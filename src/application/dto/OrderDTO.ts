@@ -82,17 +82,10 @@ export interface OrderDTO {
 }
 
 /**
- * Конвертирует Order entity в OrderDTO
+ * Convert a domain Order entity into an OrderDTO suitable for API/DB transmission.
  *
- * @param order - Order entity из domain layer
- * @returns OrderDTO для передачи в API/DB
- *
- * @example
- * ```typescript
- * const order = Order.create({...});
- * const dto = toOrderDTO(order);
- * console.log(JSON.stringify(dto));
- * ```
+ * @param order - Domain Order entity to convert; optional fields on the entity are preserved as optional DTO fields.
+ * @returns An OrderDTO containing primitive fields: `id`, `marketId`, `tokenId`, `side`, `price`, `size`, `status`, optional `filledSize`, optional `averageFillPrice`, `notional`, `remainingSize`, `fillPercentage`, and `timestamp`.
  */
 export function toOrderDTO(order: any): OrderDTO {
   return {

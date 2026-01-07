@@ -34,47 +34,10 @@ import { mapParsedToDomainEvent } from '../../../infrastructure/polymarket/ws/ma
 import type { DomainEvent } from '../../../domain/events/DomainEvent.js';
 
 /**
- * Нормализует сырую JSONL строку в DomainEvent
+ * Normalize a raw JSONL snapshot line into a DomainEvent or return null for non-data or invalid lines.
  *
- * @param line - JSONL строка из snapshot файла
- * @returns DomainEvent если валидно, null иначе
- *
- * @throws Никогда - возвращает null для невалидных данных
- *
- * @remarks
- * Алгоритм:
- * 1. Парсит JSON
- * 2. Проверяет наличие event_type
- * 3. Использует mapParsedToDomainEvent для преобразования
- * 4. Возвращает результат (может быть null)
- *
- * Возвращает null если:
- * - JSON parse error
- * - Отсутствует event_type
- * - mapParsedToDomainEvent вернул null (контрольное сообщение или невалидные данные)
- *
- * @example
- * ```typescript
- * // Book событие
- * const bookLine = '{"event_type":"book","asset_id":"0x123","bids":[],"asks":[]}';
- * const bookEvent = normalizeSnapshotEvent(bookLine);
- * // → OrderBookSnapshotReceivedEvent
- *
- * // Trade событие
- * const tradeLine = '{"event_type":"trade","asset_id":"0x123","price":"0.5","size":"100","side":"BUY"}';
- * const tradeEvent = normalizeSnapshotEvent(tradeLine);
- * // → TradeExecutedEvent
- *
- * // Невалидный JSON
- * const invalidLine = '{broken json}';
- * const invalidEvent = normalizeSnapshotEvent(invalidLine);
- * // → null
- *
- * // Контрольное сообщение
- * const pongLine = '{"event_type":"pong"}';
- * const pongEvent = normalizeSnapshotEvent(pongLine);
- * // → null
- * ```
+ * @param line - A single JSONL string read from a snapshot file representing an event.
+ * @returns A DomainEvent when the line contains a valid data event; `null` for invalid JSON, missing or non-string `event_type`, or control/non-data messages.
  */
 export function normalizeSnapshotEvent(line: string): DomainEvent | null {
   try {

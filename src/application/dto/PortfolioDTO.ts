@@ -57,11 +57,11 @@ export interface PortfolioDTO {
 }
 
 /**
- * Конвертирует Portfolio entity в PortfolioDTO
+ * Convert a Portfolio entity into a transport-friendly PortfolioDTO containing per-position metrics and aggregated totals.
  *
- * @param portfolio - Portfolio entity
- * @param marketPrices - Map текущих цен (tokenId -> price)
- * @returns PortfolioDTO
+ * @param portfolio - Domain Portfolio entity to convert
+ * @param marketPrices - Map of current prices keyed by tokenId used to compute each position's market value and unrealized PnL
+ * @returns A PortfolioDTO containing id, cash balances, positions (with pricing, cost basis, market value, unrealized PnL, and lot count), aggregated totals (total value, total unrealized PnL and percent), position count, and an ISO timestamp
  */
 export function toPortfolioDTO(
   portfolio: any,

@@ -83,11 +83,13 @@ export interface PositionLotDTO {
 }
 
 /**
- * Конвертирует Position entity в PositionDTO
+ * Convert a Position entity into a PositionDTO.
  *
- * @param position - Position entity
- * @param currentPrice - Текущая рыночная цена
- * @returns PositionDTO
+ * When `currentPrice` is provided, unrealized P&L, market value, and per-lot unrealized P&L are computed from that price; when omitted, unrealized P&L defaults to 0 and market value falls back to the position's cost basis.
+ *
+ * @param position - The Position entity to convert
+ * @param currentPrice - Optional current market price used to calculate unrealized P&L and market value
+ * @returns A PositionDTO containing tokenId, side, totalQuantity, averageEntryPrice, optional currentPrice, unrealizedPnL, unrealizedPnLPercent, costBasis, marketValue, lotCount, and an optional `lots` array
  */
 export function toPositionDTO(position: any, currentPrice?: number): PositionDTO {
   const pnl = currentPrice
@@ -117,7 +119,11 @@ export function toPositionDTO(position: any, currentPrice?: number): PositionDTO
 }
 
 /**
- * Конвертирует PositionLot в DTO
+ * Converts a PositionLot entity into a PositionLotDTO.
+ *
+ * @param lot - Position lot entity to convert
+ * @param currentPrice - Optional current market price used to compute unrealized P&L
+ * @returns A PositionLotDTO containing `lotId`, `quantity`, `entryPrice`, ISO `timestamp`, `costBasis`, and optional `unrealizedPnL` when `currentPrice` is provided
  */
 export function toPositionLotDTO(
   lot: any,

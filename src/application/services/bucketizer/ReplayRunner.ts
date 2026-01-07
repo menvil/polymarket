@@ -49,13 +49,12 @@ import { normalizeSnapshotEvent } from './SnapshotEventNormalizer.js';
 import type { ReplayConfig, ReplayStats } from './types/replay.js';
 
 /**
- * Sleep utility для задержек в SCALED режиме
+ * Waits for the specified number of milliseconds or aborts if cancelled.
  *
- * @param ms - Миллисекунды задержки
- * @param signal - AbortSignal для cancellation
- * @returns Promise который резолвится после задержки
- *
- * @throws {Error} Если signal был aborted
+ * @param ms - Delay duration in milliseconds
+ * @param signal - Optional AbortSignal that causes the promise to reject if already aborted or if it aborts during the wait
+ * @returns A promise that resolves when the delay completes
+ * @throws {Error} When `signal` is aborted before or during the delay (error message: "Aborted")
  */
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
