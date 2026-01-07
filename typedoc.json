@@ -1,0 +1,17 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["./src"],
+  "entryPointStrategy": "expand",
+  "out": "docs/api",
+  "plugin": [],
+  "readme": "README.md",
+  "excludePrivate": true,
+  "excludeProtected": false,
+  "excludeExternals": true,
+  "includeVersion": true,
+  "navigationLinks": {
+    "GitHub": "https://github.com/your-username/polymarket-mm-bot"
+  },
+  "sort": ["source-order"],
+  "githubPages": false
+}
