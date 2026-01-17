@@ -343,13 +343,14 @@ export class ErrorClassifier {
    * @returns Ключ кэша
    *
    * @remarks
-   * Ключ = type + первые 100 символов сообщения
+   * Ключ = type + полное сообщение
    * Одинаковые (type, message) → один ключ → один кэшированный результат
+   * Использует полное сообщение для избежания коллизий
    */
   private makeCacheKey(error: OrderError): string {
     const message = this.extractMessage(error);
-    // Простой хэш: type + первые 100 символов сообщения
-    return `${error.type}:${message.substring(0, 100)}`;
+    // Ключ кэша: type + полное сообщение (без обрезания)
+    return `${error.type}:${message}`;
   }
 
   /**
