@@ -62,7 +62,7 @@ export interface RegistryStats {
   uniqueAssets: number;
   /** Всего callbacks по всем assets */
   totalCallbacks: number;
-  /** Всего отправлено уведомлений */
+  /** Всего попыток вызова callbacks (успешных + неуспешных) */
   totalNotifications: number;
   /** Всего ошибок при выполнении callbacks */
   callbackErrors: number;
@@ -326,7 +326,9 @@ export class SubscriptionRegistry<T> {
       }
     }
 
-    this.stats.totalNotifications++;
+    // Считаем все попытки вызова callbacks (успешные + неуспешные)
+    // Это согласовано с callbackErrors, который считает индивидуальные ошибки
+    this.stats.totalNotifications += callbacks.size;
 
     this.logger.trace('Notifications sent', {
       assetId: assetId.substring(0, 16) + '...',
