@@ -190,13 +190,13 @@ function mapTradeMessage(message: PolymarketTradeMessage): TradeExecutedEvent | 
 
   // Парсим price
   const price = parseFloat(message.price);
-  if (isNaN(price)) {
+  if (isNaN(price) || price < 0) {
     return null;
   }
 
   // Парсим size
   const size = parseFloat(message.size);
-  if (isNaN(size)) {
+  if (isNaN(size) || size <= 0) {
     return null;
   }
 
@@ -241,10 +241,16 @@ function parseLevels(
     if (isNaN(price)) {
       return null;
     }
+    if (price < 0) {
+      return null;
+    }
 
     // Парсим size
     const size = parseFloat(level.size);
     if (isNaN(size)) {
+      return null;
+    }
+    if (size < 0) {
       return null;
     }
 
