@@ -111,7 +111,7 @@ export class PolymarketMarketConstraintsPolicy {
       const priceTick = Math.max(0.01, apiPriceTick);
 
       // ✅ v7.7.15: DEBUG - Log ALL constraints from API
-      console.log('[PolymarketMarketConstraintsPolicy] API constraints:', {
+      this.logger.debug('API constraints received', {
         tokenId: tokenId.substring(0, 16) + '...',
         apiPriceTick: apiPriceTick,
         correctedPriceTick: priceTick,
