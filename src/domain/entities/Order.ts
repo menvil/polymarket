@@ -257,65 +257,11 @@ export class Order {
       // ✅ v7.7.15: OrderFilled УДАЛЁН - стратегия работает только по StrategyTick!
       // case 'OrderFilled': { ... }
 
-      case 'OrderCancelled': {
-        // FSM transition check
-        const currentState = this.mapStatusToExecutionState(this.status);
-        const targetState = OrderExecutionState.CANCELED;
+      case 'OrderCancelled':
+        return this.applyTerminalStatus(OrderExecutionState.CANCELED, 'CANCELED');
 
-        if (!isAllowedTransition(currentState, targetState)) {
-          return Err(
-            `FSM violation: transition ${currentState} → ${targetState} not allowed for order ${this.id}`
-          );
-        }
-
-        try {
-          const updatedOrder = Order.create({
-            id: this.id,
-            tokenId: this.tokenId,
-            side: this.side,
-            price: this.price,
-            size: this.size,
-            status: 'CANCELED',
-            timestamp: this.timestamp,
-            filledSize: this.filledSize,
-            averageFillPrice: this.averageFillPrice,
-          });
-
-          return Ok(updatedOrder);
-        } catch (error) {
-          return Err(`Failed to create updated Order: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-
-      case 'OrderRejected': {
-        // FSM transition check
-        const currentState = this.mapStatusToExecutionState(this.status);
-        const targetState = OrderExecutionState.REJECTED;
-
-        if (!isAllowedTransition(currentState, targetState)) {
-          return Err(
-            `FSM violation: transition ${currentState} → ${targetState} not allowed for order ${this.id}`
-          );
-        }
-
-        try {
-          const updatedOrder = Order.create({
-            id: this.id,
-            tokenId: this.tokenId,
-            side: this.side,
-            price: this.price,
-            size: this.size,
-            status: 'REJECTED',
-            timestamp: this.timestamp,
-            filledSize: this.filledSize,
-            averageFillPrice: this.averageFillPrice,
-          });
-
-          return Ok(updatedOrder);
-        } catch (error) {
-          return Err(`Failed to create updated Order: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
+      case 'OrderRejected':
+        return this.applyTerminalStatus(OrderExecutionState.REJECTED, 'REJECTED');
 
       default: {
         const _exhaustive: never = event;
@@ -354,6 +300,51 @@ export class Order {
         return OrderExecutionState.CANCELED;
       default:
         return OrderExecutionState.OPEN; // Default fallback
+    }
+  }
+
+  /**
+   * Применяет терминальный статус к ордеру (CANCELED или REJECTED)
+   *
+   * @param targetState - Целевое состояние FSM (CANCELED или REJECTED)
+   * @param status - Новый статус ордера ('CANCELED' или 'REJECTED')
+   * @returns Result<Order, string> - обновлённый ордер или ошибка FSM/создания
+   *
+   * @remarks
+   * Вспомогательный метод для устранения дублирования в обработчиках
+   * OrderCancelled и OrderRejected. Выполняет:
+   * 1. Проверку FSM перехода через isAllowedTransition()
+   * 2. Создание нового Order с обновлённым статусом
+   * 3. Сохранение всех остальных свойств (id, tokenId, side, price, size, timestamp, filledSize, averageFillPrice)
+   */
+  private applyTerminalStatus(
+    targetState: OrderExecutionState,
+    status: 'CANCELED' | 'REJECTED'
+  ): Result<Order, string> {
+    const currentState = this.mapStatusToExecutionState(this.status);
+
+    if (!isAllowedTransition(currentState, targetState)) {
+      return Err(
+        `FSM violation: transition ${currentState} → ${targetState} not allowed for order ${this.id}`
+      );
+    }
+
+    try {
+      const updatedOrder = Order.create({
+        id: this.id,
+        tokenId: this.tokenId,
+        side: this.side,
+        price: this.price,
+        size: this.size,
+        status,
+        timestamp: this.timestamp,
+        filledSize: this.filledSize,
+        averageFillPrice: this.averageFillPrice,
+      });
+
+      return Ok(updatedOrder);
+    } catch (error) {
+      return Err(`Failed to create updated Order: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
