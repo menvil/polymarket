@@ -264,7 +264,18 @@ export class ErrorClassifier {
       };
     }
 
-    if (code.includes('network') || code.includes('timeout') || code.includes('econnrefused')) {
+    const messageLower = structured.message.toLowerCase();
+    if (
+      code.includes('network') ||
+      code.includes('timeout') ||
+      code.includes('econnrefused') ||
+      messageLower.includes('timed out') ||
+      messageLower.includes('timeout') ||
+      messageLower.includes('connection refused') ||
+      messageLower.includes('connection') ||
+      messageLower.includes('network') ||
+      messageLower.includes('network error')
+    ) {
       return {
         type: 'NETWORK_ERROR',
         message: structured.message,
