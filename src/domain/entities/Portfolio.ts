@@ -253,6 +253,7 @@ export class Portfolio {
    * @returns Новый Portfolio с обновлённым кэшем
    *
    * @throws {Error} Если результирующий кэш становится отрицательным
+   * @throws {InsufficientFundsError} Если результирующий кэш становится меньше reservedCash
    *
    * @remarks
    * Используется для:
@@ -261,14 +262,16 @@ export class Portfolio {
    * - Зачисления при продаже (положительная сумма)
    * - Вывода средств (отрицательная сумма)
    *
+   * Инвариант: cash должен быть >= reservedCash для сохранения корректного availableCash.
+   *
    * @example
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000));
-   * 
+   *
    * // Пополнение
    * const deposited = portfolio.updateCash(Money.fromUSDC(500));
    * console.log(deposited.cash.amount); // 1500
-   * 
+   *
    * // Списание при покупке
    * const afterBuy = deposited.updateCash(Money.fromUSDC(-100));
    * console.log(afterBuy.cash.amount); // 1400
@@ -281,6 +284,14 @@ export class Portfolio {
 
     if (newCash.amount < 0) {
       throw new Error(`Cash cannot be negative: ${newCash.amount}`);
+    }
+
+    // Проверка инварианта: cash не может быть меньше reservedCash
+    if (newCash.amount < this.reservedCash.amount) {
+      throw new InsufficientFundsError(
+        this.reservedCash.amount - newCash.amount,
+        newCash.amount
+      );
     }
 
     return new Portfolio(
