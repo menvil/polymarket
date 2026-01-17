@@ -125,13 +125,13 @@ export class SequencedEventBus implements IEventBus {
       );
     }
 
-    // Обновляем последний доставленный sequence ДО доставки
-    this.lastDeliveredSequence = envelope.sequenceNumber;
-
     // Синхронная доставка с защитой от reentrancy
     this.isDelivering = true;
     try {
       this.deliverEvent(envelope);
+      // Обновляем последний доставленный sequence ПОСЛЕ успешной доставки
+      // Если handler выбросит ошибку, sequence не будет помечен как доставленный
+      this.lastDeliveredSequence = envelope.sequenceNumber;
     } finally {
       this.isDelivering = false;
     }
