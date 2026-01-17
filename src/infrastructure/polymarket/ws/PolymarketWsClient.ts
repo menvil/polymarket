@@ -38,7 +38,7 @@
  * });
  *
  * // Переподключение с timeout
- * await client.reconnectWithTimeout(10000);
+ * await client.reconnectWithTimeout(1000);
  *
  * // Отключение
  * await client.disconnect();
