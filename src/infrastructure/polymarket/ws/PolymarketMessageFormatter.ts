@@ -99,7 +99,7 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
    *
    * Алгоритм:
    * 1. Привести params к типу PolymarketSubscriptionParams
-   * 2. Валидировать что assets_ids существует и не пустой
+   * 2. Валидировать что assets_ids существует и непустой
    * 3. Удалить дубликаты ID токенов
    * 4. Валидировать формат токенов (числовые строки)
    * 5. Построить объект подписки
@@ -129,7 +129,7 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
    *   type: 'market',
    * });
    * // Возвращает: '{"assets_ids":["67704255..."],"type":"market"}'
-   * // Логирует: ⚠️  Duplicate tokens detected
+   * // Логирует: ⚠️ Duplicate tokens detected
    *
    * // Отсутствующий assets_ids (бросает исключение)
    * const msg = formatter.formatSubscription('market', {});

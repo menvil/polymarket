@@ -123,7 +123,7 @@ export interface MarketInfoResponse {
  * Ограничения рынка
  */
 export interface MarketConstraintsResponse {
-  /** Минимальная СТОИМОСТЬ ордера в USD для ордеров BUY ($1) */
+  /** Минимальная СТОИМОСТЬ ордера в USD для ордеров BUY */
   minimum_order_value?: number;
 
   /** Минимальный РАЗМЕР ордера в акциях для ордеров SELL */
@@ -333,7 +333,7 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
 
       const constraints: MarketConstraintsResponse = {
         minimum_order_value: 0, // Нет минимальной стоимости - требуется только минимум 1 акция
-        minimum_order_size: market.orderMinSize ?? 10, // Минимум акций для ордеров SELL
+        minimum_order_size: market.orderMinSize ?? 1, // Минимум акций для ордеров SELL
         maximum_order_size: 10000, // API не предоставляет максимум, используем значение по умолчанию
         minimum_tick_size: 0.01, // API не предоставляет шаг размера, используем значение по умолчанию
         minimum_price_tick: market.orderPriceMinTickSize ?? 0.0001,

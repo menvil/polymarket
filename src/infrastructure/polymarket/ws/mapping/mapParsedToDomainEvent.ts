@@ -238,19 +238,13 @@ function parseLevels(
 
     // Парсим price
     const price = parseFloat(level.price);
-    if (isNaN(price)) {
-      return null;
-    }
-    if (price < 0) {
+    if (isNaN(price) || price < 0) {
       return null;
     }
 
     // Парсим size
     const size = parseFloat(level.size);
-    if (isNaN(size)) {
-      return null;
-    }
-    if (size < 0) {
+    if (isNaN(size) || size <= 0) {
       return null;
     }
 
