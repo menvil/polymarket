@@ -162,9 +162,10 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       const orderAcceptedEvent: OrderAccepted = {
         type: 'OrderAccepted',
         orderId: virtualOrder.orderId,
-        strategyId: params.strategyId,
+        strategyId: params.strategyId ?? 'default',
+        marketId: params.marketId,
+        tokenId: params.tokenId,
         side: params.side.toUpperCase() as 'BUY' | 'SELL',
-        marketId: params.tokenId,
         price: params.price,
         size: params.size,
         timestamp: new Date(),
@@ -217,9 +218,10 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       const orderAcceptedEvent: OrderAccepted = {
         type: 'OrderAccepted',
         orderId: domainOrder.orderId,
-        strategyId: params.strategyId,
+        strategyId: params.strategyId ?? 'default',
+        marketId: params.marketId,
+        tokenId: params.tokenId,
         side: params.side.toUpperCase() as 'BUY' | 'SELL',
-        marketId: params.tokenId,
         price: params.price,
         size: params.size,
         timestamp: new Date(), // TODO: Использовать детерминированный timestamp из params/clock
@@ -279,9 +281,10 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
           const orderAcceptedEvent: OrderAccepted = {
             type: 'OrderAccepted',
             orderId: domainOrder.orderId,
-            strategyId: params.strategyId,
+            strategyId: params.strategyId ?? 'default',
+            marketId: params.marketId,
+            tokenId: params.tokenId,
             side: params.side.toUpperCase() as 'BUY' | 'SELL',
-            marketId: params.tokenId,
             price: params.price,
             size: params.size,
             timestamp: new Date(),
@@ -316,6 +319,9 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       const orderRejectedEvent: OrderRejected = {
         type: 'OrderRejected',
         orderId: undefined, // Ордер не создан на бирже
+        strategyId: params.strategyId ?? 'default',
+        marketId: params.marketId,
+        tokenId: params.tokenId,
         reason: error instanceof Error ? error.message : 'Unknown error',
         errorCode: (error as any).code || 'API_ERROR',
         timestamp: new Date(),
@@ -346,7 +352,10 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    * @remarks
    * После успешного API-вызова публикует событие OrderCancelled
    */
-  async cancelOrder(orderId: string): Promise<void> {
+  async cancelOrder(
+    orderId: string,
+    context?: { marketId: string; tokenId: string; strategyId: string }
+  ): Promise<void> {
     // РЕЖИМ СИМУЛЯЦИИ: Пропустить API-вызов, только опубликовать событие
     if (this.simulationMode) {
       this.logger.info('Cancelling order (SIMULATION MODE - virtual cancellation)', { orderId });
@@ -355,6 +364,9 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       const orderCancelledEvent: OrderCancelled = {
         type: 'OrderCancelled',
         orderId,
+        strategyId: context?.strategyId ?? 'default',
+        marketId: context?.marketId ?? 'unknown',
+        tokenId: context?.tokenId ?? 'unknown',
         reason: 'User requested cancellation (SIMULATION)',
         timestamp: new Date(),
       };
@@ -381,6 +393,9 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
     const orderCancelledEvent: OrderCancelled = {
       type: 'OrderCancelled',
       orderId,
+      strategyId: context?.strategyId ?? 'default',
+      marketId: context?.marketId ?? 'unknown',
+      tokenId: context?.tokenId ?? 'unknown',
       reason: 'User requested cancellation',
       timestamp: new Date(),
     };

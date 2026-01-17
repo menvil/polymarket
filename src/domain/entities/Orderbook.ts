@@ -20,7 +20,7 @@
  *
  * @example
  * ```typescript
- * const orderbook = Orderbook.create('market-123', {
+ * const orderbook = Orderbook.create('token-yes-123', {
  *   bids: [
  *     { price: Price.fromNumber(0.52), quantity: Quantity.fromNumber(100) },
  *     { price: Price.fromNumber(0.51), quantity: Quantity.fromNumber(200) }
@@ -81,7 +81,7 @@ export class Orderbook {
   /**
    * Создаёт новый Orderbook
    *
-   * @param marketId - Идентификатор рынка
+   * @param tokenId - Идентификатор токена
    * @param bids - Массив bid уровней (отсортирован по убыванию цены)
    * @param asks - Массив ask уровней (отсортирован по возрастанию цены)
    * @param timestamp - Время снимка стакана
@@ -90,7 +90,7 @@ export class Orderbook {
    * Private constructor - используйте статический метод create().
    */
   private constructor(
-    public readonly marketId: string,
+    public readonly tokenId: string,
     public readonly bids: readonly OrderbookLevel[],
     public readonly asks: readonly OrderbookLevel[],
     public readonly timestamp: Date
@@ -99,7 +99,7 @@ export class Orderbook {
   /**
    * Создаёт новый Orderbook
    *
-   * @param marketId - Идентификатор рынка
+   * @param tokenId - Идентификатор токена
    * @param data - Данные стакана (bids, asks, timestamp)
    * @returns Новый Orderbook с отсортированными уровнями
    *
@@ -113,7 +113,7 @@ export class Orderbook {
    *
    * @example
    * ```typescript
-   * const orderbook = Orderbook.create('market-123', {
+   * const orderbook = Orderbook.create('token-yes-123', {
    *   bids: [
    *     { price: Price.fromNumber(0.52), quantity: Quantity.fromNumber(100) },
    *     { price: Price.fromNumber(0.51), quantity: Quantity.fromNumber(200) }
@@ -124,9 +124,9 @@ export class Orderbook {
    * });
    * ```
    */
-  public static create(marketId: string, data: OrderbookData): Orderbook {
-    if (!marketId || marketId.trim().length === 0) {
-      throw new Error('Market ID cannot be empty');
+  public static create(tokenId: string, data: OrderbookData): Orderbook {
+    if (!tokenId || tokenId.trim().length === 0) {
+      throw new Error('Token ID cannot be empty');
     }
 
     // Сортируем bids по убыванию цены (лучший bid первый)
@@ -151,7 +151,7 @@ export class Orderbook {
     const timestamp = data.timestamp ? new Date(data.timestamp.getTime()) : new Date();
 
     const orderbook = new Orderbook(
-      marketId,
+      tokenId,
       sortedBids,
       sortedAsks,
       timestamp
@@ -164,7 +164,7 @@ export class Orderbook {
   /**
    * Создаёт пустой стакан
    *
-   * @param marketId - Идентификатор рынка
+   * @param tokenId - Идентификатор токена
    * @returns Пустой Orderbook без уровней
    *
    * @remarks
@@ -174,13 +174,13 @@ export class Orderbook {
    *
    * @example
    * ```typescript
-   * const empty = Orderbook.empty('market-123');
+   * const empty = Orderbook.empty('token-yes-123');
    * console.log(empty.getBestBid()); // null
    * console.log(empty.isEmpty()); // true
    * ```
    */
-  public static empty(marketId: string): Orderbook {
-    return Orderbook.create(marketId, {
+  public static empty(tokenId: string): Orderbook {
+    return Orderbook.create(tokenId, {
       bids: [],
       asks: [],
       timestamp: new Date()
@@ -595,7 +595,7 @@ export class Orderbook {
   public toString(): string {
     const spread = this.getSpread();
     const spreadStr = spread ? spread.width().toFixed(4) : 'N/A';
-    return `Orderbook[${this.marketId}]: ${this.bids.length} bids, ${this.asks.length} asks, spread ${spreadStr}`;
+    return `Orderbook[${this.tokenId}]: ${this.bids.length} bids, ${this.asks.length} asks, spread ${spreadStr}`;
   }
 
   /**
@@ -617,7 +617,7 @@ export class Orderbook {
     const spread = this.getSpread();
 
     return {
-      marketId: this.marketId,
+      tokenId: this.tokenId,
       timestamp: this.timestamp.toISOString(),
       bestBid: bestBid?.value,
       bestAsk: bestAsk?.value,

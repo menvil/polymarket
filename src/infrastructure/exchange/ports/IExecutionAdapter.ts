@@ -37,7 +37,10 @@
  * strategyId передаётся через: Intent → Context → Adapter → Event
  */
 export interface PlaceOrderParams {
-  /** ID токена */
+  /** ID рынка (condition ID в Polymarket) */
+  marketId: string;
+
+  /** ID токена (UP или DOWN) */
   tokenId: string;
 
   /** Сторона ордера */
@@ -153,12 +156,22 @@ export interface IExecutionAdapter {
   postOrder(params: PlaceOrderParams): Promise<OrderResponse>;
 
   /**
+   * Параметры контекста для отмены ордера (для публикации события)
+   */
+  CancelOrderContext?: {
+    marketId: string;
+    tokenId: string;
+    strategyId: string;
+  };
+
+  /**
    * Отменить ордер (прямой вызов API)
    *
    * @param orderId - ID ордера для отмены
+   * @param context - Контекст ордера для публикации события (marketId, tokenId, strategyId)
    * @throws {ApiError} Если вызов API завершился неудачей
    */
-  cancelOrder(orderId: string): Promise<void>;
+  cancelOrder(orderId: string, context?: { marketId: string; tokenId: string; strategyId: string }): Promise<void>;
 
   /**
    * Получить открытые ордера (прямой вызов API)

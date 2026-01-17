@@ -85,19 +85,21 @@ export interface IPortfolioAdapter {
   getPosition(tokenId: string): Promise<Quantity>;
 
   /**
-   * Получает стакан заявок для рынка
+   * Получает стакан заявок для токена
    *
-   * @param marketId - ID рынка (tokenId)
+   * @param tokenId - ID токена (YES или NO)
    * @returns Orderbook snapshot
    * @throws {ExchangeError} При ошибке API
    *
    * @remarks
    * - Получает текущее состояние стакана из CLOB REST API
+   * - В Polymarket orderbook запрашивается по tokenId, не по marketId
+   * - Для полной картины маркета нужно получить orderbook обоих токенов
    * - Используется для расчёта котировок и анализа ликвидности
    * - Данные могут быть закешированы (см. OrderbookRestClient)
    *
    * Алгоритм:
-   * 1. Fetch ApiOrderbook от OrderbookRestClient
+   * 1. Fetch ApiOrderbook от OrderbookRestClient по tokenId
    * 2. Map ApiOrderbook → Domain Orderbook через OrderbookMapper
    * 3. Возвращает Domain Orderbook
    *
@@ -105,14 +107,15 @@ export interface IPortfolioAdapter {
    *
    * @example
    * ```typescript
-   * const orderbook = await portfolioAdapter.getOrderBook('0xabc123');
+   * const upTokenId = market.outcomes[0].tokenId;
+   * const orderbook = await portfolioAdapter.getOrderBook(upTokenId);
    * const bestBid = orderbook.bids[0];
    * const bestAsk = orderbook.asks[0];
    * const spread = bestAsk.price.value - bestBid.price.value;
    * console.log(`Best bid: ${bestBid.price.value}, Best ask: ${bestAsk.price.value}, Spread: ${spread}`);
    * ```
    */
-  getOrderBook(marketId: string): Promise<Orderbook>;
+  getOrderBook(tokenId: string): Promise<Orderbook>;
 
   /**
    * Получает все текущие позиции

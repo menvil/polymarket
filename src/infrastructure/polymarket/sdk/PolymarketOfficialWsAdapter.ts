@@ -72,8 +72,11 @@
  *        price: Price.fromNumber(parseFloat(b.price)),
  *        quantity: Quantity.fromNumber(parseFloat(b.size)),
  *      }));
- *      // ... преобразуйте asks аналогично
- *      return Orderbook.create({ assetId: sdkData.tokenId, bids, asks });
+ *      const asks = sdkData.asks.map(a => ({
+ *        price: Price.fromNumber(parseFloat(a.price)),
+ *        quantity: Quantity.fromNumber(parseFloat(a.size)),
+ *      }));
+ *      return Orderbook.create(sdkData.tokenId, { bids, asks });
  *    }
  *    ```
  *
