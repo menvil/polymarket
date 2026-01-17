@@ -543,8 +543,8 @@ export class BaseWebSocketTransport extends EventEmitter {
    * @example
    * ```typescript
    * processMessage({ event_type: 'book', asset_id: '123', bids: [], asks: [] });
-   * // -> emit('raw', message)
-   * // -> emit('orderbook', message)
+   * // -> emit('raw', parsed.payload)
+   * // -> emit('orderbook', parsed.payload)
    * ```
    */
   private processMessage(message: any): void {
@@ -573,10 +573,10 @@ export class BaseWebSocketTransport extends EventEmitter {
       }
 
       // Эмитим raw событие для DataCollector (ДО события специфичного типа)
-      this.emit('raw', message);
+      // ВАЖНО: передаём parsed.payload для консистентности (контракт ParsedMessage)
+      this.emit('raw', parsed.payload);
 
       // Эмитим событие специфичного типа (orderbook, trade, и т.д.)
-      // ВАЖНО: передаём parsed.payload, а не сырое message (контракт ParsedMessage)
       this.emit(parsed.type, parsed.payload);
     } catch (error) {
       this.logger.error('Failed to process message', { error, message });
