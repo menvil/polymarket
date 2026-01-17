@@ -21,12 +21,14 @@
  * // Create a new buy order
  * const order = Order.create({
  *   id: '0x123...',
+ *   marketId: 'market-abc',
  *   tokenId: 'token-yes',
  *   side: 'BUY',
  *   price: Price.fromNumber(0.65),
  *   size: Quantity.fromNumber(100),
  *   status: 'PENDING',
- *   timestamp: new Date()
+ *   timestamp: new Date(),
+ *   strategyId: 'strategy-1'
  * });
  *
  * // Check if order can be canceled
@@ -126,12 +128,14 @@ export class Order {
    * ```typescript
    * const order = Order.create({
    *   id: '0x123abc',
+   *   marketId: 'market-abc',
    *   tokenId: 'token-yes-123',
    *   side: 'BUY',
    *   price: Price.fromNumber(0.55),
    *   size: Quantity.fromNumber(50),
    *   status: 'PENDING',
-   *   timestamp: new Date()
+   *   timestamp: new Date(),
+   *   strategyId: 'strategy-1'
    * });
    * ```
    */
@@ -161,10 +165,13 @@ export class Order {
    * const event: OrderAccepted = {
    *   type: 'OrderAccepted',
    *   orderId: '123',
+   *   strategyId: 'strategy-1',
+   *   marketId: 'market-abc',
+   *   tokenId: 'token-yes',
    *   side: 'BUY',
-   *   marketId: 'abc',
-   *   price: 100,
-   *   size: 10
+   *   price: 0.55,
+   *   size: 100,
+   *   timestamp: new Date()
    * };
    *
    * const result = Order.fromOrderAccepted(event);
@@ -240,8 +247,13 @@ export class Order {
    * const event: OrderPartiallyFilled = {
    *   type: 'OrderPartiallyFilled',
    *   orderId: '123',
+   *   strategyId: 'strategy-1',
+   *   marketId: 'market-abc',
+   *   tokenId: 'token-yes',
+   *   side: 'BUY',
    *   filledDelta: 50,
-   *   price: 100
+   *   price: 0.55,
+   *   timestamp: new Date()
    * };
    *
    * const result = order.applyExecutionEvent(event);
@@ -511,6 +523,34 @@ export class Order {
     if (!(this.timestamp instanceof Date) || isNaN(this.timestamp.getTime())) {
       throw new OrderValidationError('Invalid timestamp', 'timestamp');
     }
+
+    // Валидация консистентности статуса с filledSize и averageFillPrice
+    // PARTIALLY_FILLED и FILLED требуют наличия filledSize > 0 и averageFillPrice
+    if (this.status === 'PARTIALLY_FILLED' || this.status === 'FILLED') {
+      if (!this.filledSize || !this.filledSize.isPositive()) {
+        throw new OrderValidationError(
+          `Status ${this.status} requires filledSize > 0, got ${this.filledSize?.value ?? 'undefined'}`,
+          'filledSize'
+        );
+      }
+
+      if (!this.averageFillPrice) {
+        throw new OrderValidationError(
+          `Status ${this.status} requires averageFillPrice to be present`,
+          'averageFillPrice'
+        );
+      }
+    }
+
+    // Для FILLED дополнительно проверяем что filledSize === size (полное исполнение)
+    if (this.status === 'FILLED') {
+      if (this.filledSize && !this.filledSize.equals(this.size)) {
+        throw new OrderValidationError(
+          `Status FILLED requires filledSize (${this.filledSize.value}) to equal size (${this.size.value})`,
+          'filledSize'
+        );
+      }
+    }
   }
 
   /**
@@ -621,12 +661,14 @@ export class Order {
    * ```typescript
    * const order = Order.create({
    *   id: '123',
+   *   marketId: 'market-abc',
    *   tokenId: 'token-yes',
    *   side: 'BUY',
    *   price: Price.fromNumber(0.65),
    *   size: Quantity.fromNumber(100),
    *   status: 'PENDING',
-   *   timestamp: new Date()
+   *   timestamp: new Date(),
+   *   strategyId: 'strategy-1'
    * });
    *
    * const notional = order.getNotional();
@@ -652,13 +694,16 @@ export class Order {
    * ```typescript
    * const order = Order.create({
    *   id: '123',
+   *   marketId: 'market-abc',
    *   tokenId: 'token-yes',
    *   side: 'BUY',
    *   price: Price.fromNumber(0.55),
    *   size: Quantity.fromNumber(100),
-   *   status: 'OPEN',
+   *   status: 'PARTIALLY_FILLED',
    *   timestamp: new Date(),
-   *   filledSize: Quantity.fromNumber(40)
+   *   strategyId: 'strategy-1',
+   *   filledSize: Quantity.fromNumber(40),
+   *   averageFillPrice: Price.fromNumber(0.55)
    * });
    *
    * const remaining = order.getRemainingSize();

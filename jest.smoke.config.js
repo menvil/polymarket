@@ -33,7 +33,7 @@ export default {
   testTimeout: 30000,
 
   // Transform TypeScript
-  extensionsToTreatAsEsm: ['.ts'],
+  extensionsToTreatAsEsm: ['.ts', '.tsx'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },
@@ -42,6 +42,7 @@ export default {
       'ts-jest',
       {
         useESM: true,
+        tsconfig: './configs/tsconfig.test.json',
       },
     ],
   },

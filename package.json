@@ -13,9 +13,10 @@
     "lint:fix": "eslint src --ext .ts --fix",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "type-check": "tsc --noEmit && tsc --project tsconfig.tests.json --noEmit",
-    "clean": "rm -rf dist coverage",
+    "clean": "rm -rf dist dist-test coverage",
     "docs:generate": "typedoc",
-    "prebuild": "npm run clean"
+    "prebuild": "npm run clean",
+    "test:smoke": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.smoke.config.js"
   },
   "keywords": [
     "polymarket",

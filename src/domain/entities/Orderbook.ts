@@ -130,17 +130,35 @@ export class Orderbook {
     }
 
     // Сортируем bids по убыванию цены (лучший bid первый)
-    const sortedBids = [...data.bids].sort((a, b) => b.price.value - a.price.value);
+    // Замораживаем каждый уровень для истинной immutability
+    const sortedBids = [...data.bids]
+      .sort((a, b) => b.price.value - a.price.value)
+      .map(level => Object.freeze(level));
+
+    // Замораживаем массив bids
+    Object.freeze(sortedBids);
 
     // Сортируем asks по возрастанию цены (лучший ask первый)
-    const sortedAsks = [...data.asks].sort((a, b) => a.price.value - b.price.value);
+    // Замораживаем каждый уровень для истинной immutability
+    const sortedAsks = [...data.asks]
+      .sort((a, b) => a.price.value - b.price.value)
+      .map(level => Object.freeze(level));
 
-    return new Orderbook(
+    // Замораживаем массив asks
+    Object.freeze(sortedAsks);
+
+    // Клонируем timestamp чтобы предотвратить внешнюю мутацию
+    const timestamp = data.timestamp ? new Date(data.timestamp.getTime()) : new Date();
+
+    const orderbook = new Orderbook(
       marketId,
       sortedBids,
       sortedAsks,
-      data.timestamp || new Date()
+      timestamp
     );
+
+    // Замораживаем весь Orderbook для полной immutability
+    return Object.freeze(orderbook);
   }
 
   /**

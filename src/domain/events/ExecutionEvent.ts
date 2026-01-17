@@ -174,7 +174,7 @@ export interface OrderRejected {
  */
 export interface OrderValidationFailed {
   readonly type: 'OrderValidationFailed';
-  readonly orderId?: string; // Может быть null если ID не сгенерирован
+  readonly orderId?: string; // Может быть undefined если ID не сгенерирован
   readonly reason: string;
   readonly validationErrors: Record<string, string>; // field → error message
 }
