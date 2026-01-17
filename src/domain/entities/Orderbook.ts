@@ -502,11 +502,14 @@ export class Orderbook {
   /**
    * Получает возраст снимка стакана
    *
+   * @param now - Текущее время в мс (по умолчанию Date.now())
    * @returns Возраст в миллисекундах
    *
    * @remarks
    * Вычисляет разницу между текущим временем и timestamp.
    * Используется для проверки актуальности данных.
+   *
+   * Параметр `now` позволяет передать детерминированное время для юнит-тестов.
    *
    * @example
    * ```typescript
@@ -514,27 +517,37 @@ export class Orderbook {
    * if (ageMs > 5000) {
    *   console.log('Orderbook data is stale (>5s old)');
    * }
+   *
+   * // В тестах:
+   * const ageMs = orderbook.getAgeMs(1700000000000);
    * ```
    */
-  public getAgeMs(): number {
-    return Date.now() - this.timestamp.getTime();
+  public getAgeMs(now: number = Date.now()): number {
+    return now - this.timestamp.getTime();
   }
 
   /**
    * Проверяет, устарел ли стакан
    *
    * @param maxAgeMs - Максимальный возраст в мс (по умолчанию 5000)
+   * @param now - Текущее время в мс (по умолчанию Date.now())
    * @returns True если стакан старше maxAgeMs
+   *
+   * @remarks
+   * Параметр `now` позволяет передать детерминированное время для юнит-тестов.
    *
    * @example
    * ```typescript
    * if (orderbook.isStale(3000)) {
    *   console.log('Need to refresh orderbook');
    * }
+   *
+   * // В тестах:
+   * const isStale = orderbook.isStale(5000, 1700000000000);
    * ```
    */
-  public isStale(maxAgeMs: number = 5000): boolean {
-    return this.getAgeMs() > maxAgeMs;
+  public isStale(maxAgeMs: number = 5000, now: number = Date.now()): boolean {
+    return this.getAgeMs(now) > maxAgeMs;
   }
 
   /**
