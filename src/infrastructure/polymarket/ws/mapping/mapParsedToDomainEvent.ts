@@ -50,7 +50,11 @@
  * ```
  */
 
-import type { PolymarketMessage } from '../PolymarketMessageRouter.js';
+import type {
+  PolymarketMessage,
+  PolymarketOrderbookMessage,
+  PolymarketTradeMessage,
+} from '../PolymarketMessageRouter.js';
 import { OrderBookSnapshotReceivedEvent } from '../../../../domain/events/OrderBookSnapshotReceivedEvent.js';
 import { TradeExecutedEvent } from '../../../../domain/events/TradeExecutedEvent.js';
 import type { TradeSide } from '../../../../domain/events/TradeExecutedEvent.js';
@@ -82,16 +86,14 @@ import type { DomainEvent } from '../../../../domain/events/DomainEvent.js';
 export function mapParsedToDomainEvent(
   message: PolymarketMessage
 ): DomainEvent | null {
-  const eventType = message.event_type;
-
   // Маппим orderbook сообщения
-  if (eventType === 'book') {
-    return mapOrderbookMessage(message as any);
+  if (message.event_type === 'book') {
+    return mapOrderbookMessage(message);
   }
 
   // Маппим trade сообщения
-  if (eventType === 'trade' || eventType === 'last_trade_price') {
-    return mapTradeMessage(message as any);
+  if (message.event_type === 'trade' || message.event_type === 'last_trade_price') {
+    return mapTradeMessage(message);
   }
 
   // Контрольные сообщения → null
@@ -120,7 +122,7 @@ export function mapParsedToDomainEvent(
  * - bids[0] = лучший (самый высокий) bid
  * - asks[0] = лучший (самый низкий) ask
  */
-function mapOrderbookMessage(message: any): OrderBookSnapshotReceivedEvent | null {
+function mapOrderbookMessage(message: PolymarketOrderbookMessage): OrderBookSnapshotReceivedEvent | null {
   // Валидируем asset_id
   const assetId = message.asset_id;
   if (typeof assetId !== 'string' || assetId.length === 0) {
@@ -179,7 +181,7 @@ function mapOrderbookMessage(message: any): OrderBookSnapshotReceivedEvent | nul
  * - side является 'BUY' | 'SELL' | undefined (undefined → null в событии)
  * - timestamp валиден
  */
-function mapTradeMessage(message: any): TradeExecutedEvent | null {
+function mapTradeMessage(message: PolymarketTradeMessage): TradeExecutedEvent | null {
   // Валидируем asset_id
   const assetId = message.asset_id;
   if (typeof assetId !== 'string' || assetId.length === 0) {
