@@ -200,7 +200,9 @@ export class TradeExecutedEvent extends DomainEvent {
    * ```
    */
   public toString(): string {
-    const assetShort = this.assetId.substring(0, 10) + '...';
+    const assetShort = this.assetId.length > 10
+      ? this.assetId.substring(0, 10) + '...'
+      : this.assetId;
     const sideStr = this.side || 'UNKNOWN';
     return `TradeExecuted[${assetShort}]: ${sideStr} ${this.size} @ ${this.price} (notional: ${this.getNotional().toFixed(2)})`;
   }

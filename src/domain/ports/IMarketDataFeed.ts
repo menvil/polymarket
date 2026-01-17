@@ -104,7 +104,9 @@ export interface IMarketDataFeed {
    * @remarks
    * - Закрывает все подписки для указанного токена
    * - Вызывайте при остановке стратегии
-   * - **УСТАРЕЛО**: Используйте unsubscribeFromMarket(upTokenId, downTokenId)
+   *
+   * @deprecated Используйте unsubscribeFromMarket(upTokenId, downTokenId) для
+   * отписки от обоих токенов маркета одновременно
    */
   unsubscribe(tokenId: string): void;
 
@@ -143,4 +145,42 @@ export interface IMarketDataFeed {
    * - Полезно для мониторинга состояния соединения
    */
   isSubscribed(tokenId: string): boolean;
+
+  /**
+   * Подписывается на маркет (оба токена)
+   *
+   * @param upTokenId - ID токена YES
+   * @param downTokenId - ID токена NO
+   * @returns Promise<void> - резолвится когда WebSocket подписка активна
+   *
+   * @remarks
+   * - Запускает реальную WebSocket подписку на оба токена маркета
+   * - subscribeToOrderbook/subscribeToTrades только регистрируют callbacks
+   * - Этот метод устанавливает соединение и начинает получать данные
+   * - Для каждого маркета нужно вызвать только один раз
+   *
+   * @example
+   * ```typescript
+   * // Сначала регистрируем callbacks
+   * dataFeed.subscribeToOrderbook(upTokenId, handleOrderbook);
+   * dataFeed.subscribeToOrderbook(downTokenId, handleOrderbook);
+   *
+   * // Затем запускаем WebSocket подписку
+   * await dataFeed.subscribeToMarket(upTokenId, downTokenId);
+   * ```
+   */
+  subscribeToMarket(upTokenId: string, downTokenId: string): Promise<void>;
+
+  /**
+   * Отписывается от маркета (оба токена)
+   *
+   * @param upTokenId - ID токена YES
+   * @param downTokenId - ID токена NO
+   *
+   * @remarks
+   * - Закрывает WebSocket подписку для обоих токенов маркета
+   * - Все зарегистрированные callbacks перестанут вызываться
+   * - Вызывайте при остановке стратегии или смене маркета
+   */
+  unsubscribeFromMarket(upTokenId: string, downTokenId: string): void;
 }
