@@ -65,13 +65,14 @@ export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | '
  */
 export interface OrderParams {
   id: string;
+  marketId: string;
   tokenId: string;
   side: OrderSide;
   price: Price;
   size: Quantity;
   status: OrderStatus;
   timestamp: Date;
-  strategyId?: string; // v4.2: для multi-strategy изоляции (optional для обратной совместимости)
+  strategyId: string; // v4.2: для multi-strategy изоляции (optional для обратной совместимости)
   filledSize?: Quantity;
   averageFillPrice?: Price;
 }
@@ -85,18 +86,20 @@ export interface OrderParams {
  */
 export class Order {
   public readonly id: string;
+  public readonly marketId: string;
   public readonly tokenId: string;
   public readonly side: OrderSide;
   public readonly price: Price;
   public readonly size: Quantity;
   public readonly status: OrderStatus;
   public readonly timestamp: Date;
-  public readonly strategyId?: string; // v4.2: для multi-strategy изоляции
+  public readonly strategyId: string;
   public readonly filledSize?: Quantity;
   public readonly averageFillPrice?: Price;
 
   private constructor(params: OrderParams) {
     this.id = params.id;
+    this.marketId = params.marketId;
     this.tokenId = params.tokenId;
     this.side = params.side;
     this.price = params.price;
@@ -186,15 +189,21 @@ export class Order {
       return Err(`Invariant violation: marketId empty for order ${event.orderId}`);
     }
 
+    if (!event.tokenId || event.tokenId.trim().length === 0) {
+      return Err(`Invariant violation: tokenId empty for order ${event.orderId}`);
+    }
+
     try {
       const order = Order.create({
         id: event.orderId,
-        tokenId: event.marketId,
+        marketId: event.marketId,
+        tokenId: event.tokenId,
         side: event.side,
         price: Price.fromNumber(event.price),
         size: Quantity.fromNumber(event.size),
         status: 'OPEN', // OrderAccepted → OPEN state
-        timestamp: event.timestamp, // Используем timestamp из события для детерминизма
+        timestamp: event.timestamp,
+        strategyId: event.strategyId,
         filledSize: Quantity.fromNumber(0), // Initial state
       });
 
@@ -251,11 +260,11 @@ export class Order {
         // Order создаётся через Order.fromOrderAccepted()
         return Err(`Cannot apply OrderAccepted to existing order ${this.id}`);
 
-      // ✅ v7.7.15: OrderPartiallyFilled УДАЛЁН - стратегия работает только по StrategyTick!
-      // case 'OrderPartiallyFilled': { ... }
+      case 'OrderPartiallyFilled':
+        return this.applyFill(event.filledDelta, event.price, 'PARTIALLY_FILLED');
 
-      // ✅ v7.7.15: OrderFilled УДАЛЁН - стратегия работает только по StrategyTick!
-      // case 'OrderFilled': { ... }
+      case 'OrderFilled':
+        return this.applyFill(event.filledDelta, event.price, 'FILLED');
 
       case 'OrderCancelled':
         return this.applyTerminalStatus(OrderExecutionState.CANCELED, 'CANCELED');
@@ -335,12 +344,14 @@ export class Order {
     try {
       const updatedOrder = Order.create({
         id: this.id,
+        marketId: this.marketId,
         tokenId: this.tokenId,
         side: this.side,
         price: this.price,
         size: this.size,
         status,
         timestamp: this.timestamp,
+        strategyId: this.strategyId,
         filledSize: this.filledSize,
         averageFillPrice: this.averageFillPrice,
       });
@@ -348,6 +359,65 @@ export class Order {
       return Ok(updatedOrder);
     } catch (error) {
       return Err(`Failed to create updated Order: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  /**
+   * Применяет fill к ордеру (частичный или полный)
+   *
+   * @param filledDelta - Размер исполнения (delta)
+   * @param price - Цена исполнения
+   * @param targetStatus - Целевой статус ('PARTIALLY_FILLED' или 'FILLED')
+   * @returns Result<Order, string>
+   */
+  private applyFill(
+    filledDelta: number,
+    price: number,
+    targetStatus: 'PARTIALLY_FILLED' | 'FILLED'
+  ): Result<Order, string> {
+    // Invariant checks
+    if (filledDelta <= 0) {
+      return Err(`Invariant violation: filledDelta ${filledDelta} <= 0 for order ${this.id}`);
+    }
+
+    if (price <= 0) {
+      return Err(`Invariant violation: price ${price} <= 0 for order ${this.id}`);
+    }
+
+    // Вычисляем новый totalFilled
+    const previousFilled = this.filledSize?.value ?? 0;
+    const newTotalFilled = previousFilled + filledDelta;
+
+    // Проверяем что не превышаем размер ордера
+    if (newTotalFilled > this.size.value) {
+      return Err(
+        `Invariant violation: totalFilled ${newTotalFilled} > size ${this.size.value} for order ${this.id}`
+      );
+    }
+
+    // Вычисляем weighted average price
+    const previousValue = previousFilled * (this.averageFillPrice?.value ?? 0);
+    const newValue = filledDelta * price;
+    const newAveragePrice = (previousValue + newValue) / newTotalFilled;
+
+    try {
+      const updatedOrder = Order.create({
+        id: this.id,
+        marketId: this.marketId,
+        tokenId: this.tokenId,
+        side: this.side,
+        price: this.price,
+        size: this.size,
+        status: targetStatus,
+        timestamp: this.timestamp,
+        strategyId: this.strategyId,
+        filledSize: Quantity.fromNumber(newTotalFilled),
+        averageFillPrice: Price.fromNumber(newAveragePrice),
+      });
+
+      return Ok(updatedOrder);
+    } catch (error) {
+      return Err(`Failed to apply fill to Order: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -383,6 +453,11 @@ export class Order {
     // Валидация ID
     if (!this.id || typeof this.id !== 'string' || this.id.trim().length === 0) {
       throw new OrderValidationError('Order ID must be a non-empty string', 'id');
+    }
+
+    // Валидация marketId
+    if (!this.marketId || typeof this.marketId !== 'string' || this.marketId.trim().length === 0) {
+      throw new OrderValidationError('Market ID must be a non-empty string', 'marketId');
     }
 
     // Валидация tokenId
@@ -720,12 +795,14 @@ export class Order {
   public toJSON(): Record<string, unknown> {
     return {
       id: this.id,
+      marketId: this.marketId,
       tokenId: this.tokenId,
       side: this.side,
       price: this.price.value,
       size: this.size.value,
       status: this.status,
       timestamp: this.timestamp.toISOString(),
+      strategyId: this.strategyId,
       filledSize: this.filledSize?.value,
       averageFillPrice: this.averageFillPrice?.value,
       notional: this.getNotional(),

@@ -91,6 +91,7 @@ export class OrderFilledEvent extends DomainEvent {
   protected getData(): Record<string, unknown> {
     return {
       orderId: this.order.id,
+      marketId: this.order.marketId,
       tokenId: this.order.tokenId,
       side: this.order.side,
       fillSize: this.fillSize.value,

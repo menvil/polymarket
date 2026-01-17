@@ -2,8 +2,7 @@
  * ExecutionEvent - ТОЛЬКО факты внешнего мира (биржа, CLOB API)
  *
  * @remarks
- * КРИТИЧНО v7.7.15: Только OrderAccepted, OrderCancelled, OrderRejected!
- * OrderPartiallyFilled и OrderFilled УДАЛЕНЫ - стратегия работает только по StrategyTick!
+ * Только OrderAccepted, OrderFilled, OrderPartiallyFilled, OrderCancelled, OrderRejected!
  *
  * Execution остаётся чистым.
  * Можно реплеить execution-stream из биржевых логов.
@@ -17,22 +16,16 @@
  * - OrderAccepted содержит MINIMAL CONTEXT (side, marketId, price, size)
  * - Immutable facts
  *
- * v7.7.15 changes:
- * - OrderPartiallyFilled УДАЛЁН (стратегия не использует)
- * - OrderFilled УДАЛЁН (стратегия не использует)
- * - Стратегия работает ТОЛЬКО по StrategyTick + ctx.getInventory()
  */
 export type ExecutionEvent =
   | OrderAccepted
+  | OrderPartiallyFilled
+  | OrderFilled
   | OrderCancelled
   | OrderRejected;
 
 /**
  * ExecutionErrorEvent - execution errors (для metrics/logging)
- *
- * @remarks
- * LEGACY: Separated error events для metrics/logging.
- * OrderRejected теперь также в ExecutionEvent (для FSM compatibility).
  *
  * Обработка:
  * - ErrorMetricsProjector подписывается
@@ -60,8 +53,6 @@ export type ExecutionErrorEvent =
  * - price: number (лимит цена, принятая биржей)
  * - size: number (размер, принятый биржей)
  *
- * v4: timestamp field для deterministic replay
- * v4.2 (Фаза 4): strategyId для multi-strategy изоляции
  *
  * Invariants проверяются в AGGREGATE, NOT в mapper
  * - Mapper = pure parsing (может вернуть price=0 для replay на грязных данных)
@@ -70,62 +61,105 @@ export type ExecutionErrorEvent =
 export interface OrderAccepted {
   readonly type: 'OrderAccepted';
   readonly orderId: string; // Биржевой ID
-  readonly strategyId?: string; // v4.2: для multi-strategy изоляции (optional для обратной совместимости)
+  readonly strategyId: string;
+  readonly marketId: string; // Идентификатор рынка
+  readonly tokenId: string; // Идентификатор токена
   readonly side: 'BUY' | 'SELL';
-  readonly marketId: string;
   readonly price: number; // Aggregate проверит > 0
   readonly size: number; // Aggregate проверит > 0
-  readonly timestamp: Date; // v4: для deterministic replay
+  readonly timestamp: Date; // для deterministic replay
 }
 
 /**
- * v7.7.15: OrderPartiallyFilled УДАЛЁН
- * v7.7.15: OrderFilled УДАЛЁН
+ * OrderPartiallyFilled - ордер частично исполнен
  *
  * @remarks
- * Стратегия работает ТОЛЬКО по StrategyTick!
- * Inventory берётся из ctx.getInventory() (синхронизируется каждые 4 секунды с биржей).
- * События fill НЕ НУЖНЫ для принятия решений стратегией.
+ * filledDelta - сколько исполнилось В ЭТОМ событии (delta)
+ * Aggregate вычисляет totalFilled = previousFilled + filledDelta
+ *
+ * price - цена ЭТОГО fill (для weighted average в aggregate)
+ *
+ * Invariants в AGGREGATE
+ * - Mapper НЕ проверяет filledDelta > 0 (replay на грязных данных)
+ * - Aggregate проверяет: filledDelta > 0, price > 0
  */
+export interface OrderPartiallyFilled {
+  readonly type: 'OrderPartiallyFilled';
+  readonly orderId: string;
+  readonly strategyId: string; // для multi-strategy изоляции
+  readonly tokenId: string; // для PortfolioProjector
+  readonly marketId: string;
+  readonly side: 'BUY' | 'SELL'; // для PortfolioProjector
+  readonly filledDelta: number; // DELTA, NOT total
+  readonly price: number; // Цена ЭТОГО исполнения
+  readonly timestamp: Date; // для deterministic replay
+}
+
+/**
+ * OrderFilled - ордер полностью исполнен
+ *
+ * @remarks
+ * filledDelta - последний кусок (delta)
+ * После этого события aggregate проверяет invariant: totalFilled === Order.size
+ *
+ */
+export interface OrderFilled {
+  readonly type: 'OrderFilled';
+  readonly orderId: string;
+  readonly strategyId: string;
+  readonly tokenId: string;
+  readonly marketId: string;
+  readonly side: 'BUY' | 'SELL';
+  readonly filledDelta: number; // DELTA последнего fill
+  readonly price: number;
+  readonly timestamp: Date; // для deterministic replay
+
+  // Причина исполнения ордера (критично для статистики!)
+  // String literal type that matches FillReason enum values + 'REAL' for live trading
+  readonly fillReason?: 'CROSSED_BOOK' | 'TRADE_THROUGH' | 'BOOK_TOUCH' | 'REAL';
+
+  // Доступный объем на уровне в момент исполнения
+  readonly availableVolume?: number;
+
+  // Состояние Orderbook в момент исполнения (для debugging)
+  readonly orderbookSnapshot?: {
+    bestBid: number;
+    bestAsk: number;
+  };
+}
 
 /**
  * OrderCancelled - ордер отменён
- *
- * @remarks
- * v4: timestamp field для deterministic replay
- * v4.2 (Фаза 4): strategyId для multi-strategy изоляции
  */
 export interface OrderCancelled {
   readonly type: 'OrderCancelled';
   readonly orderId: string;
-  readonly strategyId?: string; // v4.2: для multi-strategy изоляции (optional для обратной совместимости)
+  readonly marketId: string;
+  readonly tokenId: string;
+  readonly strategyId: string;
   readonly reason?: string;
-  readonly timestamp: Date; // v4: для deterministic replay
+  readonly timestamp: Date; // для deterministic replay
 }
 
 /**
  * OrderRejected - ордер отклонён биржей
- *
- * @remarks
- * v4: OrderRejected включён в ExecutionEvent (для FSM compatibility)
  *
  * Семантика:
  * - OrderRejected = execution error, НО также часть ExecutionEvent (для FSM)
  * - Для DumbStrategy FSM: OrderRejected → STOPPED state
  * - Для metrics/logging: также в ExecutionErrorEvent
  *
- * v4: timestamp field для deterministic replay
- * v4.2 (Фаза 4): strategyId для multi-strategy изоляции
- *
  * orderId может быть undefined - ордер не дошёл до биржи (validation error)
  */
 export interface OrderRejected {
   readonly type: 'OrderRejected';
   readonly orderId?: string; // Может быть undefined если ордер не дошёл до биржи
-  readonly strategyId?: string; // v4.2: для multi-strategy изоляции (optional для обратной совместимости)
+  readonly strategyId: string;
+  readonly marketId: string;
+  readonly tokenId: string;
   readonly reason: string;
   readonly errorCode?: string;
-  readonly timestamp: Date; // v4: для deterministic replay
+  readonly timestamp: Date; // для deterministic replay
 }
 
 /**
@@ -150,12 +184,17 @@ export function isOrderAccepted(event: ExecutionEvent): event is OrderAccepted {
   return event.type === 'OrderAccepted';
 }
 
+export function isOrderPartiallyFilled(event: ExecutionEvent): event is OrderPartiallyFilled {
+  return event.type === 'OrderPartiallyFilled';
+}
+
+export function isOrderFilled(event: ExecutionEvent): event is OrderFilled {
+  return event.type === 'OrderFilled';
+}
+
 export function isOrderCancelled(event: ExecutionEvent): event is OrderCancelled {
   return event.type === 'OrderCancelled';
 }
-
-// v7.7.15: isOrderPartiallyFilled УДАЛЁН
-// v7.7.15: isOrderFilled УДАЛЁН
 
 // Type guards для ExecutionErrorEvent
 export function isOrderRejected(event: ExecutionErrorEvent): event is OrderRejected {
