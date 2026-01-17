@@ -69,6 +69,24 @@ import { createProductionEnvelope } from '../../../../shared/events/EventEnvelop
  */
 export class PolymarketExecutionAdapter implements IExecutionAdapter {
   /**
+   * Временное окно для поиска недавних ордеров (мс)
+   * Используется для определения дубликатов при ошибках API
+   */
+  private static readonly RECENT_ORDER_WINDOW_MS = 5000; // 5 секунд
+
+  /**
+   * Толерантность сравнения цены
+   * Два ордера считаются идентичными если разница цен < этого значения
+   */
+  private static readonly PRICE_TOLERANCE = 0.001;
+
+  /**
+   * Толерантность сравнения размера
+   * Два ордера считаются идентичными если разница размеров < этого значения
+   */
+  private static readonly SIZE_TOLERANCE = 0.1;
+
+  /**
    * ExecutionContext для всех событий (окружение LIVE)
    */
   private readonly executionContext: ExecutionContext;
@@ -232,17 +250,17 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         // Проверяем: есть ли свежий ордер в открытых ордерах для этого токена?
         const openOrders = await this.orderClient.getOpenOrders(params.tokenId);
 
-        // Ищем ордер, созданный в последние 5 секунд с такими же параметрами
+        // Ищем недавно созданный ордер с такими же параметрами
         const now = Date.now();
         const recentOrder = openOrders.find((o: any) => {
           const orderAge = now - (o.timestamp || 0);
           const matchesParams =
             o.tokenId === params.tokenId &&
             o.side === params.side.toUpperCase() &&
-            Math.abs(parseFloat(o.price || '0') - params.price) < 0.001 &&
-            Math.abs(parseFloat(o.size || '0') - params.size) < 0.1;
+            Math.abs(parseFloat(o.price || '0') - params.price) < PolymarketExecutionAdapter.PRICE_TOLERANCE &&
+            Math.abs(parseFloat(o.size || '0') - params.size) < PolymarketExecutionAdapter.SIZE_TOLERANCE;
 
-          return orderAge < 5000 && matchesParams; // Создан в последние 5 секунд
+          return orderAge < PolymarketExecutionAdapter.RECENT_ORDER_WINDOW_MS && matchesParams;
         });
 
         if (recentOrder) {
