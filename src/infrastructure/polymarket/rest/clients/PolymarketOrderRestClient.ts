@@ -12,15 +12,14 @@
  *
  * @example
  * ```typescript
- * const client = new PolymarketOrderRestClient(restClient, logger);
+ * const client = new PolymarketOrderRestClient(restClient, orderBuilder, logger);
  *
- * // Place order
+ * // Place order (nonce автоматически назначается API)
  * const order = await client.createOrder({
  *   tokenId: '0x123',
  *   side: 'BUY',
- *   price: '0.52',
- *   size: '100',
- *   nonce: Date.now(),
+ *   price: 0.52,
+ *   size: 100,
  * });
  *
  * // Cancel order
@@ -54,8 +53,15 @@ export interface CreateOrderRequest {
   /** Ставка комиссии в базисных пунктах (по умолчанию: 0) */
   feeRateBps?: number;
 
-  /** Nonce для защиты от повторов */
-  nonce: number;
+  /**
+   * Nonce для защиты от повторов (опционально)
+   *
+   * @remarks
+   * Если не передан (undefined), API автоматически назначит nonce.
+   * Если передан 0, API также автоматически назначит nonce.
+   * Если передано конкретное значение > 0, оно будет использовано.
+   */
+  nonce?: number;
 
   /** Размер шага цены для округления (опционально, по умолчанию 0.01) */
   priceTick?: number;
@@ -270,9 +276,21 @@ export class PolymarketOrderRestClient {
    * @remarks
    * Возвращает сырой ответ API. Нормализация должна выполняться маппером.
    *
+   * Если nonce не передан или равен 0, API автоматически назначит nonce.
+   * Для явного контроля можно передать конкретное значение nonce > 0.
+   *
    * @example
    * ```typescript
+   * // Автоматическое назначение nonce (рекомендуется)
    * const order = await client.createOrder({
+   *   tokenId: '0x123',
+   *   side: 'BUY',
+   *   price: 0.52,
+   *   size: 100,
+   * });
+   *
+   * // Явный nonce (для специфичных случаев)
+   * const orderWithNonce = await client.createOrder({
    *   tokenId: '0x123',
    *   side: 'BUY',
    *   price: 0.52,
@@ -289,13 +307,18 @@ export class PolymarketOrderRestClient {
       side: request.side,
       price: request.price,
       size: request.size,
+      nonce: request.nonce,
     });
 
-    // ВАЖНО: Передать nonce=0 для автоматического назначения API
-    // API автоматически назначит правильный nonce для обмена
-    const exchangeNonce = 0;
+    // Использовать предоставленный nonce или 0 для автоматического назначения API
+    // Если nonce = 0 или undefined, API автоматически назначит правильный nonce
+    const exchangeNonce = request.nonce ?? 0;
 
-    this.logger.debug('Using nonce for order', { exchangeNonce });
+    this.logger.debug('Using nonce for order', {
+      requestNonce: request.nonce,
+      exchangeNonce,
+      autoAssigned: exchangeNonce === 0,
+    });
 
     // Построить подписанный EIP-712 ордер
     const signedOrder = await this.orderBuilder.buildOrder({

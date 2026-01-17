@@ -76,7 +76,7 @@ export class PolymarketOrderMapper {
       price: params.price, // Число (0-1)
       size: params.size, // Число (количество акций)
       feeRateBps: params.feeRateBps ?? 1000, // Используем предоставленную или стандартную комиссию мейкера 10%
-      nonce: Date.now(),
+      // nonce опционален - если не передан, API автоматически назначит
       priceTick: params.priceTick, // Передаём priceTick в API builder (КРИТИЧНЫЙ ФИХ)
     };
   }

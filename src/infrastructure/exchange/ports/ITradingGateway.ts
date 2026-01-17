@@ -19,7 +19,7 @@
  *   size: 100,
  * });
  *
- * if (result.isOk()) {
+ * if (result.ok) {
  *   console.log(`Ордер размещён: ${result.value.orderId}`);
  * } else {
  *   console.error(`Ошибка: ${result.error.message}`);
