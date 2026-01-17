@@ -560,7 +560,8 @@ export class BaseWebSocketTransport extends EventEmitter {
       this.emit('raw', message);
 
       // Эмитим событие специфичного типа (orderbook, trade, и т.д.)
-      this.emit(parsed.type, message);
+      // ВАЖНО: передаём parsed.payload, а не сырое message (контракт ParsedMessage)
+      this.emit(parsed.type, parsed.payload);
     } catch (error) {
       this.logger.error('Failed to process message', { error, message });
     }
