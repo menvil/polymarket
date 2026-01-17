@@ -296,17 +296,24 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
    * Получить снимок книги ордеров
    *
    * @param tokenId - ID токена
-   * @returns Promise, разрешающийся в книгу ордеров
-   * @throws {Error} Не реализовано
+   * @returns Promise, который отклоняется с ошибкой (метод не реализован)
    *
    * @remarks
-   * **Шаги реализации:**
-   * 1. Вызвать getOrderbook() SDK или эквивалент
-   * 2. Преобразовать результат в нашу сущность Orderbook
-   * 3. Вернуть преобразованную книгу ордеров
+   * **НЕ РЕАЛИЗОВАН** в WebSocket адаптере.
+   *
+   * Этот адаптер предназначен для real-time данных через WebSocket.
+   * Для получения snapshot используйте:
+   * - `PolymarketOrderbookRestClient.getOrderbook()` для REST API
+   * - `subscribeToOrderbook()` для подписки на real-time обновления
    */
   async getOrderbook(_tokenId: string): Promise<Orderbook> {
-    throw new Error('PolymarketOfficialWsAdapter.getOrderbook() не реализовано - используйте WS_CLIENT_TYPE=custom');
+    return Promise.reject(
+      new Error(
+        'getOrderbook() не реализован в WebSocket адаптере. ' +
+        'Используйте PolymarketOrderbookRestClient.getOrderbook() для snapshot ' +
+        'или subscribeToOrderbook() для real-time обновлений.'
+      )
+    );
   }
 
   /**

@@ -252,22 +252,38 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
    * Получает текущий orderbook snapshot
    *
    * @param tokenId - Token ID для получения orderbook
-   * @returns Promise, разрешающийся в текущий orderbook
-   *
-   * @throws {Error} Если не подключен или fetch не удался
+   * @returns Promise, который отклоняется с ошибкой (метод не реализован)
    *
    * @remarks
-   * Получает текущий orderbook из REST API, не из WebSocket.
-   * Это snapshot, не подписка.
+   * **НЕ РЕАЛИЗОВАН** в WebSocket адаптере.
+   *
+   * Этот адаптер предназначен для real-time данных через WebSocket.
+   * Для получения snapshot используйте:
+   * - `PolymarketOrderbookRestClient.getOrderbook()` для REST API
+   * - `subscribeToOrderbook()` для подписки на real-time обновления
    *
    * @example
    * ```typescript
-   * const orderbook = await adapter.getOrderbook(upTokenId);
-   * console.log('Best bid:', orderbook.getBestBid()?.price.value);
+   * // ❌ Не работает - используйте REST клиент или подписку
+   * // const orderbook = await wsAdapter.getOrderbook(tokenId);
+   *
+   * // ✅ Вариант 1: REST клиент
+   * const orderbook = await orderbookRestClient.getOrderbook(tokenId);
+   *
+   * // ✅ Вариант 2: Подписка на real-time данные
+   * wsAdapter.subscribeToOrderbook(tokenId, (orderbook) => {
+   *   console.log('Best bid:', orderbook.getBestBid()?.price.value);
+   * });
    * ```
    */
   public async getOrderbook(_tokenId: string): Promise<Orderbook> {
-    throw new Error('getOrderbook not implemented - use subscribeToOrderbook for real-time data');
+    return Promise.reject(
+      new Error(
+        'getOrderbook() не реализован в WebSocket адаптере. ' +
+        'Используйте PolymarketOrderbookRestClient.getOrderbook() для snapshot ' +
+        'или subscribeToOrderbook() для real-time обновлений.'
+      )
+    );
   }
 
   /**
