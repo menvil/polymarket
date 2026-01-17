@@ -84,24 +84,15 @@ export interface ReplayEnvelope<E> extends BaseEventEnvelope<E> {
 export type EventEnvelope<E> = ProductionEnvelope<E> | ReplayEnvelope<E>;
 
 /**
- * Создаёт ProductionEnvelope для ExecutionEvent
+ * Create a ProductionEnvelope for the given event payload.
  *
- * @param payload - Event payload (ExecutionEvent, ExecutionErrorEvent, DomainEvent)
- * @param executionContext - Execution context (environment + accountId)
- * @param correlationId - Correlation ID для distributed tracing (optional)
- * @param sequenceNumber - Sequence number для event sourcing (optional)
- * @returns ProductionEnvelope<E>
+ * The envelope's `type` is taken from `payload.type` and the envelope is assigned a generated `id` and current `timestamp`.
  *
- * @remarks
- * executionContext ОБЯЗАТЕЛЕН (для Decision Layer)
- *
- * @example
- * ```typescript
- * const envelope = createProductionEnvelope(
- *   { type: 'OrderAccepted', orderId: '123', side: 'BUY', marketId: 'abc', price: 100, size: 10 },
- *   { environment: 'LIVE', accountId: 'main' }
- * );
- * ```
+ * @param payload - Event payload; must include a `type` string
+ * @param executionContext - Execution context (environment and accountId); required for Decision Layer
+ * @param correlationId - Optional correlation ID for distributed tracing
+ * @param sequenceNumber - Optional sequence number used by event sourcing (may be omitted in production)
+ * @returns A ProductionEnvelope wrapping `payload` with generated `id`, `timestamp`, the provided `executionContext`, and any supplied `correlationId` and `sequenceNumber`
  */
 export function createProductionEnvelope<E extends { type: string }>(
   payload: E,
@@ -121,25 +112,13 @@ export function createProductionEnvelope<E extends { type: string }>(
 }
 
 /**
- * Создаёт ReplayEnvelope для ExecutionEvent
+ * Create a ReplayEnvelope for the given event payload.
  *
- * @param payload - Event payload (ExecutionEvent, ExecutionErrorEvent, DomainEvent)
- * @param executionContext - Execution context (environment + accountId)
- * @param sequenceNumber - Sequence number (REQUIRED для replay)
- * @param correlationId - Correlation ID для distributed tracing (optional)
- * @returns ReplayEnvelope<E>
- *
- * @remarks
- * sequenceNumber REQUIRED (compile-time check)
- *
- * @example
- * ```typescript
- * const envelope = createReplayEnvelope(
- *   { type: 'OrderAccepted', orderId: '123', side: 'BUY', marketId: 'abc', price: 100, size: 10 },
- *   { environment: 'REPLAY', accountId: 'backtest-2024-01-01' },
- *   42 // sequenceNumber REQUIRED
- * );
- * ```
+ * @param payload - Event payload; must include a `type` string.
+ * @param executionContext - Execution context containing environment and accountId.
+ * @param sequenceNumber - Sequence number used to deterministically order events during replay; required.
+ * @param correlationId - Optional correlation ID for distributed tracing.
+ * @returns A ReplayEnvelope wrapping the payload with replay-specific metadata.
  */
 export function createReplayEnvelope<E extends { type: string }>(
   payload: E,
@@ -159,20 +138,11 @@ export function createReplayEnvelope<E extends { type: string }>(
 }
 
 /**
- * Генерирует уникальный ID для event envelope
+ * Generates a unique identifier for an event envelope.
  *
- * @returns Уникальный string ID (timestamp + random)
+ * The identifier combines the current timestamp and a random suffix.
  *
- * @remarks
- * Формат: `${timestamp}-${random}`
- * - timestamp: Date.now()
- * - random: base36 string (7 chars)
- *
- * @example
- * ```typescript
- * const id = generateEventId();
- * // id = "1704067200000-abc123f"
- * ```
+ * @returns A string in the format `<timestamp>-<random>`, where `timestamp` is milliseconds since the Unix epoch and `random` is a 7-character base-36 string.
  */
 function generateEventId(): string {
   const ts = Date.now();

@@ -61,27 +61,10 @@ import type { TradeSide } from '../../../../domain/events/TradeExecutedEvent.js'
 import type { DomainEvent } from '../../../../domain/events/DomainEvent.js';
 
 /**
- * Маппит Polymarket WS сообщение в DomainEvent
+ * Map a parsed Polymarket WebSocket message into the corresponding domain event.
  *
- * @param message - Распарсенное сообщение Polymarket (от Router)
- * @returns DomainEvent если валидное data сообщение, null иначе
- *
- * @remarks
- * Чистая функция - никогда не бросает исключения, возвращает null для невалидных данных.
- *
- * Правила маппинга:
- * - event_type === 'book' → OrderBookSnapshotReceivedEvent
- * - event_type === 'trade' | 'last_trade_price' → TradeExecutedEvent
- * - Контрольные сообщения (pong, subscribed, error, и т.д.) → null
- * - Невалидные данные (отсутствует asset_id, NaN цены, и т.д.) → null
- *
- * @example
- * ```typescript
- * const event = mapParsedToDomainEvent(polymarketMessage);
- * if (event) {
- *   eventBus.publish(event);
- * }
- * ```
+ * @param message - The parsed Polymarket WS message to map.
+ * @returns A DomainEvent for valid data messages; `null` for control or invalid messages.
  */
 export function mapParsedToDomainEvent(
   message: PolymarketMessage
@@ -102,25 +85,14 @@ export function mapParsedToDomainEvent(
 }
 
 /**
- * Маппит orderbook сообщение в OrderBookSnapshotReceivedEvent
+ * Map a Polymarket orderbook message to an OrderBookSnapshotReceivedEvent.
  *
- * @param message - Orderbook сообщение
- * @returns Event или null если невалидно
+ * Validates input and returns `null` for invalid or control messages. On success
+ * returns an event with parsed numeric levels and a normalized orderbook where
+ * best price levels appear first.
  *
- * @remarks
- * Валидирует:
- * - asset_id является non-empty string
- * - bids/asks являются массивами
- * - Каждый уровень имеет валидные price и size (парсятся в number, не NaN)
- * - timestamp валиден (number → Date, string → Date, undefined → now)
- *
- * **ВАЖНО:** Polymarket возвращает orderbook в обратном порядке:
- * - bids: [0.01, 0.02, ..., 0.51] (худшие → лучшие)
- * - asks: [0.99, 0.98, ..., 0.52] (худшие → лучшие)
- *
- * Мы разворачиваем массивы чтобы соответствовать стандартной convention:
- * - bids[0] = лучший (самый высокий) bid
- * - asks[0] = лучший (самый низкий) ask
+ * @param message - Parsed Polymarket orderbook message
+ * @returns The mapped OrderBookSnapshotReceivedEvent for valid input, `null` otherwise
  */
 function mapOrderbookMessage(message: PolymarketOrderbookMessage): OrderBookSnapshotReceivedEvent | null {
   // Валидируем asset_id
@@ -168,18 +140,20 @@ function mapOrderbookMessage(message: PolymarketOrderbookMessage): OrderBookSnap
 }
 
 /**
- * Маппит trade сообщение в TradeExecutedEvent
+ * Convert a Polymarket trade message into a domain trade event.
  *
- * @param message - Trade сообщение
- * @returns Event или null если невалидно
+ * Validates the input and returns a domain event only for well-formed trade messages.
+ *
+ * @param message - The parsed Polymarket trade message to map
+ * @returns `TradeExecutedEvent` for a valid trade message, `null` otherwise
  *
  * @remarks
- * Валидирует:
- * - asset_id является non-empty string
- * - price парсится в number (не NaN)
- * - size парсится в number (не NaN)
- * - side является 'BUY' | 'SELL' | undefined (undefined → null в событии)
- * - timestamp валиден
+ * The function requires:
+ * - `asset_id` to be a non-empty string
+ * - `price` to parse to a number greater than or equal to 0
+ * - `size` to parse to a number greater than 0
+ * - `side` to be `'BUY' | 'SELL'` or `undefined` (treated as no side)
+ * - `timestamp` to be convertible to a valid `Date` (falls back to current time if absent/invalid)
  */
 function mapTradeMessage(message: PolymarketTradeMessage): TradeExecutedEvent | null {
   // Валидируем asset_id
@@ -216,14 +190,10 @@ function mapTradeMessage(message: PolymarketTradeMessage): TradeExecutedEvent | 
 }
 
 /**
- * Парсит массив уровней orderbook
+ * Validates and parses an array of orderbook level objects into numeric price/size pairs.
  *
- * @param levels - Массив {price: string, size: string}
- * @returns Распарсенные уровни или null если какой-либо уровень невалиден
- *
- * @remarks
- * Возвращает null если любой уровень имеет NaN price или size.
- * Пустой массив валиден (нет ликвидности).
+ * @param levels - Array of objects expected to have string `price` and `size` properties.
+ * @returns An array of `{ price: number; size: number }` for valid levels, or `null` if any level is missing required fields, contains non-numeric values, or has negative `price` or `size`. An empty input array yields an empty result array.
  */
 function parseLevels(
   levels: any[]
@@ -261,16 +231,10 @@ function parseLevels(
 }
 
 /**
- * Парсит сторону сделки
+ * Convert an incoming side value to a canonical trade side.
  *
- * @param side - Строка стороны из сообщения
- * @returns 'BUY' | 'SELL' | null
- *
- * @remarks
- * - 'BUY' → 'BUY'
- * - 'SELL' → 'SELL'
- * - undefined → null (валидно для last_trade_price)
- * - Любое другое значение → null
+ * @param side - The raw side value from the message (may be any type)
+ * @returns `'BUY'` if `side` equals `'BUY'`, `'SELL'` if `side` equals `'SELL'`, `null` otherwise
  */
 function parseTradeSide(side: unknown): TradeSide {
   if (side === 'BUY') return 'BUY';
@@ -279,16 +243,13 @@ function parseTradeSide(side: unknown): TradeSide {
 }
 
 /**
- * Парсит timestamp в Date
+ * Convert an input timestamp into a valid Date.
  *
- * @param timestamp - Timestamp из сообщения (number | string | undefined)
- * @returns Date объект
+ * Accepts a number (treated as milliseconds since epoch), a string (parsed as a date), or undefined.
+ * If `timestamp` is undefined or cannot be parsed into a valid date, the current date/time is returned.
  *
- * @remarks
- * - number → new Date(number)
- * - string → new Date(string)
- * - undefined → new Date() (текущее время)
- * - Невалидная дата → new Date() (fallback к текущему времени)
+ * @param timestamp - The incoming timestamp value to parse (number | string | undefined)
+ * @returns A `Date` parsed from `timestamp`, or the current date/time if parsing fails or `timestamp` is undefined
  */
 function parseTimestamp(timestamp: unknown): Date {
   // Если undefined, используем текущее время
