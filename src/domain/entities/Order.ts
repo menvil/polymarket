@@ -374,6 +374,7 @@ export class Order {
    * Mapping:
    * - PENDING → OPEN (считаем как OPEN для FSM)
    * - OPEN → OPEN
+   * - PARTIALLY_FILLED → OPEN (частично исполненный ордер все еще открыт)
    * - FILLED → FILLED
    * - CANCELED → CANCELED
    * - REJECTED → CANCELED (считаем как CANCELED для FSM)
@@ -382,6 +383,7 @@ export class Order {
     switch (status) {
       case 'PENDING':
       case 'OPEN':
+      case 'PARTIALLY_FILLED':
         return OrderExecutionState.OPEN;
       case 'FILLED':
         return OrderExecutionState.FILLED;
