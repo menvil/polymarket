@@ -132,11 +132,11 @@ export class HttpClient {
         // Выполняем запрос с timeout
         const response = await this.fetchWithTimeout(fullUrl, options);
 
-        // Парсим JSON
-        const data = await response.json();
+        // Парсим ответ (с защитой от пустых и не-JSON ответов)
+        const data = await this.parseResponseBody<T>(response);
 
         this.logger.debug(`[HttpClient] Success: ${options.method || 'GET'} ${fullUrl}`);
-        return data as T;
+        return data;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
 
@@ -252,6 +252,44 @@ export class HttpClient {
       return await response.json();
     } catch {
       return await response.text();
+    }
+  }
+
+  /**
+   * Парсит тело ответа с защитой от пустых и не-JSON ответов
+   *
+   * @param response - Response объект
+   * @returns Parsed data или null для пустых ответов
+   *
+   * @remarks
+   * Обрабатывает следующие случаи:
+   * - 204 No Content / 205 Reset Content → null (нет тела)
+   * - Content-Type без application/json → null
+   * - Пустое тело → null
+   * - JSON тело → parsed object
+   *
+   * Это предотвращает ошибки при вызове response.json() на пустых ответах,
+   * которые раньше вызывали retry loop для успешных запросов.
+   */
+  private async parseResponseBody<T>(response: Response): Promise<T | null> {
+    // 204 No Content / 205 Reset Content - нет тела по определению
+    if (response.status === 204 || response.status === 205) {
+      return null;
+    }
+
+    // Проверяем Content-Type header
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      // Не JSON ответ - возвращаем null вместо ошибки парсинга
+      return null;
+    }
+
+    // Пытаемся распарсить JSON
+    try {
+      return await response.json() as T;
+    } catch {
+      // Пустое тело или невалидный JSON - возвращаем null
+      return null;
     }
   }
 
