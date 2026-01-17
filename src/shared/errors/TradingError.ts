@@ -14,7 +14,14 @@ export class TradingError extends Error {
     this.name = this.constructor.name;
     this.code = code;
     this.timestamp = new Date();
-    Error.captureStackTrace(this, this.constructor);
+
+    // captureStackTrace - V8-specific API (Node.js, Chrome)
+    // Fallback для non-V8 environments (Firefox, Safari)
+    if (typeof Error.captureStackTrace === 'function') {
+      Error.captureStackTrace(this, this.constructor);
+    } else {
+      this.stack = new Error().stack;
+    }
   }
 }
 
