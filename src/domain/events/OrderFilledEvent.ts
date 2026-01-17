@@ -80,7 +80,7 @@ export class OrderFilledEvent extends DomainEvent {
    * @returns true если ордер частично исполнен
    */
   public isPartiallyFilled(): boolean {
-    return this.order.filledSize !== undefined && this.order.filledSize.value > 0 && this.order.status !== 'FILLED';
+    return this.order.isPartiallyFilled();
   }
 
   /**
