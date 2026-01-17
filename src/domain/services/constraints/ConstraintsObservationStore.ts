@@ -388,11 +388,15 @@ export class ConstraintsObservationStore {
     }
 
     if (keysToDelete.length > 0) {
+      const percentCleared = before === 0
+        ? '0.0%'
+        : ((keysToDelete.length / before) * 100).toFixed(1) + '%';
+
       this.logger.debug('[ObservationStore] Периодическая очистка', {
         deleted: keysToDelete.length,
         before,
         after: this.observations.size,
-        percentCleared: ((keysToDelete.length / before) * 100).toFixed(1) + '%',
+        percentCleared,
       });
     }
   }
