@@ -229,6 +229,11 @@ function parseLevels(
   const result: Array<{ price: number; size: number }> = [];
 
   for (const level of levels) {
+    // Валидация структуры уровня
+    if (level === null || typeof level !== 'object' || !('price' in level) || !('size' in level)) {
+      return null;
+    }
+
     // Парсим price
     const price = parseFloat(level.price);
     if (isNaN(price)) {
