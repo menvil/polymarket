@@ -156,8 +156,11 @@ export class PolymarketOrderBuilder {
     const salt = saltBuffer.readUIntBE(0, 6);
 
     // КРИТИЧНО: Определить размер шага цены
-    // Если не предоставлен, использовать безопасное значение по умолчанию (0.01)
-    const priceTick = params.priceTick ?? this.inferPriceTick(params.price);
+    // Если не предоставлен или равен 0, использовать безопасное значение по умолчанию (0.01)
+    // Защита от деления на ноль: priceTick === 0 трактуется как отсутствующее значение
+    const priceTick = params.priceTick && params.priceTick > 0
+      ? params.priceTick
+      : this.inferPriceTick(params.price);
 
     // Округлить цену до размера шага (избежать ошибок с плавающей точкой)
     // Требование API: "Price (0.588) breaks minimum tick size rule: 0.01"
