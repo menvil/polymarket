@@ -183,10 +183,15 @@ export class Market {
       throw new MarketNotFoundError(props.id);
     }
 
-    // Если разрешён, должен иметь индекс исхода
-    if (props.status === 'RESOLVED' &&
-        (props.resolvedOutcomeIndex === undefined || props.resolvedOutcomeIndex === null)) {
-      throw new MarketNotFoundError(props.id);
+    // Если разрешён, должен иметь валидный индекс исхода (0 или 1)
+    if (props.status === 'RESOLVED') {
+      if (props.resolvedOutcomeIndex === undefined || props.resolvedOutcomeIndex === null) {
+        throw new MarketNotFoundError(props.id);
+      }
+      if (typeof props.resolvedOutcomeIndex !== 'number' ||
+          (props.resolvedOutcomeIndex !== 0 && props.resolvedOutcomeIndex !== 1)) {
+        throw new MarketNotFoundError(props.id);
+      }
     }
 
     return new Market(props);
