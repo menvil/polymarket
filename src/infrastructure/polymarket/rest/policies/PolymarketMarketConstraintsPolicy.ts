@@ -385,9 +385,9 @@ export class PolymarketMarketConstraintsPolicy {
     const feeRateMatch = errorMsg.match(/invalid fee rate \((\d+)\), current market's maker fee:\s*(\d+)/i);
     if (feeRateMatch) {
       const correctFeeRate = parseInt(feeRateMatch[2], 10);
-      // Сохраняем feeRateBps в ограничениях (добавляем новое поле)
-      if ((constraints as any).feeRateBps !== correctFeeRate) {
-        (constraints as any).feeRateBps = correctFeeRate;
+      // Сохраняем feeRateBps в ограничениях
+      if (constraints.feeRateBps !== correctFeeRate) {
+        constraints.feeRateBps = correctFeeRate;
         updated = true;
         this.logger.warn('Learned feeRateBps from error', {
           tokenId,
