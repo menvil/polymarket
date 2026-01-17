@@ -1,58 +1,58 @@
 /**
- * SequencedEventBus - Replay EventBus (sync, sequenceNumber validated, deterministic)
+ * SequencedEventBus - EventBus для воспроизведения (синхронный, с валидацией sequenceNumber, детерминированный)
  *
  * @remarks
- * Для REPLAY ONLY (НЕ для production)
+ * Только для REPLAY (НЕ для production)
  *
- * Guarantees:
- * - sequenceNumber VALIDATED (события ДОЛЖНЫ публиковаться в порядке возрастания)
- * - Synchronous (NO setImmediate, handlers вызываются синхронно)
- * - Deterministic (replay всегда воспроизводится одинаково)
- * - sequenceNumber REQUIRED (если envelope без sequenceNumber → error)
- * - Out-of-order REJECTED (если sequenceNumber <= last → error)
- * - Reentrancy BLOCKED (publish() из handler → error, предотвращает stack overflow)
+ * Гарантии:
+ * - sequenceNumber ВАЛИДИРУЕТСЯ (события ДОЛЖНЫ публиковаться в порядке возрастания)
+ * - Синхронный (БЕЗ setImmediate, handlers вызываются синхронно)
+ * - Детерминированный (replay всегда воспроизводится одинаково)
+ * - sequenceNumber ОБЯЗАТЕЛЕН (если envelope без sequenceNumber → ошибка)
+ * - Нарушение порядка ОТКЛОНЯЕТСЯ (если sequenceNumber <= последнего → ошибка)
+ * - Reentrancy БЛОКИРУЕТСЯ (publish() из handler → ошибка, предотвращает stack overflow)
  *
- * КОНТРАКТ: Caller MUST publish events in strictly increasing sequenceNumber order.
+ * КОНТРАКТ: Вызывающий ДОЛЖЕН публиковать события в строго возрастающем порядке sequenceNumber.
  * Если событие приходит с sequenceNumber <= последнего доставленного, выбрасывается ошибка.
  *
  * REENTRANCY: Handlers НЕ МОГУТ вызывать publish() (нарушает детерминизм replay).
  *
  * Отличия от ProductionEventBus (InMemoryEventBus):
- * - ProductionEventBus: async, FIFO, sequenceNumber ignored
- * - ReplayEventBus: sync, sorted, sequenceNumber required
+ * - ProductionEventBus: асинхронный, FIFO, sequenceNumber игнорируется
+ * - ReplayEventBus: синхронный, сортированный, sequenceNumber обязателен
  *
  * @example
  * ```typescript
  * const replayBus = new SequencedEventBus();
  *
- * // Subscribe to events
+ * // Подписка на события
  * replayBus.subscribe('OrderAccepted', (envelope) => {
- *   console.log('Order accepted:', envelope.payload.orderId);
+ *   console.log('Ордер принят:', envelope.payload.orderId);
  * });
  *
- * // Publish events with sequenceNumber
+ * // Публикация событий с sequenceNumber
  * const envelope1: ReplayEnvelope<OrderAccepted> = {
  *   id: '1',
  *   type: 'OrderAccepted',
  *   payload: { type: 'OrderAccepted', orderId: '123', side: 'BUY', marketId: 'abc', price: 100, size: 10 },
  *   timestamp: new Date(),
  *   executionContext: { environment: 'REPLAY', accountId: 'backtest-xyz' },
- *   sequenceNumber: 42, // REQUIRED для replay
+ *   sequenceNumber: 42, // ОБЯЗАТЕЛЕН для replay
  * };
  *
- * replayBus.publish(envelope1); // Delivered synchronously
+ * replayBus.publish(envelope1); // Доставляется синхронно
  * ```
  */
 import type { IEventBus, EventHandler } from './IEventBus.js';
 import type { EventEnvelope } from './EventEnvelope.js';
 
 /**
- * SequencedEventBus implementation
+ * Реализация SequencedEventBus
  *
  * @remarks
- * Для replay с deterministic ordering.
+ * Для replay с детерминированным порядком.
  *
- * ВАЖНО: Caller ДОЛЖЕН публиковать события в порядке возрастания sequenceNumber.
+ * ВАЖНО: Вызывающий ДОЛЖЕН публиковать события в порядке возрастания sequenceNumber.
  * Если событие публикуется с sequenceNumber <= lastDeliveredSequence, выбрасывается ошибка.
  */
 export class SequencedEventBus implements IEventBus {
@@ -62,73 +62,73 @@ export class SequencedEventBus implements IEventBus {
   /** Последний доставленный sequenceNumber (для валидации порядка) */
   private lastDeliveredSequence: number = -1;
 
-  /** Флаг для reentrancy protection (true если идёт доставка события) */
+  /** Флаг для защиты от reentrancy (true если идёт доставка события) */
   private isDelivering: boolean = false;
 
   /**
-   * Публикует событие в envelope (synchronous, sequenceNumber required, order validated)
+   * Публикует событие в envelope (синхронно, sequenceNumber обязателен, порядок валидируется)
    *
    * @param envelope - EventEnvelope (ДОЛЖЕН содержать sequenceNumber > lastDelivered)
    *
    * @remarks
    * Валидация:
-   * - Reentrancy BLOCKED (publish() из handler → error)
-   * - sequenceNumber REQUIRED (undefined → error)
-   * - sequenceNumber > lastDeliveredSequence (out-of-order → error)
-   * - Delivery SYNCHRONOUS (NO setImmediate)
-   * - Deterministic replay
+   * - Reentrancy БЛОКИРУЕТСЯ (publish() из handler → ошибка)
+   * - sequenceNumber ОБЯЗАТЕЛЕН (undefined → ошибка)
+   * - sequenceNumber > lastDeliveredSequence (нарушение порядка → ошибка)
+   * - Доставка СИНХРОННАЯ (БЕЗ setImmediate)
+   * - Детерминированный replay
    *
-   * Reentrancy protection:
+   * Защита от reentrancy:
    * - Handlers НЕ МОГУТ вызывать publish() (нарушает детерминизм replay)
    * - Попытка publish() из handler выбрасывает ошибку
    * - Защищает от stack overflow при вложенных publish()
    *
    * @throws {Error} Если publish() вызван из handler (reentrancy)
    * @throws {Error} Если sequenceNumber отсутствует
-   * @throws {Error} Если sequenceNumber <= lastDeliveredSequence (out-of-order)
+   * @throws {Error} Если sequenceNumber <= lastDeliveredSequence (нарушение порядка)
    *
    * @example
    * ```typescript
    * // События ДОЛЖНЫ публиковаться в порядке возрастания sequenceNumber
    * replayBus.publish({ sequenceNumber: 1, ... }); // OK
    * replayBus.publish({ sequenceNumber: 2, ... }); // OK
-   * replayBus.publish({ sequenceNumber: 1, ... }); // ERROR: out-of-order
+   * replayBus.publish({ sequenceNumber: 1, ... }); // ОШИБКА: нарушение порядка
    *
    * // Reentrancy запрещена
    * replayBus.subscribe('EventA', () => {
-   *   replayBus.publish({ sequenceNumber: 2, ... }); // ERROR: reentrancy
+   *   replayBus.publish({ sequenceNumber: 2, ... }); // ОШИБКА: reentrancy
    * });
    * ```
    */
   public publish<E = any>(envelope: EventEnvelope<E>): void {
-    // Reentrancy guard: prevent publish() from handler during delivery
-    // This ensures deterministic replay (handlers should NOT publish new events)
+    // Защита от reentrancy: запрет publish() из handler во время доставки
+    // Гарантирует детерминированный replay (handlers НЕ ДОЛЖНЫ публиковать новые события)
     if (this.isDelivering) {
       throw new Error(
-        `[SequencedEventBus] Reentrancy detected: publish() called from within a handler. ` +
-        `Handlers must NOT publish new events during replay (breaks determinism). ` +
+        `[SequencedEventBus] Обнаружен reentrancy: publish() вызван из handler. ` +
+        `Handlers НЕ ДОЛЖНЫ публиковать новые события во время replay (нарушает детерминизм). ` +
         `(envelope: ${envelope.id}, type: ${envelope.type})`
       );
     }
 
-    // sequenceNumber REQUIRED для replay
+    // sequenceNumber ОБЯЗАТЕЛЕН для replay
     if (envelope.sequenceNumber === undefined) {
-      throw new Error(`[SequencedEventBus] sequenceNumber required for envelope ${envelope.id} (type: ${envelope.type})`);
+      throw new Error(`[SequencedEventBus] sequenceNumber обязателен для envelope ${envelope.id} (type: ${envelope.type})`);
     }
 
-    // Validate strict ordering: sequenceNumber must be > lastDeliveredSequence
-    // This ensures deterministic replay (events processed in sequence order)
+    // Валидация строгого порядка: sequenceNumber должен быть > lastDeliveredSequence
+    // Гарантирует детерминированный replay (события обрабатываются в порядке sequence)
     if (envelope.sequenceNumber <= this.lastDeliveredSequence) {
       throw new Error(
-        `[SequencedEventBus] Out-of-order event: sequenceNumber ${envelope.sequenceNumber} <= last delivered ${this.lastDeliveredSequence}. ` +
-        `Events must be published in strictly increasing sequenceNumber order. (envelope: ${envelope.id}, type: ${envelope.type})`
+        `[SequencedEventBus] Нарушение порядка: sequenceNumber ${envelope.sequenceNumber} <= последний доставленный ${this.lastDeliveredSequence}. ` +
+        `События должны публиковаться в строго возрастающем порядке sequenceNumber. (envelope: ${envelope.id}, type: ${envelope.type})`
       );
     }
 
-    // Update last delivered sequence BEFORE delivery
+    // Обновляем последний доставленный sequence ДО доставки
     this.lastDeliveredSequence = envelope.sequenceNumber;
 
-    // Synchronous delivery with reentrancy protection
+    // Синхронная доставка с защитой от reentrancy
     this.isDelivering = true;
     try {
       this.deliverEvent(envelope);
@@ -141,16 +141,16 @@ export class SequencedEventBus implements IEventBus {
    * Подписаться на события определённого типа
    *
    * @param eventName - Имя события (envelope.type)
-   * @param handler - Handler функция
-   * @returns Unsubscribe функция
+   * @param handler - Функция-обработчик
+   * @returns Функция отписки
    *
    * @example
    * ```typescript
    * const unsubscribe = replayBus.subscribe('OrderAccepted', (envelope) => {
-   *   console.log('Order accepted:', envelope.payload.orderId);
+   *   console.log('Ордер принят:', envelope.payload.orderId);
    * });
    *
-   * // Later: unsubscribe
+   * // Позже: отписка
    * unsubscribe();
    * ```
    */
@@ -162,7 +162,7 @@ export class SequencedEventBus implements IEventBus {
     const handlers = this.handlers.get(eventName)!;
     handlers.push(handler);
 
-    // Return unsubscribe function
+    // Возвращаем функцию отписки
     return () => {
       const index = handlers.indexOf(handler);
       if (index !== -1) {
@@ -174,20 +174,20 @@ export class SequencedEventBus implements IEventBus {
   /**
    * Подписаться на все события
    *
-   * @param handler - Handler функция
-   * @returns Unsubscribe функция
+   * @param handler - Функция-обработчик
+   * @returns Функция отписки
    *
    * @example
    * ```typescript
    * const unsubscribe = replayBus.subscribeAll((envelope) => {
-   *   console.log('Event:', envelope.type, 'seq:', envelope.sequenceNumber);
+   *   console.log('Событие:', envelope.type, 'seq:', envelope.sequenceNumber);
    * });
    * ```
    */
   public subscribeAll(handler: EventHandler): () => void {
     this.allHandlers.push(handler);
 
-    // Return unsubscribe function
+    // Возвращаем функцию отписки
     return () => {
       const index = this.allHandlers.indexOf(handler);
       if (index !== -1) {
@@ -207,9 +207,9 @@ export class SequencedEventBus implements IEventBus {
   }
 
   /**
-   * Получить общее количество all-subscribers
+   * Получить общее количество подписчиков на все события
    *
-   * @returns Количество all-subscribers
+   * @returns Количество подписчиков на все события
    */
   public getAllSubscriberCount(): number {
     return this.allHandlers.length;
@@ -228,28 +228,28 @@ export class SequencedEventBus implements IEventBus {
   }
 
   /**
-   * Доставляет событие подписчикам (synchronous)
+   * Доставляет событие подписчикам (синхронно)
    *
    * @param envelope - EventEnvelope для доставки
    *
    * @remarks
-   * Synchronous delivery (для deterministic replay)
-   * - NO try/catch (для determinism - ошибка должна прервать replay)
-   * - Порядок: specific handlers → all handlers
+   * Синхронная доставка (для детерминированного replay)
+   * - БЕЗ try/catch (для детерминизма - ошибка должна прервать replay)
+   * - Порядок: специфичные handlers → handlers на все события
    */
   private deliverEvent(envelope: EventEnvelope<any>): void {
     const eventName = envelope.type;
 
-    // Deliver to specific handlers
+    // Доставка специфичным handlers
     const specificHandlers = this.handlers.get(eventName);
     if (specificHandlers) {
       for (const handler of specificHandlers) {
-        // Synchronous (NO try/catch for determinism)
+        // Синхронно (БЕЗ try/catch для детерминизма)
         handler(envelope);
       }
     }
 
-    // Deliver to all handlers
+    // Доставка handlers на все события
     for (const handler of this.allHandlers) {
       handler(envelope);
     }
