@@ -143,7 +143,8 @@ export class PolymarketRestAdapterFactory {
       signer.getWallet(),
       config.chainId,
       makerAddress,
-      config.signatureType!
+      config.signatureType!,
+      logger
     );
 
     // REST клиенты

@@ -21,7 +21,7 @@
  *
  * @example
  * ```typescript
- * const builder = new PolymarketOrderBuilder(signer, chainId, makerAddress);
+ * const builder = new PolymarketOrderBuilder(signer, chainId, makerAddress, signatureType, logger);
  *
  * const signedOrder = await builder.buildOrder({
  *   tokenId: '0x123',
@@ -37,6 +37,7 @@
  */
 
 import type { Wallet } from 'ethers';
+import type { ILogger } from '../../../../domain/ports/ILogger.js';
 import type { SignatureType } from '../types.js';
 
 /**
@@ -125,7 +126,8 @@ export class PolymarketOrderBuilder {
     private readonly signer: Wallet,
     private readonly chainId: number,
     private readonly makerAddress: string,
-    private readonly signatureType: SignatureType
+    private readonly signatureType: SignatureType,
+    private readonly logger?: ILogger
   ) {}
 
   /**
@@ -160,7 +162,7 @@ export class PolymarketOrderBuilder {
     const priceRounded = Math.round(params.price * tickMultiplier) / tickMultiplier;
 
     // ✅ v7.7.15: DEBUG - Логирование деталей расчета цены
-    console.log('[PolymarketOrderBuilder] Price calculation:', {
+    this.logger?.debug('Price calculation', {
       inputPrice: params.price,
       priceTick,
       tickMultiplier,
@@ -276,7 +278,7 @@ export class PolymarketOrderBuilder {
       const takerAmount = Math.round(size * multiplier);
 
       // ✅ v7.7.16: DEBUG - Логирование деталей расчета сумм
-      console.log('[PolymarketOrderBuilder] Amount calculation (BUY):', {
+      this.logger?.debug('Amount calculation (BUY)', {
         price,
         size,
         usdcAmount,
