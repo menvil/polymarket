@@ -25,14 +25,18 @@ import type { ILogger } from '../../../../domain/ports/ILogger.js';
 import type { PolymarketRestClient } from '../PolymarketRestClient.js';
 
 /**
- * Ответ с рыночной сделкой (сырой формат API)
+ * Ответ с рыночной сделкой (сырой формат API - snake_case)
+ *
+ * @remarks
+ * Поля в snake_case соответствуют формату ответа Polymarket API.
+ * Для доменных моделей используйте маппер для преобразования в camelCase.
  */
 export interface MarketTradeResponse {
   /** ID сделки */
-  tradeId: string;
+  trade_id: string;
 
   /** ID токена */
-  tokenId: string;
+  token_id: string;
 
   /** Сторона сделки (с точки зрения тейкера) */
   side: 'BUY' | 'SELL';

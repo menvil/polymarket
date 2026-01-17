@@ -136,6 +136,107 @@ export interface GetOrdersResponse {
 }
 
 /**
+ * Ответ исполненного ордера из /data/orders (status=MATCHED)
+ *
+ * @remarks
+ * Используется методом getMatchedOrders() для получения исполненных ордеров.
+ * Поля size_matched и avg_price содержат агрегированную информацию.
+ */
+export interface MatchedOrderResponse {
+  /** ID ордера (заглавная D!) */
+  orderID: string;
+
+  /** ID токена/актива */
+  asset_id: string;
+
+  /** Сторона ордера */
+  side: 'BUY' | 'SELL';
+
+  /** Исполненный размер (строка-число) */
+  size_matched: string;
+
+  /** Средняя цена исполнения (строка-число) */
+  avg_price: string;
+
+  /** Исходный размер ордера (строка-число) */
+  original_size: string;
+
+  /** Цена ордера (строка-число) */
+  price: string;
+
+  /** Статус ордера */
+  status: 'MATCHED' | 'LIVE' | 'CANCELLED';
+
+  /** Временная метка создания */
+  created_at: string;
+
+  /** Condition ID (ID рынка) */
+  condition_id?: string;
+
+  /** Ставка комиссии в bps */
+  fee_rate_bps?: string;
+
+  /** Адрес владельца */
+  owner?: string;
+}
+
+/**
+ * Ответ сделки из /data/trades
+ *
+ * @remarks
+ * Используется методом getFilledOrders() для получения истории сделок.
+ * Содержит детализацию каждой отдельной сделки (fill).
+ */
+export interface TradeResponse {
+  /** ID сделки */
+  id: string;
+
+  /** ID ордера taker */
+  taker_order_id: string;
+
+  /** ID рынка */
+  market: string;
+
+  /** ID токена/актива */
+  asset_id: string;
+
+  /** Сторона сделки */
+  side: 'BUY' | 'SELL';
+
+  /** Размер сделки (строка-число) */
+  size: string;
+
+  /** Цена сделки (строка-число) */
+  price: string;
+
+  /** Роль трейдера в сделке */
+  trader_side: 'MAKER' | 'TAKER';
+
+  /** Адрес maker */
+  maker_address?: string;
+
+  /** Временная метка сделки */
+  created_at?: string;
+
+  /** ID транзакции */
+  transaction_hash?: string;
+
+  /** Комиссия (строка-число) */
+  fee_amount?: string;
+}
+
+/**
+ * Пагинированный ответ сделок из /data/trades
+ */
+export interface TradesPageResponse {
+  /** Массив сделок */
+  data: TradeResponse[];
+
+  /** Курсор для следующей страницы */
+  next_cursor: string;
+}
+
+/**
  * REST-клиент для ордеров Polymarket
  */
 export class PolymarketOrderRestClient {
@@ -372,7 +473,7 @@ export class PolymarketOrderRestClient {
    * // orders[0].avg_price - average price
    * ```
    */
-  async getMatchedOrders(tokenId?: string, limit: number = 100): Promise<any[]> {
+  async getMatchedOrders(tokenId?: string, limit: number = 100): Promise<MatchedOrderResponse[]> {
     this.logger.debug('[PolymarketOrderRestClient] v7.7.11: Getting matched orders from /data/orders', {
       tokenId: tokenId ? tokenId.substring(0, 16) + '...' : 'all',
       limit,
@@ -388,10 +489,10 @@ export class PolymarketOrderRestClient {
     }
 
     // Использовать эндпоинт /data/orders (не /data/trades!)
-    const response = await this.restClient.get<any[]>('/data/orders', params);
+    const response = await this.restClient.get<MatchedOrderResponse[]>('/data/orders', params);
 
     // API возвращает массив напрямую
-    const orders = Array.isArray(response) ? response : [];
+    const orders: MatchedOrderResponse[] = Array.isArray(response) ? response : [];
 
     this.logger.info('[PolymarketOrderRestClient] 📊 v7.7.11: Matched orders from /data/orders retrieved', {
       count: orders.length,
@@ -441,7 +542,7 @@ export class PolymarketOrderRestClient {
       onlyFirstPage?: boolean;
       includeAllTrades?: boolean;
     }
-  ): Promise<any[]> {
+  ): Promise<TradeResponse[]> {
     // Опции по умолчанию
     const onlyFirstPage = options?.onlyFirstPage ?? false;
     const includeAllTrades = options?.includeAllTrades ?? true;
@@ -455,7 +556,7 @@ export class PolymarketOrderRestClient {
     });
 
     // ✅ v7.7.12: Пагинация по результатам (опционально)
-    let allTrades: any[] = [];
+    let allTrades: TradeResponse[] = [];
     let nextCursor = 'MA=='; // Начальный курсор
     const END_CURSOR = 'LTE='; // Маркер конца
     let pageCount = 0;
@@ -477,10 +578,10 @@ export class PolymarketOrderRestClient {
 
       // ✅ v7.7.10: Использовать эндпоинт /data/trades (не /data/orders!)
       // ✅ v7.7.11: API возвращает { data: [...], next_cursor: "..." }, НЕ массив напрямую!
-      const response = await this.restClient.get<any>('/data/trades', params);
+      const response = await this.restClient.get<TradesPageResponse>('/data/trades', params);
 
       // ✅ v7.7.11: Извлечь поле data из ответа (формат пагинированного ответа)
-      const trades = Array.isArray(response?.data) ? response.data : [];
+      const trades: TradeResponse[] = Array.isArray(response?.data) ? response.data : [];
 
       pageCount++;
 
