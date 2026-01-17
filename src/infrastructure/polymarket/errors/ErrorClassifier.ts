@@ -304,7 +304,7 @@ export class ErrorClassifier {
       };
     }
 
-    if (code.includes('5') || structured.message.toLowerCase().includes('server error')) {
+    if (code.startsWith('5') || structured.message.toLowerCase().includes('server error')) {
       return {
         type: 'SERVER_ERROR',
         message: structured.message,
