@@ -226,7 +226,7 @@ function mapTradeMessage(message: PolymarketTradeMessage): TradeExecutedEvent | 
  * Пустой массив валиден (нет ликвидности).
  */
 function parseLevels(
-  levels: any[]
+  levels: ReadonlyArray<{ price: string; size: string }>
 ): Array<{ price: number; size: number }> | null {
   const result: Array<{ price: number; size: number }> = [];
 
