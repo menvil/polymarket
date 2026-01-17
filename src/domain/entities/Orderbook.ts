@@ -328,7 +328,7 @@ export class Orderbook {
    * ```
    */
   public getTotalBidVolume(levels?: number): Quantity {
-    const relevantBids = levels ? this.bids.slice(0, levels) : this.bids;
+    const relevantBids = levels !== undefined ? this.bids.slice(0, levels) : this.bids;
     
     const total = relevantBids.reduce(
       (sum, level) => sum + level.quantity.value,
@@ -356,7 +356,7 @@ export class Orderbook {
    * ```
    */
   public getTotalAskVolume(levels?: number): Quantity {
-    const relevantAsks = levels ? this.asks.slice(0, levels) : this.asks;
+    const relevantAsks = levels !== undefined ? this.asks.slice(0, levels) : this.asks;
     
     const total = relevantAsks.reduce(
       (sum, level) => sum + level.quantity.value,
