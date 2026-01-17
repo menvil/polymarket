@@ -13,20 +13,20 @@
  * @example
  * ```typescript
  * const errorHandler: EventBusErrorHandler = {
- *   handle(error, event, handlerName) {
+ *   handle(error, envelope, handlerName) {
  *     console.error('[EventBus] Handler error', {
  *       error: error instanceof Error ? error.message : String(error),
- *       eventName: event.eventName,
- *       eventId: event.eventId,
+ *       eventType: envelope.type,
+ *       eventId: envelope.id,
  *       handlerName,
- *       timestamp: event.timestamp.toISOString(),
+ *       timestamp: envelope.timestamp.toISOString(),
  *     });
  *   }
  * };
  * ```
  */
 
-import type { DomainEvent } from '../../domain/events/DomainEvent.js';
+import type { EventEnvelope } from './EventEnvelope.js';
 import type { ILogger } from '../../domain/ports/ILogger.js';
 
 /**
@@ -40,7 +40,7 @@ export interface EventBusErrorHandler {
    * Обрабатывает ошибку из event handler
    *
    * @param error - Ошибка, брошенная handler (может быть любого типа)
-   * @param event - Событие, которое обрабатывалось
+   * @param envelope - EventEnvelope, который обрабатывался
    * @param handlerName - Имя handler для debugging (обычно 'specific' или 'all')
    *
    * @remarks
@@ -49,26 +49,26 @@ export interface EventBusErrorHandler {
    *
    * Контекст для logging:
    * - `error`: само исключение (Error или unknown)
-   * - `event.eventName`: тип события
-   * - `event.eventId`: уникальный ID события
-   * - `event.timestamp`: когда событие произошло
+   * - `envelope.type`: тип события
+   * - `envelope.id`: уникальный ID события
+   * - `envelope.timestamp`: когда событие произошло
    * - `handlerName`: для различения specific vs all handlers
    *
    * @example
    * ```typescript
-   * handle(error, event, handlerName) {
+   * handle(error, envelope, handlerName) {
    *   logger.error('[EventBus] Handler failed', {
    *     error: error instanceof Error ? error.message : String(error),
    *     stack: error instanceof Error ? error.stack : undefined,
-   *     eventName: event.eventName,
-   *     eventId: event.eventId,
+   *     eventType: envelope.type,
+   *     eventId: envelope.id,
    *     handlerName,
-   *     timestamp: event.timestamp.toISOString(),
+   *     timestamp: envelope.timestamp.toISOString(),
    *   });
    * }
    * ```
    */
-  handle(error: unknown, event: DomainEvent, handlerName: string): void;
+  handle(error: unknown, envelope: EventEnvelope<unknown>, handlerName: string): void;
 }
 
 /**
@@ -112,7 +112,7 @@ export class DefaultEventBusErrorHandler implements EventBusErrorHandler {
    * Обрабатывает ошибку через ILogger
    *
    * @param error - Ошибка из handler
-   * @param event - Событие
+   * @param envelope - EventEnvelope
    * @param handlerName - Имя handler
    *
    * @remarks
@@ -124,7 +124,7 @@ export class DefaultEventBusErrorHandler implements EventBusErrorHandler {
    *
    * Если logger упадёт - fallback на console.error.
    */
-  public handle(error: unknown, event: DomainEvent, handlerName: string): void {
+  public handle(error: unknown, envelope: EventEnvelope<unknown>, handlerName: string): void {
     // ВАЖНО: Обработчик ошибок НЕ должен падать
     try {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -134,10 +134,10 @@ export class DefaultEventBusErrorHandler implements EventBusErrorHandler {
       this.logger.error('[EventBus] Handler error', {
         error: errorMessage,
         stack: errorStack,
-        eventName: event.eventName,
-        eventId: event.eventId,
+        eventType: envelope.type,
+        eventId: envelope.id,
         handlerName,
-        timestamp: event.timestamp.toISOString(),
+        timestamp: envelope.timestamp.toISOString(),
       });
     } catch (loggingError) {
       // Fallback: если даже logger упал

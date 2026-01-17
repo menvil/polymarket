@@ -313,8 +313,7 @@ export class InMemoryEventBus implements IEventBus, IEventBusInspector {
     } catch (error) {
       // Передать ошибку в error handler (НЕ пробрасывать!)
       try {
-        // передаём envelope для logging
-        this.errorHandler.handle(error, envelope as any, handlerType);
+        this.errorHandler.handle(error, envelope, handlerType);
       } catch (errorHandlerError) {
         // Fallback: если даже error handler упал
         console.error('[EventBus] Error in error handler:', errorHandlerError);
