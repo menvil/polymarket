@@ -214,16 +214,20 @@ export class InMemoryEventBus implements IEventBus, IEventBusInspector {
    * Обрабатывает очередь событий
    *
    * @remarks
-   * Алгоритм:
+   * Алгоритм (O(n) оптимизация):
    * 1. Установить флаг isDraining = true (защита от reentrancy)
-   * 2. Пока очередь не пуста:
-   *    - Извлечь событие из начала очереди (FIFO)
-   *    - Доставить всем subscribers
-   * 3. Сбросить флаг isDraining = false
+   * 2. Итерировать по индексу: while (i < queue.length)
+   * 3. Один splice(0, i) в конце для удаления обработанных событий
+   * 4. Сбросить флаг isDraining = false
+   *
+   * Оптимизация:
+   * - Старый подход: shift() в цикле → O(n²) (shift = O(n) на каждый вызов)
+   * - Новый подход: индекс + один splice → O(n)
    *
    * ВАЖНО: Subscriber может вызвать publish() внутри обработки.
-   * Новое событие добавится в очередь, но НЕ запустит новый drain
-   * (isDraining = true). Drain обработает новое событие в этом же цикле.
+   * Новое событие добавится в this.queue, queue.length увеличится,
+   * и цикл продолжит обработку. isDraining = true предотвращает
+   * запуск нового drain.
    *
    * Гарантии:
    * - События обрабатываются строго FIFO
@@ -235,13 +239,17 @@ export class InMemoryEventBus implements IEventBus, IEventBusInspector {
     this.isDraining = true;
 
     try {
-      // Обрабатывать события пока очередь не пуста
-      while (this.queue.length > 0) {
-        // Извлечь событие из начала очереди (FIFO)
-        const event = this.queue.shift()!;
-
-        // Доставить всем subscribers
+      // O(n) оптимизация: вместо shift() O(n) на каждый элемент,
+      // итерируем по индексу и делаем один splice в конце
+      // Если handler вызывает publish(), queue.length растёт и цикл продолжается
+      let i = 0;
+      while (i < this.queue.length) {
+        const event = this.queue[i++];
         this.deliverEvent(event);
+      }
+      // Удалить обработанные события одной операцией splice
+      if (i > 0) {
+        this.queue.splice(0, i);
       }
     } finally {
       // Сбросить флаг drain (даже если была ошибка)
