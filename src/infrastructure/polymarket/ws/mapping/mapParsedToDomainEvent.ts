@@ -152,17 +152,17 @@ function mapOrderbookMessage(message: PolymarketOrderbookMessage): OrderBookSnap
   // bids: [0.01, 0.02, ..., 0.51] (худшие → лучшие)
   // asks: [0.99, 0.98, ..., 0.52] (худшие → лучшие)
   // Но наша модель ожидает стандартный порядок (лучшие первыми)
-  // Поэтому разворачиваем массивы
-  bids.reverse();
-  asks.reverse();
+  // Используем spread + reverse для избежания мутации оригинальных массивов
+  const reversedBids = [...bids].reverse();
+  const reversedAsks = [...asks].reverse();
 
   // Парсим timestamp
   const timestamp = parseTimestamp(message.timestamp);
 
   return new OrderBookSnapshotReceivedEvent(
     assetId,
-    bids,
-    asks,
+    reversedBids,
+    reversedAsks,
     timestamp
   );
 }
