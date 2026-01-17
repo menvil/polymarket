@@ -382,7 +382,8 @@ export class BaseWebSocketTransport extends EventEmitter {
     const subscriptionKey = this.getSubscriptionKey(channel, params);
     this.subscriptions.delete(subscriptionKey);
 
-    if (this.status === 'connected' && this.ws) {
+    // Проверяем и статус И readyState WebSocket (аналогично subscribe)
+    if (this.status === 'connected' && this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
         // Делегируем форматирование в специфичный для биржи formatter
         const message = this.formatter.formatUnsubscription(channel, params);
@@ -392,6 +393,21 @@ export class BaseWebSocketTransport extends EventEmitter {
         this.logger.error('Failed to format/send unsubscription', { error, channel, params });
         throw error;
       }
+    } else if (this.ws && this.ws.readyState !== WebSocket.OPEN) {
+      // Сокет не OPEN - отписка пропущена, но subscription удалена из Map
+      this.logger.warn('Unsubscription skipped: socket not OPEN', {
+        channel,
+        params,
+        readyState: this.ws.readyState,
+        status: this.status,
+      });
+    } else {
+      // Не подключены вообще
+      this.logger.warn('Cannot unsubscribe - not connected', {
+        channel,
+        params,
+        status: this.status,
+      });
     }
   }
 
