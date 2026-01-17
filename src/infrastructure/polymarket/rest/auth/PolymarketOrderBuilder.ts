@@ -36,6 +36,7 @@
  * ```
  */
 
+import { randomBytes } from 'node:crypto';
 import type { Wallet } from 'ethers';
 import type { ILogger } from '../../../../domain/ports/ILogger.js';
 import type { SignatureType } from '../types.js';
@@ -149,8 +150,10 @@ export class PolymarketOrderBuilder {
    * ```
    */
   async buildOrder(params: BuildOrderParams): Promise<SignedOrder> {
-    // Сгенерировать случайную соль
-    const salt = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
+    // Сгенерировать криптографически безопасную соль (48 бит = 6 байт)
+    // Используем crypto.randomBytes вместо Math.random() для безопасности
+    const saltBuffer = randomBytes(6);
+    const salt = saltBuffer.readUIntBE(0, 6);
 
     // КРИТИЧНО: Определить размер шага цены
     // Если не предоставлен, использовать безопасное значение по умолчанию (0.01)
