@@ -536,10 +536,13 @@ export class Order {
   /**
    * Проверяет, может ли ордер быть отменён
    *
-   * @returns True если ордер PENDING или OPEN
+   * @returns True если ордер PENDING, OPEN или PARTIALLY_FILLED
    *
    * @remarks
-   * Только ордера в состоянии PENDING или OPEN могут быть отменены.
+   * Только ордера в состоянии PENDING, OPEN или PARTIALLY_FILLED могут быть отменены.
+   * Частично исполненный ордер (PARTIALLY_FILLED) все еще активен и может быть отменён,
+   * при этом исполненная часть остается, а оставшаяся часть отменяется.
+   *
    * Ордера FILLED, CANCELED и REJECTED не могут быть отменены.
    *
    * Бизнес-правило: Терминальные состояния (FILLED, CANCELED, REJECTED)
@@ -555,7 +558,7 @@ export class Order {
    * ```
    */
   public canCancel(): boolean {
-    return this.status === 'PENDING' || this.status === 'OPEN';
+    return this.status === 'PENDING' || this.status === 'OPEN' || this.status === 'PARTIALLY_FILLED';
   }
 
   /**
