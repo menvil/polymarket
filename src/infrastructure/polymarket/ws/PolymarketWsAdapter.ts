@@ -75,27 +75,6 @@ import { InMemoryEventBus } from '../../../shared/events/InMemoryEventBus.js';
 import { ProjectorCoordinator } from '../../../application/projectors/ProjectorCoordinator.js';
 import { mapParsedToDomainEvent } from './mapping/mapParsedToDomainEvent.js';
 import { createProductionEnvelope } from '../../../shared/events/EventEnvelope.js';
-import type { DomainEvent } from '../../../domain/events/DomainEvent.js';
-
-/**
- * Преобразует DomainEvent в payload для EventEnvelope
- *
- * @remarks
- * DomainEvent использует `eventName`, но createProductionEnvelope ожидает `type`.
- * Эта функция выполняет типобезопасное преобразование.
- *
- * @param event - Domain событие с eventName
- * @returns Payload с type для использования в envelope
- */
-function domainEventToEnvelopePayload<E extends DomainEvent>(
-  event: E
-): E & { type: string } {
-  return {
-    ...event,
-    type: event.eventName,
-  };
-}
-
 /**
  * Тип callback для orderbook
  */
@@ -620,7 +599,8 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
     }
 
     // Публикуем в EventBus (оборачиваем в envelope)
-    const envelope = createProductionEnvelope(domainEventToEnvelopePayload(event), {
+    // createProductionEnvelope нормализует eventName → type автоматически
+    const envelope = createProductionEnvelope(event, {
       environment: 'LIVE',
       accountId: 'default',
     });
@@ -672,7 +652,8 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
     }
 
     // Публикуем в EventBus (оборачиваем в envelope)
-    const envelope = createProductionEnvelope(domainEventToEnvelopePayload(event), {
+    // createProductionEnvelope нормализует eventName → type автоматически
+    const envelope = createProductionEnvelope(event, {
       environment: 'LIVE',
       accountId: 'default',
     });

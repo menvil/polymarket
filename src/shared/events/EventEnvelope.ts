@@ -84,34 +84,53 @@ export interface ReplayEnvelope<E> extends BaseEventEnvelope<E> {
 export type EventEnvelope<E> = ProductionEnvelope<E> | ReplayEnvelope<E>;
 
 /**
- * Создаёт ProductionEnvelope для ExecutionEvent
+ * Создаёт ProductionEnvelope для ExecutionEvent или DomainEvent
  *
- * @param payload - Event payload (ExecutionEvent, ExecutionErrorEvent, DomainEvent)
+ * @param payload - Event payload с type (ExecutionEvent) или eventName (DomainEvent)
  * @param executionContext - Execution context (environment + accountId)
  * @param correlationId - Correlation ID для distributed tracing (optional)
  * @param sequenceNumber - Sequence number для event sourcing (optional)
  * @returns ProductionEnvelope<E>
  *
  * @remarks
- * executionContext ОБЯЗАТЕЛЕН (для Decision Layer)
+ * Нормализация типа события:
+ * - Если payload имеет `type` → используется `type`
+ * - Если payload имеет `eventName` → используется `eventName`
+ * - Если ни одного → выбрасывается ошибка
+ *
+ * Это позволяет передавать как ExecutionEvent (type), так и DomainEvent (eventName)
+ * без необходимости ручного преобразования.
  *
  * @example
  * ```typescript
- * const envelope = createProductionEnvelope(
- *   { type: 'OrderAccepted', orderId: '123', side: 'BUY', marketId: 'abc', price: 100, size: 10 },
+ * // ExecutionEvent с type
+ * const envelope1 = createProductionEnvelope(
+ *   { type: 'OrderAccepted', orderId: '123' },
+ *   { environment: 'LIVE', accountId: 'main' }
+ * );
+ *
+ * // DomainEvent с eventName
+ * const envelope2 = createProductionEnvelope(
+ *   { eventName: 'OrderBookSnapshotReceived', tokenId: 'abc' },
  *   { environment: 'LIVE', accountId: 'main' }
  * );
  * ```
  */
-export function createProductionEnvelope<E extends { type: string }>(
+export function createProductionEnvelope<E extends { type?: string; eventName?: string }>(
   payload: E,
   executionContext: ExecutionContext,
   correlationId?: string,
   sequenceNumber?: number
 ): ProductionEnvelope<E> {
+  // Нормализация: поддержка type (ExecutionEvent) и eventName (DomainEvent)
+  const eventType = payload.type ?? payload.eventName;
+  if (!eventType) {
+    throw new Error('Payload must have either "type" or "eventName" field');
+  }
+
   return {
     id: generateEventId(),
-    type: payload.type, // EventBus маршрутизирует по этому полю
+    type: eventType, // EventBus маршрутизирует по этому полю
     payload,
     timestamp: new Date(),
     executionContext,
@@ -121,9 +140,9 @@ export function createProductionEnvelope<E extends { type: string }>(
 }
 
 /**
- * Создаёт ReplayEnvelope для ExecutionEvent
+ * Создаёт ReplayEnvelope для ExecutionEvent или DomainEvent
  *
- * @param payload - Event payload (ExecutionEvent, ExecutionErrorEvent, DomainEvent)
+ * @param payload - Event payload с type (ExecutionEvent) или eventName (DomainEvent)
  * @param executionContext - Execution context (environment + accountId)
  * @param sequenceNumber - Sequence number (REQUIRED для replay)
  * @param correlationId - Correlation ID для distributed tracing (optional)
@@ -132,24 +151,43 @@ export function createProductionEnvelope<E extends { type: string }>(
  * @remarks
  * sequenceNumber REQUIRED (compile-time check)
  *
+ * Нормализация типа события:
+ * - Если payload имеет `type` → используется `type`
+ * - Если payload имеет `eventName` → используется `eventName`
+ * - Если ни одного → выбрасывается ошибка
+ *
  * @example
  * ```typescript
+ * // ExecutionEvent с type
  * const envelope = createReplayEnvelope(
- *   { type: 'OrderAccepted', orderId: '123', side: 'BUY', marketId: 'abc', price: 100, size: 10 },
+ *   { type: 'OrderAccepted', orderId: '123' },
  *   { environment: 'REPLAY', accountId: 'backtest-2024-01-01' },
- *   42 // sequenceNumber REQUIRED
+ *   42
+ * );
+ *
+ * // DomainEvent с eventName
+ * const envelope2 = createReplayEnvelope(
+ *   { eventName: 'OrderBookSnapshotReceived', tokenId: 'abc' },
+ *   { environment: 'REPLAY', accountId: 'backtest-2024-01-01' },
+ *   43
  * );
  * ```
  */
-export function createReplayEnvelope<E extends { type: string }>(
+export function createReplayEnvelope<E extends { type?: string; eventName?: string }>(
   payload: E,
   executionContext: ExecutionContext,
   sequenceNumber: number, // REQUIRED
   correlationId?: string
 ): ReplayEnvelope<E> {
+  // Нормализация: поддержка type (ExecutionEvent) и eventName (DomainEvent)
+  const eventType = payload.type ?? payload.eventName;
+  if (!eventType) {
+    throw new Error('Payload must have either "type" or "eventName" field');
+  }
+
   return {
     id: generateEventId(),
-    type: payload.type,
+    type: eventType,
     payload,
     timestamp: new Date(),
     executionContext,
