@@ -17,7 +17,7 @@
  *
  * const result = await policy.checkBalance({
  *   tokenId: '0x123',
- *   side: 'buy',
+ *   side: 'BUY',
  *   price: 0.52,
  *   size: 100,
  * });
@@ -32,6 +32,7 @@
 import type { ILogger } from '../../../../domain/ports/ILogger.js';
 import type { IBalanceProvider } from '../../../exchange/ports/IBalanceProvider.js';
 import type { IPortfolioProjector } from '../../../../domain/services/portfolio/PortfolioProjector.js';
+import type { OrderSide } from '../../../exchange/types/OrderResponse.js';
 
 /**
  * Параметры проверки баланса
@@ -40,8 +41,8 @@ export interface BalanceCheckParams {
   /** ID токена */
   tokenId: string;
 
-  /** Сторона ордера */
-  side: 'buy' | 'sell';
+  /** Сторона ордера (UPPERCASE: 'BUY' | 'SELL') */
+  side: OrderSide;
 
   /** Цена ордера */
   price: number;
@@ -93,7 +94,7 @@ export class PolymarketBalancePolicy {
    * ```typescript
    * const result = await policy.checkBalance({
    *   tokenId: '0x123',
-   *   side: 'buy',
+   *   side: 'BUY',
    *   price: 0.52,
    *   size: 100,
    * });
@@ -116,10 +117,8 @@ export class PolymarketBalancePolicy {
       minOrderSize: params.minOrderSize,
     });
 
-    // Нормализуем сторону к нижнему регистру для сравнения
-    const normalizedSide = side.toLowerCase();
-
-    if (normalizedSide === 'buy') {
+    // side уже в UPPERCASE (OrderSide = 'BUY' | 'SELL')
+    if (side === 'BUY') {
       return this.checkBuyBalance(params);
     } else {
       return this.checkSellBalance(tokenId, size);

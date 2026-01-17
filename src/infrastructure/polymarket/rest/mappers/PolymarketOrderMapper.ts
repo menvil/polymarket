@@ -25,7 +25,7 @@
  * };
  *
  * const domainOrder = mapper.toDomainOrder(rawOrder);
- * // { orderId: 'order-123', side: 'buy', price: 0.52, size: 100, ... }
+ * // { orderId: 'order-123', side: 'BUY', price: 0.52, size: 100, status: 'OPEN', ... }
  * ```
  */
 
@@ -34,7 +34,8 @@ import type {
   CreateOrderRequest,
   CreateOrderResponse,
 } from '../clients/PolymarketOrderRestClient.js';
-import type { OrderResponse } from '../../../exchange/ports/IExecutionAdapter.js';
+import type { OrderResponse, OrderSide } from '../../../exchange/ports/IExecutionAdapter.js';
+import type { OrderStatus } from '../../../exchange/types/OrderResponse.js';
 
 /**
  * Маппер ордеров Polymarket
@@ -52,7 +53,7 @@ export class PolymarketOrderMapper {
    * ```typescript
    * const apiRequest = mapper.toApiRequest({
    *   tokenId: '0x123',
-   *   side: 'buy',
+   *   side: 'BUY',
    *   price: 0.52,
    *   size: 100,
    *   priceTick: 0.001,
@@ -63,18 +64,15 @@ export class PolymarketOrderMapper {
    */
   toApiRequest(params: {
     tokenId: string;
-    side: 'buy' | 'sell';
+    side: OrderSide;
     price: number;
     size: number;
     priceTick?: number;
     feeRateBps?: number;
   }): CreateOrderRequest {
-    // Нормализуем сторону в нижний регистр для сравнения (защита от ввода в верхнем регистре)
-    const normalizedSide = params.side.toLowerCase();
-
     return {
       tokenId: params.tokenId,
-      side: normalizedSide === 'buy' ? 'BUY' : 'SELL',
+      side: params.side, // Уже в UPPERCASE (OrderSide = 'BUY' | 'SELL')
       price: params.price, // Число (0-1)
       size: params.size, // Число (количество акций)
       feeRateBps: params.feeRateBps ?? 1000, // Используем предоставленную или стандартную комиссию мейкера 10%
@@ -103,7 +101,7 @@ export class PolymarketOrderMapper {
    * };
    *
    * const domainOrder = mapper.toDomainOrder(rawOrder);
-   * console.log(domainOrder.status); // 'partially_filled'
+   * console.log(domainOrder.status); // 'PARTIALLY_FILLED'
    * ```
    */
   toDomainOrder(response: CreateOrderResponse): OrderResponse {
@@ -114,7 +112,7 @@ export class PolymarketOrderMapper {
     return {
       orderId: response.orderID, // API возвращает "orderID" с заглавной D
       tokenId: response.tokenId || '',
-      side: response.side === 'BUY' ? 'buy' : 'sell',
+      side: response.side === 'BUY' ? 'BUY' : 'SELL', // UPPERCASE
       price: this.parseNumber(response.price || '0'),
       size,
       sizeRemaining,
@@ -125,42 +123,42 @@ export class PolymarketOrderMapper {
   }
 
   /**
-   * Преобразует статус API в статус домена
+   * Преобразует статус API в статус домена (UPPERCASE)
    *
-   * @param apiStatus - Статус API
+   * @param apiStatus - Статус API (может быть в любом регистре)
    * @param filledSize - Заполненный объём
    * @param totalSize - Общий объём
-   * @returns Статус домена
+   * @returns Статус домена в UPPERCASE
    */
   private mapStatus(
     apiStatus: string,
     filledSize: number,
     totalSize: number
-  ): 'open' | 'partially_filled' | 'filled' | 'cancelled' {
-    // API возвращает статусы в нижнем регистре
+  ): OrderStatus {
+    // API возвращает статусы в разных регистрах, нормализуем
     const normalizedStatus = apiStatus.toLowerCase();
 
     switch (normalizedStatus) {
       case 'pending':
       case 'live':
         if (filledSize === 0) {
-          return 'open';
+          return 'OPEN';
         } else if (filledSize < totalSize) {
-          return 'partially_filled';
+          return 'PARTIALLY_FILLED';
         } else {
-          return 'filled';
+          return 'FILLED';
         }
 
       case 'filled':
       case 'matched': // Ордер полностью сопоставлен/заполнен
-        return 'filled';
+        return 'FILLED';
 
       case 'cancelled':
-        return 'cancelled';
+        return 'CANCELED'; // Американское написание (без двойной L)
 
       default:
         this.logger.warn('Unknown order status', { apiStatus });
-        return 'open';
+        return 'OPEN';
     }
   }
 

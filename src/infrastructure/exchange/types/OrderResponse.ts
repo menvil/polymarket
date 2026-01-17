@@ -8,6 +8,7 @@
  * - ITradingGateway (торговый шлюз)
  *
  * Нормализованный формат для любой биржи.
+ * Все значения в UPPERCASE для консистентности с domain layer.
  */
 export interface OrderResponse {
   /** Специфичный для биржи ID ордера */
@@ -16,8 +17,8 @@ export interface OrderResponse {
   /** ID токена/актива */
   tokenId: string;
 
-  /** Сторона ордера */
-  side: 'buy' | 'sell';
+  /** Сторона ордера (UPPERCASE) */
+  side: OrderSide;
 
   /** Цена ордера */
   price: number;
@@ -28,7 +29,7 @@ export interface OrderResponse {
   /** Оставшийся (неисполненный) размер */
   sizeRemaining: number;
 
-  /** Статус ордера */
+  /** Статус ордера (UPPERCASE) */
   status: OrderStatus;
 
   /** Временная метка создания ордера (миллисекунды) */
@@ -39,6 +40,18 @@ export interface OrderResponse {
 }
 
 /**
- * Статусы ордера
+ * Сторона ордера (UPPERCASE)
+ *
+ * @remarks
+ * Унифицировано с domain layer (Order.ts).
  */
-export type OrderStatus = 'open' | 'partially_filled' | 'filled' | 'cancelled';
+export type OrderSide = 'BUY' | 'SELL';
+
+/**
+ * Статусы ордера (UPPERCASE)
+ *
+ * @remarks
+ * Унифицировано с domain layer (Order.ts).
+ * Используется американское написание CANCELED (не CANCELLED).
+ */
+export type OrderStatus = 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED';

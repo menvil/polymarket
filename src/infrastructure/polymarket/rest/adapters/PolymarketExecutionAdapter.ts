@@ -30,8 +30,9 @@
  *
  * // Параметры уже нормализованы и проверены!
  * const order = await adapter.postOrder({
+ *   marketId: 'condition-123',
  *   tokenId: '0x123',
- *   side: 'buy',
+ *   side: 'BUY',
  *   price: 0.52,
  *   size: 100, // Уже округлено до sizeTick
  * });
@@ -125,8 +126,9 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    * @example
    * ```typescript
    * const order = await adapter.postOrder({
+   *   marketId: 'condition-123',
    *   tokenId: '0x123',
-   *   side: 'buy',
+   *   side: 'BUY',
    *   price: 0.52,
    *   size: 100,
    * });
@@ -149,7 +151,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
 
       const virtualOrder: OrderResponse = {
         orderId: virtualOrderId,
-        status: 'open',
+        status: 'OPEN',
         side: params.side,
         price: params.price,
         size: params.size,
@@ -165,7 +167,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         strategyId: params.strategyId ?? 'default',
         marketId: params.marketId,
         tokenId: params.tokenId,
-        side: params.side.toUpperCase() as 'BUY' | 'SELL',
+        side: params.side,
         price: params.price,
         size: params.size,
         timestamp: new Date(),
@@ -221,7 +223,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         strategyId: params.strategyId ?? 'default',
         marketId: params.marketId,
         tokenId: params.tokenId,
-        side: params.side.toUpperCase() as 'BUY' | 'SELL',
+        side: params.side,
         price: params.price,
         size: params.size,
         timestamp: new Date(), // TODO: Использовать детерминированный timestamp из params/clock
@@ -258,7 +260,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
           const orderAge = now - (o.timestamp || 0);
           const matchesParams =
             o.tokenId === params.tokenId &&
-            o.side === params.side.toUpperCase() &&
+            o.side === params.side &&
             Math.abs(parseFloat(o.price || '0') - params.price) < PolymarketExecutionAdapter.PRICE_TOLERANCE &&
             Math.abs(parseFloat(o.size || '0') - params.size) < PolymarketExecutionAdapter.SIZE_TOLERANCE;
 
@@ -284,7 +286,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
             strategyId: params.strategyId ?? 'default',
             marketId: params.marketId,
             tokenId: params.tokenId,
-            side: params.side.toUpperCase() as 'BUY' | 'SELL',
+            side: params.side,
             price: params.price,
             size: params.size,
             timestamp: new Date(),
@@ -471,17 +473,21 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    *
    * @example
    * ```typescript
-   * const order = await adapter.getOrderById('0x123...');
-   * if (order.status === 'filled') {
+   * const rawOrder = await adapter.getOrderById('0x123...');
+   * // Примечание: возвращает сырой формат API (lowercase statuses)
+   * if (rawOrder.status === 'filled') {
    *   // Ордер был исполнен
-   * } else if (order.status === 'cancelled') {
+   * } else if (rawOrder.status === 'cancelled') {
    *   // Ордер был отменён
    * }
    * ```
+   *
+   * @remarks
+   * TODO: Рефакторинг для возврата OrderResponse через mapper
    */
   async getOrderById(orderId: string): Promise<{
     orderID: string;
-    status: 'pending' | 'live' | 'filled' | 'cancelled';
+    status: 'pending' | 'live' | 'filled' | 'cancelled'; // Сырой формат API
     filledSize?: string;
     size?: string;
   }> {

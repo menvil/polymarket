@@ -29,9 +29,9 @@
  * ```
  */
 
-import type { OrderResponse, OrderStatus } from '../types/OrderResponse.js';
+import type { OrderResponse, OrderStatus, OrderSide } from '../types/OrderResponse.js';
 
-export type { OrderResponse, OrderStatus };
+export type { OrderResponse, OrderStatus, OrderSide };
 
 /**
  * Общий интерфейс провайдера ордеров (МНОЖЕСТВЕННОЕ ЧИСЛО!)
@@ -107,12 +107,12 @@ export interface IOrdersProvider {
    *
    * @example
    * ```typescript
-   * const filledOrders = await provider.getOrdersByStatus('filled');
+   * const filledOrders = await provider.getOrdersByStatus('FILLED');
    * console.log(`Исполненные ордера: ${filledOrders.length}`);
    * ```
    */
   getOrdersByStatus?(
-    status: 'open' | 'partially_filled' | 'filled' | 'cancelled',
+    status: OrderStatus,
     tokenId?: string
   ): Promise<OrderResponse[]>;
 }

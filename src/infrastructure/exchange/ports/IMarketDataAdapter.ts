@@ -1,3 +1,5 @@
+import type { OrderSide } from '../types/OrderResponse.js';
+
 /**
  * Общий интерфейс адаптера рыночных данных
  *
@@ -72,8 +74,8 @@ export interface MarketTrade {
   /** ID токена */
   tokenId: string;
 
-  /** Сторона сделки (с точки зрения taker) */
-  side: 'buy' | 'sell';
+  /** Сторона сделки (с точки зрения taker, UPPERCASE: 'BUY' | 'SELL') */
+  side: OrderSide;
 
   /** Цена исполнения */
   price: number;

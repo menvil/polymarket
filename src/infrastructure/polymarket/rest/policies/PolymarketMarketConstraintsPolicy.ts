@@ -33,6 +33,7 @@
 
 import type { ILogger } from '../../../../domain/ports/ILogger.js';
 import type { PolymarketMarketDataRestClient } from '../clients/PolymarketMarketDataRestClient.js';
+import type { OrderSide } from '../../../exchange/types/OrderResponse.js';
 
 /**
  * Ограничения рынка (кэшированные)
@@ -224,7 +225,7 @@ export class PolymarketMarketConstraintsPolicy {
    * @param tokenId - ID токена
    * @param size - Размер для валидации
    * @param price - Цена ордера
-   * @param side - Сторона ордера ('buy' или 'sell')
+   * @param side - Сторона ордера (UPPERCASE: 'BUY' | 'SELL')
    * @returns Результат валидации
    *
    * @remarks
@@ -240,7 +241,7 @@ export class PolymarketMarketConstraintsPolicy {
    *
    * @example
    * ```typescript
-   * const result = await policy.validateSize('0x123', 5, 0.60, 'buy');
+   * const result = await policy.validateSize('0x123', 5, 0.60, 'BUY');
    * if (!result.ok) {
    *   console.error(result.reason);
    * }
@@ -250,12 +251,12 @@ export class PolymarketMarketConstraintsPolicy {
     tokenId: string,
     size: number,
     price: number,
-    side: 'buy' | 'sell'
+    side: OrderSide
   ): Promise<{ ok: boolean; reason?: string; minShares?: number }> {
     const constraints = await this.getConstraints(tokenId);
 
     // BUY: проверяем минимальный РАЗМЕР ордера и СТОИМОСТЬ
-    if (side === 'buy') {
+    if (side === 'BUY') {
       // Сначала проверяем минимальный РАЗМЕР ордера (акции)
       if (size < constraints.minOrderSize) {
         return {

@@ -19,8 +19,9 @@
  *
  * // Параметры уже нормализованы и валидированы!
  * const order = await adapter.postOrder({
+ *   marketId: 'condition-123',
  *   tokenId: '0x123',
- *   side: 'buy',
+ *   side: 'BUY',
  *   price: 0.52,
  *   size: 100, // Уже округлено до sizeTick
  * });
@@ -29,9 +30,9 @@
  * ```
  */
 
-import type { OrderResponse } from '../types/OrderResponse.js';
+import type { OrderResponse, OrderSide } from '../types/OrderResponse.js';
 
-export type { OrderResponse };
+export type { OrderResponse, OrderSide };
 
 /**
  * Параметры для размещения ордера (уже нормализованные)
@@ -47,8 +48,8 @@ export interface PlaceOrderParams {
   /** ID токена (UP или DOWN) */
   tokenId: string;
 
-  /** Сторона ордера */
-  side: 'buy' | 'sell';
+  /** Сторона ордера (UPPERCASE: 'BUY' | 'SELL') */
+  side: OrderSide;
 
   /** Цена (уже валидирована и нормализована) */
   price: number;
@@ -79,8 +80,8 @@ export interface FillResponse {
   /** ID токена */
   tokenId: string;
 
-  /** Сторона сделки */
-  side: 'buy' | 'sell';
+  /** Сторона сделки (UPPERCASE: 'BUY' | 'SELL') */
+  side: OrderSide;
 
   /** Цена исполнения */
   executedPrice: number;

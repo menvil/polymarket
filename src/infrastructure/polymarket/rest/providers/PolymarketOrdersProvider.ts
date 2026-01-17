@@ -36,6 +36,7 @@ import type { ILogger } from '../../../../domain/ports/ILogger.js';
 import type {
   IOrdersProvider,
   OrderResponse,
+  OrderStatus,
 } from '../../../exchange/ports/IOrdersProvider.js';
 import type { PolymarketOrderRestClient } from '../clients/PolymarketOrderRestClient.js';
 import type { PolymarketOrderMapper } from '../mappers/PolymarketOrderMapper.js';
@@ -61,7 +62,7 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
    * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Возвращает только заказы со статусом 'open' или 'partially_filled'.
+   * Возвращает только заказы со статусом 'OPEN' или 'PARTIALLY_FILLED'.
    * Выполненные и отмененные заказы исключены.
    *
    * @example
@@ -117,7 +118,7 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
   /**
    * Получить заказы по статусу
    *
-   * @param status - Статус заказа для фильтрации ('open' или 'partially_filled')
+   * @param status - Статус заказа для фильтрации (UPPERCASE: 'OPEN', 'PARTIALLY_FILLED', etc.)
    * @param tokenId - Опционально: фильтр по ID токена
    * @returns Массив заказов с указанным статусом
    * @throws {ApiError} Если вызов API завершился неудачей
@@ -125,15 +126,14 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
    * @remarks
    * Фильтрует заказы по статусу локально (после получения всех открытых заказов).
    *
-   *
    * @example
    * ```typescript
-   * const partiallyFilled = await provider.getOrdersByStatus('partially_filled');
+   * const partiallyFilled = await provider.getOrdersByStatus('PARTIALLY_FILLED');
    * console.log(`Partially filled orders: ${partiallyFilled.length}`);
    * ```
    */
   async getOrdersByStatus(
-    status: 'open' | 'partially_filled' | 'filled' | 'cancelled',
+    status: OrderStatus,
     tokenId?: string
   ): Promise<OrderResponse[]> {
     this.logger.debug('Getting orders by status', { status, tokenId });

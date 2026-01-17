@@ -14,7 +14,7 @@
  *
  * const result = await gateway.placeOrder({
  *   tokenId: '0x123',
- *   side: 'buy',
+ *   side: 'BUY',
  *   price: 0.52,
  *   size: 100,
  * });
@@ -28,9 +28,9 @@
  */
 
 import type { Result } from '../../../shared/types/Result.js';
-import type { OrderResponse } from '../types/OrderResponse.js';
+import type { OrderResponse, OrderSide } from '../types/OrderResponse.js';
 
-export type { OrderResponse };
+export type { OrderResponse, OrderSide };
 
 /**
  * Параметры для размещения ордера
@@ -39,8 +39,8 @@ export interface PlaceOrderParams {
   /** ID токена (asset ID, market ID или символ в зависимости от биржи) */
   tokenId: string;
 
-  /** Сторона ордера */
-  side: 'buy' | 'sell';
+  /** Сторона ордера (UPPERCASE: 'BUY' | 'SELL') */
+  side: OrderSide;
 
   /** Цена за единицу */
   price: number;
@@ -65,7 +65,7 @@ export interface ITradingGateway {
    * ```typescript
    * const result = await gateway.placeOrder({
    *   tokenId: '0x123',
-   *   side: 'buy',
+   *   side: 'BUY',
    *   price: 0.52,
    *   size: 100,
    * });
