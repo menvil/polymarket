@@ -83,7 +83,7 @@ export class PositionLot {
    * @param entryPrice - Цена, по которой был куплен этот лот
    * @param timestamp - Когда был создан лот
    *
-   * @throws {Error} Если количество не положительное
+   * @throws {Error} Если количество отрицательное
    *
    * @example
    * ```typescript
@@ -105,8 +105,8 @@ export class PositionLot {
     public readonly entryPrice: Price,
     public readonly timestamp: Date
   ) {
-    if (!quantity.isPositive()) {
-      throw new Error('Lot quantity must be positive');
+    if (quantity.value < 0) {
+      throw new Error('Lot quantity must be non-negative');
     }
   }
 
