@@ -310,11 +310,14 @@ export class SubscriptionRegistry<T> {
       return 0;
     }
 
-    const attemptedCount = callbacks.size;
+    let attemptedCount = 0;
     let errorCount = 0;
 
     // Вызываем все callbacks, изолируя ошибки
+    // Считаем каждый вызов отдельно, т.к. Set может измениться во время итерации
+    // (callback может удалить другие callbacks через unsubscribe)
     for (const callback of callbacks) {
+      attemptedCount++;
       try {
         callback(data);
       } catch (error) {
