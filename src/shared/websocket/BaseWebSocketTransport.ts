@@ -712,7 +712,16 @@ export class BaseWebSocketTransport extends EventEmitter {
     this.logger.debug('Resubscribing to all subscriptions', { count: this.subscriptions.size });
 
     this.subscriptions.forEach((subscriptionKey) => {
-      const [channel, paramsJson] = subscriptionKey.split('::');
+      // Используем indexOf для поиска ПЕРВОГО '::' разделителя
+      // split('::') сломается если params JSON содержит '::'
+      // Формат ключа: channel::JSON.stringify(params)
+      const separatorIndex = subscriptionKey.indexOf('::');
+      if (separatorIndex === -1) {
+        this.logger.error('Invalid subscription key format', { subscriptionKey });
+        return;
+      }
+      const channel = subscriptionKey.slice(0, separatorIndex);
+      const paramsJson = subscriptionKey.slice(separatorIndex + 2);
       const params = JSON.parse(paramsJson) as SubscriptionParams;
 
       if (this.ws && this.status === 'connected') {
