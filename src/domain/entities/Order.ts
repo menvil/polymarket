@@ -298,8 +298,11 @@ export class Order {
       case 'CANCELED':
       case 'REJECTED':
         return OrderExecutionState.CANCELED;
-      default:
-        return OrderExecutionState.OPEN; // Default fallback
+      default: {
+        // Exhaustive check: если добавлен новый OrderStatus, компилятор выдаст ошибку
+        const _exhaustiveCheck: never = status;
+        throw new Error(`Unhandled OrderStatus: ${_exhaustiveCheck}`);
+      }
     }
   }
 
