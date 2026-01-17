@@ -3,21 +3,14 @@
  *
  * @remarks
  * Используется HttpClient для обертки ошибок fetch.
- * Содержит HTTP status code и response body для debugging.
+ * Расширяет стандартный Error дополнительными полями:
+ * - status: HTTP status code (404, 500, etc.)
+ * - responseBody: тело ответа для debugging
  *
  * @example
  * ```typescript
  * throw new HttpError(404, 'Not Found', { detail: 'Market not found' });
  * ```
- */
-
-/**
- * HttpError - ошибка HTTP запроса
- *
- * @remarks
- * Расширяет стандартный Error дополнительными полями:
- * - status: HTTP status code (404, 500, etc.)
- * - responseBody: тело ответа для debugging
  */
 export class HttpError extends Error {
   /**
