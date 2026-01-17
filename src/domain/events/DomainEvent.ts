@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 /**
  * DomainEvent - базовый класс для доменных событий
  *
@@ -80,12 +82,11 @@ export abstract class DomainEvent {
    * @returns Unique identifier for this event
    *
    * @remarks
-   * Формат: `{eventName}-{timestamp}-{random}`
+   * Uses crypto.randomUUID() for guaranteed uniqueness.
+   * Формат: `{eventName}-{uuid}`
    */
   private generateEventId(): string {
-    const ts = this.timestamp.getTime();
-    const random = Math.random().toString(36).substring(2, 9);
-    return `${this.eventName}-${ts}-${random}`;
+    return `${this.eventName}-${randomUUID()}`;
   }
 
   /**
