@@ -407,9 +407,10 @@ export class Order {
    * 3. Side должен быть 'BUY' или 'SELL'
    * 4. Status должен быть валидным OrderStatus
    * 5. Size должен быть положительным
-   * 6. FilledSize (если присутствует) не может превышать исходный размер
-   * 7. AverageFillPrice должна быть валидной если filledSize > 0
-   * 8. Timestamp должен быть валидной датой
+   * 6. Price должна быть в диапазоне [0.01, 0.99]
+   * 7. FilledSize (если присутствует) не может превышать исходный размер
+   * 8. AverageFillPrice должна быть валидной если filledSize > 0
+   * 9. Timestamp должен быть валидной датой
    *
    * @example
    * ```typescript
@@ -447,6 +448,14 @@ export class Order {
     // Валидация что размер положительный
     if (!this.size.isPositive()) {
       throw new OrderValidationError('Order size must be positive', 'size');
+    }
+
+    // Валидация диапазона цены
+    if (this.price.value < 0.01 || this.price.value > 0.99) {
+      throw new OrderValidationError(
+        `Price must be in range [0.01, 0.99], got ${this.price.value}`,
+        'price'
+      );
     }
 
     // Валидация filledSize если присутствует
