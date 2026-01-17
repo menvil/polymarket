@@ -1,46 +1,46 @@
 /**
- * ConstraintsObservationStore - LRU-based observation store with TTL
+ * ConstraintsObservationStore - Хранилище наблюдений на основе LRU с TTL
  *
  * @remarks
- * Stores constraint violation observations with confidence-based learning.
- * Prevents memory leak using LRU eviction when maxSize exceeded.
+ * Хранит наблюдения нарушений ограничений с обучением на основе уверенности.
+ * Предотвращает утечку памяти используя LRU вытеснение при превышении maxSize.
  *
- * Features:
- * - LRU eviction: oldest observations removed when size > maxSize
- * - TTL expiration: observations expire after observationTTL ms
- * - Confidence calculation: confidence = min(1.0, count / minObservations)
- * - Periodic cleanup: optional full TTL cleanup every N ms
+ * Возможности:
+ * - LRU вытеснение: старейшие наблюдения удаляются при size > maxSize
+ * - TTL истечение: наблюдения истекают через observationTTL мс
+ * - Расчёт уверенности: confidence = min(1.0, count / minObservations)
+ * - Периодическая очистка: опциональная полная TTL очистка каждые N мс
  *
- * Eviction strategy:
- * 1. On observe(): if size > maxSize → delete oldest (first in Map)
- * 2. On getConfidence(): move to end (LRU: most recently used)
- * 3. Periodic cleanup: remove expired observations (optional)
+ * Стратегия вытеснения:
+ * 1. При observe(): если size > maxSize → удалить старейшее (первое в Map)
+ * 2. При getConfidence(): переместить в конец (LRU: недавно использованное)
+ * 3. Периодическая очистка: удалить истёкшие наблюдения (опционально)
  *
  * @example
  * ```typescript
  * const store = new ConstraintsObservationStore({
  *   minObservations: 3,
  *   confidenceThreshold: 0.8,
- *   observationTTL: 3600000, // 1 hour
+ *   observationTTL: 3600000, // 1 час
  *   maxObservations: 10000,
- *   cleanupInterval: 600000, // 10 min
+ *   cleanupInterval: 600000, // 10 мин
  * }, logger);
  *
- * // Observe violation
+ * // Наблюдать нарушение
  * store.observe(tokenId, { type: 'MIN_SIZE', value: 10 });
  * store.observe(tokenId, { type: 'MIN_SIZE', value: 10 });
  * store.observe(tokenId, { type: 'MIN_SIZE', value: 10 });
  *
- * // Check confidence
+ * // Проверить уверенность
  * const confidence = store.getConfidence(tokenId, { type: 'MIN_SIZE', value: 10 });
- * // confidence = 1.0 (3 observations / 3 minObservations)
+ * // confidence = 1.0 (3 наблюдения / 3 minObservations)
  *
- * // Should learn?
+ * // Стоит ли обучаться?
  * if (store.shouldLearn(tokenId, violation)) {
  *   knowledgeBase.learn(tokenId, violation);
  * }
  *
- * // Cleanup on shutdown
+ * // Очистка при завершении
  * store.stop();
  * ```
  */
@@ -48,7 +48,7 @@
 import type { ILogger } from '../../../domain/ports/ILogger.js';
 
 /**
- * Constraint violation types
+ * Типы нарушений ограничений
  */
 export type ConstraintViolationType =
   | 'MIN_SIZE'
@@ -59,59 +59,59 @@ export type ConstraintViolationType =
   | 'PRICE_INCREMENT';
 
 /**
- * Constraint violation data
+ * Данные нарушения ограничения
  */
 export interface ConstraintViolation {
-  /** Violation type */
+  /** Тип нарушения */
   type: ConstraintViolationType;
-  /** Violation value (e.g., minimum size) */
+  /** Значение нарушения (например, минимальный размер) */
   value: number;
 }
 
 /**
- * Observation record stored in Map
+ * Запись наблюдения, хранимая в Map
  */
 export interface ObservationRecord {
-  /** Token ID */
+  /** ID токена */
   tokenId: string;
-  /** Constraint violation */
+  /** Нарушение ограничения */
   violation: ConstraintViolation;
-  /** Observation count */
+  /** Количество наблюдений */
   count: number;
-  /** First seen timestamp (ms) */
+  /** Временная метка первого обнаружения (мс) */
   firstSeen: number;
-  /** Last seen timestamp (ms) */
+  /** Временная метка последнего обнаружения (мс) */
   lastSeen: number;
 }
 
 /**
- * ConstraintsObservationStore configuration
+ * Конфигурация ConstraintsObservationStore
  */
 export interface ConstraintsObservationStoreConfig {
-  /** Minimum observations required for learning */
+  /** Минимальное количество наблюдений для обучения */
   minObservations: number;
-  /** Confidence threshold for learning (0-1) */
+  /** Порог уверенности для обучения (0-1) */
   confidenceThreshold: number;
-  /** Observation TTL (ms) */
+  /** TTL наблюдения (мс) */
   observationTTL: number;
-  /** Maximum observations to store (LRU eviction) */
+  /** Максимальное количество хранимых наблюдений (LRU вытеснение) */
   maxObservations?: number;
-  /** Periodic cleanup interval (ms, optional) */
+  /** Интервал периодической очистки (мс, опционально) */
   cleanupInterval?: number;
 }
 
 /**
- * ConstraintsObservationStore - LRU-based observation store
+ * ConstraintsObservationStore - Хранилище наблюдений на основе LRU
  *
  * @remarks
- * Stores observations with automatic LRU eviction when maxSize exceeded.
- * Prevents memory leak for long-running services.
+ * Хранит наблюдения с автоматическим LRU вытеснением при превышении maxSize.
+ * Предотвращает утечку памяти для долго работающих сервисов.
  *
- * Guarantees:
- * - Zero memory leak: Map size ≤ maxObservations
- * - LRU eviction: oldest observations deleted first
- * - TTL expiration: expired observations ignored
- * - Periodic cleanup: optional full cleanup timer
+ * Гарантии:
+ * - Нулевая утечка памяти: размер Map ≤ maxObservations
+ * - LRU вытеснение: старейшие наблюдения удаляются первыми
+ * - TTL истечение: истёкшие наблюдения игнорируются
+ * - Периодическая очистка: опциональный таймер полной очистки
  */
 export class ConstraintsObservationStore {
   private readonly observations = new Map<string, ObservationRecord>();
@@ -119,13 +119,13 @@ export class ConstraintsObservationStore {
   private cleanupTimer?: NodeJS.Timeout;
 
   /**
-   * Create observation store
+   * Создать хранилище наблюдений
    *
-   * @param config - Store configuration
-   * @param logger - Logger instance
+   * @param config - Конфигурация хранилища
+   * @param logger - Экземпляр логгера
    *
    * @remarks
-   * If cleanupInterval specified, starts periodic cleanup timer.
+   * Если указан cleanupInterval, запускает таймер периодической очистки.
    *
    * @example
    * ```typescript
@@ -150,29 +150,29 @@ export class ConstraintsObservationStore {
   }
 
   /**
-   * Record observation with automatic LRU eviction
+   * Записать наблюдение с автоматическим LRU вытеснением
    *
-   * @param tokenId - Token ID
-   * @param violation - Constraint violation
+   * @param tokenId - ID токена
+   * @param violation - Нарушение ограничения
    *
    * @remarks
-   * Algorithm:
-   * 1. If observation exists: update count + lastSeen, move to end (strict LRU)
-   * 2. If new observation:
-   *    a. Check size >= maxSize → delete oldest (GUARANTEED first in Map)
-   *    b. Add new observation to end
+   * Алгоритм:
+   * 1. Если наблюдение существует: обновить count + lastSeen, переместить в конец (строгий LRU)
+   * 2. Если новое наблюдение:
+   *    a. Проверить size >= maxSize → удалить старейшее (ГАРАНТИРОВАННО первое в Map)
+   *    b. Добавить новое наблюдение в конец
    *
-   * CRITICAL LRU guarantees:
-   * - Map iteration order = insertion order (ES2015+ spec)
-   * - Most recent observations at END of Map
-   * - Oldest observations at BEGINNING of Map
-   * - Size NEVER exceeds maxSize
-   * - Eviction is ALWAYS oldest entry (Map.keys().next().value)
+   * КРИТИЧЕСКИЕ гарантии LRU:
+   * - Порядок итерации Map = порядок вставки (спецификация ES2015+)
+   * - Самые свежие наблюдения в КОНЦЕ Map
+   * - Старейшие наблюдения в НАЧАЛЕ Map
+   * - Размер НИКОГДА не превышает maxSize
+   * - Вытеснение ВСЕГДА старейшей записи (Map.keys().next().value)
    *
-   * High-load safety:
-   * - Single-threaded JS: no race conditions
-   * - Atomic delete+set: move to end is safe
-   * - TTL checked in getConfidence() for lazy expiration
+   * Безопасность при высокой нагрузке:
+   * - Однопоточный JS: нет гонки данных
+   * - Атомарное delete+set: перемещение в конец безопасно
+   * - TTL проверяется в getConfidence() для ленивого истечения
    *
    * @example
    * ```typescript
@@ -183,21 +183,21 @@ export class ConstraintsObservationStore {
     const key = this.makeKey(tokenId, violation);
     const now = Date.now();
 
-    // Check if observation already exists
+    // Проверить существует ли наблюдение
     if (this.observations.has(key)) {
       const existing = this.observations.get(key)!;
 
-      // CRITICAL: Delete BEFORE re-adding to move to end (strict LRU)
+      // КРИТИЧНО: Удалить ПЕРЕД повторным добавлением, чтобы переместить в конец (строгий LRU)
       this.observations.delete(key);
 
-      // Update fields
+      // Обновить поля
       existing.count++;
       existing.lastSeen = now;
 
-      // Re-add to end
+      // Добавить снова в конец
       this.observations.set(key, existing);
 
-      this.logger.trace('[ObservationStore] Updated observation (moved to end)', {
+      this.logger.trace('[ObservationStore] Обновлено наблюдение (перемещено в конец)', {
         tokenId,
         violation,
         count: existing.count,
@@ -206,19 +206,19 @@ export class ConstraintsObservationStore {
       return;
     }
 
-    // New observation: check size BEFORE adding
+    // Новое наблюдение: проверить размер ПЕРЕД добавлением
     if (this.observations.size >= this.maxSize) {
-      // GUARANTEED: First entry is oldest (Map preserves insertion order)
+      // ГАРАНТИРОВАННО: Первая запись старейшая (Map сохраняет порядок вставки)
       const firstKey = this.observations.keys().next().value as string;
       this.observations.delete(firstKey);
 
-      this.logger.trace('[ObservationStore] LRU eviction (size limit)', {
+      this.logger.trace('[ObservationStore] LRU вытеснение (лимит размера)', {
         evictedKey: firstKey,
         size: this.observations.size,
       });
     }
 
-    // Add new observation to end
+    // Добавить новое наблюдение в конец
     this.observations.set(key, {
       tokenId,
       violation,
@@ -227,7 +227,7 @@ export class ConstraintsObservationStore {
       lastSeen: now,
     });
 
-    this.logger.trace('[ObservationStore] New observation', {
+    this.logger.trace('[ObservationStore] Новое наблюдение', {
       tokenId,
       violation,
       size: this.observations.size,
@@ -235,31 +235,31 @@ export class ConstraintsObservationStore {
   }
 
   /**
-   * Get confidence for observation
+   * Получить уверенность для наблюдения
    *
-   * @param tokenId - Token ID
-   * @param violation - Constraint violation
-   * @returns Confidence [0.0, 1.0] or 0.0 if expired
+   * @param tokenId - ID токена
+   * @param violation - Нарушение ограничения
+   * @returns Уверенность [0.0, 1.0] или 0.0 если истекло
    *
    * @remarks
-   * Confidence = min(1.0, count / minObservations)
+   * Уверенность = min(1.0, count / minObservations)
    *
-   * Returns 0.0 if:
-   * - Observation not found
-   * - Observation expired (TTL)
+   * Возвращает 0.0 если:
+   * - Наблюдение не найдено
+   * - Наблюдение истекло (TTL)
    *
-   * Side effect: Moves observation to end (LRU: most recently used)
+   * Побочный эффект: Перемещает наблюдение в конец (LRU: недавно использованное)
    *
-   * TTL handling:
-   * - Checks expiration using Date.now() for consistency
-   * - Expired observations deleted immediately (aggressive cleanup)
-   * - Prevents Map bloat with stale entries
+   * Обработка TTL:
+   * - Проверяет истечение используя Date.now() для консистентности
+   * - Истёкшие наблюдения удаляются немедленно (агрессивная очистка)
+   * - Предотвращает раздувание Map устаревшими записями
    *
    * @example
    * ```typescript
    * const confidence = store.getConfidence(tokenId, violation);
    * if (confidence >= 0.8) {
-   *   // High confidence - safe to learn
+   *   // Высокая уверенность - безопасно обучаться
    * }
    * ```
    */
@@ -269,13 +269,13 @@ export class ConstraintsObservationStore {
 
     if (!record) return 0.0;
 
-    // Check TTL with explicit timestamp
+    // Проверить TTL с явной временной меткой
     const now = Date.now();
     if (now - record.lastSeen > this.config.observationTTL) {
-      // AGGRESSIVE cleanup: delete expired entry immediately
+      // АГРЕССИВНАЯ очистка: удалить истёкшую запись немедленно
       this.observations.delete(key);
 
-      this.logger.trace('[ObservationStore] Deleted expired observation', {
+      this.logger.trace('[ObservationStore] Удалено истёкшее наблюдение', {
         tokenId,
         violation,
         age: now - record.lastSeen,
@@ -284,8 +284,8 @@ export class ConstraintsObservationStore {
       return 0.0;
     }
 
-    // Move to end (LRU: most recently used)
-    // CRITICAL: Delete BEFORE re-adding to move to end
+    // Переместить в конец (LRU: недавно использованное)
+    // КРИТИЧНО: Удалить ПЕРЕД повторным добавлением, чтобы переместить в конец
     this.observations.delete(key);
     this.observations.set(key, record);
 
@@ -293,14 +293,14 @@ export class ConstraintsObservationStore {
   }
 
   /**
-   * Check if should learn constraint
+   * Проверить стоит ли обучаться ограничению
    *
-   * @param tokenId - Token ID
-   * @param violation - Constraint violation
-   * @returns true if confidence >= threshold
+   * @param tokenId - ID токена
+   * @param violation - Нарушение ограничения
+   * @returns true если уверенность >= порога
    *
    * @remarks
-   * Convenience method: getConfidence() >= confidenceThreshold
+   * Вспомогательный метод: getConfidence() >= confidenceThreshold
    *
    * @example
    * ```typescript
@@ -314,63 +314,63 @@ export class ConstraintsObservationStore {
   }
 
   /**
-   * Make cache key from tokenId and violation
+   * Создать ключ кэша из tokenId и violation
    *
-   * @param tokenId - Token ID
-   * @param violation - Constraint violation
-   * @returns Cache key
+   * @param tokenId - ID токена
+   * @param violation - Нарушение ограничения
+   * @returns Ключ кэша
    *
    * @remarks
-   * Format: `${tokenId}:${violation.type}:${violation.value}`
+   * Формат: `${tokenId}:${violation.type}:${violation.value}`
    */
   private makeKey(tokenId: string, violation: ConstraintViolation): string {
     return `${tokenId}:${violation.type}:${violation.value}`;
   }
 
   /**
-   * Full cleanup: remove all expired observations
+   * Полная очистка: удалить все истёкшие наблюдения
    *
    * @remarks
-   * Called periodically if cleanupInterval is configured.
-   * Iterates through all observations and deletes expired.
+   * Вызывается периодически если настроен cleanupInterval.
+   * Проходит через все наблюдения и удаляет истёкшие.
    *
-   * CRITICAL: Prevents Map bloat with stale entries
-   * - Without aggressive cleanup, Map can grow to maxSize with expired entries
-   * - This causes subtle memory leak: Map is "full" but contains stale data
-   * - At high load, this wastes memory and prevents new observations
+   * КРИТИЧНО: Предотвращает раздувание Map устаревшими записями
+   * - Без агрессивной очистки Map может вырасти до maxSize с истёкшими записями
+   * - Это вызывает скрытую утечку памяти: Map "полная" но содержит устаревшие данные
+   * - При высокой нагрузке это тратит память и препятствует новым наблюдениям
    *
-   * Algorithm:
-   * 1. Get current timestamp (Date.now())
-   * 2. Iterate all entries in Map
-   * 3. Check TTL: now - lastSeen > observationTTL
-   * 4. Delete expired entries immediately
-   * 5. Log cleanup stats for monitoring
+   * Алгоритм:
+   * 1. Получить текущую временную метку (Date.now())
+   * 2. Пройти по всем записям в Map
+   * 3. Проверить TTL: now - lastSeen > observationTTL
+   * 4. Удалить истёкшие записи немедленно
+   * 5. Залогировать статистику очистки для мониторинга
    *
-   * Performance:
-   * - O(n) iteration over Map
-   * - Acceptable for periodic cleanup (not hot path)
-   * - Should run at ~10min intervals (configurable)
+   * Производительность:
+   * - O(n) итерация по Map
+   * - Приемлемо для периодической очистки (не горячий путь)
+   * - Должна запускаться с интервалом ~10 мин (настраиваемо)
    */
   private fullCleanup(): void {
     const before = this.observations.size;
-    const now = Date.now(); // Explicit timestamp for consistency
+    const now = Date.now(); // Явная временная метка для консистентности
     const keysToDelete: string[] = [];
 
-    // Use Array.from to avoid downlevelIteration requirement
+    // Использовать Array.from чтобы избежать требования downlevelIteration
     for (const [key, record] of Array.from(this.observations.entries())) {
-      // Check TTL: now - lastSeen > observationTTL
+      // Проверить TTL: now - lastSeen > observationTTL
       if (now - record.lastSeen > this.config.observationTTL) {
         keysToDelete.push(key);
       }
     }
 
-    // Delete all expired entries
+    // Удалить все истёкшие записи
     for (const key of keysToDelete) {
       this.observations.delete(key);
     }
 
     if (keysToDelete.length > 0) {
-      this.logger.debug('[ObservationStore] Periodic cleanup', {
+      this.logger.debug('[ObservationStore] Периодическая очистка', {
         deleted: keysToDelete.length,
         before,
         after: this.observations.size,
@@ -380,34 +380,34 @@ export class ConstraintsObservationStore {
   }
 
   /**
-   * Start periodic cleanup timer
+   * Запустить таймер периодической очистки
    *
    * @remarks
-   * Calls fullCleanup() every cleanupInterval ms.
-   * Timer does not keep process alive (unref()).
+   * Вызывает fullCleanup() каждые cleanupInterval мс.
+   * Таймер не удерживает процесс живым (unref()).
    */
   private startPeriodicCleanup(): void {
     this.cleanupTimer = setInterval(() => {
       this.fullCleanup();
     }, this.config.cleanupInterval!);
 
-    // Don't keep process alive
+    // Не удерживать процесс живым
     this.cleanupTimer.unref();
 
-    this.logger.info('[ObservationStore] Periodic cleanup started', {
+    this.logger.info('[ObservationStore] Периодическая очистка запущена', {
       interval: this.config.cleanupInterval,
     });
   }
 
   /**
-   * Stop periodic cleanup timer
+   * Остановить таймер периодической очистки
    *
    * @remarks
-   * Call on shutdown to prevent timer leak.
+   * Вызвать при завершении чтобы предотвратить утечку таймера.
    *
    * @example
    * ```typescript
-   * // On application shutdown
+   * // При завершении приложения
    * observationStore.stop();
    * ```
    */
@@ -416,30 +416,30 @@ export class ConstraintsObservationStore {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = undefined;
 
-      this.logger.info('[ObservationStore] Periodic cleanup stopped');
+      this.logger.info('[ObservationStore] Периодическая очистка остановлена');
     }
   }
 
   /**
-   * Get current store size
+   * Получить текущий размер хранилища
    *
-   * @returns Number of observations stored
+   * @returns Количество хранимых наблюдений
    *
    * @remarks
-   * For monitoring and debugging.
+   * Для мониторинга и отладки.
    */
   getSize(): number {
     return this.observations.size;
   }
 
   /**
-   * Clear all observations
+   * Очистить все наблюдения
    *
    * @remarks
-   * For testing only. Should not be used in production.
+   * Только для тестирования. Не должно использоваться в продакшене.
    */
   clear(): void {
     this.observations.clear();
-    this.logger.warn('[ObservationStore] Cleared all observations');
+    this.logger.warn('[ObservationStore] Очищены все наблюдения');
   }
 }
