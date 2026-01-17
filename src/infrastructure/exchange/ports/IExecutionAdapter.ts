@@ -1,144 +1,144 @@
 /**
- * Generic execution adapter interface
+ * Общий интерфейс адаптера исполнения
  *
  * @remarks
- * Execution adapter is responsible ONLY for API calls.
- * NO validation, NO balance checks, NO normalization.
+ * Адаптер исполнения отвечает ТОЛЬКО за вызовы API.
+ * БЕЗ валидации, БЕЗ проверки баланса, БЕЗ нормализации.
  *
- * This adapter assumes all parameters are already validated and normalized
- * by policies (BalancePolicy, MarketConstraintsPolicy).
+ * Этот адаптер предполагает, что все параметры уже валидированы и нормализованы
+ * политиками (BalancePolicy, MarketConstraintsPolicy).
  *
- * Key principle: **Separation of Concerns**
- * - Validation → BalancePolicy, MarketConstraintsPolicy
- * - API calls → ExecutionAdapter
- * - Orchestration → RestAdapter (Facade)
+ * Ключевой принцип: **Разделение ответственности**
+ * - Валидация → BalancePolicy, MarketConstraintsPolicy
+ * - Вызовы API → ExecutionAdapter
+ * - Оркестрация → RestAdapter (Фасад)
  *
  * @example
  * ```typescript
  * const adapter = new PolymarketExecutionAdapter(orderClient, mapper, logger);
  *
- * // Parameters are already normalized and validated!
+ * // Параметры уже нормализованы и валидированы!
  * const order = await adapter.postOrder({
  *   tokenId: '0x123',
  *   side: 'buy',
  *   price: 0.52,
- *   size: 100, // Already rounded to sizeTick
+ *   size: 100, // Уже округлено до sizeTick
  * });
  *
- * console.log(`Order placed: ${order.orderId}`);
+ * console.log(`Ордер размещён: ${order.orderId}`);
  * ```
  */
 
 /**
- * Parameters for placing an order (already normalized)
+ * Параметры для размещения ордера (уже нормализованные)
  *
  * @remarks
  * v4.2 (Фаза 4): strategyId для multi-strategy изоляции
- * strategyId propagated через: Intent → Context → Adapter → Event
+ * strategyId передаётся через: Intent → Context → Adapter → Event
  */
 export interface PlaceOrderParams {
-  /** Token ID */
+  /** ID токена */
   tokenId: string;
 
-  /** Order side */
+  /** Сторона ордера */
   side: 'buy' | 'sell';
 
-  /** Price (already validated and normalized) */
+  /** Цена (уже валидирована и нормализована) */
   price: number;
 
-  /** Size (already normalized to sizeTick) */
+  /** Размер (уже нормализован до sizeTick) */
   size: number;
 
-  /** Strategy ID (v4.2: для multi-strategy изоляции, optional для обратной совместимости) */
+  /** ID стратегии (v4.2: для multi-strategy изоляции, опционально для обратной совместимости) */
   strategyId?: string;
 
-  /** Price tick size from market constraints (for API order builder) */
+  /** Шаг цены из ограничений рынка (для построителя ордеров API) */
   priceTick?: number;
 
-  /** Fee rate in basis points (from market constraints or learned from errors) */
+  /** Ставка комиссии в базисных пунктах (из ограничений рынка или выученная из ошибок) */
   feeRateBps?: number;
 }
 
 /**
- * Order response (normalized)
+ * Ответ с ордером (нормализованный)
  */
 export interface OrderResponse {
-  /** Order ID */
+  /** ID ордера */
   orderId: string;
 
-  /** Token ID */
+  /** ID токена */
   tokenId: string;
 
-  /** Order side */
+  /** Сторона ордера */
   side: 'buy' | 'sell';
 
-  /** Order price */
+  /** Цена ордера */
   price: number;
 
-  /** Original size */
+  /** Исходный размер */
   size: number;
 
-  /** Remaining size */
+  /** Оставшийся размер */
   sizeRemaining: number;
 
-  /** Order status */
+  /** Статус ордера */
   status: 'open' | 'partially_filled' | 'filled' | 'cancelled';
 
-  /** Created timestamp (ms) */
+  /** Временная метка создания (мс) */
   createdAt: number;
 
-  /** Updated timestamp (ms) */
+  /** Временная метка обновления (мс) */
   updatedAt?: number;
 }
 
 /**
- * Fill/trade response (normalized)
+ * Ответ об исполнении/сделке (нормализованный)
  */
 export interface FillResponse {
-  /** Fill ID */
+  /** ID исполнения */
   fillId: string;
 
-  /** Order ID */
+  /** ID ордера */
   orderId: string;
 
-  /** Token ID */
+  /** ID токена */
   tokenId: string;
 
-  /** Trade side */
+  /** Сторона сделки */
   side: 'buy' | 'sell';
 
-  /** Executed price */
+  /** Цена исполнения */
   executedPrice: number;
 
-  /** Filled size */
+  /** Исполненный размер */
   filledSize: number;
 
-  /** Fee paid */
+  /** Уплаченная комиссия */
   fee: number;
 
-  /** Execution timestamp (ms) */
+  /** Временная метка исполнения (мс) */
   timestamp: number;
 }
 
 /**
- * Generic execution adapter interface
+ * Общий интерфейс адаптера исполнения
  *
  * @remarks
- * ONLY API calls - no business logic!
+ * ТОЛЬКО вызовы API - без бизнес-логики!
  */
 export interface IExecutionAdapter {
   /**
-   * Place order (ONLY API call, NO validation)
+   * Разместить ордер (ТОЛЬКО вызов API, БЕЗ валидации)
    *
-   * @param params - Normalized order parameters (already validated!)
-   * @returns Order response
-   * @throws {ApiError} If API call fails
+   * @param params - Нормализованные параметры ордера (уже валидированы!)
+   * @returns Ответ с ордером
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Assumes:
-   * - Size is already normalized (rounded to sizeTick)
-   * - Balance is already checked
-   * - Price is valid
+   * Предполагается:
+   * - Размер уже нормализован (округлён до sizeTick)
+   * - Баланс уже проверен
+   * - Цена валидна
    *
    * @example
    * ```typescript
@@ -153,32 +153,32 @@ export interface IExecutionAdapter {
   postOrder(params: PlaceOrderParams): Promise<OrderResponse>;
 
   /**
-   * Cancel order (direct API call)
+   * Отменить ордер (прямой вызов API)
    *
-   * @param orderId - Order ID to cancel
-   * @throws {ApiError} If API call fails
+   * @param orderId - ID ордера для отмены
+   * @throws {ApiError} Если вызов API завершился неудачей
    */
   cancelOrder(orderId: string): Promise<void>;
 
   /**
-   * Get open orders (direct API call)
+   * Получить открытые ордера (прямой вызов API)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of open orders (normalized)
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Опционально: фильтр по ID токена
+   * @returns Массив открытых ордеров (нормализованных)
+   * @throws {ApiError} Если вызов API завершился неудачей
    */
   getOpenOrders(tokenId?: string): Promise<OrderResponse[]>;
 
   /**
-   * Get fill history
+   * Получить историю исполнений
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of fills (normalized)
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Опционально: фильтр по ID токена
+   * @returns Массив исполнений (нормализованных)
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Returns executed trades for the user.
-   * This is NOT market trade history - use IMarketDataAdapter for that.
+   * Возвращает исполненные сделки пользователя.
+   * Это НЕ история рыночных сделок - для этого используйте IMarketDataAdapter.
    */
   getFillHistory(tokenId?: string): Promise<FillResponse[]>;
 }

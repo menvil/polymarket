@@ -1,18 +1,18 @@
 /**
- * Generic portfolio adapter interface
+ * Общий интерфейс адаптера портфеля
  *
  * @remarks
- * Portfolio adapter handles balance, positions, and allowance queries.
- * It can use policies internally (BalancePolicy, MarketConstraintsPolicy).
+ * Адаптер портфеля обрабатывает запросы балансов, позиций и разрешений.
+ * Может использовать политики внутренне (BalancePolicy, MarketConstraintsPolicy).
  *
- * **IMPORTANT**: This adapter does NOT handle orderbook or market data.
- * Use IMarketDataAdapter for that.
+ * **ВАЖНО**: Этот адаптер НЕ обрабатывает orderbook или рыночные данные.
+ * Для этого используйте IMarketDataAdapter.
  *
- * Key responsibilities:
- * - Get user balances (USDC, outcome tokens)
- * - Get user positions (filled trades)
- * - Check if order can be placed (uses policies)
- * - Approve USDC for trading (blockchain call)
+ * Ключевые обязанности:
+ * - Получение балансов пользователя (USDC, outcome токены)
+ * - Получение позиций пользователя (исполненные сделки)
+ * - Проверка возможности размещения ордера (использует политики)
+ * - Одобрение USDC для торговли (вызов блокчейна)
  *
  * @example
  * ```typescript
@@ -24,7 +24,7 @@
  *   logger
  * );
  *
- * // Check if order can be placed
+ * // Проверка возможности размещения ордера
  * const result = await adapter.canPlaceOrder({
  *   tokenId: '0x123',
  *   side: 'buy',
@@ -33,132 +33,132 @@
  * });
  *
  * if (result.ok) {
- *   console.log(`Can place order with size ${result.normalizedSize}`);
+ *   console.log(`Можно разместить ордер с размером ${result.normalizedSize}`);
  * } else {
- *   console.error(`Cannot place order: ${result.reason}`);
+ *   console.error(`Нельзя разместить ордер: ${result.reason}`);
  * }
  * ```
  */
 
 /**
- * Position response (normalized)
+ * Ответ с позицией (нормализованный)
  */
 export interface PositionResponse {
-  /** Token ID */
+  /** ID токена */
   tokenId: string;
 
-  /** Condition ID (market ID) - used to match with strategy */
+  /** Condition ID (market ID) - используется для сопоставления со стратегией */
   conditionId?: string;
 
-  /** Position size (positive = long, negative = short) */
+  /** Размер позиции (положительный = long, отрицательный = short) */
   size: number;
 
-  /** Average entry price */
+  /** Средняя цена входа */
   averagePrice: number;
 
-  /** Realized PnL */
+  /** Реализованный PnL */
   realizedPnl: number;
 
-  /** Unrealized PnL */
+  /** Нереализованный PnL */
   unrealizedPnl: number;
 
-  /** Last update timestamp (ms) */
+  /** Временная метка последнего обновления (мс) */
   updatedAt: number;
 }
 
 /**
- * Parameters for checking if order can be placed
+ * Параметры для проверки возможности размещения ордера
  */
 export interface CanPlaceOrderParams {
-  /** Token ID */
+  /** ID токена */
   tokenId: string;
 
-  /** Order side */
+  /** Сторона ордера */
   side: 'buy' | 'sell';
 
-  /** Order price */
+  /** Цена ордера */
   price: number;
 
-  /** Order size (will be normalized) */
+  /** Размер ордера (будет нормализован) */
   size: number;
 }
 
 /**
- * Result of canPlaceOrder check
+ * Результат проверки canPlaceOrder
  */
 export interface CanPlaceOrderResult {
-  /** Whether order can be placed */
+  /** Можно ли разместить ордер */
   ok: boolean;
 
-  /** Reason if order cannot be placed */
+  /** Причина если ордер нельзя разместить */
   reason?: string;
 
-  /** Normalized size if order can be placed */
+  /** Нормализованный размер если ордер можно разместить */
   normalizedSize?: number;
 
-  /** Normalized price if order can be placed (rounded to priceTick) */
+  /** Нормализованная цена если ордер можно разместить (округлена до priceTick) */
   normalizedPrice?: number;
 
-  /** Price tick size from market constraints */
+  /** Шаг цены из ограничений рынка */
   priceTick?: number;
 
-  /** Fee rate in basis points (learned from errors or default) */
+  /** Ставка комиссии в базисных пунктах (выученная из ошибок или по умолчанию) */
   feeRateBps?: number;
 }
 
 /**
- * Generic portfolio adapter interface
+ * Общий интерфейс адаптера портфеля
  */
 export interface IPortfolioAdapter {
   /**
-   * Get available USDC balance
+   * Получить доступный баланс USDC
    *
-   * @returns Available USDC balance
-   * @throws {ApiError} If API call fails
+   * @returns Доступный баланс USDC
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @example
    * ```typescript
    * const balance = await adapter.getBalance();
-   * console.log(`Available: ${balance} USDC`);
+   * console.log(`Доступно: ${balance} USDC`);
    * ```
    */
   getBalance(): Promise<number>;
 
   /**
-   * Get outcome token balance for specific token
+   * Получить баланс outcome токенов для конкретного токена
    *
-   * @param tokenId - Token ID
-   * @returns Outcome token balance
-   * @throws {ApiError} If API call fails
+   * @param tokenId - ID токена
+   * @returns Баланс outcome токенов
+   * @throws {ApiError} Если вызов API завершился неудачей
    */
   getOutcomeBalance(tokenId: string): Promise<number>;
 
   /**
-   * Get current positions (filled trades)
+   * Получить текущие позиции (исполненные сделки)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of positions
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Опционально: фильтр по ID токена
+   * @returns Массив позиций
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Positions are filled trades, NOT open orders.
-   * For open orders, use IExecutionAdapter.getOpenOrders().
+   * Позиции - это исполненные сделки, НЕ открытые ордера.
+   * Для открытых ордеров используйте IExecutionAdapter.getOpenOrders().
    */
   getPositions(tokenId?: string): Promise<PositionResponse[]>;
 
   /**
-   * Check if order can be placed (uses policies internally)
+   * Проверить возможность размещения ордера (использует политики внутренне)
    *
-   * @param params - Order parameters
-   * @returns Result with normalized size or reason for failure
+   * @param params - Параметры ордера
+   * @returns Результат с нормализованным размером или причиной отказа
    *
    * @remarks
-   * This method uses:
-   * - MarketConstraintsPolicy → normalize size, validate constraints
-   * - BalancePolicy → check if sufficient balance
+   * Этот метод использует:
+   * - MarketConstraintsPolicy → нормализация размера, валидация ограничений
+   * - BalancePolicy → проверка достаточности баланса
    *
-   * Returns {ok: true, normalizedSize: ...} if order can be placed.
-   * Returns {ok: false, reason: '...'} otherwise.
+   * Возвращает {ok: true, normalizedSize: ...} если ордер можно разместить.
+   * Возвращает {ok: false, reason: '...'} в противном случае.
    *
    * @example
    * ```typescript
@@ -170,31 +170,31 @@ export interface IPortfolioAdapter {
    * });
    *
    * if (result.ok) {
-   *   console.log(`Can place order with size ${result.normalizedSize}`);
+   *   console.log(`Можно разместить ордер с размером ${result.normalizedSize}`);
    * } else {
-   *   console.error(`Cannot place order: ${result.reason}`);
+   *   console.error(`Нельзя разместить ордер: ${result.reason}`);
    * }
    * ```
    */
   canPlaceOrder(params: CanPlaceOrderParams): Promise<CanPlaceOrderResult>;
 
   /**
-   * Approve USDC for trading (blockchain call)
+   * Одобрить USDC для торговли (вызов блокчейна)
    *
-   * @param amount - Amount to approve
-   * @throws {BlockchainError} If blockchain call fails
+   * @param amount - Сумма для одобрения
+   * @throws {BlockchainError} Если вызов блокчейна завершился неудачей
    *
    * @remarks
-   * This is a blockchain transaction, not an API call.
-   * May require gas fees.
+   * Это транзакция блокчейна, не вызов API.
+   * Может потребовать оплату газа.
    */
   approveUSDC(amount: number): Promise<void>;
 
   /**
-   * Get current USDC allowance
+   * Получить текущее разрешение USDC
    *
-   * @returns Current allowance amount
-   * @throws {BlockchainError} If blockchain call fails
+   * @returns Текущая сумма разрешения
+   * @throws {BlockchainError} Если вызов блокчейна завершился неудачей
    */
   getAllowance(): Promise<number>;
 }

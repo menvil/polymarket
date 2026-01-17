@@ -1,12 +1,12 @@
 /**
- * Generic trading gateway interface for any exchange
+ * Общий интерфейс торгового шлюза для любой биржи
  *
  * @remarks
- * Implementations should be exchange-specific (e.g., PolymarketTradingGateway).
- * Gateway is a thin layer translating domain → exchange API.
+ * Реализации должны быть специфичными для биржи (например, PolymarketTradingGateway).
+ * Шлюз - это тонкий слой, транслирующий домен → API биржи.
  *
- * The gateway pattern provides a simple abstraction over exchange-specific APIs,
- * allowing the domain layer to remain independent of any particular exchange.
+ * Паттерн шлюза предоставляет простую абстракцию над специфичными для биржи API,
+ * позволяя доменному слою оставаться независимым от конкретной биржи.
  *
  * @example
  * ```typescript
@@ -20,9 +20,9 @@
  * });
  *
  * if (result.isOk()) {
- *   console.log(`Order placed: ${result.value.orderId}`);
+ *   console.log(`Ордер размещён: ${result.value.orderId}`);
  * } else {
- *   console.error(`Failed: ${result.error.message}`);
+ *   console.error(`Ошибка: ${result.error.message}`);
  * }
  * ```
  */
@@ -30,65 +30,65 @@
 import type { Result } from '../../../shared/types/Result.js';
 
 /**
- * Parameters for placing an order
+ * Параметры для размещения ордера
  */
 export interface PlaceOrderParams {
-  /** Token ID (asset ID, market ID, or symbol depending on exchange) */
+  /** ID токена (asset ID, market ID или символ в зависимости от биржи) */
   tokenId: string;
 
-  /** Order side */
+  /** Сторона ордера */
   side: 'buy' | 'sell';
 
-  /** Price per unit */
+  /** Цена за единицу */
   price: number;
 
-  /** Order size/quantity */
+  /** Размер/количество ордера */
   size: number;
 }
 
 /**
- * Order response (normalized across exchanges)
+ * Ответ с ордером (нормализованный для всех бирж)
  */
 export interface OrderResponse {
-  /** Exchange-specific order ID */
+  /** Специфичный для биржи ID ордера */
   orderId: string;
 
-  /** Token/asset ID */
+  /** ID токена/актива */
   tokenId: string;
 
-  /** Order side */
+  /** Сторона ордера */
   side: 'buy' | 'sell';
 
-  /** Order price */
+  /** Цена ордера */
   price: number;
 
-  /** Original order size */
+  /** Исходный размер ордера */
   size: number;
 
-  /** Remaining (unfilled) size */
+  /** Оставшийся (неисполненный) размер */
   sizeRemaining: number;
 
-  /** Order status */
+  /** Статус ордера */
   status: 'open' | 'partially_filled' | 'filled' | 'cancelled';
 
-  /** Order creation timestamp (milliseconds) */
+  /** Временная метка создания ордера (миллисекунды) */
   createdAt: number;
 
-  /** Optional: Last update timestamp */
+  /** Опционально: временная метка последнего обновления */
   updatedAt?: number;
 }
 
 /**
- * Generic trading gateway interface
+ * Общий интерфейс торгового шлюза
  */
 export interface ITradingGateway {
   /**
-   * Place a new order
+   * Разместить новый ордер
    *
-   * @param params - Order parameters
-   * @returns Result with order response or error
+   * @param params - Параметры ордера
+   * @returns Result с ответом ордера или ошибкой
    *
-   * @throws Should NOT throw - returns Result type instead
+   * @throws НЕ должен выбрасывать - возвращает тип Result вместо этого
    *
    * @example
    * ```typescript
@@ -103,32 +103,32 @@ export interface ITradingGateway {
   placeOrder(params: PlaceOrderParams): Promise<Result<OrderResponse, Error>>;
 
   /**
-   * Cancel an existing order
+   * Отменить существующий ордер
    *
-   * @param orderId - Exchange-specific order ID
-   * @returns Result with void or error
+   * @param orderId - Специфичный для биржи ID ордера
+   * @returns Result с void или ошибкой
    *
-   * @throws Should NOT throw - returns Result type instead
+   * @throws НЕ должен выбрасывать - возвращает тип Result вместо этого
    */
   cancelOrder(orderId: string): Promise<Result<void, Error>>;
 
   /**
-   * Get all open orders
+   * Получить все открытые ордера
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Result with array of orders or error
+   * @param tokenId - Опционально: фильтр по ID токена
+   * @returns Result с массивом ордеров или ошибкой
    *
-   * @throws Should NOT throw - returns Result type instead
+   * @throws НЕ должен выбрасывать - возвращает тип Result вместо этого
    */
   getOpenOrders(tokenId?: string): Promise<Result<OrderResponse[], Error>>;
 
   /**
-   * Get specific order by ID
+   * Получить конкретный ордер по ID
    *
-   * @param orderId - Exchange-specific order ID
-   * @returns Result with order response or error
+   * @param orderId - Специфичный для биржи ID ордера
+   * @returns Result с ответом ордера или ошибкой
    *
-   * @throws Should NOT throw - returns Result type instead
+   * @throws НЕ должен выбрасывать - возвращает тип Result вместо этого
    */
   getOrderById(orderId: string): Promise<Result<OrderResponse, Error>>;
 }

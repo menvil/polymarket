@@ -1,142 +1,142 @@
 /**
- * Generic orders provider interface (PLURAL!)
+ * Общий интерфейс провайдера ордеров (МНОЖЕСТВЕННОЕ ЧИСЛО!)
  *
  * @remarks
- * Orders provider abstracts orders data access.
- * Provides read-only access to open orders and order history.
+ * Провайдер ордеров абстрагирует доступ к данным об ордерах.
+ * Предоставляет доступ только для чтения к открытым ордерам и истории ордеров.
  *
- * **IMPORTANT**: This is plural "Orders" (not singular "Order")
- * because it manages multiple orders.
+ * **ВАЖНО**: Это множественное число "Orders" (не единственное "Order"),
+ * потому что он управляет несколькими ордерами.
  *
- * **NOTE**: This provider is read-only. For placing/canceling orders,
- * use IExecutionAdapter.
+ * **ПРИМЕЧАНИЕ**: Этот провайдер предназначен только для чтения. Для размещения/отмены ордеров
+ * используйте IExecutionAdapter.
  *
- * **Use cases**:
- * - Get open orders
- * - Get order by ID
- * - Get order history
- * - Monitor order status
+ * **Варианты использования**:
+ * - Получение открытых ордеров
+ * - Получение ордера по ID
+ * - Получение истории ордеров
+ * - Мониторинг статуса ордеров
  *
  * @example
  * ```typescript
  * const provider = new PolymarketOrdersProvider(orderClient, mapper, logger);
  *
  * const openOrders = await provider.getOpenOrders();
- * console.log(`Open orders: ${openOrders.length}`);
+ * console.log(`Открытые ордера: ${openOrders.length}`);
  *
  * const order = await provider.getOrderById('order-123');
- * console.log(`Order status: ${order.status}`);
+ * console.log(`Статус ордера: ${order.status}`);
  * ```
  */
 
 /**
- * Order response (normalized)
+ * Ответ с ордером (нормализованный)
  */
 export interface OrderResponse {
-  /** Order ID */
+  /** ID ордера */
   orderId: string;
 
-  /** Token ID */
+  /** ID токена */
   tokenId: string;
 
-  /** Order side */
+  /** Сторона ордера */
   side: 'buy' | 'sell';
 
-  /** Order price */
+  /** Цена ордера */
   price: number;
 
-  /** Original size */
+  /** Исходный размер */
   size: number;
 
-  /** Remaining (unfilled) size */
+  /** Оставшийся (неисполненный) размер */
   sizeRemaining: number;
 
-  /** Order status */
+  /** Статус ордера */
   status: 'open' | 'partially_filled' | 'filled' | 'cancelled';
 
-  /** Created timestamp (ms) */
+  /** Временная метка создания (мс) */
   createdAt: number;
 
-  /** Updated timestamp (ms) */
+  /** Временная метка обновления (мс) */
   updatedAt?: number;
 }
 
 /**
- * Generic orders provider interface (PLURAL!)
+ * Общий интерфейс провайдера ордеров (МНОЖЕСТВЕННОЕ ЧИСЛО!)
  */
 export interface IOrdersProvider {
   /**
-   * Get all open orders
+   * Получить все открытые ордера
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of open orders
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Опционально: фильтр по ID токена
+   * @returns Массив открытых ордеров
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Returns only orders with status 'open' or 'partially_filled'.
-   * Filled and cancelled orders are excluded.
+   * Возвращает только ордера со статусом 'open' или 'partially_filled'.
+   * Исполненные и отменённые ордера исключены.
    *
    * @example
    * ```typescript
    * const openOrders = await provider.getOpenOrders();
-   * console.log(`Open orders: ${openOrders.length}`);
+   * console.log(`Открытые ордера: ${openOrders.length}`);
    *
    * const btcOrders = await provider.getOpenOrders('BTC-USD');
-   * console.log(`BTC open orders: ${btcOrders.length}`);
+   * console.log(`Открытые ордера BTC: ${btcOrders.length}`);
    * ```
    */
   getOpenOrders(tokenId?: string): Promise<OrderResponse[]>;
 
   /**
-   * Get specific order by ID
+   * Получить конкретный ордер по ID
    *
-   * @param orderId - Order ID
-   * @returns Order response
-   * @throws {ApiError} If API call fails or order not found
+   * @param orderId - ID ордера
+   * @returns Ответ с ордером
+   * @throws {ApiError} Если вызов API завершился неудачей или ордер не найден
    *
    * @example
    * ```typescript
    * const order = await provider.getOrderById('order-123');
-   * console.log(`Order status: ${order.status}`);
-   * console.log(`Remaining: ${order.sizeRemaining}`);
+   * console.log(`Статус ордера: ${order.status}`);
+   * console.log(`Осталось: ${order.sizeRemaining}`);
    * ```
    */
   getOrderById(orderId: string): Promise<OrderResponse>;
 
   /**
-   * Get order history (filled and cancelled orders)
+   * Получить историю ордеров (исполненные и отменённые)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @param limit - Optional: max number of orders to return
-   * @returns Array of historical orders
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Опционально: фильтр по ID токена
+   * @param limit - Опционально: максимальное количество ордеров для возврата
+   * @returns Массив исторических ордеров
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Optional method. Returns filled and cancelled orders.
+   * Опциональный метод. Возвращает исполненные и отменённые ордера.
    *
    * @example
    * ```typescript
    * const history = await provider.getOrderHistory('0x123', 100);
-   * console.log(`Last 100 orders for token 0x123: ${history.length}`);
+   * console.log(`Последние 100 ордеров для токена 0x123: ${history.length}`);
    * ```
    */
   getOrderHistory?(tokenId?: string, limit?: number): Promise<OrderResponse[]>;
 
   /**
-   * Get orders by status
+   * Получить ордера по статусу
    *
-   * @param status - Order status to filter
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of orders with specified status
-   * @throws {ApiError} If API call fails
+   * @param status - Статус ордера для фильтрации
+   * @param tokenId - Опционально: фильтр по ID токена
+   * @returns Массив ордеров с указанным статусом
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Optional method. Returns orders filtered by status.
+   * Опциональный метод. Возвращает ордера отфильтрованные по статусу.
    *
    * @example
    * ```typescript
    * const filledOrders = await provider.getOrdersByStatus('filled');
-   * console.log(`Filled orders: ${filledOrders.length}`);
+   * console.log(`Исполненные ордера: ${filledOrders.length}`);
    * ```
    */
   getOrdersByStatus?(

@@ -1,92 +1,92 @@
 /**
- * Generic balance provider interface
+ * Общий интерфейс провайдера балансов
  *
  * @remarks
- * Balance provider abstracts balance data access.
- * This is a lightweight interface for querying user balances.
+ * Провайдер балансов абстрагирует доступ к данным о балансах.
+ * Это легковесный интерфейс для запроса балансов пользователя.
  *
- * Implementations should use REST clients or other data sources
- * to fetch balance information.
+ * Реализации должны использовать REST клиенты или другие источники данных
+ * для получения информации о балансах.
  *
- * **Use cases**:
- * - Check available USDC before placing order
- * - Check outcome token balance before selling
- * - Display portfolio summary
- * - Validate trading operations
+ * **Варианты использования**:
+ * - Проверка доступных USDC перед размещением ордера
+ * - Проверка баланса outcome токенов перед продажей
+ * - Отображение сводки портфеля
+ * - Валидация торговых операций
  *
  * @example
  * ```typescript
  * const provider = new PolymarketBalanceProvider(balanceClient, mapper, logger);
  *
  * const usdcBalance = await provider.getAvailableBalance();
- * console.log(`Available: ${usdcBalance} USDC`);
+ * console.log(`Доступно: ${usdcBalance} USDC`);
  *
  * const outcomeBalance = await provider.getOutcomeBalance('0x123');
- * console.log(`Outcome tokens: ${outcomeBalance}`);
+ * console.log(`Outcome токены: ${outcomeBalance}`);
  * ```
  */
 
 /**
- * Generic balance provider interface
+ * Общий интерфейс провайдера балансов
  */
 export interface IBalanceProvider {
   /**
-   * Get available USDC balance
+   * Получить доступный баланс USDC
    *
-   * @returns Available USDC balance (NOT locked in open orders)
-   * @throws {ApiError} If API call fails
+   * @returns Доступный баланс USDC (НЕ заблокированный в открытых ордерах)
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * This should return the balance available for trading.
-   * Locked balance in open orders should be excluded.
+   * Должен возвращать баланс, доступный для торговли.
+   * Заблокированный баланс в открытых ордерах должен быть исключён.
    *
    * @example
    * ```typescript
    * const balance = await provider.getAvailableBalance();
-   * console.log(`Available: ${balance} USDC`);
+   * console.log(`Доступно: ${balance} USDC`);
    * ```
    */
   getAvailableBalance(): Promise<number>;
 
   /**
-   * Get outcome token balance for specific token
+   * Получить баланс outcome токенов для конкретного токена
    *
-   * @param tokenId - Token ID (asset ID, market ID, or symbol)
-   * @returns Outcome token balance
-   * @throws {ApiError} If API call fails
+   * @param tokenId - ID токена (asset ID, market ID или символ)
+   * @returns Баланс outcome токенов
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Returns the balance of outcome tokens for a specific market.
-   * This is used when selling outcome tokens.
+   * Возвращает баланс outcome токенов для конкретного рынка.
+   * Используется при продаже outcome токенов.
    *
    * @example
    * ```typescript
    * const balance = await provider.getOutcomeBalance('0x123');
-   * console.log(`Outcome tokens: ${balance}`);
+   * console.log(`Outcome токены: ${balance}`);
    * ```
    */
   getOutcomeBalance(tokenId: string): Promise<number>;
 
   /**
-   * Get locked balance (in open orders)
+   * Получить заблокированный баланс (в открытых ордерах)
    *
-   * @returns Locked USDC balance
-   * @throws {ApiError} If API call fails
+   * @returns Заблокированный баланс USDC
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Optional method. Returns balance locked in open orders.
-   * Total balance = available + locked.
+   * Опциональный метод. Возвращает баланс, заблокированный в открытых ордерах.
+   * Общий баланс = доступный + заблокированный.
    */
   getLockedBalance?(): Promise<number>;
 
   /**
-   * Get total balance (available + locked)
+   * Получить общий баланс (доступный + заблокированный)
    *
-   * @returns Total USDC balance
-   * @throws {ApiError} If API call fails
+   * @returns Общий баланс USDC
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Optional method. Returns total balance including locked funds.
+   * Опциональный метод. Возвращает общий баланс включая заблокированные средства.
    */
   getTotalBalance?(): Promise<number>;
 }

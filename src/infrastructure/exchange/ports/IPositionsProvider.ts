@@ -1,138 +1,138 @@
 /**
- * Generic positions provider interface (PLURAL!)
+ * Общий интерфейс провайдера позиций (МНОЖЕСТВЕННОЕ ЧИСЛО!)
  *
  * @remarks
- * Positions provider abstracts positions data access.
- * Positions are filled trades, NOT open orders.
+ * Провайдер позиций абстрагирует доступ к данным о позициях.
+ * Позиции - это исполненные сделки, НЕ открытые ордера.
  *
- * **IMPORTANT**: This is plural "Positions" (not singular "Position")
- * because it manages multiple positions.
+ * **ВАЖНО**: Это множественное число "Positions" (не единственное "Position"),
+ * потому что он управляет несколькими позициями.
  *
- * **Use cases**:
- * - Get current positions (filled trades)
- * - Calculate unrealized PnL
- * - Check position limits
- * - Display portfolio summary
+ * **Варианты использования**:
+ * - Получение текущих позиций (исполненные сделки)
+ * - Расчёт нереализованного PnL
+ * - Проверка лимитов позиций
+ * - Отображение сводки портфеля
  *
  * @example
  * ```typescript
  * const provider = new PolymarketPositionsProvider(positionsClient, mapper, logger);
  *
  * const positions = await provider.getPositions();
- * console.log(`Total positions: ${positions.length}`);
+ * console.log(`Всего позиций: ${positions.length}`);
  *
  * const state = await provider.getPositionState('0x123');
- * console.log(`Current: ${state.currentPosition}, Limit: ${state.positionLimit}`);
+ * console.log(`Текущая: ${state.currentPosition}, Лимит: ${state.positionLimit}`);
  * ```
  */
 
 /**
- * Position response (normalized)
+ * Ответ с позицией (нормализованный)
  */
 export interface PositionResponse {
-  /** Token ID */
+  /** ID токена */
   tokenId: string;
 
-  /** Position size (positive = long, negative = short) */
+  /** Размер позиции (положительный = long, отрицательный = short) */
   size: number;
 
-  /** Average entry price */
+  /** Средняя цена входа */
   averagePrice: number;
 
-  /** Realized PnL */
+  /** Реализованный PnL */
   realizedPnl: number;
 
-  /** Unrealized PnL */
+  /** Нереализованный PnL */
   unrealizedPnl: number;
 
-  /** Last update timestamp (ms) */
+  /** Временная метка последнего обновления (мс) */
   updatedAt: number;
 }
 
 /**
- * Position state (for validation)
+ * Состояние позиции (для валидации)
  */
 export interface PositionState {
-  /** Current position size */
+  /** Текущий размер позиции */
   currentPosition: number;
 
-  /** Position limit (max size) */
+  /** Лимит позиции (макс размер) */
   positionLimit: number;
 
-  /** Whether position can be increased */
+  /** Можно ли увеличить позицию */
   canIncrease: boolean;
 
-  /** Whether position can be decreased */
+  /** Можно ли уменьшить позицию */
   canDecrease: boolean;
 }
 
 /**
- * Generic positions provider interface (PLURAL!)
+ * Общий интерфейс провайдера позиций (МНОЖЕСТВЕННОЕ ЧИСЛО!)
  */
 export interface IPositionsProvider {
   /**
-   * Get current positions (filled trades)
+   * Получить текущие позиции (исполненные сделки)
    *
-   * @param tokenId - Optional: filter by token ID
-   * @returns Array of positions
-   * @throws {ApiError} If API call fails
+   * @param tokenId - Опционально: фильтр по ID токена
+   * @returns Массив позиций
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Returns filled trades, NOT open orders.
-   * For open orders, use IOrdersProvider.
+   * Возвращает исполненные сделки, НЕ открытые ордера.
+   * Для открытых ордеров используйте IOrdersProvider.
    *
    * @example
    * ```typescript
    * const positions = await provider.getPositions();
-   * console.log(`Total positions: ${positions.length}`);
+   * console.log(`Всего позиций: ${positions.length}`);
    *
    * const btcPositions = await provider.getPositions('BTC-USD');
-   * console.log(`BTC position: ${btcPositions[0].size}`);
+   * console.log(`Позиция BTC: ${btcPositions[0].size}`);
    * ```
    */
   getPositions(tokenId?: string): Promise<PositionResponse[]>;
 
   /**
-   * Get position state for specific token
+   * Получить состояние позиции для конкретного токена
    *
-   * @param tokenId - Token ID
-   * @returns Position state with limits
-   * @throws {ApiError} If API call fails
+   * @param tokenId - ID токена
+   * @returns Состояние позиции с лимитами
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Used for validation before placing orders.
-   * Checks current position size and limits.
+   * Используется для валидации перед размещением ордеров.
+   * Проверяет текущий размер позиции и лимиты.
    *
    * @example
    * ```typescript
    * const state = await provider.getPositionState('0x123');
    *
    * if (state.canIncrease) {
-   *   console.log(`Can increase position up to ${state.positionLimit}`);
+   *   console.log(`Можно увеличить позицию до ${state.positionLimit}`);
    * }
    * ```
    */
   getPositionState(tokenId: string): Promise<PositionState>;
 
   /**
-   * Get total unrealized PnL across all positions
+   * Получить общий нереализованный PnL по всем позициям
    *
-   * @returns Total unrealized PnL
-   * @throws {ApiError} If API call fails
+   * @returns Общий нереализованный PnL
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Optional method. Calculates sum of unrealized PnL for all positions.
+   * Опциональный метод. Вычисляет сумму нереализованного PnL для всех позиций.
    */
   getTotalUnrealizedPnl?(): Promise<number>;
 
   /**
-   * Get total realized PnL across all positions
+   * Получить общий реализованный PnL по всем позициям
    *
-   * @returns Total realized PnL
-   * @throws {ApiError} If API call fails
+   * @returns Общий реализованный PnL
+   * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Optional method. Calculates sum of realized PnL for all closed positions.
+   * Опциональный метод. Вычисляет сумму реализованного PnL для всех закрытых позиций.
    */
   getTotalRealizedPnl?(): Promise<number>;
 }
