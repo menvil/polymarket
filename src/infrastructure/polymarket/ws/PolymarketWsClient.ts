@@ -219,17 +219,23 @@ export class PolymarketWsClient extends EventEmitter {
 
     this.logger.debug('Reconnecting with timeout', { timeoutMs });
 
+    let timeoutHandle: ReturnType<typeof setTimeout>;
+
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(
+      timeoutHandle = setTimeout(
         () => reject(new Error(`Reconnect timeout after ${timeoutMs}ms`)),
         timeoutMs
       );
     });
 
-    await Promise.race([
-      this.wsManager.reconnectForNewSubscription(),
-      timeoutPromise,
-    ]);
+    try {
+      await Promise.race([
+        this.wsManager.reconnectForNewSubscription(),
+        timeoutPromise,
+      ]);
+    } finally {
+      clearTimeout(timeoutHandle!);
+    }
 
     this.logger.debug('Reconnect successful');
   }
