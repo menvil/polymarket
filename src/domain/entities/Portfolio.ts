@@ -322,16 +322,16 @@ export class Portfolio {
    *
    * @remarks
    * Добавляет позицию в портфель.
-   * Каждый рынок может иметь только одну позицию.
+   * Каждый tokenId может иметь только одну позицию.
    *
    * @example
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000));
-   * const position = Position.empty('market-123', 'YES');
-   * 
+   * const position = Position.empty('token-123', 'YES');
+   *
    * const updated = portfolio.addPosition(position);
    * console.log(updated.positions.size); // 1
-   * console.log(updated.getPosition('market-123')); // position
+   * console.log(updated.getPosition('token-123')); // position
    * ```
    */
   public addPosition(position: Position): Portfolio {
@@ -353,7 +353,7 @@ export class Portfolio {
   /**
    * Обновляет существующую позицию
    *
-   * @param tokenId - Идентификатор токена/рынка
+   * @param tokenId - Идентификатор токена
    * @param updatedPosition - Обновлённая позиция
    * @returns Новый Portfolio с обновлённой позицией
    *
@@ -367,10 +367,10 @@ export class Portfolio {
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
    *   .addPosition(position);
-   * 
+   *
    * // Обновляем позицию (добавляем лот)
    * const newPosition = position.addLot(lot);
-   * const updated = portfolio.updatePosition('market-123', newPosition);
+   * const updated = portfolio.updatePosition('token-123', newPosition);
    * ```
    */
   public updatePosition(tokenId: string, updatedPosition: Position): Portfolio {
@@ -405,7 +405,7 @@ export class Portfolio {
   /**
    * Удаляет позицию из портфеля
    *
-   * @param tokenId - Идентификатор токена/рынка
+   * @param tokenId - Идентификатор токена
    * @returns Новый Portfolio без указанной позиции
    *
    * @remarks
@@ -416,8 +416,8 @@ export class Portfolio {
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
    *   .addPosition(position);
-   * 
-   * const updated = portfolio.removePosition('market-123');
+   *
+   * const updated = portfolio.removePosition('token-123');
    * console.log(updated.positions.size); // 0
    * ```
    */
@@ -436,12 +436,12 @@ export class Portfolio {
   /**
    * Получает позицию по идентификатору
    *
-   * @param tokenId - Идентификатор токена/рынка
+   * @param tokenId - Идентификатор токена
    * @returns Position или undefined
    *
    * @example
    * ```typescript
-   * const position = portfolio.getPosition('market-123');
+   * const position = portfolio.getPosition('token-123');
    * if (position) {
    *   console.log(position.totalQuantity.value);
    * }
@@ -454,12 +454,12 @@ export class Portfolio {
   /**
    * Проверяет наличие позиции
    *
-   * @param tokenId - Идентификатор токена/рынка
+   * @param tokenId - Идентификатор токена
    * @returns True если позиция существует
    *
    * @example
    * ```typescript
-   * if (portfolio.hasPosition('market-123')) {
+   * if (portfolio.hasPosition('token-123')) {
    *   console.log('Position exists');
    * }
    * ```
@@ -494,7 +494,7 @@ export class Portfolio {
    *   .addPosition(position); // 10 shares @ entry 0.60
    *
    * const marketPrices = new Map([
-   *   ['market-123', Price.fromNumber(0.70)]
+   *   ['token-123', Price.fromNumber(0.70)]
    * ]);
    *
    * const totalValue = portfolio.getTotalValue(marketPrices);
@@ -532,7 +532,7 @@ export class Portfolio {
    * @example
    * ```typescript
    * const marketPrices = new Map([
-   *   ['market-123', Price.fromNumber(0.70)]
+   *   ['token-123', Price.fromNumber(0.70)]
    * ]);
    *
    * const totalPnL = portfolio.getTotalUnrealizedPnL(marketPrices);
