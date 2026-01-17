@@ -176,7 +176,9 @@ export class OrderBookSnapshotReceivedEvent extends DomainEvent {
    * ```
    */
   public toString(): string {
-    const assetShort = this.assetId.substring(0, 10) + '...';
+    const assetShort = this.assetId.length > 10
+      ? this.assetId.substring(0, 10) + '...'
+      : this.assetId;
     const spread = this.getSpread();
     const spreadStr = spread !== null ? spread.toFixed(4) : 'N/A';
     return `OrderBookSnapshotReceived[${assetShort}]: ${this.bids.length} bids, ${this.asks.length} asks, spread: ${spreadStr}`;
