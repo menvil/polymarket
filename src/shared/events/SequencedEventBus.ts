@@ -1,14 +1,18 @@
 /**
- * SequencedEventBus - Replay EventBus (sync, sequenceNumber sorted, deterministic)
+ * SequencedEventBus - Replay EventBus (sync, sequenceNumber validated, deterministic)
  *
  * @remarks
  * Для REPLAY ONLY (НЕ для production)
  *
  * Guarantees:
- * - sequenceNumber SORTED (строгий порядок по sequenceNumber)
+ * - sequenceNumber VALIDATED (события ДОЛЖНЫ публиковаться в порядке возрастания)
  * - Synchronous (NO setImmediate, handlers вызываются синхронно)
  * - Deterministic (replay всегда воспроизводится одинаково)
  * - sequenceNumber REQUIRED (если envelope без sequenceNumber → error)
+ * - Out-of-order REJECTED (если sequenceNumber <= last → error)
+ *
+ * КОНТРАКТ: Caller MUST publish events in strictly increasing sequenceNumber order.
+ * Если событие приходит с sequenceNumber <= последнего доставленного, выбрасывается ошибка.
  *
  * Отличия от ProductionEventBus (InMemoryEventBus):
  * - ProductionEventBus: async, FIFO, sequenceNumber ignored
@@ -43,37 +47,39 @@ import type { EventEnvelope } from './EventEnvelope.js';
  * SequencedEventBus implementation
  *
  * @remarks
- * Для replay с deterministic ordering
+ * Для replay с deterministic ordering.
+ *
+ * ВАЖНО: Caller ДОЛЖЕН публиковать события в порядке возрастания sequenceNumber.
+ * Если событие публикуется с sequenceNumber <= lastDeliveredSequence, выбрасывается ошибка.
  */
 export class SequencedEventBus implements IEventBus {
   private readonly handlers: Map<string, EventHandler[]> = new Map();
   private readonly allHandlers: EventHandler[] = [];
 
+  /** Последний доставленный sequenceNumber (для валидации порядка) */
+  private lastDeliveredSequence: number = -1;
+
   /**
-   * Публикует событие в envelope (synchronous, sequenceNumber required)
+   * Публикует событие в envelope (synchronous, sequenceNumber required, order validated)
    *
-   * @param envelope - EventEnvelope (ДОЛЖЕН содержать sequenceNumber)
+   * @param envelope - EventEnvelope (ДОЛЖЕН содержать sequenceNumber > lastDelivered)
    *
    * @remarks
-   * sequenceNumber REQUIRED
-   * - Если envelope.sequenceNumber === undefined → throw error
+   * Валидация:
+   * - sequenceNumber REQUIRED (undefined → error)
+   * - sequenceNumber > lastDeliveredSequence (out-of-order → error)
    * - Delivery SYNCHRONOUS (NO setImmediate)
    * - Deterministic replay
    *
    * @throws {Error} Если sequenceNumber отсутствует
+   * @throws {Error} Если sequenceNumber <= lastDeliveredSequence (out-of-order)
    *
    * @example
    * ```typescript
-   * const envelope: ReplayEnvelope<OrderAccepted> = {
-   *   id: '1',
-   *   type: 'OrderAccepted',
-   *   payload: orderAcceptedEvent,
-   *   timestamp: new Date(),
-   *   executionContext: { environment: 'REPLAY', accountId: 'backtest' },
-   *   sequenceNumber: 1, // REQUIRED
-   * };
-   *
-   * replayBus.publish(envelope);
+   * // События ДОЛЖНЫ публиковаться в порядке возрастания sequenceNumber
+   * replayBus.publish({ sequenceNumber: 1, ... }); // OK
+   * replayBus.publish({ sequenceNumber: 2, ... }); // OK
+   * replayBus.publish({ sequenceNumber: 1, ... }); // ERROR: out-of-order
    * ```
    */
   public publish<E = any>(envelope: EventEnvelope<E>): void {
@@ -81,6 +87,18 @@ export class SequencedEventBus implements IEventBus {
     if (envelope.sequenceNumber === undefined) {
       throw new Error(`[SequencedEventBus] sequenceNumber required for envelope ${envelope.id} (type: ${envelope.type})`);
     }
+
+    // Validate strict ordering: sequenceNumber must be > lastDeliveredSequence
+    // This ensures deterministic replay (events processed in sequence order)
+    if (envelope.sequenceNumber <= this.lastDeliveredSequence) {
+      throw new Error(
+        `[SequencedEventBus] Out-of-order event: sequenceNumber ${envelope.sequenceNumber} <= last delivered ${this.lastDeliveredSequence}. ` +
+        `Events must be published in strictly increasing sequenceNumber order. (envelope: ${envelope.id}, type: ${envelope.type})`
+      );
+    }
+
+    // Update last delivered sequence BEFORE delivery
+    this.lastDeliveredSequence = envelope.sequenceNumber;
 
     // Synchronous delivery (NO setImmediate)
     // Deterministic replay - handlers вызываются немедленно
@@ -166,6 +184,18 @@ export class SequencedEventBus implements IEventBus {
   }
 
   /**
+   * Получить последний доставленный sequenceNumber
+   *
+   * @returns Последний доставленный sequenceNumber (-1 если ещё ничего не доставлено)
+   *
+   * @remarks
+   * Полезно для диагностики и проверки состояния replay.
+   */
+  public getLastDeliveredSequence(): number {
+    return this.lastDeliveredSequence;
+  }
+
+  /**
    * Доставляет событие подписчикам (synchronous)
    *
    * @param envelope - EventEnvelope для доставки
@@ -194,13 +224,15 @@ export class SequencedEventBus implements IEventBus {
   }
 
   /**
-   * Очищает все подписки (для тестов)
+   * Очищает все подписки и сбрасывает состояние (для тестов)
    *
    * @remarks
-   * Используется в тестах для cleanup между тестами
+   * Используется в тестах для cleanup между тестами.
+   * Сбрасывает lastDeliveredSequence в -1.
    */
   public clear(): void {
     this.handlers.clear();
     this.allHandlers.length = 0;
+    this.lastDeliveredSequence = -1;
   }
 }
