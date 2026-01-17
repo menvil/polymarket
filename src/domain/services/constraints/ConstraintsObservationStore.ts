@@ -157,7 +157,9 @@ export class ConstraintsObservationStore {
    *
    * @remarks
    * Алгоритм:
-   * 1. Если наблюдение существует: обновить count + lastSeen, переместить в конец (строгий LRU)
+   * 1. Если наблюдение существует:
+   *    a. Проверить TTL: если истекло → удалить и создать новую запись (count=1)
+   *    b. Если не истекло: обновить count + lastSeen, переместить в конец (строгий LRU)
    * 2. Если новое наблюдение:
    *    a. Проверить size >= maxSize → удалить старейшее (ГАРАНТИРОВАННО первое в Map)
    *    b. Добавить новое наблюдение в конец
@@ -172,7 +174,8 @@ export class ConstraintsObservationStore {
    * Безопасность при высокой нагрузке:
    * - Однопоточный JS: нет гонки данных
    * - Атомарное delete+set: перемещение в конец безопасно
-   * - TTL проверяется в getConfidence() для ленивого истечения
+   * - TTL проверяется при observe() и getConfidence() для предотвращения
+   *   накопления устаревших наблюдений через длительные промежутки
    *
    * @example
    * ```typescript
@@ -187,23 +190,38 @@ export class ConstraintsObservationStore {
     if (this.observations.has(key)) {
       const existing = this.observations.get(key)!;
 
-      // КРИТИЧНО: Удалить ПЕРЕД повторным добавлением, чтобы переместить в конец (строгий LRU)
-      this.observations.delete(key);
+      // Проверить TTL: если запись истекла, удалить и создать новую
+      // Это предотвращает накопление устаревших наблюдений через длительные промежутки
+      if (now - existing.lastSeen > this.config.observationTTL) {
+        this.observations.delete(key);
 
-      // Обновить поля
-      existing.count++;
-      existing.lastSeen = now;
+        this.logger.trace('[ObservationStore] Удалено истёкшее наблюдение при observe()', {
+          tokenId,
+          violation,
+          age: now - existing.lastSeen,
+          oldCount: existing.count,
+        });
 
-      // Добавить снова в конец
-      this.observations.set(key, existing);
+        // Продолжить создание новой записи ниже (не return)
+      } else {
+        // КРИТИЧНО: Удалить ПЕРЕД повторным добавлением, чтобы переместить в конец (строгий LRU)
+        this.observations.delete(key);
 
-      this.logger.trace('[ObservationStore] Обновлено наблюдение (перемещено в конец)', {
-        tokenId,
-        violation,
-        count: existing.count,
-      });
+        // Обновить поля
+        existing.count++;
+        existing.lastSeen = now;
 
-      return;
+        // Добавить снова в конец
+        this.observations.set(key, existing);
+
+        this.logger.trace('[ObservationStore] Обновлено наблюдение (перемещено в конец)', {
+          tokenId,
+          violation,
+          count: existing.count,
+        });
+
+        return;
+      }
     }
 
     // Новое наблюдение: проверить размер ПЕРЕД добавлением
