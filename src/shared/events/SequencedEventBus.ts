@@ -10,9 +10,12 @@
  * - Deterministic (replay всегда воспроизводится одинаково)
  * - sequenceNumber REQUIRED (если envelope без sequenceNumber → error)
  * - Out-of-order REJECTED (если sequenceNumber <= last → error)
+ * - Reentrancy BLOCKED (publish() из handler → error, предотвращает stack overflow)
  *
  * КОНТРАКТ: Caller MUST publish events in strictly increasing sequenceNumber order.
  * Если событие приходит с sequenceNumber <= последнего доставленного, выбрасывается ошибка.
+ *
+ * REENTRANCY: Handlers НЕ МОГУТ вызывать publish() (нарушает детерминизм replay).
  *
  * Отличия от ProductionEventBus (InMemoryEventBus):
  * - ProductionEventBus: async, FIFO, sequenceNumber ignored
@@ -59,6 +62,9 @@ export class SequencedEventBus implements IEventBus {
   /** Последний доставленный sequenceNumber (для валидации порядка) */
   private lastDeliveredSequence: number = -1;
 
+  /** Флаг для reentrancy protection (true если идёт доставка события) */
+  private isDelivering: boolean = false;
+
   /**
    * Публикует событие в envelope (synchronous, sequenceNumber required, order validated)
    *
@@ -66,11 +72,18 @@ export class SequencedEventBus implements IEventBus {
    *
    * @remarks
    * Валидация:
+   * - Reentrancy BLOCKED (publish() из handler → error)
    * - sequenceNumber REQUIRED (undefined → error)
    * - sequenceNumber > lastDeliveredSequence (out-of-order → error)
    * - Delivery SYNCHRONOUS (NO setImmediate)
    * - Deterministic replay
    *
+   * Reentrancy protection:
+   * - Handlers НЕ МОГУТ вызывать publish() (нарушает детерминизм replay)
+   * - Попытка publish() из handler выбрасывает ошибку
+   * - Защищает от stack overflow при вложенных publish()
+   *
+   * @throws {Error} Если publish() вызван из handler (reentrancy)
    * @throws {Error} Если sequenceNumber отсутствует
    * @throws {Error} Если sequenceNumber <= lastDeliveredSequence (out-of-order)
    *
@@ -80,9 +93,24 @@ export class SequencedEventBus implements IEventBus {
    * replayBus.publish({ sequenceNumber: 1, ... }); // OK
    * replayBus.publish({ sequenceNumber: 2, ... }); // OK
    * replayBus.publish({ sequenceNumber: 1, ... }); // ERROR: out-of-order
+   *
+   * // Reentrancy запрещена
+   * replayBus.subscribe('EventA', () => {
+   *   replayBus.publish({ sequenceNumber: 2, ... }); // ERROR: reentrancy
+   * });
    * ```
    */
   public publish<E = any>(envelope: EventEnvelope<E>): void {
+    // Reentrancy guard: prevent publish() from handler during delivery
+    // This ensures deterministic replay (handlers should NOT publish new events)
+    if (this.isDelivering) {
+      throw new Error(
+        `[SequencedEventBus] Reentrancy detected: publish() called from within a handler. ` +
+        `Handlers must NOT publish new events during replay (breaks determinism). ` +
+        `(envelope: ${envelope.id}, type: ${envelope.type})`
+      );
+    }
+
     // sequenceNumber REQUIRED для replay
     if (envelope.sequenceNumber === undefined) {
       throw new Error(`[SequencedEventBus] sequenceNumber required for envelope ${envelope.id} (type: ${envelope.type})`);
@@ -100,9 +128,13 @@ export class SequencedEventBus implements IEventBus {
     // Update last delivered sequence BEFORE delivery
     this.lastDeliveredSequence = envelope.sequenceNumber;
 
-    // Synchronous delivery (NO setImmediate)
-    // Deterministic replay - handlers вызываются немедленно
-    this.deliverEvent(envelope);
+    // Synchronous delivery with reentrancy protection
+    this.isDelivering = true;
+    try {
+      this.deliverEvent(envelope);
+    } finally {
+      this.isDelivering = false;
+    }
   }
 
   /**
@@ -228,11 +260,12 @@ export class SequencedEventBus implements IEventBus {
    *
    * @remarks
    * Используется в тестах для cleanup между тестами.
-   * Сбрасывает lastDeliveredSequence в -1.
+   * Сбрасывает lastDeliveredSequence в -1 и isDelivering в false.
    */
   public clear(): void {
     this.handlers.clear();
     this.allHandlers.length = 0;
     this.lastDeliveredSequence = -1;
+    this.isDelivering = false;
   }
 }
