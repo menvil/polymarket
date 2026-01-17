@@ -11,7 +11,7 @@
  * 3. Размер должен быть >= минимального количества
  * 4. Исполненный размер не может превышать исходный размер
  * 5. Средняя цена исполнения должна быть валидной если ордер частично/полностью исполнен
- * 6. Только ордера PENDING или OPEN могут быть отменены
+ * 6. Только ордера со статусами PENDING, OPEN или PARTIALLY_FILLED могут быть отменены (см. метод canCancel())
  *
  * ### Жизненный цикл ордера:
  * PENDING → OPEN → FILLED (или CANCELED/REJECTED)
@@ -721,7 +721,10 @@ export class Order {
    *
    * @remarks
    * Создаёт новый неизменяемый Order с деталями исполнения.
-   * Автоматически устанавливает статус FILLED если полностью исполнен.
+   * Автоматически устанавливает статус:
+   * - FILLED если filledSize >= size (полностью исполнен)
+   * - PARTIALLY_FILLED если 0 < filledSize < size (частично исполнен)
+   * - Оставляет текущий статус если filledSize = 0
    *
    * @example
    * ```typescript
@@ -734,12 +737,13 @@ export class Order {
    */
   public withFill(filledSize: Quantity, averageFillPrice: Price): Order {
     const isFullyFilled = filledSize.equals(this.size) || filledSize.isGreaterThan(this.size);
+    const isPartiallyFilled = !filledSize.isZero() && filledSize.isLessThan(this.size);
 
     return Order.create({
       ...this,
       filledSize,
       averageFillPrice,
-      status: isFullyFilled ? 'FILLED' : this.status
+      status: isFullyFilled ? 'FILLED' : isPartiallyFilled ? 'PARTIALLY_FILLED' : this.status
     });
   }
 

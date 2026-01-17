@@ -185,8 +185,13 @@ export class Portfolio {
    * ```
    */
   public reserveCash(amount: Money): Portfolio {
+    // Валидация: сумма не может быть отрицательной
+    if (amount.amount < 0) {
+      throw new RangeError(`Cannot reserve negative amount: ${amount.amount}`);
+    }
+
     const available = this.availableCash;
-    
+
     if (available.isLessThan(amount)) {
       throw new InsufficientFundsError(amount.amount, available.amount);
     }
@@ -230,6 +235,11 @@ export class Portfolio {
    * ```
    */
   public releaseCash(amount: Money): Portfolio {
+    // Валидация: сумма не может быть отрицательной
+    if (amount.amount < 0) {
+      throw new RangeError(`Cannot release negative amount: ${amount.amount}`);
+    }
+
     if (this.reservedCash.isLessThan(amount)) {
       throw new Error(
         `Cannot release ${amount.amount}: only ${this.reservedCash.amount} reserved`
@@ -364,12 +374,19 @@ export class Portfolio {
    * ```
    */
   public updatePosition(tokenId: string, updatedPosition: Position): Portfolio {
+    // Валидация: tokenId должен совпадать с tokenId позиции
+    if (tokenId !== updatedPosition.tokenId) {
+      throw new Error(
+        `Position tokenId mismatch: expected ${tokenId}, got ${updatedPosition.tokenId}`
+      );
+    }
+
     if (!this.positions.has(tokenId)) {
       throw new PositionNotFoundError(tokenId);
     }
 
     const newPositions = new Map(this.positions);
-    
+
     // Если позиция пустая - удаляем её
     if (updatedPosition.isEmpty()) {
       newPositions.delete(tokenId);
