@@ -273,20 +273,50 @@ function parseTradeSide(side: unknown): TradeSide {
 }
 
 /**
+ * Callback для диагностики fallback случаев в parseTimestamp
+ */
+type TimestampDiagnostics = (reason: string, value?: unknown) => void;
+
+/**
  * Парсит timestamp в Date
  *
  * @param timestamp - Timestamp из сообщения (number | string | undefined)
+ * @param diagnostics - Опциональный callback для диагностики fallback случаев
  * @returns Date объект
  *
  * @remarks
- * - number → new Date(number)
- * - string → new Date(string)
- * - undefined → new Date() (текущее время)
- * - Невалидная дата → new Date() (fallback к текущему времени)
+ * Поведение парсинга:
+ * - number → new Date(number) (миллисекунды с epoch)
+ * - string → new Date(string) (ISO 8601 или другой парсируемый формат)
+ * - undefined → new Date() (текущее время, fallback)
+ * - Невалидная дата (NaN) → new Date() (fallback к текущему времени)
+ * - Неподдерживаемый тип → new Date() (fallback к текущему времени)
+ *
+ * Диагностика:
+ * Если передан параметр diagnostics, он вызывается при каждом fallback:
+ * - 'undefined' - timestamp не определён
+ * - 'invalid_number' - число привело к NaN дате
+ * - 'invalid_string' - строка не парсится в валидную дату
+ * - 'unsupported_type' - неподдерживаемый тип значения
+ *
+ * @example
+ * ```typescript
+ * // Без диагностики (тихий fallback)
+ * const date1 = parseTimestamp(undefined);
+ *
+ * // С диагностикой
+ * const date2 = parseTimestamp(invalidValue, (reason, value) => {
+ *   console.warn(`Timestamp fallback: ${reason}`, value);
+ * });
+ * ```
  */
-function parseTimestamp(timestamp: unknown): Date {
+function parseTimestamp(
+  timestamp: unknown,
+  diagnostics?: TimestampDiagnostics
+): Date {
   // Если undefined, используем текущее время
   if (timestamp === undefined) {
+    diagnostics?.('undefined', undefined);
     return new Date();
   }
 
@@ -295,6 +325,7 @@ function parseTimestamp(timestamp: unknown): Date {
     const date = new Date(timestamp);
     // Проверяем валидность даты
     if (isNaN(date.getTime())) {
+      diagnostics?.('invalid_number', timestamp);
       return new Date();
     }
     return date;
@@ -305,11 +336,13 @@ function parseTimestamp(timestamp: unknown): Date {
     const date = new Date(timestamp);
     // Проверяем валидность даты
     if (isNaN(date.getTime())) {
+      diagnostics?.('invalid_string', timestamp);
       return new Date();
     }
     return date;
   }
 
-  // Fallback к текущему времени
+  // Fallback к текущему времени для неподдерживаемых типов
+  diagnostics?.('unsupported_type', timestamp);
   return new Date();
 }
