@@ -148,9 +148,10 @@ export class PolymarketMarketConstraintsPolicy {
         error,
       });
 
-      // Используем ограничения по умолчанию
-      this.cache.set(tokenId, this.defaultConstraints);
-      return this.defaultConstraints;
+      // Используем ограничения по умолчанию (клонируем, чтобы избежать мутации shared объекта)
+      const constraintsClone = { ...this.defaultConstraints };
+      this.cache.set(tokenId, constraintsClone);
+      return constraintsClone;
     }
   }
 
