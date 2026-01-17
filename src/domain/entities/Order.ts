@@ -194,7 +194,7 @@ export class Order {
         price: Price.fromNumber(event.price),
         size: Quantity.fromNumber(event.size),
         status: 'OPEN', // OrderAccepted → OPEN state
-        timestamp: new Date(),
+        timestamp: event.timestamp, // Используем timestamp из события для детерминизма
         filledSize: Quantity.fromNumber(0), // Initial state
       });
 
@@ -322,44 +322,6 @@ export class Order {
         return Err(`Unhandled ExecutionEvent: ${JSON.stringify(_exhaustive)}`);
       }
     }
-  }
-
-  /**
-   * Вычисляет weighted average fill price
-   *
-   * @param previousFilled - Предыдущий заполненный объём
-   * @param previousAvgPrice - Предыдущая средняя цена
-   * @param filledDelta - Новый заполненный объём (delta)
-   * @param currentPrice - Цена текущего fill
-   * @returns Weighted average price
-   *
-   * @remarks
-   * используется для multiple fills
-   *
-   * Формула: (previousFilled * previousAvgPrice + filledDelta * currentPrice) / totalFilled
-   *
-   * @example
-   * ```typescript
-   * // First fill: 50 @ 100
-   * const avgPrice1 = calculateWeightedAveragePrice(0, 0, 50, 100); // 100
-   *
-   * // Second fill: 30 @ 110
-   * const avgPrice2 = calculateWeightedAveragePrice(50, 100, 30, 110); // 103.75
-   * ```
-   */
-  // @ts-expect-error - utility method for future use
-  private _calculateWeightedAveragePrice(
-    previousFilled: number,
-    previousAvgPrice: number,
-    filledDelta: number,
-    currentPrice: number
-  ): number {
-    if (previousFilled === 0) {
-      return currentPrice;
-    }
-
-    const totalFilled = previousFilled + filledDelta;
-    return (previousFilled * previousAvgPrice + filledDelta * currentPrice) / totalFilled;
   }
 
   /**
