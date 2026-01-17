@@ -333,17 +333,19 @@ export class Orderbook {
    * ```
    */
   public getTotalBidVolume(levels?: number): Quantity {
-    // Нормализация levels до неотрицательного целого числа
-    if (levels !== undefined) {
-      levels = Math.max(0, Math.floor(levels));
+    // Нормализация levels до неотрицательного целого числа (без мутации входного параметра)
+    const normalizedLevels = levels !== undefined
+      ? Math.max(0, Math.floor(levels))
+      : undefined;
 
-      // Ранний возврат для нулевых уровней (оптимизация)
-      if (levels === 0) {
-        return Quantity.fromNumber(0, 0);
-      }
+    // Ранний возврат для нулевых уровней (оптимизация)
+    if (normalizedLevels === 0) {
+      return Quantity.fromNumber(0, 0);
     }
 
-    const relevantBids = levels !== undefined ? this.bids.slice(0, levels) : this.bids;
+    const relevantBids = normalizedLevels !== undefined
+      ? this.bids.slice(0, normalizedLevels)
+      : this.bids;
 
     const total = relevantBids.reduce(
       (sum, level) => sum + level.quantity.value,
@@ -371,17 +373,19 @@ export class Orderbook {
    * ```
    */
   public getTotalAskVolume(levels?: number): Quantity {
-    // Нормализация levels до неотрицательного целого числа
-    if (levels !== undefined) {
-      levels = Math.max(0, Math.floor(levels));
+    // Нормализация levels до неотрицательного целого числа (без мутации входного параметра)
+    const normalizedLevels = levels !== undefined
+      ? Math.max(0, Math.floor(levels))
+      : undefined;
 
-      // Ранний возврат для нулевых уровней (оптимизация)
-      if (levels === 0) {
-        return Quantity.fromNumber(0, 0);
-      }
+    // Ранний возврат для нулевых уровней (оптимизация)
+    if (normalizedLevels === 0) {
+      return Quantity.fromNumber(0, 0);
     }
 
-    const relevantAsks = levels !== undefined ? this.asks.slice(0, levels) : this.asks;
+    const relevantAsks = normalizedLevels !== undefined
+      ? this.asks.slice(0, normalizedLevels)
+      : this.asks;
 
     const total = relevantAsks.reduce(
       (sum, level) => sum + level.quantity.value,
