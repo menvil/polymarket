@@ -192,10 +192,24 @@ export class HttpClient {
     options: FetchOptions
   ): Promise<Response> {
     const timeout = options.timeout ?? this.config.timeout;
-    const controller = new AbortController();
-    const signal = options.signal ?? controller.signal;
 
-    // Таймер для abort
+    // Используем локальный controller для композиции timeout + external signal
+    // Это гарантирует что и timeout, и external abort работают корректно
+    const controller = new AbortController();
+
+    // Если передан внешний signal, пробрасываем его abort на наш controller
+    let externalAbortHandler: (() => void) | undefined;
+    if (options.signal) {
+      // Если внешний signal уже aborted, сразу abort наш controller
+      if (options.signal.aborted) {
+        controller.abort();
+      } else {
+        externalAbortHandler = () => controller.abort();
+        options.signal.addEventListener('abort', externalAbortHandler);
+      }
+    }
+
+    // Таймер для abort (всегда работает через наш controller)
     const timeoutId = setTimeout(() => controller.abort(), timeout);
 
     try {
@@ -209,12 +223,12 @@ export class HttpClient {
       // Подготавливаем body
       const body = options.body ? JSON.stringify(options.body) : undefined;
 
-      // Выполняем fetch
+      // Выполняем fetch с нашим controller.signal (композиция timeout + external)
       const response = await fetch(url, {
         method: options.method || 'GET',
         headers,
         body,
-        signal,
+        signal: controller.signal,
       });
 
       // Проверяем status
@@ -237,7 +251,11 @@ export class HttpClient {
       // Пробрасываем другие ошибки
       throw error;
     } finally {
+      // Cleanup: удаляем listener и очищаем timeout
       clearTimeout(timeoutId);
+      if (externalAbortHandler && options.signal) {
+        options.signal.removeEventListener('abort', externalAbortHandler);
+      }
     }
   }
 
