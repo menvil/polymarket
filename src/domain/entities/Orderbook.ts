@@ -143,6 +143,7 @@ export class Orderbook {
    * @remarks
    * Используется когда нет данных стакана.
    * Все методы вернут null/undefined.
+   * Использует фабричный метод create() для переиспользования валидации.
    *
    * @example
    * ```typescript
@@ -152,7 +153,11 @@ export class Orderbook {
    * ```
    */
   public static empty(marketId: string): Orderbook {
-    return new Orderbook(marketId, [], [], new Date());
+    return Orderbook.create(marketId, {
+      bids: [],
+      asks: [],
+      timestamp: new Date()
+    });
   }
 
   /**
