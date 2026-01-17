@@ -1,9 +1,9 @@
 /**
- * Base trading error class
- * 
+ * Базовый класс торговых ошибок
+ *
  * @remarks
- * All domain errors should extend this class.
- * Provides structured error handling with error codes.
+ * Все доменные ошибки должны наследовать этот класс.
+ * Обеспечивает структурированную обработку ошибок с кодами.
  */
 export class TradingError extends Error {
   public readonly code: string;
@@ -19,10 +19,10 @@ export class TradingError extends Error {
 }
 
 /**
- * Insufficient funds error
- * 
+ * Ошибка недостаточных средств
+ *
  * @remarks
- * Thrown when trying to place an order without sufficient cash balance.
+ * Выбрасывается при попытке разместить ордер без достаточного баланса.
  */
 export class InsufficientFundsError extends TradingError {
   constructor(
@@ -37,10 +37,10 @@ export class InsufficientFundsError extends TradingError {
 }
 
 /**
- * Order validation error
- * 
+ * Ошибка валидации ордера
+ *
  * @remarks
- * Thrown when order parameters are invalid.
+ * Выбрасывается когда параметры ордера невалидны.
  */
 export class OrderValidationError extends TradingError {
   constructor(message: string, public readonly field?: string) {
@@ -49,10 +49,10 @@ export class OrderValidationError extends TradingError {
 }
 
 /**
- * Position limit exceeded error
- * 
+ * Ошибка превышения лимита позиции
+ *
  * @remarks
- * Thrown when trying to exceed risk limits.
+ * Выбрасывается при попытке превысить риск-лимиты.
  */
 export class PositionLimitExceededError extends TradingError {
   constructor(
@@ -65,10 +65,10 @@ export class PositionLimitExceededError extends TradingError {
 }
 
 /**
- * Market not found error
- * 
+ * Ошибка рынок не найден
+ *
  * @remarks
- * Thrown when trying to access non-existent market.
+ * Выбрасывается при попытке доступа к несуществующему рынку.
  */
 export class MarketNotFoundError extends TradingError {
   constructor(public readonly marketId: string) {
@@ -77,10 +77,10 @@ export class MarketNotFoundError extends TradingError {
 }
 
 /**
- * Invalid price error
- * 
+ * Ошибка невалидной цены
+ *
  * @remarks
- * Thrown when price is outside valid range [0.01, 0.99].
+ * Выбрасывается когда цена вне допустимого диапазона [0.01, 0.99].
  */
 export class InvalidPriceError extends TradingError {
   constructor(public readonly price: number) {
@@ -92,10 +92,10 @@ export class InvalidPriceError extends TradingError {
 }
 
 /**
- * Invalid quantity error
- * 
+ * Ошибка невалидного количества
+ *
  * @remarks
- * Thrown when quantity is invalid (negative, zero, or too small).
+ * Выбрасывается когда количество невалидно (отрицательное, ноль или слишком маленькое).
  */
 export class InvalidQuantityError extends TradingError {
   constructor(public readonly quantity: number, public readonly minSize: number) {
@@ -107,10 +107,10 @@ export class InvalidQuantityError extends TradingError {
 }
 
 /**
- * Exchange error
- * 
+ * Ошибка биржи
+ *
  * @remarks
- * Thrown when exchange API returns an error.
+ * Выбрасывается когда API биржи возвращает ошибку.
  */
 export class ExchangeError extends TradingError {
   constructor(

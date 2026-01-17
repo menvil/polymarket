@@ -1,8 +1,8 @@
 /**
- * Domain errors barrel export
- * 
+ * Barrel экспорт доменных ошибок
+ *
  * @remarks
- * Exports all custom error types.
+ * Экспортирует все пользовательские типы ошибок.
  */
 export {
   TradingError,

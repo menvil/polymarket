@@ -1,23 +1,23 @@
 /**
- * Shared WebSocket types for exchange-agnostic transport layer
+ * Общие WebSocket типы для exchange-agnostic транспортного слоя
  *
  * @remarks
- * These types are used across all WebSocket implementations regardless of exchange.
- * Exchange-specific types should be defined in their own modules.
+ * Эти типы используются во всех WebSocket реализациях независимо от биржи.
+ * Специфичные для биржи типы должны быть определены в отдельных модулях.
  *
  * @module shared/websocket/types
  */
 
 /**
- * WebSocket connection status
+ * Статус WebSocket соединения
  *
  * @remarks
- * Lifecycle states:
- * - disconnected: Initial state, not connected
- * - connecting: Connection attempt in progress
- * - connected: Successfully connected and ready
- * - reconnecting: Lost connection, attempting to reconnect
- * - closed: Permanently closed, no reconnection
+ * Состояния жизненного цикла:
+ * - disconnected: Начальное состояние, не подключён
+ * - connecting: Попытка подключения в процессе
+ * - connected: Успешно подключён и готов
+ * - reconnecting: Потеря соединения, попытка переподключения
+ * - closed: Окончательно закрыт, без переподключения
  */
 export type ConnectionStatus =
   | 'disconnected'
@@ -27,11 +27,11 @@ export type ConnectionStatus =
   | 'closed';
 
 /**
- * Base WebSocket configuration
+ * Базовая конфигурация WebSocket
  *
  * @remarks
- * Common configuration options for any WebSocket transport.
- * Exchange-specific configs can extend this interface.
+ * Общие опции конфигурации для любого WebSocket транспорта.
+ * Специфичные для биржи конфиги могут расширять этот интерфейс.
  *
  * @example
  * ```typescript
@@ -45,33 +45,33 @@ export type ConnectionStatus =
  * ```
  */
 export interface BaseWebSocketConfig {
-  /** WebSocket server URL (wss:// or ws://) */
+  /** URL WebSocket сервера (wss:// или ws://) */
   url: string;
 
-  /** Initial reconnection delay in milliseconds */
+  /** Начальная задержка переподключения в миллисекундах */
   reconnectDelay?: number;
 
-  /** Maximum reconnection delay (for exponential backoff) */
+  /** Максимальная задержка переподключения (для экспоненциального backoff) */
   maxReconnectDelay?: number;
 
-  /** Heartbeat/ping interval in milliseconds */
+  /** Интервал heartbeat/ping в миллисекундах */
   heartbeatInterval?: number;
 
-  /** Heartbeat timeout (before considering connection dead) */
+  /** Таймаут heartbeat (до признания соединения мёртвым) */
   heartbeatTimeout?: number;
 }
 
 /**
- * Parsed WebSocket message (exchange-agnostic)
+ * Распарсенное WebSocket сообщение (exchange-agnostic)
  *
  * @remarks
- * Represents a successfully parsed data message from the exchange.
- * IMessageParser implementations return this structure.
+ * Представляет успешно распарсенное сообщение данных от биржи.
+ * Реализации IMessageParser возвращают эту структуру.
  *
- * Flow:
- * 1. Raw WebSocket data arrives
- * 2. IMessageParser.parseMessage() converts it to ParsedMessage
- * 3. BaseWebSocketTransport emits event based on `type`
+ * Поток:
+ * 1. Приходят сырые WebSocket данные
+ * 2. IMessageParser.parseMessage() преобразует их в ParsedMessage
+ * 3. BaseWebSocketTransport эмитит событие на основе `type`
  *
  * @example
  * ```typescript
@@ -84,43 +84,43 @@ export interface BaseWebSocketConfig {
  */
 export interface ParsedMessage {
   /**
-   * Event type (e.g., 'orderbook', 'trade', 'ticker')
+   * Тип события (например, 'orderbook', 'trade', 'ticker')
    *
    * @remarks
-   * This value determines which event will be emitted:
+   * Это значение определяет какое событие будет эмитировано:
    * - 'orderbook' → emit('orderbook', payload)
    * - 'trade' → emit('trade', payload)
-   * - Custom types are allowed
+   * - Кастомные типы разрешены
    */
   type: string;
 
   /**
-   * Channel/asset/symbol identifier
+   * Идентификатор канала/актива/символа
    *
    * @remarks
-   * Identifies which market/asset this message is for.
-   * Format depends on exchange (e.g., Polymarket uses asset_id, Binance uses symbol).
+   * Определяет к какому рынку/активу относится это сообщение.
+   * Формат зависит от биржи (например, Polymarket использует asset_id, Binance использует symbol).
    */
   channelId: string;
 
   /**
-   * Parsed message payload
+   * Распарсенный payload сообщения
    *
    * @remarks
-   * Exchange-specific data structure.
-   * Type safety is the responsibility of the consuming code.
+   * Структура данных специфична для биржи.
+   * Типобезопасность - ответственность потребляющего кода.
    */
   payload: unknown;
 }
 
 /**
- * Generic subscription parameters
+ * Общие параметры подписки
  *
  * @remarks
- * Key-value map for subscription configuration.
- * Exchange-specific implementations define the actual structure.
+ * Карта ключ-значение для конфигурации подписки.
+ * Специфичные для биржи реализации определяют фактическую структуру.
  *
- * Examples:
+ * Примеры:
  * - Polymarket: { assets_ids: string[], type: 'market' }
  * - Binance: { symbol: string, channel: 'depth' }
  *

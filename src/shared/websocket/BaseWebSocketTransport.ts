@@ -1,21 +1,21 @@
 /**
- * BaseWebSocketTransport - Exchange-agnostic WebSocket transport layer
+ * BaseWebSocketTransport - Exchange-agnostic WebSocket транспортный слой
  *
  * @remarks
- * Provides core WebSocket functionality that works with any exchange:
- * - Connection lifecycle (connect, disconnect, reconnect)
- * - Automatic reconnection with exponential backoff
- * - Heartbeat/ping-pong mechanism
- * - Subscription tracking and automatic resubscription
- * - Event emission (EventEmitter pattern)
+ * Предоставляет основную функциональность WebSocket, работающую с любой биржей:
+ * - Жизненный цикл соединения (connect, disconnect, reconnect)
+ * - Автоматическое переподключение с экспоненциальным backoff
+ * - Механизм heartbeat/ping-pong
+ * - Отслеживание подписок и автоматическая переподписка
+ * - Эмиссия событий (паттерн EventEmitter)
  * - Graceful shutdown
  *
- * Uses composition pattern:
- * - IMessageFormatter: Formats outgoing subscribe/unsubscribe messages (exchange-specific)
- * - IMessageParser: Parses incoming messages and detects control messages (exchange-specific)
+ * Использует паттерн композиции:
+ * - IMessageFormatter: Форматирует исходящие subscribe/unsubscribe сообщения (специфично для биржи)
+ * - IMessageParser: Парсит входящие сообщения и обнаруживает управляющие сообщения (специфично для биржи)
  *
- * Exchange-specific logic is delegated to injected formatter and parser.
- * This allows the same transport to work with Polymarket, Binance, Kraken, etc.
+ * Специфичная для биржи логика делегируется инжектированным formatter и parser.
+ * Это позволяет одному транспорту работать с Polymarket, Binance, Kraken, и т.д.
  *
  * @example
  * ```typescript
@@ -51,31 +51,31 @@ import type { IMessageParser } from './IMessageParser.js';
  * BaseWebSocketTransport
  *
  * @remarks
- * Core WebSocket transport implementation using composition pattern.
- * Delegates exchange-specific logic to IMessageFormatter and IMessageParser.
+ * Основная реализация WebSocket транспорта использующая паттерн композиции.
+ * Делегирует специфичную для биржи логику в IMessageFormatter и IMessageParser.
  *
- * Events:
- * - `connected` - Successfully connected
- * - `disconnected` - Disconnected
- * - `reconnecting` - Reconnection attempt started
- * - `error` - Error occurred
- * - `message` - Raw WebSocket data (Buffer, emitted FIRST)
- * - `raw` - Parsed message (after message event)
- * - `orderbook` - Orderbook update (routed from parser)
- * - `trade` - Trade update (routed from parser)
- * - Custom events from parser.parseMessage().type
+ * События:
+ * - `connected` - Успешно подключено
+ * - `disconnected` - Отключено
+ * - `reconnecting` - Начата попытка переподключения
+ * - `error` - Произошла ошибка
+ * - `message` - Сырые WebSocket данные (Buffer, эмитятся ПЕРВЫМИ)
+ * - `raw` - Распарсенное сообщение (после события message)
+ * - `orderbook` - Обновление orderbook (роутится из parser)
+ * - `trade` - Обновление trade (роутится из parser)
+ * - Кастомные события из parser.parseMessage().type
  *
- * Event Order (CRITICAL for DataCollector):
- * 1. `message` (raw Buffer) - emitted FIRST
- * 2. `raw` (parsed data) - emitted after parsing
- * 3. Type-specific event (orderbook/trade/etc.) - emitted last
+ * Порядок событий (КРИТИЧНО для DataCollector):
+ * 1. `message` (сырой Buffer) - эмитится ПЕРВЫМ
+ * 2. `raw` (распарсенные данные) - эмитится после парсинга
+ * 3. Событие специфичного типа (orderbook/trade/и т.д.) - эмитится последним
  *
- * Lifecycle:
- * 1. disconnected (initial)
- * 2. connecting (connection attempt)
- * 3. connected (ready for subscriptions)
- * 4. reconnecting (lost connection, attempting reconnect)
- * 5. closed (permanently closed, no reconnection)
+ * Жизненный цикл:
+ * 1. disconnected (начальное)
+ * 2. connecting (попытка подключения)
+ * 3. connected (готов для подписок)
+ * 4. reconnecting (потеря соединения, попытка переподключения)
+ * 5. closed (окончательно закрыт, без переподключения)
  */
 export class BaseWebSocketTransport extends EventEmitter {
   private ws: WebSocket | null = null;
@@ -93,21 +93,21 @@ export class BaseWebSocketTransport extends EventEmitter {
   private isShuttingDown = false;
 
   /**
-   * Create a new WebSocket transport
+   * Создаёт новый WebSocket транспорт
    *
-   * @param config - Transport configuration
-   * @param formatter - Message formatter for outgoing messages (exchange-specific)
-   * @param parser - Message parser for incoming messages (exchange-specific)
-   * @param logger - Logger instance
+   * @param config - Конфигурация транспорта
+   * @param formatter - Форматировщик сообщений для исходящих сообщений (специфично для биржи)
+   * @param parser - Парсер сообщений для входящих сообщений (специфично для биржи)
+   * @param logger - Экземпляр логгера
    *
-   * @throws {Error} If config, formatter, parser, or logger is null
+   * @throws {Error} Если config, formatter, parser, или logger равен null
    *
    * @remarks
-   * Applies default values:
-   * - reconnectDelay: 1000ms
-   * - maxReconnectDelay: 30000ms
-   * - heartbeatInterval: 30000ms
-   * - heartbeatTimeout: 5000ms
+   * Применяет значения по умолчанию:
+   * - reconnectDelay: 1000мс
+   * - maxReconnectDelay: 30000мс
+   * - heartbeatInterval: 30000мс
+   * - heartbeatTimeout: 5000мс
    *
    * @example
    * ```typescript
@@ -143,7 +143,7 @@ export class BaseWebSocketTransport extends EventEmitter {
       throw new Error('logger is required');
     }
 
-    // Apply defaults
+    // Применяем значения по умолчанию
     this.config = {
       url: config.url,
       reconnectDelay: config.reconnectDelay ?? 1000,
@@ -159,17 +159,17 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Connect to WebSocket server
+   * Подключается к WebSocket серверу
    *
-   * @returns Promise that resolves when connected
-   * @throws {Error} If connection fails
+   * @returns Promise который резолвится при подключении
+   * @throws {Error} Если подключение не удалось
    *
    * @remarks
-   * - If already connected or connecting, returns immediately
-   * - Emits 'connecting' event when connection attempt starts
-   * - Emits 'connected' event when connection succeeds
-   * - Automatically starts heartbeat after connection
-   * - Automatically resubscribes to all subscriptions after reconnection
+   * - Если уже подключён или подключается, возвращает немедленно
+   * - Эмитит событие 'connecting' когда начинается попытка подключения
+   * - Эмитит событие 'connected' когда подключение успешно
+   * - Автоматически запускает heartbeat после подключения
+   * - Автоматически переподписывается на все подписки после переподключения
    *
    * @example
    * ```typescript
@@ -200,8 +200,8 @@ export class BaseWebSocketTransport extends EventEmitter {
           this.logger.info('WebSocket connected successfully');
           this.startHeartbeat();
 
-          // Wait for WebSocket to be fully ready before resubscribing
-          // Prevents "readyState 0 (CONNECTING)" errors
+          // Ждём полной готовности WebSocket перед переподпиской
+          // Предотвращает ошибки "readyState 0 (CONNECTING)"
           await new Promise(resolve => setTimeout(resolve, 100));
 
           this.resubscribeAll();
@@ -235,16 +235,16 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Disconnect from WebSocket server
+   * Отключается от WebSocket сервера
    *
-   * @returns Promise that resolves when disconnected
+   * @returns Promise который резолвится при отключении
    *
    * @remarks
-   * - Stops heartbeat
-   * - Clears reconnection timer
-   * - Closes WebSocket connection
-   * - Sets status to 'closed' (prevents automatic reconnection)
-   * - Emits 'disconnected' event
+   * - Останавливает heartbeat
+   * - Очищает таймер переподключения
+   * - Закрывает WebSocket соединение
+   * - Устанавливает статус 'closed' (предотвращает автоматическое переподключение)
+   * - Эмитит событие 'disconnected'
    *
    * @example
    * ```typescript
@@ -267,20 +267,20 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Reconnect for new subscription (clears old subscriptions)
+   * Переподключается для новой подписки (очищает старые подписки)
    *
-   * @returns Promise that resolves when reconnected
-   * @throws {Error} If reconnection fails
+   * @returns Promise который резолвится при переподключении
+   * @throws {Error} Если переподключение не удалось
    *
    * @remarks
-   * Some exchanges (e.g., Polymarket) don't support dynamic subscription changes.
-   * This method:
-   * 1. Clears all old subscriptions
-   * 2. Closes current connection
-   * 3. Waits 500ms
-   * 4. Reconnects (resubscribeAll will NOT restore old subscriptions)
+   * Некоторые биржи (например, Polymarket) не поддерживают динамическое изменение подписок.
+   * Этот метод:
+   * 1. Очищает все старые подписки
+   * 2. Закрывает текущее соединение
+   * 3. Ждёт 500мс
+   * 4. Переподключается (resubscribeAll НЕ восстановит старые подписки)
    *
-   * After calling this, you must manually subscribe again.
+   * После вызова вы должны вручную подписаться заново.
    *
    * @example
    * ```typescript
@@ -291,46 +291,46 @@ export class BaseWebSocketTransport extends EventEmitter {
   public async reconnectForNewSubscription(): Promise<void> {
     this.logger.info('Reconnecting for new subscription...');
 
-    // Clear old subscriptions BEFORE reconnect
-    // Otherwise resubscribeAll() will try to restore them
+    // Очищаем старые подписки ДО переподключения
+    // Иначе resubscribeAll() попытается их восстановить
     const oldCount = this.subscriptions.size;
     this.subscriptions.clear();
     this.logger.debug('Cleared old subscriptions before reconnect', { oldCount });
 
-    // Close current connection
+    // Закрываем текущее соединение
     if (this.ws && this.status === 'connected') {
       this.ws.close();
       this.ws = null;
       this.status = 'disconnected';
     }
 
-    // Wait before reconnecting
+    // Ждём перед переподключением
     await new Promise(resolve => setTimeout(resolve, 500));
 
-    // Reconnect (resubscribeAll will do nothing - subscriptions cleared)
+    // Переподключаемся (resubscribeAll ничего не сделает - подписки очищены)
     await this.connect();
 
     this.logger.info('Reconnected - ready for new subscription');
   }
 
   /**
-   * Subscribe to a channel
+   * Подписывается на канал
    *
-   * @param channel - Channel name (exchange-specific)
-   * @param params - Subscription parameters (exchange-specific)
-   * @returns Promise that resolves when subscription message sent
+   * @param channel - Имя канала (специфично для биржи)
+   * @param params - Параметры подписки (специфичны для биржи)
+   * @returns Promise который резолвится когда сообщение подписки отправлено
    *
    * @remarks
-   * - Delegates message formatting to IMessageFormatter
-   * - Tracks subscription for automatic resubscription after reconnect
-   * - Only sends if connected and WebSocket is open
-   * - Logs warning if not connected
+   * - Делегирует форматирование сообщения в IMessageFormatter
+   * - Отслеживает подписку для автоматической переподписки после переподключения
+   * - Отправляет только если подключён и WebSocket открыт
+   * - Логирует предупреждение если не подключён
    *
-   * Flow:
-   * 1. Create subscription key (channel + params)
-   * 2. Add to subscriptions set (for resubscribeAll)
-   * 3. Format message using formatter.formatSubscription()
-   * 4. Send via WebSocket
+   * Поток:
+   * 1. Создать ключ подписки (channel + params)
+   * 2. Добавить в set подписок (для resubscribeAll)
+   * 3. Отформатировать сообщение используя formatter.formatSubscription()
+   * 4. Отправить через WebSocket
    *
    * @example
    * ```typescript
@@ -346,10 +346,10 @@ export class BaseWebSocketTransport extends EventEmitter {
 
     this.logger.debug('Subscribe called', { channel, params, status: this.status });
 
-    // Check both status AND WebSocket readyState
+    // Проверяем и статус И readyState WebSocket
     if (this.status === 'connected' && this.ws && this.ws.readyState === WebSocket.OPEN) {
       try {
-        // Delegate formatting to exchange-specific formatter
+        // Делегируем форматирование в специфичный для биржи formatter
         const message = this.formatter.formatSubscription(channel, params);
         this.logger.debug('Sending subscription', { channel, message: message.substring(0, 200) });
         this.ws.send(message);
@@ -363,15 +363,15 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Unsubscribe from a channel
+   * Отписывается от канала
    *
-   * @param channel - Channel name
-   * @param params - Subscription parameters
-   * @returns Promise that resolves when unsubscription message sent
+   * @param channel - Имя канала
+   * @param params - Параметры подписки
+   * @returns Promise который резолвится когда сообщение отписки отправлено
    *
    * @remarks
-   * - Removes subscription from tracking (won't be restored on reconnect)
-   * - Delegates message formatting to IMessageFormatter
+   * - Удаляет подписку из отслеживания (не будет восстановлена при переподключении)
+   * - Делегирует форматирование сообщения в IMessageFormatter
    *
    * @example
    * ```typescript
@@ -384,7 +384,7 @@ export class BaseWebSocketTransport extends EventEmitter {
 
     if (this.status === 'connected' && this.ws) {
       try {
-        // Delegate formatting to exchange-specific formatter
+        // Делегируем форматирование в специфичный для биржи formatter
         const message = this.formatter.formatUnsubscription(channel, params);
         this.logger.debug('Sending unsubscription', { channel, message: message.substring(0, 200) });
         this.ws.send(message);
@@ -396,9 +396,9 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Get current connection status
+   * Получает текущий статус соединения
    *
-   * @returns Connection status
+   * @returns Статус соединения
    *
    * @example
    * ```typescript
@@ -413,9 +413,9 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Check if connected
+   * Проверяет подключён ли
    *
-   * @returns true if connected
+   * @returns true если подключён
    *
    * @example
    * ```typescript
@@ -429,43 +429,43 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Handle incoming WebSocket message
+   * Обрабатывает входящее WebSocket сообщение
    *
-   * @param data - Raw WebSocket data
+   * @param data - Сырые WebSocket данные
    *
    * @remarks
-   * CRITICAL EVENT ORDER (for DataCollector):
-   * 1. Emit 'message' event with raw Buffer FIRST
-   * 2. Parse message using IMessageParser
-   * 3. Handle control messages (pong, error) internally
-   * 4. Emit 'raw' event with parsed data
-   * 5. Emit type-specific event (orderbook, trade, etc.)
+   * КРИТИЧНЫЙ ПОРЯДОК СОБЫТИЙ (для DataCollector):
+   * 1. Эмитить событие 'message' с сырым Buffer ПЕРВЫМ
+   * 2. Распарсить сообщение используя IMessageParser
+   * 3. Обработать управляющие сообщения (pong, error) внутренне
+   * 4. Эмитить событие 'raw' с распарсенными данными
+   * 5. Эмитить событие специфичного типа (orderbook, trade, и т.д.)
    *
-   * This order ensures DataCollector receives raw Buffer before any parsing.
+   * Этот порядок гарантирует что DataCollector получит сырой Buffer до любого парсинга.
    *
-   * Algorithm:
-   * 1. Emit raw 'message' event
-   * 2. Parse JSON
-   * 3. Handle arrays (batch messages)
-   * 4. Delegate to processMessage()
-   * 5. Log errors for unparseable messages
+   * Алгоритм:
+   * 1. Эмитить сырое событие 'message'
+   * 2. Распарсить JSON
+   * 3. Обработать массивы (batch сообщения)
+   * 4. Делегировать в processMessage()
+   * 5. Логировать ошибки для непарсируемых сообщений
    *
    * @example
    * ```typescript
-   * // Event emission order:
+   * // Порядок эмиссии событий:
    * // 1. emit('message', Buffer.from('{"event_type":"book",...}'))
    * // 2. emit('raw', { event_type: 'book', ... })
    * // 3. emit('orderbook', { event_type: 'book', ... })
    * ```
    */
   private handleMessage(data: WebSocket.Data): void {
-    // CRITICAL: Emit raw message event BEFORE parsing (for router/DataCollector)
+    // КРИТИЧНО: Эмитить сырое событие message ДО парсинга (для router/DataCollector)
     this.emit('message', data);
 
     try {
       const message = JSON.parse(data.toString()) as any;
 
-      // Handle batch messages (array of messages)
+      // Обработка batch сообщений (массив сообщений)
       if (Array.isArray(message)) {
         for (const msg of message) {
           this.processMessage(msg);
@@ -476,12 +476,12 @@ export class BaseWebSocketTransport extends EventEmitter {
     } catch (error) {
       const rawData = data.toString().trim();
 
-      // Skip empty messages (heartbeat)
+      // Пропускаем пустые сообщения (heartbeat)
       if (rawData === '') {
         return;
       }
 
-      // Handle known text responses from server (not JSON)
+      // Обрабатываем известные текстовые ответы от сервера (не JSON)
       const knownTextResponses = [
         'INVALID OPERATION',
         'ERROR',
@@ -492,14 +492,14 @@ export class BaseWebSocketTransport extends EventEmitter {
       ];
 
       if (knownTextResponses.includes(rawData)) {
-        // Log as warning (not error) - these are expected server responses
+        // Логируем как warning (не error) - это ожидаемые ответы сервера
         this.logger.warn('Received text message from server', {
           message: rawData,
         });
         return;
       }
 
-      // Unknown unparseable message - log as error
+      // Неизвестное непарсируемое сообщение - логируем как error
       this.logger.error('Failed to parse WebSocket message', {
         error: error instanceof Error ? error.message : String(error),
         rawData: rawData.substring(0, 200),
@@ -508,21 +508,21 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Process a single parsed message
+   * Обрабатывает одно распарсенное сообщение
    *
-   * @param message - Parsed message object
+   * @param message - Распарсенный объект сообщения
    *
    * @remarks
-   * Delegates message parsing to IMessageParser.
+   * Делегирует парсинг сообщения в IMessageParser.
    *
-   * Algorithm:
-   * 1. Check if message is pong (using parser.isPongMessage)
-   *    - If yes: handle pong, return
-   * 2. Check if message is error (using parser.isErrorMessage)
-   *    - If yes: extract error, emit error event, return
-   * 3. Parse message (using parser.parseMessage)
-   *    - If null: control message (subscribed, etc.), log and return
-   *    - If ParsedMessage: emit 'raw' + type-specific event
+   * Алгоритм:
+   * 1. Проверить является ли сообщение pong (используя parser.isPongMessage)
+   *    - Если да: обработать pong, вернуться
+   * 2. Проверить является ли сообщение ошибкой (используя parser.isErrorMessage)
+   *    - Если да: извлечь ошибку, эмитить событие error, вернуться
+   * 3. Распарсить сообщение (используя parser.parseMessage)
+   *    - Если null: управляющее сообщение (subscribed, и т.д.), залогировать и вернуться
+   *    - Если ParsedMessage: эмитить 'raw' + событие специфичного типа
    *
    * @example
    * ```typescript
@@ -533,13 +533,13 @@ export class BaseWebSocketTransport extends EventEmitter {
    */
   private processMessage(message: any): void {
     try {
-      // Check for pong message (using parser)
+      // Проверка на pong сообщение (используя parser)
       if (this.parser.isPongMessage(message)) {
         this.handlePong();
         return;
       }
 
-      // Check for error message (using parser)
+      // Проверка на сообщение об ошибке (используя parser)
       if (this.parser.isErrorMessage(message)) {
         const errorMsg = this.parser.extractErrorMessage(message);
         this.logger.error('WebSocket error message received', { message, errorMsg });
@@ -547,19 +547,19 @@ export class BaseWebSocketTransport extends EventEmitter {
         return;
       }
 
-      // Parse message using exchange-specific parser
+      // Парсим сообщение используя специфичный для биржи parser
       const parsed = this.parser.parseMessage(message);
 
       if (parsed === null) {
-        // Control message (subscribed, unsubscribed, price_change, etc.) - ignore
-        // Not logged to reduce noise (price_change events are very frequent)
+        // Управляющее сообщение (subscribed, unsubscribed, price_change, и т.д.) - игнорируем
+        // Не логируем чтобы уменьшить шум (события price_change очень частые)
         return;
       }
 
-      // Emit raw event for DataCollector (BEFORE type-specific event)
+      // Эмитим raw событие для DataCollector (ДО события специфичного типа)
       this.emit('raw', message);
 
-      // Emit type-specific event (orderbook, trade, etc.)
+      // Эмитим событие специфичного типа (orderbook, trade, и т.д.)
       this.emit(parsed.type, message);
     } catch (error) {
       this.logger.error('Failed to process message', { error, message });
@@ -567,12 +567,12 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Handle connection close
+   * Обрабатывает закрытие соединения
    *
    * @remarks
-   * - Stops heartbeat
-   * - Emits 'disconnected' event
-   * - Schedules reconnection (unless shutting down)
+   * - Останавливает heartbeat
+   * - Эмитит событие 'disconnected'
+   * - Планирует переподключение (если не завершаемся)
    */
   private handleClose(): void {
     this.status = 'disconnected';
@@ -585,12 +585,12 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Schedule reconnection with exponential backoff
+   * Планирует переподключение с экспоненциальным backoff
    *
    * @remarks
-   * - Emits 'reconnecting' event with current delay
-   * - Doubles delay on each failure (up to maxReconnectDelay)
-   * - Resets delay to initial value on successful connection
+   * - Эмитит событие 'reconnecting' с текущей задержкой
+   * - Удваивает задержку при каждой неудаче (до maxReconnectDelay)
+   * - Сбрасывает задержку до начального значения при успешном подключении
    */
   private scheduleReconnect(): void {
     this.clearReconnectTimer();
@@ -600,7 +600,7 @@ export class BaseWebSocketTransport extends EventEmitter {
     this.reconnectTimer = setTimeout(() => {
       this.connect().catch((error) => {
         this.emit('error', error);
-        // Increase delay for next attempt (exponential backoff)
+        // Увеличиваем задержку для следующей попытки (экспоненциальный backoff)
         this.currentReconnectDelay = Math.min(
           this.currentReconnectDelay * 2,
           this.config.maxReconnectDelay
@@ -611,7 +611,7 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Clear reconnection timer
+   * Очищает таймер переподключения
    */
   private clearReconnectTimer(): void {
     if (this.reconnectTimer) {
@@ -621,12 +621,12 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Start heartbeat mechanism
+   * Запускает механизм heartbeat
    *
    * @remarks
-   * - Sends ping every heartbeatInterval
-   * - Sets timeout for pong response
-   * - Terminates connection if pong not received
+   * - Отправляет ping каждые heartbeatInterval
+   * - Устанавливает таймаут для pong ответа
+   * - Терминирует соединение если pong не получен
    */
   private startHeartbeat(): void {
     this.stopHeartbeat();
@@ -635,9 +635,9 @@ export class BaseWebSocketTransport extends EventEmitter {
       if (this.ws && this.status === 'connected') {
         this.ws.ping();
 
-        // Set timeout for pong response
+        // Устанавливаем таймаут для pong ответа
         this.heartbeatTimeoutTimer = setTimeout(() => {
-          // If pong not received - terminate connection
+          // Если pong не получен - терминируем соединение
           this.logger.warn('Heartbeat timeout - terminating connection');
           this.ws?.terminate();
         }, this.config.heartbeatTimeout);
@@ -646,7 +646,7 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Stop heartbeat mechanism
+   * Останавливает механизм heartbeat
    */
   private stopHeartbeat(): void {
     if (this.heartbeatTimer) {
@@ -661,10 +661,10 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Handle pong from server
+   * Обрабатывает pong от сервера
    *
    * @remarks
-   * Clears heartbeat timeout (connection is alive)
+   * Очищает таймаут heartbeat (соединение живо)
    */
   private handlePong(): void {
     if (this.heartbeatTimeoutTimer) {
@@ -674,11 +674,11 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Resubscribe to all tracked subscriptions
+   * Переподписывается на все отслеживаемые подписки
    *
    * @remarks
-   * Called automatically after reconnection.
-   * Iterates over all subscriptions and sends subscribe messages.
+   * Вызывается автоматически после переподключения.
+   * Итерирует по всем подпискам и отправляет subscribe сообщения.
    */
   private resubscribeAll(): void {
     if (this.subscriptions.size === 0) {
@@ -703,15 +703,15 @@ export class BaseWebSocketTransport extends EventEmitter {
   }
 
   /**
-   * Create subscription key
+   * Создаёт ключ подписки
    *
-   * @param channel - Channel name
-   * @param params - Subscription parameters
-   * @returns Unique subscription key
+   * @param channel - Имя канала
+   * @param params - Параметры подписки
+   * @returns Уникальный ключ подписки
    *
    * @remarks
-   * Format: `channel::JSON.stringify(params)`
-   * Used for tracking and deduplication.
+   * Формат: `channel::JSON.stringify(params)`
+   * Используется для отслеживания и дедупликации.
    */
   private getSubscriptionKey(channel: string, params: SubscriptionParams): string {
     return `${channel}::${JSON.stringify(params)}`;

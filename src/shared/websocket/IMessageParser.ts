@@ -1,29 +1,29 @@
 /**
- * IMessageParser - Interface for parsing INCOMING WebSocket messages
+ * IMessageParser - Интерфейс для парсинга ВХОДЯЩИХ WebSocket сообщений
  *
  * @remarks
- * Responsibility: Convert raw WebSocket messages into structured domain events.
- * This is the INCOMING half of the message handling (paired with IMessageFormatter for outgoing).
+ * Ответственность: Преобразование сырых WebSocket сообщений в структурированные доменные события.
+ * Это ВХОДЯЩАЯ половина обработки сообщений (в паре с IMessageFormatter для исходящих).
  *
- * Design Decision:
- * - Split from IMessageFormatter to follow Single Responsibility Principle
- * - IMessageParser handles incoming message parsing (server → client)
- * - IMessageFormatter handles subscribe/unsubscribe formatting (client → server)
+ * Решение по дизайну:
+ * - Отделён от IMessageFormatter для следования Single Responsibility Principle
+ * - IMessageParser обрабатывает парсинг входящих сообщений (сервер → клиент)
+ * - IMessageFormatter обрабатывает форматирование subscribe/unsubscribe (клиент → сервер)
  *
- * Each exchange implements this interface with their specific parsing logic:
- * - Polymarket: Parse { event_type: 'book' | 'trade' | 'pong' | ... }
- * - Binance: Parse { e: 'depthUpdate' | 'trade' | ... }
- * - Kraken: Parse { event: 'heartbeat' | ... } and array payloads
+ * Каждая биржа реализует этот интерфейс со своей специфичной логикой парсинга:
+ * - Polymarket: Парсит { event_type: 'book' | 'trade' | 'pong' | ... }
+ * - Binance: Парсит { e: 'depthUpdate' | 'trade' | ... }
+ * - Kraken: Парсит { event: 'heartbeat' | ... } и array payloads
  *
- * Key Responsibilities:
- * 1. **parseMessage()**: Convert raw data to ParsedMessage (or null for control messages)
- * 2. **isPongMessage()**: Detect heartbeat/pong responses
- * 3. **isErrorMessage()**: Detect error messages
- * 4. **extractErrorMessage()**: Extract human-readable error text
+ * Ключевые ответственности:
+ * 1. **parseMessage()**: Преобразовать сырые данные в ParsedMessage (или null для управляющих сообщений)
+ * 2. **isPongMessage()**: Обнаружить heartbeat/pong ответы
+ * 3. **isErrorMessage()**: Обнаружить сообщения об ошибках
+ * 4. **extractErrorMessage()**: Извлечь человекочитаемый текст ошибки
  *
  * @example
  * ```typescript
- * // Polymarket implementation
+ * // Реализация Polymarket
  * class PolymarketMessageParser implements IMessageParser {
  *   parseMessage(data: unknown): ParsedMessage | null {
  *     const msg = data as PolymarketWSMessage;
@@ -34,11 +34,11 @@
  *         payload: msg,
  *       };
  *     }
- *     return null; // Control message (pong, subscribed, etc.)
+ *     return null; // Управляющее сообщение (pong, subscribed, и т.д.)
  *   }
  * }
  *
- * // Usage in BaseWebSocketTransport
+ * // Использование в BaseWebSocketTransport
  * const parsed = this.parser.parseMessage(JSON.parse(rawData));
  * if (parsed) {
  *   this.emit(parsed.type, parsed.payload);
@@ -51,57 +51,57 @@
 import type { ParsedMessage } from './types.js';
 
 /**
- * Interface for parsing incoming WebSocket messages
+ * Интерфейс для парсинга входящих WebSocket сообщений
  *
  * @remarks
- * Implementations must:
- * - Parse exchange-specific message formats
- * - Return ParsedMessage for data events (orderbook, trade, ticker, etc.)
- * - Return null for control messages (pong, subscribed, error, etc.)
- * - Detect heartbeat/pong messages
- * - Detect and extract error messages
+ * Реализации должны:
+ * - Парсить специфичные для биржи форматы сообщений
+ * - Возвращать ParsedMessage для событий данных (orderbook, trade, ticker, и т.д.)
+ * - Возвращать null для управляющих сообщений (pong, subscribed, error, и т.д.)
+ * - Обнаруживать heartbeat/pong сообщения
+ * - Обнаруживать и извлекать сообщения об ошибках
  *
- * Design Principles:
- * - **Fail gracefully**: Return null for unparseable messages (don't throw)
- * - **Logging**: Log warnings for unexpected formats
- * - **Type safety**: Validate message structure before accessing fields
- * - **Performance**: Fast parsing (< 1ms typical)
+ * Принципы дизайна:
+ * - **Мягкая обработка ошибок**: Возвращать null для непарсируемых сообщений (не выбрасывать)
+ * - **Логирование**: Логировать предупреждения для неожиданных форматов
+ * - **Типобезопасность**: Валидировать структуру сообщения перед обращением к полям
+ * - **Производительность**: Быстрый парсинг (< 1мс типично)
  *
- * Control Messages vs Data Messages:
- * - **Control messages** (return null): pong, subscribed, unsubscribed, error
- * - **Data messages** (return ParsedMessage): orderbook, trade, ticker, etc.
+ * Управляющие сообщения vs Сообщения данных:
+ * - **Управляющие сообщения** (возвращать null): pong, subscribed, unsubscribed, error
+ * - **Сообщения данных** (возвращать ParsedMessage): orderbook, trade, ticker, и т.д.
  *
- * This distinction allows BaseWebSocketTransport to:
- * - Handle control messages internally (heartbeat, subscriptions, errors)
- * - Emit data messages to application layer
+ * Это разделение позволяет BaseWebSocketTransport:
+ * - Обрабатывать управляющие сообщения внутренне (heartbeat, подписки, ошибки)
+ * - Эмитить сообщения данных в прикладной слой
  */
 export interface IMessageParser {
   /**
-   * Parse incoming WebSocket message
+   * Парсит входящее WebSocket сообщение
    *
-   * @param data - Raw message data (usually parsed JSON object)
-   * @returns ParsedMessage for data events, null for control messages or unparseable data
+   * @param data - Сырые данные сообщения (обычно распарсенный JSON объект)
+   * @returns ParsedMessage для событий данных, null для управляющих сообщений или непарсируемых данных
    *
    * @remarks
-   * Decision Flow:
-   * 1. Check if message is control message (pong, subscribed, error) → return null
-   * 2. Check if message is data event (orderbook, trade) → return ParsedMessage
-   * 3. Check if message is malformed/incomplete → log warning, return null
+   * Дерево решений:
+   * 1. Проверить является ли сообщение управляющим (pong, subscribed, error) → вернуть null
+   * 2. Проверить является ли сообщение событием данных (orderbook, trade) → вернуть ParsedMessage
+   * 3. Проверить является ли сообщение malformed/неполным → залогировать предупреждение, вернуть null
    *
-   * Control Messages (return null):
-   * - Heartbeat/pong responses (handled by BaseWebSocketTransport)
-   * - Subscription confirmations (logged but not emitted)
-   * - Error messages (handled by isErrorMessage/extractErrorMessage)
+   * Управляющие сообщения (возвращать null):
+   * - Heartbeat/pong ответы (обрабатываются BaseWebSocketTransport)
+   * - Подтверждения подписки (логируются, но не эмитятся)
+   * - Сообщения об ошибках (обрабатываются isErrorMessage/extractErrorMessage)
    *
-   * Data Messages (return ParsedMessage):
-   * - Orderbook updates → { type: 'orderbook', channelId: '123', payload: {...} }
-   * - Trade events → { type: 'trade', channelId: '123', payload: {...} }
-   * - Custom events → { type: 'custom', channelId: '123', payload: {...} }
+   * Сообщения данных (возвращать ParsedMessage):
+   * - Обновления orderbook → { type: 'orderbook', channelId: '123', payload: {...} }
+   * - События trade → { type: 'trade', channelId: '123', payload: {...} }
+   * - Кастомные события → { type: 'custom', channelId: '123', payload: {...} }
    *
-   * Error Handling:
-   * - Invalid/unparseable data → log warning, return null (don't throw)
-   * - Missing required fields → log warning, return null
-   * - Never throw exceptions (parseMessage is called in hot path)
+   * Обработка ошибок:
+   * - Невалидные/непарсируемые данные → залогировать предупреждение, вернуть null (не выбрасывать)
+   * - Отсутствующие обязательные поля → залогировать предупреждение, вернуть null
+   * - Никогда не выбрасывать исключения (parseMessage вызывается в горячем пути)
    *
    * @example
    * ```typescript
@@ -112,10 +112,10 @@ export interface IMessageParser {
    *   bids: [...],
    *   asks: [...],
    * });
-   * // Returns: { type: 'orderbook', channelId: '123', payload: {...} }
+   * // Возвращает: { type: 'orderbook', channelId: '123', payload: {...} }
    *
    * const pong = parser.parseMessage({ event_type: 'pong' });
-   * // Returns: null (control message)
+   * // Возвращает: null (управляющее сообщение)
    *
    * // Binance
    * const parsed = parser.parseMessage({
@@ -124,51 +124,51 @@ export interface IMessageParser {
    *   b: [...],
    *   a: [...],
    * });
-   * // Returns: { type: 'orderbook', channelId: 'BTCUSDT', payload: {...} }
+   * // Возвращает: { type: 'orderbook', channelId: 'BTCUSDT', payload: {...} }
    * ```
    */
   parseMessage(data: unknown): ParsedMessage | null;
 
   /**
-   * Check if message is a pong/heartbeat response
+   * Проверяет является ли сообщение pong/heartbeat ответом
    *
-   * @param data - Raw message data
-   * @returns true if this is a heartbeat/pong message
+   * @param data - Сырые данные сообщения
+   * @returns true если это heartbeat/pong сообщение
    *
    * @remarks
-   * Used by BaseWebSocketTransport to:
-   * - Reset heartbeat timeout
-   * - Confirm connection is alive
-   * - Avoid treating pong as a data event
+   * Используется BaseWebSocketTransport для:
+   * - Сброса таймаута heartbeat
+   * - Подтверждения что соединение живо
+   * - Избежания обработки pong как события данных
    *
-   * Exchange Examples:
+   * Примеры для бирж:
    * - Polymarket: { event_type: 'pong' }
-   * - Binance: { e: 'ping' } or { result: null, id: <pingId> }
+   * - Binance: { e: 'ping' } или { result: null, id: <pingId> }
    * - Kraken: { event: 'heartbeat' }
    *
    * @example
    * ```typescript
    * if (parser.isPongMessage(data)) {
    *   this.resetHeartbeatTimeout();
-   *   return; // Don't process as data event
+   *   return; // Не обрабатывать как событие данных
    * }
    * ```
    */
   isPongMessage(data: unknown): boolean;
 
   /**
-   * Check if message is an error message
+   * Проверяет является ли сообщение сообщением об ошибке
    *
-   * @param data - Raw message data
-   * @returns true if this is an error message
+   * @param data - Сырые данные сообщения
+   * @returns true если это сообщение об ошибке
    *
    * @remarks
-   * Used by BaseWebSocketTransport to:
-   * - Detect exchange errors
-   * - Emit 'error' event with extracted message
-   * - Log error details
+   * Используется BaseWebSocketTransport для:
+   * - Обнаружения ошибок биржи
+   * - Эмитирования события 'error' с извлечённым сообщением
+   * - Логирования деталей ошибки
    *
-   * Exchange Examples:
+   * Примеры для бирж:
    * - Polymarket: { event_type: 'error', message: '...' }
    * - Binance: { error: { code: -1100, msg: '...' } }
    * - Kraken: { errorMessage: '...' }
@@ -185,34 +185,34 @@ export interface IMessageParser {
   isErrorMessage(data: unknown): boolean;
 
   /**
-   * Extract human-readable error message
+   * Извлекает человекочитаемое сообщение об ошибке
    *
-   * @param data - Raw message data (should be error message)
-   * @returns Error message string, or undefined if not an error or message unavailable
+   * @param data - Сырые данные сообщения (должно быть сообщением об ошибке)
+   * @returns Строка сообщения об ошибке, или undefined если не ошибка или сообщение недоступно
    *
    * @remarks
-   * Called after isErrorMessage() returns true.
-   * Extracts the actual error text from exchange-specific error format.
+   * Вызывается после того как isErrorMessage() вернул true.
+   * Извлекает фактический текст ошибки из специфичного для биржи формата ошибки.
    *
-   * Fallback Behavior:
-   * - If no error message found → return 'Unknown error'
-   * - If data is not an error → return undefined
-   * - Never throw exceptions
+   * Fallback поведение:
+   * - Если сообщение об ошибке не найдено → вернуть 'Unknown error'
+   * - Если данные не ошибка → вернуть undefined
+   * - Никогда не выбрасывать исключения
    *
-   * Exchange Examples:
-   * - Polymarket: Extract message field
-   * - Binance: Extract error.msg field
-   * - Kraken: Extract errorMessage field
+   * Примеры для бирж:
+   * - Polymarket: Извлечь поле message
+   * - Binance: Извлечь поле error.msg
+   * - Kraken: Извлечь поле errorMessage
    *
    * @example
    * ```typescript
    * // Polymarket
    * const msg = parser.extractErrorMessage({ event_type: 'error', message: 'Invalid token' });
-   * // Returns: 'Invalid token'
+   * // Возвращает: 'Invalid token'
    *
    * // Binance
    * const msg = parser.extractErrorMessage({ error: { code: -1100, msg: 'Invalid symbol' } });
-   * // Returns: 'Invalid symbol'
+   * // Возвращает: 'Invalid symbol'
    * ```
    */
   extractErrorMessage(data: unknown): string | undefined;

@@ -1,23 +1,23 @@
 /**
- * IMessageFormatter - Interface for formatting OUTGOING WebSocket messages
+ * IMessageFormatter - Интерфейс для форматирования ИСХОДЯЩИХ WebSocket сообщений
  *
  * @remarks
- * Responsibility: Convert domain-level subscription requests into exchange-specific wire format.
- * This is the OUTGOING half of the message handling (paired with IMessageParser for incoming).
+ * Ответственность: Преобразование доменных запросов подписки в специфичный для биржи wire-формат.
+ * Это ИСХОДЯЩАЯ половина обработки сообщений (в паре с IMessageParser для входящих).
  *
- * Design Decision:
- * - Split from IMessageParser to follow Single Responsibility Principle
- * - IMessageFormatter handles subscribe/unsubscribe formatting (client → server)
- * - IMessageParser handles incoming message parsing (server → client)
+ * Решение по дизайну:
+ * - Отделён от IMessageParser для следования Single Responsibility Principle
+ * - IMessageFormatter обрабатывает форматирование subscribe/unsubscribe (клиент → сервер)
+ * - IMessageParser обрабатывает парсинг входящих сообщений (сервер → клиент)
  *
- * Each exchange implements this interface with their specific format:
- * - Polymarket: JSON with { assets_ids: [...], type: 'market' }
- * - Binance: JSON with { method: 'SUBSCRIBE', params: [...] }
- * - Kraken: JSON with { event: 'subscribe', pair: [...], subscription: {...} }
+ * Каждая биржа реализует этот интерфейс со своим специфичным форматом:
+ * - Polymarket: JSON с { assets_ids: [...], type: 'market' }
+ * - Binance: JSON с { method: 'SUBSCRIBE', params: [...] }
+ * - Kraken: JSON с { event: 'subscribe', pair: [...], subscription: {...} }
  *
  * @example
  * ```typescript
- * // Polymarket implementation
+ * // Реализация Polymarket
  * class PolymarketMessageFormatter implements IMessageFormatter {
  *   formatSubscription(channel: string, params: SubscriptionParams): string {
  *     return JSON.stringify({
@@ -27,7 +27,7 @@
  *   }
  * }
  *
- * // Usage in BaseWebSocketTransport
+ * // Использование в BaseWebSocketTransport
  * const message = this.formatter.formatSubscription('market', { assets_ids: ['123'] });
  * this.ws.send(message);
  * ```
@@ -38,43 +38,43 @@
 import type { SubscriptionParams } from './types.js';
 
 /**
- * Interface for formatting outgoing WebSocket messages
+ * Интерфейс для форматирования исходящих WebSocket сообщений
  *
  * @remarks
- * Implementations must:
- * - Convert generic SubscriptionParams to exchange-specific format
- * - Return ready-to-send string (usually JSON.stringify result)
- * - Validate params and throw clear errors if invalid
- * - Handle exchange-specific quirks (e.g., Polymarket requires numeric strings)
+ * Реализации должны:
+ * - Преобразовывать generic SubscriptionParams в специфичный для биржи формат
+ * - Возвращать готовую к отправке строку (обычно результат JSON.stringify)
+ * - Валидировать параметры и выбрасывать понятные ошибки если невалидны
+ * - Обрабатывать специфичные для биржи особенности (например, Polymarket требует числовые строки)
  *
- * Error Handling:
- * - Throw Error for invalid params (caught by BaseWebSocketTransport)
- * - Log warnings for suspicious but valid input
- * - Never return null/undefined (always return valid string or throw)
+ * Обработка ошибок:
+ * - Выбрасывать Error для невалидных параметров (ловится BaseWebSocketTransport)
+ * - Логировать предупреждения для подозрительного, но валидного ввода
+ * - Никогда не возвращать null/undefined (всегда возвращать валидную строку или выбрасывать)
  *
  * SLA:
- * - Synchronous operation (no async needed for formatting)
- * - Fast execution (< 1ms typical)
- * - Deterministic output (same params → same output)
+ * - Синхронная операция (async не нужен для форматирования)
+ * - Быстрое выполнение (< 1мс типично)
+ * - Детерминистичный вывод (одни параметры → один вывод)
  */
 export interface IMessageFormatter {
   /**
-   * Format a subscription request
+   * Форматирует запрос подписки
    *
-   * @param channel - Channel name (exchange-specific, e.g., 'market', 'depth', 'trade')
-   * @param params - Subscription parameters (exchange-specific structure)
-   * @returns Formatted message string ready to send via WebSocket
-   * @throws {Error} If params are invalid or missing required fields
+   * @param channel - Имя канала (специфично для биржи, например, 'market', 'depth', 'trade')
+   * @param params - Параметры подписки (специфичная для биржи структура)
+   * @returns Отформатированная строка сообщения готовая к отправке через WebSocket
+   * @throws {Error} Если параметры невалидны или отсутствуют обязательные поля
    *
    * @remarks
-   * The channel parameter may be ignored by some exchanges (e.g., Polymarket doesn't use it).
-   * Other exchanges may use it to determine message structure (e.g., Binance).
+   * Параметр channel может игнорироваться некоторыми биржами (например, Polymarket не использует его).
+   * Другие биржи могут использовать его для определения структуры сообщения (например, Binance).
    *
-   * Validation:
-   * - Check required fields exist
-   * - Validate field formats (e.g., numeric strings, valid enums)
-   * - Remove duplicates if applicable
-   * - Throw descriptive errors for invalid input
+   * Валидация:
+   * - Проверить наличие обязательных полей
+   * - Валидировать форматы полей (например, числовые строки, валидные enum)
+   * - Удалить дубликаты если применимо
+   * - Выбрасывать описательные ошибки для невалидного ввода
    *
    * @example
    * ```typescript
@@ -83,46 +83,46 @@ export interface IMessageFormatter {
    *   assets_ids: ['123', '456'],
    *   type: 'market',
    * });
-   * // Returns: '{"assets_ids":["123","456"],"type":"market"}'
+   * // Возвращает: '{"assets_ids":["123","456"],"type":"market"}'
    *
    * // Binance
    * const msg = formatter.formatSubscription('depth', {
    *   symbol: 'BTCUSDT',
    *   levels: 20,
    * });
-   * // Returns: '{"method":"SUBSCRIBE","params":["btcusdt@depth20"],"id":1}'
+   * // Возвращает: '{"method":"SUBSCRIBE","params":["btcusdt@depth20"],"id":1}'
    * ```
    */
   formatSubscription(channel: string, params: SubscriptionParams): string;
 
   /**
-   * Format an unsubscription request
+   * Форматирует запрос отписки
    *
-   * @param channel - Channel name
-   * @param params - Unsubscription parameters (usually same as subscription)
-   * @returns Formatted message string ready to send via WebSocket
-   * @throws {Error} If params are invalid
+   * @param channel - Имя канала
+   * @param params - Параметры отписки (обычно такие же как для подписки)
+   * @returns Отформатированная строка сообщения готовая к отправке через WebSocket
+   * @throws {Error} Если параметры невалидны
    *
    * @remarks
-   * Some exchanges use the same format for subscribe/unsubscribe (e.g., Polymarket).
-   * Others use different message types (e.g., Binance uses method: 'UNSUBSCRIBE').
+   * Некоторые биржи используют одинаковый формат для subscribe/unsubscribe (например, Polymarket).
+   * Другие используют разные типы сообщений (например, Binance использует method: 'UNSUBSCRIBE').
    *
-   * Implementation Note:
-   * - If unsubscribe format is identical to subscribe, delegate to formatSubscription()
-   * - If different, implement separate logic
+   * Примечание по реализации:
+   * - Если формат unsubscribe идентичен subscribe, делегировать в formatSubscription()
+   * - Если отличается, реализовать отдельную логику
    *
    * @example
    * ```typescript
-   * // Polymarket (same as subscribe)
+   * // Polymarket (такой же как subscribe)
    * const msg = formatter.formatUnsubscription('market', {
    *   assets_ids: ['123'],
    * });
    *
-   * // Binance (different method)
+   * // Binance (другой method)
    * const msg = formatter.formatUnsubscription('depth', {
    *   symbol: 'BTCUSDT',
    * });
-   * // Returns: '{"method":"UNSUBSCRIBE","params":["btcusdt@depth20"],"id":2}'
+   * // Возвращает: '{"method":"UNSUBSCRIBE","params":["btcusdt@depth20"],"id":2}'
    * ```
    */
   formatUnsubscription(channel: string, params: SubscriptionParams): string;
