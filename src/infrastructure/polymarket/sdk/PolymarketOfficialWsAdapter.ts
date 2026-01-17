@@ -187,6 +187,7 @@
 import type { IMarketDataFeed } from '../../../domain/ports/IMarketDataFeed.js';
 import type { ILogger } from '../../../domain/ports/ILogger.js';
 import { Orderbook } from '../../../domain/entities/Orderbook.js';
+import { Trade } from '../../../domain/entities/Trade.js';
 
 /**
  * Конфигурация для официального WebSocket клиента SDK
@@ -226,7 +227,7 @@ export type OrderbookCallback = (orderbook: Orderbook) => void;
 /**
  * Тип callback для обновлений сделок
  */
-export type TradeCallback = (trade: any) => void; // TODO: Использовать сущность Trade при реализации
+export type TradeCallback = (trade: Trade) => void;
 
 /**
  * Адаптер WebSocket официального SDK для Polymarket (Заглушка)

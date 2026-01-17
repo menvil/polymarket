@@ -570,9 +570,13 @@ export class PolymarketOrderRestClient {
     const onlyFirstPage = options?.onlyFirstPage ?? false;
     const includeAllTrades = options?.includeAllTrades ?? true;
 
-    this.logger.debug('[PolymarketOrderRestClient] v7.7.12: Getting fills from /data/trades', {
+    // Fallback на this.makerAddress если makerAddress не передан
+    const effectiveMaker = makerAddress ?? this.makerAddress;
+
+    this.logger.debug('[PolymarketOrderRestClient] : Getting fills from /data/trades', {
       tokenId: tokenId ? tokenId.substring(0, 16) + '...' : 'all',
-      makerAddress: makerAddress ? makerAddress.substring(0, 10) + '...' : 'none',
+      makerAddress: effectiveMaker ? effectiveMaker.substring(0, 10) + '...' : 'none',
+      makerSource: makerAddress ? 'param' : 'this.makerAddress',
       limit,
       onlyFirstPage,
       includeAllTrades,
@@ -590,9 +594,9 @@ export class PolymarketOrderRestClient {
         next_cursor: nextCursor,
       };
 
-      // ✅ v7.7.10: КРИТИЧНО - Использовать параметр maker_address!
-      if (makerAddress) {
-        params.maker_address = makerAddress;
+      // Использовать effectiveMaker (параметр или this.makerAddress)
+      if (effectiveMaker) {
+        params.maker_address = effectiveMaker;
       }
 
       if (tokenId) {
@@ -631,11 +635,11 @@ export class PolymarketOrderRestClient {
       }
     }
 
-    this.logger.info('[PolymarketOrderRestClient] 📊 v7.7.12: Fills from /data/trades retrieved', {
+    this.logger.info('[PolymarketOrderRestClient]: Fills from /data/trades retrieved', {
       totalCount: allTrades.length,
       pages: pageCount,
       tokenIdFilter: tokenId ? tokenId.substring(0, 16) + '...' : 'all',
-      makerAddress: makerAddress ? makerAddress.substring(0, 10) + '...' : 'none',
+      makerAddress: effectiveMaker ? effectiveMaker.substring(0, 10) + '...' : 'none',
       limit,
       onlyFirstPage,
     });

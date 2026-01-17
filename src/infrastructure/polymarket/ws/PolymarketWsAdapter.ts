@@ -707,7 +707,7 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
         });
 
         // Polymarket требует переподключения для новых подписок
-        await this.client.reconnectWithTimeout(1000);
+        await this.client.reconnectWithTimeout(2000);
 
         // Отправляем одно сообщение подписки со всеми токенами
         const params: SubscriptionParams = {

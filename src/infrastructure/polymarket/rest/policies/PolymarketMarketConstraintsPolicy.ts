@@ -23,11 +23,11 @@
  * const normalized = await policy.normalizeSize('0x123', 15.7777);
  * // Возвращает 15.78 (округлено до sizeTick=0.01)
  *
- * policy.learnFromError('0x123', 'size too small: minimum is 20');
- * // Обновляет кэш: minOrderSize = 20
+ * policy.learnFromError('0x123', 'invalid amount ($0.50), min size: $1');
+ * // Обновляет кэш: minOrderValue = 1.0
  *
- * const validation = await policy.validateSize('0x123', 5);
- * // Возвращает { ok: false, reason: 'Size 5 below minimum 20' }
+ * const validation = await policy.validateSize('0x123', 1, 0.50, 'BUY');
+ * // Возвращает { ok: false, reason: 'Size 1 × $0.50 = $0.50 below minimum $1.00 (need 2 shares)' }
  * ```
  */
 
@@ -268,6 +268,14 @@ export class PolymarketMarketConstraintsPolicy {
 
       // Затем проверяем минимальную СТОИМОСТЬ ордера (если > 0)
       if (constraints.minOrderValue > 0) {
+        // Защита от деления на ноль/Infinity
+        if (price <= 0) {
+          return {
+            ok: false,
+            reason: `Invalid price ${price} for minOrderValue check (price must be > 0)`,
+          };
+        }
+
         const orderValue = size * price;
         const minSharesForValue = Math.ceil(constraints.minOrderValue / price);
 

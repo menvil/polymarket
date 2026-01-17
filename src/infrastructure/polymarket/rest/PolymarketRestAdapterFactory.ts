@@ -139,11 +139,13 @@ export class PolymarketRestAdapterFactory {
     // Построитель ордеров (для подписанных EIP-712 ордеров)
     const signer = restClient.getSigner();
     const makerAddress = config.funderAddress || signer.getAddress();
+    // Используем signatureType из инициализированного клиента (уже применил fallback к EOA)
+    const signatureType = restClient.getSignatureType();
     const orderBuilder = new PolymarketOrderBuilder(
       signer.getWallet(),
       config.chainId,
       makerAddress,
-      config.signatureType!,
+      signatureType,
       logger
     );
 
