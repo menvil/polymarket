@@ -259,9 +259,30 @@ export class InMemoryEventStore {
    * @remarks
    * Используется для мониторинга memory usage.
    * Приблизительная оценка через JSON serialization.
+   *
+   * Совместимость:
+   * - Browser: TextEncoder (стандартный API)
+   * - Node.js: Buffer.byteLength (fallback)
+   * - Graceful handling: если event не имеет toJSON, используется сам объект
    */
   public getSizeInBytes(): number {
-    const json = JSON.stringify(this.events.map((e) => e.toJSON()));
-    return new Blob([json]).size;
+    // Безопасная сериализация: toJSON() если есть, иначе сам объект
+    const serializable = this.events.map((e) =>
+      typeof e.toJSON === 'function' ? e.toJSON() : e
+    );
+    const json = JSON.stringify(serializable);
+
+    // TextEncoder доступен в браузерах и Node.js 11+
+    if (typeof TextEncoder !== 'undefined') {
+      return new TextEncoder().encode(json).length;
+    }
+
+    // Fallback для старых версий Node.js
+    if (typeof Buffer !== 'undefined') {
+      return Buffer.byteLength(json, 'utf8');
+    }
+
+    // Последний fallback: приблизительная оценка (ASCII = 1 байт на символ)
+    return json.length;
   }
 }
