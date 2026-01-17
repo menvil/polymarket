@@ -15,9 +15,9 @@
  * @example
  * ```typescript
  * const auth = new PolymarketL2Authenticator({
- *   apiKey: '550e8400-e29b-41d4-a716-446655440000',
- *   secret: 'L-VjT8weg_KHTYkU1gPqCXGpgk8VuZ0mtizM8KObMV0=', // base64url
- *   passphrase: 'c72eb0fad6f390d26d5e322baeebb084bce0ddcc0893d58efdad23dbd991b6bc',
+ *   apiKey: 'apiKey',
+ *   secret: 'secret', // base64url
+ *   passphrase: 'passphrase',
  * }, address);
  *
  * const headers = auth.createAuthHeaders('GET', '/balance-allowance', '');
