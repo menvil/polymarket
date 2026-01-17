@@ -321,8 +321,11 @@ export class HttpClient {
    * @remarks
    * Retry выполняется для:
    * - HttpError с retryable status (5xx, 429, 408)
-   * - Network errors
-   * - Timeout errors
+   * - Network errors (TypeError, fetch failures)
+   *
+   * НЕ retryable:
+   * - AbortError (внешняя/пользовательская отмена)
+   * - Timeout уже конвертирован в HttpError(408) в fetchWithTimeout
    */
   private shouldRetry(error: unknown, attempt: number): boolean {
     // Достигли лимита попыток
@@ -335,11 +338,18 @@ export class HttpClient {
       return error.isRetryable();
     }
 
-    // Network errors, timeout
+    // Network errors (NOT AbortError - см. ниже)
     if (error instanceof Error) {
+      // AbortError НЕ retryable:
+      // - Timeout уже конвертирован в HttpError(408) в fetchWithTimeout
+      // - Любой AbortError здесь = внешняя/пользовательская отмена
+      // - Пользовательская отмена не должна retry-иться
+      if (error.name === 'AbortError') {
+        return false;
+      }
+
       return (
-        error.name === 'AbortError' ||
-        error.name === 'TypeError' || // Network error
+        error.name === 'TypeError' || // Network error (e.g., DNS failure)
         error.message.includes('fetch') ||
         error.message.includes('timeout')
       );
