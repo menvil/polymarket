@@ -117,14 +117,14 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
   /**
    * Получить заказы по статусу
    *
-   * @param status - Статус заказа для фильтрации
+   * @param status - Статус заказа для фильтрации ('open' или 'partially_filled')
    * @param tokenId - Опционально: фильтр по ID токена
    * @returns Массив заказов с указанным статусом
    * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
    * Фильтрует заказы по статусу локально (после получения всех открытых заказов).
-   * Для заказов 'filled' и 'cancelled' используйте getOrderHistory(), если доступно.
+   *
    *
    * @example
    * ```typescript
