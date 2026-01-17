@@ -70,6 +70,15 @@ export interface OrderbookData {
  */
 export class Orderbook {
   /**
+   * Количество уровней по умолчанию для расчёта imbalance
+   *
+   * @remarks
+   * Используется как значение по умолчанию в getImbalance().
+   * 5 уровней обеспечивают баланс между точностью и устойчивостью к шуму.
+   */
+  public static readonly DEFAULT_IMBALANCE_LEVELS = 5;
+
+  /**
    * Создаёт новый Orderbook
    *
    * @param marketId - Идентификатор рынка
@@ -398,17 +407,17 @@ export class Orderbook {
   /**
    * Вычисляет imbalance (дисбаланс объёмов)
    *
-   * @param levels - Количество уровней для расчёта (по умолчанию 5)
+   * @param levels - Количество уровней для расчёта (по умолчанию DEFAULT_IMBALANCE_LEVELS)
    * @returns Imbalance от -1 до 1
    *
    * @remarks
    * Imbalance = (bidVolume - askVolume) / (bidVolume + askVolume)
-   * 
+   *
    * Интерпретация:
    * - Imbalance > 0: больше покупателей, цена может вырасти
    * - Imbalance < 0: больше продавцов, цена может упасть
    * - Imbalance ~0: баланс сторон
-   * 
+   *
    * Диапазон:
    * - +1.0: только bids, нет asks (сильное покупательское давление)
    * - -1.0: только asks, нет bids (сильное продавательское давление)
@@ -416,7 +425,7 @@ export class Orderbook {
    *
    * @example
    * ```typescript
-   * const imbalance = orderbook.getImbalance(5);
+   * const imbalance = orderbook.getImbalance(); // использует DEFAULT_IMBALANCE_LEVELS
    * if (imbalance > 0.3) {
    *   console.log('Strong buying pressure');
    * } else if (imbalance < -0.3) {
@@ -426,7 +435,7 @@ export class Orderbook {
    * }
    * ```
    */
-  public getImbalance(levels: number = 5): number {
+  public getImbalance(levels: number = Orderbook.DEFAULT_IMBALANCE_LEVELS): number {
     const bidVolume = this.getTotalBidVolume(levels).value;
     const askVolume = this.getTotalAskVolume(levels).value;
 
