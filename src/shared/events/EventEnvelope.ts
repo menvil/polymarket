@@ -116,7 +116,7 @@ export type EventEnvelope<E> = ProductionEnvelope<E> | ReplayEnvelope<E>;
  * );
  * ```
  */
-export function createProductionEnvelope<E extends { type?: string; eventName?: string }>(
+export function createProductionEnvelope<E extends { type: string; eventName?: string } | { type?: string; eventName: string }>(
   payload: E,
   executionContext: ExecutionContext,
   correlationId?: string,
@@ -173,7 +173,7 @@ export function createProductionEnvelope<E extends { type?: string; eventName?: 
  * );
  * ```
  */
-export function createReplayEnvelope<E extends { type?: string; eventName?: string }>(
+export function createReplayEnvelope<E extends { type: string; eventName?: string } | { type?: string; eventName: string }>(
   payload: E,
   executionContext: ExecutionContext,
   sequenceNumber: number, // REQUIRED
