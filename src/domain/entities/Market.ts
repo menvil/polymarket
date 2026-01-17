@@ -115,7 +115,11 @@ export class Market {
     this.id = props.id;
     this.question = props.question;
     this.marketUrl = props.marketUrl ?? null;
-    this.outcomes = props.outcomes;
+    // Defensive copy and freeze outcomes to prevent external mutation
+    this.outcomes = Object.freeze([
+      Object.freeze({ ...props.outcomes[0] }),
+      Object.freeze({ ...props.outcomes[1] }),
+    ]) as readonly [OutcomeToken, OutcomeToken];
     this.expirationDate = props.expirationDate;
     this.status = props.status;
     this.resolvedOutcomeIndex = props.resolvedOutcomeIndex ?? null;
