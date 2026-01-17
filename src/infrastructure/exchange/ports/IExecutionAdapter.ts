@@ -29,6 +29,10 @@
  * ```
  */
 
+import type { OrderResponse } from '../types/OrderResponse.js';
+
+export type { OrderResponse };
+
 /**
  * Параметры для размещения ордера (уже нормализованные)
  *
@@ -60,38 +64,6 @@ export interface PlaceOrderParams {
 
   /** Ставка комиссии в базисных пунктах (из ограничений рынка или выученная из ошибок) */
   feeRateBps?: number;
-}
-
-/**
- * Ответ с ордером (нормализованный)
- */
-export interface OrderResponse {
-  /** ID ордера */
-  orderId: string;
-
-  /** ID токена */
-  tokenId: string;
-
-  /** Сторона ордера */
-  side: 'buy' | 'sell';
-
-  /** Цена ордера */
-  price: number;
-
-  /** Исходный размер */
-  size: number;
-
-  /** Оставшийся размер */
-  sizeRemaining: number;
-
-  /** Статус ордера */
-  status: 'open' | 'partially_filled' | 'filled' | 'cancelled';
-
-  /** Временная метка создания (мс) */
-  createdAt: number;
-
-  /** Временная метка обновления (мс) */
-  updatedAt?: number;
 }
 
 /**

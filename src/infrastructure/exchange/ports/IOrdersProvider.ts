@@ -29,37 +29,9 @@
  * ```
  */
 
-/**
- * Ответ с ордером (нормализованный)
- */
-export interface OrderResponse {
-  /** ID ордера */
-  orderId: string;
+import type { OrderResponse, OrderStatus } from '../types/OrderResponse.js';
 
-  /** ID токена */
-  tokenId: string;
-
-  /** Сторона ордера */
-  side: 'buy' | 'sell';
-
-  /** Цена ордера */
-  price: number;
-
-  /** Исходный размер */
-  size: number;
-
-  /** Оставшийся (неисполненный) размер */
-  sizeRemaining: number;
-
-  /** Статус ордера */
-  status: 'open' | 'partially_filled' | 'filled' | 'cancelled';
-
-  /** Временная метка создания (мс) */
-  createdAt: number;
-
-  /** Временная метка обновления (мс) */
-  updatedAt?: number;
-}
+export type { OrderResponse, OrderStatus };
 
 /**
  * Общий интерфейс провайдера ордеров (МНОЖЕСТВЕННОЕ ЧИСЛО!)

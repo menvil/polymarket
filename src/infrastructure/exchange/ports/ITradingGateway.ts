@@ -28,6 +28,9 @@
  */
 
 import type { Result } from '../../../shared/types/Result.js';
+import type { OrderResponse } from '../types/OrderResponse.js';
+
+export type { OrderResponse };
 
 /**
  * Параметры для размещения ордера
@@ -44,38 +47,6 @@ export interface PlaceOrderParams {
 
   /** Размер/количество ордера */
   size: number;
-}
-
-/**
- * Ответ с ордером (нормализованный для всех бирж)
- */
-export interface OrderResponse {
-  /** Специфичный для биржи ID ордера */
-  orderId: string;
-
-  /** ID токена/актива */
-  tokenId: string;
-
-  /** Сторона ордера */
-  side: 'buy' | 'sell';
-
-  /** Цена ордера */
-  price: number;
-
-  /** Исходный размер ордера */
-  size: number;
-
-  /** Оставшийся (неисполненный) размер */
-  sizeRemaining: number;
-
-  /** Статус ордера */
-  status: 'open' | 'partially_filled' | 'filled' | 'cancelled';
-
-  /** Временная метка создания ордера (миллисекунды) */
-  createdAt: number;
-
-  /** Опционально: временная метка последнего обновления */
-  updatedAt?: number;
 }
 
 /**
