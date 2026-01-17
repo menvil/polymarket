@@ -310,14 +310,15 @@ export class SubscriptionRegistry<T> {
       return 0;
     }
 
-    let successCount = 0;
+    const attemptedCount = callbacks.size;
+    let errorCount = 0;
 
     // Вызываем все callbacks, изолируя ошибки
     for (const callback of callbacks) {
       try {
         callback(data);
-        successCount++;
       } catch (error) {
+        errorCount++;
         this.stats.callbackErrors++;
         this.logger.error('Error in subscription callback', {
           assetId: assetId.substring(0, 16) + '...',
@@ -328,15 +329,17 @@ export class SubscriptionRegistry<T> {
 
     // Считаем все попытки вызова callbacks (успешные + неуспешные)
     // Это согласовано с callbackErrors, который считает индивидуальные ошибки
-    this.stats.totalNotifications += callbacks.size;
+    this.stats.totalNotifications += attemptedCount;
 
     this.logger.trace('Notifications sent', {
       assetId: assetId.substring(0, 16) + '...',
-      count: successCount,
-      errors: callbacks.size - successCount,
+      attempted: attemptedCount,
+      succeeded: attemptedCount - errorCount,
+      errors: errorCount,
     });
 
-    return successCount;
+    // Возвращаем количество вызванных callbacks (как указано в JSDoc)
+    return attemptedCount;
   }
 
   /**
