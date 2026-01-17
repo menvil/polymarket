@@ -123,6 +123,12 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
   private _isSubscribing = false;
 
   /**
+   * Флаг необходимости повторной подписки
+   * Устанавливается в true если токены изменились во время sendAllSubscriptions()
+   */
+  private _needsResubscribe = false;
+
+  /**
    * Создаёт PolymarketWsAdapter
    *
    * @param wsManager - Экземпляр PolymarketWebSocketManager
@@ -663,39 +669,46 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
       return;
     }
 
-    // Предотвращаем цикл переподключений
+    // Если уже идёт подписка - помечаем что нужен повтор
     if (this._isSubscribing) {
-      this.logger.debug('Subscription already in progress, skipping');
+      this._needsResubscribe = true;
+      this.logger.debug('Subscription in progress, will retry after completion');
       return;
     }
 
     this._isSubscribing = true;
 
     try {
-      const tokens = Array.from(this.subscribedTokens);
+      do {
+        // Сбрасываем флаг перед каждой отправкой
+        this._needsResubscribe = false;
 
-      this.logger.info('Sending WebSocket subscription', {
-        tokenCount: tokens.length,
-        marketCount: tokens.length / 2,
-        sampleTokens: tokens.slice(0, 2).map(t => t.substring(0, 16) + '...'),
-      });
+        const tokens = Array.from(this.subscribedTokens);
 
-      // Polymarket требует переподключения для новых подписок
-      await this.client.reconnectWithTimeout(10000);
+        this.logger.info('Sending WebSocket subscription', {
+          tokenCount: tokens.length,
+          marketCount: tokens.length / 2,
+          sampleTokens: tokens.slice(0, 2).map(t => t.substring(0, 16) + '...'),
+        });
 
-      // Отправляем одно сообщение подписки со всеми токенами
-      const params: SubscriptionParams = {
-        assets_ids: tokens,
-        type: 'market',
-      };
+        // Polymarket требует переподключения для новых подписок
+        await this.client.reconnectWithTimeout(1000);
 
-      await this.client.subscribe('market', params);
+        // Отправляем одно сообщение подписки со всеми токенами
+        const params: SubscriptionParams = {
+          assets_ids: tokens,
+          type: 'market',
+        };
 
-      this.logger.info('Subscription sent successfully', {
-        tokenCount: tokens.length,
-      });
+        await this.client.subscribe('market', params);
+
+        this.logger.info('Subscription sent successfully', {
+          tokenCount: tokens.length,
+        });
+
+      } while (this._needsResubscribe); // Повторяем если были изменения
     } catch (error) {
-      // CRITICAL: Don't log error if adapter is destroyed (это нормально)
+      // Don't log error if adapter is destroyed (это нормально)
       if (this._isDestroyed) {
         this.logger.debug('Subscription failed after destroy (expected)', {
           error: error instanceof Error ? error.message : String(error),
