@@ -21,7 +21,7 @@
  *   async placeOrder(order: Order): Promise<Order> {
  *     // 1. Нормализация через MarketConstraintsPolicy
  *     // 2. Проверка баланса через BalancePolicy
- *     // 3. Размешение ордера
+ *     // 3. Размещение ордера
  *     // 4. Обучение на ошибках
  *     return placedOrder;
  *   }
