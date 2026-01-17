@@ -26,45 +26,9 @@
  * ```
  */
 
-/**
- * Ответ с позицией (нормализованный)
- */
-export interface PositionResponse {
-  /** ID токена */
-  tokenId: string;
+import type { PositionResponse, PositionState } from '../types/PositionResponse.js';
 
-  /** Размер позиции (положительный = long, отрицательный = short) */
-  size: number;
-
-  /** Средняя цена входа */
-  averagePrice: number;
-
-  /** Реализованный PnL */
-  realizedPnl: number;
-
-  /** Нереализованный PnL */
-  unrealizedPnl: number;
-
-  /** Временная метка последнего обновления (мс) */
-  updatedAt: number;
-}
-
-/**
- * Состояние позиции (для валидации)
- */
-export interface PositionState {
-  /** Текущий размер позиции */
-  currentPosition: number;
-
-  /** Лимит позиции (макс размер) */
-  positionLimit: number;
-
-  /** Можно ли увеличить позицию */
-  canIncrease: boolean;
-
-  /** Можно ли уменьшить позицию */
-  canDecrease: boolean;
-}
+export type { PositionResponse, PositionState };
 
 /**
  * Общий интерфейс провайдера позиций (МНОЖЕСТВЕННОЕ ЧИСЛО!)

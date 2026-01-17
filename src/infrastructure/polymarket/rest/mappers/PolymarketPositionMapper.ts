@@ -28,7 +28,7 @@
  */
 
 import type { PositionResponse as ApiPositionResponse } from '../clients/PolymarketPositionsRestClient.js';
-import type { PositionResponse } from '../../../exchange/ports/IPortfolioAdapter.js';
+import type { PositionResponse } from '../../../exchange/types/PositionResponse.js';
 
 /**
  * Маппер позиций Polymarket
@@ -52,7 +52,7 @@ export class PolymarketPositionMapper {
    * ```typescript
    * const rawPosition = {
    *   asset: '0x123',
-   *   conditionId: 'market-456',
+   *   conditionId: 'market-456', // API возвращает conditionId
    *   size: 50.5,
    *   avgPrice: 0.52,
    *   currentValue: 52.5,
@@ -61,6 +61,7 @@ export class PolymarketPositionMapper {
    * };
    *
    * const normalized = mapper.toDomainPosition(rawPosition);
+   * console.log(normalized.marketId); // 'market-456' (маппится из conditionId)
    * console.log(normalized.size); // 50.5
    * ```
    */
@@ -76,7 +77,7 @@ export class PolymarketPositionMapper {
 
     return {
       tokenId: response.asset,
-      conditionId: response.conditionId, // ✅ Передаём для сопоставления стратегии
+      marketId: response.conditionId, // API возвращает conditionId, маппим на marketId
       size,
       averagePrice,
       realizedPnl,

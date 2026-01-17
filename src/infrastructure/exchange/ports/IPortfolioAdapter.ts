@@ -40,31 +40,10 @@
  * ```
  */
 
-/**
- * Ответ с позицией (нормализованный)
- */
-export interface PositionResponse {
-  /** ID токена */
-  tokenId: string;
+import type { PositionResponse } from '../types/PositionResponse.js';
+import type { OrderSide } from '../types/OrderResponse.js';
 
-  /** Condition ID (market ID) - используется для сопоставления со стратегией */
-  conditionId?: string;
-
-  /** Размер позиции (положительный = long, отрицательный = short) */
-  size: number;
-
-  /** Средняя цена входа */
-  averagePrice: number;
-
-  /** Реализованный PnL */
-  realizedPnl: number;
-
-  /** Нереализованный PnL */
-  unrealizedPnl: number;
-
-  /** Временная метка последнего обновления (мс) */
-  updatedAt: number;
-}
+export type { PositionResponse, OrderSide };
 
 /**
  * Параметры для проверки возможности размещения ордера
@@ -73,8 +52,8 @@ export interface CanPlaceOrderParams {
   /** ID токена */
   tokenId: string;
 
-  /** Сторона ордера */
-  side: 'buy' | 'sell';
+  /** Сторона ордера (UPPERCASE: 'BUY' | 'SELL') */
+  side: OrderSide;
 
   /** Цена ордера */
   price: number;
