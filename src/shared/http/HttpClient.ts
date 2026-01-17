@@ -359,26 +359,40 @@ export class HttpClient {
   }
 
   /**
-   * Вычисляет задержку для retry с exponential backoff
+   * Вычисляет задержку для retry с exponential backoff + jitter
    *
    * @param attempt - Номер попытки (0-based)
    * @returns Задержка в мс
    *
    * @remarks
-   * Алгоритм: delay * (2 ^ attempt)
-   * Максимальная задержка ограничена maxRetryDelay.
+   * Алгоритм: delay * (2 ^ attempt) * jitter
+   * - Jitter: случайный множитель 0.5–1.5 для предотвращения thundering herd
+   * - Максимальная задержка ограничена maxRetryDelay
+   *
+   * Thundering herd problem:
+   * Без jitter все клиенты retry-ят одновременно после ошибки сервера,
+   * создавая пиковую нагрузку. Jitter распределяет retry во времени.
    *
    * @example
    * ```
-   * attempt 0: 1000ms
-   * attempt 1: 2000ms
-   * attempt 2: 4000ms
-   * attempt 3: 8000ms (или maxRetryDelay)
+   * attempt 0: 500-1500ms (base 1000ms ± 50%)
+   * attempt 1: 1000-3000ms (base 2000ms ± 50%)
+   * attempt 2: 2000-6000ms (base 4000ms ± 50%)
+   * attempt 3: maxRetryDelay (если base превышает)
    * ```
    */
   private calculateRetryDelay(attempt: number): number {
-    const delay = this.config.retryDelay * Math.pow(2, attempt);
-    return Math.min(delay, this.config.maxRetryDelay);
+    // Базовая экспоненциальная задержка
+    const baseDelay = this.config.retryDelay * Math.pow(2, attempt);
+
+    // Jitter: множитель 0.5–1.5 для распределения retry во времени
+    // Это предотвращает thundering herd когда много клиентов retry-ят одновременно
+    const jitter = 0.5 + Math.random(); // 0.5 to 1.5
+
+    const delayWithJitter = baseDelay * jitter;
+
+    // Ограничиваем максимальной задержкой
+    return Math.min(delayWithJitter, this.config.maxRetryDelay);
   }
 
   /**
