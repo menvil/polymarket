@@ -156,8 +156,11 @@ export interface IEventBus {
    *
    * @example
    * ```typescript
-   * const unsubscribe = bus.subscribe('TradeExecuted', (event) => {
-   *   console.log('Trade:', event.price, event.size);
+   * const unsubscribe = bus.subscribe('TradeExecuted', (envelope) => {
+   *   // envelope.type = 'TradeExecuted'
+   *   // envelope.payload = TradeExecutedEvent
+   *   console.log('Trade:', envelope.payload.price, envelope.payload.size);
+   *   console.log('Timestamp:', envelope.timestamp);
    * });
    *
    * // Позже: отписка
@@ -178,8 +181,12 @@ export interface IEventBus {
    *
    * @example
    * ```typescript
-   * const unsubscribe = bus.subscribeAll((event) => {
-   *   console.log('Any event:', event.eventName, event.timestamp);
+   * const unsubscribe = bus.subscribeAll((envelope) => {
+   *   // envelope.type = тип события (маршрутизация)
+   *   // envelope.payload = данные события
+   *   // envelope.timestamp = время события
+   *   console.log('Event:', envelope.type, envelope.timestamp);
+   *   console.log('Context:', envelope.executionContext.environment);
    * });
    *
    * // Позже: отписка
