@@ -477,41 +477,44 @@ export class Portfolio {
    * @remarks
    * Общая стоимость = cash + sum(position values)
    * Position value = quantity * current price
-   * 
+   *
    * Алгоритм:
    * 1. Начинаем с cash (доступный + резервированный)
    * 2. Для каждой позиции:
    *    - Получаем текущую цену из marketPrices
    *    - Вычисляем value = quantity * price
-   *    - Добавляем к общей стоимости
+   *    - Добавляем к общей стоимости через Money.add()
    * 3. Возвращаем итоговую сумму
+   *
+   * Использует операции Money для предотвращения ошибок с плавающей точкой.
    *
    * @example
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
    *   .addPosition(position); // 10 shares @ entry 0.60
-   * 
+   *
    * const marketPrices = new Map([
    *   ['market-123', Price.fromNumber(0.70)]
    * ]);
-   * 
+   *
    * const totalValue = portfolio.getTotalValue(marketPrices);
    * // cash (1000) + position value (10 * 0.70 = 7)
    * console.log(totalValue.amount); // 1007
    * ```
    */
   public getTotalValue(marketPrices: Map<string, Price>): Money {
-    let totalValue = this.cash.amount;
+    let totalValue = this.cash;
 
-    for (const [tokenId, position] of this.positions.entries()) {
+    // Используем Array.from чтобы избежать требования downlevelIteration
+    for (const [tokenId, position] of Array.from(this.positions.entries())) {
       const currentPrice = marketPrices.get(tokenId);
       if (currentPrice && position.totalQuantity.isPositive()) {
-        const positionValue = position.totalQuantity.value * currentPrice.value;
-        totalValue += positionValue;
+        const positionValue = Money.fromUSDC(position.totalQuantity.value * currentPrice.value);
+        totalValue = totalValue.add(positionValue);
       }
     }
 
-    return Money.fromUSDC(totalValue);
+    return totalValue;
   }
 
   /**
@@ -524,28 +527,31 @@ export class Portfolio {
    * Суммирует нереализованный P&L всех позиций.
    * Каждая позиция вычисляет P&L на основе своего average entry price.
    *
+   * Использует операции Money для предотвращения ошибок с плавающей точкой.
+   *
    * @example
    * ```typescript
    * const marketPrices = new Map([
    *   ['market-123', Price.fromNumber(0.70)]
    * ]);
-   * 
+   *
    * const totalPnL = portfolio.getTotalUnrealizedPnL(marketPrices);
    * console.log(totalPnL.amount); // Sum of all position P&Ls
    * ```
    */
   public getTotalUnrealizedPnL(marketPrices: Map<string, Price>): Money {
-    let totalPnL = 0;
+    let totalPnL = Money.fromUSDC(0);
 
-    for (const [tokenId, position] of this.positions.entries()) {
+    // Используем Array.from чтобы избежать требования downlevelIteration
+    for (const [tokenId, position] of Array.from(this.positions.entries())) {
       const currentPrice = marketPrices.get(tokenId);
       if (currentPrice) {
         const pnl = position.calculateUnrealizedPnL(currentPrice);
-        totalPnL += pnl.amount;
+        totalPnL = totalPnL.add(pnl);
       }
     }
 
-    return Money.fromUSDC(totalPnL);
+    return totalPnL;
   }
 
   /**
