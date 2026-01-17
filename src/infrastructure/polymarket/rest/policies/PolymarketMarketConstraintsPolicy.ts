@@ -82,7 +82,7 @@ export class PolymarketMarketConstraintsPolicy {
    * @returns Ограничения рынка
    *
    * @remarks
-   * Безопасные значения по умолчанию при отсутствии данных: { minOrderSize: 10, sizeTick: 0.01, maxOrderSize: 10000 }
+   * Безопасные значения по умолчанию при отсутствии данных: { minOrderSize: 1, sizeTick: 0.01, maxOrderSize: 10000 }
    * Результаты кэшируются в памяти.
    *
    * @example
@@ -229,7 +229,7 @@ export class PolymarketMarketConstraintsPolicy {
    *
    * @remarks
    * Ордера BUY: минимум 1 акция (если minOrderValue=0) ИЛИ минимальная СТОИМОСТЬ ордера (если minOrderValue>0)
-   * Ордера SELL: нет минимального РАЗМЕРА (только проверка maxOrderSize)
+   * Ордера SELL: проверка минимального РАЗМЕРА (minOrderSize) и максимального размера (maxOrderSize)
    *
    * Примеры (BUY с minOrderValue=0):
    * - Любая цена → минимум 1 акция
