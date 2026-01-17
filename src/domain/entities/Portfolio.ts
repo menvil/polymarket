@@ -7,7 +7,7 @@
  *
  * Алгоритм:
  * 1. Хранит доступный кэш (cash) и резервированный кэш (reservedCash)
- * 2. Управляет позициями по всем рынкам (Map<marketId, Position>)
+ * 2. Управляет позициями по всем рынкам (Map<tokenId, Position>)
  * 3. Резервирует средства при размещении BUY ордеров
  * 4. Освобождает средства при отмене или исполнении ордеров
  * 5. Вычисляет общую стоимость портфеля = cash + sum(position values)
@@ -15,7 +15,7 @@
  * Бизнес-правила:
  * - Нельзя резервировать больше доступного кэша
  * - Резервированный кэш недоступен для новых ордеров
- * - При добавлении позиции проверяется уникальность marketId
+ * - При добавлении позиции проверяется уникальность tokenId
  * - Общая стоимость учитывает текущие рыночные цены
  *
  * @example
@@ -44,12 +44,12 @@ import { InsufficientFundsError, TradingError } from '../../shared/errors/Tradin
  * Ошибка дублирующейся позиции
  *
  * @remarks
- * Выбрасывается при попытке добавить позицию с уже существующим marketId.
+ * Выбрасывается при попытке добавить позицию с уже существующим tokenId.
  */
 export class DuplicatePositionError extends TradingError {
-  constructor(public readonly marketId: string) {
+  constructor(public readonly tokenId: string) {
     super(
-      `Position already exists for market: ${marketId}`,
+      `Position already exists for token: ${tokenId}`,
       'DUPLICATE_POSITION'
     );
   }
@@ -62,9 +62,9 @@ export class DuplicatePositionError extends TradingError {
  * Выбрасывается при попытке обновить несуществующую позицию.
  */
 export class PositionNotFoundError extends TradingError {
-  constructor(public readonly marketId: string) {
+  constructor(public readonly tokenId: string) {
     super(
-      `Position not found for market: ${marketId}`,
+      `Position not found for token: ${tokenId}`,
       'POSITION_NOT_FOUND'
     );
   }
@@ -83,7 +83,7 @@ export class Portfolio {
    * @param id - Уникальный идентификатор портфеля
    * @param cash - Доступные денежные средства
    * @param reservedCash - Резервированные средства (для открытых BUY ордеров)
-   * @param positions - Map позиций (marketId -> Position)
+   * @param positions - Map позиций (tokenId -> Position)
    *
    * @remarks
    * Private constructor - используйте статические фабричные методы.
@@ -318,7 +318,7 @@ export class Portfolio {
    * @param position - Позиция для добавления
    * @returns Новый Portfolio с добавленной позицией
    *
-   * @throws {DuplicatePositionError} Если позиция с таким marketId уже существует
+   * @throws {DuplicatePositionError} Если позиция с таким tokenId уже существует
    *
    * @remarks
    * Добавляет позицию в портфель.
@@ -471,7 +471,7 @@ export class Portfolio {
   /**
    * Вычисляет общую стоимость портфеля
    *
-   * @param marketPrices - Map текущих рыночных цен (marketId -> Price)
+   * @param marketPrices - Map текущих рыночных цен (tokenId -> Price)
    * @returns Общая стоимость портфеля
    *
    * @remarks
@@ -517,7 +517,7 @@ export class Portfolio {
   /**
    * Вычисляет общий нереализованный P&L всех позиций
    *
-   * @param marketPrices - Map текущих рыночных цен (marketId -> Price)
+   * @param marketPrices - Map текущих рыночных цен (tokenId -> Price)
    * @returns Общий нереализованный P&L
    *
    * @remarks
