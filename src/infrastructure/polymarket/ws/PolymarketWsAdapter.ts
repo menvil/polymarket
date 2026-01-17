@@ -721,7 +721,7 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
 
         this.logger.info('Sending WebSocket subscription', {
           tokenCount: tokens.length,
-          marketCount: tokens.length / 2,
+          marketCount: Math.floor(tokens.length / 2),
           sampleTokens: tokens.slice(0, 2).map(t => t.substring(0, 16) + '...'),
         });
 
