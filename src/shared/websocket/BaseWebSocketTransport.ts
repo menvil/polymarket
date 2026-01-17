@@ -650,11 +650,10 @@ export class BaseWebSocketTransport extends EventEmitter {
 
     this.heartbeatTimer = setInterval(() => {
       if (this.ws && this.status === 'connected') {
-        // Очищаем предыдущий timeout перед созданием нового
-        // Это предотвращает утечку таймеров когда heartbeatInterval < heartbeatTimeout
+        // Пропускаем ping если ещё ждём pong от предыдущего
+        // Это гарантирует что timeout сможет сработать при отсутствии pong
         if (this.heartbeatTimeoutTimer) {
-          clearTimeout(this.heartbeatTimeoutTimer);
-          this.heartbeatTimeoutTimer = null;
+          return;
         }
 
         this.ws.ping();
