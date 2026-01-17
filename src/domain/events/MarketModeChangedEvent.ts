@@ -123,13 +123,18 @@ export class MarketModeChangedEvent extends DomainEvent {
    * ```
    */
   public isEscalation(): boolean {
+    // PAUSED is neutral - transitions involving PAUSED are not escalations
+    if (this.fromMode === 'PAUSED' || this.toMode === 'PAUSED') {
+      return false;
+    }
+
     const modeRank: Record<TradingMode, number> = {
       FLAT: 0,
       QUOTE: 1,
       SKEW: 2,
       UNWIND: 3,
       PANIC: 4,
-      PAUSED: -1, // neutral
+      PAUSED: -1, // not used due to guard above
     };
 
     return modeRank[this.toMode] > modeRank[this.fromMode];
@@ -147,16 +152,21 @@ export class MarketModeChangedEvent extends DomainEvent {
    * ```
    */
   public isDeescalation(): boolean {
+    // PAUSED is neutral - transitions involving PAUSED are not de-escalations
+    if (this.fromMode === 'PAUSED' || this.toMode === 'PAUSED') {
+      return false;
+    }
+
     const modeRank: Record<TradingMode, number> = {
       FLAT: 0,
       QUOTE: 1,
       SKEW: 2,
       UNWIND: 3,
       PANIC: 4,
-      PAUSED: -1,
+      PAUSED: -1, // not used due to guard above
     };
 
-    return modeRank[this.toMode] < modeRank[this.fromMode] && modeRank[this.toMode] >= 0;
+    return modeRank[this.toMode] < modeRank[this.fromMode];
   }
 
   /**
