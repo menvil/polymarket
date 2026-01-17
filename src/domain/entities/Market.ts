@@ -184,7 +184,8 @@ export class Market {
     }
 
     // Если разрешён, должен иметь индекс исхода
-    if (props.status === 'RESOLVED' && props.resolvedOutcomeIndex === undefined) {
+    if (props.status === 'RESOLVED' &&
+        (props.resolvedOutcomeIndex === undefined || props.resolvedOutcomeIndex === null)) {
       throw new MarketNotFoundError(props.id);
     }
 

@@ -3,9 +3,9 @@
  *
  * @remarks
  * Интерфейс для execution операций (размещение/отмена ордеров).
- * Часть разделения IExchangeAdapter на Execution и Portfolio (Step 3).
+ * Часть разделения IExchangeAdapter на Execution и Portfolio.
  *
- * Responsibilities:
+ * Обязанности:
  * - Размещение ордеров (с нормализацией и валидацией)
  * - Отмена ордеров
  * - Получение открытых ордеров
@@ -19,10 +19,10 @@
  * ```typescript
  * class PolymarketExecutionAdapter implements IExecutionAdapter {
  *   async placeOrder(order: Order): Promise<Order> {
- *     // 1. Normalize size via MarketConstraintsPolicy
- *     // 2. Check balance via BalancePolicy
- *     // 3. Place order via CLOBClient
- *     // 4. Learn from errors
+ *     // 1. Нормализация через MarketConstraintsPolicy
+ *     // 2. Проверка баланса через BalancePolicy
+ *     // 3. Размешение ордера
+ *     // 4. Обучение на ошибках
  *     return placedOrder;
  *   }
  * }
