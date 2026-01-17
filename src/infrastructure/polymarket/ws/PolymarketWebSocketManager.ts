@@ -233,15 +233,22 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
         const cb = this.tradeCallbacks.get(assetId);
         if (!cb) return;
 
-        // Парсим и нормализуем данные трейда
+        // Парсим и валидируем данные трейда
         // PolymarketTradeMessage имеет: price (строка), size (строка), side ('BUY'|'SELL'|undefined)
-        const tradeData = {
-          price: parseFloat(message.price) || 0,
-          quantity: parseFloat(message.size) || 0,
-          side: (message.side as 'BUY' | 'SELL') || null,
-        };
+        const price = parseFloat(message.price);
+        const quantity = parseFloat(message.size);
 
-        cb(tradeData);
+        // Пропускаем сообщения с некорректными значениями (NaN, Infinity, <= 0)
+        // чтобы не создавать фиктивные сделки
+        if (!Number.isFinite(price) || !Number.isFinite(quantity) || price <= 0 || quantity <= 0) {
+          return;
+        }
+
+        cb({
+          price,
+          quantity,
+          side: (message.side as 'BUY' | 'SELL') || null,
+        });
       });
     }
   }
