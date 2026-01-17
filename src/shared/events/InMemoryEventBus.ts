@@ -275,15 +275,19 @@ export class InMemoryEventBus implements IEventBus, IEventBusInspector {
     const eventName = envelope.type;
 
     // 1. Вызвать specific event handlers
+    // ВАЖНО: Shallow copy для защиты от мутации при unsubscribe во время dispatch
+    // Если handler отписывается во время итерации, splice() сдвигает элементы и
+    // for...of может пропустить следующий handler
     const specificHandlers = this.handlers.get(eventName);
     if (specificHandlers) {
-      for (const handler of specificHandlers) {
+      for (const handler of [...specificHandlers]) {
         this.invokeHandler(handler, envelope, 'specific');
       }
     }
 
     // 2. Вызвать "all events" handlers
-    for (const handler of this.allHandlers) {
+    // ВАЖНО: Shallow copy для защиты от мутации при unsubscribe во время dispatch
+    for (const handler of [...this.allHandlers]) {
       this.invokeHandler(handler, envelope, 'all');
     }
   }
