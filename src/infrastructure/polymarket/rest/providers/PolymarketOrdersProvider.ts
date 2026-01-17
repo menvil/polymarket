@@ -118,7 +118,7 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
   /**
    * Получить заказы по статусу
    *
-   * @param status - Статус заказа для фильтрации (UPPERCASE: 'OPEN', 'PARTIALLY_FILLED', etc.)
+   * @param status - Статус заказа для фильтрации ('OPEN', 'PARTIALLY_FILLED', etc.)
    * @param tokenId - Опционально: фильтр по ID токена
    * @returns Массив заказов с указанным статусом
    * @throws {ApiError} Если вызов API завершился неудачей

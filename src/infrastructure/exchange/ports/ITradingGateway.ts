@@ -39,7 +39,7 @@ export interface PlaceOrderParams {
   /** ID токена (asset ID, market ID или символ в зависимости от биржи) */
   tokenId: string;
 
-  /** Сторона ордера (UPPERCASE: 'BUY' | 'SELL') */
+  /** Сторона ордера ('BUY' | 'SELL') */
   side: OrderSide;
 
   /** Цена за единицу */

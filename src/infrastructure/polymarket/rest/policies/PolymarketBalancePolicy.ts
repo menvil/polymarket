@@ -41,7 +41,7 @@ export interface BalanceCheckParams {
   /** ID токена */
   tokenId: string;
 
-  /** Сторона ордера (UPPERCASE: 'BUY' | 'SELL') */
+  /** Сторона ордера ('BUY' | 'SELL') */
   side: OrderSide;
 
   /** Цена ордера */

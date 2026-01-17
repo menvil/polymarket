@@ -48,7 +48,7 @@ export interface PlaceOrderParams {
   /** ID токена (UP или DOWN) */
   tokenId: string;
 
-  /** Сторона ордера (UPPERCASE: 'BUY' | 'SELL') */
+  /** Сторона ордера ('BUY' | 'SELL') */
   side: OrderSide;
 
   /** Цена (уже валидирована и нормализована) */
@@ -80,7 +80,7 @@ export interface FillResponse {
   /** ID токена */
   tokenId: string;
 
-  /** Сторона сделки (UPPERCASE: 'BUY' | 'SELL') */
+  /** Сторона сделки ('BUY' | 'SELL') */
   side: OrderSide;
 
   /** Цена исполнения */

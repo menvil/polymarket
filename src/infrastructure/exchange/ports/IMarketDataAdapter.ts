@@ -74,7 +74,7 @@ export interface MarketTrade {
   /** ID токена */
   tokenId: string;
 
-  /** Сторона сделки (с точки зрения taker, UPPERCASE: 'BUY' | 'SELL') */
+  /** Сторона сделки (с точки зрения taker, 'BUY' | 'SELL') */
   side: OrderSide;
 
   /** Цена исполнения */

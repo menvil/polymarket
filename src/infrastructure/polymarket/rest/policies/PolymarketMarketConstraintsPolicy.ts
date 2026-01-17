@@ -225,7 +225,7 @@ export class PolymarketMarketConstraintsPolicy {
    * @param tokenId - ID токена
    * @param size - Размер для валидации
    * @param price - Цена ордера
-   * @param side - Сторона ордера (UPPERCASE: 'BUY' | 'SELL')
+   * @param side - Сторона ордера ('BUY' | 'SELL')
    * @returns Результат валидации
    *
    * @remarks
