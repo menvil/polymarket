@@ -151,7 +151,7 @@ export class PolymarketOrderBuilder {
     const salt = Math.floor(Math.random() * Number.MAX_SAFE_INTEGER);
 
     // КРИТИЧНО: Определить размер шага цены
-    // Если не предоставлен, использовать безопасное значение по умолчанию (0.001)
+    // Если не предоставлен, использовать безопасное значение по умолчанию (0.01)
     const priceTick = params.priceTick ?? this.inferPriceTick(params.price);
 
     // Округлить цену до размера шага (избежать ошибок с плавающей точкой)
