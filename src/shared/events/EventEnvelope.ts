@@ -1,16 +1,16 @@
 import type { ExecutionContext } from '../../domain/execution/ExecutionContext.js';
 
 /**
- * EventEnvelope - base metadata wrapper
+ * EventEnvelope - базовая обёртка с метаданными
  *
  * @remarks
- * payload - opaque, EventBus маршрутизирует по envelope.type
+ * payload - непрозрачный, EventBus маршрутизирует по envelope.type
  *
  * Принципы:
  * - type: string из payload.type (для ExecutionEvent/ExecutionErrorEvent) или DomainEvent.eventName
- * - payload: OPAQUE - EventBus не читает payload, только доставляет
+ * - payload: НЕПРОЗРАЧНЫЙ - EventBus не читает payload, только доставляет
  * - executionContext: для Decision Layer (environment + accountId)
- * - correlationId: для distributed tracing
+ * - correlationId: для распределённой трассировки
  *
  * sequenceNumber НЕ optional - см. ProductionEnvelope vs ReplayEnvelope
  */
@@ -27,10 +27,10 @@ export interface BaseEventEnvelope<E> {
  * ProductionEnvelope - для production (LIVE, PAPER)
  *
  * @remarks
- * sequenceNumber OPTIONAL
- * - ProductionEventBus ИГНОРИРУЕТ sequenceNumber (FIFO strict)
+ * sequenceNumber ОПЦИОНАЛЕН
+ * - ProductionEventBus ИГНОРИРУЕТ sequenceNumber (строгий FIFO)
  * - sequenceNumber может использоваться для event sourcing persistence
- * - НО NOT для ordering в ProductionEventBus
+ * - НО НЕ для упорядочивания в ProductionEventBus
  *
  * @example
  * ```typescript
@@ -40,22 +40,22 @@ export interface BaseEventEnvelope<E> {
  *   payload: orderAcceptedEvent,
  *   timestamp: new Date(),
  *   executionContext: { environment: 'LIVE', accountId: 'main' },
- *   sequenceNumber: 42 // optional
+ *   sequenceNumber: 42 // опционален
  * };
  * ```
  */
 export interface ProductionEnvelope<E> extends BaseEventEnvelope<E> {
-  readonly sequenceNumber?: number; // Optional для production
+  readonly sequenceNumber?: number; // Опционален для production
 }
 
 /**
- * ReplayEnvelope - для replay (REPLAY environment)
+ * ReplayEnvelope - для replay (среда REPLAY)
  *
  * @remarks
- * sequenceNumber REQUIRED
+ * sequenceNumber ОБЯЗАТЕЛЕН
  * - ReplayEventBus СОРТИРУЕТ по sequenceNumber
- * - Deterministic replay
- * - Runtime invariant: ReplayEventBus.publish() проверяет sequenceNumber !== undefined
+ * - Детерминированное воспроизведение
+ * - Runtime инвариант: ReplayEventBus.publish() проверяет sequenceNumber !== undefined
  *
  * @example
  * ```typescript
@@ -65,16 +65,16 @@ export interface ProductionEnvelope<E> extends BaseEventEnvelope<E> {
  *   payload: orderAcceptedEvent,
  *   timestamp: new Date(),
  *   executionContext: { environment: 'REPLAY', accountId: 'backtest-xyz' },
- *   sequenceNumber: 42 // REQUIRED для replay
+ *   sequenceNumber: 42 // ОБЯЗАТЕЛЕН для replay
  * };
  * ```
  */
 export interface ReplayEnvelope<E> extends BaseEventEnvelope<E> {
-  readonly sequenceNumber: number; // REQUIRED для replay
+  readonly sequenceNumber: number; // ОБЯЗАТЕЛЕН для replay
 }
 
 /**
- * EventEnvelope - union type для flexibility
+ * EventEnvelope - union тип для гибкости
  *
  * @remarks
  * Используется как общий тип для обоих envelopes.
@@ -87,9 +87,9 @@ export type EventEnvelope<E> = ProductionEnvelope<E> | ReplayEnvelope<E>;
  * Создаёт ProductionEnvelope для ExecutionEvent или DomainEvent
  *
  * @param payload - Event payload с type (ExecutionEvent) или eventName (DomainEvent)
- * @param executionContext - Execution context (environment + accountId)
- * @param correlationId - Correlation ID для distributed tracing (optional)
- * @param sequenceNumber - Sequence number для event sourcing (optional)
+ * @param executionContext - Контекст выполнения (environment + accountId)
+ * @param correlationId - Correlation ID для распределённой трассировки (опционален)
+ * @param sequenceNumber - Порядковый номер для event sourcing (опционален)
  * @returns ProductionEnvelope<E>
  *
  * @remarks
@@ -125,7 +125,7 @@ export function createProductionEnvelope<E extends { type: string; eventName?: s
   // Нормализация: поддержка type (ExecutionEvent) и eventName (DomainEvent)
   const eventType = payload.type ?? payload.eventName;
   if (!eventType) {
-    throw new Error('Payload must have either "type" or "eventName" field');
+    throw new Error('Payload должен иметь поле "type" или "eventName"');
   }
 
   return {
@@ -143,13 +143,13 @@ export function createProductionEnvelope<E extends { type: string; eventName?: s
  * Создаёт ReplayEnvelope для ExecutionEvent или DomainEvent
  *
  * @param payload - Event payload с type (ExecutionEvent) или eventName (DomainEvent)
- * @param executionContext - Execution context (environment + accountId)
- * @param sequenceNumber - Sequence number (REQUIRED для replay)
- * @param correlationId - Correlation ID для distributed tracing (optional)
+ * @param executionContext - Контекст выполнения (environment + accountId)
+ * @param sequenceNumber - Порядковый номер (ОБЯЗАТЕЛЕН для replay)
+ * @param correlationId - Correlation ID для распределённой трассировки (опционален)
  * @returns ReplayEnvelope<E>
  *
  * @remarks
- * sequenceNumber REQUIRED (compile-time check)
+ * sequenceNumber ОБЯЗАТЕЛЕН (проверка на этапе компиляции)
  *
  * Нормализация типа события:
  * - Если payload имеет `type` → используется `type`
@@ -176,13 +176,13 @@ export function createProductionEnvelope<E extends { type: string; eventName?: s
 export function createReplayEnvelope<E extends { type: string; eventName?: string } | { type?: string; eventName: string }>(
   payload: E,
   executionContext: ExecutionContext,
-  sequenceNumber: number, // REQUIRED
+  sequenceNumber: number, // ОБЯЗАТЕЛЕН
   correlationId?: string
 ): ReplayEnvelope<E> {
   // Нормализация: поддержка type (ExecutionEvent) и eventName (DomainEvent)
   const eventType = payload.type ?? payload.eventName;
   if (!eventType) {
-    throw new Error('Payload must have either "type" or "eventName" field');
+    throw new Error('Payload должен иметь поле "type" или "eventName"');
   }
 
   return {
@@ -204,7 +204,7 @@ export function createReplayEnvelope<E extends { type: string; eventName?: strin
  * @remarks
  * Формат: `${timestamp}-${random}`
  * - timestamp: Date.now()
- * - random: base36 string (7 chars)
+ * - random: base36 строка (7 символов)
  *
  * @example
  * ```typescript
