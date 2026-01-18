@@ -320,7 +320,7 @@ export class PolymarketRestClient {
 
     this.logger.debug(`${method} ${url}`, {
       headers: this.maskHeaders(headers),
-      body: body ? JSON.stringify(body).substring(0, 200) : undefined,
+      body: body ? '<redacted>' : undefined,
     });
 
     const controller = new AbortController();
@@ -342,7 +342,7 @@ export class PolymarketRestClient {
           method,
           url,
           status: response.status,
-          requestBody: body ? JSON.stringify(body).substring(0, 500) : undefined,
+          requestBody: body ? '<redacted>' : undefined,
           responseBody: errorBody,
         });
 

@@ -217,8 +217,8 @@ export class PolymarketSigner {
    */
   private encodeOrderData(orderData: Record<string, unknown>): string {
     // TODO: Реализовать кодирование типизированных данных EIP-712 в продакшене
-    // Пока используем простое JSON кодирование
-    return JSON.stringify(orderData);
+    // Сортировка ключей для детерминированной сериализации
+    return JSON.stringify(this.sortObjectKeys(orderData));
   }
 
   /**
@@ -229,6 +229,6 @@ export class PolymarketSigner {
    */
   private encodeCancelData(cancelData: Record<string, unknown>): string {
     // TODO: Реализовать кодирование типизированных данных EIP-712 в продакшене
-    return JSON.stringify(cancelData);
+    return JSON.stringify(this.sortObjectKeys(cancelData));
   }
 }
