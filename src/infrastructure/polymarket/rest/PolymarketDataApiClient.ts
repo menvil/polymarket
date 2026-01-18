@@ -62,9 +62,11 @@ export class PolymarketDataApiClient {
       });
     }
 
+    const fullUrl = url.toString();
+
     this.logger.debug('Data API request', {
       method: 'GET',
-      url: url.toString(),
+      url: fullUrl,
       params,
     });
 
@@ -72,7 +74,7 @@ export class PolymarketDataApiClient {
     const timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
     try {
-      const response = await fetch(url.toString(), {
+      const response = await fetch(fullUrl, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -95,7 +97,7 @@ export class PolymarketDataApiClient {
           `HTTP ${response.status}: ${response.statusText}${errorText ? ` - ${errorText}` : ''}`,
           {
             statusCode: response.status,
-            endpoint,
+            endpoint: fullUrl,
             method: 'GET',
             responseBody: errorText,
           }
@@ -115,11 +117,11 @@ export class PolymarketDataApiClient {
 
       if (error instanceof Error && error.name === 'AbortError') {
         this.logger.error('Data API timeout', {
-          endpoint,
+          url: fullUrl,
           timeout: this.timeout,
         });
         throw new ApiError(`Request timeout after ${this.timeout}ms`, {
-          endpoint,
+          endpoint: fullUrl,
           method: 'GET',
         });
       }
