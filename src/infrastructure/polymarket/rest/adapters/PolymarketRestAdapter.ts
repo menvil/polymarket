@@ -141,7 +141,7 @@ export class PolymarketRestAdapter {
         tokenId: params.tokenId,
       });
 
-      throw new ValidationError(canPlace.reason!);
+      throw new ValidationError(canPlace.reason ?? 'Order validation failed');
     }
 
     this.logger.debug('Order validation passed', {
