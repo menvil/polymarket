@@ -28,6 +28,7 @@
  * const adapter = PolymarketRestAdapterFactory.create(
  *   config,
  *   marketDataConfig,
+ *   eventBus,
  *   logger
  * );
  *

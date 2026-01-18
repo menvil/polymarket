@@ -108,7 +108,7 @@ export class PolymarketOrderMapper {
   toDomainOrder(response: CreateOrderResponse): OrderResponse {
     const size = this.parseNumber(response.size || '0');
     const filledSize = this.parseNumber(response.filledSize || '0');
-    const sizeRemaining = size - filledSize;
+    const sizeRemaining = Math.max(0, size - filledSize);
 
     return {
       orderId: response.orderID, // API возвращает "orderID" с заглавной D
@@ -224,7 +224,7 @@ export class PolymarketOrderMapper {
   toDomainOrderFromMatched(response: MatchedOrderResponse): OrderResponse {
     const size = this.parseNumber(response.original_size || '0');
     const filledSize = this.parseNumber(response.size_matched || '0');
-    const sizeRemaining = size - filledSize;
+    const sizeRemaining = Math.max(0, size - filledSize);
     const createdAt = response.created_at ? new Date(response.created_at).getTime() : Date.now();
 
     return {

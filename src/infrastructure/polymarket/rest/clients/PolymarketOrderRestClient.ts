@@ -436,10 +436,12 @@ export class PolymarketOrderRestClient {
     // API возвращает массив напрямую, а не формат { orders: [...] }
     const orders = Array.isArray(response) ? response : [];
 
+    const previewCount = 3;
     this.logger.info('📥 GET /data/orders RESPONSE', {
       count: orders.length,
       tokenIdFilter: tokenId || 'none',
-      orders: orders.length > 0 ? JSON.stringify(orders, null, 2) : 'NO ORDERS',
+      preview: orders.slice(0, previewCount),
+      truncated: orders.length > previewCount ? orders.length - previewCount : 0,
     });
 
     return orders;
