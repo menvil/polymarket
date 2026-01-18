@@ -482,7 +482,16 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
         });
       }
 
-      throw error;
+      // Уже ApiError - перебросить как есть
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      // Wrap all other errors (network/DNS/connection) into ApiError
+      throw new ApiError(`Network error: ${(error as Error).message}`, {
+        endpoint: url,
+        method: 'GET',
+      });
     }
   }
 }
