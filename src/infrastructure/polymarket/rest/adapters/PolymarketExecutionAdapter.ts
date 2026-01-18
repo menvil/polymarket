@@ -500,7 +500,10 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
     // РЕЖИМ СИМУЛЯЦИИ: Выбросить ошибку (нет истории ордеров в симуляции)
     if (this.simulationMode) {
       this.logger.warn('getOrderById not available in SIMULATION MODE', { orderId });
-      throw new Error('getOrderById not available in simulation mode');
+      throw new ApiError('getOrderById not available in simulation mode', {
+        endpoint: `/order/${orderId}`,
+        method: 'GET',
+      });
     }
 
     // РЕЖИМ LIVE: Реальный API-вызов
