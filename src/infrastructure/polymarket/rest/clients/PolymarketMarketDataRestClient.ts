@@ -245,15 +245,19 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   /**
    * Получить сырые активные рынки (для внутреннего использования)
    *
-   * @returns Массив сырых ответов с информацией о рынках
+   * @returns Массив сырых ответов с информацией о рынках (ТОЛЬКО ПЕРВАЯ СТРАНИЦА)
    * @throws {Error} Если вызов API завершается с ошибкой
    *
    * @remarks
-   * Возвращает сырой ответ API без преобразования.
-   * Используйте getActiveMarkets() для доменного формата.
+   * **ВАЖНО:** Возвращает только первую страницу результатов (без пагинации).
+   * Для получения ВСЕХ рынков используйте getActiveMarkets() который
+   * итерирует по всем страницам и возвращает доменный формат.
+   *
+   * Используется для быстрой проверки или когда нужны сырые данные
+   * без полного обхода пагинации.
    */
   async getRawActiveMarkets(): Promise<MarketInfoResponse[]> {
-    this.logger.debug('Getting raw active markets');
+    this.logger.debug('Getting raw active markets (first page only)');
 
     // Полный набор фильтров для активных рынков (как в официальном Polymarket agents)
     const url = `${this.config.baseUrl}/markets?active=true&closed=false&archived=false`;

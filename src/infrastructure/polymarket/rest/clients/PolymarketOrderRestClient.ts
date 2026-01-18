@@ -604,6 +604,7 @@ export class PolymarketOrderRestClient {
     let nextCursor = 'MA=='; // Начальный курсор
     const END_CURSOR = 'LTE='; // Маркер конца
     let pageCount = 0;
+    let prevCursor: string | null = null;
 
     while (nextCursor !== END_CURSOR) {
       const params: Record<string, string> = {
@@ -637,8 +638,22 @@ export class PolymarketOrderRestClient {
 
       allTrades.push(...trades);
 
-      // Обновить курсор для следующей итерации
-      nextCursor = response?.next_cursor || END_CURSOR;
+      // Сохранить предыдущий курсор для детекции застревания
+      const newCursor = response?.next_cursor || END_CURSOR;
+
+      // Guard: детекция застрявшей пагинации (курсор не меняется)
+      if (newCursor === prevCursor || (newCursor === nextCursor && trades.length === 0)) {
+        this.logger.warn('[PolymarketOrderRestClient] Pagination stalled - cursor not progressing', {
+          prevCursor,
+          nextCursor: newCursor,
+          tradesCount: trades.length,
+          totalFetched: allTrades.length,
+        });
+        break;
+      }
+
+      prevCursor = nextCursor;
+      nextCursor = newCursor;
 
       // Безопасность: остановиться, если больше нет данных
       if (trades.length === 0) {

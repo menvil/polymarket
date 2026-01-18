@@ -135,33 +135,36 @@ export class PolymarketSigner {
   /**
    * Рекурсивно сортирует ключи объекта для детерминированной сериализации
    *
-   * @param obj - Объект для сортировки
-   * @returns Объект с отсортированными ключами
+   * @param value - Значение для нормализации (объект, массив или примитив)
+   * @returns Нормализованное значение с отсортированными ключами
    *
    * @remarks
-   * Сортирует только plain objects (созданные через {}).
-   * Class instances (Date, BigNumber, etc.) возвращаются без изменений,
-   * чтобы сохранить их toJSON() сериализацию.
+   * - Plain objects: ключи сортируются рекурсивно
+   * - Массивы: элементы нормализуются рекурсивно
+   * - Class instances (Date, BigNumber, etc.): возвращаются без изменений
    */
-  private sortObjectKeys(obj: Record<string, unknown>): Record<string, unknown> {
-    // Пропускаем null, примитивы, массивы и class instances (Date, BigNumber, etc.)
-    if (
-      obj === null ||
-      typeof obj !== 'object' ||
-      Array.isArray(obj) ||
-      Object.getPrototypeOf(obj) !== Object.prototype
-    ) {
-      return obj;
+  private sortObjectKeys(value: unknown): unknown {
+    // Пропускаем null и примитивы
+    if (value === null || typeof value !== 'object') {
+      return value;
     }
 
+    // Массивы: рекурсивно нормализуем каждый элемент
+    if (Array.isArray(value)) {
+      return value.map((item) => this.sortObjectKeys(item));
+    }
+
+    // Пропускаем class instances (Date, BigNumber, etc.) - сортируем только plain objects
+    if (Object.getPrototypeOf(value) !== Object.prototype) {
+      return value;
+    }
+
+    // Plain object: сортируем ключи и рекурсивно нормализуем значения
+    const obj = value as Record<string, unknown>;
     return Object.keys(obj)
       .sort()
       .reduce((acc, key) => {
-        const value = obj[key];
-        acc[key] =
-          value !== null && typeof value === 'object' && !Array.isArray(value)
-            ? this.sortObjectKeys(value as Record<string, unknown>)
-            : value;
+        acc[key] = this.sortObjectKeys(obj[key]);
         return acc;
       }, {} as Record<string, unknown>);
   }

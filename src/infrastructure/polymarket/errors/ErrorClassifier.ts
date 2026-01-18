@@ -252,16 +252,15 @@ export class ErrorClassifier {
 
     // Проверить код ошибки
     const code = (structured.code || '').toLowerCase();
+    const messageLower = structured.message.toLowerCase();
 
-    if (code.includes('balance') || structured.message.toLowerCase().includes('insufficient')) {
+    if (code.includes('balance') || messageLower.includes('insufficient')) {
       return {
         type: 'BALANCE_INSUFFICIENT',
         message: structured.message,
         recoverable: true,
       };
     }
-
-    const messageLower = structured.message.toLowerCase();
     // Проверка сетевых ошибок - используем специфичные паттерны,
     // избегая ложных срабатываний на "connection established", "network ready" и т.д.
     if (

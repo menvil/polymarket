@@ -126,7 +126,16 @@ export class PolymarketDataApiClient {
         });
       }
 
-      throw error;
+      // Уже ApiError - перебросить как есть
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      // Обернуть все остальные ошибки (network/DNS/connection) в ApiError
+      throw new ApiError(`Network error: ${(error as Error).message}`, {
+        endpoint: fullUrl,
+        method: 'GET',
+      });
     }
   }
 }

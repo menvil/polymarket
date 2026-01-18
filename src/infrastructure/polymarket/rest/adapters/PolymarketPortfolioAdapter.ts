@@ -226,34 +226,40 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
     }
 
     // Использовать suggestedSize, если проверка баланса предоставила его (например, продажа точного доступного баланса)
-    const suggestedOrNormalizedSize = balanceCheck.suggestedSize ?? normalizedSize;
+    // Если suggestedSize отсутствует, normalizedSize уже нормализован и провалидирован выше
+    let normalizedFinalSize: number;
 
-    // Шаг 4: Нормализация и валидация finalSize (suggestedSize может быть ненормализованным)
-    const normalizedFinalSize = await this.constraintsPolicy.normalizeSize(
-      tokenId,
-      suggestedOrNormalizedSize
-    );
-
-    // Шаг 5: Повторная валидация размера после нормализации suggestedSize
-    const finalSizeValidation = await this.constraintsPolicy.validateSize(
-      tokenId,
-      normalizedFinalSize,
-      normalizedPrice,
-      side
-    );
-
-    if (!finalSizeValidation.ok) {
-      this.logger.warn('Final size validation failed after balance adjustment', {
+    if (balanceCheck.suggestedSize != null) {
+      // Шаг 4: Нормализация suggestedSize (может быть ненормализованным)
+      normalizedFinalSize = await this.constraintsPolicy.normalizeSize(
         tokenId,
-        suggestedSize: balanceCheck.suggestedSize,
-        normalizedFinalSize,
-        price: normalizedPrice,
-        side,
-        reason: finalSizeValidation.reason,
-        minShares: finalSizeValidation.minShares,
-      });
+        balanceCheck.suggestedSize
+      );
 
-      return { ok: false, reason: finalSizeValidation.reason };
+      // Шаг 5: Валидация нормализованного suggestedSize
+      const finalSizeValidation = await this.constraintsPolicy.validateSize(
+        tokenId,
+        normalizedFinalSize,
+        normalizedPrice,
+        side
+      );
+
+      if (!finalSizeValidation.ok) {
+        this.logger.warn('Final size validation failed after balance adjustment', {
+          tokenId,
+          suggestedSize: balanceCheck.suggestedSize,
+          normalizedFinalSize,
+          price: normalizedPrice,
+          side,
+          reason: finalSizeValidation.reason,
+          minShares: finalSizeValidation.minShares,
+        });
+
+        return { ok: false, reason: finalSizeValidation.reason };
+      }
+    } else {
+      // normalizedSize уже нормализован и провалидирован в шагах 1-2
+      normalizedFinalSize = normalizedSize;
     }
 
     // Получить ставку комиссии (изученную из ошибок или по умолчанию)
