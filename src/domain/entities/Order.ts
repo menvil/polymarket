@@ -850,8 +850,12 @@ export class Order {
    * ```
    */
   public withFill(filledSize: Quantity, averageFillPrice: Price): Order {
+    if (filledSize.isZero()) {
+      return this;
+    }
+
     const isFullyFilled = filledSize.equals(this.size) || filledSize.isGreaterThan(this.size);
-    const isPartiallyFilled = !filledSize.isZero() && filledSize.isLessThan(this.size);
+    const isPartiallyFilled = filledSize.isLessThan(this.size);
 
     let newStatus: OrderStatus = this.status;
     if (isFullyFilled) {

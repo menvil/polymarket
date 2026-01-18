@@ -242,7 +242,7 @@ export class ErrorClassifier {
    * @returns Классифицированная OrderError
    */
   private classifyStructured(structured: StructuredError): OrderError {
-    const { message } = structured;
+    const message = String(structured.message ?? '');
     const code = (structured.code || '').toLowerCase();
     const messageLower = message.toLowerCase();
 
