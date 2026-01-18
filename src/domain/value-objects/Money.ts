@@ -22,6 +22,8 @@ export class Money {
   public readonly amount: number;
   public readonly currency: string;
 
+  private static readonly EPSILON = 0.000001;
+
   private constructor(amount: number, currency: string) {
     this.amount = Number(amount.toFixed(6)); // 6 знаков после запятой
     this.currency = currency;
@@ -156,7 +158,7 @@ export class Money {
    */
   public equals(other: Money): boolean {
     return this.currency === other.currency &&
-           Math.abs(this.amount - other.amount) < 0.000001;
+           Math.abs(this.amount - other.amount) < Money.EPSILON;
   }
 
   /**

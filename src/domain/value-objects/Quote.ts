@@ -350,17 +350,14 @@ export class Quote {
    * ```
    */
   public equals(other: Quote): boolean {
-    const bidEquals =
-      (!this.bid && !other.bid) ||
-      (this.bid && other.bid && this.bid.value === other.bid.value);
+    const pricesEqual = (a: Price | null, b: Price | null): boolean =>
+      a === b || (a !== null && b !== null && a.equals(b));
 
-    const askEquals =
-      (!this.ask && !other.ask) ||
-      (this.ask && other.ask && this.ask.value === other.ask.value);
-
-    const bidSizeEquals = this.bidSize.value === other.bidSize.value;
-    const askSizeEquals = this.askSize.value === other.askSize.value;
-
-    return (bidEquals && askEquals && bidSizeEquals && askSizeEquals) as boolean;
+    return (
+      pricesEqual(this.bid, other.bid) &&
+      pricesEqual(this.ask, other.ask) &&
+      this.bidSize.equals(other.bidSize) &&
+      this.askSize.equals(other.askSize)
+    );
   }
 }

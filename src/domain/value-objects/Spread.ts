@@ -324,9 +324,9 @@ export class Spread {
    * ```
    */
   public shift(amount: number): Spread {
-    const newBid = amount >= 0 ? this.bid.add(amount) : this.bid.subtract(Math.abs(amount));
-    const newAsk = amount >= 0 ? this.ask.add(amount) : this.ask.subtract(Math.abs(amount));
-    return Spread.create(newBid, newAsk);
+    const shiftPrice = (price: Price): Price =>
+      amount >= 0 ? price.add(amount) : price.subtract(Math.abs(amount));
+    return Spread.create(shiftPrice(this.bid), shiftPrice(this.ask));
   }
 
   /**

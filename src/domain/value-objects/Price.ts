@@ -28,6 +28,7 @@ export class Price {
   private static readonly MIN_PRICE = 0.0001;
   private static readonly MAX_PRICE = 0.9999;
   private static readonly DEFAULT_TICK = 0.0001; // 1 базисный пункт
+  private static readonly EPSILON = 0.0000001;
 
   private constructor(value: number) {
     this.value = value;
@@ -101,11 +102,7 @@ export class Price {
    * ```
    */
   public toTick(tickSize: number = Price.DEFAULT_TICK): Price {
-    const rounded = Math.round(this.value / tickSize) * tickSize;
-    const fixed = Number(rounded.toFixed(this.getDecimalPlaces(tickSize)));
-    return Price.fromNumber(
-      Math.max(Price.MIN_PRICE, Math.min(Price.MAX_PRICE, fixed))
-    );
+    return this.roundToTick(tickSize, Math.round);
   }
 
   /**
@@ -115,9 +112,7 @@ export class Price {
    * @returns Новый Price округлённый вниз до тика
    */
   public floorToTick(tickSize: number = Price.DEFAULT_TICK): Price {
-    const floored = Math.floor(this.value / tickSize) * tickSize;
-    const fixed = Number(floored.toFixed(this.getDecimalPlaces(tickSize)));
-    return Price.fromNumber(Math.max(Price.MIN_PRICE, fixed));
+    return this.roundToTick(tickSize, Math.floor);
   }
 
   /**
@@ -127,9 +122,16 @@ export class Price {
    * @returns Новый Price округлённый вверх до тика
    */
   public ceilToTick(tickSize: number = Price.DEFAULT_TICK): Price {
-    const ceiled = Math.ceil(this.value / tickSize) * tickSize;
-    const fixed = Number(ceiled.toFixed(this.getDecimalPlaces(tickSize)));
-    return Price.fromNumber(Math.min(Price.MAX_PRICE, fixed));
+    return this.roundToTick(tickSize, Math.ceil);
+  }
+
+  private roundToTick(tickSize: number, roundFn: (x: number) => number): Price {
+    const rounded = roundFn(this.value / tickSize) * tickSize;
+    const decimals = this.getDecimalPlaces(tickSize);
+    const fixed = Number(rounded.toFixed(decimals));
+    return Price.fromNumber(
+      Math.max(Price.MIN_PRICE, Math.min(Price.MAX_PRICE, fixed))
+    );
   }
 
   /**
@@ -195,7 +197,7 @@ export class Price {
    * @returns True если равны (в пределах epsilon)
    */
   public equals(other: Price): boolean {
-    return Math.abs(this.value - other.value) < 0.0000001;
+    return Math.abs(this.value - other.value) < Price.EPSILON;
   }
 
   /**
@@ -218,9 +220,8 @@ export class Price {
   }
 
   private getDecimalPlaces(tickSize: number): number {
-    const str = tickSize.toString();
-    const decimalIndex = str.indexOf('.');
-    return decimalIndex === -1 ? 0 : str.length - decimalIndex - 1;
+    const match = tickSize.toString().split('.')[1];
+    return match?.length ?? 0;
   }
 
   public static get minPrice(): number {
