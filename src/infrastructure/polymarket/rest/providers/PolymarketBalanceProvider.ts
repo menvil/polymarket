@@ -128,13 +128,14 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    * Получить симулированный баланс для режима симуляции
    *
    * @param type - Тип баланса ('available' | 'locked' | 'total' | 'outcome')
-   * @param tokenId - ID токена (только для типа 'outcome')
+   * @param tokenId - ID токена (обязателен для типа 'outcome')
    * @returns Виртуальный баланс
+   * @throws {Error} Если type === 'outcome' и tokenId не указан
    */
   private getSimulatedBalance(type: 'available' | 'locked' | 'total' | 'outcome', tokenId?: string): number {
     if (type === 'outcome' && !tokenId) {
       this.logger.warn('Getting outcome balance (SIMULATION MODE) without tokenId');
-      return 0;
+      throw new Error('tokenId is required for outcome balance in simulation mode');
     }
 
     const balance =

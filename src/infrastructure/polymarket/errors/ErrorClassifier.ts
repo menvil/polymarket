@@ -277,7 +277,13 @@ export class ErrorClassifier {
     }
 
     // Недостаточный баланс
-    if (code.includes('balance') || messageLower.includes('insufficient')) {
+    if (
+      code.includes('balance') ||
+      messageLower.includes('insufficient balance') ||
+      messageLower.includes('insufficient funds') ||
+      messageLower.includes('not enough balance') ||
+      messageLower.includes('not enough funds')
+    ) {
       return { type: 'BALANCE_INSUFFICIENT', message, recoverable: true };
     }
 
