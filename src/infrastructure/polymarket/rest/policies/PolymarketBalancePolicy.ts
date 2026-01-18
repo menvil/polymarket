@@ -179,6 +179,17 @@ export class PolymarketBalancePolicy {
       };
     }
 
+    // Валидация размера ордера
+    if (size <= 0) {
+      return {
+        ok: false,
+        reason: `Invalid size: ${size}. Size must be positive`,
+        required: 0,
+        available: 0,
+        suggestedSize: 0,
+      };
+    }
+
     const requiredUSDC = price * size;
     const availableUSDC = await this.balanceProvider.getAvailableBalance();
 
@@ -249,6 +260,17 @@ export class PolymarketBalancePolicy {
     tokenId: string,
     size: number
   ): Promise<BalanceCheckResult> {
+    // Валидация размера ордера
+    if (size <= 0) {
+      return {
+        ok: false,
+        reason: `Invalid size: ${size}. Size must be positive`,
+        required: 0,
+        available: 0,
+        suggestedSize: 0,
+      };
+    }
+
     const requiredTokens = size;
 
     // ✅ v7.6: Сначала пробуем PortfolioProjector (мгновенно, без задержки)
