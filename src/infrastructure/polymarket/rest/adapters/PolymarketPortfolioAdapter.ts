@@ -226,7 +226,35 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
     }
 
     // Использовать suggestedSize, если проверка баланса предоставила его (например, продажа точного доступного баланса)
-    const finalSize = balanceCheck.suggestedSize ?? normalizedSize;
+    const suggestedOrNormalizedSize = balanceCheck.suggestedSize ?? normalizedSize;
+
+    // Шаг 4: Нормализация и валидация finalSize (suggestedSize может быть ненормализованным)
+    const normalizedFinalSize = await this.constraintsPolicy.normalizeSize(
+      tokenId,
+      suggestedOrNormalizedSize
+    );
+
+    // Шаг 5: Повторная валидация размера после нормализации suggestedSize
+    const finalSizeValidation = await this.constraintsPolicy.validateSize(
+      tokenId,
+      normalizedFinalSize,
+      normalizedPrice,
+      side
+    );
+
+    if (!finalSizeValidation.ok) {
+      this.logger.warn('Final size validation failed after balance adjustment', {
+        tokenId,
+        suggestedSize: balanceCheck.suggestedSize,
+        normalizedFinalSize,
+        price: normalizedPrice,
+        side,
+        reason: finalSizeValidation.reason,
+        minShares: finalSizeValidation.minShares,
+      });
+
+      return { ok: false, reason: finalSizeValidation.reason };
+    }
 
     // Получить ставку комиссии (изученную из ошибок или по умолчанию)
     const feeRateBps = this.constraintsPolicy.getFeeRateBps(tokenId);
@@ -235,15 +263,15 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
       tokenId,
       side,
       price: normalizedPrice,
-      normalizedSize,
-      finalSize,
+      originalSize: size,
+      normalizedFinalSize,
       priceTick: constraints.priceTick,
       feeRateBps,
     });
 
     return {
       ok: true,
-      normalizedSize: finalSize,
+      normalizedSize: normalizedFinalSize,
       normalizedPrice,
       feeRateBps,
       priceTick: constraints.priceTick,
