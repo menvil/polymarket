@@ -354,12 +354,18 @@ export class ErrorClassifier {
    *
    * @param error - Ошибка ордера
    * @returns Строка сообщения
+   *
+   * @remarks
+   * Проверяем наличие поля, а не его truthy-значение.
+   * Пустая строка '' - валидное сообщение и должна быть возвращена.
    */
   private extractMessage(error: OrderError): string {
-    if ('message' in error && error.message) {
+    // Проверяем наличие поля message (не truthy, чтобы пустая строка была валидной)
+    if ('message' in error && error.message !== undefined && error.message !== null) {
       return error.message;
     }
-    if ('violation' in error && error.violation) {
+    // Fallback на violation если message отсутствует
+    if ('violation' in error && error.violation !== undefined && error.violation !== null) {
       return JSON.stringify(error.violation);
     }
     return 'Unknown error';
