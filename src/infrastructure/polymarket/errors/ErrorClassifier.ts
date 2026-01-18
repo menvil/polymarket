@@ -7,12 +7,12 @@
  *
  * Возможности:
  * - LRU кэш: Максимум 1000 записей, старейшие вытесняются первыми
- * - Идемпотентность: Одинаковые (type + message) → один и тот же кэшированный результат
+ * - Идемпотентность: Одинаковые сообщения → один и тот же кэшированный результат
  * - Равенство ссылок: classify(x) дважды возвращает ОДИН И ТОТ ЖЕ объект
  * - Нулевая утечка памяти: Размер кэша ограничен maxCacheSize
  *
  * Стратегия кэширования:
- * - Ключ: type + полное сообщение (для избежания коллизий)
+ * - Ключ: только сообщение об ошибке (для истинной идемпотентности)
  * - Значение: классифицированная OrderError
  * - LRU вытеснение: старейшие записи удаляются при заполнении кэша
  * - Без TTL: кэш сохраняется на протяжении жизни сессии
@@ -26,7 +26,7 @@
  * // classified = { type: 'CONSTRAINT_VIOLATION', violation: { type: 'MIN_SIZE', ... } }
  *
  * const classified2 = classifier.classify(classified);
- * // classified2 === classified (одна и та же ссылка!)
+ * // classified2 === classified (same reference!)
  * ```
  */
 
@@ -104,7 +104,7 @@ export interface ErrorAdapter {
  * - LRU вытеснение: Старейшие записи удаляются первыми
  *
  * Алгоритм:
- * 1. Вычислить ключ кэша из (type + message)
+ * 1. Извлечь сообщение и вычислить ключ кэша (только из message)
  * 2. Проверить кэш: если попадание → вернуть кэшированное (та же ссылка)
  * 3. Если промах: парсить → классифицировать → кэшировать → вернуть
  * 4. Перед кэшированием: если size >= maxSize → удалить старейшее
@@ -139,15 +139,14 @@ export class ErrorClassifier {
    * Гарантия идемпотентности: classify(classify(x)) === classify(x)
    *
    * Алгоритм:
-   * 1. Вычислить ключ кэша из (type + message)
+   * 1. Извлечь сообщение и вычислить ключ кэша (только из message для идемпотентности)
    * 2. Проверить кэш: если попадание → удалить + добавить снова, чтобы переместить в конец (строгий LRU)
    * 3. Если промах:
-   *    a. Извлечь сообщение из ошибки
-   *    b. Распарсить сообщение → StructuredError (ErrorAdapter)
-   *    c. Классифицировать StructuredError → OrderError
-   *    d. Выбрать лучшую классификацию (новая vs существующая)
-   *    e. LRU вытеснение, если кэш полон (ГАРАНТИРОВАННО первая запись = старейшая)
-   *    f. Закэшировать результат
+   *    a. Распарсить сообщение → StructuredError (ErrorAdapter)
+   *    b. Классифицировать StructuredError → OrderError
+   *    c. Выбрать лучшую классификацию (новая vs существующая)
+   *    d. LRU вытеснение, если кэш полон (ГАРАНТИРОВАННО первая запись = старейшая)
+   *    e. Закэшировать результат
    * 4. Вернуть результат
    *
    * КРИТИЧЕСКИЕ гарантии LRU:
@@ -166,12 +165,13 @@ export class ErrorClassifier {
    * const err = { type: 'UNKNOWN', message: 'size too small', recoverable: false };
    * const c1 = classifier.classify(err);
    * const c2 = classifier.classify(c1);
-   * // c1 === c2 (та же ссылка)
+   * // c1 === c2 (same reference)
    * ```
    */
   classify(error: OrderError): OrderError {
-    // 1. Вычислить ключ кэша
-    const cacheKey = this.makeCacheKey(error);
+    // 1. Извлечь сообщение и вычислить ключ кэша (только из message для идемпотентности)
+    const message = this.extractMessage(error);
+    const cacheKey = this.makeCacheKey(message);
 
     // 2. Проверить кэш
     const cached = this.cache.get(cacheKey);
@@ -180,12 +180,11 @@ export class ErrorClassifier {
       this.cache.delete(cacheKey);
       this.cache.set(cacheKey, cached);
 
-      this.logger.trace('[ErrorClassifier] Попадание в кэш (перемещено в конец)', { cacheKey });
+      this.logger.trace('[ErrorClassifier] Cache hit (moved to end)', { cacheKey });
       return cached; // Та же ссылка!
     }
 
     // 3. Классифицировать
-    const message = this.extractMessage(error);
     const structured = this.errorAdapter.parse(message);
     const classified = this.classifyStructured(structured);
 
@@ -208,7 +207,7 @@ export class ErrorClassifier {
       const firstKey = this.cache.keys().next().value as string;
       this.cache.delete(firstKey);
 
-      this.logger.trace('[ErrorClassifier] LRU вытеснение (лимит размера)', {
+      this.logger.trace('[ErrorClassifier] LRU eviction (size limit)', {
         evictedKey: firstKey,
         size: this.cache.size,
       });
@@ -217,7 +216,7 @@ export class ErrorClassifier {
     // 6. Закэшировать результат
     this.cache.set(cacheKey, result);
 
-    this.logger.trace('[ErrorClassifier] Закэшированная классификация', {
+    this.logger.trace('[ErrorClassifier] Cached classification', {
       cacheKey,
       originalType: error.type,
       classifiedType: result.type,
@@ -344,24 +343,23 @@ export class ErrorClassifier {
     if ('violation' in error && error.violation) {
       return JSON.stringify(error.violation);
     }
-    return 'Неизвестная ошибка';
+    return 'Unknown error';
   }
 
   /**
-   * Создать ключ кэша из ошибки
+   * Создать ключ кэша из сообщения
    *
-   * @param error - Ошибка ордера
+   * @param message - Сообщение об ошибке
    * @returns Ключ кэша
    *
    * @remarks
-   * Ключ = type + полное сообщение
-   * Одинаковые (type, message) → один ключ → один кэшированный результат
-   * Использует полное сообщение для избежания коллизий
+   * Ключ = только сообщение (без type для истинной идемпотентности).
+   * Это гарантирует: classify(classify(x)) === classify(x),
+   * т.к. одинаковые сообщения всегда дают один и тот же кэшированный результат,
+   * независимо от того, был ли type UNKNOWN или уже классифицирован.
    */
-  private makeCacheKey(error: OrderError): string {
-    const message = this.extractMessage(error);
-    // Ключ кэша: type + полное сообщение (без обрезания)
-    return `${error.type}:${message}`;
+  private makeCacheKey(message: string): string {
+    return message;
   }
 
   /**

@@ -187,6 +187,11 @@ export class Market {
       throw new MarketNotFoundError(props.id);
     }
 
+    // Для не-RESOLVED рынков resolvedOutcomeIndex должен быть null/undefined
+    if (props.status !== 'RESOLVED' && props.resolvedOutcomeIndex != null) {
+      throw new MarketNotFoundError(props.id);
+    }
+
     // Если разрешён, должен иметь валидный индекс исхода (0 или 1)
     if (props.status === 'RESOLVED') {
       if (props.resolvedOutcomeIndex === undefined || props.resolvedOutcomeIndex === null) {

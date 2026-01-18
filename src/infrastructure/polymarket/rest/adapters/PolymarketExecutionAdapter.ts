@@ -449,21 +449,20 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    *
    * @param tokenId - Опционально: фильтр по ID токена
    * @returns Массив исполнений (нормализованный)
-   * @throws {ApiError} Если API-вызов не удался
+   * @throws {Error} Метод не реализован - API эндпоинт недоступен
    *
    * @remarks
    * Возвращает исполненные сделки для пользователя.
    * Это НЕ история сделок рынка - используйте MarketDataAdapter для этого.
    *
-   * TODO: Реализовать, когда Polymarket API предоставит эндпоинт истории исполнений.
-   * Пока возвращает пустой массив.
+   * @deprecated Метод не реализован. Используйте getOpenOrders() для получения ордеров
+   * или MarketDataAdapter для истории сделок рынка.
    */
-  async getFillHistory(tokenId?: string): Promise<FillResponse[]> {
-    this.logger.warn('getFillHistory not yet implemented', { tokenId });
-
-    // TODO: Реализовать, когда эндпоинт API будет доступен
-    // Пока возвращаем пустой массив
-    return [];
+  async getFillHistory(_tokenId?: string): Promise<FillResponse[]> {
+    throw new Error(
+      'getFillHistory not implemented: Polymarket API endpoint not available. ' +
+      'Use getOpenOrders() for order tracking or MarketDataAdapter for market trade history.'
+    );
   }
 
   /**
