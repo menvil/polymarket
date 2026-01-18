@@ -277,7 +277,7 @@ export class PolymarketBalancePolicy {
     const { balance: availableTokens, source: balanceSource } = await this.getTokenBalance(tokenId);
 
     this.logger.debug('Checking sell balance', {
-      tokenId: tokenId.substring(0, 16) + '...',
+      tokenId: tokenId.length > 16 ? tokenId.substring(0, 16) + '...' : tokenId,
       requiredTokens,
       availableTokens,
       source: balanceSource,
@@ -423,7 +423,7 @@ export class PolymarketBalancePolicy {
     const roundedSize = Math.floor(availableTokens * 100) / 100;
 
     this.logger.debug('Calculated max sell size', {
-      tokenId: tokenId.substring(0, 16) + '...',
+      tokenId: tokenId.length > 16 ? tokenId.substring(0, 16) + '...' : tokenId,
       availableTokens,
       maxSize: roundedSize,
       source: balanceSource,
