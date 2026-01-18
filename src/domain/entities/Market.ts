@@ -102,8 +102,8 @@ export class Market {
    */
   public readonly outcomes: readonly [OutcomeToken, OutcomeToken];
 
-  /** Дата/время истечения рынка */
-  public readonly expirationDate: Date;
+  /** Дата/время истечения рынка (внутреннее хранилище) */
+  private readonly _expirationDate: Date;
 
   /** Текущий статус рынка */
   public readonly status: MarketStatus;
@@ -120,7 +120,8 @@ export class Market {
       Object.freeze({ ...props.outcomes[0] }),
       Object.freeze({ ...props.outcomes[1] }),
     ]) as readonly [OutcomeToken, OutcomeToken];
-    this.expirationDate = props.expirationDate;
+    // Защитное копирование Date для предотвращения внешней мутации
+    this._expirationDate = new Date(props.expirationDate.getTime());
     this.status = props.status;
     this.resolvedOutcomeIndex = props.resolvedOutcomeIndex ?? null;
   }
@@ -263,6 +264,15 @@ export class Market {
   }
 
   /**
+   * Дата/время истечения рынка
+   *
+   * @returns Защитная копия даты истечения (внешние мутации не затронут Market)
+   */
+  public get expirationDate(): Date {
+    return new Date(this._expirationDate.getTime());
+  }
+
+  /**
    * Проверяет, истёк ли срок рынка
    *
    * @returns True если текущее время превышает дату истечения
@@ -275,7 +285,7 @@ export class Market {
    * ```
    */
   public isExpired(): boolean {
-    return Date.now() > this.expirationDate.getTime();
+    return Date.now() > this._expirationDate.getTime();
   }
 
   /**
@@ -291,7 +301,7 @@ export class Market {
    * ```
    */
   public timeToExpiry(): number {
-    return this.expirationDate.getTime() - Date.now();
+    return this._expirationDate.getTime() - Date.now();
   }
 
   /**
