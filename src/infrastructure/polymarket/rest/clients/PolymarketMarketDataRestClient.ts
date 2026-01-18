@@ -177,7 +177,7 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
    * Получить все активные рынки (реализация IMarketDataProvider)
    *
    * @returns Массив рыночных данных в доменном формате (GammaMarketData)
-   * @throws {Error} Если вызов API завершается с ошибкой
+   * @throws {ApiError} Если вызов API завершается с ошибкой
    *
    * @remarks
    * Реализует интерфейс IMarketDataProvider.

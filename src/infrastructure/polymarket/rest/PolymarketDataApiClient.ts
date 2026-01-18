@@ -51,7 +51,7 @@ export class PolymarketDataApiClient {
    * @param endpoint - Эндпоинт API (например, '/positions')
    * @param params - Параметры запроса
    * @returns Данные ответа
-   * @throws {Error} Если запрос не удался
+   * @throws {ApiError} Если запрос не удался
    */
   async get<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
     const url = new URL(endpoint, this.baseUrl);

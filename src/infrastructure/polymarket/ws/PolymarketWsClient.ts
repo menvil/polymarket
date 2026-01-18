@@ -96,6 +96,8 @@ export class PolymarketWsClient extends EventEmitter {
    * const wsManager = new PolymarketWebSocketManager({ url: '...', logger });
    * const client = new PolymarketWsClient(wsManager, logger);
    * ```
+   *
+   * @throws {Error} Если wsManager или logger не предоставлены
    */
   constructor(wsManager: PolymarketWebSocketManager, logger: ILogger) {
     super();
@@ -188,6 +190,7 @@ export class PolymarketWsClient extends EventEmitter {
    *
    * @param timeoutMs - Timeout в миллисекундах (по умолчанию: 10000)
    * @returns Promise который разрешается при переподключении
+   * @throws {Error} Если timeoutMs не положительное число
    * @throws {Error} Если клиент уничтожен
    * @throws {Error} Если переподключение истекло по времени или не удалось
    *

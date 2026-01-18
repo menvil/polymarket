@@ -311,6 +311,7 @@ export class PolymarketOrderBuilder {
    *
    * @param order - Объект ордера (без подписи)
    * @returns Hex подпись
+   * @throws {Error} Если нет адреса контракта для данной сети
    */
   private async signOrder(order: Omit<SignedOrder, 'signature'>): Promise<string> {
     // Получить проверяющий контракт для этой сети

@@ -254,7 +254,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
    * Одобрить USDC для торговли (вызов блокчейна)
    *
    * @param amount - Сумма для одобрения
-   * @throws {BlockchainError} Если вызов блокчейна не удался
+   * @throws {Error} Метод не реализован
    *
    * @remarks
    * Это транзакция блокчейна, а не API-вызов.
@@ -273,7 +273,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
    * Получить текущее разрешение USDC
    *
    * @returns Текущая сумма разрешения
-   * @throws {BlockchainError} Если вызов блокчейна не удался
+   * @throws {Error} Метод не реализован
    *
    * @remarks
    * TODO: Реализовать интеграцию с блокчейном.
