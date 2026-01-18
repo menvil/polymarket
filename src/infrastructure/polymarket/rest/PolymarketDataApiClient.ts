@@ -83,8 +83,6 @@ export class PolymarketDataApiClient {
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
       if (!response.ok) {
         const errorText = await response.text();
         this.logger.error('Data API error', {
@@ -113,8 +111,6 @@ export class PolymarketDataApiClient {
 
       return data as T;
     } catch (error) {
-      clearTimeout(timeoutId);
-
       if (error instanceof Error && error.name === 'AbortError') {
         this.logger.error('Data API timeout', {
           url: fullUrl,
@@ -136,6 +132,8 @@ export class PolymarketDataApiClient {
         endpoint: fullUrl,
         method: 'GET',
       });
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 }
