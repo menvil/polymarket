@@ -21,6 +21,7 @@ export class Quantity {
   // Реальный orderMinSize из информации о рынке должен переопределять это значение
   private static readonly MIN_SIZE = 1;
   private static readonly DEFAULT_TICK = 0.01;
+  private static readonly EPSILON = 0.0001;
 
   private constructor(value: number) {
     this.value = value;
@@ -120,9 +121,7 @@ export class Quantity {
    * ```
    */
   public toTick(tickSize: number = Quantity.DEFAULT_TICK): Quantity {
-    const rounded = Math.round(this.value / tickSize) * tickSize;
-    const fixed = Number(rounded.toFixed(this.getDecimalPlaces(tickSize)));
-    return new Quantity(Math.max(0, fixed));
+    return this.roundToTick(tickSize, Math.round);
   }
 
   /**
@@ -132,9 +131,7 @@ export class Quantity {
    * @returns Новый Quantity округлённый вниз до тика
    */
   public floorToTick(tickSize: number = Quantity.DEFAULT_TICK): Quantity {
-    const floored = Math.floor(this.value / tickSize) * tickSize;
-    const fixed = Number(floored.toFixed(this.getDecimalPlaces(tickSize)));
-    return new Quantity(Math.max(0, fixed));
+    return this.roundToTick(tickSize, Math.floor);
   }
 
   /**
@@ -144,9 +141,13 @@ export class Quantity {
    * @returns Новый Quantity округлённый вверх до тика
    */
   public ceilToTick(tickSize: number = Quantity.DEFAULT_TICK): Quantity {
-    const ceiled = Math.ceil(this.value / tickSize) * tickSize;
-    const fixed = Number(ceiled.toFixed(this.getDecimalPlaces(tickSize)));
-    return new Quantity(fixed);
+    return this.roundToTick(tickSize, Math.ceil);
+  }
+
+  private roundToTick(tickSize: number, roundFn: (x: number) => number): Quantity {
+    const rounded = roundFn(this.value / tickSize) * tickSize;
+    const decimals = this.getDecimalPlaces(tickSize);
+    return new Quantity(Math.max(0, Number(rounded.toFixed(decimals))));
   }
 
   /**
@@ -225,7 +226,7 @@ export class Quantity {
    * @returns True если равны (в пределах epsilon)
    */
   public equals(other: Quantity): boolean {
-    return Math.abs(this.value - other.value) < 0.0001;
+    return Math.abs(this.value - other.value) < Quantity.EPSILON;
   }
 
   /**
@@ -257,9 +258,8 @@ export class Quantity {
   }
 
   private getDecimalPlaces(tickSize: number): number {
-    const str = tickSize.toString();
-    const decimalIndex = str.indexOf('.');
-    return decimalIndex === -1 ? 0 : str.length - decimalIndex - 1;
+    const match = tickSize.toString().split('.')[1];
+    return match?.length ?? 0;
   }
 
   public static get minSize(): number {
