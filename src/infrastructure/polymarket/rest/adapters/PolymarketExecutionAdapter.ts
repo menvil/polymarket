@@ -263,7 +263,20 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         // Ищем недавно созданный ордер с такими же параметрами
         const now = Date.now();
         const recentOrder = normalizedOrders.find(order => {
-          const orderAge = now - order.createdAt;
+          // Coerce createdAt to milliseconds (handle Date, string, or number)
+          const createdAtMs =
+            order.createdAt instanceof Date
+              ? order.createdAt.getTime()
+              : typeof order.createdAt === 'string'
+                ? new Date(order.createdAt).getTime()
+                : Number(order.createdAt);
+
+          // Skip orders with invalid createdAt
+          if (isNaN(createdAtMs)) {
+            return false;
+          }
+
+          const orderAge = now - createdAtMs;
           const matchesParams =
             order.tokenId === params.tokenId &&
             order.side === params.side &&
