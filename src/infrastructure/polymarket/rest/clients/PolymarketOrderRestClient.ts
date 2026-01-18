@@ -382,10 +382,14 @@ export class PolymarketOrderRestClient {
   async cancelOrder(orderId: string): Promise<CancelOrderResponse> {
     this.logger.debug('Cancelling order', { orderId });
 
-    const response = await this.restClient.delete<CancelOrderResponse>('/order', {
-      orderId,
-      timestamp: Date.now(),
-    });
+    const response = await this.restClient.delete<CancelOrderResponse>(
+      '/order',
+      {
+        orderId,
+        timestamp: Date.now(),
+      },
+      { requireSignature: false } // L2 HMAC аутентификация достаточна, подпись в теле не нужна
+    );
 
     this.logger.info('Order cancelled successfully', { orderId });
 

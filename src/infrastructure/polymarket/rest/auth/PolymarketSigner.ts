@@ -114,6 +114,10 @@ export class PolymarketSigner {
    *
    * @remarks
    * Универсальный метод подписи для любых данных запроса.
+   * Ключи сортируются для детерминизма (JSON.stringify не гарантирует порядок).
+   *
+   * ПРИМЕЧАНИЕ: Это EIP-191 (personal_sign), НЕ EIP-712.
+   * Для ордеров используется @polymarket/order-utils с proper EIP-712.
    *
    * @example
    * ```typescript
@@ -121,9 +125,34 @@ export class PolymarketSigner {
    * ```
    */
   async signData(data: Record<string, unknown>): Promise<string> {
-    const message = JSON.stringify(data);
+    // Сортировка ключей для детерминированной сериализации
+    const sortedData = this.sortObjectKeys(data);
+    const message = JSON.stringify(sortedData);
     const signature = await this.wallet.signMessage(message);
     return signature;
+  }
+
+  /**
+   * Рекурсивно сортирует ключи объекта для детерминированной сериализации
+   *
+   * @param obj - Объект для сортировки
+   * @returns Объект с отсортированными ключами
+   */
+  private sortObjectKeys(obj: Record<string, unknown>): Record<string, unknown> {
+    if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+      return obj;
+    }
+
+    return Object.keys(obj)
+      .sort()
+      .reduce((acc, key) => {
+        const value = obj[key];
+        acc[key] =
+          value !== null && typeof value === 'object' && !Array.isArray(value)
+            ? this.sortObjectKeys(value as Record<string, unknown>)
+            : value;
+        return acc;
+      }, {} as Record<string, unknown>);
   }
 
   /**
