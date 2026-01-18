@@ -126,6 +126,35 @@ export class PolymarketBalancePolicy {
   }
 
   /**
+   * Получает баланс токенов из PortfolioProjector (мгновенно) или Balance API (fallback)
+   *
+   * @param tokenId - ID токена
+   * @returns Баланс и источник данных
+   *
+   * @remarks
+   * v7.6: PortfolioProjector используется первым (мгновенно, на основе событий),
+   * Balance API - как fallback (может задерживаться 0-5 секунд после исполнения).
+   */
+  private async getTokenBalance(
+    tokenId: string
+  ): Promise<{ balance: number; source: 'PortfolioProjector' | 'BalanceAPI' }> {
+    if (this.portfolioProjector) {
+      const position = this.portfolioProjector.getPosition(tokenId);
+      return {
+        balance: position?.quantity ?? 0,
+        source: 'PortfolioProjector',
+      };
+    }
+
+    // Fallback - Balance API (может задерживаться после мгновенного исполнения)
+    const balance = await this.balanceProvider.getOutcomeBalance(tokenId);
+    return {
+      balance,
+      source: 'BalanceAPI',
+    };
+  }
+
+  /**
    * Проверяет баланс для ордера на покупку (BUY)
    *
    * @param params - Параметры проверки баланса
@@ -223,32 +252,14 @@ export class PolymarketBalancePolicy {
     const requiredTokens = size;
 
     // ✅ v7.6: Сначала пробуем PortfolioProjector (мгновенно, без задержки)
-    let availableTokens: number;
-    let balanceSource: 'PortfolioProjector' | 'BalanceAPI';
+    const { balance: availableTokens, source: balanceSource } = await this.getTokenBalance(tokenId);
 
-    if (this.portfolioProjector) {
-      const position = this.portfolioProjector.getPosition(tokenId);
-      availableTokens = position?.quantity ?? 0;
-      balanceSource = 'PortfolioProjector';
-
-      this.logger.debug('Checking sell balance (PortfolioProjector - instant)', {
-        tokenId: tokenId.substring(0, 16) + '...',
-        requiredTokens,
-        availableTokens,
-        source: balanceSource,
-      });
-    } else {
-      // Резервный вариант - Balance API (может задерживаться после мгновенного исполнения)
-      availableTokens = await this.balanceProvider.getOutcomeBalance(tokenId);
-      balanceSource = 'BalanceAPI';
-
-      this.logger.debug('Checking sell balance (Balance API - may lag)', {
-        tokenId: tokenId.substring(0, 16) + '...',
-        requiredTokens,
-        availableTokens,
-        source: balanceSource,
-      });
-    }
+    this.logger.debug('Checking sell balance', {
+      tokenId: tokenId.substring(0, 16) + '...',
+      requiredTokens,
+      availableTokens,
+      source: balanceSource,
+    });
 
     if (availableTokens < requiredTokens) {
       const deficit = requiredTokens - availableTokens;
@@ -384,35 +395,16 @@ export class PolymarketBalancePolicy {
    */
   async getMaxSellSize(tokenId: string): Promise<number> {
     // ✅ v7.6: Сначала пробуем PortfolioProjector (мгновенно, без задержки)
-    let availableTokens: number;
-
-    if (this.portfolioProjector) {
-      const position = this.portfolioProjector.getPosition(tokenId);
-      availableTokens = position?.quantity ?? 0;
-
-      this.logger.debug('Calculated max sell size (PortfolioProjector)', {
-        tokenId: tokenId.substring(0, 16) + '...',
-        availableTokens,
-        source: 'PortfolioProjector',
-      });
-    } else {
-      // Резервный вариант - Balance API (может задерживаться после мгновенного исполнения)
-      availableTokens = await this.balanceProvider.getOutcomeBalance(tokenId);
-
-      this.logger.debug('Calculated max sell size (Balance API)', {
-        tokenId: tokenId.substring(0, 16) + '...',
-        availableTokens,
-        source: 'BalanceAPI',
-      });
-    }
+    const { balance: availableTokens, source: balanceSource } = await this.getTokenBalance(tokenId);
 
     // Округляем вниз до 2 знаков после запятой (требование API для ордеров SELL)
     const roundedSize = Math.floor(availableTokens * 100) / 100;
 
-    this.logger.debug('Max sell size (rounded)', {
+    this.logger.debug('Calculated max sell size', {
       tokenId: tokenId.substring(0, 16) + '...',
       availableTokens,
       maxSize: roundedSize,
+      source: balanceSource,
     });
 
     return roundedSize;

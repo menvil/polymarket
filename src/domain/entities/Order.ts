@@ -74,7 +74,7 @@ export interface OrderParams {
   size: Quantity;
   status: OrderStatus;
   timestamp: Date;
-  strategyId: string; // v4.2: для multi-strategy изоляции (optional для обратной совместимости)
+  strategyId: string; // v4.2: для multi-strategy изоляции
   filledSize?: Quantity;
   averageFillPrice?: Price;
 }
@@ -789,10 +789,17 @@ export class Order {
    *
    * @param status - Новый статус ордера
    * @returns Новый экземпляр Order с обновлённым статусом
+   * @throws {OrderValidationError} Если переход FSM не разрешён
    *
    * @remarks
    * Создаёт новый неизменяемый экземпляр Order с изменённым статусом.
    * Исходный ордер остаётся неизменным (immutability).
+   *
+   * Валидирует переход FSM согласно правилам:
+   * - PENDING → OPEN, REJECTED, CANCELED
+   * - OPEN → PARTIALLY_FILLED, FILLED, CANCELED
+   * - PARTIALLY_FILLED → FILLED, CANCELED
+   * - FILLED, CANCELED, REJECTED → терминальные (нет переходов)
    *
    * @example
    * ```typescript
@@ -801,6 +808,17 @@ export class Order {
    * ```
    */
   public withStatus(status: OrderStatus): Order {
+    // Валидируем переход FSM
+    const currentState = this.mapStatusToExecutionState(this.status);
+    const targetState = this.mapStatusToExecutionState(status);
+
+    if (!isAllowedTransition(currentState, targetState)) {
+      throw new OrderValidationError(
+        `FSM violation: transition ${this.status} → ${status} not allowed`,
+        'status'
+      );
+    }
+
     return Order.create({
       ...this,
       status

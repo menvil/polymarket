@@ -362,7 +362,13 @@ export class Orderbook {
       (bestAsk.price.value * bidQty + bestBid.price.value * askQty) /
       (bidQty + askQty);
 
-    return Price.fromNumber(microprice);
+    // Clamp to valid Price range [0.0001, 0.9999] to prevent InvalidPriceError
+    const clampedMicroprice = Math.max(
+      Price.minPrice,
+      Math.min(Price.maxPrice, microprice)
+    );
+
+    return Price.fromNumber(clampedMicroprice);
   }
 
   /**

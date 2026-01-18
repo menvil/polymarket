@@ -175,8 +175,10 @@ export interface OrderRejected {
 export interface OrderValidationFailed {
   readonly type: 'OrderValidationFailed';
   readonly orderId?: string; // Может быть undefined если ID не сгенерирован
+  readonly strategyId: string; // v4.2: для multi-strategy изоляции
   readonly reason: string;
   readonly validationErrors: Record<string, string>; // field → error message
+  readonly timestamp: Date; // для deterministic replay
 }
 
 // Type guards для ExecutionEvent (используются ТОЛЬКО в infrastructure, НЕ в projectors)
@@ -197,7 +199,7 @@ export function isOrderCancelled(event: ExecutionEvent): event is OrderCancelled
 }
 
 // Type guards для ExecutionErrorEvent (ошибки исполнения)
-export function isOrderRejected(event: ExecutionErrorEvent): event is OrderRejected {
+export function isOrderRejected(event: ExecutionEvent | ExecutionErrorEvent): event is OrderRejected {
   return event.type === 'OrderRejected';
 }
 

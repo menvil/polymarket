@@ -140,10 +140,14 @@ export class Price {
   /**
    * Прибавляет к цене
    *
-   * @param amount - Сумма для прибавления
+   * @param amount - Сумма для прибавления (должна быть >= 0)
    * @returns Новый Price
+   * @throws {RangeError} Если amount отрицательный
    */
   public add(amount: number): Price {
+    if (amount < 0) {
+      throw new RangeError(`Invalid amount: ${amount}. Amount must be non-negative`);
+    }
     return Price.fromNumber(
       Math.min(Price.MAX_PRICE, this.value + amount)
     );
@@ -152,10 +156,14 @@ export class Price {
   /**
    * Вычитает из цены
    *
-   * @param amount - Сумма для вычитания
+   * @param amount - Сумма для вычитания (должна быть >= 0)
    * @returns Новый Price
+   * @throws {RangeError} Если amount отрицательный
    */
   public subtract(amount: number): Price {
+    if (amount < 0) {
+      throw new RangeError(`Invalid amount: ${amount}. Amount must be non-negative`);
+    }
     return Price.fromNumber(
       Math.max(Price.MIN_PRICE, this.value - amount)
     );

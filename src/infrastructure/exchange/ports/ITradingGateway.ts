@@ -33,9 +33,13 @@ import type { OrderResponse, OrderSide } from '../types/OrderResponse.js';
 export type { OrderResponse, OrderSide };
 
 /**
- * Параметры для размещения ордера
+ * Параметры для размещения ордера через Trading Gateway
+ *
+ * @remarks
+ * Переименовано в GatewayPlaceOrderParams, чтобы избежать конфликта
+ * с PlaceOrderParams из IExecutionAdapter (который имеет дополнительные поля).
  */
-export interface PlaceOrderParams {
+export interface GatewayPlaceOrderParams {
   /** ID токена (asset ID, market ID или символ в зависимости от биржи) */
   tokenId: string;
 
@@ -71,7 +75,7 @@ export interface ITradingGateway {
    * });
    * ```
    */
-  placeOrder(params: PlaceOrderParams): Promise<Result<OrderResponse, Error>>;
+  placeOrder(params: GatewayPlaceOrderParams): Promise<Result<OrderResponse, Error>>;
 
   /**
    * Отменить существующий ордер
