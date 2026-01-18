@@ -850,14 +850,23 @@ export class Order {
    * ```
    */
   public withFill(filledSize: Quantity, averageFillPrice: Price): Order {
+    if (filledSize.value < 0) {
+      throw new OrderValidationError('filledSize cannot be negative', 'filledSize');
+    }
+
     if (filledSize.isZero()) {
       return this;
     }
 
-    const normalizedFilledSize = filledSize.isGreaterThan(this.size) ? this.size : filledSize;
+    if (filledSize.isGreaterThan(this.size)) {
+      throw new OrderValidationError(
+        `filledSize (${filledSize.value}) cannot exceed order size (${this.size.value})`,
+        'filledSize'
+      );
+    }
 
-    const isFullyFilled = normalizedFilledSize.equals(this.size);
-    const isPartiallyFilled = normalizedFilledSize.isLessThan(this.size);
+    const isFullyFilled = filledSize.equals(this.size);
+    const isPartiallyFilled = filledSize.isLessThan(this.size);
 
     let newStatus: OrderStatus = this.status;
     if (isFullyFilled) {
@@ -868,7 +877,7 @@ export class Order {
 
     return Order.create({
       ...this,
-      filledSize: normalizedFilledSize,
+      filledSize,
       averageFillPrice,
       status: newStatus
     });

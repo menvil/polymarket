@@ -297,8 +297,20 @@ export class ErrorClassifier {
    * @returns true если это сетевая ошибка
    */
   private isNetworkError(code: string, messageLower: string): boolean {
-    // Коды ошибок сети
-    const networkCodes = ['network', 'timeout', 'econnrefused', 'econnreset', 'enotfound', 'ehostunreach'];
+    // Коды ошибок сети (часто приходят из Node/undici как errno)
+    const networkCodes = [
+      'network',
+      'timeout',
+      'timedout',
+      'etimedout',
+      'econnaborted',
+      'econnrefused',
+      'econnreset',
+      'eai_again',
+      'enotfound',
+      'enetunreach',
+      'ehostunreach',
+    ];
     if (networkCodes.some(nc => code.includes(nc))) {
       return true;
     }
