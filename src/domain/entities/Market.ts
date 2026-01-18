@@ -275,29 +275,48 @@ export class Market {
   /**
    * Проверяет, истёк ли срок рынка
    *
-   * @returns True если текущее время превышает дату истечения
+   * @returns True если текущее время >= дата истечения (inclusive boundary)
+   *
+   * @remarks
+   * Граница истечения ВКЛЮЧИТЕЛЬНАЯ: в момент expirationDate рынок
+   * считается истёкшим и торговля запрещена. Это стандартная семантика
+   * для рынков предсказаний.
+   *
+   * Связь с timeToExpiry(): isExpired() === (timeToExpiry() <= 0)
    *
    * @example
    * ```typescript
    * if (market.isExpired()) {
-   *   console.log('Market has expired');
+   *   console.log('Market has expired - trading disabled');
    * }
    * ```
    */
   public isExpired(): boolean {
-    return Date.now() > this._expirationDate.getTime();
+    // >= для inclusive boundary: в момент истечения рынок уже недоступен
+    return Date.now() >= this._expirationDate.getTime();
   }
 
   /**
    * Вычисляет оставшееся время до истечения
    *
-   * @returns Миллисекунды до истечения (отрицательное если истёк)
+   * @returns Миллисекунды до истечения (0 или отрицательное если истёк)
+   *
+   * @remarks
+   * - Положительное значение: рынок активен, столько мс до истечения
+   * - Ноль: рынок только что истёк (inclusive boundary)
+   * - Отрицательное: рынок истёк, столько мс назад
+   *
+   * Связь с isExpired(): isExpired() === (timeToExpiry() <= 0)
    *
    * @example
    * ```typescript
    * const msRemaining = market.timeToExpiry();
-   * const hoursRemaining = msRemaining / (1000 * 60 * 60);
-   * console.log(`Hours remaining: ${hoursRemaining.toFixed(2)}`);
+   * if (msRemaining > 0) {
+   *   const hoursRemaining = msRemaining / (1000 * 60 * 60);
+   *   console.log(`Hours remaining: ${hoursRemaining.toFixed(2)}`);
+   * } else {
+   *   console.log('Market expired');
+   * }
    * ```
    */
   public timeToExpiry(): number {
