@@ -119,7 +119,7 @@ export class PolymarketRestClient {
         this.signer.getAddress()
       );
       this.logger.debug('L2 authenticator initialized', {
-        apiKey: config.l2Credentials.apiKey,
+        apiKey: this.maskSecret(config.l2Credentials.apiKey),
         address: this.signer.getAddress(),
         signatureType: this.config.signatureType,
       });
@@ -313,13 +313,13 @@ export class PolymarketRestClient {
         method,
         requestPath,
         fullUrl: url,
-        apiKey: l2Headers.POLY_API_KEY,
+        apiKey: this.maskSecret(l2Headers.POLY_API_KEY),
         timestamp: l2Headers.POLY_TIMESTAMP,
       });
     }
 
     this.logger.debug(`${method} ${url}`, {
-      headers,
+      headers: this.maskHeaders(headers),
       body: body ? JSON.stringify(body).substring(0, 200) : undefined,
     });
 
@@ -464,5 +464,39 @@ export class PolymarketRestClient {
    */
   getSigner() {
     return this.signer;
+  }
+
+  /**
+   * Маскирует секретную строку для безопасного логирования
+   *
+   * @param secret - Секретная строка
+   * @returns Замаскированная строка (первые 4 символа + ****)
+   */
+  private maskSecret(secret: string): string {
+    if (!secret || secret.length <= 4) {
+      return '****';
+    }
+    return secret.substring(0, 4) + '****';
+  }
+
+  /**
+   * Маскирует чувствительные заголовки для безопасного логирования
+   *
+   * @param headers - Заголовки запроса
+   * @returns Заголовки с замаскированными секретами
+   */
+  private maskHeaders(headers: Record<string, string>): Record<string, string> {
+    const sensitiveKeys = ['POLY_API_KEY', 'POLY_SIGNATURE', 'POLY_PASSPHRASE', 'Authorization'];
+    const masked: Record<string, string> = {};
+
+    for (const [key, value] of Object.entries(headers)) {
+      if (sensitiveKeys.some((sk) => key.toUpperCase().includes(sk.toUpperCase()))) {
+        masked[key] = this.maskSecret(value);
+      } else {
+        masked[key] = value;
+      }
+    }
+
+    return masked;
   }
 }
