@@ -307,8 +307,11 @@ export class Quote {
    * ```
    */
   public withAdjustment(bidAdjustment: number, askAdjustment: number): Quote {
-    const newBid = this.bid ? Price.fromNumber(this.bid.value + bidAdjustment) : null;
-    const newAsk = this.ask ? Price.fromNumber(this.ask.value + askAdjustment) : null;
+    const adjustPrice = (price: Price, adjustment: number): Price =>
+      adjustment >= 0 ? price.add(adjustment) : price.subtract(Math.abs(adjustment));
+
+    const newBid = this.bid ? adjustPrice(this.bid, bidAdjustment) : null;
+    const newAsk = this.ask ? adjustPrice(this.ask, askAdjustment) : null;
 
     return new Quote(newBid, newAsk, this.bidSize, this.askSize, new Date());
   }

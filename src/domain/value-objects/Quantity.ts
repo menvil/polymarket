@@ -181,25 +181,43 @@ export class Quantity {
   /**
    * Умножает на коэффициент
    *
-   * @param factor - Коэффициент умножения
+   * @param factor - Коэффициент умножения (должен быть неотрицательным конечным числом)
    * @returns Новый Quantity
+   * @throws {Error} Если factor невалиден (NaN, Infinity, отрицательный)
    */
   public multiply(factor: number): Quantity {
-    return new Quantity(Math.max(0, this.value * factor));
+    if (!Number.isFinite(factor)) {
+      throw new Error(`Invalid factor: ${factor}. Must be a finite number`);
+    }
+    if (factor < 0) {
+      throw new Error(`Invalid factor: ${factor}. Must be non-negative`);
+    }
+    const result = this.value * factor;
+    if (!Number.isFinite(result)) {
+      throw new Error(`Multiplication overflow: ${this.value} * ${factor}`);
+    }
+    return new Quantity(result);
   }
 
   /**
    * Делит на коэффициент
    *
-   * @param divisor - Делитель (должен быть положительным)
+   * @param divisor - Делитель (должен быть положительным конечным числом)
    * @returns Новый Quantity
-   * @throws {Error} Если делитель <= 0
+   * @throws {Error} Если делитель невалиден (NaN, Infinity, <= 0)
    */
   public divide(divisor: number): Quantity {
+    if (!Number.isFinite(divisor)) {
+      throw new Error(`Invalid divisor: ${divisor}. Must be a finite number`);
+    }
     if (divisor <= 0) {
       throw new Error(`Divisor must be positive: ${divisor}`);
     }
-    return new Quantity(this.value / divisor);
+    const result = this.value / divisor;
+    if (!Number.isFinite(result)) {
+      throw new Error(`Division overflow: ${this.value} / ${divisor}`);
+    }
+    return new Quantity(result);
   }
 
   /**
