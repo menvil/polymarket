@@ -43,20 +43,9 @@ import type { PolymarketRestConfig, PolymarketL2Credentials } from './types.js';
 import { SignatureType } from './types.js';
 import { PolymarketSigner } from './auth/PolymarketSigner.js';
 import { PolymarketL2Authenticator } from './auth/PolymarketL2Authenticator.js';
+import { ApiError } from '../../../shared/errors/TradingError.js';
 
-/**
- * Класс ошибки API
- */
-export class ApiError extends Error {
-  constructor(
-    message: string,
-    public readonly statusCode?: number,
-    public readonly responseBody?: unknown
-  ) {
-    super(message);
-    this.name = 'ApiError';
-  }
-}
+export { ApiError };
 
 /**
  * Опции запроса
@@ -260,7 +249,10 @@ export class PolymarketRestClient {
     }
 
     // Сюда никогда не должны дойти из-за throw в цикле
-    throw new ApiError('Request failed after all retries');
+    throw new ApiError('Request failed after all retries', {
+      endpoint,
+      method,
+    });
   }
 
   /**
@@ -356,8 +348,12 @@ export class PolymarketRestClient {
 
         throw new ApiError(
           `HTTP ${response.status}: ${response.statusText}${errorBody ? ` - ${errorBody}` : ''}`,
-          response.status,
-          errorBody
+          {
+            statusCode: response.status,
+            endpoint: new URL(url).pathname,
+            method,
+            responseBody: errorBody,
+          }
         );
       }
 
@@ -375,10 +371,16 @@ export class PolymarketRestClient {
       }
 
       if ((error as Error).name === 'AbortError') {
-        throw new ApiError(`Request timeout after ${this.config.timeout}ms`);
+        throw new ApiError(`Request timeout after ${this.config.timeout}ms`, {
+          endpoint: new URL(url).pathname,
+          method,
+        });
       }
 
-      throw new ApiError(`Network error: ${(error as Error).message}`);
+      throw new ApiError(`Network error: ${(error as Error).message}`, {
+        endpoint: new URL(url).pathname,
+        method,
+      });
     }
   }
 

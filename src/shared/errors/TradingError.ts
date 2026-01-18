@@ -132,3 +132,83 @@ export class ExchangeError extends TradingError {
     super(message, 'EXCHANGE_ERROR');
   }
 }
+
+/**
+ * Ошибка API запроса
+ *
+ * @remarks
+ * Выбрасывается когда HTTP-запрос к API завершился неудачей.
+ * Содержит контекст запроса: endpoint, метод, статус-код, тело ответа.
+ *
+ * Примеры использования:
+ * - Сетевые ошибки (timeout, connection refused)
+ * - HTTP ошибки (4xx, 5xx)
+ * - Ошибки парсинга ответа
+ *
+ * @example
+ * ```typescript
+ * throw new ApiError('Request failed', {
+ *   statusCode: 400,
+ *   endpoint: '/order',
+ *   method: 'POST',
+ *   responseBody: { error: 'Invalid price' },
+ * });
+ * ```
+ */
+export class ApiError extends TradingError {
+  public readonly statusCode?: number;
+  public readonly endpoint?: string;
+  public readonly method?: string;
+  public readonly responseBody?: unknown;
+
+  constructor(
+    message: string,
+    options?: {
+      statusCode?: number;
+      endpoint?: string;
+      method?: string;
+      responseBody?: unknown;
+    }
+  ) {
+    super(message, 'API_ERROR');
+    this.statusCode = options?.statusCode;
+    this.endpoint = options?.endpoint;
+    this.method = options?.method;
+    this.responseBody = options?.responseBody;
+  }
+
+  /**
+   * Проверяет, является ли ошибка сетевой (timeout, connection refused)
+   */
+  public isNetworkError(): boolean {
+    return this.statusCode === undefined;
+  }
+
+  /**
+   * Проверяет, является ли ошибка клиентской (4xx)
+   */
+  public isClientError(): boolean {
+    return this.statusCode !== undefined && this.statusCode >= 400 && this.statusCode < 500;
+  }
+
+  /**
+   * Проверяет, является ли ошибка серверной (5xx)
+   */
+  public isServerError(): boolean {
+    return this.statusCode !== undefined && this.statusCode >= 500;
+  }
+
+  /**
+   * Проверяет, является ли ошибка rate limit (429)
+   */
+  public isRateLimited(): boolean {
+    return this.statusCode === 429;
+  }
+
+  /**
+   * Проверяет, является ли ошибка ошибкой авторизации (401, 403)
+   */
+  public isAuthError(): boolean {
+    return this.statusCode === 401 || this.statusCode === 403;
+  }
+}

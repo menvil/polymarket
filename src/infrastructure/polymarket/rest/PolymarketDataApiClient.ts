@@ -14,6 +14,7 @@
  */
 
 import type { ILogger } from '../../../domain/ports/ILogger.js';
+import { ApiError } from '../../../shared/errors/TradingError.js';
 
 /**
  * Конфигурация клиента Data API
@@ -90,8 +91,14 @@ export class PolymarketDataApiClient {
           body: errorText,
         });
 
-        throw new Error(
-          `HTTP ${response.status}: ${response.statusText}${errorText ? ` - ${errorText}` : ''}`
+        throw new ApiError(
+          `HTTP ${response.status}: ${response.statusText}${errorText ? ` - ${errorText}` : ''}`,
+          {
+            statusCode: response.status,
+            endpoint,
+            method: 'GET',
+            responseBody: errorText,
+          }
         );
       }
 
@@ -111,7 +118,10 @@ export class PolymarketDataApiClient {
           endpoint,
           timeout: this.timeout,
         });
-        throw new Error(`Request timeout after ${this.timeout}ms`);
+        throw new ApiError(`Request timeout after ${this.timeout}ms`, {
+          endpoint,
+          method: 'GET',
+        });
       }
 
       throw error;

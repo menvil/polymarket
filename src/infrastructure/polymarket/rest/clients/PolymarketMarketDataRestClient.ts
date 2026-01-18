@@ -32,6 +32,7 @@
 import type { ILogger } from '../../../../domain/ports/ILogger.js';
 import type { GammaMarketData } from '../../../../domain/services/market-discovery/types.js';
 import type { IMarketDataProvider } from '../../../../domain/services/market-discovery/MarketDiscoveryService.js';
+import { ApiError } from '../../../../shared/errors/TradingError.js';
 
 /**
  * Конфигурация клиента рыночных данных
@@ -452,9 +453,12 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
           });
         }
 
-        const error: any = new Error(`HTTP ${response.status}: ${response.statusText}`);
-        error.statusCode = response.status;
-        throw error;
+        throw new ApiError(`HTTP ${response.status}: ${response.statusText}`, {
+          statusCode: response.status,
+          endpoint: url,
+          method: 'GET',
+          responseBody: errorBody,
+        });
       }
 
       const data = await response.json();
@@ -468,7 +472,10 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
       clearTimeout(timeoutId);
 
       if ((error as Error).name === 'AbortError') {
-        throw new Error(`Request timeout after ${this.config.timeout}ms`);
+        throw new ApiError(`Request timeout after ${this.config.timeout}ms`, {
+          endpoint: url,
+          method: 'GET',
+        });
       }
 
       throw error;
