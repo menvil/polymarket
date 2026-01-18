@@ -257,7 +257,7 @@ export class PolymarketMessageParser implements IMessageParser {
    */
   isPongMessage(data: unknown): boolean {
     const message = data as PolymarketWSMessage;
-    return message.event_type?.toLowerCase() === 'pong';
+    return typeof message.event_type === 'string' && message.event_type.toLowerCase() === 'pong';
   }
 
   /**
