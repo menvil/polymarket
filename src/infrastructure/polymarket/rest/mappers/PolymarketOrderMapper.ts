@@ -33,6 +33,7 @@ import type { ILogger } from '../../../../domain/ports/ILogger.js';
 import type {
   CreateOrderRequest,
   CreateOrderResponse,
+  MatchedOrderResponse,
 } from '../clients/PolymarketOrderRestClient.js';
 import type { OrderResponse, OrderSide } from '../../../exchange/ports/IExecutionAdapter.js';
 import type { OrderStatus } from '../../../exchange/types/OrderResponse.js';
@@ -204,5 +205,38 @@ export class PolymarketOrderMapper {
     }
 
     return parsed;
+  }
+
+  /**
+   * Преобразует ответ API MatchedOrderResponse в формат домена
+   *
+   * @param response - Ответ API из /data/orders с параметром status
+   * @returns Нормализованный доменный ордер
+   *
+   * @remarks
+   * Используется для ордеров полученных через getOrdersByApiStatus().
+   * Поля отличаются от CreateOrderResponse:
+   * - asset_id вместо tokenId
+   * - original_size вместо size
+   * - size_matched для расчёта sizeRemaining
+   * - created_at вместо timestamp
+   */
+  toDomainOrderFromMatched(response: MatchedOrderResponse): OrderResponse {
+    const size = this.parseNumber(response.original_size || '0');
+    const filledSize = this.parseNumber(response.size_matched || '0');
+    const sizeRemaining = size - filledSize;
+    const createdAt = response.created_at ? new Date(response.created_at).getTime() : Date.now();
+
+    return {
+      orderId: response.orderID,
+      tokenId: response.asset_id || '',
+      side: this.mapSide(response.side, response.orderID),
+      price: this.parseNumber(response.price || '0'),
+      size,
+      sizeRemaining,
+      status: this.mapStatus(response.status, filledSize, size),
+      createdAt,
+      updatedAt: createdAt,
+    };
   }
 }

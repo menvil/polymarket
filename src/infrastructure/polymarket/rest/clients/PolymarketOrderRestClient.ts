@@ -145,7 +145,7 @@ export interface GetOrdersResponse {
  * Ответ исполненного ордера из /data/orders (status=MATCHED)
  *
  * @remarks
- * Используется методом getMatchedOrders() для получения исполненных ордеров.
+ * Используется методом getOrdersByApiStatus('MATCHED') для получения исполненных ордеров.
  * Поля size_matched и avg_price содержат агрегированную информацию.
  */
 export interface MatchedOrderResponse {
@@ -472,55 +472,66 @@ export class PolymarketOrderRestClient {
   }
 
   /**
-   * Получить совпавшие ордера (используя эндпоинт /data/orders?status=MATCHED)
+   * Получить ордера по статусу API
    *
+   * @param status - Статус API ('LIVE' | 'MATCHED' | 'CANCELLED')
    * @param tokenId - Опционально: фильтр по ID токена
    * @param limit - Максимальное количество возвращаемых ордеров (по умолчанию: 100)
-   * @returns Массив совпавших ордеров (АГРЕГИРОВАННЫХ по ордерам!)
+   * @returns Массив ордеров с указанным статусом
    * @throws {ApiError} Если вызов API завершается с ошибкой
    *
    * @remarks
-   * v7.7.11: ЗАПАСНОЙ метод, когда /data/trades возвращает пустой результат.
-   * Использует /data/orders с параметром status=MATCHED (как старый бот).
+   * Универсальный метод для получения ордеров любого статуса через /data/orders.
+   *
+   * Поддерживаемые статусы:
+   * - LIVE: активные/открытые ордера
+   * - MATCHED: исполненные ордера
+   * - CANCELLED: отменённые ордера
    *
    * ВАЖНО: Возвращает ОРДЕРА, а не отдельные СДЕЛКИ!
    * - Один ордер = одна строка (даже если исполнен несколькими сделками)
-   * - size_matched = общий исполненный размер (сумма всех сделок)
-   * - avg_price = средняя цена исполнения (НЕ лимитная цена!)
+   * - size_matched = общий исполненный размер
+   * - avg_price = средняя цена исполнения
    *
    * @example
    * ```typescript
-   * // Get all matched orders
-   * const orders = await client.getMatchedOrders('0x123...', 100);
-   * // orders[0].size_matched - total filled
-   * // orders[0].avg_price - average price
+   * // Получить исполненные ордера
+   * const filled = await client.getOrdersByApiStatus('MATCHED', '0x123...', 100);
+   *
+   * // Получить отменённые ордера
+   * const cancelled = await client.getOrdersByApiStatus('CANCELLED');
+   *
+   * // Получить активные ордера
+   * const live = await client.getOrdersByApiStatus('LIVE');
    * ```
    */
-  async getMatchedOrders(tokenId?: string, limit: number = 100): Promise<MatchedOrderResponse[]> {
-    this.logger.debug('[PolymarketOrderRestClient] v7.7.11: Getting matched orders from /data/orders', {
+  async getOrdersByApiStatus(
+    status: 'LIVE' | 'MATCHED' | 'CANCELLED',
+    tokenId?: string,
+    limit: number = 100
+  ): Promise<MatchedOrderResponse[]> {
+    this.logger.debug('[PolymarketOrderRestClient] Getting orders by API status', {
+      status,
       tokenId: tokenId ? tokenId.substring(0, 16) + '...' : 'all',
       limit,
     });
 
     const params: Record<string, string> = {
       limit: limit.toString(),
-      status: 'MATCHED', // ✅ Только исполненные ордера
+      status,
     };
 
     if (tokenId) {
       params.asset_id = tokenId;
     }
 
-    // Использовать эндпоинт /data/orders (не /data/trades!)
     const response = await this.restClient.get<MatchedOrderResponse[]>('/data/orders', params);
-
-    // API возвращает массив напрямую
     const orders: MatchedOrderResponse[] = Array.isArray(response) ? response : [];
 
-    this.logger.info('[PolymarketOrderRestClient] 📊 v7.7.11: Matched orders from /data/orders retrieved', {
+    this.logger.debug('[PolymarketOrderRestClient] Orders by API status retrieved', {
+      status,
       count: orders.length,
       tokenIdFilter: tokenId ? tokenId.substring(0, 16) + '...' : 'all',
-      limit,
     });
 
     return orders;
@@ -539,7 +550,7 @@ export class PolymarketOrderRestClient {
    * v7.7.10: Использует /data/trades с параметром maker_address (как официальный @polymarket/clob-client)
    * КРИТИЧНО: Необходимо использовать адрес MAKER (спонсор), НЕ адрес SIGNER (прокси)!
    *
-   * v7.7.11: ЗАПАСНОЙ ВАРИАНТ - если возвращает пустой результат, вызовите getMatchedOrders()!
+   * v7.7.11: ЗАПАСНОЙ ВАРИАНТ - если возвращает пустой результат, вызовите getOrdersByApiStatus('MATCHED')!
    *
    * Подход официального CLOB клиента:
    * ```typescript
@@ -552,7 +563,7 @@ export class PolymarketOrderRestClient {
    * const fills = await client.getFilledOrders('0x123...', '0xMAKER...', 100);
    * if (fills.length === 0) {
    *   // Fallback to matched orders
-   *   const orders = await client.getMatchedOrders('0x123...', 100);
+   *   const orders = await client.getOrdersByApiStatus('MATCHED', '0x123...', 100);
    * }
    * console.log(`Total fills: ${fills.length}`);
    * ```

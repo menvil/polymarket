@@ -118,18 +118,24 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
   /**
    * Получить заказы по статусу
    *
-   * @param status - Статус заказа для фильтрации ('OPEN', 'PARTIALLY_FILLED', etc.)
+   * @param status - Статус заказа для фильтрации ('OPEN', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED')
    * @param tokenId - Опционально: фильтр по ID токена
    * @returns Массив заказов с указанным статусом
    * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Фильтрует заказы по статусу локально (после получения всех открытых заказов).
+   * Маршрутизирует запросы к соответствующим API эндпоинтам:
+   * - OPEN, PARTIALLY_FILLED → API status 'LIVE'
+   * - FILLED → API status 'MATCHED'
+   * - CANCELED → API status 'CANCELLED'
    *
    * @example
    * ```typescript
-   * const partiallyFilled = await provider.getOrdersByStatus('PARTIALLY_FILLED');
-   * console.log(`Partially filled orders: ${partiallyFilled.length}`);
+   * const filled = await provider.getOrdersByStatus('FILLED');
+   * console.log(`Filled orders: ${filled.length}`);
+   *
+   * const cancelled = await provider.getOrdersByStatus('CANCELED');
+   * console.log(`Cancelled orders: ${cancelled.length}`);
    * ```
    */
   async getOrdersByStatus(
@@ -138,17 +144,43 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
   ): Promise<OrderResponse[]> {
     this.logger.debug('Getting orders by status', { status, tokenId });
 
-    // Получить открытые заказы (включает 'open' и 'partially_filled')
-    const openOrders = await this.getOpenOrders(tokenId);
+    // Маппинг доменного статуса → API статус
+    const apiStatus = this.mapDomainStatusToApiStatus(status);
 
-    // Фильтровать по статусу
-    const filtered = openOrders.filter((order) => order.status === status);
+    // Получить ордера через универсальный метод
+    const rawOrders = await this.orderClient.getOrdersByApiStatus(apiStatus, tokenId);
+
+    // Нормализовать и фильтровать по точному статусу
+    // (API может вернуть несколько статусов, например LIVE включает и OPEN и PARTIALLY_FILLED)
+    const normalized = rawOrders.map((order) => this.mapper.toDomainOrderFromMatched(order));
+    const filtered = normalized.filter((order) => order.status === status);
 
     this.logger.debug('Orders by status retrieved', {
       status,
-      count: filtered.length,
+      apiStatus,
+      rawCount: rawOrders.length,
+      filteredCount: filtered.length,
     });
 
     return filtered;
+  }
+
+  /**
+   * Маппинг доменного статуса в статус API Polymarket
+   */
+  private mapDomainStatusToApiStatus(status: OrderStatus): 'LIVE' | 'MATCHED' | 'CANCELLED' {
+    switch (status) {
+      case 'OPEN':
+      case 'PARTIALLY_FILLED':
+        return 'LIVE';
+      case 'FILLED':
+        return 'MATCHED';
+      case 'CANCELED':
+        return 'CANCELLED';
+      default:
+        // Для неизвестных статусов возвращаем LIVE как fallback
+        this.logger.warn('Unknown order status, defaulting to LIVE', { status });
+        return 'LIVE';
+    }
   }
 }
