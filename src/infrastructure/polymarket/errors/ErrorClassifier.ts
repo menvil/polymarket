@@ -192,8 +192,19 @@ export class ErrorClassifier {
       return cached; // Та же ссылка!
     }
 
-    // 4. Классифицировать
-    const structured = this.errorAdapter.parse(message);
+    // 4. Классифицировать (с защитой от исключений парсера)
+    let structured: StructuredError;
+    try {
+      structured = this.errorAdapter.parse(message);
+    } catch (parseError) {
+      this.logger.error('[ErrorClassifier] errorAdapter.parse threw exception, using fallback', {
+        originalMessage: message,
+        error: parseError instanceof Error ? parseError.message : String(parseError),
+        stack: parseError instanceof Error ? parseError.stack : undefined,
+      });
+      // Fallback: создаём безопасную структуру, которая даст OrderError с type UNKNOWN
+      structured = { message };
+    }
     const classified = this.classifyStructured(structured);
 
     // 5. Использовать результат классификации напрямую (classified уже содержит корректный type и message)
