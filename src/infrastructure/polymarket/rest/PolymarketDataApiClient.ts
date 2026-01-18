@@ -1,0 +1,153 @@
+/**
+ * Polymarket Data API Client
+ *
+ * @remarks
+ * Простой HTTP-клиент для Polymarket Data API (data-api.polymarket.com).
+ * Используется для эндпоинтов, которых НЕТ в CLOB API.
+ *
+ * Эндпоинты:
+ * - GET /positions - Позиции пользователя (требуется Data API, не CLOB API)
+ *
+ * Это легковесный клиент без аутентификации (Data API публичен).
+ *
+ * @module infrastructure/polymarket/rest/PolymarketDataApiClient
+ */
+
+import type { ILogger } from '../../../domain/ports/ILogger.js';
+import { ApiError } from '../../../shared/errors/TradingError.js';
+
+/**
+ * Конфигурация клиента Data API
+ */
+export interface DataApiClientConfig {
+  /** Базовый URL Data API (по умолчанию: https://data-api.polymarket.com) */
+  baseUrl?: string;
+
+  /** Таймаут запроса в миллисекундах (по умолчанию: 30000) */
+  timeout?: number;
+}
+
+/**
+ * Polymarket Data API Client
+ *
+ * @remarks
+ * Легковесный HTTP-клиент для эндпоинтов Data API.
+ * Аутентификация не требуется (публичный API).
+ */
+export class PolymarketDataApiClient {
+  private readonly baseUrl: string;
+  private readonly timeout: number;
+  private readonly logger: ILogger;
+
+  constructor(config: DataApiClientConfig, logger: ILogger) {
+    this.baseUrl = config.baseUrl ?? 'https://data-api.polymarket.com';
+    this.timeout = config.timeout ?? 30000;
+    this.logger = logger.child?.('PolymarketDataApiClient') ?? logger;
+  }
+
+  /**
+   * Выполнить GET запрос
+   *
+   * @param endpoint - Эндпоинт API (например, '/positions')
+   * @param params - Параметры запроса
+   * @returns Данные ответа
+   * @throws {ApiError} Если запрос не удался
+   */
+  async get<T>(endpoint: string, params?: Record<string, string>): Promise<T> {
+    const url = new URL(endpoint, this.baseUrl);
+
+    if (params) {
+      Object.entries(params).forEach(([key, value]) => {
+        url.searchParams.append(key, value);
+      });
+    }
+
+    const fullUrl = url.toString();
+
+    this.logger.debug('Data API request', {
+      method: 'GET',
+      url: fullUrl,
+      params,
+    });
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+
+    try {
+      const response = await fetch(fullUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        this.logger.error('Data API error', {
+          status: response.status,
+          statusText: response.statusText,
+          body: errorText,
+        });
+
+        throw new ApiError(
+          `HTTP ${response.status}: ${response.statusText}${errorText ? ` - ${errorText}` : ''}`,
+          {
+            statusCode: response.status,
+            endpoint: fullUrl,
+            method: 'GET',
+            responseBody: errorText,
+          }
+        );
+      }
+
+      let data: T;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        this.logger.error('Data API JSON parse error', {
+          url: fullUrl,
+          error: parseError instanceof Error ? parseError.message : String(parseError),
+        });
+        throw new ApiError(
+          `JSON parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+          {
+            endpoint: fullUrl,
+            method: 'GET',
+          }
+        );
+      }
+
+      this.logger.debug('Data API response', {
+        status: response.status,
+        dataLength: Array.isArray(data) ? data.length : undefined,
+      });
+
+      return data;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        this.logger.error('Data API timeout', {
+          url: fullUrl,
+          timeout: this.timeout,
+        });
+        throw new ApiError(`Request timeout after ${this.timeout}ms`, {
+          endpoint: fullUrl,
+          method: 'GET',
+        });
+      }
+
+      // Уже ApiError - перебросить как есть
+      if (error instanceof ApiError) {
+        throw error;
+      }
+
+      // Обернуть сетевые ошибки (network/DNS/connection) в ApiError
+      throw new ApiError(`Network error: ${(error as Error).message}`, {
+        endpoint: fullUrl,
+        method: 'GET',
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+}
