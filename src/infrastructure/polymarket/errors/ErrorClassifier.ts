@@ -196,10 +196,8 @@ export class ErrorClassifier {
     const structured = this.errorAdapter.parse(message);
     const classified = this.classifyStructured(structured);
 
-    // 5. Использовать результат классификации (или UNKNOWN если не удалось классифицировать)
-    const result: OrderError = classified.type !== 'UNKNOWN'
-      ? classified
-      : { type: 'UNKNOWN', message, recoverable: false };
+    // 5. Использовать результат классификации напрямую (classified уже содержит корректный type и message)
+    const result: OrderError = classified;
 
     // 6. LRU вытеснение ПЕРЕД добавлением (ГАРАНТИРОВАННО первая = старейшая)
     if (this.cache.size >= this.maxCacheSize) {
