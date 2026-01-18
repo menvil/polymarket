@@ -552,6 +552,16 @@ export class Order {
       }
     }
 
+    // Для PARTIALLY_FILLED дополнительно проверяем что filledSize < size (частичное исполнение)
+    if (this.status === 'PARTIALLY_FILLED') {
+      if (this.filledSize && !this.filledSize.isLessThan(this.size)) {
+        throw new OrderValidationError(
+          `Status PARTIALLY_FILLED requires filledSize (${this.filledSize.value}) < size (${this.size.value})`,
+          'filledSize'
+        );
+      }
+    }
+
     // Для FILLED дополнительно проверяем что filledSize === size (полное исполнение)
     if (this.status === 'FILLED') {
       if (this.filledSize && !this.filledSize.equals(this.size)) {

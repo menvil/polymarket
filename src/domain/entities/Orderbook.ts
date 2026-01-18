@@ -79,12 +79,18 @@ export class Orderbook {
   public static readonly DEFAULT_IMBALANCE_LEVELS = 5;
 
   /**
+   * Внутреннее хранение timestamp в миллисекундах для истинной immutability
+   * (Date объекты мутабельны даже после Object.freeze)
+   */
+  private readonly _timestampMs: number;
+
+  /**
    * Создаёт новый Orderbook
    *
    * @param tokenId - Идентификатор токена
    * @param bids - Массив bid уровней (отсортирован по убыванию цены)
    * @param asks - Массив ask уровней (отсортирован по возрастанию цены)
-   * @param timestamp - Время снимка стакана
+   * @param timestampMs - Время снимка стакана в миллисекундах
    *
    * @remarks
    * Private constructor - используйте статический метод create().
@@ -93,8 +99,23 @@ export class Orderbook {
     public readonly tokenId: string,
     public readonly bids: readonly OrderbookLevel[],
     public readonly asks: readonly OrderbookLevel[],
-    public readonly timestamp: Date
-  ) {}
+    timestampMs: number
+  ) {
+    this._timestampMs = timestampMs;
+  }
+
+  /**
+   * Получает время снимка стакана
+   *
+   * @returns Копия Date объекта (для защиты от внешней мутации)
+   *
+   * @remarks
+   * Возвращает новый Date объект при каждом вызове,
+   * чтобы внешний код не мог мутировать внутреннее состояние.
+   */
+  public get timestamp(): Date {
+    return new Date(this._timestampMs);
+  }
 
   /**
    * Создаёт новый Orderbook
@@ -130,35 +151,37 @@ export class Orderbook {
     }
 
     // Сортируем bids по убыванию цены (лучший bid первый)
-    // Замораживаем каждый уровень для истинной immutability
+    // Клонируем каждый уровень перед заморозкой, чтобы не мутировать внешние объекты
     const sortedBids = [...data.bids]
       .sort((a, b) => b.price.value - a.price.value)
-      .map(level => Object.freeze(level));
+      .map(level => Object.freeze({ price: level.price, quantity: level.quantity }));
 
     // Замораживаем массив bids
     Object.freeze(sortedBids);
 
     // Сортируем asks по возрастанию цены (лучший ask первый)
-    // Замораживаем каждый уровень для истинной immutability
+    // Клонируем каждый уровень перед заморозкой, чтобы не мутировать внешние объекты
     const sortedAsks = [...data.asks]
       .sort((a, b) => a.price.value - b.price.value)
-      .map(level => Object.freeze(level));
+      .map(level => Object.freeze({ price: level.price, quantity: level.quantity }));
 
     // Замораживаем массив asks
     Object.freeze(sortedAsks);
 
-    // Клонируем timestamp чтобы предотвратить внешнюю мутацию
-    const timestamp = data.timestamp ? new Date(data.timestamp.getTime()) : new Date();
+    // Извлекаем timestamp в миллисекундах для истинной immutability
+    const timestampMs = data.timestamp ? data.timestamp.getTime() : Date.now();
 
     const orderbook = new Orderbook(
       tokenId,
       sortedBids,
       sortedAsks,
-      timestamp
+      timestampMs
     );
 
     // Замораживаем весь Orderbook для полной immutability
-    return Object.freeze(orderbook);
+    // Type assertion needed: Object.freeze returns Readonly<T>, but private fields
+    // cause TS to see Readonly<Orderbook> as incompatible with Orderbook
+    return Object.freeze(orderbook) as Orderbook;
   }
 
   /**
@@ -554,7 +577,7 @@ export class Orderbook {
    * ```
    */
   public getAgeMs(now: number = Date.now()): number {
-    return now - this.timestamp.getTime();
+    return now - this._timestampMs;
   }
 
   /**
