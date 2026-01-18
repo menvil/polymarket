@@ -1,5 +1,5 @@
 /**
- * Portfolio entity
+ * Сущность Portfolio (портфель)
  *
  * @remarks
  * Представляет портфель трейдера с денежными средствами и позициями.
@@ -71,10 +71,10 @@ export class PositionNotFoundError extends TradingError {
 }
 
 /**
- * Portfolio entity
+ * Сущность Portfolio
  *
  * @remarks
- * Immutable entity representing trader's portfolio.
+ * Неизменяемая сущность, представляющая портфель трейдера.
  */
 export class Portfolio {
   /**

@@ -89,7 +89,7 @@ export class LotNotFoundError extends TradingError {
 }
 
 /**
- * Position entity
+ * Сущность Position
  *
  * @remarks
  * Неизменяемая сущность, представляющая агрегированную позицию с FIFO отслеживанием лотов.

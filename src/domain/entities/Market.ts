@@ -76,7 +76,7 @@ export interface MarketProps {
 }
 
 /**
- * Market entity
+ * Сущность Market
  *
  * @remarks
  * Неизменяемая сущность, представляющая рынок предсказаний.

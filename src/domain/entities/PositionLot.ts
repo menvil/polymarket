@@ -67,7 +67,7 @@ export class InsufficientLotQuantityError extends TradingError {
 }
 
 /**
- * PositionLot entity
+ * Сущность PositionLot
  *
  * @remarks
  * Неизменяемая сущность, представляющая один лот в FIFO учёте.
