@@ -299,7 +299,7 @@ export class ErrorClassifier {
       };
     }
 
-    if (code.includes('rate') || code.includes('429')) {
+    if (code.includes('rate') || code === '429') {
       return {
         type: 'RATE_LIMITED',
         message: structured.message,
@@ -307,7 +307,7 @@ export class ErrorClassifier {
       };
     }
 
-    if (code.includes('auth') || code.includes('401') || code.includes('403')) {
+    if (code.includes('auth') || code === '401' || code === '403') {
       return {
         type: 'AUTH_FAILED',
         message: structured.message,
@@ -323,7 +323,7 @@ export class ErrorClassifier {
       };
     }
 
-    if (code.includes('404') || structured.message.toLowerCase().includes('not found')) {
+    if (code === '404' || structured.message.toLowerCase().includes('not found')) {
       return {
         type: 'ORDER_NOT_FOUND',
         message: structured.message,
@@ -331,7 +331,7 @@ export class ErrorClassifier {
       };
     }
 
-    if (code.startsWith('5') || structured.message.toLowerCase().includes('server error')) {
+    if (/^5\d{2}$/.test(code) || structured.message.toLowerCase().includes('server error')) {
       return {
         type: 'SERVER_ERROR',
         message: structured.message,
