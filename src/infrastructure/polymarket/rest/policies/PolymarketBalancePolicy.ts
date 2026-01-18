@@ -340,7 +340,8 @@ export class PolymarketBalancePolicy {
     }
 
     const availableUSDC = await this.balanceProvider.getAvailableBalance();
-    const maxSize = availableUSDC / price;
+    // Округляем вниз для согласованности с checkBuyBalance
+    const maxSize = Math.floor(availableUSDC / price);
 
     this.logger.debug('Calculated max buy size', {
       price,
