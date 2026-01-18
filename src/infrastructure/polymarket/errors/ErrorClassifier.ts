@@ -240,121 +240,79 @@ export class ErrorClassifier {
    *
    * @param structured - Структурированная ошибка из адаптера
    * @returns Классифицированная OrderError
-   *
-   * @remarks
-   * Правила классификации:
-   * - Есть нарушение → CONSTRAINT_VIOLATION
-   * - Код содержит "balance" → BALANCE_INSUFFICIENT
-   * - Код содержит "network" → NETWORK_ERROR
-   * - Код содержит "rate" → RATE_LIMITED
-   * - Код содержит "auth" → AUTH_FAILED
-   * - Иначе → UNKNOWN
    */
   private classifyStructured(structured: StructuredError): OrderError {
-    // Проверить наличие нарушения ограничения
-    if (structured.violation) {
-      return {
-        type: 'CONSTRAINT_VIOLATION',
-        message: structured.message,
-        recoverable: false,
-        violation: structured.violation,
-      };
-    }
-
-    // Проверить код ошибки
+    const { message } = structured;
     const code = (structured.code || '').toLowerCase();
-    const messageLower = structured.message.toLowerCase();
+    const messageLower = message.toLowerCase();
 
+    // Нарушение ограничения (приоритетная проверка)
+    if (structured.violation) {
+      return { type: 'CONSTRAINT_VIOLATION', message, recoverable: false, violation: structured.violation };
+    }
+
+    // Недостаточный баланс
     if (code.includes('balance') || messageLower.includes('insufficient')) {
-      return {
-        type: 'BALANCE_INSUFFICIENT',
-        message: structured.message,
-        recoverable: true,
-      };
-    }
-    // Проверка сетевых ошибок - используем специфичные паттерны,
-    // избегая ложных срабатываний на "connection established", "network ready" и т.д.
-    if (
-      // Коды ошибок (обычно специфичны для сбоев)
-      code.includes('network') ||
-      code.includes('timeout') ||
-      code.includes('econnrefused') ||
-      code.includes('econnreset') ||
-      code.includes('enotfound') ||
-      code.includes('ehostunreach') ||
-      // Таймауты
-      messageLower.includes('timed out') ||
-      messageLower.includes('timeout') ||
-      // Специфичные сбои соединения (НЕ общее 'connection')
-      messageLower.includes('connection refused') ||
-      messageLower.includes('connection reset') ||
-      messageLower.includes('connection closed unexpectedly') ||
-      messageLower.includes('connection failed') ||
-      messageLower.includes('failed to connect') ||
-      messageLower.includes('could not connect') ||
-      messageLower.includes('cannot connect') ||
-      messageLower.includes('unable to connect') ||
-      // Сетевые сбои
-      messageLower.includes('network error') ||
-      messageLower.includes('network failure') ||
-      messageLower.includes('network unreachable') ||
-      messageLower.includes('no route to host') ||
-      messageLower.includes('socket hang up') ||
-      messageLower.includes('socket closed')
-    ) {
-      return {
-        type: 'NETWORK_ERROR',
-        message: structured.message,
-        recoverable: true,
-      };
+      return { type: 'BALANCE_INSUFFICIENT', message, recoverable: true };
     }
 
+    // Сетевые ошибки
+    if (this.isNetworkError(code, messageLower)) {
+      return { type: 'NETWORK_ERROR', message, recoverable: true };
+    }
+
+    // Ограничение частоты запросов
     if (code.includes('rate') || code === '429') {
-      return {
-        type: 'RATE_LIMITED',
-        message: structured.message,
-        recoverable: true,
-      };
+      return { type: 'RATE_LIMITED', message, recoverable: true };
     }
 
+    // Ошибка аутентификации
     if (code.includes('auth') || code === '401' || code === '403') {
-      return {
-        type: 'AUTH_FAILED',
-        message: structured.message,
-        recoverable: false,
-      };
+      return { type: 'AUTH_FAILED', message, recoverable: false };
     }
 
+    // Рынок закрыт
     if (code.includes('closed') || messageLower.includes('market closed')) {
-      return {
-        type: 'MARKET_CLOSED',
-        message: structured.message,
-        recoverable: false,
-      };
+      return { type: 'MARKET_CLOSED', message, recoverable: false };
     }
 
+    // Ордер не найден
     if (code === '404' || messageLower.includes('not found')) {
-      return {
-        type: 'ORDER_NOT_FOUND',
-        message: structured.message,
-        recoverable: false,
-      };
+      return { type: 'ORDER_NOT_FOUND', message, recoverable: false };
     }
 
+    // Серверная ошибка (5xx)
     if (/^5\d{2}$/.test(code) || messageLower.includes('server error')) {
-      return {
-        type: 'SERVER_ERROR',
-        message: structured.message,
-        recoverable: true,
-      };
+      return { type: 'SERVER_ERROR', message, recoverable: true };
     }
 
-    // Неизвестная
-    return {
-      type: 'UNKNOWN',
-      message: structured.message,
-      recoverable: false,
-    };
+    return { type: 'UNKNOWN', message, recoverable: false };
+  }
+
+  /**
+   * Проверить, является ли ошибка сетевой
+   *
+   * @param code - Код ошибки (в нижнем регистре)
+   * @param messageLower - Сообщение об ошибке (в нижнем регистре)
+   * @returns true если это сетевая ошибка
+   */
+  private isNetworkError(code: string, messageLower: string): boolean {
+    // Коды ошибок сети
+    const networkCodes = ['network', 'timeout', 'econnrefused', 'econnreset', 'enotfound', 'ehostunreach'];
+    if (networkCodes.some(nc => code.includes(nc))) {
+      return true;
+    }
+
+    // Паттерны в сообщениях об ошибках
+    const networkPatterns = [
+      'timed out', 'timeout',
+      'connection refused', 'connection reset', 'connection closed unexpectedly',
+      'connection failed', 'failed to connect', 'could not connect',
+      'cannot connect', 'unable to connect',
+      'network error', 'network failure', 'network unreachable',
+      'no route to host', 'socket hang up', 'socket closed',
+    ];
+    return networkPatterns.some(pattern => messageLower.includes(pattern));
   }
 
   /**

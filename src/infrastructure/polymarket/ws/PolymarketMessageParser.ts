@@ -170,28 +170,16 @@ export class PolymarketMessageParser implements IMessageParser {
         return null;
       }
 
-      // Контрольные сообщения (нет asset_id) - обрабатываются транспортом
-      if (eventType === 'pong' || eventType === 'error' || eventType === 'subscribed' || eventType === 'unsubscribed') {
-        // Они обрабатываются в BaseWebSocketTransport (isPongMessage, isErrorMessage)
+      // Контрольные сообщения (без asset_id) - обрабатываются транспортом
+      const controlEvents = ['pong', 'error', 'subscribed', 'unsubscribed'];
+      if (controlEvents.includes(eventType)) {
         return null;
       }
 
       // Игнорируемые события (не нужны для торговли)
-      if (eventType === 'price_change') {
-        // price_change содержит массив price_changes, а не единичный asset_id
-        // Пропускаем - не нужны для торговли или сбора данных
-        this.logger.trace('Skipping price_change event', {
-          market: (message as any).market?.substring(0, 16) + '...',
-          changes: (message as any).price_changes?.length,
-        });
-        return null;
-      }
-
-      if (eventType === 'tick_size_change') {
-        // tick_size_change - пропускаем, не нужны для торговли или сбора данных
-        this.logger.trace('Skipping tick_size_change event', {
-          market: (message as any).market?.substring(0, 16) + '...',
-        });
+      const ignoredEvents = ['price_change', 'tick_size_change'];
+      if (ignoredEvents.includes(eventType)) {
+        this.logger.trace(`Skipping ${eventType} event`);
         return null;
       }
 

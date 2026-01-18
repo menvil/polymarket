@@ -435,7 +435,7 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
         signal: controller.signal,
       });

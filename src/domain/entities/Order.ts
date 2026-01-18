@@ -853,11 +853,18 @@ export class Order {
     const isFullyFilled = filledSize.equals(this.size) || filledSize.isGreaterThan(this.size);
     const isPartiallyFilled = !filledSize.isZero() && filledSize.isLessThan(this.size);
 
+    let newStatus: OrderStatus = this.status;
+    if (isFullyFilled) {
+      newStatus = 'FILLED';
+    } else if (isPartiallyFilled) {
+      newStatus = 'PARTIALLY_FILLED';
+    }
+
     return Order.create({
       ...this,
       filledSize,
       averageFillPrice,
-      status: isFullyFilled ? 'FILLED' : isPartiallyFilled ? 'PARTIALLY_FILLED' : this.status
+      status: newStatus
     });
   }
 

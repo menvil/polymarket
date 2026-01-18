@@ -9,4 +9,5 @@ export { Money } from './Money.js';
 export { Price } from './Price.js';
 export { Quantity } from './Quantity.js';
 export { Percentage, InvalidPercentageError } from './Percentage.js';
+export { Quote } from './Quote.js';
 export { Spread, InvalidSpreadError } from './Spread.js';
