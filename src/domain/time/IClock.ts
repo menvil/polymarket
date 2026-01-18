@@ -2,26 +2,19 @@
  * IClock - контракт источника времени
  *
  * @remarks
- * КРИТИЧНО v4: Время - это dependency!
+ * Время - это dependency!
  * Стратегия НЕ создаёт время, она получает его из clock.
  *
- * Архитектурная проблема v3:
- * - v3: ctx.now() { return new Date(); } - nondeterministic
- * - Replay НЕ bit-for-bit (timestamp всегда новый)
- * - Два replay одного стрима → разные telemetry timestamps
- *
- * Решение v4:
  * - Время = dependency injection
  * - IClock = контракт источника времени
  * - 3 implementations: LiveClock, ReplayClock, PaperClock
  * - StrategyContextImpl получает clock via DI
  *
- * Implementations:
- * - LiveClock: Date.now() (production, LIVE mode)
- * - ReplayClock: event.timestamp (replay, REPLAY mode)
- * - PaperClock: controllable (testing, PAPER mode)
+ * Implementations (все возвращают Date из now()):
+ * - LiveClock: new Date() — реальное время (production, LIVE mode)
+ * - ReplayClock: замороженное время из event.timestamp (replay, REPLAY mode)
+ * - PaperClock: контролируемое время (testing, PAPER mode)
  *
- * Жёсткое правило v4:
  * ```
  * Стратегия НЕ создаёт время.
  * Время = dependency injection.
@@ -30,14 +23,14 @@
  *
  * @example
  * ```typescript
- * // v3 (НЕПРАВИЛЬНО):
+ * // (НЕПРАВИЛЬНО):
  * class StrategyContextImpl {
  *   now(): Date {
  *    return new Date(); // ❌ nondeterministic
  *   }
  * }
  *
- * // v4 (ПРАВИЛЬНО):
+ * // (ПРАВИЛЬНО):
  * class StrategyContextImpl {
  *   constructor(
  *    private readonly clock: IClock // ✅ Dependency injection
@@ -74,20 +67,20 @@
  */
 export interface IClock {
   /**
-  * Получение текущего timestamp
+   * Получение текущего времени
    *
-   * @returns Текущий timestamp
+   * @returns Date — текущий timestamp
    *
    * @remarks
    * NO new Date() внутри стратегии!
    * Время инжектится через clock.
    *
-   * Implementations:
-   * - LiveClock: возвращает new Date() (в реальном времени)
-   * - ReplayClock: возвращает frozen timestamp (в бектестах)
-   * - PaperClock: возвращает controllable timestamp (в тестах)
+   * Implementations (все возвращают Date):
+   * - LiveClock: new Date() — реальное время
+   * - ReplayClock: frozen Date из event.timestamp
+   * - PaperClock: controllable Date для тестов
    *
-   * v4: Гарантирует deterministic replay
+   * Гарантирует deterministic replay
    * - Один event stream → одни timestamps
    * - Telemetry bit-for-bit deterministic
    * - NO race conditions с временем
