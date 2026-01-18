@@ -33,18 +33,18 @@
  * // v3 (НЕПРАВИЛЬНО):
  * class StrategyContextImpl {
  *   now(): Date {
- *     return new Date(); // ❌ nondeterministic
+ *    return new Date(); // ❌ nondeterministic
  *   }
  * }
  *
  * // v4 (ПРАВИЛЬНО):
  * class StrategyContextImpl {
  *   constructor(
- *     private readonly clock: IClock // ✅ Dependency injection
+ *    private readonly clock: IClock // ✅ Dependency injection
  *   ) {}
  *
  *   now(): Date {
- *     return this.clock.now(); // ✅ deterministic
+ *    return this.clock.now(); // ✅ deterministic
  *   }
  * }
  * ```
@@ -73,24 +73,24 @@
  * ```
  */
 export interface IClock {
-    /**
-     * Get current timestamp
-     *
-     * @returns Current timestamp
-     *
-     * @remarks
-     * NO new Date() внутри стратегии!
-     * Время инжектится через clock.
-     *
-     * Implementations:
-     * - LiveClock: returns new Date() (real time)
-     * - ReplayClock: returns frozen timestamp (replay)
-     * - PaperClock: returns controllable timestamp (testing)
-     *
-     * v4: Гарантирует deterministic replay
-     * - Один event stream → одни timestamps
-     * - Telemetry bit-for-bit deterministic
-     * - NO race conditions с временем
-     */
-    now(): Date;
+  /**
+  * Получение текущего timestamp
+   *
+   * @returns Текущий timestamp
+   *
+   * @remarks
+   * NO new Date() внутри стратегии!
+   * Время инжектится через clock.
+   *
+   * Implementations:
+   * - LiveClock: возвращает new Date() (в реальном времени)
+   * - ReplayClock: возвращает frozen timestamp (в бектестах)
+   * - PaperClock: возвращает controllable timestamp (в тестах)
+   *
+   * v4: Гарантирует deterministic replay
+   * - Один event stream → одни timestamps
+   * - Telemetry bit-for-bit deterministic
+   * - NO race conditions с временем
+   */
+  now(): Date;
 }
