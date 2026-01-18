@@ -49,11 +49,14 @@ export enum OrderExecutionState {
  * - OPEN → PARTIALLY_FILLED (OrderPartiallyFilled)
  * - OPEN → FILLED (OrderFilled)
  * - OPEN → CANCELED (OrderCancelled)
+ * - OPEN → REJECTED (OrderRejected)
  * - PARTIALLY_FILLED → PARTIALLY_FILLED (OrderPartiallyFilled)
  * - PARTIALLY_FILLED → FILLED (OrderFilled)
  * - PARTIALLY_FILLED → CANCELED (OrderCancelled)
+ * - PARTIALLY_FILLED → REJECTED (OrderRejected)
  * - FILLED → НИКУДА (terminal state)
  * - CANCELED → НИКУДА (terminal state)
+ * - REJECTED → НИКУДА (terminal state)
  *
  * @example
  * ```typescript
@@ -132,8 +135,8 @@ export function isTerminalState(state: OrderExecutionState): boolean {
  * Вычисляет target state для ExecutionEvent
  *
  * @param event - ExecutionEvent
- * @param currentFilledTotal - Текущий filledTotal (для определения PARTIALLY_FILLED vs FILLED)
- * @param orderSize - Размер ордера
+ * @param _currentFilledTotal - Текущий filledTotal (для определения PARTIALLY_FILLED vs FILLED)
+ * @param _orderSize - Размер ордера
  * @returns Target OrderExecutionState
  *
  * @remarks
@@ -144,6 +147,7 @@ export function isTerminalState(state: OrderExecutionState): boolean {
  * - OrderPartiallyFilled → PARTIALLY_FILLED
  * - OrderFilled → FILLED
  * - OrderCancelled → CANCELED
+ * - OrderRejected → REJECTED
  *
  * @example
  * ```typescript
@@ -167,11 +171,11 @@ export function targetStateForEvent(
     case 'OrderAccepted':
       return OrderExecutionState.OPEN;
 
-    // ✅ v7.7.15: OrderPartiallyFilled УДАЛЁН - стратегия работает только по StrategyTick!
-    // case 'OrderPartiallyFilled': return OrderExecutionState.PARTIALLY_FILLED;
+    case 'OrderPartiallyFilled':
+      return OrderExecutionState.PARTIALLY_FILLED;
 
-    // ✅ v7.7.15: OrderFilled УДАЛЁН - стратегия работает только по StrategyTick!
-    // case 'OrderFilled': return OrderExecutionState.FILLED;
+    case 'OrderFilled':
+      return OrderExecutionState.FILLED;
 
     case 'OrderCancelled':
       return OrderExecutionState.CANCELED;
