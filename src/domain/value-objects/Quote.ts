@@ -27,7 +27,7 @@
  *   new Date()
  * );
  *
- * console.log(quote.getSpread().value); // 0.02
+ * console.log(quote.getSpread()); // 0.02
  * console.log(quote.getMidPrice().value); // 0.65
  * ```
  */
@@ -151,14 +151,14 @@ export class Quote {
    * );
    *
    * const spread = quote.getSpread();
-   * console.log(spread.value); // 0.02
+   * console.log(spread); // 0.02
    * ```
    */
-  public getSpread(): Price {
+  public getSpread(): number {
     if (!this.bid || !this.ask) {
       throw new Error('Cannot calculate spread for one-sided quote');
     }
-    return Price.fromNumber(this.ask.value - this.bid.value);
+    return this.ask.value - this.bid.value;
   }
 
   /**
@@ -328,7 +328,7 @@ export class Quote {
   public toString(): string {
     const bidStr = this.bid ? `${this.bid.value.toFixed(4)} (${this.bidSize.value})` : 'N/A';
     const askStr = this.ask ? `${this.ask.value.toFixed(4)} (${this.askSize.value})` : 'N/A';
-    const spreadStr = this.isTwoSided() ? ` [spread: ${this.getSpread().value.toFixed(4)}]` : '';
+    const spreadStr = this.isTwoSided() ? ` [spread: ${this.getSpread().toFixed(4)}]` : '';
 
     return `${bidStr} / ${askStr}${spreadStr}`;
   }

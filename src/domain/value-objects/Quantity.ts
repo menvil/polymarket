@@ -145,6 +145,9 @@ export class Quantity {
   }
 
   private roundToTick(tickSize: number, roundFn: (x: number) => number): Quantity {
+    if (!Number.isFinite(tickSize) || tickSize <= 0) {
+      throw new Error(`Invalid tickSize: ${tickSize}. Must be a positive finite number`);
+    }
     const rounded = roundFn(this.value / tickSize) * tickSize;
     const decimals = this.getDecimalPlaces(tickSize);
     return new Quantity(Math.max(0, Number(rounded.toFixed(decimals))));

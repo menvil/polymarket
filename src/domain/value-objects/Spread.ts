@@ -21,11 +21,10 @@
  * const spread = Spread.create(bid, ask);
  * console.log(spread.width()); // 0.04
  * console.log(spread.midpoint().value); // 0.50
- * console.log(spread.widthPercentage().value); // 8%
+ * console.log(spread.widthPercentage()); // 8
  * ```
  */
 import { Price } from './Price.js';
-import { Percentage } from './Percentage.js';
 import { TradingError } from '../../shared/errors/TradingError.js';
 
 /**
@@ -163,27 +162,29 @@ export class Spread {
   /**
    * Вычисляет ширину спреда в процентах
    *
-   * @returns Ширина спреда в процентах относительно середины
+   * @returns Ширина спреда в процентах относительно середины (может быть > 100%)
    *
    * @remarks
    * Вычисляет: (width / midpoint) * 100
    * Это нормализует спред для сравнения на разных уровнях цен.
+   * Для широких спредов значение может превышать 100%.
    *
    * @example
    * ```typescript
    * const spread = Spread.fromNumbers(0.48, 0.52);
-   * const widthPct = spread.widthPercentage();
-   * console.log(widthPct.value); // 8%
+   * console.log(spread.widthPercentage()); // 8
    * // Расчёт: (0.04 / 0.50) * 100 = 8%
+   *
+   * const wideSpread = Spread.fromNumbers(0.01, 0.99);
+   * console.log(wideSpread.widthPercentage()); // 196
    * ```
    */
-  public widthPercentage(): Percentage {
+  public widthPercentage(): number {
     const mid = this.midpoint().value;
     if (mid === 0) {
-      return Percentage.zero();
+      return 0;
     }
-    const widthPct = Math.min((this.width() / mid) * 100, 100);
-    return Percentage.fromNumber(widthPct);
+    return (this.width() / mid) * 100;
   }
 
   /**

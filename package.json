@@ -16,6 +16,7 @@
     "clean": "rm -rf dist dist-test coverage",
     "docs:generate": "typedoc",
     "prebuild": "npm run clean",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:smoke": "node --experimental-vm-modules node_modules/jest/bin/jest.js --config jest.smoke.config.js"
   },
   "keywords": [

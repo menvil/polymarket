@@ -5,17 +5,19 @@
  * Представляет денежную сумму с валютой.
  * Иммутабельный value object для финансовых вычислений.
  *
- * Алгоритм:
- * - Хранит сумму как число с фиксированной точностью
- * - Предоставляет арифметические операции (сложение, вычитание, умножение, деление)
- * - Проверяет, что сумма неотрицательна
- * - Обеспечивает точность при вычислениях
+ * Два режима использования:
+ * 1. **Балансы** (неотрицательные): fromUSDC(), subtract()
+ * 2. **PnL** (со знаком): fromSignedUSDC(), signedSubtract()
  *
  * @example
  * ```typescript
- * const money = Money.fromUSDC(100.50);
- * const doubled = money.multiply(2);
- * console.log(doubled.amount); // 201.00
+ * // Баланс (неотрицательный)
+ * const balance = Money.fromUSDC(100);
+ * const remaining = balance.subtract(Money.fromUSDC(30)); // 70
+ *
+ * // PnL (может быть отрицательным)
+ * const pnl = Money.fromSignedUSDC(-15.50); // убыток
+ * console.log(pnl.isNegative()); // true
  * ```
  */
 export class Money {
@@ -99,11 +101,15 @@ export class Money {
   }
 
   /**
-   * Вычитает денежную сумму
+   * Вычитает денежную сумму (безопасная версия для балансов)
    *
    * @param other - Money для вычитания
    * @returns Новый экземпляр Money с разностью
    * @throws {Error} Если валюты не совпадают или результат отрицательный
+   *
+   * @remarks
+   * Используйте для операций с балансами, где отрицательный результат недопустим.
+   * Для PnL расчётов используйте signedSubtract().
    */
   public subtract(other: Money): Money {
     this.assertSameCurrency(other);
@@ -112,6 +118,28 @@ export class Money {
       throw new Error(`Cannot subtract: result would be negative (${result})`);
     }
     return new Money(result, this.currency);
+  }
+
+  /**
+   * Вычитает денежную сумму (разрешает отрицательный результат)
+   *
+   * @param other - Money для вычитания
+   * @returns Новый экземпляр Money с разностью (может быть отрицательным)
+   * @throws {Error} Если валюты не совпадают
+   *
+   * @remarks
+   * Используйте для PnL расчётов, где отрицательный результат означает убыток.
+   *
+   * @example
+   * ```typescript
+   * const cost = Money.fromUSDC(100);
+   * const revenue = Money.fromUSDC(80);
+   * const pnl = revenue.signedSubtract(cost); // -20 (убыток)
+   * ```
+   */
+  public signedSubtract(other: Money): Money {
+    this.assertSameCurrency(other);
+    return new Money(this.amount - other.amount, this.currency);
   }
 
   /**
@@ -187,6 +215,18 @@ export class Money {
    */
   public isPositive(): boolean {
     return this.amount > 0;
+  }
+
+  /**
+   * Проверяет, отрицательная ли сумма
+   *
+   * @returns True если отрицательная
+   *
+   * @remarks
+   * Используется для PnL значений, созданных через fromSignedUSDC() или signedSubtract().
+   */
+  public isNegative(): boolean {
+    return this.amount < 0;
   }
 
   /**
