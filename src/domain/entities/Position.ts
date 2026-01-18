@@ -19,13 +19,13 @@
  *
  * @example
  * ```typescript
- * const position = Position.empty('token-123', 'YES');
+ * const position = Position.empty('token-123', 'UP');
  *
  * // Add first lot
  * const lot1 = new PositionLot(
  *   'lot-1',
  *   'token-123',
- *   'YES',
+ *   'UP',
  *   Quantity.fromNumber(10),
  *   Price.fromNumber(0.60),
  *   new Date()
@@ -38,7 +38,7 @@
  * const lot2 = new PositionLot(
  *   'lot-2',
  *   'token-123',
- *   'YES',
+ *   'UP',
  *   Quantity.fromNumber(5),
  *   Price.fromNumber(0.70),
  *   new Date()
@@ -99,7 +99,7 @@ export class Position {
    * Создаёт новую Position
    *
    * @param tokenId - ID токена/рынка
-   * @param side - Сторона YES или NO
+   * @param side - Сторона UP или DOWN
    * @param totalQuantity - Общее количество по всем лотам
    * @param averageEntryPrice - Взвешенная средняя цена входа
    * @param lots - Массив лотов (FIFO порядок)
@@ -121,12 +121,12 @@ export class Position {
    * Создаёт пустую позицию
    *
    * @param tokenId - ID токена/рынка
-   * @param side - Сторона YES или NO
+   * @param side - Сторона UP или DOWN
    * @returns Пустая позиция без лотов
    *
    * @example
    * ```typescript
-   * const position = Position.empty('token-123', 'YES');
+   * const position = Position.empty('token-123', 'UP');
    * console.log(position.isEmpty()); // true
    * console.log(position.totalQuantity.value); // 0
    * ```
@@ -164,12 +164,12 @@ export class Position {
    *
    * @example
    * ```typescript
-   * const position = Position.empty('token-123', 'YES');
+   * const position = Position.empty('token-123', 'UP');
    *
    * const lot1 = new PositionLot(
    *   'lot-1',
    *   'token-123',
-   *   'YES',
+   *   'UP',
    *   Quantity.fromNumber(10),
    *   Price.fromNumber(0.60),
    *   new Date()
@@ -241,7 +241,7 @@ export class Position {
    *
    * @example
    * ```typescript
-   * const position = Position.empty('token-123', 'YES')
+   * const position = Position.empty('token-123', 'UP')
    *   .addLot(lot1) // 10 shares @ 0.60
    *   .addLot(lot2); // 5 shares @ 0.70
    *
@@ -308,7 +308,7 @@ export class Position {
    *
    * @example
    * ```typescript
-   * const position = Position.empty('token-123', 'YES')
+   * const position = Position.empty('token-123', 'UP')
    *   .addLot(lot1) // 10 @ 0.60
    *   .addLot(lot2); // 5 @ 0.70
    *
@@ -344,7 +344,7 @@ export class Position {
    *
    * @example
    * ```typescript
-   * const position = Position.empty('token-123', 'YES')
+   * const position = Position.empty('token-123', 'UP')
    *   .addLot(lot1) // Added first
    *   .addLot(lot2); // Added second
    *
@@ -367,7 +367,7 @@ export class Position {
    *
    * @example
    * ```typescript
-   * const position = Position.empty('token-123', 'YES');
+   * const position = Position.empty('token-123', 'UP');
    * console.log(position.isEmpty()); // true
    *
    * const withLot = position.addLot(lot);
@@ -389,7 +389,7 @@ export class Position {
    *
    * @example
    * ```typescript
-   * const position = Position.empty('token-123', 'YES')
+   * const position = Position.empty('token-123', 'UP')
    *   .addLot(lot1) // 10 @ 0.60 = 6.00
    *   .addLot(lot2); // 5 @ 0.70 = 3.50
    *
@@ -416,7 +416,7 @@ export class Position {
    *
    * @example
    * ```typescript
-   * const position = Position.empty('token-123', 'YES')
+   * const position = Position.empty('token-123', 'UP')
    *   .addLot(lot1)
    *   .addLot(lot2);
    * console.log(position.getLotCount()); // 2
@@ -433,11 +433,11 @@ export class Position {
    *
    * @example
    * ```typescript
-   * const position = Position.empty('token-123', 'YES')
+   * const position = Position.empty('token-123', 'UP')
    *   .addLot(lot1)
    *   .addLot(lot2);
    * console.log(position.toString());
-   * // "Position[token-123/YES]: 15.00 shares @ avg $0.6333 (2 lots)"
+   * // "Position[token-123/UP]: 15.00 shares @ avg $0.6333 (2 lots)"
    * ```
    */
   public toString(): string {

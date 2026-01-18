@@ -18,7 +18,7 @@
  * const lot = new PositionLot(
  *   'lot-1',
  *   'token-123',
- *   'YES',
+ *   'UP',
  *   Quantity.fromNumber(10),
  *   Price.fromNumber(0.65),
  *   new Date()
@@ -46,7 +46,7 @@ import { TradingError } from '../../shared/errors/TradingError.js';
 /**
  * Сторона позиции
  */
-export type Side = 'YES' | 'NO';
+export type Side = 'UP' | 'DOWN';
 
 /**
  * Ошибка недостаточного количества
@@ -78,7 +78,7 @@ export class PositionLot {
    *
    * @param lotId - Уникальный идентификатор лота
    * @param tokenId - ID токена/рынка
-   * @param side - Сторона YES или NO
+   * @param side - Сторона UP или DOWN
    * @param quantity - Количество акций в лоте
    * @param entryPrice - Цена, по которой был куплен этот лот
    * @param timestamp - Когда был создан лот
@@ -90,7 +90,7 @@ export class PositionLot {
    * const lot = new PositionLot(
    *   'lot-1',
    *   'token-123',
-   *   'YES',
+   *   'UP',
    *   Quantity.fromNumber(10),
    *   Price.fromNumber(0.65),
    *   new Date()
@@ -124,7 +124,7 @@ export class PositionLot {
    * const lot = new PositionLot(
    *   'lot-1',
    *   'token-123',
-   *   'YES',
+   *   'UP',
    *   Quantity.fromNumber(10),
    *   Price.fromNumber(0.65),
    *   new Date()
@@ -148,7 +148,7 @@ export class PositionLot {
    * - Положительное значение = прибыль
    * - Отрицательное значение = убыток
    *
-   * Для NO позиций P&L инвертирован:
+   * Для DOWN позиций P&L инвертирован:
    * - Стоимость входа = количество * (1 - цена входа)
    * - Текущая стоимость = количество * (1 - текущая цена)
    * - P&L = текущая стоимость - стоимость входа
@@ -158,7 +158,7 @@ export class PositionLot {
    * const lot = new PositionLot(
    *   'lot-1',
    *   'token-123',
-   *   'YES',
+   *   'UP',
    *   Quantity.fromNumber(10),
    *   Price.fromNumber(0.65),
    *   new Date()
@@ -174,13 +174,13 @@ export class PositionLot {
    * ```
    */
   public calculateUnrealizedPnL(currentPrice: Price): Money {
-    if (this.side === 'YES') {
-      // Для YES: P&L = (текущая - входная) * количество
+    if (this.side === 'UP') {
+      // Для UP: P&L = (текущая - входная) * количество
       const pnl = (currentPrice.value - this.entryPrice.value) * this.quantity.value;
       return Money.fromUSDC(Math.abs(pnl) < 0.000001 ? 0 : pnl);
     } else {
-      // Для NO: P&L = (входная - текущая) * количество
-      // Потому что стоимость NO токена движется обратно цене
+      // Для DOWN: P&L = (входная - текущая) * количество
+      // Потому что стоимость DOWN токена движется обратно цене
       const pnl = (this.entryPrice.value - currentPrice.value) * this.quantity.value;
       return Money.fromUSDC(Math.abs(pnl) < 0.000001 ? 0 : pnl);
     }
@@ -204,7 +204,7 @@ export class PositionLot {
    * const lot = new PositionLot(
    *   'lot-1',
    *   'token-123',
-   *   'YES',
+   *   'UP',
    *   Quantity.fromNumber(10),
    *   Price.fromNumber(0.65),
    *   new Date()
@@ -254,7 +254,7 @@ export class PositionLot {
    * const lot = new PositionLot(
    *   'lot-1',
    *   'token-123',
-   *   'YES',
+   *   'UP',
    *   Quantity.fromNumber(10),
    *   Price.fromNumber(0.65),
    *   new Date()
@@ -279,13 +279,13 @@ export class PositionLot {
    * const lot = new PositionLot(
    *   'lot-1',
    *   'token-123',
-   *   'YES',
+   *   'UP',
    *   Quantity.fromNumber(10),
    *   Price.fromNumber(0.65),
    *   new Date('2024-01-01')
    * );
    * console.log(lot.toString());
-   * // "Lot[lot-1]: 10.00 YES @ $0.6500 (2024-01-01)"
+   * // "Lot[lot-1]: 10.00 UP @ $0.6500 (2024-01-01)"
    * ```
    */
   public toString(): string {

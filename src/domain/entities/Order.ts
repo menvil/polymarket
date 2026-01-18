@@ -22,7 +22,7 @@
  * const order = Order.create({
  *   id: '0x123...',
  *   marketId: 'market-abc',
- *   tokenId: 'token-yes',
+ *   tokenId: 'token-up',
  *   side: 'BUY',
  *   price: Price.fromNumber(0.65),
  *   size: Quantity.fromNumber(100),
@@ -129,7 +129,7 @@ export class Order {
    * const order = Order.create({
    *   id: '0x123abc',
    *   marketId: 'market-abc',
-   *   tokenId: 'token-yes-123',
+   *   tokenId: 'token-up-123',
    *   side: 'BUY',
    *   price: Price.fromNumber(0.55),
    *   size: Quantity.fromNumber(50),
@@ -153,7 +153,7 @@ export class Order {
    *
    * @remarks
    * OrderAccepted содержит minimal context (side, marketId, price, size)
-   * NO Pending Orders Registry - ExecutionEvent self-contained
+   * DOWN Pending Orders Registry - ExecutionEvent self-contained
    *
    * Invariant checks:
    * - price > 0
@@ -167,7 +167,7 @@ export class Order {
    *   orderId: '123',
    *   strategyId: 'strategy-1',
    *   marketId: 'market-abc',
-   *   tokenId: 'token-yes',
+   *   tokenId: 'token-up',
    *   side: 'BUY',
    *   price: 0.55,
    *   size: 100,
@@ -249,7 +249,7 @@ export class Order {
    *   orderId: '123',
    *   strategyId: 'strategy-1',
    *   marketId: 'market-abc',
-   *   tokenId: 'token-yes',
+   *   tokenId: 'token-up',
    *   side: 'BUY',
    *   filledDelta: 50,
    *   price: 0.55,
@@ -682,7 +682,7 @@ export class Order {
    * const order = Order.create({
    *   id: '123',
    *   marketId: 'market-abc',
-   *   tokenId: 'token-yes',
+   *   tokenId: 'token-up',
    *   side: 'BUY',
    *   price: Price.fromNumber(0.65),
    *   size: Quantity.fromNumber(100),
@@ -715,7 +715,7 @@ export class Order {
    * const order = Order.create({
    *   id: '123',
    *   marketId: 'market-abc',
-   *   tokenId: 'token-yes',
+   *   tokenId: 'token-up',
    *   side: 'BUY',
    *   price: Price.fromNumber(0.55),
    *   size: Quantity.fromNumber(100),

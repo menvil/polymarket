@@ -56,7 +56,7 @@ export type OutcomeIndex = 0 | 1;
 export interface OutcomeToken {
   /** ID токена для этого исхода */
   readonly tokenId: string;
-  /** Читаемое название исхода (например, "Up", "Down", "Yes", "No") */
+  /** Читаемое название исхода (например, "Up", "Down") */
   readonly name: string;
 }
 
@@ -97,8 +97,8 @@ export class Market {
    * Исходы рынка как кортеж из двух токенов
    *
    * @remarks
-   * - outcomes[0]: Первый исход (например, "Up", "Yes")
-   * - outcomes[1]: Второй исход (например, "Down", "No")
+   * - outcomes[0]: Первый исход
+   * - outcomes[1]: Второй исход
    */
   public readonly outcomes: readonly [OutcomeToken, OutcomeToken];
 

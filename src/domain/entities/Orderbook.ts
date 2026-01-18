@@ -20,7 +20,7 @@
  *
  * @example
  * ```typescript
- * const orderbook = Orderbook.create('token-yes-123', {
+ * const orderbook = Orderbook.create('token-up-123', {
  *   bids: [
  *     { price: Price.fromNumber(0.52), quantity: Quantity.fromNumber(100) },
  *     { price: Price.fromNumber(0.51), quantity: Quantity.fromNumber(200) }
@@ -134,7 +134,7 @@ export class Orderbook {
    *
    * @example
    * ```typescript
-   * const orderbook = Orderbook.create('token-yes-123', {
+   * const orderbook = Orderbook.create('token-up-123', {
    *   bids: [
    *     { price: Price.fromNumber(0.52), quantity: Quantity.fromNumber(100) },
    *     { price: Price.fromNumber(0.51), quantity: Quantity.fromNumber(200) }
@@ -197,7 +197,7 @@ export class Orderbook {
    *
    * @example
    * ```typescript
-   * const empty = Orderbook.empty('token-yes-123');
+   * const empty = Orderbook.empty('token-up-123');
    * console.log(empty.getBestBid()); // null
    * console.log(empty.isEmpty()); // true
    * ```

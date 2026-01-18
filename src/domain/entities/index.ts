@@ -18,7 +18,7 @@ export type { Side } from './PositionLot.js';
 
 // Portfolio экспортируется из aggregates, а не из entities
 // export { Portfolio, DuplicatePositionError, PositionNotFoundError } from './Portfolio.js';
-export { DuplicatePositionError, PositionNotFoundError } from './Portfolio.js';
+//export { DuplicatePositionError, PositionNotFoundError } from './Portfolio.js';
 
 export { Orderbook } from './Orderbook.js';
 export type { OrderbookLevel, OrderbookData } from './Orderbook.js';
