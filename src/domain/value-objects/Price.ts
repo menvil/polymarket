@@ -140,11 +140,14 @@ export class Price {
   /**
    * Прибавляет к цене
    *
-   * @param amount - Сумма для прибавления (должна быть >= 0)
-   * @returns Новый Price
-   * @throws {RangeError} Если amount отрицательный
+   * @param amount - Сумма для прибавления (должна быть >= 0 и конечным числом)
+   * @returns Новый Price (зажатый в MAX_PRICE)
+   * @throws {RangeError} Если amount отрицательный или не является конечным числом
    */
   public add(amount: number): Price {
+    if (!Number.isFinite(amount)) {
+      throw new RangeError(`Invalid amount: ${amount}. Amount must be a finite number`);
+    }
     if (amount < 0) {
       throw new RangeError(`Invalid amount: ${amount}. Amount must be non-negative`);
     }
@@ -156,11 +159,14 @@ export class Price {
   /**
    * Вычитает из цены
    *
-   * @param amount - Сумма для вычитания (должна быть >= 0)
-   * @returns Новый Price
-   * @throws {RangeError} Если amount отрицательный
+   * @param amount - Сумма для вычитания (должна быть >= 0 и конечным числом)
+   * @returns Новый Price (зажатый в MIN_PRICE)
+   * @throws {RangeError} Если amount отрицательный или не является конечным числом
    */
   public subtract(amount: number): Price {
+    if (!Number.isFinite(amount)) {
+      throw new RangeError(`Invalid amount: ${amount}. Amount must be a finite number`);
+    }
     if (amount < 0) {
       throw new RangeError(`Invalid amount: ${amount}. Amount must be non-negative`);
     }
@@ -172,10 +178,17 @@ export class Price {
   /**
    * Умножает цену на коэффициент
    *
-   * @param factor - Коэффициент умножения
-   * @returns Новый Price
+   * @param factor - Коэффициент умножения (должен быть >= 0 и конечным числом)
+   * @returns Новый Price (зажатый в [MIN_PRICE, MAX_PRICE])
+   * @throws {RangeError} Если factor отрицательный или не является конечным числом
    */
   public multiply(factor: number): Price {
+    if (!Number.isFinite(factor)) {
+      throw new RangeError(`Invalid factor: ${factor}. Factor must be a finite number`);
+    }
+    if (factor < 0) {
+      throw new RangeError(`Invalid factor: ${factor}. Factor must be non-negative`);
+    }
     return Price.fromNumber(
       Math.max(Price.MIN_PRICE, Math.min(Price.MAX_PRICE, this.value * factor))
     );
