@@ -59,6 +59,7 @@ import type {
 } from '../../../../domain/events/ExecutionEvent.js';
 import type { ExecutionContext } from '../../../../domain/execution/ExecutionContext.js';
 import { createProductionEnvelope } from '../../../../shared/events/EventEnvelope.js';
+import { ApiError } from '../../../../shared/errors/TradingError.js';
 
 /**
  * Адаптер исполнения для Polymarket
@@ -447,21 +448,22 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
   /**
    * Получить историю исполнений
    *
-   * @param tokenId - Опционально: фильтр по ID токена
+   * @param _tokenId - Опционально: фильтр по ID токена
    * @returns Массив исполнений (нормализованный)
-   * @throws {Error} Метод не реализован - API эндпоинт недоступен
+   * @throws {ApiError} Polymarket API не предоставляет этот эндпоинт
    *
    * @remarks
-   * Возвращает исполненные сделки для пользователя.
-   * Это НЕ история сделок рынка - используйте MarketDataAdapter для этого.
+   * Polymarket CLOB API не поддерживает получение истории исполнений.
+   * Альтернативы: getOpenOrders() для ордеров, MarketDataAdapter для истории рынка.
    *
    * @deprecated Метод не реализован. Используйте getOpenOrders() для получения ордеров
    * или MarketDataAdapter для истории сделок рынка.
    */
   async getFillHistory(_tokenId?: string): Promise<FillResponse[]> {
-    throw new Error(
+    throw new ApiError(
       'getFillHistory not implemented: Polymarket API endpoint not available. ' +
-      'Use getOpenOrders() for order tracking or MarketDataAdapter for market trade history.'
+      'Use getOpenOrders() for order tracking or MarketDataAdapter for market trade history.',
+      { endpoint: '/fills', method: 'GET' }
     );
   }
 
