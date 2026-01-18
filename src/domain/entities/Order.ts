@@ -152,8 +152,10 @@ export class Order {
    * @returns Result<Order, string>
    *
    * @remarks
-   * OrderAccepted содержит minimal context (side, marketId, price, size)
-   * DOWN Pending Orders Registry - ExecutionEvent self-contained
+   * Конструирует Order из OrderAccepted события без внешних зависимостей.
+   * Событие содержит все необходимые данные: orderId, strategyId, marketId,
+   * tokenId, side, price, size, timestamp. Метод выполняет валидацию
+   * инвариантов и возвращает Result с ошибкой при нарушении.
    *
    * Invariant checks:
    * - price > 0

@@ -110,7 +110,7 @@ export function isAllowedTransition(from: OrderExecutionState, to: OrderExecutio
 }
 
 /**
- * Проверяет terminal state (FILLED, CANCELED)
+ * Проверяет terminal state (FILLED, CANCELED, REJECTED)
  *
  * @param state - State для проверки
  * @returns true если state terminal
@@ -123,12 +123,13 @@ export function isAllowedTransition(from: OrderExecutionState, to: OrderExecutio
  * ```typescript
  * isTerminalState(OrderExecutionState.FILLED); // true
  * isTerminalState(OrderExecutionState.CANCELED); // true
+ * isTerminalState(OrderExecutionState.REJECTED); // true
  * isTerminalState(OrderExecutionState.OPEN); // false
  * isTerminalState(OrderExecutionState.PARTIALLY_FILLED); // false
  * ```
  */
 export function isTerminalState(state: OrderExecutionState): boolean {
-  return state === OrderExecutionState.FILLED || state === OrderExecutionState.CANCELED;
+  return state === OrderExecutionState.FILLED || state === OrderExecutionState.CANCELED || state === OrderExecutionState.REJECTED;
 }
 
 /**
