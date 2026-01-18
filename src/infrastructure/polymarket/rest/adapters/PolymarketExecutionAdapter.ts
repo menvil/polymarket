@@ -171,7 +171,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         side: params.side,
         price: params.price,
         size: params.size,
-        timestamp: new Date(),
+        timestamp: params.timestamp ?? new Date(),
       };
 
       const envelope = createProductionEnvelope(orderAcceptedEvent, this.executionContext);
@@ -227,7 +227,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         side: params.side,
         price: params.price,
         size: params.size,
-        timestamp: new Date(), // TODO: Использовать детерминированный timestamp из params/clock
+        timestamp: params.timestamp ?? new Date(),
       };
 
       const envelope = createProductionEnvelope(
