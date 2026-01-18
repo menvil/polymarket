@@ -102,14 +102,29 @@ export class PolymarketDataApiClient {
         );
       }
 
-      const data = await response.json();
+      let data: T;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        this.logger.error('Data API JSON parse error', {
+          url: fullUrl,
+          error: parseError instanceof Error ? parseError.message : String(parseError),
+        });
+        throw new ApiError(
+          `JSON parse error: ${parseError instanceof Error ? parseError.message : String(parseError)}`,
+          {
+            endpoint: fullUrl,
+            method: 'GET',
+          }
+        );
+      }
 
       this.logger.debug('Data API response', {
         status: response.status,
         dataLength: Array.isArray(data) ? data.length : undefined,
       });
 
-      return data as T;
+      return data;
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {
         this.logger.error('Data API timeout', {
@@ -127,7 +142,7 @@ export class PolymarketDataApiClient {
         throw error;
       }
 
-      // Обернуть все остальные ошибки (network/DNS/connection) в ApiError
+      // Обернуть сетевые ошибки (network/DNS/connection) в ApiError
       throw new ApiError(`Network error: ${(error as Error).message}`, {
         endpoint: fullUrl,
         method: 'GET',
