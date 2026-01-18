@@ -204,7 +204,10 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
     try {
       for (let page = 0; page < maxPages; page++) {
         const url = new URL(`${this.config.baseUrl}/markets`);
+        // Полный набор фильтров для активных рынков (как в официальном Polymarket agents)
+        url.searchParams.set('active', 'true');
         url.searchParams.set('closed', 'false');
+        url.searchParams.set('archived', 'false');
         url.searchParams.set('limit', limit.toString());
         url.searchParams.set('offset', offset.toString());
         url.searchParams.set('order', 'volume'); // Сортировка по объему
@@ -252,7 +255,8 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   async getRawActiveMarkets(): Promise<MarketInfoResponse[]> {
     this.logger.debug('Getting raw active markets');
 
-    const url = `${this.config.baseUrl}/markets?active=true`;
+    // Полный набор фильтров для активных рынков (как в официальном Polymarket agents)
+    const url = `${this.config.baseUrl}/markets?active=true&closed=false&archived=false`;
     const markets = await this.fetch<MarketInfoResponse[]>(url);
 
     this.logger.debug('Raw active markets retrieved', {
