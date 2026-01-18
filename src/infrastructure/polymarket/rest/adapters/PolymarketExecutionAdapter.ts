@@ -308,7 +308,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
             side: params.side,
             price: params.price,
             size: params.size,
-            timestamp: new Date(),
+            timestamp: params.timestamp ?? new Date(),
           };
 
           const envelope = createProductionEnvelope(
@@ -345,7 +345,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         tokenId: params.tokenId,
         reason: error instanceof Error ? error.message : 'Unknown error',
         errorCode: (error as any).code || 'API_ERROR',
-        timestamp: new Date(),
+        timestamp: params.timestamp ?? new Date(),
       };
 
       const envelope = createProductionEnvelope(
