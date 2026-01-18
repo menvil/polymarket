@@ -68,6 +68,11 @@ import type { ILogger } from '../../../domain/ports/ILogger.js';
  * - Никогда не бросает исключения (graceful обработка)
  */
 export class PolymarketMessageParser implements IMessageParser {
+  /** Контрольные события (без asset_id) - обрабатываются транспортом */
+  private static readonly CONTROL_EVENTS = ['pong', 'error', 'subscribed', 'unsubscribed'] as const;
+  /** Игнорируемые события (не нужны для торговли) */
+  private static readonly IGNORED_EVENTS = ['price_change', 'tick_size_change'] as const;
+
   private readonly logger: ILogger;
 
   /**
@@ -171,14 +176,12 @@ export class PolymarketMessageParser implements IMessageParser {
       }
 
       // Контрольные сообщения (без asset_id) - обрабатываются транспортом
-      const controlEvents = ['pong', 'error', 'subscribed', 'unsubscribed'];
-      if (controlEvents.includes(eventType)) {
+      if ((PolymarketMessageParser.CONTROL_EVENTS as readonly string[]).includes(eventType)) {
         return null;
       }
 
       // Игнорируемые события (не нужны для торговли)
-      const ignoredEvents = ['price_change', 'tick_size_change'];
-      if (ignoredEvents.includes(eventType)) {
+      if ((PolymarketMessageParser.IGNORED_EVENTS as readonly string[]).includes(eventType)) {
         this.logger.trace(`Skipping ${eventType} event`);
         return null;
       }

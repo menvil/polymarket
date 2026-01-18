@@ -254,7 +254,7 @@ export class ConstraintsObservationStore {
 
       // Проверить TTL: если запись истекла, удалить и создать новую
       // Это предотвращает накопление устаревших наблюдений через длительные промежутки
-      if (now - existing.lastSeen > this.config.observationTTL) {
+      if (this.isExpired(existing, now)) {
         this.observations.delete(key);
 
         this.logger.trace('[ObservationStore] Удалено истёкшее наблюдение при observe()', {
@@ -351,7 +351,7 @@ export class ConstraintsObservationStore {
 
     // Проверить TTL с явной временной меткой
     const now = Date.now();
-    if (now - record.lastSeen > this.config.observationTTL) {
+    if (this.isExpired(record, now)) {
       // АГРЕССИВНАЯ очистка: удалить истёкшую запись немедленно
       this.observations.delete(key);
 

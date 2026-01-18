@@ -73,8 +73,7 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    */
   async getOutcomeBalance(tokenId: string): Promise<number> {
     if (this.simulationMode) {
-      this.logger.debug('Getting outcome balance (SIMULATION MODE)', { tokenId, balance: 0 });
-      return 0;
+      return this.getSimulatedBalance('outcome', tokenId);
     }
 
     this.logger.debug('Getting outcome balance', { tokenId });
@@ -125,14 +124,22 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
   /**
    * Получить симулированный баланс для режима симуляции
    *
-   * @param type - Тип баланса ('available' | 'locked' | 'total')
+   * @param type - Тип баланса ('available' | 'locked' | 'total' | 'outcome')
+   * @param tokenId - ID токена (только для типа 'outcome')
    * @returns Виртуальный баланс
    */
-  private getSimulatedBalance(type: 'available' | 'locked' | 'total'): number {
+  private getSimulatedBalance(type: 'available' | 'locked' | 'total' | 'outcome', tokenId?: string): number {
     const VIRTUAL_BALANCE = 1_000_000; // 1М USDC
-    const balance = type === 'locked' ? 0 : VIRTUAL_BALANCE;
 
-    this.logger.debug(`Getting ${type} balance (SIMULATION MODE)`, { balance });
+    let balance: number;
+    if (type === 'locked' || type === 'outcome') {
+      balance = 0;
+    } else {
+      balance = VIRTUAL_BALANCE;
+    }
+
+    const logContext = tokenId ? { balance, tokenId } : { balance };
+    this.logger.debug(`Getting ${type} balance (SIMULATION MODE)`, logContext);
     return balance;
   }
 }

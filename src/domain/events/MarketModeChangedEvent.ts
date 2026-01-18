@@ -31,7 +31,7 @@
 import { DomainEvent } from './DomainEvent.js';
 
 /**
- * Trading modes
+ * Режимы торговли
  */
 export type TradingMode = 'FLAT' | 'QUOTE' | 'SKEW' | 'UNWIND' | 'PANIC' | 'PAUSED';
 
@@ -174,9 +174,9 @@ export class MarketModeChangedEvent extends DomainEvent {
   }
 
   /**
-   * Checks if entered panic mode
+   * Проверяет, активирован ли режим паники
    *
-   * @returns True if toMode is PANIC
+   * @returns True если toMode равен PANIC
    *
    * @example
    * ```typescript
@@ -191,9 +191,9 @@ export class MarketModeChangedEvent extends DomainEvent {
   }
 
   /**
-   * Checks if trading paused
+   * Проверяет, приостановлена ли торговля
    *
-   * @returns True if toMode is PAUSED
+   * @returns True если toMode равен PAUSED
    *
    * @example
    * ```typescript
@@ -208,9 +208,9 @@ export class MarketModeChangedEvent extends DomainEvent {
   }
 
   /**
-   * String representation
+   * Строковое представление события
    *
-   * @returns Human-readable string
+   * @returns Человекочитаемая строка
    *
    * @example
    * ```typescript
