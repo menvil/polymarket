@@ -132,12 +132,13 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    * @returns Виртуальный баланс
    */
   private getSimulatedBalance(type: 'available' | 'locked' | 'total' | 'outcome', tokenId?: string): number {
-    let balance: number;
-    if (type === 'locked' || type === 'outcome') {
-      balance = 0;
-    } else {
-      balance = PolymarketBalanceProvider.VIRTUAL_BALANCE;
+    if (type === 'outcome' && !tokenId) {
+      this.logger.warn('Getting outcome balance (SIMULATION MODE) without tokenId');
+      return 0;
     }
+
+    const balance =
+      type === 'locked' || type === 'outcome' ? 0 : PolymarketBalanceProvider.VIRTUAL_BALANCE;
 
     const logContext = tokenId ? { balance, tokenId } : { balance };
     this.logger.debug(`Getting ${type} balance (SIMULATION MODE)`, logContext);

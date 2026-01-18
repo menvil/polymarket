@@ -175,13 +175,15 @@ export class PolymarketMessageParser implements IMessageParser {
         return null;
       }
 
+      const eventTypeLower = eventType.toLowerCase();
+
       // Контрольные сообщения (без asset_id) - обрабатываются транспортом
-      if (PolymarketMessageParser.CONTROL_EVENTS.includes(eventType)) {
+      if (PolymarketMessageParser.CONTROL_EVENTS.includes(eventTypeLower)) {
         return null;
       }
 
       // Игнорируемые события (не нужны для торговли)
-      if (PolymarketMessageParser.IGNORED_EVENTS.includes(eventType)) {
+      if (PolymarketMessageParser.IGNORED_EVENTS.includes(eventTypeLower)) {
         this.logger.trace(`Skipping ${eventType} event`);
         return null;
       }

@@ -243,7 +243,7 @@ export class ErrorClassifier {
    */
   private classifyStructured(structured: StructuredError): OrderError {
     const message = String(structured.message ?? '');
-    const code = (structured.code || '').toLowerCase();
+    const code = String(structured.code ?? '').toLowerCase();
     const messageLower = message.toLowerCase();
 
     // Нарушение ограничения (приоритетная проверка)

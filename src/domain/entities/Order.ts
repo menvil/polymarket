@@ -854,8 +854,10 @@ export class Order {
       return this;
     }
 
-    const isFullyFilled = filledSize.equals(this.size) || filledSize.isGreaterThan(this.size);
-    const isPartiallyFilled = filledSize.isLessThan(this.size);
+    const normalizedFilledSize = filledSize.isGreaterThan(this.size) ? this.size : filledSize;
+
+    const isFullyFilled = normalizedFilledSize.equals(this.size);
+    const isPartiallyFilled = normalizedFilledSize.isLessThan(this.size);
 
     let newStatus: OrderStatus = this.status;
     if (isFullyFilled) {
@@ -866,7 +868,7 @@ export class Order {
 
     return Order.create({
       ...this,
-      filledSize,
+      filledSize: normalizedFilledSize,
       averageFillPrice,
       status: newStatus
     });
