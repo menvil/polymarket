@@ -1,5 +1,5 @@
 /**
- * Orderbook entity
+ * Сущность Orderbook (стакан заявок)
  *
  * @remarks
  * Представляет стакан заявок (order book) с бидами и аcками.

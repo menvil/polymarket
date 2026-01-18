@@ -1,5 +1,5 @@
 /**
- * PositionLot entity
+ * Сущность PositionLot (лот позиции)
  *
  * @remarks
  * Представляет один лот для FIFO (First In, First Out) учёта.
