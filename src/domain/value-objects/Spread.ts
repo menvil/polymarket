@@ -182,7 +182,7 @@ export class Spread {
     if (mid === 0) {
       return Percentage.zero();
     }
-    const widthPct = (this.width() / mid) * 100;
+    const widthPct = Math.min((this.width() / mid) * 100, 100);
     return Percentage.fromNumber(widthPct);
   }
 

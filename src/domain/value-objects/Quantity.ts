@@ -107,7 +107,7 @@ export class Quantity {
   /**
    * Округляет до размера тика
    *
-   * @param tickSize - Размер тика (по умолчанию 0.1)
+   * @param tickSize - Размер тика (по умолчанию 0.01)
    * @returns Новый Quantity округлённый до тика
    *
    * @remarks
@@ -116,8 +116,8 @@ export class Quantity {
    * @example
    * ```typescript
    * const qty = Quantity.fromNumber(10.567);
-   * const rounded = qty.toTick(0.1);
-   * console.log(rounded.value); // 10.6
+   * const rounded = qty.toTick(0.01);
+   * console.log(rounded.value); // 10.57
    * ```
    */
   public toTick(tickSize: number = Quantity.DEFAULT_TICK): Quantity {
@@ -188,13 +188,13 @@ export class Quantity {
   /**
    * Делит на коэффициент
    *
-   * @param divisor - Делитель
+   * @param divisor - Делитель (должен быть положительным)
    * @returns Новый Quantity
-   * @throws {Error} Если делитель равен нулю
+   * @throws {Error} Если делитель <= 0
    */
   public divide(divisor: number): Quantity {
-    if (divisor === 0) {
-      throw new Error('Cannot divide by zero');
+    if (divisor <= 0) {
+      throw new Error(`Divisor must be positive: ${divisor}`);
     }
     return new Quantity(this.value / divisor);
   }

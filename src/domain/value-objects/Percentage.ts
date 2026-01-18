@@ -317,7 +317,13 @@ export class Percentage {
     if (divisor === 0) {
       throw new Error('Cannot divide by zero');
     }
-    return new Percentage(this.value / divisor);
+    const result = this.value / divisor;
+    return new Percentage(
+      Math.max(
+        Percentage.MIN_PERCENTAGE,
+        Math.min(Percentage.MAX_PERCENTAGE, result)
+      )
+    );
   }
 
   /**

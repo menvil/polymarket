@@ -49,7 +49,7 @@ export class Price {
    */
   public static fromNumber(value: number): Price {
     if (!Price.isValid(value)) {
-      throw new InvalidPriceError(value);
+      throw new InvalidPriceError(value, Price.MIN_PRICE, Price.MAX_PRICE);
     }
     return new Price(value);
   }
@@ -64,7 +64,7 @@ export class Price {
   public static fromString(value: string): Price {
     const numValue = parseFloat(value);
     if (isNaN(numValue)) {
-      throw new InvalidPriceError(numValue);
+      throw new InvalidPriceError(numValue, Price.MIN_PRICE, Price.MAX_PRICE);
     }
     return Price.fromNumber(numValue);
   }

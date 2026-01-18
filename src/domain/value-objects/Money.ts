@@ -25,6 +25,9 @@ export class Money {
   private static readonly EPSILON = 0.000001;
 
   private constructor(amount: number, currency: string) {
+    if (!Number.isFinite(amount)) {
+      throw new Error(`Invalid amount: ${amount}. Must be a finite number`);
+    }
     this.amount = Number(amount.toFixed(6)); // 6 знаков после запятой
     this.currency = currency;
   }

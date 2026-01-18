@@ -87,12 +87,16 @@ export class MarketNotFoundError extends TradingError {
  * Ошибка невалидной цены
  *
  * @remarks
- * Выбрасывается когда цена вне допустимого диапазона [0.01, 0.99].
+ * Выбрасывается когда цена вне допустимого диапазона [0.0001, 0.9999].
  */
 export class InvalidPriceError extends TradingError {
-  constructor(public readonly price: number) {
+  constructor(
+    public readonly price: number,
+    minPrice: number = 0.0001,
+    maxPrice: number = 0.9999
+  ) {
     super(
-      `Invalid price: ${price}. Must be between 0.01 and 0.99`,
+      `Invalid price: ${price}. Must be between ${minPrice} and ${maxPrice}`,
       'INVALID_PRICE'
     );
   }
