@@ -7,7 +7,7 @@
  *
  * ### Бизнес-правила:
  * 1. Ордер должен иметь валидные tokenId, price и size
- * 2. Цена должна быть в валидном диапазоне [0.01, 0.99]
+ * 2. Цена должна быть в валидном диапазоне [Price.minPrice, Price.maxPrice]
  * 3. Размер должен быть >= минимального количества
  * 4. Исполненный размер не может превышать исходный размер
  * 5. Средняя цена исполнения должна быть валидной если ордер частично/полностью исполнен
@@ -455,7 +455,7 @@ export class Order {
    * 3. Side должен быть 'BUY' или 'SELL'
    * 4. Status должен быть валидным OrderStatus
    * 5. Size должен быть положительным
-   * 6. Price должна быть в диапазоне [0.01, 0.99]
+   * 6. Price должна быть в диапазоне [Price.minPrice, Price.maxPrice]
    * 7. FilledSize (если присутствует) не может превышать исходный размер
    * 8. AverageFillPrice должна быть валидной если filledSize > 0
    * 9. Timestamp должен быть валидной датой
@@ -503,10 +503,10 @@ export class Order {
       throw new OrderValidationError('Order size must be positive', 'size');
     }
 
-    // Валидация диапазона цены
-    if (this.price.value < 0.01 || this.price.value > 0.99) {
+    // Валидация диапазона цены (используем константы из Price value object)
+    if (this.price.value < Price.minPrice || this.price.value > Price.maxPrice) {
       throw new OrderValidationError(
-        `Price must be in range [0.01, 0.99], got ${this.price.value}`,
+        `Price must be in range [${Price.minPrice}, ${Price.maxPrice}], got ${this.price.value}`,
         'price'
       );
     }
