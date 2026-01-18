@@ -40,7 +40,7 @@ export class PolymarketDataApiClient {
   private readonly logger: ILogger;
 
   constructor(config: DataApiClientConfig, logger: ILogger) {
-    this.baseUrl = config.baseUrl || 'https://data-api.polymarket.com';
+    this.baseUrl = config.baseUrl ?? 'https://data-api.polymarket.com';
     this.timeout = config.timeout ?? 30000;
     this.logger = logger.child?.('PolymarketDataApiClient') ?? logger;
   }

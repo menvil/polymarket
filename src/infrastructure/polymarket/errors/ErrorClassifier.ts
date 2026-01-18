@@ -314,7 +314,7 @@ export class ErrorClassifier {
       };
     }
 
-    if (code.includes('closed') || structured.message.toLowerCase().includes('market closed')) {
+    if (code.includes('closed') || messageLower.includes('market closed')) {
       return {
         type: 'MARKET_CLOSED',
         message: structured.message,
@@ -322,7 +322,7 @@ export class ErrorClassifier {
       };
     }
 
-    if (code === '404' || structured.message.toLowerCase().includes('not found')) {
+    if (code === '404' || messageLower.includes('not found')) {
       return {
         type: 'ORDER_NOT_FOUND',
         message: structured.message,
@@ -330,7 +330,7 @@ export class ErrorClassifier {
       };
     }
 
-    if (/^5\d{2}$/.test(code) || structured.message.toLowerCase().includes('server error')) {
+    if (/^5\d{2}$/.test(code) || messageLower.includes('server error')) {
       return {
         type: 'SERVER_ERROR',
         message: structured.message,
