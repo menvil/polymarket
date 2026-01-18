@@ -52,9 +52,9 @@ export interface HttpClientConfig {
 export interface FetchOptions {
   /** HTTP метод */
   method?: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
-  /** Request headers */
+  /** Заголовки запроса */
   headers?: Record<string, string>;
-  /** Request body (будет сериализован в JSON) */
+  /** Тело запроса (будет сериализован в JSON) */
   body?: unknown;
   /** Abort signal для отмены запроса */
   signal?: AbortSignal;
@@ -105,7 +105,7 @@ export class HttpClient {
    *
    * @param url - Относительный URL (будет добавлен к baseUrl)
    * @param options - Опции запроса
-   * @returns Parsed JSON response
+   * @returns Распарсенный JSON ответ
    * @throws {HttpError} При HTTP ошибке или timeout
    *
    * @remarks
@@ -178,10 +178,10 @@ export class HttpClient {
   /**
    * Выполняет fetch с timeout
    *
-   * @param url - Full URL
-   * @param options - Fetch options
+   * @param url - Полный URL
+   * @param options - Опции запроса
    * @returns Response
-   * @throws {HttpError} При timeout или HTTP ошибке
+   * @throws {HttpError} При тайм-ауте или HTTP ошибке
    *
    * @remarks
    * Использует AbortController для timeout.
@@ -262,8 +262,8 @@ export class HttpClient {
   /**
    * Пытается распарсить JSON из response
    *
-   * @param response - Response объект
-   * @returns Parsed JSON или null
+   * @param response - Объект Response
+   * @returns Распарсенный JSON или null
    */
   private async tryParseJson(response: Response): Promise<unknown> {
     try {
@@ -276,15 +276,15 @@ export class HttpClient {
   /**
    * Парсит тело ответа с защитой от пустых и не-JSON ответов
    *
-   * @param response - Response объект
-   * @returns Parsed data или null для пустых ответов
+   * @param response - Объект Response
+   * @returns Распарсенные данные или null для пустых ответов
    *
    * @remarks
    * Обрабатывает следующие случаи:
    * - 204 No Content / 205 Reset Content → null (нет тела)
    * - Content-Type без application/json → null
    * - Пустое тело → null
-   * - JSON тело → parsed object
+   * - JSON тело → распарсенный объект
    *
    * Это предотвращает ошибки при вызове response.json() на пустых ответах,
    * которые раньше вызывали retry loop для успешных запросов.
@@ -319,13 +319,13 @@ export class HttpClient {
    * @returns true если нужен retry
    *
    * @remarks
-   * Retry выполняется для:
-   * - HttpError с retryable status (5xx, 429, 408)
-   * - Network errors (TypeError, fetch failures)
+   * Повторная попытка выполняется для:
+   * - HttpError с повторяемым статусом (5xx, 429, 408)
+   * - Сетевые ошибки (TypeError, ошибки fetch)
    *
-   * НЕ retryable:
+   * НЕ повторяемые:
    * - AbortError (внешняя/пользовательская отмена)
-   * - Timeout уже конвертирован в HttpError(408) в fetchWithTimeout
+   * - Тайм-аут уже конвертирован в HttpError(408) в fetchWithTimeout
    */
   private shouldRetry(error: unknown, attempt: number): boolean {
     // Достигли лимита попыток
@@ -333,23 +333,23 @@ export class HttpClient {
       return false;
     }
 
-    // HttpError с retryable status
+    // HttpError с повторяемым статусом
     if (error instanceof HttpError) {
       return error.isRetryable();
     }
 
-    // Network errors (NOT AbortError - см. ниже)
+    // Сетевые ошибки (НЕ AbortError - см. ниже)
     if (error instanceof Error) {
-      // AbortError НЕ retryable:
-      // - Timeout уже конвертирован в HttpError(408) в fetchWithTimeout
+      // AbortError НЕ повторяемый:
+      // - Тайм-аут уже конвертирован в HttpError(408) в fetchWithTimeout
       // - Любой AbortError здесь = внешняя/пользовательская отмена
-      // - Пользовательская отмена не должна retry-иться
+      // - Пользовательская отмена не должна повторяться
       if (error.name === 'AbortError') {
         return false;
       }
 
       return (
-        error.name === 'TypeError' || // Network error (e.g., DNS failure)
+        error.name === 'TypeError' || // Сетевая ошибка (напр., ошибка DNS)
         error.message.includes('fetch') ||
         error.message.includes('timeout')
       );
@@ -366,12 +366,12 @@ export class HttpClient {
    *
    * @remarks
    * Алгоритм: delay * (2 ^ attempt) * jitter
-   * - Jitter: случайный множитель 0.5–1.5 для предотвращения thundering herd
+   * - Jitter: случайный множитель 0.5–1.5 для предотвращения эффекта "громовое стадо"
    * - Максимальная задержка ограничена maxRetryDelay
    *
-   * Thundering herd problem:
-   * Без jitter все клиенты retry-ят одновременно после ошибки сервера,
-   * создавая пиковую нагрузку. Jitter распределяет retry во времени.
+   * Проблема "громового стада":
+   * Без jitter все клиенты повторяют запросы одновременно после ошибки сервера,
+   * создавая пиковую нагрузку. Jitter распределяет повторные попытки во времени.
    *
    * @example
    * ```
@@ -385,8 +385,8 @@ export class HttpClient {
     // Базовая экспоненциальная задержка
     const baseDelay = this.config.retryDelay * Math.pow(2, attempt);
 
-    // Jitter: множитель 0.5–1.5 для распределения retry во времени
-    // Это предотвращает thundering herd когда много клиентов retry-ят одновременно
+    // Jitter: множитель 0.5–1.5 для распределения повторных попыток во времени
+    // Это предотвращает эффект "громового стада" когда много клиентов повторяют одновременно
     const jitter = 0.5 + Math.random(); // 0.5 to 1.5
 
     const delayWithJitter = baseDelay * jitter;
@@ -407,12 +407,12 @@ export class HttpClient {
       return error;
     }
 
-    // Timeout
+    // Тайм-аут
     if (error.name === 'AbortError') {
       return new HttpError(408, `Request timeout: ${url}`);
     }
 
-    // Network error
+    // Сетевая ошибка
     return new HttpError(0, `Network error: ${error.message}`, { url });
   }
 

@@ -65,7 +65,7 @@
  *    ```typescript
  *    // В регистрации exchangeAdapter
  *    if (env.REST_CLIENT_TYPE === 'official') {
- *      logger.info('[DI] Использование официального клиента Polymarket SDK');
+ *      logger.info('[DI] Using official Polymarket SDK client');
  *      const sdkConfig = {
  *        baseUrl: env.POLYMARKET_API_URL,
  *        privateKey: env.PRIVATE_KEY,
@@ -213,7 +213,7 @@ export class PolymarketOfficialRestAdapter {
     //   privateKey: config.privateKey,
     // });
 
-    this.logger.warn('[PolymarketOfficialRestAdapter] Заглушка - еще не реализовано');
+    this.logger.warn('[PolymarketOfficialRestAdapter] Stub - not yet implemented');
   }
 
   /**
@@ -231,7 +231,7 @@ export class PolymarketOfficialRestAdapter {
    * 4. Обработать ошибки SDK и преобразовать в наши типы ошибок
    */
   async placeOrder(_params: PlaceOrderParams): Promise<OrderResponse> {
-    throw new Error('PolymarketOfficialRestAdapter.placeOrder() не реализовано - используйте REST_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialRestAdapter.placeOrder() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
@@ -246,7 +246,7 @@ export class PolymarketOfficialRestAdapter {
    * 2. Обработать ошибки SDK
    */
   async cancelOrder(_orderId: string): Promise<void> {
-    throw new Error('PolymarketOfficialRestAdapter.cancelOrder() не реализовано - используйте REST_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialRestAdapter.cancelOrder() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
@@ -263,7 +263,7 @@ export class PolymarketOfficialRestAdapter {
    * 3. Преобразовать результаты в OrderResponse[]
    */
   async getOpenOrders(_tokenId?: string): Promise<OrderResponse[]> {
-    throw new Error('PolymarketOfficialRestAdapter.getOpenOrders() не реализовано - используйте REST_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialRestAdapter.getOpenOrders() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
@@ -279,7 +279,7 @@ export class PolymarketOfficialRestAdapter {
    * 3. Вернуть как число
    */
   async getBalance(): Promise<number> {
-    throw new Error('PolymarketOfficialRestAdapter.getBalance() не реализовано - используйте REST_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialRestAdapter.getBalance() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
@@ -296,7 +296,7 @@ export class PolymarketOfficialRestAdapter {
    * 3. Вернуть баланс как число
    */
   async getOutcomeBalance(_tokenId: string): Promise<number> {
-    throw new Error('PolymarketOfficialRestAdapter.getOutcomeBalance() не реализовано - используйте REST_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialRestAdapter.getOutcomeBalance() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
@@ -313,7 +313,7 @@ export class PolymarketOfficialRestAdapter {
    * 3. Преобразовать результаты в PositionResponse[]
    */
   async getPositions(_tokenId?: string): Promise<PositionResponse[]> {
-    throw new Error('PolymarketOfficialRestAdapter.getPositions() не реализовано - используйте REST_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialRestAdapter.getPositions() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
@@ -329,7 +329,7 @@ export class PolymarketOfficialRestAdapter {
    * 3. Обработать ошибки блокчейна
    */
   async approveUSDC(_amount: number): Promise<void> {
-    throw new Error('PolymarketOfficialRestAdapter.approveUSDC() не реализовано - используйте REST_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialRestAdapter.approveUSDC() not implemented - use REST_CLIENT_TYPE=custom');
   }
 
   /**
@@ -343,7 +343,7 @@ export class PolymarketOfficialRestAdapter {
    * Этот метод может быть пустой операцией или записывать предупреждение.
    */
   clearConstraintsCache(_tokenId?: string): void {
-    this.logger.debug('[PolymarketOfficialRestAdapter] clearConstraintsCache() - пустая операция в официальном SDK');
+    this.logger.debug('[PolymarketOfficialRestAdapter] clearConstraintsCache() - no-op in official SDK');
     // Официальный SDK может не кэшировать ограничения
     // Это пустая операция, если SDK не предоставляет очистку кэша
   }

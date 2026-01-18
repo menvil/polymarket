@@ -35,28 +35,28 @@ import { Price } from './Price.js';
 import { Quantity } from './Quantity.js';
 
 /**
- * Quote value object
+ * Value object Quote
  *
  * @remarks
  * Иммутабельный value object для котировок.
- * Bid и Ask могут быть null (one-sided quote).
+ * Bid и Ask могут быть null (односторонняя котировка).
  */
 export class Quote {
   /**
-   * Creates a Quote
+   * Создаёт Quote
    *
-   * @param bid - Bid price (null for ask-only quote)
-   * @param ask - Ask price (null for bid-only quote)
-   * @param bidSize - Bid quantity
-   * @param askSize - Ask quantity
-   * @param timestamp - Quote timestamp (default: now)
+   * @param bid - Цена bid (null для котировки только ask)
+   * @param ask - Цена ask (null для котировки только bid)
+   * @param bidSize - Объём bid
+   * @param askSize - Объём ask
+   * @param timestamp - Временная метка котировки (по умолчанию: текущее время)
    *
-   * @throws {Error} If bid >= ask (when both present)
-   * @throws {Error} If sizes are negative (sizes must be >= 0)
+   * @throws {Error} Если bid >= ask (когда оба присутствуют)
+   * @throws {Error} Если размеры отрицательные (должны быть >= 0)
    *
    * @example
    * ```typescript
-   * // Two-sided quote
+   * // Двухсторонняя котировка
    * const quote1 = new Quote(
    *   Price.fromNumber(0.64),
    *   Price.fromNumber(0.66),
@@ -64,7 +64,7 @@ export class Quote {
    *   Quantity.fromNumber(100)
    * );
    *
-   * // Bid-only quote
+   * // Котировка только bid
    * const quote2 = new Quote(
    *   Price.fromNumber(0.64),
    *   null,
@@ -72,7 +72,7 @@ export class Quote {
    *   Quantity.fromNumber(0)
    * );
    *
-   * // Ask-only quote
+   * // Котировка только ask
    * const quote3 = new Quote(
    *   null,
    *   Price.fromNumber(0.66),
@@ -92,9 +92,9 @@ export class Quote {
   }
 
   /**
-   * Validates quote
+   * Валидирует котировку
    *
-   * @throws {Error} If validation fails
+   * @throws {Error} Если валидация не прошла
    *
    * @remarks
    * Проверки:
@@ -104,40 +104,40 @@ export class Quote {
    * 4. Если bid/ask null, соответствующий size должен быть 0
    */
   private validate(): void {
-    // At least one side must be present
+    // Хотя бы одна сторона должна присутствовать
     if (!this.bid && !this.ask) {
       throw new Error('Quote must have at least bid or ask');
     }
 
-    // Bid must be less than ask
+    // Bid должен быть меньше ask
     if (this.bid && this.ask && this.bid.value >= this.ask.value) {
       throw new Error(
         `Bid ${this.bid.value} must be less than ask ${this.ask.value}`
       );
     }
 
-    // Sizes must be non-negative
+    // Размеры должны быть неотрицательными
     if (this.bidSize.value < 0 || this.askSize.value < 0) {
       throw new Error('Quote sizes must be non-negative');
     }
 
-    // If bid is null, bidSize should be 0
+    // Если bid равен null, bidSize должен быть 0
     if (!this.bid && this.bidSize.value > 0) {
       throw new Error('Bid size must be 0 when bid price is null');
     }
 
-    // If ask is null, askSize should be 0
+    // Если ask равен null, askSize должен быть 0
     if (!this.ask && this.askSize.value > 0) {
       throw new Error('Ask size must be 0 when ask price is null');
     }
   }
 
   /**
-   * Calculates spread
+   * Вычисляет спред
    *
-   * @returns Spread (ask - bid)
+   * @returns Спред (ask - bid)
    *
-   * @throws {Error} If quote is one-sided
+   * @throws {Error} Если котировка односторонняя
    *
    * @remarks
    * spread = ask - bid
@@ -162,11 +162,11 @@ export class Quote {
   }
 
   /**
-   * Calculates mid-price
+   * Вычисляет среднюю цену
    *
-   * @returns Mid-price ((bid + ask) / 2)
+   * @returns Средняя цена ((bid + ask) / 2)
    *
-   * @throws {Error} If quote is one-sided
+   * @throws {Error} Если котировка односторонняя
    *
    * @remarks
    * midPrice = (bid + ask) / 2
@@ -191,9 +191,9 @@ export class Quote {
   }
 
   /**
-   * Checks if quote is two-sided
+   * Проверяет, является ли котировка двухсторонней
    *
-   * @returns True if both bid and ask are present
+   * @returns True если присутствуют и bid, и ask
    *
    * @example
    * ```typescript
@@ -209,9 +209,9 @@ export class Quote {
   }
 
   /**
-   * Checks if quote is bid-only
+   * Проверяет, является ли котировка только bid
    *
-   * @returns True if only bid is present
+   * @returns True если присутствует только bid
    *
    * @example
    * ```typescript
@@ -224,9 +224,9 @@ export class Quote {
   }
 
   /**
-   * Checks if quote is ask-only
+   * Проверяет, является ли котировка только ask
    *
-   * @returns True if only ask is present
+   * @returns True если присутствует только ask
    *
    * @example
    * ```typescript
@@ -239,16 +239,16 @@ export class Quote {
   }
 
   /**
-   * Checks if quote would cross with orderbook prices
+   * Проверяет, пересечётся ли котировка с ценами стакана
    *
-   * @param orderbookBid - Best bid from orderbook
-   * @param orderbookAsk - Best ask from orderbook
-   * @returns True if quote would immediately execute
+   * @param orderbookBid - Лучший bid из стакана
+   * @param orderbookAsk - Лучший ask из стакана
+   * @returns True если котировка исполнится немедленно
    *
    * @remarks
-   * Crossing occurs when:
-   * - Our bid >= orderbook ask (would buy immediately)
-   * - Our ask <= orderbook bid (would sell immediately)
+   * Пересечение происходит когда:
+   * - Наш bid >= ask стакана (немедленная покупка)
+   * - Наш ask <= bid стакана (немедленная продажа)
    *
    * @example
    * ```typescript
@@ -266,12 +266,12 @@ export class Quote {
    * ```
    */
   public crossesMarket(orderbookBid: Price | null, orderbookAsk: Price | null): boolean {
-    // Our bid crosses if it's >= orderbook ask
+    // Наш bid пересекается если >= ask стакана
     if (this.bid && orderbookAsk && this.bid.value >= orderbookAsk.value) {
       return true;
     }
 
-    // Our ask crosses if it's <= orderbook bid
+    // Наш ask пересекается если <= bid стакана
     if (this.ask && orderbookBid && this.ask.value <= orderbookBid.value) {
       return true;
     }
@@ -280,14 +280,14 @@ export class Quote {
   }
 
   /**
-   * Creates a copy with adjusted prices
+   * Создаёт копию с скорректированными ценами
    *
-   * @param bidAdjustment - Amount to add/subtract from bid
-   * @param askAdjustment - Amount to add/subtract from ask
-   * @returns New Quote with adjusted prices
+   * @param bidAdjustment - Величина для добавления/вычитания из bid
+   * @param askAdjustment - Величина для добавления/вычитания из ask
+   * @returns Новый Quote со скорректированными ценами
    *
    * @remarks
-   * Используется для skew adjustments в стратегиях.
+   * Используется для корректировки перекоса в стратегиях.
    *
    * @example
    * ```typescript
@@ -297,11 +297,11 @@ export class Quote {
    *   ...
    * );
    *
-   * // Widen spread (move bid down, ask up)
+   * // Расширить спред (bid вниз, ask вверх)
    * const widened = quote.withAdjustment(-0.01, +0.01);
    * // bid: 0.63, ask: 0.67
    *
-   * // Skew towards bid (inventory mgmt)
+   * // Перекос к bid (управление запасами)
    * const skewed = quote.withAdjustment(-0.01, -0.01);
    * // bid: 0.63, ask: 0.65
    * ```
@@ -317,9 +317,9 @@ export class Quote {
   }
 
   /**
-   * String representation
+   * Строковое представление
    *
-   * @returns Human-readable string
+   * @returns Читаемая строка
    *
    * @example
    * ```typescript
@@ -337,13 +337,13 @@ export class Quote {
   }
 
   /**
-   * Checks equality with another quote
+   * Проверяет равенство с другой котировкой
    *
-   * @param other - Other quote to compare
-   * @returns True if quotes are equal
+   * @param other - Другая котировка для сравнения
+   * @returns True если котировки равны
    *
    * @remarks
-   * Quotes are equal if bid, ask, and sizes are equal (timestamps ignored).
+   * Котировки равны если bid, ask и размеры равны (timestamp игнорируются).
    *
    * @example
    * ```typescript

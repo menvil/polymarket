@@ -19,10 +19,10 @@
  * const provider = new PolymarketBalanceProvider(balanceClient, mapper, logger);
  *
  * const usdcBalance = await provider.getAvailableBalance();
- * console.log(`Доступно: ${usdcBalance} USDC`);
+ * console.log(`Available: ${usdcBalance} USDC`);
  *
  * const outcomeBalance = await provider.getOutcomeBalance('0x123');
- * console.log(`Outcome токены: ${outcomeBalance}`);
+ * console.log(`Outcome tokens: ${outcomeBalance}`);
  * ```
  */
 
@@ -43,7 +43,7 @@ export interface IBalanceProvider {
    * @example
    * ```typescript
    * const balance = await provider.getAvailableBalance();
-   * console.log(`Доступно: ${balance} USDC`);
+   * console.log(`Available: ${balance} USDC`);
    * ```
    */
   getAvailableBalance(): Promise<number>;
@@ -62,7 +62,7 @@ export interface IBalanceProvider {
    * @example
    * ```typescript
    * const balance = await provider.getOutcomeBalance('0x123');
-   * console.log(`Outcome токены: ${balance}`);
+   * console.log(`Outcome tokens: ${balance}`);
    * ```
    */
   getOutcomeBalance(tokenId: string): Promise<number>;

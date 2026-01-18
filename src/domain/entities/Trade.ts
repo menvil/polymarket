@@ -1,5 +1,5 @@
 /**
- * Trade entity
+ * Сущность Trade
  *
  * @remarks
  * Представляет исполненную сделку на рынке.
@@ -38,7 +38,7 @@ import { Quantity } from '../value-objects/Quantity.js';
 import { TradingError } from '../../shared/errors/TradingError.js';
 
 /**
- * Trade side type
+ * Тип стороны сделки
  *
  * @remarks
  * - BUY: покупка (taker купил)
@@ -48,7 +48,7 @@ import { TradingError } from '../../shared/errors/TradingError.js';
 export type TradeSide = 'BUY' | 'SELL' | null;
 
 /**
- * Trade creation parameters
+ * Параметры создания сделки
  */
 export interface TradeParams {
   id: string;
@@ -75,10 +75,10 @@ export class TradeValidationError extends TradingError {
 }
 
 /**
- * Trade entity
+ * Сущность Trade
  *
  * @remarks
- * Immutable entity representing an executed trade.
+ * Неизменяемая сущность, представляющая исполненную сделку.
  */
 export class Trade {
   public readonly id: string;
@@ -172,27 +172,27 @@ export class Trade {
    * ```
    */
   public validate(): void {
-    // Validate ID
+    // Валидация ID
     if (!this.id || typeof this.id !== 'string' || this.id.trim().length === 0) {
       throw new TradeValidationError('Trade ID must be a non-empty string', 'id');
     }
 
-    // Validate marketId
+    // Валидация marketId
     if (!this.marketId || typeof this.marketId !== 'string' || this.marketId.trim().length === 0) {
       throw new TradeValidationError('Market ID must be a non-empty string', 'marketId');
     }
 
-    // Validate quantity is positive
+    // Валидация что количество положительное
     if (!this.quantity.isPositive()) {
       throw new TradeValidationError('Trade quantity must be positive', 'quantity');
     }
 
-    // Validate side (allow null for unknown direction)
+    // Валидация стороны (null допускается для неизвестного направления)
     if (this.side !== 'BUY' && this.side !== 'SELL' && this.side !== null) {
       throw new TradeValidationError(`Invalid trade side: ${this.side}`, 'side');
     }
 
-    // Validate timestamp
+    // Валидация timestamp
     if (!(this.timestamp instanceof Date) || isNaN(this.timestamp.getTime())) {
       throw new TradeValidationError('Invalid timestamp', 'timestamp');
     }

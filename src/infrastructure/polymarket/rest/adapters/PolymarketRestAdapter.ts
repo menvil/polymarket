@@ -144,7 +144,7 @@ export class PolymarketRestAdapter {
       throw new ValidationError(canPlace.reason ?? 'Order validation failed');
     }
 
-    // Validate required fields are present
+    // Проверить наличие обязательных полей
     const { normalizedSize, normalizedPrice, priceTick, feeRateBps } = canPlace;
     if (normalizedSize === undefined || normalizedPrice === undefined) {
       throw new ValidationError(

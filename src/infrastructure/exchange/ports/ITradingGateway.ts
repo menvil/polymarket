@@ -20,9 +20,9 @@
  * });
  *
  * if (result.ok) {
- *   console.log(`Ордер размещён: ${result.value.orderId}`);
+ *   console.log(`Order placed: ${result.value.orderId}`);
  * } else {
- *   console.error(`Ошибка: ${result.error.message}`);
+ *   console.error(`Error: ${result.error.message}`);
  * }
  * ```
  */

@@ -19,10 +19,10 @@
  * const provider = new PolymarketPositionsProvider(positionsClient, mapper, logger);
  *
  * const positions = await provider.getPositions();
- * console.log(`Всего позиций: ${positions.length}`);
+ * console.log(`Total positions: ${positions.length}`);
  *
  * const state = await provider.getPositionState('0x123');
- * console.log(`Текущая: ${state.currentPosition}, Лимит: ${state.positionLimit}`);
+ * console.log(`Current: ${state.currentPosition}, Limit: ${state.positionLimit}`);
  * ```
  */
 
@@ -48,10 +48,10 @@ export interface IPositionsProvider {
    * @example
    * ```typescript
    * const positions = await provider.getPositions();
-   * console.log(`Всего позиций: ${positions.length}`);
+   * console.log(`Total positions: ${positions.length}`);
    *
    * const btcPositions = await provider.getPositions('BTC-USD');
-   * console.log(`Позиция BTC: ${btcPositions[0].size}`);
+   * console.log(`BTC position: ${btcPositions[0].size}`);
    * ```
    */
   getPositions(tokenId?: string): Promise<PositionResponse[]>;
@@ -72,7 +72,7 @@ export interface IPositionsProvider {
    * const state = await provider.getPositionState('0x123');
    *
    * if (state.canIncrease) {
-   *   console.log(`Можно увеличить позицию до ${state.positionLimit}`);
+   *   console.log(`Can increase position up to ${state.positionLimit}`);
    * }
    * ```
    */

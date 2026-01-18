@@ -127,7 +127,7 @@ export class PolymarketWsClient extends EventEmitter {
    * @example
    * ```typescript
    * await client.connect();
-   * console.log('Подключено к WebSocket');
+   * console.log('Connected to WebSocket');
    * ```
    */
   public async connect(): Promise<void> {
@@ -149,7 +149,7 @@ export class PolymarketWsClient extends EventEmitter {
    * @example
    * ```typescript
    * await client.disconnect();
-   * console.log('Отключено');
+   * console.log('Disconnected');
    * ```
    */
   public async disconnect(): Promise<void> {
@@ -309,7 +309,7 @@ export class PolymarketWsClient extends EventEmitter {
    * ```typescript
    * const status = client.getStatus();
    * if (status === 'connected') {
-   *   console.log('Готов к подписке');
+   *   console.log('Ready to subscribe');
    * }
    * ```
    */
@@ -393,7 +393,7 @@ export class PolymarketWsClient extends EventEmitter {
    * @example
    * ```typescript
    * if (client.isDestroyed()) {
-   *   console.log('Клиент больше не используется');
+   *   console.log('Client is no longer in use');
    * }
    * ```
    */

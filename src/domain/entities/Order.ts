@@ -18,7 +18,7 @@
  *
  * @example
  * ```typescript
- * // Create a new buy order
+ * // Создание нового ордера на покупку
  * const order = Order.create({
  *   id: '0x123...',
  *   marketId: 'market-abc',
@@ -31,12 +31,12 @@
  *   strategyId: 'strategy-1'
  * });
  *
- * // Check if order can be canceled
+ * // Проверка возможности отмены ордера
  * if (order.canCancel()) {
  *   console.log('Order can be canceled');
  * }
  *
- * // Calculate notional value
+ * // Расчёт условной стоимости
  * const notional = order.getNotional();
  * console.log(`Notional: ${notional}`); // 65.00 (100 * 0.65)
  * ```
@@ -208,10 +208,10 @@ export class Order {
         side: event.side,
         price: Price.fromNumber(event.price),
         size: Quantity.fromNumber(event.size),
-        status: 'OPEN', // OrderAccepted → OPEN state
+        status: 'OPEN', // OrderAccepted → состояние OPEN
         timestamp: event.timestamp,
         strategyId: event.strategyId,
-        filledSize: Quantity.fromNumber(0), // Initial state
+        filledSize: Quantity.fromNumber(0), // Начальное состояние
       });
 
       return Ok(order);
@@ -387,7 +387,7 @@ export class Order {
     price: number,
     targetStatus: 'PARTIALLY_FILLED' | 'FILLED'
   ): Result<Order, string> {
-    // FSM transition check: only OPEN/PARTIALLY_FILLED orders can receive fills
+    // Проверка перехода FSM: только ордера OPEN/PARTIALLY_FILLED могут получать исполнения
     const currentState = this.mapStatusToExecutionState(this.status);
     const targetState = targetStatus === 'FILLED' ? OrderExecutionState.FILLED : OrderExecutionState.OPEN;
 
@@ -397,7 +397,7 @@ export class Order {
       );
     }
 
-    // Invariant checks
+    // Проверки инвариантов
     if (filledDelta <= 0) {
       return Err(`Invariant violation: filledDelta ${filledDelta} <= 0 for order ${this.id}`);
     }

@@ -29,10 +29,10 @@ import type { OrderSide } from '../types/OrderResponse.js';
  * );
  *
  * const orderbook = await adapter.getOrderbook('0x123');
- * console.log(`Лучший bid: ${orderbook.bids[0].price}`);
+ * console.log(`Best bid: ${orderbook.bids[0].price}`);
  *
  * const constraints = await adapter.getMarketConstraints('0x123');
- * console.log(`Мин размер: ${constraints.minOrderSize}`);
+ * console.log(`Min size: ${constraints.minOrderSize}`);
  * ```
  */
 
@@ -145,11 +145,11 @@ export interface IMarketDataAdapter {
    * @example
    * ```typescript
    * const orderbook = await adapter.getOrderbook('0x123');
-   * console.log(`Лучший bid: ${orderbook.bids[0].price}`);
-   * console.log(`Лучший ask: ${orderbook.asks[0].price}`);
+   * console.log(`Best bid: ${orderbook.bids[0].price}`);
+   * console.log(`Best ask: ${orderbook.asks[0].price}`);
    *
    * const top10 = await adapter.getOrderbook('0x123', 10);
-   * console.log(`Топ 10 уровней: ${top10.bids.length} bids`);
+   * console.log(`Top 10 levels: ${top10.bids.length} bids`);
    * ```
    */
   getOrderbook(tokenId: string, depth?: number): Promise<OrderbookSnapshot>;
@@ -169,8 +169,8 @@ export interface IMarketDataAdapter {
    * @example
    * ```typescript
    * const trades = await adapter.getMarketTrades('0x123', 100);
-   * console.log(`Последние 100 сделок: ${trades.length}`);
-   * console.log(`Цена последней сделки: ${trades[0].price}`);
+   * console.log(`Last 100 trades: ${trades.length}`);
+   * console.log(`Last trade price: ${trades[0].price}`);
    * ```
    */
   getMarketTrades(tokenId: string, limit?: number): Promise<MarketTrade[]>;
@@ -189,8 +189,8 @@ export interface IMarketDataAdapter {
    * @example
    * ```typescript
    * const constraints = await adapter.getMarketConstraints('0x123');
-   * console.log(`Мин размер: ${constraints.minOrderSize}`);
-   * console.log(`Шаг размера: ${constraints.sizeTick}`);
+   * console.log(`Min size: ${constraints.minOrderSize}`);
+   * console.log(`Size tick: ${constraints.sizeTick}`);
    * ```
    */
   getMarketConstraints(tokenId: string): Promise<MarketConstraints>;
@@ -208,8 +208,8 @@ export interface IMarketDataAdapter {
    * @example
    * ```typescript
    * const info = await adapter.getMarketInfo('0x123');
-   * console.log(`Рынок: ${info.name}`);
-   * console.log(`Статус: ${info.status}`);
+   * console.log(`Market: ${info.name}`);
+   * console.log(`Status: ${info.status}`);
    * ```
    */
   getMarketInfo(tokenId: string): Promise<MarketInfo>;

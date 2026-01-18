@@ -496,13 +496,13 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
     filledSize?: string;
     size?: string;
   }> {
-    // SIMULATION MODE: Throw error (no order history in simulation)
+    // РЕЖИМ СИМУЛЯЦИИ: Выбросить ошибку (нет истории ордеров в симуляции)
     if (this.simulationMode) {
       this.logger.warn('getOrderById not available in SIMULATION MODE', { orderId });
       throw new Error('getOrderById not available in simulation mode');
     }
 
-    // LIVE MODE: Real API call
+    // РЕЖИМ LIVE: Реальный API-вызов
     this.logger.debug('Getting order by ID', { orderId });
 
     try {

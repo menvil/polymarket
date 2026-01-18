@@ -65,7 +65,7 @@ export class PolymarketPositionMapper {
    * };
    *
    * const normalized = mapper.toDomainPosition(rawPosition);
-   * console.log(normalized.marketId); // 'market-456' (маппится из conditionId)
+   * console.log(normalized.marketId); // 'market-456' (mapped from conditionId)
    * console.log(normalized.size); // 50.5
    * ```
    */
@@ -85,7 +85,7 @@ export class PolymarketPositionMapper {
     const tokenId = response.asset ?? '';
     const marketId = response.conditionId ?? '';
 
-    // Warn if required fields are missing
+    // Предупреждение, если обязательные поля отсутствуют
     if (!tokenId || !marketId) {
       this.logger?.warn('Position response missing required fields', {
         hasAsset: !!response.asset,

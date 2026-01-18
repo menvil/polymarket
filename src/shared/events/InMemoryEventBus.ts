@@ -4,21 +4,21 @@
  * @remarks
  * ProductionEventBus (async, FIFO strict, sequenceNumber ignored)
  *
- * ## Guarantees (BREAKING CHANGE - теперь CONTRACT):
+ * ## Гарантии (КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ - теперь КОНТРАКТ):
  *
- * ### 1. FIFO strict (ТЕПЕРЬ CONTRACT!)
+ * ### 1. Строгий FIFO (ТЕПЕРЬ КОНТРАКТ!)
  * - События обрабатываются в порядке publish() - **ГАРАНТИРОВАНО**
- * - Это БОЛЬШЕ НЕ implementation detail, это **контрактная гарантия**
- * - Subscribers могут полагаться на FIFO порядок
+ * - Это БОЛЬШЕ НЕ деталь реализации, это **контрактная гарантия**
+ * - Подписчики могут полагаться на FIFO порядок
  *
- * ### 2. Async boundary через setImmediate
+ * ### 2. Асинхронная граница через setImmediate
  * - `publish()` **немедленно возвращает управление**
- * - Handlers вызываются в следующем event loop tick через `setImmediate()`
+ * - Обработчики вызываются в следующем цикле событий через `setImmediate()`
  * - Producer **никогда не блокируется** на consumers
  *
- * ### 3. Error isolation через try/catch
- * - Каждый handler вызывается в отдельном try/catch
- * - Ошибки **не пробрасываются** в producer
+ * ### 3. Изоляция ошибок через try/catch
+ * - Каждый обработчик вызывается в отдельном try/catch
+ * - Ошибки **не пробрасываются** в публикатор
  * - Ошибки передаются в EventBusErrorHandler для логирования
  *
  * ### 4. sequenceNumber IGNORED (КРИТИЧНО)
@@ -26,11 +26,11 @@
  * - sequenceNumber - только metadata (для event sourcing persistence)
  * - Порядок определяется ТОЛЬКО publish() order (FIFO)
  *
- * ### 5. Reentrancy protection
- * - Subscriber может вызвать `publish()` внутри handler
+ * ### 5. Защита от реентерабельности
+ * - Подписчик может вызвать `publish()` внутри обработчика
  * - Новые события добавляются в очередь, НЕ вызывая рекурсию
- * - Флаг `isDraining` предотвращает множественные drain операции
- * - **Нет stack overflow**
+ * - Флаг `isDraining` предотвращает множественные операции опустошения
+ * - **Нет переполнения стека**
  *
  * @example
  * ```typescript
@@ -75,16 +75,16 @@ export class InMemoryEventBus implements IEventBus, IEventBusInspector {
    * Handlers для конкретных типов событий
    *
    * @remarks
-   * Map: eventName → Array of handlers
-   * Array сохраняет порядок подписки.
+   * Map: имяСобытия → Массив обработчиков
+   * Массив сохраняет порядок подписки.
    */
   private readonly handlers: Map<string, EventHandler[]> = new Map();
 
   /**
-   * Handlers для всех событий
+   * Обработчики для всех событий
    *
    * @remarks
-   * Array сохраняет порядок подписки.
+   * Массив сохраняет порядок подписки.
    */
   private readonly allHandlers: EventHandler[] = [];
 

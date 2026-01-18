@@ -22,10 +22,10 @@
  * const provider = new PolymarketOrdersProvider(orderClient, mapper, logger);
  *
  * const openOrders = await provider.getOpenOrders();
- * console.log(`Открытые ордера: ${openOrders.length}`);
+ * console.log(`Open orders: ${openOrders.length}`);
  *
  * const order = await provider.getOrderById('order-123');
- * console.log(`Статус ордера: ${order.status}`);
+ * console.log(`Order status: ${order.status}`);
  * ```
  */
 
@@ -51,10 +51,10 @@ export interface IOrdersProvider {
    * @example
    * ```typescript
    * const openOrders = await provider.getOpenOrders();
-   * console.log(`Открытые ордера: ${openOrders.length}`);
+   * console.log(`Open orders: ${openOrders.length}`);
    *
    * const btcOrders = await provider.getOpenOrders('BTC-USD');
-   * console.log(`Открытые ордера BTC: ${btcOrders.length}`);
+   * console.log(`Open BTC orders: ${btcOrders.length}`);
    * ```
    */
   getOpenOrders(tokenId?: string): Promise<OrderResponse[]>;
@@ -69,8 +69,8 @@ export interface IOrdersProvider {
    * @example
    * ```typescript
    * const order = await provider.getOrderById('order-123');
-   * console.log(`Статус ордера: ${order.status}`);
-   * console.log(`Осталось: ${order.sizeRemaining}`);
+   * console.log(`Order status: ${order.status}`);
+   * console.log(`Remaining: ${order.sizeRemaining}`);
    * ```
    */
   getOrderById(orderId: string): Promise<OrderResponse>;
@@ -89,7 +89,7 @@ export interface IOrdersProvider {
    * @example
    * ```typescript
    * const history = await provider.getOrderHistory('0x123', 100);
-   * console.log(`Последние 100 ордеров для токена 0x123: ${history.length}`);
+   * console.log(`Last 100 orders for token 0x123: ${history.length}`);
    * ```
    */
   getOrderHistory?(tokenId?: string, limit?: number): Promise<OrderResponse[]>;
@@ -108,7 +108,7 @@ export interface IOrdersProvider {
    * @example
    * ```typescript
    * const filledOrders = await provider.getOrdersByStatus('FILLED');
-   * console.log(`Исполненные ордера: ${filledOrders.length}`);
+   * console.log(`Filled orders: ${filledOrders.length}`);
    * ```
    */
   getOrdersByStatus?(

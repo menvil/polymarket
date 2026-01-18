@@ -139,7 +139,7 @@ export class PolymarketBalancePolicy {
   ): Promise<BalanceCheckResult> {
     const { price, size } = params;
 
-    // Guard against divide-by-zero (consistent with getMaxBuySize)
+    // Защита от деления на ноль (согласовано с getMaxBuySize)
     if (price <= 0) {
       return {
         ok: false,
@@ -379,7 +379,7 @@ export class PolymarketBalancePolicy {
    * @example
    * ```typescript
    * const maxSize = await policy.getMaxSellSize('0x123');
-   * console.log(`Max sell size: ${maxSize}`); // например, 9.99 (не 9.997271)
+   * console.log(`Max sell size: ${maxSize}`); // e.g., 9.99 (not 9.997271)
    * ```
    */
   async getMaxSellSize(tokenId: string): Promise<number> {

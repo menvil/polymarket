@@ -125,7 +125,7 @@ export function createProductionEnvelope<E extends { type: string; eventName?: s
   // Нормализация: поддержка type (ExecutionEvent) и eventName (DomainEvent)
   const eventType = payload.type ?? payload.eventName;
   if (!eventType) {
-    throw new Error('Payload должен иметь поле "type" или "eventName"');
+    throw new Error('Payload must have "type" or "eventName" field');
   }
 
   return {
@@ -182,7 +182,7 @@ export function createReplayEnvelope<E extends { type: string; eventName?: strin
   // Нормализация: поддержка type (ExecutionEvent) и eventName (DomainEvent)
   const eventType = payload.type ?? payload.eventName;
   if (!eventType) {
-    throw new Error('Payload должен иметь поле "type" или "eventName"');
+    throw new Error('Payload must have "type" or "eventName" field');
   }
 
   return {

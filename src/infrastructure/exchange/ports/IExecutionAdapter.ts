@@ -26,7 +26,7 @@
  *   size: 100, // Уже округлено до sizeTick
  * });
  *
- * console.log(`Ордер размещён: ${order.orderId}`);
+ * console.log(`Order placed: ${order.orderId}`);
  * ```
  */
 

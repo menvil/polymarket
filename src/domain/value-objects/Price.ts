@@ -13,7 +13,7 @@
  * ```typescript
  * const price = Price.fromNumber(0.5234);
  * console.log(price.value); // 0.5234
- * console.log(price.toTick(0.0001)); // 0.5234 (округлено до тика)
+ * console.log(price.toTick(0.0001)); // 0.5234 (rounded to tick)
  *
  * // Edge cases теперь поддерживаются:
  * const lowPrice = Price.fromNumber(0.001);

@@ -27,7 +27,7 @@
  *
  * // Подписка на события
  * replayBus.subscribe('OrderAccepted', (envelope) => {
- *   console.log('Ордер принят:', envelope.payload.orderId);
+ *   console.log('Order accepted:', envelope.payload.orderId);
  * });
  *
  * // Публикация событий с sequenceNumber
@@ -105,23 +105,23 @@ export class SequencedEventBus implements IEventBus {
     // Гарантирует детерминированный replay (handlers НЕ ДОЛЖНЫ публиковать новые события)
     if (this.isDelivering) {
       throw new Error(
-        `[SequencedEventBus] Обнаружен reentrancy: publish() вызван из handler. ` +
-        `Handlers НЕ ДОЛЖНЫ публиковать новые события во время replay (нарушает детерминизм). ` +
+        `[SequencedEventBus] Reentrancy detected: publish() called from handler. ` +
+        `Handlers MUST NOT publish new events during replay (breaks determinism). ` +
         `(envelope: ${envelope.id}, type: ${envelope.type})`
       );
     }
 
     // sequenceNumber ОБЯЗАТЕЛЕН для replay
     if (envelope.sequenceNumber === undefined) {
-      throw new Error(`[SequencedEventBus] sequenceNumber обязателен для envelope ${envelope.id} (type: ${envelope.type})`);
+      throw new Error(`[SequencedEventBus] sequenceNumber is required for envelope ${envelope.id} (type: ${envelope.type})`);
     }
 
     // Валидация строгого порядка: sequenceNumber должен быть > lastDeliveredSequence
     // Гарантирует детерминированный replay (события обрабатываются в порядке sequence)
     if (envelope.sequenceNumber <= this.lastDeliveredSequence) {
       throw new Error(
-        `[SequencedEventBus] Нарушение порядка: sequenceNumber ${envelope.sequenceNumber} <= последний доставленный ${this.lastDeliveredSequence}. ` +
-        `События должны публиковаться в строго возрастающем порядке sequenceNumber. (envelope: ${envelope.id}, type: ${envelope.type})`
+        `[SequencedEventBus] Order violation: sequenceNumber ${envelope.sequenceNumber} <= last delivered ${this.lastDeliveredSequence}. ` +
+        `Events must be published in strictly increasing sequenceNumber order. (envelope: ${envelope.id}, type: ${envelope.type})`
       );
     }
 
@@ -147,7 +147,7 @@ export class SequencedEventBus implements IEventBus {
    * @example
    * ```typescript
    * const unsubscribe = replayBus.subscribe('OrderAccepted', (envelope) => {
-   *   console.log('Ордер принят:', envelope.payload.orderId);
+   *   console.log('Order accepted:', envelope.payload.orderId);
    * });
    *
    * // Позже: отписка
@@ -180,7 +180,7 @@ export class SequencedEventBus implements IEventBus {
    * @example
    * ```typescript
    * const unsubscribe = replayBus.subscribeAll((envelope) => {
-   *   console.log('Событие:', envelope.type, 'seq:', envelope.sequenceNumber);
+   *   console.log('Event:', envelope.type, 'seq:', envelope.sequenceNumber);
    * });
    * ```
    */

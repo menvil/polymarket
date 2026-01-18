@@ -327,7 +327,7 @@ export class Spread {
    * const shifted = spread.shift(0.05);
    * console.log(shifted.bid.value); // 0.53
    * console.log(shifted.ask.value); // 0.57
-   * console.log(shifted.width()); // 0.04 (без изменений)
+   * console.log(shifted.width()); // 0.04 (unchanged)
    * ```
    */
   public shift(amount: number): Spread {
@@ -335,11 +335,11 @@ export class Spread {
     const minPrice = Price.minPrice;
     const maxPrice = Price.maxPrice;
 
-    // Calculate target positions
+    // Вычисление целевых позиций
     let newBidValue = this.bid.value + amount;
     let newAskValue = this.ask.value + amount;
 
-    // Clamp while preserving width
+    // Ограничение с сохранением ширины
     if (newBidValue < minPrice) {
       newBidValue = minPrice;
       newAskValue = minPrice + originalWidth;
@@ -349,7 +349,7 @@ export class Spread {
       newBidValue = maxPrice - originalWidth;
     }
 
-    // Final clamp to ensure valid prices
+    // Финальное ограничение для обеспечения корректных цен
     newBidValue = Math.max(minPrice, Math.min(maxPrice - originalWidth, newBidValue));
     newAskValue = newBidValue + originalWidth;
 

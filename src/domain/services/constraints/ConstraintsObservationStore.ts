@@ -151,7 +151,7 @@ export class ConstraintsObservationStore {
       this.startPeriodicCleanup();
     }
 
-    this.logger.debug('[ObservationStore] Инициализирован', {
+    this.logger.debug('[ObservationStore] Initialized', {
       minObservations: config.minObservations,
       confidenceThreshold: config.confidenceThreshold,
       observationTTL: config.observationTTL,
@@ -205,7 +205,7 @@ export class ConstraintsObservationStore {
 
     // cleanupInterval > 0 (если указан)
     if (config.cleanupInterval !== undefined && config.cleanupInterval <= 0) {
-      this.logger.warn('[ObservationStore] Invalid cleanupInterval <= 0, периодическая очистка отключена', {
+      this.logger.warn('[ObservationStore] Invalid cleanupInterval <= 0, periodic cleanup disabled', {
         cleanupInterval: config.cleanupInterval,
       });
     }
@@ -454,7 +454,7 @@ export class ConstraintsObservationStore {
         ? '0.0%'
         : ((keysToDelete.length / before) * 100).toFixed(1) + '%';
 
-      this.logger.debug('[ObservationStore] Периодическая очистка', {
+      this.logger.debug('[ObservationStore] Periodic cleanup', {
         deleted: keysToDelete.length,
         before,
         after: this.observations.size,
@@ -486,7 +486,7 @@ export class ConstraintsObservationStore {
 
     // Валидация: должен быть конечным числом
     if (typeof interval !== 'number' || !Number.isFinite(interval)) {
-      this.logger.warn('[ObservationStore] cleanupInterval не является конечным числом, периодическая очистка отключена', {
+      this.logger.warn('[ObservationStore] cleanupInterval is not a finite number, periodic cleanup disabled', {
         cleanupInterval: interval,
         type: typeof interval,
       });
@@ -495,7 +495,7 @@ export class ConstraintsObservationStore {
 
     // Валидация: минимальный интервал
     if (interval < ConstraintsObservationStore.MIN_CLEANUP_INTERVAL_MS) {
-      this.logger.warn('[ObservationStore] cleanupInterval слишком мал, периодическая очистка отключена', {
+      this.logger.warn('[ObservationStore] cleanupInterval too small, periodic cleanup disabled', {
         cleanupInterval: interval,
         minRequired: ConstraintsObservationStore.MIN_CLEANUP_INTERVAL_MS,
       });
@@ -504,7 +504,7 @@ export class ConstraintsObservationStore {
 
     // Валидация: максимальный интервал
     if (interval > ConstraintsObservationStore.MAX_CLEANUP_INTERVAL_MS) {
-      this.logger.warn('[ObservationStore] cleanupInterval слишком велик, периодическая очистка отключена', {
+      this.logger.warn('[ObservationStore] cleanupInterval too large, periodic cleanup disabled', {
         cleanupInterval: interval,
         maxAllowed: ConstraintsObservationStore.MAX_CLEANUP_INTERVAL_MS,
       });
@@ -519,7 +519,7 @@ export class ConstraintsObservationStore {
     // Не удерживать процесс живым
     this.cleanupTimer.unref();
 
-    this.logger.info('[ObservationStore] Периодическая очистка запущена', {
+    this.logger.info('[ObservationStore] Periodic cleanup started', {
       interval,
       minInterval: ConstraintsObservationStore.MIN_CLEANUP_INTERVAL_MS,
       maxInterval: ConstraintsObservationStore.MAX_CLEANUP_INTERVAL_MS,
@@ -543,7 +543,7 @@ export class ConstraintsObservationStore {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = undefined;
 
-      this.logger.info('[ObservationStore] Периодическая очистка остановлена');
+      this.logger.info('[ObservationStore] Periodic cleanup stopped');
     }
   }
 
@@ -567,6 +567,6 @@ export class ConstraintsObservationStore {
    */
   clear(): void {
     this.observations.clear();
-    this.logger.warn('[ObservationStore] Очищены все наблюдения');
+    this.logger.warn('[ObservationStore] All observations cleared');
   }
 }

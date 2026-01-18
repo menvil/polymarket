@@ -26,7 +26,7 @@
  * );
  *
  * manager.on('orderbook', (data) => {
- *   console.log('Обновление orderbook:', data);
+ *   console.log('Orderbook update:', data);
  * });
  *
  * await manager.connect();
@@ -154,7 +154,7 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
    * ]);
    *
    * manager.on('orderbook', (data) => {
-   *   console.log('Orderbook для токена:', data.asset_id);
+   *   console.log('Orderbook for token:', data.asset_id);
    * });
    * ```
    */
@@ -209,7 +209,7 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
    * @example
    * ```typescript
    * manager.subscribeToTrades('67704255...', (trade) => {
-   *   console.log(`Трейд: ${trade.side} ${trade.quantity} @ ${trade.price}`);
+   *   console.log(`Trade: ${trade.side} ${trade.quantity} @ ${trade.price}`);
    *   tradeAccumulator.addTrade(tokenId, trade);
    * });
    * ```

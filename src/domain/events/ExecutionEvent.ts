@@ -11,10 +11,10 @@
  *
  * Принципы:
  * - ExecutionEvent = факты внешнего мира (биржа, CLOB API)
- * - Self-contained (deterministic without external state)
- * - Включает timestamp для deterministic replay (v4)
- * - OrderAccepted содержит MINIMAL CONTEXT (side, marketId, price, size)
- * - Immutable facts
+ * - Самодостаточный (детерминированный без внешнего состояния)
+ * - Включает timestamp для детерминированного воспроизведения (v4)
+ * - OrderAccepted содержит минимальный контекст (side, marketId, price, size)
+ * - Неизменяемые факты
  *
  */
 export type ExecutionEvent =
@@ -25,7 +25,7 @@ export type ExecutionEvent =
   | OrderRejected;
 
 /**
- * ExecutionErrorEvent - execution errors (для metrics/logging)
+ * ExecutionErrorEvent - ошибки исполнения (для метрик/логирования)
  *
  * Обработка:
  * - ErrorMetricsProjector подписывается
@@ -43,20 +43,20 @@ export type ExecutionErrorEvent =
  *
  * Почему context необходим:
  * - Projector должен создать Order aggregate детерминированно
- * - NO Pending Orders Registry (hidden state, NOT evented, NOT replay-friendly)
- * - ExecutionEvent = self-contained (без external dependencies)
- * - side, marketId, price, size - execution-time facts, NOT business decisions
+ * - Нет реестра ожидающих ордеров (скрытое состояние, не событийное, не пригодно для воспроизведения)
+ * - ExecutionEvent = самодостаточный (без внешних зависимостей)
+ * - side, marketId, price, size - факты времени исполнения, не бизнес-решения
  *
- * Context = MINIMAL:
- * - side: BUY | SELL (execution fact)
+ * Контекст = минимальный:
+ * - side: BUY | SELL (факт исполнения)
  * - marketId: string (где исполняется)
  * - price: number (лимит цена, принятая биржей)
  * - size: number (размер, принятый биржей)
  *
  *
- * Invariants проверяются в AGGREGATE, NOT в mapper
- * - Mapper = pure parsing (может вернуть price=0 для replay на грязных данных)
- * - Aggregate проверяет: price > 0, size > 0, marketId non-empty
+ * Инварианты проверяются в AGGREGATE, не в mapper
+ * - Mapper = чистый парсинг (может вернуть price=0 для воспроизведения на грязных данных)
+ * - Aggregate проверяет: price > 0, size > 0, marketId непустой
  */
 export interface OrderAccepted {
   readonly type: 'OrderAccepted';
@@ -74,13 +74,13 @@ export interface OrderAccepted {
  * OrderPartiallyFilled - ордер частично исполнен
  *
  * @remarks
- * filledDelta - сколько исполнилось В ЭТОМ событии (delta)
+ * filledDelta - сколько исполнилось В ЭТОМ событии (дельта)
  * Aggregate вычисляет totalFilled = previousFilled + filledDelta
  *
- * price - цена ЭТОГО fill (для weighted average в aggregate)
+ * price - цена ЭТОГО исполнения (для взвешенного среднего в aggregate)
  *
- * Invariants в AGGREGATE
- * - Mapper НЕ проверяет filledDelta > 0 (replay на грязных данных)
+ * Инварианты в AGGREGATE
+ * - Mapper НЕ проверяет filledDelta > 0 (воспроизведение на грязных данных)
  * - Aggregate проверяет: filledDelta > 0, price > 0
  */
 export interface OrderPartiallyFilled {
@@ -115,13 +115,13 @@ export interface OrderFilled {
   readonly timestamp: Date; // для deterministic replay
 
   // Причина исполнения ордера (критично для статистики!)
-  // String literal type that matches FillReason enum values + 'REAL' for live trading
+  // Строковый литеральный тип, соответствующий значениям enum FillReason + 'REAL' для реальной торговли
   readonly fillReason?: 'CROSSED_BOOK' | 'TRADE_THROUGH' | 'BOOK_TOUCH' | 'REAL';
 
   // Доступный объем на уровне в момент исполнения
   readonly availableVolume?: number;
 
-  // Состояние Orderbook в момент исполнения (для debugging)
+  // Состояние Orderbook в момент исполнения (для отладки)
   readonly orderbookSnapshot?: {
     bestBid: number;
     bestAsk: number;
@@ -179,7 +179,7 @@ export interface OrderValidationFailed {
   readonly validationErrors: Record<string, string>; // field → error message
 }
 
-// Type guards для ExecutionEvent (используются ТОЛЬКО в infrastructure, NOT в projectors)
+// Type guards для ExecutionEvent (используются ТОЛЬКО в infrastructure, НЕ в projectors)
 export function isOrderAccepted(event: ExecutionEvent): event is OrderAccepted {
   return event.type === 'OrderAccepted';
 }
@@ -196,7 +196,7 @@ export function isOrderCancelled(event: ExecutionEvent): event is OrderCancelled
   return event.type === 'OrderCancelled';
 }
 
-// Type guards для ExecutionErrorEvent
+// Type guards для ExecutionErrorEvent (ошибки исполнения)
 export function isOrderRejected(event: ExecutionErrorEvent): event is OrderRejected {
   return event.type === 'OrderRejected';
 }

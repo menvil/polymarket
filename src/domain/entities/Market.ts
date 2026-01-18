@@ -1,5 +1,5 @@
 /**
- * Market entity representing a prediction market
+ * Сущность Market, представляющая рынок предсказаний
  *
  * @remarks
  * Представляет неизменяемый рынок предсказаний с бинарными исходами.
@@ -115,7 +115,7 @@ export class Market {
     this.id = props.id;
     this.question = props.question;
     this.marketUrl = props.marketUrl ?? null;
-    // Defensive copy and freeze outcomes to prevent external mutation
+    // Защитное копирование и заморозка исходов для предотвращения внешней мутации
     this.outcomes = Object.freeze([
       Object.freeze({ ...props.outcomes[0] }),
       Object.freeze({ ...props.outcomes[1] }),

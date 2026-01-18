@@ -63,10 +63,10 @@ export interface OrderbookData {
 }
 
 /**
- * Orderbook entity
+ * Сущность Orderbook
  *
  * @remarks
- * Immutable entity representing market order book.
+ * Неизменяемая сущность, представляющая стакан заявок.
  */
 export class Orderbook {
   /**
@@ -179,8 +179,8 @@ export class Orderbook {
     );
 
     // Замораживаем весь Orderbook для полной immutability
-    // Type assertion needed: Object.freeze returns Readonly<T>, but private fields
-    // cause TS to see Readonly<Orderbook> as incompatible with Orderbook
+    // Type assertion необходим: Object.freeze возвращает Readonly<T>, но приватные поля
+    // приводят к тому, что TS видит Readonly<Orderbook> как несовместимый с Orderbook
     return Object.freeze(orderbook) as Orderbook;
   }
 

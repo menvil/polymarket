@@ -84,7 +84,7 @@
  *    ```typescript
  *    // В регистрации wsManager
  *    if (env.WS_CLIENT_TYPE === 'official') {
- *      logger.info('[DI] Использование официального WebSocket клиента Polymarket SDK');
+ *      logger.info('[DI] Using official Polymarket SDK WebSocket client');
  *      const sdkConfig = {
  *        url: env.POLYMARKET_WS_URL,
  *        privateKey: env.PRIVATE_KEY,
@@ -177,9 +177,9 @@
  * await adapter.connect();
  *
  * adapter.subscribeToOrderbook(tokenId, (orderbook) => {
- *   console.log('Лучший bid:', orderbook.getBestBid()?.price.value);
- *   console.log('Лучший ask:', orderbook.getBestAsk()?.price.value);
- *   console.log('Спред:', orderbook.getSpread().value);
+ *   console.log('Best bid:', orderbook.getBestBid()?.price.value);
+ *   console.log('Best ask:', orderbook.getBestAsk()?.price.value);
+ *   console.log('Spread:', orderbook.getSpread().value);
  * });
  * ```
  */
@@ -270,7 +270,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
     //
     // this.setupSDKEventHandlers();
 
-    this.logger.warn('[PolymarketOfficialWsAdapter] Заглушка - еще не реализовано');
+    this.logger.warn('[PolymarketOfficialWsAdapter] Stub - not yet implemented');
   }
 
   /**
@@ -293,7 +293,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
    * 4. Настроить обработчики событий
    */
   async connect(): Promise<void> {
-    throw new Error('PolymarketOfficialWsAdapter.connect() не реализовано - используйте WS_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialWsAdapter.connect() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
@@ -313,9 +313,9 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
   async getOrderbook(_tokenId: string): Promise<Orderbook> {
     return Promise.reject(
       new Error(
-        'getOrderbook() не реализован в WebSocket адаптере. ' +
-        'Используйте PolymarketOrderbookRestClient.getOrderbook() для snapshot ' +
-        'или subscribeToOrderbook() для real-time обновлений.'
+        'getOrderbook() not implemented in WebSocket adapter. ' +
+        'Use PolymarketOrderbookRestClient.getOrderbook() for snapshot ' +
+        'or subscribeToOrderbook() for real-time updates.'
       )
     );
   }
@@ -335,7 +335,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
    * 4. Преобразовать данные книги ордеров SDK в нашу сущность Orderbook
    */
   subscribeToOrderbook(_tokenId: string, _callback: OrderbookCallback): void {
-    throw new Error('PolymarketOfficialWsAdapter.subscribeToOrderbook() не реализовано - используйте WS_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialWsAdapter.subscribeToOrderbook() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
@@ -353,7 +353,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
    * 4. Преобразовать данные сделок SDK в нашу сущность Trade
    */
   subscribeToTrades(_tokenId: string, _callback: TradeCallback): void {
-    throw new Error('PolymarketOfficialWsAdapter.subscribeToTrades() не реализовано - используйте WS_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialWsAdapter.subscribeToTrades() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
@@ -369,7 +369,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
    * 2. Подписаться на оба токена через SDK
    */
   async subscribeToMarket(_upTokenId: string, _downTokenId: string): Promise<void> {
-    throw new Error('PolymarketOfficialWsAdapter.subscribeToMarket() не реализовано - используйте WS_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialWsAdapter.subscribeToMarket() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
@@ -385,7 +385,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
    * 3. Удалить обработчики событий
    */
   unsubscribe(_tokenId: string): void {
-    throw new Error('PolymarketOfficialWsAdapter.unsubscribe() не реализовано - используйте WS_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialWsAdapter.unsubscribe() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
@@ -400,7 +400,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
    * 1. Вызвать unsubscribe() для обоих токенов
    */
   unsubscribeFromMarket(_upTokenId: string, _downTokenId: string): void {
-    throw new Error('PolymarketOfficialWsAdapter.unsubscribeFromMarket() не реализовано - используйте WS_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialWsAdapter.unsubscribeFromMarket() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
@@ -415,7 +415,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
    * Может потребоваться отслеживать подписки внутренне и фильтровать события.
    */
   unsubscribeFromOrderbook(_tokenId: string): void {
-    throw new Error('PolymarketOfficialWsAdapter.unsubscribeFromOrderbook() не реализовано - используйте WS_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialWsAdapter.unsubscribeFromOrderbook() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
@@ -430,7 +430,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
    * Может потребоваться отслеживать подписки внутренне и фильтровать события.
    */
   unsubscribeFromTrades(_tokenId: string): void {
-    throw new Error('PolymarketOfficialWsAdapter.unsubscribeFromTrades() не реализовано - используйте WS_CLIENT_TYPE=custom');
+    throw new Error('PolymarketOfficialWsAdapter.unsubscribeFromTrades() not implemented - use WS_CLIENT_TYPE=custom');
   }
 
   /**
@@ -478,7 +478,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
       return;
     }
 
-    this.logger.info('[PolymarketOfficialWsAdapter] Уничтожение (заглушка)');
+    this.logger.info('[PolymarketOfficialWsAdapter] Destroying (stub)');
 
     this._isDestroyed = true;
     this._isConnected = false;

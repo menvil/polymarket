@@ -394,7 +394,7 @@ export class Percentage {
    * ```typescript
    * const a = Percentage.fromNumber(10.0001);
    * const b = Percentage.fromNumber(10.0000);
-   * console.log(a.equals(b)); // true (в пределах epsilon)
+   * console.log(a.equals(b)); // true (within epsilon)
    * ```
    */
   public equals(other: Percentage): boolean {

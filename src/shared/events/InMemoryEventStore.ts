@@ -4,17 +4,17 @@
  * @remarks
  * Простая реализация EventStore для хранения истории всех domain events.
  *
- * Features:
- * - Сохранение всех событий в памяти (array)
- * - Поиск событий по типу/aggregateId/временному диапазону
- * - Replay событий (для debugging и testing)
- * - Очистка store (для тестов)
+ * Возможности:
+ * - Сохранение всех событий в памяти (массив)
+ * - Поиск событий по типу/идентификатору агрегата/временному диапазону
+ * - Воспроизведение событий (для отладки и тестирования)
+ * - Очистка хранилища (для тестов)
  *
  * Используется для:
- * - Debugging (просмотр истории событий)
- * - Testing (replay scenarios)
- * - Audit trail (кто/что/когда)
- * - Event sourcing (восстановление state из событий)
+ * - Отладка (просмотр истории событий)
+ * - Тестирование (воспроизведение сценариев)
+ * - Журнал аудита (кто/что/когда)
+ * - Источник событий (восстановление состояния из событий)
  *
  * @example
  * ```typescript
@@ -40,15 +40,15 @@ import type { DomainEvent } from '../../domain/events/DomainEvent.js';
 import type { ILogger } from '../../domain/ports/ILogger.js';
 
 /**
- * InMemoryEventStore class
+ * Класс InMemoryEventStore
  *
  * @remarks
- * Thread-safe для single-threaded JS (no synchronization needed).
+ * Потокобезопасен для однопоточного JS (синхронизация не требуется).
  * Хранит события в памяти до явной очистки или перезапуска процесса.
  */
 export class InMemoryEventStore {
   /**
-   * In-memory storage for events (append-only)
+   * Хранилище событий в памяти (только добавление)
    */
   private readonly events: DomainEvent[] = [];
 
@@ -68,13 +68,13 @@ export class InMemoryEventStore {
   }
 
   /**
-   * Append event to store
+   * Добавить событие в хранилище
    *
-   * @param event - Domain event to store
+   * @param event - Доменное событие для сохранения
    *
    * @remarks
-   * Append-only operation (no updates/deletes).
-   * Events are stored in order of append (not event timestamp).
+   * Операция только добавления (без обновлений/удалений).
+   * События хранятся в порядке добавления (не по временной метке события).
    *
    * @example
    * ```typescript
@@ -99,7 +99,7 @@ export class InMemoryEventStore {
    * ```
    */
   public getAll(): DomainEvent[] {
-    return [...this.events]; // return copy to prevent mutation
+    return [...this.events]; // возвращаем копию для предотвращения мутации
   }
 
   /**

@@ -33,9 +33,9 @@
  * });
  *
  * if (result.ok) {
- *   console.log(`Можно разместить ордер с размером ${result.normalizedSize}`);
+ *   console.log(`Can place order with size ${result.normalizedSize}`);
  * } else {
- *   console.error(`Нельзя разместить ордер: ${result.reason}`);
+ *   console.error(`Cannot place order: ${result.reason}`);
  * }
  * ```
  */
@@ -98,7 +98,7 @@ export interface IPortfolioAdapter {
    * @example
    * ```typescript
    * const balance = await adapter.getBalance();
-   * console.log(`Доступно: ${balance} USDC`);
+   * console.log(`Available: ${balance} USDC`);
    * ```
    */
   getBalance(): Promise<number>;
@@ -149,9 +149,9 @@ export interface IPortfolioAdapter {
    * });
    *
    * if (result.ok) {
-   *   console.log(`Можно разместить ордер с размером ${result.normalizedSize}`);
+   *   console.log(`Can place order with size ${result.normalizedSize}`);
    * } else {
-   *   console.error(`Нельзя разместить ордер: ${result.reason}`);
+   *   console.error(`Cannot place order: ${result.reason}`);
    * }
    * ```
    */

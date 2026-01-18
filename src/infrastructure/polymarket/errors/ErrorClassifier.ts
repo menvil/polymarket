@@ -372,7 +372,7 @@ export class ErrorClassifier {
    */
   clearCache(): void {
     this.cache.clear();
-    this.logger.warn('[ErrorClassifier] Кэш очищен');
+    this.logger.warn('[ErrorClassifier] Cache cleared');
   }
 
   /**

@@ -15,8 +15,8 @@ export class TradingError extends Error {
     this.code = code;
     this.timestamp = new Date();
 
-    // captureStackTrace - V8-specific API (Node.js, Chrome)
-    // Fallback для non-V8 environments (Firefox, Safari)
+    // captureStackTrace - специфичный для V8 API (Node.js, Chrome)
+    // Fallback для сред без V8 (Firefox, Safari)
     if (typeof Error.captureStackTrace === 'function') {
       Error.captureStackTrace(this, this.constructor);
     } else {

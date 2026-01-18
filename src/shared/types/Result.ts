@@ -84,7 +84,7 @@ export const Err = <E>(error: E): Result<never, E> => ({
  * ```typescript
  * const result = Ok(42);
  * if (isOk(result)) {
- *   console.log(result.value); // TypeScript знает что это Ok
+ *   console.log(result.value); // TypeScript knows this is Ok
  * }
  * ```
  */
@@ -101,7 +101,7 @@ export const isOk = <T, E>(result: Result<T, E>): result is { ok: true; value: T
  * ```typescript
  * const result = Err('error');
  * if (isErr(result)) {
- *   console.error(result.error); // TypeScript знает что это Err
+ *   console.error(result.error); // TypeScript knows this is Err
  * }
  * ```
  */
