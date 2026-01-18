@@ -435,12 +435,10 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
       const response = await fetch(url, {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
+          'Accept': 'application/json',
         },
         signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const errorBody = await response.text();
@@ -477,8 +475,6 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
 
       return data as T;
     } catch (error) {
-      clearTimeout(timeoutId);
-
       if ((error as Error).name === 'AbortError') {
         throw new ApiError(`Request timeout after ${this.config.timeout}ms`, {
           endpoint: url,
@@ -496,6 +492,8 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
         endpoint: url,
         method: 'GET',
       });
+    } finally {
+      clearTimeout(timeoutId);
     }
   }
 }

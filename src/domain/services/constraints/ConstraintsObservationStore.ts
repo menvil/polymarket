@@ -254,7 +254,7 @@ export class ConstraintsObservationStore {
 
       // Проверить TTL: если запись истекла, удалить и создать новую
       // Это предотвращает накопление устаревших наблюдений через длительные промежутки
-      if (now - existing.lastSeen > this.config.observationTTL) {
+      if (this.isExpired(existing, now)) {
         this.observations.delete(key);
 
         this.logger.trace('[ObservationStore] Удалено истёкшее наблюдение при observe()', {
@@ -351,7 +351,7 @@ export class ConstraintsObservationStore {
 
     // Проверить TTL с явной временной меткой
     const now = Date.now();
-    if (now - record.lastSeen > this.config.observationTTL) {
+    if (this.isExpired(record, now)) {
       // АГРЕССИВНАЯ очистка: удалить истёкшую запись немедленно
       this.observations.delete(key);
 
@@ -408,6 +408,17 @@ export class ConstraintsObservationStore {
   }
 
   /**
+   * Проверяет, истекла ли запись наблюдения
+   *
+   * @param record - Запись наблюдения для проверки
+   * @param now - Текущая временная метка
+   * @returns True если запись истекла
+   */
+  private isExpired(record: ObservationRecord, now: number): boolean {
+    return now - record.lastSeen >= this.config.observationTTL;
+  }
+
+  /**
    * Полная очистка: удалить все истёкшие наблюдения
    *
    * @remarks
@@ -433,18 +444,15 @@ export class ConstraintsObservationStore {
    */
   private fullCleanup(): void {
     const before = this.observations.size;
-    const now = Date.now(); // Явная временная метка для консистентности
+    const now = Date.now();
     const keysToDelete: string[] = [];
 
-    // Использовать Array.from чтобы избежать требования downlevelIteration
     for (const [key, record] of Array.from(this.observations.entries())) {
-      // Проверить TTL: now - lastSeen > observationTTL
-      if (now - record.lastSeen > this.config.observationTTL) {
+      if (this.isExpired(record, now)) {
         keysToDelete.push(key);
       }
     }
 
-    // Удалить все истёкшие записи
     for (const key of keysToDelete) {
       this.observations.delete(key);
     }

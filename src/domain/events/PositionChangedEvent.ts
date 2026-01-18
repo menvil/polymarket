@@ -143,9 +143,36 @@ export class PositionChangedEvent extends DomainEvent {
   }
 
   /**
-   * String representation
+   * Форматирует число со знаком
    *
-   * @returns Human-readable string
+   * @param value - Число для форматирования
+   * @returns Строка с явным знаком плюс для положительных чисел
+   */
+  private formatSignedNumber(value: number): string {
+    if (value >= 0) {
+      return `+${value}`;
+    }
+    return String(value);
+  }
+
+  /**
+   * Форматирует P&L как денежную строку со знаком
+   *
+   * @param amount - Сумма P&L
+   * @returns Отформатированная строка (например, "+$25.00" или "-$10.00")
+   */
+  private formatPnL(amount: number): string {
+    const absAmount = Math.abs(amount).toFixed(2);
+    if (amount >= 0) {
+      return `+$${absAmount}`;
+    }
+    return `-$${absAmount}`;
+  }
+
+  /**
+   * Строковое представление
+   *
+   * @returns Читаемая строка
    *
    * @example
    * ```typescript
@@ -155,8 +182,8 @@ export class PositionChangedEvent extends DomainEvent {
    * ```
    */
   public toString(): string {
-    const delta = this.deltaQuantity.value >= 0 ? `+${this.deltaQuantity.value}` : this.deltaQuantity.value;
-    const pnl = this.unrealizedPnl.amount >= 0 ? `+$${this.unrealizedPnl.amount.toFixed(2)}` : `-$${Math.abs(this.unrealizedPnl.amount).toFixed(2)}`;
+    const delta = this.formatSignedNumber(this.deltaQuantity.value);
+    const pnl = this.formatPnL(this.unrealizedPnl.amount);
     return `PositionChanged[${this.positionId}]: ${delta} → ${this.newQuantity.value} (unrealized: ${pnl})`;
   }
 }

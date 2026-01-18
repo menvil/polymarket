@@ -38,6 +38,9 @@ import type { PolymarketBalanceMapper } from '../mappers/PolymarketBalanceMapper
  * Реализует IBalanceProvider для Polymarket.
  */
 export class PolymarketBalanceProvider implements IBalanceProvider {
+  /** Виртуальный баланс для режима симуляции (1М USDC) */
+  private static readonly VIRTUAL_BALANCE = 1_000_000;
+
   constructor(
     private readonly balanceClient: PolymarketBalanceRestClient,
     private readonly mapper: PolymarketBalanceMapper,
@@ -50,32 +53,17 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    *
    * @returns Доступный баланс USDC (НЕ заблокированный в открытых заказах)
    * @throws {ApiError} Если вызов API завершился неудачей
-   *
-   * @example
-   * ```typescript
-   * const balance = await provider.getAvailableBalance();
-   * console.log(`Available: ${balance} USDC`);
-   * ```
    */
   async getAvailableBalance(): Promise<number> {
-    // В режиме симуляции возвращаем виртуальный баланс без вызова API
     if (this.simulationMode) {
-      const virtualBalance = 1000000; // 1М USDC виртуальный баланс
-      this.logger.debug('Getting available balance (SIMULATION MODE)', {
-        virtualBalance,
-      });
-      return virtualBalance;
+      return this.getSimulatedBalance('available');
     }
 
     this.logger.debug('Getting available balance');
-
     const rawBalances = await this.balanceClient.getBalances();
     const normalized = this.mapper.toDomainBalances(rawBalances);
 
-    this.logger.debug('Available balance retrieved', {
-      availableUSDC: normalized.availableUSDC,
-    });
-
+    this.logger.debug('Available balance retrieved', { availableUSDC: normalized.availableUSDC });
     return normalized.availableUSDC;
   }
 
@@ -85,33 +73,16 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    * @param tokenId - ID токена
    * @returns Баланс токенов исхода
    * @throws {ApiError} Если вызов API завершился неудачей
-   *
-   * @example
-   * ```typescript
-   * const balance = await provider.getOutcomeBalance('0x123');
-   * console.log(`Outcome tokens: ${balance}`);
-   * ```
    */
   async getOutcomeBalance(tokenId: string): Promise<number> {
-    // В режиме симуляции возвращаем виртуальный баланс исхода
     if (this.simulationMode) {
-      const virtualOutcomeBalance = 0; // Нет токенов исхода изначально
-      this.logger.debug('Getting outcome balance (SIMULATION MODE)', {
-        tokenId,
-        virtualOutcomeBalance,
-      });
-      return virtualOutcomeBalance;
+      return this.getSimulatedBalance('outcome', tokenId);
     }
 
     this.logger.debug('Getting outcome balance', { tokenId });
-
     const balance = await this.balanceClient.getOutcomeTokenBalance(tokenId);
 
-    this.logger.debug('Outcome balance retrieved', {
-      tokenId,
-      balance,
-    });
-
+    this.logger.debug('Outcome balance retrieved', { tokenId, balance });
     return balance;
   }
 
@@ -120,32 +91,17 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    *
    * @returns Заблокированный баланс USDC
    * @throws {ApiError} Если вызов API завершился неудачей
-   *
-   * @example
-   * ```typescript
-   * const locked = await provider.getLockedBalance();
-   * console.log(`Locked in orders: ${locked} USDC`);
-   * ```
    */
   async getLockedBalance(): Promise<number> {
-    // В режиме симуляции возвращаем виртуальный заблокированный баланс
     if (this.simulationMode) {
-      const virtualLockedBalance = 0; // Нет заблокированного баланса в симуляции
-      this.logger.debug('Getting locked balance (SIMULATION MODE)', {
-        virtualLockedBalance,
-      });
-      return virtualLockedBalance;
+      return this.getSimulatedBalance('locked');
     }
 
     this.logger.debug('Getting locked balance');
-
     const rawBalances = await this.balanceClient.getBalances();
     const normalized = this.mapper.toDomainBalances(rawBalances);
 
-    this.logger.debug('Locked balance retrieved', {
-      lockedUSDC: normalized.lockedUSDC,
-    });
-
+    this.logger.debug('Locked balance retrieved', { lockedUSDC: normalized.lockedUSDC });
     return normalized.lockedUSDC;
   }
 
@@ -154,32 +110,39 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    *
    * @returns Общий баланс USDC
    * @throws {ApiError} Если вызов API завершился неудачей
-   *
-   * @example
-   * ```typescript
-   * const total = await provider.getTotalBalance();
-   * console.log(`Total: ${total} USDC`);
-   * ```
    */
   async getTotalBalance(): Promise<number> {
-    // В режиме симуляции возвращаем виртуальный общий баланс
     if (this.simulationMode) {
-      const virtualTotalBalance = 1000000; // 1М USDC всего
-      this.logger.debug('Getting total balance (SIMULATION MODE)', {
-        virtualTotalBalance,
-      });
-      return virtualTotalBalance;
+      return this.getSimulatedBalance('total');
     }
 
     this.logger.debug('Getting total balance');
-
     const rawBalances = await this.balanceClient.getBalances();
     const normalized = this.mapper.toDomainBalances(rawBalances);
 
-    this.logger.debug('Total balance retrieved', {
-      totalUSDC: normalized.totalUSDC,
-    });
-
+    this.logger.debug('Total balance retrieved', { totalUSDC: normalized.totalUSDC });
     return normalized.totalUSDC;
+  }
+
+  /**
+   * Получить симулированный баланс для режима симуляции
+   *
+   * @param type - Тип баланса ('available' | 'locked' | 'total' | 'outcome')
+   * @param tokenId - ID токена (обязателен для типа 'outcome')
+   * @returns Виртуальный баланс
+   * @throws {Error} Если type === 'outcome' и tokenId не указан
+   */
+  private getSimulatedBalance(type: 'available' | 'locked' | 'total' | 'outcome', tokenId?: string): number {
+    if (type === 'outcome' && !tokenId) {
+      this.logger.warn('Getting outcome balance (SIMULATION MODE) without tokenId');
+      throw new Error('tokenId is required for outcome balance in simulation mode');
+    }
+
+    const balance =
+      type === 'locked' || type === 'outcome' ? 0 : PolymarketBalanceProvider.VIRTUAL_BALANCE;
+
+    const logContext = tokenId ? { balance, tokenId } : { balance };
+    this.logger.debug(`Getting ${type} balance (SIMULATION MODE)`, logContext);
+    return balance;
   }
 }

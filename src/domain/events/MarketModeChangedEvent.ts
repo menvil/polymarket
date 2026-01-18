@@ -31,9 +31,26 @@
 import { DomainEvent } from './DomainEvent.js';
 
 /**
- * Trading modes
+ * Режимы торговли
  */
 export type TradingMode = 'FLAT' | 'QUOTE' | 'SKEW' | 'UNWIND' | 'PANIC' | 'PAUSED';
+
+/**
+ * Ранжирование уровня риска для торговых режимов
+ *
+ * @remarks
+ * Используется для определения эскалации/деэскалации.
+ * Большие значения указывают на более высокий уровень риска.
+ * PAUSED нейтрален (-1) и исключён из логики эскалации.
+ */
+const MODE_RISK_RANK: Record<TradingMode, number> = {
+  FLAT: 0,
+  QUOTE: 1,
+  SKEW: 2,
+  UNWIND: 3,
+  PANIC: 4,
+  PAUSED: -1,
+};
 
 /**
  * MarketModeChangedEvent
@@ -43,37 +60,37 @@ export type TradingMode = 'FLAT' | 'QUOTE' | 'SKEW' | 'UNWIND' | 'PANIC' | 'PAUS
  */
 export class MarketModeChangedEvent extends DomainEvent {
   /**
-   * Creates MarketModeChangedEvent
+   * Создаёт MarketModeChangedEvent
    *
-   * @param fromMode - Previous trading mode
-   * @param toMode - New trading mode
-   * @param reason - Reason for mode change
-   * @param timestamp - When mode changed (default: now)
+   * @param fromMode - Предыдущий торговый режим
+   * @param toMode - Новый торговый режим
+   * @param reason - Причина изменения режима
+   * @param timestamp - Когда изменился режим (по умолчанию: сейчас)
    *
    * @example
    * ```typescript
-   * // Normal → Inventory management
+   * // Нормальный → Управление запасами
    * const event1 = new MarketModeChangedEvent(
    *   'QUOTE',
    *   'SKEW',
    *   'Net position: 750/1000 (75%)'
    * );
    *
-   * // Inventory → Unwind
+   * // Управление запасами → Закрытие
    * const event2 = new MarketModeChangedEvent(
    *   'SKEW',
    *   'UNWIND',
    *   'Net position: 900/1000 (90%), time to expiry: 2 hours'
    * );
    *
-   * // Unwind → Panic
+   * // Закрытие → Паника
    * const event3 = new MarketModeChangedEvent(
    *   'UNWIND',
    *   'PANIC',
    *   'Net position: 950/1000 (95%), time to expiry: 30 minutes'
    * );
    *
-   * // Panic → Paused
+   * // Паника → Пауза
    * const event4 = new MarketModeChangedEvent(
    *   'PANIC',
    *   'PAUSED',
@@ -91,9 +108,9 @@ export class MarketModeChangedEvent extends DomainEvent {
   }
 
   /**
-   * Gets event data for serialization
+   * Получает данные события для сериализации
    *
-   * @returns Event data
+   * @returns Данные события
    */
   protected getData(): Record<string, unknown> {
     return {
@@ -104,14 +121,23 @@ export class MarketModeChangedEvent extends DomainEvent {
   }
 
   /**
-   * Checks if mode escalated to higher risk
+   * Проверяет, включает ли переход режим PAUSED
    *
-   * @returns True if toMode is more aggressive than fromMode
+   * @returns True если fromMode или toMode равен PAUSED
+   */
+  private involvesPausedMode(): boolean {
+    return this.fromMode === 'PAUSED' || this.toMode === 'PAUSED';
+  }
+
+  /**
+   * Проверяет, произошла ли эскалация к более высокому риску
+   *
+   * @returns True если toMode более агрессивен чем fromMode
    *
    * @remarks
-   * Risk escalation order:
+   * Порядок эскалации риска:
    * FLAT < QUOTE < SKEW < UNWIND < PANIC
-   * PAUSED is considered neutral (not escalation)
+   * PAUSED считается нейтральным (не эскалация)
    *
    * @example
    * ```typescript
@@ -119,31 +145,20 @@ export class MarketModeChangedEvent extends DomainEvent {
    * console.log(event1.isEscalation()); // true
    *
    * const event2 = new MarketModeChangedEvent('SKEW', 'QUOTE', '...');
-   * console.log(event2.isEscalation()); // false (de-escalation)
+   * console.log(event2.isEscalation()); // false (деэскалация)
    * ```
    */
   public isEscalation(): boolean {
-    // PAUSED is neutral - transitions involving PAUSED are not escalations
-    if (this.fromMode === 'PAUSED' || this.toMode === 'PAUSED') {
+    if (this.involvesPausedMode()) {
       return false;
     }
-
-    const modeRank: Record<TradingMode, number> = {
-      FLAT: 0,
-      QUOTE: 1,
-      SKEW: 2,
-      UNWIND: 3,
-      PANIC: 4,
-      PAUSED: -1, // not used due to guard above
-    };
-
-    return modeRank[this.toMode] > modeRank[this.fromMode];
+    return MODE_RISK_RANK[this.toMode] > MODE_RISK_RANK[this.fromMode];
   }
 
   /**
-   * Checks if mode de-escalated to lower risk
+   * Проверяет, произошла ли деэскалация к более низкому риску
    *
-   * @returns True if toMode is less aggressive than fromMode
+   * @returns True если toMode менее агрессивен чем fromMode
    *
    * @example
    * ```typescript
@@ -152,27 +167,16 @@ export class MarketModeChangedEvent extends DomainEvent {
    * ```
    */
   public isDeescalation(): boolean {
-    // PAUSED is neutral - transitions involving PAUSED are not de-escalations
-    if (this.fromMode === 'PAUSED' || this.toMode === 'PAUSED') {
+    if (this.involvesPausedMode()) {
       return false;
     }
-
-    const modeRank: Record<TradingMode, number> = {
-      FLAT: 0,
-      QUOTE: 1,
-      SKEW: 2,
-      UNWIND: 3,
-      PANIC: 4,
-      PAUSED: -1, // not used due to guard above
-    };
-
-    return modeRank[this.toMode] < modeRank[this.fromMode];
+    return MODE_RISK_RANK[this.toMode] < MODE_RISK_RANK[this.fromMode];
   }
 
   /**
-   * Checks if entered panic mode
+   * Проверяет, активирован ли режим паники
    *
-   * @returns True if toMode is PANIC
+   * @returns True если toMode равен PANIC
    *
    * @example
    * ```typescript
@@ -187,9 +191,9 @@ export class MarketModeChangedEvent extends DomainEvent {
   }
 
   /**
-   * Checks if trading paused
+   * Проверяет, приостановлена ли торговля
    *
-   * @returns True if toMode is PAUSED
+   * @returns True если toMode равен PAUSED
    *
    * @example
    * ```typescript
@@ -204,9 +208,9 @@ export class MarketModeChangedEvent extends DomainEvent {
   }
 
   /**
-   * String representation
+   * Строковое представление события
    *
-   * @returns Human-readable string
+   * @returns Человекочитаемая строка
    *
    * @example
    * ```typescript
