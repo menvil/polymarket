@@ -262,16 +262,37 @@ export class ErrorClassifier {
     }
 
     const messageLower = structured.message.toLowerCase();
+    // Проверка сетевых ошибок - используем специфичные паттерны,
+    // избегая ложных срабатываний на "connection established", "network ready" и т.д.
     if (
+      // Коды ошибок (обычно специфичны для сбоев)
       code.includes('network') ||
       code.includes('timeout') ||
       code.includes('econnrefused') ||
+      code.includes('econnreset') ||
+      code.includes('enotfound') ||
+      code.includes('ehostunreach') ||
+      // Таймауты
       messageLower.includes('timed out') ||
       messageLower.includes('timeout') ||
+      // Специфичные сбои соединения (НЕ общее 'connection')
       messageLower.includes('connection refused') ||
-      messageLower.includes('connection') ||
-      messageLower.includes('network') ||
-      messageLower.includes('network error')
+      messageLower.includes('connection reset') ||
+      messageLower.includes('connection closed unexpectedly') ||
+      messageLower.includes('connection failed') ||
+      messageLower.includes('failed to connect') ||
+      messageLower.includes('could not connect') ||
+      messageLower.includes('cannot connect') ||
+      messageLower.includes('unable to connect') ||
+      // Сетевые сбои
+      messageLower.includes('network error') ||
+      messageLower.includes('network failure') ||
+      messageLower.includes('network unreachable') ||
+      messageLower.includes('no route to host') ||
+      messageLower.includes('socket hang up') ||
+      messageLower.includes('socket closed') ||
+      messageLower.includes('econnrefused') ||
+      messageLower.includes('econnreset')
     ) {
       return {
         type: 'NETWORK_ERROR',
