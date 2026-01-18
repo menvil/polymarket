@@ -38,6 +38,9 @@ import type { PolymarketBalanceMapper } from '../mappers/PolymarketBalanceMapper
  * Реализует IBalanceProvider для Polymarket.
  */
 export class PolymarketBalanceProvider implements IBalanceProvider {
+  /** Виртуальный баланс для режима симуляции (1М USDC) */
+  private static readonly VIRTUAL_BALANCE = 1_000_000;
+
   constructor(
     private readonly balanceClient: PolymarketBalanceRestClient,
     private readonly mapper: PolymarketBalanceMapper,
@@ -129,13 +132,11 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    * @returns Виртуальный баланс
    */
   private getSimulatedBalance(type: 'available' | 'locked' | 'total' | 'outcome', tokenId?: string): number {
-    const VIRTUAL_BALANCE = 1_000_000; // 1М USDC
-
     let balance: number;
     if (type === 'locked' || type === 'outcome') {
       balance = 0;
     } else {
-      balance = VIRTUAL_BALANCE;
+      balance = PolymarketBalanceProvider.VIRTUAL_BALANCE;
     }
 
     const logContext = tokenId ? { balance, tokenId } : { balance };
