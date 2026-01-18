@@ -387,6 +387,16 @@ export class Order {
     price: number,
     targetStatus: 'PARTIALLY_FILLED' | 'FILLED'
   ): Result<Order, string> {
+    // FSM transition check: only OPEN/PARTIALLY_FILLED orders can receive fills
+    const currentState = this.mapStatusToExecutionState(this.status);
+    const targetState = targetStatus === 'FILLED' ? OrderExecutionState.FILLED : OrderExecutionState.OPEN;
+
+    if (!isAllowedTransition(currentState, targetState)) {
+      return Err(
+        `FSM violation: cannot apply fill to order ${this.id} in state ${this.status} (transition ${currentState} → ${targetState} not allowed)`
+      );
+    }
+
     // Invariant checks
     if (filledDelta <= 0) {
       return Err(`Invariant violation: filledDelta ${filledDelta} <= 0 for order ${this.id}`);

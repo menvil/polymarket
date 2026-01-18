@@ -112,7 +112,7 @@ export class PolymarketOrderMapper {
     return {
       orderId: response.orderID, // API возвращает "orderID" с заглавной D
       tokenId: response.tokenId || '',
-      side: response.side === 'BUY' ? 'BUY' : 'SELL', // UPPERCASE
+      side: this.mapSide(response.side, response.orderID),
       price: this.parseNumber(response.price || '0'),
       size,
       sizeRemaining,
@@ -120,6 +120,33 @@ export class PolymarketOrderMapper {
       createdAt: response.timestamp || Date.now(),
       updatedAt: response.timestamp || Date.now(),
     };
+  }
+
+  /**
+   * Преобразует сторону API в сторону домена (UPPERCASE)
+   *
+   * @param apiSide - Сторона API (может быть в любом регистре или отсутствовать)
+   * @param orderId - ID ордера для логирования
+   * @returns Сторона домена ('BUY' | 'SELL')
+   */
+  private mapSide(apiSide: string | undefined, orderId: string | undefined): OrderSide {
+    if (!apiSide) {
+      this.logger.warn('Order side is missing, defaulting to BUY', { orderId });
+      return 'BUY';
+    }
+
+    const normalizedSide = apiSide.toUpperCase();
+
+    if (normalizedSide === 'BUY') {
+      return 'BUY';
+    }
+
+    if (normalizedSide === 'SELL') {
+      return 'SELL';
+    }
+
+    this.logger.warn('Unknown order side, defaulting to BUY', { apiSide, orderId });
+    return 'BUY';
   }
 
   /**
