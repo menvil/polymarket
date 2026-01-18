@@ -13,17 +13,19 @@
  * ```typescript
  * const mapper = new PolymarketPositionMapper();
  *
+ * // Формат Data API (числа, не строки)
  * const rawPosition = {
- *   tokenId: '0x123',
- *   quantity: '50.5',
- *   side: 'YES',
- *   averagePrice: '0.52',
- *   realizedPnl: '10.5',
- *   unrealizedPnl: '5.25',
+ *   asset: '0x123',
+ *   conditionId: 'market-456',
+ *   size: 50.5,
+ *   avgPrice: 0.52,
+ *   currentValue: 52.5,
+ *   cashPnl: 10.5,
+ *   percentPnl: 0.2,
  * };
  *
  * const normalized = mapper.toDomainPosition(rawPosition);
- * // { tokenId: '0x123', size: 50.5, averagePrice: 0.52, ... }
+ * // { tokenId: '0x123', marketId: 'market-456', size: 50.5, averagePrice: 0.52, ... }
  * ```
  */
 
@@ -66,18 +68,21 @@ export class PolymarketPositionMapper {
    * ```
    */
   toDomainPosition(response: ApiPositionResponse): PositionResponse {
-    // Data API возвращает числа напрямую, парсинг не требуется
-    const size = response.size;
-    const averagePrice = response.avgPrice;
-    const realizedPnl = response.cashPnl;
+    // ✅ Safe defaults: защита от null/undefined → NaN
+    // Data API возвращает числа напрямую, но поля могут отсутствовать
+    const size = response.size ?? 0;
+    const averagePrice = response.avgPrice ?? 0;
+    const realizedPnl = response.cashPnl ?? 0;
+    const currentValue = response.currentValue ?? 0;
 
     // Data API не возвращает unrealizedPnl отдельно, вычисляем из currentValue
     // currentValue = size * currentPrice, поэтому unrealized = (currentValue - size * avgPrice)
-    const unrealizedPnl = response.currentValue - size * averagePrice;
+    // Используем safe values для предотвращения NaN
+    const unrealizedPnl = currentValue - size * averagePrice;
 
     return {
-      tokenId: response.asset,
-      marketId: response.conditionId, // API возвращает conditionId, маппим на marketId
+      tokenId: response.asset ?? '',
+      marketId: response.conditionId ?? '', // API возвращает conditionId, маппим на marketId
       size,
       averagePrice,
       realizedPnl,

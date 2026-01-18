@@ -1,16 +1,16 @@
 /**
- * Money value object
- * 
+ * Value Object для денежной суммы
+ *
  * @remarks
- * Represents a monetary amount with currency.
- * Immutable value object for financial calculations.
- * 
- * Algorithm:
- * - Stores amount as number with fixed precision
- * - Provides arithmetic operations (add, subtract, multiply, divide)
- * - Validates amount is non-negative
- * - Ensures precision in calculations
- * 
+ * Представляет денежную сумму с валютой.
+ * Иммутабельный value object для финансовых вычислений.
+ *
+ * Алгоритм:
+ * - Хранит сумму как число с фиксированной точностью
+ * - Предоставляет арифметические операции (сложение, вычитание, умножение, деление)
+ * - Проверяет, что сумма неотрицательна
+ * - Обеспечивает точность при вычислениях
+ *
  * @example
  * ```typescript
  * const money = Money.fromUSDC(100.50);
@@ -23,16 +23,16 @@ export class Money {
   public readonly currency: string;
 
   private constructor(amount: number, currency: string) {
-    this.amount = Number(amount.toFixed(6)); // 6 decimal precision
+    this.amount = Number(amount.toFixed(6)); // 6 знаков после запятой
     this.currency = currency;
   }
 
   /**
-   * Creates Money from USDC amount
+   * Создаёт Money из суммы в USDC
    *
-   * @param amount - Amount in USDC (must be non-negative)
-   * @returns Money instance
-   * @throws {Error} If amount is negative
+   * @param amount - Сумма в USDC (должна быть неотрицательной)
+   * @returns Экземпляр Money
+   * @throws {Error} Если сумма отрицательная
    *
    * @example
    * ```typescript
@@ -47,18 +47,18 @@ export class Money {
   }
 
   /**
-   * Creates Money from signed USDC amount (can be negative)
+   * Создаёт Money из суммы в USDC со знаком (может быть отрицательной)
    *
-   * @param amount - Amount in USDC (can be negative for PnL)
-   * @returns Money instance
+   * @param amount - Сумма в USDC (может быть отрицательной для PnL)
+   * @returns Экземпляр Money
    *
    * @remarks
-   * Used for PnL calculations where negative values represent losses.
+   * Используется для расчётов PnL, где отрицательные значения представляют убытки.
    *
    * @example
    * ```typescript
-   * const profit = Money.fromSignedUSDC(10.5);   // profit
-   * const loss = Money.fromSignedUSDC(-5.2);     // loss
+   * const profit = Money.fromSignedUSDC(10.5);   // прибыль
+   * const loss = Money.fromSignedUSDC(-5.2);     // убыток
    * ```
    */
   public static fromSignedUSDC(amount: number): Money {
@@ -66,20 +66,20 @@ export class Money {
   }
 
   /**
-   * Creates zero money
-   * 
-   * @returns Money instance with zero amount
+   * Создаёт нулевую денежную сумму
+   *
+   * @returns Экземпляр Money с нулевой суммой
    */
   public static zero(): Money {
     return new Money(0, 'USDC');
   }
 
   /**
-   * Adds two money values
-   * 
-   * @param other - Money to add
-   * @returns New Money instance with sum
-   * @throws {Error} If currencies don't match
+   * Складывает две денежные суммы
+   *
+   * @param other - Money для сложения
+   * @returns Новый экземпляр Money с суммой
+   * @throws {Error} Если валюты не совпадают
    */
   public add(other: Money): Money {
     this.assertSameCurrency(other);
@@ -87,11 +87,11 @@ export class Money {
   }
 
   /**
-   * Subtracts money value
-   * 
-   * @param other - Money to subtract
-   * @returns New Money instance with difference
-   * @throws {Error} If currencies don't match or result is negative
+   * Вычитает денежную сумму
+   *
+   * @param other - Money для вычитания
+   * @returns Новый экземпляр Money с разностью
+   * @throws {Error} Если валюты не совпадают или результат отрицательный
    */
   public subtract(other: Money): Money {
     this.assertSameCurrency(other);
@@ -103,21 +103,21 @@ export class Money {
   }
 
   /**
-   * Multiplies by a factor
-   * 
-   * @param factor - Multiplication factor
-   * @returns New Money instance
+   * Умножает на коэффициент
+   *
+   * @param factor - Коэффициент умножения
+   * @returns Новый экземпляр Money
    */
   public multiply(factor: number): Money {
     return new Money(this.amount * factor, this.currency);
   }
 
   /**
-   * Divides by a factor
-   * 
-   * @param divisor - Division factor
-   * @returns New Money instance
-   * @throws {Error} If divisor is zero
+   * Делит на коэффициент
+   *
+   * @param divisor - Делитель
+   * @returns Новый экземпляр Money
+   * @throws {Error} Если делитель равен нулю
    */
   public divide(divisor: number): Money {
     if (divisor === 0) {
@@ -127,10 +127,10 @@ export class Money {
   }
 
   /**
-   * Checks if this money is greater than other
-   * 
-   * @param other - Money to compare
-   * @returns True if greater
+   * Проверяет, больше ли эта сумма чем другая
+   *
+   * @param other - Money для сравнения
+   * @returns True если больше
    */
   public isGreaterThan(other: Money): boolean {
     this.assertSameCurrency(other);
@@ -138,10 +138,10 @@ export class Money {
   }
 
   /**
-   * Checks if this money is less than other
-   * 
-   * @param other - Money to compare
-   * @returns True if less
+   * Проверяет, меньше ли эта сумма чем другая
+   *
+   * @param other - Money для сравнения
+   * @returns True если меньше
    */
   public isLessThan(other: Money): boolean {
     this.assertSameCurrency(other);
@@ -149,39 +149,39 @@ export class Money {
   }
 
   /**
-   * Checks if this money equals other
-   * 
-   * @param other - Money to compare
-   * @returns True if equal
+   * Проверяет, равна ли эта сумма другой
+   *
+   * @param other - Money для сравнения
+   * @returns True если равны
    */
   public equals(other: Money): boolean {
-    return this.currency === other.currency && 
+    return this.currency === other.currency &&
            Math.abs(this.amount - other.amount) < 0.000001;
   }
 
   /**
-   * Checks if amount is zero
-   * 
-   * @returns True if zero
+   * Проверяет, равна ли сумма нулю
+   *
+   * @returns True если ноль
    */
   public isZero(): boolean {
     return this.amount === 0;
   }
 
   /**
-   * Checks if amount is positive
-   * 
-   * @returns True if positive
+   * Проверяет, положительная ли сумма
+   *
+   * @returns True если положительная
    */
   public isPositive(): boolean {
     return this.amount > 0;
   }
 
   /**
-   * Formats as string
-   * 
-   * @param decimals - Number of decimal places
-   * @returns Formatted string
+   * Форматирует как строку
+   *
+   * @param decimals - Количество десятичных знаков
+   * @returns Отформатированная строка
    */
   public toString(decimals: number = 2): string {
     return `$${this.amount.toFixed(decimals)} ${this.currency}`;

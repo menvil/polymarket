@@ -252,17 +252,22 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
 
       try {
         // Проверяем: есть ли свежий ордер в открытых ордерах для этого токена?
-        const openOrders = await this.orderClient.getOpenOrders(params.tokenId);
+        const rawOpenOrders = await this.orderClient.getOpenOrders(params.tokenId);
+
+        // ✅ КРИТИЧНО: Нормализуем через mapper ПЕРЕД сравнением!
+        // Raw API возвращает: snake_case поля, строковые price/size, разный формат timestamp
+        // Без нормализации сравнение может дать false negative → ложный OrderRejected
+        const normalizedOrders = rawOpenOrders.map(raw => this.mapper.toDomainOrder(raw));
 
         // Ищем недавно созданный ордер с такими же параметрами
         const now = Date.now();
-        const recentOrder = openOrders.find((o: any) => {
-          const orderAge = now - (o.timestamp || 0);
+        const recentOrder = normalizedOrders.find(order => {
+          const orderAge = now - order.createdAt;
           const matchesParams =
-            o.tokenId === params.tokenId &&
-            o.side === params.side &&
-            Math.abs(parseFloat(o.price || '0') - params.price) < PolymarketExecutionAdapter.PRICE_TOLERANCE &&
-            Math.abs(parseFloat(o.size || '0') - params.size) < PolymarketExecutionAdapter.SIZE_TOLERANCE;
+            order.tokenId === params.tokenId &&
+            order.side === params.side &&
+            Math.abs(order.price - params.price) < PolymarketExecutionAdapter.PRICE_TOLERANCE &&
+            Math.abs(order.size - params.size) < PolymarketExecutionAdapter.SIZE_TOLERANCE;
 
           return orderAge < PolymarketExecutionAdapter.RECENT_ORDER_WINDOW_MS && matchesParams;
         });
@@ -270,14 +275,14 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         if (recentOrder) {
           // ✅ Ордер был размещён несмотря на ошибку API!
           this.logger.warn('Order was actually placed despite API error!', {
-            orderId: recentOrder.orderID,
+            orderId: recentOrder.orderId,
             tokenId: params.tokenId,
             side: params.side,
             apiError: error instanceof Error ? error.message : String(error),
           });
 
-          // Преобразуем в доменный формат
-          const domainOrder = this.mapper.toDomainOrder(recentOrder);
+          // Ордер уже нормализован - используем напрямую
+          const domainOrder = recentOrder;
 
           // Публикуем OrderAccepted (ордер реально принят!)
           const orderAcceptedEvent: OrderAccepted = {

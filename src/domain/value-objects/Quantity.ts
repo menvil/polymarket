@@ -1,9 +1,9 @@
 /**
- * Quantity value object
+ * Value Object для количества
  *
  * @remarks
- * Represents a quantity/size of shares in prediction markets.
- * Immutable value object with validation and rounding to tick size.
+ * Представляет количество/размер акций на рынках предсказаний.
+ * Иммутабельный value object с валидацией и округлением до размера тика.
  *
  * @example
  * ```typescript
@@ -12,13 +12,13 @@
  * console.log(rounded.value); // 10.5
  * ```
  */
-import { InvalidQuantityError } from '../../shared/errors/TradingError.js';
+import { InvalidQuantityError } from '../../shared/errors/index.js';
 
 export class Quantity {
   public readonly value: number;
 
-  // КРИТИЧНО: Default MIN_SIZE = 1 share (Polymarket minimum)
-  // Real orderMinSize from market info should override this
+  // КРИТИЧНО: По умолчанию MIN_SIZE = 1 акция (минимум Polymarket)
+  // Реальный orderMinSize из информации о рынке должен переопределять это значение
   private static readonly MIN_SIZE = 1;
   private static readonly DEFAULT_TICK = 0.01;
 
@@ -27,23 +27,23 @@ export class Quantity {
   }
 
   /**
-   * Creates Quantity from number
+   * Создаёт Quantity из числа
    *
-   * @param value - Quantity value (must be >= minSize)
-   * @param minSize - Minimum size (default 1 share, should use orderMinSize from market)
-   * @returns Quantity instance
-   * @throws {InvalidQuantityError} If quantity is invalid
+   * @param value - Значение количества (должно быть >= minSize)
+   * @param minSize - Минимальный размер (по умолчанию 1 акция, используйте orderMinSize из рынка)
+   * @returns Экземпляр Quantity
+   * @throws {InvalidQuantityError} Если количество невалидно
    *
    * @remarks
    * КРИТИЧНО: Всегда передавайте minSize из market info (orderMinSize)!
-   * Default = 1 share, но каждый маркет может иметь свой минимум.
+   * По умолчанию = 1 акция, но каждый маркет может иметь свой минимум.
    *
    * @example
    * ```typescript
-   * // Default (1 share)
+   * // По умолчанию (1 акция)
    * const qty = Quantity.fromNumber(10);
    *
-   * // With market-specific minSize
+   * // С минимальным размером из рынка
    * const qty = Quantity.fromNumber(10, marketInfo.orderMinSize || 1);
    * ```
    */
@@ -55,28 +55,28 @@ export class Quantity {
   }
 
   /**
-   * Creates zero quantity
+   * Создаёт нулевое количество
    *
-   * @returns Quantity with zero value
+   * @returns Quantity с нулевым значением
    */
   public static zero(): Quantity {
     return new Quantity(0);
   }
 
   /**
-   * Creates Quantity from market data without minimum size validation
+   * Создаёт Quantity из рыночных данных без валидации минимального размера
    *
-   * @param value - Quantity value (must be >= 0)
-   * @returns Quantity instance
+   * @param value - Значение количества (должно быть >= 0)
+   * @returns Экземпляр Quantity
    *
    * @remarks
-   * Use this for incoming market data (trades, fills) where the exchange
-   * may send quantities smaller than our MIN_SIZE for orders.
-   * For creating orders, use `fromNumber()` which enforces MIN_SIZE.
+   * Используйте для входящих рыночных данных (сделки, исполнения), где биржа
+   * может отправлять количества меньше нашего MIN_SIZE для ордеров.
+   * Для создания ордеров используйте `fromNumber()`, который проверяет MIN_SIZE.
    *
    * @example
    * ```typescript
-   * // For incoming trade from exchange
+   * // Для входящей сделки с биржи
    * const qty = Quantity.fromMarketData(0.07);
    * ```
    */
@@ -88,11 +88,11 @@ export class Quantity {
   }
 
   /**
-   * Validates quantity value
+   * Проверяет валидность количества
    *
-   * @param value - Value to validate
-   * @param minSize - Minimum size
-   * @returns True if valid
+   * @param value - Значение для проверки
+   * @param minSize - Минимальный размер
+   * @returns True если валидно
    */
   public static isValid(value: number, minSize: number = Quantity.MIN_SIZE): boolean {
     return (
@@ -104,13 +104,13 @@ export class Quantity {
   }
 
   /**
-   * Rounds to tick size
+   * Округляет до размера тика
    *
-   * @param tickSize - Tick size (default 0.1)
-   * @returns New Quantity rounded to tick
+   * @param tickSize - Размер тика (по умолчанию 0.1)
+   * @returns Новый Quantity округлённый до тика
    *
    * @remarks
-   * Rounds quantity to nearest tick size.
+   * Округляет количество до ближайшего размера тика.
    *
    * @example
    * ```typescript
@@ -126,10 +126,10 @@ export class Quantity {
   }
 
   /**
-   * Floors to tick size
+   * Округляет вниз до размера тика
    *
-   * @param tickSize - Tick size
-   * @returns New Quantity floored to tick
+   * @param tickSize - Размер тика
+   * @returns Новый Quantity округлённый вниз до тика
    */
   public floorToTick(tickSize: number = Quantity.DEFAULT_TICK): Quantity {
     const floored = Math.floor(this.value / tickSize) * tickSize;
@@ -138,10 +138,10 @@ export class Quantity {
   }
 
   /**
-   * Ceils to tick size
+   * Округляет вверх до размера тика
    *
-   * @param tickSize - Tick size
-   * @returns New Quantity ceiled to tick
+   * @param tickSize - Размер тика
+   * @returns Новый Quantity округлённый вверх до тика
    */
   public ceilToTick(tickSize: number = Quantity.DEFAULT_TICK): Quantity {
     const ceiled = Math.ceil(this.value / tickSize) * tickSize;
@@ -150,21 +150,21 @@ export class Quantity {
   }
 
   /**
-   * Adds quantities
+   * Складывает количества
    *
-   * @param other - Quantity to add
-   * @returns New Quantity
+   * @param other - Quantity для сложения
+   * @returns Новый Quantity
    */
   public add(other: Quantity): Quantity {
     return new Quantity(this.value + other.value);
   }
 
   /**
-   * Subtracts quantity
+   * Вычитает количество
    *
-   * @param other - Quantity to subtract
-   * @returns New Quantity
-   * @throws {Error} If result would be negative
+   * @param other - Quantity для вычитания
+   * @returns Новый Quantity
+   * @throws {Error} Если результат будет отрицательным
    */
   public subtract(other: Quantity): Quantity {
     const result = this.value - other.value;
@@ -175,21 +175,21 @@ export class Quantity {
   }
 
   /**
-   * Multiplies by factor
+   * Умножает на коэффициент
    *
-   * @param factor - Multiplication factor
-   * @returns New Quantity
+   * @param factor - Коэффициент умножения
+   * @returns Новый Quantity
    */
   public multiply(factor: number): Quantity {
     return new Quantity(Math.max(0, this.value * factor));
   }
 
   /**
-   * Divides by factor
+   * Делит на коэффициент
    *
-   * @param divisor - Division factor
-   * @returns New Quantity
-   * @throws {Error} If divisor is zero
+   * @param divisor - Делитель
+   * @returns Новый Quantity
+   * @throws {Error} Если делитель равен нулю
    */
   public divide(divisor: number): Quantity {
     if (divisor === 0) {
@@ -199,58 +199,58 @@ export class Quantity {
   }
 
   /**
-   * Checks if greater than other
+   * Проверяет, больше ли чем другое
    *
-   * @param other - Quantity to compare
-   * @returns True if greater
+   * @param other - Quantity для сравнения
+   * @returns True если больше
    */
   public isGreaterThan(other: Quantity): boolean {
     return this.value > other.value;
   }
 
   /**
-   * Checks if less than other
+   * Проверяет, меньше ли чем другое
    *
-   * @param other - Quantity to compare
-   * @returns True if less
+   * @param other - Quantity для сравнения
+   * @returns True если меньше
    */
   public isLessThan(other: Quantity): boolean {
     return this.value < other.value;
   }
 
   /**
-   * Checks if equal
+   * Проверяет равенство
    *
-   * @param other - Quantity to compare
-   * @returns True if equal (within epsilon)
+   * @param other - Quantity для сравнения
+   * @returns True если равны (в пределах epsilon)
    */
   public equals(other: Quantity): boolean {
     return Math.abs(this.value - other.value) < 0.0001;
   }
 
   /**
-   * Checks if zero
+   * Проверяет, равно ли нулю
    *
-   * @returns True if zero
+   * @returns True если ноль
    */
   public isZero(): boolean {
     return this.value === 0;
   }
 
   /**
-   * Checks if positive
+   * Проверяет, положительное ли значение
    *
-   * @returns True if positive
+   * @returns True если положительное
    */
   public isPositive(): boolean {
     return this.value > 0;
   }
 
   /**
-   * Converts to string
+   * Преобразует в строку
    *
-   * @param decimals - Number of decimals
-   * @returns Formatted string
+   * @param decimals - Количество десятичных знаков
+   * @returns Отформатированная строка
    */
   public toString(decimals: number = 2): string {
     return this.value.toFixed(decimals);

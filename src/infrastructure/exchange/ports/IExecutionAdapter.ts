@@ -68,6 +68,21 @@ export interface PlaceOrderParams {
 }
 
 /**
+ * Контекст для отмены ордера (для публикации события)
+ *
+ * @remarks
+ * Содержит информацию, необходимую для публикации OrderCancelled события.
+ */
+export interface CancelOrderContext {
+  /** ID рынка */
+  marketId: string;
+  /** ID токена */
+  tokenId: string;
+  /** ID стратегии */
+  strategyId: string;
+}
+
+/**
  * Ответ об исполнении/сделке (нормализованный)
  */
 export interface FillResponse {
@@ -120,7 +135,7 @@ export interface IExecutionAdapter {
    * ```typescript
    * const order = await adapter.postOrder({
    *   tokenId: '0x123',
-   *   side: 'buy',
+   *   side: 'BUY',
    *   price: 0.52,
    *   size: 100,
    * });
@@ -129,22 +144,13 @@ export interface IExecutionAdapter {
   postOrder(params: PlaceOrderParams): Promise<OrderResponse>;
 
   /**
-   * Параметры контекста для отмены ордера (для публикации события)
-   */
-  CancelOrderContext?: {
-    marketId: string;
-    tokenId: string;
-    strategyId: string;
-  };
-
-  /**
    * Отменить ордер (прямой вызов API)
    *
    * @param orderId - ID ордера для отмены
    * @param context - Контекст ордера для публикации события (marketId, tokenId, strategyId)
    * @throws {ApiError} Если вызов API завершился неудачей
    */
-  cancelOrder(orderId: string, context?: { marketId: string; tokenId: string; strategyId: string }): Promise<void>;
+  cancelOrder(orderId: string, context?: CancelOrderContext): Promise<void>;
 
   /**
    * Получить открытые ордера (прямой вызов API)

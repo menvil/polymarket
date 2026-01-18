@@ -107,7 +107,7 @@
  * - subscribeToTrades(tokenId, callback): void
  * - subscribeToMarket(upTokenId, downTokenId): Promise<void>
  * - unsubscribe(tokenId): void
- * - unsubscribeFromMarket(upTokenId, downTokenId): Promise<void>
+ * - unsubscribeFromMarket(upTokenId, downTokenId): void
  * - unsubscribeFromOrderbook(tokenId): void
  * - unsubscribeFromTrades(tokenId): void
  * - isSubscribed(tokenId): boolean
@@ -399,7 +399,7 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
    * **Шаги реализации:**
    * 1. Вызвать unsubscribe() для обоих токенов
    */
-  async unsubscribeFromMarket(_upTokenId: string, _downTokenId: string): Promise<void> {
+  unsubscribeFromMarket(_upTokenId: string, _downTokenId: string): void {
     throw new Error('PolymarketOfficialWsAdapter.unsubscribeFromMarket() не реализовано - используйте WS_CLIENT_TYPE=custom');
   }
 

@@ -441,10 +441,10 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
    *
    * @example
    * ```typescript
-   * await adapter.unsubscribeFromMarket(market.upTokenId, market.downTokenId);
+   * adapter.unsubscribeFromMarket(market.upTokenId, market.downTokenId);
    * ```
    */
-  public async unsubscribeFromMarket(upTokenId: string, downTokenId: string): Promise<void> {
+  public unsubscribeFromMarket(upTokenId: string, downTokenId: string): void {
     this.checkDestroyed();
 
     this.logger.info('Unsubscribing from market', {

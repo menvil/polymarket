@@ -28,7 +28,7 @@
  * // Проверить, может ли быть размещён ордер
  * const result = await adapter.canPlaceOrder({
  *   tokenId: '0x123',
- *   side: 'buy',
+ *   side: 'BUY',
  *   price: 0.52,
  *   size: 100,
  * });
@@ -140,7 +140,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
    * ```typescript
    * const result = await adapter.canPlaceOrder({
    *   tokenId: '0x123',
-   *   side: 'buy',
+   *   side: 'BUY',
    *   price: 0.52,
    *   size: 15.7777,
    * });

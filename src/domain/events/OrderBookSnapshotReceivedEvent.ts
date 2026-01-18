@@ -59,6 +59,10 @@ export interface OrderbookLevel {
  * НЕ содержит value objects - только примитивы для упрощения event sourcing.
  */
 export class OrderBookSnapshotReceivedEvent extends DomainEvent {
+  public readonly assetId: string;
+  public readonly bids: readonly OrderbookLevel[];
+  public readonly asks: readonly OrderbookLevel[];
+
   /**
    * Creates OrderBookSnapshotReceivedEvent
    *
@@ -70,6 +74,9 @@ export class OrderBookSnapshotReceivedEvent extends DomainEvent {
    * @remarks
    * Конструктор НЕ валидирует данные - это ответственность маппера.
    * Событие просто хранит данные как есть.
+   *
+   * bids/asks клонируются и замораживаются для истинной immutability,
+   * чтобы внешний код не мог мутировать внутреннее состояние события.
    *
    * bids/asks могут быть пустыми массивами (валидный случай - нет ликвидности).
    *
@@ -91,12 +98,16 @@ export class OrderBookSnapshotReceivedEvent extends DomainEvent {
    * ```
    */
   constructor(
-    public readonly assetId: string,
-    public readonly bids: readonly OrderbookLevel[],
-    public readonly asks: readonly OrderbookLevel[],
+    assetId: string,
+    bids: readonly OrderbookLevel[],
+    asks: readonly OrderbookLevel[],
     timestamp: Date = new Date()
   ) {
     super('OrderBookSnapshotReceived', timestamp);
+    this.assetId = assetId;
+    // Клонируем и замораживаем массивы и каждый уровень для истинной immutability
+    this.bids = Object.freeze(bids.map(level => Object.freeze({ price: level.price, size: level.size })));
+    this.asks = Object.freeze(asks.map(level => Object.freeze({ price: level.price, size: level.size })));
   }
 
   /**

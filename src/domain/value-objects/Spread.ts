@@ -1,18 +1,18 @@
 /**
- * Spread value object
+ * Value Object для спреда
  *
  * @remarks
- * Represents a bid-ask spread in prediction markets.
- * Immutable value object that encapsulates bid and ask prices with validation.
- * The spread width represents the difference between ask and bid prices.
+ * Представляет спред bid-ask на рынках предсказаний.
+ * Иммутабельный value object, инкапсулирующий цены bid и ask с валидацией.
+ * Ширина спреда представляет разницу между ценами ask и bid.
  *
- * Algorithm:
- * 1. Validates that bid price is less than or equal to ask price
- * 2. Stores both bid and ask as Price value objects
- * 3. Calculates spread width as (ask - bid)
- * 4. Calculates midpoint as (bid + ask) / 2
- * 5. All operations return new Spread instances (immutability)
- * 6. Provides percentage-based spread width calculation
+ * Алгоритм:
+ * 1. Проверяет, что цена bid меньше или равна цене ask
+ * 2. Хранит bid и ask как value objects Price
+ * 3. Вычисляет ширину спреда как (ask - bid)
+ * 4. Вычисляет середину как (bid + ask) / 2
+ * 5. Все операции возвращают новые экземпляры Spread (иммутабельность)
+ * 6. Предоставляет расчёт ширины спреда в процентах
  *
  * @example
  * ```typescript
@@ -29,10 +29,10 @@ import { Percentage } from './Percentage.js';
 import { TradingError } from '../../shared/errors/TradingError.js';
 
 /**
- * Invalid spread error
+ * Ошибка невалидного спреда
  *
  * @remarks
- * Thrown when spread is invalid (bid > ask).
+ * Выбрасывается когда спред невалиден (bid > ask).
  */
 export class InvalidSpreadError extends TradingError {
   constructor(
@@ -58,18 +58,18 @@ export class Spread {
   }
 
   /**
-   * Creates Spread from bid and ask prices
+   * Создаёт Spread из цен bid и ask
    *
-   * @param bid - Bid price
-   * @param ask - Ask price
-   * @returns Spread instance
-   * @throws {InvalidSpreadError} If bid > ask
+   * @param bid - Цена bid
+   * @param ask - Цена ask
+   * @returns Экземпляр Spread
+   * @throws {InvalidSpreadError} Если bid > ask
    *
    * @remarks
-   * Validates that bid <= ask. In prediction markets:
-   * - Bid is the highest price buyers are willing to pay
-   * - Ask is the lowest price sellers are willing to accept
-   * - Ask must be >= bid (no crossed markets)
+   * Проверяет, что bid <= ask. На рынках предсказаний:
+   * - Bid — это максимальная цена, которую покупатели готовы заплатить
+   * - Ask — это минимальная цена, по которой продавцы готовы продать
+   * - Ask должен быть >= bid (без пересечения рынка)
    *
    * @example
    * ```typescript
@@ -86,13 +86,13 @@ export class Spread {
   }
 
   /**
-   * Creates Spread from bid and ask numbers
+   * Создаёт Spread из чисел bid и ask
    *
-   * @param bid - Bid price value
-   * @param ask - Ask price value
-   * @returns Spread instance
-   * @throws {InvalidPriceError} If prices are invalid
-   * @throws {InvalidSpreadError} If bid > ask
+   * @param bid - Значение цены bid
+   * @param ask - Значение цены ask
+   * @returns Экземпляр Spread
+   * @throws {InvalidPriceError} Если цены невалидны
+   * @throws {InvalidSpreadError} Если bid > ask
    *
    * @example
    * ```typescript
@@ -106,14 +106,14 @@ export class Spread {
   }
 
   /**
-   * Creates zero-width spread (bid = ask)
+   * Создаёт спред с нулевой шириной (bid = ask)
    *
-   * @param price - Price for both bid and ask
-   * @returns Spread with zero width
+   * @param price - Цена для bid и ask
+   * @returns Spread с нулевой шириной
    *
    * @remarks
-   * Zero-width spread indicates a perfectly liquid market
-   * where bid and ask prices are the same.
+   * Спред с нулевой шириной указывает на идеально ликвидный рынок,
+   * где цены bid и ask совпадают.
    *
    * @example
    * ```typescript
@@ -127,28 +127,28 @@ export class Spread {
   }
 
   /**
-   * Validates spread
+   * Проверяет валидность спреда
    *
-   * @param bid - Bid price
-   * @param ask - Ask price
-   * @returns True if valid (bid <= ask)
+   * @param bid - Цена bid
+   * @param ask - Цена ask
+   * @returns True если валиден (bid <= ask)
    *
    * @remarks
-   * A valid spread requires bid <= ask.
-   * Equal prices (bid = ask) represent zero spread.
+   * Валидный спред требует bid <= ask.
+   * Равные цены (bid = ask) представляют нулевой спред.
    */
   public static isValid(bid: Price, ask: Price): boolean {
     return bid.value <= ask.value;
   }
 
   /**
-   * Calculates spread width
+   * Вычисляет ширину спреда
    *
-   * @returns Spread width (ask - bid)
+   * @returns Ширина спреда (ask - bid)
    *
    * @remarks
-   * Width represents the liquidity cost.
-   * Narrower spreads indicate more liquid markets.
+   * Ширина представляет стоимость ликвидности.
+   * Узкие спреды указывают на более ликвидные рынки.
    *
    * @example
    * ```typescript
@@ -161,20 +161,20 @@ export class Spread {
   }
 
   /**
-   * Calculates spread width as Percentage
+   * Вычисляет ширину спреда в процентах
    *
-   * @returns Spread width percentage relative to midpoint
+   * @returns Ширина спреда в процентах относительно середины
    *
    * @remarks
-   * Calculates: (width / midpoint) * 100
-   * This normalizes spread for comparison across different price levels.
+   * Вычисляет: (width / midpoint) * 100
+   * Это нормализует спред для сравнения на разных уровнях цен.
    *
    * @example
    * ```typescript
    * const spread = Spread.fromNumbers(0.48, 0.52);
    * const widthPct = spread.widthPercentage();
    * console.log(widthPct.value); // 8%
-   * // Calculation: (0.04 / 0.50) * 100 = 8%
+   * // Расчёт: (0.04 / 0.50) * 100 = 8%
    * ```
    */
   public widthPercentage(): Percentage {
@@ -187,13 +187,13 @@ export class Spread {
   }
 
   /**
-   * Calculates midpoint price
+   * Вычисляет среднюю цену
    *
-   * @returns Midpoint price (average of bid and ask)
+   * @returns Средняя цена (среднее bid и ask)
    *
    * @remarks
-   * Midpoint represents the theoretical "fair" price.
-   * Often used as reference price for analytics.
+   * Середина представляет теоретическую "справедливую" цену.
+   * Часто используется как референсная цена для аналитики.
    *
    * @example
    * ```typescript
@@ -208,12 +208,12 @@ export class Spread {
   }
 
   /**
-   * Checks if spread is zero-width
+   * Проверяет, имеет ли спред нулевую ширину
    *
-   * @returns True if bid equals ask (within epsilon)
+   * @returns True если bid равен ask (в пределах epsilon)
    *
    * @remarks
-   * Zero-width spread indicates perfect liquidity at this price level.
+   * Спред с нулевой шириной указывает на идеальную ликвидность на этом уровне цен.
    *
    * @example
    * ```typescript
@@ -229,14 +229,14 @@ export class Spread {
   }
 
   /**
-   * Checks if spread is wide
+   * Проверяет, широкий ли спред
    *
-   * @param threshold - Width threshold (default 0.05 = 5 cents)
-   * @returns True if width exceeds threshold
+   * @param threshold - Порог ширины (по умолчанию 0.05 = 5 центов)
+   * @returns True если ширина превышает порог
    *
    * @remarks
-   * Wide spreads indicate low liquidity or high uncertainty.
-   * Common threshold is 0.05 (5 cents) for prediction markets.
+   * Широкие спреды указывают на низкую ликвидность или высокую неопределённость.
+   * Типичный порог для рынков предсказаний — 0.05 (5 центов).
    *
    * @example
    * ```typescript
@@ -250,15 +250,15 @@ export class Spread {
   }
 
   /**
-   * Tightens spread by moving bid/ask closer
+   * Сужает спред, сдвигая bid/ask ближе друг к другу
    *
-   * @param amount - Amount to tighten (reduce width by 2x this amount)
-   * @returns New Spread with tightened width
+   * @param amount - Величина сужения (уменьшает ширину на 2x от этого значения)
+   * @returns Новый Spread с суженной шириной
    *
    * @remarks
-   * Moves bid up and ask down by the specified amount.
-   * Useful for market making strategies.
-   * If amount would cross the spread, returns zero-width spread at midpoint.
+   * Сдвигает bid вверх и ask вниз на указанную величину.
+   * Полезно для стратегий маркет-мейкинга.
+   * Если величина привела бы к пересечению, возвращает спред с нулевой шириной в середине.
    *
    * @example
    * ```typescript
@@ -280,14 +280,14 @@ export class Spread {
   }
 
   /**
-   * Widens spread by moving bid/ask apart
+   * Расширяет спред, раздвигая bid/ask
    *
-   * @param amount - Amount to widen (increase width by 2x this amount)
-   * @returns New Spread with widened width
+   * @param amount - Величина расширения (увеличивает ширину на 2x от этого значения)
+   * @returns Новый Spread с расширенной шириной
    *
    * @remarks
-   * Moves bid down and ask up by the specified amount.
-   * Respects price boundaries [0.01, 0.99].
+   * Сдвигает bid вниз и ask вверх на указанную величину.
+   * Соблюдает границы цен [0.01, 0.99].
    *
    * @example
    * ```typescript
@@ -305,14 +305,14 @@ export class Spread {
   }
 
   /**
-   * Shifts spread up or down
+   * Сдвигает спред вверх или вниз
    *
-   * @param amount - Amount to shift (positive = up, negative = down)
-   * @returns New Spread shifted by amount
+   * @param amount - Величина сдвига (положительное = вверх, отрицательное = вниз)
+   * @returns Новый Spread сдвинутый на величину
    *
    * @remarks
-   * Moves both bid and ask by the same amount.
-   * Preserves spread width. Respects price boundaries.
+   * Сдвигает и bid и ask на одинаковую величину.
+   * Сохраняет ширину спреда. Соблюдает границы цен.
    *
    * @example
    * ```typescript
@@ -320,7 +320,7 @@ export class Spread {
    * const shifted = spread.shift(0.05);
    * console.log(shifted.bid.value); // 0.53
    * console.log(shifted.ask.value); // 0.57
-   * console.log(shifted.width()); // 0.04 (unchanged)
+   * console.log(shifted.width()); // 0.04 (без изменений)
    * ```
    */
   public shift(amount: number): Spread {
@@ -330,10 +330,10 @@ export class Spread {
   }
 
   /**
-   * Checks if price is within spread
+   * Проверяет, находится ли цена внутри спреда
    *
-   * @param price - Price to check
-   * @returns True if bid <= price <= ask
+   * @param price - Цена для проверки
+   * @returns True если bid <= price <= ask
    *
    * @example
    * ```typescript
@@ -347,10 +347,10 @@ export class Spread {
   }
 
   /**
-   * Checks if spreads are equal
+   * Проверяет равенство спредов
    *
-   * @param other - Spread to compare
-   * @returns True if both bid and ask are equal
+   * @param other - Спред для сравнения
+   * @returns True если оба bid и ask равны
    *
    * @example
    * ```typescript
@@ -364,9 +364,9 @@ export class Spread {
   }
 
   /**
-   * Converts to string representation
+   * Преобразует в строковое представление
    *
-   * @returns String in format "bid-ask (width)"
+   * @returns Строка в формате "bid-ask (width)"
    *
    * @example
    * ```typescript
@@ -379,9 +379,9 @@ export class Spread {
   }
 
   /**
-   * Converts to object representation
+   * Преобразует в объектное представление
    *
-   * @returns Object with bid, ask, width, and midpoint
+   * @returns Объект с bid, ask, width и midpoint
    *
    * @example
    * ```typescript

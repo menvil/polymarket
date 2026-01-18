@@ -45,7 +45,7 @@
  * ```
  */
 
-import type { ILogger } from '../../../domain/ports/ILogger.js';
+import type { ILogger } from '../../ports/ILogger.js';
 
 /**
  * Типы нарушений ограничений
@@ -142,10 +142,72 @@ export class ConstraintsObservationStore {
     private readonly config: ConstraintsObservationStoreConfig,
     private readonly logger: ILogger
   ) {
+    // Валидация конфига для предотвращения ошибок в рантайме
+    this.validateConfig(config);
+
     this.maxSize = config.maxObservations ?? 10000;
 
-    if (config.cleanupInterval) {
+    if (config.cleanupInterval && config.cleanupInterval > 0) {
       this.startPeriodicCleanup();
+    }
+
+    this.logger.debug('[ObservationStore] Инициализирован', {
+      minObservations: config.minObservations,
+      confidenceThreshold: config.confidenceThreshold,
+      observationTTL: config.observationTTL,
+      maxObservations: this.maxSize,
+      cleanupInterval: config.cleanupInterval,
+    });
+  }
+
+  /**
+   * Валидация конфигурации хранилища
+   *
+   * @param config - Конфигурация для валидации
+   * @throws {Error} При невалидных значениях конфигурации
+   *
+   * @remarks
+   * Проверяет:
+   * - minObservations > 0 (защита от деления на ноль в getConfidence)
+   * - confidenceThreshold в диапазоне (0, 1]
+   * - observationTTL > 0
+   * - maxObservations > 0 (если указан)
+   * - cleanupInterval > 0 (если указан)
+   */
+  private validateConfig(config: ConstraintsObservationStoreConfig): void {
+    // minObservations > 0 (деление на ноль в getConfidence)
+    if (config.minObservations <= 0) {
+      throw new Error(
+        `[ObservationStore] Invalid config: minObservations must be > 0, got ${config.minObservations}`
+      );
+    }
+
+    // confidenceThreshold в диапазоне (0, 1]
+    if (config.confidenceThreshold <= 0 || config.confidenceThreshold > 1) {
+      throw new Error(
+        `[ObservationStore] Invalid config: confidenceThreshold must be in range (0, 1], got ${config.confidenceThreshold}`
+      );
+    }
+
+    // observationTTL > 0
+    if (config.observationTTL <= 0) {
+      throw new Error(
+        `[ObservationStore] Invalid config: observationTTL must be > 0, got ${config.observationTTL}`
+      );
+    }
+
+    // maxObservations > 0 (если указан)
+    if (config.maxObservations !== undefined && config.maxObservations <= 0) {
+      throw new Error(
+        `[ObservationStore] Invalid config: maxObservations must be > 0, got ${config.maxObservations}`
+      );
+    }
+
+    // cleanupInterval > 0 (если указан)
+    if (config.cleanupInterval !== undefined && config.cleanupInterval <= 0) {
+      this.logger.warn('[ObservationStore] Invalid cleanupInterval <= 0, периодическая очистка отключена', {
+        cleanupInterval: config.cleanupInterval,
+      });
     }
   }
 
@@ -401,23 +463,66 @@ export class ConstraintsObservationStore {
     }
   }
 
+  /** Минимальный интервал очистки (1 секунда) */
+  private static readonly MIN_CLEANUP_INTERVAL_MS = 1000;
+  /** Максимальный интервал очистки (24 часа) */
+  private static readonly MAX_CLEANUP_INTERVAL_MS = 86400000;
+
   /**
    * Запустить таймер периодической очистки
    *
    * @remarks
    * Вызывает fullCleanup() каждые cleanupInterval мс.
    * Таймер не удерживает процесс живым (unref()).
+   *
+   * Валидация cleanupInterval:
+   * - Должен быть конечным числом
+   * - Минимум MIN_CLEANUP_INTERVAL_MS (1 секунда)
+   * - Максимум MAX_CLEANUP_INTERVAL_MS (24 часа)
+   * - При невалидном значении очистка не запускается (логируется предупреждение)
    */
   private startPeriodicCleanup(): void {
+    const interval = this.config.cleanupInterval;
+
+    // Валидация: должен быть конечным числом
+    if (typeof interval !== 'number' || !Number.isFinite(interval)) {
+      this.logger.warn('[ObservationStore] cleanupInterval не является конечным числом, периодическая очистка отключена', {
+        cleanupInterval: interval,
+        type: typeof interval,
+      });
+      return;
+    }
+
+    // Валидация: минимальный интервал
+    if (interval < ConstraintsObservationStore.MIN_CLEANUP_INTERVAL_MS) {
+      this.logger.warn('[ObservationStore] cleanupInterval слишком мал, периодическая очистка отключена', {
+        cleanupInterval: interval,
+        minRequired: ConstraintsObservationStore.MIN_CLEANUP_INTERVAL_MS,
+      });
+      return;
+    }
+
+    // Валидация: максимальный интервал
+    if (interval > ConstraintsObservationStore.MAX_CLEANUP_INTERVAL_MS) {
+      this.logger.warn('[ObservationStore] cleanupInterval слишком велик, периодическая очистка отключена', {
+        cleanupInterval: interval,
+        maxAllowed: ConstraintsObservationStore.MAX_CLEANUP_INTERVAL_MS,
+      });
+      return;
+    }
+
+    // Интервал валиден - запускаем таймер
     this.cleanupTimer = setInterval(() => {
       this.fullCleanup();
-    }, this.config.cleanupInterval!);
+    }, interval);
 
     // Не удерживать процесс живым
     this.cleanupTimer.unref();
 
     this.logger.info('[ObservationStore] Периодическая очистка запущена', {
-      interval: this.config.cleanupInterval,
+      interval,
+      minInterval: ConstraintsObservationStore.MIN_CLEANUP_INTERVAL_MS,
+      maxInterval: ConstraintsObservationStore.MAX_CLEANUP_INTERVAL_MS,
     });
   }
 

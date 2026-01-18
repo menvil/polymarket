@@ -109,10 +109,10 @@ export interface IPortfolioAdapter {
    * ```typescript
    * const upTokenId = market.outcomes[0].tokenId;
    * const orderbook = await portfolioAdapter.getOrderBook(upTokenId);
-   * const bestBid = orderbook.bids[0];
-   * const bestAsk = orderbook.asks[0];
-   * const spread = bestAsk.price.value - bestBid.price.value;
-   * console.log(`Best bid: ${bestBid.price.value}, Best ask: ${bestAsk.price.value}, Spread: ${spread}`);
+   * const bestBid = orderbook.getBestBid();
+   * const bestAsk = orderbook.getBestAsk();
+   * const spread = orderbook.getSpread();
+   * console.log(`Best bid: ${bestBid?.value}, Best ask: ${bestAsk?.value}, Spread: ${spread?.width()}`);
    * ```
    */
   getOrderBook(tokenId: string): Promise<Orderbook>;

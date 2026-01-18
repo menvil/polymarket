@@ -38,7 +38,7 @@
  *
  * const order = await adapter.placeOrder({
  *   tokenId: '0x123',
- *   side: 'buy',
+ *   side: 'BUY',
  *   price: 0.52,
  *   size: 100,
  * });
@@ -111,7 +111,7 @@ export class PolymarketRestAdapter {
    * ```typescript
    * const order = await adapter.placeOrder({
    *   tokenId: '0x123',
-   *   side: 'buy',
+   *   side: 'BUY',
    *   price: 0.52,
    *   size: 100,
    * });

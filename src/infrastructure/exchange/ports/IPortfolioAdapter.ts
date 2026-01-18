@@ -27,7 +27,7 @@
  * // Проверка возможности размещения ордера
  * const result = await adapter.canPlaceOrder({
  *   tokenId: '0x123',
- *   side: 'buy',
+ *   side: 'BUY',
  *   price: 0.52,
  *   size: 100,
  * });
@@ -143,7 +143,7 @@ export interface IPortfolioAdapter {
    * ```typescript
    * const result = await adapter.canPlaceOrder({
    *   tokenId: '0x123',
-   *   side: 'buy',
+   *   side: 'BUY',
    *   price: 0.52,
    *   size: 15.7777,
    * });

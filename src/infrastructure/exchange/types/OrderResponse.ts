@@ -1,4 +1,4 @@
-/**
+ /**
  * Унифицированный тип ответа с ордером
  *
  * @remarks
@@ -54,4 +54,5 @@ export type OrderSide = 'BUY' | 'SELL';
  * Унифицировано с domain layer (Order.ts).
  * Используется американское написание CANCELED (не CANCELLED).
  */
-export type OrderStatus = 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED';
+export type OrderStatus = 'OPEN' |
+    'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED';

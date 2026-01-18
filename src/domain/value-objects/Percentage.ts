@@ -1,17 +1,17 @@
 /**
- * Percentage value object
+ * Value Object для процента
  *
  * @remarks
- * Represents a percentage value in the range [0, 100].
- * Immutable value object with validation, arithmetic operations, and formatting.
- * Used for representing gains, losses, fees, and other percentage-based metrics.
+ * Представляет процентное значение в диапазоне [0, 100].
+ * Иммутабельный value object с валидацией, арифметическими операциями и форматированием.
+ * Используется для представления прибыли, убытков, комиссий и других процентных метрик.
  *
- * Algorithm:
- * 1. Validates that value is finite and within [0, 100] range
- * 2. Stores value as decimal percentage (e.g., 50 for 50%)
- * 3. Provides conversion to/from decimal (0.5 for 50%) and basis points
- * 4. All arithmetic operations return new Percentage instances (immutability)
- * 5. Supports comparison operations with epsilon for floating-point equality
+ * Алгоритм:
+ * 1. Проверяет, что значение конечное и в диапазоне [0, 100]
+ * 2. Хранит значение как десятичный процент (например, 50 для 50%)
+ * 3. Предоставляет конвертацию в/из десятичной дроби (0.5 для 50%) и базисных пунктов
+ * 4. Все арифметические операции возвращают новые экземпляры Percentage (иммутабельность)
+ * 5. Поддерживает операции сравнения с epsilon для равенства чисел с плавающей точкой
  *
  * @example
  * ```typescript
@@ -25,10 +25,10 @@
 import { TradingError } from '../../shared/errors/TradingError.js';
 
 /**
- * Invalid percentage error
+ * Ошибка невалидного процента
  *
  * @remarks
- * Thrown when percentage value is outside valid range [0, 100] or is not a finite number.
+ * Выбрасывается когда процентное значение вне допустимого диапазона [0, 100] или не является конечным числом.
  */
 export class InvalidPercentageError extends TradingError {
   constructor(public readonly percentage: number) {
@@ -51,11 +51,11 @@ export class Percentage {
   }
 
   /**
-   * Creates Percentage from number (0-100 scale)
+   * Создаёт Percentage из числа (шкала 0-100)
    *
-   * @param value - Percentage value [0, 100]
-   * @returns Percentage instance
-   * @throws {InvalidPercentageError} If percentage is out of range or not finite
+   * @param value - Процентное значение [0, 100]
+   * @returns Экземпляр Percentage
+   * @throws {InvalidPercentageError} Если процент вне диапазона или не конечный
    *
    * @example
    * ```typescript
@@ -70,15 +70,15 @@ export class Percentage {
   }
 
   /**
-   * Creates Percentage from decimal (0-1 scale)
+   * Создаёт Percentage из десятичной дроби (шкала 0-1)
    *
-   * @param decimal - Decimal value [0, 1]
-   * @returns Percentage instance
-   * @throws {InvalidPercentageError} If decimal is out of range
+   * @param decimal - Десятичное значение [0, 1]
+   * @returns Экземпляр Percentage
+   * @throws {InvalidPercentageError} Если десятичное значение вне диапазона
    *
    * @remarks
-   * Converts decimal representation to percentage.
-   * Example: 0.5 becomes 50%, 0.025 becomes 2.5%
+   * Преобразует десятичное представление в процент.
+   * Пример: 0.5 становится 50%, 0.025 становится 2.5%
    *
    * @example
    * ```typescript
@@ -95,15 +95,15 @@ export class Percentage {
   }
 
   /**
-   * Creates Percentage from basis points
+   * Создаёт Percentage из базисных пунктов
    *
-   * @param bps - Basis points (1 bp = 0.01%)
-   * @returns Percentage instance
-   * @throws {InvalidPercentageError} If resulting percentage is out of range
+   * @param bps - Базисные пункты (1 bp = 0.01%)
+   * @returns Экземпляр Percentage
+   * @throws {InvalidPercentageError} Если результирующий процент вне диапазона
    *
    * @remarks
-   * Converts basis points to percentage.
-   * Example: 100 bps = 1%, 250 bps = 2.5%
+   * Преобразует базисные пункты в процент.
+   * Пример: 100 bps = 1%, 250 bps = 2.5%
    *
    * @example
    * ```typescript
@@ -119,11 +119,11 @@ export class Percentage {
   }
 
   /**
-   * Creates Percentage from string
+   * Создаёт Percentage из строки
    *
-   * @param value - Percentage as string (with or without '%' symbol)
-   * @returns Percentage instance
-   * @throws {InvalidPercentageError} If string is invalid
+   * @param value - Процент в виде строки (с символом '%' или без)
+   * @returns Экземпляр Percentage
+   * @throws {InvalidPercentageError} Если строка невалидна
    *
    * @example
    * ```typescript
@@ -141,9 +141,9 @@ export class Percentage {
   }
 
   /**
-   * Creates zero percentage
+   * Создаёт нулевой процент
    *
-   * @returns Percentage with 0% value
+   * @returns Percentage со значением 0%
    *
    * @example
    * ```typescript
@@ -156,9 +156,9 @@ export class Percentage {
   }
 
   /**
-   * Creates 100% percentage
+   * Создаёт 100% процент
    *
-   * @returns Percentage with 100% value
+   * @returns Percentage со значением 100%
    *
    * @example
    * ```typescript
@@ -171,15 +171,15 @@ export class Percentage {
   }
 
   /**
-   * Validates percentage value
+   * Проверяет валидность процентного значения
    *
-   * @param value - Value to validate
-   * @returns True if valid
+   * @param value - Значение для проверки
+   * @returns True если валидно
    *
    * @remarks
-   * Valid percentage must be:
-   * - A finite number
-   * - Between 0 and 100 (inclusive)
+   * Валидный процент должен быть:
+   * - Конечным числом
+   * - Между 0 и 100 (включительно)
    */
   public static isValid(value: number): boolean {
     return (
@@ -191,13 +191,13 @@ export class Percentage {
   }
 
   /**
-   * Converts to decimal (0-1 scale)
+   * Преобразует в десятичную дробь (шкала 0-1)
    *
-   * @returns Decimal representation
+   * @returns Десятичное представление
    *
    * @remarks
-   * Converts percentage to decimal for calculations.
-   * Example: 50% becomes 0.5, 2.5% becomes 0.025
+   * Преобразует процент в десятичную дробь для вычислений.
+   * Пример: 50% становится 0.5, 2.5% становится 0.025
    *
    * @example
    * ```typescript
@@ -210,13 +210,13 @@ export class Percentage {
   }
 
   /**
-   * Converts to basis points
+   * Преобразует в базисные пункты
    *
-   * @returns Basis points (1 bp = 0.01%)
+   * @returns Базисные пункты (1 bp = 0.01%)
    *
    * @remarks
-   * Converts percentage to basis points.
-   * Example: 2.5% becomes 250 bps, 1% becomes 100 bps
+   * Преобразует процент в базисные пункты.
+   * Пример: 2.5% становится 250 bps, 1% становится 100 bps
    *
    * @example
    * ```typescript
@@ -229,13 +229,13 @@ export class Percentage {
   }
 
   /**
-   * Adds percentages
+   * Складывает проценты
    *
-   * @param other - Percentage to add
-   * @returns New Percentage clamped to [0, 100]
+   * @param other - Процент для сложения
+   * @returns Новый Percentage ограниченный диапазоном [0, 100]
    *
    * @remarks
-   * Adds two percentages together, clamping result to max 100%
+   * Складывает два процента, ограничивая результат максимумом 100%
    *
    * @example
    * ```typescript
@@ -251,13 +251,13 @@ export class Percentage {
   }
 
   /**
-   * Subtracts percentage
+   * Вычитает процент
    *
-   * @param other - Percentage to subtract
-   * @returns New Percentage clamped to [0, 100]
+   * @param other - Процент для вычитания
+   * @returns Новый Percentage ограниченный диапазоном [0, 100]
    *
    * @remarks
-   * Subtracts percentage, clamping result to min 0%
+   * Вычитает процент, ограничивая результат минимумом 0%
    *
    * @example
    * ```typescript
@@ -273,13 +273,13 @@ export class Percentage {
   }
 
   /**
-   * Multiplies by factor
+   * Умножает на коэффициент
    *
-   * @param factor - Multiplication factor
-   * @returns New Percentage clamped to [0, 100]
+   * @param factor - Коэффициент умножения
+   * @returns Новый Percentage ограниченный диапазоном [0, 100]
    *
    * @remarks
-   * Multiplies percentage by a factor, clamping to valid range
+   * Умножает процент на коэффициент, ограничивая до допустимого диапазона
    *
    * @example
    * ```typescript
@@ -298,14 +298,14 @@ export class Percentage {
   }
 
   /**
-   * Divides by factor
+   * Делит на коэффициент
    *
-   * @param divisor - Division factor
-   * @returns New Percentage
-   * @throws {Error} If divisor is zero
+   * @param divisor - Делитель
+   * @returns Новый Percentage
+   * @throws {Error} Если делитель равен нулю
    *
    * @remarks
-   * Divides percentage by a factor
+   * Делит процент на коэффициент
    *
    * @example
    * ```typescript
@@ -321,14 +321,14 @@ export class Percentage {
   }
 
   /**
-   * Applies percentage to a value
+   * Применяет процент к значению
    *
-   * @param value - Base value
-   * @returns Calculated amount (value * percentage)
+   * @param value - Базовое значение
+   * @returns Вычисленная сумма (value * percentage)
    *
    * @remarks
-   * Calculates the percentage amount of a value.
-   * Example: 10% of 1000 = 100
+   * Вычисляет процентную долю от значения.
+   * Пример: 10% от 1000 = 100
    *
    * @example
    * ```typescript
@@ -342,10 +342,10 @@ export class Percentage {
   }
 
   /**
-   * Checks if greater than other
+   * Проверяет, больше ли чем другой
    *
-   * @param other - Percentage to compare
-   * @returns True if greater
+   * @param other - Процент для сравнения
+   * @returns True если больше
    *
    * @example
    * ```typescript
@@ -359,10 +359,10 @@ export class Percentage {
   }
 
   /**
-   * Checks if less than other
+   * Проверяет, меньше ли чем другой
    *
-   * @param other - Percentage to compare
-   * @returns True if less
+   * @param other - Процент для сравнения
+   * @returns True если меньше
    *
    * @example
    * ```typescript
@@ -376,19 +376,19 @@ export class Percentage {
   }
 
   /**
-   * Checks if percentages are equal
+   * Проверяет равенство процентов
    *
-   * @param other - Percentage to compare
-   * @returns True if equal (within epsilon)
+   * @param other - Процент для сравнения
+   * @returns True если равны (в пределах epsilon)
    *
    * @remarks
-   * Uses epsilon comparison for floating-point equality
+   * Использует сравнение с epsilon для равенства чисел с плавающей точкой
    *
    * @example
    * ```typescript
    * const a = Percentage.fromNumber(10.0001);
    * const b = Percentage.fromNumber(10.0000);
-   * console.log(a.equals(b)); // true (within epsilon)
+   * console.log(a.equals(b)); // true (в пределах epsilon)
    * ```
    */
   public equals(other: Percentage): boolean {
@@ -396,9 +396,9 @@ export class Percentage {
   }
 
   /**
-   * Checks if zero
+   * Проверяет, равно ли нулю
    *
-   * @returns True if zero
+   * @returns True если ноль
    *
    * @example
    * ```typescript
@@ -411,9 +411,9 @@ export class Percentage {
   }
 
   /**
-   * Checks if positive
+   * Проверяет, положительное ли значение
    *
-   * @returns True if positive (> 0)
+   * @returns True если положительное (> 0)
    *
    * @example
    * ```typescript
@@ -426,10 +426,10 @@ export class Percentage {
   }
 
   /**
-   * Converts to string with percentage symbol
+   * Преобразует в строку с символом процента
    *
-   * @param decimals - Number of decimal places (default 2)
-   * @returns Formatted string (e.g., "25.50%")
+   * @param decimals - Количество десятичных знаков (по умолчанию 2)
+   * @returns Отформатированная строка (например, "25.50%")
    *
    * @example
    * ```typescript
@@ -443,10 +443,10 @@ export class Percentage {
   }
 
   /**
-   * Converts to plain number string
+   * Преобразует в простую числовую строку
    *
-   * @param decimals - Number of decimal places (default 2)
-   * @returns Formatted number string (e.g., "25.50")
+   * @param decimals - Количество десятичных знаков (по умолчанию 2)
+   * @returns Отформатированная числовая строка (например, "25.50")
    *
    * @example
    * ```typescript

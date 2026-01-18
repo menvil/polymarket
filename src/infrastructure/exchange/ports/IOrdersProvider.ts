@@ -45,7 +45,7 @@ export interface IOrdersProvider {
    * @throws {ApiError} Если вызов API завершился неудачей
    *
    * @remarks
-   * Возвращает только ордера со статусом 'open' или 'partially_filled'.
+   * Возвращает только ордера со статусом 'OPEN' или 'PARTIALLY_FILLED'.
    * Исполненные и отменённые ордера исключены.
    *
    * @example

@@ -1,9 +1,9 @@
 /**
- * Value Objects barrel export
- * 
+ * Barrel экспорт Value Objects
+ *
  * @remarks
- * Exports all value objects for convenient importing.
- * Value objects are immutable and represent concepts without identity.
+ * Экспортирует все value objects для удобного импорта.
+ * Value objects являются иммутабельными и представляют концепции без идентичности.
  */
 export { Money } from './Money.js';
 export { Price } from './Price.js';

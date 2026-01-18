@@ -1,9 +1,9 @@
 /**
- * Price value object
+ * Value Object для цены
  *
  * @remarks
- * Represents a price in prediction markets [0.0001, 0.9999].
- * Immutable value object with validation and rounding.
+ * Представляет цену на рынках предсказаний [0.0001, 0.9999].
+ * Иммутабельный value object с валидацией и округлением.
  *
  * Диапазон расширен с [0.01, 0.99] до [0.0001, 0.9999] для:
  * - Обработки edge-case цен близких к 0 или 1
@@ -13,7 +13,7 @@
  * ```typescript
  * const price = Price.fromNumber(0.5234);
  * console.log(price.value); // 0.5234
- * console.log(price.toTick(0.0001)); // 0.5234 (rounded to tick)
+ * console.log(price.toTick(0.0001)); // 0.5234 (округлено до тика)
  *
  * // Edge cases теперь поддерживаются:
  * const lowPrice = Price.fromNumber(0.001);
@@ -27,23 +27,23 @@ export class Price {
 
   private static readonly MIN_PRICE = 0.0001;
   private static readonly MAX_PRICE = 0.9999;
-  private static readonly DEFAULT_TICK = 0.0001; // 1 basis point
+  private static readonly DEFAULT_TICK = 0.0001; // 1 базисный пункт
 
   private constructor(value: number) {
     this.value = value;
   }
 
   /**
-   * Creates Price from number
+   * Создаёт Price из числа
    *
-   * @param value - Price value [0.0001, 0.9999]
-   * @returns Price instance
-   * @throws {InvalidPriceError} If price is out of range
+   * @param value - Значение цены [0.0001, 0.9999]
+   * @returns Экземпляр Price
+   * @throws {InvalidPriceError} Если цена вне диапазона
    *
    * @example
    * ```typescript
    * const price = Price.fromNumber(0.5);
-   * const edgePrice = Price.fromNumber(0.001); // Edge case supported
+   * const edgePrice = Price.fromNumber(0.001); // Edge case поддерживается
    * ```
    */
   public static fromNumber(value: number): Price {
@@ -54,11 +54,11 @@ export class Price {
   }
 
   /**
-   * Creates Price from string
-   * 
-   * @param value - Price as string
-   * @returns Price instance
-   * @throws {InvalidPriceError} If price is invalid
+   * Создаёт Price из строки
+   *
+   * @param value - Цена в виде строки
+   * @returns Экземпляр Price
+   * @throws {InvalidPriceError} Если цена невалидна
    */
   public static fromString(value: string): Price {
     const numValue = parseFloat(value);
@@ -69,10 +69,10 @@ export class Price {
   }
 
   /**
-   * Validates price value
-   * 
-   * @param value - Price to validate
-   * @returns True if valid
+   * Проверяет валидность цены
+   *
+   * @param value - Цена для проверки
+   * @returns True если валидна
    */
   public static isValid(value: number): boolean {
     return (
@@ -84,15 +84,15 @@ export class Price {
   }
 
   /**
-   * Rounds to tick size
-   * 
-   * @param tickSize - Tick size (default 0.0001)
-   * @returns New Price rounded to tick
-   * 
+   * Округляет до размера тика
+   *
+   * @param tickSize - Размер тика (по умолчанию 0.0001)
+   * @returns Новый Price округлённый до тика
+   *
    * @remarks
-   * Rounds price to nearest tick size.
-   * Example: 0.5234 with tick 0.01 becomes 0.52
-   * 
+   * Округляет цену до ближайшего размера тика.
+   * Пример: 0.5234 с тиком 0.01 становится 0.52
+   *
    * @example
    * ```typescript
    * const price = Price.fromNumber(0.5234);
@@ -109,10 +109,10 @@ export class Price {
   }
 
   /**
-   * Floors to tick size
-   * 
-   * @param tickSize - Tick size
-   * @returns New Price floored to tick
+   * Округляет вниз до размера тика
+   *
+   * @param tickSize - Размер тика
+   * @returns Новый Price округлённый вниз до тика
    */
   public floorToTick(tickSize: number = Price.DEFAULT_TICK): Price {
     const floored = Math.floor(this.value / tickSize) * tickSize;
@@ -121,10 +121,10 @@ export class Price {
   }
 
   /**
-   * Ceils to tick size
-   * 
-   * @param tickSize - Tick size
-   * @returns New Price ceiled to tick
+   * Округляет вверх до размера тика
+   *
+   * @param tickSize - Размер тика
+   * @returns Новый Price округлённый вверх до тика
    */
   public ceilToTick(tickSize: number = Price.DEFAULT_TICK): Price {
     const ceiled = Math.ceil(this.value / tickSize) * tickSize;
@@ -133,10 +133,10 @@ export class Price {
   }
 
   /**
-   * Adds to price
-   * 
-   * @param amount - Amount to add
-   * @returns New Price
+   * Прибавляет к цене
+   *
+   * @param amount - Сумма для прибавления
+   * @returns Новый Price
    */
   public add(amount: number): Price {
     return Price.fromNumber(
@@ -145,10 +145,10 @@ export class Price {
   }
 
   /**
-   * Subtracts from price
-   * 
-   * @param amount - Amount to subtract
-   * @returns New Price
+   * Вычитает из цены
+   *
+   * @param amount - Сумма для вычитания
+   * @returns Новый Price
    */
   public subtract(amount: number): Price {
     return Price.fromNumber(
@@ -157,10 +157,10 @@ export class Price {
   }
 
   /**
-   * Multiplies price by factor
-   * 
-   * @param factor - Multiplication factor
-   * @returns New Price
+   * Умножает цену на коэффициент
+   *
+   * @param factor - Коэффициент умножения
+   * @returns Новый Price
    */
   public multiply(factor: number): Price {
     return Price.fromNumber(
@@ -169,49 +169,49 @@ export class Price {
   }
 
   /**
-   * Checks if price is greater than other
-   * 
-   * @param other - Price to compare
-   * @returns True if greater
+   * Проверяет, больше ли цена чем другая
+   *
+   * @param other - Цена для сравнения
+   * @returns True если больше
    */
   public isGreaterThan(other: Price): boolean {
     return this.value > other.value;
   }
 
   /**
-   * Checks if price is less than other
-   * 
-   * @param other - Price to compare
-   * @returns True if less
+   * Проверяет, меньше ли цена чем другая
+   *
+   * @param other - Цена для сравнения
+   * @returns True если меньше
    */
   public isLessThan(other: Price): boolean {
     return this.value < other.value;
   }
 
   /**
-   * Checks if prices are equal
-   * 
-   * @param other - Price to compare
-   * @returns True if equal (within epsilon)
+   * Проверяет равенство цен
+   *
+   * @param other - Цена для сравнения
+   * @returns True если равны (в пределах epsilon)
    */
   public equals(other: Price): boolean {
     return Math.abs(this.value - other.value) < 0.0000001;
   }
 
   /**
-   * Converts to string
-   * 
-   * @param decimals - Number of decimals
-   * @returns Formatted string
+   * Преобразует в строку
+   *
+   * @param decimals - Количество десятичных знаков
+   * @returns Отформатированная строка
    */
   public toString(decimals: number = 4): string {
     return this.value.toFixed(decimals);
   }
 
   /**
-   * Converts to percentage string
-   * 
-   * @returns Percentage string (e.g., "52.34%")
+   * Преобразует в процентную строку
+   *
+   * @returns Процентная строка (например, "52.34%")
    */
   public toPercentage(): string {
     return `${(this.value * 100).toFixed(2)}%`;
