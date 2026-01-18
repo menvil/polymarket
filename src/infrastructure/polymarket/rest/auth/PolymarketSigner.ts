@@ -137,9 +137,20 @@ export class PolymarketSigner {
    *
    * @param obj - Объект для сортировки
    * @returns Объект с отсортированными ключами
+   *
+   * @remarks
+   * Сортирует только plain objects (созданные через {}).
+   * Class instances (Date, BigNumber, etc.) возвращаются без изменений,
+   * чтобы сохранить их toJSON() сериализацию.
    */
   private sortObjectKeys(obj: Record<string, unknown>): Record<string, unknown> {
-    if (obj === null || typeof obj !== 'object' || Array.isArray(obj)) {
+    // Пропускаем null, примитивы, массивы и class instances (Date, BigNumber, etc.)
+    if (
+      obj === null ||
+      typeof obj !== 'object' ||
+      Array.isArray(obj) ||
+      Object.getPrototypeOf(obj) !== Object.prototype
+    ) {
       return obj;
     }
 
