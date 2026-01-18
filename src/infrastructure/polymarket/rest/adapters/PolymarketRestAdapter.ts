@@ -144,20 +144,28 @@ export class PolymarketRestAdapter {
       throw new ValidationError(canPlace.reason ?? 'Order validation failed');
     }
 
+    // Validate required fields are present
+    const { normalizedSize, normalizedPrice, priceTick, feeRateBps } = canPlace;
+    if (normalizedSize === undefined || normalizedPrice === undefined) {
+      throw new ValidationError(
+        'Order validation succeeded but normalizedSize or normalizedPrice is missing'
+      );
+    }
+
     this.logger.debug('Order validation passed', {
-      normalizedSize: canPlace.normalizedSize,
-      normalizedPrice: canPlace.normalizedPrice,
-      priceTick: canPlace.priceTick,
+      normalizedSize,
+      normalizedPrice,
+      priceTick,
     });
 
     // Шаг 2: Разместить ордер через ExecutionAdapter (ТОЛЬКО API-вызов)
     try {
       const order = await this.executionAdapter.postOrder({
         ...params,
-        size: canPlace.normalizedSize!, // Использовать нормализованный размер
-        price: canPlace.normalizedPrice!, // Использовать нормализованную цену (КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ)
-        priceTick: canPlace.priceTick, // Передать priceTick в построитель API
-        feeRateBps: canPlace.feeRateBps, // Передать изученную или стандартную ставку комиссии
+        size: normalizedSize,
+        price: normalizedPrice,
+        priceTick,
+        feeRateBps,
       });
 
       this.logger.info('Order placed successfully', {

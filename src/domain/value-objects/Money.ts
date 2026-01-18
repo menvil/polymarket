@@ -85,10 +85,17 @@ export class Money {
    * @param other - Money для сложения
    * @returns Новый экземпляр Money с суммой
    * @throws {Error} Если валюты не совпадают
+   * @throws {RangeError} Если результат выходит за пределы безопасного диапазона
    */
   public add(other: Money): Money {
     this.assertSameCurrency(other);
-    return new Money(this.amount + other.amount, this.currency);
+    const result = this.amount + other.amount;
+    if (result > Number.MAX_SAFE_INTEGER || result < Number.MIN_SAFE_INTEGER) {
+      throw new RangeError(
+        `Addition overflow: ${this.amount} + ${other.amount} exceeds safe integer bounds`
+      );
+    }
+    return new Money(result, this.currency);
   }
 
   /**
@@ -167,10 +174,10 @@ export class Money {
   /**
    * Проверяет, равна ли сумма нулю
    *
-   * @returns True если ноль
+   * @returns True если ноль (в пределах epsilon)
    */
   public isZero(): boolean {
-    return this.amount === 0;
+    return Math.abs(this.amount) < Money.EPSILON;
   }
 
   /**

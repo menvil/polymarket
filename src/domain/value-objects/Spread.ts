@@ -324,9 +324,32 @@ export class Spread {
    * ```
    */
   public shift(amount: number): Spread {
-    const shiftPrice = (price: Price): Price =>
-      amount >= 0 ? price.add(amount) : price.subtract(Math.abs(amount));
-    return Spread.create(shiftPrice(this.bid), shiftPrice(this.ask));
+    const originalWidth = this.width();
+    const minPrice = Price.minPrice;
+    const maxPrice = Price.maxPrice;
+
+    // Calculate target positions
+    let newBidValue = this.bid.value + amount;
+    let newAskValue = this.ask.value + amount;
+
+    // Clamp while preserving width
+    if (newBidValue < minPrice) {
+      newBidValue = minPrice;
+      newAskValue = minPrice + originalWidth;
+    }
+    if (newAskValue > maxPrice) {
+      newAskValue = maxPrice;
+      newBidValue = maxPrice - originalWidth;
+    }
+
+    // Final clamp to ensure valid prices
+    newBidValue = Math.max(minPrice, Math.min(maxPrice - originalWidth, newBidValue));
+    newAskValue = newBidValue + originalWidth;
+
+    return Spread.create(
+      Price.fromNumber(newBidValue),
+      Price.fromNumber(newAskValue)
+    );
   }
 
   /**

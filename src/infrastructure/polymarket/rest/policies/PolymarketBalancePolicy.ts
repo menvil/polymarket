@@ -138,6 +138,18 @@ export class PolymarketBalancePolicy {
     params: BalanceCheckParams
   ): Promise<BalanceCheckResult> {
     const { price, size } = params;
+
+    // Guard against divide-by-zero (consistent with getMaxBuySize)
+    if (price <= 0) {
+      return {
+        ok: false,
+        reason: `Invalid price: ${price}. Price must be positive`,
+        required: 0,
+        available: 0,
+        suggestedSize: 0,
+      };
+    }
+
     const requiredUSDC = price * size;
     const availableUSDC = await this.balanceProvider.getAvailableBalance();
 

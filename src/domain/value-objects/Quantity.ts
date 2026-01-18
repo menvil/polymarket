@@ -232,10 +232,10 @@ export class Quantity {
   /**
    * Проверяет, равно ли нулю
    *
-   * @returns True если ноль
+   * @returns True если ноль (в пределах epsilon)
    */
   public isZero(): boolean {
-    return this.value === 0;
+    return Math.abs(this.value) < Quantity.EPSILON;
   }
 
   /**
@@ -258,8 +258,17 @@ export class Quantity {
   }
 
   private getDecimalPlaces(tickSize: number): number {
-    const match = tickSize.toString().split('.')[1];
-    return match?.length ?? 0;
+    if (!Number.isFinite(tickSize) || tickSize === 0) {
+      return 0;
+    }
+    let decimals = 0;
+    let value = Math.abs(tickSize);
+    const maxDecimals = 15;
+    while (decimals < maxDecimals && Math.abs(value - Math.round(value)) > 1e-10) {
+      value *= 10;
+      decimals++;
+    }
+    return decimals;
   }
 
   public static get minSize(): number {

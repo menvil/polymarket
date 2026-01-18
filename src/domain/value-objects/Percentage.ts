@@ -449,18 +449,18 @@ export class Percentage {
   }
 
   /**
-   * Преобразует в простую числовую строку
+   * Преобразует в отформатированную строку без символа %
    *
    * @param decimals - Количество десятичных знаков (по умолчанию 2)
-   * @returns Отформатированная числовая строка (например, "25.50")
+   * @returns Отформатированная строка (например, "25.50")
    *
    * @example
    * ```typescript
    * const pct = Percentage.fromNumber(25.5);
-   * console.log(pct.toNumber()); // "25.50"
+   * console.log(pct.toFixedString()); // "25.50"
    * ```
    */
-  public toNumber(decimals: number = 2): string {
+  public toFixedString(decimals: number = 2): string {
     return this.value.toFixed(decimals);
   }
 

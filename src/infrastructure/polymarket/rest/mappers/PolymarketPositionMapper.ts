@@ -31,11 +31,13 @@
 
 import type { PositionResponse as ApiPositionResponse } from '../clients/PolymarketPositionsRestClient.js';
 import type { PositionResponse } from '../../../exchange/types/PositionResponse.js';
+import type { ILogger } from '../../../../shared/logging/ILogger.js';
 
 /**
  * Маппер позиций Polymarket
  */
 export class PolymarketPositionMapper {
+  constructor(private readonly logger?: ILogger) {}
 
   /**
    * Преобразует ответ API позиции в формат домена
@@ -80,9 +82,20 @@ export class PolymarketPositionMapper {
     // Используем safe values для предотвращения NaN
     const unrealizedPnl = currentValue - size * averagePrice;
 
+    const tokenId = response.asset ?? '';
+    const marketId = response.conditionId ?? '';
+
+    // Warn if required fields are missing
+    if (!tokenId || !marketId) {
+      this.logger?.warn('Position response missing required fields', {
+        hasAsset: !!response.asset,
+        hasConditionId: !!response.conditionId,
+      });
+    }
+
     return {
-      tokenId: response.asset ?? '',
-      marketId: response.conditionId ?? '', // API возвращает conditionId, маппим на marketId
+      tokenId,
+      marketId,
       size,
       averagePrice,
       realizedPnl,

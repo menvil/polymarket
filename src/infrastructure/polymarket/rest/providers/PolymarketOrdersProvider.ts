@@ -167,6 +167,8 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
 
   /**
    * Маппинг доменного статуса в статус API Polymarket
+   *
+   * @throws {Error} Если статус не поддерживается API
    */
   private mapDomainStatusToApiStatus(status: OrderStatus): 'LIVE' | 'MATCHED' | 'CANCELLED' {
     switch (status) {
@@ -178,9 +180,10 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
       case 'CANCELED':
         return 'CANCELLED';
       default:
-        // Для неизвестных статусов возвращаем LIVE как fallback
-        this.logger.warn('Unknown order status, defaulting to LIVE', { status });
-        return 'LIVE';
+        throw new Error(
+          `Unsupported OrderStatus for API mapping: "${status}". ` +
+          `Supported statuses: OPEN, PARTIALLY_FILLED, FILLED, CANCELED`
+        );
     }
   }
 }

@@ -182,8 +182,8 @@ export class PolymarketRestAdapterFactory {
     );
 
     // Провайдер ордеров - в настоящее время не используется, но доступен для будущего использования
-    // @ts-expect-error - Временно не используется, пока не реализован запрос ордеров
-    const _ordersProvider = new PolymarketOrdersProvider(orderClient, orderMapper, logger);
+    const ordersProvider = new PolymarketOrdersProvider(orderClient, orderMapper, logger);
+    void ordersProvider;
 
     // Политики
     const constraintsPolicy = new PolymarketMarketConstraintsPolicy(

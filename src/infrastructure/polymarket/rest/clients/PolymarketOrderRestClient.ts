@@ -359,7 +359,7 @@ export class PolymarketOrderRestClient {
       success: response.success,
     });
 
-    this.logger.info('📤 POST /order FULL RESPONSE', {
+    this.logger.debug('POST /order full response', {
       response: JSON.stringify(response, null, 2),
     });
 
@@ -631,7 +631,7 @@ export class PolymarketOrderRestClient {
         nextCursor: response?.next_cursor || 'none',
       });
 
-      allTrades = [...allTrades, ...trades];
+      allTrades.push(...trades);
 
       // Обновить курсор для следующей итерации
       nextCursor = response?.next_cursor || END_CURSOR;

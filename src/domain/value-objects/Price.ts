@@ -220,8 +220,17 @@ export class Price {
   }
 
   private getDecimalPlaces(tickSize: number): number {
-    const match = tickSize.toString().split('.')[1];
-    return match?.length ?? 0;
+    if (!Number.isFinite(tickSize) || tickSize === 0) {
+      return 0;
+    }
+    let decimals = 0;
+    let value = Math.abs(tickSize);
+    const maxDecimals = 15; // IEEE 754 precision limit
+    while (decimals < maxDecimals && Math.abs(value - Math.round(value)) > 1e-10) {
+      value *= 10;
+      decimals++;
+    }
+    return decimals;
   }
 
   public static get minPrice(): number {
