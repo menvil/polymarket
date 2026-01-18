@@ -158,9 +158,14 @@ export class Quantity {
    *
    * @param other - Quantity для сложения
    * @returns Новый Quantity
+   * @throws {Error} Если результат не является конечным числом
    */
   public add(other: Quantity): Quantity {
-    return new Quantity(this.value + other.value);
+    const result = this.value + other.value;
+    if (!Number.isFinite(result)) {
+      throw new Error(`Addition overflow: ${this.value} + ${other.value}`);
+    }
+    return new Quantity(result);
   }
 
   /**

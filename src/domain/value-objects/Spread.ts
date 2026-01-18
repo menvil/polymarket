@@ -271,6 +271,9 @@ export class Spread {
    * ```
    */
   public tighten(amount: number): Spread {
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new RangeError(`Invalid amount: ${amount}. Must be a non-negative finite number`);
+    }
     const halfWidth = this.width() / 2;
     const tightenAmount = Math.min(amount, halfWidth);
 
@@ -300,6 +303,9 @@ export class Spread {
    * ```
    */
   public widen(amount: number): Spread {
+    if (!Number.isFinite(amount) || amount < 0) {
+      throw new RangeError(`Invalid amount: ${amount}. Must be a non-negative finite number`);
+    }
     const newBid = this.bid.subtract(amount);
     const newAsk = this.ask.add(amount);
     return Spread.create(newBid, newAsk);

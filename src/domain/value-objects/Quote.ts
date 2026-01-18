@@ -52,7 +52,7 @@ export class Quote {
    * @param timestamp - Quote timestamp (default: now)
    *
    * @throws {Error} If bid >= ask (when both present)
-   * @throws {Error} If sizes are not positive
+   * @throws {Error} If sizes are negative (sizes must be >= 0)
    *
    * @example
    * ```typescript
