@@ -190,12 +190,12 @@ export class PolymarketMessageParser implements IMessageParser {
 
       // Data сообщения ДОЛЖНЫ иметь asset_id
       if (!message.asset_id) {
-        this.logger.warn('Data message without asset_id', { eventType, message });
+        this.logger.warn('Data message without asset_id', { eventType: eventTypeLower, message });
         return null;
       }
 
       // Парсим событие orderbook
-      if (eventType === 'book') {
+      if (eventTypeLower === 'book') {
         // Валидируем обязательные поля
         if (!message.bids || !message.asks) {
           this.logger.warn('Orderbook message missing bids or asks', { message });
@@ -210,10 +210,10 @@ export class PolymarketMessageParser implements IMessageParser {
       }
 
       // Парсим событие trade
-      if (eventType === 'trade' || eventType === 'last_trade_price') {
+      if (eventTypeLower === 'trade' || eventTypeLower === 'last_trade_price') {
         // Валидируем обязательные поля
         if (!message.price || !message.size) {
-          this.logger.trace('Trade message missing price or size', { eventType, message });
+          this.logger.trace('Trade message missing price or size', { eventType: eventTypeLower, message });
           return null;
         }
 
@@ -226,7 +226,7 @@ export class PolymarketMessageParser implements IMessageParser {
 
       // Неизвестный тип события
       this.logger.debug('Unknown event type', {
-        eventType,
+        eventType: eventTypeLower,
         asset_id: message.asset_id?.substring(0, 16),
       });
       return null;
@@ -257,7 +257,7 @@ export class PolymarketMessageParser implements IMessageParser {
    */
   isPongMessage(data: unknown): boolean {
     const message = data as PolymarketWSMessage;
-    return message.event_type === 'pong';
+    return message.event_type?.toLowerCase() === 'pong';
   }
 
   /**
@@ -281,7 +281,7 @@ export class PolymarketMessageParser implements IMessageParser {
    */
   isErrorMessage(data: unknown): boolean {
     const message = data as PolymarketWSMessage;
-    return message.event_type === 'error';
+    return message.event_type?.toLowerCase() === 'error';
   }
 
   /**
@@ -316,7 +316,7 @@ export class PolymarketMessageParser implements IMessageParser {
   extractErrorMessage(data: unknown): string | undefined {
     const message = data as PolymarketWSMessage;
 
-    if (message.event_type !== 'error') {
+    if (message.event_type?.toLowerCase() !== 'error') {
       return undefined;
     }
 

@@ -113,6 +113,31 @@ export class ErrorClassifier {
   private readonly cache = new Map<string, OrderError>();
   private readonly maxCacheSize = 1000;
 
+  /** Коды ошибок сети (часто приходят из Node/undici как errno) */
+  private static readonly NETWORK_CODES: readonly string[] = [
+    'network',
+    'timeout',
+    'timedout',
+    'etimedout',
+    'econnaborted',
+    'econnrefused',
+    'econnreset',
+    'eai_again',
+    'enotfound',
+    'enetunreach',
+    'ehostunreach',
+  ];
+
+  /** Паттерны сетевых ошибок в сообщениях */
+  private static readonly NETWORK_PATTERNS: readonly string[] = [
+    'timed out', 'timeout',
+    'connection refused', 'connection reset', 'connection closed unexpectedly',
+    'connection failed', 'failed to connect', 'could not connect',
+    'cannot connect', 'unable to connect',
+    'network error', 'network failure', 'network unreachable',
+    'no route to host', 'socket hang up', 'socket closed',
+  ];
+
   /**
    * Создать классификатор ошибок
    *
@@ -297,34 +322,10 @@ export class ErrorClassifier {
    * @returns true если это сетевая ошибка
    */
   private isNetworkError(code: string, messageLower: string): boolean {
-    // Коды ошибок сети (часто приходят из Node/undici как errno)
-    const networkCodes = [
-      'network',
-      'timeout',
-      'timedout',
-      'etimedout',
-      'econnaborted',
-      'econnrefused',
-      'econnreset',
-      'eai_again',
-      'enotfound',
-      'enetunreach',
-      'ehostunreach',
-    ];
-    if (networkCodes.some(nc => code.includes(nc))) {
+    if (ErrorClassifier.NETWORK_CODES.some(nc => code.includes(nc))) {
       return true;
     }
-
-    // Паттерны в сообщениях об ошибках
-    const networkPatterns = [
-      'timed out', 'timeout',
-      'connection refused', 'connection reset', 'connection closed unexpectedly',
-      'connection failed', 'failed to connect', 'could not connect',
-      'cannot connect', 'unable to connect',
-      'network error', 'network failure', 'network unreachable',
-      'no route to host', 'socket hang up', 'socket closed',
-    ];
-    return networkPatterns.some(pattern => messageLower.includes(pattern));
+    return ErrorClassifier.NETWORK_PATTERNS.some(pattern => messageLower.includes(pattern));
   }
 
   /**
