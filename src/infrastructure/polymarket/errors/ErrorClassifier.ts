@@ -290,9 +290,7 @@ export class ErrorClassifier {
       messageLower.includes('network unreachable') ||
       messageLower.includes('no route to host') ||
       messageLower.includes('socket hang up') ||
-      messageLower.includes('socket closed') ||
-      messageLower.includes('econnrefused') ||
-      messageLower.includes('econnreset')
+      messageLower.includes('socket closed')
     ) {
       return {
         type: 'NETWORK_ERROR',
