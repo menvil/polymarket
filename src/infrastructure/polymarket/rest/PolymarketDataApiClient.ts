@@ -77,7 +77,6 @@ export class PolymarketDataApiClient {
       const response = await fetch(fullUrl, {
         method: 'GET',
         headers: {
-          'Content-Type': 'application/json',
           'Accept': 'application/json',
         },
         signal: controller.signal,
