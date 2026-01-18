@@ -107,7 +107,7 @@ export function isAllowedTransition(from: OrderExecutionState, to: OrderExecutio
 }
 
 /**
- * Проверяет terminal state (FILLED, CANCELED, REJECTED)
+ * Проверяет terminal state (FILLED, CANCELED)
  *
  * @param state - State для проверки
  * @returns true если state terminal
@@ -120,21 +120,20 @@ export function isAllowedTransition(from: OrderExecutionState, to: OrderExecutio
  * ```typescript
  * isTerminalState(OrderExecutionState.FILLED); // true
  * isTerminalState(OrderExecutionState.CANCELED); // true
- * isTerminalState(OrderExecutionState.REJECTED); // true
  * isTerminalState(OrderExecutionState.OPEN); // false
  * isTerminalState(OrderExecutionState.PARTIALLY_FILLED); // false
  * ```
  */
 export function isTerminalState(state: OrderExecutionState): boolean {
-  return state === OrderExecutionState.FILLED || state === OrderExecutionState.CANCELED || state === OrderExecutionState.REJECTED;
+  return state === OrderExecutionState.FILLED || state === OrderExecutionState.CANCELED;
 }
 
 /**
  * Вычисляет target state для ExecutionEvent
  *
  * @param event - ExecutionEvent
- * @param _currentFilledTotal - Текущий filledTotal (для определения PARTIALLY_FILLED vs FILLED)
- * @param _orderSize - Размер ордера
+ * @param currentFilledTotal - Текущий filledTotal (для определения PARTIALLY_FILLED vs FILLED)
+ * @param orderSize - Размер ордера
  * @returns Target OrderExecutionState
  *
  * @remarks
@@ -168,11 +167,11 @@ export function targetStateForEvent(
     case 'OrderAccepted':
       return OrderExecutionState.OPEN;
 
-    case 'OrderPartiallyFilled':
-      return OrderExecutionState.PARTIALLY_FILLED;
+    // ✅ v7.7.15: OrderPartiallyFilled УДАЛЁН - стратегия работает только по StrategyTick!
+    // case 'OrderPartiallyFilled': return OrderExecutionState.PARTIALLY_FILLED;
 
-    case 'OrderFilled':
-      return OrderExecutionState.FILLED;
+    // ✅ v7.7.15: OrderFilled УДАЛЁН - стратегия работает только по StrategyTick!
+    // case 'OrderFilled': return OrderExecutionState.FILLED;
 
     case 'OrderCancelled':
       return OrderExecutionState.CANCELED;
