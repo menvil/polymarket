@@ -415,7 +415,7 @@ export class ConstraintsObservationStore {
    * @returns True если запись истекла
    */
   private isExpired(record: ObservationRecord, now: number): boolean {
-    return now - record.lastSeen > this.config.observationTTL;
+    return now - record.lastSeen >= this.config.observationTTL;
   }
 
   /**
