@@ -66,8 +66,10 @@ describe('ValidationError', () => {
 
     it('должен работать с комплексными динамическими шаблонами для валидации диапазонов', () => {
       const error = new ValidationError(
-        (ctx: any) =>
-          `Validation failed: ${ctx.field} = ${ctx.value} (expected: min=${ctx.min}, max=${ctx.max})`,
+        ((ctx: { field: string; value: number; min: number; max: number }) =>
+          `Validation failed: ${ctx.field} = ${ctx.value} (expected: min=${ctx.min}, max=${ctx.max})`) as (
+          context: Record<string, unknown>
+        ) => string,
         {
           code: 'RANGE_ERROR',
           context: { field: 'quantity', value: 150, min: 1, max: 100 },
