@@ -13,7 +13,7 @@
     "module": "ESNext",
     "target": "ES2022",
     "lib": ["ES2022"],
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "noUnusedLocals": true,
