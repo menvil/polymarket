@@ -103,10 +103,16 @@ describe('TradingError', () => {
       expect(error.message).toBe('PRICE must be positive but current value is -10');
     });
 
-    it('должен использовать статическое сообщение если функция передана без context', () => {
-      const error = new TestError((ctx) => `Field ${ctx.field} is invalid`);
+    it('должен выбросить TypeError если функция передана без context', () => {
+      expect(() => {
+        new TestError((ctx) => `Field ${ctx.field} is invalid`);
+      }).toThrow(TypeError);
 
-      expect(error.message).toBe('Unknown error');
+      expect(() => {
+        new TestError((ctx) => `Field ${ctx.field} is invalid`);
+      }).toThrow(
+        'TradingError: Message template function provided without context. Pass context in options or use a static string message.'
+      );
     });
 
     it('должен использовать статическое сообщение если передана строка с context', () => {
@@ -116,6 +122,23 @@ describe('TradingError', () => {
 
       expect(error.message).toBe('Static message');
       expect(error.context).toEqual({ field: 'price', value: -10 });
+    });
+
+    it('должен выбросить TypeError если message не строка и не функция', () => {
+      expect(() => {
+        // @ts-expect-error Testing invalid type
+        new TestError(123);
+      }).toThrow(TypeError);
+
+      expect(() => {
+        // @ts-expect-error Testing invalid type
+        new TestError({ invalid: 'object' });
+      }).toThrow('TradingError: Message must be a string or function, got object');
+
+      expect(() => {
+        // @ts-expect-error Testing invalid type
+        new TestError(null);
+      }).toThrow('TradingError: Message must be a string or function, got object');
     });
   });
 

@@ -206,26 +206,34 @@ export class TradingError extends Error implements ITradingError {
    * @param message - Человекочитаемое сообщение об ошибке (строка или функция-шаблон)
    * @param options - Опции (опционально)
    * @param options.code - Код ошибки для детальной классификации
-   * @param options.context - Дополнительный контекст
+   * @param options.context - Дополнительный контекст (обязателен при использовании функции-шаблона)
+   *
+   * @throws {TypeError} Если message - функция, но context не передан
+   * @throws {TypeError} Если message не является строкой или функцией
    *
    * @remarks
    * this.name устанавливается автоматически из имени класса (this.constructor.name),
    * поэтому в дочерних классах не нужно его задавать вручную.
    *
-   * Если message - функция и передан context, то функция выполнится с контекстом
-   * для генерации динамического сообщения.
+   * **ВАЖНО**: Если message - функция-шаблон, options.context ОБЯЗАТЕЛЕН!
+   * Функция будет вызвана с переданным контекстом для генерации динамического сообщения.
+   * При отсутствии context выбросится TypeError.
    *
    * @example
    * ```typescript
    * // Статическое сообщение
    * new ValidationError('Invalid value');
    *
-   * // Динамическое сообщение из контекста
+   * // Динамическое сообщение из контекста (context обязателен!)
    * new ValidationError(
    *   (ctx) => `${ctx.field.toUpperCase()} must be positive but current value is ${ctx.value}`,
    *   { context: { field: 'price', value: -10 } }
    * );
    * // Результат: "PRICE must be positive but current value is -10"
+   *
+   * // ❌ ОШИБКА: функция без context
+   * // new ValidationError((ctx) => `Field ${ctx.field} is invalid`);
+   * // Выбросит TypeError: Message template function provided without context
    * ```
    */
   constructor(
@@ -235,13 +243,25 @@ export class TradingError extends Error implements ITradingError {
       context?: Record<string, unknown>;
     }
   ) {
-    // Разрешаем сообщение: если функция и есть context - выполняем шаблон
-    const resolvedMessage =
-      typeof message === 'function' && options?.context
-        ? message(options.context)
-        : typeof message === 'string'
-        ? message
-        : 'Unknown error';
+    // Разрешаем сообщение
+    let resolvedMessage: string;
+
+    if (typeof message === 'function') {
+      // Функция-шаблон требует обязательного наличия context
+      if (!options?.context) {
+        throw new TypeError(
+          'TradingError: Message template function provided without context. ' +
+            'Pass context in options or use a static string message.'
+        );
+      }
+      resolvedMessage = message(options.context);
+    } else if (typeof message === 'string') {
+      resolvedMessage = message;
+    } else {
+      throw new TypeError(
+        `TradingError: Message must be a string or function, got ${typeof message}`
+      );
+    }
 
     super(resolvedMessage);
 
@@ -315,4 +335,3 @@ export class TradingError extends Error implements ITradingError {
     return error instanceof this;
   }
 }
-

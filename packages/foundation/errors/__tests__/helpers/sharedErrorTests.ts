@@ -162,9 +162,16 @@ export function testTradingError(options: SharedErrorTestOptions): void {
         expect(error.message).toBe('PRICE = -10');
       });
 
-      it('должен использовать "Unknown error" если функция передана без context', () => {
-        const error = new ErrorClass((ctx) => `Field ${ctx.field} is invalid`);
-        expect(error.message).toBe('Unknown error');
+      it('должен выбросить TypeError если функция передана без context', () => {
+        expect(() => {
+          new ErrorClass((ctx) => `Field ${ctx.field} is invalid`);
+        }).toThrow(TypeError);
+
+        expect(() => {
+          new ErrorClass((ctx) => `Field ${ctx.field} is invalid`);
+        }).toThrow(
+          'TradingError: Message template function provided without context. Pass context in options or use a static string message.'
+        );
       });
 
       it('должен использовать статическое сообщение если передана строка с context', () => {
