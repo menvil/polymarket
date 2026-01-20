@@ -82,24 +82,30 @@ export class LRUCache<K extends string, V> {
 ```
 ````
 
-## 3. Запускай генерацию документации
+## 3. Проверяй корректность кода
 
-После всех правок **обязательно** выполни команду:
+После всех правок **обязательно** выполни команды проверки:
 
 ```bash
-npm run docs:generate && npm run build
+npm run build && npm test && npm run lint
 ```
 
 Где в package.json есть скрипты:
 
 ```json
 "scripts": {
-  "docs:generate": "typedoc",
-  "build": "astro build"
+  "build": "tsc -p tsconfig.build.json",
+  "test": "jest",
+  "test:coverage": "jest --coverage",
+  "lint": "eslint src --ext .ts",
+  "typecheck": "tsc --noEmit"
 }
 ```
 
-✅ После этого документация в docs/api/ и весь Astro‑сайт будут актуальны!
+✅ После этого будет:
+- Скомпилирован TypeScript код в dist/
+- Запущены все тесты (автоматическое обнаружение + специфичные)
+- Проверен код на соответствие стандартам ESLint
 
 ## 4. Языковые требования
 
