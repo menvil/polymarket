@@ -9,7 +9,7 @@ Result<T, E> тип для Railway-Oriented Programming в Polymarket trading sy
 - ✅ **Railway-Oriented Programming** - элегантная композиция операций
 - ✅ **Функциональный подход** - immutable, composable, предсказуемо
 - ✅ **Plain objects** - легкая сериализация через JSON.stringify
-- ✅ **100% покрытие тестами** - все функции полностью протестированы
+- ✅ **Высокое покрытие тестами** - >90% покрытие (пороги: 85% branches, 90% functions/lines/statements)
 
 ## 📦 Установка
 
