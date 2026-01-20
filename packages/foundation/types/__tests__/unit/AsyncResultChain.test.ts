@@ -163,6 +163,21 @@ describe('AsyncResultChain', () => {
 
       expect(result).toBe('Division by zero');
     });
+
+    it('должен пропускать операцию если исходный Result - ошибка', async () => {
+      let called = false;
+      const errorResult: Result<number, string> = Err('initial error');
+
+      const result = await AsyncResult.from(Promise.resolve(errorResult))
+        .flatMap((x) => {
+          called = true;
+          return divide(x, 2);
+        })
+        .unwrapErr();
+
+      expect(called).toBe(false);
+      expect(result).toBe('initial error');
+    });
   });
 
   describe('Метод mapErrAsync()', () => {
@@ -198,6 +213,20 @@ describe('AsyncResultChain', () => {
         .unwrapErr();
 
       expect(result).toBe('Not found');
+    });
+
+    it('не должен вызывать функцию для Ok', async () => {
+      let called = false;
+
+      const result = await AsyncResult.ok(Promise.resolve(42))
+        .mapErr((err) => {
+          called = true;
+          return err;
+        })
+        .unwrap();
+
+      expect(called).toBe(false);
+      expect(result).toBe(42);
     });
   });
 
@@ -420,6 +449,19 @@ describe('AsyncResultChain', () => {
 
       expect(result).toBe(42);
     });
+
+    it('должен возвращать первую ошибку если первый Result - Err', async () => {
+      const errorResult: Result<number, string> = Err('error1');
+      const step2 = async (): Promise<Result<number, string>> => {
+        return Ok(42);
+      };
+
+      const result = await AsyncResult.from(Promise.resolve(errorResult))
+        .andAsync(step2())
+        .unwrapErr();
+
+      expect(result).toBe('error1');
+    });
   });
 
   describe('Метод or()', () => {
@@ -453,6 +495,18 @@ describe('AsyncResultChain', () => {
         .unwrap();
 
       expect(result).toBe(99);
+    });
+
+    it('должен возвращать первый Result если он Ok', async () => {
+      const fallback = async (): Promise<Result<number, string>> => {
+        return Ok(99);
+      };
+
+      const result = await AsyncResult.ok(Promise.resolve(10))
+        .orAsync(fallback())
+        .unwrap();
+
+      expect(result).toBe(10);
     });
   });
 
@@ -493,6 +547,20 @@ describe('AsyncResultChain', () => {
         .unwrap();
 
       expect(result).toBe(0);
+    });
+
+    it('не должен вызывать функцию для Ok', async () => {
+      let called = false;
+
+      const result = await AsyncResult.ok(Promise.resolve(42))
+        .orElse((_err) => {
+          called = true;
+          return Ok(0);
+        })
+        .unwrap();
+
+      expect(called).toBe(false);
+      expect(result).toBe(42);
     });
   });
 
