@@ -7,10 +7,15 @@
  *
  * Преимущества:
  * - Читабельный синтаксис для async операций
- * - Автоматическая обработка Promise rejections
  * - Композиция async операций без явного await
  *
- * **Обработка exceptions:**
+ * **Обработка Promise rejections:**
+ * - `AsyncResult.ok(promise)` - автоматически ловит rejections через `.catch()` и преобразует их в Err<E>
+ * - `AsyncResult.from(promise)` - НЕ ловит rejections, ожидает что входной Promise<Result<T,E>>
+ *   уже resolved или caller сам обработает rejections. Если Promise будет rejected, это приведёт
+ *   к unhandled rejection (не к Err<E>)
+ *
+ * **Обработка exceptions в методах цепочки:**
  * - Трансформирующие методы (*Async, flatMap*) ловят exceptions и преобразуют их в Err<E>
  * - Side-effect методы (tap, tapErr) НЕ ловят exceptions - они приводят к rejected Promise
  * - Sync методы (map) НЕ ловят exceptions - они приводят к rejected Promise
@@ -21,10 +26,16 @@
  *
  * @example
  * ```typescript
+ * // AsyncResult.from ожидает Promise<Result<T,E>>
  * const result = await AsyncResult.from(fetchUser('123'))
  *   .mapAsync(user => fetchProfile(user.id))
  *   .flatMapAsync(profile => validateProfile(profile))
  *   .unwrapOr({ name: 'Guest' });
+ *
+ * // AsyncResult.ok ловит rejections
+ * const result2 = await AsyncResult.ok(rawFetch('/api/user'))
+ *   .map(response => response.json())
+ *   .unwrapOr({});
  * ```
  */
 
