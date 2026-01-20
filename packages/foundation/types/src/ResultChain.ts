@@ -257,6 +257,11 @@ export class ResultChain<T, E> {
    * @param fn - Функция для выполнения (получает value если Ok)
    * @returns this для продолжения цепочки
    *
+   * @remarks
+   * ⚠️ Если fn выбросит exception, он будет propagate напрямую.
+   * tap предназначен для side-effects и не должен изменять Result.
+   * Если вам нужно обработать ошибки в tap, используйте try/catch внутри fn.
+   *
    * @example
    * ```typescript
    * const result = OkChain(42)
@@ -276,6 +281,12 @@ export class ResultChain<T, E> {
    *
    * @param fn - Функция для выполнения (получает error если Err)
    * @returns this для продолжения цепочки
+   *
+   * @remarks
+   * ⚠️ Если fn выбросит exception, он будет propagate напрямую.
+   * tapErr предназначен для side-effects и не должен изменять Result.
+   * Оригинальная ошибка сохраняется, а exception из fn propagate напрямую.
+   * Если вам нужно обработать ошибки в tapErr, используйте try/catch внутри fn.
    *
    * @example
    * ```typescript
