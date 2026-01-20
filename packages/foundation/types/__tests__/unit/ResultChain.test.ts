@@ -292,10 +292,12 @@ describe('ResultChain', () => {
     });
 
     it('должен возвращать this для chaining', () => {
+      const spy = jest.fn();
       const result = OkChain(5)
-        .tap((x) => console.log(x))
+        .tap(spy)
         .map((x) => x * 2);
 
+      expect(spy).toHaveBeenCalledWith(5);
       expect(result.unwrap()).toBe(10);
     });
   });
@@ -322,10 +324,12 @@ describe('ResultChain', () => {
     });
 
     it('должен возвращать this для chaining', () => {
+      const spy = jest.fn();
       const result = ErrChain('error')
-        .tapErr((err) => console.error(err))
+        .tapErr(spy)
         .mapErr((err) => err.toUpperCase());
 
+      expect(spy).toHaveBeenCalledWith('error');
       expect(result.unwrapErr()).toBe('ERROR');
     });
   });
