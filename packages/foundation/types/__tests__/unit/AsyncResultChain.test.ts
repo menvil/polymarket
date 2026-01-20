@@ -510,6 +510,55 @@ describe('AsyncResultChain', () => {
     });
   });
 
+  describe('Метод orAsyncLazy()', () => {
+    it('должен вызывать фабрику только при Err', async () => {
+      let called = false;
+      const fallback = async (): Promise<Result<number, string>> => {
+        called = true;
+        return Ok(99);
+      };
+
+      const errorResult: Result<number, string> = Err('error');
+      const result = await AsyncResult.from(Promise.resolve(errorResult))
+        .orAsyncLazy(fallback)
+        .unwrap();
+
+      expect(called).toBe(true);
+      expect(result).toBe(99);
+    });
+
+    it('НЕ должен вызывать фабрику если первый Result - Ok', async () => {
+      let called = false;
+      const fallback = async (): Promise<Result<number, string>> => {
+        called = true;
+        return Ok(99);
+      };
+
+      const result = await AsyncResult.ok(Promise.resolve(10))
+        .orAsyncLazy(fallback)
+        .unwrap();
+
+      expect(called).toBe(false);
+      expect(result).toBe(10);
+    });
+
+    it('должен избегать side-effects при Ok', async () => {
+      const sideEffects: string[] = [];
+
+      const expensiveOperation = async (): Promise<Result<number, string>> => {
+        sideEffects.push('executed');
+        await new Promise((resolve) => setTimeout(resolve, 10));
+        return Ok(99);
+      };
+
+      await AsyncResult.ok(Promise.resolve(42))
+        .orAsyncLazy(expensiveOperation)
+        .unwrap();
+
+      expect(sideEffects).toEqual([]); // Фабрика не вызвана, side-effects не произошли
+    });
+  });
+
   describe('Метод orElseAsync()', () => {
     it('должен восстанавливать значение асинхронно', async () => {
       const recover = async (_err: string): Promise<Result<number, string>> => {

@@ -454,6 +454,34 @@ export class AsyncResultChain<T, E> {
   }
 
   /**
+   * Возвращает первый Ok, иначе lazy async fallback
+   *
+   * @param fn - Функция возвращающая Promise<Result> (вызывается только при Err)
+   * @returns this если ok = true, иначе результат fn()
+   *
+   * @remarks
+   * В отличие от orAsync, принимает фабричную функцию которая вызывается
+   * только когда результат - Err. Это позволяет избежать ненужных side-effects
+   * и вычислений если основной результат успешный.
+   *
+   * @example
+   * ```typescript
+   * const result = await AsyncResult.from(primarySource())
+   *   .orAsyncLazy(() => expensiveFallbackSource())  // Вызовется только при Err
+   *   .unwrap();
+   * ```
+   */
+  orAsyncLazy<F>(fn: () => Promise<Result<T, F>>): AsyncResultChain<T, F> {
+    const newPromise = this.promise.then(async (result) => {
+      if (result.ok) {
+        return result as Result<T, F>;
+      }
+      return await fn();
+    });
+    return new AsyncResultChain(newPromise);
+  }
+
+  /**
    * Recovery при ошибке через async функцию
    *
    * @param fn - Async функция для обработки ошибки
