@@ -222,7 +222,7 @@ describe('ResultChain', () => {
     });
 
     it('должен выбрасывать ошибку для Err', () => {
-      expect(() => ErrChain('error').unwrap()).toThrow('Called unwrap on Err result');
+      expect(() => ErrChain('error').unwrap()).toThrow('Called unwrap on Err result: error');
     });
   });
 
@@ -246,7 +246,7 @@ describe('ResultChain', () => {
     });
 
     it('должен выбрасывать ошибку для Ok', () => {
-      expect(() => OkChain(42).unwrapErr()).toThrow('Called unwrapErr on Ok result');
+      expect(() => OkChain(42).unwrapErr()).toThrow('Called unwrapErr on Ok result: 42');
     });
   });
 

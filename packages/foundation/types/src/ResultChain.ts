@@ -33,6 +33,7 @@ import {
   unwrapOr as unwrapOrFn,
   isOk,
   isErr,
+  formatValue,
 } from './result';
 
 /**
@@ -176,11 +177,13 @@ export class ResultChain<T, E> {
    * @example
    * ```typescript
    * const error = ErrChain('упс').unwrapErr(); // 'упс'
+   * const value = OkChain(42).unwrapErr(); // выбрасывает Error с информацией о значении
    * ```
    */
   unwrapErr(): E {
     if (this.data.ok) {
-      throw new Error('Called unwrapErr on Ok result');
+      const valueInfo = formatValue(this.data.value);
+      throw new Error(`Called unwrapErr on Ok result: ${valueInfo}`);
     }
     return this.data.error;
   }

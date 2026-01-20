@@ -229,6 +229,28 @@ export const combine = <T, E>(results: Array<Result<T, E>>): Result<T[], E> => {
 };
 
 /**
+ * Форматирует значение в строку для сообщений об ошибках
+ *
+ * @param value - Значение для форматирования
+ * @returns Строковое представление значения
+ *
+ * @internal
+ */
+export function formatValue(value: unknown): string {
+  if (value === null) return 'null';
+  if (value === undefined) return 'undefined';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (value instanceof Error) return value.message;
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+/**
  * Unwrap успешного Result (небезопасно)
  *
  * @param result - Result для unwrap
@@ -245,12 +267,13 @@ export const combine = <T, E>(results: Array<Result<T, E>>): Result<T[], E> => {
  * const value = unwrap(result); // 42
  *
  * const error = Err('упс');
- * const value = unwrap(error); // выбрасывает Error
+ * const value = unwrap(error); // выбрасывает Error с информацией об ошибке
  * ```
  */
 export const unwrap = <T, E>(result: Result<T, E>): T => {
   if (!result.ok) {
-    throw new Error('Called unwrap on Err result');
+    const errorInfo = formatValue(result.error);
+    throw new Error(`Called unwrap on Err result: ${errorInfo}`);
   }
   return result.value;
 };

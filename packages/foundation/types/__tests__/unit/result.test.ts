@@ -311,7 +311,7 @@ describe('Result<T, E>', () => {
     it('должен выбрасывать ошибку для Err', () => {
       const result = Err('error');
 
-      expect(() => unwrap(result)).toThrow('Called unwrap on Err result');
+      expect(() => unwrap(result)).toThrow('Called unwrap on Err result: error');
     });
 
     it('должен работать с разными типами', () => {

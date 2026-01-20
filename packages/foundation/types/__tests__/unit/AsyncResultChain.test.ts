@@ -239,7 +239,7 @@ describe('AsyncResultChain', () => {
 
     it('должен выбрасывать ошибку для Err', async () => {
       await expect(AsyncResult.err('error').unwrap()).rejects.toThrow(
-        'Called unwrap on Err result'
+        'Called unwrap on Err result: error'
       );
     });
   });
@@ -285,7 +285,7 @@ describe('AsyncResultChain', () => {
 
     it('должен выбрасывать ошибку для Ok', async () => {
       await expect(AsyncResult.ok(Promise.resolve(42)).unwrapErr()).rejects.toThrow(
-        'Called unwrapErr on Ok result'
+        'Called unwrapErr on Ok result: 42'
       );
     });
   });

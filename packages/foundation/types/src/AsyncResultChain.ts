@@ -22,7 +22,7 @@
  * ```
  */
 
-import { Result, Ok, Err } from './result';
+import { Result, Ok, Err, formatValue } from './result';
 import { ResultChain, toChain } from './ResultChain';
 
 /**
@@ -195,7 +195,8 @@ export class AsyncResultChain<T, E> {
   async unwrap(): Promise<T> {
     const result = await this.promise;
     if (!result.ok) {
-      throw new Error('Called unwrap on Err result');
+      const errorInfo = formatValue(result.error);
+      throw new Error(`Called unwrap on Err result: ${errorInfo}`);
     }
     return result.value;
   }
@@ -251,7 +252,8 @@ export class AsyncResultChain<T, E> {
   async unwrapErr(): Promise<E> {
     const result = await this.promise;
     if (result.ok) {
-      throw new Error('Called unwrapErr on Ok result');
+      const valueInfo = formatValue(result.value);
+      throw new Error(`Called unwrapErr on Ok result: ${valueInfo}`);
     }
     return result.error;
   }
