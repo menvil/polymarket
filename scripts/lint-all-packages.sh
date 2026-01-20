@@ -47,11 +47,21 @@ for pkg_file in $PACKAGES; do
   echo -e "${YELLOW}Linting package: $pkg_name${NC}"
   echo "  Directory: $pkg_dir"
 
-  # Check if package has lint script
-  if ! grep -q '"lint"' "$pkg_file"; then
-    echo -e "  ${RED}⚠️  No 'lint' script found, skipping...${NC}"
-    echo ""
-    continue
+  # Check if package has lint script(s) for the selected mode
+  if [[ -n "$FIX_MODE" ]]; then
+    # In fix mode, check for fix scripts or fallback scripts
+    if ! grep -Eq '"lint:all:fix"|"lint:fix"|"lint:all"|"lint"' "$pkg_file"; then
+      echo -e "  ${RED}⚠️  No lint scripts found, skipping...${NC}"
+      echo ""
+      continue
+    fi
+  else
+    # In check mode, check for check scripts
+    if ! grep -Eq '"lint:all"|"lint"' "$pkg_file"; then
+      echo -e "  ${RED}⚠️  No 'lint:all' or 'lint' script found, skipping...${NC}"
+      echo ""
+      continue
+    fi
   fi
 
   # Run lint (with or without fix)
