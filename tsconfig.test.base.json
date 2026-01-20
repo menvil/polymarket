@@ -3,7 +3,7 @@
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
     "rootDir": ".",
-    "types": ["jest", "@types/jest", "@jest/globals"],
+    "types": ["jest", "@jest/globals"],
     "noEmit": true
   }
 }
