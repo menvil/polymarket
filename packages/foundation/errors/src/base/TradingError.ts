@@ -278,7 +278,7 @@ export class TradingError extends Error implements ITradingError {
       message: this.message,
       severity: this.severity,
       timestamp: this.timestamp.toISOString(),
-      context: this.context,
+      ...(this.context !== undefined && { context: this.context }),
     };
   }
 
