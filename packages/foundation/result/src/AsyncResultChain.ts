@@ -736,7 +736,7 @@ export class AsyncResultChain<T, E> {
  *
  * @example
  * ```typescript
- * import { AsyncResult } from '@polymarket/types';
+ * import { AsyncResult } from '@polymarket/result';
  *
  * // Из Promise<Result>
  * const result1 = await AsyncResult.from(fetchUser('123')).unwrap();

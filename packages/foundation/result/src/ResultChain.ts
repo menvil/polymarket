@@ -535,7 +535,7 @@ export const toChain = <T, E>(result: Result<T, E>): ResultChain<T, E> => {
  *
  * @example
  * ```typescript
- * import { R } from '@polymarket/types';
+ * import { R } from '@polymarket/result';
  *
  * const result = R.ok(42).map(x => x * 2).unwrap(); // 84
  * const fallback = R.err('error').or(Ok(0)); // Ok(0)

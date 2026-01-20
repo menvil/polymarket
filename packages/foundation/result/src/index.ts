@@ -1,5 +1,5 @@
 /**
- * @polymarket/types - Foundation type utilities
+ * @polymarket/result - Foundation type utilities
  *
  * @remarks
  * Базовые типы для функционального программирования в Polymarket trading system.
@@ -18,7 +18,7 @@
  *
  * **1. Функциональный стиль (plain objects):**
  * ```typescript
- * import { Result, Ok, Err, map, flatMap } from '@polymarket/types';
+ * import { Result, Ok, Err, map, flatMap } from '@polymarket/result';
  *
  * function divide(a: number, b: number): Result<number, string> {
  *   if (b === 0) return Err('Division by zero');
@@ -36,7 +36,7 @@
  *
  * **2. OOP стиль (method chaining):**
  * ```typescript
- * import { OkChain, ErrChain } from '@polymarket/types';
+ * import { OkChain, ErrChain } from '@polymarket/result';
  *
  * const result = OkChain(10)
  *   .map(x => x / 2)
@@ -47,7 +47,7 @@
  *
  * **3. Async стиль (для Promise<Result>):**
  * ```typescript
- * import { AsyncResult } from '@polymarket/types';
+ * import { AsyncResult } from '@polymarket/result';
  *
  * const user = await AsyncResult.from(fetchUser('123'))
  *   .mapAsync(user => enrichUserData(user))
