@@ -537,7 +537,8 @@ export class AsyncResultChain<T, E> {
   async expect(message: string): Promise<T> {
     const result = await this.promise;
     if (!result.ok) {
-      throw new Error(`${message}: ${result.error}`);
+      const errorInfo = formatValue(result.error);
+      throw new Error(`${message}: ${errorInfo}`);
     }
     return result.value;
   }
@@ -558,7 +559,8 @@ export class AsyncResultChain<T, E> {
   async expectErr(message: string): Promise<E> {
     const result = await this.promise;
     if (result.ok) {
-      throw new Error(`${message}: expected Err but got Ok(${result.value})`);
+      const valueInfo = formatValue(result.value);
+      throw new Error(`${message}: expected Err but got Ok(${valueInfo})`);
     }
     return result.error;
   }

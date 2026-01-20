@@ -381,7 +381,8 @@ export class ResultChain<T, E> {
    */
   expect(message: string): T {
     if (!this.data.ok) {
-      throw new Error(`${message}: ${this.data.error}`);
+      const errorInfo = formatValue(this.data.error);
+      throw new Error(`${message}: ${errorInfo}`);
     }
     return this.data.value;
   }
@@ -401,7 +402,8 @@ export class ResultChain<T, E> {
    */
   expectErr(message: string): E {
     if (this.data.ok) {
-      throw new Error(`${message}: expected Err but got Ok(${this.data.value})`);
+      const valueInfo = formatValue(this.data.value);
+      throw new Error(`${message}: expected Err but got Ok(${valueInfo})`);
     }
     return this.data.error;
   }
