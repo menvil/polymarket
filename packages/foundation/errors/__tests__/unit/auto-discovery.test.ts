@@ -102,11 +102,17 @@ function findTsFiles(dir: string, files: string[] = []): string[] {
           }
         }
       } catch (error) {
-        // Игнорируем ошибки доступа к файлам
+        // Логируем ошибки доступа к файлам для отладки (не ломая тесты)
+        if (process.env.DEBUG) {
+          console.debug(`[auto-discovery] File access error for ${fullPath}:`, error);
+        }
       }
     }
   } catch (error) {
-    // Игнорируем ошибки чтения директории
+    // Логируем ошибки чтения директории для отладки (не ломая тесты)
+    if (process.env.DEBUG) {
+      console.debug(`[auto-discovery] Directory read error for ${dir}:`, error);
+    }
   }
 
   return files;
@@ -186,7 +192,10 @@ function discoverErrorClasses(): Array<{
         }
       }
     } catch (error) {
-      // Игнорируем ошибки импорта (например, файлы с интерфейсами)
+      // Логируем ошибки импорта для отладки (например, файлы с интерфейсами)
+      if (process.env.DEBUG) {
+        console.debug(`[auto-discovery] Module import error for ${tsFilePath}:`, error);
+      }
     }
   }
 
