@@ -55,6 +55,41 @@
  *   .unwrapOr({ id: 'guest', name: 'Guest' });
  * ```
  *
+ * **Advanced patterns:**
+ *
+ * *Union error types:*
+ * ```typescript
+ * type NetworkError = { type: 'network'; code: number };
+ * type ValidationError = { type: 'validation'; field: string };
+ * type AppError = NetworkError | ValidationError;
+ *
+ * function fetchAndValidate(id: string): Result<User, AppError> {
+ *   return OkChain({ id, name: 'Test' })
+ *     .flatMap(user => validateUser(user))
+ *     .toResult();
+ * }
+ * ```
+ *
+ * *Recovery patterns:*
+ * ```typescript
+ * const result = await AsyncResult.from(primaryAPI())
+ *   .orElseAsync(err => {
+ *     console.log('Primary failed:', err);
+ *     return fallbackAPI(); // Fallback при ошибке
+ *   })
+ *   .unwrapOr(defaultValue);
+ * ```
+ *
+ * *Safe wrapping throwable functions:*
+ * ```typescript
+ * const safeJSON = fromThrowable(
+ *   JSON.parse,
+ *   (error) => `Parse error: ${error}`
+ * );
+ * const result = safeJSON('{"name":"John"}');
+ * // result: Ok({name: "John"})
+ * ```
+ *
  * @packageDocumentation
  */
 

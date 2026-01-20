@@ -10,6 +10,11 @@
  * - Автоматическая обработка Promise rejections
  * - Композиция async операций без явного await
  *
+ * **Обработка exceptions:**
+ * - Async методы (*Async, tap, tapErr) ловят exceptions и преобразуют их в Err<E>
+ * - Sync методы (map, flatMap) НЕ ловят exceptions - они приводят к rejected Promise
+ * - При преобразовании exception в E используется type assertion - убедитесь что E достаточно широкий
+ *
  * @template T - Тип успешного результата
  * @template E - Тип ошибки
  *
@@ -51,8 +56,9 @@ export class AsyncResultChain<T, E> {
    * @returns Новый AsyncResultChain
    *
    * @remarks
-   * Автоматически ловит исключения из fn и преобразует их в Err.
-   * Если fn выбросит исключение, оно будет приведено к типу E.
+   * ⚠️ Автоматически ловит исключения из fn и преобразует их в Err.
+   * Exception будет приведён к типу E через type assertion - убедитесь что тип E
+   * может представить возможные exceptions (например, E = unknown | Error | string).
    *
    * @example
    * ```typescript
@@ -82,8 +88,8 @@ export class AsyncResultChain<T, E> {
    * @returns Новый AsyncResultChain
    *
    * @remarks
-   * Автоматически ловит исключения из fn и преобразует их в Err.
-   * Если fn выбросит исключение, оно будет приведено к типу E.
+   * ⚠️ Если fn выбросит исключение, Promise будет rejected.
+   * Для безопасной обработки exceptions используйте mapAsync с try/catch.
    *
    * @example
    * ```typescript
@@ -94,11 +100,7 @@ export class AsyncResultChain<T, E> {
   map<U>(fn: (value: T) => U): AsyncResultChain<U, E> {
     const newPromise = this.promise.then((result) => {
       if (result.ok) {
-        try {
-          return Ok(fn(result.value));
-        } catch (error) {
-          return Err(error as E);
-        }
+        return Ok(fn(result.value));
       }
       return result as Result<U, E>;
     });
@@ -345,6 +347,11 @@ export class AsyncResultChain<T, E> {
    * @param fn - Функция для выполнения (получает value если Ok)
    * @returns this для продолжения цепочки
    *
+   * @remarks
+   * ⚠️ Если fn выбросит exception, Result преобразуется в Err.
+   * Это означает что ошибка в side-effect прерывает цепочку.
+   * Если вам нужно игнорировать ошибки в tap, оберните fn в try/catch.
+   *
    * @example
    * ```typescript
    * const result = await AsyncResult.from(fetchUser('123'))
@@ -372,6 +379,11 @@ export class AsyncResultChain<T, E> {
    *
    * @param fn - Функция для выполнения (получает error если Err)
    * @returns this для продолжения цепочки
+   *
+   * @remarks
+   * ⚠️ Если fn выбросит exception, он заменит текущую ошибку.
+   * Это означает что exception в tapErr изменяет ошибку в Result.
+   * Если вам нужно игнорировать ошибки в tapErr, оберните fn в try/catch.
    *
    * @example
    * ```typescript

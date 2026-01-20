@@ -409,10 +409,16 @@ export class ResultChain<T, E> {
   }
 
   /**
-   * Алиас для flatMap (более явное имя в Rust-стиле)
+   * Алиас для flatMap (Rust-стиль, более явное имя)
    *
    * @param fn - Функция возвращающая Result
    * @returns Новый ResultChain
+   *
+   * @remarks
+   * Функционально идентичен flatMap. Название из Rust/Result паттерна.
+   * Используйте тот стиль, который привычнее вашей команде:
+   * - `andThen` - Rust-стиль (and_then в Rust)
+   * - `flatMap` - FP-стиль (Haskell, Scala, др.)
    *
    * @example
    * ```typescript

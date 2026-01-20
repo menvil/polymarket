@@ -203,6 +203,7 @@ export const mapErr = <T, E, F>(
  * @remarks
  * Если хотя бы один Result содержит ошибку, возвращает первую ошибку.
  * Если все Results успешные, возвращает массив всех значений.
+ * Пустой массив возвращает Ok([]).
  *
  * @example
  * ```typescript
@@ -213,6 +214,9 @@ export const mapErr = <T, E, F>(
  * const withError = [Ok(1), Err('упс'), Ok(3)];
  * const failed = combine(withError);
  * // failed: Err('упс')
+ *
+ * const empty = combine([]);
+ * // empty: Ok([])
  * ```
  */
 export const combine = <T, E>(results: Array<Result<T, E>>): Result<T[], E> => {
@@ -234,6 +238,14 @@ export const combine = <T, E>(results: Array<Result<T, E>>): Result<T[], E> => {
  * @param value - Значение для форматирования
  * @returns Строковое представление значения
  *
+ * @remarks
+ * Обрабатывает специальные случаи:
+ * - Циклические ссылки (через WeakSet)
+ * - Error объекты с именем и сообщением
+ * - Date, Map, Set с их строковым представлением
+ * - Symbol с toStringTag
+ * - Функции с именем
+ *
  * @internal
  */
 export function formatValue(value: unknown): string {
@@ -245,6 +257,7 @@ export function formatValue(value: unknown): string {
     return value.message ? `${value.name}: ${value.message}` : value.name;
   }
 
+  // Примитивы
   if (typeof value === 'string') return value;
   if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
     return String(value);
@@ -254,9 +267,40 @@ export function formatValue(value: unknown): string {
     return `[Function${value.name ? `: ${value.name}` : ''}]`;
   }
 
+  // Специальные встроенные типы
+  if (value instanceof Date) {
+    return `Date(${value.toISOString()})`;
+  }
+  if (value instanceof Map) {
+    return `Map(${value.size} entries)`;
+  }
+  if (value instanceof Set) {
+    return `Set(${value.size} items)`;
+  }
+  if (value instanceof RegExp) {
+    return value.toString();
+  }
+
+  // Объекты с Symbol.toStringTag
+  const tag = (value as Record<symbol, unknown>)[Symbol.toStringTag];
+  if (tag && typeof tag === 'string') {
+    return `[${tag}]`;
+  }
+
+  // Попытка JSON.stringify с обработкой циклических ссылок
   try {
-    return JSON.stringify(value) ?? String(value);
+    const seen = new WeakSet();
+    return JSON.stringify(value, (_key, val) => {
+      if (typeof val === 'object' && val !== null) {
+        if (seen.has(val)) {
+          return '[Circular]';
+        }
+        seen.add(val);
+      }
+      return val;
+    }) ?? String(value);
   } catch {
+    // Fallback для объектов которые нельзя сериализовать
     return String(value);
   }
 }

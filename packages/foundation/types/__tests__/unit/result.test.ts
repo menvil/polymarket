@@ -502,12 +502,12 @@ describe('Result<T, E>', () => {
       expect(formatValue([1, 2, 3])).toBe('[1,2,3]');
     });
 
-    it('должен использовать String() для циклических объектов', () => {
+    it('должен обрабатывать циклические ссылки с метками [Circular]', () => {
       const circular: any = { a: 1 };
       circular.self = circular;
 
       const result = formatValue(circular);
-      expect(result).toBe('[object Object]');
+      expect(result).toBe('{"a":1,"self":"[Circular]"}');
     });
   });
 });
