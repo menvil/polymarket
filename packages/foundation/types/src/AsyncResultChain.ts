@@ -50,6 +50,10 @@ export class AsyncResultChain<T, E> {
    * @param fn - Async функция для трансформации значения
    * @returns Новый AsyncResultChain
    *
+   * @remarks
+   * Автоматически ловит исключения из fn и преобразует их в Err.
+   * Если fn выбросит исключение, оно будет приведено к типу E.
+   *
    * @example
    * ```typescript
    * const result = AsyncResult.from(getUser('123'))
@@ -59,8 +63,13 @@ export class AsyncResultChain<T, E> {
   mapAsync<U>(fn: (value: T) => Promise<U>): AsyncResultChain<U, E> {
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
-        const newValue = await fn(result.value);
-        return Ok(newValue);
+        try {
+          const newValue = await fn(result.value);
+          return Ok(newValue);
+        } catch (error) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return Err(error as any as E);
+        }
       }
       return result as Result<U, E>;
     });
@@ -73,6 +82,10 @@ export class AsyncResultChain<T, E> {
    * @param fn - Функция для трансформации значения
    * @returns Новый AsyncResultChain
    *
+   * @remarks
+   * Автоматически ловит исключения из fn и преобразует их в Err.
+   * Если fn выбросит исключение, оно будет приведено к типу E.
+   *
    * @example
    * ```typescript
    * const result = AsyncResult.from(getUser('123'))
@@ -82,7 +95,12 @@ export class AsyncResultChain<T, E> {
   map<U>(fn: (value: T) => U): AsyncResultChain<U, E> {
     const newPromise = this.promise.then((result) => {
       if (result.ok) {
-        return Ok(fn(result.value));
+        try {
+          return Ok(fn(result.value));
+        } catch (error) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return Err(error as any as E);
+        }
       }
       return result as Result<U, E>;
     });
@@ -94,6 +112,10 @@ export class AsyncResultChain<T, E> {
    *
    * @param fn - Async функция возвращающая Result
    * @returns Новый AsyncResultChain
+   *
+   * @remarks
+   * Автоматически ловит исключения из fn и преобразует их в Err.
+   * Если fn выбросит исключение, оно будет приведено к типу E.
    *
    * @example
    * ```typescript
@@ -107,7 +129,12 @@ export class AsyncResultChain<T, E> {
   ): AsyncResultChain<U, E | F> {
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
-        return (await fn(result.value)) as Result<U, E | F>;
+        try {
+          return (await fn(result.value)) as Result<U, E | F>;
+        } catch (error) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return Err(error as any as E | F);
+        }
       }
       return result as Result<U, E | F>;
     });
@@ -120,6 +147,10 @@ export class AsyncResultChain<T, E> {
    * @param fn - Функция возвращающая Result
    * @returns Новый AsyncResultChain
    *
+   * @remarks
+   * Автоматически ловит исключения из fn и преобразует их в Err.
+   * Если fn выбросит исключение, оно будет приведено к типу E | F.
+   *
    * @example
    * ```typescript
    * const result = AsyncResult.from(getUser('123'))
@@ -129,7 +160,12 @@ export class AsyncResultChain<T, E> {
   flatMap<U, F>(fn: (value: T) => Result<U, F>): AsyncResultChain<U, E | F> {
     const newPromise = this.promise.then((result) => {
       if (result.ok) {
-        return fn(result.value) as Result<U, E | F>;
+        try {
+          return fn(result.value) as Result<U, E | F>;
+        } catch (error) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return Err(error as any as E | F);
+        }
       }
       return result as Result<U, E | F>;
     });
@@ -151,8 +187,13 @@ export class AsyncResultChain<T, E> {
   mapErrAsync<F>(fn: (error: E) => Promise<F>): AsyncResultChain<T, F> {
     const newPromise = this.promise.then(async (result) => {
       if (!result.ok) {
-        const newError = await fn(result.error);
-        return Err(newError);
+        try {
+          const newError = await fn(result.error);
+          return Err(newError);
+        } catch (error) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return Err(error as any as F);
+        }
       }
       return result as Result<T, F>;
     });
@@ -174,7 +215,12 @@ export class AsyncResultChain<T, E> {
   mapErr<F>(fn: (error: E) => F): AsyncResultChain<T, F> {
     const newPromise = this.promise.then((result) => {
       if (!result.ok) {
-        return Err(fn(result.error));
+        try {
+          return Err(fn(result.error));
+        } catch (error) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return Err(error as any as F);
+        }
       }
       return result as Result<T, F>;
     });
@@ -235,7 +281,14 @@ export class AsyncResultChain<T, E> {
    */
   async unwrapOrElse(fn: (error: E) => T): Promise<T> {
     const result = await this.promise;
-    return result.ok ? result.value : fn(result.error);
+    if (result.ok) {
+      return result.value;
+    }
+    try {
+      return fn(result.error);
+    } catch (error) {
+      throw new Error(`Exception in unwrapOrElse handler: ${formatValue(error)}`);
+    }
   }
 
   /**
@@ -309,7 +362,12 @@ export class AsyncResultChain<T, E> {
   tap(fn: (value: T) => void | Promise<void>): AsyncResultChain<T, E> {
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
-        await fn(result.value);
+        try {
+          await fn(result.value);
+        } catch (error) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return Err(error as any as E);
+        }
       }
       return result;
     });
@@ -332,7 +390,12 @@ export class AsyncResultChain<T, E> {
   tapErr(fn: (error: E) => void | Promise<void>): AsyncResultChain<T, E> {
     const newPromise = this.promise.then(async (result) => {
       if (!result.ok) {
-        await fn(result.error);
+        try {
+          await fn(result.error);
+        } catch (error) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          return Err(error as any as E);
+        }
       }
       return result;
     });
@@ -358,7 +421,11 @@ export class AsyncResultChain<T, E> {
     err: (error: E) => U | Promise<U>;
   }): Promise<U> {
     const result = await this.promise;
-    return result.ok ? handlers.ok(result.value) : handlers.err(result.error);
+    try {
+      return result.ok ? await handlers.ok(result.value) : await handlers.err(result.error);
+    } catch (error) {
+      throw new Error(`Exception in match handler: ${formatValue(error)}`);
+    }
   }
 
   /**
@@ -476,7 +543,12 @@ export class AsyncResultChain<T, E> {
       if (result.ok) {
         return result as Result<T, F>;
       }
-      return await fn();
+      try {
+        return await fn();
+      } catch (error) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return Err(error as any as F);
+      }
     });
     return new AsyncResultChain(newPromise);
   }
@@ -502,7 +574,12 @@ export class AsyncResultChain<T, E> {
       if (result.ok) {
         return result as Result<T, F>;
       }
-      return await fn(result.error);
+      try {
+        return await fn(result.error);
+      } catch (error) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return Err(error as any as F);
+      }
     });
     return new AsyncResultChain(newPromise);
   }
@@ -528,7 +605,12 @@ export class AsyncResultChain<T, E> {
       if (result.ok) {
         return result as Result<T, F>;
       }
-      return fn(result.error);
+      try {
+        return fn(result.error);
+      } catch (error) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        return Err(error as any as F);
+      }
     });
     return new AsyncResultChain(newPromise);
   }
