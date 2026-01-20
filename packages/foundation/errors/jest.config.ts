@@ -30,10 +30,7 @@ const config: Config = {
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', {
-      tsconfig: {
-        esModuleInterop: true,
-        allowSyntheticDefaultImports: true,
-      },
+      tsconfig: 'tsconfig.eslint.json',
     }],
   },
 };

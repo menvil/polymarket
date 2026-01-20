@@ -317,7 +317,7 @@ npm run test:coverage
 
 ## 🏗️ Архитектура
 
-```
+```text
 @polymarket/errors/
 ├── src/
 │   ├── base/
@@ -424,6 +424,7 @@ MIT
 При добавлении нового класса ошибки:
 
 1. **Создайте класс** в `src/base/` или `src/domain/`
+
    ```typescript
    export class MyError extends TradingError {
      public readonly severity = 'high' as const;
@@ -431,6 +432,7 @@ MIT
    ```
 
 2. **Добавьте экспорт** в соответствующий `index.ts`
+
    ```typescript
    export * from './MyError.js';
    ```

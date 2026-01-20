@@ -44,5 +44,4 @@ lerna-debug.log*
 .cache/
 
 # OS
-.DS_Store
 Thumbs.db
