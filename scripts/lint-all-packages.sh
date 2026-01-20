@@ -30,15 +30,12 @@ fi
 
 echo ""
 
-# Find all packages with package.json
-PACKAGES=$(find "$ROOT_DIR/packages" -type f -name "package.json" -not -path "*/node_modules/*" | sort)
-
 FAILED_PACKAGES=()
 SUCCESS_COUNT=0
 TOTAL_COUNT=0
 
-# Lint each package
-for pkg_file in $PACKAGES; do
+# Lint each package (safe iteration for paths with spaces)
+while IFS= read -r pkg_file; do
   pkg_dir=$(dirname "$pkg_file")
   pkg_name=$(basename "$pkg_dir")
 
@@ -126,7 +123,7 @@ for pkg_file in $PACKAGES; do
   fi
 
   echo ""
-done
+done < <(find "$ROOT_DIR/packages" -type f -name "package.json" -not -path "*/node_modules/*" | sort)
 
 # Summary
 echo "============================================"
