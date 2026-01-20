@@ -8,6 +8,7 @@
 - ✅ **100% покрытие тестами** - все классы автоматически тестируются
 - ✅ **Автоматические фичи** - `name`, `toJSON()`, `is()` работают автоматически
 - ✅ **Динамические сообщения** - поддержка шаблонов с контекстом
+- ✅ **Graceful error handling** - ошибки в template функциях не роняют программу
 - ✅ **Минимальный boilerplate** - новый класс = 1 строка кода
 - ✅ **Type-safe** - полная типобезопасность с TypeScript
 
@@ -106,11 +107,19 @@ abstract class TradingError extends Error {
   readonly timestamp: Date;
   readonly code?: string;
   readonly context?: Record<string, unknown>;
+  readonly innerError?: Error;
 
   toJSON(): Record<string, unknown>;
   static is(error: unknown): error is TradingError;
 }
 ```
+
+**Свойства:**
+- `severity` - уровень серьёзности ошибки (обязательно)
+- `timestamp` - время возникновения ошибки
+- `code` - опциональный код для детальной классификации
+- `context` - дополнительные данные для отладки
+- `innerError` - оригинальная ошибка (если ошибка возникла в template функции)
 
 #### Конструктор
 
