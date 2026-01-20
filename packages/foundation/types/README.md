@@ -92,10 +92,8 @@ async function fetchUser(id: number) {
   return user;
 }
 
-// Короткий синтаксис с R alias
-import { R } from '@polymarket/types';
-
-const result = await R.from(fetchData())
+// AsyncResult.from для Promise<Result>
+const result = await AsyncResult.from(fetchData())
   .map(data => processData(data))
   .unwrapOr(defaultValue);
 ```
