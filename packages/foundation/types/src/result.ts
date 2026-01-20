@@ -239,12 +239,22 @@ export const combine = <T, E>(results: Array<Result<T, E>>): Result<T[], E> => {
  * @returns Строковое представление значения
  *
  * @remarks
- * Обрабатывает специальные случаи:
+ * Безопасно обрабатывает любые значения, включая специальные случаи:
  * - Циклические ссылки (через WeakSet)
  * - Error объекты с именем и сообщением
- * - Date, Map, Set с их строковым представлением
- * - Symbol с toStringTag
+ * - Date объекты (включая Invalid Date)
+ * - Map, Set с их размером
+ * - Symbol и toStringTag
  * - Функции с именем
+ *
+ * @example
+ * ```typescript
+ * formatValue(42) // "42"
+ * formatValue(new Error('oops')) // "Error: oops"
+ * formatValue(new Date('2024-01-01')) // "Date(2024-01-01T00:00:00.000Z)"
+ * formatValue(new Date('invalid')) // "Date(Invalid Date)"
+ * formatValue({ a: 1 }) // '{"a":1}'
+ * ```
  *
  * @internal
  */
@@ -269,6 +279,11 @@ export function formatValue(value: unknown): string {
 
   // Специальные встроенные типы
   if (value instanceof Date) {
+    // Проверяем валидность даты перед вызовом toISOString()
+    // isNaN(value.getTime()) возвращает true для Invalid Date
+    if (isNaN(value.getTime())) {
+      return 'Date(Invalid Date)';
+    }
     return `Date(${value.toISOString()})`;
   }
   if (value instanceof Map) {

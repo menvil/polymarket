@@ -497,6 +497,19 @@ describe('Result<T, E>', () => {
       expect(formatValue(error)).toBe('Error');
     });
 
+    it('должен форматировать валидные даты', () => {
+      const date = new Date('2024-01-15T10:30:00.000Z');
+      expect(formatValue(date)).toBe('Date(2024-01-15T10:30:00.000Z)');
+    });
+
+    it('должен безопасно форматировать невалидные даты', () => {
+      const invalidDate = new Date('invalid');
+      expect(formatValue(invalidDate)).toBe('Date(Invalid Date)');
+
+      const invalidDate2 = new Date(NaN);
+      expect(formatValue(invalidDate2)).toBe('Date(Invalid Date)');
+    });
+
     it('должен форматировать объекты через JSON.stringify', () => {
       expect(formatValue({ a: 1, b: 2 })).toBe('{"a":1,"b":2}');
       expect(formatValue([1, 2, 3])).toBe('[1,2,3]');
