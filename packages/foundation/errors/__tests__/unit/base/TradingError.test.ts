@@ -154,6 +154,23 @@ describe('TradingError', () => {
       });
     });
 
+    it('должен сериализовать ошибку без code и context', () => {
+      const error = new TestError('Test error');
+
+      const json = error.toJSON();
+
+      expect(json).toEqual({
+        name: 'TestError',
+        message: 'Test error',
+        severity: 'medium',
+        timestamp: error.timestamp.toISOString()
+      });
+
+      // Проверяем что context и code не присутствуют в объекте
+      expect(json).not.toHaveProperty('code');
+      expect(json).not.toHaveProperty('context');
+    });
+
     it('должен работать с JSON.stringify()', () => {
       const error = new TestError('Test error', {
         code: 'TEST_CODE',

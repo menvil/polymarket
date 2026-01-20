@@ -62,7 +62,8 @@ import { testTradingError, TradingErrorConstructor } from '../helpers/sharedErro
  * Функция игнорирует:
  * - Служебные директории: node_modules, dist, __tests__, coverage
  * - Файлы index.ts (файлы экспорта)
- * - Файлы начинающиеся с 'I' (интерфейсы)
+ * - Интерфейсы TypeScript (файлы вида I<UpperCase>, например ITradingError, IValidator)
+ * - Классы ошибок вида I<lowercase> (InsufficientFundsError, InvalidOrderError) НЕ игнорируются
  * - Файл TradingError.ts (базовый класс)
  *
  * @example
@@ -86,13 +87,17 @@ function findTsFiles(dir: string, files: string[] = []): string[] {
             findTsFiles(fullPath, files);
           }
         } else if (stat.isFile() && extname(entry) === '.ts') {
-          // Игнорируем index.ts, интерфейсы, TradingError.ts (базовый класс)
+          // Игнорируем index.ts, интерфейсы (I<UpperCase>), TradingError.ts (базовый класс)
           const fileName = basename(entry, '.ts');
-          if (
-            fileName !== 'index' &&
-            !fileName.startsWith('I') &&
-            fileName !== 'TradingError'
-          ) {
+
+          // Интерфейсы TypeScript именуются как I<Name> где вторая буква заглавная
+          // (ITradingError, IValidator), в отличие от классов ошибок (InsufficientFundsError, InvalidOrderError)
+          const isInterface =
+            fileName.startsWith('I') &&
+            fileName.length > 1 &&
+            fileName[1] === fileName[1].toUpperCase();
+
+          if (fileName !== 'index' && !isInterface && fileName !== 'TradingError') {
             files.push(fullPath);
           }
         }
