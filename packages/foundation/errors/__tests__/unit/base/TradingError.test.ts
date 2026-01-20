@@ -211,6 +211,87 @@ describe('TradingError', () => {
     });
   });
 
+  describe('innerError handling', () => {
+    it('должен устанавливать innerError когда функция-шаблон выбрасывает ошибку', () => {
+      const templateError = new Error('Template execution failed');
+      const error = new TestError(
+        () => {
+          throw templateError;
+        },
+        { context: { field: 'price' } }
+      );
+
+      expect(error.innerError).toBe(templateError);
+      expect(error.innerError?.message).toBe('Template execution failed');
+    });
+
+    it('должен использовать безопасное сообщение когда функция-шаблон выбрасывает ошибку', () => {
+      const error = new TestError(
+        () => {
+          throw new Error('Template failed');
+        },
+        { context: { field: 'price' } }
+      );
+
+      expect(error.message).toBe('Message template function failed: Template failed');
+    });
+
+    it('должен сохранять context когда функция-шаблон выбрасывает ошибку', () => {
+      const error = new TestError(
+        () => {
+          throw new Error('Template failed');
+        },
+        { context: { field: 'price', value: -10 } }
+      );
+
+      expect(error.context).toEqual({ field: 'price', value: -10 });
+    });
+
+    it('должен включать innerError в toJSON() когда он есть', () => {
+      const error = new TestError(
+        () => {
+          throw new Error('Template failed');
+        },
+        { context: { field: 'price' } }
+      );
+
+      const json = error.toJSON();
+
+      expect(json.innerError).toBeDefined();
+      expect((json.innerError as any).name).toBe('Error');
+      expect((json.innerError as any).message).toBe('Template failed');
+      expect((json.innerError as any).stack).toBeDefined();
+    });
+
+    it('должен преобразовать non-Error исключение в Error', () => {
+      const error = new TestError(
+        () => {
+          throw 'String error';
+        },
+        { context: { field: 'price' } }
+      );
+
+      expect(error.innerError).toBeInstanceOf(Error);
+      expect(error.innerError?.message).toBe('String error');
+    });
+
+    it('не должен устанавливать innerError когда функция-шаблон выполняется успешно', () => {
+      const error = new TestError((ctx) => `Field ${ctx.field} is invalid`, {
+        context: { field: 'price' },
+      });
+
+      expect(error.innerError).toBeUndefined();
+    });
+
+    it('не должен включать innerError в toJSON() когда его нет', () => {
+      const error = new TestError('Test error');
+
+      const json = error.toJSON();
+
+      expect(json).not.toHaveProperty('innerError');
+    });
+  });
+
   describe('static is()', () => {
     it('должен правильно определять тип ошибки', () => {
       const error = new TestError('Test error');

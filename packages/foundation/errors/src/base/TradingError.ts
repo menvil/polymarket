@@ -201,6 +201,15 @@ export class TradingError extends Error implements ITradingError {
   public readonly context?: Record<string, unknown>;
 
   /**
+   * Внутренняя ошибка (опционально)
+   *
+   * @remarks
+   * Сохраняет оригинальную ошибку, выброшенную из функции-шаблона сообщения.
+   * Полезно для отладки и логирования цепочки ошибок.
+   */
+  public readonly innerError?: Error;
+
+  /**
    * Создаёт TradingError
    *
    * @param message - Человекочитаемое сообщение об ошибке (строка или функция-шаблон)
@@ -245,6 +254,7 @@ export class TradingError extends Error implements ITradingError {
   ) {
     // Разрешаем сообщение
     let resolvedMessage: string;
+    let innerError: Error | undefined;
 
     if (typeof message === 'function') {
       // Функция-шаблон требует обязательного наличия context
@@ -254,7 +264,17 @@ export class TradingError extends Error implements ITradingError {
             'Pass context in options or use a static string message.'
         );
       }
-      resolvedMessage = message(options.context);
+
+      // Обрабатываем исключения из функции-шаблона
+      try {
+        resolvedMessage = message(options.context);
+      } catch (error) {
+        // Сохраняем оригинальную ошибку для отладки
+        innerError = error instanceof Error ? error : new Error(String(error));
+
+        // Используем безопасное сообщение с деталями ошибки шаблона
+        resolvedMessage = `Message template function failed: ${innerError.message}`;
+      }
     } else if (typeof message === 'string') {
       resolvedMessage = message;
     } else {
@@ -270,6 +290,7 @@ export class TradingError extends Error implements ITradingError {
     this.timestamp = new Date();
     this.code = options?.code;
     this.context = options?.context;
+    this.innerError = innerError;
 
     // captureStackTrace - специфичный для V8 API (Node.js, Chrome)
     // Fallback для сред без V8 (Firefox, Safari)
@@ -299,6 +320,13 @@ export class TradingError extends Error implements ITradingError {
       severity: this.severity,
       timestamp: this.timestamp.toISOString(),
       ...(this.context !== undefined && { context: this.context }),
+      ...(this.innerError && {
+        innerError: {
+          name: this.innerError.name,
+          message: this.innerError.message,
+          stack: this.innerError.stack,
+        },
+      }),
     };
   }
 

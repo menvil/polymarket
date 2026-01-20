@@ -123,6 +123,26 @@ export interface ITradingError {
   readonly context?: Record<string, unknown>;
 
   /**
+   * Внутренняя ошибка (опционально)
+   *
+   * @remarks
+   * Используется для хранения оригинальной ошибки, которая была выброшена
+   * из функции-шаблона сообщения или для цепочки ошибок.
+   * Полезно для отладки и логирования.
+   *
+   * @example
+   * ```typescript
+   * // Ошибка из функции-шаблона сохраняется в innerError
+   * const error = new ValidationError(
+   *   (ctx) => { throw new Error('Template failed'); },
+   *   { context: { field: 'price' } }
+   * );
+   * console.log(error.innerError); // Error: Template failed
+   * ```
+   */
+  readonly innerError?: Error;
+
+  /**
    * Сериализует ошибку в объект
    *
    * @returns Plain object с данными ошибки
