@@ -147,6 +147,47 @@
  * }
  *
  * // ═══════════════════════════════════════════════════════════════════
+ * // GRACEFUL ОБРАБОТКА ОШИБОК В TEMPLATE ФУНКЦИЯХ ✨
+ * // ═══════════════════════════════════════════════════════════════════
+ *
+ * // Если template функция выбрасывает ошибку, она обрабатывается gracefully:
+ * // 1. Оригинальная ошибка сохраняется в innerError
+ * // 2. Используется безопасное сообщение
+ * // 3. Context сохраняется для отладки
+ *
+ * const error = new ValidationError(
+ *   (ctx: any) => {
+ *     // Ошибка доступа к свойству
+ *     return ctx.missingField.toUpperCase();
+ *   },
+ *   { context: { field: 'price', value: -10 } }
+ * );
+ *
+ * console.log(error.message);
+ * // "Message template function failed: Cannot read properties of undefined (reading 'toUpperCase')"
+ *
+ * console.log(error.innerError);
+ * // TypeError: Cannot read properties of undefined (reading 'toUpperCase')
+ *
+ * console.log(error.context);
+ * // { field: 'price', value: -10 } - context сохранён!
+ *
+ * // innerError включается в toJSON() для отладки
+ * console.log(error.toJSON());
+ * // {
+ * //   name: 'ValidationError',
+ * //   message: 'Message template function failed: ...',
+ * //   severity: 'low',
+ * //   timestamp: '2024-01-20T12:00:00.000Z',
+ * //   context: { field: 'price', value: -10 },
+ * //   innerError: {
+ * //     name: 'TypeError',
+ * //     message: "Cannot read properties of undefined (reading 'toUpperCase')",
+ * //     stack: '...'
+ * //   }
+ * // }
+ *
+ * // ═══════════════════════════════════════════════════════════════════
  * // СЕРИАЛИЗАЦИЯ
  * // ═══════════════════════════════════════════════════════════════════
  *

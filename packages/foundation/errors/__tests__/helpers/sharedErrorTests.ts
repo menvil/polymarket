@@ -63,7 +63,7 @@ export interface SharedErrorTestOptions {
  * @param options - Параметры тестирования
  *
  * @remarks
- * Проверяет:
+ * Проверяет (27 тестов):
  * - Создание экземпляра
  * - Наследование от Error и TradingError
  * - Автоматическую установку name
@@ -75,6 +75,8 @@ export interface SharedErrorTestOptions {
  * - Работу static is()
  * - Работу instanceof
  * - Динамические сообщения
+ * - Graceful обработку ошибок из template функций
+ * - Свойство innerError при ошибках шаблона
  */
 export function testTradingError(options: SharedErrorTestOptions): void {
   const { ErrorClass, expectedName, expectedSeverity, testMessage } = options;
@@ -301,6 +303,65 @@ export function testTradingError(options: SharedErrorTestOptions): void {
             expect(error.severity).toBe(expectedSeverity);
           }
         }
+      });
+    });
+
+    describe('innerError handling', () => {
+      it('должен обрабатывать ошибки из функции-шаблона gracefully', () => {
+        const error = new ErrorClass(
+          () => {
+            throw new Error('Template failed');
+          },
+          { context: { field: 'test' } }
+        );
+
+        // Не должно выбросить исключение
+        expect(error).toBeInstanceOf(ErrorClass);
+        expect(error.message).toBe('Message template function failed: Template failed');
+        expect(error.innerError).toBeInstanceOf(Error);
+        expect(error.innerError?.message).toBe('Template failed');
+      });
+
+      it('должен сохранять context даже при ошибке в шаблоне', () => {
+        const error = new ErrorClass(
+          () => {
+            throw new Error('Template failed');
+          },
+          { context: { field: 'test', value: 123 } }
+        );
+
+        expect(error.context).toEqual({ field: 'test', value: 123 });
+      });
+
+      it('должен включать innerError в toJSON() при наличии', () => {
+        const error = new ErrorClass(
+          () => {
+            throw new Error('Template failed');
+          },
+          { context: { field: 'test' } }
+        );
+
+        const json = error.toJSON();
+
+        expect(json.innerError).toBeDefined();
+        expect((json.innerError as any).message).toBe('Template failed');
+        expect((json.innerError as any).stack).toBeDefined();
+      });
+
+      it('не должен устанавливать innerError при успешном выполнении шаблона', () => {
+        const error = new ErrorClass((ctx) => `Test ${ctx.field}`, {
+          context: { field: 'value' },
+        });
+
+        expect(error.innerError).toBeUndefined();
+      });
+
+      it('не должен включать innerError в toJSON() когда его нет', () => {
+        const error = new ErrorClass(testMessage);
+
+        const json = error.toJSON();
+
+        expect(json).not.toHaveProperty('innerError');
       });
     });
   });

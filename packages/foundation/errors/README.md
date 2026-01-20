@@ -81,7 +81,7 @@ export * from './ValidationError.js';
 export * from './InsufficientFundsError.js'; // ← добавьте эту строку
 ```
 
-**Всё! При запуске `npm test` автоматически запустятся 22 базовых теста для вашего класса!** ✨
+**Всё! При запуске `npm test` автоматически запустятся 27 базовых тестов для вашего класса!** ✨
 
 Никаких registry, никакой ручной регистрации! Тесты находят все классы автоматически через файловую систему.
 
@@ -249,18 +249,68 @@ try {
 }
 ```
 
+### Graceful обработка ошибок в template функциях
+
+Если template функция выбрасывает ошибку, она обрабатывается gracefully:
+
+```typescript
+import { ValidationError } from '@polymarket/errors';
+
+// Template функция с ошибкой
+const error = new ValidationError(
+  (ctx: any) => {
+    // Ошибка доступа к несуществующему свойству
+    return ctx.missingField.toUpperCase();
+  },
+  { context: { field: 'price', value: -10 } }
+);
+
+// Ошибка не прерывает выполнение программы!
+console.log(error.message);
+// "Message template function failed: Cannot read properties of undefined (reading 'toUpperCase')"
+
+// Оригинальная ошибка сохранена для отладки
+console.log(error.innerError?.message);
+// "Cannot read properties of undefined (reading 'toUpperCase')"
+
+// Context сохранён для отладки
+console.log(error.context);
+// { field: 'price', value: -10 }
+
+// innerError включён в JSON для логирования
+const json = error.toJSON();
+// {
+//   name: 'ValidationError',
+//   message: 'Message template function failed: ...',
+//   severity: 'low',
+//   timestamp: '2024-01-20T12:00:00.000Z',
+//   context: { field: 'price', value: -10 },
+//   innerError: {
+//     name: 'TypeError',
+//     message: "Cannot read properties of undefined (reading 'toUpperCase')",
+//     stack: '...'
+//   }
+// }
+```
+
+**Преимущества:**
+- ✅ Программа не падает при ошибках в template
+- ✅ Оригинальная ошибка сохраняется для отладки
+- ✅ Context остаётся доступным
+- ✅ Полная информация в логах через toJSON()
+
 ## 🧪 Тестирование
 
 ### Автоматические тесты
 
-При создании нового класса ошибки тесты **автоматически** находят его и запускают 22 базовых теста:
+При создании нового класса ошибки тесты **автоматически** находят его и запускают 27 базовых тестов:
 
 ```bash
 npm test
 # ✨ Автоматически обнаружено 1 класс(ов) ошибок:
 #    - ValidationError (severity: low)
 #
-# ✓ ValidationError (auto-discovered, severity: low) (22 tests)
+# ✓ ValidationError (auto-discovered, severity: low) (27 tests)
 ```
 
 **Как это работает?**
@@ -280,7 +330,7 @@ import { testTradingError } from '../../helpers/sharedErrorTests';
 import { InsufficientFundsError } from '../../../src/errors/InsufficientFundsError';
 
 describe('InsufficientFundsError', () => {
-  // 22 базовых теста автоматически
+  // 27 базовых тестов автоматически
   testTradingError({
     ErrorClass: InsufficientFundsError,
     expectedName: 'InsufficientFundsError',
