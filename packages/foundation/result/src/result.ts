@@ -297,9 +297,13 @@ export function formatValue(value: unknown): string {
   }
 
   // Объекты с Symbol.toStringTag
-  const tag = (value as Record<symbol, unknown>)[Symbol.toStringTag];
-  if (tag && typeof tag === 'string') {
-    return `[${tag}]`;
+  try {
+    const tag = (value as Record<symbol, unknown>)[Symbol.toStringTag];
+    if (tag && typeof tag === 'string') {
+      return `[${tag}]`;
+    }
+  } catch {
+    // Ignore - getter может выбросить исключение
   }
 
   // Попытка JSON.stringify с обработкой циклических ссылок
