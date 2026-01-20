@@ -7,6 +7,10 @@ import {
   OkChain,
   ErrChain,
   toChain,
+  R,
+  fromPromise,
+  fromNullable,
+  fromThrowable,
 } from '../../src/ResultChain';
 import { Ok, Err, Result } from '../../src/result';
 
@@ -473,6 +477,358 @@ describe('ResultChain', () => {
         .unwrapOr(0);
 
       expect(result).toBe(0); // Вернул fallback из-за ошибки
+    });
+  });
+
+  describe('Метод and()', () => {
+    it('должен возвращать второй Result если первый Ok', () => {
+      const result = OkChain(2).and(Ok(3));
+
+      expect(result.isOk()).toBe(true);
+      expect(result.unwrap()).toBe(3);
+    });
+
+    it('должен возвращать первую ошибку если первый Result - Err', () => {
+      const result = ErrChain('error1').and(Ok(5));
+
+      expect(result.isErr()).toBe(true);
+      expect(result.unwrapErr()).toBe('error1');
+    });
+
+    it('должен работать с разными типами ошибок', () => {
+      const result = OkChain(2).and(Ok(5));
+
+      expect(result.isOk()).toBe(true);
+      expect(result.unwrap()).toBe(5);
+    });
+  });
+
+  describe('Метод or()', () => {
+    it('должен возвращать первый Result если он Ok', () => {
+      const result = OkChain(10).or(Ok(20));
+
+      expect(result.isOk()).toBe(true);
+      expect(result.unwrap()).toBe(10);
+    });
+
+    it('должен возвращать второй Result если первый Err', () => {
+      const errorResult: Result<number, string> = Err('error1');
+      const result = toChain(errorResult).or(Ok(42));
+
+      expect(result.isOk()).toBe(true);
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it('должен возвращать второй Err если оба Err', () => {
+      const result = ErrChain('error1').or(Err('error2'));
+
+      expect(result.isErr()).toBe(true);
+      expect(result.unwrapErr()).toBe('error2');
+    });
+  });
+
+  describe('Метод flatten()', () => {
+    it('должен разворачивать вложенный Result<Result<T, E>, E>', () => {
+      const nested: Result<Result<number, string>, string> = Ok(Ok(42));
+      const flat = toChain(nested).flatten();
+
+      expect(flat.isOk()).toBe(true);
+      expect(flat.unwrap()).toBe(42);
+    });
+
+    it('должен обрабатывать вложенную ошибку', () => {
+      const nested: Result<Result<number, string>, string> = Ok(Err('inner error'));
+      const flat = toChain(nested).flatten();
+
+      expect(flat.isErr()).toBe(true);
+      expect(flat.unwrapErr()).toBe('inner error');
+    });
+
+    it('должен обрабатывать внешнюю ошибку', () => {
+      const nested: Result<Result<number, string>, string> = Err('outer error');
+      const flat = toChain(nested).flatten();
+
+      expect(flat.isErr()).toBe(true);
+      expect(flat.unwrapErr()).toBe('outer error');
+    });
+  });
+
+  describe('Метод expect()', () => {
+    it('должен возвращать значение для Ok', () => {
+      const value = OkChain(42).expect('Should be Ok');
+
+      expect(value).toBe(42);
+    });
+
+    it('должен выбрасывать ошибку с кастомным сообщением для Err', () => {
+      expect(() => ErrChain('oops').expect('Failed to get value')).toThrow(
+        'Failed to get value: oops'
+      );
+    });
+  });
+
+  describe('Метод expectErr()', () => {
+    it('должен возвращать ошибку для Err', () => {
+      const error = ErrChain('oops').expectErr('Should be Err');
+
+      expect(error).toBe('oops');
+    });
+
+    it('должен выбрасывать ошибку с кастомным сообщением для Ok', () => {
+      expect(() => OkChain(42).expectErr('Expected error')).toThrow(
+        'Expected error: expected Err but got Ok(42)'
+      );
+    });
+  });
+
+  describe('Метод andThen()', () => {
+    const divide = (a: number, b: number): Result<number, string> =>
+      b === 0 ? Err('Division by zero') : Ok(a / b);
+
+    it('должен работать как алиас для flatMap', () => {
+      const result = OkChain(10)
+        .andThen((x) => divide(x, 2))
+        .andThen((x) => divide(x, 5));
+
+      expect(result.unwrap()).toBe(1);
+    });
+
+    it('должен возвращать первую ошибку', () => {
+      const result = OkChain(10)
+        .andThen((x) => divide(x, 2))
+        .andThen((x) => divide(x, 0));
+
+      expect(result.isErr()).toBe(true);
+      expect(result.unwrapErr()).toBe('Division by zero');
+    });
+  });
+
+  describe('Метод orElse()', () => {
+    it('должен восстанавливать значение из ошибки', () => {
+      const errorResult: Result<number, string> = Err('error');
+      const result = toChain(errorResult)
+        .orElse((_err) => {
+          return Ok(0); // fallback значение
+        })
+        .unwrap();
+
+      expect(result).toBe(0);
+    });
+
+    it('не должен вызывать функцию для Ok', () => {
+      let called = false;
+      const result = OkChain(42).orElse((_err) => {
+        called = true;
+        return Ok(0);
+      });
+
+      expect(called).toBe(false);
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it('должен обрабатывать новую ошибку', () => {
+      const result = ErrChain('error1')
+        .orElse((_err) => {
+          return Err('error2');
+        })
+        .unwrapErr();
+
+      expect(result).toBe('error2');
+    });
+  });
+
+  describe('Короткий алиас R', () => {
+    it('R.ok должен создавать OkChain', () => {
+      const result = R.ok(42);
+
+      expect(result.isOk()).toBe(true);
+      expect(result.unwrap()).toBe(42);
+    });
+
+    it('R.err должен создавать ErrChain', () => {
+      const result = R.err('error');
+
+      expect(result.isErr()).toBe(true);
+      expect(result.unwrapErr()).toBe('error');
+    });
+
+    it('R.from должен конвертировать plain Result в ResultChain', () => {
+      const plain = Ok(42);
+      const chain = R.from(plain);
+
+      expect(chain.isOk()).toBe(true);
+      expect(chain.unwrap()).toBe(42);
+    });
+
+    it('должен поддерживать method chaining', () => {
+      const result = R.ok(5)
+        .map((x) => x * 2)
+        .map((x) => x + 1)
+        .unwrap();
+
+      expect(result).toBe(11);
+    });
+  });
+
+  describe('Helper функция fromPromise()', () => {
+    it('должен конвертировать успешный Promise в Ok', async () => {
+      const result = await fromPromise(
+        Promise.resolve(42),
+        (error) => `Error: ${error}`
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe(42);
+      }
+    });
+
+    it('должен конвертировать rejected Promise в Err', async () => {
+      const result = await fromPromise(
+        Promise.reject('failure'),
+        (error) => `Error: ${error}`
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe('Error: failure');
+      }
+    });
+
+    it('должен обрабатывать async функции', async () => {
+      const fetchData = async () => {
+        throw new Error('Network error');
+      };
+
+      const result = await fromPromise(fetchData(), (error) => {
+        return error instanceof Error ? error.message : 'Unknown error';
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe('Network error');
+      }
+    });
+  });
+
+  describe('Helper функция fromNullable()', () => {
+    it('должен конвертировать значение в Ok', () => {
+      const result = fromNullable(42, 'Value is null');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe(42);
+      }
+    });
+
+    it('должен конвертировать null в Err', () => {
+      const result = fromNullable(null, 'Value is null');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe('Value is null');
+      }
+    });
+
+    it('должен конвертировать undefined в Err', () => {
+      const result = fromNullable(undefined, 'Value is undefined');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe('Value is undefined');
+      }
+    });
+
+    it('должен работать с объектами', () => {
+      interface User {
+        id: string;
+        name: string;
+      }
+
+      const maybeUser: User | null = { id: '123', name: 'John' };
+      const result = fromNullable(maybeUser, 'User not found');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.name).toBe('John');
+      }
+    });
+  });
+
+  describe('Helper функция fromThrowable()', () => {
+    it('должен обернуть успешную функцию в Result-returning функцию', () => {
+      const safeParseInt = fromThrowable(
+        (text: string) => {
+          const num = parseInt(text, 10);
+          if (isNaN(num)) throw new Error('Not a number');
+          return num;
+        },
+        (error) => (error instanceof Error ? error.message : 'Unknown error')
+      );
+
+      const result = safeParseInt('42');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe(42);
+      }
+    });
+
+    it('должен ловить exceptions и возвращать Err', () => {
+      const safeParseJSON = fromThrowable(
+        (text: string) => JSON.parse(text),
+        (error) => `Parse error: ${error}`
+      );
+
+      const result = safeParseJSON('invalid json');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toContain('Parse error');
+      }
+    });
+
+    it('должен работать с функциями с несколькими аргументами', () => {
+      const safeDivide = fromThrowable(
+        (a: number, b: number) => {
+          if (b === 0) throw new Error('Division by zero');
+          return a / b;
+        },
+        (error) => (error instanceof Error ? error.message : 'Unknown error')
+      );
+
+      const result1 = safeDivide(10, 2);
+      expect(result1.ok).toBe(true);
+      if (result1.ok) {
+        expect(result1.value).toBe(5);
+      }
+
+      const result2 = safeDivide(10, 0);
+      expect(result2.ok).toBe(false);
+      if (!result2.ok) {
+        expect(result2.error).toBe('Division by zero');
+      }
+    });
+
+    it('должен сохранять контекст функции', () => {
+      const obj = {
+        value: 10,
+        getValue() {
+          return this.value;
+        },
+      };
+
+      const safeGetValue = fromThrowable(
+        () => obj.getValue(),
+        (_error) => 'Error'
+      );
+
+      const result = safeGetValue();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe(10);
+      }
     });
   });
 });

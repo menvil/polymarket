@@ -9,11 +9,12 @@
  * - Result<T, E> - явная обработка ошибок без exceptions
  * - Ok/Err - конструкторы для создания Result (plain objects)
  * - OkChain/ErrChain - конструкторы для method chaining (OOP)
+ * - AsyncResultChain - method chaining для async операций
  * - map/flatMap - композиция операций (функции)
  * - .map()/.flatMap() - композиция операций (методы)
  * - Type-safe error handling
  *
- * Два стиля использования:
+ * Три стиля использования:
  *
  * **1. Функциональный стиль (plain objects):**
  * ```typescript
@@ -44,8 +45,19 @@
  * // result: 10
  * ```
  *
+ * **3. Async стиль (для Promise<Result>):**
+ * ```typescript
+ * import { AsyncResult } from '@polymarket/types';
+ *
+ * const user = await AsyncResult.from(fetchUser('123'))
+ *   .mapAsync(user => enrichUserData(user))
+ *   .flatMapAsync(user => validateUser(user))
+ *   .unwrapOr({ id: 'guest', name: 'Guest' });
+ * ```
+ *
  * @packageDocumentation
  */
 
 export * from './result.js';
 export * from './ResultChain.js';
+export * from './AsyncResultChain.js';

@@ -296,6 +296,142 @@ export class ResultChain<T, E> {
   match<U>(handlers: { ok: (value: T) => U; err: (error: E) => U }): U {
     return this.data.ok ? handlers.ok(this.data.value) : handlers.err(this.data.error);
   }
+
+  /**
+   * Комбинирует два Result - возвращает второй если первый Ok
+   *
+   * @param other - Другой Result
+   * @returns Второй Result если this.ok = true, иначе первую ошибку
+   *
+   * @example
+   * ```typescript
+   * const r1 = OkChain(2).and(Ok(3)); // Ok(3)
+   * const r2 = ErrChain('error1').and(Ok(5)); // Err('error1')
+   * ```
+   */
+  and<U, F>(other: Result<U, F>): ResultChain<U, E | F> {
+    if (this.data.ok) {
+      return new ResultChain(other as Result<U, E | F>);
+    }
+    return new ResultChain(this.data as Result<U, E | F>);
+  }
+
+  /**
+   * Возвращает первый Ok, иначе второй Result
+   *
+   * @param other - Fallback Result
+   * @returns this если ok = true, иначе other
+   *
+   * @example
+   * ```typescript
+   * const r1 = ErrChain('error1').or(Ok(42)); // Ok(42)
+   * const r2 = OkChain(10).or(Ok(20)); // Ok(10)
+   * ```
+   */
+  or<F>(other: Result<T, F>): ResultChain<T, F> {
+    if (this.data.ok) {
+      return new ResultChain(this.data as Result<T, F>);
+    }
+    return new ResultChain(other);
+  }
+
+  /**
+   * Разворачивает вложенный Result<Result<T, E>, E> в Result<T, E>
+   *
+   * @returns ResultChain с развёрнутым значением
+   *
+   * @example
+   * ```typescript
+   * const nested: Result<Result<number, string>, string> = Ok(Ok(42));
+   * const flat = toChain(nested).flatten(); // ResultChain<number, string>
+   * ```
+   */
+  flatten<U>(this: ResultChain<Result<U, E>, E>): ResultChain<U, E> {
+    if (this.data.ok) {
+      return new ResultChain(this.data.value);
+    }
+    return new ResultChain(this.data as Result<U, E>);
+  }
+
+  /**
+   * Unwrap с кастомным сообщением ошибки
+   *
+   * @param message - Сообщение для ошибки
+   * @returns Значение если ok = true
+   * @throws {Error} С кастомным сообщением если ok = false
+   *
+   * @example
+   * ```typescript
+   * const value = OkChain(42).expect('Should be Ok'); // 42
+   * const error = ErrChain('oops').expect('Failed'); // throws Error: "Failed: oops"
+   * ```
+   */
+  expect(message: string): T {
+    if (!this.data.ok) {
+      throw new Error(`${message}: ${this.data.error}`);
+    }
+    return this.data.value;
+  }
+
+  /**
+   * Unwrap ошибки с кастомным сообщением
+   *
+   * @param message - Сообщение для ошибки
+   * @returns Ошибка если ok = false
+   * @throws {Error} С кастомным сообщением если ok = true
+   *
+   * @example
+   * ```typescript
+   * const error = ErrChain('oops').expectErr('Should be Err'); // 'oops'
+   * const value = OkChain(42).expectErr('Failed'); // throws Error: "Failed: expected Err but got Ok(42)"
+   * ```
+   */
+  expectErr(message: string): E {
+    if (this.data.ok) {
+      throw new Error(`${message}: expected Err but got Ok(${this.data.value})`);
+    }
+    return this.data.error;
+  }
+
+  /**
+   * Алиас для flatMap (более явное имя в Rust-стиле)
+   *
+   * @param fn - Функция возвращающая Result
+   * @returns Новый ResultChain
+   *
+   * @example
+   * ```typescript
+   * const result = OkChain(10)
+   *   .andThen(x => divide(x, 2))
+   *   .andThen(x => divide(x, 5));
+   * ```
+   */
+  andThen<U, F>(fn: (value: T) => Result<U, F>): ResultChain<U, E | F> {
+    return this.flatMap(fn);
+  }
+
+  /**
+   * Recovery при ошибке - возвращает новый Result
+   *
+   * @param fn - Функция для обработки ошибки
+   * @returns ResultChain с восстановленным значением или новой ошибкой
+   *
+   * @example
+   * ```typescript
+   * const recovered = ErrChain('error')
+   *   .orElse(err => {
+   *     console.log('Recovering from:', err);
+   *     return Ok(0);  // fallback значение
+   *   })
+   *   .unwrap();  // 0
+   * ```
+   */
+  orElse<F>(fn: (error: E) => Result<T, F>): ResultChain<T, F> {
+    if (this.data.ok) {
+      return new ResultChain(this.data as Result<T, F>);
+    }
+    return new ResultChain(fn(this.data.error));
+  }
 }
 
 /**
@@ -345,3 +481,112 @@ export const ErrChain = <E>(error: E): ResultChain<never, E> => {
 export const toChain = <T, E>(result: Result<T, E>): ResultChain<T, E> => {
   return new ResultChain(result);
 };
+
+/**
+ * Короткий алиас для быстрого создания ResultChain
+ *
+ * @example
+ * ```typescript
+ * import { R } from '@polymarket/types';
+ *
+ * const result = R.ok(42).map(x => x * 2).unwrap(); // 84
+ * const fallback = R.err('error').or(Ok(0)); // Ok(0)
+ * ```
+ */
+export const R = {
+  ok: OkChain,
+  err: ErrChain,
+  from: toChain,
+} as const;
+
+/**
+ * Конвертирует Promise в Result (обрабатывает exceptions)
+ *
+ * @param promise - Promise для конвертации
+ * @param onError - Функция для обработки ошибки
+ * @returns Promise<Result<T, E>>
+ *
+ * @example
+ * ```typescript
+ * const result = await fromPromise(
+ *   fetch('/api/user'),
+ *   (error) => `Network error: ${error}`
+ * );
+ *
+ * if (result.ok) {
+ *   console.log('Response:', result.value);
+ * }
+ * ```
+ */
+export async function fromPromise<T, E>(
+  promise: Promise<T>,
+  onError: (error: unknown) => E
+): Promise<Result<T, E>> {
+  try {
+    const value = await promise;
+    return Ok(value);
+  } catch (error) {
+    return Err(onError(error));
+  }
+}
+
+/**
+ * Конвертирует nullable значение в Result
+ *
+ * @param value - Значение которое может быть null/undefined
+ * @param error - Ошибка если значение null/undefined
+ * @returns Result<T, E>
+ *
+ * @example
+ * ```typescript
+ * const maybeUser: User | null = findUser('123');
+ * const result = fromNullable(maybeUser, 'User not found');
+ *
+ * if (result.ok) {
+ *   console.log('User:', result.value);
+ * }
+ * ```
+ */
+export function fromNullable<T, E>(
+  value: T | null | undefined,
+  error: E
+): Result<T, E> {
+  if (value == null) {
+    return Err(error);
+  }
+  return Ok(value);
+}
+
+/**
+ * Оборачивает функцию которая может выбросить exception в Result-returning функцию
+ *
+ * @param fn - Функция которая может выбросить exception
+ * @param onError - Функция для обработки exception
+ * @returns Обёрнутая функция возвращающая Result
+ *
+ * @example
+ * ```typescript
+ * const safeParseJSON = fromThrowable(
+ *   (text: string) => JSON.parse(text),
+ *   (error) => `Parse error: ${error}`
+ * );
+ *
+ * const result = safeParseJSON('{"name": "John"}');
+ * if (result.ok) {
+ *   console.log('Parsed:', result.value);
+ * }
+ * ```
+ */
+export function fromThrowable<Args extends readonly unknown[], T, E>(
+  fn: (...args: Args) => T,
+  onError: (error: unknown) => E
+): (...args: Args) => Result<T, E> {
+  return (...args: Args) => {
+    try {
+      const value = fn(...args);
+      return Ok(value);
+    } catch (error) {
+      return Err(onError(error));
+    }
+  };
+}

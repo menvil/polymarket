@@ -22,8 +22,11 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
     "lint:tests": "eslint __tests__ --ext .ts",
+    "lint:tests:fix": "eslint __tests__ --ext .ts --fix",
     "lint:all": "eslint src __tests__ --ext .ts",
+    "lint:all:fix": "eslint src __tests__ --ext .ts --fix",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },

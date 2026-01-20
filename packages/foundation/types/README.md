@@ -19,7 +19,7 @@ npm install @polymarket/types
 
 ## 🚀 Быстрый старт
 
-Пакет предоставляет **два стиля использования** - выбирайте тот, который вам удобнее!
+Пакет предоставляет **три стиля использования** - выбирайте тот, который вам удобнее!
 
 ### Стиль 1: Функциональный (Plain Objects)
 
@@ -72,6 +72,32 @@ const safe = OkChain(10)
     ok: value => `Успех: ${value}`,
     err: error => `Ошибка: ${error}`
   });
+```
+
+### Стиль 3: Async (AsyncResultChain)
+
+Идеален для асинхронных операций с Result.
+
+```typescript
+import { AsyncResult } from '@polymarket/types';
+
+// Async операции с автоматической обработкой ошибок
+async function fetchUser(id: number) {
+  const user = await AsyncResult.from(getUserFromAPI(id))
+    .mapAsync(async user => enrichUserData(user))
+    .flatMapAsync(async user => validateUser(user))
+    .map(user => ({ ...user, normalized: true }))
+    .unwrapOr({ id: 0, name: 'Guest' });
+
+  return user;
+}
+
+// Короткий синтаксис с R alias
+import { R } from '@polymarket/types';
+
+const result = await R.from(fetchData())
+  .map(data => processData(data))
+  .unwrapOr(defaultValue);
 ```
 
 ### Гибридный подход
@@ -382,6 +408,292 @@ OkChain(42).isOk(); // true
 ErrChain('error').isErr(); // true
 ```
 
+### R alias (короткий синтаксис)
+
+Короткие алиасы для быстрого создания ResultChain.
+
+```typescript
+import { R } from '@polymarket/types';
+
+// Вместо OkChain(42)
+const result = R.ok(42);
+
+// Вместо ErrChain('error')
+const error = R.err('error');
+
+// Вместо toChain(result)
+const chain = R.from(Ok(42));
+```
+
+### .and(other)
+
+Возвращает `other` если текущий Result успешный, иначе первую ошибку.
+
+```typescript
+const result = OkChain(2)
+  .and(Ok(3))
+  .unwrap(); // 3
+
+const error = ErrChain('first error')
+  .and(Ok(5))
+  .unwrapErr(); // 'first error'
+```
+
+### .or(other)
+
+Возвращает текущий Result если он успешный, иначе `other`.
+
+```typescript
+const result = OkChain(10)
+  .or(Ok(20))
+  .unwrap(); // 10
+
+const fallback = ErrChain('error')
+  .or(Ok(42))
+  .unwrap(); // 42
+```
+
+### .flatten()
+
+Разворачивает вложенные Result<Result<T, E>, E> в Result<T, E>.
+
+```typescript
+const nested = OkChain(Ok(42));
+const flattened = nested.flatten().unwrap(); // 42
+
+const nestedErr = OkChain(Err('inner error'));
+const result = nestedErr.flatten().unwrapErr(); // 'inner error'
+```
+
+### .expect(message)
+
+Извлекает значение с кастомным сообщением об ошибке.
+
+```typescript
+const value = OkChain(42).expect('Should have value'); // 42
+
+// Выбрасывает Error с сообщением: "Should have value: error"
+ErrChain('error').expect('Should have value');
+```
+
+### .expectErr(message)
+
+Извлекает ошибку с кастомным сообщением.
+
+```typescript
+const error = ErrChain('oops').expectErr('Should have error'); // 'oops'
+
+// Выбрасывает Error с сообщением: "Should have error: expected Err but got Ok(42)"
+OkChain(42).expectErr('Should have error');
+```
+
+### .andThen(fn) / .orElse(fn)
+
+Rust-style алиасы для flatMap и recover.
+
+```typescript
+// andThen - то же что flatMap
+const divide = (a: number, b: number): Result<number, string> =>
+  b === 0 ? Err('Division by zero') : Ok(a / b);
+
+const result = OkChain(10)
+  .andThen(x => divide(x, 2))
+  .andThen(x => divide(x, 5))
+  .unwrap(); // 1
+
+// orElse - восстановление после ошибки
+const recovered = ErrChain('error')
+  .orElse(err => Ok(0))
+  .unwrap(); // 0
+```
+
+### Helper функции
+
+#### fromPromise(promise, onError)
+
+Конвертирует Promise в Result, ловя rejections.
+
+```typescript
+import { fromPromise } from '@polymarket/types';
+
+const result = await fromPromise(
+  fetch('/api/user'),
+  (err) => `Network error: ${err}`
+);
+
+if (result.ok) {
+  console.log(result.value);
+} else {
+  console.error(result.error); // "Network error: ..."
+}
+```
+
+#### fromNullable(value, error)
+
+Конвертирует nullable значение в Result.
+
+```typescript
+import { fromNullable } from '@polymarket/types';
+
+const result = fromNullable(maybeUser, 'User not found');
+
+if (result.ok) {
+  console.log(result.value); // User exists
+} else {
+  console.error(result.error); // "User not found"
+}
+```
+
+#### fromThrowable(fn, onError)
+
+Оборачивает функцию с exceptions в Result-возвращающую функцию.
+
+```typescript
+import { fromThrowable } from '@polymarket/types';
+
+const safeParseJSON = fromThrowable(
+  JSON.parse,
+  (err) => `Invalid JSON: ${err}`
+);
+
+const result = safeParseJSON('{"valid": true}');
+if (result.ok) {
+  console.log(result.value); // { valid: true }
+}
+
+const invalid = safeParseJSON('not json');
+if (!invalid.ok) {
+  console.error(invalid.error); // "Invalid JSON: ..."
+}
+```
+
+## 🔗 AsyncResultChain API (Async Operations)
+
+Для работы с асинхронными операциями используйте `AsyncResultChain`.
+
+### AsyncResult.from(promise)
+
+Создает AsyncResultChain из Promise<Result<T, E>>.
+
+```typescript
+import { AsyncResult } from '@polymarket/types';
+
+const result = await AsyncResult.from(fetchUser('123'))
+  .mapAsync(user => enrichUserData(user))
+  .unwrap();
+```
+
+### AsyncResult.ok(promise)
+
+Создает AsyncResultChain из Promise<T>.
+
+```typescript
+const result = await AsyncResult.ok(Promise.resolve(42))
+  .map(x => x * 2)
+  .unwrap(); // 84
+```
+
+### AsyncResult.err(error)
+
+Создает AsyncResultChain с ошибкой.
+
+```typescript
+const error = await AsyncResult.err('error')
+  .unwrapErr(); // 'error'
+```
+
+### .mapAsync(fn) / .map(fn)
+
+Трансформирует значение (async или sync).
+
+```typescript
+const result = await AsyncResult.ok(Promise.resolve(5))
+  .mapAsync(async x => x * 2)  // async transform
+  .map(x => x + 1)               // sync transform
+  .unwrap(); // 11
+```
+
+### .flatMapAsync(fn) / .flatMap(fn)
+
+Цепочка async/sync Result-возвращающих операций.
+
+```typescript
+const fetchUser = async (id: number): Promise<Result<User, string>> => {
+  // ...
+};
+
+const result = await AsyncResult.ok(Promise.resolve(123))
+  .flatMapAsync(fetchUser)
+  .flatMap(user => validateUser(user))
+  .unwrap();
+```
+
+### .andThen(fn)
+
+Rust-style алиас для flatMapAsync.
+
+```typescript
+const result = await AsyncResult.ok(Promise.resolve(123))
+  .andThen(fetchUser)
+  .andThen(validateUser)
+  .unwrap();
+```
+
+### .orElseAsync(fn) / .orElse(fn)
+
+Восстановление после ошибки (async или sync).
+
+```typescript
+const result = await AsyncResult.from(fetchUser(0))
+  .orElseAsync(async err => {
+    return Ok({ id: 0, name: 'Guest' });
+  })
+  .unwrap();
+```
+
+### .tap(fn) / .tapErr(fn)
+
+Side effects для async операций.
+
+```typescript
+await AsyncResult.ok(Promise.resolve(42))
+  .tap(value => console.log('Value:', value))
+  .tapErr(err => console.error('Error:', err));
+```
+
+### .match({ ok, err })
+
+Pattern matching для async Result.
+
+```typescript
+const message = await AsyncResult.ok(Promise.resolve(42)).match({
+  ok: value => `Success: ${value}`,
+  err: error => `Error: ${error}`
+});
+```
+
+### .unwrap() / .unwrapOr() / .unwrapErr()
+
+Извлечение значений из async Result.
+
+```typescript
+const value = await AsyncResult.ok(Promise.resolve(42)).unwrap(); // 42
+const fallback = await AsyncResult.err('error').unwrapOr(0); // 0
+const error = await AsyncResult.err('error').unwrapErr(); // 'error'
+```
+
+### .expect(message) / .expectErr(message)
+
+Кастомные сообщения для async Result.
+
+```typescript
+const value = await AsyncResult.ok(Promise.resolve(42))
+  .expect('Should be ok'); // 42
+
+await AsyncResult.err('oops')
+  .expect('Should be ok'); // Throws: "Should be ok: oops"
+```
+
 ## 💡 Примеры использования
 
 ### Обработка ошибок без exceptions
@@ -434,19 +746,31 @@ if (result.ok) {
 // Все операции возвращают Result
 // Если любая операция упадет, цепочка останавливается автоматически
 
-const orderResult = flatMap(
-  validatePrice(price),           // Result<Price, InvalidPriceError>
-  price => validateQuantity(qty), // Result<Quantity, InvalidQuantityError>
-  qty => checkMarket(marketId),   // Result<Market, MarketError>
-  market => placeOrder(...)       // Result<Order, OrderError>
+// Вариант 1: Вложенные flatMap (функциональный подход)
+const orderResult1 = flatMap(
+  flatMap(
+    flatMap(
+      validatePrice(price),           // Result<Price, InvalidPriceError>
+      validatedPrice => validateQuantity(qty, validatedPrice) // Result<Quantity, InvalidQuantityError>
+    ),
+    validatedQty => checkMarket(marketId, validatedQty)   // Result<Market, MarketError>
+  ),
+  validatedMarket => placeOrder(validatedMarket)          // Result<Order, OrderError>
 );
 
-// Одна проверка в конце
-if (orderResult.ok) {
-  console.log('Ордер размещен:', orderResult.value.id);
+// Вариант 2: Method chaining (более читабельно)
+const orderResult2 = toChain(validatePrice(price))
+  .flatMap(validatedPrice => validateQuantity(qty, validatedPrice))
+  .flatMap(validatedQty => checkMarket(marketId, validatedQty))
+  .flatMap(validatedMarket => placeOrder(validatedMarket))
+  .toResult();
+
+// Одна проверка в конце (используем любой из вариантов)
+if (orderResult1.ok) {
+  console.log('Ордер размещен:', orderResult1.value.id);
 } else {
   // TypeScript знает все возможные типы ошибок
-  const error = orderResult.error;
+  const error = orderResult1.error;
 
   if (error instanceof InvalidPriceError) {
     console.log('Некорректная цена:', error.context);
