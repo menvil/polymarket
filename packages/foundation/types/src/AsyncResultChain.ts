@@ -11,8 +11,9 @@
  * - Композиция async операций без явного await
  *
  * **Обработка exceptions:**
- * - Async методы (*Async, tap, tapErr) ловят exceptions и преобразуют их в Err<E>
- * - Sync методы (map, flatMap) НЕ ловят exceptions - они приводят к rejected Promise
+ * - Трансформирующие методы (*Async, flatMap*) ловят exceptions и преобразуют их в Err<E>
+ * - Side-effect методы (tap, tapErr) НЕ ловят exceptions - они приводят к rejected Promise
+ * - Sync методы (map) НЕ ловят exceptions - они приводят к rejected Promise
  * - При преобразовании exception в E используется type assertion - убедитесь что E достаточно широкий
  *
  * @template T - Тип успешного результата
@@ -348,9 +349,9 @@ export class AsyncResultChain<T, E> {
    * @returns this для продолжения цепочки
    *
    * @remarks
-   * ⚠️ Если fn выбросит exception, Result преобразуется в Err.
-   * Это означает что ошибка в side-effect прерывает цепочку.
-   * Если вам нужно игнорировать ошибки в tap, оберните fn в try/catch.
+   * ⚠️ Если fn выбросит exception, Promise будет rejected.
+   * tap предназначен для side-effects и не должен изменять Result.
+   * Если вам нужно обработать ошибки в tap, используйте try/catch внутри fn.
    *
    * @example
    * ```typescript
@@ -363,11 +364,7 @@ export class AsyncResultChain<T, E> {
   tap(fn: (value: T) => void | Promise<void>): AsyncResultChain<T, E> {
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
-        try {
-          await fn(result.value);
-        } catch (error) {
-          return Err(error as E);
-        }
+        await fn(result.value);
       }
       return result;
     });
@@ -381,9 +378,10 @@ export class AsyncResultChain<T, E> {
    * @returns this для продолжения цепочки
    *
    * @remarks
-   * ⚠️ Если fn выбросит exception, он заменит текущую ошибку.
-   * Это означает что exception в tapErr изменяет ошибку в Result.
-   * Если вам нужно игнорировать ошибки в tapErr, оберните fn в try/catch.
+   * ⚠️ Если fn выбросит exception, Promise будет rejected.
+   * tapErr предназначен для side-effects и не должен изменять Result.
+   * Оригинальная ошибка сохраняется, а exception из fn приводит к rejected Promise.
+   * Если вам нужно обработать ошибки в tapErr, используйте try/catch внутри fn.
    *
    * @example
    * ```typescript
@@ -395,11 +393,7 @@ export class AsyncResultChain<T, E> {
   tapErr(fn: (error: E) => void | Promise<void>): AsyncResultChain<T, E> {
     const newPromise = this.promise.then(async (result) => {
       if (!result.ok) {
-        try {
-          await fn(result.error);
-        } catch (error) {
-          return Err(error as E);
-        }
+        await fn(result.error);
       }
       return result;
     });
