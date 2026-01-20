@@ -11,7 +11,7 @@
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",
     "typecheck": "npm run typecheck --workspaces",
-    "clean": "rm -rf node_modules packages/*/node_modules packages/*/dist"
+    "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist"
   },
   "devDependencies": {},
   "engines": {
