@@ -323,6 +323,20 @@ describe('Result<T, E>', () => {
       expect(unwrap(stringResult)).toBe('hello');
       expect(unwrap(objectResult)).toEqual({ id: 1 });
     });
+
+    it('должен корректно форматировать функции в сообщениях об ошибках', () => {
+      const fn = () => 42;
+      const result = Err(fn);
+
+      expect(() => unwrap(result)).toThrow('Called unwrap on Err result: () => 42');
+    });
+
+    it('должен корректно форматировать символы в сообщениях об ошибках', () => {
+      const sym = Symbol('test');
+      const result = Err(sym);
+
+      expect(() => unwrap(result)).toThrow('Called unwrap on Err result: Symbol(test)');
+    });
   });
 
   describe('unwrapOr function', () => {

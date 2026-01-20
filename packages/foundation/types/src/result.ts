@@ -244,7 +244,7 @@ export function formatValue(value: unknown): string {
   if (value instanceof Error) return value.message;
 
   try {
-    return JSON.stringify(value);
+    return JSON.stringify(value) ?? String(value);
   } catch {
     return String(value);
   }
