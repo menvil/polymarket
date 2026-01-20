@@ -66,7 +66,7 @@ console.log('Результат:', result); // 16
 
 // Обработка ошибок
 const safe = OkChain(10)
-  .flatMap(x => x > 0 ? OkChain(x) : ErrChain('Отрицательное число'))
+  .flatMap(x => x > 0 ? Ok(x) : Err('Отрицательное число'))
   .map(x => Math.sqrt(x))
   .match({
     ok: value => `Успех: ${value}`,
@@ -103,7 +103,7 @@ const result = await AsyncResult.from(fetchData())
 Оба стиля полностью совместимы!
 
 ```typescript
-import { Ok, Err, OkChain, toChain } from '@polymarket/types';
+import { Result, Ok, Err, OkChain, toChain } from '@polymarket/types';
 
 // Функция возвращает plain object
 function divide(a: number, b: number): Result<number, string> {
@@ -680,7 +680,7 @@ const message = await AsyncResult.ok(Promise.resolve(42)).match({
 
 ```typescript
 const value = await AsyncResult.ok(Promise.resolve(42)).unwrap(); // 42
-const fallback = await AsyncResult.err('error').unwrapOr(0); // 0
+const fallback = await AsyncResult.ok(Promise.reject('error')).unwrapOr(0); // 0
 const error = await AsyncResult.err('error').unwrapErr(); // 'error'
 ```
 
