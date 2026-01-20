@@ -200,7 +200,8 @@ describe('TradingError', () => {
         context: { field: 'price' }
       });
 
-      const jsonString = JSON.stringify(error.toJSON());
+      // Проверяем что JSON.stringify автоматически вызывает toJSON()
+      const jsonString = JSON.stringify(error);
       const parsed = JSON.parse(jsonString);
 
       expect(parsed.name).toBe('TestError');
