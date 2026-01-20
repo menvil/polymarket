@@ -19,7 +19,7 @@
  * - Импортирует файлы напрямую из TypeScript источников через require()
  * - Jest с ts-jest автоматически транспилирует TypeScript код
  * - Для каждого найденного класса создаёт экземпляр и читает severity
- * - Генерирует describe блок с 22 базовыми тестами
+ * - Генерирует describe блок с 28 базовыми тестами
  *
  * @example
  * ```typescript
@@ -40,8 +40,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { readdirSync, statSync } from 'fs';
 import { join, extname, basename } from 'path';
-import { TradingError } from '../../src/base/TradingError';
-import type { ErrorSeverity } from '../../src/base/ITradingError';
+import { TradingError, type ErrorSeverity } from '../../src/base';
 import { testTradingError, TradingErrorConstructor } from '../helpers/sharedErrorTests';
 
 /**

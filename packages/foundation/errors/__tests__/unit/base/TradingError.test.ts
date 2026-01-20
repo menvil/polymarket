@@ -3,8 +3,7 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { TradingError } from '../../../src/base/TradingError';
-import { ErrorSeverity } from '../../../src/base/ITradingError';
+import { TradingError, ErrorSeverity } from '../../../src/base';
 
 // Тестовый класс для проверки наследования
 class TestError extends TradingError {
@@ -133,18 +132,15 @@ describe('TradingError', () => {
 
     it('должен выбросить TypeError если message не строка и не функция', () => {
       expect(() => {
-        // @ts-expect-error Testing invalid type
-        new TestError(123);
-      }).toThrow(TypeError);
+        new TestError(123 as any);
+      }).toThrow('TradingError: Message must be a string or function, got number');
 
       expect(() => {
-        // @ts-expect-error Testing invalid type
-        new TestError({ invalid: 'object' });
+        new TestError({ invalid: 'object' } as any);
       }).toThrow('TradingError: Message must be a string or function, got object');
 
       expect(() => {
-        // @ts-expect-error Testing invalid type
-        new TestError(null);
+        new TestError(null as any);
       }).toThrow('TradingError: Message must be a string or function, got object');
     });
   });

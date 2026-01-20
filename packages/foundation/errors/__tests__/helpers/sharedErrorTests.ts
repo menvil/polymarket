@@ -30,8 +30,7 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { TradingError } from '../../src/base/TradingError';
-import { ErrorSeverity } from '../../src/base/ITradingError';
+import { TradingError, ErrorSeverity } from '../../src/base';
 
 /**
  * Тип конструктора для TradingError с статическими методами
