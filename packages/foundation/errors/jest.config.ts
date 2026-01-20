@@ -30,7 +30,7 @@ const config: Config = {
   },
   transform: {
     '^.+\\.ts$': ['ts-jest', {
-      tsconfig: 'tsconfig.eslint.json',
+      tsconfig: 'tsconfig.lint.json',
     }],
   },
 };

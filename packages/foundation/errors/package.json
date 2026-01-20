@@ -36,7 +36,7 @@
     "lint:all": "eslint src __tests__ --ext .ts",
     "lint:all:fix": "eslint src __tests__ --ext .ts --fix",
     "typecheck": "tsc --noEmit",
-    "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
     "clean": "rm -rf dist"
   },
