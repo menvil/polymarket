@@ -596,9 +596,9 @@ export function fromThrowable<Args extends readonly unknown[], T, E>(
   fn: (...args: Args) => T,
   onError: (error: unknown) => E
 ): (...args: Args) => Result<T, E> {
-  return (...args: Args) => {
+  return function (this: unknown, ...args: Args): Result<T, E> {
     try {
-      const value = fn(...args);
+      const value = fn.call(this, ...args);
       return Ok(value);
     } catch (error) {
       return Err(onError(error));

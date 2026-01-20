@@ -814,24 +814,60 @@ describe('ResultChain', () => {
       }
     });
 
-    it('должен сохранять контекст функции', () => {
-      const obj = {
-        value: 10,
-        getValue() {
-          return this.value;
-        },
-      };
+    it('должен сохранять контекст this при вызове методов', () => {
+      class Calculator {
+        multiplier = 10;
 
-      const safeGetValue = fromThrowable(
-        () => obj.getValue(),
-        (_error) => 'Error'
+        multiply(x: number): number {
+          return x * this.multiplier;
+        }
+      }
+
+      const calc = new Calculator();
+      const safeMultiply = fromThrowable(
+        calc.multiply,
+        (error) => `Calc error: ${error}`
       );
 
-      const result = safeGetValue();
+      // Вызываем wrapped метод с правильным this контекстом
+      const result = safeMultiply.call(calc, 5);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value).toBe(10);
+        expect(result.value).toBe(50); // 5 * 10
+      }
+    });
+
+    it('должен работать с методами класса при выбросе исключения', () => {
+      class Validator {
+        maxValue = 100;
+
+        validate(value: number): number {
+          if (value > this.maxValue) {
+            throw new Error(`Value ${value} exceeds max ${this.maxValue}`);
+          }
+          return value;
+        }
+      }
+
+      const validator = new Validator();
+      const safeValidate = fromThrowable(
+        validator.validate,
+        (error) => (error instanceof Error ? error.message : 'Unknown error')
+      );
+
+      // Success case с this
+      const result1 = safeValidate.call(validator, 50);
+      expect(result1.ok).toBe(true);
+      if (result1.ok) {
+        expect(result1.value).toBe(50);
+      }
+
+      // Error case с this
+      const result2 = safeValidate.call(validator, 150);
+      expect(result2.ok).toBe(false);
+      if (!result2.ok) {
+        expect(result2.error).toContain('Value 150 exceeds max 100');
       }
     });
   });
