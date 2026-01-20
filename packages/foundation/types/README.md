@@ -367,6 +367,8 @@ const error = ErrChain('error')
   .tapErr(err => console.error('Ошибка:', err));
 ```
 
+**Важно:** Если callback выбросит exception, он propagate напрямую. `tap`/`tapErr` предназначены для side-effects и не должны изменять Result. Если нужна обработка ошибок в callback, используйте try/catch внутри функции.
+
 ### .match({ ok, err })
 
 Pattern matching для Result.
@@ -660,6 +662,8 @@ await AsyncResult.ok(Promise.resolve(42))
   .tap(value => console.log('Value:', value))
   .tapErr(err => console.error('Error:', err));
 ```
+
+**Важно:** Если callback выбросит exception, Promise будет rejected. `tap`/`tapErr` предназначены для side-effects и не должны изменять Result. Если нужна обработка ошибок в callback, используйте try/catch внутри функции.
 
 ### .match({ ok, err })
 
