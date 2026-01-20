@@ -19,10 +19,14 @@ npm install @polymarket/types
 
 ## 🚀 Быстрый старт
 
-### Базовое использование
+Пакет предоставляет **два стиля использования** - выбирайте тот, который вам удобнее!
+
+### Стиль 1: Функциональный (Plain Objects)
+
+Идеален для сериализации, tree-shaking и функционального подхода.
 
 ```typescript
-import { Result, Ok, Err } from '@polymarket/types';
+import { Result, Ok, Err, map, flatMap } from '@polymarket/types';
 
 function divide(a: number, b: number): Result<number, string> {
   if (b === 0) {
@@ -38,6 +42,60 @@ if (result.ok) {
 } else {
   console.error('Ошибка:', result.error);
 }
+
+// Композиция через функции
+const doubled = map(result, x => x * 2);
+const chained = flatMap(divide(10, 2), x => divide(x, 5));
+```
+
+### Стиль 2: OOP (Method Chaining)
+
+Идеален для читабельных цепочек операций.
+
+```typescript
+import { OkChain, ErrChain } from '@polymarket/types';
+
+// Элегантная цепочка методов
+const result = OkChain(10)
+  .map(x => x / 2)      // 5
+  .map(x => x * 3)      // 15
+  .map(x => x + 1)      // 16
+  .unwrapOr(0);         // 16
+
+console.log('Результат:', result); // 16
+
+// Обработка ошибок
+const safe = OkChain(10)
+  .flatMap(x => x > 0 ? OkChain(x) : ErrChain('Отрицательное число'))
+  .map(x => Math.sqrt(x))
+  .match({
+    ok: value => `Успех: ${value}`,
+    err: error => `Ошибка: ${error}`
+  });
+```
+
+### Гибридный подход
+
+Оба стиля полностью совместимы!
+
+```typescript
+import { Ok, Err, OkChain, toChain } from '@polymarket/types';
+
+// Функция возвращает plain object
+function divide(a: number, b: number): Result<number, string> {
+  if (b === 0) return Err('Деление на ноль');
+  return Ok(a / b);
+}
+
+// Используем с method chaining
+const result = toChain(divide(10, 2))
+  .map(x => x * 2)
+  .map(x => x + 1)
+  .unwrap(); // 11
+
+// Или создаём chain и конвертируем в plain object
+const chain = OkChain(42).map(x => x * 2);
+const plain = chain.toResult(); // { ok: true, value: 84 }
 ```
 
 ### Использование с @polymarket/errors
@@ -192,6 +250,136 @@ const value = unwrapOr(result, 42); // 42
 
 const success = Ok(10);
 const value = unwrapOr(success, 42); // 10
+```
+
+## 🔗 ResultChain API (Method Chaining)
+
+Для удобства работы с цепочками методов доступен OOP-стиль через `ResultChain`.
+
+### OkChain(value)
+
+Создает ResultChain с успешным значением.
+
+```typescript
+const result = OkChain(42);
+// поддерживает method chaining
+```
+
+### ErrChain(error)
+
+Создает ResultChain с ошибкой.
+
+```typescript
+const result = ErrChain('Ошибка');
+```
+
+### toChain(result)
+
+Конвертирует plain object Result в ResultChain.
+
+```typescript
+const plain = Ok(42);
+const chain = toChain(plain);
+```
+
+### .map(fn)
+
+Трансформирует значение с method chaining.
+
+```typescript
+const result = OkChain(5)
+  .map(x => x * 2)
+  .map(x => x + 1);
+// result.unwrap() === 11
+```
+
+### .flatMap(fn)
+
+Цепочка Result-возвращающих операций.
+
+```typescript
+const divide = (a: number, b: number): Result<number, string> =>
+  b === 0 ? Err('Деление на ноль') : Ok(a / b);
+
+const result = OkChain(10)
+  .flatMap(x => divide(x, 2))
+  .flatMap(x => divide(x, 5));
+// result.unwrap() === 1
+```
+
+### .flatMapChain(fn)
+
+Цепочка операций с ResultChain.
+
+```typescript
+const result = OkChain(10)
+  .flatMapChain(x => OkChain(x * 2))
+  .flatMapChain(x => OkChain(x + 1));
+// result.unwrap() === 21
+```
+
+### .mapErr(fn)
+
+Трансформирует ошибку.
+
+```typescript
+const result = ErrChain({ code: 404, message: 'Не найдено' })
+  .mapErr(err => err.message);
+// result.unwrapErr() === 'Не найдено'
+```
+
+### .tap(fn) / .tapErr(fn)
+
+Выполняет side effects без изменения значения.
+
+```typescript
+const result = OkChain(42)
+  .tap(value => console.log('Значение:', value))
+  .map(x => x * 2);
+
+const error = ErrChain('error')
+  .tapErr(err => console.error('Ошибка:', err));
+```
+
+### .match({ ok, err })
+
+Pattern matching для Result.
+
+```typescript
+const message = OkChain(42).match({
+  ok: value => `Успех: ${value}`,
+  err: error => `Ошибка: ${error}`
+});
+// message === 'Успех: 42'
+```
+
+### .toResult()
+
+Конвертирует обратно в plain object Result.
+
+```typescript
+const chain = OkChain(42).map(x => x * 2);
+const plain = chain.toResult();
+// plain: { ok: true, value: 84 }
+```
+
+### .unwrap() / .unwrapOr(default) / .unwrapErr()
+
+Извлечение значений (аналогично функциям).
+
+```typescript
+OkChain(42).unwrap(); // 42
+ErrChain('error').unwrapOr(0); // 0
+ErrChain('error').unwrapErr(); // 'error'
+```
+
+### .isOk() / .isErr()
+
+Проверка типа Result.
+
+```typescript
+OkChain(42).isOk(); // true
+ErrChain('error').isErr(); // true
 ```
 
 ## 💡 Примеры использования

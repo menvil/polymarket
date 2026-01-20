@@ -7,11 +7,15 @@
  *
  * Архитектура:
  * - Result<T, E> - явная обработка ошибок без exceptions
- * - Ok/Err - конструкторы для создания Result
- * - map/flatMap - композиция операций
+ * - Ok/Err - конструкторы для создания Result (plain objects)
+ * - OkChain/ErrChain - конструкторы для method chaining (OOP)
+ * - map/flatMap - композиция операций (функции)
+ * - .map()/.flatMap() - композиция операций (методы)
  * - Type-safe error handling
  *
- * Использование:
+ * Два стиля использования:
+ *
+ * **1. Функциональный стиль (plain objects):**
  * ```typescript
  * import { Result, Ok, Err, map, flatMap } from '@polymarket/types';
  *
@@ -23,20 +27,25 @@
  * const result = divide(10, 2);
  * if (result.ok) {
  *   console.log('Result:', result.value); // 5
- * } else {
- *   console.error('Error:', result.error);
  * }
  *
- * // Композиция операций
+ * // Композиция через функции
  * const doubled = map(result, x => x * 2);
- * // doubled: Ok(10)
+ * ```
  *
- * // Цепочка операций
- * const chained = flatMap(divide(10, 2), x => divide(x, 2));
- * // chained: Ok(2.5)
+ * **2. OOP стиль (method chaining):**
+ * ```typescript
+ * import { OkChain, ErrChain } from '@polymarket/types';
+ *
+ * const result = OkChain(10)
+ *   .map(x => x / 2)
+ *   .map(x => x * 2)
+ *   .unwrapOr(0);
+ * // result: 10
  * ```
  *
  * @packageDocumentation
  */
 
 export * from './result.js';
+export * from './ResultChain.js';
