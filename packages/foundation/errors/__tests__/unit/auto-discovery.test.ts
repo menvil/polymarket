@@ -86,8 +86,8 @@ function findTsFiles(dir: string, files: string[] = []): string[] {
           if (!['node_modules', 'dist', '__tests__', 'coverage'].includes(entry)) {
             findTsFiles(fullPath, files);
           }
-        } else if (stat.isFile() && extname(entry) === '.ts') {
-          // Игнорируем index.ts, интерфейсы (I<UpperCase>), TradingError.ts (базовый класс)
+        } else if (stat.isFile() && extname(entry) === '.ts' && !entry.endsWith('.d.ts')) {
+          // Игнорируем index.ts, интерфейсы (I<UpperCase>), TradingError.ts (базовый класс), .d.ts файлы
           const fileName = basename(entry, '.ts');
 
           // Интерфейсы TypeScript именуются как I<Name> где вторая буква заглавная
@@ -198,12 +198,11 @@ function discoverErrorClasses(): Array<{
 
       // Паттерны ожидаемых ошибок:
       // - Файлы только с интерфейсами/типами (нет экспортируемых классов)
-      // - TypeScript ошибки компиляции (TS2306, TS1005, и т.д.)
+      // - TypeScript ошибки компиляции (TS2306 - module not found)
       // - ES modules ошибки в CommonJS окружении
       const isBenignError =
         errorMessage.includes('Cannot use import statement') ||
         errorMessage.includes('TS2306') ||
-        errorMessage.includes('TS1005') ||
         errorCode === 'ERR_REQUIRE_ESM' ||
         // Пустой модуль (только интерфейсы/типы)
         errorMessage.includes('is not a constructor');
