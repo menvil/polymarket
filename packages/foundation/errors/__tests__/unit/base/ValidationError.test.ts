@@ -1,21 +1,17 @@
 /**
  * Тесты для ValidationError
+ *
+ * @remarks
+ * Базовые тесты (constructor, toJSON, is(), instanceof и т.д.) запускаются
+ * автоматически через auto-discovery.test.ts.
+ * Здесь находятся только специфичные тесты для ValidationError.
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { ValidationError } from '../../../src/base/ValidationError';
-import { TradingError } from '../../../src/base/TradingError';
-import { testTradingError } from '../../helpers/sharedErrorTests';
+import { ValidationError } from '../../../src/base/ValidationError.js';
+import { TradingError } from '../../../src/base/TradingError.js';
 
 describe('ValidationError', () => {
-  // Запускаем стандартные тесты для всех TradingError
-  testTradingError({
-    ErrorClass: ValidationError,
-    expectedName: 'ValidationError',
-    expectedSeverity: 'low',
-    testMessage: 'Invalid price',
-  });
-
   // Специфичные тесты для ValidationError
   describe('specific use cases', () => {
     it('должен работать для валидации полей формы', () => {
