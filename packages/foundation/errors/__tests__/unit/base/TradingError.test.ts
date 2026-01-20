@@ -132,18 +132,15 @@ describe('TradingError', () => {
 
     it('должен выбросить TypeError если message не строка и не функция', () => {
       expect(() => {
-        // @ts-expect-error Testing invalid type
-        new TestError(123);
+        new TestError(123 as any);
       }).toThrow(TypeError);
 
       expect(() => {
-        // @ts-expect-error Testing invalid type
-        new TestError({ invalid: 'object' });
+        new TestError({ invalid: 'object' } as any);
       }).toThrow('TradingError: Message must be a string or function, got object');
 
       expect(() => {
-        // @ts-expect-error Testing invalid type
-        new TestError(null);
+        new TestError(null as any);
       }).toThrow('TradingError: Message must be a string or function, got object');
     });
   });
