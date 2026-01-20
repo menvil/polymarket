@@ -66,7 +66,7 @@ describe('TradingError', () => {
       expect(typeof error.stack).toBe('string');
 
       // Проверяем содержимое stack только в V8 окружениях (Node.js, Chrome)
-      const ErrorCtor = Error as unknown as { captureStackTrace?: Function };
+      const ErrorCtor = Error as unknown as { captureStackTrace?: (targetObject: object, constructorOpt?: unknown) => void };
       if (typeof ErrorCtor.captureStackTrace === 'function') {
         expect(error.stack).toContain('TestError');
       }

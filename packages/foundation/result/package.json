@@ -1,7 +1,7 @@
 {
-  "name": "@polymarket/errors",
+  "name": "@polymarket/result",
   "version": "0.1.0",
-  "description": "Foundation error handling package for Polymarket trading system",
+  "description": "Result type for Railway-Oriented Programming - type-safe error handling for Polymarket trading system",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,14 +9,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./base": {
-      "types": "./dist/base/index.d.ts",
-      "import": "./dist/base/index.js"
-    },
-    "./domain": {
-      "types": "./dist/domain/index.d.ts",
-      "import": "./dist/domain/index.js"
     }
   },
   "files": [
@@ -41,7 +33,10 @@
     "clean": "rm -rf dist"
   },
   "keywords": [
-    "errors",
+    "types",
+    "result",
+    "railway-oriented-programming",
+    "functional",
     "error-handling",
     "trading",
     "polymarket",
