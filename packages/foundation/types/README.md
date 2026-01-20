@@ -893,7 +893,7 @@ npm test
 
 ## 🏗️ Архитектура
 
-```
+```text
 @polymarket/types                      # Layer 0 (Foundation)
     ↓ используется в
 @polymarket/value-objects              # Layer 1 (Domain Primitives)
