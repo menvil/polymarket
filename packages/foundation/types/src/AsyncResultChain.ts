@@ -67,8 +67,7 @@ export class AsyncResultChain<T, E> {
           const newValue = await fn(result.value);
           return Ok(newValue);
         } catch (error) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return Err(error as any as E);
+          return Err(error as E);
         }
       }
       return result as Result<U, E>;
@@ -98,8 +97,7 @@ export class AsyncResultChain<T, E> {
         try {
           return Ok(fn(result.value));
         } catch (error) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return Err(error as any as E);
+          return Err(error as E);
         }
       }
       return result as Result<U, E>;
@@ -132,8 +130,7 @@ export class AsyncResultChain<T, E> {
         try {
           return (await fn(result.value)) as Result<U, E | F>;
         } catch (error) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return Err(error as any as E | F);
+          return Err(error as E | F);
         }
       }
       return result as Result<U, E | F>;
@@ -163,8 +160,7 @@ export class AsyncResultChain<T, E> {
         try {
           return fn(result.value) as Result<U, E | F>;
         } catch (error) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return Err(error as any as E | F);
+          return Err(error as E | F);
         }
       }
       return result as Result<U, E | F>;
@@ -191,8 +187,7 @@ export class AsyncResultChain<T, E> {
           const newError = await fn(result.error);
           return Err(newError);
         } catch (error) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return Err(error as any as F);
+          return Err(error as F);
         }
       }
       return result as Result<T, F>;
@@ -218,8 +213,7 @@ export class AsyncResultChain<T, E> {
         try {
           return Err(fn(result.error));
         } catch (error) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return Err(error as any as F);
+          return Err(error as F);
         }
       }
       return result as Result<T, F>;
@@ -365,8 +359,7 @@ export class AsyncResultChain<T, E> {
         try {
           await fn(result.value);
         } catch (error) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return Err(error as any as E);
+          return Err(error as E);
         }
       }
       return result;
@@ -393,8 +386,7 @@ export class AsyncResultChain<T, E> {
         try {
           await fn(result.error);
         } catch (error) {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          return Err(error as any as E);
+          return Err(error as E);
         }
       }
       return result;
@@ -546,8 +538,7 @@ export class AsyncResultChain<T, E> {
       try {
         return await fn();
       } catch (error) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return Err(error as any as F);
+        return Err(error as F);
       }
     });
     return new AsyncResultChain(newPromise);
@@ -577,8 +568,7 @@ export class AsyncResultChain<T, E> {
       try {
         return await fn(result.error);
       } catch (error) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return Err(error as any as F);
+        return Err(error as F);
       }
     });
     return new AsyncResultChain(newPromise);
@@ -608,8 +598,7 @@ export class AsyncResultChain<T, E> {
       try {
         return fn(result.error);
       } catch (error) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        return Err(error as any as F);
+        return Err(error as F);
       }
     });
     return new AsyncResultChain(newPromise);
