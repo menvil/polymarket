@@ -191,34 +191,44 @@ export class ResultChain<T, E> {
   /**
    * Проверяет является ли Result успешным
    *
-   * @returns true если ok = true
+   * @returns Type predicate - сужает тип до ResultChain с успешным значением
+   *
+   * @remarks
+   * Использует TypeScript type predicate для автоматического сужения типа.
+   * После проверки `if (result.isOk())` TypeScript знает что результат успешный.
    *
    * @example
    * ```typescript
-   * const result = OkChain(42);
+   * const result: ResultChain<number, string> = OkChain(42);
    * if (result.isOk()) {
-   *   console.log('Успех!');
+   *   // TypeScript знает что result содержит успешное значение
+   *   const value = result.unwrap(); // Type: number, безопасно
    * }
    * ```
    */
-  isOk(): boolean {
+  isOk(): this is ResultChain<T, never> {
     return isOk(this.data);
   }
 
   /**
    * Проверяет содержит ли Result ошибку
    *
-   * @returns true если ok = false
+   * @returns Type predicate - сужает тип до ResultChain с ошибкой
+   *
+   * @remarks
+   * Использует TypeScript type predicate для автоматического сужения типа.
+   * После проверки `if (result.isErr())` TypeScript знает что результат содержит ошибку.
    *
    * @example
    * ```typescript
-   * const result = ErrChain('error');
+   * const result: ResultChain<number, string> = ErrChain('error');
    * if (result.isErr()) {
-   *   console.log('Ошибка!');
+   *   // TypeScript знает что result содержит ошибку
+   *   const error = result.unwrapErr(); // Type: string, безопасно
    * }
    * ```
    */
-  isErr(): boolean {
+  isErr(): this is ResultChain<never, E> {
     return isErr(this.data);
   }
 
