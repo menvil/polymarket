@@ -102,8 +102,8 @@ type ErrorSeverity = 'low' | 'medium' | 'high' | 'critical';
 ### TradingError (базовый класс)
 
 ```typescript
-abstract class TradingError extends Error {
-  abstract readonly severity: ErrorSeverity;
+class TradingError extends Error {
+  readonly severity: ErrorSeverity = 'medium';
   readonly timestamp: Date;
   readonly code?: string;
   readonly context?: Record<string, unknown>;
