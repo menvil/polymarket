@@ -1,6 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/eslintrc",
-  "root": true,
   "extends": "../../../.eslintrc.base.json",
   "parserOptions": {
     "project": "./tsconfig.lint.json"
