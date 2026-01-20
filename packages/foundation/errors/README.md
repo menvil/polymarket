@@ -319,7 +319,7 @@ npm test
 # ✨ Автоматически обнаружено 1 класс(ов) ошибок:
 #    - ValidationError (severity: low)
 #
-# ✓ ValidationError (auto-discovered, severity: low) (27 tests)
+# ✓ ValidationError (auto-discovered, severity: low) (28 tests)
 ```
 
 **Как это работает?**
