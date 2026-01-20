@@ -177,10 +177,18 @@ export class AsyncResultChain<T, E> {
    * @param fn - Async функция для трансформации ошибки
    * @returns AsyncResultChain с трансформированной ошибкой
    *
+   * @remarks
+   * ⚠️ Автоматически ловит исключения из fn и преобразует их в Err.
+   * Exception будет приведён к типу F через type assertion - убедитесь что тип F
+   * может представить возможные exceptions (например, F = unknown | Error | string).
+   *
    * @example
    * ```typescript
    * const result = AsyncResult.from(fetchData())
    *   .mapErrAsync(err => enrichErrorWithContext(err));
+   *
+   * // Если enrichErrorWithContext выбросит exception:
+   * // Result будет Err(exception), а не rejected Promise
    * ```
    */
   mapErrAsync<F>(fn: (error: E) => Promise<F>): AsyncResultChain<T, F> {
@@ -204,10 +212,18 @@ export class AsyncResultChain<T, E> {
    * @param fn - Функция для трансформации ошибки
    * @returns AsyncResultChain с трансформированной ошибкой
    *
+   * @remarks
+   * ⚠️ Автоматически ловит исключения из fn и преобразует их в Err.
+   * Exception будет приведён к типу F через type assertion - убедитесь что тип F
+   * может представить возможные exceptions (например, F = unknown | Error | string).
+   *
    * @example
    * ```typescript
    * const result = AsyncResult.from(fetchData())
    *   .mapErr(err => `Failed: ${err}`);
+   *
+   * // Если трансформация выбросит exception:
+   * // Result будет Err(exception), а не rejected Promise
    * ```
    */
   mapErr<F>(fn: (error: E) => F): AsyncResultChain<T, F> {
