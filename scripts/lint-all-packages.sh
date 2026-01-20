@@ -48,14 +48,14 @@ while IFS= read -r pkg_file; do
   if [[ -n "$FIX_MODE" ]]; then
     # In fix mode, check for fix scripts or fallback scripts
     if ! grep -Eq '"lint:all:fix"|"lint:fix"|"lint:all"|"lint"' "$pkg_file"; then
-      echo -e "  ${RED}⚠️  No lint scripts found, skipping...${NC}"
+      echo -e "  ${RED}WARNING: No lint scripts found, skipping...${NC}"
       echo ""
       continue
     fi
   else
     # In check mode, check for check scripts
     if ! grep -Eq '"lint:all"|"lint"' "$pkg_file"; then
-      echo -e "  ${RED}⚠️  No 'lint:all' or 'lint' script found, skipping...${NC}"
+      echo -e "  ${RED}WARNING: No 'lint:all' or 'lint' script found, skipping...${NC}"
       echo ""
       continue
     fi
@@ -68,36 +68,36 @@ while IFS= read -r pkg_file; do
     # Try to run lint:all:fix, fallback to lint:fix
     if grep -q '"lint:all:fix"' "$pkg_file"; then
       if npm run lint:all:fix; then
-        echo -e "  ${GREEN}✓ Linting passed (fixed)${NC}"
+        echo -e "  ${GREEN}[OK] Linting passed (fixed)${NC}"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
       else
-        echo -e "  ${RED}✗ Linting failed${NC}"
+        echo -e "  ${RED}[FAIL] Linting failed${NC}"
         FAILED_PACKAGES+=("$pkg_name")
       fi
     elif grep -q '"lint:fix"' "$pkg_file"; then
       if npm run lint:fix; then
-        echo -e "  ${GREEN}✓ Linting passed (fixed)${NC}"
+        echo -e "  ${GREEN}[OK] Linting passed (fixed)${NC}"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
       else
-        echo -e "  ${RED}✗ Linting failed${NC}"
+        echo -e "  ${RED}[FAIL] Linting failed${NC}"
         FAILED_PACKAGES+=("$pkg_name")
       fi
     else
-      echo -e "  ${YELLOW}⚠️  No 'lint:fix' or 'lint:all:fix' script found; running check-only lint${NC}"
+      echo -e "  ${YELLOW}WARNING: No 'lint:fix' or 'lint:all:fix' script found; running check-only lint${NC}"
       # Fallback to check mode - still verify the package
       if grep -q '"lint:all"' "$pkg_file"; then
         if npm run lint:all; then
-          echo -e "  ${GREEN}✓ Linting passed${NC}"
+          echo -e "  ${GREEN}[OK] Linting passed${NC}"
           SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
         else
-          echo -e "  ${RED}✗ Linting failed${NC}"
+          echo -e "  ${RED}[FAIL] Linting failed${NC}"
           FAILED_PACKAGES+=("$pkg_name")
         fi
       elif npm run lint; then
-        echo -e "  ${GREEN}✓ Linting passed${NC}"
+        echo -e "  ${GREEN}[OK] Linting passed${NC}"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
       else
-        echo -e "  ${RED}✗ Linting failed${NC}"
+        echo -e "  ${RED}[FAIL] Linting failed${NC}"
         FAILED_PACKAGES+=("$pkg_name")
       fi
     fi
@@ -105,18 +105,18 @@ while IFS= read -r pkg_file; do
     # Check mode - try lint:all, fallback to lint
     if grep -q '"lint:all"' "$pkg_file"; then
       if npm run lint:all; then
-        echo -e "  ${GREEN}✓ Linting passed${NC}"
+        echo -e "  ${GREEN}[OK] Linting passed${NC}"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
       else
-        echo -e "  ${RED}✗ Linting failed${NC}"
+        echo -e "  ${RED}[FAIL] Linting failed${NC}"
         FAILED_PACKAGES+=("$pkg_name")
       fi
     else
       if npm run lint; then
-        echo -e "  ${GREEN}✓ Linting passed${NC}"
+        echo -e "  ${GREEN}[OK] Linting passed${NC}"
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
       else
-        echo -e "  ${RED}✗ Linting failed${NC}"
+        echo -e "  ${RED}[FAIL] Linting failed${NC}"
         FAILED_PACKAGES+=("$pkg_name")
       fi
     fi
@@ -142,4 +142,4 @@ if [[ ${#FAILED_PACKAGES[@]} -gt 0 ]]; then
 fi
 
 echo ""
-echo -e "${GREEN}All packages linted successfully! ✓${NC}"
+echo -e "${GREEN}All packages linted successfully!${NC}"
