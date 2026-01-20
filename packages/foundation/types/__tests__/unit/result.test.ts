@@ -15,6 +15,7 @@ import {
   combine,
   unwrap,
   unwrapOr,
+  formatValue,
 } from '../../src/result';
 
 describe('Result<T, E>', () => {
@@ -328,7 +329,7 @@ describe('Result<T, E>', () => {
       const fn = () => 42;
       const result = Err(fn);
 
-      expect(() => unwrap(result)).toThrow('Called unwrap on Err result: () => 42');
+      expect(() => unwrap(result)).toThrow('Called unwrap on Err result: [Function: fn]');
     });
 
     it('должен корректно форматировать символы в сообщениях об ошибках', () => {
@@ -445,6 +446,68 @@ describe('Result<T, E>', () => {
         : `Error: ${result.error}`;
 
       expect(message).toBe('Error: error');
+    });
+  });
+
+  describe('formatValue', () => {
+    it('должен форматировать null и undefined', () => {
+      expect(formatValue(null)).toBe('null');
+      expect(formatValue(undefined)).toBe('undefined');
+    });
+
+    it('должен форматировать строки', () => {
+      expect(formatValue('hello')).toBe('hello');
+      expect(formatValue('')).toBe('');
+    });
+
+    it('должен форматировать примитивы', () => {
+      expect(formatValue(42)).toBe('42');
+      expect(formatValue(true)).toBe('true');
+      expect(formatValue(false)).toBe('false');
+    });
+
+    it('должен форматировать bigint', () => {
+      expect(formatValue(BigInt(9007199254740991))).toBe('9007199254740991');
+      expect(formatValue(123n)).toBe('123');
+    });
+
+    it('должен форматировать символы', () => {
+      expect(formatValue(Symbol('test'))).toBe('Symbol(test)');
+      expect(formatValue(Symbol())).toBe('Symbol()');
+    });
+
+    it('должен форматировать функции', () => {
+      function namedFunc() {}
+      const anonymousFunc = () => {};
+
+      expect(formatValue(namedFunc)).toBe('[Function: namedFunc]');
+      expect(formatValue(anonymousFunc)).toMatch(/\[Function(?:: anonymousFunc)?\]/);
+    });
+
+    it('должен форматировать Error с именем и сообщением', () => {
+      const error = new Error('Something went wrong');
+      expect(formatValue(error)).toBe('Error: Something went wrong');
+
+      const typeError = new TypeError('Invalid type');
+      expect(formatValue(typeError)).toBe('TypeError: Invalid type');
+    });
+
+    it('должен форматировать Error без сообщения', () => {
+      const error = new Error();
+      expect(formatValue(error)).toBe('Error');
+    });
+
+    it('должен форматировать объекты через JSON.stringify', () => {
+      expect(formatValue({ a: 1, b: 2 })).toBe('{"a":1,"b":2}');
+      expect(formatValue([1, 2, 3])).toBe('[1,2,3]');
+    });
+
+    it('должен использовать String() для циклических объектов', () => {
+      const circular: any = { a: 1 };
+      circular.self = circular;
+
+      const result = formatValue(circular);
+      expect(result).toBe('[object Object]');
     });
   });
 });

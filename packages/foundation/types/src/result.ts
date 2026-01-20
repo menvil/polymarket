@@ -239,9 +239,20 @@ export const combine = <T, E>(results: Array<Result<T, E>>): Result<T[], E> => {
 export function formatValue(value: unknown): string {
   if (value === null) return 'null';
   if (value === undefined) return 'undefined';
+
+  // Error обработка с именем и сообщением
+  if (value instanceof Error) {
+    return value.message ? `${value.name}: ${value.message}` : value.name;
+  }
+
   if (typeof value === 'string') return value;
-  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
-  if (value instanceof Error) return value.message;
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+  if (typeof value === 'symbol') return value.toString();
+  if (typeof value === 'function') {
+    return `[Function${value.name ? `: ${value.name}` : ''}]`;
+  }
 
   try {
     return JSON.stringify(value) ?? String(value);
