@@ -219,10 +219,8 @@ function discoverErrorClasses(): Array<{
           `[auto-discovery] Unexpected import error for ${tsFilePath}:`,
           error
         );
-        // В режиме DEBUG выбрасываем ошибку для остановки тестов
-        if (process.env.DEBUG) {
-          throw error;
-        }
+        // Неожиданные ошибки должны валить тесты
+        throw error;
       }
     }
   }
