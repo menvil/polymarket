@@ -82,7 +82,7 @@ export * from './ValidationError.js';
 export * from './InsufficientFundsError.js'; // ← добавьте эту строку
 ```
 
-**Всё! При запуске `npm test` автоматически запустятся 27 базовых тестов для вашего класса!** ✨
+**Всё! При запуске `npm test` автоматически запустятся 28 базовых тестов для вашего класса!** ✨
 
 Никаких registry, никакой ручной регистрации! Тесты находят все классы автоматически через файловую систему.
 
@@ -312,7 +312,7 @@ const json = error.toJSON();
 
 ### Автоматические тесты
 
-При создании нового класса ошибки тесты **автоматически** находят его и запускают 27 базовых тестов:
+При создании нового класса ошибки тесты **автоматически** находят его и запускают 28 базовых тестов:
 
 ```bash
 npm test
@@ -339,7 +339,7 @@ import { testTradingError } from '../../helpers/sharedErrorTests';
 import { InsufficientFundsError } from '../../../src/errors/InsufficientFundsError';
 
 describe('InsufficientFundsError', () => {
-  // 27 базовых тестов автоматически
+  // 28 базовых тестов автоматически
   testTradingError({
     ErrorClass: InsufficientFundsError,
     expectedName: 'InsufficientFundsError',

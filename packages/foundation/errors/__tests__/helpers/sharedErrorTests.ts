@@ -63,7 +63,7 @@ export interface SharedErrorTestOptions {
  * @param options - Параметры тестирования
  *
  * @remarks
- * Проверяет (27 тестов):
+ * Проверяет (28 тестов):
  * - Создание экземпляра
  * - Наследование от Error и TradingError
  * - Автоматическую установку name
@@ -255,6 +255,34 @@ export function testTradingError(options: SharedErrorTestOptions): void {
 
         const error = new AnotherError('Another error');
         expect(ErrorClass.is(error)).toBe(false);
+      });
+
+      it('должен корректно различать разные классы ошибок (перекрестная проверка)', () => {
+        class ErrorA extends TradingError {
+          public readonly severity = 'low' as const;
+        }
+        class ErrorB extends TradingError {
+          public readonly severity = 'high' as const;
+        }
+
+        const errorA = new ErrorA('Error A');
+        const errorB = new ErrorB('Error B');
+        const mainError = new ErrorClass(testMessage);
+
+        // Проверяем, что ErrorClass.is() правильно определяет свой тип
+        expect(ErrorClass.is(mainError)).toBe(true);
+        expect(ErrorClass.is(errorA)).toBe(false);
+        expect(ErrorClass.is(errorB)).toBe(false);
+
+        // Проверяем, что ErrorA.is() правильно определяет свой тип
+        expect(ErrorA.is(errorA)).toBe(true);
+        expect(ErrorA.is(mainError)).toBe(false);
+        expect(ErrorA.is(errorB)).toBe(false);
+
+        // Проверяем, что ErrorB.is() правильно определяет свой тип
+        expect(ErrorB.is(errorB)).toBe(true);
+        expect(ErrorB.is(mainError)).toBe(false);
+        expect(ErrorB.is(errorA)).toBe(false);
       });
 
       it('должен возвращать false для обычных ошибок', () => {
