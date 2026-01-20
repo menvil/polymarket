@@ -1,7 +1,7 @@
 {
-  "name": "@polymarket/types",
+  "name": "@polymarket/result",
   "version": "0.1.0",
-  "description": "Foundation type utilities for Polymarket trading system - Result type for Railway-Oriented Programming",
+  "description": "Result type for Railway-Oriented Programming - type-safe error handling for Polymarket trading system",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

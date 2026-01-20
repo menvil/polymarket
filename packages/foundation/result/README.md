@@ -1,6 +1,6 @@
-# @polymarket/types
+# @polymarket/result
 
-Фундаментальные типы для Polymarket trading system. Railway-Oriented Programming через Result<T, E>.
+Result<T, E> тип для Railway-Oriented Programming в Polymarket trading system. Type-safe обработка ошибок без exceptions.
 
 ## ✨ Ключевые особенности
 
@@ -14,7 +14,7 @@
 ## 📦 Установка
 
 ```bash
-npm install @polymarket/types
+npm install @polymarket/result
 ```
 
 ## 🚀 Быстрый старт
@@ -26,7 +26,7 @@ npm install @polymarket/types
 Идеален для сериализации, tree-shaking и функционального подхода.
 
 ```typescript
-import { Result, Ok, Err, map, flatMap } from '@polymarket/types';
+import { Result, Ok, Err, map, flatMap } from '@polymarket/result';
 
 function divide(a: number, b: number): Result<number, string> {
   if (b === 0) {
@@ -53,7 +53,7 @@ const chained = flatMap(divide(10, 2), x => divide(x, 5));
 Идеален для читабельных цепочек операций.
 
 ```typescript
-import { OkChain, ErrChain } from '@polymarket/types';
+import { Ok, Err, OkChain, ErrChain } from '@polymarket/result';
 
 // Элегантная цепочка методов
 const result = OkChain(10)
@@ -79,7 +79,7 @@ const safe = OkChain(10)
 Идеален для асинхронных операций с Result.
 
 ```typescript
-import { AsyncResult } from '@polymarket/types';
+import { AsyncResult } from '@polymarket/result';
 
 // Async операции с автоматической обработкой ошибок
 async function fetchUser(id: number) {
@@ -103,7 +103,7 @@ const result = await AsyncResult.from(fetchData())
 Оба стиля полностью совместимы!
 
 ```typescript
-import { Result, Ok, Err, OkChain, toChain } from '@polymarket/types';
+import { Result, Ok, Err, OkChain, toChain } from '@polymarket/result';
 
 // Функция возвращает plain object
 function divide(a: number, b: number): Result<number, string> {
@@ -125,7 +125,7 @@ const plain = chain.toResult(); // { ok: true, value: 84 }
 ### Использование с @polymarket/errors
 
 ```typescript
-import { Result, Ok, Err } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 function createPrice(value: number): Result<number, InvalidPriceError> {
@@ -413,7 +413,7 @@ ErrChain('error').isErr(); // true
 Короткие алиасы для быстрого создания ResultChain.
 
 ```typescript
-import { R } from '@polymarket/types';
+import { R } from '@polymarket/result';
 
 // Вместо OkChain(42)
 const result = R.ok(42);
@@ -514,7 +514,7 @@ const recovered = ErrChain('error')
 Конвертирует Promise в Result, ловя rejections.
 
 ```typescript
-import { fromPromise } from '@polymarket/types';
+import { fromPromise } from '@polymarket/result';
 
 const result = await fromPromise(
   fetch('/api/user'),
@@ -533,7 +533,7 @@ if (result.ok) {
 Конвертирует nullable значение в Result.
 
 ```typescript
-import { fromNullable } from '@polymarket/types';
+import { fromNullable } from '@polymarket/result';
 
 const result = fromNullable(maybeUser, 'User not found');
 
@@ -549,7 +549,7 @@ if (result.ok) {
 Оборачивает функцию с exceptions в Result-возвращающую функцию.
 
 ```typescript
-import { fromThrowable } from '@polymarket/types';
+import { fromThrowable } from '@polymarket/result';
 
 const safeParseJSON = fromThrowable(
   JSON.parse,
@@ -576,7 +576,7 @@ if (!invalid.ok) {
 Создает AsyncResultChain из Promise<Result<T, E>>.
 
 ```typescript
-import { AsyncResult } from '@polymarket/types';
+import { AsyncResult } from '@polymarket/result';
 
 const result = await AsyncResult.from(fetchUser('123'))
   .mapAsync(user => enrichUserData(user))
@@ -680,7 +680,7 @@ const message = await AsyncResult.ok(Promise.resolve(42)).match({
 
 ```typescript
 const value = await AsyncResult.ok(Promise.resolve(42)).unwrap(); // 42
-const fallback = await AsyncResult.ok(Promise.reject('error')).unwrapOr(0); // 0
+const fallback = await AsyncResult.ok(Promise.reject<number>('error')).unwrapOr(0); // 0
 const error = await AsyncResult.err('error').unwrapErr(); // 'error'
 ```
 
@@ -701,7 +701,7 @@ await AsyncResult.err('oops')
 ### Обработка ошибок без exceptions
 
 ```typescript
-import { Result, Ok, Err, flatMap } from '@polymarket/types';
+import { Result, Ok, Err, flatMap } from '@polymarket/result';
 
 interface User {
   id: string;
@@ -804,7 +804,7 @@ if (orderResult1.ok) {
 ### Type-Safe обработка ошибок
 
 ```typescript
-import { Result, Ok, Err } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import {
   UserNotFoundError,
   InsufficientFundsError,
@@ -896,7 +896,7 @@ npm test
 ## 🏗️ Архитектура
 
 ```text
-@polymarket/types                      # Layer 0 (Foundation)
+@polymarket/result                      # Layer 0 (Foundation)
     ↓ используется в
 @polymarket/value-objects              # Layer 1 (Domain Primitives)
 @polymarket/entities                   # Layer 2 (Domain Core)
