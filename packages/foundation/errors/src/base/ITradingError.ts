@@ -157,7 +157,7 @@ export interface ITradingError {
    * ```typescript
    * const error = new ValidationError(
    *   'Invalid price',
-   *   { field: 'price', value: -10 }
+   *   { context: { field: 'price', value: -10 } }
    * );
    *
    * console.log(JSON.stringify(error.toJSON()));
