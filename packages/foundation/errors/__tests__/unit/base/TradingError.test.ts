@@ -65,23 +65,30 @@ describe('TradingError', () => {
       const error = new TestError('Test error');
       expect(error.stack).toBeDefined();
       expect(typeof error.stack).toBe('string');
-      expect(error.stack).toContain('TestError');
+
+      // Проверяем содержимое stack только в V8 окружениях (Node.js, Chrome)
+      const ErrorCtor = Error as unknown as { captureStackTrace?: Function };
+      if (typeof ErrorCtor.captureStackTrace === 'function') {
+        expect(error.stack).toContain('TestError');
+      }
     });
 
     it('должен использовать fallback для stack trace в non-V8 окружениях', () => {
       // Сохраняем оригинальную функцию
       const originalCaptureStackTrace = (Error as any).captureStackTrace;
 
-      // Временно удаляем captureStackTrace для эмуляции non-V8 окружения
-      (Error as any).captureStackTrace = undefined;
+      try {
+        // Временно удаляем captureStackTrace для эмуляции non-V8 окружения
+        (Error as any).captureStackTrace = undefined;
 
-      const error = new TestError('Test error');
+        const error = new TestError('Test error');
 
-      expect(error.stack).toBeDefined();
-      expect(typeof error.stack).toBe('string');
-
-      // Восстанавливаем оригинальную функцию
-      (Error as any).captureStackTrace = originalCaptureStackTrace;
+        expect(error.stack).toBeDefined();
+        expect(typeof error.stack).toBe('string');
+      } finally {
+        // Восстанавливаем оригинальную функцию
+        (Error as any).captureStackTrace = originalCaptureStackTrace;
+      }
     });
 
     it('должен поддерживать функцию-шаблон для динамических сообщений', () => {
