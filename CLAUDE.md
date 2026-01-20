@@ -55,7 +55,7 @@ async function getCachedData(key: string): Promise<Data | null> {
 
 📌 **Пример раздела в docs/algorithms/lru-cache.md:**
 
-```markdown
+````markdown
 ## Как работает LRU‑кэш
 
 ### Проблема
@@ -80,7 +80,7 @@ export class LRUCache<K extends string, V> {
   // ... реализация (должна совпадать с кодом в проекте!)
 }
 ```
-```
+````
 
 ## 3. Запускай генерацию документации
 
