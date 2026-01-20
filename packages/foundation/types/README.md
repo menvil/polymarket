@@ -746,7 +746,10 @@ if (result.ok) {
 // Все операции возвращают Result
 // Если любая операция упадет, цепочка останавливается автоматически
 
-// Вариант 1: Вложенные flatMap (функциональный подход)
+// Важно: flatMap принимает ровно 2 аргумента: (result, fn)
+// Для композиции нескольких операций используйте вложенные вызовы или chaining
+
+// Вариант 1: Функциональный подход с явными шагами
 const step1 = validatePrice(price); // Result<Price, InvalidPriceError>
 const step2 = flatMap(
   step1,
@@ -761,7 +764,19 @@ const orderResult1 = flatMap(
   validatedMarket => placeOrder(validatedMarket) // Result<Order, OrderError>
 );
 
-// Вариант 2: Method chaining (более читабельно)
+// Вариант 2: Вложенные flatMap (компактный функциональный стиль)
+const orderResult1b = flatMap(
+  flatMap(
+    flatMap(
+      validatePrice(price),
+      validatedPrice => validateQuantity(qty, validatedPrice)
+    ),
+    validatedQty => checkMarket(marketId, validatedQty)
+  ),
+  validatedMarket => placeOrder(validatedMarket)
+);
+
+// Вариант 3: Method chaining (рекомендуется, наиболее читабельно)
 const orderResult2 = toChain(validatePrice(price))
   .flatMap(validatedPrice => validateQuantity(qty, validatedPrice))
   .flatMap(validatedQty => checkMarket(marketId, validatedQty))
