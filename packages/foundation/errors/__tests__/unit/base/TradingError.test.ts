@@ -133,7 +133,7 @@ describe('TradingError', () => {
     it('должен выбросить TypeError если message не строка и не функция', () => {
       expect(() => {
         new TestError(123 as any);
-      }).toThrow(TypeError);
+      }).toThrow('TradingError: Message must be a string or function, got number');
 
       expect(() => {
         new TestError({ invalid: 'object' } as any);
