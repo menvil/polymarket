@@ -76,7 +76,23 @@ for pkg_file in $PACKAGES; do
         FAILED_PACKAGES+=("$pkg_name")
       fi
     else
-      echo -e "  ${YELLOW}⚠️  No 'lint:fix' or 'lint:all:fix' script found${NC}"
+      echo -e "  ${YELLOW}⚠️  No 'lint:fix' or 'lint:all:fix' script found; running check-only lint${NC}"
+      # Fallback to check mode - still verify the package
+      if grep -q '"lint:all"' "$pkg_file"; then
+        if npm run lint:all; then
+          echo -e "  ${GREEN}✓ Linting passed${NC}"
+          SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+        else
+          echo -e "  ${RED}✗ Linting failed${NC}"
+          FAILED_PACKAGES+=("$pkg_name")
+        fi
+      elif npm run lint; then
+        echo -e "  ${GREEN}✓ Linting passed${NC}"
+        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+      else
+        echo -e "  ${RED}✗ Linting failed${NC}"
+        FAILED_PACKAGES+=("$pkg_name")
+      fi
     fi
   else
     # Check mode - try lint:all, fallback to lint
