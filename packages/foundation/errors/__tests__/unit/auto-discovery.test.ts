@@ -192,9 +192,37 @@ function discoverErrorClasses(): Array<{
         }
       }
     } catch (error) {
-      // Логируем ошибки импорта для отладки (например, файлы с интерфейсами)
-      if (process.env.DEBUG) {
-        console.debug(`[auto-discovery] Module import error for ${tsFilePath}:`, error);
+      // Различаем ожидаемые доброкачественные ошибки от реальных проблем
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorCode = (error as any)?.code;
+
+      // Паттерны ожидаемых ошибок:
+      // - Файлы только с интерфейсами/типами (нет экспортируемых классов)
+      // - TypeScript ошибки компиляции (TS2306, TS1005, и т.д.)
+      // - ES modules ошибки в CommonJS окружении
+      const isBenignError =
+        errorMessage.includes('Cannot use import statement') ||
+        errorMessage.includes('TS2306') ||
+        errorMessage.includes('TS1005') ||
+        errorCode === 'ERR_REQUIRE_ESM' ||
+        // Пустой модуль (только интерфейсы/типы)
+        errorMessage.includes('is not a constructor');
+
+      if (isBenignError) {
+        // Ожидаемая ошибка - логируем только в DEBUG режиме
+        if (process.env.DEBUG) {
+          console.debug(`[auto-discovery] Benign import error for ${tsFilePath}:`, errorMessage);
+        }
+      } else {
+        // Неожиданная ошибка - логируем всегда, это может быть синтаксическая ошибка или проблема с зависимостями
+        console.error(
+          `[auto-discovery] Unexpected import error for ${tsFilePath}:`,
+          error
+        );
+        // В режиме DEBUG выбрасываем ошибку для остановки тестов
+        if (process.env.DEBUG) {
+          throw error;
+        }
       }
     }
   }
