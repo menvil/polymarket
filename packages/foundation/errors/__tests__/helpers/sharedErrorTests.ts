@@ -138,7 +138,12 @@ export function testTradingError(options: SharedErrorTestOptions): void {
 
         expect(error.stack).toBeDefined();
         expect(typeof error.stack).toBe('string');
-        expect(error.stack).toContain(expectedName);
+
+        // Проверяем что stack содержит имя класса только в V8 окружениях (Node.js, Chrome)
+        // В других средах (Firefox, Safari) используется fallback и stack может отличаться
+        if (typeof (Error as any).captureStackTrace === 'function') {
+          expect(error.stack).toContain(expectedName);
+        }
       });
     });
 
