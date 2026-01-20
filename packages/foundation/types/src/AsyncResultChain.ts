@@ -725,9 +725,35 @@ export const AsyncResult = {
 
   /**
    * Создаёт AsyncResultChain из Promise<T> (wraps в Ok)
+   *
+   * @remarks
+   * Автоматически ловит Promise rejections и преобразует их в Err.
+   * Можно указать функцию для трансформации ошибки.
+   *
+   * @param promise - Promise для оборачивания
+   * @param onError - Опциональная функция для трансформации ошибки
+   *
+   * @example
+   * ```typescript
+   * // Базовое использование
+   * const result = await AsyncResult.ok(fetch('/api/user')).unwrap();
+   *
+   * // С трансформацией ошибки
+   * const result = await AsyncResult.ok(
+   *   fetch('/api/user'),
+   *   (error) => new NetworkError(error)
+   * ).unwrap();
+   * ```
    */
-  ok: <T>(promise: Promise<T>): AsyncResultChain<T, never> => {
-    return new AsyncResultChain(promise.then(Ok));
+  ok: <T, E = unknown>(
+    promise: Promise<T>,
+    onError?: (error: unknown) => E
+  ): AsyncResultChain<T, E> => {
+    const mapError = onError ?? ((error) => error as E);
+
+    return new AsyncResultChain(
+      promise.then((value) => Ok(value)).catch((error) => Err(mapError(error)))
+    );
   },
 
   /**
