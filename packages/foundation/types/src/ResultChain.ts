@@ -61,6 +61,10 @@ export class ResultChain<T, E> {
    * @param fn - Функция для трансформации значения
    * @returns Новый ResultChain с трансформированным значением
    *
+   * @remarks
+   * ⚠️ Если fn выбросит exception, он будет propagate напрямую.
+   * Для безопасной обработки exceptions используйте try/catch внутри fn.
+   *
    * @example
    * ```typescript
    * const result = OkChain(5).map(x => x * 2);
@@ -76,6 +80,10 @@ export class ResultChain<T, E> {
    *
    * @param fn - Функция возвращающая Result
    * @returns Новый ResultChain
+   *
+   * @remarks
+   * ⚠️ Если fn выбросит exception, он будет propagate напрямую.
+   * Для безопасной обработки exceptions используйте try/catch внутри fn.
    *
    * @example
    * ```typescript
@@ -101,6 +109,10 @@ export class ResultChain<T, E> {
    * @param fn - Функция возвращающая ResultChain
    * @returns Новый ResultChain
    *
+   * @remarks
+   * ⚠️ Если fn выбросит exception, он будет propagate напрямую.
+   * Для безопасной обработки exceptions используйте try/catch внутри fn.
+   *
    * @example
    * ```typescript
    * const result = OkChain(10)
@@ -121,6 +133,10 @@ export class ResultChain<T, E> {
    *
    * @param fn - Функция для трансформации ошибки
    * @returns ResultChain с трансформированной ошибкой
+   *
+   * @remarks
+   * ⚠️ Если fn выбросит exception, он будет propagate напрямую.
+   * Для безопасной обработки exceptions используйте try/catch внутри fn.
    *
    * @example
    * ```typescript
