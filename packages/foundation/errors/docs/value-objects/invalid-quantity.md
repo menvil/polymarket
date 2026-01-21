@@ -28,6 +28,9 @@
 
 ```typescript
 import { InvalidQuantityError } from '@polymarket/errors';
+
+// Для примеров с Result<T,E>:
+import { Result } from '@polymarket/types';
 ```
 
 ---
@@ -191,7 +194,14 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
 import { InvalidQuantityError } from '@polymarket/errors';
 
 function handleQuantityInput(input: string): void {
-  const value = parseFloat(input);
+  // Используем Number() для более строгого парсинга
+  const value = Number(input);
+
+  // Проверка что парсинг успешен
+  if (isNaN(value)) {
+    showFieldError('quantity', 'Please enter a valid number');
+    return;
+  }
 
   const result = Quantity.fromNumber(value);
 

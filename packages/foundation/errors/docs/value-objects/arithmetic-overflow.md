@@ -29,6 +29,10 @@
 
 ```typescript
 import { ArithmeticOverflowError } from '@polymarket/errors';
+
+// Для примеров с Result<T,E> и SafeMath также понадобятся:
+import { InvalidMoneyError, CurrencyMismatchError, DivisionByZeroError } from '@polymarket/errors';
+import { Result } from '@polymarket/types';
 ```
 
 ---

@@ -29,6 +29,10 @@
 
 ```typescript
 import { InvalidMoneyError } from '@polymarket/errors';
+
+// Для примеров с операциями также понадобятся:
+import { CurrencyMismatchError, ArithmeticOverflowError } from '@polymarket/errors';
+import { Result } from '@polymarket/types';
 ```
 
 ---
@@ -159,6 +163,30 @@ class Money {
     return Result.ok(new Money(amount, currency));
   }
 
+  static fromString(
+    amountStr: string,
+    currency: string
+  ): Result<Money, InvalidMoneyError> {
+    // Парсинг строки в число
+    const amount = Number(amountStr);
+
+    // Проверка что парсинг успешен
+    if (isNaN(amount)) {
+      return Result.err(
+        new InvalidMoneyError(
+          (ctx) => `Invalid amount format: "${ctx.amountStr}"`,
+          {
+            code: InvalidMoneyError.code,
+            context: { amountStr, currency, reason: 'NaN after parsing' }
+          }
+        )
+      );
+    }
+
+    // Используем существующую валидацию fromAmount
+    return Money.fromAmount(amount, currency);
+  }
+
   getAmount(): number {
     return this.amount;
   }
@@ -267,9 +295,10 @@ class Money {
 import { InvalidMoneyError } from '@polymarket/errors';
 
 function handleDepositInput(input: string, currency: string): void {
-  const amount = parseFloat(input);
-
-  const result = Money.fromAmount(amount, currency);
+  // Используем fromString для работы со строковым вводом
+  // Примечание: для production с высокими требованиями к точности
+  // используйте версию Money с decimal.js (пример 5)
+  const result = Money.fromString(input, currency);
 
   result.match({
     ok: (money) => {

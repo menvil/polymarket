@@ -29,6 +29,10 @@
 
 ```typescript
 import { DivisionByZeroError } from '@polymarket/errors';
+
+// Для примеров с Result<T,E> также понадобятся:
+import { InvalidMoneyError, ArithmeticOverflowError } from '@polymarket/errors';
+import { Result } from '@polymarket/types';
 ```
 
 ---
@@ -296,26 +300,30 @@ result.match({
 
 ```typescript
 // 0 / 0 = неопределенность (NaN в JavaScript)
-const zero = new Money(0, 'USDC');
+const zero = Money.fromAmount(0, 'USDC').unwrap();
 const result = zero.divide(0);
 // ❌ Result.err(DivisionByZeroError)
 // Важно: даже если делимое = 0, деление на ноль недопустимо
 ```
 
-### Деление отрицательных чисел на ноль
+### Деление любых чисел на ноль
 
 ```typescript
-const negative = new Money(-100, 'USDC');
-const result = negative.divide(0);
+// Деление на ноль недопустимо для любых значений
+const money = Money.fromAmount(100, 'USDC').unwrap();
+const result = money.divide(0);
 // ❌ Result.err(DivisionByZeroError)
-// Результат: -Infinity в JavaScript, но мы перехватываем это до вычисления
+
+const smallMoney = Money.fromAmount(0.01, 'USDC').unwrap();
+const result2 = smallMoney.divide(0);
+// ❌ Result.err(DivisionByZeroError)
 ```
 
 ### Очень малые делители (почти ноль)
 
 ```typescript
 // Технически не ноль, но результат может быть огромным
-const money = new Money(100, 'USDC');
+const money = Money.fromAmount(100, 'USDC').unwrap();
 const result = money.divide(0.0000001); // ✅ Result.ok(Money(1000000000))
 
 // Если нужна защита от слишком малых делителей:
@@ -344,7 +352,7 @@ function safeDivide(
 
 ```typescript
 // JavaScript имеет -0, который === 0
-const money = new Money(100, 'USDC');
+const money = Money.fromAmount(100, 'USDC').unwrap();
 const result = money.divide(-0);
 // ❌ Result.err(DivisionByZeroError)
 // Проверка divisor === 0 ловит и -0

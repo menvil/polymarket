@@ -28,6 +28,9 @@
 
 ```typescript
 import { InvalidPriceError } from '@polymarket/errors';
+
+// Для примеров с Result<T,E>:
+import { Result } from '@polymarket/types';
 ```
 
 ---
@@ -154,7 +157,15 @@ function validatePrice(value: number): Result<Price, InvalidPriceError> {
 import { InvalidPriceError } from '@polymarket/errors';
 
 function handlePriceInput(input: string): void {
-  const value = parseFloat(input);
+  // Используем Number() для более строгого парсинга
+  // Для production с высокими требованиями к точности используйте decimal.js
+  const value = Number(input);
+
+  // Проверка что парсинг успешен
+  if (isNaN(value)) {
+    showFieldError('price', 'Please enter a valid number');
+    return;
+  }
 
   const result = Price.fromNumber(value);
 

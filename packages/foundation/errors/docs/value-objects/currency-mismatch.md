@@ -29,6 +29,10 @@
 
 ```typescript
 import { CurrencyMismatchError } from '@polymarket/errors';
+
+// Для примеров с Result<T,E> также понадобятся:
+import { InvalidMoneyError } from '@polymarket/errors';
+import { Result } from '@polymarket/types';
 ```
 
 ---

@@ -29,6 +29,9 @@
 
 ```typescript
 import { InvalidAmountError } from '@polymarket/errors';
+
+// Для примеров с Result<T,E>:
+import { Result } from '@polymarket/types';
 ```
 
 ---

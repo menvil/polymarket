@@ -46,7 +46,7 @@ throw new ValidationError(
 #### Вариант 1: Минимальный (1 строка!) 🎉
 
 ```typescript
-// src/errors/OrderNotFoundError.ts
+// src/base/OrderNotFoundError.ts
 import { TradingError } from '@polymarket/errors';
 
 export class OrderNotFoundError extends TradingError {}
@@ -58,11 +58,11 @@ export class OrderNotFoundError extends TradingError {}
 #### Вариант 2: С переопределением severity (3 строки)
 
 ```typescript
-// src/errors/ValidationError.ts
+// src/base/InsufficientFundsError.ts
 import { TradingError } from '@polymarket/errors';
 
-export class ValidationError extends TradingError {
-  public readonly severity = 'low' as const;
+export class InsufficientFundsError extends TradingError {
+  public readonly severity = 'high' as const;
 }
 ```
 
@@ -78,8 +78,9 @@ export class ValidationError extends TradingError {
 
 ```typescript
 // src/base/index.ts
+export * from './TradingError.js';
 export * from './ValidationError.js';
-export * from './InsufficientFundsError.js'; // ← добавьте эту строку
+export * from './InsufficientFundsError.js'; // ← добавьте эту строку для нового класса
 ```
 
 **Всё! При запуске `npm test` автоматически запустятся 28 базовых тестов для вашего класса!** ✨
@@ -333,17 +334,17 @@ npm test
 Для специфичных тестов создайте отдельный файл:
 
 ```typescript
-// __tests__/unit/errors/InsufficientFundsError.test.ts
+// __tests__/unit/base/InsufficientFundsError.test.ts
 import { describe, it, expect } from '@jest/globals';
 import { testTradingError } from '../../helpers/sharedErrorTests';
-import { InsufficientFundsError } from '../../../src/errors/InsufficientFundsError';
+import { InsufficientFundsError } from '../../../src/base/InsufficientFundsError';
 
 describe('InsufficientFundsError', () => {
   // 28 базовых тестов автоматически
   testTradingError({
     ErrorClass: InsufficientFundsError,
     expectedName: 'InsufficientFundsError',
-    expectedSeverity: 'medium',
+    expectedSeverity: 'high',
     testMessage: 'Not enough funds',
   });
 
@@ -356,7 +357,7 @@ describe('InsufficientFundsError', () => {
       );
 
       expect(error.message).toBe('Insufficient funds: required 1000, available 500');
-      expect(error.severity).toBe('medium');
+      expect(error.severity).toBe('high');
     });
   });
 });
