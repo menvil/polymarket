@@ -445,24 +445,54 @@ export class Spread {
    * Сдвигает спред вверх или вниз
    *
    * @param amount - Величина сдвига (положительное = вверх, отрицательное = вниз)
-   * @returns Новый Spread сдвинутый на величину
+   * @returns Result с новым Spread или InvalidSpreadError
+   * @throws {InvalidSpreadError} Если amount не является конечным числом
    *
    * @remarks
    * Сдвигает и bid и ask на одинаковую величину.
    * Сохраняет ширину спреда. Соблюдает границы цен.
+   * Алгоритм:
+   * 1. Валидирует входной параметр amount (должен быть конечным числом)
+   * 2. Сдвигает bid и ask на величину amount
+   * 3. Применяет границы цен с сохранением ширины спреда
+   * 4. Возвращает Result с новым Spread
    *
    * @example
    * ```typescript
    * import { unwrap } from '@polymarket/result';
    *
    * const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
-   * const shifted = spread.shift(0.05);
-   * console.log(shifted.bid.value); // 0.53
-   * console.log(shifted.ask.value); // 0.57
-   * console.log(shifted.width()); // 0.04 (unchanged)
+   * const result = spread.shift(0.05);
+   * if (result.ok) {
+   *   const shifted = result.value;
+   *   console.log(shifted.bid.value); // 0.53
+   *   console.log(shifted.ask.value); // 0.57
+   *   console.log(shifted.width()); // 0.04 (unchanged)
+   * }
+   *
+   * // Или используя unwrap
+   * const shifted = unwrap(spread.shift(0.05));
+   *
+   * // Обработка ошибок
+   * const invalidResult = spread.shift(NaN);
+   * if (!invalidResult.ok) {
+   *   console.error(invalidResult.error.message);
+   * }
    * ```
    */
-  public shift(amount: number): Spread {
+  public shift(amount: number): Result<Spread, InvalidSpreadError> {
+    // Валидация входного параметра
+    if (!Number.isFinite(amount)) {
+      return Err(
+        new InvalidSpreadError(
+          (ctx) => `Invalid shift amount ${ctx.amount}: must be a finite number`,
+          {
+            context: { amount }
+          }
+        )
+      );
+    }
+
     const originalWidth = this.width();
     const minPriceDecimal = new Decimal(Price.minPrice);
     const maxPriceDecimal = new Decimal(Price.maxPrice);
@@ -494,9 +524,28 @@ export class Spread {
     // Пересчитываем ask на основе финального bid для сохранения ширины
     newAskDecimal = newBidDecimal.plus(originalWidthDecimal);
 
-    const newBid = unwrap(Price.fromValue(newBidDecimal.toNumber()));
-    const newAsk = unwrap(Price.fromValue(newAskDecimal.toNumber()));
-    return unwrap(Spread.create(newBid, newAsk));
+    // Создание новых Price с обработкой ошибок
+    const newBidResult = Price.fromValue(newBidDecimal.toNumber());
+    if (!newBidResult.ok) {
+      return Err(
+        new InvalidSpreadError(
+          (ctx) => `Failed to create bid price: ${ctx.error}`,
+          { context: { error: newBidResult.error.message } }
+        )
+      );
+    }
+
+    const newAskResult = Price.fromValue(newAskDecimal.toNumber());
+    if (!newAskResult.ok) {
+      return Err(
+        new InvalidSpreadError(
+          (ctx) => `Failed to create ask price: ${ctx.error}`,
+          { context: { error: newAskResult.error.message } }
+        )
+      );
+    }
+
+    return Spread.create(newBidResult.value, newAskResult.value);
   }
 
   /**

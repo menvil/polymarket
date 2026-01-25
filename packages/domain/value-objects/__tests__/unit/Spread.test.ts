@@ -272,30 +272,78 @@ describe('Spread', () => {
       it('should shift spread up', () => {
         const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
 
-        const shifted = spread.shift(0.05);
+        const result = spread.shift(0.05);
 
-        expect(shifted.bid.value).toBeCloseTo(0.53, 2);
-        expect(shifted.ask.value).toBeCloseTo(0.57, 2);
-        expect(shifted.width()).toBeCloseTo(0.04, 2); // Width preserved
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const shifted = result.value;
+          expect(shifted.bid.value).toBeCloseTo(0.53, 2);
+          expect(shifted.ask.value).toBeCloseTo(0.57, 2);
+          expect(shifted.width()).toBeCloseTo(0.04, 2); // Width preserved
+        }
       });
 
       it('should shift spread down', () => {
         const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
 
-        const shifted = spread.shift(-0.05);
+        const result = spread.shift(-0.05);
 
-        expect(shifted.bid.value).toBeCloseTo(0.43, 2);
-        expect(shifted.ask.value).toBeCloseTo(0.47, 2);
-        expect(shifted.width()).toBeCloseTo(0.04, 2);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const shifted = result.value;
+          expect(shifted.bid.value).toBeCloseTo(0.43, 2);
+          expect(shifted.ask.value).toBeCloseTo(0.47, 2);
+          expect(shifted.width()).toBeCloseTo(0.04, 2);
+        }
       });
 
       it('should clamp at price boundaries', () => {
         const spread = unwrap(Spread.fromNumbers(0.005, 0.045));
 
-        const shiftedDown = spread.shift(-0.1);
+        const result = spread.shift(-0.1);
 
-        expect(shiftedDown.bid.value).toBe(0.0001);
-        expect(shiftedDown.width()).toBeCloseTo(0.04, 2);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const shiftedDown = result.value;
+          expect(shiftedDown.bid.value).toBe(0.0001);
+          expect(shiftedDown.width()).toBeCloseTo(0.04, 2);
+        }
+      });
+
+      it('should reject NaN shift amount', () => {
+        const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
+
+        const result = spread.shift(NaN);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidSpreadError);
+          expect(result.error.message).toContain('must be a finite number');
+        }
+      });
+
+      it('should reject Infinity shift amount', () => {
+        const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
+
+        const result = spread.shift(Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidSpreadError);
+          expect(result.error.message).toContain('must be a finite number');
+        }
+      });
+
+      it('should reject -Infinity shift amount', () => {
+        const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
+
+        const result = spread.shift(-Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidSpreadError);
+          expect(result.error.message).toContain('must be a finite number');
+        }
       });
     });
   });
@@ -378,7 +426,7 @@ describe('Spread', () => {
       expect(widened.width()).toBeCloseTo(0.06, 2);
 
       // Shift based on inventory
-      const shifted = widened.shift(-0.02);
+      const shifted = unwrap(widened.shift(-0.02));
       expect(shifted.midpoint().value).toBeCloseTo(0.48, 2);
     });
 
