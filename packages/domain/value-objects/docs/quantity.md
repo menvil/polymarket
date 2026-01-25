@@ -385,7 +385,7 @@ console.log(Quantity.minSize); // 1
 ```typescript
 // Валидные количества
 console.log(Quantity.isValid(10));    // true
-console.log(Quantity.isValid(0));     // true (ноль всегда валиден)
+console.log(Quantity.isValid(0));     // false (minSize по умолчанию = 1)
 console.log(Quantity.isValid(1000));  // true
 
 // Невалидные количества
@@ -396,7 +396,8 @@ console.log(Quantity.isValid(Infinity)); // false
 // С minSize
 console.log(Quantity.isValid(5, 10));  // false (< minSize)
 console.log(Quantity.isValid(10, 10)); // true
-console.log(Quantity.isValid(0, 10));  // true (ноль разрешен)
+console.log(Quantity.isValid(0, 10));  // false (< minSize)
+console.log(Quantity.isValid(0, 0));   // true (ноль валиден когда minSize = 0)
 ```
 
 ## Примеры использования

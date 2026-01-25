@@ -702,11 +702,11 @@ describe('Quantity', () => {
         }
       });
 
-      it('should ignore invalid minSize (zero) and use default', () => {
+      it('should treat minSize: 0 as invalid and use default', () => {
         const json = { value: 100, minSize: 0 };
         const result = Quantity.fromJSON(json);
 
-        // Должно успешно создаться с дефолтным minSize
+        // fromJSON treats minSize=0 as invalid and uses default MIN_SIZE=1
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value.value).toBe(100);

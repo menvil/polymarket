@@ -41,8 +41,8 @@ import { unwrap } from '@polymarket/result';
 import { Price, Spread } from '@polymarket/value-objects';
 
 // Создание валидного спреда
-const bid = unwrap(Price.fromNumber(0.48));
-const ask = unwrap(Price.fromNumber(0.52));
+const bid = unwrap(Price.fromValue(0.48));
+const ask = unwrap(Price.fromValue(0.52));
 
 const result = Spread.create(bid, ask);
 if (result.ok) {
@@ -58,8 +58,8 @@ const spread = unwrap(Spread.create(bid, ask));
 
 // Невалидный спред (bid > ask)
 const invalid = Spread.create(
-  unwrap(Price.fromNumber(0.6)),
-  unwrap(Price.fromNumber(0.5))
+  unwrap(Price.fromValue(0.6)),
+  unwrap(Price.fromValue(0.5))
 );
 if (!invalid.ok) {
   console.error(invalid.error.message);
@@ -67,9 +67,13 @@ if (!invalid.ok) {
 }
 ```
 
-### `fromNumbers(bid: number, ask: number): Result<Spread, InvalidSpreadError>`
+### `fromNumbers(bid: number, ask: number): Result<Spread, InvalidSpreadError | InvalidPriceError>`
 
 Создаёт Spread из чисел (удобный shortcut).
+
+Может вернуть ошибки:
+- **InvalidPriceError** - если bid или ask выходят за допустимые границы [0, 1]
+- **InvalidSpreadError** - если bid > ask
 
 ```typescript
 import { unwrap } from '@polymarket/result';
@@ -84,8 +88,10 @@ if (result.ok) {
 // Или используя unwrap
 const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
 
-// Ошибка если цены невалидны
+// Ошибка если цены невалидны (за границами [0, 1])
 const invalid1 = Spread.fromNumbers(1.5, 2.0);  // InvalidPriceError
+
+// Ошибка если bid > ask
 const invalid2 = Spread.fromNumbers(0.6, 0.5);  // InvalidSpreadError
 ```
 
@@ -96,7 +102,7 @@ const invalid2 = Spread.fromNumbers(0.6, 0.5);  // InvalidSpreadError
 ```typescript
 import { unwrap } from '@polymarket/result';
 
-const price = unwrap(Price.fromNumber(0.5));
+const price = unwrap(Price.fromValue(0.5));
 const spread = Spread.zero(price);
 
 console.log(spread.width());        // 0
@@ -161,7 +167,7 @@ console.log(mid.toPercentage()); // "50.00%"
 Проверяет, имеет ли спред нулевую ширину.
 
 ```typescript
-const price = unwrap(Price.fromNumber(0.5));
+const price = unwrap(Price.fromValue(0.5));
 const zeroSpread = Spread.zero(price);
 
 console.log(zeroSpread.isZeroWidth()); // true
@@ -333,18 +339,18 @@ Width = constant
 Статический метод для проверки валидности спреда.
 
 ```typescript
-const bid = unwrap(Price.fromNumber(0.48));
-const ask = unwrap(Price.fromNumber(0.52));
+const bid = unwrap(Price.fromValue(0.48));
+const ask = unwrap(Price.fromValue(0.52));
 
 console.log(Spread.isValid(bid, ask)); // true
 
-const invalidBid = unwrap(Price.fromNumber(0.6));
-const invalidAsk = unwrap(Price.fromNumber(0.5));
+const invalidBid = unwrap(Price.fromValue(0.6));
+const invalidAsk = unwrap(Price.fromValue(0.5));
 
 console.log(Spread.isValid(invalidBid, invalidAsk)); // false (bid > ask)
 
 // Равные цены валидны (zero-width spread)
-const price = unwrap(Price.fromNumber(0.5));
+const price = unwrap(Price.fromValue(0.5));
 console.log(Spread.isValid(price, price)); // true
 ```
 
@@ -355,15 +361,15 @@ console.log(Spread.isValid(price, price)); // true
 ```typescript
 const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
 
-const insidePrice = unwrap(Price.fromNumber(0.5));
+const insidePrice = unwrap(Price.fromValue(0.5));
 console.log(spread.contains(insidePrice)); // true
 
-const outsidePrice = unwrap(Price.fromNumber(0.6));
+const outsidePrice = unwrap(Price.fromValue(0.6));
 console.log(spread.contains(outsidePrice)); // false
 
 // Границы включены
-const bidPrice = unwrap(Price.fromNumber(0.48));
-const askPrice = unwrap(Price.fromNumber(0.52));
+const bidPrice = unwrap(Price.fromValue(0.48));
+const askPrice = unwrap(Price.fromValue(0.52));
 console.log(spread.contains(bidPrice)); // true
 console.log(spread.contains(askPrice)); // true
 ```
@@ -745,8 +751,8 @@ spread.bid = newBid; // Error: readonly property
 
 // ❌ НЕ забывайте про валидацию bid <= ask
 const invalid = Spread.create(
-  unwrap(Price.fromNumber(0.6)),
-  unwrap(Price.fromNumber(0.5))
+  unwrap(Price.fromValue(0.6)),
+  unwrap(Price.fromValue(0.5))
 ); // Вернёт Err!
 
 // ❌ НЕ предполагайте что операции сохраняют ширину
