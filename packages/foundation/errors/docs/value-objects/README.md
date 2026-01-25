@@ -43,6 +43,13 @@ Value Objects представляют неизменяемые бизнес-к�
 | `DIVISION_BY_ZERO` | DivisionByZeroError | Деление на ноль в расчетах | [→](./division-by-zero.md) |
 | `ARITHMETIC_OVERFLOW` | ArithmeticOverflowError | Результат операции = Infinity | [→](./arithmetic-overflow.md) |
 
+### Валидация котировок и спредов
+
+| Код | Класс | Когда использовать | Документация |
+|-----|-------|-------------------|--------------|
+| `INVALID_QUOTE` | InvalidQuoteError | Невалидная котировка (bid >= ask, отсутствие сторон) | [→](./invalid-quote.md) |
+| `INVALID_SPREAD` | InvalidSpreadError | Невалидный спред (bid > ask) | [→](./invalid-spread.md) |
+
 ---
 
 ## Общие паттерны использования
@@ -249,7 +256,8 @@ import { Result } from '@polymarket/types';
 import {
   InvalidMoneyError,
   ArithmeticOverflowError,
-  DivisionByZeroError
+  DivisionByZeroError,
+  CurrencyMismatchError
 } from '@polymarket/errors';
 
 class Money {
