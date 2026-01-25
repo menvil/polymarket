@@ -10,7 +10,7 @@ import { InvalidMoneyError, CurrencyMismatchError } from '@polymarket/errors';
 
 describe('Balance', () => {
   describe('Construction', () => {
-    describe('fromAmount', () => {
+    describe('fromValue with number', () => {
       it('should create balance from positive number', () => {
         const result = Balance.fromValue(1000, 'USDC');
 
@@ -70,7 +70,7 @@ describe('Balance', () => {
       });
     });
 
-    describe('fromString', () => {
+    describe('fromValue with string', () => {
       it('should create balance from valid string', () => {
         const result = Balance.fromValue('1000.50', 'USDC');
 
@@ -91,7 +91,7 @@ describe('Balance', () => {
       });
     });
 
-    describe('fromDecimal', () => {
+    describe('fromValue with Decimal', () => {
       it('should create balance from Decimal', () => {
         const result = Balance.fromValue(new Decimal('1000.50'), 'USDC');
 
