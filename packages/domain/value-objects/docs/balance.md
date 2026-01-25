@@ -581,9 +581,15 @@ result.match({
 // Используйте toDecimal() для точных вычислений
 const precise = balance.toDecimal().times('1.05').toNumber();
 
-// Проверяйте валюту перед операциями
+// Проверяйте валюту перед операциями и обрабатывайте Result
 if (b1.getCurrency() === b2.getCurrency()) {
-  const sum = b1.add(b2);
+  const sumResult = b1.add(b2);
+  if (sumResult.ok) {
+    const sum = sumResult.value;
+    // используйте sum
+  } else {
+    // обработайте ошибку sumResult.error
+  }
 }
 ```
 
@@ -594,13 +600,13 @@ if (b1.getCurrency() === b2.getCurrency()) {
 const wrong = balance.getAmount() * 1.05; // ❌ Потеря точности
 
 // Не игнорируйте Result
-balance.subtract(cost); // ❌ Не проверяет ошибку
+balance.subtract(cost); // ❌ Не проверяет Result - ошибка может остаться незамеченной
 
 // Не создавайте отрицательные балансы
-Balance.fromValue(-100, 'USDC'); // ❌ Ошибка валидации
+const badBalance = Balance.fromValue(-100, 'USDC'); // ❌ Вернёт Result с InvalidMoneyError
 
-// Не складывайте балансы разных валют без проверки
-balance1.add(balance2); // ❌ Может упасть если разные валюты
+// Не складывайте балансы разных валют без проверки Result
+const badSum = balance1.add(balance2); // ❌ Может вернуть CurrencyMismatchError в Result
 ```
 
 ## Архитектурные решения

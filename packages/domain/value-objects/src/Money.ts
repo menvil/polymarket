@@ -14,20 +14,21 @@
  * @example
  * ```typescript
  * import { Money } from '@polymarket/value-objects';
+ * import { unwrap } from '@polymarket/result';
  *
  * // Создание Money (USDC по умолчанию)
- * const moneyResult = Money.fromValue(100);
+ * const moneyResult = unwrap(Money.fromValue(100);
  * moneyResult.match({
  *   ok: (money) => console.log(money.getAmount()), // 100
  *   err: (error) => console.error(error.message)
  * });
  *
  * // Короткий синтаксис с unwrap (USDC по умолчанию)
- * const money = Money.fromValue(100).unwrap();
+ * const money = unwrap(Money.fromValue(100));
  *
  * // Математические операции
- * const m1 = Money.fromValue(100).unwrap();
- * const m2 = Money.fromValue(50).unwrap();
+ * const m1 = unwrap(Money.fromValue(100));
+ * const m2 = unwrap(Money.fromValue(50));
  *
  * const sum = m1.add(m2);
  * sum.match({
@@ -36,9 +37,9 @@
  * });
  *
  * // Точность decimal.js
- * const m3 = Money.fromValue('0.1').unwrap();
- * const m4 = Money.fromValue('0.2').unwrap();
- * const precise = m3.add(m4).unwrap();
+ * const m3 = unwrap(Money.fromValue('0.1'));
+ * const m4 = unwrap(Money.fromValue('0.2'));
+ * const precise = unwrap(m3.add(m4));
  * precise.toDecimal().toString(); // "0.3" (точно!)
  * ```
  */
@@ -135,7 +136,7 @@ export class Money {
    * const m4 = unwrap(Money.fromValue(new Decimal(100)));
    *
    * // Обработка ошибок
-   * const result = Money.fromValue(NaN);
+   * const result = unwrap(Money.fromValue(NaN);
    * if (!result.ok) {
    *   console.error(result.error.message); // "Amount cannot be NaN"
    * }
@@ -196,6 +197,22 @@ export class Money {
       );
     }
 
+    // Проверка превышения максимальной суммы
+    if (decimalAmount.abs().greaterThan(Money.MAX_AMOUNT)) {
+      return Err(
+        new InvalidMoneyError(
+          (ctx) => `Amount ${ctx.amount} exceeds MAX_AMOUNT (${ctx.max})`,
+          {
+            context: {
+              amount: decimalAmount.toString(),
+              currency,
+              max: Money.MAX_AMOUNT.toString()
+            }
+          }
+        )
+      );
+    }
+
     return Ok(new Money(decimalAmount, currency));
   }
 
@@ -248,8 +265,8 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const m1 = Money.fromValue(100).unwrap();
-   * const m2 = Money.fromValue(50).unwrap();
+   * const m1 = unwrap(Money.fromValue(100));
+   * const m2 = unwrap(Money.fromValue(50));
    * const sum = m1.add(m2);
    * sum.match({
    *   ok: (money) => console.log(money.getAmount()), // 150
@@ -327,9 +344,11 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const m1 = Money.fromUSDC(100).unwrap();
-   * const m2 = Money.fromUSDC(150).unwrap();
-   * const diff = m1.subtract(m2).unwrap();
+   * import { unwrap } from '@polymarket/result';
+   *
+   * const m1 = unwrap(Money.fromValue(100));
+   * const m2 = unwrap(Money.fromValue(150));
+   * const diff = unwrap(m1.subtract(m2));
    * diff.isNegative(); // true (PnL = -50)
    * ```
    */
@@ -494,19 +513,21 @@ export class Money {
    * Разделить на коэффициент
    *
    * @param divisor - Делитель (number или Decimal)
-   * @returns Result с новым Money или DivisionByZeroError
+   * @returns Result с новым Money или ошибкой:
+   *   - DivisionByZeroError: если делитель равен нулю или не является конечным числом
+   *   - ArithmeticOverflowError: если результат превышает MAX_AMOUNT или произошла непредвиденная ошибка
    *
    * @example
    * ```typescript
-   * const money = Money.fromValue(100).unwrap();
+   * const money = unwrap(Money.fromValue(100));
    * const half = money.divide(2);
    * half.match({
    *   ok: (m) => console.log(m.getAmount()), // 50
-   *   err: (error) => console.error('Division by zero')
+   *   err: (error) => console.error('Division error')
    * });
    * ```
    */
-  divide(divisor: number | Decimal): Result<Money, DivisionByZeroError> {
+  divide(divisor: number | Decimal): Result<Money, DivisionByZeroError | ArithmeticOverflowError> {
     try {
       const divisorDecimal = divisor instanceof Decimal ? divisor : new Decimal(divisor);
 
@@ -564,6 +585,25 @@ export class Money {
         );
       }
 
+      // Проверка что результат не превышает MAX_AMOUNT
+      if (result.abs().greaterThan(Money.MAX_AMOUNT)) {
+        return Err(
+          new ArithmeticOverflowError(
+            (ctx: Record<string, unknown>) =>
+              `Division overflow: result ${ctx.result} exceeds maximum ${ctx.max}`,
+            {
+              context: {
+                operation: 'divide',
+                amount: this.amount.toString(),
+                divisor: divisorDecimal.toString(),
+                result: result.toString(),
+                max: Money.MAX_AMOUNT.toString()
+              }
+            }
+          )
+        );
+      }
+
       return Ok(new Money(result, this.currency));
     } catch (error) {
       return Err(
@@ -596,8 +636,10 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const m1 = Money.fromUSDC(100).unwrap();
-   * const m2 = Money.fromUSDC(100).unwrap();
+   * import { unwrap } from '@polymarket/result';
+   *
+   * const m1 = unwrap(Money.fromValue(100));
+   * const m2 = unwrap(Money.fromValue(100));
    * m1.equals(m2); // true
    * ```
    */
@@ -613,8 +655,8 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const m1 = Money.fromValue(100).unwrap();
-   * const m2 = Money.fromValue(50).unwrap();
+   * const m1 = unwrap(Money.fromValue(100));
+   * const m2 = unwrap(Money.fromValue(50));
    * const result = m1.greaterThan(m2);
    * result.match({
    *   ok: (isGreater) => console.log(isGreater), // true
@@ -761,7 +803,7 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const loss = Money.fromUSDC(-50).unwrap();
+   * const loss = unwrap(Money.fromValue(-50));
    * const absLoss = loss.abs();
    * absLoss.getAmount(); // 50
    * ```
@@ -777,7 +819,7 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const profit = Money.fromUSDC(50).unwrap();
+   * const profit = unwrap(Money.fromValue(50));
    * const loss = profit.negate();
    * loss.getAmount(); // -50
    * ```
@@ -793,7 +835,7 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const money = Money.fromUSDC(100.50).unwrap();
+   * const money = unwrap(Money.fromValue(100.50));
    * const json = money.toJSON();
    * console.log(json); // { amount: "100.5", currency: "USDC" }
    * ```
@@ -835,7 +877,7 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const money = Money.fromUSDC(100.5).unwrap();
+   * const money = unwrap(Money.fromValue(100.5));
    * money.toString();    // "$100.50 USDC"
    * money.toString(4);   // "$100.5000 USDC"
    * ```

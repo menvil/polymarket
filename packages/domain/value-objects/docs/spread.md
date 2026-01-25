@@ -794,7 +794,7 @@ interface SpreadOperations {
   // Операции
   tighten(amount: number): Result<Spread, InvalidSpreadError>;
   widen(amount: number): Result<Spread, InvalidSpreadError>;
-  shift(amount: number): Spread;
+  shift(amount: number): Result<Spread, InvalidSpreadError>;
 
   // Проверки
   contains(price: Price): boolean;

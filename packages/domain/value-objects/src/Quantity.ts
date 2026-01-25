@@ -164,6 +164,18 @@ export class Quantity {
    * ```
    */
   public static fromValue(value: number | string | Decimal, minSize: number = Quantity.MIN_SIZE): Result<Quantity, InvalidQuantityError> {
+    // Валидация minSize
+    if (typeof minSize !== 'number' || !Number.isFinite(minSize) || minSize < 0) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid minSize ${ctx.minSize}: must be a finite number >= 0`,
+          {
+            context: { minSize }
+          }
+        )
+      );
+    }
+
     // Преобразование в число с обработкой ошибок
     let numValue: number;
     try {
@@ -217,8 +229,14 @@ export class Quantity {
    *
    * @remarks
    * Использует Decimal.js для точных сравнений с минимальным размером.
+   * Проверяет, что minSize сам по себе валиден (конечное число > 0).
    */
   public static isValid(value: number, minSize: number = Quantity.MIN_SIZE): boolean {
+    // Валидация minSize
+    if (typeof minSize !== 'number' || !Number.isFinite(minSize) || minSize < 0) {
+      return false;
+    }
+
     // Используем Decimal для проверки isFinite и точных сравнений
     const decimal = new Decimal(value);
     if (!decimal.isFinite()) {
@@ -517,6 +535,10 @@ export class Quantity {
    * Это важно для правильной обработки данных с разных рынков,
    * где orderMinSize может отличаться.
    *
+   * minSize валидируется перед использованием:
+   * - Если minSize не указан или невалиден, используется дефолтное значение (MIN_SIZE = 1)
+   * - minSize должен быть конечным числом > 0
+   *
    * @example
    * ```typescript
    * import { unwrap } from '@polymarket/result';
@@ -534,10 +556,30 @@ export class Quantity {
    * if (result2.ok) {
    *   console.log(result2.value.value); // 0.5
    * }
+   *
+   * // Невалидный minSize игнорируется
+   * const json3 = { value: 100, minSize: NaN };
+   * const result3 = Quantity.fromJSON(json3); // Использует дефолтный minSize
    * ```
    */
   public static fromJSON(json: { value: number; minSize?: number }): Result<Quantity, InvalidQuantityError> {
-    return Quantity.fromValue(json.value, json.minSize);
+    // Валидация minSize перед использованием
+    let validatedMinSize: number | undefined = json.minSize;
+
+    if (json.minSize !== undefined) {
+      // Проверяем что minSize - это конечное число > 0
+      if (
+        typeof json.minSize !== 'number' ||
+        !Number.isFinite(json.minSize) ||
+        json.minSize <= 0
+      ) {
+        // Если minSize невалиден, используем дефолтное значение вместо ошибки
+        // Это делает десериализацию более устойчивой к невалидным данным
+        validatedMinSize = undefined;
+      }
+    }
+
+    return Quantity.fromValue(json.value, validatedMinSize);
   }
 
   /**

@@ -129,13 +129,18 @@ total.match({
 - `ArithmeticOverflowError` — результат > 1e6 или < -1e6
 
 **Проблема старой версии:**
+
 ```typescript
+import { unwrap } from '@polymarket/result';
+
 // ❌ СТАРАЯ ВЕРСИЯ (опасно!)
-const a = Percentage.fromValue(999999);
-const b = Percentage.fromValue(10);
+const a = unwrap(Percentage.fromValue(999999));
+const b = unwrap(Percentage.fromValue(10));
 const sum = a.add(b); // Молча возвращает 1_000_000% (clamped)! Баг скрыт!
 
 // ✅ НОВАЯ ВЕРСИЯ (безопасно!)
+const a = unwrap(Percentage.fromValue(999999));
+const b = unwrap(Percentage.fromValue(10));
 const sum = a.add(b);
 sum.match({
   ok: (pct) => console.log(pct), // Не выполнится
@@ -159,6 +164,7 @@ net.match({
 ```
 
 **Разрешает отрицательный результат:**
+
 ```typescript
 const p1 = unwrap(Percentage.fromValue(5));
 const p2 = unwrap(Percentage.fromValue(10));
@@ -274,6 +280,7 @@ p1.lessThanOrEqual(p2);     // false
 ```
 
 **Точность decimal.js:**
+
 ```typescript
 const p1 = unwrap(Percentage.fromString('10.1'));
 const p2 = unwrap(Percentage.fromString('10.10'));

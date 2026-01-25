@@ -214,50 +214,87 @@ console.log(diff.value); // 7
 // Ошибка при отрицательном результате
 const small = unwrap(Quantity.fromValue(5));
 const large = unwrap(Quantity.fromValue(10));
-small.subtract(large); // Throws Error
+const subtractResult = small.subtract(large);
+if (!subtractResult.ok) {
+  console.error(subtractResult.error); // InvalidQuantityError: result would be negative
+}
 
 // Ноль разрешен
 const same = unwrap(Quantity.fromValue(10));
-const zero = same.subtract(same);
-console.log(zero.value); // 0
+const zeroResult = same.subtract(same);
+if (zeroResult.ok) {
+  console.log(zeroResult.value.value); // 0
+}
 ```
 
-### `multiply(factor: number): Quantity`
+### `multiply(factor: number): Result<Quantity, InvalidQuantityError | ArithmeticOverflowError>`
 
 Умножает на коэффициент.
 
 ```typescript
+import { unwrap } from '@polymarket/result';
+
 const qty = unwrap(Quantity.fromValue(10));
 
-const doubled = qty.multiply(2);
-console.log(doubled.value); // 20
+// Успешное умножение
+const doubledResult = qty.multiply(2);
+if (doubledResult.ok) {
+  console.log(doubledResult.value.value); // 20
+}
 
-const half = qty.multiply(0.5);
-console.log(half.value); // 5
+const halfResult = qty.multiply(0.5);
+if (halfResult.ok) {
+  console.log(halfResult.value.value); // 5
+}
 
 // Ноль разрешен
-const zero = qty.multiply(0);
-console.log(zero.value); // 0
+const zeroResult = qty.multiply(0);
+if (zeroResult.ok) {
+  console.log(zeroResult.value.value); // 0
+}
 
-// Ошибки
-qty.multiply(-1);   // RangeError: отрицательный factor
-qty.multiply(NaN);  // RangeError: не число
+// Ошибки возвращаются через Result
+const negativeResult = qty.multiply(-1);
+if (!negativeResult.ok) {
+  console.error(negativeResult.error); // InvalidQuantityError: отрицательный factor
+}
+
+const nanResult = qty.multiply(NaN);
+if (!nanResult.ok) {
+  console.error(nanResult.error); // InvalidQuantityError: не число
+}
 ```
 
-### `divide(divisor: number): Quantity`
+### `divide(divisor: number): Result<Quantity, InvalidQuantityError>`
 
 Делит на делитель.
 
 ```typescript
+import { unwrap } from '@polymarket/result';
+
 const qty = unwrap(Quantity.fromValue(10));
 
-const half = qty.divide(2);
-console.log(half.value); // 5
+// Успешное деление
+const halfResult = qty.divide(2);
+if (halfResult.ok) {
+  console.log(halfResult.value.value); // 5
+}
 
-// Ошибки
-qty.divide(0);      // Error: деление на ноль
-qty.divide(-2);     // Error: отрицательный делитель
-qty.divide(NaN);    // Error: не число
+// Ошибки возвращаются через Result
+const divByZeroResult = qty.divide(0);
+if (!divByZeroResult.ok) {
+  console.error(divByZeroResult.error); // InvalidQuantityError: деление на ноль
+}
+
+const negDivisorResult = qty.divide(-2);
+if (!negDivisorResult.ok) {
+  console.error(negDivisorResult.error); // InvalidQuantityError: отрицательный делитель
+}
+
+const nanDivisorResult = qty.divide(NaN);
+if (!nanDivisorResult.ok) {
+  console.error(nanDivisorResult.error); // InvalidQuantityError: не число
+}
 ```
 
 ## Сравнение

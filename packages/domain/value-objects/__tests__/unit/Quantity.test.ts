@@ -579,6 +579,92 @@ describe('Quantity', () => {
 
         expect(deserialized.equals(original)).toBe(true);
       });
+
+      it('should accept valid minSize from JSON', () => {
+        const json = { value: 0.5, minSize: 0.1 };
+        const result = Quantity.fromJSON(json);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value).toBe(0.5);
+        }
+      });
+
+      it('should use default minSize when minSize is not provided', () => {
+        const json = { value: 100 };
+        const result = Quantity.fromJSON(json);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value).toBe(100);
+        }
+      });
+
+      it('should ignore invalid minSize (NaN) and use default', () => {
+        const json = { value: 100, minSize: NaN };
+        const result = Quantity.fromJSON(json);
+
+        // Должно успешно создаться с дефолтным minSize
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value).toBe(100);
+        }
+      });
+
+      it('should ignore invalid minSize (Infinity) and use default', () => {
+        const json = { value: 100, minSize: Infinity };
+        const result = Quantity.fromJSON(json);
+
+        // Должно успешно создаться с дефолтным minSize
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value).toBe(100);
+        }
+      });
+
+      it('should ignore invalid minSize (negative) and use default', () => {
+        const json = { value: 100, minSize: -1 };
+        const result = Quantity.fromJSON(json);
+
+        // Должно успешно создаться с дефолтным minSize
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value).toBe(100);
+        }
+      });
+
+      it('should ignore invalid minSize (zero) and use default', () => {
+        const json = { value: 100, minSize: 0 };
+        const result = Quantity.fromJSON(json);
+
+        // Должно успешно создаться с дефолтным minSize
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value).toBe(100);
+        }
+      });
+
+      it('should ignore invalid minSize (non-number) and use default', () => {
+        const json = { value: 100, minSize: 'invalid' as any };
+        const result = Quantity.fromJSON(json);
+
+        // Должно успешно создаться с дефолтным minSize
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value).toBe(100);
+        }
+      });
+
+      it('should reject value below valid minSize', () => {
+        const json = { value: 0.05, minSize: 0.1 };
+        const result = Quantity.fromJSON(json);
+
+        // Должно вернуть ошибку, так как value < minSize
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        }
+      });
     });
   });
 });

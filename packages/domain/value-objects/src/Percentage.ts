@@ -22,9 +22,9 @@
  * import { Percentage } from '@polymarket/value-objects';
  *
  * // Создание процентов
- * const fee = Percentage.fromNumber(2.5);  // 2.5%
+ * const fee = Percentage.fromValue(2.5);  // 2.5%
  * const gain = Percentage.fromDecimal(0.15); // 15%
- * const loss = Percentage.fromNumber(-5); // -5% (убыток)
+ * const loss = Percentage.fromValue(-5); // -5% (убыток)
  *
  * // Арифметические операции
  * fee.match({
@@ -365,7 +365,7 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const pct = unwrap(Percentage.fromNumber(50));
+   * const pct = unwrap(Percentage.fromValue(50));
    * pct.toDecimalFraction(); // 0.5
    * ```
    */
@@ -384,7 +384,7 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const pct = unwrap(Percentage.fromNumber(2.5));
+   * const pct = unwrap(Percentage.fromValue(2.5));
    * pct.toBasisPoints(); // 250
    * ```
    */
@@ -407,8 +407,8 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const fee = unwrap(Percentage.fromNumber(2.5));
-   * const gain = unwrap(Percentage.fromNumber(15));
+   * const fee = unwrap(Percentage.fromValue(2.5));
+   * const gain = unwrap(Percentage.fromValue(15));
    * const total = fee.add(gain);
    * total.match({
    *   ok: (pct) => console.log(pct.getValue()), // 17.5
@@ -466,8 +466,8 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const total = unwrap(Percentage.fromNumber(17.5));
-   * const fee = unwrap(Percentage.fromNumber(2.5));
+   * const total = unwrap(Percentage.fromValue(17.5));
+   * const fee = unwrap(Percentage.fromValue(2.5));
    * const net = total.subtract(fee);
    * net.match({
    *   ok: (pct) => console.log(pct.getValue()), // 15
@@ -525,7 +525,7 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const base = unwrap(Percentage.fromNumber(10));
+   * const base = unwrap(Percentage.fromValue(10));
    * const doubled = base.multiply(2);
    * doubled.match({
    *   ok: (pct) => console.log(pct.getValue()), // 20
@@ -588,13 +588,17 @@ export class Percentage {
    * Разделить на коэффициент
    *
    * @param divisor - Делитель (number или Decimal)
-   * @returns Result с новым Percentage или ошибкой (DivisionByZeroError | ArithmeticOverflowError)
-   * @throws {DivisionByZeroError} Если делитель равен нулю, не является конечным числом, или результат деления не конечен
-   * @throws {ArithmeticOverflowError} Если произошла непредвиденная ошибка при выполнении деления
+   * @returns Result с новым Percentage или ошибкой:
+   *   - DivisionByZeroError: если делитель равен нулю или не является конечным числом
+   *   - ArithmeticOverflowError: если результат выходит за пределы допустимого диапазона
+   *
+   * @remarks
+   * Метод возвращает Result вместо выбрасывания исключений.
+   * Все ошибки возвращаются через Result и должны обрабатываться через .ok/.error или match().
    *
    * @example
    * ```typescript
-   * const total = unwrap(Percentage.fromNumber(20));
+   * const total = unwrap(Percentage.fromValue(20));
    * const half = total.divide(2);
    * half.match({
    *   ok: (pct) => console.log(pct.getValue()), // 10
@@ -725,7 +729,7 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const fee = unwrap(Percentage.fromNumber(2.5));
+   * const fee = unwrap(Percentage.fromValue(2.5));
    * const orderValue = 1000;
    * const feeAmount = fee.of(orderValue); // 25
    * ```
@@ -747,8 +751,8 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const a = unwrap(Percentage.fromNumber(10));
-   * const b = unwrap(Percentage.fromNumber(10));
+   * const a = unwrap(Percentage.fromValue(10));
+   * const b = unwrap(Percentage.fromValue(10));
    * a.equals(b); // true
    * ```
    */
@@ -837,7 +841,7 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const loss = unwrap(Percentage.fromNumber(-10));
+   * const loss = unwrap(Percentage.fromValue(-10));
    * const absLoss = loss.abs();
    * absLoss.getValue(); // 10
    * ```
@@ -853,7 +857,7 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const gain = unwrap(Percentage.fromNumber(10));
+   * const gain = unwrap(Percentage.fromValue(10));
    * const loss = gain.negate();
    * loss.getValue(); // -10
    * ```
@@ -869,7 +873,7 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const pct = unwrap(Percentage.fromNumber(25.5));
+   * const pct = unwrap(Percentage.fromValue(25.5));
    * const json = pct.toJSON();
    * console.log(json); // { value: 25.5 }
    * ```
@@ -905,7 +909,7 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const pct = unwrap(Percentage.fromNumber(25.5));
+   * const pct = unwrap(Percentage.fromValue(25.5));
    * pct.toString();    // "25.50%"
    * pct.toString(1);   // "25.5%"
    * ```
@@ -922,7 +926,7 @@ export class Percentage {
    *
    * @example
    * ```typescript
-   * const pct = unwrap(Percentage.fromNumber(25.5));
+   * const pct = unwrap(Percentage.fromValue(25.5));
    * pct.toFixedString(); // "25.50"
    * ```
    */

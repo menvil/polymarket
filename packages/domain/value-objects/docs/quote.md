@@ -603,7 +603,7 @@ const bidOnly = unwrap(Quote.create(
   unwrap(Price.fromValue(0.64)),
   null,
   unwrap(Quantity.fromValue(100)),
-  Quantity.ZERO
+  Quantity.zero()
 ));
 
 console.log(bidOnly.toJSON());
@@ -1012,7 +1012,12 @@ if (!quote.crossesMarket(marketBid, marketAsk)) {
 **Пример использования:**
 
 ```typescript
-const quote = Quote.fromOneSided(bid, 'BUY');
+import { unwrap } from '@polymarket/result';
+
+// Создание односторонней котировки (только bid)
+const bidPrice = unwrap(Price.fromValue(0.55));
+const bidSize = unwrap(Quantity.fromValue(100));
+const quote = unwrap(Quote.create(bidPrice, null, bidSize, Quantity.zero()));
 
 // Вариант 1: Проверка перед вызовом
 if (quote.isTwoSided()) {

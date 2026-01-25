@@ -32,7 +32,7 @@ import { Result, Ok, Err, unwrap, map, flatMap } from '@polymarket/result';
 import { Balance } from '@polymarket/value-objects';
 
 // Value objects возвращают plain Result
-const result = Balance.fromAmount(1000, 'USDC');
+const result = Balance.fromValue(1000, 'USDC');
 // result: Result<Balance, InvalidMoneyError>
 
 // ✅ Проверка через поле .ok
@@ -45,7 +45,7 @@ if (result.ok) {
 }
 
 // ✅ Использование функции unwrap
-const balance = unwrap(Balance.fromAmount(1000, 'USDC'));
+const balance = unwrap(Balance.fromValue(1000, 'USDC'));
 
 // ✅ Композиция через функции
 const doubled = map(result, balance => {
@@ -54,7 +54,7 @@ const doubled = map(result, balance => {
 });
 
 const chained = flatMap(result, balance =>
-  balance.add(unwrap(Balance.fromAmount(500, 'USDC')))
+  balance.add(unwrap(Balance.fromValue(500, 'USDC')))
 );
 ```
 
@@ -125,7 +125,7 @@ import { toChain, unwrap } from '@polymarket/result';
 import { Balance, Money, Percentage } from '@polymarket/value-objects';
 
 // 1. Value objects возвращают plain Result
-const balanceResult = Balance.fromAmount(1000, 'USDC');
+const balanceResult = Balance.fromValue(1000, 'USDC');
 const feeResult = Percentage.fromNumber(2.5);
 
 // 2. Простые случаи — функциональный стиль
@@ -152,7 +152,7 @@ const finalAmount = toChain(balanceResult)
 const balance = unwrap(balanceResult);
 const fee = unwrap(feeResult);
 const feeAmount = fee.of(balance.getAmount());
-const final = unwrap(Money.fromAmount(
+const final = unwrap(Money.fromValue(
   balance.getAmount() - feeAmount.toNumber()
 ));
 ```
@@ -179,7 +179,7 @@ result.unwrap();  // ✅ Метод для chain
 
 ```typescript
 // ❌ НЕПРАВИЛЬНО
-const result = Balance.fromAmount(1000, 'USDC');  // Plain object
+const result = Balance.fromValue(1000, 'USDC');  // Plain object
 result.map(b => b.getAmount());  // ❌ НЕТ метода .map()
 
 // ✅ ПРАВИЛЬНО - конвертируем в chain
@@ -265,7 +265,7 @@ const processed = toChain(result)
  * @returns Plain Result object (функциональный стиль)
  */
 export function createBalance(): Result<Balance, Error> {
-  return Balance.fromAmount(0, 'USDC');
+  return Balance.fromValue(0, 'USDC');
 }
 ```
 
