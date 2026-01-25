@@ -72,7 +72,7 @@ if (!invalid.ok) {
 Создаёт Spread из чисел (удобный shortcut).
 
 Может вернуть ошибки:
-- **InvalidPriceError** - если bid или ask выходят за допустимые границы [0, 1]
+- **InvalidPriceError** - если bid или ask выходят за допустимые границы [0.0001, 0.9999]
 - **InvalidSpreadError** - если bid > ask
 
 ```typescript
@@ -88,7 +88,7 @@ if (result.ok) {
 // Или используя unwrap
 const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
 
-// Ошибка если цены невалидны (за границами [0, 1])
+// Ошибка если цены невалидны (за границами [0.0001, 0.9999])
 const invalid1 = Spread.fromNumbers(1.5, 2.0);  // InvalidPriceError
 
 // Ошибка если bid > ask
