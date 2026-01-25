@@ -164,8 +164,20 @@ export class Quantity {
    * ```
    */
   public static fromValue(value: number | string | Decimal, minSize: number = Quantity.MIN_SIZE): Result<Quantity, InvalidQuantityError> {
-    // Валидация minSize
-    if (typeof minSize !== 'number' || !Number.isFinite(minSize) || minSize < 0) {
+    // Валидация minSize с использованием Decimal
+    if (typeof minSize !== 'number') {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid minSize ${ctx.minSize}: must be a number`,
+          {
+            context: { minSize }
+          }
+        )
+      );
+    }
+
+    const minSizeDecimal = new Decimal(minSize);
+    if (!minSizeDecimal.isFinite() || minSizeDecimal.lessThan(0)) {
       return Err(
         new InvalidQuantityError(
           (ctx) => `Invalid minSize ${ctx.minSize}: must be a finite number >= 0`,
@@ -232,24 +244,31 @@ export class Quantity {
    * Проверяет, что minSize сам по себе валиден (конечное число > 0).
    */
   public static isValid(value: number, minSize: number = Quantity.MIN_SIZE): boolean {
-    // Валидация minSize
-    if (typeof minSize !== 'number' || !Number.isFinite(minSize) || minSize < 0) {
+    // Валидация minSize с использованием Decimal
+    if (typeof minSize !== 'number') {
       return false;
     }
 
-    // Используем Decimal для проверки isFinite и точных сравнений
-    const decimal = new Decimal(value);
-    if (!decimal.isFinite()) {
+    try {
+      const minSizeDecimal = new Decimal(minSize);
+      if (!minSizeDecimal.isFinite() || minSizeDecimal.lessThan(0)) {
+        return false;
+      }
+
+      // Используем Decimal для проверки isFinite и точных сравнений
+      const decimal = new Decimal(value);
+      if (!decimal.isFinite()) {
+        return false;
+      }
+
+      // Значение должно быть >= 0 И >= minSize
+      return (
+        !decimal.lessThan(0) &&
+        !decimal.lessThan(minSizeDecimal)
+      );
+    } catch {
       return false;
     }
-
-    const minDecimal = new Decimal(minSize);
-
-    // Значение должно быть >= 0 И >= minSize
-    return (
-      !decimal.lessThan(0) &&
-      !decimal.lessThan(minDecimal)
-    );
   }
 
   /**
