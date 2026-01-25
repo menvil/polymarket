@@ -1,69 +1,69 @@
-# Architecture Guide: Value Objects
+# Архитектурный гайд: Value Objects
 
-## Factory Method Naming Conventions
+## Соглашения по именованию фабричных методов
 
-### Pattern 1: `fromValue()` - Single-Value Conversion
+### Паттерн 1: `fromValue()` - Конвертация одиночного значения
 
-Used for value objects that wrap a single numeric value:
+Используется для value objects которые оборачивают одно числовое значение:
 
-**Examples:**
-- `Money.fromValue(100)` - amount in currency units
-- `Price.fromValue(0.65)` - price value [0.0001, 0.9999]
-- `Quantity.fromValue(100)` - quantity value
-- `Balance.fromValue(1000, 'USDC')` - balance amount
+**Примеры:**
+- `Money.fromValue(100)` - сумма в единицах валюты
+- `Price.fromValue(0.65)` - значение цены [0.0001, 0.9999]
+- `Quantity.fromValue(100)` - значение количества
+- `Balance.fromValue(1000, 'USDC')` - сумма баланса
 
-**When to use:**
-- Constructor takes 1-2 parameters (value + optional config like currency)
-- Primary use case is converting number → value object
+**Когда использовать:**
+- Конструктор принимает 1-2 параметра (значение + опциональная конфигурация как валюта)
+- Основной use case — преобразование number → value object
 
-### Pattern 2: `create()` - Multi-Parameter Composition
+### Паттерн 2: `create()` - Композиция из нескольких параметров
 
-Used for value objects composed from multiple other value objects:
+Используется для value objects составленных из нескольких других value objects:
 
-**Examples:**
-- `Spread.create(bid, ask)` - requires 2 Price objects
-- `Quote.create(bid, ask, bidSize, askSize)` - requires 4 objects
+**Примеры:**
+- `Spread.create(bid, ask)` - требует 2 объекта Price
+- `Quote.create(bid, ask, bidSize, askSize)` - требует 4 объекта
 
-**When to use:**
-- Constructor requires multiple value object parameters
-- Represents composition/aggregation of other value objects
-- Primary use case is assembling from components
+**Когда использовать:**
+- Конструктор требует несколько параметров-value objects
+- Представляет композицию/агрегацию других value objects
+- Основной use case — сборка из компонентов
 
-### Pattern 3: Domain-Specific Factories
+### Паттерн 3: Доменно-специфичные фабрики
 
-Used for domain-specific conversion semantics:
+Используется для доменно-специфичной семантики конвертации:
 
-**Examples:**
-- `Percentage.fromDecimal(0.25)` - from decimal fraction [0-1]
-- `Percentage.fromValue(25)` - from percentage points [0-100]
-- `Percentage.fromBasisPoints(250)` - from basis points
-- `Quantity.fromMarketData(data)` - from external API data
+**Примеры:**
+- `Percentage.fromDecimal(0.25)` - из десятичной дроби [0-1]
+- `Percentage.fromValue(25)` - из процентных пунктов [0-100]
+- `Percentage.fromBasisPoints(250)` - из базисных пунктов
+- `Quantity.fromMarketData(data)` - из данных внешнего API
 
-**When to use:**
-- Multiple representations of the same concept
-- Different scales or units (decimal vs percentage vs basis points)
-- Different data sources (API vs user input)
+**Когда использовать:**
+- Множественные представления одной концепции
+- Разные шкалы или единицы измерения (десятичная дробь vs проценты vs базисные пункты)
+- Разные источники данных (API vs пользовательский ввод)
 
-### Pattern 4: Convenience Factories
+### Паттерн 4: Вспомогательные фабрики
 
-Special case constructors for common values:
+Специальные конструкторы для общих значений:
 
-**Examples:**
-- `Money.zero()` - zero amount
-- `Quantity.zero()` - zero quantity
-- `Spread.zero(price)` - zero-width spread
+**Примеры:**
+- `Money.zero()` - нулевая сумма
+- `Quantity.zero()` - нулевое количество
+- `Spread.zero(price)` - спред с нулевой шириной
 
-## When to Use Each Value Object
+## Когда использовать каждый Value Object
 
 ### Money vs Balance
-- **Money**: General-purpose monetary value, supports negative (for PnL)
-- **Balance**: User account balance, always non-negative, supports operations like `reserve()`
+- **Money**: Универсальная денежная сумма, поддерживает отрицательные значения (для PnL)
+- **Balance**: Баланс счёта пользователя, всегда неотрицательный, поддерживает операции типа `reserve()`
 
 ### Price vs Spread
-- **Price**: Single price point [0.0001, 0.9999]
-- **Spread**: Bid-ask pair with width calculations
+- **Price**: Одиночная точка цены [0.0001, 0.9999]
+- **Spread**: Пара bid-ask с расчётами ширины
 
-### Percentage - Three Scales
-- `fromDecimal(0.25)` → 25% (for calculations)
-- `fromValue(25)` → 25% (for user input)
-- `fromBasisPoints(250)` → 25% (for financial APIs)
+### Percentage - Три шкалы
+- `fromDecimal(0.25)` → 25% (для вычислений)
+- `fromValue(25)` → 25% (для пользовательского ввода)
+- `fromBasisPoints(250)` → 25% (для финансовых API)
