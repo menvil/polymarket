@@ -49,18 +49,18 @@ Quote поддерживает односторонние котировки (bi
 ```typescript
 // Только bid (готовы купить, но не продавать)
 const bidOnly = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
+  unwrap(Price.fromValue(0.64)),
   null,
-  unwrap(Quantity.fromNumber(100)),
+  unwrap(Quantity.fromValue(100)),
   Quantity.zero()
 ));
 
 // Только ask (готовы продать, но не покупать)
 const askOnly = unwrap(Quote.create(
   null,
-  unwrap(Price.fromNumber(0.66)),
+  unwrap(Price.fromValue(0.66)),
   Quantity.zero(),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Quantity.fromValue(100))
 ));
 ```
 
@@ -139,10 +139,10 @@ import { Price } from '@polymarket/value-objects';
 import { Quantity } from '@polymarket/value-objects';
 
 // Двухсторонняя котировка
-const bid = unwrap(Price.fromNumber(0.64));
-const ask = unwrap(Price.fromNumber(0.66));
-const bidSize = unwrap(Quantity.fromNumber(100));
-const askSize = unwrap(Quantity.fromNumber(100));
+const bid = unwrap(Price.fromValue(0.64));
+const ask = unwrap(Price.fromValue(0.66));
+const bidSize = unwrap(Quantity.fromValue(100));
+const askSize = unwrap(Quantity.fromValue(100));
 
 const result = Quote.create(bid, ask, bidSize, askSize);
 if (result.ok) {
@@ -174,8 +174,8 @@ const askOnly = unwrap(Quote.create(
 
 // Ошибка: bid >= ask
 const invalid = Quote.create(
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Price.fromNumber(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Price.fromValue(0.64)),
   bidSize,
   askSize
 );
@@ -189,32 +189,44 @@ console.log(invalid.ok); // false
 Вычисляет спред котировки (ask - bid).
 
 ```typescript
-getSpread(): number
+getSpread(): Result<number, InvalidQuoteError>
 ```
 
-**Throws:** Error если котировка односторонняя
+**Возвращает:** Result с числом спреда или InvalidQuoteError для односторонней котировки
 
 **Примеры:**
 
 ```typescript
 const quote = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
-const spread = quote.getSpread();
+// Обработка Result
+const spreadResult = quote.getSpread();
+if (spreadResult.ok) {
+  console.log(spreadResult.value); // 0.02
+} else {
+  console.error(spreadResult.error.message);
+}
+
+// Или используя unwrap
+const spread = unwrap(quote.getSpread());
 console.log(spread); // 0.02
 
 // Ошибка для односторонней котировки
 const bidOnly = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
+  unwrap(Price.fromValue(0.64)),
   null,
-  unwrap(Quantity.fromNumber(100)),
+  unwrap(Quantity.fromValue(100)),
   Quantity.zero()
 ));
-// bidOnly.getSpread(); // throws Error
+
+const result = bidOnly.getSpread();
+console.log(result.ok); // false
+console.log(result.error?.message); // "Cannot calculate spread for one-sided quote"
 ```
 
 ### getMidPrice
@@ -222,26 +234,35 @@ const bidOnly = unwrap(Quote.create(
 Вычисляет среднюю цену котировки ((bid + ask) / 2).
 
 ```typescript
-getMidPrice(): Price
+getMidPrice(): Result<Price, InvalidQuoteError>
 ```
 
-**Throws:** Error если котировка односторонняя
+**Возвращает:** Result с Price или InvalidQuoteError для односторонней котировки
 
 **Примеры:**
 
 ```typescript
 const quote = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
-const mid = quote.getMidPrice();
+// Обработка Result
+const midResult = quote.getMidPrice();
+if (midResult.ok) {
+  console.log(midResult.value.value); // 0.65
+} else {
+  console.error(midResult.error.message);
+}
+
+// Или используя unwrap
+const mid = unwrap(quote.getMidPrice());
 console.log(mid.value); // 0.65
 
 // Mid price часто используется как "справедливая" цена рынка
-const fairValue = quote.getMidPrice();
+const fairValue = unwrap(quote.getMidPrice());
 ```
 
 ## Проверки типа
@@ -258,17 +279,17 @@ isTwoSided(): boolean
 
 ```typescript
 const twoSided = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 console.log(twoSided.isTwoSided()); // true
 
 const bidOnly = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
+  unwrap(Price.fromValue(0.64)),
   null,
-  unwrap(Quantity.fromNumber(100)),
+  unwrap(Quantity.fromValue(100)),
   Quantity.zero()
 ));
 console.log(bidOnly.isTwoSided()); // false
@@ -286,9 +307,9 @@ isBidOnly(): boolean
 
 ```typescript
 const bidOnly = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
+  unwrap(Price.fromValue(0.64)),
   null,
-  unwrap(Quantity.fromNumber(100)),
+  unwrap(Quantity.fromValue(100)),
   Quantity.zero()
 ));
 console.log(bidOnly.isBidOnly()); // true
@@ -307,9 +328,9 @@ isAskOnly(): boolean
 ```typescript
 const askOnly = unwrap(Quote.create(
   null,
-  unwrap(Price.fromNumber(0.66)),
+  unwrap(Price.fromValue(0.66)),
   Quantity.zero(),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Quantity.fromValue(100))
 ));
 console.log(askOnly.isAskOnly()); // true
 ```
@@ -338,25 +359,25 @@ crossesMarket(orderbookBid: Price | null, orderbookAsk: Price | null): boolean
 
 ```typescript
 const quote = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.67)),  // Наш bid
-  unwrap(Price.fromNumber(0.68)),  // Наш ask
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.67)),  // Наш bid
+  unwrap(Price.fromValue(0.68)),  // Наш ask
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
 // Рынок: bid=0.65, ask=0.66
-const marketBid = unwrap(Price.fromNumber(0.65));
-const marketAsk = unwrap(Price.fromNumber(0.66));
+const marketBid = unwrap(Price.fromValue(0.65));
+const marketAsk = unwrap(Price.fromValue(0.66));
 
 // Наш bid (0.67) >= market ask (0.66) → пересечение!
 console.log(quote.crossesMarket(marketBid, marketAsk)); // true
 
 // Пример без пересечения
 const safeQuote = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),  // Наш bid
-  unwrap(Price.fromNumber(0.66)),  // Наш ask
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.64)),  // Наш bid
+  unwrap(Price.fromValue(0.66)),  // Наш ask
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
 // Наш bid (0.64) < market ask (0.66) и наш ask (0.66) >= market bid (0.65)
@@ -381,14 +402,14 @@ if (quote.crossesMarket(marketBid, marketAsk)) {
 Создаёт новую котировку со скорректированными ценами.
 
 ```typescript
-withAdjustment(bidAdjustment: number, askAdjustment: number): Quote
+withAdjustment(bidAdjustment: number, askAdjustment: number): Result<Quote, InvalidQuoteError>
 ```
 
 **Параметры:**
 - `bidAdjustment` — величина для добавления/вычитания из bid (положительная = вверх, отрицательная = вниз)
 - `askAdjustment` — величина для добавления/вычитания из ask (положительная = вверх, отрицательная = вниз)
 
-**Возвращает:** Новый Quote со скорректированными ценами и новым timestamp
+**Возвращает:** Result с новым Quote (со скорректированными ценами и новым timestamp) или InvalidQuoteError
 
 **Использование:**
 
@@ -396,13 +417,13 @@ withAdjustment(bidAdjustment: number, askAdjustment: number): Quote
 
 1. **Расширение спреда** (увеличение profit margin):
    ```typescript
-   const widened = quote.withAdjustment(-0.01, +0.01);
+   const widened = unwrap(quote.withAdjustment(-0.01, +0.01));
    // bid: 0.64 → 0.63, ask: 0.66 → 0.67, spread: 0.02 → 0.04
    ```
 
 2. **Сужение спреда** (повышение вероятности исполнения):
    ```typescript
-   const narrowed = quote.withAdjustment(+0.005, -0.005);
+   const narrowed = unwrap(quote.withAdjustment(+0.005, -0.005));
    // bid: 0.64 → 0.645, ask: 0.66 → 0.655, spread: 0.02 → 0.01
    ```
 
@@ -410,7 +431,7 @@ withAdjustment(bidAdjustment: number, askAdjustment: number): Quote
    ```typescript
    // Слишком много инвентаря → снижаем обе стороны
    // (делаем покупку менее привлекательной)
-   const skewed = quote.withAdjustment(-0.01, -0.01);
+   const skewed = unwrap(quote.withAdjustment(-0.01, -0.01));
    // bid: 0.64 → 0.63, ask: 0.66 → 0.65
    // Теперь mid = 0.64 вместо 0.65
    ```
@@ -418,7 +439,7 @@ withAdjustment(bidAdjustment: number, askAdjustment: number): Quote
 4. **Сдвиг вверх/вниз** (следование за рынком):
    ```typescript
    // Рынок движется вверх → сдвигаем котировку вверх
-   const shifted = quote.withAdjustment(+0.02, +0.02);
+   const shifted = unwrap(quote.withAdjustment(+0.02, +0.02));
    // bid: 0.64 → 0.66, ask: 0.66 → 0.68
    ```
 
@@ -426,22 +447,22 @@ withAdjustment(bidAdjustment: number, askAdjustment: number): Quote
 
 ```typescript
 const baseQuote = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
 // Расширить спред
-const widened = baseQuote.withAdjustment(-0.01, +0.01);
-console.log(widened.getSpread()); // 0.04
+const widened = unwrap(baseQuote.withAdjustment(-0.01, +0.01));
+console.log(unwrap(widened.getSpread())); // 0.04
 
 // Перекос к bid (управление запасами)
-const skewed = baseQuote.withAdjustment(-0.01, -0.01);
-console.log(skewed.getMidPrice().value); // 0.64
+const skewed = unwrap(baseQuote.withAdjustment(-0.01, -0.01));
+console.log(unwrap(skewed.getMidPrice()).value); // 0.64
 
 // Сдвиг вверх
-const shifted = baseQuote.withAdjustment(+0.05, +0.05);
+const shifted = unwrap(baseQuote.withAdjustment(+0.05, +0.05));
 console.log(shifted.bid?.value); // 0.69
 console.log(shifted.ask?.value); // 0.71
 
@@ -467,19 +488,19 @@ toString(): string
 
 ```typescript
 const quote = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(150))
+  unwrap(Price.fromValue(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(150))
 ));
 
 console.log(quote.toString());
 // "0.6400 (100) / 0.6600 (150) [spread: 0.0200]"
 
 const bidOnly = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
+  unwrap(Price.fromValue(0.64)),
   null,
-  unwrap(Quantity.fromNumber(100)),
+  unwrap(Quantity.fromValue(100)),
   Quantity.zero()
 ));
 
@@ -501,26 +522,26 @@ equals(other: Quote): boolean
 
 ```typescript
 const q1 = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
 const q2 = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
 console.log(q1.equals(q2)); // true (timestamp не учитывается)
 
 const q3 = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.63)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.63)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
 console.log(q1.equals(q3)); // false (разные bids)
@@ -550,10 +571,10 @@ toJSON(): {
 
 ```typescript
 const quote = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
 const json = quote.toJSON();
@@ -575,9 +596,9 @@ await fetch('/api/quotes', {
 
 // Односторонняя котировка
 const bidOnly = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
+  unwrap(Price.fromValue(0.64)),
   null,
-  unwrap(Quantity.fromNumber(100)),
+  unwrap(Quantity.fromValue(100)),
   Quantity.ZERO
 ));
 
@@ -610,7 +631,7 @@ Quote.fromJSON(json: {
 
 **Возвращает:** Result с Quote или InvalidQuoteError
 
-**Валидация:** Все значения валидируются через соответствующие фабричные методы (Price.fromNumber, Quantity.fromNumber).
+**Валидация:** Все значения валидируются через соответствующие фабричные методы (Price.fromValue, Quantity.fromValue).
 
 **Примеры:**
 
@@ -637,7 +658,7 @@ const json = {
 };
 
 const quote = unwrap(Quote.fromJSON(json));
-console.log(quote.getSpread()); // 0.02
+console.log(unwrap(quote.getSpread())); // 0.02
 
 // Ошибка при невалидных данных
 const invalidJson = {
@@ -664,8 +685,8 @@ import { unwrap } from '@polymarket/result';
 import { Quote, Price, Quantity } from '@polymarket/value-objects';
 
 // 1. Получаем справедливую цену (mid-price) из стакана
-const marketBid = unwrap(Price.fromNumber(0.64));
-const marketAsk = unwrap(Price.fromNumber(0.66));
+const marketBid = unwrap(Price.fromValue(0.64));
+const marketAsk = unwrap(Price.fromValue(0.66));
 const fairValue = (marketBid.value + marketAsk.value) / 2; // 0.65
 
 // 2. Устанавливаем желаемый спред (например, 2%)
@@ -673,9 +694,9 @@ const targetSpread = 0.02;
 const halfSpread = targetSpread / 2;
 
 // 3. Создаём базовую котировку
-const ourBid = unwrap(Price.fromNumber(fairValue - halfSpread)); // 0.64
-const ourAsk = unwrap(Price.fromNumber(fairValue + halfSpread)); // 0.66
-const size = unwrap(Quantity.fromNumber(100));
+const ourBid = unwrap(Price.fromValue(fairValue - halfSpread)); // 0.64
+const ourAsk = unwrap(Price.fromValue(fairValue + halfSpread)); // 0.66
+const size = unwrap(Quantity.fromValue(100));
 
 const baseQuote = unwrap(Quote.create(ourBid, ourAsk, size, size));
 
@@ -705,10 +726,10 @@ const maxPosition = 1000;
 
 // Базовая котировка
 const baseQuote = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
 // Вычисляем перекос (skew) на основе инвентаря
@@ -719,7 +740,7 @@ const skew = inventoryRatio * maxSkew; // 0.01
 // Применяем перекос:
 // - Если long (избыток инвентаря) → снижаем котировку (делаем продажу привлекательнее)
 // - Если short (недостаток) → повышаем котировку (делаем покупку привлекательнее)
-const skewedQuote = baseQuote.withAdjustment(-skew, -skew);
+const skewedQuote = unwrap(baseQuote.withAdjustment(-skew, -skew));
 
 console.log('Base quote:', baseQuote.toString());
 // "0.6400 (100) / 0.6600 (100) [spread: 0.0200]"
@@ -771,9 +792,9 @@ function createAdaptiveQuote(
   const finalSpread = Math.max(baseSpread, marketSpread);
 
   const halfSpread = finalSpread / 2;
-  const bid = unwrap(Price.fromNumber(fairValue.value - halfSpread));
-  const ask = unwrap(Price.fromNumber(fairValue.value + halfSpread));
-  const size = unwrap(Quantity.fromNumber(100));
+  const bid = unwrap(Price.fromValue(fairValue.value - halfSpread));
+  const ask = unwrap(Price.fromValue(fairValue.value + halfSpread));
+  const size = unwrap(Quantity.fromValue(100));
 
   return unwrap(Quote.create(bid, ask, size, size));
 }
@@ -786,10 +807,10 @@ const normalConditions: MarketConditions = {
 };
 
 const normalQuote = createAdaptiveQuote(
-  unwrap(Price.fromNumber(0.65)),
+  unwrap(Price.fromValue(0.65)),
   normalConditions
 );
-console.log('Normal:', normalQuote.getSpread()); // ~0.01
+console.log('Normal:', unwrap(normalQuote.getSpread())); // ~0.01
 
 // Высокая волатильность + низкая ликвидность
 const volatileConditions: MarketConditions = {
@@ -799,10 +820,10 @@ const volatileConditions: MarketConditions = {
 };
 
 const volatileQuote = createAdaptiveQuote(
-  unwrap(Price.fromNumber(0.65)),
+  unwrap(Price.fromValue(0.65)),
   volatileConditions
 );
-console.log('Volatile:', volatileQuote.getSpread()); // ~0.03 (wider)
+console.log('Volatile:', unwrap(volatileQuote.getSpread())); // ~0.03 (wider)
 ```
 
 ### Пример 4: Обнаружение stale quotes и refresh
@@ -860,10 +881,10 @@ class QuoteManager {
 const manager = new QuoteManager();
 
 const quote = unwrap(Quote.create(
-  unwrap(Price.fromNumber(0.64)),
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Quantity.fromNumber(100)),
-  unwrap(Quantity.fromNumber(100))
+  unwrap(Price.fromValue(0.64)),
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Quantity.fromValue(100)),
+  unwrap(Quantity.fromValue(100))
 ));
 
 manager.updateQuote(quote);
@@ -883,17 +904,17 @@ setTimeout(() => {
 // Всегда проверяйте пересечение перед отправкой котировки
 if (quote.crossesMarket(marketBid, marketAsk)) {
   console.warn('Quote would cross, adjusting...');
-  quote = quote.withAdjustment(-0.01, +0.01);
+  quote = unwrap(quote.withAdjustment(-0.01, +0.01));
 }
 
 // Используйте withAdjustment для управления запасами
 const skew = calculateInventorySkew(position);
-const adjustedQuote = baseQuote.withAdjustment(skew, skew);
+const adjustedQuote = unwrap(baseQuote.withAdjustment(skew, skew));
 
 // Проверяйте тип котировки перед расчётом метрик
 if (quote.isTwoSided()) {
-  const spread = quote.getSpread();
-  const mid = quote.getMidPrice();
+  const spread = unwrap(quote.getSpread());
+  const mid = unwrap(quote.getMidPrice());
 }
 
 // Обновляйте котировки периодически (новый timestamp)
@@ -918,16 +939,16 @@ if (!result.ok) {
 
 ```typescript
 // Не вызывайте getSpread/getMidPrice без проверки типа
-const spread = quote.getSpread(); // Может throw для bid-only!
+const spread = unwrap(quote.getSpread()); // Может вернуть Err для bid-only!
 // Правильно:
 if (quote.isTwoSided()) {
-  const spread = quote.getSpread();
+  const spread = unwrap(quote.getSpread());
 }
 
 // Не создавайте котировки с bid >= ask
 const badQuote = Quote.create(
-  unwrap(Price.fromNumber(0.66)),
-  unwrap(Price.fromNumber(0.64)), // ask < bid!
+  unwrap(Price.fromValue(0.66)),
+  unwrap(Price.fromValue(0.64)), // ask < bid!
   size,
   size
 ); // Вернёт Err
@@ -1068,15 +1089,15 @@ export class Quote {
 
   /**
    * Вычисляет спред (ask - bid)
-   * @throws {Error} Если котировка односторонняя
+   * @returns Result с числом спреда или InvalidQuoteError для односторонней котировки
    */
-  public getSpread(): number;
+  public getSpread(): Result<number, InvalidQuoteError>;
 
   /**
    * Вычисляет среднюю цену ((bid + ask) / 2)
-   * @throws {Error} Если котировка односторонняя
+   * @returns Result с Price или InvalidQuoteError для односторонней котировки
    */
-  public getMidPrice(): Price;
+  public getMidPrice(): Result<Price, InvalidQuoteError>;
 
   /**
    * Проверяет, является ли котировка двухсторонней
@@ -1110,9 +1131,9 @@ export class Quote {
    *
    * @param bidAdjustment - Величина для добавления/вычитания из bid
    * @param askAdjustment - Величина для добавления/вычитания из ask
-   * @returns Новый Quote со скорректированными ценами
+   * @returns Result с Quote или InvalidQuoteError
    */
-  public withAdjustment(bidAdjustment: number, askAdjustment: number): Quote;
+  public withAdjustment(bidAdjustment: number, askAdjustment: number): Result<Quote, InvalidQuoteError>;
 
   /**
    * Строковое представление
