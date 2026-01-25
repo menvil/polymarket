@@ -143,6 +143,14 @@ describe('Spread', () => {
 
         expect(percentage).toBeGreaterThan(100);
       });
+
+      it('should handle extreme boundary spreads', () => {
+        const spread = unwrap(Spread.fromNumbers(0.0001, 0.9999));
+
+        const percentage = spread.widthPercentage();
+
+        expect(percentage).toBeGreaterThan(100);
+      });
     });
 
     describe('midpoint', () => {
@@ -264,6 +272,28 @@ describe('Spread', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.message).toContain('must be >= 0');
+        }
+      });
+
+      it('should return error on NaN amount', () => {
+        const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
+
+        const result = spread.widen(Number.NaN);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toMatch(/NaN|finite|invalid/i);
+        }
+      });
+
+      it('should return error on Infinity amount', () => {
+        const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
+
+        const result = spread.widen(Number.POSITIVE_INFINITY);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toMatch(/Infinity|finite|invalid/i);
         }
       });
     });

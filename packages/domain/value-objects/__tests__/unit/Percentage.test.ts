@@ -476,6 +476,199 @@ describe('Percentage', () => {
         expect(pct.toString()).toContain('%');
       });
     });
+
+    describe('abs', () => {
+      it('должен возвращать абсолютное значение для отрицательного', () => {
+        const pct = unwrap(Percentage.fromValue(-10));
+        const abs = pct.abs();
+
+        expect(abs.getValue()).toBe(10);
+      });
+
+      it('должен возвращать то же значение для положительного', () => {
+        const pct = unwrap(Percentage.fromValue(15));
+        const abs = pct.abs();
+
+        expect(abs.getValue()).toBe(15);
+      });
+
+      it('должен возвращать ноль для нуля', () => {
+        const abs = Percentage.ZERO.abs();
+
+        expect(abs.isZero()).toBe(true);
+      });
+
+      it('должен возвращать абсолютное значение для отрицательной дроби', () => {
+        const pct = unwrap(Percentage.fromValue(-2.5));
+        const abs = pct.abs();
+
+        expect(abs.getValue()).toBe(2.5);
+      });
+    });
+
+    describe('negate', () => {
+      it('должен инвертировать знак положительного', () => {
+        const pct = unwrap(Percentage.fromValue(10));
+        const negated = pct.negate();
+
+        expect(negated.getValue()).toBe(-10);
+      });
+
+      it('должен инвертировать знак отрицательного', () => {
+        const pct = unwrap(Percentage.fromValue(-10));
+        const negated = pct.negate();
+
+        expect(negated.getValue()).toBe(10);
+      });
+
+      it('должен возвращать ноль для нуля', () => {
+        const negated = Percentage.ZERO.negate();
+
+        // В JavaScript -0 !== 0, поэтому проверяем через isZero
+        expect(negated.isZero()).toBe(true);
+      });
+
+      it('должен инвертировать знак дроби', () => {
+        const pct = unwrap(Percentage.fromValue(2.5));
+        const negated = pct.negate();
+
+        expect(negated.getValue()).toBe(-2.5);
+      });
+    });
+
+    describe('greaterThan', () => {
+      it('должен возвращать true когда первый больше второго', () => {
+        const p1 = unwrap(Percentage.fromValue(10));
+        const p2 = unwrap(Percentage.fromValue(5));
+
+        expect(p1.greaterThan(p2)).toBe(true);
+      });
+
+      it('должен возвращать false когда первый меньше второго', () => {
+        const p1 = unwrap(Percentage.fromValue(5));
+        const p2 = unwrap(Percentage.fromValue(10));
+
+        expect(p1.greaterThan(p2)).toBe(false);
+      });
+
+      it('должен возвращать false когда значения равны', () => {
+        const p1 = unwrap(Percentage.fromValue(10));
+        const p2 = unwrap(Percentage.fromValue(10));
+
+        expect(p1.greaterThan(p2)).toBe(false);
+      });
+
+      it('должен работать с отрицательными значениями', () => {
+        const p1 = unwrap(Percentage.fromValue(-5));
+        const p2 = unwrap(Percentage.fromValue(-10));
+
+        expect(p1.greaterThan(p2)).toBe(true);
+      });
+
+      it('должен работать с нулём', () => {
+        const pct = unwrap(Percentage.fromValue(5));
+
+        expect(pct.greaterThan(Percentage.ZERO)).toBe(true);
+        expect(Percentage.ZERO.greaterThan(pct)).toBe(false);
+      });
+    });
+
+    describe('lessThan', () => {
+      it('должен возвращать true когда первый меньше второго', () => {
+        const p1 = unwrap(Percentage.fromValue(5));
+        const p2 = unwrap(Percentage.fromValue(10));
+
+        expect(p1.lessThan(p2)).toBe(true);
+      });
+
+      it('должен возвращать false когда первый больше второго', () => {
+        const p1 = unwrap(Percentage.fromValue(10));
+        const p2 = unwrap(Percentage.fromValue(5));
+
+        expect(p1.lessThan(p2)).toBe(false);
+      });
+
+      it('должен возвращать false когда значения равны', () => {
+        const p1 = unwrap(Percentage.fromValue(10));
+        const p2 = unwrap(Percentage.fromValue(10));
+
+        expect(p1.lessThan(p2)).toBe(false);
+      });
+
+      it('должен работать с отрицательными значениями', () => {
+        const p1 = unwrap(Percentage.fromValue(-10));
+        const p2 = unwrap(Percentage.fromValue(-5));
+
+        expect(p1.lessThan(p2)).toBe(true);
+      });
+
+      it('должен работать с нулём', () => {
+        const pct = unwrap(Percentage.fromValue(5));
+
+        expect(Percentage.ZERO.lessThan(pct)).toBe(true);
+        expect(pct.lessThan(Percentage.ZERO)).toBe(false);
+      });
+    });
+
+    describe('greaterThanOrEqual', () => {
+      it('должен возвращать true когда первый больше второго', () => {
+        const p1 = unwrap(Percentage.fromValue(10));
+        const p2 = unwrap(Percentage.fromValue(5));
+
+        expect(p1.greaterThanOrEqual(p2)).toBe(true);
+      });
+
+      it('должен возвращать true когда значения равны', () => {
+        const p1 = unwrap(Percentage.fromValue(10));
+        const p2 = unwrap(Percentage.fromValue(10));
+
+        expect(p1.greaterThanOrEqual(p2)).toBe(true);
+      });
+
+      it('должен возвращать false когда первый меньше второго', () => {
+        const p1 = unwrap(Percentage.fromValue(5));
+        const p2 = unwrap(Percentage.fromValue(10));
+
+        expect(p1.greaterThanOrEqual(p2)).toBe(false);
+      });
+
+      it('должен работать с нулём', () => {
+        const pct = unwrap(Percentage.fromValue(5));
+
+        expect(pct.greaterThanOrEqual(Percentage.ZERO)).toBe(true);
+        expect(Percentage.ZERO.greaterThanOrEqual(Percentage.ZERO)).toBe(true);
+      });
+    });
+
+    describe('lessThanOrEqual', () => {
+      it('должен возвращать true когда первый меньше второго', () => {
+        const p1 = unwrap(Percentage.fromValue(5));
+        const p2 = unwrap(Percentage.fromValue(10));
+
+        expect(p1.lessThanOrEqual(p2)).toBe(true);
+      });
+
+      it('должен возвращать true когда значения равны', () => {
+        const p1 = unwrap(Percentage.fromValue(10));
+        const p2 = unwrap(Percentage.fromValue(10));
+
+        expect(p1.lessThanOrEqual(p2)).toBe(true);
+      });
+
+      it('должен возвращать false когда первый больше второго', () => {
+        const p1 = unwrap(Percentage.fromValue(10));
+        const p2 = unwrap(Percentage.fromValue(5));
+
+        expect(p1.lessThanOrEqual(p2)).toBe(false);
+      });
+
+      it('должен работать с нулём', () => {
+        const pct = unwrap(Percentage.fromValue(5));
+
+        expect(Percentage.ZERO.lessThanOrEqual(pct)).toBe(true);
+        expect(Percentage.ZERO.lessThanOrEqual(Percentage.ZERO)).toBe(true);
+      });
+    });
   });
 
   describe('Сериализация', () => {
