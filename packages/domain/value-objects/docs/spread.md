@@ -475,15 +475,21 @@ class MarketMaker {
 
   // Итоговый спред с всеми корректировками
   getFinalQuote(inventory: number, maxInventory: number, volatility: number): Spread {
-    let spread = this.baseSpread;
+    // 1. Применяем inventory adjustment (shift)
+    let spread = this.adjustForInventory(inventory, maxInventory);
 
-    // Применяем корректировки последовательно
-    const adjustedSpread = this.adjustForInventory(inventory, maxInventory);
-    spread = unwrap(adjustedSpread.shift(0)); // Ensure we start from adjusted position
+    // 2. Применяем volatility adjustment (widen/tighten)
+    const widthAdjustment = volatility * 0.01; // 1 cent per volatility unit
+    if (volatility > 1.0) {
+      spread = unwrap(spread.widen(widthAdjustment));
+    } else if (volatility < 1.0) {
+      spread = unwrap(spread.tighten(widthAdjustment));
+    }
 
-    spread = spread.widthPercentage() < 5
-      ? unwrap(spread.widen(0.01)) // Minimum 5% spread
-      : spread;
+    // 3. Применяем minimum-width правило
+    if (spread.widthPercentage() < 5) {
+      spread = unwrap(spread.widen(0.01)); // Minimum 5% spread
+    }
 
     return spread;
   }
