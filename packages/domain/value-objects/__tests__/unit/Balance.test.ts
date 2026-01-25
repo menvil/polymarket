@@ -306,4 +306,178 @@ describe('Balance', () => {
       expect(sum.toDecimal().toString()).toBe('0.3');
     });
   });
+
+  describe('Serialization', () => {
+    describe('toJSON', () => {
+      it('should return object with amount as string and currency', () => {
+        const balance = unwrap(Balance.fromValue(1000, 'USDC'));
+        const json = balance.toJSON();
+
+        expect(json).toEqual({
+          amount: '1000',
+          currency: 'USDC'
+        });
+      });
+
+      it('should preserve decimal precision in amount string', () => {
+        const balance = unwrap(Balance.fromValue('1000.50', 'USDC'));
+        const json = balance.toJSON();
+
+        expect(json.amount).toBe('1000.5');
+        expect(json.currency).toBe('USDC');
+      });
+
+      it('should serialize zero balance', () => {
+        const balance = unwrap(Balance.fromValue(0, 'USDC'));
+        const json = balance.toJSON();
+
+        expect(json).toEqual({
+          amount: '0',
+          currency: 'USDC'
+        });
+      });
+
+      it('should serialize very small amounts', () => {
+        const balance = unwrap(Balance.fromValue('0.0001', 'USDC'));
+        const json = balance.toJSON();
+
+        expect(json.amount).toBe('0.0001');
+      });
+
+      it('should serialize large amounts', () => {
+        const balance = unwrap(Balance.fromValue('1000000000000000', 'USDC'));
+        const json = balance.toJSON();
+
+        expect(json.amount).toBe('1000000000000000');
+      });
+    });
+
+    describe('fromJSON', () => {
+      it('should deserialize valid JSON with amount string', () => {
+        const json = { amount: '1000', currency: 'USDC' };
+        const result = Balance.fromJSON(json);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getAmount()).toBe(1000);
+          expect(result.value.getCurrency()).toBe('USDC');
+        }
+      });
+
+      it('should deserialize decimal amounts', () => {
+        const json = { amount: '1000.50', currency: 'USDC' };
+        const result = Balance.fromJSON(json);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toDecimal().toString()).toBe('1000.5');
+          expect(result.value.getCurrency()).toBe('USDC');
+        }
+      });
+
+      it('should deserialize zero balance', () => {
+        const json = { amount: '0', currency: 'USDC' };
+        const result = Balance.fromJSON(json);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getAmount()).toBe(0);
+        }
+      });
+
+      it('should reject invalid amount string', () => {
+        const json = { amount: 'invalid', currency: 'USDC' };
+        const result = Balance.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        }
+      });
+
+      it('should reject negative amount', () => {
+        const json = { amount: '-100', currency: 'USDC' };
+        const result = Balance.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        }
+      });
+
+      it('should deserialize different currencies', () => {
+        const usdcJson = { amount: '100', currency: 'USDC' };
+        const usdcResult = Balance.fromJSON(usdcJson);
+
+        const daiJson = { amount: '200', currency: 'DAI' };
+        const daiResult = Balance.fromJSON(daiJson);
+
+        expect(usdcResult.ok).toBe(true);
+        expect(daiResult.ok).toBe(true);
+
+        if (usdcResult.ok && daiResult.ok) {
+          expect(usdcResult.value.getCurrency()).toBe('USDC');
+          expect(daiResult.value.getCurrency()).toBe('DAI');
+        }
+      });
+    });
+
+    describe('Round-trip', () => {
+      it('should maintain equality after serialization and deserialization', () => {
+        const original = unwrap(Balance.fromValue(1000, 'USDC'));
+        const deserialized = unwrap(Balance.fromJSON(original.toJSON()));
+
+        expect(original.equals(deserialized)).toBe(true);
+      });
+
+      it('should preserve decimal precision in round-trip', () => {
+        const original = unwrap(Balance.fromValue('1000.123456789', 'USDC'));
+        const deserialized = unwrap(Balance.fromJSON(original.toJSON()));
+
+        expect(original.equals(deserialized)).toBe(true);
+        expect(original.toDecimal().toString()).toBe(deserialized.toDecimal().toString());
+        expect(deserialized.toDecimal().toString()).toBe('1000.123456789');
+      });
+
+      it('should preserve zero balance in round-trip', () => {
+        const original = unwrap(Balance.fromValue(0, 'USDC'));
+        const deserialized = unwrap(Balance.fromJSON(original.toJSON()));
+
+        expect(original.equals(deserialized)).toBe(true);
+        expect(deserialized.getAmount()).toBe(0);
+      });
+
+      it('should preserve currency in round-trip', () => {
+        const original = unwrap(Balance.fromValue(500, 'DAI'));
+        const deserialized = unwrap(Balance.fromJSON(original.toJSON()));
+
+        expect(original.equals(deserialized)).toBe(true);
+        expect(deserialized.getCurrency()).toBe('DAI');
+      });
+
+      it('should preserve very small amounts in round-trip', () => {
+        const original = unwrap(Balance.fromValue('0.000000001', 'USDC'));
+        const deserialized = unwrap(Balance.fromJSON(original.toJSON()));
+
+        expect(original.equals(deserialized)).toBe(true);
+        expect(original.toDecimal().toString()).toBe(deserialized.toDecimal().toString());
+      });
+
+      it('should preserve very large amounts in round-trip', () => {
+        const original = unwrap(Balance.fromValue('999999999999999.999', 'USDC'));
+        const deserialized = unwrap(Balance.fromJSON(original.toJSON()));
+
+        expect(original.equals(deserialized)).toBe(true);
+        expect(original.toDecimal().toString()).toBe(deserialized.toDecimal().toString());
+      });
+
+      it('should work with Decimal input in round-trip', () => {
+        const original = unwrap(Balance.fromValue(new Decimal('1234.5678'), 'USDC'));
+        const deserialized = unwrap(Balance.fromJSON(original.toJSON()));
+
+        expect(original.equals(deserialized)).toBe(true);
+        expect(original.toString()).toBe(deserialized.toString());
+      });
+    });
+  });
 });
