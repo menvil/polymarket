@@ -411,6 +411,23 @@ export class Money {
     try {
       const divisorDecimal = divisor instanceof Decimal ? divisor : new Decimal(divisor);
 
+      // Проверка что divisor является конечным числом
+      if (!divisorDecimal.isFinite()) {
+        return Err(
+          new DivisionByZeroError(
+            (ctx: Record<string, unknown>) =>
+              `Invalid divisor ${ctx.divisor}: must be a finite number`,
+            {
+              context: {
+                amount: this.amount.toNumber(),
+                divisor: divisorDecimal.toString(),
+                operation: 'divide money'
+              }
+            }
+          )
+        );
+      }
+
       // Проверка деления на ноль
       if (divisorDecimal.isZero()) {
         return Err(
@@ -429,6 +446,25 @@ export class Money {
       }
 
       const result = this.amount.dividedBy(divisorDecimal);
+
+      // Проверка что результат является конечным числом
+      if (!result.isFinite()) {
+        return Err(
+          new DivisionByZeroError(
+            (ctx: Record<string, unknown>) =>
+              `Division resulted in non-finite value: ${ctx.result}`,
+            {
+              context: {
+                amount: this.amount.toNumber(),
+                divisor: divisorDecimal.toNumber(),
+                result: result.toString(),
+                operation: 'divide money'
+              }
+            }
+          )
+        );
+      }
+
       return Ok(new Money(result, this.currency));
     } catch (error) {
       return Err(

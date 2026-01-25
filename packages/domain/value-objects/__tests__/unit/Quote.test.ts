@@ -462,10 +462,14 @@ describe('Quote', () => {
           )
         );
 
-        const adjusted = quote.withAdjustment(-0.01, 0.01);
+        const result = quote.withAdjustment(-0.01, 0.01);
 
-        expect(adjusted.bid?.value).toBeCloseTo(0.63, 2);
-        expect(adjusted.ask?.value).toBeCloseTo(0.67, 2);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const adjusted = result.value;
+          expect(adjusted.bid?.value).toBeCloseTo(0.63, 2);
+          expect(adjusted.ask?.value).toBeCloseTo(0.67, 2);
+        }
       });
 
       it('should narrow spread (bid up, ask down)', () => {
@@ -478,10 +482,14 @@ describe('Quote', () => {
           )
         );
 
-        const adjusted = quote.withAdjustment(0.005, -0.005);
+        const result = quote.withAdjustment(0.005, -0.005);
 
-        expect(adjusted.bid?.value).toBeCloseTo(0.645, 3);
-        expect(adjusted.ask?.value).toBeCloseTo(0.655, 3);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const adjusted = result.value;
+          expect(adjusted.bid?.value).toBeCloseTo(0.645, 3);
+          expect(adjusted.ask?.value).toBeCloseTo(0.655, 3);
+        }
       });
 
       it('should skew quote (inventory management)', () => {
@@ -495,10 +503,14 @@ describe('Quote', () => {
         );
 
         // Lower both to discourage buys
-        const adjusted = quote.withAdjustment(-0.01, -0.01);
+        const result = quote.withAdjustment(-0.01, -0.01);
 
-        expect(adjusted.bid?.value).toBeCloseTo(0.63, 2);
-        expect(adjusted.ask?.value).toBeCloseTo(0.65, 2);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const adjusted = result.value;
+          expect(adjusted.bid?.value).toBeCloseTo(0.63, 2);
+          expect(adjusted.ask?.value).toBeCloseTo(0.65, 2);
+        }
       });
 
       it('should preserve sizes', () => {
@@ -511,10 +523,14 @@ describe('Quote', () => {
           )
         );
 
-        const adjusted = quote.withAdjustment(-0.01, 0.01);
+        const result = quote.withAdjustment(-0.01, 0.01);
 
-        expect(adjusted.bidSize.value).toBe(100);
-        expect(adjusted.askSize.value).toBe(100);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const adjusted = result.value;
+          expect(adjusted.bidSize.value).toBe(100);
+          expect(adjusted.askSize.value).toBe(100);
+        }
       });
 
       it('should handle bid-only quote', () => {
@@ -522,10 +538,14 @@ describe('Quote', () => {
           Quote.create(createValidBid(), null, createValidBidSize(), Quantity.zero())
         );
 
-        const adjusted = quote.withAdjustment(-0.01, 0);
+        const result = quote.withAdjustment(-0.01, 0);
 
-        expect(adjusted.bid?.value).toBeCloseTo(0.63, 2);
-        expect(adjusted.ask).toBeNull();
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const adjusted = result.value;
+          expect(adjusted.bid?.value).toBeCloseTo(0.63, 2);
+          expect(adjusted.ask).toBeNull();
+        }
       });
 
       it('should handle ask-only quote', () => {
@@ -533,10 +553,14 @@ describe('Quote', () => {
           Quote.create(null, createValidAsk(), Quantity.zero(), createValidAskSize())
         );
 
-        const adjusted = quote.withAdjustment(0, 0.01);
+        const result = quote.withAdjustment(0, 0.01);
 
-        expect(adjusted.bid).toBeNull();
-        expect(adjusted.ask?.value).toBeCloseTo(0.67, 2);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const adjusted = result.value;
+          expect(adjusted.bid).toBeNull();
+          expect(adjusted.ask?.value).toBeCloseTo(0.67, 2);
+        }
       });
 
       it('should update timestamp', () => {
@@ -551,9 +575,49 @@ describe('Quote', () => {
           )
         );
 
-        const adjusted = quote.withAdjustment(0, 0);
+        const result = quote.withAdjustment(0, 0);
 
-        expect(adjusted.timestamp).not.toEqual(oldTimestamp);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const adjusted = result.value;
+          expect(adjusted.timestamp).not.toEqual(oldTimestamp);
+        }
+      });
+
+      it('should reject invalid bid adjustment (NaN)', () => {
+        const quote = unwrap(
+          Quote.create(
+            createValidBid(),
+            createValidAsk(),
+            createValidBidSize(),
+            createValidAskSize()
+          )
+        );
+
+        const result = quote.withAdjustment(NaN, 0);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidQuoteError);
+        }
+      });
+
+      it('should reject invalid ask adjustment (Infinity)', () => {
+        const quote = unwrap(
+          Quote.create(
+            createValidBid(),
+            createValidAsk(),
+            createValidBidSize(),
+            createValidAskSize()
+          )
+        );
+
+        const result = quote.withAdjustment(0, Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidQuoteError);
+        }
       });
     });
   });
@@ -769,11 +833,15 @@ describe('Quote', () => {
       expect(baseQuote.crossesMarket(marketBid, marketAsk)).toBe(false);
 
       // 5. Adjust based on inventory (too much inventory, lower quotes)
-      const adjusted = baseQuote.withAdjustment(-0.01, -0.01);
-      const adjustedMidResult = adjusted.getMidPrice();
-      expect(adjustedMidResult.ok).toBe(true);
-      if (adjustedMidResult.ok) {
-        expect(adjustedMidResult.value.value).toBeCloseTo(0.64, 2);
+      const adjustedResult = baseQuote.withAdjustment(-0.01, -0.01);
+      expect(adjustedResult.ok).toBe(true);
+      if (adjustedResult.ok) {
+        const adjusted = adjustedResult.value;
+        const adjustedMidResult = adjusted.getMidPrice();
+        expect(adjustedMidResult.ok).toBe(true);
+        if (adjustedMidResult.ok) {
+          expect(adjustedMidResult.value.value).toBeCloseTo(0.64, 2);
+        }
       }
     });
 

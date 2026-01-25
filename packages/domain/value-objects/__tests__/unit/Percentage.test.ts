@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
+import Decimal from 'decimal.js';
 import { unwrap } from '@polymarket/result';
 import { Percentage } from '../../src/Percentage';
 import {
@@ -157,6 +158,54 @@ describe('Percentage', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(DivisionByZeroError);
+        }
+      });
+
+      it('должен отклонять деление на NaN', () => {
+        const pct = unwrap(Percentage.fromValue(10));
+
+        const result = pct.divide(NaN);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(DivisionByZeroError);
+          expect(result.error.message).toContain('must be a finite number');
+        }
+      });
+
+      it('должен отклонять деление на Infinity', () => {
+        const pct = unwrap(Percentage.fromValue(10));
+
+        const result = pct.divide(Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(DivisionByZeroError);
+          expect(result.error.message).toContain('must be a finite number');
+        }
+      });
+
+      it('должен отклонять деление на -Infinity', () => {
+        const pct = unwrap(Percentage.fromValue(10));
+
+        const result = pct.divide(-Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(DivisionByZeroError);
+          expect(result.error.message).toContain('must be a finite number');
+        }
+      });
+
+      it('должен отклонять деление на Decimal NaN', () => {
+        const pct = unwrap(Percentage.fromValue(10));
+
+        const result = pct.divide(new Decimal(NaN));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(DivisionByZeroError);
+          expect(result.error.message).toContain('must be a finite number');
         }
       });
     });

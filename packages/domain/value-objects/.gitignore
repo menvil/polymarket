@@ -29,4 +29,4 @@ yarn-error.log*
 # Environment
 .env
 .env.local
-.env.*.localtsconfig.build.tsbuildinfo
+.env.*.local

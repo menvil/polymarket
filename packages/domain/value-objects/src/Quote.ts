@@ -34,7 +34,7 @@
  * }
  * ```
  */
-import { Result, Ok, Err, unwrap } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuoteError } from '@polymarket/errors';
 import { Price } from './Price.js';
 import { Quantity } from './Quantity.js';
@@ -350,40 +350,89 @@ export class Quote {
    *
    * @param bidAdjustment - Величина для добавления/вычитания из bid
    * @param askAdjustment - Величина для добавления/вычитания из ask
-   * @returns Новый Quote со скорректированными ценами
+   * @returns Result с новым Quote или InvalidQuoteError
    *
    * @remarks
    * Используется для корректировки перекоса в стратегиях.
    *
+   * Возвращает Result для правильной обработки ошибок при:
+   * - Невалидных adjustment значениях (NaN, Infinity)
+   * - Ценах вне допустимого диапазона после корректировки
+   * - Пересечении bid/ask после корректировки
+   *
    * @example
    * ```typescript
+   * import { unwrap } from '@polymarket/result';
+   *
    * const quote = unwrap(Quote.create(
-   *   Price.fromValue(0.64),
-   *   Price.fromValue(0.66),
+   *   unwrap(Price.fromValue(0.64)),
+   *   unwrap(Price.fromValue(0.66)),
    *   ...
-   * );
+   * ));
    *
    * // Расширить спред (bid вниз, ask вверх)
-   * const widened = quote.withAdjustment(-0.01, +0.01);
-   * // bid: 0.63, ask: 0.67
+   * const result = quote.withAdjustment(-0.01, +0.01);
+   * if (result.ok) {
+   *   const widened = result.value;
+   *   // bid: 0.63, ask: 0.67
+   * }
    *
    * // Перекос к bid (управление запасами)
-   * const skewed = quote.withAdjustment(-0.01, -0.01);
+   * const skewed = unwrap(quote.withAdjustment(-0.01, -0.01));
    * // bid: 0.63, ask: 0.65
    * ```
    */
-  public withAdjustment(bidAdjustment: number, askAdjustment: number): Quote {
-    const adjustPrice = (price: Price, adjustment: number): Price => {
+  public withAdjustment(bidAdjustment: number, askAdjustment: number): Result<Quote, InvalidQuoteError> {
+    // Применить корректировку к цене
+    const adjustPrice = (
+      price: Price,
+      adjustment: number,
+      priceType: 'bid' | 'ask'
+    ): Result<Price, InvalidQuoteError> => {
       const result = adjustment >= 0
         ? price.add(adjustment)
         : price.subtract(Math.abs(adjustment));
-      return unwrap(result);
+
+      if (!result.ok) {
+        return Err(
+          new InvalidQuoteError(
+            (ctx) => `Failed to adjust ${ctx.priceType} price: ${ctx.error}`,
+            {
+              context: {
+                priceType,
+                originalPrice: price.value,
+                adjustment,
+                error: result.error.message
+              }
+            }
+          )
+        );
+      }
+
+      return Ok(result.value);
     };
 
-    const newBid = this.bid ? adjustPrice(this.bid, bidAdjustment) : null;
-    const newAsk = this.ask ? adjustPrice(this.ask, askAdjustment) : null;
+    // Применить корректировку к bid если есть
+    let newBid: Price | null = null;
+    if (this.bid) {
+      const bidResult = adjustPrice(this.bid, bidAdjustment, 'bid');
+      if (!bidResult.ok) {
+        return Err(bidResult.error);
+      }
+      newBid = bidResult.value;
+    }
 
-    return unwrap(Quote.create(newBid, newAsk, this.bidSize, this.askSize, new Date()));
+    // Применить корректировку к ask если есть
+    let newAsk: Price | null = null;
+    if (this.ask) {
+      const askResult = adjustPrice(this.ask, askAdjustment, 'ask');
+      if (!askResult.ok) {
+        return Err(askResult.error);
+      }
+      newAsk = askResult.value;
+    }
+
+    return Quote.create(newBid, newAsk, this.bidSize, this.askSize, new Date());
   }
 
   /**
@@ -548,8 +597,8 @@ export class Quote {
       ask = askResult.value;
     }
 
-    // Создаём Quantity из чисел
-    const bidSizeResult = Quantity.fromValue(json.bidSize);
+    // Создаём Quantity из чисел (используем minSize=0 для десериализации)
+    const bidSizeResult = Quantity.fromValue(json.bidSize, 0);
     if (!bidSizeResult.ok) {
       return Err(
         new InvalidQuoteError(`Invalid bid size: ${bidSizeResult.error.message}`, {
@@ -558,7 +607,7 @@ export class Quote {
       );
     }
 
-    const askSizeResult = Quantity.fromValue(json.askSize);
+    const askSizeResult = Quantity.fromValue(json.askSize, 0);
     if (!askSizeResult.ok) {
       return Err(
         new InvalidQuoteError(`Invalid ask size: ${askSizeResult.error.message}`, {

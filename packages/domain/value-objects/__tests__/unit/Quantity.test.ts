@@ -32,12 +32,33 @@ describe('Quantity', () => {
         }
       });
 
-      it('should allow zero quantity', () => {
-        const result = Quantity.fromValue(0);
+      it('should allow zero quantity with minSize=0', () => {
+        const result = Quantity.fromValue(0, 0);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value.value).toBe(0);
+        }
+      });
+
+      it('should reject zero quantity when minSize > 0', () => {
+        const result = Quantity.fromValue(0, 1);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidQuantityError);
+          expect(result.error.message).toContain('must be >= 1');
+        }
+      });
+
+      it('should reject zero quantity with default minSize', () => {
+        // DEFAULT minSize = 1
+        const result = Quantity.fromValue(0);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidQuantityError);
+          expect(result.error.message).toContain('must be >=');
         }
       });
 
@@ -137,7 +158,7 @@ describe('Quantity', () => {
     describe('isValid', () => {
       it('should validate correct quantities', () => {
         expect(Quantity.isValid(10)).toBe(true);
-        expect(Quantity.isValid(0)).toBe(true);
+        expect(Quantity.isValid(1)).toBe(true); // minSize = 1 by default
         expect(Quantity.isValid(1000)).toBe(true);
       });
 
@@ -153,8 +174,13 @@ describe('Quantity', () => {
         expect(Quantity.isValid(15, 10)).toBe(true);
       });
 
-      it('should allow zero regardless of minSize', () => {
-        expect(Quantity.isValid(0, 10)).toBe(true);
+      it('should reject zero when minSize > 0', () => {
+        expect(Quantity.isValid(0, 1)).toBe(false); // default MIN_SIZE = 1
+        expect(Quantity.isValid(0, 10)).toBe(false);
+      });
+
+      it('should allow zero when minSize = 0', () => {
+        expect(Quantity.isValid(0, 0)).toBe(true);
       });
     });
   });

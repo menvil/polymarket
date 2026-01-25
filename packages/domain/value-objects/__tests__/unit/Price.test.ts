@@ -148,6 +148,30 @@ describe('Price', () => {
         // так как 0.52345 ровно посередине между 0.5234 и 0.5235
         expect(rounded.value).toBe(0.5235);
       });
+
+      it('should handle very small tick sizes with exponential notation', () => {
+        const price = unwrap(Price.fromValue(0.12345678));
+        const rounded = unwrap(price.toTick(1e-7));
+
+        // Should round to 7 decimal places (1e-7 = 0.0000001)
+        expect(rounded.value).toBeCloseTo(0.1234568, 7);
+      });
+
+      it('should handle tick size 1e-6', () => {
+        const price = unwrap(Price.fromValue(0.123456789));
+        const rounded = unwrap(price.toTick(1e-6));
+
+        // Should round to 6 decimal places
+        expect(rounded.value).toBeCloseTo(0.123457, 6);
+      });
+
+      it('should handle tick size 1e-10', () => {
+        const price = unwrap(Price.fromValue(0.123456789012));
+        const rounded = unwrap(price.toTick(1e-10));
+
+        // Should round to 10 decimal places
+        expect(rounded.value).toBeCloseTo(0.123456789, 10);
+      });
     });
 
     describe('floorToTick', () => {

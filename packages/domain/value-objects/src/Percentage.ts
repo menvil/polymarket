@@ -604,6 +604,23 @@ export class Percentage {
     try {
       const divisorDecimal = divisor instanceof Decimal ? divisor : new Decimal(divisor);
 
+      // Проверка что divisor является конечным числом
+      if (!divisorDecimal.isFinite()) {
+        return Err(
+          new DivisionByZeroError(
+            (ctx: Record<string, unknown>) =>
+              `Invalid divisor ${ctx.divisor}: must be a finite number`,
+            {
+              context: {
+                value: this.value.toString(),
+                divisor: divisorDecimal.toString(),
+                operation: 'divide percentage'
+              }
+            }
+          )
+        );
+      }
+
       if (divisorDecimal.isZero()) {
         return Err(
           new DivisionByZeroError(
@@ -621,6 +638,25 @@ export class Percentage {
       }
 
       const result = this.value.dividedBy(divisorDecimal);
+
+      // Проверка что результат является конечным числом
+      if (!result.isFinite()) {
+        return Err(
+          new DivisionByZeroError(
+            (ctx: Record<string, unknown>) =>
+              `Division resulted in non-finite value: ${ctx.result}`,
+            {
+              context: {
+                value: this.value.toString(),
+                divisor: divisorDecimal.toNumber(),
+                result: result.toString(),
+                operation: 'divide percentage'
+              }
+            }
+          )
+        );
+      }
+
       return Ok(new Percentage(result));
     } catch (error) {
       return Err(

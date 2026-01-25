@@ -395,6 +395,54 @@ describe('Money', () => {
 
         expect(money.getAmount()).toBe(100);
       });
+
+      it('должен отклонять деление на NaN', () => {
+        const money = unwrap(Money.fromValue(100));
+
+        const result = money.divide(NaN);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(DivisionByZeroError);
+          expect(result.error.message).toContain('must be a finite number');
+        }
+      });
+
+      it('должен отклонять деление на Infinity', () => {
+        const money = unwrap(Money.fromValue(100));
+
+        const result = money.divide(Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(DivisionByZeroError);
+          expect(result.error.message).toContain('must be a finite number');
+        }
+      });
+
+      it('должен отклонять деление на -Infinity', () => {
+        const money = unwrap(Money.fromValue(100));
+
+        const result = money.divide(-Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(DivisionByZeroError);
+          expect(result.error.message).toContain('must be a finite number');
+        }
+      });
+
+      it('должен отклонять деление на Decimal NaN', () => {
+        const money = unwrap(Money.fromValue(100));
+
+        const result = money.divide(new Decimal(NaN));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(DivisionByZeroError);
+          expect(result.error.message).toContain('must be a finite number');
+        }
+      });
     });
   });
 

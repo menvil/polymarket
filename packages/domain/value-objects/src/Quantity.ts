@@ -227,9 +227,10 @@ export class Quantity {
 
     const minDecimal = new Decimal(minSize);
 
+    // Значение должно быть >= 0 И >= minSize
     return (
       !decimal.lessThan(0) &&
-      (decimal.equals(0) || !decimal.lessThan(minDecimal))
+      !decimal.lessThan(minDecimal)
     );
   }
 
