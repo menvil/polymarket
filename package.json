@@ -14,9 +14,7 @@
     "typecheck": "npm run typecheck --workspaces",
     "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist"
   },
-  "dependencies": {
-    "decimal.js": "^10.6.0"
-  },
+  "dependencies": {},
   "devDependencies": {},
   "engines": {
     "node": ">=18.0.0",
