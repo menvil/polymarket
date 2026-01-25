@@ -26,16 +26,16 @@ MAX: +1,000,000%
 
 ## Создание (Factory Methods)
 
-### fromNumber(value: number)
+### fromValue(value: number)
 
 Создать из числа (шкала 0-100).
 
 ```typescript
 import { Percentage } from '@polymarket/value-objects';
 
-const fee = Percentage.fromNumber(2.5);  // 2.5%
-const gain = Percentage.fromNumber(15);  // 15%
-const loss = Percentage.fromNumber(-10); // -10% (убыток)
+const fee = Percentage.fromValue(2.5);  // 2.5%
+const gain = Percentage.fromValue(15);  // 15%
+const loss = Percentage.fromValue(-10); // -10% (убыток)
 
 // Обработка результата
 fee.match({
@@ -105,8 +105,8 @@ const full = Percentage.oneHundred();    // 100%
 ```typescript
 import { unwrap } from '@polymarket/result';
 
-const fee = unwrap(Percentage.fromNumber(2.5));
-const gain = unwrap(Percentage.fromNumber(15));
+const fee = unwrap(Percentage.fromValue(2.5));
+const gain = unwrap(Percentage.fromValue(15));
 
 const total = fee.add(gain);
 total.match({
@@ -121,8 +121,8 @@ total.match({
 **Проблема старой версии:**
 ```typescript
 // ❌ СТАРАЯ ВЕРСИЯ (опасно!)
-const a = Percentage.fromNumber(999999);
-const b = Percentage.fromNumber(10);
+const a = Percentage.fromValue(999999);
+const b = Percentage.fromValue(10);
 const sum = a.add(b); // Молча возвращает 100%! Баг скрыт!
 
 // ✅ НОВАЯ ВЕРСИЯ (безопасно!)
@@ -138,8 +138,8 @@ sum.match({
 Вычитание процентов.
 
 ```typescript
-const total = unwrap(Percentage.fromNumber(17.5));
-const fee = unwrap(Percentage.fromNumber(2.5));
+const total = unwrap(Percentage.fromValue(17.5));
+const fee = unwrap(Percentage.fromValue(2.5));
 
 const net = total.subtract(fee);
 net.match({
@@ -150,8 +150,8 @@ net.match({
 
 **Разрешает отрицательный результат:**
 ```typescript
-const p1 = unwrap(Percentage.fromNumber(5));
-const p2 = unwrap(Percentage.fromNumber(10));
+const p1 = unwrap(Percentage.fromValue(5));
+const p2 = unwrap(Percentage.fromValue(10));
 
 const diff = p1.subtract(p2);
 diff.match({
@@ -168,7 +168,7 @@ diff.match({
 Умножение на коэффициент.
 
 ```typescript
-const base = unwrap(Percentage.fromNumber(10));
+const base = unwrap(Percentage.fromValue(10));
 
 const doubled = base.multiply(2);
 doubled.match({
@@ -182,7 +182,7 @@ doubled.match({
 Деление на коэффициент.
 
 ```typescript
-const total = unwrap(Percentage.fromNumber(20));
+const total = unwrap(Percentage.fromValue(20));
 
 const half = total.divide(2);
 half.match({
@@ -199,7 +199,7 @@ half.match({
 Применить процент к значению.
 
 ```typescript
-const fee = unwrap(Percentage.fromNumber(2.5)); // 2.5%
+const fee = unwrap(Percentage.fromValue(2.5)); // 2.5%
 const orderValue = 1000;
 
 const feeAmount = fee.of(orderValue); // Decimal(25)
@@ -217,7 +217,7 @@ console.log(feeAmount.toNumber()); // 25
 Преобразовать в десятичную дробь (0-1).
 
 ```typescript
-const pct = unwrap(Percentage.fromNumber(50)); // 50%
+const pct = unwrap(Percentage.fromValue(50)); // 50%
 const decimal = pct.toDecimalFraction(); // Decimal(0.5)
 ```
 
@@ -226,7 +226,7 @@ const decimal = pct.toDecimalFraction(); // Decimal(0.5)
 Преобразовать в базисные пункты.
 
 ```typescript
-const pct = unwrap(Percentage.fromNumber(2.5)); // 2.5%
+const pct = unwrap(Percentage.fromValue(2.5)); // 2.5%
 const bps = pct.toBasisPoints(); // Decimal(250)
 ```
 
@@ -235,7 +235,7 @@ const bps = pct.toBasisPoints(); // Decimal(250)
 Получить как number (шкала 0-100).
 
 ```typescript
-const pct = unwrap(Percentage.fromNumber(25.5));
+const pct = unwrap(Percentage.fromValue(25.5));
 console.log(pct.getValue()); // 25.5
 ```
 
@@ -244,7 +244,7 @@ console.log(pct.getValue()); // 25.5
 Получить как Decimal (высокая точность).
 
 ```typescript
-const pct = unwrap(Percentage.fromNumber(25.5));
+const pct = unwrap(Percentage.fromValue(25.5));
 console.log(pct.toDecimal().toString()); // "25.5"
 ```
 
@@ -253,8 +253,8 @@ console.log(pct.toDecimal().toString()); // "25.5"
 Все методы сравнения используют Decimal.js для точности.
 
 ```typescript
-const p1 = unwrap(Percentage.fromNumber(10));
-const p2 = unwrap(Percentage.fromNumber(5));
+const p1 = unwrap(Percentage.fromValue(10));
+const p2 = unwrap(Percentage.fromValue(5));
 
 p1.equals(p2);              // false
 p1.greaterThan(p2);         // true
@@ -279,8 +279,8 @@ p1.equals(p2); // true (decimal.js сравнивает значения, не �
 
 ```typescript
 const zero = Percentage.zero();
-const gain = unwrap(Percentage.fromNumber(10));
-const loss = unwrap(Percentage.fromNumber(-5));
+const gain = unwrap(Percentage.fromValue(10));
+const loss = unwrap(Percentage.fromValue(-5));
 
 zero.isZero();       // true
 gain.isPositive();   // true
@@ -293,7 +293,7 @@ loss.isNegative();   // true
 Абсолютное значение.
 
 ```typescript
-const loss = unwrap(Percentage.fromNumber(-10));
+const loss = unwrap(Percentage.fromValue(-10));
 const absLoss = loss.abs();
 
 console.log(absLoss.getValue()); // 10
@@ -305,7 +305,7 @@ console.log(loss.getValue());    // -10 (оригинал не изменён)
 Изменить знак.
 
 ```typescript
-const gain = unwrap(Percentage.fromNumber(10));
+const gain = unwrap(Percentage.fromValue(10));
 const loss = gain.negate();
 
 console.log(loss.getValue()); // -10
@@ -316,7 +316,7 @@ console.log(loss.getValue()); // -10
 Форматирование с символом `%`.
 
 ```typescript
-const pct = unwrap(Percentage.fromNumber(25.5));
+const pct = unwrap(Percentage.fromValue(25.5));
 
 console.log(pct.toString());    // "25.50%"
 console.log(pct.toString(1));   // "25.5%"
@@ -328,7 +328,7 @@ console.log(pct.toString(4));   // "25.5000%"
 Форматирование без символа `%`.
 
 ```typescript
-const pct = unwrap(Percentage.fromNumber(25.5));
+const pct = unwrap(Percentage.fromValue(25.5));
 
 console.log(pct.toFixedString());    // "25.50"
 console.log(pct.toFixedString(3));   // "25.500"
@@ -342,7 +342,7 @@ console.log(pct.toFixedString(3));   // "25.500"
 import { Percentage } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
-const tradingFee = unwrap(Percentage.fromNumber(0.25)); // 0.25%
+const tradingFee = unwrap(Percentage.fromValue(0.25)); // 0.25%
 const orderSize = 10000; // USDC
 
 const feeAmount = tradingFee.of(orderSize);
@@ -356,7 +356,7 @@ const entryPrice = 100;
 const exitPrice = 95;
 
 const change = ((exitPrice - entryPrice) / entryPrice) * 100;
-const pnl = unwrap(Percentage.fromNumber(change)); // -5%
+const pnl = unwrap(Percentage.fromValue(change)); // -5%
 
 if (pnl.isNegative()) {
   console.log(`Убыток: ${pnl.abs().toString()}`); // "Убыток: 5.00%"
@@ -366,8 +366,8 @@ if (pnl.isNegative()) {
 ### Композиция операций
 
 ```typescript
-const initialFee = unwrap(Percentage.fromNumber(2));   // 2%
-const discount = unwrap(Percentage.fromNumber(0.5));   // 0.5%
+const initialFee = unwrap(Percentage.fromValue(2));   // 2%
+const discount = unwrap(Percentage.fromValue(0.5));   // 0.5%
 
 const finalFee = initialFee.subtract(discount);
 finalFee.match({
@@ -408,8 +408,8 @@ console.log(sum.toDecimal().toString()); // "30" (точно!)
 
 ```typescript
 // ❌ СТАРАЯ ВЕРСИЯ
-const a = Percentage.fromNumber(80);
-const b = Percentage.fromNumber(30);
+const a = Percentage.fromValue(80);
+const b = Percentage.fromValue(30);
 const sum = a.add(b); // Молча возвращает 100% (silent clamping)
 // БАГ! Пользователь думает что 80% + 30% = 100%, а на самом деле это overflow!
 
@@ -433,7 +433,7 @@ sum.match({
 ```typescript
 import { InvalidPercentageError } from '@polymarket/errors';
 
-const result = Percentage.fromNumber(NaN);
+const result = Percentage.fromValue(NaN);
 
 result.match({
   ok: (pct) => console.log(pct),
@@ -454,8 +454,8 @@ result.match({
 ```typescript
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
-const p1 = unwrap(Percentage.fromNumber(999999));
-const p2 = unwrap(Percentage.fromNumber(10));
+const p1 = unwrap(Percentage.fromValue(999999));
+const p2 = unwrap(Percentage.fromValue(10));
 
 const result = p1.add(p2);
 
@@ -477,7 +477,7 @@ result.match({
 ```typescript
 import { DivisionByZeroError } from '@polymarket/errors';
 
-const pct = unwrap(Percentage.fromNumber(10));
+const pct = unwrap(Percentage.fromValue(10));
 const result = pct.divide(0);
 
 result.match({
@@ -515,14 +515,14 @@ npm test -- Percentage.test.ts
 import { unwrap } from '@polymarket/result';
 
 // Короткий синтаксис
-const fee = unwrap(Percentage.fromNumber(2.5));
+const fee = unwrap(Percentage.fromValue(2.5));
 console.log(fee.getValue()); // 2.5
 ```
 
 ### ✅ DO: Обрабатывайте ошибки явно
 
 ```typescript
-const result = Percentage.fromNumber(value);
+const result = Percentage.fromValue(value);
 
 result.match({
   ok: (pct) => processPercentage(pct),
@@ -533,7 +533,7 @@ result.match({
 ### ✅ DO: Используйте Decimal для точности
 
 ```typescript
-const pct = unwrap(Percentage.fromNumber(10));
+const pct = unwrap(Percentage.fromValue(10));
 const amount = new Decimal('1000.123456789');
 
 const result = pct.of(amount); // Decimal точность сохранена
@@ -543,10 +543,10 @@ const result = pct.of(amount); // Decimal точность сохранена
 
 ```typescript
 // ❌ ПЛОХО
-const pct = Percentage.fromNumber(value); // Result игнорируется
+const pct = Percentage.fromValue(value); // Result игнорируется
 
 // ✅ ХОРОШО
-const result = Percentage.fromNumber(value);
+const result = Percentage.fromValue(value);
 if (!result.ok) {
   throw result.error;
 }

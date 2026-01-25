@@ -19,105 +19,77 @@
 
 ## Создание (Factory Methods)
 
-### fromAmount(amount: number, currency: string)
+### fromValue(amount: number | string | Decimal, currency: string)
 
-Создать Balance из числа.
+Универсальный метод для создания Balance из различных типов значений.
 
 **Параметры:**
-- `amount` — сумма баланса (number)
+- `amount` — сумма баланса (number, string или Decimal)
 - `currency` — валюта (string, например 'USDC')
 
 **Возвращает:**
 - `Result<Balance, InvalidMoneyError>`
+
+**Поддерживаемые типы amount:**
+- `number` — обычное число (1000, 0.5, 1000.50)
+- `string` — строковое представление числа ("1000.50", "0.1")
+- `Decimal` — объект Decimal.js для высокой точности
 
 **Валидация:**
 - ❌ Отклоняет NaN
 - ❌ Отклоняет Infinity/-Infinity
 - ❌ Отклоняет отрицательные значения
 - ❌ Отклоняет пустую валюту
+- ❌ Отклоняет невалидные строки
 
 **Примеры:**
 
 ```typescript
 import { Balance } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
+import Decimal from 'decimal.js';
 
-// ✅ Успешное создание
-const balance = unwrap(Balance.fromAmount(1000, 'USDC'));
-console.log(balance.getAmount()); // 1000
-console.log(balance.getCurrency()); // "USDC"
+// ✅ Создание из числа
+const balance1 = unwrap(Balance.fromValue(1000, 'USDC'));
+console.log(balance1.getAmount()); // 1000
+
+// ✅ Создание из строки
+const balance2 = unwrap(Balance.fromValue('1000.50', 'USDC'));
+console.log(balance2.getAmount()); // 1000.5
+
+// ✅ Создание из Decimal (высокая точность)
+const balance3 = unwrap(Balance.fromValue(new Decimal('1000.50'), 'USDC'));
+console.log(balance3.toDecimal().toString()); // "1000.5"
 
 // ✅ Нулевой баланс
-const empty = unwrap(Balance.fromAmount(0, 'USDC'));
+const empty = unwrap(Balance.fromValue(0, 'USDC'));
 console.log(empty.getAmount()); // 0
 
 // ❌ Отклоняет отрицательные
-const negative = Balance.fromAmount(-100, 'USDC');
+const negative = Balance.fromValue(-100, 'USDC');
 if (!negative.ok) {
   console.error(negative.error.message);
   // "Balance cannot be negative: -100 USDC"
 }
 
 // ❌ Отклоняет NaN
-const invalid = Balance.fromAmount(NaN, 'USDC');
+const invalid = Balance.fromValue(NaN, 'USDC');
 if (!invalid.ok) {
   console.error(invalid.error.message);
   // "Balance amount must be finite"
 }
 
 // ❌ Отклоняет пустую валюту
-const noCurrency = Balance.fromAmount(100, '');
+const noCurrency = Balance.fromValue(100, '');
 if (!noCurrency.ok) {
   console.error(noCurrency.error.message);
   // "Currency must be a non-empty string"
 }
-```
 
-### fromDecimal(amount: Decimal, currency: string)
-
-Создать Balance из Decimal.
-
-**Параметры:**
-- `amount` — сумма (Decimal)
-- `currency` — валюта (string)
-
-**Возвращает:**
-- `Result<Balance, InvalidMoneyError>`
-
-**Примеры:**
-
-```typescript
-import Decimal from 'decimal.js';
-
-const balance = unwrap(
-  Balance.fromDecimal(new Decimal('1000.50'), 'USDC')
-);
-
-console.log(balance.toDecimal().toString()); // "1000.5"
-```
-
-### fromString(amount: string, currency: string)
-
-Создать Balance из строки.
-
-**Параметры:**
-- `amount` — сумма в виде строки
-- `currency` — валюта (string)
-
-**Возвращает:**
-- `Result<Balance, InvalidMoneyError>`
-
-**Примеры:**
-
-```typescript
-// ✅ Парсинг строки
-const balance = unwrap(Balance.fromString('1000.50', 'USDC'));
-console.log(balance.getAmount()); // 1000.5
-
-// ❌ Некорректная строка
-const invalid = Balance.fromString('not-a-number', 'USDC');
-if (!invalid.ok) {
-  console.error(invalid.error.message);
+// ❌ Отклоняет невалидные строки
+const invalidString = Balance.fromValue('not-a-number', 'USDC');
+if (!invalidString.ok) {
+  console.error(invalidString.error.message);
   // "Invalid balance format: \"not-a-number\""
 }
 ```
@@ -133,7 +105,7 @@ if (!invalid.ok) {
 **⚠️ Важно:** Для высокоточных вычислений используйте `toDecimal()`.
 
 ```typescript
-const balance = unwrap(Balance.fromAmount(1000.50, 'USDC'));
+const balance = unwrap(Balance.fromValue(1000.50, 'USDC'));
 console.log(balance.getAmount()); // 1000.5
 ```
 
@@ -144,7 +116,7 @@ console.log(balance.getAmount()); // 1000.5
 **Возвращает:** `string`
 
 ```typescript
-const balance = unwrap(Balance.fromAmount(1000, 'USDC'));
+const balance = unwrap(Balance.fromValue(1000, 'USDC'));
 console.log(balance.getCurrency()); // "USDC"
 ```
 
@@ -155,7 +127,7 @@ console.log(balance.getCurrency()); // "USDC"
 **Возвращает:** `Decimal`
 
 ```typescript
-const balance = unwrap(Balance.fromAmount(1000.5, 'USDC'));
+const balance = unwrap(Balance.fromValue(1000.5, 'USDC'));
 const decimal = balance.toDecimal();
 
 console.log(decimal.toString()); // "1000.5"
@@ -176,7 +148,7 @@ console.log(decimal.toFixed(2)); // "1000.50"
 **Примеры:**
 
 ```typescript
-const balance = unwrap(Balance.fromAmount(1000, 'USDC'));
+const balance = unwrap(Balance.fromValue(1000, 'USDC'));
 
 // ✅ Достаточно средств
 console.log(balance.hasEnough(500));   // true
@@ -207,7 +179,7 @@ function placeOrder(
   console.log('Order placed successfully');
 }
 
-const myBalance = unwrap(Balance.fromAmount(1000, 'USDC'));
+const myBalance = unwrap(Balance.fromValue(1000, 'USDC'));
 placeOrder(myBalance, 900, 10); // ✅ OK: 1000 >= 910
 ```
 
@@ -229,15 +201,15 @@ placeOrder(myBalance, 900, 10); // ✅ OK: 1000 >= 910
 **Примеры:**
 
 ```typescript
-const b1 = unwrap(Balance.fromAmount(1000, 'USDC'));
-const b2 = unwrap(Balance.fromAmount(500, 'USDC'));
+const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+const b2 = unwrap(Balance.fromValue(500, 'USDC'));
 
 // ✅ Сложение с той же валютой
 const sum = unwrap(b1.add(b2));
 console.log(sum.getAmount()); // 1500
 
 // ❌ Разные валюты
-const btc = unwrap(Balance.fromAmount(0.1, 'BTC'));
+const btc = unwrap(Balance.fromValue(0.1, 'BTC'));
 const result = b1.add(btc);
 
 if (!result.ok) {
@@ -256,7 +228,7 @@ function deposit(
   const currency = currentBalance.getCurrency();
 
   // Создаем Balance для депозита
-  const depositBalance = Balance.fromAmount(depositAmount, currency);
+  const depositBalance = Balance.fromValue(depositAmount, currency);
   if (!depositBalance.ok) {
     return depositBalance;
   }
@@ -265,7 +237,7 @@ function deposit(
   return currentBalance.add(depositBalance.value);
 }
 
-const balance = unwrap(Balance.fromAmount(1000, 'USDC'));
+const balance = unwrap(Balance.fromValue(1000, 'USDC'));
 const newBalance = unwrap(deposit(balance, 500));
 console.log(newBalance.getAmount()); // 1500
 ```
@@ -287,15 +259,15 @@ console.log(newBalance.getAmount()); // 1500
 **Примеры:**
 
 ```typescript
-const balance = unwrap(Balance.fromAmount(1000, 'USDC'));
-const amount = unwrap(Balance.fromAmount(300, 'USDC'));
+const balance = unwrap(Balance.fromValue(1000, 'USDC'));
+const amount = unwrap(Balance.fromValue(300, 'USDC'));
 
 // ✅ Вычитание
 const result = unwrap(balance.subtract(amount));
 console.log(result.getAmount()); // 700
 
 // ❌ Результат отрицательный (insufficient balance)
-const large = unwrap(Balance.fromAmount(1500, 'USDC'));
+const large = unwrap(Balance.fromValue(1500, 'USDC'));
 const insufficient = balance.subtract(large);
 
 if (!insufficient.ok) {
@@ -325,7 +297,7 @@ function executeOrder(
   }
 
   // Создаем Balance для списания
-  const cost = Balance.fromAmount(orderCost, currency);
+  const cost = Balance.fromValue(orderCost, currency);
   if (!cost.ok) {
     return cost;
   }
@@ -334,7 +306,7 @@ function executeOrder(
   return balance.subtract(cost.value);
 }
 
-const myBalance = unwrap(Balance.fromAmount(1000, 'USDC'));
+const myBalance = unwrap(Balance.fromValue(1000, 'USDC'));
 const newBalance = unwrap(executeOrder(myBalance, 300));
 console.log(newBalance.getAmount()); // 700
 ```
@@ -353,9 +325,9 @@ console.log(newBalance.getAmount()); // 700
 **Примеры:**
 
 ```typescript
-const b1 = unwrap(Balance.fromAmount(1000, 'USDC'));
-const b2 = unwrap(Balance.fromAmount(1000, 'USDC'));
-const b3 = unwrap(Balance.fromAmount(500, 'USDC'));
+const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+const b3 = unwrap(Balance.fromValue(500, 'USDC'));
 
 console.log(b1.equals(b2)); // true (одинаковые суммы и валюты)
 console.log(b1.equals(b3)); // false (разные суммы)
@@ -364,7 +336,7 @@ console.log(b1.equals(b3)); // false (разные суммы)
 console.log(b1.equals(b1)); // true
 
 // Разные валюты
-const btc = unwrap(Balance.fromAmount(1000, 'BTC'));
+const btc = unwrap(Balance.fromValue(1000, 'BTC'));
 console.log(b1.equals(btc)); // false (разные валюты)
 ```
 
@@ -379,11 +351,11 @@ console.log(b1.equals(btc)); // false (разные валюты)
 **Примеры:**
 
 ```typescript
-const balance = unwrap(Balance.fromAmount(1000, 'USDC'));
+const balance = unwrap(Balance.fromValue(1000, 'USDC'));
 console.log(balance.toString()); // "1000 USDC"
 
 // Сохраняет десятичную точность
-const precise = unwrap(Balance.fromString('1000.50', 'USDC'));
+const precise = unwrap(Balance.fromValue('1000.50', 'USDC'));
 console.log(precise.toString()); // "1000.5 USDC"
 ```
 
@@ -399,7 +371,7 @@ class UserAccount {
   private balance: Balance;
 
   constructor(initialBalance: number, currency: string) {
-    this.balance = unwrap(Balance.fromAmount(initialBalance, currency));
+    this.balance = unwrap(Balance.fromValue(initialBalance, currency));
   }
 
   getBalance(): Balance {
@@ -408,7 +380,7 @@ class UserAccount {
 
   deposit(amount: number): void {
     const currency = this.balance.getCurrency();
-    const depositBalance = unwrap(Balance.fromAmount(amount, currency));
+    const depositBalance = unwrap(Balance.fromValue(amount, currency));
     this.balance = unwrap(this.balance.add(depositBalance));
 
     console.log(`Deposited ${amount} ${currency}`);
@@ -423,7 +395,7 @@ class UserAccount {
     }
 
     const currency = this.balance.getCurrency();
-    const withdrawBalance = unwrap(Balance.fromAmount(amount, currency));
+    const withdrawBalance = unwrap(Balance.fromValue(amount, currency));
 
     const result = this.balance.subtract(withdrawBalance);
     if (!result.ok) {
@@ -482,7 +454,7 @@ function validateTradingBalance(
 }
 
 // Использование
-const balance = unwrap(Balance.fromAmount(1000, 'USDC'));
+const balance = unwrap(Balance.fromValue(1000, 'USDC'));
 
 const order1 = { size: 900, fee: 10 };
 const result1 = validateTradingBalance(balance, order1);
@@ -506,8 +478,8 @@ const sum = amount1 + amount2;
 console.log(sum); // 0.30000000000000004 ❌
 
 // ✅ С Balance
-const b1 = unwrap(Balance.fromString('0.1', 'USDC'));
-const b2 = unwrap(Balance.fromString('0.2', 'USDC'));
+const b1 = unwrap(Balance.fromValue('0.1', 'USDC'));
+const b2 = unwrap(Balance.fromValue('0.2', 'USDC'));
 const sumBalance = unwrap(b1.add(b2));
 
 console.log(sumBalance.toDecimal().toString()); // "0.3" ✅
@@ -524,8 +496,8 @@ interface MultiCurrencyWallet {
 
 function createWallet(): MultiCurrencyWallet {
   return {
-    usdc: unwrap(Balance.fromAmount(1000, 'USDC')),
-    btc: unwrap(Balance.fromAmount(0.5, 'BTC'))
+    usdc: unwrap(Balance.fromValue(1000, 'USDC')),
+    btc: unwrap(Balance.fromValue(0.5, 'BTC'))
   };
 }
 
@@ -619,7 +591,7 @@ const wrong = balance.getAmount() * 1.05; // ❌ Потеря точности
 balance.subtract(cost); // ❌ Не проверяет ошибку
 
 // Не создавайте отрицательные балансы
-Balance.fromAmount(-100, 'USDC'); // ❌ Ошибка валидации
+Balance.fromValue(-100, 'USDC'); // ❌ Ошибка валидации
 
 // Не складывайте балансы разных валют без проверки
 balance1.add(balance2); // ❌ Может упасть если разные валюты
@@ -662,19 +634,9 @@ Railway-Oriented Programming обеспечивает:
 ## TypeScript Types
 
 ```typescript
-// Factory methods
-static fromAmount(
-  amount: number,
-  currency: string
-): Result<Balance, InvalidMoneyError>
-
-static fromDecimal(
-  amount: Decimal,
-  currency: string
-): Result<Balance, InvalidMoneyError>
-
-static fromString(
-  amount: string,
+// Factory method
+static fromValue(
+  amount: number | string | Decimal,
   currency: string
 ): Result<Balance, InvalidMoneyError>
 

@@ -81,7 +81,7 @@ const chained = flatMap(result, balance =>
 ### Примеры
 
 ```typescript
-import { OkChain, ErrChain, toChain } from '@polymarket/result';
+import { OkChain, ErrChain, toChain, unwrap } from '@polymarket/result';
 import { Balance } from '@polymarket/value-objects';
 
 // Создание chain напрямую
@@ -91,8 +91,8 @@ const result = OkChain(42)
   .unwrap(); // 85
 
 // Конвертация plain Result в chain
-const balance = toChain(Balance.fromAmount(1000, 'USDC'))
-  .flatMap(b => b.add(unwrap(Balance.fromAmount(500, 'USDC'))))
+const balance = toChain(Balance.fromValue(1000, 'USDC'))
+  .flatMap(b => b.add(unwrap(Balance.fromValue(500, 'USDC'))))
   .map(b => b.getAmount())
   .unwrapOr(0); // 1500
 

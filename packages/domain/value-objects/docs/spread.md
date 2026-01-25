@@ -191,20 +191,28 @@ console.log(spread.isWide(0.08)); // true (width = 0.10 > 0.08)
 
 ## Операции со спредом
 
-### `tighten(amount: number): Spread`
+### `tighten(amount: number): Result<Spread, InvalidSpreadError>`
 
 Сужает спред, сдвигая bid вверх и ask вниз.
 
 ```typescript
+import { unwrap } from '@polymarket/result';
+
 const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
 
-const tightened = spread.tighten(0.01);
-console.log(tightened.bid.value);   // 0.49
-console.log(tightened.ask.value);   // 0.51
-console.log(tightened.width());     // 0.02
+const result = spread.tighten(0.01);
+if (result.ok) {
+  const tightened = result.value;
+  console.log(tightened.bid.value);   // 0.49
+  console.log(tightened.ask.value);   // 0.51
+  console.log(tightened.width());     // 0.02
+}
+
+// Или используя unwrap
+const tightened = unwrap(spread.tighten(0.01));
 
 // Автоматическое ограничение до нулевой ширины
-const maxTightened = spread.tighten(0.1); // More than half width
+const maxTightened = unwrap(spread.tighten(0.1)); // More than half width
 console.log(maxTightened.isZeroWidth()); // true
 console.log(maxTightened.width());       // 0
 ```
@@ -221,21 +229,29 @@ New Ask = Old Ask - amount
 New Width = Old Width - 2 * amount
 ```
 
-### `widen(amount: number): Spread`
+### `widen(amount: number): Result<Spread, InvalidSpreadError>`
 
 Расширяет спред, сдвигая bid вниз и ask вверх.
 
 ```typescript
+import { unwrap } from '@polymarket/result';
+
 const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
 
-const widened = spread.widen(0.02);
-console.log(widened.bid.value);  // 0.46
-console.log(widened.ask.value);  // 0.54
-console.log(widened.width());    // 0.08
+const result = spread.widen(0.02);
+if (result.ok) {
+  const widened = result.value;
+  console.log(widened.bid.value);  // 0.46
+  console.log(widened.ask.value);  // 0.54
+  console.log(widened.width());    // 0.08
+}
+
+// Или используя unwrap
+const widened = unwrap(spread.widen(0.02));
 
 // Соблюдает границы цен [0.0001, 0.9999]
 const edgeSpread = unwrap(Spread.fromNumbers(0.001, 0.999));
-const maxWidened = edgeSpread.widen(0.1);
+const maxWidened = unwrap(edgeSpread.widen(0.1));
 console.log(maxWidened.bid.value); // 0.0001 (clamped)
 console.log(maxWidened.ask.value); // 0.9999 (clamped)
 ```
@@ -252,28 +268,33 @@ New Ask = Old Ask + amount
 New Width = Old Width + 2 * amount
 ```
 
-### `shift(amount: number): Spread`
+### `shift(amount: number): Result<Spread, InvalidSpreadError>`
 
 Сдвигает спред вверх или вниз, сохраняя ширину.
 
 ```typescript
+import { unwrap } from '@polymarket/result';
+
 const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
 
 // Сдвиг вверх (positive amount)
-const shiftedUp = spread.shift(0.05);
-console.log(shiftedUp.bid.value);  // 0.53
-console.log(shiftedUp.ask.value);  // 0.57
-console.log(shiftedUp.width());    // 0.04 (unchanged)
+const result = spread.shift(0.05);
+if (result.ok) {
+  const shiftedUp = result.value;
+  console.log(shiftedUp.bid.value);  // 0.53
+  console.log(shiftedUp.ask.value);  // 0.57
+  console.log(shiftedUp.width());    // 0.04 (unchanged)
+}
 
-// Сдвиг вниз (negative amount)
-const shiftedDown = spread.shift(-0.05);
+// Или используя unwrap
+const shiftedDown = unwrap(spread.shift(-0.05));
 console.log(shiftedDown.bid.value);  // 0.43
 console.log(shiftedDown.ask.value);  // 0.47
 console.log(shiftedDown.width());    // 0.04 (unchanged)
 
 // Автоматическое ограничение на границах
 const lowSpread = unwrap(Spread.fromNumbers(0.005, 0.045));
-const clamped = lowSpread.shift(-0.1);
+const clamped = unwrap(lowSpread.shift(-0.1));
 console.log(clamped.bid.value);  // 0.0001 (clamped to MIN_PRICE)
 console.log(clamped.width());    // ~0.04 (preserved)
 ```

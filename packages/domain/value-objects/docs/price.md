@@ -209,14 +209,14 @@ console.log(clamped.value); // 0.0001 (зажато в MIN_PRICE)
 Умножает цену на коэффициент. Результат ограничен [MIN_PRICE, MAX_PRICE].
 
 ```typescript
-const price = unwrap(Price.fromNumber(0.5));
+const price = unwrap(Price.fromValue(0.5));
 
-const doubled = price.multiply(2);
-console.log(doubled.value); // 1.0
+const doubled = unwrap(price.multiply(2));
+console.log(doubled.value); // 0.9999 (зажато в MAX_PRICE)
 
-// Но зажато в MAX_PRICE при превышении
-const high = unwrap(Price.fromNumber(0.99));
-const overflow = high.multiply(2);
+// Другой пример зажатия
+const high = unwrap(Price.fromValue(0.99));
+const overflow = unwrap(high.multiply(2));
 console.log(overflow.value); // 0.9999 (зажато)
 ```
 
@@ -388,15 +388,15 @@ const neutral = adjustPricesForInventory(midPrice, 0);
 console.log(`Neutral: ${neutral.bid.value} / ${neutral.ask.value}`);
 // "0.64 / 0.66"
 
-// Long inventory (+100 units) -> shift prices down to encourage sells
+// Long inventory (+100 units) -> shift prices up to discourage buys
 const long = adjustPricesForInventory(midPrice, 100);
 console.log(`Long: ${long.bid.value} / ${long.ask.value}`);
-// "0.6500 / 0.6700" (shifted down by 0.01)
+// "0.6500 / 0.6700" (shifted up by 0.01)
 
-// Short inventory (-100 units) -> shift prices up to encourage buys
+// Short inventory (-100 units) -> shift prices down to encourage buys
 const short = adjustPricesForInventory(midPrice, -100);
 console.log(`Short: ${short.bid.value} / ${short.ask.value}`);
-// "0.6300 / 0.6500" (shifted up by 0.01)
+// "0.6300 / 0.6500" (shifted down by 0.01)
 ```
 
 ### 3. Проверка crossing ордеров (самоисполнение)

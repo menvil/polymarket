@@ -42,25 +42,55 @@ MAX: 1e15 (= 1 квадриллион центов = 10 триллионов д�
 
 ## Создание (Factory Methods)
 
-### fromAmount(amount: number, currency?: SupportedCurrency)
+### fromValue(amount: number | string | Decimal, currency?: SupportedCurrency)
 
-Создать Money из числа.
+Универсальный метод для создания Money из различных типов значений.
+
+**Параметры:**
+- `amount` — сумма (number, string или Decimal)
+- `currency` — валюта (опционально, по умолчанию 'USDC')
+
+**Поддерживаемые типы amount:**
+- `number` — обычное число (100, -50, 100.50)
+- `string` — строковое представление числа ("100.123456789012345")
+- `Decimal` — объект Decimal.js для высокой точности
+
+**Примеры:**
 
 ```typescript
 import { Money } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
 
-// USDC по умолчанию
-const money = Money.fromAmount(100);
-money.match({
+// ✅ Создание из числа (USDC по умолчанию)
+const money1 = Money.fromValue(100);
+money1.match({
   ok: (m) => console.log(m.getAmount()),    // 100
   err: (error) => console.error(error)
 });
 
-// С явной валютой
-const usdc = Money.fromAmount(100, 'USDC');
+// ✅ С явной валютой
+const usdc = Money.fromValue(100, 'USDC');
 
-// Отрицательные значения для PnL
-const loss = Money.fromAmount(-50);
+// ✅ Из строки (высокая точность)
+const money2 = Money.fromValue('100.123456789012345');
+money2.match({
+  ok: (m) => {
+    // Decimal.js сохраняет всю точность
+    console.log(m.toDecimal().toString()); // "100.123456789012345"
+  },
+  err: (error) => console.error(error)
+});
+
+// ✅ Из Decimal
+const decimal = new Decimal('100.123456789');
+const money3 = Money.fromValue(decimal);
+money3.match({
+  ok: (m) => console.log(m.toDecimal().toString()), // "100.123456789"
+  err: (error) => console.error(error)
+});
+
+// ✅ Отрицательные значения для PnL
+const loss = Money.fromValue(-50);
 loss.match({
   ok: (m) => {
     console.log(m.getAmount());    // -50
@@ -74,52 +104,23 @@ loss.match({
 - `NaN`
 - `Infinity` / `-Infinity`
 - Значения вне диапазона [-1e15, 1e15]
+- Невалидные строки
 
 **Алгоритм валидации:**
-1. Преобразует `number` в `Decimal`
+1. Преобразует входное значение в `Decimal`
 2. Проверяет `Decimal.isNaN()`
 3. Проверяет `Decimal.isFinite()`
-4. Возвращает `Ok(Money)` или `Err(InvalidMoneyError)`
+4. Проверяет диапазон значений
+5. Возвращает `Ok(Money)` или `Err(InvalidMoneyError)`
 
-### fromDecimal(amount: Decimal, currency?: SupportedCurrency)
-
-Создать Money из Decimal.
-
-```typescript
-import Decimal from 'decimal.js';
-
-const decimal = new Decimal('100.123456789');
-const money = Money.fromDecimal(decimal);
-
-money.match({
-  ok: (m) => console.log(m.toDecimal().toString()), // "100.123456789"
-  err: (error) => console.error(error)
-});
-```
-
-**Преимущество:** сохраняет высокую точность (15+ знаков).
-
-### fromString(amount: string, currency?: SupportedCurrency)
-
-Создать Money из строки.
-
-```typescript
-// Для высокой точности используйте строки
-const money = Money.fromString('100.123456789012345');
-
-money.match({
-  ok: (m) => {
-    // Decimal.js сохраняет всю точность
-    console.log(m.toDecimal().toString()); // "100.123456789012345"
-  },
-  err: (error) => console.error(error)
-});
-```
-
-**Когда использовать:**
+**Когда использовать строки:**
 - Для значений с высокой точностью (>15 знаков)
 - При парсинге из JSON/API
 - Для избежания проблем floating point
+
+**Когда использовать Decimal:**
+- Когда уже есть Decimal объект из других вычислений
+- Для сохранения максимальной точности в цепочке операций
 
 ### zero(currency?: SupportedCurrency)
 
@@ -145,8 +146,8 @@ console.log(zero.getCurrency());   // "USDC"
 ```typescript
 import { unwrap } from '@polymarket/result';
 
-const m1 = unwrap(Money.fromAmount(100));
-const m2 = unwrap(Money.fromAmount(50));
+const m1 = unwrap(Money.fromValue(100));
+const m2 = unwrap(Money.fromValue(50));
 
 const sum = m1.add(m2);
 sum.match({
@@ -164,8 +165,8 @@ sum.match({
 
 **Пример ошибки валюты:**
 ```typescript
-const usdc = unwrap(Money.fromAmount(100, 'USDC'));
-const btc = unwrap(Money.fromAmount(1, 'BTC')); // Если BTC добавлен
+const usdc = unwrap(Money.fromValue(100, 'USDC'));
+const btc = unwrap(Money.fromValue(1, 'BTC')); // Если BTC добавлен
 
 const result = usdc.add(btc);
 result.match({
@@ -182,8 +183,8 @@ result.match({
 Вычитание денежных сумм.
 
 ```typescript
-const m1 = unwrap(Money.fromAmount(100));
-const m2 = unwrap(Money.fromAmount(30));
+const m1 = unwrap(Money.fromValue(100));
+const m2 = unwrap(Money.fromValue(30));
 
 const diff = m1.subtract(m2);
 diff.match({
@@ -194,8 +195,8 @@ diff.match({
 
 **Разрешает отрицательный результат:**
 ```typescript
-const cost = unwrap(Money.fromAmount(100));
-const revenue = unwrap(Money.fromAmount(80));
+const cost = unwrap(Money.fromValue(100));
+const revenue = unwrap(Money.fromValue(80));
 
 const pnl = revenue.subtract(cost);
 pnl.match({
@@ -212,7 +213,7 @@ pnl.match({
 Умножение на коэффициент.
 
 ```typescript
-const money = unwrap(Money.fromAmount(100));
+const money = unwrap(Money.fromValue(100));
 
 // Умножение на число
 const doubled = money.multiply(2);
@@ -235,7 +236,7 @@ result.match({
 
 **Пример overflow:**
 ```typescript
-const huge = unwrap(Money.fromAmount(1e15));
+const huge = unwrap(Money.fromValue(1e15));
 const result = huge.multiply(1000);
 
 result.match({
@@ -252,7 +253,7 @@ result.match({
 Деление на коэффициент.
 
 ```typescript
-const money = unwrap(Money.fromAmount(100));
+const money = unwrap(Money.fromValue(100));
 
 const half = money.divide(2);
 half.match({
@@ -266,7 +267,7 @@ half.match({
 
 **Пример ошибки деления:**
 ```typescript
-const money = unwrap(Money.fromAmount(100));
+const money = unwrap(Money.fromValue(100));
 const result = money.divide(0);
 
 result.match({
@@ -288,9 +289,9 @@ result.match({
 Проверка равенства.
 
 ```typescript
-const m1 = unwrap(Money.fromAmount(100));
-const m2 = unwrap(Money.fromAmount(100));
-const m3 = unwrap(Money.fromAmount(50));
+const m1 = unwrap(Money.fromValue(100));
+const m2 = unwrap(Money.fromValue(100));
+const m3 = unwrap(Money.fromValue(50));
 
 console.log(m1.equals(m2)); // true
 console.log(m1.equals(m3)); // false
@@ -298,8 +299,8 @@ console.log(m1.equals(m3)); // false
 
 **Точность Decimal.js:**
 ```typescript
-const m1 = unwrap(Money.fromString('100.1'));
-const m2 = unwrap(Money.fromString('100.10'));
+const m1 = unwrap(Money.fromValue('100.1'));
+const m2 = unwrap(Money.fromValue('100.10'));
 
 console.log(m1.equals(m2)); // true (Decimal.js сравнивает значения)
 ```
@@ -309,8 +310,8 @@ console.log(m1.equals(m2)); // true (Decimal.js сравнивает значе�
 Проверка больше.
 
 ```typescript
-const m1 = unwrap(Money.fromAmount(100));
-const m2 = unwrap(Money.fromAmount(50));
+const m1 = unwrap(Money.fromValue(100));
+const m2 = unwrap(Money.fromValue(50));
 
 const result = m1.greaterThan(m2);
 result.match({
@@ -324,8 +325,8 @@ result.match({
 Проверка меньше.
 
 ```typescript
-const m1 = unwrap(Money.fromAmount(50));
-const m2 = unwrap(Money.fromAmount(100));
+const m1 = unwrap(Money.fromValue(50));
+const m2 = unwrap(Money.fromValue(100));
 
 const result = m1.lessThan(m2);
 result.match({
@@ -337,8 +338,8 @@ result.match({
 ### greaterThanOrEqual / lessThanOrEqual
 
 ```typescript
-const m1 = unwrap(Money.fromAmount(100));
-const m2 = unwrap(Money.fromAmount(100));
+const m1 = unwrap(Money.fromValue(100));
+const m2 = unwrap(Money.fromValue(100));
 
 const result = m1.greaterThanOrEqual(m2);
 result.match({
@@ -355,8 +356,8 @@ result.match({
 
 ```typescript
 const zero = Money.zero();
-const profit = unwrap(Money.fromAmount(100));
-const loss = unwrap(Money.fromAmount(-50));
+const profit = unwrap(Money.fromValue(100));
+const loss = unwrap(Money.fromValue(-50));
 
 console.log(zero.isZero());         // true
 console.log(profit.isPositive());   // true (> 0)
@@ -376,7 +377,7 @@ console.log(zero.isPositive()); // false (ноль не является пол�
 Абсолютное значение.
 
 ```typescript
-const loss = unwrap(Money.fromAmount(-50));
+const loss = unwrap(Money.fromValue(-50));
 const absLoss = loss.abs();
 
 console.log(loss.getAmount());    // -50 (оригинал не изменён)
@@ -388,7 +389,7 @@ console.log(absLoss.getAmount()); // 50
 Изменить знак.
 
 ```typescript
-const profit = unwrap(Money.fromAmount(100));
+const profit = unwrap(Money.fromValue(100));
 const loss = profit.negate();
 
 console.log(profit.getAmount()); // 100
@@ -400,7 +401,7 @@ console.log(loss.getAmount());   // -100
 Форматирование в строку.
 
 ```typescript
-const money = unwrap(Money.fromAmount(100.5));
+const money = unwrap(Money.fromValue(100.5));
 
 console.log(money.toString());     // "$100.50 USDC"
 console.log(money.toString(4));    // "$100.5000 USDC"
@@ -412,7 +413,7 @@ console.log(money.toString(0));    // "$100 USDC"
 Получение значений.
 
 ```typescript
-const money = unwrap(Money.fromAmount(100.5, 'USDC'));
+const money = unwrap(Money.fromValue(100.5, 'USDC'));
 
 console.log(money.getAmount());    // 100.5 (number)
 console.log(money.getCurrency());  // "USDC"
@@ -427,7 +428,7 @@ console.log(money.toDecimal());    // Decimal(100.5)
 import { Money } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
-const orderSize = unwrap(Money.fromAmount(10000));      // 10,000 USDC
+const orderSize = unwrap(Money.fromValue(10000));      // 10,000 USDC
 const feeRate = 0.0025;                                  // 0.25%
 
 const fee = orderSize.multiply(feeRate);
@@ -442,8 +443,8 @@ fee.match({
 ### 2. PnL (Profit & Loss) расчёты
 
 ```typescript
-const entryPrice = unwrap(Money.fromAmount(100));
-const exitPrice = unwrap(Money.fromAmount(95));
+const entryPrice = unwrap(Money.fromValue(100));
+const exitPrice = unwrap(Money.fromValue(95));
 const quantity = 100;
 
 const entryCost = unwrap(entryPrice.multiply(quantity));  // $10,000
@@ -469,8 +470,8 @@ pnl.match({
 const wrong = 0.1 + 0.2; // 0.30000000000000004
 
 // ✅ С Money + Decimal.js (точно!)
-const m1 = unwrap(Money.fromString('0.1'));
-const m2 = unwrap(Money.fromString('0.2'));
+const m1 = unwrap(Money.fromValue('0.1'));
+const m2 = unwrap(Money.fromValue('0.2'));
 const correct = unwrap(m1.add(m2));
 
 console.log(correct.toDecimal().toString()); // "0.3" (точно!)
@@ -479,9 +480,9 @@ console.log(correct.toDecimal().toString()); // "0.3" (точно!)
 ### 4. Композиция операций
 
 ```typescript
-const initialBalance = unwrap(Money.fromAmount(1000));
-const deposit = unwrap(Money.fromAmount(500));
-const withdrawal = unwrap(Money.fromAmount(200));
+const initialBalance = unwrap(Money.fromValue(1000));
+const deposit = unwrap(Money.fromValue(500));
+const withdrawal = unwrap(Money.fromValue(200));
 
 // Цепочка операций через Result
 const result = initialBalance.add(deposit)
@@ -500,7 +501,7 @@ result.match({
 
 ```typescript
 // Money может быть отрицательным для PnL
-const pnl = unwrap(Money.fromAmount(-100));
+const pnl = unwrap(Money.fromValue(-100));
 console.log(pnl.isNegative()); // true - допустимо
 
 // Для балансов счетов используйте Balance
@@ -519,7 +520,7 @@ balance.match({
 ### 6. Точные вычисления с большими числами
 
 ```typescript
-const price = unwrap(Money.fromString('0.123456789012345'));
+const price = unwrap(Money.fromValue('0.123456789012345'));
 const quantity = new Decimal('1000000');
 
 const total = price.multiply(quantity);
@@ -542,7 +543,7 @@ total.match({
 ```typescript
 import { InvalidMoneyError } from '@polymarket/errors';
 
-const result = Money.fromAmount(NaN);
+const result = Money.fromValue(NaN);
 
 result.match({
   ok: (money) => console.log(money),
@@ -568,8 +569,8 @@ result.match({
 ```typescript
 import { CurrencyMismatchError } from '@polymarket/errors';
 
-const usdc = unwrap(Money.fromAmount(100, 'USDC'));
-const btc = unwrap(Money.fromAmount(1, 'BTC')); // Если BTC добавлен
+const usdc = unwrap(Money.fromValue(100, 'USDC'));
+const btc = unwrap(Money.fromValue(1, 'BTC')); // Если BTC добавлен
 
 const result = usdc.add(btc);
 
@@ -593,7 +594,7 @@ result.match({
 ```typescript
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
-const huge = unwrap(Money.fromAmount(1e15));
+const huge = unwrap(Money.fromValue(1e15));
 const result = huge.multiply(1000);
 
 result.match({
@@ -614,7 +615,7 @@ result.match({
 ```typescript
 import { DivisionByZeroError } from '@polymarket/errors';
 
-const money = unwrap(Money.fromAmount(100));
+const money = unwrap(Money.fromValue(100));
 const result = money.divide(0);
 
 result.match({
@@ -636,14 +637,14 @@ result.match({
 import { unwrap } from '@polymarket/result';
 
 // Короткий синтаксис когда уверены в валидности
-const money = unwrap(Money.fromAmount(100));
+const money = unwrap(Money.fromValue(100));
 console.log(money.getAmount()); // 100
 ```
 
 ### ✅ DO: Обрабатывайте ошибки явно
 
 ```typescript
-const result = Money.fromAmount(value);
+const result = Money.fromValue(value);
 
 result.match({
   ok: (money) => processMoney(money),
@@ -659,17 +660,17 @@ result.match({
 
 ```typescript
 // ✅ ХОРОШО - точность сохранена
-const money = unwrap(Money.fromString('100.123456789012345'));
+const money = unwrap(Money.fromValue('100.123456789012345'));
 
 // ❌ ПЛОХО - теряется точность из-за floating point
-const money2 = unwrap(Money.fromAmount(100.123456789012345));
+const money2 = unwrap(Money.fromValue(100.123456789012345));
 ```
 
 ### ✅ DO: Проверяйте валюты перед операциями
 
 ```typescript
-const m1 = unwrap(Money.fromAmount(100, 'USDC'));
-const m2 = unwrap(Money.fromAmount(50, 'USDC'));
+const m1 = unwrap(Money.fromValue(100, 'USDC'));
+const m2 = unwrap(Money.fromValue(50, 'USDC'));
 
 // Валюты совпадают - операция безопасна
 const sum = m1.add(m2);
@@ -679,10 +680,10 @@ const sum = m1.add(m2);
 
 ```typescript
 // ❌ ПЛОХО - Result игнорируется
-const money = Money.fromAmount(value);
+const money = Money.fromValue(value);
 
 // ✅ ХОРОШО - Result обработан
-const result = Money.fromAmount(value);
+const result = Money.fromValue(value);
 if (!result.ok) {
   throw result.error;
 }
@@ -703,8 +704,8 @@ const newMoney = unwrap(money.multiply(2));
 
 ```typescript
 // ❌ ПЛОХО - ошибка выполнения
-const usdc = unwrap(Money.fromAmount(100, 'USDC'));
-const btc = unwrap(Money.fromAmount(1, 'BTC'));
+const usdc = unwrap(Money.fromValue(100, 'USDC'));
+const btc = unwrap(Money.fromValue(1, 'BTC'));
 const result = usdc.add(btc); // CurrencyMismatchError
 
 // ✅ ХОРОШО - конвертация перед операцией
@@ -723,8 +724,8 @@ const result = usdc.add(btcInUsdc);
 
 **Решение:**
 ```typescript
-const m1 = unwrap(Money.fromString('0.1'));
-const m2 = unwrap(Money.fromString('0.2'));
+const m1 = unwrap(Money.fromValue('0.1'));
+const m2 = unwrap(Money.fromValue('0.2'));
 const sum = unwrap(m1.add(m2));
 sum.toDecimal().toString() === '0.3' // true!
 ```
@@ -734,7 +735,7 @@ sum.toDecimal().toString() === '0.3' // true!
 **Проблема с exceptions:**
 ```typescript
 try {
-  const money = Money.fromAmount(value); // Может выбросить
+  const money = Money.fromValue(value); // Может выбросить
 } catch (error) {
   // Неявная обработка, легко пропустить
 }
@@ -742,7 +743,7 @@ try {
 
 **Решение с Result:**
 ```typescript
-const result = Money.fromAmount(value);
+const result = Money.fromValue(value);
 result.match({
   ok: (money) => processMoney(money),
   err: (error) => handleError(error) // Компилятор заставит обработать
@@ -754,8 +755,8 @@ result.match({
 Для PnL (Profit & Loss) расчётов нужны отрицательные значения:
 
 ```typescript
-const cost = unwrap(Money.fromAmount(100));
-const revenue = unwrap(Money.fromAmount(80));
+const cost = unwrap(Money.fromValue(100));
+const revenue = unwrap(Money.fromValue(80));
 const pnl = unwrap(revenue.subtract(cost)); // -20 (убыток)
 ```
 
@@ -780,9 +781,9 @@ npm test -- Money.test.ts
 
 ```typescript
 // Фабричные методы
-Money.fromAmount(amount: number, currency?: SupportedCurrency): Result<Money, InvalidMoneyError>
-Money.fromDecimal(amount: Decimal, currency?: SupportedCurrency): Result<Money, InvalidMoneyError>
-Money.fromString(amount: string, currency?: SupportedCurrency): Result<Money, InvalidMoneyError>
+Money.fromValue(amount: number, currency?: SupportedCurrency): Result<Money, InvalidMoneyError>
+Money.fromValue(amount: Decimal, currency?: SupportedCurrency): Result<Money, InvalidMoneyError>
+Money.fromValue(amount: string, currency?: SupportedCurrency): Result<Money, InvalidMoneyError>
 Money.zero(currency?: SupportedCurrency): Money
 
 // Геттеры
