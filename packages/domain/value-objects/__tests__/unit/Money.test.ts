@@ -13,224 +13,234 @@ import {
   CurrencyMismatchError
 } from '@polymarket/errors';
 
+/**
+ * Test helper to create Money with arbitrary currency for testing edge cases
+ */
+function createMoneyForTest(amount: Decimal | number, currency: string): Money {
+  const decimal = amount instanceof Decimal ? amount : new Decimal(amount);
+  return new (Money as any)(decimal, currency);
+}
+
 describe('Money', () => {
   describe('Фабричные методы', () => {
     describe('fromValue', () => {
-      it('должен создать Money из положительного числа', () => {
-        const result = Money.fromValue(100);
+      describe('with number', () => {
+        it('должен создать Money из положительного числа', () => {
+          const result = Money.fromValue(100);
 
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          const money = result.value;
-          expect(money.getAmount()).toBe(100);
-          expect(money.getCurrency()).toBe('USDC');
-        }
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            const money = result.value;
+            expect(money.getAmount()).toBe(100);
+            expect(money.getCurrency()).toBe('USDC');
+          }
+        });
+
+        it('должен создать Money с явной валютой', () => {
+          const result = Money.fromValue(100, 'USDC');
+
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            const money = result.value;
+            expect(money.getCurrency()).toBe('USDC');
+          }
+        });
+
+        it('должен создать Money из отрицательного числа (для PnL)', () => {
+          const result = Money.fromValue(-50);
+
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            const money = result.value;
+            expect(money.getAmount()).toBe(-50);
+            expect(money.isNegative()).toBe(true);
+          }
+        });
+
+        it('должен создать Money из нуля', () => {
+          const result = Money.fromValue(0);
+
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            const money = result.value;
+            expect(money.isZero()).toBe(true);
+          }
+        });
+
+        it('должен создать Money из дробного числа', () => {
+          const result = Money.fromValue(100.50);
+
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            const money = result.value;
+            expect(money.getAmount()).toBe(100.50);
+          }
+        });
+
+        it('должен отклонить NaN', () => {
+          const result = Money.fromValue(NaN);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            const error = result.error;
+            expect(error).toBeInstanceOf(InvalidMoneyError);
+            expect(error.context?.reason).toBe('NaN');
+          }
+        });
+
+        it('должен отклонить Infinity', () => {
+          const result = Money.fromValue(Infinity);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            const error = result.error;
+            expect(error).toBeInstanceOf(InvalidMoneyError);
+            expect(error.context?.reason).toBe('Infinity');
+          }
+        });
+
+        it('должен отклонить отрицательный Infinity', () => {
+          const result = Money.fromValue(-Infinity);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error).toBeInstanceOf(InvalidMoneyError);
+          }
+        });
+
+        it('должен отклонить пустую валюту', () => {
+          const result = Money.fromValue(100, '' as 'USDC');
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error).toBeInstanceOf(InvalidMoneyError);
+            expect(result.error.message).toContain('Unsupported currency');
+          }
+        });
+
+        it('должен отклонить невалидную валюту (пробелы)', () => {
+          const result = Money.fromValue(100, '   ' as 'USDC');
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error).toBeInstanceOf(InvalidMoneyError);
+            expect(result.error.message).toContain('Unsupported currency');
+          }
+        });
       });
 
-      it('должен создать Money с явной валютой', () => {
-        const result = Money.fromValue(100, 'USDC');
+      describe('with Decimal', () => {
+        it('должен создать Money из Decimal', () => {
+          const decimal = new Decimal('100.123456789');
+          const result = Money.fromValue(decimal);
 
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          const money = result.value;
-          expect(money.getCurrency()).toBe('USDC');
-        }
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            const money = result.value;
+            expect(money.toDecimal().toString()).toBe('100.123456789');
+          }
+        });
+
+        it('должен отклонить неконечный Decimal', () => {
+          const decimal = new Decimal(Infinity);
+          const result = Money.fromValue(decimal);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error).toBeInstanceOf(InvalidMoneyError);
+          }
+        });
       });
 
-      it('должен создать Money из отрицательного числа (для PnL)', () => {
-        const result = Money.fromValue(-50);
+      describe('with string', () => {
+        it('должен создать Money из валидной строки', () => {
+          const result = Money.fromValue('100.123456789');
 
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          const money = result.value;
-          expect(money.getAmount()).toBe(-50);
-          expect(money.isNegative()).toBe(true);
-        }
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            const money = result.value;
+            expect(money.toDecimal().toString()).toBe('100.123456789');
+          }
+        });
+
+        it('должен создать Money из отрицательной строки', () => {
+          const result = Money.fromValue('-50.25');
+
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            const money = result.value;
+            expect(money.getAmount()).toBe(-50.25);
+          }
+        });
+
+        it('должен отклонить невалидную строку', () => {
+          const result = Money.fromValue('invalid');
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error).toBeInstanceOf(InvalidMoneyError);
+          }
+        });
+
+        it('должен отклонить пустую строку', () => {
+          const result = Money.fromValue('');
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error).toBeInstanceOf(InvalidMoneyError);
+          }
+        });
       });
 
-      it('должен создать Money из нуля', () => {
-        const result = Money.fromValue(0);
+      describe('default currency', () => {
+        it('должен создать USDC Money по умолчанию', () => {
+          const result = Money.fromValue(100);
 
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          const money = result.value;
-          expect(money.isZero()).toBe(true);
-        }
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            const money = result.value;
+            expect(money.getAmount()).toBe(100);
+            expect(money.getCurrency()).toBe('USDC');
+          }
+        });
+
+        it('дефолт должен быть эквивалентен явному USDC', () => {
+          const m1 = unwrap(Money.fromValue(100));
+          const m2 = unwrap(Money.fromValue(100, 'USDC'));
+
+          expect(m1.equals(m2)).toBe(true);
+        });
       });
 
-      it('должен создать Money из дробного числа', () => {
-        const result = Money.fromValue(100.50);
+      describe('MAX_AMOUNT validation', () => {
+        it('должен отклонить положительное значение превышающее MAX_AMOUNT', () => {
+          const result = Money.fromValue(2e15); // Больше чем 1e15
 
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          const money = result.value;
-          expect(money.getAmount()).toBe(100.50);
-        }
-      });
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error).toBeInstanceOf(InvalidMoneyError);
+            expect(result.error.message).toContain('exceeds MAX_AMOUNT');
+          }
+        });
 
-      it('должен отклонить NaN', () => {
-        const result = Money.fromValue(NaN);
+        it('должен отклонить отрицательное значение превышающее MAX_AMOUNT', () => {
+          const result = Money.fromValue(-2e15); // Меньше чем -1e15
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          const error = result.error;
-          expect(error).toBeInstanceOf(InvalidMoneyError);
-          expect(error.context?.reason).toBe('NaN');
-        }
-      });
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error).toBeInstanceOf(InvalidMoneyError);
+            expect(result.error.message).toContain('exceeds MAX_AMOUNT');
+          }
+        });
 
-      it('должен отклонить Infinity', () => {
-        const result = Money.fromValue(Infinity);
+        it('должен принять значение равное MAX_AMOUNT', () => {
+          const result = Money.fromValue(1e15);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          const error = result.error;
-          expect(error).toBeInstanceOf(InvalidMoneyError);
-          expect(error.context?.reason).toBe('Infinity');
-        }
-      });
-
-      it('должен отклонить отрицательный Infinity', () => {
-        const result = Money.fromValue(-Infinity);
-
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        }
-      });
-
-      it('должен отклонить пустую валюту', () => {
-        const result = Money.fromValue(100, '' as 'USDC');
-
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error).toBeInstanceOf(InvalidMoneyError);
-          expect(result.error.message).toContain('Unsupported currency');
-        }
-      });
-
-      it('должен отклонить невалидную валюту (пробелы)', () => {
-        const result = Money.fromValue(100, '   ' as 'USDC');
-
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error).toBeInstanceOf(InvalidMoneyError);
-          expect(result.error.message).toContain('Unsupported currency');
-        }
-      });
-    });
-
-    describe('fromValue', () => {
-      it('должен создать Money из Decimal', () => {
-        const decimal = new Decimal('100.123456789');
-        const result = Money.fromValue(decimal);
-
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          const money = result.value;
-          expect(money.toDecimal().toString()).toBe('100.123456789');
-        }
-      });
-
-      it('должен отклонить неконечный Decimal', () => {
-        const decimal = new Decimal(Infinity);
-        const result = Money.fromValue(decimal);
-
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        }
-      });
-    });
-
-    describe('fromValue', () => {
-      it('должен создать Money из валидной строки', () => {
-        const result = Money.fromValue('100.123456789');
-
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          const money = result.value;
-          expect(money.toDecimal().toString()).toBe('100.123456789');
-        }
-      });
-
-      it('должен создать Money из отрицательной строки', () => {
-        const result = Money.fromValue('-50.25');
-
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          const money = result.value;
-          expect(money.getAmount()).toBe(-50.25);
-        }
-      });
-
-      it('должен отклонить невалидную строку', () => {
-        const result = Money.fromValue('invalid');
-
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        }
-      });
-
-      it('должен отклонить пустую строку', () => {
-        const result = Money.fromValue('');
-
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        }
-      });
-    });
-
-    describe('fromValue с дефолтной валютой', () => {
-      it('должен создать USDC Money по умолчанию', () => {
-        const result = Money.fromValue(100);
-
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          const money = result.value;
-          expect(money.getAmount()).toBe(100);
-          expect(money.getCurrency()).toBe('USDC');
-        }
-      });
-
-      it('дефолт должен быть эквивалентен явному USDC', () => {
-        const m1 = unwrap(Money.fromValue(100));
-        const m2 = unwrap(Money.fromValue(100, 'USDC'));
-
-        expect(m1.equals(m2)).toBe(true);
-      });
-    });
-
-    describe('fromValue с превышением MAX_AMOUNT', () => {
-      it('должен отклонить положительное значение превышающее MAX_AMOUNT', () => {
-        const result = Money.fromValue(2e15); // Больше чем 1e15
-
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error).toBeInstanceOf(InvalidMoneyError);
-          expect(result.error.message).toContain('exceeds MAX_AMOUNT');
-        }
-      });
-
-      it('должен отклонить отрицательное значение превышающее MAX_AMOUNT', () => {
-        const result = Money.fromValue(-2e15); // Меньше чем -1e15
-
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error).toBeInstanceOf(InvalidMoneyError);
-          expect(result.error.message).toContain('exceeds MAX_AMOUNT');
-        }
-      });
-
-      it('должен принять значение равное MAX_AMOUNT', () => {
-        const result = Money.fromValue(1e15);
-
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          expect(result.value.getAmount()).toBe(1e15);
-        }
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            expect(result.value.getAmount()).toBe(1e15);
+          }
+        });
       });
     });
 
@@ -290,8 +300,7 @@ describe('Money', () => {
 
       it('должен отклонить операцию с разными валютами', () => {
         const usd = unwrap(Money.fromValue(100, 'USDC'));
-        // Используем обход типов для тестирования с другой валютой
-        const btc = new (Money as any)(new Decimal(1), 'BTC');
+        const btc = createMoneyForTest(1, 'BTC');
 
         const result = usd.add(btc);
 
@@ -316,8 +325,8 @@ describe('Money', () => {
       });
 
       it('должен отклонить сложение приводящее к не конечному значению', () => {
-        const m1 = new (Money as any)(new Decimal(Number.MAX_VALUE), 'USDC');
-        const m2 = new (Money as any)(new Decimal(Number.MAX_VALUE), 'USDC');
+        const m1 = createMoneyForTest(Number.MAX_VALUE, 'USDC');
+        const m2 = createMoneyForTest(Number.MAX_VALUE, 'USDC');
 
         const result = m1.add(m2);
 
@@ -367,8 +376,7 @@ describe('Money', () => {
 
       it('должен отклонить операцию с разными валютами', () => {
         const usd = unwrap(Money.fromValue(100, 'USDC'));
-        // Используем обход типов для тестирования с другой валютой
-        const eth = new (Money as any)(new Decimal(2), 'ETH');
+        const eth = createMoneyForTest(2, 'ETH');
 
         const result = usd.subtract(eth);
 
@@ -393,8 +401,8 @@ describe('Money', () => {
       });
 
       it('должен отклонить вычитание приводящее к не конечному значению', () => {
-        const m1 = new (Money as any)(new Decimal(Number.MAX_VALUE), 'USDC');
-        const m2 = new (Money as any)(new Decimal(-Number.MAX_VALUE), 'USDC');
+        const m1 = createMoneyForTest(Number.MAX_VALUE, 'USDC');
+        const m2 = createMoneyForTest(-Number.MAX_VALUE, 'USDC');
 
         const result = m1.subtract(m2);
 
@@ -601,7 +609,7 @@ describe('Money', () => {
       });
 
       it('должен отклонить деление приводящее к ошибке вычисления', () => {
-        const money = new (Money as any)(new Decimal('1e308'), 'USDC');
+        const money = createMoneyForTest(new Decimal('1e308'), 'USDC');
         const divisor = new Decimal('1e-308');
 
         const result = money.divide(divisor);

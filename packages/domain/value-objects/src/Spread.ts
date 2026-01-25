@@ -24,7 +24,7 @@
  * console.log(spread.widthPercentage()); // 8
  * ```
  */
-import { Result, Ok, Err, unwrap } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { Price } from './Price.js';
 import { InvalidPriceError, InvalidSpreadError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
@@ -219,6 +219,11 @@ export class Spread {
    * Середина представляет теоретическую "справедливую" цену.
    * Часто используется как референсная цена для аналитики.
    *
+   * Метод всегда возвращает валидный Price, так как:
+   * - bid и ask уже валидированы при создании Spread
+   * - среднее арифметическое двух валидных цен всегда валидно
+   * - диапазон: если 0 ≤ bid ≤ ask ≤ 1, то 0 ≤ (bid + ask) / 2 ≤ 1
+   *
    * @example
    * ```typescript
    * const spread = Spread.fromNumbers(0.48, 0.52);
@@ -232,7 +237,16 @@ export class Spread {
       .plus(this.ask.value)
       .dividedBy(2)
       .toNumber();
-    return unwrap(Price.fromValue(midValue));
+
+    // Defensive check: should never fail given validated bid/ask
+    const result = Price.fromValue(midValue);
+    if (!result.ok) {
+      throw new Error(
+        `Spread.midpoint: unexpected error creating Price from midValue ${midValue} ` +
+          `(bid=${this.bid.value}, ask=${this.ask.value}): ${result.error.message}`
+      );
+    }
+    return result.value;
   }
 
   /**

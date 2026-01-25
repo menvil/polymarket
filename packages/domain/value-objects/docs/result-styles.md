@@ -54,7 +54,9 @@ const doubled = map(result, balance => {
 });
 
 const chained = flatMap(result, balance =>
-  balance.add(unwrap(Balance.fromValue(500, 'USDC')))
+  flatMap(Balance.fromValue(500, 'USDC'), toAdd =>
+    balance.add(toAdd)
+  )
 );
 ```
 
@@ -137,7 +139,7 @@ if (balanceResult.ok && feeResult.ok) {
 
 // 3. Сложные цепочки — конвертируем в chain
 const finalAmount = toChain(balanceResult)
-  .flatMap(balance => {
+  .flatMapChain(balance => {
     return toChain(feeResult)
       .flatMap(fee => {
         const feeAmount = fee.of(balance.getAmount());

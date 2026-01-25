@@ -525,7 +525,7 @@ function calculateVWAP(trades: Trade[]): number {
     const qty = unwrap(Quantity.fromMarketData(trade.size));
     const value = qty.value * trade.price;
 
-    totalQuantity = totalQuantity.add(qty);
+    totalQuantity = unwrap(totalQuantity.add(qty));
     totalValue += value;
   }
 
@@ -635,7 +635,7 @@ interface QuantityOperations {
   add(other: Quantity): Result<Quantity, ArithmeticOverflowError>;
   subtract(other: Quantity): Result<Quantity, InvalidQuantityError>;
   multiply(factor: number): Result<Quantity, InvalidQuantityError | ArithmeticOverflowError>;
-  divide(divisor: number): Quantity;
+  divide(divisor: number): Result<Quantity, InvalidQuantityError | ArithmeticOverflowError | DivisionByZeroError>;
 
   // Сравнение
   isGreaterThan(other: Quantity): boolean;

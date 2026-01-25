@@ -17,7 +17,7 @@
  * import { unwrap } from '@polymarket/result';
  *
  * // Создание Money (USDC по умолчанию)
- * const moneyResult = unwrap(Money.fromValue(100);
+ * const moneyResult = Money.fromValue(100);
  * moneyResult.match({
  *   ok: (money) => console.log(money.getAmount()), // 100
  *   err: (error) => console.error(error.message)

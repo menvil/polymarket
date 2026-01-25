@@ -229,7 +229,8 @@ if (!invalidResult.ok) {
 - Конкуренция за top of book
 
 **Формула:**
-```
+
+```text
 New Bid = Old Bid + amount
 New Ask = Old Ask - amount
 New Width = Old Width - 2 * amount
@@ -274,7 +275,8 @@ if (!invalidWidenResult.ok) {
 - Снижение риска adverse selection
 
 **Формула:**
-```
+
+```text
 New Bid = Old Bid - amount
 New Ask = Old Ask + amount
 New Width = Old Width + 2 * amount
@@ -317,7 +319,8 @@ console.log(clamped.width());    // ~0.04 (preserved)
 - Repositioning spread without changing width
 
 **Формула:**
-```
+
+```text
 New Bid = Old Bid + amount
 New Ask = Old Ask + amount
 Width = constant
