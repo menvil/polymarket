@@ -4,7 +4,8 @@
   "private": true,
   "description": "Polymarket trading system monorepo",
   "workspaces": [
-    "packages/foundation/*"
+    "packages/foundation/*",
+    "packages/domain/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
@@ -13,6 +14,7 @@
     "typecheck": "npm run typecheck --workspaces",
     "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist"
   },
+  "dependencies": {},
   "devDependencies": {},
   "engines": {
     "node": ">=18.0.0",

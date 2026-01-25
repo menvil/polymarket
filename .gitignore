@@ -41,3 +41,13 @@ src_bundle.md
 snapshots/
 .env.smoke
 *.zip
+
+#ignore claude plans
+/VALUE_OBJECTS_ANALYSIS.md
+/STORAGE_AND_STATE_MANAGEMENT.md
+/ERRORS_FOR_VALUE_OBJECTS.md
+/ARCHITECTURE_INTEGRATION_PLAN.md
+/ARCHITECTURE_CONCEPTS_EXPLAINED.md
+
+# Domain entities (will be added later)
+packages/domain/entities
