@@ -94,6 +94,220 @@ describe('Percentage', () => {
         expect(Percentage.ONE_HUNDRED.getValue()).toBe(100);
       });
     });
+
+    describe('fromBasisPoints', () => {
+      it('должен создать процент из 100 базисных пунктов (1%)', () => {
+        const result = Percentage.fromBasisPoints(100);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getValue()).toBe(1);
+        }
+      });
+
+      it('должен создать процент из 250 базисных пунктов (2.5%)', () => {
+        const result = Percentage.fromBasisPoints(250);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getValue()).toBe(2.5);
+        }
+      });
+
+      it('должен создать процент из 10000 базисных пунктов (100%)', () => {
+        const result = Percentage.fromBasisPoints(10000);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getValue()).toBe(100);
+        }
+      });
+
+      it('должен создать процент из 0 базисных пунктов (0%)', () => {
+        const result = Percentage.fromBasisPoints(0);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getValue()).toBe(0);
+          expect(result.value.isZero()).toBe(true);
+        }
+      });
+
+      it('должен создать процент из 50 базисных пунктов (0.5%)', () => {
+        const result = Percentage.fromBasisPoints(50);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getValue()).toBe(0.5);
+        }
+      });
+
+      it('должен отклонить NaN', () => {
+        const result = Percentage.fromBasisPoints(NaN);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPercentageError);
+        }
+      });
+
+      it('должен отклонить Infinity', () => {
+        const result = Percentage.fromBasisPoints(Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPercentageError);
+        }
+      });
+    });
+
+    describe('toBasisPoints', () => {
+      it('должен вернуть 0 для ZERO', () => {
+        const bps = Percentage.ZERO.toBasisPoints();
+
+        expect(bps.toNumber()).toBe(0);
+      });
+
+      it('должен вернуть 10000 для ONE_HUNDRED', () => {
+        const bps = Percentage.ONE_HUNDRED.toBasisPoints();
+
+        expect(bps.toNumber()).toBe(10000);
+      });
+
+      it('должен вернуть 100 для 1%', () => {
+        const pct = unwrap(Percentage.fromValue(1));
+        const bps = pct.toBasisPoints();
+
+        expect(bps.toNumber()).toBe(100);
+      });
+
+      it('должен вернуть 250 для 2.5%', () => {
+        const pct = unwrap(Percentage.fromValue(2.5));
+        const bps = pct.toBasisPoints();
+
+        expect(bps.toNumber()).toBe(250);
+      });
+
+      it('должен вернуть 50 для 0.5%', () => {
+        const pct = unwrap(Percentage.fromValue(0.5));
+        const bps = pct.toBasisPoints();
+
+        expect(bps.toNumber()).toBe(50);
+      });
+    });
+
+    describe('toDecimalFraction', () => {
+      it('должен вернуть 0 для ZERO', () => {
+        const decimal = Percentage.ZERO.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(0);
+      });
+
+      it('должен вернуть 1 для ONE_HUNDRED', () => {
+        const decimal = Percentage.ONE_HUNDRED.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(1);
+      });
+
+      it('должен вернуть 0.01 для 1%', () => {
+        const pct = unwrap(Percentage.fromValue(1));
+        const decimal = pct.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(0.01);
+      });
+
+      it('должен вернуть 0.025 для 2.5%', () => {
+        const pct = unwrap(Percentage.fromValue(2.5));
+        const decimal = pct.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(0.025);
+      });
+
+      it('должен вернуть 0.005 для 0.5%', () => {
+        const pct = unwrap(Percentage.fromValue(0.5));
+        const decimal = pct.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(0.005);
+      });
+
+      it('должен вернуть 0.5 для 50%', () => {
+        const pct = unwrap(Percentage.fromValue(50));
+        const decimal = pct.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(0.5);
+      });
+    });
+
+    describe('Round-trip: fromBasisPoints -> toBasisPoints', () => {
+      it('должен сохранить значение при преобразовании 100 bps', () => {
+        const original = 100;
+        const pct = unwrap(Percentage.fromBasisPoints(original));
+        const roundtrip = pct.toBasisPoints().toNumber();
+
+        expect(roundtrip).toBe(original);
+      });
+
+      it('должен сохранить значение при преобразовании 250 bps', () => {
+        const original = 250;
+        const pct = unwrap(Percentage.fromBasisPoints(original));
+        const roundtrip = pct.toBasisPoints().toNumber();
+
+        expect(roundtrip).toBe(original);
+      });
+
+      it('должен сохранить значение при преобразовании 10000 bps', () => {
+        const original = 10000;
+        const pct = unwrap(Percentage.fromBasisPoints(original));
+        const roundtrip = pct.toBasisPoints().toNumber();
+
+        expect(roundtrip).toBe(original);
+      });
+
+      it('должен сохранить значение при преобразовании 0 bps', () => {
+        const original = 0;
+        const pct = unwrap(Percentage.fromBasisPoints(original));
+        const roundtrip = pct.toBasisPoints().toNumber();
+
+        expect(roundtrip).toBe(original);
+      });
+    });
+
+    describe('Взаимосвязь fromBasisPoints и toDecimalFraction', () => {
+      it('100 bps (1%) должны дать 0.01 в decimal fraction', () => {
+        const pct = unwrap(Percentage.fromBasisPoints(100));
+        const decimal = pct.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(0.01);
+      });
+
+      it('250 bps (2.5%) должны дать 0.025 в decimal fraction', () => {
+        const pct = unwrap(Percentage.fromBasisPoints(250));
+        const decimal = pct.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(0.025);
+      });
+
+      it('10000 bps (100%) должны дать 1.0 в decimal fraction', () => {
+        const pct = unwrap(Percentage.fromBasisPoints(10000));
+        const decimal = pct.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(1.0);
+      });
+
+      it('0 bps (0%) должны дать 0.0 в decimal fraction', () => {
+        const pct = unwrap(Percentage.fromBasisPoints(0));
+        const decimal = pct.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(0);
+      });
+
+      it('50 bps (0.5%) должны дать 0.005 в decimal fraction', () => {
+        const pct = unwrap(Percentage.fromBasisPoints(50));
+        const decimal = pct.toDecimalFraction();
+
+        expect(decimal.toNumber()).toBe(0.005);
+      });
+    });
   });
 
   describe('Математические операции', () => {
