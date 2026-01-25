@@ -281,6 +281,10 @@ if (!insufficient.ok) {
 **Use case: Списание средств при выполнении ордера**
 
 ```typescript
+import { Balance } from '@polymarket/value-objects';
+import { unwrap, Err, Result } from '@polymarket/result';
+import { InvalidMoneyError, CurrencyMismatchError } from '@polymarket/errors';
+
 function executeOrder(
   balance: Balance,
   orderCost: number
