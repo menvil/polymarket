@@ -16,7 +16,7 @@
 
 Spread (спред) — это разница между ценой bid (покупка) и ask (продажа):
 
-```
+```text
 Spread = Ask - Bid
 
 Bid  ←─────── Spread Width ────────→  Ask
@@ -447,7 +447,7 @@ class MarketMaker {
 
     // Сдвигаем спред: long position -> вниз (encourage sells)
     //                 short position -> вверх (encourage buys)
-    return this.baseSpread.shift(-skewAmount);
+    return unwrap(this.baseSpread.shift(-skewAmount));
   }
 
   // Корректировка ширины на основе волатильности
@@ -458,9 +458,9 @@ class MarketMaker {
     const widthAdjustment = volatility * 0.01; // 1 cent per volatility unit
 
     if (volatility > 1.0) {
-      return this.baseSpread.widen(widthAdjustment);
+      return unwrap(this.baseSpread.widen(widthAdjustment));
     } else {
-      return this.baseSpread.tighten(widthAdjustment);
+      return unwrap(this.baseSpread.tighten(widthAdjustment));
     }
   }
 
@@ -469,11 +469,11 @@ class MarketMaker {
     let spread = this.baseSpread;
 
     // Применяем корректировки последовательно
-    spread = this.adjustForInventory(inventory, maxInventory)
-      .widen(0); // Ensure we start from adjusted position
+    const adjustedSpread = this.adjustForInventory(inventory, maxInventory);
+    spread = unwrap(adjustedSpread.shift(0)); // Ensure we start from adjusted position
 
     spread = spread.widthPercentage() < 5
-      ? spread.widen(0.01) // Minimum 5% spread
+      ? unwrap(spread.widen(0.01)) // Minimum 5% spread
       : spread;
 
     return spread;
@@ -662,8 +662,8 @@ function adjustSpreadForOrderFlow(
   const widenAmount = Math.abs(imbalance) * 0.005; // Max 0.5 cent widen
 
   // Apply adjustments
-  let adjusted = baseSpread.shift(shiftAmount);
-  adjusted = adjusted.widen(widenAmount);
+  let adjusted = unwrap(baseSpread.shift(shiftAmount));
+  adjusted = unwrap(adjusted.widen(widenAmount));
 
   return adjusted;
 }

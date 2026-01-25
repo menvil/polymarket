@@ -89,7 +89,7 @@ if (balance.hasEnough(500)) {
 // Операции с балансом (возвращают Result)
 const deposit = unwrap(Balance.fromValue(200, 'USDC'));
 const newBalance = unwrap(balance.add(deposit));  // Result!
-console.log(unwrap(newBalance).toString()); // "1200 USDC"
+console.log(newBalance.toString()); // "1200 USDC"
 ```
 
 **Особенности:**
@@ -112,8 +112,8 @@ import { Price } from '@polymarket/value-objects';
 const price = Price.fromValue(0.55); // 55% вероятность
 price.match({
   ok: (p) => {
-    console.log(p.getValue());        // 0.55
-    console.log(p.toPercentage());    // 55%
+    console.log(p.value);             // 0.55
+    console.log(p.toPercentage());    // "55.00%"
   },
   err: (error) => console.error(error)
 });
@@ -167,20 +167,23 @@ quote.match({
 Спред между ценами покупки и продажи.
 
 ```typescript
-import { Spread } from '@polymarket/value-objects';
+import { Spread, Price } from '@polymarket/value-objects';
+import { unwrap } from '@polymarket/result';
 
 const bid = unwrap(Price.fromValue(0.54));
 const ask = unwrap(Price.fromValue(0.56));
 
-const spread = Spread.fromPrices(bid, ask);
+const spread = Spread.create(bid, ask);
 spread.match({
   ok: (s) => {
-    console.log(s.getValue());        // 0.02
-    console.log(s.toPercentage());    // 2%
-    console.log(s.toBasisPoints());   // 200 bp
+    console.log(s.width());              // 0.02
+    console.log(s.widthPercentage());    // 2
   },
   err: (error) => console.error(error)
 });
+
+// Или напрямую из чисел
+const spreadResult = Spread.fromNumbers(0.54, 0.56);
 ```
 
 ## Установка
@@ -288,15 +291,13 @@ if (pnl.isNegative()) {
 
 ### Подробные гайды
 
-- 💰 **[Money](./docs/money.md)** — денежные суммы с высокой точностью
-- 📊 **[Percentage](./docs/percentage.md)** — процентные значения для комиссий и расчётов
-- 💵 **[Balance](./docs/balance.md)** — балансы счетов пользователей
+- 💰 **[Money](./money.md)** — денежные суммы с высокой точностью
+- 📊 **[Percentage](./percentage.md)** — процентные значения для комиссий и расчётов
+- 💵 **[Balance](./balance.md)** — балансы счетов пользователей
 
 ### Архитектурные документы
 
-- 📊 **[API Comparison](./API_COMPARISON.md)** — сравнение API всех value objects
-- 📝 **[Percentage Refactoring](./PERCENTAGE_REFACTORING.md)** — migration guide для Percentage
-- 📝 **[Refactoring Summary](./REFACTORING_SUMMARY.md)** — итоговое резюме рефакторинга
+- 🎨 **[Result Styles](./result-styles.md)** — стили работы с Result, архитектурное правило когда возвращать Result
 
 ## Особенности
 

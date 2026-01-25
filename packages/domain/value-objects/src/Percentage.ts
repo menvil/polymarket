@@ -588,7 +588,9 @@ export class Percentage {
    * Разделить на коэффициент
    *
    * @param divisor - Делитель (number или Decimal)
-   * @returns Result с новым Percentage или DivisionByZeroError
+   * @returns Result с новым Percentage или ошибкой (DivisionByZeroError | ArithmeticOverflowError)
+   * @throws {DivisionByZeroError} Если делитель равен нулю, не является конечным числом, или результат деления не конечен
+   * @throws {ArithmeticOverflowError} Если произошла непредвиденная ошибка при выполнении деления
    *
    * @example
    * ```typescript
@@ -596,7 +598,7 @@ export class Percentage {
    * const half = total.divide(2);
    * half.match({
    *   ok: (pct) => console.log(pct.getValue()), // 10
-   *   err: (error) => console.error('Division by zero')
+   *   err: (error) => console.error('Division error:', error.message)
    * });
    * ```
    */
@@ -651,6 +653,41 @@ export class Percentage {
                 divisor: divisorDecimal.toNumber(),
                 result: result.toString(),
                 operation: 'divide percentage'
+              }
+            }
+          )
+        );
+      }
+
+      // Проверка что результат находится в допустимом диапазоне
+      if (result.greaterThan(Percentage.MAX_PERCENTAGE)) {
+        return Err(
+          new ArithmeticOverflowError(
+            (ctx: Record<string, unknown>) =>
+              `Division result ${ctx.result} exceeds MAX_PERCENTAGE (${ctx.max})`,
+            {
+              context: {
+                value: this.value.toString(),
+                divisor: divisorDecimal.toString(),
+                result: result.toString(),
+                max: Percentage.MAX_PERCENTAGE.toString()
+              }
+            }
+          )
+        );
+      }
+
+      if (result.lessThan(Percentage.MIN_PERCENTAGE)) {
+        return Err(
+          new ArithmeticOverflowError(
+            (ctx: Record<string, unknown>) =>
+              `Division result ${ctx.result} below MIN_PERCENTAGE (${ctx.min})`,
+            {
+              context: {
+                value: this.value.toString(),
+                divisor: divisorDecimal.toString(),
+                result: result.toString(),
+                min: Percentage.MIN_PERCENTAGE.toString()
               }
             }
           )

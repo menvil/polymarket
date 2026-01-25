@@ -198,11 +198,15 @@ describe('Price', () => {
         expect(result.value).toBe(0.55);
       });
 
-      it('should clamp at maximum', () => {
+      it('should return error when exceeding maximum', () => {
         const price = unwrap(Price.fromValue(0.98));
-        const result = unwrap(price.add(0.05));
+        const result = price.add(0.05);
 
-        expect(result.value).toBe(0.9999);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPriceError);
+          expect(result.error.message).toContain('must be in range');
+        }
       });
 
       it('should return error on negative amount', () => {
@@ -236,11 +240,15 @@ describe('Price', () => {
         expect(result.value).toBe(0.45);
       });
 
-      it('should clamp at minimum', () => {
+      it('should return error when going below minimum', () => {
         const price = unwrap(Price.fromValue(0.002));
-        const result = unwrap(price.subtract(0.002));
+        const result = price.subtract(0.002);
 
-        expect(result.value).toBe(0.0001);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPriceError);
+          expect(result.error.message).toContain('must be in range');
+        }
       });
 
       it('should return error on negative amount', () => {
@@ -263,11 +271,15 @@ describe('Price', () => {
         expect(result.value).toBe(0.8);
       });
 
-      it('should clamp result within bounds', () => {
+      it('should return error when result exceeds bounds', () => {
         const price = unwrap(Price.fromValue(0.99));
-        const result = unwrap(price.multiply(2));
+        const result = price.multiply(2);
 
-        expect(result.value).toBe(0.9999);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPriceError);
+          expect(result.error.message).toContain('must be in range');
+        }
       });
 
       it('should return error on negative factor', () => {

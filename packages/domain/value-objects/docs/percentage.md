@@ -26,16 +26,26 @@ MAX: +1,000,000%
 
 ## Создание (Factory Methods)
 
-### fromValue(value: number)
+### fromValue(value: number | string | Decimal)
 
-Создать из числа (шкала 0-100).
+Создать из числа, строки или Decimal (шкала 0-100).
 
 ```typescript
 import { Percentage } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
 
+// Из числа
 const fee = Percentage.fromValue(2.5);  // 2.5%
 const gain = Percentage.fromValue(15);  // 15%
 const loss = Percentage.fromValue(-10); // -10% (убыток)
+
+// Из строки (с % или без)
+const pct1 = Percentage.fromValue("25.5");  // 25.5%
+const pct2 = Percentage.fromValue("25.5%"); // 25.5%
+const pct3 = Percentage.fromValue("-10%");  // -10%
+
+// Из Decimal (для высокой точности)
+const precise = Percentage.fromValue(new Decimal('2.5'));  // 2.5%
 
 // Обработка результата
 fee.match({
@@ -123,13 +133,13 @@ total.match({
 // ❌ СТАРАЯ ВЕРСИЯ (опасно!)
 const a = Percentage.fromValue(999999);
 const b = Percentage.fromValue(10);
-const sum = a.add(b); // Молча возвращает 100%! Баг скрыт!
+const sum = a.add(b); // Молча возвращает 1_000_000% (clamped)! Баг скрыт!
 
 // ✅ НОВАЯ ВЕРСИЯ (безопасно!)
 const sum = a.add(b);
 sum.match({
   ok: (pct) => console.log(pct), // Не выполнится
-  err: (error) => console.error('Overflow detected!') // Явная ошибка!
+  err: (error) => console.error('Overflow detected! Result exceeds MAX_PERCENTAGE (1_000_000%)') // Явная ошибка!
 });
 ```
 

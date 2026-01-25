@@ -395,74 +395,99 @@ export class Money {
    * Умножить на коэффициент
    *
    * @param factor - Коэффициент (number или Decimal)
-   * @returns Result с новым Money или ArithmeticOverflowError
+   * @returns Result с новым Money или ошибкой (InvalidMoneyError | ArithmeticOverflowError)
+   *
+   * @throws {InvalidMoneyError} Если factor невалиден (не конечное число)
+   * @throws {ArithmeticOverflowError} Если результат превышает максимальное значение
    *
    * @example
    * ```typescript
-   * const money = Money.fromValue(100).unwrap();
+   * import { unwrap } from '@polymarket/result';
+   *
+   * const money = unwrap(Money.fromValue(100));
    * const doubled = money.multiply(2);
    * doubled.match({
    *   ok: (m) => console.log(m.getAmount()), // 200
-   *   err: (error) => console.error('Overflow')
+   *   err: (error) => console.error('Error:', error.message)
    * });
    * ```
    */
-  multiply(factor: number | Decimal): Result<Money, ArithmeticOverflowError> {
+  multiply(factor: number | Decimal): Result<Money, InvalidMoneyError | ArithmeticOverflowError> {
+    // Валидация параметра factor
+    let factorDecimal: Decimal;
     try {
-      const factorDecimal = factor instanceof Decimal ? factor : new Decimal(factor);
-      const result = this.amount.times(factorDecimal);
-
-      // Проверка конечности
-      if (!result.isFinite()) {
-        return Err(
-          new ArithmeticOverflowError(
-            (ctx: Record<string, unknown>) =>
-              `Multiplication overflow: ${ctx.a} * ${ctx.b} = ${ctx.result}`,
-            {
-              context: {
-                operation: 'multiply',
-                a: this.amount.toNumber(),
-                b: factorDecimal.toNumber(),
-                result: Infinity
-              }
-            }
-          )
-        );
-      }
-
-      // Проверка превышения максимальной суммы
-      if (result.abs().greaterThan(Money.MAX_AMOUNT)) {
-        return Err(
-          new ArithmeticOverflowError(
-            (ctx: Record<string, unknown>) =>
-              `Multiplication overflow: result ${ctx.result} exceeds maximum ${ctx.max}`,
-            {
-              context: {
-                operation: 'multiply',
-                a: this.amount.toString(),
-                b: factorDecimal.toString(),
-                result: result.toString(),
-                max: Money.MAX_AMOUNT.toString()
-              }
-            }
-          )
-        );
-      }
-
-      return Ok(new Money(result, this.currency));
+      factorDecimal = factor instanceof Decimal ? factor : new Decimal(factor);
     } catch (error) {
       return Err(
-        new ArithmeticOverflowError(
-          `Multiplication error: ${error}`,
+        new InvalidMoneyError(
+          (ctx: Record<string, unknown>) =>
+            `Invalid factor: ${ctx.factor}`,
           {
             context: {
-              operation: 'multiply',
+              factor: String(factor),
               error: String(error)
             }
           }
         )
       );
     }
+
+    // Проверка что factor является конечным числом
+    if (!factorDecimal.isFinite()) {
+      return Err(
+        new InvalidMoneyError(
+          (ctx: Record<string, unknown>) =>
+            `Invalid factor ${ctx.factor}: must be a finite number`,
+          {
+            context: {
+              factor: factorDecimal.toString(),
+              operation: 'multiply money'
+            }
+          }
+        )
+      );
+    }
+
+    const result = this.amount.times(factorDecimal);
+
+    // Проверка конечности результата
+    if (!result.isFinite()) {
+      return Err(
+        new ArithmeticOverflowError(
+          (ctx: Record<string, unknown>) =>
+            `Multiplication overflow: ${ctx.a} * ${ctx.b} = ${ctx.result}`,
+          {
+            context: {
+              operation: 'multiply',
+              a: this.amount.toNumber(),
+              b: factorDecimal.toNumber(),
+              result: Infinity
+            }
+          }
+        )
+      );
+    }
+
+    // Проверка превышения максимальной суммы
+    if (result.abs().greaterThan(Money.MAX_AMOUNT)) {
+      return Err(
+        new ArithmeticOverflowError(
+          (ctx: Record<string, unknown>) =>
+            `Multiplication overflow: result ${ctx.result} exceeds maximum ${ctx.max}`,
+          {
+            context: {
+              operation: 'multiply',
+              a: this.amount.toString(),
+              b: factorDecimal.toString(),
+              result: result.toString(),
+              max: Money.MAX_AMOUNT.toString()
+            }
+          }
+        )
+      );
+    }
+
+    return Ok(new Money(result, this.currency));
   }
 
   /**
@@ -542,10 +567,15 @@ export class Money {
       return Ok(new Money(result, this.currency));
     } catch (error) {
       return Err(
-        new DivisionByZeroError(
-          `Division error: ${error}`,
+        new ArithmeticOverflowError(
+          (ctx: Record<string, unknown>) =>
+            `Unexpected division error: ${ctx.error}`,
           {
             context: {
+              operation: 'divide money',
+              amount: this.amount.toString(),
+              currency: this.currency,
+              divisor: String(divisor),
               error: String(error)
             }
           }

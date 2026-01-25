@@ -416,18 +416,21 @@ withAdjustment(bidAdjustment: number, askAdjustment: number): Result<Quote, Inva
 Этот метод используется для различных стратегий корректировки котировок:
 
 1. **Расширение спреда** (увеличение profit margin):
+
    ```typescript
    const widened = unwrap(quote.withAdjustment(-0.01, +0.01));
    // bid: 0.64 → 0.63, ask: 0.66 → 0.67, spread: 0.02 → 0.04
    ```
 
 2. **Сужение спреда** (повышение вероятности исполнения):
+
    ```typescript
    const narrowed = unwrap(quote.withAdjustment(+0.005, -0.005));
    // bid: 0.64 → 0.645, ask: 0.66 → 0.655, spread: 0.02 → 0.01
    ```
 
 3. **Перекос (inventory skew)**:
+
    ```typescript
    // Слишком много инвентаря → снижаем обе стороны
    // (делаем покупку менее привлекательной)
@@ -437,6 +440,7 @@ withAdjustment(bidAdjustment: number, askAdjustment: number): Result<Quote, Inva
    ```
 
 4. **Сдвиг вверх/вниз** (следование за рынком):
+
    ```typescript
    // Рынок движется вверх → сдвигаем котировку вверх
    const shifted = unwrap(quote.withAdjustment(+0.02, +0.02));
@@ -996,18 +1000,38 @@ if (!quote.crossesMarket(marketBid, marketAsk)) {
 - Timestamp нужен для определения stale quotes
 - Помогает избежать adverse selection (торговли по устаревшим ценам)
 
-### 3. Почему getSpread/getMidPrice throw вместо возврата null?
+### 3. Почему getSpread/getMidPrice возвращают Result вместо null?
 
-**Решение:** Fail-fast при некорректном использовании.
+**Решение:** Явная обработка ошибок через Result API.
 
 **Обоснование:**
-- Вызов getSpread() на односторонней котировке — программная ошибка
-- TypeScript проверки не помогут в runtime
-- Разработчик должен явно проверить `isTwoSided()` перед вызовом
+- Вызов getSpread() на односторонней котировке возвращает Err с InvalidQuoteError
+- Ошибка обрабатывается явно через Result (unwrap или match)
+- Разработчик может проверить `isTwoSided()` до вызова или обработать Err после
 
-**Альтернативы:**
-- Возвращать `null` — тихие ошибки, сложнее отлаживать
-- Возвращать `Option<number>` — дополнительная сложность без преимуществ
+**Пример использования:**
+
+```typescript
+const quote = Quote.fromOneSided(bid, 'BUY');
+
+// Вариант 1: Проверка перед вызовом
+if (quote.isTwoSided()) {
+  const spread = unwrap(quote.getSpread());
+  console.log(spread);
+}
+
+// Вариант 2: Обработка Result
+const spreadResult = quote.getSpread();
+spreadResult.match({
+  ok: (spread) => console.log('Spread:', spread),
+  err: (error) => console.log('One-sided quote')
+});
+```
+
+**Преимущества:**
+- Ошибки явно типизированы и обрабатываются
+- Нет null/undefined для проверки
+- Консистентно с остальным API проекта
 
 ### 4. Почему timestamp не участвует в equals()?
 

@@ -254,14 +254,16 @@ describe('Spread', () => {
         expect(widened.width()).toBeCloseTo(0.08, 2);
       });
 
-      it('should respect price boundaries', () => {
+      it('should return error when exceeding price boundaries', () => {
         const spread = unwrap(Spread.fromNumbers(0.001, 0.999));
 
-        const widened = unwrap(spread.widen(0.1));
+        const result = spread.widen(0.1);
 
-        // Should clamp to MIN_PRICE and MAX_PRICE
-        expect(widened.bid.value).toBe(0.0001);
-        expect(widened.ask.value).toBe(0.9999);
+        // Should return error when bid/ask go out of bounds
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('must be in range');
+        }
       });
 
       it('should return error on negative amount', () => {

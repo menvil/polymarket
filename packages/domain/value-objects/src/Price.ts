@@ -16,7 +16,8 @@
  * const result = Price.fromValue(0.5234);
  * if (result.ok) {
  *   console.log(result.value.value); // 0.5234
- *   console.log(result.value.toTick(0.0001).value); // 0.5234 (rounded to tick)
+ *   const rounded = unwrap(result.value.toTick(0.0001));
+ *   console.log(rounded.value); // 0.5234 (rounded to tick)
  * }
  *
  * // Или используя unwrap
@@ -219,7 +220,7 @@ export class Price {
    * 2. Применяет roundFn (Math.round(52.34) = 52)
    * 3. Умножает обратно на tickSize (52 * 0.01 = 0.52)
    * 4. Фиксирует количество знаков по tickSize
-   * 5. Зажимает в диапазон [MIN_PRICE, MAX_PRICE]
+   * 5. Валидирует диапазон через fromValue (возвращает ошибку при overflow)
    *
    * Использует Decimal.js для точных вычислений и избежания floating-point ошибок.
    *
@@ -256,16 +257,16 @@ export class Price {
     // Это правильно обрабатывает экспоненциальную нотацию (1e-7)
     const decimals = tickSizeDecimal.decimalPlaces();
 
-    // Фиксируем количество знаков и зажимаем в допустимый диапазон
+    // Фиксируем количество знаков
     const fixed = Number(rounded.toFixed(decimals));
-    return Price.fromValue(Math.max(Price.MIN_PRICE, Math.min(Price.MAX_PRICE, fixed)));
+    return Price.fromValue(fixed);
   }
 
   /**
    * Прибавляет к цене
    *
    * @param amount - Сумма для прибавления (должна быть >= 0 и конечным числом)
-   * @returns Result с новым Price (зажатый в MAX_PRICE) или InvalidPriceError
+   * @returns Result с новым Price или InvalidPriceError при overflow
    *
    * @example
    * ```typescript
@@ -298,14 +299,14 @@ export class Price {
       );
     }
     const result = new Decimal(this.value).plus(amount).toNumber();
-    return Price.fromValue(Math.min(Price.MAX_PRICE, result));
+    return Price.fromValue(result);
   }
 
   /**
    * Вычитает из цены
    *
    * @param amount - Сумма для вычитания (должна быть >= 0 и конечным числом)
-   * @returns Result с новым Price (зажатый в MIN_PRICE) или InvalidPriceError
+   * @returns Result с новым Price или InvalidPriceError при underflow
    *
    * @example
    * ```typescript
@@ -338,14 +339,14 @@ export class Price {
       );
     }
     const result = new Decimal(this.value).minus(amount).toNumber();
-    return Price.fromValue(Math.max(Price.MIN_PRICE, result));
+    return Price.fromValue(result);
   }
 
   /**
    * Умножает цену на коэффициент
    *
    * @param factor - Коэффициент умножения (должен быть >= 0 и конечным числом)
-   * @returns Result с новым Price (зажатый в [MIN_PRICE, MAX_PRICE]) или InvalidPriceError
+   * @returns Result с новым Price или InvalidPriceError при overflow
    *
    * @example
    * ```typescript
@@ -354,7 +355,7 @@ export class Price {
    * const price = unwrap(Price.fromValue(0.5));
    * const result = price.multiply(2);
    * if (result.ok) {
-   *   console.log(result.value.value); // 0.9999 (clamped to MAX)
+   *   console.log(result.value.value); // 1 (но вернёт ошибку если > MAX_PRICE)
    * }
    * ```
    */
@@ -378,7 +379,7 @@ export class Price {
       );
     }
     const result = new Decimal(this.value).times(factor).toNumber();
-    return Price.fromValue(Math.max(Price.MIN_PRICE, Math.min(Price.MAX_PRICE, result)));
+    return Price.fromValue(result);
   }
 
   /**

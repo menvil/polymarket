@@ -12,13 +12,13 @@
  * const result = Quantity.fromValue(10.5);
  * if (result.ok) {
  *   const qty = result.value;
- *   const rounded = qty.toTick(0.1);
+ *   const rounded = unwrap(qty.toTick(0.1));
  *   console.log(rounded.value); // 10.5
  * }
  *
  * // Или используя unwrap
  * const qty = unwrap(Quantity.fromValue(10.5));
- * const rounded = qty.toTick(0.1);
+ * const rounded = unwrap(qty.toTick(0.1));
  * console.log(rounded.value); // 10.5
  * ```
  */
@@ -509,20 +509,35 @@ export class Quantity {
   /**
    * Создаёт Quantity из JSON объекта
    *
-   * @param json - JSON объект с полем value
+   * @param json - JSON объект с полем value и опциональным minSize
    * @returns Result с Quantity или InvalidQuantityError
+   *
+   * @remarks
+   * Если JSON содержит поле minSize, оно будет использовано для валидации.
+   * Это важно для правильной обработки данных с разных рынков,
+   * где orderMinSize может отличаться.
    *
    * @example
    * ```typescript
-   * const json = { value: 100 };
-   * const result = Quantity.fromJSON(json);
-   * if (result.ok) {
-   *   console.log(result.value.value); // 100
+   * import { unwrap } from '@polymarket/result';
+   *
+   * // Без minSize (используется дефолтное значение 1)
+   * const json1 = { value: 100 };
+   * const result1 = Quantity.fromJSON(json1);
+   * if (result1.ok) {
+   *   console.log(result1.value.value); // 100
+   * }
+   *
+   * // С minSize из данных рынка
+   * const json2 = { value: 0.5, minSize: 0.1 };
+   * const result2 = Quantity.fromJSON(json2);
+   * if (result2.ok) {
+   *   console.log(result2.value.value); // 0.5
    * }
    * ```
    */
-  public static fromJSON(json: { value: number }): Result<Quantity, InvalidQuantityError> {
-    return Quantity.fromValue(json.value);
+  public static fromJSON(json: { value: number; minSize?: number }): Result<Quantity, InvalidQuantityError> {
+    return Quantity.fromValue(json.value, json.minSize);
   }
 
   /**

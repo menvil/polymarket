@@ -209,7 +209,9 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const balance = Balance.fromValue(1000, 'USDC').unwrap();
+   * import { unwrap } from '@polymarket/result';
+   *
+   * const balance = unwrap(Balance.fromValue(1000, 'USDC'));
    * balance.hasEnough(500); // true
    * balance.hasEnough(1500); // false
    * ```
@@ -227,8 +229,10 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const b1 = Balance.fromValue(1000, 'USDC').unwrap();
-   * const b2 = Balance.fromValue(500, 'USDC').unwrap();
+   * import { unwrap } from '@polymarket/result';
+   *
+   * const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+   * const b2 = unwrap(Balance.fromValue(500, 'USDC'));
    * const sumResult = b1.add(b2);
    * // Result.ok(Balance(1500, 'USDC'))
    * ```
@@ -261,8 +265,10 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const b1 = Balance.fromValue(1000, 'USDC').unwrap();
-   * const b2 = Balance.fromValue(300, 'USDC').unwrap();
+   * import { unwrap } from '@polymarket/result';
+   *
+   * const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+   * const b2 = unwrap(Balance.fromValue(300, 'USDC'));
    * const result = b1.subtract(b2);
    * // Result.ok(Balance(700, 'USDC'))
    * ```
@@ -313,8 +319,10 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const b1 = Balance.fromValue(1000, 'USDC').unwrap();
-   * const b2 = Balance.fromValue(1000, 'USDC').unwrap();
+   * import { unwrap } from '@polymarket/result';
+   *
+   * const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+   * const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
    * b1.equals(b2); // true
    * ```
    */

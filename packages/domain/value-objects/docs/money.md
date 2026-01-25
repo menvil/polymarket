@@ -164,6 +164,7 @@ sum.match({
 - `CurrencyMismatchError` — несоответствие валют
 
 **Пример ошибки валюты:**
+
 ```typescript
 const usdc = unwrap(Money.fromValue(100, 'USDC'));
 const btc = unwrap(Money.fromValue(1, 'BTC')); // Если BTC добавлен
@@ -491,7 +492,7 @@ const result = initialBalance.add(deposit)
 result.match({
   ok: (finalBalance) => {
     console.log(`Final balance: ${finalBalance.toString()}`);
-    // "Final balance: $1,300.00 USDC"
+    // "Final balance: $1300.00 USDC"
   },
   err: (error) => console.error('Operation failed:', error)
 });

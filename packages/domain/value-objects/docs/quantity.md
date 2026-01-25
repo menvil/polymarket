@@ -26,12 +26,12 @@
 
 ## Factory Methods
 
-### `fromValue(value: number, minSize?: number): Result<Quantity, InvalidQuantityError>`
+### `fromValue(value: number | string | Decimal, minSize?: number): Result<Quantity, InvalidQuantityError>`
 
 Создаёт Quantity для ордера с валидацией минимального размера.
 
 **Параметры:**
-- `value` - количество (number)
+- `value` - количество (может быть number, string или Decimal для точных вычислений)
 - `minSize` - минимальный размер (по умолчанию 1)
 
 **Валидация:**
@@ -168,7 +168,7 @@ console.log(ceiled.value); // 10.6
 
 ## Арифметические операции
 
-### `add(other: Quantity): Quantity`
+### `add(other: Quantity): Result<Quantity, ArithmeticOverflowError>`
 
 Складывает количества.
 
@@ -176,16 +176,25 @@ console.log(ceiled.value); // 10.6
 const q1 = unwrap(Quantity.fromValue(10));
 const q2 = unwrap(Quantity.fromValue(5));
 
-const sum = q1.add(q2);
+const sumResult = q1.add(q2);
+if (sumResult.ok) {
+  console.log(sumResult.value.value); // 15
+}
+
+// Или используя unwrap
+const sum = unwrap(q1.add(q2));
 console.log(sum.value); // 15
 
 // Ошибка при overflow
 const huge1 = unwrap(Quantity.fromValue(Number.MAX_VALUE));
 const huge2 = unwrap(Quantity.fromValue(Number.MAX_VALUE));
-huge1.add(huge2); // Throws Error
+const overflowResult = huge1.add(huge2);
+if (!overflowResult.ok) {
+  console.error('Overflow:', overflowResult.error.message);
+}
 ```
 
-### `subtract(other: Quantity): Quantity`
+### `subtract(other: Quantity): Result<Quantity, InvalidQuantityError>`
 
 Вычитает количества.
 
@@ -193,7 +202,13 @@ huge1.add(huge2); // Throws Error
 const q1 = unwrap(Quantity.fromValue(10));
 const q2 = unwrap(Quantity.fromValue(3));
 
-const diff = q1.subtract(q2);
+const diffResult = q1.subtract(q2);
+if (diffResult.ok) {
+  console.log(diffResult.value.value); // 7
+}
+
+// Или используя unwrap
+const diff = unwrap(q1.subtract(q2));
 console.log(diff.value); // 7
 
 // Ошибка при отрицательном результате
@@ -364,7 +379,7 @@ function calculateOrderSize(
   const qty = unwrap(Quantity.fromValue(desiredSize, marketMinSize));
 
   // Округлить к tick size рынка
-  const rounded = qty.floorToTick(marketTickSize);
+  const rounded = unwrap(qty.floorToTick(marketTickSize));
 
   return rounded;
 }
@@ -390,13 +405,13 @@ class Order {
   applyFill(fillSize: number): Order {
     // Используем fromMarketData так как биржа может прислать < MIN_SIZE
     const fillQty = unwrap(Quantity.fromMarketData(fillSize));
-    const newFilled = this.filled.add(fillQty);
+    const newFilled = unwrap(this.filled.add(fillQty));
 
     return new Order(this.originalSize, newFilled);
   }
 
   getRemainingSize(): Quantity {
-    return this.originalSize.subtract(this.filled);
+    return unwrap(this.originalSize.subtract(this.filled));
   }
 
   isFilled(): boolean {
@@ -428,16 +443,16 @@ function calculatePositionSize(
   tickSize: number
 ): Quantity {
   // Риск на сделку
-  const riskAmount = portfolioSize.multiply(riskPercentage / 100);
+  const riskAmount = unwrap(portfolioSize.multiply(riskPercentage / 100));
 
   // Размер риска на единицу
   const riskPerUnit = Math.abs(entryPrice - stopLossPrice);
 
   // Максимальный размер позиции
-  const maxSize = riskAmount.divide(riskPerUnit);
+  const maxSize = unwrap(riskAmount.divide(riskPerUnit));
 
   // Округлить к tick size
-  return maxSize.floorToTick(tickSize);
+  return unwrap(maxSize.floorToTick(tickSize));
 }
 
 // Использование
@@ -556,11 +571,11 @@ const sum = unwrap(q1.add(q2)); // ✅
 2. **Безопасность**: предотвращает логические ошибки в расчётах
 3. **Направление**: для short позиций используется отдельный флаг side='SELL', не отрицательное количество
 
-### Почему методы экземпляра используют throw?
+### Почему методы экземпляра возвращают Result?
 
-1. **Паттерн DDD**: factory methods возвращают Result, методы экземпляра могут throw
-2. **Предсказуемость**: операции над валидным Quantity предполагают валидные входные данные
-3. **Удобство**: не нужно обрабатывать Result для каждой операции
+1. **Безопасность**: все ошибки явно обрабатываются через Result
+2. **Предсказуемость**: overflow и другие ошибки не скрываются, а возвращаются как Err
+3. **Консистентность**: единый подход для всех методов - как factory, так и операций
 
 ### Почему tick size awareness?
 
@@ -575,14 +590,14 @@ type QuantityValue = number; // >= 0
 
 interface QuantityOperations {
   // Округление
-  toTick(tickSize?: number): Quantity;
-  floorToTick(tickSize?: number): Quantity;
-  ceilToTick(tickSize?: number): Quantity;
+  toTick(tickSize?: number): Result<Quantity, InvalidQuantityError>;
+  floorToTick(tickSize?: number): Result<Quantity, InvalidQuantityError>;
+  ceilToTick(tickSize?: number): Result<Quantity, InvalidQuantityError>;
 
   // Арифметика
-  add(other: Quantity): Quantity;
-  subtract(other: Quantity): Quantity;
-  multiply(factor: number): Quantity;
+  add(other: Quantity): Result<Quantity, ArithmeticOverflowError>;
+  subtract(other: Quantity): Result<Quantity, InvalidQuantityError>;
+  multiply(factor: number): Result<Quantity, InvalidQuantityError | ArithmeticOverflowError>;
   divide(divisor: number): Quantity;
 
   // Сравнение

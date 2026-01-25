@@ -161,7 +161,7 @@ console.log(balance.hasEnough(1500));  // false
 console.log(balance.hasEnough(new Decimal('999.99'))); // true
 ```
 
-**Use case: Проверка перед выполнением ордера**
+#### Use case: Проверка перед выполнением ордера
 
 ```typescript
 function placeOrder(
@@ -218,7 +218,7 @@ if (!result.ok) {
 }
 ```
 
-**Use case: Пополнение баланса**
+#### Use case: Пополнение баланса
 
 ```typescript
 function deposit(
@@ -278,7 +278,7 @@ if (!insufficient.ok) {
 }
 ```
 
-**Use case: Списание средств при выполнении ордера**
+#### Use case: Списание средств при выполнении ордера
 
 ```typescript
 import { Balance } from '@polymarket/value-objects';
@@ -535,6 +535,7 @@ console.log(wallet.btc.toString());  // "0.5 BTC"
 - Недостаточности средств при subtract
 
 **Контекст ошибки:**
+
 ```typescript
 {
   amount: number | string,
@@ -551,6 +552,7 @@ console.log(wallet.btc.toString());  // "0.5 BTC"
 Возникает при операциях с разными валютами (add, subtract).
 
 **Контекст ошибки:**
+
 ```typescript
 {
   operation: string,     // "add balance" | "subtract balance"
