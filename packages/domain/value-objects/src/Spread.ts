@@ -225,8 +225,8 @@ export class Spread {
    * - математическая гарантия: если 0.0001 ≤ bid ≤ ask ≤ 0.9999,
    *   то 0.0001 ≤ (bid + ask) / 2 ≤ 0.9999
    *
-   * Это единственный метод в value-objects который использует приватный
-   * конструктор напрямую, но это безопасно благодаря математической гарантии.
+   * Использует Price.createTrusted() для создания без валидации,
+   * так как значение математически гарантированно валидно.
    *
    * @example
    * ```typescript
@@ -244,10 +244,8 @@ export class Spread {
       .dividedBy(2)
       .toNumber();
 
-    // Используем приватный конструктор напрямую (без валидации)
-    // так как midValue математически гарантированно валиден
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return new (Price as any)(midValue);
+    // Используем createTrusted() так как midValue математически гарантированно валиден
+    return Price.createTrusted(midValue);
   }
 
   /**
