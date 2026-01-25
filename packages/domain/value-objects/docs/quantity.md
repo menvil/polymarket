@@ -21,20 +21,29 @@
 
 **Почему два типа создания?**
 
-- `fromNumber()` - для создания ордеров, проверяет MIN_SIZE
+- `fromValue()` - для создания ордеров, проверяет MIN_SIZE
 - `fromMarketData()` - для входящих данных с биржи, где могут быть частичные исполнения < MIN_SIZE
 
 ## Factory Methods
 
-### `fromNumber(value: number, minSize?: number): Result<Quantity, InvalidQuantityError>`
+### `fromValue(value: number, minSize?: number): Result<Quantity, InvalidQuantityError>`
 
 Создаёт Quantity для ордера с валидацией минимального размера.
+
+**Параметры:**
+- `value` - количество (number)
+- `minSize` - минимальный размер (по умолчанию 1)
+
+**Валидация:**
+- Значение должно быть >= 0
+- Значение должно быть >= minSize (по умолчанию 1)
+- Отклоняет NaN и Infinity
 
 ```typescript
 import { unwrap } from '@polymarket/result';
 
 // Валидное количество (>= MIN_SIZE)
-const result = Quantity.fromNumber(10);
+const result = Quantity.fromValue(10);
 if (result.ok) {
   const qty = result.value;
   console.log(qty.value); // 10
@@ -43,20 +52,21 @@ if (result.ok) {
 }
 
 // Используя unwrap для краткости
-const qty = unwrap(Quantity.fromNumber(10));
+const qty = unwrap(Quantity.fromValue(10));
 
 // С кастомным minSize из market info
 const marketMinSize = 5;
-const qty2 = unwrap(Quantity.fromNumber(10, marketMinSize));
+const qty2 = unwrap(Quantity.fromValue(10, marketMinSize));
 
-// Нулевое количество разрешено
-const zero = unwrap(Quantity.fromNumber(0));
+// Ноль разрешен только с minSize=0
+const zero = unwrap(Quantity.fromValue(0, 0));
 
 // Невалидные значения возвращают Err
-const invalid1 = Quantity.fromNumber(-10);      // Error: отрицательное
-const invalid2 = Quantity.fromNumber(0.5);      // Error: < MIN_SIZE (1)
-const invalid3 = Quantity.fromNumber(NaN);      // Error: не число
-const invalid4 = Quantity.fromNumber(Infinity); // Error: не конечное
+const invalid1 = Quantity.fromValue(-10);      // Error: отрицательное
+const invalid2 = Quantity.fromValue(0.5);      // Error: < MIN_SIZE (1)
+const invalid3 = Quantity.fromValue(0);        // Error: < MIN_SIZE (1)
+const invalid4 = Quantity.fromValue(NaN);      // Error: не число
+const invalid5 = Quantity.fromValue(Infinity); // Error: не конечное
 ```
 
 ### `fromMarketData(value: number): Result<Quantity, InvalidQuantityError>`
@@ -92,40 +102,67 @@ console.log(empty.isZero()); // true
 
 ## Операции округления
 
-### `toTick(tickSize?: number): Quantity`
+### `toTick(tickSize?: number): Result<Quantity, InvalidQuantityError>`
 
 Округляет к ближайшему tick size.
 
 ```typescript
-const qty = unwrap(Quantity.fromNumber(10.567));
+import { unwrap } from '@polymarket/result';
 
-const rounded = qty.toTick(0.1);
+const qty = unwrap(Quantity.fromValue(10.567));
+
+// Возвращает Result
+const result = qty.toTick(0.1);
+if (result.ok) {
+  console.log(result.value.value); // 10.6
+}
+
+// Или используя unwrap
+const rounded = unwrap(qty.toTick(0.1));
 console.log(rounded.value); // 10.6
 
 // Округление к tick size по умолчанию (0.01)
-const defaultRounded = qty.toTick();
+const defaultRounded = unwrap(qty.toTick());
 console.log(defaultRounded.value); // 10.57
 ```
 
-### `floorToTick(tickSize?: number): Quantity`
+### `floorToTick(tickSize?: number): Result<Quantity, InvalidQuantityError>`
 
 Округляет вниз до tick size.
 
 ```typescript
-const qty = unwrap(Quantity.fromNumber(10.569));
+import { unwrap } from '@polymarket/result';
 
-const floored = qty.floorToTick(0.1);
+const qty = unwrap(Quantity.fromValue(10.569));
+
+// Возвращает Result
+const result = qty.floorToTick(0.1);
+if (result.ok) {
+  console.log(result.value.value); // 10.5
+}
+
+// Или используя unwrap
+const floored = unwrap(qty.floorToTick(0.1));
 console.log(floored.value); // 10.5
 ```
 
-### `ceilToTick(tickSize?: number): Quantity`
+### `ceilToTick(tickSize?: number): Result<Quantity, InvalidQuantityError>`
 
 Округляет вверх до tick size.
 
 ```typescript
-const qty = unwrap(Quantity.fromNumber(10.531));
+import { unwrap } from '@polymarket/result';
 
-const ceiled = qty.ceilToTick(0.1);
+const qty = unwrap(Quantity.fromValue(10.531));
+
+// Возвращает Result
+const result = qty.ceilToTick(0.1);
+if (result.ok) {
+  console.log(result.value.value); // 10.6
+}
+
+// Или используя unwrap
+const ceiled = unwrap(qty.ceilToTick(0.1));
 console.log(ceiled.value); // 10.6
 ```
 
@@ -136,15 +173,15 @@ console.log(ceiled.value); // 10.6
 Складывает количества.
 
 ```typescript
-const q1 = unwrap(Quantity.fromNumber(10));
-const q2 = unwrap(Quantity.fromNumber(5));
+const q1 = unwrap(Quantity.fromValue(10));
+const q2 = unwrap(Quantity.fromValue(5));
 
 const sum = q1.add(q2);
 console.log(sum.value); // 15
 
 // Ошибка при overflow
-const huge1 = unwrap(Quantity.fromNumber(Number.MAX_VALUE));
-const huge2 = unwrap(Quantity.fromNumber(Number.MAX_VALUE));
+const huge1 = unwrap(Quantity.fromValue(Number.MAX_VALUE));
+const huge2 = unwrap(Quantity.fromValue(Number.MAX_VALUE));
 huge1.add(huge2); // Throws Error
 ```
 
@@ -153,19 +190,19 @@ huge1.add(huge2); // Throws Error
 Вычитает количества.
 
 ```typescript
-const q1 = unwrap(Quantity.fromNumber(10));
-const q2 = unwrap(Quantity.fromNumber(3));
+const q1 = unwrap(Quantity.fromValue(10));
+const q2 = unwrap(Quantity.fromValue(3));
 
 const diff = q1.subtract(q2);
 console.log(diff.value); // 7
 
 // Ошибка при отрицательном результате
-const small = unwrap(Quantity.fromNumber(5));
-const large = unwrap(Quantity.fromNumber(10));
+const small = unwrap(Quantity.fromValue(5));
+const large = unwrap(Quantity.fromValue(10));
 small.subtract(large); // Throws Error
 
 // Ноль разрешен
-const same = unwrap(Quantity.fromNumber(10));
+const same = unwrap(Quantity.fromValue(10));
 const zero = same.subtract(same);
 console.log(zero.value); // 0
 ```
@@ -175,7 +212,7 @@ console.log(zero.value); // 0
 Умножает на коэффициент.
 
 ```typescript
-const qty = unwrap(Quantity.fromNumber(10));
+const qty = unwrap(Quantity.fromValue(10));
 
 const doubled = qty.multiply(2);
 console.log(doubled.value); // 20
@@ -197,7 +234,7 @@ qty.multiply(NaN);  // RangeError: не число
 Делит на делитель.
 
 ```typescript
-const qty = unwrap(Quantity.fromNumber(10));
+const qty = unwrap(Quantity.fromValue(10));
 
 const half = qty.divide(2);
 console.log(half.value); // 5
@@ -213,8 +250,8 @@ qty.divide(NaN);    // Error: не число
 ### `isGreaterThan(other: Quantity): boolean`
 
 ```typescript
-const q1 = unwrap(Quantity.fromNumber(15));
-const q2 = unwrap(Quantity.fromNumber(10));
+const q1 = unwrap(Quantity.fromValue(15));
+const q2 = unwrap(Quantity.fromValue(10));
 
 console.log(q1.isGreaterThan(q2)); // true
 console.log(q2.isGreaterThan(q1)); // false
@@ -223,8 +260,8 @@ console.log(q2.isGreaterThan(q1)); // false
 ### `isLessThan(other: Quantity): boolean`
 
 ```typescript
-const q1 = unwrap(Quantity.fromNumber(10));
-const q2 = unwrap(Quantity.fromNumber(15));
+const q1 = unwrap(Quantity.fromValue(10));
+const q2 = unwrap(Quantity.fromValue(15));
 
 console.log(q1.isLessThan(q2)); // true
 console.log(q2.isLessThan(q1)); // false
@@ -235,16 +272,16 @@ console.log(q2.isLessThan(q1)); // false
 Проверяет равенство с учётом epsilon для floating-point.
 
 ```typescript
-const q1 = unwrap(Quantity.fromNumber(10));
-const q2 = unwrap(Quantity.fromNumber(10));
-const q3 = unwrap(Quantity.fromNumber(15));
+const q1 = unwrap(Quantity.fromValue(10));
+const q2 = unwrap(Quantity.fromValue(10));
+const q3 = unwrap(Quantity.fromValue(15));
 
 console.log(q1.equals(q2)); // true
 console.log(q1.equals(q3)); // false
 
 // Epsilon handling
-const q4 = unwrap(Quantity.fromNumber(10));
-const q5 = unwrap(Quantity.fromNumber(10 + 1e-5));
+const q4 = unwrap(Quantity.fromValue(10));
+const q5 = unwrap(Quantity.fromValue(10 + 1e-5));
 console.log(q4.equals(q5)); // true (в пределах EPSILON)
 ```
 
@@ -254,7 +291,7 @@ console.log(q4.equals(q5)); // true (в пределах EPSILON)
 const zero = Quantity.zero();
 console.log(zero.isZero()); // true
 
-const nonZero = unwrap(Quantity.fromNumber(10));
+const nonZero = unwrap(Quantity.fromValue(10));
 console.log(nonZero.isZero()); // false
 
 // Epsilon handling
@@ -265,7 +302,7 @@ console.log(tiny.isZero()); // true
 ### `isPositive(): boolean`
 
 ```typescript
-const positive = unwrap(Quantity.fromNumber(10));
+const positive = unwrap(Quantity.fromValue(10));
 console.log(positive.isPositive()); // true
 
 const zero = Quantity.zero();
@@ -277,7 +314,7 @@ console.log(zero.isPositive()); // false
 ### `toString(decimals?: number): string`
 
 ```typescript
-const qty = unwrap(Quantity.fromNumber(10.567));
+const qty = unwrap(Quantity.fromValue(10.567));
 
 console.log(qty.toString());   // "10.57" (default: 2 decimals)
 console.log(qty.toString(0));  // "11"
@@ -324,7 +361,7 @@ function calculateOrderSize(
   marketMinSize: number
 ): Quantity {
   // Создать количество с валидацией minSize
-  const qty = unwrap(Quantity.fromNumber(desiredSize, marketMinSize));
+  const qty = unwrap(Quantity.fromValue(desiredSize, marketMinSize));
 
   // Округлить к tick size рынка
   const rounded = qty.floorToTick(marketTickSize);
@@ -367,7 +404,7 @@ class Order {
 }
 
 // Использование
-const order = new Order(unwrap(Quantity.fromNumber(100)));
+const order = new Order(unwrap(Quantity.fromValue(100)));
 
 order.applyFill(37.5);  // Частичное исполнение
 console.log(order.getRemainingSize().value); // 62.5
@@ -403,7 +440,7 @@ function calculatePositionSize(
 }
 
 // Использование
-const portfolio = unwrap(Quantity.fromNumber(10000));
+const portfolio = unwrap(Quantity.fromValue(10000));
 const positionSize = calculatePositionSize(
   portfolio,
   2,      // 2% риска на сделку
@@ -462,18 +499,20 @@ console.log(`VWAP: ${vwap.toFixed(4)}`);
 ### ✅ DO
 
 ```typescript
-// ✅ Используйте fromNumber для создания ордеров
-const orderQty = unwrap(Quantity.fromNumber(10, marketMinSize));
+import { unwrap } from '@polymarket/result';
+
+// ✅ Используйте fromValue для создания ордеров
+const orderQty = unwrap(Quantity.fromValue(10, marketMinSize));
 
 // ✅ Используйте fromMarketData для входящих данных
 const fillQty = unwrap(Quantity.fromMarketData(37.5));
 
 // ✅ Округляйте к tick size перед отправкой ордера
-const rounded = qty.floorToTick(marketTickSize);
+const rounded = unwrap(qty.floorToTick(marketTickSize));
 
 // ✅ Проверяйте валидность перед созданием
 if (Quantity.isValid(userInput, marketMinSize)) {
-  const qty = unwrap(Quantity.fromNumber(userInput, marketMinSize));
+  const qty = unwrap(Quantity.fromValue(userInput, marketMinSize));
 }
 
 // ✅ Используйте Quantity.zero() для инициализации
@@ -484,7 +523,7 @@ let filled = Quantity.zero();
 
 ```typescript
 // ❌ НЕ игнорируйте Result
-const qty = Quantity.fromNumber(10); // Type error!
+const qty = Quantity.fromValue(10); // Type error!
 
 // ❌ НЕ создавайте Quantity напрямую
 const qty = new Quantity(10); // Constructor is private!
@@ -492,24 +531,22 @@ const qty = new Quantity(10); // Constructor is private!
 // ❌ НЕ изменяйте существующий Quantity
 qty.value = 20; // Error: readonly property
 
-// ❌ НЕ используйте fromNumber для market data
-const fill = unwrap(Quantity.fromNumber(0.07)); // Может упасть если < MIN_SIZE!
+// ❌ НЕ используйте fromValue для market data (проверяет MIN_SIZE!)
+const fill = unwrap(Quantity.fromValue(0.07)); // Error: < MIN_SIZE!
 // Используйте:
 const fill = unwrap(Quantity.fromMarketData(0.07)); // ✅
 
-// ❌ НЕ забывайте про проверку отрицательного результата
-const remaining = filled.subtract(orderSize); // Может выбросить!
-// Проверяйте:
-if (filled.isGreaterThan(orderSize) || filled.equals(orderSize)) {
-  const remaining = filled.subtract(orderSize);
-}
+// ❌ НЕ игнорируйте Result в арифметике
+const sum = q1.add(q2);  // Returns Result, handle it!
+// Используйте:
+const sum = unwrap(q1.add(q2)); // ✅
 ```
 
 ## Архитектурные решения
 
 ### Почему два метода создания?
 
-1. **fromNumber**: для ордеров, проверяет MIN_SIZE - гарантирует что ордер соответствует требованиям рынка
+1. **fromValue**: для ордеров, проверяет MIN_SIZE - гарантирует что ордер соответствует требованиям рынка
 2. **fromMarketData**: для данных с биржи - допускает частичные исполнения < MIN_SIZE
 
 ### Почему неотрицательные значения?
