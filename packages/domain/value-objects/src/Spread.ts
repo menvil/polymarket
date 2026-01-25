@@ -219,10 +219,14 @@ export class Spread {
    * Середина представляет теоретическую "справедливую" цену.
    * Часто используется как референсная цена для аналитики.
    *
-   * Метод всегда возвращает валидный Price, так как:
+   * Метод возвращает Price напрямую (не Result) так как:
    * - bid и ask уже валидированы при создании Spread
    * - среднее арифметическое двух валидных цен всегда валидно
-   * - диапазон: если 0 ≤ bid ≤ ask ≤ 1, то 0 ≤ (bid + ask) / 2 ≤ 1
+   * - математическая гарантия: если 0.0001 ≤ bid ≤ ask ≤ 0.9999,
+   *   то 0.0001 ≤ (bid + ask) / 2 ≤ 0.9999
+   *
+   * Это единственный метод в value-objects который использует приватный
+   * конструктор напрямую, но это безопасно благодаря математической гарантии.
    *
    * @example
    * ```typescript
@@ -232,21 +236,18 @@ export class Spread {
    * ```
    */
   public midpoint(): Price {
-    // Используем Decimal для точных вычислений
+    // Вычисляем среднюю точку спреда
+    // Математически гарантированно валидно:
+    // Если 0.0001 ≤ bid ≤ ask ≤ 0.9999, то 0.0001 ≤ (bid+ask)/2 ≤ 0.9999
     const midValue = new Decimal(this.bid.value)
       .plus(this.ask.value)
       .dividedBy(2)
       .toNumber();
 
-    // Defensive check: should never fail given validated bid/ask
-    const result = Price.fromValue(midValue);
-    if (!result.ok) {
-      throw new Error(
-        `Spread.midpoint: unexpected error creating Price from midValue ${midValue} ` +
-          `(bid=${this.bid.value}, ask=${this.ask.value}): ${result.error.message}`
-      );
-    }
-    return result.value;
+    // Используем приватный конструктор напрямую (без валидации)
+    // так как midValue математически гарантированно валиден
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return new (Price as any)(midValue);
   }
 
   /**

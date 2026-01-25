@@ -298,6 +298,7 @@ if (pnl.isNegative()) {
 ### Архитектурные документы
 
 - 🎨 **[Result Styles](./result-styles.md)** — стили работы с Result, архитектурное правило когда возвращать Result
+- 🏗️ **[Architecture Guide](./architecture.md)** — паттерны именования фабричных методов и когда использовать каждый value object
 
 ## Особенности
 
