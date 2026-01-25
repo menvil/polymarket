@@ -1,7 +1,7 @@
 {
-  "name": "@polymarket/errors",
+  "name": "@polymarket/value-objects",
   "version": "0.1.0",
-  "description": "Foundation error handling package for Polymarket trading system",
+  "description": "Domain value objects for Polymarket trading system",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,14 +9,6 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
-    },
-    "./base": {
-      "types": "./dist/base/index.d.ts",
-      "import": "./dist/base/index.js"
-    },
-    "./value-objects": {
-      "types": "./dist/value-objects/index.d.ts",
-      "import": "./dist/value-objects/index.js"
     }
   },
   "files": [
@@ -41,14 +33,20 @@
     "clean": "rm -rf dist"
   },
   "keywords": [
-    "errors",
-    "error-handling",
+    "value-objects",
+    "domain-driven-design",
+    "ddd",
     "trading",
     "polymarket",
-    "foundation"
+    "domain"
   ],
   "author": "Ivan Moroz",
   "license": "MIT",
+  "dependencies": {
+    "@polymarket/result": "^0.1.0",
+    "@polymarket/errors": "^0.1.0",
+    "decimal.js": "^10.6.0"
+  },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/jest": "^29.5.0",
@@ -61,7 +59,6 @@
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0"
   },
-  "dependencies": {},
   "publishConfig": {
     "access": "restricted"
   }

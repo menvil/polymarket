@@ -23,6 +23,10 @@
  * - InvalidMoneyError - некорректная денежная сумма (отрицательная, NaN, etc.)
  * - CurrencyMismatchError - несоответствие валют при операциях
  *
+ * **Валидация торговых объектов:**
+ * - InvalidSpreadError - невалидный спред (bid > ask)
+ * - InvalidQuoteError - невалидная котировка маркет-мейкера
+ *
  * **Математические ошибки:**
  * - DivisionByZeroError - деление на ноль
  * - ArithmeticOverflowError - переполнение при арифметических операциях
@@ -38,22 +42,50 @@
  *
  * // Валидация цены
  * if (!Price.isValid(value)) {
- *   throw new InvalidPriceError(value);
+ *   throw new InvalidPriceError(
+ *     `Invalid price: ${value}`,
+ *     {
+ *       code: InvalidPriceError.code,
+ *       context: { value }
+ *     }
+ *   );
  * }
  *
  * // Валидация денег
  * if (amount < 0) {
- *   throw new InvalidMoneyError(amount, 'USDC');
+ *   throw new InvalidMoneyError(
+ *     `Invalid money amount: ${amount}`,
+ *     {
+ *       code: InvalidMoneyError.code,
+ *       context: { amount, currency: 'USDC' }
+ *     }
+ *   );
  * }
  *
  * // Проверка валюты при операциях
  * if (money1.currency !== money2.currency) {
- *   throw new CurrencyMismatchError('addition', money1.currency, money2.currency);
+ *   throw new CurrencyMismatchError(
+ *     `Currency mismatch: ${money1.currency} vs ${money2.currency}`,
+ *     {
+ *       code: CurrencyMismatchError.code,
+ *       context: {
+ *         operation: 'addition',
+ *         expected: money1.currency,
+ *         actual: money2.currency
+ *       }
+ *     }
+ *   );
  * }
  *
  * // Защита от деления на ноль
  * if (divisor === 0) {
- *   throw new DivisionByZeroError(dividend, divisor, 'average price calculation');
+ *   throw new DivisionByZeroError(
+ *     'Cannot divide by zero',
+ *     {
+ *       code: DivisionByZeroError.code,
+ *       context: { dividend, divisor, operation: 'average price calculation' }
+ *     }
+ *   );
  * }
  * ```
  *
@@ -69,6 +101,10 @@ export * from './InvalidAmountError.js';
 // Валидация денежных значений
 export * from './InvalidMoneyError.js';
 export * from './CurrencyMismatchError.js';
+
+// Валидация торговых объектов
+export * from './InvalidSpreadError.js';
+export * from './InvalidQuoteError.js';
 
 // Математические ошибки
 export * from './DivisionByZeroError.js';

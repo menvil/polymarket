@@ -64,7 +64,7 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity} from '../base';
+import { TradingError, ErrorSeverity } from '../base';
 
 /**
  * ArithmeticOverflowError - ошибка переполнения при арифметических операциях

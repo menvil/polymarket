@@ -47,17 +47,17 @@
  * // "Cannot calculate average price: divisor is zero"
  *
  * // В методе value object
- * public divide(other: Money): Money {
- *   if (other.amount === 0) {
+ * public divide(divisor: number): Money {
+ *   if (divisor === 0) {
  *     throw new DivisionByZeroError(
- *       (ctx) => `Cannot divide ${ctx.a} by ${ctx.b}`,
+ *       (ctx) => `Cannot divide ${ctx.amount} by ${ctx.divisor}`,
  *       {
  *         code: DivisionByZeroError.code,
- *         context: { a: this.amount, b: other.amount }
+ *         context: { amount: this.amount, divisor }
  *       }
  *     );
  *   }
- *   return new Money(this.amount / other.amount, this.currency);
+ *   return new Money(this.amount / divisor, this.currency);
  * }
  * ```
  */

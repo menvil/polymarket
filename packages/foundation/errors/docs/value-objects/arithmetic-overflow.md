@@ -323,6 +323,7 @@ result.match({
 import { Result } from '@polymarket/types';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
+// Примечание: SafeMath определён в Примере 3 выше
 class InterestCalculator {
   /**
    * Вычислить сложный процент: principal * (1 + rate)^periods
@@ -332,7 +333,7 @@ class InterestCalculator {
     rate: number,
     periods: number
   ): Result<number, ArithmeticOverflowError> {
-    // Вычисляем (1 + rate)
+    // Вычисляем (1 + rate) используя SafeMath (см. Пример 3)
     const rateResult = SafeMath.add(1, rate);
     if (rateResult.isErr()) {
       return Result.err(rateResult.unwrapErr());

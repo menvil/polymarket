@@ -177,7 +177,7 @@ class Money {
           (ctx) => `Invalid amount format: "${ctx.amountStr}"`,
           {
             code: InvalidMoneyError.code,
-            context: { amountStr, currency, reason: 'NaN after parsing' }
+            context: { amountStr, currency, reason: 'NaN' }
           }
         )
       );

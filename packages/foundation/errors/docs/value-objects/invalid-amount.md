@@ -179,6 +179,7 @@ result.match({
 ### 3. Валидация с кастомными правилами
 
 ```typescript
+import { Result } from '@polymarket/types';
 import { InvalidAmountError } from '@polymarket/errors';
 
 class Multiplier {

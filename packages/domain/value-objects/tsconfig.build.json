@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "types": []
+  },
+  "references": [
+    { "path": "../../foundation/result" },
+    { "path": "../../foundation/errors" }
+  ],
+  "include": ["src/**/*"]
+}

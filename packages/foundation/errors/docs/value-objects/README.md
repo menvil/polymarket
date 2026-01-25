@@ -246,7 +246,11 @@ validationResult.match({
 ```typescript
 import Decimal from 'decimal.js';
 import { Result } from '@polymarket/types';
-import { ArithmeticOverflowError, DivisionByZeroError } from '@polymarket/errors';
+import {
+  InvalidMoneyError,
+  ArithmeticOverflowError,
+  DivisionByZeroError
+} from '@polymarket/errors';
 
 class Money {
   private constructor(

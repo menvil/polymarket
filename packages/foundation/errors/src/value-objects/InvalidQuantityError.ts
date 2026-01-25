@@ -36,11 +36,11 @@
  * // С условной логикой в template
  * throw new InvalidQuantityError(
  *   (ctx) => ctx.min === 0
- *     ? `Quantity ${ctx.value} must be positive`
+ *     ? `Quantity ${ctx.value} must be non-negative`
  *     : `Quantity ${ctx.value} must be >= ${ctx.min}`,
  *   {
  *     code: InvalidQuantityError.code,
- *     context: { value: 0, min: 1 }
+ *     context: { value: -1, min: 0 }
  *   }
  * );
  * ```
