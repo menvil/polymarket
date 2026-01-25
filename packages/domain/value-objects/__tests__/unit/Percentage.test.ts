@@ -9,6 +9,7 @@ import { Percentage } from '../../src/Percentage';
 import {
   InvalidPercentageError,
   DivisionByZeroError,
+  ArithmeticOverflowError,
 } from '@polymarket/errors';
 
 describe('Percentage', () => {
@@ -92,6 +93,17 @@ describe('Percentage', () => {
 
       it('ONE_HUNDRED должен быть 100%', () => {
         expect(Percentage.ONE_HUNDRED.getValue()).toBe(100);
+      });
+
+      it('zero() должен вернуть ZERO', () => {
+        const zero = Percentage.zero();
+        expect(zero.getValue()).toBe(0);
+        expect(zero.isZero()).toBe(true);
+      });
+
+      it('oneHundred() должен вернуть ONE_HUNDRED', () => {
+        const hundred = Percentage.oneHundred();
+        expect(hundred.getValue()).toBe(100);
       });
     });
 
@@ -420,6 +432,30 @@ describe('Percentage', () => {
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(DivisionByZeroError);
           expect(result.error.message).toContain('must be a finite number');
+        }
+      });
+
+      it('должен отклонять результат превышающий MAX_PERCENTAGE', () => {
+        const pct = unwrap(Percentage.fromValue(1000000));
+
+        const result = pct.divide(0.0001);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('MAX_PERCENTAGE');
+        }
+      });
+
+      it('должен отклонять результат меньше MIN_PERCENTAGE', () => {
+        const pct = unwrap(Percentage.fromValue(-1000000));
+
+        const result = pct.divide(0.0001);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('MIN_PERCENTAGE');
         }
       });
     });

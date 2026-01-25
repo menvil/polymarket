@@ -561,6 +561,7 @@ describe('Money', () => {
           expect(result.value).toBe(false);
         }
       });
+
     });
 
     describe('lessThan', () => {
@@ -587,6 +588,7 @@ describe('Money', () => {
           expect(result.value).toBe(false);
         }
       });
+
     });
 
     describe('greaterThanOrEqual', () => {
@@ -625,6 +627,7 @@ describe('Money', () => {
           expect(result.value).toBe(false);
         }
       });
+
     });
 
     describe('lessThanOrEqual', () => {
@@ -663,6 +666,7 @@ describe('Money', () => {
           expect(result.value).toBe(false);
         }
       });
+
     });
   });
 

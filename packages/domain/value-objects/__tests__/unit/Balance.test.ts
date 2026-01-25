@@ -102,6 +102,32 @@ describe('Balance', () => {
         }
       });
     });
+
+    describe('zero', () => {
+      it('should create zero balance with default currency', () => {
+        const result = Balance.zero();
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const balance = result.value;
+          expect(balance.getAmount()).toBe(0);
+          expect(balance.getCurrency()).toBe('USDC');
+          expect(balance.isZero()).toBe(true);
+        }
+      });
+
+      it('should create zero balance with specified currency', () => {
+        const result = Balance.zero('BTC');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const balance = result.value;
+          expect(balance.getAmount()).toBe(0);
+          expect(balance.getCurrency()).toBe('BTC');
+          expect(balance.isZero()).toBe(true);
+        }
+      });
+    });
   });
 
   describe('Operations', () => {
@@ -247,6 +273,236 @@ describe('Balance', () => {
         const b = unwrap(Balance.fromValue(1000, 'USDC'));
 
         expect(b.equals(b)).toBe(true);
+      });
+    });
+  });
+
+  describe('Comparisons', () => {
+    describe('greaterThan', () => {
+      it('should return true when balance is greater', () => {
+        const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(500, 'USDC'));
+
+        const result = b1.greaterThan(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('should return false when balance is less', () => {
+        const b1 = unwrap(Balance.fromValue(500, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+
+        const result = b1.greaterThan(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('should return false when balances are equal', () => {
+        const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+
+        const result = b1.greaterThan(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('should reject comparing different currencies', () => {
+        const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(500, 'BTC'));
+
+        const result = b1.greaterThan(b2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(CurrencyMismatchError);
+        }
+      });
+    });
+
+    describe('lessThan', () => {
+      it('should return true when balance is less', () => {
+        const b1 = unwrap(Balance.fromValue(500, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+
+        const result = b1.lessThan(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('should return false when balance is greater', () => {
+        const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(500, 'USDC'));
+
+        const result = b1.lessThan(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('should reject comparing different currencies', () => {
+        const b1 = unwrap(Balance.fromValue(500, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(1000, 'BTC'));
+
+        const result = b1.lessThan(b2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(CurrencyMismatchError);
+        }
+      });
+    });
+
+    describe('greaterThanOrEqual', () => {
+      it('should return true when balance is greater', () => {
+        const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(500, 'USDC'));
+
+        const result = b1.greaterThanOrEqual(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('should return true when balances are equal', () => {
+        const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+
+        const result = b1.greaterThanOrEqual(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('should return false when balance is less', () => {
+        const b1 = unwrap(Balance.fromValue(500, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+
+        const result = b1.greaterThanOrEqual(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('should reject comparing different currencies', () => {
+        const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(500, 'BTC'));
+
+        const result = b1.greaterThanOrEqual(b2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(CurrencyMismatchError);
+        }
+      });
+    });
+
+    describe('lessThanOrEqual', () => {
+      it('should return true when balance is less', () => {
+        const b1 = unwrap(Balance.fromValue(500, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+
+        const result = b1.lessThanOrEqual(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('should return true when balances are equal', () => {
+        const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+
+        const result = b1.lessThanOrEqual(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('should return false when balance is greater', () => {
+        const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(500, 'USDC'));
+
+        const result = b1.lessThanOrEqual(b2);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('should reject comparing different currencies', () => {
+        const b1 = unwrap(Balance.fromValue(500, 'USDC'));
+        const b2 = unwrap(Balance.fromValue(1000, 'BTC'));
+
+        const result = b1.lessThanOrEqual(b2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(CurrencyMismatchError);
+        }
+      });
+    });
+
+    describe('isZero', () => {
+      it('should return true for zero balance', () => {
+        const balance = unwrap(Balance.fromValue(0, 'USDC'));
+
+        expect(balance.isZero()).toBe(true);
+      });
+
+      it('should return false for non-zero balance', () => {
+        const balance = unwrap(Balance.fromValue(1000, 'USDC'));
+
+        expect(balance.isZero()).toBe(false);
+      });
+
+      it('should return false for very small non-zero balance', () => {
+        const balance = unwrap(Balance.fromValue(0.0001, 'USDC'));
+
+        expect(balance.isZero()).toBe(false);
+      });
+    });
+
+    describe('isPositive', () => {
+      it('should return true for positive balance', () => {
+        const balance = unwrap(Balance.fromValue(1000, 'USDC'));
+
+        expect(balance.isPositive()).toBe(true);
+      });
+
+      it('should return false for zero balance', () => {
+        const balance = unwrap(Balance.fromValue(0, 'USDC'));
+
+        expect(balance.isPositive()).toBe(false);
+      });
+
+      it('should return true for very small positive balance', () => {
+        const balance = unwrap(Balance.fromValue(0.0001, 'USDC'));
+
+        expect(balance.isPositive()).toBe(true);
       });
     });
   });
