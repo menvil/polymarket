@@ -265,9 +265,14 @@ if (!nanResult.ok) {
 }
 ```
 
-### `divide(divisor: number): Result<Quantity, InvalidQuantityError>`
+### `divide(divisor: number): Result<Quantity, InvalidQuantityError | ArithmeticOverflowError | DivisionByZeroError>`
 
 Делит на делитель.
+
+Может вернуть ошибки:
+- **DivisionByZeroError** - если делитель равен нулю
+- **InvalidQuantityError** - если делитель не является конечным числом или отрицательный
+- **ArithmeticOverflowError** - если результат деления превышает допустимые границы
 
 ```typescript
 import { unwrap } from '@polymarket/result';
@@ -280,20 +285,28 @@ if (halfResult.ok) {
   console.log(halfResult.value.value); // 5
 }
 
-// Ошибки возвращаются через Result
+// Ошибка деления на ноль
 const divByZeroResult = qty.divide(0);
 if (!divByZeroResult.ok) {
-  console.error(divByZeroResult.error); // InvalidQuantityError: деление на ноль
+  console.error(divByZeroResult.error); // DivisionByZeroError
 }
 
+// Ошибка отрицательного делителя
 const negDivisorResult = qty.divide(-2);
 if (!negDivisorResult.ok) {
-  console.error(negDivisorResult.error); // InvalidQuantityError: отрицательный делитель
+  console.error(negDivisorResult.error); // InvalidQuantityError
 }
 
+// Ошибка невалидного делителя
 const nanDivisorResult = qty.divide(NaN);
 if (!nanDivisorResult.ok) {
-  console.error(nanDivisorResult.error); // InvalidQuantityError: не число
+  console.error(nanDivisorResult.error); // InvalidQuantityError
+}
+
+// Ошибка переполнения
+const overflowResult = qty.divide(1e-100);
+if (!overflowResult.ok) {
+  console.error(overflowResult.error); // ArithmeticOverflowError
 }
 ```
 
