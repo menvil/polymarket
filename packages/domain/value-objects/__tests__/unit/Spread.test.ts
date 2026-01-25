@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from '@jest/globals';
 import { unwrap } from '@polymarket/result';
-import { InvalidSpreadError } from '@polymarket/errors';
+import { InvalidSpreadError, InvalidPriceError } from '@polymarket/errors';
 import { Price } from '../../src/Price';
 import { Spread } from '../../src/Spread';
 
@@ -66,6 +66,24 @@ describe('Spread', () => {
         const result = Spread.fromNumbers(1.5, 2.0);
 
         expect(result.ok).toBe(false);
+      });
+
+      it('should reject invalid bid price', () => {
+        const result = Spread.fromNumbers(1.5, 0.5);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPriceError);
+        }
+      });
+
+      it('should reject invalid ask price', () => {
+        const result = Spread.fromNumbers(0.5, 1.5);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPriceError);
+        }
       });
 
       it('should reject bid > ask', () => {

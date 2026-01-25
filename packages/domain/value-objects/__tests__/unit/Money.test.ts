@@ -203,6 +203,37 @@ describe('Money', () => {
       });
     });
 
+    describe('fromValue с превышением MAX_AMOUNT', () => {
+      it('должен отклонить положительное значение превышающее MAX_AMOUNT', () => {
+        const result = Money.fromValue(2e15); // Больше чем 1e15
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidMoneyError);
+          expect(result.error.message).toContain('exceeds MAX_AMOUNT');
+        }
+      });
+
+      it('должен отклонить отрицательное значение превышающее MAX_AMOUNT', () => {
+        const result = Money.fromValue(-2e15); // Меньше чем -1e15
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidMoneyError);
+          expect(result.error.message).toContain('exceeds MAX_AMOUNT');
+        }
+      });
+
+      it('должен принять значение равное MAX_AMOUNT', () => {
+        const result = Money.fromValue(1e15);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getAmount()).toBe(1e15);
+        }
+      });
+    });
+
     describe('zero', () => {
       it('должен создать нулевой Money', () => {
         const zero = Money.zero();
@@ -270,6 +301,31 @@ describe('Money', () => {
           expect(result.error.message).toContain('Cannot add');
         }
       });
+
+      it('должен отклонить сложение с превышением MAX_AMOUNT', () => {
+        const m1 = unwrap(Money.fromValue(9e14));
+        const m2 = unwrap(Money.fromValue(2e14)); // Сумма = 1.1e15 > MAX_AMOUNT
+
+        const result = m1.add(m2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('overflow');
+        }
+      });
+
+      it('должен отклонить сложение приводящее к не конечному значению', () => {
+        const m1 = new (Money as any)(new Decimal(Number.MAX_VALUE), 'USDC');
+        const m2 = new (Money as any)(new Decimal(Number.MAX_VALUE), 'USDC');
+
+        const result = m1.add(m2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+        }
+      });
     });
 
     describe('subtract', () => {
@@ -320,6 +376,31 @@ describe('Money', () => {
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(CurrencyMismatchError);
           expect(result.error.message).toContain('Cannot subtract');
+        }
+      });
+
+      it('должен отклонить вычитание с превышением MAX_AMOUNT по модулю', () => {
+        const m1 = unwrap(Money.fromValue(-9e14));
+        const m2 = unwrap(Money.fromValue(2e14)); // Результат = -1.1e15, |результат| > MAX_AMOUNT
+
+        const result = m1.subtract(m2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('overflow');
+        }
+      });
+
+      it('должен отклонить вычитание приводящее к не конечному значению', () => {
+        const m1 = new (Money as any)(new Decimal(Number.MAX_VALUE), 'USDC');
+        const m2 = new (Money as any)(new Decimal(-Number.MAX_VALUE), 'USDC');
+
+        const result = m1.subtract(m2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
         }
       });
     });
@@ -490,6 +571,44 @@ describe('Money', () => {
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(DivisionByZeroError);
           expect(result.error.message).toContain('must be a finite number');
+        }
+      });
+
+      it('должен отклонить деление с превышением MAX_AMOUNT', () => {
+        const money = unwrap(Money.fromValue(1e15)); // MAX_AMOUNT
+        const divisor = 0.1; // Результат = 1e16 > MAX_AMOUNT
+
+        const result = money.divide(divisor);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('overflow');
+        }
+      });
+
+      it('должен отклонить деление отрицательного числа с превышением MAX_AMOUNT', () => {
+        const money = unwrap(Money.fromValue(-1e15)); // -MAX_AMOUNT
+        const divisor = 0.1; // |Результат| = 1e16 > MAX_AMOUNT
+
+        const result = money.divide(divisor);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('overflow');
+        }
+      });
+
+      it('должен отклонить деление приводящее к ошибке вычисления', () => {
+        const money = new (Money as any)(new Decimal('1e308'), 'USDC');
+        const divisor = new Decimal('1e-308');
+
+        const result = money.divide(divisor);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
         }
       });
     });

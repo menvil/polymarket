@@ -3,6 +3,7 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
+import Decimal from 'decimal.js';
 import { unwrap } from '@polymarket/result';
 import {
   InvalidQuantityError,
@@ -98,6 +99,64 @@ describe('Quantity', () => {
           expect(result.error).toBeInstanceOf(InvalidQuantityError);
         }
       });
+
+      it('should reject invalid minSize (NaN)', () => {
+        const result = Quantity.fromValue(10, NaN);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidQuantityError);
+          expect(result.error.message).toContain('Invalid minSize');
+        }
+      });
+
+      it('should reject invalid minSize (negative)', () => {
+        const result = Quantity.fromValue(10, -5);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidQuantityError);
+          expect(result.error.message).toContain('Invalid minSize');
+        }
+      });
+
+      it('should reject invalid minSize (Infinity)', () => {
+        const result = Quantity.fromValue(10, Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidQuantityError);
+          expect(result.error.message).toContain('Invalid minSize');
+        }
+      });
+
+      it('should create from valid string', () => {
+        const result = Quantity.fromValue('100.5');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value).toBe(100.5);
+        }
+      });
+
+      it('should reject invalid string', () => {
+        const result = Quantity.fromValue('not a number');
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidQuantityError);
+          expect(result.error.message).toContain('Invalid quantity format');
+        }
+      });
+
+      it('should create from Decimal', () => {
+        const result = Quantity.fromValue(new Decimal(50.25));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value).toBe(50.25);
+        }
+      });
     });
 
     describe('fromMarketData', () => {
@@ -143,6 +202,16 @@ describe('Quantity', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        }
+      });
+
+      it('should reject non-number value', () => {
+        const result = Quantity.fromMarketData('100' as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidQuantityError);
+          expect(result.error.message).toContain('must be a number');
         }
       });
     });

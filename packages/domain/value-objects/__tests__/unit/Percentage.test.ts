@@ -63,6 +63,34 @@ describe('Percentage', () => {
           expect(result.error).toBeInstanceOf(InvalidPercentageError);
         }
       });
+
+      it('должен создать из строки с символом %', () => {
+        const result = Percentage.fromValue('50%');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getValue()).toBe(50);
+        }
+      });
+
+      it('должен создать из строки с пробелами и символом %', () => {
+        const result = Percentage.fromValue('  25.5%  ');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getValue()).toBe(25.5);
+        }
+      });
+
+      it('должен отклонить невалидную строку', () => {
+        const result = Percentage.fromValue('not a number');
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPercentageError);
+          expect(result.error.message).toContain('Invalid percentage format');
+        }
+      });
     });
 
     describe('fromDecimal', () => {
@@ -81,6 +109,43 @@ describe('Percentage', () => {
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value.getValue()).toBe(2.5);
+        }
+      });
+
+      it('должен отклонить Infinity', () => {
+        const result = Percentage.fromDecimal(Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPercentageError);
+          expect(result.error.message).toContain('finite');
+        }
+      });
+
+      it('должен отклонить -Infinity', () => {
+        const result = Percentage.fromDecimal(-Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPercentageError);
+        }
+      });
+
+      it('должен отклонить NaN', () => {
+        const result = Percentage.fromDecimal(NaN);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPercentageError);
+        }
+      });
+
+      it('должен обработать ошибку при парсинге невалидного Decimal', () => {
+        const result = Percentage.fromDecimal('invalid' as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidPercentageError);
         }
       });
     });
@@ -335,6 +400,32 @@ describe('Percentage', () => {
           expect(result.value.getValue()).toBe(15);
         }
       });
+
+      it('должен отклонить сложение с overflow', () => {
+        const p1 = unwrap(Percentage.fromValue(9e5));
+        const p2 = unwrap(Percentage.fromValue(2e5)); // Сумма = 1.1e6 > MAX_PERCENTAGE
+
+        const result = p1.add(p2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('overflow');
+        }
+      });
+
+      it('должен отклонить сложение с underflow', () => {
+        const p1 = unwrap(Percentage.fromValue(-9e5));
+        const p2 = unwrap(Percentage.fromValue(-2e5)); // Сумма = -1.1e6 < MIN_PERCENTAGE
+
+        const result = p1.add(p2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('underflow');
+        }
+      });
     });
 
     describe('subtract', () => {
@@ -349,6 +440,32 @@ describe('Percentage', () => {
           expect(result.value.getValue()).toBe(7);
         }
       });
+
+      it('должен отклонить вычитание с overflow', () => {
+        const p1 = unwrap(Percentage.fromValue(9e5));
+        const p2 = unwrap(Percentage.fromValue(-2e5)); // Результат = 1.1e6 > MAX_PERCENTAGE
+
+        const result = p1.subtract(p2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('overflow');
+        }
+      });
+
+      it('должен отклонить вычитание с underflow', () => {
+        const p1 = unwrap(Percentage.fromValue(-9e5));
+        const p2 = unwrap(Percentage.fromValue(2e5)); // Результат = -1.1e6 < MIN_PERCENTAGE
+
+        const result = p1.subtract(p2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('underflow');
+        }
+      });
     });
 
     describe('multiply', () => {
@@ -360,6 +477,31 @@ describe('Percentage', () => {
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value.getValue()).toBe(20);
+        }
+      });
+
+      it('должен отклонить умножение с overflow', () => {
+        const pct = unwrap(Percentage.fromValue(5e5));
+        const factor = 3; // Результат = 1.5e6 > MAX_PERCENTAGE
+
+        const result = pct.multiply(factor);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+          expect(result.error.message).toContain('overflow');
+        }
+      });
+
+      it('должен отклонить умножение отрицательного числа с overflow по модулю', () => {
+        const pct = unwrap(Percentage.fromValue(-5e5));
+        const factor = 3; // Результат = -1.5e6, |результат| > MAX_PERCENTAGE
+
+        const result = pct.multiply(factor);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
         }
       });
     });
