@@ -327,7 +327,7 @@ describe('Spread', () => {
         }
       });
 
-      it('should clamp at price boundaries', () => {
+      it('should clamp at price boundaries when shifting down', () => {
         const spread = unwrap(Spread.fromNumbers(0.005, 0.045));
 
         const result = spread.shift(-0.1);
@@ -337,6 +337,47 @@ describe('Spread', () => {
           const shiftedDown = result.value;
           expect(shiftedDown.bid.value).toBe(0.0001);
           expect(shiftedDown.width()).toBeCloseTo(0.04, 2);
+        }
+      });
+
+      it('should clamp at price boundaries when shifting up', () => {
+        const spread = unwrap(Spread.fromNumbers(0.955, 0.995));
+
+        const result = spread.shift(0.1);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const shiftedUp = result.value;
+          expect(shiftedUp.ask.value).toBe(0.9999);
+          expect(shiftedUp.width()).toBeCloseTo(0.04, 2);
+        }
+      });
+
+      it('should handle extreme positive shift gracefully', () => {
+        const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
+
+        // Very large shift that would exceed MAX_PRICE
+        const result = spread.shift(1000);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const shifted = result.value;
+          // Should clamp to MAX_PRICE
+          expect(shifted.ask.value).toBeLessThanOrEqual(0.9999);
+        }
+      });
+
+      it('should handle extreme negative shift gracefully', () => {
+        const spread = unwrap(Spread.fromNumbers(0.48, 0.52));
+
+        // Very large negative shift that would go below MIN_PRICE
+        const result = spread.shift(-1000);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          const shifted = result.value;
+          // Should clamp to MIN_PRICE
+          expect(shifted.bid.value).toBeGreaterThanOrEqual(0.0001);
         }
       });
 
