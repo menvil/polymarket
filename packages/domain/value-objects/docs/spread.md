@@ -727,7 +727,7 @@ if (spread.isWide()) {
 }
 
 // ✅ Сохраняйте ширину при shift
-const shifted = spread.shift(0.05);
+const shifted = unwrap(spread.shift(0.05));
 console.assert(shifted.width() === spread.width());
 ```
 

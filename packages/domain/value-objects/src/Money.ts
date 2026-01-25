@@ -136,7 +136,7 @@ export class Money {
    * const m4 = unwrap(Money.fromValue(new Decimal(100)));
    *
    * // Обработка ошибок
-   * const result = unwrap(Money.fromValue(NaN);
+   * const result = Money.fromValue(NaN);
    * if (!result.ok) {
    *   console.error(result.error.message); // "Amount cannot be NaN"
    * }

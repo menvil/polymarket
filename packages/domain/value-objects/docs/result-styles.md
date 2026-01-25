@@ -278,22 +278,26 @@ export function createBalance(): Result<Balance, Error> {
 **✅ Возвращаем `Result<T, E>` когда:**
 
 1. **Фабричные методы** — получают внешние данные (могут быть невалидными)
+
    ```typescript
    static fromValue(value: unknown): Result<Price, InvalidPriceError>
    ```
 
 2. **Арифметические операции** — могут overflow или получить невалидный аргумент
+
    ```typescript
    add(amount: number): Result<Price, InvalidPriceError>
    divide(divisor: number): Result<Quantity, DivisionByZeroError>
    ```
 
 3. **Операции с валидацией параметров** — параметр может быть невалидным
+
    ```typescript
    toTick(tickSize: number): Result<Price, InvalidPriceError>  // tickSize может быть <= 0, NaN
    ```
 
 4. **Операции между объектами** — объекты могут быть несовместимы
+
    ```typescript
    add(other: Money): Result<Money, CurrencyMismatchError>  // валюты могут не совпадать
    ```
@@ -301,18 +305,21 @@ export function createBalance(): Result<Balance, Error> {
 **❌ НЕ возвращаем Result (простое значение) когда:**
 
 1. **Предикаты** — всегда возвращают boolean (оперируем валидными объектами)
+
    ```typescript
    isGreaterThan(other: Price): boolean
    isZero(): boolean
    ```
 
 2. **Геттеры** — просто читают внутреннее валидное поле
+
    ```typescript
    getValue(): number
    getCurrency(): string
    ```
 
 3. **Безопасные преобразования** — не могут упасть
+
    ```typescript
    toString(): string
    toJSON(): object
