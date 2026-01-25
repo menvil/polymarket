@@ -7,12 +7,24 @@
  *
  * @example
  * ```typescript
- * const qty = Quantity.fromNumber(10.5);
+ * import { unwrap } from '@polymarket/result';
+ *
+ * const result = Quantity.fromValue(10.5);
+ * if (result.ok) {
+ *   const qty = result.value;
+ *   const rounded = qty.toTick(0.1);
+ *   console.log(rounded.value); // 10.5
+ * }
+ *
+ * // Или используя unwrap
+ * const qty = unwrap(Quantity.fromValue(10.5));
  * const rounded = qty.toTick(0.1);
  * console.log(rounded.value); // 10.5
  * ```
  */
-import { InvalidQuantityError } from '../../shared/errors/index.js';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError, ArithmeticOverflowError, DivisionByZeroError } from '@polymarket/errors';
+import Decimal from 'decimal.js';
 
 export class Quantity {
   public readonly value: number;
@@ -23,36 +35,18 @@ export class Quantity {
   private static readonly DEFAULT_TICK = 0.01;
   private static readonly EPSILON = 0.0001;
 
-  private constructor(value: number) {
-    this.value = value;
-  }
+  /**
+   * Нулевое количество (0 акций)
+   */
+  public static readonly ZERO = new Quantity(0);
 
   /**
-   * Создаёт Quantity из числа
-   *
-   * @param value - Значение количества (должно быть >= minSize)
-   * @param minSize - Минимальный размер (по умолчанию 1 акция, используйте orderMinSize из рынка)
-   * @returns Экземпляр Quantity
-   * @throws {InvalidQuantityError} Если количество невалидно
-   *
-   * @remarks
-   * КРИТИЧНО: Всегда передавайте minSize из market info (orderMinSize)!
-   * По умолчанию = 1 акция, но каждый маркет может иметь свой минимум.
-   *
-   * @example
-   * ```typescript
-   * // По умолчанию (1 акция)
-   * const qty = Quantity.fromNumber(10);
-   *
-   * // С минимальным размером из рынка
-   * const qty = Quantity.fromNumber(10, marketInfo.orderMinSize || 1);
-   * ```
+   * Одна акция
    */
-  public static fromNumber(value: number, minSize: number = Quantity.MIN_SIZE): Quantity {
-    if (!Quantity.isValid(value, minSize)) {
-      throw new InvalidQuantityError(value, minSize);
-    }
-    return new Quantity(value);
+  public static readonly ONE = new Quantity(1);
+
+  private constructor(value: number) {
+    this.value = value;
   }
 
   /**
@@ -68,24 +62,150 @@ export class Quantity {
    * Создаёт Quantity из рыночных данных без валидации минимального размера
    *
    * @param value - Значение количества (должно быть >= 0)
-   * @returns Экземпляр Quantity
+   * @returns Result с Quantity или InvalidQuantityError
    *
    * @remarks
    * Используйте для входящих рыночных данных (сделки, исполнения), где биржа
    * может отправлять количества меньше нашего MIN_SIZE для ордеров.
-   * Для создания ордеров используйте `fromNumber()`, который проверяет MIN_SIZE.
+   * Для создания ордеров используйте `fromValue()`, который проверяет MIN_SIZE.
    *
    * @example
    * ```typescript
+   * import { unwrap } from '@polymarket/result';
+   *
    * // Для входящей сделки с биржи
-   * const qty = Quantity.fromMarketData(0.07);
+   * const result = Quantity.fromMarketData(0.07);
+   * if (result.ok) {
+   *   const qty = result.value;
+   * }
+   *
+   * // Или используя unwrap
+   * const qty = unwrap(Quantity.fromMarketData(0.07));
    * ```
    */
-  public static fromMarketData(value: number): Quantity {
-    if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      throw new InvalidQuantityError(value, 0);
+  public static fromMarketData(value: number): Result<Quantity, InvalidQuantityError> {
+    if (typeof value !== 'number') {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid quantity ${ctx.value}: must be a number`,
+          {
+            context: { value }
+          }
+        )
+      );
     }
-    return new Quantity(value);
+
+    // Используем Decimal для проверки isFinite и >= 0
+    const decimal = new Decimal(value);
+    if (!decimal.isFinite()) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid quantity ${ctx.value}: must be a finite number`,
+          {
+            context: { value }
+          }
+        )
+      );
+    }
+
+    if (decimal.lessThan(0)) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid quantity ${ctx.value}: must be >= ${ctx.min}`,
+          { context: { value, min: 0 } }
+        )
+      );
+    }
+
+    return Ok(new Quantity(value));
+  }
+
+  /**
+   * Создаёт Quantity из различных типов значений
+   *
+   * @param value - Значение: number, string или Decimal
+   * @param minSize - Минимальный размер (по умолчанию 1 акция, используйте orderMinSize из рынка)
+   * @returns Result с Quantity или InvalidQuantityError
+   *
+   * @remarks
+   * Универсальный метод для создания Quantity.
+   * Автоматически определяет тип входного значения и выполняет все необходимые проверки:
+   * - Парсинг строки в число
+   * - Валидация формата (конечное значение, не NaN)
+   * - Проверка минимального размера (minSize)
+   * - Использует Decimal.js для точных сравнений
+   *
+   * КРИТИЧНО: Всегда передавайте minSize из market info (orderMinSize)!
+   * По умолчанию = 1 акция, но каждый маркет может иметь свой минимум.
+   *
+   * @throws Никогда - все ошибки возвращаются через Result
+   *
+   * @example
+   * ```typescript
+   * import { unwrap } from '@polymarket/result';
+   *
+   * // Из числа (по умолчанию minSize = 1)
+   * const q1 = unwrap(Quantity.fromValue(100));
+   *
+   * // С минимальным размером из рынка
+   * const q2 = unwrap(Quantity.fromValue(10, marketInfo.orderMinSize || 1));
+   *
+   * // Из строки
+   * const q3 = unwrap(Quantity.fromValue('100.5'));
+   *
+   * // Из Decimal
+   * const q4 = unwrap(Quantity.fromValue(new Decimal(100)));
+   *
+   * // Обработка ошибок
+   * const result = Quantity.fromValue(0.5, 1);
+   * if (!result.ok) {
+   *   console.error(result.error.message); // "Invalid quantity: must be >= 1"
+   * }
+   * ```
+   */
+  public static fromValue(value: number | string | Decimal, minSize: number = Quantity.MIN_SIZE): Result<Quantity, InvalidQuantityError> {
+    // Преобразование в число с обработкой ошибок
+    let numValue: number;
+    try {
+      if (value instanceof Decimal) {
+        numValue = value.toNumber();
+      } else if (typeof value === 'string') {
+        // Используем Decimal для парсинга
+        const decimal = new Decimal(value);
+        if (!decimal.isFinite()) {
+          return Err(
+            new InvalidQuantityError(
+              (ctx) => `Invalid quantity "${ctx.value}": not a valid number`,
+              { context: { value } }
+            )
+          );
+        }
+        numValue = decimal.toNumber();
+      } else {
+        numValue = value;
+      }
+    } catch (error) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid quantity format: ${ctx.value}`,
+          { context: { value: String(value) } }
+        )
+      );
+    }
+
+    // Валидация с использованием Decimal для точных сравнений
+    if (!Quantity.isValid(numValue, minSize)) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid quantity ${ctx.value}: must be >= ${ctx.min}`,
+          {
+            context: { value: numValue, min: minSize }
+          }
+        )
+      );
+    }
+
+    return Ok(new Quantity(numValue));
   }
 
   /**
@@ -94,13 +214,22 @@ export class Quantity {
    * @param value - Значение для проверки
    * @param minSize - Минимальный размер
    * @returns True если валидно
+   *
+   * @remarks
+   * Использует Decimal.js для точных сравнений с минимальным размером.
    */
   public static isValid(value: number, minSize: number = Quantity.MIN_SIZE): boolean {
+    // Используем Decimal для проверки isFinite и точных сравнений
+    const decimal = new Decimal(value);
+    if (!decimal.isFinite()) {
+      return false;
+    }
+
+    const minDecimal = new Decimal(minSize);
+
     return (
-      typeof value === 'number' &&
-      Number.isFinite(value) &&
-      value >= 0 &&
-      (value === 0 || value >= minSize)
+      !decimal.lessThan(0) &&
+      (decimal.equals(0) || !decimal.lessThan(minDecimal))
     );
   }
 
@@ -108,19 +237,23 @@ export class Quantity {
    * Округляет до размера тика
    *
    * @param tickSize - Размер тика (по умолчанию 0.01)
-   * @returns Новый Quantity округлённый до тика
+   * @returns Result с новым Quantity округлённым до тика или InvalidQuantityError
    *
    * @remarks
    * Округляет количество до ближайшего размера тика.
    *
    * @example
    * ```typescript
-   * const qty = Quantity.fromNumber(10.567);
-   * const rounded = qty.toTick(0.01);
-   * console.log(rounded.value); // 10.57
+   * import { unwrap } from '@polymarket/result';
+   *
+   * const qty = unwrap(Quantity.fromValue(10.567));
+   * const result = qty.toTick(0.01);
+   * if (result.ok) {
+   *   console.log(result.value.value); // 10.57
+   * }
    * ```
    */
-  public toTick(tickSize: number = Quantity.DEFAULT_TICK): Quantity {
+  public toTick(tickSize: number = Quantity.DEFAULT_TICK): Result<Quantity, InvalidQuantityError> {
     return this.roundToTick(tickSize, Math.round);
   }
 
@@ -128,9 +261,9 @@ export class Quantity {
    * Округляет вниз до размера тика
    *
    * @param tickSize - Размер тика
-   * @returns Новый Quantity округлённый вниз до тика
+   * @returns Result с новым Quantity округлённым вниз до тика или InvalidQuantityError
    */
-  public floorToTick(tickSize: number = Quantity.DEFAULT_TICK): Quantity {
+  public floorToTick(tickSize: number = Quantity.DEFAULT_TICK): Result<Quantity, InvalidQuantityError> {
     return this.roundToTick(tickSize, Math.floor);
   }
 
@@ -138,91 +271,193 @@ export class Quantity {
    * Округляет вверх до размера тика
    *
    * @param tickSize - Размер тика
-   * @returns Новый Quantity округлённый вверх до тика
+   * @returns Result с новым Quantity округлённым вверх до тика или InvalidQuantityError
    */
-  public ceilToTick(tickSize: number = Quantity.DEFAULT_TICK): Quantity {
+  public ceilToTick(tickSize: number = Quantity.DEFAULT_TICK): Result<Quantity, InvalidQuantityError> {
     return this.roundToTick(tickSize, Math.ceil);
   }
 
-  private roundToTick(tickSize: number, roundFn: (x: number) => number): Quantity {
-    if (!Number.isFinite(tickSize) || tickSize <= 0) {
-      throw new Error(`Invalid tickSize: ${tickSize}. Must be a positive finite number`);
+  /**
+   * Внутренний метод для округления количества до размера тика
+   *
+   * @param tickSize - Размер тика (например, 0.1 для 10 центов)
+   * @param roundFn - Функция округления (Math.round, Math.floor, Math.ceil)
+   * @returns Новый Quantity округлённый до тика
+   *
+   * @remarks
+   * Алгоритм:
+   * 1. Делит this.value на tickSize (10.567 / 0.01 = 1056.7)
+   * 2. Применяет roundFn (Math.round(1056.7) = 1057)
+   * 3. Умножает обратно на tickSize (1057 * 0.01 = 10.57)
+   * 4. Фиксирует количество знаков по tickSize
+   * 5. Зажимает в минимум 0
+   *
+   * Использует Decimal.js для точных вычислений и избежания floating-point ошибок.
+   *
+   * @throws {RangeError} Если tickSize невалидный (не конечное число или <= 0)
+   *
+   * @example
+   * // roundToTick(0.01, Math.round)
+   * // 10.567 → 10.567 / 0.01 → 1056.7 → round(1056.7) → 1057 → 1057 * 0.01 → 10.57
+   */
+  private roundToTick(tickSize: number, roundFn: (x: number) => number): Result<Quantity, InvalidQuantityError> {
+    // Используем Decimal для проверки isFinite
+    const tickSizeDecimal = new Decimal(tickSize);
+    if (!tickSizeDecimal.isFinite()) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid tickSize ${ctx.tickSize}: must be a finite number`,
+          { context: { tickSize } }
+        )
+      );
     }
-    const rounded = roundFn(this.value / tickSize) * tickSize;
-    const decimals = this.getDecimalPlaces(tickSize);
-    return new Quantity(Math.max(0, Number(rounded.toFixed(decimals))));
+    if (tickSizeDecimal.lessThanOrEqualTo(0)) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid tickSize ${ctx.tickSize}: must be positive`,
+          { context: { tickSize } }
+        )
+      );
+    }
+
+    // Используем Decimal для точных вычислений
+    const divided = new Decimal(this.value).dividedBy(tickSize).toNumber();
+    const roundedValue = roundFn(divided);
+    const rounded = new Decimal(roundedValue).times(tickSize).toNumber();
+
+    // Вычисляем количество десятичных знаков в tickSize
+    const tickSizeStr = tickSize.toString();
+    const decimalIndex = tickSizeStr.indexOf('.');
+    const decimals = decimalIndex === -1 ? 0 : tickSizeStr.length - decimalIndex - 1;
+
+    // Фиксируем количество знаков и зажимаем в минимум 0
+    return Ok(new Quantity(Math.max(0, Number(rounded.toFixed(decimals)))));
   }
 
   /**
    * Складывает количества
    *
    * @param other - Quantity для сложения
-   * @returns Новый Quantity
-   * @throws {Error} Если результат не является конечным числом
+   * @returns Result с новым Quantity или ArithmeticOverflowError
    */
-  public add(other: Quantity): Quantity {
-    const result = this.value + other.value;
-    if (!Number.isFinite(result)) {
-      throw new Error(`Addition overflow: ${this.value} + ${other.value}`);
+  public add(other: Quantity): Result<Quantity, ArithmeticOverflowError> {
+    const result = new Decimal(this.value).plus(other.value).toNumber();
+    // Используем Decimal для проверки isFinite
+    const resultDecimal = new Decimal(result);
+    if (!resultDecimal.isFinite()) {
+      return Err(
+        new ArithmeticOverflowError(
+          (ctx) => `Addition overflow: ${ctx.a} + ${ctx.b} = ${ctx.result}`,
+          {
+            context: { a: this.value, b: other.value, result }
+          }
+        )
+      );
     }
-    return new Quantity(result);
+    return Ok(new Quantity(result));
   }
 
   /**
    * Вычитает количество
    *
    * @param other - Quantity для вычитания
-   * @returns Новый Quantity
-   * @throws {Error} Если результат будет отрицательным
+   * @returns Result с новым Quantity или InvalidQuantityError
    */
-  public subtract(other: Quantity): Quantity {
-    const result = this.value - other.value;
-    if (result < 0) {
-      throw new Error(`Cannot subtract: result would be negative (${result})`);
+  public subtract(other: Quantity): Result<Quantity, InvalidQuantityError> {
+    const resultDecimal = new Decimal(this.value).minus(other.value);
+    if (resultDecimal.lessThan(0)) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Cannot subtract: result would be negative (${ctx.result})`,
+          { context: { result: resultDecimal.toString() } }
+        )
+      );
     }
-    return new Quantity(result);
+    return Ok(new Quantity(resultDecimal.toNumber()));
   }
 
   /**
    * Умножает на коэффициент
    *
    * @param factor - Коэффициент умножения (должен быть неотрицательным конечным числом)
-   * @returns Новый Quantity
-   * @throws {Error} Если factor невалиден (NaN, Infinity, отрицательный)
+   * @returns Result с новым Quantity или InvalidQuantityError/ArithmeticOverflowError
    */
-  public multiply(factor: number): Quantity {
-    if (!Number.isFinite(factor)) {
-      throw new Error(`Invalid factor: ${factor}. Must be a finite number`);
+  public multiply(factor: number): Result<Quantity, InvalidQuantityError | ArithmeticOverflowError> {
+    // Используем Decimal для проверки isFinite
+    const factorDecimal = new Decimal(factor);
+    if (!factorDecimal.isFinite()) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid factor ${ctx.factor}: must be a finite number`,
+          { context: { factor } }
+        )
+      );
     }
-    if (factor < 0) {
-      throw new Error(`Invalid factor: ${factor}. Must be non-negative`);
+    if (factorDecimal.lessThan(0)) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid factor ${ctx.factor}: must be non-negative`,
+          { context: { factor } }
+        )
+      );
     }
-    const result = this.value * factor;
-    if (!Number.isFinite(result)) {
-      throw new Error(`Multiplication overflow: ${this.value} * ${factor}`);
+    const result = new Decimal(this.value).times(factor).toNumber();
+    const resultDecimal = new Decimal(result);
+    if (!resultDecimal.isFinite()) {
+      return Err(
+        new ArithmeticOverflowError(
+          (ctx) => `Multiplication overflow: ${ctx.a} * ${ctx.b} = ${ctx.result}`,
+          { context: { a: this.value, b: factor, result } }
+        )
+      );
     }
-    return new Quantity(result);
+    return Ok(new Quantity(result));
   }
 
   /**
    * Делит на коэффициент
    *
    * @param divisor - Делитель (должен быть положительным конечным числом)
-   * @returns Новый Quantity
-   * @throws {Error} Если делитель невалиден (NaN, Infinity, <= 0)
+   * @returns Result с новым Quantity или InvalidQuantityError/ArithmeticOverflowError/DivisionByZeroError
    */
-  public divide(divisor: number): Quantity {
-    if (!Number.isFinite(divisor)) {
-      throw new Error(`Invalid divisor: ${divisor}. Must be a finite number`);
+  public divide(divisor: number): Result<Quantity, InvalidQuantityError | ArithmeticOverflowError | DivisionByZeroError> {
+    // Используем Decimal для проверки isFinite
+    const divisorDecimal = new Decimal(divisor);
+    if (!divisorDecimal.isFinite()) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid divisor ${ctx.divisor}: must be a finite number`,
+          { context: { divisor } }
+        )
+      );
     }
-    if (divisor <= 0) {
-      throw new Error(`Divisor must be positive: ${divisor}`);
+    if (divisorDecimal.equals(0)) {
+      return Err(
+        new DivisionByZeroError(
+          () => `Cannot divide by zero`,
+          { context: {} }
+        )
+      );
     }
-    const result = this.value / divisor;
-    if (!Number.isFinite(result)) {
-      throw new Error(`Division overflow: ${this.value} / ${divisor}`);
+    if (divisorDecimal.lessThan(0)) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Invalid divisor ${ctx.divisor}: must be positive`,
+          { context: { divisor } }
+        )
+      );
     }
-    return new Quantity(result);
+    const result = new Decimal(this.value).dividedBy(divisor).toNumber();
+    const resultDecimal = new Decimal(result);
+    if (!resultDecimal.isFinite()) {
+      return Err(
+        new ArithmeticOverflowError(
+          (ctx) => `Division overflow: ${ctx.a} / ${ctx.b} = ${ctx.result}`,
+          { context: { a: this.value, b: divisor, result } }
+        )
+      );
+    }
+    return Ok(new Quantity(result));
   }
 
   /**
@@ -230,9 +465,14 @@ export class Quantity {
    *
    * @param other - Quantity для сравнения
    * @returns True если больше
+   *
+   * @remarks
+   * Использует Decimal.js для точного сравнения, избегая ошибок floating-point.
    */
   public isGreaterThan(other: Quantity): boolean {
-    return this.value > other.value;
+    const thisDecimal = new Decimal(this.value);
+    const otherDecimal = new Decimal(other.value);
+    return thisDecimal.greaterThan(otherDecimal);
   }
 
   /**
@@ -240,9 +480,49 @@ export class Quantity {
    *
    * @param other - Quantity для сравнения
    * @returns True если меньше
+   *
+   * @remarks
+   * Использует Decimal.js для точного сравнения, избегая ошибок floating-point.
    */
   public isLessThan(other: Quantity): boolean {
-    return this.value < other.value;
+    const thisDecimal = new Decimal(this.value);
+    const otherDecimal = new Decimal(other.value);
+    return thisDecimal.lessThan(otherDecimal);
+  }
+
+  /**
+   * Сериализует в JSON
+   *
+   * @returns Объект для JSON сериализации
+   *
+   * @example
+   * ```typescript
+   * const qty = unwrap(Quantity.fromValue(100));
+   * const json = qty.toJSON();
+   * console.log(json); // { value: 100 }
+   * ```
+   */
+  public toJSON(): { value: number } {
+    return { value: this.value };
+  }
+
+  /**
+   * Создаёт Quantity из JSON объекта
+   *
+   * @param json - JSON объект с полем value
+   * @returns Result с Quantity или InvalidQuantityError
+   *
+   * @example
+   * ```typescript
+   * const json = { value: 100 };
+   * const result = Quantity.fromJSON(json);
+   * if (result.ok) {
+   *   console.log(result.value.value); // 100
+   * }
+   * ```
+   */
+  public static fromJSON(json: { value: number }): Result<Quantity, InvalidQuantityError> {
+    return Quantity.fromValue(json.value);
   }
 
   /**
@@ -250,27 +530,41 @@ export class Quantity {
    *
    * @param other - Quantity для сравнения
    * @returns True если равны (в пределах epsilon)
+   *
+   * @remarks
+   * Использует Decimal.js для точного вычисления разницы и сравнения с epsilon.
    */
   public equals(other: Quantity): boolean {
-    return Math.abs(this.value - other.value) < Quantity.EPSILON;
+    const diff = new Decimal(this.value).minus(other.value).abs();
+    const epsilonDecimal = new Decimal(Quantity.EPSILON);
+    return diff.lessThan(epsilonDecimal);
   }
 
   /**
    * Проверяет, равно ли нулю
    *
    * @returns True если ноль (в пределах epsilon)
+   *
+   * @remarks
+   * Использует Decimal.js для точного сравнения с epsilon.
    */
   public isZero(): boolean {
-    return Math.abs(this.value) < Quantity.EPSILON;
+    const valueDecimal = new Decimal(this.value).abs();
+    const epsilonDecimal = new Decimal(Quantity.EPSILON);
+    return valueDecimal.lessThan(epsilonDecimal);
   }
 
   /**
    * Проверяет, положительное ли значение
    *
    * @returns True если положительное
+   *
+   * @remarks
+   * Использует Decimal.js для точного сравнения с нулём.
    */
   public isPositive(): boolean {
-    return this.value > 0;
+    const valueDecimal = new Decimal(this.value);
+    return valueDecimal.greaterThan(0);
   }
 
   /**
@@ -281,20 +575,6 @@ export class Quantity {
    */
   public toString(decimals: number = 2): string {
     return this.value.toFixed(decimals);
-  }
-
-  private getDecimalPlaces(tickSize: number): number {
-    if (!Number.isFinite(tickSize) || tickSize === 0) {
-      return 0;
-    }
-    let decimals = 0;
-    let value = Math.abs(tickSize);
-    const maxDecimals = 15;
-    while (decimals < maxDecimals && Math.abs(value - Math.round(value)) > 1e-10) {
-      value *= 10;
-      decimals++;
-    }
-    return decimals;
   }
 
   public static get minSize(): number {

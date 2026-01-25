@@ -11,4 +11,4 @@ export { Price } from './Price.js';
 export { Quantity } from './Quantity.js';
 export { Percentage } from './Percentage.js';
 export { Quote } from './Quote.js';
-export { Spread, InvalidSpreadError } from './Spread.js';
+export { Spread } from './Spread.js';

@@ -17,14 +17,14 @@
  * import { InvalidMoneyError } from '@polymarket/errors';
  *
  * // Создание баланса
- * const balanceResult = Balance.fromAmount(1000, 'USDC');
+ * const balanceResult = Balance.fromValue(1000, 'USDC');
  * balanceResult.match({
  *   ok: (balance) => console.log(`Balance: ${balance.getAmount()} ${balance.getCurrency()}`),
  *   err: (error) => console.error('Invalid balance:', error.message)
  * });
  *
  * // Проверка достаточности средств
- * const balance = Balance.fromAmount(1000, 'USDC').unwrap();
+ * const balance = Balance.fromValue(1000, 'USDC').unwrap();
  * const hasEnough = balance.hasEnough(500); // true
  *
  * // Резервирование средств
@@ -57,19 +57,60 @@ export class Balance {
   ) {}
 
   /**
-   * Создать Balance из Decimal значения
+   * Создать нулевой баланс в указанной валюте
    *
-   * @param amount - Сумма (Decimal)
-   * @param currency - Валюта (например, 'USDC', 'BTC')
-   * @returns Result с Balance или InvalidMoneyError
+   * @param currency - Валюта (по умолчанию 'USDC')
+   * @returns Balance с нулевой суммой
    *
    * @example
    * ```typescript
-   * const balance = Balance.fromDecimal(new Decimal('1000.50'), 'USDC');
+   * const zero = Balance.zero();
+   * console.log(zero.getAmount()); // 0
+   * console.log(zero.isZero()); // true
    * ```
    */
-  static fromDecimal(
-    amount: Decimal,
+  public static zero(currency: string = 'USDC'): Balance {
+    return new Balance(new Decimal(0), currency);
+  }
+
+  /**
+   * Создать Balance из различных типов значений
+   *
+   * @param amount - Значение: number, string или Decimal
+   * @param currency - Валюта (например, 'USDC', 'BTC')
+   * @returns Result с Balance или InvalidMoneyError
+   *
+   * @remarks
+   * Универсальный метод для создания Balance.
+   * Автоматически определяет тип входного значения и выполняет все необходимые проверки:
+   * - Валидация валюты (непустая строка)
+   * - Валидация формата числа (конечное значение)
+   * - Проверка неотрицательности (баланс >= 0)
+   *
+   * @throws Никогда - все ошибки возвращаются через Result
+   *
+   * @example
+   * ```typescript
+   * import { unwrap } from '@polymarket/result';
+   *
+   * // Из числа
+   * const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+   *
+   * // Из строки
+   * const b2 = unwrap(Balance.fromValue('1000.50', 'USDC'));
+   *
+   * // Из Decimal
+   * const b3 = unwrap(Balance.fromValue(new Decimal(1000), 'USDC'));
+   *
+   * // Обработка ошибок
+   * const result = Balance.fromValue(-100, 'USDC');
+   * if (!result.ok) {
+   *   console.error(result.error.message); // "Balance cannot be negative"
+   * }
+   * ```
+   */
+  static fromValue(
+    amount: number | string | Decimal,
     currency: string
   ): Result<Balance, InvalidMoneyError> {
     // Валидация валюты
@@ -78,102 +119,52 @@ export class Balance {
         new InvalidMoneyError(
           'Currency must be a non-empty string',
           {
-            code: InvalidMoneyError.code,
-            context: { amount: amount.toString(), currency: currency || '(empty)' }
+            context: { amount: String(amount), currency: currency || '(empty)' }
+          }
+        )
+      );
+    }
+
+    // Преобразование в Decimal с обработкой ошибок
+    let decimalAmount: Decimal;
+    try {
+      decimalAmount = amount instanceof Decimal ? amount : new Decimal(amount);
+    } catch (error) {
+      return Err(
+        new InvalidMoneyError(
+          (ctx) => `Invalid balance format: ${ctx.amount}`,
+          {
+            context: { amount: String(amount), currency, error: String(error) }
           }
         )
       );
     }
 
     // Валидация конечности
-    if (!amount.isFinite()) {
+    if (!decimalAmount.isFinite()) {
       return Err(
         new InvalidMoneyError(
           'Balance amount must be finite',
           {
-            code: InvalidMoneyError.code,
-            context: { amount: amount.toString(), currency, reason: 'not finite' }
+            context: { amount: decimalAmount.toString(), currency, reason: 'not finite' }
           }
         )
       );
     }
 
     // Валидация неотрицательности (баланс не может быть отрицательным)
-    if (amount.isNegative()) {
+    if (decimalAmount.isNegative()) {
       return Err(
         new InvalidMoneyError(
           (ctx) => `Balance cannot be negative: ${ctx.amount} ${ctx.currency}`,
           {
-            code: InvalidMoneyError.code,
-            context: { amount: amount.toString(), currency }
+            context: { amount: decimalAmount.toString(), currency }
           }
         )
       );
     }
 
-    return Ok(new Balance(amount, currency));
-  }
-
-  /**
-   * Создать Balance из числа
-   *
-   * @param amount - Сумма (number)
-   * @param currency - Валюта
-   * @returns Result с Balance или InvalidMoneyError
-   *
-   * @example
-   * ```typescript
-   * const balance = Balance.fromAmount(1000, 'USDC');
-   * ```
-   */
-  static fromAmount(
-    amount: number,
-    currency: string
-  ): Result<Balance, InvalidMoneyError> {
-    try {
-      return Balance.fromDecimal(new Decimal(amount), currency);
-    } catch (error) {
-      return Err(
-        new InvalidMoneyError(
-          (ctx) => `Invalid balance format: ${ctx.amount}`,
-          {
-            code: InvalidMoneyError.code,
-            context: { amount, currency, error: String(error) }
-          }
-        )
-      );
-    }
-  }
-
-  /**
-   * Создать Balance из строки
-   *
-   * @param amount - Сумма (string)
-   * @param currency - Валюта
-   * @returns Result с Balance или InvalidMoneyError
-   *
-   * @example
-   * ```typescript
-   * const balance = Balance.fromString('1000.50', 'USDC');
-   * ```
-   */
-  static fromString(
-    amount: string,
-    currency: string
-  ): Result<Balance, InvalidMoneyError> {
-    try {
-      return Balance.fromDecimal(new Decimal(amount), currency);
-    } catch (error) {
-      return Err(
-        new InvalidMoneyError(
-          (ctx) => `Invalid balance format: "${ctx.amount}"`,
-          {
-            code: InvalidMoneyError.code,
-            context: { amount, currency, error: String(error) }
-          }
-        )
-      );
-    }
+    return Ok(new Balance(decimalAmount, currency));
   }
 
   /**
@@ -214,7 +205,7 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const balance = Balance.fromAmount(1000, 'USDC').unwrap();
+   * const balance = Balance.fromValue(1000, 'USDC').unwrap();
    * balance.hasEnough(500); // true
    * balance.hasEnough(1500); // false
    * ```
@@ -232,8 +223,8 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const b1 = Balance.fromAmount(1000, 'USDC').unwrap();
-   * const b2 = Balance.fromAmount(500, 'USDC').unwrap();
+   * const b1 = Balance.fromValue(1000, 'USDC').unwrap();
+   * const b2 = Balance.fromValue(500, 'USDC').unwrap();
    * const sumResult = b1.add(b2);
    * // Result.ok(Balance(1500, 'USDC'))
    * ```
@@ -244,7 +235,6 @@ export class Balance {
         new CurrencyMismatchError(
           (ctx) => `Cannot add ${ctx.actual} to ${ctx.expected}`,
           {
-            code: CurrencyMismatchError.code,
             context: {
               operation: 'add balance',
               expected: this.currency,
@@ -267,8 +257,8 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const b1 = Balance.fromAmount(1000, 'USDC').unwrap();
-   * const b2 = Balance.fromAmount(300, 'USDC').unwrap();
+   * const b1 = Balance.fromValue(1000, 'USDC').unwrap();
+   * const b2 = Balance.fromValue(300, 'USDC').unwrap();
    * const result = b1.subtract(b2);
    * // Result.ok(Balance(700, 'USDC'))
    * ```
@@ -279,7 +269,6 @@ export class Balance {
         new CurrencyMismatchError(
           (ctx) => `Cannot subtract ${ctx.actual} from ${ctx.expected}`,
           {
-            code: CurrencyMismatchError.code,
             context: {
               operation: 'subtract balance',
               expected: this.currency,
@@ -298,7 +287,6 @@ export class Balance {
         new InvalidMoneyError(
           (ctx) => `Insufficient balance: ${ctx.available} - ${ctx.required} = ${ctx.result}`,
           {
-            code: InvalidMoneyError.code,
             context: {
               available: this.amount.toNumber(),
               required: other.amount.toNumber(),
@@ -321,13 +309,237 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const b1 = Balance.fromAmount(1000, 'USDC').unwrap();
-   * const b2 = Balance.fromAmount(1000, 'USDC').unwrap();
+   * const b1 = Balance.fromValue(1000, 'USDC').unwrap();
+   * const b2 = Balance.fromValue(1000, 'USDC').unwrap();
    * b1.equals(b2); // true
    * ```
    */
   equals(other: Balance): boolean {
     return this.currency === other.currency && this.amount.equals(other.amount);
+  }
+
+  /**
+   * Проверить, больше ли текущий баланс чем другой
+   *
+   * @param other - Другой баланс для сравнения
+   * @returns Result с boolean или CurrencyMismatchError если разные валюты
+   *
+   * @example
+   * ```typescript
+   * const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+   * const b2 = unwrap(Balance.fromValue(500, 'USDC'));
+   *
+   * const result = b1.greaterThan(b2);
+   * if (result.ok) {
+   *   console.log(result.value); // true
+   * }
+   * ```
+   */
+  greaterThan(other: Balance): Result<boolean, CurrencyMismatchError> {
+    if (this.currency !== other.currency) {
+      return Err(
+        new CurrencyMismatchError(
+          (ctx) => `Cannot compare ${ctx.actual} with ${ctx.expected}`,
+          {
+            context: {
+              operation: 'compare balance',
+              expected: this.currency,
+              actual: other.currency
+            }
+          }
+        )
+      );
+    }
+
+    return Ok(this.amount.greaterThan(other.amount));
+  }
+
+  /**
+   * Проверить, меньше ли текущий баланс чем другой
+   *
+   * @param other - Другой баланс для сравнения
+   * @returns Result с boolean или CurrencyMismatchError если разные валюты
+   *
+   * @example
+   * ```typescript
+   * const b1 = unwrap(Balance.fromValue(500, 'USDC'));
+   * const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+   *
+   * const result = b1.lessThan(b2);
+   * if (result.ok) {
+   *   console.log(result.value); // true
+   * }
+   * ```
+   */
+  lessThan(other: Balance): Result<boolean, CurrencyMismatchError> {
+    if (this.currency !== other.currency) {
+      return Err(
+        new CurrencyMismatchError(
+          (ctx) => `Cannot compare ${ctx.actual} with ${ctx.expected}`,
+          {
+            context: {
+              operation: 'compare balance',
+              expected: this.currency,
+              actual: other.currency
+            }
+          }
+        )
+      );
+    }
+
+    return Ok(this.amount.lessThan(other.amount));
+  }
+
+  /**
+   * Проверить, больше или равен ли текущий баланс чем другой
+   *
+   * @param other - Другой баланс для сравнения
+   * @returns Result с boolean или CurrencyMismatchError если разные валюты
+   *
+   * @example
+   * ```typescript
+   * const b1 = unwrap(Balance.fromValue(1000, 'USDC'));
+   * const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+   *
+   * const result = b1.greaterThanOrEqual(b2);
+   * if (result.ok) {
+   *   console.log(result.value); // true
+   * }
+   * ```
+   */
+  greaterThanOrEqual(other: Balance): Result<boolean, CurrencyMismatchError> {
+    if (this.currency !== other.currency) {
+      return Err(
+        new CurrencyMismatchError(
+          (ctx) => `Cannot compare ${ctx.actual} with ${ctx.expected}`,
+          {
+            context: {
+              operation: 'compare balance',
+              expected: this.currency,
+              actual: other.currency
+            }
+          }
+        )
+      );
+    }
+
+    return Ok(this.amount.greaterThanOrEqualTo(other.amount));
+  }
+
+  /**
+   * Проверить, меньше или равен ли текущий баланс чем другой
+   *
+   * @param other - Другой баланс для сравнения
+   * @returns Result с boolean или CurrencyMismatchError если разные валюты
+   *
+   * @example
+   * ```typescript
+   * const b1 = unwrap(Balance.fromValue(500, 'USDC'));
+   * const b2 = unwrap(Balance.fromValue(1000, 'USDC'));
+   *
+   * const result = b1.lessThanOrEqual(b2);
+   * if (result.ok) {
+   *   console.log(result.value); // true
+   * }
+   * ```
+   */
+  lessThanOrEqual(other: Balance): Result<boolean, CurrencyMismatchError> {
+    if (this.currency !== other.currency) {
+      return Err(
+        new CurrencyMismatchError(
+          (ctx) => `Cannot compare ${ctx.actual} with ${ctx.expected}`,
+          {
+            context: {
+              operation: 'compare balance',
+              expected: this.currency,
+              actual: other.currency
+            }
+          }
+        )
+      );
+    }
+
+    return Ok(this.amount.lessThanOrEqualTo(other.amount));
+  }
+
+  /**
+   * Проверить, равен ли баланс нулю
+   *
+   * @returns true если баланс равен нулю
+   *
+   * @example
+   * ```typescript
+   * const empty = unwrap(Balance.fromValue(0, 'USDC'));
+   * console.log(empty.isZero()); // true
+   *
+   * const full = unwrap(Balance.fromValue(1000, 'USDC'));
+   * console.log(full.isZero()); // false
+   * ```
+   */
+  isZero(): boolean {
+    return this.amount.isZero();
+  }
+
+  /**
+   * Проверить, является ли баланс положительным (больше нуля)
+   *
+   * @returns true если баланс больше нуля
+   *
+   * @remarks
+   * Нулевой баланс НЕ считается положительным
+   *
+   * @example
+   * ```typescript
+   * const balance = unwrap(Balance.fromValue(1000, 'USDC'));
+   * console.log(balance.isPositive()); // true
+   *
+   * const empty = unwrap(Balance.fromValue(0, 'USDC'));
+   * console.log(empty.isPositive()); // false
+   * ```
+   */
+  isPositive(): boolean {
+    return this.amount.greaterThan(0);
+  }
+
+  /**
+   * Сериализует в JSON
+   *
+   * @returns Объект для JSON сериализации
+   *
+   * @example
+   * ```typescript
+   * const balance = unwrap(Balance.fromValue(1000, 'USDC'));
+   * const json = balance.toJSON();
+   * console.log(json); // { amount: "1000", currency: "USDC" }
+   * ```
+   */
+  public toJSON(): { amount: string; currency: string } {
+    return {
+      amount: this.amount.toString(),
+      currency: this.currency,
+    };
+  }
+
+  /**
+   * Создаёт Balance из JSON объекта
+   *
+   * @param json - JSON объект с полями amount и currency
+   * @returns Result с Balance или InvalidMoneyError
+   *
+   * @example
+   * ```typescript
+   * const json = { amount: "1000", currency: "USDC" };
+   * const result = Balance.fromJSON(json);
+   * if (result.ok) {
+   *   console.log(result.value.getAmount()); // 1000
+   * }
+   * ```
+   */
+  public static fromJSON(json: {
+    amount: string;
+    currency: string;
+  }): Result<Balance, InvalidMoneyError> {
+    return Balance.fromValue(json.amount, json.currency);
   }
 
   /**

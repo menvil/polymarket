@@ -16,18 +16,18 @@
  * import { Money } from '@polymarket/value-objects';
  *
  * // Создание Money (USDC по умолчанию)
- * const moneyResult = Money.fromAmount(100);
+ * const moneyResult = Money.fromValue(100);
  * moneyResult.match({
  *   ok: (money) => console.log(money.getAmount()), // 100
  *   err: (error) => console.error(error.message)
  * });
  *
  * // Короткий синтаксис с unwrap (USDC по умолчанию)
- * const money = Money.fromAmount(100).unwrap();
+ * const money = Money.fromValue(100).unwrap();
  *
  * // Математические операции
- * const m1 = Money.fromAmount(100).unwrap();
- * const m2 = Money.fromAmount(50).unwrap();
+ * const m1 = Money.fromValue(100).unwrap();
+ * const m2 = Money.fromValue(50).unwrap();
  *
  * const sum = m1.add(m2);
  * sum.match({
@@ -36,8 +36,8 @@
  * });
  *
  * // Точность decimal.js
- * const m3 = Money.fromString('0.1').unwrap();
- * const m4 = Money.fromString('0.2').unwrap();
+ * const m3 = Money.fromValue('0.1').unwrap();
+ * const m4 = Money.fromValue('0.2').unwrap();
  * const precise = m3.add(m4).unwrap();
  * precise.toDecimal().toString(); // "0.3" (точно!)
  * ```
@@ -85,165 +85,11 @@ export class Money {
   ) {}
 
   // ============================================================================
-  // Factory Methods
+  // Constants & Factory Methods
   // ============================================================================
 
   /**
-   * Создать Money из числа
-   *
-   * @param amount - Сумма (number)
-   * @param currency - Валюта (по умолчанию 'USDC')
-   * @returns Result с Money или InvalidMoneyError
-   *
-   * @example
-   * ```typescript
-   * const money = Money.fromAmount(100);
-   * const money2 = Money.fromAmount(100, 'USDC');
-   * ```
-   */
-  static fromAmount(
-    amount: number,
-    currency: SupportedCurrency = 'USDC'
-  ): Result<Money, InvalidMoneyError> {
-    // Валидация валюты
-    if (!Money.SUPPORTED_CURRENCIES.has(currency)) {
-      return Err(
-        new InvalidMoneyError(
-          `Unsupported currency: ${currency}. Only USDC is supported.`,
-          {
-            code: InvalidMoneyError.code,
-            context: { amount, currency }
-          }
-        )
-      );
-    }
-
-    try {
-      const decimal = new Decimal(amount);
-
-      // Проверка NaN через Decimal
-      if (decimal.isNaN()) {
-        return Err(
-          new InvalidMoneyError(
-            'Amount cannot be NaN',
-            {
-              code: InvalidMoneyError.code,
-              context: { amount, currency, reason: 'NaN' }
-            }
-          )
-        );
-      }
-
-      // Проверка конечности через Decimal
-      if (!decimal.isFinite()) {
-        return Err(
-          new InvalidMoneyError(
-            'Amount must be finite',
-            {
-              code: InvalidMoneyError.code,
-              context: { amount, currency, reason: 'Infinity' }
-            }
-          )
-        );
-      }
-
-      return Ok(new Money(decimal, currency));
-    } catch (error) {
-      return Err(
-        new InvalidMoneyError(
-          `Invalid amount: ${amount}`,
-          {
-            code: InvalidMoneyError.code,
-            context: { amount, currency, error: String(error) }
-          }
-        )
-      );
-    }
-  }
-
-  /**
-   * Создать Money из Decimal
-   *
-   * @param amount - Сумма (Decimal)
-   * @param currency - Валюта (по умолчанию 'USDC')
-   * @returns Result с Money или InvalidMoneyError
-   *
-   * @example
-   * ```typescript
-   * const decimal = new Decimal('100.123456789');
-   * const money = Money.fromDecimal(decimal);
-   * ```
-   */
-  static fromDecimal(
-    amount: Decimal,
-    currency: SupportedCurrency = 'USDC'
-  ): Result<Money, InvalidMoneyError> {
-    // Валидация валюты
-    if (!Money.SUPPORTED_CURRENCIES.has(currency)) {
-      return Err(
-        new InvalidMoneyError(
-          `Unsupported currency: ${currency}. Only USDC is supported.`,
-          {
-            code: InvalidMoneyError.code,
-            context: { amount: amount.toString(), currency }
-          }
-        )
-      );
-    }
-
-    // Валидация конечности
-    if (!amount.isFinite()) {
-      return Err(
-        new InvalidMoneyError(
-          'Amount must be finite',
-          {
-            code: InvalidMoneyError.code,
-            context: { amount: amount.toString(), currency, reason: 'not finite' }
-          }
-        )
-      );
-    }
-
-    return Ok(new Money(amount, currency));
-  }
-
-  /**
-   * Создать Money из строки
-   *
-   * @param amount - Сумма (string)
-   * @param currency - Валюта (по умолчанию 'USDC')
-   * @returns Result с Money или InvalidMoneyError
-   *
-   * @remarks
-   * Используйте для высокоточного ввода, например '0.123456789'
-   *
-   * @example
-   * ```typescript
-   * const money = Money.fromString('100.123456789');
-   * ```
-   */
-  static fromString(
-    amount: string,
-    currency: SupportedCurrency = 'USDC'
-  ): Result<Money, InvalidMoneyError> {
-    try {
-      const decimal = new Decimal(amount);
-      return Money.fromDecimal(decimal, currency);
-    } catch (error) {
-      return Err(
-        new InvalidMoneyError(
-          `Invalid amount format: "${amount}"`,
-          {
-            code: InvalidMoneyError.code,
-            context: { amount, currency, error: String(error) }
-          }
-        )
-      );
-    }
-  }
-
-  /**
-   * Создать нулевую сумму
+   * Создать нулевую сумму в указанной валюте
    *
    * @param currency - Валюта (по умолчанию 'USDC')
    * @returns Money с нулевой суммой
@@ -251,11 +97,106 @@ export class Money {
    * @example
    * ```typescript
    * const zero = Money.zero();
-   * zero.isZero(); // true
+   * console.log(zero.getAmount()); // 0
    * ```
    */
-  static zero(currency: SupportedCurrency = 'USDC'): Money {
+  public static zero(currency: SupportedCurrency = 'USDC'): Money {
     return new Money(new Decimal(0), currency);
+  }
+
+  /**
+   * Создать Money из различных типов значений
+   *
+   * @param amount - Значение: number, string или Decimal
+   * @param currency - Валюта (по умолчанию 'USDC')
+   * @returns Result с Money или InvalidMoneyError
+   *
+   * @remarks
+   * Универсальный метод для создания Money.
+   * Автоматически определяет тип входного значения и выполняет все необходимые проверки:
+   * - Валидация поддерживаемой валюты (только USDC)
+   * - Валидация формата числа (конечное значение, не NaN)
+   * - Преобразование в Decimal для точных вычислений
+   *
+   * @throws Никогда - все ошибки возвращаются через Result
+   *
+   * @example
+   * ```typescript
+   * import { unwrap } from '@polymarket/result';
+   *
+   * // Из числа
+   * const m1 = unwrap(Money.fromValue(100));
+   * const m2 = unwrap(Money.fromValue(100, 'USDC'));
+   *
+   * // Из строки (высокая точность)
+   * const m3 = unwrap(Money.fromValue('100.123456789'));
+   *
+   * // Из Decimal
+   * const m4 = unwrap(Money.fromValue(new Decimal(100)));
+   *
+   * // Обработка ошибок
+   * const result = Money.fromValue(NaN);
+   * if (!result.ok) {
+   *   console.error(result.error.message); // "Amount cannot be NaN"
+   * }
+   * ```
+   */
+  static fromValue(
+    amount: number | string | Decimal,
+    currency: SupportedCurrency = 'USDC'
+  ): Result<Money, InvalidMoneyError> {
+    // Валидация валюты
+    if (!Money.SUPPORTED_CURRENCIES.has(currency)) {
+      return Err(
+        new InvalidMoneyError(
+          `Unsupported currency: ${currency}. Only USDC is supported.`,
+          {
+            context: { amount: String(amount), currency }
+          }
+        )
+      );
+    }
+
+    // Преобразование в Decimal с обработкой ошибок
+    let decimalAmount: Decimal;
+    try {
+      decimalAmount = amount instanceof Decimal ? amount : new Decimal(amount);
+    } catch (error) {
+      return Err(
+        new InvalidMoneyError(
+          `Invalid amount format: ${String(amount)}`,
+          {
+            context: { amount: String(amount), currency, error: String(error) }
+          }
+        )
+      );
+    }
+
+    // Проверка NaN через Decimal
+    if (decimalAmount.isNaN()) {
+      return Err(
+        new InvalidMoneyError(
+          'Amount cannot be NaN',
+          {
+            context: { amount: String(amount), currency, reason: 'NaN' }
+          }
+        )
+      );
+    }
+
+    // Проверка конечности через Decimal
+    if (!decimalAmount.isFinite()) {
+      return Err(
+        new InvalidMoneyError(
+          'Amount must be finite',
+          {
+            context: { amount: decimalAmount.toString(), currency, reason: 'Infinity' }
+          }
+        )
+      );
+    }
+
+    return Ok(new Money(decimalAmount, currency));
   }
 
   // ============================================================================
@@ -307,8 +248,8 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const m1 = Money.fromAmount(100).unwrap();
-   * const m2 = Money.fromAmount(50).unwrap();
+   * const m1 = Money.fromValue(100).unwrap();
+   * const m2 = Money.fromValue(50).unwrap();
    * const sum = m1.add(m2);
    * sum.match({
    *   ok: (money) => console.log(money.getAmount()), // 150
@@ -323,7 +264,6 @@ export class Money {
           (ctx: Record<string, unknown>) =>
             `Cannot add ${ctx.actual} to ${ctx.expected}`,
           {
-            code: CurrencyMismatchError.code,
             context: {
               operation: 'add',
               expected: this.currency,
@@ -363,7 +303,6 @@ export class Money {
           (ctx: Record<string, unknown>) =>
             `Cannot subtract ${ctx.actual} from ${ctx.expected}`,
           {
-            code: CurrencyMismatchError.code,
             context: {
               operation: 'subtract',
               expected: this.currency,
@@ -386,7 +325,7 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const money = Money.fromAmount(100).unwrap();
+   * const money = Money.fromValue(100).unwrap();
    * const doubled = money.multiply(2);
    * doubled.match({
    *   ok: (m) => console.log(m.getAmount()), // 200
@@ -406,7 +345,6 @@ export class Money {
             (ctx: Record<string, unknown>) =>
               `Multiplication overflow: ${ctx.a} * ${ctx.b} = ${ctx.result}`,
             {
-              code: ArithmeticOverflowError.code,
               context: {
                 operation: 'multiply',
                 a: this.amount.toNumber(),
@@ -425,7 +363,6 @@ export class Money {
             (ctx: Record<string, unknown>) =>
               `Multiplication overflow: result ${ctx.result} exceeds maximum ${ctx.max}`,
             {
-              code: ArithmeticOverflowError.code,
               context: {
                 operation: 'multiply',
                 a: this.amount.toString(),
@@ -444,7 +381,6 @@ export class Money {
         new ArithmeticOverflowError(
           `Multiplication error: ${error}`,
           {
-            code: ArithmeticOverflowError.code,
             context: {
               operation: 'multiply',
               error: String(error)
@@ -463,7 +399,7 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const money = Money.fromAmount(100).unwrap();
+   * const money = Money.fromValue(100).unwrap();
    * const half = money.divide(2);
    * half.match({
    *   ok: (m) => console.log(m.getAmount()), // 50
@@ -482,7 +418,6 @@ export class Money {
             (ctx: Record<string, unknown>) =>
               `Cannot divide ${ctx.amount} by ${ctx.divisor}`,
             {
-              code: DivisionByZeroError.code,
               context: {
                 amount: this.amount.toNumber(),
                 divisor: 0,
@@ -500,7 +435,6 @@ export class Money {
         new DivisionByZeroError(
           `Division error: ${error}`,
           {
-            code: DivisionByZeroError.code,
             context: {
               error: String(error)
             }
@@ -539,8 +473,8 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const m1 = Money.fromAmount(100).unwrap();
-   * const m2 = Money.fromAmount(50).unwrap();
+   * const m1 = Money.fromValue(100).unwrap();
+   * const m2 = Money.fromValue(50).unwrap();
    * const result = m1.greaterThan(m2);
    * result.match({
    *   ok: (isGreater) => console.log(isGreater), // true
@@ -555,7 +489,6 @@ export class Money {
           (ctx: Record<string, unknown>) =>
             `Cannot compare ${ctx.expected} with ${ctx.actual}`,
           {
-            code: CurrencyMismatchError.code,
             context: {
               operation: 'compare',
               expected: this.currency,
@@ -582,7 +515,6 @@ export class Money {
           (ctx: Record<string, unknown>) =>
             `Cannot compare ${ctx.expected} with ${ctx.actual}`,
           {
-            code: CurrencyMismatchError.code,
             context: {
               operation: 'compare',
               expected: this.currency,
@@ -609,7 +541,6 @@ export class Money {
           (ctx: Record<string, unknown>) =>
             `Cannot compare ${ctx.expected} with ${ctx.actual}`,
           {
-            code: CurrencyMismatchError.code,
             context: {
               operation: 'compare',
               expected: this.currency,
@@ -636,7 +567,6 @@ export class Money {
           (ctx: Record<string, unknown>) =>
             `Cannot compare ${ctx.expected} with ${ctx.actual}`,
           {
-            code: CurrencyMismatchError.code,
             context: {
               operation: 'compare',
               expected: this.currency,
@@ -714,6 +644,47 @@ export class Money {
    */
   negate(): Money {
     return new Money(this.amount.negated(), this.currency);
+  }
+
+  /**
+   * Сериализует в JSON
+   *
+   * @returns Объект для JSON сериализации
+   *
+   * @example
+   * ```typescript
+   * const money = Money.fromUSDC(100.50).unwrap();
+   * const json = money.toJSON();
+   * console.log(json); // { amount: "100.5", currency: "USDC" }
+   * ```
+   */
+  public toJSON(): { amount: string; currency: SupportedCurrency } {
+    return {
+      amount: this.amount.toString(),
+      currency: this.currency,
+    };
+  }
+
+  /**
+   * Создаёт Money из JSON объекта
+   *
+   * @param json - JSON объект с полями amount и currency
+   * @returns Result с Money или InvalidMoneyError
+   *
+   * @example
+   * ```typescript
+   * const json = { amount: "100.50", currency: "USDC" };
+   * const result = Money.fromJSON(json);
+   * if (result.ok) {
+   *   console.log(result.value.getAmount()); // 100.5
+   * }
+   * ```
+   */
+  public static fromJSON(json: {
+    amount: string;
+    currency: SupportedCurrency;
+  }): Result<Money, InvalidMoneyError> {
+    return Money.fromValue(json.amount, json.currency);
   }
 
   /**

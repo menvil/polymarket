@@ -79,6 +79,16 @@ export class Percentage {
    */
   private static readonly MIN_PERCENTAGE = new Decimal('-1e6');
 
+  /**
+   * Нулевой процент (0%)
+   */
+  public static readonly ZERO = new Percentage(new Decimal(0));
+
+  /**
+   * Сто процентов (100%)
+   */
+  public static readonly ONE_HUNDRED = new Percentage(new Decimal(100));
+
   private constructor(
     private readonly value: Decimal
   ) {}
@@ -86,128 +96,6 @@ export class Percentage {
   // ============================================================================
   // Factory Methods
   // ============================================================================
-
-  /**
-   * Создать Percentage из числа (шкала 0-100)
-   *
-   * @param value - Процентное значение (50 = 50%)
-   * @returns Result с Percentage или InvalidPercentageError
-   *
-   * @example
-   * ```typescript
-   * const pct = Percentage.fromNumber(25.5); // 25.5%
-   * const fee = Percentage.fromNumber(2.5);  // 2.5%
-   * const loss = Percentage.fromNumber(-10); // -10%
-   * ```
-   */
-  static fromNumber(value: number): Result<Percentage, InvalidPercentageError> {
-    try {
-      const decimal = new Decimal(value);
-
-      // Проверка NaN
-      if (decimal.isNaN()) {
-        return Err(
-          new InvalidPercentageError(
-            'Percentage cannot be NaN',
-            {
-              code: InvalidPercentageError.code,
-              context: { value, reason: 'NaN' }
-            }
-          )
-        );
-      }
-
-      // Проверка конечности
-      if (!decimal.isFinite()) {
-        return Err(
-          new InvalidPercentageError(
-            'Percentage must be finite',
-            {
-              code: InvalidPercentageError.code,
-              context: { value, reason: 'Infinity' }
-            }
-          )
-        );
-      }
-
-      // Проверка диапазона
-      if (decimal.lessThan(Percentage.MIN_PERCENTAGE) || decimal.greaterThan(Percentage.MAX_PERCENTAGE)) {
-        return Err(
-          new InvalidPercentageError(
-            (ctx: Record<string, unknown>) =>
-              `Percentage ${ctx.value} is out of range [${ctx.min}, ${ctx.max}]`,
-            {
-              code: InvalidPercentageError.code,
-              context: {
-                value: decimal.toString(),
-                min: Percentage.MIN_PERCENTAGE.toString(),
-                max: Percentage.MAX_PERCENTAGE.toString()
-              }
-            }
-          )
-        );
-      }
-
-      return Ok(new Percentage(decimal));
-    } catch (error) {
-      return Err(
-        new InvalidPercentageError(
-          `Invalid percentage value: ${value}`,
-          {
-            code: InvalidPercentageError.code,
-            context: { value, error: String(error) }
-          }
-        )
-      );
-    }
-  }
-
-  /**
-   * Создать Percentage из Decimal
-   *
-   * @param value - Процентное значение (Decimal)
-   * @returns Result с Percentage или InvalidPercentageError
-   *
-   * @example
-   * ```typescript
-   * const decimal = new Decimal('25.123456789');
-   * const pct = Percentage.fromDecimal(decimal);
-   * ```
-   */
-  static fromDecimalValue(value: Decimal): Result<Percentage, InvalidPercentageError> {
-    // Проверка конечности
-    if (!value.isFinite()) {
-      return Err(
-        new InvalidPercentageError(
-          'Percentage must be finite',
-          {
-            code: InvalidPercentageError.code,
-            context: { value: value.toString(), reason: 'not finite' }
-          }
-        )
-      );
-    }
-
-    // Проверка диапазона
-    if (value.lessThan(Percentage.MIN_PERCENTAGE) || value.greaterThan(Percentage.MAX_PERCENTAGE)) {
-      return Err(
-        new InvalidPercentageError(
-          (ctx: Record<string, unknown>) =>
-            `Percentage ${ctx.value} is out of range [${ctx.min}, ${ctx.max}]`,
-          {
-            code: InvalidPercentageError.code,
-            context: {
-              value: value.toString(),
-              min: Percentage.MIN_PERCENTAGE.toString(),
-              max: Percentage.MAX_PERCENTAGE.toString()
-            }
-          }
-        )
-      );
-    }
-
-    return Ok(new Percentage(value));
-  }
 
   /**
    * Создать Percentage из десятичной дроби (шкала 0-1)
@@ -235,7 +123,6 @@ export class Percentage {
           new InvalidPercentageError(
             'Decimal value must be finite',
             {
-              code: InvalidPercentageError.code,
               context: { decimal, reason: 'not finite' }
             }
           )
@@ -243,13 +130,12 @@ export class Percentage {
       }
 
       const percentage = decimalValue.times(100);
-      return Percentage.fromDecimalValue(percentage);
+      return Percentage.fromValue(percentage);
     } catch (error) {
       return Err(
         new InvalidPercentageError(
           `Invalid decimal value: ${decimal}`,
           {
-            code: InvalidPercentageError.code,
             context: { decimal, error: String(error) }
           }
         )
@@ -258,34 +144,111 @@ export class Percentage {
   }
 
   /**
-   * Создать Percentage из строки
+   * Создать Percentage из различных типов значений
    *
-   * @param value - Процент в виде строки (с символом '%' или без)
+   * @param value - Значение: number, string или Decimal (шкала 0-100, т.е. 25 = 25%)
    * @returns Result с Percentage или InvalidPercentageError
+   *
+   * @remarks
+   * Универсальный метод для создания Percentage.
+   * Автоматически определяет тип входного значения и выполняет все необходимые проверки:
+   * - Парсинг строки (убирает символ '%' если есть)
+   * - Валидация формата числа (конечное значение, не NaN)
+   * - Проверка диапазона [-1'000'000, 1'000'000]
+   * - Преобразование в Decimal для точных вычислений
+   *
+   * @throws Никогда - все ошибки возвращаются через Result
    *
    * @example
    * ```typescript
-   * const pct1 = Percentage.fromString("25.5");  // 25.5%
-   * const pct2 = Percentage.fromString("25.5%"); // 25.5%
-   * const pct3 = Percentage.fromString("-10%");  // -10%
+   * import { unwrap } from '@polymarket/result';
+   *
+   * // Из числа (25 = 25%)
+   * const p1 = unwrap(Percentage.fromValue(25));
+   * const p2 = unwrap(Percentage.fromValue(2.5));
+   * const p3 = unwrap(Percentage.fromValue(-10));
+   *
+   * // Из строки (с % или без)
+   * const p4 = unwrap(Percentage.fromValue('25.5'));
+   * const p5 = unwrap(Percentage.fromValue('25.5%'));
+   * const p6 = unwrap(Percentage.fromValue('-10%'));
+   *
+   * // Из Decimal
+   * const p7 = unwrap(Percentage.fromValue(new Decimal(25)));
+   *
+   * // Обработка ошибок
+   * const result = Percentage.fromValue(NaN);
+   * if (!result.ok) {
+   *   console.error(result.error.message); // "Percentage cannot be NaN"
+   * }
    * ```
    */
-  static fromString(value: string): Result<Percentage, InvalidPercentageError> {
+  static fromValue(value: number | string | Decimal): Result<Percentage, InvalidPercentageError> {
+    // Преобразование в Decimal с обработкой ошибок
+    let decimalValue: Decimal;
     try {
-      const cleaned = value.replace('%', '').trim();
-      const decimal = new Decimal(cleaned);
-      return Percentage.fromDecimalValue(decimal);
+      if (value instanceof Decimal) {
+        decimalValue = value;
+      } else if (typeof value === 'string') {
+        // Убираем символ % если есть
+        const cleaned = value.replace('%', '').trim();
+        decimalValue = new Decimal(cleaned);
+      } else {
+        decimalValue = new Decimal(value);
+      }
     } catch (error) {
       return Err(
         new InvalidPercentageError(
-          `Invalid percentage string: "${value}"`,
+          `Invalid percentage format: ${String(value)}`,
           {
-            code: InvalidPercentageError.code,
-            context: { value, error: String(error) }
+            context: { value: String(value), error: String(error) }
           }
         )
       );
     }
+
+    // Проверка NaN
+    if (decimalValue.isNaN()) {
+      return Err(
+        new InvalidPercentageError(
+          'Percentage cannot be NaN',
+          {
+            context: { value: String(value), reason: 'NaN' }
+          }
+        )
+      );
+    }
+
+    // Проверка конечности
+    if (!decimalValue.isFinite()) {
+      return Err(
+        new InvalidPercentageError(
+          'Percentage must be finite',
+          {
+            context: { value: decimalValue.toString(), reason: 'Infinity' }
+          }
+        )
+      );
+    }
+
+    // Проверка диапазона
+    if (decimalValue.lessThan(Percentage.MIN_PERCENTAGE) || decimalValue.greaterThan(Percentage.MAX_PERCENTAGE)) {
+      return Err(
+        new InvalidPercentageError(
+          (ctx: Record<string, unknown>) =>
+            `Percentage ${ctx.value} is out of range [${ctx.min}, ${ctx.max}]`,
+          {
+            context: {
+              value: decimalValue.toString(),
+              min: Percentage.MIN_PERCENTAGE.toString(),
+              max: Percentage.MAX_PERCENTAGE.toString()
+            }
+          }
+        )
+      );
+    }
+
+    return Ok(new Percentage(decimalValue));
   }
 
   /**
@@ -313,7 +276,6 @@ export class Percentage {
           new InvalidPercentageError(
             'Basis points must be finite',
             {
-              code: InvalidPercentageError.code,
               context: { bps, reason: 'not finite' }
             }
           )
@@ -321,13 +283,12 @@ export class Percentage {
       }
 
       const percentage = bpsDecimal.dividedBy(100);
-      return Percentage.fromDecimalValue(percentage);
+      return Percentage.fromValue(percentage);
     } catch (error) {
       return Err(
         new InvalidPercentageError(
           `Invalid basis points: ${bps}`,
           {
-            code: InvalidPercentageError.code,
             context: { bps, error: String(error) }
           }
         )
@@ -464,7 +425,6 @@ export class Percentage {
           (ctx: Record<string, unknown>) =>
             `Addition overflow: ${ctx.a} + ${ctx.b} = ${ctx.result} exceeds max ${ctx.max}`,
           {
-            code: ArithmeticOverflowError.code,
             context: {
               operation: 'add',
               a: this.value.toString(),
@@ -483,7 +443,6 @@ export class Percentage {
           (ctx: Record<string, unknown>) =>
             `Addition underflow: ${ctx.a} + ${ctx.b} = ${ctx.result} below min ${ctx.min}`,
           {
-            code: ArithmeticOverflowError.code,
             context: {
               operation: 'add',
               a: this.value.toString(),
@@ -525,7 +484,6 @@ export class Percentage {
           (ctx: Record<string, unknown>) =>
             `Subtraction overflow: ${ctx.a} - ${ctx.b} = ${ctx.result} exceeds max ${ctx.max}`,
           {
-            code: ArithmeticOverflowError.code,
             context: {
               operation: 'subtract',
               a: this.value.toString(),
@@ -544,7 +502,6 @@ export class Percentage {
           (ctx: Record<string, unknown>) =>
             `Subtraction underflow: ${ctx.a} - ${ctx.b} = ${ctx.result} below min ${ctx.min}`,
           {
-            code: ArithmeticOverflowError.code,
             context: {
               operation: 'subtract',
               a: this.value.toString(),
@@ -586,7 +543,6 @@ export class Percentage {
           new ArithmeticOverflowError(
             'Multiplication resulted in non-finite value',
             {
-              code: ArithmeticOverflowError.code,
               context: {
                 operation: 'multiply',
                 a: this.value.toString(),
@@ -603,7 +559,6 @@ export class Percentage {
             (ctx: Record<string, unknown>) =>
               `Multiplication overflow: ${ctx.a} * ${ctx.b} = ${ctx.result} exceeds limit`,
             {
-              code: ArithmeticOverflowError.code,
               context: {
                 operation: 'multiply',
                 a: this.value.toString(),
@@ -622,7 +577,6 @@ export class Percentage {
         new ArithmeticOverflowError(
           `Multiplication error: ${error}`,
           {
-            code: ArithmeticOverflowError.code,
             context: { error: String(error) }
           }
         )
@@ -656,7 +610,6 @@ export class Percentage {
             (ctx: Record<string, unknown>) =>
               `Cannot divide percentage ${ctx.value} by zero`,
             {
-              code: DivisionByZeroError.code,
               context: {
                 value: this.value.toString(),
                 divisor: 0,
@@ -674,7 +627,6 @@ export class Percentage {
         new DivisionByZeroError(
           `Division error: ${error}`,
           {
-            code: DivisionByZeroError.code,
             context: { error: String(error) }
           }
         )
@@ -829,6 +781,41 @@ export class Percentage {
    */
   negate(): Percentage {
     return new Percentage(this.value.negated());
+  }
+
+  /**
+   * Сериализует в JSON
+   *
+   * @returns Объект для JSON сериализации
+   *
+   * @example
+   * ```typescript
+   * const pct = unwrap(Percentage.fromNumber(25.5));
+   * const json = pct.toJSON();
+   * console.log(json); // { value: 25.5 }
+   * ```
+   */
+  public toJSON(): { value: number } {
+    return { value: this.value.toNumber() };
+  }
+
+  /**
+   * Создаёт Percentage из JSON объекта
+   *
+   * @param json - JSON объект с полем value
+   * @returns Result с Percentage или InvalidPercentageError
+   *
+   * @example
+   * ```typescript
+   * const json = { value: 25.5 };
+   * const result = Percentage.fromJSON(json);
+   * if (result.ok) {
+   *   console.log(result.value.toNumber()); // 25.5
+   * }
+   * ```
+   */
+  public static fromJSON(json: { value: number }): Result<Percentage, InvalidPercentageError> {
+    return Percentage.fromValue(json.value);
   }
 
   /**

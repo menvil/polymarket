@@ -4,7 +4,11 @@
 
 import { describe, it, expect } from '@jest/globals';
 import { unwrap } from '@polymarket/result';
-import { InvalidQuantityError } from '@polymarket/errors';
+import {
+  InvalidQuantityError,
+  ArithmeticOverflowError,
+  DivisionByZeroError
+} from '@polymarket/errors';
 import { Quantity } from '../../src/Quantity';
 
 describe('Quantity', () => {
@@ -195,7 +199,7 @@ describe('Quantity', () => {
         const q1 = unwrap(Quantity.fromValue(10));
         const q2 = unwrap(Quantity.fromValue(5));
 
-        const result = q1.add(q2);
+        const result = unwrap(q1.add(q2));
 
         expect(result.value).toBe(15);
       });
@@ -218,7 +222,7 @@ describe('Quantity', () => {
         const q1 = unwrap(Quantity.fromValue(10));
         const q2 = unwrap(Quantity.fromValue(3));
 
-        const result = q1.subtract(q2);
+        const result = unwrap(q1.subtract(q2));
 
         expect(result.value).toBe(7);
       });
@@ -239,7 +243,7 @@ describe('Quantity', () => {
         const q1 = unwrap(Quantity.fromValue(10));
         const q2 = unwrap(Quantity.fromValue(10));
 
-        const result = q1.subtract(q2);
+        const result = unwrap(q1.subtract(q2));
 
         expect(result.value).toBe(0);
       });
@@ -249,7 +253,7 @@ describe('Quantity', () => {
       it('should multiply by factor', () => {
         const qty = unwrap(Quantity.fromValue(10));
 
-        const result = qty.multiply(2.5);
+        const result = unwrap(qty.multiply(2.5));
 
         expect(result.value).toBe(25);
       });
@@ -257,7 +261,7 @@ describe('Quantity', () => {
       it('should allow multiplication by zero', () => {
         const qty = unwrap(Quantity.fromValue(10));
 
-        const result = qty.multiply(0);
+        const result = unwrap(qty.multiply(0));
 
         expect(result.value).toBe(0);
       });
@@ -289,7 +293,7 @@ describe('Quantity', () => {
       it('should divide by divisor', () => {
         const qty = unwrap(Quantity.fromValue(10));
 
-        const result = qty.divide(2);
+        const result = unwrap(qty.divide(2));
 
         expect(result.value).toBe(5);
       });

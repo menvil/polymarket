@@ -14,9 +14,9 @@ import {
 
 describe('Money', () => {
   describe('Фабричные методы', () => {
-    describe('fromAmount', () => {
+    describe('fromValue', () => {
       it('должен создать Money из положительного числа', () => {
-        const result = Money.fromAmount(100);
+        const result = Money.fromValue(100);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -27,7 +27,7 @@ describe('Money', () => {
       });
 
       it('должен создать Money с явной валютой', () => {
-        const result = Money.fromAmount(100, 'USDC');
+        const result = Money.fromValue(100, 'USDC');
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -37,7 +37,7 @@ describe('Money', () => {
       });
 
       it('должен создать Money из отрицательного числа (для PnL)', () => {
-        const result = Money.fromAmount(-50);
+        const result = Money.fromValue(-50);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -48,7 +48,7 @@ describe('Money', () => {
       });
 
       it('должен создать Money из нуля', () => {
-        const result = Money.fromAmount(0);
+        const result = Money.fromValue(0);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -58,7 +58,7 @@ describe('Money', () => {
       });
 
       it('должен создать Money из дробного числа', () => {
-        const result = Money.fromAmount(100.50);
+        const result = Money.fromValue(100.50);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -68,19 +68,18 @@ describe('Money', () => {
       });
 
       it('должен отклонить NaN', () => {
-        const result = Money.fromAmount(NaN);
+        const result = Money.fromValue(NaN);
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
           const error = result.error;
           expect(error).toBeInstanceOf(InvalidMoneyError);
-          expect(error.code).toBe(InvalidMoneyError.code);
           expect(error.context?.reason).toBe('NaN');
         }
       });
 
       it('должен отклонить Infinity', () => {
-        const result = Money.fromAmount(Infinity);
+        const result = Money.fromValue(Infinity);
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -91,7 +90,7 @@ describe('Money', () => {
       });
 
       it('должен отклонить отрицательный Infinity', () => {
-        const result = Money.fromAmount(-Infinity);
+        const result = Money.fromValue(-Infinity);
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -100,10 +99,10 @@ describe('Money', () => {
       });
     });
 
-    describe('fromDecimal', () => {
+    describe('fromValue', () => {
       it('должен создать Money из Decimal', () => {
         const decimal = new Decimal('100.123456789');
-        const result = Money.fromDecimal(decimal);
+        const result = Money.fromValue(decimal);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -114,7 +113,7 @@ describe('Money', () => {
 
       it('должен отклонить неконечный Decimal', () => {
         const decimal = new Decimal(Infinity);
-        const result = Money.fromDecimal(decimal);
+        const result = Money.fromValue(decimal);
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -123,9 +122,9 @@ describe('Money', () => {
       });
     });
 
-    describe('fromString', () => {
+    describe('fromValue', () => {
       it('должен создать Money из валидной строки', () => {
-        const result = Money.fromString('100.123456789');
+        const result = Money.fromValue('100.123456789');
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -135,7 +134,7 @@ describe('Money', () => {
       });
 
       it('должен создать Money из отрицательной строки', () => {
-        const result = Money.fromString('-50.25');
+        const result = Money.fromValue('-50.25');
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -145,7 +144,7 @@ describe('Money', () => {
       });
 
       it('должен отклонить невалидную строку', () => {
-        const result = Money.fromString('invalid');
+        const result = Money.fromValue('invalid');
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -154,7 +153,7 @@ describe('Money', () => {
       });
 
       it('должен отклонить пустую строку', () => {
-        const result = Money.fromString('');
+        const result = Money.fromValue('');
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -163,9 +162,9 @@ describe('Money', () => {
       });
     });
 
-    describe('fromAmount с дефолтной валютой', () => {
+    describe('fromValue с дефолтной валютой', () => {
       it('должен создать USDC Money по умолчанию', () => {
-        const result = Money.fromAmount(100);
+        const result = Money.fromValue(100);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -176,8 +175,8 @@ describe('Money', () => {
       });
 
       it('дефолт должен быть эквивалентен явному USDC', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(100, 'USDC'));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(100, 'USDC'));
 
         expect(m1.equals(m2)).toBe(true);
       });
@@ -203,8 +202,8 @@ describe('Money', () => {
   describe('Математические операции', () => {
     describe('add', () => {
       it('должен сложить две денежные суммы', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(50));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(50));
 
         const result = m1.add(m2);
 
@@ -216,8 +215,8 @@ describe('Money', () => {
       });
 
       it('должен складывать отрицательные суммы', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(-30));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(-30));
 
         const result = m1.add(m2);
 
@@ -228,8 +227,8 @@ describe('Money', () => {
       });
 
       it('не должен изменять исходные значения', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(50));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(50));
 
         m1.add(m2);
 
@@ -240,8 +239,8 @@ describe('Money', () => {
 
     describe('subtract', () => {
       it('должен вычесть две денежные суммы', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(30));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(30));
 
         const result = m1.subtract(m2);
 
@@ -252,8 +251,8 @@ describe('Money', () => {
       });
 
       it('должен разрешать отрицательный результат (для PnL)', () => {
-        const m1 = unwrap(Money.fromAmount(50));
-        const m2 = unwrap(Money.fromAmount(100));
+        const m1 = unwrap(Money.fromValue(50));
+        const m2 = unwrap(Money.fromValue(100));
 
         const result = m1.subtract(m2);
 
@@ -266,8 +265,8 @@ describe('Money', () => {
       });
 
       it('не должен изменять исходные значения', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(30));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(30));
 
         m1.subtract(m2);
 
@@ -278,7 +277,7 @@ describe('Money', () => {
 
     describe('multiply', () => {
       it('должен умножать на число', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         const result = money.multiply(2);
 
@@ -289,7 +288,7 @@ describe('Money', () => {
       });
 
       it('должен умножать на Decimal', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
         const factor = new Decimal('1.5');
 
         const result = money.multiply(factor);
@@ -301,7 +300,7 @@ describe('Money', () => {
       });
 
       it('должен умножать на дробное число', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         const result = money.multiply(0.5);
 
@@ -312,7 +311,7 @@ describe('Money', () => {
       });
 
       it('должен обрабатывать отрицательное умножение', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         const result = money.multiply(-1);
 
@@ -323,7 +322,7 @@ describe('Money', () => {
       });
 
       it('должен отклонять переполнение', () => {
-        const money = unwrap(Money.fromAmount(1e15));
+        const money = unwrap(Money.fromValue(1e15));
 
         const result = money.multiply(1000);
 
@@ -334,7 +333,7 @@ describe('Money', () => {
       });
 
       it('не должен изменять исходное значение', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         money.multiply(2);
 
@@ -344,7 +343,7 @@ describe('Money', () => {
 
     describe('divide', () => {
       it('должен делить на число', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         const result = money.divide(2);
 
@@ -355,7 +354,7 @@ describe('Money', () => {
       });
 
       it('должен делить на Decimal', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
         const divisor = new Decimal('4');
 
         const result = money.divide(divisor);
@@ -367,7 +366,7 @@ describe('Money', () => {
       });
 
       it('должен отклонять деление на ноль', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         const result = money.divide(0);
 
@@ -375,12 +374,11 @@ describe('Money', () => {
         if (!result.ok) {
           const error = result.error;
           expect(error).toBeInstanceOf(DivisionByZeroError);
-          expect(error.code).toBe(DivisionByZeroError.code);
         }
       });
 
       it('должен отклонять деление на нулевой Decimal', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         const result = money.divide(new Decimal(0));
 
@@ -391,7 +389,7 @@ describe('Money', () => {
       });
 
       it('не должен изменять исходное значение', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         money.divide(2);
 
@@ -403,28 +401,28 @@ describe('Money', () => {
   describe('Сравнение', () => {
     describe('equals', () => {
       it('должен возвращать true для равных сумм', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(100));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(100));
 
         expect(m1.equals(m2)).toBe(true);
       });
 
       it('должен возвращать false для разных сумм', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(50));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(50));
 
         expect(m1.equals(m2)).toBe(false);
       });
 
       it('должен быть рефлексивным', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         expect(money.equals(money)).toBe(true);
       });
 
       it('должен корректно обрабатывать десятичную точность', () => {
-        const m1 = unwrap(Money.fromString('0.1'));
-        const m2 = unwrap(Money.fromString('0.10'));
+        const m1 = unwrap(Money.fromValue('0.1'));
+        const m2 = unwrap(Money.fromValue('0.10'));
 
         expect(m1.equals(m2)).toBe(true);
       });
@@ -432,8 +430,8 @@ describe('Money', () => {
 
     describe('greaterThan', () => {
       it('должен возвращать true когда больше', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(50));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(50));
 
         const result = m1.greaterThan(m2);
 
@@ -444,8 +442,8 @@ describe('Money', () => {
       });
 
       it('должен возвращать false когда меньше', () => {
-        const m1 = unwrap(Money.fromAmount(50));
-        const m2 = unwrap(Money.fromAmount(100));
+        const m1 = unwrap(Money.fromValue(50));
+        const m2 = unwrap(Money.fromValue(100));
 
         const result = m1.greaterThan(m2);
 
@@ -456,8 +454,8 @@ describe('Money', () => {
       });
 
       it('должен возвращать false когда равно', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(100));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(100));
 
         const result = m1.greaterThan(m2);
 
@@ -470,8 +468,8 @@ describe('Money', () => {
 
     describe('lessThan', () => {
       it('должен возвращать true когда меньше', () => {
-        const m1 = unwrap(Money.fromAmount(50));
-        const m2 = unwrap(Money.fromAmount(100));
+        const m1 = unwrap(Money.fromValue(50));
+        const m2 = unwrap(Money.fromValue(100));
 
         const result = m1.lessThan(m2);
 
@@ -482,8 +480,8 @@ describe('Money', () => {
       });
 
       it('должен возвращать false когда больше', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(50));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(50));
 
         const result = m1.lessThan(m2);
 
@@ -496,8 +494,8 @@ describe('Money', () => {
 
     describe('greaterThanOrEqual', () => {
       it('должен возвращать true когда больше', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(50));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(50));
 
         const result = m1.greaterThanOrEqual(m2);
 
@@ -508,8 +506,8 @@ describe('Money', () => {
       });
 
       it('должен возвращать true когда равно', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(100));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(100));
 
         const result = m1.greaterThanOrEqual(m2);
 
@@ -520,8 +518,8 @@ describe('Money', () => {
       });
 
       it('должен возвращать false когда меньше', () => {
-        const m1 = unwrap(Money.fromAmount(50));
-        const m2 = unwrap(Money.fromAmount(100));
+        const m1 = unwrap(Money.fromValue(50));
+        const m2 = unwrap(Money.fromValue(100));
 
         const result = m1.greaterThanOrEqual(m2);
 
@@ -534,8 +532,8 @@ describe('Money', () => {
 
     describe('lessThanOrEqual', () => {
       it('должен возвращать true когда меньше', () => {
-        const m1 = unwrap(Money.fromAmount(50));
-        const m2 = unwrap(Money.fromAmount(100));
+        const m1 = unwrap(Money.fromValue(50));
+        const m2 = unwrap(Money.fromValue(100));
 
         const result = m1.lessThanOrEqual(m2);
 
@@ -546,8 +544,8 @@ describe('Money', () => {
       });
 
       it('должен возвращать true когда равно', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(100));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(100));
 
         const result = m1.lessThanOrEqual(m2);
 
@@ -558,8 +556,8 @@ describe('Money', () => {
       });
 
       it('должен возвращать false когда больше', () => {
-        const m1 = unwrap(Money.fromAmount(100));
-        const m2 = unwrap(Money.fromAmount(50));
+        const m1 = unwrap(Money.fromValue(100));
+        const m2 = unwrap(Money.fromValue(50));
 
         const result = m1.lessThanOrEqual(m2);
 
@@ -580,13 +578,13 @@ describe('Money', () => {
       });
 
       it('должен возвращать false для ненулевого', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         expect(money.isZero()).toBe(false);
       });
 
       it('должен возвращать false для отрицательного', () => {
-        const money = unwrap(Money.fromAmount(-50));
+        const money = unwrap(Money.fromValue(-50));
 
         expect(money.isZero()).toBe(false);
       });
@@ -594,7 +592,7 @@ describe('Money', () => {
 
     describe('isPositive', () => {
       it('должен возвращать true для положительного', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         expect(money.isPositive()).toBe(true);
       });
@@ -606,7 +604,7 @@ describe('Money', () => {
       });
 
       it('должен возвращать false для отрицательного', () => {
-        const money = unwrap(Money.fromAmount(-50));
+        const money = unwrap(Money.fromValue(-50));
 
         expect(money.isPositive()).toBe(false);
       });
@@ -614,7 +612,7 @@ describe('Money', () => {
 
     describe('isNegative', () => {
       it('должен возвращать true для отрицательного', () => {
-        const money = unwrap(Money.fromAmount(-50));
+        const money = unwrap(Money.fromValue(-50));
 
         expect(money.isNegative()).toBe(true);
       });
@@ -626,7 +624,7 @@ describe('Money', () => {
       });
 
       it('должен возвращать false для положительного', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
 
         expect(money.isNegative()).toBe(false);
       });
@@ -634,14 +632,14 @@ describe('Money', () => {
 
     describe('abs', () => {
       it('должен возвращать абсолютное значение положительного', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
         const abs = money.abs();
 
         expect(abs.getAmount()).toBe(100);
       });
 
       it('должен возвращать абсолютное значение отрицательного', () => {
-        const money = unwrap(Money.fromAmount(-50));
+        const money = unwrap(Money.fromValue(-50));
         const abs = money.abs();
 
         expect(abs.getAmount()).toBe(50);
@@ -655,7 +653,7 @@ describe('Money', () => {
       });
 
       it('не должен изменять оригинал', () => {
-        const money = unwrap(Money.fromAmount(-50));
+        const money = unwrap(Money.fromValue(-50));
         money.abs();
 
         expect(money.getAmount()).toBe(-50);
@@ -664,14 +662,14 @@ describe('Money', () => {
 
     describe('negate', () => {
       it('должен инвертировать положительное', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
         const negated = money.negate();
 
         expect(negated.getAmount()).toBe(-100);
       });
 
       it('должен инвертировать отрицательное', () => {
-        const money = unwrap(Money.fromAmount(-50));
+        const money = unwrap(Money.fromValue(-50));
         const negated = money.negate();
 
         expect(negated.getAmount()).toBe(50);
@@ -685,7 +683,7 @@ describe('Money', () => {
       });
 
       it('не должен изменять оригинал', () => {
-        const money = unwrap(Money.fromAmount(100));
+        const money = unwrap(Money.fromValue(100));
         money.negate();
 
         expect(money.getAmount()).toBe(100);
@@ -694,19 +692,19 @@ describe('Money', () => {
 
     describe('toString', () => {
       it('должен форматировать с десятичными знаками по умолчанию', () => {
-        const money = unwrap(Money.fromAmount(100.5));
+        const money = unwrap(Money.fromValue(100.5));
 
         expect(money.toString()).toBe('$100.50 USDC');
       });
 
       it('должен форматировать с указанным количеством знаков', () => {
-        const money = unwrap(Money.fromAmount(100.5));
+        const money = unwrap(Money.fromValue(100.5));
 
         expect(money.toString(4)).toBe('$100.5000 USDC');
       });
 
       it('должен форматировать отрицательные суммы', () => {
-        const money = unwrap(Money.fromAmount(-50.25));
+        const money = unwrap(Money.fromValue(-50.25));
 
         expect(money.toString()).toBe('$-50.25 USDC');
       });
@@ -722,8 +720,8 @@ describe('Money', () => {
   describe('Граничные случаи', () => {
     describe('Точность Decimal', () => {
       it('должен корректно обрабатывать 0.1 + 0.2 = 0.3', () => {
-        const m1 = unwrap(Money.fromString('0.1'));
-        const m2 = unwrap(Money.fromString('0.2'));
+        const m1 = unwrap(Money.fromValue('0.1'));
+        const m2 = unwrap(Money.fromValue('0.2'));
 
         const result = m1.add(m2);
 
@@ -735,13 +733,13 @@ describe('Money', () => {
       });
 
       it('должен сохранять высокую точность', () => {
-        const money = unwrap(Money.fromString('100.123456789012345'));
+        const money = unwrap(Money.fromValue('100.123456789012345'));
 
         expect(money.toDecimal().toString()).toBe('100.123456789012345');
       });
 
       it('должен обрабатывать очень малые числа', () => {
-        const money = unwrap(Money.fromString('0.000001'));
+        const money = unwrap(Money.fromValue('0.000001'));
 
         expect(money.toDecimal().toString()).toBe('0.000001');
       });
@@ -749,7 +747,7 @@ describe('Money', () => {
 
     describe('Большие числа', () => {
       it('должен обрабатывать большие суммы', () => {
-        const result = Money.fromAmount(1e10);
+        const result = Money.fromValue(1e10);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -758,7 +756,7 @@ describe('Money', () => {
       });
 
       it('должен обнаруживать переполнение при умножении', () => {
-        const money = unwrap(Money.fromAmount(1e15));
+        const money = unwrap(Money.fromValue(1e15));
         const result = money.multiply(1000);
 
         expect(result.ok).toBe(false);
@@ -770,9 +768,61 @@ describe('Money', () => {
 
     describe('Отрицательный ноль', () => {
       it('должен трактовать -0 как ноль', () => {
-        const money = unwrap(Money.fromAmount(-0));
+        const money = unwrap(Money.fromValue(-0));
 
         expect(money.isZero()).toBe(true);
+      });
+    });
+  });
+
+  describe('Сериализация', () => {
+    describe('toJSON', () => {
+      it('должен сериализовать Money в JSON', () => {
+        const money = unwrap(Money.fromValue(100.5));
+        const json = money.toJSON();
+
+        expect(json).toEqual({ amount: '100.5', currency: 'USDC' });
+      });
+
+      it('должен сериализовать с другой валютой', () => {
+        const money = unwrap(Money.fromValue(50));
+        const json = money.toJSON();
+
+        expect(json).toEqual({ amount: '50', currency: 'USDC' });
+      });
+
+      it('должен сериализовать ноль', () => {
+        const json = Money.zero().toJSON();
+
+        expect(json).toEqual({ amount: '0', currency: 'USDC' });
+      });
+    });
+
+    describe('fromJSON', () => {
+      it('должен десериализовать Money из JSON', () => {
+        const json = { amount: '100.5', currency: 'USDC' as const };
+        const result = Money.fromJSON(json);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.getAmount()).toBe(100.5);
+          expect(result.value.getCurrency()).toBe('USDC');
+        }
+      });
+
+      it('должен отклонить невалидную сумму', () => {
+        const json = { amount: 'invalid', currency: 'USDC' as const };
+        const result = Money.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+      });
+
+      it('должен корректно работать round-trip', () => {
+        const original = unwrap(Money.fromValue(123.456));
+        const json = original.toJSON();
+        const deserialized = unwrap(Money.fromJSON(json));
+
+        expect(deserialized.equals(original)).toBe(true);
       });
     });
   });

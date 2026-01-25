@@ -11,6 +11,7 @@
 - [Определение пересечения с рынком](#определение-пересечения-с-рынком)
 - [Операции](#операции)
 - [Утилиты](#утилиты)
+- [Сериализация](#сериализация)
 - [Примеры использования](#примеры-использования)
 - [Best Practices](#best-practices)
 - [Архитектурные решения](#архитектурные-решения)
@@ -525,6 +526,133 @@ const q3 = unwrap(Quote.create(
 console.log(q1.equals(q3)); // false (разные bids)
 ```
 
+## Сериализация
+
+### toJSON
+
+Сериализует котировку в JSON-представление.
+
+```typescript
+toJSON(): {
+  bid: number | null;
+  ask: number | null;
+  bidSize: number;
+  askSize: number;
+  timestamp: string;
+}
+```
+
+**Возвращает:** JSON-объект с ценами в виде чисел и timestamp в виде ISO строки.
+
+**Использование:** Передача данных через API или сохранение в хранилище.
+
+**Примеры:**
+
+```typescript
+const quote = unwrap(Quote.create(
+  unwrap(Price.fromNumber(0.64)),
+  unwrap(Price.fromNumber(0.66)),
+  unwrap(Quantity.fromNumber(100)),
+  unwrap(Quantity.fromNumber(100))
+));
+
+const json = quote.toJSON();
+console.log(json);
+// {
+//   bid: 0.64,
+//   ask: 0.66,
+//   bidSize: 100,
+//   askSize: 100,
+//   timestamp: '2026-01-25T12:00:00.000Z'
+// }
+
+// Отправка через API
+await fetch('/api/quotes', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify(quote.toJSON())
+});
+
+// Односторонняя котировка
+const bidOnly = unwrap(Quote.create(
+  unwrap(Price.fromNumber(0.64)),
+  null,
+  unwrap(Quantity.fromNumber(100)),
+  Quantity.ZERO
+));
+
+console.log(bidOnly.toJSON());
+// {
+//   bid: 0.64,
+//   ask: null,
+//   bidSize: 100,
+//   askSize: 0,
+//   timestamp: '2026-01-25T12:00:00.000Z'
+// }
+```
+
+### fromJSON
+
+Десериализует котировку из JSON.
+
+```typescript
+Quote.fromJSON(json: {
+  bid: number | null;
+  ask: number | null;
+  bidSize: number;
+  askSize: number;
+  timestamp: string;
+}): Result<Quote, InvalidQuoteError>
+```
+
+**Параметры:**
+- `json` — JSON-объект с данными котировки
+
+**Возвращает:** Result с Quote или InvalidQuoteError
+
+**Валидация:** Все значения валидируются через соответствующие фабричные методы (Price.fromNumber, Quantity.fromNumber).
+
+**Примеры:**
+
+```typescript
+// Десериализация из API
+const response = await fetch('/api/quotes/123');
+const json = await response.json();
+
+const result = Quote.fromJSON(json);
+if (result.ok) {
+  const quote = result.value;
+  console.log(quote.toString());
+} else {
+  console.error('Invalid quote data:', result.error.message);
+}
+
+// Прямая десериализация
+const json = {
+  bid: 0.64,
+  ask: 0.66,
+  bidSize: 100,
+  askSize: 100,
+  timestamp: '2026-01-25T12:00:00.000Z'
+};
+
+const quote = unwrap(Quote.fromJSON(json));
+console.log(quote.getSpread()); // 0.02
+
+// Ошибка при невалидных данных
+const invalidJson = {
+  bid: 1.5,  // > 1.0 (invalid price)
+  ask: 0.66,
+  bidSize: 100,
+  askSize: 100,
+  timestamp: '2026-01-25T12:00:00.000Z'
+};
+
+const invalidResult = Quote.fromJSON(invalidJson);
+console.log(invalidResult.ok); // false
+console.log(invalidResult.error?.message); // "Invalid bid price: ..."
+```
+
 ## Примеры использования
 
 ### Пример 1: Базовый маркет-мейкинг
@@ -996,6 +1124,31 @@ export class Quote {
    * (timestamp игнорируется)
    */
   public equals(other: Quote): boolean;
+
+  /**
+   * Сериализует котировку в JSON
+   * @returns JSON-представление котировки
+   */
+  public toJSON(): {
+    bid: number | null;
+    ask: number | null;
+    bidSize: number;
+    askSize: number;
+    timestamp: string;
+  };
+
+  /**
+   * Десериализует котировку из JSON
+   * @param json - JSON-объект с данными котировки
+   * @returns Result с Quote или InvalidQuoteError
+   */
+  public static fromJSON(json: {
+    bid: number | null;
+    ask: number | null;
+    bidSize: number;
+    askSize: number;
+    timestamp: string;
+  }): Result<Quote, InvalidQuoteError>;
 }
 
 /**
