@@ -215,6 +215,12 @@ const tightened = unwrap(spread.tighten(0.01));
 const maxTightened = unwrap(spread.tighten(0.1)); // More than half width
 console.log(maxTightened.isZeroWidth()); // true
 console.log(maxTightened.width());       // 0
+
+// Обработка ошибок InvalidSpreadError
+const invalidResult = spread.tighten(NaN);
+if (!invalidResult.ok) {
+  console.error(invalidResult.error.message); // InvalidSpreadError
+}
 ```
 
 **Применение:**
@@ -254,6 +260,12 @@ const edgeSpread = unwrap(Spread.fromNumbers(0.001, 0.999));
 const maxWidened = unwrap(edgeSpread.widen(0.1));
 console.log(maxWidened.bid.value); // 0.0001 (clamped)
 console.log(maxWidened.ask.value); // 0.9999 (clamped)
+
+// Обработка ошибок InvalidSpreadError
+const invalidWidenResult = spread.widen(Infinity);
+if (!invalidWidenResult.ok) {
+  console.error(invalidWidenResult.error.message); // InvalidSpreadError
+}
 ```
 
 **Применение:**
@@ -768,6 +780,9 @@ const widened = spread.widen(0.01);
 ## TypeScript Types
 
 ```typescript
+import { Result } from '@polymarket/result';
+import { InvalidSpreadError } from '@polymarket/errors';
+
 interface SpreadOperations {
   // Метрики
   width(): number;
@@ -777,8 +792,8 @@ interface SpreadOperations {
   isWide(threshold?: number): boolean;
 
   // Операции
-  tighten(amount: number): Spread;
-  widen(amount: number): Spread;
+  tighten(amount: number): Result<Spread, InvalidSpreadError>;
+  widen(amount: number): Result<Spread, InvalidSpreadError>;
   shift(amount: number): Spread;
 
   // Проверки

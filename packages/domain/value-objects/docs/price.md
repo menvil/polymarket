@@ -128,64 +128,75 @@ if (!invalid.ok) {
 
 ## Операции округления
 
-### `toTick(tickSize?: number): Price`
+### `toTick(tickSize?: number): Result<Price, InvalidPriceError>`
 
 Округляет цену до ближайшего tick size (размера тика).
 
 ```typescript
-const price = unwrap(Price.fromNumber(0.5234));
+const price = unwrap(Price.fromValue(0.5234));
 
 // Округление к ближайшему тику
-const rounded = price.toTick(0.01);
+const rounded = unwrap(price.toTick(0.01));
 console.log(rounded.value); // 0.52
 
 // Округление к tick size по умолчанию (0.0001)
-const defaultRounded = price.toTick();
+const defaultRounded = unwrap(price.toTick());
 console.log(defaultRounded.value); // 0.5234
 ```
 
-### `floorToTick(tickSize?: number): Price`
+### `floorToTick(tickSize?: number): Result<Price, InvalidPriceError>`
 
 Округляет цену **вниз** до tick size.
 
 ```typescript
-const price = unwrap(Price.fromNumber(0.5239));
+const price = unwrap(Price.fromValue(0.5239));
 
-const floored = price.floorToTick(0.01);
+const floored = unwrap(price.floorToTick(0.01));
 console.log(floored.value); // 0.52 (округлено вниз)
 ```
 
-### `ceilToTick(tickSize?: number): Price`
+### `ceilToTick(tickSize?: number): Result<Price, InvalidPriceError>`
 
 Округляет цену **вверх** до tick size.
 
 ```typescript
-const price = unwrap(Price.fromNumber(0.5231));
+const price = unwrap(Price.fromValue(0.5231));
 
-const ceiled = price.ceilToTick(0.01);
+const ceiled = unwrap(price.ceilToTick(0.01));
 console.log(ceiled.value); // 0.53 (округлено вверх)
 ```
 
 ## Арифметические операции
 
-### `add(amount: number): Price`
+### `add(amount: number): Result<Price, InvalidPriceError>`
 
 Прибавляет к цене. Результат ограничен MAX_PRICE (0.9999).
 
 ```typescript
 const price = unwrap(Price.fromNumber(0.65));
 
-const increased = price.add(0.05);
-console.log(increased.value); // 0.70
+// Успешное сложение
+const result = price.add(0.05);
+if (result.ok) {
+  console.log(result.value.value); // 0.70
+}
 
 // Автоматическое ограничение при превышении максимума
 const nearMax = unwrap(Price.fromNumber(0.98));
-const clamped = nearMax.add(0.05);
+const clampedResult = nearMax.add(0.05);
+const clamped = unwrap(clampedResult);
 console.log(clamped.value); // 0.9999 (зажато в MAX_PRICE)
 
-// Ошибки валидации
-price.add(-0.1);    // RangeError: отрицательное значение
-price.add(NaN);     // RangeError: не число
+// Обработка ошибок через Result
+const negativeResult = price.add(-0.1);
+if (!negativeResult.ok) {
+  console.error(negativeResult.error.message); // Invalid amount -0.1: must be non-negative
+}
+
+const nanResult = price.add(NaN);
+if (!nanResult.ok) {
+  console.error(nanResult.error.message); // Invalid amount NaN: must be a finite number
+}
 ```
 
 ### `subtract(amount: number): Price`
@@ -204,13 +215,14 @@ const clamped = nearMin.subtract(0.002);
 console.log(clamped.value); // 0.0001 (зажато в MIN_PRICE)
 ```
 
-### `multiply(factor: number): Price`
+### `multiply(factor: number): Result<Price, InvalidPriceError>`
 
 Умножает цену на коэффициент. Результат ограничен [MIN_PRICE, MAX_PRICE].
 
 ```typescript
 const price = unwrap(Price.fromValue(0.5));
 
+// 0.5 * 2 = 1.0, но это превышает MAX_PRICE (0.9999), поэтому зажимается
 const doubled = unwrap(price.multiply(2));
 console.log(doubled.value); // 0.9999 (зажато в MAX_PRICE)
 
@@ -437,7 +449,7 @@ const passiveBuy = unwrap(Price.fromNumber(0.65));
 console.log(wouldOrderCross(passiveBuy, 'BUY', marketBid, marketAsk)); // false
 ```
 
-### 4. Вычисление edge price для лимит ордеров
+### 4. Вычисление edge price для лимитных ордеров
 
 ```typescript
 import { unwrap } from '@polymarket/result';
@@ -547,12 +559,6 @@ const doubled = price.multiply(2);
 1. **Безопасность**: предотвращает выход цен за валидный диапазон
 2. **Удобство**: не нужно вручную проверять границы после каждой операции
 3. **Предсказуемость**: операции никогда не падают из-за переполнения
-
-### Почему методы экземпляра используют throw, а не Result?
-
-1. **Паттерн DDD**: factory methods возвращают Result, методы экземпляра могут использовать throw
-2. **Контракт**: операции над валидным Price предполагают валидные входные данные
-3. **Простота**: не нужно обрабатывать Result для каждой операции
 
 ### Почему tick size awareness?
 

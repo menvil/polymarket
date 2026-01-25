@@ -13,8 +13,17 @@ import { describe, it, expect } from '@jest/globals';
 /**
  * Проверка неизменяемости value object
  *
+ * @param name - Имя value object
  * @param createValueObject - Функция создания value object
  * @param mutationAttempt - Функция, пытающаяся изменить объект
+ *
+ * @remarks
+ * Этот тест проверяет RUNTIME immutability — value object должен быть заморожен через Object.freeze()
+ * или методы должны выбрасывать исключения при попытке изменения.
+ * TypeScript readonly — это compile-time проверка, которая не предотвращает мутации в runtime.
+ * Если используется только TypeScript readonly, тест не будет падать в runtime.
+ * Рекомендация: замораживайте объекты через Object.freeze() или создавайте mutationAttempt,
+ * который вызывает методы, выбрасывающие ошибки при попытке изменения.
  */
 export function testImmutability<T>(
   name: string,
@@ -57,6 +66,16 @@ export function testValueEquality<T>(
     it('should be reflexive (equals itself)', () => {
       const [obj] = createEqual();
       expect(equalsMethod(obj, obj)).toBe(true);
+    });
+
+    it('should be symmetric (a.equals(b) => b.equals(a))', () => {
+      const [a, b] = createEqual();
+      expect(equalsMethod(a, b)).toBe(true);
+      expect(equalsMethod(b, a)).toBe(true);
+
+      const [c, d] = createDifferent();
+      expect(equalsMethod(c, d)).toBe(false);
+      expect(equalsMethod(d, c)).toBe(false);
     });
   });
 }

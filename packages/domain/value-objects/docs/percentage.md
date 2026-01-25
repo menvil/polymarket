@@ -408,17 +408,17 @@ console.log(sum.toDecimal().toString()); // "30" (точно!)
 
 ```typescript
 // ❌ СТАРАЯ ВЕРСИЯ
-const a = Percentage.fromValue(80);
-const b = Percentage.fromValue(30);
-const sum = a.add(b); // Молча возвращает 100% (silent clamping)
-// БАГ! Пользователь думает что 80% + 30% = 100%, а на самом деле это overflow!
+const a = unwrap(Percentage.fromValue(999999));
+const b = unwrap(Percentage.fromValue(10));
+const sum = a.add(b); // Молча возвращает 1000000% (silent clamping)
+// БАГ! Пользователь думает что 999999% + 10% = 1000000%, а на самом деле это overflow!
 
 // ✅ НОВАЯ ВЕРСИЯ
 const sum = a.add(b);
 sum.match({
   ok: (pct) => console.log(pct), // Не выполнится
   err: (error) => {
-    // ArithmeticOverflowError: "Addition overflow: 80 + 30 = 110 exceeds max 100"
+    // ArithmeticOverflowError: "Addition overflow: 999999 + 10 = 1000009 exceeds max 1000000"
     console.error('Overflow detected! Fix your logic!');
   }
 });

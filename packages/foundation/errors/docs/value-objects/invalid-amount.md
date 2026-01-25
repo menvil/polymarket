@@ -31,7 +31,7 @@
 import { InvalidAmountError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E>:
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 ```
 
 ---
@@ -88,7 +88,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { InvalidAmountError } from '@polymarket/errors';
 
 class Amount {
@@ -179,7 +179,7 @@ result.match({
 ### 3. Валидация с кастомными правилами
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { InvalidAmountError } from '@polymarket/errors';
 
 class Multiplier {
@@ -238,6 +238,9 @@ class Multiplier {
 
 ```typescript
 import { InvalidAmountError } from '@polymarket/errors';
+import { Result } from '@polymarket/result';
+
+// Используем класс Amount из Примера 2
 
 interface TradingSettings {
   leverage: number;
@@ -313,7 +316,7 @@ settingsResult.match({
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { InvalidAmountError } from '@polymarket/errors';
 
 class DecimalAmount {
@@ -412,6 +415,8 @@ class DecimalAmount {
 ### Граничные значения
 
 ```typescript
+// Использует класс Amount из Примера 2
+
 // С минимумом и максимумом
 Amount.fromNumber(50, 'leverage', 1, 100); // ✅ Result.ok(Amount)
 Amount.fromNumber(1, 'leverage', 1, 100); // ✅ Result.ok(Amount) - граница
@@ -633,7 +638,7 @@ function validateAndLogAmount(
 
 ```typescript
 import { InvalidAmountError } from '@polymarket/errors';
-import { ResultChain } from '@polymarket/types';
+import { ResultChain } from '@polymarket/result';
 
 interface Config {
   leverage: Amount;

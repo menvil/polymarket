@@ -9,7 +9,8 @@ import { Money } from '../../src/Money';
 import {
   InvalidMoneyError,
   DivisionByZeroError,
-  ArithmeticOverflowError
+  ArithmeticOverflowError,
+  CurrencyMismatchError
 } from '@polymarket/errors';
 
 describe('Money', () => {
@@ -95,6 +96,26 @@ describe('Money', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        }
+      });
+
+      it('должен отклонить пустую валюту', () => {
+        const result = Money.fromValue(100, '' as 'USDC');
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidMoneyError);
+          expect(result.error.message).toContain('Unsupported currency');
+        }
+      });
+
+      it('должен отклонить невалидную валюту (пробелы)', () => {
+        const result = Money.fromValue(100, '   ' as 'USDC');
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(InvalidMoneyError);
+          expect(result.error.message).toContain('Unsupported currency');
         }
       });
     });
@@ -235,6 +256,20 @@ describe('Money', () => {
         expect(m1.getAmount()).toBe(100);
         expect(m2.getAmount()).toBe(50);
       });
+
+      it('должен отклонить операцию с разными валютами', () => {
+        const usd = unwrap(Money.fromValue(100, 'USDC'));
+        // Используем обход типов для тестирования с другой валютой
+        const btc = new (Money as any)(new Decimal(1), 'BTC');
+
+        const result = usd.add(btc);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(CurrencyMismatchError);
+          expect(result.error.message).toContain('Cannot add');
+        }
+      });
     });
 
     describe('subtract', () => {
@@ -272,6 +307,20 @@ describe('Money', () => {
 
         expect(m1.getAmount()).toBe(100);
         expect(m2.getAmount()).toBe(30);
+      });
+
+      it('должен отклонить операцию с разными валютами', () => {
+        const usd = unwrap(Money.fromValue(100, 'USDC'));
+        // Используем обход типов для тестирования с другой валютой
+        const eth = new (Money as any)(new Decimal(2), 'ETH');
+
+        const result = usd.subtract(eth);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(CurrencyMismatchError);
+          expect(result.error.message).toContain('Cannot subtract');
+        }
       });
     });
 

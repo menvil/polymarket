@@ -202,18 +202,18 @@ function validateOrderForm(
   const errors: TradingError[] = [];
 
   const priceResult = Price.fromNumber(priceInput);
-  if (priceResult.isErr()) {
-    errors.push(priceResult.unwrapErr());
+  if (!priceResult.ok) {
+    errors.push(priceResult.error);
   }
 
   const qtyResult = Quantity.fromNumber(qtyInput);
-  if (qtyResult.isErr()) {
-    errors.push(qtyResult.unwrapErr());
+  if (!qtyResult.ok) {
+    errors.push(qtyResult.error);
   }
 
   const balanceResult = Money.fromUSDC(balanceInput);
-  if (balanceResult.isErr()) {
-    errors.push(balanceResult.unwrapErr());
+  if (!balanceResult.ok) {
+    errors.push(balanceResult.error);
   }
 
   if (errors.length > 0) {

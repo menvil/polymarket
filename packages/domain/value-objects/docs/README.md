@@ -2,9 +2,9 @@
 
 > Неизменяемые value objects для доменной модели торговой системы Polymarket
 
-[![Tests](https://img.shields.io/badge/tests-350%20passing-brightgreen)]()
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)]()
-[![License](https://img.shields.io/badge/license-MIT-blue)]()
+![Tests](https://img.shields.io/badge/tests-350%20passing-brightgreen)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 ## Описание
 
@@ -29,8 +29,8 @@ import { Money } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
 const money = unwrap(Money.fromValue(100)); // 100 USDC
-const doubled = unwrap(money.multiply(2));  // 200 USDC (Result)
-console.log(unwrap(doubled).toString());     // "$200.00 USDC"
+const doubled = unwrap(money.multiply(2));  // 200 USDC
+console.log(doubled.toString());             // "$200.00 USDC"
 ```
 
 **Особенности:**
@@ -98,7 +98,7 @@ console.log(unwrap(newBalance).toString()); // "1200 USDC"
 - Операции только с одинаковой валютой
 - Отличие от Money: Balance — для счетов, Money — универсальный
 
-**[→ Подробная документация](./docs/balance.md)**
+**[→ Подробная документация](./balance.md)**
 
 ---
 
@@ -395,7 +395,7 @@ npm run clean
 
 ### Структура проекта
 
-```
+```text
 packages/domain/value-objects/
 ├── src/
 │   ├── Money.ts           # Money value object
@@ -552,7 +552,7 @@ if (!result.ok) {
 
 ## Миграция
 
-### С старой версии Percentage
+### Со старой версии Percentage
 
 См. **[PERCENTAGE_REFACTORING.md](./PERCENTAGE_REFACTORING.md)** для подробного migration guide.
 

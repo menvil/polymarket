@@ -308,7 +308,7 @@ export class Percentage {
    * ```
    */
   static zero(): Percentage {
-    return new Percentage(new Decimal(0));
+    return Percentage.ZERO;
   }
 
   /**
@@ -323,7 +323,7 @@ export class Percentage {
    * ```
    */
   static oneHundred(): Percentage {
-    return new Percentage(new Decimal(100));
+    return Percentage.ONE_HUNDRED;
   }
 
   // ============================================================================
@@ -600,7 +600,7 @@ export class Percentage {
    * });
    * ```
    */
-  divide(divisor: number | Decimal): Result<Percentage, DivisionByZeroError> {
+  divide(divisor: number | Decimal): Result<Percentage, DivisionByZeroError | ArithmeticOverflowError> {
     try {
       const divisorDecimal = divisor instanceof Decimal ? divisor : new Decimal(divisor);
 
@@ -660,10 +660,16 @@ export class Percentage {
       return Ok(new Percentage(result));
     } catch (error) {
       return Err(
-        new DivisionByZeroError(
-          `Division error: ${error}`,
+        new ArithmeticOverflowError(
+          (ctx: Record<string, unknown>) =>
+            `Unexpected division error: ${ctx.error}`,
           {
-            context: { error: String(error) }
+            context: {
+              operation: 'divide percentage',
+              value: this.value.toString(),
+              divisor: String(divisor),
+              error: String(error)
+            }
           }
         )
       );

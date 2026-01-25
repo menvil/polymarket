@@ -432,6 +432,7 @@ export class Quote {
       newAsk = askResult.value;
     }
 
+    // Quote.create возвращает Result, поэтому просто возвращаем его
     return Quote.create(newBid, newAsk, this.bidSize, this.askSize, new Date());
   }
 

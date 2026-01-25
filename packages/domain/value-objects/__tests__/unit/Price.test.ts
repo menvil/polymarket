@@ -9,7 +9,7 @@ import { Price } from '../../src/Price';
 
 describe('Price', () => {
   describe('Factory Methods', () => {
-    describe('fromNumber', () => {
+    describe('fromValue', () => {
       it('should create Price from valid number', () => {
         const result = Price.fromValue(0.5);
 
@@ -82,9 +82,7 @@ describe('Price', () => {
           expect(result.error).toBeInstanceOf(InvalidPriceError);
         }
       });
-    });
 
-    describe('fromString', () => {
       it('should create Price from valid string', () => {
         const result = Price.fromValue('0.5234');
 

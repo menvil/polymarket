@@ -383,15 +383,16 @@ import { Quantity } from '@polymarket/value-objects';
 class Order {
   constructor(
     public readonly originalSize: Quantity,
-    private filled: Quantity = Quantity.zero()
+    public readonly filled: Quantity = Quantity.zero()
   ) {}
 
-  // Обработка частичного исполнения с биржи
-  applyFill(fillSize: number): void {
+  // Обработка частичного исполнения с биржи (возвращает новый Order)
+  applyFill(fillSize: number): Order {
     // Используем fromMarketData так как биржа может прислать < MIN_SIZE
     const fillQty = unwrap(Quantity.fromMarketData(fillSize));
+    const newFilled = this.filled.add(fillQty);
 
-    this.filled = this.filled.add(fillQty);
+    return new Order(this.originalSize, newFilled);
   }
 
   getRemainingSize(): Quantity {
@@ -406,11 +407,11 @@ class Order {
 // Использование
 const order = new Order(unwrap(Quantity.fromValue(100)));
 
-order.applyFill(37.5);  // Частичное исполнение
-console.log(order.getRemainingSize().value); // 62.5
+const updatedOrder = order.applyFill(37.5);  // Частичное исполнение (новый Order)
+console.log(updatedOrder.getRemainingSize().value); // 62.5
 
-order.applyFill(62.5);  // Оставшаяся часть
-console.log(order.isFilled()); // true
+const fullyFilled = updatedOrder.applyFill(62.5);  // Оставшаяся часть (новый Order)
+console.log(fullyFilled.isFilled()); // true
 ```
 
 ### 3. Position sizing с риск-менеджментом

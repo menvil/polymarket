@@ -55,7 +55,7 @@ export class Quantity {
    * @returns Quantity с нулевым значением
    */
   public static zero(): Quantity {
-    return new Quantity(0);
+    return Quantity.ZERO;
   }
 
   /**
@@ -326,10 +326,9 @@ export class Quantity {
     const roundedValue = roundFn(divided);
     const rounded = new Decimal(roundedValue).times(tickSize).toNumber();
 
-    // Вычисляем количество десятичных знаков в tickSize
-    const tickSizeStr = tickSize.toString();
-    const decimalIndex = tickSizeStr.indexOf('.');
-    const decimals = decimalIndex === -1 ? 0 : tickSizeStr.length - decimalIndex - 1;
+    // Вычисляем количество десятичных знаков в tickSize используя Decimal
+    // Это правильно обрабатывает экспоненциальную нотацию (1e-7)
+    const decimals = tickSizeDecimal.decimalPlaces();
 
     // Фиксируем количество знаков и зажимаем в минимум 0
     return Ok(new Quantity(Math.max(0, Number(rounded.toFixed(decimals)))));

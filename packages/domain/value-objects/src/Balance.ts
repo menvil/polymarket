@@ -15,27 +15,27 @@
  * ```typescript
  * import { Balance } from '@polymarket/value-objects';
  * import { InvalidMoneyError } from '@polymarket/errors';
+ * import { unwrap } from '@polymarket/result';
  *
  * // Создание баланса
  * const balanceResult = Balance.fromValue(1000, 'USDC');
- * balanceResult.match({
- *   ok: (balance) => console.log(`Balance: ${balance.getAmount()} ${balance.getCurrency()}`),
- *   err: (error) => console.error('Invalid balance:', error.message)
- * });
+ * if (balanceResult.ok) {
+ *   const balance = balanceResult.value;
+ *   console.log(`Balance: ${balance.getAmount()} ${balance.getCurrency()}`);
+ * }
  *
  * // Проверка достаточности средств
- * const balance = Balance.fromValue(1000, 'USDC').unwrap();
+ * const balance = unwrap(Balance.fromValue(1000, 'USDC'));
  * const hasEnough = balance.hasEnough(500); // true
  *
- * // Резервирование средств
- * const reserveResult = balance.reserve(300);
- * reserveResult.match({
- *   ok: ([newBalance, reserved]) => {
- *     console.log(`Available: ${newBalance.getAvailable()}`); // 700
- *     console.log(`Reserved: ${reserved.getAmount()}`); // 300
- *   },
- *   err: (error) => console.error('Insufficient funds')
- * });
+ * // Вычитание для резервирования средств
+ * const toReserve = unwrap(Balance.fromValue(300, 'USDC'));
+ * const subtractResult = balance.subtract(toReserve);
+ * if (subtractResult.ok) {
+ *   const remaining = subtractResult.value;
+ *   console.log(`Available: ${remaining.getAmount()}`); // 700
+ *   console.log(`Reserved: ${toReserve.getAmount()}`); // 300
+ * }
  * ```
  */
 
@@ -62,15 +62,19 @@ export class Balance {
    * @param currency - Валюта (по умолчанию 'USDC')
    * @returns Balance с нулевой суммой
    *
+   * @throws InvalidMoneyError если currency пустая или невалидная
+   *
    * @example
    * ```typescript
-   * const zero = Balance.zero();
+   * import { unwrap } from '@polymarket/result';
+   *
+   * const zero = unwrap(Balance.zero());
    * console.log(zero.getAmount()); // 0
    * console.log(zero.isZero()); // true
    * ```
    */
-  public static zero(currency: string = 'USDC'): Balance {
-    return new Balance(new Decimal(0), currency);
+  public static zero(currency: string = 'USDC'): Result<Balance, InvalidMoneyError> {
+    return Balance.fromValue(new Decimal(0), currency);
   }
 
   /**

@@ -92,7 +92,7 @@ const result = OkChain(42)
 
 // Конвертация plain Result в chain
 const balance = toChain(Balance.fromValue(1000, 'USDC'))
-  .flatMap(b => b.add(unwrap(Balance.fromValue(500, 'USDC'))))
+  .flatMap(b => toChain(Balance.fromValue(500, 'USDC')).flatMap(b2 => b.add(b2)))
   .map(b => b.getAmount())
   .unwrapOr(0); // 1500
 

@@ -507,7 +507,7 @@ console.log(pnl.isNegative()); // true - допустимо
 // Для балансов счетов используйте Balance
 import { Balance } from '@polymarket/value-objects';
 
-const balance = Balance.fromAmount(-100, 'USDC');
+const balance = Balance.fromValue(-100, 'USDC');
 balance.match({
   ok: (b) => console.log(b),
   err: (error) => {

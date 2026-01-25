@@ -257,7 +257,7 @@ export class Money {
    * });
    * ```
    */
-  add(other: Money): Result<Money, CurrencyMismatchError> {
+  add(other: Money): Result<Money, CurrencyMismatchError | ArithmeticOverflowError> {
     if (this.currency !== other.currency) {
       return Err(
         new CurrencyMismatchError(
@@ -275,6 +275,43 @@ export class Money {
     }
 
     const sum = this.amount.plus(other.amount);
+
+    // Проверка overflow
+    if (!sum.isFinite()) {
+      return Err(
+        new ArithmeticOverflowError(
+          (ctx: Record<string, unknown>) =>
+            `Addition overflow: ${ctx.a} + ${ctx.b} = ${ctx.result}`,
+          {
+            context: {
+              operation: 'add',
+              a: this.amount.toNumber(),
+              b: other.amount.toNumber(),
+              result: Infinity
+            }
+          }
+        )
+      );
+    }
+
+    if (sum.abs().greaterThan(Money.MAX_AMOUNT)) {
+      return Err(
+        new ArithmeticOverflowError(
+          (ctx: Record<string, unknown>) =>
+            `Addition overflow: result ${ctx.result} exceeds maximum ${ctx.max}`,
+          {
+            context: {
+              operation: 'add',
+              a: this.amount.toString(),
+              b: other.amount.toString(),
+              result: sum.toString(),
+              max: Money.MAX_AMOUNT.toString()
+            }
+          }
+        )
+      );
+    }
+
     return Ok(new Money(sum, this.currency));
   }
 
@@ -296,7 +333,7 @@ export class Money {
    * diff.isNegative(); // true (PnL = -50)
    * ```
    */
-  subtract(other: Money): Result<Money, CurrencyMismatchError> {
+  subtract(other: Money): Result<Money, CurrencyMismatchError | ArithmeticOverflowError> {
     if (this.currency !== other.currency) {
       return Err(
         new CurrencyMismatchError(
@@ -314,6 +351,43 @@ export class Money {
     }
 
     const diff = this.amount.minus(other.amount);
+
+    // Проверка overflow
+    if (!diff.isFinite()) {
+      return Err(
+        new ArithmeticOverflowError(
+          (ctx: Record<string, unknown>) =>
+            `Subtraction overflow: ${ctx.a} - ${ctx.b} = ${ctx.result}`,
+          {
+            context: {
+              operation: 'subtract',
+              a: this.amount.toNumber(),
+              b: other.amount.toNumber(),
+              result: Infinity
+            }
+          }
+        )
+      );
+    }
+
+    if (diff.abs().greaterThan(Money.MAX_AMOUNT)) {
+      return Err(
+        new ArithmeticOverflowError(
+          (ctx: Record<string, unknown>) =>
+            `Subtraction overflow: result ${ctx.result} exceeds maximum ${ctx.max}`,
+          {
+            context: {
+              operation: 'subtract',
+              a: this.amount.toString(),
+              b: other.amount.toString(),
+              result: diff.toString(),
+              max: Money.MAX_AMOUNT.toString()
+            }
+          }
+        )
+      );
+    }
+
     return Ok(new Money(diff, this.currency));
   }
 

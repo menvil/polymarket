@@ -13,7 +13,7 @@ import { Quantity } from '../../src/Quantity';
 
 describe('Quantity', () => {
   describe('Factory Methods', () => {
-    describe('fromNumber', () => {
+    describe('fromValue', () => {
       it('should create Quantity from valid number', () => {
         const result = Quantity.fromValue(10);
 
