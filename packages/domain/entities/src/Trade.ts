@@ -26,7 +26,7 @@
  * const result = Trade.create({
  *   id: 'trade-1',
  *   marketId: 'market-123',
- *   tokenId: 'token-yes-456',
+ *   tokenId: 'token-up-456',
  *   price: Price.fromValue(0.65),
  *   size: Quantity.fromValue(100),
  *   side: 'BUY',
@@ -44,6 +44,7 @@
 import { Price, Quantity } from '@polymarket/value-objects';
 import { TradeValidationError } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
+import Decimal from 'decimal.js';
 
 /**
  * Сторона сделки
@@ -124,7 +125,7 @@ export class Trade {
    *
    * @remarks
    * Конструктор приватный для использования только через factory методы.
-   * Используйте Trade.create() или Trade.fromPolymarketEvent().
+   * Используйте Trade.create() или Trade.fromValue().
    */
   private constructor(params: TradeParams) {
     this.id = params.id;
@@ -164,7 +165,7 @@ export class Trade {
    * const result = Trade.create({
    *   id: 'trade-1',
    *   marketId: 'market-123',
-   *   tokenId: 'token-yes-456',
+   *   tokenId: 'token-up-456',
    *   price: Price.fromValue(0.65),
    *   size: Quantity.fromValue(100),
    *   side: 'BUY',
@@ -186,7 +187,6 @@ export class Trade {
     if (!params.id || typeof params.id !== 'string' || params.id.trim() === '') {
       return Err(
         new TradeValidationError('Trade ID must be a non-empty string', {
-          code: TradeValidationError.code,
           context: { field: 'id', value: params.id }
         })
       );
@@ -196,7 +196,6 @@ export class Trade {
     if (!params.marketId || typeof params.marketId !== 'string' || params.marketId.trim() === '') {
       return Err(
         new TradeValidationError('Market ID must be a non-empty string', {
-          code: TradeValidationError.code,
           context: { field: 'marketId', tradeId: params.id, value: params.marketId }
         })
       );
@@ -206,7 +205,6 @@ export class Trade {
     if (!params.tokenId || typeof params.tokenId !== 'string' || params.tokenId.trim() === '') {
       return Err(
         new TradeValidationError('Token ID must be a non-empty string', {
-          code: TradeValidationError.code,
           context: { field: 'tokenId', tradeId: params.id, value: params.tokenId }
         })
       );
@@ -216,7 +214,6 @@ export class Trade {
     if (!params.size.isPositive()) {
       return Err(
         new TradeValidationError('Trade size must be positive', {
-          code: TradeValidationError.code,
           context: { field: 'size', tradeId: params.id, value: params.size.value }
         })
       );
@@ -226,7 +223,6 @@ export class Trade {
     if (params.side !== 'BUY' && params.side !== 'SELL') {
       return Err(
         new TradeValidationError(`Invalid trade side: ${params.side}`, {
-          code: TradeValidationError.code,
           context: {
             field: 'side',
             tradeId: params.id,
@@ -241,7 +237,6 @@ export class Trade {
     if (!(params.timestamp instanceof Date) || isNaN(params.timestamp.getTime())) {
       return Err(
         new TradeValidationError('Invalid timestamp', {
-          code: TradeValidationError.code,
           context: { field: 'timestamp', tradeId: params.id, value: params.timestamp }
         })
       );
@@ -255,7 +250,6 @@ export class Trade {
     ) {
       return Err(
         new TradeValidationError('Transaction hash must be a non-empty string', {
-          code: TradeValidationError.code,
           context: { field: 'transactionHash', tradeId: params.id, value: params.transactionHash }
         })
       );
@@ -266,13 +260,13 @@ export class Trade {
   }
 
   /**
-   * Создаёт Trade из события Polymarket API
+   * Создаёт Trade из внешних данных (API, WebSocket и т.д.)
    *
-   * @param event - Событие last_trade_price из Polymarket WebSocket
+   * @param data - Данные сделки из внешнего источника
    * @returns Result<Trade, TradeValidationError> - Ok(trade) или Err(error)
    *
    * @remarks
-   * Парсит событие из Polymarket WebSocket и создаёт Trade entity.
+   * Парсит данные из внешнего источника (Polymarket API, WebSocket и т.д.) и создаёт Trade entity.
    *
    * **Формат события Polymarket:**
    * ```json
@@ -298,9 +292,9 @@ export class Trade {
    *
    * @example
    * ```typescript
-   * const event = {
+   * const data = {
    *   market: 'market-123',
-   *   asset_id: 'token-yes-456',
+   *   asset_id: 'token-up-456',
    *   price: '0.65',
    *   size: '100.5',
    *   side: 'BUY',
@@ -308,44 +302,41 @@ export class Trade {
    *   transaction_hash: '0x1234abcd...'
    * };
    *
-   * const result = Trade.fromPolymarketEvent(event);
+   * const result = Trade.fromValue(data);
    * if (result.ok) {
    *   const trade = result.value;
    *   console.log(`Trade: ${trade.side} ${trade.size.value} @ ${trade.price.value}`);
    * }
    * ```
    */
-  public static fromPolymarketEvent(
-    event: Record<string, unknown>
+  public static fromValue(
+    data: Record<string, unknown>
   ): Result<Trade, TradeValidationError> {
-    // Валидация что event это объект
-    if (typeof event !== 'object' || event === null) {
+    // Валидация что data это объект
+    if (typeof data !== 'object' || data === null) {
       return Err(
-        new TradeValidationError('Event must be an object', {
-          code: TradeValidationError.code,
-          context: { value: event }
+        new TradeValidationError('Data must be an object', {
+          context: { value: data }
         })
       );
     }
 
     // Парсинг price
-    const priceResult = Price.fromValue(parseFloat(event.price as string));
+    const priceResult = Price.fromValue(data.price as string | number);
     if (!priceResult.ok) {
       return Err(
         new TradeValidationError(`Invalid price: ${priceResult.error.message}`, {
-          code: TradeValidationError.code,
-          context: { field: 'price', value: event.price }
+          context: { value: data.price }
         })
       );
     }
 
     // Парсинг size
-    const sizeResult = Quantity.fromValue(parseFloat(event.size as string));
+    const sizeResult = Quantity.fromValue(data.size as string | number);
     if (!sizeResult.ok) {
       return Err(
         new TradeValidationError(`Invalid size: ${sizeResult.error.message}`, {
-          code: TradeValidationError.code,
-          context: { field: 'size', value: event.size }
+          context: { value: data.size }
         })
       );
     }
@@ -354,9 +345,9 @@ export class Trade {
     let timestamp: Date;
     try {
       const timestampMs =
-        typeof event.timestamp === 'string'
-          ? parseInt(event.timestamp, 10)
-          : (event.timestamp as number);
+        typeof data.timestamp === 'string'
+          ? parseInt(data.timestamp, 10)
+          : (data.timestamp as number);
       timestamp = new Date(timestampMs);
       if (isNaN(timestamp.getTime())) {
         throw new Error('Invalid date');
@@ -366,26 +357,25 @@ export class Trade {
         new TradeValidationError(
           `Invalid timestamp: ${error instanceof Error ? error.message : 'unknown error'}`,
           {
-            code: TradeValidationError.code,
-            context: { field: 'timestamp', value: event.timestamp }
+            context: { value: data.timestamp }
           }
         )
       );
     }
 
-    // Генерируем уникальный ID из transaction_hash и timestamp
-    const id = `${event.transaction_hash}-${event.timestamp}`;
+    // Используем transaction_hash как ID (он уже уникальный)
+    const id = data.transaction_hash as string;
 
     // Создаём Trade через create() для полной валидации
     return Trade.create({
       id,
-      marketId: event.market as string,
-      tokenId: event.asset_id as string,
+      marketId: data.market as string,
+      tokenId: data.asset_id as string,
       price: priceResult.value,
       size: sizeResult.value,
-      side: (event.side as string).toUpperCase() as TradeSide,
+      side: (data.side as string).toUpperCase() as TradeSide,
       timestamp,
-      transactionHash: event.transaction_hash as string
+      transactionHash: data.transaction_hash as string
     });
   }
 
@@ -414,7 +404,7 @@ export class Trade {
    * const result = Trade.create({
    *   id: 'trade-1',
    *   marketId: 'market-123',
-   *   tokenId: 'token-yes-456',
+   *   tokenId: 'token-up-456',
    *   price: Price.fromValue(0.65),
    *   size: Quantity.fromValue(100),
    *   side: 'BUY',
@@ -430,6 +420,56 @@ export class Trade {
    */
   public getNotional(): number {
     return this.price.value * this.size.value;
+  }
+
+  /**
+   * Вычисляет notional value сделки с высокой точностью
+   *
+   * @returns Notional value как Decimal (цена × размер)
+   *
+   * @remarks
+   * Использует Decimal.js для точных финансовых вычислений без потери точности.
+   * Рекомендуется использовать этот метод вместо getNotional() для финансовых расчётов.
+   *
+   * **Notional = Price × Size**
+   *
+   * **Зачем нужен Decimal?**
+   * - Избегает ошибок округления floating-point арифметики
+   * - Гарантирует точность до 20 знаков после запятой
+   * - Критично для финансовых расчётов (комиссии, PnL, налоги)
+   *
+   * **Используется для:**
+   * - Точного расчёта объёмов торговли
+   * - Вычисления комиссий без потери точности
+   * - Анализа PnL (profit and loss)
+   * - Бухгалтерских операций
+   *
+   * @example
+   * ```typescript
+   * const result = Trade.create({
+   *   id: 'trade-1',
+   *   marketId: 'market-123',
+   *   tokenId: 'token-up-456',
+   *   price: Price.fromValue(0.65),
+   *   size: Quantity.fromValue(100),
+   *   side: 'BUY',
+   *   timestamp: new Date(),
+   *   transactionHash: '0x1234...'
+   * });
+   *
+   * if (result.ok) {
+   *   const notionalDecimal = result.value.getNotionalDecimal();
+   *   console.log(notionalDecimal.toString()); // "65.00"
+   *   console.log(notionalDecimal.toFixed(4)); // "65.0000"
+   *
+   *   // Для финансовых расчётов с высокой точностью
+   *   const fee = notionalDecimal.mul(0.001); // 0.1% комиссия
+   *   console.log(fee.toString()); // "0.065"
+   * }
+   * ```
+   */
+  public getNotionalDecimal(): Decimal {
+    return new Decimal(this.price.value).mul(this.size.value);
   }
 
   /**
@@ -620,7 +660,7 @@ export class Trade {
    * const json = {
    *   id: 'trade-1',
    *   marketId: 'market-123',
-   *   tokenId: 'token-yes-456',
+   *   tokenId: 'token-up-456',
    *   price: 0.65,
    *   size: 100,
    *   side: 'BUY',
@@ -640,7 +680,6 @@ export class Trade {
     if (typeof json !== 'object' || json === null) {
       return Err(
         new TradeValidationError('JSON must be an object', {
-          code: TradeValidationError.code,
           context: { value: json }
         })
       );
@@ -653,7 +692,6 @@ export class Trade {
     if (!priceResult.ok) {
       return Err(
         new TradeValidationError(`Invalid price: ${priceResult.error.message}`, {
-          code: TradeValidationError.code,
           context: { field: 'price', value: obj.price }
         })
       );
@@ -664,7 +702,6 @@ export class Trade {
     if (!sizeResult.ok) {
       return Err(
         new TradeValidationError(`Invalid size: ${sizeResult.error.message}`, {
-          code: TradeValidationError.code,
           context: { field: 'size', value: obj.size }
         })
       );
@@ -685,7 +722,6 @@ export class Trade {
         new TradeValidationError(
           `Invalid timestamp: ${error instanceof Error ? error.message : 'unknown error'}`,
           {
-            code: TradeValidationError.code,
             context: { field: 'timestamp', value: obj.timestamp }
           }
         )

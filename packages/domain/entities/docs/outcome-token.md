@@ -59,8 +59,8 @@ const marketResult = Market.create({
   id: 'market-123',
   slug: 'btc-100k-2024',
   question: 'Will BTC reach $100k in 2024?',
-  outcomeNames: ['Yes', 'No'],
-  outcomeTokenIds: ['token-yes-456', 'token-no-789'],
+  outcomeNames: ['Up', 'Down'],
+  outcomeTokenIds: ['token-up-456', 'token-down-789'],
   expirationDate: new Date('2024-12-31T23:59:59Z'),
   status: 'ACTIVE'
 });
@@ -73,13 +73,13 @@ if (!marketResult.ok) {
 const market = marketResult.value;
 
 // 2. Получите outcome токен по индексу
-const yesToken = market.getOutcomeToken(0);
-console.log(yesToken.name); // "Yes"
-console.log(yesToken.outcomeIndex); // 0
+const upToken = market.getOutcomeToken(0);
+console.log(upToken.name); // "Up"
+console.log(upToken.outcomeIndex); // 0
 
-const noToken = market.getOutcomeToken(1);
-console.log(noToken.name); // "No"
-console.log(noToken.outcomeIndex); // 1
+const downToken = market.getOutcomeToken(1);
+console.log(downToken.name); // "Down"
+console.log(downToken.outcomeIndex); // 1
 ```
 
 ### Поиск OutcomeToken по ID
@@ -88,10 +88,10 @@ console.log(noToken.outcomeIndex); // 1
 const market = marketResult.value;
 
 // Найти outcome token по ID
-const outcomeToken = market.getOutcomeTokenById('token-yes-456');
+const outcomeToken = market.getOutcomeTokenById('token-up-456');
 
 if (outcomeToken) {
-  console.log(outcomeToken.name); // "Yes"
+  console.log(outcomeToken.name); // "Up"
   console.log(outcomeToken.marketId); // "market-123"
 }
 ```
@@ -102,11 +102,11 @@ if (outcomeToken) {
 const market = marketResult.value;
 
 // Получить индекс outcome по token ID
-const index = market.getOutcomeIndexByTokenId('token-yes-456');
+const index = market.getOutcomeIndexByTokenId('token-up-456');
 
 if (index !== null) {
   console.log(index); // 0
-  console.log(market.getOutcomeToken(index).name); // "Yes"
+  console.log(market.getOutcomeToken(index).name); // "Up"
 }
 ```
 
@@ -134,7 +134,7 @@ console.log(token1.equals(token3)); // false (разные токены)
 ```typescript
 const token = market.getOutcomeToken(0);
 console.log(token.toString());
-// Output: "OutcomeToken[token-yes-456]: Yes (index: 0, market: market-123)"
+// Output: "OutcomeToken[token-up-456]: Up (index: 0, market: market-123)"
 ```
 
 ## Связь с Trade
@@ -146,13 +146,13 @@ import { Trade } from '@polymarket/entities';
 import { Price, Quantity } from '@polymarket/value-objects';
 
 const market = marketResult.value;
-const yesToken = market.getOutcomeToken(0);
+const upToken = market.getOutcomeToken(0);
 
-// Создаём сделку на Yes токен
+// Создаём сделку на Up токен
 const tradeResult = Trade.create({
   id: 'trade-1',
   marketId: market.id,
-  tokenId: yesToken.id, // ← Ссылка на outcome token
+  tokenId: upToken.id, // ← Ссылка на outcome token
   price: Price.fromValue(0.65).value,
   size: Quantity.fromValue(100).value,
   side: 'BUY',
@@ -165,7 +165,7 @@ if (tradeResult.ok) {
 
   // Можем получить outcome token обратно из market
   const outcomeToken = market.getOutcomeTokenById(trade.tokenId);
-  console.log(outcomeToken?.name); // "Yes"
+  console.log(outcomeToken?.name); // "Up"
 }
 ```
 
@@ -175,12 +175,12 @@ Trade entity хранит `tokenId` напрямую (дублирование �
 
 ```typescript
 // Быстрая фильтрация сделок по outcome token
-const yesTrades = allTrades.filter(t => t.tokenId === yesToken.id);
+const upTrades = allTrades.filter(t => t.tokenId === upToken.id);
 
 // Без denormalization потребовался бы JOIN:
-// const yesTrades = allTrades.filter(t => {
+// const upTrades = allTrades.filter(t => {
 //   const market = findMarketById(t.marketId);
-//   return market.getOutcomeToken(0).id === yesToken.id;
+//   return market.getOutcomeToken(0).id === upToken.id;
 // });
 ```
 
@@ -200,7 +200,7 @@ const yesTrades = allTrades.filter(t => t.tokenId === yesToken.id);
 const market = marketResult.value;
 
 // Разрешаем рынок
-const resolveResult = market.resolve(0); // Yes wins
+const resolveResult = market.resolve(0); // Up wins
 
 if (resolveResult.ok) {
   const resolvedMarket = resolveResult.value;
@@ -209,8 +209,8 @@ if (resolveResult.ok) {
   const winningToken = resolvedMarket.getResolvedOutcomeToken();
 
   if (winningToken) {
-    console.log(`Winner: ${winningToken.name}`); // "Winner: Yes"
-    console.log(`Token ID: ${winningToken.id}`); // "Token ID: token-yes-456"
+    console.log(`Winner: ${winningToken.name}`); // "Winner: Up"
+    console.log(`Token ID: ${winningToken.id}`); // "Token ID: token-up-456"
   }
 }
 ```
@@ -219,15 +219,15 @@ if (resolveResult.ok) {
 
 ```typescript
 const market = marketResult.value;
-const yesToken = market.getOutcomeToken(0);
+const upToken = market.getOutcomeToken(0);
 
-// Получаем все сделки на Yes
-const yesTrades = allTrades.filter(trade =>
-  trade.tokenId === yesToken.id
+// Получаем все сделки на Up
+const upTrades = allTrades.filter(trade =>
+  trade.tokenId === upToken.id
 );
 
-console.log(`Total Yes trades: ${yesTrades.length}`);
-console.log(`Total Yes volume: ${yesTrades.reduce((sum, t) => sum + t.getNotional(), 0)}`);
+console.log(`Total Up trades: ${upTrades.length}`);
+console.log(`Total Up volume: ${upTrades.reduce((sum, t) => sum + t.getNotional(), 0)}`);
 ```
 
 ### Use case 3: Парсинг Polymarket события
@@ -236,7 +236,7 @@ console.log(`Total Yes volume: ${yesTrades.reduce((sum, t) => sum + t.getNotiona
 // Событие из Polymarket WebSocket
 const polymarketEvent = {
   market: 'market-123',
-  asset_id: 'token-yes-456',
+  asset_id: 'token-up-456',
   price: '0.65',
   size: '100',
   side: 'BUY',
@@ -245,7 +245,7 @@ const polymarketEvent = {
 };
 
 // Парсим сделку
-const tradeResult = Trade.fromPolymarketEvent(polymarketEvent);
+const tradeResult = Trade.fromValue(polymarketEvent);
 
 if (tradeResult.ok) {
   const trade = tradeResult.value;
@@ -254,7 +254,7 @@ if (tradeResult.ok) {
   const outcomeToken = market.getOutcomeTokenById(trade.tokenId);
 
   if (outcomeToken) {
-    console.log(`Trade on: ${outcomeToken.name}`); // "Trade on: Yes"
+    console.log(`Trade on: ${outcomeToken.name}`); // "Trade on: Up"
     console.log(`Outcome index: ${outcomeToken.outcomeIndex}`); // 0
   }
 }
@@ -288,16 +288,16 @@ export interface OutcomeTokenProps {
 ```typescript
 // ❌ НЕ ДЕЛАЙТЕ ТАК:
 const token = OutcomeToken.createTrusted({
-  id: 'token-yes',
+  id: 'token-up',
   marketId: 'market-123',
   outcomeIndex: 0,
-  name: 'Yes'
+  name: 'Up'
 });
 
 // ✅ ПРАВИЛЬНО - создавайте через Market:
 const market = Market.create({
   id: 'market-123',
-  outcomeNames: ['Yes', 'No'],
+  outcomeNames: ['Up', 'Down'],
   // ... другие параметры
 });
 const token = market.value.getOutcomeToken(0);

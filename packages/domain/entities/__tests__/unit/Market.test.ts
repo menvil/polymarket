@@ -14,7 +14,7 @@ describe('Market entity', () => {
     id: 'market-123',
     slug: 'btc-100k-2024',
     question: 'Will BTC reach $100k in 2024?',
-    outcomeNames: ['Yes', 'No'] as const,
+    outcomeNames: ['Up', 'Down'] as const,
     outcomeTokenIds: ['token-yes-456', 'token-no-789'] as const,
     expirationDate: new Date('2024-12-31T23:59:59Z'),
     status: 'ACTIVE' as const
@@ -31,8 +31,8 @@ describe('Market entity', () => {
         expect(result.value.question).toBe('Will BTC reach $100k in 2024?');
         expect(result.value.status).toBe('ACTIVE');
         expect(result.value.outcomeTokens).toHaveLength(2);
-        expect(result.value.outcomeTokens[0].name).toBe('Yes');
-        expect(result.value.outcomeTokens[1].name).toBe('No');
+        expect(result.value.outcomeTokens[0].name).toBe('Up');
+        expect(result.value.outcomeTokens[1].name).toBe('Down');
       }
     });
 
@@ -47,12 +47,12 @@ describe('Market entity', () => {
         expect(token0.id).toBe('token-yes-456');
         expect(token0.marketId).toBe('market-123');
         expect(token0.outcomeIndex).toBe(0);
-        expect(token0.name).toBe('Yes');
+        expect(token0.name).toBe('Up');
 
         expect(token1.id).toBe('token-no-789');
         expect(token1.marketId).toBe('market-123');
         expect(token1.outcomeIndex).toBe(1);
-        expect(token1.name).toBe('No');
+        expect(token1.name).toBe('Down');
       }
     });
 
@@ -96,7 +96,7 @@ describe('Market entity', () => {
     it('should fail validation if outcomeNames has wrong count', () => {
       const result = Market.create({
         ...validProps,
-        outcomeNames: ['Yes'] as any
+        outcomeNames: ['Up'] as any
       });
 
       expect(result.ok).toBe(false);
@@ -120,7 +120,7 @@ describe('Market entity', () => {
     it('should fail validation if outcome name is empty', () => {
       const result = Market.create({
         ...validProps,
-        outcomeNames: ['', 'No'] as const
+        outcomeNames: ['', 'Down'] as const
       });
 
       expect(result.ok).toBe(false);
@@ -200,8 +200,8 @@ describe('Market entity', () => {
         const token0 = result.value.getOutcomeToken(0);
         const token1 = result.value.getOutcomeToken(1);
 
-        expect(token0.name).toBe('Yes');
-        expect(token1.name).toBe('No');
+        expect(token0.name).toBe('Up');
+        expect(token1.name).toBe('Down');
       }
     });
   });
@@ -235,7 +235,7 @@ describe('Market entity', () => {
       if (result.ok) {
         const token = result.value.getOutcomeTokenById('token-yes-456');
         expect(token).not.toBe(null);
-        expect(token?.name).toBe('Yes');
+        expect(token?.name).toBe('Up');
       }
     });
 
@@ -259,9 +259,13 @@ describe('Market entity', () => {
           const activeMarket = result.value;
           expect(activeMarket.status).toBe('ACTIVE');
 
-          const closedMarket = activeMarket.close();
-          expect(closedMarket.status).toBe('CLOSED');
-          expect(closedMarket.id).toBe(activeMarket.id);
+          const closeResult = activeMarket.close();
+          expect(closeResult.ok).toBe(true);
+          if (closeResult.ok) {
+            const closedMarket = closeResult.value;
+            expect(closedMarket.status).toBe('CLOSED');
+            expect(closedMarket.id).toBe(activeMarket.id);
+          }
         }
       });
 
@@ -270,12 +274,16 @@ describe('Market entity', () => {
 
         expect(result.ok).toBe(true);
         if (result.ok) {
-          const closedMarket = result.value.close();
+          const closeResult = result.value.close();
+          expect(closeResult.ok).toBe(true);
 
-          expect(closedMarket.id).toBe('market-123');
-          expect(closedMarket.slug).toBe('btc-100k-2024');
-          expect(closedMarket.question).toBe('Will BTC reach $100k in 2024?');
-          expect(closedMarket.outcomeTokens[0].name).toBe('Yes');
+          if (closeResult.ok) {
+            const closedMarket = closeResult.value;
+            expect(closedMarket.id).toBe('market-123');
+            expect(closedMarket.slug).toBe('btc-100k-2024');
+            expect(closedMarket.question).toBe('Will BTC reach $100k in 2024?');
+            expect(closedMarket.outcomeTokens[0].name).toBe('Up');
+          }
         }
       });
     });
@@ -347,7 +355,7 @@ describe('Market entity', () => {
       if (result.ok) {
         const winner = result.value.getResolvedOutcomeToken();
         expect(winner).not.toBe(null);
-        expect(winner?.name).toBe('Yes');
+        expect(winner?.name).toBe('Up');
       }
     });
 
@@ -383,7 +391,7 @@ describe('Market entity', () => {
           const tokens = json.outcomeTokens as any[];
           expect(tokens).toHaveLength(2);
           expect(tokens[0].id).toBe('token-yes-456');
-          expect(tokens[0].name).toBe('Yes');
+          expect(tokens[0].name).toBe('Up');
           expect(tokens[0].outcomeIndex).toBe(0);
         }
       });
@@ -396,8 +404,8 @@ describe('Market entity', () => {
           slug: 'btc-100k-2024',
           question: 'Will BTC reach $100k in 2024?',
           outcomeTokens: [
-            { id: 'token-yes-456', name: 'Yes' },
-            { id: 'token-no-789', name: 'No' }
+            { id: 'token-up-456', name: 'Up' },
+            { id: 'token-down-789', name: 'Down' }
           ],
           expirationDate: '2024-12-31T23:59:59.000Z',
           status: 'ACTIVE'
@@ -410,8 +418,8 @@ describe('Market entity', () => {
           expect(result.value.id).toBe('market-123');
           expect(result.value.slug).toBe('btc-100k-2024');
           expect(result.value.question).toBe('Will BTC reach $100k in 2024?');
-          expect(result.value.outcomeTokens[0].name).toBe('Yes');
-          expect(result.value.outcomeTokens[1].name).toBe('No');
+          expect(result.value.outcomeTokens[0].name).toBe('Up');
+          expect(result.value.outcomeTokens[1].name).toBe('Down');
         }
       });
 
@@ -531,7 +539,7 @@ describe('Market entity', () => {
         const str = result.value.toString();
         expect(str).toContain('market-123');
         expect(str).toContain('Will BTC reach $100k in 2024?');
-        expect(str).toContain('[Yes/No]');
+        expect(str).toContain('[Up/Down]');
         expect(str).toContain('ACTIVE');
       }
     });

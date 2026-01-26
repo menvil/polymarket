@@ -519,3 +519,22 @@ MIT
 5. **Добавьте документацию** в `docs/[category]/[error-name].md`
 
 **Никаких registry! Никакой ручной регистрации!** Всё работает через автоматическое обнаружение классов в файловой системе.
+
+## 📚 Документация ошибок
+
+### Entity Validation Errors
+
+Ошибки валидации доменных сущностей (entities):
+
+- **[Entity Validation Errors Overview](./entities/README.md)** — обзор всех validation errors для entities
+- **[OrderValidationError](./entities/OrderValidationError.md)** — ошибки валидации Order entity
+- **[OrderbookValidationError](./entities/OrderbookValidationError.md)** — ошибки валидации Orderbook entity
+
+### Value Object Errors
+
+Ошибки валидации value objects:
+
+- **[Value Object Errors Overview](./value-objects/README.md)** — обзор всех errors для value objects
+- **[InvalidPriceError](./value-objects/InvalidPriceError.md)** — невалидная цена
+- **[InvalidQuantityError](./value-objects/InvalidQuantityError.md)** — невалидный объём
+- **[InvalidSpreadError](./value-objects/InvalidSpreadError.md)** — невалидный spread

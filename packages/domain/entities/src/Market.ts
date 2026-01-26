@@ -7,7 +7,7 @@
  * и статус lifecycle (ACTIVE, CLOSED, RESOLVED).
  *
  * Outcomes хранятся как tuple из двух OutcomeToken объектов,
- * где каждый токен имеет ID и человеко-читаемое имя (например, "Yes", "No").
+ * где каждый токен имеет ID и человеко-читаемое имя (например, "Up", "Down").
  *
  * Immutability обеспечивает thread-safety и предотвращает случайные мутации состояния.
  * Используйте factory метод `create()` для создания новых рынков.
@@ -18,14 +18,14 @@
  *   id: 'market-123',
  *   slug: 'btc-100k-2024',
  *   question: 'Will BTC reach $100k in 2024?',
- *   outcomeNames: ['Yes', 'No'],
+ *   outcomeNames: ['Up', 'Down'],
  *   expirationDate: new Date('2024-12-31T23:59:59Z'),
  *   status: 'ACTIVE'
  * });
  *
  * if (result.ok) {
  *   const market = result.value;
- *   console.log(market.outcomeTokens[0].name); // "Yes"
+ *   console.log(market.outcomeTokens[0].name); // "Up"
  *   console.log(market.marketUrl); // "https://polymarket.com/event/btc-100k-2024"
  * }
  * ```
@@ -58,7 +58,7 @@ export interface MarketProps {
   readonly slug: string;
   /** Вопрос рынка */
   readonly question: string;
-  /** Массив из двух названий исходов ["Yes", "No"] */
+  /** Массив из двух названий исходов ["Up", "Down"] */
   readonly outcomeNames: readonly [string, string];
   /** Массив из двух ID токенов исходов */
   readonly outcomeTokenIds: readonly [string, string];
@@ -107,8 +107,8 @@ export class Market {
    * Outcome токены рынка как tuple из двух токенов
    *
    * @remarks
-   * - outcomeTokens[0]: Первый исход (например, "Yes", "Up")
-   * - outcomeTokens[1]: Второй исход (например, "No", "Down")
+   * - outcomeTokens[0]: Первый исход (например, "Up")
+   * - outcomeTokens[1]: Второй исход (например, "Down")
    */
   public readonly outcomeTokens: readonly [OutcomeToken, OutcomeToken];
 
@@ -189,7 +189,7 @@ export class Market {
    *   id: 'market-123',
    *   slug: 'btc-100k-2024',
    *   question: 'Will BTC reach $100k in 2024?',
-   *   outcomeNames: ['Yes', 'No'],
+   *   outcomeNames: ['Up', 'Down'],
    *   outcomeTokenIds: ['token-yes-123', 'token-no-456'],
    *   expirationDate: new Date('2024-12-31T23:59:59Z'),
    *   status: 'ACTIVE'
@@ -211,7 +211,6 @@ export class Market {
         new MarketValidationError(
           'Market ID must be a non-empty string',
           {
-            code: MarketValidationError.code,
             context: { field: 'id', value: props.id }
           }
         )
@@ -224,7 +223,6 @@ export class Market {
         new MarketValidationError(
           'Market slug must be a non-empty string',
           {
-            code: MarketValidationError.code,
             context: { field: 'slug', marketId: props.id, value: props.slug }
           }
         )
@@ -237,7 +235,6 @@ export class Market {
         new MarketValidationError(
           'Market question must be a non-empty string',
           {
-            code: MarketValidationError.code,
             context: { field: 'question', marketId: props.id, value: props.question }
           }
         )
@@ -250,7 +247,6 @@ export class Market {
         new MarketValidationError(
           'Market must have exactly 2 outcome names',
           {
-            code: MarketValidationError.code,
             context: {
               field: 'outcomeNames',
               marketId: props.id,
@@ -271,7 +267,6 @@ export class Market {
         new MarketValidationError(
           'Market must have exactly 2 outcome token IDs',
           {
-            code: MarketValidationError.code,
             context: {
               field: 'outcomeTokenIds',
               marketId: props.id,
@@ -288,7 +283,6 @@ export class Market {
         new MarketValidationError(
           'Outcome name at index 0 must be a non-empty string',
           {
-            code: MarketValidationError.code,
             context: { field: 'outcomeNames[0]', marketId: props.id }
           }
         )
@@ -300,7 +294,6 @@ export class Market {
         new MarketValidationError(
           'Outcome name at index 1 must be a non-empty string',
           {
-            code: MarketValidationError.code,
             context: { field: 'outcomeNames[1]', marketId: props.id }
           }
         )
@@ -313,7 +306,6 @@ export class Market {
         new MarketValidationError(
           'Outcome token ID at index 0 must be a non-empty string',
           {
-            code: MarketValidationError.code,
             context: { field: 'outcomeTokenIds[0]', marketId: props.id }
           }
         )
@@ -325,7 +317,6 @@ export class Market {
         new MarketValidationError(
           'Outcome token ID at index 1 must be a non-empty string',
           {
-            code: MarketValidationError.code,
             context: { field: 'outcomeTokenIds[1]', marketId: props.id }
           }
         )
@@ -342,7 +333,6 @@ export class Market {
         new MarketValidationError(
           'Market expiration date must be a valid Date',
           {
-            code: MarketValidationError.code,
             context: { field: 'expirationDate', marketId: props.id }
           }
         )
@@ -356,7 +346,6 @@ export class Market {
         new MarketValidationError(
           `Invalid market status: ${props.status}`,
           {
-            code: MarketValidationError.code,
             context: {
               field: 'status',
               marketId: props.id,
@@ -374,7 +363,6 @@ export class Market {
         new MarketValidationError(
           'Resolved market must have resolvedOutcomeIndex',
           {
-            code: MarketValidationError.code,
             context: { field: 'resolvedOutcomeIndex', marketId: props.id, status: props.status }
           }
         )
@@ -419,7 +407,7 @@ export class Market {
    * @example
    * ```typescript
    * const firstOutcome = market.getOutcomeToken(0);
-   * console.log(firstOutcome.name); // "Yes"
+   * console.log(firstOutcome.name); // "Up"
    * console.log(firstOutcome.id); // "token-yes-123"
    * ```
    */
@@ -437,7 +425,7 @@ export class Market {
    * ```typescript
    * const index = market.getOutcomeIndexByTokenId('token-yes-123');
    * if (index !== null) {
-   *   console.log(market.outcomeTokens[index].name); // "Yes"
+   *   console.log(market.outcomeTokens[index].name); // "Up"
    * }
    * ```
    */
@@ -457,7 +445,7 @@ export class Market {
    * ```typescript
    * const outcome = market.getOutcomeTokenById('token-yes-123');
    * if (outcome) {
-   *   console.log(outcome.name); // "Yes"
+   *   console.log(outcome.name); // "Up"
    * }
    * ```
    */
@@ -568,31 +556,36 @@ export class Market {
   /**
    * Закрывает рынок (переводит в статус CLOSED)
    *
-   * @returns Новый Market instance со статусом CLOSED
+   * @returns Result<Market, MarketValidationError> - Ok(market) со статусом CLOSED
    *
    * @remarks
    * Lifecycle метод для перехода из ACTIVE → CLOSED.
    * Возвращает новый instance (immutable pattern).
    * Закрытый рынок не принимает новые сделки, но еще не разрешен.
+   * resolvedOutcomeIndex сбрасывается в null, так как рынок еще не разрешен.
    *
    * @example
    * ```typescript
    * const activeMarket = Market.create({ status: 'ACTIVE', ... }).value;
-   * const closedMarket = activeMarket.close();
-   * console.log(closedMarket.status); // "CLOSED"
-   * console.log(closedMarket.canTrade()); // false
+   * const result = activeMarket.close();
+   * if (result.ok) {
+   *   const closedMarket = result.value;
+   *   console.log(closedMarket.status); // "CLOSED"
+   *   console.log(closedMarket.canTrade()); // false
+   *   console.log(closedMarket.resolvedOutcomeIndex); // null
+   * }
    * ```
    */
-  public close(): Market {
-    return new Market({
+  public close(): Result<Market, MarketValidationError> {
+    return Ok(new Market({
       id: this.id,
       slug: this.slug,
       question: this.question,
       outcomeTokens: this.outcomeTokens,
       expirationDate: this.expirationDate,
       status: 'CLOSED',
-      resolvedOutcomeIndex: this.resolvedOutcomeIndex
-    });
+      resolvedOutcomeIndex: null
+    }));
   }
 
   /**
@@ -610,12 +603,12 @@ export class Market {
    * @example
    * ```typescript
    * const market = Market.create({ status: 'CLOSED', ... }).value;
-   * const result = market.resolve(0); // Outcome 0 wins ("Yes")
+   * const result = market.resolve(0); // Outcome 0 wins ("Up")
    *
    * if (result.ok) {
    *   const resolvedMarket = result.value;
    *   console.log(resolvedMarket.status); // "RESOLVED"
-   *   console.log(resolvedMarket.getResolvedOutcomeToken()?.name); // "Yes"
+   *   console.log(resolvedMarket.getResolvedOutcomeToken()?.name); // "Up"
    * }
    * ```
    */
@@ -626,7 +619,6 @@ export class Market {
         new MarketValidationError(
           `Invalid outcome index: ${outcomeIndex}. Must be 0 or 1`,
           {
-            code: MarketValidationError.code,
             context: {
               field: 'outcomeIndex',
               marketId: this.id,
@@ -677,8 +669,8 @@ export class Market {
    * //   "marketUrl": "https://polymarket.com/event/btc-100k-2024",
    * //   "question": "Will BTC reach $100k?",
    * //   "outcomeTokens": [
-   * //     { "id": "token-yes", "marketId": "market-123", "outcomeIndex": 0, "name": "Yes" },
-   * //     { "id": "token-no", "marketId": "market-123", "outcomeIndex": 1, "name": "No" }
+   * //     { "id": "token-up", "marketId": "market-123", "outcomeIndex": 0, "name": "Up" },
+   * //     { "id": "token-down", "marketId": "market-123", "outcomeIndex": 1, "name": "Down" }
    * //   ],
    * //   "expirationDate": "2024-12-31T23:59:59.000Z",
    * //   "status": "ACTIVE",
@@ -738,8 +730,8 @@ export class Market {
    *   slug: 'btc-100k-2024',
    *   question: 'Will BTC reach $100k?',
    *   outcomeTokens: [
-   *     { id: 'token-yes', name: 'Yes' },
-   *     { id: 'token-no', name: 'No' }
+   *     { id: 'token-up', name: 'Up' },
+   *     { id: 'token-down', name: 'Down' }
    *   ],
    *   expirationDate: '2024-12-31T23:59:59.000Z',
    *   status: 'ACTIVE'
@@ -759,7 +751,6 @@ export class Market {
         new MarketValidationError(
           'JSON must be an object',
           {
-            code: MarketValidationError.code,
             context: { value: json }
           }
         )
@@ -783,7 +774,6 @@ export class Market {
         new MarketValidationError(
           `Invalid expiration date: ${error instanceof Error ? error.message : 'unknown error'}`,
           {
-            code: MarketValidationError.code,
             context: { field: 'expirationDate', value: obj.expirationDate }
           }
         )
@@ -796,7 +786,6 @@ export class Market {
         new MarketValidationError(
           'outcomeTokens must be an array of 2 elements',
           {
-            code: MarketValidationError.code,
             context: {
               field: 'outcomeTokens',
               value: obj.outcomeTokens,
@@ -834,7 +823,7 @@ export class Market {
    * @example
    * ```typescript
    * console.log(market.toString());
-   * // Output: "Market[market-123]: Will BTC reach $100k? [Yes/No] (ACTIVE)"
+   * // Output: "Market[market-123]: Will BTC reach $100k? [Up/Down] (ACTIVE)"
    * ```
    */
   public toString(): string {

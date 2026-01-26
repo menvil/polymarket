@@ -29,18 +29,18 @@
  *   id: 'market-123',
  *   slug: 'btc-100k-2024',
  *   question: 'Will BTC reach $100k in 2024?',
- *   outcomeNames: ['Yes', 'No'],
+ *   outcomeNames: ['Up', 'Down'],
  *   // ...
  * });
  *
  * // Получение токена из рынка
- * const yesToken = market.getOutcomeToken(0);
- * console.log(yesToken.name); // "Yes"
- * console.log(yesToken.outcomeIndex); // 0
+ * const upToken = market.getOutcomeToken(0);
+ * console.log(upToken.name); // "Up"
+ * console.log(upToken.outcomeIndex); // 0
  *
  * // Сравнение токенов
  * const anotherToken = market.getOutcomeToken(1);
- * console.log(yesToken.equals(anotherToken)); // false
+ * console.log(upToken.equals(anotherToken)); // false
  * ```
  */
 
@@ -49,8 +49,8 @@
  *
  * @remarks
  * Бинарные рынки имеют ровно 2 исхода:
- * - 0: Первый исход (например, "Yes", "Up")
- * - 1: Второй исход (например, "No", "Down")
+ * - 0: Первый исход (например, "Up")
+ * - 1: Второй исход (например, "Down")
  */
 export type OutcomeIndex = 0 | 1;
 
@@ -68,7 +68,7 @@ export interface OutcomeTokenProps {
   readonly marketId: string;
   /** Индекс исхода (0 или 1) */
   readonly outcomeIndex: OutcomeIndex;
-  /** Человеко-читаемое название исхода (например, "Yes", "No", "Up", "Down") */
+  /** Человеко-читаемое название исхода (например, "Up", "Down") */
   readonly name: string;
 }
 
@@ -137,7 +137,7 @@ export class OutcomeToken {
    * // ✅ ПРАВИЛЬНО - создавайте через Market:
    * const market = Market.create({
    *   id: 'market-123',
-   *   outcomeNames: ['Yes', 'No'],
+   *   outcomeNames: ['Up', 'Down'],
    *   // ... другие параметры
    * });
    * const token = market.getOutcomeToken(0);
@@ -180,7 +180,7 @@ export class OutcomeToken {
    * ```typescript
    * const token = market.getOutcomeToken(0);
    * console.log(token.toString());
-   * // Output: "OutcomeToken[token-yes]: Yes (index: 0, market: market-123)"
+   * // Output: "OutcomeToken[token-up]: Up (index: 0, market: market-123)"
    * ```
    */
   public toString(): string {
