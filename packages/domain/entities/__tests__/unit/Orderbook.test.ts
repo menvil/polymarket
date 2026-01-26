@@ -43,7 +43,7 @@ describe('Orderbook Entity (Result pattern)', () => {
         ],
       };
 
-      const result = Orderbook.create('market-123', data);
+      const result = Orderbook.create('market-123', 'token-market-123', data);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -63,7 +63,7 @@ describe('Orderbook Entity (Result pattern)', () => {
         asks: [],
       };
 
-      const result = Orderbook.create('market-sort', data);
+      const result = Orderbook.create('market-sort', 'token-market-sort', data);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -83,7 +83,7 @@ describe('Orderbook Entity (Result pattern)', () => {
         ],
       };
 
-      const result = Orderbook.create('market-sort', data);
+      const result = Orderbook.create('market-sort', 'token-market-sort', data);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -101,7 +101,7 @@ describe('Orderbook Entity (Result pattern)', () => {
         timestamp: customTimestamp,
       };
 
-      const result = Orderbook.create('market-ts', data);
+      const result = Orderbook.create('market-ts', 'token-market-ts', data);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -116,7 +116,7 @@ describe('Orderbook Entity (Result pattern)', () => {
         asks: [],
       };
 
-      const result = Orderbook.create('market-now', data);
+      const result = Orderbook.create('market-now', 'token-market-now', data);
       const after = Date.now();
 
       expect(result.ok).toBe(true);
@@ -130,7 +130,7 @@ describe('Orderbook Entity (Result pattern)', () => {
 
   describe('Orderbook.create() - валидация', () => {
     it('должен вернуть ошибку если marketId пустой', () => {
-      const result = Orderbook.create('', { bids: [], asks: [] });
+      const result = Orderbook.create('', 'token-', { bids: [], asks: [] });
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -140,7 +140,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('должен вернуть ошибку если bids не массив', () => {
-      const result = Orderbook.create('market-bad', { bids: 'invalid' as any, asks: [] });
+      const result = Orderbook.create('market-bad', 'token-market-bad', { bids: 'invalid' as any, asks: [] });
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -150,7 +150,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('должен вернуть ошибку если asks не массив', () => {
-      const result = Orderbook.create('market-bad', { bids: [], asks: null as any });
+      const result = Orderbook.create('market-bad', 'token-market-bad', { bids: [], asks: null as any });
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -162,7 +162,7 @@ describe('Orderbook Entity (Result pattern)', () => {
 
   describe('Orderbook.empty()', () => {
     it('должен создать пустой Orderbook', () => {
-      const result = Orderbook.empty('market-empty');
+      const result = Orderbook.empty('market-empty', 'token-market-empty');
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -178,6 +178,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     it('должен создать Orderbook из валидного JSON', () => {
       const json = {
         marketId: 'market-json',
+        tokenId: 'token-market-json',
         timestamp: '2024-01-15T12:00:00Z',
         bids: [
           { price: 0.52, quantity: 100 },
@@ -201,7 +202,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('должен сериализовать Orderbook в JSON и восстановить', () => {
-      const originalResult = Orderbook.create('market-rt', {
+      const originalResult = Orderbook.create('market-rt', 'token-market-rt', {
         bids: [
           createLevel(0.50, 300),
           createLevel(0.49, 400),
@@ -238,6 +239,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     it('должен вернуть ошибку если price в bid невалидный', () => {
       const json = {
         marketId: 'market-bad',
+        tokenId: 'token-market-bad',
         bids: [{ price: 'invalid', quantity: 100 }],
         asks: [],
       };
@@ -254,7 +256,7 @@ describe('Orderbook Entity (Result pattern)', () => {
 
   describe('Orderbook best bid/ask', () => {
     it('getBestBid() должен вернуть лучший bid', () => {
-      const result = Orderbook.create('market-bb', {
+      const result = Orderbook.create('market-bb', 'token-market-bb', {
         bids: [
           createLevel(0.52, 100),
           createLevel(0.51, 200),
@@ -270,7 +272,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getBestBid() должен вернуть null если нет бидов', () => {
-      const result = Orderbook.create('market-empty', {
+      const result = Orderbook.create('market-empty', 'token-market-empty', {
         bids: [],
         asks: [createLevel(0.53, 100)],
       });
@@ -282,7 +284,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getBestAsk() должен вернуть лучший ask', () => {
-      const result = Orderbook.create('market-ba', {
+      const result = Orderbook.create('market-ba', 'token-market-ba', {
         bids: [],
         asks: [
           createLevel(0.53, 150),
@@ -298,7 +300,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getBestAsk() должен вернуть null если нет асков', () => {
-      const result = Orderbook.create('market-empty', {
+      const result = Orderbook.create('market-empty', 'token-market-empty', {
         bids: [createLevel(0.52, 100)],
         asks: [],
       });
@@ -312,7 +314,7 @@ describe('Orderbook Entity (Result pattern)', () => {
 
   describe('Orderbook цены', () => {
     it('getSpread() должен вернуть Spread объект', () => {
-      const result = Orderbook.create('market-spread', {
+      const result = Orderbook.create('market-spread', 'token-market-spread', {
         bids: [createLevel(0.50, 100)],
         asks: [createLevel(0.52, 100)],
       });
@@ -326,12 +328,12 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getSpread() должен вернуть null если нет bid или ask', () => {
-      const result1 = Orderbook.create('market-1', {
+      const result1 = Orderbook.create('market-1', 'token-market-1', {
         bids: [createLevel(0.50, 100)],
         asks: [],
       });
 
-      const result2 = Orderbook.create('market-2', {
+      const result2 = Orderbook.create('market-2', 'token-market-2', {
         bids: [],
         asks: [createLevel(0.52, 100)],
       });
@@ -341,7 +343,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getMidPrice() должен вернуть среднюю цену', () => {
-      const result = Orderbook.create('market-mid', {
+      const result = Orderbook.create('market-mid', 'token-market-mid', {
         bids: [createLevel(0.50, 100)],
         asks: [createLevel(0.52, 100)],
       });
@@ -354,7 +356,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getMicroprice() должен вернуть взвешенную цену', () => {
-      const result = Orderbook.create('market-micro', {
+      const result = Orderbook.create('market-micro', 'token-market-micro', {
         bids: [createLevel(0.50, 100)], // bid qty = 100
         asks: [createLevel(0.52, 200)], // ask qty = 200
       });
@@ -369,7 +371,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getMicroprice() должен вернуть null если нет bid или ask', () => {
-      const result = Orderbook.empty('market-empty');
+      const result = Orderbook.empty('market-empty', 'token-market-empty');
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -380,7 +382,7 @@ describe('Orderbook Entity (Result pattern)', () => {
 
   describe('Orderbook объёмы', () => {
     it('getTotalBidVolume() должен вернуть сумму всех бидов', () => {
-      const result = Orderbook.create('market-vol', {
+      const result = Orderbook.create('market-vol', 'token-market-vol', {
         bids: [
           createLevel(0.52, 100),
           createLevel(0.51, 200),
@@ -397,7 +399,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getTotalBidVolume(N) должен вернуть сумму первых N уровней', () => {
-      const result = Orderbook.create('market-vol', {
+      const result = Orderbook.create('market-vol', 'token-market-vol', {
         bids: [
           createLevel(0.52, 100),
           createLevel(0.51, 200),
@@ -414,7 +416,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getTotalAskVolume() должен вернуть сумму всех асков', () => {
-      const result = Orderbook.create('market-vol', {
+      const result = Orderbook.create('market-vol', 'token-market-vol', {
         bids: [],
         asks: [
           createLevel(0.53, 150),
@@ -430,7 +432,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getTotalAskVolume(N) должен вернуть сумму первых N уровней', () => {
-      const result = Orderbook.create('market-vol', {
+      const result = Orderbook.create('market-vol', 'token-market-vol', {
         bids: [],
         asks: [
           createLevel(0.53, 150),
@@ -449,7 +451,7 @@ describe('Orderbook Entity (Result pattern)', () => {
 
   describe('Orderbook imbalance', () => {
     it('getImbalance() должен вернуть положительное значение если больше бидов', () => {
-      const result = Orderbook.create('market-imb', {
+      const result = Orderbook.create('market-imb', 'token-market-imb', {
         bids: [createLevel(0.50, 300)], // bid vol = 300
         asks: [createLevel(0.51, 100)], // ask vol = 100
       });
@@ -463,7 +465,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getImbalance() должен вернуть отрицательное значение если больше асков', () => {
-      const result = Orderbook.create('market-imb', {
+      const result = Orderbook.create('market-imb', 'token-market-imb', {
         bids: [createLevel(0.50, 100)], // bid vol = 100
         asks: [createLevel(0.51, 300)], // ask vol = 300
       });
@@ -477,7 +479,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getImbalance() должен вернуть 0 если объёмы равны', () => {
-      const result = Orderbook.create('market-balanced', {
+      const result = Orderbook.create('market-balanced', 'token-market-balanced', {
         bids: [createLevel(0.50, 200)],
         asks: [createLevel(0.51, 200)],
       });
@@ -490,7 +492,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getImbalance() должен вернуть 0 если нет уровней', () => {
-      const result = Orderbook.empty('market-empty');
+      const result = Orderbook.empty('market-empty', 'token-market-empty');
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -502,7 +504,7 @@ describe('Orderbook Entity (Result pattern)', () => {
 
   describe('Orderbook предикаты', () => {
     it('isEmpty() должен вернуть true если нет бидов и асков', () => {
-      const result = Orderbook.empty('market-empty');
+      const result = Orderbook.empty('market-empty', 'token-market-empty');
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -511,7 +513,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('isEmpty() должен вернуть false если есть уровни', () => {
-      const result = Orderbook.create('market-filled', {
+      const result = Orderbook.create('market-filled', 'token-market-filled', {
         bids: [createLevel(0.50, 100)],
         asks: [],
       });
@@ -523,7 +525,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('hasLiquidity() должен вернуть true если есть bid и ask', () => {
-      const result = Orderbook.create('market-liq', {
+      const result = Orderbook.create('market-liq', 'token-market-liq', {
         bids: [createLevel(0.50, 100)],
         asks: [createLevel(0.51, 100)],
       });
@@ -535,12 +537,12 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('hasLiquidity() должен вернуть false если нет bid или ask', () => {
-      const result1 = Orderbook.create('market-1', {
+      const result1 = Orderbook.create('market-1', 'token-market-1', {
         bids: [createLevel(0.50, 100)],
         asks: [],
       });
 
-      const result2 = Orderbook.empty('market-2');
+      const result2 = Orderbook.empty('market-2', 'token-market-2');
 
       expect(result1.ok && result1.value.hasLiquidity()).toBe(false);
       expect(result2.ok && result2.value.hasLiquidity()).toBe(false);
@@ -549,7 +551,7 @@ describe('Orderbook Entity (Result pattern)', () => {
 
   describe('Orderbook глубина', () => {
     it('getBidDepth() должен вернуть количество bid уровней', () => {
-      const result = Orderbook.create('market-depth', {
+      const result = Orderbook.create('market-depth', 'token-market-depth', {
         bids: [
           createLevel(0.52, 100),
           createLevel(0.51, 200),
@@ -565,7 +567,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('getAskDepth() должен вернуть количество ask уровней', () => {
-      const result = Orderbook.create('market-depth', {
+      const result = Orderbook.create('market-depth', 'token-market-depth', {
         bids: [],
         asks: [
           createLevel(0.53, 150),
@@ -582,7 +584,7 @@ describe('Orderbook Entity (Result pattern)', () => {
 
   describe('Orderbook возраст', () => {
     it('getAgeMs() должен вернуть возраст в миллисекундах', (done) => {
-      const result = Orderbook.create('market-age', {
+      const result = Orderbook.create('market-age', 'token-market-age', {
         bids: [createLevel(0.50, 100)],
         asks: [createLevel(0.51, 100)],
       });
@@ -600,7 +602,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('isStale() должен вернуть true если старше maxAgeMs', (done) => {
-      const result = Orderbook.create('market-stale', {
+      const result = Orderbook.create('market-stale', 'token-market-stale', {
         bids: [createLevel(0.50, 100)],
         asks: [createLevel(0.51, 100)],
       });
@@ -619,7 +621,7 @@ describe('Orderbook Entity (Result pattern)', () => {
 
   describe('Orderbook утилиты', () => {
     it('toString() должен вернуть читаемую строку', () => {
-      const result = Orderbook.create('market-str', {
+      const result = Orderbook.create('market-str', 'token-market-str', {
         bids: [
           createLevel(0.52, 100),
           createLevel(0.51, 200),
@@ -640,7 +642,7 @@ describe('Orderbook Entity (Result pattern)', () => {
     });
 
     it('toObject() должен вернуть объект с метриками', () => {
-      const result = Orderbook.create('market-obj', {
+      const result = Orderbook.create('market-obj', 'token-market-obj', {
         bids: [createLevel(0.50, 100)],
         asks: [createLevel(0.52, 100)],
       });

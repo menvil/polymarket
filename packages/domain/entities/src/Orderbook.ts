@@ -70,12 +70,14 @@ export interface OrderbookData {
  *
  * @remarks
  * Неизменяемая сущность, представляющая стакан заявок рынка.
+ * Каждый outcome token имеет свой orderbook.
  */
 export class Orderbook {
   /**
    * Создаёт новый Orderbook
    *
    * @param marketId - Идентификатор рынка
+   * @param tokenId - Идентификатор outcome token
    * @param bids - Массив bid уровней (отсортирован по убыванию цены)
    * @param asks - Массив ask уровней (отсортирован по возрастанию цены)
    * @param timestamp - Время снимка стакана
@@ -85,6 +87,7 @@ export class Orderbook {
    */
   private constructor(
     public readonly marketId: string,
+    public readonly tokenId: string,
     public readonly bids: readonly OrderbookLevel[],
     public readonly asks: readonly OrderbookLevel[],
     public readonly timestamp: Date
@@ -94,12 +97,13 @@ export class Orderbook {
    * Создаёт новый Orderbook с валидацией
    *
    * @param marketId - Идентификатор рынка
+   * @param tokenId - Идентификатор outcome token
    * @param data - Данные стакана (bids, asks, timestamp)
    * @returns Result<Orderbook, OrderbookValidationError>
    *
    * @remarks
    * Factory method с Result pattern.
-   * Валидирует marketId и создаёт Orderbook с отсортированными уровнями.
+   * Валидирует marketId, tokenId и создаёт Orderbook с отсортированными уровнями.
    *
    * Сортирует bids по убыванию цены, asks по возрастанию.
    * Гарантирует правильный порядок для эффективного доступа к best bid/ask.
@@ -116,7 +120,7 @@ export class Orderbook {
    * const qtyResult2 = Quantity.fromValue(200);
    *
    * if (priceResult1.ok && priceResult2.ok && qtyResult1.ok && qtyResult2.ok) {
-   *   const result = Orderbook.create('market-123', {
+   *   const result = Orderbook.create('market-123', 'token-yes', {
    *     bids: [
    *       { price: priceResult1.value, quantity: qtyResult1.value },
    *       { price: priceResult2.value, quantity: qtyResult2.value }
@@ -125,14 +129,14 @@ export class Orderbook {
    *   });
    *
    *   if (result.ok) {
-   *     console.log('Orderbook created:', result.value.marketId);
+   *     console.log('Orderbook created:', result.value.marketId, result.value.tokenId);
    *   } else {
    *     console.error('Validation failed:', result.error.message);
    *   }
    * }
    * ```
    */
-  public static create(marketId: string, data: OrderbookData): Result<Orderbook, OrderbookValidationError> {
+  public static create(marketId: string, tokenId: string, data: OrderbookData): Result<Orderbook, OrderbookValidationError> {
     // Валидация marketId
     if (!marketId || typeof marketId !== 'string' || marketId.trim().length === 0) {
       return Err(
@@ -141,6 +145,19 @@ export class Orderbook {
           {
             code: OrderbookValidationError.code,
             context: { field: 'marketId', value: marketId }
+          }
+        )
+      );
+    }
+
+    // Валидация tokenId
+    if (!tokenId || typeof tokenId !== 'string' || tokenId.trim().length === 0) {
+      return Err(
+        new OrderbookValidationError(
+          'Token ID must be a non-empty string',
+          {
+            code: OrderbookValidationError.code,
+            context: { field: 'tokenId', value: tokenId, marketId }
           }
         )
       );
@@ -180,6 +197,7 @@ export class Orderbook {
 
     return Ok(new Orderbook(
       marketId,
+      tokenId,
       sortedBids,
       sortedAsks,
       data.timestamp || new Date()
@@ -238,6 +256,21 @@ export class Orderbook {
     }
 
     const marketId = json.marketId;
+
+    // Валидация tokenId
+    if (!json.tokenId || typeof json.tokenId !== 'string') {
+      return Err(
+        new OrderbookValidationError(
+          'Missing or invalid tokenId in JSON',
+          {
+            code: OrderbookValidationError.code,
+            context: { field: 'tokenId', value: json.tokenId }
+          }
+        )
+      );
+    }
+
+    const tokenId = json.tokenId;
 
     // Валидация bids
     if (!Array.isArray(json.bids)) {
@@ -419,13 +452,14 @@ export class Orderbook {
     }
 
     // Создание Orderbook через create()
-    return Orderbook.create(marketId, { bids, asks, timestamp });
+    return Orderbook.create(marketId, tokenId, { bids, asks, timestamp });
   }
 
   /**
    * Создаёт пустой стакан
    *
    * @param marketId - Идентификатор рынка
+   * @param tokenId - Идентификатор outcome token
    * @returns Result<Orderbook, OrderbookValidationError>
    *
    * @remarks
@@ -434,7 +468,7 @@ export class Orderbook {
    *
    * @example
    * ```typescript
-   * const result = Orderbook.empty('market-123');
+   * const result = Orderbook.empty('market-123', 'token-yes-456');
    * if (result.ok) {
    *   const empty = result.value;
    *   console.log(empty.getBestBid()); // null
@@ -442,8 +476,8 @@ export class Orderbook {
    * }
    * ```
    */
-  public static empty(marketId: string): Result<Orderbook, OrderbookValidationError> {
-    return Orderbook.create(marketId, { bids: [], asks: [] });
+  public static empty(marketId: string, tokenId: string): Result<Orderbook, OrderbookValidationError> {
+    return Orderbook.create(marketId, tokenId, { bids: [], asks: [] });
   }
 
   /**
@@ -912,6 +946,7 @@ export class Orderbook {
   public toJSON(): Record<string, unknown> {
     return {
       marketId: this.marketId,
+      tokenId: this.tokenId,
       timestamp: this.timestamp.toISOString(),
       bids: this.bids.map(level => ({
         price: level.price.value,

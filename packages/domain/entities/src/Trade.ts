@@ -41,7 +41,7 @@
  * }
  * ```
  */
-import { Price, Quantity } from '@polymarket/value-objects';
+import { Price, Quantity, Money } from '@polymarket/value-objects';
 import { TradeValidationError } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 import Decimal from 'decimal.js';
@@ -59,8 +59,11 @@ export type TradeSide = 'BUY' | 'SELL';
  * Параметры для создания Trade
  *
  * @remarks
- * Все поля кроме orderId обязательны.
- * orderId опциональный - может быть null если сделка не принадлежит нашей системе.
+ * Все поля кроме orderId, fee, reasonCode, metadata обязательны.
+ * - orderId: опциональный - может быть null если сделка не принадлежит нашей системе
+ * - fee: опциональная комиссия за сделку (default = 0 USDC)
+ * - reasonCode: код причины возникновения трейда
+ * - metadata: дополнительные данные
  */
 export interface TradeParams {
   /** Уникальный ID сделки */
@@ -81,6 +84,21 @@ export interface TradeParams {
   readonly transactionHash: string;
   /** ID нашего ордера (если это наша сделка) */
   readonly orderId?: string;
+  /** Комиссия за сделку в USDC (опционально, по умолчанию 0) */
+  readonly fee?: Money;
+  /**
+   * Код причины возникновения трейда
+   *
+   * Примеры:
+   * - "match_on_book" - обычный матч на бирже
+   * - "reconciliation" - корректировочный трейд для синхронизации
+   * - "manual" - ручной трейд
+   * - "paper_trading" - paper trading simulation
+   * - "backtest" - backtest simulation
+   */
+  readonly reasonCode?: string;
+  /** Дополнительные метаданные (напр. taker_order_id, maker_order_ids из Polymarket) */
+  readonly metadata?: Record<string, unknown>;
 }
 
 /**
@@ -118,6 +136,15 @@ export class Trade {
   /** ID нашего ордера (если это наша сделка) */
   public readonly orderId?: string;
 
+  /** Комиссия за сделку */
+  public readonly fee: Money;
+
+  /** Код причины возникновения трейда */
+  public readonly reasonCode?: string;
+
+  /** Дополнительные метаданные */
+  public readonly metadata?: Record<string, unknown>;
+
   /**
    * Приватный конструктор
    *
@@ -137,6 +164,9 @@ export class Trade {
     this.timestamp = params.timestamp;
     this.transactionHash = params.transactionHash;
     this.orderId = params.orderId;
+    this.fee = params.fee ?? Money.zero('USDC');  // default 0 USDC
+    this.reasonCode = params.reasonCode;
+    this.metadata = params.metadata;
   }
 
   /**
@@ -629,8 +659,12 @@ export class Trade {
       side: this.side,
       timestamp: this.timestamp.toISOString(),
       transactionHash: this.transactionHash,
-      notional: this.getNotional(),
-      orderId: this.orderId
+      orderId: this.orderId,
+      fee: this.fee.getAmount(),
+      feeCurrency: this.fee.getCurrency(),
+      reasonCode: this.reasonCode,
+      metadata: this.metadata,
+      notional: this.getNotional()
     };
   }
 
@@ -728,6 +762,31 @@ export class Trade {
       );
     }
 
+    // Парсинг fee (опционально)
+    let fee: Money | undefined;
+    if (obj.fee !== undefined && obj.fee !== null) {
+      const feeAmount = typeof obj.fee === 'number' ? obj.fee : Number(obj.fee);
+      const feeCurrency = (typeof obj.feeCurrency === 'string' ? obj.feeCurrency : 'USDC') as 'USDC';
+      const feeResult = Money.fromValue(feeAmount, feeCurrency);
+      if (!feeResult.ok) {
+        return Err(
+          new TradeValidationError(`Invalid fee: ${feeResult.error.message}`, {
+            context: { field: 'fee', value: obj.fee }
+          })
+        );
+      }
+      fee = feeResult.value;
+    }
+
+    // Парсинг reasonCode (опционально)
+    const reasonCode = typeof obj.reasonCode === 'string' ? obj.reasonCode : undefined;
+
+    // Парсинг metadata (опционально)
+    const metadata =
+      typeof obj.metadata === 'object' && obj.metadata !== null
+        ? (obj.metadata as Record<string, unknown>)
+        : undefined;
+
     // Создаём Trade через create() для полной валидации
     return Trade.create({
       id: obj.id as string,
@@ -738,7 +797,10 @@ export class Trade {
       side: obj.side as TradeSide,
       timestamp,
       transactionHash: obj.transactionHash as string,
-      orderId: obj.orderId as string | undefined
+      orderId: obj.orderId as string | undefined,
+      fee,
+      reasonCode,
+      metadata
     });
   }
 
