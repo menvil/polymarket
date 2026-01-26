@@ -33,9 +33,8 @@
  * console.log(`Age: ${trade.getAgeMs()}ms`);
  * ```
  */
-import { Price } from '../value-objects/Price.js';
-import { Quantity } from '../value-objects/Quantity.js';
-import { TradingError } from '../../shared/errors/TradingError.js';
+import { Price, Quantity } from '@polymarket/value-objects';
+import { TradeValidationError } from '@polymarket/errors';
 
 /**
  * Trade side type
@@ -60,18 +59,6 @@ export interface TradeParams {
   orderId?: string;
   makerOrderId?: string;
   takerOrderId?: string;
-}
-
-/**
- * Ошибка валидации сделки
- *
- * @remarks
- * Выбрасывается при попытке создать сделку с невалидными параметрами.
- */
-export class TradeValidationError extends TradingError {
-  constructor(message: string, public readonly field?: string) {
-    super(message, 'TRADE_VALIDATION_ERROR');
-  }
 }
 
 /**
@@ -120,7 +107,7 @@ export class Trade {
    *
    * @remarks
    * Factory method с полной валидацией всех параметров.
-   * 
+   *
    * Валидирует:
    * 1. ID не пустой
    * 2. MarketId не пустой
@@ -174,27 +161,42 @@ export class Trade {
   public validate(): void {
     // Validate ID
     if (!this.id || typeof this.id !== 'string' || this.id.trim().length === 0) {
-      throw new TradeValidationError('Trade ID must be a non-empty string', 'id');
+      throw new TradeValidationError('Trade ID must be a non-empty string', {
+        code: TradeValidationError.code,
+        context: { field: 'id', value: this.id }
+      });
     }
 
     // Validate marketId
     if (!this.marketId || typeof this.marketId !== 'string' || this.marketId.trim().length === 0) {
-      throw new TradeValidationError('Market ID must be a non-empty string', 'marketId');
+      throw new TradeValidationError('Market ID must be a non-empty string', {
+        code: TradeValidationError.code,
+        context: { field: 'marketId', value: this.marketId }
+      });
     }
 
     // Validate quantity is positive
     if (!this.quantity.isPositive()) {
-      throw new TradeValidationError('Trade quantity must be positive', 'quantity');
+      throw new TradeValidationError('Trade quantity must be positive', {
+        code: TradeValidationError.code,
+        context: { field: 'quantity', value: this.quantity.value }
+      });
     }
 
     // Validate side (allow null for unknown direction)
     if (this.side !== 'BUY' && this.side !== 'SELL' && this.side !== null) {
-      throw new TradeValidationError(`Invalid trade side: ${this.side}`, 'side');
+      throw new TradeValidationError(`Invalid trade side: ${this.side}`, {
+        code: TradeValidationError.code,
+        context: { field: 'side', value: this.side }
+      });
     }
 
     // Validate timestamp
     if (!(this.timestamp instanceof Date) || isNaN(this.timestamp.getTime())) {
-      throw new TradeValidationError('Invalid timestamp', 'timestamp');
+      throw new TradeValidationError('Invalid timestamp', {
+        code: TradeValidationError.code,
+        context: { field: 'timestamp', value: this.timestamp }
+      });
     }
   }
 
@@ -205,7 +207,7 @@ export class Trade {
    *
    * @remarks
    * Notional = Price × Quantity
-   * 
+   *
    * Представляет общую стоимость сделки в USDC.
    * Используется для:
    * - Расчёта объёмов торговли
@@ -273,7 +275,7 @@ export class Trade {
    * if (trade.isRecent(30000)) {
    *   console.log('This is a recent trade');
    * }
-   * 
+   *
    * // По умолчанию проверяет за последнюю минуту
    * if (trade.isRecent()) {
    *   console.log('Trade happened in last minute');
@@ -337,10 +339,10 @@ export class Trade {
    * @example
    * ```typescript
    * const trades = [trade1, trade2, trade3];
-   * 
+   *
    * // Сортировка по возрастанию (старые → новые)
    * trades.sort((a, b) => a.compareByTime(b));
-   * 
+   *
    * // Сортировка по убыванию (новые → старые)
    * trades.sort((a, b) => b.compareByTime(a));
    * ```

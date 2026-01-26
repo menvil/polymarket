@@ -38,10 +38,10 @@
  * console.log(closedLot.isClosed()); // true
  * ```
  */
-import { Price } from '../value-objects/Price.js';
-import { Quantity } from '../value-objects/Quantity.js';
-import { Money } from '../value-objects/Money.js';
-import { TradingError } from '../../shared/errors/TradingError.js';
+import { Price } from '@polymarket/value-objects';
+import { Quantity } from '@polymarket/value-objects';
+import { Money } from '@polymarket/value-objects';
+import { TradingError } from '@polymarket/errors';
 
 /**
  * Side of the position

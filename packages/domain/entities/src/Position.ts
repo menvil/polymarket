@@ -53,11 +53,11 @@
  * // lot-1 now has 2 remaining, lot-2 is untouched
  * ```
  */
-import { Price } from '../value-objects/Price.js';
-import { Quantity } from '../value-objects/Quantity.js';
-import { Money } from '../value-objects/Money.js';
+import { Price } from '@polymarket/value-objects';
+import { Quantity } from '@polymarket/value-objects';
+import { Money } from '@polymarket/value-objects';
 import { PositionLot, Side } from './PositionLot.js';
-import { TradingError } from '../../shared/errors/TradingError.js';
+import { TradingError } from '@polymarket/errors';
 
 /**
  * Insufficient position error

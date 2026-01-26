@@ -39,13 +39,13 @@
  * console.log(`Notional: ${notional}`); // 65.00 (100 * 0.65)
  * ```
  */
-import { Price } from '../value-objects/Price.js';
-import { Quantity } from '../value-objects/Quantity.js';
-import { OrderValidationError } from '../../shared/errors/TradingError.js';
+import { Price } from '@polymarket/value-objects';
+import { Quantity } from '@polymarket/value-objects';
+import { OrderValidationError } from '@polymarket/errors';
 import type { ExecutionEvent, OrderAccepted } from '../events/ExecutionEvent.js';
 import { OrderExecutionState, isAllowedTransition } from '../execution/OrderExecutionState.js';
-import type { Result } from '../../shared/types/Result.js';
-import { Ok, Err } from '../../shared/types/Result.js';
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
 
 /**
  * Order side type

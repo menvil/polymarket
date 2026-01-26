@@ -51,3 +51,6 @@ export * from './base/index.js';
 
 // Value objects errors
 export * from './value-objects/index.js';
+
+// Entity errors
+export * from './entities/index.js';

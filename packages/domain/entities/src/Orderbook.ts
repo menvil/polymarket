@@ -38,9 +38,9 @@
  * const microprice = orderbook.getMicroprice(); // ~0.524 (weighted)
  * ```
  */
-import { Price } from '../value-objects/Price.js';
-import { Quantity } from '../value-objects/Quantity.js';
-import { Spread } from '../value-objects/Spread.js';
+import { Price } from '@polymarket/value-objects';
+import { Quantity } from '@polymarket/value-objects';
+import { Spread } from '@polymarket/value-objects';
 
 /**
  * Уровень в стакане заявок
@@ -257,16 +257,16 @@ export class Orderbook {
    *
    * @remarks
    * Microprice учитывает объёмы на лучших bid/ask уровнях:
-   * 
+   *
    * microprice = (bestAsk * bidQty + bestBid * askQty) / (bidQty + askQty)
-   * 
+   *
    * Где:
    * - bidQty = объём на лучшем bid
    * - askQty = объём на лучшем ask
-   * 
+   *
    * Microprice точнее отражает истинную рыночную цену,
    * так как учитывает дисбаланс ликвидности.
-   * 
+   *
    * Примеры:
    * - Если bidQty >> askQty: microprice ближе к ask (давление покупателей)
    * - Если askQty >> bidQty: microprice ближе к bid (давление продавцов)
@@ -279,10 +279,10 @@ export class Orderbook {
    * // micro = (0.52 * 100 + 0.50 * 200) / (100 + 200)
    * //       = (52 + 100) / 300 = 0.5067
    * // Ближе к bid, так как больше объём на ask
-   * 
+   *
    * const mid = orderbook.getMidPrice();
    * // mid = (0.50 + 0.52) / 2 = 0.51
-   * 
+   *
    * console.log(`Micro: ${micro.value}`); // 0.5067
    * console.log(`Mid: ${mid.value}`); // 0.51
    * ```
@@ -329,7 +329,7 @@ export class Orderbook {
    */
   public getTotalBidVolume(levels?: number): Quantity {
     const relevantBids = levels ? this.bids.slice(0, levels) : this.bids;
-    
+
     const total = relevantBids.reduce(
       (sum, level) => sum + level.quantity.value,
       0
@@ -357,7 +357,7 @@ export class Orderbook {
    */
   public getTotalAskVolume(levels?: number): Quantity {
     const relevantAsks = levels ? this.asks.slice(0, levels) : this.asks;
-    
+
     const total = relevantAsks.reduce(
       (sum, level) => sum + level.quantity.value,
       0
@@ -374,12 +374,12 @@ export class Orderbook {
    *
    * @remarks
    * Imbalance = (bidVolume - askVolume) / (bidVolume + askVolume)
-   * 
+   *
    * Интерпретация:
    * - Imbalance > 0: больше покупателей, цена может вырасти
    * - Imbalance < 0: больше продавцов, цена может упасть
    * - Imbalance ~0: баланс сторон
-   * 
+   *
    * Диапазон:
    * - +1.0: только bids, нет asks (сильное покупательское давление)
    * - -1.0: только asks, нет bids (сильное продавательское давление)

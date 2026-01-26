@@ -4,5 +4,12 @@
     "rootDir": "./src",
     "types": []
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": [
+    "src/Order.ts",
+    "src/Orderbook.ts",
+    "src/Portfolio.ts",
+    "src/Position.ts",
+    "src/PositionLot.ts"
+  ]
 }

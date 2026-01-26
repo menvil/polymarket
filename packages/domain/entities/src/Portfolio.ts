@@ -21,24 +21,24 @@
  * @example
  * ```typescript
  * const portfolio = Portfolio.create('portfolio-1', Money.fromUSDC(1000));
- * 
+ *
  * // Резервируем средства для BUY ордера
  * const updated = portfolio.reserveCash(Money.fromUSDC(100));
  * console.log(updated.availableCash.amount); // 900
  * console.log(updated.reservedCash.amount); // 100
- * 
+ *
  * // Добавляем позицию
  * const withPosition = updated.addPosition(position);
- * 
+ *
  * // Вычисляем общую стоимость
  * const totalValue = withPosition.getTotalValue(marketPrices);
  * console.log(totalValue.amount); // cash + position values
  * ```
  */
-import { Money } from '../value-objects/Money.js';
+import { Money } from '@polymarket/value-objects';
 import { Position } from './Position.js';
-import { Price } from '../value-objects/Price.js';
-import { InsufficientFundsError, TradingError } from '../../shared/errors/TradingError.js';
+import { Price } from '@polymarket/value-objects';
+import { InsufficientFundsError, TradingError } from '@polymarket/errors';
 
 /**
  * Ошибка дублирующейся позиции
@@ -148,7 +148,7 @@ export class Portfolio {
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
    *   .reserveCash(Money.fromUSDC(200));
-   * 
+   *
    * const available = portfolio.availableCash;
    * console.log(available.amount); // 800
    * ```
@@ -168,7 +168,7 @@ export class Portfolio {
    * @remarks
    * Резервирует средства для открытого BUY ордера.
    * Резервированные средства недоступны для других ордеров.
-   * 
+   *
    * Алгоритм:
    * 1. Проверяем, что availableCash >= amount
    * 2. Увеличиваем reservedCash на amount
@@ -177,7 +177,7 @@ export class Portfolio {
    * @example
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000));
-   * 
+   *
    * // Резервируем для BUY ордера на 100 USDC
    * const updated = portfolio.reserveCash(Money.fromUSDC(100));
    * console.log(updated.reservedCash.amount); // 100
@@ -186,7 +186,7 @@ export class Portfolio {
    */
   public reserveCash(amount: Money): Portfolio {
     const available = this.availableCash;
-    
+
     if (available.isLessThan(amount)) {
       throw new InsufficientFundsError(amount.amount, available.amount);
     }
@@ -212,7 +212,7 @@ export class Portfolio {
    * @remarks
    * Освобождает средства при отмене или исполнении ордера.
    * После освобождения средства снова доступны для новых ордеров.
-   * 
+   *
    * Алгоритм:
    * 1. Проверяем, что reservedCash >= amount
    * 2. Уменьшаем reservedCash на amount
@@ -222,7 +222,7 @@ export class Portfolio {
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
    *   .reserveCash(Money.fromUSDC(100));
-   * 
+   *
    * // Отменяем ордер - освобождаем средства
    * const updated = portfolio.releaseCash(Money.fromUSDC(100));
    * console.log(updated.reservedCash.amount); // 0
@@ -264,11 +264,11 @@ export class Portfolio {
    * @example
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000));
-   * 
+   *
    * // Пополнение
    * const deposited = portfolio.updateCash(Money.fromUSDC(500));
    * console.log(deposited.cash.amount); // 1500
-   * 
+   *
    * // Списание при покупке
    * const afterBuy = deposited.updateCash(Money.fromUSDC(-100));
    * console.log(afterBuy.cash.amount); // 1400
@@ -307,7 +307,7 @@ export class Portfolio {
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000));
    * const position = Position.empty('market-123', 'YES');
-   * 
+   *
    * const updated = portfolio.addPosition(position);
    * console.log(updated.positions.size); // 1
    * console.log(updated.getPosition('market-123')); // position
@@ -346,7 +346,7 @@ export class Portfolio {
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
    *   .addPosition(position);
-   * 
+   *
    * // Обновляем позицию (добавляем лот)
    * const newPosition = position.addLot(lot);
    * const updated = portfolio.updatePosition('market-123', newPosition);
@@ -358,7 +358,7 @@ export class Portfolio {
     }
 
     const newPositions = new Map(this.positions);
-    
+
     // Если позиция пустая - удаляем её
     if (updatedPosition.isEmpty()) {
       newPositions.delete(tokenId);
@@ -388,7 +388,7 @@ export class Portfolio {
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
    *   .addPosition(position);
-   * 
+   *
    * const updated = portfolio.removePosition('market-123');
    * console.log(updated.positions.size); // 0
    * ```
@@ -449,7 +449,7 @@ export class Portfolio {
    * @remarks
    * Общая стоимость = cash + sum(position values)
    * Position value = quantity * current price
-   * 
+   *
    * Алгоритм:
    * 1. Начинаем с cash (доступный + резервированный)
    * 2. Для каждой позиции:
@@ -462,11 +462,11 @@ export class Portfolio {
    * ```typescript
    * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
    *   .addPosition(position); // 10 shares @ entry 0.60
-   * 
+   *
    * const marketPrices = new Map([
    *   ['market-123', Price.fromNumber(0.70)]
    * ]);
-   * 
+   *
    * const totalValue = portfolio.getTotalValue(marketPrices);
    * // cash (1000) + position value (10 * 0.70 = 7)
    * console.log(totalValue.amount); // 1007
@@ -501,7 +501,7 @@ export class Portfolio {
    * const marketPrices = new Map([
    *   ['market-123', Price.fromNumber(0.70)]
    * ]);
-   * 
+   *
    * const totalPnL = portfolio.getTotalUnrealizedPnL(marketPrices);
    * console.log(totalPnL.amount); // Sum of all position P&Ls
    * ```
