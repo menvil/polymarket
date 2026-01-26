@@ -162,41 +162,159 @@ console.log(totalValue.amount); // cash + позиции по текущим ц�
 
 ---
 
-### 🔄 Trade - Исполненная сделка
+### 🎯 OutcomeToken - Токен исхода
 
-История транзакций (пары matched ордеров).
+Представляет один из двух исходов бинарного рынка.
 
 ```typescript
-import { Trade } from '@polymarket/entities';
+import { Market } from '@polymarket/entities';
 
-const trade = new Trade(
-  'trade-123',
-  'order-buy',
-  'order-sell',
-  Price.fromValue(0.65),
-  Quantity.fromValue(10),
-  new Date()
-);
+// OutcomeToken создается автоматически при создании Market
+const result = Market.create({
+  id: 'market-123',
+  slug: 'btc-100k-2024',
+  question: 'Will BTC reach $100k in 2024?',
+  outcomeNames: ['Yes', 'No'],
+  outcomeTokenIds: ['token-yes-456', 'token-no-789'],
+  expirationDate: new Date('2024-12-31T23:59:59Z'),
+  status: 'ACTIVE'
+});
 
-console.log(trade.value); // 6.5 (10 * 0.65)
+if (result.ok) {
+  const market = result.value;
+
+  // Получение outcome токенов
+  const yesToken = market.getOutcomeToken(0);
+  console.log(yesToken.name); // "Yes"
+  console.log(yesToken.id); // "token-yes-456"
+  console.log(yesToken.outcomeIndex); // 0
+
+  // Поиск по ID
+  const token = market.getOutcomeTokenById('token-yes-456');
+  console.log(token?.name); // "Yes"
+}
 ```
+
+**Lifecycle:** Создается вместе с Market, существует пока существует Market.
+
+**Aggregate:** Market - aggregate root, OutcomeToken - часть aggregate.
+
+**Подробнее:** См. [outcome-token.md](./outcome-token.md)
 
 ---
 
 ### 📊 Market - Рынок предсказаний
 
-Метаданные и состояние рынка.
+Представляет бинарный рынок предсказаний с двумя исходами.
 
 ```typescript
 import { Market } from '@polymarket/entities';
 
-const market = new Market(
-  'market-123',
-  'Will BTC reach $100k in 2024?',
-  ['YES', 'NO'],
-  'OPEN'
-);
+// Создание рынка с валидацией
+const result = Market.create({
+  id: 'market-123',
+  slug: 'btc-100k-2024',
+  question: 'Will BTC reach $100k in 2024?',
+  outcomeNames: ['Yes', 'No'],
+  outcomeTokenIds: ['token-yes-456', 'token-no-789'],
+  expirationDate: new Date('2024-12-31T23:59:59Z'),
+  status: 'ACTIVE'
+});
+
+if (result.ok) {
+  const market = result.value;
+
+  // Getter для marketUrl
+  console.log(market.marketUrl);
+  // "https://polymarket.com/event/btc-100k-2024"
+
+  // Lifecycle методы
+  const closedMarket = market.close();
+  console.log(closedMarket.status); // "CLOSED"
+
+  const resolveResult = closedMarket.resolve(0); // Yes wins
+  if (resolveResult.ok) {
+    const resolved = resolveResult.value;
+    console.log(resolved.getResolvedOutcomeToken()?.name); // "Yes"
+  }
+
+  // Serialization
+  const json = market.toJSON();
+  const fromJson = Market.fromJSON(json);
+} else {
+  console.error('Validation failed:', result.error.message);
+}
 ```
+
+**Lifecycle:**
+```
+ACTIVE → CLOSED → RESOLVED
+```
+
+**Методы:**
+- `close()` - закрывает рынок (ACTIVE → CLOSED)
+- `resolve(outcomeIndex)` - разрешает рынок (CLOSED → RESOLVED)
+- `getOutcomeToken(index)` - получает outcome token по индексу
+- `getOutcomeTokenById(tokenId)` - поиск outcome token по ID
+- `canTrade()` - проверяет можно ли торговать
+- `toJSON() / fromJSON()` - сериализация
+
+---
+
+### 🔄 Trade - Исполненная сделка
+
+Представляет исполненную сделку на рынке.
+
+```typescript
+import { Trade } from '@polymarket/entities';
+import { Price, Quantity } from '@polymarket/value-objects';
+
+// Создание сделки с валидацией
+const result = Trade.create({
+  id: 'trade-1',
+  marketId: 'market-123',
+  tokenId: 'token-yes-456',
+  price: Price.fromValue(0.65).value,
+  size: Quantity.fromValue(100).value,
+  side: 'BUY',
+  timestamp: new Date(),
+  transactionHash: '0x1234...',
+  orderId: 'order-1' // optional
+});
+
+if (result.ok) {
+  const trade = result.value;
+
+  console.log(trade.getNotional()); // 65.0 (0.65 * 100)
+  console.log(trade.isBuy()); // true
+  console.log(trade.isRecent(60000)); // true if < 1 minute old
+}
+
+// Парсинг события Polymarket
+const event = {
+  market: 'market-123',
+  asset_id: 'token-yes-456',
+  price: '0.65',
+  size: '100',
+  side: 'BUY',
+  timestamp: '1705315800000',
+  transaction_hash: '0x1234...'
+};
+
+const tradeResult = Trade.fromPolymarketEvent(event);
+if (tradeResult.ok) {
+  console.log(tradeResult.value.getNotional()); // 65.0
+}
+```
+
+**Методы:**
+- `getNotional()` - вычисляет стоимость (price × size)
+- `isBuy() / isSell()` - проверка стороны
+- `getAgeMs() / isRecent()` - проверка возраста
+- `fromPolymarketEvent()` - парсинг Polymarket WebSocket события
+- `toJSON() / fromJSON()` - сериализация
+
+**Denormalization:** Trade хранит `tokenId` напрямую для быстрого поиска по токену.
 
 ---
 
