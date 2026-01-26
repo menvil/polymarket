@@ -604,26 +604,32 @@ export class Order {
   /**
    * Проверяет, можно ли отменить ордер
    *
-   * @returns True если ордер в статусе PENDING или OPEN
+   * @returns True если ордер может быть отменен
    *
    * @remarks
-   * Только ордера в статусе PENDING или OPEN могут быть отменены.
-   * Ордера в статусе FILLED, CANCELED и REJECTED не могут быть отменены.
+   * Заявка может быть отменена только если:
+   * - Статус OPEN или PARTIALLY_FILLED
    *
-   * Бизнес-правило: Терминальные статусы (FILLED, CANCELED, REJECTED)
-   * неизменны и не могут переходить в другие состояния.
+   * PENDING заявки не могут быть отменены напрямую - они должны быть
+   * либо accepted (→ OPEN) либо rejected (→ REJECTED) биржей.
+   *
+   * Терминальные статусы (FILLED, CANCELED, REJECTED, EXPIRED) не могут
+   * переходить в другие состояния.
+   *
+   * Используется в UI для показа кнопки "Cancel".
    *
    * @example
    * ```typescript
    * if (order.canCancel()) {
-   *   await exchangeService.cancelOrder(order.id);
+   *   const result = order.cancel('User cancelled');
+   *   // result.ok будет true
    * } else {
    *   console.log('Order cannot be canceled');
    * }
    * ```
    */
   public canCancel(): boolean {
-    return this.status === 'PENDING' || this.status === 'OPEN';
+    return this.status === 'OPEN' || this.status === 'PARTIALLY_FILLED';
   }
 
   /**
@@ -759,6 +765,118 @@ export class Order {
     return new Decimal(this.filledSize.value)
       .dividedBy(this.size.value)
       .times(100);
+  }
+
+  /**
+   * Возвращает количество trades, заполнивших эту заявку
+   *
+   * @returns Количество trades
+   *
+   * @remarks
+   * Полезно для аналитики: сколько частичных fills произошло.
+   * Если заявка не была filled - возвращает 0.
+   *
+   * @example
+   * ```typescript
+   * const order = unwrap(Order.create({ ...params, tradeIds: ['t1', 't2', 't3'] }));
+   * console.log(order.getTradeCount()); // 3
+   * ```
+   */
+  public getTradeCount(): number {
+    return this.tradeIds.length;
+  }
+
+  /**
+   * Проверяет, был ли применен конкретный trade к этой заявке
+   *
+   * @param tradeId - ID trade для проверки
+   * @returns True если trade был применен
+   *
+   * @remarks
+   * Используется для:
+   * - Предотвращения дубликатов (уже проверяется в _applyTrade)
+   * - Reconciliation: проверка что все ожидаемые trades применены
+   * - Аудит: трассировка исполнения заявки
+   *
+   * @example
+   * ```typescript
+   * const order = unwrap(Order.create({ ...params, tradeIds: ['trade-1', 'trade-2'] }));
+   * console.log(order.hasTrade('trade-1')); // true
+   * console.log(order.hasTrade('trade-3')); // false
+   * ```
+   */
+  public hasTrade(tradeId: string): boolean {
+    return this.tradeIds.includes(tradeId);
+  }
+
+  /**
+   * Проверяет, может ли заявка принять данный trade (pre-validation)
+   *
+   * @param trade - Trade для проверки
+   * @returns True если trade может быть применен
+   *
+   * @remarks
+   * Быстрая проверка без создания нового Order объекта.
+   * Полезно для фильтрации trades до вызова applyTrade().
+   *
+   * Проверки (subset от _applyTrade):
+   * 1. Статус OPEN или PARTIALLY_FILLED
+   * 2. trade.marketId === this.marketId
+   * 3. trade.tokenId === this.tokenId
+   * 4. trade.side === this.side
+   * 5. trade.orderId === this.id (или undefined)
+   * 6. trade.size <= remainingSize
+   * 7. Нет дубликата trade.id
+   *
+   * @example
+   * ```typescript
+   * const order = unwrap(Order.create({ ...params, status: 'OPEN' }));
+   * const trade = unwrap(Trade.create({ ...tradeParams, orderId: order.id }));
+   *
+   * if (order.canAcceptTrade(trade)) {
+   *   const result = order.applyTrade(trade);
+   *   // result.ok гарантированно true (если не было concurrent changes)
+   * }
+   * ```
+   */
+  public canAcceptTrade(trade: Trade): boolean {
+    // 1. Статус
+    if (this.status !== 'OPEN' && this.status !== 'PARTIALLY_FILLED') {
+      return false;
+    }
+
+    // 2. marketId
+    if (trade.marketId !== this.marketId) {
+      return false;
+    }
+
+    // 3. tokenId
+    if (trade.tokenId !== this.tokenId) {
+      return false;
+    }
+
+    // 4. side
+    if (trade.side !== this.side) {
+      return false;
+    }
+
+    // 5. orderId (может быть undefined для FIFO)
+    if (trade.orderId !== undefined && trade.orderId !== this.id) {
+      return false;
+    }
+
+    // 6. size <= remainingSize
+    const remainingSize = this.getRemainingSize();
+    if (trade.size.value > remainingSize.value) {
+      return false;
+    }
+
+    // 7. Нет дубликата
+    if (this.tradeIds.includes(trade.id)) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -1366,16 +1484,7 @@ export class Order {
     }
 
     // Вычисление нового filledSize
-    const zeroQuantity = Quantity.fromValue(0);
-    if (!zeroQuantity.ok) {
-      // Это не должно произойти, но для type safety
-      return Err(
-        new OrderValidationError('Failed to create zero quantity', {
-          context: { orderId: this.id }
-        })
-      );
-    }
-    const currentFilledSize = this.filledSize ?? zeroQuantity.value;
+    const currentFilledSize = this.filledSize ?? Quantity.zero();
     const newFilledSizeResult = Quantity.fromValue(
       new Decimal(currentFilledSize.value)
         .plus(trade.size.value)
@@ -1468,7 +1577,7 @@ export class Order {
     // Используем приватный конструктор Price напрямую (гарантированно валидно)
     // так как weighted average двух валидных цен всегда валиден
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return new (Price as any)(new Decimal(avgPrice));
+    return new (Price as any)(avgPrice);
   }
 
   public toString(): string {

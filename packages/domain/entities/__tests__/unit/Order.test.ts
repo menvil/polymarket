@@ -439,8 +439,11 @@ describe('Order Entity (Result pattern)', () => {
         timestamp: new Date(),
       });
 
-      expect(pendingResult.ok && pendingResult.value.canCancel()).toBe(true);
+      // PENDING orders cannot be cancelled (only accepted or rejected)
+      expect(pendingResult.ok && pendingResult.value.canCancel()).toBe(false);
+      // OPEN orders can be cancelled
       expect(openResult.ok && openResult.value.canCancel()).toBe(true);
+      // FILLED orders cannot be cancelled (terminal status)
       expect(filledResult.ok && filledResult.value.canCancel()).toBe(false);
     });
 
