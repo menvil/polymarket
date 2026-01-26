@@ -44,13 +44,14 @@ import { Quantity } from '@polymarket/value-objects';
 import { OrderValidationError } from '@polymarket/errors';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
-import { TradeSide } from './Trade.js';
+import { TradeSide, Trade } from './Trade.js';
+import type { OrderChange } from './types/OrderChange.js';
 import Decimal from 'decimal.js';
 
 /**
  * Тип статуса ордера
  */
-export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED' | 'REJECTED';
+export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED' | 'REJECTED' | 'EXPIRED';
 
 /**
  * Параметры создания ордера
@@ -70,6 +71,8 @@ export interface OrderParams {
   strategyId?: string;
   filledSize?: Quantity;
   averageFillPrice?: Price;
+  tradeIds?: string[]; // IDs сделок, заполнивших заявку (denormalization для performance)
+  reason?: string; // Причина для REJECTED/CANCELED/EXPIRED статусов
 }
 
 /**
@@ -91,6 +94,8 @@ export class Order {
   public readonly strategyId?: string;
   public readonly filledSize?: Quantity;
   public readonly averageFillPrice?: Price;
+  public readonly tradeIds: string[]; // IDs сделок, заполнивших заявку
+  public readonly reason?: string; // Причина для REJECTED/CANCELED/EXPIRED
 
   private constructor(params: OrderParams) {
     this.id = params.id;
@@ -104,6 +109,8 @@ export class Order {
     this.strategyId = params.strategyId;
     this.filledSize = params.filledSize;
     this.averageFillPrice = params.averageFillPrice;
+    this.tradeIds = params.tradeIds ?? []; // Default: пустой массив
+    this.reason = params.reason;
   }
 
   /**
@@ -487,6 +494,36 @@ export class Order {
       averageFillPrice = avgPriceResult.value;
     }
 
+    // Парсинг tradeIds (опционально)
+    let tradeIds: string[] | undefined;
+    if (json.tradeIds !== undefined && json.tradeIds !== null) {
+      if (!Array.isArray(json.tradeIds)) {
+        return Err(
+          new OrderValidationError(
+            'Invalid tradeIds in JSON (must be an array)',
+            {
+              context: { field: 'tradeIds', orderId: json.id, value: json.tradeIds }
+            }
+          )
+        );
+      }
+      // Проверка что все элементы - строки
+      if (!json.tradeIds.every((id: unknown) => typeof id === 'string')) {
+        return Err(
+          new OrderValidationError(
+            'Invalid tradeIds in JSON (all elements must be strings)',
+            {
+              context: { field: 'tradeIds', orderId: json.id, value: json.tradeIds }
+            }
+          )
+        );
+      }
+      tradeIds = json.tradeIds as string[];
+    }
+
+    // Парсинг reason (опционально)
+    const reason = typeof json.reason === 'string' ? json.reason : undefined;
+
     // Создание Order через create()
     return Order.create({
       id: json.id as string,
@@ -500,6 +537,8 @@ export class Order {
       strategyId: typeof json.strategyId === 'string' ? json.strategyId : undefined,
       filledSize,
       averageFillPrice,
+      tradeIds,
+      reason,
     });
   }
 
@@ -820,6 +859,8 @@ export class Order {
       strategyId: this.strategyId,
       filledSize: this.filledSize?.value,
       averageFillPrice: this.averageFillPrice?.value,
+      tradeIds: this.tradeIds,
+      reason: this.reason,
       notional: this.getNotional().toNumber(),
       remainingSize: this.getRemainingSize().value,
       fillPercentage: this.getFillPercentage().toNumber()
@@ -837,6 +878,599 @@ export class Order {
    * // Output: "Order[0x123]: BUY 100 @ 0.5500 (OPEN)"
    * ```
    */
+  /**
+   * Принять заявку (биржей)
+   *
+   * @returns Result<Order, OrderValidationError> - Новая заявка со статусом OPEN
+   *
+   * @remarks
+   * Переход: PENDING → OPEN
+   *
+   * Означает что заявка прошла валидацию биржи и размещена в orderbook.
+   * После accept() заявка становится видимой другим участникам и может быть исполнена.
+   *
+   * Валидация:
+   * - Текущий статус должен быть NEW
+   *
+   * @example
+   * ```typescript
+   * const newOrder = unwrap(Order.create({ ...params, status: 'PENDING' }));
+   * const result = newOrder.accept();
+   * if (result.ok) {
+   *   console.log(result.value.status); // 'OPEN'
+   * }
+   * ```
+   */
+  public accept(): Result<Order, OrderValidationError> {
+    const change: OrderChange = { type: 'ACCEPTED' };
+    return this._transition(change);
+  }
+
+  /**
+   * Отклонить заявку (биржей)
+   *
+   * @param reason - Причина отклонения (обязательна для аудита)
+   * @returns Result<Order, OrderValidationError> - Новая заявка со статусом REJECTED
+   *
+   * @remarks
+   * Переход: PENDING → REJECTED
+   *
+   * Причины отклонения:
+   * - Недостаточный баланс
+   * - Невалидная цена (вне диапазона)
+   * - Рынок закрыт
+   * - Нарушение risk limits
+   *
+   * Валидация:
+   * - Текущий статус должен быть NEW
+   * - reason не должен быть пустой строкой
+   *
+   * @example
+   * ```typescript
+   * const newOrder = unwrap(Order.create({ ...params, status: 'PENDING' }));
+   * const result = newOrder.reject('Insufficient balance');
+   * if (result.ok) {
+   *   console.log(result.value.status); // 'REJECTED'
+   *   console.log(result.value.reason); // 'Insufficient balance'
+   * }
+   * ```
+   */
+  public reject(reason: string): Result<Order, OrderValidationError> {
+    if (!reason || reason.trim().length === 0) {
+      return Err(
+        new OrderValidationError('Reject reason must be a non-empty string', {
+          context: { orderId: this.id, reason }
+        })
+      );
+    }
+
+    const change: OrderChange = { type: 'REJECTED', reason };
+    return this._transition(change);
+  }
+
+  /**
+   * Отменить заявку (пользователем)
+   *
+   * @param reason - Причина отмены (опционально, по умолчанию "User cancelled")
+   * @returns Result<Order, OrderValidationError> - Новая заявка со статусом CANCELED
+   *
+   * @remarks
+   * Переход: OPEN или PARTIALLY_FILLED → CANCELED
+   *
+   * Пользователь может отменить заявку если она еще не полностью исполнена.
+   * Частично исполненная заявка останется с тем же filledSize.
+   *
+   * Валидация:
+   * - Текущий статус должен быть OPEN или PARTIALLY_FILLED
+   *
+   * @example
+   * ```typescript
+   * const openOrder = unwrap(Order.create({ ...params, status: 'OPEN' }));
+   * const result = openOrder.cancel('Changed strategy');
+   * if (result.ok) {
+   *   console.log(result.value.status); // 'CANCELED'
+   *   console.log(result.value.reason); // 'Changed strategy'
+   * }
+   * ```
+   */
+  public cancel(reason?: string): Result<Order, OrderValidationError> {
+    const change: OrderChange = {
+      type: 'CANCELLED',
+      reason: reason || 'User cancelled'
+    };
+    return this._transition(change);
+  }
+
+  /**
+   * Истечь заявке по времени
+   *
+   * @returns Result<Order, OrderValidationError> - Новая заявка со статусом EXPIRED
+   *
+   * @remarks
+   * Переход: OPEN или PARTIALLY_FILLED → EXPIRED
+   *
+   * Заявка истекает когда:
+   * - Время expiresAt достигнуто
+   * - Рынок закрывается
+   *
+   * Валидация:
+   * - Текущий статус должен быть OPEN или PARTIALLY_FILLED
+   *
+   * @example
+   * ```typescript
+   * const openOrder = unwrap(Order.create({ ...params, status: 'OPEN' }));
+   * const result = openOrder.expire();
+   * if (result.ok) {
+   *   console.log(result.value.status); // 'EXPIRED'
+   *   console.log(result.value.reason); // 'Expired'
+   * }
+   * ```
+   */
+  public expire(): Result<Order, OrderValidationError> {
+    const change: OrderChange = { type: 'EXPIRED' };
+    return this._transition(change);
+  }
+
+  /**
+   * Применить сделку (trade) к заявке
+   *
+   * @param trade - Trade объект который заполняет эту заявку
+   * @returns Result<Order, OrderValidationError> - Новая заявка с обновленным filledSize
+   *
+   * @remarks
+   * Переходы:
+   * - OPEN → PARTIALLY_FILLED (если remainingSize > 0)
+   * - OPEN или PARTIALLY_FILLED → FILLED (если remainingSize = 0)
+   *
+   * Это единственный способ fill заявки. Fill всегда происходит из-за trade, а не сам по себе.
+   *
+   * Валидация в _applyTrade():
+   * 1. trade.marketId === this.marketId
+   * 2. trade.tokenId === this.tokenId
+   * 3. trade.side === this.side
+   * 4. trade.orderId === this.id (или undefined для FIFO matching)
+   * 5. trade.size <= remainingSize
+   * 6. Нет дубликатов trade.id в tradeIds
+   *
+   * Обновление:
+   * - filledSize += trade.size
+   * - averageFillPrice = weighted average по всем trades
+   * - tradeIds.push(trade.id)
+   * - status → PARTIALLY_FILLED или FILLED
+   *
+   * @example
+   * ```typescript
+   * const openOrder = unwrap(Order.create({ ...params, status: 'OPEN', size: Quantity(100) }));
+   * const trade = unwrap(Trade.create({
+   *   ...tradeParams,
+   *   orderId: openOrder.id,
+   *   size: Quantity(30)
+   * }));
+   *
+   * const result = openOrder.applyTrade(trade);
+   * if (result.ok) {
+   *   console.log(result.value.status); // 'PARTIALLY_FILLED'
+   *   console.log(result.value.filledSize.value); // 30
+   *   console.log(result.value.getRemainingSize().value); // 70
+   * }
+   * ```
+   */
+  public applyTrade(trade: Trade): Result<Order, OrderValidationError> {
+    const change: OrderChange = { type: 'TRADE_APPLIED', trade };
+    return this._transition(change);
+  }
+
+  /**
+   * Приватный метод для применения изменений состояния (FSM transitions)
+   *
+   * @param change - OrderChange объект описывающий изменение
+   * @returns Result<Order, OrderValidationError> - Новая заявка или ошибка
+   *
+   * @remarks
+   * Централизованная логика переходов состояний.
+   * Использует discriminated union для type-safe pattern matching.
+   *
+   * Архитектура:
+   * - Все public методы создают OrderChange и вызывают _transition()
+   * - _transition() валидирует переход и делегирует обработку специализированным методам
+   * - Каждый тип change обрабатывается отдельным методом
+   */
+  private _transition(change: OrderChange): Result<Order, OrderValidationError> {
+    switch (change.type) {
+      case 'ACCEPTED':
+        return this._handleAccepted();
+
+      case 'REJECTED':
+        return this._handleRejected(change.reason);
+
+      case 'CANCELLED':
+        return this._handleCancelled(change.reason);
+
+      case 'EXPIRED':
+        return this._handleExpired();
+
+      case 'TRADE_APPLIED':
+        return this._applyTrade(change.trade);
+
+      default: {
+        // TypeScript exhaustiveness check
+        const _exhaustive: never = change;
+        return _exhaustive;
+      }
+    }
+  }
+
+  /**
+   * Обработать принятие заявки
+   *
+   * @returns Result<Order, OrderValidationError>
+   */
+  private _handleAccepted(): Result<Order, OrderValidationError> {
+    // Валидация: только NEW может быть accepted
+    if (this.status !== 'PENDING') {
+      return Err(
+        new OrderValidationError(
+          `Cannot accept order with status ${this.status}. Only PENDING orders can be accepted.`,
+          {
+            context: { orderId: this.id, currentStatus: this.status }
+          }
+        )
+      );
+    }
+
+    // Создать новую заявку со статусом OPEN
+    return Order.create({
+      ...this,
+      status: 'OPEN',
+      price: this.price,
+      size: this.size,
+      filledSize: this.filledSize,
+      averageFillPrice: this.averageFillPrice,
+      tradeIds: this.tradeIds,
+      reason: this.reason,
+    });
+  }
+
+  /**
+   * Обработать отклонение заявки
+   *
+   * @param reason - Причина отклонения
+   * @returns Result<Order, OrderValidationError>
+   */
+  private _handleRejected(reason: string): Result<Order, OrderValidationError> {
+    // Валидация: только NEW может быть rejected
+    if (this.status !== 'PENDING') {
+      return Err(
+        new OrderValidationError(
+          `Cannot reject order with status ${this.status}. Only PENDING orders can be rejected.`,
+          {
+            context: { orderId: this.id, currentStatus: this.status, reason }
+          }
+        )
+      );
+    }
+
+    // Создать новую заявку со статусом REJECTED
+    return Order.create({
+      ...this,
+      status: 'REJECTED',
+      reason,
+      price: this.price,
+      size: this.size,
+      filledSize: this.filledSize,
+      averageFillPrice: this.averageFillPrice,
+      tradeIds: this.tradeIds,
+    });
+  }
+
+  /**
+   * Обработать отмену заявки
+   *
+   * @param reason - Причина отмены
+   * @returns Result<Order, OrderValidationError>
+   */
+  private _handleCancelled(reason?: string): Result<Order, OrderValidationError> {
+    // Валидация: только OPEN или PARTIALLY_FILLED может быть cancelled
+    if (this.status !== 'OPEN' && this.status !== 'PARTIALLY_FILLED') {
+      return Err(
+        new OrderValidationError(
+          `Cannot cancel order with status ${this.status}. Only OPEN or PARTIALLY_FILLED orders can be cancelled.`,
+          {
+            context: { orderId: this.id, currentStatus: this.status, reason }
+          }
+        )
+      );
+    }
+
+    // Создать новую заявку со статусом CANCELED
+    return Order.create({
+      ...this,
+      status: 'CANCELED',
+      reason,
+      price: this.price,
+      size: this.size,
+      filledSize: this.filledSize,
+      averageFillPrice: this.averageFillPrice,
+      tradeIds: this.tradeIds,
+    });
+  }
+
+  /**
+   * Обработать истечение заявки
+   *
+   * @returns Result<Order, OrderValidationError>
+   */
+  private _handleExpired(): Result<Order, OrderValidationError> {
+    // Валидация: только OPEN или PARTIALLY_FILLED может быть expired
+    if (this.status !== 'OPEN' && this.status !== 'PARTIALLY_FILLED') {
+      return Err(
+        new OrderValidationError(
+          `Cannot expire order with status ${this.status}. Only OPEN or PARTIALLY_FILLED orders can expire.`,
+          {
+            context: { orderId: this.id, currentStatus: this.status }
+          }
+        )
+      );
+    }
+
+    // Создать новую заявку со статусом EXPIRED
+    return Order.create({
+      ...this,
+      status: 'EXPIRED',
+      reason: 'Expired',
+      price: this.price,
+      size: this.size,
+      filledSize: this.filledSize,
+      averageFillPrice: this.averageFillPrice,
+      tradeIds: this.tradeIds,
+    });
+  }
+
+  /**
+   * Применить trade к заявке
+   *
+   * @param trade - Trade объект
+   * @returns Result<Order, OrderValidationError>
+   *
+   * @remarks
+   * Выполняет 6 проверок валидации:
+   * 1. Статус должен быть OPEN или PARTIALLY_FILLED
+   * 2. trade.marketId === this.marketId
+   * 3. trade.tokenId === this.tokenId
+   * 4. trade.side === this.side
+   * 5. trade.orderId === this.id (или undefined для FIFO)
+   * 6. trade.size <= remainingSize
+   * 7. Нет дубликатов trade.id в tradeIds
+   *
+   * Вычисляет:
+   * - Новый filledSize = current filledSize + trade.size
+   * - Новый averageFillPrice = weighted average по всем trades
+   * - Новый status = PARTIALLY_FILLED (если остаток > 0) или FILLED (если остаток = 0)
+   */
+  private _applyTrade(trade: Trade): Result<Order, OrderValidationError> {
+    // Валидация 1: Статус должен быть OPEN или PARTIALLY_FILLED
+    if (this.status !== 'OPEN' && this.status !== 'PARTIALLY_FILLED') {
+      return Err(
+        new OrderValidationError(
+          `Cannot apply trade to order with status ${this.status}. Only OPEN or PARTIALLY_FILLED orders can accept trades.`,
+          {
+            context: {
+              orderId: this.id,
+              currentStatus: this.status,
+              tradeId: trade.id
+            }
+          }
+        )
+      );
+    }
+
+    // Валидация 2: marketId должен совпадать
+    if (trade.marketId !== this.marketId) {
+      return Err(
+        new OrderValidationError(
+          `Trade marketId (${trade.marketId}) does not match order marketId (${this.marketId})`,
+          {
+            context: {
+              orderId: this.id,
+              orderMarketId: this.marketId,
+              tradeMarketId: trade.marketId,
+              tradeId: trade.id
+            }
+          }
+        )
+      );
+    }
+
+    // Валидация 3: tokenId должен совпадать
+    if (trade.tokenId !== this.tokenId) {
+      return Err(
+        new OrderValidationError(
+          `Trade tokenId (${trade.tokenId}) does not match order tokenId (${this.tokenId})`,
+          {
+            context: {
+              orderId: this.id,
+              orderTokenId: this.tokenId,
+              tradeTokenId: trade.tokenId,
+              tradeId: trade.id
+            }
+          }
+        )
+      );
+    }
+
+    // Валидация 4: side должна совпадать
+    if (trade.side !== this.side) {
+      return Err(
+        new OrderValidationError(
+          `Trade side (${trade.side}) does not match order side (${this.side})`,
+          {
+            context: {
+              orderId: this.id,
+              orderSide: this.side,
+              tradeSide: trade.side,
+              tradeId: trade.id
+            }
+          }
+        )
+      );
+    }
+
+    // Валидация 5: orderId должен совпадать (или быть undefined для FIFO)
+    if (trade.orderId !== undefined && trade.orderId !== this.id) {
+      return Err(
+        new OrderValidationError(
+          `Trade orderId (${trade.orderId}) does not match this order id (${this.id})`,
+          {
+            context: {
+              orderId: this.id,
+              tradeOrderId: trade.orderId,
+              tradeId: trade.id
+            }
+          }
+        )
+      );
+    }
+
+    // Валидация 6: trade.size не должен превышать remainingSize
+    const remainingSize = this.getRemainingSize();
+    if (trade.size.value > remainingSize.value) {
+      return Err(
+        new OrderValidationError(
+          `Trade size (${trade.size.value}) exceeds remaining order size (${remainingSize.value})`,
+          {
+            context: {
+              orderId: this.id,
+              remainingSize: remainingSize.value,
+              tradeSize: trade.size.value,
+              tradeId: trade.id
+            }
+          }
+        )
+      );
+    }
+
+    // Валидация 7: Проверка на дубликаты tradeId
+    if (this.tradeIds.includes(trade.id)) {
+      return Err(
+        new OrderValidationError(
+          `Trade ${trade.id} has already been applied to this order`,
+          {
+            context: {
+              orderId: this.id,
+              tradeId: trade.id,
+              existingTradeIds: this.tradeIds
+            }
+          }
+        )
+      );
+    }
+
+    // Вычисление нового filledSize
+    const zeroQuantity = Quantity.fromValue(0);
+    if (!zeroQuantity.ok) {
+      // Это не должно произойти, но для type safety
+      return Err(
+        new OrderValidationError('Failed to create zero quantity', {
+          context: { orderId: this.id }
+        })
+      );
+    }
+    const currentFilledSize = this.filledSize ?? zeroQuantity.value;
+    const newFilledSizeResult = Quantity.fromValue(
+      new Decimal(currentFilledSize.value)
+        .plus(trade.size.value)
+        .toNumber()
+    );
+
+    if (!newFilledSizeResult.ok) {
+      return Err(
+        new OrderValidationError(
+          `Failed to calculate new filled size: ${newFilledSizeResult.error.message}`,
+          {
+            context: {
+              orderId: this.id,
+              currentFilledSize: currentFilledSize.value,
+              tradeSize: trade.size.value,
+              tradeId: trade.id
+            }
+          }
+        )
+      );
+    }
+
+    const newFilledSize = newFilledSizeResult.value;
+
+    // Вычисление нового averageFillPrice (weighted average)
+    const newAverageFillPrice = this._calculateWeightedAveragePrice(
+      this.filledSize,
+      this.averageFillPrice,
+      trade.size,
+      trade.price
+    );
+
+    // Определение нового статуса
+    const newRemainingSize = new Decimal(this.size.value)
+      .minus(newFilledSize.value)
+      .toNumber();
+
+    const newStatus: OrderStatus = newRemainingSize === 0 ? 'FILLED' : 'PARTIALLY_FILLED';
+
+    // Обновление tradeIds
+    const newTradeIds = [...this.tradeIds, trade.id];
+
+    // Создать новую заявку с обновленными данными
+    return Order.create({
+      ...this,
+      status: newStatus,
+      filledSize: newFilledSize,
+      averageFillPrice: newAverageFillPrice,
+      tradeIds: newTradeIds,
+      price: this.price,
+      size: this.size,
+      reason: this.reason,
+    });
+  }
+
+  /**
+   * Вычисляет weighted average price для multiple fills
+   *
+   * @param currentFilledSize - Текущий filledSize (или undefined если нет fills)
+   * @param currentAvgPrice - Текущий average price (или undefined)
+   * @param newTradeSize - Размер нового trade
+   * @param newTradePrice - Цена нового trade
+   * @returns Price - Новый weighted average price
+   *
+   * @remarks
+   * Формула: newAvg = (currentFilledSize * currentAvg + newTradeSize * newTradePrice) / (currentFilledSize + newTradeSize)
+   *
+   * Использует Decimal.js для точных вычислений.
+   */
+  private _calculateWeightedAveragePrice(
+    currentFilledSize: Quantity | undefined,
+    currentAvgPrice: Price | undefined,
+    newTradeSize: Quantity,
+    newTradePrice: Price
+  ): Price {
+    // Если это первый fill
+    if (!currentFilledSize || !currentAvgPrice) {
+      return newTradePrice;
+    }
+
+    // Weighted average: (size1 * price1 + size2 * price2) / (size1 + size2)
+    const currentNotional = new Decimal(currentFilledSize.value).times(currentAvgPrice.value);
+    const newNotional = new Decimal(newTradeSize.value).times(newTradePrice.value);
+    const totalNotional = currentNotional.plus(newNotional);
+
+    const totalSize = new Decimal(currentFilledSize.value).plus(newTradeSize.value);
+
+    const avgPrice = totalNotional.dividedBy(totalSize).toNumber();
+
+    // Используем приватный конструктор Price напрямую (гарантированно валидно)
+    // так как weighted average двух валидных цен всегда валиден
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return new (Price as any)(new Decimal(avgPrice));
+  }
+
   public toString(): string {
     return `Order[${this.id}]: ${this.side} ${this.size.value} @ ${this.price.toString()} (${this.status})`;
   }
