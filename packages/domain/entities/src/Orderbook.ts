@@ -41,6 +41,9 @@
 import { Price } from '@polymarket/value-objects';
 import { Quantity } from '@polymarket/value-objects';
 import { Spread } from '@polymarket/value-objects';
+import { OrderbookValidationError } from '@polymarket/errors';
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
 
 /**
  * Уровень в стакане заявок
@@ -63,10 +66,10 @@ export interface OrderbookData {
 }
 
 /**
- * Orderbook entity
+ * Сущность Orderbook (Стакан заявок)
  *
  * @remarks
- * Immutable entity representing market order book.
+ * Неизменяемая сущность, представляющая стакан заявок рынка.
  */
 export class Orderbook {
   /**
@@ -88,13 +91,16 @@ export class Orderbook {
   ) {}
 
   /**
-   * Создаёт новый Orderbook
+   * Создаёт новый Orderbook с валидацией
    *
    * @param marketId - Идентификатор рынка
    * @param data - Данные стакана (bids, asks, timestamp)
-   * @returns Новый Orderbook с отсортированными уровнями
+   * @returns Result<Orderbook, OrderbookValidationError>
    *
    * @remarks
+   * Factory method с Result pattern.
+   * Валидирует marketId и создаёт Orderbook с отсортированными уровнями.
+   *
    * Сортирует bids по убыванию цены, asks по возрастанию.
    * Гарантирует правильный порядок для эффективного доступа к best bid/ask.
    *
@@ -104,20 +110,66 @@ export class Orderbook {
    *
    * @example
    * ```typescript
-   * const orderbook = Orderbook.create('market-123', {
-   *   bids: [
-   *     { price: Price.fromNumber(0.52), quantity: Quantity.fromNumber(100) },
-   *     { price: Price.fromNumber(0.51), quantity: Quantity.fromNumber(200) }
-   *   ],
-   *   asks: [
-   *     { price: Price.fromNumber(0.53), quantity: Quantity.fromNumber(150) }
-   *   ]
-   * });
+   * const priceResult1 = Price.fromValue(0.52);
+   * const priceResult2 = Price.fromValue(0.51);
+   * const qtyResult1 = Quantity.fromValue(100);
+   * const qtyResult2 = Quantity.fromValue(200);
+   *
+   * if (priceResult1.ok && priceResult2.ok && qtyResult1.ok && qtyResult2.ok) {
+   *   const result = Orderbook.create('market-123', {
+   *     bids: [
+   *       { price: priceResult1.value, quantity: qtyResult1.value },
+   *       { price: priceResult2.value, quantity: qtyResult2.value }
+   *     ],
+   *     asks: []
+   *   });
+   *
+   *   if (result.ok) {
+   *     console.log('Orderbook created:', result.value.marketId);
+   *   } else {
+   *     console.error('Validation failed:', result.error.message);
+   *   }
+   * }
    * ```
    */
-  public static create(marketId: string, data: OrderbookData): Orderbook {
-    if (!marketId || marketId.trim().length === 0) {
-      throw new Error('Market ID cannot be empty');
+  public static create(marketId: string, data: OrderbookData): Result<Orderbook, OrderbookValidationError> {
+    // Валидация marketId
+    if (!marketId || typeof marketId !== 'string' || marketId.trim().length === 0) {
+      return Err(
+        new OrderbookValidationError(
+          'Market ID must be a non-empty string',
+          {
+            code: OrderbookValidationError.code,
+            context: { field: 'marketId', value: marketId }
+          }
+        )
+      );
+    }
+
+    // Валидация bids массива
+    if (!Array.isArray(data.bids)) {
+      return Err(
+        new OrderbookValidationError(
+          'Bids must be an array',
+          {
+            code: OrderbookValidationError.code,
+            context: { field: 'bids', marketId, value: data.bids }
+          }
+        )
+      );
+    }
+
+    // Валидация asks массива
+    if (!Array.isArray(data.asks)) {
+      return Err(
+        new OrderbookValidationError(
+          'Asks must be an array',
+          {
+            code: OrderbookValidationError.code,
+            context: { field: 'asks', marketId, value: data.asks }
+          }
+        )
+      );
     }
 
     // Сортируем bids по убыванию цены (лучший bid первый)
@@ -126,19 +178,255 @@ export class Orderbook {
     // Сортируем asks по возрастанию цены (лучший ask первый)
     const sortedAsks = [...data.asks].sort((a, b) => a.price.value - b.price.value);
 
-    return new Orderbook(
+    return Ok(new Orderbook(
       marketId,
       sortedBids,
       sortedAsks,
       data.timestamp || new Date()
-    );
+    ));
+  }
+
+  /**
+   * Создаёт Orderbook из JSON данных
+   *
+   * @param json - JSON объект с данными стакана
+   * @returns Result<Orderbook, OrderbookValidationError>
+   *
+   * @remarks
+   * Преобразует примитивные типы (numbers) в value objects (Price, Quantity)
+   * и создаёт Orderbook через create().
+   *
+   * Валидация происходит на каждом шаге:
+   * 1. Проверка структуры JSON
+   * 2. Создание Price и Quantity value objects
+   * 3. Финальная валидация через Orderbook.create()
+   *
+   * @example
+   * ```typescript
+   * const json = {
+   *   marketId: 'market-123',
+   *   bids: [
+   *     { price: 0.52, quantity: 100 },
+   *     { price: 0.51, quantity: 200 }
+   *   ],
+   *   asks: [
+   *     { price: 0.53, quantity: 150 }
+   *   ],
+   *   timestamp: '2024-01-15T10:30:00.000Z'
+   * };
+   *
+   * const result = Orderbook.fromJSON(json);
+   * if (result.ok) {
+   *   console.log('Orderbook loaded:', result.value.marketId);
+   * } else {
+   *   console.error('Invalid JSON:', result.error.message);
+   * }
+   * ```
+   */
+  public static fromJSON(json: Record<string, unknown>): Result<Orderbook, OrderbookValidationError> {
+    // Валидация marketId
+    if (!json.marketId || typeof json.marketId !== 'string') {
+      return Err(
+        new OrderbookValidationError(
+          'Missing or invalid marketId in JSON',
+          {
+            code: OrderbookValidationError.code,
+            context: { field: 'marketId', value: json.marketId }
+          }
+        )
+      );
+    }
+
+    const marketId = json.marketId;
+
+    // Валидация bids
+    if (!Array.isArray(json.bids)) {
+      return Err(
+        new OrderbookValidationError(
+          'Missing or invalid bids array in JSON',
+          {
+            code: OrderbookValidationError.code,
+            context: { field: 'bids', marketId, value: json.bids }
+          }
+        )
+      );
+    }
+
+    // Валидация asks
+    if (!Array.isArray(json.asks)) {
+      return Err(
+        new OrderbookValidationError(
+          'Missing or invalid asks array in JSON',
+          {
+            code: OrderbookValidationError.code,
+            context: { field: 'asks', marketId, value: json.asks }
+          }
+        )
+      );
+    }
+
+    // Парсинг bids
+    const bids: OrderbookLevel[] = [];
+    for (let i = 0; i < json.bids.length; i++) {
+      const bid = json.bids[i] as Record<string, unknown>;
+
+      if (typeof bid.price !== 'number') {
+        return Err(
+          new OrderbookValidationError(
+            `Invalid price in bid[${i}]`,
+            {
+              code: OrderbookValidationError.code,
+              context: { field: `bids[${i}].price`, marketId, value: bid.price }
+            }
+          )
+        );
+      }
+
+      if (typeof bid.quantity !== 'number') {
+        return Err(
+          new OrderbookValidationError(
+            `Invalid quantity in bid[${i}]`,
+            {
+              code: OrderbookValidationError.code,
+              context: { field: `bids[${i}].quantity`, marketId, value: bid.quantity }
+            }
+          )
+        );
+      }
+
+      const priceResult = Price.fromValue(bid.price);
+      if (!priceResult.ok) {
+        return Err(
+          new OrderbookValidationError(
+            `Failed to create Price from bid[${i}]: ${priceResult.error.message}`,
+            {
+              code: OrderbookValidationError.code,
+              context: { field: `bids[${i}].price`, marketId, value: bid.price }
+            }
+          )
+        );
+      }
+
+      const quantityResult = Quantity.fromValue(bid.quantity);
+      if (!quantityResult.ok) {
+        return Err(
+          new OrderbookValidationError(
+            `Failed to create Quantity from bid[${i}]: ${quantityResult.error.message}`,
+            {
+              code: OrderbookValidationError.code,
+              context: { field: `bids[${i}].quantity`, marketId, value: bid.quantity }
+            }
+          )
+        );
+      }
+
+      bids.push({
+        price: priceResult.value,
+        quantity: quantityResult.value,
+      });
+    }
+
+    // Парсинг asks
+    const asks: OrderbookLevel[] = [];
+    for (let i = 0; i < json.asks.length; i++) {
+      const ask = json.asks[i] as Record<string, unknown>;
+
+      if (typeof ask.price !== 'number') {
+        return Err(
+          new OrderbookValidationError(
+            `Invalid price in ask[${i}]`,
+            {
+              code: OrderbookValidationError.code,
+              context: { field: `asks[${i}].price`, marketId, value: ask.price }
+            }
+          )
+        );
+      }
+
+      if (typeof ask.quantity !== 'number') {
+        return Err(
+          new OrderbookValidationError(
+            `Invalid quantity in ask[${i}]`,
+            {
+              code: OrderbookValidationError.code,
+              context: { field: `asks[${i}].quantity`, marketId, value: ask.quantity }
+            }
+          )
+        );
+      }
+
+      const priceResult = Price.fromValue(ask.price);
+      if (!priceResult.ok) {
+        return Err(
+          new OrderbookValidationError(
+            `Failed to create Price from ask[${i}]: ${priceResult.error.message}`,
+            {
+              code: OrderbookValidationError.code,
+              context: { field: `asks[${i}].price`, marketId, value: ask.price }
+            }
+          )
+        );
+      }
+
+      const quantityResult = Quantity.fromValue(ask.quantity);
+      if (!quantityResult.ok) {
+        return Err(
+          new OrderbookValidationError(
+            `Failed to create Quantity from ask[${i}]: ${quantityResult.error.message}`,
+            {
+              code: OrderbookValidationError.code,
+              context: { field: `asks[${i}].quantity`, marketId, value: ask.quantity }
+            }
+          )
+        );
+      }
+
+      asks.push({
+        price: priceResult.value,
+        quantity: quantityResult.value,
+      });
+    }
+
+    // Парсинг timestamp
+    let timestamp: Date | undefined;
+    if (json.timestamp !== undefined) {
+      if (json.timestamp instanceof Date) {
+        timestamp = json.timestamp;
+      } else if (typeof json.timestamp === 'string') {
+        timestamp = new Date(json.timestamp);
+        if (isNaN(timestamp.getTime())) {
+          return Err(
+            new OrderbookValidationError(
+              'Invalid timestamp format',
+              {
+                code: OrderbookValidationError.code,
+                context: { field: 'timestamp', marketId, value: json.timestamp }
+              }
+            )
+          );
+        }
+      } else {
+        return Err(
+          new OrderbookValidationError(
+            'Timestamp must be a Date or ISO string',
+            {
+              code: OrderbookValidationError.code,
+              context: { field: 'timestamp', marketId, value: json.timestamp }
+            }
+          )
+        );
+      }
+    }
+
+    // Создание Orderbook через create()
+    return Orderbook.create(marketId, { bids, asks, timestamp });
   }
 
   /**
    * Создаёт пустой стакан
    *
    * @param marketId - Идентификатор рынка
-   * @returns Пустой Orderbook без уровней
+   * @returns Result<Orderbook, OrderbookValidationError>
    *
    * @remarks
    * Используется когда нет данных стакана.
@@ -146,13 +434,16 @@ export class Orderbook {
    *
    * @example
    * ```typescript
-   * const empty = Orderbook.empty('market-123');
-   * console.log(empty.getBestBid()); // null
-   * console.log(empty.isEmpty()); // true
+   * const result = Orderbook.empty('market-123');
+   * if (result.ok) {
+   *   const empty = result.value;
+   *   console.log(empty.getBestBid()); // null
+   *   console.log(empty.isEmpty()); // true
+   * }
    * ```
    */
-  public static empty(marketId: string): Orderbook {
-    return new Orderbook(marketId, [], [], new Date());
+  public static empty(marketId: string): Result<Orderbook, OrderbookValidationError> {
+    return Orderbook.create(marketId, { bids: [], asks: [] });
   }
 
   /**
@@ -224,7 +515,11 @@ export class Orderbook {
       return null;
     }
 
-    return Spread.create(bid, ask);
+    const spreadResult = Spread.create(bid, ask);
+    if (!spreadResult.ok) {
+      return null;
+    }
+    return spreadResult.value;
   }
 
   /**
@@ -307,7 +602,12 @@ export class Orderbook {
       (bestAsk.price.value * bidQty + bestBid.price.value * askQty) /
       (bidQty + askQty);
 
-    return Price.fromNumber(microprice);
+    const priceResult = Price.fromValue(microprice);
+    if (!priceResult.ok) {
+      // Не должно произойти, так как microprice вычислен из валидных значений
+      return null;
+    }
+    return priceResult.value;
   }
 
   /**
@@ -335,7 +635,17 @@ export class Orderbook {
       0
     );
 
-    return Quantity.fromNumber(total, 0);
+    // Если orderbook пустой, возвращаем ноль
+    if (total === 0) {
+      return Quantity.zero();
+    }
+
+    const quantityResult = Quantity.fromValue(total);
+    if (!quantityResult.ok) {
+      // Не должно произойти, так как total вычислен из валидных значений
+      throw new Error(`Unexpected error creating Quantity from total ${total}: ${quantityResult.error.message}`);
+    }
+    return quantityResult.value;
   }
 
   /**
@@ -363,7 +673,17 @@ export class Orderbook {
       0
     );
 
-    return Quantity.fromNumber(total, 0);
+    // Если orderbook пустой, возвращаем ноль
+    if (total === 0) {
+      return Quantity.zero();
+    }
+
+    const quantityResult = Quantity.fromValue(total);
+    if (!quantityResult.ok) {
+      // Не должно произойти, так как total вычислен из валидных значений
+      throw new Error(`Unexpected error creating Quantity from total ${total}: ${quantityResult.error.message}`);
+    }
+    return quantityResult.value;
   }
 
   /**
@@ -530,9 +850,13 @@ export class Orderbook {
   }
 
   /**
-   * Конвертирует в объект
+   * Конвертирует в объект (summary view)
    *
-   * @returns Объектное представление стакана
+   * @returns Объектное представление стакана с метриками
+   *
+   * @remarks
+   * Возвращает сводные метрики без полных данных уровней.
+   * Для полного представления используйте toJSON().
    *
    * @example
    * ```typescript
@@ -561,6 +885,42 @@ export class Orderbook {
       totalAskVolume: this.getTotalAskVolume().value,
       imbalance: this.getImbalance(),
       ageMs: this.getAgeMs(),
+    };
+  }
+
+  /**
+   * Конвертирует в JSON (full view)
+   *
+   * @returns Полное JSON представление стакана
+   *
+   * @remarks
+   * Возвращает полные данные включая все уровни bids и asks.
+   * Используется для сериализации и сохранения стакана.
+   *
+   * @example
+   * ```typescript
+   * const json = orderbook.toJSON();
+   * const serialized = JSON.stringify(json);
+   *
+   * // Восстановление из JSON
+   * const restored = Orderbook.fromJSON(JSON.parse(serialized));
+   * if (restored.ok) {
+   *   console.log('Orderbook restored successfully');
+   * }
+   * ```
+   */
+  public toJSON(): Record<string, unknown> {
+    return {
+      marketId: this.marketId,
+      timestamp: this.timestamp.toISOString(),
+      bids: this.bids.map(level => ({
+        price: level.price.value,
+        quantity: level.quantity.value,
+      })),
+      asks: this.asks.map(level => ({
+        price: level.price.value,
+        quantity: level.quantity.value,
+      })),
     };
   }
 }

@@ -1,484 +1,516 @@
 /**
- * Order entity
+ * Сущность Order (Ордер)
  *
  * @remarks
- * Represents an order in the prediction market trading system.
- * Orders are immutable entities with readonly properties.
+ * Представляет ордер в системе трейдинга на рынках предсказаний.
+ * Ордера являются неизменяемыми сущностями с readonly свойствами.
  *
- * ### Business Rules:
- * 1. Order must have valid tokenId, price, and size
- * 2. Price must be within valid range [0.01, 0.99]
- * 3. Size must be >= minimum quantity
- * 4. Filled size cannot exceed original size
- * 5. Average fill price must be valid if order is partially/fully filled
- * 6. Only PENDING or OPEN orders can be canceled
+ * ### Бизнес-правила:
+ * 1. Ордер должен иметь валидные tokenId, price и size
+ * 2. Цена должна быть в валидном диапазоне [0.01, 0.99]
+ * 3. Размер должен быть >= минимального количества
+ * 4. Заполненный размер не может превышать исходный размер
+ * 5. Средняя цена исполнения должна быть валидной если ордер частично/полностью исполнен
+ * 6. Только PENDING или OPEN ордера могут быть отменены
  *
- * ### Order Lifecycle:
- * PENDING → OPEN → FILLED (or CANCELED/REJECTED)
+ * ### Жизненный цикл ордера:
+ * PENDING → OPEN → PARTIALLY_FILLED → FILLED (или CANCELED/REJECTED на любом этапе)
  *
  * @example
  * ```typescript
- * // Create a new buy order
+ * // Создание нового ордера на покупку
  * const order = Order.create({
  *   id: '0x123...',
  *   tokenId: 'token-yes',
  *   side: 'BUY',
- *   price: Price.fromNumber(0.65),
- *   size: Quantity.fromNumber(100),
+ *   price: Price.fromValue(0.65).value!,
+ *   size: Quantity.fromValue(100).value!,
  *   status: 'PENDING',
  *   timestamp: new Date()
  * });
  *
- * // Check if order can be canceled
- * if (order.canCancel()) {
- *   console.log('Order can be canceled');
+ * // Проверка возможности отмены ордера
+ * if (order.value.canCancel()) {
+ *   console.log('Ордер можно отменить');
  * }
  *
- * // Calculate notional value
- * const notional = order.getNotional();
+ * // Расчёт номинальной стоимости
+ * const notional = order.value.getNotional();
  * console.log(`Notional: ${notional}`); // 65.00 (100 * 0.65)
  * ```
  */
 import { Price } from '@polymarket/value-objects';
 import { Quantity } from '@polymarket/value-objects';
 import { OrderValidationError } from '@polymarket/errors';
-import type { ExecutionEvent, OrderAccepted } from '../events/ExecutionEvent.js';
-import { OrderExecutionState, isAllowedTransition } from '../execution/OrderExecutionState.js';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
+import { TradeSide } from './Trade.js';
+import Decimal from 'decimal.js';
 
 /**
- * Order side type
- */
-export type OrderSide = 'BUY' | 'SELL';
-
-/**
- * Order status type
+ * Тип статуса ордера
  */
 export type OrderStatus = 'PENDING' | 'OPEN' | 'PARTIALLY_FILLED' | 'FILLED' | 'CANCELED' | 'REJECTED';
 
 /**
- * Order creation parameters
+ * Параметры создания ордера
  *
  * @remarks
- * v4.2 (Фаза 4): strategyId для multi-strategy изоляции
+ * strategyId опциональный для multi-strategy изоляции (optional для обратной совместимости)
  */
 export interface OrderParams {
   id: string;
+  marketId: string;
   tokenId: string;
-  side: OrderSide;
+  side: TradeSide;
   price: Price;
   size: Quantity;
   status: OrderStatus;
   timestamp: Date;
-  strategyId?: string; // v4.2: для multi-strategy изоляции (optional для обратной совместимости)
+  strategyId?: string;
   filledSize?: Quantity;
   averageFillPrice?: Price;
 }
 
 /**
- * Order entity class
+ * Класс сущности Order
  *
  * @remarks
- * Immutable domain entity representing a trading order.
- * All properties are readonly to ensure immutability.
+ * Неизменяемая доменная сущность, представляющая торговый ордер.
+ * Все свойства readonly для обеспечения неизменяемости.
  */
 export class Order {
   public readonly id: string;
+  public readonly marketId: string;
   public readonly tokenId: string;
-  public readonly side: OrderSide;
+  public readonly side: TradeSide;
   public readonly price: Price;
   public readonly size: Quantity;
   public readonly status: OrderStatus;
   public readonly timestamp: Date;
-  public readonly strategyId?: string; // v4.2: для multi-strategy изоляции
+  public readonly strategyId?: string;
   public readonly filledSize?: Quantity;
   public readonly averageFillPrice?: Price;
 
   private constructor(params: OrderParams) {
     this.id = params.id;
+    this.marketId = params.marketId;
     this.tokenId = params.tokenId;
     this.side = params.side;
     this.price = params.price;
     this.size = params.size;
     this.status = params.status;
     this.timestamp = params.timestamp;
-    this.strategyId = params.strategyId; // v4.2: propagate strategyId
+    this.strategyId = params.strategyId;
     this.filledSize = params.filledSize;
     this.averageFillPrice = params.averageFillPrice;
   }
 
   /**
-   * Creates a new Order instance
+   * Создаёт новый Order с валидацией
    *
-   * @param params - Order creation parameters
-   * @returns Order instance
-   * @throws {OrderValidationError} If validation fails
+   * @param params - Параметры создания ордера
+   * @returns Result<Order, OrderValidationError>
    *
    * @remarks
-   * Factory method that creates and validates an Order.
-   * Performs comprehensive validation of all business rules.
+   * Factory method с Result pattern.
+   * Валидирует все обязательные поля и бизнес-правила:
+   * - ID, marketId, tokenId не пустые
+   * - side = 'BUY' или 'SELL'
+   * - status валидный
+   * - size положительный
+   * - filledSize не превышает size
+   * - averageFillPrice присутствует если filledSize > 0
+   * - timestamp валидный Date
    *
    * @example
    * ```typescript
-   * const order = Order.create({
-   *   id: '0x123abc',
-   *   tokenId: 'token-yes-123',
+   * const result = Order.create({
+   *   id: 'order-123',
+   *   marketId: 'market-abc',
+   *   tokenId: 'token-yes-456',
    *   side: 'BUY',
-   *   price: Price.fromNumber(0.55),
-   *   size: Quantity.fromNumber(50),
-   *   status: 'PENDING',
+   *   price: Price.fromValue(0.65).value!,
+   *   size: Quantity.fromValue(100).value!,
+   *   status: 'OPEN',
    *   timestamp: new Date()
    * });
-   * ```
-   */
-  public static create(params: OrderParams): Order {
-    const order = new Order(params);
-    order.validate();
-    return order;
-  }
-
-  /**
-   * Создаёт новый Order aggregate из OrderAccepted event
    *
-   * @param event - OrderAccepted event
-   * @returns Result<Order, string>
-   *
-   * @remarks
-   * OrderAccepted содержит minimal context (side, marketId, price, size)
-   * NO Pending Orders Registry - ExecutionEvent self-contained
-   *
-   * Invariant checks:
-   * - price > 0
-   * - size > 0
-   * - marketId non-empty
-   *
-   * @example
-   * ```typescript
-   * const event: OrderAccepted = {
-   *   type: 'OrderAccepted',
-   *   orderId: '123',
-   *   side: 'BUY',
-   *   marketId: 'abc',
-   *   price: 100,
-   *   size: 10
-   * };
-   *
-   * const result = Order.fromOrderAccepted(event);
    * if (result.ok) {
-   *   console.log('Order created:', result.value.id);
+   *   const order = result.value;
+   *   console.log('Order created:', order.id);
    * } else {
-   *   console.error('Invariant violation:', result.error);
+   *   console.error('Validation failed:', result.error.message);
    * }
    * ```
    */
-  public static fromOrderAccepted(event: OrderAccepted): Result<Order, string> {
-    // Invariant checks в aggregate, NOT в mapper
-    if (event.price <= 0) {
-      return Err(`Invariant violation: price ${event.price} <= 0 for order ${event.orderId}`);
-    }
-
-    if (event.size <= 0) {
-      return Err(`Invariant violation: size ${event.size} <= 0 for order ${event.orderId}`);
-    }
-
-    if (!event.marketId || event.marketId.trim().length === 0) {
-      return Err(`Invariant violation: marketId empty for order ${event.orderId}`);
-    }
-
-    try {
-      const order = Order.create({
-        id: event.orderId,
-        tokenId: event.marketId,
-        side: event.side,
-        price: Price.fromNumber(event.price),
-        size: Quantity.fromNumber(event.size),
-        status: 'OPEN', // OrderAccepted → OPEN state
-        timestamp: new Date(),
-        filledSize: Quantity.fromNumber(0), // Initial state
-      });
-
-      return Ok(order);
-    } catch (error) {
-      return Err(`Failed to create Order from OrderAccepted: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  /**
-   * Применяет ExecutionEvent к Order aggregate
-   *
-   * @param event - ExecutionEvent для применения
-   * @returns Result<Order, string> - успех или ошибка с нарушением invariant
-   *
-   * @remarks
-   * aggregate logic (invariants, FSM transitions, derived values)
-   *
-   * Responsibilities:
-   * - Вычисление totalFilled из filledDelta
-   * - Invariant checks (filledDelta > 0, price > 0, totalFilled <= size)
-   * - FSM transitions (OPEN → PARTIALLY_FILLED → FILLED)
-   * - Weighted average fillPrice (если multiple fills)
-   * - Derived values (remaining = size - totalFilled)
-   *
-   * FSM transitions проверяются через isAllowedTransition()
-   * - Aggregate проверяет: текущий status → target status = allowed?
-   * - Invalid transition = Result.fail()
-   *
-   * Projector НЕ должен содержать эту логику - он только вызывает applyExecutionEvent()
-   *
-   * @example
-   * ```typescript
-   * const event: OrderPartiallyFilled = {
-   *   type: 'OrderPartiallyFilled',
-   *   orderId: '123',
-   *   filledDelta: 50,
-   *   price: 100
-   * };
-   *
-   * const result = order.applyExecutionEvent(event);
-   * if (result.ok) {
-   *   const updatedOrder = result.value;
-   *   console.log('Order updated:', updatedOrder.status);
-   * } else {
-   *   console.error('Failed to apply event:', result.error);
-   * }
-   * ```
-   */
-  public applyExecutionEvent(event: ExecutionEvent): Result<Order, string> {
-    switch (event.type) {
-      case 'OrderAccepted':
-        // OrderAccepted не применяется к существующему Order
-        // Order создаётся через Order.fromOrderAccepted()
-        return Err(`Cannot apply OrderAccepted to existing order ${this.id}`);
-
-      // ✅ v7.7.15: OrderPartiallyFilled УДАЛЁН - стратегия работает только по StrategyTick!
-      // case 'OrderPartiallyFilled': { ... }
-
-      // ✅ v7.7.15: OrderFilled УДАЛЁН - стратегия работает только по StrategyTick!
-      // case 'OrderFilled': { ... }
-
-      case 'OrderCancelled': {
-        // FSM transition check
-        const currentState = this.mapStatusToExecutionState(this.status);
-        const targetState = OrderExecutionState.CANCELED;
-
-        if (!isAllowedTransition(currentState, targetState)) {
-          return Err(
-            `FSM violation: transition ${currentState} → ${targetState} not allowed for order ${this.id}`
-          );
-        }
-
-        try {
-          const updatedOrder = Order.create({
-            id: this.id,
-            tokenId: this.tokenId,
-            side: this.side,
-            price: this.price,
-            size: this.size,
-            status: 'CANCELED',
-            timestamp: this.timestamp,
-            filledSize: this.filledSize,
-            averageFillPrice: this.averageFillPrice,
-          });
-
-          return Ok(updatedOrder);
-        } catch (error) {
-          return Err(`Failed to create updated Order: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-
-      case 'OrderRejected': {
-        // FSM transition check
-        const currentState = this.mapStatusToExecutionState(this.status);
-        const targetState = OrderExecutionState.REJECTED;
-
-        if (!isAllowedTransition(currentState, targetState)) {
-          return Err(
-            `FSM violation: transition ${currentState} → ${targetState} not allowed for order ${this.id}`
-          );
-        }
-
-        try {
-          const updatedOrder = Order.create({
-            id: this.id,
-            tokenId: this.tokenId,
-            side: this.side,
-            price: this.price,
-            size: this.size,
-            status: 'REJECTED',
-            timestamp: this.timestamp,
-            filledSize: this.filledSize,
-            averageFillPrice: this.averageFillPrice,
-          });
-
-          return Ok(updatedOrder);
-        } catch (error) {
-          return Err(`Failed to create updated Order: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      }
-
-      default: {
-        const _exhaustive: never = event;
-        return Err(`Unhandled ExecutionEvent: ${JSON.stringify(_exhaustive)}`);
-      }
-    }
-  }
-
-  /**
-   * Вычисляет weighted average fill price
-   *
-   * @param previousFilled - Предыдущий заполненный объём
-   * @param previousAvgPrice - Предыдущая средняя цена
-   * @param filledDelta - Новый заполненный объём (delta)
-   * @param currentPrice - Цена текущего fill
-   * @returns Weighted average price
-   *
-   * @remarks
-   * используется для multiple fills
-   *
-   * Формула: (previousFilled * previousAvgPrice + filledDelta * currentPrice) / totalFilled
-   *
-   * @example
-   * ```typescript
-   * // First fill: 50 @ 100
-   * const avgPrice1 = calculateWeightedAveragePrice(0, 0, 50, 100); // 100
-   *
-   * // Second fill: 30 @ 110
-   * const avgPrice2 = calculateWeightedAveragePrice(50, 100, 30, 110); // 103.75
-   * ```
-   */
-  // @ts-expect-error - utility method for future use
-  private _calculateWeightedAveragePrice(
-    previousFilled: number,
-    previousAvgPrice: number,
-    filledDelta: number,
-    currentPrice: number
-  ): number {
-    if (previousFilled === 0) {
-      return currentPrice;
-    }
-
-    const totalFilled = previousFilled + filledDelta;
-    return (previousFilled * previousAvgPrice + filledDelta * currentPrice) / totalFilled;
-  }
-
-  /**
-   * Маппит OrderStatus → OrderExecutionState для FSM transitions
-   *
-   * @param status - OrderStatus
-   * @returns OrderExecutionState
-   *
-   * @remarks
-   * используется для FSM validation в applyExecutionEvent()
-   *
-   * Mapping:
-   * - PENDING → OPEN (считаем как OPEN для FSM)
-   * - OPEN → OPEN
-   * - FILLED → FILLED
-   * - CANCELED → CANCELED
-   * - REJECTED → CANCELED (считаем как CANCELED для FSM)
-   */
-  private mapStatusToExecutionState(status: OrderStatus): OrderExecutionState {
-    switch (status) {
-      case 'PENDING':
-      case 'OPEN':
-        return OrderExecutionState.OPEN;
-      case 'FILLED':
-        return OrderExecutionState.FILLED;
-      case 'CANCELED':
-      case 'REJECTED':
-        return OrderExecutionState.CANCELED;
-      default:
-        return OrderExecutionState.OPEN; // Default fallback
-    }
-  }
-
-  /**
-   * Validates order against business rules
-   *
-   * @throws {OrderValidationError} If any validation rule fails
-   *
-   * @remarks
-   * Validates the following rules:
-   * 1. ID must be non-empty string
-   * 2. TokenId must be non-empty string
-   * 3. Side must be 'BUY' or 'SELL'
-   * 4. Status must be valid OrderStatus
-   * 5. Size must be positive
-   * 6. FilledSize (if present) cannot exceed original size
-   * 7. AverageFillPrice must be valid if filledSize > 0
-   * 8. Timestamp must be valid Date
-   *
-   * @example
-   * ```typescript
-   * try {
-   *   order.validate();
-   * } catch (error) {
-   *   if (error instanceof OrderValidationError) {
-   *     console.error(`Validation failed: ${error.message}`);
-   *   }
-   * }
-   * ```
-   */
-  public validate(): void {
-    // Validate ID
-    if (!this.id || typeof this.id !== 'string' || this.id.trim().length === 0) {
-      throw new OrderValidationError('Order ID must be a non-empty string', 'id');
-    }
-
-    // Validate tokenId
-    if (!this.tokenId || typeof this.tokenId !== 'string' || this.tokenId.trim().length === 0) {
-      throw new OrderValidationError('Token ID must be a non-empty string', 'tokenId');
-    }
-
-    // Validate side
-    if (this.side !== 'BUY' && this.side !== 'SELL') {
-      throw new OrderValidationError(`Invalid order side: ${this.side}`, 'side');
-    }
-
-    // Validate status
-    const validStatuses: OrderStatus[] = ['PENDING', 'OPEN', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED'];
-    if (!validStatuses.includes(this.status)) {
-      throw new OrderValidationError(`Invalid order status: ${this.status}`, 'status');
-    }
-
-    // Validate size is positive
-    if (!this.size.isPositive()) {
-      throw new OrderValidationError('Order size must be positive', 'size');
-    }
-
-    // Validate filledSize if present
-    if (this.filledSize) {
-      if (this.filledSize.isGreaterThan(this.size)) {
-        throw new OrderValidationError(
-          `Filled size (${this.filledSize.value}) cannot exceed order size (${this.size.value})`,
-          'filledSize'
-        );
-      }
-    }
-
-    // Validate averageFillPrice if filledSize > 0
-    if (this.filledSize && this.filledSize.isPositive() && !this.averageFillPrice) {
-      throw new OrderValidationError(
-        'Average fill price is required when filled size > 0',
-        'averageFillPrice'
+  public static create(params: OrderParams): Result<Order, OrderValidationError> {
+    // Валидация ID
+    if (!params.id || typeof params.id !== 'string' || params.id.trim() === '') {
+      return Err(
+        new OrderValidationError(
+          'Order ID must be a non-empty string',
+          {
+            context: { field: 'id', value: params.id }
+          }
+        )
       );
     }
 
-    // Validate timestamp
-    if (!(this.timestamp instanceof Date) || isNaN(this.timestamp.getTime())) {
-      throw new OrderValidationError('Invalid timestamp', 'timestamp');
+    // Валидация marketId
+    if (!params.marketId || typeof params.marketId !== 'string' || params.marketId.trim() === '') {
+      return Err(
+        new OrderValidationError(
+          'Market ID must be a non-empty string',
+          {
+            context: { field: 'marketId', orderId: params.id, value: params.marketId }
+          }
+        )
+      );
     }
+
+    // Валидация tokenId
+    if (!params.tokenId || typeof params.tokenId !== 'string' || params.tokenId.trim() === '') {
+      return Err(
+        new OrderValidationError(
+          'Token ID must be a non-empty string',
+          {
+            context: { field: 'tokenId', orderId: params.id, value: params.tokenId }
+          }
+        )
+      );
+    }
+
+    // Валидация side
+    if (params.side !== 'BUY' && params.side !== 'SELL') {
+      return Err(
+        new OrderValidationError(
+          `Invalid order side: ${params.side}`,
+          {
+            context: {
+              field: 'side',
+              orderId: params.id,
+              value: params.side,
+              validValues: ['BUY', 'SELL']
+            }
+          }
+        )
+      );
+    }
+
+    // Валидация price (existence)
+    if (!params.price) {
+      return Err(
+        new OrderValidationError(
+          'Price is required',
+          {
+            context: { field: 'price', orderId: params.id, value: params.price }
+          }
+        )
+      );
+    }
+
+    // Валидация size (existence)
+    if (!params.size) {
+      return Err(
+        new OrderValidationError(
+          'Size is required',
+          {
+            context: { field: 'size', orderId: params.id, value: params.size }
+          }
+        )
+      );
+    }
+
+    // Валидация size (business rule)
+    if (!params.size.isPositive()) {
+      return Err(
+        new OrderValidationError(
+          'Order size must be positive',
+          {
+            context: { field: 'size', orderId: params.id, value: params.size.value }
+          }
+        )
+      );
+    }
+
+    // Валидация filledSize
+    if (params.filledSize && params.filledSize.isGreaterThan(params.size)) {
+      return Err(
+        new OrderValidationError(
+          `Filled size (${params.filledSize.value}) cannot exceed order size (${params.size.value})`,
+          {
+            context: {
+              field: 'filledSize',
+              orderId: params.id,
+              filledSize: params.filledSize.value,
+              orderSize: params.size.value
+            }
+          }
+        )
+      );
+    }
+
+    // Валидация averageFillPrice если filledSize > 0
+    if (params.filledSize && params.filledSize.isPositive() && !params.averageFillPrice) {
+      return Err(
+        new OrderValidationError(
+          'Average fill price is required when filled size > 0',
+          {
+            context: { field: 'averageFillPrice', orderId: params.id }
+          }
+        )
+      );
+    }
+
+    // Валидация timestamp
+    if (!(params.timestamp instanceof Date) || isNaN(params.timestamp.getTime())) {
+      return Err(
+        new OrderValidationError(
+          'Invalid timestamp',
+          {
+            context: { field: 'timestamp', orderId: params.id, value: params.timestamp }
+          }
+        )
+      );
+    }
+
+    return Ok(new Order(params));
   }
 
   /**
-   * Checks if order is fully filled
+   * Создаёт Order из JSON данных
    *
-   * @returns True if order status is FILLED
+   * @param json - JSON объект с данными ордера
+   * @returns Result<Order, OrderValidationError>
    *
    * @remarks
-   * A filled order has completed execution.
-   * All requested size has been matched.
+   * Преобразует примитивные типы в value objects и создаёт Order.
+   * Валидация происходит через Order.create().
+   *
+   * @example
+   * ```typescript
+   * const json = {
+   *   id: 'order-123',
+   *   marketId: 'market-abc',
+   *   tokenId: 'token-yes',
+   *   side: 'BUY',
+   *   price: 0.65,
+   *   size: 100,
+   *   status: 'OPEN',
+   *   timestamp: '2024-01-15T10:30:00.000Z',
+   *   filledSize: 50,
+   *   averageFillPrice: 0.64
+   * };
+   *
+   * const result = Order.fromJSON(json);
+   * if (result.ok) {
+   *   console.log('Order loaded:', result.value.id);
+   * } else {
+   *   console.error('Invalid JSON:', result.error.message);
+   * }
+   * ```
+   */
+  public static fromJSON(json: Record<string, unknown>): Result<Order, OrderValidationError> {
+    // Валидация обязательных полей
+    if (!json.id || typeof json.id !== 'string') {
+      return Err(
+        new OrderValidationError(
+          'Missing or invalid id in JSON',
+          {
+            context: { field: 'id', value: json.id }
+          }
+        )
+      );
+    }
+
+    if (!json.marketId || typeof json.marketId !== 'string') {
+      return Err(
+        new OrderValidationError(
+          'Missing or invalid marketId in JSON',
+          {
+            context: { field: 'marketId', orderId: json.id, value: json.marketId }
+          }
+        )
+      );
+    }
+
+    if (!json.tokenId || typeof json.tokenId !== 'string') {
+      return Err(
+        new OrderValidationError(
+          'Missing or invalid tokenId in JSON',
+          {
+            context: { field: 'tokenId', orderId: json.id, value: json.tokenId }
+          }
+        )
+      );
+    }
+
+    if (!json.side || (json.side !== 'BUY' && json.side !== 'SELL')) {
+      return Err(
+        new OrderValidationError(
+          'Missing or invalid side in JSON',
+          {
+            context: { field: 'side', orderId: json.id, value: json.side }
+          }
+        )
+      );
+    }
+
+    if (typeof json.price !== 'number') {
+      return Err(
+        new OrderValidationError(
+          'Missing or invalid price in JSON',
+          {
+            context: { field: 'price', orderId: json.id, value: json.price }
+          }
+        )
+      );
+    }
+
+    if (typeof json.size !== 'number') {
+      return Err(
+        new OrderValidationError(
+          'Missing or invalid size in JSON',
+          {
+            context: { field: 'size', orderId: json.id, value: json.size }
+          }
+        )
+      );
+    }
+
+    if (!json.status || typeof json.status !== 'string') {
+      return Err(
+        new OrderValidationError(
+          'Missing or invalid status in JSON',
+          {
+            context: { field: 'status', orderId: json.id, value: json.status }
+          }
+        )
+      );
+    }
+
+    // Парсинг timestamp
+    let timestamp: Date;
+    if (json.timestamp instanceof Date) {
+      timestamp = json.timestamp;
+    } else if (typeof json.timestamp === 'string') {
+      timestamp = new Date(json.timestamp);
+    } else {
+      return Err(
+        new OrderValidationError(
+          'Missing or invalid timestamp in JSON',
+          {
+            context: { field: 'timestamp', orderId: json.id, value: json.timestamp }
+          }
+        )
+      );
+    }
+
+    // Создание Price value object
+    const priceResult = Price.fromValue(json.price as number);
+    if (!priceResult.ok) {
+      return Err(
+        new OrderValidationError(
+          `Invalid price value: ${priceResult.error.message}`,
+          {
+            context: { field: 'price', orderId: json.id, value: json.price }
+          }
+        )
+      );
+    }
+
+    // Создание Quantity value object для size
+    const sizeResult = Quantity.fromValue(json.size as number);
+    if (!sizeResult.ok) {
+      return Err(
+        new OrderValidationError(
+          `Invalid size value: ${sizeResult.error.message}`,
+          {
+            context: { field: 'size', orderId: json.id, value: json.size }
+          }
+        )
+      );
+    }
+
+    // Опциональный filledSize
+    let filledSize: Quantity | undefined;
+    if (json.filledSize !== undefined && json.filledSize !== null) {
+      if (typeof json.filledSize !== 'number') {
+        return Err(
+          new OrderValidationError(
+            'Invalid filledSize in JSON',
+            {
+              context: { field: 'filledSize', orderId: json.id, value: json.filledSize }
+            }
+          )
+        );
+      }
+      const filledSizeResult = Quantity.fromValue(json.filledSize);
+      if (!filledSizeResult.ok) {
+        return Err(
+          new OrderValidationError(
+            `Invalid filledSize value: ${filledSizeResult.error.message}`,
+            {
+              context: { field: 'filledSize', orderId: json.id, value: json.filledSize }
+            }
+          )
+        );
+      }
+      filledSize = filledSizeResult.value;
+    }
+
+    // Опциональный averageFillPrice
+    let averageFillPrice: Price | undefined;
+    if (json.averageFillPrice !== undefined && json.averageFillPrice !== null) {
+      if (typeof json.averageFillPrice !== 'number') {
+        return Err(
+          new OrderValidationError(
+            'Invalid averageFillPrice in JSON',
+            {
+              context: { field: 'averageFillPrice', orderId: json.id, value: json.averageFillPrice }
+            }
+          )
+        );
+      }
+      const avgPriceResult = Price.fromValue(json.averageFillPrice);
+      if (!avgPriceResult.ok) {
+        return Err(
+          new OrderValidationError(
+            `Invalid averageFillPrice value: ${avgPriceResult.error.message}`,
+            {
+              context: { field: 'averageFillPrice', orderId: json.id, value: json.averageFillPrice }
+            }
+          )
+        );
+      }
+      averageFillPrice = avgPriceResult.value;
+    }
+
+    // Создание Order через create()
+    return Order.create({
+      id: json.id as string,
+      marketId: json.marketId as string,
+      tokenId: json.tokenId as string,
+      side: json.side as TradeSide,
+      price: priceResult.value,
+      size: sizeResult.value,
+      status: json.status as OrderStatus,
+      timestamp,
+      strategyId: typeof json.strategyId === 'string' ? json.strategyId : undefined,
+      filledSize,
+      averageFillPrice,
+    });
+  }
+
+  /**
+   * Проверяет, полностью ли заполнен ордер
+   *
+   * @returns True если статус ордера FILLED
+   *
+   * @remarks
+   * Заполненный ордер завершил исполнение.
+   * Весь запрошенный объем был исполнен.
    *
    * @example
    * ```typescript
@@ -492,13 +524,13 @@ export class Order {
   }
 
   /**
-   * Checks if order is open
+   * Проверяет, открыт ли ордер
    *
-   * @returns True if order status is OPEN
+   * @returns True если статус ордера OPEN
    *
    * @remarks
-   * An open order is actively in the order book
-   * and waiting for execution.
+   * Открытый ордер активно находится в стакане
+   * и ожидает исполнения.
    *
    * @example
    * ```typescript
@@ -512,13 +544,12 @@ export class Order {
   }
 
   /**
-   * Checks if order is pending
+   * Проверяет, находится ли ордер в ожидании
    *
-   * @returns True if order status is PENDING
+   * @returns True если статус ордера PENDING
    *
    * @remarks
-   * A pending order has been submitted but not yet
-   * accepted by the exchange.
+   * Ордер в ожидании был отправлен, но еще не принят биржей.
    *
    * @example
    * ```typescript
@@ -532,16 +563,16 @@ export class Order {
   }
 
   /**
-   * Checks if order can be canceled
+   * Проверяет, можно ли отменить ордер
    *
-   * @returns True if order is PENDING or OPEN
+   * @returns True если ордер в статусе PENDING или OPEN
    *
    * @remarks
-   * Only orders that are PENDING or OPEN can be canceled.
-   * FILLED, CANCELED, and REJECTED orders cannot be canceled.
+   * Только ордера в статусе PENDING или OPEN могут быть отменены.
+   * Ордера в статусе FILLED, CANCELED и REJECTED не могут быть отменены.
    *
-   * Business rule: Terminal states (FILLED, CANCELED, REJECTED)
-   * are immutable and cannot transition to other states.
+   * Бизнес-правило: Терминальные статусы (FILLED, CANCELED, REJECTED)
+   * неизменны и не могут переходить в другие состояния.
    *
    * @example
    * ```typescript
@@ -557,83 +588,96 @@ export class Order {
   }
 
   /**
-   * Calculates the notional value of the order
+   * Вычисляет номинальную стоимость ордера
    *
-   * @returns Notional value (price * size)
+   * @returns Номинальная стоимость (price * size) как Decimal
    *
    * @remarks
-   * Notional = Price × Size
+   * Notional = Цена × Размер
    *
-   * For BUY orders: This is the maximum amount needed to fill the order
-   * For SELL orders: This is the amount received if order fills
+   * Для BUY ордеров: Это максимальная сумма необходимая для исполнения ордера
+   * Для SELL ордеров: Это сумма которая будет получена при исполнении ордера
    *
-   * Example:
-   * - Price: 0.65
-   * - Size: 100
+   * Использует Decimal.js для точных вычислений без ошибок округления.
+   *
+   * Пример:
+   * - Цена: 0.65
+   * - Размер: 100
    * - Notional: 65.00
    *
    * @example
    * ```typescript
-   * const order = Order.create({
+   * const result = Order.create({
    *   id: '123',
+   *   marketId: 'market-abc',
    *   tokenId: 'token-yes',
    *   side: 'BUY',
-   *   price: Price.fromNumber(0.65),
-   *   size: Quantity.fromNumber(100),
+   *   price: Price.fromValue(0.65).value!,
+   *   size: Quantity.fromValue(100).value!,
    *   status: 'PENDING',
    *   timestamp: new Date()
    * });
    *
-   * const notional = order.getNotional();
-   * console.log(notional); // 65.0
+   * if (result.ok) {
+   *   const notional = result.value.getNotional();
+   *   console.log(notional.toNumber()); // 65.0
+   * }
    * ```
    */
-  public getNotional(): number {
-    return this.price.value * this.size.value;
+  public getNotional(): Decimal {
+    return new Decimal(this.price.value).times(this.size.value);
   }
 
   /**
-   * Gets the remaining unfilled size
+   * Возвращает оставшийся незаполненный размер
    *
-   * @returns Remaining quantity to be filled
+   * @returns Оставшееся количество для заполнения
    *
    * @remarks
-   * Calculates: Original Size - Filled Size
+   * Вычисляет: Исходный размер - Заполненный размер
    *
-   * Returns original size if no fills have occurred.
-   * Returns zero if order is fully filled.
+   * Возвращает исходный размер если не было заполнения.
+   * Возвращает ноль если ордер полностью заполнен.
    *
    * @example
    * ```typescript
-   * const order = Order.create({
+   * const result = Order.create({
    *   id: '123',
+   *   marketId: 'market-abc',
    *   tokenId: 'token-yes',
    *   side: 'BUY',
-   *   price: Price.fromNumber(0.55),
-   *   size: Quantity.fromNumber(100),
+   *   price: Price.fromValue(0.55).value!,
+   *   size: Quantity.fromValue(100).value!,
    *   status: 'OPEN',
    *   timestamp: new Date(),
-   *   filledSize: Quantity.fromNumber(40)
+   *   filledSize: Quantity.fromValue(40).value!
    * });
    *
-   * const remaining = order.getRemainingSize();
-   * console.log(remaining.value); // 60
+   * if (result.ok) {
+   *   const remaining = result.value.getRemainingSize();
+   *   console.log(remaining.value); // 60
+   * }
    * ```
    */
   public getRemainingSize(): Quantity {
     if (!this.filledSize || this.filledSize.isZero()) {
       return this.size;
     }
-    return this.size.subtract(this.filledSize);
+    const remainingResult = this.size.subtract(this.filledSize);
+    if (!remainingResult.ok) {
+      // Не должно произойти если filledSize <= size (проверяется в create)
+      return this.size;
+    }
+    return remainingResult.value;
   }
 
   /**
-   * Checks if order is partially filled
+   * Проверяет, частично ли заполнен ордер
    *
-   * @returns True if 0 < filledSize < size
+   * @returns True если 0 < filledSize < size
    *
    * @remarks
-   * A partially filled order has some execution but is not complete.
+   * Частично заполненный ордер имеет некоторое исполнение, но не завершен.
    *
    * @example
    * ```typescript
@@ -651,15 +695,17 @@ export class Order {
   }
 
   /**
-   * Gets fill percentage
+   * Возвращает процент заполнения
    *
-   * @returns Fill percentage (0-100)
+   * @returns Процент заполнения (0-100) как Decimal
    *
    * @remarks
-   * Calculates: (FilledSize / Size) × 100
+   * Вычисляет: (FilledSize / Size) × 100
    *
-   * Returns 0 if no fills.
-   * Returns 100 if fully filled.
+   * Возвращает 0 если не было заполнения.
+   * Возвращает 100 если ордер полностью заполнен.
+   *
+   * Использует Decimal.js для точных вычислений без ошибок округления.
    *
    * @example
    * ```typescript
@@ -667,30 +713,40 @@ export class Order {
    * console.log(`Order ${fillPct.toFixed(1)}% filled`);
    * ```
    */
-  public getFillPercentage(): number {
+  public getFillPercentage(): Decimal {
     if (!this.filledSize || this.filledSize.isZero()) {
-      return 0;
+      return new Decimal(0);
     }
-    return (this.filledSize.value / this.size.value) * 100;
+    return new Decimal(this.filledSize.value)
+      .dividedBy(this.size.value)
+      .times(100);
   }
 
   /**
-   * Creates a new order with updated status
+   * Создает новый ордер с обновленным статусом
    *
-   * @param status - New order status
-   * @returns New Order instance with updated status
+   * @param status - Новый статус ордера
+   * @returns Result<Order, OrderValidationError> с новым экземпляром или ошибкой
    *
    * @remarks
-   * Creates a new immutable Order instance with changed status.
-   * Original order remains unchanged (immutability).
+   * Создает новый неизменяемый экземпляр Order с измененным статусом.
+   * Исходный ордер остается неизменным (immutability).
+   *
+   * Следует Result паттерну - возвращает Ok(order) при успехе или Err(error) при ошибке валидации.
    *
    * @example
    * ```typescript
-   * const pendingOrder = Order.create({...});
-   * const openOrder = pendingOrder.withStatus('OPEN');
+   * const pendingResult = Order.create({...});
+   * if (pendingResult.ok) {
+   *   const openResult = pendingResult.value.withStatus('OPEN');
+   *   if (openResult.ok) {
+   *     const openOrder = openResult.value;
+   *     console.log('Order is now OPEN');
+   *   }
+   * }
    * ```
    */
-  public withStatus(status: OrderStatus): Order {
+  public withStatus(status: OrderStatus): Result<Order, OrderValidationError> {
     return Order.create({
       ...this,
       status
@@ -698,27 +754,34 @@ export class Order {
   }
 
   /**
-   * Creates a new order with filled size and average price
+   * Создает новый ордер с информацией о заполнении
    *
-   * @param filledSize - Filled quantity
-   * @param averageFillPrice - Average execution price
-   * @returns New Order instance with fill information
-   * @throws {OrderValidationError} If filled size exceeds order size
+   * @param filledSize - Заполненное количество
+   * @param averageFillPrice - Средняя цена исполнения
+   * @returns Result<Order, OrderValidationError> с новым экземпляром или ошибкой
    *
    * @remarks
-   * Creates a new immutable Order with execution details.
-   * Automatically sets status to FILLED if fully executed.
+   * Создает новый неизменяемый Order с деталями исполнения.
+   * Автоматически устанавливает статус FILLED если полностью исполнен.
+   *
+   * Следует Result паттерну - возвращает Ok(order) при успехе или Err(error) при ошибке валидации.
    *
    * @example
    * ```typescript
-   * const openOrder = Order.create({...});
-   * const filledOrder = openOrder.withFill(
-   *   Quantity.fromNumber(100),
-   *   Price.fromNumber(0.55)
-   * );
+   * const openResult = Order.create({...});
+   * if (openResult.ok) {
+   *   const fillResult = openResult.value.withFill(
+   *     Quantity.fromValue(100).value!,
+   *     Price.fromValue(0.55).value!
+   *   );
+   *   if (fillResult.ok) {
+   *     const filledOrder = fillResult.value;
+   *     console.log('Order filled');
+   *   }
+   * }
    * ```
    */
-  public withFill(filledSize: Quantity, averageFillPrice: Price): Order {
+  public withFill(filledSize: Quantity, averageFillPrice: Price): Result<Order, OrderValidationError> {
     const isFullyFilled = filledSize.equals(this.size) || filledSize.isGreaterThan(this.size);
 
     return Order.create({
@@ -730,12 +793,13 @@ export class Order {
   }
 
   /**
-   * Converts order to plain object
+   * Преобразует Order в plain object
    *
-   * @returns Plain object representation
+   * @returns Представление в виде простого объекта
    *
    * @remarks
-   * Useful for serialization, logging, or API responses.
+   * Используется для сериализации, логирования, или API responses.
+   * Включает вычисляемые поля (notional, remainingSize, fillPercentage).
    *
    * @example
    * ```typescript
@@ -746,24 +810,26 @@ export class Order {
   public toJSON(): Record<string, unknown> {
     return {
       id: this.id,
+      marketId: this.marketId,
       tokenId: this.tokenId,
       side: this.side,
       price: this.price.value,
       size: this.size.value,
       status: this.status,
       timestamp: this.timestamp.toISOString(),
+      strategyId: this.strategyId,
       filledSize: this.filledSize?.value,
       averageFillPrice: this.averageFillPrice?.value,
-      notional: this.getNotional(),
+      notional: this.getNotional().toNumber(),
       remainingSize: this.getRemainingSize().value,
-      fillPercentage: this.getFillPercentage()
+      fillPercentage: this.getFillPercentage().toNumber()
     };
   }
 
   /**
-   * Converts order to string representation
+   * Преобразует ордер в строковое представление
    *
-   * @returns Human-readable string
+   * @returns Читаемая строка
    *
    * @example
    * ```typescript

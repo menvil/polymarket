@@ -12,6 +12,19 @@ import { Trade } from '../../src/Trade';
 import { Price, Quantity } from '@polymarket/value-objects';
 
 describe('Trading Flow Integration', () => {
+  // Helper для создания валидных Price и Quantity
+  const createPrice = (value: number): Price => {
+    const result = Price.fromValue(value);
+    if (!result.ok) throw new Error(`Failed to create Price: ${result.error.message}`);
+    return result.value;
+  };
+
+  const createQuantity = (value: number): Quantity => {
+    const result = Quantity.fromValue(value);
+    if (!result.ok) throw new Error(`Failed to create Quantity: ${result.error.message}`);
+    return result.value;
+  };
+
   describe('Market → OutcomeToken → Trade flow', () => {
     it('should create market and trade on outcome token', () => {
       // 1. Создаём рынок
@@ -43,8 +56,8 @@ describe('Trading Flow Integration', () => {
         id: 'trade-1',
         marketId: market.id,
         tokenId: yesToken.id,
-        price: Price.fromValue(0.65).value!,
-        size: Quantity.fromValue(100).value!,
+        price: createPrice(0.65),
+        size: createQuantity(100),
         side: 'BUY',
         timestamp: new Date(),
         transactionHash: '0xabc123...'
@@ -87,8 +100,8 @@ describe('Trading Flow Integration', () => {
         id: 'trade-buy-yes',
         marketId: market.id,
         tokenId: market.getOutcomeToken(0).id,
-        price: Price.fromValue(0.60).value!,
-        size: Quantity.fromValue(50).value!,
+        price: createPrice(0.60),
+        size: createQuantity(50),
         side: 'BUY',
         timestamp: new Date(),
         transactionHash: '0xabc1...'
@@ -98,8 +111,8 @@ describe('Trading Flow Integration', () => {
         id: 'trade-sell-no',
         marketId: market.id,
         tokenId: market.getOutcomeToken(1).id,
-        price: Price.fromValue(0.40).value!,
-        size: Quantity.fromValue(75).value!,
+        price: createPrice(0.40),
+        size: createQuantity(75),
         side: 'SELL',
         timestamp: new Date(),
         transactionHash: '0xabc2...'
@@ -148,8 +161,8 @@ describe('Trading Flow Integration', () => {
         id: 'trade-1',
         marketId: market.id,
         tokenId: market.getOutcomeToken(0).id,
-        price: Price.fromValue(0.50).value!,
-        size: Quantity.fromValue(10).value!,
+        price: createPrice(0.50),
+        size: createQuantity(10),
         side: 'BUY',
         timestamp: new Date(),
         transactionHash: '0xabc...'
@@ -182,8 +195,8 @@ describe('Trading Flow Integration', () => {
         id: 'trade-1',
         marketId: market.id,
         tokenId: market.getOutcomeToken(0).id,
-        price: Price.fromValue(0.50).value!,
-        size: Quantity.fromValue(10).value!,
+        price: createPrice(0.50),
+        size: createQuantity(10),
         side: 'BUY',
         timestamp: new Date(),
         transactionHash: '0xabc...'
@@ -212,8 +225,8 @@ describe('Trading Flow Integration', () => {
         id: 'trade-yes',
         marketId: marketResult.value.id,
         tokenId: marketResult.value.getOutcomeToken(0).id,
-        price: Price.fromValue(0.70).value!,
-        size: Quantity.fromValue(100).value!,
+        price: createPrice(0.70),
+        size: createQuantity(100),
         side: 'BUY',
         timestamp: new Date(),
         transactionHash: '0xabc1...'
@@ -223,8 +236,8 @@ describe('Trading Flow Integration', () => {
         id: 'trade-no',
         marketId: marketResult.value.id,
         tokenId: marketResult.value.getOutcomeToken(1).id,
-        price: Price.fromValue(0.30).value!,
-        size: Quantity.fromValue(50).value!,
+        price: createPrice(0.30),
+        size: createQuantity(50),
         side: 'BUY',
         timestamp: new Date(),
         transactionHash: '0xabc2...'
@@ -233,7 +246,11 @@ describe('Trading Flow Integration', () => {
       expect(buyYesResult.ok && buyNoResult.ok).toBe(true);
 
       // 3. Закрываем рынок
-      const closedMarket = marketResult.value.close();
+      const closeResult = marketResult.value.close();
+      expect(closeResult.ok).toBe(true);
+      if (!closeResult.ok) return;
+
+      const closedMarket = closeResult.value;
       expect(closedMarket.canTrade()).toBe(false);
 
       // 4. Разрешаем рынок (Yes wins)
@@ -286,7 +303,7 @@ describe('Trading Flow Integration', () => {
       };
 
       // 3. Парсим событие в Trade
-      const tradeResult = Trade.fromPolymarketEvent(polymarketEvent);
+      const tradeResult = Trade.fromValue(polymarketEvent);
 
       expect(tradeResult.ok).toBe(true);
       if (!tradeResult.ok) return;
@@ -353,7 +370,7 @@ describe('Trading Flow Integration', () => {
 
       // Парсим все события
       const trades = events
-        .map((event) => Trade.fromPolymarketEvent(event))
+        .map((event) => Trade.fromValue(event))
         .filter((result) => result.ok)
         .map((result) => (result.ok ? result.value : null))
         .filter((trade): trade is NonNullable<typeof trade> => trade !== null);
@@ -396,8 +413,8 @@ describe('Trading Flow Integration', () => {
         id: 'trade-json',
         marketId: market.id,
         tokenId: market.getOutcomeToken(0).id,
-        price: Price.fromValue(0.65).value!,
-        size: Quantity.fromValue(100).value!,
+        price: createPrice(0.65),
+        size: createQuantity(100),
         side: 'BUY',
         timestamp: new Date('2024-01-15T10:30:00Z'),
         transactionHash: '0xjson...'

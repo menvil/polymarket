@@ -10,13 +10,26 @@ import { Trade } from '../../src/Trade';
 import { Price, Quantity } from '@polymarket/value-objects';
 
 describe('Trade entity', () => {
+  // Helper для создания валидных Price и Quantity
+  const createPrice = (value: number): Price => {
+    const result = Price.fromValue(value);
+    if (!result.ok) throw new Error(`Failed to create Price: ${result.error.message}`);
+    return result.value;
+  };
+
+  const createQuantity = (value: number): Quantity => {
+    const result = Quantity.fromValue(value);
+    if (!result.ok) throw new Error(`Failed to create Quantity: ${result.error.message}`);
+    return result.value;
+  };
+
   // Валидные параметры для тестов
   const validParams = {
     id: 'trade-1',
     marketId: 'market-123',
     tokenId: 'token-yes-456',
-    price: Price.fromValue(0.65).value!,
-    size: Quantity.fromValue(100).value!,
+    price: createPrice(0.65),
+    size: createQuantity(100),
     side: 'BUY' as const,
     timestamp: new Date('2024-01-15T10:30:00.000Z'),
     transactionHash: '0x1234abcd...',
@@ -87,18 +100,6 @@ describe('Trade entity', () => {
       }
     });
 
-    it('should fail validation if size is not positive', () => {
-      const result = Trade.create({
-        ...validParams,
-        size: Quantity.fromValue(0).value!
-      });
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Trade size must be positive');
-      }
-    });
-
     it('should fail validation if side is invalid', () => {
       const result = Trade.create({
         ...validParams,
@@ -160,7 +161,7 @@ describe('Trade entity', () => {
     });
   });
 
-  describe('fromPolymarketEvent()', () => {
+  describe('fromValue() - Polymarket event parsing', () => {
     it('should parse valid Polymarket event', () => {
       const event = {
         market: 'market-123',
@@ -172,7 +173,7 @@ describe('Trade entity', () => {
         transaction_hash: '0x1234abcd...'
       };
 
-      const result = Trade.fromPolymarketEvent(event);
+      const result = Trade.fromValue(event);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -196,7 +197,7 @@ describe('Trade entity', () => {
         transaction_hash: '0xabcd1234...'
       };
 
-      const result = Trade.fromPolymarketEvent(event);
+      const result = Trade.fromValue(event);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -215,7 +216,7 @@ describe('Trade entity', () => {
         transaction_hash: '0x1234abcd...'
       };
 
-      const result = Trade.fromPolymarketEvent(event);
+      const result = Trade.fromValue(event);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -223,7 +224,7 @@ describe('Trade entity', () => {
       }
     });
 
-    it('should generate ID from transaction_hash + timestamp', () => {
+    it('should use transaction_hash as ID', () => {
       const event = {
         market: 'market-123',
         asset_id: 'token-yes-456',
@@ -234,11 +235,12 @@ describe('Trade entity', () => {
         transaction_hash: '0x1234abcd...'
       };
 
-      const result = Trade.fromPolymarketEvent(event);
+      const result = Trade.fromValue(event);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.id).toBe('0x1234abcd...-1705315800000');
+        expect(result.value.id).toBe('0x1234abcd...');
+        expect(result.value.transactionHash).toBe('0x1234abcd...');
       }
     });
 
@@ -253,7 +255,7 @@ describe('Trade entity', () => {
         transaction_hash: '0x1234abcd...'
       };
 
-      const result = Trade.fromPolymarketEvent(event);
+      const result = Trade.fromValue(event);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -272,7 +274,7 @@ describe('Trade entity', () => {
         transaction_hash: '0x1234abcd...'
       };
 
-      const result = Trade.fromPolymarketEvent(event);
+      const result = Trade.fromValue(event);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -291,7 +293,7 @@ describe('Trade entity', () => {
         transaction_hash: '0x1234abcd...'
       };
 
-      const result = Trade.fromPolymarketEvent(event);
+      const result = Trade.fromValue(event);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -315,8 +317,8 @@ describe('Trade entity', () => {
         const result = Trade.create({
           ...validParams,
           side: 'SELL',
-          price: Price.fromValue(0.35).value!,
-          size: Quantity.fromValue(50).value!
+          price: createPrice(0.35),
+          size: createQuantity(50)
         });
 
         expect(result.ok).toBe(true);

@@ -19,11 +19,19 @@
  * **Валидация сделок:**
  * - TradeValidationError - невалидные данные сделки (Trade entity)
  *
+ * **Валидация ордеров:**
+ * - OrderValidationError - невалидные данные ордера (Order entity)
+ *
+ * **Валидация стакана ордеров:**
+ * - OrderbookValidationError - невалидные данные orderbook (Orderbook entity)
+ *
  * @example
  * ```typescript
  * import {
  *   MarketValidationError,
- *   TradeValidationError
+ *   TradeValidationError,
+ *   OrderValidationError,
+ *   OrderbookValidationError
  * } from '@polymarket/errors';
  *
  * // Валидация рынка
@@ -57,3 +65,9 @@ export * from './MarketValidationError.js';
 
 // Валидация сделок
 export * from './TradeValidationError.js';
+
+// Валидация ордеров
+export * from './OrderValidationError.js';
+
+// Валидация стакана ордеров
+export * from './OrderbookValidationError.js';
