@@ -1,16 +1,20 @@
 /**
- * Trade entity
+ * Trade entity - исполненная сделка
  *
  * @remarks
  * Представляет исполненную сделку на рынке.
  * Immutable entity для хранения истории сделок.
  *
- * Алгоритм:
+ * **Денормализация:** Trade хранит tokenId напрямую (дублирование данных)
+ * вместо ссылки только на marketId. Это оптимизация для производительности -
+ * позволяет быстро фильтровать сделки по токену без JOIN с Market.
+ *
+ * **Алгоритм:**
  * 1. Хранит детали сделки: цена, количество, сторона, время
  * 2. Вычисляет notional value (цена × количество)
  * 3. Предоставляет методы для анализа сделок
  *
- * Использование:
+ * **Использование:**
  * - Запись истории исполненных ордеров
  * - Анализ рыночной активности
  * - Расчёт VWAP (volume-weighted average price)
@@ -19,223 +23,413 @@
  *
  * @example
  * ```typescript
- * const trade = Trade.create({
+ * const result = Trade.create({
  *   id: 'trade-1',
  *   marketId: 'market-123',
- *   price: Price.fromNumber(0.65),
- *   quantity: Quantity.fromNumber(100),
+ *   tokenId: 'token-yes-456',
+ *   price: Price.fromValue(0.65),
+ *   size: Quantity.fromValue(100),
  *   side: 'BUY',
- *   timestamp: new Date()
+ *   timestamp: new Date(),
+ *   transactionHash: '0x1234...'
  * });
  *
- * console.log(`Trade: ${trade.side} ${trade.quantity.value} @ ${trade.price.value}`);
- * console.log(`Notional: ${trade.getNotional()}`);
- * console.log(`Age: ${trade.getAgeMs()}ms`);
+ * if (result.ok) {
+ *   const trade = result.value;
+ *   console.log(`Trade: ${trade.side} ${trade.size.value} @ ${trade.price.value}`);
+ *   console.log(`Notional: ${trade.getNotional()}`);
+ * }
  * ```
  */
 import { Price, Quantity } from '@polymarket/value-objects';
 import { TradeValidationError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
 
 /**
- * Trade side type
+ * Сторона сделки
  *
  * @remarks
- * - BUY: покупка (taker купил)
- * - SELL: продажа (taker продал)
- * - null: направление неизвестно (Polymarket не предоставил информацию)
+ * - BUY: покупка (taker купил, aggressive buyer)
+ * - SELL: продажа (taker продал, aggressive seller)
  */
-export type TradeSide = 'BUY' | 'SELL' | null;
+export type TradeSide = 'BUY' | 'SELL';
 
 /**
- * Trade creation parameters
+ * Параметры для создания Trade
+ *
+ * @remarks
+ * Все поля кроме orderId обязательны.
+ * orderId опциональный - может быть null если сделка не принадлежит нашей системе.
  */
 export interface TradeParams {
-  id: string;
-  marketId: string;
-  price: Price;
-  quantity: Quantity;
-  side: TradeSide;
-  timestamp: Date;
-  orderId?: string;
-  makerOrderId?: string;
-  takerOrderId?: string;
+  /** Уникальный ID сделки */
+  readonly id: string;
+  /** ID рынка */
+  readonly marketId: string;
+  /** ID outcome токена (денормализация для быстрого поиска по токену) */
+  readonly tokenId: string;
+  /** Цена исполнения */
+  readonly price: Price;
+  /** Размер сделки (количество токенов) */
+  readonly size: Quantity;
+  /** Сторона сделки (BUY или SELL) */
+  readonly side: TradeSide;
+  /** Timestamp исполнения */
+  readonly timestamp: Date;
+  /** Хеш транзакции в блокчейне */
+  readonly transactionHash: string;
+  /** ID нашего ордера (если это наша сделка) */
+  readonly orderId?: string;
 }
 
 /**
  * Trade entity
  *
  * @remarks
- * Immutable entity representing an executed trade.
+ * Immutable entity представляющая исполненную сделку.
+ * Все свойства readonly для обеспечения неизменяемости.
  */
 export class Trade {
+  /** Уникальный ID сделки */
   public readonly id: string;
+
+  /** ID рынка */
   public readonly marketId: string;
+
+  /** ID outcome токена */
+  public readonly tokenId: string;
+
+  /** Цена исполнения */
   public readonly price: Price;
-  public readonly quantity: Quantity;
+
+  /** Размер сделки (quantity переименован в size для соответствия Polymarket API) */
+  public readonly size: Quantity;
+
+  /** Сторона сделки (BUY или SELL) */
   public readonly side: TradeSide;
+
+  /** Timestamp исполнения */
   public readonly timestamp: Date;
+
+  /** Хеш транзакции в блокчейне */
+  public readonly transactionHash: string;
+
+  /** ID нашего ордера (если это наша сделка) */
   public readonly orderId?: string;
-  public readonly makerOrderId?: string;
-  public readonly takerOrderId?: string;
 
   /**
-   * Создаёт новый Trade
+   * Приватный конструктор
    *
    * @param params - Параметры сделки
    *
    * @remarks
-   * Private constructor - используйте статический метод create().
+   * Конструктор приватный для использования только через factory методы.
+   * Используйте Trade.create() или Trade.fromPolymarketEvent().
    */
   private constructor(params: TradeParams) {
     this.id = params.id;
     this.marketId = params.marketId;
+    this.tokenId = params.tokenId;
     this.price = params.price;
-    this.quantity = params.quantity;
+    this.size = params.size;
     this.side = params.side;
     this.timestamp = params.timestamp;
+    this.transactionHash = params.transactionHash;
     this.orderId = params.orderId;
-    this.makerOrderId = params.makerOrderId;
-    this.takerOrderId = params.takerOrderId;
   }
 
   /**
    * Создаёт новый Trade с валидацией
    *
    * @param params - Параметры сделки
-   * @returns Новый Trade instance
-   * @throws {TradeValidationError} Если валидация не прошла
+   * @returns Result<Trade, TradeValidationError> - Ok(trade) или Err(error)
    *
    * @remarks
-   * Factory method с полной валидацией всех параметров.
+   * Factory метод с полной валидацией всех параметров.
    *
-   * Валидирует:
+   * **Валидирует:**
    * 1. ID не пустой
    * 2. MarketId не пустой
-   * 3. Quantity положительная
-   * 4. Side корректный ('BUY' или 'SELL')
-   * 5. Timestamp валидный
+   * 3. TokenId не пустой
+   * 4. Size положительный
+   * 5. Side корректный ('BUY' или 'SELL')
+   * 6. Timestamp валидный
+   * 7. TransactionHash не пустой
+   *
+   * Если все валидации пройдены, возвращает Ok(Trade).
+   * При ошибке валидации возвращает Err(TradeValidationError).
    *
    * @example
    * ```typescript
-   * const trade = Trade.create({
+   * const result = Trade.create({
    *   id: 'trade-1',
    *   marketId: 'market-123',
-   *   price: Price.fromNumber(0.65),
-   *   quantity: Quantity.fromNumber(100),
+   *   tokenId: 'token-yes-456',
+   *   price: Price.fromValue(0.65),
+   *   size: Quantity.fromValue(100),
    *   side: 'BUY',
    *   timestamp: new Date(),
+   *   transactionHash: '0x1234...',
    *   orderId: 'order-1'
    * });
-   * ```
-   */
-  public static create(params: TradeParams): Trade {
-    const trade = new Trade(params);
-    trade.validate();
-    return trade;
-  }
-
-  /**
-   * Валидирует сделку
    *
-   * @throws {TradeValidationError} Если валидация не прошла
-   *
-   * @remarks
-   * Проверяет все бизнес-правила:
-   * 1. ID должен быть непустой строкой
-   * 2. MarketId должен быть непустой строкой
-   * 3. Quantity должна быть положительной
-   * 4. Side должен быть 'BUY' или 'SELL'
-   * 5. Timestamp должен быть валидной датой
-   *
-   * @example
-   * ```typescript
-   * try {
-   *   trade.validate();
-   * } catch (error) {
-   *   if (error instanceof TradeValidationError) {
-   *     console.error(`Validation failed: ${error.message}`);
-   *   }
+   * if (result.ok) {
+   *   const trade = result.value;
+   *   console.log(`Trade created: ${trade.id}`);
+   * } else {
+   *   console.error('Validation failed:', result.error.message);
    * }
    * ```
    */
-  public validate(): void {
-    // Validate ID
-    if (!this.id || typeof this.id !== 'string' || this.id.trim().length === 0) {
-      throw new TradeValidationError('Trade ID must be a non-empty string', {
-        code: TradeValidationError.code,
-        context: { field: 'id', value: this.id }
-      });
+  public static create(params: TradeParams): Result<Trade, TradeValidationError> {
+    // Валидация ID
+    if (!params.id || typeof params.id !== 'string' || params.id.trim() === '') {
+      return Err(
+        new TradeValidationError('Trade ID must be a non-empty string', {
+          code: TradeValidationError.code,
+          context: { field: 'id', value: params.id }
+        })
+      );
     }
 
-    // Validate marketId
-    if (!this.marketId || typeof this.marketId !== 'string' || this.marketId.trim().length === 0) {
-      throw new TradeValidationError('Market ID must be a non-empty string', {
-        code: TradeValidationError.code,
-        context: { field: 'marketId', value: this.marketId }
-      });
+    // Валидация marketId
+    if (!params.marketId || typeof params.marketId !== 'string' || params.marketId.trim() === '') {
+      return Err(
+        new TradeValidationError('Market ID must be a non-empty string', {
+          code: TradeValidationError.code,
+          context: { field: 'marketId', tradeId: params.id, value: params.marketId }
+        })
+      );
     }
 
-    // Validate quantity is positive
-    if (!this.quantity.isPositive()) {
-      throw new TradeValidationError('Trade quantity must be positive', {
-        code: TradeValidationError.code,
-        context: { field: 'quantity', value: this.quantity.value }
-      });
+    // Валидация tokenId
+    if (!params.tokenId || typeof params.tokenId !== 'string' || params.tokenId.trim() === '') {
+      return Err(
+        new TradeValidationError('Token ID must be a non-empty string', {
+          code: TradeValidationError.code,
+          context: { field: 'tokenId', tradeId: params.id, value: params.tokenId }
+        })
+      );
     }
 
-    // Validate side (allow null for unknown direction)
-    if (this.side !== 'BUY' && this.side !== 'SELL' && this.side !== null) {
-      throw new TradeValidationError(`Invalid trade side: ${this.side}`, {
-        code: TradeValidationError.code,
-        context: { field: 'side', value: this.side }
-      });
+    // Валидация size положительный
+    if (!params.size.isPositive()) {
+      return Err(
+        new TradeValidationError('Trade size must be positive', {
+          code: TradeValidationError.code,
+          context: { field: 'size', tradeId: params.id, value: params.size.value }
+        })
+      );
     }
 
-    // Validate timestamp
-    if (!(this.timestamp instanceof Date) || isNaN(this.timestamp.getTime())) {
-      throw new TradeValidationError('Invalid timestamp', {
-        code: TradeValidationError.code,
-        context: { field: 'timestamp', value: this.timestamp }
-      });
+    // Валидация side
+    if (params.side !== 'BUY' && params.side !== 'SELL') {
+      return Err(
+        new TradeValidationError(`Invalid trade side: ${params.side}`, {
+          code: TradeValidationError.code,
+          context: {
+            field: 'side',
+            tradeId: params.id,
+            value: params.side,
+            validValues: ['BUY', 'SELL']
+          }
+        })
+      );
     }
+
+    // Валидация timestamp
+    if (!(params.timestamp instanceof Date) || isNaN(params.timestamp.getTime())) {
+      return Err(
+        new TradeValidationError('Invalid timestamp', {
+          code: TradeValidationError.code,
+          context: { field: 'timestamp', tradeId: params.id, value: params.timestamp }
+        })
+      );
+    }
+
+    // Валидация transactionHash
+    if (
+      !params.transactionHash ||
+      typeof params.transactionHash !== 'string' ||
+      params.transactionHash.trim() === ''
+    ) {
+      return Err(
+        new TradeValidationError('Transaction hash must be a non-empty string', {
+          code: TradeValidationError.code,
+          context: { field: 'transactionHash', tradeId: params.id, value: params.transactionHash }
+        })
+      );
+    }
+
+    // Создаём Trade instance
+    return Ok(new Trade(params));
+  }
+
+  /**
+   * Создаёт Trade из события Polymarket API
+   *
+   * @param event - Событие last_trade_price из Polymarket WebSocket
+   * @returns Result<Trade, TradeValidationError> - Ok(trade) или Err(error)
+   *
+   * @remarks
+   * Парсит событие из Polymarket WebSocket и создаёт Trade entity.
+   *
+   * **Формат события Polymarket:**
+   * ```json
+   * {
+   *   "market": "0xb9ed6ed...",
+   *   "asset_id": "62305814...",
+   *   "price": "0.44",
+   *   "size": "4.090908",
+   *   "side": "BUY",
+   *   "timestamp": "1767463213145",
+   *   "event_type": "last_trade_price",
+   *   "transaction_hash": "0x0b5f0c77..."
+   * }
+   * ```
+   *
+   * Автоматически преобразует:
+   * - `market` → `marketId`
+   * - `asset_id` → `tokenId` (outcome token ID)
+   * - `price` (string) → Price value object
+   * - `size` (string) → Quantity value object
+   * - `timestamp` (milliseconds string) → Date
+   * - Генерирует уникальный `id` из `transaction_hash` + `timestamp`
+   *
+   * @example
+   * ```typescript
+   * const event = {
+   *   market: 'market-123',
+   *   asset_id: 'token-yes-456',
+   *   price: '0.65',
+   *   size: '100.5',
+   *   side: 'BUY',
+   *   timestamp: '1767463213145',
+   *   transaction_hash: '0x1234abcd...'
+   * };
+   *
+   * const result = Trade.fromPolymarketEvent(event);
+   * if (result.ok) {
+   *   const trade = result.value;
+   *   console.log(`Trade: ${trade.side} ${trade.size.value} @ ${trade.price.value}`);
+   * }
+   * ```
+   */
+  public static fromPolymarketEvent(
+    event: Record<string, unknown>
+  ): Result<Trade, TradeValidationError> {
+    // Валидация что event это объект
+    if (typeof event !== 'object' || event === null) {
+      return Err(
+        new TradeValidationError('Event must be an object', {
+          code: TradeValidationError.code,
+          context: { value: event }
+        })
+      );
+    }
+
+    // Парсинг price
+    const priceResult = Price.fromValue(parseFloat(event.price as string));
+    if (!priceResult.ok) {
+      return Err(
+        new TradeValidationError(`Invalid price: ${priceResult.error.message}`, {
+          code: TradeValidationError.code,
+          context: { field: 'price', value: event.price }
+        })
+      );
+    }
+
+    // Парсинг size
+    const sizeResult = Quantity.fromValue(parseFloat(event.size as string));
+    if (!sizeResult.ok) {
+      return Err(
+        new TradeValidationError(`Invalid size: ${sizeResult.error.message}`, {
+          code: TradeValidationError.code,
+          context: { field: 'size', value: event.size }
+        })
+      );
+    }
+
+    // Парсинг timestamp
+    let timestamp: Date;
+    try {
+      const timestampMs =
+        typeof event.timestamp === 'string'
+          ? parseInt(event.timestamp, 10)
+          : (event.timestamp as number);
+      timestamp = new Date(timestampMs);
+      if (isNaN(timestamp.getTime())) {
+        throw new Error('Invalid date');
+      }
+    } catch (error) {
+      return Err(
+        new TradeValidationError(
+          `Invalid timestamp: ${error instanceof Error ? error.message : 'unknown error'}`,
+          {
+            code: TradeValidationError.code,
+            context: { field: 'timestamp', value: event.timestamp }
+          }
+        )
+      );
+    }
+
+    // Генерируем уникальный ID из transaction_hash и timestamp
+    const id = `${event.transaction_hash}-${event.timestamp}`;
+
+    // Создаём Trade через create() для полной валидации
+    return Trade.create({
+      id,
+      marketId: event.market as string,
+      tokenId: event.asset_id as string,
+      price: priceResult.value,
+      size: sizeResult.value,
+      side: (event.side as string).toUpperCase() as TradeSide,
+      timestamp,
+      transactionHash: event.transaction_hash as string
+    });
   }
 
   /**
    * Вычисляет notional value сделки
    *
-   * @returns Notional value (цена × количество)
+   * @returns Notional value (цена × размер)
    *
    * @remarks
-   * Notional = Price × Quantity
+   * Notional = Price × Size
    *
    * Представляет общую стоимость сделки в USDC.
-   * Используется для:
+   *
+   * **Используется для:**
    * - Расчёта объёмов торговли
    * - Анализа ликвидности
    * - Вычисления комиссий
    *
-   * Пример:
+   * **Пример:**
    * - Price: 0.65
-   * - Quantity: 100
+   * - Size: 100
    * - Notional: 65.00 USDC
    *
    * @example
    * ```typescript
-   * const trade = Trade.create({
+   * const result = Trade.create({
    *   id: 'trade-1',
    *   marketId: 'market-123',
-   *   price: Price.fromNumber(0.65),
-   *   quantity: Quantity.fromNumber(100),
+   *   tokenId: 'token-yes-456',
+   *   price: Price.fromValue(0.65),
+   *   size: Quantity.fromValue(100),
    *   side: 'BUY',
-   *   timestamp: new Date()
+   *   timestamp: new Date(),
+   *   transactionHash: '0x1234...'
    * });
    *
-   * const notional = trade.getNotional();
-   * console.log(notional); // 65.0
+   * if (result.ok) {
+   *   const notional = result.value.getNotional();
+   *   console.log(notional); // 65.0
+   * }
    * ```
    */
   public getNotional(): number {
-    return this.price.value * this.quantity.value;
+    return this.price.value * this.size.value;
   }
 
   /**
@@ -352,6 +546,167 @@ export class Trade {
   }
 
   /**
+   * Сериализует Trade в JSON объект
+   *
+   * @returns JSON представление сделки
+   *
+   * @remarks
+   * Преобразует все поля в JSON-совместимый формат:
+   * - Date → ISO string
+   * - Price/Quantity → number values
+   * - Включает вычисляемые поля: notional
+   *
+   * Используется для:
+   * - Сохранения состояния в storage
+   * - Передачи через API
+   * - Логирования
+   *
+   * @example
+   * ```typescript
+   * const json = trade.toJSON();
+   * console.log(JSON.stringify(json, null, 2));
+   * // {
+   * //   "id": "trade-1",
+   * //   "marketId": "market-123",
+   * //   "tokenId": "token-yes-456",
+   * //   "price": 0.65,
+   * //   "size": 100,
+   * //   "side": "BUY",
+   * //   "timestamp": "2024-01-15T10:30:00.000Z",
+   * //   "transactionHash": "0x1234...",
+   * //   "notional": 65.0,
+   * //   "orderId": "order-1"
+   * // }
+   * ```
+   */
+  public toJSON(): Record<string, unknown> {
+    return {
+      id: this.id,
+      marketId: this.marketId,
+      tokenId: this.tokenId,
+      price: this.price.value,
+      size: this.size.value,
+      side: this.side,
+      timestamp: this.timestamp.toISOString(),
+      transactionHash: this.transactionHash,
+      notional: this.getNotional(),
+      orderId: this.orderId
+    };
+  }
+
+  /**
+   * Десериализует Trade из JSON объекта
+   *
+   * @param json - JSON представление сделки
+   * @returns Result<Trade, TradeValidationError> - Ok(trade) или Err(error)
+   *
+   * @remarks
+   * Парсит JSON и создаёт Trade instance через create().
+   * Выполняет полную валидацию всех полей.
+   *
+   * **Ожидаемый формат JSON:**
+   * - id: string
+   * - marketId: string
+   * - tokenId: string
+   * - price: number
+   * - size: number
+   * - side: 'BUY' | 'SELL'
+   * - timestamp: ISO date string
+   * - transactionHash: string
+   * - orderId?: string (optional)
+   *
+   * @example
+   * ```typescript
+   * const json = {
+   *   id: 'trade-1',
+   *   marketId: 'market-123',
+   *   tokenId: 'token-yes-456',
+   *   price: 0.65,
+   *   size: 100,
+   *   side: 'BUY',
+   *   timestamp: '2024-01-15T10:30:00.000Z',
+   *   transactionHash: '0x1234...'
+   * };
+   *
+   * const result = Trade.fromJSON(json);
+   * if (result.ok) {
+   *   const trade = result.value;
+   *   console.log(`Trade: ${trade.id}`);
+   * }
+   * ```
+   */
+  public static fromJSON(json: unknown): Result<Trade, TradeValidationError> {
+    // Проверка что json это объект
+    if (typeof json !== 'object' || json === null) {
+      return Err(
+        new TradeValidationError('JSON must be an object', {
+          code: TradeValidationError.code,
+          context: { value: json }
+        })
+      );
+    }
+
+    const obj = json as Record<string, unknown>;
+
+    // Парсинг price
+    const priceResult = Price.fromValue(obj.price as number);
+    if (!priceResult.ok) {
+      return Err(
+        new TradeValidationError(`Invalid price: ${priceResult.error.message}`, {
+          code: TradeValidationError.code,
+          context: { field: 'price', value: obj.price }
+        })
+      );
+    }
+
+    // Парсинг size
+    const sizeResult = Quantity.fromValue(obj.size as number);
+    if (!sizeResult.ok) {
+      return Err(
+        new TradeValidationError(`Invalid size: ${sizeResult.error.message}`, {
+          code: TradeValidationError.code,
+          context: { field: 'size', value: obj.size }
+        })
+      );
+    }
+
+    // Парсинг timestamp
+    let timestamp: Date;
+    try {
+      if (typeof obj.timestamp !== 'string') {
+        throw new Error('timestamp must be a string');
+      }
+      timestamp = new Date(obj.timestamp);
+      if (isNaN(timestamp.getTime())) {
+        throw new Error('Invalid date format');
+      }
+    } catch (error) {
+      return Err(
+        new TradeValidationError(
+          `Invalid timestamp: ${error instanceof Error ? error.message : 'unknown error'}`,
+          {
+            code: TradeValidationError.code,
+            context: { field: 'timestamp', value: obj.timestamp }
+          }
+        )
+      );
+    }
+
+    // Создаём Trade через create() для полной валидации
+    return Trade.create({
+      id: obj.id as string,
+      marketId: obj.marketId as string,
+      tokenId: obj.tokenId as string,
+      price: priceResult.value,
+      size: sizeResult.value,
+      side: obj.side as TradeSide,
+      timestamp,
+      transactionHash: obj.transactionHash as string,
+      orderId: obj.orderId as string | undefined
+    });
+  }
+
+  /**
    * Конвертирует в строковое представление
    *
    * @returns Строковое представление сделки
@@ -363,51 +718,6 @@ export class Trade {
    * ```
    */
   public toString(): string {
-    return `Trade[${this.id}]: ${this.side} ${this.quantity.toString()} @ ${this.price.toString()} (${this.timestamp.toISOString()})`;
-  }
-
-  /**
-   * Конвертирует в объект
-   *
-   * @returns Объектное представление сделки
-   *
-   * @remarks
-   * Полезно для сериализации, логирования и API ответов.
-   *
-   * @example
-   * ```typescript
-   * const obj = trade.toObject();
-   * console.log(JSON.stringify(obj, null, 2));
-   * ```
-   */
-  public toObject() {
-    return {
-      id: this.id,
-      marketId: this.marketId,
-      price: this.price.value,
-      quantity: this.quantity.value,
-      side: this.side,
-      timestamp: this.timestamp.toISOString(),
-      notional: this.getNotional(),
-      ageMs: this.getAgeMs(),
-      orderId: this.orderId,
-      makerOrderId: this.makerOrderId,
-      takerOrderId: this.takerOrderId,
-    };
-  }
-
-  /**
-   * Конвертирует в JSON
-   *
-   * @returns JSON представление сделки
-   *
-   * @example
-   * ```typescript
-   * const json = trade.toJSON();
-   * console.log(JSON.stringify(json, null, 2));
-   * ```
-   */
-  public toJSON(): Record<string, unknown> {
-    return this.toObject();
+    return `Trade[${this.id}]: ${this.side} ${this.size.toString()} @ ${this.price.toString()} (${this.timestamp.toISOString()})`;
   }
 }
