@@ -82,31 +82,48 @@ import { Price, Quantity } from '@polymarket/value-objects';
 // Создание пустой позиции
 const position = Position.empty('token-yes', 'YES');
 
-// Добавление первого лота
-const lot1 = new PositionLot(
+// Создание первого лота через factory (возвращает Result)
+const lot1Result = PositionLot.create(
   'lot-1',
   'token-yes',
   'YES',
-  Quantity.fromValue(10),
-  Price.fromValue(0.60),
-  new Date()
+  Quantity.fromValue(10).value,
+  Price.fromValue(0.60).value,
+  Date.now()
 );
-const updated = position.addLot(lot1);
 
+if (!lot1Result.ok) {
+  console.error('Failed to create lot:', lot1Result.error.message);
+  return;
+}
+
+// Добавление лота (возвращает Result)
+const addResult = position.addLot(lot1Result.value);
+if (!addResult.ok) {
+  console.error('Failed to add lot:', addResult.error.message);
+  return;
+}
+
+const updated = addResult.value;
 console.log(updated.totalQuantity.value); // 10
 console.log(updated.averageEntryPrice.value); // 0.60
 
 // Добавление второго лота (weighted average)
-const lot2 = new PositionLot(
+const lot2Result = PositionLot.create(
   'lot-2',
   'token-yes',
   'YES',
-  Quantity.fromValue(5),
-  Price.fromValue(0.70),
-  new Date()
+  Quantity.fromValue(5).value,
+  Price.fromValue(0.70).value,
+  Date.now()
 );
-const withLot2 = updated.addLot(lot2);
 
+if (!lot2Result.ok) return;
+
+const addResult2 = updated.addLot(lot2Result.value);
+if (!addResult2.ok) return;
+
+const withLot2 = addResult2.value;
 console.log(withLot2.totalQuantity.value); // 15
 console.log(withLot2.averageEntryPrice.value); // 0.6333
 ```
@@ -132,16 +149,34 @@ console.log(withLot2.averageEntryPrice.value); // 0.6333
 import { Portfolio } from '@polymarket/entities';
 import { Money } from '@polymarket/value-objects';
 
-// Создание портфеля с начальным балансом
-const portfolio = Portfolio.create('portfolio-1', Money.fromValue(1000));
+// Создание портфеля с начальным балансом (возвращает Result)
+const portfolioResult = Portfolio.create('portfolio-1', Money.fromValue(1000));
+if (!portfolioResult.ok) {
+  console.error('Failed to create portfolio:', portfolioResult.error.message);
+  return;
+}
 
-// Резервирование средств для BUY ордера
-const reserved = portfolio.reserveCash(Money.fromValue(100));
+const portfolio = portfolioResult.value;
+
+// Резервирование средств для BUY ордера (возвращает Result)
+const reserveResult = portfolio.reserveCash(Money.fromValue(100));
+if (!reserveResult.ok) {
+  console.error('Insufficient funds:', reserveResult.error.message);
+  return;
+}
+
+const reserved = reserveResult.value;
 console.log(reserved.availableCash.amount); // 900
 console.log(reserved.reservedCash.amount); // 100
 
-// Добавление позиции
-const withPosition = reserved.addPosition(position);
+// Добавление позиции (возвращает Result)
+const addResult = reserved.addPosition(position);
+if (!addResult.ok) {
+  console.error('Failed to add position:', addResult.error.message);
+  return;
+}
+
+const withPosition = addResult.value;
 
 // Расчёт общей стоимости портфеля
 const marketPrices = new Map([['token-yes', Price.fromValue(0.70)]]);
@@ -361,30 +396,39 @@ export class Order {
 - Невозможно создать невалидную Entity
 - Явный контракт через factory method
 
-### 2. Immutable updates
+### 2. Immutable updates + Result pattern
 
-Entity иммутабельны - методы возвращают новые экземпляры:
+Entity иммутабельны - методы возвращают новые экземпляры через Result:
 
 ```typescript
 class Portfolio {
-  public reserveCash(amount: Money): Portfolio {
-    const newCash = this.cash.subtract(amount);
-    const newReserved = this.reservedCash.add(amount);
+  public reserveCash(amount: Money): Result<Portfolio, InsufficientFundsError> {
+    const available = this.availableCash;
 
-    return new Portfolio(
-      this.id,
-      newCash,
-      newReserved,
-      this.positions
+    if (available.isLessThan(amount)) {
+      return Err(new InsufficientFundsError(amount.amount, available.amount));
+    }
+
+    const newReservedCash = this.reservedCash.add(amount);
+
+    return Ok(
+      new Portfolio(
+        this.id,
+        this.cash,
+        newReservedCash,
+        this.positions
+      )
     );
   }
 }
 ```
 
 **Преимущества:**
-- Нет побочных эффектов
+- Нет побочных эффектов (immutability)
+- Type-safe error handling (Result pattern)
 - Безопасность в многопоточности
 - Простая отладка (snapshot состояния)
+- Композируемость операций
 
 ### 3. Rich Domain Model
 

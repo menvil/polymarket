@@ -13,35 +13,51 @@
  * - Lots can be partially closed
  * - Lots are immutable - closing creates new instance
  *
+ * Design Patterns:
+ * - Result pattern для всех fallible операций (create, close)
+ * - Private constructor + static factory method
+ * - Immutability: timestamp хранится как number (Unix ms) для защиты от мутации
+ *
  * @example
  * ```typescript
- * const lot = new PositionLot(
+ * // Создание лота через factory
+ * const result = PositionLot.create(
  *   'lot-1',
  *   'token-123',
  *   'YES',
- *   Quantity.fromNumber(10),
- *   Price.fromNumber(0.65),
- *   new Date()
+ *   Quantity.fromValue(10).value,
+ *   Price.fromValue(0.65).value,
+ *   Date.now()
  * );
+ *
+ * if (!result.ok) {
+ *   console.error('Failed to create lot:', result.error.message);
+ *   return;
+ * }
+ *
+ * const lot = result.value;
  *
  * // Calculate cost
  * const cost = lot.calculateCost();
  * console.log(cost.amount); // 6.50
  *
  * // Calculate unrealized P&L
- * const pnl = lot.calculateUnrealizedPnL(Price.fromNumber(0.70));
+ * const pnl = lot.calculateUnrealizedPnL(Price.fromValue(0.70).value);
  * console.log(pnl.amount); // 0.50 (profit)
  *
- * // Close partial quantity
- * const closedLot = lot.close(Quantity.fromNumber(5));
- * console.log(closedLot.quantity.value); // 5
- * console.log(closedLot.isClosed()); // true
+ * // Close partial quantity (возвращает Result)
+ * const closeResult = lot.close(Quantity.fromValue(5).value);
+ * if (closeResult.ok) {
+ *   console.log(closeResult.value.quantity.value); // 5
+ *   console.log(closeResult.value.isClosed()); // false
+ * }
  * ```
  */
 import { Price } from '@polymarket/value-objects';
 import { Quantity } from '@polymarket/value-objects';
 import { Money } from '@polymarket/value-objects';
-import { TradingError } from '@polymarket/errors';
+import { TradingError, PositionValidationError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
 
 /**
  * Side of the position
@@ -55,13 +71,15 @@ export type Side = 'YES' | 'NO';
  * Thrown when trying to close more quantity than available in lot.
  */
 export class InsufficientLotQuantityError extends TradingError {
+  public readonly severity = 'low' as const;
+
   constructor(
     public readonly requested: number,
     public readonly available: number
   ) {
     super(
       `Insufficient lot quantity: requested ${requested}, available ${available}`,
-      'INSUFFICIENT_LOT_QUANTITY'
+      { code: 'INSUFFICIENT_LOT_QUANTITY', context: { requested, available } }
     );
   }
 }
@@ -74,40 +92,128 @@ export class InsufficientLotQuantityError extends TradingError {
  */
 export class PositionLot {
   /**
-   * Creates a new PositionLot
+   * Private constructor - используйте PositionLot.create()
    *
    * @param lotId - Unique identifier for this lot
    * @param tokenId - ID of the token/market
    * @param side - YES or NO side
    * @param quantity - Amount of shares in this lot
    * @param entryPrice - Price at which this lot was purchased
-   * @param timestamp - When this lot was created
-   *
-   * @throws {Error} If quantity is not positive
-   *
-   * @example
-   * ```typescript
-   * const lot = new PositionLot(
-   *   'lot-1',
-   *   'token-123',
-   *   'YES',
-   *   Quantity.fromNumber(10),
-   *   Price.fromNumber(0.65),
-   *   new Date()
-   * );
-   * ```
+   * @param timestampMs - Unix timestamp в миллисекундах (immutable number)
    */
-  constructor(
+  private constructor(
     public readonly lotId: string,
     public readonly tokenId: string,
     public readonly side: Side,
     public readonly quantity: Quantity,
     public readonly entryPrice: Price,
-    public readonly timestamp: Date
-  ) {
-    if (!quantity.isPositive()) {
-      throw new Error('Lot quantity must be positive');
+    public readonly timestampMs: number
+  ) {}
+
+  /**
+   * Создаёт новый PositionLot
+   *
+   * @param lotId - Уникальный идентификатор лота
+   * @param tokenId - ID токена/рынка
+   * @param side - Сторона (YES/NO)
+   * @param quantity - Количество
+   * @param entryPrice - Цена входа
+   * @param timestamp - Время создания (Date или Unix ms)
+   * @returns Result с PositionLot или ошибкой
+   *
+   * @remarks
+   * Валидирует все параметры перед созданием:
+   * - lotId должен быть непустой строкой
+   * - tokenId должен быть непустой строкой
+   * - quantity должен быть положительным
+   * - timestamp конвертируется в number для immutability
+   *
+   * @example
+   * ```typescript
+   * const result = PositionLot.create(
+   *   'lot-1',
+   *   'token-123',
+   *   'YES',
+   *   Quantity.fromValue(10).value,
+   *   Price.fromValue(0.65).value,
+   *   Date.now()
+   * );
+   * if (result.ok) {
+   *   console.log(result.value.lotId);
+   * }
+   * ```
+   */
+  public static create(
+    lotId: string,
+    tokenId: string,
+    side: Side,
+    quantity: Quantity,
+    entryPrice: Price,
+    timestamp: Date | number
+  ): Result<PositionLot, PositionValidationError> {
+    // Валидация lotId
+    if (!lotId || typeof lotId !== 'string' || lotId.trim() === '') {
+      return Err(
+        new PositionValidationError(
+          'Lot ID must be a non-empty string',
+          { context: { field: 'lotId', value: lotId } }
+        )
+      );
     }
+
+    // Валидация tokenId
+    if (!tokenId || typeof tokenId !== 'string' || tokenId.trim() === '') {
+      return Err(
+        new PositionValidationError(
+          'Token ID must be a non-empty string',
+          { context: { field: 'tokenId', lotId, value: tokenId } }
+        )
+      );
+    }
+
+    // Валидация quantity (allow zero for closed lots)
+    if (quantity.value < 0) {
+      return Err(
+        new PositionValidationError(
+          'Lot quantity cannot be negative',
+          { context: { field: 'quantity', lotId, value: quantity.value } }
+        )
+      );
+    }
+
+    // Конвертируем timestamp в ms
+    const timestampMs = timestamp instanceof Date ? timestamp.getTime() : timestamp;
+
+    return Ok(
+      new PositionLot(
+        lotId,
+        tokenId,
+        side,
+        quantity,
+        entryPrice,
+        timestampMs
+      )
+    );
+  }
+
+  /**
+   * Получает timestamp как Date объект
+   *
+   * @returns Date объект (копия для immutability)
+   *
+   * @remarks
+   * Возвращает новую копию Date каждый раз для защиты от мутации.
+   * Внутренне timestamp хранится как number (Unix ms).
+   *
+   * @example
+   * ```typescript
+   * const lot = PositionLot.create(...).value;
+   * const date = lot.getTimestamp();
+   * console.log(date.toISOString());
+   * ```
+   */
+  public getTimestamp(): Date {
+    return new Date(this.timestampMs);
   }
 
   /**
@@ -134,7 +240,13 @@ export class PositionLot {
    * ```
    */
   public calculateCost(): Money {
-    return Money.fromUSDC(this.quantity.value * this.entryPrice.value);
+    const costValue = this.quantity.value * this.entryPrice.value;
+    const result = Money.fromValue(costValue);
+    if (!result.ok) {
+      // Это не должно случиться - математически гарантировано валидно
+      throw new Error(`Failed to create Money for cost: ${result.error.message}`);
+    }
+    return result.value;
   }
 
   /**
@@ -174,71 +286,97 @@ export class PositionLot {
    * ```
    */
   public calculateUnrealizedPnL(currentPrice: Price): Money {
+    let pnl: number;
+
     if (this.side === 'YES') {
       // For YES: P&L = (current - entry) * quantity
-      const pnl = (currentPrice.value - this.entryPrice.value) * this.quantity.value;
-      return Money.fromUSDC(Math.abs(pnl) < 0.000001 ? 0 : pnl);
+      pnl = (currentPrice.value - this.entryPrice.value) * this.quantity.value;
     } else {
       // For NO: P&L = (entry - current) * quantity
       // Because NO token value moves inversely to price
-      const pnl = (this.entryPrice.value - currentPrice.value) * this.quantity.value;
-      return Money.fromUSDC(Math.abs(pnl) < 0.000001 ? 0 : pnl);
+      pnl = (this.entryPrice.value - currentPrice.value) * this.quantity.value;
     }
+
+    // Округляем очень маленькие значения до нуля
+    const pnlValue = Math.abs(pnl) < 0.000001 ? 0 : pnl;
+    const result = Money.fromValue(pnlValue);
+
+    if (!result.ok) {
+      // Это не должно случиться - математически гарантировано валидно
+      throw new Error(`Failed to create Money for P&L: ${result.error.message}`);
+    }
+
+    return result.value;
   }
 
   /**
-   * Closes part or all of this lot
+   * Закрывает часть или весь лот
    *
-   * @param closeQuantity - Amount to close from this lot
-   * @returns New PositionLot with remaining quantity
-   *
-   * @throws {InsufficientLotQuantityError} If closing more than available
+   * @param closeQuantity - Количество для закрытия
+   * @returns Result с новым PositionLot или ошибкой
    *
    * @remarks
-   * Creates a new lot with reduced quantity.
-   * If closing entire quantity, returns lot with zero quantity.
-   * Original lot remains unchanged (immutable).
+   * Создаёт новый лот с уменьшенным количеством.
+   * Если закрываем всё - возвращает лот с нулевым количеством.
+   * Оригинальный лот остаётся неизменным (immutable).
+   *
+   * Шаги:
+   * 1. Проверяем что closeQuantity не превышает доступное количество
+   * 2. Вычисляем remainingQuantity = quantity - closeQuantity
+   * 3. Создаём новый лот через create() factory
    *
    * @example
    * ```typescript
-   * const lot = new PositionLot(
-   *   'lot-1',
-   *   'token-123',
-   *   'YES',
-   *   Quantity.fromNumber(10),
-   *   Price.fromNumber(0.65),
-   *   new Date()
-   * );
+   * const lot = PositionLot.create(...).value;
    *
-   * // Close partial
-   * const remaining = lot.close(Quantity.fromNumber(6));
-   * console.log(remaining.quantity.value); // 4
-   * console.log(remaining.isClosed()); // false
+   * // Закрываем частично
+   * const result = lot.close(Quantity.fromValue(6).value);
+   * if (result.ok) {
+   *   console.log(result.value.quantity.value); // 4
+   *   console.log(result.value.isClosed()); // false
+   * }
    *
-   * // Close remaining
-   * const closed = remaining.close(Quantity.fromNumber(4));
-   * console.log(closed.quantity.value); // 0
-   * console.log(closed.isClosed()); // true
+   * // Закрываем полностью
+   * const closeResult = result.value.close(Quantity.fromValue(4).value);
+   * if (closeResult.ok) {
+   *   console.log(closeResult.value.quantity.value); // 0
+   *   console.log(closeResult.value.isClosed()); // true
+   * }
    * ```
    */
-  public close(closeQuantity: Quantity): PositionLot {
+  public close(closeQuantity: Quantity): Result<PositionLot, InsufficientLotQuantityError | PositionValidationError> {
     if (closeQuantity.isGreaterThan(this.quantity)) {
-      throw new InsufficientLotQuantityError(
-        closeQuantity.value,
-        this.quantity.value
+      return Err(
+        new InsufficientLotQuantityError(
+          closeQuantity.value,
+          this.quantity.value
+        )
       );
     }
 
-    const remainingQuantity = this.quantity.subtract(closeQuantity);
+    const subtractResult = this.quantity.subtract(closeQuantity);
+    if (!subtractResult.ok) {
+      // Конвертируем в PositionValidationError
+      return Err(
+        new PositionValidationError(
+          `Failed to subtract quantities: ${subtractResult.error.message}`,
+          { context: { lotId: this.lotId, closeQuantity: closeQuantity.value, available: this.quantity.value } }
+        )
+      );
+    }
 
-    return new PositionLot(
+    const remainingQuantity = subtractResult.value;
+
+    const result = PositionLot.create(
       this.lotId,
       this.tokenId,
       this.side,
       remainingQuantity,
       this.entryPrice,
-      this.timestamp
+      this.timestampMs
     );
+
+    return result;
   }
 
   /**
@@ -276,19 +414,20 @@ export class PositionLot {
    *
    * @example
    * ```typescript
-   * const lot = new PositionLot(
+   * const lot = PositionLot.create(
    *   'lot-1',
    *   'token-123',
    *   'YES',
-   *   Quantity.fromNumber(10),
-   *   Price.fromNumber(0.65),
+   *   Quantity.fromValue(10).value,
+   *   Price.fromValue(0.65).value,
    *   new Date('2024-01-01')
-   * );
+   * ).value;
    * console.log(lot.toString());
    * // "Lot[lot-1]: 10.00 YES @ $0.6500 (2024-01-01)"
    * ```
    */
   public toString(): string {
-    return `Lot[${this.lotId}]: ${this.quantity.toString()} ${this.side} @ $${this.entryPrice.toString()} (${this.timestamp.toISOString().split('T')[0]})`;
+    const date = new Date(this.timestampMs).toISOString().split('T')[0];
+    return `Lot[${this.lotId}]: ${this.quantity.toString()} ${this.side} @ $${this.entryPrice.toString()} (${date})`;
   }
 }

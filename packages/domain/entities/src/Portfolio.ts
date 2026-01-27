@@ -18,17 +18,41 @@
  * - При добавлении позиции проверяется уникальность marketId
  * - Общая стоимость учитывает текущие рыночные цены
  *
+ * Design Patterns:
+ * - Result pattern для всех fallible операций (create, reserveCash, releaseCash, updateCash, addPosition, updatePosition)
+ * - Private constructor + static factory method (create)
+ * - Immutability: все операции возвращают новый Portfolio
+ *
  * @example
  * ```typescript
- * const portfolio = Portfolio.create('portfolio-1', Money.fromUSDC(1000));
+ * // Создание портфеля (возвращает Result)
+ * const result = Portfolio.create('portfolio-1', Money.fromUSDC(1000));
+ * if (!result.ok) {
+ *   console.error('Failed to create portfolio:', result.error.message);
+ *   return;
+ * }
  *
- * // Резервируем средства для BUY ордера
- * const updated = portfolio.reserveCash(Money.fromUSDC(100));
+ * const portfolio = result.value;
+ *
+ * // Резервируем средства для BUY ордера (возвращает Result)
+ * const reserveResult = portfolio.reserveCash(Money.fromUSDC(100));
+ * if (!reserveResult.ok) {
+ *   console.error('Insufficient funds:', reserveResult.error.message);
+ *   return;
+ * }
+ *
+ * const updated = reserveResult.value;
  * console.log(updated.availableCash.amount); // 900
  * console.log(updated.reservedCash.amount); // 100
  *
- * // Добавляем позицию
- * const withPosition = updated.addPosition(position);
+ * // Добавляем позицию (возвращает Result)
+ * const addResult = updated.addPosition(position);
+ * if (!addResult.ok) {
+ *   console.error('Failed to add position:', addResult.error.message);
+ *   return;
+ * }
+ *
+ * const withPosition = addResult.value;
  *
  * // Вычисляем общую стоимость
  * const totalValue = withPosition.getTotalValue(marketPrices);
@@ -38,7 +62,8 @@
 import { Money } from '@polymarket/value-objects';
 import { Position } from './Position.js';
 import { Price } from '@polymarket/value-objects';
-import { InsufficientFundsError, TradingError } from '@polymarket/errors';
+import { InsufficientFundsError, TradingError, PortfolioValidationError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
 
 /**
  * Ошибка дублирующейся позиции
@@ -47,10 +72,12 @@ import { InsufficientFundsError, TradingError } from '@polymarket/errors';
  * Выбрасывается при попытке добавить позицию с уже существующим marketId.
  */
 export class DuplicatePositionError extends TradingError {
+  public readonly severity = 'low' as const;
+
   constructor(public readonly marketId: string) {
     super(
       `Position already exists for market: ${marketId}`,
-      'DUPLICATE_POSITION'
+      { code: 'DUPLICATE_POSITION', context: { marketId } }
     );
   }
 }
@@ -62,10 +89,12 @@ export class DuplicatePositionError extends TradingError {
  * Выбрасывается при попытке обновить несуществующую позицию.
  */
 export class PositionNotFoundError extends TradingError {
+  public readonly severity = 'low' as const;
+
   constructor(public readonly marketId: string) {
     super(
       `Position not found for market: ${marketId}`,
-      'POSITION_NOT_FOUND'
+      { code: 'POSITION_NOT_FOUND', context: { marketId } }
     );
   }
 }
@@ -100,38 +129,62 @@ export class Portfolio {
    *
    * @param id - Идентификатор портфеля
    * @param initialCash - Начальные денежные средства
-   * @returns Новый Portfolio с нулевым резервом и без позиций
-   *
-   * @throws {Error} If initialCash is negative
+   * @returns Result с новым Portfolio или ошибкой
    *
    * @remarks
    * Используется для инициализации нового портфеля.
    * Начинает с нулевым резервом и пустым списком позиций.
    *
+   * Валидация:
+   * - id должен быть непустой строкой
+   * - initialCash не может быть отрицательным
+   *
    * @example
    * ```typescript
-   * const portfolio = Portfolio.create(
+   * const result = Portfolio.create(
    *   'portfolio-1',
    *   Money.fromUSDC(10000)
    * );
-   * console.log(portfolio.cash.amount); // 10000
-   * console.log(portfolio.reservedCash.amount); // 0
-   * console.log(portfolio.positions.size); // 0
+   * if (result.ok) {
+   *   console.log(result.value.cash.amount); // 10000
+   *   console.log(result.value.reservedCash.amount); // 0
+   *   console.log(result.value.positions.size); // 0
+   * } else {
+   *   console.error('Failed to create portfolio:', result.error.message);
+   * }
    * ```
    */
-  public static create(id: string, initialCash: Money): Portfolio {
-    if (!id || id.trim().length === 0) {
-      throw new Error('Portfolio id cannot be empty');
-    }
-    if (initialCash.amount < 0) {
-      throw new Error('Initial cash cannot be negative');
+  public static create(
+    id: string,
+    initialCash: Money
+  ): Result<Portfolio, PortfolioValidationError> {
+    // Валидация ID
+    if (!id || typeof id !== 'string' || id.trim().length === 0) {
+      return Err(
+        new PortfolioValidationError(
+          'Portfolio id must be a non-empty string',
+          { context: { field: 'id', value: id } }
+        )
+      );
     }
 
-    return new Portfolio(
-      id,
-      initialCash,
-      Money.zero(),
-      new Map<string, Position>()
+    // Валидация initialCash
+    if (initialCash.getAmount() < 0) {
+      return Err(
+        new PortfolioValidationError(
+          'Initial cash cannot be negative',
+          { context: { field: 'initialCash', portfolioId: id, value: initialCash.getAmount() } }
+        )
+      );
+    }
+
+    return Ok(
+      new Portfolio(
+        id,
+        initialCash,
+        Money.zero(),
+        new Map<string, Position>()
+      )
     );
   }
 
@@ -144,26 +197,32 @@ export class Portfolio {
    * Доступный кэш = cash - reservedCash
    * Только доступный кэш может быть использован для новых ордеров.
    *
+   * Математически гарантировано что cash >= reservedCash (инвариант класса),
+   * поэтому subtract не может упасть.
+   *
    * @example
    * ```typescript
-   * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
-   *   .reserveCash(Money.fromUSDC(200));
+   * const portfolio = Portfolio.create('p1', Money.fromValue(1000)).value;
+   * const reserved = portfolio.reserveCash(Money.fromValue(200)).value;
    *
-   * const available = portfolio.availableCash;
-   * console.log(available.amount); // 800
+   * const available = reserved.availableCash;
+   * console.log(available.getAmount()); // 800
    * ```
    */
   public get availableCash(): Money {
-    return this.cash.subtract(this.reservedCash);
+    const result = this.cash.subtract(this.reservedCash);
+    if (!result.ok) {
+      // Это не должно случиться никогда (инвариант класса)
+      throw new Error(`Invariant violation: cash < reservedCash`);
+    }
+    return result.value;
   }
 
   /**
    * Резервирует денежные средства
    *
    * @param amount - Сумма для резервирования
-   * @returns Новый Portfolio с резервированными средствами
-   *
-   * @throws {InsufficientFundsError} Если недостаточно доступных средств
+   * @returns Result с новым Portfolio или ошибкой
    *
    * @remarks
    * Резервирует средства для открытого BUY ордера.
@@ -176,28 +235,49 @@ export class Portfolio {
    *
    * @example
    * ```typescript
-   * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000));
+   * const result = Portfolio.create('p1', Money.fromUSDC(1000));
+   * if (!result.ok) return;
    *
    * // Резервируем для BUY ордера на 100 USDC
-   * const updated = portfolio.reserveCash(Money.fromUSDC(100));
-   * console.log(updated.reservedCash.amount); // 100
-   * console.log(updated.availableCash.amount); // 900
+   * const reserveResult = result.value.reserveCash(Money.fromUSDC(100));
+   * if (reserveResult.ok) {
+   *   console.log(reserveResult.value.reservedCash.amount); // 100
+   *   console.log(reserveResult.value.availableCash.amount); // 900
+   * } else {
+   *   console.error('Insufficient funds:', reserveResult.error.message);
+   * }
    * ```
    */
-  public reserveCash(amount: Money): Portfolio {
+  public reserveCash(amount: Money): Result<Portfolio, InsufficientFundsError> {
     const available = this.availableCash;
 
-    if (available.isLessThan(amount)) {
-      throw new InsufficientFundsError(amount.amount, available.amount);
+    const compareResult = available.lessThan(amount);
+    if (!compareResult.ok) {
+      // Currency mismatch - should not happen with USDC
+      throw new Error(`Currency comparison failed: ${compareResult.error.message}`);
     }
 
-    const newReservedCash = this.reservedCash.add(amount);
+    if (compareResult.value) {
+      return Err(
+        new InsufficientFundsError(amount.getAmount(), available.getAmount())
+      );
+    }
 
-    return new Portfolio(
-      this.id,
-      this.cash,
-      newReservedCash,
-      this.positions
+    const addResult = this.reservedCash.add(amount);
+    if (!addResult.ok) {
+      // Конвертируем ArithmeticError в ValidationError
+      return Err(
+        new InsufficientFundsError(amount.getAmount(), available.getAmount())
+      );
+    }
+
+    return Ok(
+      new Portfolio(
+        this.id,
+        this.cash,
+        addResult.value,
+        this.positions
+      )
     );
   }
 
@@ -205,9 +285,7 @@ export class Portfolio {
    * Освобождает резервированные средства
    *
    * @param amount - Сумма для освобождения
-   * @returns Новый Portfolio с освобождёнными средствами
-   *
-   * @throws {Error} Если освобождаем больше чем резервировано
+   * @returns Result с новым Portfolio или ошибкой
    *
    * @remarks
    * Освобождает средства при отмене или исполнении ордера.
@@ -220,29 +298,65 @@ export class Portfolio {
    *
    * @example
    * ```typescript
-   * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
-   *   .reserveCash(Money.fromUSDC(100));
+   * const result = Portfolio.create('p1', Money.fromUSDC(1000));
+   * if (!result.ok) return;
+   *
+   * const reserveResult = result.value.reserveCash(Money.fromUSDC(100));
+   * if (!reserveResult.ok) return;
    *
    * // Отменяем ордер - освобождаем средства
-   * const updated = portfolio.releaseCash(Money.fromUSDC(100));
-   * console.log(updated.reservedCash.amount); // 0
-   * console.log(updated.availableCash.amount); // 1000
+   * const releaseResult = reserveResult.value.releaseCash(Money.fromUSDC(100));
+   * if (releaseResult.ok) {
+   *   console.log(releaseResult.value.reservedCash.amount); // 0
+   *   console.log(releaseResult.value.availableCash.amount); // 1000
+   * }
    * ```
    */
-  public releaseCash(amount: Money): Portfolio {
-    if (this.reservedCash.isLessThan(amount)) {
-      throw new Error(
-        `Cannot release ${amount.amount}: only ${this.reservedCash.amount} reserved`
+  public releaseCash(amount: Money): Result<Portfolio, PortfolioValidationError> {
+    const compareResult = this.reservedCash.lessThan(amount);
+    if (!compareResult.ok) {
+      // Currency mismatch - should not happen with USDC
+      throw new Error(`Currency comparison failed: ${compareResult.error.message}`);
+    }
+
+    if (compareResult.value) {
+      return Err(
+        new PortfolioValidationError(
+          `Cannot release ${amount.getAmount()}: only ${this.reservedCash.getAmount()} reserved`,
+          {
+            context: {
+              requested: amount.getAmount(),
+              available: this.reservedCash.getAmount(),
+              portfolioId: this.id
+            }
+          }
+        )
       );
     }
 
-    const newReservedCash = this.reservedCash.subtract(amount);
+    const subtractResult = this.reservedCash.subtract(amount);
+    if (!subtractResult.ok) {
+      return Err(
+        new PortfolioValidationError(
+          `Failed to subtract from reserved cash: ${subtractResult.error.message}`,
+          {
+            context: {
+              requested: amount.getAmount(),
+              reserved: this.reservedCash.getAmount(),
+              portfolioId: this.id
+            }
+          }
+        )
+      );
+    }
 
-    return new Portfolio(
-      this.id,
-      this.cash,
-      newReservedCash,
-      this.positions
+    return Ok(
+      new Portfolio(
+        this.id,
+        this.cash,
+        subtractResult.value,
+        this.positions
+      )
     );
   }
 
@@ -250,9 +364,7 @@ export class Portfolio {
    * Добавляет или обновляет денежные средства
    *
    * @param amount - Сумма для добавления (может быть отрицательной)
-   * @returns Новый Portfolio с обновлённым кэшем
-   *
-   * @throws {Error} Если результирующий кэш становится отрицательным
+   * @returns Result с новым Portfolio или ошибкой
    *
    * @remarks
    * Используется для:
@@ -261,33 +373,79 @@ export class Portfolio {
    * - Зачисления при продаже (положительная сумма)
    * - Вывода средств (отрицательная сумма)
    *
+   * Валидация:
+   * - Результирующий cash не может быть отрицательным
+   *
    * @example
    * ```typescript
-   * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000));
+   * const result = Portfolio.create('p1', Money.fromUSDC(1000));
+   * if (!result.ok) return;
    *
    * // Пополнение
-   * const deposited = portfolio.updateCash(Money.fromUSDC(500));
-   * console.log(deposited.cash.amount); // 1500
+   * const depositResult = result.value.updateCash(Money.fromUSDC(500));
+   * if (depositResult.ok) {
+   *   console.log(depositResult.value.cash.amount); // 1500
+   * }
    *
    * // Списание при покупке
-   * const afterBuy = deposited.updateCash(Money.fromUSDC(-100));
-   * console.log(afterBuy.cash.amount); // 1400
+   * const buyResult = depositResult.value.updateCash(Money.fromUSDC(-100));
+   * if (buyResult.ok) {
+   *   console.log(buyResult.value.cash.amount); // 1400
+   * }
    * ```
    */
-  public updateCash(amount: Money): Portfolio {
-    const newCash = amount.amount >= 0
-      ? this.cash.add(amount)
-      : this.cash.subtract(Money.fromUSDC(Math.abs(amount.amount)));
+  public updateCash(amount: Money): Result<Portfolio, PortfolioValidationError> {
+    const amountValue = amount.getAmount();
 
-    if (newCash.amount < 0) {
-      throw new Error(`Cash cannot be negative: ${newCash.amount}`);
+    // Вычисляем новый cash
+    const cashResult = amountValue >= 0
+      ? this.cash.add(amount)
+      : (() => {
+          const absAmountResult = Money.fromValue(Math.abs(amountValue));
+          if (!absAmountResult.ok) return absAmountResult;
+          return this.cash.subtract(absAmountResult.value);
+        })();
+
+    if (!cashResult.ok) {
+      return Err(
+        new PortfolioValidationError(
+          `Failed to update cash: ${cashResult.error.message}`,
+          {
+            context: {
+              currentCash: this.cash.getAmount(),
+              changeAmount: amountValue,
+              portfolioId: this.id
+            }
+          }
+        )
+      );
     }
 
-    return new Portfolio(
-      this.id,
-      newCash,
-      this.reservedCash,
-      this.positions
+    const newCash = cashResult.value;
+
+    if (newCash.getAmount() < 0) {
+      return Err(
+        new PortfolioValidationError(
+          `Cash cannot be negative: ${newCash.getAmount()}`,
+          {
+            context: {
+              currentCash: this.cash.getAmount(),
+              changeAmount: amountValue,
+              resultingCash: newCash.getAmount(),
+              portfolioId: this.id
+            }
+          }
+        )
+      );
+    }
+
+    return Ok(
+      new Portfolio(
+        this.id,
+        newCash,
+        this.reservedCash,
+        this.positions
+      )
     );
   }
 
@@ -295,37 +453,44 @@ export class Portfolio {
    * Добавляет новую позицию
    *
    * @param position - Позиция для добавления
-   * @returns Новый Portfolio с добавленной позицией
-   *
-   * @throws {DuplicatePositionError} Если позиция с таким marketId уже существует
+   * @returns Result с новым Portfolio или ошибкой
    *
    * @remarks
    * Добавляет позицию в портфель.
    * Каждый рынок может иметь только одну позицию.
    *
+   * Валидация:
+   * - Позиция с таким tokenId не должна существовать
+   *
    * @example
    * ```typescript
-   * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000));
+   * const result = Portfolio.create('p1', Money.fromUSDC(1000));
+   * if (!result.ok) return;
+   *
    * const position = Position.empty('market-123', 'YES');
    *
-   * const updated = portfolio.addPosition(position);
-   * console.log(updated.positions.size); // 1
-   * console.log(updated.getPosition('market-123')); // position
+   * const addResult = result.value.addPosition(position);
+   * if (addResult.ok) {
+   *   console.log(addResult.value.positions.size); // 1
+   *   console.log(addResult.value.getPosition('market-123')); // position
+   * }
    * ```
    */
-  public addPosition(position: Position): Portfolio {
+  public addPosition(position: Position): Result<Portfolio, DuplicatePositionError> {
     if (this.positions.has(position.tokenId)) {
-      throw new DuplicatePositionError(position.tokenId);
+      return Err(new DuplicatePositionError(position.tokenId));
     }
 
     const newPositions = new Map(this.positions);
     newPositions.set(position.tokenId, position);
 
-    return new Portfolio(
-      this.id,
-      this.cash,
-      this.reservedCash,
-      newPositions
+    return Ok(
+      new Portfolio(
+        this.id,
+        this.cash,
+        this.reservedCash,
+        newPositions
+      )
     );
   }
 
@@ -334,27 +499,40 @@ export class Portfolio {
    *
    * @param tokenId - Идентификатор токена/рынка
    * @param updatedPosition - Обновлённая позиция
-   * @returns Новый Portfolio с обновлённой позицией
-   *
-   * @throws {PositionNotFoundError} Если позиция не найдена
+   * @returns Result с новым Portfolio или ошибкой
    *
    * @remarks
    * Заменяет существующую позицию новой версией.
    * Используется для обновления после добавления/удаления лотов.
    *
+   * Алгоритм:
+   * - Если позиция пустая - удаляем её из Map
+   * - Иначе - заменяем на обновлённую версию
+   *
    * @example
    * ```typescript
-   * const portfolio = Portfolio.create('p1', Money.fromUSDC(1000))
-   *   .addPosition(position);
+   * const result = Portfolio.create('p1', Money.fromUSDC(1000));
+   * if (!result.ok) return;
+   *
+   * const addResult = result.value.addPosition(position);
+   * if (!addResult.ok) return;
    *
    * // Обновляем позицию (добавляем лот)
-   * const newPosition = position.addLot(lot);
-   * const updated = portfolio.updatePosition('market-123', newPosition);
+   * const lotResult = position.addLot(lot);
+   * if (!lotResult.ok) return;
+   *
+   * const updateResult = addResult.value.updatePosition('market-123', lotResult.value);
+   * if (updateResult.ok) {
+   *   console.log('Position updated');
+   * }
    * ```
    */
-  public updatePosition(tokenId: string, updatedPosition: Position): Portfolio {
+  public updatePosition(
+    tokenId: string,
+    updatedPosition: Position
+  ): Result<Portfolio, PositionNotFoundError> {
     if (!this.positions.has(tokenId)) {
-      throw new PositionNotFoundError(tokenId);
+      return Err(new PositionNotFoundError(tokenId));
     }
 
     const newPositions = new Map(this.positions);
@@ -366,11 +544,13 @@ export class Portfolio {
       newPositions.set(tokenId, updatedPosition);
     }
 
-    return new Portfolio(
-      this.id,
-      this.cash,
-      this.reservedCash,
-      newPositions
+    return Ok(
+      new Portfolio(
+        this.id,
+        this.cash,
+        this.reservedCash,
+        newPositions
+      )
     );
   }
 
@@ -473,7 +653,7 @@ export class Portfolio {
    * ```
    */
   public getTotalValue(marketPrices: Map<string, Price>): Money {
-    let totalValue = this.cash.amount;
+    let totalValue = this.cash.getAmount();
 
     for (const [tokenId, position] of this.positions.entries()) {
       const currentPrice = marketPrices.get(tokenId);
@@ -483,7 +663,11 @@ export class Portfolio {
       }
     }
 
-    return Money.fromUSDC(totalValue);
+    const result = Money.fromValue(totalValue);
+    if (!result.ok) {
+      throw new Error(`Failed to create Money for total value: ${result.error.message}`);
+    }
+    return result.value;
   }
 
   /**
@@ -513,11 +697,15 @@ export class Portfolio {
       const currentPrice = marketPrices.get(tokenId);
       if (currentPrice) {
         const pnl = position.calculateUnrealizedPnL(currentPrice);
-        totalPnL += pnl.amount;
+        totalPnL += pnl.getAmount();
       }
     }
 
-    return Money.fromUSDC(totalPnL);
+    const result = Money.fromValue(totalPnL);
+    if (!result.ok) {
+      throw new Error(`Failed to create Money for total unrealized P&L: ${result.error.message}`);
+    }
+    return result.value;
   }
 
   /**
@@ -595,9 +783,9 @@ export class Portfolio {
   public toObject() {
     return {
       id: this.id,
-      cash: this.cash.amount,
-      reservedCash: this.reservedCash.amount,
-      availableCash: this.availableCash.amount,
+      cash: this.cash.getAmount(),
+      reservedCash: this.reservedCash.getAmount(),
+      availableCash: this.availableCash.getAmount(),
       positionCount: this.positions.size,
       positions: Array.from(this.positions.entries()).map(([tokenId, position]) => ({
         tokenId,

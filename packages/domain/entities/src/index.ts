@@ -14,18 +14,15 @@ export type { OutcomeIndex, OutcomeTokenProps } from './OutcomeToken.js';
 export { Trade } from './Trade.js';
 export type { TradeSide, TradeParams } from './Trade.js';
 
-// TODO: Fix imports and refactor these entities
-// export { Order } from './Order.js';
-// export type { OrderSide, OrderStatus, OrderParams } from './Order.js';
+export { Order } from './Order.js';
+export type { OrderStatus, OrderParams } from './Order.js';
 
-// export { Position, InsufficientPositionError, LotNotFoundError } from './Position.js';
+export { Position, InsufficientPositionError, LotNotFoundError } from './Position.js';
 
-// export { PositionLot, InsufficientLotQuantityError } from './PositionLot.js';
-// export type { Side } from './PositionLot.js';
+export { PositionLot, InsufficientLotQuantityError } from './PositionLot.js';
+export type { Side } from './PositionLot.js';
 
-// Portfolio is exported from aggregates, not entities
-// export { Portfolio, DuplicatePositionError, PositionNotFoundError } from './Portfolio.js';
-// export { DuplicatePositionError, PositionNotFoundError } from './Portfolio.js';
+export { Portfolio, DuplicatePositionError, PositionNotFoundError } from './Portfolio.js';
 
-// export { Orderbook } from './Orderbook.js';
-// export type { OrderbookLevel, OrderbookData } from './Orderbook.js';
+export { Orderbook } from './Orderbook.js';
+export type { OrderbookLevel, OrderbookData } from './Orderbook.js';

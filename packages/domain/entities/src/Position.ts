@@ -18,46 +18,70 @@
  * - Simplifies accounting (no need to match specific lots)
  * - Industry standard for securities
  *
+ * Design Patterns:
+ * - Result pattern для всех fallible операций (addLot, removeLot)
+ * - Private constructor + static factory method (empty)
+ * - Immutability: все операции возвращают новый Position
+ *
  * @example
  * ```typescript
  * const position = Position.empty('token-123', 'YES');
  *
- * // Add first lot
- * const lot1 = new PositionLot(
+ * // Add first lot (возвращает Result)
+ * const lot1Result = PositionLot.create(
  *   'lot-1',
  *   'token-123',
  *   'YES',
- *   Quantity.fromNumber(10),
- *   Price.fromNumber(0.60),
- *   new Date()
+ *   Quantity.fromValue(10).value,
+ *   Price.fromValue(0.60).value,
+ *   Date.now()
  * );
- * position = position.addLot(lot1);
- * console.log(position.totalQuantity.value); // 10
- * console.log(position.averageEntryPrice.value); // 0.60
+ * if (!lot1Result.ok) {
+ *   console.error('Failed to create lot:', lot1Result.error.message);
+ *   return;
+ * }
+ *
+ * const addResult1 = position.addLot(lot1Result.value);
+ * if (!addResult1.ok) {
+ *   console.error('Failed to add lot:', addResult1.error.message);
+ *   return;
+ * }
+ *
+ * console.log(addResult1.value.totalQuantity.value); // 10
+ * console.log(addResult1.value.averageEntryPrice.value); // 0.60
  *
  * // Add second lot
- * const lot2 = new PositionLot(
+ * const lot2Result = PositionLot.create(
  *   'lot-2',
  *   'token-123',
  *   'YES',
- *   Quantity.fromNumber(5),
- *   Price.fromNumber(0.70),
- *   new Date()
+ *   Quantity.fromValue(5).value,
+ *   Price.fromValue(0.70).value,
+ *   Date.now()
  * );
- * position = position.addLot(lot2);
- * console.log(position.totalQuantity.value); // 15
- * console.log(position.averageEntryPrice.value); // 0.6333 (weighted average)
+ * if (!lot2Result.ok) return;
  *
- * // Remove quantity (FIFO)
- * position = position.removeLot('lot-1', Quantity.fromNumber(8));
+ * const addResult2 = addResult1.value.addLot(lot2Result.value);
+ * if (!addResult2.ok) return;
+ *
+ * console.log(addResult2.value.totalQuantity.value); // 15
+ * console.log(addResult2.value.averageEntryPrice.value); // 0.6333 (weighted average)
+ *
+ * // Remove quantity (FIFO, возвращает Result)
+ * const removeResult = addResult2.value.removeLot('lot-1', Quantity.fromValue(8).value);
+ * if (!removeResult.ok) {
+ *   console.error('Failed to remove lot:', removeResult.error.message);
+ *   return;
+ * }
  * // lot-1 now has 2 remaining, lot-2 is untouched
  * ```
  */
 import { Price } from '@polymarket/value-objects';
 import { Quantity } from '@polymarket/value-objects';
 import { Money } from '@polymarket/value-objects';
-import { PositionLot, Side } from './PositionLot.js';
-import { TradingError } from '@polymarket/errors';
+import { PositionLot, Side, InsufficientLotQuantityError } from './PositionLot.js';
+import { TradingError, PositionValidationError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
 
 /**
  * Insufficient position error
@@ -66,13 +90,15 @@ import { TradingError } from '@polymarket/errors';
  * Thrown when trying to remove more quantity than available in position.
  */
 export class InsufficientPositionError extends TradingError {
+  public readonly severity = 'low' as const;
+
   constructor(
     public readonly requested: number,
     public readonly available: number
   ) {
     super(
       `Insufficient position: requested ${requested}, available ${available}`,
-      'INSUFFICIENT_POSITION'
+      { code: 'INSUFFICIENT_POSITION', context: { requested, available } }
     );
   }
 }
@@ -84,8 +110,10 @@ export class InsufficientPositionError extends TradingError {
  * Thrown when trying to remove from non-existent lot.
  */
 export class LotNotFoundError extends TradingError {
+  public readonly severity = 'low' as const;
+
   constructor(public readonly lotId: string) {
-    super(`Lot not found: ${lotId}`, 'LOT_NOT_FOUND');
+    super(`Lot not found: ${lotId}`, { code: 'LOT_NOT_FOUND', context: { lotId } });
   }
 }
 
@@ -125,6 +153,10 @@ export class Position {
    * @param side - YES or NO side
    * @returns Empty position with no lots
    *
+   * @remarks
+   * Использует neutral price (0.50) для пустой позиции.
+   * Price.fromValue(0.50) гарантированно успешен (математическая инвариантность).
+   *
    * @example
    * ```typescript
    * const position = Position.empty('token-123', 'YES');
@@ -133,150 +165,218 @@ export class Position {
    * ```
    */
   public static empty(tokenId: string, side: Side): Position {
+    // Price.fromValue(0.50) гарантированно успешен
+    const neutralPriceResult = Price.fromValue(0.50);
+    if (!neutralPriceResult.ok) {
+      // Это не должно случиться никогда, но для type safety
+      throw new Error('Failed to create neutral price for empty position');
+    }
+
     return new Position(
       tokenId,
       side,
       Quantity.zero(),
-      Price.fromNumber(0.50), // Neutral price for empty position
+      neutralPriceResult.value,
       [],
       Money.zero()
     );
   }
 
   /**
-   * Adds a new lot to the position
+   * Добавляет новый лот к позиции
    *
-   * @param lot - Lot to add
-   * @returns New Position with added lot
-   *
-   * @throws {Error} If lot token/side doesn't match position
+   * @param lot - Лот для добавления
+   * @returns Result с новой Position или ошибкой
    *
    * @remarks
-   * Steps:
-   * 1. Validates lot matches position token and side
-   * 2. Appends lot to lots array
-   * 3. Recalculates total quantity (sum of all lots)
-   * 4. Recalculates average entry price (weighted average)
-   * 5. Returns new immutable Position instance
+   * Шаги:
+   * 1. Валидирует совпадение tokenId и side
+   * 2. Добавляет лот в массив
+   * 3. Пересчитывает total quantity и average entry price
+   * 4. Возвращает новый immutable Position
    *
-   * Average price calculation:
+   * Алгоритм вычисления средней цены:
    * - new_avg = (old_cost + new_cost) / (old_qty + new_qty)
-   * - where cost = quantity * price
+   * - где cost = quantity * price
    *
    * @example
    * ```typescript
    * const position = Position.empty('token-123', 'YES');
    *
-   * const lot1 = new PositionLot(
+   * const lotResult = PositionLot.create(
    *   'lot-1',
    *   'token-123',
    *   'YES',
-   *   Quantity.fromNumber(10),
-   *   Price.fromNumber(0.60),
-   *   new Date()
+   *   Quantity.fromValue(10).value,
+   *   Price.fromValue(0.60).value,
+   *   Date.now()
    * );
    *
-   * const newPosition = position.addLot(lot1);
-   * console.log(newPosition.totalQuantity.value); // 10
-   * console.log(newPosition.averageEntryPrice.value); // 0.60
+   * if (lotResult.ok) {
+   *   const result = position.addLot(lotResult.value);
+   *   if (result.ok) {
+   *     console.log(result.value.totalQuantity.value); // 10
+   *     console.log(result.value.averageEntryPrice.value); // 0.60
+   *   }
+   * }
    * ```
    */
-  public addLot(lot: PositionLot): Position {
+  public addLot(lot: PositionLot): Result<Position, PositionValidationError> {
+    // Валидация tokenId
     if (lot.tokenId !== this.tokenId) {
-      throw new Error(
-        `Token mismatch: lot ${lot.tokenId} vs position ${this.tokenId}`
+      return Err(
+        new PositionValidationError(
+          `Token mismatch: lot ${lot.tokenId} vs position ${this.tokenId}`,
+          {
+            context: {
+              lotTokenId: lot.tokenId,
+              positionTokenId: this.tokenId,
+              lotId: lot.lotId
+            }
+          }
+        )
       );
     }
+
+    // Валидация side
     if (lot.side !== this.side) {
-      throw new Error(
-        `Side mismatch: lot ${lot.side} vs position ${this.side}`
+      return Err(
+        new PositionValidationError(
+          `Side mismatch: lot ${lot.side} vs position ${this.side}`,
+          {
+            context: {
+              lotSide: lot.side,
+              positionSide: this.side,
+              lotId: lot.lotId
+            }
+          }
+        )
       );
     }
 
     const newLots = [...this.lots, lot];
-    const newTotalQuantity = this.totalQuantity.add(lot.quantity);
+
+    // Add quantities
+    const addResult = this.totalQuantity.add(lot.quantity);
+    if (!addResult.ok) {
+      return Err(
+        new PositionValidationError(
+          `Failed to add quantities: ${addResult.error.message}`,
+          { context: { lotId: lot.lotId, currentQuantity: this.totalQuantity.value, addQuantity: lot.quantity.value } }
+        )
+      );
+    }
+    const newTotalQuantity = addResult.value;
 
     // Calculate weighted average entry price
     const oldCost = this.totalQuantity.value * this.averageEntryPrice.value;
     const newCost = lot.quantity.value * lot.entryPrice.value;
     const totalCost = oldCost + newCost;
 
-    const newAveragePrice =
-      newTotalQuantity.value > 0
-        ? Price.fromNumber(totalCost / newTotalQuantity.value)
-        : this.averageEntryPrice;
+    // Математически гарантировано валидно если оба price валидны
+    const avgPriceValue = newTotalQuantity.value > 0
+      ? totalCost / newTotalQuantity.value
+      : 0.5;
 
-    return new Position(
-      this.tokenId,
-      this.side,
-      newTotalQuantity,
-      newAveragePrice,
-      newLots,
-      Money.zero() // Will be recalculated on demand
+    // Используем fromValue() для консистентности
+    const newAveragePriceResult = Price.fromValue(avgPriceValue);
+    if (!newAveragePriceResult.ok) {
+      return Err(
+        new PositionValidationError(
+          `Failed to calculate average price: ${newAveragePriceResult.error.message}`,
+          { context: { avgPriceValue, totalCost, totalQuantity: newTotalQuantity.value } }
+        )
+      );
+    }
+
+    return Ok(
+      new Position(
+        this.tokenId,
+        this.side,
+        newTotalQuantity,
+        newAveragePriceResult.value,
+        newLots,
+        Money.zero()
+      )
     );
   }
 
   /**
-   * Removes quantity from position using FIFO
+   * Удаляет количество из позиции используя FIFO
    *
-   * @param lotId - ID of the lot to remove from
-   * @param quantity - Amount to remove
-   * @returns New Position with reduced quantity
-   *
-   * @throws {LotNotFoundError} If lot doesn't exist
-   * @throws {InsufficientPositionError} If removing more than available
+   * @param lotId - ID лота
+   * @param quantity - Количество для удаления
+   * @returns Result с новой Position или ошибкой
    *
    * @remarks
-   * FIFO Algorithm:
-   * 1. Find the specified lot in the lots array
-   * 2. Close the specified quantity from that lot
-   * 3. If lot is fully closed (quantity = 0), remove it from array
-   * 4. Recalculate total quantity (sum remaining lots)
-   * 5. Recalculate average entry price (weighted average of remaining)
-   * 6. Return new immutable Position
+   * FIFO Алгоритм:
+   * 1. Находим указанный лот в массиве
+   * 2. Закрываем указанное количество из этого лота (через lot.close())
+   * 3. Если лот полностью закрыт (quantity = 0) - удаляем его из массива
+   * 4. Пересчитываем total quantity (сумма оставшихся лотов)
+   * 5. Пересчитываем average entry price (weighted average оставшихся)
+   * 6. Возвращаем новый immutable Position
    *
-   * Why FIFO?
-   * - Tax compliance: most jurisdictions require FIFO
-   * - Simplicity: no need to track which specific shares were sold
-   * - Fair: oldest purchases are closed first
+   * Почему FIFO?
+   * - Налоговое соответствие: большинство юрисдикций требуют FIFO
+   * - Простота: не нужно отслеживать какие конкретно акции проданы
+   * - Справедливость: самые старые покупки закрываются первыми
    *
    * @example
    * ```typescript
-   * const position = Position.empty('token-123', 'YES')
-   *   .addLot(lot1) // 10 shares @ 0.60
-   *   .addLot(lot2); // 5 shares @ 0.70
+   * const position = Position.empty('token-123', 'YES');
+   * const result1 = position.addLot(lot1); // 10 shares @ 0.60
+   * if (!result1.ok) return;
+   * const result2 = result1.value.addLot(lot2); // 5 shares @ 0.70
+   * if (!result2.ok) return;
    *
    * // Remove 8 shares (FIFO: takes from lot1 first)
-   * const reduced = position.removeLot('lot-1', Quantity.fromNumber(8));
-   * console.log(reduced.totalQuantity.value); // 7
-   * // lot1 has 2 remaining, lot2 still has 5
-   *
-   * // Remove remaining from lot1
-   * const reduced2 = reduced.removeLot('lot-1', Quantity.fromNumber(2));
-   * console.log(reduced2.lots.length); // 1 (lot1 removed)
+   * const removeResult = result2.value.removeLot('lot-1', Quantity.fromValue(8).value);
+   * if (removeResult.ok) {
+   *   console.log(removeResult.value.totalQuantity.value); // 7
+   *   // lot1 has 2 remaining, lot2 still has 5
+   * }
    * ```
    */
-  public removeLot(lotId: string, quantity: Quantity): Position {
+  public removeLot(
+    lotId: string,
+    quantity: Quantity
+  ): Result<Position, LotNotFoundError | InsufficientLotQuantityError | PositionValidationError> {
     const lotIndex = this.lots.findIndex((l) => l.lotId === lotId);
     if (lotIndex === -1) {
-      throw new LotNotFoundError(lotId);
+      return Err(new LotNotFoundError(lotId));
     }
 
     const lot = this.lots[lotIndex];
 
-    // Close the specified quantity from this lot
-    const updatedLot = lot.close(quantity);
+    // Close specified quantity from this lot (returns Result)
+    const closeResult = lot.close(quantity);
+    if (!closeResult.ok) {
+      return Err(closeResult.error);  // Propagate error
+    }
+
+    const updatedLot = closeResult.value;
 
     // Remove lot if fully closed, otherwise replace it
     const newLots = updatedLot.isClosed()
       ? this.lots.filter((l) => l.lotId !== lotId)
       : this.lots.map((l, i) => (i === lotIndex ? updatedLot : l));
 
-    // Recalculate total quantity and average price
-    const newTotalQuantity = newLots.reduce(
-      (sum, l) => sum.add(l.quantity),
-      Quantity.zero()
-    );
+    // Recalculate total quantity using manual loop to handle Results
+    let totalQty = Quantity.zero();
+    for (const lot of newLots) {
+      const addResult = totalQty.add(lot.quantity);
+      if (!addResult.ok) {
+        return Err(
+          new PositionValidationError(
+            `Failed to sum quantities: ${addResult.error.message}`,
+            { context: { lotId: lot.lotId } }
+          )
+        );
+      }
+      totalQty = addResult.value;
+    }
+    const newTotalQuantity = totalQty;
 
     let newAveragePrice = this.averageEntryPrice;
     if (newLots.length > 0) {
@@ -284,16 +384,29 @@ export class Position {
         (sum, l) => sum + l.quantity.value * l.entryPrice.value,
         0
       );
-      newAveragePrice = Price.fromNumber(totalCost / newTotalQuantity.value);
+      const avgPriceValue = totalCost / newTotalQuantity.value;
+
+      const priceResult = Price.fromValue(avgPriceValue);
+      if (!priceResult.ok) {
+        return Err(
+          new PositionValidationError(
+            `Failed to calculate average price: ${priceResult.error.message}`,
+            { context: { avgPriceValue, totalCost } }
+          )
+        );
+      }
+      newAveragePrice = priceResult.value;
     }
 
-    return new Position(
-      this.tokenId,
-      this.side,
-      newTotalQuantity,
-      newAveragePrice,
-      newLots,
-      Money.zero() // Will be recalculated on demand
+    return Ok(
+      new Position(
+        this.tokenId,
+        this.side,
+        newTotalQuantity,
+        newAveragePrice,
+        newLots,
+        Money.zero()
+      )
     );
   }
 
@@ -328,10 +441,16 @@ export class Position {
 
     const totalPnL = this.lots.reduce((sum, lot) => {
       const lotPnL = lot.calculateUnrealizedPnL(currentPrice);
-      return sum + lotPnL.amount;
+      return sum + lotPnL.getAmount();
     }, 0);
 
-    return Money.fromUSDC(totalPnL);
+    const result = Money.fromValue(totalPnL);
+    if (!result.ok) {
+      // Это не должно случиться - математически гарантировано валидно
+      throw new Error(`Failed to create Money for total P&L: ${result.error.message}`);
+    }
+
+    return result.value;
   }
 
   /**
@@ -404,10 +523,16 @@ export class Position {
     }
 
     const totalCost = this.lots.reduce((sum, lot) => {
-      return sum + lot.calculateCost().amount;
+      return sum + lot.calculateCost().getAmount();
     }, 0);
 
-    return Money.fromUSDC(totalCost);
+    const result = Money.fromValue(totalCost);
+    if (!result.ok) {
+      // Это не должно случиться - математически гарантировано валидно
+      throw new Error(`Failed to create Money for total cost: ${result.error.message}`);
+    }
+
+    return result.value;
   }
 
   /**

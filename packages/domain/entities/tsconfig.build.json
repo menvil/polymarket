@@ -5,11 +5,5 @@
     "types": []
   },
   "include": ["src/**/*"],
-  "exclude": [
-    "src/Order.ts",
-    "src/Orderbook.ts",
-    "src/Portfolio.ts",
-    "src/Position.ts",
-    "src/PositionLot.ts"
-  ]
+  "exclude": ["**/__tests__/**", "**/*.test.ts"]
 }

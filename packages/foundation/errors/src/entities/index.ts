@@ -25,13 +25,21 @@
  * **Валидация стакана ордеров:**
  * - OrderbookValidationError - невалидные данные orderbook (Orderbook entity)
  *
+ * **Валидация портфеля:**
+ * - PortfolioValidationError - невалидные данные портфеля (Portfolio entity)
+ *
+ * **Валидация позиций:**
+ * - PositionValidationError - невалидные данные позиции (Position/PositionLot entity)
+ *
  * @example
  * ```typescript
  * import {
  *   MarketValidationError,
  *   TradeValidationError,
  *   OrderValidationError,
- *   OrderbookValidationError
+ *   OrderbookValidationError,
+ *   PortfolioValidationError,
+ *   PositionValidationError
  * } from '@polymarket/errors';
  *
  * // Валидация рынка
@@ -71,3 +79,12 @@ export * from './OrderValidationError.js';
 
 // Валидация стакана ордеров
 export * from './OrderbookValidationError.js';
+
+// Валидация портфеля
+export * from './PortfolioValidationError.js';
+
+// Валидация позиций
+export * from './PositionValidationError.js';
+
+// Ошибки портфеля
+export * from './InsufficientFundsError.js';
