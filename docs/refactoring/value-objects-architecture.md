@@ -19,11 +19,12 @@
 **Пилотный пример:** Quantity - как самый сложный VO с множеством операций.
 
 **Принцип:** Разделение ответственности (Separation of Concerns)
-- **Core** - "тупые" value objects (только инварианты существования)
+- **Core** - "тупые" value objects (только инварианты существования + equality)
 - **Math** - чистые математические операции (throw на математические невозможности)
 - **Rules** - атомарные бизнес-правила (Result для ожидаемых ошибок)
 - **Policy** - комбинации правил для конкретных сценариев
 - **Facade** - единая точка входа (оркестрация)
+- **Adapters** - сериализация и форматирование (технические детали)
 
 **Стратегия обработки ошибок:**
 - **Инварианты** (объект не может существовать в этом состоянии) → `throw`
@@ -115,12 +116,19 @@
 
 ```
 packages/domain/value-objects/src/
- ├─ core/                          ← "Тупые" value objects
- │   ├─ Quantity.ts                  - Только инварианты (finite, >= 0)
+ ├─ core/                          ← "Тупые" value objects (только VO essentials)
+ │   ├─ Quantity.ts                  - Инварианты + equality (finite, >= 0, equals)
  │   ├─ Price.ts
  │   ├─ Money.ts
  │   ├─ Balance.ts
  │   ├─ Percentage.ts
+ │   └─ index.ts
+ │
+ ├─ adapters/                      ← Сериализация и форматирование
+ │   ├─ QuantitySerializer.ts        - toJSON/fromJSON
+ │   ├─ QuantityFormatter.ts         - toString
+ │   ├─ PriceSerializer.ts
+ │   ├─ PriceFormatter.ts
  │   └─ index.ts
  │
  ├─ math/                          ← Чистые математические операции
@@ -168,7 +176,7 @@ packages/domain/value-objects/src/
  ├─ errors/                        ← Ошибки (уже есть в @polymarket/errors)
  │   └─ index.ts                     - Re-export from @polymarket/errors
  │
- └─ index.ts                       ← Экспортирует ТОЛЬКО facade + core
+ └─ index.ts                       ← Экспортирует facade + core + adapters
 ```
 
 ### Слои и ответственность
@@ -176,10 +184,19 @@ packages/domain/value-objects/src/
 #### 1. Core Layer - "Тупые" Value Objects
 
 **Ответственность:**
-- Только инварианты существования объекта
+- **ТОЛЬКО** инварианты существования объекта (immutability)
+- **ТОЛЬКО** сравнение по значению (equality)
 - Никаких бизнес-правил
+- Никакой сериализации (это технические детали → Adapters)
 - Private constructor + static factory `of()`
 - Throw только на инварианты (finite, не NaN)
+
+**Обоснование:**
+Согласно DDD, Value Object имеет только ДВА строгих требования:
+1. **Immutability** - объект неизменяемый
+2. **Equality by value** - сравнение по значению, а не по ссылке
+
+Сериализация (`toJSON`) и форматирование (`toString`) - это **НЕ** часть определения VO, а технические детали реализации. Они выносятся в Adapters layer.
 
 **Пример: Quantity.ts**
 ```typescript
@@ -187,16 +204,36 @@ packages/domain/value-objects/src/
  * Value Object для количества (Core Layer)
  *
  * @remarks
- * "Тупой" VO - содержит ТОЛЬКО инварианты существования:
- * - Значение должно быть конечным числом (finite)
- * - Значение должно быть >= 0
+ * Строго минимальный VO - содержит ТОЛЬКО:
+ * 1. Инварианты существования (immutability):
+ *    - Значение должно быть конечным числом (finite)
+ *    - Значение должно быть >= 0
+ * 2. Сравнение по значению (equality):
+ *    - equals() - сравнение двух Quantity
+ *    - isZero() - частный случай сравнения
  *
  * НЕ содержит:
- * - Бизнес-правила (minSize, market-specific rules)
- * - Математические операции (используйте QuantityService)
- * - Валидацию контекста
+ * - Бизнес-правила (minSize, market-specific rules) → используйте QuantityService
+ * - Математические операции (add/divide/etc) → используйте QuantityService
+ * - Сериализацию (toJSON) → используйте QuantitySerializer
+ * - Форматирование (toString) → используйте QuantityFormatter
  *
- * Используйте через QuantityService facade.
+ * @example
+ * ```typescript
+ * // Создание (проверяет только инварианты)
+ * const qty = Quantity.of(10);
+ * const qty2 = Quantity.of(new Decimal(10));
+ *
+ * // Сравнение по значению
+ * qty.equals(qty2); // true
+ * qty.isZero();     // false
+ *
+ * // Доступ к значению
+ * qty.value();      // Decimal(10)
+ * qty.toNumber();   // 10
+ *
+ * // Для всего остального используйте facade/adapters
+ * ```
  */
 export class Quantity {
   private constructor(private readonly v: Decimal) {
@@ -210,22 +247,39 @@ export class Quantity {
   }
 
   /**
-   * Создаёт Quantity из Decimal значения
+   * Создаёт Quantity из значения
    *
-   * @param value - Decimal значение
+   * @param value - Значение: number, string или Decimal
    * @returns Новый Quantity
    * @throws {QuantityInvariantViolation} Если значение нарушает инварианты
    *
    * @remarks
-   * Этот метод НЕ делает бизнес-валидацию.
+   * Этот метод НЕ делает бизнес-валидацию (minSize, etc).
    * Используйте QuantityService.create() для полной валидации.
+   *
+   * Оптимизация: если передан Decimal, используется напрямую без пересоздания.
+   *
+   * @example
+   * ```typescript
+   * Quantity.of(10);              // из number
+   * Quantity.of("10.5");          // из string
+   * Quantity.of(new Decimal(10)); // из Decimal (без пересоздания)
+   * ```
    */
-  public static of(value: Decimal.Value): Quantity {
+  public static of(value: number | string | Decimal): Quantity {
+    // Оптимизация: если уже Decimal - используем напрямую
+    if (value instanceof Decimal) {
+      return new Quantity(value);
+    }
+
+    // Иначе создаём Decimal
     return new Quantity(new Decimal(value));
   }
 
   /**
    * Возвращает значение как Decimal
+   *
+   * @returns Immutable Decimal значение
    */
   public value(): Decimal {
     return this.v;
@@ -233,41 +287,75 @@ export class Quantity {
 
   /**
    * Возвращает значение как number
+   *
+   * @returns Number значение (для удобства)
+   *
+   * @remarks
+   * Может терять точность для очень больших чисел.
+   * Используйте value() для точных вычислений.
    */
   public toNumber(): number {
     return this.v.toNumber();
   }
 
   /**
-   * Сравнение (используется для equals/comparisons)
+   * Сравнивает два Quantity по значению (Value Object equality)
+   *
+   * @param other - Другой Quantity для сравнения
+   * @param epsilon - Точность сравнения (default: 0.0001)
+   * @returns True если значения равны в пределах epsilon
+   *
+   * @remarks
+   * Это строгое требование DDD для Value Object - сравнение по значению.
+   * Используется epsilon для floating-point сравнений.
+   *
+   * @example
+   * ```typescript
+   * const q1 = Quantity.of(10);
+   * const q2 = Quantity.of(10);
+   * q1.equals(q2); // true
+   *
+   * const q3 = Quantity.of(10.00001);
+   * q1.equals(q3); // true (в пределах epsilon)
+   * ```
    */
   public equals(other: Quantity, epsilon: Decimal = new Decimal(0.0001)): boolean {
     return this.v.minus(other.v).abs().lessThan(epsilon);
   }
 
+  /**
+   * Проверяет равенство нулю
+   *
+   * @param epsilon - Точность сравнения (default: 0.0001)
+   * @returns True если значение ~= 0
+   *
+   * @remarks
+   * Частный случай equals() - сравнение с нулём.
+   * Удобный helper для частого сценария.
+   *
+   * @example
+   * ```typescript
+   * Quantity.of(0).isZero();      // true
+   * Quantity.of(0.00001).isZero(); // true (в пределах epsilon)
+   * Quantity.of(1).isZero();       // false
+   * ```
+   */
   public isZero(epsilon: Decimal = new Decimal(0.0001)): boolean {
     return this.v.abs().lessThan(epsilon);
-  }
-
-  /**
-   * Сериализация
-   */
-  public toJSON(): { value: number } {
-    return { value: this.toNumber() };
-  }
-
-  public toString(decimals: number = 2): string {
-    return this.v.toFixed(decimals);
   }
 }
 ```
 
 **Ключевые особенности:**
-- ✅ Только `Decimal` внутри (no number)
-- ✅ Private constructor
-- ✅ Static factory `of()` - throws на инварианты
-- ✅ Никаких бизнес-правил (minSize, etc)
-- ✅ Никаких математических операций (add/subtract/etc)
+- ✅ Только `Decimal` внутри (no number для точности)
+- ✅ Private constructor (нельзя создать невалидный объект)
+- ✅ Static factory `of()` - throws на инварианты, принимает number/string/Decimal
+- ✅ Оптимизация: если `value instanceof Decimal` - не пересоздаём
+- ✅ Только equality методы (equals, isZero) - требование DDD
+- ✅ Никаких бизнес-правил (minSize → QuantityService)
+- ✅ Никаких математических операций (add/divide → QuantityService)
+- ✅ Никакой сериализации (toJSON → QuantitySerializer)
+- ✅ Никакого форматирования (toString → QuantityFormatter)
 
 ---
 
@@ -953,6 +1041,207 @@ export class NegativeFactorNotAllowed extends RuleViolation {
 
 ---
 
+#### 6. Adapters Layer - Сериализация и форматирование
+
+**Ответственность:**
+- Сериализация Value Objects (toJSON/fromJSON)
+- Форматирование для отображения (toString)
+- Технические детали, НЕ часть определения VO в DDD
+
+**Обоснование:**
+Сериализация и форматирование - это **технические детали реализации**, а не часть теоретического определения Value Object. Согласно DDD, Value Object требует только:
+1. Immutability
+2. Equality by value
+
+Все остальное (JSON, строковое представление) - это адаптация VO для конкретных технических нужд (HTTP API, логирование, UI).
+
+**Пример: adapters/QuantitySerializer.ts**
+```typescript
+import { Quantity } from '../core/Quantity.js';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
+import Decimal from 'decimal.js';
+
+/**
+ * Адаптер для сериализации Quantity
+ *
+ * @remarks
+ * Отвечает за преобразование Quantity в JSON и обратно.
+ * Выделен в отдельный адаптер потому что сериализация - это
+ * технический аспект, а не часть определения Value Object.
+ *
+ * @example
+ * ```typescript
+ * const qty = Quantity.of(100);
+ *
+ * // Сериализация
+ * const json = QuantitySerializer.toJSON(qty);
+ * console.log(json); // { value: 100 }
+ *
+ * // Десериализация
+ * const result = QuantitySerializer.fromJSON(json);
+ * if (result.ok) {
+ *   console.log(result.value.equals(qty)); // true
+ * }
+ * ```
+ */
+export class QuantitySerializer {
+  /**
+   * Сериализует Quantity в JSON
+   *
+   * @param quantity - Quantity для сериализации
+   * @returns JSON объект
+   */
+  static toJSON(quantity: Quantity): { value: number } {
+    return { value: quantity.toNumber() };
+  }
+
+  /**
+   * Десериализует Quantity из JSON
+   *
+   * @param json - JSON объект
+   * @returns Result с Quantity или ошибкой
+   *
+   * @remarks
+   * Использует Quantity.of() - проверяет только инварианты.
+   * Для валидации с minSize используйте QuantityService.create()
+   */
+  static fromJSON(json: { value: number }): Result<Quantity, InvalidQuantityError> {
+    try {
+      const qty = Quantity.of(json.value);
+      return Ok(qty);
+    } catch (error) {
+      return Err(
+        new InvalidQuantityError(
+          () => `Failed to deserialize Quantity: ${error instanceof Error ? error.message : String(error)}`,
+          { context: { json } }
+        )
+      );
+    }
+  }
+
+  /**
+   * Сериализует в JSON с дополнительными метаданными
+   *
+   * @param quantity - Quantity
+   * @param metadata - Дополнительные данные (например, minSize из market)
+   * @returns Расширенный JSON объект
+   */
+  static toJSONWithMetadata(
+    quantity: Quantity,
+    metadata?: { minSize?: number }
+  ): { value: number; metadata?: { minSize?: number } } {
+    return {
+      value: quantity.toNumber(),
+      ...(metadata && { metadata })
+    };
+  }
+}
+```
+
+**Пример: adapters/QuantityFormatter.ts**
+```typescript
+import { Quantity } from '../core/Quantity.js';
+
+/**
+ * Адаптер для форматирования Quantity
+ *
+ * @remarks
+ * Отвечает за представление Quantity в виде строки.
+ * Выделен в отдельный адаптер потому что форматирование - это
+ * технический аспект для UI/логирования, а не часть VO.
+ *
+ * @example
+ * ```typescript
+ * const qty = Quantity.of(10.567);
+ *
+ * QuantityFormatter.toString(qty);           // "10.57"
+ * QuantityFormatter.toString(qty, 3);        // "10.567"
+ * QuantityFormatter.toFixed(qty, 1);         // "10.6"
+ * QuantityFormatter.toCompactString(qty);    // "10.6"
+ * ```
+ */
+export class QuantityFormatter {
+  /**
+   * Форматирует Quantity как строку
+   *
+   * @param quantity - Quantity для форматирования
+   * @param decimals - Количество десятичных знаков (default: 2)
+   * @returns Отформатированная строка
+   */
+  static toString(quantity: Quantity, decimals: number = 2): string {
+    return quantity.value().toFixed(decimals);
+  }
+
+  /**
+   * Форматирует с фиксированным количеством знаков
+   *
+   * @param quantity - Quantity
+   * @param decimals - Количество знаков
+   * @returns Строка с фиксированным количеством знаков
+   */
+  static toFixed(quantity: Quantity, decimals: number): string {
+    return quantity.value().toFixed(decimals);
+  }
+
+  /**
+   * Компактное представление (убирает trailing zeros)
+   *
+   * @param quantity - Quantity
+   * @returns Компактная строка
+   *
+   * @example
+   * ```typescript
+   * toCompactString(Quantity.of(10.00)); // "10"
+   * toCompactString(Quantity.of(10.50)); // "10.5"
+   * ```
+   */
+  static toCompactString(quantity: Quantity): string {
+    return quantity.value().toString();
+  }
+
+  /**
+   * Форматирует для отладки (с типом)
+   *
+   * @param quantity - Quantity
+   * @returns Отладочное представление
+   *
+   * @example
+   * ```typescript
+   * toDebugString(Quantity.of(10)); // "Quantity(10)"
+   * ```
+   */
+  static toDebugString(quantity: Quantity): string {
+    return `Quantity(${quantity.value().toString()})`;
+  }
+}
+```
+
+**Использование:**
+```typescript
+const qty = Quantity.of(100.567);
+
+// Сериализация
+const json = QuantitySerializer.toJSON(qty);
+const restored = QuantitySerializer.fromJSON(json);
+
+// Форматирование
+QuantityFormatter.toString(qty);        // "100.57"
+QuantityFormatter.toString(qty, 3);     // "100.567"
+QuantityFormatter.toCompactString(qty); // "100.567"
+QuantityFormatter.toDebugString(qty);   // "Quantity(100.567)"
+```
+
+**Ключевые особенности:**
+- ✅ Отделяет технические детали от бизнес-логики
+- ✅ Сериализация в отдельном адаптере (QuantitySerializer)
+- ✅ Форматирование в отдельном адаптере (QuantityFormatter)
+- ✅ Core Quantity остаётся чистым (только инварианты + equality)
+- ✅ Легко добавить новые адаптеры (XML, Protobuf, etc)
+- ✅ Легко тестировать адаптеры отдельно от Core
+
+---
+
 ## Детальный план рефакторинга Quantity
 
 ### Фаза 0: Подготовка (30 минут)
@@ -964,6 +1253,7 @@ export class NegativeFactorNotAllowed extends RuleViolation {
 cd /Users/menvil/Projects/polymarket/packages/domain/value-objects/src
 
 mkdir -p core
+mkdir -p adapters
 mkdir -p math/decimal
 mkdir -p math/rounding
 mkdir -p rules/base
@@ -1216,11 +1506,17 @@ export class QuantityInvariantViolation extends Error {
  * Value Object для количества (Core Layer)
  *
  * @remarks
- * "Тупой" VO - содержит ТОЛЬКО инварианты существования:
- * - Значение должно быть конечным числом
- * - Значение должно быть >= 0
+ * Строго минимальный VO - содержит ТОЛЬКО:
+ * 1. Инварианты существования (immutability):
+ *    - Значение должно быть конечным числом
+ *    - Значение должно быть >= 0
+ * 2. Сравнение по значению (equality):
+ *    - equals() - сравнение двух Quantity
+ *    - isZero() - частный случай сравнения
  *
- * Используйте через QuantityService facade.
+ * Сериализация (toJSON) → QuantitySerializer
+ * Форматирование (toString) → QuantityFormatter
+ * Бизнес-операции (divide/multiply) → QuantityService
  */
 export class Quantity {
   private constructor(private readonly v: Decimal) {
@@ -1233,11 +1529,22 @@ export class Quantity {
   }
 
   /**
-   * Создаёт Quantity из Decimal значения
+   * Создаёт Quantity из значения
    *
+   * @param value - Значение: number, string или Decimal
+   * @returns Новый Quantity
    * @throws {QuantityInvariantViolation} Если значение нарушает инварианты
+   *
+   * @remarks
+   * Оптимизация: если передан Decimal, используется напрямую без пересоздания.
    */
-  public static of(value: Decimal.Value): Quantity {
+  public static of(value: number | string | Decimal): Quantity {
+    // Оптимизация: если уже Decimal - используем напрямую
+    if (value instanceof Decimal) {
+      return new Quantity(value);
+    }
+
+    // Иначе создаём Decimal
     return new Quantity(new Decimal(value));
   }
 
@@ -1255,14 +1562,6 @@ export class Quantity {
 
   public isZero(epsilon: Decimal = new Decimal(0.0001)): boolean {
     return this.v.abs().lessThan(epsilon);
-  }
-
-  public toJSON(): { value: number } {
-    return { value: this.toNumber() };
-  }
-
-  public toString(decimals: number = 2): string {
-    return this.v.toFixed(decimals);
   }
 }
 ```
@@ -1458,15 +1757,87 @@ export { QuantityService } from './QuantityService.js';
 
 ---
 
-### Фаза 6: Главный index.ts (15 минут)
+### Фаза 6: Adapters Layer (30 минут)
 
-#### Шаг 6.1: Обновить главный export
+#### Шаг 6.1: Создать QuantitySerializer
+
+**Файл:** `adapters/QuantitySerializer.ts`
+```typescript
+import { Quantity } from '../core/Quantity.js';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
+import Decimal from 'decimal.js';
+
+/**
+ * Адаптер для сериализации Quantity
+ */
+export class QuantitySerializer {
+  static toJSON(quantity: Quantity): { value: number } {
+    return { value: quantity.toNumber() };
+  }
+
+  static fromJSON(json: { value: number }): Result<Quantity, InvalidQuantityError> {
+    try {
+      const qty = Quantity.of(json.value);
+      return Ok(qty);
+    } catch (error) {
+      return Err(
+        new InvalidQuantityError(
+          () => `Failed to deserialize Quantity: ${error instanceof Error ? error.message : String(error)}`,
+          { context: { json } }
+        )
+      );
+    }
+  }
+}
+```
+
+#### Шаг 6.2: Создать QuantityFormatter
+
+**Файл:** `adapters/QuantityFormatter.ts`
+```typescript
+import { Quantity } from '../core/Quantity.js';
+
+/**
+ * Адаптер для форматирования Quantity
+ */
+export class QuantityFormatter {
+  static toString(quantity: Quantity, decimals: number = 2): string {
+    return quantity.value().toFixed(decimals);
+  }
+
+  static toFixed(quantity: Quantity, decimals: number): string {
+    return quantity.value().toFixed(decimals);
+  }
+
+  static toCompactString(quantity: Quantity): string {
+    return quantity.value().toString();
+  }
+
+  static toDebugString(quantity: Quantity): string {
+    return `Quantity(${quantity.value().toString()})`;
+  }
+}
+```
+
+**Файл:** `adapters/index.ts`
+```typescript
+export { QuantitySerializer } from './QuantitySerializer.js';
+export { QuantityFormatter } from './QuantityFormatter.js';
+```
+
+---
+
+### Фаза 7: Главный index.ts (15 минут)
+
+#### Шаг 7.1: Обновить главный export
 
 **Файл:** `src/index.ts`
 ```typescript
-// Главный export - ТОЛЬКО facade и core
+// Главный export - facade, core и adapters
 export { QuantityService } from './facade/index.js';
 export { Quantity } from './core/index.js';
+export { QuantitySerializer, QuantityFormatter } from './adapters/index.js';
 
 // Ошибки для пользователей
 export { RuleViolation } from './rules/base/index.js';
@@ -1482,9 +1853,9 @@ export { Quantity as QuantityLegacy } from './Quantity.js';
 
 ---
 
-### Фаза 7: Обновить package.json exports (15 минут)
+### Фаза 8: Обновить package.json exports (15 минут)
 
-#### Шаг 7.1: Настроить exports
+#### Шаг 8.1: Настроить exports
 
 **Файл:** `packages/domain/value-objects/package.json`
 ```json
@@ -1498,6 +1869,10 @@ export { Quantity as QuantityLegacy } from './Quantity.js';
     "./core": {
       "types": "./dist/core/index.d.ts",
       "import": "./dist/core/index.js"
+    },
+    "./adapters": {
+      "types": "./dist/adapters/index.d.ts",
+      "import": "./dist/adapters/index.js"
     },
     "./math": {
       "types": "./dist/math/index.d.ts",
