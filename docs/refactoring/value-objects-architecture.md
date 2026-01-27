@@ -20,11 +20,15 @@
 
 **Принцип:** Разделение ответственности (Separation of Concerns)
 - **Core** - "тупые" value objects (только инварианты существования + equality)
-- **Math** - чистые математические операции (throw на математические невозможности)
+- **Math** - чистые математические операции (**ОТДЕЛЬНЫЙ PACKAGE:** `@polymarket/math`)
 - **Rules** - атомарные бизнес-правила (Result для ожидаемых ошибок)
 - **Policy** - комбинации правил для конкретных сценариев
 - **Facade** - единая точка входа (оркестрация)
 - **Adapters** - сериализация и форматирование (технические детали)
+
+**ВАЖНО:** Math layer НЕ входит в value-objects package. Это отдельный foundation package `@polymarket/math`.
+
+**См. детальный план Math:** [`foundation-math-implementation.md`](./foundation-math-implementation.md)
 
 **Стратегия обработки ошибок:**
 - **Инварианты** (объект не может существовать в этом состоянии) → `throw`
@@ -129,18 +133,6 @@ packages/domain/value-objects/src/
  │   ├─ QuantityFormatter.ts         - toString
  │   ├─ PriceSerializer.ts
  │   ├─ PriceFormatter.ts
- │   └─ index.ts
- │
- ├─ math/                          ← Чистые математические операции
- │   ├─ decimal/
- │   │   ├─ add.ts                   - addDecimal(a, b): Decimal
- │   │   ├─ subtract.ts              - subtractDecimal(a, b): Decimal
- │   │   ├─ multiply.ts              - multiplyDecimal(a, b): Decimal
- │   │   ├─ divide.ts                - divideDecimal(a, b): Decimal (throw на 0)
- │   │   └─ index.ts
- │   ├─ rounding/
- │   │   ├─ roundToTick.ts           - roundToTick(value, tick, fn): Decimal
- │   │   └─ index.ts
  │   └─ index.ts
  │
  ├─ rules/                         ← Атомарные бизнес-правила
@@ -1254,14 +1246,15 @@ cd /Users/menvil/Projects/polymarket/packages/domain/value-objects/src
 
 mkdir -p core
 mkdir -p adapters
-mkdir -p math/decimal
-mkdir -p math/rounding
 mkdir -p rules/base
 mkdir -p rules/quantity
 mkdir -p policy/base
 mkdir -p policy/quantity
 mkdir -p facade
 ```
+
+**Примечание:** Math operations (`addDecimal`, `divideDecimal`, etc) импортируются из отдельного package `@polymarket/math`.
+См. [`foundation-math-implementation.md`](./foundation-math-implementation.md) для реализации Math package.
 
 #### Шаг 0.2: Создать базовые типы для Rules
 
