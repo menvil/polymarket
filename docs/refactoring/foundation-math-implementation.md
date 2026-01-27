@@ -1009,7 +1009,7 @@ import Decimal from 'decimal.js';
  *
  * @param value - Значение для округления
  * @param decimalPlaces - Количество десятичных знаков
- * @param roundFn - Тип округления (default: ROUND_HALF_UP)
+ * @param roundingMode - Режим округления Decimal (default: ROUND_HALF_UP)
  * @returns Округлённое значение
  *
  * @example
@@ -1017,6 +1017,7 @@ import Decimal from 'decimal.js';
  * roundToPrecision(new Decimal(10.567), 2); // 10.57
  * roundToPrecision(new Decimal(10.564), 2); // 10.56
  * roundToPrecision(new Decimal(10.567), 1); // 10.6
+ * roundToPrecision(new Decimal(10.567), 2, Decimal.ROUND_DOWN); // 10.56
  * ```
  */
 export function roundToPrecision(
@@ -1228,7 +1229,7 @@ import { InvalidTickSizeError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('roundToTick', () => {
-  describe('roundToTick (Math.round)', () => {
+  describe('roundToTick (default ROUND_HALF_UP)', () => {
     it('должен округлять до 0.01', () => {
       const result = roundToTick(new Decimal(10.567), new Decimal(0.01));
       expect(result.toString()).toBe('10.57');
@@ -1532,13 +1533,23 @@ try {
 ## Команды для выполнения
 
 ```bash
-# Создать структуру
-cd packages/foundation
+# 1. Создать структуру для math ошибок
+cd packages/foundation/errors/src
 mkdir math
-cd math
-# ... создать все директории
 
-# Установить зависимости
+# 2. Создать структуру для math package
+cd packages/foundation
+mkdir -p math/src/decimal
+mkdir -p math/src/rounding
+mkdir -p math/src/validation
+mkdir -p math/__tests__/unit/decimal
+mkdir -p math/__tests__/unit/rounding
+mkdir -p math/__tests__/unit/validation
+mkdir -p math/__tests__/integration
+mkdir -p math/docs
+
+# 3. Установить зависимости
+cd math
 npm install
 
 # Разработка
