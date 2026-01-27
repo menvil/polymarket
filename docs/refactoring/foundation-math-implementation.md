@@ -326,40 +326,89 @@ export default config;
 
 ### Фаза 1: Decimal Operations (2 часа)
 
-#### Шаг 1.1: Добавить ошибки (если нужны новые)
+#### Шаг 1.1: Добавить математические ошибки
 
-**Проверить:** `packages/foundation/errors/src/value-objects/`
+**Создать директорию:** `packages/foundation/errors/src/math/`
 
-Уже есть:
-- ✅ `DivisionByZeroError`
-- ✅ `ArithmeticOverflowError`
+**Уже есть в value-objects:**
+- ✅ `DivisionByZeroError` (оставить там - используется в value objects)
+- ✅ `ArithmeticOverflowError` (оставить там - используется в value objects)
 
-Добавить если нужно:
+**Добавить новые в math:**
 - `InvalidDivisorError` (для non-finite divisor)
+- `InvalidTickSizeError` (для невалидного tickSize)
 
-**Файл:** `packages/foundation/errors/src/value-objects/InvalidDivisorError.ts`
+**Файл:** `packages/foundation/errors/src/math/InvalidDivisorError.ts`
 ```typescript
-import { ValidationError } from '../base/ValidationError.js';
-
 /**
- * Ошибка: невалидный делитель
+ * InvalidDivisorError - ошибка невалидного делителя
  *
  * @remarks
  * Выбрасывается при попытке деления на невалидное значение (NaN, Infinity).
  * Это математическая невозможность, а не бизнес-правило.
+ *
+ * Уровень серьезности: low (проблемы валидации данных не критичны).
+ *
+ * @example
+ * ```typescript
+ * import { InvalidDivisorError } from '@polymarket/errors';
+ *
+ * // С динамическим сообщением
+ * throw new InvalidDivisorError(
+ *   (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
+ *   {
+ *     code: InvalidDivisorError.code,
+ *     context: { divisor: 'Infinity', dividend: '100' }
+ *   }
+ * );
+ *
+ * // Статическое сообщение
+ * throw new InvalidDivisorError('Invalid divisor', {
+ *   code: InvalidDivisorError.code,
+ *   context: { divisor: NaN }
+ * });
+ * ```
  */
-export class InvalidDivisorError extends ValidationError {
-  constructor(
-    message: string | ((ctx: Record<string, unknown>) => string),
-    options?: { context?: Record<string, unknown> }
-  ) {
-    super(
-      typeof message === 'function' ? message(options?.context || {}) : message,
-      options
-    );
-    this.name = 'InvalidDivisorError';
-  }
+
+import { TradingError, ErrorSeverity } from '../base';
+
+/**
+ * InvalidDivisorError - ошибка невалидного делителя
+ *
+ * @remarks
+ * Уровень серьезности: low (незначительная)
+ * Рекомендуемый код ошибки: INVALID_DIVISOR
+ */
+export class InvalidDivisorError extends TradingError {
+  public readonly severity: ErrorSeverity = 'low';
+
+  /**
+   * Рекомендуемый код ошибки
+   */
+  public static readonly code = 'INVALID_DIVISOR';
 }
+```
+
+---
+
+**Создать index для math ошибок:**
+
+**Файл:** `packages/foundation/errors/src/math/index.ts`
+```typescript
+export { InvalidDivisorError } from './InvalidDivisorError.js';
+export { InvalidTickSizeError } from './InvalidTickSizeError.js';
+```
+
+---
+
+**Обновить главный index:**
+
+**Файл:** `packages/foundation/errors/src/index.ts`
+
+Добавить:
+```typescript
+// Math errors
+export * from './math/index.js';
 ```
 
 #### Шаг 1.2: Реализовать add
@@ -757,45 +806,54 @@ import Decimal from 'decimal.js';
 import { InvalidTickSizeError } from '@polymarket/errors';
 
 /**
- * Тип функции округления
- */
-export type RoundFunction = (x: number) => number;
-
-/**
  * Округляет значение до размера тика
  *
  * @param value - Значение для округления
  * @param tickSize - Размер тика (например, 0.01 для центов)
- * @param roundFn - Функция округления (Math.round/floor/ceil)
+ * @param roundingMode - Режим округления Decimal (default: ROUND_HALF_UP)
  * @returns Округлённое значение
  * @throws {InvalidTickSizeError} Если tickSize невалидный (<= 0 или не finite)
  *
  * @remarks
- * Алгоритм:
- * 1. value / tickSize (получаем количество тиков)
- * 2. roundFn(количество тиков) (округляем до целого числа тиков)
+ * Алгоритм (полностью на Decimal API):
+ * 1. value / tickSize (получаем количество тиков как Decimal)
+ * 2. toDecimalPlaces(0, roundingMode) (округляем до целого числа тиков)
  * 3. * tickSize (умножаем обратно)
+ *
+ * Использует ТОЛЬКО Decimal API - нет конвертации в number и обратно.
+ * Это сохраняет точность для больших чисел.
+ *
+ * Режимы округления:
+ * - Decimal.ROUND_HALF_UP (default) - округление к ближайшему, .5 вверх
+ * - Decimal.ROUND_DOWN - округление к нулю (floor для положительных)
+ * - Decimal.ROUND_UP - округление от нуля (ceil для положительных)
+ * - Decimal.ROUND_FLOOR - округление вниз (к -Infinity)
+ * - Decimal.ROUND_CEIL - округление вверх (к +Infinity)
  *
  * @example
  * ```typescript
- * // Округление до 0.01 (центы)
+ * // Округление до 0.01 (центы) - default ROUND_HALF_UP
  * roundToTick(new Decimal(10.567), new Decimal(0.01)); // 10.57
  * roundToTick(new Decimal(10.564), new Decimal(0.01)); // 10.56
+ * roundToTick(new Decimal(10.565), new Decimal(0.01)); // 10.57 (.5 вверх)
  *
  * // Округление до 0.1
  * roundToTick(new Decimal(10.567), new Decimal(0.1)); // 10.6
  *
- * // Округление вниз
- * roundToTick(new Decimal(10.567), new Decimal(0.01), Math.floor); // 10.56
+ * // Округление вниз (ROUND_DOWN)
+ * roundToTick(new Decimal(10.567), new Decimal(0.01), Decimal.ROUND_DOWN); // 10.56
  *
- * // Округление вверх
- * roundToTick(new Decimal(10.561), new Decimal(0.01), Math.ceil); // 10.57
+ * // Округление вверх (ROUND_UP)
+ * roundToTick(new Decimal(10.561), new Decimal(0.01), Decimal.ROUND_UP); // 10.57
+ *
+ * // Работает с большими числами без потери точности
+ * roundToTick(new Decimal('999999999999.567'), new Decimal(0.01)); // 999999999999.57
  * ```
  */
 export function roundToTick(
   value: Decimal,
   tickSize: Decimal,
-  roundFn: RoundFunction = Math.round
+  roundingMode: Decimal.Rounding = Decimal.ROUND_HALF_UP
 ): Decimal {
   // Валидация tickSize
   if (!tickSize.isFinite() || tickSize.lessThanOrEqualTo(0)) {
@@ -810,46 +868,133 @@ export function roundToTick(
     );
   }
 
-  // Алгоритм округления до тика
-  const divided = value.dividedBy(tickSize).toNumber();
-  const rounded = roundFn(divided);
-  const result = new Decimal(rounded).times(tickSize);
+  // Алгоритм округления до тика (полностью на Decimal)
+  const divided = value.dividedBy(tickSize);
+  const rounded = divided.toDecimalPlaces(0, roundingMode);
+  const result = rounded.times(tickSize);
 
   return result;
 }
 
 /**
- * Округляет вниз до тика
+ * Округляет вниз до тика (к нулю для положительных, от нуля для отрицательных)
+ *
+ * @remarks
+ * Использует Decimal.ROUND_DOWN - округление к нулю.
+ * Для положительных чисел это floor, для отрицательных - ceil.
+ *
+ * @example
+ * ```typescript
+ * floorToTick(new Decimal(10.567), new Decimal(0.01)); // 10.56
+ * floorToTick(new Decimal(-10.567), new Decimal(0.01)); // -10.56 (к нулю)
+ * ```
  */
 export function floorToTick(value: Decimal, tickSize: Decimal): Decimal {
-  return roundToTick(value, tickSize, Math.floor);
+  return roundToTick(value, tickSize, Decimal.ROUND_DOWN);
 }
 
 /**
- * Округляет вверх до тика
+ * Округляет вверх до тика (от нуля)
+ *
+ * @remarks
+ * Использует Decimal.ROUND_UP - округление от нуля.
+ * Для положительных чисел это ceil, для отрицательных - floor.
+ *
+ * @example
+ * ```typescript
+ * ceilToTick(new Decimal(10.561), new Decimal(0.01)); // 10.57
+ * ceilToTick(new Decimal(-10.561), new Decimal(0.01)); // -10.57 (от нуля)
+ * ```
  */
 export function ceilToTick(value: Decimal, tickSize: Decimal): Decimal {
-  return roundToTick(value, tickSize, Math.ceil);
+  return roundToTick(value, tickSize, Decimal.ROUND_UP);
+}
+
+/**
+ * Округляет до тика с математическим floor (всегда вниз к -Infinity)
+ *
+ * @remarks
+ * Использует Decimal.ROUND_FLOOR - всегда округление вниз.
+ * В отличие от floorToTick, всегда округляет к -Infinity.
+ *
+ * @example
+ * ```typescript
+ * mathFloorToTick(new Decimal(10.567), new Decimal(0.01)); // 10.56
+ * mathFloorToTick(new Decimal(-10.561), new Decimal(0.01)); // -10.57 (к -Infinity)
+ * ```
+ */
+export function mathFloorToTick(value: Decimal, tickSize: Decimal): Decimal {
+  return roundToTick(value, tickSize, Decimal.ROUND_FLOOR);
+}
+
+/**
+ * Округляет до тика с математическим ceil (всегда вверх к +Infinity)
+ *
+ * @remarks
+ * Использует Decimal.ROUND_CEIL - всегда округление вверх.
+ * В отличие от ceilToTick, всегда округляет к +Infinity.
+ *
+ * @example
+ * ```typescript
+ * mathCeilToTick(new Decimal(10.561), new Decimal(0.01)); // 10.57
+ * mathCeilToTick(new Decimal(-10.567), new Decimal(0.01)); // -10.56 (к +Infinity)
+ * ```
+ */
+export function mathCeilToTick(value: Decimal, tickSize: Decimal): Decimal {
+  return roundToTick(value, tickSize, Decimal.ROUND_CEIL);
 }
 ```
 
-**Добавить ошибку если нет:**
+**Добавить ошибку:**
 
-**Файл:** `packages/foundation/errors/src/value-objects/InvalidTickSizeError.ts`
+**Файл:** `packages/foundation/errors/src/math/InvalidTickSizeError.ts`
 ```typescript
-import { ValidationError } from '../base/ValidationError.js';
+/**
+ * InvalidTickSizeError - ошибка невалидного размера тика
+ *
+ * @remarks
+ * Выбрасывается когда tickSize <= 0 или не является конечным числом.
+ * Это математическая невозможность, а не бизнес-правило.
+ *
+ * Уровень серьезности: low (проблемы валидации данных не критичны).
+ *
+ * @example
+ * ```typescript
+ * import { InvalidTickSizeError } from '@polymarket/errors';
+ *
+ * // С динамическим сообщением
+ * throw new InvalidTickSizeError(
+ *   (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
+ *   {
+ *     code: InvalidTickSizeError.code,
+ *     context: { tickSize: 0, value: 10.567 }
+ *   }
+ * );
+ *
+ * // Статическое сообщение
+ * throw new InvalidTickSizeError('Invalid tick size', {
+ *   code: InvalidTickSizeError.code,
+ *   context: { tickSize: -0.01 }
+ * });
+ * ```
+ */
 
-export class InvalidTickSizeError extends ValidationError {
-  constructor(
-    message: string | ((ctx: Record<string, unknown>) => string),
-    options?: { context?: Record<string, unknown> }
-  ) {
-    super(
-      typeof message === 'function' ? message(options?.context || {}) : message,
-      options
-    );
-    this.name = 'InvalidTickSizeError';
-  }
+import { TradingError, ErrorSeverity } from '../base';
+
+/**
+ * InvalidTickSizeError - ошибка невалидного размера тика
+ *
+ * @remarks
+ * Уровень серьезности: low (незначительная)
+ * Рекомендуемый код ошибки: INVALID_TICK_SIZE
+ */
+export class InvalidTickSizeError extends TradingError {
+  public readonly severity: ErrorSeverity = 'low';
+
+  /**
+   * Рекомендуемый код ошибки
+   */
+  public static readonly code = 'INVALID_TICK_SIZE';
 }
 ```
 
@@ -891,7 +1036,8 @@ export {
   roundToTick,
   floorToTick,
   ceilToTick,
-  type RoundFunction
+  mathFloorToTick,
+  mathCeilToTick
 } from './roundToTick.js';
 export { roundToPrecision } from './roundToPrecision.js';
 ```
