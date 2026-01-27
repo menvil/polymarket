@@ -1,24 +1,24 @@
 /**
- * Position entity
+ * Сущность Position (Позиция)
  *
  * @remarks
- * Represents aggregate position in a token with FIFO lot accounting.
- * Manages multiple lots for accurate P&L tracking and tax reporting.
+ * Представляет агрегированную позицию в токене с учетом FIFO лотов.
+ * Управляет множественными лотами для точного отслеживания P&L и налоговой отчетности.
  *
- * Algorithm:
- * - Position consists of multiple lots (FIFO queue)
- * - Adding lot: appends to lots array, recalculates average entry price
- * - Removing: uses oldest lots first (FIFO)
- * - Average entry price = total cost / total quantity
- * - Unrealized P&L = sum of all lot P&Ls
+ * Алгоритм:
+ * - Позиция состоит из множественных лотов (FIFO очередь)
+ * - Добавление лота: добавляет в массив lots, пересчитывает среднюю цену входа
+ * - Удаление: использует самые старые лоты первыми (FIFO)
+ * - Средняя цена входа = общая стоимость / общее количество
+ * - Нереализованный P&L = сумма всех P&L лотов
  *
- * Why FIFO?
- * - Required by most tax jurisdictions
- * - Provides accurate cost basis tracking
- * - Simplifies accounting (no need to match specific lots)
- * - Industry standard for securities
+ * Почему FIFO?
+ * - Требуется большинством налоговых юрисдикций
+ * - Обеспечивает точное отслеживание базовой стоимости
+ * - Упрощает бухгалтерский учет (не нужно сопоставлять конкретные лоты)
+ * - Отраслевой стандарт для ценных бумаг
  *
- * Design Patterns:
+ * Паттерны проектирования:
  * - Result pattern для всех fallible операций (addLot, removeLot)
  * - Private constructor + static factory method (empty)
  * - Immutability: все операции возвращают новый Position
@@ -27,7 +27,7 @@
  * ```typescript
  * const position = Position.empty('token-123', 'YES');
  *
- * // Add first lot (возвращает Result)
+ * // Добавляем первый лот (возвращает Result)
  * const lot1Result = PositionLot.create(
  *   'lot-1',
  *   'token-123',
@@ -37,20 +37,20 @@
  *   Date.now()
  * );
  * if (!lot1Result.ok) {
- *   console.error('Failed to create lot:', lot1Result.error.message);
+ *   console.error('Не удалось создать лот:', lot1Result.error.message);
  *   return;
  * }
  *
  * const addResult1 = position.addLot(lot1Result.value);
  * if (!addResult1.ok) {
- *   console.error('Failed to add lot:', addResult1.error.message);
+ *   console.error('Не удалось добавить лот:', addResult1.error.message);
  *   return;
  * }
  *
  * console.log(addResult1.value.totalQuantity.value); // 10
  * console.log(addResult1.value.averageEntryPrice.value); // 0.60
  *
- * // Add second lot
+ * // Добавляем второй лот
  * const lot2Result = PositionLot.create(
  *   'lot-2',
  *   'token-123',
@@ -65,15 +65,15 @@
  * if (!addResult2.ok) return;
  *
  * console.log(addResult2.value.totalQuantity.value); // 15
- * console.log(addResult2.value.averageEntryPrice.value); // 0.6333 (weighted average)
+ * console.log(addResult2.value.averageEntryPrice.value); // 0.6333 (средневзвешенная)
  *
- * // Remove quantity (FIFO, возвращает Result)
+ * // Удаляем количество (FIFO, возвращает Result)
  * const removeResult = addResult2.value.removeLot('lot-1', Quantity.fromValue(8).value);
  * if (!removeResult.ok) {
- *   console.error('Failed to remove lot:', removeResult.error.message);
+ *   console.error('Не удалось удалить лот:', removeResult.error.message);
  *   return;
  * }
- * // lot-1 now has 2 remaining, lot-2 is untouched
+ * // lot-1 теперь имеет 2 оставшихся, lot-2 не тронут
  * ```
  */
 import { Price } from '@polymarket/value-objects';
@@ -84,10 +84,10 @@ import { TradingError, PositionValidationError } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
 /**
- * Insufficient position error
+ * Ошибка недостаточной позиции
  *
  * @remarks
- * Thrown when trying to remove more quantity than available in position.
+ * Выбрасывается при попытке удалить больше количества, чем доступно в позиции.
  */
 export class InsufficientPositionError extends TradingError {
   public readonly severity = 'low' as const;
@@ -104,10 +104,10 @@ export class InsufficientPositionError extends TradingError {
 }
 
 /**
- * Lot not found error
+ * Ошибка "лот не найден"
  *
  * @remarks
- * Thrown when trying to remove from non-existent lot.
+ * Выбрасывается при попытке удалить из несуществующего лота.
  */
 export class LotNotFoundError extends TradingError {
   public readonly severity = 'low' as const;
@@ -118,24 +118,24 @@ export class LotNotFoundError extends TradingError {
 }
 
 /**
- * Position entity
+ * Сущность Position (Позиция)
  *
  * @remarks
- * Immutable entity representing aggregate position with FIFO lot tracking.
+ * Неизменяемая сущность, представляющая агрегированную позицию с отслеживанием FIFO лотов.
  */
 export class Position {
   /**
-   * Creates a new Position
+   * Создает новую Position
    *
-   * @param tokenId - ID of the token/market
-   * @param side - YES or NO side
-   * @param totalQuantity - Total quantity across all lots
-   * @param averageEntryPrice - Weighted average entry price
-   * @param lots - Array of lots (FIFO order)
-   * @param unrealizedPnL - Current unrealized profit/loss
+   * @param tokenId - ID токена/рынка
+   * @param side - Сторона YES или NO
+   * @param totalQuantity - Общее количество по всем лотам
+   * @param averageEntryPrice - Средневзвешенная цена входа
+   * @param lots - Массив лотов (порядок FIFO)
+   * @param unrealizedPnL - Текущий нереализованный прибыль/убыток
    *
    * @remarks
-   * Private constructor - use static factory methods instead.
+   * Private constructor - используйте статические фабричные методы.
    */
   private constructor(
     public readonly tokenId: string,
@@ -147,14 +147,14 @@ export class Position {
   ) {}
 
   /**
-   * Creates an empty position
+   * Создает пустую позицию
    *
-   * @param tokenId - ID of the token/market
-   * @param side - YES or NO side
-   * @returns Empty position with no lots
+   * @param tokenId - ID токена/рынка
+   * @param side - Сторона YES или NO
+   * @returns Пустая позиция без лотов
    *
    * @remarks
-   * Использует neutral price (0.50) для пустой позиции.
+   * Использует нейтральную цену (0.50) для пустой позиции.
    * Price.fromValue(0.50) гарантированно успешен (математическая инвариантность).
    *
    * @example
@@ -411,14 +411,14 @@ export class Position {
   }
 
   /**
-   * Calculates total unrealized P&L at current price
+   * Вычисляет общий нереализованный P&L по текущей цене
    *
-   * @param currentPrice - Current market price
-   * @returns Total unrealized P&L across all lots
+   * @param currentPrice - Текущая рыночная цена
+   * @returns Общий нереализованный P&L по всем лотам
    *
    * @remarks
-   * Sums unrealized P&L from each lot.
-   * Each lot calculates its own P&L based on entry price.
+   * Суммирует нереализованный P&L от каждого лота.
+   * Каждый лот вычисляет свой собственный P&L на основе цены входа.
    *
    * @example
    * ```typescript
@@ -426,11 +426,11 @@ export class Position {
    *   .addLot(lot1) // 10 @ 0.60
    *   .addLot(lot2); // 5 @ 0.70
    *
-   * // Current price is 0.75
+   * // Текущая цена 0.75
    * const pnl = position.calculateUnrealizedPnL(Price.fromNumber(0.75));
    * // lot1: (0.75 - 0.60) * 10 = 1.50
    * // lot2: (0.75 - 0.70) * 5 = 0.25
-   * // total: 1.75
+   * // итого: 1.75
    * console.log(pnl.amount); // 1.75
    * ```
    */
@@ -454,19 +454,19 @@ export class Position {
   }
 
   /**
-   * Gets the oldest lot (for FIFO removal)
+   * Получает самый старый лот (для удаления FIFO)
    *
-   * @returns Oldest lot or undefined if no lots
+   * @returns Самый старый лот или undefined если нет лотов
    *
    * @remarks
-   * Returns first lot in array (oldest by timestamp).
-   * Used for FIFO position closing.
+   * Возвращает первый лот в массиве (самый старый по timestamp).
+   * Используется для закрытия позиции по FIFO.
    *
    * @example
    * ```typescript
    * const position = Position.empty('token-123', 'YES')
-   *   .addLot(lot1) // Added first
-   *   .addLot(lot2); // Added second
+   *   .addLot(lot1) // Добавлен первым
+   *   .addLot(lot2); // Добавлен вторым
    *
    * const oldest = position.getOldestLot();
    * console.log(oldest?.lotId); // 'lot-1'
@@ -477,13 +477,13 @@ export class Position {
   }
 
   /**
-   * Checks if position is empty
+   * Проверяет, пустая ли позиция
    *
-   * @returns True if no quantity or no lots
+   * @returns True если нет количества или нет лотов
    *
    * @remarks
-   * Empty position has zero quantity and no lots.
-   * Should be removed from inventory when empty.
+   * Пустая позиция имеет нулевое количество и не имеет лотов.
+   * Должна быть удалена из инвентаря когда пустая.
    *
    * @example
    * ```typescript
@@ -499,13 +499,13 @@ export class Position {
   }
 
   /**
-   * Calculates total cost basis of position
+   * Вычисляет общую базовую стоимость позиции
    *
-   * @returns Total cost of all lots
+   * @returns Общая стоимость всех лотов
    *
    * @remarks
-   * Sum of cost basis from all lots.
-   * Used for P&L calculation and reporting.
+   * Сумма базовой стоимости от всех лотов.
+   * Используется для вычисления P&L и отчетности.
    *
    * @example
    * ```typescript
@@ -536,9 +536,9 @@ export class Position {
   }
 
   /**
-   * Gets number of lots in position
+   * Получает количество лотов в позиции
    *
-   * @returns Number of lots
+   * @returns Количество лотов
    *
    * @example
    * ```typescript
@@ -553,9 +553,9 @@ export class Position {
   }
 
   /**
-   * Creates a string representation of position
+   * Создает строковое представление позиции
    *
-   * @returns Formatted string with position summary
+   * @returns Отформатированная строка с сводкой позиции
    *
    * @example
    * ```typescript

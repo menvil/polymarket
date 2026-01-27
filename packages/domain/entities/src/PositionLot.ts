@@ -1,19 +1,19 @@
 /**
- * PositionLot entity
+ * Сущность PositionLot (Лот позиции)
  *
  * @remarks
- * Represents a single lot for FIFO (First In, First Out) accounting.
- * Each lot tracks a specific purchase at a specific price and time.
- * Used for accurate P&L calculation and tax reporting.
+ * Представляет единичный лот для FIFO (First In, First Out) учета.
+ * Каждый лот отслеживает конкретную покупку по конкретной цене и времени.
+ * Используется для точного расчета P&L и налоговой отчетности.
  *
- * Algorithm:
- * - Each trade creates a new lot with entry price and quantity
- * - When closing position, oldest lots are used first (FIFO)
- * - Unrealized P&L = (current price - entry price) * quantity
- * - Lots can be partially closed
- * - Lots are immutable - closing creates new instance
+ * Алгоритм:
+ * - Каждая сделка создает новый лот с ценой входа и количеством
+ * - При закрытии позиции используются самые старые лоты первыми (FIFO)
+ * - Нереализованный P&L = (текущая цена - цена входа) * количество
+ * - Лоты могут быть частично закрыты
+ * - Лоты неизменяемы - закрытие создает новый экземпляр
  *
- * Design Patterns:
+ * Паттерны проектирования:
  * - Result pattern для всех fallible операций (create, close)
  * - Private constructor + static factory method
  * - Immutability: timestamp хранится как number (Unix ms) для защиты от мутации
@@ -31,21 +31,21 @@
  * );
  *
  * if (!result.ok) {
- *   console.error('Failed to create lot:', result.error.message);
+ *   console.error('Не удалось создать лот:', result.error.message);
  *   return;
  * }
  *
  * const lot = result.value;
  *
- * // Calculate cost
+ * // Вычисляем стоимость
  * const cost = lot.calculateCost();
  * console.log(cost.amount); // 6.50
  *
- * // Calculate unrealized P&L
+ * // Вычисляем нереализованный P&L
  * const pnl = lot.calculateUnrealizedPnL(Price.fromValue(0.70).value);
- * console.log(pnl.amount); // 0.50 (profit)
+ * console.log(pnl.amount); // 0.50 (прибыль)
  *
- * // Close partial quantity (возвращает Result)
+ * // Закрываем частичное количество (возвращает Result)
  * const closeResult = lot.close(Quantity.fromValue(5).value);
  * if (closeResult.ok) {
  *   console.log(closeResult.value.quantity.value); // 5
@@ -60,15 +60,15 @@ import { TradingError, PositionValidationError } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
 /**
- * Side of the position
+ * Сторона позиции
  */
 export type Side = 'YES' | 'NO';
 
 /**
- * Insufficient quantity error
+ * Ошибка недостаточного количества
  *
  * @remarks
- * Thrown when trying to close more quantity than available in lot.
+ * Выбрасывается при попытке закрыть больше количества, чем доступно в лоте.
  */
 export class InsufficientLotQuantityError extends TradingError {
   public readonly severity = 'low' as const;
@@ -85,20 +85,20 @@ export class InsufficientLotQuantityError extends TradingError {
 }
 
 /**
- * PositionLot entity
+ * Сущность PositionLot (Лот позиции)
  *
  * @remarks
- * Immutable entity representing a single lot in FIFO accounting.
+ * Неизменяемая сущность, представляющая единичный лот в FIFO учете.
  */
 export class PositionLot {
   /**
    * Private constructor - используйте PositionLot.create()
    *
-   * @param lotId - Unique identifier for this lot
-   * @param tokenId - ID of the token/market
-   * @param side - YES or NO side
-   * @param quantity - Amount of shares in this lot
-   * @param entryPrice - Price at which this lot was purchased
+   * @param lotId - Уникальный идентификатор этого лота
+   * @param tokenId - ID токена/рынка
+   * @param side - Сторона YES или NO
+   * @param quantity - Количество акций в этом лоте
+   * @param entryPrice - Цена, по которой был куплен этот лот
    * @param timestampMs - Unix timestamp в миллисекундах (immutable number)
    */
   private constructor(
@@ -217,13 +217,13 @@ export class PositionLot {
   }
 
   /**
-   * Calculates the total cost of this lot
+   * Вычисляет общую стоимость этого лота
    *
-   * @returns Money value representing cost (quantity * entry price)
+   * @returns Значение Money, представляющее стоимость (количество * цена входа)
    *
    * @remarks
-   * Cost = quantity * entry price
-   * This is the amount paid to acquire this lot.
+   * Стоимость = количество * цена входа
+   * Это сумма, уплаченная за приобретение этого лота.
    *
    * @example
    * ```typescript
@@ -250,20 +250,20 @@ export class PositionLot {
   }
 
   /**
-   * Calculates unrealized profit/loss at current price
+   * Вычисляет нереализованную прибыль/убыток по текущей цене
    *
-   * @param currentPrice - Current market price
-   * @returns Money value representing unrealized P&L
+   * @param currentPrice - Текущая рыночная цена
+   * @returns Значение Money, представляющее нереализованный P&L
    *
    * @remarks
-   * Unrealized P&L = (current price - entry price) * quantity
-   * - Positive value = profit
-   * - Negative value = loss
+   * Нереализованный P&L = (текущая цена - цена входа) * количество
+   * - Положительное значение = прибыль
+   * - Отрицательное значение = убыток
    *
-   * For NO positions, P&L is inverted:
-   * - Entry cost = quantity * (1 - entry price)
-   * - Current value = quantity * (1 - current price)
-   * - P&L = current value - entry cost
+   * Для позиций NO, P&L инвертирован:
+   * - Стоимость входа = количество * (1 - цена входа)
+   * - Текущая стоимость = количество * (1 - текущая цена)
+   * - P&L = текущая стоимость - стоимость входа
    *
    * @example
    * ```typescript
@@ -276,11 +276,11 @@ export class PositionLot {
    *   new Date()
    * );
    *
-   * // Price went up - profit
+   * // Цена выросла - прибыль
    * const pnl1 = lot.calculateUnrealizedPnL(Price.fromNumber(0.70));
    * console.log(pnl1.amount); // 0.50
    *
-   * // Price went down - loss
+   * // Цена упала - убыток
    * const pnl2 = lot.calculateUnrealizedPnL(Price.fromNumber(0.60));
    * console.log(pnl2.amount); // -0.50
    * ```
@@ -289,11 +289,11 @@ export class PositionLot {
     let pnl: number;
 
     if (this.side === 'YES') {
-      // For YES: P&L = (current - entry) * quantity
+      // Для YES: P&L = (текущая - входная) * количество
       pnl = (currentPrice.value - this.entryPrice.value) * this.quantity.value;
     } else {
-      // For NO: P&L = (entry - current) * quantity
-      // Because NO token value moves inversely to price
+      // Для NO: P&L = (входная - текущая) * количество
+      // Потому что стоимость NO токена двигается обратно пропорционально цене
       pnl = (this.entryPrice.value - currentPrice.value) * this.quantity.value;
     }
 
@@ -380,12 +380,12 @@ export class PositionLot {
   }
 
   /**
-   * Checks if lot is fully closed
+   * Проверяет, полностью ли закрыт лот
    *
-   * @returns True if quantity is zero
+   * @returns True если количество равно нулю
    *
    * @remarks
-   * A closed lot has zero quantity and should be removed from inventory.
+   * Закрытый лот имеет нулевое количество и должен быть удален из инвентаря.
    *
    * @example
    * ```typescript
@@ -408,9 +408,9 @@ export class PositionLot {
   }
 
   /**
-   * Creates a string representation of this lot
+   * Создает строковое представление этого лота
    *
-   * @returns Formatted string with lot details
+   * @returns Отформатированная строка с деталями лота
    *
    * @example
    * ```typescript

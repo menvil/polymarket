@@ -1,5 +1,5 @@
 /**
- * Portfolio entity
+ * Сущность Portfolio (Портфель)
  *
  * @remarks
  * Представляет портфель трейдера с денежными средствами и позициями.
@@ -18,7 +18,7 @@
  * - При добавлении позиции проверяется уникальность marketId
  * - Общая стоимость учитывает текущие рыночные цены
  *
- * Design Patterns:
+ * Паттерны проектирования:
  * - Result pattern для всех fallible операций (create, reserveCash, releaseCash, updateCash, addPosition, updatePosition)
  * - Private constructor + static factory method (create)
  * - Immutability: все операции возвращают новый Portfolio
@@ -100,10 +100,10 @@ export class PositionNotFoundError extends TradingError {
 }
 
 /**
- * Portfolio entity
+ * Сущность Portfolio (Портфель)
  *
  * @remarks
- * Immutable entity representing trader's portfolio.
+ * Неизменяемая сущность, представляющая портфель трейдера.
  */
 export class Portfolio {
   /**
@@ -627,8 +627,8 @@ export class Portfolio {
    * @returns Общая стоимость портфеля
    *
    * @remarks
-   * Общая стоимость = cash + sum(position values)
-   * Position value = quantity * current price
+   * Общая стоимость = cash + sum(значения позиций)
+   * Значение позиции = количество * текущая цена
    *
    * Алгоритм:
    * 1. Начинаем с cash (доступный + резервированный)
