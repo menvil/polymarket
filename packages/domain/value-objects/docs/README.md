@@ -57,7 +57,8 @@ const gain = unwrap(Percentage.fromDecimal(0.15)); // 15%
 const total = unwrap(fee.add(gain));                // 17.5% (Result)
 
 const orderValue = 1000;
-const feeAmount = fee.of(orderValue); // Decimal(25)
+const feeResult = fee.of(orderValue);
+const feeAmount = unwrap(feeResult); // Decimal(25)
 ```
 
 **Особенности:**
@@ -205,7 +206,8 @@ const balance = unwrap(Money.fromValue(1000)); // 1000 USDC
 
 // Расчёт комиссии
 const feeRate = unwrap(Percentage.fromValue(0.25)); // 0.25%
-const feeAmount = feeRate.of(balance.getAmount());
+const feeResult = feeRate.of(balance.getAmount());
+const feeAmount = unwrap(feeResult);
 
 console.log(`Комиссия: ${feeAmount.toNumber()} USDC`); // "Комиссия: 2.5 USDC"
 

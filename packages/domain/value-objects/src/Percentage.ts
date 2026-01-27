@@ -721,22 +721,49 @@ export class Percentage {
    * Применить процент к значению
    *
    * @param value - Базовое значение (number или Decimal)
-   * @returns Вычисленная сумма (value * percentage)
+   * @returns Result с вычисленной суммой (value * percentage) или ошибкой
    *
    * @remarks
    * Вычисляет процентную долю от значения.
    * Пример: 10% от 1000 = 100
    *
+   * Использует Result паттерн для безопасной обработки невалидных значений.
+   *
    * @example
    * ```typescript
    * const fee = unwrap(Percentage.fromValue(2.5));
    * const orderValue = 1000;
-   * const feeAmount = fee.of(orderValue); // 25
+   * const result = fee.of(orderValue);
+   * if (result.ok) {
+   *   console.log(result.value.toNumber()); // 25
+   * }
    * ```
    */
-  of(value: number | Decimal): Decimal {
-    const valueDecimal = value instanceof Decimal ? value : new Decimal(value);
-    return valueDecimal.times(this.toDecimalFraction());
+  of(value: number | Decimal): Result<Decimal, InvalidPercentageError> {
+    try {
+      const valueDecimal = value instanceof Decimal ? value : new Decimal(value);
+
+      // Проверка на валидность
+      if (!valueDecimal.isFinite()) {
+        return Err(
+          new InvalidPercentageError('Value must be finite', {
+            context: { value: value.toString() }
+          })
+        );
+      }
+
+      const result = valueDecimal.times(this.toDecimalFraction());
+      return Ok(result);
+    } catch (error) {
+      return Err(
+        new InvalidPercentageError(
+          `Invalid value for percentage calculation: ${error instanceof Error ? error.message : 'unknown error'}`,
+          {
+            context: { value: value.toString() }
+          }
+        )
+      );
+    }
   }
 
   // ============================================================================

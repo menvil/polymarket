@@ -109,7 +109,8 @@ export class Order {
     this.strategyId = params.strategyId;
     this.filledSize = params.filledSize;
     this.averageFillPrice = params.averageFillPrice;
-    this.tradeIds = params.tradeIds ?? []; // Default: пустой массив
+    // Делаем shallow copy для immutability
+    this.tradeIds = params.tradeIds ? [...params.tradeIds] : [];
     this.reason = params.reason;
   }
 

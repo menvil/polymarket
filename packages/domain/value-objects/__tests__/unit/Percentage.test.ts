@@ -608,7 +608,43 @@ describe('Percentage', () => {
 
         const result = pct.of(1000);
 
-        expect(Number(result)).toBe(100);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(Number(result.value)).toBe(100);
+        }
+      });
+
+      it('должен обрабатывать Decimal значения', () => {
+        const pct = unwrap(Percentage.fromValue(15));
+
+        const result = pct.of(new Decimal(200));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(Number(result.value)).toBe(30);
+        }
+      });
+
+      it('должен возвращать ошибку для NaN', () => {
+        const pct = unwrap(Percentage.fromValue(10));
+
+        const result = pct.of(NaN);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('finite');
+        }
+      });
+
+      it('должен возвращать ошибку для бесконечных значений', () => {
+        const pct = unwrap(Percentage.fromValue(10));
+
+        const result = pct.of(Infinity);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('finite');
+        }
       });
     });
   });

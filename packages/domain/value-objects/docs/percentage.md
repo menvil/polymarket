@@ -218,13 +218,16 @@ half.match({
 const fee = unwrap(Percentage.fromValue(2.5)); // 2.5%
 const orderValue = 1000;
 
-const feeAmount = fee.of(orderValue); // Decimal(25)
-console.log(feeAmount.toNumber()); // 25
+const result = fee.of(orderValue);
+if (result.ok) {
+  console.log(result.value.toNumber()); // 25
+}
 ```
 
 **Алгоритм:**
 1. Преобразует процент в дробь: `2.5% → 0.025`
 2. Умножает на значение: `1000 * 0.025 = 25`
+3. Возвращает Result для безопасной обработки невалидных значений
 
 ## Преобразования
 
@@ -362,8 +365,10 @@ import { unwrap } from '@polymarket/result';
 const tradingFee = unwrap(Percentage.fromValue(0.25)); // 0.25%
 const orderSize = 10000; // USDC
 
-const feeAmount = tradingFee.of(orderSize);
-console.log(feeAmount.toNumber()); // 25 USDC
+const result = tradingFee.of(orderSize);
+if (result.ok) {
+  console.log(result.value.toNumber()); // 25 USDC
+}
 ```
 
 ### PnL расчёты (Profit & Loss)
