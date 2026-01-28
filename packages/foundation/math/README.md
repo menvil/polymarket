@@ -38,11 +38,12 @@ npm install @polymarket/math
 
 ### Rounding Operations (`@polymarket/math/rounding`)
 
-Операции округления:
-- `roundToTickSize(value, tickSize)` - округление к tick size
-- `roundToDecimalPlaces(value, places)` - округление к количеству знаков
-- `floorToTickSize(value, tickSize)` - округление вниз к tick size
-- `ceilToTickSize(value, tickSize)` - округление вверх к tick size
+Операции округления к tick size:
+- ✅ `roundToTick(value, tickSize, mode?)` - округление к tick size
+- ✅ `floorToTick(value, tickSize)` - округление вниз (к нулю)
+- ✅ `ceilToTick(value, tickSize)` - округление вверх (от нуля)
+- ✅ `mathFloorToTick(value, tickSize)` - floor к -Infinity
+- ✅ `mathCeilToTick(value, tickSize)` - ceil к +Infinity
 
 ### Validation (`@polymarket/math/validation`)
 
