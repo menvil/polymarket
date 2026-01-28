@@ -55,6 +55,12 @@ class Price {
 | `multiplyDecimal(a, b)` | Умножение чисел | [→](./multiply.md) |
 | `divideDecimal(a, b)` | Деление чисел | [→](./divide.md) |
 | `averageDecimal(a, b)` | Среднее значение | [→](./average.md) |
+| `equalsDecimal(a, b, epsilon?)` | Равенство с точностью | — |
+| `lessThanDecimal(a, b)` | Строгое меньше (<) | — |
+| `lessThanOrEqualDecimal(a, b)` | Меньше или равно (<=) | — |
+| `greaterThanDecimal(a, b)` | Строгое больше (>) | — |
+| `greaterThanOrEqualDecimal(a, b)` | Больше или равно (>=) | — |
+| `compareDecimal(a, b)` | Сравнение (-1/0/1) | — |
 
 ## Общие паттерны использования
 

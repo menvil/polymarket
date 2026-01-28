@@ -19,6 +19,9 @@
 | `multiplyDecimal(a, b)` | Decimal | Умножение чисел | [→](./decimal/multiply.md) |
 | `divideDecimal(a, b)` | Decimal | Деление чисел | [→](./decimal/divide.md) |
 | `averageDecimal(a, b)` | Decimal | Среднее значение | [→](./decimal/average.md) |
+| `compareDecimal(a, b)` | Decimal | Сравнение чисел | — |
+| `equalsDecimal(a, b, ε?)` | Decimal | Равенство с точностью | — |
+| `lessThan/greaterThan...` | Decimal | Операторы сравнения | — |
 | `roundToTickSize(value, tickSize)` | Rounding | Запланировано |
 | `roundToDecimalPlaces(value, places)` | Rounding | Запланировано |
 | `isFiniteDecimal(value)` | Validation | Запланировано |
