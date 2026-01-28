@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { averageDecimal } from '../../../src/decimal/average.js';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidOperandError } from '@polymarket/errors';
 
 describe('averageDecimal', () => {
   describe('Success cases', () => {
@@ -54,43 +54,57 @@ describe('averageDecimal', () => {
     });
   });
 
-  describe('Overflow cases', () => {
-    it('should throw ArithmeticOverflowError on Infinity operand', () => {
+  describe('Input validation', () => {
+    it('should throw InvalidOperandError on Infinity in first operand', () => {
       const inf = new Decimal(Infinity);
       expect(() => averageDecimal(inf, new Decimal(10))).toThrow(
-        ArithmeticOverflowError
+        InvalidOperandError
       );
     });
 
-    it('should throw ArithmeticOverflowError on NaN result', () => {
+    it('should throw InvalidOperandError on NaN in first operand', () => {
       const nan = new Decimal(NaN);
       expect(() => averageDecimal(nan, new Decimal(10))).toThrow(
-        ArithmeticOverflowError
+        InvalidOperandError
       );
     });
 
-    it('should throw ArithmeticOverflowError on -Infinity operand', () => {
+    it('should throw InvalidOperandError on -Infinity in first operand', () => {
       const negInf = new Decimal(-Infinity);
       expect(() => averageDecimal(negInf, new Decimal(10))).toThrow(
-        ArithmeticOverflowError
+        InvalidOperandError
+      );
+    });
+
+    it('should throw InvalidOperandError on Infinity in second operand', () => {
+      const inf = new Decimal(Infinity);
+      expect(() => averageDecimal(new Decimal(10), inf)).toThrow(
+        InvalidOperandError
+      );
+    });
+
+    it('should throw InvalidOperandError on NaN in second operand', () => {
+      const nan = new Decimal(NaN);
+      expect(() => averageDecimal(new Decimal(10), nan)).toThrow(
+        InvalidOperandError
       );
     });
   });
 
   describe('Error context', () => {
-    it('should include operation details in error', () => {
+    it('should include operation details in InvalidOperandError', () => {
       const inf = new Decimal(Infinity);
 
       try {
         averageDecimal(inf, new Decimal(10));
         fail('Should have thrown');
       } catch (error) {
-        expect(error).toBeInstanceOf(ArithmeticOverflowError);
-        if (error instanceof ArithmeticOverflowError) {
+        expect(error).toBeInstanceOf(InvalidOperandError);
+        if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.operation).toBe('average');
-          expect(error.context?.operand1).toBe('Infinity');
-          expect(error.context?.operand2).toBe('10');
+          expect(error.context?.a).toBe('Infinity');
+          expect(error.context?.b).toBe('10');
         }
       }
     });

@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { subtractDecimal } from '../../../src/decimal/subtract.js';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidOperandError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('subtractDecimal', () => {
@@ -63,32 +63,50 @@ describe('subtractDecimal', () => {
     });
   });
 
-  describe('граничные случаи', () => {
-    it('должен throw на overflow (Infinity - отрицательное)', () => {
+  describe('проверка валидации операндов', () => {
+    it('должен throw InvalidOperandError на Infinity в первом операнде', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(100);
-      expect(() => subtractDecimal(inf, value)).toThrow(ArithmeticOverflowError);
+      expect(() => subtractDecimal(inf, value)).toThrow(InvalidOperandError);
     });
 
-    it('должен throw на overflow (-Infinity - положительное)', () => {
+    it('должен throw InvalidOperandError на -Infinity в первом операнде', () => {
       const negInf = new Decimal(-Infinity);
       const value = new Decimal(100);
-      expect(() => subtractDecimal(negInf, value)).toThrow(ArithmeticOverflowError);
+      expect(() => subtractDecimal(negInf, value)).toThrow(InvalidOperandError);
     });
 
-    it('должен содержать контекст в ошибке overflow', () => {
+    it('должен throw InvalidOperandError на NaN в первом операнде', () => {
+      const nan = new Decimal(NaN);
+      const value = new Decimal(100);
+      expect(() => subtractDecimal(nan, value)).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError на Infinity во втором операнде', () => {
+      const value = new Decimal(100);
+      const inf = new Decimal(Infinity);
+      expect(() => subtractDecimal(value, inf)).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError на NaN во втором операнде', () => {
+      const value = new Decimal(100);
+      const nan = new Decimal(NaN);
+      expect(() => subtractDecimal(value, nan)).toThrow(InvalidOperandError);
+    });
+
+    it('должен содержать контекст в InvalidOperandError', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(100);
       try {
         subtractDecimal(inf, value);
         fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(ArithmeticOverflowError);
-        if (error instanceof ArithmeticOverflowError) {
+        expect(error).toBeInstanceOf(InvalidOperandError);
+        if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.a).toBe('Infinity');
           expect(error.context?.b).toBe('100');
-          expect(error.context?.result).toBe('Infinity');
+          expect(error.context?.operation).toBe('subtract');
         }
       }
     });

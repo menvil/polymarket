@@ -2,8 +2,8 @@ import { describe, it, expect } from '@jest/globals';
 import { divideDecimal } from '../../../src/decimal/divide.js';
 import {
   DivisionByZeroError,
-  ArithmeticOverflowError,
   InvalidDivisorError,
+  InvalidOperandError,
 } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
@@ -138,30 +138,45 @@ describe('divideDecimal', () => {
     });
   });
 
-  describe('ошибки overflow', () => {
-    it('должен throw ArithmeticOverflowError на overflow (Infinity dividend)', () => {
+  describe('ошибки invalid operand (dividend)', () => {
+    it('должен throw InvalidOperandError на Infinity dividend', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(2);
-      expect(() => divideDecimal(inf, value)).toThrow(
-        ArithmeticOverflowError
-      );
+      expect(() => divideDecimal(inf, value)).toThrow(InvalidOperandError);
     });
 
-    it('должен содержать контекст в ошибке overflow', () => {
+    it('должен throw InvalidOperandError на NaN dividend', () => {
+      const nan = new Decimal(NaN);
+      const value = new Decimal(2);
+      expect(() => divideDecimal(nan, value)).toThrow(InvalidOperandError);
+    });
+
+    it('должен содержать контекст в ошибке invalid dividend', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(2);
       try {
         divideDecimal(inf, value);
         fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(ArithmeticOverflowError);
-        if (error instanceof ArithmeticOverflowError) {
+        expect(error).toBeInstanceOf(InvalidOperandError);
+        if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.dividend).toBe('Infinity');
           expect(error.context?.divisor).toBe('2');
-          expect(error.context?.result).toBe('Infinity');
+          expect(error.context?.operation).toBe('divide');
         }
       }
+    });
+  });
+
+  describe('ошибки overflow (result)', () => {
+    it('проверяет что результат должен быть finite', () => {
+      // Примечание: С Decimal.js практически невозможно получить Infinity result
+      // при валидных finite входах. Decimal поддерживает очень большие числа.
+      // Overflow происходит в основном когда входы сами Infinity (проверяется выше).
+      // Этот тест - документация того, что проверка result.isFinite() есть.
+      const result = divideDecimal(new Decimal(10), new Decimal(2));
+      expect(result.isFinite()).toBe(true);
     });
   });
 

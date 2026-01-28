@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { addDecimal } from '../../../src/decimal/add.js';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidOperandError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('addDecimal', () => {
@@ -66,46 +66,67 @@ describe('addDecimal', () => {
     });
   });
 
-  describe('граничные случаи', () => {
-    it('должен throw на overflow (положительный Infinity)', () => {
+  describe('проверка валидации операндов', () => {
+    it('должен throw InvalidOperandError на Infinity в первом операнде', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(100);
-      expect(() => addDecimal(inf, value)).toThrow(ArithmeticOverflowError);
+      expect(() => addDecimal(inf, value)).toThrow(InvalidOperandError);
     });
 
-    it('должен throw на overflow (отрицательный Infinity)', () => {
+    it('должен throw InvalidOperandError на -Infinity в первом операнде', () => {
       const negInf = new Decimal(-Infinity);
       const value = new Decimal(100);
-      expect(() => addDecimal(negInf, value)).toThrow(ArithmeticOverflowError);
+      expect(() => addDecimal(negInf, value)).toThrow(InvalidOperandError);
     });
 
-    it('должен содержать контекст в ошибке overflow', () => {
+    it('должен throw InvalidOperandError на NaN в первом операнде', () => {
+      const nan = new Decimal(NaN);
+      const value = new Decimal(100);
+      expect(() => addDecimal(nan, value)).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError на Infinity во втором операнде', () => {
+      const value = new Decimal(100);
+      const inf = new Decimal(Infinity);
+      expect(() => addDecimal(value, inf)).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError на NaN во втором операнде', () => {
+      const value = new Decimal(100);
+      const nan = new Decimal(NaN);
+      expect(() => addDecimal(value, nan)).toThrow(InvalidOperandError);
+    });
+
+    it('должен содержать контекст в InvalidOperandError', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(100);
       try {
         addDecimal(inf, value);
         fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(ArithmeticOverflowError);
-        if (error instanceof ArithmeticOverflowError) {
+        expect(error).toBeInstanceOf(InvalidOperandError);
+        if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.a).toBe('Infinity');
           expect(error.context?.b).toBe('100');
-          expect(error.context?.result).toBe('Infinity');
+          expect(error.context?.operation).toBe('add');
         }
       }
     });
   });
 
   describe('точность', () => {
-    it('должен сохранять точность при сложении дробных', () => {
-      const result = addDecimal(new Decimal('0.1'), new Decimal('0.2'));
+    it('должен корректно складывать 0.1 + 0.2', () => {
+      const result = addDecimal(new Decimal(0.1), new Decimal(0.2));
       expect(result.toString()).toBe('0.3'); // Не 0.30000000000000004!
     });
 
-    it('должен корректно работать с разными знаками после запятой', () => {
-      const result = addDecimal(new Decimal('1.123456789'), new Decimal('2.987654321'));
-      expect(result.toString()).toBe('4.11111111');
+    it('должен сохранять точность для больших дробных чисел', () => {
+      const result = addDecimal(
+        new Decimal('1.123456789123456789'),
+        new Decimal('2.987654321987654321')
+      );
+      expect(result.toString()).toBe('4.11111111111111111');
     });
   });
 });

@@ -1,5 +1,8 @@
 import Decimal from 'decimal.js';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import {
+  ArithmeticOverflowError,
+  InvalidOperandError,
+} from '@polymarket/errors';
 import { MATH_CONSTANTS } from '../constants.js';
 
 /**
@@ -8,13 +11,16 @@ import { MATH_CONSTANTS } from '../constants.js';
  * @param a - Первое число
  * @param b - Второе число
  * @returns Среднее значение (a + b) / 2
+ * @throws {InvalidOperandError} Если операнды не конечные числа (NaN/Infinity)
  * @throws {ArithmeticOverflowError} Если результат не конечное число
  *
  * @remarks
  * Чистая математическая операция без бизнес-правил.
  * Алгоритм: (a + b) / 2
  *
- * Throw = математическая невозможность (overflow, NaN, Infinity).
+ * Проверяет только математическую корректность:
+ * - Оба операнда должны быть finite (не NaN, не Infinity)
+ * - Результат должен быть finite
  *
  * НЕ проверяет:
  * - Знаки операндов (это бизнес-правило)
@@ -33,15 +39,48 @@ import { MATH_CONSTANTS } from '../constants.js';
  * const avg3 = averageDecimal(new Decimal(-10), new Decimal(10));
  * console.log(avg3.toString()); // "0"
  *
+ * // Throw на invalid operand
+ * averageDecimal(new Decimal(NaN), new Decimal(5)); // throws InvalidOperandError
+ * averageDecimal(new Decimal(Infinity), new Decimal(5)); // throws InvalidOperandError
+ *
  * // Throw на overflow
  * const huge = new Decimal('1e308');
  * averageDecimal(huge, huge); // throws ArithmeticOverflowError
  * ```
  */
 export function averageDecimal(a: Decimal, b: Decimal): Decimal {
+  // Проверка 1: Оба операнда должны быть конечными числами
+  if (!a.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Operand 'a' must be finite, got ${ctx.a}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'average',
+        },
+      }
+    );
+  }
+
+  if (!b.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Operand 'b' must be finite, got ${ctx.b}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'average',
+        },
+      }
+    );
+  }
+
+  // Выполняем операцию
   const sum = a.plus(b);
   const result = sum.dividedBy(MATH_CONSTANTS.TWO);
 
+  // Проверка 2: Результат должен быть конечным
   if (!result.isFinite()) {
     throw new ArithmeticOverflowError(
       (ctx) =>

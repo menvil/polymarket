@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { multiplyDecimal } from '../../../src/decimal/multiply.js';
 import { MATH_CONSTANTS } from '../../../src/constants.js';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidOperandError } from '@polymarket/errors';
 
 describe('multiplyDecimal', () => {
   // ==================== NORMAL OPERATIONS ====================
@@ -91,27 +91,59 @@ describe('multiplyDecimal', () => {
     });
   });
 
-  // ==================== OVERFLOW TESTS ====================
-  describe('Overflow тесты', () => {
-    it('должен throw на overflow (положительный Infinity)', () => {
+  // ==================== INPUT VALIDATION ====================
+  describe('Проверка валидации операндов', () => {
+    it('должен throw InvalidOperandError на Infinity в первом операнде', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(100);
 
-      expect(() => multiplyDecimal(inf, value)).toThrow(ArithmeticOverflowError);
+      expect(() => multiplyDecimal(inf, value)).toThrow(InvalidOperandError);
     });
 
-    it('должен throw на overflow (отрицательный Infinity)', () => {
+    it('должен throw InvalidOperandError на -Infinity в первом операнде', () => {
       const negInf = new Decimal(-Infinity);
       const value = new Decimal(100);
 
-      expect(() => multiplyDecimal(negInf, value)).toThrow(ArithmeticOverflowError);
+      expect(() => multiplyDecimal(negInf, value)).toThrow(InvalidOperandError);
     });
 
-    it('должен throw на overflow (Infinity * -1)', () => {
-      const inf = new Decimal(Infinity);
-      const negOne = new Decimal(-1);
+    it('должен throw InvalidOperandError на NaN в первом операнде', () => {
+      const nan = new Decimal(NaN);
+      const value = new Decimal(100);
 
-      expect(() => multiplyDecimal(inf, negOne)).toThrow(ArithmeticOverflowError);
+      expect(() => multiplyDecimal(nan, value)).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError на Infinity во втором операнде', () => {
+      const value = new Decimal(100);
+      const inf = new Decimal(Infinity);
+
+      expect(() => multiplyDecimal(value, inf)).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError на NaN во втором операнде', () => {
+      const value = new Decimal(100);
+      const nan = new Decimal(NaN);
+
+      expect(() => multiplyDecimal(value, nan)).toThrow(InvalidOperandError);
+    });
+
+    it('должен содержать контекст в InvalidOperandError', () => {
+      const inf = new Decimal(Infinity);
+      const value = new Decimal(100);
+
+      try {
+        multiplyDecimal(inf, value);
+        fail('Should have thrown InvalidOperandError');
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidOperandError);
+        if (error instanceof InvalidOperandError) {
+          expect(error.context).toBeDefined();
+          expect(error.context?.a).toBe('Infinity');
+          expect(error.context?.b).toBe('100');
+          expect(error.context?.operation).toBe('multiply');
+        }
+      }
     });
   });
 
@@ -132,27 +164,6 @@ describe('multiplyDecimal', () => {
       const result = multiplyDecimal(price, quantity);
 
       expect(result.toString()).toBe('65.43');
-    });
-  });
-
-  // ==================== ERROR CONTEXT ====================
-  describe('Контекст ошибки', () => {
-    it('должен включать контекст в ошибку overflow', () => {
-      const inf = new Decimal(Infinity);
-      const value = new Decimal(100);
-
-      try {
-        multiplyDecimal(inf, value);
-        fail('Should have thrown ArithmeticOverflowError');
-      } catch (error) {
-        expect(error).toBeInstanceOf(ArithmeticOverflowError);
-        if (error instanceof ArithmeticOverflowError) {
-          expect(error.context).toBeDefined();
-          expect(error.context?.a).toBe('Infinity');
-          expect(error.context?.b).toBe('100');
-          expect(error.context?.result).toBe('Infinity');
-        }
-      }
     });
   });
 });

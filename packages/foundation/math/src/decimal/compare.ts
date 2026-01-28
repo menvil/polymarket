@@ -1,30 +1,37 @@
 import Decimal from 'decimal.js';
 
 /**
- * Сравнивает два Decimal на равенство с точностью epsilon
+ * Строгое сравнение двух Decimal на равенство
  *
  * @param a - Первое значение
  * @param b - Второе значение
- * @param epsilon - Точность сравнения (default: 1e-10)
- * @returns True если |a - b| < epsilon
+ * @returns True если a === b (строго равны)
  *
  * @remarks
- * Использует epsilon для сравнения floating-point чисел.
- * По умолчанию epsilon = 1e-10, что достаточно для большинства финансовых расчётов.
+ * Строгое математическое сравнение без epsilon/tolerance.
+ * Использует встроенный метод Decimal.equals() - побитовое сравнение значений.
+ *
+ * Это согласуется с compareDecimal(), который также строгий:
+ * - equalsDecimal(a, b) === true <=> compareDecimal(a, b) === 0
+ *
+ * Для приблизительного сравнения с погрешностью создайте отдельную функцию
+ * или используйте isZeroDecimal() для проверки разности.
  *
  * @example
  * ```typescript
  * equalsDecimal(new Decimal(10), new Decimal(10)); // true
- * equalsDecimal(new Decimal(10.00001), new Decimal(10)); // true (в пределах epsilon)
+ * equalsDecimal(new Decimal('10.0'), new Decimal('10')); // true
+ * equalsDecimal(new Decimal(10), new Decimal(10.0000000001)); // false (строго)
  * equalsDecimal(new Decimal(10), new Decimal(11)); // false
+ *
+ * // Для приблизительного сравнения используйте isZeroDecimal:
+ * import { isZeroDecimal } from '@polymarket/math/validation';
+ * const diff = a.minus(b);
+ * const approxEqual = isZeroDecimal(diff, new Decimal(0.01)); // epsilon = 0.01
  * ```
  */
-export function equalsDecimal(
-  a: Decimal,
-  b: Decimal,
-  epsilon: Decimal = new Decimal(1e-10)
-): boolean {
-  return a.minus(b).abs().lessThan(epsilon);
+export function equalsDecimal(a: Decimal, b: Decimal): boolean {
+  return a.equals(b);
 }
 
 /**

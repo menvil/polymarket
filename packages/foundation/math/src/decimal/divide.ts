@@ -3,6 +3,7 @@ import {
   DivisionByZeroError,
   ArithmeticOverflowError,
   InvalidDivisorError,
+  InvalidOperandError,
 } from '@polymarket/errors';
 
 /**
@@ -11,6 +12,7 @@ import {
  * @param dividend - Делимое
  * @param divisor - Делитель
  * @returns Частное dividend / divisor
+ * @throws {InvalidOperandError} Если делимое не конечное число (NaN/Infinity)
  * @throws {InvalidDivisorError} Если делитель не конечное число (NaN/Infinity)
  * @throws {DivisionByZeroError} Если делитель равен нулю
  * @throws {ArithmeticOverflowError} Если результат не конечное число
@@ -19,6 +21,7 @@ import {
  * Чистая математическая операция.
  *
  * Проверяет только математическую корректность:
+ * - dividend должен быть finite (не NaN, не Infinity)
  * - divisor должен быть finite (не NaN, не Infinity)
  * - divisor не должен быть нулём
  * - result должен быть finite
@@ -52,7 +55,21 @@ import {
  * ```
  */
 export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
-  // Проверка 1: Делитель должен быть конечным числом
+  // Проверка 1: Делимое должно быть конечным числом
+  if (!dividend.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Dividend must be finite, got ${ctx.dividend}`,
+      {
+        context: {
+          dividend: dividend.toString(),
+          divisor: divisor.toString(),
+          operation: 'divide',
+        },
+      }
+    );
+  }
+
+  // Проверка 2: Делитель должен быть конечным числом
   if (!divisor.isFinite()) {
     throw new InvalidDivisorError(
       (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
@@ -65,7 +82,7 @@ export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
     );
   }
 
-  // Проверка 2: Делитель не должен быть нулём
+  // Проверка 3: Делитель не должен быть нулём
   if (divisor.isZero()) {
     throw new DivisionByZeroError(() => 'Cannot divide by zero', {
       context: {
@@ -78,7 +95,7 @@ export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
   // Выполняем деление
   const result = dividend.div(divisor);
 
-  // Проверка 3: Результат должен быть конечным
+  // Проверка 4: Результат должен быть конечным
   if (!result.isFinite()) {
     throw new ArithmeticOverflowError(
       (ctx) =>
