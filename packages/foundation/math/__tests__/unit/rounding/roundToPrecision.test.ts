@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { roundToPrecision } from '../../../src/rounding/roundToPrecision.js';
-import { InvalidDecimalPlacesError } from '@polymarket/errors';
+import { InvalidDecimalPlacesError, InvalidOperandError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('roundToPrecision', () => {
@@ -156,6 +156,41 @@ describe('roundToPrecision', () => {
         Decimal.ROUND_HALF_UP
       );
       expect(result.toString()).toBe('10.12345679');
+    });
+  });
+
+  describe('валидация value', () => {
+    it('должен throw InvalidOperandError на value = NaN', () => {
+      expect(() =>
+        roundToPrecision(new Decimal(NaN), 2, Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError на value = Infinity', () => {
+      expect(() =>
+        roundToPrecision(new Decimal(Infinity), 2, Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError на value = -Infinity', () => {
+      expect(() =>
+        roundToPrecision(new Decimal(-Infinity), 2, Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен содержать контекст в InvalidOperandError', () => {
+      try {
+        roundToPrecision(new Decimal(NaN), 2, Decimal.ROUND_HALF_UP);
+        fail('Should throw');
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidOperandError);
+        if (error instanceof InvalidOperandError) {
+          expect(error.context).toBeDefined();
+          expect(error.context?.value).toBe('NaN');
+          expect(error.context?.decimalPlaces).toBe('2');
+          expect(error.context?.operation).toBe('roundToPrecision');
+        }
+      }
     });
   });
 

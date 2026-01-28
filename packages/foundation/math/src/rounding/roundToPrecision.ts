@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { InvalidDecimalPlacesError } from '@polymarket/errors';
+import { InvalidDecimalPlacesError, InvalidOperandError } from '@polymarket/errors';
 
 /**
  * Округляет значение до указанного количества десятичных знаков
@@ -8,6 +8,7 @@ import { InvalidDecimalPlacesError } from '@polymarket/errors';
  * @param decimalPlaces - Количество десятичных знаков (0 для целых чисел)
  * @param roundingMode - Режим округления Decimal
  * @returns Округлённое значение
+ * @throws {InvalidOperandError} При невалидном value (NaN, ±Infinity)
  * @throws {InvalidDecimalPlacesError} При невалидном количестве знаков (отрицательное, NaN, Infinity, не integer)
  *
  * @remarks
@@ -56,6 +57,20 @@ export function roundToPrecision(
   decimalPlaces: number,
   roundingMode: Decimal.Rounding
 ): Decimal {
+  // Валидация value
+  if (!value.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Value must be finite, got ${ctx.value}`,
+      {
+        context: {
+          value: value.toString(),
+          decimalPlaces: String(decimalPlaces),
+          operation: 'roundToPrecision'
+        }
+      }
+    );
+  }
+
   // Валидация decimalPlaces через Decimal
   const decimalPlacesDecimal = new Decimal(decimalPlaces);
 
