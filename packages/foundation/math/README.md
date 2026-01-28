@@ -44,6 +44,7 @@ npm install @polymarket/math
 - ✅ `ceilToTick(value, tickSize)` - округление вверх (от нуля)
 - ✅ `mathFloorToTick(value, tickSize)` - floor к -Infinity
 - ✅ `mathCeilToTick(value, tickSize)` - ceil к +Infinity
+- ✅ `roundToPrecision(value, decimalPlaces, mode?)` - округление до N знаков
 
 ### Validation (`@polymarket/math/validation`)
 

@@ -24,8 +24,12 @@
 | `lessThan/greaterThan...` | Decimal | Операторы сравнения | — |
 | `roundDecimal(value)` | Decimal | Округление half-up | — |
 | `floor/ceil/truncDecimal` | Decimal | Округление к/от нуля | — |
-| `roundToTickSize(value, tickSize)` | Rounding | Запланировано |
-| `roundToDecimalPlaces(value, places)` | Rounding | Запланировано |
+| `roundToTick(value, tickSize, mode?)` | Rounding | Округление к tick size | — |
+| `floorToTick(value, tickSize)` | Rounding | Floor к tick size | — |
+| `ceilToTick(value, tickSize)` | Rounding | Ceil к tick size | — |
+| `mathFloorToTick(value, tickSize)` | Rounding | Math floor к tick | — |
+| `mathCeilToTick(value, tickSize)` | Rounding | Math ceil к tick | — |
+| `roundToPrecision(value, places, mode?)` | Rounding | Округление до N знаков | — |
 | `isFiniteDecimal(value)` | Validation | Запланировано |
 | `isPositiveDecimal(value)` | Validation | Запланировано |
 
