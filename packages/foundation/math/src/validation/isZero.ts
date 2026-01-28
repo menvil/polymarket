@@ -1,39 +1,29 @@
 import Decimal from 'decimal.js';
 
 /**
- * Проверяет что значение близко к нулю в пределах epsilon
+ * Проверяет что значение строго равно нулю
  *
  * @param value - Проверяемое значение
- * @param epsilon - Максимальная допустимая разница от нуля
- * @returns True если |value| < epsilon
+ * @returns True если значение строго равно 0
  *
  * @remarks
- * Приблизительное сравнение с нулем с явным epsilon.
+ * Выполняет строгое сравнение с нулем через Decimal.isZero().
  *
- * Параметр epsilon ОБЯЗАТЕЛЕН - нет значения по умолчанию.
- * Философия: explicit лучше implicit.
- *
- * Для строгого сравнения с нулем используйте value.isZero().
+ * Для приблизительного сравнения используйте напрямую:
+ * value.abs().lessThan(epsilon)
  *
  * @example
  * ```typescript
- * // Приблизительное сравнение
+ * isZeroDecimal(new Decimal(0));        // true
+ * isZeroDecimal(new Decimal('0.0'));    // true
+ * isZeroDecimal(new Decimal('0.0001')); // false
+ *
+ * // Для приблизительного сравнения:
  * const value = new Decimal('0.0001');
  * const epsilon = new Decimal('0.001');
- *
- * isZeroDecimal(value, epsilon); // true (|0.0001| < 0.001)
- *
- * // Строгое сравнение
- * value.isZero(); // false (не строго ноль)
- *
- * // Разные epsilon для разных контекстов
- * const computationalPrecision = new Decimal('1e-10');
- * const businessPrecision = new Decimal('0.01');
- *
- * isZeroDecimal(diff, computationalPrecision); // Числовая точность
- * isZeroDecimal(remaining, businessPrecision);  // Бизнес-логика
+ * value.abs().lessThan(epsilon); // true
  * ```
  */
-export function isZeroDecimal(value: Decimal, epsilon: Decimal): boolean {
-  return value.abs().lessThan(epsilon);
+export function isZeroDecimal(value: Decimal): boolean {
+  return value.isZero();
 }
