@@ -1,5 +1,9 @@
 import Decimal from 'decimal.js';
-import { InvalidTickSizeError, InvalidOperandError } from '@polymarket/errors';
+import {
+  InvalidTickSizeError,
+  InvalidOperandError,
+  ArithmeticOverflowError,
+} from '@polymarket/errors';
 
 /**
  * Округляет значение до размера тика
@@ -10,6 +14,7 @@ import { InvalidTickSizeError, InvalidOperandError } from '@polymarket/errors';
  * @returns Округлённое значение
  * @throws {InvalidOperandError} Если value не finite (NaN или Infinity)
  * @throws {InvalidTickSizeError} Если tickSize невалидный (<= 0 или не finite)
+ * @throws {ArithmeticOverflowError} Если результат округления не finite
  *
  * @remarks
  * Алгоритм (полностью на Decimal API):
@@ -82,6 +87,22 @@ export function roundToTick(
   const divided = value.dividedBy(tickSize);
   const rounded = divided.toDecimalPlaces(0, roundingMode);
   const result = rounded.times(tickSize);
+
+  // Проверка результата на конечность
+  if (!result.isFinite()) {
+    throw new ArithmeticOverflowError(
+      (ctx) =>
+        `Round to tick overflow: ${ctx.value} rounded to ${ctx.tickSize} = ${ctx.result}`,
+      {
+        context: {
+          value: value.toString(),
+          tickSize: tickSize.toString(),
+          roundingMode: roundingMode.toString(),
+          result: result.toString(),
+        },
+      }
+    );
+  }
 
   return result;
 }
