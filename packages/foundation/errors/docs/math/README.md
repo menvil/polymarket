@@ -24,6 +24,8 @@ Math Errors представляют математические невозмо
 
 | Код | Класс | Когда использовать | Документация |
 |-----|-------|-------------------|--------------|
+| `INVALID_OPERAND` | InvalidOperandError | Операнд NaN/Infinity | [→](./invalid-operand.md) |
+| `INVALID_DECIMAL_PLACES` | InvalidDecimalPlacesError | Decimal places < 0, не целое, не конечно | [→](./invalid-decimal-places.md) |
 | `INVALID_DIVISOR` | InvalidDivisorError | Деление на NaN/Infinity | [→](./invalid-divisor.md) |
 | `INVALID_TICK_SIZE` | InvalidTickSizeError | Tick size <= 0 или не конечен | [→](./invalid-tick-size.md) |
 
