@@ -263,7 +263,7 @@ console.log(check.equals(a)); // true
 
 ## См. также
 
-- [subtractDecimal](./subtract.md) - Вычитание Decimal чисел
+- [subtractDecimal](./subtract.md) - Вычитание Decimal чисел ✅
 - [multiplyDecimal](./multiply.md) - Умножение Decimal чисел
 - [divideDecimal](./divide.md) - Деление Decimal чисел
 - [averageDecimal](./average.md) - Среднее значение двух чисел

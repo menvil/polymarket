@@ -29,7 +29,7 @@ npm install @polymarket/math
 
 Базовые арифметические операции с Decimal:
 - ✅ `addDecimal(a, b)` - сложение ([docs](./docs/decimal/add.md))
-- 🚧 `subtractDecimal(a, b)` - вычитание
+- ✅ `subtractDecimal(a, b)` - вычитание ([docs](./docs/decimal/subtract.md))
 - 🚧 `multiplyDecimal(a, b)` - умножение
 - 🚧 `divideDecimal(a, b)` - деление
 - 🚧 `averageDecimal(a, b)` - среднее значение
