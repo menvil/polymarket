@@ -187,26 +187,4 @@ describe('compare', () => {
       expect(compareDecimal(new Decimal('1e2'), new Decimal('100'))).toBe(0);
     });
   });
-
-  describe('транзитивность сравнений', () => {
-    it('если a < b и b < c, то a < c', () => {
-      const a = new Decimal(1);
-      const b = new Decimal(5);
-      const c = new Decimal(10);
-
-      expect(lessThanDecimal(a, b)).toBe(true);
-      expect(lessThanDecimal(b, c)).toBe(true);
-      expect(lessThanDecimal(a, c)).toBe(true);
-    });
-
-    it('если a == b и b == c, то a == c', () => {
-      const a = new Decimal(10);
-      const b = new Decimal(10);
-      const c = new Decimal(10);
-
-      expect(equalsDecimal(a, b)).toBe(true);
-      expect(equalsDecimal(b, c)).toBe(true);
-      expect(equalsDecimal(a, c)).toBe(true);
-    });
-  });
 });

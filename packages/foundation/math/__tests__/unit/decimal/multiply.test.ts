@@ -44,40 +44,21 @@ describe('multiplyDecimal', () => {
 
   // ==================== INPUT VALIDATION ====================
   describe('Проверка валидации операндов', () => {
-    it('должен throw InvalidOperandError на Infinity в первом операнде', () => {
-      const inf = new Decimal(Infinity);
-      const value = new Decimal(100);
-
-      expect(() => multiplyDecimal(inf, value)).toThrow(InvalidOperandError);
-    });
-
-    it('должен throw InvalidOperandError на -Infinity в первом операнде', () => {
-      const negInf = new Decimal(-Infinity);
-      const value = new Decimal(100);
-
-      expect(() => multiplyDecimal(negInf, value)).toThrow(InvalidOperandError);
-    });
-
-    it('должен throw InvalidOperandError на NaN в первом операнде', () => {
-      const nan = new Decimal(NaN);
-      const value = new Decimal(100);
-
-      expect(() => multiplyDecimal(nan, value)).toThrow(InvalidOperandError);
-    });
-
-    it('должен throw InvalidOperandError на Infinity во втором операнде', () => {
-      const value = new Decimal(100);
-      const inf = new Decimal(Infinity);
-
-      expect(() => multiplyDecimal(value, inf)).toThrow(InvalidOperandError);
-    });
-
-    it('должен throw InvalidOperandError на NaN во втором операнде', () => {
-      const value = new Decimal(100);
-      const nan = new Decimal(NaN);
-
-      expect(() => multiplyDecimal(value, nan)).toThrow(InvalidOperandError);
-    });
+    it.each([
+      ['Infinity', Infinity, 100],
+      ['-Infinity', -Infinity, 100],
+      ['NaN', NaN, 100],
+      ['100', 100, Infinity],
+      ['100', 100, -Infinity],
+      ['100', 100, NaN],
+    ])(
+      'должен throw InvalidOperandError на невалидные операнды: a=%s b=%s',
+      (_label, a, b) => {
+        expect(() => multiplyDecimal(new Decimal(a), new Decimal(b))).toThrow(
+          InvalidOperandError
+        );
+      }
+    );
 
     it('должен содержать контекст в InvalidOperandError', () => {
       const inf = new Decimal(Infinity);

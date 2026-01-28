@@ -55,40 +55,21 @@ describe('averageDecimal', () => {
   });
 
   describe('Input validation', () => {
-    it('should throw InvalidOperandError on Infinity in first operand', () => {
-      const inf = new Decimal(Infinity);
-      expect(() => averageDecimal(inf, new Decimal(10))).toThrow(
-        InvalidOperandError
-      );
-    });
-
-    it('should throw InvalidOperandError on NaN in first operand', () => {
-      const nan = new Decimal(NaN);
-      expect(() => averageDecimal(nan, new Decimal(10))).toThrow(
-        InvalidOperandError
-      );
-    });
-
-    it('should throw InvalidOperandError on -Infinity in first operand', () => {
-      const negInf = new Decimal(-Infinity);
-      expect(() => averageDecimal(negInf, new Decimal(10))).toThrow(
-        InvalidOperandError
-      );
-    });
-
-    it('should throw InvalidOperandError on Infinity in second operand', () => {
-      const inf = new Decimal(Infinity);
-      expect(() => averageDecimal(new Decimal(10), inf)).toThrow(
-        InvalidOperandError
-      );
-    });
-
-    it('should throw InvalidOperandError on NaN in second operand', () => {
-      const nan = new Decimal(NaN);
-      expect(() => averageDecimal(new Decimal(10), nan)).toThrow(
-        InvalidOperandError
-      );
-    });
+    it.each([
+      ['Infinity', Infinity, 10],
+      ['-Infinity', -Infinity, 10],
+      ['NaN', NaN, 10],
+      ['10', 10, Infinity],
+      ['10', 10, -Infinity],
+      ['10', 10, NaN],
+    ])(
+      'should throw InvalidOperandError on invalid operands: a=%s b=%s',
+      (_label, a, b) => {
+        expect(() => averageDecimal(new Decimal(a), new Decimal(b))).toThrow(
+          InvalidOperandError
+        );
+      }
+    );
   });
 
   describe('Error context', () => {

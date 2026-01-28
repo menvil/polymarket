@@ -47,6 +47,7 @@ describe('addDecimal', () => {
       ['-Infinity', -Infinity, 100],
       ['NaN', NaN, 100],
       ['100', 100, Infinity],
+      ['100', 100, -Infinity],
       ['100', 100, NaN],
     ])(
       'должен throw InvalidOperandError на невалидные операнды: a=%s b=%s',

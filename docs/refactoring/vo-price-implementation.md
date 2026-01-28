@@ -28,7 +28,8 @@
 
 2. ✅ **Rules работают с Price, НО правила, валидирующие ПАРАМЕТРЫ рынка, работают с `number | string | Decimal`.**
    - Правила для доменных объектов (ValidateSpread, ValidateAligned) принимают Price
-   - Правила для параметров рынка (ValidateTickSize для tickSize/minSpread) принимают `number | string | Decimal` и возвращают нормализованный Decimal
+   - Правила для параметров рынка (ValidateTickSize для tickSize) принимают `number | string | Decimal` и возвращают нормализованный Decimal
+   - ValidateSpread парсит minSpread внутри и возвращает Result<void, InvalidSpreadError>
 
 3. ✅ **`roundToMarketTick()` не требует "уже кратно тика".** Это функция округления, а не валидации. Для проверки alignment используем отдельный метод `ensureAlignedToMarketTick()`.
 
@@ -37,15 +38,17 @@
    - **ВСЕ публичные методы Facade и Rules возвращают `Result<T, E>`**
    - **Никаких `Price.of()` в публичных методах — только через `create()`**
    - **Никаких `Price.of()` в примерах/тестах вне Core — только `expectOk(PriceService.create(...))`**
-   - **Парсинг входных `number | string` делается в одном месте:**
+   - **Парсинг входных `number | string` делается внутри того метода/правила, где параметр впервые появляется как raw input:**
      - `ValidateTickSize` парсит `tickSize` и возвращает `Result<Decimal, E>`
      - `ValidateSpread` парсит `minSpread` внутри
-     - `PriceService.multiply/divide` парсит `factor/divisor` внутри
-     - Остальные функции используют готовые `Decimal` из Result.value
+     - `PriceService.multiply/divide` парсят `factor/divisor` внутри
+     - Остальные функции получают готовые `Decimal` из предыдущих Result.value
 
 5. ✅ **Никаких магических чисел типа 0.9998.** Только вычисления из констант: `Price.maxValue().minus(Price.minValue())`.
 
 6. ✅ **Никаких epsilon в проверках alignment.** Для проверки кратности используем `price.mod(tickSize).isZero()` — строго, без приближений. Epsilon только в `approximatelyEquals()` для явных approximate-сравнений (с защитой от epsilon <= 0).
+
+7. ✅ **Стандарт field + reason обязателен только для Rules.** Facade и Adapters могут возвращать ошибки без field/reason, если это не доменная валидация, а I/O / JSON / parsing структуры. Например, `PriceSerializer.fromJSON()` возвращает ошибки с контекстом `{ type, json }` без field/reason — это нормально.
 
 ---
 
@@ -839,6 +842,8 @@ export class ValidateAligned {
           {
             code: InvalidPriceError.code,
             context: {
+              field: 'price',
+              reason: 'not_aligned' as AlignedErrorReason,
               price: price.value().toString(),
               tickSize: tickDecimal.toString(),
               remainder: remainder.toString()
@@ -1434,15 +1439,21 @@ mkdir -p price/adapters
 1. Создание Price из number/string/Decimal
 2. Инварианты: NaN, Infinity, отрицательные, < MIN, > MAX
 3. Константы: `min()`, `max()`, `half()` возвращают корректные значения
-4. **`minValue()`, `maxValue()` возвращают Decimal (не создают Price)**
-5. **`minValue()` возвращает тот же Decimal что и `min().value()`**
-6. **`maxValue()` возвращает тот же Decimal что и `max().value()`**
-7. `equals()` - строгое равенство (без epsilon!)
-8. `isMin()`, `isMax()` работают корректно
-9. `value()`, `toNumber()` возвращают корректные значения
-10. PriceInvariantViolation содержит корректное сообщение
+4. **`min()` возвращает новый Price объект каждый раз (не referential equality)**
+5. **`minValue()` возвращает Decimal с корректным значением (0.0001)**
+6. **`maxValue()` возвращает Decimal с корректным значением (0.9999)**
+7. **`minValue()` возвращает тип Decimal (instanceof Decimal)**
+8. `equals()` - строгое равенство (без epsilon!)
+9. `isMin()`, `isMax()` работают корректно
+10. `value()`, `toNumber()` возвращают корректные значения
+11. PriceInvariantViolation содержит корректное сообщение
 
-**Итого:** ~22 теста (было 20)
+**Итого:** ~22 теста
+
+**Важно:** НЕ тестируем implementation details:
+- ❌ НЕ проверяем "minValue() возвращает тот же Decimal что и min().value()" (детали реализации)
+- ❌ НЕ проверяем "Decimal шарится" (детали реализации)
+- ✅ Проверяем только контракт: корректное значение, корректный тип
 
 ---
 
@@ -1469,13 +1480,17 @@ mkdir -p price/adapters
 
 **Тест-кейсы для ValidateTickSize:**
 1. Валидный tickSize (0.0001, 0.01, 0.1) - **проверяем что возвращается Decimal**
-2. Невалидный: NaN, Infinity, отрицательный, 0
-3. **Ошибка парсинга: "abc", null, undefined**
-4. **Проверяем что возвращённый Decimal равен входному значению (без потери точности)**
-5. **При too-large tickSize ошибка содержит context.maxAllowed/minPrice/maxPrice**
-6. **Граничный случай: вычисляем `maxAllowed = Price.maxValue().minus(Price.minValue())`, проверяем `tickSize == maxAllowed → Ok`**
-7. **Граничный случай: `tickSize == maxAllowed.plus(0.0001) → Err`**
-8. Граничные значения
+2. **Ошибка парсинга: "abc", null → field: 'tickSize', reason: 'parse_error'**
+3. **Невалидный: NaN → field: 'tickSize', reason: 'is_nan'**
+4. **Невалидный: Infinity → field: 'tickSize', reason: 'not_finite'**
+5. **Невалидный: отрицательный/0 → field: 'tickSize', reason: 'not_positive'**
+6. **Слишком большой tickSize → field: 'tickSize', reason: 'too_large'**
+7. **При too-large tickSize ошибка содержит context.maxAllowed/minPrice/maxPrice**
+8. **Граничный случай: вычисляем `maxAllowed = Price.maxValue().minus(Price.minValue())`, проверяем `tickSize == maxAllowed → Ok`**
+9. **Граничный случай: `tickSize == maxAllowed.plus(0.0001) → Err`**
+10. **ВСЕ ошибки содержат field: 'tickSize' + reason (проверяем наличие полей во всех Err)**
+11. **reason соответствует типу TickSizeErrorReason (типобезопасность)**
+12. Граничные значения
 
 **Тест-кейсы для ValidateSpread:**
 1. Валидный spread (ask >= bid, spread >= minSpread)
@@ -1494,11 +1509,13 @@ mkdir -p price/adapters
 
 **Тест-кейсы для ValidateAligned:**
 1. Цена кратна tickSize (0.5 % 0.0001 === 0) - строгая проверка mod().isZero()
-2. Цена НЕ кратна tickSize (0.12345 % 0.01 !== 0)
+2. **Цена НЕ кратна tickSize → field: 'price', reason: 'not_aligned'**
 3. **При валидном tickSize не возвращает InvalidTickSizeError**
-4. **При невалидном tickSize возвращает ровно ошибку от ValidateTickSize**
-5. **При валидном tickSize, но некратной цене — возвращает InvalidPriceError (не InvalidTickSizeError)**
-6. Граничные значения (MIN, MAX)
+4. **При невалидном tickSize возвращает ровно ошибку от ValidateTickSize (с field: 'tickSize')**
+5. **При валидном tickSize, но некратной цене — возвращает InvalidPriceError с field: 'price', reason: 'not_aligned'**
+6. **ВСЕ ошибки содержат field + reason (проверяем наличие полей во всех Err)**
+7. **reason соответствует типу AlignedErrorReason (типобезопасность)**
+8. Граничные значения (MIN, MAX)
 
 **Итого:** ~26 тестов (было 22)
 

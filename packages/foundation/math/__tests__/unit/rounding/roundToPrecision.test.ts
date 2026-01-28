@@ -159,22 +159,22 @@ describe('roundToPrecision', () => {
   });
 
   describe('валидация decimalPlaces', () => {
-    it('должен throw на decimalPlaces < 0', () => {
+    it('должен throw Error с "Invalid argument" на decimalPlaces < 0', () => {
       expect(() =>
         roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP)
-      ).toThrow();
+      ).toThrow(/Invalid argument/);
     });
 
-    it('должен throw на decimalPlaces = Infinity', () => {
+    it('должен throw Error с "Invalid argument" на decimalPlaces = Infinity', () => {
       expect(() =>
         roundToPrecision(new Decimal('10.567'), Infinity, Decimal.ROUND_HALF_UP)
-      ).toThrow();
+      ).toThrow(/Invalid argument/);
     });
 
-    it('должен throw на decimalPlaces = NaN', () => {
+    it('должен throw Error с "Invalid argument" на decimalPlaces = NaN', () => {
       expect(() =>
         roundToPrecision(new Decimal('10.567'), NaN, Decimal.ROUND_HALF_UP)
-      ).toThrow();
+      ).toThrow(/Invalid argument/);
     });
 
     it('должен работать с очень высокой точностью', () => {

@@ -91,15 +91,14 @@ describe('validation', () => {
       expect(isZeroDecimal(new Decimal(-1))).toBe(false);
     });
 
-    it('для приблизительного сравнения используйте abs().lessThan()', () => {
-      const value = new Decimal('0.0001');
-      const epsilon = new Decimal('0.001');
+    it('isZeroDecimal использует строгое равенство (не approximate)', () => {
+      const almostZero = new Decimal('1e-10');
 
-      // Строгое сравнение
-      expect(isZeroDecimal(value)).toBe(false);
+      // Строгое: ненулевое значение возвращает false
+      expect(isZeroDecimal(almostZero)).toBe(false);
 
-      // Приблизительное сравнение
-      expect(value.abs().lessThan(epsilon)).toBe(true);
+      // Строгое: только настоящий 0 возвращает true
+      expect(isZeroDecimal(new Decimal(0))).toBe(true);
     });
   });
 });

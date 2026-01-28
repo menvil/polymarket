@@ -355,4 +355,78 @@ describe('roundToTick', () => {
       });
     });
   });
+
+  describe('инвариант: семантика режимов округления', () => {
+    it('ROUND_FLOOR всегда округляет <= value', () => {
+      const testCases = [
+        { value: '10.567', tick: '0.01' },
+        { value: '-10.567', tick: '0.01' },
+        { value: '100.123', tick: '0.1' },
+        { value: '-100.123', tick: '0.1' },
+        { value: '0.567', tick: '0.5' },
+      ];
+
+      testCases.forEach(({ value, tick }) => {
+        const valueDecimal = new Decimal(value);
+        const result = mathFloorToTick(valueDecimal, new Decimal(tick));
+
+        // ROUND_FLOOR: result <= value (всегда к -Infinity)
+        expect(result.lessThanOrEqualTo(valueDecimal)).toBe(true);
+      });
+    });
+
+    it('ROUND_CEIL всегда округляет >= value', () => {
+      const testCases = [
+        { value: '10.567', tick: '0.01' },
+        { value: '-10.567', tick: '0.01' },
+        { value: '100.123', tick: '0.1' },
+        { value: '-100.123', tick: '0.1' },
+        { value: '0.567', tick: '0.5' },
+      ];
+
+      testCases.forEach(({ value, tick }) => {
+        const valueDecimal = new Decimal(value);
+        const result = mathCeilToTick(valueDecimal, new Decimal(tick));
+
+        // ROUND_CEIL: result >= value (всегда к +Infinity)
+        expect(result.greaterThanOrEqualTo(valueDecimal)).toBe(true);
+      });
+    });
+
+    it('ROUND_DOWN округляет к нулю (abs(result) <= abs(value))', () => {
+      const testCases = [
+        { value: '10.567', tick: '0.01' },
+        { value: '-10.567', tick: '0.01' },
+        { value: '100.123', tick: '0.1' },
+        { value: '-100.123', tick: '0.1' },
+        { value: '0.567', tick: '0.5' },
+      ];
+
+      testCases.forEach(({ value, tick }) => {
+        const valueDecimal = new Decimal(value);
+        const result = floorToTick(valueDecimal, new Decimal(tick));
+
+        // ROUND_DOWN: abs(result) <= abs(value) (к нулю)
+        expect(result.abs().lessThanOrEqualTo(valueDecimal.abs())).toBe(true);
+      });
+    });
+
+    it('ROUND_UP округляет от нуля (abs(result) >= abs(value))', () => {
+      const testCases = [
+        { value: '10.567', tick: '0.01' },
+        { value: '-10.567', tick: '0.01' },
+        { value: '100.123', tick: '0.1' },
+        { value: '-100.123', tick: '0.1' },
+        { value: '0.567', tick: '0.5' },
+      ];
+
+      testCases.forEach(({ value, tick }) => {
+        const valueDecimal = new Decimal(value);
+        const result = ceilToTick(valueDecimal, new Decimal(tick));
+
+        // ROUND_UP: abs(result) >= abs(value) (от нуля)
+        expect(result.abs().greaterThanOrEqualTo(valueDecimal.abs())).toBe(true);
+      });
+    });
+  });
 });

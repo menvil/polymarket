@@ -122,6 +122,12 @@ describe('divideDecimal', () => {
       expect(() => divideDecimal(inf, value)).toThrow(InvalidOperandError);
     });
 
+    it('должен throw InvalidOperandError на -Infinity dividend', () => {
+      const negInf = new Decimal(-Infinity);
+      const value = new Decimal(2);
+      expect(() => divideDecimal(negInf, value)).toThrow(InvalidOperandError);
+    });
+
     it('должен throw InvalidOperandError на NaN dividend', () => {
       const nan = new Decimal(NaN);
       const value = new Decimal(2);
