@@ -384,6 +384,10 @@ npm run test:coverage
 │   │   ├── TradingError.ts           # Базовый класс
 │   │   ├── ValidationError.ts        # Пример: ошибка валидации
 │   │   └── index.ts
+│   ├── math/
+│   │   ├── InvalidDivisorError.ts    # Ошибка деления на NaN/Infinity
+│   │   ├── InvalidTickSizeError.ts   # Ошибка невалидного tick size
+│   │   └── index.ts
 │   └── index.ts
 ├── __tests__/
 │   ├── helpers/
