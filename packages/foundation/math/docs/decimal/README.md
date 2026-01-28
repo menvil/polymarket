@@ -54,12 +54,7 @@ class Price {
 | `subtractDecimal(a, b)` | Вычитание чисел | [→](./subtract.md) |
 | `multiplyDecimal(a, b)` | Умножение чисел | [→](./multiply.md) |
 | `divideDecimal(a, b)` | Деление чисел | [→](./divide.md) |
-
-### В разработке
-
-| Функция | Описание | Статус |
-|---------|----------|--------|
-| `averageDecimal(a, b)` | Среднее значение | Запланировано |
+| `averageDecimal(a, b)` | Среднее значение | [→](./average.md) |
 
 ## Общие паттерны использования
 

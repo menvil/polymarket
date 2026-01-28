@@ -32,7 +32,7 @@ npm install @polymarket/math
 - ✅ `subtractDecimal(a, b)` - вычитание ([docs](./docs/decimal/subtract.md))
 - ✅ `multiplyDecimal(a, b)` - умножение ([docs](./docs/decimal/multiply.md))
 - ✅ `divideDecimal(a, b)` - деление ([docs](./docs/decimal/divide.md))
-- 🚧 `averageDecimal(a, b)` - среднее значение
+- ✅ `averageDecimal(a, b)` - среднее значение ([docs](./docs/decimal/average.md))
 
 ### Rounding Operations (`@polymarket/math/rounding`)
 
