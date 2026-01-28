@@ -69,7 +69,7 @@ describe('roundToPrecision', () => {
   });
 
   describe('rounding modes', () => {
-    it('ROUND_HALF_UP (default): должен округлять .5 вверх', () => {
+    it('ROUND_HALF_UP: должен округлять .5 вверх', () => {
       const result = roundToPrecision(
         new Decimal('10.565'),
         2,

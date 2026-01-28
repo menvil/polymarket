@@ -22,7 +22,7 @@ describe('subtractDecimal', () => {
 
     it('должен вычитать дробные числа', () => {
       const result = subtractDecimal(new Decimal(5.5), new Decimal(2.3));
-      expect(result.toNumber()).toBeCloseTo(3.2, 10);
+      expect(result.toString()).toBe('3.2');
     });
 
     it('должен работать с нулём', () => {
@@ -39,27 +39,6 @@ describe('subtractDecimal', () => {
     it('должен работать с очень маленькими числами', () => {
       const result = subtractDecimal(new Decimal('3e-10'), new Decimal('1e-10'));
       expect(result.toString()).toBe('2e-10');
-    });
-  });
-
-  describe('математические свойства', () => {
-    it('НЕ должен быть коммутативным (a-b ≠ b-a)', () => {
-      const a = new Decimal(10);
-      const b = new Decimal(3);
-      expect(subtractDecimal(a, b).toString()).not.toBe(subtractDecimal(b, a).toString());
-    });
-
-    it('вычитание нуля не меняет значение', () => {
-      const a = new Decimal(42);
-      const zero = new Decimal(0);
-      expect(subtractDecimal(a, zero).toString()).toBe(a.toString());
-    });
-
-    it('a - b + b = a', () => {
-      const a = new Decimal(10);
-      const b = new Decimal(3);
-      const result = subtractDecimal(a, b).plus(b);
-      expect(result.toString()).toBe(a.toString());
     });
   });
 

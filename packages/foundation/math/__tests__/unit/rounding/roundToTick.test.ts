@@ -282,28 +282,6 @@ describe('roundToTick', () => {
     });
   });
 
-  describe('ошибки overflow результата', () => {
-    it('проверка overflow существует для консистентности с другими операциями', () => {
-      // ПРИМЕЧАНИЕ: Overflow в roundToTick крайне редок при нормальных условиях,
-      // т.к. алгоритм (value/tick).round()*tick обычно возвращает значение
-      // сопоставимое с исходным value. Если value был finite, результат тоже будет finite.
-      //
-      // Однако проверка добавлена для:
-      // 1. Консистентности с add/subtract/multiply/divide/average
-      // 2. Защиты от экстремальных кейсов при изменении настроек Decimal.js
-      // 3. Защиты от будущих багов в алгоритме
-      //
-      // Проверим что проверка существует (код покрытие):
-      const normalValue = new Decimal('100.567');
-      const normalTick = new Decimal('0.01');
-
-      // Не должен throw на нормальных значениях
-      expect(() =>
-        roundToTick(normalValue, normalTick, Decimal.ROUND_HALF_UP)
-      ).not.toThrow();
-    });
-  });
-
   describe('точность и граничные случаи', () => {
     it('должен сохранять точность для очень маленьких tickSize', () => {
       const result = roundToTick(

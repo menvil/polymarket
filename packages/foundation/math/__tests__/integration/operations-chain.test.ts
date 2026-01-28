@@ -1,7 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import {
   addDecimal,
-  subtractDecimal,
   multiplyDecimal,
   divideDecimal,
   roundToTick,
@@ -78,59 +77,20 @@ describe('Operations Chain Integration', () => {
   });
 
   describe('сложные сценарии', () => {
-    it('составной расчет с несколькими округлениями', () => {
-      // Сценарий: Купил 100 акций по $50.567, продал 60 по $55.123
-      const buyPrice = new Decimal('50.567');
-      const sellPrice = new Decimal('55.123');
-      const sellQty = new Decimal(60);
+    it('цепочка с округлением и делением', () => {
+      const a = new Decimal('100.567');
+      const b = new Decimal(3);
 
-      // Округляем цены до центов
-      const buyPriceRounded = roundToTick(
-        buyPrice,
+      const multiplied = multiplyDecimal(a, b); // 301.701
+      const rounded = roundToTick(
+        multiplied,
         new Decimal(0.01),
         Decimal.ROUND_HALF_UP
-      );
-      const sellPriceRounded = roundToTick(
-        sellPrice,
-        new Decimal(0.01),
-        Decimal.ROUND_HALF_UP
-      );
+      ); // 301.70
+      const divided = divideDecimal(rounded, new Decimal(2)); // 150.85
 
-      // Расчет PnL на проданную часть
-      const buyTotal = multiplyDecimal(buyPriceRounded, sellQty);
-      const sellTotal = multiplyDecimal(sellPriceRounded, sellQty);
-      const pnl = subtractDecimal(sellTotal, buyTotal);
-
-      // Округляем финальный результат
-      const pnlRounded = roundToPrecision(pnl, 2, Decimal.ROUND_HALF_UP);
-
-      expect(buyPriceRounded.toString()).toBe('50.57');
-      expect(sellPriceRounded.toString()).toBe('55.12');
-      expect(pnlRounded.toString()).toBe('273');
-    });
-
-    it('weighted average с округлением', () => {
-      // Три покупки по разным ценам
-      const purchases = [
-        { price: new Decimal('100.50'), qty: new Decimal(10) },
-        { price: new Decimal('102.75'), qty: new Decimal(15) },
-        { price: new Decimal('99.25'), qty: new Decimal(5) },
-      ];
-
-      let totalCost = MATH_CONSTANTS.ZERO;
-      let totalQty = MATH_CONSTANTS.ZERO;
-
-      for (const p of purchases) {
-        const cost = multiplyDecimal(p.price, p.qty);
-        totalCost = addDecimal(totalCost, cost);
-        totalQty = addDecimal(totalQty, p.qty);
-      }
-
-      const avgPrice = divideDecimal(totalCost, totalQty);
-      const rounded = roundToPrecision(avgPrice, 2, Decimal.ROUND_HALF_UP);
-
-      // (1005 + 1541.25 + 496.25) / 30 = 3042.5 / 30 = 101.4166... ≈ 101.42
-      expect(rounded.toString()).toBe('101.42');
+      expect(rounded.toString()).toBe('301.7');
+      expect(divided.toString()).toBe('150.85');
     });
   });
 

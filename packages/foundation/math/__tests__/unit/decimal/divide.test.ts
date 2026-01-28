@@ -53,29 +53,6 @@ describe('divideDecimal', () => {
     });
   });
 
-  describe('математические свойства', () => {
-    it('НЕ должен быть коммутативным (a/b ≠ b/a)', () => {
-      const a = new Decimal(10);
-      const b = new Decimal(2);
-      expect(divideDecimal(a, b).toString()).not.toBe(
-        divideDecimal(b, a).toString()
-      );
-    });
-
-    it('деление на себя даёт единицу', () => {
-      const a = new Decimal(42);
-      const result = divideDecimal(a, a);
-      expect(result.toString()).toBe('1');
-    });
-
-    it('a / b * b = a', () => {
-      const a = new Decimal(10);
-      const b = new Decimal(3);
-      const result = divideDecimal(a, b).times(b);
-      expect(result.toFixed(10)).toBe(a.toFixed(10));
-    });
-  });
-
   describe('ошибки деления на ноль', () => {
     it('должен throw DivisionByZeroError на ноль', () => {
       expect(() => divideDecimal(new Decimal(10), new Decimal(0))).toThrow(

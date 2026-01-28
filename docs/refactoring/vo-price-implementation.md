@@ -26,7 +26,9 @@
 
 1. ✅ **Core не делает approximate-equality.** В Core только строгое равенство `equals()` по Decimal. Approx сравнение — в Facade/Math/Utils под другим именем (например, `approximatelyEquals`).
 
-2. ✅ **Rules/Policy работают с Price, а не с raw Decimal.** Правила принимают Price как основной тип. Исключение: на границе системы (например, ValidateTickSize) можно принимать `number | string | Decimal` для удобства.
+2. ✅ **Rules работают с Price, НО правила, валидирующие ПАРАМЕТРЫ рынка, работают с `number | string | Decimal`.**
+   - Правила для доменных объектов (ValidateSpread, ValidateAligned) принимают Price
+   - Правила для параметров рынка (ValidateTickSize для tickSize/minSpread) принимают `number | string | Decimal` и возвращают нормализованный Decimal
 
 3. ✅ **`roundToMarketTick()` не требует "уже кратно тика".** Это функция округления, а не валидации. Для проверки alignment используем отдельный метод `ensureAlignedToMarketTick()`.
 
@@ -80,7 +82,17 @@
 
 **7. Тест-план с проверяемыми контрактами**
 - Убраны непроверяемые "нет двойного парсинга", "не создаются Price-объекты"
+- Убраны магические числа (0.9998) - вычисляется maxAllowed динамически
 - Добавлены: "error context содержит maxAllowed/minPrice/maxPrice", "tickSize == maxAllowed → Ok"
+
+**8. Типизация стандартизированных ошибок**
+- rules/types.ts с ErrorContext и *ErrorReason unions
+- Все ошибки типобезопасны (reason: SpreadErrorReason | TickSizeErrorReason | AlignedErrorReason)
+- Тесты проверяют наличие field + reason во всех Err
+
+**9. Технические оптимизации**
+- ValidateAligned: убран избыточный .abs() после mod()
+- Core constants: точная формулировка про Decimal sharing как иммутабельных значений
 
 ---
 
@@ -184,6 +196,7 @@ packages/domain/value-objects/src/price/
  │   └─ index.ts
  │
  ├─ rules/
+ │   ├─ types.ts                    ← Типизация стандартизированных ошибок
  │   ├─ ValidateTickSize.ts         ← Правило: tickSize валидный
  │   ├─ ValidateSpread.ts           ← Правило: spread корректный
  │   ├─ ValidateAligned.ts          ← Правило: price кратен tickSize
@@ -288,8 +301,8 @@ export class Price {
    * Константы (функции, создающие новый объект каждый раз)
    *
    * @remarks
-   * Функции возвращают новый Price; не полагаемся на referential equality.
-   * Каждый вызов создаёт новый объект Price - это нормально для Value Object.
+   * Функции возвращают новый Price-объект; Decimal константы шарятся как иммутабельные значения.
+   * Не полагаемся на referential equality.
    */
   public static min(): Price {
     return new Price(Price.MIN_PRICE);
@@ -420,12 +433,56 @@ const rounded = roundToTick(price.value(), new Decimal(0.0001));
 
 #### **Rules Layer**
 
+**Типизация стандартизированных ошибок:**
+
+```typescript
+/**
+ * Общий тип для стандартизированных контекстов ошибок
+ *
+ * @remarks
+ * Все ошибки в Rules должны содержать field + reason для упрощения обработки.
+ */
+export type ErrorContext = {
+  field: string;
+  reason: string;
+  [key: string]: unknown; // дополнительные поля
+};
+
+/**
+ * Типы reason для ValidateTickSize
+ */
+export type TickSizeErrorReason =
+  | 'parse_error'
+  | 'is_nan'
+  | 'not_finite'
+  | 'not_positive'
+  | 'too_large';
+
+/**
+ * Типы reason для ValidateSpread
+ */
+export type SpreadErrorReason =
+  | 'parse_error'    // minSpread парсинг
+  | 'is_nan'         // minSpread NaN
+  | 'not_finite'     // minSpread Infinity
+  | 'negative'       // minSpread < 0
+  | 'ask_lt_bid'     // ask < bid
+  | 'lt_min_spread'; // spread < minSpread
+
+/**
+ * Типы reason для ValidateAligned
+ */
+export type AlignedErrorReason =
+  | 'not_aligned'; // price не кратен tickSize
+```
+
 **Файл:** `rules/ValidateTickSize.ts`
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidTickSizeError } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
+import type { TickSizeErrorReason } from './types.js';
 import Decimal from 'decimal.js';
 
 /**
@@ -468,6 +525,8 @@ export class ValidateTickSize {
           {
             code: InvalidTickSizeError.code,
             context: {
+              field: 'tickSize',
+              reason: 'parse_error' as TickSizeErrorReason,
               tickSize: String(tickSize),
               parseError: error instanceof Error ? error.message : 'unknown'
             }
@@ -483,7 +542,11 @@ export class ValidateTickSize {
           (ctx) => `Tick size must not be NaN, got ${ctx.tickSize}`,
           {
             code: InvalidTickSizeError.code,
-            context: { tickSize: String(tickSize) }
+            context: {
+              field: 'tickSize',
+              reason: 'is_nan' as TickSizeErrorReason,
+              tickSize: String(tickSize)
+            }
           }
         )
       );
@@ -496,7 +559,11 @@ export class ValidateTickSize {
           (ctx) => `Tick size must be finite, got ${ctx.tickSize}`,
           {
             code: InvalidTickSizeError.code,
-            context: { tickSize: tickDecimal.toString() }
+            context: {
+              field: 'tickSize',
+              reason: 'not_finite' as TickSizeErrorReason,
+              tickSize: tickDecimal.toString()
+            }
           }
         )
       );
@@ -509,7 +576,11 @@ export class ValidateTickSize {
           (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
           {
             code: InvalidTickSizeError.code,
-            context: { tickSize: tickDecimal.toString() }
+            context: {
+              field: 'tickSize',
+              reason: 'not_positive' as TickSizeErrorReason,
+              tickSize: tickDecimal.toString()
+            }
           }
         )
       );
@@ -526,6 +597,8 @@ export class ValidateTickSize {
           {
             code: InvalidTickSizeError.code,
             context: {
+              field: 'tickSize',
+              reason: 'too_large' as TickSizeErrorReason,
               tickSize: tickDecimal.toString(),
               maxAllowed: maxAllowed.toString(),
               minPrice: Price.minValue().toString(),
@@ -548,6 +621,7 @@ export class ValidateTickSize {
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidSpreadError } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
+import type { SpreadErrorReason } from './types.js';
 import Decimal from 'decimal.js';
 
 /**
@@ -597,7 +671,7 @@ export class ValidateSpread {
             code: InvalidSpreadError.code,
             context: {
               field: 'minSpread',
-              reason: 'parse_error',
+              reason: 'parse_error' as SpreadErrorReason,
               minSpread: String(minSpread),
               parseError: error instanceof Error ? error.message : 'unknown'
             }
@@ -615,7 +689,7 @@ export class ValidateSpread {
             code: InvalidSpreadError.code,
             context: {
               field: 'minSpread',
-              reason: 'is_nan',
+              reason: 'is_nan' as SpreadErrorReason,
               minSpread: String(minSpread)
             }
           }
@@ -631,7 +705,7 @@ export class ValidateSpread {
             code: InvalidSpreadError.code,
             context: {
               field: 'minSpread',
-              reason: 'not_finite',
+              reason: 'not_finite' as SpreadErrorReason,
               minSpread: minSpreadDecimal.toString()
             }
           }
@@ -647,7 +721,7 @@ export class ValidateSpread {
             code: InvalidSpreadError.code,
             context: {
               field: 'minSpread',
-              reason: 'negative',
+              reason: 'negative' as SpreadErrorReason,
               minSpread: minSpreadDecimal.toString()
             }
           }
@@ -664,7 +738,7 @@ export class ValidateSpread {
             code: InvalidSpreadError.code,
             context: {
               field: 'ask',
-              reason: 'ask_lt_bid',
+              reason: 'ask_lt_bid' as SpreadErrorReason,
               bid: bid.value().toString(),
               ask: ask.value().toString()
             }
@@ -683,7 +757,7 @@ export class ValidateSpread {
             code: InvalidSpreadError.code,
             context: {
               field: 'spread',
-              reason: 'lt_min_spread',
+              reason: 'lt_min_spread' as SpreadErrorReason,
               spread: spread.toString(),
               minSpread: minSpreadDecimal.toString(),
               bid: bid.value().toString(),
@@ -706,6 +780,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError, InvalidTickSizeError } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import { ValidateTickSize } from './ValidateTickSize.js';
+import type { AlignedErrorReason } from './types.js';
 import Decimal from 'decimal.js';
 
 /**
@@ -754,7 +829,8 @@ export class ValidateAligned {
     const tickDecimal = tickResult.value;
 
     // 3. Проверяем кратность через mod() - СТРОГО, без epsilon!
-    const remainder = price.value().mod(tickDecimal).abs();
+    // Для положительных price и tickSize mod() всегда >= 0, abs() избыточен
+    const remainder = price.value().mod(tickDecimal);
 
     if (!remainder.isZero()) {
       return Err(
@@ -1373,6 +1449,7 @@ mkdir -p price/adapters
 ### Фаза 2: Rules Layer (30 минут)
 
 **Файлы:**
+- `price/rules/types.ts` - типизация стандартизированных ошибок (ErrorContext, *ErrorReason)
 - `price/rules/ValidateTickSize.ts` - валидация tickSize
 - `price/rules/ValidateSpread.ts` - валидация spread между bid/ask
 - `price/rules/ValidateAligned.ts` - проверка что цена кратна tickSize
@@ -1384,6 +1461,7 @@ mkdir -p price/adapters
 3. ✅ `ValidateSpread.check()` принимает `Price`, а не `Decimal`
 4. ✅ Добавлен `ValidateAligned` для проверки alignment (было в MarketPricePolicy)
 5. ✅ Все ошибки ValidateSpread стандартизированы (field + reason)
+6. ✅ Типизация ошибок через ErrorContext и *ErrorReason unions
 
 **Реализация:** См. секцию "Rules Layer" выше для полного кода.
 
@@ -1395,8 +1473,8 @@ mkdir -p price/adapters
 3. **Ошибка парсинга: "abc", null, undefined**
 4. **Проверяем что возвращённый Decimal равен входному значению (без потери точности)**
 5. **При too-large tickSize ошибка содержит context.maxAllowed/minPrice/maxPrice**
-6. **tickSize == maxAllowed (0.9998) → Ok**
-7. **tickSize > maxAllowed (0.9998) → Err**
+6. **Граничный случай: вычисляем `maxAllowed = Price.maxValue().minus(Price.minValue())`, проверяем `tickSize == maxAllowed → Ok`**
+7. **Граничный случай: `tickSize == maxAllowed.plus(0.0001) → Err`**
 8. Граничные значения
 
 **Тест-кейсы для ValidateSpread:**
@@ -1408,7 +1486,9 @@ mkdir -p price/adapters
 6. **Невалидный minSpread: Infinity → field: "minSpread", reason: "not_finite"**
 7. **Невалидный minSpread: отрицательный → field: "minSpread", reason: "negative"**
 8. **minSpread принимает number/string/Decimal**
-9. Граничные значения
+9. **ВСЕ ошибки содержат field + reason (проверяем наличие полей во всех Err)**
+10. **reason соответствует типу SpreadErrorReason (типобезопасность)**
+11. Граничные значения
 
 **Важно:** ВСЕ ошибки должны содержать стандартизированные field + reason для упрощения обработки.
 
@@ -1513,6 +1593,14 @@ export { PriceSerializer, PriceFormatter } from './adapters/index.js';
 
 // Rules (для advanced use cases)
 export { ValidateTickSize, ValidateSpread, ValidateAligned } from './rules/index.js';
+
+// Типизация ошибок (для type-safe обработки)
+export type {
+  ErrorContext,
+  TickSizeErrorReason,
+  SpreadErrorReason,
+  AlignedErrorReason
+} from './rules/types.js';
 ```
 
 **Изменения:**
@@ -1716,6 +1804,8 @@ const avgResult = PriceService.average(price, other);
 - [x] **ValidateSpread: принимает minSpread: number|string|Decimal (консистентность)** ✅
 - [x] **ValidateSpread: валидирует minSpread (NaN, Infinity, negative)** ✅
 - [x] **ValidateSpread: ВСЕ ошибки содержат field + reason (minSpread, ask, spread)** ✅
+- [x] **Rules: типизация ошибок через ErrorContext и *ErrorReason unions** ✅
+- [x] **ValidateAligned: убран избыточный .abs() после mod()** ✅
 - [x] **ValidateAligned: импорты ValidateTickSize и InvalidTickSizeError** ✅
 - [x] ValidateAligned: вызывает ValidateTickSize внутри ✅
 - [x] **ValidateAligned: получает готовый Decimal из ValidateTickSize.check().value** ✅
@@ -1731,32 +1821,40 @@ const avgResult = PriceService.average(price, other);
 - [x] **PriceService.approximatelyEquals(): защита от epsilon <= 0 (возвращает false)** ✅
 - [x] **Все примеры/тесты вне Core: Price.of() заменён на expectOk(PriceService.create())** ✅
 - [x] **Все упоминания Price.max().value().minus() заменены на Price.maxValue().minus()** ✅
+- [x] **Тест-план: убраны магические числа (0.9998), вычисляется maxAllowed динамически** ✅
+- [x] **Core constants: точная формулировка про Decimal sharing** ✅
 - [x] **Правило 4 переписано: парсинг в одном месте, не "везде try/catch"** ✅
 - [x] **Правило 5 исправлено: Price.maxValue().minus(Price.minValue())** ✅
 - [x] **Тест-план: убраны непроверяемые утверждения про "нет двойного парсинга"** ✅
 - [x] **Тест-план: добавлены проверяемые контракты (error context, границы)** ✅
 - [x] **Миграция: убран опасный sed-скрипт, описаны breaking changes** ✅
 
-**План полностью адаптирован согласно критике (финальная итерация).**
+**План полностью адаптирован согласно критике (финальная итерация + 4 правки).**
 
 **Обязательные правки выполнены:**
-1. ✅ Правило 5 исправлено: везде Price.maxValue().minus(Price.minValue())
-2. ✅ ValidateTickSize тест-план: удалено "не создаются Price-объекты", добавлены проверяемые контракты
-3. ✅ ValidateSpread: ВСЕ ошибки стандартизированы (field + reason для minSpread/ask/spread)
+1. ✅ **Тест-кейсы ValidateTickSize:** убраны магические числа (0.9998), maxAllowed вычисляется динамически
+2. ✅ **Core constants:** точная формулировка "Decimal константы шарятся как иммутабельные значения"
+3. ✅ **ValidateAligned:** убран избыточный `.abs()` после `mod()` (для положительных чисел)
+4. ✅ **Standardized errors:** типизация через ErrorContext и *ErrorReason unions (rules/types.ts)
 
-**Улучшения выполнены:**
-4. ✅ Core constants: упрощена аргументация про referential equality
-5. ✅ approximatelyEquals: защита от epsilon <= 0 (возвращает false)
+**Предыдущие правки:**
+5. ✅ Правило 5 исправлено: везде Price.maxValue().minus(Price.minValue())
+6. ✅ ValidateTickSize тест-план: удалено "не создаются Price-объекты", добавлены проверяемые контракты
+7. ✅ ValidateSpread: ВСЕ ошибки стандартизированы (field + reason для minSpread/ask/spread)
+8. ✅ Core constants: упрощена аргументация про referential equality
+9. ✅ approximatelyEquals: защита от epsilon <= 0 (возвращает false)
 
 **Финальная проверка пройдена:**
 - ✅ Все Price.of() вне Core заменены на expectOk(PriceService.create())
 - ✅ ValidateAligned компилируется (добавлены импорты)
-- ✅ ValidateSpread ошибки полностью стандартизированы (field + reason)
+- ✅ ValidateSpread ошибки полностью стандартизированы (field + reason + типизация)
 - ✅ Правило 4 про парсинг переписано корректно
-- ✅ Правило 5 исправлено (maxValue/minValue везде)
-- ✅ Тест-план содержит только проверяемые контракты
+- ✅ Правило 5 исправлено (maxValue/minValue везде, включая тесты)
+- ✅ Тест-план содержит только проверяемые контракты (без магических чисел)
 - ✅ Price.minValue()/maxValue() добавлены и используются
 - ✅ approximatelyEquals защищён от epsilon <= 0
+- ✅ ValidateAligned без избыточного .abs()
+- ✅ Типизация ошибок: ErrorContext + *ErrorReason unions
 - ✅ Миграция описана без опасных sed-скриптов
 
 **План готов к реализации.**

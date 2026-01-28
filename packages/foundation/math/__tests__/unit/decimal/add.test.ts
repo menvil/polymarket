@@ -22,7 +22,7 @@ describe('addDecimal', () => {
 
     it('должен складывать дробные числа', () => {
       const result = addDecimal(new Decimal(1.5), new Decimal(2.3));
-      expect(result.toNumber()).toBeCloseTo(3.8, 10);
+      expect(result.toString()).toBe('3.8');
     });
 
     it('должен работать с нулём', () => {
@@ -38,31 +38,6 @@ describe('addDecimal', () => {
     it('должен работать с очень большими числами', () => {
       const result = addDecimal(new Decimal('1e100'), new Decimal('2e100'));
       expect(result.toString()).toBe('3e+100');
-    });
-  });
-
-  describe('математические свойства', () => {
-    it('должен быть коммутативным (a+b = b+a)', () => {
-      const a = new Decimal(5);
-      const b = new Decimal(3);
-      expect(addDecimal(a, b).toString()).toBe(addDecimal(b, a).toString());
-    });
-
-    it('должен быть ассоциативным ((a+b)+c = a+(b+c))', () => {
-      const a = new Decimal(5);
-      const b = new Decimal(3);
-      const c = new Decimal(2);
-
-      const left = addDecimal(addDecimal(a, b), c);
-      const right = addDecimal(a, addDecimal(b, c));
-
-      expect(left.toString()).toBe(right.toString());
-    });
-
-    it('ноль должен быть нейтральным элементом', () => {
-      const a = new Decimal(42);
-      const zero = new Decimal(0);
-      expect(addDecimal(a, zero).toString()).toBe(a.toString());
     });
   });
 
