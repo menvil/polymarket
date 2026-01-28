@@ -3,12 +3,12 @@
 ## Навигация
 
 - [Блок 1: Infrastructure](#блок-1-infrastructure-3-задачи)
-- [Блок 2: Decimal Operations](#блок-2-decimal-operations-7-задач)
+- [Блок 2: Decimal Operations](#блок-2-decimal-operations-8-задач)
 - [Блок 3: Rounding Operations](#блок-3-rounding-operations-3-задачи)
 - [Блок 4: Validation Utilities](#блок-4-validation-utilities-2-задачи)
 - [Блок 5: Finalization](#блок-5-finalization-4-задачи)
 
-**Всего: 19 атомарных задач**
+**Всего: 20 атомарных задач**
 
 ---
 
@@ -699,7 +699,7 @@ EOF
 
 ---
 
-## Блок 2: Decimal Operations (7 задач)
+## Блок 2: Decimal Operations (8 задач)
 
 ### Задача 2.1: Реализовать addDecimal
 
@@ -1763,7 +1763,281 @@ EOF
 
 ---
 
-### Задача 2.5: Реализовать compare операции
+### Задача 2.5: Реализовать averageDecimal
+
+🟡 **Зависит от:** Задача 2.1 (addDecimal), 2.4 (divideDecimal)
+⏱️ **Время:** 12 минут
+
+#### Что делаем:
+1. Создаём `src/decimal/average.ts`
+2. Создаём `__tests__/unit/decimal/average.test.ts`
+3. Обновляем `src/decimal/index.ts`
+4. Запускаем тесты
+
+---
+
+#### Файл 1: average.ts
+
+**Путь:** `packages/foundation/math/src/decimal/average.ts`
+
+```typescript
+import Decimal from 'decimal.js';
+import { ArithmeticOverflowError } from '@polymarket/errors';
+import { MATH_CONSTANTS } from '../constants.js';
+
+/**
+ * Вычисляет среднее значение двух Decimal чисел
+ *
+ * @param a - Первое число
+ * @param b - Второе число
+ * @returns Среднее значение (a + b) / 2
+ * @throws {ArithmeticOverflowError} Если результат не конечное число
+ *
+ * @remarks
+ * Чистая математическая операция без бизнес-правил.
+ * Алгоритм: (a + b) / 2
+ *
+ * Throw = математическая невозможность (overflow, NaN, Infinity).
+ *
+ * НЕ проверяет:
+ * - Знаки операндов (это бизнес-правило)
+ * - Минимальные/максимальные значения (это бизнес-правило)
+ * - Является ли результат "валидным" для конкретного домена
+ *
+ * @example
+ * ```typescript
+ * const avg1 = averageDecimal(new Decimal(10), new Decimal(20));
+ * console.log(avg1.toString()); // "15"
+ *
+ * const avg2 = averageDecimal(new Decimal(0.5), new Decimal(0.7));
+ * console.log(avg2.toString()); // "0.6"
+ *
+ * // Работает с отрицательными числами
+ * const avg3 = averageDecimal(new Decimal(-10), new Decimal(10));
+ * console.log(avg3.toString()); // "0"
+ *
+ * // Throw на overflow
+ * const huge = new Decimal('1e308');
+ * averageDecimal(huge, huge); // throws ArithmeticOverflowError
+ * ```
+ */
+export function averageDecimal(a: Decimal, b: Decimal): Decimal {
+  const sum = a.plus(b);
+  const result = sum.dividedBy(MATH_CONSTANTS.TWO);
+
+  if (!result.isFinite()) {
+    throw new ArithmeticOverflowError(
+      (ctx) => `Average operation resulted in non-finite value: ${ctx.result}`,
+      {
+        code: ArithmeticOverflowError.code,
+        context: {
+          operation: 'average',
+          operand1: a.toString(),
+          operand2: b.toString(),
+          result: result.toString()
+        }
+      }
+    );
+  }
+
+  return result;
+}
+```
+
+---
+
+#### Файл 2: average.test.ts
+
+**Путь:** `packages/foundation/math/__tests__/unit/decimal/average.test.ts`
+
+```typescript
+import Decimal from 'decimal.js';
+import { describe, it, expect } from 'vitest';
+import { averageDecimal } from '../../../src/decimal/average.js';
+import { ArithmeticOverflowError } from '@polymarket/errors';
+
+describe('averageDecimal', () => {
+  describe('Success cases', () => {
+    it('should calculate average of two positive integers', () => {
+      const result = averageDecimal(new Decimal(10), new Decimal(20));
+      expect(result.toString()).toBe('15');
+    });
+
+    it('should calculate average of two decimals', () => {
+      const result = averageDecimal(new Decimal(0.5), new Decimal(0.7));
+      expect(result.toString()).toBe('0.6');
+    });
+
+    it('should handle identical values', () => {
+      const result = averageDecimal(new Decimal(5), new Decimal(5));
+      expect(result.toString()).toBe('5');
+    });
+
+    it('should handle zero and positive number', () => {
+      const result = averageDecimal(new Decimal(0), new Decimal(10));
+      expect(result.toString()).toBe('5');
+    });
+
+    it('should handle negative and positive (result zero)', () => {
+      const result = averageDecimal(new Decimal(-10), new Decimal(10));
+      expect(result.toString()).toBe('0');
+    });
+
+    it('should handle two negative numbers', () => {
+      const result = averageDecimal(new Decimal(-10), new Decimal(-20));
+      expect(result.toString()).toBe('-15');
+    });
+
+    it('should handle very small numbers', () => {
+      const result = averageDecimal(new Decimal(0.0001), new Decimal(0.0003));
+      expect(result.toString()).toBe('0.0002');
+    });
+
+    it('should handle large numbers within range', () => {
+      const result = averageDecimal(new Decimal(1e6), new Decimal(2e6));
+      expect(result.toString()).toBe('1500000');
+    });
+
+    it('should preserve precision', () => {
+      const result = averageDecimal(
+        new Decimal('0.123456789'),
+        new Decimal('0.987654321')
+      );
+      expect(result.toString()).toBe('0.555555555');
+    });
+  });
+
+  describe('Overflow cases', () => {
+    it('should throw ArithmeticOverflowError on overflow', () => {
+      const huge = new Decimal('1e308');
+      expect(() => averageDecimal(huge, huge)).toThrow(ArithmeticOverflowError);
+    });
+
+    it('should throw ArithmeticOverflowError on NaN result', () => {
+      const nan = new Decimal(NaN);
+      expect(() => averageDecimal(nan, new Decimal(10))).toThrow(
+        ArithmeticOverflowError
+      );
+    });
+
+    it('should throw ArithmeticOverflowError on Infinity operand', () => {
+      const inf = new Decimal(Infinity);
+      expect(() => averageDecimal(inf, new Decimal(10))).toThrow(
+        ArithmeticOverflowError
+      );
+    });
+  });
+
+  describe('Error context', () => {
+    it('should include operation details in error', () => {
+      const huge = new Decimal('1e308');
+
+      try {
+        averageDecimal(huge, huge);
+        expect.fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(ArithmeticOverflowError);
+        expect(error.context).toBeDefined();
+        expect(error.context.operation).toBe('average');
+        expect(error.context.operand1).toBe(huge.toString());
+        expect(error.context.operand2).toBe(huge.toString());
+      }
+    });
+  });
+});
+```
+
+---
+
+#### Файл 3: Обновить decimal/index.ts
+
+**Путь:** `packages/foundation/math/src/decimal/index.ts`
+
+**Добавить после divideDecimal:**
+
+```typescript
+export { addDecimal } from './add.js';
+export { subtractDecimal } from './subtract.js';
+export { multiplyDecimal } from './multiply.js';
+export { divideDecimal } from './divide.js';
+export { averageDecimal } from './average.js';
+```
+
+---
+
+#### Команды:
+
+```bash
+cd packages/foundation/math
+
+# Создать файлы (используй Write tool)
+# src/decimal/average.ts
+# __tests__/unit/decimal/average.test.ts
+
+# Обновить src/decimal/index.ts (добавить export)
+
+# Запустить тесты
+npm test -- average.test.ts
+
+# Проверка компиляции
+npm run build
+
+# Проверка типов
+npm run typecheck
+```
+
+---
+
+#### Проверка:
+
+```bash
+cd packages/foundation/math
+
+# Проверить что averageDecimal экспортируется
+node -e "import('./dist/index.js').then(m => console.log('averageDecimal:', typeof m.averageDecimal))"
+
+# Проверить работу
+node -e "import('./dist/index.js').then(m => { const Decimal = m.default; const result = m.averageDecimal(new Decimal(10), new Decimal(20)); console.log('Average 10 and 20:', result.toString()); })"
+```
+
+**Ожидаемый вывод:**
+```
+averageDecimal: function
+Average 10 and 20: 15
+```
+
+---
+
+#### Коммит:
+
+```bash
+cd /Users/menvil/Projects/polymarket
+git add packages/foundation/math/src/decimal/average.ts
+git add packages/foundation/math/__tests__/unit/decimal/average.test.ts
+git add packages/foundation/math/src/decimal/index.ts
+git commit -m "$(cat <<'EOF'
+feat(math): add averageDecimal operation
+
+Добавлена функция averageDecimal для вычисления среднего двух Decimal чисел.
+
+Алгоритм: (a + b) / 2
+
+Features:
+- Чистая математическая операция
+- Обработка overflow с ArithmeticOverflowError
+- Поддержка отрицательных чисел
+- Сохранение precision
+
+Tests: 17 unit тестов (success cases, overflow, error context)
+
+Co-Authored-By: Claude Sonnet 4.5 <noreply@anthropic.com>
+EOF
+)"
+```
+
+---
+
+### Задача 2.6: Реализовать compare операции
 
 🟡 **Зависит от:** Задача 1.2, 1.3
 ⏱️ **Время:** 15 минут
@@ -2063,7 +2337,7 @@ EOF
 
 ---
 
-### Задача 2.6: Реализовать round операции
+### Задача 2.7: Реализовать round операции
 
 🟡 **Зависит от:** Задача 1.2, 1.3
 ⏱️ **Время:** 10 минут
@@ -2324,9 +2598,9 @@ EOF
 
 ---
 
-### Задача 2.7: Проверить полноту decimal exports
+### Задача 2.8: Проверить полноту decimal exports
 
-🟡 **Зависит от:** Задачи 2.1-2.6
+🟡 **Зависит от:** Задачи 2.1-2.7
 ⏱️ **Время:** 5 минут
 
 #### Что делаем:
@@ -3439,7 +3713,7 @@ EOF
 
 ### Задача 5.1: Создать integration тесты
 
-🟡 **Зависит от:** Задачи 2.1-2.6
+🟡 **Зависит от:** Задачи 2.1-2.7
 ⏱️ **Время:** 20 минут
 
 #### Что делаем:
