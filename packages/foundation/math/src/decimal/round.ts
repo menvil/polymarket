@@ -1,14 +1,20 @@
 import Decimal from 'decimal.js';
 
 /**
- * Округляет Decimal к ближайшему целому (banker's rounding)
+ * Округляет Decimal к ближайшему целому (standard half-up rounding)
  *
  * @param value - Значение для округления
  * @returns Округлённое значение
  *
  * @remarks
- * Использует ROUND_HALF_UP - округление 0.5 вверх.
- * Это стандартное математическое округление.
+ * Использует ROUND_HALF_UP - стандартное округление, где 0.5 всегда округляется вверх.
+ * Это НЕ banker's rounding (ROUND_HALF_EVEN).
+ *
+ * Примеры округления 0.5:
+ * - 2.5 -> 3 (вверх)
+ * - 3.5 -> 4 (вверх)
+ *
+ * Для banker's rounding используйте value.toDecimalPlaces(0, Decimal.ROUND_HALF_EVEN).
  *
  * @example
  * ```typescript
