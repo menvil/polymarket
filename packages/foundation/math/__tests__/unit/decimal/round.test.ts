@@ -4,6 +4,8 @@ import {
   floorDecimal,
   ceilDecimal,
   truncDecimal,
+  mathFloorDecimal,
+  mathCeilDecimal,
 } from '../../../src/decimal/round.js';
 import Decimal from 'decimal.js';
 
@@ -102,12 +104,64 @@ describe('round', () => {
     });
   });
 
+  describe('mathFloorDecimal (ROUND_FLOOR - к -Infinity)', () => {
+    it('должен округлять положительные вниз', () => {
+      expect(mathFloorDecimal(new Decimal(10.9)).toString()).toBe('10');
+      expect(mathFloorDecimal(new Decimal(10.1)).toString()).toBe('10');
+    });
+
+    it('должен округлять отрицательные вниз (к -Infinity)', () => {
+      expect(mathFloorDecimal(new Decimal(-10.1)).toString()).toBe('-11');
+      expect(mathFloorDecimal(new Decimal(-10.9)).toString()).toBe('-11');
+    });
+
+    it('должен не изменять целые числа', () => {
+      expect(mathFloorDecimal(new Decimal(10)).toString()).toBe('10');
+      expect(mathFloorDecimal(new Decimal(-10)).toString()).toBe('-10');
+    });
+
+    it('должен работать с нулём', () => {
+      expect(mathFloorDecimal(new Decimal(0)).toString()).toBe('0');
+    });
+  });
+
+  describe('mathCeilDecimal (ROUND_CEIL - к +Infinity)', () => {
+    it('должен округлять положительные вверх (к +Infinity)', () => {
+      expect(mathCeilDecimal(new Decimal(10.1)).toString()).toBe('11');
+      expect(mathCeilDecimal(new Decimal(10.9)).toString()).toBe('11');
+    });
+
+    it('должен округлять отрицательные вверх (к +Infinity)', () => {
+      expect(mathCeilDecimal(new Decimal(-10.9)).toString()).toBe('-10');
+      expect(mathCeilDecimal(new Decimal(-10.1)).toString()).toBe('-10');
+    });
+
+    it('должен не изменять целые числа', () => {
+      expect(mathCeilDecimal(new Decimal(10)).toString()).toBe('10');
+      expect(mathCeilDecimal(new Decimal(-10)).toString()).toBe('-10');
+    });
+
+    it('должен работать с нулём', () => {
+      expect(mathCeilDecimal(new Decimal(0)).toString()).toBe('0');
+    });
+  });
+
   describe('сравнение методов округления', () => {
     it('floor, ceil и round дают разные результаты для 10.5', () => {
       const value = new Decimal(10.5);
       expect(floorDecimal(value).toString()).toBe('10'); // К нулю
       expect(ceilDecimal(value).toString()).toBe('11'); // От нуля
       expect(roundDecimal(value).toString()).toBe('11'); // Half-up
+    });
+
+    it('floorDecimal (к нулю) vs mathFloorDecimal (к -Infinity) для отрицательных', () => {
+      expect(floorDecimal(new Decimal(-10.1)).toString()).toBe('-10'); // К нулю
+      expect(mathFloorDecimal(new Decimal(-10.1)).toString()).toBe('-11'); // К -Infinity
+    });
+
+    it('ceilDecimal (от нуля) vs mathCeilDecimal (к +Infinity) для отрицательных', () => {
+      expect(ceilDecimal(new Decimal(-10.9)).toString()).toBe('-11'); // От нуля
+      expect(mathCeilDecimal(new Decimal(-10.9)).toString()).toBe('-10'); // К +Infinity
     });
 
     it('floor и trunc одинаковы для положительных', () => {
@@ -122,6 +176,11 @@ describe('round', () => {
       expect(floorDecimal(value).toString()).toBe(
         truncDecimal(value).toString()
       );
+    });
+
+    it('truncDecimal отличается от mathFloorDecimal для отрицательных', () => {
+      expect(truncDecimal(new Decimal(-10.9)).toString()).toBe('-10'); // К нулю
+      expect(mathFloorDecimal(new Decimal(-10.9)).toString()).toBe('-11'); // К -Infinity
     });
   });
 });

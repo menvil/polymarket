@@ -6,7 +6,7 @@ import {
   mathFloorToTick,
   mathCeilToTick,
 } from '../../../src/rounding/roundToTick.js';
-import { InvalidTickSizeError } from '@polymarket/errors';
+import { InvalidTickSizeError, InvalidOperandError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('roundToTick', () => {
@@ -199,6 +199,40 @@ describe('roundToTick', () => {
 
       expect(ceil.toString()).toBe('-10.57'); // От нуля
       expect(mathCeil.toString()).toBe('-10.56'); // К +Infinity
+    });
+  });
+
+  describe('ошибки валидации value', () => {
+    it('должен throw на value = NaN', () => {
+      expect(() =>
+        roundToTick(new Decimal(NaN), new Decimal(0.01), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw на value = Infinity', () => {
+      expect(() =>
+        roundToTick(new Decimal(Infinity), new Decimal(0.01), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw на value = -Infinity', () => {
+      expect(() =>
+        roundToTick(new Decimal(-Infinity), new Decimal(0.01), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен содержать контекст в ошибке', () => {
+      try {
+        roundToTick(new Decimal(NaN), new Decimal(0.01), Decimal.ROUND_HALF_UP);
+        fail('Should throw');
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidOperandError);
+        if (error instanceof InvalidOperandError) {
+          expect(error.context).toBeDefined();
+          expect(error.context?.value).toBe('NaN');
+          expect(error.context?.operation).toBe('roundToTick');
+        }
+      }
     });
   });
 

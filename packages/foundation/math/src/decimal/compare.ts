@@ -116,6 +116,7 @@ export function greaterThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
  * @returns -1 если a < b, 0 если a == b, 1 если a > b
  *
  * @remarks
+ * Использует канонический метод comparedTo из Decimal.js.
  * Полезно для сортировки и условных ветвлений.
  *
  * @example
@@ -131,7 +132,8 @@ export function greaterThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function compareDecimal(a: Decimal, b: Decimal): -1 | 0 | 1 {
-  if (a.lessThan(b)) return -1;
-  if (a.greaterThan(b)) return 1;
+  const c = a.comparedTo(b);
+  if (c < 0) return -1;
+  if (c > 0) return 1;
   return 0;
 }

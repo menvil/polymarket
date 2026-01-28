@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { InvalidTickSizeError } from '@polymarket/errors';
+import { InvalidTickSizeError, InvalidOperandError } from '@polymarket/errors';
 
 /**
  * Округляет значение до размера тика
@@ -8,6 +8,7 @@ import { InvalidTickSizeError } from '@polymarket/errors';
  * @param tickSize - Размер тика (например, 0.01 для центов)
  * @param roundingMode - Режим округления Decimal
  * @returns Округлённое значение
+ * @throws {InvalidOperandError} Если value не finite (NaN или Infinity)
  * @throws {InvalidTickSizeError} Если tickSize невалидный (<= 0 или не finite)
  *
  * @remarks
@@ -51,6 +52,19 @@ export function roundToTick(
   tickSize: Decimal,
   roundingMode: Decimal.Rounding
 ): Decimal {
+  // Валидация value
+  if (!value.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Value must be finite, got ${ctx.value}`,
+      {
+        context: {
+          value: value.toString(),
+          operation: 'roundToTick',
+        },
+      }
+    );
+  }
+
   // Валидация tickSize
   if (!tickSize.isFinite() || tickSize.lessThanOrEqualTo(0)) {
     throw new InvalidTickSizeError(

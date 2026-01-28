@@ -16,4 +16,6 @@ export {
   floorDecimal,
   ceilDecimal,
   truncDecimal,
+  mathFloorDecimal,
+  mathCeilDecimal,
 } from './round.js';
