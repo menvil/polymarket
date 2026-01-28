@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { roundToPrecision } from '../../../src/rounding/roundToPrecision.js';
+import { InvalidDecimalPlacesError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('roundToPrecision', () => {
@@ -159,31 +160,43 @@ describe('roundToPrecision', () => {
   });
 
   describe('валидация decimalPlaces', () => {
-    it('должен throw Error на decimalPlaces < 0', () => {
+    it('должен throw InvalidDecimalPlacesError на decimalPlaces < 0', () => {
       expect(() =>
         roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP)
-      ).toThrow(Error);
-      expect(() =>
-        roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP)
-      ).toThrow('Invalid argument');
+      ).toThrow(InvalidDecimalPlacesError);
     });
 
-    it('должен throw Error на decimalPlaces = Infinity', () => {
+    it('должен throw InvalidDecimalPlacesError на decimalPlaces = Infinity', () => {
       expect(() =>
         roundToPrecision(new Decimal('10.567'), Infinity, Decimal.ROUND_HALF_UP)
-      ).toThrow(Error);
-      expect(() =>
-        roundToPrecision(new Decimal('10.567'), Infinity, Decimal.ROUND_HALF_UP)
-      ).toThrow('Invalid argument');
+      ).toThrow(InvalidDecimalPlacesError);
     });
 
-    it('должен throw Error на decimalPlaces = NaN', () => {
+    it('должен throw InvalidDecimalPlacesError на decimalPlaces = NaN', () => {
       expect(() =>
         roundToPrecision(new Decimal('10.567'), NaN, Decimal.ROUND_HALF_UP)
-      ).toThrow(Error);
+      ).toThrow(InvalidDecimalPlacesError);
+    });
+
+    it('должен throw InvalidDecimalPlacesError на decimalPlaces = 1.5 (не integer)', () => {
       expect(() =>
-        roundToPrecision(new Decimal('10.567'), NaN, Decimal.ROUND_HALF_UP)
-      ).toThrow('Invalid argument');
+        roundToPrecision(new Decimal('10.567'), 1.5, Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidDecimalPlacesError);
+    });
+
+    it('должен содержать контекст в InvalidDecimalPlacesError', () => {
+      try {
+        roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP);
+        fail('Should throw');
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidDecimalPlacesError);
+        if (error instanceof InvalidDecimalPlacesError) {
+          expect(error.context).toBeDefined();
+          expect(error.context?.decimalPlaces).toBe('-1');
+          expect(error.context?.value).toBe('10.567');
+          expect(error.context?.operation).toBe('roundToPrecision');
+        }
+      }
     });
 
     it('должен работать с очень высокой точностью', () => {

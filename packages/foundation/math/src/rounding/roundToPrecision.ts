@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { InvalidDecimalPlacesError } from '@polymarket/errors';
 
 /**
  * Округляет значение до указанного количества десятичных знаков
@@ -7,9 +8,10 @@ import Decimal from 'decimal.js';
  * @param decimalPlaces - Количество десятичных знаков (0 для целых чисел)
  * @param roundingMode - Режим округления Decimal
  * @returns Округлённое значение
+ * @throws {InvalidDecimalPlacesError} При невалидном количестве знаков (отрицательное, NaN, Infinity, не integer)
  *
  * @remarks
- * Обёртка над Decimal.toDecimalPlaces() для единообразного API.
+ * Обёртка над Decimal.toDecimalPlaces() с валидацией для единообразного API.
  *
  * Режимы округления:
  * - Decimal.ROUND_HALF_UP - округление к ближайшему, .5 вверх
@@ -42,6 +44,11 @@ import Decimal from 'decimal.js';
  *
  * // Работает с отрицательными числами
  * roundToPrecision(new Decimal('-10.567'), 2, Decimal.ROUND_HALF_UP); // -10.57
+ *
+ * // Невалидные значения бросают InvalidDecimalPlacesError
+ * roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP); // throws
+ * roundToPrecision(new Decimal('10.567'), NaN, Decimal.ROUND_HALF_UP); // throws
+ * roundToPrecision(new Decimal('10.567'), 1.5, Decimal.ROUND_HALF_UP); // throws
  * ```
  */
 export function roundToPrecision(
@@ -49,5 +56,19 @@ export function roundToPrecision(
   decimalPlaces: number,
   roundingMode: Decimal.Rounding
 ): Decimal {
+  // Валидация decimalPlaces
+  if (!Number.isFinite(decimalPlaces) || decimalPlaces < 0 || !Number.isInteger(decimalPlaces)) {
+    throw new InvalidDecimalPlacesError(
+      (ctx) => `Decimal places must be a non-negative integer, got ${ctx.decimalPlaces}`,
+      {
+        context: {
+          decimalPlaces: String(decimalPlaces),
+          value: value.toString(),
+          operation: 'roundToPrecision'
+        }
+      }
+    );
+  }
+
   return value.toDecimalPlaces(decimalPlaces, roundingMode);
 }
