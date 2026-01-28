@@ -11,3 +11,9 @@ export {
   greaterThanOrEqualDecimal,
   compareDecimal,
 } from './compare.js';
+export {
+  roundDecimal,
+  floorDecimal,
+  ceilDecimal,
+  truncDecimal,
+} from './round.js';

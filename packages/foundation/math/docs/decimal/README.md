@@ -61,6 +61,10 @@ class Price {
 | `greaterThanDecimal(a, b)` | Строгое больше (>) | — |
 | `greaterThanOrEqualDecimal(a, b)` | Больше или равно (>=) | — |
 | `compareDecimal(a, b)` | Сравнение (-1/0/1) | — |
+| `roundDecimal(value)` | Округление (half-up) | — |
+| `floorDecimal(value)` | Округление к нулю | — |
+| `ceilDecimal(value)` | Округление от нуля | — |
+| `truncDecimal(value)` | Усечение дроби | — |
 
 ## Общие паттерны использования
 

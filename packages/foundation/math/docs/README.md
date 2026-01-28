@@ -22,6 +22,8 @@
 | `compareDecimal(a, b)` | Decimal | Сравнение чисел | — |
 | `equalsDecimal(a, b, ε?)` | Decimal | Равенство с точностью | — |
 | `lessThan/greaterThan...` | Decimal | Операторы сравнения | — |
+| `roundDecimal(value)` | Decimal | Округление half-up | — |
+| `floor/ceil/truncDecimal` | Decimal | Округление к/от нуля | — |
 | `roundToTickSize(value, tickSize)` | Rounding | Запланировано |
 | `roundToDecimalPlaces(value, places)` | Rounding | Запланировано |
 | `isFiniteDecimal(value)` | Validation | Запланировано |
