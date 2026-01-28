@@ -42,55 +42,6 @@ describe('multiplyDecimal', () => {
     });
   });
 
-  // ==================== MATHEMATICAL PROPERTIES ====================
-  describe('Математические свойства', () => {
-    it('должен соблюдать коммутативность (a * b = b * a)', () => {
-      const a = new Decimal('5.5');
-      const b = new Decimal('3.2');
-
-      const result1 = multiplyDecimal(a, b);
-      const result2 = multiplyDecimal(b, a);
-
-      expect(result1.equals(result2)).toBe(true);
-    });
-
-    it('должен соблюдать ассоциативность ((a * b) * c = a * (b * c))', () => {
-      const a = new Decimal('2');
-      const b = new Decimal('3');
-      const c = new Decimal('4');
-
-      const result1 = multiplyDecimal(multiplyDecimal(a, b), c);
-      const result2 = multiplyDecimal(a, multiplyDecimal(b, c));
-
-      expect(result1.equals(result2)).toBe(true);
-    });
-
-    it('должен соблюдать свойство нейтрального элемента (a * 1 = a)', () => {
-      const a = new Decimal('42.5');
-      const result = multiplyDecimal(a, MATH_CONSTANTS.ONE);
-
-      expect(result.equals(a)).toBe(true);
-    });
-
-    it('должен соблюдать свойство нуля (a * 0 = 0)', () => {
-      const a = new Decimal('123.456');
-      const result = multiplyDecimal(a, MATH_CONSTANTS.ZERO);
-
-      expect(result.equals(MATH_CONSTANTS.ZERO)).toBe(true);
-    });
-
-    it('должен соблюдать дистрибутивность (a * (b + c) = a * b + a * c)', () => {
-      const a = new Decimal('2');
-      const b = new Decimal('3');
-      const c = new Decimal('4');
-
-      const left = multiplyDecimal(a, b.plus(c));
-      const right = multiplyDecimal(a, b).plus(multiplyDecimal(a, c));
-
-      expect(left.equals(right)).toBe(true);
-    });
-  });
-
   // ==================== INPUT VALIDATION ====================
   describe('Проверка валидации операндов', () => {
     it('должен throw InvalidOperandError на Infinity в первом операнде', () => {

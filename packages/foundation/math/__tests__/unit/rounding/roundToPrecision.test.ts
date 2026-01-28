@@ -156,6 +156,26 @@ describe('roundToPrecision', () => {
       );
       expect(result.toString()).toBe('10.12345679');
     });
+  });
+
+  describe('валидация decimalPlaces', () => {
+    it('должен throw на decimalPlaces < 0', () => {
+      expect(() =>
+        roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP)
+      ).toThrow();
+    });
+
+    it('должен throw на decimalPlaces = Infinity', () => {
+      expect(() =>
+        roundToPrecision(new Decimal('10.567'), Infinity, Decimal.ROUND_HALF_UP)
+      ).toThrow();
+    });
+
+    it('должен throw на decimalPlaces = NaN', () => {
+      expect(() =>
+        roundToPrecision(new Decimal('10.567'), NaN, Decimal.ROUND_HALF_UP)
+      ).toThrow();
+    });
 
     it('должен работать с очень высокой точностью', () => {
       const result = roundToPrecision(

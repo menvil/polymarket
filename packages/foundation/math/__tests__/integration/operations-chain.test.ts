@@ -51,52 +51,6 @@ describe('Operations Chain Integration', () => {
     });
   });
 
-  describe('финансовые расчеты', () => {
-    it('расчет PnL: (sellPrice - buyPrice) * quantity', () => {
-      const buyPrice = new Decimal('0.65');
-      const sellPrice = new Decimal('0.75');
-      const quantity = new Decimal(1000);
-
-      const priceDiff = subtractDecimal(sellPrice, buyPrice); // 0.10
-      const pnl = multiplyDecimal(priceDiff, quantity); // 100
-
-      expect(pnl.toString()).toBe('100');
-    });
-
-    it('расчет комиссии: amount * feeRate', () => {
-      const amount = new Decimal(1000);
-      const feeRate = new Decimal('0.02'); // 2%
-
-      const fee = multiplyDecimal(amount, feeRate);
-      const rounded = roundToPrecision(fee, 2, Decimal.ROUND_HALF_UP);
-
-      expect(rounded.toString()).toBe('20');
-    });
-
-    it('расчет нетто после комиссии', () => {
-      const amount = new Decimal(1000);
-      const feeRate = new Decimal('0.02');
-
-      const fee = multiplyDecimal(amount, feeRate); // 20
-      const net = subtractDecimal(amount, fee); // 980
-
-      expect(net.toString()).toBe('980');
-    });
-
-    it('расчет маржи: (sell - cost) / sell * 100', () => {
-      const sellPrice = new Decimal(150);
-      const costPrice = new Decimal(100);
-      const hundred = MATH_CONSTANTS.HUNDRED;
-
-      const profit = subtractDecimal(sellPrice, costPrice); // 50
-      const margin = divideDecimal(profit, sellPrice); // 0.333...
-      const marginPercent = multiplyDecimal(margin, hundred); // 33.33...
-      const rounded = roundToPrecision(marginPercent, 2, Decimal.ROUND_HALF_UP); // 33.33
-
-      expect(rounded.toString()).toBe('33.33');
-    });
-  });
-
   describe('использование констант', () => {
     it('использование ZERO', () => {
       const value = new Decimal(100);

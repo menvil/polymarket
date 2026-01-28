@@ -169,17 +169,6 @@ describe('divideDecimal', () => {
     });
   });
 
-  describe('ошибки overflow (result)', () => {
-    it('проверяет что результат должен быть finite', () => {
-      // Примечание: С Decimal.js практически невозможно получить Infinity result
-      // при валидных finite входах. Decimal поддерживает очень большие числа.
-      // Overflow происходит в основном когда входы сами Infinity (проверяется выше).
-      // Этот тест - документация того, что проверка result.isFinite() есть.
-      const result = divideDecimal(new Decimal(10), new Decimal(2));
-      expect(result.isFinite()).toBe(true);
-    });
-  });
-
   describe('точность', () => {
     it('должен сохранять точность при делении дробных', () => {
       const result = divideDecimal(new Decimal('1'), new Decimal('3'));

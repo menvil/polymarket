@@ -49,9 +49,17 @@ describe('compare', () => {
       expect(equalsDecimal(a, b)).toBe(true);
       expect(compareDecimal(a, b)).toBe(0);
 
-      // equals false => compare !== 0
+      // equals false => compare должен быть -1 или 1
       expect(equalsDecimal(a, c)).toBe(false);
-      expect(compareDecimal(a, c)).not.toBe(0);
+      expect(compareDecimal(a, c)).toBe(-1); // a < c
+    });
+
+    it('должен работать с разными форматами для equals', () => {
+      // '10.0' vs '10' - одинаковые численно
+      expect(equalsDecimal(new Decimal('10.0'), new Decimal('10'))).toBe(true);
+      expect(
+        equalsDecimal(new Decimal('0.1000'), new Decimal('0.10'))
+      ).toBe(true);
     });
   });
 
@@ -151,6 +159,32 @@ describe('compare', () => {
       expect(compareDecimal(new Decimal(0), new Decimal(0))).toBe(0);
       expect(compareDecimal(new Decimal(5), new Decimal(0))).toBe(1);
       expect(compareDecimal(new Decimal(-5), new Decimal(0))).toBe(-1);
+    });
+
+    it('должен соблюдать антисимметрию: compare(a,b) === -compare(b,a)', () => {
+      const a = new Decimal('5.5');
+      const b = new Decimal('10.7');
+      const c = new Decimal('-3.2');
+
+      expect(compareDecimal(a, b)).toBe(-compareDecimal(b, a));
+      expect(compareDecimal(b, c)).toBe(-compareDecimal(c, b));
+      expect(compareDecimal(a, c)).toBe(-compareDecimal(c, a));
+    });
+
+    it('должен соблюдать транзитивность: если a<b и b<c то a<c', () => {
+      const a = new Decimal('1.5');
+      const b = new Decimal('5.7');
+      const c = new Decimal('10.3');
+
+      expect(compareDecimal(a, b)).toBe(-1); // a < b
+      expect(compareDecimal(b, c)).toBe(-1); // b < c
+      expect(compareDecimal(a, c)).toBe(-1); // a < c (транзитивность)
+    });
+
+    it('должен работать с разными форматами: compare("10.0", "10") === 0', () => {
+      expect(compareDecimal(new Decimal('10.0'), new Decimal('10'))).toBe(0);
+      expect(compareDecimal(new Decimal('0.1000'), new Decimal('0.10'))).toBe(0);
+      expect(compareDecimal(new Decimal('1e2'), new Decimal('100'))).toBe(0);
     });
   });
 

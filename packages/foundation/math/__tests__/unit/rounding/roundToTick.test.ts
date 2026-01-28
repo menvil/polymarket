@@ -249,6 +249,12 @@ describe('roundToTick', () => {
       ).toThrow(InvalidTickSizeError);
     });
 
+    it('должен throw на очень маленький отрицательный tickSize', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal(-0.000000001), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidTickSizeError);
+    });
+
     it('должен throw на tickSize = NaN', () => {
       expect(() =>
         roundToTick(new Decimal(10), new Decimal(NaN), Decimal.ROUND_HALF_UP)
@@ -324,6 +330,51 @@ describe('roundToTick', () => {
         Decimal.ROUND_HALF_UP
       );
       expect(result.toString()).toBe('0');
+    });
+  });
+
+  describe('инвариант: результат всегда кратен tickSize', () => {
+    it('result.div(tick).isInteger() должно быть true для разных значений', () => {
+      const testCases = [
+        { value: '10.567', tick: '0.01' },
+        { value: '100.123', tick: '0.1' },
+        { value: '45.678', tick: '0.001' },
+        { value: '1000.5', tick: '1' },
+        { value: '-10.567', tick: '0.01' },
+        { value: '0.123456', tick: '0.000001' },
+        { value: '999.999', tick: '0.5' },
+        { value: '1234567', tick: '100' },
+      ];
+
+      testCases.forEach(({ value, tick }) => {
+        const result = roundToTick(
+          new Decimal(value),
+          new Decimal(tick),
+          Decimal.ROUND_HALF_UP
+        );
+
+        const quotient = result.div(new Decimal(tick));
+        expect(quotient.isInteger()).toBe(true);
+      });
+    });
+
+    it('result должен быть кратен tickSize для всех режимов округления', () => {
+      const value = new Decimal('10.567');
+      const tick = new Decimal('0.01');
+
+      const modes = [
+        Decimal.ROUND_HALF_UP,
+        Decimal.ROUND_DOWN,
+        Decimal.ROUND_UP,
+        Decimal.ROUND_FLOOR,
+        Decimal.ROUND_CEIL,
+      ];
+
+      modes.forEach((mode) => {
+        const result = roundToTick(value, tick, mode);
+        const quotient = result.div(tick);
+        expect(quotient.isInteger()).toBe(true);
+      });
     });
   });
 });
