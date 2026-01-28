@@ -1,4 +1,1 @@
-// Decimal operations exports
-// Will be populated in subsequent tasks
-
-export {};
+export { addDecimal } from './add.js';
