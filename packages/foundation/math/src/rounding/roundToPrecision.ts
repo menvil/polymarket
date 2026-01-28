@@ -56,13 +56,15 @@ export function roundToPrecision(
   decimalPlaces: number,
   roundingMode: Decimal.Rounding
 ): Decimal {
-  // Валидация decimalPlaces
-  if (!Number.isFinite(decimalPlaces) || decimalPlaces < 0 || !Number.isInteger(decimalPlaces)) {
+  // Валидация decimalPlaces через Decimal
+  const decimalPlacesDecimal = new Decimal(decimalPlaces);
+
+  if (!decimalPlacesDecimal.isFinite() || decimalPlacesDecimal.isNegative() || !decimalPlacesDecimal.isInteger()) {
     throw new InvalidDecimalPlacesError(
       (ctx) => `Decimal places must be a non-negative integer, got ${ctx.decimalPlaces}`,
       {
         context: {
-          decimalPlaces: String(decimalPlaces),
+          decimalPlaces: decimalPlacesDecimal.toString(),
           value: value.toString(),
           operation: 'roundToPrecision'
         }

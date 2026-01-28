@@ -33,15 +33,16 @@
 
 3. ✅ **`roundToMarketTick()` не требует "уже кратно тика".** Это функция округления, а не валидации. Для проверки alignment используем отдельный метод `ensureAlignedToMarketTick()`.
 
-4. ✅ **Исключения остаются внутри Core. Всё наружу — Result.**
-   - Core бросает исключения при нарушении инвариантов
-   - **ВСЕ публичные методы Facade и Rules возвращают `Result<T, E>`**
+4. ✅ **Публичный API не бросает исключения. Всё наружу — Result.**
+   - Core может бросать исключения при нарушении инвариантов (PriceInvariantViolation)
+   - Парсинг Decimal может бросать исключения внутри любого слоя (на границе парсинга)
+   - **ВСЕ публичные методы Facade и Rules возвращают `Result<T, E>` и ловят все throws**
    - **Никаких `Price.of()` в публичных методах — только через `create()`**
    - **Никаких `Price.of()` в примерах/тестах вне Core — только `expectOk(PriceService.create(...))`**
    - **Парсинг входных `number | string` делается внутри того метода/правила, где параметр впервые появляется как raw input:**
-     - `ValidateTickSize` парсит `tickSize` и возвращает `Result<Decimal, E>`
-     - `ValidateSpread` парсит `minSpread` внутри
-     - `PriceService.multiply/divide` парсят `factor/divisor` внутри
+     - `ValidateTickSize` парсит `tickSize` (обёрнуто в try/catch) и возвращает `Result<Decimal, E>`
+     - `ValidateSpread` парсит `minSpread` внутри (обёрнуто в try/catch)
+     - `PriceService.multiply/divide` парсят `factor/divisor` внутри (обёрнуто в try/catch)
      - Остальные функции получают готовые `Decimal` из предыдущих Result.value
 
 5. ✅ **Никаких магических чисел типа 0.9998.** Только вычисления из констант: `Price.maxValue().minus(Price.minValue())`.
@@ -304,19 +305,19 @@ export class Price {
    * Константы (функции, создающие новый объект каждый раз)
    *
    * @remarks
-   * Функции возвращают новый Price-объект; Decimal константы шарятся как иммутабельные значения.
-   * Не полагаемся на referential equality.
+   * Функции возвращают новый Price-объект; Decimal клонируется через new Decimal() для безопасности.
+   * НЕ полагаемся на referential equality или immutability Decimal.js.
    */
   public static min(): Price {
-    return new Price(Price.MIN_PRICE);
+    return new Price(new Decimal(Price.MIN_PRICE));
   }
 
   public static max(): Price {
-    return new Price(Price.MAX_PRICE);
+    return new Price(new Decimal(Price.MAX_PRICE));
   }
 
   public static half(): Price {
-    return new Price(Price.HALF_PRICE);
+    return new Price(new Decimal(Price.HALF_PRICE));
   }
 
   /**
@@ -325,6 +326,9 @@ export class Price {
    * @remarks
    * Используется в Rules для проверок без создания Price объектов.
    * Оптимизация: не гоняет инварианты конструктора.
+   *
+   * КОНТРАКТ: возвращает shared immutable Decimal константу.
+   * НЕ модифицируйте результат. Decimal.js операции создают новые объекты (immutable по дизайну).
    */
   public static minValue(): Decimal {
     return Price.MIN_PRICE;
@@ -336,6 +340,9 @@ export class Price {
    * @remarks
    * Используется в Rules для проверок без создания Price объектов.
    * Оптимизация: не гоняет инварианты конструктора.
+   *
+   * КОНТРАКТ: возвращает shared immutable Decimal константу.
+   * НЕ модифицируйте результат. Decimal.js операции создают новые объекты (immutable по дизайну).
    */
   public static maxValue(): Decimal {
     return Price.MAX_PRICE;
@@ -494,15 +501,19 @@ import Decimal from 'decimal.js';
  * @remarks
  * Атомарное бизнес-правило.
  * Проверяет что tickSize:
+ * - Парсится в Decimal (не null, не undefined, не мусор)
  * - Положительный
  * - Конечный
+ * - Кратен базовому тику Price (0.0001) - ВАЖНО для Polymarket!
  * - Не больше чем диапазон цены (MAX - MIN)
  *
  * ВАЖНО:
  * - Никаких магических чисел типа 0.9998! Используем Price.maxValue().minus(Price.minValue())
  * - Возвращает нормализованный Decimal (не void), чтобы избежать двойного парсинга
+ * - Принимает unknown для настоящей границы системы (проверяет null/undefined/invalid types)
+ * - Проверка кратности базовому тику критична: tickSize = 0.9998 = 9998 тиков допустим, но tickSize = 0.00015 недопустим
  *
- * @param tickSize - Размер тика (принимает number/string/Decimal для удобства на границе)
+ * @param tickSize - Размер тика (unknown - настоящая граница системы)
  * @returns Result<Decimal, InvalidTickSizeError> - валидированный и нормализованный tickSize
  *
  * @example
@@ -516,7 +527,7 @@ import Decimal from 'decimal.js';
  * ```
  */
 export class ValidateTickSize {
-  public static check(tickSize: number | string | Decimal): Result<Decimal, InvalidTickSizeError> {
+  public static check(tickSize: unknown): Result<Decimal, InvalidTickSizeError> {
     // Нормализуем входное значение (с обработкой ошибок парсинга!)
     let tickDecimal: Decimal;
     try {
