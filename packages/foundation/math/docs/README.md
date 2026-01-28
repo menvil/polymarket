@@ -17,12 +17,12 @@
 | `addDecimal(a, b)` | Decimal | Сложение двух чисел | [→](./decimal/add.md) |
 | `subtractDecimal(a, b)` | Decimal | Вычитание чисел | [→](./decimal/subtract.md) |
 | `multiplyDecimal(a, b)` | Decimal | Умножение чисел | [→](./decimal/multiply.md) |
+| `divideDecimal(a, b)` | Decimal | Деление чисел | [→](./decimal/divide.md) |
 
 ### В разработке
 
 | Функция | Категория | Статус |
 |---------|-----------|--------|
-| `divideDecimal(a, b)` | Decimal | Запланировано |
 | `averageDecimal(a, b)` | Decimal | Запланировано |
 | `roundToTickSize(value, tickSize)` | Rounding | Запланировано |
 | `roundToDecimalPlaces(value, places)` | Rounding | Запланировано |

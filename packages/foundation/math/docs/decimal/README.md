@@ -53,12 +53,12 @@ class Price {
 | `addDecimal(a, b)` | Сложение двух чисел | [→](./add.md) |
 | `subtractDecimal(a, b)` | Вычитание чисел | [→](./subtract.md) |
 | `multiplyDecimal(a, b)` | Умножение чисел | [→](./multiply.md) |
+| `divideDecimal(a, b)` | Деление чисел | [→](./divide.md) |
 
 ### В разработке
 
 | Функция | Описание | Статус |
 |---------|----------|--------|
-| `divideDecimal(a, b)` | Деление чисел | Запланировано |
 | `averageDecimal(a, b)` | Среднее значение | Запланировано |
 
 ## Общие паттерны использования
