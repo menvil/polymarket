@@ -7,7 +7,7 @@
  * Архитектура:
  * - decimal/ - арифметические операции (add, subtract, multiply, divide, average, compare, round)
  * - rounding/ - округление к tick size (roundToTick, floorToTick, ceilToTick, roundToPrecision)
- * - validation/ - валидация чисел (isFinite, isPositive, isNonNegative)
+ * - validation/ - валидация чисел (isFinite, isPositive, isNonNegative, isZero)
  *
  * Принципы:
  * - Чистые функции без побочных эффектов
