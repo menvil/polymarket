@@ -51,3 +51,6 @@ export * from './base/index.js';
 
 // Value objects errors
 export * from './value-objects/index.js';
+
+// Math errors
+export * from './math/index.js';
