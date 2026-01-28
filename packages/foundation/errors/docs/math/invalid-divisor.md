@@ -42,7 +42,7 @@ import Decimal from 'decimal.js';
 ### 1. Базовое использование (throw)
 
 ```typescript
-import { InvalidDivisorError } from '@polymarket/errors';
+import { InvalidDivisorError, DivisionByZeroError } from '@polymarket/errors';
 
 function divide(dividend: number, divisor: number): number {
   if (!Number.isFinite(divisor)) {
@@ -77,7 +77,7 @@ try {
 
 ```typescript
 import Decimal from 'decimal.js';
-import { InvalidDivisorError } from '@polymarket/errors';
+import { InvalidDivisorError, DivisionByZeroError } from '@polymarket/errors';
 
 function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
   // Проверяем что делитель конечен
@@ -195,7 +195,7 @@ const rounded = roundToTickSize(
 
 ```typescript
 import Decimal from 'decimal.js';
-import { InvalidDivisorError } from '@polymarket/errors';
+import { InvalidDivisorError, DivisionByZeroError } from '@polymarket/errors';
 
 function calculatePercentage(part: Decimal, total: Decimal): Decimal {
   if (!total.isFinite()) {

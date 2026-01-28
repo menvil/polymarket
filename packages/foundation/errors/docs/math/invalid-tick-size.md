@@ -259,7 +259,8 @@ const grid = generatePriceGrid(
 
 ```typescript
 import Decimal from 'decimal.js';
-import { InvalidTickSizeError } from '@polymarket/errors';
+import { InvalidTickSizeError, InvalidPriceError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
 
 function normalizeUserPrice(
   userInput: string,
@@ -267,7 +268,7 @@ function normalizeUserPrice(
 ): Result<Decimal, InvalidTickSizeError | InvalidPriceError> {
   // Валидация tick size
   if (!tickSize.isFinite() || tickSize.isNegative() || tickSize.isZero()) {
-    return Result.err(
+    return Err(
       new InvalidTickSizeError(
         (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
         {
@@ -284,9 +285,9 @@ function normalizeUserPrice(
     // Округляем к ближайшему tick
     const normalized = value.dividedBy(tickSize).round().times(tickSize);
 
-    return Result.ok(normalized);
+    return Ok(normalized);
   } catch (error) {
-    return Result.err(
+    return Err(
       new InvalidPriceError(
         (ctx) => `Invalid price input: ${ctx.input}`,
         {
@@ -366,7 +367,7 @@ roundToTickSize(
 roundToTickSize(
   new Decimal('10.567'),
   new Decimal('0.333')
-);                              // ✅ 10.665 (10.567 / 0.333 = 31.73... → 32 → 32 * 0.333)
+);                              // ✅ 10.656 (10.567 / 0.333 = 31.732... → 32 → 32 * 0.333 = 10.656)
 ```
 
 ### Граничные случаи округления
@@ -471,7 +472,9 @@ const rounded = safeRoundToTickSize(
 ### Валидация конфигурации
 
 ```typescript
+import Decimal from 'decimal.js';
 import { InvalidTickSizeError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
 
 interface MarketConfig {
   minPrice: Decimal;
@@ -486,7 +489,7 @@ function validateMarketConfig(
   if (!config.tickSize.isFinite() ||
       config.tickSize.isNegative() ||
       config.tickSize.isZero()) {
-    return Result.err(
+    return Err(
       new InvalidTickSizeError(
         (ctx) => `Market tick size must be finite and positive, got ${ctx.tickSize}`,
         {
@@ -501,7 +504,7 @@ function validateMarketConfig(
     );
   }
 
-  return Result.ok(config);
+  return Ok(config);
 }
 
 // Использование при инициализации рынка

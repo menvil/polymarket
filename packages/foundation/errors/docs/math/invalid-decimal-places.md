@@ -463,7 +463,9 @@ const formatted = safeFormatPrice(
 ### Валидация конфигурации
 
 ```typescript
+import Decimal from 'decimal.js';
 import { InvalidDecimalPlacesError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
 
 interface FormattingConfig {
   priceDecimals: number;
@@ -484,7 +486,7 @@ function validateFormattingConfig(
     const dpDecimal = new Decimal(field.value);
 
     if (!dpDecimal.isFinite() || dpDecimal.isNegative() || !dpDecimal.isInteger()) {
-      return Result.err(
+      return Err(
         new InvalidDecimalPlacesError(
           (ctx) => `${ctx.field} must be a non-negative integer, got ${ctx.decimalPlaces}`,
           {
@@ -499,7 +501,7 @@ function validateFormattingConfig(
     }
   }
 
-  return Result.ok(config);
+  return Ok(config);
 }
 
 // Использование при загрузке конфигурации
