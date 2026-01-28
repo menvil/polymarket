@@ -73,6 +73,12 @@ describe('subtractDecimal', () => {
       expect(() => subtractDecimal(value, nan)).toThrow(InvalidOperandError);
     });
 
+    it('должен throw InvalidOperandError на -Infinity во втором операнде', () => {
+      const value = new Decimal(100);
+      const negInf = new Decimal(-Infinity);
+      expect(() => subtractDecimal(value, negInf)).toThrow(InvalidOperandError);
+    });
+
     it('должен содержать контекст в InvalidOperandError', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(100);

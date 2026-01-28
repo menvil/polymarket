@@ -186,5 +186,14 @@ describe('compare', () => {
       expect(compareDecimal(new Decimal('0.1000'), new Decimal('0.10'))).toBe(0);
       expect(compareDecimal(new Decimal('1e2'), new Decimal('100'))).toBe(0);
     });
+
+    it('должен быть симметричным для разных форматов', () => {
+      // Прямое направление
+      expect(compareDecimal(new Decimal('10'), new Decimal('10.0'))).toBe(0);
+      // Обратное направление
+      expect(compareDecimal(new Decimal('10.0'), new Decimal('10'))).toBe(0);
+      // Экспоненциальная форма
+      expect(compareDecimal(new Decimal('100'), new Decimal('1e2'))).toBe(0);
+    });
   });
 });

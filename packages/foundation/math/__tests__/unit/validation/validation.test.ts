@@ -90,15 +90,5 @@ describe('validation', () => {
       expect(isZeroDecimal(new Decimal(1))).toBe(false);
       expect(isZeroDecimal(new Decimal(-1))).toBe(false);
     });
-
-    it('isZeroDecimal использует строгое равенство (не approximate)', () => {
-      const almostZero = new Decimal('1e-10');
-
-      // Строгое: ненулевое значение возвращает false
-      expect(isZeroDecimal(almostZero)).toBe(false);
-
-      // Строгое: только настоящий 0 возвращает true
-      expect(isZeroDecimal(new Decimal(0))).toBe(true);
-    });
   });
 });

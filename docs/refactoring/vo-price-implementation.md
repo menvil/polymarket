@@ -226,7 +226,7 @@ packages/domain/value-objects/src/price/
 
 #### **Core Layer** (`core/Price.ts`)
 
-**Ответственность:** Только инварианты существования.
+**Ответственность:** Инварианты существования + доменные константы + строгое равенство.
 
 ```typescript
 import Decimal from 'decimal.js';
@@ -803,6 +803,10 @@ import Decimal from 'decimal.js';
  * - ValidateTickSize возвращает нормализованный Decimal — БЕЗ двойного парсинга!
  * - Использует строгую проверку mod() БЕЗ epsilon
  *
+ * КОНТРАКТ ОШИБКИ:
+ * - "not_aligned" → InvalidPriceError с field='price', reason='not_aligned'
+ * - Контракт зафиксирован тестами, НЕ менять тип ошибки
+ *
  * @param price - Цена для проверки
  * @param tickSize - Размер тика (number | string | Decimal)
  * @returns Result<void, InvalidPriceError | InvalidTickSizeError>
@@ -1178,6 +1182,14 @@ export class PriceService {
   }
 
   /**
+   * Константа для default epsilon в approximatelyEquals
+   *
+   * @remarks
+   * Значение 0.0001 соответствует минимальному тику Price.
+   */
+  private static readonly DEFAULT_EPSILON = new Decimal(0.0001);
+
+  /**
    * Проверяет приблизительное равенство двух цен
    *
    * @param price1 - Первая цена
@@ -1188,6 +1200,7 @@ export class PriceService {
    * @remarks
    * Для строгого равенства используй price1.equals(price2).
    * Если epsilon <= 0, возвращает false (вместо бросания исключения).
+   * По умолчанию epsilon = 0.0001 (минимальный тик Price).
    *
    * @example
    * ```typescript
@@ -1204,7 +1217,7 @@ export class PriceService {
   public static approximatelyEquals(
     price1: Price,
     price2: Price,
-    epsilon: Decimal = new Decimal(0.0001)
+    epsilon: Decimal = PriceService.DEFAULT_EPSILON
   ): boolean {
     // Защита от невалидного epsilon
     if (epsilon.lessThanOrEqualTo(0)) {
@@ -1515,7 +1528,8 @@ mkdir -p price/adapters
 5. **При валидном tickSize, но некратной цене — возвращает InvalidPriceError с field: 'price', reason: 'not_aligned'**
 6. **ВСЕ ошибки содержат field + reason (проверяем наличие полей во всех Err)**
 7. **reason соответствует типу AlignedErrorReason (типобезопасность)**
-8. Граничные значения (MIN, MAX)
+8. **КОНТРАКТ: тип ошибки всегда InvalidPriceError (не InvalidMarketPriceError или другой)**
+9. Граничные значения (MIN, MAX)
 
 **Итого:** ~26 тестов (было 22)
 
@@ -1611,18 +1625,32 @@ export { PriceSerializer, PriceFormatter } from './adapters/index.js';
 // Rules (для advanced use cases)
 export { ValidateTickSize, ValidateSpread, ValidateAligned } from './rules/index.js';
 
-// Типизация ошибок (для type-safe обработки)
+// ВАЖНО: типы ErrorContext и *ErrorReason НЕ экспортируются из верхнего index
+// Они доступны только через './price/rules' для internal use
+// Это НЕ публичный API пакета (избегаем semver-зависимостей)
+```
+
+**Файл:** `price/rules/index.ts`
+
+```typescript
+// Rules
+export { ValidateTickSize } from './ValidateTickSize.js';
+export { ValidateSpread } from './ValidateSpread.js';
+export { ValidateAligned } from './ValidateAligned.js';
+
+// Типизация ошибок (для internal/advanced use)
 export type {
   ErrorContext,
   TickSizeErrorReason,
   SpreadErrorReason,
   AlignedErrorReason
-} from './rules/types.js';
+} from './types.js';
 ```
 
 **Изменения:**
 - ❌ Удалён экспорт `MarketPricePolicy` (policy/ больше нет)
 - ✅ Добавлен экспорт `ValidateAligned`
+- ✅ Типы ErrorContext и *ErrorReason НЕ экспортируются из верхнего index (только из `./price/rules`)
 
 ---
 
@@ -1682,10 +1710,16 @@ export type {
     "./price/core": {
       "types": "./dist/price/core/index.d.ts",
       "import": "./dist/price/core/index.js"
+    },
+    "./price/rules": {
+      "types": "./dist/price/rules/index.d.ts",
+      "import": "./dist/price/rules/index.js"
     }
   }
 }
 ```
+
+**ВАЖНО:** Типы ErrorContext и *ErrorReason доступны через `import type { ... } from '@polymarket/value-objects/price/rules'` для internal/advanced use, но НЕ через верхний export `./price`.
 
 ---
 
@@ -1800,18 +1834,22 @@ const avgResult = PriceService.average(price, other);
 
 ### Архитектурные правила (критические)
 - [x] **Правило 1:** Core не делает approximate-equality ✅
-- [x] **Правило 2:** Rules/Policy работают с Price ✅
+- [x] **Правило 2:** Rules работают с Price, НО правила для параметров рынка работают с `number | string | Decimal` ✅
 - [x] **Правило 3:** roundToMarketTick() не требует alignment ✅
 - [x] **Правило 4:** Исключения остаются в Core, всё наружу — Result ✅
   - [x] ВСЕ публичные методы PriceService возвращают Result (включая complement, average)
   - [x] Никаких Price.of() в публичных методах — только this.create()
   - [x] Все парсинги new Decimal() обёрнуты в try/catch → Result.Err
+  - [x] Парсинг делается внутри того метода/правила, где параметр впервые появляется как raw input
 - [x] **Правило 5:** Никаких магических чисел (0.9998) ✅
 - [x] **Правило 6:** Никаких epsilon в проверках alignment ✅
   - [x] ValidateAligned использует mod().isZero() — строго, без приближений
   - [x] Epsilon только в approximatelyEquals()
+- [x] **Правило 7:** Стандарт field + reason обязателен только для Rules ✅
+  - [x] Facade и Adapters могут использовать другие форматы контекста
 
 ### Детальные проверки
+- [x] Core: ответственность "инварианты + доменные константы + строгое равенство" (не "только инварианты") ✅
 - [x] Core: константы min()/max()/half() создают новый объект каждый раз ✅
 - [x] **Core: добавлены minValue()/maxValue() для доступа к Decimal без создания Price** ✅
 - [x] ValidateTickSize: парсинг tickSize обёрнут в try/catch ✅
@@ -1828,6 +1866,7 @@ const avgResult = PriceService.average(price, other);
 - [x] **ValidateAligned: получает готовый Decimal из ValidateTickSize.check().value** ✅
 - [x] **ValidateAligned: НЕ парсит tickSize повторно (нет new Decimal)** ✅
 - [x] ValidateAligned: использует mod() без epsilon ✅
+- [x] **ValidateAligned: контракт ошибки зафиксирован - "not_aligned" → InvalidPriceError(field='price', reason='not_aligned')** ✅
 - [x] PriceService.complement(): возвращает Result ✅
 - [x] PriceService.average(): возвращает Result ✅
 - [x] PriceService.multiply(): парсинг factor в try/catch ✅
@@ -1836,6 +1875,7 @@ const avgResult = PriceService.average(price, other);
 - [x] **PriceService.roundToMarketTick(): НЕ парсит tickSize повторно** ✅
 - [x] PriceService.ensureAlignedToMarketTick(): делегирует ValidateAligned ✅
 - [x] **PriceService.approximatelyEquals(): защита от epsilon <= 0 (возвращает false)** ✅
+- [x] **PriceService.approximatelyEquals(): default epsilon через константу DEFAULT_EPSILON (не создается каждый раз)** ✅
 - [x] **Все примеры/тесты вне Core: Price.of() заменён на expectOk(PriceService.create())** ✅
 - [x] **Все упоминания Price.max().value().minus() заменены на Price.maxValue().minus()** ✅
 - [x] **Тест-план: убраны магические числа (0.9998), вычисляется maxAllowed динамически** ✅
@@ -1845,6 +1885,8 @@ const avgResult = PriceService.average(price, other);
 - [x] **Тест-план: убраны непроверяемые утверждения про "нет двойного парсинга"** ✅
 - [x] **Тест-план: добавлены проверяемые контракты (error context, границы)** ✅
 - [x] **Миграция: убран опасный sed-скрипт, описаны breaking changes** ✅
+- [x] **Exports: типы ErrorContext и *ErrorReason НЕ экспортируются из верхнего index (только из ./price/rules)** ✅
+- [x] **Стандарт field+reason применяется только к Rules (не к Facade/Adapters)** ✅
 
 **План полностью адаптирован согласно критике (финальная итерация + 4 правки).**
 

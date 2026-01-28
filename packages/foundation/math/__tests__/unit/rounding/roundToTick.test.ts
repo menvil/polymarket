@@ -11,50 +11,26 @@ import Decimal from 'decimal.js';
 
 describe('roundToTick', () => {
   describe('roundToTick (ROUND_HALF_UP)', () => {
-    it('должен округлять до 0.01', () => {
-      const result = roundToTick(
-        new Decimal(10.567),
-        new Decimal(0.01),
-        Decimal.ROUND_HALF_UP
-      );
-      expect(result.toString()).toBe('10.57');
-    });
-
-    it('должен округлять до 0.1', () => {
-      const result = roundToTick(
-        new Decimal(10.567),
-        new Decimal(0.1),
-        Decimal.ROUND_HALF_UP
-      );
-      expect(result.toString()).toBe('10.6');
-    });
-
-    it('должен округлять вниз когда .xx4', () => {
-      const result = roundToTick(
-        new Decimal(10.564),
-        new Decimal(0.01),
-        Decimal.ROUND_HALF_UP
-      );
-      expect(result.toString()).toBe('10.56');
-    });
-
-    it('должен округлять вверх когда .xx5', () => {
-      const result = roundToTick(
-        new Decimal(10.565),
-        new Decimal(0.01),
-        Decimal.ROUND_HALF_UP
-      );
-      expect(result.toString()).toBe('10.57');
-    });
-
-    it('должен округлять вверх когда .xx6', () => {
-      const result = roundToTick(
-        new Decimal(10.566),
-        new Decimal(0.01),
-        Decimal.ROUND_HALF_UP
-      );
-      expect(result.toString()).toBe('10.57');
-    });
+    it.each([
+      { value: '10.567', tick: '0.01', expected: '10.57', desc: 'округление до 0.01' },
+      { value: '10.567', tick: '0.1', expected: '10.6', desc: 'округление до 0.1' },
+      { value: '10.564', tick: '0.01', expected: '10.56', desc: 'округление вниз .xx4' },
+      { value: '10.565', tick: '0.01', expected: '10.57', desc: 'округление вверх .xx5' },
+      { value: '10.566', tick: '0.01', expected: '10.57', desc: 'округление вверх .xx6' },
+      { value: '10.5', tick: '1', expected: '11', desc: 'tickSize = 1' },
+      { value: '10.7', tick: '0.5', expected: '10.5', desc: 'tickSize = 0.5' },
+      { value: '12', tick: '5', expected: '10', desc: 'tickSize = 5' },
+    ])(
+      'должен $desc',
+      ({ value, tick, expected }) => {
+        const result = roundToTick(
+          new Decimal(value),
+          new Decimal(tick),
+          Decimal.ROUND_HALF_UP
+        );
+        expect(result.toString()).toBe(expected);
+      }
+    );
 
     it('должен работать с большими числами', () => {
       const result = roundToTick(
@@ -72,33 +48,6 @@ describe('roundToTick', () => {
         Decimal.ROUND_HALF_UP
       );
       expect(result.toString()).toBe('0.006');
-    });
-
-    it('должен работать с tickSize = 1', () => {
-      const result = roundToTick(
-        new Decimal(10.5),
-        new Decimal(1),
-        Decimal.ROUND_HALF_UP
-      );
-      expect(result.toString()).toBe('11');
-    });
-
-    it('должен работать с tickSize = 0.5', () => {
-      const result = roundToTick(
-        new Decimal(10.7),
-        new Decimal(0.5),
-        Decimal.ROUND_HALF_UP
-      );
-      expect(result.toString()).toBe('10.5');
-    });
-
-    it('должен работать с tickSize = 5', () => {
-      const result = roundToTick(
-        new Decimal(12),
-        new Decimal(5),
-        Decimal.ROUND_HALF_UP
-      );
-      expect(result.toString()).toBe('10');
     });
 
     it('должен не изменять уже округлённые значения', () => {

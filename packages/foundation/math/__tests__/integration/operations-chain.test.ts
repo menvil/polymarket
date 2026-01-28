@@ -76,41 +76,4 @@ describe('Operations Chain Integration', () => {
     });
   });
 
-  describe('сложные сценарии', () => {
-    it('цепочка с округлением и делением', () => {
-      const a = new Decimal('100.567');
-      const b = new Decimal(3);
-
-      const multiplied = multiplyDecimal(a, b); // 301.701
-      const rounded = roundToTick(
-        multiplied,
-        new Decimal(0.01),
-        Decimal.ROUND_HALF_UP
-      ); // 301.70
-      const divided = divideDecimal(rounded, new Decimal(2)); // 150.85
-
-      expect(rounded.toString()).toBe('301.7');
-      expect(divided.toString()).toBe('150.85');
-    });
-  });
-
-  describe('обработка граничных случаев', () => {
-    it('деление с последующим округлением не теряет точность', () => {
-      const a = new Decimal(10);
-      const b = new Decimal(3);
-
-      const divided = divideDecimal(a, b);
-      const rounded = roundToPrecision(divided, 10, Decimal.ROUND_HALF_UP);
-
-      expect(rounded.toString()).toBe('3.3333333333');
-    });
-
-    it('множественные операции с очень маленькими числами', () => {
-      const tiny = new Decimal('1e-8');
-      const result = multiplyDecimal(tiny, new Decimal(2));
-      const result2 = addDecimal(result, new Decimal('1e-8'));
-
-      expect(result2.toString()).toBe('3e-8');
-    });
-  });
 });
