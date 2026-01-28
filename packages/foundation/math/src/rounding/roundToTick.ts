@@ -6,7 +6,7 @@ import { InvalidTickSizeError } from '@polymarket/errors';
  *
  * @param value - Значение для округления
  * @param tickSize - Размер тика (например, 0.01 для центов)
- * @param roundingMode - Режим округления Decimal (default: ROUND_HALF_UP)
+ * @param roundingMode - Режим округления Decimal
  * @returns Округлённое значение
  * @throws {InvalidTickSizeError} Если tickSize невалидный (<= 0 или не finite)
  *
@@ -20,7 +20,7 @@ import { InvalidTickSizeError } from '@polymarket/errors';
  * Это сохраняет точность для больших чисел.
  *
  * Режимы округления:
- * - Decimal.ROUND_HALF_UP (default) - округление к ближайшему, .5 вверх
+ * - Decimal.ROUND_HALF_UP - округление к ближайшему, .5 вверх
  * - Decimal.ROUND_DOWN - округление к нулю (floor для положительных)
  * - Decimal.ROUND_UP - округление от нуля (ceil для положительных)
  * - Decimal.ROUND_FLOOR - округление вниз (к -Infinity)
@@ -28,13 +28,13 @@ import { InvalidTickSizeError } from '@polymarket/errors';
  *
  * @example
  * ```typescript
- * // Округление до 0.01 (центы) - default ROUND_HALF_UP
- * roundToTick(new Decimal(10.567), new Decimal(0.01)); // 10.57
- * roundToTick(new Decimal(10.564), new Decimal(0.01)); // 10.56
- * roundToTick(new Decimal(10.565), new Decimal(0.01)); // 10.57 (.5 вверх)
+ * // Округление до 0.01 (центы) - ROUND_HALF_UP
+ * roundToTick(new Decimal(10.567), new Decimal(0.01), Decimal.ROUND_HALF_UP); // 10.57
+ * roundToTick(new Decimal(10.564), new Decimal(0.01), Decimal.ROUND_HALF_UP); // 10.56
+ * roundToTick(new Decimal(10.565), new Decimal(0.01), Decimal.ROUND_HALF_UP); // 10.57 (.5 вверх)
  *
  * // Округление до 0.1
- * roundToTick(new Decimal(10.567), new Decimal(0.1)); // 10.6
+ * roundToTick(new Decimal(10.567), new Decimal(0.1), Decimal.ROUND_HALF_UP); // 10.6
  *
  * // Округление вниз (ROUND_DOWN)
  * roundToTick(new Decimal(10.567), new Decimal(0.01), Decimal.ROUND_DOWN); // 10.56
@@ -43,13 +43,13 @@ import { InvalidTickSizeError } from '@polymarket/errors';
  * roundToTick(new Decimal(10.561), new Decimal(0.01), Decimal.ROUND_UP); // 10.57
  *
  * // Работает с большими числами без потери точности
- * roundToTick(new Decimal('999999999999.567'), new Decimal(0.01)); // 999999999999.57
+ * roundToTick(new Decimal('999999999999.567'), new Decimal(0.01), Decimal.ROUND_HALF_UP); // 999999999999.57
  * ```
  */
 export function roundToTick(
   value: Decimal,
   tickSize: Decimal,
-  roundingMode: Decimal.Rounding = Decimal.ROUND_HALF_UP
+  roundingMode: Decimal.Rounding
 ): Decimal {
   // Валидация tickSize
   if (!tickSize.isFinite() || tickSize.lessThanOrEqualTo(0)) {

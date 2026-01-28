@@ -1,26 +1,30 @@
 /**
- * @polymarket/math - Pure mathematical operations
+ * @polymarket/math - Decimal.js utilities
  *
  * @remarks
- * Этот пакет предоставляет чистые математические функции для работы с Decimal.js.
+ * Утилиты для работы с высокоточными десятичными числами на базе Decimal.js.
  *
  * Архитектура:
- * - decimal/ - базовые арифметические операции (add, subtract, multiply, divide, average)
- * - rounding/ - операции округления (roundToTickSize, roundToDecimalPlaces)
+ * - decimal/ - арифметические операции (add, subtract, multiply, divide, average, compare, round)
+ * - rounding/ - округление к tick size (roundToTick, floorToTick, ceilToTick, roundToPrecision)
  * - validation/ - валидация чисел (isFinite, isPositive, isNonNegative)
  *
- * Философия:
+ * Принципы:
  * - Чистые функции без побочных эффектов
  * - Throw на математические невозможности (NaN, Infinity, деление на ноль)
- * - Используется на Core Layer (до бизнес-логики)
+ * - Explicit лучше implicit (обязательные параметры для rounding modes)
  *
  * @example
  * ```typescript
  * import Decimal from 'decimal.js';
- * import { divideDecimal, roundToTickSize } from '@polymarket/math';
+ * import { divideDecimal, roundToTick } from '@polymarket/math';
  *
  * const result = divideDecimal(new Decimal('100'), new Decimal('3'));
- * const rounded = roundToTickSize(new Decimal('10.567'), new Decimal('0.01'));
+ * const rounded = roundToTick(
+ *   new Decimal('10.567'),
+ *   new Decimal('0.01'),
+ *   Decimal.ROUND_HALF_UP
+ * );
  * ```
  *
  * @packageDocumentation

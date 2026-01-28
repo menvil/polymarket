@@ -9,13 +9,17 @@ import Decimal from 'decimal.js';
  *
  * @remarks
  * Строгое математическое сравнение без epsilon/tolerance.
- * Использует встроенный метод Decimal.equals() - побитовое сравнение значений.
+ * Использует встроенный метод Decimal.equals() для строгого сравнения
+ * численного значения (без допуска).
  *
  * Это согласуется с compareDecimal(), который также строгий:
  * - equalsDecimal(a, b) === true <=> compareDecimal(a, b) === 0
  *
- * Для приблизительного сравнения с погрешностью создайте отдельную функцию
- * или используйте isZeroDecimal() для проверки разности.
+ * Для приблизительного сравнения с погрешностью используйте:
+ * ```typescript
+ * const diff = a.minus(b).abs();
+ * const approxEqual = diff.lessThan(epsilon);
+ * ```
  *
  * @example
  * ```typescript
@@ -24,10 +28,10 @@ import Decimal from 'decimal.js';
  * equalsDecimal(new Decimal(10), new Decimal(10.0000000001)); // false (строго)
  * equalsDecimal(new Decimal(10), new Decimal(11)); // false
  *
- * // Для приблизительного сравнения используйте isZeroDecimal:
- * import { isZeroDecimal } from '@polymarket/math/validation';
- * const diff = a.minus(b);
- * const approxEqual = isZeroDecimal(diff, new Decimal(0.01)); // epsilon = 0.01
+ * // Для приблизительного сравнения:
+ * const diff = a.minus(b).abs();
+ * const epsilon = new Decimal('0.01');
+ * const approxEqual = diff.lessThan(epsilon);
  * ```
  */
 export function equalsDecimal(a: Decimal, b: Decimal): boolean {

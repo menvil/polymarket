@@ -10,67 +10,112 @@ import { InvalidTickSizeError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('roundToTick', () => {
-  describe('roundToTick (default ROUND_HALF_UP)', () => {
+  describe('roundToTick (ROUND_HALF_UP)', () => {
     it('должен округлять до 0.01', () => {
-      const result = roundToTick(new Decimal(10.567), new Decimal(0.01));
+      const result = roundToTick(
+        new Decimal(10.567),
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('10.57');
     });
 
     it('должен округлять до 0.1', () => {
-      const result = roundToTick(new Decimal(10.567), new Decimal(0.1));
+      const result = roundToTick(
+        new Decimal(10.567),
+        new Decimal(0.1),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('10.6');
     });
 
     it('должен округлять вниз когда .xx4', () => {
-      const result = roundToTick(new Decimal(10.564), new Decimal(0.01));
+      const result = roundToTick(
+        new Decimal(10.564),
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('10.56');
     });
 
     it('должен округлять вверх когда .xx5', () => {
-      const result = roundToTick(new Decimal(10.565), new Decimal(0.01));
+      const result = roundToTick(
+        new Decimal(10.565),
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('10.57');
     });
 
     it('должен округлять вверх когда .xx6', () => {
-      const result = roundToTick(new Decimal(10.566), new Decimal(0.01));
+      const result = roundToTick(
+        new Decimal(10.566),
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('10.57');
     });
 
     it('должен работать с большими числами', () => {
       const result = roundToTick(
         new Decimal('999999999999.567'),
-        new Decimal(0.01)
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
       );
       expect(result.toString()).toBe('999999999999.57');
     });
 
     it('должен работать с очень маленькими числами', () => {
-      const result = roundToTick(new Decimal('0.00567'), new Decimal(0.001));
+      const result = roundToTick(
+        new Decimal('0.00567'),
+        new Decimal(0.001),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('0.006');
     });
 
     it('должен работать с tickSize = 1', () => {
-      const result = roundToTick(new Decimal(10.5), new Decimal(1));
+      const result = roundToTick(
+        new Decimal(10.5),
+        new Decimal(1),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('11');
     });
 
     it('должен работать с tickSize = 0.5', () => {
-      const result = roundToTick(new Decimal(10.7), new Decimal(0.5));
+      const result = roundToTick(
+        new Decimal(10.7),
+        new Decimal(0.5),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('10.5');
     });
 
     it('должен работать с tickSize = 5', () => {
-      const result = roundToTick(new Decimal(12), new Decimal(5));
+      const result = roundToTick(
+        new Decimal(12),
+        new Decimal(5),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('10');
     });
 
     it('должен не изменять уже округлённые значения', () => {
-      const result = roundToTick(new Decimal(10.5), new Decimal(0.01));
+      const result = roundToTick(
+        new Decimal(10.5),
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('10.5');
     });
 
     it('должен работать с отрицательными числами', () => {
-      const result = roundToTick(new Decimal(-10.567), new Decimal(0.01));
+      const result = roundToTick(
+        new Decimal(-10.567),
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('-10.57');
     });
   });
@@ -159,32 +204,32 @@ describe('roundToTick', () => {
 
   describe('ошибки валидации tickSize', () => {
     it('должен throw на tickSize <= 0', () => {
-      expect(() => roundToTick(new Decimal(10), new Decimal(0))).toThrow(
-        InvalidTickSizeError
-      );
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal(0), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidTickSizeError);
     });
 
     it('должен throw на отрицательный tickSize', () => {
-      expect(() => roundToTick(new Decimal(10), new Decimal(-0.01))).toThrow(
-        InvalidTickSizeError
-      );
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal(-0.01), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidTickSizeError);
     });
 
     it('должен throw на tickSize = NaN', () => {
-      expect(() => roundToTick(new Decimal(10), new Decimal(NaN))).toThrow(
-        InvalidTickSizeError
-      );
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal(NaN), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidTickSizeError);
     });
 
     it('должен throw на tickSize = Infinity', () => {
       expect(() =>
-        roundToTick(new Decimal(10), new Decimal(Infinity))
+        roundToTick(new Decimal(10), new Decimal(Infinity), Decimal.ROUND_HALF_UP)
       ).toThrow(InvalidTickSizeError);
     });
 
     it('должен содержать контекст в ошибке', () => {
       try {
-        roundToTick(new Decimal(10), new Decimal(0));
+        roundToTick(new Decimal(10), new Decimal(0), Decimal.ROUND_HALF_UP);
         fail('Should throw');
       } catch (error) {
         expect(error).toBeInstanceOf(InvalidTickSizeError);
@@ -201,18 +246,27 @@ describe('roundToTick', () => {
     it('должен сохранять точность для очень маленьких tickSize', () => {
       const result = roundToTick(
         new Decimal('1.123456789'),
-        new Decimal('0.000000001')
+        new Decimal('0.000000001'),
+        Decimal.ROUND_HALF_UP
       );
       expect(result.toString()).toBe('1.123456789');
     });
 
     it('должен корректно работать с большим tickSize', () => {
-      const result = roundToTick(new Decimal(123), new Decimal(50));
+      const result = roundToTick(
+        new Decimal(123),
+        new Decimal(50),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('100');
     });
 
     it('должен работать с нулевым значением', () => {
-      const result = roundToTick(new Decimal(0), new Decimal(0.01));
+      const result = roundToTick(
+        new Decimal(0),
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
+      );
       expect(result.toString()).toBe('0');
     });
   });

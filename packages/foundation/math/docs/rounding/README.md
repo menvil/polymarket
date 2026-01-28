@@ -21,7 +21,7 @@
 function roundToTick(
   value: Decimal,
   tickSize: Decimal,
-  roundingMode?: Decimal.Rounding
+  roundingMode: Decimal.Rounding
 ): Decimal
 ```
 
@@ -32,16 +32,18 @@ function roundToTick(
 
 **Важно:** Алгоритм полностью на Decimal API без конвертации в number.
 
+**roundingMode обязателен** - explicit лучше implicit.
+
 ### Варианты функции
 
-#### 1. `roundToTick(value, tickSize, mode?)` - default ROUND_HALF_UP
+#### 1. `roundToTick(value, tickSize, mode)` - с явным режимом
 
-Стандартное округление: 0.5 всегда вверх.
+Базовая функция с явным указанием режима округления.
 
 ```typescript
-roundToTick(new Decimal(10.567), new Decimal(0.01)); // 10.57
-roundToTick(new Decimal(10.565), new Decimal(0.01)); // 10.57 (.5 вверх)
-roundToTick(new Decimal(10.564), new Decimal(0.01)); // 10.56
+roundToTick(new Decimal(10.567), new Decimal(0.01), Decimal.ROUND_HALF_UP); // 10.57
+roundToTick(new Decimal(10.565), new Decimal(0.01), Decimal.ROUND_HALF_UP); // 10.57 (.5 вверх)
+roundToTick(new Decimal(10.564), new Decimal(0.01), Decimal.ROUND_HALF_UP); // 10.56
 ```
 
 #### 2. `floorToTick(value, tickSize)` - ROUND_DOWN
@@ -121,39 +123,41 @@ roundToTick(new Decimal(10), new Decimal(Infinity)); // throws InvalidTickSizeEr
 function roundToPrecision(
   value: Decimal,
   decimalPlaces: number,
-  roundingMode?: Decimal.Rounding
+  roundingMode: Decimal.Rounding
 ): Decimal
 ```
 
 **Обёртка над** `value.toDecimalPlaces()` для единообразного API.
 
+**roundingMode обязателен** - explicit лучше implicit.
+
 ### Примеры
 
 ```typescript
-// Округление до 2 знаков (центы)
-roundToPrecision(new Decimal('10.567'), 2); // 10.57
-roundToPrecision(new Decimal('10.564'), 2); // 10.56
-roundToPrecision(new Decimal('10.565'), 2); // 10.57 (.5 вверх)
+// Округление до 2 знаков (центы) - ROUND_HALF_UP
+roundToPrecision(new Decimal('10.567'), 2, Decimal.ROUND_HALF_UP); // 10.57
+roundToPrecision(new Decimal('10.564'), 2, Decimal.ROUND_HALF_UP); // 10.56
+roundToPrecision(new Decimal('10.565'), 2, Decimal.ROUND_HALF_UP); // 10.57 (.5 вверх)
 
 // Округление до целого
-roundToPrecision(new Decimal('10.5'), 0); // 11
+roundToPrecision(new Decimal('10.5'), 0, Decimal.ROUND_HALF_UP); // 11
 
 // Округление до 1 знака
-roundToPrecision(new Decimal('10.567'), 1); // 10.6
+roundToPrecision(new Decimal('10.567'), 1, Decimal.ROUND_HALF_UP); // 10.6
 
 // С разными режимами
 roundToPrecision(new Decimal('10.567'), 2, Decimal.ROUND_DOWN); // 10.56
 roundToPrecision(new Decimal('10.561'), 2, Decimal.ROUND_UP);   // 10.57
 
 // Работает с большими числами
-roundToPrecision(new Decimal('999999999999.567'), 2); // 999999999999.57
+roundToPrecision(new Decimal('999999999999.567'), 2, Decimal.ROUND_HALF_UP); // 999999999999.57
 ```
 
 ---
 
 ## Режимы округления
 
-### ROUND_HALF_UP (default)
+### ROUND_HALF_UP
 
 Стандартное округление: 0.5 всегда вверх.
 

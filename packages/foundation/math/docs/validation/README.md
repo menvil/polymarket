@@ -7,7 +7,6 @@
 - [isFiniteDecimal - Проверка конечности](#isfinitedecimal)
 - [isPositiveDecimal - Проверка положительности](#ispositivedecimal)
 - [isNonNegativeDecimal - Проверка неотрицательности](#isnonnegativedecimal)
-- [isZeroDecimal - Проверка близости к нулю](#iszerodecimal)
 - [Примеры использования](#примеры-использования)
 
 ---
@@ -157,110 +156,6 @@ class Balance {
 
 ---
 
-## isZeroDecimal
-
-Проверяет что значение близко к нулю с явной точностью.
-
-```typescript
-function isZeroDecimal(value: Decimal, epsilon: Decimal): boolean
-```
-
-**Важно:** Параметр `epsilon` ОБЯЗАТЕЛЕН - нет значения по умолчанию.
-
-### Примеры
-
-```typescript
-import { isZeroDecimal } from '@polymarket/math/validation';
-import Decimal from 'decimal.js';
-
-// Высокая точность (1e-10) для числовых вычислений
-const highPrecision = new Decimal(1e-10);
-
-isZeroDecimal(new Decimal(0), highPrecision);         // true
-isZeroDecimal(new Decimal('1e-11'), highPrecision);   // true (в пределах)
-isZeroDecimal(new Decimal('1e-9'), highPrecision);    // false (вне пределов)
-
-// Низкая точность (0.01) для бизнес-логики
-const lowPrecision = new Decimal(0.01);
-
-isZeroDecimal(new Decimal(0.005), lowPrecision);      // true (близко)
-isZeroDecimal(new Decimal(0.02), lowPrecision);       // false (далеко)
-```
-
-### Строгое vs приблизительное сравнение
-
-```typescript
-const value = new Decimal('0.0000001');
-
-// Строгое сравнение с нулем
-value.isZero(); // false (не строго ноль)
-
-// Приблизительное сравнение
-isZeroDecimal(value, new Decimal(1e-6));  // true (близко в пределах 1e-6)
-isZeroDecimal(value, new Decimal(1e-8));  // false (далеко для точности 1e-8)
-```
-
-### Почему epsilon обязателен?
-
-**Философия:** Явный лучше неявного.
-
-```typescript
-// ❌ Плохо: неясно какой epsilon
-if (isZeroDecimal(diff)) {
-  // Что считается "близко к нулю"?
-}
-
-// ✅ Хорошо: явно видна точность
-if (isZeroDecimal(diff, new Decimal(0.01))) {
-  // Близко к нулю в пределах 1 цента
-}
-```
-
-### Когда использовать
-
-#### 1. Проверка погрешности вычислений
-
-```typescript
-const a = new Decimal(10);
-const b = new Decimal(3);
-const result = a.dividedBy(b).times(b); // 10.000000000000002?
-
-const diff = result.minus(a);
-const precisionError = new Decimal(1e-10);
-
-if (isZeroDecimal(diff, precisionError)) {
-  // Результат равен исходному в пределах точности
-}
-```
-
-#### 2. Приблизительное равенство значений
-
-```typescript
-function approximatelyEqual(a: Decimal, b: Decimal, tolerance: Decimal): boolean {
-  const diff = a.minus(b);
-  return isZeroDecimal(diff, tolerance);
-}
-
-const price1 = new Decimal('10.5678');
-const price2 = new Decimal('10.5679');
-const centTolerance = new Decimal('0.01');
-
-approximatelyEqual(price1, price2, centTolerance); // true (в пределах цента)
-```
-
-#### 3. Проверка "незначительного остатка"
-
-```typescript
-const remaining = new Decimal('0.0003');
-const insignificantThreshold = new Decimal('0.001');
-
-if (isZeroDecimal(remaining, insignificantThreshold)) {
-  // Остаток незначителен, можем игнорировать
-}
-```
-
----
-
 ## Примеры использования
 
 ### Валидация перед арифметикой
@@ -317,7 +212,6 @@ class Quantity {
 ### Проверка незначительной разницы
 
 ```typescript
-import { isZeroDecimal } from '@polymarket/math/validation';
 import { subtractDecimal } from '@polymarket/math';
 import Decimal from 'decimal.js';
 
@@ -329,7 +223,7 @@ function pricesMatch(
   const diff = subtractDecimal(price1, price2).abs();
 
   // Разница меньше tick size считается незначительной
-  return isZeroDecimal(diff, tickSize);
+  return diff.lessThan(tickSize);
 }
 
 const p1 = new Decimal('10.567');
@@ -342,7 +236,7 @@ pricesMatch(p1, p2, tick); // true (разница 0.001 < 0.01)
 ### Guard clauses в функциях
 
 ```typescript
-import { isNonNegativeDecimal, isZeroDecimal } from '@polymarket/math/validation';
+import { isNonNegativeDecimal } from '@polymarket/math/validation';
 import Decimal from 'decimal.js';
 
 function calculateFee(amount: Decimal, feeRate: Decimal): Decimal {
@@ -358,7 +252,7 @@ function calculateFee(amount: Decimal, feeRate: Decimal): Decimal {
 
   // Оптимизация: если amount близок к нулю, комиссия = 0
   const negligibleThreshold = new Decimal('0.0001');
-  if (isZeroDecimal(amount, negligibleThreshold)) {
+  if (amount.abs().lessThan(negligibleThreshold)) {
     return new Decimal(0);
   }
 
@@ -392,18 +286,18 @@ class Price {
 }
 ```
 
-### 2. Всегда указывайте явный epsilon
+### 2. Для приблизительного сравнения используйте явный epsilon
 
 ```typescript
 // ✅ Хорошо: явный epsilon показывает намерение
 const computationalPrecision = new Decimal(1e-10);
 const businessPrecision = new Decimal(0.01);
 
-if (isZeroDecimal(diff, computationalPrecision)) {
+if (diff.abs().lessThan(computationalPrecision)) {
   // Числовая точность
 }
 
-if (isZeroDecimal(remaining, businessPrecision)) {
+if (remaining.abs().lessThan(businessPrecision)) {
   // Бизнес-логика
 }
 ```
@@ -411,14 +305,15 @@ if (isZeroDecimal(remaining, businessPrecision)) {
 ### 3. Для строгого сравнения используйте Decimal методы
 
 ```typescript
-// ❌ Плохо: isZeroDecimal со слишком малым epsilon
-if (isZeroDecimal(value, new Decimal(Number.MIN_VALUE))) {
-  // Фактически строгое сравнение, но неясно
-}
-
 // ✅ Хорошо: явный метод для строгого сравнения
 if (value.isZero()) {
   // Строго равно нулю
+}
+
+// ✅ Хорошо: для приблизительного сравнения
+const epsilon = new Decimal('0.0001');
+if (value.abs().lessThan(epsilon)) {
+  // Близко к нулю в пределах epsilon
 }
 ```
 

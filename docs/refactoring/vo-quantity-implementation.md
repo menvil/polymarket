@@ -1,87 +1,135 @@
-# Quantity Value Object: План рефакторинга и имплементации
+# Quantity Value Object: New Implementation Plan (Decimal-based)
+
+## Epic Overview
+
+**Epic:** Quantity (Decimal inside) — new implementation + replace exports
+
+**Current state:** `packages/domain/value-objects/src/Quantity.ts` (659 lines, number-based)
+
+**Target:** New Decimal-based implementation with layered architecture
+
+**Strategy:** New implementation in `quantity/` directory, then replace exports (NOT incremental refactoring)
+
+---
 
 ## Метаданные
 
 - **Value Object:** Quantity
-- **Текущий файл:** `packages/domain/value-objects/src/Quantity.ts` (659 lines)
 - **Сложность:** High (базовый VO, используется везде)
 - **Зависимости:** `@polymarket/math`, `@polymarket/errors`, `@polymarket/result`
 - **Приоритет:** 🔴 ВЫСОКИЙ (базовый unit для всей системы)
 
 ---
 
-## Оглавление
+## ⚠️ Ключевое архитектурное решение
 
-1. [Специфика Quantity](#специфика-quantity)
-2. [Целевая архитектура](#целевая-архитектура)
-3. [Детальный план по фазам](#детальный-план-по-фазам)
-4. [План тестирования](#план-тестирования)
-5. [План документации](#план-документации)
-6. [Миграция](#миграция)
+**Quantity хранит Decimal внутри:**
+
+- Core Quantity хранит `Decimal` (opaque)
+- Наружу отдаёт `Decimal` через `value()` и `number` через `toNumber()` (lossy)
+- Это реально побеждает precision проблемы
+- Все арифметические операции работают с `Decimal` через `@polymarket/math`
+
+**Почему новая реализация:**
+- Текущий `Quantity.ts` (659 строк) хранит `number`, а `Decimal` использует только для проверок/парсинга
+- Миграция на Decimal-внутри — это архитектурный разлом
+- Big-bang замена экспортов проще и безопаснее чем инкрементальный рефакторинг
 
 ---
 
-## Специфика Quantity
+## 🚨 Блокеры (проверить ДО начала работы)
 
-### Характеристики
+### Блокер 1: @polymarket/math должен экспортировать типизированные ошибки
 
-**Назначение:** Представляет количество акций/токенов на рынках предсказаний.
+`@polymarket/math` **ДОЛЖЕН** экспортировать:
+- `DivisionByZeroError` - для деления на ноль
+- `ArithmeticOverflowError` - для переполнения/overflow
 
-**Диапазон:** `>= 0` (non-negative)
-
-**MIN_SIZE:** `1` (минимум Polymarket - 1 акция)
-- По умолчанию = 1
-- Может переопределяться для конкретных рынков (orderMinSize)
-
-**DEFAULT_TICK:** `0.01` (для округления)
-
-**Константы:**
-```typescript
-Quantity.ZERO = 0
-Quantity.ONE = 1
+**Проверка:**
+```bash
+grep -r "DivisionByZeroError" packages/foundation/math/src
+grep -r "ArithmeticOverflowError" packages/foundation/math/src
 ```
 
-### Текущие операции
+**Если НЕТ:** Реализовать их в `@polymarket/math` **ДО начала работы над Quantity**.
 
-1. **Создание:**
-   - `fromValue(value, minSize?)` - с проверкой minSize
-   - `fromNumber(n)` - без проверки minSize
-   - `unsafeFromNumber(n)` - для внутренних операций
+**Почему критично:**
+- Без этих типов невозможно отличить ожидаемые арифметические ошибки от багов
+- Невозможно корректно мапить user-input ошибки в Result
+- Придется использовать catch-all антипаттерн (скрывает реальные баги)
 
-2. **Математика:**
-   - `add(other)` - сложение
-   - `subtract(other)` - вычитание (может стать отрицательным!)
-   - `multiply(factor)` - умножение
-   - `divide(divisor)` - деление
+---
 
-3. **Округление:**
-   - `toTick(tickSize)` - округление до тика
-   - `floor()`, `ceil()`, `round()` - округление
+## Правила дизайна (стандарты для всех задач)
 
-4. **Сравнение:**
-   - `equals(other)` - равенство
-   - `lessThan(other)`, `greaterThan(other)` - сравнения
-   - `isZero()` - проверка на ноль
-   - `isPositive()` - проверка положительности
+### 1. Парсинг разрешён только в двух местах
 
-5. **Сериализация:**
-   - `toJSON()` - { value: number }
-   - `toString()` - string representation
+**Правило:** Парсинг (преобразование `number | string` в `Decimal`) разрешён только в двух местах:
 
-### Инварианты
+1. **`Quantity.of(value: Decimal.Value)`** (Core — создание доменного примитива)
+2. **`QuantityService.*`** (Facade — user-input операции и оркестрация)
 
-**Всегда должно быть true:**
-1. ✅ `quantity >= 0` (non-negative)
-2. ✅ `isFinite(quantity)`
-3. ✅ `!isNaN(quantity)`
+**Ни Rules, ни Policy не парсят никогда — принимают только `Decimal`.**
 
-### Бизнес-правила (контекстуальные)
+Конкретно:
+- ✅ `Quantity.of(value: Decimal.Value)` — парсит в Core
+- ✅ `QuantityService.create(value: number | string | Decimal)` — парсит в Facade
+- ✅ `QuantityService.multiply(qty, factor: number | Decimal)` — парсит factor в Facade
+- ✅ `QuantityService.divide(qty, divisor: number | Decimal)` — парсит divisor в Facade
 
-**Зависят от контекста:**
-1. 🔶 `quantity >= minSize` (для ордеров)
-2. 🔶 `divisor > 0` (для деления)
-3. 🔶 `result >= 0` (для subtract - зависит от use case)
-4. 🔶 Округление до конкретного tickSize
+- ❌ `ValidateMinSize.check(quantity: Decimal, minSize: Decimal)` — НЕ парсит, ТОЛЬКО Decimal
+- ❌ `OrderQuantityPolicy.validateForOrder(quantity: Decimal, ...)` — НЕ парсит, ТОЛЬКО Decimal
+- ❌ Все остальные rules/policy — НЕ парсят, ТОЛЬКО Decimal
+
+**Почему:** Если разрешить парсинг в rules/policy, он размажется по проекту → проблемы с режимами Decimal и дублирование логики.
+
+### 2. Rules возвращают InvalidQuantityError
+
+**Правило:** Все rules возвращают `Result<void, InvalidQuantityError>`.
+
+Это стандарт домена Polymarket для валидации Quantity.
+
+### 3. Все операции возвращают Result
+
+**Правило:** ВСЕ арифметические операции `QuantityService` возвращают `Result<Quantity, Error>`.
+
+**Причина:** `@polymarket/math` может:
+- Вернуть non-finite Decimal (Infinity, NaN)
+- Бросить `ArithmeticOverflowError` (если так устроен math layer)
+- Результат операции может нарушить инварианты Quantity (например, negative после subtract)
+
+Конкретно:
+- `add()` → Result (math может вернуть Infinity/NaN или бросить overflow)
+- `subtract()` → Result (результат может быть negative)
+- `multiply()` → Result (invalid factor, math может вернуть Infinity/NaN)
+- `divide()` → Result (division by zero, math бросает DivisionByZeroError)
+- `roundToTick()` → Result (invalid tickSize)
+
+**Важно:** Поведение `@polymarket/math` (throw vs return non-finite) должно быть согласовано с контрактом math layer.
+
+### 4. Выбор конструктора Quantity
+
+**Правило:**
+
+- `Quantity.of(value: Decimal.Value)` — когда вход сырой: `number`, `string`, `Decimal.Value`
+- `Quantity.fromDecimal(decimal: Decimal)` — когда вход уже `Decimal` (результат math операций, конфиги)
+
+**Избегайте повторного парсинга (для advanced use cases):**
+```typescript
+// ❌ Неправильно
+const decimal = new Decimal(10);
+const qty = Quantity.of(decimal); // лишний парсинг!
+
+// ✅ Правильно
+const decimal = new Decimal(10);
+const qty = Quantity.fromDecimal(decimal);
+
+// Пример advanced use: после math операций
+const sum = addDecimal(qty1.value(), qty2.value());
+const result = Quantity.fromDecimal(sum); // напрямую, минуя фасад
+```
+
+**Важно:** В `QuantityService` (фасаде) после math операций используйте `this.create(decimalResult)`, который внутри оптимизирован для Decimal. Правило "fromDecimal после math" применяется только для advanced use cases (когда работаете с Quantity напрямую, минуя фасад).
 
 ---
 
@@ -96,721 +144,389 @@ packages/domain/value-objects/src/quantity/
  │   └─ index.ts
  │
  ├─ rules/
- │   ├─ ValidateMinSize.ts          ← Правило: qty >= minSize
- │   ├─ ValidateNonNegative.ts      ← Правило: qty >= 0
- │   ├─ ValidatePositiveDivisor.ts  ← Правило: divisor > 0
+ │   ├─ ValidateMinSize.ts
+ │   ├─ ValidateResultNonNegative.ts
+ │   ├─ ValidateDivisorForQuantityDivision.ts
+ │   ├─ ValidateFactorForQuantityMultiplication.ts
+ │   ├─ ValidateTickSizeForRounding.ts
  │   └─ index.ts
  │
  ├─ policy/
- │   ├─ OrderQuantityPolicy.ts      ← Политика для ордеров
- │   ├─ PositionQuantityPolicy.ts   ← Политика для позиций
+ │   ├─ OrderQuantityPolicy.ts
+ │   ├─ PositionQuantityPolicy.ts
  │   └─ index.ts
  │
  ├─ facade/
- │   ├─ QuantityService.ts          ← Главный фасад
+ │   ├─ QuantityService.ts
  │   └─ index.ts
  │
  ├─ adapters/
- │   ├─ QuantitySerializer.ts       ← JSON сериализация
- │   ├─ QuantityFormatter.ts        ← String formatting
+ │   ├─ QuantitySerializer.ts
+ │   ├─ QuantityFormatter.ts
  │   └─ index.ts
  │
- └─ index.ts                        ← Главный экспорт
+ └─ index.ts                        ← Главный экспорт (заменит старый Quantity.ts)
 ```
 
-### Слои и ответственность
+### Публичный API
 
-#### **Core Layer** (`core/Quantity.ts`)
-
-**Ответственность:** Только инварианты существования.
+#### Core Layer (Quantity)
 
 ```typescript
-import Decimal from 'decimal.js';
+// Создание
+Quantity.of(value: Decimal.Value): Quantity
+Quantity.fromDecimal(decimal: Decimal): Quantity
+Quantity.ZERO: Quantity
+Quantity.ONE: Quantity
 
-/**
- * QuantityInvariantViolation - нарушение инварианта Quantity
- */
-export class QuantityInvariantViolation extends Error {
-  constructor(message: string) {
-    super(`Quantity invariant violation: ${message}`);
-    this.name = 'QuantityInvariantViolation';
-  }
-}
+// Доступ
+value(): Decimal
+toNumber(): number  // lossy
 
-/**
- * Core Quantity Value Object
- *
- * @remarks
- * Содержит ТОЛЬКО инварианты существования:
- * - Non-negative (>= 0)
- * - Finite value
- * - Equality comparison
- *
- * НЕ содержит:
- * - Математику (используй @polymarket/math)
- * - Бизнес-правила minSize (используй Rules)
- * - Округление (используй Math)
- * - Сериализацию (используй Adapters)
- */
-export class Quantity {
-  private constructor(private readonly v: Decimal) {
-    // Инвариант 1: Must be finite
-    if (!v.isFinite()) {
-      throw new QuantityInvariantViolation('must be finite');
-    }
-
-    // Инвариант 2: Cannot be negative
-    if (v.isNegative()) {
-      throw new QuantityInvariantViolation('cannot be negative');
-    }
-  }
-
-  /**
-   * Создаёт Quantity из Decimal/number/string
-   *
-   * @remarks
-   * Без проверки minSize - это бизнес-правило.
-   * Для проверки minSize используй QuantityService.createForOrder()
-   */
-  public static of(value: number | string | Decimal): Quantity {
-    // Оптимизация: если уже Decimal, не пересоздаём
-    const decimal = value instanceof Decimal ? value : new Decimal(value);
-    return new Quantity(decimal);
-  }
-
-  /**
-   * Константы
-   */
-  public static readonly ZERO = new Quantity(new Decimal(0));
-  public static readonly ONE = new Quantity(new Decimal(1));
-
-  /**
-   * Возвращает Decimal значение
-   */
-  public value(): Decimal {
-    return this.v;
-  }
-
-  /**
-   * Возвращает number значение
-   */
-  public toNumber(): number {
-    return this.v.toNumber();
-  }
-
-  /**
-   * Проверяет равенство с другим количеством
-   */
-  public equals(other: Quantity, epsilon: Decimal = new Decimal(0.0001)): boolean {
-    return this.v.minus(other.v).abs().lessThan(epsilon);
-  }
-
-  /**
-   * Проверяет что количество равно нулю
-   */
-  public isZero(epsilon: Decimal = new Decimal(0.0001)): boolean {
-    return this.v.abs().lessThan(epsilon);
-  }
-
-  /**
-   * Проверяет что количество положительное (> 0)
-   */
-  public isPositive(): boolean {
-    return this.v.greaterThan(0);
-  }
-}
+// Сравнение (без epsilon)
+equals(other: Quantity): boolean
+isZero(): boolean
+isPositive(): boolean
 ```
 
-**Что можно:**
-- Проверка инвариантов
-- Equality comparison
-- Геттеры для Decimal/number
+#### Facade Layer (QuantityService)
 
-**Что нельзя:**
-- Математику (используй `@polymarket/math`)
-- Бизнес-правила (используй Rules)
-- Сериализацию (используй Adapters)
+```typescript
+// Создание
+create(value: number | string | Decimal): Result<Quantity, Error>
+createForOrder(value: number | string | Decimal, orderMinSize: Decimal): Result<Quantity, Error>
+
+// Математика (все → Result)
+add(qty1: Quantity, qty2: Quantity): Result<Quantity, Error>
+subtract(qty1: Quantity, qty2: Quantity): Result<Quantity, Error>
+multiply(qty: Quantity, factor: number | Decimal): Result<Quantity, Error>
+divide(qty: Quantity, divisor: number | Decimal): Result<Quantity, Error>
+roundToTick(qty: Quantity, tickSize: Decimal, mode?): Result<Quantity, Error>
+
+// Валидация
+validateForPosition(qty: Quantity): Result<void, Error>
+```
+
+#### Adapters Layer
+
+```typescript
+// Точная сериализация (string)
+QuantitySerializer.toJSON(qty): { value: string }
+QuantitySerializer.fromJSON(json): Result<Quantity, Error>
+
+// Lossy сериализация (number)
+QuantityLossySerializer.toJSON(qty): { value: number }
+QuantityLossySerializer.fromJSON(json): Result<Quantity, Error>
+
+// Форматирование
+QuantityFormatter.toString(qty, decimals?): string
+QuantityFormatter.toCompactString(qty): string
+QuantityFormatter.toDebugString(qty): string
+QuantityFormatter.toDisplayString(qty): string  // K/M суффиксы
+```
 
 ---
 
-#### **Math Layer** (из `@polymarket/math`)
+## Tasks (Jira-style)
 
-**Используем готовые функции:**
+### Task 1 — Create core VO
+
+**Files:**
+- ✅ `packages/domain/value-objects/src/quantity/core/Quantity.ts`
+- ✅ `packages/domain/value-objects/src/quantity/core/index.ts`
+
+**Implement:**
+- `class Quantity`
+- `class QuantityInvariantViolation extends Error { readonly reason: 'NEGATIVE' | 'NON_FINITE' }`
+
+**API:**
+- `Quantity.of(value: Decimal.Value): Quantity` — с парсингом
+- `Quantity.fromDecimal(decimal: Decimal): Quantity` — без парсинга, не клонирует Decimal
+- `Quantity.ZERO`, `Quantity.ONE` — константы
+- `value(): Decimal` — геттер Decimal
+- `toNumber(): number` — геттер number (lossy, с warning в TSDoc)
+- `equals(other: Quantity): boolean` — без epsilon
+- `isZero(): boolean` — без epsilon
+- `isPositive(): boolean`
+
+**Инварианты (проверка в конструкторе):**
+1. `>= 0` (non-negative) → throw QuantityInvariantViolation('Quantity value cannot be negative', 'NEGATIVE')
+2. `isFinite` → throw QuantityInvariantViolation('Quantity value must be finite', 'NON_FINITE')
+
+**Tests:**
+- `__tests__/unit/quantity/core/Quantity.test.ts` (~25 тестов)
+- Покрытие: инварианты, of/fromDecimal, equals/isZero/isPositive, ZERO/ONE
+
+**Acceptance Criteria:**
+- [ ] QuantityInvariantViolation.reason имеет тип `'NEGATIVE' | 'NON_FINITE'` (union, не любая строка)
+- [ ] `of()` парсит Decimal.Value через `new Decimal(value)`
+- [ ] `fromDecimal()` НЕ парсит, принимает Decimal как есть (не клонирует)
+- [ ] fromDecimal() TSDoc явно указывает: "не клонирует Decimal, принимает как есть"
+- [ ] ZERO и ONE используют `of(0)` и `of(1)`
+- [ ] equals/isZero используют точное сравнение (без epsilon)
+- [ ] toNumber() имеет TSDoc warning про lossy conversion
+- [ ] 100% coverage
+
+---
+
+### Task 2 — Create rules (domain-specific, NOT reusable)
+
+**Rules возвращают `InvalidQuantityError` — это стандарт домена Polymarket.**
+
+**Files:**
+- ✅ `quantity/rules/ValidateMinSize.ts`
+- ✅ `quantity/rules/ValidateResultNonNegative.ts`
+- ✅ `quantity/rules/ValidateDivisorForQuantityDivision.ts`
+- ✅ `quantity/rules/ValidateFactorForQuantityMultiplication.ts`
+- ✅ `quantity/rules/ValidateTickSizeForRounding.ts`
+- ✅ `quantity/rules/index.ts`
+
+**Сигнатуры (ВСЕ принимают ТОЛЬКО Decimal):**
 
 ```typescript
-import {
-  addDecimal,
-  subtractDecimal,
-  multiplyDecimal,
-  divideDecimal,
-  roundToTick
-} from '@polymarket/math';
+// ValidateMinSize
+static check(quantity: Decimal, minSize: Decimal): Result<void, InvalidQuantityError>
+
+// ValidateResultNonNegative
+static check(result: Decimal): Result<void, InvalidQuantityError>
+
+// ValidateDivisorForQuantityDivision
+static check(divisor: Decimal): Result<void, InvalidQuantityError>
+// Проверяет: divisor > 0 && isFinite
+
+// ValidateFactorForQuantityMultiplication
+static check(factor: Decimal): Result<void, InvalidQuantityError>
+// Проверяет: factor >= 0 && isFinite
+
+// ValidateTickSizeForRounding
+static check(tickSize: Decimal): Result<void, InvalidQuantityError>
+// Проверяет: tickSize > 0 && isFinite
 ```
 
-**Примеры:**
+**Tests:**
+- `__tests__/unit/quantity/rules/*.test.ts` (~30 тестов, ~6 на rule)
+- Покрытие: valid/invalid cases, граничные случаи (0, negative, Infinity, NaN)
+
+**Acceptance Criteria:**
+- [ ] ВСЕ rules принимают ТОЛЬКО Decimal (НЕ number | Decimal)
+- [ ] ВСЕ rules возвращают InvalidQuantityError с context
+- [ ] InvalidQuantityError.context использует единый формат ключей:
+  - ValidateMinSize: `{ quantity, minSize }`
+  - ValidateResultNonNegative: `{ result }`
+  - ValidateDivisorForQuantityDivision: `{ divisor }`
+  - ValidateFactorForQuantityMultiplication: `{ factor }`
+  - ValidateTickSizeForRounding: `{ tickSize }`
+- [ ] Все значения в context сериализуются через `.toString()`
+- [ ] TSDoc содержит @example для каждого rule
+- [ ] 100% coverage
+
+---
+
+### Task 3 — Create policy
+
+**Files:**
+- ✅ `quantity/policy/OrderQuantityPolicy.ts`
+- ✅ `quantity/policy/PositionQuantityPolicy.ts`
+- ✅ `quantity/policy/index.ts`
+
+**Сигнатуры (ВСЕ принимают ТОЛЬКО Decimal):**
+
 ```typescript
-// Сложение
+// OrderQuantityPolicy
+static validateForOrder(quantity: Decimal, orderMinSize: Decimal): Result<void, InvalidQuantityError>
+// Использует ValidateMinSize.check()
+
+// PositionQuantityPolicy
+static validateForPosition(quantity: Decimal): Result<void, InvalidQuantityError>
+// Проверяет: >= 0 && isFinite (allow zero)
+
+static validatePartialClose(currentQuantity: Decimal, closeQuantity: Decimal): Result<void, InvalidQuantityError>
+// Проверяет: closeQuantity > 0 && closeQuantity <= currentQuantity
+// Предполагается что currentQuantity и closeQuantity finite (источник — Quantity)
+```
+
+**Tests:**
+- `__tests__/unit/quantity/policy/*.test.ts` (~15 тестов)
+- Покрытие: order validation, position validation (zero allowed), partial close
+
+**Acceptance Criteria:**
+- [ ] ВСЕ policy принимают ТОЛЬКО Decimal (НЕ number | Decimal)
+- [ ] OrderQuantityPolicy использует ValidateMinSize
+- [ ] PositionQuantityPolicy allows zero (>= 0, не > 0)
+- [ ] PositionQuantityPolicy.validatePartialClose явно документирует предположение: входы finite (источник — Quantity)
+- [ ] TSDoc объясняет почему position может быть 0
+- [ ] 100% coverage
+
+---
+
+### Task 4 — Create facade QuantityService
+
+**Rule:** ALL operations return Result (как в правилах дизайна).
+
+**Files:**
+- ✅ `quantity/facade/QuantityService.ts`
+- ✅ `quantity/facade/index.ts`
+
+**Сигнатуры:**
+
+```typescript
+// Создание (парсинг разрешён в фасаде)
+static create(value: number | string | Decimal): Result<Quantity, InvalidQuantityError>
+// Оптимизация: если value instanceof Decimal → fromDecimal(), иначе of()
+
+static createForOrder(
+  value: number | string | Decimal,
+  orderMinSize: Decimal  // ⚠️ orderMinSize ТОЛЬКО Decimal
+): Result<Quantity, InvalidQuantityError>
+// Парсит value один раз → OrderQuantityPolicy.validateForOrder() → create()
+
+// Математика (factor/divisor могут быть number | Decimal в фасаде)
+static add(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError>
+static subtract(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError>
+static multiply(qty: Quantity, factor: number | Decimal): Result<Quantity, InvalidQuantityError>
+static divide(qty: Quantity, divisor: number | Decimal): Result<Quantity, InvalidQuantityError>
+static roundToTick(qty: Quantity, tickSize: Decimal, mode?: Decimal.Rounding): Result<Quantity, InvalidQuantityError>
+
+// Валидация
+static validateForPosition(quantity: Quantity): Result<void, InvalidQuantityError>
+```
+
+**Оркестрация в операциях:**
+
+**Важное правило:** В фасаде после math операций всегда используем `this.create(decimalResult)`.
+
+Правило "использовать `fromDecimal()` после math" применяется только для ручного advanced use (когда пользователь напрямую работает с Quantity, минуя фасад).
+
+```typescript
+// add()
 const sum = addDecimal(qty1.value(), qty2.value());
+return this.create(sum);  // create() оптимизирован для Decimal, проверит инварианты
 
-// Вычитание (может стать отрицательным!)
+// subtract()
 const diff = subtractDecimal(qty1.value(), qty2.value());
+const validateResult = ValidateResultNonNegative.check(diff);
+if (!validateResult.ok) return Err(validateResult.error);
+return this.create(diff);
 
-// Умножение
-const multiplied = multiplyDecimal(qty.value(), new Decimal(2));
+// multiply() — парсит factor только в фасаде
+const factorDecimal = factor instanceof Decimal ? factor : new Decimal(factor);
+const validateResult = ValidateFactorForQuantityMultiplication.check(factorDecimal);
+if (!validateResult.ok) return Err(validateResult.error);
+const result = multiplyDecimal(qty.value(), factorDecimal);
+return this.create(result);
 
-// Деление
-const divided = divideDecimal(qty.value(), new Decimal(2));
-
-// Округление до тика
-const rounded = roundToTick(qty.value(), new Decimal(0.01));
-```
-
----
-
-#### **Rules Layer**
-
-**Файл:** `rules/ValidateMinSize.ts`
-
-```typescript
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuantityError } from '@polymarket/errors';
-import Decimal from 'decimal.js';
-
-/**
- * Правило: Quantity должен быть >= minSize
- *
- * @remarks
- * Атомарное бизнес-правило.
- * Проверяет что количество >= минимального размера для рынка.
- *
- * Это контекстуальное правило:
- * - Для ордеров: minSize обычно >= 1
- * - Для позиций: может быть меньше (лоты могут частично закрываться)
- * - Для вычислений: может не применяться
- *
- * @example
- * ```typescript
- * const result = ValidateMinSize.check(
- *   new Decimal(0.5),
- *   new Decimal(1)
- * );
- * if (!result.ok) {
- *   console.error(result.error); // InvalidQuantityError
- * }
- * ```
- */
-export class ValidateMinSize {
-  public static check(
-    quantity: Decimal,
-    minSize: Decimal
-  ): Result<void, InvalidQuantityError> {
-    if (quantity.lessThan(minSize)) {
-      return Err(
-        new InvalidQuantityError(
-          (ctx) => `Quantity ${ctx.quantity} is less than minimum size ${ctx.minSize}`,
-          {
-            code: InvalidQuantityError.code,
-            context: {
-              quantity: quantity.toString(),
-              minSize: minSize.toString()
-            }
-          }
-        )
-      );
-    }
-
-    return Ok(undefined);
+// divide() — парсит divisor только в фасаде
+const divisorDecimal = divisor instanceof Decimal ? divisor : new Decimal(divisor);
+const validateResult = ValidateDivisorForQuantityDivision.check(divisorDecimal);
+if (!validateResult.ok) return Err(validateResult.error);
+try {
+  const result = divideDecimal(qty.value(), divisorDecimal);
+  return this.create(result);
+} catch (error) {
+  // Мапим ТОЛЬКО ожидаемые типы (DivisionByZeroError | ArithmeticOverflowError)
+  // Контракт: @polymarket/math.divideDecimal ДОЛЖЕН бросать эти классы
+  if (error instanceof DivisionByZeroError || error instanceof ArithmeticOverflowError) {
+    return Err(new InvalidQuantityError(...));
   }
+  throw error;  // rethrow unexpected
 }
+
+// roundToTick()
+const validateResult = ValidateTickSizeForRounding.check(tickSize);
+if (!validateResult.ok) return Err(validateResult.error);
+const rounded = roundToTick(qty.value(), tickSize, roundingMode);
+return this.create(rounded);
 ```
 
-**Файл:** `rules/ValidateNonNegative.ts`
-
+**Imports:**
 ```typescript
-/**
- * Правило: Результат операции должен быть неотрицательным
- *
- * @remarks
- * Используется когда результат операции (subtract) не должен быть отрицательным.
- * Отличается от Core инварианта:
- * - Core: объект НЕ МОЖЕТ существовать с negative
- * - Rule: операция НЕ ДОЛЖНА давать negative результат в этом контексте
- */
-export class ValidateNonNegativeResult {
-  public static check(result: Decimal): Result<void, InvalidQuantityError> {
-    if (result.isNegative()) {
-      return Err(
-        new InvalidQuantityError(
-          (ctx) => `Operation result ${ctx.result} cannot be negative`,
-          {
-            code: InvalidQuantityError.code,
-            context: { result: result.toString() }
-          }
-        )
-      );
-    }
-
-    return Ok(undefined);
-  }
-}
-```
-
-**Файл:** `rules/ValidatePositiveDivisor.ts`
-
-```typescript
-/**
- * Правило: Делитель должен быть положительным
- *
- * @remarks
- * Бизнес-правило для деления quantity.
- * Математически можно делить на отрицательное,
- * но в бизнес-логике это обычно ошибка.
- */
-export class ValidatePositiveDivisor {
-  public static check(divisor: Decimal): Result<void, InvalidQuantityError> {
-    if (divisor.lessThanOrEqualTo(0)) {
-      return Err(
-        new InvalidQuantityError(
-          (ctx) => `Divisor must be positive, got ${ctx.divisor}`,
-          {
-            code: InvalidQuantityError.code,
-            context: { divisor: divisor.toString() }
-          }
-        )
-      );
-    }
-
-    if (!divisor.isFinite()) {
-      return Err(
-        new InvalidQuantityError(
-          (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
-          {
-            code: InvalidQuantityError.code,
-            context: { divisor: divisor.toString() }
-          }
-        )
-      );
-    }
-
-    return Ok(undefined);
-  }
-}
-```
-
----
-
-#### **Policy Layer**
-
-**Файл:** `policy/OrderQuantityPolicy.ts`
-
-```typescript
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuantityError } from '@polymarket/errors';
-import { ValidateMinSize } from '../rules/ValidateMinSize.js';
-import Decimal from 'decimal.js';
-
-/**
- * Политика для количеств в ордерах
- *
- * @remarks
- * Комбинирует правила для создания/обновления ордеров.
- */
-export class OrderQuantityPolicy {
-  /**
-   * Валидирует quantity для размещения ордера
-   *
-   * @param quantity - Количество
-   * @param orderMinSize - Минимальный размер ордера для рынка
-   * @returns Result<void, Error>
-   */
-  public static validateForOrder(
-    quantity: Decimal,
-    orderMinSize: Decimal
-  ): Result<void, InvalidQuantityError> {
-    // 1. Проверяем minSize
-    const minSizeResult = ValidateMinSize.check(quantity, orderMinSize);
-    if (!minSizeResult.ok) {
-      return minSizeResult;
-    }
-
-    // 2. Дополнительные проверки для ордеров
-    // (например, проверка максимального размера, если нужно)
-
-    return Ok(undefined);
-  }
-
-  /**
-   * Валидирует изменение количества в ордере
-   */
-  public static validateUpdate(
-    currentQuantity: Decimal,
-    newQuantity: Decimal,
-    orderMinSize: Decimal
-  ): Result<void, InvalidQuantityError> {
-    // Новое количество должно удовлетворять minSize
-    return this.validateForOrder(newQuantity, orderMinSize);
-  }
-}
-```
-
-**Файл:** `policy/PositionQuantityPolicy.ts`
-
-```typescript
-/**
- * Политика для количеств в позициях
- *
- * @remarks
- * Позиции могут иметь дробные количества (лоты частично закрываются).
- * Правила мягче чем для ордеров.
- */
-export class PositionQuantityPolicy {
-  /**
-   * Валидирует quantity для добавления в позицию
-   */
-  public static validateForPosition(
-    quantity: Decimal
-  ): Result<void, InvalidQuantityError> {
-    // Для позиций достаточно быть > 0
-    // (может быть < orderMinSize после частичного закрытия)
-    if (!quantity.isPositive()) {
-      return Err(
-        new InvalidQuantityError(
-          (ctx) => `Position quantity must be positive, got ${ctx.quantity}`,
-          {
-            code: InvalidQuantityError.code,
-            context: { quantity: quantity.toString() }
-          }
-        )
-      );
-    }
-
-    return Ok(undefined);
-  }
-
-  /**
-   * Валидирует закрытие части позиции
-   */
-  public static validatePartialClose(
-    currentQuantity: Decimal,
-    closeQuantity: Decimal
-  ): Result<void, InvalidQuantityError> {
-    // closeQuantity должен быть > 0
-    if (!closeQuantity.isPositive()) {
-      return Err(
-        new InvalidQuantityError(
-          'Close quantity must be positive',
-          {
-            code: InvalidQuantityError.code,
-            context: { closeQuantity: closeQuantity.toString() }
-          }
-        )
-      );
-    }
-
-    // closeQuantity не должен превышать current
-    if (closeQuantity.greaterThan(currentQuantity)) {
-      return Err(
-        new InvalidQuantityError(
-          (ctx) => `Cannot close ${ctx.close} when position is ${ctx.current}`,
-          {
-            code: InvalidQuantityError.code,
-            context: {
-              current: currentQuantity.toString(),
-              close: closeQuantity.toString()
-            }
-          }
-        )
-      );
-    }
-
-    return Ok(undefined);
-  }
-}
-```
-
----
-
-#### **Facade Layer**
-
-**Файл:** `facade/QuantityService.ts`
-
-```typescript
-import { Result, Ok, Err } from '@polymarket/result';
-import { Quantity } from '../core/Quantity.js';
-import { InvalidQuantityError } from '@polymarket/errors';
 import {
   addDecimal,
   subtractDecimal,
   multiplyDecimal,
   divideDecimal,
-  roundToTick
+  roundToTick,
+  DivisionByZeroError,      // ⚠️ Блокер
+  ArithmeticOverflowError   // ⚠️ Блокер
 } from '@polymarket/math';
-import { OrderQuantityPolicy } from '../policy/OrderQuantityPolicy.js';
-import { PositionQuantityPolicy } from '../policy/PositionQuantityPolicy.js';
-import { ValidatePositiveDivisor } from '../rules/ValidatePositiveDivisor.js';
-import { ValidateNonNegativeResult } from '../rules/ValidateNonNegative.js';
-import Decimal from 'decimal.js';
-
-/**
- * Фасад для работы с Quantity
- *
- * @remarks
- * Единая точка входа для всех операций с количествами.
- * Оркестрирует Core + Math + Rules + Policy.
- */
-export class QuantityService {
-  /**
-   * Создаёт Quantity (без проверки minSize)
-   */
-  public static create(value: number | string | Decimal): Result<Quantity, InvalidQuantityError> {
-    try {
-      const quantity = Quantity.of(value);
-      return Ok(quantity);
-    } catch (error) {
-      if (error instanceof Error) {
-        return Err(
-          new InvalidQuantityError(error.message, {
-            code: InvalidQuantityError.code,
-            context: { value: String(value) }
-          })
-        );
-      }
-      throw error;
-    }
-  }
-
-  /**
-   * Создаёт Quantity для ордера (с проверкой minSize)
-   */
-  public static createForOrder(
-    value: number | string | Decimal,
-    orderMinSize: Decimal
-  ): Result<Quantity, InvalidQuantityError> {
-    const decimal = value instanceof Decimal ? value : new Decimal(value);
-
-    // Проверяем политику ордера
-    const policyResult = OrderQuantityPolicy.validateForOrder(decimal, orderMinSize);
-    if (!policyResult.ok) {
-      return Err(policyResult.error);
-    }
-
-    return this.create(decimal);
-  }
-
-  /**
-   * Складывает два количества
-   */
-  public static add(qty1: Quantity, qty2: Quantity): Quantity {
-    const sum = addDecimal(qty1.value(), qty2.value());
-    return Quantity.of(sum);
-  }
-
-  /**
-   * Вычитает quantity с проверкой неотрицательности
-   */
-  public static subtract(
-    qty1: Quantity,
-    qty2: Quantity
-  ): Result<Quantity, InvalidQuantityError> {
-    const diff = subtractDecimal(qty1.value(), qty2.value());
-
-    // Проверяем что результат неотрицательный
-    const validateResult = ValidateNonNegativeResult.check(diff);
-    if (!validateResult.ok) {
-      return Err(validateResult.error);
-    }
-
-    return this.create(diff);
-  }
-
-  /**
-   * Умножает quantity на коэффициент
-   */
-  public static multiply(
-    quantity: Quantity,
-    factor: number | Decimal
-  ): Result<Quantity, InvalidQuantityError> {
-    const factorDecimal = factor instanceof Decimal ? factor : new Decimal(factor);
-    const result = multiplyDecimal(quantity.value(), factorDecimal);
-
-    return this.create(result);
-  }
-
-  /**
-   * Делит quantity на делитель с проверкой
-   */
-  public static divide(
-    quantity: Quantity,
-    divisor: number | Decimal
-  ): Result<Quantity, InvalidQuantityError> {
-    const divisorDecimal = divisor instanceof Decimal ? divisor : new Decimal(divisor);
-
-    // Проверяем что делитель положительный
-    const validateResult = ValidatePositiveDivisor.check(divisorDecimal);
-    if (!validateResult.ok) {
-      return Err(validateResult.error);
-    }
-
-    // Делим (Math layer уже проверит division by zero)
-    const result = divideDecimal(quantity.value(), divisorDecimal);
-
-    return this.create(result);
-  }
-
-  /**
-   * Округляет до тика
-   */
-  public static roundToTick(
-    quantity: Quantity,
-    tickSize: Decimal,
-    roundingMode?: Decimal.Rounding
-  ): Result<Quantity, InvalidQuantityError> {
-    const rounded = roundToTick(quantity.value(), tickSize, roundingMode);
-    return this.create(rounded);
-  }
-
-  /**
-   * Валидирует для использования в позиции
-   */
-  public static validateForPosition(
-    quantity: Quantity
-  ): Result<void, InvalidQuantityError> {
-    return PositionQuantityPolicy.validateForPosition(quantity.value());
-  }
-}
 ```
+
+**Tests:**
+- `__tests__/unit/quantity/facade/*.test.ts` (~30 тестов)
+- Покрытие: create/createForOrder, все операции (success/failure), валидации
+
+**Acceptance Criteria:**
+- [ ] create() использует fromDecimal() для Decimal (оптимизация)
+- [ ] createForOrder() парсит value один раз
+- [ ] ВСЕ операции возвращают Result
+- [ ] В фасаде после math операций всегда используется `this.create(decimalResult)`
+- [ ] multiply/divide парсят factor/divisor только в фасаде, потом передают Decimal в rules
+- [ ] divide() ловит ТОЛЬКО DivisionByZeroError | ArithmeticOverflowError
+- [ ] divide() rethrow unexpected errors
+- [ ] Контракт проверяется тестом: @polymarket/math.divideDecimal действительно бросает DivisionByZeroError/ArithmeticOverflowError (не просто вера)
+- [ ] create() мапит QuantityInvariantViolation.reason в InvalidQuantityError.context
+- [ ] 100% coverage
 
 ---
 
-#### **Adapters Layer**
+### Task 5 — Create adapters
 
-**Файл:** `adapters/QuantitySerializer.ts`
+**Files:**
+- ✅ `quantity/adapters/QuantitySerializer.ts` (включает QuantitySerializer + QuantityLossySerializer)
+- ✅ `quantity/adapters/QuantityFormatter.ts`
+- ✅ `quantity/adapters/index.ts`
 
+**QuantitySerializer (точная сериализация):**
 ```typescript
-/**
- * Сериализация Quantity в/из JSON
- */
-export class QuantitySerializer {
-  public static toJSON(quantity: Quantity): { value: number } {
-    return { value: quantity.toNumber() };
-  }
+static toJSON(quantity: Quantity): { value: string }
+// return { value: quantity.value().toString() }
 
-  public static fromJSON(json: { value: number }): Result<Quantity, InvalidQuantityError> {
-    return QuantityService.create(json.value);
-  }
-}
+static fromJSON(json: { value: string }): Result<Quantity, InvalidQuantityError>
+// return QuantityService.create(json.value)
 ```
 
-**Файл:** `adapters/QuantityFormatter.ts`
-
+**QuantityLossySerializer (lossy сериализация):**
 ```typescript
-/**
- * Форматирование Quantity в строки
- */
-export class QuantityFormatter {
-  public static toString(quantity: Quantity, decimals: number = 2): string {
-    return quantity.value().toFixed(decimals);
-  }
+static toJSON(quantity: Quantity): { value: number }
+// return { value: quantity.toNumber() }
 
-  public static toCompactString(quantity: Quantity): string {
-    return quantity.value().toString();
-  }
-
-  public static toDebugString(quantity: Quantity): string {
-    return `Quantity(${quantity.value().toString()})`;
-  }
-
-  public static toDisplayString(quantity: Quantity): string {
-    const value = quantity.toNumber();
-    if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(2)}M`;
-    }
-    if (value >= 1000) {
-      return `${(value / 1000).toFixed(2)}K`;
-    }
-    return value.toFixed(2);
-  }
-}
+static fromJSON(json: { value: number }): Result<Quantity, InvalidQuantityError>
+// return QuantityService.create(json.value)
 ```
 
----
-
-## Детальный план по фазам
-
-### Фаза 0: Подготовка (15 минут)
-
-**Цель:** Создать структуру директорий.
-
-**Команды:**
-```bash
-cd packages/domain/value-objects/src
-mkdir -p quantity/core
-mkdir -p quantity/rules
-mkdir -p quantity/policy
-mkdir -p quantity/facade
-mkdir -p quantity/adapters
+**QuantityFormatter:**
+```typescript
+static toString(quantity: Quantity, decimals: number = 2): string
+static toCompactString(quantity: Quantity): string
+static toDebugString(quantity: Quantity): string
+static toDisplayString(quantity: Quantity): string  // с K/M суффиксами
+// ⚠️ toDisplayString() использует toNumber() → lossy, может врать на больших значениях
 ```
 
----
+**Tests:**
+- `__tests__/unit/quantity/adapters/*.test.ts` (~15 тестов)
+- Покрытие: string serialization, lossy serialization, все форматтеры
 
-### Фаза 1: Core Layer (25 минут)
-
-**Файлы:**
-- `quantity/core/Quantity.ts` - Core VO
-- `quantity/core/index.ts` - Экспорты
-
-**Тесты:** `__tests__/unit/quantity/core/Quantity.test.ts` (~25 тестов)
-
----
-
-### Фаза 2: Rules Layer (40 минут)
-
-**Файлы:**
-- `quantity/rules/ValidateMinSize.ts`
-- `quantity/rules/ValidateNonNegative.ts`
-- `quantity/rules/ValidatePositiveDivisor.ts`
-- `quantity/rules/index.ts`
-
-**Тесты:** `__tests__/unit/quantity/rules/*.test.ts` (~20 тестов)
+**Acceptance Criteria:**
+- [ ] QuantitySerializer использует string (без потери точности)
+- [ ] QuantityLossySerializer имеет TSDoc warning про lossy
+- [ ] toDisplayString() имеет TSDoc warning: "использует toNumber() → lossy для больших значений"
+- [ ] toDisplayString() форматирует >= 1000000 как "M", >= 1000 как "K"
+- [ ] В тестах не проверяется "точность больших чисел" через toDisplayString (это lossy)
+- [ ] 100% coverage
 
 ---
 
-### Фаза 3: Policy Layer (30 минут)
+### Task 6 — Public exports + replace old Quantity
 
-**Файлы:**
-- `quantity/policy/OrderQuantityPolicy.ts`
-- `quantity/policy/PositionQuantityPolicy.ts`
-- `quantity/policy/index.ts`
+**Files:**
+- ✅ `quantity/index.ts` — главный экспорт
+- ✅ `packages/domain/value-objects/src/index.ts` — обновить экспорты (обеспечить обратную совместимость)
+- ✅ `package.json` — добавить `./quantity` export
 
-**Тесты:** `__tests__/unit/quantity/policy/*.test.ts` (~15 тестов)
+**⚠️ Важно:** Обеспечить обратный экспорт для старого пути импорта, чтобы не сломать существующий код.
 
----
-
-### Фаза 4: Facade Layer (50 минут)
-
-**Файлы:**
-- `quantity/facade/QuantityService.ts` - Главный фасад
-- `quantity/facade/index.ts`
-
-**Тесты:** `__tests__/unit/quantity/facade/*.test.ts` (~30 тестов)
-
----
-
-### Фаза 5: Adapters Layer (15 минут)
-
-**Файлы:**
-- `quantity/adapters/QuantitySerializer.ts`
-- `quantity/adapters/QuantityFormatter.ts`
-- `quantity/adapters/index.ts`
-
-**Тесты:** `__tests__/unit/quantity/adapters/*.test.ts` (~12 тестов)
-
----
-
-### Фаза 6: Главный index.ts (10 минут)
-
-**Файл:** `quantity/index.ts`
-
+**quantity/index.ts:**
 ```typescript
 // Core
 export { Quantity, QuantityInvariantViolation } from './core/index.js';
@@ -819,13 +535,19 @@ export { Quantity, QuantityInvariantViolation } from './core/index.js';
 export { QuantityService } from './facade/index.js';
 
 // Adapters
-export { QuantitySerializer, QuantityFormatter } from './adapters/index.js';
+export {
+  QuantitySerializer,
+  QuantityLossySerializer,
+  QuantityFormatter
+} from './adapters/index.js';
 
 // Rules (для advanced use cases)
 export {
   ValidateMinSize,
-  ValidateNonNegativeResult,
-  ValidatePositiveDivisor
+  ValidateResultNonNegative,
+  ValidateDivisorForQuantityDivision,
+  ValidateFactorForQuantityMultiplication,
+  ValidateTickSizeForRounding
 } from './rules/index.js';
 
 // Policy (для advanced use cases)
@@ -835,23 +557,7 @@ export {
 } from './policy/index.js';
 ```
 
----
-
-### Фаза 7: Integration тесты (35 минут)
-
-**Файл:** `__tests__/integration/quantity/QuantityWorkflow.integration.test.ts`
-
-**Сценарии:**
-1. Создание для ордера → валидация minSize
-2. Add → subtract → проверка неотрицательности
-3. Multiply → divide → округление
-4. Создание для позиции → частичное закрытие
-5. Сериализация → десериализация
-
----
-
-### Фаза 8: Обновить package.json exports (5 минут)
-
+**package.json:**
 ```json
 {
   "exports": {
@@ -863,6 +569,75 @@ export {
 }
 ```
 
+**packages/domain/value-objects/src/index.ts (обратная совместимость):**
+```typescript
+// Обратный экспорт для старого пути импорта
+// Было: import { Quantity } from '@polymarket/value-objects'
+// Стало: import { Quantity } from '@polymarket/value-objects' (ещё работает!)
+export { Quantity, QuantityService, QuantityInvariantViolation } from './quantity/index.js';
+
+// Или если нужен полный экспорт:
+export * from './quantity/index.js';
+```
+
+**Acceptance Criteria:**
+- [ ] `quantity/index.ts` экспортирует всё публичное API
+- [ ] package.json содержит `./quantity` export
+- [ ] `packages/domain/value-objects/src/index.ts` реэкспортирует Quantity/QuantityService (обратная совместимость)
+- [ ] `npm run build` успешно компилирует
+- [ ] Можно импортировать: `import { Quantity, QuantityService } from '@polymarket/value-objects/quantity'` (новый путь)
+- [ ] Можно импортировать: `import { Quantity } from '@polymarket/value-objects'` (старый путь, обратная совместимость)
+- [ ] Не ломается существующий код с импортами Quantity
+
+---
+
+### Task 7 — Integration test
+
+**File:**
+- ✅ `__tests__/integration/quantity/QuantityWorkflow.integration.test.ts`
+
+**Scenarios:**
+
+1. **createForOrder + minSize validation:**
+   - createForOrder с валидным minSize → Ok
+   - createForOrder с quantity < minSize → Err
+
+2. **add + subtract + non-negative:**
+   - add(qty1, qty2) → Ok(sum)
+   - subtract(qty1, qty2) где qty1 > qty2 → Ok(diff)
+   - subtract(qty1, qty2) где qty1 < qty2 → Err (negative result)
+
+3. **multiply + divide + round:**
+   - multiply с valid factor → Ok
+   - multiply с negative factor → Err
+   - divide с valid divisor → Ok
+   - divide с zero divisor → Err (DivisionByZeroError)
+   - roundToTick с valid tickSize → Ok
+
+4. **position validate + partial close:**
+   - validateForPosition с qty > 0 → Ok
+   - validateForPosition с qty = 0 → Ok (allow zero)
+   - QuantityService.create(-1) → Err (NEGATIVE) — тестирует что negative qty не может быть создан
+   - PositionQuantityPolicy.validateForPosition(new Decimal(-1)) → Err — тестирует policy-level проверку
+   - validatePartialClose с closeQuantity <= currentQuantity → Ok
+   - validatePartialClose с closeQuantity > currentQuantity → Err
+
+5. **serialize + deserialize:**
+   - QuantitySerializer (string) round-trip без потери точности на числе "12345678901234567890.123456789"
+   - QuantityLossySerializer (number) round-trip (не требуем точности, это lossy)
+   - Проверить что string serializer сохраняет точность для больших чисел через сравнение строк
+
+**Tests:**
+- `__tests__/integration/quantity/QuantityWorkflow.integration.test.ts` (~20 тестов)
+
+**Acceptance Criteria:**
+- [ ] Все сценарии проходят
+- [ ] Тесты используют реальные компоненты (не моки)
+- [ ] Невозможный сценарий "validateForPosition(qty < 0)" заменён на тесты создания negative qty
+- [ ] String serializer тестируется на "12345678901234567890.123456789" и сохраняет точность (сравнение через строки)
+- [ ] Lossy serializer тестируется отдельно, точность не требуется
+- [ ] 100% coverage для интеграционных потоков
+
 ---
 
 ## План тестирования
@@ -872,13 +647,13 @@ export {
 | Слой | Unit тестов | Integration |
 |------|-------------|-------------|
 | Core | 25 | - |
-| Rules | 20 | - |
+| Rules | 30 | - |
 | Policy | 15 | - |
 | Facade | 30 | - |
-| Adapters | 12 | - |
+| Adapters | 15 | - |
 | **Integration** | - | 20 |
-| **Итого** | **102** | **20** |
-| **ВСЕГО** | **122 теста** | |
+| **Итого** | **115** | **20** |
+| **ВСЕГО** | **135 тестов** | |
 
 ### Coverage Target
 
@@ -889,44 +664,78 @@ export {
 
 ---
 
-## План документации
+## Breaking Changes (для документации миграции)
 
-1. **`quantity/README.md`** - Обзор архитектуры
-2. **`quantity/docs/architecture.md`** - Детали слоёв
-3. **`quantity/docs/migration-guide.md`** - Гайд по миграции
-4. **`quantity/docs/examples.md`** - Примеры использования
-
----
-
-## Миграция
-
-### Breaking Changes
+### 1. Создание Quantity для ордеров
 
 ```typescript
 // Было:
 const qty = Quantity.fromValue(10, 1);
 
 // Стало:
-const qty = QuantityService.createForOrder(10, new Decimal(1));
+const result = QuantityService.createForOrder(10, new Decimal(1));
+if (!result.ok) {
+  // Обработка ошибки
+}
+const qty = result.value;
+```
+
+### 2. Внутреннее представление
+
+```typescript
+// Было: Quantity хранит number
+const num = quantity.value; // number
+
+// Стало: Quantity хранит Decimal
+const decimal = quantity.value(); // Decimal
+const num = quantity.toNumber(); // number (lossy)
+```
+
+### 3. Арифметические операции
+
+```typescript
+// ВСЕ арифметические операции возвращают Result
+
+// Было:
+const sum = qty1.add(qty2); // Quantity
+
+// Стало:
+const result = QuantityService.add(qty1, qty2);
+if (!result.ok) {
+  // Обработка ошибки (например, overflow)
+}
+const sum = result.value;
+```
+
+### 4. Сериализация
+
+```typescript
+// Было: toJSON() возвращал number
+const json = { value: 10.5 }; // number
+
+// Стало: toJSON() возвращает string (для точности)
+const json = QuantitySerializer.toJSON(qty); // { value: "10.5" }
+
+// Для lossy сериализации (только для отображения):
+const lossyJson = QuantityLossySerializer.toJSON(qty); // { value: number }
 ```
 
 ---
 
-## Timeline
+## Timeline (оценка)
 
-| Фаза | Время |
+| Task | Время |
 |------|-------|
-| 0. Подготовка | 15 мин |
-| 1. Core | 25 мин |
-| 2. Rules | 40 мин |
-| 3. Policy | 30 мин |
-| 4. Facade | 50 мин |
-| 5. Adapters | 15 мин |
-| 6. Index | 10 мин |
-| 7. Integration | 35 мин |
-| 8. Exports | 5 мин |
-| **Итого** | **~3.5 часа** |
+| **Проверка блокеров** | 15 мин |
+| Task 1 — Core VO | 25 мин |
+| Task 2 — Rules | 50 мин |
+| Task 3 — Policy | 30 мин |
+| Task 4 — Facade | 50 мин |
+| Task 5 — Adapters | 15 мин |
+| Task 6 — Exports | 10 мин |
+| Task 7 — Integration | 35 мин |
+| **Итого** | **~4 часа** |
 
 ---
 
-**Конец плана для Quantity**
+**Конец плана**

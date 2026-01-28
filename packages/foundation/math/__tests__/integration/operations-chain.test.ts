@@ -17,7 +17,7 @@ describe('Operations Chain Integration', () => {
       const step1 = addDecimal(new Decimal(10), new Decimal(5)); // 15
       const step2 = multiplyDecimal(step1, new Decimal(2)); // 30
       const step3 = divideDecimal(step2, new Decimal(3)); // 10
-      const result = roundToPrecision(step3, 2); // 10.00
+      const result = roundToPrecision(step3, 2, Decimal.ROUND_HALF_UP); // 10.00
 
       expect(result.toString()).toBe('10');
     });
@@ -41,7 +41,11 @@ describe('Operations Chain Integration', () => {
     it('должен работать с округлением в цепочке', () => {
       const value = new Decimal(10.567);
       const multiplied = multiplyDecimal(value, new Decimal(3)); // 31.701
-      const rounded = roundToTick(multiplied, new Decimal(0.01)); // 31.70
+      const rounded = roundToTick(
+        multiplied,
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
+      ); // 31.70
 
       expect(rounded.toString()).toBe('31.7');
     });
@@ -64,7 +68,7 @@ describe('Operations Chain Integration', () => {
       const feeRate = new Decimal('0.02'); // 2%
 
       const fee = multiplyDecimal(amount, feeRate);
-      const rounded = roundToPrecision(fee, 2);
+      const rounded = roundToPrecision(fee, 2, Decimal.ROUND_HALF_UP);
 
       expect(rounded.toString()).toBe('20');
     });
@@ -87,7 +91,7 @@ describe('Operations Chain Integration', () => {
       const profit = subtractDecimal(sellPrice, costPrice); // 50
       const margin = divideDecimal(profit, sellPrice); // 0.333...
       const marginPercent = multiplyDecimal(margin, hundred); // 33.33...
-      const rounded = roundToPrecision(marginPercent, 2); // 33.33
+      const rounded = roundToPrecision(marginPercent, 2, Decimal.ROUND_HALF_UP); // 33.33
 
       expect(rounded.toString()).toBe('33.33');
     });
@@ -106,13 +110,6 @@ describe('Operations Chain Integration', () => {
       const result = multiplyDecimal(value, MATH_CONSTANTS.ONE);
 
       expect(result.toString()).toBe('42');
-    });
-
-    it('использование DEFAULT_TICK для округления', () => {
-      const value = new Decimal('10.567');
-      const rounded = roundToTick(value, MATH_CONSTANTS.DEFAULT_TICK);
-
-      expect(rounded.toString()).toBe('10.57');
     });
 
     it('точное сравнение с equalsDecimal', () => {
@@ -134,8 +131,16 @@ describe('Operations Chain Integration', () => {
       const sellQty = new Decimal(60);
 
       // Округляем цены до центов
-      const buyPriceRounded = roundToTick(buyPrice, new Decimal(0.01));
-      const sellPriceRounded = roundToTick(sellPrice, new Decimal(0.01));
+      const buyPriceRounded = roundToTick(
+        buyPrice,
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
+      );
+      const sellPriceRounded = roundToTick(
+        sellPrice,
+        new Decimal(0.01),
+        Decimal.ROUND_HALF_UP
+      );
 
       // Расчет PnL на проданную часть
       const buyTotal = multiplyDecimal(buyPriceRounded, sellQty);
@@ -143,7 +148,7 @@ describe('Operations Chain Integration', () => {
       const pnl = subtractDecimal(sellTotal, buyTotal);
 
       // Округляем финальный результат
-      const pnlRounded = roundToPrecision(pnl, 2);
+      const pnlRounded = roundToPrecision(pnl, 2, Decimal.ROUND_HALF_UP);
 
       expect(buyPriceRounded.toString()).toBe('50.57');
       expect(sellPriceRounded.toString()).toBe('55.12');
@@ -168,7 +173,7 @@ describe('Operations Chain Integration', () => {
       }
 
       const avgPrice = divideDecimal(totalCost, totalQty);
-      const rounded = roundToPrecision(avgPrice, 2);
+      const rounded = roundToPrecision(avgPrice, 2, Decimal.ROUND_HALF_UP);
 
       // (1005 + 1541.25 + 496.25) / 30 = 3042.5 / 30 = 101.4166... ≈ 101.42
       expect(rounded.toString()).toBe('101.42');
@@ -181,7 +186,7 @@ describe('Operations Chain Integration', () => {
       const b = new Decimal(3);
 
       const divided = divideDecimal(a, b);
-      const rounded = roundToPrecision(divided, 10);
+      const rounded = roundToPrecision(divided, 10, Decimal.ROUND_HALF_UP);
 
       expect(rounded.toString()).toBe('3.3333333333');
     });

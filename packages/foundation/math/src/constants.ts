@@ -6,7 +6,7 @@ import Decimal from 'decimal.js';
  * @remarks
  * Предопределённые Decimal значения для часто используемых констант.
  * Использование констант вместо создания новых Decimal объектов
- * улучшает производительность и читаемость кода.
+ * повышает читаемость и снижает количество повторов.
  *
  * @example
  * ```typescript
@@ -34,7 +34,4 @@ export const MATH_CONSTANTS = {
 
   /** Сто */
   HUNDRED: new Decimal(100),
-
-  /** Минимальный тик по умолчанию (1 цент) */
-  DEFAULT_TICK: new Decimal(0.01),
 } as const;
