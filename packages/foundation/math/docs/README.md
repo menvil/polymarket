@@ -20,7 +20,7 @@
 | `divideDecimal(a, b)` | Decimal | Деление чисел | [→](./decimal/divide.md) |
 | `averageDecimal(a, b)` | Decimal | Среднее значение | [→](./decimal/average.md) |
 | `compareDecimal(a, b)` | Decimal | Сравнение чисел | — |
-| `equalsDecimal(a, b, ε?)` | Decimal | Равенство с точностью | — |
+| `equalsDecimal(a, b)` | Decimal | Строгое равенство | — |
 | `lessThan/greaterThan...` | Decimal | Операторы сравнения | — |
 | `roundDecimal(value)` | Decimal | Округление half-up | — |
 | `floor/ceil/truncDecimal` | Decimal | Округление к/от нуля | — |
@@ -33,7 +33,6 @@
 | `isFiniteDecimal(value)` | Validation | Проверка конечности | — |
 | `isPositiveDecimal(value)` | Validation | Проверка > 0 | — |
 | `isNonNegativeDecimal(value)` | Validation | Проверка >= 0 | — |
-| `isZeroDecimal(value, epsilon?)` | Validation | Проверка == 0 с точностью | — |
 
 ## Философия пакета
 

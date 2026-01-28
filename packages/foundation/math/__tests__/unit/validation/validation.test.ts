@@ -3,7 +3,6 @@ import {
   isFiniteDecimal,
   isPositiveDecimal,
   isNonNegativeDecimal,
-  isZeroDecimal,
 } from '../../../src/validation/index.js';
 import Decimal from 'decimal.js';
 
@@ -59,30 +58,25 @@ describe('validation', () => {
     });
   });
 
-  describe('isZeroDecimal', () => {
-    it('должен возвращать true для нуля', () => {
-      expect(isZeroDecimal(new Decimal(0))).toBe(true);
+  describe('строгое сравнение с нулем', () => {
+    it('используйте встроенный метод isZero() для строгого сравнения', () => {
+      expect(new Decimal(0).isZero()).toBe(true);
+      expect(new Decimal('0').isZero()).toBe(true);
+      expect(new Decimal('0.0').isZero()).toBe(true);
+
+      expect(new Decimal('1e-11').isZero()).toBe(false);
+      expect(new Decimal(0.0000001).isZero()).toBe(false);
     });
 
-    it('должен возвращать true для чисел в пределах epsilon', () => {
-      expect(isZeroDecimal(new Decimal('1e-11'))).toBe(true);
-      expect(isZeroDecimal(new Decimal('-1e-11'))).toBe(true);
-    });
+    it('для приблизительного сравнения используйте abs().lessThan()', () => {
+      const value = new Decimal('0.0001');
+      const epsilon = new Decimal('0.001');
 
-    it('должен возвращать false для ненулевых чисел', () => {
-      expect(isZeroDecimal(new Decimal(10))).toBe(false);
-      expect(isZeroDecimal(new Decimal(0.1))).toBe(false);
-      expect(isZeroDecimal(new Decimal(-10))).toBe(false);
-    });
+      // Приблизительное: близко к нулю?
+      expect(value.abs().lessThan(epsilon)).toBe(true);
 
-    it('должен работать с кастомным epsilon', () => {
-      const epsilon = new Decimal(1);
-      expect(isZeroDecimal(new Decimal(0.5), epsilon)).toBe(true);
-      expect(isZeroDecimal(new Decimal(1.5), epsilon)).toBe(false);
-    });
-
-    it('должен работать с отрицательными значениями', () => {
-      expect(isZeroDecimal(new Decimal('-1e-11'))).toBe(true);
+      // Строгое: равно нулю?
+      expect(value.isZero()).toBe(false);
     });
   });
 
@@ -99,11 +93,6 @@ describe('validation', () => {
       const negative = new Decimal(-10);
       expect(isPositiveDecimal(negative)).toBe(false);
       expect(isNonNegativeDecimal(negative)).toBe(false);
-    });
-
-    it('isZero с default epsilon корректен для машинной точности', () => {
-      expect(isZeroDecimal(new Decimal('1e-10'))).toBe(true);
-      expect(isZeroDecimal(new Decimal('1e-9'))).toBe(false);
     });
   });
 });

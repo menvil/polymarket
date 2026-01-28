@@ -6,6 +6,7 @@ import {
   divideDecimal,
   roundToTick,
   roundToPrecision,
+  equalsDecimal,
   MATH_CONSTANTS,
 } from '../../src/index.js';
 import Decimal from 'decimal.js';
@@ -114,15 +115,14 @@ describe('Operations Chain Integration', () => {
       expect(rounded.toString()).toBe('10.57');
     });
 
-    it('использование DEFAULT_EPSILON для сравнения', () => {
+    it('точное сравнение с equalsDecimal', () => {
       const a = new Decimal(10);
-      const b = new Decimal('10.00000000001'); // Разница 1e-11, меньше epsilon 1e-10
-      const epsilon = MATH_CONSTANTS.DEFAULT_EPSILON;
+      const b = new Decimal(10);
+      const c = new Decimal('10.0000000001');
 
-      const diff = subtractDecimal(a, b).abs();
-      const isEqual = diff.lessThan(epsilon);
-
-      expect(isEqual).toBe(true);
+      // Строгое равенство
+      expect(equalsDecimal(a, b)).toBe(true);
+      expect(equalsDecimal(a, c)).toBe(false); // Строго неравны
     });
   });
 

@@ -48,11 +48,12 @@ npm install @polymarket/math
 
 ### Validation (`@polymarket/math/validation`)
 
-Валидация чисел:
+Валидация чисел (все проверки строгие):
 - ✅ `isFiniteDecimal(value)` - проверка что число конечное
 - ✅ `isPositiveDecimal(value)` - проверка что число положительное (> 0)
 - ✅ `isNonNegativeDecimal(value)` - проверка что число неотрицательное (>= 0)
-- ✅ `isZeroDecimal(value, epsilon?)` - проверка равенства нулю с точностью
+
+Для строгого сравнения с нулем используйте `value.isZero()` из Decimal.js
 
 ## Быстрый старт
 

@@ -35,9 +35,6 @@ export const MATH_CONSTANTS = {
   /** Сто */
   HUNDRED: new Decimal(100),
 
-  /** Точность по умолчанию для сравнений (1e-10) */
-  DEFAULT_EPSILON: new Decimal(1e-10),
-
   /** Минимальный тик по умолчанию (1 цент) */
   DEFAULT_TICK: new Decimal(0.01),
 } as const;
