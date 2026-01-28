@@ -55,16 +55,16 @@ class Price {
 | `multiplyDecimal(a, b)` | Умножение чисел | [→](./multiply.md) |
 | `divideDecimal(a, b)` | Деление чисел | [→](./divide.md) |
 | `averageDecimal(a, b)` | Среднее значение | [→](./average.md) |
-| `equalsDecimal(a, b, epsilon?)` | Равенство с точностью | — |
-| `lessThanDecimal(a, b)` | Строгое меньше (<) | — |
-| `lessThanOrEqualDecimal(a, b)` | Меньше или равно (<=) | — |
-| `greaterThanDecimal(a, b)` | Строгое больше (>) | — |
-| `greaterThanOrEqualDecimal(a, b)` | Больше или равно (>=) | — |
-| `compareDecimal(a, b)` | Сравнение (-1/0/1) | — |
-| `roundDecimal(value)` | Округление (half-up) | — |
-| `floorDecimal(value)` | Округление к нулю | — |
-| `ceilDecimal(value)` | Округление от нуля | — |
-| `truncDecimal(value)` | Усечение дроби | — |
+| `equalsDecimal(a, b)` | Строгое равенство | [→](./compare.md#equalsdecimal) |
+| `lessThanDecimal(a, b)` | Строгое меньше (<) | [→](./compare.md#lessthanbdecimal) |
+| `lessThanOrEqualDecimal(a, b)` | Меньше или равно (<=) | [→](./compare.md#lessthanorequaldecimal) |
+| `greaterThanDecimal(a, b)` | Строгое больше (>) | [→](./compare.md#greaterthandecimal) |
+| `greaterThanOrEqualDecimal(a, b)` | Больше или равно (>=) | [→](./compare.md#greaterthanorequaldecimal) |
+| `compareDecimal(a, b)` | Сравнение (-1/0/1) | [→](./compare.md#comparedecimal) |
+| `roundDecimal(value)` | Округление (half-up) | [→](./round.md#rounddecimal) |
+| `floorDecimal(value)` | Округление к нулю | [→](./round.md#floordecimal) |
+| `ceilDecimal(value)` | Округление от нуля | [→](./round.md#ceildecimal) |
+| `truncDecimal(value)` | Усечение дроби | [→](./round.md#truncdecimal) |
 
 ## Общие паттерны использования
 
