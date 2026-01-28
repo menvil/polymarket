@@ -28,11 +28,11 @@ npm install @polymarket/math
 ### Decimal Operations (`@polymarket/math/decimal`)
 
 Базовые арифметические операции с Decimal:
-- `addDecimal(a, b)` - сложение
-- `subtractDecimal(a, b)` - вычитание
-- `multiplyDecimal(a, b)` - умножение
-- `divideDecimal(a, b)` - деление
-- `averageDecimal(a, b)` - среднее значение
+- ✅ `addDecimal(a, b)` - сложение ([docs](./docs/decimal/add.md))
+- 🚧 `subtractDecimal(a, b)` - вычитание
+- 🚧 `multiplyDecimal(a, b)` - умножение
+- 🚧 `divideDecimal(a, b)` - деление
+- 🚧 `averageDecimal(a, b)` - среднее значение
 
 ### Rounding Operations (`@polymarket/math/rounding`)
 
