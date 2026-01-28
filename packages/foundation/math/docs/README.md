@@ -30,8 +30,10 @@
 | `mathFloorToTick(value, tickSize)` | Rounding | Math floor к tick | — |
 | `mathCeilToTick(value, tickSize)` | Rounding | Math ceil к tick | — |
 | `roundToPrecision(value, places, mode?)` | Rounding | Округление до N знаков | — |
-| `isFiniteDecimal(value)` | Validation | Запланировано |
-| `isPositiveDecimal(value)` | Validation | Запланировано |
+| `isFiniteDecimal(value)` | Validation | Проверка конечности | — |
+| `isPositiveDecimal(value)` | Validation | Проверка > 0 | — |
+| `isNonNegativeDecimal(value)` | Validation | Проверка >= 0 | — |
+| `isZeroDecimal(value, epsilon?)` | Validation | Проверка == 0 с точностью | — |
 
 ## Философия пакета
 
