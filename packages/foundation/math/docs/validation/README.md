@@ -7,6 +7,7 @@
 - [isFiniteDecimal - Проверка конечности](#isfinitedecimal)
 - [isPositiveDecimal - Проверка положительности](#ispositivedecimal)
 - [isNonNegativeDecimal - Проверка неотрицательности](#isnonnegativedecimal)
+- [isZeroDecimal - Приблизительное сравнение с нулем](#iszerodecimal)
 - [Примеры использования](#примеры-использования)
 
 ---
@@ -156,6 +157,137 @@ class Balance {
 
 ---
 
+## isZeroDecimal
+
+Проверяет что значение близко к нулю в пределах epsilon.
+
+```typescript
+function isZeroDecimal(value: Decimal, epsilon: Decimal): boolean
+```
+
+### Параметры
+
+- `value` - Проверяемое значение
+- `epsilon` - Максимальная допустимая разница от нуля (**обязательный параметр**)
+
+### Возвращает
+
+`true` если `|value| < epsilon`
+
+### Философия
+
+**Параметр epsilon обязателен** - нет значения по умолчанию.
+
+Explicit лучше implicit - пользователь должен явно указывать точность.
+
+### Примеры
+
+```typescript
+import { isZeroDecimal } from '@polymarket/math/validation';
+import Decimal from 'decimal.js';
+
+// Приблизительное сравнение с нулем
+const value = new Decimal('0.0001');
+const epsilon = new Decimal('0.001');
+
+isZeroDecimal(value, epsilon); // true (|0.0001| < 0.001)
+
+// Строгое сравнение
+value.isZero(); // false (не строго ноль)
+```
+
+### Разные epsilon для разных контекстов
+
+```typescript
+const diff = new Decimal('0.0001');
+
+// Высокая точность для числовых вычислений
+const computationalPrecision = new Decimal('1e-10');
+isZeroDecimal(diff, computationalPrecision); // false
+
+// Бизнес-точность (1 цент)
+const businessPrecision = new Decimal('0.01');
+isZeroDecimal(diff, businessPrecision); // true
+```
+
+### Строгое vs приблизительное
+
+```typescript
+const value = new Decimal('0.0000001');
+
+// Строгое сравнение с нулем
+value.isZero(); // false (не строго ноль)
+
+// Приблизительное сравнение
+isZeroDecimal(value, new Decimal('1e-6'));  // true (близко в пределах epsilon)
+isZeroDecimal(value, new Decimal('1e-8'));  // false (вне пределов epsilon)
+```
+
+### Когда использовать
+
+#### 1. Проверка погрешности вычислений
+
+```typescript
+const a = new Decimal(10);
+const b = new Decimal(3);
+const result = a.dividedBy(b).times(b); // 10.000000000000002?
+
+const diff = result.minus(a);
+const precisionError = new Decimal('1e-10');
+
+if (isZeroDecimal(diff, precisionError)) {
+  // Результат равен исходному в пределах точности
+}
+```
+
+#### 2. Приблизительное равенство значений
+
+```typescript
+function approximatelyEqual(
+  a: Decimal,
+  b: Decimal,
+  tolerance: Decimal
+): boolean {
+  const diff = a.minus(b);
+  return isZeroDecimal(diff, tolerance);
+}
+
+const price1 = new Decimal('10.5678');
+const price2 = new Decimal('10.5679');
+const centTolerance = new Decimal('0.01');
+
+approximatelyEqual(price1, price2, centTolerance); // true (в пределах цента)
+```
+
+#### 3. Проверка "незначительного остатка"
+
+```typescript
+const remaining = new Decimal('0.0003');
+const insignificantThreshold = new Decimal('0.001');
+
+if (isZeroDecimal(remaining, insignificantThreshold)) {
+  // Остаток незначителен, можем игнорировать
+}
+```
+
+### Граничные случаи
+
+```typescript
+// Значение равно epsilon - НЕ считается близким к нулю
+const value = new Decimal('0.001');
+const epsilon = new Decimal('0.001');
+isZeroDecimal(value, epsilon); // false (|0.001| < 0.001 = false)
+
+// Значение чуть меньше epsilon - считается близким к нулю
+const almostEpsilon = new Decimal('0.0009999');
+isZeroDecimal(almostEpsilon, epsilon); // true
+
+// Работает с отрицательными значениями
+isZeroDecimal(new Decimal('-0.0005'), new Decimal('0.001')); // true
+```
+
+---
+
 ## Примеры использования
 
 ### Валидация перед арифметикой
@@ -286,18 +418,18 @@ class Price {
 }
 ```
 
-### 2. Для приблизительного сравнения используйте явный epsilon
+### 2. Для приблизительного сравнения используйте isZeroDecimal с явным epsilon
 
 ```typescript
 // ✅ Хорошо: явный epsilon показывает намерение
-const computationalPrecision = new Decimal(1e-10);
-const businessPrecision = new Decimal(0.01);
+const computationalPrecision = new Decimal('1e-10');
+const businessPrecision = new Decimal('0.01');
 
-if (diff.abs().lessThan(computationalPrecision)) {
+if (isZeroDecimal(diff, computationalPrecision)) {
   // Числовая точность
 }
 
-if (remaining.abs().lessThan(businessPrecision)) {
+if (isZeroDecimal(remaining, businessPrecision)) {
   // Бизнес-логика
 }
 ```
@@ -310,10 +442,15 @@ if (value.isZero()) {
   // Строго равно нулю
 }
 
-// ✅ Хорошо: для приблизительного сравнения
+// ✅ Хорошо: для приблизительного сравнения с isZeroDecimal
 const epsilon = new Decimal('0.0001');
-if (value.abs().lessThan(epsilon)) {
+if (isZeroDecimal(value, epsilon)) {
   // Близко к нулю в пределах epsilon
+}
+
+// ✅ Альтернатива: прямое использование Decimal методов
+if (value.abs().lessThan(epsilon)) {
+  // Тот же эффект
 }
 ```
 
