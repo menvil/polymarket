@@ -1,0 +1,70 @@
+import { describe, it, expect } from '@jest/globals';
+import { QuantityFormatter } from '../../../../src/quantity/adapters/QuantityFormatter.js';
+import { Quantity } from '../../../../src/quantity/core/Quantity.js';
+
+describe('QuantityFormatter', () => {
+  describe('toString()', () => {
+    it('должен форматировать с default decimals (2)', () => {
+      const qty = Quantity.of(10.567);
+      expect(QuantityFormatter.toString(qty)).toBe("10.57");
+    });
+
+    it('должен форматировать с custom decimals', () => {
+      const qty = Quantity.of(10.567);
+      expect(QuantityFormatter.toString(qty, 3)).toBe("10.567");
+    });
+
+    it('должен добавить trailing zeros', () => {
+      const qty = Quantity.of(10);
+      expect(QuantityFormatter.toString(qty, 2)).toBe("10.00");
+    });
+  });
+
+  describe('toCompactString()', () => {
+    it('должен форматировать без trailing zeros', () => {
+      const qty = Quantity.of(10.5);
+      expect(QuantityFormatter.toCompactString(qty)).toBe("10.5");
+    });
+
+    it('должен форматировать integer без decimal point', () => {
+      const qty = Quantity.of(10);
+      expect(QuantityFormatter.toCompactString(qty)).toBe("10");
+    });
+  });
+
+  describe('toDebugString()', () => {
+    it('должен форматировать для отладки', () => {
+      const qty = Quantity.of(10);
+      expect(QuantityFormatter.toDebugString(qty)).toBe("Quantity(10)");
+    });
+
+    it('должен включать decimal places', () => {
+      const qty = Quantity.of(10.5);
+      expect(QuantityFormatter.toDebugString(qty)).toBe("Quantity(10.5)");
+    });
+  });
+
+  describe('toDisplayString()', () => {
+    it('должен форматировать < 1000 без суффикса', () => {
+      const qty = Quantity.of(100);
+      expect(QuantityFormatter.toDisplayString(qty)).toBe("100.00");
+    });
+
+    it('должен форматировать >= 1000 с K суффиксом', () => {
+      const qty = Quantity.of(1500);
+      expect(QuantityFormatter.toDisplayString(qty)).toBe("1.50K");
+    });
+
+    it('должен форматировать >= 1000000 с M суффиксом', () => {
+      const qty = Quantity.of(1500000);
+      expect(QuantityFormatter.toDisplayString(qty)).toBe("1.50M");
+    });
+
+    it('должен работать для граничных значений', () => {
+      expect(QuantityFormatter.toDisplayString(Quantity.of(999))).toBe("999.00");
+      expect(QuantityFormatter.toDisplayString(Quantity.of(1000))).toBe("1.00K");
+      expect(QuantityFormatter.toDisplayString(Quantity.of(999999))).toBe("1000.00K");
+      expect(QuantityFormatter.toDisplayString(Quantity.of(1000000))).toBe("1.00M");
+    });
+  });
+});
