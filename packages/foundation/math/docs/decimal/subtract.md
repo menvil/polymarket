@@ -199,19 +199,26 @@ import Decimal from 'decimal.js';
 import { subtractDecimal } from '@polymarket/math';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
-try {
-  // Операции с экстремальными значениями могут привести к overflow
-  const largePositive = new Decimal('1e5000');
-  const largeNegative = new Decimal('-1e5000');
+// Временно устанавливаем maxE для демонстрации overflow
+const originalMaxE = Decimal.maxE;
+Decimal.set({ maxE: 308 }); // Соответствует пределу JavaScript Number
 
-  // ❌ Throws ArithmeticOverflowError (результат не конечен)
-  const result = subtractDecimal(largePositive, largeNegative);
+try {
+  // Операции с экстремальными значениями приводят к overflow
+  const huge = new Decimal('1e308');
+  const largeNegative = new Decimal('-1e308');
+
+  // ❌ Throws ArithmeticOverflowError (результат превышает maxE)
+  const result = subtractDecimal(huge, largeNegative);
 } catch (error) {
   if (ArithmeticOverflowError.is(error)) {
     console.error('Arithmetic overflow:', error.message);
     console.error('Context:', error.context);
-    // Context: { a: '1e+5000', b: '-1e+5000', result: 'Infinity', operation: 'subtract' }
+    // Context: { a: '1e+308', b: '-1e+308', result: 'Infinity', operation: 'subtract' }
   }
+} finally {
+  // Восстанавливаем оригинальное значение
+  Decimal.set({ maxE: originalMaxE });
 }
 ```
 

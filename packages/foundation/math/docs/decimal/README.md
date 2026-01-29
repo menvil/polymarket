@@ -186,12 +186,14 @@ console.log(result.toString()); // "0.3"
 ### Оптимизация 1: Переиспользуйте константы
 
 ```typescript
+import Decimal from 'decimal.js';
+import { addDecimal, MATH_CONSTANTS } from '@polymarket/math';
+
 // ✅ Быстро
-import { MATH_CONSTANTS } from '@polymarket/math';
 const result = addDecimal(value, MATH_CONSTANTS.ONE);
 
 // ❌ Медленно
-const result = addDecimal(value, new Decimal(1));
+const result2 = addDecimal(value, new Decimal(1));
 ```
 
 ### Оптимизация 2: Минимизируйте преобразования
