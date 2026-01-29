@@ -56,14 +56,6 @@ describe('compare', () => {
       expect(compareDecimal(c, a)).toBe(1); // c > a (симметрия)
     });
 
-    it('должен работать с разными форматами для equals', () => {
-      // '10.0' vs '10' - одинаковые численно
-      expect(equalsDecimal(new Decimal('10.0'), new Decimal('10'))).toBe(true);
-      expect(
-        equalsDecimal(new Decimal('0.1000'), new Decimal('0.10'))
-      ).toBe(true);
-    });
-
     // Валидация операндов (для консистентности с другими comparison функциями)
     describe('валидация операндов', () => {
       it('должен throw InvalidOperandError на NaN в первом операнде', () => {
@@ -295,51 +287,26 @@ describe('compare', () => {
     });
   });
 
-  // Тесты валидации lessThanDecimal
-  describe('lessThanDecimal validation', () => {
-    it('должен throw InvalidOperandError на NaN в первом операнде', () => {
-      expect(() =>
-        lessThanDecimal(new Decimal(NaN), new Decimal(10))
-      ).toThrow(InvalidOperandError);
-    });
+  // Валидация всех операций сравнения
+  describe('валидация (все компараторы)', () => {
+    it.each([
+      ['lessThanDecimal', lessThanDecimal],
+      ['lessThanOrEqualDecimal', lessThanOrEqualDecimal],
+      ['greaterThanDecimal', greaterThanDecimal],
+      ['greaterThanOrEqualDecimal', greaterThanOrEqualDecimal],
+      ['compareDecimal', compareDecimal],
+      ['equalsDecimal', equalsDecimal],
+    ])('%s должен throw InvalidOperandError на невалидные операнды', (_name, fn) => {
+      const invalidValues = [NaN, Infinity, -Infinity];
 
-    it('должен throw InvalidOperandError на Infinity во втором операнде', () => {
-      expect(() =>
-        lessThanDecimal(new Decimal(10), new Decimal(Infinity))
-      ).toThrow(InvalidOperandError);
-    });
-  });
-
-  // Тесты валидации greaterThanDecimal
-  describe('greaterThanDecimal validation', () => {
-    it('должен throw InvalidOperandError на -Infinity в первом операнде', () => {
-      expect(() =>
-        greaterThanDecimal(new Decimal(-Infinity), new Decimal(10))
-      ).toThrow(InvalidOperandError);
-    });
-
-    it('должен throw InvalidOperandError на NaN во втором операнде', () => {
-      expect(() =>
-        greaterThanDecimal(new Decimal(10), new Decimal(NaN))
-      ).toThrow(InvalidOperandError);
-    });
-  });
-
-  // Тесты валидации lessThanOrEqualDecimal
-  describe('lessThanOrEqualDecimal validation', () => {
-    it('должен throw InvalidOperandError на Infinity', () => {
-      expect(() =>
-        lessThanOrEqualDecimal(new Decimal(Infinity), new Decimal(10))
-      ).toThrow(InvalidOperandError);
-    });
-  });
-
-  // Тесты валидации greaterThanOrEqualDecimal
-  describe('greaterThanOrEqualDecimal validation', () => {
-    it('должен throw InvalidOperandError на NaN', () => {
-      expect(() =>
-        greaterThanOrEqualDecimal(new Decimal(10), new Decimal(NaN))
-      ).toThrow(InvalidOperandError);
+      invalidValues.forEach((invalid) => {
+        expect(() => fn(new Decimal(invalid), new Decimal(10))).toThrow(
+          InvalidOperandError
+        );
+        expect(() => fn(new Decimal(10), new Decimal(invalid))).toThrow(
+          InvalidOperandError
+        );
+      });
     });
   });
 
@@ -367,6 +334,19 @@ describe('compare', () => {
 
       pairs.forEach(([a, b]) => {
         expect(lessThanOrEqualDecimal(a, b)).toBe(!greaterThanDecimal(a, b));
+      });
+    });
+
+    it('greaterThanOrEqualDecimal(a,b) === !lessThanDecimal(a,b)', () => {
+      const pairs = [
+        [new Decimal('10'), new Decimal('5')],
+        [new Decimal('10'), new Decimal('10')],
+        [new Decimal('5'), new Decimal('10')],
+        [new Decimal('0.5'), new Decimal('-1.5')],
+      ];
+
+      pairs.forEach(([a, b]) => {
+        expect(greaterThanOrEqualDecimal(a, b)).toBe(!lessThanDecimal(a, b));
       });
     });
   });

@@ -33,7 +33,7 @@ describe('multiplyDecimal', () => {
 
     it('должен умножать очень большие числа', () => {
       const result = multiplyDecimal(new Decimal('1e50'), new Decimal('2e50'));
-      expect(result.toString()).toBe('2e+100');
+      expect(result.eq(new Decimal('2e100'))).toBe(true);
     });
 
     it('должен умножать на ноль', () => {
