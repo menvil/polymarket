@@ -2,33 +2,10 @@ import { describe, it, expect } from '@jest/globals';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
 import { QuantityService } from '../../../src/quantity/facade/QuantityService.js';
 import { QuantitySerializer, QuantityLossySerializer } from '../../../src/quantity/adapters/QuantitySerializer.js';
-import { PositionQuantityPolicy } from '../../../src/quantity/policy/PositionQuantityPolicy.js';
 import Decimal from 'decimal.js';
 
 describe('Quantity Integration Workflow', () => {
-  describe('Scenario 1: createForOrder + minSize validation', () => {
-    it('должен создать Quantity с valid minSize', () => {
-      const result = QuantityService.createForOrder(10, new Decimal(1));
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value).toBeInstanceOf(Quantity);
-        expect(result.value.value().toNumber()).toBe(10);
-      }
-    });
-
-    it('должен вернуть Err для quantity < minSize', () => {
-      const result = QuantityService.createForOrder(0.5, new Decimal(1));
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('minimum size');
-        expect(result.error.context?.op).toBe('createForOrder');
-      }
-    });
-  });
-
-  describe('Scenario 2: add + subtract + non-negative', () => {
+  describe('Scenario 1: add + subtract + non-negative', () => {
     it('должен сложить два Quantity', () => {
       const qty1 = Quantity.of(10);
       const qty2 = Quantity.of(5);
@@ -64,7 +41,7 @@ describe('Quantity Integration Workflow', () => {
     });
   });
 
-  describe('Scenario 3: multiply + divide + round', () => {
+  describe('Scenario 2: multiply + divide + round', () => {
     it('должен умножить с valid factor', () => {
       const qty = Quantity.of(10);
       const result = QuantityService.multiply(qty, 2);
@@ -106,9 +83,9 @@ describe('Quantity Integration Workflow', () => {
       }
     });
 
-    it('должен округлить с valid tickSize', () => {
+    it('должен округлить с valid stepSize', () => {
       const qty = Quantity.of(10.567);
-      const result = QuantityService.roundToTick(qty, new Decimal(0.01));
+      const result = QuantityService.roundToStep(qty, new Decimal(0.01));
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -117,56 +94,7 @@ describe('Quantity Integration Workflow', () => {
     });
   });
 
-  describe('Scenario 4: position validate + partial close', () => {
-    it('должен вернуть Ok для qty > 0', () => {
-      const qty = Quantity.of(10);
-      const result = QuantityService.validateForPosition(qty);
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('должен вернуть Ok для qty = 0 (allow zero)', () => {
-      const result = QuantityService.validateForPosition(Quantity.ZERO);
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('QuantityService.create(-1) должен вернуть Err (NEGATIVE)', () => {
-      const result = QuantityService.create(-1);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe('NEGATIVE');
-      }
-    });
-
-    // Примечание: Тест на validateForPosition с negative Decimal удалён,
-    // так как метод теперь принимает Quantity (который гарантирует positive/finite
-    // через Core инварианты). Нельзя создать Quantity с negative значением.
-
-    it('должен вернуть Ok для validatePartialClose где closeQuantity <= currentQuantity', () => {
-      const result = PositionQuantityPolicy.validatePartialClose(
-        new Decimal(10),
-        new Decimal(5)
-      );
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('должен вернуть Err для validatePartialClose где closeQuantity > currentQuantity', () => {
-      const result = PositionQuantityPolicy.validatePartialClose(
-        new Decimal(10),
-        new Decimal(15)
-      );
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Cannot close');
-      }
-    });
-  });
-
-  describe('Scenario 5: serialize + deserialize', () => {
+  describe('Scenario 3: serialize + deserialize', () => {
     it('QuantitySerializer (string) round-trip без потери точности', () => {
       const bigNum = "12345678901234567890.123456789";
       const original = Quantity.of(bigNum);

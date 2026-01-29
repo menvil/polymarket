@@ -13,5 +13,5 @@ export {
   QuantityFormatter
 } from './adapters/index.js';
 
-// Rules, Policy, и QuantityInvariantViolation НЕ экспортируются —
+// Rules и QuantityInvariantViolation НЕ экспортируются —
 // это internal implementation details. Всё должно идти через QuantityService.

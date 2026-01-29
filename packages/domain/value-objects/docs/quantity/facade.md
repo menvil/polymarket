@@ -6,7 +6,7 @@
 
 `QuantityService` — это фасад, который предоставляет type-safe API для работы с Quantity через `Result<T, E>`.
 
-**Все методы возвращают `Result<Quantity, InvalidQuantityError>`** (кроме `validateForPosition` который возвращает `Result<void, InvalidQuantityError>`).
+**Все методы возвращают `Result<Quantity, InvalidQuantityError>`**.
 
 ---
 
@@ -25,8 +25,7 @@ interface InvalidQuantityErrorContext {
   quantity2?: string;
   divisor?: string;
   factor?: string;
-  tickSize?: string;
-  minSize?: string;
+  stepSize?: string;
 
   // Причина из Core/Rules
   reason?: 'NEGATIVE' | 'NON_FINITE';
@@ -83,28 +82,6 @@ if (!nanResult.ok) {
 ```
 
 **Оптимизация:** Если `value` уже `Decimal`, используется `fromDecimal()` без повторного парсинга.
-
-#### `createForOrder(value, orderMinSize: Decimal)`
-
-Создаёт Quantity для ордера с проверкой `minSize`.
-
-```typescript
-const ORDER_MIN_SIZE = new Decimal(1);
-
-// Успех
-const result = QuantityService.createForOrder(10, ORDER_MIN_SIZE);
-if (result.ok) {
-  console.log('Order quantity valid');
-}
-
-// Ошибка: quantity < minSize
-const tooSmall = QuantityService.createForOrder(0.5, ORDER_MIN_SIZE);
-if (!tooSmall.ok) {
-  console.log(tooSmall.error.context?.op);      // 'createForOrder'
-  console.log(tooSmall.error.context?.minSize); // '1'
-  console.log(tooSmall.error.message);          // "... less than minimum size ..."
-}
-```
 
 ---
 
@@ -229,63 +206,36 @@ if (!neg.ok) {
 
 ### Округление
 
-#### `roundToTick(quantity, tickSize: Decimal, roundingMode?)`
+#### `roundToStep(quantity, stepSize: Decimal, roundingMode?)`
 
-Округляет Quantity к размеру тика.
+Округляет Quantity к размеру шага (step).
 
 ```typescript
 const qty = Quantity.of("10.567");
-const tickSize = new Decimal("0.01");
+const stepSize = new Decimal("0.01");
 
 // Default: ROUND_HALF_UP
-const result = QuantityService.roundToTick(qty, tickSize);
+const result = QuantityService.roundToStep(qty, stepSize);
 if (result.ok) {
   console.log(result.value.value().toString());  // "10.57"
 }
 
 // С указанным режимом
-const down = QuantityService.roundToTick(
+const down = QuantityService.roundToStep(
   qty,
-  tickSize,
+  stepSize,
   Decimal.ROUND_DOWN
 );
 if (down.ok) {
   console.log(down.value.value().toString());  // "10.56"
 }
 
-// Ошибка: invalid tickSize
-const invalid = QuantityService.roundToTick(qty, new Decimal(0));
+// Ошибка: invalid stepSize
+const invalid = QuantityService.roundToStep(qty, new Decimal(0));
 if (!invalid.ok) {
   console.log(invalid.error.message);  // "... must be positive"
 }
 ```
-
----
-
-### Валидация
-
-#### `validateForPosition(quantity: Quantity)`
-
-Валидирует Quantity для использования в позиции.
-
-```typescript
-// Позиция > 0: OK
-const active = QuantityService.validateForPosition(Quantity.of(10));
-if (active.ok) {
-  console.log('Position valid');
-}
-
-// Позиция = 0: OK (closed position)
-const closed = QuantityService.validateForPosition(Quantity.ZERO);
-if (closed.ok) {
-  console.log('Closed position valid');
-}
-
-// Negative невозможен (Core инвариант)
-// Quantity.of(-1) бросит исключение, до validateForPosition не дойдёт
-```
-
-**Примечание:** Этот метод всегда возвращает `Ok` для валидного `Quantity`, так как Core уже гарантирует >= 0.
 
 ---
 
@@ -294,9 +244,9 @@ if (closed.ok) {
 ### Pattern 1: Create + Validate
 
 ```typescript
-async function createOrder(input: string, minSize: Decimal) {
+async function createOrder(input: string) {
   // Парсим и валидируем
-  const result = QuantityService.createForOrder(input, minSize);
+  const result = QuantityService.create(input);
 
   if (!result.ok) {
     // Показываем пользователю понятную ошибку
@@ -309,7 +259,7 @@ async function createOrder(input: string, minSize: Decimal) {
 }
 ```
 
-### Pattern 2: Calculate + Validate
+### Pattern 2: Calculate
 
 ```typescript
 function calculateRemaining(current: Quantity, trade: Quantity) {
@@ -321,12 +271,7 @@ function calculateRemaining(current: Quantity, trade: Quantity) {
     return Result.err(new TradeTooLargeError());
   }
 
-  const remaining = result.value;
-
-  // Проверяем что можно использовать как позицию
-  const validateResult = QuantityService.validateForPosition(remaining);
-
-  return Result.ok(remaining);
+  return Result.ok(result.value);
 }
 ```
 

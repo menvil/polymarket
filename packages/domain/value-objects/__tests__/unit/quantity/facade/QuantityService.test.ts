@@ -87,62 +87,6 @@ describe('QuantityService', () => {
     });
   });
 
-  describe('createForOrder()', () => {
-    it('должен создать Quantity для valid order', () => {
-      const result = QuantityService.createForOrder(10, new Decimal(1));
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value).toBeInstanceOf(Quantity);
-      }
-    });
-
-    it('должен вернуть Err для quantity < orderMinSize', () => {
-      const result = QuantityService.createForOrder(0.5, new Decimal(1));
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidQuantityError);
-        expect(result.error.message).toContain('minimum size');
-      }
-    });
-
-    it('должен парсить value только один раз', () => {
-      const decimal = new Decimal(10);
-      const result = QuantityService.createForOrder(decimal, new Decimal(1));
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        // Проверяем что decimal не был распарсен повторно
-        expect(result.value.value()).toBe(decimal);
-      }
-    });
-
-    describe('Facade Error Contract', () => {
-      it('error должен содержать context.op = "createForOrder"', () => {
-        expect.assertions(1);
-        const result = QuantityService.createForOrder(0.5, new Decimal(1));
-        if (!result.ok) {
-          expect(result.error.context?.op).toBe('createForOrder');
-        }
-      });
-
-      it('error должен содержать context из policy (quantity, minSize)', () => {
-        expect.assertions(2);
-        const result = QuantityService.createForOrder(0.5, new Decimal(1));
-        if (!result.ok) {
-          expect(result.error.context).toHaveProperty('quantity');
-          expect(result.error.context).toHaveProperty('minSize');
-        }
-      });
-
-      it('error для negative должен содержать context.op = "createForOrder"', () => {
-        expect.assertions(1);
-        const result = QuantityService.createForOrder(-1, new Decimal(1));
-        if (!result.ok) {
-          expect(result.error.context?.op).toBe('createForOrder');
-        }
-      });
-    });
-  });
-
   describe('add()', () => {
     it('должен сложить два Quantity', () => {
       const qty1 = Quantity.of(10);
@@ -522,10 +466,10 @@ describe('QuantityService', () => {
     });
   });
 
-  describe('roundToTick()', () => {
-    it('должен округлить Quantity до tick', () => {
+  describe('roundToStep()', () => {
+    it('должен округлить Quantity до step', () => {
       const qty = Quantity.of(10.567);
-      const result = QuantityService.roundToTick(qty, new Decimal(0.01));
+      const result = QuantityService.roundToStep(qty, new Decimal(0.01));
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -535,7 +479,7 @@ describe('QuantityService', () => {
 
     it('должен работать с разными rounding modes', () => {
       const qty = Quantity.of(10.555);
-      const result = QuantityService.roundToTick(
+      const result = QuantityService.roundToStep(
         qty,
         new Decimal(0.01),
         Decimal.ROUND_DOWN
@@ -547,9 +491,9 @@ describe('QuantityService', () => {
       }
     });
 
-    it('должен вернуть Err для tickSize <= 0', () => {
+    it('должен вернуть Err для stepSize <= 0', () => {
       const qty = Quantity.of(10);
-      const result = QuantityService.roundToTick(qty, new Decimal(0));
+      const result = QuantityService.roundToStep(qty, new Decimal(0));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -557,9 +501,9 @@ describe('QuantityService', () => {
       }
     });
 
-    it('должен вернуть Err для Infinity tickSize', () => {
+    it('должен вернуть Err для Infinity stepSize', () => {
       const qty = Quantity.of(10);
-      const result = QuantityService.roundToTick(qty, new Decimal(Infinity));
+      const result = QuantityService.roundToStep(qty, new Decimal(Infinity));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -568,24 +512,24 @@ describe('QuantityService', () => {
     });
 
     describe('Facade Error Contract', () => {
-      it('error должен содержать context.op = "roundToTick"', () => {
+      it('error должен содержать context.op = "roundToStep"', () => {
         expect.assertions(1);
         const qty = Quantity.of(10);
-        const result = QuantityService.roundToTick(qty, new Decimal(0));
+        const result = QuantityService.roundToStep(qty, new Decimal(0));
 
         if (!result.ok) {
-          expect(result.error.context?.op).toBe('roundToTick');
+          expect(result.error.context?.op).toBe('roundToStep');
         }
       });
 
-      it('error должен содержать context.quantity и tickSize', () => {
+      it('error должен содержать context.quantity и stepSize', () => {
         expect.assertions(2);
         const qty = Quantity.of(10);
-        const result = QuantityService.roundToTick(qty, new Decimal(0));
+        const result = QuantityService.roundToStep(qty, new Decimal(0));
 
         if (!result.ok) {
           expect(result.error.context?.quantity).toBe('10');
-          expect(result.error.context?.tickSize).toBe('0');
+          expect(result.error.context?.stepSize).toBe('0');
         }
       });
     });

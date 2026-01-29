@@ -1,12 +1,10 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { Quantity, QuantityInvariantViolation } from '../core/Quantity.js';
 import { InvalidQuantityError, DivisionByZeroError, ArithmeticOverflowError } from '@polymarket/errors';
-import { OrderQuantityPolicy } from '../policy/OrderQuantityPolicy.js';
-import { PositionQuantityPolicy } from '../policy/PositionQuantityPolicy.js';
 import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
 import { ValidateFactorForQuantityMultiplication } from '../rules/ValidateFactorForQuantityMultiplication.js';
 import { ValidateDivisorForQuantityDivision } from '../rules/ValidateDivisorForQuantityDivision.js';
-import { ValidateTickSizeForRounding } from '../rules/ValidateTickSizeForRounding.js';
+import { ValidateStepSizeForQuantity } from '../rules/ValidateStepSizeForQuantity.js';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTick } from '@polymarket/math';
 import { withOperationContext } from './errorUtils.js';
 import Decimal from 'decimal.js';
@@ -16,13 +14,13 @@ import Decimal from 'decimal.js';
  *
  * @remarks
  * Единая точка входа для всех операций с количествами.
- * Оркестрирует Core + Math + Rules + Policy.
+ * Оркестрирует Core + Math + Rules.
  *
  * **Facade Error Contract:**
  * Любой Err из Facade содержит:
  * - context.op - название операции
  * - context.quantity - входной quantity (если применимо)
- * - context.divisor|factor|tickSize - входные параметры (если применимо)
+ * - context.divisor|factor|stepSize - входные параметры (если применимо)
  * - context.cause - для math-исключений: { name, message }
  *
  * **Правило возвращаемых типов:**
@@ -84,46 +82,6 @@ export class QuantityService {
       // Unknown error (не Error) - rethrow для debugging
       throw error;
     }
-  }
-
-  /**
-   * Создаёт Quantity для ордера (с проверкой minSize)
-   *
-   * @remarks
-   * Сначала валидирует через create() (гарантия Result), затем применяет policy.
-   * Гарантирует Result - никогда не бросает исключения.
-   *
-   * @param value - Значение для создания (number, string, или Decimal)
-   * @param orderMinSize - Минимальный размер ордера (ТОЛЬКО Decimal)
-   * @returns Result<Quantity, InvalidQuantityError>
-   *
-   * @example
-   * ```typescript
-   * const result = QuantityService.createForOrder(10, new Decimal(1));
-   * if (!result.ok) {
-   *   console.error(result.error.context.op); // 'createForOrder'
-   * }
-   * ```
-   */
-  public static createForOrder(
-    value: number | string | Decimal,
-    orderMinSize: Decimal
-  ): Result<Quantity, InvalidQuantityError> {
-    // Шаг 1: create() гарантирует валидный Decimal через Quantity
-    const createResult = this.create(value);
-    if (!createResult.ok) {
-      return Err(withOperationContext(createResult.error, 'createForOrder'));
-    }
-
-    const quantity = createResult.value;
-
-    // Шаг 2: Проверяем политику ордера
-    const policyResult = OrderQuantityPolicy.validateForOrder(quantity.value(), orderMinSize);
-    if (!policyResult.ok) {
-      return Err(withOperationContext(policyResult.error, 'createForOrder'));
-    }
-
-    return Ok(quantity);
   }
 
   /**
@@ -381,81 +339,52 @@ export class QuantityService {
   }
 
   /**
-   * Округляет до тика
+   * Округляет до шага (step)
    *
    * @remarks
-   * Оркестрирует: валидация tickSize → округление → создание Quantity
+   * Оркестрирует: валидация stepSize → округление → создание Quantity
    *
    * @param quantity - Количество для округления
-   * @param tickSize - Размер тика (ТОЛЬКО Decimal)
+   * @param stepSize - Размер шага для округления (ТОЛЬКО Decimal)
    * @param roundingMode - Режим округления (по умолчанию ROUND_HALF_UP)
    * @returns Result<Quantity, InvalidQuantityError>
    *
    * @example
    * ```typescript
-   * const result = QuantityService.roundToTick(qty, new Decimal(0.01));
+   * const result = QuantityService.roundToStep(qty, new Decimal(0.01));
    * if (!result.ok) {
-   *   console.error(result.error.context.op); // 'roundToTick'
+   *   console.error(result.error.context.op); // 'roundToStep'
    * }
    * ```
    */
-  public static roundToTick(
+  public static roundToStep(
     quantity: Quantity,
-    tickSize: Decimal,
+    stepSize: Decimal,
     roundingMode: Decimal.Rounding = Decimal.ROUND_HALF_UP
   ): Result<Quantity, InvalidQuantityError> {
     // Валидация через rule
-    const validateResult = ValidateTickSizeForRounding.check(tickSize);
+    const validateResult = ValidateStepSizeForQuantity.check(stepSize);
     if (!validateResult.ok) {
       return Err(
-        withOperationContext(validateResult.error, 'roundToTick', {
+        withOperationContext(validateResult.error, 'roundToStep', {
           quantity: quantity.value().toString()
         })
       );
     }
 
     // Округление через math layer
-    const rounded = roundToTick(quantity.value(), tickSize, roundingMode);
+    const rounded = roundToTick(quantity.value(), stepSize, roundingMode);
 
     const createResult = this.create(rounded);
     if (!createResult.ok) {
       return Err(
-        withOperationContext(createResult.error, 'roundToTick', {
+        withOperationContext(createResult.error, 'roundToStep', {
           quantity: quantity.value().toString(),
-          tickSize: tickSize.toString()
+          stepSize: stepSize.toString()
         })
       );
     }
 
     return createResult;
-  }
-
-  /**
-   * Валидирует для использования в позиции
-   *
-   * @remarks
-   * Использует PositionQuantityPolicy для проверки.
-   *
-   * @param quantity - Количество для валидации
-   * @returns Result<void, InvalidQuantityError>
-   *
-   * @example
-   * ```typescript
-   * const result = QuantityService.validateForPosition(qty);
-   * if (!result.ok) {
-   *   console.error(result.error.context.op); // 'validateForPosition'
-   * }
-   * ```
-   */
-  public static validateForPosition(
-    quantity: Quantity
-  ): Result<void, InvalidQuantityError> {
-    const policyResult = PositionQuantityPolicy.validateForPosition(quantity);
-
-    if (!policyResult.ok) {
-      return Err(withOperationContext(policyResult.error, 'validateForPosition'));
-    }
-
-    return policyResult;
   }
 }
