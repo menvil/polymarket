@@ -41,6 +41,10 @@ describe('validation', () => {
       expect(isPositiveDecimal(new Decimal(-10))).toBe(false);
       expect(isPositiveDecimal(new Decimal(-0.1))).toBe(false);
     });
+
+    it('должен возвращать false для Infinity', () => {
+      expect(isPositiveDecimal(new Decimal(Infinity))).toBe(false);
+    });
   });
 
   describe('isNonNegativeDecimal', () => {
@@ -56,6 +60,10 @@ describe('validation', () => {
     it('должен возвращать false для отрицательных', () => {
       expect(isNonNegativeDecimal(new Decimal(-10))).toBe(false);
       expect(isNonNegativeDecimal(new Decimal(-0.1))).toBe(false);
+    });
+
+    it('должен возвращать false для Infinity', () => {
+      expect(isNonNegativeDecimal(new Decimal(Infinity))).toBe(false);
     });
   });
 
