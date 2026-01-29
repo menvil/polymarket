@@ -131,7 +131,7 @@ declare const orderService: OrderService;
 
 interface MarketConfig {
   minOrderSize: Decimal;
-  tickSize: Decimal;
+  stepSize: Decimal;
 }
 
 async function createOrder(
@@ -154,9 +154,9 @@ async function createOrder(
   const orderQuantity = quantityResult.value;
 
   // Округляем к tick size
-  const roundedResult = QuantityService.roundToTick(
+  const roundedResult = QuantityService.roundToStep(
     orderQuantity,
-    marketConfig.tickSize
+    marketConfig.stepSize
   );
 
   if (!roundedResult.ok) {
@@ -179,7 +179,7 @@ async function createOrder(
 // Использование
 const marketConfig: MarketConfig = {
   minOrderSize: new Decimal(1),
-  tickSize: new Decimal("0.01")
+  stepSize: new Decimal("0.01")
 };
 
 try {
@@ -461,18 +461,18 @@ import Decimal from 'decimal.js';
 
 // Различные режимы округления
 const qty = Quantity.of("10.567");
-const tickSize = new Decimal("0.01");
+const stepSize = new Decimal("0.01");
 
 // ROUND_HALF_UP (default)
-const rounded1 = QuantityService.roundToTick(qty, tickSize);
+const rounded1 = QuantityService.roundToStep(qty, stepSize);
 if (rounded1.ok) {
   console.log(rounded1.value.value().toString()); // "10.57"
 }
 
 // ROUND_DOWN
-const rounded2 = QuantityService.roundToTick(
+const rounded2 = QuantityService.roundToStep(
   qty,
-  tickSize,
+  stepSize,
   Decimal.ROUND_DOWN
 );
 if (rounded2.ok) {
@@ -480,9 +480,9 @@ if (rounded2.ok) {
 }
 
 // ROUND_UP
-const rounded3 = QuantityService.roundToTick(
+const rounded3 = QuantityService.roundToStep(
   qty,
-  tickSize,
+  stepSize,
   Decimal.ROUND_UP
 );
 if (rounded3.ok) {
@@ -490,9 +490,9 @@ if (rounded3.ok) {
 }
 
 // ROUND_HALF_EVEN (banker's rounding)
-const rounded4 = QuantityService.roundToTick(
+const rounded4 = QuantityService.roundToStep(
   qty,
-  tickSize,
+  stepSize,
   Decimal.ROUND_HALF_EVEN
 );
 if (rounded4.ok) {
@@ -1042,10 +1042,10 @@ class QuantityCalculator {
     return this;
   }
 
-  roundToTick(tickSize: Decimal): this {
+  roundToStep(stepSize: Decimal): this {
     if (!this.current.ok) return this;
 
-    this.current = QuantityService.roundToTick(this.current.value, tickSize);
+    this.current = QuantityService.roundToStep(this.current.value, stepSize);
     return this;
   }
 
@@ -1060,7 +1060,7 @@ const result = new QuantityCalculator(Quantity.of(100))
   .multiply(2)
   .subtract(Quantity.of(100))
   .divide(5)
-  .roundToTick(new Decimal("0.01"))
+  .roundToStep(new Decimal("0.01"))
   .build();
 
 if (result.ok) {
@@ -1114,7 +1114,7 @@ console.log(formatter.format(qty, 2)); // "123.46" (instant)
 
 1. **Создание и валидация** — всегда через `QuantityService`
 2. **Арифметика** — с обработкой overflow/underflow
-3. **Ордера** — с `minSize` и `tickSize`
+3. **Ордера** — с `minSize` и `stepSize`
 4. **Позиции** — с частичным закрытием и объединением
 5. **Форматирование** — для UI и API
 6. **Batch операции** — с early return

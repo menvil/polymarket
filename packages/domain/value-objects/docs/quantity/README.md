@@ -170,7 +170,7 @@ quantity.isPositive(): boolean
 - `ValidateResultNonNegative` — проверка неотрицательности результата
 - `ValidateDivisorForQuantityDivision` — валидация делителя
 - `ValidateFactorForQuantityMultiplication` — валидация множителя
-- `ValidateTickSizeForRounding` — валидация размера тика
+- `ValidateStepSizeForQuantity` — валидация размера тика
 
 **Принцип:** Одно правило = одна проверка
 
@@ -220,7 +220,7 @@ multiply(quantity: Quantity, factor: number | Decimal): Result<Quantity, Invalid
 divide(quantity: Quantity, divisor: number | Decimal): Result<Quantity, InvalidQuantityError>
 
 // Округление
-roundToTick(quantity: Quantity, tickSize: Decimal, roundingMode?: Decimal.Rounding): Result<Quantity, InvalidQuantityError>
+roundToStep(quantity: Quantity, stepSize: Decimal, roundingMode?: Decimal.Rounding): Result<Quantity, InvalidQuantityError>
 
 // Валидация
 validateForPosition(quantity: Quantity): Result<void, InvalidQuantityError>
@@ -231,7 +231,7 @@ validateForPosition(quantity: Quantity): Result<void, InvalidQuantityError>
 Все ошибки содержат:
 - `context.op` — название операции (`'create'`, `'add'`, `'divide'`, etc.)
 - `context.quantity` — входное количество (если применимо)
-- `context.divisor|factor|tickSize` — параметры операции
+- `context.divisor|factor|stepSize` — параметры операции
 - `context.reason` — причина из Core/Rules (`'NEGATIVE'`, `'NON_FINITE'`)
 - `context.cause` — для math-исключений: `{ name, message }`
 
@@ -305,7 +305,7 @@ interface InvalidQuantityErrorContext {
   quantity2?: string;
   divisor?: string;
   factor?: string;
-  tickSize?: string;
+  stepSize?: string;
   minSize?: string;
   reason?: 'NEGATIVE' | 'NON_FINITE';
   cause?: { name: string; message: string };
@@ -376,12 +376,12 @@ import Decimal from 'decimal.js';
 const calculated = Quantity.of("10.567891");
 
 // Tick size рынка
-const tickSize = new Decimal("0.01");
+const stepSize = new Decimal("0.01");
 
 // Округляем
-const roundedResult = QuantityService.roundToTick(
+const roundedResult = QuantityService.roundToStep(
   calculated,
-  tickSize,
+  stepSize,
   Decimal.ROUND_HALF_UP
 );
 

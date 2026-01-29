@@ -126,7 +126,7 @@ try {
 │  - ValidateResultNonNegative                        │
 │  - ValidateDivisorForQuantityDivision               │
 │  - ValidateFactorForQuantityMultiplication          │
-│  - ValidateTickSizeForRounding                      │
+│  - ValidateStepSizeForQuantity                      │
 │                                                     │
 │  Зависит от: Ничего (только Decimal, Result)       │
 └─────────────────────────────────────────────────────┘
@@ -153,7 +153,7 @@ try {
 - Базовые операции (equals, isZero, isPositive)
 
 **НЕ делает:**
-- Не знает про бизнес-правила (minSize, tickSize)
+- Не знает про бизнес-правила (minSize, stepSize)
 - Не знает про Result<T, E>
 - Не делает арифметику (это делает Facade + Math)
 

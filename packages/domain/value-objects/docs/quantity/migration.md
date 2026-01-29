@@ -395,8 +395,8 @@ console.log(`Total: ${result.value.value()}`); // "60"
 ```typescript
 import { round } from '@polymarket/math';
 
-function roundQuantity(qty: Quantity, tickSize: number): Quantity {
-  const rounded = round(qty.value().toNumber(), tickSize);
+function roundQuantity(qty: Quantity, stepSize: number): Quantity {
+  const rounded = round(qty.value().toNumber(), stepSize);
   return new Quantity(rounded);
 }
 ```
@@ -407,9 +407,9 @@ import Decimal from 'decimal.js';
 
 function roundQuantity(
   qty: Quantity,
-  tickSize: Decimal
+  stepSize: Decimal
 ): Result<Quantity, InvalidQuantityError> {
-  return QuantityService.roundToTick(qty, tickSize);
+  return QuantityService.roundToStep(qty, stepSize);
 }
 
 // Использование
