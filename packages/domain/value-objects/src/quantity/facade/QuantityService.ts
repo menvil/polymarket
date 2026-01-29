@@ -2,7 +2,8 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { Quantity, QuantityInvariantViolation } from '../core/Quantity.js';
 import { InvalidQuantityError } from '@polymarket/errors';
 import { OrderQuantityPolicy } from '../policy/OrderQuantityPolicy.js';
-import { addDecimal } from '@polymarket/math';
+import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
+import { addDecimal, subtractDecimal } from '@polymarket/math';
 import Decimal from 'decimal.js';
 
 /**
@@ -171,6 +172,65 @@ export class QuantityService {
             quantity1: qty1.value().toString(),
             quantity2: qty2.value().toString(),
             reason: createResult.error.context?.reason
+          }
+        })
+      );
+    }
+
+    return createResult;
+  }
+
+  /**
+   * Вычитает quantity с проверкой неотрицательности
+   *
+   * @remarks
+   * Оркестрирует: вычитание → валидация non-negative → создание Quantity
+   *
+   * @param qty1 - Уменьшаемое
+   * @param qty2 - Вычитаемое
+   * @returns Result<Quantity, InvalidQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const result = QuantityService.subtract(qty1, qty2);
+   * if (!result.ok) {
+   *   console.error(result.error.context.op); // 'subtract'
+   * }
+   * ```
+   */
+  public static subtract(
+    qty1: Quantity,
+    qty2: Quantity
+  ): Result<Quantity, InvalidQuantityError> {
+    const diff = subtractDecimal(qty1.value(), qty2.value());
+
+    // Проверяем что результат неотрицательный
+    const validateResult = ValidateResultNonNegative.check(diff);
+    if (!validateResult.ok) {
+      // Добавляем op к ошибке из rule
+      return Err(
+        new InvalidQuantityError(validateResult.error.message, {
+          code: InvalidQuantityError.code,
+          context: {
+            op: 'subtract',
+            quantity1: qty1.value().toString(),
+            quantity2: qty2.value().toString(),
+            ...validateResult.error.context
+          }
+        })
+      );
+    }
+
+    const createResult = this.create(diff);
+    if (!createResult.ok) {
+      return Err(
+        new InvalidQuantityError(createResult.error.message, {
+          code: InvalidQuantityError.code,
+          context: {
+            op: 'subtract',
+            quantity1: qty1.value().toString(),
+            quantity2: qty2.value().toString(),
+            ...createResult.error.context
           }
         })
       );

@@ -196,4 +196,76 @@ describe('QuantityService', () => {
       });
     });
   });
+
+  describe('subtract()', () => {
+    it('должен вычесть два Quantity', () => {
+      const qty1 = Quantity.of(10);
+      const qty2 = Quantity.of(5);
+      const result = QuantityService.subtract(qty1, qty2);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(5);
+      }
+    });
+
+    it('должен вернуть Ok для 0 результата', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.subtract(qty, qty);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(0);
+      }
+    });
+
+    it('должен вернуть Err для negative результата', () => {
+      const qty1 = Quantity.of(5);
+      const qty2 = Quantity.of(10);
+      const result = QuantityService.subtract(qty1, qty2);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        expect(result.error.message).toContain('cannot be negative');
+      }
+    });
+
+    describe('Facade Error Contract', () => {
+      it('error должен содержать context.op = "subtract"', () => {
+        expect.assertions(1);
+        const qty1 = Quantity.of(5);
+        const qty2 = Quantity.of(10);
+        const result = QuantityService.subtract(qty1, qty2);
+
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('subtract');
+        }
+      });
+
+      it('error должен содержать context.quantity1 и quantity2', () => {
+        expect.assertions(2);
+        const qty1 = Quantity.of(5);
+        const qty2 = Quantity.of(10);
+        const result = QuantityService.subtract(qty1, qty2);
+
+        if (!result.ok) {
+          expect(result.error.context?.quantity1).toBe('5');
+          expect(result.error.context?.quantity2).toBe('10');
+        }
+      });
+
+      it('error должен содержать context.result (от rule)', () => {
+        expect.assertions(2);
+        const qty1 = Quantity.of(5);
+        const qty2 = Quantity.of(10);
+        const result = QuantityService.subtract(qty1, qty2);
+
+        if (!result.ok) {
+          expect(result.error.context).toHaveProperty('result');
+          expect(result.error.context?.result).toBe('-5');
+        }
+      });
+    });
+  });
 });
