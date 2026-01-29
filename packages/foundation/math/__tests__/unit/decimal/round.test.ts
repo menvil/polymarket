@@ -8,6 +8,7 @@ import {
   mathCeilDecimal,
 } from '../../../src/decimal/round.js';
 import Decimal from 'decimal.js';
+import { InvalidOperandError } from '@polymarket/errors';
 
 describe('round', () => {
   describe('roundDecimal (ROUND_HALF_UP)', () => {
@@ -181,6 +182,176 @@ describe('round', () => {
     it('truncDecimal отличается от mathFloorDecimal для отрицательных', () => {
       expect(truncDecimal(new Decimal(-10.9)).toString()).toBe('-10'); // К нулю
       expect(mathFloorDecimal(new Decimal(-10.9)).toString()).toBe('-11'); // К -Infinity
+    });
+  });
+
+  describe('валидация операндов', () => {
+    describe('roundDecimal', () => {
+      it('должен throw InvalidOperandError на NaN', () => {
+        expect(() => roundDecimal(new Decimal(NaN))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на Infinity', () => {
+        expect(() => roundDecimal(new Decimal(Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на -Infinity', () => {
+        expect(() => roundDecimal(new Decimal(-Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен содержать контекст в InvalidOperandError', () => {
+        try {
+          roundDecimal(new Decimal(NaN));
+          expect(true).toBe(false); // Should not reach here
+        } catch (error) {
+          expect(InvalidOperandError.is(error)).toBe(true);
+          if (InvalidOperandError.is(error)) {
+            expect(error.context).toBeDefined();
+            expect(error.context?.value).toBe('NaN');
+            expect(error.context?.operation).toBe('round');
+          }
+        }
+      });
+    });
+
+    describe('roundTowardZeroDecimal', () => {
+      it('должен throw InvalidOperandError на NaN', () => {
+        expect(() => roundTowardZeroDecimal(new Decimal(NaN))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на Infinity', () => {
+        expect(() => roundTowardZeroDecimal(new Decimal(Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на -Infinity', () => {
+        expect(() => roundTowardZeroDecimal(new Decimal(-Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен содержать контекст в InvalidOperandError', () => {
+        try {
+          roundTowardZeroDecimal(new Decimal(Infinity));
+          expect(true).toBe(false);
+        } catch (error) {
+          expect(InvalidOperandError.is(error)).toBe(true);
+          if (InvalidOperandError.is(error)) {
+            expect(error.context).toBeDefined();
+            expect(error.context?.value).toBe('Infinity');
+            expect(error.context?.operation).toBe('roundTowardZero');
+          }
+        }
+      });
+    });
+
+    describe('roundAwayFromZeroDecimal', () => {
+      it('должен throw InvalidOperandError на NaN', () => {
+        expect(() => roundAwayFromZeroDecimal(new Decimal(NaN))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на Infinity', () => {
+        expect(() => roundAwayFromZeroDecimal(new Decimal(Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на -Infinity', () => {
+        expect(() => roundAwayFromZeroDecimal(new Decimal(-Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен содержать контекст в InvalidOperandError', () => {
+        try {
+          roundAwayFromZeroDecimal(new Decimal(-Infinity));
+          expect(true).toBe(false);
+        } catch (error) {
+          expect(InvalidOperandError.is(error)).toBe(true);
+          if (InvalidOperandError.is(error)) {
+            expect(error.context).toBeDefined();
+            expect(error.context?.value).toBe('-Infinity');
+            expect(error.context?.operation).toBe('roundAwayFromZero');
+          }
+        }
+      });
+    });
+
+    describe('truncDecimal', () => {
+      it('должен throw InvalidOperandError на NaN', () => {
+        expect(() => truncDecimal(new Decimal(NaN))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на Infinity', () => {
+        expect(() => truncDecimal(new Decimal(Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на -Infinity', () => {
+        expect(() => truncDecimal(new Decimal(-Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен содержать контекст в InvalidOperandError', () => {
+        try {
+          truncDecimal(new Decimal(NaN));
+          expect(true).toBe(false);
+        } catch (error) {
+          expect(InvalidOperandError.is(error)).toBe(true);
+          if (InvalidOperandError.is(error)) {
+            expect(error.context).toBeDefined();
+            expect(error.context?.value).toBe('NaN');
+            expect(error.context?.operation).toBe('trunc');
+          }
+        }
+      });
+    });
+
+    describe('mathFloorDecimal', () => {
+      it('должен throw InvalidOperandError на NaN', () => {
+        expect(() => mathFloorDecimal(new Decimal(NaN))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на Infinity', () => {
+        expect(() => mathFloorDecimal(new Decimal(Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на -Infinity', () => {
+        expect(() => mathFloorDecimal(new Decimal(-Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен содержать контекст в InvalidOperandError', () => {
+        try {
+          mathFloorDecimal(new Decimal(Infinity));
+          expect(true).toBe(false);
+        } catch (error) {
+          expect(InvalidOperandError.is(error)).toBe(true);
+          if (InvalidOperandError.is(error)) {
+            expect(error.context).toBeDefined();
+            expect(error.context?.value).toBe('Infinity');
+            expect(error.context?.operation).toBe('mathFloor');
+          }
+        }
+      });
+    });
+
+    describe('mathCeilDecimal', () => {
+      it('должен throw InvalidOperandError на NaN', () => {
+        expect(() => mathCeilDecimal(new Decimal(NaN))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на Infinity', () => {
+        expect(() => mathCeilDecimal(new Decimal(Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на -Infinity', () => {
+        expect(() => mathCeilDecimal(new Decimal(-Infinity))).toThrow(InvalidOperandError);
+      });
+
+      it('должен содержать контекст в InvalidOperandError', () => {
+        try {
+          mathCeilDecimal(new Decimal(-Infinity));
+          expect(true).toBe(false);
+        } catch (error) {
+          expect(InvalidOperandError.is(error)).toBe(true);
+          if (InvalidOperandError.is(error)) {
+            expect(error.context).toBeDefined();
+            expect(error.context?.value).toBe('-Infinity');
+            expect(error.context?.operation).toBe('mathCeil');
+          }
+        }
+      });
     });
   });
 });
