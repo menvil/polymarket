@@ -85,4 +85,59 @@ describe('QuantityService', () => {
       });
     });
   });
+
+  describe('createForOrder()', () => {
+    it('должен создать Quantity для valid order', () => {
+      const result = QuantityService.createForOrder(10, new Decimal(1));
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBeInstanceOf(Quantity);
+      }
+    });
+
+    it('должен вернуть Err для quantity < orderMinSize', () => {
+      const result = QuantityService.createForOrder(0.5, new Decimal(1));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        expect(result.error.message).toContain('minimum size');
+      }
+    });
+
+    it('должен парсить value только один раз', () => {
+      const decimal = new Decimal(10);
+      const result = QuantityService.createForOrder(decimal, new Decimal(1));
+      if (result.ok) {
+        // Проверяем что decimal не был распарсен повторно
+        expect(result.value.value()).toBe(decimal);
+      }
+    });
+
+    describe('Facade Error Contract', () => {
+      it('error должен содержать context.op = "createForOrder"', () => {
+        expect.assertions(1);
+        const result = QuantityService.createForOrder(0.5, new Decimal(1));
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('createForOrder');
+        }
+      });
+
+      it('error должен содержать context из policy (quantity, minSize)', () => {
+        expect.assertions(2);
+        const result = QuantityService.createForOrder(0.5, new Decimal(1));
+        if (!result.ok) {
+          expect(result.error.context).toHaveProperty('quantity');
+          expect(result.error.context).toHaveProperty('minSize');
+        }
+      });
+
+      it('error для negative должен содержать context.op = "createForOrder"', () => {
+        expect.assertions(1);
+        const result = QuantityService.createForOrder(-1, new Decimal(1));
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('createForOrder');
+        }
+      });
+    });
+  });
 });
