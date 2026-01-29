@@ -16,7 +16,7 @@ describe('Operations Chain Integration', () => {
       const step1 = addDecimal(new Decimal(10), new Decimal(5)); // 15
       const step2 = multiplyDecimal(step1, new Decimal(2)); // 30
       const step3 = divideDecimal(step2, new Decimal(3)); // 10
-      const result = roundToPrecision(step3, 2, Decimal.ROUND_HALF_UP); // 10.00
+      const result = roundToPrecision(step3, 2, Decimal.ROUND_HALF_UP);
 
       expect(result.toString()).toBe('10');
     });

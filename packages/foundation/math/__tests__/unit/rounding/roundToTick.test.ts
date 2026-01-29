@@ -265,7 +265,7 @@ describe('roundToTick', () => {
   });
 
   describe('инвариант: результат всегда кратен tickSize', () => {
-    it('result.div(tick).isInteger() должно быть true для разных значений', () => {
+    it('result.mod(tick) должно быть 0 для разных значений', () => {
       const testCases = [
         { value: '10.567', tick: '0.01' },
         { value: '100.123', tick: '0.1' },
@@ -284,8 +284,8 @@ describe('roundToTick', () => {
           Decimal.ROUND_HALF_UP
         );
 
-        const quotient = result.div(new Decimal(tick));
-        expect(quotient.isInteger()).toBe(true);
+        const tickDecimal = new Decimal(tick);
+        expect(result.mod(tickDecimal).eq(0)).toBe(true);
       });
     });
 
@@ -303,8 +303,7 @@ describe('roundToTick', () => {
 
       modes.forEach((mode) => {
         const result = roundToTick(value, tick, mode);
-        const quotient = result.div(tick);
-        expect(quotient.isInteger()).toBe(true);
+        expect(result.mod(tick).eq(0)).toBe(true);
       });
     });
   });

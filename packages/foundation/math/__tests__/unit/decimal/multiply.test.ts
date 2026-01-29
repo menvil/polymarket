@@ -61,6 +61,7 @@ describe('multiplyDecimal', () => {
     );
 
     it('должен содержать контекст в InvalidOperandError', () => {
+      expect.assertions(5);
       const inf = new Decimal(Infinity);
       const value = new Decimal(100);
 
@@ -78,6 +79,23 @@ describe('multiplyDecimal', () => {
           expect(error.context?.operation).toBe('multiply');
         }
       }
+    });
+  });
+
+  // ==================== MATHEMATICAL PROPERTIES ====================
+  describe('Математические свойства', () => {
+    it('должен быть коммутативным: multiplyDecimal(a,b) === multiplyDecimal(b,a)', () => {
+      const testCases = [
+        [new Decimal('5'), new Decimal('3')],
+        [new Decimal('0.123'), new Decimal('456.789')],
+        [new Decimal('-2.5'), new Decimal('4.8')],
+      ];
+
+      testCases.forEach(([a, b]) => {
+        const resultAB = multiplyDecimal(a, b);
+        const resultBA = multiplyDecimal(b, a);
+        expect(resultAB.equals(resultBA)).toBe(true);
+      });
     });
   });
 

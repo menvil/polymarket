@@ -81,6 +81,22 @@ describe('divideDecimal', () => {
         }
       }
     });
+
+    it('должен проверять валидность dividend перед проверкой на ноль (порядок проверок)', () => {
+      // Контракт: InvalidOperandError имеет приоритет над DivisionByZeroError
+      // Даже если divisor = 0, сначала проверяется валидность dividend
+      expect(() =>
+        divideDecimal(new Decimal(NaN), new Decimal(0))
+      ).toThrow(InvalidOperandError);
+
+      expect(() =>
+        divideDecimal(new Decimal(Infinity), new Decimal(0))
+      ).toThrow(InvalidOperandError);
+
+      expect(() =>
+        divideDecimal(new Decimal(-Infinity), new Decimal(0))
+      ).toThrow(InvalidOperandError);
+    });
   });
 
   describe('ошибки невалидного делителя', () => {

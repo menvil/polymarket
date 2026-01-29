@@ -4,48 +4,48 @@ import { averageDecimal } from '../../../src/decimal/average.js';
 import { InvalidOperandError } from '@polymarket/errors';
 
 describe('averageDecimal', () => {
-  describe('Success cases', () => {
-    it('should calculate average of two positive integers', () => {
+  describe('Успешные случаи', () => {
+    it('должен вычислять среднее двух положительных целых чисел', () => {
       const result = averageDecimal(new Decimal(10), new Decimal(20));
       expect(result.toString()).toBe('15');
     });
 
-    it('should calculate average of two decimals', () => {
+    it('должен вычислять среднее двух десятичных чисел', () => {
       const result = averageDecimal(new Decimal(0.5), new Decimal(0.7));
       expect(result.toString()).toBe('0.6');
     });
 
-    it('should handle identical values', () => {
+    it('должен обрабатывать одинаковые значения', () => {
       const result = averageDecimal(new Decimal(5), new Decimal(5));
       expect(result.toString()).toBe('5');
     });
 
-    it('should handle zero and positive number', () => {
+    it('должен обрабатывать ноль и положительное число', () => {
       const result = averageDecimal(new Decimal(0), new Decimal(10));
       expect(result.toString()).toBe('5');
     });
 
-    it('should handle negative and positive (result zero)', () => {
+    it('должен обрабатывать отрицательное и положительное (результат ноль)', () => {
       const result = averageDecimal(new Decimal(-10), new Decimal(10));
       expect(result.toString()).toBe('0');
     });
 
-    it('should handle two negative numbers', () => {
+    it('должен обрабатывать два отрицательных числа', () => {
       const result = averageDecimal(new Decimal(-10), new Decimal(-20));
       expect(result.toString()).toBe('-15');
     });
 
-    it('should handle very small numbers', () => {
+    it('должен обрабатывать очень маленькие числа', () => {
       const result = averageDecimal(new Decimal(0.0001), new Decimal(0.0003));
       expect(result.toString()).toBe('0.0002');
     });
 
-    it('should handle large numbers within range', () => {
+    it('должен обрабатывать большие числа в допустимом диапазоне', () => {
       const result = averageDecimal(new Decimal(1e6), new Decimal(2e6));
       expect(result.toString()).toBe('1500000');
     });
 
-    it('should preserve precision', () => {
+    it('должен сохранять точность', () => {
       const result = averageDecimal(
         new Decimal('0.123456789'),
         new Decimal('0.987654321')
@@ -54,7 +54,7 @@ describe('averageDecimal', () => {
     });
   });
 
-  describe('Input validation', () => {
+  describe('Валидация входных данных', () => {
     it.each([
       ['Infinity', Infinity, 10],
       ['-Infinity', -Infinity, 10],
@@ -63,7 +63,7 @@ describe('averageDecimal', () => {
       ['10', 10, -Infinity],
       ['10', 10, NaN],
     ])(
-      'should throw InvalidOperandError on invalid operands: a=%s b=%s',
+      'должен throw InvalidOperandError на невалидные операнды: a=%s b=%s',
       (_label, a, b) => {
         expect(() => averageDecimal(new Decimal(a), new Decimal(b))).toThrow(
           InvalidOperandError
@@ -72,8 +72,9 @@ describe('averageDecimal', () => {
     );
   });
 
-  describe('Error context', () => {
-    it('should include operation details in InvalidOperandError', () => {
+  describe('Контекст ошибки', () => {
+    it('должен включать детали операции в InvalidOperandError', () => {
+      expect.assertions(5);
       const inf = new Decimal(Infinity);
 
       expect(() => averageDecimal(inf, new Decimal(10))).toThrow(
