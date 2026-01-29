@@ -102,6 +102,10 @@ try {
 function equalsDecimal(a: Decimal, b: Decimal): boolean
 ```
 
+### Выбрасываемые ошибки
+
+- **InvalidOperandError** - Если операнды не являются конечными числами (NaN, Infinity, -Infinity)
+
 ### Примеры
 
 ```typescript

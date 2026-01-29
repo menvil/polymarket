@@ -39,6 +39,7 @@ function assertFinite2(a: Decimal, b: Decimal, operation: string): void {
  * @param a - Первое значение
  * @param b - Второе значение
  * @returns True если a === b (строго равны)
+ * @throws {InvalidOperandError} При невалидных операндах (NaN, ±Infinity)
  *
  * @remarks
  * Строгое математическое сравнение без epsilon/tolerance.
@@ -47,6 +48,10 @@ function assertFinite2(a: Decimal, b: Decimal, operation: string): void {
  *
  * Это согласуется с compareDecimal(), который также строгий:
  * - equalsDecimal(a, b) === true <=> compareDecimal(a, b) === 0
+ *
+ * Валидация операндов:
+ * - Оба операнда должны быть конечными числами
+ * - NaN, Infinity, -Infinity выбрасывают InvalidOperandError
  *
  * Для приблизительного сравнения с погрешностью используйте:
  * ```typescript
@@ -61,20 +66,18 @@ function assertFinite2(a: Decimal, b: Decimal, operation: string): void {
  * equalsDecimal(new Decimal(10), new Decimal(10.0000000001)); // false (строго)
  * equalsDecimal(new Decimal(10), new Decimal(11)); // false
  *
- * // NaN поведение (IEEE 754):
- * equalsDecimal(new Decimal(NaN), new Decimal(NaN)); // false
+ * // Невалидные значения
+ * equalsDecimal(new Decimal(NaN), new Decimal(10)); // throws InvalidOperandError
+ * equalsDecimal(new Decimal(10), new Decimal(Infinity)); // throws InvalidOperandError
  *
  * // Для приблизительного сравнения:
  * const diff = a.minus(b).abs();
  * const epsilon = new Decimal('1e-12');
  * const approxEqual = diff.lessThan(epsilon);
  * ```
- *
- * @remarks
- * Следует семантике IEEE 754: NaN не равен никакому значению, включая сам себя.
- * Если нужно проверить что оба значения NaN, используйте `a.isNaN() && b.isNaN()`.
  */
 export function equalsDecimal(a: Decimal, b: Decimal): boolean {
+  assertFinite2(a, b, 'equals');
   return a.equals(b);
 }
 

@@ -62,6 +62,47 @@ describe('compare', () => {
         equalsDecimal(new Decimal('0.1000'), new Decimal('0.10'))
       ).toBe(true);
     });
+
+    // Валидация операндов (для консистентности с другими comparison функциями)
+    describe('валидация операндов', () => {
+      it('должен throw InvalidOperandError на NaN в первом операнде', () => {
+        expect(() =>
+          equalsDecimal(new Decimal(NaN), new Decimal(10))
+        ).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на NaN во втором операнде', () => {
+        expect(() =>
+          equalsDecimal(new Decimal(10), new Decimal(NaN))
+        ).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на Infinity в первом операнде', () => {
+        expect(() =>
+          equalsDecimal(new Decimal(Infinity), new Decimal(10))
+        ).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на -Infinity во втором операнде', () => {
+        expect(() =>
+          equalsDecimal(new Decimal(10), new Decimal(-Infinity))
+        ).toThrow(InvalidOperandError);
+      });
+
+      it('должен содержать контекст в InvalidOperandError', () => {
+        expect.assertions(4);
+        try {
+          equalsDecimal(new Decimal(NaN), new Decimal(10));
+        } catch (error) {
+          if (error instanceof InvalidOperandError) {
+            expect(error.context).toBeDefined();
+            expect(error.context?.a).toBe('NaN');
+            expect(error.context?.b).toBe('10');
+            expect(error.context?.operation).toBe('equals');
+          }
+        }
+      });
+    });
   });
 
   describe('lessThanDecimal', () => {
