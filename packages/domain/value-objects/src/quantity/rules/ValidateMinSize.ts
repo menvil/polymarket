@@ -38,6 +38,36 @@ export class ValidateMinSize {
     quantity: Decimal,
     minSize: Decimal
   ): Result<void, InvalidQuantityError> {
+    // Валидация minSize (защита от невалидной конфигурации)
+    if (!minSize.isFinite()) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `minSize must be finite, got ${ctx.minSize}`,
+          {
+            context: {
+              minSize: minSize.toString(),
+              quantity: quantity.toString()
+            }
+          }
+        )
+      );
+    }
+
+    if (minSize.lessThanOrEqualTo(0)) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `minSize must be positive, got ${ctx.minSize}`,
+          {
+            context: {
+              minSize: minSize.toString(),
+              quantity: quantity.toString()
+            }
+          }
+        )
+      );
+    }
+
+    // Основная проверка: quantity >= minSize
     if (quantity.lessThan(minSize)) {
       return Err(
         new InvalidQuantityError(

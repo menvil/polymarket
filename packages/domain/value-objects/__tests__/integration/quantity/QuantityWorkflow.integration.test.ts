@@ -140,14 +140,9 @@ describe('Quantity Integration Workflow', () => {
       }
     });
 
-    it('PositionQuantityPolicy.validateForPosition(new Decimal(-1)) должен вернуть Err', () => {
-      const result = PositionQuantityPolicy.validateForPosition(new Decimal(-1));
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('cannot be negative');
-      }
-    });
+    // Примечание: Тест на validateForPosition с negative Decimal удалён,
+    // так как метод теперь принимает Quantity (который гарантирует positive/finite
+    // через Core инварианты). Нельзя создать Quantity с negative значением.
 
     it('должен вернуть Ok для validatePartialClose где closeQuantity <= currentQuantity', () => {
       const result = PositionQuantityPolicy.validatePartialClose(

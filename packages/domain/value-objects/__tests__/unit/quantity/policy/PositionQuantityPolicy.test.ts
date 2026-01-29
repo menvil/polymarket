@@ -1,36 +1,25 @@
 import { describe, it, expect } from '@jest/globals';
 import { PositionQuantityPolicy } from '../../../../src/quantity/policy/PositionQuantityPolicy.js';
-import { InvalidQuantityError } from '@polymarket/errors';
+import { Quantity } from '../../../../src/quantity/core/Quantity.js';
 import Decimal from 'decimal.js';
 
 describe('PositionQuantityPolicy', () => {
   describe('validateForPosition()', () => {
     it('должен вернуть Ok для positive quantity', () => {
-      const result = PositionQuantityPolicy.validateForPosition(new Decimal(10));
+      const qty = Quantity.of(10);
+      const result = PositionQuantityPolicy.validateForPosition(qty);
       expect(result.ok).toBe(true);
     });
 
     it('должен вернуть Ok для 0 (allow zero)', () => {
-      const result = PositionQuantityPolicy.validateForPosition(new Decimal(0));
+      const qty = Quantity.of(0);
+      const result = PositionQuantityPolicy.validateForPosition(qty);
       expect(result.ok).toBe(true);
     });
 
-    it('должен вернуть Err для negative', () => {
-      const result = PositionQuantityPolicy.validateForPosition(new Decimal(-1));
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidQuantityError);
-        expect(result.error.message).toContain('cannot be negative');
-      }
-    });
-
-    it('должен вернуть Err для non-finite', () => {
-      const result = PositionQuantityPolicy.validateForPosition(new Decimal(Infinity));
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('must be finite');
-      }
-    });
+    // Примечание: Проверки negative/non-finite удалены, так как Quantity
+    // гарантирует эти свойства через Core инварианты. validateForPosition()
+    // теперь принимает Quantity и не дублирует Core валидацию.
   });
 
   describe('validatePartialClose()', () => {

@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { Quantity } from '../core/Quantity.js';
 
 /**
  * Политика для количеств в позициях
@@ -19,41 +20,25 @@ export class PositionQuantityPolicy {
    * - > 0 = активная позиция
    * - Может быть < orderMinSize после частичного закрытия
    *
-   * @param quantity - Количество для проверки (ТОЛЬКО Decimal)
+   * Принимает Quantity (уже валидированный объект), поэтому проверки
+   * finite/negative не нужны - они гарантированы Core инвариантами.
+   *
+   * @param quantity - Количество для проверки (Quantity объект)
    * @returns Result<void, InvalidQuantityError>
    *
    * @example
    * ```typescript
-   * const result = PositionQuantityPolicy.validateForPosition(new Decimal(0));
+   * const qty = Quantity.of(0);
+   * const result = PositionQuantityPolicy.validateForPosition(qty);
    * expect(result.ok).toBe(true); // 0 допустим для позиции
    * ```
    */
   public static validateForPosition(
-    quantity: Decimal
+    _quantity: Quantity
   ): Result<void, InvalidQuantityError> {
     // Для позиций допускается >= 0 (allow zero)
-    if (quantity.isNegative()) {
-      return Err(
-        new InvalidQuantityError(
-          (ctx) => `Position quantity cannot be negative, got ${ctx.quantity}`,
-          {
-            context: { quantity: quantity.toString() }
-          }
-        )
-      );
-    }
-
-    if (!quantity.isFinite()) {
-      return Err(
-        new InvalidQuantityError(
-          (ctx) => `Position quantity must be finite, got ${ctx.quantity}`,
-          {
-            context: { quantity: quantity.toString() }
-          }
-        )
-      );
-    }
-
+    // Проверки finite/negative не нужны - гарантированы Core инвариантами
+    // Параметр принимается для консистентности API, но не используется
     return Ok(undefined);
   }
 

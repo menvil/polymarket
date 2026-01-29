@@ -50,5 +50,29 @@ describe('ValidateMinSize', () => {
       );
       expect(result.ok).toBe(true);
     });
+
+    it('должен вернуть Err для non-finite minSize', () => {
+      const result = ValidateMinSize.check(new Decimal(10), new Decimal(Infinity));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('minSize must be finite');
+      }
+    });
+
+    it('должен вернуть Err для negative minSize', () => {
+      const result = ValidateMinSize.check(new Decimal(10), new Decimal(-1));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('minSize must be positive');
+      }
+    });
+
+    it('должен вернуть Err для zero minSize', () => {
+      const result = ValidateMinSize.check(new Decimal(10), new Decimal(0));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('minSize must be positive');
+      }
+    });
   });
 });

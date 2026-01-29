@@ -458,7 +458,7 @@ export class QuantityService {
   public static validateForPosition(
     quantity: Quantity
   ): Result<void, InvalidQuantityError> {
-    const policyResult = PositionQuantityPolicy.validateForPosition(quantity.value());
+    const policyResult = PositionQuantityPolicy.validateForPosition(quantity);
 
     if (!policyResult.ok) {
       return Err(withOperationContext(policyResult.error, 'validateForPosition'));
