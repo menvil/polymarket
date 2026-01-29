@@ -90,5 +90,14 @@ describe('validation', () => {
       expect(isZeroDecimal(new Decimal(1))).toBe(false);
       expect(isZeroDecimal(new Decimal(-1))).toBe(false);
     });
+
+    it('должен возвращать false для NaN', () => {
+      expect(isZeroDecimal(new Decimal(NaN))).toBe(false);
+    });
+
+    it('должен возвращать false для Infinity', () => {
+      expect(isZeroDecimal(new Decimal(Infinity))).toBe(false);
+      expect(isZeroDecimal(new Decimal(-Infinity))).toBe(false);
+    });
   });
 });

@@ -178,18 +178,26 @@ const result = addDecimal(tiny1, tiny2);
 console.log(result.toString()); // "3e-10" ✅
 ```
 
-### Overflow при достижении Infinity
+### Валидация невалидных операндов
 
 ```typescript
 import Decimal from 'decimal.js';
 import { addDecimal } from '@polymarket/math';
+import { InvalidOperandError } from '@polymarket/errors';
 
-// Infinity + любое число = Infinity (математическая невозможность)
-const inf = new Decimal(Infinity);
-const num = new Decimal(100);
+try {
+  // Попытка создать операнд с Infinity
+  const inf = new Decimal(Infinity);
+  const num = new Decimal(100);
 
-// ❌ Throws ArithmeticOverflowError
-addDecimal(inf, num);
+  // ❌ Throws InvalidOperandError
+  addDecimal(inf, num);
+} catch (error) {
+  if (InvalidOperandError.is(error)) {
+    console.error('Invalid operand:', error.message);
+    // Context: { a: 'Infinity', b: '100', operation: 'add' }
+  }
+}
 ```
 
 ### Сложение с нулём

@@ -171,11 +171,13 @@ describe('roundToTick', () => {
     });
 
     it('должен содержать контекст в ошибке', () => {
+      expect(() =>
+        roundToTick(new Decimal(NaN), new Decimal('0.01'), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidOperandError);
+
       try {
         roundToTick(new Decimal(NaN), new Decimal('0.01'), Decimal.ROUND_HALF_UP);
-        fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(InvalidOperandError);
         if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.value).toBe('NaN');
@@ -217,11 +219,13 @@ describe('roundToTick', () => {
     });
 
     it('должен содержать контекст в ошибке', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal(0), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidTickSizeError);
+
       try {
         roundToTick(new Decimal(10), new Decimal(0), Decimal.ROUND_HALF_UP);
-        fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(InvalidTickSizeError);
         if (error instanceof InvalidTickSizeError) {
           expect(error.context).toBeDefined();
           expect(error.context?.tickSize).toBe('0');

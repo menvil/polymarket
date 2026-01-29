@@ -146,23 +146,24 @@ const result2 = averageDecimal(value, MATH_CONSTANTS.ONE);
 console.log(result2.toString()); // "50.5"
 ```
 
-### Обработка overflow
+### Валидация невалидных операндов
 
 ```typescript
 import Decimal from 'decimal.js';
 import { averageDecimal } from '@polymarket/math';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidOperandError } from '@polymarket/errors';
 
 try {
+  // Попытка создать операнд с Infinity
   const inf = new Decimal(Infinity);
   const value = new Decimal(10);
 
   const result = averageDecimal(inf, value);
 } catch (error) {
-  if (ArithmeticOverflowError.is(error)) {
-    console.error('Average overflow:', error.message);
+  if (InvalidOperandError.is(error)) {
+    console.error('Invalid operand:', error.message);
     console.error('Context:', error.context);
-    // Context: { operation: 'average', operand1: 'Infinity', operand2: '10', result: 'Infinity' }
+    // Context: { a: 'Infinity', b: '10', operation: 'average' }
   }
 }
 ```
@@ -390,7 +391,7 @@ console.log(avgPrice.toString()); // "0.665"
 ```typescript
 import Decimal from 'decimal.js';
 import { averageDecimal } from '@polymarket/math';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidOperandError } from '@polymarket/errors';
 
 try {
   const nan = new Decimal(NaN);
@@ -398,9 +399,9 @@ try {
 
   const result = averageDecimal(nan, value);
 } catch (error) {
-  if (ArithmeticOverflowError.is(error)) {
+  if (InvalidOperandError.is(error)) {
     console.error('Average with NaN is invalid');
-    // Context показывает NaN операнд
+    // Context: { a: 'NaN', b: '10', operation: 'average' }
   }
 }
 ```

@@ -6,7 +6,7 @@
 
 - [compareDecimal](#comparedecimal) - Трёхстороннее сравнение (-1/0/1)
 - [equalsDecimal](#equalsdecimal) - Строгое равенство
-- [lessThanDecimal](#lessthanbdecimal) - Строгое меньше (<)
+- [lessThanDecimal](#lessthandecimal) - Строгое меньше (<)
 - [lessThanOrEqualDecimal](#lessthanorequaldecimal) - Меньше или равно (<=)
 - [greaterThanDecimal](#greaterthandecimal) - Строгое больше (>)
 - [greaterThanOrEqualDecimal](#greaterthanorequaldecimal) - Больше или равно (>=)
@@ -73,13 +73,22 @@ compareDecimal(a, b); // 0 (одинаковое математическое з
 compareDecimal(a, c); // 0 (одинаковое математическое значение)
 ```
 
-**NaN обрабатывается специально:**
+**Валидация невалидных операндов:**
 ```typescript
-const nan = new Decimal(NaN);
-const num = new Decimal(10);
+import { compareDecimal } from '@polymarket/math';
+import { InvalidOperandError } from '@polymarket/errors';
 
-compareDecimal(nan, num); // NaN не равен ничему, включая NaN
-compareDecimal(nan, nan); // даже себе
+try {
+  const nan = new Decimal(NaN);
+  const num = new Decimal(10);
+
+  compareDecimal(nan, num); // ❌ Throws InvalidOperandError
+} catch (error) {
+  if (InvalidOperandError.is(error)) {
+    console.error('Cannot compare NaN:', error.message);
+    // Context: { a: 'NaN', b: '10', operation: 'compare' }
+  }
+}
 ```
 
 ---
@@ -538,7 +547,7 @@ if (equalsDecimal(value, MATH_CONSTANTS.ZERO)) {
 ## Интеграция с Value Objects
 
 ```typescript
-import { equalsDecimal, compareDecimal } from '@polymarket/math';
+import { equalsDecimal, compareDecimal, lessThanDecimal } from '@polymarket/math';
 
 class Price {
   private constructor(private readonly _value: Decimal) {}
