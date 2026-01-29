@@ -102,22 +102,13 @@ try {
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
-│  Layer 4: Facade                                    │
+│  Layer 3: Facade                                    │
 │  - QuantityService                                  │
 │  - Единая точка входа                              │
 │  - Result<T, E> обёртка                            │
 │  - Error Contract                                   │
 │                                                     │
-│  Зависит от: Core, Rules, Policy, Math             │
-└─────────────────────────────────────────────────────┘
-                        ↓
-┌─────────────────────────────────────────────────────┐
-│  Layer 3: Policy                                    │
-│  - OrderQuantityPolicy                              │
-│  - PositionQuantityPolicy                           │
-│  - Композиция Rules                                 │
-│                                                     │
-│  Зависит от: Rules                                  │
+│  Зависит от: Core, Rules, Math                     │
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
@@ -179,7 +170,6 @@ qty.equals(other);
 
 **НЕ делает:**
 - Не создают Quantity
-- Не композируют другие правила (это делает Policy)
 - Не знают про операции (add, multiply)
 
 **Пример:**
@@ -194,41 +184,16 @@ ValidateMinSize.check(new Decimal(0.5), new Decimal(1)); // Err
 
 ---
 
-### Layer 3: Policy
-
-**Ответственность:**
-- Композиция Rules для бизнес-контекстов
-- Знает про OrderQuantity vs PositionQuantity
-- Проверяет комбинации условий
-
-**НЕ делает:**
-- Не создаёт Quantity
-- Не делает арифметику
-- Не знает про операции Facade
-
-**Пример:**
-```typescript
-// ✅ Делает: композиция правил для контекста
-OrderQuantityPolicy.validateForOrder(decimal, minSize);
-// Внутри: проверяет > 0, finite, >= minSize
-
-// ✅ Делает: специфичная для домена логика
-PositionQuantityPolicy.validatePartialClose(current, close);
-// Проверяет: close > 0 && close <= current
-```
-
----
-
-### Layer 4: Facade
+### Layer 3: Facade
 
 **Ответственность:**
 - Единая точка входа для всех операций
-- Оркестрация Core + Math + Rules + Policy
+- Оркестрация Core + Math + Rules
 - Обёртка исключений в Result<T, E>
 - Facade Error Contract
 
 **НЕ делает:**
-- Не реализует бизнес-логику (делегирует Policy/Rules)
+- Не реализует бизнес-логику (делегирует Rules)
 - Не делает low-level checks (делегирует Core)
 
 **Пример:**
@@ -250,7 +215,7 @@ if (!result.ok) {
 
 ---
 
-### Layer 5: Adapters
+### Layer 4: Adapters
 
 **Ответственность:**
 - Сериализация (toJSON/fromJSON)
@@ -299,24 +264,23 @@ this.create(sum)  ← проверяет инварианты
 Result<Quantity, Error>
 ```
 
-### Поток валидации с Policy
+### Поток валидации через Facade
 
 ```
 User Input
     ↓
-QuantityService.createForOrder(value, minSize)
+QuantityService.create(value)
     ↓
 decimal = parse(value)
     ↓
-OrderQuantityPolicy.validateForOrder(decimal, minSize)
+Quantity.fromDecimal(decimal)  ← Core (проверяет инварианты)
     ↓
-  ValidateMinSize.check(decimal, minSize)  ← Rule
+  если non-negative && finite → Ok
+  иначе → QuantityInvariantViolation
     ↓
-  if (!ok) return Err
+Facade ловит exception → Result.err(InvalidQuantityError)
     ↓
-this.create(decimal)  ← Core
-    ↓
-Result<Quantity, Error>
+Result<Quantity, InvalidQuantityError>
 ```
 
 ---
@@ -428,7 +392,7 @@ public static min(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuant
 }
 ```
 
-2. **Готово!** Не нужно менять Core/Rules/Policy
+2. **Готово!** Не нужно менять Core/Rules
 
 ---
 
@@ -448,20 +412,27 @@ export class ValidateMaxSize {
 }
 ```
 
-2. **Policy:** Использовать в нужном контексте
+2. **Facade:** Использовать в методе сервиса
 ```typescript
-OrderQuantityPolicy.validateForOrder(quantity, minSize, maxSize) {
-  const minResult = ValidateMinSize.check(quantity, minSize);
-  if (!minResult.ok) return minResult;
+// В QuantityService
+public static createWithValidation(value: number | string | Decimal, minSize: Decimal, maxSize: Decimal) {
+  const createResult = this.create(value);
+  if (!createResult.ok) return createResult;
 
-  const maxResult = ValidateMaxSize.check(quantity, maxSize);
-  if (!maxResult.ok) return maxResult;
+  const qty = createResult.value;
+  const decimal = qty.value();
 
-  return Ok(undefined);
+  const minResult = ValidateMinSize.check(decimal, minSize);
+  if (!minResult.ok) return Err(withOperationContext(minResult.error, 'createWithValidation'));
+
+  const maxResult = ValidateMaxSize.check(decimal, maxSize);
+  if (!maxResult.ok) return Err(withOperationContext(maxResult.error, 'createWithValidation'));
+
+  return Ok(qty);
 }
 ```
 
-3. **Готово!** Core и Facade не меняются
+3. **Готово!** Core не меняется
 
 ---
 
@@ -503,18 +474,25 @@ ValidateDivisorForQuantityDivision.check(divisor)
 
 ---
 
-### 3. Policy для бизнес-контекста
+### 3. Композиция правил в Facade
 
-❌ **Плохо:** Смешивать контексты
+❌ **Плохо:** Смешивать контексты в одном методе
 ```typescript
 // Одна функция для всех контекстов
 validateQuantity(qty, minSize?, maxSize?, allowZero?)
 ```
 
-✅ **Хорошо:** Отдельные политики
+✅ **Хорошо:** Специализированные методы в Facade
 ```typescript
-OrderQuantityPolicy.validateForOrder(qty, minSize)
-PositionQuantityPolicy.validateForPosition(qty)  // allowZero
+// QuantityService предоставляет контекст-специфичные методы
+QuantityService.create(value)  // Базовая валидация (Core инварианты)
+
+// Приложение может создать свои методы с композицией Rules
+export function validateForOrder(qty: Quantity, minSize: Decimal) {
+  const minResult = ValidateMinSize.check(qty.value(), minSize);
+  if (!minResult.ok) return minResult;
+  return Ok(undefined);
+}
 ```
 
 ---

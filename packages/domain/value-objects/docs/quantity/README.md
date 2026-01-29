@@ -68,19 +68,13 @@ const sumResult = QuantityService.add(qty1, qty2);
 if (sumResult.ok) {
   console.log(sumResult.value.value().toNumber()); // 15
 }
-
-// Создание для ордера с проверкой minSize
-const orderResult = QuantityService.createForOrder(10, new Decimal(1));
-if (orderResult.ok) {
-  console.log('Order quantity valid');
-}
 ```
 
 ---
 
 ## Архитектура
 
-Quantity модуль построен на **5-слойной архитектуре** с паттерном **Throws+Facade**:
+Quantity модуль построен на **4-слойной архитектуре** с паттерном **Throws+Facade**:
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -91,11 +85,6 @@ Quantity модуль построен на **5-слойной архитект�
 ┌─────────────────────────────────────────────────┐
 │           Facade Layer                          │
 │  (QuantityService - Result<T, E>)               │
-└─────────────────────────────────────────────────┘
-                      ↓
-┌─────────────────────────────────────────────────┐
-│           Policy Layer                          │
-│  (OrderQuantityPolicy, PositionQuantityPolicy)  │
 └─────────────────────────────────────────────────┘
                       ↓
 ┌─────────────────────────────────────────────────┐
@@ -178,31 +167,7 @@ quantity.isPositive(): boolean
 
 ---
 
-### 3. Policy Layer
-
-**Назначение:** Композиция правил для бизнес-контекстов
-
-**Политики:**
-- `OrderQuantityPolicy` — правила для ордеров
-- `PositionQuantityPolicy` — правила для позиций
-
-**Пример:**
-```typescript
-// Для ордера: quantity >= minSize
-OrderQuantityPolicy.validateForOrder(quantity, minSize)
-
-// Для позиции: quantity >= 0 (разрешён ноль)
-PositionQuantityPolicy.validateForPosition(quantity)
-
-// Частичное закрытие позиции
-PositionQuantityPolicy.validatePartialClose(current, close)
-```
-
-Подробнее: [policy.md](./policy.md)
-
----
-
-### 4. Facade Layer
+### 3. Facade Layer
 
 **Назначение:** Единая точка входа с `Result<T, E>`
 
@@ -211,7 +176,6 @@ PositionQuantityPolicy.validatePartialClose(current, close)
 ```typescript
 // Создание
 create(value: number | string | Decimal): Result<Quantity, InvalidQuantityError>
-createForOrder(value: number | string | Decimal, minSize: Decimal): Result<Quantity, InvalidQuantityError>
 
 // Арифметика
 add(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError>
@@ -221,9 +185,6 @@ divide(quantity: Quantity, divisor: number | Decimal): Result<Quantity, InvalidQ
 
 // Округление
 roundToStep(quantity: Quantity, stepSize: Decimal, roundingMode?: Decimal.Rounding): Result<Quantity, InvalidQuantityError>
-
-// Валидация
-validateForPosition(quantity: Quantity): Result<void, InvalidQuantityError>
 ```
 
 **Facade Error Contract:**
@@ -239,7 +200,7 @@ validateForPosition(quantity: Quantity): Result<void, InvalidQuantityError>
 
 ---
 
-### 5. Adapters Layer
+### 4. Adapters Layer
 
 **Назначение:** Сериализация и форматирование
 
@@ -281,8 +242,6 @@ import {
 
 // Для advanced use cases
 import {
-  OrderQuantityPolicy,
-  PositionQuantityPolicy,
   ValidateMinSize
 } from '@polymarket/value-objects/quantity';
 
@@ -316,30 +275,26 @@ interface InvalidQuantityErrorContext {
 
 ## Примеры использования
 
-### Создание ордера
+### Создание количества
 
 ```typescript
 import { QuantityService } from '@polymarket/value-objects/quantity';
-import Decimal from 'decimal.js';
-
-// Минимальный размер ордера для рынка
-const ORDER_MIN_SIZE = new Decimal(1);
 
 // Пользователь вводит количество
 const userInput = "10.5";
 
-// Создаём quantity с валидацией minSize
-const result = QuantityService.createForOrder(userInput, ORDER_MIN_SIZE);
+// Создаём quantity с валидацией инвариантов
+const result = QuantityService.create(userInput);
 
 if (!result.ok) {
-  // Ошибка валидации
-  console.error(`Order rejected: ${result.error.message}`);
+  // Ошибка валидации (negative, non-finite, etc.)
+  console.error(`Invalid quantity: ${result.error.message}`);
   console.error(`Reason: ${result.error.context?.reason}`);
   return;
 }
 
-const orderQuantity = result.value;
-console.log(`Order quantity: ${orderQuantity.value()}`);
+const quantity = result.value;
+console.log(`Quantity: ${quantity.value()}`);
 ```
 
 ### Вычисление остатка позиции
@@ -472,7 +427,6 @@ const qty = result.value;
 - [Архитектура и паттерны](./architecture.md)
 - [Core Layer API](./core.md)
 - [Rules Layer](./rules.md)
-- [Policy Layer](./policy.md)
 - [Facade Layer API](./facade.md)
 - [Adapters Layer](./adapters.md)
 - [Примеры использования](./examples.md)

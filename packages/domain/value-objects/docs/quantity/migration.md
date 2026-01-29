@@ -27,7 +27,7 @@
 - Создание через `QuantityService` (Facade)
 - Возвращает `Result<Quantity, InvalidQuantityError>`
 - Явное управление ошибками через `Result<T, E>`
-- 5-слойная архитектура (Core → Rules → Policy → Facade → Adapters)
+- 4-слойная архитектура (Core → Rules → Facade → Adapters)
 
 ### Почему миграция?
 
@@ -322,7 +322,7 @@ function validateOrderQuantity(
   input: string,
   minSize: Decimal
 ): Result<Quantity, InvalidQuantityError> {
-  return QuantityService.createForOrder(input, minSize);
+  return QuantityService.create(input);
 }
 
 // Использование

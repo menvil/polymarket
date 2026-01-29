@@ -138,11 +138,8 @@ async function createOrder(
   userInput: string,
   marketConfig: MarketConfig
 ): Promise<{ orderId: string; quantity: Quantity }> {
-  // Создаём quantity с валидацией minSize
-  const quantityResult = QuantityService.createForOrder(
-    userInput,
-    marketConfig.minOrderSize
-  );
+  // Создаём quantity с валидацией инвариантов
+  const quantityResult = QuantityService.create(userInput);
 
   if (!quantityResult.ok) {
     // Показываем пользователю понятную ошибку
@@ -216,7 +213,7 @@ function validateOrders(
   const validated: ValidatedOrder[] = [];
 
   for (const input of inputs) {
-    const result = QuantityService.createForOrder(input.quantity, minSize);
+    const result = QuantityService.create(input.quantity);
 
     if (!result.ok) {
       // Возвращаем первую ошибку
@@ -298,12 +295,7 @@ function closePartialPosition(
 
   const remaining = remainingResult.value;
 
-  // Проверяем что результат валиден для позиции
-  const validateResult = QuantityService.validateForPosition(remaining);
-  if (!validateResult.ok) {
-    return Err(validateResult.error);
-  }
-
+  // Результат уже валиден - Core гарантирует non-negative
   return Ok({
     marketId: position.marketId,
     quantity: remaining
@@ -833,7 +825,7 @@ function handleQuantityError(error: InvalidQuantityError): string {
   // Проверяем операцию
   switch (ctx?.op) {
     case 'create':
-    case 'createForOrder':
+    case 'create':
       if (ctx.reason === 'NEGATIVE') {
         return 'Quantity cannot be negative';
       }
@@ -894,7 +886,7 @@ async function createOrderWithRetry(
   let lastError: InvalidQuantityError | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const result = QuantityService.createForOrder(quantity, minSize);
+    const result = QuantityService.create(input.quantity);
 
     if (result.ok) {
       return result.value;
