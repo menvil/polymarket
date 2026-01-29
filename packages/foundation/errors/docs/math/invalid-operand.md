@@ -249,6 +249,52 @@ const avg = averageDecimal(
 ); // ✅ 0.70
 ```
 
+### 6. Сериализация Quantity в JSON (Value Objects)
+
+```typescript
+import { Quantity } from '@polymarket/value-objects';
+import { InvalidOperandError } from '@polymarket/errors';
+
+/**
+ * Сериализует Quantity в JSON (number, lossy)
+ *
+ * @remarks
+ * Используется в QuantityLossySerializer из @polymarket/value-objects.
+ * ⚠️ ВНИМАНИЕ: Может потерять точность для больших чисел.
+ * Валидирует что Quantity содержит finite значение перед сериализацией.
+ *
+ * @param quantity - Количество для сериализации
+ * @returns JSON объект { value: number }
+ * @throws {InvalidOperandError} Если Quantity содержит non-finite значение
+ */
+function toJSON(quantity: Quantity): { value: number } {
+  const decimalValue = quantity.value();
+
+  if (!decimalValue.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Cannot serialize non-finite Quantity to JSON, got ${ctx.value}`,
+      {
+        context: {
+          value: decimalValue.toString(),
+          operation: 'toJSON'
+        }
+      }
+    );
+  }
+
+  return { value: quantity.toNumber() };
+}
+
+// Использование
+const qty = Quantity.of(10.5);
+
+toJSON(qty);                          // ✅ { value: 10.5 }
+
+// С non-finite значением (защитная проверка, не должно происходить в норме)
+const infiniteQty = Quantity.fromDecimal(new Decimal('Infinity')); // гипотетически
+toJSON(infiniteQty);                  // ❌ InvalidOperandError
+```
+
 ---
 
 ## Edge Cases
