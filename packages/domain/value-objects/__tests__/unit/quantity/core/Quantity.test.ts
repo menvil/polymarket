@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
+import Decimal from 'decimal.js';
 import { Quantity, QuantityInvariantViolation } from '../../../../src/quantity/core/Quantity.js';
 
 describe('Quantity constructor', () => {
@@ -52,5 +53,36 @@ describe('Quantity constructor', () => {
       expect(() => Quantity.of(10)).not.toThrow();
       expect(() => Quantity.of(10.5)).not.toThrow();
     });
+  });
+});
+
+describe('Quantity.of()', () => {
+  it('должен создать Quantity из number', () => {
+    const qty = Quantity.of(10);
+    expect(qty).toBeInstanceOf(Quantity);
+    expect(qty.value().toNumber()).toBe(10);
+  });
+
+  it('должен создать Quantity из string', () => {
+    const qty = Quantity.of("15.5");
+    expect(qty).toBeInstanceOf(Quantity);
+    expect(qty.value().toString()).toBe("15.5");
+  });
+
+  it('должен создать Quantity из Decimal', () => {
+    const decimal = new Decimal(20);
+    const qty = Quantity.of(decimal);
+    expect(qty).toBeInstanceOf(Quantity);
+    expect(qty.value().toNumber()).toBe(20);
+  });
+
+  it('должен создать Quantity из большого числа в строке', () => {
+    const qty = Quantity.of("12345678901234567890.123456789");
+    expect(qty).toBeInstanceOf(Quantity);
+    expect(qty.value().toString()).toBe("12345678901234567890.123456789");
+  });
+
+  it('должен бросить для invalid string', () => {
+    expect(() => Quantity.of("not a number")).toThrow();
   });
 });
