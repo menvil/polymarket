@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { InvalidOperandError } from '@polymarket/errors';
 
 /**
  * Строгое сравнение двух Decimal на равенство
@@ -114,10 +115,15 @@ export function greaterThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
  * @param a - Первое значение
  * @param b - Второе значение
  * @returns -1 если a < b, 0 если a == b, 1 если a > b
+ * @throws {InvalidOperandError} При невалидных операндах (NaN, ±Infinity)
  *
  * @remarks
  * Использует канонический метод comparedTo из Decimal.js.
  * Полезно для сортировки и условных ветвлений.
+ *
+ * Валидация операндов:
+ * - Оба операнда должны быть конечными числами
+ * - NaN, Infinity, -Infinity выбрасывают InvalidOperandError
  *
  * @example
  * ```typescript
@@ -129,9 +135,40 @@ export function greaterThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
  * const prices = [new Decimal(0.67), new Decimal(0.65), new Decimal(0.66)];
  * prices.sort(compareDecimal);
  * // [0.65, 0.66, 0.67]
+ *
+ * // Невалидные значения
+ * compareDecimal(new Decimal(NaN), new Decimal(10)); // throws InvalidOperandError
  * ```
  */
 export function compareDecimal(a: Decimal, b: Decimal): -1 | 0 | 1 {
+  // Валидация первого операнда
+  if (!a.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `First operand must be finite, got ${ctx.a}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'compare'
+        }
+      }
+    );
+  }
+
+  // Валидация второго операнда
+  if (!b.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Second operand must be finite, got ${ctx.b}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'compare'
+        }
+      }
+    );
+  }
+
   const c = a.comparedTo(b);
   if (c < 0) return -1;
   if (c > 0) return 1;

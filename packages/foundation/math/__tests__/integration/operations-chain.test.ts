@@ -44,7 +44,7 @@ describe('Operations Chain Integration', () => {
         multiplied,
         new Decimal(0.01),
         Decimal.ROUND_HALF_UP
-      ); // 31.70
+      ); // 31.7 (trailing zero removed by toString())
 
       expect(rounded.toString()).toBe('31.7');
     });

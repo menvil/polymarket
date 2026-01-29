@@ -1,3 +1,5 @@
+import { TradingError, ErrorSeverity } from '../base/index.js';
+
 /**
  * InvalidOperandError - ошибка невалидного операнда
  *
@@ -6,6 +8,7 @@
  * Это математическая невозможность, а не бизнес-правило.
  *
  * Уровень серьезности: low (проблемы валидации данных не критичны).
+ * Рекомендуемый код ошибки: INVALID_OPERAND
  *
  * @example
  * ```typescript
@@ -24,16 +27,6 @@
  *   context: { operand: 'Infinity', operation: 'multiply' }
  * });
  * ```
- */
-
-import { TradingError, ErrorSeverity } from '../base/index.js';
-
-/**
- * InvalidOperandError - ошибка невалидного операнда
- *
- * @remarks
- * Уровень серьезности: low (незначительная)
- * Рекомендуемый код ошибки: INVALID_OPERAND
  */
 export class InvalidOperandError extends TradingError {
   public readonly severity: ErrorSeverity = 'low';

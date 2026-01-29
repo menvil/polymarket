@@ -385,6 +385,8 @@ npm run test:coverage
 │   │   ├── ValidationError.ts        # Пример: ошибка валидации
 │   │   └── index.ts
 │   ├── math/
+│   │   ├── InvalidOperandError.ts    # Ошибка невалидного операнда (NaN/Infinity)
+│   │   ├── InvalidDecimalPlacesError.ts # Ошибка невалидного количества знаков
 │   │   ├── InvalidDivisorError.ts    # Ошибка деления на NaN/Infinity
 │   │   ├── InvalidTickSizeError.ts   # Ошибка невалидного tick size
 │   │   └── index.ts

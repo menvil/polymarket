@@ -82,11 +82,12 @@ describe('subtractDecimal', () => {
     it('должен содержать контекст в InvalidOperandError', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(100);
+
+      expect(() => subtractDecimal(inf, value)).toThrow(InvalidOperandError);
+
       try {
         subtractDecimal(inf, value);
-        fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(InvalidOperandError);
         if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.a).toBe('Infinity');

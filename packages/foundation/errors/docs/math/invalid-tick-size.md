@@ -379,7 +379,7 @@ const tickSize = new Decimal('0.01');
 roundToTickSize(
   new Decimal('10.565'),
   tickSize
-);                              // ✅ 10.57 (округление к ближайшему четному)
+);                              // ✅ 10.57 (ROUND_HALF_UP: .5 округляется вверх)
 
 // Чуть выше нижнего тика
 roundToTickSize(

@@ -7,6 +7,7 @@ import {
   greaterThanOrEqualDecimal,
   compareDecimal,
 } from '../../../src/decimal/compare.js';
+import { InvalidOperandError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('compare', () => {
@@ -194,6 +195,59 @@ describe('compare', () => {
       expect(compareDecimal(new Decimal('10.0'), new Decimal('10'))).toBe(0);
       // Экспоненциальная форма
       expect(compareDecimal(new Decimal('100'), new Decimal('1e2'))).toBe(0);
+    });
+
+    describe('валидация операндов', () => {
+      it('должен throw InvalidOperandError на NaN в первом операнде', () => {
+        expect(() =>
+          compareDecimal(new Decimal(NaN), new Decimal(10))
+        ).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на NaN во втором операнде', () => {
+        expect(() =>
+          compareDecimal(new Decimal(10), new Decimal(NaN))
+        ).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на Infinity в первом операнде', () => {
+        expect(() =>
+          compareDecimal(new Decimal(Infinity), new Decimal(10))
+        ).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на Infinity во втором операнде', () => {
+        expect(() =>
+          compareDecimal(new Decimal(10), new Decimal(Infinity))
+        ).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на -Infinity в первом операнде', () => {
+        expect(() =>
+          compareDecimal(new Decimal(-Infinity), new Decimal(10))
+        ).toThrow(InvalidOperandError);
+      });
+
+      it('должен throw InvalidOperandError на -Infinity во втором операнде', () => {
+        expect(() =>
+          compareDecimal(new Decimal(10), new Decimal(-Infinity))
+        ).toThrow(InvalidOperandError);
+      });
+
+      it('должен содержать контекст в InvalidOperandError', () => {
+        try {
+          compareDecimal(new Decimal(NaN), new Decimal(10));
+          fail('Should throw');
+        } catch (error) {
+          expect(error).toBeInstanceOf(InvalidOperandError);
+          if (error instanceof InvalidOperandError) {
+            expect(error.context).toBeDefined();
+            expect(error.context?.a).toBe('NaN');
+            expect(error.context?.b).toBe('10');
+            expect(error.context?.operation).toBe('compare');
+          }
+        }
+      });
     });
   });
 });
