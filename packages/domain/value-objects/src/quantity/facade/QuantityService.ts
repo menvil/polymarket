@@ -3,7 +3,8 @@ import { Quantity, QuantityInvariantViolation } from '../core/Quantity.js';
 import { InvalidQuantityError } from '@polymarket/errors';
 import { OrderQuantityPolicy } from '../policy/OrderQuantityPolicy.js';
 import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
-import { addDecimal, subtractDecimal } from '@polymarket/math';
+import { ValidateFactorForQuantityMultiplication } from '../rules/ValidateFactorForQuantityMultiplication.js';
+import { addDecimal, subtractDecimal, multiplyDecimal } from '@polymarket/math';
 import Decimal from 'decimal.js';
 
 /**
@@ -230,6 +231,68 @@ export class QuantityService {
             op: 'subtract',
             quantity1: qty1.value().toString(),
             quantity2: qty2.value().toString(),
+            ...createResult.error.context
+          }
+        })
+      );
+    }
+
+    return createResult;
+  }
+
+  /**
+   * Умножает quantity на коэффициент
+   *
+   * @remarks
+   * Оркестрирует: парсинг factor (только в фасаде) → валидация → умножение → создание Quantity
+   *
+   * @param quantity - Количество для умножения
+   * @param factor - Коэффициент (number или Decimal, парсится в фасаде)
+   * @returns Result<Quantity, InvalidQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const result = QuantityService.multiply(qty, 2);
+   * if (!result.ok) {
+   *   console.error(result.error.context.op); // 'multiply'
+   *   console.error(result.error.context.factor); // '2'
+   * }
+   * ```
+   */
+  public static multiply(
+    quantity: Quantity,
+    factor: number | Decimal
+  ): Result<Quantity, InvalidQuantityError> {
+    // Парсим factor только в фасаде
+    const factorDecimal = factor instanceof Decimal ? factor : new Decimal(factor);
+
+    // Валидация через rule (принимает только Decimal)
+    const validateResult = ValidateFactorForQuantityMultiplication.check(factorDecimal);
+    if (!validateResult.ok) {
+      return Err(
+        new InvalidQuantityError(validateResult.error.message, {
+          code: InvalidQuantityError.code,
+          context: {
+            op: 'multiply',
+            quantity: quantity.value().toString(),
+            ...validateResult.error.context
+          }
+        })
+      );
+    }
+
+    // Умножение через math layer
+    const result = multiplyDecimal(quantity.value(), factorDecimal);
+
+    const createResult = this.create(result);
+    if (!createResult.ok) {
+      return Err(
+        new InvalidQuantityError(createResult.error.message, {
+          code: InvalidQuantityError.code,
+          context: {
+            op: 'multiply',
+            quantity: quantity.value().toString(),
+            factor: factorDecimal.toString(),
             ...createResult.error.context
           }
         })

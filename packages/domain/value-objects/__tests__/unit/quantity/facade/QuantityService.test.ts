@@ -268,4 +268,89 @@ describe('QuantityService', () => {
       });
     });
   });
+
+  describe('multiply()', () => {
+    it('должен умножить Quantity на number', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.multiply(qty, 2);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(20);
+      }
+    });
+
+    it('должен умножить Quantity на Decimal', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.multiply(qty, new Decimal(2.5));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(25);
+      }
+    });
+
+    it('должен вернуть Ok для умножения на 0', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.multiply(qty, 0);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(0);
+      }
+    });
+
+    it('должен вернуть Err для negative factor', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.multiply(qty, -1);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        expect(result.error.message).toContain('cannot be negative');
+      }
+    });
+
+    it('должен вернуть Err для Infinity factor', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.multiply(qty, Infinity);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be finite');
+      }
+    });
+
+    describe('Facade Error Contract', () => {
+      it('error должен содержать context.op = "multiply"', () => {
+        expect.assertions(1);
+        const qty = Quantity.of(10);
+        const result = QuantityService.multiply(qty, -1);
+
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('multiply');
+        }
+      });
+
+      it('error должен содержать context.quantity', () => {
+        expect.assertions(1);
+        const qty = Quantity.of(10);
+        const result = QuantityService.multiply(qty, -1);
+
+        if (!result.ok) {
+          expect(result.error.context?.quantity).toBe('10');
+        }
+      });
+
+      it('error должен содержать context.factor', () => {
+        expect.assertions(1);
+        const qty = Quantity.of(10);
+        const result = QuantityService.multiply(qty, -1);
+
+        if (!result.ok) {
+          expect(result.error.context?.factor).toBe('-1');
+        }
+      });
+    });
+  });
 });
