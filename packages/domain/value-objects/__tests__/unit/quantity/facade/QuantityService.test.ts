@@ -508,4 +508,73 @@ describe('QuantityService', () => {
       });
     });
   });
+
+  describe('roundToTick()', () => {
+    it('должен округлить Quantity до tick', () => {
+      const qty = Quantity.of(10.567);
+      const result = QuantityService.roundToTick(qty, new Decimal(0.01));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(10.57);
+      }
+    });
+
+    it('должен работать с разными rounding modes', () => {
+      const qty = Quantity.of(10.555);
+      const result = QuantityService.roundToTick(
+        qty,
+        new Decimal(0.01),
+        Decimal.ROUND_DOWN
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(10.55);
+      }
+    });
+
+    it('должен вернуть Err для tickSize <= 0', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.roundToTick(qty, new Decimal(0));
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be positive');
+      }
+    });
+
+    it('должен вернуть Err для Infinity tickSize', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.roundToTick(qty, new Decimal(Infinity));
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be finite');
+      }
+    });
+
+    describe('Facade Error Contract', () => {
+      it('error должен содержать context.op = "roundToTick"', () => {
+        expect.assertions(1);
+        const qty = Quantity.of(10);
+        const result = QuantityService.roundToTick(qty, new Decimal(0));
+
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('roundToTick');
+        }
+      });
+
+      it('error должен содержать context.quantity и tickSize', () => {
+        expect.assertions(2);
+        const qty = Quantity.of(10);
+        const result = QuantityService.roundToTick(qty, new Decimal(0));
+
+        if (!result.ok) {
+          expect(result.error.context?.quantity).toBe('10');
+          expect(result.error.context?.tickSize).toBe('0');
+        }
+      });
+    });
+  });
 });

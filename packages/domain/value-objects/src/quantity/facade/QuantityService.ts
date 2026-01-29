@@ -5,7 +5,8 @@ import { OrderQuantityPolicy } from '../policy/OrderQuantityPolicy.js';
 import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
 import { ValidateFactorForQuantityMultiplication } from '../rules/ValidateFactorForQuantityMultiplication.js';
 import { ValidateDivisorForQuantityDivision } from '../rules/ValidateDivisorForQuantityDivision.js';
-import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
+import { ValidateTickSizeForRounding } from '../rules/ValidateTickSizeForRounding.js';
+import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTick } from '@polymarket/math';
 import Decimal from 'decimal.js';
 
 /**
@@ -396,5 +397,65 @@ export class QuantityService {
       // Все остальные ошибки - rethrow (это баги или неожиданные ситуации)
       throw error;
     }
+  }
+
+  /**
+   * Округляет до тика
+   *
+   * @remarks
+   * Оркестрирует: валидация tickSize → округление → создание Quantity
+   *
+   * @param quantity - Количество для округления
+   * @param tickSize - Размер тика (ТОЛЬКО Decimal)
+   * @param roundingMode - Режим округления (по умолчанию ROUND_HALF_UP)
+   * @returns Result<Quantity, InvalidQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const result = QuantityService.roundToTick(qty, new Decimal(0.01));
+   * if (!result.ok) {
+   *   console.error(result.error.context.op); // 'roundToTick'
+   * }
+   * ```
+   */
+  public static roundToTick(
+    quantity: Quantity,
+    tickSize: Decimal,
+    roundingMode: Decimal.Rounding = Decimal.ROUND_HALF_UP
+  ): Result<Quantity, InvalidQuantityError> {
+    // Валидация через rule
+    const validateResult = ValidateTickSizeForRounding.check(tickSize);
+    if (!validateResult.ok) {
+      return Err(
+        new InvalidQuantityError(validateResult.error.message, {
+          code: InvalidQuantityError.code,
+          context: {
+            op: 'roundToTick',
+            quantity: quantity.value().toString(),
+            ...validateResult.error.context
+          }
+        })
+      );
+    }
+
+    // Округление через math layer
+    const rounded = roundToTick(quantity.value(), tickSize, roundingMode);
+
+    const createResult = this.create(rounded);
+    if (!createResult.ok) {
+      return Err(
+        new InvalidQuantityError(createResult.error.message, {
+          code: InvalidQuantityError.code,
+          context: {
+            op: 'roundToTick',
+            quantity: quantity.value().toString(),
+            tickSize: tickSize.toString(),
+            ...createResult.error.context
+          }
+        })
+      );
+    }
+
+    return createResult;
   }
 }
