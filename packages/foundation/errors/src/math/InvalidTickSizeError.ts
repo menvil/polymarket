@@ -28,7 +28,8 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity } from '../base/index.js';
+import { TradingError } from '../base/index.js';
+import type { ErrorSeverity } from '../base/index.js';
 
 /**
  * InvalidTickSizeError - ошибка невалидного размера тика

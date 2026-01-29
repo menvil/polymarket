@@ -59,7 +59,7 @@ npm install @polymarket/math
 
 ```typescript
 import Decimal from 'decimal.js';
-import { divideDecimal, roundToTickSize } from '@polymarket/math';
+import { divideDecimal, roundToTick } from '@polymarket/math';
 
 // Деление с проверкой делителя
 const result = divideDecimal(
@@ -69,9 +69,10 @@ const result = divideDecimal(
 console.log(result.toString()); // "33.333333333333333333"
 
 // Округление к tick size
-const rounded = roundToTickSize(
+const rounded = roundToTick(
   new Decimal('10.567'),
-  new Decimal('0.01')
+  new Decimal('0.01'),
+  Decimal.ROUND_HALF_UP
 );
 console.log(rounded.toString()); // "10.57"
 ```

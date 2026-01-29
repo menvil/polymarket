@@ -1,3 +1,6 @@
+import { TradingError } from '../base/index.js';
+import type { ErrorSeverity } from '../base/index.js';
+
 /**
  * InvalidDecimalPlacesError - ошибка невалидного количества десятичных знаков
  *
@@ -6,6 +9,7 @@
  * Это математическая невозможность, а не бизнес-правило.
  *
  * Уровень серьезности: low (проблемы валидации данных не критичны).
+ * Рекомендуемый код ошибки: INVALID_DECIMAL_PLACES
  *
  * @example
  * ```typescript
@@ -24,16 +28,6 @@
  *   context: { decimalPlaces: 'NaN', value: '10.567', operation: 'roundToPrecision' }
  * });
  * ```
- */
-
-import { TradingError, ErrorSeverity } from '../base/index.js';
-
-/**
- * InvalidDecimalPlacesError - ошибка невалидного количества десятичных знаков
- *
- * @remarks
- * Уровень серьезности: low (незначительная)
- * Рекомендуемый код ошибки: INVALID_DECIMAL_PLACES
  */
 export class InvalidDecimalPlacesError extends TradingError {
   public readonly severity: ErrorSeverity = 'low';

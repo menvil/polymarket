@@ -39,8 +39,8 @@ Math Errors представляют математические невозмо
 import Decimal from 'decimal.js';
 import { InvalidDivisorError } from '@polymarket/errors';
 
-function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
-  // Проверяем что делитель конечен
+function safeDivide(dividend: Decimal, divisor: Decimal): Decimal {
+  // Проверяем что делитель конечен и не ноль
   if (!divisor.isFinite()) {
     throw new InvalidDivisorError(
       (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
@@ -54,17 +54,8 @@ function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
     );
   }
 
-  // Проверяем деление на ноль
-  if (divisor.isZero()) {
-    throw new DivisionByZeroError(
-      'Cannot divide by zero',
-      {
-        code: DivisionByZeroError.code,
-        context: { dividend: dividend.toString() }
-      }
-    );
-  }
-
+  // Примечание: для проверки на ноль используйте DivisionByZeroError
+  // из value-objects (не входит в math errors)
   return dividend.dividedBy(divisor);
 }
 
@@ -236,9 +227,20 @@ Math errors используются в пакете `@polymarket/math` для �
 ```typescript
 // packages/foundation/math/src/operations/divide.ts
 import Decimal from 'decimal.js';
-import { InvalidDivisorError, DivisionByZeroError } from '@polymarket/errors';
+import { InvalidDivisorError, InvalidOperandError } from '@polymarket/errors';
 
 export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
+  // Валидация операндов (math errors)
+  if (!dividend.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Dividend must be finite, got ${ctx.dividend}`,
+      {
+        code: InvalidOperandError.code,
+        context: { dividend: dividend.toString(), divisor: divisor.toString(), operation: 'divide' }
+      }
+    );
+  }
+
   if (!divisor.isFinite()) {
     throw new InvalidDivisorError(
       (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
@@ -249,13 +251,8 @@ export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
     );
   }
 
-  if (divisor.isZero()) {
-    throw new DivisionByZeroError(
-      'Cannot divide by zero',
-      { code: DivisionByZeroError.code, context: { dividend: dividend.toString() } }
-    );
-  }
-
+  // Примечание: проверка на ноль (DivisionByZeroError) выполняется
+  // на уровне value objects, а не здесь
   return dividend.dividedBy(divisor);
 }
 ```

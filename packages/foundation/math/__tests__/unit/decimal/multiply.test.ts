@@ -64,11 +64,13 @@ describe('multiplyDecimal', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(100);
 
+      expect(() => multiplyDecimal(inf, value)).toThrow(
+        InvalidOperandError
+      );
+
       try {
         multiplyDecimal(inf, value);
-        fail('Should have thrown InvalidOperandError');
       } catch (error) {
-        expect(error).toBeInstanceOf(InvalidOperandError);
         if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.a).toBe('Infinity');

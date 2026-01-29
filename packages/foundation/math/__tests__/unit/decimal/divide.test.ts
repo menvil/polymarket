@@ -67,11 +67,13 @@ describe('divideDecimal', () => {
     });
 
     it('должен содержать контекст в ошибке', () => {
+      expect(() => divideDecimal(new Decimal(10), new Decimal(0))).toThrow(
+        DivisionByZeroError
+      );
+
       try {
         divideDecimal(new Decimal(10), new Decimal(0));
-        fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(DivisionByZeroError);
         if (error instanceof DivisionByZeroError) {
           expect(error.context).toBeDefined();
           expect(error.context?.dividend).toBe('10');
@@ -101,11 +103,13 @@ describe('divideDecimal', () => {
     });
 
     it('должен содержать контекст в ошибке', () => {
+      expect(() => divideDecimal(new Decimal(10), new Decimal(NaN))).toThrow(
+        InvalidDivisorError
+      );
+
       try {
         divideDecimal(new Decimal(10), new Decimal(NaN));
-        fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(InvalidDivisorError);
         if (error instanceof InvalidDivisorError) {
           expect(error.context).toBeDefined();
           expect(error.context?.dividend).toBe('10');
@@ -137,11 +141,12 @@ describe('divideDecimal', () => {
     it('должен содержать контекст в ошибке invalid dividend', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(2);
+
+      expect(() => divideDecimal(inf, value)).toThrow(InvalidOperandError);
+
       try {
         divideDecimal(inf, value);
-        fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(InvalidOperandError);
         if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.dividend).toBe('Infinity');

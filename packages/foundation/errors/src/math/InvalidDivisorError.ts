@@ -1,3 +1,6 @@
+import { TradingError } from '../base/index.js';
+import type { ErrorSeverity } from '../base/index.js';
+
 /**
  * InvalidDivisorError - ошибка невалидного делителя
  *
@@ -6,6 +9,7 @@
  * Это математическая невозможность, а не бизнес-правило.
  *
  * Уровень серьезности: low (проблемы валидации данных не критичны).
+ * Рекомендуемый код ошибки: INVALID_DIVISOR
  *
  * @example
  * ```typescript
@@ -26,16 +30,6 @@
  *   context: { divisor: NaN }
  * });
  * ```
- */
-
-import { TradingError, ErrorSeverity } from '../base/index.js';
-
-/**
- * InvalidDivisorError - ошибка невалидного делителя
- *
- * @remarks
- * Уровень серьезности: low (незначительная)
- * Рекомендуемый код ошибки: INVALID_DIVISOR
  */
 export class InvalidDivisorError extends TradingError {
   public readonly severity: ErrorSeverity = 'low';

@@ -229,7 +229,7 @@ import Decimal from 'decimal.js';
 const price = new Decimal('10.5678');
 const centTick = new Decimal('0.01');
 
-const rounded = roundToTick(price, centTick);
+const rounded = roundToTick(price, centTick, Decimal.ROUND_HALF_UP);
 // 10.57
 ```
 
@@ -277,7 +277,7 @@ const sellPrice = ceilToTick(price, tick); // 10.57
 const price = new Decimal('0.12345');
 const tick = new Decimal('0.0001');
 
-const rounded = roundToTick(price, tick);
+const rounded = roundToTick(price, tick, Decimal.ROUND_HALF_UP);
 // 0.1235
 ```
 
@@ -288,8 +288,8 @@ const rounded = roundToTick(price, tick);
 ### 1. Используйте правильный режим для контекста
 
 ```typescript
-// ❌ Плохо: всегда ROUND_HALF_UP
-const rounded = roundToTick(price, tick);
+// ❌ Плохо: всегда один режим округления
+const rounded = roundToTick(price, tick, Decimal.ROUND_HALF_UP);
 
 // ✅ Хорошо: режим зависит от контекста
 const buyPrice = floorToTick(price, tick);  // Выгоднее покупателю
@@ -300,13 +300,13 @@ const sellPrice = ceilToTick(price, tick);  // Выгоднее продавцу
 
 ```typescript
 // ❌ Плохо: можем получить InvalidTickSizeError
-const rounded = roundToTick(value, userInputTick);
+const rounded = roundToTick(value, userInputTick, Decimal.ROUND_HALF_UP);
 
 // ✅ Хорошо: валидируем tick заранее
 if (!userInputTick.isFinite() || userInputTick.lessThanOrEqualTo(0)) {
   throw new Error('Invalid tick size');
 }
-const rounded = roundToTick(value, userInputTick);
+const rounded = roundToTick(value, userInputTick, Decimal.ROUND_HALF_UP);
 ```
 
 ### 3. Для финансов используйте roundToTick, не roundToPrecision
@@ -316,19 +316,19 @@ const rounded = roundToTick(value, userInputTick);
 const price = roundToPrecision(new Decimal('10.567'), 2); // 10.57
 
 // ✅ Хорошо: roundToTick гарантирует кратность тику
-const price = roundToTick(new Decimal('10.567'), marketTickSize);
+const price = roundToTick(new Decimal('10.567'), marketTickSize, Decimal.ROUND_HALF_UP);
 ```
 
 ### 4. Минимизируйте количество округлений
 
 ```typescript
 // ❌ Плохо: округляем на каждом шаге
-const step1 = roundToTick(a, tick);
-const step2 = roundToTick(b, tick);
-const result = roundToTick(step1.plus(step2), tick);
+const step1 = roundToTick(a, tick, Decimal.ROUND_HALF_UP);
+const step2 = roundToTick(b, tick, Decimal.ROUND_HALF_UP);
+const result = roundToTick(step1.plus(step2), tick, Decimal.ROUND_HALF_UP);
 
 // ✅ Хорошо: округляем только финальный результат
-const result = roundToTick(a.plus(b), tick);
+const result = roundToTick(a.plus(b), tick, Decimal.ROUND_HALF_UP);
 ```
 
 ---

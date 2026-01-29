@@ -76,11 +76,13 @@ describe('averageDecimal', () => {
     it('should include operation details in InvalidOperandError', () => {
       const inf = new Decimal(Infinity);
 
+      expect(() => averageDecimal(inf, new Decimal(10))).toThrow(
+        InvalidOperandError
+      );
+
       try {
         averageDecimal(inf, new Decimal(10));
-        fail('Should have thrown');
       } catch (error) {
-        expect(error).toBeInstanceOf(InvalidOperandError);
         if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.operation).toBe('average');
