@@ -62,8 +62,8 @@ class Price {
 | `greaterThanOrEqualDecimal(a, b)` | Больше или равно (>=) | [→](./compare.md#greaterthanorequaldecimal) |
 | `compareDecimal(a, b)` | Сравнение (-1/0/1) | [→](./compare.md#comparedecimal) |
 | `roundDecimal(value)` | Округление (half-up) | [→](./round.md#rounddecimal) |
-| `floorDecimal(value)` | Округление к −∞ | [→](./round.md#floordecimal) |
-| `ceilDecimal(value)` | Округление к +∞ | [→](./round.md#ceildecimal) |
+| `roundTowardZeroDecimal(value)` | Округление к нулю | [→](./round.md#roundtowardzerodecimal) |
+| `roundAwayFromZeroDecimal(value)` | Округление от нуля | [→](./round.md#roundawayfromzerodecimal) |
 | `truncDecimal(value)` | Округление к нулю (усечение) | [→](./round.md#truncdecimal) |
 
 ## Общие паттерны использования

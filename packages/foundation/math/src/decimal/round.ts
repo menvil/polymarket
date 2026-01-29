@@ -52,7 +52,6 @@ export function roundDecimal(value: Decimal): Decimal {
  * @throws {InvalidOperandError} При невалидном операнде (NaN, ±Infinity)
  *
  * @remarks
- * ВНИМАНИЕ: Название "floor" вводит в заблуждение!
  *
  * Использует ROUND_DOWN - округление к нулю.
  * Для положительных чисел это математический floor, для отрицательных - ceil.
@@ -65,22 +64,22 @@ export function roundDecimal(value: Decimal): Decimal {
  *
  * @example
  * ```typescript
- * floorDecimal(new Decimal(10.9)); // 10
- * floorDecimal(new Decimal(-10.9)); // -10 (к нулю, не к -Infinity!)
+ * roundTowardZeroDecimal(new Decimal(10.9)); // 10
+ * roundTowardZeroDecimal(new Decimal(-10.9)); // -10 (к нулю, не к -Infinity!)
  *
  * // Сравнение с математическим floor:
- * floorDecimal(new Decimal(-10.1)); // -10 (к нулю)
+ * roundTowardZeroDecimal(new Decimal(-10.1)); // -10 (к нулю)
  * mathFloorDecimal(new Decimal(-10.1)); // -11 (к -Infinity)
  * ```
  */
-export function floorDecimal(value: Decimal): Decimal {
+export function roundTowardZeroDecimal(value: Decimal): Decimal {
   if (!value.isFinite()) {
     throw new InvalidOperandError(
       (ctx) => `Value must be finite, got ${ctx.value}`,
       {
         context: {
           value: value.toString(),
-          operation: 'floor',
+          operation: 'roundTowardZero',
         },
       }
     );
@@ -97,7 +96,6 @@ export function floorDecimal(value: Decimal): Decimal {
  * @throws {InvalidOperandError} При невалидном операнде (NaN, ±Infinity)
  *
  * @remarks
- * ВНИМАНИЕ: Название "ceil" вводит в заблуждение!
  *
  * Использует ROUND_UP - округление от нуля.
  * Для положительных чисел это математический ceil, для отрицательных - floor.
@@ -110,22 +108,22 @@ export function floorDecimal(value: Decimal): Decimal {
  *
  * @example
  * ```typescript
- * ceilDecimal(new Decimal(10.1)); // 11
- * ceilDecimal(new Decimal(-10.1)); // -11 (от нуля, не к +Infinity!)
+ * roundAwayFromZeroDecimal(new Decimal(10.1)); // 11
+ * roundAwayFromZeroDecimal(new Decimal(-10.1)); // -11 (от нуля, не к +Infinity!)
  *
  * // Сравнение с математическим ceil:
- * ceilDecimal(new Decimal(-10.9)); // -11 (от нуля)
+ * roundAwayFromZeroDecimal(new Decimal(-10.9)); // -11 (от нуля)
  * mathCeilDecimal(new Decimal(-10.9)); // -10 (к +Infinity)
  * ```
  */
-export function ceilDecimal(value: Decimal): Decimal {
+export function roundAwayFromZeroDecimal(value: Decimal): Decimal {
   if (!value.isFinite()) {
     throw new InvalidOperandError(
       (ctx) => `Value must be finite, got ${ctx.value}`,
       {
         context: {
           value: value.toString(),
-          operation: 'ceil',
+          operation: 'roundAwayFromZero',
         },
       }
     );
@@ -183,7 +181,7 @@ export function truncDecimal(value: Decimal): Decimal {
  * @remarks
  * Использует ROUND_FLOOR - всегда округление к -Infinity.
  *
- * В отличие от floorDecimal (ROUND_DOWN), всегда округляет вниз,
+ * В отличие от roundTowardZeroDecimal (ROUND_DOWN), всегда округляет вниз,
  * независимо от знака числа.
  *
  * Примеры:
@@ -195,8 +193,8 @@ export function truncDecimal(value: Decimal): Decimal {
  * mathFloorDecimal(new Decimal(10.9)); // 10
  * mathFloorDecimal(new Decimal(-10.1)); // -11 (к -Infinity)
  *
- * // Сравнение с floorDecimal (ROUND_DOWN):
- * floorDecimal(new Decimal(-10.1)); // -10 (к нулю)
+ * // Сравнение с roundTowardZeroDecimal (ROUND_DOWN):
+ * roundTowardZeroDecimal(new Decimal(-10.1)); // -10 (к нулю)
  * mathFloorDecimal(new Decimal(-10.1)); // -11 (к -Infinity)
  * ```
  */
@@ -226,7 +224,7 @@ export function mathFloorDecimal(value: Decimal): Decimal {
  * @remarks
  * Использует ROUND_CEIL - всегда округление к +Infinity.
  *
- * В отличие от ceilDecimal (ROUND_UP), всегда округляет вверх,
+ * В отличие от roundAwayFromZeroDecimal (ROUND_UP), всегда округляет вверх,
  * независимо от знака числа.
  *
  * Примеры:
@@ -238,8 +236,8 @@ export function mathFloorDecimal(value: Decimal): Decimal {
  * mathCeilDecimal(new Decimal(10.1)); // 11
  * mathCeilDecimal(new Decimal(-10.9)); // -10 (к +Infinity)
  *
- * // Сравнение с ceilDecimal (ROUND_UP):
- * ceilDecimal(new Decimal(-10.9)); // -11 (от нуля)
+ * // Сравнение с roundAwayFromZeroDecimal (ROUND_UP):
+ * roundAwayFromZeroDecimal(new Decimal(-10.9)); // -11 (от нуля)
  * mathCeilDecimal(new Decimal(-10.9)); // -10 (к +Infinity)
  * ```
  */

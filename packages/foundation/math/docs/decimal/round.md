@@ -5,8 +5,8 @@
 ## Содержание
 
 - [roundDecimal](#rounddecimal) - Стандартное округление (half-up)
-- [floorDecimal](#floordecimal) - Округление к нулю (вниз для положительных)
-- [ceilDecimal](#ceildecimal) - Округление от нуля (вверх для положительных)
+- [roundTowardZeroDecimal](#floordecimal) - Округление к нулю (вниз для положительных)
+- [roundAwayFromZeroDecimal](#ceildecimal) - Округление от нуля (вверх для положительных)
 - [truncDecimal](#truncdecimal) - Усечение дробной части
 - [Сравнение функций](#сравнение-функций)
 - [Рекомендации](#рекомендации)
@@ -97,12 +97,12 @@ try {
 
 ---
 
-## floorDecimal
+## roundTowardZeroDecimal
 
 Округляет Decimal **к нулю** (вниз для положительных, вверх для отрицательных).
 
 ```typescript
-function floorDecimal(value: Decimal): Decimal
+function roundTowardZeroDecimal(value: Decimal): Decimal
 ```
 
 ### Поведение
@@ -115,30 +115,30 @@ function floorDecimal(value: Decimal): Decimal
 
 ```typescript
 import Decimal from 'decimal.js';
-import { floorDecimal } from '@polymarket/math';
+import { roundTowardZeroDecimal } from '@polymarket/math';
 
 // Положительные числа (округление вниз)
-floorDecimal(new Decimal('2.1')); // 2
-floorDecimal(new Decimal('2.5')); // 2
-floorDecimal(new Decimal('2.9')); // 2
+roundTowardZeroDecimal(new Decimal('2.1')); // 2
+roundTowardZeroDecimal(new Decimal('2.5')); // 2
+roundTowardZeroDecimal(new Decimal('2.9')); // 2
 
 // Отрицательные числа (округление к нулю)
-floorDecimal(new Decimal('-2.1')); // -2 (к нулю!)
-floorDecimal(new Decimal('-2.5')); // -2 (к нулю!)
-floorDecimal(new Decimal('-2.9')); // -2 (к нулю!)
+roundTowardZeroDecimal(new Decimal('-2.1')); // -2 (к нулю!)
+roundTowardZeroDecimal(new Decimal('-2.5')); // -2 (к нулю!)
+roundTowardZeroDecimal(new Decimal('-2.9')); // -2 (к нулю!)
 
 // Граничные случаи
-floorDecimal(new Decimal('0'));   // 0
-floorDecimal(new Decimal('10'));  // 10
-floorDecimal(new Decimal('-10')); // -10
+roundTowardZeroDecimal(new Decimal('0'));   // 0
+roundTowardZeroDecimal(new Decimal('10'));  // 10
+roundTowardZeroDecimal(new Decimal('-10')); // -10
 ```
 
 ### Отличие от Math.floor()
 
-**floorDecimal (округление к нулю):**
+**roundTowardZeroDecimal (округление к нулю):**
 ```typescript
-floorDecimal(new Decimal('2.9'));  // 2
-floorDecimal(new Decimal('-2.9')); // -2 (к нулю!)
+roundTowardZeroDecimal(new Decimal('2.9'));  // 2
+roundTowardZeroDecimal(new Decimal('-2.9')); // -2 (к нулю!)
 ```
 
 **Math.floor() (округление к -Infinity):**
@@ -155,12 +155,12 @@ Math.floor(-2.9); // -3 (к -Infinity!)
 
 ---
 
-## ceilDecimal
+## roundAwayFromZeroDecimal
 
 Округляет Decimal **от нуля** (вверх для положительных, вниз для отрицательных).
 
 ```typescript
-function ceilDecimal(value: Decimal): Decimal
+function roundAwayFromZeroDecimal(value: Decimal): Decimal
 ```
 
 ### Поведение
@@ -173,30 +173,30 @@ function ceilDecimal(value: Decimal): Decimal
 
 ```typescript
 import Decimal from 'decimal.js';
-import { ceilDecimal } from '@polymarket/math';
+import { roundAwayFromZeroDecimal } from '@polymarket/math';
 
 // Положительные числа (округление вверх)
-ceilDecimal(new Decimal('2.1')); // 3
-ceilDecimal(new Decimal('2.5')); // 3
-ceilDecimal(new Decimal('2.9')); // 3
+roundAwayFromZeroDecimal(new Decimal('2.1')); // 3
+roundAwayFromZeroDecimal(new Decimal('2.5')); // 3
+roundAwayFromZeroDecimal(new Decimal('2.9')); // 3
 
 // Отрицательные числа (округление от нуля)
-ceilDecimal(new Decimal('-2.1')); // -3 (от нуля!)
-ceilDecimal(new Decimal('-2.5')); // -3 (от нуля!)
-ceilDecimal(new Decimal('-2.9')); // -3 (от нуля!)
+roundAwayFromZeroDecimal(new Decimal('-2.1')); // -3 (от нуля!)
+roundAwayFromZeroDecimal(new Decimal('-2.5')); // -3 (от нуля!)
+roundAwayFromZeroDecimal(new Decimal('-2.9')); // -3 (от нуля!)
 
 // Граничные случаи
-ceilDecimal(new Decimal('0'));   // 0
-ceilDecimal(new Decimal('10'));  // 10
-ceilDecimal(new Decimal('-10')); // -10
+roundAwayFromZeroDecimal(new Decimal('0'));   // 0
+roundAwayFromZeroDecimal(new Decimal('10'));  // 10
+roundAwayFromZeroDecimal(new Decimal('-10')); // -10
 ```
 
 ### Отличие от Math.ceil()
 
-**ceilDecimal (округление от нуля):**
+**roundAwayFromZeroDecimal (округление от нуля):**
 ```typescript
-ceilDecimal(new Decimal('2.1'));  // 3
-ceilDecimal(new Decimal('-2.1')); // -3 (от нуля!)
+roundAwayFromZeroDecimal(new Decimal('2.1'));  // 3
+roundAwayFromZeroDecimal(new Decimal('-2.1')); // -3 (от нуля!)
 ```
 
 **Math.ceil() (округление к +Infinity):**
@@ -223,7 +223,7 @@ function truncDecimal(value: Decimal): Decimal
 
 ### Поведение
 
-Эквивалентно `floorDecimal` — отбрасывает дробную часть.
+Эквивалентно `roundTowardZeroDecimal` — отбрасывает дробную часть.
 
 - **Положительные:** отбрасывание дроби → округление вниз
 - **Отрицательные:** отбрасывание дроби → округление к нулю
@@ -247,19 +247,19 @@ truncDecimal(new Decimal('0'));   // 0
 truncDecimal(new Decimal('10.0')); // 10
 ```
 
-### truncDecimal === floorDecimal
+### truncDecimal === roundTowardZeroDecimal
 
 **В текущей реализации** обе функции эквивалентны:
 
 ```typescript
 import { equalsDecimal } from '@polymarket/math';
 
-equalsDecimal(truncDecimal(value), floorDecimal(value)) // всегда true
+equalsDecimal(truncDecimal(value), roundTowardZeroDecimal(value)) // всегда true
 ```
 
 Обе функции используют `Decimal.ROUND_DOWN` (округление к нулю).
 
-**Важно:** Семантически `floorDecimal` должна округлять к `-Infinity` (как математическая функция `floor`), но текущая реализация округляет к нулю для совместимости с `truncDecimal`. Если реализация изменится на `Decimal.ROUND_FLOOR`, эквивалентность нарушится для отрицательных чисел. Для истинного математического floor используйте `mathFloorDecimal`.
+**Важно:** Семантически `roundTowardZeroDecimal` должна округлять к `-Infinity` (как математическая функция `floor`), но текущая реализация округляет к нулю для совместимости с `truncDecimal`. Если реализация изменится на `Decimal.ROUND_FLOOR`, эквивалентность нарушится для отрицательных чисел. Для истинного математического floor используйте `mathFloorDecimal`.
 
 ### Когда использовать
 
@@ -273,7 +273,7 @@ equalsDecimal(truncDecimal(value), floorDecimal(value)) // всегда true
 
 ### Таблица округления положительных чисел
 
-| Значение | roundDecimal | floorDecimal | ceilDecimal | truncDecimal |
+| Значение | roundDecimal | roundTowardZeroDecimal | roundAwayFromZeroDecimal | truncDecimal |
 |----------|--------------|--------------|-------------|--------------|
 | 2.1      | 2            | 2            | 3           | 2            |
 | 2.5      | **3**        | 2            | 3           | 2            |
@@ -281,7 +281,7 @@ equalsDecimal(truncDecimal(value), floorDecimal(value)) // всегда true
 
 ### Таблица округления отрицательных чисел
 
-| Значение | roundDecimal | floorDecimal | ceilDecimal | truncDecimal |
+| Значение | roundDecimal | roundTowardZeroDecimal | roundAwayFromZeroDecimal | truncDecimal |
 |----------|--------------|--------------|-------------|--------------|
 | -2.1     | -2           | -2           | **-3**      | -2           |
 | -2.5     | **-3**       | -2           | **-3**      | -2           |
@@ -293,8 +293,8 @@ equalsDecimal(truncDecimal(value), floorDecimal(value)) // всегда true
 const value = new Decimal('2.5');
 
 roundDecimal(value); // 3  (half-up)
-floorDecimal(value); // 2  (к нулю)
-ceilDecimal(value);  // 3  (от нуля)
+roundTowardZeroDecimal(value); // 2  (к нулю)
+roundAwayFromZeroDecimal(value);  // 3  (от нуля)
 truncDecimal(value); // 2  (отбросить дробь)
 ```
 
@@ -303,8 +303,8 @@ truncDecimal(value); // 2  (отбросить дробь)
 const negative = new Decimal('-2.5');
 
 roundDecimal(negative); // -3 (от нуля для .5)
-floorDecimal(negative); // -2 (к нулю)
-ceilDecimal(negative);  // -3 (от нуля)
+roundTowardZeroDecimal(negative); // -2 (к нулю)
+roundAwayFromZeroDecimal(negative);  // -3 (от нуля)
 truncDecimal(negative); // -2 (отбросить дробь)
 ```
 
@@ -323,9 +323,9 @@ function roundToNearestCent(amount: Decimal): Decimal {
 // ❌ Плохо: неясное намерение
 function roundAmount(amount: Decimal): Decimal {
   if (amount.isPositive()) {
-    return ceilDecimal(amount); // Почему ceil?
+    return roundAwayFromZeroDecimal(amount); // Почему ceil?
   } else {
-    return floorDecimal(amount); // Почему floor?
+    return roundTowardZeroDecimal(amount); // Почему floor?
   }
 }
 ```
@@ -410,7 +410,7 @@ const intPart = new Decimal(value.toInteger());
 ## Интеграция с Value Objects
 
 ```typescript
-import { roundDecimal, ceilDecimal } from '@polymarket/math';
+import { roundDecimal, roundAwayFromZeroDecimal } from '@polymarket/math';
 
 class Money {
   private constructor(private readonly _cents: Decimal) {}
@@ -427,7 +427,7 @@ class Money {
    * Округляет вверх к ближайшему центу
    */
   ceilToCent(): Money {
-    const ceiled = ceilDecimal(this._cents);
+    const ceiled = roundAwayFromZeroDecimal(this._cents);
     return new Money(ceiled);
   }
 }

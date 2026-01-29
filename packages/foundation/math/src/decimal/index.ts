@@ -13,8 +13,8 @@ export {
 } from './compare.js';
 export {
   roundDecimal,
-  floorDecimal,
-  ceilDecimal,
+  roundTowardZeroDecimal,
+  roundAwayFromZeroDecimal,
   truncDecimal,
   mathFloorDecimal,
   mathCeilDecimal,
