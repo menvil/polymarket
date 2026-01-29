@@ -47,3 +47,47 @@ export class QuantitySerializer {
     return QuantityService.create(json.value);
   }
 }
+
+/**
+ * Lossy serializer для случаев когда точность не критична
+ *
+ * @remarks
+ * ⚠️ ВНИМАНИЕ: Использует number, что может привести к потере точности.
+ * Используйте только для отображения или когда точность не критична.
+ * Для точной сериализации используйте QuantitySerializer.
+ */
+export class QuantityLossySerializer {
+  /**
+   * Сериализует Quantity в JSON (number, lossy)
+   *
+   * @remarks
+   * ⚠️ ВНИМАНИЕ: Может потерять точность для больших чисел.
+   *
+   * @param quantity - Количество для сериализации
+   * @returns JSON объект { value: number }
+   *
+   * @example
+   * ```typescript
+   * const json = QuantityLossySerializer.toJSON(qty);
+   * // { value: 10.123456789 } (может потерять precision)
+   * ```
+   */
+  public static toJSON(quantity: Quantity): { value: number } {
+    return { value: quantity.toNumber() };
+  }
+
+  /**
+   * Десериализует Quantity из JSON (number, lossy)
+   *
+   * @param json - JSON объект { value: number }
+   * @returns Result<Quantity, InvalidQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const result = QuantityLossySerializer.fromJSON({ value: 10 });
+   * ```
+   */
+  public static fromJSON(json: { value: number }): Result<Quantity, InvalidQuantityError> {
+    return QuantityService.create(json.value);
+  }
+}
