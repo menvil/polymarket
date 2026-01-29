@@ -29,15 +29,47 @@ export class QuantityInvariantViolation extends Error {
  * Core Quantity Value Object
  *
  * @remarks
+ * Представляет количество акций/токенов на рынках предсказаний.
+ *
  * Содержит ТОЛЬКО инварианты существования:
  * - Non-negative (>= 0)
  * - Finite value (не Infinity, не NaN)
  *
  * НЕ содержит:
- * - Математику (используй @polymarket/math)
- * - Бизнес-правила minSize (используй Rules)
- * - Округление (используй Math)
+ * - Математику (используй @polymarket/math + QuantityService)
+ * - Бизнес-правила minSize (используй Rules/Policy)
+ * - Округление (используй QuantityService)
  * - Сериализацию (используй Adapters)
+ *
+ * Внутреннее представление: хранит Decimal (opaque).
+ * Наружу отдаёт Decimal через value() и number через toNumber() (lossy).
+ *
+ * @example
+ * ```typescript
+ * // Создание
+ * const qty1 = Quantity.of(10);         // from number
+ * const qty2 = Quantity.of("15.5");     // from string
+ *
+ * // Создание из готового Decimal (без парсинга)
+ * const decimal = new Decimal(20);
+ * const qty3 = Quantity.fromDecimal(decimal);
+ *
+ * // Константы
+ * const zero = Quantity.ZERO;
+ * const one = Quantity.ONE;
+ *
+ * // Доступ к значению
+ * const decimal = qty1.value();    // Decimal
+ * const num = qty1.toNumber();     // number (lossy)
+ *
+ * // Сравнение (без epsilon)
+ * qty1.equals(qty2);     // boolean
+ * qty1.isZero();         // boolean
+ * qty1.isPositive();     // boolean
+ *
+ * // Для математики используй QuantityService:
+ * const result = QuantityService.add(qty1, qty2);
+ * ```
  */
 export class Quantity {
   /**
