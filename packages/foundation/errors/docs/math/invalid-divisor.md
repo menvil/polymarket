@@ -11,13 +11,13 @@
 
 ## Свойства
 
-| Свойство | Значение |
+|Свойство|Значение|
 |----------|----------|
-| **Код** | `INVALID_DIVISOR` |
-| **Severity** | `low` |
-| **Класс** | `InvalidDivisorError` |
-| **Пакет** | `@polymarket/errors` |
-| **Категория** | Math |
+|**Код**|`INVALID_DIVISOR`|
+|**Severity**|`low`|
+|**Класс**|`InvalidDivisorError`|
+|**Пакет**|`@polymarket/errors`|
+|**Категория**|Math|
 
 ## Когда использовать
 

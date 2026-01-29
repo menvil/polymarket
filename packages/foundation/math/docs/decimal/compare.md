@@ -126,6 +126,9 @@ equalsDecimal(a, d); // false (разные значения)
 
 **Строгое равенство (equalsDecimal):**
 ```typescript
+import Decimal from 'decimal.js';
+import { equalsDecimal } from '@polymarket/math';
+
 const a = new Decimal('0.65');
 const b = new Decimal('0.6500000000001');
 
@@ -134,6 +137,8 @@ equalsDecimal(a, b); // false (строго неравны)
 
 **Приблизительное равенство (ручная реализация):**
 ```typescript
+import Decimal from 'decimal.js';
+
 function approximatelyEquals(
   a: Decimal,
   b: Decimal,
@@ -159,6 +164,9 @@ equalsDecimal(a, b) === true <=> compareDecimal(a, b) === 0
 
 Пример:
 ```typescript
+import Decimal from 'decimal.js';
+import { equalsDecimal, compareDecimal } from '@polymarket/math';
+
 const a = new Decimal('10.5');
 const b = new Decimal('10.5');
 

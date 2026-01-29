@@ -43,6 +43,9 @@ isFiniteDecimal(new Decimal(-Infinity)); // false
 - **Guard clauses** в функциях
 
 ```typescript
+import Decimal from 'decimal.js';
+import { isFiniteDecimal } from '@polymarket/math/validation';
+
 function processValue(value: Decimal): Decimal {
   if (!isFiniteDecimal(value)) {
     throw new Error('Value must be finite');
@@ -94,6 +97,9 @@ isNonNegativeDecimal(zero); // true  (>= 0)
 - **Валидация делителя** - делитель должен быть != 0
 
 ```typescript
+import Decimal from 'decimal.js';
+import { isPositiveDecimal } from '@polymarket/math/validation';
+
 class Price {
   static fromDecimal(value: Decimal): Result<Price, ValidationError> {
     if (!isPositiveDecimal(value)) {
@@ -234,7 +240,7 @@ function safeDivide(a: Decimal, b: Decimal): Result<Decimal, ValidationError> {
 ### Value Object с валидацией
 
 ```typescript
-import { isPositiveDecimal } from '@polymarket/math/validation';
+import { isPositiveDecimal, isFiniteDecimal } from '@polymarket/math/validation';
 import Decimal from 'decimal.js';
 
 class Quantity {
@@ -376,6 +382,9 @@ if (value.abs().lt(epsilon)) {
 ### 4. Комбинируйте валидаторы для сложных проверок
 
 ```typescript
+import Decimal from 'decimal.js';
+import { isFiniteDecimal, isPositiveDecimal } from '@polymarket/math/validation';
+
 function validatePrice(value: Decimal): Result<void, ValidationError> {
   // Проверка 1: Конечность
   if (!isFiniteDecimal(value)) {

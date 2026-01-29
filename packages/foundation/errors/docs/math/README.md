@@ -22,12 +22,12 @@ Math Errors представляют математические невозмо
 
 ### Математические операции
 
-| Код | Класс | Когда использовать | Документация |
+|Код|Класс|Когда использовать|Документация|
 |-----|-------|-------------------|--------------|
-| `INVALID_OPERAND` | InvalidOperandError | Операнд NaN/Infinity | [→](./invalid-operand.md) |
-| `INVALID_DECIMAL_PLACES` | InvalidDecimalPlacesError | Decimal places < 0, не целое, не конечно | [→](./invalid-decimal-places.md) |
-| `INVALID_DIVISOR` | InvalidDivisorError | Деление на NaN/Infinity | [→](./invalid-divisor.md) |
-| `INVALID_TICK_SIZE` | InvalidTickSizeError | Tick size <= 0 или не конечен | [→](./invalid-tick-size.md) |
+|`INVALID_OPERAND`|InvalidOperandError|Операнд NaN/Infinity|[→](./invalid-operand.md)|
+|`INVALID_DECIMAL_PLACES`|InvalidDecimalPlacesError|Decimal places < 0, не целое, не конечно|[→](./invalid-decimal-places.md)|
+|`INVALID_DIVISOR`|InvalidDivisorError|Деление на NaN/Infinity|[→](./invalid-divisor.md)|
+|`INVALID_TICK_SIZE`|InvalidTickSizeError|Tick size <= 0 или не конечен|[→](./invalid-tick-size.md)|
 
 ---
 
@@ -45,7 +45,6 @@ function safeDivide(dividend: Decimal, divisor: Decimal): Decimal {
     throw new InvalidDivisorError(
       (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
       {
-        code: InvalidDivisorError.code,
         context: {
           divisor: divisor.toString(),
           dividend: dividend.toString()
@@ -78,7 +77,6 @@ function roundToTickSize(value: Decimal, tickSize: Decimal): Decimal {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be finite, got ${ctx.tickSize}`,
       {
-        code: InvalidTickSizeError.code,
         context: { tickSize: tickSize.toString(), value: value.toString() }
       }
     );
@@ -209,7 +207,7 @@ priceResult.match({
 // ✅ Хорошо
 throw new InvalidDivisorError(
   (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
-  { code: InvalidDivisorError.code, context: { divisor: 'NaN' } }
+  { context: { divisor: 'NaN' } }
 );
 
 // ❌ Плохо
@@ -235,7 +233,6 @@ export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
     throw new InvalidOperandError(
       (ctx) => `Dividend must be finite, got ${ctx.dividend}`,
       {
-        code: InvalidOperandError.code,
         context: { dividend: dividend.toString(), divisor: divisor.toString(), operation: 'divide' }
       }
     );
@@ -245,7 +242,6 @@ export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
     throw new InvalidDivisorError(
       (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
       {
-        code: InvalidDivisorError.code,
         context: { divisor: divisor.toString(), dividend: dividend.toString() }
       }
     );

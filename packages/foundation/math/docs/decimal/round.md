@@ -273,19 +273,19 @@ equalsDecimal(truncDecimal(value), roundTowardZeroDecimal(value)) // всегд�
 
 ### Таблица округления положительных чисел
 
-| Значение | roundDecimal | roundTowardZeroDecimal | roundAwayFromZeroDecimal | truncDecimal |
-|----------|--------------|--------------|-------------|--------------|
-| 2.1      | 2            | 2            | 3           | 2            |
-| 2.5      | **3**        | 2            | 3           | 2            |
-| 2.9      | 3            | 2            | 3           | 2            |
+|Значение|roundDecimal|roundTowardZeroDecimal|roundAwayFromZeroDecimal|truncDecimal|
+|----------|----------|----------|----------|----------|
+|2.1|2|2|3|2|
+|2.5|**3**|2|3|2|
+|2.9|3|2|3|2|
 
 ### Таблица округления отрицательных чисел
 
-| Значение | roundDecimal | roundTowardZeroDecimal | roundAwayFromZeroDecimal | truncDecimal |
-|----------|--------------|--------------|-------------|--------------|
-| -2.1     | -2           | -2           | **-3**      | -2           |
-| -2.5     | **-3**       | -2           | **-3**      | -2           |
-| -2.9     | -3           | -2           | **-3**      | -2           |
+|Значение|roundDecimal|roundTowardZeroDecimal|roundAwayFromZeroDecimal|truncDecimal|
+|----------|----------|----------|----------|----------|
+|-2.1|-2|-2|**-3**|-2|
+|-2.5|**-3**|-2|**-3**|-2|
+|-2.9|-3|-2|**-3**|-2|
 
 ### Ключевые отличия
 
