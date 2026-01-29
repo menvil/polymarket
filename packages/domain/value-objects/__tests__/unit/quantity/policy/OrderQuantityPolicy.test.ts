@@ -32,15 +32,26 @@ describe('OrderQuantityPolicy', () => {
       }
     });
 
-    it('должен использовать ValidateMinSize внутри', () => {
-      // Проверяем что ошибка от ValidateMinSize
+    it('должен проверять context.minSize вместо текста ошибки', () => {
+      // Проверяем стабильные свойства ошибки
       const result = OrderQuantityPolicy.validateForOrder(
         new Decimal(0.5),
         new Decimal(1)
       );
+      expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('minimum size');
+        expect(result.error.context).toHaveProperty('minSize');
+        expect(result.error.context?.minSize).toBe('1');
       }
     });
+
+    // Примечание: OrderQuantityPolicy работает с Decimal значениями и предполагает
+    // что они уже валидированы. Проверка finite/non-finite значений происходит
+    // при создании Quantity через QuantityService.create(), а не в Policy.
+    // Policy проверяет только бизнес-правила (например, minSize).
+
+    // Примечание: Валидация orderMinSize не является обязанностью OrderQuantityPolicy.
+    // Проверка что orderMinSize валиден (positive, finite) должна быть на уровне
+    // Market aggregate или конфигурации рынка, а не в Quantity Policy.
   });
 });

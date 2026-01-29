@@ -22,6 +22,10 @@ describe('ValidateDivisorForQuantityDivision', () => {
     it('должен вернуть Err для negative', () => {
       const result = ValidateDivisorForQuantityDivision.check(new Decimal(-1));
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        expect(result.error.message).toContain('must be positive');
+      }
     });
 
     it('должен вернуть Err для Infinity', () => {
@@ -35,6 +39,10 @@ describe('ValidateDivisorForQuantityDivision', () => {
     it('должен вернуть Err для NaN', () => {
       const result = ValidateDivisorForQuantityDivision.check(new Decimal(NaN));
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        expect(result.error.message).toContain('must be finite');
+      }
     });
 
     it('должен иметь правильный context format', () => {

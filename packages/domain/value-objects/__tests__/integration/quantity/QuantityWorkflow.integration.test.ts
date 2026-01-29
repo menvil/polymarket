@@ -210,6 +210,8 @@ describe('Quantity Integration Workflow', () => {
       const json = QuantitySerializer.toJSON(original);
       const result = QuantitySerializer.fromJSON(json);
 
+      // Явная проверка успеха десериализации
+      expect(result.ok).toBe(true);
       if (result.ok) {
         // Сравниваем через строки, не через number
         expect(result.value.value().toString()).toBe(original.value().toString());

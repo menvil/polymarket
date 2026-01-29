@@ -111,8 +111,23 @@ if (divResult.ok) {
 ### Валидация ордера с minSize
 
 ```typescript
-import { QuantityService } from '@polymarket/value-objects/quantity';
+import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
 import Decimal from 'decimal.js';
+
+// Определение ValidationError (пользовательский класс ошибок)
+class ValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
+// Предполагается что orderService доступен в контексте
+// (например, внедрён через DI или импортирован)
+interface OrderService {
+  createOrder(params: { quantity: Quantity }): Promise<{ id: string }>;
+}
+declare const orderService: OrderService;
 
 interface MarketConfig {
   minOrderSize: Decimal;
@@ -180,6 +195,8 @@ try {
 
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 interface OrderInput {

@@ -164,17 +164,22 @@ describe('QuantityService', () => {
       }
     });
 
-    it('должен вернуть Err если результат non-finite (overflow)', () => {
-      // Создаём очень большое число через Decimal
-      const bigQty = Quantity.fromDecimal(new Decimal('1e308'));
-      const result = QuantityService.add(bigQty, bigQty);
+    // Примечание: Decimal.js не производит Infinity при арифметических операциях,
+    // так как работает с arbitrary precision. Overflow проверяется при создании
+    // Quantity из результатов math операций, если математическая библиотека
+    // вернёт non-finite значение (что маловероятно с Decimal.js).
+    // Этот тест оставлен закомментированным как документация expected behavior.
 
-      // Если addDecimal вернёт Infinity, create() вернёт Err
-      if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidQuantityError);
-        expect(result.error.context?.reason).toBe('NON_FINITE');
-      }
-    });
+    // it('должен вернуть Err если результат non-finite (overflow)', () => {
+    //   // В реальности Decimal.js не даёт Infinity при add()
+    //   // Overflow может произойти только если math layer вернёт Infinity
+    //   const result = QuantityService.add(bigQty, bigQty);
+    //   expect(result.ok).toBe(false);
+    //   if (!result.ok) {
+    //     expect(result.error).toBeInstanceOf(InvalidQuantityError);
+    //     expect(result.error.context?.reason).toBe('NON_FINITE');
+    //   }
+    // });
 
     describe('Facade Error Contract', () => {
       it('error должен содержать context.op = "add"', () => {

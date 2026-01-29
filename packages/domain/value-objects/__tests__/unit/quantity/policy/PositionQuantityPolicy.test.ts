@@ -61,10 +61,18 @@ describe('PositionQuantityPolicy', () => {
       }
     });
 
-    it('должен вернуть Err для closeQuantity <= 0', () => {
+    it('должен вернуть Err для closeQuantity = 0', () => {
       const result = PositionQuantityPolicy.validatePartialClose(
         new Decimal(10),
         new Decimal(0)
+      );
+      expect(result.ok).toBe(false);
+    });
+
+    it('должен вернуть Err для negative closeQuantity', () => {
+      const result = PositionQuantityPolicy.validatePartialClose(
+        new Decimal(10),
+        new Decimal(-5)
       );
       expect(result.ok).toBe(false);
     });
