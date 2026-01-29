@@ -53,6 +53,7 @@ describe('compare', () => {
       // equals false => compare должен быть -1 или 1
       expect(equalsDecimal(a, c)).toBe(false);
       expect(compareDecimal(a, c)).toBe(-1); // a < c
+      expect(compareDecimal(c, a)).toBe(1); // c > a (симметрия)
     });
 
     it('должен работать с разными форматами для equals', () => {
@@ -339,6 +340,34 @@ describe('compare', () => {
       expect(() =>
         greaterThanOrEqualDecimal(new Decimal(10), new Decimal(NaN))
       ).toThrow(InvalidOperandError);
+    });
+  });
+
+  // Дополнительные тесты транзитивности и консистентности
+  describe('Транзитивность на отрицательных и дробных', () => {
+    it('должен соблюдать транзитивность: если a<b и b<c то a<c (отрицательные + дробные)', () => {
+      const a = new Decimal('-1.2');
+      const b = new Decimal('-1.1');
+      const c = new Decimal('0');
+
+      expect(compareDecimal(a, b)).toBe(-1); // a < b
+      expect(compareDecimal(b, c)).toBe(-1); // b < c
+      expect(compareDecimal(a, c)).toBe(-1); // a < c (транзитивность)
+    });
+  });
+
+  describe('Консистентность операций сравнения', () => {
+    it('lessThanOrEqualDecimal(a,b) === !greaterThanDecimal(a,b)', () => {
+      const pairs = [
+        [new Decimal('5'), new Decimal('10')],
+        [new Decimal('10'), new Decimal('10')],
+        [new Decimal('15'), new Decimal('10')],
+        [new Decimal('-1.5'), new Decimal('0.5')],
+      ];
+
+      pairs.forEach(([a, b]) => {
+        expect(lessThanOrEqualDecimal(a, b)).toBe(!greaterThanDecimal(a, b));
+      });
     });
   });
 });

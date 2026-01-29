@@ -32,12 +32,12 @@ describe('addDecimal', () => {
 
     it('должен работать с очень маленькими числами', () => {
       const result = addDecimal(new Decimal('1e-10'), new Decimal('2e-10'));
-      expect(result.toString()).toBe('3e-10');
+      expect(result.eq(new Decimal('3e-10'))).toBe(true);
     });
 
     it('должен работать с очень большими числами', () => {
       const result = addDecimal(new Decimal('1e100'), new Decimal('2e100'));
-      expect(result.toString()).toBe('3e+100');
+      expect(result.eq(new Decimal('3e100'))).toBe(true);
     });
   });
 
@@ -59,6 +59,7 @@ describe('addDecimal', () => {
     );
 
     it('должен содержать контекст в InvalidOperandError', () => {
+      expect.assertions(5);
       const inf = new Decimal(Infinity);
       const value = new Decimal(100);
 
