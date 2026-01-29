@@ -27,7 +27,8 @@ import Decimal from 'decimal.js';
  *
  * **Правило возвращаемых типов:**
  * ВСЕ операции возвращают Result<T, InvalidQuantityError>
- * ВСЕ ошибки обрабатываются через Result - никогда не бросаем исключения наружу
+ * ОЖИДАЕМЫЕ ошибки обрабатываются через Result
+ * НЕОЖИДАННЫЕ ошибки (баги) → rethrow для отладки
  */
 export class QuantityService {
   /**

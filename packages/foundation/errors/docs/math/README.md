@@ -86,7 +86,6 @@ function roundToTickSize(value: Decimal, tickSize: Decimal): Decimal {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
       {
-        code: InvalidTickSizeError.code,
         context: { tickSize: tickSize.toString(), value: value.toString() }
       }
     );

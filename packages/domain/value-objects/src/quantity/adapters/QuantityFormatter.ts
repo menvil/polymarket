@@ -1,15 +1,19 @@
 import { Quantity } from '../core/Quantity.js';
+import { InvalidDecimalPlacesError } from '@polymarket/errors';
 
 /**
  * Форматирование Quantity в строки
  */
 export class QuantityFormatter {
+  private static readonly THOUSAND = 1000;
+  private static readonly MILLION = 1000000;
   /**
    * Форматирует в string с фиксированным количеством decimal places
    *
    * @param quantity - Количество для форматирования
-   * @param decimals - Количество знаков после запятой (default: 2)
+   * @param decimals - Количество знаков после запятой (default: 2, max: 100)
    * @returns Отформатированная строка
+   * @throws {InvalidDecimalPlacesError} Если decimals не целое число или выходит за диапазон [0, 100]
    *
    * @example
    * ```typescript
@@ -17,6 +21,18 @@ export class QuantityFormatter {
    * ```
    */
   public static toString(quantity: Quantity, decimals: number = 2): string {
+    if (!Number.isInteger(decimals) || decimals < 0 || decimals > 100) {
+      throw new InvalidDecimalPlacesError(
+        (ctx) => `Decimal places must be an integer between 0 and 100, got ${ctx.decimalPlaces}`,
+        {
+          context: {
+            decimalPlaces: String(decimals),
+            quantity: quantity.value().toString(),
+            operation: 'toString'
+          }
+        }
+      );
+    }
     return quantity.value().toFixed(decimals);
   }
 
@@ -71,11 +87,11 @@ export class QuantityFormatter {
   public static toDisplayString(quantity: Quantity): string {
     const value = quantity.toNumber(); // lossy
 
-    if (value >= 1000000) {
-      return `${(value / 1000000).toFixed(2)}M`;
+    if (value >= QuantityFormatter.MILLION) {
+      return `${(value / QuantityFormatter.MILLION).toFixed(2)}M`;
     }
-    if (value >= 1000) {
-      return `${(value / 1000).toFixed(2)}K`;
+    if (value >= QuantityFormatter.THOUSAND) {
+      return `${(value / QuantityFormatter.THOUSAND).toFixed(2)}K`;
     }
     return value.toFixed(2);
   }

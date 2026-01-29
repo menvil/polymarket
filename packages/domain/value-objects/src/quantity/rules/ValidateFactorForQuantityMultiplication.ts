@@ -27,10 +27,11 @@ import Decimal from 'decimal.js';
  */
 export class ValidateFactorForQuantityMultiplication {
   public static check(factor: Decimal): Result<void, InvalidQuantityError> {
-    if (factor.isNegative()) {
+    // Проверка 1: factor должен быть finite (включая -Infinity)
+    if (!factor.isFinite()) {
       return Err(
         new InvalidQuantityError(
-          (ctx) => `Factor for Quantity multiplication cannot be negative, got ${ctx.factor}`,
+          (ctx) => `Factor for Quantity multiplication must be finite, got ${ctx.factor}`,
           {
             context: { factor: factor.toString() }
           }
@@ -38,10 +39,11 @@ export class ValidateFactorForQuantityMultiplication {
       );
     }
 
-    if (!factor.isFinite()) {
+    // Проверка 2: factor не должен быть отрицательным
+    if (factor.isNegative()) {
       return Err(
         new InvalidQuantityError(
-          (ctx) => `Factor for Quantity multiplication must be finite, got ${ctx.factor}`,
+          (ctx) => `Factor for Quantity multiplication cannot be negative, got ${ctx.factor}`,
           {
             context: { factor: factor.toString() }
           }

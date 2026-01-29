@@ -32,6 +32,19 @@ import Decimal from 'decimal.js';
  */
 export class ValidateResultNonNegative {
   public static check(result: Decimal): Result<void, InvalidQuantityError> {
+    // Проверка 1: результат должен быть finite
+    if (!result.isFinite()) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Operation result ${ctx.result} must be finite`,
+          {
+            context: { result: result.toString() }
+          }
+        )
+      );
+    }
+
+    // Проверка 2: результат не должен быть отрицательным
     if (result.isNegative()) {
       return Err(
         new InvalidQuantityError(

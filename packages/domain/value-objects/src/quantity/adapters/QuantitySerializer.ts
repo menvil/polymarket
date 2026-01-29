@@ -1,5 +1,5 @@
 import { Result } from '@polymarket/result';
-import { InvalidQuantityError } from '@polymarket/errors';
+import { InvalidQuantityError, InvalidOperandError } from '@polymarket/errors';
 import { Quantity } from '../core/Quantity.js';
 import { QuantityService } from '../facade/QuantityService.js';
 
@@ -65,6 +65,7 @@ export class QuantityLossySerializer {
    *
    * @param quantity - Количество для сериализации
    * @returns JSON объект { value: number }
+   * @throws {InvalidOperandError} Если Quantity содержит non-finite значение
    *
    * @example
    * ```typescript
@@ -73,6 +74,18 @@ export class QuantityLossySerializer {
    * ```
    */
   public static toJSON(quantity: Quantity): { value: number } {
+    const decimalValue = quantity.value();
+    if (!decimalValue.isFinite()) {
+      throw new InvalidOperandError(
+        (ctx) => `Cannot serialize non-finite Quantity to JSON, got ${ctx.value}`,
+        {
+          context: {
+            value: decimalValue.toString(),
+            operation: 'toJSON'
+          }
+        }
+      );
+    }
     return { value: quantity.toNumber() };
   }
 

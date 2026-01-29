@@ -84,6 +84,29 @@ export class PositionQuantityPolicy {
     currentQuantity: Decimal,
     closeQuantity: Decimal
   ): Result<void, InvalidQuantityError> {
+    // Defensive: currentQuantity должен быть finite и >= 0
+    if (!currentQuantity.isFinite()) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Current position quantity must be finite, got ${ctx.current}`,
+          {
+            context: { current: currentQuantity.toString() }
+          }
+        )
+      );
+    }
+
+    if (currentQuantity.isNegative()) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Current position quantity cannot be negative, got ${ctx.current}`,
+          {
+            context: { current: currentQuantity.toString() }
+          }
+        )
+      );
+    }
+
     // closeQuantity должен быть > 0
     if (closeQuantity.lessThanOrEqualTo(0)) {
       return Err(
