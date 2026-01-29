@@ -2,6 +2,38 @@ import Decimal from 'decimal.js';
 import { InvalidOperandError } from '@polymarket/errors';
 
 /**
+ * Приватный helper для валидации двух операндов
+ * @internal
+ */
+function assertFinite2(a: Decimal, b: Decimal, operation: string): void {
+  if (!a.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `First operand must be finite, got ${ctx.a}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation,
+        },
+      }
+    );
+  }
+
+  if (!b.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Second operand must be finite, got ${ctx.b}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation,
+        },
+      }
+    );
+  }
+}
+
+/**
  * Строгое сравнение двух Decimal на равенство
  *
  * @param a - Первое значение
@@ -34,7 +66,7 @@ import { InvalidOperandError } from '@polymarket/errors';
  *
  * // Для приблизительного сравнения:
  * const diff = a.minus(b).abs();
- * const epsilon = new Decimal('0.01');
+ * const epsilon = new Decimal('1e-12');
  * const approxEqual = diff.lessThan(epsilon);
  * ```
  *
@@ -64,32 +96,7 @@ export function equalsDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function lessThanDecimal(a: Decimal, b: Decimal): boolean {
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `First operand must be finite, got ${ctx.a}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'lessThan',
-        },
-      }
-    );
-  }
-
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Second operand must be finite, got ${ctx.b}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'lessThan',
-        },
-      }
-    );
-  }
-
+  assertFinite2(a, b, 'lessThan');
   return a.lessThan(b);
 }
 
@@ -112,32 +119,7 @@ export function lessThanDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function lessThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `First operand must be finite, got ${ctx.a}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'lessThanOrEqual',
-        },
-      }
-    );
-  }
-
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Second operand must be finite, got ${ctx.b}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'lessThanOrEqual',
-        },
-      }
-    );
-  }
-
+  assertFinite2(a, b, 'lessThanOrEqual');
   return a.lessThanOrEqualTo(b);
 }
 
@@ -159,32 +141,7 @@ export function lessThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function greaterThanDecimal(a: Decimal, b: Decimal): boolean {
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `First operand must be finite, got ${ctx.a}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'greaterThan',
-        },
-      }
-    );
-  }
-
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Second operand must be finite, got ${ctx.b}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'greaterThan',
-        },
-      }
-    );
-  }
-
+  assertFinite2(a, b, 'greaterThan');
   return a.greaterThan(b);
 }
 
@@ -207,32 +164,7 @@ export function greaterThanDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function greaterThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `First operand must be finite, got ${ctx.a}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'greaterThanOrEqual',
-        },
-      }
-    );
-  }
-
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Second operand must be finite, got ${ctx.b}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'greaterThanOrEqual',
-        },
-      }
-    );
-  }
-
+  assertFinite2(a, b, 'greaterThanOrEqual');
   return a.greaterThanOrEqualTo(b);
 }
 

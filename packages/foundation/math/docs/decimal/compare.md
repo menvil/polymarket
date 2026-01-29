@@ -422,9 +422,9 @@ if (approximatelyEquals(a, b)) {
 }
 
 // ✅ Хорошо: явно видна точность
-const epsilon = new Decimal('0.01'); // Точность 1 цент
+const epsilon = new Decimal('1e-12'); // Высокая точность
 if (approximatelyEquals(a, b, epsilon)) {
-  // Близко в пределах 1 цента
+  // Близко в пределах погрешности
 }
 ```
 

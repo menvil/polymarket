@@ -41,6 +41,3 @@ export * from './validation/index.js';
 
 // Constants
 export { MATH_CONSTANTS } from './constants.js';
-
-// Re-export Decimal type for convenience
-export type { Decimal } from 'decimal.js';
