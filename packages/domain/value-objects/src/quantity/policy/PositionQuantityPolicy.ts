@@ -92,6 +92,21 @@ export class PositionQuantityPolicy {
       );
     }
 
+    // Defensive: closeQuantity должен быть finite
+    if (!closeQuantity.isFinite()) {
+      return Err(
+        new InvalidQuantityError(
+          (ctx) => `Close quantity must be finite, got ${ctx.closeQuantity}`,
+          {
+            context: {
+              closeQuantity: closeQuantity.toString(),
+              current: currentQuantity.toString()
+            }
+          }
+        )
+      );
+    }
+
     // closeQuantity должен быть > 0
     if (closeQuantity.lessThanOrEqualTo(0)) {
       return Err(

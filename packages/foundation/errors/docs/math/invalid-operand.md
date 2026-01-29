@@ -290,9 +290,15 @@ const qty = Quantity.of(10.5);
 
 toJSON(qty);                          // ✅ { value: 10.5 }
 
-// С non-finite значением (защитная проверка, не должно происходить в норме)
-const infiniteQty = Quantity.fromDecimal(new Decimal('Infinity')); // гипотетически
-toJSON(infiniteQty);                  // ❌ InvalidOperandError
+// Примечание: Quantity имеет инвариант finite значения.
+// Quantity.fromDecimal(new Decimal('Infinity')) БРОСИТ ИСКЛЮЧЕНИЕ при создании,
+// так как Quantity не может содержать non-finite значения.
+// Проверка в toJSON() - это defensive guard на случай если upstream код
+// каким-то образом создал невалидный Quantity (что не должно происходить).
+//
+// Гипотетический пример (НЕВОЗМОЖЕН в реальности):
+// const infiniteQty = Quantity.fromDecimal(new Decimal('Infinity')); // throws!
+// toJSON(infiniteQty);                  // никогда не выполнится
 ```
 
 ---

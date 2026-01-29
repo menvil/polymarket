@@ -463,7 +463,7 @@ if (!result.ok) {
 const qty = result.value;
 ```
 
-Подробный гайд: [migration.md](./migration.md)
+Подробное руководство: [migration.md](./migration.md)
 
 ---
 

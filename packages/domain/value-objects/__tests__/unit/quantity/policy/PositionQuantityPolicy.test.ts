@@ -65,5 +65,16 @@ describe('PositionQuantityPolicy', () => {
       );
       expect(result.ok).toBe(false);
     });
+
+    it('должен вернуть Err для non-finite closeQuantity', () => {
+      const result = PositionQuantityPolicy.validatePartialClose(
+        new Decimal(10),
+        new Decimal(Infinity)
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be finite');
+      }
+    });
   });
 });

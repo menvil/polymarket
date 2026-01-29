@@ -40,6 +40,7 @@ interface InvalidQuantityErrorContext {
 ```
 
 **Пример использования:**
+
 ```typescript
 const result = QuantityService.divide(qty, 0);
 if (!result.ok) {
