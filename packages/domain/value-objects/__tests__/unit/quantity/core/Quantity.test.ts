@@ -69,11 +69,13 @@ describe('Quantity.of()', () => {
     expect(qty.value().toString()).toBe("15.5");
   });
 
-  it('должен создать Quantity из Decimal', () => {
+  it('должен создать Quantity из Decimal без повторного парсинга', () => {
     const decimal = new Decimal(20);
     const qty = Quantity.of(decimal);
     expect(qty).toBeInstanceOf(Quantity);
     expect(qty.value().toNumber()).toBe(20);
+    // Проверяем что используется тот же объект (zero-copy оптимизация)
+    expect(qty.value()).toBe(decimal);
   });
 
   it('должен создать Quantity из большого числа в строке', () => {

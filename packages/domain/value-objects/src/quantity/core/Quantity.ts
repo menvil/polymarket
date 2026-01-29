@@ -95,6 +95,7 @@ export class Quantity {
    *
    * @remarks
    * Парсит значение в Decimal через `new Decimal(value)`.
+   * Оптимизация: если value уже Decimal, используется напрямую без повторной конверсии.
    * Без проверки minSize - это бизнес-правило.
    * Для проверки minSize используй QuantityService.createForOrder()
    *
@@ -104,13 +105,15 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(10);         // from number
-   * const qty2 = Quantity.of("15.5");     // from string
-   * const qty3 = Quantity.of(new Decimal(20)); // from Decimal (парсит повторно)
+   * const qty1 = Quantity.of(10);                // from number
+   * const qty2 = Quantity.of("15.5");            // from string
+   * const qty3 = Quantity.of(new Decimal(20));   // from Decimal (без повторного парсинга)
    * ```
    */
   public static of(value: number | string | Decimal): Quantity {
-    return new Quantity(new Decimal(value));
+    return value instanceof Decimal
+      ? Quantity.fromDecimal(value)
+      : new Quantity(new Decimal(value));
   }
 
   /**

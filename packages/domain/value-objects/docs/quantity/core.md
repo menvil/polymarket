@@ -32,10 +32,12 @@ Core Layer содержит базовую реализацию `Quantity` — �
 
 Создаёт Quantity из number/string/Decimal.
 
+**Оптимизация:** Если `value` уже `Decimal`, используется без повторного парсинга (zero-copy).
+
 ```typescript
 const qty1 = Quantity.of(10);
 const qty2 = Quantity.of("10.5");
-const qty3 = Quantity.of(new Decimal(10));
+const qty3 = Quantity.of(new Decimal(10)); // Без повторного парсинга!
 
 // Throws QuantityInvariantViolation
 try {
@@ -214,22 +216,23 @@ const qty = Quantity.of(10);
 
 ## Zero-copy оптимизация
 
-При частой конверсии между Decimal и Quantity используйте `fromDecimal()`:
+И `Quantity.of()`, и `Quantity.fromDecimal()` используют zero-copy для Decimal:
 
 ```typescript
-// ❌ Медленно: парсит дважды
 const decimal = new Decimal(value);
-const qty = Quantity.of(decimal);  // Внутри: new Decimal(decimal)
 
-// ✅ Быстро: zero-copy
-const decimal = new Decimal(value);
-const qty = Quantity.fromDecimal(decimal);  // Использует тот же объект
+// ✅ Оба метода используют zero-copy
+const qty1 = Quantity.of(decimal);          // Проверяет instanceof и использует тот же объект
+const qty2 = Quantity.fromDecimal(decimal); // Напрямую использует тот же объект
+
+// Проверяем что это тот же Decimal
+console.log(qty1.value() === decimal); // true
+console.log(qty2.value() === decimal); // true
 ```
 
-**Когда использовать:**
-- В Facade методах (уже используется)
-- В performance-critical code
-- Когда работаете с Decimal напрямую
+**Когда использовать `fromDecimal()` вместо `of()`:**
+- Когда важна семантика (явно показываем что ожидаем Decimal)
+- В type-narrowed контексте (когда TypeScript уже знает что это Decimal)
 
 ---
 
