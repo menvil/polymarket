@@ -45,6 +45,7 @@
   "dependencies": {
     "@polymarket/result": "^0.1.0",
     "@polymarket/errors": "^0.1.0",
+    "@polymarket/math": "^0.1.0",
     "decimal.js": "^10.6.0"
   },
   "devDependencies": {

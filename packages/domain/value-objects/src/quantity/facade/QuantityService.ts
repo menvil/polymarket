@@ -2,6 +2,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { Quantity, QuantityInvariantViolation } from '../core/Quantity.js';
 import { InvalidQuantityError } from '@polymarket/errors';
 import { OrderQuantityPolicy } from '../policy/OrderQuantityPolicy.js';
+import { addDecimal } from '@polymarket/math';
 import Decimal from 'decimal.js';
 
 /**
@@ -128,6 +129,48 @@ export class QuantityService {
           context: {
             ...createResult.error.context,
             op: 'createForOrder'
+          }
+        })
+      );
+    }
+
+    return createResult;
+  }
+
+  /**
+   * Складывает два количества
+   *
+   * @remarks
+   * Возвращает Result потому что результат может быть non-finite (overflow → Infinity).
+   * Оркестрирует: сложение через math → создание Quantity через create() (проверит инварианты)
+   *
+   * @param qty1 - Первое количество
+   * @param qty2 - Второе количество
+   * @returns Result<Quantity, InvalidQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const result = QuantityService.add(qty1, qty2);
+   * if (!result.ok) {
+   *   console.error(result.error.context.op); // 'add'
+   * }
+   * ```
+   */
+  public static add(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError> {
+    const sum = addDecimal(qty1.value(), qty2.value());
+
+    // create() проверит инварианты (включая finite) и вернёт Result
+    const createResult = this.create(sum);
+    if (!createResult.ok) {
+      // Перезаписываем op и добавляем context
+      return Err(
+        new InvalidQuantityError(createResult.error.message, {
+          code: InvalidQuantityError.code,
+          context: {
+            op: 'add',
+            quantity1: qty1.value().toString(),
+            quantity2: qty2.value().toString(),
+            reason: createResult.error.context?.reason
           }
         })
       );

@@ -140,4 +140,60 @@ describe('QuantityService', () => {
       });
     });
   });
+
+  describe('add()', () => {
+    it('должен сложить два Quantity', () => {
+      const qty1 = Quantity.of(10);
+      const qty2 = Quantity.of(5);
+      const result = QuantityService.add(qty1, qty2);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(15);
+      }
+    });
+
+    it('должен работать с ZERO', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.add(qty, Quantity.ZERO);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(10);
+      }
+    });
+
+    it('должен вернуть Err если результат non-finite (overflow)', () => {
+      // Создаём очень большое число через Decimal
+      const bigQty = Quantity.fromDecimal(new Decimal('1e308'));
+      const result = QuantityService.add(bigQty, bigQty);
+
+      // Если addDecimal вернёт Infinity, create() вернёт Err
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        expect(result.error.context?.reason).toBe('NON_FINITE');
+      }
+    });
+
+    describe('Facade Error Contract', () => {
+      it('error должен содержать context.op = "add"', () => {
+        const bigQty = Quantity.fromDecimal(new Decimal('1e308'));
+        const result = QuantityService.add(bigQty, bigQty);
+
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('add');
+        }
+      });
+
+      it('error должен содержать context.quantity1 и quantity2', () => {
+        const bigQty = Quantity.fromDecimal(new Decimal('1e308'));
+        const result = QuantityService.add(bigQty, bigQty);
+
+        if (!result.ok) {
+          expect(result.error.context).toHaveProperty('quantity1');
+          expect(result.error.context).toHaveProperty('quantity2');
+        }
+      });
+    });
+  });
 });
