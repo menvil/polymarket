@@ -249,13 +249,15 @@ truncDecimal(new Decimal('10.0')); // 10
 
 ### truncDecimal === floorDecimal
 
-В текущей реализации:
+**В текущей реализации** обе функции эквивалентны:
 
 ```typescript
 truncDecimal(value) === floorDecimal(value) // всегда true
 ```
 
 Обе функции используют `Decimal.ROUND_DOWN` (округление к нулю).
+
+**Важно:** Семантически `floorDecimal` должна округлять к `-Infinity` (как математическая функция `floor`), но текущая реализация округляет к нулю для совместимости с `truncDecimal`. Если реализация изменится на `Decimal.ROUND_FLOOR`, эквивалентность нарушится для отрицательных чисел. Для истинного математического floor используйте `mathFloorDecimal`.
 
 ### Когда использовать
 
@@ -348,10 +350,9 @@ const totalCents = amount
  * Примеры: $2.50 → $3, $3.50 → $4
  */
 function roundToCent(price: Decimal): Decimal {
-  return price
-    .times(100)
-    .pipe(roundDecimal)
-    .dividedBy(100);
+  const scaled = price.times(100);
+  const rounded = roundDecimal(scaled);
+  return rounded.dividedBy(100);
 }
 ```
 

@@ -41,7 +41,7 @@ function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal
 
 ## Математические свойства
 
-Функция НЕ сохраняет коммутативность (деление не коммутативно), но сохраняет другие свойства:
+Функция не является коммутативной, но сохраняет другие свойства:
 
 - **НЕ коммутативно:** `divideDecimal(a, b) ≠ divideDecimal(b, a)` (обычно)
 - **Деление на себя:** `divideDecimal(a, a) === 1` (для любого ненулевого a)
@@ -237,7 +237,7 @@ console.log(amount.toString()); // "100.5"
 
 ## Edge Cases
 
-### Деление нуля на число
+### Деление ноля на число
 
 ```typescript
 import Decimal from 'decimal.js';

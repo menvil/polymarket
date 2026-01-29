@@ -89,6 +89,7 @@ mathCeilToTick(new Decimal(-10.567), new Decimal(0.01)); // -10.56 (к +Infinity
 - `ceilToTick` = `mathCeilToTick` (оба вверх)
 
 Для **отрицательных** чисел:
+
 ```typescript
 const value = new Decimal(-10.567);
 const tick = new Decimal(0.01);

@@ -47,6 +47,8 @@ function multiplyDecimal(a: Decimal, b: Decimal): Decimal
 - **Свойство нуля:** `multiplyDecimal(a, MATH_CONSTANTS.ZERO) === MATH_CONSTANTS.ZERO`
 - **Дистрибутивность:** `multiplyDecimal(a, addDecimal(b, c)) === addDecimal(multiplyDecimal(a, b), multiplyDecimal(a, c))`
 
+**Важно:** Ассоциативность и дистрибутивность могут нарушаться при ограниченной точности `Decimal.js`, так как каждая операция округляется согласно настроенной `precision`. При стандартных настройках (precision = 20) эти свойства сохраняются для большинства практических случаев. Коммутативность и свойства нейтрального элемента/нуля гарантированы всегда.
+
 ## Примеры использования
 
 ### Базовое умножение
@@ -214,21 +216,29 @@ const result = multiplyDecimal(tiny1, tiny2);
 console.log(result.toString()); // "2e-20" ✅
 ```
 
-### Overflow при достижении Infinity
+### Валидация невалидных операндов
 
 ```typescript
 import Decimal from 'decimal.js';
 import { multiplyDecimal } from '@polymarket/math';
+import { InvalidOperandError } from '@polymarket/errors';
 
-// Infinity * любое число (кроме 0) = Infinity (математическая невозможность)
-const inf = new Decimal(Infinity);
-const num = new Decimal(100);
+try {
+  // Попытка создать операнд с Infinity
+  const inf = new Decimal(Infinity);
+  const num = new Decimal(100);
 
-// ❌ Throws ArithmeticOverflowError
-multiplyDecimal(inf, num);
+  // ❌ Throws InvalidOperandError
+  multiplyDecimal(inf, num);
+} catch (error) {
+  if (InvalidOperandError.is(error)) {
+    console.error('Invalid operand:', error.message);
+    // Context: { a: 'Infinity', b: '100', operation: 'multiply' }
+  }
+}
 ```
 
-### Умножение на ноль
+### Умножение на нуль
 
 ```typescript
 import Decimal from 'decimal.js';

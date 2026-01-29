@@ -27,7 +27,7 @@ function subtractDecimal(a: Decimal, b: Decimal): Decimal
 
 ### Выбрасываемые ошибки
 
-- **ArithmeticOverflowError** - Если результат не является конечным числом (Infinity, -Infinity)
+- **InvalidOperandError** - Если операнды не являются конечными числами (NaN, Infinity, -Infinity)
 
 ## Математические свойства
 
@@ -168,24 +168,25 @@ const result = subtractDecimal(value, value);
 console.log(result.equals(MATH_CONSTANTS.ZERO)); // true
 ```
 
-### Обработка overflow
+### Валидация невалидных операндов
 
 ```typescript
 import Decimal from 'decimal.js';
 import { subtractDecimal } from '@polymarket/math';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidOperandError } from '@polymarket/errors';
 
 try {
+  // Попытка создать операнд с Infinity
   const inf = new Decimal(Infinity);
   const value = new Decimal(100);
 
-  // Infinity - число = Infinity (overflow)
+  // ❌ Throws InvalidOperandError
   const result = subtractDecimal(inf, value);
 } catch (error) {
-  if (ArithmeticOverflowError.is(error)) {
-    console.error('Subtraction overflow:', error.message);
+  if (InvalidOperandError.is(error)) {
+    console.error('Invalid operand:', error.message);
     console.error('Context:', error.context);
-    // Context: { a: 'Infinity', b: '100', result: 'Infinity' }
+    // Context: { a: 'Infinity', b: '100', operation: 'subtract' }
   }
 }
 ```
