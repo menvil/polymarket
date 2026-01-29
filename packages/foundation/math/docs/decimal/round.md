@@ -252,7 +252,9 @@ truncDecimal(new Decimal('10.0')); // 10
 **В текущей реализации** обе функции эквивалентны:
 
 ```typescript
-truncDecimal(value) === floorDecimal(value) // всегда true
+import { equalsDecimal } from '@polymarket/math';
+
+equalsDecimal(truncDecimal(value), floorDecimal(value)) // всегда true
 ```
 
 Обе функции используют `Decimal.ROUND_DOWN` (округление к нулю).

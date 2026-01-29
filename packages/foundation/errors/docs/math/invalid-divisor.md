@@ -29,7 +29,7 @@
 ## Импорт
 
 ```typescript
-import { InvalidDivisorError } from '@polymarket/errors';
+import { InvalidDivisorError, DivisionByZeroError } from '@polymarket/errors';
 
 // Для примеров с Decimal:
 import Decimal from 'decimal.js';

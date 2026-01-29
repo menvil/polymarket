@@ -111,8 +111,11 @@ class Price {
 ```typescript
 // Математическая невозможность = throw
 function divideDecimal(a: Decimal, b: Decimal): Decimal {
-  if (!b.isFinite() || b.isZero()) {
-    throw new InvalidDivisorError('Cannot divide by zero or non-finite');
+  if (!b.isFinite()) {
+    throw new InvalidDivisorError('Divisor must be finite');
+  }
+  if (b.isZero()) {
+    throw new DivisionByZeroError('Cannot divide by zero');
   }
   return a.dividedBy(b);
 }

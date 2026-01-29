@@ -114,18 +114,20 @@ console.log(incremented.toString()); // "43"
 ```typescript
 import Decimal from 'decimal.js';
 import { addDecimal } from '@polymarket/math';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidOperandError } from '@polymarket/errors';
 
 try {
+  // Попытка создать операнд с Infinity
   const inf = new Decimal(Infinity);
   const value = new Decimal(100);
 
+  // ❌ Throws InvalidOperandError
   const result = addDecimal(inf, value);
 } catch (error) {
-  if (ArithmeticOverflowError.is(error)) {
-    console.error('Addition overflow:', error.message);
+  if (InvalidOperandError.is(error)) {
+    console.error('Invalid operand:', error.message);
     console.error('Context:', error.context);
-    // Context: { a: 'Infinity', b: '100', result: 'Infinity' }
+    // Context: { a: 'Infinity', b: '100', operation: 'add' }
   }
 }
 ```

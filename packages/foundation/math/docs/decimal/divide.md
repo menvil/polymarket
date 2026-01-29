@@ -205,7 +205,7 @@ try {
 
 ```typescript
 import Decimal from 'decimal.js';
-import { divideDecimal, multiplyDecimal, addDecimal } from '@polymarket/math';
+import { divideDecimal, multiplyDecimal, addDecimal, MATH_CONSTANTS } from '@polymarket/math';
 
 const totalCost = new Decimal('100');
 const itemCount = new Decimal('4');
@@ -326,6 +326,8 @@ console.log(check.toFixed(10)); // "1.0000000000"
 ```typescript
 import Decimal from 'decimal.js';
 import { divideDecimal, MATH_CONSTANTS } from '@polymarket/math';
+
+const value = new Decimal('100');
 
 // ✅ Хорошо: переиспользуем константы
 const result1 = divideDecimal(value, MATH_CONSTANTS.TWO);

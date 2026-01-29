@@ -254,7 +254,7 @@ import Decimal from 'decimal.js';
 
 const percentage = new Decimal('33.33333333');
 
-const rounded = roundToPrecision(percentage, 2);
+const rounded = roundToPrecision(percentage, 2, Decimal.ROUND_HALF_UP);
 // 33.33
 ```
 

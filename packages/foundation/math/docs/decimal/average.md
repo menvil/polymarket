@@ -77,11 +77,11 @@ import Decimal from 'decimal.js';
 import { averageDecimal } from '@polymarket/math';
 
 // Проблема обычного JavaScript
-console.log((0.1 + 0.3) / 2); // 0.19999999999999998 ❌
+console.log((0.1 + 0.2) / 2); // 0.15000000000000002 ❌
 
 // Решение с Decimal.js
-const result = averageDecimal(new Decimal('0.1'), new Decimal('0.3'));
-console.log(result.toString()); // "0.2" ✅
+const result = averageDecimal(new Decimal('0.1'), new Decimal('0.2'));
+console.log(result.toString()); // "0.15" ✅
 ```
 
 ### Расчёт средней цены (bid-ask spread)

@@ -35,6 +35,7 @@ function multiplyDecimal(a: Decimal, b: Decimal): Decimal
 
 ### Выбрасываемые ошибки
 
+- **InvalidOperandError** - Если операнды не являются конечными числами (NaN, Infinity, -Infinity)
 - **ArithmeticOverflowError** - Если результат не является конечным числом (Infinity, -Infinity)
 
 ## Математические свойства
@@ -139,18 +140,19 @@ console.log(result3.toString()); // "84"
 ```typescript
 import Decimal from 'decimal.js';
 import { multiplyDecimal } from '@polymarket/math';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidOperandError } from '@polymarket/errors';
 
 try {
   const inf = new Decimal(Infinity);
   const value = new Decimal(100);
 
+  // ❌ Throws InvalidOperandError
   const result = multiplyDecimal(inf, value);
 } catch (error) {
-  if (ArithmeticOverflowError.is(error)) {
-    console.error('Multiplication overflow:', error.message);
+  if (InvalidOperandError.is(error)) {
+    console.error('Invalid operand:', error.message);
     console.error('Context:', error.context);
-    // Context: { a: 'Infinity', b: '100', result: 'Infinity' }
+    // Context: { a: 'Infinity', b: '100', operation: 'multiply' }
   }
 }
 ```
