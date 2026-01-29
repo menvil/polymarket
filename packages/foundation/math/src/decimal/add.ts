@@ -32,10 +32,6 @@ import {
  * // Throw на invalid operand
  * addDecimal(new Decimal(NaN), new Decimal(5)); // throws InvalidOperandError
  * addDecimal(new Decimal(Infinity), new Decimal(5)); // throws InvalidOperandError
- *
- * // Throw на overflow
- * const huge = new Decimal('1e308');
- * addDecimal(huge, huge); // throws ArithmeticOverflowError
  * ```
  */
 export function addDecimal(a: Decimal, b: Decimal): Decimal {

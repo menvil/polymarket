@@ -29,11 +29,18 @@ import { InvalidOperandError } from '@polymarket/errors';
  * equalsDecimal(new Decimal(10), new Decimal(10.0000000001)); // false (строго)
  * equalsDecimal(new Decimal(10), new Decimal(11)); // false
  *
+ * // NaN поведение (IEEE 754):
+ * equalsDecimal(new Decimal(NaN), new Decimal(NaN)); // false
+ *
  * // Для приблизительного сравнения:
  * const diff = a.minus(b).abs();
  * const epsilon = new Decimal('0.01');
  * const approxEqual = diff.lessThan(epsilon);
  * ```
+ *
+ * @remarks
+ * Следует семантике IEEE 754: NaN не равен никакому значению, включая сам себя.
+ * Если нужно проверить что оба значения NaN, используйте `!a.isFinite() && !b.isFinite()`.
  */
 export function equalsDecimal(a: Decimal, b: Decimal): boolean {
   return a.equals(b);
@@ -45,14 +52,44 @@ export function equalsDecimal(a: Decimal, b: Decimal): boolean {
  * @param a - Первое значение
  * @param b - Второе значение
  * @returns True если a строго меньше b
+ * @throws {InvalidOperandError} При невалидных операндах (NaN, ±Infinity)
  *
  * @example
  * ```typescript
  * lessThanDecimal(new Decimal(5), new Decimal(10)); // true
  * lessThanDecimal(new Decimal(10), new Decimal(10)); // false
+ *
+ * // Невалидные значения
+ * lessThanDecimal(new Decimal(NaN), new Decimal(10)); // throws InvalidOperandError
  * ```
  */
 export function lessThanDecimal(a: Decimal, b: Decimal): boolean {
+  if (!a.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `First operand must be finite, got ${ctx.a}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'lessThan',
+        },
+      }
+    );
+  }
+
+  if (!b.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Second operand must be finite, got ${ctx.b}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'lessThan',
+        },
+      }
+    );
+  }
+
   return a.lessThan(b);
 }
 
@@ -62,15 +99,45 @@ export function lessThanDecimal(a: Decimal, b: Decimal): boolean {
  * @param a - Первое значение
  * @param b - Второе значение
  * @returns True если a меньше или равно b
+ * @throws {InvalidOperandError} При невалидных операндах (NaN, ±Infinity)
  *
  * @example
  * ```typescript
  * lessThanOrEqualDecimal(new Decimal(5), new Decimal(10)); // true
  * lessThanOrEqualDecimal(new Decimal(10), new Decimal(10)); // true
  * lessThanOrEqualDecimal(new Decimal(15), new Decimal(10)); // false
+ *
+ * // Невалидные значения
+ * lessThanOrEqualDecimal(new Decimal(Infinity), new Decimal(10)); // throws InvalidOperandError
  * ```
  */
 export function lessThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
+  if (!a.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `First operand must be finite, got ${ctx.a}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'lessThanOrEqual',
+        },
+      }
+    );
+  }
+
+  if (!b.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Second operand must be finite, got ${ctx.b}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'lessThanOrEqual',
+        },
+      }
+    );
+  }
+
   return a.lessThanOrEqualTo(b);
 }
 
@@ -80,14 +147,44 @@ export function lessThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
  * @param a - Первое значение
  * @param b - Второе значение
  * @returns True если a строго больше b
+ * @throws {InvalidOperandError} При невалидных операндах (NaN, ±Infinity)
  *
  * @example
  * ```typescript
  * greaterThanDecimal(new Decimal(10), new Decimal(5)); // true
  * greaterThanDecimal(new Decimal(10), new Decimal(10)); // false
+ *
+ * // Невалидные значения
+ * greaterThanDecimal(new Decimal(-Infinity), new Decimal(5)); // throws InvalidOperandError
  * ```
  */
 export function greaterThanDecimal(a: Decimal, b: Decimal): boolean {
+  if (!a.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `First operand must be finite, got ${ctx.a}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'greaterThan',
+        },
+      }
+    );
+  }
+
+  if (!b.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Second operand must be finite, got ${ctx.b}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'greaterThan',
+        },
+      }
+    );
+  }
+
   return a.greaterThan(b);
 }
 
@@ -97,15 +194,45 @@ export function greaterThanDecimal(a: Decimal, b: Decimal): boolean {
  * @param a - Первое значение
  * @param b - Второе значение
  * @returns True если a больше или равно b
+ * @throws {InvalidOperandError} При невалидных операндах (NaN, ±Infinity)
  *
  * @example
  * ```typescript
  * greaterThanOrEqualDecimal(new Decimal(10), new Decimal(5)); // true
  * greaterThanOrEqualDecimal(new Decimal(10), new Decimal(10)); // true
  * greaterThanOrEqualDecimal(new Decimal(5), new Decimal(10)); // false
+ *
+ * // Невалидные значения
+ * greaterThanOrEqualDecimal(new Decimal(10), new Decimal(NaN)); // throws InvalidOperandError
  * ```
  */
 export function greaterThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
+  if (!a.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `First operand must be finite, got ${ctx.a}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'greaterThanOrEqual',
+        },
+      }
+    );
+  }
+
+  if (!b.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Second operand must be finite, got ${ctx.b}`,
+      {
+        context: {
+          a: a.toString(),
+          b: b.toString(),
+          operation: 'greaterThanOrEqual',
+        },
+      }
+    );
+  }
+
   return a.greaterThanOrEqualTo(b);
 }
 

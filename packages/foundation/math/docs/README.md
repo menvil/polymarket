@@ -193,7 +193,7 @@ import { MATH_CONSTANTS } from '@polymarket/math';
 
 // Из подмодулей
 import { addDecimal } from '@polymarket/math/decimal';
-import { roundToTickSize } from '@polymarket/math/rounding';
+import { roundToTick } from '@polymarket/math/rounding';
 ```
 
 ### Базовый пример

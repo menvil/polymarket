@@ -335,39 +335,41 @@ class Price {
 }
 ```
 
-### 2. Для приблизительного сравнения используйте isZeroDecimal с явным epsilon
+### 2. Для строгого сравнения используйте isZeroDecimal или Decimal методы
+
+```typescript
+// ✅ Хорошо: строгое сравнение с isZeroDecimal
+if (isZeroDecimal(value)) {
+  // Строго равно нулю
+}
+
+// ✅ Альтернатива: прямое использование Decimal метода
+if (value.isZero()) {
+  // Строго равно нулю
+}
+```
+
+### 3. Для приблизительного сравнения используйте Decimal методы
 
 ```typescript
 // ✅ Хорошо: явный epsilon показывает намерение
 const computationalPrecision = new Decimal('1e-10');
 const businessPrecision = new Decimal('0.01');
 
-if (isZeroDecimal(diff, computationalPrecision)) {
-  // Числовая точность
+// Приблизительное сравнение для числовой точности
+if (diff.abs().lessThan(computationalPrecision)) {
+  // Близко к нулю в пределах вычислительной точности
 }
 
-if (isZeroDecimal(remaining, businessPrecision)) {
-  // Бизнес-логика
-}
-```
-
-### 3. Для строгого сравнения используйте Decimal методы
-
-```typescript
-// ✅ Хорошо: явный метод для строгого сравнения
-if (value.isZero()) {
-  // Строго равно нулю
+// Приблизительное сравнение для бизнес-логики
+if (remaining.abs().lessThan(businessPrecision)) {
+  // Близко к нулю в пределах бизнес-точности (1 цент)
 }
 
-// ✅ Хорошо: для приблизительного сравнения с isZeroDecimal
+// ✅ Альтернатива с использованием .lt() (короткая форма)
 const epsilon = new Decimal('0.0001');
-if (isZeroDecimal(value, epsilon)) {
+if (value.abs().lt(epsilon)) {
   // Близко к нулю в пределах epsilon
-}
-
-// ✅ Альтернатива: прямое использование Decimal методов
-if (value.abs().lessThan(epsilon)) {
-  // Тот же эффект
 }
 ```
 

@@ -1,10 +1,12 @@
 import Decimal from 'decimal.js';
+import { InvalidOperandError } from '@polymarket/errors';
 
 /**
  * Округляет Decimal к ближайшему целому (standard half-up rounding)
  *
  * @param value - Значение для округления
  * @returns Округлённое значение
+ * @throws {InvalidOperandError} При невалидном операнде (NaN, ±Infinity)
  *
  * @remarks
  * Использует ROUND_HALF_UP - стандартное округление, где 0.5 всегда округляется вверх.
@@ -21,9 +23,24 @@ import Decimal from 'decimal.js';
  * roundDecimal(new Decimal(10.5)); // 11
  * roundDecimal(new Decimal(10.4)); // 10
  * roundDecimal(new Decimal(-10.5)); // -11
+ *
+ * // Невалидные значения
+ * roundDecimal(new Decimal(NaN)); // throws InvalidOperandError
  * ```
  */
 export function roundDecimal(value: Decimal): Decimal {
+  if (!value.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Value must be finite, got ${ctx.value}`,
+      {
+        context: {
+          value: value.toString(),
+          operation: 'round',
+        },
+      }
+    );
+  }
+
   return value.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
 }
 
@@ -32,6 +49,7 @@ export function roundDecimal(value: Decimal): Decimal {
  *
  * @param value - Значение для округления
  * @returns Округлённое значение
+ * @throws {InvalidOperandError} При невалидном операнде (NaN, ±Infinity)
  *
  * @remarks
  * ВНИМАНИЕ: Название "floor" вводит в заблуждение!
@@ -56,6 +74,18 @@ export function roundDecimal(value: Decimal): Decimal {
  * ```
  */
 export function floorDecimal(value: Decimal): Decimal {
+  if (!value.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Value must be finite, got ${ctx.value}`,
+      {
+        context: {
+          value: value.toString(),
+          operation: 'floor',
+        },
+      }
+    );
+  }
+
   return value.toDecimalPlaces(0, Decimal.ROUND_DOWN);
 }
 
@@ -64,6 +94,7 @@ export function floorDecimal(value: Decimal): Decimal {
  *
  * @param value - Значение для округления
  * @returns Округлённое значение
+ * @throws {InvalidOperandError} При невалидном операнде (NaN, ±Infinity)
  *
  * @remarks
  * ВНИМАНИЕ: Название "ceil" вводит в заблуждение!
@@ -88,6 +119,18 @@ export function floorDecimal(value: Decimal): Decimal {
  * ```
  */
 export function ceilDecimal(value: Decimal): Decimal {
+  if (!value.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Value must be finite, got ${ctx.value}`,
+      {
+        context: {
+          value: value.toString(),
+          operation: 'ceil',
+        },
+      }
+    );
+  }
+
   return value.toDecimalPlaces(0, Decimal.ROUND_UP);
 }
 
@@ -96,6 +139,7 @@ export function ceilDecimal(value: Decimal): Decimal {
  *
  * @param value - Значение для усечения
  * @returns Целая часть числа
+ * @throws {InvalidOperandError} При невалидном операнде (NaN, ±Infinity)
  *
  * @remarks
  * Эквивалентно округлению к нулю (truncation).
@@ -114,6 +158,18 @@ export function ceilDecimal(value: Decimal): Decimal {
  * ```
  */
 export function truncDecimal(value: Decimal): Decimal {
+  if (!value.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Value must be finite, got ${ctx.value}`,
+      {
+        context: {
+          value: value.toString(),
+          operation: 'trunc',
+        },
+      }
+    );
+  }
+
   return value.trunc();
 }
 
@@ -122,6 +178,7 @@ export function truncDecimal(value: Decimal): Decimal {
  *
  * @param value - Значение для округления
  * @returns Округлённое значение
+ * @throws {InvalidOperandError} При невалидном операнде (NaN, ±Infinity)
  *
  * @remarks
  * Использует ROUND_FLOOR - всегда округление к -Infinity.
@@ -144,6 +201,18 @@ export function truncDecimal(value: Decimal): Decimal {
  * ```
  */
 export function mathFloorDecimal(value: Decimal): Decimal {
+  if (!value.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Value must be finite, got ${ctx.value}`,
+      {
+        context: {
+          value: value.toString(),
+          operation: 'mathFloor',
+        },
+      }
+    );
+  }
+
   return value.toDecimalPlaces(0, Decimal.ROUND_FLOOR);
 }
 
@@ -152,6 +221,7 @@ export function mathFloorDecimal(value: Decimal): Decimal {
  *
  * @param value - Значение для округления
  * @returns Округлённое значение
+ * @throws {InvalidOperandError} При невалидном операнде (NaN, ±Infinity)
  *
  * @remarks
  * Использует ROUND_CEIL - всегда округление к +Infinity.
@@ -174,5 +244,17 @@ export function mathFloorDecimal(value: Decimal): Decimal {
  * ```
  */
 export function mathCeilDecimal(value: Decimal): Decimal {
+  if (!value.isFinite()) {
+    throw new InvalidOperandError(
+      (ctx) => `Value must be finite, got ${ctx.value}`,
+      {
+        context: {
+          value: value.toString(),
+          operation: 'mathCeil',
+        },
+      }
+    );
+  }
+
   return value.toDecimalPlaces(0, Decimal.ROUND_CEIL);
 }

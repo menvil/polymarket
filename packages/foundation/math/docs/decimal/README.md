@@ -56,15 +56,15 @@ class Price {
 | `divideDecimal(a, b)` | Деление чисел | [→](./divide.md) |
 | `averageDecimal(a, b)` | Среднее значение | [→](./average.md) |
 | `equalsDecimal(a, b)` | Строгое равенство | [→](./compare.md#equalsdecimal) |
-| `lessThanDecimal(a, b)` | Строгое меньше (<) | [→](./compare.md#lessthanbdecimal) |
+| `lessThanDecimal(a, b)` | Строгое меньше (<) | [→](./compare.md#lessthandecimal) |
 | `lessThanOrEqualDecimal(a, b)` | Меньше или равно (<=) | [→](./compare.md#lessthanorequaldecimal) |
 | `greaterThanDecimal(a, b)` | Строгое больше (>) | [→](./compare.md#greaterthandecimal) |
 | `greaterThanOrEqualDecimal(a, b)` | Больше или равно (>=) | [→](./compare.md#greaterthanorequaldecimal) |
 | `compareDecimal(a, b)` | Сравнение (-1/0/1) | [→](./compare.md#comparedecimal) |
 | `roundDecimal(value)` | Округление (half-up) | [→](./round.md#rounddecimal) |
-| `floorDecimal(value)` | Округление к нулю | [→](./round.md#floordecimal) |
-| `ceilDecimal(value)` | Округление от нуля | [→](./round.md#ceildecimal) |
-| `truncDecimal(value)` | Усечение дроби | [→](./round.md#truncdecimal) |
+| `floorDecimal(value)` | Округление к −∞ | [→](./round.md#floordecimal) |
+| `ceilDecimal(value)` | Округление к +∞ | [→](./round.md#ceildecimal) |
+| `truncDecimal(value)` | Округление к нулю (усечение) | [→](./round.md#truncdecimal) |
 
 ## Общие паттерны использования
 
@@ -135,33 +135,37 @@ const total = addDecimal(
 ### Коммутативность (только для add и multiply)
 
 ```typescript
-addDecimal(a, b) === addDecimal(b, a) // ✅ Всегда true
-multiplyDecimal(a, b) === multiplyDecimal(b, a) // ✅ Всегда true
+import { equalsDecimal } from '@polymarket/math';
 
-subtractDecimal(a, b) !== subtractDecimal(b, a) // ❌ Обычно разные
-divideDecimal(a, b) !== divideDecimal(b, a) // ❌ Обычно разные
+equalsDecimal(addDecimal(a, b), addDecimal(b, a)) // ✅ Всегда true
+equalsDecimal(multiplyDecimal(a, b), multiplyDecimal(b, a)) // ✅ Всегда true
+
+!equalsDecimal(subtractDecimal(a, b), subtractDecimal(b, a)) // ❌ Обычно разные
+!equalsDecimal(divideDecimal(a, b), divideDecimal(b, a)) // ❌ Обычно разные
 ```
 
 ### Ассоциативность (только для add и multiply)
 
 ```typescript
+import { equalsDecimal } from '@polymarket/math';
+
 // Сложение
-addDecimal(addDecimal(a, b), c) === addDecimal(a, addDecimal(b, c))
+equalsDecimal(addDecimal(addDecimal(a, b), c), addDecimal(a, addDecimal(b, c)))
 
 // Умножение
-multiplyDecimal(multiplyDecimal(a, b), c) === multiplyDecimal(a, multiplyDecimal(b, c))
+equalsDecimal(multiplyDecimal(multiplyDecimal(a, b), c), multiplyDecimal(a, multiplyDecimal(b, c)))
 ```
 
 ### Нейтральные элементы
 
 ```typescript
-import { MATH_CONSTANTS } from '@polymarket/math';
+import { equalsDecimal, MATH_CONSTANTS } from '@polymarket/math';
 
 // Ноль для сложения
-addDecimal(a, MATH_CONSTANTS.ZERO) === a
+equalsDecimal(addDecimal(a, MATH_CONSTANTS.ZERO), a)
 
 // Единица для умножения
-multiplyDecimal(a, MATH_CONSTANTS.ONE) === a
+equalsDecimal(multiplyDecimal(a, MATH_CONSTANTS.ONE), a)
 ```
 
 ## Точность Decimal.js

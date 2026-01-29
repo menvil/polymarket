@@ -250,4 +250,52 @@ describe('compare', () => {
       });
     });
   });
+
+  // Tests for lessThanDecimal validation
+  describe('lessThanDecimal validation', () => {
+    it('should throw InvalidOperandError on NaN in first operand', () => {
+      expect(() =>
+        lessThanDecimal(new Decimal(NaN), new Decimal(10))
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('should throw InvalidOperandError on Infinity in second operand', () => {
+      expect(() =>
+        lessThanDecimal(new Decimal(10), new Decimal(Infinity))
+      ).toThrow(InvalidOperandError);
+    });
+  });
+
+  // Tests for greaterThanDecimal validation
+  describe('greaterThanDecimal validation', () => {
+    it('should throw InvalidOperandError on -Infinity in first operand', () => {
+      expect(() =>
+        greaterThanDecimal(new Decimal(-Infinity), new Decimal(10))
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('should throw InvalidOperandError on NaN in second operand', () => {
+      expect(() =>
+        greaterThanDecimal(new Decimal(10), new Decimal(NaN))
+      ).toThrow(InvalidOperandError);
+    });
+  });
+
+  // Tests for lessThanOrEqualDecimal validation
+  describe('lessThanOrEqualDecimal validation', () => {
+    it('should throw InvalidOperandError on Infinity', () => {
+      expect(() =>
+        lessThanOrEqualDecimal(new Decimal(Infinity), new Decimal(10))
+      ).toThrow(InvalidOperandError);
+    });
+  });
+
+  // Tests for greaterThanOrEqualDecimal validation
+  describe('greaterThanOrEqualDecimal validation', () => {
+    it('should throw InvalidOperandError on NaN', () => {
+      expect(() =>
+        greaterThanOrEqualDecimal(new Decimal(10), new Decimal(NaN))
+      ).toThrow(InvalidOperandError);
+    });
+  });
 });

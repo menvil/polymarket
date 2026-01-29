@@ -34,7 +34,7 @@ function addDecimal(a: Decimal, b: Decimal): Decimal
 
 ### Выбрасываемые ошибки
 
-- **ArithmeticOverflowError** - Если результат не является конечным числом (Infinity, -Infinity)
+- **InvalidOperandError** - Если операнды не являются конечными числами (NaN, Infinity, -Infinity)
 
 ## Математические свойства
 
