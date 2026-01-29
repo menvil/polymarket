@@ -48,6 +48,7 @@ snapshots/
 /ERRORS_FOR_VALUE_OBJECTS.md
 /ARCHITECTURE_INTEGRATION_PLAN.md
 /ARCHITECTURE_CONCEPTS_EXPLAINED.md
+/docs/refactoring/
 
 # Domain entities (will be added later)
 packages/domain/entities
