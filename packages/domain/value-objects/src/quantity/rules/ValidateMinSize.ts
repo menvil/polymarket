@@ -43,7 +43,6 @@ export class ValidateMinSize {
         new InvalidQuantityError(
           (ctx) => `Quantity ${ctx.quantity} is less than minimum size ${ctx.minSize}`,
           {
-            code: InvalidQuantityError.code,
             context: {
               quantity: quantity.toString(),
               minSize: minSize.toString()

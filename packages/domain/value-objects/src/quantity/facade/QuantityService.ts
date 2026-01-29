@@ -59,8 +59,7 @@ export class QuantityService {
       if (error instanceof QuantityInvariantViolation) {
         return Err(
           new InvalidQuantityError(error.message, {
-            code: InvalidQuantityError.code,
-            context: {
+              context: {
               op: 'create',
               value: String(value),
               reason: error.reason
@@ -71,8 +70,7 @@ export class QuantityService {
       if (error instanceof Error) {
         return Err(
           new InvalidQuantityError(error.message, {
-            code: InvalidQuantityError.code,
-            context: {
+              context: {
               op: 'create',
               value: String(value)
             }
@@ -115,7 +113,6 @@ export class QuantityService {
       // Добавляем op к ошибке из policy
       return Err(
         new InvalidQuantityError(policyResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             op: 'createForOrder',
             ...policyResult.error.context
@@ -130,7 +127,6 @@ export class QuantityService {
       // Перезаписываем op с 'create' на 'createForOrder'
       return Err(
         new InvalidQuantityError(createResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             ...createResult.error.context,
             op: 'createForOrder'
@@ -170,7 +166,6 @@ export class QuantityService {
       // Перезаписываем op и добавляем context
       return Err(
         new InvalidQuantityError(createResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             op: 'add',
             quantity1: qty1.value().toString(),
@@ -214,7 +209,6 @@ export class QuantityService {
       // Добавляем op к ошибке из rule
       return Err(
         new InvalidQuantityError(validateResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             op: 'subtract',
             quantity1: qty1.value().toString(),
@@ -229,7 +223,6 @@ export class QuantityService {
     if (!createResult.ok) {
       return Err(
         new InvalidQuantityError(createResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             op: 'subtract',
             quantity1: qty1.value().toString(),
@@ -274,7 +267,6 @@ export class QuantityService {
     if (!validateResult.ok) {
       return Err(
         new InvalidQuantityError(validateResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             op: 'multiply',
             quantity: quantity.value().toString(),
@@ -291,7 +283,6 @@ export class QuantityService {
     if (!createResult.ok) {
       return Err(
         new InvalidQuantityError(createResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             op: 'multiply',
             quantity: quantity.value().toString(),
@@ -343,7 +334,6 @@ export class QuantityService {
     if (!validateResult.ok) {
       return Err(
         new InvalidQuantityError(validateResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             op: 'divide',
             quantity: quantity.value().toString(),
@@ -361,8 +351,7 @@ export class QuantityService {
       if (!createResult.ok) {
         return Err(
           new InvalidQuantityError(createResult.error.message, {
-            code: InvalidQuantityError.code,
-            context: {
+              context: {
               op: 'divide',
               quantity: quantity.value().toString(),
               divisor: divisorDecimal.toString(),
@@ -380,8 +369,7 @@ export class QuantityService {
           new InvalidQuantityError(
             `Division failed: ${error.message}`,
             {
-              code: InvalidQuantityError.code,
-              context: {
+                  context: {
                 op: 'divide',
                 quantity: quantity.value().toString(),
                 divisor: divisorDecimal.toString(),
@@ -429,7 +417,6 @@ export class QuantityService {
     if (!validateResult.ok) {
       return Err(
         new InvalidQuantityError(validateResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             op: 'roundToTick',
             quantity: quantity.value().toString(),
@@ -446,7 +433,6 @@ export class QuantityService {
     if (!createResult.ok) {
       return Err(
         new InvalidQuantityError(createResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             op: 'roundToTick',
             quantity: quantity.value().toString(),
@@ -485,7 +471,6 @@ export class QuantityService {
     if (!policyResult.ok) {
       return Err(
         new InvalidQuantityError(policyResult.error.message, {
-          code: InvalidQuantityError.code,
           context: {
             op: 'validateForPosition',
             ...policyResult.error.context

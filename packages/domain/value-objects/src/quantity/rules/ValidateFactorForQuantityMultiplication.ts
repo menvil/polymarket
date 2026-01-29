@@ -32,7 +32,6 @@ export class ValidateFactorForQuantityMultiplication {
         new InvalidQuantityError(
           (ctx) => `Factor for Quantity multiplication cannot be negative, got ${ctx.factor}`,
           {
-            code: InvalidQuantityError.code,
             context: { factor: factor.toString() }
           }
         )
@@ -44,7 +43,6 @@ export class ValidateFactorForQuantityMultiplication {
         new InvalidQuantityError(
           (ctx) => `Factor for Quantity multiplication must be finite, got ${ctx.factor}`,
           {
-            code: InvalidQuantityError.code,
             context: { factor: factor.toString() }
           }
         )

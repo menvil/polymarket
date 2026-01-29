@@ -37,7 +37,6 @@ export class ValidateResultNonNegative {
         new InvalidQuantityError(
           (ctx) => `Operation result ${ctx.result} cannot be negative`,
           {
-            code: InvalidQuantityError.code,
             context: { result: result.toString() }
           }
         )

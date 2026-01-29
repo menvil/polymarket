@@ -37,7 +37,6 @@ export class PositionQuantityPolicy {
         new InvalidQuantityError(
           (ctx) => `Position quantity cannot be negative, got ${ctx.quantity}`,
           {
-            code: InvalidQuantityError.code,
             context: { quantity: quantity.toString() }
           }
         )
@@ -49,7 +48,6 @@ export class PositionQuantityPolicy {
         new InvalidQuantityError(
           (ctx) => `Position quantity must be finite, got ${ctx.quantity}`,
           {
-            code: InvalidQuantityError.code,
             context: { quantity: quantity.toString() }
           }
         )
@@ -92,7 +90,6 @@ export class PositionQuantityPolicy {
         new InvalidQuantityError(
           (ctx) => `Close quantity must be positive, got ${ctx.closeQuantity}`,
           {
-            code: InvalidQuantityError.code,
             context: { closeQuantity: closeQuantity.toString() }
           }
         )
@@ -105,7 +102,6 @@ export class PositionQuantityPolicy {
         new InvalidQuantityError(
           (ctx) => `Cannot close ${ctx.close} when position is ${ctx.current}`,
           {
-            code: InvalidQuantityError.code,
             context: {
               current: currentQuantity.toString(),
               close: closeQuantity.toString()

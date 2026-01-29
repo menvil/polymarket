@@ -35,7 +35,6 @@ export class ValidateDivisorForQuantityDivision {
         new InvalidQuantityError(
           (ctx) => `Divisor for Quantity division must be positive, got ${ctx.divisor}`,
           {
-            code: InvalidQuantityError.code,
             context: { divisor: divisor.toString() }
           }
         )
@@ -47,7 +46,6 @@ export class ValidateDivisorForQuantityDivision {
         new InvalidQuantityError(
           (ctx) => `Divisor for Quantity division must be finite, got ${ctx.divisor}`,
           {
-            code: InvalidQuantityError.code,
             context: { divisor: divisor.toString() }
           }
         )

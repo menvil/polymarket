@@ -32,7 +32,6 @@ export class ValidateTickSizeForRounding {
         new InvalidQuantityError(
           (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
           {
-            code: InvalidQuantityError.code,
             context: { tickSize: tickSize.toString() }
           }
         )
@@ -44,7 +43,6 @@ export class ValidateTickSizeForRounding {
         new InvalidQuantityError(
           (ctx) => `Tick size must be finite, got ${ctx.tickSize}`,
           {
-            code: InvalidQuantityError.code,
             context: { tickSize: tickSize.toString() }
           }
         )
