@@ -27,7 +27,7 @@ import Decimal from 'decimal.js';
  */
 export class ValidateFactorForQuantityMultiplication {
   public static check(factor: Decimal): Result<void, InvalidQuantityError> {
-    // Проверка 1: factor должен быть finite (включая -Infinity)
+    // Проверка 1: factor должен быть finite (исключает NaN, Infinity, -Infinity)
     if (!factor.isFinite()) {
       return Err(
         new InvalidQuantityError(

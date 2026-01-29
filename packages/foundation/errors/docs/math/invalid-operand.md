@@ -254,6 +254,7 @@ const avg = averageDecimal(
 ```typescript
 import { Quantity } from '@polymarket/value-objects';
 import { InvalidOperandError } from '@polymarket/errors';
+import Decimal from 'decimal.js';
 
 /**
  * Сериализует Quantity в JSON (number, lossy)
@@ -290,15 +291,13 @@ const qty = Quantity.of(10.5);
 
 toJSON(qty);                          // ✅ { value: 10.5 }
 
-// Примечание: Quantity имеет инвариант finite значения.
-// Quantity.fromDecimal(new Decimal('Infinity')) БРОСИТ ИСКЛЮЧЕНИЕ при создании,
-// так как Quantity не может содержать non-finite значения.
-// Проверка в toJSON() - это defensive guard на случай если upstream код
-// каким-то образом создал невалидный Quantity (что не должно происходить).
+// ВАЖНО: Quantity имеет Core инвариант что значение должно быть finite.
+// При создании Quantity через Quantity.of() или Quantity.fromDecimal()
+// non-finite значения вызовут QuantityInvariantViolation.
 //
-// Гипотетический пример (НЕВОЗМОЖЕН в реальности):
-// const infiniteQty = Quantity.fromDecimal(new Decimal('Infinity')); // throws!
-// toJSON(infiniteQty);                  // никогда не выполнится
+// Проверка isFinite() в toJSON() - это defensive guard для защиты
+// от гипотетических багов в upstream коде. В нормальной ситуации
+// эта проверка никогда не должна срабатывать.
 ```
 
 ---

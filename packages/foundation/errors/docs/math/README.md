@@ -68,10 +68,10 @@ const result = safeDivide(
 ### 2. InvalidDecimalPlacesError (форматирование)
 
 ```typescript
-import { Quantity } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
 import { InvalidDecimalPlacesError } from '@polymarket/errors';
 
-function formatQuantity(quantity: Quantity, decimals: number): string {
+function formatDecimal(value: Decimal, decimals: number): string {
   // Валидация decimals параметра
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 100) {
     throw new InvalidDecimalPlacesError(
@@ -79,19 +79,19 @@ function formatQuantity(quantity: Quantity, decimals: number): string {
       {
         context: {
           decimalPlaces: String(decimals),
-          quantity: quantity.value().toString(),
-          operation: 'toString'
+          value: value.toString(),
+          operation: 'formatDecimal'
         }
       }
     );
   }
 
-  return quantity.value().toFixed(decimals);
+  return value.toFixed(decimals);
 }
 
 // Использование
-const qty = Quantity.of(10.5);
-const formatted = formatQuantity(qty, 2); // ✅ "10.50"
+const value = new Decimal(10.5);
+const formatted = formatDecimal(value, 2); // ✅ "10.50"
 ```
 
 ### 3. InvalidTickSizeError (округление)
