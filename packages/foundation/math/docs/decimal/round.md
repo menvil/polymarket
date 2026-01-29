@@ -5,8 +5,8 @@
 ## Содержание
 
 - [roundDecimal](#rounddecimal) - Стандартное округление (half-up)
-- [roundTowardZeroDecimal](#floordecimal) - Округление к нулю (вниз для положительных)
-- [roundAwayFromZeroDecimal](#ceildecimal) - Округление от нуля (вверх для положительных)
+- [roundTowardZeroDecimal](#roundtowardzerodecimal) - Округление к нулю (вниз для положительных)
+- [roundAwayFromZeroDecimal](#roundawayfromzerodecimal) - Округление от нуля (вверх для положительных)
 - [truncDecimal](#truncdecimal) - Усечение дробной части
 - [Сравнение функций](#сравнение-функций)
 - [Рекомендации](#рекомендации)
@@ -259,7 +259,7 @@ equalsDecimal(truncDecimal(value), roundTowardZeroDecimal(value)) // всегд�
 
 Обе функции используют `Decimal.ROUND_DOWN` (округление к нулю).
 
-**Важно:** Семантически `roundTowardZeroDecimal` должна округлять к `-Infinity` (как математическая функция `floor`), но текущая реализация округляет к нулю для совместимости с `truncDecimal`. Если реализация изменится на `Decimal.ROUND_FLOOR`, эквивалентность нарушится для отрицательных чисел. Для истинного математического floor используйте `mathFloorDecimal`.
+**Важно:** `roundTowardZeroDecimal` намеренно округляет к нулю (не к `-Infinity` как математический `floor`). Это поведение эквивалентно `truncDecimal` и полезно для усечения дробной части. Для истинного математического floor (округление к `-Infinity`) используйте `mathFloorDecimal`.
 
 ### Когда использовать
 
@@ -364,12 +364,13 @@ function roundToCent(price: Decimal): Decimal {
 
 ```typescript
 import { roundToTick } from '@polymarket/math/rounding';
+import Decimal from 'decimal.js';
 
 const price = new Decimal('0.6567');
 const tickSize = new Decimal('0.01');
 
 // ✅ Правильно: используем roundToTick
-const rounded = roundToTick(price, tickSize);
+const rounded = roundToTick(price, tickSize, Decimal.ROUND_HALF_UP);
 // 0.66
 
 // ❌ Неправильно: roundDecimal для tick size

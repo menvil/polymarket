@@ -7,7 +7,7 @@
 - [isFiniteDecimal - Проверка конечности](#isfinitedecimal)
 - [isPositiveDecimal - Проверка положительности](#ispositivedecimal)
 - [isNonNegativeDecimal - Проверка неотрицательности](#isnonnegativedecimal)
-- [isZeroDecimal - Приблизительное сравнение с нулем](#iszerodecimal)
+- [isZeroDecimal - Строгое сравнение с нулем](#iszerodecimal)
 - [Примеры использования](#примеры-использования)
 
 ---

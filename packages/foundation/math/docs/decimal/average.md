@@ -38,6 +38,7 @@ function averageDecimal(a: Decimal, b: Decimal): Decimal
 
 ### Выбрасываемые ошибки
 
+- **InvalidOperandError** - Если операнды не являются конечными числами (NaN, Infinity, -Infinity)
 - **ArithmeticOverflowError** - Если результат не является конечным числом (Infinity, -Infinity, NaN)
 
 ## Математические свойства
@@ -412,4 +413,4 @@ try {
 - [divideDecimal](./divide.md) - Деление Decimal чисел
 - [multiplyDecimal](./multiply.md) - Умножение Decimal чисел
 - [subtractDecimal](./subtract.md) - Вычитание Decimal чисел
-- [ArithmeticOverflowError](../../errors/docs/arithmetic/overflow.md) - Ошибка overflow
+- [ArithmeticOverflowError](../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow

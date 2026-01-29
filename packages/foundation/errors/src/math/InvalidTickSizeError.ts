@@ -15,14 +15,12 @@
  * throw new InvalidTickSizeError(
  *   (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
  *   {
- *     code: InvalidTickSizeError.code,
  *     context: { tickSize: 0, value: 10.567 }
  *   }
  * );
  *
  * // Статическое сообщение
  * throw new InvalidTickSizeError('Invalid tick size', {
- *   code: InvalidTickSizeError.code,
  *   context: { tickSize: -0.01 }
  * });
  * ```

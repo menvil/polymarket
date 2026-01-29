@@ -72,7 +72,7 @@ function assertFinite2(a: Decimal, b: Decimal, operation: string): void {
  *
  * @remarks
  * Следует семантике IEEE 754: NaN не равен никакому значению, включая сам себя.
- * Если нужно проверить что оба значения NaN, используйте `!a.isFinite() && !b.isFinite()`.
+ * Если нужно проверить что оба значения NaN, используйте `a.isNaN() && b.isNaN()`.
  */
 export function equalsDecimal(a: Decimal, b: Decimal): boolean {
   return a.equals(b);
@@ -200,34 +200,7 @@ export function greaterThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function compareDecimal(a: Decimal, b: Decimal): -1 | 0 | 1 {
-  // Валидация первого операнда
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `First operand must be finite, got ${ctx.a}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'compare'
-        }
-      }
-    );
-  }
-
-  // Валидация второго операнда
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Second operand must be finite, got ${ctx.b}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'compare'
-        }
-      }
-    );
-  }
-
+  assertFinite2(a, b, 'compare');
   const c = a.comparedTo(b);
   if (c < 0) return -1;
   if (c > 0) return 1;

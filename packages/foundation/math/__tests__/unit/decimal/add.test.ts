@@ -79,7 +79,7 @@ describe('addDecimal', () => {
 
   describe('точность', () => {
     it('должен корректно складывать 0.1 + 0.2', () => {
-      const result = addDecimal(new Decimal(0.1), new Decimal(0.2));
+      const result = addDecimal(new Decimal('0.1'), new Decimal('0.2'));
       expect(result.toString()).toBe('0.3'); // Не 0.30000000000000004!
     });
 

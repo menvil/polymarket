@@ -19,14 +19,12 @@ import type { ErrorSeverity } from '../base/index.js';
  * throw new InvalidDivisorError(
  *   (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
  *   {
- *     code: InvalidDivisorError.code,
  *     context: { divisor: 'Infinity', dividend: '100' }
  *   }
  * );
  *
  * // Статическое сообщение
  * throw new InvalidDivisorError('Invalid divisor', {
- *   code: InvalidDivisorError.code,
  *   context: { divisor: NaN }
  * });
  * ```

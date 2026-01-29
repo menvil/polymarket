@@ -49,7 +49,6 @@ function divide(dividend: number, divisor: number): number {
     throw new InvalidDivisorError(
       (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
       {
-        code: InvalidDivisorError.code,
         context: { divisor, dividend }
       }
     );
@@ -85,7 +84,6 @@ function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
     throw new InvalidDivisorError(
       (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
       {
-        code: InvalidDivisorError.code,
         context: {
           divisor: divisor.toString(),
           dividend: dividend.toString()
@@ -99,7 +97,6 @@ function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
     throw new DivisionByZeroError(
       'Cannot divide by zero',
       {
-        code: DivisionByZeroError.code,
         context: { dividend: dividend.toString() }
       }
     );
@@ -129,7 +126,6 @@ function average(a: Decimal, b: Decimal): Decimal {
     throw new InvalidDivisorError(
       'Divisor for average must be finite',
       {
-        code: InvalidDivisorError.code,
         context: { divisor: divisor.toString() }
       }
     );
@@ -157,7 +153,6 @@ function roundToTickSize(value: Decimal, tickSize: Decimal): Decimal {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
       {
-        code: InvalidTickSizeError.code,
         context: { tickSize: tickSize.toString(), value: value.toString() }
       }
     );
@@ -170,7 +165,6 @@ function roundToTickSize(value: Decimal, tickSize: Decimal): Decimal {
     throw new InvalidDivisorError(
       (ctx) => `Division by tick size resulted in non-finite value: ${ctx.result}`,
       {
-        code: InvalidDivisorError.code,
         context: {
           value: value.toString(),
           tickSize: tickSize.toString(),
@@ -202,7 +196,6 @@ function calculatePercentage(part: Decimal, total: Decimal): Decimal {
     throw new InvalidDivisorError(
       (ctx) => `Total must be finite for percentage calculation, got ${ctx.total}`,
       {
-        code: InvalidDivisorError.code,
         context: {
           part: part.toString(),
           total: total.toString()
@@ -215,7 +208,6 @@ function calculatePercentage(part: Decimal, total: Decimal): Decimal {
     throw new DivisionByZeroError(
       'Cannot calculate percentage with zero total',
       {
-        code: DivisionByZeroError.code,
         context: { part: part.toString() }
       }
     );

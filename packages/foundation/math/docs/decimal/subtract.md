@@ -28,6 +28,7 @@ function subtractDecimal(a: Decimal, b: Decimal): Decimal
 ### Выбрасываемые ошибки
 
 - **InvalidOperandError** - Если операнды не являются конечными числами (NaN, Infinity, -Infinity)
+- **ArithmeticOverflowError** - Если результат не является конечным числом (Infinity, -Infinity)
 
 ## Математические свойства
 

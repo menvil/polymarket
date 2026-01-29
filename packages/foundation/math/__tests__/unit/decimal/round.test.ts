@@ -200,9 +200,9 @@ describe('round', () => {
       });
 
       it('должен содержать контекст в InvalidOperandError', () => {
+        expect.assertions(4);
         try {
           roundDecimal(new Decimal(NaN));
-          expect(true).toBe(false); // Should not reach here
         } catch (error) {
           expect(InvalidOperandError.is(error)).toBe(true);
           if (InvalidOperandError.is(error)) {
@@ -228,9 +228,9 @@ describe('round', () => {
       });
 
       it('должен содержать контекст в InvalidOperandError', () => {
+        expect.assertions(4);
         try {
           roundTowardZeroDecimal(new Decimal(Infinity));
-          expect(true).toBe(false);
         } catch (error) {
           expect(InvalidOperandError.is(error)).toBe(true);
           if (InvalidOperandError.is(error)) {
@@ -256,9 +256,9 @@ describe('round', () => {
       });
 
       it('должен содержать контекст в InvalidOperandError', () => {
+        expect.assertions(4);
         try {
           roundAwayFromZeroDecimal(new Decimal(-Infinity));
-          expect(true).toBe(false);
         } catch (error) {
           expect(InvalidOperandError.is(error)).toBe(true);
           if (InvalidOperandError.is(error)) {
@@ -284,9 +284,9 @@ describe('round', () => {
       });
 
       it('должен содержать контекст в InvalidOperandError', () => {
+        expect.assertions(4);
         try {
           truncDecimal(new Decimal(NaN));
-          expect(true).toBe(false);
         } catch (error) {
           expect(InvalidOperandError.is(error)).toBe(true);
           if (InvalidOperandError.is(error)) {
@@ -312,9 +312,9 @@ describe('round', () => {
       });
 
       it('должен содержать контекст в InvalidOperandError', () => {
+        expect.assertions(4);
         try {
           mathFloorDecimal(new Decimal(Infinity));
-          expect(true).toBe(false);
         } catch (error) {
           expect(InvalidOperandError.is(error)).toBe(true);
           if (InvalidOperandError.is(error)) {
@@ -340,9 +340,9 @@ describe('round', () => {
       });
 
       it('должен содержать контекст в InvalidOperandError', () => {
+        expect.assertions(4);
         try {
           mathCeilDecimal(new Decimal(-Infinity));
-          expect(true).toBe(false);
         } catch (error) {
           expect(InvalidOperandError.is(error)).toBe(true);
           if (InvalidOperandError.is(error)) {

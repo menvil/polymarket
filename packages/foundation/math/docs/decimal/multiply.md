@@ -135,8 +135,9 @@ const result3 = multiplyDecimal(value, MATH_CONSTANTS.TWO);
 console.log(result3.toString()); // "84"
 ```
 
-### Обработка overflow
+### Обработка ошибок
 
+**Невалидные операнды:**
 ```typescript
 import Decimal from 'decimal.js';
 import { multiplyDecimal } from '@polymarket/math';
@@ -146,13 +147,29 @@ try {
   const inf = new Decimal(Infinity);
   const value = new Decimal(100);
 
-  // ❌ Throws InvalidOperandError
+  // ❌ Throws InvalidOperandError (операнд не конечен)
   const result = multiplyDecimal(inf, value);
 } catch (error) {
   if (InvalidOperandError.is(error)) {
     console.error('Invalid operand:', error.message);
     console.error('Context:', error.context);
     // Context: { a: 'Infinity', b: '100', operation: 'multiply' }
+  }
+}
+```
+
+**Обработка overflow результата:**
+```typescript
+import { multiplyDecimal } from '@polymarket/math';
+import { ArithmeticOverflowError } from '@polymarket/errors';
+
+try {
+  // Гипотетический пример - в реальности требуются экстремальные значения
+  const result = multiplyDecimal(veryLargeNumber, anotherLargeNumber);
+} catch (error) {
+  if (ArithmeticOverflowError.is(error)) {
+    console.error('Multiplication overflow:', error.message);
+    console.error('Context:', error.context);
   }
 }
 ```

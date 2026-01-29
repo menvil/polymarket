@@ -1,4 +1,5 @@
-import { TradingError, ErrorSeverity } from '../base/index.js';
+import { TradingError } from '../base/index.js';
+import type { ErrorSeverity } from '../base/index.js';
 
 /**
  * InvalidOperandError - ошибка невалидного операнда

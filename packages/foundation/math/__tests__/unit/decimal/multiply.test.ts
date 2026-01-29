@@ -100,4 +100,5 @@ describe('multiplyDecimal', () => {
       expect(result.toString()).toBe('65.43');
     });
   });
+
 });

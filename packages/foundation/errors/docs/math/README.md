@@ -40,7 +40,7 @@ import Decimal from 'decimal.js';
 import { InvalidDivisorError } from '@polymarket/errors';
 
 function safeDivide(dividend: Decimal, divisor: Decimal): Decimal {
-  // Проверяем что делитель конечен и не ноль
+  // Проверяем что делитель конечен
   if (!divisor.isFinite()) {
     throw new InvalidDivisorError(
       (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
@@ -60,7 +60,7 @@ function safeDivide(dividend: Decimal, divisor: Decimal): Decimal {
 }
 
 // Использование
-const result = divideDecimal(
+const result = safeDivide(
   new Decimal('100'),
   new Decimal('0.5')
 ); // ✅ 200
@@ -265,7 +265,7 @@ Value objects используют math operations и обрабатывают �
 // packages/domain/value-objects/src/Price.ts
 import { divideDecimal, roundToTickSize } from '@polymarket/math';
 import { InvalidDivisorError, InvalidTickSizeError } from '@polymarket/errors';
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 
 export class Price {
   // ...

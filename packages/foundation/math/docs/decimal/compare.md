@@ -75,6 +75,7 @@ compareDecimal(a, c); // 0 (одинаковое математическое з
 
 **Валидация невалидных операндов:**
 ```typescript
+import Decimal from 'decimal.js';
 import { compareDecimal } from '@polymarket/math';
 import { InvalidOperandError } from '@polymarket/errors';
 
