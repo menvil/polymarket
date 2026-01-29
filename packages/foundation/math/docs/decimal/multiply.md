@@ -240,7 +240,7 @@ try {
 }
 ```
 
-### Умножение на нуль
+### Умножение на ноль
 
 ```typescript
 import Decimal from 'decimal.js';

@@ -235,11 +235,13 @@ describe('compare', () => {
       });
 
       it('должен содержать контекст в InvalidOperandError', () => {
+        expect(() => compareDecimal(new Decimal(NaN), new Decimal(10))).toThrow(
+          InvalidOperandError
+        );
+
         try {
           compareDecimal(new Decimal(NaN), new Decimal(10));
-          fail('Should throw');
         } catch (error) {
-          expect(error).toBeInstanceOf(InvalidOperandError);
           if (error instanceof InvalidOperandError) {
             expect(error.context).toBeDefined();
             expect(error.context?.a).toBe('NaN');

@@ -179,11 +179,13 @@ describe('roundToPrecision', () => {
     });
 
     it('должен содержать контекст в InvalidOperandError', () => {
+      expect(() =>
+        roundToPrecision(new Decimal(NaN), 2, Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidOperandError);
+
       try {
         roundToPrecision(new Decimal(NaN), 2, Decimal.ROUND_HALF_UP);
-        fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(InvalidOperandError);
         if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.value).toBe('NaN');
@@ -220,11 +222,13 @@ describe('roundToPrecision', () => {
     });
 
     it('должен содержать контекст в InvalidDecimalPlacesError', () => {
+      expect(() =>
+        roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidDecimalPlacesError);
+
       try {
         roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP);
-        fail('Should throw');
       } catch (error) {
-        expect(error).toBeInstanceOf(InvalidDecimalPlacesError);
         if (error instanceof InvalidDecimalPlacesError) {
           expect(error.context).toBeDefined();
           expect(error.context?.decimalPlaces).toBe('-1');
