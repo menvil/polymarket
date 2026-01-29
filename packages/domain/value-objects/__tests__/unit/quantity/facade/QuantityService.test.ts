@@ -108,6 +108,7 @@ describe('QuantityService', () => {
     it('должен парсить value только один раз', () => {
       const decimal = new Decimal(10);
       const result = QuantityService.createForOrder(decimal, new Decimal(1));
+      expect(result.ok).toBe(true);
       if (result.ok) {
         // Проверяем что decimal не был распарсен повторно
         expect(result.value.value()).toBe(decimal);
@@ -181,26 +182,33 @@ describe('QuantityService', () => {
     //   }
     // });
 
-    describe('Facade Error Contract', () => {
-      it('error должен содержать context.op = "add"', () => {
-        const bigQty = Quantity.fromDecimal(new Decimal('1e308'));
-        const result = QuantityService.add(bigQty, bigQty);
+    // Примечание: Тесты Facade Error Contract закомментированы, так как
+    // Decimal.js не производит overflow/Infinity для add() (arbitrary precision).
+    // Error contract задокументирован, но реально протестировать его для add()
+    // невозможно с валидными Quantity объектами.
 
-        if (!result.ok) {
-          expect(result.error.context?.op).toBe('add');
-        }
-      });
-
-      it('error должен содержать context.quantity1 и quantity2', () => {
-        const bigQty = Quantity.fromDecimal(new Decimal('1e308'));
-        const result = QuantityService.add(bigQty, bigQty);
-
-        if (!result.ok) {
-          expect(result.error.context).toHaveProperty('quantity1');
-          expect(result.error.context).toHaveProperty('quantity2');
-        }
-      });
-    });
+    // describe('Facade Error Contract', () => {
+    //   it('error должен содержать context.op = "add"', () => {
+    //     // Decimal.js не даёт Infinity при сложении
+    //     const bigQty = Quantity.fromDecimal(new Decimal('1e308'));
+    //     const result = QuantityService.add(bigQty, bigQty);
+    //
+    //     if (!result.ok) {
+    //       expect(result.error.context?.op).toBe('add');
+    //     }
+    //   });
+    //
+    //   it('error должен содержать context.quantity1 и quantity2', () => {
+    //     // Decimal.js не даёт Infinity при сложении
+    //     const bigQty = Quantity.fromDecimal(new Decimal('1e308'));
+    //     const result = QuantityService.add(bigQty, bigQty);
+    //
+    //     if (!result.ok) {
+    //       expect(result.error.context).toHaveProperty('quantity1');
+    //       expect(result.error.context).toHaveProperty('quantity2');
+    //     }
+    //   });
+    // });
   });
 
   describe('subtract()', () => {

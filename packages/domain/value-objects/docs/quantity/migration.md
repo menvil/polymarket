@@ -62,7 +62,7 @@ import { QuantitySerializer, QuantityFormatter } from '@polymarket/value-objects
 **Было:**
 ```typescript
 try {
-  const qty = new Quantity(10);
+  const qty = Quantity.of(10);
   // используем qty
 } catch (error) {
   // обработка ошибки

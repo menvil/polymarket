@@ -455,14 +455,14 @@ doSomething(result.value);
 ### 1. Переиспользуйте Decimal
 
 ```typescript
-// ❌ Медленно: парсит дважды
-const decimal = new Decimal(value);
-const result1 = QuantityService.create(decimal);  // parse
-const result2 = QuantityService.create(decimal);  // parse
+// ❌ Медленно: парсит из строки дважды
+const result1 = QuantityService.create("123.456");  // парсинг строки → Decimal
+const result2 = QuantityService.create("123.456");  // парсинг строки → Decimal снова
 
 // ✅ Быстро: parse один раз, потом zero-copy
-const decimal = new Decimal(value);
-const result1 = QuantityService.create(decimal);  // Внутри: fromDecimal()
+const decimal = new Decimal("123.456");             // парсинг один раз
+const result1 = QuantityService.create(decimal);    // zero-copy (fromDecimal)
+const result2 = QuantityService.create(decimal);    // zero-copy (fromDecimal)
 ```
 
 ### 2. Кешируйте константы

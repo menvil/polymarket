@@ -358,7 +358,7 @@ const remainingResult = QuantityService.subtract(currentPosition, tradeSize);
 
 if (!remainingResult.ok) {
   // Ошибка: попытка закрыть больше чем есть
-  console.error(result.error.message);
+  console.error(remainingResult.error.message);
   return;
 }
 
