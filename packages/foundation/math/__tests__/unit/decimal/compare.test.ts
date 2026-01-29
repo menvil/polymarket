@@ -295,48 +295,48 @@ describe('compare', () => {
     });
   });
 
-  // Tests for lessThanDecimal validation
+  // Тесты валидации lessThanDecimal
   describe('lessThanDecimal validation', () => {
-    it('should throw InvalidOperandError on NaN in first operand', () => {
+    it('должен throw InvalidOperandError на NaN в первом операнде', () => {
       expect(() =>
         lessThanDecimal(new Decimal(NaN), new Decimal(10))
       ).toThrow(InvalidOperandError);
     });
 
-    it('should throw InvalidOperandError on Infinity in second operand', () => {
+    it('должен throw InvalidOperandError на Infinity во втором операнде', () => {
       expect(() =>
         lessThanDecimal(new Decimal(10), new Decimal(Infinity))
       ).toThrow(InvalidOperandError);
     });
   });
 
-  // Tests for greaterThanDecimal validation
+  // Тесты валидации greaterThanDecimal
   describe('greaterThanDecimal validation', () => {
-    it('should throw InvalidOperandError on -Infinity in first operand', () => {
+    it('должен throw InvalidOperandError на -Infinity в первом операнде', () => {
       expect(() =>
         greaterThanDecimal(new Decimal(-Infinity), new Decimal(10))
       ).toThrow(InvalidOperandError);
     });
 
-    it('should throw InvalidOperandError on NaN in second operand', () => {
+    it('должен throw InvalidOperandError на NaN во втором операнде', () => {
       expect(() =>
         greaterThanDecimal(new Decimal(10), new Decimal(NaN))
       ).toThrow(InvalidOperandError);
     });
   });
 
-  // Tests for lessThanOrEqualDecimal validation
+  // Тесты валидации lessThanOrEqualDecimal
   describe('lessThanOrEqualDecimal validation', () => {
-    it('should throw InvalidOperandError on Infinity', () => {
+    it('должен throw InvalidOperandError на Infinity', () => {
       expect(() =>
         lessThanOrEqualDecimal(new Decimal(Infinity), new Decimal(10))
       ).toThrow(InvalidOperandError);
     });
   });
 
-  // Tests for greaterThanOrEqualDecimal validation
+  // Тесты валидации greaterThanOrEqualDecimal
   describe('greaterThanOrEqualDecimal validation', () => {
-    it('should throw InvalidOperandError on NaN', () => {
+    it('должен throw InvalidOperandError на NaN', () => {
       expect(() =>
         greaterThanOrEqualDecimal(new Decimal(10), new Decimal(NaN))
       ).toThrow(InvalidOperandError);
