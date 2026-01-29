@@ -413,4 +413,4 @@ try {
 - [divideDecimal](./divide.md) - Деление Decimal чисел
 - [multiplyDecimal](./multiply.md) - Умножение Decimal чисел
 - [subtractDecimal](./subtract.md) - Вычитание Decimal чисел
-- [ArithmeticOverflowError](../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow
+- [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow

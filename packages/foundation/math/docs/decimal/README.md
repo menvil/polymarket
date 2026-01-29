@@ -56,7 +56,7 @@ class Price {
 | `divideDecimal(a, b)` | Деление чисел | [→](./divide.md) |
 | `averageDecimal(a, b)` | Среднее значение | [→](./average.md) |
 | `equalsDecimal(a, b)` | Строгое равенство | [→](./compare.md#equalsdecimal) |
-| `lessThanDecimal(a, b)` | Строгое меньше (<) | [→](./compare.md#lessThanDecimal) |
+| `lessThanDecimal(a, b)` | Строгое меньше (<) | [→](./compare.md#lessthnadecimal) |
 | `lessThanOrEqualDecimal(a, b)` | Меньше или равно (<=) | [→](./compare.md#lessthanorequaldecimal) |
 | `greaterThanDecimal(a, b)` | Строгое больше (>) | [→](./compare.md#greaterthandecimal) |
 | `greaterThanOrEqualDecimal(a, b)` | Больше или равно (>=) | [→](./compare.md#greaterthanorequaldecimal) |

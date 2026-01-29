@@ -454,6 +454,6 @@ console.log(multiplyDecimal(quotient, b).equals(a)); // true
 - [subtractDecimal](./subtract.md) - Вычитание Decimal чисел
 - [multiplyDecimal](./multiply.md) - Умножение Decimal чисел
 - [averageDecimal](./average.md) - Среднее значение двух чисел *(в разработке)*
-- [DivisionByZeroError](../../errors/docs/arithmetic/division-by-zero.md) - Ошибка деления на ноль
-- [InvalidDivisorError](../../errors/docs/arithmetic/invalid-divisor.md) - Ошибка невалидного делителя
-- [ArithmeticOverflowError](../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow
+- [DivisionByZeroError](../../../errors/docs/value-objects/division-by-zero.md) - Ошибка деления на ноль
+- [InvalidDivisorError](../../../errors/docs/math/invalid-divisor.md) - Ошибка невалидного делителя
+- [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow

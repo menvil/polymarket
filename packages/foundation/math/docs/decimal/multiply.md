@@ -160,11 +160,15 @@ try {
 
 **Обработка overflow результата:**
 ```typescript
+import Decimal from 'decimal.js';
 import { multiplyDecimal } from '@polymarket/math';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
 try {
   // Гипотетический пример - в реальности требуются экстремальные значения
+  const veryLargeNumber = new Decimal('1e5000');
+  const anotherLargeNumber = new Decimal('1e5000');
+
   const result = multiplyDecimal(veryLargeNumber, anotherLargeNumber);
 } catch (error) {
   if (ArithmeticOverflowError.is(error)) {
