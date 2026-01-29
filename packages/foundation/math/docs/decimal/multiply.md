@@ -24,10 +24,10 @@ function multiplyDecimal(a: Decimal, b: Decimal): Decimal
 
 ### Параметры
 
-| Параметр | Тип | Описание |
-|----------|-----|----------|
-| `a` | `Decimal` | Первый множитель |
-| `b` | `Decimal` | Второй множитель |
+| Параметр | Тип       | Описание            |
+|----------|-----------|---------------------|
+| `a`      | `Decimal` | Первый множитель    |
+| `b`      | `Decimal` | Второй множитель    |
 
 ### Возвращаемое значение
 
@@ -138,6 +138,7 @@ console.log(result3.toString()); // "84"
 ### Обработка ошибок
 
 **Невалидные операнды:**
+
 ```typescript
 import Decimal from 'decimal.js';
 import { multiplyDecimal } from '@polymarket/math';
@@ -159,6 +160,7 @@ try {
 ```
 
 **Обработка overflow результата:**
+
 ```typescript
 import Decimal from 'decimal.js';
 import { multiplyDecimal } from '@polymarket/math';
@@ -380,4 +382,4 @@ console.log(left.equals(right)); // true
 - [subtractDecimal](./subtract.md) - Вычитание Decimal чисел
 - [divideDecimal](./divide.md) - Деление Decimal чисел *(в разработке)*
 - [averageDecimal](./average.md) - Среднее значение двух чисел *(в разработке)*
-- [ArithmeticOverflowError](../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow
+- [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow

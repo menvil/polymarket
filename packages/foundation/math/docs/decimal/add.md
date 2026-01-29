@@ -278,4 +278,4 @@ console.log(check.equals(a)); // true
 - [multiplyDecimal](./multiply.md) - Умножение Decimal чисел
 - [divideDecimal](./divide.md) - Деление Decimal чисел
 - [averageDecimal](./average.md) - Среднее значение двух чисел
-- [ArithmeticOverflowError](../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow
+- [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow

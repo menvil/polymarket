@@ -192,6 +192,29 @@ try {
 }
 ```
 
+**Обработка overflow результата:**
+
+```typescript
+import Decimal from 'decimal.js';
+import { subtractDecimal } from '@polymarket/math';
+import { ArithmeticOverflowError } from '@polymarket/errors';
+
+try {
+  // Операции с экстремальными значениями могут привести к overflow
+  const largePositive = new Decimal('1e5000');
+  const largeNegative = new Decimal('-1e5000');
+
+  // ❌ Throws ArithmeticOverflowError (результат не конечен)
+  const result = subtractDecimal(largePositive, largeNegative);
+} catch (error) {
+  if (ArithmeticOverflowError.is(error)) {
+    console.error('Arithmetic overflow:', error.message);
+    console.error('Context:', error.context);
+    // Context: { a: '1e+5000', b: '-1e+5000', result: 'Infinity', operation: 'subtract' }
+  }
+}
+```
+
 ## Edge Cases
 
 ### Отрицательные результаты разрешены
@@ -386,4 +409,4 @@ class Quantity {
 - [addDecimal](./add.md) - Сложение Decimal чисел
 - [multiplyDecimal](./multiply.md) - Умножение Decimal чисел
 - [divideDecimal](./divide.md) - Деление Decimal чисел
-- [ArithmeticOverflowError](../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow
+- [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow
