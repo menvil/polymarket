@@ -76,6 +76,33 @@ export class Quantity {
   }
 
   /**
+   * Создаёт Quantity из готового Decimal (без повторного парсинга)
+   *
+   * @remarks
+   * Используй когда у тебя уже есть Decimal объект (результат math операций, конфиги).
+   * Избегает повторного парсинга и гарантирует единый режим Decimal.
+   *
+   * ВАЖНО: Не клонирует Decimal, принимает как есть.
+   *
+   * @param decimal - Готовый Decimal объект
+   * @returns Новый Quantity
+   * @throws {QuantityInvariantViolation} Если значение не соответствует инвариантам
+   *
+   * @example
+   * ```typescript
+   * const decimal = new Decimal(10);
+   * const qty = Quantity.fromDecimal(decimal); // НЕ of(decimal)!
+   *
+   * // После math операций
+   * const sum = addDecimal(qty1.value(), qty2.value());
+   * const result = Quantity.fromDecimal(sum);
+   * ```
+   */
+  public static fromDecimal(decimal: Decimal): Quantity {
+    return new Quantity(decimal);
+  }
+
+  /**
    * Возвращает внутреннее значение Decimal
    *
    * @returns Decimal значение
