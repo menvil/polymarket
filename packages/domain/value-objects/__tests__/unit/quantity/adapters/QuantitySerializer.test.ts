@@ -81,27 +81,36 @@ describe('QuantityLossySerializer', () => {
   describe('toJSON()', () => {
     it('должен сериализовать Quantity в number', () => {
       const qty = Quantity.of(10);
-      const json = QuantityLossySerializer.toJSON(qty);
+      const result = QuantityLossySerializer.toJSON(qty);
 
-      expect(json).toEqual({ value: 10 });
-      expect(typeof json.value).toBe('number');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toEqual({ value: 10 });
+        expect(typeof result.value.value).toBe('number');
+      }
     });
 
     it('должен сериализовать decimal значения', () => {
       const qty = Quantity.of(10.5);
-      const json = QuantityLossySerializer.toJSON(qty);
+      const result = QuantityLossySerializer.toJSON(qty);
 
-      expect(json.value).toBe(10.5);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value).toBe(10.5);
+      }
     });
 
     it('может потерять точность для больших чисел (ожидаемо)', () => {
       const bigNum = "12345678901234567890.123456789";
       const qty = Quantity.of(bigNum);
-      const json = QuantityLossySerializer.toJSON(qty);
+      const result = QuantityLossySerializer.toJSON(qty);
 
-      // Проверяем что это number (может быть неточным)
-      expect(typeof json.value).toBe('number');
-      // НЕ проверяем точность, это lossy serializer
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Проверяем что это number (может быть неточным)
+        expect(typeof result.value.value).toBe('number');
+        // НЕ проверяем точность, это lossy serializer
+      }
     });
   });
 
@@ -128,9 +137,12 @@ describe('QuantityLossySerializer', () => {
   describe('round-trip', () => {
     it('должен работать для small numbers', () => {
       const original = Quantity.of(10.5);
-      const json = QuantityLossySerializer.toJSON(original);
-      const result = QuantityLossySerializer.fromJSON(json);
+      const jsonResult = QuantityLossySerializer.toJSON(original);
 
+      expect(jsonResult.ok).toBe(true);
+      if (!jsonResult.ok) return;
+
+      const result = QuantityLossySerializer.fromJSON(jsonResult.value);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.toNumber()).toBe(10.5);
@@ -141,9 +153,12 @@ describe('QuantityLossySerializer', () => {
       // Просто проверяем что round-trip не падает
       const bigNum = "12345678901234567890";
       const original = Quantity.of(bigNum);
-      const json = QuantityLossySerializer.toJSON(original);
-      const result = QuantityLossySerializer.fromJSON(json);
+      const jsonResult = QuantityLossySerializer.toJSON(original);
 
+      expect(jsonResult.ok).toBe(true);
+      if (!jsonResult.ok) return;
+
+      const result = QuantityLossySerializer.fromJSON(jsonResult.value);
       expect(result.ok).toBe(true);
       // НЕ проверяем точность
     });

@@ -192,7 +192,11 @@ describe('Quantity Integration Workflow', () => {
       const qty = Quantity.of(10.5);
 
       // Сериализация
-      const json = QuantityLossySerializer.toJSON(qty);
+      const jsonResult = QuantityLossySerializer.toJSON(qty);
+      expect(jsonResult.ok).toBe(true);
+      if (!jsonResult.ok) return;
+
+      const json = jsonResult.value;
       expect(typeof json.value).toBe('number');
 
       // Десериализация

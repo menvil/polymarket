@@ -1,4 +1,4 @@
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError, InvalidOperandError } from '@polymarket/errors';
 import { Quantity } from '../core/Quantity.js';
 import { QuantityService } from '../facade/QuantityService.js';
@@ -64,29 +64,32 @@ export class QuantityLossySerializer {
    * ⚠️ ВНИМАНИЕ: Может потерять точность для больших чисел.
    *
    * @param quantity - Количество для сериализации
-   * @returns JSON объект { value: number }
-   * @throws {InvalidOperandError} Если Quantity содержит non-finite значение
+   * @returns Result с JSON объектом { value: number } или ошибкой
    *
    * @example
    * ```typescript
-   * const json = QuantityLossySerializer.toJSON(qty);
-   * // { value: 10.123456789 } (может потерять precision)
+   * const result = QuantityLossySerializer.toJSON(qty);
+   * if (result.ok) {
+   *   console.log(result.value); // { value: 10.123456789 }
+   * }
    * ```
    */
-  public static toJSON(quantity: Quantity): { value: number } {
+  public static toJSON(quantity: Quantity): Result<{ value: number }, InvalidOperandError> {
     const decimalValue = quantity.value();
     if (!decimalValue.isFinite()) {
-      throw new InvalidOperandError(
-        (ctx) => `Cannot serialize non-finite Quantity to JSON, got ${ctx.value}`,
-        {
-          context: {
-            value: decimalValue.toString(),
-            operation: 'toJSON'
+      return Err(
+        new InvalidOperandError(
+          (ctx) => `Cannot serialize non-finite Quantity to JSON, got ${ctx.value}`,
+          {
+            context: {
+              value: decimalValue.toString(),
+              operation: 'toJSON'
+            }
           }
-        }
+        )
       );
     }
-    return { value: quantity.toNumber() };
+    return Ok({ value: quantity.toNumber() });
   }
 
   /**

@@ -1,5 +1,6 @@
 import { Quantity } from '../core/Quantity.js';
 import { InvalidDecimalPlacesError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
 
 /**
  * Форматирование Quantity в строки
@@ -12,28 +13,32 @@ export class QuantityFormatter {
    *
    * @param quantity - Количество для форматирования
    * @param decimals - Количество знаков после запятой (default: 2, max: 100)
-   * @returns Отформатированная строка
-   * @throws {InvalidDecimalPlacesError} Если decimals не целое число или выходит за диапазон [0, 100]
+   * @returns Result с отформатированной строкой или ошибкой
    *
    * @example
    * ```typescript
-   * QuantityFormatter.toString(Quantity.of(10.5), 2); // "10.50"
+   * const result = QuantityFormatter.toString(Quantity.of(10.5), 2);
+   * if (result.ok) {
+   *   console.log(result.value); // "10.50"
+   * }
    * ```
    */
-  public static toString(quantity: Quantity, decimals: number = 2): string {
+  public static toString(quantity: Quantity, decimals: number = 2): Result<string, InvalidDecimalPlacesError> {
     if (!Number.isInteger(decimals) || decimals < 0 || decimals > 100) {
-      throw new InvalidDecimalPlacesError(
-        (ctx) => `Decimal places must be an integer between 0 and 100, got ${ctx.decimalPlaces}`,
-        {
-          context: {
-            decimalPlaces: String(decimals),
-            quantity: quantity.value().toString(),
-            operation: 'toString'
+      return Err(
+        new InvalidDecimalPlacesError(
+          (ctx) => `Decimal places must be an integer between 0 and 100, got ${ctx.decimalPlaces}`,
+          {
+            context: {
+              decimalPlaces: String(decimals),
+              quantity: quantity.value().toString(),
+              operation: 'toString'
+            }
           }
-        }
+        )
       );
     }
-    return quantity.value().toFixed(decimals);
+    return Ok(quantity.value().toFixed(decimals));
   }
 
   /**

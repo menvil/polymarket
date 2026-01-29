@@ -6,17 +6,35 @@ describe('QuantityFormatter', () => {
   describe('toString()', () => {
     it('должен форматировать с default decimals (2)', () => {
       const qty = Quantity.of(10.567);
-      expect(QuantityFormatter.toString(qty)).toBe("10.57");
+      const result = QuantityFormatter.toString(qty);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe("10.57");
+      }
     });
 
     it('должен форматировать с custom decimals', () => {
       const qty = Quantity.of(10.567);
-      expect(QuantityFormatter.toString(qty, 3)).toBe("10.567");
+      const result = QuantityFormatter.toString(qty, 3);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe("10.567");
+      }
     });
 
     it('должен добавить trailing zeros', () => {
       const qty = Quantity.of(10);
-      expect(QuantityFormatter.toString(qty, 2)).toBe("10.00");
+      const result = QuantityFormatter.toString(qty, 2);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe("10.00");
+      }
+    });
+
+    it('должен вернуть Err для invalid decimals', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityFormatter.toString(qty, -1);
+      expect(result.ok).toBe(false);
     });
   });
 
