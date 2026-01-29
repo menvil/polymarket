@@ -40,6 +40,12 @@ export class QuantityInvariantViolation extends Error {
  * - Сериализацию (используй Adapters)
  */
 export class Quantity {
+  /**
+   * Константы для часто используемых значений
+   */
+  public static readonly ZERO = Quantity.of(0);
+  public static readonly ONE = Quantity.of(1);
+
   private constructor(private readonly v: Decimal) {
     // Инвариант 1: Must be finite (покрывает Infinity и NaN)
     if (!v.isFinite()) {
@@ -103,11 +109,97 @@ export class Quantity {
   }
 
   /**
-   * Возвращает внутреннее значение Decimal
+   * Возвращает Decimal значение
    *
-   * @returns Decimal значение
+   * @returns Внутренний Decimal объект
+   *
+   * @example
+   * ```typescript
+   * const qty = Quantity.of(10);
+   * const decimal = qty.value(); // Decimal
+   * ```
    */
   public value(): Decimal {
     return this.v;
+  }
+
+  /**
+   * Возвращает number значение (lossy conversion)
+   *
+   * @remarks
+   * ⚠️ ВНИМАНИЕ: Преобразование в number может привести к потере точности.
+   * Используйте только для отображения или когда точность не критична.
+   * Для вычислений используйте value() для получения Decimal.
+   *
+   * @returns Number значение (может потерять точность для больших чисел)
+   *
+   * @example
+   * ```typescript
+   * const qty = Quantity.of("12345678901234567890.123456789");
+   * const num = qty.toNumber(); // Может потерять точность!
+   * const decimal = qty.value(); // Сохраняет точность
+   * ```
+   */
+  public toNumber(): number {
+    return this.v.toNumber();
+  }
+
+  /**
+   * Проверяет равенство с другим количеством
+   *
+   * @remarks
+   * Точное сравнение без epsilon.
+   * Epsilon — это политика сравнения, не свойство Quantity.
+   *
+   * @param other - Другой Quantity для сравнения
+   * @returns true если значения равны, иначе false
+   *
+   * @example
+   * ```typescript
+   * const qty1 = Quantity.of(10);
+   * const qty2 = Quantity.of(10);
+   * const qty3 = Quantity.of(10.0000001);
+   *
+   * qty1.equals(qty2); // true
+   * qty1.equals(qty3); // false (точное сравнение)
+   * ```
+   */
+  public equals(other: Quantity): boolean {
+    return this.v.eq(other.v);
+  }
+
+  /**
+   * Проверяет что количество равно нулю
+   *
+   * @remarks
+   * Точное сравнение без epsilon.
+   *
+   * @returns true если значение равно 0, иначе false
+   *
+   * @example
+   * ```typescript
+   * Quantity.ZERO.isZero();     // true
+   * Quantity.of(0).isZero();    // true
+   * Quantity.of(0.0001).isZero(); // false (точное сравнение)
+   * ```
+   */
+  public isZero(): boolean {
+    return this.v.isZero();
+  }
+
+  /**
+   * Проверяет что количество положительное (> 0)
+   *
+   * @returns true если значение > 0, иначе false
+   *
+   * @example
+   * ```typescript
+   * Quantity.of(10).isPositive();  // true
+   * Quantity.of(0).isPositive();   // false
+   * Quantity.ZERO.isPositive();    // false
+   * ```
+   */
+  public isPositive(): boolean {
+    return this.v.greaterThan(0);
   }
 }
