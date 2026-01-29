@@ -12,5 +12,5 @@ export { Percentage } from './Percentage.js';
 export { Quote } from './Quote.js';
 export { Spread } from './Spread.js';
 
-// Backward compatibility: новый Quantity модуль
-export { Quantity, QuantityService, QuantityInvariantViolation } from './quantity/index.js';
+// Backward compatibility: новый Quantity модуль (только публичный API)
+export { Quantity, QuantityService } from './quantity/index.js';
