@@ -2,6 +2,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { Quantity, QuantityInvariantViolation } from '../core/Quantity.js';
 import { InvalidQuantityError, DivisionByZeroError, ArithmeticOverflowError } from '@polymarket/errors';
 import { OrderQuantityPolicy } from '../policy/OrderQuantityPolicy.js';
+import { PositionQuantityPolicy } from '../policy/PositionQuantityPolicy.js';
 import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
 import { ValidateFactorForQuantityMultiplication } from '../rules/ValidateFactorForQuantityMultiplication.js';
 import { ValidateDivisorForQuantityDivision } from '../rules/ValidateDivisorForQuantityDivision.js';
@@ -457,5 +458,42 @@ export class QuantityService {
     }
 
     return createResult;
+  }
+
+  /**
+   * Валидирует для использования в позиции
+   *
+   * @remarks
+   * Использует PositionQuantityPolicy для проверки.
+   *
+   * @param quantity - Количество для валидации
+   * @returns Result<void, InvalidQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const result = QuantityService.validateForPosition(qty);
+   * if (!result.ok) {
+   *   console.error(result.error.context.op); // 'validateForPosition'
+   * }
+   * ```
+   */
+  public static validateForPosition(
+    quantity: Quantity
+  ): Result<void, InvalidQuantityError> {
+    const policyResult = PositionQuantityPolicy.validateForPosition(quantity.value());
+
+    if (!policyResult.ok) {
+      return Err(
+        new InvalidQuantityError(policyResult.error.message, {
+          code: InvalidQuantityError.code,
+          context: {
+            op: 'validateForPosition',
+            ...policyResult.error.context
+          }
+        })
+      );
+    }
+
+    return policyResult;
   }
 }
