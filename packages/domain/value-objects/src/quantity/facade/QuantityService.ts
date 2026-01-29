@@ -80,7 +80,16 @@ export class QuantityService {
           })
         );
       }
-      throw error;
+      // Unknown error (не Error) - всё равно возвращаем Result
+      return Err(
+        new InvalidQuantityError('Unknown error during quantity creation', {
+          context: {
+            op: 'create',
+            value: String(value),
+            cause: String(error)
+          }
+        })
+      );
     }
   }
 
