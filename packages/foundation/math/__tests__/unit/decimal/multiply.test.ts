@@ -84,18 +84,14 @@ describe('multiplyDecimal', () => {
 
   // ==================== MATHEMATICAL PROPERTIES ====================
   describe('Математические свойства', () => {
-    it('должен быть коммутативным: multiplyDecimal(a,b) === multiplyDecimal(b,a)', () => {
-      const testCases = [
-        [new Decimal('5'), new Decimal('3')],
-        [new Decimal('0.123'), new Decimal('456.789')],
-        [new Decimal('-2.5'), new Decimal('4.8')],
-      ];
-
-      testCases.forEach(([a, b]) => {
-        const resultAB = multiplyDecimal(a, b);
-        const resultBA = multiplyDecimal(b, a);
-        expect(resultAB.equals(resultBA)).toBe(true);
-      });
+    it.each([
+      [new Decimal('5'), new Decimal('3')],
+      [new Decimal('0.123'), new Decimal('456.789')],
+      [new Decimal('-2.5'), new Decimal('4.8')],
+    ])('%s и %s должны быть коммутативны', (a, b) => {
+      const resultAB = multiplyDecimal(a, b);
+      const resultBA = multiplyDecimal(b, a);
+      expect(resultAB.equals(resultBA)).toBe(true);
     });
   });
 

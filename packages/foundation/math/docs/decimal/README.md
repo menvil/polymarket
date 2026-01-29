@@ -135,7 +135,13 @@ const total = addDecimal(
 ### Коммутативность (только для add и multiply)
 
 ```typescript
-import { equalsDecimal } from '@polymarket/math';
+import {
+  addDecimal,
+  multiplyDecimal,
+  subtractDecimal,
+  divideDecimal,
+  equalsDecimal,
+} from '@polymarket/math';
 
 equalsDecimal(addDecimal(a, b), addDecimal(b, a)) // ✅ Всегда true
 equalsDecimal(multiplyDecimal(a, b), multiplyDecimal(b, a)) // ✅ Всегда true
@@ -147,7 +153,7 @@ equalsDecimal(multiplyDecimal(a, b), multiplyDecimal(b, a)) // ✅ Всегда 
 ### Ассоциативность (только для add и multiply)
 
 ```typescript
-import { equalsDecimal } from '@polymarket/math';
+import { addDecimal, multiplyDecimal, equalsDecimal } from '@polymarket/math';
 
 // Сложение
 equalsDecimal(addDecimal(addDecimal(a, b), c), addDecimal(a, addDecimal(b, c)))
@@ -159,7 +165,12 @@ equalsDecimal(multiplyDecimal(multiplyDecimal(a, b), c), multiplyDecimal(a, mult
 ### Нейтральные элементы
 
 ```typescript
-import { equalsDecimal, MATH_CONSTANTS } from '@polymarket/math';
+import {
+  addDecimal,
+  multiplyDecimal,
+  equalsDecimal,
+  MATH_CONSTANTS,
+} from '@polymarket/math';
 
 // Ноль для сложения
 equalsDecimal(addDecimal(a, MATH_CONSTANTS.ZERO), a)
