@@ -109,7 +109,7 @@ export class Quantity {
    * const qty3 = Quantity.of(new Decimal(20)); // from Decimal (парсит повторно)
    * ```
    */
-  public static of(value: Decimal.Value): Quantity {
+  public static of(value: number | string | Decimal): Quantity {
     return new Quantity(new Decimal(value));
   }
 
