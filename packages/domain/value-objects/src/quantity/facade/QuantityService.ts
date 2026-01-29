@@ -30,10 +30,13 @@ import Decimal from 'decimal.js';
  */
 export class QuantityService {
   /**
-   * Создаёт Quantity (без проверки minSize)
+   * Создаёт Quantity с валидацией инвариантов
    *
    * @remarks
-   * Мапит QuantityInvariantViolation.reason в InvalidQuantityError.context
+   * Core инварианты проверяются автоматически через Quantity.fromDecimal():
+   * - finite (не NaN, не Infinity)
+   * - non-negative (>= 0)
+   *
    * Оптимизация: если value уже Decimal, использует fromDecimal() без повторного парсинга
    * Гарантирует Result - никогда не бросает исключения
    *
