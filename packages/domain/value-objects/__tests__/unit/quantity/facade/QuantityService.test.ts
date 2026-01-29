@@ -1,8 +1,9 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
 import { QuantityService } from '../../../../src/quantity/facade/QuantityService.js';
 import { Quantity } from '../../../../src/quantity/core/Quantity.js';
-import { InvalidQuantityError } from '@polymarket/errors';
+import { InvalidQuantityError, DivisionByZeroError, ArithmeticOverflowError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import * as math from '@polymarket/math';
 
 describe('QuantityService', () => {
   describe('create()', () => {
@@ -350,6 +351,160 @@ describe('QuantityService', () => {
         if (!result.ok) {
           expect(result.error.context?.factor).toBe('-1');
         }
+      });
+    });
+  });
+
+  describe('divide()', () => {
+    it('должен разделить Quantity на number', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.divide(qty, 2);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(5);
+      }
+    });
+
+    it('должен разделить Quantity на Decimal', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.divide(qty, new Decimal(2));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(5);
+      }
+    });
+
+    it('должен вернуть Err для division by zero', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.divide(qty, 0);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        // Может быть от rule (divisor > 0) или от math (DivisionByZeroError)
+      }
+    });
+
+    it('должен вернуть Err для negative divisor', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.divide(qty, -1);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be positive');
+      }
+    });
+
+    it('должен вернуть Err для Infinity divisor', () => {
+      const qty = Quantity.of(10);
+      const result = QuantityService.divide(qty, Infinity);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be finite');
+      }
+    });
+
+    describe('Math exception handling', () => {
+      it('должен ловить DivisionByZeroError из @polymarket/math', () => {
+        // Mock divideDecimal чтобы бросить DivisionByZeroError
+        jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
+          throw new DivisionByZeroError(() => 'division by zero', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.divide(qty, 1); // divisor valid, но divideDecimal бросит
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Division failed');
+          expect(result.error.context?.cause).toEqual({
+            name: 'DivisionByZeroError',
+            message: 'division by zero'
+          });
+        }
+
+        // Restore
+        jest.restoreAllMocks();
+      });
+
+      it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
+        jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
+          throw new ArithmeticOverflowError(() => 'overflow', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.divide(qty, 1);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.cause).toEqual({
+            name: 'ArithmeticOverflowError',
+            message: 'overflow'
+          });
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен rethrow unexpected errors', () => {
+        jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
+          throw new Error('unexpected error');
+        });
+
+        const qty = Quantity.of(10);
+
+        expect(() => QuantityService.divide(qty, 1)).toThrow('unexpected error');
+
+        jest.restoreAllMocks();
+      });
+    });
+
+    describe('Facade Error Contract', () => {
+      it('error должен содержать context.op = "divide"', () => {
+        expect.assertions(1);
+        const qty = Quantity.of(10);
+        const result = QuantityService.divide(qty, 0);
+
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('divide');
+        }
+      });
+
+      it('error должен содержать context.quantity и divisor', () => {
+        expect.assertions(2);
+        const qty = Quantity.of(10);
+        const result = QuantityService.divide(qty, 0);
+
+        if (!result.ok) {
+          expect(result.error.context?.quantity).toBe('10');
+          expect(result.error.context).toHaveProperty('divisor');
+        }
+      });
+
+      it('error для math exception должен содержать context.cause', () => {
+        jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
+          throw new DivisionByZeroError(() => 'test', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.divide(qty, 1);
+
+        if (!result.ok) {
+          expect(result.error.context).toHaveProperty('cause');
+          expect(result.error.context?.cause).toHaveProperty('name');
+          expect(result.error.context?.cause).toHaveProperty('message');
+        }
+
+        jest.restoreAllMocks();
       });
     });
   });

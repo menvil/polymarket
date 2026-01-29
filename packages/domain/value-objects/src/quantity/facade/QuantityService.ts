@@ -1,10 +1,11 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { Quantity, QuantityInvariantViolation } from '../core/Quantity.js';
-import { InvalidQuantityError } from '@polymarket/errors';
+import { InvalidQuantityError, DivisionByZeroError, ArithmeticOverflowError } from '@polymarket/errors';
 import { OrderQuantityPolicy } from '../policy/OrderQuantityPolicy.js';
 import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
 import { ValidateFactorForQuantityMultiplication } from '../rules/ValidateFactorForQuantityMultiplication.js';
-import { addDecimal, subtractDecimal, multiplyDecimal } from '@polymarket/math';
+import { ValidateDivisorForQuantityDivision } from '../rules/ValidateDivisorForQuantityDivision.js';
+import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
 import Decimal from 'decimal.js';
 
 /**
@@ -300,5 +301,100 @@ export class QuantityService {
     }
 
     return createResult;
+  }
+
+  /**
+   * Делит quantity на делитель с проверкой
+   *
+   * @remarks
+   * Контракт:
+   * - divideDecimal кидает DivisionByZeroError | ArithmeticOverflowError (из @polymarket/math)
+   * - QuantityService мапит ТОЛЬКО ожидаемые арифметические исключения в Err
+   * - Неожиданные ошибки пробрасываются дальше (rethrow)
+   *
+   * Разделение:
+   * - Ожидаемые ошибки (divide by zero, overflow) → Result Err (user-input сценарии)
+   * - Неожиданные ошибки (баги, ошибки decimal.js) → rethrow (для отладки)
+   *
+   * @param quantity - Количество для деления
+   * @param divisor - Делитель (number или Decimal, парсится в фасаде)
+   * @returns Result<Quantity, InvalidQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const result = QuantityService.divide(qty, 2);
+   * if (!result.ok) {
+   *   console.error(result.error.context.op); // 'divide'
+   *   console.error(result.error.context.cause); // { name, message } для math-исключений
+   * }
+   * ```
+   */
+  public static divide(
+    quantity: Quantity,
+    divisor: number | Decimal
+  ): Result<Quantity, InvalidQuantityError> {
+    // Парсим divisor только в фасаде
+    const divisorDecimal = divisor instanceof Decimal ? divisor : new Decimal(divisor);
+
+    // Валидация через rule (принимает только Decimal)
+    const validateResult = ValidateDivisorForQuantityDivision.check(divisorDecimal);
+    if (!validateResult.ok) {
+      return Err(
+        new InvalidQuantityError(validateResult.error.message, {
+          code: InvalidQuantityError.code,
+          context: {
+            op: 'divide',
+            quantity: quantity.value().toString(),
+            ...validateResult.error.context
+          }
+        })
+      );
+    }
+
+    // Делим с обработкой ТОЛЬКО ожидаемых арифметических исключений
+    try {
+      const result = divideDecimal(quantity.value(), divisorDecimal);
+
+      const createResult = this.create(result);
+      if (!createResult.ok) {
+        return Err(
+          new InvalidQuantityError(createResult.error.message, {
+            code: InvalidQuantityError.code,
+            context: {
+              op: 'divide',
+              quantity: quantity.value().toString(),
+              divisor: divisorDecimal.toString(),
+              ...createResult.error.context
+            }
+          })
+        );
+      }
+
+      return createResult;
+    } catch (error) {
+      // Мапим ТОЛЬКО ожидаемые типы ошибок из @polymarket/math
+      if (error instanceof DivisionByZeroError || error instanceof ArithmeticOverflowError) {
+        return Err(
+          new InvalidQuantityError(
+            `Division failed: ${error.message}`,
+            {
+              code: InvalidQuantityError.code,
+              context: {
+                op: 'divide',
+                quantity: quantity.value().toString(),
+                divisor: divisorDecimal.toString(),
+                cause: {
+                  name: error.name,
+                  message: error.message
+                }
+              }
+            }
+          )
+        );
+      }
+
+      // Все остальные ошибки - rethrow (это баги или неожиданные ситуации)
+      throw error;
+    }
   }
 }
