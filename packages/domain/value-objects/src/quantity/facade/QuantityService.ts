@@ -82,19 +82,9 @@ export class QuantityService {
           })
         );
       }
-      // Unknown error (не Error) - оборачиваем в InvalidQuantityError для соблюдения Result контракта
-      return Err(
-        new InvalidQuantityError(
-          `Unexpected error during quantity creation: ${String(error)}`,
-          {
-            context: {
-              op: 'create',
-              value: String(value),
-              unknownError: String(error)
-            }
-          }
-        )
-      );
+      // Unknown error (не Error) - rethrow для debugging
+      // Это не должно происходить в нормальной ситуации, поэтому важно сохранить stack trace
+      throw error;
     }
   }
 

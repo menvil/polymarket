@@ -317,7 +317,6 @@ function validateOrderQuantity(input: string, minSize: number): boolean {
 **Стало:**
 ```typescript
 import { QuantityService } from '@polymarket/value-objects/quantity';
-import { ValidateMinSize } from '@polymarket/value-objects/quantity/rules';
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
@@ -332,16 +331,17 @@ function validateOrderQuantity(
 
   const quantity = createResult.value;
 
-  // Проверяем minSize (бизнес-правило для ордеров)
-  const minSizeResult = ValidateMinSize.check(quantity.value(), minSize);
-  if (!minSizeResult.ok) {
+  // Проверяем minSize вручную (бизнес-правило для ордеров)
+  // Примечание: Rules слой internal, используем прямую проверку через Decimal
+  if (quantity.value().lessThan(minSize)) {
     return Err(
       new InvalidQuantityError(
-        minSizeResult.error.message,
+        `Quantity must be >= ${minSize.toString()}, got ${quantity.value().toString()}`,
         {
           context: {
-            ...minSizeResult.error.context,
-            op: 'validateOrderQuantity'
+            op: 'validateOrderQuantity',
+            quantity: quantity.value().toString(),
+            minSize: minSize.toString()
           }
         }
       )
