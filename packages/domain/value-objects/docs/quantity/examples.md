@@ -76,22 +76,24 @@ if (position.equals(Quantity.of(0))) { ... }
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
 
-// Создаём Quantity через QuantityService.create()
-const qty1Result = QuantityService.create(10);
-const qty2Result = QuantityService.create(5);
+function performArithmetic() {
+  // Создаём Quantity через QuantityService.create()
+  const qty1Result = QuantityService.create(10);
+  const qty2Result = QuantityService.create(5);
 
-if (!qty1Result.ok || !qty2Result.ok) {
-  console.error('Failed to create quantities');
-  return;
-}
+  if (!qty1Result.ok || !qty2Result.ok) {
+    console.error('Failed to create quantities');
+    return;
+  }
 
-const qty1 = qty1Result.value;
-const qty2 = qty2Result.value;
+  const qty1 = qty1Result.value;
+  const qty2 = qty2Result.value;
 
-// Сложение
-const sumResult = QuantityService.add(qty1, qty2);
-if (sumResult.ok) {
-  console.log(sumResult.value.value().toNumber()); // 15
+  // Сложение
+  const sumResult = QuantityService.add(qty1, qty2);
+  if (sumResult.ok) {
+    console.log(sumResult.value.value().toNumber()); // 15
+  }
 }
 
 // Вычитание
