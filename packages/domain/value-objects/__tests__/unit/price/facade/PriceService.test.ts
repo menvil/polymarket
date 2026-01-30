@@ -288,38 +288,4 @@ describe('PriceService', () => {
       expect(result.ok).toBe(false);
     });
   });
-
-  describe('approximatelyEquals()', () => {
-    it('должен вернуть true для почти равных цен', () => {
-      const p1 = Price.of(0.5);
-      const p2 = Price.of(0.500005); // Разница 0.000005 < default epsilon 0.00001
-      expect(PriceService.approximatelyEquals(p1, p2)).toBe(true);
-    });
-
-    it('должен вернуть false для разных цен', () => {
-      const p1 = Price.of(0.5);
-      const p2 = Price.of(0.6);
-      expect(PriceService.approximatelyEquals(p1, p2)).toBe(false);
-    });
-
-    it('должен вернуть true для одинаковых цен', () => {
-      const p1 = Price.of(0.5);
-      const p2 = Price.of(0.5);
-      expect(PriceService.approximatelyEquals(p1, p2)).toBe(true);
-    });
-
-    it('должен вернуть false для epsilon <= 0', () => {
-      const p1 = Price.of(0.5);
-      const p2 = Price.of(0.5);
-      expect(PriceService.approximatelyEquals(p1, p2, new Decimal(0))).toBe(false);
-      expect(PriceService.approximatelyEquals(p1, p2, new Decimal(-0.1))).toBe(false);
-    });
-
-    it('должен использовать кастомный epsilon', () => {
-      const p1 = Price.of(0.5);
-      const p2 = Price.of(0.51);
-      expect(PriceService.approximatelyEquals(p1, p2, new Decimal(0.02))).toBe(true);
-      expect(PriceService.approximatelyEquals(p1, p2, new Decimal(0.005))).toBe(false);
-    });
-  });
 });

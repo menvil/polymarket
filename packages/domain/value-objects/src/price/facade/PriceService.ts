@@ -44,8 +44,6 @@ import Decimal from 'decimal.js';
  * ```
  */
 export class PriceService {
-  private static readonly DEFAULT_EPSILON = new Decimal(0.00001);
-
   /**
    * Создаёт Price из значения (безопасно - никогда не бросает)
    *
@@ -359,39 +357,5 @@ export class PriceService {
     tickSize: number | string | Decimal
   ): Result<void, InvalidPriceError | InvalidTickSizeError> {
     return ValidateAligned.check(price, tickSize);
-  }
-
-  /**
-   * Проверяет approximate равенство двух цен
-   *
-   * @remarks
-   * Единственный метод БЕЗ Result (возвращает boolean).
-   * Защита: epsilon <= 0 → возвращает false.
-   *
-   * Используется для сравнения цен с учётом погрешности вычислений.
-   * НЕ используй для exact equality - используй price1.equals(price2).
-   *
-   * @param price1 - Первая цена
-   * @param price2 - Вторая цена
-   * @param epsilon - Точность сравнения (по умолчанию 0.00001)
-   * @returns true если разница меньше epsilon, false иначе
-   *
-   * @example
-   * ```typescript
-   * const p1 = expectOk(PriceService.create(0.5));
-   * const p2 = expectOk(PriceService.create(0.50001));
-   * console.log(PriceService.approximatelyEquals(p1, p2)); // true
-   * console.log(p1.equals(p2)); // false (exact equality)
-   * ```
-   */
-  public static approximatelyEquals(
-    price1: Price,
-    price2: Price,
-    epsilon: Decimal = PriceService.DEFAULT_EPSILON
-  ): boolean {
-    // Защита от невалидного epsilon
-    if (epsilon.lessThanOrEqualTo(0)) return false;
-
-    return price1.value().minus(price2.value()).abs().lessThan(epsilon);
   }
 }
