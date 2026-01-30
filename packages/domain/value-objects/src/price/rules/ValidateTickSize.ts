@@ -79,7 +79,7 @@ export class ValidateTickSize {
     if (tickDecimal.isNaN()) {
       return Err(
         new InvalidTickSizeError(
-          (ctx) => `Tick size must not be NaN`,
+          () => `Tick size must not be NaN`,
           {
             code: InvalidTickSizeError.code,
             context: {
