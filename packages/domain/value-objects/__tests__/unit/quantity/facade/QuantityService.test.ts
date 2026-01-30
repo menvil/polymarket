@@ -410,14 +410,23 @@ describe('QuantityService', () => {
         jest.restoreAllMocks();
       });
 
-      it('должен rethrow unexpected errors', () => {
+      it('должен обернуть неожиданные ошибки в Result', () => {
         jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
           throw new Error('unexpected error');
         });
 
         const qty = Quantity.of(10);
+        const result = QuantityService.divide(qty, 1);
 
-        expect(() => QuantityService.divide(qty, 1)).toThrow('unexpected error');
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Unexpected error during quantity divide');
+          expect(result.error.message).toContain('unexpected error');
+          expect(result.error.context?.op).toBe('divide');
+          expect(result.error.context?.cause).toBeDefined();
+          expect(result.error.context?.cause).toHaveProperty('name', 'Error');
+          expect(result.error.context?.cause).toHaveProperty('message', 'unexpected error');
+        }
 
         jest.restoreAllMocks();
       });

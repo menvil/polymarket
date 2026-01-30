@@ -63,7 +63,6 @@ export class ValidateTickSize {
         new InvalidTickSizeError(
           (ctx) => `Tick size is not a valid decimal: ${ctx.tickSize}`,
           {
-            code: InvalidTickSizeError.code,
             context: {
               field: 'tickSize',
               reason: 'parse_error' as TickSizeErrorReason,
@@ -81,7 +80,6 @@ export class ValidateTickSize {
         new InvalidTickSizeError(
           () => `Tick size must not be NaN`,
           {
-            code: InvalidTickSizeError.code,
             context: {
               field: 'tickSize',
               reason: 'is_nan' as TickSizeErrorReason,
@@ -98,7 +96,6 @@ export class ValidateTickSize {
         new InvalidTickSizeError(
           (ctx) => `Tick size must be finite, got ${ctx.tickSize}`,
           {
-            code: InvalidTickSizeError.code,
             context: {
               field: 'tickSize',
               reason: 'not_finite' as TickSizeErrorReason,
@@ -115,7 +112,6 @@ export class ValidateTickSize {
         new InvalidTickSizeError(
           (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
           {
-            code: InvalidTickSizeError.code,
             context: {
               field: 'tickSize',
               reason: 'not_positive' as TickSizeErrorReason,
@@ -133,7 +129,6 @@ export class ValidateTickSize {
         new InvalidTickSizeError(
           (ctx) => `Tick size ${ctx.tickSize} exceeds price range`,
           {
-            code: InvalidTickSizeError.code,
             context: {
               field: 'tickSize',
               reason: 'exceeds_range' as TickSizeErrorReason,

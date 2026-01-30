@@ -1,7 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError, InvalidTickSizeError } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
-import { ValidateTickSize } from './ValidateTickSize.js';
+import { ValidateTickSizeMultipleOfBaseTick } from './ValidateTickSizeMultipleOfBaseTick.js';
 import type { AlignedErrorReason } from './types.js';
 import type Decimal from 'decimal.js';
 
@@ -40,10 +40,10 @@ export class ValidateAligned {
    *
    * @remarks
    * Выполняет две проверки:
-   * 1. Валидация tickSize через ValidateTickSize
+   * 1. Валидация tickSize через ValidateTickSizeMultipleOfBaseTick (проверяет что кратен базовому тику 0.0001)
    * 2. Проверка кратности: price % tickSize === 0 (через div().isInteger())
    *
-   * Возвращает InvalidTickSizeError если tickSize невалидный.
+   * Возвращает InvalidTickSizeError если tickSize невалидный или не кратен базовому тику.
    * Возвращает InvalidPriceError если price не кратен tickSize.
    *
    * @example
@@ -65,10 +65,10 @@ export class ValidateAligned {
     price: Price,
     tickSize: number | string | Decimal
   ): Result<void, InvalidPriceError | InvalidTickSizeError> {
-    // Валидация tickSize
-    const tickResult = ValidateTickSize.check(tickSize);
+    // Валидация tickSize (проверяет что кратен базовому тику 0.0001)
+    const tickResult = ValidateTickSizeMultipleOfBaseTick.check(tickSize);
     if (!tickResult.ok) {
-      return tickResult as Result<never, InvalidTickSizeError>;
+      return Err(tickResult.error);
     }
     const tickDecimal = tickResult.value;
 
@@ -79,7 +79,6 @@ export class ValidateAligned {
         new InvalidPriceError(
           (ctx) => `Price ${ctx.price} is not aligned to tick size ${ctx.tickSize}`,
           {
-            code: InvalidPriceError.code,
             context: {
               field: 'price',
               reason: 'not_aligned' as AlignedErrorReason,

@@ -1,7 +1,9 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { PriceService } from '../../../../src/price/facade/PriceService.js';
 import { Price } from '../../../../src/price/core/Price.js';
+import { InvalidDivisorError } from '@polymarket/errors';
+import * as math from '@polymarket/math';
 
 describe('PriceService', () => {
   describe('create()', () => {
@@ -203,13 +205,16 @@ describe('PriceService', () => {
       }
     });
 
-    it('должен вернуть DivisionByZeroError для нулевого делителя', () => {
+    it('должен вернуть InvalidDivisorError для нулевого делителя', () => {
       const price = Price.of(0.5);
       const result = PriceService.divide(price, 0);
       expect(result.ok).toBe(false);
       if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidDivisorError);
+        expect(result.error.context?.op).toBe('divide');
         expect(result.error.context?.divisor).toBe('0');
         expect(result.error.context?.dividend).toBe('0.5');
+        expect(result.error.context?.reason).toBe('is_zero');
       }
     });
 
@@ -250,6 +255,27 @@ describe('PriceService', () => {
       const result = PriceService.divide(price, 2);
       // 0.0001 / 2 = 0.00005, что ниже минимума
       expect(result.ok).toBe(false);
+    });
+
+    it('должен обернуть неожиданные ошибки в Result', () => {
+      jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
+        throw new Error('unexpected error');
+      });
+
+      const price = Price.of(0.5);
+      const result = PriceService.divide(price, 1);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Unexpected error during price divide');
+        expect(result.error.message).toContain('unexpected error');
+        expect(result.error.context?.op).toBe('divide');
+        expect(result.error.context?.cause).toBeDefined();
+        expect(result.error.context?.cause).toHaveProperty('name', 'Error');
+        expect(result.error.context?.cause).toHaveProperty('message', 'unexpected error');
+      }
+
+      jest.restoreAllMocks();
     });
   });
 
@@ -306,6 +332,77 @@ describe('PriceService', () => {
       if (result.ok) {
         expect(result.value.toNumber()).toBe(0.5);
       }
+    });
+
+    it('должен вернуть Err для tickSize = 0', () => {
+      const price = Price.of(0.5);
+      const result = PriceService.roundToMarketTick(price, 0);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.field).toBe('tickSize');
+        expect(result.error.context?.reason).toBe('not_positive');
+      }
+    });
+
+    it('должен вернуть Err для tickSize = NaN', () => {
+      const price = Price.of(0.5);
+      const result = PriceService.roundToMarketTick(price, NaN);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.field).toBe('tickSize');
+        expect(result.error.context?.reason).toBe('is_nan');
+      }
+    });
+
+    it('должен вернуть Err для tickSize = Infinity', () => {
+      const price = Price.of(0.5);
+      const result = PriceService.roundToMarketTick(price, Infinity);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.field).toBe('tickSize');
+        expect(result.error.context?.reason).toBe('not_finite');
+      }
+    });
+
+    it('должен вернуть Err для tickSize не кратного базовому тику', () => {
+      const price = Price.of(0.5);
+      const result = PriceService.roundToMarketTick(price, 0.00015);  // НЕ кратен 0.0001
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.field).toBe('tickSize');
+        expect(result.error.context?.reason).toBe('not_multiple_of_base_tick');
+        expect(result.error.context?.tickSize).toBe('0.00015');
+      }
+    });
+
+    it('должен принять tickSize кратный базовому тику', () => {
+      const price = Price.of(0.5);
+      const validTickSizes = [0.0001, 0.0002, 0.001, 0.01, 0.1];
+
+      validTickSizes.forEach(tickSize => {
+        const result = PriceService.roundToMarketTick(price, tickSize);
+        expect(result.ok).toBe(true);
+      });
+    });
+
+    it('должен обернуть неожиданные ошибки в Result', () => {
+      jest.spyOn(Decimal.prototype, 'toDecimalPlaces').mockImplementation(() => {
+        throw new Error('unexpected rounding error');
+      });
+
+      const price = Price.of(0.5);
+      const result = PriceService.roundToMarketTick(price, 0.01);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toBe('unexpected rounding error');
+        expect(result.error.context?.op).toBe('roundToMarketTick');
+        expect(result.error.context?.cause).toBeDefined();
+        expect(result.error.context?.cause).toHaveProperty('name', 'Error');
+        expect(result.error.context?.cause).toHaveProperty('message', 'unexpected rounding error');
+      }
+
+      jest.restoreAllMocks();
     });
   });
 

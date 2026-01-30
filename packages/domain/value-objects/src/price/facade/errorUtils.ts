@@ -10,7 +10,7 @@ import {
  *
  * @remarks
  * Мерджит контексты корректно: сохраняет все поля из исходной ошибки
- * (включая code) и добавляет новые. Не пересоздаёт ошибку с нуля.
+ * и добавляет новые. Не пересоздаёт ошибку с нуля.
  * extraContext разворачивается ПЕРЕД op, чтобы op всегда был авторитетным.
  *
  * @param error - Исходная ошибка
@@ -28,11 +28,10 @@ export function withOperationContext<
   // Создаем новую ошибку того же типа
   const ErrorConstructor = error.constructor as new (
     message: string | ((ctx: any) => string),
-    options?: { code?: string; context?: Record<string, unknown> }
+    options?: { context?: Record<string, unknown> }
   ) => T;
 
   return new ErrorConstructor(error.message, {
-    code: error.code,            // Сохраняем error.code
     context: {
       ...error.context,          // Сохраняем все существующие поля
       ...extraContext,           // Добавляем дополнительные поля (может быть перезаписано op)

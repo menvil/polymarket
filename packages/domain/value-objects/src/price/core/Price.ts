@@ -24,7 +24,7 @@ export class PriceInvariantViolation extends Error {
  * Содержит ТОЛЬКО инварианты существования:
  * - Not NaN
  * - Finite
- * - Диапазон [MIN, MAX]
+ * - Диапазон [MIN, MAX] (отрицательные значения автоматически отфильтровываются проверкой MIN)
  * - Строгое равенство
  *
  * Методы toTick/floor/ceil/round УДАЛЕНЫ из Core.
@@ -48,12 +48,7 @@ export class Price {
       throw new PriceInvariantViolation('Price must be finite');
     }
 
-    // Инвариант 3: Cannot be negative
-    if (v.isNegative()) {
-      throw new PriceInvariantViolation('Price value cannot be negative');
-    }
-
-    // Инвариант 4: Must be within valid range [MIN, MAX]
+    // Инвариант 3: Must be within valid range [MIN, MAX]
     if (v.lessThan(Price.MIN_PRICE)) {
       throw new PriceInvariantViolation(
         `Price ${v} is below minimum ${Price.MIN_PRICE}`

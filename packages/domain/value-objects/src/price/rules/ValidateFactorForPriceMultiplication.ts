@@ -33,7 +33,6 @@ export class ValidateFactorForPriceMultiplication {
         new InvalidOperandError(
           () => `Factor cannot be NaN`,
           {
-            code: InvalidOperandError.code,
             context: {
               operation: 'multiply',
               operand: 'factor',
@@ -51,7 +50,6 @@ export class ValidateFactorForPriceMultiplication {
         new InvalidOperandError(
           () => `Factor must be finite`,
           {
-            code: InvalidOperandError.code,
             context: {
               operation: 'multiply',
               operand: 'factor',

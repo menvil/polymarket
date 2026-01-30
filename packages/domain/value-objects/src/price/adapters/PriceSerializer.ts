@@ -92,7 +92,6 @@ export class PriceSerializer {
         new InvalidPriceError(
           (ctx) => `Expected object, got ${ctx.type}`,
           {
-            code: InvalidPriceError.code,
             context: {
               kind: 'invalid_json',
               type: typeof json,
@@ -109,7 +108,6 @@ export class PriceSerializer {
         new InvalidPriceError(
           () => `Missing required field 'value'`,
           {
-            code: InvalidPriceError.code,
             context: {
               kind: 'invalid_json',
               type: 'missing_field',
@@ -128,7 +126,6 @@ export class PriceSerializer {
         new InvalidPriceError(
           (ctx) => `Field 'value' must be number or string, got ${ctx.type}`,
           {
-            code: InvalidPriceError.code,
             context: {
               kind: 'invalid_json',
               type: typeof value,
