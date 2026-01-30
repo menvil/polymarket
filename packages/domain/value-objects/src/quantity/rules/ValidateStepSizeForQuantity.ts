@@ -27,10 +27,11 @@ import Decimal from 'decimal.js';
  */
 export class ValidateStepSizeForQuantity {
   public static check(stepSize: Decimal): Result<void, InvalidQuantityError> {
-    if (stepSize.lessThanOrEqualTo(0)) {
+    // Проверка 1: stepSize должен быть finite (проверяем первым)
+    if (!stepSize.isFinite()) {
       return Err(
         new InvalidQuantityError(
-          (ctx) => `Step size must be positive, got ${ctx.stepSize}`,
+          (ctx) => `Step size must be finite, got ${ctx.stepSize}`,
           {
             context: { stepSize: stepSize.toString() }
           }
@@ -38,10 +39,11 @@ export class ValidateStepSizeForQuantity {
       );
     }
 
-    if (!stepSize.isFinite()) {
+    // Проверка 2: stepSize должен быть positive
+    if (stepSize.lessThanOrEqualTo(0)) {
       return Err(
         new InvalidQuantityError(
-          (ctx) => `Step size must be finite, got ${ctx.stepSize}`,
+          (ctx) => `Step size must be positive, got ${ctx.stepSize}`,
           {
             context: { stepSize: stepSize.toString() }
           }

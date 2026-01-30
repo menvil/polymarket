@@ -74,5 +74,11 @@ describe('ValidateMinSize', () => {
         expect(result.error.message).toContain('minSize must be positive');
       }
     });
+
+    it('должен вернуть Ok для non-finite quantity (валидация quantity - ответственность Core)', () => {
+      // ValidateMinSize не проверяет finiteness quantity - это делает Core
+      const result = ValidateMinSize.check(new Decimal(Infinity), new Decimal(1));
+      expect(result.ok).toBe(true);
+    });
   });
 });
