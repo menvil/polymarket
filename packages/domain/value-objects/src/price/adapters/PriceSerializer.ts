@@ -107,7 +107,7 @@ export class PriceSerializer {
     if (!('value' in json)) {
       return Err(
         new InvalidPriceError(
-          (ctx) => `Missing required field 'value'`,
+          () => `Missing required field 'value'`,
           {
             code: InvalidPriceError.code,
             context: {
