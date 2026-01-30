@@ -60,6 +60,15 @@ describe('QuantitySerializer', () => {
       const result = QuantitySerializer.fromJSON({ value: "not a number" });
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(Error);
+        expect(result.error.message).toBeTruthy();
+        // Проверяем что ошибка содержит информацию о проблеме
+        expect(
+          result.error.message.toLowerCase().includes('invalid') ||
+          result.error.message.toLowerCase().includes('number')
+        ).toBe(true);
+      }
     });
   });
 
@@ -130,6 +139,24 @@ describe('QuantityLossySerializer', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.toNumber()).toBe(10.5);
+      }
+    });
+
+    it('должен вернуть Err для negative numbers', () => {
+      const result = QuantityLossySerializer.fromJSON({ value: -1 });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(Error);
+      }
+    });
+
+    it('должен вернуть Err для NaN', () => {
+      const result = QuantityLossySerializer.fromJSON({ value: NaN });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(Error);
       }
     });
   });

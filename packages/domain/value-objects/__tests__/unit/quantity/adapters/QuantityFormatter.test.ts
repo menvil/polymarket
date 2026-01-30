@@ -33,8 +33,18 @@ describe('QuantityFormatter', () => {
 
     it('должен вернуть Err для invalid decimals', () => {
       const qty = Quantity.of(10);
-      const result = QuantityFormatter.toString(qty, -1);
-      expect(result.ok).toBe(false);
+
+      // Negative decimals
+      const negResult = QuantityFormatter.toString(qty, -1);
+      expect(negResult.ok).toBe(false);
+
+      // Decimals > 100
+      const tooLargeResult = QuantityFormatter.toString(qty, 101);
+      expect(tooLargeResult.ok).toBe(false);
+
+      // Non-integer decimals
+      const nonIntResult = QuantityFormatter.toString(qty, 1.5);
+      expect(nonIntResult.ok).toBe(false);
     });
   });
 
@@ -81,7 +91,12 @@ describe('QuantityFormatter', () => {
     it('должен работать для граничных значений', () => {
       expect(QuantityFormatter.toDisplayString(Quantity.of(999))).toBe("999.00");
       expect(QuantityFormatter.toDisplayString(Quantity.of(1000))).toBe("1.00K");
+
+      // Важно: 999999 → "1000.00K" это ожидаемое поведение!
+      // Причина: 999999 / 1000 = 999.999, toFixed(2) округляет до 1000.00
+      // Поэтому formatter выдает "1000.00K" а не "999.99K"
       expect(QuantityFormatter.toDisplayString(Quantity.of(999999))).toBe("1000.00K");
+
       expect(QuantityFormatter.toDisplayString(Quantity.of(1000000))).toBe("1.00M");
     });
   });
