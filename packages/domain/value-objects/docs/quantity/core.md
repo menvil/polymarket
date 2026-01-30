@@ -240,6 +240,8 @@ try {
 ```typescript
 import { QuantityService } from '@polymarket/value-objects/quantity';
 
+const value = 10; // Пример: создаём Quantity из number
+
 const result = QuantityService.create(value);
 if (!result.ok) {
   // Type-safe error handling
@@ -274,6 +276,7 @@ const qty = Quantity.of(10);
 И `Quantity.of()`, и `Quantity.fromDecimal()` используют zero-copy для Decimal:
 
 ```typescript
+const value = 10;
 const decimal = new Decimal(value);
 
 // ✅ Оба метода используют zero-copy
@@ -339,10 +342,12 @@ console.log(result2.value.value().toString());  // "0.3" ✅
 ### 3. Используйте константы
 
 ```typescript
-// ✅ Хорошо
+const qty = Quantity.of(0); // Пример: количество для проверки
+
+// ✅ Хорошо: используем константу
 if (qty.equals(Quantity.ZERO)) { ... }
 
-// ❌ Избыточно
+// ❌ Избыточно: создаём новый экземпляр
 if (qty.equals(Quantity.of(0))) { ... }
 ```
 
