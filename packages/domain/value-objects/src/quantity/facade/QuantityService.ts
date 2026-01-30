@@ -63,7 +63,7 @@ export class QuantityService {
       if (error instanceof QuantityInvariantViolation) {
         return Err(
           new InvalidQuantityError(error.message, {
-              context: {
+            context: {
               op: 'create',
               value: String(value),
               reason: error.reason
@@ -75,7 +75,7 @@ export class QuantityService {
       if (error instanceof Error) {
         return Err(
           new InvalidQuantityError(error.message, {
-              context: {
+            context: {
               op: 'create',
               value: String(value)
             }

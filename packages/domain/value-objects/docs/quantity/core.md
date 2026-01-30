@@ -74,6 +74,7 @@ Quantity.ONE   // Quantity со значением 1
 ```
 
 **Пример:**
+
 ```typescript
 if (remaining.equals(Quantity.ZERO)) {
   console.log('Position closed');
@@ -310,6 +311,7 @@ Core Layer кидает исключения при нарушении инва�
 ### 2. Не храните number для вычислений
 
 ❌ **Плохо:**
+
 ```typescript
 let total: number = 0;
 total += 0.1;
@@ -318,6 +320,7 @@ console.log(total);  // 0.30000000000000004 😱
 ```
 
 ✅ **Хорошо:**
+
 ```typescript
 let total = Quantity.ZERO;
 const result1 = QuantityService.add(total, Quantity.of("0.1"));

@@ -503,7 +503,7 @@ const rounded4 = QuantityService.roundToStep(
   Decimal.ROUND_HALF_EVEN
 );
 if (rounded4.ok) {
-  console.log(rounded4.value.value().toString()); // "10.56"
+  console.log(rounded4.value.value().toString()); // "10.57"
 }
 ```
 
@@ -809,7 +809,7 @@ if (bigJsonResult.ok) {
 ### Сериализация для хранения в БД
 
 ```typescript
-import { QuantityService, QuantitySerializer } from '@polymarket/value-objects/quantity';
+import { QuantityService, Quantity, QuantitySerializer } from '@polymarket/value-objects/quantity';
 
 interface OrderEntity {
   id: string;
@@ -912,6 +912,7 @@ if (!result.ok) {
 
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 async function createOrderWithRetry(
