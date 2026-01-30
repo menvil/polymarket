@@ -9,6 +9,8 @@ import {
 import { Price, PriceInvariantViolation } from '../core/Price.js';
 import { ValidateTickSize } from '../rules/ValidateTickSize.js';
 import { ValidateAligned } from '../rules/ValidateAligned.js';
+import { ValidateFactorForPriceMultiplication } from '../rules/ValidateFactorForPriceMultiplication.js';
+import { ValidateDivisorForPriceDivision } from '../rules/ValidateDivisorForPriceDivision.js';
 import {
   addDecimal,
   subtractDecimal,
@@ -219,39 +221,10 @@ export class PriceService {
       );
     }
 
-    // Валидация factor после парсинга
-    if (factorDecimal.isNaN()) {
-      return Err(
-        new InvalidOperandError(
-          () => `Factor cannot be NaN`,
-          {
-            code: InvalidOperandError.code,
-            context: {
-              operation: 'multiply',
-              operand: 'factor',
-              value: String(factor),
-              reason: 'is_nan'
-            }
-          }
-        )
-      );
-    }
-
-    if (!factorDecimal.isFinite()) {
-      return Err(
-        new InvalidOperandError(
-          () => `Factor must be finite`,
-          {
-            code: InvalidOperandError.code,
-            context: {
-              operation: 'multiply',
-              operand: 'factor',
-              value: String(factor),
-              reason: 'not_finite'
-            }
-          }
-        )
-      );
+    // Валидация через rule (принимает только Decimal)
+    const validateResult = ValidateFactorForPriceMultiplication.check(factorDecimal);
+    if (!validateResult.ok) {
+      return Err(validateResult.error);
     }
 
     const result = multiplyDecimal(price.value(), factorDecimal);
@@ -305,33 +278,18 @@ export class PriceService {
       );
     }
 
-    // Валидация divisor после парсинга
-    if (divisorDecimal.isNaN()) {
+    // Валидация через rule (принимает только Decimal)
+    const validateResult = ValidateDivisorForPriceDivision.check(divisorDecimal);
+    if (!validateResult.ok) {
+      // Добавляем dividend в контекст ошибки
       return Err(
         new InvalidDivisorError(
-          () => `Divisor cannot be NaN`,
+          validateResult.error.message,
           {
-            code: InvalidDivisorError.code,
+            code: validateResult.error.code,
             context: {
-              divisor: String(divisor),
-              dividend: price.value().toString(),
-              reason: 'is_nan'
-            }
-          }
-        )
-      );
-    }
-
-    if (!divisorDecimal.isFinite()) {
-      return Err(
-        new InvalidDivisorError(
-          () => `Divisor must be finite`,
-          {
-            code: InvalidDivisorError.code,
-            context: {
-              divisor: String(divisor),
-              dividend: price.value().toString(),
-              reason: 'not_finite'
+              ...validateResult.error.context,
+              dividend: price.value().toString()
             }
           }
         )
