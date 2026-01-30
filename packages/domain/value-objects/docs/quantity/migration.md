@@ -316,13 +316,39 @@ function validateOrderQuantity(input: string, minSize: number): boolean {
 
 **Стало:**
 ```typescript
+import { QuantityService } from '@polymarket/value-objects/quantity';
+import { ValidateMinSize } from '@polymarket/value-objects/quantity/rules';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 function validateOrderQuantity(
   input: string,
   minSize: Decimal
 ): Result<Quantity, InvalidQuantityError> {
-  return QuantityService.create(input);
+  // Создаём Quantity с проверкой core инвариантов
+  const createResult = QuantityService.create(input);
+  if (!createResult.ok) return createResult;
+
+  const quantity = createResult.value;
+
+  // Проверяем minSize (бизнес-правило для ордеров)
+  const minSizeResult = ValidateMinSize.check(quantity.value(), minSize);
+  if (!minSizeResult.ok) {
+    return Err(
+      new InvalidQuantityError(
+        minSizeResult.error.message,
+        {
+          context: {
+            ...minSizeResult.error.context,
+            op: 'validateOrderQuantity'
+          }
+        }
+      )
+    );
+  }
+
+  return Ok(quantity);
 }
 
 // Использование

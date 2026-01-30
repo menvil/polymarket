@@ -242,12 +242,13 @@ function validateOrders(
 const orders: OrderInput[] = [
   { id: "order-1", quantity: "10" },
   { id: "order-2", quantity: "5" },
-  { id: "order-3", quantity: "0.5" } // Меньше minSize!
+  { id: "order-3", quantity: "-1" } // Невалидно: negative!
 ];
 
 const result = validateOrders(orders);
 if (!result.ok) {
   console.error(result.error.message); // "Order order-3 validation failed: ..."
+  console.error(result.error.context?.reason); // "NEGATIVE"
 } else {
   console.log(`Validated ${result.value.length} orders`);
 }
@@ -900,7 +901,6 @@ import Decimal from 'decimal.js';
 
 async function createOrderWithRetry(
   quantity: string,
-  minSize: Decimal,
   maxRetries: number = 3
 ): Promise<Quantity> {
   let lastError: InvalidQuantityError | null = null;
