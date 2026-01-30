@@ -324,7 +324,13 @@ console.log(total);  // 0.30000000000000004 😱
 ```typescript
 let total = Quantity.ZERO;
 const result1 = QuantityService.add(total, Quantity.of("0.1"));
+if (!result1.ok) {
+  throw result1.error;
+}
 const result2 = QuantityService.add(result1.value, Quantity.of("0.2"));
+if (!result2.ok) {
+  throw result2.error;
+}
 console.log(result2.value.value().toString());  // "0.3" ✅
 ```
 

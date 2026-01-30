@@ -94,24 +94,24 @@ function performArithmetic() {
   if (sumResult.ok) {
     console.log(sumResult.value.value().toNumber()); // 15
   }
-}
 
-// Вычитание
-const diffResult = QuantityService.subtract(qty1, qty2);
-if (diffResult.ok) {
-  console.log(diffResult.value.value().toNumber()); // 5
-}
+  // Вычитание
+  const diffResult = QuantityService.subtract(qty1, qty2);
+  if (diffResult.ok) {
+    console.log(diffResult.value.value().toNumber()); // 5
+  }
 
-// Умножение
-const multResult = QuantityService.multiply(qty1, 2);
-if (multResult.ok) {
-  console.log(multResult.value.value().toNumber()); // 20
-}
+  // Умножение
+  const multResult = QuantityService.multiply(qty1, 2);
+  if (multResult.ok) {
+    console.log(multResult.value.value().toNumber()); // 20
+  }
 
-// Деление
-const divResult = QuantityService.divide(qty1, 2);
-if (divResult.ok) {
-  console.log(divResult.value.value().toNumber()); // 5
+  // Деление
+  const divResult = QuantityService.divide(qty1, 2);
+  if (divResult.ok) {
+    console.log(divResult.value.value().toNumber()); // 5
+  }
 }
 ```
 
