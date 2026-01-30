@@ -268,11 +268,9 @@ const qty = qtyResult.value;
 const jsonResult = QuantityLossySerializer.toJSON(qty);
 
 if (!jsonResult.ok) {
-  // Если toJSON вернул ошибку - это может быть InvalidOperandError
+  // Если toJSON вернул ошибку - это InvalidOperandError
   // когда Quantity содержит non-finite значение (защитная проверка)
-  if (InvalidOperandError.is(jsonResult.error.context?.cause)) {
-    console.error('Cannot serialize non-finite Quantity:', jsonResult.error.message);
-  }
+  console.error('Cannot serialize non-finite Quantity:', jsonResult.error.message);
   return;
 }
 

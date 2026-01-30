@@ -76,8 +76,17 @@ if (position.equals(Quantity.of(0))) { ... }
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
 
-const qty1 = Quantity.of(10);
-const qty2 = Quantity.of(5);
+// Создаём Quantity через QuantityService.create()
+const qty1Result = QuantityService.create(10);
+const qty2Result = QuantityService.create(5);
+
+if (!qty1Result.ok || !qty2Result.ok) {
+  console.error('Failed to create quantities');
+  return;
+}
+
+const qty1 = qty1Result.value;
+const qty2 = qty2Result.value;
 
 // Сложение
 const sumResult = QuantityService.add(qty1, qty2);
@@ -531,6 +540,12 @@ console.log(QuantityFormatter.toDebugString(qty1)); // "Quantity(1500)"
 ```typescript
 import { Quantity, QuantityFormatter } from '@polymarket/value-objects/quantity';
 
+// Пример интерфейсов для демонстрации
+interface Position {
+  marketId: string;
+  quantity: Quantity;
+}
+
 interface PositionRow {
   market: string;
   quantity: Quantity;
@@ -794,7 +809,7 @@ if (bigJsonResult.ok) {
 ### Сериализация для хранения в БД
 
 ```typescript
-import { Quantity, QuantitySerializer } from '@polymarket/value-objects/quantity';
+import { QuantityService, QuantitySerializer } from '@polymarket/value-objects/quantity';
 
 interface OrderEntity {
   id: string;
