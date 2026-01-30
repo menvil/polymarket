@@ -207,8 +207,7 @@ interface ValidatedOrder {
 }
 
 function validateOrders(
-  inputs: OrderInput[],
-  minSize: Decimal
+  inputs: OrderInput[]
 ): Result<ValidatedOrder[], InvalidQuantityError> {
   const validated: ValidatedOrder[] = [];
 
@@ -246,7 +245,7 @@ const orders: OrderInput[] = [
   { id: "order-3", quantity: "0.5" } // Меньше minSize!
 ];
 
-const result = validateOrders(orders, new Decimal(1));
+const result = validateOrders(orders);
 if (!result.ok) {
   console.error(result.error.message); // "Order order-3 validation failed: ..."
 } else {
@@ -262,6 +261,8 @@ if (!result.ok) {
 
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
 
 interface Position {
   marketId: string;
@@ -325,6 +326,8 @@ if (!result2.ok) {
 
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
 
 interface Position {
   marketId: string;
@@ -375,6 +378,8 @@ if (result.ok) {
 
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 interface Trade {
@@ -502,8 +507,11 @@ const qty1 = Quantity.of(1500);
 const qty2 = Quantity.of("10.567891");
 
 // Для детального отображения
-console.log(QuantityFormatter.toString(qty1, 2)); // "1500.00"
-console.log(QuantityFormatter.toString(qty2, 6)); // "10.567891"
+const formatted1 = QuantityFormatter.toString(qty1, 2);
+if (formatted1.ok) console.log(formatted1.value); // "1500.00"
+
+const formatted2 = QuantityFormatter.toString(qty2, 6);
+if (formatted2.ok) console.log(formatted2.value); // "10.567891"
 
 // Компактный формат (убирает лишние нули)
 console.log(QuantityFormatter.toCompactString(qty1)); // "1500"
@@ -529,12 +537,15 @@ interface PositionRow {
 }
 
 function formatPositionsForTable(positions: Position[]): PositionRow[] {
-  return positions.map(position => ({
-    market: position.marketId,
-    quantity: position.quantity,
-    // Используем 2 знака после запятой для UI
-    displayQuantity: QuantityFormatter.toString(position.quantity, 2)
-  }));
+  return positions.map(position => {
+    const formattedResult = QuantityFormatter.toString(position.quantity, 2);
+    return {
+      market: position.marketId,
+      quantity: position.quantity,
+      // Используем 2 знака после запятой для UI
+      displayQuantity: formattedResult.ok ? formattedResult.value : position.quantity.value().toString()
+    };
+  });
 }
 
 // Использование в React компоненте
@@ -570,6 +581,8 @@ function PositionsTable({ positions }: { positions: Position[] }) {
 
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
 
 function validateQuantities(
   values: string[]
@@ -616,6 +629,8 @@ if (!result.ok) {
 
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
 
 function sumQuantities(
   quantities: Quantity[]
@@ -666,6 +681,8 @@ if (result.ok) {
 
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 interface Trade {
@@ -760,13 +777,17 @@ import { Quantity, QuantityLossySerializer } from '@polymarket/value-objects/qua
 const qty = Quantity.of("123.456789");
 
 // Lossy сериализация → JSON
-const json = QuantityLossySerializer.toJSON(qty);
-console.log(json); // { value: 123.456789 }
+const jsonResult = QuantityLossySerializer.toJSON(qty);
+if (jsonResult.ok) {
+  console.log(jsonResult.value); // { value: 123.456789 }
+}
 
 // ⚠️ Внимание: lossy для больших чисел!
 const bigQty = Quantity.of("99999999999999999999.123");
-const bigJson = QuantityLossySerializer.toJSON(bigQty);
-console.log(bigJson); // { value: 1e+20 } - потеря точности!
+const bigJsonResult = QuantityLossySerializer.toJSON(bigQty);
+if (bigJsonResult.ok) {
+  console.log(bigJsonResult.value); // { value: 1e+20 } - потеря точности!
+}
 ```
 
 ### Сериализация для хранения в БД
@@ -824,7 +845,6 @@ function handleQuantityError(error: InvalidQuantityError): string {
 
   // Проверяем операцию
   switch (ctx?.op) {
-    case 'create':
     case 'create':
       if (ctx.reason === 'NEGATIVE') {
         return 'Quantity cannot be negative';
@@ -886,7 +906,7 @@ async function createOrderWithRetry(
   let lastError: InvalidQuantityError | null = null;
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    const result = QuantityService.create(input.quantity);
+    const result = QuantityService.create(quantity);
 
     if (result.ok) {
       return result.value;
@@ -945,6 +965,8 @@ const qty = getQuantityOrDefault(userInput, Quantity.ONE);
 
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 function processTradeSequence(
@@ -997,6 +1019,8 @@ if (result.ok) {
 
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 class QuantityCalculator {
@@ -1075,7 +1099,8 @@ class MemoizedQuantityFormatter {
       return this.cache.get(key)!;
     }
 
-    const formatted = QuantityFormatter.toString(quantity, decimals);
+    const formattedResult = QuantityFormatter.toString(quantity, decimals);
+    const formatted = formattedResult.ok ? formattedResult.value : quantity.value().toString();
     this.cache.set(key, formatted);
 
     return formatted;

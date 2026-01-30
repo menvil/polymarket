@@ -16,7 +16,7 @@
 
 ## Введение
 
-**Quantity** — это value object для работы с количествами в торговой системе Polymarket. Модуль построен на архитектуре **Throws+Facade** с чётким разделением на 5 слоёв.
+**Quantity** — это value object для работы с количествами в торговой системе Polymarket. Модуль построен на архитектуре **Throws+Facade** с чётким разделением на 4 слоя.
 
 ### Ключевые особенности
 
@@ -61,12 +61,14 @@ const qty = result.value;
 console.log(qty.value().toString()); // "10"
 
 // Арифметические операции
-const qty1 = Quantity.of(10);
-const qty2 = Quantity.of(5);
+const qty1Result = QuantityService.create(10);
+const qty2Result = QuantityService.create(5);
 
-const sumResult = QuantityService.add(qty1, qty2);
-if (sumResult.ok) {
-  console.log(sumResult.value.value().toNumber()); // 15
+if (qty1Result.ok && qty2Result.ok) {
+  const sumResult = QuantityService.add(qty1Result.value, qty2Result.value);
+  if (sumResult.ok) {
+    console.log(sumResult.value.value().toNumber()); // 15
+  }
 }
 ```
 
@@ -216,11 +218,17 @@ const json = QuantitySerializer.toJSON(qty);  // { value: "12345678901234567890.
 const result = QuantitySerializer.fromJSON(json);
 
 // Lossy сериализация (для UI)
-const lossy = QuantityLossySerializer.toJSON(qty);  // { value: 123.45 }
+const lossyResult = QuantityLossySerializer.toJSON(qty);
+if (lossyResult.ok) {
+  console.log(lossyResult.value);  // { value: 123.45 }
+}
 
 // Форматирование
-QuantityFormatter.toString(qty, 2);  // "10.50"
-QuantityFormatter.toDisplayString(qty);  // "1.50K" для 1500
+const formattedResult = QuantityFormatter.toString(qty, 2);
+if (formattedResult.ok) {
+  console.log(formattedResult.value);  // "10.50"
+}
+console.log(QuantityFormatter.toDisplayString(qty));  // "1.50K" для 1500
 ```
 
 Подробнее: [adapters.md](./adapters.md)
@@ -238,11 +246,6 @@ import {
   QuantityService,
   QuantitySerializer,
   QuantityFormatter
-} from '@polymarket/value-objects/quantity';
-
-// Для advanced use cases
-import {
-  ValidateMinSize
 } from '@polymarket/value-objects/quantity';
 
 // Backward compatibility (старый путь)
@@ -302,11 +305,15 @@ console.log(`Quantity: ${quantity.value()}`);
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
 
-// Текущая позиция
-const currentPosition = Quantity.of(100);
+// Текущая позиция (используем QuantityService.create для создания)
+const currentPositionResult = QuantityService.create(100);
+if (!currentPositionResult.ok) return;
+const currentPosition = currentPositionResult.value;
 
 // Размер сделки (частичное закрытие)
-const tradeSize = Quantity.of(30);
+const tradeSizeResult = QuantityService.create(30);
+if (!tradeSizeResult.ok) return;
+const tradeSize = tradeSizeResult.value;
 
 // Вычисляем остаток
 const remainingResult = QuantityService.subtract(currentPosition, tradeSize);
@@ -328,7 +335,9 @@ import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
 import Decimal from 'decimal.js';
 
 // Результат вычисления
-const calculated = Quantity.of("10.567891");
+const calculatedResult = QuantityService.create("10.567891");
+if (!calculatedResult.ok) return;
+const calculated = calculatedResult.value;
 
 // Tick size рынка
 const stepSize = new Decimal("0.01");
@@ -348,10 +357,12 @@ if (roundedResult.ok) {
 ### Сериализация для API
 
 ```typescript
-import { Quantity, QuantitySerializer } from '@polymarket/value-objects/quantity';
+import { QuantityService, QuantitySerializer } from '@polymarket/value-objects/quantity';
 
 // Создаём quantity
-const qty = Quantity.of("99999999999999999999.123456789");
+const qtyResult = QuantityService.create("99999999999999999999.123456789");
+if (!qtyResult.ok) return;
+const qty = qtyResult.value;
 
 // Сериализуем для отправки на сервер (точная)
 const payload = {
@@ -372,12 +383,17 @@ if (receivedResult.ok) {
 ### Форматирование для UI
 
 ```typescript
-import { Quantity, QuantityFormatter } from '@polymarket/value-objects/quantity';
+import { QuantityService, QuantityFormatter } from '@polymarket/value-objects/quantity';
 
-const qty = Quantity.of(1500);
+const qtyResult = QuantityService.create(1500);
+if (!qtyResult.ok) return;
+const qty = qtyResult.value;
 
 // Для детального отображения
-console.log(QuantityFormatter.toString(qty, 2));  // "1500.00"
+const formattedResult = QuantityFormatter.toString(qty, 2);
+if (formattedResult.ok) {
+  console.log(formattedResult.value);  // "1500.00"
+}
 
 // Для компактного отображения
 console.log(QuantityFormatter.toCompactString(qty));  // "1500"

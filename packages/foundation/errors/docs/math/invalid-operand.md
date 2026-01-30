@@ -252,52 +252,40 @@ const avg = averageDecimal(
 ### 6. Сериализация Quantity в JSON (Value Objects)
 
 ```typescript
-import { Quantity } from '@polymarket/value-objects';
+import { QuantityService, QuantityLossySerializer } from '@polymarket/value-objects/quantity';
 import { InvalidOperandError } from '@polymarket/errors';
-import Decimal from 'decimal.js';
 
-/**
- * Сериализует Quantity в JSON (number, lossy)
- *
- * @remarks
- * Используется в QuantityLossySerializer из @polymarket/value-objects.
- * ⚠️ ВНИМАНИЕ: Может потерять точность для больших чисел.
- * Валидирует что Quantity содержит finite значение перед сериализацией.
- *
- * @param quantity - Количество для сериализации
- * @returns JSON объект { value: number }
- * @throws {InvalidOperandError} Если Quantity содержит non-finite значение
- */
-function toJSON(quantity: Quantity): { value: number } {
-  const decimalValue = quantity.value();
-
-  if (!decimalValue.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Cannot serialize non-finite Quantity to JSON, got ${ctx.value}`,
-      {
-        context: {
-          value: decimalValue.toString(),
-          operation: 'toJSON'
-        }
-      }
-    );
-  }
-
-  return { value: quantity.toNumber() };
+// Создание Quantity
+const qtyResult = QuantityService.create(10.5);
+if (!qtyResult.ok) {
+  console.error('Failed to create quantity');
+  return;
 }
 
-// Использование
-const qty = Quantity.of(10.5);
+const qty = qtyResult.value;
 
-toJSON(qty);                          // ✅ { value: 10.5 }
+// Lossy сериализация (number-based, может потерять точность для больших чисел)
+const jsonResult = QuantityLossySerializer.toJSON(qty);
+
+if (!jsonResult.ok) {
+  // Если toJSON вернул ошибку - это может быть InvalidOperandError
+  // когда Quantity содержит non-finite значение (защитная проверка)
+  if (InvalidOperandError.is(jsonResult.error.context?.cause)) {
+    console.error('Cannot serialize non-finite Quantity:', jsonResult.error.message);
+  }
+  return;
+}
+
+// ✅ { value: 10.5 }
+console.log(jsonResult.value);
 
 // ВАЖНО: Quantity имеет Core инвариант что значение должно быть finite.
-// При создании Quantity через Quantity.of() или Quantity.fromDecimal()
-// non-finite значения вызовут QuantityInvariantViolation.
+// При создании Quantity через QuantityService.create() non-finite значения
+// возвращают Err с InvalidQuantityError.
 //
-// Проверка isFinite() в toJSON() - это defensive guard для защиты
-// от гипотетических багов в upstream коде. В нормальной ситуации
-// эта проверка никогда не должна срабатывать.
+// Проверка isFinite() внутри QuantityLossySerializer.toJSON() - это
+// defensive guard для защиты от гипотетических багов в upstream коде.
+// В нормальной ситуации эта проверка никогда не должна срабатывать.
 ```
 
 ---

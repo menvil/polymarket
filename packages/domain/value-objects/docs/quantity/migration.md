@@ -601,6 +601,10 @@ Facade добавляет минимальный overhead (обёртка в Res
 **A:** Используйте early return или собирайте ошибки:
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
+import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+
 // Early return (для первой ошибки)
 function validateMultiple(values: string[]): Result<Quantity[], InvalidQuantityError> {
   const quantities: Quantity[] = [];
@@ -646,7 +650,7 @@ function validateAllWithErrors(values: string[]): {
 ✅ **Type-safe error handling** — компилятор заставляет проверить ошибки
 ✅ **Explicit contracts** — видно какие ошибки могут произойти
 ✅ **Better error context** — context.op, context.reason, context.cause
-✅ **Scalable architecture** — 5 слоёв с чётким разделением
+✅ **Scalable architecture** — 4 слоя с чётким разделением
 ✅ **Testability** — легко тестировать каждый слой
 
 ### Миграция не срочная
