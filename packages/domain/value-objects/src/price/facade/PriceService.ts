@@ -6,7 +6,7 @@ import {
   DivisionByZeroError,
   InvalidTickSizeError
 } from '@polymarket/errors';
-import { Price } from '../core/Price.js';
+import { Price, PriceInvariantViolation } from '../core/Price.js';
 import { ValidateTickSize } from '../rules/ValidateTickSize.js';
 import { ValidateAligned } from '../rules/ValidateAligned.js';
 import {
@@ -74,16 +74,38 @@ export class PriceService {
     try {
       const price = Price.of(value);
       return Ok(price);
-    } catch (error: unknown) {
+    } catch (error) {
+      if (error instanceof PriceInvariantViolation) {
+        return Err(
+          new InvalidPriceError(error.message, {
+            context: {
+              op: 'create',
+              value: String(value)
+            }
+          })
+        );
+      }
+      // Любая другая ошибка (парсинг Decimal, etc.)
+      if (error instanceof Error) {
+        return Err(
+          new InvalidPriceError(error.message, {
+            context: {
+              op: 'create',
+              value: String(value)
+            }
+          })
+        );
+      }
+      // Unknown error (не Error) - оборачиваем в InvalidPriceError
+      // Сохраняем Result-only контракт: никогда не бросаем исключения
       return Err(
         new InvalidPriceError(
-          (ctx) => `Invalid price value: ${ctx.value}`,
+          `Unexpected non-Error thrown during price creation: ${String(error)}`,
           {
-            code: InvalidPriceError.code,
             context: {
+              op: 'create',
               value: String(value),
-              errorMessage: error instanceof Error ? error.message : String(error),
-              errorName: error instanceof Error ? error.name : 'UnknownError'
+              unexpectedError: String(error)
             }
           }
         )
@@ -197,6 +219,41 @@ export class PriceService {
       );
     }
 
+    // Валидация factor после парсинга
+    if (factorDecimal.isNaN()) {
+      return Err(
+        new InvalidOperandError(
+          () => `Factor cannot be NaN`,
+          {
+            code: InvalidOperandError.code,
+            context: {
+              operation: 'multiply',
+              operand: 'factor',
+              value: String(factor),
+              reason: 'is_nan'
+            }
+          }
+        )
+      );
+    }
+
+    if (!factorDecimal.isFinite()) {
+      return Err(
+        new InvalidOperandError(
+          () => `Factor must be finite`,
+          {
+            code: InvalidOperandError.code,
+            context: {
+              operation: 'multiply',
+              operand: 'factor',
+              value: String(factor),
+              reason: 'not_finite'
+            }
+          }
+        )
+      );
+    }
+
     const result = multiplyDecimal(price.value(), factorDecimal);
     return this.create(result);
   }
@@ -242,6 +299,39 @@ export class PriceService {
               divisor: String(divisor),
               dividend: price.value().toString(),
               parseError: error instanceof Error ? error.message : 'unknown'
+            }
+          }
+        )
+      );
+    }
+
+    // Валидация divisor после парсинга
+    if (divisorDecimal.isNaN()) {
+      return Err(
+        new InvalidDivisorError(
+          () => `Divisor cannot be NaN`,
+          {
+            code: InvalidDivisorError.code,
+            context: {
+              divisor: String(divisor),
+              dividend: price.value().toString(),
+              reason: 'is_nan'
+            }
+          }
+        )
+      );
+    }
+
+    if (!divisorDecimal.isFinite()) {
+      return Err(
+        new InvalidDivisorError(
+          () => `Divisor must be finite`,
+          {
+            code: InvalidDivisorError.code,
+            context: {
+              divisor: String(divisor),
+              dividend: price.value().toString(),
+              reason: 'not_finite'
             }
           }
         )

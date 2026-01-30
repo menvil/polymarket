@@ -145,6 +145,28 @@ describe('PriceService', () => {
       }
     });
 
+    it('должен вернуть InvalidOperandError для NaN factor', () => {
+      const price = Price.of(0.5);
+      const result = PriceService.multiply(price, NaN);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.operation).toBe('multiply');
+        expect(result.error.context?.operand).toBe('factor');
+        expect(result.error.context?.reason).toBe('is_nan');
+      }
+    });
+
+    it('должен вернуть InvalidOperandError для Infinity factor', () => {
+      const price = Price.of(0.5);
+      const result = PriceService.multiply(price, Infinity);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.operation).toBe('multiply');
+        expect(result.error.context?.operand).toBe('factor');
+        expect(result.error.context?.reason).toBe('not_finite');
+      }
+    });
+
     it('должен вернуть Err если результат выходит за диапазон', () => {
       const price = Price.of(0.5);
       const result = PriceService.multiply(price, 2);
@@ -198,6 +220,28 @@ describe('PriceService', () => {
       if (!result.ok) {
         expect(result.error.context).toHaveProperty('divisor');
         expect(result.error.context).toHaveProperty('dividend');
+      }
+    });
+
+    it('должен вернуть InvalidDivisorError для NaN divisor', () => {
+      const price = Price.of(0.5);
+      const result = PriceService.divide(price, NaN);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context).toHaveProperty('divisor');
+        expect(result.error.context).toHaveProperty('dividend');
+        expect(result.error.context?.reason).toBe('is_nan');
+      }
+    });
+
+    it('должен вернуть InvalidDivisorError для Infinity divisor', () => {
+      const price = Price.of(0.5);
+      const result = PriceService.divide(price, Infinity);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context).toHaveProperty('divisor');
+        expect(result.error.context).toHaveProperty('dividend');
+        expect(result.error.context?.reason).toBe('not_finite');
       }
     });
 
