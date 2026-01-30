@@ -66,6 +66,10 @@ export class QuantityInvariantViolation extends Error {
  * qty1.equals(qty2);     // boolean
  * qty1.isZero();         // boolean
  * qty1.isPositive();     // boolean
+ * qty1.isLessThan(qty2); // boolean
+ * qty1.isLessThanOrEqual(qty2); // boolean
+ * qty1.isGreaterThan(qty2); // boolean
+ * qty1.isGreaterThanOrEqual(qty2); // boolean
  *
  * // Для математики используй QuantityService:
  * const result = QuantityService.add(qty1, qty2);
@@ -236,5 +240,97 @@ export class Quantity {
    */
   public isPositive(): boolean {
     return this.v.greaterThan(0);
+  }
+
+  /**
+   * Проверяет что это количество меньше другого
+   *
+   * @remarks
+   * Точное сравнение без epsilon.
+   *
+   * @param other - Другой Quantity для сравнения
+   * @returns true если this < other, иначе false
+   *
+   * @example
+   * ```typescript
+   * const qty1 = Quantity.of(5);
+   * const qty2 = Quantity.of(10);
+   *
+   * qty1.isLessThan(qty2);  // true
+   * qty2.isLessThan(qty1);  // false
+   * qty1.isLessThan(qty1);  // false (равны)
+   * ```
+   */
+  public isLessThan(other: Quantity): boolean {
+    return this.v.lessThan(other.v);
+  }
+
+  /**
+   * Проверяет что это количество меньше или равно другому
+   *
+   * @remarks
+   * Точное сравнение без epsilon.
+   *
+   * @param other - Другой Quantity для сравнения
+   * @returns true если this <= other, иначе false
+   *
+   * @example
+   * ```typescript
+   * const qty1 = Quantity.of(5);
+   * const qty2 = Quantity.of(10);
+   *
+   * qty1.isLessThanOrEqual(qty2);  // true
+   * qty2.isLessThanOrEqual(qty1);  // false
+   * qty1.isLessThanOrEqual(qty1);  // true (равны)
+   * ```
+   */
+  public isLessThanOrEqual(other: Quantity): boolean {
+    return this.v.lessThanOrEqualTo(other.v);
+  }
+
+  /**
+   * Проверяет что это количество больше другого
+   *
+   * @remarks
+   * Точное сравнение без epsilon.
+   *
+   * @param other - Другой Quantity для сравнения
+   * @returns true если this > other, иначе false
+   *
+   * @example
+   * ```typescript
+   * const qty1 = Quantity.of(10);
+   * const qty2 = Quantity.of(5);
+   *
+   * qty1.isGreaterThan(qty2);  // true
+   * qty2.isGreaterThan(qty1);  // false
+   * qty1.isGreaterThan(qty1);  // false (равны)
+   * ```
+   */
+  public isGreaterThan(other: Quantity): boolean {
+    return this.v.greaterThan(other.v);
+  }
+
+  /**
+   * Проверяет что это количество больше или равно другому
+   *
+   * @remarks
+   * Точное сравнение без epsilon.
+   *
+   * @param other - Другой Quantity для сравнения
+   * @returns true если this >= other, иначе false
+   *
+   * @example
+   * ```typescript
+   * const qty1 = Quantity.of(10);
+   * const qty2 = Quantity.of(5);
+   *
+   * qty1.isGreaterThanOrEqual(qty2);  // true
+   * qty2.isGreaterThanOrEqual(qty1);  // false
+   * qty1.isGreaterThanOrEqual(qty1);  // true (равны)
+   * ```
+   */
+  public isGreaterThanOrEqual(other: Quantity): boolean {
+    return this.v.greaterThanOrEqualTo(other.v);
   }
 }

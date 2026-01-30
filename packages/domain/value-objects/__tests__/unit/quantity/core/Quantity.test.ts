@@ -242,3 +242,117 @@ describe('Quantity.isPositive()', () => {
     expect(Quantity.ZERO.isPositive()).toBe(false);
   });
 });
+
+describe('Quantity.isLessThan()', () => {
+  it('должен вернуть true если this < other', () => {
+    const qty1 = Quantity.of(5);
+    const qty2 = Quantity.of(10);
+    expect(qty1.isLessThan(qty2)).toBe(true);
+  });
+
+  it('должен вернуть false если this > other', () => {
+    const qty1 = Quantity.of(10);
+    const qty2 = Quantity.of(5);
+    expect(qty1.isLessThan(qty2)).toBe(false);
+  });
+
+  it('должен вернуть false для равных значений', () => {
+    const qty1 = Quantity.of(10);
+    const qty2 = Quantity.of(10);
+    expect(qty1.isLessThan(qty2)).toBe(false);
+  });
+
+  it('должен работать с константами', () => {
+    expect(Quantity.ZERO.isLessThan(Quantity.ONE)).toBe(true);
+    expect(Quantity.ONE.isLessThan(Quantity.ZERO)).toBe(false);
+  });
+
+  it('должен работать с decimal значениями', () => {
+    const qty1 = Quantity.of("10.5");
+    const qty2 = Quantity.of("10.6");
+    expect(qty1.isLessThan(qty2)).toBe(true);
+  });
+});
+
+describe('Quantity.isLessThanOrEqual()', () => {
+  it('должен вернуть true если this < other', () => {
+    const qty1 = Quantity.of(5);
+    const qty2 = Quantity.of(10);
+    expect(qty1.isLessThanOrEqual(qty2)).toBe(true);
+  });
+
+  it('должен вернуть false если this > other', () => {
+    const qty1 = Quantity.of(10);
+    const qty2 = Quantity.of(5);
+    expect(qty1.isLessThanOrEqual(qty2)).toBe(false);
+  });
+
+  it('должен вернуть true для равных значений', () => {
+    const qty1 = Quantity.of(10);
+    const qty2 = Quantity.of(10);
+    expect(qty1.isLessThanOrEqual(qty2)).toBe(true);
+  });
+
+  it('должен работать с константами', () => {
+    expect(Quantity.ZERO.isLessThanOrEqual(Quantity.ONE)).toBe(true);
+    expect(Quantity.ZERO.isLessThanOrEqual(Quantity.ZERO)).toBe(true);
+    expect(Quantity.ONE.isLessThanOrEqual(Quantity.ZERO)).toBe(false);
+  });
+});
+
+describe('Quantity.isGreaterThan()', () => {
+  it('должен вернуть true если this > other', () => {
+    const qty1 = Quantity.of(10);
+    const qty2 = Quantity.of(5);
+    expect(qty1.isGreaterThan(qty2)).toBe(true);
+  });
+
+  it('должен вернуть false если this < other', () => {
+    const qty1 = Quantity.of(5);
+    const qty2 = Quantity.of(10);
+    expect(qty1.isGreaterThan(qty2)).toBe(false);
+  });
+
+  it('должен вернуть false для равных значений', () => {
+    const qty1 = Quantity.of(10);
+    const qty2 = Quantity.of(10);
+    expect(qty1.isGreaterThan(qty2)).toBe(false);
+  });
+
+  it('должен работать с константами', () => {
+    expect(Quantity.ONE.isGreaterThan(Quantity.ZERO)).toBe(true);
+    expect(Quantity.ZERO.isGreaterThan(Quantity.ONE)).toBe(false);
+  });
+
+  it('должен работать с decimal значениями', () => {
+    const qty1 = Quantity.of("10.6");
+    const qty2 = Quantity.of("10.5");
+    expect(qty1.isGreaterThan(qty2)).toBe(true);
+  });
+});
+
+describe('Quantity.isGreaterThanOrEqual()', () => {
+  it('должен вернуть true если this > other', () => {
+    const qty1 = Quantity.of(10);
+    const qty2 = Quantity.of(5);
+    expect(qty1.isGreaterThanOrEqual(qty2)).toBe(true);
+  });
+
+  it('должен вернуть false если this < other', () => {
+    const qty1 = Quantity.of(5);
+    const qty2 = Quantity.of(10);
+    expect(qty1.isGreaterThanOrEqual(qty2)).toBe(false);
+  });
+
+  it('должен вернуть true для равных значений', () => {
+    const qty1 = Quantity.of(10);
+    const qty2 = Quantity.of(10);
+    expect(qty1.isGreaterThanOrEqual(qty2)).toBe(true);
+  });
+
+  it('должен работать с константами', () => {
+    expect(Quantity.ONE.isGreaterThanOrEqual(Quantity.ZERO)).toBe(true);
+    expect(Quantity.ONE.isGreaterThanOrEqual(Quantity.ONE)).toBe(true);
+    expect(Quantity.ZERO.isGreaterThanOrEqual(Quantity.ONE)).toBe(false);
+  });
+});

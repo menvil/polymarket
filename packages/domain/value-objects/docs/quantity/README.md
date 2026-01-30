@@ -146,6 +146,10 @@ quantity.toNumber(): number  // lossy
 quantity.equals(other: Quantity): boolean
 quantity.isZero(): boolean
 quantity.isPositive(): boolean
+quantity.isLessThan(other: Quantity): boolean
+quantity.isLessThanOrEqual(other: Quantity): boolean
+quantity.isGreaterThan(other: Quantity): boolean
+quantity.isGreaterThanOrEqual(other: Quantity): boolean
 ```
 
 Подробнее: [core.md](./core.md)

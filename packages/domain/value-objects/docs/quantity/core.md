@@ -142,6 +142,58 @@ Quantity.of(0).isPositive();    // false (ноль не positive)
 Quantity.ZERO.isPositive();     // false
 ```
 
+### `isLessThan(other: Quantity): boolean`
+
+Проверяет что это количество меньше другого.
+
+```typescript
+const qty1 = Quantity.of(5);
+const qty2 = Quantity.of(10);
+
+qty1.isLessThan(qty2);  // true
+qty2.isLessThan(qty1);  // false
+qty1.isLessThan(qty1);  // false (равны)
+```
+
+### `isLessThanOrEqual(other: Quantity): boolean`
+
+Проверяет что это количество меньше или равно другому.
+
+```typescript
+const qty1 = Quantity.of(5);
+const qty2 = Quantity.of(10);
+
+qty1.isLessThanOrEqual(qty2);  // true
+qty2.isLessThanOrEqual(qty1);  // false
+qty1.isLessThanOrEqual(qty1);  // true (равны)
+```
+
+### `isGreaterThan(other: Quantity): boolean`
+
+Проверяет что это количество больше другого.
+
+```typescript
+const qty1 = Quantity.of(10);
+const qty2 = Quantity.of(5);
+
+qty1.isGreaterThan(qty2);  // true
+qty2.isGreaterThan(qty1);  // false
+qty1.isGreaterThan(qty1);  // false (равны)
+```
+
+### `isGreaterThanOrEqual(other: Quantity): boolean`
+
+Проверяет что это количество больше или равно другому.
+
+```typescript
+const qty1 = Quantity.of(10);
+const qty2 = Quantity.of(5);
+
+qty1.isGreaterThanOrEqual(qty2);  // true
+qty2.isGreaterThanOrEqual(qty1);  // false
+qty1.isGreaterThanOrEqual(qty1);  // true (равны)
+```
+
 ---
 
 ## QuantityInvariantViolation
