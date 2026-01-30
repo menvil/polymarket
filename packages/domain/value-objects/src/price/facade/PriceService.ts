@@ -20,6 +20,7 @@ import {
   floorToTick,
   ceilToTick
 } from '@polymarket/math';
+import { withOperationContext } from './errorUtils.js';
 import Decimal from 'decimal.js';
 
 /**
@@ -224,11 +225,26 @@ export class PriceService {
     // Валидация через rule (принимает только Decimal)
     const validateResult = ValidateFactorForPriceMultiplication.check(factorDecimal);
     if (!validateResult.ok) {
-      return Err(validateResult.error);
+      return Err(
+        withOperationContext(validateResult.error, 'multiply', {
+          price: price.value().toString()
+        })
+      );
     }
 
     const result = multiplyDecimal(price.value(), factorDecimal);
-    return this.create(result);
+
+    const createResult = this.create(result);
+    if (!createResult.ok) {
+      return Err(
+        withOperationContext(createResult.error, 'multiply', {
+          price: price.value().toString(),
+          factor: factorDecimal.toString()
+        })
+      );
+    }
+
+    return createResult;
   }
 
   /**
@@ -281,18 +297,10 @@ export class PriceService {
     // Валидация через rule (принимает только Decimal)
     const validateResult = ValidateDivisorForPriceDivision.check(divisorDecimal);
     if (!validateResult.ok) {
-      // Добавляем dividend в контекст ошибки
       return Err(
-        new InvalidDivisorError(
-          validateResult.error.message,
-          {
-            code: validateResult.error.code,
-            context: {
-              ...validateResult.error.context,
-              dividend: price.value().toString()
-            }
-          }
-        )
+        withOperationContext(validateResult.error, 'divide', {
+          dividend: price.value().toString()
+        })
       );
     }
 
@@ -313,7 +321,18 @@ export class PriceService {
     }
 
     const result = divideDecimal(price.value(), divisorDecimal);
-    return this.create(result);
+
+    const createResult = this.create(result);
+    if (!createResult.ok) {
+      return Err(
+        withOperationContext(createResult.error, 'divide', {
+          dividend: price.value().toString(),
+          divisor: divisorDecimal.toString()
+        })
+      );
+    }
+
+    return createResult;
   }
 
   /**
