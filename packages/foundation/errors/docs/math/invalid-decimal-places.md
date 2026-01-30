@@ -296,6 +296,48 @@ const rounded = roundAll(prices, 2);
 // ✅ [0.65, 0.76, 0.85]
 ```
 
+### 6. Форматирование Quantity (Value Objects)
+
+```typescript
+import { Quantity } from '@polymarket/value-objects';
+import { InvalidDecimalPlacesError } from '@polymarket/errors';
+
+/**
+ * Форматирует Quantity в string с фиксированным количеством decimal places
+ *
+ * @remarks
+ * Используется в QuantityFormatter из @polymarket/value-objects.
+ * Валидирует decimals параметр перед форматированием.
+ *
+ * @param quantity - Количество для форматирования
+ * @param decimals - Количество знаков после запятой (default: 2, max: 100)
+ * @throws {InvalidDecimalPlacesError} Если decimals не целое число или выходит за диапазон [0, 100]
+ */
+function toString(quantity: Quantity, decimals: number = 2): string {
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 100) {
+    throw new InvalidDecimalPlacesError(
+      (ctx) => `Decimal places must be an integer between 0 and 100, got ${ctx.decimalPlaces}`,
+      {
+        context: {
+          decimalPlaces: String(decimals),
+          quantity: quantity.value().toString(),
+          operation: 'toString'
+        }
+      }
+    );
+  }
+  return quantity.value().toFixed(decimals);
+}
+
+// Использование
+const qty = Quantity.of(10.5);
+
+toString(qty, 2);   // ✅ "10.50"
+toString(qty, 0);   // ✅ "11"
+toString(qty, -1);  // ❌ InvalidDecimalPlacesError
+toString(qty, 1.5); // ❌ InvalidDecimalPlacesError
+```
+
 ---
 
 ## Edge Cases

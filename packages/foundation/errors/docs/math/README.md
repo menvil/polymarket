@@ -65,7 +65,36 @@ const result = safeDivide(
 ); // ✅ 200
 ```
 
-### 2. InvalidTickSizeError (округление)
+### 2. InvalidDecimalPlacesError (форматирование)
+
+```typescript
+import Decimal from 'decimal.js';
+import { InvalidDecimalPlacesError } from '@polymarket/errors';
+
+function formatDecimal(value: Decimal, decimals: number): string {
+  // Валидация decimals параметра
+  if (!Number.isInteger(decimals) || decimals < 0 || decimals > 100) {
+    throw new InvalidDecimalPlacesError(
+      (ctx) => `Decimal places must be an integer between 0 and 100, got ${ctx.decimalPlaces}`,
+      {
+        context: {
+          decimalPlaces: String(decimals),
+          value: value.toString(),
+          operation: 'formatDecimal'
+        }
+      }
+    );
+  }
+
+  return value.toFixed(decimals);
+}
+
+// Использование
+const value = new Decimal(10.5);
+const formatted = formatDecimal(value, 2); // ✅ "10.50"
+```
+
+### 3. InvalidTickSizeError (округление)
 
 ```typescript
 import Decimal from 'decimal.js';
@@ -86,7 +115,6 @@ function roundToTickSize(value: Decimal, tickSize: Decimal): Decimal {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
       {
-        code: InvalidTickSizeError.code,
         context: { tickSize: tickSize.toString(), value: value.toString() }
       }
     );

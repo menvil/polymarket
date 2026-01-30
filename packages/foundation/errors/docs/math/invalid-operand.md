@@ -249,6 +249,43 @@ const avg = averageDecimal(
 ); // ✅ 0.70
 ```
 
+### 6. Сериализация Quantity в JSON (Value Objects)
+
+```typescript
+import { QuantityService, QuantityLossySerializer } from '@polymarket/value-objects/quantity';
+import { InvalidOperandError } from '@polymarket/errors';
+
+// Создание Quantity
+const qtyResult = QuantityService.create(10.5);
+if (!qtyResult.ok) {
+  console.error('Failed to create quantity');
+  return;
+}
+
+const qty = qtyResult.value;
+
+// Lossy сериализация (number-based, может потерять точность для больших чисел)
+const jsonResult = QuantityLossySerializer.toJSON(qty);
+
+if (!jsonResult.ok) {
+  // Если toJSON вернул ошибку - это InvalidOperandError
+  // когда Quantity содержит non-finite значение (защитная проверка)
+  console.error('Cannot serialize non-finite Quantity:', jsonResult.error.message);
+  return;
+}
+
+// ✅ { value: 10.5 }
+console.log(jsonResult.value);
+
+// ВАЖНО: Quantity имеет Core инвариант что значение должно быть finite.
+// При создании Quantity через QuantityService.create() non-finite значения
+// возвращают Err с InvalidQuantityError.
+//
+// Проверка isFinite() внутри QuantityLossySerializer.toJSON() - это
+// defensive guard для защиты от гипотетических багов в upstream коде.
+// В нормальной ситуации эта проверка никогда не должна срабатывать.
+```
+
 ---
 
 ## Edge Cases
