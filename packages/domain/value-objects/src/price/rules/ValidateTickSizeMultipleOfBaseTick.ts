@@ -71,7 +71,6 @@ export class ValidateTickSizeMultipleOfBaseTick {
           (ctx) =>
             `Tick size ${ctx.tickSize} must be multiple of base tick ${ctx.baseTick}`,
           {
-            code: InvalidTickSizeError.code,
             context: {
               field: 'tickSize',
               reason: 'not_multiple_of_base_tick' as TickSizeMultipleReason,

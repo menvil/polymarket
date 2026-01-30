@@ -37,10 +37,64 @@ export class Price {
   private static readonly MAX_PRICE = new Decimal(0.9999);
   private static readonly HALF_PRICE = new Decimal(0.5);
 
-  private readonly v: Decimal;
+  private constructor(private readonly v: Decimal) {
+    // Инвариант 1: Not NaN
+    if (v.isNaN()) {
+      throw new PriceInvariantViolation('Price cannot be NaN');
+    }
 
-  private constructor(value: Decimal) {
-    this.v = value;
+    // Инвариант 2: Must be finite
+    if (!v.isFinite()) {
+      throw new PriceInvariantViolation('Price must be finite');
+    }
+
+    // Инвариант 3: Cannot be negative
+    if (v.isNegative()) {
+      throw new PriceInvariantViolation('Price value cannot be negative');
+    }
+
+    // Инвариант 4: Must be within valid range [MIN, MAX]
+    if (v.lessThan(Price.MIN_PRICE)) {
+      throw new PriceInvariantViolation(
+        `Price ${v} is below minimum ${Price.MIN_PRICE}`
+      );
+    }
+
+    if (v.greaterThan(Price.MAX_PRICE)) {
+      throw new PriceInvariantViolation(
+        `Price ${v} exceeds maximum ${Price.MAX_PRICE}`
+      );
+    }
+  }
+
+  /**
+   * Создаёт Price из Decimal значения (ТОЛЬКО для Core!)
+   *
+   * @internal ТОЛЬКО для внутреннего использования в Core и Facade
+   *
+   * @remarks
+   * Бросает PriceInvariantViolation при нарушении инвариантов.
+   * Все проверки инвариантов выполняются в конструкторе.
+   * Для публичного API используйте PriceService.create().
+   *
+   * @param decimal - Decimal значение цены
+   * @returns Price объект
+   * @throws {PriceInvariantViolation} При нарушении инвариантов
+   *
+   * @example
+   * ```typescript
+   * // ✅ В Core и Facade
+   * const price = Price.fromDecimal(new Decimal(0.5));
+   *
+   * // ❌ В публичном коде - используй PriceService.create()
+   * const result = PriceService.create(0.5);
+   * if (!result.ok) {
+   *   console.error(result.error);
+   * }
+   * ```
+   */
+  public static fromDecimal(decimal: Decimal): Price {
+    return new Price(decimal);
   }
 
   /**
@@ -52,7 +106,7 @@ export class Price {
    * Бросает PriceInvariantViolation при нарушении инвариантов.
    * Для публичного API используйте PriceService.create().
    *
-   * @param value - Значение цены
+   * @param value - Значение цены (number, string или Decimal)
    * @returns Price объект
    * @throws {PriceInvariantViolation} При нарушении инвариантов
    *
@@ -69,29 +123,9 @@ export class Price {
    * ```
    */
   public static of(value: number | string | Decimal): Price {
-    const decimal = value instanceof Decimal ? value : new Decimal(value);
-
-    if (decimal.isNaN()) {
-      throw new PriceInvariantViolation('Price cannot be NaN');
-    }
-
-    if (!decimal.isFinite()) {
-      throw new PriceInvariantViolation('Price must be finite');
-    }
-
-    if (decimal.lessThan(Price.MIN_PRICE)) {
-      throw new PriceInvariantViolation(
-        `Price ${decimal} is below minimum ${Price.MIN_PRICE}`
-      );
-    }
-
-    if (decimal.greaterThan(Price.MAX_PRICE)) {
-      throw new PriceInvariantViolation(
-        `Price ${decimal} exceeds maximum ${Price.MAX_PRICE}`
-      );
-    }
-
-    return new Price(decimal);
+    return value instanceof Decimal
+      ? Price.fromDecimal(value)
+      : new Price(new Decimal(value));
   }
 
   /**
