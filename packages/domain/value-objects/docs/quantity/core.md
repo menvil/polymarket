@@ -213,6 +213,8 @@ class QuantityInvariantViolation extends Error {
 ### Пример обработки
 
 ```typescript
+const value = -1; // Пример невалидного значения
+
 try {
   const qty = Quantity.of(value);
 } catch (error) {

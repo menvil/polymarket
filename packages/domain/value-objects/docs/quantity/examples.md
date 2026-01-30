@@ -63,6 +63,10 @@ import { Quantity } from '@polymarket/value-objects/quantity';
 const zero = Quantity.ZERO;
 const one = Quantity.ONE;
 
+// Пример: проверяем закрытую позицию
+const position = Quantity.of(0);
+
+// ✅ Хорошо: используем константу
 if (position.equals(Quantity.ZERO)) {
   console.log('Position closed');
 }
@@ -76,42 +80,39 @@ if (position.equals(Quantity.of(0))) { ... }
 ```typescript
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
 
-function performArithmetic() {
-  // Создаём Quantity через QuantityService.create()
-  const qty1Result = QuantityService.create(10);
-  const qty2Result = QuantityService.create(5);
+// Создаём Quantity через QuantityService.create()
+const qty1Result = QuantityService.create(10);
+const qty2Result = QuantityService.create(5);
 
-  if (!qty1Result.ok || !qty2Result.ok) {
-    console.error('Failed to create quantities');
-    return;
-  }
+if (!qty1Result.ok || !qty2Result.ok) {
+  throw new Error('Failed to create quantities');
+}
 
-  const qty1 = qty1Result.value;
-  const qty2 = qty2Result.value;
+const qty1 = qty1Result.value;
+const qty2 = qty2Result.value;
 
-  // Сложение
-  const sumResult = QuantityService.add(qty1, qty2);
-  if (sumResult.ok) {
-    console.log(sumResult.value.value().toNumber()); // 15
-  }
+// Сложение
+const sumResult = QuantityService.add(qty1, qty2);
+if (sumResult.ok) {
+  console.log(sumResult.value.value().toNumber()); // 15
+}
 
-  // Вычитание
-  const diffResult = QuantityService.subtract(qty1, qty2);
-  if (diffResult.ok) {
-    console.log(diffResult.value.value().toNumber()); // 5
-  }
+// Вычитание
+const diffResult = QuantityService.subtract(qty1, qty2);
+if (diffResult.ok) {
+  console.log(diffResult.value.value().toNumber()); // 5
+}
 
-  // Умножение
-  const multResult = QuantityService.multiply(qty1, 2);
-  if (multResult.ok) {
-    console.log(multResult.value.value().toNumber()); // 20
-  }
+// Умножение
+const multResult = QuantityService.multiply(qty1, 2);
+if (multResult.ok) {
+  console.log(multResult.value.value().toNumber()); // 20
+}
 
-  // Деление
-  const divResult = QuantityService.divide(qty1, 2);
-  if (divResult.ok) {
-    console.log(divResult.value.value().toNumber()); // 5
-  }
+// Деление
+const divResult = QuantityService.divide(qty1, 2);
+if (divResult.ok) {
+  console.log(divResult.value.value().toNumber()); // 5
 }
 ```
 
@@ -174,6 +175,13 @@ async function createOrder(
   }
 
   const finalQuantity = roundedResult.value;
+
+  // Проверяем минимальный размер ордера
+  if (finalQuantity.value().lessThan(marketConfig.minOrderSize)) {
+    throw new ValidationError(
+      `Order quantity ${finalQuantity.value()} is below minOrderSize ${marketConfig.minOrderSize}`
+    );
+  }
 
   // Создаём ордер
   const order = await orderService.createOrder({
