@@ -33,9 +33,9 @@ export class PriceInvariantViolation extends Error {
 export class Price {
   // MIN_PRICE служит базовым тиком Polymarket (0.0001)
   // Все tickSize должны быть кратны этому значению
-  private static readonly MIN_PRICE = new Decimal(0.0001);
-  private static readonly MAX_PRICE = new Decimal(0.9999);
-  private static readonly HALF_PRICE = new Decimal(0.5);
+  private static readonly MIN_PRICE = new Decimal('0.0001');
+  private static readonly MAX_PRICE = new Decimal('0.9999');
+  private static readonly HALF_PRICE = new Decimal('0.5');
 
   private constructor(private readonly v: Decimal) {
     // Инвариант 1: Not NaN

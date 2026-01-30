@@ -119,22 +119,22 @@ import { PriceService, Price } from '@polymarket/value-objects/price';
 const price1 = Price.of(0.5);
 const price2 = Price.of(0.3);
 
-const result = PriceService.add(price1, price2);
+// Вместо прямого сложения используй average для получения средней цены
+const result = PriceService.average(price1, price2);
 
 if (!result.ok) {
-  console.error('Addition failed:', result.error);
+  console.error('Average calculation failed:', result.error);
   return;
 }
 
-const sum = result.value;
+const avgPrice = result.value;  // 0.4
 ```
 
-**Новые операции:**
-- `add()` — сложение
-- `subtract()` — вычитание
-- `multiply()` — умножение
-- `divide()` — деление
+**Доступные операции:**
+- `multiply()` — умножение на коэффициент
+- `divide()` — деление на делитель
 - `complement()` — дополнение (1 - price)
+- `average()` — среднее двух цен
 - `average()` — среднее двух цен
 
 ---

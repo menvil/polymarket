@@ -27,7 +27,24 @@ import Decimal from 'decimal.js';
  */
 export class ValidateFactorForPriceMultiplication {
   public static check(factor: Decimal): Result<void, InvalidOperandError> {
-    // Проверка 1: factor не должен быть NaN
+    // Проверка 1: factor не должен быть отрицательным
+    if (factor.isNegative()) {
+      return Err(
+        new InvalidOperandError(
+          () => `Factor cannot be negative`,
+          {
+            context: {
+              operation: 'multiply',
+              operand: 'factor',
+              value: factor.toString(),
+              reason: 'is_negative'
+            }
+          }
+        )
+      );
+    }
+
+    // Проверка 2: factor не должен быть NaN
     if (factor.isNaN()) {
       return Err(
         new InvalidOperandError(
@@ -44,7 +61,7 @@ export class ValidateFactorForPriceMultiplication {
       );
     }
 
-    // Проверка 2: factor должен быть finite (исключает Infinity, -Infinity)
+    // Проверка 3: factor должен быть finite (исключает Infinity, -Infinity)
     if (!factor.isFinite()) {
       return Err(
         new InvalidOperandError(

@@ -4,6 +4,7 @@ import { PriceService } from '../../../../src/price/facade/PriceService.js';
 import { Price } from '../../../../src/price/core/Price.js';
 import { InvalidDivisorError } from '@polymarket/errors';
 import * as math from '@polymarket/math';
+import { ValidateAligned } from '../../../../src/price/rules/ValidateAligned.js';
 
 describe('PriceService', () => {
   describe('create()', () => {
@@ -78,7 +79,7 @@ describe('PriceService', () => {
       }
     });
 
-    it('должен вернуть Err если результат выходит за диапазон', () => {
+    it('должен вернуть Ok если результат в диапазоне', () => {
       const price = Price.of(0.9999);
       const result = PriceService.complement(price);
       // 1 - 0.9999 = 0.0001, что валидно
@@ -424,9 +425,12 @@ describe('PriceService', () => {
     });
 
     it('должен делегировать ValidateAligned', () => {
+      const spy = jest.spyOn(ValidateAligned, 'check');
       const price = Price.of(0.1235);
       const result = PriceService.ensureAlignedToMarketTick(price, 0.01);
       expect(result.ok).toBe(false);
+      expect(spy).toHaveBeenCalledWith(price, 0.01);
+      spy.mockRestore();
     });
   });
 });

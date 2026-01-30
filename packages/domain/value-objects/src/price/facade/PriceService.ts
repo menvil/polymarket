@@ -502,7 +502,17 @@ export class PriceService {
           break;
       }
 
-      return this.create(out);
+      const createResult = this.create(out);
+      if (!createResult.ok) {
+        return Err(
+          withOperationContext(createResult.error, 'roundToMarketTick', {
+            price: price.value().toString(),
+            tickSize: tick.toString(),
+            mode
+          })
+        );
+      }
+      return createResult;
     } catch (e: unknown) {
       if (e instanceof InvalidTickSizeError) return Err(e);
 

@@ -1,7 +1,6 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidTickSizeError } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
-import type { TickSizeErrorReason } from './types.js';
 import Decimal from 'decimal.js';
 
 /**
@@ -65,7 +64,7 @@ export class ValidateTickSize {
           {
             context: {
               field: 'tickSize',
-              reason: 'parse_error' as TickSizeErrorReason,
+              reason: 'parse_error',
               tickSize: String(tickSize),
               parseError: error instanceof Error ? error.message : 'unknown'
             }
@@ -82,7 +81,7 @@ export class ValidateTickSize {
           {
             context: {
               field: 'tickSize',
-              reason: 'is_nan' as TickSizeErrorReason,
+              reason: 'is_nan',
               tickSize: String(tickSize)
             }
           }
@@ -98,7 +97,7 @@ export class ValidateTickSize {
           {
             context: {
               field: 'tickSize',
-              reason: 'not_finite' as TickSizeErrorReason,
+              reason: 'not_finite',
               tickSize: tickDecimal.toString()
             }
           }
@@ -114,7 +113,7 @@ export class ValidateTickSize {
           {
             context: {
               field: 'tickSize',
-              reason: 'not_positive' as TickSizeErrorReason,
+              reason: 'not_positive',
               tickSize: tickDecimal.toString()
             }
           }
@@ -131,7 +130,7 @@ export class ValidateTickSize {
           {
             context: {
               field: 'tickSize',
-              reason: 'exceeds_range' as TickSizeErrorReason,
+              reason: 'exceeds_range',
               tickSize: tickDecimal.toString(),
               maxAllowed: maxAllowed.toString(),
               minPrice: Price.minValue().toString(),

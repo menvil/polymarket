@@ -48,6 +48,16 @@ describe('PriceFormatter', () => {
       expect(PriceFormatter.toFixed(price, 6)).toBe('0.500000');
     });
 
+    it('должен бросить RangeError для отрицательного decimals', () => {
+      const price = Price.of(0.5);
+      expect(() => PriceFormatter.toFixed(price, -1)).toThrow(RangeError);
+    });
+
+    it('должен бросить RangeError для нецелого decimals', () => {
+      const price = Price.of(0.5);
+      expect(() => PriceFormatter.toFixed(price, 2.5)).toThrow(RangeError);
+    });
+
     it('должен корректно форматировать дробные значения', () => {
       const price = Price.of(0.123456);
       expect(PriceFormatter.toFixed(price, 2)).toBe('0.12');

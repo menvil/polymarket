@@ -366,7 +366,8 @@ export class QuantityService {
               divisor: divisorDecimal.toString(),
               cause: error instanceof Error ? {
                 name: error.name,
-                message: error.message
+                message: error.message,
+                stack: error.stack
               } : {
                 name: 'UnknownError',
                 message: String(error)

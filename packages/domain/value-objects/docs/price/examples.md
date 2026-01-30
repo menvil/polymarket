@@ -652,7 +652,7 @@ class PriceRounder {
   private cache = new Map<string, Price>();
 
   roundToTick(price: Price, tickSize: number, mode: 'nearest' | 'floor' | 'ceil' = 'nearest'): Price | null {
-    const key = `${price.toNumber()}-${tickSize}-${mode}`;
+    const key = `${price.value().toString()}-${tickSize}-${mode}`;
 
     // Проверяем кэш
     if (this.cache.has(key)) {

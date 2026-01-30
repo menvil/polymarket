@@ -27,7 +27,7 @@ export function withOperationContext<
 ): T {
   // Создаем новую ошибку того же типа
   const ErrorConstructor = error.constructor as new (
-    message: string | ((ctx: any) => string),
+    message: string | ((ctx: Record<string, unknown>) => string),
     options?: { context?: Record<string, unknown> }
   ) => T;
 
@@ -36,6 +36,7 @@ export function withOperationContext<
       ...error.context,          // Сохраняем все существующие поля
       ...extraContext,           // Добавляем дополнительные поля (может быть перезаписано op)
       op                         // op всегда авторитетный (последний)
-    }
+    },
+    ...(error.code && { code: error.code })  // Сохраняем code если есть
   });
 }

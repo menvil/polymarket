@@ -69,7 +69,22 @@ export class ValidateDivisorForPriceDivision {
       );
     }
 
-    // Проверка 3: divisor не должен быть 0
+    // Проверка 3: divisor не должен быть отрицательным
+    if (divisor.isNegative()) {
+      return Err(
+        new InvalidDivisorError(
+          () => `Divisor cannot be negative`,
+          {
+            context: {
+              divisor: divisor.toString(),
+              reason: 'is_negative'
+            }
+          }
+        )
+      );
+    }
+
+    // Проверка 4: divisor не должен быть 0
     if (divisor.isZero()) {
       return Err(
         new InvalidDivisorError(

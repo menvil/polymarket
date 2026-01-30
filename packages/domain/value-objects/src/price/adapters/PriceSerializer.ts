@@ -14,16 +14,20 @@ import { PriceService } from '../facade/PriceService.js';
  * Используется для читаемой диагностики ошибок.
  */
 function safeStringify(value: unknown): string {
-  const seen = new WeakSet();
-  return JSON.stringify(value, (_key, val) => {
-    if (typeof val === 'object' && val !== null) {
-      if (seen.has(val)) {
-        return '[Circular]';
+  try {
+    const seen = new WeakSet();
+    return JSON.stringify(value, (_key, val) => {
+      if (typeof val === 'object' && val !== null) {
+        if (seen.has(val)) {
+          return '[Circular]';
+        }
+        seen.add(val);
       }
-      seen.add(val);
-    }
-    return val;
-  });
+      return val;
+    });
+  } catch {
+    return '[Unstringifiable]';
+  }
 }
 
 /**
@@ -95,6 +99,22 @@ export class PriceSerializer {
             context: {
               kind: 'invalid_json',
               type: typeof json,
+              json: safeStringify(json)
+            }
+          }
+        )
+      );
+    }
+
+    // Проверка что это не массив
+    if (Array.isArray(json)) {
+      return Err(
+        new InvalidPriceError(
+          () => `Expected object, got array`,
+          {
+            context: {
+              kind: 'invalid_json',
+              type: 'array',
               json: safeStringify(json)
             }
           }

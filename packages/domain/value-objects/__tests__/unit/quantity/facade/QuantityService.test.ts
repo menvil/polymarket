@@ -411,6 +411,7 @@ describe('QuantityService', () => {
       });
 
       it('должен обернуть неожиданные ошибки в Result', () => {
+        expect.assertions(8);
         jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
           throw new Error('unexpected error');
         });
@@ -426,6 +427,7 @@ describe('QuantityService', () => {
           expect(result.error.context?.cause).toBeDefined();
           expect(result.error.context?.cause).toHaveProperty('name', 'Error');
           expect(result.error.context?.cause).toHaveProperty('message', 'unexpected error');
+          expect(result.error.context?.cause).toHaveProperty('stack');
         }
 
         jest.restoreAllMocks();

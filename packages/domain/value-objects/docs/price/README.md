@@ -194,8 +194,6 @@ price.isMax(): boolean
 create(value: number | string | Decimal): Result<Price, InvalidPriceError>
 
 // Арифметика
-add(price1: Price, price2: Price): Result<Price, InvalidPriceError>
-subtract(price1: Price, price2: Price): Result<Price, InvalidPriceError>
 multiply(price: Price, factor: number | string | Decimal): Result<Price, InvalidPriceError | InvalidOperandError>
 divide(price: Price, divisor: number | string | Decimal): Result<Price, InvalidPriceError | InvalidDivisorError>
 

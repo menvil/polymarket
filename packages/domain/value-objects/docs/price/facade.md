@@ -219,9 +219,9 @@ if (result2.ok) {
 // Ошибка: невалидный factor (NaN)
 const nanResult = PriceService.multiply(price, NaN);
 if (!nanResult.ok) {
-  console.log(nanResult.error.context?.operation);  // 'multiply'
-  console.log(nanResult.error.context?.operand);    // 'factor'
-  console.log(nanResult.error.context?.reason);     // 'is_nan'
+  console.log(nanResult.error.context?.op);      // 'multiply'
+  console.log(nanResult.error.context?.factor);  // 'NaN'
+  console.log(nanResult.error.context?.reason);  // 'is_nan'
 }
 
 // Ошибка: результат выходит за диапазон
@@ -662,9 +662,10 @@ const midPrice = PriceService.average(bid, ask);
 ### ❌ DON'T: Не используйте generic арифметику для domain операций
 
 ```typescript
-// ❌ Плохо (неясное намерение)
-const oneResult = PriceService.create(1);
-const noPrice = PriceService.subtract(oneResult.value, yesPrice);
+// ❌ Плохо (неясное намерение - вместо complement используется умножение)
+const yesPrice = Price.of(0.6);
+const factor = 1 / yesPrice.toNumber() - 1;  // Сложный расчёт вместо complement
+const noPrice = PriceService.multiply(yesPrice, factor);
 ```
 
 ---
