@@ -26,7 +26,6 @@ import Decimal from 'decimal.js';
  * **Правило возвращаемых типов:**
  * ВСЕ операции возвращают Result<T, InvalidQuantityError>
  * ОЖИДАЕМЫЕ ошибки обрабатываются через Result
- * НЕОЖИДАННЫЕ ошибки (баги) → rethrow для отладки
  */
 export class QuantityService {
   /**
@@ -255,26 +254,34 @@ export class QuantityService {
   /**
    * Делит quantity на делитель с проверкой
    *
-   * @remarks
-   * Единый контракт обработки ошибок:
-   * - Парсинг divisor → Result (не бросает)
-   * - Валидация divisor → Result
-   * - divideDecimal() может бросить исключения → ловим и мапим в Result
-   * - create() возвращает Result
-   *
-   * Все ожидаемые ошибки (parsing, validation, math exceptions) → Result.Err
-   * Неожиданные ошибки → rethrow (баги)
-   *
    * @param quantity - Количество для деления
    * @param divisor - Делитель (number или Decimal, парсится безопасно)
    * @returns Result<Quantity, InvalidQuantityError>
+   * @throws Никогда - все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * Единый контракт обработки ошибок - все ошибки оборачиваются в Result:
+   * - Парсинг divisor → InvalidQuantityError
+   * - Валидация divisor → InvalidQuantityError
+   * - DivisionByZeroError, ArithmeticOverflowError → InvalidQuantityError с причиной в context.cause
+   * - Неожиданные ошибки → InvalidQuantityError с полным контекстом
+   * - Результат вне диапазона → InvalidQuantityError
+   *
+   * Обработка ошибок:
+   * 1. Парсинг divisor в Decimal (try/catch)
+   * 2. Валидация через ValidateDivisorForQuantityDivision
+   * 3. Деление через divideDecimal() (может бросить DivisionByZeroError, ArithmeticOverflowError)
+   * 4. Создание Quantity через create()
+   *
+   * Все исключения ловятся и мапятся в Result.Err.
+   * Метод никогда не бросает исключения.
    *
    * @example
    * ```typescript
    * const result = QuantityService.divide(qty, 2);
    * if (!result.ok) {
    *   console.error(result.error.context.op); // 'divide'
-   *   console.error(result.error.context.cause); // { name, message } для math-исключений
+   *   console.error(result.error.context.cause); // { name, message } для исключений
    * }
    * ```
    */
@@ -334,7 +341,7 @@ export class QuantityService {
           new InvalidQuantityError(
             `Division failed: ${error.message}`,
             {
-                  context: {
+              context: {
                 op: 'divide',
                 quantity: quantity.value().toString(),
                 divisor: divisorDecimal.toString(),
@@ -348,8 +355,27 @@ export class QuantityService {
         );
       }
 
-      // Все остальные ошибки - rethrow (это баги или неожиданные ситуации)
-      throw error;
+      // Неожиданные ошибки - оборачиваем в Result
+      return Err(
+        new InvalidQuantityError(
+          `Unexpected error during quantity divide: ${error instanceof Error ? error.message : String(error)}`,
+          {
+            context: {
+              op: 'divide',
+              quantity: quantity.value().toString(),
+              divisor: divisorDecimal.toString(),
+              cause: error instanceof Error ? {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+              } : {
+                name: 'UnknownError',
+                message: String(error)
+              }
+            }
+          }
+        )
+      );
     }
   }
 
