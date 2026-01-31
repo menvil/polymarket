@@ -57,6 +57,24 @@ const result = PriceService.create(0.5);  // Новый API
 
 ### 1. Создание Price
 
+**Важно: Price.of() vs PriceService.create()**
+
+Новый API предоставляет два способа создания Price:
+
+- **`Price.of(value)`** — для **известных валидных** литералов и констант
+  - Бросает исключение при невалидном значении
+  - Используй когда значение гарантированно валидно (литералы в коде: `0.5`, `Price.MIN`, etc.)
+  - Пример: `const half = Price.of(0.5);` ✅ безопасно
+
+- **`PriceService.create(value)`** — для **runtime/user-supplied** значений
+  - Возвращает `Result<Price, InvalidPriceError>` (никогда не бросает)
+  - Используй для данных из API, пользовательского ввода, вычислений
+  - Пример: `const result = PriceService.create(userInput);` ✅ безопасно
+
+**Правило:** Если значение может быть невалидным → используй `PriceService.create()`
+
+---
+
 #### Было (старый способ)
 
 ```typescript
@@ -128,8 +146,9 @@ const sumPrice = new Price(sum.toNumber());   // Тоже может броси�
 ```typescript
 import { PriceService, Price } from '@polymarket/value-objects/price';
 
-const price1 = Price.of(0.5);
-const price2 = Price.of(0.3);
+// Price.of() безопасен для известных валидных литералов
+const price1 = Price.of(0.5);  // ✅ литерал, гарантированно валиден
+const price2 = Price.of(0.3);  // ✅ литерал, гарантированно валиден
 
 // Вместо прямого сложения используй average для получения средней цены
 const result = PriceService.average(price1, price2);
@@ -176,7 +195,7 @@ const roundedPrice = new Price(rounded.toNumber());  // Может бросит�
 ```typescript
 import { PriceService, Price } from '@polymarket/value-objects/price';
 
-const price = Price.of(0.6543);
+const price = Price.of(0.6543);  // ✅ литерал, безопасно
 const tickSize = 0.01;
 
 const result = PriceService.roundToMarketTick(price, tickSize, 'nearest');
@@ -212,7 +231,7 @@ const tickSize = 0.003;  // НЕ кратен 0.0001 - но старый код 
 ```typescript
 import { PriceService } from '@polymarket/value-objects/price';
 
-const price = Price.of(0.65);
+const price = Price.of(0.65);  // ✅ литерал, безопасно
 const tickSize = 0.003;  // НЕ кратен 0.0001
 
 const result = PriceService.roundToMarketTick(price, tickSize);
@@ -324,7 +343,7 @@ const noPrice = new OldPrice(noValue.toNumber());  // Может бросить!
 ```typescript
 import { PriceService, Price } from '@polymarket/value-objects/price';
 
-const yesPrice = Price.of(0.65);
+const yesPrice = Price.of(0.65);  // ✅ литерал, безопасно
 const noResult = PriceService.complement(yesPrice);
 
 if (!noResult.ok) {
@@ -362,7 +381,7 @@ const roundedPrice = new OldPrice(rounded.toNumber());
 ```typescript
 import { PriceService, Price } from '@polymarket/value-objects/price';
 
-const price = Price.of(0.6543);
+const price = Price.of(0.6543);  // ✅ литерал, безопасно
 const result = PriceService.roundToMarketTick(price, 0.01, 'floor');
 
 if (!result.ok) {
@@ -398,7 +417,7 @@ const parsed = new OldPrice(parseFloat(json.value));  // Может бросит
 import { PriceSerializer, Price } from '@polymarket/value-objects/price';
 
 // Сериализация
-const price = Price.of(0.65);
+const price = Price.of(0.65);  // ✅ литерал, безопасно
 const json = PriceSerializer.toJSON(price);  // { value: "0.65" }
 
 // Десериализация
