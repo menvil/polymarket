@@ -219,7 +219,6 @@ export class PriceService {
         new InvalidOperandError(
           (ctx) => `Invalid factor: ${ctx.value}`,
           {
-            code: InvalidOperandError.code,
             context: {
               operation: 'multiply',
               operand: 'factor',
@@ -514,8 +513,6 @@ export class PriceService {
       }
       return createResult;
     } catch (e: unknown) {
-      if (e instanceof InvalidTickSizeError) return Err(e);
-
       if (e instanceof ArithmeticOverflowError) {
         return Err(
           new InvalidPriceError(
