@@ -101,15 +101,27 @@ const price = result.value;
 #### Было
 
 ```typescript
-// Старый Price НЕ ИМЕЛ арифметических операций
-// Приходилось работать напрямую с Decimal:
+// Старый Price ИМЕЛ базовые методы (add, subtract, multiply),
+// но они БРОСАЛИ исключения вместо возврата Result<T, E>:
 
 const price1 = new Price(0.5);
 const price2 = new Price(0.3);
 
+try {
+  const sum = price1.add(price2);  // Может бросить!
+} catch (error) {
+  console.error('Addition failed:', error);
+}
+
+// Или приходилось работать напрямую с Decimal:
 const sum = price1.value.plus(price2.value);  // Decimal
-const sumPrice = new Price(sum.toNumber());   // Может бросить!
+const sumPrice = new Price(sum.toNumber());   // Тоже может бросить!
 ```
+
+**Проблемы:**
+- Методы бросают исключения вместо Result contract
+- Нет domain-level операций (complement, average, roundToMarketTick)
+- Легко забыть обработать ошибку в try/catch
 
 #### Стало
 

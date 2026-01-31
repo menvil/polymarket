@@ -88,7 +88,7 @@ if (roundedResult.ok) {
 
 Price модуль построен на **4-слойной архитектуре** с паттерном **Throws+Facade**:
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │           Adapters Layer                        │
 │  (Serializers, Formatters)                      │
@@ -146,6 +146,7 @@ Price модуль построен на **4-слойной архитектур
 - `HALF_PRICE = 0.5` — средняя цена
 
 **API:**
+
 ```typescript
 // Создание
 Price.of(value: Decimal.Value): Price
@@ -228,6 +229,7 @@ ensureAlignedToMarketTick(price: Price, tickSize: number | string | Decimal): Re
 - `PriceFormatter` — форматирование в строки
 
 **Пример:**
+
 ```typescript
 // Точная сериализация
 const json = PriceSerializer.toJSON(price);  // { value: "0.5" }
@@ -504,6 +506,7 @@ Price НЕ может быть 0 или 1:
 Старый `Price.ts` остаётся для backward compatibility, но новый код должен использовать `PriceService`.
 
 **Было:**
+
 ```typescript
 import { Price } from '@polymarket/value-objects';
 
@@ -511,6 +514,7 @@ const price = new Price(0.5);  // Может бросить исключение
 ```
 
 **Стало:**
+
 ```typescript
 import { PriceService } from '@polymarket/value-objects/price';
 
