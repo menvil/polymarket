@@ -750,7 +750,7 @@ const display = price.toNumber();  // 0.123456789012345
 - [ ] Все tick sizes кратны 0.0001
 - [ ] Все операции возвращают `Result<T, E>`
 - [ ] Все Results проверяются через `if (!result.ok)`
-- [ ] Нет прямых вызовов `Price.of()` в production коде
+- [ ] Нет прямых вызовов `Price.of()` с runtime/user-supplied данных в production (использование для литералов/констант допускается)
 
 ### Тестирование
 
