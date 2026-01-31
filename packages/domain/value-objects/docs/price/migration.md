@@ -57,13 +57,13 @@ const result = PriceService.create(0.5);  // Новый API
 
 ### 1. Создание Price
 
-**Важно: Price.of() vs PriceService.create()**
+#### Важно: Price.of() vs PriceService.create()
 
 Новый API предоставляет два способа создания Price:
 
 - **`Price.of(value)`** — для **известных валидных** литералов и констант
   - Бросает исключение при невалидном значении
-  - Используй когда значение гарантированно валидно (литералы в коде: `0.5`, `Price.MIN`, etc.)
+  - Используй когда значение гарантированно валидно (литералы в коде: `0.5`, `Price.min()`, etc.)
   - Пример: `const half = Price.of(0.5);` ✅ безопасно
 
 - **`PriceService.create(value)`** — для **runtime/user-supplied** значений
@@ -108,9 +108,9 @@ const price = result.value;
 ```
 
 **Преимущества:**
-- Никогда не бросает исключения
-- Компилятор заставляет проверить `result.ok`
-- Type-safe на compile time
+- Не бросает исключения (всегда возвращает Result)
+- Заставляет проверить `result.ok` через компилятор
+- Обеспечивает type-safety на compile time
 
 ---
 
