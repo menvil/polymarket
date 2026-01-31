@@ -76,11 +76,9 @@ const noPrice = calculateOppositePrice(yesPrice);
 console.log(`YES: ${(yesPrice.toNumber() * 100).toFixed(2)}%`);  // "YES: 65.00%"
 console.log(`NO: ${(noPrice.toNumber() * 100).toFixed(2)}%`);     // "NO: 35.00%"
 
-// Проверка: сумма должна быть 1
-const sumResult = PriceService.add(yesPrice, noPrice);
-if (sumResult.ok) {
-  console.log(sumResult.value.toNumber());  // 1.0 (но это выйдет за MAX_PRICE!)
-}
+// Проверка: сумма должна быть 1 (используем Decimal для точности)
+const sum = yesPrice.value().plus(noPrice.value());
+console.log(sum.toNumber());  // 1.0
 ```
 
 ---

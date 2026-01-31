@@ -234,11 +234,10 @@ const json = PriceSerializer.toJSON(price);  // { value: "0.5" }
 const result = PriceSerializer.fromJSON(json);
 
 // Форматирование
-const formattedResult = PriceFormatter.toString(price, 4);
-if (formattedResult.ok) {
-  console.log(formattedResult.value);  // "0.5000"
-}
-console.log(PriceFormatter.toPercentageString(price));  // "50.00%"
+const formatted = PriceFormatter.toFixed(price, 4);
+console.log(formatted);  // "0.5000"
+
+console.log(PriceFormatter.toPercentage(price));  // "50.00%"
 ```
 
 Подробнее: [adapters.md](./adapters.md)
@@ -447,16 +446,13 @@ if (!priceResult.ok) return;
 const price = priceResult.value;
 
 // Для детального отображения (4 знака)
-const formattedResult = PriceFormatter.toString(price, 4);
-if (formattedResult.ok) {
-  console.log(formattedResult.value);  // "0.6500"
-}
+console.log(PriceFormatter.toFixed(price, 4));  // "0.6500"
 
 // Как процент
-console.log(PriceFormatter.toPercentageString(price));  // "65.00%"
+console.log(PriceFormatter.toPercentage(price));  // "65.00%"
 
 // Для отладки
-console.log(PriceFormatter.toDebugString(price));  // "Price(0.65)"
+console.log(`Price(${price.toNumber()})`);  // "Price(0.65)"
 ```
 
 Больше примеров: [examples.md](./examples.md)

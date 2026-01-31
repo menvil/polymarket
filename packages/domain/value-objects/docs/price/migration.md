@@ -135,7 +135,6 @@ const avgPrice = result.value;  // 0.4
 - `divide()` — деление на делитель
 - `complement()` — дополнение (1 - price)
 - `average()` — среднее двух цен
-- `average()` — среднее двух цен
 
 ---
 

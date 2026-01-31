@@ -44,7 +44,7 @@ export class PriceFormatter {
    */
   public static toPercentage(price: Price, decimals: number = 2): string {
     if (decimals < 0 || !Number.isInteger(decimals)) {
-      throw new RangeError('toFixed() decimals argument must be a non-negative integer');
+      throw new RangeError('decimals argument must be a non-negative integer');
     }
     const percentage = price.value().times(100);
     return `${percentage.toFixed(decimals)}%`;

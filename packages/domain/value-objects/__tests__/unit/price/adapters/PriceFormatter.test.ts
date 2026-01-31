@@ -42,6 +42,7 @@ describe('PriceFormatter', () => {
 
     it('должен форматировать с указанным количеством знаков', () => {
       const price = Price.of(0.5);
+      // Decimal.toFixed uses ROUND_HALF_UP rounding mode, so 0.5 rounds up to '1'
       expect(PriceFormatter.toFixed(price, 0)).toBe('1');
       expect(PriceFormatter.toFixed(price, 1)).toBe('0.5');
       expect(PriceFormatter.toFixed(price, 2)).toBe('0.50');

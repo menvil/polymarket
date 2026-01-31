@@ -110,72 +110,6 @@ if (!nanResult.ok) {
 
 ### Арифметика
 
-#### `add(price1: Price, price2: Price)`
-
-Складывает две цены.
-
-**Сигнатура:**
-```typescript
-add(price1: Price, price2: Price): Result<Price, InvalidPriceError>
-```
-
-**Примеры:**
-
-```typescript
-const p1 = Price.of(0.3);
-const p2 = Price.of(0.2);
-
-const result = PriceService.add(p1, p2);
-if (result.ok) {
-  console.log(result.value.toNumber());  // 0.5
-}
-
-// Ошибка: результат выходит за диапазон
-const p3 = Price.of(0.6);
-const p4 = Price.of(0.5);
-
-const overflowResult = PriceService.add(p3, p4);
-if (!overflowResult.ok) {
-  console.log(overflowResult.error.context?.op);  // 'add'
-  // Результат 1.1 > MAX_PRICE (0.9999)
-}
-```
-
----
-
-#### `subtract(price1: Price, price2: Price)`
-
-Вычитает price2 из price1.
-
-**Сигнатура:**
-```typescript
-subtract(price1: Price, price2: Price): Result<Price, InvalidPriceError>
-```
-
-**Примеры:**
-
-```typescript
-const p1 = Price.of(0.7);
-const p2 = Price.of(0.2);
-
-const result = PriceService.subtract(p1, p2);
-if (result.ok) {
-  console.log(result.value.toNumber());  // 0.5
-}
-
-// Ошибка: результат выходит за диапазон
-const p3 = Price.of(0.0002);
-const p4 = Price.of(0.0001);
-
-const underflowResult = PriceService.subtract(p3, p4);
-if (!underflowResult.ok) {
-  console.log(underflowResult.error.context?.op);  // 'subtract'
-  // Результат 0.0001 - 0.0001 = 0 < MIN_PRICE (0.0001)
-}
-```
-
----
-
 #### `multiply(price: Price, factor: number | string | Decimal)`
 
 Умножает цену на коэффициент.
@@ -219,9 +153,10 @@ if (result2.ok) {
 // Ошибка: невалидный factor (NaN)
 const nanResult = PriceService.multiply(price, NaN);
 if (!nanResult.ok) {
-  console.log(nanResult.error.context?.op);      // 'multiply'
-  console.log(nanResult.error.context?.factor);  // 'NaN'
-  console.log(nanResult.error.context?.reason);  // 'is_nan'
+  console.log(nanResult.error.context?.operation);  // 'multiply'
+  console.log(nanResult.error.context?.operand);    // 'factor'
+  console.log(nanResult.error.context?.value);      // 'NaN'
+  console.log(nanResult.error.context?.reason);     // 'is_nan'
 }
 
 // Ошибка: результат выходит за диапазон

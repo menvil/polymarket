@@ -163,7 +163,7 @@ price1.equals(price2);  // true
 price1.equals(price3);  // false
 ```
 
-**Примечание:** Это **строгое** равенство по `Decimal.equals()`. Для approximate equality используйте `PriceService.approximatelyEquals()` (если реализовано).
+**Примечание:** Это **строгое** равенство по `Decimal.equals()`. Для approximate equality можно реализовать вспомогательную функцию сравнения с допустимой погрешностью при необходимости.
 
 ### `isMin(): boolean`
 
