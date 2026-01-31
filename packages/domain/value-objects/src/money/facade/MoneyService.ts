@@ -52,12 +52,14 @@ export class MoneyService {
     // Шаг 1: парсинг через Decimal (НЕ через Money.of)
     let decimal: Decimal;
     try {
+      // Runtime guard: Decimal constructor принимает number | string | Decimal
+      // TypeScript тип параметра: number | string | Decimal
+      // as any безопасен т.к. catch обработает невалидные типы
       decimal = new Decimal(value as any);
     } catch {
       // Decimal parse error → InvalidMoneyError с INVALID_FORMAT и raw value
       return Err(
         new InvalidMoneyError('Failed to create Money', {
-          code: InvalidMoneyError.code,
           context: {
             op: 'create',
             value: String(value),
@@ -116,7 +118,6 @@ export class MoneyService {
     if (reason === 'EXCEEDS_MAX_AMOUNT' || reason === 'NON_FINITE' || reason === 'NAN') {
       return Err(
         new ArithmeticOverflowError(`${op} result is invalid`, {
-          code: ArithmeticOverflowError.code,
           context: {
             op,
             ...ctx,
@@ -162,7 +163,6 @@ export class MoneyService {
     if (!a.hasSameCurrency(b)) {
       return Err(
         new CurrencyMismatchError('Cannot add Money with different currencies', {
-          code: CurrencyMismatchError.code,
           context: {
             op: 'add',
             expected: a.currency(),
@@ -219,7 +219,6 @@ export class MoneyService {
     if (!a.hasSameCurrency(b)) {
       return Err(
         new CurrencyMismatchError('Cannot subtract Money with different currencies', {
-          code: CurrencyMismatchError.code,
           context: {
             op: 'subtract',
             expected: a.currency(),
@@ -272,11 +271,12 @@ export class MoneyService {
     let factorDecimal: Decimal;
 
     try {
+      // Runtime guard: Decimal constructor принимает number | string | Decimal
+      // as any безопасен т.к. catch обработает невалидные типы
       factorDecimal = new Decimal(factor as any);
     } catch {
       return Err(
         new InvalidMoneyError('Invalid factor', {
-          code: InvalidMoneyError.code,
           context: {
             op: 'multiply',
             factor: String(factor),
@@ -289,7 +289,6 @@ export class MoneyService {
     if (factorDecimal.isNaN()) {
       return Err(
         new InvalidMoneyError('Factor is NaN', {
-          code: InvalidMoneyError.code,
           context: {
             op: 'multiply',
             factor: String(factor),
@@ -302,7 +301,6 @@ export class MoneyService {
     if (!factorDecimal.isFinite()) {
       return Err(
         new InvalidMoneyError('Factor must be finite', {
-          code: InvalidMoneyError.code,
           context: {
             op: 'multiply',
             factor: String(factor),
@@ -355,11 +353,12 @@ export class MoneyService {
     let divisorDecimal: Decimal;
 
     try {
+      // Runtime guard: Decimal constructor принимает number | string | Decimal
+      // as any безопасен т.к. catch обработает невалидные типы
       divisorDecimal = new Decimal(divisor as any);
     } catch {
       return Err(
         new InvalidMoneyError('Invalid divisor', {
-          code: InvalidMoneyError.code,
           context: {
             op: 'divide',
             divisor: String(divisor),
@@ -372,7 +371,6 @@ export class MoneyService {
     if (divisorDecimal.isNaN()) {
       return Err(
         new InvalidMoneyError('Divisor is NaN', {
-          code: InvalidMoneyError.code,
           context: {
             op: 'divide',
             divisor: String(divisor),
@@ -385,7 +383,6 @@ export class MoneyService {
     if (!divisorDecimal.isFinite()) {
       return Err(
         new InvalidMoneyError('Divisor must be finite', {
-          code: InvalidMoneyError.code,
           context: {
             op: 'divide',
             divisor: String(divisor),
@@ -398,7 +395,6 @@ export class MoneyService {
     if (divisorDecimal.isZero()) {
       return Err(
         new DivisionByZeroError('Cannot divide by zero', {
-          code: DivisionByZeroError.code,
           context: {
             op: 'divide',
             amount: m.amount().toString(),

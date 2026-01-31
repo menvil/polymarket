@@ -1,6 +1,6 @@
-import { Money } from './Money';
-import { MoneyInvariantViolation } from './MoneyInvariantViolation';
-import { MoneyParseError } from './MoneyParseError';
+import { Money } from '../../../../src/money/core/Money';
+import { MoneyInvariantViolation } from '../../../../src/money/core/MoneyInvariantViolation';
+import { MoneyParseError } from '../../../../src/money/core/MoneyParseError';
 
 describe('Money core', () => {
   describe('parse errors', () => {

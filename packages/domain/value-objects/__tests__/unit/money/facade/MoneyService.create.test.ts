@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { MoneyService } from './MoneyService';
+import { MoneyService } from '../../../../src/money/facade/MoneyService';
 import { InvalidMoneyError } from '@polymarket/errors';
 
 describe('MoneyService.create()', () => {

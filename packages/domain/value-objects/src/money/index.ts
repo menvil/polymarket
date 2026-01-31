@@ -16,3 +16,6 @@ export { Money, SupportedCurrency, MoneyInvariantViolation, MoneyParseError } fr
 
 // Facade (главный публичный API)
 export { MoneyService } from './facade/index.js';
+
+// Adapters (публичный API)
+export { MoneySerializer, MoneyFormatter } from './adapters/index.js';

@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
-import { Money } from '../core/Money';
-import { MoneyService } from './MoneyService';
+import { Money } from '../../../../src/money/core/Money';
+import { MoneyService } from '../../../../src/money/facade/MoneyService';
 import { ArithmeticOverflowError, InvalidMoneyError, DivisionByZeroError } from '@polymarket/errors';
 
 describe('MoneyService.add()', () => {

@@ -7,7 +7,7 @@
  */
 
 // Money модуль (только публичный API)
-export { Money, MoneyService, SupportedCurrency } from './money/index.js';
+export { Money, MoneyService, MoneySerializer, MoneyFormatter, SupportedCurrency } from './money/index.js';
 
 // Price модуль (только публичный API)
 export { Price, PriceService, PriceSerializer, PriceFormatter } from './price/index.js';
