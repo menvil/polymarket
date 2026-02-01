@@ -183,7 +183,6 @@ export class Money {
    * ```
    */
   public static get ZERO_USDC(): Money {
-    // ✅ ИСПРАВЛЕНО: используем create() НЕ прямой конструктор
     return this._zeroUSDC ??= Money.create(new Decimal(0), 'USDC');
   }
 
