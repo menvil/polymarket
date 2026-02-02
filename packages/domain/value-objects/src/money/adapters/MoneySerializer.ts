@@ -2,6 +2,7 @@ import { Result, Err } from '@polymarket/result';
 import { InvalidMoneyError } from '@polymarket/errors';
 import { Money, SupportedCurrency } from '../core/Money.js';
 import { MoneyService } from '../facade/MoneyService.js';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок
@@ -95,7 +96,7 @@ export class MoneySerializer {
           context: {
             op: 'fromJSON',
             json: safeStringify(json),
-            reason: 'INVALID_FORMAT',
+            reason: MoneyErrorReason.INVALID_FORMAT,
           },
         })
       );
@@ -110,7 +111,7 @@ export class MoneySerializer {
           context: {
             op: 'fromJSON',
             json: safeStringify(json),
-            reason: 'INVALID_FORMAT',
+            reason: MoneyErrorReason.INVALID_FORMAT,
           },
         })
       );
@@ -123,7 +124,7 @@ export class MoneySerializer {
           context: {
             op: 'fromJSON',
             json: safeStringify(json),
-            reason: 'INVALID_FORMAT',
+            reason: MoneyErrorReason.INVALID_FORMAT,
           },
         })
       );
@@ -137,7 +138,7 @@ export class MoneySerializer {
           context: {
             op: 'fromJSON',
             amount: safeStringify(amount),
-            reason: 'INVALID_FORMAT',
+            reason: MoneyErrorReason.INVALID_FORMAT,
           },
         })
       );
@@ -150,7 +151,7 @@ export class MoneySerializer {
           context: {
             op: 'fromJSON',
             currency: safeStringify(currency),
-            reason: 'INVALID_FORMAT',
+            reason: MoneyErrorReason.INVALID_FORMAT,
           },
         })
       );

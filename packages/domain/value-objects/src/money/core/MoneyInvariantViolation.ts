@@ -1,3 +1,5 @@
+import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+
 /**
  * Исключение, выбрасываемое при нарушении инвариантов Money.
  *
@@ -16,15 +18,15 @@
  *
  * @example
  * ```typescript
- * throw new MoneyInvariantViolation('Amount exceeds maximum', 'EXCEEDS_MAX_AMOUNT');
+ * throw new MoneyInvariantViolation('Amount exceeds maximum', MoneyErrorReason.EXCEEDS_MAX_AMOUNT);
  * ```
  */
 export class MoneyInvariantViolation extends Error {
   public readonly reason:
-    | 'UNSUPPORTED_CURRENCY'
-    | 'NAN'
-    | 'NON_FINITE'
-    | 'EXCEEDS_MAX_AMOUNT';
+    | MoneyErrorReason.UNSUPPORTED_CURRENCY
+    | MoneyErrorReason.NAN
+    | MoneyErrorReason.NON_FINITE
+    | MoneyErrorReason.EXCEEDS_MAX_AMOUNT;
 
   constructor(message: string, reason: MoneyInvariantViolation['reason']) {
     super(`Money invariant violation: ${message}`);

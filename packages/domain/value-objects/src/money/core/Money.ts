@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 import { MoneyInvariantViolation } from './MoneyInvariantViolation';
 import { MoneyParseError } from './MoneyParseError';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason';
 
 export type SupportedCurrency = 'USDC';
 
@@ -70,25 +71,25 @@ export class Money {
     if (!Money.SUPPORTED_CURRENCIES.has(currency)) {
       throw new MoneyInvariantViolation(
         `Unsupported currency: ${currency}`,
-        'UNSUPPORTED_CURRENCY'
+        MoneyErrorReason.UNSUPPORTED_CURRENCY
       );
     }
 
     // Инвариант 2: не NaN
     if (amount.isNaN()) {
-      throw new MoneyInvariantViolation('Amount is NaN', 'NAN');
+      throw new MoneyInvariantViolation('Amount is NaN', MoneyErrorReason.NAN);
     }
 
     // Инвариант 3: finite
     if (!amount.isFinite()) {
-      throw new MoneyInvariantViolation('Amount must be finite', 'NON_FINITE');
+      throw new MoneyInvariantViolation('Amount must be finite', MoneyErrorReason.NON_FINITE);
     }
 
     // Инвариант 4: не превышает MAX_AMOUNT
     if (amount.abs().greaterThan(Money.MAX_AMOUNT)) {
       throw new MoneyInvariantViolation(
         `Amount exceeds maximum: ${Money.MAX_AMOUNT}`,
-        'EXCEEDS_MAX_AMOUNT'
+        MoneyErrorReason.EXCEEDS_MAX_AMOUNT
       );
     }
 

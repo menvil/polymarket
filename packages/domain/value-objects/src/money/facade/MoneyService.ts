@@ -11,6 +11,7 @@ import { Money, SupportedCurrency } from '../core/Money';
 import { MoneyInvariantViolation } from '../core/MoneyInvariantViolation';
 import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorForMoneyMultiplication';
 import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason';
 
 /**
  * Facade для безопасного создания и операций с Money - публичный API
@@ -37,25 +38,26 @@ import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMone
  * ВСЕ операции возвращают Result<T, InvalidMoneyError>
  * ОЖИДАЕМЫЕ и НЕОЖИДАННЫЕ ошибки обрабатываются через Result
  *
- * Специальные reason значения в context.reason:
- * - INVALID_FORMAT - ошибка парсинга значения
- * - NAN - значение NaN
- * - NON_FINITE - значение не finite (Infinity)
- * - EXCEEDS_MAX_AMOUNT - результат превышает максимальную сумму
- * - CURRENCY_MISMATCH - несовпадение валют в add/subtract
- * - DIVISION_BY_ZERO - деление на ноль
- * - UNSUPPORTED_CURRENCY - неподдерживаемая валюта
+ * Специальные reason значения в context.reason (MoneyErrorReason enum):
+ * - MoneyErrorReason.INVALID_FORMAT - ошибка парсинга значения
+ * - MoneyErrorReason.NAN - значение NaN
+ * - MoneyErrorReason.NON_FINITE - значение не finite (Infinity)
+ * - MoneyErrorReason.EXCEEDS_MAX_AMOUNT - результат превышает максимальную сумму
+ * - MoneyErrorReason.CURRENCY_MISMATCH - несовпадение валют в add/subtract
+ * - MoneyErrorReason.DIVISION_BY_ZERO - деление на ноль
+ * - MoneyErrorReason.UNSUPPORTED_CURRENCY - неподдерживаемая валюта
+ * - MoneyErrorReason.NEGATIVE_RESULT - результат операции меньше нуля
  *
  * @example
  * ```typescript
- * import { MoneyService } from '@polymarket/value-objects/money';
+ * import { MoneyService, MoneyErrorReason } from '@polymarket/value-objects/money';
  *
  * const result = MoneyService.create(100, 'USDC');
  * if (result.ok) {
  *   console.log(result.value.amount()); // Decimal(100)
  * } else {
  *   console.error(result.error.message);
- *   console.error(result.error.context.reason); // INVALID_FORMAT, NAN, etc.
+ *   console.error(result.error.context.reason); // MoneyErrorReason.INVALID_FORMAT, etc.
  * }
  * ```
  */
@@ -124,7 +126,7 @@ export class MoneyService {
           new InvalidMoneyError('Failed to normalize value: no valid toString()', {
             context: {
               raw: { field, value: String(input) },
-              reason: 'INVALID_FORMAT'
+              reason: MoneyErrorReason.INVALID_FORMAT
             }
           })
         );
@@ -141,7 +143,7 @@ export class MoneyService {
             context: {
               raw: { field, value: String(input) },
               cause: this.toCause(error),
-              reason: 'INVALID_FORMAT'
+              reason: MoneyErrorReason.INVALID_FORMAT
             }
           }
         )
@@ -509,7 +511,7 @@ export class MoneyService {
         new InvalidMoneyError('Cannot add Money with different currencies', {
           context: {
             op: 'add',
-            reason: 'CURRENCY_MISMATCH',
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
             expected: a.currency(),
             actual: b.currency()
           }
@@ -557,7 +559,7 @@ export class MoneyService {
         new InvalidMoneyError('Cannot subtract Money with different currencies', {
           context: {
             op: 'subtract',
-            reason: 'CURRENCY_MISMATCH',
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
             expected: a.currency(),
             actual: b.currency()
           }

@@ -10,5 +10,8 @@ export {
   QuantityFormatter
 } from './adapters/index.js';
 
+// Errors (публичный API)
+export { QuantityErrorReason } from './errors/QuantityErrorReason.js';
+
 // Rules и QuantityInvariantViolation НЕ экспортируются —
 // это internal implementation details. Всё должно идти через QuantityService.

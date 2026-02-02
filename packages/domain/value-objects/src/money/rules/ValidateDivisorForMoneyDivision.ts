@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidMoneyError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason';
 
 /**
  * Правило: Делитель для операции деления Money должен быть валидным
@@ -27,13 +28,13 @@ import Decimal from 'decimal.js';
  * // ❌ Деление на ноль
  * const result2 = ValidateDivisorForMoneyDivision.check(new Decimal(0));
  * if (!result2.ok) {
- *   console.error(result2.error.context?.reason); // 'DIVISION_BY_ZERO'
+ *   console.error(result2.error.context?.reason); // MoneyErrorReason.DIVISION_BY_ZERO
  * }
  *
  * // ❌ NaN делитель
  * const result3 = ValidateDivisorForMoneyDivision.check(new Decimal(NaN));
  * if (!result3.ok) {
- *   console.error(result3.error.context?.reason); // 'NAN'
+ *   console.error(result2.error.context?.reason); // MoneyErrorReason.NAN
  * }
  * ```
  */
@@ -45,7 +46,7 @@ export class ValidateDivisorForMoneyDivision {
         new InvalidMoneyError('Divisor cannot be NaN', {
           context: {
             divisor: divisor.toString(),
-            reason: 'NAN'
+            reason: MoneyErrorReason.NAN
           }
         })
       );
@@ -57,7 +58,7 @@ export class ValidateDivisorForMoneyDivision {
         new InvalidMoneyError('Divisor must be finite', {
           context: {
             divisor: divisor.toString(),
-            reason: 'NON_FINITE'
+            reason: MoneyErrorReason.NON_FINITE
           }
         })
       );
@@ -69,7 +70,7 @@ export class ValidateDivisorForMoneyDivision {
         new InvalidMoneyError('Cannot divide by zero', {
           context: {
             divisor: divisor.toString(),
-            reason: 'DIVISION_BY_ZERO'
+            reason: MoneyErrorReason.DIVISION_BY_ZERO
           }
         })
       );

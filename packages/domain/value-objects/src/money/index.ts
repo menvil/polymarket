@@ -19,3 +19,6 @@ export { MoneyService } from './facade/index.js';
 
 // Adapters (публичный API)
 export { MoneySerializer, MoneyFormatter } from './adapters/index.js';
+
+// Errors (публичный API)
+export { MoneyErrorReason } from './errors/MoneyErrorReason.js';

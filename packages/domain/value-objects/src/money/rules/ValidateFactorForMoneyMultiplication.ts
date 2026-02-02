@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidMoneyError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason';
 
 /**
  * Правило: Factor для операции умножения Money должен быть finite и не NaN
@@ -33,7 +34,7 @@ export class ValidateFactorForMoneyMultiplication {
         new InvalidMoneyError('Factor cannot be NaN', {
           context: {
             factor: factor.toString(),
-            reason: 'NAN'
+            reason: MoneyErrorReason.NAN
           }
         })
       );
@@ -45,7 +46,7 @@ export class ValidateFactorForMoneyMultiplication {
         new InvalidMoneyError('Factor must be finite', {
           context: {
             factor: factor.toString(),
-            reason: 'NON_FINITE'
+            reason: MoneyErrorReason.NON_FINITE
           }
         })
       );
