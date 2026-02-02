@@ -17,7 +17,7 @@
 Все ошибки из `QuantityService` содержат стандартный контекст:
 
 ```typescript
-import { QuantityErrorReason } from './errors/QuantityErrorReason';
+import { QuantityErrorReason } from '@polymarket/value-objects/quantity';
 
 interface InvalidQuantityErrorContext {
   op: string;  // Название операции: 'create', 'add', 'divide', etc. (ВСЕГДА присутствует)

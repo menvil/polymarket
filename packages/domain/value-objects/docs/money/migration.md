@@ -52,6 +52,8 @@ import { Money, MoneyService } from '@polymarket/value-objects/money';
 **Было:**
 
 ```typescript
+import Decimal from 'decimal.js';
+
 // Создание через статические методы (конструктор приватный)
 const money = Money.of(100);           // Валюта по умолчанию: 'USDC'
 const money2 = Money.of(100, 'MATIC'); // Указать валюту
