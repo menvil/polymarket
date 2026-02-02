@@ -32,11 +32,13 @@
 ### Шаг 1: Изменить импорты
 
 **Было:**
+
 ```typescript
 import { Money } from '@polymarket/value-objects';
 ```
 
 **Стало:**
+
 ```typescript
 import { Money, MoneyService } from '@polymarket/value-objects/money';
 ```
@@ -46,6 +48,7 @@ import { Money, MoneyService } from '@polymarket/value-objects/money';
 ### Шаг 2: Заменить создание Money
 
 **Было:**
+
 ```typescript
 // Может бросить исключение
 const money = new Money(100);
@@ -53,6 +56,7 @@ const money2 = Money.of(100);
 ```
 
 **Стало:**
+
 ```typescript
 // Возвращает Result
 const result = MoneyService.create(100);
@@ -69,6 +73,7 @@ const money = result.value;
 ### Шаг 3: Обновить арифметические операции
 
 **Было:**
+
 ```typescript
 // Нет явной обработки ошибок
 const sum = money1.add(money2);  // Может бросить
@@ -76,6 +81,7 @@ const diff = money1.subtract(money2);
 ```
 
 **Стало:**
+
 ```typescript
 // Через MoneyService с Result
 const sumResult = MoneyService.add(money1, money2);
@@ -99,6 +105,7 @@ const diff = diffResult.value;
 ### Шаг 4: Обновить обработку ошибок
 
 **Было:**
+
 ```typescript
 try {
   const money = new Money(userInput);
@@ -110,6 +117,7 @@ try {
 ```
 
 **Стало:**
+
 ```typescript
 const result = MoneyService.create(userInput);
 if (!result.ok) {
@@ -140,6 +148,7 @@ processPayment(money);
 ### 1. Удалены методы арифметики из Money
 
 **Было:**
+
 ```typescript
 money1.add(money2)
 money1.subtract(money2)
@@ -148,6 +157,7 @@ money1.divide(divisor)
 ```
 
 **Стало:**
+
 ```typescript
 MoneyService.add(money1, money2)
 MoneyService.subtract(money1, money2)
@@ -162,6 +172,7 @@ MoneyService.divide(money1, divisor)
 ### 2. MoneyService.create не бросает исключений
 
 **Было:**
+
 ```typescript
 try {
   const money = new Money(value);
@@ -171,6 +182,7 @@ try {
 ```
 
 **Стало:**
+
 ```typescript
 const result = MoneyService.create(value);
 if (!result.ok) {
@@ -185,12 +197,14 @@ if (!result.ok) {
 ### 3. Изменён формат ошибок
 
 **Было:**
+
 ```typescript
 // Generic Error
 throw new Error('Invalid money amount');
 ```
 
 **Стало:**
+
 ```typescript
 // Типизированные ошибки с контекстом
 InvalidMoneyError {

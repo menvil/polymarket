@@ -325,7 +325,7 @@ rounded: Decimal
     ↓
 this.create(rounded)  ← проверяет инварианты
     ↓
-Result<Price, InvalidPriceError | InvalidPriceError>
+Result<Price, InvalidPriceError>
 ```
 
 ### Поток деления с валидацией
@@ -349,7 +349,7 @@ result: Decimal
     ↓
 this.create(result)  ← проверяет инварианты
     ↓
-Result<Price, InvalidPriceError | InvalidPriceError>
+Result<Price, InvalidPriceError>
 ```
 
 ---
@@ -387,15 +387,15 @@ Result<Price, InvalidPriceError | InvalidPriceError>
 
 ### 3. Почему отдельные методы multiply/divide, а не один calculate?
 
-**Решение:** Разные операции = разные методы с разными типами ошибок.
+**Решение:** Разные операции = разные методы для явности намерения.
 
 ```typescript
 // ✅ Текущее решение
-multiply(price, factor): Result<Price, InvalidPriceError | InvalidPriceError>
-divide(price, divisor): Result<Price, InvalidPriceError | InvalidPriceError>
+multiply(price, factor): Result<Price, InvalidPriceError>
+divide(price, divisor): Result<Price, InvalidPriceError>
 
 // ❌ Альтернатива
-calculate(price, value, op): Result<Price, InvalidPriceError | InvalidPriceError | InvalidPriceError>
+calculate(price, value, op): Result<Price, InvalidPriceError>
 ```
 
 **Почему выбрали:**

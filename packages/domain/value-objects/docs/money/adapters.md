@@ -58,12 +58,12 @@ public static fromJSON(json: unknown): Result<Money, InvalidMoneyError>
 ```
 
 **Валидация:**
-1. json это объект (не null, не массив, не примитив)
+1. json это объект (ни null, ни массив, ни примитив)
 2. Есть поля amount и currency
 3. amount это string
 4. currency это string
 
-**Делегирует:** `Money.fromDecimal()` для создания
+**Делегирует:** `MoneyService.create(amount, currency as SupportedCurrency)` для создания
 
 **Примеры:**
 ```typescript

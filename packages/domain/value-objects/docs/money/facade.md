@@ -16,8 +16,8 @@
 
 **MoneyService** — Facade слой, который:
 - Оборачивает все операции в `Result<T, E>`
-- Ловит ВСЕ исключения (из Core, из @polymarket/math)
-- НИКОГДА не бросает исключения
+- Ловит все исключения (из Core и `@polymarket/math`)
+- Никогда не бросает исключения
 - Проверяет контекстные правила (совпадение валют)
 - Предоставляет математические операции
 
@@ -32,6 +32,7 @@
 Создаёт Money с валидацией и Result.
 
 **Сигнатура:**
+
 ```typescript
 public static create(
   value: number | string | Decimal,
@@ -83,6 +84,7 @@ public static add(
 3. Создание через Money.fromDecimal (try/catch)
 
 **Пример:**
+
 ```typescript
 const m1 = Money.of(100, 'USDC');
 const m2 = Money.of(50, 'USDC');

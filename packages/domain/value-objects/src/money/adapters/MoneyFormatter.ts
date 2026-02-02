@@ -79,8 +79,10 @@ export class MoneyFormatter {
     showCurrency: boolean = true,
     decimals: number = 2
   ): string {
-    const amount = MoneyFormatter.toFixed(money, decimals);
-    const formatted = `$${amount}`;
+    const amount = money.amount();
+    const isNegative = amount.isNegative();
+    const absAmount = amount.abs().toFixed(decimals);
+    const formatted = isNegative ? `-$${absAmount}` : `$${absAmount}`;
     return showCurrency ? `${formatted} ${money.currency()}` : formatted;
   }
 

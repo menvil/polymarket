@@ -72,7 +72,7 @@ describe('MoneyFormatter', () => {
 
     it('форматирует отрицательные числа', () => {
       const money = Money.of(-100.50);
-      expect(MoneyFormatter.toCurrency(money)).toBe('$-100.50 USDC');
+      expect(MoneyFormatter.toCurrency(money)).toBe('-$100.50 USDC');
     });
 
     it('форматирует ноль', () => {
