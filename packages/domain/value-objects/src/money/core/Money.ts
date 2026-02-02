@@ -168,6 +168,10 @@ export class Money {
    * ```
    */
   public static zero(currency: SupportedCurrency = 'USDC'): Money {
+    // Переиспользуем singleton для USDC
+    if (currency === 'USDC') {
+      return Money.ZERO_USDC;
+    }
     return Money.create(new Decimal(0), currency);
   }
 

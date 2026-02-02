@@ -201,30 +201,35 @@ ValidateMinSize.check(new Decimal(0.5), new Decimal(1)); // Err
 Facade использует централизованные helper methods для обработки ошибок:
 
 1. **`toCause(e: unknown)`** — извлекает структурированный cause из любой ошибки
+
    ```typescript
    // Error → { name, message, stack }
    // Unknown → { name: 'UnknownError', message: String(e) }
    ```
 
 2. **`expectedMathError(op, ctx, e)`** — создаёт InvalidQuantityError для ожидаемых ошибок из @polymarket/math
+
    ```typescript
    // Для InvalidQuantityError, ArithmeticOverflowError, DivisionByZeroError
    // Добавляет op, ctx и cause
    ```
 
 3. **`unexpectedError(op, ctx, e)`** — создаёт InvalidQuantityError для неожиданных ошибок
+
    ```typescript
    // Для любых других исключений
    // Включает полный stack trace для debugging
    ```
 
 4. **`rewrap(op, ctx, err)`** — обёртывает InvalidQuantityError с добавлением op и контекста
+
    ```typescript
    // Порядок мерджа защищает приоритет err.context:
    // { ...ctx, ...(err.context ?? {}), op }
    ```
 
 5. **`toDecimal(input)`** — безопасно конвертирует number | string | Decimal в Decimal
+
    ```typescript
    // Убирает ненадёжный instanceof Decimal
    // Использует Decimal.isDecimal() или всегда парсит

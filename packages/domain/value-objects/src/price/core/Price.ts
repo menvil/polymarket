@@ -20,6 +20,7 @@ export class PriceInvariantViolation extends Error {
 
   constructor(message: string, reason: 'NAN' | 'NON_FINITE' | 'OUT_OF_RANGE_LOW' | 'OUT_OF_RANGE_HIGH') {
     super(`Price invariant violation: ${message}`);
+    Object.setPrototypeOf(this, PriceInvariantViolation.prototype);
     this.name = 'PriceInvariantViolation';
     this.reason = reason;
   }

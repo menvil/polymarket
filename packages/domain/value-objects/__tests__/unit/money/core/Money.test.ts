@@ -106,10 +106,12 @@ describe('Money core', () => {
       expect(Money.zero().currency()).toBe('USDC');
     });
 
-    it('новый объект каждый раз', () => {
+    it('возвращает singleton для USDC', () => {
       const z1 = Money.zero();
       const z2 = Money.zero();
-      expect(z1).not.toBe(z2);
+      // Для USDC возвращается singleton ZERO_USDC
+      expect(z1).toBe(z2);
+      expect(z1).toBe(Money.ZERO_USDC);
       expect(z1.equals(z2)).toBe(true);
     });
   });

@@ -427,14 +427,14 @@ testInputs.forEach(input => {
 ```typescript
 import { PriceService, Price } from '@polymarket/value-objects/price';
 import { Result, Ok, Err } from '@polymarket/result';
-import type { InvalidPriceError, InvalidPriceError } from '@polymarket/errors';
+import type { InvalidPriceError } from '@polymarket/errors';
 
 function processMarketPrice(
   rawYesPrice: string,
   tickSize: number
 ): Result<
   { yes: Price; no: Price; mid: Price },
-  InvalidPriceError | InvalidPriceError
+  InvalidPriceError
 > {
   // 1. Создаём YES цену
   const yesResult = PriceService.create(rawYesPrice);

@@ -37,7 +37,7 @@ interface InvalidQuantityErrorContext {
 
   // Для math exceptions и unexpected errors
   cause?: {
-    name: string;     // 'InvalidQuantityError', 'InvalidQuantityError', 'InvalidOperandError', 'UnknownError'
+    name: string;     // 'DivisionByZeroError', 'InvalidQuantityError', 'InvalidOperandError', 'UnknownError'
     message: string;
     stack?: string;   // Stack trace для отладки
   };
@@ -238,7 +238,7 @@ if (!invalid.ok) {
 **Обработка math exceptions:**
 
 `divide()` ловит ВСЕ исключения и возвращает Result (контракт "Never Throw"):
-- `InvalidQuantityError` → `Result.Err` с `context.cause`
+- `DivisionByZeroError` → `Result.Err` с `context.cause`
 - `InvalidOperandError` → `Result.Err` с `context.cause`
 - `InvalidQuantityError` → `Result.Err` с `context.cause`
 - Неожиданные ошибки → `Result.Err` с `context.cause` (UnknownError)

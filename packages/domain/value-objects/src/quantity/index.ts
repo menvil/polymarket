@@ -1,4 +1,4 @@
-export { Quantity, QuantityInvariantViolation } from './core/index.js';
+export { Quantity } from './core/index.js';
 
 // Facade (единственная точка входа для операций)
 export { QuantityService } from './facade/index.js';

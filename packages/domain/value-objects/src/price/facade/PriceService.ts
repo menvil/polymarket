@@ -97,7 +97,7 @@ export class PriceService {
   /**
    * Создаёт InvalidPriceError для ожидаемых ошибок из @polymarket/math
    *
-   * @param op - Название операции
+   * @param op - Название операции (используется только для message formatting)
    * @param ctx - Контекст операции (price, factor, divisor, etc.)
    * @param e - Ошибка из math layer (ТОЛЬКО Error объекты)
    * @returns InvalidPriceError с полным контекстом
@@ -108,7 +108,9 @@ export class PriceService {
    * - ArithmeticOverflowError
    * - DivisionByZeroError
    *
-   * ВАЖНО: Принимает только Error. Если это не Error - используй unexpectedError.
+   * ВАЖНО:
+   * - Принимает только Error. Если это не Error - используй unexpectedError.
+   * - НЕ добавляет op в context - rewrap будет единственным источником op и opChain
    */
   private static expectedMathError(
     op: string,
@@ -118,7 +120,6 @@ export class PriceService {
     const cause = this.toCause(e);
     return new InvalidPriceError(`Price ${op} failed: ${cause.message}`, {
       context: {
-        op,
         ...ctx,
         cause
       }
@@ -128,7 +129,7 @@ export class PriceService {
   /**
    * Создаёт InvalidPriceError для неожиданных ошибок
    *
-   * @param op - Название операции
+   * @param op - Название операции (используется только для message formatting)
    * @param ctx - Контекст операции
    * @param e - Неожиданная ошибка (any type)
    * @returns InvalidPriceError с полным контекстом
@@ -136,6 +137,7 @@ export class PriceService {
    * @remarks
    * Используется когда происходит неожиданная ошибка (не из известных типов).
    * Включает полный stack trace для debugging.
+   * НЕ добавляет op в context - rewrap будет единственным источником op и opChain
    */
   private static unexpectedError(
     op: string,
@@ -145,7 +147,6 @@ export class PriceService {
     const cause = this.toCause(e);
     return new InvalidPriceError(`Unexpected error during price ${op}`, {
       context: {
-        op,
         ...ctx,
         cause
       }

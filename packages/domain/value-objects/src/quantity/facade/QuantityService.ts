@@ -67,7 +67,7 @@ export class QuantityService {
   /**
    * Создаёт InvalidQuantityError для ожидаемых ошибок из @polymarket/math
    *
-   * @param op - Название операции
+   * @param op - Название операции (используется только для message formatting)
    * @param ctx - Контекст операции (quantity, factor, divisor, etc.)
    * @param e - Ошибка из math layer (ТОЛЬКО Error объекты)
    * @returns InvalidQuantityError с полным контекстом
@@ -78,7 +78,9 @@ export class QuantityService {
    * - ArithmeticOverflowError
    * - DivisionByZeroError
    *
-   * ВАЖНО: Принимает только Error. Если это не Error - используй unexpectedError.
+   * ВАЖНО:
+   * - Принимает только Error. Если это не Error - используй unexpectedError.
+   * - НЕ добавляет op в context - rewrap будет единственным источником op и opChain
    */
   private static expectedMathError(
     op: string,
@@ -88,7 +90,6 @@ export class QuantityService {
     const cause = this.toCause(e);
     return new InvalidQuantityError(`${op} failed: ${cause.message}`, {
       context: {
-        op,
         ...ctx,
         cause
       }
@@ -98,7 +99,7 @@ export class QuantityService {
   /**
    * Создаёт InvalidQuantityError для неожиданных ошибок
    *
-   * @param op - Название операции
+   * @param op - Название операции (используется только для message formatting)
    * @param ctx - Контекст операции
    * @param e - Неожиданная ошибка (any type)
    * @returns InvalidQuantityError с полным контекстом
@@ -106,6 +107,7 @@ export class QuantityService {
    * @remarks
    * Используется когда происходит неожиданная ошибка (не из известных типов).
    * Включает полный stack trace для debugging.
+   * НЕ добавляет op в context - rewrap будет единственным источником op и opChain
    */
   private static unexpectedError(
     op: string,
@@ -115,7 +117,6 @@ export class QuantityService {
     const cause = this.toCause(e);
     return new InvalidQuantityError(`Unexpected error during quantity ${op}`, {
       context: {
-        op,
         ...ctx,
         cause
       }
@@ -261,11 +262,11 @@ export class QuantityService {
       if (e instanceof InvalidQuantityError) {
         return Err(this.rewrap(op, ctx, e));
       }
-      // Ожидаемые math ошибки - прогоняем через rewrap для opChain
+      // Ожидаемые math ошибки - создаём новую ошибку и оборачиваем через rewrap
       if (this.isExpectedMathError(e)) {
         return Err(this.rewrap(op, ctx, this.expectedMathError(op, ctx, e)));
       }
-      // Неожиданные ошибки - прогоняем через rewrap для opChain
+      // Неожиданные ошибки - создаём новую ошибку и оборачиваем через rewrap
       return Err(this.rewrap(op, ctx, this.unexpectedError(op, ctx, e)));
     }
   }
@@ -460,7 +461,8 @@ export class QuantityService {
 
       const validateResult = ValidateResultNonNegative.check(diff);
       if (!validateResult.ok) {
-        return Err(this.rewrap('subtract', ctx, validateResult.error));
+        // wrapOp автоматически сделает rewrap для любого Err результата
+        return Err(validateResult.error);
       }
 
       return this.create(diff);
