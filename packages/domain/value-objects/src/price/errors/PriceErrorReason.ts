@@ -21,12 +21,6 @@ export enum PriceErrorReason {
   /** Значение не finite (Infinity, -Infinity) */
   NON_FINITE = 'NON_FINITE',
 
-  /** Цена превышает максимальное значение */
-  EXCEEDS_MAX_PRICE = 'EXCEEDS_MAX_PRICE',
-
-  /** Цена меньше минимального значения */
-  NEGATIVE_PRICE = 'NEGATIVE_PRICE',
-
   /** Деление на ноль */
   DIVISION_BY_ZERO = 'DIVISION_BY_ZERO',
 

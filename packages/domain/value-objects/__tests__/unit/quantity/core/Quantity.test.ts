@@ -13,7 +13,7 @@ describe('Quantity constructor', () => {
         Quantity.of(-1);
       } catch (e) {
         expect(e).toBeInstanceOf(QuantityInvariantViolation);
-        expect((e as QuantityInvariantViolation).reason).toBe('NEGATIVE_QUANTITY');
+        expect((e as QuantityInvariantViolation).reason).toBe('NEGATIVE');
       }
     });
 
