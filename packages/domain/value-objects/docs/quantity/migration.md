@@ -449,6 +449,8 @@ if (result2.ok) {
 }
 
 // Использование с Decimal
+import Decimal from 'decimal.js';
+
 const result3 = roundQuantity(Quantity.of("10.567"), new Decimal("0.01"));
 if (result3.ok) {
   console.log(result3.value.value().toString()); // "10.57"

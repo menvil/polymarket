@@ -216,7 +216,8 @@ public static create(value: number | string | Decimal, currency: SupportedCurren
     if (error instanceof MoneyInvariantViolation) {
       return Err(InvalidMoneyError with reason from Core);
     }
-    throw error;  // unexpected
+    // Unexpected error - возвращаем Err вместо throw
+    return Err(unexpectedError('createFromDecimal', {}, error));
   }
 }
 ```

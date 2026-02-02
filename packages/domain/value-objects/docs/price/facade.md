@@ -6,7 +6,7 @@
 
 `PriceService` — это фасад, который предоставляет type-safe API для работы с Price через `Result<T, E>`.
 
-**Все методы возвращают `Result<Price, InvalidPriceError>`**.
+**Все методы возвращают `Result<T, InvalidPriceError>`** (где T - Price или void для проверочных методов).
 
 PriceService НИКОГДА не бросает исключения. Все ошибки возвращаются через Result с InvalidPriceError, который содержит в context детальную информацию о причине ошибки.
 

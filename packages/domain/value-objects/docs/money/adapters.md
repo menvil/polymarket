@@ -60,7 +60,7 @@ public static fromJSON(json: unknown): Result<Money, InvalidMoneyError>
 **Валидация:**
 1. json это объект (ни null, ни массив, ни примитив)
 2. Есть поля amount и currency
-3. amount это string
+3. amount это number или string
 4. currency это string
 
 **Делегирует:** `MoneyService.create(amount, currency as SupportedCurrency)` для создания

@@ -19,7 +19,7 @@
 ### Создание Money из пользовательского ввода
 
 ```typescript
-import { MoneyService } from '@polymarket/value-objects/money';
+import { MoneyService, Money } from '@polymarket/value-objects/money';
 
 function processDeposit(userInput: string) {
   // Пользователь вводит сумму депозита

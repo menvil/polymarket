@@ -286,7 +286,9 @@ export class MoneyService {
     const base = filtered.length > 0 ? filtered : (typeof inner.op === 'string' ? [inner.op] : []);
 
     merged.op = op;
-    merged.opChain = [...base, op];
+    // Не добавляем op в opChain если он уже последний элемент (избегаем дублирования)
+    const lastOp = base[base.length - 1];
+    merged.opChain = lastOp === op ? base : [...base, op];
 
     // 3) root-поля сохраняем из inner, если они есть (не перетираются)
     if (inner.cause !== undefined) {
