@@ -1,17 +1,13 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import Decimal from 'decimal.js';
-import {
-  InvalidMoneyError,
-  ArithmeticOverflowError,
-  InvalidOperandError,
-  DivisionByZeroError
-} from '@polymarket/errors';
+import { InvalidMoneyError } from '@polymarket/errors';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
 import { Money, SupportedCurrency } from '../core/Money';
 import { MoneyInvariantViolation } from '../core/MoneyInvariantViolation';
 import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorForMoneyMultiplication';
 import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { toDecimal, rewrap, wrapOp, unexpectedError } from '../../shared/facade/errorUtils';
 
 /**
  * Facade для безопасного создания и операций с Money - публичный API
@@ -63,303 +59,6 @@ import { MoneyErrorReason } from '../errors/MoneyErrorReason';
  */
 export class MoneyService {
   /**
-   * Извлекает структурированный cause из любой ошибки
-   *
-   * @param e - Ошибка (Error или unknown)
-   * @returns Структурированный объект cause
-   *
-   * @remarks
-   * - Если e instanceof Error → { name, message, stack }
-   * - Иначе → { name: 'UnknownError', message: String(e) }
-   */
-  private static toCause(e: unknown): { name: string; message: string; stack?: string } {
-    if (e instanceof Error) {
-      return {
-        name: e.name,
-        message: e.message,
-        stack: e.stack
-      };
-    }
-
-    return {
-      name: 'UnknownError',
-      message: String(e)
-    };
-  }
-
-  /**
-   * Безопасно конвертирует number | string | Decimal в Decimal
-   *
-   * @param field - Имя поля (для структурированного raw)
-   * @param input - Входное значение
-   * @returns Result<Decimal, InvalidMoneyError>
-   *
-   * @remarks
-   * Нормализует вход и корректно работает с двумя копиями decimal.js:
-   * - Primitives (number, string) парсим напрямую
-   * - Объекты (Decimal из другой копии) → toString() → парсим
-   *
-   * При ошибке парсинга → InvalidMoneyError с raw: { field, value } и cause.
-   *
-   * Не добавляет op в контекст - внешний код добавит через rewrap.
-   */
-  private static toDecimal(
-    field: 'value' | 'factor' | 'divisor',
-    input: number | string | Decimal
-  ): Result<Decimal, InvalidMoneyError> {
-    try {
-      // Не пытаемся "распознать" Decimal из другой копии.
-      // Нормализуем: primitives парсим напрямую, объекты — через toString().
-      let normalized: number | string | undefined;
-
-      if (typeof input === 'number' || typeof input === 'string') {
-        normalized = input;
-      } else {
-        // input это Decimal (возможно из другой копии decimal.js)
-        // Безопасно извлекаем toString если он есть
-        const obj = input as unknown as { toString?: unknown };
-        normalized = typeof obj.toString === 'function' ? obj.toString() : undefined;
-      }
-
-      if (normalized === undefined) {
-        return Err(
-          new InvalidMoneyError('Failed to normalize value: no valid toString()', {
-            context: {
-              raw: { field, value: String(input) },
-              reason: MoneyErrorReason.INVALID_FORMAT
-            }
-          })
-        );
-      }
-
-      // normalized точно number | string после проверки выше
-      const decimal = new Decimal(normalized);
-      return Ok(decimal);
-    } catch (error) {
-      return Err(
-        new InvalidMoneyError(
-          error instanceof Error ? error.message : 'Failed to parse value',
-          {
-            context: {
-              raw: { field, value: String(input) },
-              cause: this.toCause(error),
-              reason: MoneyErrorReason.INVALID_FORMAT
-            }
-          }
-        )
-      );
-    }
-  }
-
-  /**
-   * Создаёт InvalidMoneyError для ожидаемых ошибок из @polymarket/math
-   *
-   * @param op - Название операции
-   * @param ctx - Контекст операции (amount, factor, divisor, etc.)
-   * @param e - Ошибка из math layer (ТОЛЬКО Error объекты)
-   * @returns InvalidMoneyError с полным контекстом
-   *
-   * @remarks
-   * Используется для обработки ожидаемых ошибок:
-   * - InvalidOperandError
-   * - ArithmeticOverflowError
-   * - DivisionByZeroError
-   *
-   * ВАЖНО: Принимает только Error. Если это не Error - используй unexpectedError.
-   */
-  private static expectedMathError(
-    op: string,
-    ctx: Record<string, unknown>,
-    e: Error
-  ): InvalidMoneyError {
-    const cause = this.toCause(e);
-    return new InvalidMoneyError(`Money ${op} failed: ${cause.message}`, {
-      context: {
-        op,
-        ...ctx,
-        cause
-      }
-    });
-  }
-
-  /**
-   * Создаёт InvalidMoneyError для неожиданных ошибок
-   *
-   * @param op - Название операции
-   * @param ctx - Контекст операции
-   * @param e - Неожиданная ошибка (any type)
-   * @returns InvalidMoneyError с полным контекстом
-   *
-   * @remarks
-   * Используется когда происходит неожиданная ошибка (не из известных типов).
-   * Включает полный stack trace для debugging.
-   */
-  private static unexpectedError(
-    op: string,
-    ctx: Record<string, unknown>,
-    e: unknown
-  ): InvalidMoneyError {
-    const cause = this.toCause(e);
-    return new InvalidMoneyError(`Unexpected error during money ${op}`, {
-      context: {
-        op,
-        ...ctx,
-        cause
-      }
-    });
-  }
-
-  /**
-   * Проверяет является ли ошибка ожидаемой math-ошибкой
-   *
-   * @param e - Ошибка для проверки
-   * @returns true если это ожидаемая math-ошибка (ArithmeticOverflowError, InvalidOperandError, DivisionByZeroError)
-   *
-   * @remarks
-   * Используется в catch блоках для централизованной классификации ошибок.
-   * Проверяет как instanceof, так и name для надёжности.
-   *
-   * **ВАЖНО: Список ожидаемых ошибок фиксирован.**
-   * Если @polymarket/math добавит новые error types, они попадут в unexpected
-   * до явного добавления сюда. Это осознанное решение для безопасности.
-   *
-   * Текущий whitelist:
-   * - ArithmeticOverflowError - переполнение при арифметике
-   * - InvalidOperandError - невалидный операнд (NaN, Infinity)
-   * - DivisionByZeroError - деление на ноль
-   */
-  private static isExpectedMathError(e: unknown): e is Error {
-    return (
-      e instanceof Error &&
-      (e instanceof ArithmeticOverflowError ||
-        e instanceof InvalidOperandError ||
-        e instanceof DivisionByZeroError ||
-        e.name === 'ArithmeticOverflowError' ||
-        e.name === 'InvalidOperandError' ||
-        e.name === 'DivisionByZeroError')
-    );
-  }
-
-  /**
-   * Оборачивает InvalidMoneyError с добавлением op и контекста
-   *
-   * @param op - Название операции (станет верхним в opChain)
-   * @param ctx - Дополнительный контекст для добавления (операционные поля: amount, factor, divisor, etc)
-   * @param err - Исходная InvalidMoneyError
-   * @returns Новая InvalidMoneyError с объединённым контекстом
-   *
-   * @remarks
-   * Простая перепаковка без рефлексии (никогда не бросает exception).
-   *
-   * Порядок мерджа:
-   * 1. inner (err.context) - база из вложенной ошибки
-   * 2. ctx - операционные поля (amount, factor, divisor) - перетирают inner
-   * 3. op + opChain - строит цепочку операций, НЕ теряя внутренний op
-   * 4. preserve root-полей: cause, reason, raw (первопричина не перетирается)
-   *
-   * **Root-cause semantics:**
-   * - cause, reason, raw сохраняются из inner (это первопричина)
-   * - opChain накапливает историю операций: [innerOp, ..., op]
-   *
-   * Это гарантирует:
-   * - Операционный контекст (amount, factor) всегда актуален для текущего op
-   * - Первопричина (cause, reason, raw) не теряется
-   * - История операций сохраняется в opChain
-   */
-  private static rewrap(
-    op: string,
-    ctx: Record<string, unknown>,
-    err: InvalidMoneyError
-  ): InvalidMoneyError {
-    const inner = (err.context ?? {}) as Record<string, unknown>;
-
-    // Запрещаем ctx приносить root-поля (защита от случайного перетирания)
-    const { cause: _c, reason: _r, raw: _raw, op: _op, opChain: _chain, ...safeCtx } = ctx;
-
-    // 1) мерджим контекст: inner база, safeCtx сверху (без root-полей)
-    const merged: Record<string, unknown> = {
-      ...inner,
-      ...safeCtx
-    };
-
-    // 2) opChain строим только тут (единственное место истины)
-    const innerChain = Array.isArray(inner.opChain) ? inner.opChain : undefined;
-    const filtered = (innerChain?.filter((x) => typeof x === 'string') as string[]) ?? [];
-    const base = filtered.length > 0 ? filtered : (typeof inner.op === 'string' ? [inner.op] : []);
-
-    merged.op = op;
-    // Не добавляем op в opChain если он уже последний элемент (избегаем дублирования)
-    const lastOp = base[base.length - 1];
-    merged.opChain = lastOp === op ? base : [...base, op];
-
-    // 3) root-поля сохраняем из inner, если они есть (не перетираются)
-    if (inner.cause !== undefined) {
-      merged.cause = inner.cause;
-    }
-    if (inner.reason !== undefined) {
-      merged.reason = inner.reason;
-    }
-    if (inner.raw !== undefined) {
-      merged.raw = inner.raw;
-    }
-
-    return new InvalidMoneyError(err.message, { context: merged });
-  }
-
-  /**
-   * Оборачивает facade операцию в try/catch с централизованной обработкой ошибок
-   *
-   * @param op - Название операции
-   * @param ctx - Контекст операции
-   * @param fn - Функция выполняющая операцию (может включать math, create, rules)
-   * @returns Result с результатом или InvalidMoneyError
-   *
-   * @remarks
-   * Устраняет дублирование try/catch блоков во всех операциях.
-   * Автоматически классифицирует ошибки как expected/unexpected.
-   * Автоматически rewrap'ает InvalidMoneyError из Result.Err.
-   *
-   * Обрабатывает четыре типа ошибок/результатов:
-   * 1. Result.Err(InvalidMoneyError) (из create/rules) → rewrap с добавлением op
-   * 2. throw InvalidMoneyError (из вложенных операций) → rewrap с добавлением op
-   * 3. Expected math errors (ArithmeticOverflowError, etc.) → expectedMathError
-   * 4. Unexpected errors → unexpectedError
-   *
-   * @example
-   * ```typescript
-   * return this.wrapOp('add', { a: a.amount().toString(), b: b.amount().toString() }, () => {
-   *   const sum = addDecimal(a.amount(), b.amount());
-   *   return this.createFromDecimal(sum, a.currency(), 'add', {});
-   * });
-   * ```
-   */
-  private static wrapOp<T>(
-    op: string,
-    ctx: Record<string, unknown>,
-    fn: () => Result<T, InvalidMoneyError>
-  ): Result<T, InvalidMoneyError> {
-    try {
-      const result = fn();
-      // Если fn() вернул Err с InvalidMoneyError - rewrap автоматически
-      if (!result.ok) {
-        return Err(this.rewrap(op, ctx, result.error));
-      }
-      return result;
-    } catch (e) {
-      // Если кто-то бросил InvalidMoneyError - rewrap с добавлением контекста
-      if (e instanceof InvalidMoneyError) {
-        return Err(this.rewrap(op, ctx, e));
-      }
-      // Ожидаемые math ошибки - прогоняем через rewrap для opChain
-      if (this.isExpectedMathError(e)) {
-        return Err(this.rewrap(op, ctx, this.expectedMathError(op, ctx, e)));
-      }
-      // Неожиданные ошибки - прогоняем через rewrap для opChain
-      return Err(this.rewrap(op, ctx, this.unexpectedError(op, ctx, e)));
-    }
-  }
-
-  /**
    * Создаёт Money с обработкой через Result.
    *
    * @param value - Сумма (number, string, Decimal)
@@ -392,10 +91,10 @@ export class MoneyService {
     currency: SupportedCurrency = 'USDC'
   ): Result<Money, InvalidMoneyError> {
     // Безопасный парсинг value через toDecimal
-    const decimalResult = this.toDecimal('value', value);
+    const decimalResult = toDecimal('value', value, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
     if (!decimalResult.ok) {
       // raw уже внутри err.context.raw от toDecimal
-      return Err(this.rewrap('create', { currency }, decimalResult.error));
+      return Err(rewrap('create', { currency }, decimalResult.error, InvalidMoneyError));
     }
 
     // Создание через createFromDecimal (проверит инварианты)
@@ -440,7 +139,7 @@ export class MoneyService {
       }
 
       // Unexpected error - возвращаем InvalidMoneyError
-      return Err(this.unexpectedError(op, { value: decimal.toString(), currency, ...ctx }, error));
+      return Err(unexpectedError(op, { value: decimal.toString(), currency, ...ctx }, error, 'money', InvalidMoneyError));
     }
   }
 
@@ -520,10 +219,10 @@ export class MoneyService {
     }
 
     const ctx = { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() };
-    return this.wrapOp('add', ctx, () => {
+    return wrapOp('add', ctx, () => {
       const sum = addDecimal(a.amount(), b.amount());
       return this.createFromDecimal(sum, a.currency(), 'add', {});
-    });
+    }, 'money', InvalidMoneyError);
   }
 
   /**
@@ -568,10 +267,10 @@ export class MoneyService {
     }
 
     const ctx = { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() };
-    return this.wrapOp('subtract', ctx, () => {
+    return wrapOp('subtract', ctx, () => {
       const diff = subtractDecimal(a.amount(), b.amount());
       return this.createFromDecimal(diff, a.currency(), 'subtract', {});
-    });
+    }, 'money', InvalidMoneyError);
   }
 
   /**
@@ -607,14 +306,14 @@ export class MoneyService {
     factor: number | string | Decimal
   ): Result<Money, InvalidMoneyError> {
     // Безопасный парсинг factor через toDecimal
-    const factorResult = this.toDecimal('factor', factor);
+    const factorResult = toDecimal('factor', factor, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
     if (!factorResult.ok) {
       return Err(
-        this.rewrap('multiply', {
+        rewrap('multiply', {
           amount: m.amount().toString(),
           factor: String(factor),
           currency: m.currency()
-        }, factorResult.error)
+        }, factorResult.error, InvalidMoneyError)
       );
     }
 
@@ -624,11 +323,11 @@ export class MoneyService {
     const validateResult = ValidateFactorForMoneyMultiplication.check(factorDecimal);
     if (!validateResult.ok) {
       return Err(
-        this.rewrap('multiply', {
+        rewrap('multiply', {
           amount: m.amount().toString(),
           factor: factorDecimal.toString(),
           currency: m.currency()
-        }, validateResult.error)
+        }, validateResult.error, InvalidMoneyError)
       );
     }
 
@@ -639,10 +338,10 @@ export class MoneyService {
       currency: m.currency()
     };
 
-    return this.wrapOp('multiply', ctx, () => {
+    return wrapOp('multiply', ctx, () => {
       const product = multiplyDecimal(m.amount(), factorDecimal);
       return this.createFromDecimal(product, m.currency(), 'multiply', {});
-    });
+    }, 'money', InvalidMoneyError);
   }
 
   /**
@@ -678,14 +377,14 @@ export class MoneyService {
     divisor: number | string | Decimal
   ): Result<Money, InvalidMoneyError> {
     // Безопасный парсинг divisor через toDecimal
-    const divisorResult = this.toDecimal('divisor', divisor);
+    const divisorResult = toDecimal('divisor', divisor, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
     if (!divisorResult.ok) {
       return Err(
-        this.rewrap('divide', {
+        rewrap('divide', {
           amount: m.amount().toString(),
           divisor: String(divisor),
           currency: m.currency()
-        }, divisorResult.error)
+        }, divisorResult.error, InvalidMoneyError)
       );
     }
 
@@ -695,11 +394,11 @@ export class MoneyService {
     const validateResult = ValidateDivisorForMoneyDivision.check(divisorDecimal);
     if (!validateResult.ok) {
       return Err(
-        this.rewrap('divide', {
+        rewrap('divide', {
           amount: m.amount().toString(),
           divisor: divisorDecimal.toString(),
           currency: m.currency()
-        }, validateResult.error)
+        }, validateResult.error, InvalidMoneyError)
       );
     }
 
@@ -710,9 +409,9 @@ export class MoneyService {
       currency: m.currency()
     };
 
-    return this.wrapOp('divide', ctx, () => {
+    return wrapOp('divide', ctx, () => {
       const quotient = divideDecimal(m.amount(), divisorDecimal);
       return this.createFromDecimal(quotient, m.currency(), 'divide', {});
-    });
+    }, 'money', InvalidMoneyError);
   }
 }
