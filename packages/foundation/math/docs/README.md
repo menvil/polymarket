@@ -51,12 +51,14 @@
 ```
 
 **Что делает Core Layer:**
+
 - ✅ Чистые математические операции
 - ✅ Throw на математические невозможности (overflow, division by zero)
 - ✅ Высокая точность с Decimal.js
 - ✅ Без зависимости от бизнес-контекста
 
 **Что НЕ делает Core Layer:**
+
 - ❌ Не проверяет бизнес-правила (min/max значения)
 - ❌ Не использует Result pattern (это для Domain Layer)
 - ❌ Не зависит от других domain concepts
@@ -108,6 +110,7 @@ class Price {
 ### 1. Throw vs Result
 
 **В @polymarket/math используется throw:**
+
 ```typescript
 // Математическая невозможность = throw
 function divideDecimal(a: Decimal, b: Decimal): Decimal {
@@ -122,6 +125,7 @@ function divideDecimal(a: Decimal, b: Decimal): Decimal {
 ```
 
 **В Value Objects используется Result:**
+
 ```typescript
 // Бизнес-правило = Result
 class Price {
@@ -142,6 +146,7 @@ class Price {
 ### 2. Чистые функции
 
 Все функции в `@polymarket/math`:
+
 - Не имеют побочных эффектов
 - Детерминированные (одинаковый вход → одинаковый выход)
 - Легко тестируются
@@ -232,6 +237,7 @@ try {
 ```
 
 **Используемые ошибки:**
+
 - `ArithmeticOverflowError` - результат операции = Infinity
 - `InvalidDivisorError` - делитель NaN/Infinity
 - `DivisionByZeroError` - деление на ноль

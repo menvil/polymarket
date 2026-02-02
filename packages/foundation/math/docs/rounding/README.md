@@ -26,6 +26,7 @@ function roundToTick(
 ```
 
 **Алгоритм:**
+
 1. Делим `value / tickSize` → получаем количество тиков
 2. Округляем до целого количества тиков используя `roundingMode`
 3. Умножаем обратно на `tickSize`
@@ -85,6 +86,7 @@ mathCeilToTick(new Decimal(-10.567), new Decimal(0.01)); // -10.56 (к +Infinity
 ### Разница между floor/ceil вариантами
 
 Для **положительных** чисел:
+
 - `floorToTick` = `mathFloorToTick` (оба вниз)
 - `ceilToTick` = `mathCeilToTick` (оба вверх)
 
@@ -104,6 +106,7 @@ mathCeilToTick(value, tick);   // -10.56 (к +Infinity)
 ### Валидация
 
 Throws `InvalidTickSizeError` если:
+
 - `tickSize <= 0`
 - `tickSize` не конечное число (NaN, Infinity)
 

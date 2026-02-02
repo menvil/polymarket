@@ -5,6 +5,7 @@
 ## Обзор
 
 Math Errors представляют математические невозможности и проблемы валидации в низкоуровневых операциях:
+
 - **Деление** - операции с невалидными делителями
 - **Округление** - операции с tick size
 - **Арифметика** - базовые математические функции с `Decimal.js`
@@ -12,6 +13,7 @@ Math Errors представляют математические невозмо
 Это математические невозможности, а не бизнес-правила. Эти ошибки возникают на уровне чистых математических функций (core layer) до применения бизнес-логики.
 
 Все math errors имеют:
+
 - **Severity:** `low` (проблемы валидации данных не критичны)
 - **Статический код:** `ErrorClass.code` (для удобства)
 - **Предназначение:** throw (математические невозможности)
@@ -138,6 +140,7 @@ const rounded = roundToTickSize(
 ### Math vs Value Objects Errors
 
 **Math Errors (низкий уровень - Core Layer):**
+
 - Чистые математические операции
 - Не знают о бизнес-правилах
 - Только проверка математической валидности (finite, positive, non-zero)
@@ -145,6 +148,7 @@ const rounded = roundToTickSize(
 - **Всегда throw** (математические невозможности)
 
 **Value Objects Errors (средний уровень - Domain Layer):**
+
 - Бизнес-валидация (диапазоны, форматы)
 - Создание и валидация domain objects (Price, Quantity, Money)
 - Используются в `@polymarket/value-objects` пакете
@@ -185,12 +189,14 @@ priceResult.match({
 ### 1. Когда использовать Math Errors
 
 ✅ **Используйте Math Errors:**
+
 - В чистых математических функциях (`add`, `subtract`, `divide`, `round`)
 - При валидации математических параметров (делитель, tick size)
 - Когда проверяете математическую корректность (`isFinite()`, `isPositive()`)
 - В `@polymarket/math` пакете
 
 ❌ **НЕ используйте Math Errors:**
+
 - Для бизнес-валидации (используйте Value Objects Errors)
 - Для проверки бизнес-диапазонов (min/max цены, quantity limits)
 - В domain/application layers (только в core layer)
@@ -198,6 +204,7 @@ priceResult.match({
 ### 2. Severity Guidelines
 
 Все Math Errors имеют **severity: low** потому что:
+
 - Это проблемы валидации на уровне ввода
 - Не критичны для системы (система не упадёт)
 - Обычно возникают из-за некорректного пользовательского ввода
@@ -206,6 +213,7 @@ priceResult.match({
 ### 3. Context Guidelines
 
 Всегда включайте в context:
+
 - **Параметры операции:** `divisor`, `dividend`, `tickSize`, `value`
 - **Результат (если есть):** `result`, `normalized`
 - **Дополнительный контекст:** `operation`, `reason`
@@ -327,6 +335,7 @@ export class Price {
 Из других категорий:
 
 ### Value Objects Errors
+
 - [DivisionByZeroError](../value-objects/division-by-zero.md) - деление на ноль (конкретный случай InvalidDivisorError)
 - [ArithmeticOverflowError](../value-objects/arithmetic-overflow.md) - результат операции вышел за пределы
 - [InvalidPriceError](../value-objects/invalid-price.md) - бизнес-валидация цен

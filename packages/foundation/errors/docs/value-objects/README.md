@@ -5,6 +5,7 @@
 ## Обзор
 
 Value Objects представляют неизменяемые бизнес-концепции в domain model:
+
 - **Price** - цена на рынке [0.0001, 0.9999]
 - **Quantity** - количество акций
 - **Money** - денежная сумма с валютой
@@ -12,6 +13,7 @@ Value Objects представляют неизменяемые бизнес-к�
 - И другие числовые величины
 
 Все ошибки валидации value objects имеют:
+
 - **Severity:** `low` (проблемы валидации данных не критичны)
 - **Статический код:** `ErrorClass.code` (для удобства)
 - **Поддержка Result<T,E>:** интеграция с Railway-Oriented Programming
@@ -357,26 +359,31 @@ class Money {
 ### ✅ DO
 
 1. **Используйте Result<T,E> вместо throw**
+
    ```typescript
    static fromNumber(value: number): Result<Price, InvalidPriceError>
    ```
 
 2. **Используйте статические коды**
+
    ```typescript
    code: InvalidPriceError.code // ✅ 'INVALID_PRICE'
    ```
 
 3. **Включайте полезный context**
+
    ```typescript
    context: { value, min, max, field: 'price' }
    ```
 
 4. **Используйте template функции для динамических сообщений**
+
    ```typescript
    (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`
    ```
 
 5. **Обрабатывайте ошибки по типу или коду**
+
    ```typescript
    if (InvalidPriceError.is(error)) { ... }
    // или
@@ -386,24 +393,28 @@ class Money {
 ### ❌ DON'T
 
 1. **Не используйте общие ошибки**
+
    ```typescript
    throw new Error('Invalid price') // ❌
    throw new InvalidPriceError(...) // ✅
    ```
 
 2. **Не опускайте код ошибки**
+
    ```typescript
    new InvalidPriceError('message', {}) // ❌ нет code
    new InvalidPriceError('message', { code: InvalidPriceError.code }) // ✅
    ```
 
 3. **Не игнорируйте валидацию**
+
    ```typescript
    new Price(userInput) // ❌ без проверки
    Price.fromNumber(userInput) // ✅ с Result<T,E>
    ```
 
 4. **Не используйте native number для денег**
+
    ```typescript
    const total = price * quantity // ❌ точность теряется
    const total = price.mul(quantity) // ✅ decimal.js
