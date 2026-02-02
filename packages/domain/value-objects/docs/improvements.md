@@ -135,16 +135,16 @@ if (result.error.context?.reason === MoneyErrorReason.DIVISION_BY_ZERO) {
 
 ### 📝 Задачи
 
-- [ ] Создать `MoneyErrorReason` enum
-- [ ] Создать `PriceErrorReason` enum
-- [ ] Создать `QuantityErrorReason` enum
-- [ ] Обновить MoneyService для использования enum
-- [ ] Обновить PriceService для использования enum
-- [ ] Обновить QuantityService для использования enum
-- [ ] Обновить все Rules для использования enum
-- [ ] Обновить все тесты
-- [ ] Обновить документацию с примерами использования enum
-- [ ] Добавить migration guide для пользователей API
+- [x] Создать `MoneyErrorReason` enum ✅
+- [x] Создать `PriceErrorReason` enum ✅
+- [x] Создать `QuantityErrorReason` enum ✅
+- [x] Обновить MoneyService для использования enum ✅
+- [x] Обновить PriceService для использования enum ✅
+- [x] Обновить QuantityService для использования enum ✅
+- [x] Обновить все Rules для использования enum ✅
+- [x] Обновить все тесты ✅
+- [x] Обновить документацию с примерами использования enum ✅
+- [ ] Добавить migration guide для пользователей API (optional)
 
 ---
 
@@ -729,23 +729,25 @@ export function toDecimal<TError extends DomainError>(...) {
 
 ### 📝 Задачи
 
-#### Вариант A (Base Class):
-- [ ] Создать `ValueObjectServiceBase` abstract class
-- [ ] Рефакторить MoneyService для использования базового класса
-- [ ] Рефакторить PriceService для использования базового класса
-- [ ] Рефакторить QuantityService для использования базового класса
-- [ ] Удалить дублированные методы из всех сервисов
-- [ ] Обновить тесты (проверить что всё работает)
-- [ ] Обновить документацию с описанием базового класса
+#### ✅ Выбран Вариант B (Utility Functions)
 
-#### Вариант B (Utility Functions):
-- [ ] Создать модуль `errorUtils.ts` с utility функциями
-- [ ] Обновить MoneyService для использования utilities
+**Реализовано:**
+- [x] Создать модуль `errorUtils.ts` с utility функциями ✅
+- [x] Обновить MoneyService для использования utilities ✅
+  - Удалено 6 методов (~160 строк)
+  - Размер файла: 718 → 394 строк (-45%)
+- [x] Удалить дублированные методы из MoneyService ✅
+- [x] Обновить тесты MoneyService (все 476 тестов проходят) ✅
+
+**TODO (следующая итерация):**
 - [ ] Обновить PriceService для использования utilities
+  - Удалить ~160 строк дублированных методов
+  - Ожидаемое сокращение: 787 → ~530 строк
 - [ ] Обновить QuantityService для использования utilities
-- [ ] Удалить дублированные методы
-- [ ] Добавить тесты для utility функций
-- [ ] Обновить документацию
+  - Удалить ~160 строк дублированных методов
+  - Ожидаемое сокращение: ~650 → ~390 строк
+- [ ] Добавить unit тесты для errorUtils функций
+- [ ] Обновить документацию с описанием errorUtils
 
 ---
 
