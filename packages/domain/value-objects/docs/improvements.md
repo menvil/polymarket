@@ -397,7 +397,7 @@ if (!result.ok) {
 1. **Удобство** - краткие проверки вместо switch
 2. **Type safety** - автоматический type narrowing
 3. **Переиспользование** - guards можно экспортировать и использовать везде
-4. **Читаемость** - `isCurrencyMismatch(error)` читается лучше чем `error.context?.reason === ...`
+4. **Читаемость** - `isCurrencyMismatch(error)` читается лучше, чем `error.context?.reason === ...`
 
 ### 📝 Задачи
 

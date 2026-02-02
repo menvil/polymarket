@@ -73,7 +73,7 @@ describe('QuantityService', () => {
         expect.assertions(1);
         const result = QuantityService.create(-1);
         if (!result.ok) {
-          expect(result.error.context?.reason).toBe('NEGATIVE');
+          expect(result.error.context?.reason).toBe('NEGATIVE_QUANTITY');
         }
       });
 

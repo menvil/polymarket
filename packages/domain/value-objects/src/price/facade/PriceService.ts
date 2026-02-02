@@ -109,13 +109,12 @@ export class PriceService {
       // PriceInvariantViolation - доменные ограничения Core
       if (error instanceof PriceInvariantViolation) {
         return Err(
-          new InvalidPriceError(error.message, {
+          rewrap('create', {}, new InvalidPriceError(error.message, {
             context: {
-              op: 'create',
               raw: { field: 'value', value: String(value) },
               reason: error.reason
             }
-          })
+          }), InvalidPriceError)
         );
       }
 

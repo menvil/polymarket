@@ -221,7 +221,7 @@ export class MoneyService {
     const ctx = { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() };
     return wrapOp('add', ctx, () => {
       const sum = addDecimal(a.amount(), b.amount());
-      return this.createFromDecimal(sum, a.currency(), 'add', {});
+      return this.createFromDecimal(sum, a.currency(), 'add', ctx);
     }, 'money', InvalidMoneyError);
   }
 
@@ -269,7 +269,7 @@ export class MoneyService {
     const ctx = { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() };
     return wrapOp('subtract', ctx, () => {
       const diff = subtractDecimal(a.amount(), b.amount());
-      return this.createFromDecimal(diff, a.currency(), 'subtract', {});
+      return this.createFromDecimal(diff, a.currency(), 'subtract', ctx);
     }, 'money', InvalidMoneyError);
   }
 
@@ -340,7 +340,7 @@ export class MoneyService {
 
     return wrapOp('multiply', ctx, () => {
       const product = multiplyDecimal(m.amount(), factorDecimal);
-      return this.createFromDecimal(product, m.currency(), 'multiply', {});
+      return this.createFromDecimal(product, m.currency(), 'multiply', ctx);
     }, 'money', InvalidMoneyError);
   }
 
@@ -411,7 +411,7 @@ export class MoneyService {
 
     return wrapOp('divide', ctx, () => {
       const quotient = divideDecimal(m.amount(), divisorDecimal);
-      return this.createFromDecimal(quotient, m.currency(), 'divide', {});
+      return this.createFromDecimal(quotient, m.currency(), 'divide', ctx);
     }, 'money', InvalidMoneyError);
   }
 }

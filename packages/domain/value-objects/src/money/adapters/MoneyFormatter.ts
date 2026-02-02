@@ -79,6 +79,10 @@ export class MoneyFormatter {
     showCurrency: boolean = true,
     decimals: number = 2
   ): string {
+    if (decimals < 0 || !Number.isInteger(decimals)) {
+      throw new RangeError('decimals argument must be a non-negative integer');
+    }
+
     const amount = money.amount();
     const isNegative = amount.isNegative();
     const absAmount = amount.abs().toFixed(decimals);
@@ -117,23 +121,25 @@ export class MoneyFormatter {
       throw new RangeError('decimals argument must be a non-negative integer');
     }
 
-    const absAmount = money.amount().abs();
+    const amount = money.amount();
+    const absAmount = amount.abs();
+    const sign = amount.isNegative() ? '-' : '';
 
     if (absAmount.greaterThanOrEqualTo(1_000_000_000)) {
-      const billions = money.amount().dividedBy(1_000_000_000);
-      return `$${billions.toFixed(decimals)}B`;
+      const billions = absAmount.dividedBy(1_000_000_000);
+      return `${sign}$${billions.toFixed(decimals)}B`;
     }
 
     if (absAmount.greaterThanOrEqualTo(1_000_000)) {
-      const millions = money.amount().dividedBy(1_000_000);
-      return `$${millions.toFixed(decimals)}M`;
+      const millions = absAmount.dividedBy(1_000_000);
+      return `${sign}$${millions.toFixed(decimals)}M`;
     }
 
     if (absAmount.greaterThanOrEqualTo(1_000)) {
-      const thousands = money.amount().dividedBy(1_000);
-      return `$${thousands.toFixed(decimals)}K`;
+      const thousands = absAmount.dividedBy(1_000);
+      return `${sign}$${thousands.toFixed(decimals)}K`;
     }
 
-    return `$${money.amount().toFixed(decimals)}`;
+    return `${sign}$${absAmount.toFixed(decimals)}`;
   }
 }

@@ -109,7 +109,7 @@ describe('MoneyFormatter', () => {
 
     it('форматирует отрицательные числа', () => {
       const money = Money.of(-1500);
-      expect(MoneyFormatter.toCompact(money)).toBe('$-1.5K');
+      expect(MoneyFormatter.toCompact(money)).toBe('-$1.5K');
     });
 
     it('форматирует ноль', () => {

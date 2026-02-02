@@ -76,7 +76,7 @@ const result = MoneySerializer.fromJSON({
 // ❌ Структурные ошибки
 MoneySerializer.fromJSON(null);              // Err: expected object
 MoneySerializer.fromJSON({ });               // Err: missing fields
-MoneySerializer.fromJSON({ amount: 123 });   // Err: amount must be string
+MoneySerializer.fromJSON({ amount: 123 });   // Err: missing currency
 
 // ❌ Бизнес-ошибки (из Money.fromDecimal)
 MoneySerializer.fromJSON({

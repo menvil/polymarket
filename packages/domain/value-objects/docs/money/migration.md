@@ -50,9 +50,11 @@ import { Money, MoneyService } from '@polymarket/value-objects/money';
 **Было:**
 
 ```typescript
-// Может бросить исключение
-const money = new Money(100);
-const money2 = Money.of(100);
+// Создание через статические методы (конструктор приватный)
+const money = Money.of(100);           // Валюта по умолчанию: 'USDC'
+const money2 = Money.of(100, 'MATIC'); // Указать валюту
+const money3 = Money.fromDecimal(new Decimal('100.5'));
+const money4 = Money.zero();           // Money(0)
 ```
 
 **Стало:**
@@ -278,6 +280,7 @@ class PaymentService {
 
 ```typescript
 import { Money, MoneyService } from '@polymarket/value-objects/money';
+import { InvalidMoneyError } from '@polymarket/errors';
 
 class PaymentService {
   processPayment(amount: number) {

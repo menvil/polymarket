@@ -8,18 +8,18 @@ import { QuantityErrorReason } from '../errors/QuantityErrorReason';
  * Содержит reason из enum QuantityErrorReason для типизированной обработки ошибок.
  *
  * Возможные причины:
- * - QuantityErrorReason.NEGATIVE: значение < 0
+ * - QuantityErrorReason.NEGATIVE_QUANTITY: входное значение < 0
  * - QuantityErrorReason.NON_FINITE: значение не finite (Infinity, NaN)
  *
  * @example
  * ```typescript
- * throw new QuantityInvariantViolation('Quantity value cannot be negative', QuantityErrorReason.NEGATIVE);
+ * throw new QuantityInvariantViolation('Quantity value cannot be negative', QuantityErrorReason.NEGATIVE_QUANTITY);
  * ```
  */
 export class QuantityInvariantViolation extends Error {
-  public readonly reason: QuantityErrorReason.NEGATIVE | QuantityErrorReason.NON_FINITE;
+  public readonly reason: QuantityErrorReason.NEGATIVE_QUANTITY | QuantityErrorReason.NON_FINITE;
 
-  constructor(message: string, reason: QuantityErrorReason.NEGATIVE | QuantityErrorReason.NON_FINITE) {
+  constructor(message: string, reason: QuantityErrorReason.NEGATIVE_QUANTITY | QuantityErrorReason.NON_FINITE) {
     super(`Quantity invariant violation: ${message}`);
     this.name = 'QuantityInvariantViolation';
     this.reason = reason;
@@ -91,7 +91,7 @@ export class Quantity {
 
     // Инвариант 2: Cannot be negative
     if (v.isNegative()) {
-      throw new QuantityInvariantViolation('Quantity value cannot be negative', QuantityErrorReason.NEGATIVE);
+      throw new QuantityInvariantViolation('Quantity value cannot be negative', QuantityErrorReason.NEGATIVE_QUANTITY);
     }
   }
 

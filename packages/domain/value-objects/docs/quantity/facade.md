@@ -223,7 +223,7 @@ if (decimalResult.ok) {
 const zero = QuantityService.divide(qty, 0);
 if (!zero.ok) {
   console.log(zero.error.context?.op);     // 'divide'
-  console.log(zero.error.context?.cause);  // { name: 'InvalidQuantityError', message: '...' }
+  console.log(zero.error.context?.cause);  // { name: 'DivisionByZeroError', message: '...' }
 }
 
 // Ошибка: negative divisor
