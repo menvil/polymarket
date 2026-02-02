@@ -1,6 +1,5 @@
 import Decimal from 'decimal.js';
 import { MoneyInvariantViolation } from './MoneyInvariantViolation';
-import { MoneyParseError } from './MoneyParseError';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason';
 
 export type SupportedCurrency = 'USDC';
@@ -27,7 +26,7 @@ export type SupportedCurrency = 'USDC';
  *
  * ## НЕ инварианты (не в core)
  *
- * - Формат входных данных — это parse error, см. {@link MoneyParseError}
+ * - Формат входных данных — парсинг делегируется Decimal
  *
  * ## Контекстные правила (НЕ в core)
  *
@@ -114,13 +113,14 @@ export class Money {
    * @param value - Сумма (число или строка)
    * @param currency - Валюта (default 'USDC')
    * @returns Money
-   * @throws {MoneyParseError} Ошибка парсинга
+   * @throws {Error} Ошибка парсинга Decimal (если value невалидный)
    * @throws {MoneyInvariantViolation} Нарушение инвариантов
    *
    * @remarks
    * Парсит value в Decimal, затем вызывает create().
    *
-   * Parse fail → MoneyParseError (НЕ инвариант).
+   * Философия: данные должны быть адекватными на входе.
+   * Parse fail → бросит ошибку Decimal.
    * Invariant fail → MoneyInvariantViolation.
    *
    * @example
@@ -130,17 +130,9 @@ export class Money {
    * ```
    */
   public static of(value: number | string, currency: SupportedCurrency = 'USDC'): Money {
-    let decimal: Decimal;
-
-    try {
-      decimal = new Decimal(value);
-    } catch (error) {
-      // Ошибка парсинга → MoneyParseError (НЕ инвариант!)
-      throw new MoneyParseError(String(value));
-    }
-
+    // Decimal бросит свою ошибку если value невалидный
     // create() бросит MoneyInvariantViolation если нарушены инварианты
-    return Money.create(decimal, currency);
+    return Money.create(new Decimal(value), currency);
   }
 
   /**
