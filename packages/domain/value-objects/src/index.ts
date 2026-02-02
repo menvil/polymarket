@@ -15,8 +15,37 @@ export { Price, PriceService, PriceSerializer, PriceFormatter } from './price/in
 // Quantity модуль (только публичный API)
 export { Quantity, QuantityService } from './quantity/index.js';
 
+// Balance модуль (только публичный API)
+export {
+  Balance,
+  BalanceService,
+  BalanceSerializer,
+  BalanceFormatter,
+  BalanceErrorReason
+} from './balance/index.js';
+
+// Percentage модуль (только публичный API)
+export {
+  Percentage,
+  PercentageService,
+  PercentageFormatter,
+  PercentageSerializer,
+  PercentageErrorReason,
+  ValidateFeeNonNegative,
+  ValidateFeeForTrading,
+  ValidateTotalFee,
+  ValidateSpreadNonNegative,
+  ValidateSpreadRange
+} from './percentage/index.js';
+
+// Spread модуль (только публичный API)
+export {
+  Spread,
+  SpreadService,
+  SpreadSerializer,
+  SpreadFormatter,
+  SpreadErrorReason
+} from './spread/index.js';
+
 // TODO: Implement these value objects
-// export { Balance } from './Balance.js';
-// export { Percentage } from './Percentage.js';
 // export { Quote } from './Quote.js';
-// export { Spread } from './Spread.js';

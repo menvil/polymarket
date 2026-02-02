@@ -1,9 +1,11 @@
-import { Result, Ok, Err } from '@polymarket/result';
+import { Result, Ok, Err, isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
 import {
   InvalidMoneyError,
   InvalidPriceError,
   InvalidQuantityError,
+  InvalidPercentageError,
+  InvalidQuoteError,
   ArithmeticOverflowError,
   InvalidOperandError,
   DivisionByZeroError
@@ -13,7 +15,7 @@ import {
  * Utility functions для обработки ошибок в Facade сервисах
  *
  * @remarks
- * Устраняет дублирование ~390 строк кода между MoneyService, PriceService, QuantityService.
+ * Устраняет дублирование ~390 строк кода между MoneyService, PriceService, QuantityService, BalanceService, QuoteService.
  *
  * Этот модуль содержит pure functions для:
  * - Извлечения cause из ошибок
@@ -38,7 +40,12 @@ import {
 /**
  * Тип Domain Error для параметризации функций
  */
-export type DomainError = InvalidMoneyError | InvalidPriceError | InvalidQuantityError;
+export type DomainError =
+  | InvalidMoneyError
+  | InvalidPriceError
+  | InvalidQuantityError
+  | InvalidPercentageError
+  | InvalidQuoteError;
 
 /**
  * Конструктор Domain Error
@@ -387,16 +394,18 @@ export function wrapOp<T, TError extends DomainError>(
   try {
     const result = fn();
     // Если fn() вернул Err с TError - rewrap автоматически
-    if (!result.ok) {
+    if (isErr(result)) {
       return Err(rewrap(op, ctx, result.error, ErrorConstructor));
     }
     return result;
   } catch (e) {
-    // Если кто-то бросил InvalidMoneyError/InvalidPriceError/InvalidQuantityError
+    // Если кто-то бросил Domain Error
     if (
       e instanceof InvalidMoneyError ||
       e instanceof InvalidPriceError ||
-      e instanceof InvalidQuantityError
+      e instanceof InvalidQuantityError ||
+      e instanceof InvalidPercentageError ||
+      e instanceof InvalidQuoteError
     ) {
       return Err(rewrap(op, ctx, e as TError, ErrorConstructor));
     }
