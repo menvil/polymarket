@@ -118,6 +118,7 @@ Price модуль построен на **4-слойной архитектур
 - **Facade слой**: Ловит исключения и возвращает `Result<Price, InvalidPriceError>`
 
 Это обеспечивает:
+
 - Явное управление ошибками через `Result<T, E>`
 - Невозможность забыть обработать ошибку (compile-time проверка)
 - Типизированный контекст ошибок
@@ -133,14 +134,17 @@ Price модуль построен на **4-слойной архитектур
 **Назначение:** Базовый value object с инвариантами
 
 **Компоненты:**
+
 - `Price` — иммутабельный value object
 - `PriceInvariantViolation` — типизированное исключение
 
 **Инварианты:**
+
 - Значение должно быть finite (не `NaN`, не `Infinity`)
 - Значение должно быть в диапазоне [0.0001, 0.9999]
 
 **Константы:**
+
 - `MIN_PRICE = 0.0001` — минимальная цена (базовый тик Polymarket)
 - `MAX_PRICE = 0.9999` — максимальная цена
 - `HALF_PRICE = 0.5` — средняя цена
@@ -172,6 +176,7 @@ price.isMax(): boolean
 **Назначение:** Атомарные правила валидации
 
 **Правила:**
+
 - `ValidateTickSize` — проверка tick size (positive, finite, <= MAX_PRICE)
 - `ValidateTickSizeMultipleOfBaseTick` — проверка кратности базовому тику (0.0001)
 - `ValidateAligned` — проверка выравнивания цены по tick size
@@ -210,6 +215,7 @@ ensureAlignedToMarketTick(price: Price, tickSize: number | string | Decimal): Re
 **Facade Error Contract:**
 
 Все ошибки содержат:
+
 - `context.op` — название операции (`'create'`, `'complement'`, `'divide'`, etc.)
 - `context.price` / `context.price1` / `context.price2` — входные цены
 - `context.divisor|factor|tickSize` — параметры операции
@@ -225,6 +231,7 @@ ensureAlignedToMarketTick(price: Price, tickSize: number | string | Decimal): Re
 **Назначение:** Сериализация и форматирование
 
 **Компоненты:**
+
 - `PriceSerializer` — точная сериализация через `string`
 - `PriceFormatter` — форматирование в строки
 
@@ -484,16 +491,19 @@ console.log(`Price(${price.toNumber()})`);  // "Price(0.65)"
 ### Проверка кратности
 
 `ValidateTickSizeMultipleOfBaseTick` используется в:
+
 - `roundToMarketTick()` — округление к тику
 - `ensureAlignedToMarketTick()` — проверка выравнивания
 
 ### Диапазон [0.0001, 0.9999]
 
 Price НЕ может быть 0 или 1:
+
 - `0` означает "невозможный исход"
 - `1` означает "гарантированный исход"
 
 На реальных рынках всегда есть uncertainty, поэтому:
+
 - Минимум: `0.0001` (0.01%)
 - Максимум: `0.9999` (99.99%)
 

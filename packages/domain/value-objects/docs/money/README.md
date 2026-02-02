@@ -118,6 +118,7 @@ Money модуль построен на **4-слойной архитектур
 - **Facade слой**: Ловит исключения и возвращает `Result<Money, InvalidMoneyError | ...>`
 
 Это обеспечивает:
+
 - Явное управление ошибками через `Result<T, E>`
 - Невозможность забыть обработать ошибку (compile-time проверка)
 - Типизированный контекст ошибок
@@ -133,25 +134,30 @@ Money модуль построен на **4-слойной архитектур
 **Назначение:** Базовый value object с инвариантами
 
 **Компоненты:**
+
 - `Money` — иммутабельный value object
 - `MoneyInvariantViolation` — типизированное исключение для нарушения инвариантов
 - `MoneyParseError` — исключение для ошибок парсинга
 
 **Инварианты:**
+
 1. Валюта поддерживается (сейчас только `USDC`)
 2. Сумма finite (не `NaN`, не `Infinity`)
 3. |Сумма| <= MAX_AMOUNT (1e15)
 
 **НЕ инварианты** (контекстные правила):
+
 - Неотрицательность — бизнес-логика (можно иметь отрицательный баланс)
 - Минимальная сумма — PaymentPolicy
 - Совпадение валют — проверяется в MoneyService
 
 **Константы:**
+
 - `MAX_AMOUNT = 1e15` — максимальная абсолютная сумма
 - `SUPPORTED_CURRENCIES = new Set(['USDC'])` — поддерживаемые валюты
 
 **API:**
+
 ```typescript
 // Создание
 Money.of(value: number | string, currency?: 'USDC'): Money
@@ -194,6 +200,7 @@ divide(m: Money, divisor: number | string | Decimal): Result<Money, DivisionByZe
 **Facade Error Contract:**
 
 Все ошибки содержат:
+
 - `context.op` — название операции (`'create'`, `'add'`, `'divide'`, etc.)
 - `context.value|amount` — входные значения
 - `context.currency` — валюта (если применимо)
@@ -201,6 +208,7 @@ divide(m: Money, divisor: number | string | Decimal): Result<Money, DivisionByZe
 - `context.reason` — причина из Core (`'UNSUPPORTED_CURRENCY'`, `'NAN'`, `'NON_FINITE'`, `'EXCEEDS_MAX_AMOUNT'`, `'INVALID_FORMAT'`)
 
 **Специфика MoneyService:**
+
 - **Never Throw**: Все методы ГАРАНТИРОВАННО возвращают Result, никогда не бросают исключения
 - **Math Safety**: Все вызовы @polymarket/math обёрнуты в try/catch
 - **Currency Check**: add/subtract проверяют совпадение валют
@@ -214,10 +222,12 @@ divide(m: Money, divisor: number | string | Decimal): Result<Money, DivisionByZe
 **Назначение:** Сериализация и форматирование
 
 **Компоненты:**
+
 - `MoneySerializer` — точная сериализация через `string`
 - `MoneyFormatter` — форматирование в строки
 
 **Пример:**
+
 ```typescript
 // Точная сериализация (для больших чисел)
 const json = MoneySerializer.toJSON(money);  // { amount: "123.45", currency: "USDC" }
@@ -434,6 +444,7 @@ console.log(MoneyFormatter.toCompact(Money.of(2300000)));  // "$2.3M"
 Старый `Money.ts` может существовать для backward compatibility, но новый код должен использовать `MoneyService`.
 
 **Было:**
+
 ```typescript
 import { Money } from '@polymarket/value-objects';
 
@@ -441,6 +452,7 @@ const money = new Money(100);  // Может бросить исключение
 ```
 
 **Стало:**
+
 ```typescript
 import { MoneyService } from '@polymarket/value-objects/money';
 

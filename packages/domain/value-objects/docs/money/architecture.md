@@ -155,23 +155,27 @@ Money имеет **4 слоя** по аналогии с Price и Quantity.
 ### Layer 1: Core
 
 **Ответственность:**
+
 - Представление денежной суммы с валютой как value object
 - Гарантия инвариантов (supported currency, finite, |amount| <= MAX_AMOUNT)
 - Базовые операции (equals, hasSameCurrency)
 - **Два типа ошибок**: MoneyParseError (до создания Decimal) и MoneyInvariantViolation (после)
 
 **НЕ делает:**
+
 - Не знает про бизнес-правила (минимальная сумма, неотрицательность)
 - Не знает про Result<T, E>
 - Не делает арифметику (это делает Facade + Math)
 - Не проверяет совпадение валют в операциях (это делает Facade)
 
 **Файлы:**
+
 - `src/money/core/Money.ts`
 - `src/money/core/MoneyInvariantViolation.ts`
 - `src/money/core/MoneyParseError.ts`
 
 **Инварианты:**
+
 1. **Поддерживаемая валюта**: `currency in SUPPORTED_CURRENCIES` (сейчас только 'USDC')
 2. **Not NaN**: `!amount.isNaN()`
 3. **Finite**: `amount.isFinite()`
@@ -196,15 +200,18 @@ Money различает два типа ошибок на Core уровне:
 ### Layer 2: Rules
 
 **Ответственность:**
+
 - Валидация операндов для арифметических операций
 - Проверка factor и divisor (NaN, finite, zero)
 - Возвращает InvalidMoneyError с соответствующим reason
 
 **Файлы:**
+
 - `src/money/rules/ValidateFactorForMoneyMultiplication.ts`
 - `src/money/rules/ValidateDivisorForMoneyDivision.ts`
 
 **НЕ делает:**
+
 - Не проверяет Core инварианты (это делает Core)
 - Не делает математику (это делает Facade через @polymarket/math)
 
@@ -213,6 +220,7 @@ Money различает два типа ошибок на Core уровне:
 ### Layer 3: Facade
 
 **Ответственность:**
+
 - Единая точка входа для создания и операций с Money
 - Преобразование исключений в `Result<T, InvalidMoneyError>`
 - Проверка контекстных правил (совпадение валют в add/subtract)
@@ -220,14 +228,17 @@ Money различает два типа ошибок на Core уровне:
 - **NEVER THROW**: Ловит ВСЕ исключения (из Core, из @polymarket/math, из Rules)
 
 **НЕ делает:**
+
 - Не реализует математику (делегирует @polymarket/math)
 - Не знает про сериализацию/форматирование
 - Не валидирует операнды напрямую (делегирует Rules)
 
 **Файлы:**
+
 - `src/money/facade/MoneyService.ts`
 
 **API:**
+
 ```typescript
 create(value: number | string | Decimal, currency?: 'USDC'): Result<Money, InvalidMoneyError>
 add(a: Money, b: Money): Result<Money, CurrencyMismatchError | ArithmeticOverflowError>
@@ -267,22 +278,27 @@ private static mapInvariantToOverflow(
 ### Layer 4: Adapters
 
 **Ответственность:**
+
 - Сериализация в/из JSON (с валидацией на границе системы)
 - Форматирование для UI
 - Десериализация с unknown → typed
 
 **НЕ делает:**
+
 - Не создаёт Money напрямую (делегирует MoneyService или Money.fromDecimal)
 
 **Файлы:**
+
 - `src/money/adapters/MoneySerializer.ts`
 - `src/money/adapters/MoneyFormatter.ts`
 
 **MoneySerializer:**
+
 - `toJSON(money)` → `{ amount: string, currency: string }`
 - `fromJSON(json: unknown)` → валидирует структуру, делегирует `Money.fromDecimal`
 
 **MoneyFormatter:**
+
 - `toFixed(money, decimals)` → string
 - `toCurrency(money, showCurrency)` → "$100.50 USDC"
 - `toCompact(money, decimals)` → "$1.5K"
@@ -393,17 +409,20 @@ Result.Ok(Money)
 **Причина:** Большинство проверок Money — это инварианты Core, а не контекстные правила.
 
 **Money имеет минимальный Rules Layer (Layer 2):**
+
 - `ValidateFactorForMoneyMultiplication` — проверка множителя (не NaN, finite)
 - `ValidateDivisorForMoneyDivision` — проверка делителя (не NaN, finite, не ноль)
 - Эти правила проверяют ВХОДНЫЕ операнды, а не результат операции
 
 **Core инварианты остаются в Core:**
+
 - Валюта — инвариант (поддерживается или нет)
 - Finite — инвариант (всегда требуется для результата)
 - MAX_AMOUNT — инвариант (всегда проверяется для результата)
 - Неотрицательность — НЕ инвариант (можно иметь отрицательный баланс)
 
 **Price/Quantity имеют более развитый Rules Layer:**
+
 - Price: tick size alignment, tick size multiple of base tick — контекстные правила рынка
 - Quantity: minSize, stepSize — контекстные правила обмена
 
@@ -424,6 +443,7 @@ Result.Ok(Money)
    - Пример: `Infinity`, `1e16`, `EUR`
 
 Это позволяет:
+
 - Чётко разделить "bad input format" vs "violates business rules"
 - Логировать по-разному (parse errors — user error, invariant violations — logic bug)
 
@@ -437,6 +457,7 @@ Result.Ok(Money)
 **Два подхода:**
 
 **А) Facade использует Money.of (не выбран):**
+
 ```typescript
 try {
   return Ok(Money.of(value));
@@ -450,6 +471,7 @@ try {
 ```
 
 **Б) Facade парсит сам (выбран):**
+
 ```typescript
 try {
   decimal = new Decimal(value);
@@ -467,6 +489,7 @@ try {
 ```
 
 **Преимущество Б:**
+
 - Разделение parse errors и invariant errors явное
 - Контроль над error context (raw value vs normalized value)
 - Money.of остаётся для Core-only использования
@@ -478,6 +501,7 @@ try {
 JavaScript `Number.MAX_SAFE_INTEGER = 9007199254740991 ≈ 9e15`.
 
 Мы ставим лимит `1e15` чтобы:
+
 - Оставить margin для вычислений (умножение, сложение)
 - Гарантировать что `money.toNumber()` безопасен (хоть и lossy)
 - Предотвратить overflow в арифметике
@@ -500,15 +524,18 @@ JavaScript `Number.MAX_SAFE_INTEGER = 9007199254740991 ≈ 9e15`.
 ### 6. Почему Currency обязательна, но есть default?
 
 **Money ≠ Number**:
+
 - Денежная сумма БЕЗ валюты бессмысленна
 - `100` что? Доллары? Евро? Биткоины?
 
 **Default = 'USDC'**:
+
 - Polymarket использует только USDC
 - Удобство: `MoneyService.create(100)` вместо `MoneyService.create(100, 'USDC')`
 - Явность: можно указать валюту при необходимости
 
 **В будущем:**
+
 - Если добавим другие валюты (EUR, BTC), default можно убрать
 - Текущий API будет backward compatible
 
@@ -517,12 +544,14 @@ JavaScript `Number.MAX_SAFE_INTEGER = 9007199254740991 ≈ 9e15`.
 ## Заключение
 
 Money модуль следует принципам:
+
 - **Простота** — чёткое разделение на 4 слоя (Core, Rules, Facade, Adapters)
 - **Безопасность** — Never Throw Facade, явные ошибки
 - **Точность** — Decimal.js для всех вычислений
 - **Ясность** — разделение parse errors vs invariant violations
 
 Архитектура позволяет легко:
+
 - Добавлять новые валюты (расширить SUPPORTED_CURRENCIES)
 - Добавлять новые операции (в Facade)
 - Тестировать каждый слой отдельно

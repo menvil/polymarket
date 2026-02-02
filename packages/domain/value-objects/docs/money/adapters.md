@@ -14,6 +14,7 @@
 ## Обзор
 
 Adapters Layer отвечает за:
+
 - Сериализацию Money в/из JSON
 - Форматирование Money для отображения
 - Валидацию на границе системы (unknown → typed)
@@ -33,6 +34,7 @@ Adapters Layer отвечает за:
 Сериализует Money в JSON объект.
 
 **Сигнатура:**
+
 ```typescript
 public static toJSON(money: Money): { amount: string; currency: string }
 ```
@@ -40,6 +42,7 @@ public static toJSON(money: Money): { amount: string; currency: string }
 **Возвращает:** `{ amount: string, currency: string }`
 
 **Пример:**
+
 ```typescript
 const money = Money.of(123.456, 'USDC');
 const json = MoneySerializer.toJSON(money);
@@ -53,11 +56,13 @@ const json = MoneySerializer.toJSON(money);
 Десериализует Money из JSON с валидацией на границе.
 
 **Сигнатура:**
+
 ```typescript
 public static fromJSON(json: unknown): Result<Money, InvalidMoneyError>
 ```
 
 **Валидация:**
+
 1. json это объект (ни null, ни массив, ни примитив)
 2. Есть поля amount и currency
 3. amount это number или string
@@ -66,6 +71,7 @@ public static fromJSON(json: unknown): Result<Money, InvalidMoneyError>
 **Делегирует:** `MoneyService.create(amount, currency as SupportedCurrency)` для создания
 
 **Примеры:**
+
 ```typescript
 // ✅ Валидный JSON
 const result = MoneySerializer.fromJSON({
@@ -100,14 +106,17 @@ MoneySerializer.fromJSON({
 Форматирует с фиксированным количеством знаков.
 
 **Сигнатура:**
+
 ```typescript
 public static toFixed(money: Money, decimals: number = 2): string
 ```
 
 **Параметры:**
+
 - `decimals` — количество знаков после запятой (default: 2)
 
 **Примеры:**
+
 ```typescript
 const money = Money.of(100.5, 'USDC');
 
@@ -123,6 +132,7 @@ MoneyFormatter.toFixed(money, 4);   // "100.5000"
 Форматирует с символом валюты.
 
 **Сигнатура:**
+
 ```typescript
 public static toCurrency(
   money: Money,
@@ -132,10 +142,12 @@ public static toCurrency(
 ```
 
 **Параметры:**
+
 - `showCurrency` — показывать код валюты (default: true)
 - `decimals` — количество знаков (default: 2)
 
 **Примеры:**
+
 ```typescript
 const money = Money.of(100.5, 'USDC');
 
@@ -151,20 +163,24 @@ MoneyFormatter.toCurrency(money, true, 4);  // "$100.5000 USDC"
 Компактный формат с суффиксами (K, M, B).
 
 **Сигнатура:**
+
 ```typescript
 public static toCompact(money: Money, decimals: number = 1): string
 ```
 
 **Параметры:**
+
 - `decimals` — количество знаков после запятой (default: 1)
 
 **Суффиксы:**
+
 - < 1000: нет суффикса
 - >= 1000: K (тысячи)
 - >= 1000000: M (миллионы)
 - >= 1000000000: B (миллиарды)
 
 **Примеры:**
+
 ```typescript
 MoneyFormatter.toCompact(Money.of(999));       // "$999.0"
 MoneyFormatter.toCompact(Money.of(1500));      // "$1.5K"
@@ -284,6 +300,7 @@ if (balance) {
 ## Заключение
 
 Adapters Layer:
+
 - ✅ MoneySerializer — граница системы с валидацией unknown
 - ✅ MoneyFormatter — читаемое форматирование для UI
 - ✅ Точность через string в JSON

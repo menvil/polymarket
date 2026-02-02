@@ -25,6 +25,7 @@ Bid  ←─────── Spread Width ────────→  Ask
 ```
 
 **На рынках предсказаний:**
+
 - **Bid** — максимальная цена, которую покупатели готовы заплатить
 - **Ask** — минимальная цена, по которой продавцы готовы продать
 - **Spread Width** — стоимость ликвидности (чем уже, тем ликвиднее рынок)
@@ -72,6 +73,7 @@ if (!invalid.ok) {
 Создаёт Spread из чисел (удобный shortcut).
 
 Может вернуть ошибки:
+
 - **InvalidPriceError** - если bid или ask выходят за допустимые границы [0.0001, 0.9999]
 - **InvalidSpreadError** - если bid > ask
 
@@ -126,6 +128,7 @@ console.log(spread.width()); // 0.04 (4 cents)
 ```
 
 **Интерпретация:**
+
 - Узкий спред (< 0.02): ликвидный рынок
 - Средний спред (0.02 - 0.05): нормальная ликвидность
 - Широкий спред (> 0.05): низкая ликвидность или высокая неопределённость
@@ -230,6 +233,7 @@ if (!invalidResult.ok) {
 ```
 
 **Применение:**
+
 - Агрессивный маркет-мейкинг
 - Улучшение fill rate
 - Конкуренция за top of book
@@ -276,6 +280,7 @@ if (!invalidWidenResult.ok) {
 ```
 
 **Применение:**
+
 - Консервативный маркет-мейкинг
 - Увеличение прибыли на spread
 - Снижение риска adverse selection
@@ -320,6 +325,7 @@ console.log(clamped.width());    // ~0.04 (preserved)
 ```
 
 **Применение:**
+
 - Skewing based on inventory (inventory management)
 - Tracking market mid-price movement
 - Repositioning spread without changing width

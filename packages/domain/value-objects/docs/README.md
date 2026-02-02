@@ -34,6 +34,7 @@ console.log(doubled.toString());             // "$200.00 USDC"
 ```
 
 **Особенности:**
+
 - Использует `decimal.js` для точных вычислений
 - Поддержка отрицательных значений (PnL)
 - Railway-Oriented Programming через `Result<T, E>`
@@ -61,6 +62,7 @@ const feeAmount = fee.of(orderValue); // Decimal(25)
 ```
 
 **Особенности:**
+
 - Поддержка отрицательных процентов (для PnL)
 - Точные вычисления с `decimal.js`
 - Базисные пункты (bp)
@@ -93,6 +95,7 @@ console.log(newBalance.toString()); // "1200 USDC"
 ```
 
 **Особенности:**
+
 - Всегда неотрицательный (отклоняет отрицательные значения)
 - Метод `hasEnough()` для проверки достаточности средств
 - Операции только с одинаковой валютой
@@ -435,6 +438,7 @@ npm run test:watch
 ```
 
 **Статистика тестов:**
+
 - Money: 77 тестов ✅
 - Percentage: 95 тестов ✅
 - Всего: 172 теста ✅
@@ -558,6 +562,7 @@ if (!result.ok) {
 См. **[PERCENTAGE_REFACTORING.md](./PERCENTAGE_REFACTORING.md)** для подробного migration guide.
 
 **Основные изменения:**
+
 - Exceptions → Result<T, E>
 - Number → Decimal.js
 - Silent clamping → Explicit errors

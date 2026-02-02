@@ -16,11 +16,13 @@
 ## Обзор
 
 Core Layer отвечает за:
+
 - Представление денежной суммы с валютой как immutable value object
 - Гарантию инвариантов через typed exceptions
 - Базовые операции (equals, hasSameCurrency)
 
 **НЕ отвечает за:**
+
 - Арифметические операции (это Facade + Math)
 - Result<T, E> (это Facade)
 - Валидацию контекстных правил (это Facade)
@@ -67,6 +69,7 @@ Core бросает два типа исключений:
 **Extends:** `Error`
 
 **Структура:**
+
 ```typescript
 export class MoneyParseError extends Error {
   public readonly value: string;  // сырое значение
@@ -80,6 +83,7 @@ export class MoneyParseError extends Error {
 ```
 
 **Примеры:**
+
 - `Money.of("abc")` → MoneyParseError
 - `Money.of(undefined)` → MoneyParseError
 - `Money.of({})` → MoneyParseError
@@ -93,6 +97,7 @@ export class MoneyParseError extends Error {
 **Extends:** `Error`
 
 **Структура:**
+
 ```typescript
 type MoneyInvariantReason =
   | 'UNSUPPORTED_CURRENCY'  // валюта не поддерживается
@@ -112,6 +117,7 @@ export class MoneyInvariantViolation extends Error {
 ```
 
 **Примеры:**
+
 - `Money.fromDecimal(new Decimal(NaN), 'USDC')` → reason: 'NAN'
 - `Money.fromDecimal(new Decimal(Infinity), 'USDC')` → reason: 'NON_FINITE'
 - `Money.fromDecimal(new Decimal('1e16'), 'USDC')` → reason: 'EXCEEDS_MAX_AMOUNT'
@@ -128,6 +134,7 @@ Money гарантирует 4 инварианта:
 **Правило:** `currency in SUPPORTED_CURRENCIES`
 
 **Проверка:**
+
 ```typescript
 if (!Money.SUPPORTED_CURRENCIES.has(currency)) {
   throw new MoneyInvariantViolation(
@@ -148,6 +155,7 @@ if (!Money.SUPPORTED_CURRENCIES.has(currency)) {
 **Правило:** `!amount.isNaN()`
 
 **Проверка:**
+
 ```typescript
 if (amount.isNaN()) {
   throw new MoneyInvariantViolation('Amount is NaN', 'NAN');
@@ -155,6 +163,7 @@ if (amount.isNaN()) {
 ```
 
 **Примеры нарушений:**
+
 - `new Decimal(NaN)`
 - Результат `0 / 0`
 - Результат `Infinity - Infinity`
@@ -166,6 +175,7 @@ if (amount.isNaN()) {
 **Правило:** `amount.isFinite()`
 
 **Проверка:**
+
 ```typescript
 if (!amount.isFinite()) {
   throw new MoneyInvariantViolation('Amount must be finite', 'NON_FINITE');
@@ -173,6 +183,7 @@ if (!amount.isFinite()) {
 ```
 
 **Примеры нарушений:**
+
 - `new Decimal(Infinity)`
 - `new Decimal(-Infinity)`
 - Результат `1 / 0`
@@ -184,6 +195,7 @@ if (!amount.isFinite()) {
 **Правило:** `|amount| <= 1e15`
 
 **Проверка:**
+
 ```typescript
 if (amount.abs().greaterThan(Money.MAX_AMOUNT)) {
   throw new MoneyInvariantViolation(
@@ -194,6 +206,7 @@ if (amount.abs().greaterThan(Money.MAX_AMOUNT)) {
 ```
 
 **Почему 1e15?**
+
 - Меньше чем `Number.MAX_SAFE_INTEGER` (9e15)
 - Margin для вычислений
 - Практичность: 1 квадриллион USD > мировой GDP
@@ -217,6 +230,7 @@ new Decimal('9999999999999999')
 Создаёт Money из number или string.
 
 **Сигнатура:**
+
 ```typescript
 public static of(
   value: number | string,
@@ -225,22 +239,26 @@ public static of(
 ```
 
 **Параметры:**
+
 - `value` — сумма (number или string)
 - `currency` — валюта (default: 'USDC')
 
 **Возвращает:** `Money`
 
 **Бросает:**
+
 - `MoneyParseError` — если не удалось parse value в Decimal
 - `MoneyInvariantViolation` — если нарушены инварианты
 
 **Процесс:**
+
 1. Парсит value в Decimal через `new Decimal(value)`
 2. Если parse fail → бросает `MoneyParseError`
 3. Вызывает `Money.create(decimal, currency)`
 4. Если invariant fail → бросает `MoneyInvariantViolation`
 
 **Примеры:**
+
 ```typescript
 const m1 = Money.of(100);                 // Money(100 USDC)
 const m2 = Money.of('42.50', 'USDC');     // Money(42.50 USDC)
@@ -260,6 +278,7 @@ Money.of('1e16');      // throws MoneyInvariantViolation (EXCEEDS_MAX_AMOUNT)
 Создаёт Money из Decimal (zero-copy).
 
 **Сигнатура:**
+
 ```typescript
 public static fromDecimal(
   value: Decimal,
@@ -268,20 +287,24 @@ public static fromDecimal(
 ```
 
 **Параметры:**
+
 - `value` — Decimal сумма
 - `currency` — валюта (default: 'USDC')
 
 **Возвращает:** `Money`
 
 **Бросает:**
+
 - `MoneyInvariantViolation` — если нарушены инварианты
 
 **Использование:**
+
 - В Facade после арифметики
 - В тестах для точного контроля
 - Когда уже есть Decimal (zero-copy)
 
 **Примеры:**
+
 ```typescript
 const decimal = new Decimal('123.456');
 const money = Money.fromDecimal(decimal);  // Money(123.456 USDC)
@@ -298,16 +321,19 @@ Money.fromDecimal(new Decimal('1e16'));   // throws MoneyInvariantViolation
 Создаёт Money с нулевой суммой.
 
 **Сигнатура:**
+
 ```typescript
 public static zero(currency: SupportedCurrency = 'USDC'): Money
 ```
 
 **Параметры:**
+
 - `currency` — валюта (default: 'USDC')
 
 **Возвращает:** `Money` с amount = 0
 
 **Примеры:**
+
 ```typescript
 const zero = Money.zero();        // Money(0 USDC)
 const zeroEUR = Money.zero('EUR'); // throws (EUR not supported)
@@ -320,6 +346,7 @@ const zeroEUR = Money.zero('EUR'); // throws (EUR not supported)
 Singleton константа для нулевой суммы USDC.
 
 **Сигнатура:**
+
 ```typescript
 public static get ZERO_USDC(): Money
 ```
@@ -327,10 +354,12 @@ public static get ZERO_USDC(): Money
 **Возвращает:** `Money(0 USDC)` (ленивая инициализация)
 
 **Использование:**
+
 - Вместо `Money.zero()` когда нужен USDC
 - Singleton — всегда один и тот же объект
 
 **Примеры:**
+
 ```typescript
 const zero = Money.ZERO_USDC;  // Money(0 USDC)
 
@@ -347,11 +376,13 @@ Money.ZERO_USDC === Money.ZERO_USDC;  // true
 Возвращает сумму как Decimal.
 
 **Сигнатура:**
+
 ```typescript
 public amount(): Decimal
 ```
 
 **Примеры:**
+
 ```typescript
 const money = Money.of(100.5);
 const decimal = money.amount();  // Decimal(100.5)
@@ -365,11 +396,13 @@ console.log(decimal.toString()); // "100.5"
 Возвращает валюту.
 
 **Сигнатура:**
+
 ```typescript
 public currency(): SupportedCurrency
 ```
 
 **Примеры:**
+
 ```typescript
 const money = Money.of(100, 'USDC');
 console.log(money.currency());  // "USDC"
@@ -382,6 +415,7 @@ console.log(money.currency());  // "USDC"
 Преобразует в number (lossy).
 
 **Сигнатура:**
+
 ```typescript
 public toNumber(): number
 ```
@@ -391,6 +425,7 @@ public toNumber(): number
 **Использование:** Для UI, когда точность не критична.
 
 **Примеры:**
+
 ```typescript
 const money = Money.of('123.456');
 console.log(money.toNumber());  // 123.456
@@ -406,11 +441,13 @@ const decimal = money.amount();  // Decimal (точный)
 Алиас для `amount()`.
 
 **Сигнатура:**
+
 ```typescript
 public toDecimal(): Decimal
 ```
 
 **Примеры:**
+
 ```typescript
 const money = Money.of(100);
 const decimal = money.toDecimal();  // Decimal(100)
@@ -423,6 +460,7 @@ const decimal = money.toDecimal();  // Decimal(100)
 Проверяет строгое равенство (валюта и сумма).
 
 **Сигнатура:**
+
 ```typescript
 public equals(other: Money): boolean
 ```
@@ -430,6 +468,7 @@ public equals(other: Money): boolean
 **Возвращает:** `true` если валюта и сумма идентичны.
 
 **Примеры:**
+
 ```typescript
 const m1 = Money.of(100, 'USDC');
 const m2 = Money.of(100, 'USDC');
@@ -446,6 +485,7 @@ m1.equals(m3);  // false (разные суммы)
 Проверяет совпадение валют.
 
 **Сигнатура:**
+
 ```typescript
 public hasSameCurrency(other: Money): boolean
 ```
@@ -453,6 +493,7 @@ public hasSameCurrency(other: Money): boolean
 **Использование:** В Facade для проверки перед add/subtract.
 
 **Примеры:**
+
 ```typescript
 const usd1 = Money.of(100, 'USDC');
 const usd2 = Money.of(200, 'USDC');
@@ -566,6 +607,7 @@ console.log(zero.currency());           // "USDC"
 ## Заключение
 
 Core Layer:
+
 - ✅ Простой, чистый value object
 - ✅ Гарантия инвариантов через typed exceptions
 - ✅ Разделение parse errors и invariant violations

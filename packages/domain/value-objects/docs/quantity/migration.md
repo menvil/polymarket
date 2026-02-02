@@ -19,11 +19,13 @@
 ### Что изменилось?
 
 **Старый Quantity:**
+
 - Прямое создание через конструктор или статические методы
 - Исключения при невалидных значениях
 - Нет явного управления ошибками
 
 **Новый Quantity:**
+
 - Создание через `QuantityService` (Facade)
 - Возвращает `Result<Quantity, InvalidQuantityError>`
 - Явное управление ошибками через `Result<T, E>`
@@ -44,11 +46,13 @@
 ### Шаг 1: Обновите импорты
 
 **Было:**
+
 ```typescript
 import { Quantity } from '@polymarket/value-objects';
 ```
 
 **Стало:**
+
 ```typescript
 // Для основной работы
 import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
@@ -60,6 +64,7 @@ import { QuantitySerializer, QuantityFormatter } from '@polymarket/value-objects
 ### Шаг 2: Замените создание Quantity
 
 **Было:**
+
 ```typescript
 try {
   const qty = Quantity.of(10);
@@ -70,6 +75,7 @@ try {
 ```
 
 **Стало:**
+
 ```typescript
 const result = QuantityService.create(10);
 if (!result.ok) {
@@ -83,6 +89,7 @@ const qty = result.value;
 ### Шаг 3: Обновите обработку ошибок
 
 **Было:**
+
 ```typescript
 try {
   const qty = Quantity.of(-1);
@@ -94,6 +101,7 @@ try {
 ```
 
 **Стало:**
+
 ```typescript
 const result = QuantityService.create(-1);
 if (!result.ok) {
@@ -108,11 +116,13 @@ if (!result.ok) {
 Если в старом коде были прямые арифметические операции, замените их на `QuantityService`:
 
 **Было (если были методы):**
+
 ```typescript
 const sum = qty1.add(qty2); // Если бы такой метод был
 ```
 
 **Стало:**
+
 ```typescript
 const sumResult = QuantityService.add(qty1, qty2);
 if (!sumResult.ok) {
@@ -165,6 +175,7 @@ const sum = sumResult.value;
 ### 1. Создание возвращает Result вместо throw
 
 **До:**
+
 ```typescript
 function createOrder(input: string) {
   try {
@@ -177,6 +188,7 @@ function createOrder(input: string) {
 ```
 
 **После:**
+
 ```typescript
 function createOrder(input: string) {
   const result = QuantityService.create(input);
@@ -194,6 +206,7 @@ function createOrder(input: string) {
 Если в старом Quantity были методы типа `add()`, `subtract()`, они удалены.
 
 **Используйте Facade:**
+
 ```typescript
 // ❌ Старый способ (если был)
 const sum = qty1.add(qty2);
@@ -208,6 +221,7 @@ if (sumResult.ok) {
 ### 3. InvalidQuantityError вместо QuantityInvariantViolation
 
 **До:**
+
 ```typescript
 catch (error) {
   if (error instanceof QuantityInvariantViolation) {
@@ -217,6 +231,7 @@ catch (error) {
 ```
 
 **После:**
+
 ```typescript
 if (!result.ok) {
   console.log(result.error.context?.reason); // 'NEGATIVE' | 'NON_FINITE'
@@ -260,6 +275,7 @@ import { QuantityService } from '@polymarket/value-objects/quantity';
 ### Use Case 1: Парсинг пользовательского ввода
 
 **Было:**
+
 ```typescript
 function parseUserQuantity(input: string): Quantity | null {
   try {
@@ -272,6 +288,7 @@ function parseUserQuantity(input: string): Quantity | null {
 ```
 
 **Стало:**
+
 ```typescript
 function parseUserQuantity(input: string): Quantity | null {
   const result = QuantityService.create(input);
@@ -286,6 +303,7 @@ function parseUserQuantity(input: string): Quantity | null {
 ```
 
 **Улучшенный вариант (возвращаем Result):**
+
 ```typescript
 function parseUserQuantity(input: string): Result<Quantity, InvalidQuantityError> {
   return QuantityService.create(input);
@@ -303,6 +321,7 @@ const qty = result.value;
 ### Use Case 2: Валидация ордера
 
 **Было:**
+
 ```typescript
 function validateOrderQuantity(input: string, minSize: number): boolean {
   try {
@@ -315,6 +334,7 @@ function validateOrderQuantity(input: string, minSize: number): boolean {
 ```
 
 **Стало:**
+
 ```typescript
 import { QuantityService } from '@polymarket/value-objects/quantity';
 import { Result, Ok, Err } from '@polymarket/result';
@@ -363,6 +383,7 @@ const orderQty = result.value;
 ### Use Case 3: Вычисление суммы
 
 **Было:**
+
 ```typescript
 function calculateTotal(quantities: string[]): Quantity {
   let total = new Quantity(0);
@@ -381,6 +402,7 @@ function calculateTotal(quantities: string[]): Quantity {
 ```
 
 **Стало:**
+
 ```typescript
 function calculateTotal(
   quantities: string[]
@@ -418,6 +440,7 @@ console.log(`Total: ${result.value.value()}`); // "60"
 ### Use Case 4: Округление к tick size
 
 **Было:**
+
 ```typescript
 import { round } from '@polymarket/math';
 
@@ -428,6 +451,7 @@ function roundQuantity(qty: Quantity, stepSize: number): Quantity {
 ```
 
 **Стало:**
+
 ```typescript
 function roundQuantity(
   qty: Quantity,
@@ -460,6 +484,7 @@ if (result3.ok) {
 ### Use Case 5: Сериализация для API
 
 **Было:**
+
 ```typescript
 function serializeQuantity(qty: Quantity) {
   return {
@@ -473,6 +498,7 @@ function deserializeQuantity(json: { value: string }): Quantity {
 ```
 
 **Стало:**
+
 ```typescript
 import { QuantitySerializer } from '@polymarket/value-objects/quantity';
 
@@ -491,6 +517,7 @@ const qty = result.value;
 ### Use Case 6: Форматирование для UI
 
 **Было:**
+
 ```typescript
 function formatQuantity(qty: Quantity, decimals: number): string {
   return qty.value().toFixed(decimals);
@@ -498,6 +525,7 @@ function formatQuantity(qty: Quantity, decimals: number): string {
 ```
 
 **Стало:**
+
 ```typescript
 import { QuantityFormatter } from '@polymarket/value-objects/quantity';
 
@@ -580,6 +608,7 @@ if (newResult.ok) {
 ### Q: Что делать с null checks?
 
 **Было:**
+
 ```typescript
 function process(qty: Quantity | null) {
   if (qty === null) {
@@ -590,6 +619,7 @@ function process(qty: Quantity | null) {
 ```
 
 **Стало:**
+
 ```typescript
 function process(result: Result<Quantity, InvalidQuantityError>) {
   if (!result.ok) {
@@ -606,11 +636,13 @@ function process(result: Result<Quantity, InvalidQuantityError>) {
 **План:**
 
 1. **Шаг 1:** Добавьте новые импорты
+
 ```typescript
 import { QuantityService } from '@polymarket/value-objects/quantity';
 ```
 
-2. **Шаг 2:** Создайте wrapper функции
+1. **Шаг 2:** Создайте wrapper функции
+
 ```typescript
 function createQuantitySafe(value: string | number): Quantity | null {
   const result = QuantityService.create(value);
@@ -618,9 +650,9 @@ function createQuantitySafe(value: string | number): Quantity | null {
 }
 ```
 
-3. **Шаг 3:** Постепенно заменяйте прямые вызовы на wrapper
+1. **Шаг 3:** Постепенно заменяйте прямые вызовы на wrapper
 
-4. **Шаг 4:** Рефакторите wrapper на полноценный Result<T, E>
+2. **Шаг 4:** Рефакторите wrapper на полноценный Result<T, E>
 
 ### Q: Производительность изменилась?
 
@@ -637,6 +669,7 @@ Facade добавляет минимальный overhead (обёртка в Res
 **A:** Да! Теперь все параметры принимают `number | string | Decimal`:
 
 **Было:**
+
 ```typescript
 QuantityService.multiply(qty, factor: number | Decimal)
 QuantityService.divide(qty, divisor: number | Decimal)
@@ -644,6 +677,7 @@ QuantityService.roundToStep(qty, stepSize: Decimal)
 ```
 
 **Стало:**
+
 ```typescript
 QuantityService.multiply(qty, factor: number | string | Decimal)
 QuantityService.divide(qty, divisor: number | string | Decimal)
@@ -651,6 +685,7 @@ QuantityService.roundToStep(qty, stepSize: number | string | Decimal)
 ```
 
 **Примеры:**
+
 ```typescript
 // ✅ Все варианты работают
 QuantityService.multiply(qty, 2);              // number
@@ -667,6 +702,7 @@ QuantityService.roundToStep(qty, new Decimal("0.01"));
 ```
 
 **Преимущества:**
+
 - ✅ Консистентный API (все методы одинаковые)
 - ✅ Можно использовать string для максимальной точности
 - ✅ Удобнее для пользователей (не нужно конвертировать в Decimal)
@@ -687,6 +723,7 @@ expect(() => QuantityService.divide(qty, 0)).not.toThrow();
 ```
 
 **Почему это важно:**
+
 - ✅ Compile-time безопасность (TypeScript знает что метод возвращает Result)
 - ✅ Runtime безопасность (все исключения ловятся внутри)
 - ✅ Явная обработка ошибок (невозможно забыть проверить result.ok)

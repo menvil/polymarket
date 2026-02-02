@@ -1,6 +1,7 @@
 # План улучшений архитектуры Value Objects
 
 ## Статус: Планирование
+
 **Дата создания:** 2026-02-02
 **Версия:** 1.0
 
@@ -22,6 +23,7 @@ if (result.error.context?.reason === 'DIVISION_BY_ZERO') {
 ```
 
 **Риски:**
+
 - Опечатки в строковых константах не ловятся на этапе компиляции
 - Отсутствие автодополнения усложняет разработку
 - Невозможность exhaustive checking (TypeScript не может проверить, что все случаи обработаны)
@@ -32,6 +34,7 @@ if (result.error.context?.reason === 'DIVISION_BY_ZERO') {
 #### Шаг 1: Создать enum для каждого Value Object
 
 **Файл:** `src/money/errors/MoneyErrorReason.ts`
+
 ```typescript
 /**
  * Типизированные причины ошибок для Money операций
@@ -68,6 +71,7 @@ export enum MoneyErrorReason {
 ```
 
 **Файл:** `src/price/errors/PriceErrorReason.ts`
+
 ```typescript
 export enum PriceErrorReason {
   NAN = 'NAN',
@@ -82,6 +86,7 @@ export enum PriceErrorReason {
 ```
 
 **Файл:** `src/quantity/errors/QuantityErrorReason.ts`
+
 ```typescript
 export enum QuantityErrorReason {
   NAN = 'NAN',
@@ -167,6 +172,7 @@ const { reason, expected, actual } = result.error.context || {};
 #### Шаг 1: Определить типы контекстов
 
 **Файл:** `src/money/errors/MoneyErrorContext.ts`
+
 ```typescript
 import { MoneyErrorReason } from './MoneyErrorReason';
 
@@ -328,6 +334,7 @@ if (!result.ok) {
 ### ✅ Решение: Type Guard функции
 
 **Файл:** `src/money/errors/guards.ts`
+
 ```typescript
 import { InvalidMoneyError } from '@polymarket/errors';
 import { MoneyErrorReason } from './MoneyErrorReason';
@@ -416,6 +423,7 @@ if (!result.ok) {
 Идентичные helper methods дублируются в MoneyService, PriceService и QuantityService:
 
 **Дублированные методы:**
+
 1. `toCause(e: unknown)` - 100% идентичен в трёх сервисах (15 строк × 3 = 45 строк)
 2. `wrapOp<T>(op, ctx, fn)` - идентичная логика, только разные типы ошибок (20 строк × 3 = 60 строк)
 3. `rewrap(op, ctx, err)` - идентичная логика, только разные типы ошибок (35 строк × 3 = 105 строк)
@@ -426,6 +434,7 @@ if (!result.ok) {
 **Итого дублирования:** ~390 строк кода
 
 **Риски:**
+
 - Изменение логики требует обновления в трёх местах
 - Высокий риск рассинхронизации реализаций
 - Усложнение поддержки и ревью
@@ -436,6 +445,7 @@ if (!result.ok) {
 #### Вариант A: Abstract Base Class (рекомендуется)
 
 **Файл:** `src/shared/facade/ValueObjectServiceBase.ts`
+
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
 import Decimal from 'decimal.js';
@@ -692,6 +702,7 @@ export class MoneyService extends ValueObjectServiceBase<
 Если не хотим inheritance, можно создать utility модуль:
 
 **Файл:** `src/shared/facade/errorUtils.ts`
+
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
 import Decimal from 'decimal.js';
@@ -732,6 +743,7 @@ export function toDecimal<TError extends DomainError>(...) {
 #### ✅ Выбран Вариант B (Utility Functions)
 
 **Реализовано:**
+
 - [x] Создать модуль `errorUtils.ts` с utility функциями ✅
 - [x] Обновить MoneyService для использования utilities ✅
   - Удалено 6 методов (~160 строк)
@@ -740,6 +752,7 @@ export function toDecimal<TError extends DomainError>(...) {
 - [x] Обновить тесты MoneyService (все 476 тестов проходят) ✅
 
 **TODO (следующая итерация):**
+
 - [ ] Обновить PriceService для использования utilities
   - Удалить ~160 строк дублированных методов
   - Ожидаемое сокращение: 787 → ~530 строк
@@ -807,17 +820,20 @@ const result = MoneyService.create(100, 'USDC', {
 ## Приоритизация
 
 ### 🔥 Критично (реализовать в первую очередь)
+
 1. **Enum для Error Reasons** (§1) - восстановление compile-time safety
 2. **Устранение дублирования Helper Methods** (§4) - снижение технического долга
 
 ### ⚡ Важно (реализовать во вторую очередь)
+
 3. **Типизация Error Context** (§2) - улучшение type safety
-4. **Type Guards** (§3) - улучшение DX (Developer Experience)
+2. **Type Guards** (§3) - улучшение DX (Developer Experience)
 
 ### 💡 Опционально (future improvements)
+
 5. **Result Helpers** (§5.1)
-6. **Builder Pattern** (§5.2)
-7. **Structured Logging** (§5.3)
+2. **Builder Pattern** (§5.2)
+3. **Structured Logging** (§5.3)
 
 ---
 
@@ -826,21 +842,25 @@ const result = MoneyService.create(100, 'USDC', {
 После реализации улучшений мы должны достичь:
 
 ✅ **Type Safety:**
+
 - 0 string literals для error reasons (все через enum)
 - 100% типизированных error contexts
 - Exhaustive checking для всех обработчиков ошибок
 
 ✅ **Code Quality:**
+
 - Уменьшение дублирования на ~390 строк кода
 - Единая точка изменения для общей логики
 - Упрощение добавления новых value objects
 
 ✅ **Developer Experience:**
+
 - Автодополнение для всех error reasons
 - Автодополнение для полей error context
 - Меньше boilerplate при обработке ошибок
 
 ✅ **Maintainability:**
+
 - Изменение логики в одном месте вместо трёх
 - Проще добавлять новые value objects
 - Меньше рисков рассинхронизации
@@ -852,10 +872,12 @@ const result = MoneyService.create(100, 'USDC', {
 ### ✅ Завершено
 
 #### 1. Enum для Error Reasons (§1)
+
 **Дата:** 2026-02-02
 **Коммит:** `8d0fa94` - feat(errors): add typed error reason enums for type safety
 
 **Реализовано:**
+
 - ✅ `MoneyErrorReason` enum (8 значений)
 - ✅ `PriceErrorReason` enum (10 значений)
 - ✅ `QuantityErrorReason` enum (8 значений)
@@ -867,19 +889,23 @@ const result = MoneyService.create(100, 'USDC', {
 - ✅ Добавлены экспорты в index.ts
 
 **Результаты:**
+
 - Все 476 тестов проходят
 - Полная обратная совместимость (enum компилируется в строки)
 - Compile-time type safety восстановлен
 - Автодополнение работает в IDE
 
 #### 2. Устранение дублирования Helper Methods (§4)
+
 **Дата:** 2026-02-02
 **Коммиты:**
+
 - `25e866c` - refactor(money): eliminate helper method duplication using errorUtils
 - Текущий - refactor(price): eliminate helper method duplication using errorUtils
 - Текущий - refactor(quantity): eliminate helper method duplication using errorUtils
 
 **Реализовано:**
+
 - ✅ Создан `src/shared/facade/errorUtils.ts` (410 строк)
   - `toCause()` - извлечение structured cause
   - `toDecimal()` - безопасный парсинг с generic типами
@@ -893,6 +919,7 @@ const result = MoneyService.create(100, 'USDC', {
 - ✅ QuantityService рефакторинг: 677 → 380 строк (-44%, -297 строк)
 
 **Результаты:**
+
 - Удалено ~918 строк дублированного кода
 - Создано 410 строк переиспользуемых утилит
 - **Чистое сокращение: -508 строк кода**
@@ -903,20 +930,24 @@ const result = MoneyService.create(100, 'USDC', {
 ### 📋 Следующие шаги (опционально)
 
 #### 3. Типизация Error Context (§2)
+
 **Приоритет:** Средний
 **Статус:** Не начато
 
 Discriminated unions для типизированных контекстов ошибок с автоматическим type narrowing.
 
 #### 4. Type Guards (§3)
+
 **Приоритет:** Средний
 **Статус:** Не начато
 
 Функции type guard для упрощения проверки типов ошибок.
 
 #### 5. Future Improvements (§5)
+
 **Приоритет:** Низкий
 **Статус:** Не начато
+
 - Result Helpers (§5.1)
 - Builder Pattern (§5.2)
 - Structured Logging (§5.3)

@@ -15,6 +15,7 @@
 ## Обзор
 
 **MoneyService** — Facade слой, который:
+
 - Оборачивает все операции в `Result<T, E>`
 - Ловит все исключения (из Core и `@polymarket/math`)
 - Никогда не бросает исключения
@@ -41,11 +42,13 @@ public static create(
 ```
 
 **Процесс:**
+
 1. Парсит value в Decimal (try/catch → INVALID_FORMAT)
 2. Вызывает `Money.fromDecimal()` (try/catch → reason из Core)
 3. Возвращает Result
 
 **Ошибки:**
+
 - `INVALID_FORMAT` — parse error
 - `UNSUPPORTED_CURRENCY` — валюта не поддерживается
 - `NAN` — сумма NaN
@@ -53,6 +56,7 @@ public static create(
 - `EXCEEDS_MAX_AMOUNT` — |сумма| > 1e15
 
 **Пример:**
+
 ```typescript
 const result = MoneyService.create("100.50");
 if (!result.ok) {
@@ -71,6 +75,7 @@ const money = result.value;
 Складывает две денежные суммы.
 
 **Сигнатура:**
+
 ```typescript
 public static add(
   a: Money,
@@ -79,6 +84,7 @@ public static add(
 ```
 
 **Проверки:**
+
 1. Валюты совпадают → иначе InvalidMoneyError (reason: 'CURRENCY_MISMATCH')
 2. Арифметика через @polymarket/math (try/catch)
 3. Создание через Money.fromDecimal (try/catch)
@@ -102,6 +108,7 @@ if (result.ok) {
 Вычитает одну сумму из другой.
 
 **Сигнатура:**
+
 ```typescript
 public static subtract(
   a: Money,
@@ -112,6 +119,7 @@ public static subtract(
 **Процесс:** аналогичен `add()`
 
 **Пример:**
+
 ```typescript
 const m1 = Money.of(100, 'USDC');
 const m2 = Money.of(30, 'USDC');
@@ -129,6 +137,7 @@ if (result.ok) {
 Умножает сумму на множитель.
 
 **Сигнатура:**
+
 ```typescript
 public static multiply(
   m: Money,
@@ -137,12 +146,14 @@ public static multiply(
 ```
 
 **Валидация factor:**
+
 - Парсинг в Decimal (reason: 'INVALID_FORMAT')
 - Не NaN (reason: 'NAN')
 - Finite (reason: 'NON_FINITE')
 - Валидация через ValidateFactorForMoneyMultiplication (Rules слой)
 
 **Пример:**
+
 ```typescript
 const money = Money.of(100, 'USDC');
 
@@ -159,6 +170,7 @@ if (result.ok) {
 Делит сумму на делитель.
 
 **Сигнатура:**
+
 ```typescript
 public static divide(
   m: Money,
@@ -167,6 +179,7 @@ public static divide(
 ```
 
 **Валидация divisor:**
+
 - Парсинг в Decimal (reason: 'INVALID_FORMAT')
 - Не NaN (reason: 'NAN')
 - Finite (reason: 'NON_FINITE')
@@ -174,6 +187,7 @@ public static divide(
 - Валидация через ValidateDivisorForMoneyDivision (Rules слой)
 
 **Пример:**
+
 ```typescript
 const money = Money.of(100, 'USDC');
 
@@ -260,6 +274,7 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
 **InvalidMoneyError** — единый тип ошибки для всех операций:
 
 **Создание (create):**
+
 ```typescript
 {
   message: "Failed to create Money",
@@ -273,6 +288,7 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
 ```
 
 **Несовпадение валют (add/subtract):**
+
 ```typescript
 {
   message: "Cannot add Money with different currencies",
@@ -286,6 +302,7 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
 ```
 
 **Overflow в арифметике:**
+
 ```typescript
 {
   message: "Money add result is invalid: EXCEEDS_MAX_AMOUNT",
@@ -300,6 +317,7 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
 ```
 
 **Деление на ноль:**
+
 ```typescript
 {
   message: "Cannot divide by zero",
@@ -314,6 +332,7 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
 ### Error Context
 
 Каждая InvalidMoneyError содержит:
+
 - `op` — операция ('create', 'add', 'divide', ...)
 - `opChain` — цепочка операций (для вложенных вызовов)
 - `reason` — причина ошибки (см. список выше)
@@ -322,7 +341,7 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
 - Входные данные (amount, divisor, factor, a, b)
 - `currency` — валюта (если применимо)
 
-### Все возможные reason значения:
+### Все возможные reason значения
 
 - `INVALID_FORMAT` — ошибка парсинга значения
 - `NAN` — значение NaN
@@ -410,6 +429,7 @@ if (fee) {
 ## Заключение
 
 MoneyService:
+
 - ✅ Never Throw — все ошибки через Result
 - ✅ Type-safe — compile-time проверка ошибок
 - ✅ Context-rich errors — подробная диагностика

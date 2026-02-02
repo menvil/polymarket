@@ -244,6 +244,7 @@ if (!invalid.ok) {
 **Обработка math exceptions:**
 
 `divide()` ловит ВСЕ исключения и возвращает Result (контракт "Never Throw"):
+
 - `DivisionByZeroError` → `Result.Err` с `context.cause`
 - `InvalidOperandError` → `Result.Err` с `context.cause`
 - `ArithmeticOverflowError` → `Result.Err` с `context.cause`
@@ -484,6 +485,7 @@ expect(() => QuantityService.multiply(qty, "invalid")).not.toThrow();
 ### Контракт ошибок
 
 **Parse fail гарантии:**
+
 - Всегда содержит `context.op`
 - Всегда содержит `context.raw` (сырой ввод в toDecimal)
 - Всегда содержит операционный параметр (`factor`, `divisor`, `stepSize`)
@@ -500,6 +502,7 @@ if (!result.ok) {
 ```
 
 **Rule fail гарантии:**
+
 - Всегда содержит `context.op`
 - Всегда содержит операционные поля (`quantity`, `quantity1`, `quantity2`, `factor`, `divisor`, `stepSize`)
 - Может содержать `context.reason` для инвариантов Core
@@ -516,6 +519,7 @@ if (!result.ok) {
 ```
 
 **Math exception гарантии:**
+
 - Всегда содержит `context.op`
 - Всегда содержит `context.cause.name`
 - Всегда содержит `context.cause.message`

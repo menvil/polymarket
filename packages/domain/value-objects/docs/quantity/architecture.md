@@ -139,16 +139,19 @@ try {
 ### Layer 1: Core
 
 **Ответственность:**
+
 - Представление количества как value object
 - Гарантия инвариантов (finite, non-negative)
 - Базовые операции (equals, isZero, isPositive)
 
 **НЕ делает:**
+
 - Не знает про бизнес-правила (minSize, stepSize)
 - Не знает про Result<T, E>
 - Не делает арифметику (это делает Facade + Math)
 
 **Пример:**
+
 ```typescript
 // ✅ Делает
 const qty = Quantity.of(10);
@@ -164,15 +167,18 @@ qty.equals(other);
 ### Layer 2: Rules
 
 **Ответственность:**
+
 - Атомарные проверки (одно правило = одна проверка)
 - Принимают Decimal, возвращают Result<void, Error>
 - Не знают про Quantity (работают с Decimal)
 
 **НЕ делает:**
+
 - Не создают Quantity
 - Не знают про операции (add, multiply)
 
 **Пример:**
+
 ```typescript
 // ✅ Делает
 ValidateMinSize.check(new Decimal(10), new Decimal(1));  // Ok
@@ -187,6 +193,7 @@ ValidateMinSize.check(new Decimal(0.5), new Decimal(1)); // Err
 ### Layer 3: Facade
 
 **Ответственность:**
+
 - Единая точка входа для всех операций
 - Оркестрация Core + Math + Rules
 - Обёртка исключений в Result<T, E>
@@ -194,6 +201,7 @@ ValidateMinSize.check(new Decimal(0.5), new Decimal(1)); // Err
 - Контракт "Never Throw" — никогда не бросает исключения
 
 **НЕ делает:**
+
 - Не реализует бизнес-логику (делегирует Rules)
 - Не делает low-level checks (делегирует Core)
 
@@ -237,6 +245,7 @@ Facade использует централизованные helper methods дл
    ```
 
 **Пример оркестрации:**
+
 ```typescript
 // ✅ Делает: оркестрация с централизованной обработкой ошибок
 QuantityService.divide(qty, divisor)
@@ -262,11 +271,13 @@ if (!result.ok) {
 ### Layer 4: Adapters
 
 **Ответственность:**
+
 - Сериализация (toJSON/fromJSON)
 - Форматирование (toString, toDisplayString)
 - Адаптация к внешним системам
 
 **НЕ делает:**
+
 - Не содержит бизнес-логику
 - Не валидирует (использует Facade)
 
@@ -336,10 +347,12 @@ Result<Quantity, InvalidQuantityError>
 **Решение:** Core кидает исключения, Facade возвращает Result.
 
 **Альтернативы:**
+
 - ❌ Result везде — Core становится зависим от @polymarket/result
 - ❌ Exceptions везде — пользователь должен писать try/catch
 
 **Почему выбрали:**
+
 - ✅ Core остаётся чистым domain model
 - ✅ Facade обеспечивает type-safe контракт
 - ✅ Разделение concerns
@@ -351,9 +364,11 @@ Result<Quantity, InvalidQuantityError>
 **Решение:** Rules работают только с Decimal.
 
 **Альтернативы:**
+
 - ❌ Rules принимают Quantity — циклическая зависимость
 
 **Почему выбрали:**
+
 - ✅ Нет циклических зависимостей
 - ✅ Rules переиспользуемы
 - ✅ Тестировать проще
@@ -365,9 +380,11 @@ Result<Quantity, InvalidQuantityError>
 **Решение:** Facade всегда возвращает Result<T, E>.
 
 **Альтернативы:**
+
 - ❌ Facade кидает — пользователь забывает try/catch
 
 **Почему выбрали:**
+
 - ✅ Type-safe на compile time
 - ✅ Явное управление ошибками
 - ✅ Невозможно забыть обработать
@@ -379,9 +396,11 @@ Result<Quantity, InvalidQuantityError>
 **Решение:** Используем простые if/else вместо монадических цепочек.
 
 **Альтернативы:**
+
 - ❌ Монадические цепочки — сложнее читать для junior devs
 
 **Почему выбрали:**
+
 - ✅ Код понятен всем уровням разработчиков
 - ✅ Легче отлаживать
 - ✅ Производительность одинаковая
@@ -400,9 +419,11 @@ const quantity = value instanceof Decimal
 ```
 
 **Альтернативы:**
+
 - ❌ Всегда парсить — лишние операции
 
 **Почему выбрали:**
+
 - ✅ Производительность
 - ✅ Избегаем повторного парсинга
 
@@ -413,9 +434,11 @@ const quantity = value instanceof Decimal
 **Решение:** Два отдельных класса вместо флага `lossy`.
 
 **Альтернативы:**
+
 - ❌ `QuantitySerializer.toJSON(qty, { lossy: true })`
 
 **Почему выбрали:**
+
 - ✅ Explicit intent (явное намерение)
 - ✅ Разные типы возврата (`{ value: string }` vs `{ value: number }`)
 - ✅ Компилятор видит разницу
@@ -428,6 +451,7 @@ const quantity = value instanceof Decimal
 
 **Проблема:**
 Без helper methods каждый catch block дублировал 20-40 строк кода:
+
 ```typescript
 // ❌ Было: дублирование в каждом методе
 try {
@@ -456,6 +480,7 @@ try {
 ```
 
 **Решение:**
+
 ```typescript
 // ✅ Стало: централизованные helper methods
 try {
@@ -480,6 +505,7 @@ try {
 ```
 
 **Почему выбрали:**
+
 - ✅ Сократили catch blocks с 20-40 строк до 2-6 строк
 - ✅ Единственное место для логики toCause/expectedMathError/unexpectedError
 - ✅ Проще поддерживать (изменения в одном месте)
@@ -492,10 +518,12 @@ try {
 **Решение:** ВСЕ методы QuantityService ГАРАНТИРОВАННО возвращают Result, никогда не бросают.
 
 **Альтернативы:**
+
 - ❌ Частичное покрытие try/catch — можно забыть обработать исключение
 - ❌ Пробрасывать unexpected errors — пользователь должен писать try/catch
 
 **Почему выбрали:**
+
 - ✅ Compile-time гарантия: TypeScript знает что метод возвращает Result
 - ✅ Runtime гарантия: catch blocks ловят ВСЁ (даже non-Error throws)
 - ✅ Диагностика: unexpected errors включают полный stack trace
@@ -503,6 +531,7 @@ try {
 
 **Comprehensive Contract Tests:**
 Все гарантии задокументированы тестами:
+
 ```typescript
 describe('Facade Error Contract - Comprehensive', () => {
   it('Parse fail → context.op и context.raw обязательны', () => {
@@ -544,12 +573,14 @@ describe('Facade Error Contract - Comprehensive', () => {
 
 **Проблема:**
 `instanceof Decimal` ломается при наличии двух копий decimal.js в node_modules:
+
 ```typescript
 // ❌ Было: ненадёжно
 const decimal = factor instanceof Decimal ? factor : new Decimal(factor);
 ```
 
 **Решение:**
+
 ```typescript
 // ✅ Стало: надёжно
 private static toDecimal(input: number | string | Decimal): Result<Decimal, InvalidQuantityError> {
@@ -570,6 +601,7 @@ private static toDecimal(input: number | string | Decimal): Result<Decimal, Inva
 ```
 
 **Почему выбрали:**
+
 - ✅ Надёжнее: Decimal.isDecimal() не зависит от множественных копий
 - ✅ Диагностичнее: raw и cause для всех ошибок парсинга
 - ✅ Консистентнее: единый путь парсинга для всех операций
@@ -583,6 +615,7 @@ private static toDecimal(input: number | string | Decimal): Result<Decimal, Inva
 Пример: добавить `min(qty1, qty2)`
 
 1. **Facade:** Добавить метод
+
 ```typescript
 public static min(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError> {
   const smaller = qty1.value().lessThan(qty2.value()) ? qty1 : qty2;
@@ -590,7 +623,7 @@ public static min(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuant
 }
 ```
 
-2. **Готово!** Не нужно менять Core/Rules
+1. **Готово!** Не нужно менять Core/Rules
 
 ---
 
@@ -599,6 +632,7 @@ public static min(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuant
 Пример: добавить `ValidateMaxSize`
 
 1. **Rules:** Создать класс
+
 ```typescript
 export class ValidateMaxSize {
   public static check(quantity: Decimal, maxSize: Decimal): Result<void, InvalidQuantityError> {
@@ -610,7 +644,8 @@ export class ValidateMaxSize {
 }
 ```
 
-2. **Facade:** Использовать в методе сервиса
+1. **Facade:** Использовать в методе сервиса
+
 ```typescript
 // В QuantityService
 public static createWithValidation(value: number | string | Decimal, minSize: Decimal, maxSize: Decimal) {
@@ -630,7 +665,7 @@ public static createWithValidation(value: number | string | Decimal, minSize: De
 }
 ```
 
-3. **Готово!** Core не меняется
+1. **Готово!** Core не меняется
 
 ---
 
@@ -639,6 +674,7 @@ public static createWithValidation(value: number | string | Decimal, minSize: De
 ### 1. Всегда используйте Facade
 
 ❌ **Плохо:**
+
 ```typescript
 try {
   const qty = Quantity.of(userInput);
@@ -648,6 +684,7 @@ try {
 ```
 
 ✅ **Хорошо:**
+
 ```typescript
 const result = QuantityService.create(userInput);
 if (!result.ok) {
@@ -660,12 +697,14 @@ if (!result.ok) {
 ### 2. Rules для переиспользуемой логики
 
 ❌ **Плохо:** Дублировать проверки
+
 ```typescript
 // В нескольких местах
 if (divisor.lessThanOrEqualTo(0)) { ... }
 ```
 
 ✅ **Хорошо:** Создать Rule
+
 ```typescript
 ValidateDivisorForQuantityDivision.check(divisor)
 ```
@@ -675,12 +714,14 @@ ValidateDivisorForQuantityDivision.check(divisor)
 ### 3. Композиция правил в Facade
 
 ❌ **Плохо:** Смешивать контексты в одном методе
+
 ```typescript
 // Одна функция для всех контекстов
 validateQuantity(qty, minSize?, maxSize?, allowZero?)
 ```
 
 ✅ **Хорошо:** Специализированные методы в Facade
+
 ```typescript
 // QuantityService предоставляет контекст-специфичные методы
 QuantityService.create(value)  // Базовая валидация (Core инварианты)

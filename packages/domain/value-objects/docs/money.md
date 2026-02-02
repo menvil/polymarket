@@ -36,6 +36,7 @@ MAX: 1e15 (= 1 квадриллион центов = 10 триллионов д�
 ```
 
 Этого достаточно для:
+
 - Капитализация всех криптовалют: ~2-3 трлн $
 - ВВП США: ~25 трлн $
 - Типичные объёмы Polymarket: миллионы-миллиарды $
@@ -47,10 +48,12 @@ MAX: 1e15 (= 1 квадриллион центов = 10 триллионов д�
 Универсальный метод для создания Money из различных типов значений.
 
 **Параметры:**
+
 - `amount` — сумма (number, string или Decimal)
 - `currency` — валюта (опционально, по умолчанию 'USDC')
 
 **Поддерживаемые типы amount:**
+
 - `number` — обычное число (100, -50, 100.50)
 - `string` — строковое представление числа ("100.123456789012345")
 - `Decimal` — объект Decimal.js для высокой точности
@@ -101,12 +104,14 @@ loss.match({
 ```
 
 **Отклоняет:**
+
 - `NaN`
 - `Infinity` / `-Infinity`
 - Значения вне диапазона [-1e15, 1e15]
 - Невалидные строки
 
 **Алгоритм валидации:**
+
 1. Преобразует входное значение в `Decimal`
 2. Проверяет `Decimal.isNaN()`
 3. Проверяет `Decimal.isFinite()`
@@ -114,11 +119,13 @@ loss.match({
 5. Возвращает `Ok(Money)` или `Err(InvalidMoneyError)`
 
 **Когда использовать строки:**
+
 - Для значений с высокой точностью (>15 знаков)
 - При парсинге из JSON/API
 - Для избежания проблем floating point
 
 **Когда использовать Decimal:**
+
 - Когда уже есть Decimal объект из других вычислений
 - Для сохранения максимальной точности в цепочке операций
 
@@ -157,10 +164,12 @@ sum.match({
 ```
 
 **Валидация:**
+
 - Проверяет совпадение валют
 - Возвращает `CurrencyMismatchError` если валюты разные
 
 **Ошибки:**
+
 - `CurrencyMismatchError` — несоответствие валют
 
 **Пример ошибки валюты:**
@@ -195,6 +204,7 @@ diff.match({
 ```
 
 **Разрешает отрицательный результат:**
+
 ```typescript
 const cost = unwrap(Money.fromValue(100));
 const revenue = unwrap(Money.fromValue(80));
@@ -233,9 +243,11 @@ result.match({
 ```
 
 **Ошибки:**
+
 - `ArithmeticOverflowError` — результат > 1e15
 
 **Пример overflow:**
+
 ```typescript
 const huge = unwrap(Money.fromValue(1e15));
 const result = huge.multiply(1000);
@@ -264,9 +276,11 @@ half.match({
 ```
 
 **Ошибки:**
+
 - `DivisionByZeroError` — деление на 0
 
 **Пример ошибки деления:**
+
 ```typescript
 const money = unwrap(Money.fromValue(100));
 const result = money.divide(0);
@@ -299,6 +313,7 @@ console.log(m1.equals(m3)); // false
 ```
 
 **Точность Decimal.js:**
+
 ```typescript
 const m1 = unwrap(Money.fromValue('100.1'));
 const m2 = unwrap(Money.fromValue('100.10'));
@@ -559,6 +574,7 @@ result.match({
 ```
 
 **Причины:**
+
 - `NaN`
 - `Infinity` / `-Infinity`
 - Неподдерживаемая валюта
@@ -719,11 +735,13 @@ const result = usdc.add(btcInUsdc);
 ### Почему Decimal.js?
 
 **Проблема:**
+
 ```typescript
 0.1 + 0.2 === 0.3 // false! (0.30000000000000004)
 ```
 
 **Решение:**
+
 ```typescript
 const m1 = unwrap(Money.fromValue('0.1'));
 const m2 = unwrap(Money.fromValue('0.2'));
@@ -734,6 +752,7 @@ sum.toDecimal().toString() === '0.3' // true!
 ### Почему Result<T, E>?
 
 **Проблема с exceptions:**
+
 ```typescript
 try {
   const money = Money.fromValue(value); // Может выбросить
@@ -743,6 +762,7 @@ try {
 ```
 
 **Решение с Result:**
+
 ```typescript
 const result = Money.fromValue(value);
 result.match({
@@ -772,6 +792,7 @@ npm test -- Money.test.ts
 ```
 
 **Категории тестов:**
+
 - ✅ Фабричные методы (17 тестов)
 - ✅ Математические операции (22 теста)
 - ✅ Сравнение (18 тестов)

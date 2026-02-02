@@ -7,6 +7,7 @@
 Core Layer содержит базовую реализацию `Quantity` — иммутабельного value object для представления количества.
 
 **Ключевые принципы:**
+
 - Иммутабельность — все операции возвращают новые экземпляры
 - Инварианты — значение всегда finite и non-negative
 - Типизированные исключения — `QuantityInvariantViolation`
@@ -23,6 +24,7 @@ Core Layer содержит базовую реализацию `Quantity` — �
 2. **Non-negative** — значение должно быть >= 0
 
 При нарушении инварианта кидается `QuantityInvariantViolation` с `reason`:
+
 - `'NON_FINITE'` — для NaN/Infinity
 - `'NEGATIVE'` — для отрицательных значений
 
@@ -289,6 +291,7 @@ console.log(qty2.value() === decimal); // true
 ```
 
 **Когда использовать `fromDecimal()` вместо `of()`:**
+
 - Когда важна семантика (явно показываем что ожидаем Decimal)
 - В type-narrowed контексте (когда TypeScript уже знает что это Decimal)
 

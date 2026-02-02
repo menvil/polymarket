@@ -460,6 +460,7 @@ function safeCreate(value: string): Money | null {
 ## Заключение
 
 Money Value Object покрывает все типичные сценарии:
+
 - ✅ Управление балансами
 - ✅ Вычисление комиссий
 - ✅ P&L и ROI
