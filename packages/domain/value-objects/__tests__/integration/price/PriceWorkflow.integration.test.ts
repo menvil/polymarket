@@ -29,7 +29,7 @@ describe('Price Integration Tests', () => {
         expect(roundResult.ok).toBe(true);
 
         if (roundResult.ok) {
-          const alignResult = ValidateAligned.check(roundResult.value, tickSize);
+          const alignResult = ValidateAligned.check(roundResult.value, new Decimal(tickSize));
           expect(alignResult.ok).toBe(true);
         }
       }
@@ -44,7 +44,7 @@ describe('Price Integration Tests', () => {
         expect(roundResult.ok).toBe(true);
 
         if (roundResult.ok) {
-          const alignResult = ValidateAligned.check(roundResult.value, tickSize);
+          const alignResult = ValidateAligned.check(roundResult.value, new Decimal(tickSize));
           expect(alignResult.ok).toBe(true);
         }
       }
@@ -156,13 +156,15 @@ describe('Price Integration Tests', () => {
   });
 
   describe('multiply/divide семантика', () => {
-    it('multiply с InvalidOperandError для невалидного factor', () => {
+    it('multiply с InvalidPriceError для невалидного factor', () => {
       const price = Price.of(0.5);
       const result = PriceService.multiply(price, 'invalid');
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.operation).toBe('multiply');
-        expect(result.error.context?.operand).toBe('factor');
+        expect(result.error.context?.op).toBe('multiply');
+        expect(result.error.context?.raw).toBeDefined(); // toDecimal добавляет raw
+        expect(result.error.context?.factor).toBe('invalid'); // контракт требует factor
+        expect(result.error.context?.price).toBeDefined();
       }
     });
 
@@ -180,7 +182,10 @@ describe('Price Integration Tests', () => {
       const result = PriceService.divide(price, 'invalid');
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context).toHaveProperty('divisor');
+        expect(result.error.context?.op).toBe('divide');
+        expect(result.error.context?.raw).toBeDefined(); // toDecimal добавляет raw
+        expect(result.error.context?.divisor).toBe('invalid'); // контракт требует divisor
+        expect(result.error.context?.price).toBeDefined();
       }
     });
   });

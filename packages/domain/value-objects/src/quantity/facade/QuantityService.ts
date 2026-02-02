@@ -1,13 +1,14 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { Quantity, QuantityInvariantViolation } from '../core/Quantity.js';
-import { InvalidQuantityError, DivisionByZeroError, ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidQuantityError } from '@polymarket/errors';
 import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
 import { ValidateFactorForQuantityMultiplication } from '../rules/ValidateFactorForQuantityMultiplication.js';
 import { ValidateDivisorForQuantityDivision } from '../rules/ValidateDivisorForQuantityDivision.js';
 import { ValidateStepSizeForQuantity } from '../rules/ValidateStepSizeForQuantity.js';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTick } from '@polymarket/math';
-import { withOperationContext } from './errorUtils.js';
 import Decimal from 'decimal.js';
+import { QuantityErrorReason } from '../errors/QuantityErrorReason';
+import { toDecimal, rewrap, wrapOp, unexpectedError } from '../../shared/facade/errorUtils';
 
 /**
  * Фасад для работы с Quantity
@@ -16,28 +17,39 @@ import Decimal from 'decimal.js';
  * Единая точка входа для всех операций с количествами.
  * Оркестрирует Core + Math + Rules.
  *
+ * **Контракт "Never Throw":**
+ * ВСЕ методы QuantityService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+ * Любые исключения из @polymarket/math, Core инвариантов или Rules ловятся и преобразуются в Result.Err.
+ *
  * **Facade Error Contract:**
  * Любой Err из Facade содержит:
- * - context.op - название операции
+ * - context.op - название операции (верхний уровень)
+ * - context.opChain - цепочка операций (внутренние op не теряются)
  * - context.quantity - входной quantity (если применимо)
  * - context.divisor|factor|stepSize - входные параметры (если применимо)
- * - context.cause - для math-исключений: { name, message }
+ * - context.raw - сырой ввод (для ошибок парсинга): { field, value }
+ * - context.cause - для math-исключений: { name, message, stack? } (root-cause, не перетирается)
+ * - context.reason - для инвариантов Core (root, не перетирается)
  *
  * **Правило возвращаемых типов:**
  * ВСЕ операции возвращают Result<T, InvalidQuantityError>
- * ОЖИДАЕМЫЕ ошибки обрабатываются через Result
+ * ОЖИДАЕМЫЕ и НЕОЖИДАННЫЕ ошибки обрабатываются через Result
  */
 export class QuantityService {
   /**
-   * Создаёт Quantity с валидацией инвариантов
+   * Извлекает структурированный cause из любой ошибки
+   *
    *
    * @remarks
+   * ПУБЛИЧНЫЙ способ создания Quantity.
+   * Возвращает Result вместо исключений.
+   *
    * Core инварианты проверяются автоматически через Quantity.fromDecimal():
    * - finite (не NaN, не Infinity)
    * - non-negative (>= 0)
    *
-   * Оптимизация: если value уже Decimal, использует fromDecimal() без повторного парсинга
-   * Гарантирует Result - никогда не бросает исключения
+   * Использует toDecimal() для надёжного парсинга без instanceof.
+   * Гарантирует Result - никогда не бросает исключения.
    *
    * @param value - Значение для создания (number, string, или Decimal)
    * @returns Result<Quantity, InvalidQuantityError>
@@ -52,48 +64,35 @@ export class QuantityService {
    * ```
    */
   public static create(value: number | string | Decimal): Result<Quantity, InvalidQuantityError> {
+    // Безопасный парсинг value через toDecimal
+    const decimalResult = toDecimal('value', value, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
+    if (!decimalResult.ok) {
+      // raw уже внутри err.context.raw от toDecimal
+      return Err(rewrap('create', {}, decimalResult.error, InvalidQuantityError));
+    }
+
     try {
-      // Оптимизация: избегаем повторного парсинга Decimal
-      const quantity = value instanceof Decimal
-        ? Quantity.fromDecimal(value)
-        : Quantity.of(value);
+      // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
+      const quantity = Quantity.fromDecimal(decimalResult.value);
       return Ok(quantity);
     } catch (error) {
+      // QuantityInvariantViolation - доменные ограничения Core
       if (error instanceof QuantityInvariantViolation) {
         return Err(
           new InvalidQuantityError(error.message, {
             context: {
               op: 'create',
-              value: String(value),
+              raw: { field: 'value', value: String(value) },
+              value: decimalResult.value.toString(),
               reason: error.reason
             }
           })
         );
       }
-      // Любая другая ошибка (парсинг Decimal, etc.)
-      if (error instanceof Error) {
-        return Err(
-          new InvalidQuantityError(error.message, {
-            context: {
-              op: 'create',
-              value: String(value)
-            }
-          })
-        );
-      }
-      // Unknown error (не Error) - оборачиваем в InvalidQuantityError
-      // Сохраняем Result-only контракт: никогда не бросаем исключения
+
+      // Неожиданная ошибка - unexpectedError создаёт базовую ошибку с cause, rewrap добавляет op
       return Err(
-        new InvalidQuantityError(
-          `Unexpected non-Error thrown during quantity creation: ${String(error)}`,
-          {
-            context: {
-              op: 'create',
-              value: String(value),
-              unexpectedError: String(error)
-            }
-          }
-        )
+        rewrap('create', { value: String(value) }, unexpectedError('create', {}, error, 'quantity', InvalidQuantityError), InvalidQuantityError)
       );
     }
   }
@@ -104,6 +103,13 @@ export class QuantityService {
    * @remarks
    * Возвращает Result потому что результат может быть non-finite (overflow → Infinity).
    * Оркестрирует: сложение через math → создание Quantity через create() (проверит инварианты)
+   *
+   * Обработка ошибок:
+   * 1. Сложение через addDecimal() (может бросить InvalidOperandError, ArithmeticOverflowError)
+   * 2. Создание Quantity через create()
+   *
+   * Все исключения ловятся и мапятся в Result.Err.
+   * Метод никогда не бросает исключения.
    *
    * @param qty1 - Первое количество
    * @param qty2 - Второе количество
@@ -118,20 +124,11 @@ export class QuantityService {
    * ```
    */
   public static add(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError> {
-    const sum = addDecimal(qty1.value(), qty2.value());
-
-    // create() проверит инварианты (включая finite) и вернёт Result
-    const createResult = this.create(sum);
-    if (!createResult.ok) {
-      return Err(
-        withOperationContext(createResult.error, 'add', {
-          quantity1: qty1.value().toString(),
-          quantity2: qty2.value().toString()
-        })
-      );
-    }
-
-    return createResult;
+    const ctx = { quantity1: qty1.value().toString(), quantity2: qty2.value().toString() };
+    return wrapOp('add', ctx, () => {
+      const sum = addDecimal(qty1.value(), qty2.value());
+      return this.create(sum);
+    }, 'quantity', InvalidQuantityError);
   }
 
   /**
@@ -139,6 +136,14 @@ export class QuantityService {
    *
    * @remarks
    * Оркестрирует: вычитание → валидация non-negative → создание Quantity
+   *
+   * Обработка ошибок:
+   * 1. Вычитание через subtractDecimal() (может бросить InvalidOperandError, ArithmeticOverflowError)
+   * 2. Валидация через ValidateResultNonNegative
+   * 3. Создание Quantity через create()
+   *
+   * Все исключения ловятся и мапятся в Result.Err.
+   * Метод никогда не бросает исключения.
    *
    * @param qty1 - Уменьшаемое
    * @param qty2 - Вычитаемое
@@ -156,30 +161,18 @@ export class QuantityService {
     qty1: Quantity,
     qty2: Quantity
   ): Result<Quantity, InvalidQuantityError> {
-    const diff = subtractDecimal(qty1.value(), qty2.value());
+    const ctx = { quantity1: qty1.value().toString(), quantity2: qty2.value().toString() };
+    return wrapOp('subtract', ctx, () => {
+      const diff = subtractDecimal(qty1.value(), qty2.value());
 
-    // Проверяем что результат неотрицательный
-    const validateResult = ValidateResultNonNegative.check(diff);
-    if (!validateResult.ok) {
-      return Err(
-        withOperationContext(validateResult.error, 'subtract', {
-          quantity1: qty1.value().toString(),
-          quantity2: qty2.value().toString()
-        })
-      );
-    }
+      const validateResult = ValidateResultNonNegative.check(diff);
+      if (!validateResult.ok) {
+        // wrapOp автоматически сделает rewrap для любого Err результата
+        return Err(validateResult.error);
+      }
 
-    const createResult = this.create(diff);
-    if (!createResult.ok) {
-      return Err(
-        withOperationContext(createResult.error, 'subtract', {
-          quantity1: qty1.value().toString(),
-          quantity2: qty2.value().toString()
-        })
-      );
-    }
-
-    return createResult;
+      return this.create(diff);
+    }, 'quantity', InvalidQuantityError);
   }
 
   /**
@@ -187,10 +180,10 @@ export class QuantityService {
    *
    * @remarks
    * Оркестрирует: парсинг factor → валидация → умножение → создание Quantity
-   * Гарантирует Result - парсинг Decimal обёрнут в try/catch
+   * Гарантирует Result - парсинг Decimal обёрнут в toDecimal()
    *
    * @param quantity - Количество для умножения
-   * @param factor - Коэффициент (number или Decimal, парсится безопасно)
+   * @param factor - Коэффициент (number, string, или Decimal - парсится безопасно)
    * @returns Result<Quantity, InvalidQuantityError>
    *
    * @example
@@ -204,58 +197,49 @@ export class QuantityService {
    */
   public static multiply(
     quantity: Quantity,
-    factor: number | Decimal
+    factor: number | string | Decimal
   ): Result<Quantity, InvalidQuantityError> {
-    // Безопасный парсинг factor
-    let factorDecimal: Decimal;
-    try {
-      factorDecimal = factor instanceof Decimal ? factor : new Decimal(factor);
-    } catch (error) {
+    // Безопасный парсинг factor через toDecimal
+    const factorResult = toDecimal('factor', factor, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
+    if (!factorResult.ok) {
       return Err(
-        new InvalidQuantityError(
-          error instanceof Error ? error.message : 'Invalid factor',
-          {
-            context: {
-              op: 'multiply',
-              quantity: quantity.value().toString(),
-              factor: String(factor)
-            }
-          }
-        )
+        rewrap('multiply', {
+          quantity: quantity.value().toString(),
+          factor: String(factor)
+        }, factorResult.error, InvalidQuantityError)
       );
     }
 
-    // Валидация через rule (принимает только Decimal)
+    const factorDecimal = factorResult.value;
+
+    // Валидация через rule (проверяет isNaN, isFinite)
     const validateResult = ValidateFactorForQuantityMultiplication.check(factorDecimal);
     if (!validateResult.ok) {
       return Err(
-        withOperationContext(validateResult.error, 'multiply', {
-          quantity: quantity.value().toString()
-        })
-      );
-    }
-
-    // Умножение через math layer
-    const result = multiplyDecimal(quantity.value(), factorDecimal);
-
-    const createResult = this.create(result);
-    if (!createResult.ok) {
-      return Err(
-        withOperationContext(createResult.error, 'multiply', {
+        rewrap('multiply', {
           quantity: quantity.value().toString(),
           factor: factorDecimal.toString()
-        })
+        }, validateResult.error, InvalidQuantityError)
       );
     }
 
-    return createResult;
+    // Умножение с обработкой ожидаемых арифметических исключений
+    const ctx = {
+      quantity: quantity.value().toString(),
+      factor: factorDecimal.toString()
+    };
+
+    return wrapOp('multiply', ctx, () => {
+      const result = multiplyDecimal(quantity.value(), factorDecimal);
+      return this.create(result);
+    }, 'quantity', InvalidQuantityError);
   }
 
   /**
    * Делит quantity на делитель с проверкой
    *
    * @param quantity - Количество для деления
-   * @param divisor - Делитель (number или Decimal, парсится безопасно)
+   * @param divisor - Делитель (number, string, или Decimal - парсится безопасно)
    * @returns Result<Quantity, InvalidQuantityError>
    * @throws Никогда - все ошибки оборачиваются в Result
    *
@@ -263,15 +247,15 @@ export class QuantityService {
    * Единый контракт обработки ошибок - все ошибки оборачиваются в Result:
    * - Парсинг divisor → InvalidQuantityError
    * - Валидация divisor → InvalidQuantityError
-   * - DivisionByZeroError, ArithmeticOverflowError → InvalidQuantityError с причиной в context.cause
+   * - DivisionByZeroError, InvalidOperandError, ArithmeticOverflowError → InvalidQuantityError с причиной в context.cause
    * - Неожиданные ошибки → InvalidQuantityError с полным контекстом
    * - Результат вне диапазона → InvalidQuantityError
    *
-   * Обработка ошибок:
-   * 1. Парсинг divisor в Decimal (try/catch)
-   * 2. Валидация через ValidateDivisorForQuantityDivision
-   * 3. Деление через divideDecimal() (может бросить DivisionByZeroError, ArithmeticOverflowError)
-   * 4. Создание Quantity через create()
+   * Алгоритм:
+   * 1. Парсинг divisor в Decimal через toDecimal()
+   * 2. Валидация через ValidateDivisorForQuantityDivision (isNaN, isFinite, isZero)
+   * 3. Деление через divideDecimal() из @polymarket/math
+   * 4. Создание Quantity из результата
    *
    * Все исключения ловятся и мапятся в Result.Err.
    * Метод никогда не бросает исключения.
@@ -287,96 +271,42 @@ export class QuantityService {
    */
   public static divide(
     quantity: Quantity,
-    divisor: number | Decimal
+    divisor: number | string | Decimal
   ): Result<Quantity, InvalidQuantityError> {
-    // Безопасный парсинг divisor
-    let divisorDecimal: Decimal;
-    try {
-      divisorDecimal = divisor instanceof Decimal ? divisor : new Decimal(divisor);
-    } catch (error) {
+    // Безопасный парсинг divisor через toDecimal
+    const divisorResult = toDecimal('divisor', divisor, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
+    if (!divisorResult.ok) {
       return Err(
-        new InvalidQuantityError(
-          error instanceof Error ? error.message : 'Invalid divisor',
-          {
-            context: {
-              op: 'divide',
-              quantity: quantity.value().toString(),
-              divisor: String(divisor)
-            }
-          }
-        )
+        rewrap('divide', {
+          quantity: quantity.value().toString(),
+          divisor: String(divisor)
+        }, divisorResult.error, InvalidQuantityError)
       );
     }
 
-    // Валидация через rule (принимает только Decimal)
+    const divisorDecimal = divisorResult.value;
+
+    // Валидация через rule
     const validateResult = ValidateDivisorForQuantityDivision.check(divisorDecimal);
     if (!validateResult.ok) {
       return Err(
-        withOperationContext(validateResult.error, 'divide', {
-          quantity: quantity.value().toString()
-        })
+        rewrap('divide', {
+          quantity: quantity.value().toString(),
+          divisor: divisorDecimal.toString()
+        }, validateResult.error, InvalidQuantityError)
       );
     }
 
     // Делим с обработкой ожидаемых арифметических исключений
-    try {
+    const ctx = {
+      quantity: quantity.value().toString(),
+      divisor: divisorDecimal.toString()
+    };
+
+    return wrapOp('divide', ctx, () => {
       const result = divideDecimal(quantity.value(), divisorDecimal);
-
-      // create() может вернуть Err если результат non-finite (overflow)
-      const createResult = this.create(result);
-      if (!createResult.ok) {
-        return Err(
-          withOperationContext(createResult.error, 'divide', {
-            quantity: quantity.value().toString(),
-            divisor: divisorDecimal.toString()
-          })
-        );
-      }
-
-      return createResult;
-    } catch (error) {
-      // Мапим ТОЛЬКО ожидаемые типы ошибок из @polymarket/math
-      if (error instanceof DivisionByZeroError || error instanceof ArithmeticOverflowError) {
-        return Err(
-          new InvalidQuantityError(
-            `Division failed: ${error.message}`,
-            {
-              context: {
-                op: 'divide',
-                quantity: quantity.value().toString(),
-                divisor: divisorDecimal.toString(),
-                cause: {
-                  name: error.name,
-                  message: error.message
-                }
-              }
-            }
-          )
-        );
-      }
-
-      // Неожиданные ошибки - оборачиваем в Result
-      return Err(
-        new InvalidQuantityError(
-          `Unexpected error during quantity divide: ${error instanceof Error ? error.message : String(error)}`,
-          {
-            context: {
-              op: 'divide',
-              quantity: quantity.value().toString(),
-              divisor: divisorDecimal.toString(),
-              cause: error instanceof Error ? {
-                name: error.name,
-                message: error.message,
-                stack: error.stack
-              } : {
-                name: 'UnknownError',
-                message: String(error)
-              }
-            }
-          }
-        )
-      );
-    }
+      return this.create(result);
+    }, 'quantity', InvalidQuantityError);
   }
 
   /**
@@ -385,14 +315,23 @@ export class QuantityService {
    * @remarks
    * Оркестрирует: валидация stepSize → округление → создание Quantity
    *
+   * Обработка ошибок:
+   * 1. Парсинг stepSize через toDecimal()
+   * 2. Валидация через ValidateStepSizeForQuantity
+   * 3. Округление через roundToTick() (может бросить InvalidOperandError, ArithmeticOverflowError)
+   * 4. Создание Quantity через create()
+   *
+   * Все исключения ловятся и мапятся в Result.Err.
+   * Метод никогда не бросает исключения.
+   *
    * @param quantity - Количество для округления
-   * @param stepSize - Размер шага для округления (ТОЛЬКО Decimal)
+   * @param stepSize - Размер шага для округления (number, string, или Decimal)
    * @param roundingMode - Режим округления (по умолчанию ROUND_HALF_UP)
    * @returns Result<Quantity, InvalidQuantityError>
    *
    * @example
    * ```typescript
-   * const result = QuantityService.roundToStep(qty, new Decimal(0.01));
+   * const result = QuantityService.roundToStep(qty, 0.01);
    * if (!result.ok) {
    *   console.error(result.error.context.op); // 'roundToStep'
    * }
@@ -400,32 +339,42 @@ export class QuantityService {
    */
   public static roundToStep(
     quantity: Quantity,
-    stepSize: Decimal,
+    stepSize: number | string | Decimal,
     roundingMode: Decimal.Rounding = Decimal.ROUND_HALF_UP
   ): Result<Quantity, InvalidQuantityError> {
+    // Безопасный парсинг stepSize через toDecimal
+    const stepSizeResult = toDecimal('stepSize', stepSize, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
+    if (!stepSizeResult.ok) {
+      return Err(
+        rewrap('roundToStep', {
+          quantity: quantity.value().toString(),
+          stepSize: String(stepSize)
+        }, stepSizeResult.error, InvalidQuantityError)
+      );
+    }
+
+    const stepSizeDecimal = stepSizeResult.value;
+
     // Валидация через rule
-    const validateResult = ValidateStepSizeForQuantity.check(stepSize);
+    const validateResult = ValidateStepSizeForQuantity.check(stepSizeDecimal);
     if (!validateResult.ok) {
       return Err(
-        withOperationContext(validateResult.error, 'roundToStep', {
-          quantity: quantity.value().toString()
-        })
+        rewrap('roundToStep', {
+          quantity: quantity.value().toString(),
+          stepSize: stepSizeDecimal.toString()
+        }, validateResult.error, InvalidQuantityError)
       );
     }
 
     // Округление через math layer
-    const rounded = roundToTick(quantity.value(), stepSize, roundingMode);
+    const ctx = {
+      quantity: quantity.value().toString(),
+      stepSize: stepSizeDecimal.toString()
+    };
 
-    const createResult = this.create(rounded);
-    if (!createResult.ok) {
-      return Err(
-        withOperationContext(createResult.error, 'roundToStep', {
-          quantity: quantity.value().toString(),
-          stepSize: stepSize.toString()
-        })
-      );
-    }
-
-    return createResult;
+    return wrapOp('roundToStep', ctx, () => {
+      const rounded = roundToTick(quantity.value(), stepSizeDecimal, roundingMode);
+      return this.create(rounded);
+    }, 'quantity', InvalidQuantityError);
   }
 }

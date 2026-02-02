@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import { PriceErrorReason } from '../errors/PriceErrorReason';
 
 /**
  * Исключение при нарушении инвариантов Price
@@ -6,11 +7,34 @@ import Decimal from 'decimal.js';
  * @remarks
  * Бросается только внутри Core при нарушении инвариантов существования.
  * Facade обязан ловить и оборачивать в Result<T, E>.
+ *
+ * Содержит reason из enum PriceErrorReason для типизированной обработки ошибок.
+ *
+ * Возможные причины:
+ * - PriceErrorReason.NAN: значение является NaN
+ * - PriceErrorReason.NON_FINITE: значение не finite (Infinity, -Infinity)
+ * - PriceErrorReason.OUT_OF_RANGE_LOW: значение < MIN_PRICE
+ * - PriceErrorReason.OUT_OF_RANGE_HIGH: значение > MAX_PRICE
  */
 export class PriceInvariantViolation extends Error {
-  constructor(message: string) {
+  public readonly reason:
+    | PriceErrorReason.NAN
+    | PriceErrorReason.NON_FINITE
+    | PriceErrorReason.OUT_OF_RANGE_LOW
+    | PriceErrorReason.OUT_OF_RANGE_HIGH;
+
+  constructor(
+    message: string,
+    reason:
+      | PriceErrorReason.NAN
+      | PriceErrorReason.NON_FINITE
+      | PriceErrorReason.OUT_OF_RANGE_LOW
+      | PriceErrorReason.OUT_OF_RANGE_HIGH
+  ) {
     super(`Price invariant violation: ${message}`);
+    Object.setPrototypeOf(this, PriceInvariantViolation.prototype);
     this.name = 'PriceInvariantViolation';
+    this.reason = reason;
   }
 }
 
@@ -40,24 +64,26 @@ export class Price {
   private constructor(private readonly v: Decimal) {
     // Инвариант 1: Not NaN
     if (v.isNaN()) {
-      throw new PriceInvariantViolation('Price cannot be NaN');
+      throw new PriceInvariantViolation('Price cannot be NaN', PriceErrorReason.NAN);
     }
 
     // Инвариант 2: Must be finite
     if (!v.isFinite()) {
-      throw new PriceInvariantViolation('Price must be finite');
+      throw new PriceInvariantViolation('Price must be finite', PriceErrorReason.NON_FINITE);
     }
 
     // Инвариант 3: Must be within valid range [MIN, MAX]
     if (v.lessThan(Price.MIN_PRICE)) {
       throw new PriceInvariantViolation(
-        `Price ${v} is below minimum ${Price.MIN_PRICE}`
+        `Price ${v} is below minimum ${Price.MIN_PRICE}`,
+        PriceErrorReason.OUT_OF_RANGE_LOW
       );
     }
 
     if (v.greaterThan(Price.MAX_PRICE)) {
       throw new PriceInvariantViolation(
-        `Price ${v} exceeds maximum ${Price.MAX_PRICE}`
+        `Price ${v} exceeds maximum ${Price.MAX_PRICE}`,
+        PriceErrorReason.OUT_OF_RANGE_HIGH
       );
     }
   }

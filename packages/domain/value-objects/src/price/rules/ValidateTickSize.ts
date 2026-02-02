@@ -8,7 +8,6 @@ import Decimal from 'decimal.js';
  *
  * @remarks
  * Проверяет базовые свойства tickSize:
- * - Парсится в Decimal
  * - Не NaN
  * - Положительный
  * - Конечный
@@ -19,12 +18,13 @@ import Decimal from 'decimal.js';
  * @example
  * ```typescript
  * import { ValidateTickSize } from '@polymarket/value-objects/price';
+ * import Decimal from 'decimal.js';
  *
- * const result = ValidateTickSize.check(0.0001);
+ * const result = ValidateTickSize.check(new Decimal(0.0001));
  * if (result.ok) {
  *   const tickDecimal = result.value; // Decimal
  * } else {
- *   console.error(result.error.context.reason); // 'parse_error' | 'is_nan' | ...
+ *   console.error(result.error.context.reason); // 'is_nan' | ...
  * }
  * ```
  */
@@ -32,49 +32,30 @@ export class ValidateTickSize {
   /**
    * Проверяет валидность tickSize
    *
-   * @param tickSize - Размер тика для проверки
+   * @param tickSize - Размер тика (уже Decimal - парсинг делается в Facade)
    * @returns Result с валидированным Decimal или InvalidTickSizeError
    *
    * @remarks
-   * Возвращает Decimal вместо void для избежания двойного парсинга.
-   * Используй result.value в последующих операциях.
+   * ВАЖНО: Принимает только Decimal. Парсинг должен быть сделан в Facade через toDecimal().
+   * Rule НЕ должна парсить - это ответственность Facade.
    *
    * @example
    * ```typescript
-   * const result = ValidateTickSize.check('0.0001');
+   * const tickDecimal = new Decimal('0.0001');
+   * const result = ValidateTickSize.check(tickDecimal);
    * if (!result.ok) {
    *   console.error(result.error.context.field); // 'tickSize'
-   *   console.error(result.error.context.reason); // 'parse_error' | 'is_nan' | ...
+   *   console.error(result.error.context.reason); // 'is_nan' | ...
    *   return;
    * }
-   * const tickDecimal = result.value; // Используем в дальнейшем
+   * const validated = result.value; // Используем в дальнейшем
    * ```
    */
   public static check(
-    tickSize: number | string | Decimal
+    tickSize: Decimal
   ): Result<Decimal, InvalidTickSizeError> {
-    // Парсинг
-    let tickDecimal: Decimal;
-    try {
-      tickDecimal = tickSize instanceof Decimal ? tickSize : new Decimal(tickSize);
-    } catch (error) {
-      return Err(
-        new InvalidTickSizeError(
-          (ctx) => `Tick size is not a valid decimal: ${ctx.tickSize}`,
-          {
-            context: {
-              field: 'tickSize',
-              reason: 'parse_error',
-              tickSize: String(tickSize),
-              parseError: error instanceof Error ? error.message : 'unknown'
-            }
-          }
-        )
-      );
-    }
-
     // Проверка NaN
-    if (tickDecimal.isNaN()) {
+    if (tickSize.isNaN()) {
       return Err(
         new InvalidTickSizeError(
           () => `Tick size must not be NaN`,
@@ -82,7 +63,7 @@ export class ValidateTickSize {
             context: {
               field: 'tickSize',
               reason: 'is_nan',
-              tickSize: String(tickSize)
+              tickSize: tickSize.toString()
             }
           }
         )
@@ -90,7 +71,7 @@ export class ValidateTickSize {
     }
 
     // Проверка Finite
-    if (!tickDecimal.isFinite()) {
+    if (!tickSize.isFinite()) {
       return Err(
         new InvalidTickSizeError(
           (ctx) => `Tick size must be finite, got ${ctx.tickSize}`,
@@ -98,7 +79,7 @@ export class ValidateTickSize {
             context: {
               field: 'tickSize',
               reason: 'not_finite',
-              tickSize: tickDecimal.toString()
+              tickSize: tickSize.toString()
             }
           }
         )
@@ -106,7 +87,7 @@ export class ValidateTickSize {
     }
 
     // Проверка Positive
-    if (tickDecimal.lessThanOrEqualTo(0)) {
+    if (tickSize.lessThanOrEqualTo(0)) {
       return Err(
         new InvalidTickSizeError(
           (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
@@ -114,7 +95,7 @@ export class ValidateTickSize {
             context: {
               field: 'tickSize',
               reason: 'not_positive',
-              tickSize: tickDecimal.toString()
+              tickSize: tickSize.toString()
             }
           }
         )
@@ -123,7 +104,7 @@ export class ValidateTickSize {
 
     // Проверка максимального размера (арифметическая, не доменная)
     const maxAllowed = Price.maxValue().minus(Price.minValue());
-    if (tickDecimal.greaterThan(maxAllowed)) {
+    if (tickSize.greaterThan(maxAllowed)) {
       return Err(
         new InvalidTickSizeError(
           (ctx) => `Tick size ${ctx.tickSize} exceeds price range`,
@@ -131,7 +112,7 @@ export class ValidateTickSize {
             context: {
               field: 'tickSize',
               reason: 'exceeds_range',
-              tickSize: tickDecimal.toString(),
+              tickSize: tickSize.toString(),
               maxAllowed: maxAllowed.toString(),
               minPrice: Price.minValue().toString(),
               maxPrice: Price.maxValue().toString()
@@ -141,6 +122,6 @@ export class ValidateTickSize {
       );
     }
 
-    return Ok(tickDecimal);
+    return Ok(tickSize);
   }
 }

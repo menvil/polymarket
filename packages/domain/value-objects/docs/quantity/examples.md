@@ -20,7 +20,7 @@
 ### Создание Quantity
 
 ```typescript
-import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { QuantityService, Quantity, QuantityErrorReason } from '@polymarket/value-objects/quantity';
 
 // Из number
 const result1 = QuantityService.create(10);
@@ -43,14 +43,14 @@ const result3 = QuantityService.create(decimal);
 // ❌ Ошибка: negative
 const negResult = QuantityService.create(-1);
 if (!negResult.ok) {
-  console.log(negResult.error.context?.reason); // 'NEGATIVE'
+  console.log(negResult.error.context?.reason === QuantityErrorReason.NEGATIVE_QUANTITY); // true
   console.log(negResult.error.message); // "Quantity value cannot be negative"
 }
 
 // ❌ Ошибка: non-finite
 const nanResult = QuantityService.create(NaN);
 if (!nanResult.ok) {
-  console.log(nanResult.error.context?.reason); // 'NON_FINITE'
+  console.log(nanResult.error.context?.reason === QuantityErrorReason.NON_FINITE); // true
 }
 ```
 
@@ -103,16 +103,28 @@ if (diffResult.ok) {
   console.log(diffResult.value.value().toNumber()); // 5
 }
 
-// Умножение
+// Умножение (number)
 const multResult = QuantityService.multiply(qty1, 2);
 if (multResult.ok) {
   console.log(multResult.value.value().toNumber()); // 20
 }
 
-// Деление
+// Умножение (string для высокой точности)
+const multResult2 = QuantityService.multiply(qty1, "2.5");
+if (multResult2.ok) {
+  console.log(multResult2.value.value().toNumber()); // 25
+}
+
+// Деление (number)
 const divResult = QuantityService.divide(qty1, 2);
 if (divResult.ok) {
   console.log(divResult.value.value().toNumber()); // 5
+}
+
+// Деление (string)
+const divResult2 = QuantityService.divide(qty1, "2.5");
+if (divResult2.ok) {
+  console.log(divResult2.value.value().toNumber()); // 4
 }
 ```
 
@@ -478,42 +490,54 @@ import Decimal from 'decimal.js';
 
 // Различные режимы округления
 const qty = Quantity.of("10.567");
-const stepSize = new Decimal("0.01");
 
-// ROUND_HALF_UP (default)
-const rounded1 = QuantityService.roundToStep(qty, stepSize);
+// С number (простой вариант)
+const rounded1 = QuantityService.roundToStep(qty, 0.01);
 if (rounded1.ok) {
   console.log(rounded1.value.value().toString()); // "10.57"
 }
 
-// ROUND_DOWN
-const rounded2 = QuantityService.roundToStep(
-  qty,
-  stepSize,
-  Decimal.ROUND_DOWN
-);
+// С string (рекомендуется для точности)
+const rounded2 = QuantityService.roundToStep(qty, "0.01");
 if (rounded2.ok) {
-  console.log(rounded2.value.value().toString()); // "10.56"
+  console.log(rounded2.value.value().toString()); // "10.57"
 }
 
-// ROUND_UP
-const rounded3 = QuantityService.roundToStep(
-  qty,
-  stepSize,
-  Decimal.ROUND_UP
-);
+// С Decimal
+const stepSize = new Decimal("0.01");
+const rounded3 = QuantityService.roundToStep(qty, stepSize);
 if (rounded3.ok) {
   console.log(rounded3.value.value().toString()); // "10.57"
 }
 
-// ROUND_HALF_EVEN (banker's rounding)
+// ROUND_DOWN
 const rounded4 = QuantityService.roundToStep(
+  qty,
+  "0.01",
+  Decimal.ROUND_DOWN
+);
+if (rounded4.ok) {
+  console.log(rounded4.value.value().toString()); // "10.56"
+}
+
+// ROUND_UP
+const rounded5 = QuantityService.roundToStep(
+  qty,
+  "0.01",
+  Decimal.ROUND_UP
+);
+if (rounded5.ok) {
+  console.log(rounded5.value.value().toString()); // "10.57"
+}
+
+// ROUND_HALF_EVEN (banker's rounding)
+const rounded6 = QuantityService.roundToStep(
   qty,
   stepSize,
   Decimal.ROUND_HALF_EVEN
 );
-if (rounded4.ok) {
-  console.log(rounded4.value.value().toString()); // "10.57"
+if (rounded6.ok) {
+  console.log(rounded6.value.value().toString()); // "10.57"
 }
 ```
 
@@ -863,7 +887,7 @@ async function loadOrder(orderId: string): Promise<{ id: string; quantity: Quant
 ### Централизованная обработка ошибок
 
 ```typescript
-import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { QuantityService, Quantity, QuantityErrorReason } from '@polymarket/value-objects/quantity';
 import { InvalidQuantityError } from '@polymarket/errors';
 
 function handleQuantityError(error: InvalidQuantityError): string {
@@ -872,10 +896,10 @@ function handleQuantityError(error: InvalidQuantityError): string {
   // Проверяем операцию
   switch (ctx?.op) {
     case 'create':
-      if (ctx.reason === 'NEGATIVE') {
+      if (ctx.reason === QuantityErrorReason.NEGATIVE_QUANTITY) {
         return 'Quantity cannot be negative';
       }
-      if (ctx.reason === 'NON_FINITE') {
+      if (ctx.reason === QuantityErrorReason.NON_FINITE) {
         return 'Quantity must be a valid number';
       }
       if (error.message.includes('minimum size')) {
@@ -893,7 +917,7 @@ function handleQuantityError(error: InvalidQuantityError): string {
       break;
 
     case 'multiply':
-      if (ctx.reason === 'NEGATIVE') {
+      if (ctx.reason === QuantityErrorReason.NEGATIVE_QUANTITY) {
         return 'Cannot multiply by negative factor';
       }
       break;
@@ -941,8 +965,8 @@ async function createOrderWithRetry(
     lastError = result.error;
 
     // Если ошибка валидации - не ретраим
-    if (result.error.context?.reason === 'NEGATIVE' ||
-        result.error.context?.reason === 'NON_FINITE') {
+    if (result.error.context?.reason === QuantityErrorReason.NEGATIVE_QUANTITY ||
+        result.error.context?.reason === QuantityErrorReason.NON_FINITE) {
       throw result.error;
     }
 

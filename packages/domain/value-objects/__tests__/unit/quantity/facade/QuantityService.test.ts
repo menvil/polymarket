@@ -1,7 +1,7 @@
 import { describe, it, expect, jest } from '@jest/globals';
 import { QuantityService } from '../../../../src/quantity/facade/QuantityService.js';
 import { Quantity } from '../../../../src/quantity/core/Quantity.js';
-import { InvalidQuantityError, DivisionByZeroError, ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidQuantityError, DivisionByZeroError, ArithmeticOverflowError, InvalidOperandError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import * as math from '@polymarket/math';
 
@@ -24,13 +24,13 @@ describe('QuantityService', () => {
       }
     });
 
-    it('должен создать Quantity из Decimal (оптимизация, без повторного парсинга)', () => {
+    it('должен создать Quantity из Decimal', () => {
       const decimal = new Decimal(20);
       const result = QuantityService.create(decimal);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        // Проверяем что использовался fromDecimal (тот же объект)
-        expect(result.value.value()).toBe(decimal);
+        // Проверяем что значение корректно создано из Decimal
+        expect(result.value.value().toNumber()).toBe(20);
       }
     });
 
@@ -61,11 +61,11 @@ describe('QuantityService', () => {
         }
       });
 
-      it('error должен содержать context.value', () => {
+      it('error должен содержать context.raw.value', () => {
         expect.assertions(1);
         const result = QuantityService.create(-1);
         if (!result.ok) {
-          expect(result.error.context?.value).toBe('-1');
+          expect(result.error.context?.raw).toEqual({ field: 'value', value: '-1' });
         }
       });
 
@@ -73,7 +73,7 @@ describe('QuantityService', () => {
         expect.assertions(1);
         const result = QuantityService.create(-1);
         if (!result.ok) {
-          expect(result.error.context?.reason).toBe('NEGATIVE');
+          expect(result.error.context?.reason).toBe('NEGATIVE_QUANTITY');
         }
       });
 
@@ -82,6 +82,70 @@ describe('QuantityService', () => {
         const result = QuantityService.create(Infinity);
         if (!result.ok) {
           expect(result.error.context?.reason).toBe('NON_FINITE');
+        }
+      });
+
+      it('должен обработать unexpected error из Quantity.fromDecimal', () => {
+        // Mock Quantity.fromDecimal to throw unexpected error
+        const spy = jest.spyOn(Quantity, 'fromDecimal').mockImplementation(() => {
+          throw new Error('unexpected error from Quantity.fromDecimal');
+        });
+
+        try {
+          const result = QuantityService.create(10);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Unexpected error during quantity create');
+            expect(result.error.context?.op).toBe('create');
+          }
+        } finally {
+          spy.mockRestore();
+        }
+      });
+    });
+
+    describe('toDecimal helper', () => {
+      it('должен обработать invalid string при парсинге через multiply', () => {
+        const qty = Quantity.of(10);
+        // Передаём невалидное значение через multiply, что вызовет toDecimal
+        const result = QuantityService.multiply(qty, 'invalid' as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Invalid argument');
+          expect(result.error.context?.op).toBe('multiply');
+          expect(result.error.context?.factor).toBe('invalid');  // rewrap добавляет factor
+          expect(result.error.context?.raw).toEqual({ field: 'factor', value: 'invalid' }); // toDecimal добавляет структурированный raw
+          expect(result.error.context?.cause).toBeDefined();
+        }
+      });
+
+      it('должен обработать invalid string при парсинге через divide', () => {
+        const qty = Quantity.of(10);
+        const result = QuantityService.divide(qty, 'abc' as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Invalid argument');
+          expect(result.error.context?.op).toBe('divide');
+          expect(result.error.context?.divisor).toBe('abc');  // rewrap добавляет divisor
+          expect(result.error.context?.raw).toEqual({ field: 'divisor', value: 'abc' }); // toDecimal добавляет структурированный raw
+          expect(result.error.context?.cause).toBeDefined();
+        }
+      });
+
+      it('должен обработать invalid string при парсинге через roundToStep', () => {
+        const qty = Quantity.of(10);
+        const result = QuantityService.roundToStep(qty, 'xyz' as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Invalid argument');
+          expect(result.error.context?.op).toBe('roundToStep');
+          expect(result.error.context?.stepSize).toBe('xyz');  // rewrap добавляет stepSize
+          expect(result.error.context?.raw).toEqual({ field: 'stepSize', value: 'xyz' }); // toDecimal добавляет структурированный raw
+          expect(result.error.context?.cause).toBeDefined();
         }
       });
     });
@@ -107,6 +171,23 @@ describe('QuantityService', () => {
       if (result.ok) {
         expect(result.value.value().toNumber()).toBe(10);
       }
+    });
+
+    it('должен вернуть Err если результат сложения non-finite', () => {
+      // Mock addDecimal to return Infinity
+      jest.spyOn(math, 'addDecimal').mockReturnValue(new Decimal(Infinity));
+
+      const qty1 = Quantity.of(10);
+      const qty2 = Quantity.of(5);
+      const result = QuantityService.add(qty1, qty2);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.op).toBe('add');
+        expect(result.error.context?.reason).toBe('NON_FINITE');
+      }
+
+      jest.restoreAllMocks();
     });
 
     // Примечание: Decimal.js не производит Infinity при арифметических операциях,
@@ -153,6 +234,89 @@ describe('QuantityService', () => {
     //     }
     //   });
     // });
+
+    describe('Math exception handling', () => {
+      it('должен ловить InvalidOperandError из @polymarket/math', () => {
+        jest.spyOn(math, 'addDecimal').mockImplementation(() => {
+          throw new InvalidOperandError(() => 'invalid operand', {
+            context: {}
+          });
+        });
+
+        const qty1 = Quantity.of(10);
+        const qty2 = Quantity.of(5);
+        const result = QuantityService.add(qty1, qty2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('add failed');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('InvalidOperandError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
+        jest.spyOn(math, 'addDecimal').mockImplementation(() => {
+          throw new ArithmeticOverflowError(() => 'overflow', {
+            context: {}
+          });
+        });
+
+        const qty1 = Quantity.of(10);
+        const qty2 = Quantity.of(5);
+        const result = QuantityService.add(qty1, qty2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('add failed');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('ArithmeticOverflowError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен обернуть неожиданные ошибки в Result', () => {
+        jest.spyOn(math, 'addDecimal').mockImplementation(() => {
+          throw new Error('unexpected add error');
+        });
+
+        const qty1 = Quantity.of(10);
+        const qty2 = Quantity.of(5);
+        const result = QuantityService.add(qty1, qty2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Unexpected error during quantity add');
+          expect(result.error.context?.cause).toBeDefined();
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен обработать non-Error выброс из math', () => {
+        jest.spyOn(math, 'addDecimal').mockImplementation(() => {
+          throw 'string error'; // eslint-disable-line @typescript-eslint/only-throw-error
+        });
+
+        const qty1 = Quantity.of(10);
+        const qty2 = Quantity.of(5);
+        const result = QuantityService.add(qty1, qty2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          const cause = result.error.context?.cause as { name: string; message: string };
+          expect(cause.name).toBe('UnknownError');
+          expect(cause.message).toBe('string error');
+        }
+
+        jest.restoreAllMocks();
+      });
+    });
   });
 
   describe('subtract()', () => {
@@ -225,6 +389,87 @@ describe('QuantityService', () => {
         }
       });
     });
+
+    describe('Math exception handling', () => {
+      it('должен ловить InvalidOperandError из @polymarket/math', () => {
+        jest.spyOn(math, 'subtractDecimal').mockImplementation(() => {
+          throw new InvalidOperandError(() => 'invalid operand', {
+            context: {}
+          });
+        });
+
+        const qty1 = Quantity.of(10);
+        const qty2 = Quantity.of(5);
+        const result = QuantityService.subtract(qty1, qty2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('subtract failed');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('InvalidOperandError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
+        jest.spyOn(math, 'subtractDecimal').mockImplementation(() => {
+          throw new ArithmeticOverflowError(() => 'overflow', {
+            context: {}
+          });
+        });
+
+        const qty1 = Quantity.of(10);
+        const qty2 = Quantity.of(5);
+        const result = QuantityService.subtract(qty1, qty2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('subtract failed');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('ArithmeticOverflowError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен обернуть неожиданные ошибки в Result', () => {
+        jest.spyOn(math, 'subtractDecimal').mockImplementation(() => {
+          throw new Error('unexpected subtract error');
+        });
+
+        const qty1 = Quantity.of(10);
+        const qty2 = Quantity.of(5);
+        const result = QuantityService.subtract(qty1, qty2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Unexpected error during quantity subtract');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен вернуть Err если результат вычитания non-finite', () => {
+        // Mock subtractDecimal to return NaN (which is non-finite)
+        jest.spyOn(math, 'subtractDecimal').mockReturnValue(new Decimal(NaN));
+
+        const qty1 = Quantity.of(10);
+        const qty2 = Quantity.of(5);
+        const result = QuantityService.subtract(qty1, qty2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('subtract');
+          // Verify create failed after math operation
+          expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        }
+
+        jest.restoreAllMocks();
+      });
+    });
   });
 
   describe('multiply()', () => {
@@ -279,6 +524,22 @@ describe('QuantityService', () => {
       }
     });
 
+    it('должен вернуть Err если результат умножения Infinity', () => {
+      // Mock multiplyDecimal to return Infinity
+      jest.spyOn(math, 'multiplyDecimal').mockReturnValue(new Decimal(Infinity));
+
+      const qty = Quantity.of(10);
+      const result = QuantityService.multiply(qty, 2);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.op).toBe('multiply');
+        expect(result.error.context?.reason).toBe('NON_FINITE');
+      }
+
+      jest.restoreAllMocks();
+    });
+
     describe('Facade Error Contract', () => {
       it('error должен содержать context.op = "multiply"', () => {
         expect.assertions(1);
@@ -308,6 +569,66 @@ describe('QuantityService', () => {
         if (!result.ok) {
           expect(result.error.context?.factor).toBe('-1');
         }
+      });
+    });
+
+    describe('Math exception handling', () => {
+      it('должен ловить InvalidOperandError из @polymarket/math', () => {
+        jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
+          throw new InvalidOperandError(() => 'invalid operand', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.multiply(qty, 2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('multiply failed');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('InvalidOperandError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
+        jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
+          throw new ArithmeticOverflowError(() => 'overflow', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.multiply(qty, 2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('multiply failed');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('ArithmeticOverflowError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен обернуть неожиданные ошибки в Result', () => {
+        jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
+          throw new Error('unexpected multiply error');
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.multiply(qty, 2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Unexpected error during quantity multiply');
+        }
+
+        jest.restoreAllMocks();
       });
     });
   });
@@ -364,6 +685,23 @@ describe('QuantityService', () => {
       }
     });
 
+    it('должен вернуть Err если результат деления non-finite', () => {
+      // Mock divideDecimal to return NaN (which is non-finite)
+      const mockFn = jest.spyOn(math, 'divideDecimal').mockReturnValue(new Decimal(NaN));
+
+      const qty = Quantity.of(10);
+      const result = QuantityService.divide(qty, 2);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.op).toBe('divide');
+        // NaN is treated as NON_FINITE by Quantity
+        expect(result.error.context?.reason).toBe('NON_FINITE');
+      }
+
+      mockFn.mockRestore();
+    });
+
     describe('Math exception handling', () => {
       it('должен ловить DivisionByZeroError из @polymarket/math', () => {
         // Mock divideDecimal чтобы бросить DivisionByZeroError
@@ -378,11 +716,11 @@ describe('QuantityService', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.message).toContain('Division failed');
-          expect(result.error.context?.cause).toEqual({
-            name: 'DivisionByZeroError',
-            message: 'division by zero'
-          });
+          expect(result.error.message).toContain('divide failed');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('DivisionByZeroError');
+          expect(cause.message).toBe('division by zero');
         }
 
         // Restore
@@ -401,17 +739,17 @@ describe('QuantityService', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.cause).toEqual({
-            name: 'ArithmeticOverflowError',
-            message: 'overflow'
-          });
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('ArithmeticOverflowError');
+          expect(cause.message).toBe('overflow');
         }
 
         jest.restoreAllMocks();
       });
 
       it('должен обернуть неожиданные ошибки в Result', () => {
-        expect.assertions(8);
+        expect.assertions(7);
         jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
           throw new Error('unexpected error');
         });
@@ -422,7 +760,6 @@ describe('QuantityService', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.message).toContain('Unexpected error during quantity divide');
-          expect(result.error.message).toContain('unexpected error');
           expect(result.error.context?.op).toBe('divide');
           expect(result.error.context?.cause).toBeDefined();
           expect(result.error.context?.cause).toHaveProperty('name', 'Error');
@@ -522,6 +859,22 @@ describe('QuantityService', () => {
       }
     });
 
+    it('должен вернуть Err если результат roundToStep Infinity', () => {
+      // Mock roundToTick to return Infinity
+      jest.spyOn(math, 'roundToTick').mockReturnValue(new Decimal(Infinity));
+
+      const qty = Quantity.of(10);
+      const result = QuantityService.roundToStep(qty, new Decimal(0.1));
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.op).toBe('roundToStep');
+        expect(result.error.context?.reason).toBe('NON_FINITE');
+      }
+
+      jest.restoreAllMocks();
+    });
+
     describe('Facade Error Contract', () => {
       it('error должен содержать context.op = "roundToStep"', () => {
         expect.assertions(1);
@@ -542,6 +895,255 @@ describe('QuantityService', () => {
           expect(result.error.context?.quantity).toBe('10');
           expect(result.error.context?.stepSize).toBe('0');
         }
+      });
+    });
+
+    describe('Math exception handling', () => {
+      it('должен ловить InvalidOperandError из @polymarket/math', () => {
+        jest.spyOn(math, 'roundToTick').mockImplementation(() => {
+          throw new InvalidOperandError(() => 'invalid operand', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.roundToStep(qty, new Decimal(0.1));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('roundToStep failed');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('InvalidOperandError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
+        jest.spyOn(math, 'roundToTick').mockImplementation(() => {
+          throw new ArithmeticOverflowError(() => 'overflow', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.roundToStep(qty, new Decimal(0.1));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('roundToStep failed');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('ArithmeticOverflowError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен обернуть неожиданные ошибки в Result', () => {
+        jest.spyOn(math, 'roundToTick').mockImplementation(() => {
+          throw new Error('unexpected roundToStep error');
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.roundToStep(qty, new Decimal(0.1));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Unexpected error during quantity roundToStep');
+        }
+
+        jest.restoreAllMocks();
+      });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════════════
+  // COMPREHENSIVE ERROR CONTRACT TESTS
+  // ═══════════════════════════════════════════════════════════════════════
+  describe('Facade Error Contract - Comprehensive', () => {
+    describe('Parse fail → context.op и context.raw обязательны', () => {
+      it('create: parse fail должен содержать op и raw', () => {
+        const result = QuantityService.create('invalid' as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('create');
+          expect(result.error.context?.raw).toBeDefined();
+          expect(result.error.context?.cause).toBeDefined();
+        }
+      });
+
+      it('multiply: parse fail должен содержать op, raw и factor', () => {
+        const qty = Quantity.of(10);
+        const result = QuantityService.multiply(qty, 'invalid' as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('multiply');
+          expect(result.error.context?.raw).toBeDefined();
+          expect(result.error.context?.factor).toBeDefined();
+          expect(result.error.context?.cause).toBeDefined();
+        }
+      });
+
+      it('divide: parse fail должен содержать op, raw и divisor', () => {
+        const qty = Quantity.of(10);
+        const result = QuantityService.divide(qty, 'invalid' as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('divide');
+          expect(result.error.context?.raw).toBeDefined();
+          expect(result.error.context?.divisor).toBeDefined();
+          expect(result.error.context?.cause).toBeDefined();
+        }
+      });
+
+      it('roundToStep: parse fail должен содержать op, raw и stepSize', () => {
+        const qty = Quantity.of(10);
+        const result = QuantityService.roundToStep(qty, 'invalid' as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('roundToStep');
+          expect(result.error.context?.raw).toBeDefined();
+          expect(result.error.context?.stepSize).toBeDefined();
+          expect(result.error.context?.cause).toBeDefined();
+        }
+      });
+    });
+
+    describe('Rule fail → op и операционные поля обязательны', () => {
+      it('subtract: rule fail должен содержать op и операционные поля', () => {
+        const qty1 = Quantity.of(5);
+        const qty2 = Quantity.of(10);
+        const result = QuantityService.subtract(qty1, qty2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('subtract');
+          expect(result.error.context?.quantity1).toBeDefined();
+          expect(result.error.context?.quantity2).toBeDefined();
+          expect(result.error.context?.result).toBeDefined();
+        }
+      });
+
+      it('multiply: rule fail должен содержать op и операционные поля', () => {
+        const qty = Quantity.of(10);
+        const result = QuantityService.multiply(qty, -1);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('multiply');
+          expect(result.error.context?.quantity).toBeDefined();
+          expect(result.error.context?.factor).toBeDefined();
+        }
+      });
+
+      it('divide: rule fail должен содержать op и операционные поля', () => {
+        const qty = Quantity.of(10);
+        const result = QuantityService.divide(qty, 0);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('divide');
+          expect(result.error.context?.quantity).toBeDefined();
+          expect(result.error.context?.divisor).toBeDefined();
+        }
+      });
+
+      it('roundToStep: rule fail должен содержать op и операционные поля', () => {
+        const qty = Quantity.of(10);
+        const result = QuantityService.roundToStep(qty, new Decimal(0));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('roundToStep');
+          expect(result.error.context?.quantity).toBeDefined();
+          expect(result.error.context?.stepSize).toBeDefined();
+        }
+      });
+    });
+
+    describe('Math throw → cause.name и cause.message обязательны', () => {
+      it('add: math exception должен содержать cause.name и cause.message', () => {
+        jest.spyOn(math, 'addDecimal').mockImplementation(() => {
+          throw new ArithmeticOverflowError(() => 'overflow', { context: {} });
+        });
+
+        const qty1 = Quantity.of(10);
+        const qty2 = Quantity.of(5);
+        const result = QuantityService.add(qty1, qty2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('add');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string };
+          expect(cause.name).toBeDefined();
+          expect(cause.message).toBeDefined();
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('divide: math exception должен содержать cause.name и cause.message', () => {
+        jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
+          throw new DivisionByZeroError(() => 'division by zero', { context: {} });
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.divide(qty, 1);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('divide');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string };
+          expect(cause.name).toBe('DivisionByZeroError');
+          expect(cause.message).toBe('division by zero');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('unexpected error: должен содержать cause даже для non-Error', () => {
+        jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
+          throw 'string error'; // eslint-disable-line @typescript-eslint/only-throw-error
+        });
+
+        const qty = Quantity.of(10);
+        const result = QuantityService.multiply(qty, 2);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('multiply');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string };
+          expect(cause.name).toBe('UnknownError');
+          expect(cause.message).toBe('string error');
+        }
+
+        jest.restoreAllMocks();
+      });
+    });
+
+    describe('Контракт "Never Throw" - никогда не бросает исключения', () => {
+      it('create: всегда возвращает Result, никогда не throw', () => {
+        expect(() => QuantityService.create(NaN)).not.toThrow();
+        expect(() => QuantityService.create(Infinity)).not.toThrow();
+        expect(() => QuantityService.create(-1)).not.toThrow();
+        expect(() => QuantityService.create('invalid' as any)).not.toThrow();
+      });
+
+      it('операции: всегда возвращают Result, никогда не throw', () => {
+        const qty = Quantity.of(10);
+        expect(() => QuantityService.add(qty, qty)).not.toThrow();
+        expect(() => QuantityService.multiply(qty, -1)).not.toThrow();
+        expect(() => QuantityService.divide(qty, 0)).not.toThrow();
+        expect(() => QuantityService.roundToStep(qty, new Decimal(0))).not.toThrow();
       });
     });
   });

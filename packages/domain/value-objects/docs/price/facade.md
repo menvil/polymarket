@@ -6,11 +6,9 @@
 
 `PriceService` — это фасад, который предоставляет type-safe API для работы с Price через `Result<T, E>`.
 
-**Все методы возвращают `Result<Price, E>` где E может быть:**
-- `InvalidPriceError` — ошибки валидации цены
-- `InvalidOperandError` — ошибки валидации операнда (multiply)
-- `InvalidDivisorError` — ошибки валидации делителя (divide)
-- `InvalidTickSizeError` — ошибки валидации tick size
+**Все методы возвращают `Result<T, InvalidPriceError>`** (где T - Price или void для проверочных методов).
+
+PriceService НИКОГДА не бросает исключения. Все ошибки возвращаются через Result с InvalidPriceError, который содержит в context детальную информацию о причине ошибки.
 
 ---
 
@@ -66,11 +64,13 @@ if (!result.ok) {
 Создаёт Price с валидацией инвариантов.
 
 **Сигнатура:**
+
 ```typescript
 create(value: number | string | Decimal): Result<Price, InvalidPriceError>
 ```
 
 **Инварианты проверяются автоматически:**
+
 - finite (не NaN, не Infinity)
 - диапазон [0.0001, 0.9999]
 
@@ -115,23 +115,26 @@ if (!nanResult.ok) {
 Умножает цену на коэффициент.
 
 **Сигнатура:**
+
 ```typescript
 multiply(
   price: Price,
   factor: number | string | Decimal
-): Result<Price, InvalidPriceError | InvalidOperandError>
+): Result<Price, InvalidPriceError>
 ```
 
 **Алгоритм:**
+
 1. Парсинг factor в Decimal (try/catch для parse errors)
 2. Валидация factor через `ValidateFactorForPriceMultiplication` (isNaN, isFinite)
 3. Умножение через `multiplyDecimal()` из @polymarket/math
 4. Создание Price из результата
 
 **Обработка ошибок:**
-- Ошибки парсинга factor → `InvalidOperandError`
-- Невалидный factor (через rule) → `InvalidOperandError`
-- Результат вне диапазона Price → `InvalidPriceError`
+
+- Ошибки парсинга factor → `InvalidPriceError` (reason в context)
+- Невалидный factor (через rule) → `InvalidPriceError` (reason в context)
+- Результат вне диапазона Price → `InvalidPriceError` (reason в context)
 
 **Примеры:**
 
@@ -153,10 +156,10 @@ if (result2.ok) {
 // Ошибка: невалидный factor (NaN)
 const nanResult = PriceService.multiply(price, NaN);
 if (!nanResult.ok) {
-  console.log(nanResult.error.context?.operation);  // 'multiply'
-  console.log(nanResult.error.context?.operand);    // 'factor'
-  console.log(nanResult.error.context?.value);      // 'NaN'
-  console.log(nanResult.error.context?.reason);     // 'is_nan'
+  console.log(nanResult.error.context?.op);         // 'multiply'
+  console.log(nanResult.error.context?.raw?.field); // 'factor'
+  console.log(nanResult.error.context?.raw?.value); // 'NaN'
+  console.log(nanResult.error.context?.reason);     // PriceErrorReason.NAN
 }
 
 // Ошибка: результат выходит за диапазон
@@ -174,25 +177,28 @@ if (!overflowResult.ok) {
 Делит цену на делитель.
 
 **Сигнатура:**
+
 ```typescript
 divide(
   price: Price,
   divisor: number | string | Decimal
-): Result<Price, InvalidPriceError | InvalidDivisorError>
+): Result<Price, InvalidPriceError>
 ```
 
 **Алгоритм:**
+
 1. Парсинг divisor в Decimal (try/catch для parse errors)
 2. Валидация divisor через `ValidateDivisorForPriceDivision` (isNaN, isFinite, isZero)
 3. Деление через `divideDecimal()` из @polymarket/math
 4. Создание Price из результата
 
 **Обработка ошибок:**
-- Ошибки парсинга divisor → `InvalidDivisorError`
-- Невалидный divisor (через rule: NaN, Infinity, Zero) → `InvalidDivisorError`
+
+- Ошибки парсинга divisor → `InvalidPriceError` (reason в context)
+- Невалидный divisor (через rule: NaN, Infinity, Zero) → `InvalidPriceError` (reason в context)
 - `ArithmeticOverflowError` из divideDecimal → `InvalidPriceError` с причиной в context.cause
 - Неожиданные ошибки → `InvalidPriceError` с полным контекстом
-- Результат вне диапазона Price → `InvalidPriceError`
+- Результат вне диапазона Price → `InvalidPriceError` (reason в context)
 
 **Примеры:**
 
@@ -236,6 +242,7 @@ if (!underflowResult.ok) {
 Вычисляет дополнение до 1 (complement = 1 - price).
 
 **Сигнатура:**
+
 ```typescript
 complement(price: Price): Result<Price, InvalidPriceError>
 ```
@@ -278,6 +285,7 @@ if (maxCompResult.ok) {
 Вычисляет среднее двух цен (mid price).
 
 **Сигнатура:**
+
 ```typescript
 average(price1: Price, price2: Price): Result<Price, InvalidPriceError>
 ```
@@ -317,15 +325,17 @@ if (sameResult.ok) {
 Округляет цену к market tick с заданным режимом.
 
 **Сигнатура:**
+
 ```typescript
 roundToMarketTick(
   price: Price,
   tickSize: number | string | Decimal,
   mode: 'nearest' | 'floor' | 'ceil' = 'nearest'
-): Result<Price, InvalidPriceError | InvalidTickSizeError>
+): Result<Price, InvalidPriceError>
 ```
 
 **Режимы округления:**
+
 - `'nearest'` — к ближайшему тику (по умолчанию, используется `ROUND_HALF_UP`)
 - `'floor'` — вниз (используй для bid price)
 - `'ceil'` — вверх (используй для ask price)
@@ -333,14 +343,16 @@ roundToMarketTick(
 **КРИТИЧНО:** tickSize **ДОЛЖЕН быть кратен** базовому тику (0.0001). Используется `ValidateTickSizeMultipleOfBaseTick`.
 
 **Алгоритм:**
+
 1. Валидация tickSize через `ValidateTickSizeMultipleOfBaseTick` (проверка кратности базовому тику)
 2. Выбор направления округления (nearest/floor/ceil)
 3. Округление через @polymarket/math функции (roundToTick/floorToTick/ceilToTick)
 4. Создание Price из округлённого значения
 
 **Обработка ошибок:**
-- Невалидный tickSize → `InvalidTickSizeError`
-- tickSize не кратен 0.0001 → `InvalidTickSizeError`
+
+- Невалидный tickSize → `InvalidPriceError` (reason в context)
+- tickSize не кратен 0.0001 → `InvalidPriceError` (reason в context)
 - `ArithmeticOverflowError` из math → `InvalidPriceError` с причиной в context.cause
 - Неожиданные ошибки → `InvalidPriceError` с полным контекстом
 - Результат вне диапазона → `InvalidPriceError`
@@ -410,16 +422,18 @@ if (!negativeTickResult.ok) {
 Проверяет что цена кратна tickSize (уже aligned).
 
 **Сигнатура:**
+
 ```typescript
 ensureAlignedToMarketTick(
   price: Price,
   tickSize: number | string | Decimal
-): Result<void, InvalidPriceError | InvalidTickSizeError>
+): Result<void, InvalidPriceError>
 ```
 
 **КРИТИЧНО:** tickSize **ДОЛЖЕН быть кратен** базовому тику (0.0001). Используется `ValidateAligned`, который внутри использует `ValidateTickSizeMultipleOfBaseTick`.
 
 **Семантика:**
+
 - Проверяет что price УЖЕ кратен tickSize
 - Для округления используй `roundToMarketTick()`
 - Используется для валидации после округления или для проверки входящих данных
@@ -512,7 +526,7 @@ function calculateMidPrice(
   bidPrice: Price,
   askPrice: Price,
   tickSize: Decimal
-): Result<Price, InvalidPriceError | InvalidTickSizeError> {
+): Result<Price, InvalidPriceError> {
   // 1. Вычисляем среднее
   const midResult = PriceService.average(bidPrice, askPrice);
   if (!midResult.ok) {
@@ -537,7 +551,7 @@ function calculateMidPrice(
 function processPrices(
   yesPrice: string,
   tickSize: Decimal
-): Result<{ yes: Price; no: Price }, InvalidPriceError | InvalidTickSizeError> {
+): Result<{ yes: Price; no: Price }, InvalidPriceError> {
   // Создаём YES цену
   const yesResult = PriceService.create(yesPrice);
   if (!yesResult.ok) return yesResult;

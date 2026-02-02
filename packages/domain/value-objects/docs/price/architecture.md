@@ -141,18 +141,21 @@ try {
 ### Layer 1: Core
 
 **Ответственность:**
+
 - Представление цены как value object
 - Гарантия инвариантов (finite, диапазон [0.0001, 0.9999])
 - Базовые операции (equals, isMin, isMax)
 - Константы (MIN_PRICE, MAX_PRICE, HALF_PRICE)
 
 **НЕ делает:**
+
 - Не знает про бизнес-правила (tickSize, alignment)
 - Не знает про Result<T, E>
 - Не делает арифметику (это делает Facade + Math)
 - Не знает про Polymarket tick rules (это Rules)
 
 **Пример:**
+
 ```typescript
 // ✅ Делает
 const price = Price.of(0.5);
@@ -171,17 +174,20 @@ price.equals(other);
 ### Layer 2: Rules
 
 **Ответственность:**
+
 - Атомарные проверки (одно правило = одна проверка)
 - Принимают Decimal, возвращают Result<void, Error> или Result<Decimal, Error>
 - Не знают про Price (работают с Decimal)
 - Полиморфные правила (ValidateTickSize базовое, ValidateTickSizeMultipleOfBaseTick расширенное)
 
 **НЕ делает:**
+
 - Не создают Price
 - Не знают про операции (add, multiply)
 - Не знают друг про друга (независимы)
 
 **Пример:**
+
 ```typescript
 // ✅ Делает: атомарная проверка
 ValidateTickSize.check(new Decimal(0.01));  // Ok
@@ -209,6 +215,7 @@ ValidateTickSizeMultipleOfBaseTick (Polymarket-специфичное)
 ### Layer 3: Facade
 
 **Ответственность:**
+
 - Единая точка входа для всех операций
 - Оркестрация Core + Math + Rules
 - Обёртка исключений в Result<T, E>
@@ -216,11 +223,13 @@ ValidateTickSizeMultipleOfBaseTick (Polymarket-специфичное)
 - Semantic операции (complement, average)
 
 **НЕ делает:**
+
 - Не реализует бизнес-логику (делегирует Rules)
 - Не делает low-level checks (делегирует Core)
 - Не делает арифметику напрямую (использует @polymarket/math)
 
 **Пример:**
+
 ```typescript
 // ✅ Делает: оркестрация
 PriceService.complement(price)
@@ -248,11 +257,13 @@ roundToMarketTick(price, tickSize, mode)
 ### Layer 4: Adapters
 
 **Ответственность:**
+
 - Сериализация (toJSON/fromJSON)
 - Форматирование (toString, toPercentageString)
 - Адаптация к внешним системам
 
 **НЕ делает:**
+
 - Не содержит бизнес-логику
 - Не валидирует (использует Facade)
 
@@ -325,7 +336,7 @@ rounded: Decimal
     ↓
 this.create(rounded)  ← проверяет инварианты
     ↓
-Result<Price, InvalidPriceError | InvalidTickSizeError>
+Result<Price, InvalidPriceError>
 ```
 
 ### Поток деления с валидацией
@@ -339,9 +350,9 @@ parse divisor → Decimal  (try/catch)
     ↓
 ValidateDivisorForPriceDivision.check(divisor)  ← Rule
     ↓
-  isNaN?     → Err(InvalidDivisorError)
-  isFinite?  → Err(InvalidDivisorError)
-  isZero?    → Err(InvalidDivisorError)
+  isNaN?     → Err(InvalidPriceError)
+  isFinite?  → Err(InvalidPriceError)
+  isZero?    → Err(InvalidPriceError)
     ↓
 divideDecimal(price.value(), divisor)  ← Math
     ↓
@@ -349,7 +360,7 @@ result: Decimal
     ↓
 this.create(result)  ← проверяет инварианты
     ↓
-Result<Price, InvalidPriceError | InvalidDivisorError>
+Result<Price, InvalidPriceError>
 ```
 
 ---
@@ -361,10 +372,12 @@ Result<Price, InvalidPriceError | InvalidDivisorError>
 **Решение:** Core кидает исключения, Facade возвращает Result.
 
 **Альтернативы:**
+
 - ❌ Result везде — Core становится зависим от @polymarket/result
 - ❌ Exceptions везде — пользователь должен писать try/catch
 
 **Почему выбрали:**
+
 - ✅ Core остаётся чистым domain model
 - ✅ Facade обеспечивает type-safe контракт
 - ✅ Разделение concerns
@@ -376,9 +389,11 @@ Result<Price, InvalidPriceError | InvalidDivisorError>
 **Решение:** Rules работают только с Decimal.
 
 **Альтернативы:**
+
 - ❌ Rules принимают Price — циклическая зависимость
 
 **Почему выбрали:**
+
 - ✅ Нет циклических зависимостей
 - ✅ Rules переиспользуемы
 - ✅ Тестировать проще
@@ -387,20 +402,21 @@ Result<Price, InvalidPriceError | InvalidDivisorError>
 
 ### 3. Почему отдельные методы multiply/divide, а не один calculate?
 
-**Решение:** Разные операции = разные методы с разными типами ошибок.
+**Решение:** Разные операции = разные методы для явности намерения.
 
 ```typescript
 // ✅ Текущее решение
-multiply(price, factor): Result<Price, InvalidPriceError | InvalidOperandError>
-divide(price, divisor): Result<Price, InvalidPriceError | InvalidDivisorError>
+multiply(price, factor): Result<Price, InvalidPriceError>
+divide(price, divisor): Result<Price, InvalidPriceError>
 
 // ❌ Альтернатива
-calculate(price, value, op): Result<Price, InvalidPriceError | InvalidOperandError | InvalidDivisorError>
+calculate(price, value, op): Result<Price, InvalidPriceError>
 ```
 
 **Почему выбрали:**
+
 - ✅ Explicit intent (явное намерение)
-- ✅ Разные типы ошибок для разных операций
+- ✅ Специфичный контекст ошибок для каждой операции
 - ✅ Type narrowing работает корректно
 
 ---
@@ -410,9 +426,11 @@ calculate(price, value, op): Result<Price, InvalidPriceError | InvalidOperandErr
 **Решение:** Математические операции в Facade.
 
 **Альтернативы:**
+
 - ❌ `price.complement()` в Core
 
 **Почему выбрали:**
+
 - ✅ Core не делает арифметику
 - ✅ Facade оркестрирует Math + Core
 - ✅ Единый паттерн для всех операций
@@ -424,9 +442,11 @@ calculate(price, value, op): Result<Price, InvalidPriceError | InvalidOperandErr
 **Решение:** Два отдельных правила вместо флага.
 
 **Альтернативы:**
+
 - ❌ `ValidateTickSize.check(tickSize, { requireMultipleOfBase: true })`
 
 **Почему выбрали:**
+
 - ✅ Single Responsibility (одно правило = одна проверка)
 - ✅ Композиция проще чем конфигурация
 - ✅ Явная семантика (Polymarket vs generic)
@@ -443,30 +463,31 @@ roundToMarketTick() → ValidateTickSizeMultipleOfBaseTick
 
 ---
 
-### 6. Почему withOperationContext вместо дублирования контекста?
+### 6. Почему rewrap вместо дублирования контекста?
 
-**Решение:** Helper для добавления контекста операции.
+**Решение:** Helper `rewrap` из errorUtils для добавления контекста операции с сохранением root-cause.
 
 ```typescript
-// ✅ Текущее решение
+// ✅ Текущее решение с rewrap
 const validateResult = ValidateDivisorForPriceDivision.check(divisor);
 if (!validateResult.ok) {
   return Err(
-    withOperationContext(validateResult.error, 'divide', {
+    rewrap('divide', {
       dividend: price.value().toString()
-    })
+    }, validateResult.error, InvalidPriceError)
   );
 }
 
-// ❌ Альтернатива: дублировать всё
+// ❌ Альтернатива: дублировать всё вручную
 if (!validateResult.ok) {
   return Err(
-    new InvalidDivisorError(validateResult.error.message, {
+    new InvalidPriceError(validateResult.error.message, {
       context: {
         op: 'divide',
         divisor: validateResult.error.context.divisor,
         dividend: price.value().toString(),
-        reason: validateResult.error.context.reason
+        reason: validateResult.error.context.reason,
+        opChain: [...(validateResult.error.context.opChain || []), 'divide']
       }
     })
   );
@@ -474,6 +495,7 @@ if (!validateResult.ok) {
 ```
 
 **Почему выбрали:**
+
 - ✅ DRY (Don't Repeat Yourself)
 - ✅ Консистентность контракта
 - ✅ Меньше ошибок при рефакторинге
@@ -487,6 +509,7 @@ if (!validateResult.ok) {
 **Решение:** MIN_PRICE (0.0001) служит базовым тиком.
 
 **Почему:**
+
 - Все tick sizes кратны базовому тику
 - Упрощает валидацию
 - Соответствует семантике Polymarket
@@ -496,6 +519,7 @@ if (!validateResult.ok) {
 **Решение:** Price НЕ может быть 0 или 1.
 
 **Почему:**
+
 - 0 означает "невозможный исход" (нет смысла торговать)
 - 1 означает "гарантированный исход" (нет uncertainty)
 - Реальные рынки всегда имеют uncertainty
@@ -506,6 +530,7 @@ if (!validateResult.ok) {
 **Решение:** Строгая проверка кратности для market operations.
 
 **Почему:**
+
 - Гарантирует что все market ticks кратны базовому
 - Предотвращает создание "невалидных" tick sizes
 - Соответствует правилам биржи Polymarket
@@ -525,6 +550,7 @@ divide(add(p1, p2), 2)
 ```
 
 **Почему:**
+
 - Явное намерение (intent-revealing)
 - Читаемость кода
 - Специфичная обработка ошибок
@@ -538,6 +564,7 @@ divide(add(p1, p2), 2)
 Пример: добавить `weightedAverage(p1, w1, p2, w2)`
 
 1. **Facade:** Добавить метод
+
 ```typescript
 public static weightedAverage(
   price1: Price,
@@ -554,7 +581,7 @@ public static weightedAverage(
 }
 ```
 
-2. **Готово!** Не нужно менять Core/Rules
+1. **Готово!** Не нужно менять Core/Rules
 
 ---
 
@@ -563,6 +590,7 @@ public static weightedAverage(
 Пример: добавить `ValidateSpread`
 
 1. **Rules:** Создать класс
+
 ```typescript
 export class ValidateSpread {
   public static check(
@@ -579,7 +607,8 @@ export class ValidateSpread {
 }
 ```
 
-2. **Facade:** Использовать в методе
+1. **Facade:** Использовать в методе
+
 ```typescript
 public static validateSpread(
   bidPrice: Price,
@@ -603,7 +632,7 @@ public static validateSpread(
 }
 ```
 
-3. **Готово!** Core не меняется
+1. **Готово!** Core не меняется
 
 ---
 
@@ -612,6 +641,7 @@ public static validateSpread(
 ### 1. Всегда используйте Facade
 
 ❌ **Плохо:**
+
 ```typescript
 try {
   const price = Price.of(userInput);
@@ -621,6 +651,7 @@ try {
 ```
 
 ✅ **Хорошо:**
+
 ```typescript
 const result = PriceService.create(userInput);
 if (!result.ok) {
@@ -633,12 +664,14 @@ if (!result.ok) {
 ### 2. Используйте ValidateTickSizeMultipleOfBaseTick для Polymarket операций
 
 ❌ **Плохо:**
+
 ```typescript
 // Может принять tick size не кратный 0.0001
 ValidateTickSize.check(tickSize)
 ```
 
 ✅ **Хорошо:**
+
 ```typescript
 // Гарантирует кратность базовому тику
 ValidateTickSizeMultipleOfBaseTick.check(tickSize)
@@ -649,6 +682,7 @@ ValidateTickSizeMultipleOfBaseTick.check(tickSize)
 ### 3. Используйте semantic операции
 
 ❌ **Плохо:**
+
 ```typescript
 // Неясное намерение
 const oneResult = PriceService.create(1);
@@ -656,6 +690,7 @@ const compResult = PriceService.subtract(oneResult.value, price);
 ```
 
 ✅ **Хорошо:**
+
 ```typescript
 // Явное намерение
 const compResult = PriceService.complement(price);

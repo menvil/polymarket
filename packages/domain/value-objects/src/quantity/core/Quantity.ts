@@ -1,24 +1,25 @@
 import Decimal from 'decimal.js';
+import { QuantityErrorReason } from '../errors/QuantityErrorReason';
 
 /**
  * QuantityInvariantViolation - нарушение инварианта Quantity
  *
  * @remarks
- * Содержит reason как union type для структурированной обработки ошибок.
+ * Содержит reason из enum QuantityErrorReason для типизированной обработки ошибок.
  *
  * Возможные причины:
- * - NEGATIVE: значение < 0
- * - NON_FINITE: значение не finite (Infinity, NaN)
+ * - QuantityErrorReason.NEGATIVE_QUANTITY: входное значение < 0
+ * - QuantityErrorReason.NON_FINITE: значение не finite (Infinity, NaN)
  *
  * @example
  * ```typescript
- * throw new QuantityInvariantViolation('Quantity value cannot be negative', 'NEGATIVE');
+ * throw new QuantityInvariantViolation('Quantity value cannot be negative', QuantityErrorReason.NEGATIVE_QUANTITY);
  * ```
  */
 export class QuantityInvariantViolation extends Error {
-  public readonly reason: 'NEGATIVE' | 'NON_FINITE';
+  public readonly reason: QuantityErrorReason.NEGATIVE_QUANTITY | QuantityErrorReason.NON_FINITE;
 
-  constructor(message: string, reason: 'NEGATIVE' | 'NON_FINITE') {
+  constructor(message: string, reason: QuantityErrorReason.NEGATIVE_QUANTITY | QuantityErrorReason.NON_FINITE) {
     super(`Quantity invariant violation: ${message}`);
     this.name = 'QuantityInvariantViolation';
     this.reason = reason;
@@ -85,12 +86,12 @@ export class Quantity {
   private constructor(private readonly v: Decimal) {
     // Инвариант 1: Must be finite (покрывает Infinity и NaN)
     if (!v.isFinite()) {
-      throw new QuantityInvariantViolation('Quantity value must be finite', 'NON_FINITE');
+      throw new QuantityInvariantViolation('Quantity value must be finite', QuantityErrorReason.NON_FINITE);
     }
 
     // Инвариант 2: Cannot be negative
     if (v.isNegative()) {
-      throw new QuantityInvariantViolation('Quantity value cannot be negative', 'NEGATIVE');
+      throw new QuantityInvariantViolation('Quantity value cannot be negative', QuantityErrorReason.NEGATIVE_QUANTITY);
     }
   }
 

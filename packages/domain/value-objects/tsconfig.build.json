@@ -8,5 +8,6 @@
     { "path": "../../foundation/result" },
     { "path": "../../foundation/errors" }
   ],
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.spec.ts"]
 }

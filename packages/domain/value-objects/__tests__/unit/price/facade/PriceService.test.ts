@@ -2,11 +2,134 @@ import { describe, it, expect, jest } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { PriceService } from '../../../../src/price/facade/PriceService.js';
 import { Price } from '../../../../src/price/core/Price.js';
-import { InvalidDivisorError } from '@polymarket/errors';
+import { InvalidPriceError } from '@polymarket/errors';
 import * as math from '@polymarket/math';
 import { ValidateAligned } from '../../../../src/price/rules/ValidateAligned.js';
 
 describe('PriceService', () => {
+  describe('Facade Error Contract - Comprehensive', () => {
+    describe('Parse fail → context.op и context.raw обязательны', () => {
+      it('multiply: parse fail должен содержать op, raw, factor', () => {
+        const price = Price.of(0.5);
+        const result = PriceService.multiply(price, 'invalid' as any);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('multiply');
+          expect(result.error.context?.raw).toBeDefined(); // toDecimal добавляет raw
+          expect(result.error.context?.factor).toBe('invalid'); // контракт требует factor
+          expect(result.error.context?.price).toBeDefined(); // операционный контекст
+          expect(result.error.context?.cause).toBeDefined(); // parse error cause
+        }
+      });
+
+      it('divide: parse fail должен содержать op, raw, divisor', () => {
+        const price = Price.of(0.5);
+        const result = PriceService.divide(price, 'invalid' as any);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('divide');
+          expect(result.error.context?.raw).toBeDefined(); // toDecimal добавляет raw
+          expect(result.error.context?.divisor).toBe('invalid'); // контракт требует divisor
+          expect(result.error.context?.price).toBeDefined(); // операционный контекст
+          expect(result.error.context?.cause).toBeDefined(); // parse error cause
+        }
+      });
+    });
+
+    describe('Rule fail → op и операционные поля обязательны', () => {
+      it('multiply: rule fail должен содержать op и операционные поля', () => {
+        const price = Price.of(0.5);
+        const result = PriceService.multiply(price, NaN);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('multiply');
+          expect(result.error.context?.price).toBeDefined();
+          expect(result.error.context?.factor).toBeDefined();
+        }
+      });
+
+      it('divide: rule fail должен содержать op и операционные поля', () => {
+        const price = Price.of(0.5);
+        const result = PriceService.divide(price, 0);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('divide');
+          expect(result.error.context?.price).toBeDefined();
+          expect(result.error.context?.divisor).toBeDefined();
+        }
+      });
+
+      it('create: invariant fail должен содержать op, raw, reason (БЕЗ cause и value)', () => {
+        const result = PriceService.create(1.5); // выше максимума
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('create');
+          expect(result.error.context?.raw).toEqual({ field: 'value', value: '1.5' }); // структурированный raw
+          expect(result.error.context?.reason).toBe('OUT_OF_RANGE_HIGH');
+          // ВАЖНО: НЕ должно быть cause для доменных инвариантов (stack мусорный)
+          expect(result.error.context?.cause).toBeUndefined();
+          // value убран как дублирование raw.value
+          expect(result.error.context?.value).toBeUndefined();
+        }
+      });
+    });
+
+    describe('Math throw → cause.name и cause.message обязательны', () => {
+      it('multiply: math exception должен содержать cause.name и cause.message', () => {
+        jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
+          throw new Error('overflow');
+        });
+
+        const price = Price.of(0.5);
+        const result = PriceService.multiply(price, 2);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('multiply');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string };
+          expect(cause.name).toBeDefined();
+          expect(cause.message).toBeDefined();
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('unexpected error: должен содержать cause даже для non-Error', () => {
+        jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
+          throw 'string error'; // не Error объект
+        });
+
+        const price = Price.of(0.5);
+        const result = PriceService.divide(price, 2);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string };
+          expect(cause.name).toBe('UnknownError');
+          expect(cause.message).toBe('string error');
+        }
+
+        jest.restoreAllMocks();
+      });
+    });
+
+    describe('Контракт "Never Throw" - никогда не бросает исключения', () => {
+      it('create: всегда возвращает Result, никогда не throw', () => {
+        expect(() => PriceService.create(NaN)).not.toThrow();
+        expect(() => PriceService.create(Infinity)).not.toThrow();
+        expect(() => PriceService.create(-1)).not.toThrow();
+        expect(() => PriceService.create('invalid' as any)).not.toThrow();
+      });
+
+      it('операции: всегда возвращают Result, никогда не throw', () => {
+        const price = Price.of(0.5);
+        expect(() => PriceService.multiply(price, 'invalid' as any)).not.toThrow();
+        expect(() => PriceService.divide(price, 0)).not.toThrow();
+        expect(() => PriceService.roundToMarketTick(price, -1)).not.toThrow();
+      });
+    });
+  });
+
   describe('create()', () => {
     it('должен создать Price из number', () => {
       const result = PriceService.create(0.5);
@@ -36,7 +159,7 @@ describe('PriceService', () => {
       const result = PriceService.create(0.00001);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.value).toBe('0.00001');
+        expect(result.error.context?.raw).toEqual({ field: 'value', value: '0.00001' });
       }
     });
 
@@ -44,7 +167,7 @@ describe('PriceService', () => {
       const result = PriceService.create(1.5);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.value).toBe('1.5');
+        expect(result.error.context?.raw).toEqual({ field: 'value', value: '1.5' });
       }
     });
 
@@ -138,35 +261,40 @@ describe('PriceService', () => {
       }
     });
 
-    it('должен вернуть InvalidOperandError для невалидного factor', () => {
+    it('должен вернуть InvalidPriceError для невалидного factor (parse fail)', () => {
       const price = Price.of(0.5);
       const result = PriceService.multiply(price, 'invalid');
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.operation).toBe('multiply');
-        expect(result.error.context?.operand).toBe('factor');
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error.context?.op).toBe('multiply');
+        expect(result.error.context?.raw).toBeDefined(); // toDecimal добавляет raw
+        expect(result.error.context?.factor).toBe('invalid'); // контракт требует factor
+        expect(result.error.context?.price).toBeDefined();
       }
     });
 
-    it('должен вернуть InvalidOperandError для NaN factor', () => {
+    it('должен вернуть InvalidPriceError для NaN factor (rule fail)', () => {
       const price = Price.of(0.5);
       const result = PriceService.multiply(price, NaN);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.operation).toBe('multiply');
-        expect(result.error.context?.operand).toBe('factor');
-        expect(result.error.context?.reason).toBe('is_nan');
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error.context?.op).toBe('multiply');
+        expect(result.error.context?.factor).toBeDefined();
+        expect(result.error.context?.price).toBeDefined();
       }
     });
 
-    it('должен вернуть InvalidOperandError для Infinity factor', () => {
+    it('должен вернуть InvalidPriceError для Infinity factor (rule fail)', () => {
       const price = Price.of(0.5);
       const result = PriceService.multiply(price, Infinity);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.operation).toBe('multiply');
-        expect(result.error.context?.operand).toBe('factor');
-        expect(result.error.context?.reason).toBe('not_finite');
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error.context?.op).toBe('multiply');
+        expect(result.error.context?.factor).toBeDefined();
+        expect(result.error.context?.price).toBeDefined();
       }
     });
 
@@ -206,48 +334,52 @@ describe('PriceService', () => {
       }
     });
 
-    it('должен вернуть InvalidDivisorError для нулевого делителя', () => {
+    it('должен вернуть InvalidPriceError для нулевого делителя (rule fail)', () => {
       const price = Price.of(0.5);
       const result = PriceService.divide(price, 0);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidDivisorError);
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
         expect(result.error.context?.op).toBe('divide');
-        expect(result.error.context?.divisor).toBe('0');
-        expect(result.error.context?.dividend).toBe('0.5');
-        expect(result.error.context?.reason).toBe('is_zero');
+        expect(result.error.context?.divisor).toBeDefined();
+        expect(result.error.context?.price).toBeDefined();
       }
     });
 
-    it('должен вернуть InvalidDivisorError для невалидного divisor', () => {
+    it('должен вернуть InvalidPriceError для невалидного divisor (parse fail)', () => {
       const price = Price.of(0.5);
       const result = PriceService.divide(price, 'invalid');
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context).toHaveProperty('divisor');
-        expect(result.error.context).toHaveProperty('dividend');
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error.context?.op).toBe('divide');
+        expect(result.error.context?.raw).toBeDefined(); // toDecimal добавляет raw
+        expect(result.error.context?.divisor).toBe('invalid'); // контракт требует divisor
+        expect(result.error.context?.price).toBeDefined();
       }
     });
 
-    it('должен вернуть InvalidDivisorError для NaN divisor', () => {
+    it('должен вернуть InvalidPriceError для NaN divisor (rule fail)', () => {
       const price = Price.of(0.5);
       const result = PriceService.divide(price, NaN);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context).toHaveProperty('divisor');
-        expect(result.error.context).toHaveProperty('dividend');
-        expect(result.error.context?.reason).toBe('is_nan');
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error.context?.op).toBe('divide');
+        expect(result.error.context?.divisor).toBeDefined();
+        expect(result.error.context?.price).toBeDefined();
       }
     });
 
-    it('должен вернуть InvalidDivisorError для Infinity divisor', () => {
+    it('должен вернуть InvalidPriceError для Infinity divisor (rule fail)', () => {
       const price = Price.of(0.5);
       const result = PriceService.divide(price, Infinity);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context).toHaveProperty('divisor');
-        expect(result.error.context).toHaveProperty('dividend');
-        expect(result.error.context?.reason).toBe('not_finite');
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error.context?.op).toBe('divide');
+        expect(result.error.context?.divisor).toBeDefined();
+        expect(result.error.context?.price).toBeDefined();
       }
     });
 
@@ -268,12 +400,12 @@ describe('PriceService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Unexpected error during price divide');
-        expect(result.error.message).toContain('unexpected error');
+        expect(result.error.message).toBe('Unexpected error during price divide');
         expect(result.error.context?.op).toBe('divide');
         expect(result.error.context?.cause).toBeDefined();
-        expect(result.error.context?.cause).toHaveProperty('name', 'Error');
-        expect(result.error.context?.cause).toHaveProperty('message', 'unexpected error');
+        const cause = result.error.context?.cause as { name: string; message: string };
+        expect(cause.name).toBe('Error');
+        expect(cause.message).toBe('unexpected error');
       }
 
       jest.restoreAllMocks();
@@ -396,11 +528,12 @@ describe('PriceService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toBe('unexpected rounding error');
+        expect(result.error.message).toBe('Unexpected error during price roundToMarketTick');
         expect(result.error.context?.op).toBe('roundToMarketTick');
         expect(result.error.context?.cause).toBeDefined();
-        expect(result.error.context?.cause).toHaveProperty('name', 'Error');
-        expect(result.error.context?.cause).toHaveProperty('message', 'unexpected rounding error');
+        const cause = result.error.context?.cause as { name: string; message: string };
+        expect(cause.name).toBe('Error');
+        expect(cause.message).toBe('unexpected rounding error');
       }
 
       jest.restoreAllMocks();
@@ -429,7 +562,7 @@ describe('PriceService', () => {
       const price = Price.of(0.1235);
       const result = PriceService.ensureAlignedToMarketTick(price, 0.01);
       expect(result.ok).toBe(false);
-      expect(spy).toHaveBeenCalledWith(price, 0.01);
+      expect(spy).toHaveBeenCalledWith(price, expect.any(Decimal));
       spy.mockRestore();
     });
   });

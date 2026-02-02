@@ -1,12 +1,8 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import {
-  InvalidPriceError,
-  InvalidOperandError,
-  InvalidDivisorError,
-  InvalidTickSizeError,
-  ArithmeticOverflowError
-} from '@polymarket/errors';
+import { InvalidPriceError } from '@polymarket/errors';
 import { Price, PriceInvariantViolation } from '../core/Price.js';
+import { PriceErrorReason } from '../errors/PriceErrorReason.js';
+import { toDecimal, rewrap, wrapOp, unexpectedError } from '../../shared/facade/errorUtils.js';
 import { ValidateTickSizeMultipleOfBaseTick } from '../rules/ValidateTickSizeMultipleOfBaseTick.js';
 import { ValidateAligned } from '../rules/ValidateAligned.js';
 import { ValidateFactorForPriceMultiplication } from '../rules/ValidateFactorForPriceMultiplication.js';
@@ -20,7 +16,6 @@ import {
   floorToTick,
   ceilToTick
 } from '@polymarket/math';
-import { withOperationContext } from './errorUtils.js';
 import Decimal from 'decimal.js';
 
 /**
@@ -30,9 +25,23 @@ import Decimal from 'decimal.js';
  * Единая точка входа для всех операций с ценами.
  * Оркестрирует Core + Math + Rules.
  *
+ * **Контракт "Never Throw":**
+ * ВСЕ методы PriceService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+ * Любые исключения из @polymarket/math, Core инвариантов или Rules ловятся и преобразуются в Result.Err.
+ *
  * **Facade Error Contract:**
- * ВСЕ публичные методы возвращают Result<T, E>.
- * Никогда не бросают исключения наружу.
+ * Любой Err из Facade содержит:
+ * - context.op - название операции (верхний уровень)
+ * - context.opChain - цепочка операций (внутренние op не теряются)
+ * - context.price/dividend - входная цена (если применимо)
+ * - context.divisor|factor|tickSize - входные параметры (если применимо)
+ * - context.raw - сырой ввод (для ошибок парсинга): { field, value }
+ * - context.cause - для math-исключений: { name, message, stack? } (root-cause, не перетирается)
+ * - context.reason - для инвариантов Core (root, не перетирается)
+ *
+ * **Правило возвращаемых типов:**
+ * ВСЕ операции возвращают Result<T, InvalidPriceError>
+ * ОЖИДАЕМЫЕ и НЕОЖИДАННЫЕ ошибки обрабатываются через Result
  *
  * @example
  * ```typescript
@@ -56,6 +65,7 @@ export class PriceService {
    * Константа для арифметических операций - избегаем создания new Decimal(2) каждый раз
    */
   private static readonly TWO = new Decimal(2);
+
 
   /**
    * Создаёт Price из значения (безопасно - никогда не бросает)
@@ -84,44 +94,33 @@ export class PriceService {
   public static create(
     value: number | string | Decimal
   ): Result<Price, InvalidPriceError> {
+    // Безопасный парсинг value через toDecimal
+    const decimalResult = toDecimal('value', value, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
+    if (!decimalResult.ok) {
+      // raw уже внутри err.context.raw от toDecimal
+      return Err(rewrap('create', {}, decimalResult.error, InvalidPriceError));
+    }
+
     try {
-      const price = Price.of(value);
+      // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
+      const price = Price.fromDecimal(decimalResult.value);
       return Ok(price);
     } catch (error) {
+      // PriceInvariantViolation - доменные ограничения Core
       if (error instanceof PriceInvariantViolation) {
         return Err(
-          new InvalidPriceError(error.message, {
+          rewrap('create', {}, new InvalidPriceError(error.message, {
             context: {
-              op: 'create',
-              value: String(value)
+              raw: { field: 'value', value: String(value) },
+              reason: error.reason
             }
-          })
+          }), InvalidPriceError)
         );
       }
-      // Любая другая ошибка (парсинг Decimal, etc.)
-      if (error instanceof Error) {
-        return Err(
-          new InvalidPriceError(error.message, {
-            context: {
-              op: 'create',
-              value: String(value)
-            }
-          })
-        );
-      }
-      // Unknown error (не Error) - оборачиваем в InvalidPriceError
-      // Сохраняем Result-only контракт: никогда не бросаем исключения
+
+      // Неожиданная ошибка - unexpectedError создаёт базовую ошибку с cause, rewrap добавляет op
       return Err(
-        new InvalidPriceError(
-          `Unexpected non-Error thrown during price creation: ${String(error)}`,
-          {
-            context: {
-              op: 'create',
-              value: String(value),
-              unexpectedError: String(error)
-            }
-          }
-        )
+        rewrap('create', { value: String(value) }, unexpectedError('create', {}, error, 'price', InvalidPriceError), InvalidPriceError)
       );
     }
   }
@@ -148,8 +147,12 @@ export class PriceService {
    * ```
    */
   public static complement(price: Price): Result<Price, InvalidPriceError> {
-    const result = subtractDecimal(this.ONE, price.value());
-    return this.create(result);
+    const ctx = { price: price.value().toString() };
+
+    return wrapOp('complement', ctx, () => {
+      const result = subtractDecimal(this.ONE, price.value());
+      return this.create(result); // wrapOp сам сделает rewrap если Err
+    }, 'price', InvalidPriceError);
   }
 
   /**
@@ -177,9 +180,13 @@ export class PriceService {
     price1: Price,
     price2: Price
   ): Result<Price, InvalidPriceError> {
-    const sum = addDecimal(price1.value(), price2.value());
-    const avgValue = divideDecimal(sum, this.TWO);
-    return this.create(avgValue);
+    const ctx = { price1: price1.value().toString(), price2: price2.value().toString() };
+
+    return wrapOp('average', ctx, () => {
+      const sum = addDecimal(price1.value(), price2.value());
+      const avgValue = divideDecimal(sum, this.TWO);
+      return this.create(avgValue); // wrapOp сам сделает rewrap если Err
+    }, 'price', InvalidPriceError);
   }
 
   /**
@@ -189,13 +196,12 @@ export class PriceService {
    * multiply(0.5, 2) = 1.0 (выйдет за диапазон → Err)
    * multiply(0.3, 2) = 0.6
    *
-   * Парсит factor внутри метода (try/catch).
-   * Может вернуть InvalidOperandError при parse errors.
-   * Может вернуть InvalidPriceError если результат вне диапазона.
+   * Парсит factor через toDecimal, валидирует через rule, выполняет умножение.
+   * ВСЕ ошибки (парсинг, валидация, math, инварианты) оборачиваются в InvalidPriceError.
    *
    * @param price - Исходная цена
    * @param factor - Множитель (number, string, или Decimal)
-   * @returns Result с результатом или InvalidPriceError | InvalidOperandError
+   * @returns Result с результатом или InvalidPriceError
    *
    * @example
    * ```typescript
@@ -209,96 +215,41 @@ export class PriceService {
   public static multiply(
     price: Price,
     factor: number | string | Decimal
-  ): Result<Price, InvalidPriceError | InvalidOperandError> {
-    // Парсинг factor
-    let factorDecimal: Decimal;
-    try {
-      factorDecimal = factor instanceof Decimal ? factor : new Decimal(factor);
-    } catch (error) {
+  ): Result<Price, InvalidPriceError> {
+    // Безопасный парсинг factor через toDecimal
+    const factorResult = toDecimal('factor', factor, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
+    if (!factorResult.ok) {
       return Err(
-        new InvalidOperandError(
-          (ctx) => `Invalid factor: ${ctx.value}`,
-          {
-            code: InvalidOperandError.code,
-            context: {
-              operation: 'multiply',
-              operand: 'factor',
-              value: String(factor),
-              parseError: error instanceof Error ? error.message : 'unknown'
-            }
-          }
-        )
+        rewrap('multiply', {
+          price: price.value().toString(),
+          factor: String(factor)
+        }, factorResult.error, InvalidPriceError)
       );
     }
+
+    const factorDecimal = factorResult.value;
 
     // Валидация через rule (проверяет isNaN, isFinite)
     const validateResult = ValidateFactorForPriceMultiplication.check(factorDecimal);
     if (!validateResult.ok) {
       return Err(
-        withOperationContext(validateResult.error, 'multiply', {
-          price: price.value().toString()
-        })
+        rewrap('multiply', {
+          price: price.value().toString(),
+          factor: factorDecimal.toString()
+        }, validateResult.error, InvalidPriceError)
       );
     }
 
     // Умножение с обработкой ожидаемых арифметических исключений
-    try {
+    const ctx = {
+      price: price.value().toString(),
+      factor: factorDecimal.toString()
+    };
+
+    return wrapOp('multiply', ctx, () => {
       const result = multiplyDecimal(price.value(), factorDecimal);
-
-      // create() может вернуть Err если результат non-finite (overflow) или выходит за диапазон
-      const createResult = this.create(result);
-      if (!createResult.ok) {
-        return Err(
-          withOperationContext(createResult.error, 'multiply', {
-            price: price.value().toString(),
-            factor: factorDecimal.toString()
-          })
-        );
-      }
-
-      return createResult;
-    } catch (error) {
-      // Мапим ТОЛЬКО ожидаемые типы ошибок из @polymarket/math
-      if (error instanceof ArithmeticOverflowError) {
-        return Err(
-          new InvalidPriceError(
-            `Multiplication failed: ${error.message}`,
-            {
-              context: {
-                op: 'multiply',
-                price: price.value().toString(),
-                factor: factorDecimal.toString(),
-                cause: {
-                  name: error.name,
-                  message: error.message
-                }
-              }
-            }
-          )
-        );
-      }
-
-      // Неожиданные ошибки - оборачиваем в Result
-      return Err(
-        new InvalidPriceError(
-          `Unexpected error during price multiply: ${error instanceof Error ? error.message : String(error)}`,
-          {
-            context: {
-              op: 'multiply',
-              price: price.value().toString(),
-              factor: factorDecimal.toString(),
-              cause: error instanceof Error ? {
-                name: error.name,
-                message: error.message
-              } : {
-                name: 'UnknownError',
-                message: String(error)
-              }
-            }
-          }
-        )
-      );
-    }
+      return this.create(result); // wrapOp сам сделает rewrap если Err
+    }, 'price', InvalidPriceError);
   }
 
   /**
@@ -306,27 +257,21 @@ export class PriceService {
    *
    * @param price - Исходная цена
    * @param divisor - Делитель (number, string, или Decimal)
-   * @returns Result с результатом или InvalidPriceError | InvalidDivisorError
+   * @returns Result с результатом или InvalidPriceError
    * @throws Никогда - все ошибки оборачиваются в Result
    *
    * @remarks
    * divide(0.6, 2) = 0.3
-   * divide(0.5, 0) → InvalidDivisorError (проверка через ValidateDivisorForPriceDivision)
+   * divide(0.5, 0) → Err (проверка через ValidateDivisorForPriceDivision)
    *
    * Алгоритм:
-   * 1. Парсинг divisor в Decimal (try/catch для parse errors)
-   * 2. Валидация divisor через ValidateDivisorForPriceDivision (проверка isNaN, isFinite, isZero)
+   * 1. Парсинг divisor через toDecimal
+   * 2. Валидация divisor через ValidateDivisorForPriceDivision (isNaN, isFinite, isZero)
    * 3. Деление через divideDecimal() из @polymarket/math
    * 4. Создание Price из результата
    *
-   * Обработка ошибок:
-   * - Ошибки парсинга divisor → InvalidDivisorError
-   * - Невалидный divisor (через rule) → InvalidDivisorError
-   * - ArithmeticOverflowError из divideDecimal → InvalidPriceError с причиной в context.cause
-   * - Неожиданные ошибки → InvalidPriceError с полным контекстом
-   * - Результат вне диапазона Price → InvalidPriceError
-   *
-   * Все ошибки оборачиваются в Result. Метод никогда не бросает исключения.
+   * ВСЕ ошибки (парсинг, валидация, math, инварианты) оборачиваются в InvalidPriceError.
+   * Метод никогда не бросает исключения.
    *
    * @example
    * ```typescript
@@ -340,96 +285,41 @@ export class PriceService {
   public static divide(
     price: Price,
     divisor: number | string | Decimal
-  ): Result<Price, InvalidPriceError | InvalidDivisorError> {
-    // Парсинг divisor
-    let divisorDecimal: Decimal;
-    try {
-      divisorDecimal = divisor instanceof Decimal ? divisor : new Decimal(divisor);
-    } catch (error) {
+  ): Result<Price, InvalidPriceError> {
+    // Безопасный парсинг divisor через toDecimal
+    const divisorResult = toDecimal('divisor', divisor, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
+    if (!divisorResult.ok) {
       return Err(
-        new InvalidDivisorError(
-          (ctx) => `Invalid divisor: ${ctx.rawDivisor}`,
-          {
-            context: {
-              operation: 'divide',
-              rawDivisor: String(divisor),
-              divisor: String(divisor),
-              dividend: price.value().toString(),
-              parseError: error instanceof Error ? error.message : 'unknown'
-            }
-          }
-        )
+        rewrap('divide', {
+          price: price.value().toString(),
+          divisor: String(divisor)
+        }, divisorResult.error, InvalidPriceError)
       );
     }
 
-    // Валидация через rule (принимает только Decimal)
+    const divisorDecimal = divisorResult.value;
+
+    // Валидация через rule
     const validateResult = ValidateDivisorForPriceDivision.check(divisorDecimal);
     if (!validateResult.ok) {
       return Err(
-        withOperationContext(validateResult.error, 'divide', {
-          dividend: price.value().toString()
-        })
+        rewrap('divide', {
+          price: price.value().toString(),
+          divisor: divisorDecimal.toString()
+        }, validateResult.error, InvalidPriceError)
       );
     }
 
     // Делим с обработкой ожидаемых арифметических исключений
-    try {
+    const ctx = {
+      price: price.value().toString(),
+      divisor: divisorDecimal.toString()
+    };
+
+    return wrapOp('divide', ctx, () => {
       const result = divideDecimal(price.value(), divisorDecimal);
-
-      // create() может вернуть Err если результат non-finite (overflow) или выходит за диапазон
-      const createResult = this.create(result);
-      if (!createResult.ok) {
-        return Err(
-          withOperationContext(createResult.error, 'divide', {
-            dividend: price.value().toString(),
-            divisor: divisorDecimal.toString()
-          })
-        );
-      }
-
-      return createResult;
-    } catch (error) {
-      // Мапим ТОЛЬКО ожидаемые типы ошибок из @polymarket/math
-      if (error instanceof ArithmeticOverflowError) {
-        return Err(
-          new InvalidPriceError(
-            `Division failed: ${error.message}`,
-            {
-              context: {
-                op: 'divide',
-                dividend: price.value().toString(),
-                divisor: divisorDecimal.toString(),
-                cause: {
-                  name: error.name,
-                  message: error.message
-                }
-              }
-            }
-          )
-        );
-      }
-
-      // Неожиданные ошибки - оборачиваем в Result
-      return Err(
-        new InvalidPriceError(
-          `Unexpected error during price divide: ${error instanceof Error ? error.message : String(error)}`,
-          {
-            context: {
-              op: 'divide',
-              dividend: price.value().toString(),
-              divisor: divisorDecimal.toString(),
-              cause: error instanceof Error ? {
-                name: error.name,
-                message: error.message
-              } : {
-                name: 'UnknownError',
-                message: String(error)
-              }
-            }
-          }
-        )
-      );
-    }
+      return this.create(result); // wrapOp сам сделает rewrap если Err
+    }, 'price', InvalidPriceError);
   }
 
   /**
@@ -438,7 +328,7 @@ export class PriceService {
    * @param price - Исходная цена
    * @param tickSize - Размер тика (number, string, или Decimal)
    * @param mode - Режим округления ('nearest' | 'floor' | 'ceil')
-   * @returns Result с округлённой ценой или InvalidPriceError | InvalidTickSizeError
+   * @returns Result с округлённой ценой или InvalidPriceError
    * @throws Никогда - все ошибки оборачиваются в Result
    *
    * @remarks
@@ -453,18 +343,14 @@ export class PriceService {
    * КОНТРАКТ: результат ДОЛЖЕН проходить ValidateAligned.check()
    *
    * Алгоритм:
-   * 1. Валидация tickSize через ValidateTickSizeMultipleOfBaseTick (проверка на кратность базовому тику 0.0001)
-   * 2. Выбор направления округления (nearest/floor/ceil)
-   * 3. Округление через @polymarket/math функции (roundToTick/floorToTick/ceilToTick)
-   * 4. Создание Price из округлённого значения
+   * 1. Парсинг tickSize через toDecimal
+   * 2. Валидация tickSize через ValidateTickSizeMultipleOfBaseTick (кратность 0.0001)
+   * 3. Выбор направления округления (nearest/floor/ceil)
+   * 4. Округление через @polymarket/math функции (roundToTick/floorToTick/ceilToTick)
+   * 5. Создание Price из округлённого значения
    *
-   * Обработка ошибок:
-   * - Невалидный tickSize → InvalidTickSizeError
-   * - ArithmeticOverflowError из roundCore → InvalidPriceError с причиной в context.cause
-   * - Неожиданные ошибки → InvalidPriceError с полным контекстом
-   * - Результат вне диапазона → InvalidPriceError
-   *
-   * Все ошибки оборачиваются в Result. Метод никогда не бросает исключения.
+   * ВСЕ ошибки (парсинг, валидация, math, инварианты) оборачиваются в InvalidPriceError.
+   * Метод никогда не бросает исключения.
    *
    * @example
    * ```typescript
@@ -479,12 +365,39 @@ export class PriceService {
     price: Price,
     tickSize: number | string | Decimal,
     mode: 'nearest' | 'floor' | 'ceil' = 'nearest'
-  ): Result<Price, InvalidPriceError | InvalidTickSizeError> {
-    const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickSize);
-    if (!tickRes.ok) return Err(tickRes.error);
+  ): Result<Price, InvalidPriceError> {
+    // Безопасный парсинг tickSize через toDecimal
+    const tickDecimalResult = toDecimal('tickSize', tickSize, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
+    if (!tickDecimalResult.ok) {
+      return Err(
+        rewrap('roundToMarketTick', {
+          price: price.value().toString(),
+          tickSize: String(tickSize),
+          mode
+        }, tickDecimalResult.error, InvalidPriceError)
+      );
+    }
+
+    // Валидация через rule (уже принимает Decimal)
+    const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickDecimalResult.value);
+    if (!tickRes.ok) {
+      return Err(
+        rewrap('roundToMarketTick', {
+          price: price.value().toString(),
+          tickSize: tickDecimalResult.value.toString(),
+          mode
+        }, tickRes.error, InvalidPriceError)
+      );
+    }
     const tick = tickRes.value;
 
-    try {
+    const ctx = {
+      price: price.value().toString(),
+      tickSize: tick.toString(),
+      mode
+    };
+
+    return wrapOp('roundToMarketTick', ctx, () => {
       let out: Decimal;
 
       switch (mode) {
@@ -502,54 +415,8 @@ export class PriceService {
           break;
       }
 
-      const createResult = this.create(out);
-      if (!createResult.ok) {
-        return Err(
-          withOperationContext(createResult.error, 'roundToMarketTick', {
-            price: price.value().toString(),
-            tickSize: tick.toString(),
-            mode
-          })
-        );
-      }
-      return createResult;
-    } catch (e: unknown) {
-      if (e instanceof InvalidTickSizeError) return Err(e);
-
-      if (e instanceof ArithmeticOverflowError) {
-        return Err(
-          new InvalidPriceError(
-            e.message,
-            {
-              context: {
-                op: 'roundToMarketTick',
-                price: price.value().toString(),
-                tickSize: tick.toString(),
-                mode,
-                cause: { name: e.name, message: e.message }
-              }
-            }
-          )
-        );
-      }
-
-      return Err(
-        new InvalidPriceError(
-          e instanceof Error ? e.message : String(e),
-          {
-            context: {
-              op: 'roundToMarketTick',
-              price: price.value().toString(),
-              tickSize: tick.toString(),
-              mode,
-              cause: e instanceof Error
-                ? { name: e.name, message: e.message }
-                : { name: 'UnknownError', message: String(e) }
-            }
-          }
-        )
-      );
-    }
+      return this.create(out); // wrapOp сам сделает rewrap если Err
+    }, 'price', InvalidPriceError);
   }
 
   /**
@@ -562,9 +429,11 @@ export class PriceService {
    * Используется для валидации после округления или
    * для проверки входящих данных.
    *
+   * ВСЕ ошибки (парсинг tickSize, валидация, alignment) оборачиваются в InvalidPriceError.
+   *
    * @param price - Цена для проверки
    * @param tickSize - Размер тика (number, string, или Decimal)
-   * @returns Result<void> если кратен, InvalidPriceError | InvalidTickSizeError если нет
+   * @returns Result<void> если кратен, InvalidPriceError если нет
    *
    * @example
    * ```typescript
@@ -580,7 +449,41 @@ export class PriceService {
   public static ensureAlignedToMarketTick(
     price: Price,
     tickSize: number | string | Decimal
-  ): Result<void, InvalidPriceError | InvalidTickSizeError> {
-    return ValidateAligned.check(price, tickSize);
+  ): Result<void, InvalidPriceError> {
+    // Безопасный парсинг tickSize через toDecimal
+    const tickDecimalResult = toDecimal('tickSize', tickSize, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
+    if (!tickDecimalResult.ok) {
+      return Err(
+        rewrap('ensureAlignedToMarketTick', {
+          price: price.value().toString(),
+          tickSize: String(tickSize)
+        }, tickDecimalResult.error, InvalidPriceError)
+      );
+    }
+
+    // Валидация tickSize через ValidateTickSizeMultipleOfBaseTick (как в roundToMarketTick)
+    const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickDecimalResult.value);
+    if (!tickRes.ok) {
+      return Err(
+        rewrap('ensureAlignedToMarketTick', {
+          price: price.value().toString(),
+          tickSize: tickDecimalResult.value.toString()
+        }, tickRes.error, InvalidPriceError)
+      );
+    }
+
+    const tick = tickRes.value;
+
+    // Проверка alignment
+    const result = ValidateAligned.check(price, tick);
+    if (!result.ok) {
+      return Err(
+        rewrap('ensureAlignedToMarketTick', {
+          price: price.value().toString(),
+          tickSize: tick.toString()
+        }, result.error, InvalidPriceError)
+      );
+    }
+    return result;
   }
 }

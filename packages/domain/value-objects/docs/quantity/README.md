@@ -108,6 +108,7 @@ Quantity модуль построен на **4-слойной архитект�
 - **Facade слой**: Ловит исключения и возвращает `Result<Quantity, InvalidQuantityError>`
 
 Это обеспечивает:
+
 - Явное управление ошибками через `Result<T, E>`
 - Невозможность забыть обработать ошибку (compile-time проверка)
 - Типизированный контекст ошибок
@@ -123,14 +124,17 @@ Quantity модуль построен на **4-слойной архитект�
 **Назначение:** Базовый value object с инвариантами
 
 **Компоненты:**
+
 - `Quantity` — иммутабельный value object
 - `QuantityInvariantViolation` — типизированное исключение
 
 **Инварианты:**
+
 - Значение должно быть finite (не `NaN`, не `Infinity`)
 - Значение должно быть >= 0 (неотрицательное)
 
 **API:**
+
 ```typescript
 // Создание
 Quantity.of(value: Decimal.Value): Quantity
@@ -161,6 +165,7 @@ quantity.isGreaterThanOrEqual(other: Quantity): boolean
 **Назначение:** Атомарные правила валидации
 
 **Правила:**
+
 - `ValidateMinSize` — проверка минимального размера
 - `ValidateResultNonNegative` — проверка неотрицательности результата
 - `ValidateDivisorForQuantityDivision` — валидация делителя
@@ -186,21 +191,27 @@ create(value: number | string | Decimal): Result<Quantity, InvalidQuantityError>
 // Арифметика
 add(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError>
 subtract(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError>
-multiply(quantity: Quantity, factor: number | Decimal): Result<Quantity, InvalidQuantityError>
-divide(quantity: Quantity, divisor: number | Decimal): Result<Quantity, InvalidQuantityError>
+multiply(quantity: Quantity, factor: number | string | Decimal): Result<Quantity, InvalidQuantityError>
+divide(quantity: Quantity, divisor: number | string | Decimal): Result<Quantity, InvalidQuantityError>
 
 // Округление
-roundToStep(quantity: Quantity, stepSize: Decimal, roundingMode?: Decimal.Rounding): Result<Quantity, InvalidQuantityError>
+roundToStep(quantity: Quantity, stepSize: number | string | Decimal, roundingMode?: Decimal.Rounding): Result<Quantity, InvalidQuantityError>
 ```
+
+**Контракт "Never Throw":**
+
+ВСЕ методы QuantityService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения. Любые ошибки (ожидаемые и неожиданные) ловятся и преобразуются в Result.Err.
 
 **Facade Error Contract:**
 
 Все ошибки содержат:
-- `context.op` — название операции (`'create'`, `'add'`, `'divide'`, etc.)
+
+- `context.op` — название операции (`'create'`, `'add'`, `'divide'`, etc.) — **ВСЕГДА присутствует**
 - `context.quantity` — входное количество (если применимо)
-- `context.divisor|factor|stepSize` — параметры операции
+- `context.divisor|factor|stepSize` — параметры операции (операционные поля)
+- `context.raw` — сырой ввод для toDecimal (для ошибок парсинга)
 - `context.reason` — причина из Core/Rules (`'NEGATIVE'`, `'NON_FINITE'`)
-- `context.cause` — для math-исключений: `{ name, message }`
+- `context.cause` — для math-исключений и unexpected errors: `{ name, message, stack? }`
 
 Подробнее: [facade.md](./facade.md)
 
@@ -211,11 +222,13 @@ roundToStep(quantity: Quantity, stepSize: Decimal, roundingMode?: Decimal.Roundi
 **Назначение:** Сериализация и форматирование
 
 **Компоненты:**
+
 - `QuantitySerializer` — точная сериализация через `string`
 - `QuantityLossySerializer` — lossy сериализация через `number`
 - `QuantityFormatter` — форматирование в строки
 
 **Пример:**
+
 ```typescript
 // Точная сериализация (для больших чисел)
 const json = QuantitySerializer.toJSON(qty);  // { value: "12345678901234567890.123" }
@@ -420,6 +433,7 @@ console.log(QuantityFormatter.toDebugString(qty));  // "Quantity(1500)"
 Старый `Quantity.ts` остаётся для backward compatibility, но новый код должен использовать `QuantityService`.
 
 **Было:**
+
 ```typescript
 import { Quantity } from '@polymarket/value-objects';
 
@@ -427,6 +441,7 @@ const qty = new Quantity(10);  // Может бросить исключение
 ```
 
 **Стало:**
+
 ```typescript
 import { QuantityService } from '@polymarket/value-objects/quantity';
 
@@ -459,4 +474,4 @@ const qty = result.value;
 Вопросы? Проблемы? Создайте issue в репозитории.
 
 **Версия:** 0.1.0
-**Последнее обновление:** 29 января 2026
+**Последнее обновление:** 1 февраля 2026

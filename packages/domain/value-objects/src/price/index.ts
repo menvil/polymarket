@@ -7,6 +7,9 @@ export { PriceService } from './facade/index.js';
 // Adapters (публичный API)
 export { PriceSerializer, PriceFormatter } from './adapters/index.js';
 
+// Errors (публичный API)
+export { PriceErrorReason } from './errors/PriceErrorReason.js';
+
 // Rules (только типы для потребителей)
-// ErrorContext и *ErrorReason НЕ экспортируются из верхнего index
-// Для type-safe error handling импортируй из '@polymarket/value-objects/price/rules'
+// ErrorContext и внутренние типы Rules НЕ экспортируются из верхнего index
+// Для type-safe error handling используй PriceErrorReason (экспортирован выше)
