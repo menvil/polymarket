@@ -83,7 +83,7 @@ if (result.ok) {
 const negResult = QuantityService.create(-1);
 if (!negResult.ok) {
   console.log(negResult.error.context?.op);     // 'create'
-  console.log(negResult.error.context?.reason); // 'NEGATIVE'
+  console.log(negResult.error.context?.reason); // 'NEGATIVE_QUANTITY'
 }
 
 // Ошибка: non-finite
@@ -600,7 +600,7 @@ describe('QuantityService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.op).toBe('create');
-        expect(result.error.context?.reason).toBe('NEGATIVE');
+        expect(result.error.context?.reason).toBe('NEGATIVE_QUANTITY');
       }
     });
   });

@@ -887,7 +887,7 @@ async function loadOrder(orderId: string): Promise<{ id: string; quantity: Quant
 ### Централизованная обработка ошибок
 
 ```typescript
-import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { QuantityService, Quantity, QuantityErrorReason } from '@polymarket/value-objects/quantity';
 import { InvalidQuantityError } from '@polymarket/errors';
 
 function handleQuantityError(error: InvalidQuantityError): string {
@@ -896,10 +896,10 @@ function handleQuantityError(error: InvalidQuantityError): string {
   // Проверяем операцию
   switch (ctx?.op) {
     case 'create':
-      if (ctx.reason === 'NEGATIVE') {
+      if (ctx.reason === QuantityErrorReason.NEGATIVE_QUANTITY) {
         return 'Quantity cannot be negative';
       }
-      if (ctx.reason === 'NON_FINITE') {
+      if (ctx.reason === QuantityErrorReason.NON_FINITE) {
         return 'Quantity must be a valid number';
       }
       if (error.message.includes('minimum size')) {
@@ -917,7 +917,7 @@ function handleQuantityError(error: InvalidQuantityError): string {
       break;
 
     case 'multiply':
-      if (ctx.reason === 'NEGATIVE') {
+      if (ctx.reason === QuantityErrorReason.NEGATIVE_QUANTITY) {
         return 'Cannot multiply by negative factor';
       }
       break;
@@ -965,8 +965,8 @@ async function createOrderWithRetry(
     lastError = result.error;
 
     // Если ошибка валидации - не ретраим
-    if (result.error.context?.reason === 'NEGATIVE' ||
-        result.error.context?.reason === 'NON_FINITE') {
+    if (result.error.context?.reason === QuantityErrorReason.NEGATIVE_QUANTITY ||
+        result.error.context?.reason === QuantityErrorReason.NON_FINITE) {
       throw result.error;
     }
 

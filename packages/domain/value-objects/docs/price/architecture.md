@@ -416,7 +416,7 @@ calculate(price, value, op): Result<Price, InvalidPriceError>
 **Почему выбрали:**
 
 - ✅ Explicit intent (явное намерение)
-- ✅ Разные типы ошибок для разных операций
+- ✅ Специфичный контекст ошибок для каждой операции
 - ✅ Type narrowing работает корректно
 
 ---
