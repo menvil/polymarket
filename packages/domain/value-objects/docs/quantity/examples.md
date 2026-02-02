@@ -20,7 +20,7 @@
 ### Создание Quantity
 
 ```typescript
-import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { QuantityService, Quantity, QuantityErrorReason } from '@polymarket/value-objects/quantity';
 
 // Из number
 const result1 = QuantityService.create(10);
@@ -43,14 +43,14 @@ const result3 = QuantityService.create(decimal);
 // ❌ Ошибка: negative
 const negResult = QuantityService.create(-1);
 if (!negResult.ok) {
-  console.log(negResult.error.context?.reason); // 'NEGATIVE'
+  console.log(negResult.error.context?.reason === QuantityErrorReason.NEGATIVE_QUANTITY); // true
   console.log(negResult.error.message); // "Quantity value cannot be negative"
 }
 
 // ❌ Ошибка: non-finite
 const nanResult = QuantityService.create(NaN);
 if (!nanResult.ok) {
-  console.log(nanResult.error.context?.reason); // 'NON_FINITE'
+  console.log(nanResult.error.context?.reason === QuantityErrorReason.NON_FINITE); // true
 }
 ```
 

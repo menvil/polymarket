@@ -443,22 +443,22 @@ roundToMarketTick() → ValidateTickSizeMultipleOfBaseTick
 
 ---
 
-### 6. Почему withOperationContext вместо дублирования контекста?
+### 6. Почему rewrap вместо дублирования контекста?
 
-**Решение:** Helper для добавления контекста операции.
+**Решение:** Helper `rewrap` из errorUtils для добавления контекста операции с сохранением root-cause.
 
 ```typescript
-// ✅ Текущее решение
+// ✅ Текущее решение с rewrap
 const validateResult = ValidateDivisorForPriceDivision.check(divisor);
 if (!validateResult.ok) {
   return Err(
-    withOperationContext(validateResult.error, 'divide', {
+    rewrap('divide', {
       dividend: price.value().toString()
-    })
+    }, validateResult.error, InvalidPriceError)
   );
 }
 
-// ❌ Альтернатива: дублировать всё
+// ❌ Альтернатива: дублировать всё вручную
 if (!validateResult.ok) {
   return Err(
     new InvalidPriceError(validateResult.error.message, {
@@ -466,7 +466,8 @@ if (!validateResult.ok) {
         op: 'divide',
         divisor: validateResult.error.context.divisor,
         dividend: price.value().toString(),
-        reason: validateResult.error.context.reason
+        reason: validateResult.error.context.reason,
+        opChain: [...(validateResult.error.context.opChain || []), 'divide']
       }
     })
   );

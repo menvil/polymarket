@@ -151,10 +151,10 @@ if (result2.ok) {
 // Ошибка: невалидный factor (NaN)
 const nanResult = PriceService.multiply(price, NaN);
 if (!nanResult.ok) {
-  console.log(nanResult.error.context?.operation);  // 'multiply'
-  console.log(nanResult.error.context?.operand);    // 'factor'
-  console.log(nanResult.error.context?.value);      // 'NaN'
-  console.log(nanResult.error.context?.reason);     // 'is_nan'
+  console.log(nanResult.error.context?.op);         // 'multiply'
+  console.log(nanResult.error.context?.raw?.field); // 'factor'
+  console.log(nanResult.error.context?.raw?.value); // 'NaN'
+  console.log(nanResult.error.context?.reason);     // PriceErrorReason.NAN
 }
 
 // Ошибка: результат выходит за диапазон

@@ -17,8 +17,11 @@
 Все ошибки из `QuantityService` содержат стандартный контекст:
 
 ```typescript
+import { QuantityErrorReason } from './errors/QuantityErrorReason';
+
 interface InvalidQuantityErrorContext {
   op: string;  // Название операции: 'create', 'add', 'divide', etc. (ВСЕГДА присутствует)
+  opChain?: string[];  // Цепочка вложенных операций для трассировки
 
   // Входные данные (операционные поля)
   value?: string;
@@ -30,14 +33,17 @@ interface InvalidQuantityErrorContext {
   stepSize?: string;
 
   // Сырой ввод (для ошибок парсинга)
-  raw?: string;  // Что пришло в toDecimal перед парсингом
+  raw?: {
+    field: string;  // Имя поля: 'value', 'factor', 'divisor', 'stepSize'
+    value: string;  // Сырое значение перед парсингом
+  };
 
-  // Причина из Core/Rules
-  reason?: 'NEGATIVE' | 'NON_FINITE';
+  // Причина из Core/Rules (типизированный enum)
+  reason?: QuantityErrorReason;
 
   // Для math exceptions и unexpected errors
   cause?: {
-    name: string;     // 'DivisionByZeroError', 'InvalidQuantityError', 'InvalidOperandError', 'UnknownError'
+    name: string;     // 'DivisionByZeroError', 'ArithmeticOverflowError', 'InvalidOperandError', 'UnknownError'
     message: string;
     stack?: string;   // Stack trace для отладки
   };
