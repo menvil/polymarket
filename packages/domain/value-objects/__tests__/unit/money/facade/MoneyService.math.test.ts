@@ -12,7 +12,7 @@ describe('MoneyService.add()', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(150);
+        expect(result.value.value().toNumber()).toBe(150);
       }
     });
 
@@ -21,7 +21,7 @@ describe('MoneyService.add()', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         // ✅ Decimal сравнение вместо toNumber (lossy)
-        expect(result.value.amount().equals(new Decimal('150.75'))).toBe(true);
+        expect(result.value.value().equals(new Decimal('150.75'))).toBe(true);
       }
     });
 
@@ -29,7 +29,7 @@ describe('MoneyService.add()', () => {
       const result = MoneyService.add(Money.of(-50), Money.of(100));
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(50);
+        expect(result.value.value().toNumber()).toBe(50);
       }
     });
 
@@ -37,7 +37,7 @@ describe('MoneyService.add()', () => {
       const result = MoneyService.add(Money.of(100), Money.ZERO.USDC);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(100);
+        expect(result.value.value().toNumber()).toBe(100);
       }
     });
   });
@@ -69,7 +69,7 @@ describe('MoneyService.add()', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         // ✅ ИСПРАВЛЕНО: проверяем через equals
-        expect(result.value.amount().equals(new Decimal('1e15'))).toBe(true);
+        expect(result.value.value().equals(new Decimal('1e15'))).toBe(true);
       }
     });
   });
@@ -86,7 +86,7 @@ describe('MoneyService.subtract()', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(70);
+        expect(result.value.value().toNumber()).toBe(70);
       }
     });
 
@@ -94,7 +94,7 @@ describe('MoneyService.subtract()', () => {
       const result = MoneyService.subtract(Money.of('100.5'), Money.of('50.25'));
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().equals(new Decimal('50.25'))).toBe(true);
+        expect(result.value.value().equals(new Decimal('50.25'))).toBe(true);
       }
     });
 
@@ -102,7 +102,7 @@ describe('MoneyService.subtract()', () => {
       const result = MoneyService.subtract(Money.of(50), Money.of(100));
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(-50);
+        expect(result.value.value().toNumber()).toBe(-50);
       }
     });
   });
@@ -128,7 +128,7 @@ describe('MoneyService.multiply()', () => {
       const result = MoneyService.multiply(Money.of(100), 2);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(200);
+        expect(result.value.value().toNumber()).toBe(200);
       }
     });
 
@@ -136,7 +136,7 @@ describe('MoneyService.multiply()', () => {
       const result = MoneyService.multiply(Money.of(100), 1.5);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().equals(new Decimal('150'))).toBe(true);
+        expect(result.value.value().equals(new Decimal('150'))).toBe(true);
       }
     });
 
@@ -144,7 +144,7 @@ describe('MoneyService.multiply()', () => {
       const result = MoneyService.multiply(Money.of(100), 0);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(0);
+        expect(result.value.value().toNumber()).toBe(0);
       }
     });
 
@@ -152,7 +152,7 @@ describe('MoneyService.multiply()', () => {
       const result = MoneyService.multiply(Money.of(100), -2);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(-200);
+        expect(result.value.value().toNumber()).toBe(-200);
       }
     });
   });
@@ -202,7 +202,7 @@ describe('MoneyService.divide()', () => {
       const result = MoneyService.divide(Money.of(100), 2);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(50);
+        expect(result.value.value().toNumber()).toBe(50);
       }
     });
 
@@ -210,7 +210,7 @@ describe('MoneyService.divide()', () => {
       const result = MoneyService.divide(Money.of(100), 4);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().equals(new Decimal('25'))).toBe(true);
+        expect(result.value.value().equals(new Decimal('25'))).toBe(true);
       }
     });
 
@@ -218,7 +218,7 @@ describe('MoneyService.divide()', () => {
       const result = MoneyService.divide(Money.of(100), -2);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(-50);
+        expect(result.value.value().toNumber()).toBe(-50);
       }
     });
   });

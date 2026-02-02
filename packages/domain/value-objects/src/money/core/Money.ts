@@ -190,10 +190,10 @@ export class Money {
    * @example
    * ```typescript
    * const money = Money.of(100.5);
-   * const decimal = money.amount(); // Decimal
+   * const decimal = money.value(); // Decimal
    * ```
    */
-  public amount(): Decimal {
+  public value(): Decimal {
     return this.amt;
   }
 
@@ -212,7 +212,7 @@ export class Money {
    * @returns number
    *
    * @remarks
-   * ⚠️ Может потерять точность. Для вычислений используйте {@link amount}.
+   * ⚠️ Может потерять точность. Для вычислений используйте {@link value}.
    *
    * @example
    * ```typescript
@@ -222,15 +222,6 @@ export class Money {
    */
   public toNumber(): number {
     return this.amt.toNumber();
-  }
-
-  /**
-   * Алиас для {@link amount}.
-   *
-   * @returns Decimal
-   */
-  public toDecimal(): Decimal {
-    return this.amt;
   }
 
   /**

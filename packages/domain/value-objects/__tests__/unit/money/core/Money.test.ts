@@ -98,8 +98,8 @@ describe('Money core', () => {
   describe('Money.zero()', () => {
     it('создаёт ноль', () => {
       const money = Money.zero();
-      expect(money.amount().toNumber()).toBe(0);
-      expect(money.amount().isZero()).toBe(true);
+      expect(money.value().toNumber()).toBe(0);
+      expect(money.value().isZero()).toBe(true);
     });
 
     it('валюта по умолчанию', () => {

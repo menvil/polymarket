@@ -47,7 +47,7 @@ export class MoneyFormatter {
     if (decimals < 0 || !Number.isInteger(decimals)) {
       throw new RangeError('decimals argument must be a non-negative integer');
     }
-    return money.amount().toFixed(decimals);
+    return money.value().toFixed(decimals);
   }
 
   /**
@@ -83,7 +83,7 @@ export class MoneyFormatter {
       throw new RangeError('decimals argument must be a non-negative integer');
     }
 
-    const amount = money.amount();
+    const amount = money.value();
     const isNegative = amount.isNegative();
     const absAmount = amount.abs().toFixed(decimals);
     const formatted = isNegative ? `-$${absAmount}` : `$${absAmount}`;
@@ -121,7 +121,7 @@ export class MoneyFormatter {
       throw new RangeError('decimals argument must be a non-negative integer');
     }
 
-    const amount = money.amount();
+    const amount = money.value();
     const absAmount = amount.abs();
     const sign = amount.isNegative() ? '-' : '';
 

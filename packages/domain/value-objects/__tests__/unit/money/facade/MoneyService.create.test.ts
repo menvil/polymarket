@@ -8,7 +8,7 @@ describe('MoneyService.create()', () => {
       const result = MoneyService.create(100);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().toNumber()).toBe(100);
+        expect(result.value.value().toNumber()).toBe(100);
       }
     });
 
@@ -17,7 +17,7 @@ describe('MoneyService.create()', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         // ✅ Сравниваем через Decimal.equals вместо string
-        expect(result.value.amount().equals(new Decimal('42.5'))).toBe(true);
+        expect(result.value.value().equals(new Decimal('42.5'))).toBe(true);
       }
     });
 
@@ -27,7 +27,7 @@ describe('MoneyService.create()', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         // ✅ ИСПРАВЛЕНО: .equals() вместо toBe()
-        expect(result.value.amount().equals(decimal)).toBe(true);
+        expect(result.value.value().equals(decimal)).toBe(true);
       }
     });
   });

@@ -50,7 +50,7 @@ import { toDecimal, rewrap, wrapOp, unexpectedError } from '../../shared/facade/
  *
  * const result = MoneyService.create(100, 'USDC');
  * if (result.ok) {
- *   console.log(result.value.amount()); // Decimal(100)
+ *   console.log(result.value.value()); // Decimal(100)
  * } else {
  *   console.error(result.error.message);
  *   console.error(result.error.context.reason); // MoneyErrorReason.INVALID_FORMAT, etc.
@@ -82,7 +82,7 @@ export class MoneyService {
    * ```typescript
    * const result = MoneyService.create(100);
    * if (result.ok) {
-   *   console.log(result.value.amount());
+   *   console.log(result.value.value());
    * }
    * ```
    */
@@ -196,7 +196,7 @@ export class MoneyService {
    * ```typescript
    * const result = MoneyService.add(Money.of(100), Money.of(50));
    * if (result.ok) {
-   *   console.log(result.value.amount().toNumber()); // 150
+   *   console.log(result.value.value().toNumber()); // 150
    * }
    * ```
    */
@@ -213,12 +213,12 @@ export class MoneyService {
           actual: b.currency()
         }
       });
-      return Err(rewrap('add', { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() }, baseError, InvalidMoneyError));
+      return Err(rewrap('add', { a: a.value().toString(), b: b.value().toString(), currency: a.currency() }, baseError, InvalidMoneyError));
     }
 
-    const ctx = { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() };
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
     return wrapOp('add', ctx, () => {
-      const sum = addDecimal(a.amount(), b.amount());
+      const sum = addDecimal(a.value(), b.value());
       return this.createFromDecimal(sum, a.currency(), 'add', ctx);
     }, 'money', InvalidMoneyError);
   }
@@ -242,7 +242,7 @@ export class MoneyService {
    * ```typescript
    * const result = MoneyService.subtract(Money.of(100), Money.of(30));
    * if (result.ok) {
-   *   console.log(result.value.amount().toNumber()); // 70
+   *   console.log(result.value.value().toNumber()); // 70
    * }
    * ```
    */
@@ -259,12 +259,12 @@ export class MoneyService {
           actual: b.currency()
         }
       });
-      return Err(rewrap('subtract', { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() }, baseError, InvalidMoneyError));
+      return Err(rewrap('subtract', { a: a.value().toString(), b: b.value().toString(), currency: a.currency() }, baseError, InvalidMoneyError));
     }
 
-    const ctx = { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() };
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
     return wrapOp('subtract', ctx, () => {
-      const diff = subtractDecimal(a.amount(), b.amount());
+      const diff = subtractDecimal(a.value(), b.value());
       return this.createFromDecimal(diff, a.currency(), 'subtract', ctx);
     }, 'money', InvalidMoneyError);
   }
@@ -293,7 +293,7 @@ export class MoneyService {
    * ```typescript
    * const result = MoneyService.multiply(Money.of(100), 1.5);
    * if (result.ok) {
-   *   console.log(result.value.amount().toNumber()); // 150
+   *   console.log(result.value.value().toNumber()); // 150
    * }
    * ```
    */
@@ -306,7 +306,7 @@ export class MoneyService {
     if (!factorResult.ok) {
       return Err(
         rewrap('multiply', {
-          amount: m.amount().toString(),
+          amount: m.value().toString(),
           factor: String(factor),
           currency: m.currency()
         }, factorResult.error, InvalidMoneyError)
@@ -320,7 +320,7 @@ export class MoneyService {
     if (!validateResult.ok) {
       return Err(
         rewrap('multiply', {
-          amount: m.amount().toString(),
+          amount: m.value().toString(),
           factor: factorDecimal.toString(),
           currency: m.currency()
         }, validateResult.error, InvalidMoneyError)
@@ -329,13 +329,13 @@ export class MoneyService {
 
     // Умножение с обработкой ожидаемых арифметических исключений
     const ctx = {
-      amount: m.amount().toString(),
+      amount: m.value().toString(),
       factor: factorDecimal.toString(),
       currency: m.currency()
     };
 
     return wrapOp('multiply', ctx, () => {
-      const product = multiplyDecimal(m.amount(), factorDecimal);
+      const product = multiplyDecimal(m.value(), factorDecimal);
       return this.createFromDecimal(product, m.currency(), 'multiply', ctx);
     }, 'money', InvalidMoneyError);
   }
@@ -364,7 +364,7 @@ export class MoneyService {
    * ```typescript
    * const result = MoneyService.divide(Money.of(100), 2);
    * if (result.ok) {
-   *   console.log(result.value.amount().toNumber()); // 50
+   *   console.log(result.value.value().toNumber()); // 50
    * }
    * ```
    */
@@ -377,7 +377,7 @@ export class MoneyService {
     if (!divisorResult.ok) {
       return Err(
         rewrap('divide', {
-          amount: m.amount().toString(),
+          amount: m.value().toString(),
           divisor: String(divisor),
           currency: m.currency()
         }, divisorResult.error, InvalidMoneyError)
@@ -391,7 +391,7 @@ export class MoneyService {
     if (!validateResult.ok) {
       return Err(
         rewrap('divide', {
-          amount: m.amount().toString(),
+          amount: m.value().toString(),
           divisor: divisorDecimal.toString(),
           currency: m.currency()
         }, validateResult.error, InvalidMoneyError)
@@ -400,13 +400,13 @@ export class MoneyService {
 
     // Деление с обработкой ожидаемых арифметических исключений
     const ctx = {
-      amount: m.amount().toString(),
+      amount: m.value().toString(),
       divisor: divisorDecimal.toString(),
       currency: m.currency()
     };
 
     return wrapOp('divide', ctx, () => {
-      const quotient = divideDecimal(m.amount(), divisorDecimal);
+      const quotient = divideDecimal(m.value(), divisorDecimal);
       return this.createFromDecimal(quotient, m.currency(), 'divide', ctx);
     }, 'money', InvalidMoneyError);
   }

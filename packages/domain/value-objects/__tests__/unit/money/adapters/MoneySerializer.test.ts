@@ -45,7 +45,7 @@ describe('MoneySerializer', () => {
 
         expect(result.ok).toBe(true);
         if (result.ok) {
-          expect(result.value.amount().toNumber()).toBe(100);
+          expect(result.value.value().toNumber()).toBe(100);
           expect(result.value.currency()).toBe('USDC');
         }
       });
@@ -55,7 +55,7 @@ describe('MoneySerializer', () => {
 
         expect(result.ok).toBe(true);
         if (result.ok) {
-          expect(result.value.amount().equals(new Decimal('100.5'))).toBe(true);
+          expect(result.value.value().equals(new Decimal('100.5'))).toBe(true);
         }
       });
 
@@ -67,7 +67,7 @@ describe('MoneySerializer', () => {
 
         expect(result.ok).toBe(true);
         if (result.ok) {
-          expect(result.value.amount().toString()).toBe('999999999999.123456789');
+          expect(result.value.value().toString()).toBe('999999999999.123456789');
         }
       });
     });

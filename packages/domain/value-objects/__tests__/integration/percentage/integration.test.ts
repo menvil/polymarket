@@ -8,7 +8,7 @@ import {
   ValidateFeeForTrading,
   ValidateTotalFee,
   ValidateSpreadRange,
-} from '../../index';
+} from '../../../src/percentage/index.js';
 
 describe('Percentage Integration Tests', () => {
   describe('End-to-end: Creating and using percentages', () => {
@@ -157,7 +157,7 @@ describe('Percentage Integration Tests', () => {
       expect(validateResult.ok).toBe(false);
       if (!isErr(validateResult)) return;
 
-      expect(validateResult.error.context.reason).toBe('NEGATIVE_FEE');
+      expect(validateResult.error.context?.reason).toBe('NEGATIVE_FEE');
     });
 
     it('should reject trading fee exceeding 5%', () => {
@@ -170,7 +170,7 @@ describe('Percentage Integration Tests', () => {
       expect(validateResult.ok).toBe(false);
       if (!isErr(validateResult)) return;
 
-      expect(validateResult.error.context.reason).toBe('EXCEEDS_MAX_FEE');
+      expect(validateResult.error.context?.reason).toBe('EXCEEDS_MAX_FEE');
     });
 
     it('should validate total fee <= 10%', () => {
@@ -203,7 +203,7 @@ describe('Percentage Integration Tests', () => {
       expect(validateResult.ok).toBe(false);
       if (!isErr(validateResult)) return;
 
-      expect(validateResult.error.context.reason).toBe('EXCEEDS_MAX_TOTAL_FEE');
+      expect(validateResult.error.context?.reason).toBe('EXCEEDS_MAX_TOTAL_FEE');
     });
 
     it('should validate spread in range', () => {
@@ -226,7 +226,7 @@ describe('Percentage Integration Tests', () => {
       expect(validateResult.ok).toBe(false);
       if (!isErr(validateResult)) return;
 
-      expect(validateResult.error.context.reason).toBe('BELOW_MIN_SPREAD');
+      expect(validateResult.error.context?.reason).toBe('BELOW_MIN_SPREAD');
     });
 
     it('should reject spread exceeding maximum', () => {
@@ -239,7 +239,7 @@ describe('Percentage Integration Tests', () => {
       expect(validateResult.ok).toBe(false);
       if (!isErr(validateResult)) return;
 
-      expect(validateResult.error.context.reason).toBe('EXCEEDS_MAX_SPREAD');
+      expect(validateResult.error.context?.reason).toBe('EXCEEDS_MAX_SPREAD');
     });
   });
 
@@ -250,8 +250,8 @@ describe('Percentage Integration Tests', () => {
       expect(result.ok).toBe(false);
       if (!isErr(result)) return;
 
-      expect(result.error.context.reason).toBe('INVALID_FORMAT');
-      expect(result.error.context.op).toBe('create');
+      expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+      expect(result.error.context?.op).toBe('create');
     });
 
     it('should handle NaN gracefully', () => {
@@ -260,7 +260,7 @@ describe('Percentage Integration Tests', () => {
       expect(result.ok).toBe(false);
       if (!isErr(result)) return;
 
-      expect(result.error.context.reason).toBe('NAN');
+      expect(result.error.context?.reason).toBe('NAN');
     });
 
     it('should handle division by zero', () => {
@@ -274,7 +274,7 @@ describe('Percentage Integration Tests', () => {
       expect(divideResult.ok).toBe(false);
       if (!isErr(divideResult)) return;
 
-      expect(divideResult.error.context.reason).toBe('DIVISION_BY_ZERO');
+      expect(divideResult.error.context?.reason).toBe('DIVISION_BY_ZERO');
     });
   });
 

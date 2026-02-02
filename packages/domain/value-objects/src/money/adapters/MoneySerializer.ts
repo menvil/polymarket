@@ -184,7 +184,7 @@ export class MoneySerializer {
    */
   public static toJSON(money: Money): { amount: string; currency: string } {
     return {
-      amount: money.amount().toString(),
+      amount: money.value().toString(),
       currency: money.currency(),
     };
   }
