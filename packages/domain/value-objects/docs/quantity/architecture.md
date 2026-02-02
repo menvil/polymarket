@@ -208,7 +208,7 @@ Facade использует централизованные helper methods дл
 
 2. **`expectedMathError(op, ctx, e)`** — создаёт InvalidQuantityError для ожидаемых ошибок из @polymarket/math
    ```typescript
-   // Для InvalidOperandError, ArithmeticOverflowError, DivisionByZeroError
+   // Для InvalidQuantityError, ArithmeticOverflowError, DivisionByZeroError
    // Добавляет op, ctx и cause
    ```
 
@@ -464,7 +464,7 @@ try {
 
   // Ожидаемые ошибки
   if (error instanceof DivisionByZeroError ||
-      error instanceof InvalidOperandError ||
+      error instanceof InvalidQuantityError ||
       error instanceof ArithmeticOverflowError) {
     return Err(this.expectedMathError('divide', ctx, error));
   }

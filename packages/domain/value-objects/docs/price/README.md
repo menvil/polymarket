@@ -195,16 +195,16 @@ price.isMax(): boolean
 create(value: number | string | Decimal): Result<Price, InvalidPriceError>
 
 // Арифметика
-multiply(price: Price, factor: number | string | Decimal): Result<Price, InvalidPriceError | InvalidOperandError>
-divide(price: Price, divisor: number | string | Decimal): Result<Price, InvalidPriceError | InvalidDivisorError>
+multiply(price: Price, factor: number | string | Decimal): Result<Price, InvalidPriceError>
+divide(price: Price, divisor: number | string | Decimal): Result<Price, InvalidPriceError>
 
 // Polymarket-специфичные операции
 complement(price: Price): Result<Price, InvalidPriceError>
 average(price1: Price, price2: Price): Result<Price, InvalidPriceError>
 
 // Округление и выравнивание
-roundToMarketTick(price: Price, tickSize: number | string | Decimal, mode?: 'nearest' | 'floor' | 'ceil'): Result<Price, InvalidPriceError | InvalidTickSizeError>
-ensureAlignedToMarketTick(price: Price, tickSize: number | string | Decimal): Result<void, InvalidPriceError | InvalidTickSizeError>
+roundToMarketTick(price: Price, tickSize: number | string | Decimal, mode?: 'nearest' | 'floor' | 'ceil'): Result<Price, InvalidPriceError>
+ensureAlignedToMarketTick(price: Price, tickSize: number | string | Decimal): Result<void, InvalidPriceError>
 ```
 
 **Facade Error Contract:**

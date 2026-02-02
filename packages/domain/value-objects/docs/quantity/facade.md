@@ -37,7 +37,7 @@ interface InvalidQuantityErrorContext {
 
   // Для math exceptions и unexpected errors
   cause?: {
-    name: string;     // 'DivisionByZeroError', 'ArithmeticOverflowError', 'InvalidOperandError', 'UnknownError'
+    name: string;     // 'InvalidQuantityError', 'InvalidQuantityError', 'InvalidOperandError', 'UnknownError'
     message: string;
     stack?: string;   // Stack trace для отладки
   };
@@ -217,7 +217,7 @@ if (decimalResult.ok) {
 const zero = QuantityService.divide(qty, 0);
 if (!zero.ok) {
   console.log(zero.error.context?.op);     // 'divide'
-  console.log(zero.error.context?.cause);  // { name: 'DivisionByZeroError', message: '...' }
+  console.log(zero.error.context?.cause);  // { name: 'InvalidQuantityError', message: '...' }
 }
 
 // Ошибка: negative divisor
@@ -238,9 +238,9 @@ if (!invalid.ok) {
 **Обработка math exceptions:**
 
 `divide()` ловит ВСЕ исключения и возвращает Result (контракт "Never Throw"):
-- `DivisionByZeroError` → `Result.Err` с `context.cause`
+- `InvalidQuantityError` → `Result.Err` с `context.cause`
 - `InvalidOperandError` → `Result.Err` с `context.cause`
-- `ArithmeticOverflowError` → `Result.Err` с `context.cause`
+- `InvalidQuantityError` → `Result.Err` с `context.cause`
 - Неожиданные ошибки → `Result.Err` с `context.cause` (UnknownError)
 
 ---
@@ -428,7 +428,7 @@ if (!result.ok) {
   });
 
   // Показываем пользователю
-  if (ctx?.cause?.name === 'DivisionByZeroError') {
+  if (ctx?.cause?.name === 'InvalidQuantityError') {
     showError('Cannot divide by zero');
   } else {
     showError('Invalid division operation');
@@ -519,7 +519,7 @@ if (!result.ok) {
 const result = QuantityService.divide(qty, 0);
 if (!result.ok) {
   expect(result.error.context?.op).toBe('divide');
-  expect(result.error.context?.cause?.name).toBe('DivisionByZeroError');
+  expect(result.error.context?.cause?.name).toBe('InvalidQuantityError');
   expect(result.error.context?.cause?.message).toBeDefined();
 }
 ```

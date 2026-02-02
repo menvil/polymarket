@@ -127,9 +127,9 @@ multiply(
 4. Создание Price из результата
 
 **Обработка ошибок:**
-- Ошибки парсинга factor → `InvalidOperandError`
-- Невалидный factor (через rule) → `InvalidOperandError`
-- Результат вне диапазона Price → `InvalidPriceError`
+- Ошибки парсинга factor → `InvalidPriceError` (reason в context)
+- Невалидный factor (через rule) → `InvalidPriceError` (reason в context)
+- Результат вне диапазона Price → `InvalidPriceError` (reason в context)
 
 **Примеры:**
 
@@ -186,11 +186,11 @@ divide(
 4. Создание Price из результата
 
 **Обработка ошибок:**
-- Ошибки парсинга divisor → `InvalidDivisorError`
-- Невалидный divisor (через rule: NaN, Infinity, Zero) → `InvalidDivisorError`
+- Ошибки парсинга divisor → `InvalidPriceError` (reason в context)
+- Невалидный divisor (через rule: NaN, Infinity, Zero) → `InvalidPriceError` (reason в context)
 - `ArithmeticOverflowError` из divideDecimal → `InvalidPriceError` с причиной в context.cause
 - Неожиданные ошибки → `InvalidPriceError` с полным контекстом
-- Результат вне диапазона Price → `InvalidPriceError`
+- Результат вне диапазона Price → `InvalidPriceError` (reason в context)
 
 **Примеры:**
 

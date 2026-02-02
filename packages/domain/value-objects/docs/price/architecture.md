@@ -325,7 +325,7 @@ rounded: Decimal
     ↓
 this.create(rounded)  ← проверяет инварианты
     ↓
-Result<Price, InvalidPriceError | InvalidTickSizeError>
+Result<Price, InvalidPriceError | InvalidPriceError>
 ```
 
 ### Поток деления с валидацией
@@ -339,9 +339,9 @@ parse divisor → Decimal  (try/catch)
     ↓
 ValidateDivisorForPriceDivision.check(divisor)  ← Rule
     ↓
-  isNaN?     → Err(InvalidDivisorError)
-  isFinite?  → Err(InvalidDivisorError)
-  isZero?    → Err(InvalidDivisorError)
+  isNaN?     → Err(InvalidPriceError)
+  isFinite?  → Err(InvalidPriceError)
+  isZero?    → Err(InvalidPriceError)
     ↓
 divideDecimal(price.value(), divisor)  ← Math
     ↓
@@ -349,7 +349,7 @@ result: Decimal
     ↓
 this.create(result)  ← проверяет инварианты
     ↓
-Result<Price, InvalidPriceError | InvalidDivisorError>
+Result<Price, InvalidPriceError | InvalidPriceError>
 ```
 
 ---
@@ -391,11 +391,11 @@ Result<Price, InvalidPriceError | InvalidDivisorError>
 
 ```typescript
 // ✅ Текущее решение
-multiply(price, factor): Result<Price, InvalidPriceError | InvalidOperandError>
-divide(price, divisor): Result<Price, InvalidPriceError | InvalidDivisorError>
+multiply(price, factor): Result<Price, InvalidPriceError | InvalidPriceError>
+divide(price, divisor): Result<Price, InvalidPriceError | InvalidPriceError>
 
 // ❌ Альтернатива
-calculate(price, value, op): Result<Price, InvalidPriceError | InvalidOperandError | InvalidDivisorError>
+calculate(price, value, op): Result<Price, InvalidPriceError | InvalidPriceError | InvalidPriceError>
 ```
 
 **Почему выбрали:**
@@ -461,7 +461,7 @@ if (!validateResult.ok) {
 // ❌ Альтернатива: дублировать всё
 if (!validateResult.ok) {
   return Err(
-    new InvalidDivisorError(validateResult.error.message, {
+    new InvalidPriceError(validateResult.error.message, {
       context: {
         op: 'divide',
         divisor: validateResult.error.context.divisor,
