@@ -87,21 +87,21 @@ describe('QuantityService', () => {
 
       it('должен обработать unexpected error из Quantity.fromDecimal', () => {
         // Mock Quantity.fromDecimal to throw unexpected error
-        const originalFromDecimal = Quantity.fromDecimal;
-        (Quantity as any).fromDecimal = jest.fn().mockImplementation(() => {
+        const spy = jest.spyOn(Quantity, 'fromDecimal').mockImplementation(() => {
           throw new Error('unexpected error from Quantity.fromDecimal');
         });
 
-        const result = QuantityService.create(10);
+        try {
+          const result = QuantityService.create(10);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Unexpected error during quantity create');
-          expect(result.error.context?.op).toBe('create');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Unexpected error during quantity create');
+            expect(result.error.context?.op).toBe('create');
+          }
+        } finally {
+          spy.mockRestore();
         }
-
-        // Restore
-        (Quantity as any).fromDecimal = originalFromDecimal;
       });
     });
 

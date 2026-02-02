@@ -225,7 +225,7 @@ const data = await response.json();
 const result = MoneySerializer.fromJSON(data.balance);
 if (result.ok) {
   const money = result.value;
-  console.log(`Balance: $${money.amount()}`);
+  console.log(`Balance: $${money.amount().toString()}`);
 }
 ```
 

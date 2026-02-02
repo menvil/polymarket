@@ -189,7 +189,7 @@ if (!neg.ok) {
 const invalid = QuantityService.multiply(qty, "abc");
 if (!invalid.ok) {
   console.log(invalid.error.context?.op);  // 'multiply'
-  console.log(invalid.error.context?.raw); // 'abc'
+  console.log(invalid.error.context?.raw); // { field: 'factor', value: 'abc' }
   console.log(invalid.error.context?.factor); // 'abc'
 }
 ```
@@ -236,7 +236,7 @@ if (!neg.ok) {
 const invalid = QuantityService.divide(qty, "abc");
 if (!invalid.ok) {
   console.log(invalid.error.context?.op);     // 'divide'
-  console.log(invalid.error.context?.raw);    // 'abc'
+  console.log(invalid.error.context?.raw);    // { field: 'divisor', value: 'abc' }
   console.log(invalid.error.context?.divisor); // 'abc'
 }
 ```
@@ -300,7 +300,7 @@ if (!invalid.ok) {
 const invalidStr = QuantityService.roundToStep(qty, "abc");
 if (!invalidStr.ok) {
   console.log(invalidStr.error.context?.op);       // 'roundToStep'
-  console.log(invalidStr.error.context?.raw);      // 'abc'
+  console.log(invalidStr.error.context?.raw);      // { field: 'stepSize', value: 'abc' }
   console.log(invalidStr.error.context?.stepSize); // 'abc'
 }
 ```

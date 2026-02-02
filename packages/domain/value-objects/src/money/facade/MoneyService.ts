@@ -206,17 +206,14 @@ export class MoneyService {
   ): Result<Money, InvalidMoneyError> {
     // Проверка валют ДО wrapOp (это не math error)
     if (!a.hasSameCurrency(b)) {
-      return Err(
-        new InvalidMoneyError('Cannot add Money with different currencies', {
-          context: {
-            op: 'add',
-            opChain: ['add'],
-            reason: MoneyErrorReason.CURRENCY_MISMATCH,
-            expected: a.currency(),
-            actual: b.currency()
-          }
-        })
-      );
+      const baseError = new InvalidMoneyError('Cannot add Money with different currencies', {
+        context: {
+          reason: MoneyErrorReason.CURRENCY_MISMATCH,
+          expected: a.currency(),
+          actual: b.currency()
+        }
+      });
+      return Err(rewrap('add', { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() }, baseError, InvalidMoneyError));
     }
 
     const ctx = { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() };
@@ -255,17 +252,14 @@ export class MoneyService {
   ): Result<Money, InvalidMoneyError> {
     // Проверка валют ДО wrapOp (это не math error)
     if (!a.hasSameCurrency(b)) {
-      return Err(
-        new InvalidMoneyError('Cannot subtract Money with different currencies', {
-          context: {
-            op: 'subtract',
-            opChain: ['subtract'],
-            reason: MoneyErrorReason.CURRENCY_MISMATCH,
-            expected: a.currency(),
-            actual: b.currency()
-          }
-        })
-      );
+      const baseError = new InvalidMoneyError('Cannot subtract Money with different currencies', {
+        context: {
+          reason: MoneyErrorReason.CURRENCY_MISMATCH,
+          expected: a.currency(),
+          actual: b.currency()
+        }
+      });
+      return Err(rewrap('subtract', { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() }, baseError, InvalidMoneyError));
     }
 
     const ctx = { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() };

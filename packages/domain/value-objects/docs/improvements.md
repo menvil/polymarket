@@ -1,8 +1,9 @@
 # План улучшений архитектуры Value Objects
 
-## Статус: Планирование
+## Статус: Частично реализовано
 
 **Дата создания:** 2026-02-02
+**Дата последнего обновления:** 2026-02-02
 **Версия:** 1.0
 
 ---
@@ -594,6 +595,7 @@ export abstract class ValueObjectServiceBase<
    *
    * @param field - Имя поля (для структурированного raw)
    * @param input - Входное значение
+   * @param reasonEnum - Enum значение для INVALID_FORMAT (напр. MoneyErrorReason.INVALID_FORMAT)
    * @param ErrorConstructor - Конструктор ошибки (класс)
    * @returns Result<Decimal, TError>
    *
@@ -605,6 +607,7 @@ export abstract class ValueObjectServiceBase<
   protected static toDecimal<TError extends DomainError>(
     field: string,
     input: number | string | Decimal,
+    reasonEnum: string,
     ErrorConstructor: new (message: string, options?: { context?: unknown }) => TError
   ): Result<Decimal, TError> {
     try {
@@ -623,7 +626,7 @@ export abstract class ValueObjectServiceBase<
           new ErrorConstructor('Failed to normalize value: no valid toString()', {
             context: {
               raw: { field, value: String(input) },
-              reason: 'INVALID_FORMAT'
+              reason: reasonEnum
             }
           })
         );
@@ -638,7 +641,7 @@ export abstract class ValueObjectServiceBase<
           context: {
             raw: { field, value: String(input) },
             cause,
-            reason: 'INVALID_FORMAT'
+            reason: reasonEnum
           }
         })
       );
