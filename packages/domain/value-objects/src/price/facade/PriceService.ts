@@ -416,8 +416,10 @@ export class PriceService {
         );
       }
 
-      // Неожиданная ошибка (ctx пустой - rewrap добавит opChain, а root-поля защищены)
-      return Err(this.unexpectedError('create', {}, error));
+      // Неожиданная ошибка - unexpectedError создаёт базовую ошибку с cause, rewrap добавляет op
+      return Err(
+        this.rewrap('create', { value: String(value) }, this.unexpectedError('create', {}, error))
+      );
     }
   }
 
