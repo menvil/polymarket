@@ -695,8 +695,8 @@ describe('QuantityService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.op).toBe('divide');
-        // NaN is treated as NON_FINITE by Quantity
-        expect(result.error.context?.reason).toBe('NON_FINITE');
+        // NaN is now explicitly checked with NAN reason
+        expect(result.error.context?.reason).toBe('NAN');
       }
 
       mockFn.mockRestore();

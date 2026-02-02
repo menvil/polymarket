@@ -31,13 +31,13 @@ describe('Quantity constructor', () => {
 
     it('должен бросить QuantityInvariantViolation для NaN', () => {
       expect(() => Quantity.of(NaN)).toThrow(QuantityInvariantViolation);
-      expect(() => Quantity.of(NaN)).toThrow('must be finite');
+      expect(() => Quantity.of(NaN)).toThrow('cannot be NaN');
 
       try {
         Quantity.of(NaN);
       } catch (e) {
         expect(e).toBeInstanceOf(QuantityInvariantViolation);
-        expect((e as QuantityInvariantViolation).reason).toBe('NON_FINITE');
+        expect((e as QuantityInvariantViolation).reason).toBe('NAN');
       }
     });
 

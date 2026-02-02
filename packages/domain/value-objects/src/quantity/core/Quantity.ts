@@ -8,18 +8,19 @@ import { QuantityErrorReason } from '../errors/QuantityErrorReason';
  * Содержит reason из enum QuantityErrorReason для типизированной обработки ошибок.
  *
  * Возможные причины:
+ * - QuantityErrorReason.NAN: значение NaN
+ * - QuantityErrorReason.NON_FINITE: значение не finite (Infinity)
  * - QuantityErrorReason.NEGATIVE: входное значение < 0
- * - QuantityErrorReason.NON_FINITE: значение не finite (Infinity, NaN)
  *
  * @example
  * ```typescript
- * throw new QuantityInvariantViolation('Quantity value cannot be negative', QuantityErrorReason.NEGATIVE);
+ * throw new QuantityInvariantViolation('Quantity cannot be NaN', QuantityErrorReason.NAN);
  * ```
  */
 export class QuantityInvariantViolation extends Error {
-  public readonly reason: QuantityErrorReason.NEGATIVE | QuantityErrorReason.NON_FINITE;
+  public readonly reason: QuantityErrorReason.NAN | QuantityErrorReason.NON_FINITE | QuantityErrorReason.NEGATIVE;
 
-  constructor(message: string, reason: QuantityErrorReason.NEGATIVE | QuantityErrorReason.NON_FINITE) {
+  constructor(message: string, reason: QuantityErrorReason.NAN | QuantityErrorReason.NON_FINITE | QuantityErrorReason.NEGATIVE) {
     super(`Quantity invariant violation: ${message}`);
     this.name = 'QuantityInvariantViolation';
     this.reason = reason;
@@ -84,14 +85,19 @@ export class Quantity {
   public static readonly ONE = Quantity.of(1);
 
   private constructor(private readonly v: Decimal) {
-    // Инвариант 1: Must be finite (покрывает Infinity и NaN)
-    if (!v.isFinite()) {
-      throw new QuantityInvariantViolation('Quantity value must be finite', QuantityErrorReason.NON_FINITE);
+    // Инвариант 1: Not NaN (explicit check for consistency)
+    if (v.isNaN()) {
+      throw new QuantityInvariantViolation('Quantity cannot be NaN', QuantityErrorReason.NAN);
     }
 
-    // Инвариант 2: Cannot be negative
+    // Инвариант 2: Must be finite
+    if (!v.isFinite()) {
+      throw new QuantityInvariantViolation('Quantity must be finite', QuantityErrorReason.NON_FINITE);
+    }
+
+    // Инвариант 3: Cannot be negative
     if (v.isNegative()) {
-      throw new QuantityInvariantViolation('Quantity value cannot be negative', QuantityErrorReason.NEGATIVE);
+      throw new QuantityInvariantViolation('Quantity cannot be negative', QuantityErrorReason.NEGATIVE);
     }
   }
 

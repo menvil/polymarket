@@ -78,7 +78,17 @@ export class Money {
    * Проверяет все инварианты в одном месте.
    */
   private static create(amount: Decimal, currency: SupportedCurrency): Money {
-    // Инвариант 1: поддерживаемая валюта
+    // Инвариант 1: Not NaN (самое базовое)
+    if (amount.isNaN()) {
+      throw new MoneyInvariantViolation('Amount is NaN', MoneyErrorReason.NAN);
+    }
+
+    // Инвариант 2: Finite
+    if (!amount.isFinite()) {
+      throw new MoneyInvariantViolation('Amount must be finite', MoneyErrorReason.NON_FINITE);
+    }
+
+    // Инвариант 3: Supported currency
     if (!Money.SUPPORTED_CURRENCIES.has(currency)) {
       throw new MoneyInvariantViolation(
         `Unsupported currency: ${currency}`,
@@ -86,17 +96,7 @@ export class Money {
       );
     }
 
-    // Инвариант 2: не NaN
-    if (amount.isNaN()) {
-      throw new MoneyInvariantViolation('Amount is NaN', MoneyErrorReason.NAN);
-    }
-
-    // Инвариант 3: finite
-    if (!amount.isFinite()) {
-      throw new MoneyInvariantViolation('Amount must be finite', MoneyErrorReason.NON_FINITE);
-    }
-
-    // Инвариант 4: не превышает MAX_AMOUNT
+    // Инвариант 4: Max amount
     if (amount.abs().greaterThan(Money.MAX_AMOUNT)) {
       throw new MoneyInvariantViolation(
         `Amount exceeds maximum: ${Money.MAX_AMOUNT}`,
