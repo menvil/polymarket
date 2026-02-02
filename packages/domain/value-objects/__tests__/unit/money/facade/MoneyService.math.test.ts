@@ -34,7 +34,7 @@ describe('MoneyService.add()', () => {
     });
 
     it('с нулём', () => {
-      const result = MoneyService.add(Money.of(100), Money.ZERO_USDC);
+      const result = MoneyService.add(Money.of(100), Money.ZERO.USDC);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.amount().toNumber()).toBe(100);

@@ -24,12 +24,12 @@ describe('PriceFormatter', () => {
     });
 
     it('должен работать с минимальным значением', () => {
-      const price = Price.min();
+      const price = Price.MIN;
       expect(PriceFormatter.toPercentage(price)).toBe('0.01%');
     });
 
     it('должен работать с максимальным значением', () => {
-      const price = Price.max();
+      const price = Price.MAX;
       expect(PriceFormatter.toPercentage(price)).toBe('99.99%');
     });
   });
@@ -67,12 +67,12 @@ describe('PriceFormatter', () => {
     });
 
     it('должен работать с минимальным значением', () => {
-      const price = Price.min();
+      const price = Price.MIN;
       expect(PriceFormatter.toFixed(price, 4)).toBe('0.0001');
     });
 
     it('должен работать с максимальным значением', () => {
-      const price = Price.max();
+      const price = Price.MAX;
       expect(PriceFormatter.toFixed(price, 4)).toBe('0.9999');
     });
   });

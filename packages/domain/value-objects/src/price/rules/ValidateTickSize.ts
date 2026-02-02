@@ -103,7 +103,7 @@ export class ValidateTickSize {
     }
 
     // Проверка максимального размера (арифметическая, не доменная)
-    const maxAllowed = Price.maxValue().minus(Price.minValue());
+    const maxAllowed = Price.MAX.value().minus(Price.MIN.value());
     if (tickSize.greaterThan(maxAllowed)) {
       return Err(
         new InvalidTickSizeError(
@@ -114,8 +114,8 @@ export class ValidateTickSize {
               reason: 'exceeds_range',
               tickSize: tickSize.toString(),
               maxAllowed: maxAllowed.toString(),
-              minPrice: Price.minValue().toString(),
-              maxPrice: Price.maxValue().toString()
+              minPrice: Price.MIN.value().toString(),
+              maxPrice: Price.MAX.value().toString()
             }
           }
         )

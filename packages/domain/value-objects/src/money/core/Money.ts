@@ -45,8 +45,20 @@ export class Money {
   public static readonly SUPPORTED_CURRENCIES = new Set<SupportedCurrency>(['USDC']);
   public static readonly MAX_AMOUNT = new Decimal('1e15');
 
-  // Lazy initialization
-  private static _zeroUSDC?: Money;
+  /**
+   * Константы для нулевых сумм каждой валюты
+   *
+   * @remarks
+   * Record для мультивалютности. При добавлении новой валюты — добавь её сюда.
+   *
+   * @example
+   * ```typescript
+   * const zero = Money.ZERO.USDC;
+   * ```
+   */
+  public static readonly ZERO: Record<SupportedCurrency, Money> = {
+    USDC: Money.fromDecimal(new Decimal(0), 'USDC'),
+  };
 
   private constructor(
     private readonly amt: Decimal,
@@ -160,35 +172,22 @@ export class Money {
    * @returns Money с суммой 0
    *
    * @remarks
-   * Для константного нуля используйте {@link ZERO_USDC}.
+   * Для константного нуля используйте {@link ZERO}.
+   * Alias для удобства. Рекомендуется использовать Money.ZERO.USDC напрямую.
    *
    * @example
    * ```typescript
    * const zero = Money.zero();
-   * console.log(zero.amount().toNumber()); // 0
+   * // Или лучше:
+   * const zero = Money.ZERO.USDC;
    * ```
    */
   public static zero(currency: SupportedCurrency = 'USDC'): Money {
-    // Переиспользуем singleton для USDC
-    if (currency === 'USDC') {
-      return Money.ZERO_USDC;
+    // Переиспользуем константу из Record
+    if (currency in Money.ZERO) {
+      return Money.ZERO[currency];
     }
     return Money.create(new Decimal(0), currency);
-  }
-
-  /**
-   * Константа для нулевой суммы USDC.
-   *
-   * @remarks
-   * Ленивая инициализация. Singleton.
-   *
-   * @example
-   * ```typescript
-   * const zero = Money.ZERO_USDC;
-   * ```
-   */
-  public static get ZERO_USDC(): Money {
-    return this._zeroUSDC ??= Money.create(new Decimal(0), 'USDC');
   }
 
   /**

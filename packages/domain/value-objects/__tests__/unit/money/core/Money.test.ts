@@ -111,7 +111,7 @@ describe('Money core', () => {
       const z2 = Money.zero();
       // Для USDC возвращается singleton ZERO_USDC
       expect(z1).toBe(z2);
-      expect(z1).toBe(Money.ZERO_USDC);
+      expect(z1).toBe(Money.ZERO.USDC);
       expect(z1.equals(z2)).toBe(true);
     });
   });

@@ -55,11 +55,25 @@ export class PriceInvariantViolation extends Error {
  * Используй PriceService для математических операций.
  */
 export class Price {
-  // MIN_PRICE служит базовым тиком Polymarket (0.0001)
-  // Все tickSize должны быть кратны этому значению
+  // Внутренние константы для проверок инвариантов (должны быть определены первыми!)
   private static readonly MIN_PRICE = new Decimal('0.0001');
   private static readonly MAX_PRICE = new Decimal('0.9999');
-  private static readonly HALF_PRICE = new Decimal('0.5');
+
+  /**
+   * Минимальная цена (базовый тик Polymarket)
+   * Все tickSize должны быть кратны этому значению
+   */
+  public static readonly MIN = new Price(Price.MIN_PRICE);
+
+  /**
+   * Максимальная цена
+   */
+  public static readonly MAX = new Price(Price.MAX_PRICE);
+
+  /**
+   * Половина диапазона
+   */
+  public static readonly HALF = new Price(new Decimal('0.5'));
 
   private constructor(private readonly v: Decimal) {
     // Инвариант 1: Not NaN
@@ -147,83 +161,6 @@ export class Price {
     return value instanceof Decimal
       ? Price.fromDecimal(value)
       : new Price(new Decimal(value));
-  }
-
-  /**
-   * Возвращает минимальную цену (0.0001)
-   *
-   * @returns Price объект с минимальным значением
-   *
-   * @example
-   * ```typescript
-   * const minPrice = Price.min();
-   * console.log(minPrice.toNumber()); // 0.0001
-   * ```
-   */
-  public static min(): Price {
-    return new Price(Price.MIN_PRICE);
-  }
-
-  /**
-   * Возвращает максимальную цену (0.9999)
-   *
-   * @returns Price объект с максимальным значением
-   *
-   * @example
-   * ```typescript
-   * const maxPrice = Price.max();
-   * console.log(maxPrice.toNumber()); // 0.9999
-   * ```
-   */
-  public static max(): Price {
-    return new Price(Price.MAX_PRICE);
-  }
-
-  /**
-   * Возвращает половину диапазона (0.5)
-   *
-   * @returns Price объект со значением 0.5
-   *
-   * @example
-   * ```typescript
-   * const halfPrice = Price.half();
-   * console.log(halfPrice.toNumber()); // 0.5
-   * ```
-   */
-  public static half(): Price {
-    return new Price(Price.HALF_PRICE);
-  }
-
-  /**
-   * Возвращает минимальное значение как Decimal (internal use only)
-   *
-   * @internal ТОЛЬКО для Rules/Facade внутри пакета
-   *
-   * @remarks
-   * Возвращает shared Decimal константу.
-   * МУТАЦИИ ЗАПРЕЩЕНЫ - повлияет на всю систему!
-   * Для публичного API используйте Price.min().
-   *
-   * @returns Decimal константа минимального значения
-   */
-  public static minValue(): Decimal {
-    return Price.MIN_PRICE;
-  }
-
-  /**
-   * Возвращает максимальное значение как Decimal (internal use only)
-   *
-   * @internal ТОЛЬКО для Rules/Facade внутри пакета
-   *
-   * @remarks
-   * Возвращает shared Decimal константу.
-   * МУТАЦИИ ЗАПРЕЩЕНЫ - повлияет на всю систему!
-   * Для публичного API используйте Price.max().
-   *
-   * @returns Decimal константа максимального значения
-   */
-  public static maxValue(): Decimal {
-    return Price.MAX_PRICE;
   }
 
   /**

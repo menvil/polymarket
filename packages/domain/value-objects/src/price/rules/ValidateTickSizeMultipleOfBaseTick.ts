@@ -66,7 +66,7 @@ export class ValidateTickSizeMultipleOfBaseTick {
     const tickDecimal = tickResult.value;
 
     // Шаг 2: Проверка кратности
-    const BASE_TICK = Price.minValue();
+    const BASE_TICK = Price.MIN.value();
     const quotient = tickDecimal.div(BASE_TICK);
 
     if (!quotient.isInteger()) {

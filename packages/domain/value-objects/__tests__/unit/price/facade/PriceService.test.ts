@@ -232,8 +232,8 @@ describe('PriceService', () => {
     });
 
     it('должен работать с крайними значениями', () => {
-      const p1 = Price.min();
-      const p2 = Price.max();
+      const p1 = Price.MIN;
+      const p2 = Price.MAX;
       const result = PriceService.average(p1, p2);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -384,7 +384,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть Err если результат выходит за диапазон', () => {
-      const price = Price.min(); // 0.0001
+      const price = Price.MIN; // 0.0001
       const result = PriceService.divide(price, 2);
       // 0.0001 / 2 = 0.00005, что ниже минимума
       expect(result.ok).toBe(false);

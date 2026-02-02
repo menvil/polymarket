@@ -125,13 +125,13 @@ describe('PriceSerializer', () => {
     });
 
     it('должен работать с минимальным значением', () => {
-      const price = Price.min();
+      const price = Price.MIN;
       const json = PriceSerializer.toJSON(price);
       expect(json.value).toBe('0.0001');
     });
 
     it('должен работать с максимальным значением', () => {
-      const price = Price.max();
+      const price = Price.MAX;
       const json = PriceSerializer.toJSON(price);
       expect(json.value).toBe('0.9999');
     });

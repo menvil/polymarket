@@ -42,14 +42,14 @@ describe('ValidateAligned', () => {
     });
 
     it('должен принять минимальную цену с базовым тиком', () => {
-      const price = Price.min();
-      const result = ValidateAligned.check(price, Price.minValue());
+      const price = Price.MIN;
+      const result = ValidateAligned.check(price, Price.MIN.value());
       expect(result.ok).toBe(true);
     });
 
     it('должен принять максимальную цену с базовым тиком', () => {
-      const price = Price.max();
-      const result = ValidateAligned.check(price, Price.minValue());
+      const price = Price.MAX;
+      const result = ValidateAligned.check(price, Price.MIN.value());
       expect(result.ok).toBe(true);
     });
   });

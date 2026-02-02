@@ -14,7 +14,7 @@ describe('ValidateTickSize', () => {
     });
 
     it('должен принять tickSize равный maxAllowed', () => {
-      const maxAllowed = Price.maxValue().minus(Price.minValue());
+      const maxAllowed = Price.MAX.value().minus(Price.MIN.value());
       const result = ValidateTickSize.check(maxAllowed);
       expect(result.ok).toBe(true);
     });
@@ -72,7 +72,7 @@ describe('ValidateTickSize', () => {
 
   describe('exceeds_range', () => {
     it('должен вернуть Err для значения больше maxAllowed', () => {
-      const maxAllowed = Price.maxValue().minus(Price.minValue());
+      const maxAllowed = Price.MAX.value().minus(Price.MIN.value());
       const tooLarge = maxAllowed.plus(0.0001);
       const result = ValidateTickSize.check(tooLarge);
       expect(result.ok).toBe(false);

@@ -65,75 +65,75 @@ describe('Price.of()', () => {
   });
 });
 
-describe('Price.min()', () => {
+describe('Price.MIN', () => {
   it('должен вернуть Price с минимальным значением', () => {
-    const price = Price.min();
+    const price = Price.MIN;
     expect(price).toBeInstanceOf(Price);
     expect(price.toNumber()).toBe(0.0001);
   });
 
-  it('должен вернуть новый экземпляр при каждом вызове', () => {
-    const price1 = Price.min();
-    const price2 = Price.min();
-    expect(price1).not.toBe(price2);
+  it('должен вернуть тот же экземпляр при каждом обращении (singleton)', () => {
+    const price1 = Price.MIN;
+    const price2 = Price.MIN;
+    expect(price1).toBe(price2);
     expect(price1.equals(price2)).toBe(true);
   });
 });
 
-describe('Price.max()', () => {
+describe('Price.MAX', () => {
   it('должен вернуть Price с максимальным значением', () => {
-    const price = Price.max();
+    const price = Price.MAX;
     expect(price).toBeInstanceOf(Price);
     expect(price.toNumber()).toBe(0.9999);
   });
 
-  it('должен вернуть новый экземпляр при каждом вызове', () => {
-    const price1 = Price.max();
-    const price2 = Price.max();
-    expect(price1).not.toBe(price2);
+  it('должен вернуть тот же экземпляр при каждом обращении (singleton)', () => {
+    const price1 = Price.MAX;
+    const price2 = Price.MAX;
+    expect(price1).toBe(price2);
     expect(price1.equals(price2)).toBe(true);
   });
 });
 
-describe('Price.half()', () => {
+describe('Price.HALF', () => {
   it('должен вернуть Price со значением 0.5', () => {
-    const price = Price.half();
+    const price = Price.HALF;
     expect(price).toBeInstanceOf(Price);
     expect(price.toNumber()).toBe(0.5);
   });
 
-  it('должен вернуть новый экземпляр при каждом вызове', () => {
-    const price1 = Price.half();
-    const price2 = Price.half();
-    expect(price1).not.toBe(price2);
+  it('должен вернуть тот же экземпляр при каждом обращении (singleton)', () => {
+    const price1 = Price.HALF;
+    const price2 = Price.HALF;
+    expect(price1).toBe(price2);
     expect(price1.equals(price2)).toBe(true);
   });
 });
 
-describe('Price.minValue()', () => {
+describe('Price.MIN.value()', () => {
   it('должен вернуть Decimal константу минимального значения', () => {
-    const minValue = Price.minValue();
+    const minValue = Price.MIN.value();
     expect(minValue).toBeInstanceOf(Decimal);
     expect(minValue.toNumber()).toBe(0.0001);
   });
 
   it('должен возвращать тот же Decimal объект (shared константа)', () => {
-    const minValue1 = Price.minValue();
-    const minValue2 = Price.minValue();
+    const minValue1 = Price.MIN.value();
+    const minValue2 = Price.MIN.value();
     expect(minValue1).toBe(minValue2);
   });
 });
 
-describe('Price.maxValue()', () => {
+describe('Price.MAX.value()', () => {
   it('должен вернуть Decimal константу максимального значения', () => {
-    const maxValue = Price.maxValue();
+    const maxValue = Price.MAX.value();
     expect(maxValue).toBeInstanceOf(Decimal);
     expect(maxValue.toNumber()).toBe(0.9999);
   });
 
   it('должен возвращать тот же Decimal объект (shared константа)', () => {
-    const maxValue1 = Price.maxValue();
-    const maxValue2 = Price.maxValue();
+    const maxValue1 = Price.MAX.value();
+    const maxValue2 = Price.MAX.value();
     expect(maxValue1).toBe(maxValue2);
   });
 });
@@ -154,12 +154,12 @@ describe('Price.toNumber()', () => {
   });
 
   it('должен работать с минимальным значением', () => {
-    const price = Price.min();
+    const price = Price.MIN;
     expect(price.toNumber()).toBe(0.0001);
   });
 
   it('должен работать с максимальным значением', () => {
-    const price = Price.max();
+    const price = Price.MAX;
     expect(price.toNumber()).toBe(0.9999);
   });
 });
@@ -191,7 +191,7 @@ describe('Price.equals()', () => {
 
 describe('Price.isMin()', () => {
   it('должен вернуть true для минимального значения', () => {
-    const price = Price.min();
+    const price = Price.MIN;
     expect(price.isMin()).toBe(true);
   });
 
@@ -208,7 +208,7 @@ describe('Price.isMin()', () => {
 
 describe('Price.isMax()', () => {
   it('должен вернуть true для максимального значения', () => {
-    const price = Price.max();
+    const price = Price.MAX;
     expect(price.isMax()).toBe(true);
   });
 
