@@ -22,7 +22,7 @@ import type Decimal from 'decimal.js';
  * const priceResult = PriceService.create(0.5);
  * if (!priceResult.ok) return;
  *
- * const alignResult = ValidateAligned.check(priceResult.value, 0.0001);
+ * const alignResult = ValidateAligned.check(priceResult.value, new Decimal(0.0001));
  * if (alignResult.ok) {
  *   console.log('Price aligned to tick size');
  * } else {

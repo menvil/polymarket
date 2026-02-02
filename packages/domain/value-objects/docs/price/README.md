@@ -115,7 +115,7 @@ Price модуль построен на **4-слойной архитектур
 **Core кидает исключения** → **Facade оборачивает в Result<T, E>**
 
 - **Core слой**: Кидает типизированные исключения (`PriceInvariantViolation`)
-- **Facade слой**: Ловит исключения и возвращает `Result<Price, InvalidPriceError | ...>`
+- **Facade слой**: Ловит исключения и возвращает `Result<Price, InvalidPriceError>`
 
 Это обеспечивает:
 - Явное управление ошибками через `Result<T, E>`

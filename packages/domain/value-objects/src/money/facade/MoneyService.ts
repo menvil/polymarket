@@ -460,7 +460,6 @@ export class MoneyService {
     e: MoneyInvariantViolation
   ): Result<never, InvalidMoneyError> {
     const { reason } = e;
-
     // Все типы инвариантных нарушений мапим в InvalidMoneyError с reason
     return Err(
       new InvalidMoneyError(`Money ${op} result is invalid: ${reason}`, {

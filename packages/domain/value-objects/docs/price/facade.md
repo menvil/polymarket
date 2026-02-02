@@ -337,8 +337,8 @@ roundToMarketTick(
 4. Создание Price из округлённого значения
 
 **Обработка ошибок:**
-- Невалидный tickSize → `InvalidTickSizeError`
-- tickSize не кратен 0.0001 → `InvalidTickSizeError`
+- Невалидный tickSize → `InvalidPriceError` (reason в context)
+- tickSize не кратен 0.0001 → `InvalidPriceError` (reason в context)
 - `ArithmeticOverflowError` из math → `InvalidPriceError` с причиной в context.cause
 - Неожиданные ошибки → `InvalidPriceError` с полным контекстом
 - Результат вне диапазона → `InvalidPriceError`
@@ -412,7 +412,7 @@ if (!negativeTickResult.ok) {
 ensureAlignedToMarketTick(
   price: Price,
   tickSize: number | string | Decimal
-): Result<void, InvalidPriceError | InvalidTickSizeError>
+): Result<void, InvalidPriceError>
 ```
 
 **КРИТИЧНО:** tickSize **ДОЛЖЕН быть кратен** базовому тику (0.0001). Используется `ValidateAligned`, который внутри использует `ValidateTickSizeMultipleOfBaseTick`.
@@ -510,7 +510,7 @@ function calculateMidPrice(
   bidPrice: Price,
   askPrice: Price,
   tickSize: Decimal
-): Result<Price, InvalidPriceError | InvalidTickSizeError> {
+): Result<Price, InvalidPriceError> {
   // 1. Вычисляем среднее
   const midResult = PriceService.average(bidPrice, askPrice);
   if (!midResult.ok) {
@@ -535,7 +535,7 @@ function calculateMidPrice(
 function processPrices(
   yesPrice: string,
   tickSize: Decimal
-): Result<{ yes: Price; no: Price }, InvalidPriceError | InvalidTickSizeError> {
+): Result<{ yes: Price; no: Price }, InvalidPriceError> {
   // Создаём YES цену
   const yesResult = PriceService.create(yesPrice);
   if (!yesResult.ok) return yesResult;

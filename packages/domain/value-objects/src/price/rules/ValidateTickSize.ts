@@ -8,7 +8,6 @@ import Decimal from 'decimal.js';
  *
  * @remarks
  * Проверяет базовые свойства tickSize:
- * - Парсится в Decimal
  * - Не NaN
  * - Положительный
  * - Конечный
@@ -19,12 +18,13 @@ import Decimal from 'decimal.js';
  * @example
  * ```typescript
  * import { ValidateTickSize } from '@polymarket/value-objects/price';
+ * import Decimal from 'decimal.js';
  *
- * const result = ValidateTickSize.check(0.0001);
+ * const result = ValidateTickSize.check(new Decimal(0.0001));
  * if (result.ok) {
  *   const tickDecimal = result.value; // Decimal
  * } else {
- *   console.error(result.error.context.reason); // 'parse_error' | 'is_nan' | ...
+ *   console.error(result.error.context.reason); // 'is_nan' | ...
  * }
  * ```
  */

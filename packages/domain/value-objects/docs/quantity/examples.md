@@ -531,13 +531,13 @@ if (rounded5.ok) {
 }
 
 // ROUND_HALF_EVEN (banker's rounding)
-const rounded4 = QuantityService.roundToStep(
+const rounded6 = QuantityService.roundToStep(
   qty,
   stepSize,
   Decimal.ROUND_HALF_EVEN
 );
-if (rounded4.ok) {
-  console.log(rounded4.value.value().toString()); // "10.57"
+if (rounded6.ok) {
+  console.log(rounded6.value.value().toString()); // "10.57"
 }
 ```
 
