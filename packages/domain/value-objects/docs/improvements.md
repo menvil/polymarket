@@ -847,6 +847,82 @@ const result = MoneyService.create(100, 'USDC', {
 
 ---
 
+## 🎯 Статус реализации
+
+### ✅ Завершено
+
+#### 1. Enum для Error Reasons (§1)
+**Дата:** 2026-02-02
+**Коммит:** `8d0fa94` - feat(errors): add typed error reason enums for type safety
+
+**Реализовано:**
+- ✅ `MoneyErrorReason` enum (8 значений)
+- ✅ `PriceErrorReason` enum (10 значений)
+- ✅ `QuantityErrorReason` enum (8 значений)
+- ✅ Обновлены все Services для использования enum
+- ✅ Обновлены все Core классы (Money, Price, Quantity)
+- ✅ Обновлены все Invariant Violations
+- ✅ Обновлены все Rules
+- ✅ Обновлены все Adapters (Serializers, Formatters)
+- ✅ Добавлены экспорты в index.ts
+
+**Результаты:**
+- Все 476 тестов проходят
+- Полная обратная совместимость (enum компилируется в строки)
+- Compile-time type safety восстановлен
+- Автодополнение работает в IDE
+
+#### 2. Устранение дублирования Helper Methods (§4)
+**Дата:** 2026-02-02
+**Коммиты:**
+- `25e866c` - refactor(money): eliminate helper method duplication using errorUtils
+- Текущий - refactor(price): eliminate helper method duplication using errorUtils
+- Текущий - refactor(quantity): eliminate helper method duplication using errorUtils
+
+**Реализовано:**
+- ✅ Создан `src/shared/facade/errorUtils.ts` (410 строк)
+  - `toCause()` - извлечение structured cause
+  - `toDecimal()` - безопасный парсинг с generic типами
+  - `rewrap()` - обёртка ошибок с сохранением root-cause
+  - `wrapOp()` - централизованная обработка операций
+  - `expectedMathError()` - обработка ожидаемых math ошибок
+  - `unexpectedError()` - обработка неожиданных ошибок
+  - `isExpectedMathError()` - type guard для math ошибок
+- ✅ MoneyService рефакторинг: 718 → 394 строк (-45%, -324 строки)
+- ✅ PriceService рефакторинг: 787 → 490 строк (-37%, -297 строк)
+- ✅ QuantityService рефакторинг: 677 → 380 строк (-44%, -297 строк)
+
+**Результаты:**
+- Удалено ~918 строк дублированного кода
+- Создано 410 строк переиспользуемых утилит
+- **Чистое сокращение: -508 строк кода**
+- Все 476 тестов проходят
+- Единая точка изменения для общей логики
+- Generic типы для type-safe переиспользования
+
+### 📋 Следующие шаги (опционально)
+
+#### 3. Типизация Error Context (§2)
+**Приоритет:** Средний
+**Статус:** Не начато
+
+Discriminated unions для типизированных контекстов ошибок с автоматическим type narrowing.
+
+#### 4. Type Guards (§3)
+**Приоритет:** Средний
+**Статус:** Не начато
+
+Функции type guard для упрощения проверки типов ошибок.
+
+#### 5. Future Improvements (§5)
+**Приоритет:** Низкий
+**Статус:** Не начато
+- Result Helpers (§5.1)
+- Builder Pattern (§5.2)
+- Structured Logging (§5.3)
+
+---
+
 ## Миграция для пользователей API
 
 ### Breaking Changes
