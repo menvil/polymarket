@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { Money } from '../../../../src/money/core/Money';
 import { MoneyService } from '../../../../src/money/facade/MoneyService';
-import { ArithmeticOverflowError, InvalidMoneyError, DivisionByZeroError } from '@polymarket/errors';
+import { InvalidMoneyError } from '@polymarket/errors';
 
 describe('MoneyService.add()', () => {
   describe('success', () => {
@@ -50,7 +50,7 @@ describe('MoneyService.add()', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
         expect(result.error.context!.reason).toBe('EXCEEDS_MAX_AMOUNT');
 
         // ✅ ИСПРАВЛЕНО: НЕ проверяем точную строку экспоненты
@@ -115,7 +115,7 @@ describe('MoneyService.subtract()', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
         expect(result.error.context!.reason).toBe('EXCEEDS_MAX_AMOUNT');
       }
     });
@@ -189,7 +189,7 @@ describe('MoneyService.multiply()', () => {
       const result = MoneyService.multiply(Money.of('1e14'), '1e5');
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(ArithmeticOverflowError);
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
         expect(result.error.context!.reason).toBe('EXCEEDS_MAX_AMOUNT');
       }
     });
@@ -228,7 +228,8 @@ describe('MoneyService.divide()', () => {
       const result = MoneyService.divide(Money.of(100), 0);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(DivisionByZeroError);
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        expect(result.error.context!.reason).toBe('DIVISION_BY_ZERO');
       }
     });
 

@@ -429,21 +429,29 @@ function roundQuantity(qty: Quantity, stepSize: number): Quantity {
 
 **Стало:**
 ```typescript
-import Decimal from 'decimal.js';
-
 function roundQuantity(
   qty: Quantity,
-  stepSize: Decimal
+  stepSize: number | string | Decimal
 ): Result<Quantity, InvalidQuantityError> {
   return QuantityService.roundToStep(qty, stepSize);
 }
 
-// Использование
-const qty = Quantity.of("10.567");
-const result = roundQuantity(qty, new Decimal("0.01"));
+// Использование с number
+const result1 = roundQuantity(Quantity.of("10.567"), 0.01);
+if (result1.ok) {
+  console.log(result1.value.value().toString()); // "10.57"
+}
 
-if (result.ok) {
-  console.log(result.value.value().toString()); // "10.57"
+// Использование с string (для высокой точности)
+const result2 = roundQuantity(Quantity.of("10.567"), "0.01");
+if (result2.ok) {
+  console.log(result2.value.value().toString()); // "10.57"
+}
+
+// Использование с Decimal
+const result3 = roundQuantity(Quantity.of("10.567"), new Decimal("0.01"));
+if (result3.ok) {
+  console.log(result3.value.value().toString()); // "10.57"
 }
 ```
 
@@ -622,6 +630,65 @@ function createQuantitySafe(value: string | number): Quantity | null {
 
 Facade добавляет минимальный overhead (обёртка в Result), но это negligible.
 
+### Q: Новый API для multiply/divide/roundToStep?
+
+**A:** Да! Теперь все параметры принимают `number | string | Decimal`:
+
+**Было:**
+```typescript
+QuantityService.multiply(qty, factor: number | Decimal)
+QuantityService.divide(qty, divisor: number | Decimal)
+QuantityService.roundToStep(qty, stepSize: Decimal)
+```
+
+**Стало:**
+```typescript
+QuantityService.multiply(qty, factor: number | string | Decimal)
+QuantityService.divide(qty, divisor: number | string | Decimal)
+QuantityService.roundToStep(qty, stepSize: number | string | Decimal)
+```
+
+**Примеры:**
+```typescript
+// ✅ Все варианты работают
+QuantityService.multiply(qty, 2);              // number
+QuantityService.multiply(qty, "2.5");          // string (точнее!)
+QuantityService.multiply(qty, new Decimal(2)); // Decimal
+
+QuantityService.divide(qty, 2);
+QuantityService.divide(qty, "2.5");
+QuantityService.divide(qty, new Decimal(2));
+
+QuantityService.roundToStep(qty, 0.01);
+QuantityService.roundToStep(qty, "0.01");      // рекомендуется для точности
+QuantityService.roundToStep(qty, new Decimal("0.01"));
+```
+
+**Преимущества:**
+- ✅ Консистентный API (все методы одинаковые)
+- ✅ Можно использовать string для максимальной точности
+- ✅ Удобнее для пользователей (не нужно конвертировать в Decimal)
+
+### Q: Что такое контракт "Never Throw"?
+
+**A:** Все методы QuantityService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения:
+
+```typescript
+// ✅ Всегда безопасно - никогда не throw
+const result1 = QuantityService.create(NaN);
+const result2 = QuantityService.divide(qty, 0);
+const result3 = QuantityService.multiply(qty, "invalid");
+
+// Нет необходимости в try/catch
+expect(() => QuantityService.create(NaN)).not.toThrow();
+expect(() => QuantityService.divide(qty, 0)).not.toThrow();
+```
+
+**Почему это важно:**
+- ✅ Compile-time безопасность (TypeScript знает что метод возвращает Result)
+- ✅ Runtime безопасность (все исключения ловятся внутри)
+- ✅ Явная обработка ошибок (невозможно забыть проверить result.ok)
+
 ### Q: Как обрабатывать несколько ошибок?
 
 **A:** Используйте early return или собирайте ошибки:
@@ -693,4 +760,4 @@ function validateAllWithErrors(values: string[]): {
 ---
 
 **Версия:** 0.1.0
-**Последнее обновление:** 29 января 2026
+**Последнее обновление:** 1 февраля 2026

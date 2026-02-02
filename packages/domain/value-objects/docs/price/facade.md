@@ -6,11 +6,9 @@
 
 `PriceService` — это фасад, который предоставляет type-safe API для работы с Price через `Result<T, E>`.
 
-**Все методы возвращают `Result<Price, E>` где E может быть:**
-- `InvalidPriceError` — ошибки валидации цены
-- `InvalidOperandError` — ошибки валидации операнда (multiply)
-- `InvalidDivisorError` — ошибки валидации делителя (divide)
-- `InvalidTickSizeError` — ошибки валидации tick size
+**Все методы возвращают `Result<Price, InvalidPriceError>`**.
+
+PriceService НИКОГДА не бросает исключения. Все ошибки возвращаются через Result с InvalidPriceError, который содержит в context детальную информацию о причине ошибки.
 
 ---
 
@@ -119,7 +117,7 @@ if (!nanResult.ok) {
 multiply(
   price: Price,
   factor: number | string | Decimal
-): Result<Price, InvalidPriceError | InvalidOperandError>
+): Result<Price, InvalidPriceError>
 ```
 
 **Алгоритм:**
@@ -178,7 +176,7 @@ if (!overflowResult.ok) {
 divide(
   price: Price,
   divisor: number | string | Decimal
-): Result<Price, InvalidPriceError | InvalidDivisorError>
+): Result<Price, InvalidPriceError>
 ```
 
 **Алгоритм:**
@@ -322,7 +320,7 @@ roundToMarketTick(
   price: Price,
   tickSize: number | string | Decimal,
   mode: 'nearest' | 'floor' | 'ceil' = 'nearest'
-): Result<Price, InvalidPriceError | InvalidTickSizeError>
+): Result<Price, InvalidPriceError>
 ```
 
 **Режимы округления:**

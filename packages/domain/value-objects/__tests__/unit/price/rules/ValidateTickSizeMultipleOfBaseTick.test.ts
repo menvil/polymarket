@@ -1,13 +1,14 @@
 import { describe, it, expect } from '@jest/globals';
 import { ValidateTickSizeMultipleOfBaseTick } from '../../../../src/price/rules/ValidateTickSizeMultipleOfBaseTick.js';
 import { Price } from '../../../../src/price/core/Price.js';
+import Decimal from 'decimal.js';
 
 describe('ValidateTickSizeMultipleOfBaseTick', () => {
   const BASE_TICK = Price.minValue(); // 0.0001
 
   describe('валидные значения (кратны базовому тику)', () => {
     it('должен принять базовый тик 0.0001', () => {
-      const result = ValidateTickSizeMultipleOfBaseTick.check(0.0001);
+      const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal(0.0001));
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.toNumber()).toBe(0.0001);
@@ -15,29 +16,29 @@ describe('ValidateTickSizeMultipleOfBaseTick', () => {
     });
 
     it('должен принять 0.0002 (кратно базовому тику)', () => {
-      const result = ValidateTickSizeMultipleOfBaseTick.check(0.0002);
+      const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal(0.0002));
       expect(result.ok).toBe(true);
     });
 
     it('должен принять 0.001 (кратно базовому тику)', () => {
-      const result = ValidateTickSizeMultipleOfBaseTick.check(0.001);
+      const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal(0.001));
       expect(result.ok).toBe(true);
     });
 
     it('должен принять 0.01 (кратно базовому тику)', () => {
-      const result = ValidateTickSizeMultipleOfBaseTick.check(0.01);
+      const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal(0.01));
       expect(result.ok).toBe(true);
     });
 
     it('должен принять 0.1 (кратно базовому тику)', () => {
-      const result = ValidateTickSizeMultipleOfBaseTick.check(0.1);
+      const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal(0.1));
       expect(result.ok).toBe(true);
     });
   });
 
   describe('not_multiple_of_base_tick', () => {
     it('должен вернуть Err для 0.00015 (не кратно)', () => {
-      const result = ValidateTickSizeMultipleOfBaseTick.check(0.00015);
+      const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal(0.00015));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.field).toBe('tickSize');
@@ -49,7 +50,7 @@ describe('ValidateTickSizeMultipleOfBaseTick', () => {
     });
 
     it('должен вернуть Err для 0.00025 (не кратно)', () => {
-      const result = ValidateTickSizeMultipleOfBaseTick.check(0.00025);
+      const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal(0.00025));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe('not_multiple_of_base_tick');
@@ -57,7 +58,7 @@ describe('ValidateTickSizeMultipleOfBaseTick', () => {
     });
 
     it('должен вернуть Err для 0.00011 (не кратно)', () => {
-      const result = ValidateTickSizeMultipleOfBaseTick.check(0.00011);
+      const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal(0.00011));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe('not_multiple_of_base_tick');
@@ -67,7 +68,7 @@ describe('ValidateTickSizeMultipleOfBaseTick', () => {
 
   describe('делегирование базовой валидации', () => {
     it('должен вернуть Err от ValidateTickSize для отрицательного значения', () => {
-      const result = ValidateTickSizeMultipleOfBaseTick.check(-0.0001);
+      const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal(-0.0001));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.field).toBe('tickSize');
@@ -76,7 +77,7 @@ describe('ValidateTickSizeMultipleOfBaseTick', () => {
     });
 
     it('должен вернуть Err от ValidateTickSize для NaN', () => {
-      const result = ValidateTickSizeMultipleOfBaseTick.check(NaN);
+      const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal(NaN));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe('is_nan');

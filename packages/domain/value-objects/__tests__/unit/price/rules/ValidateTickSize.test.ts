@@ -6,7 +6,7 @@ import { Price } from '../../../../src/price/core/Price.js';
 describe('ValidateTickSize', () => {
   describe('валидные значения', () => {
     it('должен принять валидный tickSize', () => {
-      const result = ValidateTickSize.check(0.0001);
+      const result = ValidateTickSize.check(new Decimal(0.0001));
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.toNumber()).toBe(0.0001);
@@ -28,20 +28,9 @@ describe('ValidateTickSize', () => {
     });
   });
 
-  describe('parse_error', () => {
-    it('должен вернуть Err для невалидной строки', () => {
-      const result = ValidateTickSize.check('invalid');
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.field).toBe('tickSize');
-        expect(result.error.context?.reason).toBe('parse_error');
-      }
-    });
-  });
-
   describe('is_nan', () => {
     it('должен вернуть Err для NaN', () => {
-      const result = ValidateTickSize.check(NaN);
+      const result = ValidateTickSize.check(new Decimal(NaN));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.field).toBe('tickSize');
@@ -52,7 +41,7 @@ describe('ValidateTickSize', () => {
 
   describe('not_finite', () => {
     it('должен вернуть Err для Infinity', () => {
-      const result = ValidateTickSize.check(Infinity);
+      const result = ValidateTickSize.check(new Decimal(Infinity));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.field).toBe('tickSize');
@@ -63,7 +52,7 @@ describe('ValidateTickSize', () => {
 
   describe('not_positive', () => {
     it('должен вернуть Err для нуля', () => {
-      const result = ValidateTickSize.check(0);
+      const result = ValidateTickSize.check(new Decimal(0));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.field).toBe('tickSize');
@@ -72,7 +61,7 @@ describe('ValidateTickSize', () => {
     });
 
     it('должен вернуть Err для отрицательного значения', () => {
-      const result = ValidateTickSize.check(-0.01);
+      const result = ValidateTickSize.check(new Decimal(-0.01));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.field).toBe('tickSize');

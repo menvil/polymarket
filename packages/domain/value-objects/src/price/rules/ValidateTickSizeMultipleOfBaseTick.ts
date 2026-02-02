@@ -31,10 +31,12 @@ export class ValidateTickSizeMultipleOfBaseTick {
   /**
    * Проверяет что tickSize кратен базовому тику (0.0001)
    *
-   * @param tickSize - Размер тика для проверки
+   * @param tickSize - Размер тика (уже Decimal - парсинг делается в Facade)
    * @returns Result с валидированным Decimal или InvalidTickSizeError
    *
    * @remarks
+   * ВАЖНО: Принимает только Decimal. Парсинг должен быть сделан в Facade через toDecimal().
+   *
    * Выполняет две проверки:
    * 1. Базовая валидация через ValidateTickSize (positive, finite, в пределах диапазона)
    * 2. Проверка кратности базовому тику: tickSize % 0.0001 === 0
@@ -42,17 +44,19 @@ export class ValidateTickSizeMultipleOfBaseTick {
    * @example
    * ```typescript
    * // ✅ Валидные tickSize (кратны 0.0001)
-   * ValidateTickSizeMultipleOfBaseTick.check(0.0001); // Ok
-   * ValidateTickSizeMultipleOfBaseTick.check(0.0002); // Ok
-   * ValidateTickSizeMultipleOfBaseTick.check(0.01);   // Ok
+   * const tick1 = new Decimal(0.0001);
+   * ValidateTickSizeMultipleOfBaseTick.check(tick1); // Ok
+   *
+   * const tick2 = new Decimal(0.0002);
+   * ValidateTickSizeMultipleOfBaseTick.check(tick2); // Ok
    *
    * // ❌ Невалидные (не кратны 0.0001)
-   * ValidateTickSizeMultipleOfBaseTick.check(0.00015); // Err: not_multiple_of_base_tick
-   * ValidateTickSizeMultipleOfBaseTick.check(0.003);   // Err: not_multiple_of_base_tick
+   * const tick3 = new Decimal(0.00015);
+   * ValidateTickSizeMultipleOfBaseTick.check(tick3); // Err: not_multiple_of_base_tick
    * ```
    */
   public static check(
-    tickSize: number | string | Decimal
+    tickSize: Decimal
   ): Result<Decimal, InvalidTickSizeError> {
     // Шаг 1: Базовая валидация
     const tickResult = ValidateTickSize.check(tickSize);

@@ -103,16 +103,28 @@ if (diffResult.ok) {
   console.log(diffResult.value.value().toNumber()); // 5
 }
 
-// Умножение
+// Умножение (number)
 const multResult = QuantityService.multiply(qty1, 2);
 if (multResult.ok) {
   console.log(multResult.value.value().toNumber()); // 20
 }
 
-// Деление
+// Умножение (string для высокой точности)
+const multResult2 = QuantityService.multiply(qty1, "2.5");
+if (multResult2.ok) {
+  console.log(multResult2.value.value().toNumber()); // 25
+}
+
+// Деление (number)
 const divResult = QuantityService.divide(qty1, 2);
 if (divResult.ok) {
   console.log(divResult.value.value().toNumber()); // 5
+}
+
+// Деление (string)
+const divResult2 = QuantityService.divide(qty1, "2.5");
+if (divResult2.ok) {
+  console.log(divResult2.value.value().toNumber()); // 4
 }
 ```
 
@@ -478,32 +490,44 @@ import Decimal from 'decimal.js';
 
 // Различные режимы округления
 const qty = Quantity.of("10.567");
-const stepSize = new Decimal("0.01");
 
-// ROUND_HALF_UP (default)
-const rounded1 = QuantityService.roundToStep(qty, stepSize);
+// С number (простой вариант)
+const rounded1 = QuantityService.roundToStep(qty, 0.01);
 if (rounded1.ok) {
   console.log(rounded1.value.value().toString()); // "10.57"
 }
 
+// С string (рекомендуется для точности)
+const rounded2 = QuantityService.roundToStep(qty, "0.01");
+if (rounded2.ok) {
+  console.log(rounded2.value.value().toString()); // "10.57"
+}
+
+// С Decimal
+const stepSize = new Decimal("0.01");
+const rounded3 = QuantityService.roundToStep(qty, stepSize);
+if (rounded3.ok) {
+  console.log(rounded3.value.value().toString()); // "10.57"
+}
+
 // ROUND_DOWN
-const rounded2 = QuantityService.roundToStep(
+const rounded4 = QuantityService.roundToStep(
   qty,
-  stepSize,
+  "0.01",
   Decimal.ROUND_DOWN
 );
-if (rounded2.ok) {
-  console.log(rounded2.value.value().toString()); // "10.56"
+if (rounded4.ok) {
+  console.log(rounded4.value.value().toString()); // "10.56"
 }
 
 // ROUND_UP
-const rounded3 = QuantityService.roundToStep(
+const rounded5 = QuantityService.roundToStep(
   qty,
-  stepSize,
+  "0.01",
   Decimal.ROUND_UP
 );
-if (rounded3.ok) {
-  console.log(rounded3.value.value().toString()); // "10.57"
+if (rounded5.ok) {
+  console.log(rounded5.value.value().toString()); // "10.57"
 }
 
 // ROUND_HALF_EVEN (banker's rounding)

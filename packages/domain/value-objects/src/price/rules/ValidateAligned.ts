@@ -35,10 +35,12 @@ export class ValidateAligned {
    * Проверяет что price выровнен по tickSize
    *
    * @param price - Цена для проверки
-   * @param tickSize - Размер тика
+   * @param tickSize - Размер тика (уже Decimal - парсинг делается в Facade)
    * @returns Result<void> или InvalidPriceError | InvalidTickSizeError
    *
    * @remarks
+   * ВАЖНО: Принимает только Decimal. Парсинг должен быть сделан в Facade через toDecimal().
+   *
    * Выполняет две проверки:
    * 1. Валидация tickSize через ValidateTickSizeMultipleOfBaseTick (проверяет что кратен базовому тику 0.0001)
    * 2. Проверка кратности: price % tickSize === 0 (через div().isInteger())
@@ -51,19 +53,19 @@ export class ValidateAligned {
    * const price = Price.of(0.5);
    *
    * // ✅ Валидные комбинации
-   * ValidateAligned.check(price, 0.0001); // Ok (0.5 % 0.0001 === 0)
-   * ValidateAligned.check(price, 0.01);   // Ok (0.5 % 0.01 === 0)
-   * ValidateAligned.check(price, 0.1);    // Ok (0.5 % 0.1 === 0)
-   * ValidateAligned.check(price, 0.5);    // Ok (0.5 % 0.5 === 0)
+   * ValidateAligned.check(price, new Decimal(0.0001)); // Ok (0.5 % 0.0001 === 0)
+   * ValidateAligned.check(price, new Decimal(0.01));   // Ok (0.5 % 0.01 === 0)
+   * ValidateAligned.check(price, new Decimal(0.1));    // Ok (0.5 % 0.1 === 0)
+   * ValidateAligned.check(price, new Decimal(0.5));    // Ok (0.5 % 0.5 === 0)
    *
    * // ❌ Невалидные (не кратен)
-   * ValidateAligned.check(price, 0.3);    // Err: not_aligned
-   * ValidateAligned.check(price, 0.7);    // Err: not_aligned
+   * ValidateAligned.check(price, new Decimal(0.3));    // Err: not_aligned
+   * ValidateAligned.check(price, new Decimal(0.7));    // Err: not_aligned
    * ```
    */
   public static check(
     price: Price,
-    tickSize: number | string | Decimal
+    tickSize: Decimal
   ): Result<void, InvalidPriceError | InvalidTickSizeError> {
     // Валидация tickSize (проверяет что кратен базовому тику 0.0001)
     const tickResult = ValidateTickSizeMultipleOfBaseTick.check(tickSize);

@@ -191,25 +191,64 @@ ValidateMinSize.check(new Decimal(0.5), new Decimal(1)); // Err
 - Оркестрация Core + Math + Rules
 - Обёртка исключений в Result<T, E>
 - Facade Error Contract
+- Контракт "Never Throw" — никогда не бросает исключения
 
 **НЕ делает:**
 - Не реализует бизнес-логику (делегирует Rules)
 - Не делает low-level checks (делегирует Core)
 
-**Пример:**
-```typescript
-// ✅ Делает: оркестрация
-QuantityService.add(qty1, qty2)
-// Внутри:
-// 1. addDecimal(qty1.value(), qty2.value())  <- Math
-// 2. this.create(sum)                        <- Core
-// 3. Обёртка в Result                        <- Facade
+**Helper Methods (приватные):**
+Facade использует централизованные helper methods для обработки ошибок:
 
-// ✅ Делает: контракт ошибок
+1. **`toCause(e: unknown)`** — извлекает структурированный cause из любой ошибки
+   ```typescript
+   // Error → { name, message, stack }
+   // Unknown → { name: 'UnknownError', message: String(e) }
+   ```
+
+2. **`expectedMathError(op, ctx, e)`** — создаёт InvalidQuantityError для ожидаемых ошибок из @polymarket/math
+   ```typescript
+   // Для InvalidOperandError, ArithmeticOverflowError, DivisionByZeroError
+   // Добавляет op, ctx и cause
+   ```
+
+3. **`unexpectedError(op, ctx, e)`** — создаёт InvalidQuantityError для неожиданных ошибок
+   ```typescript
+   // Для любых других исключений
+   // Включает полный stack trace для debugging
+   ```
+
+4. **`rewrap(op, ctx, err)`** — обёртывает InvalidQuantityError с добавлением op и контекста
+   ```typescript
+   // Порядок мерджа защищает приоритет err.context:
+   // { ...ctx, ...(err.context ?? {}), op }
+   ```
+
+5. **`toDecimal(input)`** — безопасно конвертирует number | string | Decimal в Decimal
+   ```typescript
+   // Убирает ненадёжный instanceof Decimal
+   // Использует Decimal.isDecimal() или всегда парсит
+   // Возвращает Result с raw и cause при ошибке
+   ```
+
+**Пример оркестрации:**
+```typescript
+// ✅ Делает: оркестрация с централизованной обработкой ошибок
+QuantityService.divide(qty, divisor)
+// Внутри:
+// 1. toDecimal(divisor)                      <- Helper (parse)
+// 2. ValidateDivisorForQuantityDivision.check() <- Rules
+// 3. divideDecimal(qty.value(), divisor)     <- Math (в try/catch)
+// 4. this.create(result)                     <- Core
+// 5. Обёртка в Result через rewrap          <- Facade
+
+// ✅ Делает: контракт ошибок (всегда полный контекст)
 if (!result.ok) {
-  result.error.context.op;      // 'add'
-  result.error.context.quantity1;
-  result.error.context.quantity2;
+  result.error.context.op;         // 'divide' (всегда)
+  result.error.context.quantity;   // входной qty
+  result.error.context.divisor;    // входной divisor
+  result.error.context.raw;        // сырой ввод (при parse fail)
+  result.error.context.cause;      // { name, message, stack? }
 }
 ```
 
@@ -375,6 +414,160 @@ const quantity = value instanceof Decimal
 - ✅ Explicit intent (явное намерение)
 - ✅ Разные типы возврата (`{ value: string }` vs `{ value: number }`)
 - ✅ Компилятор видит разницу
+
+---
+
+### 7. Централизованная обработка ошибок (DRY)
+
+**Решение:** 5 helper methods для всех catch blocks вместо дублирования кода.
+
+**Проблема:**
+Без helper methods каждый catch block дублировал 20-40 строк кода:
+```typescript
+// ❌ Было: дублирование в каждом методе
+try {
+  const result = divideDecimal(qty.value(), divisor);
+  // ...
+} catch (error) {
+  if (error instanceof DivisionByZeroError) {
+    return Err(new InvalidQuantityError('...', {
+      context: {
+        op: 'divide',
+        quantity: qty.value().toString(),
+        divisor: divisor.toString(),
+        cause: {
+          name: error.name,
+          message: error.message,
+          stack: error.stack
+        }
+      }
+    }));
+  } else if (error instanceof ArithmeticOverflowError) {
+    // ... аналогичный код
+  } else {
+    // ... ещё больше дублирования
+  }
+}
+```
+
+**Решение:**
+```typescript
+// ✅ Стало: централизованные helper methods
+try {
+  const result = divideDecimal(qty.value(), divisor);
+  // ...
+} catch (error) {
+  const ctx = {
+    quantity: qty.value().toString(),
+    divisor: divisor.toString()
+  };
+
+  // Ожидаемые ошибки
+  if (error instanceof DivisionByZeroError ||
+      error instanceof InvalidOperandError ||
+      error instanceof ArithmeticOverflowError) {
+    return Err(this.expectedMathError('divide', ctx, error));
+  }
+
+  // Неожиданные ошибки
+  return Err(this.unexpectedError('divide', ctx, error));
+}
+```
+
+**Почему выбрали:**
+- ✅ Сократили catch blocks с 20-40 строк до 2-6 строк
+- ✅ Единственное место для логики toCause/expectedMathError/unexpectedError
+- ✅ Проще поддерживать (изменения в одном месте)
+- ✅ Консистентная структура cause везде
+
+---
+
+### 8. Контракт "Never Throw"
+
+**Решение:** ВСЕ методы QuantityService ГАРАНТИРОВАННО возвращают Result, никогда не бросают.
+
+**Альтернативы:**
+- ❌ Частичное покрытие try/catch — можно забыть обработать исключение
+- ❌ Пробрасывать unexpected errors — пользователь должен писать try/catch
+
+**Почему выбрали:**
+- ✅ Compile-time гарантия: TypeScript знает что метод возвращает Result
+- ✅ Runtime гарантия: catch blocks ловят ВСЁ (даже non-Error throws)
+- ✅ Диагностика: unexpected errors включают полный stack trace
+- ✅ Type-safe: невозможно забыть обработать ошибку
+
+**Comprehensive Contract Tests:**
+Все гарантии задокументированы тестами:
+```typescript
+describe('Facade Error Contract - Comprehensive', () => {
+  it('Parse fail → context.op и context.raw обязательны', () => {
+    const result = QuantityService.multiply(qty, 'invalid');
+    expect(result.ok).toBe(false);
+    expect(result.error.context?.op).toBe('multiply');
+    expect(result.error.context?.raw).toBeDefined();
+    expect(result.error.context?.factor).toBeDefined();
+  });
+
+  it('Rule fail → op и операционные поля обязательны', () => {
+    const result = QuantityService.subtract(qty1, qty2);
+    expect(result.ok).toBe(false);
+    expect(result.error.context?.op).toBe('subtract');
+    expect(result.error.context?.quantity1).toBeDefined();
+    expect(result.error.context?.quantity2).toBeDefined();
+  });
+
+  it('Math throw → cause.name и cause.message обязательны', () => {
+    const result = QuantityService.divide(qty, 0);
+    expect(result.ok).toBe(false);
+    expect(result.error.context?.cause?.name).toBe('DivisionByZeroError');
+    expect(result.error.context?.cause?.message).toBeDefined();
+  });
+
+  it('Never Throw → всегда возвращает Result', () => {
+    expect(() => QuantityService.create(NaN)).not.toThrow();
+    expect(() => QuantityService.divide(qty, 0)).not.toThrow();
+    expect(() => QuantityService.multiply(qty, 'invalid')).not.toThrow();
+  });
+});
+```
+
+---
+
+### 9. Убран instanceof Decimal (надёжность)
+
+**Решение:** Использовать `Decimal.isDecimal()` или всегда парсить.
+
+**Проблема:**
+`instanceof Decimal` ломается при наличии двух копий decimal.js в node_modules:
+```typescript
+// ❌ Было: ненадёжно
+const decimal = factor instanceof Decimal ? factor : new Decimal(factor);
+```
+
+**Решение:**
+```typescript
+// ✅ Стало: надёжно
+private static toDecimal(input: number | string | Decimal): Result<Decimal, InvalidQuantityError> {
+  try {
+    // Проверка через Decimal.isDecimal если доступен
+    if (typeof Decimal.isDecimal === 'function' && Decimal.isDecimal(input)) {
+      return Ok(input);
+    }
+    // Парсим (работает для number, string, и Decimal)
+    const decimal = new Decimal(input);
+    return Ok(decimal);
+  } catch (error) {
+    return Err(new InvalidQuantityError(..., {
+      context: { raw: String(input), cause: this.toCause(error) }
+    }));
+  }
+}
+```
+
+**Почему выбрали:**
+- ✅ Надёжнее: Decimal.isDecimal() не зависит от множественных копий
+- ✅ Диагностичнее: raw и cause для всех ошибок парсинга
+- ✅ Консистентнее: единый путь парсинга для всех операций
 
 ---
 

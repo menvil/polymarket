@@ -8,6 +8,8 @@
 
 **Все методы возвращают `Result<Quantity, InvalidQuantityError>`**.
 
+**Контракт "Never Throw":** ВСЕ методы QuantityService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+
 ---
 
 ## Facade Error Contract
@@ -16,9 +18,9 @@
 
 ```typescript
 interface InvalidQuantityErrorContext {
-  op: string;  // Название операции: 'create', 'add', 'divide', etc.
+  op: string;  // Название операции: 'create', 'add', 'divide', etc. (ВСЕГДА присутствует)
 
-  // Входные данные
+  // Входные данные (операционные поля)
   value?: string;
   quantity?: string;
   quantity1?: string;
@@ -27,13 +29,17 @@ interface InvalidQuantityErrorContext {
   factor?: string;
   stepSize?: string;
 
+  // Сырой ввод (для ошибок парсинга)
+  raw?: string;  // Что пришло в toDecimal перед парсингом
+
   // Причина из Core/Rules
   reason?: 'NEGATIVE' | 'NON_FINITE';
 
-  // Для math exceptions
+  // Для math exceptions и unexpected errors
   cause?: {
-    name: string;     // 'DivisionByZeroError', 'ArithmeticOverflowError'
+    name: string;     // 'DivisionByZeroError', 'ArithmeticOverflowError', 'InvalidOperandError', 'UnknownError'
     message: string;
+    stack?: string;   // Stack trace для отладки
   };
 }
 ```
@@ -136,14 +142,14 @@ if (zeroResult.ok) {
 }
 ```
 
-#### `multiply(quantity: Quantity, factor: number | Decimal)`
+#### `multiply(quantity: Quantity, factor: number | string | Decimal)`
 
 Умножает Quantity на коэффициент.
 
 ```typescript
 const qty = Quantity.of(10);
 
-// Успех
+// Успех (number)
 const result = QuantityService.multiply(qty, 2);
 if (result.ok) {
   console.log(result.value.value().toNumber());  // 20
@@ -153,6 +159,12 @@ if (result.ok) {
 const decimal = QuantityService.multiply(qty, new Decimal(2.5));
 if (decimal.ok) {
   console.log(decimal.value.value().toNumber());  // 25
+}
+
+// С string (для высокой точности)
+const stringResult = QuantityService.multiply(qty, "2.5");
+if (stringResult.ok) {
+  console.log(stringResult.value.value().toNumber());  // 25
 }
 
 // Умножение на 0 OK
@@ -166,26 +178,46 @@ const neg = QuantityService.multiply(qty, -1);
 if (!neg.ok) {
   console.log(neg.error.message);  // "... cannot be negative"
 }
+
+// Ошибка: invalid string
+const invalid = QuantityService.multiply(qty, "abc");
+if (!invalid.ok) {
+  console.log(invalid.error.context?.op);  // 'multiply'
+  console.log(invalid.error.context?.raw); // 'abc'
+  console.log(invalid.error.context?.factor); // 'abc'
+}
 ```
 
-#### `divide(quantity: Quantity, divisor: number | Decimal)`
+#### `divide(quantity: Quantity, divisor: number | string | Decimal)`
 
 Делит Quantity на делитель.
 
 ```typescript
 const qty = Quantity.of(10);
 
-// Успех
+// Успех (number)
 const result = QuantityService.divide(qty, 2);
 if (result.ok) {
   console.log(result.value.value().toNumber());  // 5
 }
 
+// С string (для высокой точности)
+const stringResult = QuantityService.divide(qty, "2.5");
+if (stringResult.ok) {
+  console.log(stringResult.value.value().toNumber());  // 4
+}
+
+// С Decimal
+const decimalResult = QuantityService.divide(qty, new Decimal(2));
+if (decimalResult.ok) {
+  console.log(decimalResult.value.value().toNumber());  // 5
+}
+
 // Ошибка: division by zero
 const zero = QuantityService.divide(qty, 0);
 if (!zero.ok) {
-  console.log(zero.error.context?.op);  // 'divide'
-  // Может быть cause от DivisionByZeroError
+  console.log(zero.error.context?.op);     // 'divide'
+  console.log(zero.error.context?.cause);  // { name: 'DivisionByZeroError', message: '...' }
 }
 
 // Ошибка: negative divisor
@@ -193,37 +225,58 @@ const neg = QuantityService.divide(qty, -1);
 if (!neg.ok) {
   console.log(neg.error.message);  // "... must be positive"
 }
+
+// Ошибка: invalid string
+const invalid = QuantityService.divide(qty, "abc");
+if (!invalid.ok) {
+  console.log(invalid.error.context?.op);     // 'divide'
+  console.log(invalid.error.context?.raw);    // 'abc'
+  console.log(invalid.error.context?.divisor); // 'abc'
+}
 ```
 
 **Обработка math exceptions:**
 
-`divide()` ловит только ожидаемые исключения:
+`divide()` ловит ВСЕ исключения и возвращает Result (контракт "Never Throw"):
 - `DivisionByZeroError` → `Result.Err` с `context.cause`
+- `InvalidOperandError` → `Result.Err` с `context.cause`
 - `ArithmeticOverflowError` → `Result.Err` с `context.cause`
-- Другие ошибки → rethrow (это баги)
+- Неожиданные ошибки → `Result.Err` с `context.cause` (UnknownError)
 
 ---
 
 ### Округление
 
-#### `roundToStep(quantity, stepSize: Decimal, roundingMode?)`
+#### `roundToStep(quantity, stepSize: number | string | Decimal, roundingMode?)`
 
 Округляет Quantity к размеру шага (step).
 
 ```typescript
 const qty = Quantity.of("10.567");
-const stepSize = new Decimal("0.01");
 
-// Default: ROUND_HALF_UP
-const result = QuantityService.roundToStep(qty, stepSize);
-if (result.ok) {
-  console.log(result.value.value().toString());  // "10.57"
+// С number
+const result1 = QuantityService.roundToStep(qty, 0.01);
+if (result1.ok) {
+  console.log(result1.value.value().toString());  // "10.57"
+}
+
+// С string (для высокой точности)
+const result2 = QuantityService.roundToStep(qty, "0.01");
+if (result2.ok) {
+  console.log(result2.value.value().toString());  // "10.57"
+}
+
+// С Decimal
+const stepSize = new Decimal("0.01");
+const result3 = QuantityService.roundToStep(qty, stepSize);
+if (result3.ok) {
+  console.log(result3.value.value().toString());  // "10.57"
 }
 
 // С указанным режимом
 const down = QuantityService.roundToStep(
   qty,
-  stepSize,
+  "0.01",
   Decimal.ROUND_DOWN
 );
 if (down.ok) {
@@ -231,9 +284,17 @@ if (down.ok) {
 }
 
 // Ошибка: invalid stepSize
-const invalid = QuantityService.roundToStep(qty, new Decimal(0));
+const invalid = QuantityService.roundToStep(qty, 0);
 if (!invalid.ok) {
   console.log(invalid.error.message);  // "... must be positive"
+}
+
+// Ошибка: invalid string
+const invalidStr = QuantityService.roundToStep(qty, "abc");
+if (!invalidStr.ok) {
+  console.log(invalidStr.error.context?.op);       // 'roundToStep'
+  console.log(invalidStr.error.context?.raw);      // 'abc'
+  console.log(invalidStr.error.context?.stepSize); // 'abc'
 }
 ```
 
@@ -392,6 +453,75 @@ if (!result.ok) {
   return;
 }
 doSomething(result.value);
+```
+
+---
+
+## Гарантии контракта
+
+### Контракт "Never Throw"
+
+**Гарантия:** ВСЕ методы QuantityService НИКОГДА не бросают исключения.
+
+```typescript
+// ✅ Всегда безопасно - никогда не throw
+const result = QuantityService.create(NaN);
+expect(() => QuantityService.create(NaN)).not.toThrow();
+
+const result2 = QuantityService.divide(qty, 0);
+expect(() => QuantityService.divide(qty, 0)).not.toThrow();
+
+const result3 = QuantityService.multiply(qty, "invalid");
+expect(() => QuantityService.multiply(qty, "invalid")).not.toThrow();
+```
+
+### Контракт ошибок
+
+**Parse fail гарантии:**
+- Всегда содержит `context.op`
+- Всегда содержит `context.raw` (сырой ввод в toDecimal)
+- Всегда содержит операционный параметр (`factor`, `divisor`, `stepSize`)
+- Всегда содержит `context.cause` с информацией об ошибке парсинга
+
+```typescript
+const result = QuantityService.multiply(qty, "invalid");
+if (!result.ok) {
+  expect(result.error.context?.op).toBe('multiply');
+  expect(result.error.context?.raw).toBeDefined();
+  expect(result.error.context?.factor).toBeDefined();
+  expect(result.error.context?.cause).toBeDefined();
+}
+```
+
+**Rule fail гарантии:**
+- Всегда содержит `context.op`
+- Всегда содержит операционные поля (`quantity`, `quantity1`, `quantity2`, `factor`, `divisor`, `stepSize`)
+- Может содержать `context.reason` для инвариантов Core
+- Может содержать `context.result` для rule failures
+
+```typescript
+const result = QuantityService.subtract(Quantity.of(5), Quantity.of(10));
+if (!result.ok) {
+  expect(result.error.context?.op).toBe('subtract');
+  expect(result.error.context?.quantity1).toBeDefined();
+  expect(result.error.context?.quantity2).toBeDefined();
+  expect(result.error.context?.result).toBeDefined();
+}
+```
+
+**Math exception гарантии:**
+- Всегда содержит `context.op`
+- Всегда содержит `context.cause.name`
+- Всегда содержит `context.cause.message`
+- Может содержать `context.cause.stack` для отладки
+
+```typescript
+const result = QuantityService.divide(qty, 0);
+if (!result.ok) {
+  expect(result.error.context?.op).toBe('divide');
+  expect(result.error.context?.cause?.name).toBe('DivisionByZeroError');
+  expect(result.error.context?.cause?.message).toBeDefined();
+}
 ```
 
 ---

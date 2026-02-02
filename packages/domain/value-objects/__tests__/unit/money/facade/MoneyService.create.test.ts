@@ -40,7 +40,7 @@ describe('MoneyService.create()', () => {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
         expect(result.error.context!.reason).toBe('INVALID_FORMAT');
         expect(result.error.context!.op).toBe('create');
-        expect(result.error.context!.value).toBe('abc');
+        expect(result.error.context!.raw).toEqual({ field: 'value', value: 'abc' });
       }
     });
 

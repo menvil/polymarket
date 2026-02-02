@@ -186,21 +186,26 @@ create(value: number | string | Decimal): Result<Quantity, InvalidQuantityError>
 // Арифметика
 add(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError>
 subtract(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError>
-multiply(quantity: Quantity, factor: number | Decimal): Result<Quantity, InvalidQuantityError>
-divide(quantity: Quantity, divisor: number | Decimal): Result<Quantity, InvalidQuantityError>
+multiply(quantity: Quantity, factor: number | string | Decimal): Result<Quantity, InvalidQuantityError>
+divide(quantity: Quantity, divisor: number | string | Decimal): Result<Quantity, InvalidQuantityError>
 
 // Округление
-roundToStep(quantity: Quantity, stepSize: Decimal, roundingMode?: Decimal.Rounding): Result<Quantity, InvalidQuantityError>
+roundToStep(quantity: Quantity, stepSize: number | string | Decimal, roundingMode?: Decimal.Rounding): Result<Quantity, InvalidQuantityError>
 ```
+
+**Контракт "Never Throw":**
+
+ВСЕ методы QuantityService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения. Любые ошибки (ожидаемые и неожиданные) ловятся и преобразуются в Result.Err.
 
 **Facade Error Contract:**
 
 Все ошибки содержат:
-- `context.op` — название операции (`'create'`, `'add'`, `'divide'`, etc.)
+- `context.op` — название операции (`'create'`, `'add'`, `'divide'`, etc.) — **ВСЕГДА присутствует**
 - `context.quantity` — входное количество (если применимо)
-- `context.divisor|factor|stepSize` — параметры операции
+- `context.divisor|factor|stepSize` — параметры операции (операционные поля)
+- `context.raw` — сырой ввод для toDecimal (для ошибок парсинга)
 - `context.reason` — причина из Core/Rules (`'NEGATIVE'`, `'NON_FINITE'`)
-- `context.cause` — для math-исключений: `{ name, message }`
+- `context.cause` — для math-исключений и unexpected errors: `{ name, message, stack? }`
 
 Подробнее: [facade.md](./facade.md)
 
@@ -459,4 +464,4 @@ const qty = result.value;
 Вопросы? Проблемы? Создайте issue в репозитории.
 
 **Версия:** 0.1.0
-**Последнее обновление:** 29 января 2026
+**Последнее обновление:** 1 февраля 2026

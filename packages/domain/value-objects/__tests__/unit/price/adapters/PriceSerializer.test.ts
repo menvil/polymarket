@@ -99,7 +99,7 @@ describe('PriceSerializer', () => {
         const result = PriceSerializer.fromJSON({ value: 1.5 });
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.value).toBe('1.5');
+          expect(result.error.context?.raw).toEqual({ field: 'value', value: '1.5' });
         }
       });
 
