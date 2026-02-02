@@ -34,7 +34,7 @@ import { MoneyErrorReason } from '../errors/MoneyErrorReason';
  * // ❌ NaN делитель
  * const result3 = ValidateDivisorForMoneyDivision.check(new Decimal(NaN));
  * if (!result3.ok) {
- *   console.error(result2.error.context?.reason); // MoneyErrorReason.NAN
+ *   console.error(result3.error.context?.reason); // MoneyErrorReason.NAN
  * }
  * ```
  */

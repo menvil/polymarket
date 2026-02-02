@@ -210,6 +210,7 @@ export class MoneyService {
         new InvalidMoneyError('Cannot add Money with different currencies', {
           context: {
             op: 'add',
+            opChain: ['add'],
             reason: MoneyErrorReason.CURRENCY_MISMATCH,
             expected: a.currency(),
             actual: b.currency()
@@ -258,6 +259,7 @@ export class MoneyService {
         new InvalidMoneyError('Cannot subtract Money with different currencies', {
           context: {
             op: 'subtract',
+            opChain: ['subtract'],
             reason: MoneyErrorReason.CURRENCY_MISMATCH,
             expected: a.currency(),
             actual: b.currency()
