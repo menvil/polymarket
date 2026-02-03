@@ -1,4 +1,4 @@
-import { Result, Ok, Err } from '@polymarket/result';
+import { Result, Ok, Err, isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
 import { InvalidMoneyError } from '@polymarket/errors';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
@@ -92,7 +92,7 @@ export class MoneyService {
   ): Result<Money, InvalidMoneyError> {
     // Безопасный парсинг value через toDecimal
     const decimalResult = toDecimal('value', value, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
-    if (!decimalResult.ok) {
+    if (isErr(decimalResult)) {
       // raw уже внутри err.context.raw от toDecimal
       return Err(rewrap('create', { currency }, decimalResult.error, InvalidMoneyError));
     }
@@ -303,7 +303,7 @@ export class MoneyService {
   ): Result<Money, InvalidMoneyError> {
     // Безопасный парсинг factor через toDecimal
     const factorResult = toDecimal('factor', factor, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
-    if (!factorResult.ok) {
+    if (isErr(factorResult)) {
       return Err(
         rewrap('multiply', {
           amount: m.value().toString(),
@@ -317,7 +317,7 @@ export class MoneyService {
 
     // Валидация через rule (проверяет isNaN, isFinite)
     const validateResult = ValidateFactorForMoneyMultiplication.check(factorDecimal);
-    if (!validateResult.ok) {
+    if (isErr(validateResult)) {
       return Err(
         rewrap('multiply', {
           amount: m.value().toString(),
@@ -374,7 +374,7 @@ export class MoneyService {
   ): Result<Money, InvalidMoneyError> {
     // Безопасный парсинг divisor через toDecimal
     const divisorResult = toDecimal('divisor', divisor, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
-    if (!divisorResult.ok) {
+    if (isErr(divisorResult)) {
       return Err(
         rewrap('divide', {
           amount: m.value().toString(),
@@ -388,7 +388,7 @@ export class MoneyService {
 
     // Валидация через rule
     const validateResult = ValidateDivisorForMoneyDivision.check(divisorDecimal);
-    if (!validateResult.ok) {
+    if (isErr(validateResult)) {
       return Err(
         rewrap('divide', {
           amount: m.value().toString(),
@@ -422,7 +422,7 @@ export class MoneyService {
    * @example
    * ```typescript
    * const result = MoneyService.isLessThan(Money.of(100), Money.of(200));
-   * if (!result.ok) {
+   * if (isErr(result)) {
    *   console.error('Currency mismatch');
    * } else if (result.value) {
    *   console.log('a < b');

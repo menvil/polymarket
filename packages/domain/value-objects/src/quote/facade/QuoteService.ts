@@ -1,4 +1,4 @@
-import { Result, Ok, Err } from '@polymarket/result';
+import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { InvalidQuoteError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { Price } from '../../price/core/Price.js';
@@ -92,7 +92,7 @@ export class QuoteService {
       let bid: Price | null = null;
       if (bidValue !== null) {
         const bidResult = PriceService.create(bidValue);
-        if (!bidResult.ok) {
+        if (isErr(bidResult)) {
           return Err(
             rewrap(
               'creates',
@@ -113,7 +113,7 @@ export class QuoteService {
       let ask: Price | null = null;
       if (askValue !== null) {
         const askResult = PriceService.create(askValue);
-        if (!askResult.ok) {
+        if (isErr(askResult)) {
           return Err(
             rewrap(
               'creates',
@@ -133,7 +133,7 @@ export class QuoteService {
 
       // Создаём Quantity объекты
       const bidSizeResult = QuantityService.create(bidSizeValue);
-      if (!bidSizeResult.ok) {
+      if (isErr(bidSizeResult)) {
         return Err(
           rewrap(
             'creates',
@@ -150,7 +150,7 @@ export class QuoteService {
       }
 
       const askSizeResult = QuantityService.create(askSizeValue);
-      if (!askSizeResult.ok) {
+      if (isErr(askSizeResult)) {
         return Err(
           rewrap(
             'creates',
@@ -256,7 +256,7 @@ export class QuoteService {
           QuoteErrorReason.INVALID_FORMAT,
           InvalidQuoteError
         );
-        if (!bidResult.ok) {
+        if (isErr(bidResult)) {
           return Err(rewrap('create', { component: 'bid' }, bidResult.error, InvalidQuoteError));
         }
         bidDecimal = bidResult.value;
@@ -271,7 +271,7 @@ export class QuoteService {
           QuoteErrorReason.INVALID_FORMAT,
           InvalidQuoteError
         );
-        if (!askResult.ok) {
+        if (isErr(askResult)) {
           return Err(rewrap('create', { component: 'ask' }, askResult.error, InvalidQuoteError));
         }
         askDecimal = askResult.value;
@@ -284,7 +284,7 @@ export class QuoteService {
         QuoteErrorReason.INVALID_FORMAT,
         InvalidQuoteError
       );
-      if (!bidSizeResult.ok) {
+      if (isErr(bidSizeResult)) {
         return Err(rewrap('create', { component: 'bidSize' }, bidSizeResult.error, InvalidQuoteError));
       }
 
@@ -295,7 +295,7 @@ export class QuoteService {
         QuoteErrorReason.INVALID_FORMAT,
         InvalidQuoteError
       );
-      if (!askSizeResult.ok) {
+      if (isErr(askSizeResult)) {
         return Err(rewrap('create', { component: 'askSize' }, askSizeResult.error, InvalidQuoteError));
       }
 
@@ -341,13 +341,13 @@ export class QuoteService {
     return wrapOp('bidOnly', ctx, () => {
       // Парсим bid
       const bidResult = toDecimal('bidValue', bidValue, QuoteErrorReason.INVALID_FORMAT, InvalidQuoteError);
-      if (!bidResult.ok) {
+      if (isErr(bidResult)) {
         return Err(rewrap('bidOnly', {}, bidResult.error, InvalidQuoteError));
       }
 
       // Парсим bidSize
       const sizeResult = toDecimal('bidSizeValue', bidSizeValue, QuoteErrorReason.INVALID_FORMAT, InvalidQuoteError);
-      if (!sizeResult.ok) {
+      if (isErr(sizeResult)) {
         return Err(rewrap('bidOnly', {}, sizeResult.error, InvalidQuoteError));
       }
 
@@ -392,13 +392,13 @@ export class QuoteService {
     return wrapOp('askOnly', ctx, () => {
       // Парсим ask
       const askResult = toDecimal('askValue', askValue, QuoteErrorReason.INVALID_FORMAT, InvalidQuoteError);
-      if (!askResult.ok) {
+      if (isErr(askResult)) {
         return Err(rewrap('askOnly', {}, askResult.error, InvalidQuoteError));
       }
 
       // Парсим askSize
       const sizeResult = toDecimal('askSizeValue', askSizeValue, QuoteErrorReason.INVALID_FORMAT, InvalidQuoteError);
-      if (!sizeResult.ok) {
+      if (isErr(sizeResult)) {
         return Err(rewrap('askOnly', {}, sizeResult.error, InvalidQuoteError));
       }
 
@@ -437,7 +437,7 @@ export class QuoteService {
    * const downResult = QuoteService.shift(quote, new Decimal(-0.01));
    * // bid: 0.48 → 0.47, ask: 0.52 → 0.51
    *
-   * if (!upResult.ok) {
+   * if (isErr(upResult)) {
    *   // Полный контекст ошибки
    *   console.error(upResult.error.context?.op); // 'shift'
    *   console.error(upResult.error.context?.opChain); // ['creates', 'shift']
@@ -573,7 +573,7 @@ export class QuoteService {
         bidSize = newBidSize;
       } else {
         const bidSizeResult = QuantityService.create(newBidSize);
-        if (!bidSizeResult.ok) {
+        if (isErr(bidSizeResult)) {
           return Err(
             rewrap(
               'updateSizes',
@@ -596,7 +596,7 @@ export class QuoteService {
         askSize = newAskSize;
       } else {
         const askSizeResult = QuantityService.create(newAskSize);
-        if (!askSizeResult.ok) {
+        if (isErr(askSizeResult)) {
           return Err(
             rewrap(
               'updateSizes',

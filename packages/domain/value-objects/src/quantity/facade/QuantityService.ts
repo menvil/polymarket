@@ -1,4 +1,4 @@
-import { Result, Ok, Err } from '@polymarket/result';
+import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { Quantity, QuantityInvariantViolation } from '../core/Quantity.js';
 import { InvalidQuantityError } from '@polymarket/errors';
 import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
@@ -57,7 +57,7 @@ export class QuantityService {
    * @example
    * ```typescript
    * const result = QuantityService.create(10);
-   * if (!result.ok) {
+   * if (isErr(result)) {
    *   console.error(result.error.context.op); // 'create'
    * }
    * const qty = result.value;
@@ -66,7 +66,7 @@ export class QuantityService {
   public static create(value: number | string | Decimal): Result<Quantity, InvalidQuantityError> {
     // Безопасный парсинг value через toDecimal
     const decimalResult = toDecimal('value', value, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
-    if (!decimalResult.ok) {
+    if (isErr(decimalResult)) {
       // raw уже внутри err.context.raw от toDecimal
       return Err(rewrap('create', {}, decimalResult.error, InvalidQuantityError));
     }
@@ -118,7 +118,7 @@ export class QuantityService {
    * @example
    * ```typescript
    * const result = QuantityService.add(qty1, qty2);
-   * if (!result.ok) {
+   * if (isErr(result)) {
    *   console.error(result.error.context.op); // 'add'
    * }
    * ```
@@ -152,7 +152,7 @@ export class QuantityService {
    * @example
    * ```typescript
    * const result = QuantityService.subtract(qty1, qty2);
-   * if (!result.ok) {
+   * if (isErr(result)) {
    *   console.error(result.error.context.op); // 'subtract'
    * }
    * ```
@@ -166,7 +166,7 @@ export class QuantityService {
       const diff = subtractDecimal(qty1.value(), qty2.value());
 
       const validateResult = ValidateResultNonNegative.check(diff);
-      if (!validateResult.ok) {
+      if (isErr(validateResult)) {
         // wrapOp автоматически сделает rewrap для любого Err результата
         return Err(validateResult.error);
       }
@@ -189,7 +189,7 @@ export class QuantityService {
    * @example
    * ```typescript
    * const result = QuantityService.multiply(qty, 2);
-   * if (!result.ok) {
+   * if (isErr(result)) {
    *   console.error(result.error.context.op); // 'multiply'
    *   console.error(result.error.context.factor); // '2'
    * }
@@ -201,7 +201,7 @@ export class QuantityService {
   ): Result<Quantity, InvalidQuantityError> {
     // Безопасный парсинг factor через toDecimal
     const factorResult = toDecimal('factor', factor, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
-    if (!factorResult.ok) {
+    if (isErr(factorResult)) {
       return Err(
         rewrap('multiply', {
           quantity: quantity.value().toString(),
@@ -214,7 +214,7 @@ export class QuantityService {
 
     // Валидация через rule (проверяет isNaN, isFinite)
     const validateResult = ValidateFactorForQuantityMultiplication.check(factorDecimal);
-    if (!validateResult.ok) {
+    if (isErr(validateResult)) {
       return Err(
         rewrap('multiply', {
           quantity: quantity.value().toString(),
@@ -263,7 +263,7 @@ export class QuantityService {
    * @example
    * ```typescript
    * const result = QuantityService.divide(qty, 2);
-   * if (!result.ok) {
+   * if (isErr(result)) {
    *   console.error(result.error.context.op); // 'divide'
    *   console.error(result.error.context.cause); // { name, message } для исключений
    * }
@@ -275,7 +275,7 @@ export class QuantityService {
   ): Result<Quantity, InvalidQuantityError> {
     // Безопасный парсинг divisor через toDecimal
     const divisorResult = toDecimal('divisor', divisor, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
-    if (!divisorResult.ok) {
+    if (isErr(divisorResult)) {
       return Err(
         rewrap('divide', {
           quantity: quantity.value().toString(),
@@ -288,7 +288,7 @@ export class QuantityService {
 
     // Валидация через rule
     const validateResult = ValidateDivisorForQuantityDivision.check(divisorDecimal);
-    if (!validateResult.ok) {
+    if (isErr(validateResult)) {
       return Err(
         rewrap('divide', {
           quantity: quantity.value().toString(),
@@ -332,7 +332,7 @@ export class QuantityService {
    * @example
    * ```typescript
    * const result = QuantityService.roundToStep(qty, 0.01);
-   * if (!result.ok) {
+   * if (isErr(result)) {
    *   console.error(result.error.context.op); // 'roundToStep'
    * }
    * ```
@@ -344,7 +344,7 @@ export class QuantityService {
   ): Result<Quantity, InvalidQuantityError> {
     // Безопасный парсинг stepSize через toDecimal
     const stepSizeResult = toDecimal('stepSize', stepSize, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
-    if (!stepSizeResult.ok) {
+    if (isErr(stepSizeResult)) {
       return Err(
         rewrap('roundToStep', {
           quantity: quantity.value().toString(),
@@ -357,7 +357,7 @@ export class QuantityService {
 
     // Валидация через rule
     const validateResult = ValidateStepSizeForQuantity.check(stepSizeDecimal);
-    if (!validateResult.ok) {
+    if (isErr(validateResult)) {
       return Err(
         rewrap('roundToStep', {
           quantity: quantity.value().toString(),

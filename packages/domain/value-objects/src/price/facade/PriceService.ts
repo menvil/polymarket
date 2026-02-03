@@ -1,4 +1,4 @@
-import { Result, Ok, Err } from '@polymarket/result';
+import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 import { Price, PriceInvariantViolation } from '../core/Price.js';
 import { PriceErrorReason } from '../errors/PriceErrorReason.js';
@@ -83,7 +83,7 @@ export class PriceService {
    * @example
    * ```typescript
    * const result = PriceService.create(0.5);
-   * if (!result.ok) {
+   * if (isErr(result)) {
    *   console.error(result.error.context.value); // '0.5'
    *   return;
    * }
@@ -95,7 +95,7 @@ export class PriceService {
   ): Result<Price, InvalidPriceError> {
     // Безопасный парсинг value через toDecimal
     const decimalResult = toDecimal('value', value, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
-    if (!decimalResult.ok) {
+    if (isErr(decimalResult)) {
       // raw уже внутри err.context.raw от toDecimal
       return Err(rewrap('create', {}, decimalResult.error, InvalidPriceError));
     }
@@ -217,7 +217,7 @@ export class PriceService {
   ): Result<Price, InvalidPriceError> {
     // Безопасный парсинг factor через toDecimal
     const factorResult = toDecimal('factor', factor, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
-    if (!factorResult.ok) {
+    if (isErr(factorResult)) {
       return Err(
         rewrap('multiply', {
           price: price.value().toString(),
@@ -230,7 +230,7 @@ export class PriceService {
 
     // Валидация через rule (проверяет isNaN, isFinite)
     const validateResult = ValidateFactorForPriceMultiplication.check(factorDecimal);
-    if (!validateResult.ok) {
+    if (isErr(validateResult)) {
       return Err(
         rewrap('multiply', {
           price: price.value().toString(),
@@ -287,7 +287,7 @@ export class PriceService {
   ): Result<Price, InvalidPriceError> {
     // Безопасный парсинг divisor через toDecimal
     const divisorResult = toDecimal('divisor', divisor, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
-    if (!divisorResult.ok) {
+    if (isErr(divisorResult)) {
       return Err(
         rewrap('divide', {
           price: price.value().toString(),
@@ -300,7 +300,7 @@ export class PriceService {
 
     // Валидация через rule
     const validateResult = ValidateDivisorForPriceDivision.check(divisorDecimal);
-    if (!validateResult.ok) {
+    if (isErr(validateResult)) {
       return Err(
         rewrap('divide', {
           price: price.value().toString(),
@@ -367,7 +367,7 @@ export class PriceService {
   ): Result<Price, InvalidPriceError> {
     // Безопасный парсинг tickSize через toDecimal
     const tickDecimalResult = toDecimal('tickSize', tickSize, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
-    if (!tickDecimalResult.ok) {
+    if (isErr(tickDecimalResult)) {
       return Err(
         rewrap('roundToMarketTick', {
           price: price.value().toString(),
@@ -379,7 +379,7 @@ export class PriceService {
 
     // Валидация через rule (уже принимает Decimal)
     const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickDecimalResult.value);
-    if (!tickRes.ok) {
+    if (isErr(tickRes)) {
       return Err(
         rewrap('roundToMarketTick', {
           price: price.value().toString(),
@@ -451,7 +451,7 @@ export class PriceService {
   ): Result<void, InvalidPriceError> {
     // Безопасный парсинг tickSize через toDecimal
     const tickDecimalResult = toDecimal('tickSize', tickSize, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
-    if (!tickDecimalResult.ok) {
+    if (isErr(tickDecimalResult)) {
       return Err(
         rewrap('ensureAlignedToMarketTick', {
           price: price.value().toString(),
@@ -462,7 +462,7 @@ export class PriceService {
 
     // Валидация tickSize через ValidateTickSizeMultipleOfBaseTick (как в roundToMarketTick)
     const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickDecimalResult.value);
-    if (!tickRes.ok) {
+    if (isErr(tickRes)) {
       return Err(
         rewrap('ensureAlignedToMarketTick', {
           price: price.value().toString(),
@@ -475,7 +475,7 @@ export class PriceService {
 
     // Проверка alignment
     const result = ValidateAligned.check(price, tick);
-    if (!result.ok) {
+    if (isErr(result)) {
       return Err(
         rewrap('ensureAlignedToMarketTick', {
           price: price.value().toString(),

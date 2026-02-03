@@ -1,4 +1,4 @@
-import { type Result, Ok, Err } from '@polymarket/result';
+import { type Result, Ok, Err, isErr } from '@polymarket/result';
 import { InvalidSpreadError, InvalidPriceError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { Price, PriceService } from '../../price/index.js';
@@ -44,7 +44,7 @@ import {
  *
  * const bidResult = PriceService.create(0.48);
  * const askResult = PriceService.create(0.52);
- * if (!bidResult.ok || !askResult.ok) {
+ * if (isErr(bidResult) || isErr(askResult)) {
  *   // handle error
  * }
  *
@@ -76,7 +76,7 @@ export class SpreadService {
    * ```typescript
    * const bidResult = PriceService.create(0.48);
    * const askResult = PriceService.create(0.52);
-   * if (!bidResult.ok || !askResult.ok) return;
+   * if (isErr(bidResult) || isErr(askResult)) return;
    *
    * const result = SpreadService.create(bidResult.value, askResult.value);
    * if (result.ok) {
@@ -89,7 +89,7 @@ export class SpreadService {
   public static create(bid: Price, ask: Price): Result<Spread, InvalidSpreadError> {
     // Валидация через Rule (опционально, можно положиться на Core инвариант)
     const validationResult = ValidateBidAsk.check(bid, ask);
-    if (!validationResult.ok) {
+    if (isErr(validationResult)) {
       return Err(
         rewrap('create', {
           bid: bid.value().toString(),
@@ -155,7 +155,7 @@ export class SpreadService {
     const askDecimal = askValue instanceof Decimal ? askValue : new Decimal(askValue);
 
     const bidResult = PriceService.create(bidDecimal);
-    if (!bidResult.ok) {
+    if (isErr(bidResult)) {
       return Err(
         rewrap('fromValues', {
           bidValue: bidDecimal.toString(),
@@ -165,7 +165,7 @@ export class SpreadService {
     }
 
     const askResult = PriceService.create(askDecimal);
-    if (!askResult.ok) {
+    if (isErr(askResult)) {
       return Err(
         rewrap('fromValues', {
           bidValue: bidDecimal.toString(),
@@ -232,7 +232,7 @@ export class SpreadService {
       SpreadErrorReason.INVALID_AMOUNT,
       InvalidSpreadError
     );
-    if (!amountResult.ok) {
+    if (isErr(amountResult)) {
       return Err(
         rewrap('tighten', {
           spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -284,7 +284,7 @@ export class SpreadService {
       // Новые цены через math functions + PriceService.create
       const newBidValue = addDecimal(spread.bid().value(), actualAmount);
       const newBidResult = PriceService.create(newBidValue);
-      if (!newBidResult.ok) {
+      if (isErr(newBidResult)) {
         return Err(
           rewrap('tighten', {
             spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -296,7 +296,7 @@ export class SpreadService {
 
       const newAskValue = subtractDecimal(spread.ask().value(), actualAmount);
       const newAskResult = PriceService.create(newAskValue);
-      if (!newAskResult.ok) {
+      if (isErr(newAskResult)) {
         return Err(
           rewrap('tighten', {
             spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -350,7 +350,7 @@ export class SpreadService {
       SpreadErrorReason.INVALID_AMOUNT,
       InvalidSpreadError
     );
-    if (!amountResult.ok) {
+    if (isErr(amountResult)) {
       return Err(
         rewrap('widen', {
           spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -398,7 +398,7 @@ export class SpreadService {
       // Новые цены через math functions + PriceService.create
       const newBidValue = subtractDecimal(spread.bid().value(), amountDecimal);
       const newBidResult = PriceService.create(newBidValue);
-      if (!newBidResult.ok) {
+      if (isErr(newBidResult)) {
         return Err(
           rewrap('widen', {
             spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -410,7 +410,7 @@ export class SpreadService {
 
       const newAskValue = addDecimal(spread.ask().value(), amountDecimal);
       const newAskResult = PriceService.create(newAskValue);
-      if (!newAskResult.ok) {
+      if (isErr(newAskResult)) {
         return Err(
           rewrap('widen', {
             spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -466,7 +466,7 @@ export class SpreadService {
       SpreadErrorReason.INVALID_AMOUNT,
       InvalidSpreadError
     );
-    if (!amountResult.ok) {
+    if (isErr(amountResult)) {
       return Err(
         rewrap('shift', {
           spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -498,7 +498,7 @@ export class SpreadService {
       // Сдвигаем обе цены через math functions + PriceService.create
       const newBidValue = addDecimal(spread.bid().value(), amountDecimal);
       const newBidResult = PriceService.create(newBidValue);
-      if (!newBidResult.ok) {
+      if (isErr(newBidResult)) {
         return Err(
           rewrap('shift', {
             spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -510,7 +510,7 @@ export class SpreadService {
 
       const newAskValue = addDecimal(spread.ask().value(), amountDecimal);
       const newAskResult = PriceService.create(newAskValue);
-      if (!newAskResult.ok) {
+      if (isErr(newAskResult)) {
         return Err(
           rewrap('shift', {
             spread: `${spread.bid().value()}-${spread.ask().value()}`,
