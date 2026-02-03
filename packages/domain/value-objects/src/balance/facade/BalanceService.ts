@@ -8,7 +8,7 @@ import { ValidateReserveAmount } from '../rules/ValidateReserveAmount.js';
 import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount.js';
 import { ValidateCurrencyMatch } from '../rules/ValidateCurrencyMatch.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
-import { rewrap, unexpectedError } from '../../shared/facade/errorUtils.js';
+import { rewrap, unexpectedError, currencyMismatchError } from '../../shared/facade/errorUtils.js';
 
 /**
  * Фасад для работы с Balance - публичный API
@@ -429,13 +429,13 @@ export class BalanceService {
     // Проверка совпадения валют
     if (!balance1.hasSameCurrency(balance2)) {
       return Err(
-        new InvalidBalanceError('Cannot compare balances with different currencies', {
-          context: {
-            reason: BalanceErrorReason.CURRENCY_MISMATCH,
-            currency1: balance1.currency(),
-            currency2: balance2.currency()
-          }
-        })
+        currencyMismatchError(
+          'equals',
+          balance1.currency(),
+          balance2.currency(),
+          BalanceErrorReason.CURRENCY_MISMATCH,
+          InvalidBalanceError
+        )
       );
     }
 
@@ -521,13 +521,13 @@ export class BalanceService {
     // Проверка совпадения валют
     if (balance.currency() !== amount.currency()) {
       return Err(
-        new InvalidBalanceError('Cannot check affordability with different currencies', {
-          context: {
-            reason: BalanceErrorReason.CURRENCY_MISMATCH,
-            balanceCurrency: balance.currency(),
-            amountCurrency: amount.currency()
-          }
-        })
+        currencyMismatchError(
+          'canAfford',
+          balance.currency(),
+          amount.currency(),
+          BalanceErrorReason.CURRENCY_MISMATCH,
+          InvalidBalanceError
+        )
       );
     }
 

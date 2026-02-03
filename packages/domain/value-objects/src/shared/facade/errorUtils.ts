@@ -417,3 +417,69 @@ export function wrapOp<T, TError extends DomainError>(
     return Err(rewrap(op, ctx, unexpectedError(op, ctx, e, valueName, ErrorConstructor), ErrorConstructor));
   }
 }
+
+/**
+ * Создаёт стандартизированную ошибку несовпадения валют
+ *
+ * @param op - Название операции ('isLessThan', 'equals', 'add', etc.)
+ * @param expected - Ожидаемая валюта
+ * @param actual - Фактическая валюта
+ * @param reasonEnum - Enum значение для CURRENCY_MISMATCH (напр. MoneyErrorReason.CURRENCY_MISMATCH)
+ * @param ErrorConstructor - Конструктор ошибки
+ * @returns TError с стандартизированным контекстом
+ *
+ * @remarks
+ * Стандартизирует создание ошибок несовпадения валют во всех Services.
+ * Устраняет дублирование кода в comparison и math операциях.
+ *
+ * **Стандартный контекст:**
+ * - op - название операции
+ * - reason - CURRENCY_MISMATCH enum
+ * - expected - ожидаемая валюта
+ * - actual - фактическая валюта
+ *
+ * **Используется в:**
+ * - MoneyService: isLessThan, equals, add, subtract, и т.д.
+ * - BalanceService: equals, canAfford
+ *
+ * @example
+ * ```typescript
+ * // В MoneyService.isLessThan:
+ * if (!a.hasSameCurrency(b)) {
+ *   return Err(currencyMismatchError(
+ *     'isLessThan',
+ *     a.currency(),
+ *     b.currency(),
+ *     MoneyErrorReason.CURRENCY_MISMATCH,
+ *     InvalidMoneyError
+ *   ));
+ * }
+ *
+ * // В BalanceService.equals:
+ * if (!balance1.hasSameCurrency(balance2)) {
+ *   return Err(currencyMismatchError(
+ *     'equals',
+ *     balance1.currency(),
+ *     balance2.currency(),
+ *     BalanceErrorReason.CURRENCY_MISMATCH,
+ *     InvalidBalanceError
+ *   ));
+ * }
+ * ```
+ */
+export function currencyMismatchError<TError extends DomainError>(
+  op: string,
+  expected: string,
+  actual: string,
+  reasonEnum: string,
+  ErrorConstructor: ErrorConstructor<TError>
+): TError {
+  return new ErrorConstructor(`Cannot ${op}: currency mismatch`, {
+    context: {
+      op,
+      reason: reasonEnum,
+      expected,
+      actual
+    }
+  });
+}

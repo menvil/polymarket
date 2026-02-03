@@ -7,7 +7,7 @@ import { MoneyInvariantViolation } from '../core/MoneyInvariantViolation';
 import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorForMoneyMultiplication';
 import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason';
-import { toDecimal, rewrap, wrapOp, unexpectedError } from '../../shared/facade/errorUtils';
+import { toDecimal, rewrap, wrapOp, unexpectedError, currencyMismatchError } from '../../shared/facade/errorUtils.js';
 
 /**
  * Facade для безопасного создания и операций с Money - публичный API
@@ -431,14 +431,13 @@ export class MoneyService {
    */
   public static isLessThan(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
     if (!a.hasSameCurrency(b)) {
-      return Err(new InvalidMoneyError('Cannot compare Money with different currencies', {
-        context: {
-          op: 'isLessThan',
-          reason: MoneyErrorReason.CURRENCY_MISMATCH,
-          expected: a.currency(),
-          actual: b.currency()
-        }
-      }));
+      return Err(currencyMismatchError(
+        'isLessThan',
+        a.currency(),
+        b.currency(),
+        MoneyErrorReason.CURRENCY_MISMATCH,
+        InvalidMoneyError
+      ));
     }
     return Ok(a.value().lessThan(b.value()));
   }
@@ -453,14 +452,13 @@ export class MoneyService {
    */
   public static isLessThanOrEqual(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
     if (!a.hasSameCurrency(b)) {
-      return Err(new InvalidMoneyError('Cannot compare Money with different currencies', {
-        context: {
-          op: 'isLessThanOrEqual',
-          reason: MoneyErrorReason.CURRENCY_MISMATCH,
-          expected: a.currency(),
-          actual: b.currency()
-        }
-      }));
+      return Err(currencyMismatchError(
+        'isLessThanOrEqual',
+        a.currency(),
+        b.currency(),
+        MoneyErrorReason.CURRENCY_MISMATCH,
+        InvalidMoneyError
+      ));
     }
     return Ok(a.value().lessThanOrEqualTo(b.value()));
   }
@@ -475,14 +473,13 @@ export class MoneyService {
    */
   public static isGreaterThan(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
     if (!a.hasSameCurrency(b)) {
-      return Err(new InvalidMoneyError('Cannot compare Money with different currencies', {
-        context: {
-          op: 'isGreaterThan',
-          reason: MoneyErrorReason.CURRENCY_MISMATCH,
-          expected: a.currency(),
-          actual: b.currency()
-        }
-      }));
+      return Err(currencyMismatchError(
+        'isGreaterThan',
+        a.currency(),
+        b.currency(),
+        MoneyErrorReason.CURRENCY_MISMATCH,
+        InvalidMoneyError
+      ));
     }
     return Ok(a.value().greaterThan(b.value()));
   }
@@ -497,14 +494,13 @@ export class MoneyService {
    */
   public static isGreaterThanOrEqual(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
     if (!a.hasSameCurrency(b)) {
-      return Err(new InvalidMoneyError('Cannot compare Money with different currencies', {
-        context: {
-          op: 'isGreaterThanOrEqual',
-          reason: MoneyErrorReason.CURRENCY_MISMATCH,
-          expected: a.currency(),
-          actual: b.currency()
-        }
-      }));
+      return Err(currencyMismatchError(
+        'isGreaterThanOrEqual',
+        a.currency(),
+        b.currency(),
+        MoneyErrorReason.CURRENCY_MISMATCH,
+        InvalidMoneyError
+      ));
     }
     return Ok(a.value().greaterThanOrEqualTo(b.value()));
   }
@@ -527,14 +523,13 @@ export class MoneyService {
    */
   public static equals(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
     if (!a.hasSameCurrency(b)) {
-      return Err(new InvalidMoneyError('Cannot compare Money with different currencies', {
-        context: {
-          op: 'equals',
-          reason: MoneyErrorReason.CURRENCY_MISMATCH,
-          expected: a.currency(),
-          actual: b.currency()
-        }
-      }));
+      return Err(currencyMismatchError(
+        'equals',
+        a.currency(),
+        b.currency(),
+        MoneyErrorReason.CURRENCY_MISMATCH,
+        InvalidMoneyError
+      ));
     }
     return Ok(a.value().equals(b.value()));
   }
