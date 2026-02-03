@@ -8,7 +8,7 @@ import { ValidateReserveAmount } from '../rules/ValidateReserveAmount.js';
 import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount.js';
 import { ValidateCurrencyMatch } from '../rules/ValidateCurrencyMatch.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
-import { rewrap, unexpectedError, currencyMismatchError } from '../../shared/facade/errorUtils.js';
+import { rewrap, unexpectedError, currencyMismatchError, wrapOp } from '../../shared/facade/errorUtils.js';
 
 /**
  * Фасад для работы с Balance - публичный API
@@ -194,7 +194,7 @@ export class BalanceService {
       currency: balance.currency()
     };
 
-    try {
+    return wrapOp(op, ctx, () => {
       // Проверка 1: Валюты должны совпадать
       const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
       if (isErr(currencyCheck)) {
@@ -220,9 +220,7 @@ export class BalanceService {
 
       // Создаём новый Balance
       return this.create(newAvailableResult.value, newReservedResult.value);
-    } catch (error) {
-      return Err(unexpectedError(op, ctx, error, 'balance', InvalidBalanceError));
-    }
+    }, 'balance', InvalidBalanceError);
   }
 
   /**
@@ -279,7 +277,7 @@ export class BalanceService {
       currency: balance.currency()
     };
 
-    try {
+    return wrapOp(op, ctx, () => {
       // Проверка 1: Валюты должны совпадать
       const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
       if (isErr(currencyCheck)) {
@@ -305,9 +303,7 @@ export class BalanceService {
 
       // Создаём новый Balance
       return this.create(newAvailableResult.value, newReservedResult.value);
-    } catch (error) {
-      return Err(unexpectedError(op, ctx, error, 'balance', InvalidBalanceError));
-    }
+    }, 'balance', InvalidBalanceError);
   }
 
   /**
@@ -360,30 +356,32 @@ export class BalanceService {
       currency: balance.currency()
     };
 
-    try {
+    return wrapOp(op, ctx, () => {
       // Проверка: Валюты должны совпадать
       const currencyCheck = ValidateCurrencyMatch.check(newAvailable, balance.currency());
       if (isErr(currencyCheck)) {
         return Err(rewrap(op, ctx, currencyCheck.error, InvalidBalanceError));
       }
 
-      // Создаём новый Balance с новым available
-      const newBalance = Balance.of(newAvailable, balance.reserved());
-      return Ok(newBalance);
-    } catch (error) {
-      if (error instanceof BalanceInvariantViolation) {
-        return Err(
-          new InvalidBalanceError(error.message, {
-            context: {
-              ...ctx,
-              op,
-              reason: error.reason as BalanceErrorReason
-            }
-          })
-        );
+      // Balance.of может бросить BalanceInvariantViolation - ловим локально для правильного reason
+      try {
+        const newBalance = Balance.of(newAvailable, balance.reserved());
+        return Ok(newBalance);
+      } catch (error) {
+        if (error instanceof BalanceInvariantViolation) {
+          return Err(
+            new InvalidBalanceError(error.message, {
+              context: {
+                ...ctx,
+                op,
+                reason: error.reason as BalanceErrorReason
+              }
+            })
+          );
+        }
+        throw error; // пробрасываем дальше, wrapOp поймает как unexpected
       }
-      return Err(unexpectedError(op, ctx, error, 'balance', InvalidBalanceError));
-    }
+    }, 'balance', InvalidBalanceError);
   }
 
   /**
