@@ -126,7 +126,7 @@ export class Balance {
   /**
    * Создаёт Balance из available и reserved Money
    *
-   * @param _availableable - Доступные средства
+   * @param available - Доступные средства
    * @param reserved - Зарезервированные средства
    * @returns Новый Balance объект
    * @throws {BalanceInvariantViolation} Если нарушены инварианты
@@ -159,7 +159,7 @@ export class Balance {
   /**
    * Создаёт Balance с нулевым reserved
    *
-   * @param _availableable - Доступные средства
+   * @param available - Доступные средства
    * @returns Новый Balance с reserved = 0
    * @throws {BalanceInvariantViolation} Если available < 0
    *
@@ -202,8 +202,6 @@ export class Balance {
         new Balance(money, money)
       ])
     ) as Record<SupportedCurrency, Balance>;
-
-  // ==================== Getters ====================
 
   /**
    * Возвращает доступные средства
@@ -280,8 +278,6 @@ export class Balance {
   public currency(): SupportedCurrency {
     return this._available.currency();
   }
-
-  // ==================== Query Methods ====================
 
   /**
    * Проверяет, пустой ли баланс (total = 0)

@@ -172,7 +172,7 @@ describe('BalanceService', () => {
     });
   });
 
-  describe('release()', () => {
+  describe('unfreezeReserved()', () => {
     const createBalance = () => {
       const result = BalanceService.create(
         Money.of(7000),
@@ -185,7 +185,7 @@ describe('BalanceService', () => {
     describe('успешное освобождение', () => {
       it('освобождает зарезервированные средства', () => {
         const balance = createBalance();
-        const result = BalanceService.release(balance, Money.of(2000));
+        const result = BalanceService.unfreezeReserved(balance, Money.of(2000));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -197,7 +197,7 @@ describe('BalanceService', () => {
 
       it('освобождает все reserved', () => {
         const balance = createBalance();
-        const result = BalanceService.release(balance, Money.of(5000));
+        const result = BalanceService.unfreezeReserved(balance, Money.of(5000));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -208,7 +208,7 @@ describe('BalanceService', () => {
 
       it('возвращает новый экземпляр (immutability)', () => {
         const balance = createBalance();
-        const result = BalanceService.release(balance, Money.of(1000));
+        const result = BalanceService.unfreezeReserved(balance, Money.of(1000));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -221,11 +221,11 @@ describe('BalanceService', () => {
     describe('ошибки освобождения', () => {
       it('возвращает ошибку INSUFFICIENT_RESERVED', () => {
         const balance = createBalance();
-        const result = BalanceService.release(balance, Money.of(10000));
+        const result = BalanceService.unfreezeReserved(balance, Money.of(10000));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.op).toBe('release');
+          expect(result.error.context?.op).toBe('unfreezeReserved');
           expect(result.error.context?.reason).toBe(BalanceErrorReason.INSUFFICIENT_RESERVED);
         }
       });
@@ -234,18 +234,18 @@ describe('BalanceService', () => {
       // Если добавятся другие валюты, раскомментировать:
       // it('возвращает ошибку CURRENCY_MISMATCH', () => {
       //   const balance = createBalance();
-      //   const result = BalanceService.release(balance, Money.of(1000, 'EUR' as any));
+      //   const result = BalanceService.unfreezeReserved(balance, Money.of(1000, 'EUR' as any));
       //
       //   expect(result.ok).toBe(false);
       //   if (!result.ok) {
-      //     expect(result.error.context?.op).toBe('release');
+      //     expect(result.error.context?.op)\.toBe('unfreezeReserved');
       //     expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
       //   }
       // });
 
       it('возвращает ошибку для нулевой суммы', () => {
         const balance = createBalance();
-        const result = BalanceService.release(balance, Money.of(0));
+        const result = BalanceService.unfreezeReserved(balance, Money.of(0));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -344,15 +344,15 @@ describe('BalanceService', () => {
       }
     });
 
-    it('release: содержит op и операционные поля', () => {
+    it('unfreezeReserved: содержит op и операционные поля', () => {
       const balanceResult = BalanceService.create(Money.of(100), Money.of(50));
       if (!balanceResult.ok) fail('Balance creation failed');
 
-      const result = BalanceService.release(balanceResult.value, Money.of(100));
+      const result = BalanceService.unfreezeReserved(balanceResult.value, Money.of(100));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.op).toBe('release');
+        expect(result.error.context?.op).toBe('unfreezeReserved');
         expect(result.error.context?.available).toBeDefined();
         expect(result.error.context?.reserved).toBeDefined();
         expect(result.error.context?.amount).toBeDefined();

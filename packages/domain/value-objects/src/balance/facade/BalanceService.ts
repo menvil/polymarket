@@ -224,10 +224,10 @@ export class BalanceService {
   }
 
   /**
-   * Освобождает зарезервированные средства
+   * Размораживает зарезервированные средства (возврат в available)
    *
    * @param balance - Текущий баланс
-   * @param amount - Сумма для освобождения
+   * @param amount - Сумма для разморозки
    * @returns Result с новым Balance или InvalidBalanceError
    * @throws Никогда - все ошибки оборачиваются в Result
    *
@@ -235,6 +235,13 @@ export class BalanceService {
    * Создаёт НОВЫЙ Balance с:
    * - available = balance.available + amount
    * - reserved = balance.reserved - amount
+   *
+   * **Use cases:**
+   * - Отмена сделки (возврат зарезервированных средств)
+   * - Частичное исполнение (возврат неиспользованного остатка)
+   * - Истечение срока резервирования
+   *
+   * **Важно:** Для списания reserved БЕЗ возврата в available используйте consumeReserved().
    *
    * Процесс:
    * 1. Проверяет валюту через ValidateCurrencyMatch
@@ -249,15 +256,16 @@ export class BalanceService {
    *
    * @example
    * ```typescript
+   * // Отмена сделки - возвращаем зарезервированные средства
    * const balance = expectOk(BalanceService.create(
    *   Money.fromUSDC(7000),
    *   Money.fromUSDC(5000)
    * ));
    *
-   * const result = BalanceService.release(balance, Money.fromUSDC(2000));
+   * const result = BalanceService.unfreezeReserved(balance, Money.fromUSDC(2000));
    * if (result.ok) {
-   *   console.log(result.value.available().value()); // 9000
-   *   console.log(result.value.reserved().value());  // 3000
+   *   console.log(result.value.available().value()); // 9000 (было 7000)
+   *   console.log(result.value.reserved().value());  // 3000 (было 5000)
    * } else {
    *   console.error(result.error.context.reason);
    *   // BalanceErrorReason.INSUFFICIENT_RESERVED
@@ -265,11 +273,11 @@ export class BalanceService {
    * }
    * ```
    */
-  public static release(
+  public static unfreezeReserved(
     balance: Balance,
     amount: Money
   ): Result<Balance, InvalidBalanceError> {
-    const op = 'release';
+    const op = 'unfreezeReserved';
     const ctx = {
       available: balance.available().value().toString(),
       reserved: balance.reserved().value().toString(),

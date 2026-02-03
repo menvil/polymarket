@@ -33,7 +33,7 @@ describe('Balance Integration Tests', () => {
       expect(balance2.hasReserved()).toBe(true);
 
       // Шаг 3: Освобождаем средства после закрытия ордера
-      const releaseResult = BalanceService.release(balance2, Money.of(3000));
+      const releaseResult = BalanceService.unfreezeReserved(balance2, Money.of(3000));
       expect(releaseResult.ok).toBe(true);
       if (!releaseResult.ok) return;
 
@@ -105,7 +105,7 @@ describe('Balance Integration Tests', () => {
       // Освобождаем средства частями
       const releases = [1000, 2000, 1500];
       for (const releaseAmount of releases) {
-        const releaseResult = BalanceService.release(currentBalance, Money.of(releaseAmount));
+        const releaseResult = BalanceService.unfreezeReserved(currentBalance, Money.of(releaseAmount));
         expect(releaseResult.ok).toBe(true);
         if (!releaseResult.ok) return;
         currentBalance = releaseResult.value;
@@ -138,7 +138,7 @@ describe('Balance Integration Tests', () => {
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
-      const releaseResult = BalanceService.release(createResult.value, Money.of(2000));
+      const releaseResult = BalanceService.unfreezeReserved(createResult.value, Money.of(2000));
       expect(releaseResult.ok).toBe(false);
       if (!releaseResult.ok) {
         expect(releaseResult.error.context?.reason).toBe(BalanceErrorReason.INSUFFICIENT_RESERVED);
@@ -172,7 +172,7 @@ describe('Balance Integration Tests', () => {
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
-      const releaseResult = BalanceService.release(createResult.value, Money.of(1000));
+      const releaseResult = BalanceService.unfreezeReserved(createResult.value, Money.of(1000));
       expect(releaseResult.ok).toBe(true);
       if (!releaseResult.ok) return;
 
@@ -243,7 +243,7 @@ describe('Balance Integration Tests', () => {
       if (!deserResult.ok) return;
 
       // Продолжаем workflow с десериализованным балансом
-      const releaseResult = BalanceService.release(deserResult.value, Money.of(1000));
+      const releaseResult = BalanceService.unfreezeReserved(deserResult.value, Money.of(1000));
       expect(releaseResult.ok).toBe(true);
       if (!releaseResult.ok) return;
 
@@ -356,7 +356,7 @@ describe('Balance Integration Tests', () => {
       expect(balance.reservedPercentage().toNumber()).toBe(50);
 
       // Освобождаем 25% (остаётся 25%)
-      const release1 = BalanceService.release(balance, Money.of(2500));
+      const release1 = BalanceService.unfreezeReserved(balance, Money.of(2500));
       expect(release1.ok).toBe(true);
       if (!release1.ok) return;
       balance = release1.value;
@@ -382,7 +382,7 @@ describe('Balance Integration Tests', () => {
       expect(original.available().value().toNumber()).toBe(originalAvailable);
 
       // release возвращает новый экземпляр
-      const releaseResult = BalanceService.release(original, Money.of(1000));
+      const releaseResult = BalanceService.unfreezeReserved(original, Money.of(1000));
       expect(releaseResult.ok).toBe(true);
       if (!releaseResult.ok) return;
       expect(releaseResult.value).not.toBe(original);
