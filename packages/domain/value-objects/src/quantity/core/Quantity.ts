@@ -84,19 +84,19 @@ export class Quantity {
   public static readonly ZERO = Quantity.of(0);
   public static readonly ONE = Quantity.of(1);
 
-  private constructor(private readonly v: Decimal) {
+  private constructor(private readonly _value: Decimal) {
     // Инвариант 1: Not NaN (explicit check for consistency)
-    if (v.isNaN()) {
+    if (_value.isNaN()) {
       throw new QuantityInvariantViolation('Quantity cannot be NaN', QuantityErrorReason.NAN);
     }
 
     // Инвариант 2: Must be finite
-    if (!v.isFinite()) {
+    if (!_value.isFinite()) {
       throw new QuantityInvariantViolation('Quantity must be finite', QuantityErrorReason.NON_FINITE);
     }
 
     // Инвариант 3: Cannot be negative
-    if (v.isNegative()) {
+    if (_value.isNegative()) {
       throw new QuantityInvariantViolation('Quantity cannot be negative', QuantityErrorReason.NEGATIVE);
     }
   }
@@ -166,7 +166,7 @@ export class Quantity {
    * ```
    */
   public value(): Decimal {
-    return this.v;
+    return this._value;
   }
 
   /**
@@ -187,7 +187,7 @@ export class Quantity {
    * ```
    */
   public toNumber(): number {
-    return this.v.toNumber();
+    return this._value.toNumber();
   }
 
   /**
@@ -211,7 +211,7 @@ export class Quantity {
    * ```
    */
   public equals(other: Quantity): boolean {
-    return this.v.eq(other.v);
+    return this._value.eq(other._value);
   }
 
   /**
@@ -230,7 +230,7 @@ export class Quantity {
    * ```
    */
   public isZero(): boolean {
-    return this.v.isZero();
+    return this._value.isZero();
   }
 
   /**
@@ -246,7 +246,7 @@ export class Quantity {
    * ```
    */
   public isPositive(): boolean {
-    return this.v.greaterThan(0);
+    return this._value.greaterThan(0);
   }
 
   /**
@@ -269,7 +269,7 @@ export class Quantity {
    * ```
    */
   public isLessThan(other: Quantity): boolean {
-    return this.v.lessThan(other.v);
+    return this._value.lessThan(other._value);
   }
 
   /**
@@ -292,7 +292,7 @@ export class Quantity {
    * ```
    */
   public isLessThanOrEqual(other: Quantity): boolean {
-    return this.v.lessThanOrEqualTo(other.v);
+    return this._value.lessThanOrEqualTo(other._value);
   }
 
   /**
@@ -315,7 +315,7 @@ export class Quantity {
    * ```
    */
   public isGreaterThan(other: Quantity): boolean {
-    return this.v.greaterThan(other.v);
+    return this._value.greaterThan(other._value);
   }
 
   /**
@@ -338,6 +338,6 @@ export class Quantity {
    * ```
    */
   public isGreaterThanOrEqual(other: Quantity): boolean {
-    return this.v.greaterThanOrEqualTo(other.v);
+    return this._value.greaterThanOrEqualTo(other._value);
   }
 }

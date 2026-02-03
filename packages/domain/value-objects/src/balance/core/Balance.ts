@@ -56,68 +56,68 @@ export class Balance {
   /**
    * Private constructor для защиты инвариантов
    *
-   * @param avail - Доступные средства
-   * @param res - Зарезервированные средства
+   * @param _available - Доступные средства
+   * @param _reserved - Зарезервированные средства
    * @throws {BalanceInvariantViolation} Если нарушены инварианты
    */
   private constructor(
-    private readonly avail: Money,
-    private readonly res: Money
+    private readonly _available: Money,
+    private readonly _reserved: Money
   ) {
     // Инвариант 0a: Not NaN
-    if (avail.value().isNaN() || res.value().isNaN()) {
+    if (_available.value().isNaN() || _reserved.value().isNaN()) {
       throw new BalanceInvariantViolation(
         'Balance amounts cannot be NaN',
         {
           reason: BalanceErrorReason.NAN,
-          available: avail.value().toString(),
-          reserved: res.value().toString()
+          available: _available.value().toString(),
+          reserved: _reserved.value().toString()
         }
       );
     }
 
     // Инвариант 0b: Must be finite
-    if (!avail.value().isFinite() || !res.value().isFinite()) {
+    if (!_available.value().isFinite() || !_reserved.value().isFinite()) {
       throw new BalanceInvariantViolation(
         'Balance amounts must be finite',
         {
           reason: BalanceErrorReason.NON_FINITE,
-          available: avail.value().toString(),
-          reserved: res.value().toString()
+          available: _available.value().toString(),
+          reserved: _reserved.value().toString()
         }
       );
     }
 
     // Инвариант 1: available >= 0
-    if (avail.value().isNegative()) {
+    if (_available.value().isNegative()) {
       throw new BalanceInvariantViolation(
         'Available amount cannot be negative',
         {
           reason: BalanceErrorReason.NEGATIVE_AVAILABLE,
-          available: avail.value().toNumber()
+          available: _available.value().toNumber()
         }
       );
     }
 
     // Инвариант 2: reserved >= 0
-    if (res.value().isNegative()) {
+    if (_reserved.value().isNegative()) {
       throw new BalanceInvariantViolation(
         'Reserved amount cannot be negative',
         {
           reason: BalanceErrorReason.NEGATIVE_RESERVED,
-          reserved: res.value().toNumber()
+          reserved: _reserved.value().toNumber()
         }
       );
     }
 
     // Инвариант 3: same currency
-    if (avail.currency() !== res.currency()) {
+    if (_available.currency() !== _reserved.currency()) {
       throw new BalanceInvariantViolation(
         'Available and reserved must have the same currency',
         {
           reason: BalanceErrorReason.CURRENCY_MISMATCH,
-          availableCurrency: avail.currency(),
-          reservedCurrency: res.currency()
+          availableCurrency: _available.currency(),
+          reservedCurrency: _reserved.currency()
         }
       );
     }
@@ -126,7 +126,7 @@ export class Balance {
   /**
    * Создаёт Balance из available и reserved Money
    *
-   * @param available - Доступные средства
+   * @param _availableable - Доступные средства
    * @param reserved - Зарезервированные средства
    * @returns Новый Balance объект
    * @throws {BalanceInvariantViolation} Если нарушены инварианты
@@ -159,7 +159,7 @@ export class Balance {
   /**
    * Создаёт Balance с нулевым reserved
    *
-   * @param available - Доступные средства
+   * @param _availableable - Доступные средства
    * @returns Новый Balance с reserved = 0
    * @throws {BalanceInvariantViolation} Если available < 0
    *
@@ -217,7 +217,7 @@ export class Balance {
    * ```
    */
   public available(): Money {
-    return this.avail;
+    return this._available;
   }
 
   /**
@@ -232,7 +232,7 @@ export class Balance {
    * ```
    */
   public reserved(): Money {
-    return this.res;
+    return this._reserved;
   }
 
   /**
@@ -260,11 +260,11 @@ export class Balance {
    */
   public total(): Money {
     // Прямое вычисление через Decimal (не нужен MoneyService)
-    const totalAmount = this.avail.value().plus(this.res.value());
+    const totalAmount = this._available.value().plus(this._reserved.value());
 
     // Создаём Money из результата
     // Безопасно благодаря инвариантам Balance
-    return Money.fromDecimal(totalAmount, this.avail.currency());
+    return Money.fromDecimal(totalAmount, this._available.currency());
   }
 
   /**
@@ -278,7 +278,7 @@ export class Balance {
    * ```
    */
   public currency(): SupportedCurrency {
-    return this.avail.currency();
+    return this._available.currency();
   }
 
   // ==================== Query Methods ====================
@@ -319,7 +319,7 @@ export class Balance {
    * ```
    */
   public hasReserved(): boolean {
-    return this.res.value().greaterThan(0);
+    return this._reserved.value().greaterThan(0);
   }
 
   /**
@@ -349,7 +349,7 @@ export class Balance {
       return new Decimal(0);
     }
 
-    return this.res.value().dividedBy(totalAmount).times(100);
+    return this._reserved.value().dividedBy(totalAmount).times(100);
   }
 
   /**

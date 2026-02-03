@@ -75,28 +75,28 @@ export class Price {
    */
   public static readonly HALF = new Price(new Decimal('0.5'));
 
-  private constructor(private readonly v: Decimal) {
+  private constructor(private readonly _value: Decimal) {
     // Инвариант 1: Not NaN
-    if (v.isNaN()) {
+    if (_value.isNaN()) {
       throw new PriceInvariantViolation('Price cannot be NaN', PriceErrorReason.NAN);
     }
 
     // Инвариант 2: Must be finite
-    if (!v.isFinite()) {
+    if (!_value.isFinite()) {
       throw new PriceInvariantViolation('Price must be finite', PriceErrorReason.NON_FINITE);
     }
 
     // Инвариант 3: Must be within valid range [MIN, MAX]
-    if (v.lessThan(Price.MIN_PRICE)) {
+    if (_value.lessThan(Price.MIN_PRICE)) {
       throw new PriceInvariantViolation(
-        `Price ${v} is below minimum ${Price.MIN_PRICE}`,
+        `Price ${_value} is below minimum ${Price.MIN_PRICE}`,
         PriceErrorReason.OUT_OF_RANGE_LOW
       );
     }
 
-    if (v.greaterThan(Price.MAX_PRICE)) {
+    if (_value.greaterThan(Price.MAX_PRICE)) {
       throw new PriceInvariantViolation(
-        `Price ${v} exceeds maximum ${Price.MAX_PRICE}`,
+        `Price ${_value} exceeds maximum ${Price.MAX_PRICE}`,
         PriceErrorReason.OUT_OF_RANGE_HIGH
       );
     }
@@ -176,7 +176,7 @@ export class Price {
    * ```
    */
   public value(): Decimal {
-    return this.v;
+    return this._value;
   }
 
   /**
@@ -196,7 +196,7 @@ export class Price {
    * ```
    */
   public toNumber(): number {
-    return this.v.toNumber();
+    return this._value.toNumber();
   }
 
   /**
@@ -217,7 +217,7 @@ export class Price {
    * ```
    */
   public equals(other: Price): boolean {
-    return this.v.equals(other.v);
+    return this._value.equals(other._value);
   }
 
   /**
@@ -234,7 +234,7 @@ export class Price {
    * ```
    */
   public isLessThan(other: Price): boolean {
-    return this.v.lessThan(other.v);
+    return this._value.lessThan(other._value);
   }
 
   /**
@@ -251,7 +251,7 @@ export class Price {
    * ```
    */
   public isLessThanOrEqual(other: Price): boolean {
-    return this.v.lessThanOrEqualTo(other.v);
+    return this._value.lessThanOrEqualTo(other._value);
   }
 
   /**
@@ -268,7 +268,7 @@ export class Price {
    * ```
    */
   public isGreaterThan(other: Price): boolean {
-    return this.v.greaterThan(other.v);
+    return this._value.greaterThan(other._value);
   }
 
   /**
@@ -285,7 +285,7 @@ export class Price {
    * ```
    */
   public isGreaterThanOrEqual(other: Price): boolean {
-    return this.v.greaterThanOrEqualTo(other.v);
+    return this._value.greaterThanOrEqualTo(other._value);
   }
 
   /**
@@ -319,7 +319,7 @@ export class Price {
    * ```
    */
   public isMin(): boolean {
-    return this.v.equals(Price.MIN_PRICE);
+    return this._value.equals(Price.MIN_PRICE);
   }
 
   /**
@@ -334,6 +334,6 @@ export class Price {
    * ```
    */
   public isMax(): boolean {
-    return this.v.equals(Price.MAX_PRICE);
+    return this._value.equals(Price.MAX_PRICE);
   }
 }

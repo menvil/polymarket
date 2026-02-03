@@ -71,8 +71,8 @@ export class Money {
     ) as Record<SupportedCurrency, Money>;
 
   private constructor(
-    private readonly amt: Decimal,
-    private readonly cur: SupportedCurrency
+    private readonly _amount: Decimal,
+    private readonly _currency: SupportedCurrency
   ) {}
 
   /**
@@ -181,7 +181,7 @@ export class Money {
    * ```
    */
   public value(): Decimal {
-    return this.amt;
+    return this._amount;
   }
 
   /**
@@ -190,7 +190,7 @@ export class Money {
    * @returns Код валюты
    */
   public currency(): SupportedCurrency {
-    return this.cur;
+    return this._currency;
   }
 
   /**
@@ -208,7 +208,7 @@ export class Money {
    * ```
    */
   public toNumber(): number {
-    return this.amt.toNumber();
+    return this._amount.toNumber();
   }
 
   /**
@@ -228,7 +228,7 @@ export class Money {
    * ```
    */
   public hasSameCurrency(other: Money): boolean {
-    return this.cur === other.cur;
+    return this._currency === other._currency;
   }
 
   /**
@@ -247,7 +247,7 @@ export class Money {
    * ```
    */
   public isZero(): boolean {
-    return this.amt.isZero();
+    return this._amount.isZero();
   }
 
   /**
@@ -263,7 +263,7 @@ export class Money {
    * ```
    */
   public isPositive(): boolean {
-    return this.amt.greaterThan(0);
+    return this._amount.greaterThan(0);
   }
 
   /**
@@ -279,6 +279,6 @@ export class Money {
    * ```
    */
   public isNegative(): boolean {
-    return this.amt.lessThan(0);
+    return this._amount.lessThan(0);
   }
 }
