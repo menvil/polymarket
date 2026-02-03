@@ -66,7 +66,6 @@ export class PriceService {
    */
   private static readonly TWO = new Decimal(2);
 
-
   /**
    * Создаёт Price из значения (безопасно - никогда не бросает)
    *

@@ -21,6 +21,7 @@
  *
  * **Валидация денежных значений:**
  * - InvalidMoneyError - некорректная денежная сумма (отрицательная, NaN, etc.)
+ * - InvalidBalanceError - некорректный баланс (available/reserved validation)
  * - CurrencyMismatchError - несоответствие валют при операциях
  *
  * **Валидация торговых объектов:**
@@ -100,6 +101,7 @@ export * from './InvalidAmountError.js';
 
 // Валидация денежных значений
 export * from './InvalidMoneyError.js';
+export * from './InvalidBalanceError.js';
 export * from './CurrencyMismatchError.js';
 
 // Валидация торговых объектов

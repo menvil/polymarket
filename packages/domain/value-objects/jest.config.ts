@@ -5,6 +5,8 @@ const baseConfig = createJestConfig('@polymarket/value-objects');
 
 const config: Config = {
   ...baseConfig,
+  roots: ['<rootDir>'],
+  testMatch: ['**/__tests__/**/*.test.ts'],
   moduleNameMapper: {
     ...baseConfig.moduleNameMapper,
     // Используем src/ .ts файлы для тестов

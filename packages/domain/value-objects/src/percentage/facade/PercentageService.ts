@@ -544,14 +544,9 @@ export class PercentageService {
       'applyTo',
       ctx,
       () => {
-        try {
-          const decimal = pct.toDecimal(); // pct / 100
-          const result = multiplyDecimal(value, decimal);
-          return Ok(result);
-        } catch (error) {
-          // Math error - будет обработан wrapOp
-          throw error;
-        }
+        const decimal = pct.toDecimal(); // pct / 100
+        const result = multiplyDecimal(value, decimal);
+        return Ok(result);
       },
       'percentage',
       InvalidPercentageError

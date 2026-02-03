@@ -1,0 +1,534 @@
+import { type Result, Ok, Err } from '@polymarket/result';
+import { InvalidSpreadError, InvalidPriceError } from '@polymarket/errors';
+import Decimal from 'decimal.js';
+import { Price, PriceService } from '../../price/index.js';
+import { Spread, SpreadInvariantViolation, SpreadErrorReason } from '../core/index.js';
+import { ValidateBidAsk } from '../rules/ValidateBidAsk.js';
+import { addDecimal, subtractDecimal } from '@polymarket/math';
+// Импорт из централизованного модуля
+import {
+  toCause,
+  toDecimal,
+  rewrap,
+  unexpectedError
+} from '../../shared/facade/errorUtils.js';
+
+/**
+ * Фасад для работы с Spread - публичный API
+ *
+ * @remarks
+ * Единая точка входа для всех операций со спредами.
+ * Оркестрирует Core + Math + Rules.
+ *
+ * **Контракт "Never Throw":**
+ * ВСЕ методы SpreadService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+ * Любые исключения из @polymarket/math, Core инвариантов или Rules ловятся и преобразуются в Result.Err.
+ *
+ * **Facade Error Contract:**
+ * Любой Err из Facade содержит:
+ * - context.op - название операции (верхний уровень)
+ * - context.bid/ask - входные цены (если применимо)
+ * - context.spread - входной spread (если применимо)
+ * - context.amount - входная величина операции (если применимо)
+ * - context.cause - для math-исключений: { name, message, stack? } (root-cause, не перетирается)
+ * - context.reason - для инвариантов Core (SpreadErrorReason enum)
+ *
+ * **Правило возвращаемых типов:**
+ * ВСЕ операции возвращают Result<T, InvalidSpreadError | InvalidPriceError>
+ * ОЖИДАЕМЫЕ и НЕОЖИДАННЫЕ ошибки обрабатываются через Result
+ *
+ * @example
+ * ```typescript
+ * import { SpreadService } from '@polymarket/value-objects/spread';
+ * import { PriceService } from '@polymarket/value-objects/price';
+ *
+ * const bidResult = PriceService.create(0.48);
+ * const askResult = PriceService.create(0.52);
+ * if (!bidResult.ok || !askResult.ok) {
+ *   // handle error
+ * }
+ *
+ * const result = SpreadService.create(bidResult.value, askResult.value);
+ * if (result.ok) {
+ *   console.log(result.value.width()); // Decimal(0.04)
+ * } else {
+ *   console.error(result.error.message);
+ * }
+ * ```
+ */
+export class SpreadService {
+  // ============================================================================
+  // Factory Methods
+  // ============================================================================
+
+  /**
+   * Создать Spread из Price объектов
+   *
+   * @param bid - Bid price
+   * @param ask - Ask price
+   * @returns Result со Spread или InvalidSpreadError
+   *
+   * @remarks
+   * Валидирует что bid <= ask через Rules перед созданием Core объекта.
+   * Ловит SpreadInvariantViolation из Core и преобразует в Result.Err.
+   *
+   * @example
+   * ```typescript
+   * const bidResult = PriceService.create(0.48);
+   * const askResult = PriceService.create(0.52);
+   * if (!bidResult.ok || !askResult.ok) return;
+   *
+   * const result = SpreadService.create(bidResult.value, askResult.value);
+   * if (result.ok) {
+   *   console.log(result.value.width()); // Decimal(0.04)
+   * } else {
+   *   console.error(result.error.context); // { op, bid, ask, reason?, cause? }
+   * }
+   * ```
+   */
+  public static create(bid: Price, ask: Price): Result<Spread, InvalidSpreadError> {
+    // Валидация через Rule (опционально, можно положиться на Core инвариант)
+    const validationResult = ValidateBidAsk.check(bid, ask);
+    if (!validationResult.ok) {
+      return Err(
+        rewrap('create', {
+          bid: bid.value().toString(),
+          ask: ask.value().toString()
+        }, validationResult.error, InvalidSpreadError)
+      );
+    }
+
+    // Создание через Core (может бросить SpreadInvariantViolation)
+    try {
+      return Ok(Spread.of(bid, ask));
+    } catch (error) {
+      // Ловим типизированное исключение из Core
+      if (error instanceof SpreadInvariantViolation) {
+        return Err(
+          new InvalidSpreadError(
+            `Spread invariant violation: ${error.message}`,
+            {
+              context: {
+                op: 'create',
+                bid: bid.value().toString(),
+                ask: ask.value().toString(),
+                reason: error.reason,
+                cause: toCause(error)
+              }
+            }
+          )
+        );
+      }
+
+      // Неожиданные ошибки
+      return Err(
+        unexpectedError('create', {
+          bid: bid.value().toString(),
+          ask: ask.value().toString()
+        }, error, 'spread', InvalidSpreadError)
+      );
+    }
+  }
+
+  /**
+   * Создать Spread из числовых значений
+   *
+   * @param bidValue - Значение bid
+   * @param askValue - Значение ask
+   * @returns Result со Spread или InvalidPriceError/InvalidSpreadError
+   *
+   * @example
+   * ```typescript
+   * const result = SpreadService.fromValues(0.48, 0.52);
+   * if (result.ok) {
+   *   const spread = result.value;
+   *   console.log(spread.width()); // Decimal(0.04)
+   * }
+   * ```
+   */
+  public static fromValues(
+    bidValue: number | Decimal,
+    askValue: number | Decimal
+  ): Result<Spread, InvalidPriceError | InvalidSpreadError> {
+    // Создаём Price объекты через PriceService
+    const bidDecimal = bidValue instanceof Decimal ? bidValue : new Decimal(bidValue);
+    const askDecimal = askValue instanceof Decimal ? askValue : new Decimal(askValue);
+
+    const bidResult = PriceService.create(bidDecimal);
+    if (!bidResult.ok) {
+      return Err(
+        rewrap('fromValues', {
+          bidValue: bidDecimal.toString(),
+          askValue: askDecimal.toString()
+        }, bidResult.error as InvalidSpreadError, InvalidSpreadError)
+      );
+    }
+
+    const askResult = PriceService.create(askDecimal);
+    if (!askResult.ok) {
+      return Err(
+        rewrap('fromValues', {
+          bidValue: bidDecimal.toString(),
+          askValue: askDecimal.toString()
+        }, askResult.error as InvalidSpreadError, InvalidSpreadError)
+      );
+    }
+
+    return SpreadService.create(bidResult.value, askResult.value);
+  }
+
+  /**
+   * Создать spread с нулевой шириной
+   *
+   * @param price - Цена для bid и ask
+   * @returns Spread с нулевой шириной
+   *
+   * @example
+   * ```typescript
+   * const priceResult = PriceService.create(0.50);
+   * if (priceResult.ok) {
+   *   const spread = SpreadService.zero(priceResult.value);
+   *   console.log(spread.width().toNumber()); // 0
+   * }
+   * ```
+   */
+  public static zero(price: Price): Spread {
+    return Spread.zero(price);
+  }
+
+  // ============================================================================
+  // Operations
+  // ============================================================================
+
+  /**
+   * Сузить spread (bid ↑, ask ↓)
+   *
+   * @param spread - Исходный spread
+   * @param amount - Величина сужения
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * Сдвигает bid вверх и ask вниз на указанную величину.
+   * Если amount > width/2, сужает до нулевой ширины.
+   *
+   * @example
+   * ```typescript
+   * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
+   * const tightened = SpreadService.tighten(spread, new Decimal(0.01));
+   * if (tightened.ok) {
+   *   console.log(tightened.value.bid().value()); // 0.49
+   *   console.log(tightened.value.ask().value()); // 0.51
+   * }
+   * ```
+   */
+  public static tighten(
+    spread: Spread,
+    amount: Decimal | number | string
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+    // Парсим amount через toDecimal
+    const amountResult = toDecimal<InvalidSpreadError>(
+      'amount',
+      amount,
+      SpreadErrorReason.INVALID_AMOUNT,
+      InvalidSpreadError
+    );
+    if (!amountResult.ok) {
+      return Err(
+        rewrap('tighten', {
+          spread: `${spread.bid().value()}-${spread.ask().value()}`,
+          amount: String(amount)
+        }, amountResult.error, InvalidSpreadError)
+      );
+    }
+
+    const amountDecimal = amountResult.value;
+
+    // Валидация amount
+    if (!amountDecimal.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          'Tighten amount must be finite',
+          {
+            context: {
+              op: 'tighten',
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
+    if (amountDecimal.isNegative()) {
+      return Err(
+        new InvalidSpreadError(
+          'Tighten amount cannot be negative',
+          {
+            context: {
+              op: 'tighten',
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
+    try {
+      // Ограничиваем amount до halfWidth
+      const halfWidth = spread.width().dividedBy(2);
+      const actualAmount = amountDecimal.lessThanOrEqualTo(halfWidth) ? amountDecimal : halfWidth;
+
+      // Новые цены через math functions + PriceService.create
+      const newBidValue = addDecimal(spread.bid().value(), actualAmount);
+      const newBidResult = PriceService.create(newBidValue);
+      if (!newBidResult.ok) {
+        return Err(
+          rewrap('tighten', {
+            spread: `${spread.bid().value()}-${spread.ask().value()}`,
+            amount: actualAmount.toString(),
+            operation: 'add to bid'
+          }, newBidResult.error as InvalidSpreadError, InvalidSpreadError)
+        );
+      }
+
+      const newAskValue = subtractDecimal(spread.ask().value(), actualAmount);
+      const newAskResult = PriceService.create(newAskValue);
+      if (!newAskResult.ok) {
+        return Err(
+          rewrap('tighten', {
+            spread: `${spread.bid().value()}-${spread.ask().value()}`,
+            amount: actualAmount.toString(),
+            operation: 'subtract from ask'
+          }, newAskResult.error as InvalidSpreadError, InvalidSpreadError)
+        );
+      }
+
+      return SpreadService.create(newBidResult.value, newAskResult.value);
+    } catch (error) {
+      // Неожиданные ошибки
+      return Err(
+        unexpectedError('tighten', {
+          spread: `${spread.bid().value()}-${spread.ask().value()}`,
+          amount: amountDecimal.toString()
+        }, error, 'spread', InvalidSpreadError)
+      );
+    }
+  }
+
+  /**
+   * Расширить spread (bid ↓, ask ↑)
+   *
+   * @param spread - Исходный spread
+   * @param amount - Величина расширения
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * Сдвигает bid вниз и ask вверх на указанную величину.
+   * Соблюдает границы цен [MIN_PRICE, MAX_PRICE].
+   *
+   * @example
+   * ```typescript
+   * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
+   * const widened = SpreadService.widen(spread, new Decimal(0.02));
+   * if (widened.ok) {
+   *   console.log(widened.value.bid().value()); // 0.46
+   *   console.log(widened.value.ask().value()); // 0.54
+   * }
+   * ```
+   */
+  public static widen(
+    spread: Spread,
+    amount: Decimal | number | string
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+    // Парсим amount через toDecimal
+    const amountResult = toDecimal<InvalidSpreadError>(
+      'amount',
+      amount,
+      SpreadErrorReason.INVALID_AMOUNT,
+      InvalidSpreadError
+    );
+    if (!amountResult.ok) {
+      return Err(
+        rewrap('widen', {
+          spread: `${spread.bid().value()}-${spread.ask().value()}`,
+          amount: String(amount)
+        }, amountResult.error, InvalidSpreadError)
+      );
+    }
+
+    const amountDecimal = amountResult.value;
+
+    // Валидация amount
+    if (!amountDecimal.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          'Widen amount must be finite',
+          {
+            context: {
+              op: 'widen',
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
+    if (amountDecimal.isNegative()) {
+      return Err(
+        new InvalidSpreadError(
+          'Widen amount cannot be negative',
+          {
+            context: {
+              op: 'widen',
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
+    try {
+      // Новые цены через math functions + PriceService.create
+      const newBidValue = subtractDecimal(spread.bid().value(), amountDecimal);
+      const newBidResult = PriceService.create(newBidValue);
+      if (!newBidResult.ok) {
+        return Err(
+          rewrap('widen', {
+            spread: `${spread.bid().value()}-${spread.ask().value()}`,
+            amount: amountDecimal.toString(),
+            operation: 'subtract from bid'
+          }, newBidResult.error as InvalidSpreadError, InvalidSpreadError)
+        );
+      }
+
+      const newAskValue = addDecimal(spread.ask().value(), amountDecimal);
+      const newAskResult = PriceService.create(newAskValue);
+      if (!newAskResult.ok) {
+        return Err(
+          rewrap('widen', {
+            spread: `${spread.bid().value()}-${spread.ask().value()}`,
+            amount: amountDecimal.toString(),
+            operation: 'add to ask'
+          }, newAskResult.error as InvalidSpreadError, InvalidSpreadError)
+        );
+      }
+
+      return SpreadService.create(newBidResult.value, newAskResult.value);
+    } catch (error) {
+      // Неожиданные ошибки
+      return Err(
+        unexpectedError('widen', {
+          spread: `${spread.bid().value()}-${spread.ask().value()}`,
+          amount: amountDecimal.toString()
+        }, error, 'spread', InvalidSpreadError)
+      );
+    }
+  }
+
+  /**
+   * Сдвинуть spread вверх или вниз
+   *
+   * @param spread - Исходный spread
+   * @param amount - Величина сдвига (+ вверх, - вниз)
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * Сдвигает bid и ask на одинаковую величину.
+   * Ширина спреда сохраняется.
+   * Соблюдает границы цен.
+   *
+   * @example
+   * ```typescript
+   * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
+   * const shifted = SpreadService.shift(spread, new Decimal(0.05));
+   * if (shifted.ok) {
+   *   console.log(shifted.value.bid().value()); // 0.53
+   *   console.log(shifted.value.ask().value()); // 0.57
+   *   console.log(shifted.value.width()); // 0.04 (unchanged)
+   * }
+   * ```
+   */
+  public static shift(
+    spread: Spread,
+    amount: Decimal | number | string
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+    // Парсим amount через toDecimal
+    const amountResult = toDecimal<InvalidSpreadError>(
+      'amount',
+      amount,
+      SpreadErrorReason.INVALID_AMOUNT,
+      InvalidSpreadError
+    );
+    if (!amountResult.ok) {
+      return Err(
+        rewrap('shift', {
+          spread: `${spread.bid().value()}-${spread.ask().value()}`,
+          amount: String(amount)
+        }, amountResult.error, InvalidSpreadError)
+      );
+    }
+
+    const amountDecimal = amountResult.value;
+
+    // Валидация amount
+    if (!amountDecimal.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          'Shift amount must be finite',
+          {
+            context: {
+              op: 'shift',
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
+    try {
+      // Сдвигаем обе цены через math functions + PriceService.create
+      const newBidValue = addDecimal(spread.bid().value(), amountDecimal);
+      const newBidResult = PriceService.create(newBidValue);
+      if (!newBidResult.ok) {
+        return Err(
+          rewrap('shift', {
+            spread: `${spread.bid().value()}-${spread.ask().value()}`,
+            amount: amountDecimal.toString(),
+            operation: 'shift bid'
+          }, newBidResult.error as InvalidSpreadError, InvalidSpreadError)
+        );
+      }
+
+      const newAskValue = addDecimal(spread.ask().value(), amountDecimal);
+      const newAskResult = PriceService.create(newAskValue);
+      if (!newAskResult.ok) {
+        return Err(
+          rewrap('shift', {
+            spread: `${spread.bid().value()}-${spread.ask().value()}`,
+            amount: amountDecimal.toString(),
+            operation: 'shift ask'
+          }, newAskResult.error as InvalidSpreadError, InvalidSpreadError)
+        );
+      }
+
+      return SpreadService.create(newBidResult.value, newAskResult.value);
+    } catch (error) {
+      // Неожиданные ошибки
+      return Err(
+        unexpectedError('shift', {
+          spread: `${spread.bid().value()}-${spread.ask().value()}`,
+          amount: amountDecimal.toString()
+        }, error, 'spread', InvalidSpreadError)
+      );
+    }
+  }
+}
