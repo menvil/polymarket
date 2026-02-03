@@ -289,6 +289,25 @@ export class Price {
   }
 
   /**
+   * Проверяет что цена равна нулю
+   *
+   * @returns false - Price не может быть нулем (MIN = 0.0001)
+   *
+   * @remarks
+   * Этот метод всегда возвращает false, т.к. минимальная цена 0.0001.
+   * Добавлен для единообразия API с Quantity и Money.
+   *
+   * @example
+   * ```typescript
+   * const price = Price.of(0.5);
+   * console.log(price.isZero()); // false (всегда)
+   * ```
+   */
+  public isZero(): boolean {
+    return false;
+  }
+
+  /**
    * Проверяет что это минимальная цена
    *
    * @returns true если цена равна минимальной

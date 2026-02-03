@@ -189,6 +189,19 @@ describe('Price.equals()', () => {
   });
 });
 
+describe('Price.isZero()', () => {
+  it('должен вернуть false для любой цены (Price не может быть 0)', () => {
+    const price1 = Price.MIN;
+    expect(price1.isZero()).toBe(false);
+
+    const price2 = Price.of(0.5);
+    expect(price2.isZero()).toBe(false);
+
+    const price3 = Price.MAX;
+    expect(price3.isZero()).toBe(false);
+  });
+});
+
 describe('Price.isMin()', () => {
   it('должен вернуть true для минимального значения', () => {
     const price = Price.MIN;

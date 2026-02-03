@@ -243,4 +243,55 @@ export class Money {
   public hasSameCurrency(other: Money): boolean {
     return this.cur === other.cur;
   }
+
+  /**
+   * Проверяет что сумма равна нулю.
+   *
+   * @returns true если сумма равна 0
+   *
+   * @remarks
+   * Точное сравнение без epsilon.
+   *
+   * @example
+   * ```typescript
+   * Money.ZERO.USDC.isZero(); // true
+   * Money.of(0).isZero();     // true
+   * Money.of(100).isZero();   // false
+   * ```
+   */
+  public isZero(): boolean {
+    return this.amt.isZero();
+  }
+
+  /**
+   * Проверяет что сумма положительная (> 0).
+   *
+   * @returns true если сумма > 0
+   *
+   * @example
+   * ```typescript
+   * Money.of(100).isPositive();   // true
+   * Money.ZERO.USDC.isPositive(); // false
+   * Money.of(-100).isPositive();  // false
+   * ```
+   */
+  public isPositive(): boolean {
+    return this.amt.greaterThan(0);
+  }
+
+  /**
+   * Проверяет что сумма отрицательная (< 0).
+   *
+   * @returns true если сумма < 0
+   *
+   * @example
+   * ```typescript
+   * Money.of(-100).isNegative(); // true
+   * Money.of(100).isNegative();  // false
+   * Money.ZERO.USDC.isNegative(); // false
+   * ```
+   */
+  public isNegative(): boolean {
+    return this.amt.lessThan(0);
+  }
 }

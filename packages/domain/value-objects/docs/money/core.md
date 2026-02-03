@@ -503,6 +503,75 @@ usd1.hasSameCurrency(usd2);  // true
 
 ---
 
+#### `isZero()`
+
+Проверяет что сумма равна нулю.
+
+**Сигнатура:**
+
+```typescript
+public isZero(): boolean
+```
+
+**Возвращает:** `true` если сумма равна 0.
+
+**Примеры:**
+
+```typescript
+Money.ZERO.USDC.isZero();  // true
+Money.of(0).isZero();      // true
+Money.of(100).isZero();    // false
+Money.of(-100).isZero();   // false
+```
+
+---
+
+#### `isPositive()`
+
+Проверяет что сумма положительная (> 0).
+
+**Сигнатура:**
+
+```typescript
+public isPositive(): boolean
+```
+
+**Возвращает:** `true` если сумма > 0.
+
+**Примеры:**
+
+```typescript
+Money.of(100).isPositive();     // true
+Money.of(0.01).isPositive();    // true
+Money.ZERO.USDC.isPositive();   // false
+Money.of(-100).isPositive();    // false
+```
+
+---
+
+#### `isNegative()`
+
+Проверяет что сумма отрицательная (< 0).
+
+**Сигнатура:**
+
+```typescript
+public isNegative(): boolean
+```
+
+**Возвращает:** `true` если сумма < 0.
+
+**Примеры:**
+
+```typescript
+Money.of(-100).isNegative();    // true
+Money.of(-0.01).isNegative();   // true
+Money.of(100).isNegative();     // false
+Money.ZERO.USDC.isNegative();   // false
+```
+
+---
+
 ## Примеры использования
 
 ### Создание Money
@@ -571,20 +640,31 @@ try {
 }
 ```
 
-### Сравнение
+### Сравнение и проверки
 
 ```typescript
 const m1 = Money.of(100, 'USDC');
 const m2 = Money.of(100, 'USDC');
 const m3 = Money.of(100.01, 'USDC');
 
-// Равенство
-m1.equals(m2);  // true
-m1.equals(m3);  // false
-
 // Проверка валюты
 m1.hasSameCurrency(m2);  // true
 m1.hasSameCurrency(m3);  // true
+
+// Проверка нуля
+Money.ZERO.USDC.isZero();  // true
+Money.of(0).isZero();      // true
+Money.of(100).isZero();    // false
+
+// Проверка положительности
+Money.of(100).isPositive();   // true
+Money.ZERO.USDC.isPositive(); // false
+Money.of(-100).isPositive();  // false
+
+// Проверка отрицательности
+Money.of(-100).isNegative();  // true
+Money.of(100).isNegative();   // false
+Money.ZERO.USDC.isNegative(); // false
 ```
 
 ### Константы

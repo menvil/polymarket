@@ -63,42 +63,4 @@ describe('MoneyService comparison methods', () => {
     });
   });
 
-  describe('isZero()', () => {
-    it('должен вернуть true для нулевой суммы', () => {
-      expect(MoneyService.isZero(Money.ZERO.USDC)).toBe(true);
-      expect(MoneyService.isZero(Money.of(0))).toBe(true);
-    });
-
-    it('должен вернуть false для ненулевой суммы', () => {
-      expect(MoneyService.isZero(Money.of(100))).toBe(false);
-    });
-  });
-
-  describe('isPositive()', () => {
-    it('должен вернуть true для положительной суммы', () => {
-      expect(MoneyService.isPositive(Money.of(100))).toBe(true);
-    });
-
-    it('должен вернуть false для нулевой суммы', () => {
-      expect(MoneyService.isPositive(Money.ZERO.USDC)).toBe(false);
-    });
-
-    it('должен вернуть false для отрицательной суммы', () => {
-      expect(MoneyService.isPositive(Money.of(-100))).toBe(false);
-    });
-  });
-
-  describe('isNegative()', () => {
-    it('должен вернуть true для отрицательной суммы', () => {
-      expect(MoneyService.isNegative(Money.of(-100))).toBe(true);
-    });
-
-    it('должен вернуть false для положительной суммы', () => {
-      expect(MoneyService.isNegative(Money.of(100))).toBe(false);
-    });
-
-    it('должен вернуть false для нулевой суммы', () => {
-      expect(MoneyService.isNegative(Money.ZERO.USDC)).toBe(false);
-    });
-  });
 });

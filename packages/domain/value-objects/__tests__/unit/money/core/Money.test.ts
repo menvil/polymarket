@@ -143,4 +143,50 @@ describe('Money core', () => {
       expect(m1.hasSameCurrency(m2)).toBe(true);
     });
   });
+
+  describe('isZero()', () => {
+    it('должен вернуть true для нулевой суммы', () => {
+      expect(Money.ZERO.USDC.isZero()).toBe(true);
+      expect(Money.of(0).isZero()).toBe(true);
+    });
+
+    it('должен вернуть false для ненулевой суммы', () => {
+      expect(Money.of(100).isZero()).toBe(false);
+      expect(Money.of(-100).isZero()).toBe(false);
+    });
+  });
+
+  describe('isPositive()', () => {
+    it('должен вернуть true для положительной суммы', () => {
+      expect(Money.of(100).isPositive()).toBe(true);
+      expect(Money.of(0.01).isPositive()).toBe(true);
+    });
+
+    it('должен вернуть false для нулевой суммы', () => {
+      expect(Money.ZERO.USDC.isPositive()).toBe(false);
+      expect(Money.of(0).isPositive()).toBe(false);
+    });
+
+    it('должен вернуть false для отрицательной суммы', () => {
+      expect(Money.of(-100).isPositive()).toBe(false);
+      expect(Money.of(-0.01).isPositive()).toBe(false);
+    });
+  });
+
+  describe('isNegative()', () => {
+    it('должен вернуть true для отрицательной суммы', () => {
+      expect(Money.of(-100).isNegative()).toBe(true);
+      expect(Money.of(-0.01).isNegative()).toBe(true);
+    });
+
+    it('должен вернуть false для положительной суммы', () => {
+      expect(Money.of(100).isNegative()).toBe(false);
+      expect(Money.of(0.01).isNegative()).toBe(false);
+    });
+
+    it('должен вернуть false для нулевой суммы', () => {
+      expect(Money.ZERO.USDC.isNegative()).toBe(false);
+      expect(Money.of(0).isNegative()).toBe(false);
+    });
+  });
 });
