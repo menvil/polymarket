@@ -1,8 +1,10 @@
 import Decimal from 'decimal.js';
 import { MoneyInvariantViolation } from './MoneyInvariantViolation';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { SUPPORTED_CURRENCIES, SupportedCurrency } from '../../shared/currency/SupportedCurrencies';
 
-export type SupportedCurrency = 'USDC';
+// Re-export SupportedCurrency для удобства
+export type { SupportedCurrency };
 
 /**
  * Представляет денежную сумму с валютой.
@@ -41,23 +43,32 @@ export type SupportedCurrency = 'USDC';
  */
 export class Money {
   // Константы
-  public static readonly SUPPORTED_CURRENCIES = new Set<SupportedCurrency>(['USDC']);
+  public static readonly SUPPORTED_CURRENCIES = new Set<SupportedCurrency>(SUPPORTED_CURRENCIES);
   public static readonly MAX_AMOUNT = new Decimal('1e15');
 
   /**
-   * Константы для нулевых сумм каждой валюты
+   * Singleton константы для нулевых сумм каждой валюты
    *
    * @remarks
-   * Record для мультивалютности. При добавлении новой валюты — добавь её сюда.
+   * Автоматически создаётся для всех валют из SUPPORTED_CURRENCIES.
+   * При добавлении новой валюты - singleton создаётся автоматически.
    *
    * @example
    * ```typescript
    * const zero = Money.ZERO.USDC;
+   * console.log(zero.value().toNumber()); // 0
+   *
+   * // После добавления EUR в SUPPORTED_CURRENCIES:
+   * const zeroEur = Money.ZERO.EUR; // ✅ Автоматически доступен!
    * ```
    */
-  public static readonly ZERO: Record<SupportedCurrency, Money> = {
-    USDC: Money.fromDecimal(new Decimal(0), 'USDC'),
-  };
+  public static readonly ZERO: Record<SupportedCurrency, Money> =
+    Object.fromEntries(
+      SUPPORTED_CURRENCIES.map(currency => [
+        currency,
+        Money.fromDecimal(new Decimal(0), currency)
+      ])
+    ) as Record<SupportedCurrency, Money>;
 
   private constructor(
     private readonly amt: Decimal,

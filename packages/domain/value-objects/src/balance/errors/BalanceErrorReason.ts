@@ -141,6 +141,32 @@ export enum BalanceErrorReason {
   NEGATIVE_RESERVED = 'NEGATIVE_RESERVED',
 
   /**
+   * Amount является NaN
+   *
+   * @remarks
+   * Нарушение Core инварианта: amount не может быть NaN.
+   * Бросается из Balance.of() constructor при проверке инвариантов.
+   *
+   * Контекст обычно содержит:
+   * - available: string - значение available
+   * - reserved: string - значение reserved
+   */
+  NAN = 'NAN',
+
+  /**
+   * Amount не является finite (Infinity или -Infinity)
+   *
+   * @remarks
+   * Нарушение Core инварианта: amount должен быть finite.
+   * Бросается из Balance.of() constructor при проверке инвариантов.
+   *
+   * Контекст обычно содержит:
+   * - available: string - значение available
+   * - reserved: string - значение reserved
+   */
+  NON_FINITE = 'NON_FINITE',
+
+  /**
    * Ошибка парсинга входного значения
    *
    * @remarks

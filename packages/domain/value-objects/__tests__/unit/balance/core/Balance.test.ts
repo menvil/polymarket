@@ -1,5 +1,4 @@
 import { describe, it, expect } from '@jest/globals';
-import Decimal from 'decimal.js';
 import { Balance } from '../../../../src/balance/core/Balance.js';
 import { BalanceInvariantViolation } from '../../../../src/balance/core/BalanceInvariantViolation.js';
 import { Money } from '../../../../src/money/core/Money.js';
@@ -49,6 +48,16 @@ describe('Balance Core', () => {
   });
 
   describe('Balance.of() - нарушение инвариантов', () => {
+    // ПРИМЕЧАНИЕ: Тесты NaN/Infinity невозможны на уровне Balance
+    // Money.fromDecimal() уже бросает MoneyInvariantViolation для NaN/Infinity,
+    // поэтому Balance.of() никогда не получит такие значения.
+    // Balance имеет defense-in-depth проверки NaN/Infinity, но их нельзя протестировать напрямую
+    // потому что Money защищает нас на более раннем уровне (композиция VO).
+    //
+    // Архитектурно это правильно: Money - это базовый VO, который должен быть всегда валидным.
+    // Balance (композитный VO) дополнительно проверяет, но эти проверки срабатывают только
+    // если Money-слой пропустит невалидные данные (что невозможно по дизайну).
+
     it('бросает BalanceInvariantViolation если available отрицательный', () => {
       const available = Money.of(-100, 'USDC');
       const reserved = Money.of(0);
@@ -73,6 +82,9 @@ describe('Balance Core', () => {
     //   expect(() => Balance.of(available, reserved)).toThrow(BalanceInvariantViolation);
     //   expect(() => Balance.of(available, reserved)).toThrow('Available and reserved must have the same currency');
     // });
+
+    // ПРИМЕЧАНИЕ: Тесты для NAN/NON_FINITE reason невозможны
+    // (см. комментарий выше о defense-in-depth проверках)
 
     it('проверяет reason в BalanceInvariantViolation для NEGATIVE_AVAILABLE', () => {
       const available = Money.of(-100, 'USDC');
@@ -121,14 +133,21 @@ describe('Balance Core', () => {
     // });
   });
 
-  describe('Balance.zero() - helper', () => {
-    it('создаёт пустой баланс', () => {
-      const balance = Balance.zero('USDC');
+  describe('Balance.ZERO - singleton', () => {
+    it('создаёт пустой баланс через ZERO.USDC', () => {
+      const balance = Balance.ZERO.USDC;
 
       expect(balance.available().value().toNumber()).toBe(0);
       expect(balance.reserved().value().toNumber()).toBe(0);
       expect(balance.currency()).toBe('USDC');
       expect(balance.isEmpty()).toBe(true);
+    });
+
+    it('ZERO.USDC - это всегда один и тот же экземпляр (singleton)', () => {
+      const balance1 = Balance.ZERO.USDC;
+      const balance2 = Balance.ZERO.USDC;
+
+      expect(balance1).toBe(balance2);
     });
   });
 
@@ -167,7 +186,7 @@ describe('Balance Core', () => {
       });
 
       it('возвращает true для пустого баланса', () => {
-        const empty = Balance.zero('USDC');
+        const empty = Balance.ZERO.USDC;
         expect(empty.isEmpty()).toBe(true);
       });
 
@@ -196,7 +215,7 @@ describe('Balance Core', () => {
       });
 
       it('возвращает 0 для пустого баланса', () => {
-        const empty = Balance.zero('USDC');
+        const empty = Balance.ZERO.USDC;
         expect(empty.reservedPercentage().toNumber()).toBe(0);
       });
 
@@ -211,49 +230,20 @@ describe('Balance Core', () => {
       });
     });
 
-    describe('canAfford()', () => {
-      it('возвращает true если available >= amount', () => {
-        expect(balance.canAfford(Money.of(5000))).toBe(true);
-        expect(balance.canAfford(Money.of(10000))).toBe(true);
-      });
-
-      it('возвращает false если available < amount', () => {
-        expect(balance.canAfford(Money.of(15000))).toBe(false);
-      });
-
-      it('возвращает true для нулевой суммы', () => {
-        expect(balance.canAfford(Money.of(0))).toBe(true);
-      });
-    });
-
-    describe('equals()', () => {
-      it('возвращает true для идентичных балансов', () => {
+    describe('hasSameCurrency()', () => {
+      it('возвращает true для балансов с одинаковой валютой', () => {
         const balance1 = Balance.of(Money.of(10000), Money.of(2000));
-        const balance2 = Balance.of(Money.of(10000), Money.of(2000));
+        const balance2 = Balance.of(Money.of(5000), Money.of(1000));
 
-        expect(balance1.equals(balance2, new Decimal(0.01))).toBe(true);
+        expect(balance1.hasSameCurrency(balance2)).toBe(true);
       });
 
-      it('возвращает true если разница в пределах epsilon', () => {
-        const balance1 = Balance.of(Money.of(10000), Money.of(2000));
-        const balance2 = Balance.of(Money.of(10000.001), Money.of(2000));
-
-        expect(balance1.equals(balance2, new Decimal(0.01))).toBe(true);
-      });
-
-      it('возвращает false если разница превышает epsilon', () => {
-        const balance1 = Balance.of(Money.of(10000), Money.of(2000));
-        const balance2 = Balance.of(Money.of(10000.1), Money.of(2000));
-
-        expect(balance1.equals(balance2, new Decimal(0.01))).toBe(false);
-      });
-
-      // ПРИМЕЧАНИЕ: Тест невозможен, так как Money поддерживает только USDC
-      // it('возвращает false для разных валют', () => {
-      //   const balance1 = Balance.of(Money.of(10000), Money.of(2000));
-      //   const balance2 = Balance.of(Money.of(10000, 'EUR' as any), Money.of(2000, 'EUR' as any));
+      // ПРИМЕЧАНИЕ: Тест для разных валют невозможен, так как Money поддерживает только USDC
+      // it('возвращает false для балансов с разными валютами', () => {
+      //   const balance1 = Balance.of(Money.of(10000, 'USDC'), Money.of(2000, 'USDC'));
+      //   const balance2 = Balance.of(Money.of(5000, 'EUR'), Money.of(1000, 'EUR'));
       //
-      //   expect(balance1.equals(balance2, new Decimal(0.01))).toBe(false);
+      //   expect(balance1.hasSameCurrency(balance2)).toBe(false);
       // });
     });
   });

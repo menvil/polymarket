@@ -374,4 +374,173 @@ describe('BalanceService', () => {
       }
     });
   });
+
+  describe('equals()', () => {
+    describe('успешное сравнение', () => {
+      it('возвращает true для идентичных балансов', () => {
+        const balance1Result = BalanceService.create(Money.of(10000), Money.of(2000));
+        const balance2Result = BalanceService.create(Money.of(10000), Money.of(2000));
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('возвращает false для балансов с разным available', () => {
+        const balance1Result = BalanceService.create(Money.of(10000), Money.of(2000));
+        const balance2Result = BalanceService.create(Money.of(10001), Money.of(2000));
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('возвращает false для балансов с разным reserved', () => {
+        const balance1Result = BalanceService.create(Money.of(10000), Money.of(2000));
+        const balance2Result = BalanceService.create(Money.of(10000), Money.of(2001));
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('возвращает true для нулевых балансов', () => {
+        const balance1Result = BalanceService.create(Money.of(0), Money.of(0));
+        const balance2Result = BalanceService.create(Money.of(0), Money.of(0));
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+    });
+
+    describe('ошибки сравнения', () => {
+      // ПРИМЕЧАНИЕ: Тест для CURRENCY_MISMATCH невозможен, так как Money поддерживает только USDC
+      // it('возвращает ошибку CURRENCY_MISMATCH для разных валют', () => {
+      //   const balance1Result = BalanceService.create(Money.of(10000, 'USDC'), Money.of(2000, 'USDC'));
+      //   const balance2Result = BalanceService.create(Money.of(10000, 'EUR'), Money.of(2000, 'EUR'));
+      //
+      //   if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+      //
+      //   const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+      //
+      //   expect(result.ok).toBe(false);
+      //   if (!result.ok) {
+      //     expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
+      //   }
+      // });
+    });
+  });
+
+  describe('canAfford()', () => {
+    describe('успешная проверка', () => {
+      it('возвращает true если available >= amount', () => {
+        const balanceResult = BalanceService.create(Money.of(10000), Money.of(2000));
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(5000));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('возвращает true если available === amount (граница)', () => {
+        const balanceResult = BalanceService.create(Money.of(10000), Money.of(2000));
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(10000));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('возвращает false если available < amount', () => {
+        const balanceResult = BalanceService.create(Money.of(10000), Money.of(2000));
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(15000));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('возвращает true для нулевой суммы', () => {
+        const balanceResult = BalanceService.create(Money.of(10000), Money.of(2000));
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(0));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('возвращает false для пустого баланса с ненулевой суммой', () => {
+        const balanceResult = BalanceService.create(Money.of(0), Money.of(0));
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(100));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('не учитывает reserved при проверке (только available)', () => {
+        const balanceResult = BalanceService.create(Money.of(1000), Money.of(9000));
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        // total = 10000, но available только 1000
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(5000));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+    });
+
+    describe('ошибки проверки', () => {
+      // ПРИМЕЧАНИЕ: Тест для CURRENCY_MISMATCH невозможен, так как Money поддерживает только USDC
+      // it('возвращает ошибку CURRENCY_MISMATCH для разных валют', () => {
+      //   const balanceResult = BalanceService.create(Money.of(10000, 'USDC'), Money.of(2000, 'USDC'));
+      //   if (!balanceResult.ok) fail('Balance creation failed');
+      //
+      //   const result = BalanceService.canAfford(balanceResult.value, Money.of(5000, 'EUR'));
+      //
+      //   expect(result.ok).toBe(false);
+      //   if (!result.ok) {
+      //     expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
+      //   }
+      // });
+    });
+  });
 });

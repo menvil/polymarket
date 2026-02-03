@@ -1,5 +1,4 @@
 import { describe, it, expect } from '@jest/globals';
-import Decimal from 'decimal.js';
 import { BalanceService } from '../../../src/balance/facade/BalanceService.js';
 import { BalanceSerializer } from '../../../src/balance/adapters/BalanceSerializer.js';
 import { BalanceFormatter } from '../../../src/balance/adapters/BalanceFormatter.js';
@@ -160,7 +159,12 @@ describe('Balance Integration Tests', () => {
       const balance = reserveResult.value;
       expect(balance.available().value().toNumber()).toBe(0);
       expect(balance.reserved().value().toNumber()).toBe(1000);
-      expect(balance.canAfford(Money.of(1))).toBe(false);
+
+      const canAffordResult = BalanceService.canAfford(balance, Money.of(1));
+      expect(canAffordResult.ok).toBe(true);
+      if (canAffordResult.ok) {
+        expect(canAffordResult.value).toBe(false);
+      }
     });
 
     it('освобождение всех зарезервированных средств', () => {
@@ -198,7 +202,11 @@ describe('Balance Integration Tests', () => {
       expect(deserResult2.ok).toBe(true);
       if (!deserResult2.ok) return;
 
-      expect(deserResult2.value.equals(deserResult.value, new Decimal(0.000001))).toBe(true);
+      const equalsResult = BalanceService.equals(deserResult2.value, deserResult.value);
+      expect(equalsResult.ok).toBe(true);
+      if (equalsResult.ok) {
+        expect(equalsResult.value).toBe(true);
+      }
     });
 
     it('сохраняет точность Decimal через string serialization', () => {
@@ -296,9 +304,17 @@ describe('Balance Integration Tests', () => {
       const balance = createResult.value;
 
       // Проверяем перед резервированием
-      expect(balance.canAfford(Money.of(500))).toBe(true);
-      expect(balance.canAfford(Money.of(1000))).toBe(true);
-      expect(balance.canAfford(Money.of(1500))).toBe(false);
+      const canAfford500 = BalanceService.canAfford(balance, Money.of(500));
+      expect(canAfford500.ok).toBe(true);
+      expect(canAfford500.ok && canAfford500.value).toBe(true);
+
+      const canAfford1000 = BalanceService.canAfford(balance, Money.of(1000));
+      expect(canAfford1000.ok).toBe(true);
+      expect(canAfford1000.ok && canAfford1000.value).toBe(true);
+
+      const canAfford1500 = BalanceService.canAfford(balance, Money.of(1500));
+      expect(canAfford1500.ok).toBe(true);
+      expect(canAfford1500.ok && canAfford1500.value).toBe(false);
 
       // Резервируем
       const reserveResult = BalanceService.reserve(balance, Money.of(500));
@@ -307,8 +323,14 @@ describe('Balance Integration Tests', () => {
 
       // Проверяем после резервирования
       const newBalance = reserveResult.value;
-      expect(newBalance.canAfford(Money.of(500))).toBe(true);
-      expect(newBalance.canAfford(Money.of(600))).toBe(false);
+
+      const canAffordAfter500 = BalanceService.canAfford(newBalance, Money.of(500));
+      expect(canAffordAfter500.ok).toBe(true);
+      expect(canAffordAfter500.ok && canAffordAfter500.value).toBe(true);
+
+      const canAffordAfter600 = BalanceService.canAfford(newBalance, Money.of(600));
+      expect(canAffordAfter600.ok).toBe(true);
+      expect(canAffordAfter600.ok && canAffordAfter600.value).toBe(false);
     });
 
     it('reservedPercentage отслеживание во время workflow', () => {

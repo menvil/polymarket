@@ -71,7 +71,6 @@
  * console.log(balance.available().value());    // 10000
  * console.log(balance.reserved().value());     // 2000
  * console.log(balance.reservedPercentage());    // 16.67%
- * console.log(balance.canAfford(Money.fromUSDC(5000))); // true
  *
  * // Резервирование средств
  * const reserveResult = BalanceService.reserve(
@@ -102,8 +101,8 @@
  * }
  *
  * // Helpers
- * const emptyBalance = Balance.zero('USDC');
- * const balanceWithZeroReserved = Balance.withZeroReserved(Money.fromUSDC(10000));
+ * const emptyBalance = Balance.ZERO.USDC;
+ * const balanceWithZeroReserved = Balance.withZeroReserved(Money.of(10000, 'USDC'));
  * ```
  *
  * @packageDocumentation

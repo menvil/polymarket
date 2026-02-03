@@ -1,7 +1,8 @@
 import Decimal from 'decimal.js';
-import { Money, SupportedCurrency } from '../../money/core/Money.js';
-import { MoneyService } from '../../money/facade/MoneyService.js';
+import { Money } from '../../money/core/Money.js';
+import { SupportedCurrency } from '../../shared/currency/SupportedCurrencies.js';
 import { BalanceInvariantViolation } from './BalanceInvariantViolation.js';
+import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
 /**
  * Balance - баланс денежных средств с разделением на available/reserved
@@ -45,11 +46,10 @@ import { BalanceInvariantViolation } from './BalanceInvariantViolation.js';
  * console.log(balance.available().value());       // 10000
  * console.log(balance.reserved().value());        // 2000
  * console.log(balance.reservedPercentage());       // 16.67
- * console.log(balance.canAfford(Money.fromUSDC(5000))); // true
  *
  * // Helpers
- * const empty = Balance.zero('USDC');
- * const withZero = Balance.withZeroReserved(Money.fromUSDC(10000));
+ * const empty = Balance.ZERO.USDC;
+ * const withZero = Balance.withZeroReserved(Money.of(10000));
  * ```
  */
 export class Balance {
@@ -64,12 +64,36 @@ export class Balance {
     private readonly avail: Money,
     private readonly res: Money
   ) {
+    // Инвариант 0a: Not NaN
+    if (avail.value().isNaN() || res.value().isNaN()) {
+      throw new BalanceInvariantViolation(
+        'Balance amounts cannot be NaN',
+        {
+          reason: BalanceErrorReason.NAN,
+          available: avail.value().toString(),
+          reserved: res.value().toString()
+        }
+      );
+    }
+
+    // Инвариант 0b: Must be finite
+    if (!avail.value().isFinite() || !res.value().isFinite()) {
+      throw new BalanceInvariantViolation(
+        'Balance amounts must be finite',
+        {
+          reason: BalanceErrorReason.NON_FINITE,
+          available: avail.value().toString(),
+          reserved: res.value().toString()
+        }
+      );
+    }
+
     // Инвариант 1: available >= 0
     if (avail.value().isNegative()) {
       throw new BalanceInvariantViolation(
         'Available amount cannot be negative',
         {
-          reason: 'NEGATIVE_AVAILABLE',
+          reason: BalanceErrorReason.NEGATIVE_AVAILABLE,
           available: avail.value().toNumber()
         }
       );
@@ -80,7 +104,7 @@ export class Balance {
       throw new BalanceInvariantViolation(
         'Reserved amount cannot be negative',
         {
-          reason: 'NEGATIVE_RESERVED',
+          reason: BalanceErrorReason.NEGATIVE_RESERVED,
           reserved: res.value().toNumber()
         }
       );
@@ -91,7 +115,7 @@ export class Balance {
       throw new BalanceInvariantViolation(
         'Available and reserved must have the same currency',
         {
-          reason: 'CURRENCY_MISMATCH',
+          reason: BalanceErrorReason.CURRENCY_MISMATCH,
           availableCurrency: avail.currency(),
           reservedCurrency: res.currency()
         }
@@ -144,36 +168,40 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const balance = Balance.withZeroReserved(Money.fromUSDC(10000));
+   * const balance = Balance.withZeroReserved(Money.of(10000));
    * // available: 10000, reserved: 0
    * ```
    */
   public static withZeroReserved(available: Money): Balance {
-    const zeroReserved = Money.of(0, available.currency());
+    const zeroReserved = Money.ZERO[available.currency()];
     return new Balance(available, zeroReserved);
   }
 
   /**
-   * Создаёт пустой Balance (available = 0, reserved = 0)
-   *
-   * @param currency - Валюта баланса
-   * @returns Новый пустой Balance
-   * @throws Никогда - zero значения всегда валидны
+   * Singleton константы для нулевых балансов
    *
    * @remarks
-   * Convenience метод для создания пустого баланса.
-   * Полезно для инициализации или default значений.
+   * Автоматически создаётся для всех валют из Money.ZERO.
+   * При добавлении новой валюты в SUPPORTED_CURRENCIES -
+   * singleton создаётся автоматически.
    *
    * @example
    * ```typescript
-   * const balance = Balance.zero('USDC');
-   * // available: 0, reserved: 0, currency: 'USDC'
+   * const balance = Balance.ZERO.USDC;
+   * console.log(balance.isEmpty()); // true
+   * console.log(balance.currency()); // 'USDC'
+   *
+   * // После добавления EUR в SUPPORTED_CURRENCIES:
+   * const balanceEur = Balance.ZERO.EUR; // ✅ Автоматически доступен!
    * ```
    */
-  public static zero(currency: SupportedCurrency): Balance {
-    const zero = Money.of(0, currency);
-    return new Balance(zero, zero);
-  }
+  public static readonly ZERO: Record<SupportedCurrency, Balance> =
+    Object.fromEntries(
+      Object.entries(Money.ZERO).map(([currency, money]) => [
+        currency,
+        new Balance(money, money)
+      ])
+    ) as Record<SupportedCurrency, Balance>;
 
   // ==================== Getters ====================
 
@@ -211,34 +239,32 @@ export class Balance {
    * Вычисляет общую сумму (available + reserved)
    *
    * @returns Money с total суммой
-   * @throws Никогда - сложение Money не может fail для валидных балансов
    *
    * @remarks
    * Derived value - вычисляется каждый раз при вызове.
-   * Для валидных балансов эта операция всегда успешна, потому что:
-   * - Оба значения имеют одинаковую валюту (инвариант)
-   * - Оба значения >= 0 (инварианты)
-   * - Сумма не превысит MAX_AMOUNT (гарантируется бизнес-логикой)
    *
-   * Использует MoneyService.add() и unwrap результат (безопасно для валидных балансов).
+   * Безопасно потому что:
+   * - Валюты гарантированно совпадают (инвариант Balance)
+   * - Оба значения >= 0 (инварианты Balance)
+   * - Оба значения finite и not NaN (инварианты Balance)
+   * - Сумма не может превысить Money.MAX_AMOUNT (гарантируется бизнес-логикой)
    *
    * @example
    * ```typescript
    * const balance = Balance.of(
-   *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.of(10000),
+   *   Money.of(2000)
    * );
    * console.log(balance.total().value().toNumber()); // 12000
    * ```
    */
   public total(): Money {
-    const result = MoneyService.add(this.avail, this.res);
-    // Для валидного баланса сложение всегда успешно (одинаковая валюта, не переполнение)
-    // Если fail - это баг в Balance invariants, нужно throw
-    if (!result.ok) {
-      throw new Error(`Invariant violation: failed to calculate total: ${result.error.message}`);
-    }
-    return result.value;
+    // Прямое вычисление через Decimal (не нужен MoneyService)
+    const totalAmount = this.avail.value().plus(this.res.value());
+
+    // Создаём Money из результата
+    // Безопасно благодаря инвариантам Balance
+    return Money.fromDecimal(totalAmount, this.avail.currency());
   }
 
   /**
@@ -267,10 +293,10 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const empty = Balance.zero('USDC');
+   * const empty = Balance.ZERO.USDC;
    * console.log(empty.isEmpty()); // true
    *
-   * const withReserved = Balance.of(Money.fromUSDC(0), Money.fromUSDC(100));
+   * const withReserved = Balance.of(Money.ZERO.USDC, Money.of(100, 'USDC'));
    * console.log(withReserved.isEmpty()); // false
    * ```
    */
@@ -308,12 +334,12 @@ export class Balance {
    * @example
    * ```typescript
    * const balance = Balance.of(
-   *   Money.fromUSDC(8000),
-   *   Money.fromUSDC(2000)
+   *   Money.of(8000, 'USDC'),
+   *   Money.of(2000, 'USDC')
    * );
    * console.log(balance.reservedPercentage().toFixed(2)); // "20.00"
    *
-   * const empty = Balance.zero('USDC');
+   * const empty = Balance.ZERO.USDC;
    * console.log(empty.reservedPercentage().toFixed(2)); // "0.00"
    * ```
    */
@@ -327,66 +353,22 @@ export class Balance {
   }
 
   /**
-   * Проверяет, достаточно ли available средств для указанной суммы
-   *
-   * @param amount - Требуемая сумма
-   * @returns true если available >= amount
-   *
-   * @remarks
-   * Используется для проверки возможности резервирования или траты средств.
-   * Не проверяет валюту - caller должен обеспечить совпадение валют.
-   *
-   * @example
-   * ```typescript
-   * const balance = Balance.of(
-   *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
-   * );
-   *
-   * console.log(balance.canAfford(Money.fromUSDC(5000)));  // true
-   * console.log(balance.canAfford(Money.fromUSDC(15000))); // false
-   * ```
-   */
-  public canAfford(amount: Money): boolean {
-    return this.avail.value().greaterThanOrEqualTo(amount.value());
-  }
-
-  /**
-   * Сравнивает с другим балансом на равенство (с точностью до epsilon)
+   * Проверяет совпадение валют
    *
    * @param other - Другой баланс для сравнения
-   * @param epsilon - Порог для сравнения сумм (например, new Decimal(0.01))
-   * @returns true если оба баланса идентичны в пределах epsilon
+   * @returns true если валюты совпадают
    *
    * @remarks
-   * Балансы считаются равными если:
-   * - available совпадают в пределах epsilon
-   * - reserved совпадают в пределах epsilon
-   * - валюты совпадают (проверяется неявно через сравнение amount)
+   * Используется в BalanceService для проверки совместимости операций.
    *
    * @example
    * ```typescript
-   * const balance1 = Balance.of(Money.fromUSDC(10000), Money.fromUSDC(2000));
-   * const balance2 = Balance.of(Money.fromUSDC(10000.001), Money.fromUSDC(2000));
-   *
-   * console.log(balance1.equals(balance2, new Decimal(0.01)));  // true
-   * console.log(balance1.equals(balance2, new Decimal(0.0001))); // false
+   * const balance1 = Balance.of(Money.of(100), Money.of(50));
+   * const balance2 = Balance.of(Money.of(200), Money.of(100));
+   * console.log(balance1.hasSameCurrency(balance2)); // true
    * ```
    */
-  public equals(other: Balance, epsilon: Decimal): boolean {
-    // Сравниваем available
-    const availDiff = this.avail.value().minus(other.avail.value()).abs();
-    if (availDiff.greaterThan(epsilon)) {
-      return false;
-    }
-
-    // Сравниваем reserved
-    const resDiff = this.res.value().minus(other.res.value()).abs();
-    if (resDiff.greaterThan(epsilon)) {
-      return false;
-    }
-
-    // Проверяем валюту
+  public hasSameCurrency(other: Balance): boolean {
     return this.currency() === other.currency();
   }
 }

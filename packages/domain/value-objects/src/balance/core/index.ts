@@ -32,13 +32,12 @@
  * console.log(balance.available().value());    // 10000
  * console.log(balance.reserved().value());     // 2000
  * console.log(balance.reservedPercentage());    // 16.67
- * console.log(balance.canAfford(Money.fromUSDC(5000))); // true
  * console.log(balance.isEmpty());               // false
  * console.log(balance.hasReserved());           // true
  *
  * // Helpers
- * const empty = Balance.zero('USDC');
- * const withZero = Balance.withZeroReserved(Money.fromUSDC(10000));
+ * const empty = Balance.ZERO.USDC;
+ * const withZero = Balance.withZeroReserved(Money.of(10000, 'USDC'));
  * ```
  *
  * @packageDocumentation

@@ -387,6 +387,168 @@ export class BalanceService {
   }
 
   /**
+   * Сравнивает два баланса на точное равенство
+   *
+   * @param balance1 - Первый баланс
+   * @param balance2 - Второй баланс
+   * @returns Result с true если балансы равны, false в противном случае
+   *
+   * @remarks
+   * **Strict equality (без epsilon):**
+   * - available1 === available2 (точное равенство)
+   * - reserved1 === reserved2 (точное равенство)
+   * - currency1 === currency2 (точное равенство)
+   *
+   * **Проверки:**
+   * 1. Валюты должны совпадать (иначе CURRENCY_MISMATCH)
+   * 2. Сравнение available и reserved через MoneyService.equals()
+   *
+   * **Архитектура:**
+   * Этот метод находится в Facade потому что:
+   * - Использует MoneyService для сравнения
+   * - Возвращает Result (может вернуть ошибку)
+   * - Работает с двумя Balance объектами (не intrinsic state)
+   *
+   * @example
+   * ```typescript
+   * const balance1 = Balance.of(Money.of(100, 'USDC'), Money.of(50, 'USDC'));
+   * const balance2 = Balance.of(Money.of(100, 'USDC'), Money.of(50, 'USDC'));
+   * const balance3 = Balance.of(Money.of(100, 'USDC'), Money.of(51, 'USDC'));
+   *
+   * const result1 = BalanceService.equals(balance1, balance2);
+   * console.log(result1.value); // true
+   *
+   * const result2 = BalanceService.equals(balance1, balance3);
+   * console.log(result2.value); // false
+   * ```
+   */
+  public static equals(
+    balance1: Balance,
+    balance2: Balance
+  ): Result<boolean, InvalidBalanceError> {
+    // Проверка совпадения валют
+    if (!balance1.hasSameCurrency(balance2)) {
+      return Err(
+        new InvalidBalanceError('Cannot compare balances with different currencies', {
+          context: {
+            reason: BalanceErrorReason.CURRENCY_MISMATCH,
+            currency1: balance1.currency(),
+            currency2: balance2.currency()
+          }
+        })
+      );
+    }
+
+    // Сравниваем available через MoneyService
+    const availableEqual = MoneyService.equals(balance1.available(), balance2.available());
+    if (isErr(availableEqual)) {
+      return Err(
+        new InvalidBalanceError('Failed to compare available amounts', {
+          context: {
+            reason: BalanceErrorReason.INVALID_FORMAT,
+            cause: availableEqual.error
+          }
+        })
+      );
+    }
+
+    // Если available не равны - сразу false
+    if (!availableEqual.value) {
+      return Ok(false);
+    }
+
+    // Сравниваем reserved через MoneyService
+    const reservedEqual = MoneyService.equals(balance1.reserved(), balance2.reserved());
+    if (isErr(reservedEqual)) {
+      return Err(
+        new InvalidBalanceError('Failed to compare reserved amounts', {
+          context: {
+            reason: BalanceErrorReason.INVALID_FORMAT,
+            cause: reservedEqual.error
+          }
+        })
+      );
+    }
+
+    return Ok(reservedEqual.value);
+  }
+
+  /**
+   * Проверяет, достаточно ли available средств для указанной суммы
+   *
+   * @param balance - Баланс для проверки
+   * @param amount - Требуемая сумма
+   * @returns Result с true если available >= amount, false в противном случае
+   *
+   * @remarks
+   * **Проверки:**
+   * 1. Валюта amount должна совпадать с валютой balance (иначе CURRENCY_MISMATCH)
+   * 2. available >= amount (через MoneyService.compare)
+   *
+   * **Архитектура:**
+   * Этот метод находится в Facade потому что:
+   * - Использует MoneyService для сравнения
+   * - Возвращает Result (может вернуть ошибку несовпадения валют)
+   * - Работает с Balance + Money (не intrinsic state)
+   *
+   * **Use case:**
+   * Используется перед операциями с деньгами:
+   * - Перед reserve() - проверяем что можем зарезервировать
+   * - Перед покупкой - проверяем что можем купить
+   * - Перед переводом - проверяем что можем отправить
+   *
+   * @example
+   * ```typescript
+   * const balance = Balance.of(Money.of(1000, 'USDC'), Money.of(500, 'USDC'));
+   *
+   * // Проверяем что можем зарезервировать 300
+   * const canReserve = BalanceService.canAfford(balance, Money.of(300, 'USDC'));
+   * console.log(canReserve.value); // true
+   *
+   * // Проверяем что можем зарезервировать 1500
+   * const canReserveLarge = BalanceService.canAfford(balance, Money.of(1500, 'USDC'));
+   * console.log(canReserveLarge.value); // false
+   *
+   * // Ошибка если валюты не совпадают
+   * const canAffordEur = BalanceService.canAfford(balance, Money.of(100, 'EUR'));
+   * // => Err(CURRENCY_MISMATCH)
+   * ```
+   */
+  public static canAfford(
+    balance: Balance,
+    amount: Money
+  ): Result<boolean, InvalidBalanceError> {
+    // Проверка совпадения валют
+    if (balance.currency() !== amount.currency()) {
+      return Err(
+        new InvalidBalanceError('Cannot check affordability with different currencies', {
+          context: {
+            reason: BalanceErrorReason.CURRENCY_MISMATCH,
+            balanceCurrency: balance.currency(),
+            amountCurrency: amount.currency()
+          }
+        })
+      );
+    }
+
+    // Сравниваем available с amount через MoneyService
+    // available >= amount эквивалентно isGreaterThanOrEqual(available, amount)
+    const comparison = MoneyService.isGreaterThanOrEqual(balance.available(), amount);
+    if (isErr(comparison)) {
+      return Err(
+        new InvalidBalanceError('Failed to compare available with amount', {
+          context: {
+            reason: BalanceErrorReason.INVALID_FORMAT,
+            cause: comparison.error
+          }
+        })
+      );
+    }
+
+    return Ok(comparison.value);
+  }
+
+  /**
    * Helper: складывает два Money через MoneyService
    *
    * @remarks
