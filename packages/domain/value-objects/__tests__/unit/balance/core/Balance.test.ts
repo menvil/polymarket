@@ -42,7 +42,7 @@ describe('Balance Core', () => {
 
       const balance = Balance.of(available, reserved);
 
-      expect(balance.isEmpty()).toBe(true);
+      expect(balance.isZero()).toBe(true);
       expect(balance.total().value().toNumber()).toBe(0);
     });
   });
@@ -140,7 +140,7 @@ describe('Balance Core', () => {
       expect(balance.available().value().toNumber()).toBe(0);
       expect(balance.reserved().value().toNumber()).toBe(0);
       expect(balance.currency()).toBe('USDC');
-      expect(balance.isEmpty()).toBe(true);
+      expect(balance.isZero()).toBe(true);
     });
 
     it('ZERO.USDC - это всегда один и тот же экземпляр (singleton)', () => {
@@ -182,17 +182,17 @@ describe('Balance Core', () => {
 
     describe('isEmpty()', () => {
       it('возвращает false для непустого баланса', () => {
-        expect(balance.isEmpty()).toBe(false);
+        expect(balance.isZero()).toBe(false);
       });
 
       it('возвращает true для пустого баланса', () => {
         const empty = Balance.ZERO.USDC;
-        expect(empty.isEmpty()).toBe(true);
+        expect(empty.isZero()).toBe(true);
       });
 
       it('возвращает false если есть только reserved', () => {
         const onlyReserved = Balance.of(Money.of(0), Money.of(100));
-        expect(onlyReserved.isEmpty()).toBe(false);
+        expect(onlyReserved.isZero()).toBe(false);
       });
     });
 

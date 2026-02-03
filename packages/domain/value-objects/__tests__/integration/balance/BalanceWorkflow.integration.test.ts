@@ -19,7 +19,7 @@ describe('Balance Integration Tests', () => {
       const balance1 = createResult.value;
       expect(balance1.available().value().toNumber()).toBe(10000);
       expect(balance1.reserved().value().toNumber()).toBe(0);
-      expect(balance1.isEmpty()).toBe(false);
+      expect(balance1.isZero()).toBe(false);
 
       // Шаг 2: Резервируем средства для открытия ордера
       const reserveResult = BalanceService.reserve(balance1, Money.of(3000));

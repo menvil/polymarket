@@ -280,23 +280,24 @@ export class Balance {
   }
 
   /**
-   * Проверяет, пустой ли баланс (total = 0)
+   * Проверяет, равен ли баланс нулю (total = 0)
    *
    * @returns true если available = 0 AND reserved = 0
    *
    * @remarks
-   * Баланс считается пустым только если ОБА значения равны нулю.
+   * Баланс считается нулевым только если ОБА значения равны нулю.
+   * Консистентно с Money.isZero(), Price.isZero(), Quantity.isZero().
    *
    * @example
    * ```typescript
-   * const empty = Balance.ZERO.USDC;
-   * console.log(empty.isEmpty()); // true
+   * const zero = Balance.ZERO.USDC;
+   * console.log(zero.isZero()); // true
    *
    * const withReserved = Balance.of(Money.ZERO.USDC, Money.of(100, 'USDC'));
-   * console.log(withReserved.isEmpty()); // false
+   * console.log(withReserved.isZero()); // false
    * ```
    */
-  public isEmpty(): boolean {
+  public isZero(): boolean {
     return this.total().value().equals(0);
   }
 

@@ -94,7 +94,7 @@ describe('BalanceSerializer', () => {
 
         expect(result.ok).toBe(true);
         if (result.ok) {
-          expect(result.value.isEmpty()).toBe(true);
+          expect(result.value.isZero()).toBe(true);
         }
       });
     });
