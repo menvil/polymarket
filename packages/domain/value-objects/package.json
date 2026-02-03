@@ -10,9 +10,33 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./balance": {
+      "types": "./dist/balance/index.d.ts",
+      "import": "./dist/balance/index.js"
+    },
+    "./money": {
+      "types": "./dist/money/index.d.ts",
+      "import": "./dist/money/index.js"
+    },
+    "./percentage": {
+      "types": "./dist/percentage/index.d.ts",
+      "import": "./dist/percentage/index.js"
+    },
+    "./price": {
+      "types": "./dist/price/index.d.ts",
+      "import": "./dist/price/index.js"
+    },
     "./quantity": {
       "types": "./dist/quantity/index.d.ts",
       "import": "./dist/quantity/index.js"
+    },
+    "./quote": {
+      "types": "./dist/quote/index.d.ts",
+      "import": "./dist/quote/index.js"
+    },
+    "./spread": {
+      "types": "./dist/spread/index.d.ts",
+      "import": "./dist/spread/index.js"
     }
   },
   "files": [
@@ -34,6 +58,8 @@
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
+    "ci": "npm run typecheck && npm run lint && npm run build && npm test",
+    "ci:full": "npm run typecheck:all && npm run lint:all && npm run build && npm run test:coverage",
     "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"docs/**/*.md\" \"README.md\"",
     "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"docs/**/*.md\" \"README.md\"",
     "clean": "rm -rf dist"
