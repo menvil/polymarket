@@ -39,7 +39,7 @@ public static readonly HALF = Price.fromDecimal(Price.HALF_PRICE);
 **Использование:**
 ```typescript
 // БЫЛО:
-const min = Price.min();
+const min = Price.MIN;
 
 // СТАЛО:
 const min = Price.MIN;
@@ -90,8 +90,8 @@ public static readonly HALF = new Price(new Decimal('0.5'));
 **Использование:**
 ```typescript
 // БЫЛО:
-const min = Price.min();
-const minVal = Price.minValue();
+const min = Price.MIN;
+const minVal = Price.MIN.value();
 
 // СТАЛО:
 const min = Price.MIN;
@@ -117,7 +117,7 @@ public static readonly ZERO: Record<SupportedCurrency, Money> = {
 **Использование:**
 ```typescript
 // БЫЛО:
-const zero = Money.ZERO_USDC;
+const zero = Money.ZERO.USDC;
 
 // СТАЛО:
 const zero = Money.ZERO.USDC;  // Явно указываем валюту
@@ -137,10 +137,10 @@ public static readonly ONE = Quantity.of(1);
 
 **Затронутые файлы:**
 - `src/price/core/Price.ts` - константы, удаление методов
-- `src/price/facade/PriceService.ts` - `Price.min()` → `Price.MIN`
-- `src/price/rules/**` - `Price.minValue()` → `Price.MIN.value()`
+- `src/price/facade/PriceService.ts` - `Price.MIN` → `Price.MIN`
+- `src/price/rules/**` - `Price.MIN.value()` → `Price.MIN.value()`
 - `src/money/core/Money.ts` - Record для ZERO
-- `src/money/facade/MoneyService.ts` - `Money.ZERO_USDC` → `Money.ZERO.USDC`
+- `src/money/facade/MoneyService.ts` - `Money.ZERO.USDC` → `Money.ZERO.USDC`
 - Все тесты Price и Money
 
 **Статус:** ✅ Одобрено
@@ -337,7 +337,7 @@ if (amount.abs().greaterThan(MAX_AMOUNT)) throw ...EXCEEDS_MAX_AMOUNT;
 
 ---
 
-## ✅ Коммит 5: Money.amount() → value()
+## ✅ Коммит 5: Money.value() → value()
 
 **BREAKING CHANGE**
 
@@ -362,9 +362,9 @@ public value(): Decimal { return this.amt; }
 ### 2. Обновить все файлы (вручную):
 
 **Код (проверить каждый файл):**
-- `src/money/facade/MoneyService.ts` - все `.amount()` → `.value()`
-- `src/money/adapters/MoneyFormatter.ts` - все `.amount()` → `.value()`
-- `src/money/adapters/MoneySerializer.ts` - все `.amount()` → `.value()`
+- `src/money/facade/MoneyService.ts` - все `.value()` → `.value()`
+- `src/money/adapters/MoneyFormatter.ts` - все `.value()` → `.value()`
+- `src/money/adapters/MoneySerializer.ts` - все `.value()` → `.value()`
 
 **Тесты (проверить каждый файл):**
 - `__tests__/unit/money/core/Money.test.ts`
@@ -435,8 +435,8 @@ private assertSameCurrency(other: Money): void {
 ## ❓ Коммит 7: Документация
 
 **Что обновлять:**
-- Все примеры с `.amount()` → `.value()`
-- Все примеры с `Price.min()` → `Price.MIN`
+- Все примеры с `.value()` → `.value()`
+- Все примеры с `Price.MIN` → `Price.MIN`
 - Добавить примеры ParseError (если решим добавить)
 - Добавить примеры методов сравнения (если решим добавить)
 
@@ -452,7 +452,7 @@ private assertSameCurrency(other: Money): void {
 2. ❓ **Константы** - методы → static readonly?
 3. ❓ **ParseError** - добавлять везде / убрать везде / оставить как есть?
 4. ❓ **Проверки инвариантов** - NaN отдельно или через isFinite?
-5. ❓ **Money.amount()** - переименовать в value()?
+5. ❓ **Money.value()** - переименовать в value()?
 6. ❓ **Методы сравнения** - добавлять или нет?
 7. ❓ **Документация** - что еще обновить?
 

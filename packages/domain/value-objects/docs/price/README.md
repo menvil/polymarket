@@ -155,9 +155,9 @@ Price модуль построен на **4-слойной архитектур
 // Создание
 Price.of(value: Decimal.Value): Price
 Price.fromDecimal(decimal: Decimal): Price  // zero-copy
-Price.min(): Price  // 0.0001
-Price.max(): Price  // 0.9999
-Price.half(): Price // 0.5
+Price.MIN: Price  // 0.0001
+Price.MAX: Price  // 0.9999
+Price.HALF: Price // 0.5
 
 // Методы
 price.value(): Decimal

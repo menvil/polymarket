@@ -97,7 +97,7 @@ interface Market {
 }
 
 function createBalancedMarket(): Market {
-  const yesPrice = Price.half();  // 0.5
+  const yesPrice = Price.HALF;  // 0.5
   const noResult = PriceService.complement(yesPrice);
 
   if (!noResult.ok) {
@@ -134,7 +134,7 @@ function displayProbability(price: Price): string {
 function classifyProbability(price: Price): string {
   const value = price.toNumber();
 
-  if (price.equals(Price.half())) {
+  if (price.equals(Price.HALF)) {
     return 'Toss-up (50/50)';
   }
 
@@ -161,7 +161,7 @@ function classifyProbability(price: Price): string {
 const scenarios = [
   Price.of(0.95),
   Price.of(0.65),
-  Price.half(),
+  Price.HALF,
   Price.of(0.35),
   Price.of(0.05)
 ];
@@ -290,8 +290,8 @@ interface OrderValidationResult {
 function validateOrderPrice(
   price: Price,
   tickSize: number,
-  minPrice: Price = Price.min(),
-  maxPrice: Price = Price.max()
+  minPrice: Price = Price.MIN,
+  maxPrice: Price = Price.MAX
 ): OrderValidationResult {
   // Проверка диапазона (уже гарантировано Core инвариантами, но можно уточнить)
   if (price.toNumber() < minPrice.toNumber()) {
@@ -704,15 +704,15 @@ import { Price } from '@polymarket/value-objects/price';
 
 // ❌ Плохо: создаём каждый раз
 function processPrice(price: Price) {
-  if (price.equals(Price.half())) {  // Price.half() вызывается каждый раз!
+  if (price.equals(Price.HALF)) {  // Price.HALF вызывается каждый раз!
     console.log('Neutral price');
   }
 }
 
 // ✅ Хорошо: переиспользуем
-const HALF_PRICE = Price.half();
-const MIN_PRICE = Price.min();
-const MAX_PRICE = Price.max();
+const HALF_PRICE = Price.HALF;
+const MIN_PRICE = Price.MIN;
+const MAX_PRICE = Price.MAX;
 
 function processPriceOptimized(price: Price) {
   if (price.equals(HALF_PRICE)) {

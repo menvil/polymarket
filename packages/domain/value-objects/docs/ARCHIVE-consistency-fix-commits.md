@@ -8,11 +8,13 @@
 ## Коммит 1: refactor(errors): cleanup ErrorReason enums duplicates
 
 **Изменения:**
+
 - `src/price/errors/PriceErrorReason.ts` - убрать EXCEEDS_MAX_PRICE, NEGATIVE_PRICE
 - `src/quantity/errors/QuantityErrorReason.ts` - убрать NEGATIVE_QUANTITY, EXCEEDS_MAX_QUANTITY
 - Заменить все использования в коде на унифицированные
 
 **Затронутые файлы:**
+
 - ErrorReason enums (2 файла)
 - Все места использования удаленных констант (~10 мест)
 
@@ -29,18 +31,21 @@ npm test  # Все тесты должны пройти
 **Изменения:**
 
 **Price:**
+
 - Добавить `public static readonly MIN/MAX/HALF`
 - Удалить методы `min()`, `max()`, `half()`, `minValue()`, `maxValue()`
 
 **Money:**
+
 - Заменить lazy getter на `public static readonly ZERO_USDC`
 - Удалить `private static _zeroUSDC`
 
 **Затронутые файлы:**
+
 - `src/price/core/Price.ts`
 - `src/money/core/Money.ts`
-- `src/price/facade/PriceService.ts` - заменить `Price.min()` на `Price.MIN`
-- `src/price/rules/**` - заменить `Price.minValue()` на `Price.MIN.value()`
+- `src/price/facade/PriceService.ts` - заменить `Price.MIN` на `Price.MIN`
+- `src/price/rules/**` - заменить `Price.MIN.value()` на `Price.MIN.value()`
 - Все тесты Price и Money
 
 ```bash
@@ -55,10 +60,12 @@ npm test
 **Изменения:**
 
 **Новые файлы:**
+
 - `src/price/core/PriceParseError.ts`
 - `src/quantity/core/QuantityParseError.ts`
 
 **Обновления:**
+
 - `src/price/core/Price.ts` - `of()` обрабатывает parse errors
 - `src/quantity/core/Quantity.ts` - `of()` обрабатывает parse errors
 - `src/price/core/index.ts` - экспорт PriceParseError
@@ -67,6 +74,7 @@ npm test
 - `src/quantity/facade/QuantityService.ts` - catch QuantityParseError
 
 **Новые тесты:**
+
 - `__tests__/unit/price/core/Price.test.ts` - ParseError тесты
 - `__tests__/unit/quantity/core/Quantity.test.ts` - ParseError тесты
 - `__tests__/unit/price/facade/PriceService.test.ts` - обработка ParseError
@@ -84,15 +92,18 @@ npm test
 **Изменения:**
 
 **Все три класса (Price, Quantity, Money):**
+
 - Единый порядок: NaN → Finite → Domain-specific
 - Явные проверки NaN и Finite (не полагаться на isFinite покрывает NaN)
 
 **Файлы:**
+
 - `src/price/core/Price.ts` - порядок уже правильный, добавить комментарии
 - `src/quantity/core/Quantity.ts` - добавить явную проверку NaN перед Finite
 - `src/money/core/Money.ts` - переупорядочить: NaN → Finite → Currency → Max
 
 **Обновления тестов:**
+
 - Проверить что NaN выбрасывает NAN reason (не NON_FINITE)
 
 ```bash
@@ -108,30 +119,36 @@ npm test
 **Изменения:**
 
 **Core:**
+
 - `src/money/core/Money.ts`:
   - `amount()` → `value()`
   - Удалить `toDecimal()` алиас
 
 **Facade:**
-- `src/money/facade/MoneyService.ts` - все `.amount()` → `.value()`
+
+- `src/money/facade/MoneyService.ts` - все `.value()` → `.value()`
 
 **Adapters:**
-- `src/money/adapters/MoneyFormatter.ts` - все `.amount()` → `.value()`
-- `src/money/adapters/MoneySerializer.ts` - все `.amount()` → `.value()`
+
+- `src/money/adapters/MoneyFormatter.ts` - все `.value()` → `.value()`
+- `src/money/adapters/MoneySerializer.ts` - все `.value()` → `.value()`
 
 **Тесты:**
-- `__tests__/unit/money/**/*.test.ts` - все `.amount()` → `.value()`
+
+- `__tests__/unit/money/**/*.test.ts` - все `.value()` → `.value()`
 
 **Команда для поиска:**
+
 ```bash
-grep -r "\.amount()" packages/domain/value-objects/src/money/
-grep -r "\.amount()" packages/domain/value-objects/__tests__/unit/money/
+grep -r "\.value()" packages/domain/value-objects/src/money/
+grep -r "\.value()" packages/domain/value-objects/__tests__/unit/money/
 ```
 
 **Автоматическая замена:**
+
 ```bash
-find packages/domain/value-objects/src/money -name "*.ts" -exec sed -i '' 's/\.amount()/\.value()/g' {} \;
-find packages/domain/value-objects/__tests__/unit/money -name "*.test.ts" -exec sed -i '' 's/\.amount()/\.value()/g' {} \;
+find packages/domain/value-objects/src/money -name "*.ts" -exec sed -i '' 's/\.value()/\.value()/g' {} \;
+find packages/domain/value-objects/__tests__/unit/money -name "*.test.ts" -exec sed -i '' 's/\.value()/\.value()/g' {} \;
 ```
 
 ```bash
@@ -146,18 +163,22 @@ npm test
 **Изменения:**
 
 **Price:**
+
 - Добавить `isLessThan`, `isLessThanOrEqual`, `isGreaterThan`, `isGreaterThanOrEqual`
 
 **Money:**
+
 - Добавить `isLessThan`, `isLessThanOrEqual`, `isGreaterThan`, `isGreaterThanOrEqual`
 - Добавить `isZero`, `isPositive`, `isNegative`
 - Добавить `private assertSameCurrency()`
 
 **Файлы:**
+
 - `src/price/core/Price.ts`
 - `src/money/core/Money.ts`
 
 **Новые тесты:**
+
 - `__tests__/unit/price/core/Price.test.ts` - тесты методов сравнения
 - `__tests__/unit/money/core/Money.test.ts` - тесты методов сравнения + isZero/isPositive
 
@@ -174,14 +195,17 @@ npm test
 **Изменения:**
 
 **Money документация:**
-- `docs/money/**/*.md` - все `.amount()` → `.value()`
+
+- `docs/money/**/*.md` - все `.value()` → `.value()`
 
 **Все value objects:**
+
 - Добавить примеры ParseError vs InvariantViolation
 - Обновить примеры констант (методы → static readonly)
 - Добавить примеры методов сравнения
 
 **Файлы:**
+
 - `docs/money/core.md`
 - `docs/money/facade.md`
 - `docs/money/adapters.md`
@@ -194,8 +218,9 @@ npm test
 - `docs/README.md`
 
 **Команда для поиска:**
+
 ```bash
-grep -r "\.amount()" packages/domain/value-objects/docs/money/
+grep -r "\.value()" packages/domain/value-objects/docs/money/
 grep -r "Price\.min()" packages/domain/value-objects/docs/
 ```
 
@@ -212,6 +237,7 @@ git log --oneline HEAD~7..HEAD
 ```
 
 Ожидаемый вывод:
+
 ```
 9a1b2c3 docs: update all documentation for consistency changes
 8d7e6f5 feat(core): add comparison methods to Price and Money
@@ -245,6 +271,7 @@ git status
 ```
 
 **Ожидаемый результат:**
+
 - ✅ Сборка без ошибок
 - ✅ Все 476+ тестов проходят
 - ✅ Линтер без ошибок
@@ -284,7 +311,7 @@ git status
 ```typescript
 // Money - rename method calls
 // Before:
-const decimal = money.amount();
+const decimal = money.value();
 const num = money.toDecimal();
 
 // After:
@@ -293,9 +320,9 @@ const num = money.value();  // toDecimal() removed
 
 // Price - use constants instead of methods
 // Before:
-const min = Price.min();
-const max = Price.max();
-const half = Price.half();
+const min = Price.MIN;
+const max = Price.MAX;
+const half = Price.HALF;
 
 // After:
 const min = Price.MIN;
@@ -304,10 +331,10 @@ const half = Price.HALF;
 
 // Money - use constant directly
 // Before:
-const zero = Money.ZERO_USDC;  // Still works but now static readonly
+const zero = Money.ZERO.USDC;  // Still works but now static readonly
 
 // After:
-const zero = Money.ZERO_USDC;  // Same, but no lazy init
+const zero = Money.ZERO.USDC;  // Same, but no lazy init
 
 // ErrorReasons - use unified constants
 // Before (Price):
@@ -324,6 +351,7 @@ QuantityErrorReason.NEGATIVE_QUANTITY
 // After:
 QuantityErrorReason.NEGATIVE
 ```
+
 ```
 
 ---

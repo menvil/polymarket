@@ -11,6 +11,7 @@
 PercentageService НИКОГДА не бросает исключения. Все ошибки возвращаются через Result с InvalidPercentageError, который содержит в context детальную информацию о причине ошибки.
 
 **Использует централизованный errorUtils:**
+
 - `toDecimal()` — парсинг с generic типами
 - `wrapOp()` — обработка операций
 - `rewrap()` — обёртка ошибок с сохранением root-cause

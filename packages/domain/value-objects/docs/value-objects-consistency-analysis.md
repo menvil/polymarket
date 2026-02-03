@@ -8,6 +8,7 @@
 ## 1. Обзор
 
 Проанализированы три core value objects:
+
 - **Price** - цена на рынке предсказаний [0.0001, 0.9999]
 - **Quantity** - количество акций/токенов [0, +∞]
 - **Money** - денежная сумма с валютой [-1e15, 1e15]
@@ -35,21 +36,24 @@
 #### 3.1. Несогласованность в названиях методов доступа
 
 **Проблема:**
+
 ```typescript
 // Price и Quantity
 const decimal = price.value();
 const decimal = quantity.value();
 
 // Money - ДРУГОЕ имя! ❌
-const decimal = money.amount(); // Должно быть value()
+const decimal = money.value(); // Должно быть value()
 ```
 
 **Влияние:**
+
 - Нарушается принцип наименьшего удивления
 - Затрудняет переключение между value objects
 - Различие не обосновано доменом
 
 **Решение:**
+
 ```typescript
 // Money.ts
 public value(): Decimal {  // Переименовать amount() → value()
@@ -60,6 +64,7 @@ public value(): Decimal {  // Переименовать amount() → value()
 #### 3.2. Различия в проверке NaN и Finite
 
 **Проблема:**
+
 ```typescript
 // Price - проверяет NaN и Finite отдельно
 if (v.isNaN()) throw ...;
@@ -74,10 +79,12 @@ if (!amount.isFinite()) throw ...;
 ```
 
 **Влияние:**
+
 - Quantity имеет 1 проверку, Price и Money - 2
 - Разные error reasons для одной ситуации
 
 **Анализ Decimal.js:**
+
 ```javascript
 // Decimal.js behavior
 new Decimal(NaN).isFinite()     // false
@@ -100,6 +107,7 @@ if (!v.isFinite()) {
 ```
 
 Это позволяет:
+
 - Различать NaN и Infinity в error reasons
 - Явно показывать обе проверки
 - Единообразие во всех value objects
@@ -109,6 +117,7 @@ if (!v.isFinite()) {
 **Проблема:**
 
 Money различает parse errors и invariant violations:
+
 ```typescript
 // Money.of()
 try {
@@ -120,12 +129,14 @@ return Money.create(decimal, currency);  // Может бросить MoneyInvar
 ```
 
 Price и Quantity этого не делают:
+
 ```typescript
 // Price.of() и Quantity.of()
 return new Price(new Decimal(value));  // Parse error превращается в InvariantViolation
 ```
 
 **Влияние:**
+
 - Разная обработка ошибок в Facade
 - Money требует 2 catch блока, Price/Quantity - 1
 - Facade должен мапить parse errors в INVALID_FORMAT
@@ -133,11 +144,13 @@ return new Price(new Decimal(value));  // Parse error превращается �
 **Вопрос:** Нужно ли различать parse errors?
 
 **Аргументы ЗА:**
+
 - Parse error ≠ Invariant violation (разные природы)
 - Более точная диагностика
 - MoneyService может давать разные сообщения
 
 **Аргументы ПРОТИВ:**
+
 - Усложняет код
 - Facade все равно мапит оба в InvalidXError с одинаковым reason (INVALID_FORMAT)
 - Price и Quantity работают без этого
@@ -152,6 +165,7 @@ return new Price(new Decimal(value));  // Parse error превращается �
 #### 3.4. Несогласованность в ErrorReason enum
 
 **Проблема - дублирование значений:**
+
 ```typescript
 // PriceErrorReason
 OUT_OF_RANGE_LOW = 'OUT_OF_RANGE_LOW',
@@ -168,6 +182,7 @@ NEGATIVE_RESULT = 'NEGATIVE_RESULT',
 ```
 
 **Проблема - разные названия:**
+
 ```typescript
 EXCEEDS_MAX_PRICE    // Price
 EXCEEDS_MAX_QUANTITY // Quantity
@@ -175,6 +190,7 @@ EXCEEDS_MAX_AMOUNT   // Money
 ```
 
 **Решение:**
+
 ```typescript
 // Унифицировать:
 export enum PriceErrorReason {
@@ -222,6 +238,7 @@ export enum MoneyErrorReason {
 #### 3.5. Константы - разные подходы
 
 **Проблема:**
+
 ```typescript
 // Price - методы + приватные константы
 public static min(): Price { return new Price(Price.MIN_PRICE); }
@@ -240,11 +257,13 @@ public static get ZERO_USDC(): Money {
 ```
 
 **Влияние:**
+
 - Разный API для одних и тех же концепций
 - Price требует вызов метода, Quantity - прямой доступ
 - Money использует ленивую инициализацию
 
 **Рекомендация:**
+
 ```typescript
 // Единый подход - публичные статические readonly (как Quantity)
 // Преимущества:
@@ -272,6 +291,7 @@ export class Money {
 #### 3.6. Методы сравнения - неполнота
 
 **Проблема:**
+
 ```typescript
 // Quantity - полный набор
 isZero(), isPositive(), isLessThan(), isGreaterThan(),
@@ -285,6 +305,7 @@ equals(), hasSameCurrency()
 ```
 
 **Влияние:**
+
 - Приходится сравнивать через `.value()`: `price1.value().lessThan(price2.value())`
 - Нарушается инкапсуляция
 - Quantity имеет удобный API, Price и Money - нет
@@ -315,6 +336,7 @@ public isLessThan(other: Money): boolean {
 #### 3.7. Алиас toDecimal() в Money
 
 **Проблема:**
+
 ```typescript
 // Money
 public amount(): Decimal { return this.amt; }
@@ -326,12 +348,14 @@ Price и Quantity не имеют алиаса.
 **Влияние:** Минимальное, но создает API inconsistency
 
 **Решение:**
+
 1. Переименовать `amount()` → `value()` (см. 3.1)
 2. Удалить `toDecimal()` алиас
 
 #### 3.8. Порядок проверок инвариантов
 
 **Проблема:**
+
 ```typescript
 // Price: NaN → Finite → Range
 // Quantity: Finite → Negative
@@ -342,6 +366,7 @@ Price и Quantity не имеют алиаса.
 
 **Рекомендация:**
 Единый порядок для всех:
+
 1. NaN (самая фундаментальная проблема)
 2. Finite (Infinity)
 3. Range/Negative/Currency (доменные ограничения)
@@ -353,6 +378,7 @@ Price и Quantity не имеют алиаса.
 ### 4.1. Статические методы minValue()/maxValue() в Price
 
 **Назначение:**
+
 ```typescript
 // Price.ts:209-227
 public static minValue(): Decimal { return Price.MIN_PRICE; }
@@ -362,14 +388,16 @@ public static maxValue(): Decimal { return Price.MAX_PRICE; }
 Помечены как `@internal ТОЛЬКО для Rules/Facade`.
 
 **Проблема:**
+
 - Quantity и Money не имеют аналогов
-- Rules могут использовать `Price.min().value()` вместо `Price.minValue()`
+- Rules могут использовать `Price.MIN.value()` вместо `Price.MIN.value()`
 - Дополнительные методы без явной пользы
 
 **Вопрос:** Нужны ли эти методы?
 
 **Рекомендация:**
 Убрать `minValue()`/`maxValue()`. Использовать:
+
 ```typescript
 // Rules/Facade
 const minPrice = Price.MIN.value();  // Через константу
@@ -378,6 +406,7 @@ const minPrice = Price.MIN.value();  // Через константу
 ### 4.2. of() vs fromDecimal() - семантика
 
 **Текущее состояние:**
+
 ```typescript
 // Все три одинаково:
 Price.of(value: number | string | Decimal)
@@ -395,6 +424,7 @@ Money не принимает Decimal в `of()`, но Price и Quantity прин
 
 **Решение:**
 Единообразие - `of()` принимает все типы:
+
 ```typescript
 Money.of(value: number | string | Decimal, currency: SupportedCurrency = 'USDC')
 ```
@@ -405,7 +435,7 @@ Money.of(value: number | string | Decimal, currency: SupportedCurrency = 'USDC')
 
 ### Приоритет 1 (Критические)
 
-1. **Переименовать Money.amount() → value()**
+1. **Переименовать Money.value() → value()**
    - Файлы: Money.ts, MoneyService.ts, все тесты
    - Влияние: Breaking change для всех потребителей
    - Миграция: Добавить deprecated алиас на 1 релиз
@@ -420,23 +450,23 @@ Money.of(value: number | string | Decimal, currency: SupportedCurrency = 'USDC')
 
 ### Приоритет 2 (Важные)
 
-4. **Очистить ErrorReason enums**
+1. **Очистить ErrorReason enums**
    - Убрать дубликаты (NEGATIVE vs NEGATIVE_QUANTITY)
    - Унифицировать названия (EXCEEDS_MAX)
 
-5. **Унифицировать константы**
+2. **Унифицировать константы**
    - Все через `public static readonly`
    - Убрать lazy initialization в Money
 
-6. **Добавить методы сравнения в Price и Money**
+3. **Добавить методы сравнения в Price и Money**
    - isLessThan, isGreaterThan, etc.
    - Для Money - с проверкой валюты
 
 ### Приоритет 3 (Желательные)
 
-7. **Убрать minValue()/maxValue() из Price**
-8. **Убрать toDecimal() алиас из Money**
-9. **Money.of() принимает Decimal**
+1. **Убрать minValue()/maxValue() из Price**
+2. **Убрать toDecimal() алиас из Money**
+3. **Money.of() принимает Decimal**
 
 ---
 
@@ -506,6 +536,7 @@ public value(): Decimal {
 ---
 
 **Следующие шаги:**
+
 - [ ] Обсудить с командой
 - [ ] Создать GitHub issues для каждого изменения
 - [ ] Написать тесты для миграции

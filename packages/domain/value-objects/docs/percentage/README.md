@@ -126,11 +126,13 @@ Percentage модуль построен на **4-слойной архитек�
 ### 1. Core Layer
 
 **Файлы:**
+
 - `Percentage.ts` — Value Object (433 строки)
 - `PercentageInvariantViolation.ts` — Exception класс
 - `PercentageErrorReason.ts` — Typed error reasons (13 значений)
 
 **Инварианты:**
+
 - `value.isFinite()` — не NaN, не Infinity
 - `value >= -1,000,000%` — минимальное значение
 - `value <= 1,000,000%` — максимальное значение
@@ -140,13 +142,16 @@ Percentage модуль построен на **4-слойной архитек�
 ### 2. Facade Layer
 
 **Файлы:**
+
 - `PercentageService.ts` — Result-based API (540 строк)
 
 **Методы:**
+
 - **Создание:** `create()`, `fromDecimalFraction()`, `fromBasisPoints()`
 - **Операции:** `add()`, `subtract()`, `multiply()`, `divide()`, `applyTo()`
 
 **Интеграция errorUtils:**
+
 - Использует `toDecimal()`, `wrapOp()`, `rewrap()` из централизованного модуля
 - **-100% дублирования** error handling кода
 - **-77% LOC** по сравнению со старой реализацией
@@ -156,10 +161,12 @@ Percentage модуль построен на **4-слойной архитек�
 ### 3. Adapters Layer
 
 **Файлы:**
+
 - `PercentageFormatter.ts` — Форматирование (176 строк)
 - `PercentageSerializer.ts` — JSON сериализация (158 строк)
 
 **Методы форматирования:**
+
 - `toFixed()` — фиксированное количество знаков
 - `toPercent()` — с символом % ("50.00%")
 - `toDecimalFraction()` — десятичная дробь ("0.5000")
@@ -171,6 +178,7 @@ Percentage модуль построен на **4-слойной архитек�
 ### 4. Rules Layer
 
 **Файлы:**
+
 - `ValidateFeeNonNegative.ts` — Проверка fee >= 0%
 - `ValidateFeeForTrading.ts` — Проверка fee в [0%, 5%]
 - `ValidateTotalFee.ts` — Проверка суммарной fee <= 10%
@@ -318,6 +326,7 @@ Polymarket использует процентные комиссии для т�
 - **Protocol Fee:** комиссия протокола (фиксированная)
 
 **Правила:**
+
 - Отдельная комиссия: [0%, 5%] (ValidateFeeForTrading)
 - Суммарная комиссия: <= 10% (ValidateTotalFee)
 
@@ -330,6 +339,7 @@ spread = (askPrice - bidPrice) / midPrice * 100%
 ```
 
 **Правила:**
+
 - Минимальный spread: 0% (ValidateSpreadNonNegative)
 - Максимальный spread: 10% по умолчанию (ValidateSpreadRange)
 
@@ -352,6 +362,7 @@ const feeResult = PercentageService.fromBasisPoints(50); // 50 bp = 0.5%
 ### Миграция со старого API
 
 **Старый код:**
+
 ```typescript
 // Было: throws exceptions
 const pct = Percentage.of(50);
@@ -359,6 +370,7 @@ const sum = pct.add(other);
 ```
 
 **Новый код:**
+
 ```typescript
 // Стало: Result-based, never throws
 const result = PercentageService.create(50);

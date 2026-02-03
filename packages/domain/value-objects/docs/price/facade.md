@@ -226,7 +226,7 @@ if (!nanResult.ok) {
 }
 
 // Ошибка: результат выходит за диапазон
-const underflowResult = PriceService.divide(Price.min(), 2);
+const underflowResult = PriceService.divide(Price.MIN, 2);
 if (!underflowResult.ok) {
   // 0.0001 / 2 = 0.00005 < MIN_PRICE
   console.log(underflowResult.error.context?.op);  // 'divide'
@@ -260,19 +260,19 @@ if (noResult.ok) {
 }
 
 // Симметричность
-const halfPrice = Price.half();
+const halfPrice = Price.HALF;
 const compResult = PriceService.complement(halfPrice);
 if (compResult.ok) {
   console.log(compResult.value.equals(halfPrice));  // true (0.5 = 1 - 0.5)
 }
 
 // Граничные случаи
-const minCompResult = PriceService.complement(Price.min());
+const minCompResult = PriceService.complement(Price.MIN);
 if (minCompResult.ok) {
   console.log(minCompResult.value.toNumber());  // 0.9999 (= MAX_PRICE)
 }
 
-const maxCompResult = PriceService.complement(Price.max());
+const maxCompResult = PriceService.complement(Price.MAX);
 if (maxCompResult.ok) {
   console.log(maxCompResult.value.toNumber());  // 0.0001 (= MIN_PRICE)
 }
@@ -304,15 +304,15 @@ if (midResult.ok) {
 }
 
 // Граничные случаи
-const extremeResult = PriceService.average(Price.min(), Price.max());
+const extremeResult = PriceService.average(Price.MIN, Price.MAX);
 if (extremeResult.ok) {
   console.log(extremeResult.value.toNumber());  // ~0.5
 }
 
 // Одинаковые цены
-const sameResult = PriceService.average(Price.half(), Price.half());
+const sameResult = PriceService.average(Price.HALF, Price.HALF);
 if (sameResult.ok) {
-  console.log(sameResult.value.equals(Price.half()));  // true
+  console.log(sameResult.value.equals(Price.HALF));  // true
 }
 ```
 
@@ -689,9 +689,9 @@ const validPrices = values
 
 ```typescript
 // ✅ Хорошо (переиспользуем)
-const half = Price.half();
-const min = Price.min();
-const max = Price.max();
+const half = Price.HALF;
+const min = Price.MIN;
+const max = Price.MAX;
 
 for (const price of prices) {
   if (price.equals(half)) {
@@ -701,7 +701,7 @@ for (const price of prices) {
 
 // ❌ Плохо (создаём каждый раз)
 for (const price of prices) {
-  if (price.equals(Price.half())) {  // Price.half() вызывается в цикле!
+  if (price.equals(Price.HALF)) {  // Price.HALF вызывается в цикле!
     // ...
   }
 }

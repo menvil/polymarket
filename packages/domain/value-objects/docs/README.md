@@ -165,29 +165,44 @@ quote.match({
 
 ---
 
-### 📉 Spread
+### 📉 [Spread](./spread/README.md)
 
-Спред между ценами покупки и продажи.
+Спред между ценами покупки и продажи (bid-ask spread).
 
 ```typescript
-import { Spread, Price } from '@polymarket/value-objects';
-import { unwrap } from '@polymarket/result';
+import { SpreadService, SpreadFormatter } from '@polymarket/value-objects';
 
-const bid = unwrap(Price.fromValue(0.54));
-const ask = unwrap(Price.fromValue(0.56));
+// Создание из чисел
+const result = SpreadService.fromValues(0.48, 0.52);
+if (result.ok) {
+  const spread = result.value;
 
-const spread = Spread.create(bid, ask);
-spread.match({
-  ok: (s) => {
-    console.log(s.width());              // 0.02
-    console.log(s.widthPercentage());    // 2
-  },
-  err: (error) => console.error(error)
-});
+  console.log(spread.bid().toNumber());       // 0.48
+  console.log(spread.ask().toNumber());       // 0.52
+  console.log(spread.width().toNumber());     // 0.04
+  console.log(spread.midpoint().toNumber());  // 0.50
+  console.log(spread.widthPercentage());      // 8%
 
-// Или напрямую из чисел
-const spreadResult = Spread.fromNumbers(0.54, 0.56);
+  // Форматирование
+  console.log(SpreadFormatter.format(spread));
+  // "0.4800-0.5200 (0.0400)"
+}
+
+// Операции: сужение, расширение, сдвиг
+const tighter = SpreadService.tighten(spread, 0.01);
+const wider = SpreadService.widen(spread, 0.02);
+const shifted = SpreadService.shift(spread, 0.10);
 ```
+
+**Особенности:**
+
+- Railway-Oriented Programming через `Result<T, E>`
+- Инвариант: bid ≤ ask (гарантирован на уровне типов)
+- Операции: tighten (сужение), widen (расширение), shift (сдвиг)
+- Интеграция с Price для Polymarket [0.0001, 0.9999]
+- Сериализация/форматирование для API и UI
+
+**[→ Подробная документация](./spread/README.md)**
 
 ## Установка
 

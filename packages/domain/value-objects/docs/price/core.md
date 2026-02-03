@@ -81,22 +81,22 @@ const price = Price.fromDecimal(decimal);
 #### Статические константы
 
 ```typescript
-Price.min()   // Price со значением 0.0001 (MIN_PRICE)
-Price.max()   // Price со значением 0.9999 (MAX_PRICE)
-Price.half()  // Price со значением 0.5 (HALF_PRICE)
+Price.MIN   // Price со значением 0.0001 (MIN_PRICE)
+Price.MAX   // Price со значением 0.9999 (MAX_PRICE)
+Price.HALF  // Price со значением 0.5 (HALF_PRICE)
 ```
 
 **Пример:**
 
 ```typescript
-const midPrice = Price.half();
+const midPrice = Price.HALF;
 console.log(midPrice.toNumber());  // 0.5
 
-if (price.equals(Price.min())) {
+if (price.equals(Price.MIN)) {
   console.log('Minimum price');
 }
 
-if (price.equals(Price.max())) {
+if (price.equals(Price.MAX)) {
   console.log('Maximum price');
 }
 ```
@@ -104,8 +104,8 @@ if (price.equals(Price.max())) {
 #### Internal константы (для Rules/Facade)
 
 ```typescript
-Price.minValue()  // Decimal константа 0.0001
-Price.maxValue()  // Decimal константа 0.9999
+Price.MIN.value()  // Decimal константа 0.0001
+Price.MAX.value()  // Decimal константа 0.9999
 ```
 
 **⚠️ Внимание:** Эти методы возвращают shared Decimal константы. **Decimal неизменяемый (immutable)** — все операции (plus, minus и т.д.) возвращают новые экземпляры, оригинал не меняется. Price также неизменяемый.
@@ -114,12 +114,12 @@ Price.maxValue()  // Decimal константа 0.9999
 
 ```typescript
 // ✅ Правильно (в Rules) - сравнение
-if (tickSize.greaterThan(Price.maxValue())) {
+if (tickSize.greaterThan(Price.MAX.value())) {
   return Err(...);
 }
 
 // ✅ Тоже правильно - операции создают новый Decimal
-const result = Price.minValue().plus(1);  // Безопасно, возвращает новый экземпляр
+const result = Price.MIN.value().plus(1);  // Безопасно, возвращает новый экземпляр
 ```
 
 ---
@@ -171,7 +171,7 @@ price1.equals(price3);  // false
 Проверяет что цена равна минимальной (0.0001).
 
 ```typescript
-Price.min().isMin();         // true
+Price.MIN.isMin();         // true
 Price.of(0.0001).isMin();    // true
 Price.of(0.5).isMin();       // false
 ```
@@ -181,7 +181,7 @@ Price.of(0.5).isMin();       // false
 Проверяет что цена равна максимальной (0.9999).
 
 ```typescript
-Price.max().isMax();         // true
+Price.MAX.isMax();         // true
 Price.of(0.9999).isMax();    // true
 Price.of(0.5).isMax();       // false
 ```
@@ -203,7 +203,7 @@ Price.of(0.5).isMax();       // false
 **Примеры:**
 
 ```typescript
-const minPrice = Price.min();
+const minPrice = Price.MIN;
 console.log(minPrice.toNumber());  // 0.0001
 
 // Валидные tick sizes (кратны MIN_PRICE)
@@ -230,11 +230,11 @@ console.log(minPrice.toNumber());  // 0.0001
 **Примеры:**
 
 ```typescript
-const maxPrice = Price.max();
+const maxPrice = Price.MAX;
 console.log(maxPrice.toNumber());  // 0.9999
 
 // Complement минимальной цены
-const minComplement = new Decimal(1).minus(Price.minValue());
+const minComplement = new Decimal(1).minus(Price.MIN.value());
 console.log(minComplement.toString());  // "0.9999" (= MAX_PRICE)
 ```
 
@@ -250,7 +250,7 @@ console.log(minComplement.toString());  // "0.9999" (= MAX_PRICE)
 **Примеры:**
 
 ```typescript
-const halfPrice = Price.half();
+const halfPrice = Price.HALF;
 console.log(halfPrice.toNumber());  // 0.5
 
 // Complement половинной цены
@@ -454,21 +454,21 @@ if (askPrice.isMax()) {
 
 ```typescript
 // Инициализация с нейтральной ценой
-let currentPrice = Price.half();  // 0.5
+let currentPrice = Price.HALF;  // 0.5
 
 // Проверка экстремальных значений
-if (currentPrice.equals(Price.min())) {
+if (currentPrice.equals(Price.MIN)) {
   console.log('Price at floor');
-} else if (currentPrice.equals(Price.max())) {
+} else if (currentPrice.equals(Price.MAX)) {
   console.log('Price at ceiling');
 }
 
 // Использование в вычислениях (через Facade!)
 import { PriceService } from './facade/PriceService.js';
 
-const complementResult = PriceService.complement(Price.min());
+const complementResult = PriceService.complement(Price.MIN);
 if (complementResult.ok) {
-  console.log(complementResult.value.equals(Price.max()));  // true
+  console.log(complementResult.value.equals(Price.MAX));  // true
 }
 ```
 

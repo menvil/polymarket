@@ -341,7 +341,7 @@ const zeroEUR = Money.zero('EUR'); // throws (EUR not supported)
 
 ---
 
-#### `Money.ZERO_USDC`
+#### `Money.ZERO.USDC`
 
 Singleton константа для нулевой суммы USDC.
 
@@ -361,10 +361,10 @@ public static get ZERO_USDC(): Money
 **Примеры:**
 
 ```typescript
-const zero = Money.ZERO_USDC;  // Money(0 USDC)
+const zero = Money.ZERO.USDC;  // Money(0 USDC)
 
 // Singleton:
-Money.ZERO_USDC === Money.ZERO_USDC;  // true
+Money.ZERO.USDC === Money.ZERO.USDC;  // true
 ```
 
 ---
@@ -385,7 +385,7 @@ public amount(): Decimal
 
 ```typescript
 const money = Money.of(100.5);
-const decimal = money.amount();  // Decimal(100.5)
+const decimal = money.value();  // Decimal(100.5)
 console.log(decimal.toString()); // "100.5"
 ```
 
@@ -431,7 +431,7 @@ const money = Money.of('123.456');
 console.log(money.toNumber());  // 123.456
 
 // Для вычислений используйте amount()
-const decimal = money.amount();  // Decimal (точный)
+const decimal = money.value();  // Decimal (точный)
 ```
 
 ---
@@ -524,7 +524,7 @@ const m5 = Money.fromDecimal(decimal);
 
 // Ноль
 const zero = Money.zero();          // 0 USDC
-const zero2 = Money.ZERO_USDC;      // 0 USDC (singleton)
+const zero2 = Money.ZERO.USDC;      // 0 USDC (singleton)
 ```
 
 ### Работа с инвариантами
@@ -597,8 +597,8 @@ console.log(Money.MAX_AMOUNT.toString());  // "1000000000000000"
 console.log(Money.SUPPORTED_CURRENCIES);  // Set { 'USDC' }
 
 // Zero singleton
-const zero = Money.ZERO_USDC;
-console.log(zero.amount().toNumber());  // 0
+const zero = Money.ZERO.USDC;
+console.log(zero.value().toNumber());  // 0
 console.log(zero.currency());           // "USDC"
 ```
 

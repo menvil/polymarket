@@ -119,7 +119,7 @@ if (amount.abs().greaterThan(MAX_AMOUNT)) throw ...EXCEEDS_MAX_AMOUNT;
 
 ---
 
-### ✅ Коммит 5: Money.amount() → value()
+### ✅ Коммит 5: Money.value() → value()
 
 **BREAKING CHANGE**
 
@@ -203,9 +203,9 @@ public static isLessThan(a: Money, b: Money): Result<boolean, InvalidMoneyError>
 ### ✅ Коммит 7: Обновление документации
 
 **Обновить:**
-- Все примеры с `.amount()` → `.value()`
-- Все примеры с `Price.min()` → `Price.MIN`
-- Все примеры с `Money.ZERO_USDC` → `Money.ZERO.USDC`
+- Все примеры с `.value()` → `.value()`
+- Все примеры с `Price.MIN` → `Price.MIN`
+- Все примеры с `Money.ZERO.USDC` → `Money.ZERO.USDC`
 - Добавить примеры методов сравнения
 - Обновить architecture.md с новой единообразной структурой
 
@@ -217,7 +217,7 @@ public static isLessThan(a: Money, b: Money): Result<boolean, InvalidMoneyError>
 2. **Коммит 2** - Константы (breaking для Price/Money)
 3. **Коммит 3** - Убрать ParseError (упрощение)
 4. **Коммит 4** - Проверки инвариантов (внутренние изменения)
-5. **Коммит 5** - Money.amount() → value() (breaking, массовая замена)
+5. **Коммит 5** - Money.value() → value() (breaking, массовая замена)
 6. **Коммит 6** - Методы сравнения (новая функциональность)
 7. **Коммит 7** - Документация (без кода)
 
@@ -233,13 +233,13 @@ npm run typecheck
 
 ## Ожидаемые breaking changes
 
-1. `Money.amount()` → `Money.value()`
+1. `Money.value()` → `Money.value()`
 2. `Money.toDecimal()` удален
-3. `Price.min()` → `Price.MIN`
-4. `Price.max()` → `Price.MAX`
-5. `Price.half()` → `Price.HALF`
-6. `Price.minValue()/maxValue()` удалены
-7. `Money.ZERO_USDC` → `Money.ZERO.USDC`
+3. `Price.MIN` → `Price.MIN`
+4. `Price.MAX` → `Price.MAX`
+5. `Price.HALF` → `Price.HALF`
+6. `Price.MIN.value()/maxValue()` удалены
+7. `Money.ZERO.USDC` → `Money.ZERO.USDC`
 8. `Money.equals()` удален из Core, доступен через `MoneyService.equals()`
 9. ErrorReason константы переименованы
 

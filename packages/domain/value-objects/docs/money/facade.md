@@ -97,7 +97,7 @@ const m2 = Money.of(50, 'USDC');
 
 const result = MoneyService.add(m1, m2);
 if (result.ok) {
-  console.log(result.value.amount());  // 150
+  console.log(result.value.value());  // 150
 }
 ```
 
@@ -126,7 +126,7 @@ const m2 = Money.of(30, 'USDC');
 
 const result = MoneyService.subtract(m1, m2);
 if (result.ok) {
-  console.log(result.value.amount());  // 70
+  console.log(result.value.value());  // 70
 }
 ```
 
@@ -159,7 +159,7 @@ const money = Money.of(100, 'USDC');
 
 const result = MoneyService.multiply(money, 1.5);
 if (result.ok) {
-  console.log(result.value.amount());  // 150
+  console.log(result.value.value());  // 150
 }
 ```
 
@@ -193,7 +193,7 @@ const money = Money.of(100, 'USDC');
 
 const result = MoneyService.divide(money, 2);
 if (result.ok) {
-  console.log(result.value.amount());  // 50
+  console.log(result.value.value());  // 50
 }
 
 // Деление на ноль
@@ -255,9 +255,9 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
   }
 
   // 2. wrapOp автоматически обрабатывает math операции и создание Money
-  const ctx = { a: a.amount().toString(), b: b.amount().toString(), currency: a.currency() };
+  const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
   return this.wrapOp('add', ctx, () => {
-    const sum = addDecimal(a.amount(), b.amount());
+    const sum = addDecimal(a.value(), b.value());
     return this.createFromDecimal(sum, a.currency(), 'add', {});
   });
 }
@@ -420,7 +420,7 @@ function calculateFee(amount: Money, feeRate: string): Money | null {
 const orderAmount = Money.of(1000, 'USDC');
 const fee = calculateFee(orderAmount, "0.002");  // 0.2% fee
 if (fee) {
-  console.log(`Fee: $${fee.amount()}`);  // $2.00
+  console.log(`Fee: $${fee.value()}`);  // $2.00
 }
 ```
 

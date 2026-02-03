@@ -43,7 +43,7 @@ function processDeposit(userInput: string) {
 // Использование
 const deposit = processDeposit("100.50");
 if (deposit.success) {
-  console.log(`Deposit: $${deposit.amount.amount()}`);
+  console.log(`Deposit: $${deposit.amount.value()}`);
 }
 ```
 
@@ -63,7 +63,7 @@ function canAfford(balance: Money, price: Money): boolean {
   }
 
   // Сравниваем как Decimal (точно)
-  return balance.amount().greaterThanOrEqualTo(price.amount());
+  return balance.value().greaterThanOrEqualTo(price.value());
 }
 
 const userBalance = Money.of(1000, 'USDC');
@@ -96,7 +96,7 @@ function executeTrade(
   }
 
   // Проверка достаточности средств
-  if (currentBalance.amount().lessThan(tradeAmount.amount())) {
+  if (currentBalance.value().lessThan(tradeAmount.value())) {
     return { error: 'Insufficient funds' };
   }
 
@@ -121,8 +121,8 @@ const tradeResult = executeTrade(balance, trade);
 if ('error' in tradeResult) {
   console.error(tradeResult.error);
 } else {
-  console.log(`New balance: $${tradeResult.newBalance.amount()}`);
-  console.log(`Spent: $${tradeResult.spent.amount()}`);
+  console.log(`New balance: $${tradeResult.newBalance.value()}`);
+  console.log(`Spent: $${tradeResult.spent.value()}`);
 }
 ```
 
@@ -133,7 +133,7 @@ import { MoneyService, Money } from '@polymarket/value-objects/money';
 
 function calculateTotalSpent(transactions: Money[]): Money | { error: string } {
   if (transactions.length === 0) {
-    return Money.ZERO_USDC;
+    return Money.ZERO.USDC;
   }
 
   // Проверяем что все транзакции в одной валюте
@@ -167,7 +167,7 @@ const total = calculateTotalSpent(transactions);
 if ('error' in total) {
   console.error(total.error);
 } else {
-  console.log(`Total spent: $${total.amount()}`);  // $176.25
+  console.log(`Total spent: $${total.value()}`);  // $176.25
 }
 ```
 
@@ -200,7 +200,7 @@ const fee = calculateFee(orderAmount, 0.2);  // 0.2% fee
 if ('error' in fee) {
   console.error(fee.error);
 } else {
-  console.log(`Fee: $${fee.amount()}`);  // $2.00
+  console.log(`Fee: $${fee.value()}`);  // $2.00
 }
 ```
 
@@ -231,7 +231,7 @@ const totalWithFee = calculateTotalWithFee(orderCost, 0.2);
 if ('error' in totalWithFee) {
   console.error(totalWithFee.error);
 } else {
-  console.log(`Total (with fee): $${totalWithFee.amount()}`);  // $1002.00
+  console.log(`Total (with fee): $${totalWithFee.value()}`);  // $1002.00
 }
 ```
 
@@ -266,7 +266,7 @@ const profit = calculateProfit(sold, bought);
 if ('error' in profit) {
   console.error(profit.error);
 } else {
-  const amount = profit.amount().toNumber();
+  const amount = profit.value().toNumber();
   if (amount > 0) {
     console.log(`Profit: +$${amount}`);  // +$150
   } else if (amount < 0) {
@@ -287,19 +287,19 @@ function calculateROI(
   profit: Money,
   initialInvestment: Money
 ): Decimal | { error: string } {
-  if (initialInvestment.amount().isZero()) {
+  if (initialInvestment.value().isZero()) {
     return { error: 'Cannot calculate ROI with zero investment' };
   }
 
   // ROI = (Profit / Investment) * 100
-  const result = MoneyService.divide(profit, initialInvestment.amount());
+  const result = MoneyService.divide(profit, initialInvestment.value());
 
   if (!result.ok) {
     return { error: `Failed to calculate ROI: ${result.error.message}` };
   }
 
   // Умножаем на 100 для процентов
-  const roi = result.value.amount().times(100);
+  const roi = result.value.value().times(100);
   return roi;
 }
 

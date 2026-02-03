@@ -70,7 +70,7 @@ if (!result.ok) {
 }
 
 const money = result.value;
-console.log(money.amount().toString()); // "100"
+console.log(money.value().toString()); // "100"
 console.log(money.currency()); // "USDC"
 
 // Арифметические операции
@@ -80,7 +80,7 @@ const money2Result = MoneyService.create(50);
 if (money1Result.ok && money2Result.ok) {
   const sumResult = MoneyService.add(money1Result.value, money2Result.value);
   if (sumResult.ok) {
-    console.log(sumResult.value.amount().toNumber()); // 150
+    console.log(sumResult.value.value().toNumber()); // 150
   }
 }
 ```
@@ -165,10 +165,10 @@ Money.fromDecimal(decimal: Decimal, currency?: 'USDC'): Money
 Money.zero(currency?: 'USDC'): Money
 
 // Константы
-Money.ZERO_USDC: Money
+Money.ZERO.USDC: Money
 
 // Методы
-money.amount(): Decimal
+money.value(): Decimal
 money.currency(): SupportedCurrency
 money.toNumber(): number  // lossy
 money.toDecimal(): Decimal
@@ -311,7 +311,7 @@ if (!result.ok) {
 }
 
 const money = result.value;
-console.log(`Amount: ${money.amount()}`);
+console.log(`Amount: ${money.value()}`);
 console.log(`Currency: ${money.currency()}`);
 ```
 
@@ -339,7 +339,7 @@ if (!newBalanceResult.ok) {
 }
 
 const newBalance = newBalanceResult.value;
-console.log(`New balance: $${newBalance.amount()}`);  // $849.50
+console.log(`New balance: $${newBalance.value()}`);  // $849.50
 ```
 
 ### Вычисление комиссии
@@ -364,7 +364,7 @@ if (!feeResult.ok) {
 }
 
 const fee = feeResult.value;
-console.log(`Fee: $${fee.amount()}`);  // $2.00
+console.log(`Fee: $${fee.value()}`);  // $2.00
 ```
 
 ### Проверка совпадения валют

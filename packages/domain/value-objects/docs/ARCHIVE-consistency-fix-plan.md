@@ -11,6 +11,7 @@
 Устранение всех несогласованностей между Price, Quantity и Money для создания единообразного API.
 
 **Общий объем работ:**
+
 - Изменения в Core: 3 файла (Money.ts, Price.ts, Quantity.ts)
 - Новые файлы: 2 (PriceParseError.ts, QuantityParseError.ts)
 - Обновления в Facade: 3 файла
@@ -26,9 +27,11 @@
 ### 1.1. Money: Переименование amount() → value()
 
 **Файлы:**
+
 - `src/money/core/Money.ts`
 
 **Изменения:**
+
 ```typescript
 // БЫЛО:
 public amount(): Decimal {
@@ -47,7 +50,8 @@ public value(): Decimal {
 // Deprecated alias удаляем сразу (не в продакшене)
 ```
 
-**Зависимые файлы (обновить все вызовы .amount()):**
+**Зависимые файлы (обновить все вызовы .value()):**
+
 - `src/money/facade/MoneyService.ts` - все операции
 - `src/money/adapters/MoneyFormatter.ts` - форматирование
 - `src/money/adapters/MoneySerializer.ts` - сериализация
@@ -55,9 +59,10 @@ public value(): Decimal {
 - `docs/money/**/*.md` - вся документация
 
 **Команда для поиска:**
+
 ```bash
-grep -r "\.amount()" packages/domain/value-objects/src/money/
-grep -r "\.amount()" packages/domain/value-objects/__tests__/unit/money/
+grep -r "\.value()" packages/domain/value-objects/src/money/
+grep -r "\.value()" packages/domain/value-objects/__tests__/unit/money/
 ```
 
 ---
@@ -349,6 +354,7 @@ export enum PriceErrorReason {
 ```
 
 **Обновить использование:**
+
 ```bash
 # Найти все использования удаляемых констант
 grep -r "EXCEEDS_MAX_PRICE" packages/domain/value-objects/
@@ -395,6 +401,7 @@ export enum QuantityErrorReason {
 ```
 
 **Обновить использование:**
+
 ```bash
 grep -r "NEGATIVE_QUANTITY" packages/domain/value-objects/
 # Заменить все на NEGATIVE
@@ -434,6 +441,7 @@ export class Price {
 ```
 
 **Обновить использование:**
+
 ```bash
 # Найти все вызовы методов
 grep -r "Price\.min()" packages/domain/value-objects/
@@ -441,9 +449,9 @@ grep -r "Price\.max()" packages/domain/value-objects/
 grep -r "Price\.half()" packages/domain/value-objects/
 
 # Заменить на:
-# Price.min() → Price.MIN
-# Price.max() → Price.MAX
-# Price.half() → Price.HALF
+# Price.MIN → Price.MIN
+# Price.MAX → Price.MAX
+# Price.HALF → Price.HALF
 ```
 
 ### 3.2. Money - убрать lazy initialization
@@ -466,7 +474,7 @@ export class Money {
   // УДАЛИТЬ метод zero() или сделать alias
   public static zero(currency: SupportedCurrency = 'USDC'): Money {
     if (currency === 'USDC') {
-      return Money.ZERO_USDC;
+      return Money.ZERO.USDC;
     }
     return Money.fromDecimal(new Decimal(0), currency);
   }
@@ -642,14 +650,16 @@ export { QuantityParseError } from './QuantityParseError';  // ДОБАВИТЬ
 
 ## Этап 6: Обновление тестов
 
-### 6.1. Money тесты - .amount() → .value()
+### 6.1. Money тесты - .value() → .value()
 
 **Команда для поиска всех тестов:**
+
 ```bash
-find packages/domain/value-objects/__tests__/unit/money -name "*.test.ts" -exec grep -l "\.amount()" {} \;
+find packages/domain/value-objects/__tests__/unit/money -name "*.test.ts" -exec grep -l "\.value()" {} \;
 ```
 
 **Файлы для обновления:**
+
 - `Money.test.ts`
 - `MoneyService.create.test.ts`
 - `MoneyService.math.test.ts`
@@ -657,9 +667,10 @@ find packages/domain/value-objects/__tests__/unit/money -name "*.test.ts" -exec 
 - `MoneySerializer.test.ts`
 
 **Пример замены:**
+
 ```typescript
 // БЫЛО:
-expect(money.amount().toNumber()).toBe(100);
+expect(money.value().toNumber()).toBe(100);
 
 // СТАЛО:
 expect(money.value().toNumber()).toBe(100);
@@ -723,10 +734,11 @@ describe('PriceService.create() - parse errors', () => {
 ### 6.5. Константы - обновить тесты
 
 **Price:**
+
 ```typescript
 // БЫЛО:
-const min = Price.min();
-const max = Price.max();
+const min = Price.MIN;
+const max = Price.MAX;
 
 // СТАЛО:
 const min = Price.MIN;
@@ -736,6 +748,7 @@ const max = Price.MAX;
 ### 6.6. Методы сравнения - добавить тесты
 
 **Price:**
+
 ```typescript
 describe('Price comparison methods', () => {
   it('should compare prices with isLessThan', () => {
@@ -759,6 +772,7 @@ describe('Price comparison methods', () => {
 ```
 
 **Money:**
+
 ```typescript
 describe('Money comparison methods', () => {
   it('should compare money with same currency', () => {
@@ -777,13 +791,13 @@ describe('Money comparison methods', () => {
   });
 
   it('should check if money is zero', () => {
-    expect(Money.ZERO_USDC.isZero()).toBe(true);
+    expect(Money.ZERO.USDC.isZero()).toBe(true);
     expect(Money.of(100).isZero()).toBe(false);
   });
 
   it('should check if money is positive', () => {
     expect(Money.of(100).isPositive()).toBe(true);
-    expect(Money.ZERO_USDC.isPositive()).toBe(false);
+    expect(Money.ZERO.USDC.isPositive()).toBe(false);
     expect(Money.of(-100).isPositive()).toBe(false);
   });
 });
@@ -796,8 +810,9 @@ describe('Money comparison methods', () => {
 ### 7.1. Money документация - amount → value
 
 **Файлы для обновления:**
+
 ```bash
-grep -r "\.amount()" packages/domain/value-objects/docs/money/
+grep -r "\.value()" packages/domain/value-objects/docs/money/
 ```
 
 - `docs/money/core.md`
@@ -807,9 +822,10 @@ grep -r "\.amount()" packages/domain/value-objects/docs/money/
 - `docs/money/migration.md`
 
 **Пример:**
+
 ```markdown
 // БЫЛО:
-const decimal = money.amount();
+const decimal = money.value();
 
 // СТАЛО:
 const decimal = money.value();
@@ -843,6 +859,7 @@ try {
   }
 }
 ```
+
 ```
 
 ### 7.3. Обновить примеры с константами
@@ -850,9 +867,9 @@ try {
 **Price docs:**
 ```markdown
 // БЫЛО:
-const min = Price.min();
-const max = Price.max();
-const half = Price.half();
+const min = Price.MIN;
+const max = Price.MAX;
+const half = Price.HALF;
 
 // СТАЛО:
 const min = Price.MIN;
@@ -863,6 +880,7 @@ const half = Price.HALF;
 ### 7.4. Добавить примеры новых методов сравнения
 
 **Price/Money docs:**
+
 ```markdown
 ## Методы сравнения
 
@@ -885,6 +903,7 @@ m1.isLessThan(m2);  // true
 m1.isZero();        // false
 m1.isPositive();    // true
 ```
+
 ```
 
 ### 7.5. Обновить architecture.md
@@ -905,8 +924,9 @@ npm run build
 ```
 
 Ожидаемые ошибки компиляции:
-- Все места где используется .amount() в Money
-- Все места где используется Price.min() вместо Price.MIN
+
+- Все места где используется .value() в Money
+- Все места где используется Price.MIN вместо Price.MIN
 
 Исправить все ошибки.
 
@@ -936,7 +956,8 @@ npm run lint:md
 ## Чек-лист выполнения
 
 ### Core изменения
-- [ ] Money.amount() → Money.value()
+
+- [ ] Money.value() → Money.value()
 - [ ] Создать PriceParseError
 - [ ] Создать QuantityParseError
 - [ ] Обновить Price.of() для ParseError
@@ -945,35 +966,42 @@ npm run lint:md
 - [ ] Переупорядочить проверки в Money.create()
 
 ### ErrorReason cleanup
+
 - [ ] Убрать EXCEEDS_MAX_PRICE и NEGATIVE_PRICE из PriceErrorReason
 - [ ] Убрать NEGATIVE_QUANTITY и EXCEEDS_MAX_QUANTITY из QuantityErrorReason
 - [ ] Заменить все использования на унифицированные
 
 ### Константы
+
 - [ ] Price: заменить методы на static readonly (MIN, MAX, HALF)
 - [ ] Price: удалить minValue()/maxValue()
 - [ ] Money: убрать lazy initialization ZERO_USDC
 
 ### Методы сравнения
+
 - [ ] Price: добавить isLessThan, isGreaterThan, etc
 - [ ] Money: добавить isLessThan, isGreaterThan, isZero, isPositive, isNegative
 - [ ] Money: добавить assertSameCurrency()
 
 ### Exports
+
 - [ ] Price: экспортировать PriceParseError
 - [ ] Quantity: экспортировать QuantityParseError
 
 ### Facade обновления
+
 - [ ] PriceService: обработка PriceParseError
 - [ ] QuantityService: обработка QuantityParseError
-- [ ] Обновить все вызовы Price.min()/max()/half()
+- [ ] Обновить все вызовы Price.MIN/max()/half()
 
 ### Adapters обновления
-- [ ] MoneyFormatter: .amount() → .value()
-- [ ] MoneySerializer: .amount() → .value()
+
+- [ ] MoneyFormatter: .value() → .value()
+- [ ] MoneySerializer: .value() → .value()
 
 ### Тесты
-- [ ] Money тесты: все .amount() → .value()
+
+- [ ] Money тесты: все .value() → .value()
 - [ ] Price тесты: добавить ParseError тесты
 - [ ] Quantity тесты: добавить ParseError тесты
 - [ ] PriceService тесты: ParseError handling
@@ -985,7 +1013,8 @@ npm run lint:md
 - [ ] Все тесты проходят (npm test)
 
 ### Документация
-- [ ] Money docs: все .amount() → .value()
+
+- [ ] Money docs: все .value() → .value()
 - [ ] Все docs: примеры ParseError
 - [ ] Все docs: константы через static readonly
 - [ ] Все docs: примеры методов сравнения
@@ -993,6 +1022,7 @@ npm run lint:md
 - [ ] README.md: обновить quick start примеры
 
 ### Проверки
+
 - [ ] npm run build - без ошибок
 - [ ] npm test - все тесты проходят
 - [ ] npm run lint - без ошибок

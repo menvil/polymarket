@@ -387,7 +387,7 @@ MoneyService.add(money1, money2)
 1. Check currencies match
     ↓ if not → Err(CurrencyMismatchError)
     ↓ if yes
-2. addDecimal(money1.amount(), money2.amount())  // @polymarket/math
+2. addDecimal(money1.value(), money2.value())  // @polymarket/math
     ↓
 3. Money.fromDecimal(sum, currency)
     ↓
