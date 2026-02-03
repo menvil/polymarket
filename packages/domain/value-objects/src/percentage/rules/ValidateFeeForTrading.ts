@@ -1,7 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPercentageError } from '@polymarket/errors';
 import { Percentage } from '../core/Percentage';
-import { PercentageErrorReason } from '../core/PercentageErrorReason';
+import { PercentageErrorReason } from '../errors/PercentageErrorReason';
 
 /**
  * Правило: Fee для торговых операций должна быть в диапазоне [0%, 5%]

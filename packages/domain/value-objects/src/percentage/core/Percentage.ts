@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { PercentageInvariantViolation } from './PercentageInvariantViolation';
+import { PercentageErrorReason } from '../errors/PercentageErrorReason';
 
 /**
  * Percentage - неизменяемый Value Object для процентных значений
@@ -99,26 +100,26 @@ export class Percentage {
   private constructor(private readonly v: Decimal) {
     // Инвариант 1: Not NaN
     if (v.isNaN()) {
-      throw new PercentageInvariantViolation('Percentage cannot be NaN', 'NAN');
+      throw new PercentageInvariantViolation('Percentage cannot be NaN', PercentageErrorReason.NAN);
     }
 
     // Инвариант 2: Must be finite
     if (!v.isFinite()) {
-      throw new PercentageInvariantViolation('Percentage must be finite', 'NON_FINITE');
+      throw new PercentageInvariantViolation('Percentage must be finite', PercentageErrorReason.NON_FINITE);
     }
 
     // Инвариант 3: Диапазон [MIN, MAX]
     if (v.lessThan(Percentage.MIN_PERCENTAGE)) {
       throw new PercentageInvariantViolation(
         `Percentage ${v} is below minimum ${Percentage.MIN_PERCENTAGE}`,
-        'OUT_OF_RANGE_LOW'
+        PercentageErrorReason.OUT_OF_RANGE_LOW
       );
     }
 
     if (v.greaterThan(Percentage.MAX_PERCENTAGE)) {
       throw new PercentageInvariantViolation(
         `Percentage ${v} exceeds maximum ${Percentage.MAX_PERCENTAGE}`,
-        'OUT_OF_RANGE_HIGH'
+        PercentageErrorReason.OUT_OF_RANGE_HIGH
       );
     }
   }

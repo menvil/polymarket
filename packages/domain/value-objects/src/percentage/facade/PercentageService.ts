@@ -4,7 +4,7 @@ import { InvalidPercentageError } from '@polymarket/errors';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
 import { Percentage } from '../core/Percentage';
 import { PercentageInvariantViolation } from '../core/PercentageInvariantViolation';
-import { PercentageErrorReason } from '../core/PercentageErrorReason';
+import { PercentageErrorReason } from '../errors/PercentageErrorReason';
 
 // ✅ Импорт централизованных функций из errorUtils
 import {
@@ -474,6 +474,21 @@ export class PercentageService {
     }
 
     const divisorDecimal = divisorResult.value;
+
+    // Проверка деления на ноль
+    if (divisorDecimal.isZero()) {
+      return Err(
+        new InvalidPercentageError('Cannot divide by zero', {
+          context: {
+            op: 'divide',
+            reason: PercentageErrorReason.DIVISION_BY_ZERO,
+            value: pct.value().toString(),
+            divisor: divisorDecimal.toString()
+          }
+        })
+      );
+    }
+
     const ctx = {
       value: pct.value().toString(),
       divisor: divisorDecimal.toString()

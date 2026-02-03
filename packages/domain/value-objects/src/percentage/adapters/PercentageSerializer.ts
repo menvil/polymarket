@@ -2,7 +2,7 @@ import { Result, Err } from '@polymarket/result';
 import { InvalidPercentageError } from '@polymarket/errors';
 import { Percentage } from '../core/Percentage';
 import { PercentageService } from '../facade/PercentageService';
-import { PercentageErrorReason } from '../core/PercentageErrorReason';
+import { PercentageErrorReason } from '../errors/PercentageErrorReason';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок

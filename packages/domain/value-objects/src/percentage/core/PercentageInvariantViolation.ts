@@ -1,3 +1,5 @@
+import { PercentageErrorReason } from '../errors/PercentageErrorReason';
+
 /**
  * Исключение при нарушении инвариантов Percentage
  *
@@ -14,11 +16,19 @@
  * - OUT_OF_RANGE_HIGH: значение > MAX_PERCENTAGE
  */
 export class PercentageInvariantViolation extends Error {
-  public readonly reason: 'NAN' | 'NON_FINITE' | 'OUT_OF_RANGE_LOW' | 'OUT_OF_RANGE_HIGH';
+  public readonly reason:
+    | PercentageErrorReason.NAN
+    | PercentageErrorReason.NON_FINITE
+    | PercentageErrorReason.OUT_OF_RANGE_LOW
+    | PercentageErrorReason.OUT_OF_RANGE_HIGH;
 
   constructor(
     message: string,
-    reason: 'NAN' | 'NON_FINITE' | 'OUT_OF_RANGE_LOW' | 'OUT_OF_RANGE_HIGH'
+    reason:
+      | PercentageErrorReason.NAN
+      | PercentageErrorReason.NON_FINITE
+      | PercentageErrorReason.OUT_OF_RANGE_LOW
+      | PercentageErrorReason.OUT_OF_RANGE_HIGH
   ) {
     super(`Percentage invariant violation: ${message}`);
     this.name = 'PercentageInvariantViolation';
