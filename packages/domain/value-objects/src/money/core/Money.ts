@@ -168,30 +168,6 @@ export class Money {
     return Money.create(value, currency);
   }
 
-  /**
-   * Создаёт Money с нулевой суммой.
-   *
-   * @param currency - Валюта (default 'USDC')
-   * @returns Money с суммой 0
-   *
-   * @remarks
-   * Для константного нуля используйте {@link ZERO}.
-   * Alias для удобства. Рекомендуется использовать Money.ZERO.USDC напрямую.
-   *
-   * @example
-   * ```typescript
-   * const zero = Money.zero();
-   * // Или лучше:
-   * const zero = Money.ZERO.USDC;
-   * ```
-   */
-  public static zero(currency: SupportedCurrency = 'USDC'): Money {
-    // Переиспользуем константу из Record
-    if (currency in Money.ZERO) {
-      return Money.ZERO[currency];
-    }
-    return Money.create(new Decimal(0), currency);
-  }
 
   /**
    * Возвращает сумму как Decimal.

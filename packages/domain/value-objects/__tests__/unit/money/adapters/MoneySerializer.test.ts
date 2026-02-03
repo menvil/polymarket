@@ -30,7 +30,7 @@ describe('MoneySerializer', () => {
     });
 
     it('сериализует ноль', () => {
-      const money = Money.zero();
+      const money = Money.ZERO.USDC;
       const json = MoneySerializer.toJSON(money);
 
       expect(json.amount).toBe('0');

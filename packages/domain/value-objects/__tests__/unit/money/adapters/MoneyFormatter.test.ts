@@ -29,7 +29,7 @@ describe('MoneyFormatter', () => {
     });
 
     it('форматирует ноль', () => {
-      const money = Money.zero();
+      const money = Money.ZERO.USDC;
       expect(MoneyFormatter.toFixed(money, 2)).toBe('0.00');
     });
 
@@ -76,7 +76,7 @@ describe('MoneyFormatter', () => {
     });
 
     it('форматирует ноль', () => {
-      const money = Money.zero();
+      const money = Money.ZERO.USDC;
       expect(MoneyFormatter.toCurrency(money)).toBe('$0.00 USDC');
     });
   });
@@ -113,7 +113,7 @@ describe('MoneyFormatter', () => {
     });
 
     it('форматирует ноль', () => {
-      const money = Money.zero();
+      const money = Money.ZERO.USDC;
       expect(MoneyFormatter.toCompact(money)).toBe('$0.0');
     });
 

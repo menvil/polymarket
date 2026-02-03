@@ -95,23 +95,22 @@ describe('Money core', () => {
     });
   });
 
-  describe('Money.zero()', () => {
-    it('создаёт ноль', () => {
-      const money = Money.zero();
+  describe('Money.ZERO singleton', () => {
+    it('создаёт ноль через singleton', () => {
+      const money = Money.ZERO.USDC;
       expect(money.value().toNumber()).toBe(0);
       expect(money.value().isZero()).toBe(true);
     });
 
-    it('валюта по умолчанию', () => {
-      expect(Money.zero().currency()).toBe('USDC');
+    it('валюта USDC', () => {
+      expect(Money.ZERO.USDC.currency()).toBe('USDC');
     });
 
-    it('возвращает singleton для USDC', () => {
-      const z1 = Money.zero();
-      const z2 = Money.zero();
-      // Для USDC возвращается singleton ZERO_USDC
+    it('singleton - всегда один и тот же экземпляр', () => {
+      const z1 = Money.ZERO.USDC;
+      const z2 = Money.ZERO.USDC;
+      // Singleton - один экземпляр
       expect(z1).toBe(z2);
-      expect(z1).toBe(Money.ZERO.USDC);
       expect(z1.value().equals(z2.value())).toBe(true);
       expect(z1.hasSameCurrency(z2)).toBe(true);
     });
