@@ -167,7 +167,8 @@ describe('MoneySerializer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.equals(original)).toBe(true);
+        expect(result.value.value().equals(original.value())).toBe(true);
+        expect(result.value.currency()).toBe(original.currency());
       }
     });
   });

@@ -221,6 +221,74 @@ export class Price {
   }
 
   /**
+   * Проверяет что эта цена меньше другой
+   *
+   * @param other - Другая цена
+   * @returns true если this < other
+   *
+   * @example
+   * ```typescript
+   * const p1 = Price.of(0.5);
+   * const p2 = Price.of(0.6);
+   * console.log(p1.isLessThan(p2)); // true
+   * ```
+   */
+  public isLessThan(other: Price): boolean {
+    return this.v.lessThan(other.v);
+  }
+
+  /**
+   * Проверяет что эта цена меньше или равна другой
+   *
+   * @param other - Другая цена
+   * @returns true если this <= other
+   *
+   * @example
+   * ```typescript
+   * const p1 = Price.of(0.5);
+   * const p2 = Price.of(0.5);
+   * console.log(p1.isLessThanOrEqual(p2)); // true
+   * ```
+   */
+  public isLessThanOrEqual(other: Price): boolean {
+    return this.v.lessThanOrEqualTo(other.v);
+  }
+
+  /**
+   * Проверяет что эта цена больше другой
+   *
+   * @param other - Другая цена
+   * @returns true если this > other
+   *
+   * @example
+   * ```typescript
+   * const p1 = Price.of(0.6);
+   * const p2 = Price.of(0.5);
+   * console.log(p1.isGreaterThan(p2)); // true
+   * ```
+   */
+  public isGreaterThan(other: Price): boolean {
+    return this.v.greaterThan(other.v);
+  }
+
+  /**
+   * Проверяет что эта цена больше или равна другой
+   *
+   * @param other - Другая цена
+   * @returns true если this >= other
+   *
+   * @example
+   * ```typescript
+   * const p1 = Price.of(0.5);
+   * const p2 = Price.of(0.5);
+   * console.log(p1.isGreaterThanOrEqual(p2)); // true
+   * ```
+   */
+  public isGreaterThanOrEqual(other: Price): boolean {
+    return this.v.greaterThanOrEqualTo(other.v);
+  }
+
+  /**
    * Проверяет что это минимальная цена
    *
    * @returns true если цена равна минимальной

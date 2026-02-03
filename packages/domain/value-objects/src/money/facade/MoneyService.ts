@@ -410,4 +410,180 @@ export class MoneyService {
       return this.createFromDecimal(quotient, m.currency(), 'divide', ctx);
     }, 'money', InvalidMoneyError);
   }
+
+  /**
+   * Сравнивает две суммы (a < b)
+   *
+   * @param a - Первая сумма
+   * @param b - Вторая сумма
+   * @returns Result<boolean, InvalidMoneyError>
+   * @throws Никогда - все ошибки в Result
+   *
+   * @example
+   * ```typescript
+   * const result = MoneyService.isLessThan(Money.of(100), Money.of(200));
+   * if (!result.ok) {
+   *   console.error('Currency mismatch');
+   * } else if (result.value) {
+   *   console.log('a < b');
+   * }
+   * ```
+   */
+  public static isLessThan(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
+    if (!a.hasSameCurrency(b)) {
+      return Err(new InvalidMoneyError('Cannot compare Money with different currencies', {
+        context: {
+          op: 'isLessThan',
+          reason: MoneyErrorReason.CURRENCY_MISMATCH,
+          expected: a.currency(),
+          actual: b.currency()
+        }
+      }));
+    }
+    return Ok(a.value().lessThan(b.value()));
+  }
+
+  /**
+   * Сравнивает две суммы (a <= b)
+   *
+   * @param a - Первая сумма
+   * @param b - Вторая сумма
+   * @returns Result<boolean, InvalidMoneyError>
+   * @throws Никогда - все ошибки в Result
+   */
+  public static isLessThanOrEqual(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
+    if (!a.hasSameCurrency(b)) {
+      return Err(new InvalidMoneyError('Cannot compare Money with different currencies', {
+        context: {
+          op: 'isLessThanOrEqual',
+          reason: MoneyErrorReason.CURRENCY_MISMATCH,
+          expected: a.currency(),
+          actual: b.currency()
+        }
+      }));
+    }
+    return Ok(a.value().lessThanOrEqualTo(b.value()));
+  }
+
+  /**
+   * Сравнивает две суммы (a > b)
+   *
+   * @param a - Первая сумма
+   * @param b - Вторая сумма
+   * @returns Result<boolean, InvalidMoneyError>
+   * @throws Никогда - все ошибки в Result
+   */
+  public static isGreaterThan(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
+    if (!a.hasSameCurrency(b)) {
+      return Err(new InvalidMoneyError('Cannot compare Money with different currencies', {
+        context: {
+          op: 'isGreaterThan',
+          reason: MoneyErrorReason.CURRENCY_MISMATCH,
+          expected: a.currency(),
+          actual: b.currency()
+        }
+      }));
+    }
+    return Ok(a.value().greaterThan(b.value()));
+  }
+
+  /**
+   * Сравнивает две суммы (a >= b)
+   *
+   * @param a - Первая сумма
+   * @param b - Вторая сумма
+   * @returns Result<boolean, InvalidMoneyError>
+   * @throws Никогда - все ошибки в Result
+   */
+  public static isGreaterThanOrEqual(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
+    if (!a.hasSameCurrency(b)) {
+      return Err(new InvalidMoneyError('Cannot compare Money with different currencies', {
+        context: {
+          op: 'isGreaterThanOrEqual',
+          reason: MoneyErrorReason.CURRENCY_MISMATCH,
+          expected: a.currency(),
+          actual: b.currency()
+        }
+      }));
+    }
+    return Ok(a.value().greaterThanOrEqualTo(b.value()));
+  }
+
+  /**
+   * Проверяет равенство двух сумм
+   *
+   * @param a - Первая сумма
+   * @param b - Вторая сумма
+   * @returns Result<boolean, InvalidMoneyError>
+   * @throws Никогда - все ошибки в Result
+   *
+   * @example
+   * ```typescript
+   * const result = MoneyService.equals(Money.of(100), Money.of(100));
+   * if (result.ok && result.value) {
+   *   console.log('Equal');
+   * }
+   * ```
+   */
+  public static equals(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
+    if (!a.hasSameCurrency(b)) {
+      return Err(new InvalidMoneyError('Cannot compare Money with different currencies', {
+        context: {
+          op: 'equals',
+          reason: MoneyErrorReason.CURRENCY_MISMATCH,
+          expected: a.currency(),
+          actual: b.currency()
+        }
+      }));
+    }
+    return Ok(a.value().equals(b.value()));
+  }
+
+  /**
+   * Проверяет что сумма равна нулю
+   *
+   * @param money - Money для проверки
+   * @returns true если сумма равна 0
+   *
+   * @example
+   * ```typescript
+   * MoneyService.isZero(Money.ZERO.USDC); // true
+   * MoneyService.isZero(Money.of(100));   // false
+   * ```
+   */
+  public static isZero(money: Money): boolean {
+    return money.value().isZero();
+  }
+
+  /**
+   * Проверяет что сумма положительная (> 0)
+   *
+   * @param money - Money для проверки
+   * @returns true если сумма > 0
+   *
+   * @example
+   * ```typescript
+   * MoneyService.isPositive(Money.of(100));  // true
+   * MoneyService.isPositive(Money.ZERO.USDC); // false
+   * ```
+   */
+  public static isPositive(money: Money): boolean {
+    return money.value().greaterThan(0);
+  }
+
+  /**
+   * Проверяет что сумма отрицательная (< 0)
+   *
+   * @param money - Money для проверки
+   * @returns true если сумма < 0
+   *
+   * @example
+   * ```typescript
+   * MoneyService.isNegative(Money.of(-100)); // true
+   * MoneyService.isNegative(Money.of(100));  // false
+   * ```
+   */
+  public static isNegative(money: Money): boolean {
+    return money.value().lessThan(0);
+  }
 }

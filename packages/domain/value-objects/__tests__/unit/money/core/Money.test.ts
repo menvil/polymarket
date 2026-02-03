@@ -112,24 +112,21 @@ describe('Money core', () => {
       // Для USDC возвращается singleton ZERO_USDC
       expect(z1).toBe(z2);
       expect(z1).toBe(Money.ZERO.USDC);
-      expect(z1.equals(z2)).toBe(true);
+      expect(z1.value().equals(z2.value())).toBe(true);
+      expect(z1.hasSameCurrency(z2)).toBe(true);
     });
   });
 
-  describe('equals()', () => {
-    it('true для равных', () => {
+  describe('hasSameCurrency()', () => {
+    it('true для одной валюты', () => {
       const m1 = Money.of(100);
-      const m2 = Money.of(100);
-      expect(m1.equals(m2)).toBe(true);
-    });
-
-    it('false для разных сумм', () => {
-      expect(Money.of(100).equals(Money.of(200))).toBe(false);
+      const m2 = Money.of(200);
+      expect(m1.hasSameCurrency(m2)).toBe(true);
     });
 
     it('true для одного объекта', () => {
       const m = Money.of(100);
-      expect(m.equals(m)).toBe(true);
+      expect(m.hasSameCurrency(m)).toBe(true);
     });
   });
 

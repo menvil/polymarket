@@ -222,3 +222,39 @@ describe('Price.isMax()', () => {
     expect(price.isMax()).toBe(false);
   });
 });
+
+describe('Price comparison methods', () => {
+  describe('isLessThan()', () => {
+    it('должен вернуть true если this < other', () => {
+      const p1 = Price.of(0.5);
+      const p2 = Price.of(0.6);
+      expect(p1.isLessThan(p2)).toBe(true);
+      expect(p2.isLessThan(p1)).toBe(false);
+    });
+  });
+
+  describe('isLessThanOrEqual()', () => {
+    it('должен вернуть true если this <= other', () => {
+      const p1 = Price.of(0.5);
+      const p2 = Price.of(0.5);
+      expect(p1.isLessThanOrEqual(p2)).toBe(true);
+    });
+  });
+
+  describe('isGreaterThan()', () => {
+    it('должен вернуть true если this > other', () => {
+      const p1 = Price.of(0.6);
+      const p2 = Price.of(0.5);
+      expect(p1.isGreaterThan(p2)).toBe(true);
+      expect(p2.isGreaterThan(p1)).toBe(false);
+    });
+  });
+
+  describe('isGreaterThanOrEqual()', () => {
+    it('должен вернуть true если this >= other', () => {
+      const p1 = Price.of(0.5);
+      const p2 = Price.of(0.5);
+      expect(p1.isGreaterThanOrEqual(p2)).toBe(true);
+    });
+  });
+});

@@ -225,23 +225,6 @@ export class Money {
   }
 
   /**
-   * Проверяет строгое равенство.
-   *
-   * @param other - Другой Money
-   * @returns true если валюта и сумма идентичны
-   *
-   * @example
-   * ```typescript
-   * const m1 = Money.of(100);
-   * const m2 = Money.of(100);
-   * console.log(m1.equals(m2)); // true
-   * ```
-   */
-  public equals(other: Money): boolean {
-    return this.cur === other.cur && this.amt.equals(other.amt);
-  }
-
-  /**
    * Проверяет совпадение валют.
    *
    * @param other - Другой Money
