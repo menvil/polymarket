@@ -22,7 +22,7 @@ const result = BalanceService.create(
   Money.of(2000)   // reserved: $20.00
 );
 
-if (!result.ok) {
+if (isErr(result)) {
   console.error(result.error.context?.reason);
   return;
 }
@@ -32,7 +32,6 @@ const balance = result.value;
 // Query методы
 console.log(balance.total().value());           // 12000 ($120.00)
 console.log(balance.reservedPercentage());       // 16.67%
-console.log(balance.canAfford(Money.of(5000)));  // true
 
 // Резервирование средств (для открытия ордера)
 const reserveResult = BalanceService.reserve(balance, Money.of(3000));
@@ -143,7 +142,7 @@ Balance реализован по паттерну **Throws+Facade**:
 import { BalanceErrorReason } from '@polymarket/value-objects/balance';
 
 // Type-safe проверка ошибок
-if (!result.ok) {
+if (isErr(result)) {
   switch (result.error.context?.reason) {
     case BalanceErrorReason.INSUFFICIENT_FUNDS:
       console.log('Недостаточно available для резервирования');

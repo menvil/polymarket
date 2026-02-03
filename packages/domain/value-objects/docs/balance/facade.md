@@ -14,7 +14,7 @@ const result = BalanceService.create(
   Money.of(2000)   // $20.00 reserved
 );
 
-if (!result.ok) {
+if (isErr(result)) {
   console.error(result.error.context?.reason);
   return;
 }
@@ -37,7 +37,7 @@ const balance = result.value;
 ```typescript
 const result = BalanceService.reserve(balance, Money.of(3000));
 
-if (!result.ok) {
+if (isErr(result)) {
   if (result.error.context?.reason === BalanceErrorReason.INSUFFICIENT_FUNDS) {
     console.log('Недостаточно средств для резервирования');
   }
@@ -71,7 +71,7 @@ const newBalance = result.value;
 ```typescript
 const result = BalanceService.release(balance, Money.of(2000));
 
-if (!result.ok) {
+if (isErr(result)) {
   if (result.error.context?.reason === BalanceErrorReason.INSUFFICIENT_RESERVED) {
     console.log('Недостаточно зарезервированных средств');
   }
@@ -126,6 +126,78 @@ if (result.ok) {
 
 ---
 
+### `equals(balance1, balance2)`
+
+Сравнивает два баланса на точное равенство (strict equality, без epsilon).
+
+```typescript
+const balance1 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000)));
+const balance2 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000)));
+const balance3 = expectOk(BalanceService.create(Money.of(10001), Money.of(2000)));
+
+const equals1 = BalanceService.equals(balance1, balance2);
+console.log(equals1.ok && equals1.value); // true
+
+const equals2 = BalanceService.equals(balance1, balance3);
+console.log(equals2.ok && equals2.value); // false
+```
+
+**Алгоритм:**
+
+1. Проверка совпадения валют (balance1.currency === balance2.currency)
+2. Сравнение available через MoneyService.equals()
+3. Сравнение reserved через MoneyService.equals()
+4. Возвращает true только если оба поля равны (strict equality)
+
+**Возможные ошибки:**
+
+- `CURRENCY_MISMATCH` — валюты балансов не совпадают
+
+**Особенности:**
+
+- ✅ Strict equality — точное совпадение без epsilon
+- ✅ Проверяет available И reserved
+- ✅ Использует MoneyService.equals() внутри
+
+---
+
+### `canAfford(balance, amount)`
+
+Проверяет, достаточно ли доступных средств для указанной суммы.
+
+```typescript
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000)));
+
+// Проверка доступности
+const canAfford1 = BalanceService.canAfford(balance, Money.of(5000));
+console.log(canAfford1.ok && canAfford1.value); // true
+
+const canAfford2 = BalanceService.canAfford(balance, Money.of(15000));
+console.log(canAfford2.ok && canAfford2.value); // false
+
+// Граничный случай (available === amount)
+const canAfford3 = BalanceService.canAfford(balance, Money.of(10000));
+console.log(canAfford3.ok && canAfford3.value); // true
+```
+
+**Алгоритм:**
+
+1. Проверка совпадения валют (balance.currency === amount.currency)
+2. Сравнение available >= amount через MoneyService.isGreaterThanOrEqual()
+3. Возвращает true если available >= amount
+
+**Возможные ошибки:**
+
+- `CURRENCY_MISMATCH` — валюта amount не совпадает с балансом
+
+**Особенности:**
+
+- ✅ Проверяет только available (reserved не учитывается)
+- ✅ Граничный случай: available === amount → true
+- ✅ Используется перед reserve() для проверки возможности операции
+
+---
+
 ## Контракт Never Throw
 
 **Гарантии:**
@@ -154,7 +226,7 @@ console.log(balance2.available().value()); // 7000
 ```typescript
 const result = BalanceService.reserve(balance, amount);
 
-if (!result.ok) {
+if (isErr(result)) {
   switch (result.error.context?.reason) {
     case BalanceErrorReason.INSUFFICIENT_FUNDS:
       // Обработка недостаточных средств
@@ -184,7 +256,7 @@ if (!result.ok && result.error.context?.reason === BalanceErrorReason.INSUFFICIE
 Каждая ошибка содержит контекст с полезной информацией:
 
 ```typescript
-if (!result.ok) {
+if (isErr(result)) {
   const ctx = result.error.context;
   console.log('Operation:', ctx.op);              // "reserve"
   console.log('Reason:', ctx.reason);             // "INSUFFICIENT_FUNDS"
@@ -206,7 +278,7 @@ const newReservedResult = this.addMoney(balance.reserved(), amount);
 // subtractMoney делегирует MoneyService
 private static subtractMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
   const result = MoneyService.subtract(a, b);
-  if (!result.ok) {
+  if (isErr(result)) {
     return Err(new InvalidBalanceError(result.error.message, {
       context: { reason: BalanceErrorReason.INVALID_FORMAT, ... }
     }));

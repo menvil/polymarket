@@ -13,7 +13,7 @@ const result = BalanceService.create(
   Money.of(2000)   // $20.00 reserved
 );
 
-if (!result.ok) {
+if (isErr(result)) {
   console.error('Ошибка создания:', result.error.message);
   return;
 }
@@ -29,10 +29,6 @@ console.log(balance.total().value().toNumber()); // 12000
 
 // Процент резервирования
 console.log(balance.reservedPercentage()); // 16.67
-
-// Проверка доступности средств
-console.log(balance.canAfford(Money.of(5000))); // true
-console.log(balance.canAfford(Money.of(15000))); // false
 
 // Проверка пустоты
 console.log(balance.isEmpty()); // false
@@ -121,7 +117,8 @@ console.log(json);
 const deserializedResult = BalanceSerializer.fromJSON(json);
 if (deserializedResult.ok) {
   const deserializedBalance = deserializedResult.value;
-  console.log(deserializedBalance.equals(balance, new Decimal(0))); // true
+  const equalsResult = BalanceService.equals(deserializedBalance, balance);
+  console.log(equalsResult.ok && equalsResult.value); // true
 }
 ```
 
@@ -134,7 +131,7 @@ async function fetchUserBalance(userId: string): Promise<Balance | null> {
   const json = await response.json();
 
   const result = BalanceSerializer.fromJSON(json);
-  if (!result.ok) {
+  if (isErr(result)) {
     console.error('Ошибка десериализации:', result.error.message);
     return null;
   }
@@ -215,7 +212,7 @@ function handleBalanceOperation(
     ? BalanceService.reserve(balance, amount)
     : BalanceService.release(balance, amount);
 
-  if (!result.ok) {
+  if (isErr(result)) {
     const { reason, op } = result.error.context || {};
 
     switch (reason) {
@@ -275,18 +272,14 @@ function reserveWithFallback(
 ### Проверка доступности резервирования
 
 ```typescript
-function canReserve(balance: Balance, amount: Money): boolean {
-  // Проверка валюты
-  if (amount.currency() !== balance.currency()) {
-    return false;
-  }
-
-  // Проверка достаточности средств
-  return balance.canAfford(amount);
+function canReserve(balance: Balance, amount: Money): Result<boolean, InvalidBalanceError> {
+  // Проверка достаточности средств (включая проверку валюты)
+  return BalanceService.canAfford(balance, amount);
 }
 
 // Использование
-if (canReserve(balance, orderAmount)) {
+const canReserveResult = canReserve(balance, orderAmount);
+if (canReserveResult.ok && canReserveResult.value) {
   const result = BalanceService.reserve(balance, orderAmount);
   // ...
 } else {
@@ -313,10 +306,14 @@ function canRelease(balance: Balance, amount: Money): boolean {
 ### Создание пустого баланса
 
 ```typescript
-const emptyBalance = Balance.zero('USDC');
+// Singleton - всегда один и тот же экземпляр
+const emptyBalance = Balance.ZERO.USDC;
 console.log(emptyBalance.available().value()); // 0
 console.log(emptyBalance.reserved().value());  // 0
 console.log(emptyBalance.isEmpty()); // true
+
+// Проверка singleton
+console.log(Balance.ZERO.USDC === Balance.ZERO.USDC); // true
 ```
 
 ### Создание баланса без резерва

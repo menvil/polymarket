@@ -39,7 +39,7 @@ const balanceResult = BalanceService.create(
   Money.of(2000)
 );
 
-if (!balanceResult.ok) {
+if (isErr(balanceResult)) {
   console.error(balanceResult.error.message);
   return;
 }
@@ -147,7 +147,7 @@ try {
 ```typescript
 const result = BalanceService.reserve(balance, Money.of(15000));
 
-if (!result.ok) {
+if (isErr(result)) {
   // Типизированная проверка ошибок
   switch (result.error.context?.reason) {
     case BalanceErrorReason.INSUFFICIENT_FUNDS:
@@ -180,12 +180,102 @@ const canAfford = balance.available >= requestedAmount;
 ```typescript
 const total = balance.total().value();
 const reservedPercent = balance.reservedPercentage();
-const canAfford = balance.canAfford(Money.of(requestedAmount));
-```
+
+// canAfford перенесён в BalanceService (возвращает Result)
+const canAffordResult = BalanceService.canAfford(balance, Money.of(requestedAmount));
+const canAfford = canAffordResult.ok && canAffordResult.value;
 
 ---
 
-### 5. ✅ Сериализация через Adapters
+### 5. ✅ Замените Balance.zero() на Balance.ZERO singleton
+
+**Было:**
+
+```typescript
+// Создавал новый экземпляр каждый раз
+const emptyBalance = Balance.zero('USDC');
+```
+
+**Стало:**
+
+```typescript
+// Singleton - всегда один и тот же экземпляр
+const emptyBalance = Balance.ZERO.USDC;
+
+// Проверка singleton
+console.log(Balance.ZERO.USDC === Balance.ZERO.USDC); // true
+```
+
+**Преимущества:**
+- ✅ Экономия памяти (один экземпляр на валюту)
+- ✅ Быстрое сравнение по ссылке
+- ✅ Автоматическая поддержка новых валют
+
+---
+
+### 6. ✅ Замените balance.equals() на BalanceService.equals()
+
+**Было:**
+
+```typescript
+// equals() был в Core и требовал epsilon
+const isEqual = balance1.equals(balance2, new Decimal(0.01));
+```
+
+**Стало:**
+
+```typescript
+// equals() переехал в Facade и использует strict equality
+const equalsResult = BalanceService.equals(balance1, balance2);
+if (equalsResult.ok) {
+  console.log(equalsResult.value); // true/false
+}
+```
+
+**Изменения:**
+- ✅ Strict equality (без epsilon)
+- ✅ Возвращает Result<boolean, InvalidBalanceError>
+- ✅ Проверяет совпадение валют
+
+---
+
+### 7. ✅ Замените balance.canAfford() на BalanceService.canAfford()
+
+**Было:**
+
+```typescript
+// canAfford() был в Core и возвращал boolean
+const canAfford = balance.canAfford(Money.of(5000)); // boolean
+if (canAfford) {
+  // резервируем
+}
+```
+
+**Стало:**
+
+```typescript
+// canAfford() переехал в Facade и возвращает Result
+const canAffordResult = BalanceService.canAfford(balance, Money.of(5000));
+if (canAffordResult.ok && canAffordResult.value) {
+  // резервируем
+}
+
+// Обработка ошибки несовпадения валют
+if (!canAffordResult.ok) {
+  if (canAffordResult.error.context?.reason === BalanceErrorReason.CURRENCY_MISMATCH) {
+    console.error('Валюты не совпадают');
+  }
+}
+```
+
+**Изменения:**
+- ✅ Возвращает Result<boolean, InvalidBalanceError>
+- ✅ Проверяет совпадение валют (может вернуть CURRENCY_MISMATCH)
+- ✅ Использует MoneyService.isGreaterThanOrEqual() внутри
+
+---
+
+### 8. ✅ Сериализация через Adapters
 
 **Было:**
 
@@ -210,7 +300,7 @@ const json = BalanceSerializer.toJSON(balance);
 
 // Десериализация с валидацией
 const result = BalanceSerializer.fromJSON(json);
-if (!result.ok) {
+if (isErr(result)) {
   console.error(result.error.message);
   return;
 }
@@ -219,7 +309,7 @@ const deserializedBalance = result.value;
 
 ---
 
-### 6. ✅ Форматирование через Adapters
+### 9. ✅ Форматирование через Adapters
 
 **Было:**
 
@@ -281,7 +371,7 @@ const balance = BalanceService.create(Money.of(10000), Money.of(2000)).value; //
 
 ```typescript
 const result = BalanceService.create(Money.of(10000), Money.of(2000));
-if (!result.ok) {
+if (isErr(result)) {
   console.error(result.error.message);
   return;
 }
@@ -386,7 +476,7 @@ import { Money } from '@polymarket/value-objects/money';
 
 const balanceResult = BalanceService.create(Money.of(10000), Money.of(2000));
 
-if (!balanceResult.ok) {
+if (isErr(balanceResult)) {
   console.error(balanceResult.error.message);
   return;
 }

@@ -17,8 +17,8 @@ Balance реализован по паттерну **Throws+Facade** с 4 сло
 
 - ✅ Throws исключения при нарушении инвариантов
 - ✅ Иммутабельность через `readonly` поля
-- ✅ Query методы (total, isEmpty, canAfford, equals)
-- ✅ Helpers (zero, withZeroReserved)
+- ✅ Query методы (total, isEmpty, hasReserved, reservedPercentage, hasSameCurrency)
+- ✅ Helpers (ZERO singleton, withZeroReserved)
 
 **Инварианты:**
 
@@ -28,10 +28,28 @@ private constructor(
   private readonly avail: Money,
   private readonly res: Money
 ) {
+  // Инвариант 0a: Not NaN (defense-in-depth, Money уже проверяет)
+  if (avail.value().isNaN() || res.value().isNaN()) {
+    throw new BalanceInvariantViolation('Balance amounts cannot be NaN', {
+      reason: BalanceErrorReason.NAN,
+      available: avail.value().toString(),
+      reserved: res.value().toString()
+    });
+  }
+
+  // Инвариант 0b: Must be finite (defense-in-depth, Money уже проверяет)
+  if (!avail.value().isFinite() || !res.value().isFinite()) {
+    throw new BalanceInvariantViolation('Balance amounts must be finite', {
+      reason: BalanceErrorReason.NON_FINITE,
+      available: avail.value().toString(),
+      reserved: res.value().toString()
+    });
+  }
+
   // Инвариант 1: available >= 0
   if (avail.value().isNegative()) {
     throw new BalanceInvariantViolation('Available amount cannot be negative', {
-      reason: 'NEGATIVE_AVAILABLE',
+      reason: BalanceErrorReason.NEGATIVE_AVAILABLE,
       available: avail.value().toNumber()
     });
   }
@@ -39,7 +57,7 @@ private constructor(
   // Инвариант 2: reserved >= 0
   if (res.value().isNegative()) {
     throw new BalanceInvariantViolation('Reserved amount cannot be negative', {
-      reason: 'NEGATIVE_RESERVED',
+      reason: BalanceErrorReason.NEGATIVE_RESERVED,
       reserved: res.value().toNumber()
     });
   }
@@ -47,7 +65,7 @@ private constructor(
   // Инвариант 3: same currency
   if (avail.currency() !== res.currency()) {
     throw new BalanceInvariantViolation('Available and reserved must have the same currency', {
-      reason: 'CURRENCY_MISMATCH',
+      reason: BalanceErrorReason.CURRENCY_MISMATCH,
       availableCurrency: avail.currency(),
       reservedCurrency: res.currency()
     });
@@ -146,6 +164,18 @@ export class BalanceService {
     balance: Balance,
     newAvailable: Money
   ): Result<Balance, InvalidBalanceError>
+
+  // Сравнение балансов (strict equality)
+  public static equals(
+    balance1: Balance,
+    balance2: Balance
+  ): Result<boolean, InvalidBalanceError>
+
+  // Проверка достаточности средств
+  public static canAfford(
+    balance: Balance,
+    amount: Money
+  ): Result<boolean, InvalidBalanceError>
 }
 ```
 
@@ -233,6 +263,8 @@ export enum BalanceErrorReason {
   CURRENCY_MISMATCH = 'CURRENCY_MISMATCH',         // несовпадение валют
   NEGATIVE_AVAILABLE = 'NEGATIVE_AVAILABLE',       // available < 0
   NEGATIVE_RESERVED = 'NEGATIVE_RESERVED',         // reserved < 0
+  NAN = 'NAN',                                     // amount является NaN
+  NON_FINITE = 'NON_FINITE',                       // amount не является finite
   INVALID_FORMAT = 'INVALID_FORMAT',               // ошибка парсинга
   UNSUPPORTED_CURRENCY = 'UNSUPPORTED_CURRENCY'    // неподдерживаемая валюта
 }
@@ -240,13 +272,31 @@ export enum BalanceErrorReason {
 
 ## Композиция с Money
 
-Balance не дублирует логику денежных операций — делегирует MoneyService:
+Balance построен на базе Money и делегирует MoneyService для арифметических операций в BalanceService:
+
+**total() - прямой расчёт через Decimal (Core Layer):**
 
 ```typescript
-// Внутри BalanceService
+// Balance.total() - безопасно благодаря инвариантам
+public total(): Money {
+  // Прямое вычисление через Decimal (не нужен MoneyService)
+  const totalAmount = this.avail.value().plus(this.res.value());
+
+  // Безопасно потому что:
+  // - Валюты гарантированно совпадают (инвариант Balance)
+  // - Оба значения >= 0 (инварианты Balance)
+  // - Оба значения finite и not NaN (инварианты Balance)
+  return Money.fromDecimal(totalAmount, this.avail.currency());
+}
+```
+
+**Арифметика в BalanceService (Facade Layer):**
+
+```typescript
+// Внутри BalanceService - делегируем MoneyService
 private static addMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
   const result = MoneyService.add(a, b);
-  if (!result.ok) {
+  if (isErr(result)) {
     return Err(new InvalidBalanceError(result.error.message, {
       context: {
         ...result.error.context,
