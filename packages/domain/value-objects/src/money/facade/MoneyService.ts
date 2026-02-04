@@ -111,7 +111,7 @@ export class MoneyService {
    * @remarks
    * Внутренний helper для использования в wrapOp и math операциях.
    * НЕ парсит - принимает готовый Decimal.
-   * Только проверяет инварианты через Money.fromDecimal().
+   * Только проверяет инварианты через Money.of().
    *
    * Ловит MoneyInvariantViolation и мапит через mapInvariantToOverflow:
    * - EXCEEDS_MAX_AMOUNT, NON_FINITE, NAN → ArithmeticOverflowError
@@ -128,7 +128,7 @@ export class MoneyService {
     ctx: Record<string, unknown> = {}
   ): Result<Money, InvalidMoneyError> {
     try {
-      return Ok(Money.fromDecimal(decimal, currency));
+      return Ok(Money.of(decimal, currency));
     } catch (error) {
       if (error instanceof MoneyInvariantViolation) {
         return this.mapInvariantToOverflow(op, {
@@ -148,7 +148,7 @@ export class MoneyService {
    *
    * @param op - Операция (add/subtract/multiply/divide)
    * @param ctx - Контекст (a, b, result, amount, factor, divisor, etc.)
-   * @param e - MoneyInvariantViolation из Money.fromDecimal()
+   * @param e - MoneyInvariantViolation из Money.of()
    * @returns Err(InvalidMoneyError) с reason в context
    *
    * @remarks
@@ -187,7 +187,7 @@ export class MoneyService {
    * Процесс:
    * 1. Проверка валют (ДО wrapOp - это не math error)
    * 2. Операция через @polymarket/math
-   * 3. Money.fromDecimal() (проверит инварианты через createFromDecimal)
+   * 3. Money.of() (проверит инварианты через createFromDecimal)
    * 4. Маппинг через mapInvariantToOverflow
    *
    * Service НЕ проверяет MAX руками.
@@ -235,7 +235,7 @@ export class MoneyService {
    * Процесс:
    * 1. Проверка валют (ДО wrapOp - это не math error)
    * 2. Операция через @polymarket/math
-   * 3. Money.fromDecimal() (проверит инварианты через createFromDecimal)
+   * 3. Money.of() (проверит инварианты через createFromDecimal)
    * 4. Маппинг через mapInvariantToOverflow
    *
    * @example

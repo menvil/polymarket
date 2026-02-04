@@ -262,7 +262,7 @@ export class Balance {
 
     // Создаём Money из результата
     // Безопасно благодаря инвариантам Balance
-    return Money.fromDecimal(totalAmount, this._available.currency());
+    return Money.of(totalAmount, this._available.currency());
   }
 
   /**

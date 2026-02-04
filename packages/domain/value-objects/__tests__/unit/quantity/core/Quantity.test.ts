@@ -89,36 +89,36 @@ describe('Quantity.of()', () => {
   });
 });
 
-describe('Quantity.fromDecimal()', () => {
+describe('Quantity.of()', () => {
   it('должен создать Quantity из Decimal', () => {
     const decimal = new Decimal(10);
-    const qty = Quantity.fromDecimal(decimal);
+    const qty = Quantity.of(decimal);
     expect(qty).toBeInstanceOf(Quantity);
     expect(qty.value().toNumber()).toBe(10);
   });
 
   it('не должен клонировать Decimal (использует как есть)', () => {
     const decimal = new Decimal(10);
-    const qty = Quantity.fromDecimal(decimal);
+    const qty = Quantity.of(decimal);
     // Проверяем что это тот же объект (ссылка)
     expect(qty.value()).toBe(decimal);
   });
 
   it('должен бросить для negative Decimal', () => {
     const decimal = new Decimal(-1);
-    expect(() => Quantity.fromDecimal(decimal)).toThrow(QuantityInvariantViolation);
+    expect(() => Quantity.of(decimal)).toThrow(QuantityInvariantViolation);
   });
 
   it('должен бросить для non-finite Decimal', () => {
     const decimal = new Decimal(Infinity);
-    expect(() => Quantity.fromDecimal(decimal)).toThrow(QuantityInvariantViolation);
+    expect(() => Quantity.of(decimal)).toThrow(QuantityInvariantViolation);
   });
 
   it('должен работать с результатом math операций', () => {
     const d1 = new Decimal(10);
     const d2 = new Decimal(5);
     const sum = d1.plus(d2); // Decimal math
-    const qty = Quantity.fromDecimal(sum);
+    const qty = Quantity.of(sum);
     expect(qty.value().toNumber()).toBe(15);
   });
 });
@@ -159,7 +159,7 @@ describe('Quantity.value()', () => {
 
   it('должен вернуть тот же Decimal объект', () => {
     const decimal = new Decimal(10);
-    const qty = Quantity.fromDecimal(decimal);
+    const qty = Quantity.of(decimal);
     expect(qty.value()).toBe(decimal);
   });
 });

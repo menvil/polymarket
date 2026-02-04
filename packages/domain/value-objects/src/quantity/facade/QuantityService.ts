@@ -44,7 +44,7 @@ export class QuantityService {
    * ПУБЛИЧНЫЙ способ создания Quantity.
    * Возвращает Result вместо исключений.
    *
-   * Core инварианты проверяются автоматически через Quantity.fromDecimal():
+   * Core инварианты проверяются автоматически через Quantity.of():
    * - finite (не NaN, не Infinity)
    * - non-negative (>= 0)
    *
@@ -73,7 +73,7 @@ export class QuantityService {
 
     try {
       // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
-      const quantity = Quantity.fromDecimal(decimalResult.value);
+      const quantity = Quantity.of(decimalResult.value);
       return Ok(quantity);
     } catch (error) {
       // QuantityInvariantViolation - доменные ограничения Core

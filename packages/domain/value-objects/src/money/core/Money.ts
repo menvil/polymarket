@@ -66,69 +66,53 @@ export class Money {
     Object.fromEntries(
       SUPPORTED_CURRENCIES.map(currency => [
         currency,
-        Money.fromDecimal(new Decimal(0), currency)
+        Money.of(new Decimal(0), currency)
       ])
     ) as Record<SupportedCurrency, Money>;
 
   private constructor(
     private readonly _amount: Decimal,
     private readonly _currency: SupportedCurrency
-  ) {}
-
-  /**
-   * Единственная точка создания с проверкой инвариантов.
-   *
-   * @param amount - Decimal сумма
-   * @param currency - Валюта
-   * @returns Money
-   * @throws {MoneyInvariantViolation}
-   *
-   * @remarks
-   * PRIVATE метод. Внешний код использует: of(), fromDecimal(), zero().
-   *
-   * Проверяет все инварианты в одном месте.
-   */
-  private static create(amount: Decimal, currency: SupportedCurrency): Money {
+  ) {
     // Инвариант 1: Not NaN (самое базовое)
-    if (amount.isNaN()) {
+    if (_amount.isNaN()) {
       throw new MoneyInvariantViolation('Amount is NaN', MoneyErrorReason.NAN);
     }
 
     // Инвариант 2: Finite
-    if (!amount.isFinite()) {
+    if (!_amount.isFinite()) {
       throw new MoneyInvariantViolation('Amount must be finite', MoneyErrorReason.NON_FINITE);
     }
 
     // Инвариант 3: Supported currency
-    if (!Money.SUPPORTED_CURRENCIES.has(currency)) {
+    if (!Money.SUPPORTED_CURRENCIES.has(_currency)) {
       throw new MoneyInvariantViolation(
-        `Unsupported currency: ${currency}`,
+        `Unsupported currency: ${_currency}`,
         MoneyErrorReason.UNSUPPORTED_CURRENCY
       );
     }
 
     // Инвариант 4: Max amount
-    if (amount.abs().greaterThan(Money.MAX_AMOUNT)) {
+    if (_amount.abs().greaterThan(Money.MAX_AMOUNT)) {
       throw new MoneyInvariantViolation(
         `Amount exceeds maximum: ${Money.MAX_AMOUNT}`,
         MoneyErrorReason.EXCEEDS_MAX_AMOUNT
       );
     }
-
-    return new Money(amount, currency);
   }
 
   /**
-   * Создаёт Money из числа или строки.
+   * Создаёт Money из числа, строки или Decimal.
    *
-   * @param value - Сумма (число или строка)
+   * @param value - Сумма (число, строка или Decimal)
    * @param currency - Валюта (default 'USDC')
    * @returns Money
    * @throws {Error} Ошибка парсинга Decimal (если value невалидный)
    * @throws {MoneyInvariantViolation} Нарушение инвариантов
    *
    * @remarks
-   * Парсит value в Decimal, затем вызывает create().
+   * Парсит value в Decimal если нужно, затем создаёт Money.
+   * Все проверки инвариантов выполняются в конструкторе.
    *
    * Философия: данные должны быть адекватными на входе.
    * Parse fail → бросит ошибку Decimal.
@@ -136,36 +120,16 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const m1 = Money.of(100);
-   * const m2 = Money.of('42.50', 'USDC');
+   * const m1 = Money.of(100);                    // from number
+   * const m2 = Money.of('42.50', 'USDC');        // from string
+   * const m3 = Money.of(new Decimal('100.5'));   // from Decimal
    * ```
    */
-  public static of(value: number | string, currency: SupportedCurrency = 'USDC'): Money {
+  public static of(value: number | string | Decimal, currency: SupportedCurrency = 'USDC'): Money {
     // Decimal бросит свою ошибку если value невалидный
-    // create() бросит MoneyInvariantViolation если нарушены инварианты
-    return Money.create(new Decimal(value), currency);
-  }
-
-  /**
-   * Создаёт Money из Decimal.
-   *
-   * @param value - Decimal сумма
-   * @param currency - Валюта (default 'USDC')
-   * @returns Money
-   * @throws {MoneyInvariantViolation}
-   *
-   * @remarks
-   * НЕ парсит — принимает Decimal as-is.
-   * Используется в MoneyService после math ops.
-   *
-   * @example
-   * ```typescript
-   * const decimal = new Decimal('123.456');
-   * const money = Money.fromDecimal(decimal);
-   * ```
-   */
-  public static fromDecimal(value: Decimal, currency: SupportedCurrency = 'USDC'): Money {
-    return Money.create(value, currency);
+    // constructor бросит MoneyInvariantViolation если нарушены инварианты
+    const decimal = value instanceof Decimal ? value : new Decimal(value);
+    return new Money(decimal, currency);
   }
 
   /**

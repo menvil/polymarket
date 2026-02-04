@@ -49,12 +49,9 @@ export class QuantityInvariantViolation extends Error {
  * @example
  * ```typescript
  * // Создание
- * const qty1 = Quantity.of(10);         // from number
- * const qty2 = Quantity.of("15.5");     // from string
- *
- * // Создание из готового Decimal (без парсинга)
- * const decimal = new Decimal(20);
- * const qty3 = Quantity.fromDecimal(decimal);
+ * const qty1 = Quantity.of(10);              // from number
+ * const qty2 = Quantity.of("15.5");          // from string
+ * const qty3 = Quantity.of(new Decimal(20)); // from Decimal
  *
  * // Константы
  * const zero = Quantity.ZERO;
@@ -110,6 +107,8 @@ export class Quantity {
    * Без проверки minSize - это бизнес-правило.
    * Для проверки minSize используй QuantityService.createForOrder()
    *
+   * Все проверки инвариантов выполняются в конструкторе.
+   *
    * @param value - Значение для парсинга (number, string, или Decimal)
    * @returns Новый Quantity
    * @throws {QuantityInvariantViolation} Если значение не соответствует инвариантам
@@ -122,35 +121,7 @@ export class Quantity {
    * ```
    */
   public static of(value: number | string | Decimal): Quantity {
-    return value instanceof Decimal
-      ? Quantity.fromDecimal(value)
-      : new Quantity(new Decimal(value));
-  }
-
-  /**
-   * Создаёт Quantity из готового Decimal (без повторного парсинга)
-   *
-   * @remarks
-   * Используй когда у тебя уже есть Decimal объект (результат math операций, конфиги).
-   * Избегает повторного парсинга и гарантирует единый режим Decimal.
-   *
-   * ВАЖНО: Не клонирует Decimal, принимает как есть.
-   *
-   * @param decimal - Готовый Decimal объект
-   * @returns Новый Quantity
-   * @throws {QuantityInvariantViolation} Если значение не соответствует инвариантам
-   *
-   * @example
-   * ```typescript
-   * const decimal = new Decimal(10);
-   * const qty = Quantity.fromDecimal(decimal); // НЕ of(decimal)!
-   *
-   * // После math операций
-   * const sum = addDecimal(qty1.value(), qty2.value());
-   * const result = Quantity.fromDecimal(sum);
-   * ```
-   */
-  public static fromDecimal(decimal: Decimal): Quantity {
+    const decimal = value instanceof Decimal ? value : new Decimal(value);
     return new Quantity(decimal);
   }
 

@@ -85,10 +85,10 @@ describe('QuantityService', () => {
         }
       });
 
-      it('должен обработать unexpected error из Quantity.fromDecimal', () => {
-        // Mock Quantity.fromDecimal to throw unexpected error
-        const spy = jest.spyOn(Quantity, 'fromDecimal').mockImplementation(() => {
-          throw new Error('unexpected error from Quantity.fromDecimal');
+      it('должен обработать unexpected error из Quantity.of', () => {
+        // Mock Quantity.of to throw unexpected error
+        const spy = jest.spyOn(Quantity, 'of').mockImplementation(() => {
+          throw new Error('unexpected error from Quantity.of');
         });
 
         try {
@@ -215,7 +215,7 @@ describe('QuantityService', () => {
     // describe('Facade Error Contract', () => {
     //   it('error должен содержать context.op = "add"', () => {
     //     // Decimal.js не даёт Infinity при сложении
-    //     const bigQty = Quantity.fromDecimal(new Decimal('1e308'));
+    //     const bigQty = Quantity.of(new Decimal('1e308'));
     //     const result = QuantityService.add(bigQty, bigQty);
     //
     //     if (!result.ok) {
@@ -225,7 +225,7 @@ describe('QuantityService', () => {
     //
     //   it('error должен содержать context.quantity1 и quantity2', () => {
     //     // Decimal.js не даёт Infinity при сложении
-    //     const bigQty = Quantity.fromDecimal(new Decimal('1e308'));
+    //     const bigQty = Quantity.of(new Decimal('1e308'));
     //     const result = QuantityService.add(bigQty, bigQty);
     //
     //     if (!result.ok) {

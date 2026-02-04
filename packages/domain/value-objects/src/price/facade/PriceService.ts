@@ -102,7 +102,7 @@ export class PriceService {
 
     try {
       // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
-      const price = Price.fromDecimal(decimalResult.value);
+      const price = Price.of(decimalResult.value);
       return Ok(price);
     } catch (error) {
       // PriceInvariantViolation - доменные ограничения Core
