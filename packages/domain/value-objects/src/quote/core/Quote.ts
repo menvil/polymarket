@@ -144,6 +144,29 @@ export class Quote {
   }
 
   /**
+   * Нормализует timestamp из разных форматов в Decimal
+   *
+   * @internal Внутренний метод для устранения дублирования
+   *
+   * @param value - Timestamp в любом формате (Date, number, string, Decimal)
+   * @returns Decimal с Unix ms
+   *
+   * @remarks
+   * Единообразная обработка timestamp для of() и age().
+   * Паттерн повторяет Price.of() и Quantity.of().
+   */
+  private static _toTimestampMs(value: Date | number | string | Decimal): Decimal {
+    if (value instanceof Date) {
+      return new Decimal(value.getTime());
+    } else if (value instanceof Decimal) {
+      return value;
+    } else {
+      // number | string
+      return new Decimal(value);
+    }
+  }
+
+  /**
    * Создаёт Quote из компонентов
    *
    * @internal ТОЛЬКО для внутреннего использования в Core и Facade
@@ -152,24 +175,27 @@ export class Quote {
    * Бросает QuoteInvariantViolation при нарушении инвариантов.
    * Для публичного API используйте QuoteService.create().
    *
+   * Принимает гибкие типы для timestamp (единообразие с Price/Quantity):
+   * - Date → автоматически конвертируется через .getTime()
+   * - number → Unix ms
+   * - string → парсится как Unix ms
+   * - Decimal → используется напрямую
+   *
    * @param bid - Цена покупки (может быть null)
    * @param ask - Цена продажи (может быть null)
    * @param bidSize - Объём на покупку
    * @param askSize - Объём на продажу
-   * @param timestamp - Временная метка (Date, Unix ms number, или Decimal)
+   * @param timestamp - Временная метка (Date, Unix ms, строка, или Decimal)
    * @returns Новый Quote объект
    * @throws {QuoteInvariantViolation} Если нарушены инварианты
    *
    * @example
    * ```typescript
-   * // ✅ В Core и Facade
-   * const quote = Quote.of(
-   *   Price.of(0.48),
-   *   Price.of(0.52),
-   *   Quantity.of(100),
-   *   Quantity.of(150),
-   *   Date.now()
-   * );
+   * // ✅ В Core и Facade - разные способы
+   * Quote.of(bid, ask, bidSize, askSize, Date.now())        // number
+   * Quote.of(bid, ask, bidSize, askSize, new Date())        // Date
+   * Quote.of(bid, ask, bidSize, askSize, "1234567890000")   // string
+   * Quote.of(bid, ask, bidSize, askSize, new Decimal(now))  // Decimal
    *
    * // ❌ В публичном коде - используй QuoteService
    * const result = QuoteService.create(0.48, 0.52, 100, 150);
@@ -180,18 +206,9 @@ export class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestamp: Date | number | Decimal
+    timestamp: Date | number | string | Decimal
   ): Quote {
-    let timestampMs: Decimal;
-
-    if (timestamp instanceof Date) {
-      timestampMs = new Decimal(timestamp.getTime());
-    } else if (timestamp instanceof Decimal) {
-      timestampMs = timestamp;
-    } else {
-      timestampMs = new Decimal(timestamp);
-    }
-
+    const timestampMs = Quote._toTimestampMs(timestamp);
     return new Quote(bid, ask, bidSize, askSize, timestampMs);
   }
 
@@ -304,7 +321,7 @@ export class Quote {
   /**
    * Вычисляет возраст котировки в миллисекундах
    *
-   * @param now - Текущее время в Unix ms (обычно Date.now())
+   * @param now - Текущее время (Date, Unix ms number, строка, или Decimal)
    * @returns Возраст котировки в миллисекундах как Decimal
    *
    * @remarks
@@ -312,24 +329,31 @@ export class Quote {
    * Полезно для проверок устаревания котировок.
    * Если now < timestamp, возвращает отрицательное значение.
    *
+   * Принимает гибкие типы для единообразия с Price/Quantity:
+   * - Date → автоматически конвертируется через .getTime()
+   * - number → Unix ms
+   * - string → парсится как Unix ms
+   * - Decimal → используется напрямую
+   *
    * @example
    * ```typescript
    * const quote = Quote.of(...);
-   * const ageMs = quote.age(Date.now());  // Decimal
    *
-   * if (ageMs.greaterThan(5000)) {
+   * // Разные способы использования
+   * quote.age(Date.now())        // number
+   * quote.age(new Date())        // Date
+   * quote.age("1234567890000")   // string
+   * quote.age(new Decimal(now))  // Decimal
+   *
+   * // Проверка устаревания
+   * if (quote.age(Date.now()).greaterThan(5000)) {
    *   console.log('Quote is older than 5 seconds');
-   * }
-   *
-   * // Использование в Rules:
-   * const MAX_AGE_MS = 10000; // 10 секунд
-   * if (quote.age(Date.now()).greaterThan(MAX_AGE_MS)) {
-   *   // Quote устарела
    * }
    * ```
    */
-  public age(now: number): Decimal {
-    return new Decimal(now).minus(this._timestampMs);
+  public age(now: Date | number | string | Decimal): Decimal {
+    const nowMs = Quote._toTimestampMs(now);
+    return nowMs.minus(this._timestampMs);
   }
 
   /**

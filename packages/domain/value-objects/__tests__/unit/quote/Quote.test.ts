@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
+import Decimal from 'decimal.js';
 import { Quote, QuoteInvariantViolation } from '../../../src/quote/core/index.js';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
@@ -377,6 +378,57 @@ describe('Quote Core', () => {
       const isStale = quote.age(Date.now()).greaterThan(MAX_AGE_MS);
 
       expect(isStale).toBe(true);
+    });
+
+    it('принимает Date объект', () => {
+      const timestamp = Date.now() - 5000;
+      const quote = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        timestamp
+      );
+
+      const now = new Date();
+      const age = quote.age(now);
+
+      expect(age.toNumber()).toBeGreaterThanOrEqual(5000);
+      expect(age.toNumber()).toBeLessThan(6000);
+    });
+
+    it('принимает строку с Unix ms', () => {
+      const timestamp = Date.now() - 5000;
+      const quote = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        timestamp
+      );
+
+      const now = Date.now();
+      const age = quote.age(now.toString());
+
+      expect(age.toNumber()).toBeGreaterThanOrEqual(5000);
+      expect(age.toNumber()).toBeLessThan(6000);
+    });
+
+    it('принимает Decimal', () => {
+      const timestamp = Date.now() - 5000;
+      const quote = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        timestamp
+      );
+
+      const now = new Decimal(Date.now());
+      const age = quote.age(now);
+
+      expect(age.toNumber()).toBeGreaterThanOrEqual(5000);
+      expect(age.toNumber()).toBeLessThan(6000);
     });
   });
 
