@@ -2,6 +2,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuoteError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Проверяет максимальную ширину спреда
@@ -54,6 +55,7 @@ export class ValidateMaxSpread {
       return Err(
         new InvalidQuoteError(`Spread ${spread} exceeds maximum ${maxSpread}`, {
           context: {
+            source: ErrorSource.RULE_VALIDATION,
             reason: QuoteErrorReason.SPREAD_TOO_WIDE,
             spread: spread.toNumber(),
             maxSpread: maxSpread.toNumber()

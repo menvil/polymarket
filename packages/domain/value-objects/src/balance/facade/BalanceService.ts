@@ -8,7 +8,8 @@ import { ValidateReserveAmount } from '../rules/ValidateReserveAmount.js';
 import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount.js';
 import { ValidateCurrencyMatch } from '../rules/ValidateCurrencyMatch.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
-import { rewrap, unexpectedError, currencyMismatchError, wrapOp } from '../../shared/facade/errorUtils.js';
+import { rewrap, unexpectedError, currencyMismatchError, wrapOp, toCause } from '../../shared/facade/errorUtils.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Фасад для работы с Balance - публичный API
@@ -113,6 +114,7 @@ export class BalanceService {
         return Err(
           new InvalidBalanceError(error.message, {
             context: {
+              source: ErrorSource.CORE_INVARIANT,
               op: 'create',
               reason: error.reason as BalanceErrorReason,
               available: available.value().toNumber(),
@@ -481,6 +483,7 @@ export class BalanceService {
           return Err(
             new InvalidBalanceError(error.message, {
               context: {
+                source: ErrorSource.CORE_INVARIANT,
                 ...ctx,
                 op,
                 reason: error.reason as BalanceErrorReason
@@ -553,7 +556,7 @@ export class BalanceService {
         new InvalidBalanceError('Failed to compare available amounts', {
           context: {
             reason: BalanceErrorReason.INVALID_FORMAT,
-            cause: availableEqual.error
+            cause: toCause(availableEqual.error)
           }
         })
       );
@@ -571,7 +574,7 @@ export class BalanceService {
         new InvalidBalanceError('Failed to compare reserved amounts', {
           context: {
             reason: BalanceErrorReason.INVALID_FORMAT,
-            cause: reservedEqual.error
+            cause: toCause(reservedEqual.error)
           }
         })
       );

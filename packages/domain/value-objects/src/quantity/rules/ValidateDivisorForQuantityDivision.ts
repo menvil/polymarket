@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Делитель для операции деления Quantity должен быть положительным и finite
@@ -35,7 +36,10 @@ export class ValidateDivisorForQuantityDivision {
         new InvalidQuantityError(
           (ctx) => `Divisor for Quantity division must be positive, got ${ctx.divisor}`,
           {
-            context: { divisor: divisor.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              divisor: divisor.toString()
+            }
           }
         )
       );
@@ -46,7 +50,10 @@ export class ValidateDivisorForQuantityDivision {
         new InvalidQuantityError(
           (ctx) => `Divisor for Quantity division must be finite, got ${ctx.divisor}`,
           {
-            context: { divisor: divisor.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              divisor: divisor.toString()
+            }
           }
         )
       );

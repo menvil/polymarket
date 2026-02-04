@@ -3,6 +3,7 @@ import { InvalidBalanceError } from '@polymarket/errors';
 import { Money } from '../../money/core/Money.js';
 import type { SupportedCurrency } from '../../money/core/Money.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Валюта amount должна совпадать с валютой баланса
@@ -66,6 +67,7 @@ export class ValidateCurrencyMatch {
             `Currency mismatch: expected ${ctx.expected}, got ${ctx.actual}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.CURRENCY_MISMATCH,
               expected: balanceCurrency,
               actual: amountCurrency

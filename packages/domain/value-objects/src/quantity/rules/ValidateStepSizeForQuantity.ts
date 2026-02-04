@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: StepSize для округления Quantity должен быть положительным и finite
@@ -33,7 +34,10 @@ export class ValidateStepSizeForQuantity {
         new InvalidQuantityError(
           (ctx) => `Step size must be finite, got ${ctx.stepSize}`,
           {
-            context: { stepSize: stepSize.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              stepSize: stepSize.toString()
+            }
           }
         )
       );
@@ -45,7 +49,10 @@ export class ValidateStepSizeForQuantity {
         new InvalidQuantityError(
           (ctx) => `Step size must be positive, got ${ctx.stepSize}`,
           {
-            context: { stepSize: stepSize.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              stepSize: stepSize.toString()
+            }
           }
         )
       );

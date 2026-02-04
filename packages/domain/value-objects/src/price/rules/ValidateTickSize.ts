@@ -2,6 +2,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidTickSizeError } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import Decimal from 'decimal.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: TickSize должен быть валидным для Price
@@ -61,6 +62,7 @@ export class ValidateTickSize {
           () => `Tick size must not be NaN`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
               reason: 'is_nan',
               tickSize: tickSize.toString()
@@ -77,6 +79,7 @@ export class ValidateTickSize {
           (ctx) => `Tick size must be finite, got ${ctx.tickSize}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
               reason: 'not_finite',
               tickSize: tickSize.toString()
@@ -93,6 +96,7 @@ export class ValidateTickSize {
           (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
               reason: 'not_positive',
               tickSize: tickSize.toString()
@@ -110,6 +114,7 @@ export class ValidateTickSize {
           (ctx) => `Tick size ${ctx.tickSize} exceeds price range`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
               reason: 'exceeds_range',
               tickSize: tickSize.toString(),

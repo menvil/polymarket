@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidOperandError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Factor для операции умножения Price должен быть finite и не NaN
@@ -34,6 +35,7 @@ export class ValidateFactorForPriceMultiplication {
           () => `Factor cannot be negative`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               operation: 'multiply',
               operand: 'factor',
               value: factor.toString(),
@@ -51,6 +53,7 @@ export class ValidateFactorForPriceMultiplication {
           () => `Factor cannot be NaN`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               operation: 'multiply',
               operand: 'factor',
               value: factor.toString(),
@@ -68,6 +71,7 @@ export class ValidateFactorForPriceMultiplication {
           () => `Factor must be finite`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               operation: 'multiply',
               operand: 'factor',
               value: factor.toString(),

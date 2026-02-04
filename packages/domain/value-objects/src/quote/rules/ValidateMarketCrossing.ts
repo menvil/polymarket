@@ -3,6 +3,7 @@ import { InvalidQuoteError } from '@polymarket/errors';
 import { Price } from '../../price/core/Price.js';
 import { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Проверяет, что котировка не пересекает market
@@ -72,6 +73,7 @@ export class ValidateMarketCrossing {
             `Quote bid ${quoteBid.value()} would cross orderbook ask ${orderbookAsk.value()}`,
             {
               context: {
+                source: ErrorSource.RULE_VALIDATION,
                 reason: QuoteErrorReason.MARKET_CROSSING,
                 quoteBid: quoteBid.value().toNumber(),
                 orderbookAsk: orderbookAsk.value().toNumber(),
@@ -91,6 +93,7 @@ export class ValidateMarketCrossing {
             `Quote ask ${quoteAsk.value()} would cross orderbook bid ${orderbookBid.value()}`,
             {
               context: {
+                source: ErrorSource.RULE_VALIDATION,
                 reason: QuoteErrorReason.MARKET_CROSSING,
                 quoteAsk: quoteAsk.value().toNumber(),
                 orderbookBid: orderbookBid.value().toNumber(),

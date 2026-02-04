@@ -4,6 +4,7 @@ import { Price } from '../core/Price.js';
 import { ValidateTickSizeMultipleOfBaseTick } from './ValidateTickSizeMultipleOfBaseTick.js';
 import type { AlignedErrorReason } from './types.js';
 import type Decimal from 'decimal.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Price должен быть aligned к tickSize
@@ -82,6 +83,7 @@ export class ValidateAligned {
           (ctx) => `Price ${ctx.price} is not aligned to tick size ${ctx.tickSize}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'price',
               reason: 'not_aligned' as AlignedErrorReason,
               price: price.value().toString(),

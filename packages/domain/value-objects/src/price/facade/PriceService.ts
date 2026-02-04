@@ -3,6 +3,7 @@ import { InvalidPriceError } from '@polymarket/errors';
 import { Price, PriceInvariantViolation } from '../core/Price.js';
 import { PriceErrorReason } from '../errors/PriceErrorReason.js';
 import { toDecimal, rewrap, wrapOp, unexpectedError } from '../../shared/facade/errorUtils.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 import { ValidateTickSizeMultipleOfBaseTick } from '../rules/ValidateTickSizeMultipleOfBaseTick.js';
 import { ValidateAligned } from '../rules/ValidateAligned.js';
 import { ValidateFactorForPriceMultiplication } from '../rules/ValidateFactorForPriceMultiplication.js';
@@ -110,6 +111,7 @@ export class PriceService {
         return Err(
           rewrap('create', {}, new InvalidPriceError(error.message, {
             context: {
+              source: ErrorSource.CORE_INVARIANT,
               raw: { field: 'value', value: String(value) },
               reason: error.reason
             }

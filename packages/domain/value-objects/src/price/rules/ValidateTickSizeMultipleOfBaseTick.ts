@@ -4,6 +4,7 @@ import { Price } from '../core/Price.js';
 import { ValidateTickSize } from './ValidateTickSize.js';
 import type { TickSizeMultipleReason } from './types.js';
 import type Decimal from 'decimal.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: TickSize должен быть кратен базовому тику Polymarket
@@ -76,6 +77,7 @@ export class ValidateTickSizeMultipleOfBaseTick {
             `Tick size ${ctx.tickSize} must be multiple of base tick ${ctx.baseTick}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
               reason: 'not_multiple_of_base_tick' as TickSizeMultipleReason,
               tickSize: tickDecimal.toString(),

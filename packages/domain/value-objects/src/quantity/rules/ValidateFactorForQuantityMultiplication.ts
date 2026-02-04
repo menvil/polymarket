@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Factor для операции умножения Quantity должен быть неотрицательным и finite
@@ -33,7 +34,10 @@ export class ValidateFactorForQuantityMultiplication {
         new InvalidQuantityError(
           (ctx) => `Factor for Quantity multiplication must be finite, got ${ctx.factor}`,
           {
-            context: { factor: factor.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              factor: factor.toString()
+            }
           }
         )
       );
@@ -45,7 +49,10 @@ export class ValidateFactorForQuantityMultiplication {
         new InvalidQuantityError(
           (ctx) => `Factor for Quantity multiplication cannot be negative, got ${ctx.factor}`,
           {
-            context: { factor: factor.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              factor: factor.toString()
+            }
           }
         )
       );

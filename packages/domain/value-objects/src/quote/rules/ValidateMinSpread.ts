@@ -2,6 +2,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuoteError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Проверяет минимальную ширину спреда
@@ -53,6 +54,7 @@ export class ValidateMinSpread {
       return Err(
         new InvalidQuoteError(`Spread ${spread} is below minimum ${minSpread}`, {
           context: {
+            source: ErrorSource.RULE_VALIDATION,
             reason: QuoteErrorReason.SPREAD_TOO_NARROW,
             spread: spread.toNumber(),
             minSpread: minSpread.toNumber()

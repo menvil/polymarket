@@ -3,6 +3,7 @@ import { InvalidQuoteError } from '@polymarket/errors';
 import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Проверяет консистентность размеров котировки
@@ -55,6 +56,7 @@ export class ValidateQuoteSizes {
       return Err(
         new InvalidQuoteError('Bid size must be positive when bid is defined', {
           context: {
+            source: ErrorSource.RULE_VALIDATION,
             reason: QuoteErrorReason.BID_SIZE_MUST_BE_POSITIVE,
             bidValue: bid.value().toNumber(),
             bidSize: bidSize.value().toNumber()
@@ -68,6 +70,7 @@ export class ValidateQuoteSizes {
       return Err(
         new InvalidQuoteError('Ask size must be positive when ask is defined', {
           context: {
+            source: ErrorSource.RULE_VALIDATION,
             reason: QuoteErrorReason.ASK_SIZE_MUST_BE_POSITIVE,
             askValue: ask.value().toNumber(),
             askSize: askSize.value().toNumber()

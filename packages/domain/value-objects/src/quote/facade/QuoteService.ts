@@ -9,8 +9,10 @@ import {
   toDecimal,
   rewrap,
   wrapOp,
-  unexpectedError
+  unexpectedError,
+  toCause
 } from '../../shared/facade/errorUtils.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 import { PriceService } from '../../price/facade/PriceService.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
 
@@ -47,148 +49,77 @@ import { QuantityService } from '../../quantity/facade/QuantityService.js';
  */
 export class QuoteService {
   /**
-   * Создаёт Quote из Decimal значений
+   * Создаёт Quote
    *
    * @remarks
-   * Базовый метод создания. Используется внутри других методов Facade.
-   * Использует wrapOp для централизованной обработки ошибок.
+   * Публичный метод для создания котировок.
+   * Использует toDecimal() для безопасного парсинга всех входных параметров.
+   * Принимает number | string | Decimal для гибкости использования.
    *
-   * @param bidValue - Значение bid (может быть null)
-   * @param askValue - Значение ask (может быть null)
-   * @param bidSizeValue - Значение bid size
-   * @param askSizeValue - Значение ask size
-   * @param timestamp - Временная метка (опционально)
+   * @param bidValue - Значение bid (Decimal | number | string | null)
+   * @param askValue - Значение ask (Decimal | number | string | null)
+   * @param bidSizeValue - Значение bid size (Decimal | number | string)
+   * @param askSizeValue - Значение ask size (Decimal | number | string)
+   * @param timestamp - Временная метка (опционально, Date | Decimal | number | string)
    * @returns Result с Quote или InvalidQuoteError
    *
    * @example
    * ```typescript
-   * const result = QuoteService.createFromDecimals(
+   * // С numbers
+   * const result1 = QuoteService.create(0.50, 0.51, 100, 200);
+   *
+   * // С strings
+   * const result2 = QuoteService.create("0.50", "0.51", "100", "200");
+   *
+   * // С Decimal
+   * const result3 = QuoteService.create(
    *   new Decimal(0.50),
    *   new Decimal(0.51),
    *   new Decimal(100),
    *   new Decimal(200)
    * );
-   * if (result.ok) {
-   *   const quote = result.value;
-   * }
-   * ```
-   */
-  public static createFromDecimals(
-    bidValue: Decimal | null,
-    askValue: Decimal | null,
-    bidSizeValue: Decimal,
-    askSizeValue: Decimal,
-    timestamp?: Date | number
-  ): Result<Quote, InvalidQuoteError> {
-    const ctx = {
-      bidValue: bidValue?.toString() ?? null,
-      askValue: askValue?.toString() ?? null,
-      bidSizeValue: bidSizeValue.toString(),
-      askSizeValue: askSizeValue.toString()
-    };
-
-    return wrapOp('createFromDecimals', ctx, () => {
-      // Создаём Price объекты через helper
-      const bidResult = this.createPrice(bidValue, 'bid', 'createFromDecimals');
-      if (isErr(bidResult)) return bidResult;
-      const bid = bidResult.value;
-
-      const askResult = this.createPrice(askValue, 'ask', 'createFromDecimals');
-      if (isErr(askResult)) return askResult;
-      const ask = askResult.value;
-
-      // Создаём Quantity объекты через helper
-      const bidSizeResult = this.createQuantity(bidSizeValue, 'bidSize', 'createFromDecimals');
-      if (isErr(bidSizeResult)) return bidSizeResult;
-
-      const askSizeResult = this.createQuantity(askSizeValue, 'askSize', 'createFromDecimals');
-      if (isErr(askSizeResult)) return askSizeResult;
-
-      // Создаём Quote через Core (может бросить QuoteInvariantViolation)
-      try {
-        // Конвертация timestamp → Decimal (Facade ответственность)
-        const ts = timestamp ?? Date.now();
-        const timestampMs = ts instanceof Date ? new Decimal(ts.getTime()) : new Decimal(ts);
-
-        const quote = Quote.of(
-          bid,
-          ask,
-          bidSizeResult.value,
-          askSizeResult.value,
-          timestampMs
-        );
-        return Ok(quote);
-      } catch (error) {
-        // Обработка инвариантов Core
-        if (error instanceof QuoteInvariantViolation) {
-          return Err(
-            new InvalidQuoteError(error.message, {
-              context: {
-                op: 'createFromDecimals',
-                reason: error.reason
-              }
-            })
-          );
-        }
-
-        // Неожиданная ошибка
-        return Err(
-          unexpectedError(
-            'createFromDecimals',
-            ctx,
-            error,
-            'quote',
-            InvalidQuoteError
-          )
-        );
-      }
-    }, 'quote', InvalidQuoteError);
-  }
-
-  /**
-   * Создаёт Quote из number значений
    *
-   * @remarks
-   * Публичный метод для создания котировок.
-   * Использует toDecimal() для безопасного парсинга.
+   * // С custom timestamp (Decimal)
+   * const result4 = QuoteService.create(
+   *   0.50,
+   *   0.51,
+   *   100,
+   *   200,
+   *   new Decimal(Date.now())
+   * );
    *
-   * @param bidValue - Значение bid (может быть null)
-   * @param askValue - Значение ask (может быть null)
-   * @param bidSizeValue - Значение bid size
-   * @param askSizeValue - Значение ask size
-   * @param timestamp - Временная метка (опционально)
-   * @returns Result с Quote или InvalidQuoteError
+   * // Односторонняя котировка
+   * const result5 = QuoteService.create(0.50, null, 100, 0);
    *
-   * @example
-   * ```typescript
-   * const result = QuoteService.create(0.50, 0.51, 100, 200);
-   * if (result.ok) {
-   *   const quote = result.value;
+   * if (result1.ok) {
+   *   const quote = result1.value;
    *   console.log(quote.isTwoSided()); // true
    * } else {
    *   // Структурированная ошибка
-   *   console.error(result.error.context?.op); // 'create'
-   *   console.error(result.error.context?.reason); // QuoteErrorReason
-   *   console.error(result.error.context?.raw); // { field, value }
+   *   console.error(result1.error.context?.op); // 'create'
+   *   console.error(result1.error.context?.reason); // QuoteErrorReason
+   *   console.error(result1.error.context?.raw); // { field, value }
    * }
    * ```
    */
   public static create(
-    bidValue: number | null,
-    askValue: number | null,
-    bidSizeValue: number,
-    askSizeValue: number,
-    timestamp?: Date | number
+    bidValue: Decimal | number | string | null,
+    askValue: Decimal | number | string | null,
+    bidSizeValue: Decimal | number | string,
+    askSizeValue: Decimal | number | string,
+    timestamp?: Date | Decimal | number | string
   ): Result<Quote, InvalidQuoteError> {
+    const op = 'create';
     const ctx = {
-      bidValue: bidValue ?? null,
-      askValue: askValue ?? null,
-      bidSizeValue,
-      askSizeValue
+      bidValue: bidValue !== null ? String(bidValue) : null,
+      askValue: askValue !== null ? String(askValue) : null,
+      bidSizeValue: String(bidSizeValue),
+      askSizeValue: String(askSizeValue),
+      timestamp: timestamp !== undefined ? String(timestamp) : undefined
     };
 
-    return wrapOp('create', ctx, () => {
-      // Парсим bid через toDecimal (если не null)
+    return wrapOp(op, ctx, () => {
+      // Конвертируем bid через toDecimal (если не null)
       let bidDecimal: Decimal | null = null;
       if (bidValue !== null) {
         const bidResult = toDecimal(
@@ -198,12 +129,12 @@ export class QuoteService {
           InvalidQuoteError
         );
         if (isErr(bidResult)) {
-          return Err(rewrap('create', { component: 'bid' }, bidResult.error, InvalidQuoteError));
+          return Err(rewrap(op, {}, bidResult.error, InvalidQuoteError));
         }
         bidDecimal = bidResult.value;
       }
 
-      // Парсим ask через toDecimal (если не null)
+      // Конвертируем ask через toDecimal (если не null)
       let askDecimal: Decimal | null = null;
       if (askValue !== null) {
         const askResult = toDecimal(
@@ -213,12 +144,12 @@ export class QuoteService {
           InvalidQuoteError
         );
         if (isErr(askResult)) {
-          return Err(rewrap('create', { component: 'ask' }, askResult.error, InvalidQuoteError));
+          return Err(rewrap(op, {}, askResult.error, InvalidQuoteError));
         }
         askDecimal = askResult.value;
       }
 
-      // Парсим bidSize
+      // Конвертируем bidSize через toDecimal
       const bidSizeResult = toDecimal(
         'bidSizeValue',
         bidSizeValue,
@@ -226,10 +157,10 @@ export class QuoteService {
         InvalidQuoteError
       );
       if (isErr(bidSizeResult)) {
-        return Err(rewrap('create', { component: 'bidSize' }, bidSizeResult.error, InvalidQuoteError));
+        return Err(rewrap(op, {}, bidSizeResult.error, InvalidQuoteError));
       }
 
-      // Парсим askSize
+      // Конвертируем askSize через toDecimal
       const askSizeResult = toDecimal(
         'askSizeValue',
         askSizeValue,
@@ -237,26 +168,83 @@ export class QuoteService {
         InvalidQuoteError
       );
       if (isErr(askSizeResult)) {
-        return Err(rewrap('create', { component: 'askSize' }, askSizeResult.error, InvalidQuoteError));
+        return Err(rewrap(op, {}, askSizeResult.error, InvalidQuoteError));
       }
 
-      // Делегируем creates (wrapOp сам сделает rewrap)
-      return QuoteService.createFromDecimals(
-        bidDecimal,
-        askDecimal,
-        bidSizeResult.value,
-        askSizeResult.value,
-        timestamp
-      );
+      // Конвертируем timestamp через toDecimal
+      let timestampDecimal: Decimal;
+      if (timestamp !== undefined) {
+        // Date → number (getTime)
+        const tsValue = timestamp instanceof Date ? timestamp.getTime() : timestamp;
+        const tsResult = toDecimal(
+          'timestamp',
+          tsValue,
+          QuoteErrorReason.INVALID_FORMAT,
+          InvalidQuoteError
+        );
+        if (isErr(tsResult)) {
+          return Err(rewrap(op, {}, tsResult.error, InvalidQuoteError));
+        }
+        timestampDecimal = tsResult.value;
+      } else {
+        // Default: текущее время
+        timestampDecimal = new Decimal(Date.now());
+      }
+
+      // Создаём Price объекты через helper
+      const bidResult = this.createPrice(bidDecimal, 'bid', op);
+      if (isErr(bidResult)) return bidResult;
+      const bid = bidResult.value;
+
+      const askResult = this.createPrice(askDecimal, 'ask', op);
+      if (isErr(askResult)) return askResult;
+      const ask = askResult.value;
+
+      // Создаём Quantity объекты через helper
+      const bidSizeQuantityResult = this.createQuantity(bidSizeResult.value, 'bidSize', op);
+      if (isErr(bidSizeQuantityResult)) return bidSizeQuantityResult;
+
+      const askSizeQuantityResult = this.createQuantity(askSizeResult.value, 'askSize', op);
+      if (isErr(askSizeQuantityResult)) return askSizeQuantityResult;
+
+      // Создаём Quote через Core (может бросить QuoteInvariantViolation)
+      try {
+        const quote = Quote.of(
+          bid,
+          ask,
+          bidSizeQuantityResult.value,
+          askSizeQuantityResult.value,
+          timestampDecimal
+        );
+        return Ok(quote);
+      } catch (error) {
+        // Обработка инвариантов Core
+        if (error instanceof QuoteInvariantViolation) {
+          return Err(
+            new InvalidQuoteError(error.message, {
+              context: {
+                source: ErrorSource.CORE_INVARIANT,
+                op,
+                reason: error.reason
+              }
+            })
+          );
+        }
+
+        // Неожиданная ошибка
+        return Err(
+          unexpectedError(op, ctx, error, 'quote', InvalidQuoteError)
+        );
+      }
     }, 'quote', InvalidQuoteError);
   }
 
   /**
    * Создаёт одностороннюю bid котировку
    *
-   * @param bidValue - Значение bid
-   * @param bidSizeValue - Значение bid size
-   * @param timestamp - Временная метка (опционально)
+   * @param bidValue - Значение bid (Decimal | number | string)
+   * @param bidSizeValue - Значение bid size (Decimal | number | string)
+   * @param timestamp - Временная метка (опционально, Date | Decimal | number | string)
    * @returns Result с Quote или InvalidQuoteError
    *
    * @example
@@ -270,45 +258,27 @@ export class QuoteService {
    * ```
    */
   public static bidOnly(
-    bidValue: number | Decimal,
-    bidSizeValue: number | Decimal,
-    timestamp?: Date | number
+    bidValue: Decimal | number | string,
+    bidSizeValue: Decimal | number | string,
+    timestamp?: Date | Decimal | number | string
   ): Result<Quote, InvalidQuoteError> {
-    const ctx = {
-      bidValue: String(bidValue),
-      bidSizeValue: String(bidSizeValue)
-    };
-
-    return wrapOp('bidOnly', ctx, () => {
-      // Парсим bid
-      const bidResult = toDecimal('bidValue', bidValue, QuoteErrorReason.INVALID_FORMAT, InvalidQuoteError);
-      if (isErr(bidResult)) {
-        return Err(rewrap('bidOnly', {}, bidResult.error, InvalidQuoteError));
-      }
-
-      // Парсим bidSize
-      const sizeResult = toDecimal('bidSizeValue', bidSizeValue, QuoteErrorReason.INVALID_FORMAT, InvalidQuoteError);
-      if (isErr(sizeResult)) {
-        return Err(rewrap('bidOnly', {}, sizeResult.error, InvalidQuoteError));
-      }
-
-      return QuoteService.createFromDecimals(
-        bidResult.value,
-        null,
-        sizeResult.value,
-        new Decimal(0), // zero ask size
-        timestamp
-      );
-    }, 'quote', InvalidQuoteError);
+    // Делегируем на create с null для ask
+    return QuoteService.create(
+      bidValue,
+      null, // ask отсутствует
+      bidSizeValue,
+      0, // zero ask size
+      timestamp
+    );
   }
 
   /**
    * Создаёт одностороннюю ask котировку
    *
-   * @param askValue - Значение ask
-   * @param askSizeValue - Значение ask size
-   * @param timestamp - Временная метка (опционально)
-   * @returns Result с Quote або InvalidQuoteError
+   * @param askValue - Значение ask (Decimal | number | string)
+   * @param askSizeValue - Значение ask size (Decimal | number | string)
+   * @param timestamp - Временная метка (опционально, Date | Decimal | number | string)
+   * @returns Result с Quote или InvalidQuoteError
    *
    * @example
    * ```typescript
@@ -321,36 +291,18 @@ export class QuoteService {
    * ```
    */
   public static askOnly(
-    askValue: number | Decimal,
-    askSizeValue: number | Decimal,
-    timestamp?: Date | number
+    askValue: Decimal | number | string,
+    askSizeValue: Decimal | number | string,
+    timestamp?: Date | Decimal | number | string
   ): Result<Quote, InvalidQuoteError> {
-    const ctx = {
-      askValue: String(askValue),
-      askSizeValue: String(askSizeValue)
-    };
-
-    return wrapOp('askOnly', ctx, () => {
-      // Парсим ask
-      const askResult = toDecimal('askValue', askValue, QuoteErrorReason.INVALID_FORMAT, InvalidQuoteError);
-      if (isErr(askResult)) {
-        return Err(rewrap('askOnly', {}, askResult.error, InvalidQuoteError));
-      }
-
-      // Парсим askSize
-      const sizeResult = toDecimal('askSizeValue', askSizeValue, QuoteErrorReason.INVALID_FORMAT, InvalidQuoteError);
-      if (isErr(sizeResult)) {
-        return Err(rewrap('askOnly', {}, sizeResult.error, InvalidQuoteError));
-      }
-
-      return QuoteService.createFromDecimals(
-        null,
-        askResult.value,
-        new Decimal(0), // zero bid size
-        sizeResult.value,
-        timestamp
-      );
-    }, 'quote', InvalidQuoteError);
+    // Делегируем на create с null для bid
+    return QuoteService.create(
+      null, // bid отсутствует
+      askValue,
+      0, // zero bid size
+      askSizeValue,
+      timestamp
+    );
   }
 
   /**
@@ -363,51 +315,64 @@ export class QuoteService {
    * Использует wrapOp для автоматической обработки ошибок.
    *
    * @param quote - Исходная котировка
-   * @param shiftAmount - Величина сдвига (может быть отрицательной)
+   * @param shiftAmount - Величина сдвига (Decimal | number | string, может быть отрицательной)
    * @returns Result с новой Quote или InvalidQuoteError
    *
    * @example
    * ```typescript
    * const quote = expectOk(QuoteService.create(0.48, 0.52, 100, 150));
    *
-   * // Сдвиг вверх
-   * const upResult = QuoteService.shift(quote, new Decimal(0.01));
+   * // Сдвиг вверх (с number)
+   * const upResult = QuoteService.shift(quote, 0.01);
    * // bid: 0.48 → 0.49, ask: 0.52 → 0.53
    *
-   * // Сдвиг вниз
+   * // Сдвиг вниз (с Decimal)
    * const downResult = QuoteService.shift(quote, new Decimal(-0.01));
    * // bid: 0.48 → 0.47, ask: 0.52 → 0.51
    *
    * if (isErr(upResult)) {
    *   // Полный контекст ошибки
    *   console.error(upResult.error.context?.op); // 'shift'
-   *   console.error(upResult.error.context?.opChain); // ['createFromDecimals', 'shift']
+   *   console.error(upResult.error.context?.opChain); // ['create', 'shift']
    * }
    * ```
    */
   public static shift(
     quote: Quote,
-    shiftAmount: Decimal
+    shiftAmount: Decimal | number | string
   ): Result<Quote, InvalidQuoteError> {
+    const op = 'shift';
     const ctx = {
       quoteBid: quote.bid()?.value().toString() ?? null,
       quoteAsk: quote.ask()?.value().toString() ?? null,
-      shiftAmount: shiftAmount.toString()
+      shiftAmount: String(shiftAmount)
     };
 
-    return wrapOp('shift', ctx, () => {
+    return wrapOp(op, ctx, () => {
+      // Конвертируем shiftAmount в Decimal
+      const shiftDecimalResult = toDecimal(
+        'shiftAmount',
+        shiftAmount,
+        QuoteErrorReason.INVALID_FORMAT,
+        InvalidQuoteError
+      );
+      if (isErr(shiftDecimalResult)) {
+        return Err(rewrap(op, {}, shiftDecimalResult.error, InvalidQuoteError));
+      }
+      const shiftDecimal = shiftDecimalResult.value;
+
       let newBidDecimal: Decimal | null = null;
       if (quote.bid() !== null) {
-        newBidDecimal = quote.bid()!.value().plus(shiftAmount);
+        newBidDecimal = quote.bid()!.value().plus(shiftDecimal);
       }
 
       let newAskDecimal: Decimal | null = null;
       if (quote.ask() !== null) {
-        newAskDecimal = quote.ask()!.value().plus(shiftAmount);
+        newAskDecimal = quote.ask()!.value().plus(shiftDecimal);
       }
 
-      // wrapOp автоматически обработает ошибки и добавит opChain
-      return QuoteService.createFromDecimals(
+      // Используем create - он сам сконвертирует Decimal в Price/Quantity
+      return QuoteService.create(
         newBidDecimal,
         newAskDecimal,
         quote.bidSize().value(),
@@ -425,47 +390,76 @@ export class QuoteService {
    * Позволяет наклонить котировку в одну сторону.
    *
    * @param quote - Исходная котировка
-   * @param bidAdjustment - Adjustment для bid
-   * @param askAdjustment - Adjustment для ask
+   * @param bidAdjustment - Adjustment для bid (Decimal | number | string, может быть отрицательным)
+   * @param askAdjustment - Adjustment для ask (Decimal | number | string, может быть отрицательным)
    * @returns Result с новой Quote или InvalidQuoteError
    *
    * @example
    * ```typescript
    * const quote = expectOk(QuoteService.create(0.48, 0.52, 100, 150));
    *
-   * // Сдвинуть bid вниз, ask вверх (расширить spread)
-   * const result = QuoteService.skew(
+   * // Используя number - сдвинуть bid вниз, ask вверх (расширить spread)
+   * const result = QuoteService.skew(quote, -0.01, 0.01);
+   * // bid: 0.48 → 0.47, ask: 0.52 → 0.53, spread: 0.04 → 0.06
+   *
+   * // Или используя Decimal
+   * const result2 = QuoteService.skew(
    *   quote,
    *   new Decimal(-0.01), // bid вниз
    *   new Decimal(0.01)   // ask вверх
    * );
-   * // bid: 0.48 → 0.47, ask: 0.52 → 0.53, spread: 0.04 → 0.06
    * ```
    */
   public static skew(
     quote: Quote,
-    bidAdjustment: Decimal,
-    askAdjustment: Decimal
+    bidAdjustment: Decimal | number | string,
+    askAdjustment: Decimal | number | string
   ): Result<Quote, InvalidQuoteError> {
+    const op = 'skew';
     const ctx = {
       quoteBid: quote.bid()?.value().toString() ?? null,
       quoteAsk: quote.ask()?.value().toString() ?? null,
-      bidAdjustment: bidAdjustment.toString(),
-      askAdjustment: askAdjustment.toString()
+      rawBidAdjustment: bidAdjustment.toString(),
+      rawAskAdjustment: askAdjustment.toString()
     };
 
-    return wrapOp('skew', ctx, () => {
+    return wrapOp(op, ctx, () => {
+      // Конвертируем bidAdjustment в Decimal
+      const bidAdjustmentResult = toDecimal(
+        'bidAdjustment',
+        bidAdjustment,
+        QuoteErrorReason.INVALID_FORMAT,
+        InvalidQuoteError
+      );
+      if (isErr(bidAdjustmentResult)) {
+        return Err(rewrap(op, {}, bidAdjustmentResult.error, InvalidQuoteError));
+      }
+      const bidAdjustmentDecimal = bidAdjustmentResult.value;
+
+      // Конвертируем askAdjustment в Decimal
+      const askAdjustmentResult = toDecimal(
+        'askAdjustment',
+        askAdjustment,
+        QuoteErrorReason.INVALID_FORMAT,
+        InvalidQuoteError
+      );
+      if (isErr(askAdjustmentResult)) {
+        return Err(rewrap(op, {}, askAdjustmentResult.error, InvalidQuoteError));
+      }
+      const askAdjustmentDecimal = askAdjustmentResult.value;
+
       let newBidDecimal: Decimal | null = null;
       if (quote.bid() !== null) {
-        newBidDecimal = quote.bid()!.value().plus(bidAdjustment);
+        newBidDecimal = quote.bid()!.value().plus(bidAdjustmentDecimal);
       }
 
       let newAskDecimal: Decimal | null = null;
       if (quote.ask() !== null) {
-        newAskDecimal = quote.ask()!.value().plus(askAdjustment);
+        newAskDecimal = quote.ask()!.value().plus(askAdjustmentDecimal);
       }
 
-      return QuoteService.createFromDecimals(
+      // Используем create - он сам сконвертирует Decimal в Price/Quantity
+      return QuoteService.create(
         newBidDecimal,
         newAskDecimal,
         quote.bidSize().value(),
@@ -500,6 +494,7 @@ export class QuoteService {
     newBidSize: number | Quantity,
     newAskSize: number | Quantity
   ): Result<Quote, InvalidQuoteError> {
+    const op = 'updateSizes';
     const ctx = {
       quoteBid: quote.bid()?.value().toString() ?? null,
       quoteAsk: quote.ask()?.value().toString() ?? null,
@@ -507,7 +502,7 @@ export class QuoteService {
       newAskSize: newAskSize instanceof Quantity ? newAskSize.value().toString() : String(newAskSize)
     };
 
-    return wrapOp('updateSizes', ctx, () => {
+    return wrapOp(op, ctx, () => {
       // Конвертируем в Quantity если нужно
       let bidSize: Quantity;
       if (newBidSize instanceof Quantity) {
@@ -517,12 +512,13 @@ export class QuoteService {
         if (isErr(bidSizeResult)) {
           return Err(
             rewrap(
-              'updateSizes',
-              { component: 'bidSize' },
+              op,
+              { component: 'bidSize' }, // Добавляем component т.к. QuantityService.create возвращает field: 'value'
               new InvalidQuoteError('Invalid bid size', {
                 context: {
+                  source: ErrorSource.SERVICE_CALL,
                   reason: QuoteErrorReason.INVALID_BID_SIZE,
-                  cause: bidSizeResult.error
+                  cause: toCause(bidSizeResult.error)
                 }
               }),
               InvalidQuoteError
@@ -540,12 +536,13 @@ export class QuoteService {
         if (isErr(askSizeResult)) {
           return Err(
             rewrap(
-              'updateSizes',
-              { component: 'askSize' },
+              op,
+              { component: 'askSize' }, // Добавляем component т.к. QuantityService.create возвращает field: 'value'
               new InvalidQuoteError('Invalid ask size', {
                 context: {
+                  source: ErrorSource.SERVICE_CALL,
                   reason: QuoteErrorReason.INVALID_ASK_SIZE,
-                  cause: askSizeResult.error
+                  cause: toCause(askSizeResult.error)
                 }
               }),
               InvalidQuoteError
@@ -570,7 +567,8 @@ export class QuoteService {
           return Err(
             new InvalidQuoteError(error.message, {
               context: {
-                op: 'updateSizes',
+                source: ErrorSource.CORE_INVARIANT,
+                op,
                 reason: error.reason
               }
             })
@@ -578,7 +576,7 @@ export class QuoteService {
         }
 
         return Err(
-          unexpectedError('updateSizes', ctx, error, 'quote', InvalidQuoteError)
+          unexpectedError(op, ctx, error, 'quote', InvalidQuoteError)
         );
       }
     }, 'quote', InvalidQuoteError);
@@ -676,11 +674,12 @@ export class QuoteService {
       return Err(
         rewrap(
           op,
-          { component: field },
+          { component: field }, // Добавляем component т.к. PriceService.create возвращает field: 'value', а не 'bid'/'ask'
           new InvalidQuoteError(`Invalid ${field} price`, {
             context: {
+              source: ErrorSource.SERVICE_CALL,
               reason,
-              cause: result.error
+              cause: toCause(result.error)
             }
           }),
           InvalidQuoteError
@@ -714,11 +713,12 @@ export class QuoteService {
       return Err(
         rewrap(
           op,
-          { component: field },
+          { component: field }, // Добавляем component т.к. QuantityService.create возвращает field: 'value', а не 'bidSize'/'askSize'
           new InvalidQuoteError(`Invalid ${field}`, {
             context: {
+              source: ErrorSource.SERVICE_CALL,
               reason,
-              cause: result.error
+              cause: toCause(result.error)
             }
           }),
           InvalidQuoteError

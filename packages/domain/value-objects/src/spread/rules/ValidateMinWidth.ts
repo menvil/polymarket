@@ -2,6 +2,7 @@ import { type Result, Ok, Err } from '@polymarket/result';
 import { InvalidSpreadError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { SpreadErrorReason } from '../core/SpreadErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Валидация: ширина спреда должна быть >= минимума
@@ -41,6 +42,7 @@ export class ValidateMinWidth {
           (ctx) => `minWidth must be finite, got ${ctx.minWidth}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               minWidth: minWidth.toString(),
               width: width.toString(),
               reason: SpreadErrorReason.INVALID_AMOUNT
@@ -56,6 +58,7 @@ export class ValidateMinWidth {
           (ctx) => `minWidth must be positive, got ${ctx.minWidth}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               minWidth: minWidth.toString(),
               width: width.toString(),
               reason: SpreadErrorReason.INVALID_AMOUNT
@@ -72,6 +75,7 @@ export class ValidateMinWidth {
           (ctx) => `Spread width ${ctx.width} is less than minimum ${ctx.minWidth}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               width: width.toString(),
               minWidth: minWidth.toString(),
               reason: SpreadErrorReason.WIDTH_TOO_SMALL

@@ -2,6 +2,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidBalanceError } from '@polymarket/errors';
 import { Money } from '../../money/core/Money.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Резервируемая сумма должна быть <= доступным средствам
@@ -68,6 +69,7 @@ export class ValidateReserveAmount {
       return Err(
         new InvalidBalanceError('Reserve amount must be finite', {
           context: {
+            source: ErrorSource.RULE_VALIDATION,
             reason: BalanceErrorReason.INVALID_FORMAT,
             reserveAmount: amount.toString(),
             available: availableAmount.toString()
@@ -83,6 +85,7 @@ export class ValidateReserveAmount {
           (ctx) => `Reserve amount must be positive, got ${ctx.reserveAmount}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INVALID_FORMAT,
               reserveAmount: amount.toString(),
               available: availableAmount.toString()
@@ -100,6 +103,7 @@ export class ValidateReserveAmount {
             `Cannot reserve ${ctx.requested}: only ${ctx.available} available`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INSUFFICIENT_FUNDS,
               requested: amount.toNumber(),
               available: availableAmount.toNumber()

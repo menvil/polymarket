@@ -2,6 +2,7 @@ import { type Result, Ok, Err } from '@polymarket/result';
 import { InvalidSpreadError } from '@polymarket/errors';
 import { Price } from '../../price/index.js';
 import { SpreadErrorReason } from '../core/SpreadErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Валидация: bid должен быть <= ask
@@ -41,6 +42,7 @@ export class ValidateBidAsk {
           (ctx) => `Invalid bid-ask: bid ${ctx.bid} cannot be greater than ask ${ctx.ask}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               bid: bid.value().toString(),
               ask: ask.value().toString(),
               reason: SpreadErrorReason.BID_GREATER_THAN_ASK

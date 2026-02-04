@@ -9,6 +9,7 @@ import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTic
 import Decimal from 'decimal.js';
 import { QuantityErrorReason } from '../errors/QuantityErrorReason';
 import { toDecimal, rewrap, wrapOp, unexpectedError } from '../../shared/facade/errorUtils';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Фасад для работы с Quantity
@@ -81,6 +82,7 @@ export class QuantityService {
         return Err(
           new InvalidQuantityError(error.message, {
             context: {
+              source: ErrorSource.CORE_INVARIANT,
               op: 'create',
               raw: { field: 'value', value: String(value) },
               value: decimalResult.value.toString(),

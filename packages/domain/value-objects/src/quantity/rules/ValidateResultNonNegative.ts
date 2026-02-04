@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Результат операции должен быть неотрицательным
@@ -38,7 +39,10 @@ export class ValidateResultNonNegative {
         new InvalidQuantityError(
           (ctx) => `Operation result ${ctx.result} must be finite`,
           {
-            context: { result: result.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              result: result.toString()
+            }
           }
         )
       );
@@ -50,7 +54,10 @@ export class ValidateResultNonNegative {
         new InvalidQuantityError(
           (ctx) => `Operation result ${ctx.result} cannot be negative`,
           {
-            context: { result: result.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              result: result.toString()
+            }
           }
         )
       );

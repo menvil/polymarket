@@ -2,6 +2,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidMoneyError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Делитель для операции деления Money должен быть валидным
@@ -45,6 +46,7 @@ export class ValidateDivisorForMoneyDivision {
       return Err(
         new InvalidMoneyError('Divisor cannot be NaN', {
           context: {
+            source: ErrorSource.RULE_VALIDATION,
             divisor: divisor.toString(),
             reason: MoneyErrorReason.NAN
           }
@@ -57,6 +59,7 @@ export class ValidateDivisorForMoneyDivision {
       return Err(
         new InvalidMoneyError('Divisor must be finite', {
           context: {
+            source: ErrorSource.RULE_VALIDATION,
             divisor: divisor.toString(),
             reason: MoneyErrorReason.NON_FINITE
           }
@@ -69,6 +72,7 @@ export class ValidateDivisorForMoneyDivision {
       return Err(
         new InvalidMoneyError('Cannot divide by zero', {
           context: {
+            source: ErrorSource.RULE_VALIDATION,
             divisor: divisor.toString(),
             reason: MoneyErrorReason.DIVISION_BY_ZERO
           }

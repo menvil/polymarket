@@ -8,6 +8,7 @@ import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorFor
 import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason';
 import { toDecimal, rewrap, wrapOp, unexpectedError, currencyMismatchError } from '../../shared/facade/errorUtils.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Facade для безопасного создания и операций с Money - публичный API
@@ -167,6 +168,7 @@ export class MoneyService {
     return Err(
       new InvalidMoneyError(`Money ${op} result is invalid: ${reason}`, {
         context: {
+          source: ErrorSource.CORE_INVARIANT,
           op,
           ...ctx,
           reason

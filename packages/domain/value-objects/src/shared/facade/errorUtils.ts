@@ -10,6 +10,7 @@ import {
   InvalidOperandError,
   DivisionByZeroError
 } from '@polymarket/errors';
+import { ErrorSource } from './ErrorSource.js';
 
 /**
  * Utility functions для обработки ошибок в Facade сервисах
@@ -142,6 +143,7 @@ export function toDecimal<TError extends DomainError>(
       return Err(
         new ErrorConstructor('Failed to normalize value: no valid toString()', {
           context: {
+            source: ErrorSource.PARSING,
             raw: { field, value: String(input) },
             reason: reasonEnum
           }
@@ -158,6 +160,7 @@ export function toDecimal<TError extends DomainError>(
         error instanceof Error ? error.message : 'Failed to parse value',
         {
           context: {
+            source: ErrorSource.PARSING,
             raw: { field, value: String(input) },
             cause: toCause(error),
             reason: reasonEnum
@@ -196,6 +199,7 @@ export function expectedMathError<TError extends DomainError>(
   const cause = toCause(e);
   return new ErrorConstructor(`${valueName} ${op} failed: ${cause.message}`, {
     context: {
+      source: ErrorSource.MATH_OPERATION,
       op,
       ...ctx,
       cause
@@ -227,6 +231,7 @@ export function unexpectedError<TError extends DomainError>(
   const cause = toCause(e);
   return new ErrorConstructor(`Unexpected error during ${valueName} ${op}`, {
     context: {
+      source: ErrorSource.UNEXPECTED,
       op,
       ...ctx,
       cause
@@ -317,7 +322,7 @@ export function rewrap<TError extends DomainError>(
   const inner = (err.context ?? {}) as Record<string, unknown>;
 
   // Запрещаем ctx приносить root-поля (защита от случайного перетирания)
-  const { cause: _c, reason: _r, raw: _raw, op: _op, opChain: _chain, ...safeCtx } = ctx;
+  const { cause: _c, reason: _r, raw: _raw, source: _s, op: _op, opChain: _chain, ...safeCtx } = ctx;
 
   // 1) мерджим контекст: inner база, safeCtx сверху (без root-полей)
   const merged: Record<string, unknown> = {
@@ -344,6 +349,9 @@ export function rewrap<TError extends DomainError>(
   }
   if (inner.raw !== undefined) {
     merged.raw = inner.raw;
+  }
+  if (inner.source !== undefined) {
+    merged.source = inner.source;
   }
 
   return new ErrorConstructor(err.message, { context: merged });

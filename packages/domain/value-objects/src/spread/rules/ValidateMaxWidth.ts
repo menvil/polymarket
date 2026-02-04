@@ -2,6 +2,7 @@ import { type Result, Ok, Err } from '@polymarket/result';
 import { InvalidSpreadError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { SpreadErrorReason } from '../core/SpreadErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Валидация: ширина спреда должна быть <= максимума
@@ -41,6 +42,7 @@ export class ValidateMaxWidth {
           (ctx) => `maxWidth must be finite, got ${ctx.maxWidth}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               maxWidth: maxWidth.toString(),
               width: width.toString(),
               reason: SpreadErrorReason.INVALID_AMOUNT
@@ -56,6 +58,7 @@ export class ValidateMaxWidth {
           (ctx) => `maxWidth must be positive, got ${ctx.maxWidth}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               maxWidth: maxWidth.toString(),
               width: width.toString(),
               reason: SpreadErrorReason.INVALID_AMOUNT
@@ -72,6 +75,7 @@ export class ValidateMaxWidth {
           (ctx) => `Spread width ${ctx.width} exceeds maximum ${ctx.maxWidth}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               width: width.toString(),
               maxWidth: maxWidth.toString(),
               reason: SpreadErrorReason.WIDTH_TOO_LARGE
