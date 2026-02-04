@@ -123,10 +123,11 @@ class Quote {
   // Вычисления
   public spreadWidth(): Decimal | null
   public spreadPercentage(): Decimal | null
-  public midPrice(): Price | null
+  public mid(): Decimal | null
 
   // Сравнение
-  public equals(other: Quote): boolean
+  public equals(other: Quote): boolean  // БЕЗ timestamp
+  public equalsWithTimestamp(other: Quote): boolean  // С timestamp
 }
 ```
 

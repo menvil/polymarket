@@ -457,7 +457,7 @@ describe('Quote Core', () => {
       expect(quote1.equals(quote2)).toBe(false);
     });
 
-    it('различает котировки с разными timestamp', () => {
+    it('НЕ различает котировки с разными timestamp (только рыночные данные)', () => {
       const quote1 = Quote.of(
         Price.of(0.48),
         Price.of(0.52),
@@ -473,7 +473,8 @@ describe('Quote Core', () => {
         2000 // другой timestamp
       );
 
-      expect(quote1.equals(quote2)).toBe(false);
+      // equals() сравнивает только рыночные данные, timestamp игнорируется
+      expect(quote1.equals(quote2)).toBe(true);
     });
 
     it('различает one-sided и two-sided котировки', () => {
@@ -494,6 +495,111 @@ describe('Quote Core', () => {
       );
 
       expect(quote1.equals(quote2)).toBe(false);
+    });
+  });
+
+  describe('equalsWithTimestamp()', () => {
+    it('сравнивает полностью идентичные котировки включая timestamp', () => {
+      const timestamp = Date.now();
+      const quote1 = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        timestamp
+      );
+      const quote2 = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        timestamp
+      );
+
+      expect(quote1.equalsWithTimestamp(quote2)).toBe(true);
+    });
+
+    it('различает котировки с одинаковыми данными но разным timestamp', () => {
+      const quote1 = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        1000
+      );
+      const quote2 = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        2000 // другой timestamp
+      );
+
+      // equals() возвращает true (только рыночные данные)
+      expect(quote1.equals(quote2)).toBe(true);
+
+      // equalsWithTimestamp() возвращает false (timestamp отличается)
+      expect(quote1.equalsWithTimestamp(quote2)).toBe(false);
+    });
+
+    it('различает котировки с разным bid', () => {
+      const timestamp = Date.now();
+      const quote1 = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        timestamp
+      );
+      const quote2 = Quote.of(
+        Price.of(0.49), // другой bid
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        timestamp
+      );
+
+      expect(quote1.equalsWithTimestamp(quote2)).toBe(false);
+    });
+
+    it('различает котировки с разными sizes', () => {
+      const timestamp = Date.now();
+      const quote1 = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        timestamp
+      );
+      const quote2 = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(200), // другой bidSize
+        Quantity.of(150),
+        timestamp
+      );
+
+      expect(quote1.equalsWithTimestamp(quote2)).toBe(false);
+    });
+
+    it('различает one-sided котировки с одинаковым timestamp', () => {
+      const timestamp = Date.now();
+      const quote1 = Quote.of(
+        Price.of(0.48),
+        null,
+        Quantity.of(100),
+        Quantity.ZERO,
+        timestamp
+      );
+      const quote2 = Quote.of(
+        null,
+        Price.of(0.52),
+        Quantity.ZERO,
+        Quantity.of(150),
+        timestamp
+      );
+
+      expect(quote1.equalsWithTimestamp(quote2)).toBe(false);
     });
   });
 });

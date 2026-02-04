@@ -183,12 +183,13 @@ export class Quote {
   public isTwoSided(): boolean
   public hasBid(): boolean
   public hasAsk(): boolean
-  public equals(other: Quote): boolean
+  public equals(other: Quote): boolean  // БЕЗ timestamp
+  public equalsWithTimestamp(other: Quote): boolean  // С timestamp
 
   // ✅ DOMAIN LOGIC (вычисления)
   public spreadWidth(): Decimal | null
   public spreadPercentage(): Decimal | null
-  public midPrice(): Price | null
+  public mid(): Decimal | null  // возвращает Decimal для "Never Throw"
 }
 ```
 

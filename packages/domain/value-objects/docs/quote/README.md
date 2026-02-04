@@ -314,13 +314,17 @@ quote.spreadWidth(): Decimal | null  // null для one-sided
 quote.spreadPercentage(): Decimal | null  // null для one-sided
 
 // Средняя цена
-quote.midPrice(): Price | null  // null для one-sided
+quote.mid(): Decimal | null  // null для one-sided
 ```
 
 #### Сравнение
 
 ```typescript
+// Сравнивает рыночные данные БЕЗ timestamp
 quote.equals(other: Quote): boolean
+
+// Строгое сравнение включая timestamp
+quote.equalsWithTimestamp(other: Quote): boolean
 ```
 
 ### QuoteSerializer
@@ -687,7 +691,11 @@ const jsonString = QuoteSerializer.toString(quote);
 // Обратно в Quote
 const parsed = QuoteSerializer.parse(jsonString);
 if (parsed.ok) {
+  // equals() сравнивает только рыночные данные (без timestamp)
   console.log(quote.equals(parsed.value));  // true
+
+  // equalsWithTimestamp() проверяет полную идентичность
+  console.log(quote.equalsWithTimestamp(parsed.value));  // true (timestamp тоже сохранён)
 }
 ```
 

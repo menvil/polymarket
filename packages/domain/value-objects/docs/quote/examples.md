@@ -486,7 +486,11 @@ const original = QuoteService.create(0.48, 0.52, 100, 150, 1234567890000).value;
 const jsonString = QuoteSerializer.toString(original);
 const restored = QuoteSerializer.parse(jsonString).value;
 
+// equals() сравнивает рыночные данные
 console.log(original.equals(restored));  // true
+
+// equalsWithTimestamp() проверяет полную идентичность включая timestamp
+console.log(original.equalsWithTimestamp(restored));  // true
 ```
 
 ## Error Handling
@@ -845,6 +849,7 @@ const quote = QuoteService.create(0.48, 0.52, 100, 150).value;
 storage.saveQuote('market-123', quote);
 
 const loaded = storage.loadQuote('market-123');
+// equals() сравнивает рыночные данные (timestamp сохранён через JSON)
 console.log(loaded?.equals(quote));  // true
 
 // Export/Import

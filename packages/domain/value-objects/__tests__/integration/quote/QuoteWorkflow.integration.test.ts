@@ -412,32 +412,7 @@ describe('Quote Integration Tests', () => {
   });
 
   describe('Equals contract', () => {
-    it('сравнивает идентичные котировки с одинаковым timestamp', () => {
-      // Создаём с одинаковым timestamp
-      const ts = Date.now();
-      const result1 = QuoteService.createFromDecimals(
-        new Decimal(0.48),
-        new Decimal(0.52),
-        new Decimal(100),
-        new Decimal(150),
-        ts
-      );
-      const result2 = QuoteService.createFromDecimals(
-        new Decimal(0.48),
-        new Decimal(0.52),
-        new Decimal(100),
-        new Decimal(150),
-        ts
-      );
-
-      expect(result1.ok).toBe(true);
-      expect(result2.ok).toBe(true);
-      if (!result1.ok || !result2.ok) return;
-
-      expect(result1.value.equals(result2.value)).toBe(true);
-    });
-
-    it('различает котировки с разными timestamp', () => {
+    it('equals() сравнивает только рыночные данные без timestamp', () => {
       const ts1 = Date.now();
       const ts2 = ts1 + 1000; // +1 секунда
 
@@ -460,7 +435,60 @@ describe('Quote Integration Tests', () => {
       expect(result2.ok).toBe(true);
       if (!result1.ok || !result2.ok) return;
 
-      expect(result1.value.equals(result2.value)).toBe(false);
+      // equals() игнорирует timestamp - одинаковые рыночные данные
+      expect(result1.value.equals(result2.value)).toBe(true);
+    });
+
+    it('equalsWithTimestamp() различает котировки с разными timestamp', () => {
+      const ts1 = Date.now();
+      const ts2 = ts1 + 1000; // +1 секунда
+
+      const result1 = QuoteService.createFromDecimals(
+        new Decimal(0.48),
+        new Decimal(0.52),
+        new Decimal(100),
+        new Decimal(150),
+        ts1
+      );
+      const result2 = QuoteService.createFromDecimals(
+        new Decimal(0.48),
+        new Decimal(0.52),
+        new Decimal(100),
+        new Decimal(150),
+        ts2
+      );
+
+      expect(result1.ok).toBe(true);
+      expect(result2.ok).toBe(true);
+      if (!result1.ok || !result2.ok) return;
+
+      // equalsWithTimestamp() проверяет timestamp - разные снимки
+      expect(result1.value.equalsWithTimestamp(result2.value)).toBe(false);
+    });
+
+    it('equalsWithTimestamp() подтверждает идентичность включая timestamp', () => {
+      const ts = Date.now();
+      const result1 = QuoteService.createFromDecimals(
+        new Decimal(0.48),
+        new Decimal(0.52),
+        new Decimal(100),
+        new Decimal(150),
+        ts
+      );
+      const result2 = QuoteService.createFromDecimals(
+        new Decimal(0.48),
+        new Decimal(0.52),
+        new Decimal(100),
+        new Decimal(150),
+        ts
+      );
+
+      expect(result1.ok).toBe(true);
+      expect(result2.ok).toBe(true);
+      if (!result1.ok || !result2.ok) return;
+
+      expect(result1.value.equals(result2.value)).toBe(true);
+      expect(result1.value.equalsWithTimestamp(result2.value)).toBe(true);
     });
   });
 });

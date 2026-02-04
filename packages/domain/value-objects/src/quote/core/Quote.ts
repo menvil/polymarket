@@ -363,22 +363,33 @@ export class Quote {
   }
 
   /**
-   * Сравнивает с другой котировкой
+   * Сравнивает рыночные данные с другой котировкой
    *
    * @remarks
    * СТРОГОЕ равенство без epsilon.
-   * Сравнивает bid, ask, sizes и timestamp.
+   * Сравнивает bid, ask и sizes БЕЗ timestamp.
+   *
+   * Timestamp не включён, так как:
+   * - Market data приходит с различной точностью timestamp
+   * - Разные источники/адаптеры используют локальное время
+   * - Семантически важно "одинаковые рыночные условия", а не "один снимок"
+   *
+   * Для строгого сравнения включая timestamp используйте equalsWithTimestamp().
+   * Консистентно с Price.equals() и Spread.equals() которые не сравнивают метаданные.
    *
    * @param other - Другая котировка
-   * @returns true если котировки идентичны
+   * @returns true если котировки имеют одинаковые рыночные данные
    *
    * @example
    * ```typescript
-   * const quote1 = Quote.of(...);
-   * const quote2 = Quote.of(...);
-   * if (quote1.equals(quote2)) {
-   *   console.log('Quotes are equal');
-   * }
+   * const quote1 = Quote.of(bid, ask, bidSize, askSize, Date.now());
+   * const quote2 = Quote.of(bid, ask, bidSize, askSize, Date.now() + 100);
+   *
+   * // true - одинаковые рыночные условия, разное время
+   * console.log(quote1.equals(quote2));
+   *
+   * // false - это разные снимки данных
+   * console.log(quote1.equalsWithTimestamp(quote2));
    * ```
    */
   public equals(other: Quote): boolean {
@@ -400,7 +411,41 @@ export class Quote {
     if (!this._bidSize.equals(other._bidSize)) return false;
     if (!this._askSize.equals(other._askSize)) return false;
 
-    // Сравниваем timestamp (с точностью до миллисекунды)
+    // Timestamp НЕ сравниваем (см. документацию)
+    return true;
+  }
+
+  /**
+   * Строгое сравнение включая timestamp
+   *
+   * @remarks
+   * Сравнивает bid, ask, sizes И timestamp.
+   * Используйте когда нужно проверить что это именно тот же самый снимок данных.
+   *
+   * Для большинства случаев используйте equals() без timestamp.
+   *
+   * @param other - Другая котировка
+   * @returns true если котировки полностью идентичны включая timestamp
+   *
+   * @example
+   * ```typescript
+   * const ts = Date.now();
+   * const quote1 = Quote.of(bid, ask, bidSize, askSize, ts);
+   * const quote2 = Quote.of(bid, ask, bidSize, askSize, ts);
+   * const quote3 = Quote.of(bid, ask, bidSize, askSize, ts + 1000);
+   *
+   * console.log(quote1.equalsWithTimestamp(quote2)); // true
+   * console.log(quote1.equalsWithTimestamp(quote3)); // false - разное время
+   * console.log(quote1.equals(quote3)); // true - одинаковые рыночные данные
+   * ```
+   */
+  public equalsWithTimestamp(other: Quote): boolean {
+    // Сначала проверяем рыночные данные
+    if (!this.equals(other)) {
+      return false;
+    }
+
+    // Затем проверяем timestamp (с точностью до миллисекунды)
     return this._timestampMs === other._timestampMs;
   }
 }
