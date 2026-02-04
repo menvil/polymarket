@@ -493,6 +493,56 @@ spread.isZeroWidth();  // true
 - Полезно для моделирования perfect liquidity
 - Упрощает тестирование и граничные случаи
 
+### 5. Строгие сравнения (Strict Equality)
+
+Spread использует **строгие** сравнения без epsilon:
+
+```typescript
+const spread1 = SpreadService.fromValues(0.48, 0.52).value;
+const spread2 = SpreadService.fromValues(0.48, 0.52).value;
+
+// Строгое сравнение через equals()
+spread1.equals(spread2);  // true — точное совпадение
+
+// Приближенное совпадение НЕ равно
+const spread3 = SpreadService.fromValues(0.48000001, 0.52).value;
+spread1.equals(spread3);  // false — не точное совпадение
+```
+
+**Обоснование:**
+
+- **Предсказуемость** — поведение однозначное, без сюрпризов
+- **Детерминированность** — одинаковый результат всегда
+- **Type-safety** — `Decimal.equals()` гарантирует точное сравнение
+- **Нет магических чисел** — не нужно выбирать epsilon
+- **Соответствие финансам** — в финансах важна точность до последнего знака
+
+**Когда это важно:**
+
+```typescript
+// Проверка идентичности спредов в тестах
+expect(result.value.width().toNumber()).toBe(0.04);  // Строго!
+
+// Валидация результатов операций
+const tightened = SpreadService.tighten(spread, 0.01).value;
+const expected = SpreadService.fromValues(0.49, 0.51).value;
+tightened.equals(expected);  // true — точное совпадение после операции
+```
+
+**Альтернативы (если нужно приближенное сравнение):**
+
+Если действительно нужно сравнение с tolerance, используйте кастомную логику:
+
+```typescript
+function approximatelyEqual(s1: Spread, s2: Spread, epsilon: number): boolean {
+  const bidDiff = s1.bid().value().minus(s2.bid().value()).abs();
+  const askDiff = s1.ask().value().minus(s2.ask().value()).abs();
+  return bidDiff.lessThanOrEqualTo(epsilon) && askDiff.lessThanOrEqualTo(epsilon);
+}
+```
+
+Но в 99% случаев строгое сравнение — правильный выбор.
+
 ---
 
 ## Расширяемость

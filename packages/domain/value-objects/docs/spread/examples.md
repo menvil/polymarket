@@ -675,6 +675,92 @@ const spread2 = cache.getOrCreate(0.48, 0.52);
 
 ---
 
+## Строгие сравнения
+
+### Проверка идентичности спредов
+
+Spread использует **строгие** сравнения через `equals()`:
+
+```typescript
+import { SpreadService } from '@polymarket/value-objects';
+
+const spread1 = SpreadService.fromValues(0.48, 0.52);
+const spread2 = SpreadService.fromValues(0.48, 0.52);
+
+if (spread1.ok && spread2.ok) {
+  // Строгое сравнение — точное совпадение bid и ask
+  console.log(spread1.value.equals(spread2.value));  // true
+
+  // Объектная идентичность — разные экземпляры
+  console.log(spread1.value === spread2.value);  // false
+}
+```
+
+### Валидация результатов операций
+
+```typescript
+import { SpreadService } from '@polymarket/value-objects';
+
+const original = SpreadService.fromValues(0.48, 0.52).value;
+
+// Операция tighten
+const tightened = SpreadService.tighten(original, 0.01).value;
+
+// Проверка результата — строгое сравнение
+const expected = SpreadService.fromValues(0.49, 0.51).value;
+console.log(tightened.equals(expected));  // true — точное совпадение
+
+// Неточное совпадение НЕ считается равным
+const almostSame = SpreadService.fromValues(0.49000001, 0.51).value;
+console.log(tightened.equals(almostSame));  // false
+```
+
+### Тестирование с строгими сравнениями
+
+```typescript
+import { SpreadService } from '@polymarket/value-objects';
+
+describe('Spread operations', () => {
+  it('should tighten spread correctly', () => {
+    const spread = SpreadService.fromValues(0.48, 0.52).value;
+    const result = SpreadService.tighten(spread, 0.01);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // ✅ Строгое сравнение без epsilon
+      expect(result.value.bid().value().toNumber()).toBe(0.49);
+      expect(result.value.ask().value().toNumber()).toBe(0.51);
+      expect(result.value.width().toNumber()).toBe(0.02);
+
+      // ❌ НЕ используйте toBeCloseTo()
+      // expect(result.value.width().toNumber()).toBeCloseTo(0.02, 10);
+    }
+  });
+});
+```
+
+### Почему строгие сравнения?
+
+**Преимущества:**
+- ✅ Предсказуемость — нет сюрпризов с epsilon
+- ✅ Детерминированность — результат всегда одинаковый
+- ✅ Type-safety — Decimal.js гарантирует точность
+- ✅ Финансовая точность — важна до последнего знака
+- ✅ Простота — не нужно выбирать epsilon
+
+**Когда это важно:**
+```typescript
+// Проверка после сериализации/десериализации
+const original = SpreadService.fromValues(0.48, 0.52).value;
+const json = SpreadSerializer.toJSON(original);
+const restored = SpreadSerializer.fromJSON(json).value;
+
+// Roundtrip должен быть идентичным
+console.log(original.equals(restored));  // true — точное восстановление
+```
+
+---
+
 ## Дальнейшее чтение
 
 - [Facade API](./facade.md) — полное описание SpreadService

@@ -278,6 +278,11 @@ equals(other: Spread): boolean
 
 Проверяет равенство двух спредов (bid и ask совпадают).
 
+**Строгое сравнение:**
+- Использует **точное** сравнение значений через `Decimal.equals()`
+- **НЕ** использует epsilon или приближенные сравнения
+- Bid и Ask должны совпадать **полностью** до последнего знака
+
 **Пример:**
 
 ```typescript
@@ -291,8 +296,15 @@ const spread2 = Spread.of(
   Price.of(new Decimal(0.52))
 );
 
-console.log(spread1.equals(spread2));  // true
+console.log(spread1.equals(spread2));  // true (точное совпадение)
 console.log(spread1 === spread2);      // false (разные объекты)
+
+// Приближенное совпадение НЕ считается равенством
+const spread3 = Spread.of(
+  Price.of(new Decimal(0.48000001)),
+  Price.of(new Decimal(0.52))
+);
+console.log(spread1.equals(spread3));  // false (не точное совпадение)
 ```
 
 #### `isZeroWidth()`

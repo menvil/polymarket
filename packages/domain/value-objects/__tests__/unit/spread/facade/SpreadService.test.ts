@@ -74,7 +74,7 @@ describe('SpreadService', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.width().toNumber()).toBeCloseTo(0.04, 10);
+        expect(result.value.width().toNumber()).toBe(0.04);
       }
     });
 
@@ -134,8 +134,8 @@ describe('SpreadService', () => {
 
         expect(result.ok).toBe(true);
         if (result.ok) {
-          expect(result.value.bid().value().toNumber()).toBeCloseTo(0.49, 10);
-          expect(result.value.ask().value().toNumber()).toBeCloseTo(0.51, 10);
+          expect(result.value.bid().value().toNumber()).toBe(0.49);
+          expect(result.value.ask().value().toNumber()).toBe(0.51);
         }
       }
     });
@@ -151,8 +151,8 @@ describe('SpreadService', () => {
         expect(result.ok).toBe(true);
         if (result.ok) {
           // Should only tighten by 0.02 (half width)
-          expect(result.value.bid().value().toNumber()).toBeCloseTo(0.50, 10);
-          expect(result.value.ask().value().toNumber()).toBeCloseTo(0.50, 10);
+          expect(result.value.bid().value().toNumber()).toBe(0.50);
+          expect(result.value.ask().value().toNumber()).toBe(0.50);
           expect(result.value.isZeroWidth()).toBe(true);
         }
       }
@@ -214,8 +214,8 @@ describe('SpreadService', () => {
 
         expect(result.ok).toBe(true);
         if (result.ok) {
-          expect(result.value.bid().value().toNumber()).toBeCloseTo(0.46, 10);
-          expect(result.value.ask().value().toNumber()).toBeCloseTo(0.54, 10);
+          expect(result.value.bid().value().toNumber()).toBe(0.46);
+          expect(result.value.ask().value().toNumber()).toBe(0.54);
         }
       }
     });
@@ -291,10 +291,10 @@ describe('SpreadService', () => {
 
         expect(result.ok).toBe(true);
         if (result.ok) {
-          expect(result.value.bid().value().toNumber()).toBeCloseTo(0.53, 10);
-          expect(result.value.ask().value().toNumber()).toBeCloseTo(0.57, 10);
+          expect(result.value.bid().value().toNumber()).toBe(0.53);
+          expect(result.value.ask().value().toNumber()).toBe(0.57);
           // Width should remain unchanged
-          expect(result.value.width().toNumber()).toBeCloseTo(0.04, 10);
+          expect(result.value.width().toNumber()).toBe(0.04);
         }
       }
     });
@@ -308,10 +308,10 @@ describe('SpreadService', () => {
 
         expect(result.ok).toBe(true);
         if (result.ok) {
-          expect(result.value.bid().value().toNumber()).toBeCloseTo(0.43, 10);
-          expect(result.value.ask().value().toNumber()).toBeCloseTo(0.47, 10);
+          expect(result.value.bid().value().toNumber()).toBe(0.43);
+          expect(result.value.ask().value().toNumber()).toBe(0.47);
           // Width should remain unchanged
-          expect(result.value.width().toNumber()).toBeCloseTo(0.04, 10);
+          expect(result.value.width().toNumber()).toBe(0.04);
         }
       }
     });

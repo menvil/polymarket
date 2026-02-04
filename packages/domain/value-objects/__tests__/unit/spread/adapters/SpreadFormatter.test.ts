@@ -132,7 +132,7 @@ describe('SpreadFormatter', () => {
 
         expect(obj.bid).toBe(0.48);
         expect(obj.ask).toBe(0.52);
-        expect(obj.width).toBeCloseTo(0.04, 10);
+        expect(obj.width).toBe(0.04);
         expect(obj.midpoint).toBe(0.50);
       }
     });

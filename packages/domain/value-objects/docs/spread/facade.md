@@ -568,6 +568,16 @@ const spread = SpreadService.fromValues(0.48, 0.52);
 if (!result.ok && result.error.context?.reason === SpreadErrorReason.BID_GREATER_THAN_ASK) {
   // специфичная обработка
 }
+
+// Используйте строгие сравнения через equals()
+const spread1 = SpreadService.fromValues(0.48, 0.52).value;
+const spread2 = SpreadService.fromValues(0.48, 0.52).value;
+if (spread1.equals(spread2)) {
+  // Точное совпадение
+}
+
+// В тестах используйте toBe(), не toBeCloseTo()
+expect(spread.width().toNumber()).toBe(0.04);  // ✅ Строго
 ```
 
 ### ❌ DON'T
@@ -586,6 +596,11 @@ try {
 // ❌ Не мутируйте Spread (нельзя, но не пытайтесь обойти через any)
 const spread: any = SpreadService.fromValues(0.48, 0.52).value;
 spread._bid = newBid;  // ОЧЕНЬ ПЛОХО
+
+// ❌ Не используйте приближенные сравнения
+expect(spread.width().toNumber()).toBeCloseTo(0.04, 10);  // НЕТ!
+// Используйте строгие:
+expect(spread.width().toNumber()).toBe(0.04);  // ДА!
 ```
 
 ---
