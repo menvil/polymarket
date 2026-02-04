@@ -2,7 +2,6 @@ import { type Result, Ok, Err, isErr } from '@polymarket/result';
 import { InvalidSpreadError, InvalidPriceError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { Price, PriceService } from '../../price/index.js';
-import { Quote } from '../../quote/core/Quote.js';
 import { Spread, SpreadInvariantViolation, SpreadErrorReason } from '../core/index.js';
 import { ValidateBidAsk } from '../rules/ValidateBidAsk.js';
 import { addDecimal, subtractDecimal } from '@polymarket/math';
@@ -195,77 +194,6 @@ export class SpreadService {
    */
   public static zero(price: Price): Spread {
     return Spread.zero(price);
-  }
-
-  /**
-   * Создать Spread из Quote
-   *
-   * @param quote - Quote объект
-   * @returns Result со Spread или InvalidSpreadError
-   *
-   * @remarks
-   * Извлекает bid и ask из Quote и создает Spread.
-   * Возвращает ошибку если Quote односторонний (bid-only или ask-only).
-   *
-   * Контракт "Never Throw" - все ошибки возвращаются как Result.Err.
-   *
-   * @example
-   * ```typescript
-   * import { QuoteService } from '@polymarket/value-objects/quote';
-   * import { SpreadService } from '@polymarket/value-objects/spread';
-   *
-   * const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
-   * if (quoteResult.ok) {
-   *   const spreadResult = SpreadService.fromQuote(quoteResult.value);
-   *   if (spreadResult.ok) {
-   *     console.log(spreadResult.value.width()); // Decimal(0.04)
-   *   }
-   * }
-   *
-   * // One-sided quote - ошибка
-   * const bidOnlyResult = QuoteService.bidOnly(0.50, 100);
-   * if (bidOnlyResult.ok) {
-   *   const spreadResult = SpreadService.fromQuote(bidOnlyResult.value);
-   *   if (!spreadResult.ok) {
-   *     console.error(spreadResult.error.message); // "Cannot create Spread from one-sided quote"
-   *   }
-   * }
-   * ```
-   */
-  public static fromQuote(quote: Quote): Result<Spread, InvalidSpreadError> {
-    // Проверяем что Quote двусторонний
-    if (!quote.isTwoSided()) {
-      return Err(
-        new InvalidSpreadError(
-          'Cannot create Spread from one-sided quote',
-          {
-            context: {
-              op: 'fromQuote',
-              hasBid: quote.hasBid(),
-              hasAsk: quote.hasAsk()
-            }
-          }
-        )
-      );
-    }
-
-    // Извлекаем bid и ask из Quote
-    // SAFETY: isTwoSided() гарантирует что bid и ask не null
-    const bid = quote.bid()!;
-    const ask = quote.ask()!;
-
-    // Делегируем создание SpreadService.create() с error wrapping
-    const result = SpreadService.create(bid, ask);
-    if (isErr(result)) {
-      return Err(
-        rewrap('fromQuote', {
-          bid: bid.value().toString(),
-          ask: ask.value().toString()
-        }, result.error, InvalidSpreadError)
-      );
-    }
-
-    return result;
   }
 
   // ============================================================================

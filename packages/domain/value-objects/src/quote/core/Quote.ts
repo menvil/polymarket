@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
 import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
+import { Spread } from '../../spread/core/Spread.js';
 import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
 
 /**
@@ -382,24 +383,52 @@ export class Quote {
   }
 
   /**
-   * Вычисляет ширину спреда
+   * Создает объект Spread из bid и ask
    *
-   * @returns Decimal со значением spread или null если не two-sided
+   * @returns Spread объект или null если не two-sided
+   *
+   * @remarks
+   * Делегирует создание Spread.of() для двусторонних котировок.
+   * Возвращает null для односторонних котировок (bid-only или ask-only).
    *
    * @example
    * ```typescript
    * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
-   * const spread = quote.spreadWidth();
+   * const spread = quote.spread();
    * if (spread !== null) {
-   *   console.log(`Spread: ${spread.toString()}`);
+   *   console.log(`Width: ${spread.width().toString()}`);
+   *   console.log(`Mid: ${spread.mid().toString()}`);
+   * }
+   * ```
+   */
+  public spread(): Spread | null {
+    if (!this.isTwoSided()) {
+      return null;
+    }
+    // SAFETY: isTwoSided() гарантирует что bid и ask не null
+    return Spread.of(this._bid!, this._ask!);
+  }
+
+  /**
+   * Вычисляет ширину спреда
+   *
+   * @returns Decimal со значением spread или null если не two-sided
+   *
+   * @remarks
+   * Делегирует вычисление объекту Spread.
+   *
+   * @example
+   * ```typescript
+   * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
+   * const width = quote.spreadWidth();
+   * if (width !== null) {
+   *   console.log(`Spread: ${width.toString()}`);
    * }
    * ```
    */
   public spreadWidth(): Decimal | null {
-    if (!this.isTwoSided()) {
-      return null;
-    }
-    return this._ask!.value().minus(this._bid!.value());
+    const s = this.spread();
+    return s !== null ? s.width() : null;
   }
 
   /**
@@ -411,6 +440,7 @@ export class Quote {
    * Возвращает Decimal вместо Price для соблюдения контракта
    * "Core не бросает кроме инвариантов".
    * Для получения Price используйте QuoteService.getMidPrice().
+   * Делегирует вычисление объекту Spread.
    *
    * @example
    * ```typescript
@@ -422,19 +452,17 @@ export class Quote {
    * ```
    */
   public mid(): Decimal | null {
-    if (!this.isTwoSided()) {
-      return null;
-    }
-
-    return this._bid!.value()
-      .plus(this._ask!.value())
-      .dividedBy(2);
+    const s = this.spread();
+    return s !== null ? s.mid() : null;
   }
 
   /**
    * Вычисляет spread в процентах от mid
    *
    * @returns Decimal с процентами или null
+   *
+   * @remarks
+   * Делегирует вычисление объекту Spread.
    *
    * @example
    * ```typescript
@@ -446,21 +474,8 @@ export class Quote {
    * ```
    */
   public spreadPercentage(): Decimal | null {
-    const width = this.spreadWidth();
-    if (width === null) {
-      return null;
-    }
-
-    const midValue = this.mid();
-    if (midValue === null) {
-      return null;
-    }
-
-    if (midValue.equals(0)) {
-      return new Decimal(0);
-    }
-
-    return width.dividedBy(midValue).times(100);
+    const s = this.spread();
+    return s !== null ? s.widthPercentage() : null;
   }
 
   /**

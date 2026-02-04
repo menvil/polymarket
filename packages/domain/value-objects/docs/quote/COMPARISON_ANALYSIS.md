@@ -159,7 +159,7 @@ export class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestampMs: number
+    timestampMs: Decimal  // изменено с number на Decimal для валидации
   )
 
   // ❌ ТОЛЬКО ОДИН factory method
@@ -185,11 +185,15 @@ export class Quote {
   public hasAsk(): boolean
   public equals(other: Quote): boolean  // БЕЗ timestamp
   public equalsWithTimestamp(other: Quote): boolean  // С timestamp
+  public age(now: number): number  // возраст котировки
 
-  // ✅ Чистая математика (query методы, вычисления без side effects)
-  public spreadWidth(): Decimal | null
-  public spreadPercentage(): Decimal | null
-  public mid(): Decimal | null  // возвращает Decimal для "Never Throw"
+  // ✅ Делегирование в Spread (устранение дублирования логики)
+  public spread(): Spread | null  // создает Spread объект для two-sided quote
+
+  // ✅ Чистая математика (query методы, делегируют в Spread)
+  public spreadWidth(): Decimal | null  // делегирует в spread().width()
+  public spreadPercentage(): Decimal | null  // делегирует в spread().widthPercentage()
+  public mid(): Decimal | null  // делегирует в spread().mid()
 }
 ```
 

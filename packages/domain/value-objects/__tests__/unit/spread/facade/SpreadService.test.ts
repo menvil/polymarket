@@ -1,7 +1,6 @@
 import Decimal from 'decimal.js';
 import { SpreadService } from '../../../../src/spread/facade/SpreadService.js';
 import { PriceService } from '../../../../src/price/index.js';
-import { QuoteService } from '../../../../src/quote/facade/QuoteService.js';
 import { SpreadErrorReason } from '../../../../src/spread/core/SpreadErrorReason.js';
 
 describe('SpreadService', () => {
@@ -117,65 +116,6 @@ describe('SpreadService', () => {
 
         expect(spread.width().toNumber()).toBe(0);
         expect(spread.isZeroWidth()).toBe(true);
-      }
-    });
-  });
-
-  describe('fromQuote()', () => {
-    it('should create Spread from two-sided Quote', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
-      expect(quoteResult.ok).toBe(true);
-
-      if (quoteResult.ok) {
-        const spreadResult = SpreadService.fromQuote(quoteResult.value);
-
-        expect(spreadResult.ok).toBe(true);
-        if (spreadResult.ok) {
-          expect(spreadResult.value.bid().value().toNumber()).toBe(0.48);
-          expect(spreadResult.value.ask().value().toNumber()).toBe(0.52);
-          expect(spreadResult.value.width().toNumber()).toBe(0.04);
-        }
-      }
-    });
-
-    it('should return error for bid-only Quote', () => {
-      const quoteResult = QuoteService.bidOnly(0.50, 100);
-      expect(quoteResult.ok).toBe(true);
-
-      if (quoteResult.ok) {
-        const spreadResult = SpreadService.fromQuote(quoteResult.value);
-
-        expect(spreadResult.ok).toBe(false);
-        if (!spreadResult.ok) {
-          expect(spreadResult.error.message).toContain('one-sided quote');
-          expect(spreadResult.error.context?.op).toBe('fromQuote');
-        }
-      }
-    });
-
-    it('should return error for ask-only Quote', () => {
-      const quoteResult = QuoteService.askOnly(0.51, 150);
-      expect(quoteResult.ok).toBe(true);
-
-      if (quoteResult.ok) {
-        const spreadResult = SpreadService.fromQuote(quoteResult.value);
-
-        expect(spreadResult.ok).toBe(false);
-        if (!spreadResult.ok) {
-          expect(spreadResult.error.message).toContain('one-sided quote');
-        }
-      }
-    });
-
-    it('should wrap errors with fromQuote op context', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
-      expect(quoteResult.ok).toBe(true);
-
-      if (quoteResult.ok) {
-        const spreadResult = SpreadService.fromQuote(quoteResult.value);
-
-        expect(spreadResult.ok).toBe(true);
-        // Проверяем что метод работает и не бросает исключения
       }
     });
   });

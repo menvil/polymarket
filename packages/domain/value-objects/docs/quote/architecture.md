@@ -51,7 +51,8 @@ Quote value object построен по паттерну **Throws+Facade** с �
 │  │  Quote - immutable value object                           │ │
 │  │  - of() → throws QuoteInvariantViolation                  │ │
 │  │  - bid(), ask(), bidSize(), askSize()                     │ │
-│  │  - spreadWidth(), midPrice()                              │ │
+│  │  - spread() → делегирование в Spread                      │ │
+│  │  - spreadWidth(), mid(), spreadPercentage()               │ │
 │  │  - Инварианты:                                            │ │
 │  │    * Хотя бы одна сторона определена                      │ │
 │  │    * bid <= ask (для two-sided)                           │ │
@@ -88,8 +89,9 @@ Quote value object построен по паттерну **Throws+Facade** с �
    - Валидация timestamp
 
 2. **Чистая математика** (query методы без side effects):
-   - Вычисление spread width/percentage
-   - Вычисление mid price
+   - Делегирование в Spread для устранения дублирования логики
+   - spread() создает Spread объект для two-sided котировок
+   - spreadWidth(), mid(), spreadPercentage() делегируют вычисления в Spread
    - Сравнение котировок
 
 3. **Immutable представление** - все поля readonly, методы возвращают новые значения
@@ -98,6 +100,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 - Бизнес-правила (используй Rules layer)
 - Валидацию spread границ (используй ValidateMinSpread/ValidateMaxSpread)
 - Market crossing detection (используй ValidateMarketCrossing)
+- Дублирование логики Spread (используется делегирование)
 
 **Интерфейс:**
 
@@ -109,7 +112,7 @@ class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestampMs: number
+    timestampMs: Decimal  // изменено с number на Decimal для валидации
   )
 
   // Factory method - может бросать QuoteInvariantViolation
@@ -134,14 +137,18 @@ class Quote {
   public hasBid(): boolean
   public hasAsk(): boolean
 
-  // Вычисления
-  public spreadWidth(): Decimal | null
-  public spreadPercentage(): Decimal | null
-  public mid(): Decimal | null
+  // Делегирование в Spread (устранение дублирования)
+  public spread(): Spread | null  // создает Spread для two-sided
+
+  // Вычисления (делегируют в Spread)
+  public spreadWidth(): Decimal | null  // делегирует в spread().width()
+  public spreadPercentage(): Decimal | null  // делегирует в spread().widthPercentage()
+  public mid(): Decimal | null  // делегирует в spread().mid()
 
   // Сравнение
   public equals(other: Quote): boolean  // БЕЗ timestamp
   public equalsWithTimestamp(other: Quote): boolean  // С timestamp
+  public age(now: number): number  // возраст котировки в миллисекундах
 }
 ```
 
