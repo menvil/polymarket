@@ -310,7 +310,7 @@ describe('QuoteService', () => {
       }
     });
 
-    it('фэйлится когда результат выходит за диапазон', () => {
+    it('фэйлится когда shift вверх выходит за MAX_PRICE', () => {
       const quoteResult = QuoteService.create(0.98, 0.99, 100, 150);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
@@ -319,7 +319,22 @@ describe('QuoteService', () => {
 
       expect(shiftResult.ok).toBe(false);
       if (!shiftResult.ok) {
-        // bid становится 1.08, что превышает MAX_PRICE (1.0)
+        // bid становится 1.08, что превышает MAX_PRICE (0.9999)
+        expect(shiftResult.error.context?.reason).toBe(QuoteErrorReason.INVALID_BID);
+        expect(shiftResult.error.context?.op).toBe('shift');
+      }
+    });
+
+    it('фэйлится когда shift вниз выходит за MIN_PRICE', () => {
+      const quoteResult = QuoteService.create(0.001, 0.002, 100, 150);
+      expect(quoteResult.ok).toBe(true);
+      if (!quoteResult.ok) return;
+
+      const shiftResult = QuoteService.shift(quoteResult.value, new Decimal(-0.001));
+
+      expect(shiftResult.ok).toBe(false);
+      if (!shiftResult.ok) {
+        // bid становится 0, что ниже MIN_PRICE (0.0001)
         expect(shiftResult.error.context?.reason).toBe(QuoteErrorReason.INVALID_BID);
         expect(shiftResult.error.context?.op).toBe('shift');
       }
@@ -414,6 +429,44 @@ describe('QuoteService', () => {
       expect(skewResult.ok).toBe(false);
       if (!skewResult.ok) {
         expect(skewResult.error.context?.reason).toBe(QuoteErrorReason.BID_GREATER_THAN_ASK);
+      }
+    });
+
+    it('фэйлится когда skew выходит за нижнюю границу', () => {
+      const quoteResult = QuoteService.create(0.0005, 0.001, 100, 150);
+      expect(quoteResult.ok).toBe(true);
+      if (!quoteResult.ok) return;
+
+      const skewResult = QuoteService.skew(
+        quoteResult.value,
+        new Decimal(-0.001),  // bid вниз за MIN_PRICE
+        new Decimal(0)
+      );
+
+      expect(skewResult.ok).toBe(false);
+      if (!skewResult.ok) {
+        // bid становится -0.0005, что ниже MIN_PRICE (0.0001)
+        expect(skewResult.error.context?.reason).toBe(QuoteErrorReason.INVALID_BID);
+        expect(skewResult.error.context?.op).toBe('skew');
+      }
+    });
+
+    it('фэйлится когда skew выходит за верхнюю границу', () => {
+      const quoteResult = QuoteService.create(0.98, 0.99, 100, 150);
+      expect(quoteResult.ok).toBe(true);
+      if (!quoteResult.ok) return;
+
+      const skewResult = QuoteService.skew(
+        quoteResult.value,
+        new Decimal(0),
+        new Decimal(0.10)  // ask вверх за MAX_PRICE
+      );
+
+      expect(skewResult.ok).toBe(false);
+      if (!skewResult.ok) {
+        // ask становится 1.09, что выше MAX_PRICE (0.9999)
+        expect(skewResult.error.context?.reason).toBe(QuoteErrorReason.INVALID_ASK);
+        expect(skewResult.error.context?.op).toBe('skew');
       }
     });
   });
