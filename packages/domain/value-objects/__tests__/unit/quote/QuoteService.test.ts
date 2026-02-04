@@ -569,13 +569,13 @@ describe('QuoteService', () => {
     });
   });
 
-  describe('getMidOrNull()', () => {
+  describe('getMidPrice()', () => {
     it('возвращает mid для two-sided quote', () => {
       const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
-      const mid = QuoteService.getMidOrNull(quoteResult.value);
+      const mid = QuoteService.getMidPrice(quoteResult.value);
 
       expect(mid).not.toBeNull();
       expect(mid?.value().toNumber()).toBe(0.50);
@@ -586,7 +586,7 @@ describe('QuoteService', () => {
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
-      const mid = QuoteService.getMidOrNull(quoteResult.value);
+      const mid = QuoteService.getMidPrice(quoteResult.value);
 
       expect(mid).toBeNull();
     });
@@ -596,7 +596,7 @@ describe('QuoteService', () => {
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
-      const mid = QuoteService.getMidOrNull(quoteResult.value);
+      const mid = QuoteService.getMidPrice(quoteResult.value);
 
       expect(mid).toBeNull();
     });

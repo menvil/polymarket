@@ -289,8 +289,8 @@ describe('Quote Core', () => {
     });
   });
 
-  describe('midPrice()', () => {
-    it('вычисляет mid-price для двусторонней котировки', () => {
+  describe('mid()', () => {
+    it('вычисляет mid для двусторонней котировки', () => {
       const quote = Quote.of(
         Price.of(0.48),
         Price.of(0.52),
@@ -299,10 +299,10 @@ describe('Quote Core', () => {
         Date.now()
       );
 
-      const mid = quote.midPrice();
+      const mid = quote.mid();
 
       expect(mid).not.toBeNull();
-      expect(mid!.value().toNumber()).toBe(0.50);
+      expect(mid!.toNumber()).toBe(0.50);
     });
 
     it('возвращает null для bid-only котировки', () => {
@@ -314,7 +314,7 @@ describe('Quote Core', () => {
         Date.now()
       );
 
-      expect(quote.midPrice()).toBeNull();
+      expect(quote.mid()).toBeNull();
     });
 
     it('возвращает null для ask-only котировки', () => {
@@ -326,7 +326,7 @@ describe('Quote Core', () => {
         Date.now()
       );
 
-      expect(quote.midPrice()).toBeNull();
+      expect(quote.mid()).toBeNull();
     });
   });
 

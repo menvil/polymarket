@@ -70,7 +70,7 @@ describe('Quote Integration Tests', () => {
       expect(bidQuote.hasAsk()).toBe(false);
       expect(bidQuote.isTwoSided()).toBe(false);
       expect(bidQuote.spreadWidth()).toBeNull();
-      expect(bidQuote.midPrice()).toBeNull();
+      expect(bidQuote.mid()).toBeNull();
 
       // Создаём ask-only
       const askResult = QuoteService.askOnly(0.51, 150);
@@ -97,9 +97,9 @@ describe('Quote Integration Tests', () => {
       expect(spread!.toNumber()).toBe(0.04);
 
       // Mid price
-      const mid = quote.midPrice();
+      const mid = quote.mid();
       expect(mid).not.toBeNull();
-      expect(mid!.value().toNumber()).toBe(0.50);
+      expect(mid!.toNumber()).toBe(0.50);
 
       // Spread percentage
       const spreadPct = quote.spreadPercentage();
@@ -393,19 +393,19 @@ describe('Quote Integration Tests', () => {
       expect(spread2.toNumber()).toBe(0.04);
     });
 
-    it('getMidOrNull возвращает null для one-sided', () => {
+    it('getMidPrice возвращает null для one-sided', () => {
       const bidResult = QuoteService.bidOnly(0.50, 100);
       expect(bidResult.ok).toBe(true);
       if (!bidResult.ok) return;
 
-      const mid = QuoteService.getMidOrNull(bidResult.value);
+      const mid = QuoteService.getMidPrice(bidResult.value);
       expect(mid).toBeNull();
 
       const twoSidedResult = QuoteService.create(0.48, 0.52, 100, 150);
       expect(twoSidedResult.ok).toBe(true);
       if (!twoSidedResult.ok) return;
 
-      const mid2 = QuoteService.getMidOrNull(twoSidedResult.value);
+      const mid2 = QuoteService.getMidPrice(twoSidedResult.value);
       expect(mid2).not.toBeNull();
       expect(mid2!.value().toNumber()).toBe(0.50);
     });

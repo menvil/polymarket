@@ -66,7 +66,7 @@ export class SpreadFormatter {
       }
 
       if (showMidpoint) {
-        const midStr = spread.midpoint().value().toFixed(decimals);
+        const midStr = spread.mid().toFixed(decimals);
         parts.push(`mid: ${midStr}`);
       }
 
@@ -121,7 +121,7 @@ export class SpreadFormatter {
       bid: spread.bid().value().toNumber(),
       ask: spread.ask().value().toNumber(),
       width: spread.width().toNumber(),
-      midpoint: spread.midpoint().value().toNumber(),
+      midpoint: spread.mid().toNumber(),
     };
   }
 }

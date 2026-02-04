@@ -1,4 +1,5 @@
 import { Quote } from '../core/Quote.js';
+import { Price } from '../../price/core/Price.js';
 
 /**
  * Опции форматирования для котировок
@@ -194,7 +195,9 @@ export class QuoteFormatter {
       }
 
       if (includeMid) {
-        const mid = quote.midPrice()!;
+        const midDecimal = quote.mid()!;
+        // SAFETY: mid математически в границах если bid/ask валидны
+        const mid = Price.of(midDecimal);
         parts.push(`Mid: ${mid.value().toFixed(priceDecimals)}`);
       }
     }
@@ -264,7 +267,9 @@ export class QuoteFormatter {
       const spreadPct = quote.spreadPercentage()!;
       lines.push(`Spread ${spreadWidth.toFixed(priceDecimals).padEnd(8)} (${spreadPct.toFixed(2)}%)`);
 
-      const mid = quote.midPrice()!;
+      const midDecimal = quote.mid()!;
+      // SAFETY: mid математически в границах если bid/ask валидны
+      const mid = Price.of(midDecimal);
       lines.push(`Mid    ${mid.value().toFixed(priceDecimals)}`);
     }
 
@@ -340,7 +345,7 @@ export class QuoteFormatter {
       return null;
     }
 
-    const mid = quote.midPrice()!;
-    return mid.value().toFixed(decimals);
+    const midDecimal = quote.mid()!;
+    return midDecimal.toFixed(decimals);
   }
 }

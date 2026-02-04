@@ -531,4 +531,35 @@ export class SpreadService {
       );
     }
   }
+
+  /**
+   * Получает mid price для spread
+   *
+   * @remarks
+   * Создаёт Price из spread.mid() Decimal значения.
+   * Математически безопасно - mid всегда в границах если bid/ask валидны.
+   *
+   * @param spread - Spread для вычисления mid
+   * @returns Price mid
+   *
+   * @example
+   * ```typescript
+   * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
+   * const mid = SpreadService.getMidPrice(spread);
+   * console.log(mid.value().toString()); // "0.5"
+   * ```
+   */
+  public static getMidPrice(spread: Spread): Price {
+    const midDecimal = spread.mid();
+
+    // SAFETY: mid всегда в [MIN_PRICE, MAX_PRICE] если bid/ask валидны
+    // bid <= ask (инвариант) и оба в [MIN, MAX] → mid в [MIN, MAX]
+    // Price.of() не должен бросить, но используем try-catch для безопасности
+    try {
+      return Price.of(midDecimal);
+    } catch (error) {
+      // Это не должно случиться - если случилось, это баг
+      throw new Error(`Internal error: mid ${midDecimal} out of Price bounds`);
+    }
+  }
 }

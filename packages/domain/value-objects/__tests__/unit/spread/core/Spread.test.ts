@@ -63,15 +63,15 @@ describe('Spread Core', () => {
     });
   });
 
-  describe('midpoint()', () => {
-    it('should calculate midpoint correctly', () => {
+  describe('mid()', () => {
+    it('should calculate mid correctly', () => {
       const bid = Price.of(new Decimal(0.48));
       const ask = Price.of(new Decimal(0.52));
       const spread = Spread.of(bid, ask);
 
-      const midpoint = spread.midpoint();
+      const mid = spread.mid();
 
-      expect(midpoint.value().toNumber()).toBe(0.50);
+      expect(mid.toNumber()).toBe(0.50);
     });
   });
 

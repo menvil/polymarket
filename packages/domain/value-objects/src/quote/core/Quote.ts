@@ -302,29 +302,32 @@ export class Quote {
   }
 
   /**
-   * Вычисляет mid-price
+   * Вычисляет mid (среднее между bid и ask)
    *
-   * @returns Price mid или null если не two-sided
+   * @returns Decimal mid или null если не two-sided
+   *
+   * @remarks
+   * Возвращает Decimal вместо Price для соблюдения контракта
+   * "Core не бросает кроме инвариантов".
+   * Для получения Price используйте QuoteService.getMidPrice().
    *
    * @example
    * ```typescript
    * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
-   * const mid = quote.midPrice();
+   * const mid = quote.mid();
    * if (mid !== null) {
-   *   console.log(`Mid: ${mid.value()}`);
+   *   console.log(`Mid: ${mid.toString()}`);
    * }
    * ```
    */
-  public midPrice(): Price | null {
+  public mid(): Decimal | null {
     if (!this.isTwoSided()) {
       return null;
     }
 
-    const midValue = this._bid!.value()
+    return this._bid!.value()
       .plus(this._ask!.value())
       .dividedBy(2);
-
-    return Price.of(midValue);
   }
 
   /**
@@ -347,12 +350,11 @@ export class Quote {
       return null;
     }
 
-    const mid = this.midPrice();
-    if (mid === null) {
+    const midValue = this.mid();
+    if (midValue === null) {
       return null;
     }
 
-    const midValue = mid.value();
     if (midValue.equals(0)) {
       return new Decimal(0);
     }

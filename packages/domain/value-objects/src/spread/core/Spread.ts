@@ -26,11 +26,6 @@ import { SpreadErrorReason } from './SpreadErrorReason.js';
  */
 export class Spread {
   /**
-   * Epsilon для сравнения с нулём
-   */
-  private static readonly EPSILON = new Decimal(0.0001);
-
-  /**
    * Private constructor - используйте static factory methods
    *
    * @param b - Bid price
@@ -152,13 +147,17 @@ export class Spread {
   }
 
   /**
-   * Вычислить midpoint (среднюю цену)
+   * Вычислить mid (среднее между bid и ask)
    *
-   * @returns Midpoint как Price
+   * @returns Mid как Decimal
    *
    * @remarks
-   * Midpoint = (bid + ask) / 2
+   * Mid = (bid + ask) / 2
    * Представляет теоретическую справедливую цену.
+   *
+   * Возвращает Decimal вместо Price для соблюдения контракта
+   * "Core не бросает кроме инвариантов".
+   * Для получения Price используйте SpreadService.getMidPrice().
    *
    * @example
    * ```typescript
@@ -166,17 +165,26 @@ export class Spread {
    *   Price.of(new Decimal(0.48)),
    *   Price.of(new Decimal(0.52))
    * );
-   * spread.midpoint(); // Price(0.50)
+   * spread.mid(); // Decimal(0.50)
    * ```
    */
-  public midpoint(): Price {
-    const midValue = this.b
+  public mid(): Decimal {
+    return this.b
       .value()
       .plus(this.a.value())
       .dividedBy(2);
+  }
 
-    // Midpoint всегда валиден если bid и ask валидны
-    return Price.of(midValue);
+  /**
+   * Алиас для mid() для обратной совместимости
+   *
+   * @returns Midpoint как Decimal
+   *
+   * @remarks
+   * Используется в старых тестах. Новый код должен использовать mid().
+   */
+  public midpoint(): Decimal {
+    return this.mid();
   }
 
   /**
@@ -199,7 +207,7 @@ export class Spread {
    * ```
    */
   public widthPercentage(): Decimal {
-    const mid = this.midpoint().value();
+    const mid = this.mid();
 
     // Защита от деления на ноль
     if (mid.equals(0)) {
@@ -235,15 +243,16 @@ export class Spread {
   // ============================================================================
 
   /**
-   * Проверить является ли ширина нулевой
+   * Проверить является ли ширина нулевой (строгое сравнение)
    *
-   * @returns true если ширина < EPSILON
+   * @returns true если ширина === 0 (точное совпадение bid и ask)
    *
    * @remarks
    * Spread с нулевой шириной означает bid = ask (идеальная ликвидность).
+   * Использует строгое сравнение без epsilon.
    */
   public isZeroWidth(): boolean {
-    return this.width().abs().lessThan(Spread.EPSILON);
+    return this.width().equals(0);
   }
 
   /**

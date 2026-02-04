@@ -625,9 +625,23 @@ export class QuoteService {
    * }
    * ```
    */
-  public static getMidOrNull(quote: Quote): Price | null {
-    return quote.midPrice();
+  public static getMidPrice(quote: Quote): Price | null {
+    const midDecimal = quote.mid();
+    if (midDecimal === null) {
+      return null;
+    }
+
+    // SAFETY: mid всегда в [MIN_PRICE, MAX_PRICE] если bid/ask валидны
+    // bid <= ask (инвариант) и оба в [MIN, MAX] → mid в [MIN, MAX]
+    try {
+      return Price.of(midDecimal);
+    } catch (error) {
+      // Это не должно случиться, но если случится - возвращаем null
+      return null;
+    }
   }
+
+  // === Private Helper Methods ===
 
   /**
    * Helper: создаёт Price из Decimal (с обработкой null)
