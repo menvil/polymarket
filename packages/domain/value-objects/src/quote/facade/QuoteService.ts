@@ -87,84 +87,22 @@ export class QuoteService {
       askSizeValue: askSizeValue.toString()
     };
 
-    return wrapOp('creates', ctx, () => {
-      // Создаём Price объекты
-      let bid: Price | null = null;
-      if (bidValue !== null) {
-        const bidResult = PriceService.create(bidValue);
-        if (isErr(bidResult)) {
-          return Err(
-            rewrap(
-              'creates',
-              { component: 'bid' },
-              new InvalidQuoteError('Invalid bid price', {
-                context: {
-                  reason: QuoteErrorReason.INVALID_BID,
-                  cause: bidResult.error
-                }
-              }),
-              InvalidQuoteError
-            )
-          );
-        }
-        bid = bidResult.value;
-      }
+    return wrapOp('createFromDecimals', ctx, () => {
+      // Создаём Price объекты через helper
+      const bidResult = this.createPrice(bidValue, 'bid', 'createFromDecimals');
+      if (isErr(bidResult)) return bidResult;
+      const bid = bidResult.value;
 
-      let ask: Price | null = null;
-      if (askValue !== null) {
-        const askResult = PriceService.create(askValue);
-        if (isErr(askResult)) {
-          return Err(
-            rewrap(
-              'creates',
-              { component: 'ask' },
-              new InvalidQuoteError('Invalid ask price', {
-                context: {
-                  reason: QuoteErrorReason.INVALID_ASK,
-                  cause: askResult.error
-                }
-              }),
-              InvalidQuoteError
-            )
-          );
-        }
-        ask = askResult.value;
-      }
+      const askResult = this.createPrice(askValue, 'ask', 'createFromDecimals');
+      if (isErr(askResult)) return askResult;
+      const ask = askResult.value;
 
-      // Создаём Quantity объекты
-      const bidSizeResult = QuantityService.create(bidSizeValue);
-      if (isErr(bidSizeResult)) {
-        return Err(
-          rewrap(
-            'creates',
-            { component: 'bidSize' },
-            new InvalidQuoteError('Invalid bid size', {
-              context: {
-                reason: QuoteErrorReason.INVALID_BID_SIZE,
-                cause: bidSizeResult.error
-              }
-            }),
-            InvalidQuoteError
-          )
-        );
-      }
+      // Создаём Quantity объекты через helper
+      const bidSizeResult = this.createQuantity(bidSizeValue, 'bidSize', 'createFromDecimals');
+      if (isErr(bidSizeResult)) return bidSizeResult;
 
-      const askSizeResult = QuantityService.create(askSizeValue);
-      if (isErr(askSizeResult)) {
-        return Err(
-          rewrap(
-            'creates',
-            { component: 'askSize' },
-            new InvalidQuoteError('Invalid ask size', {
-              context: {
-                reason: QuoteErrorReason.INVALID_ASK_SIZE,
-                cause: askSizeResult.error
-              }
-            }),
-            InvalidQuoteError
-          )
-        );
-      }
+      const askSizeResult = this.createQuantity(askSizeValue, 'askSize', 'createFromDecimals');
+      if (isErr(askSizeResult)) return askSizeResult;
 
       // Создаём Quote через Core (может бросить QuoteInvariantViolation)
       try {
@@ -183,7 +121,7 @@ export class QuoteService {
           return Err(
             new InvalidQuoteError(error.message, {
               context: {
-                op: 'creates',
+                op: 'createFromDecimals',
                 reason: error.reason
               }
             })
@@ -193,7 +131,7 @@ export class QuoteService {
         // Неожиданная ошибка
         return Err(
           unexpectedError(
-            'creates',
+            'createFromDecimals',
             ctx,
             error,
             'quote',
@@ -440,7 +378,7 @@ export class QuoteService {
    * if (isErr(upResult)) {
    *   // Полный контекст ошибки
    *   console.error(upResult.error.context?.op); // 'shift'
-   *   console.error(upResult.error.context?.opChain); // ['creates', 'shift']
+   *   console.error(upResult.error.context?.opChain); // ['createFromDecimals', 'shift']
    * }
    * ```
    */
@@ -689,5 +627,87 @@ export class QuoteService {
    */
   public static getMidOrNull(quote: Quote): Price | null {
     return quote.midPrice();
+  }
+
+  // === Private Helper Methods ===
+
+  /**
+   * Helper: создаёт Price из Decimal (с обработкой null)
+   *
+   * @internal
+   * @param value - Decimal значение или null
+   * @param field - Название поля ('bid' или 'ask')
+   * @param op - Название операции для error context
+   * @returns Result с Price или InvalidQuoteError
+   */
+  private static createPrice(
+    value: Decimal | null,
+    field: 'bid' | 'ask',
+    op: string
+  ): Result<Price | null, InvalidQuoteError> {
+    if (value === null) {
+      return Ok(null);
+    }
+
+    const result = PriceService.create(value);
+    if (isErr(result)) {
+      const reason = field === 'bid'
+        ? QuoteErrorReason.INVALID_BID
+        : QuoteErrorReason.INVALID_ASK;
+
+      return Err(
+        rewrap(
+          op,
+          { component: field },
+          new InvalidQuoteError(`Invalid ${field} price`, {
+            context: {
+              reason,
+              cause: result.error
+            }
+          }),
+          InvalidQuoteError
+        )
+      );
+    }
+
+    return Ok(result.value);
+  }
+
+  /**
+   * Helper: создаёт Quantity из Decimal
+   *
+   * @internal
+   * @param value - Decimal значение
+   * @param field - Название поля ('bidSize' или 'askSize')
+   * @param op - Название операции для error context
+   * @returns Result с Quantity или InvalidQuoteError
+   */
+  private static createQuantity(
+    value: Decimal,
+    field: 'bidSize' | 'askSize',
+    op: string
+  ): Result<Quantity, InvalidQuoteError> {
+    const result = QuantityService.create(value);
+    if (isErr(result)) {
+      const reason = field === 'bidSize'
+        ? QuoteErrorReason.INVALID_BID_SIZE
+        : QuoteErrorReason.INVALID_ASK_SIZE;
+
+      return Err(
+        rewrap(
+          op,
+          { component: field },
+          new InvalidQuoteError(`Invalid ${field}`, {
+            context: {
+              reason,
+              cause: result.error
+            }
+          }),
+          InvalidQuoteError
+        )
+      );
+    }
+
+    return Ok(result.value);
   }
 }

@@ -55,14 +55,14 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  */
 export class Quote {
   private constructor(
-    private readonly b: Price | null,
-    private readonly a: Price | null,
-    private readonly bSize: Quantity,
-    private readonly aSize: Quantity,
-    private readonly tsMs: number
+    private readonly _bid: Price | null,
+    private readonly _ask: Price | null,
+    private readonly _bidSize: Quantity,
+    private readonly _askSize: Quantity,
+    private readonly _timestampMs: number
   ) {
     // Инвариант 1: хотя бы одна сторона определена
-    if (b === null && a === null) {
+    if (_bid === null && _ask === null) {
       throw new QuoteInvariantViolation(
         'At least one side (bid or ask) must be defined',
         'BOTH_SIDES_NULL'
@@ -70,16 +70,16 @@ export class Quote {
     }
 
     // Инвариант 2: bid <= ask (если оба определены)
-    if (b !== null && a !== null && b.value().greaterThan(a.value())) {
+    if (_bid !== null && _ask !== null && _bid.value().greaterThan(_ask.value())) {
       throw new QuoteInvariantViolation(
-        `Bid ${b.value()} cannot be greater than ask ${a.value()}`,
+        `Bid ${_bid.value()} cannot be greater than ask ${_ask.value()}`,
         'BID_GREATER_THAN_ASK'
       );
     }
 
     // Инвариант 3: sizes >= 0
     // Quantity уже гарантирует non-negative, но проверяем для defensive programming
-    if (bSize.value().isNegative() || aSize.value().isNegative()) {
+    if (_bidSize.value().isNegative() || _askSize.value().isNegative()) {
       // Это не должно случиться, но если случится - это баг в Quantity
       throw new Error('Internal error: Quantity should guarantee non-negative values');
     }
@@ -128,8 +128,6 @@ export class Quote {
     return new Quote(bid, ask, bidSize, askSize, timestampMs);
   }
 
-  // === Getters ===
-
   /**
    * Возвращает bid цену
    *
@@ -145,7 +143,7 @@ export class Quote {
    * ```
    */
   public bid(): Price | null {
-    return this.b;
+    return this._bid;
   }
 
   /**
@@ -163,7 +161,7 @@ export class Quote {
    * ```
    */
   public ask(): Price | null {
-    return this.a;
+    return this._ask;
   }
 
   /**
@@ -178,7 +176,7 @@ export class Quote {
    * ```
    */
   public bidSize(): Quantity {
-    return this.bSize;
+    return this._bidSize;
   }
 
   /**
@@ -193,7 +191,7 @@ export class Quote {
    * ```
    */
   public askSize(): Quantity {
-    return this.aSize;
+    return this._askSize;
   }
 
   /**
@@ -209,7 +207,7 @@ export class Quote {
    * ```
    */
   public timestampMs(): number {
-    return this.tsMs;
+    return this._timestampMs;
   }
 
   /**
@@ -228,10 +226,8 @@ export class Quote {
    * ```
    */
   public getTimestamp(): Date {
-    return new Date(this.tsMs);
+    return new Date(this._timestampMs);
   }
-
-  // === Query methods ===
 
   /**
    * Проверяет, является ли котировка двусторонней
@@ -247,7 +243,7 @@ export class Quote {
    * ```
    */
   public isTwoSided(): boolean {
-    return this.b !== null && this.a !== null;
+    return this._bid !== null && this._ask !== null;
   }
 
   /**
@@ -264,7 +260,7 @@ export class Quote {
    * ```
    */
   public hasBid(): boolean {
-    return this.b !== null;
+    return this._bid !== null;
   }
 
   /**
@@ -281,7 +277,7 @@ export class Quote {
    * ```
    */
   public hasAsk(): boolean {
-    return this.a !== null;
+    return this._ask !== null;
   }
 
   /**
@@ -302,7 +298,7 @@ export class Quote {
     if (!this.isTwoSided()) {
       return null;
     }
-    return this.a!.value().minus(this.b!.value());
+    return this._ask!.value().minus(this._bid!.value());
   }
 
   /**
@@ -324,8 +320,8 @@ export class Quote {
       return null;
     }
 
-    const midValue = this.b!.value()
-      .plus(this.a!.value())
+    const midValue = this._bid!.value()
+      .plus(this._ask!.value())
       .dividedBy(2);
 
     return Price.of(midValue);
@@ -393,15 +389,15 @@ export class Quote {
     orderbookAsk: Price | null
   ): boolean {
     // Проверяем пересечение bid стороны
-    if (this.b !== null && orderbookAsk !== null) {
-      if (this.b.value().greaterThanOrEqualTo(orderbookAsk.value())) {
+    if (this._bid !== null && orderbookAsk !== null) {
+      if (this._bid.value().greaterThanOrEqualTo(orderbookAsk.value())) {
         return true;
       }
     }
 
     // Проверяем пересечение ask стороны
-    if (this.a !== null && orderbookBid !== null) {
-      if (this.a.value().lessThanOrEqualTo(orderbookBid.value())) {
+    if (this._ask !== null && orderbookBid !== null) {
+      if (this._ask.value().lessThanOrEqualTo(orderbookBid.value())) {
         return true;
       }
     }
@@ -430,24 +426,24 @@ export class Quote {
    */
   public equals(other: Quote): boolean {
     // Сравниваем bid
-    if (this.b === null && other.b !== null) return false;
-    if (this.b !== null && other.b === null) return false;
-    if (this.b !== null && other.b !== null) {
-      if (!this.b.equals(other.b)) return false;
+    if (this._bid === null && other._bid !== null) return false;
+    if (this._bid !== null && other._bid === null) return false;
+    if (this._bid !== null && other._bid !== null) {
+      if (!this._bid.equals(other._bid)) return false;
     }
 
     // Сравниваем ask
-    if (this.a === null && other.a !== null) return false;
-    if (this.a !== null && other.a === null) return false;
-    if (this.a !== null && other.a !== null) {
-      if (!this.a.equals(other.a)) return false;
+    if (this._ask === null && other._ask !== null) return false;
+    if (this._ask !== null && other._ask === null) return false;
+    if (this._ask !== null && other._ask !== null) {
+      if (!this._ask.equals(other._ask)) return false;
     }
 
     // Сравниваем sizes
-    if (!this.bSize.equals(other.bSize)) return false;
-    if (!this.aSize.equals(other.aSize)) return false;
+    if (!this._bidSize.equals(other._bidSize)) return false;
+    if (!this._askSize.equals(other._askSize)) return false;
 
     // Сравниваем timestamp (с точностью до миллисекунды)
-    return this.tsMs === other.tsMs;
+    return this._timestampMs === other._timestampMs;
   }
 }
