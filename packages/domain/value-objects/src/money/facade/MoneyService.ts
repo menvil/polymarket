@@ -2,7 +2,7 @@ import { Result, Ok, Err, isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
 import { InvalidMoneyError } from '@polymarket/errors';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
-import { Money, SupportedCurrency } from '../core/Money';
+import { Money, type SupportedCurrency } from '../core/Money';
 import { MoneyInvariantViolation } from '../core/MoneyInvariantViolation';
 import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorForMoneyMultiplication';
 import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision';

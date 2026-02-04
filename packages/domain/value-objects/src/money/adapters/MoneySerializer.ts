@@ -1,6 +1,6 @@
 import { Result, Err } from '@polymarket/result';
 import { InvalidMoneyError } from '@polymarket/errors';
-import { Money, SupportedCurrency } from '../core/Money.js';
+import { Money, type SupportedCurrency } from '../core/Money.js';
 import { MoneyService } from '../facade/MoneyService.js';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
 

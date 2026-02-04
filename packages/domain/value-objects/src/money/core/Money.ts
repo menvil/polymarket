@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { MoneyInvariantViolation } from './MoneyInvariantViolation';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason';
-import { SUPPORTED_CURRENCIES, SupportedCurrency } from '../../shared/currency/SupportedCurrencies';
+import { SUPPORTED_CURRENCIES, type SupportedCurrency } from '../../shared/currency/SupportedCurrencies';
 
 // Re-export SupportedCurrency для удобства
 export type { SupportedCurrency };

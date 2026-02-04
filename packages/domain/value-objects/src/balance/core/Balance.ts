@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
 import { Money } from '../../money/core/Money.js';
-import { SupportedCurrency } from '../../shared/currency/SupportedCurrencies.js';
+import type { SupportedCurrency } from '../../shared/currency/SupportedCurrencies.js';
 import { BalanceInvariantViolation } from './BalanceInvariantViolation.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
