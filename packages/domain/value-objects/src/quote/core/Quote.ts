@@ -64,6 +64,95 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  * ```
  */
 export class Quote {
+  /** Максимальный timestamp (год 2286) */
+  private static readonly MAX_TIMESTAMP = new Decimal(9999999999999);
+
+  /**
+   * Валидирует timestamp (Unix ms)
+   *
+   * @param timestamp - Timestamp для валидации (Decimal)
+   * @param context - Контекст для сообщения об ошибке ('timestamp' или 'now')
+   * @throws {QuoteInvariantViolation} Если timestamp невалидный
+   * @throws {Error} Если timestamp для age() невалидный
+   *
+   * @remarks
+   * Общая валидация для конструктора (timestamp котировки) и age() (now timestamp).
+   * Разные типы ошибок для разных контекстов.
+   *
+   * Инварианты timestamp (Unix ms):
+   * - Not NaN
+   * - Finite
+   * - Integer (целое число миллисекунд)
+   * - >= 0 (Unix epoch начинается с 0)
+   * - <= MAX_TIMESTAMP (год 2286)
+   */
+  private static validateTimestamp(
+    timestamp: Decimal,
+    context: 'timestamp' | 'now'
+  ): void {
+    // Инвариант: Not NaN
+    if (timestamp.isNaN()) {
+      if (context === 'timestamp') {
+        throw new QuoteInvariantViolation(
+          `Timestamp must be finite, got ${timestamp.toString()}`,
+          'INVALID_TIMESTAMP'
+        );
+      } else {
+        throw new Error('Timestamp cannot be NaN');
+      }
+    }
+
+    // Инвариант: Finite
+    if (!timestamp.isFinite()) {
+      if (context === 'timestamp') {
+        throw new QuoteInvariantViolation(
+          `Timestamp must be finite, got ${timestamp.toString()}`,
+          'INVALID_TIMESTAMP'
+        );
+      } else {
+        throw new Error('Timestamp must be finite');
+      }
+    }
+
+    // Инвариант: Integer (Unix ms - целое число)
+    if (!timestamp.isInteger()) {
+      if (context === 'timestamp') {
+        throw new QuoteInvariantViolation(
+          `Timestamp must be integer milliseconds, got ${timestamp.toString()}`,
+          'INVALID_TIMESTAMP'
+        );
+      } else {
+        throw new Error('Timestamp must be integer (Unix ms)');
+      }
+    }
+
+    // Инвариант: >= 0 (Unix epoch)
+    if (timestamp.isNegative()) {
+      if (context === 'timestamp') {
+        throw new QuoteInvariantViolation(
+          `Timestamp must be non-negative, got ${timestamp.toString()}`,
+          'INVALID_TIMESTAMP'
+        );
+      } else {
+        throw new Error('Timestamp cannot be negative');
+      }
+    }
+
+    // Инвариант: <= MAX_TIMESTAMP (разумный верхний предел)
+    if (timestamp.greaterThan(Quote.MAX_TIMESTAMP)) {
+      if (context === 'timestamp') {
+        throw new QuoteInvariantViolation(
+          `Timestamp ${timestamp.toString()} exceeds maximum ${Quote.MAX_TIMESTAMP.toString()}`,
+          'INVALID_TIMESTAMP'
+        );
+      } else {
+        throw new Error(
+          `Timestamp ${timestamp.toString()} exceeds maximum ${Quote.MAX_TIMESTAMP.toString()}`
+        );
+      }
+    }
+  }
+
   private constructor(
     private readonly _bid: Price | null,
     private readonly _ask: Price | null,
@@ -112,58 +201,7 @@ export class Quote {
     }
 
     // Инвариант 5: timestamp должен быть валидным Unix ms
-    if (!_timestampMs.isFinite() || _timestampMs.isNaN()) {
-      throw new QuoteInvariantViolation(
-        `Timestamp must be finite, got ${_timestampMs.toString()}`,
-        'INVALID_TIMESTAMP'
-      );
-    }
-
-    if (!_timestampMs.isInteger()) {
-      throw new QuoteInvariantViolation(
-        `Timestamp must be integer milliseconds, got ${_timestampMs.toString()}`,
-        'INVALID_TIMESTAMP'
-      );
-    }
-
-    if (_timestampMs.isNegative()) {
-      throw new QuoteInvariantViolation(
-        `Timestamp must be non-negative, got ${_timestampMs.toString()}`,
-        'INVALID_TIMESTAMP'
-      );
-    }
-
-    // Разумный верхний предел (год 2286)
-    const MAX_TIMESTAMP = new Decimal(9999999999999);
-    if (_timestampMs.greaterThan(MAX_TIMESTAMP)) {
-      throw new QuoteInvariantViolation(
-        `Timestamp ${_timestampMs.toString()} exceeds maximum ${MAX_TIMESTAMP.toString()}`,
-        'INVALID_TIMESTAMP'
-      );
-    }
-  }
-
-  /**
-   * Нормализует timestamp из разных форматов в Decimal
-   *
-   * @internal Внутренний метод для устранения дублирования
-   *
-   * @param value - Timestamp в любом формате (Date, number, string, Decimal)
-   * @returns Decimal с Unix ms
-   *
-   * @remarks
-   * Единообразная обработка timestamp для of() и age().
-   * Паттерн повторяет Price.of() и Quantity.of().
-   */
-  private static _toTimestampMs(value: Date | number | string | Decimal): Decimal {
-    if (value instanceof Date) {
-      return new Decimal(value.getTime());
-    } else if (value instanceof Decimal) {
-      return value;
-    } else {
-      // number | string
-      return new Decimal(value);
-    }
+    Quote.validateTimestamp(_timestampMs, 'timestamp');
   }
 
   /**
@@ -175,27 +213,21 @@ export class Quote {
    * Бросает QuoteInvariantViolation при нарушении инвариантов.
    * Для публичного API используйте QuoteService.create().
    *
-   * Принимает гибкие типы для timestamp (единообразие с Price/Quantity):
-   * - Date → автоматически конвертируется через .getTime()
-   * - number → Unix ms
-   * - string → парсится как Unix ms
-   * - Decimal → используется напрямую
+   * ВАЖНО: timestamp должен быть Decimal (Unix ms).
+   * Конвертация Date/number/string → Decimal делается в QuoteService.
    *
    * @param bid - Цена покупки (может быть null)
    * @param ask - Цена продажи (может быть null)
    * @param bidSize - Объём на покупку
    * @param askSize - Объём на продажу
-   * @param timestamp - Временная метка (Date, Unix ms, строка, или Decimal)
+   * @param timestampMs - Временная метка в Unix ms (Decimal)
    * @returns Новый Quote объект
    * @throws {QuoteInvariantViolation} Если нарушены инварианты
    *
    * @example
    * ```typescript
-   * // ✅ В Core и Facade - разные способы
-   * Quote.of(bid, ask, bidSize, askSize, Date.now())        // number
-   * Quote.of(bid, ask, bidSize, askSize, new Date())        // Date
-   * Quote.of(bid, ask, bidSize, askSize, "1234567890000")   // string
-   * Quote.of(bid, ask, bidSize, askSize, new Decimal(now))  // Decimal
+   * // ✅ В Core и Facade
+   * Quote.of(bid, ask, bidSize, askSize, new Decimal(Date.now()));
    *
    * // ❌ В публичном коде - используй QuoteService
    * const result = QuoteService.create(0.48, 0.52, 100, 150);
@@ -206,9 +238,8 @@ export class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestamp: Date | number | string | Decimal
+    timestampMs: Decimal
   ): Quote {
-    const timestampMs = Quote._toTimestampMs(timestamp);
     return new Quote(bid, ask, bidSize, askSize, timestampMs);
   }
 
@@ -321,38 +352,38 @@ export class Quote {
   /**
    * Вычисляет возраст котировки в миллисекундах
    *
-   * @param now - Текущее время (Date, Unix ms number, строка, или Decimal)
+   * @param nowMs - Текущее время в Unix ms (Decimal)
    * @returns Возраст котировки в миллисекундах как Decimal
+   * @throws {Error} Если nowMs нарушает инварианты timestamp
    *
    * @remarks
    * Чистая математика: now - timestamp с использованием Decimal.
    * Полезно для проверок устаревания котировок.
-   * Если now < timestamp, возвращает отрицательное значение.
+   * Если now < timestamp, возвращает отрицательное значение (котировка из будущего).
    *
-   * Принимает гибкие типы для единообразия с Price/Quantity:
-   * - Date → автоматически конвертируется через .getTime()
-   * - number → Unix ms
-   * - string → парсится как Unix ms
-   * - Decimal → используется напрямую
+   * Инварианты timestamp (проверяются в Core):
+   * - Not NaN
+   * - Finite
+   * - Integer (Unix ms - целое число)
+   * - >= 0 (Unix epoch начинается с 0)
    *
    * @example
    * ```typescript
    * const quote = Quote.of(...);
    *
-   * // Разные способы использования
-   * quote.age(Date.now())        // number
-   * quote.age(new Date())        // Date
-   * quote.age("1234567890000")   // string
-   * quote.age(new Decimal(now))  // Decimal
+   * // Использование
+   * const age = quote.age(new Decimal(Date.now()));
    *
    * // Проверка устаревания
-   * if (quote.age(Date.now()).greaterThan(5000)) {
+   * if (age.greaterThan(5000)) {
    *   console.log('Quote is older than 5 seconds');
    * }
    * ```
    */
-  public age(now: Date | number | string | Decimal): Decimal {
-    const nowMs = Quote._toTimestampMs(now);
+  public age(nowMs: Decimal): Decimal {
+    // Валидация nowMs через общий метод
+    Quote.validateTimestamp(nowMs, 'now');
+
     return nowMs.minus(this._timestampMs);
   }
 

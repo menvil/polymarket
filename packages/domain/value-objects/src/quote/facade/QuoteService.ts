@@ -106,13 +106,16 @@ export class QuoteService {
 
       // Создаём Quote через Core (может бросить QuoteInvariantViolation)
       try {
+        // Конвертация timestamp → Decimal (Facade ответственность)
         const ts = timestamp ?? Date.now();
+        const timestampMs = ts instanceof Date ? new Decimal(ts.getTime()) : new Decimal(ts);
+
         const quote = Quote.of(
           bid,
           ask,
           bidSizeResult.value,
           askSizeResult.value,
-          ts
+          timestampMs
         );
         return Ok(quote);
       } catch (error) {
@@ -559,7 +562,7 @@ export class QuoteService {
           quote.ask(),
           bidSize,
           askSize,
-          Date.now()
+          new Decimal(Date.now())
         );
         return Ok(newQuote);
       } catch (error) {
