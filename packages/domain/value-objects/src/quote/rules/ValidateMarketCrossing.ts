@@ -1,6 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuoteError } from '@polymarket/errors';
 import { Price } from '../../price/core/Price.js';
+import { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 
 /**
@@ -102,5 +103,74 @@ export class ValidateMarketCrossing {
     }
 
     return Ok(undefined);
+  }
+
+  /**
+   * Проверяет отсутствие market crossing для Quote объекта
+   *
+   * @remarks
+   * Удобный метод который принимает Quote вместо отдельных bid/ask.
+   * Делегирует в check() для реализации.
+   *
+   * @param quote - Котировка для проверки
+   * @param orderbookBid - Лучший bid в order book
+   * @param orderbookAsk - Лучший ask в order book
+   * @returns Result с void или InvalidQuoteError
+   *
+   * @example
+   * ```typescript
+   * const quote = Quote.of(myBid, myAsk, bidSize, askSize, Date.now());
+   *
+   * const result = ValidateMarketCrossing.checkQuote(
+   *   quote,
+   *   Price.of(0.50), // orderbook bid
+   *   Price.of(0.51)  // orderbook ask
+   * );
+   *
+   * if (!result.ok) {
+   *   console.error('Quote would cross the market!');
+   * }
+   * ```
+   */
+  public static checkQuote(
+    quote: Quote,
+    orderbookBid: Price | null,
+    orderbookAsk: Price | null
+  ): Result<void, InvalidQuoteError> {
+    return this.check(quote.bid(), quote.ask(), orderbookBid, orderbookAsk);
+  }
+
+  /**
+   * Проверяет, пересекает ли котировка market (boolean версия)
+   *
+   * @remarks
+   * Утилита для простой проверки без Result.
+   * Возвращает true если пересекает, false если нет.
+   *
+   * @param quote - Котировка для проверки
+   * @param orderbookBid - Лучший bid в order book
+   * @param orderbookAsk - Лучший ask в order book
+   * @returns true если пересекает, false если нет
+   *
+   * @example
+   * ```typescript
+   * const quote = Quote.of(...);
+   * const crosses = ValidateMarketCrossing.crossesMarket(
+   *   quote,
+   *   Price.of(0.50),
+   *   Price.of(0.51)
+   * );
+   * if (crosses) {
+   *   console.log('Quote would cross the market!');
+   * }
+   * ```
+   */
+  public static crossesMarket(
+    quote: Quote,
+    orderbookBid: Price | null,
+    orderbookAsk: Price | null
+  ): boolean {
+    const result = this.checkQuote(quote, orderbookBid, orderbookAsk);
+    return !result.ok;
   }
 }

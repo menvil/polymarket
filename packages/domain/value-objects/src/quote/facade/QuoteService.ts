@@ -629,8 +629,6 @@ export class QuoteService {
     return quote.midPrice();
   }
 
-  // === Private Helper Methods ===
-
   /**
    * Helper: создаёт Price из Decimal (с обработкой null)
    *

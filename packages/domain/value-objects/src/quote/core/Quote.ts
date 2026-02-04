@@ -361,51 +361,6 @@ export class Quote {
   }
 
   /**
-   * Проверяет, пересекается ли quote с order book
-   *
-   * @remarks
-   * Пересечение происходит когда:
-   * - Наш bid >= orderbook ask (мы готовы покупать по цене выше рынка)
-   * - Наш ask <= orderbook bid (мы готовы продавать по цене ниже рынка)
-   *
-   * @param orderbookBid - Лучший bid в order book
-   * @param orderbookAsk - Лучший ask в order book
-   * @returns true если есть пересечение
-   *
-   * @example
-   * ```typescript
-   * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
-   * const crosses = quote.crossesMarket(
-   *   Price.of(0.50),
-   *   Price.of(0.51)
-   * );
-   * if (crosses) {
-   *   console.log('Quote would cross the market!');
-   * }
-   * ```
-   */
-  public crossesMarket(
-    orderbookBid: Price | null,
-    orderbookAsk: Price | null
-  ): boolean {
-    // Проверяем пересечение bid стороны
-    if (this._bid !== null && orderbookAsk !== null) {
-      if (this._bid.value().greaterThanOrEqualTo(orderbookAsk.value())) {
-        return true;
-      }
-    }
-
-    // Проверяем пересечение ask стороны
-    if (this._ask !== null && orderbookBid !== null) {
-      if (this._ask.value().lessThanOrEqualTo(orderbookBid.value())) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
    * Сравнивает с другой котировкой
    *
    * @remarks

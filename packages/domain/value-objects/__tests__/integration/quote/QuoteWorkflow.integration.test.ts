@@ -3,6 +3,7 @@ import { QuoteService } from '../../../src/quote/facade/QuoteService.js';
 import { QuoteSerializer } from '../../../src/quote/adapters/QuoteSerializer.js';
 import { QuoteFormatter } from '../../../src/quote/adapters/QuoteFormatter.js';
 import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
+import { ValidateMarketCrossing } from '../../../src/quote/rules/ValidateMarketCrossing.js';
 import { Price } from '../../../src/price/core/Price.js';
 import Decimal from 'decimal.js';
 
@@ -115,21 +116,24 @@ describe('Quote Integration Tests', () => {
       const quote = result.value;
 
       // Нормальная ситуация - не пересекается
-      const doesNotCross = quote.crossesMarket(
+      const doesNotCross = ValidateMarketCrossing.crossesMarket(
+        quote,
         Price.of(0.47), // orderbook bid
         Price.of(0.53)  // orderbook ask
       );
       expect(doesNotCross).toBe(false);
 
       // Наш bid >= orderbook ask - пересечение!
-      const crossesBid = quote.crossesMarket(
+      const crossesBid = ValidateMarketCrossing.crossesMarket(
+        quote,
         Price.of(0.47),
         Price.of(0.48)  // наш bid 0.48 >= orderbook ask 0.48
       );
       expect(crossesBid).toBe(true);
 
       // Наш ask <= orderbook bid - пересечение!
-      const crossesAsk = quote.crossesMarket(
+      const crossesAsk = ValidateMarketCrossing.crossesMarket(
+        quote,
         Price.of(0.52),  // наш ask 0.52 <= orderbook bid 0.52
         Price.of(0.53)
       );
