@@ -300,6 +300,37 @@ export class Quote {
   }
 
   /**
+   * Вычисляет возраст котировки в миллисекундах
+   *
+   * @param now - Текущее время в Unix ms (обычно Date.now())
+   * @returns Возраст котировки в миллисекундах
+   *
+   * @remarks
+   * Чистая математика: now - timestamp.
+   * Полезно для проверок устаревания котировок.
+   * Если now < timestamp, возвращает отрицательное значение.
+   *
+   * @example
+   * ```typescript
+   * const quote = Quote.of(...);
+   * const ageMs = quote.age(Date.now());
+   *
+   * if (ageMs > 5000) {
+   *   console.log('Quote is older than 5 seconds');
+   * }
+   *
+   * // Использование в Rules:
+   * const MAX_AGE_MS = 10000; // 10 секунд
+   * if (quote.age(Date.now()) > MAX_AGE_MS) {
+   *   // Quote устарела
+   * }
+   * ```
+   */
+  public age(now: number): number {
+    return now - this.timestampMs();
+  }
+
+  /**
    * Проверяет, является ли котировка двусторонней
    *
    * @returns true если есть и bid, и ask

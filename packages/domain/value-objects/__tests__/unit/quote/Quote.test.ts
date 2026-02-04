@@ -314,6 +314,72 @@ describe('Quote Core', () => {
     });
   });
 
+  describe('age()', () => {
+    it('вычисляет возраст котировки в миллисекундах', () => {
+      const timestamp = Date.now() - 5000; // 5 секунд назад
+      const quote = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        timestamp
+      );
+
+      const now = Date.now();
+      const age = quote.age(now);
+
+      expect(age).toBeGreaterThanOrEqual(5000);
+      expect(age).toBeLessThan(6000); // с учетом времени выполнения
+    });
+
+    it('возвращает 0 для текущего момента', () => {
+      const now = Date.now();
+      const quote = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        now
+      );
+
+      const age = quote.age(now);
+      expect(age).toBe(0);
+    });
+
+    it('возвращает отрицательное значение для будущего timestamp', () => {
+      const futureTimestamp = Date.now() + 10000; // 10 секунд в будущем
+      const quote = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        futureTimestamp
+      );
+
+      const now = Date.now();
+      const age = quote.age(now);
+
+      expect(age).toBeLessThan(0);
+      expect(age).toBeGreaterThan(-11000);
+    });
+
+    it('полезен для проверок устаревания', () => {
+      const oldTimestamp = Date.now() - 15000; // 15 секунд назад
+      const quote = Quote.of(
+        Price.of(0.48),
+        Price.of(0.52),
+        Quantity.of(100),
+        Quantity.of(150),
+        oldTimestamp
+      );
+
+      const MAX_AGE_MS = 10000; // 10 секунд
+      const isStale = quote.age(Date.now()) > MAX_AGE_MS;
+
+      expect(isStale).toBe(true);
+    });
+  });
+
   describe('isTwoSided()', () => {
     it('возвращает true для двусторонней котировки', () => {
       const quote = Quote.of(
