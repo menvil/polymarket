@@ -500,8 +500,8 @@ export class QuoteService {
     const ctx = {
       quoteBid: quote.bid()?.value().toString() ?? null,
       quoteAsk: quote.ask()?.value().toString() ?? null,
-      newBidSize: String(newBidSize),
-      newAskSize: String(newAskSize)
+      newBidSize: newBidSize instanceof Quantity ? newBidSize.value().toString() : String(newBidSize),
+      newAskSize: newAskSize instanceof Quantity ? newAskSize.value().toString() : String(newAskSize)
     };
 
     return wrapOp('updateSizes', ctx, () => {
