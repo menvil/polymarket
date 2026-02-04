@@ -315,9 +315,6 @@ quote.spreadPercentage(): Decimal | null  // null для one-sided
 
 // Средняя цена
 quote.midPrice(): Price | null  // null для one-sided
-
-// Проверка пересечения с другой котировкой
-quote.crossesMarket(orderbookBid: Price | null, orderbookAsk: Price | null): boolean
 ```
 
 #### Сравнение
@@ -632,8 +629,11 @@ console.log(spreadPct?.toNumber());    // 8.0
 const mid = quote.midPrice();
 console.log(mid?.value().toNumber());  // 0.50
 
-// Проверка crossing
-const crosses = quote.crossesMarket(
+// Проверка crossing (через Rules layer)
+import { ValidateMarketCrossing } from '@polymarket/value-objects/quote';
+
+const crosses = ValidateMarketCrossing.crossesMarket(
+  quote,
   Price.of(0.50),  // orderbook bid
   Price.of(0.51)   // orderbook ask
 );

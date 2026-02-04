@@ -189,7 +189,6 @@ export class Quote {
   public spreadWidth(): Decimal | null
   public spreadPercentage(): Decimal | null
   public midPrice(): Price | null
-  public crossesMarket(orderbookBid: Price | null, orderbookAsk: Price | null): boolean
 }
 ```
 
@@ -272,7 +271,6 @@ public static fromComponents(
   - `spreadWidth()` — вычисляет spread
   - `spreadPercentage()` — вычисляет spread в процентах
   - `midPrice()` — вычисляет mid price
-  - `crossesMarket()` — проверяет crossing
 
 **⚠️ ВОПРОС КОНСИСТЕНТНОСТИ:**
 

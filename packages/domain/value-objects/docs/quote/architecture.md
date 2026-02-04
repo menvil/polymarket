@@ -51,7 +51,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 │  │  Quote - immutable value object                           │ │
 │  │  - of() → throws QuoteInvariantViolation                  │ │
 │  │  - bid(), ask(), bidSize(), askSize()                     │ │
-│  │  - spreadWidth(), midPrice(), crossesMarket()             │ │
+│  │  - spreadWidth(), midPrice()                              │ │
 │  │  - Инварианты:                                            │ │
 │  │    * Хотя бы одна сторона определена                      │ │
 │  │    * bid <= ask (для two-sided)                           │ │
@@ -124,7 +124,6 @@ class Quote {
   public spreadWidth(): Decimal | null
   public spreadPercentage(): Decimal | null
   public midPrice(): Price | null
-  public crossesMarket(orderbookBid: Price | null, orderbookAsk: Price | null): boolean
 
   // Сравнение
   public equals(other: Quote): boolean

@@ -315,8 +315,8 @@ if (!result.ok) {
   }
 }
 
-// Или через метод Quote
-const crosses = quote.crossesMarket(orderbookBid, orderbookAsk);
+// Или через boolean утилиту
+const crosses = ValidateMarketCrossing.crossesMarket(quote, orderbookBid, orderbookAsk);
 if (crosses) {
   console.log('Quote crosses market!');
 }
