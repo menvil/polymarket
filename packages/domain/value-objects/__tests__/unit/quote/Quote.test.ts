@@ -18,7 +18,7 @@ describe('Quote Core', () => {
       expect(quote.ask()).toBe(ask);
       expect(quote.bidSize()).toBe(bidSize);
       expect(quote.askSize()).toBe(askSize);
-      expect(quote.timestampMs()).toBe(timestamp);
+      expect(quote.timestampMs().toNumber()).toBe(timestamp);
     });
 
     it('создаёт одностороннюю bid котировку', () => {
@@ -58,7 +58,7 @@ describe('Quote Core', () => {
 
       const quote = Quote.of(bid, ask, bidSize, askSize, date);
 
-      expect(quote.timestampMs()).toBe(date.getTime());
+      expect(quote.timestampMs().toNumber()).toBe(date.getTime());
     });
 
     it('бросает QuoteInvariantViolation когда обе стороны null', () => {
@@ -185,19 +185,19 @@ describe('Quote Core', () => {
 
     it('принимает валидный Unix timestamp (0)', () => {
       const quote = Quote.of(bid, ask, bidSize, askSize, 0);
-      expect(quote.timestampMs()).toBe(0);
+      expect(quote.timestampMs().toNumber()).toBe(0);
     });
 
     it('принимает валидный Unix timestamp (максимум)', () => {
       const maxTimestamp = 9999999999999;
       const quote = Quote.of(bid, ask, bidSize, askSize, maxTimestamp);
-      expect(quote.timestampMs()).toBe(maxTimestamp);
+      expect(quote.timestampMs().toNumber()).toBe(maxTimestamp);
     });
 
     it('принимает текущий Unix timestamp', () => {
       const now = Date.now();
       const quote = Quote.of(bid, ask, bidSize, askSize, now);
-      expect(quote.timestampMs()).toBe(now);
+      expect(quote.timestampMs().toNumber()).toBe(now);
     });
   });
 
@@ -309,7 +309,7 @@ describe('Quote Core', () => {
       const date = quote.getTimestamp();
       date.setFullYear(2050);
 
-      expect(quote.timestampMs()).toBe(timestamp);
+      expect(quote.timestampMs().toNumber()).toBe(timestamp);
       expect(quote.getTimestamp().getFullYear()).not.toBe(2050);
     });
   });
@@ -328,8 +328,8 @@ describe('Quote Core', () => {
       const now = Date.now();
       const age = quote.age(now);
 
-      expect(age).toBeGreaterThanOrEqual(5000);
-      expect(age).toBeLessThan(6000); // с учетом времени выполнения
+      expect(age.toNumber()).toBeGreaterThanOrEqual(5000);
+      expect(age.toNumber()).toBeLessThan(6000); // с учетом времени выполнения
     });
 
     it('возвращает 0 для текущего момента', () => {
@@ -343,7 +343,7 @@ describe('Quote Core', () => {
       );
 
       const age = quote.age(now);
-      expect(age).toBe(0);
+      expect(age.toNumber()).toBe(0);
     });
 
     it('возвращает отрицательное значение для будущего timestamp', () => {
@@ -359,8 +359,8 @@ describe('Quote Core', () => {
       const now = Date.now();
       const age = quote.age(now);
 
-      expect(age).toBeLessThan(0);
-      expect(age).toBeGreaterThan(-11000);
+      expect(age.toNumber()).toBeLessThan(0);
+      expect(age.toNumber()).toBeGreaterThan(-11000);
     });
 
     it('полезен для проверок устаревания', () => {
@@ -374,7 +374,7 @@ describe('Quote Core', () => {
       );
 
       const MAX_AGE_MS = 10000; // 10 секунд
-      const isStale = quote.age(Date.now()) > MAX_AGE_MS;
+      const isStale = quote.age(Date.now()).greaterThan(MAX_AGE_MS);
 
       expect(isStale).toBe(true);
     });

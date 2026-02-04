@@ -98,7 +98,7 @@ export class QuoteSerializer {
       ask: quote.ask()?.value().toNumber() ?? null,
       bidSize: quote.bidSize().value().toNumber(),
       askSize: quote.askSize().value().toNumber(),
-      timestamp: quote.timestampMs()
+      timestamp: quote.timestampMs().toNumber()
     };
   }
 

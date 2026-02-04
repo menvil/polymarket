@@ -264,21 +264,22 @@ export class Quote {
   /**
    * Возвращает timestamp в Unix ms
    *
-   * @returns number (Unix ms)
+   * @returns Decimal (Unix ms)
    *
    * @remarks
-   * Внутри хранится как Decimal для единообразия и валидации,
-   * но возвращается как number для удобства использования.
+   * Возвращает Decimal для единообразия с внутренним представлением.
+   * Для преобразования в number используйте `.toNumber()`.
+   * Для создания Date используйте `getTimestamp()` или `new Date(timestampMs().toNumber())`.
    *
    * @example
    * ```typescript
    * const quote = Quote.of(...);
-   * const tsMs = quote.timestampMs();
-   * console.log(new Date(tsMs).toISOString());
+   * const tsMs = quote.timestampMs();  // Decimal
+   * console.log(new Date(tsMs.toNumber()).toISOString());
    * ```
    */
-  public timestampMs(): number {
-    return this._timestampMs.toNumber();
+  public timestampMs(): Decimal {
+    return this._timestampMs;
   }
 
   /**
@@ -304,31 +305,31 @@ export class Quote {
    * Вычисляет возраст котировки в миллисекундах
    *
    * @param now - Текущее время в Unix ms (обычно Date.now())
-   * @returns Возраст котировки в миллисекундах
+   * @returns Возраст котировки в миллисекундах как Decimal
    *
    * @remarks
-   * Чистая математика: now - timestamp.
+   * Чистая математика: now - timestamp с использованием Decimal.
    * Полезно для проверок устаревания котировок.
    * Если now < timestamp, возвращает отрицательное значение.
    *
    * @example
    * ```typescript
    * const quote = Quote.of(...);
-   * const ageMs = quote.age(Date.now());
+   * const ageMs = quote.age(Date.now());  // Decimal
    *
-   * if (ageMs > 5000) {
+   * if (ageMs.greaterThan(5000)) {
    *   console.log('Quote is older than 5 seconds');
    * }
    *
    * // Использование в Rules:
    * const MAX_AGE_MS = 10000; // 10 секунд
-   * if (quote.age(Date.now()) > MAX_AGE_MS) {
+   * if (quote.age(Date.now()).greaterThan(MAX_AGE_MS)) {
    *   // Quote устарела
    * }
    * ```
    */
-  public age(now: number): number {
-    return now - this.timestampMs();
+  public age(now: number): Decimal {
+    return new Decimal(now).minus(this._timestampMs);
   }
 
   /**

@@ -26,7 +26,7 @@ describe('QuoteService', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.timestampMs()).toBe(timestamp);
+        expect(result.value.timestampMs().toNumber()).toBe(timestamp);
       }
     });
 

@@ -176,7 +176,7 @@ export class Quote {
   public ask(): Price | null
   public bidSize(): Quantity
   public askSize(): Quantity
-  public timestampMs(): number
+  public timestampMs(): Decimal  // возвращает Decimal для единообразия
   public getTimestamp(): Date
 
   // Queries
@@ -185,7 +185,7 @@ export class Quote {
   public hasAsk(): boolean
   public equals(other: Quote): boolean  // БЕЗ timestamp
   public equalsWithTimestamp(other: Quote): boolean  // С timestamp
-  public age(now: number): number  // возраст котировки
+  public age(now: number): Decimal  // возраст котировки (Decimal математика)
 
   // ✅ Делегирование в Spread (устранение дублирования логики)
   public spread(): Spread | null  // создает Spread объект для two-sided quote

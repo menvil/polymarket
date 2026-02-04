@@ -157,7 +157,7 @@ describe('Quote Integration Tests', () => {
         ask: 0.52,
         bidSize: 100,
         askSize: 150,
-        timestamp: original.timestampMs()
+        timestamp: original.timestampMs().toNumber()
       });
 
       // Десериализуем
@@ -172,7 +172,7 @@ describe('Quote Integration Tests', () => {
       expect(deserialized.ask()?.value().toNumber()).toBe(0.52);
       expect(deserialized.bidSize().value().toNumber()).toBe(100);
       expect(deserialized.askSize().value().toNumber()).toBe(150);
-      expect(deserialized.timestampMs()).toBe(original.timestampMs());
+      expect(deserialized.timestampMs().equals(original.timestampMs())).toBe(true);
     });
 
     it('toJSON → fromJSON сохраняет one-sided quote', () => {

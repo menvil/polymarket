@@ -103,7 +103,7 @@ export class QuoteFormatter {
     let result = `${bidStr} / ${askStr}`;
 
     if (options.includeTimestamp) {
-      const timestamp = new Date(quote.timestampMs()).toISOString();
+      const timestamp = new Date(quote.timestampMs().toNumber()).toISOString();
       result += ` [${timestamp}]`;
     }
 
@@ -203,7 +203,7 @@ export class QuoteFormatter {
     }
 
     if (options.includeTimestamp) {
-      const timestamp = new Date(quote.timestampMs()).toISOString();
+      const timestamp = new Date(quote.timestampMs().toNumber()).toISOString();
       parts.push(`Time: ${timestamp}`);
     }
 
@@ -275,7 +275,7 @@ export class QuoteFormatter {
 
     if (options.includeTimestamp) {
       lines.push(separator);
-      const timestamp = new Date(quote.timestampMs()).toISOString();
+      const timestamp = new Date(quote.timestampMs().toNumber()).toISOString();
       lines.push(`Time:  ${timestamp}`);
     }
 

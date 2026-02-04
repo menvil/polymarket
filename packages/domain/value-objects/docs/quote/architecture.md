@@ -129,7 +129,7 @@ class Quote {
   public ask(): Price | null
   public bidSize(): Quantity
   public askSize(): Quantity
-  public timestampMs(): number
+  public timestampMs(): Decimal  // возвращает Decimal для единообразия
   public getTimestamp(): Date
 
   // Проверки
@@ -148,7 +148,7 @@ class Quote {
   // Сравнение
   public equals(other: Quote): boolean  // БЕЗ timestamp
   public equalsWithTimestamp(other: Quote): boolean  // С timestamp
-  public age(now: number): number  // возраст котировки в миллисекундах
+  public age(now: number): Decimal  // возраст котировки (использует Decimal математику)
 }
 ```
 

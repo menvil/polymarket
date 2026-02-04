@@ -79,7 +79,7 @@ describe('QuoteSerializer', () => {
         expect(quote.ask()?.value().toNumber()).toBe(0.52);
         expect(quote.bidSize().value().toNumber()).toBe(100);
         expect(quote.askSize().value().toNumber()).toBe(150);
-        expect(quote.timestampMs()).toBe(1234567890000);
+        expect(quote.timestampMs().toNumber()).toBe(1234567890000);
       }
     });
 
@@ -294,7 +294,7 @@ describe('QuoteSerializer', () => {
         const quote = result.value;
         expect(quote.bid()?.value().toNumber()).toBe(0.48);
         expect(quote.ask()?.value().toNumber()).toBe(0.52);
-        expect(quote.timestampMs()).toBe(1234567890000);
+        expect(quote.timestampMs().toNumber()).toBe(1234567890000);
       }
     });
 
