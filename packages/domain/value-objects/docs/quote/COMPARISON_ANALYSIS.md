@@ -186,7 +186,7 @@ export class Quote {
   public equals(other: Quote): boolean  // БЕЗ timestamp
   public equalsWithTimestamp(other: Quote): boolean  // С timestamp
 
-  // ✅ DOMAIN LOGIC (вычисления)
+  // ✅ Чистая математика (query методы, вычисления без side effects)
   public spreadWidth(): Decimal | null
   public spreadPercentage(): Decimal | null
   public mid(): Decimal | null  // возвращает Decimal для "Never Throw"

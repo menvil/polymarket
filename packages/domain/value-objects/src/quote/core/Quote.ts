@@ -9,17 +9,26 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  * @remarks
  * Представляет котировку рынка (bid/ask pair) с размерами и временной меткой.
  *
- * Содержит ТОЛЬКО инварианты существования:
- * - Хотя бы одна сторона определена (bid или ask)
- * - bid <= ask (если оба определены)
- * - Sizes >= 0 (гарантирует Quantity)
+ * Содержит:
+ * 1. **Инварианты существования** (проверки при создании):
+ *    - Хотя бы одна сторона определена (bid или ask)
+ *    - bid <= ask (если оба определены)
+ *    - Sizes >= 0 (гарантирует Quantity)
+ *    - Структурная согласованность: bid=null → bidSize=0, ask=null → askSize=0
+ *    - Валидный timestamp (finite, integer, >= 0, <= MAX)
+ *
+ * 2. **Чистую математику** (query методы, вычисления):
+ *    - spreadWidth() - вычисление ширины спреда
+ *    - mid() - вычисление средней цены
+ *    - spreadPercentage() - вычисление процента спреда
+ *    - equals() - сравнение рыночных данных
  *
  * НЕ содержит:
  * - Бизнес-правила про размеры (используй Rules)
- * - Валидацию spread (используй Rules)
+ * - Валидацию spread границ (используй Rules)
  * - Market crossing detection бизнес-логику (используй Rules)
  *
- * Внутреннее представление: композиция Price + Quantity + timestamp.
+ * Внутреннее представление: композиция Price + Quantity + timestamp (Decimal).
  *
  * @example
  * ```typescript
@@ -41,10 +50,10 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  *   Date.now()
  * );
  *
- * // Query methods
+ * // Query methods (чистая математика)
  * console.log(quote.isTwoSided()); // true
  * const spread = quote.spreadWidth(); // Decimal | null
- * const mid = quote.midPrice(); // Price | null
+ * const mid = quote.mid(); // Decimal | null
  *
  * // ❌ В публичном коде - используй QuoteService:
  * const result = QuoteService.create(0.48, 0.52, 100, 150);

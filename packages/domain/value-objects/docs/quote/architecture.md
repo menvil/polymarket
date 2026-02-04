@@ -81,9 +81,23 @@ Quote value object построен по паттерну **Throws+Facade** с �
 
 **Ответственность:**
 
-- Immutable представление котировки
-- Бизнес-логика (вычисление spread, mid price, проверка crossing)
-- Инварианты: хотя бы одна сторона, bid <= ask
+1. **Инварианты существования** (проверки при создании):
+   - Хотя бы одна сторона определена
+   - Порядок цен: bid <= ask
+   - Структурная согласованность price/size
+   - Валидация timestamp
+
+2. **Чистая математика** (query методы без side effects):
+   - Вычисление spread width/percentage
+   - Вычисление mid price
+   - Сравнение котировок
+
+3. **Immutable представление** - все поля readonly, методы возвращают новые значения
+
+**НЕ содержит:**
+- Бизнес-правила (используй Rules layer)
+- Валидацию spread границ (используй ValidateMinSpread/ValidateMaxSpread)
+- Market crossing detection (используй ValidateMarketCrossing)
 
 **Интерфейс:**
 
