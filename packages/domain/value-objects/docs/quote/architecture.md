@@ -135,14 +135,24 @@ class Quote {
 
 1. **Хотя бы одна сторона:** `bid !== null || ask !== null`
 2. **Порядок цен:** `bid <= ask` (для двусторонних котировок)
+3. **Валидный timestamp:**
+   - `isFinite` - не NaN и не Infinity
+   - `isInteger` - целое число миллисекунд
+   - `>= 0` - неотрицательный Unix timestamp
+   - `<= 9999999999999` - разумный верхний предел (~год 2286)
 
 **Исключения:**
 
 ```typescript
 class QuoteInvariantViolation extends Error {
-  reason: 'BOTH_SIDES_NULL' | 'BID_GREATER_THAN_ASK'
+  reason: 'BOTH_SIDES_NULL' | 'BID_GREATER_THAN_ASK' | 'INVALID_TIMESTAMP'
 }
 ```
+
+**Внутреннее представление:**
+- `_bid`, `_ask`: `Price | null`
+- `_bidSize`, `_askSize`: `Quantity`
+- `_timestampMs`: `Decimal` (для единообразия и валидации, возвращается как `number`)
 
 ### Почему throws в Core?
 

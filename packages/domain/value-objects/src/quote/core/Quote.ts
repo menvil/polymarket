@@ -59,7 +59,7 @@ export class Quote {
     private readonly _ask: Price | null,
     private readonly _bidSize: Quantity,
     private readonly _askSize: Quantity,
-    private readonly _timestampMs: number
+    private readonly _timestampMs: Decimal
   ) {
     // Инвариант 1: хотя бы одна сторона определена
     if (_bid === null && _ask === null) {
@@ -83,6 +83,37 @@ export class Quote {
       // Это не должно случиться, но если случится - это баг в Quantity
       throw new Error('Internal error: Quantity should guarantee non-negative values');
     }
+
+    // Инвариант 4: timestamp должен быть валидным Unix ms
+    if (!_timestampMs.isFinite() || _timestampMs.isNaN()) {
+      throw new QuoteInvariantViolation(
+        `Timestamp must be finite, got ${_timestampMs.toString()}`,
+        'INVALID_TIMESTAMP'
+      );
+    }
+
+    if (!_timestampMs.isInteger()) {
+      throw new QuoteInvariantViolation(
+        `Timestamp must be integer milliseconds, got ${_timestampMs.toString()}`,
+        'INVALID_TIMESTAMP'
+      );
+    }
+
+    if (_timestampMs.isNegative()) {
+      throw new QuoteInvariantViolation(
+        `Timestamp must be non-negative, got ${_timestampMs.toString()}`,
+        'INVALID_TIMESTAMP'
+      );
+    }
+
+    // Разумный верхний предел (год 2286)
+    const MAX_TIMESTAMP = new Decimal(9999999999999);
+    if (_timestampMs.greaterThan(MAX_TIMESTAMP)) {
+      throw new QuoteInvariantViolation(
+        `Timestamp ${_timestampMs.toString()} exceeds maximum ${MAX_TIMESTAMP.toString()}`,
+        'INVALID_TIMESTAMP'
+      );
+    }
   }
 
   /**
@@ -98,7 +129,7 @@ export class Quote {
    * @param ask - Цена продажи (может быть null)
    * @param bidSize - Объём на покупку
    * @param askSize - Объём на продажу
-   * @param timestamp - Временная метка (Date или Unix ms)
+   * @param timestamp - Временная метка (Date, Unix ms number, или Decimal)
    * @returns Новый Quote объект
    * @throws {QuoteInvariantViolation} Если нарушены инварианты
    *
@@ -122,9 +153,18 @@ export class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestamp: Date | number
+    timestamp: Date | number | Decimal
   ): Quote {
-    const timestampMs = timestamp instanceof Date ? timestamp.getTime() : timestamp;
+    let timestampMs: Decimal;
+
+    if (timestamp instanceof Date) {
+      timestampMs = new Decimal(timestamp.getTime());
+    } else if (timestamp instanceof Decimal) {
+      timestampMs = timestamp;
+    } else {
+      timestampMs = new Decimal(timestamp);
+    }
+
     return new Quote(bid, ask, bidSize, askSize, timestampMs);
   }
 
@@ -199,6 +239,10 @@ export class Quote {
    *
    * @returns number (Unix ms)
    *
+   * @remarks
+   * Внутри хранится как Decimal для единообразия и валидации,
+   * но возвращается как number для удобства использования.
+   *
    * @example
    * ```typescript
    * const quote = Quote.of(...);
@@ -207,7 +251,7 @@ export class Quote {
    * ```
    */
   public timestampMs(): number {
-    return this._timestampMs;
+    return this._timestampMs.toNumber();
   }
 
   /**
@@ -226,7 +270,7 @@ export class Quote {
    * ```
    */
   public getTimestamp(): Date {
-    return new Date(this._timestampMs);
+    return new Date(this._timestampMs.toNumber());
   }
 
   /**
@@ -445,7 +489,7 @@ export class Quote {
       return false;
     }
 
-    // Затем проверяем timestamp (с точностью до миллисекунды)
-    return this._timestampMs === other._timestampMs;
+    // Затем проверяем timestamp (Decimal.equals для точного сравнения)
+    return this._timestampMs.equals(other._timestampMs);
   }
 }

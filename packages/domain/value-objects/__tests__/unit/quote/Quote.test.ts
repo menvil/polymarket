@@ -110,6 +110,97 @@ describe('Quote Core', () => {
     });
   });
 
+  describe('timestamp validation', () => {
+    const bid = Price.of(0.48);
+    const ask = Price.of(0.52);
+    const bidSize = Quantity.of(100);
+    const askSize = Quantity.of(150);
+
+    it('бросает INVALID_TIMESTAMP для NaN', () => {
+      expect(() => {
+        Quote.of(bid, ask, bidSize, askSize, NaN);
+      }).toThrow(QuoteInvariantViolation);
+
+      try {
+        Quote.of(bid, ask, bidSize, askSize, NaN);
+      } catch (error) {
+        expect(error).toBeInstanceOf(QuoteInvariantViolation);
+        expect((error as QuoteInvariantViolation).reason).toBe('INVALID_TIMESTAMP');
+      }
+    });
+
+    it('бросает INVALID_TIMESTAMP для Infinity', () => {
+      expect(() => {
+        Quote.of(bid, ask, bidSize, askSize, Infinity);
+      }).toThrow(QuoteInvariantViolation);
+
+      try {
+        Quote.of(bid, ask, bidSize, askSize, Infinity);
+      } catch (error) {
+        expect(error).toBeInstanceOf(QuoteInvariantViolation);
+        expect((error as QuoteInvariantViolation).reason).toBe('INVALID_TIMESTAMP');
+      }
+    });
+
+    it('бросает INVALID_TIMESTAMP для отрицательного значения', () => {
+      expect(() => {
+        Quote.of(bid, ask, bidSize, askSize, -1000);
+      }).toThrow(QuoteInvariantViolation);
+
+      try {
+        Quote.of(bid, ask, bidSize, askSize, -1000);
+      } catch (error) {
+        expect(error).toBeInstanceOf(QuoteInvariantViolation);
+        expect((error as QuoteInvariantViolation).reason).toBe('INVALID_TIMESTAMP');
+      }
+    });
+
+    it('бросает INVALID_TIMESTAMP для дробного числа', () => {
+      expect(() => {
+        Quote.of(bid, ask, bidSize, askSize, 1234.567);
+      }).toThrow(QuoteInvariantViolation);
+
+      try {
+        Quote.of(bid, ask, bidSize, askSize, 1234.567);
+      } catch (error) {
+        expect(error).toBeInstanceOf(QuoteInvariantViolation);
+        expect((error as QuoteInvariantViolation).reason).toBe('INVALID_TIMESTAMP');
+      }
+    });
+
+    it('бросает INVALID_TIMESTAMP для слишком большого значения', () => {
+      const tooLarge = 10000000000000; // > 9999999999999
+
+      expect(() => {
+        Quote.of(bid, ask, bidSize, askSize, tooLarge);
+      }).toThrow(QuoteInvariantViolation);
+
+      try {
+        Quote.of(bid, ask, bidSize, askSize, tooLarge);
+      } catch (error) {
+        expect(error).toBeInstanceOf(QuoteInvariantViolation);
+        expect((error as QuoteInvariantViolation).reason).toBe('INVALID_TIMESTAMP');
+      }
+    });
+
+    it('принимает валидный Unix timestamp (0)', () => {
+      const quote = Quote.of(bid, ask, bidSize, askSize, 0);
+      expect(quote.timestampMs()).toBe(0);
+    });
+
+    it('принимает валидный Unix timestamp (максимум)', () => {
+      const maxTimestamp = 9999999999999;
+      const quote = Quote.of(bid, ask, bidSize, askSize, maxTimestamp);
+      expect(quote.timestampMs()).toBe(maxTimestamp);
+    });
+
+    it('принимает текущий Unix timestamp', () => {
+      const now = Date.now();
+      const quote = Quote.of(bid, ask, bidSize, askSize, now);
+      expect(quote.timestampMs()).toBe(now);
+    });
+  });
+
   describe('getTimestamp()', () => {
     it('возвращает новый Date объект', () => {
       const quote = Quote.of(

@@ -6,7 +6,7 @@
  * на уровне типов вместо строковых констант.
  *
  * Структура:
- * - Инварианты Core (BOTH_SIDES_NULL, BID_GREATER_THAN_ASK)
+ * - Инварианты Core (BOTH_SIDES_NULL, BID_GREATER_THAN_ASK, INVALID_TIMESTAMP)
  * - Ошибки парсинга (INVALID_FORMAT)
  * - Ошибки компонентов (INVALID_BID, INVALID_ASK, INVALID_BID_SIZE, INVALID_ASK_SIZE)
  * - Бизнес-правила (BID_SIZE_MUST_BE_POSITIVE, ASK_SIZE_MUST_BE_POSITIVE)
@@ -28,6 +28,9 @@ export enum QuoteErrorReason {
 
   /** Bid больше ask */
   BID_GREATER_THAN_ASK = 'BID_GREATER_THAN_ASK',
+
+  /** Невалидный timestamp (не finite, не integer, отрицательный, или превышает максимум) */
+  INVALID_TIMESTAMP = 'INVALID_TIMESTAMP',
 
   /** Ошибка парсинга значения */
   INVALID_FORMAT = 'INVALID_FORMAT',
