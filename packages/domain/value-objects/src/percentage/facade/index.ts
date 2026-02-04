@@ -1,1 +1,0 @@
-export { PercentageService } from './PercentageService';

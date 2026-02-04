@@ -18,10 +18,6 @@
       "types": "./dist/money/index.d.ts",
       "import": "./dist/money/index.js"
     },
-    "./percentage": {
-      "types": "./dist/percentage/index.d.ts",
-      "import": "./dist/percentage/index.js"
-    },
     "./price": {
       "types": "./dist/price/index.d.ts",
       "import": "./dist/price/index.js"

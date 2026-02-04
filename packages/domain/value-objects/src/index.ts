@@ -24,20 +24,6 @@ export {
   BalanceErrorReason
 } from './balance/index.js';
 
-// Percentage модуль (только публичный API)
-export {
-  Percentage,
-  PercentageService,
-  PercentageFormatter,
-  PercentageSerializer,
-  PercentageErrorReason,
-  ValidateFeeNonNegative,
-  ValidateFeeForTrading,
-  ValidateTotalFee,
-  ValidateSpreadNonNegative,
-  ValidateSpreadRange
-} from './percentage/index.js';
-
 // Spread модуль (только публичный API)
 export {
   Spread,
