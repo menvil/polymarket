@@ -201,6 +201,84 @@ describe('Quote Core', () => {
     });
   });
 
+  describe('size consistency invariant', () => {
+    it('бросает INCONSISTENT_BID_SIZE когда bid=null но bidSize>0', () => {
+      expect(() => {
+        Quote.of(
+          null,  // bid отсутствует
+          Price.of(0.52),
+          Quantity.of(100),  // но bidSize = 100 - АБСУРД!
+          Quantity.of(150),
+          Date.now()
+        );
+      }).toThrow(QuoteInvariantViolation);
+
+      try {
+        Quote.of(
+          null,
+          Price.of(0.52),
+          Quantity.of(100),
+          Quantity.of(150),
+          Date.now()
+        );
+      } catch (error) {
+        expect(error).toBeInstanceOf(QuoteInvariantViolation);
+        expect((error as QuoteInvariantViolation).reason).toBe('INCONSISTENT_BID_SIZE');
+      }
+    });
+
+    it('бросает INCONSISTENT_ASK_SIZE когда ask=null но askSize>0', () => {
+      expect(() => {
+        Quote.of(
+          Price.of(0.48),
+          null,  // ask отсутствует
+          Quantity.of(100),
+          Quantity.of(150),  // но askSize = 150 - АБСУРД!
+          Date.now()
+        );
+      }).toThrow(QuoteInvariantViolation);
+
+      try {
+        Quote.of(
+          Price.of(0.48),
+          null,
+          Quantity.of(100),
+          Quantity.of(150),
+          Date.now()
+        );
+      } catch (error) {
+        expect(error).toBeInstanceOf(QuoteInvariantViolation);
+        expect((error as QuoteInvariantViolation).reason).toBe('INCONSISTENT_ASK_SIZE');
+      }
+    });
+
+    it('разрешает bid=null с bidSize=0', () => {
+      const quote = Quote.of(
+        null,
+        Price.of(0.52),
+        Quantity.ZERO,  // ✅ OK: bid=null → bidSize=0
+        Quantity.of(150),
+        Date.now()
+      );
+
+      expect(quote.bid()).toBeNull();
+      expect(quote.bidSize().value().toNumber()).toBe(0);
+    });
+
+    it('разрешает ask=null с askSize=0', () => {
+      const quote = Quote.of(
+        Price.of(0.48),
+        null,
+        Quantity.of(100),
+        Quantity.ZERO,  // ✅ OK: ask=null → askSize=0
+        Date.now()
+      );
+
+      expect(quote.ask()).toBeNull();
+      expect(quote.askSize().value().toNumber()).toBe(0);
+    });
+  });
+
   describe('getTimestamp()', () => {
     it('возвращает новый Date объект', () => {
       const quote = Quote.of(

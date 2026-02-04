@@ -84,7 +84,24 @@ export class Quote {
       throw new Error('Internal error: Quantity should guarantee non-negative values');
     }
 
-    // Инвариант 4: timestamp должен быть валидным Unix ms
+    // Инвариант 4: структурная согласованность price/size
+    // Если bid=null, то bidSize должен быть 0 (нельзя иметь размер без цены)
+    if (_bid === null && !_bidSize.value().equals(0)) {
+      throw new QuoteInvariantViolation(
+        `Bid size must be 0 when bid is null, got ${_bidSize.value().toString()}`,
+        'INCONSISTENT_BID_SIZE'
+      );
+    }
+
+    // Если ask=null, то askSize должен быть 0 (нельзя иметь размер без цены)
+    if (_ask === null && !_askSize.value().equals(0)) {
+      throw new QuoteInvariantViolation(
+        `Ask size must be 0 when ask is null, got ${_askSize.value().toString()}`,
+        'INCONSISTENT_ASK_SIZE'
+      );
+    }
+
+    // Инвариант 5: timestamp должен быть валидным Unix ms
     if (!_timestampMs.isFinite() || _timestampMs.isNaN()) {
       throw new QuoteInvariantViolation(
         `Timestamp must be finite, got ${_timestampMs.toString()}`,

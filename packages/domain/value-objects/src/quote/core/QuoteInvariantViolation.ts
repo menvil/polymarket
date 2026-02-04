@@ -11,6 +11,8 @@
  * - BOTH_SIDES_NULL: bid и ask оба null
  * - BID_GREATER_THAN_ASK: bid > ask
  * - INVALID_TIMESTAMP: timestamp не является валидным Unix ms (не finite, не integer, отрицательный, или превышает максимум)
+ * - INCONSISTENT_BID_SIZE: bid=null но bidSize>0 (структурная несогласованность)
+ * - INCONSISTENT_ASK_SIZE: ask=null но askSize>0 (структурная несогласованность)
  *
  * @example
  * ```typescript
@@ -21,11 +23,21 @@
  * ```
  */
 export class QuoteInvariantViolation extends Error {
-  public readonly reason: 'BOTH_SIDES_NULL' | 'BID_GREATER_THAN_ASK' | 'INVALID_TIMESTAMP';
+  public readonly reason:
+    | 'BOTH_SIDES_NULL'
+    | 'BID_GREATER_THAN_ASK'
+    | 'INVALID_TIMESTAMP'
+    | 'INCONSISTENT_BID_SIZE'
+    | 'INCONSISTENT_ASK_SIZE';
 
   constructor(
     message: string,
-    reason: 'BOTH_SIDES_NULL' | 'BID_GREATER_THAN_ASK' | 'INVALID_TIMESTAMP'
+    reason:
+      | 'BOTH_SIDES_NULL'
+      | 'BID_GREATER_THAN_ASK'
+      | 'INVALID_TIMESTAMP'
+      | 'INCONSISTENT_BID_SIZE'
+      | 'INCONSISTENT_ASK_SIZE'
   ) {
     super(`Quote invariant violation: ${message}`);
     this.name = 'QuoteInvariantViolation';

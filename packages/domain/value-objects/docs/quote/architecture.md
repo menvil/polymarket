@@ -135,7 +135,11 @@ class Quote {
 
 1. **Хотя бы одна сторона:** `bid !== null || ask !== null`
 2. **Порядок цен:** `bid <= ask` (для двусторонних котировок)
-3. **Валидный timestamp:**
+3. **Sizes >= 0:** гарантируется Quantity (defensive check)
+4. **Структурная согласованность price/size:**
+   - Если `bid === null` → `bidSize === 0` (нельзя иметь размер без цены)
+   - Если `ask === null` → `askSize === 0` (нельзя иметь размер без цены)
+5. **Валидный timestamp:**
    - `isFinite` - не NaN и не Infinity
    - `isInteger` - целое число миллисекунд
    - `>= 0` - неотрицательный Unix timestamp
@@ -145,7 +149,12 @@ class Quote {
 
 ```typescript
 class QuoteInvariantViolation extends Error {
-  reason: 'BOTH_SIDES_NULL' | 'BID_GREATER_THAN_ASK' | 'INVALID_TIMESTAMP'
+  reason:
+    | 'BOTH_SIDES_NULL'
+    | 'BID_GREATER_THAN_ASK'
+    | 'INVALID_TIMESTAMP'
+    | 'INCONSISTENT_BID_SIZE'  // bid=null но bidSize>0
+    | 'INCONSISTENT_ASK_SIZE'  // ask=null но askSize>0
 }
 ```
 
