@@ -315,6 +315,107 @@ export class BalanceService {
   }
 
   /**
+   * Списывает зарезервированные средства (исполнение сделки)
+   *
+   * @param balance - Текущий баланс
+   * @param amount - Сумма для списания
+   * @returns Result с новым Balance или InvalidBalanceError
+   * @throws Никогда - все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * Создаёт НОВЫЙ Balance с:
+   * - available не меняется
+   * - reserved = balance.reserved - amount
+   *
+   * **Use cases:**
+   * - Исполнение сделки (списание зарезервированных средств)
+   * - Комиссия за операцию (списание из reserved)
+   * - Любое списание БЕЗ возврата в available
+   *
+   * **Важно:** Это списание БЕЗ возврата в available.
+   * Если нужно вернуть средства в available - используйте unfreezeReserved().
+   *
+   * **Если списалось меньше запланированного:**
+   * ```typescript
+   * // Зарезервировали 100, списалось только 80
+   * consumeReserved(balance, Money.of(80));      // списываем фактическое
+   * unfreezeReserved(balance, Money.of(20));     // размораживаем остаток
+   * ```
+   *
+   * **Если нужно списать больше reserved:**
+   * ```typescript
+   * // reserved = 100, нужно списать 120
+   * reserve(balance, Money.of(20));              // дорезервировать недостающее
+   * consumeReserved(balance, Money.of(120));     // теперь можно списать
+   * ```
+   *
+   * Процесс:
+   * 1. Проверяет валюту через ValidateCurrencyMatch
+   * 2. Проверяет достаточность reserved через ValidateReleaseAmount
+   * 3. Вычисляет новый reserved через MoneyService
+   * 4. Создаёт новый Balance через create()
+   *
+   * Обработка ошибок:
+   * - Currency mismatch → InvalidBalanceError(CURRENCY_MISMATCH)
+   * - Insufficient reserved → InvalidBalanceError(INSUFFICIENT_RESERVED)
+   * - Invariant fail → InvalidBalanceError с reason
+   *
+   * @example
+   * ```typescript
+   * // Исполнение сделки - списываем из reserved
+   * const balance = expectOk(BalanceService.create(
+   *   Money.fromUSDC(7000),
+   *   Money.fromUSDC(5000)
+   * ));
+   *
+   * const result = BalanceService.consumeReserved(balance, Money.fromUSDC(2000));
+   * if (result.ok) {
+   *   console.log(result.value.available().value()); // 7000 (не изменилось!)
+   *   console.log(result.value.reserved().value());  // 3000 (было 5000)
+   * } else {
+   *   console.error(result.error.context.reason);
+   *   // BalanceErrorReason.INSUFFICIENT_RESERVED
+   *   // BalanceErrorReason.CURRENCY_MISMATCH
+   * }
+   * ```
+   */
+  public static consumeReserved(
+    balance: Balance,
+    amount: Money
+  ): Result<Balance, InvalidBalanceError> {
+    const op = 'consumeReserved';
+    const ctx = {
+      available: balance.available().value().toString(),
+      reserved: balance.reserved().value().toString(),
+      amount: amount.value().toString(),
+      currency: balance.currency()
+    };
+
+    return wrapOp(op, ctx, () => {
+      // Проверка 1: Валюты должны совпадать
+      const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
+      if (isErr(currencyCheck)) {
+        return Err(rewrap(op, ctx, currencyCheck.error, InvalidBalanceError));
+      }
+
+      // Проверка 2: Достаточно ли зарезервированных средств
+      const releaseCheck = ValidateReleaseAmount.check(amount, balance.reserved());
+      if (isErr(releaseCheck)) {
+        return Err(rewrap(op, ctx, releaseCheck.error, InvalidBalanceError));
+      }
+
+      // Вычисляем новый reserved (available не меняется!)
+      const newReservedResult = this.subtractMoney(balance.reserved(), amount);
+      if (isErr(newReservedResult)) {
+        return Err(rewrap(op, ctx, newReservedResult.error, InvalidBalanceError));
+      }
+
+      // Создаём новый Balance: available остается тем же, reserved уменьшается
+      return this.create(balance.available(), newReservedResult.value);
+    }, 'balance', InvalidBalanceError);
+  }
+
+  /**
    * Обновляет доступные средства (available)
    *
    * @param balance - Текущий баланс

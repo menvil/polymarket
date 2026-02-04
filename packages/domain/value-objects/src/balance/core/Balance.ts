@@ -188,7 +188,7 @@ export class Balance {
    * @example
    * ```typescript
    * const balance = Balance.ZERO.USDC;
-   * console.log(balance.isEmpty()); // true
+   * console.log(balance.isZero()); // true
    * console.log(balance.currency()); // 'USDC'
    *
    * // После добавления EUR в SUPPORTED_CURRENCIES:

@@ -64,12 +64,14 @@ const newBalance = result.value;
 
 ---
 
-### `release(balance, amount)`
+### `unfreezeReserved(balance, amount)`
 
-Освобождает зарезервированные средства обратно в available.
+Освобождает (размораживает) зарезервированные средства обратно в available.
+
+**Использование:** Отмена резервирования, возврат средств в доступные.
 
 ```typescript
-const result = BalanceService.release(balance, Money.of(2000));
+const result = BalanceService.unfreezeReserved(balance, Money.of(2000));
 
 if (isErr(result)) {
   if (result.error.context?.reason === BalanceErrorReason.INSUFFICIENT_RESERVED) {
@@ -86,8 +88,8 @@ const newBalance = result.value;
 
 1. Проверка валюты (ValidateCurrencyMatch)
 2. Проверка суммы (ValidateReleaseAmount)
-3. available + amount
-4. reserved - amount
+3. available + amount (средства возвращаются в available)
+4. reserved - amount (уменьшаем reserved)
 5. Создание нового Balance
 
 **Возможные ошибки:**
@@ -95,6 +97,62 @@ const newBalance = result.value;
 - `CURRENCY_MISMATCH` — валюта amount не совпадает с балансом
 - `INSUFFICIENT_RESERVED` — amount > reserved
 - `INVALID_FORMAT` — amount <= 0 или не finite
+
+**Примеры использования:**
+
+- Отмена ордера — средства возвращаются в available
+- Закрытие позиции без исполнения — возврат залога
+
+---
+
+### `consumeReserved(balance, amount)`
+
+Списывает (тратит) зарезервированные средства без возврата в available.
+
+**Использование:** Исполнение сделки, расход зарезервированных средств.
+
+```typescript
+const result = BalanceService.consumeReserved(balance, Money.of(3000));
+
+if (isErr(result)) {
+  if (result.error.context?.reason === BalanceErrorReason.INSUFFICIENT_RESERVED) {
+    console.log('Недостаточно зарезервированных средств');
+  }
+  return;
+}
+
+const newBalance = result.value;
+// available: не изменился
+// reserved: уменьшился на amount
+// total: уменьшился на amount (средства потрачены)
+```
+
+**Алгоритм:**
+
+1. Проверка валюты (ValidateCurrencyMatch)
+2. Проверка суммы (ValidateReleaseAmount)
+3. available остаётся без изменений
+4. reserved - amount (уменьшаем reserved)
+5. Создание нового Balance
+
+**Возможные ошибки:**
+
+- `CURRENCY_MISMATCH` — валюта amount не совпадает с балансом
+- `INSUFFICIENT_RESERVED` — amount > reserved
+- `INVALID_FORMAT` — amount <= 0 или не finite
+
+**Примеры использования:**
+
+- Исполнение ордера — средства потрачены на покупку
+- Списание комиссии из зарезервированных средств
+- Расход залога при исполнении обязательств
+
+**Отличие от unfreezeReserved():**
+
+| Метод | available | reserved | total | Сценарий |
+|-------|-----------|----------|-------|----------|
+| `unfreezeReserved()` | +amount | -amount | без изменений | Отмена, возврат средств |
+| `consumeReserved()` | без изменений | -amount | -amount | Исполнение, трата средств |
 
 ---
 

@@ -41,10 +41,17 @@ if (reserveResult.ok) {
   console.log(newBalance.reserved().value());  // 5000 ($50.00)
 }
 
-// Освобождение средств (после закрытия ордера)
-const releaseResult = BalanceService.release(newBalance, Money.of(3000));
-if (releaseResult.ok) {
-  console.log(releaseResult.value.available().value()); // 10000
+// Отмена ордера (размораживание средств)
+const unfreezeResult = BalanceService.unfreezeReserved(newBalance, Money.of(3000));
+if (unfreezeResult.ok) {
+  console.log(unfreezeResult.value.available().value()); // 10000
+}
+
+// Исполнение ордера (списание средств)
+const consumeResult = BalanceService.consumeReserved(newBalance, Money.of(3000));
+if (consumeResult.ok) {
+  console.log(consumeResult.value.available().value()); // 7000 (не изменился)
+  console.log(consumeResult.value.total().value());     // 9000 (уменьшился)
 }
 ```
 
@@ -64,7 +71,8 @@ Balance гарантирует соблюдение бизнес-правил:
 
 - `BalanceService.create()` — создание баланса
 - `BalanceService.reserve()` — резервирование средств (available → reserved)
-- `BalanceService.release()` — освобождение средств (reserved → available)
+- `BalanceService.unfreezeReserved()` — размораживание средств (reserved → available)
+- `BalanceService.consumeReserved()` — списание зарезервированных средств (уменьшает total)
 - `BalanceService.updateAvailable()` — обновление доступных средств
 
 ### Сериализация (Adapters Layer)

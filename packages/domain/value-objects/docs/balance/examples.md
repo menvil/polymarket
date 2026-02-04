@@ -31,7 +31,7 @@ console.log(balance.total().value().toNumber()); // 12000
 console.log(balance.reservedPercentage()); // 16.67
 
 // Проверка пустоты
-console.log(balance.isEmpty()); // false
+console.log(balance.isZero()); // false
 console.log(balance.hasReserved()); // true
 ```
 
@@ -63,17 +63,47 @@ console.log(newBalance.available().value()); // 7000 ($70)
 console.log(newBalance.reserved().value());  // 5000 ($50)
 ```
 
-### Закрытие ордера (освобождение)
+### Отмена ордера (размораживание средств)
 
 ```typescript
-// Ордер закрылся, освобождаем $30
-const releaseResult = BalanceService.release(newBalance, Money.of(3000));
+// Ордер отменён, возвращаем $30 в available
+const unfreezeResult = BalanceService.unfreezeReserved(newBalance, Money.of(3000));
 
-if (releaseResult.ok) {
-  const finalBalance = releaseResult.value;
-  console.log(finalBalance.available().value()); // 10000
+if (unfreezeResult.ok) {
+  const finalBalance = unfreezeResult.value;
+  console.log(finalBalance.available().value()); // 10000 (вернулись средства)
   console.log(finalBalance.reserved().value());  // 2000
+  console.log(finalBalance.total().value());     // 12000 (total не изменился)
 }
+```
+
+### Исполнение ордера (списание средств)
+
+```typescript
+// Ордер исполнился, списываем $30 из reserved
+const consumeResult = BalanceService.consumeReserved(newBalance, Money.of(3000));
+
+if (consumeResult.ok) {
+  const finalBalance = consumeResult.value;
+  console.log(finalBalance.available().value()); // 7000 (не изменился)
+  console.log(finalBalance.reserved().value());  // 2000 (3000 списано)
+  console.log(finalBalance.total().value());     // 9000 (уменьшился на 3000)
+}
+```
+
+**Разница между unfreezeReserved и consumeReserved:**
+
+```typescript
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(5000)));
+// total: 15000
+
+// Вариант 1: Размораживание (отмена)
+const unfrozen = expectOk(BalanceService.unfreezeReserved(balance, Money.of(3000)));
+// available: 13000 (+3000), reserved: 2000 (-3000), total: 15000 (без изменений)
+
+// Вариант 2: Списание (исполнение)
+const consumed = expectOk(BalanceService.consumeReserved(balance, Money.of(3000)));
+// available: 10000 (без изменений), reserved: 2000 (-3000), total: 12000 (-3000)
 ```
 
 ### Пополнение баланса
@@ -205,12 +235,22 @@ console.log(BalanceFormatter.toDebugString(balance));
 ```typescript
 function handleBalanceOperation(
   balance: Balance,
-  operation: 'reserve' | 'release',
+  operation: 'reserve' | 'unfreezeReserved' | 'consumeReserved',
   amount: Money
 ): Balance | null {
-  const result = operation === 'reserve'
-    ? BalanceService.reserve(balance, amount)
-    : BalanceService.release(balance, amount);
+  let result: Result<Balance, InvalidBalanceError>;
+
+  switch (operation) {
+    case 'reserve':
+      result = BalanceService.reserve(balance, amount);
+      break;
+    case 'unfreezeReserved':
+      result = BalanceService.unfreezeReserved(balance, amount);
+      break;
+    case 'consumeReserved':
+      result = BalanceService.consumeReserved(balance, amount);
+      break;
+  }
 
   if (isErr(result)) {
     const { reason, op } = result.error.context || {};
@@ -310,7 +350,7 @@ function canRelease(balance: Balance, amount: Money): boolean {
 const emptyBalance = Balance.ZERO.USDC;
 console.log(emptyBalance.available().value()); // 0
 console.log(emptyBalance.reserved().value());  // 0
-console.log(emptyBalance.isEmpty()); // true
+console.log(emptyBalance.isZero()); // true
 
 // Проверка singleton
 console.log(Balance.ZERO.USDC === Balance.ZERO.USDC); // true

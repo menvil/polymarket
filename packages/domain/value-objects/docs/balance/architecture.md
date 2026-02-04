@@ -17,7 +17,7 @@ Balance реализован по паттерну **Throws+Facade** с 4 сло
 
 - ✅ Throws исключения при нарушении инвариантов
 - ✅ Иммутабельность через `readonly` поля
-- ✅ Query методы (total, isEmpty, hasReserved, reservedPercentage, hasSameCurrency)
+- ✅ Query методы (total, isZero, hasReserved, reservedPercentage, hasSameCurrency)
 - ✅ Helpers (ZERO singleton, withZeroReserved)
 
 **Инварианты:**
@@ -153,8 +153,14 @@ export class BalanceService {
     amount: Money
   ): Result<Balance, InvalidBalanceError>
 
-  // Освобождение: available + amount, reserved - amount
-  public static release(
+  // Размораживание: available + amount, reserved - amount (total без изменений)
+  public static unfreezeReserved(
+    balance: Balance,
+    amount: Money
+  ): Result<Balance, InvalidBalanceError>
+
+  // Списание: available без изменений, reserved - amount (total уменьшается)
+  public static consumeReserved(
     balance: Balance,
     amount: Money
   ): Result<Balance, InvalidBalanceError>

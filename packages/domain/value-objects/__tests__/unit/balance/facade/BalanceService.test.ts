@@ -255,6 +255,102 @@ describe('BalanceService', () => {
     });
   });
 
+  describe('consumeReserved()', () => {
+    const createBalance = () => {
+      const result = BalanceService.create(
+        Money.of(7000),
+        Money.of(5000)
+      );
+      if (!result.ok) throw new Error('Failed to create balance');
+      return result.value;
+    };
+
+    describe('успешное списание', () => {
+      it('списывает часть зарезервированных средств', () => {
+        const balance = createBalance();
+        const result = BalanceService.consumeReserved(balance, Money.of(2000));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.available().value().toNumber()).toBe(7000); // available не изменился
+          expect(result.value.reserved().value().toNumber()).toBe(3000); // reserved уменьшился
+          expect(result.value.total().value().toNumber()).toBe(10000); // total уменьшился
+        }
+      });
+
+      it('списывает все reserved', () => {
+        const balance = createBalance();
+        const result = BalanceService.consumeReserved(balance, Money.of(5000));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.available().value().toNumber()).toBe(7000);
+          expect(result.value.reserved().value().toNumber()).toBe(0);
+          expect(result.value.total().value().toNumber()).toBe(7000);
+        }
+      });
+
+      it('возвращает новый экземпляр (immutability)', () => {
+        const balance = createBalance();
+        const result = BalanceService.consumeReserved(balance, Money.of(1000));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).not.toBe(balance);
+          expect(balance.available().value().toNumber()).toBe(7000); // оригинал не изменён
+          expect(balance.reserved().value().toNumber()).toBe(5000); // оригинал не изменён
+        }
+      });
+
+      it('available остаётся неизменным при списании', () => {
+        const balance = createBalance();
+        const initialAvailable = balance.available().value().toNumber();
+        const result = BalanceService.consumeReserved(balance, Money.of(3000));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.available().value().toNumber()).toBe(initialAvailable);
+        }
+      });
+    });
+
+    describe('ошибки списания', () => {
+      it('возвращает ошибку INSUFFICIENT_RESERVED', () => {
+        const balance = createBalance();
+        const result = BalanceService.consumeReserved(balance, Money.of(10000));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('consumeReserved');
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.INSUFFICIENT_RESERVED);
+        }
+      });
+
+      it('возвращает ошибку для нулевой суммы', () => {
+        const balance = createBalance();
+        const result = BalanceService.consumeReserved(balance, Money.of(0));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+        }
+      });
+
+      it('проверяет контракт фасада: op и context', () => {
+        const balance = createBalance();
+        const result = BalanceService.consumeReserved(balance, Money.of(10000));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.op).toBe('consumeReserved');
+          expect(result.error.context).toHaveProperty('available');
+          expect(result.error.context).toHaveProperty('reserved');
+          expect(result.error.context).toHaveProperty('amount');
+        }
+      });
+    });
+  });
+
   describe('updateAvailable()', () => {
     const createBalance = () => {
       const result = BalanceService.create(

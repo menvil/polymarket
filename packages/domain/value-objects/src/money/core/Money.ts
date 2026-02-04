@@ -168,7 +168,6 @@ export class Money {
     return Money.create(value, currency);
   }
 
-
   /**
    * Возвращает сумму как Decimal.
    *

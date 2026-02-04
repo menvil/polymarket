@@ -32,7 +32,7 @@
  * console.log(balance.available().value());    // 10000
  * console.log(balance.reserved().value());     // 2000
  * console.log(balance.reservedPercentage());    // 16.67
- * console.log(balance.isEmpty());               // false
+ * console.log(balance.isZero());               // false
  * console.log(balance.hasReserved());           // true
  *
  * // Helpers

@@ -116,6 +116,81 @@ describe('Balance Integration Tests', () => {
       expect(currentBalance.reserved().value().toNumber()).toBe(2500);   // 7000 - 4500
       expect(currentBalance.total().value().toNumber()).toBe(10000);
     });
+
+    it('сценарий исполнения сделки: резервирование → списание', () => {
+      // Шаг 1: Создаём начальный баланс
+      const createResult = BalanceService.create(
+        Money.of(10000),
+        Money.of(0)
+      );
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      const balance1 = createResult.value;
+      expect(balance1.total().value().toNumber()).toBe(10000);
+
+      // Шаг 2: Резервируем средства для покупки акций
+      const reserveResult = BalanceService.reserve(balance1, Money.of(4000));
+      expect(reserveResult.ok).toBe(true);
+      if (!reserveResult.ok) return;
+
+      const balance2 = reserveResult.value;
+      expect(balance2.available().value().toNumber()).toBe(6000);
+      expect(balance2.reserved().value().toNumber()).toBe(4000);
+      expect(balance2.total().value().toNumber()).toBe(10000);
+
+      // Шаг 3: Сделка исполняется - списываем зарезервированные средства
+      const consumeResult = BalanceService.consumeReserved(balance2, Money.of(4000));
+      expect(consumeResult.ok).toBe(true);
+      if (!consumeResult.ok) return;
+
+      const balance3 = consumeResult.value;
+      expect(balance3.available().value().toNumber()).toBe(6000);  // не изменился
+      expect(balance3.reserved().value().toNumber()).toBe(0);      // списано
+      expect(balance3.total().value().toNumber()).toBe(6000);      // уменьшился на 4000
+
+      // Проверяем immutability
+      expect(balance1.total().value().toNumber()).toBe(10000);
+      expect(balance2.total().value().toNumber()).toBe(10000);
+      expect(balance3.total().value().toNumber()).toBe(6000);
+    });
+
+    it('сценарий частичного исполнения: резервировали больше чем потратили', () => {
+      // Резервировали $5000 для покупки, но купили только на $3000
+      const createResult = BalanceService.create(Money.of(10000), Money.of(0));
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      let currentBalance = createResult.value;
+
+      // Резервируем $5000
+      const reserveResult = BalanceService.reserve(currentBalance, Money.of(5000));
+      expect(reserveResult.ok).toBe(true);
+      if (!reserveResult.ok) return;
+      currentBalance = reserveResult.value;
+
+      expect(currentBalance.available().value().toNumber()).toBe(5000);
+      expect(currentBalance.reserved().value().toNumber()).toBe(5000);
+
+      // Списываем только $3000
+      const consumeResult = BalanceService.consumeReserved(currentBalance, Money.of(3000));
+      expect(consumeResult.ok).toBe(true);
+      if (!consumeResult.ok) return;
+      currentBalance = consumeResult.value;
+
+      expect(currentBalance.available().value().toNumber()).toBe(5000);
+      expect(currentBalance.reserved().value().toNumber()).toBe(2000);  // осталось $2000
+
+      // Размораживаем оставшиеся $2000
+      const unfreezeResult = BalanceService.unfreezeReserved(currentBalance, Money.of(2000));
+      expect(unfreezeResult.ok).toBe(true);
+      if (!unfreezeResult.ok) return;
+      currentBalance = unfreezeResult.value;
+
+      expect(currentBalance.available().value().toNumber()).toBe(7000);  // 5000 + 2000
+      expect(currentBalance.reserved().value().toNumber()).toBe(0);
+      expect(currentBalance.total().value().toNumber()).toBe(7000);      // потратили $3000
+    });
   });
 
   describe('Граничные случаи и ошибки', () => {
@@ -179,6 +254,36 @@ describe('Balance Integration Tests', () => {
       const balance = releaseResult.value;
       expect(balance.available().value().toNumber()).toBe(1000);
       expect(balance.reserved().value().toNumber()).toBe(0);
+      expect(balance.hasReserved()).toBe(false);
+    });
+
+    it('попытка списать больше чем reserved', () => {
+      const createResult = BalanceService.create(Money.of(5000), Money.of(1000));
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      const consumeResult = BalanceService.consumeReserved(createResult.value, Money.of(2000));
+      expect(consumeResult.ok).toBe(false);
+      if (!consumeResult.ok) {
+        expect(consumeResult.error.context?.reason).toBe(BalanceErrorReason.INSUFFICIENT_RESERVED);
+        expect(consumeResult.error.context?.requested).toBe(2000);
+        expect(consumeResult.error.context?.reserved).toBe('1000');
+      }
+    });
+
+    it('списание всех зарезервированных средств', () => {
+      const createResult = BalanceService.create(Money.of(5000), Money.of(3000));
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      const consumeResult = BalanceService.consumeReserved(createResult.value, Money.of(3000));
+      expect(consumeResult.ok).toBe(true);
+      if (!consumeResult.ok) return;
+
+      const balance = consumeResult.value;
+      expect(balance.available().value().toNumber()).toBe(5000);  // не изменился
+      expect(balance.reserved().value().toNumber()).toBe(0);      // всё списано
+      expect(balance.total().value().toNumber()).toBe(5000);      // уменьшился на 3000
       expect(balance.hasReserved()).toBe(false);
     });
   });
