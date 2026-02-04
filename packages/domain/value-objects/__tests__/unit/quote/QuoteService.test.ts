@@ -276,7 +276,7 @@ describe('QuoteService', () => {
         expect(shifted.bid()?.value().toNumber()).toBeCloseTo(0.49, 10);
         expect(shifted.ask()?.value().toNumber()).toBeCloseTo(0.53, 10);
         // Spread остался прежним
-        expect(shifted.spreadWidth()?.toNumber()).toBeCloseTo(0.04, 10);
+        expect(shifted.spread()?.width().toNumber()).toBeCloseTo(0.04, 10);
       }
     });
 
@@ -373,7 +373,7 @@ describe('QuoteService', () => {
         expect(skewed.bid()?.value().toNumber()).toBeCloseTo(0.47, 10);
         expect(skewed.ask()?.value().toNumber()).toBeCloseTo(0.53, 10);
         // Spread увеличился
-        expect(skewed.spreadWidth()?.toNumber()).toBeCloseTo(0.06, 10);
+        expect(skewed.spread()?.width().toNumber()).toBeCloseTo(0.06, 10);
       }
     });
 

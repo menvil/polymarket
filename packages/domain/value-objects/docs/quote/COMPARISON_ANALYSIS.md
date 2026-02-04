@@ -187,13 +187,9 @@ export class Quote {
   public equalsWithTimestamp(other: Quote): boolean  // С timestamp
   public age(now: number): Decimal  // возраст котировки (Decimal математика)
 
-  // ✅ Делегирование в Spread (устранение дублирования логики)
+  // ✅ Делегирование в Spread (устранение дублирования API)
   public spread(): Spread | null  // создает Spread объект для two-sided quote
-
-  // ✅ Чистая математика (query методы, делегируют в Spread)
-  public spreadWidth(): Decimal | null  // делегирует в spread().width()
-  public spreadPercentage(): Decimal | null  // делегирует в spread().widthPercentage()
-  public mid(): Decimal | null  // делегирует в spread().mid()
+  // Далее используйте методы Spread: spread.width(), spread.mid(), spread.widthPercentage()
 }
 ```
 
@@ -272,40 +268,34 @@ public static fromComponents(
 - ✅ Только геттеры + простые query методы (`isZero()`, `equals()`)
 
 **Quote:**
-- ✅ Есть вычислительная логика:
-  - `spreadWidth()` — вычисляет spread
-  - `spreadPercentage()` — вычисляет spread в процентах
-  - `midPrice()` — вычисляет mid price
+- ✅ Делегирует вычисления в Spread:
+  - `spread()` — создает Spread объект (Spread | null)
+  - Далее используются методы Spread: `spread.width()`, `spread.mid()`, `spread.widthPercentage()`
 
-**⚠️ ВОПРОС КОНСИСТЕНТНОСТИ:**
+**Архитектурное решение:**
 
-Почему Money/Price/Quantity выносят всю математику в Facade, а Quote оставляет вычисления в Core?
+Quote не дублирует API Spread. Вместо прямых методов `spreadWidth()`, `mid()`, `spreadPercentage()` предоставляет метод `spread(): Spread | null`.
 
-**Аргументы ЗА (Quote текущий подход):**
-1. `spreadWidth()`, `midPrice()` — это **derived properties**, а не операции
-2. Они не могут fail (кроме null для one-sided)
-3. Они не требуют Result обёртки
-4. Это больше похоже на `isZero()` из Money/Quantity
+**Преимущества подхода:**
+1. **Нет дублирования логики** — единственный источник истины для вычислений Spread
+2. **Нет дублирования API** — если есть метод `spread()`, зачем дублировать его методы?
+3. **Более четкий API** — пользователь получает объект Spread и использует все его методы
+4. **Меньше кода** — не нужны методы-обертки, которые просто делегируют
+5. **Правильная архитектура** — Quote зависит от Spread (высокий → низкий уровень)
 
-**Аргументы ПРОТИВ:**
-1. Нарушает принцип "Core не содержит бизнес-логики"
-2. Money не имеет даже `.format()` в Core — всё в Adapters
-3. Inconsistency с остальными модулями
+**Использование:**
+```typescript
+const spread = quote.spread();
+if (spread !== null) {
+  spread.width()            // вместо quote.spreadWidth()
+  spread.mid()              // вместо quote.mid()
+  spread.widthPercentage()  // вместо quote.spreadPercentage()
+}
+```
 
-**Мое мнение:**
+**Оценка: ✅ 10/10** — Quote правильно делегирует в Spread без дублирования API.
 
-Quote поступает **ПРАВИЛЬНО**, оставляя derived properties в Core, потому что:
-- Это не операции, а свойства
-- Они не могут fail
-- Они не меняют состояние
-- Это естественные геттеры для композитного объекта
-
-Money/Price/Quantity слишком строго трактуют "никакой логики в Core" — даже `isPositive()` можно считать "бизнес-логикой".
-
-**Оценка: ✅ 9/10** — Quote делает правильно, но нарушает консистентность с остальными.
-
-**Рекомендация:** Документировать различие в архитектуре:
-> Quote оставляет derived properties (`spreadWidth`, `midPrice`) в Core, потому что это естественные геттеры композитного объекта, которые не могут fail. В отличие от математических операций (add, multiply), которые требуют Result обёртки и находятся в Facade.
+Подробнее см. docs/quote/SPREAD_DELEGATION.md
 
 ---
 

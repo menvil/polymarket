@@ -137,13 +137,8 @@ class Quote {
   public hasBid(): boolean
   public hasAsk(): boolean
 
-  // Делегирование в Spread (устранение дублирования)
-  public spread(): Spread | null  // создает Spread для two-sided
-
-  // Вычисления (делегируют в Spread)
-  public spreadWidth(): Decimal | null  // делегирует в spread().width()
-  public spreadPercentage(): Decimal | null  // делегирует в spread().widthPercentage()
-  public mid(): Decimal | null  // делегирует в spread().mid()
+  // Делегирование в Spread (устранение дублирования API)
+  public spread(): Spread | null  // создает Spread для two-sided, далее используйте методы Spread
 
   // Сравнение
   public equals(other: Quote): boolean  // БЕЗ timestamp

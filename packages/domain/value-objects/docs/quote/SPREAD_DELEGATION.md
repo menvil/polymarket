@@ -121,42 +121,19 @@ public spread(): Spread | null {
 }
 ```
 
-**2. Рефакторили существующие методы для делегирования:**
+**2. Удалили дублирующие методы-обертки:**
 
 ```typescript
-/**
- * Вычисляет ширину спреда
- *
- * @remarks
- * Делегирует вычисление объекту Spread.
- */
-public spreadWidth(): Decimal | null {
-  const s = this.spread();
-  return s !== null ? s.width() : null;
-}
-
-/**
- * Вычисляет mid (среднее между bid и ask)
- *
- * @remarks
- * Делегирует вычисление объекту Spread.
- */
-public mid(): Decimal | null {
-  const s = this.spread();
-  return s !== null ? s.mid() : null;
-}
-
-/**
- * Вычисляет spread в процентах от mid
- *
- * @remarks
- * Делегирует вычисление объекту Spread.
- */
-public spreadPercentage(): Decimal | null {
-  const s = this.spread();
-  return s !== null ? s.widthPercentage() : null;
-}
+// ❌ УДАЛЕНО - дублирует Spread API
+// public spreadWidth(): Decimal | null
+// public mid(): Decimal | null
+// public spreadPercentage(): Decimal | null
 ```
+
+**Почему удалили:** Если есть метод `spread()`, зачем дублировать его методы? Это создает избыточность API:
+- Пользователь получает Spread объект
+- У него уже есть все нужные методы: `width()`, `mid()`, `widthPercentage()`
+- Дублирующие методы только усложняют API без добавления ценности
 
 **3. Удалили `SpreadService.fromQuote()`:**
 
@@ -204,52 +181,55 @@ Quantity
 ### ✅ Меньше кода
 
 **До:**
-- Quote: ~30 строк дублирующей логики
+- Quote: ~60 строк методов-оберток (spreadWidth, mid, spreadPercentage)
 - Spread: ~30 строк оригинальной логики
 - SpreadService.fromQuote: ~70 строк
-- **Итого: ~130 строк**
+- **Итого: ~160 строк**
 
 **После:**
-- Quote: ~10 строк делегирования + метод spread()
+- Quote: ~30 строк метод spread()
 - Spread: ~30 строк оригинальной логики
-- **Итого: ~40 строк**
+- **Итого: ~60 строк**
 
-**Экономия: ~90 строк**
+**Экономия: ~100 строк**
 
 ## Примеры использования
 
 ### До рефакторинга
 
 ```typescript
-// Нужно было помнить про fromQuote
+// Вариант 1: Через fromQuote (создавал circular dependency)
 const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
 if (quoteResult.ok) {
-  const spreadResult = SpreadService.fromQuote(quoteResult.value);
+  const spreadResult = SpreadService.fromQuote(quoteResult.value);  // ❌ Удалено
   if (spreadResult.ok) {
     console.log(spreadResult.value.width());  // Decimal(0.04)
   }
 }
 
-// Или использовать дублирующие методы Quote
+// Вариант 2: Через дублирующие методы Quote (избыточный API)
 const quote = quoteResult.value;
-const width = quote.spreadWidth();  // Дублирует Spread.width()
+const width = quote.spreadWidth();  // ❌ Удалено - дублирует Spread.width()
+const mid = quote.mid();  // ❌ Удалено - дублирует Spread.mid()
+const pct = quote.spreadPercentage();  // ❌ Удалено - дублирует Spread.widthPercentage()
 ```
 
 ### После рефакторинга
 
 ```typescript
-// Прямое использование spread() в Core
+// Единственный правильный способ - через spread()
 const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
 const spread = quote.spread();
+
 if (spread !== null) {
   console.log(spread.width());  // Decimal(0.04)
   console.log(spread.mid());  // Decimal(0.50)
   console.log(spread.widthPercentage());  // Decimal(8)
 }
 
-// Или краткие методы (делегируют в spread())
-const width = quote.spreadWidth();  // Делегирует в spread().width()
-const mid = quote.mid();  // Делегирует в spread().mid()
+// Для one-sided quote
+const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, Date.now());
+const spread = bidOnly.spread();  // null - нет spread для односторонней котировки
 ```
 
 ## Архитектурное решение
@@ -304,10 +284,11 @@ const mid = quote.mid();  // Делегирует в spread().mid()
 
 1. **Удалили circular dependency** Spread → Quote
 2. **Установили правильное направление** Quote → Spread → Price
-3. **Устранили дублирование логики** через делегирование
-4. **Упростили код** (~90 строк меньше)
+3. **Устранили дублирование API** — удалили методы-обертки
+4. **Упростили код** (~100 строк меньше)
 5. **Улучшили поддерживаемость** (единственный источник истины)
-6. **Сохранили обратную совместимость** (методы `spreadWidth()`, `mid()`, `spreadPercentage()` работают как прежде)
+6. **Улучшили API** — вместо множества методов один четкий: `spread()`
+7. **906 тестов проходят** — функциональность сохранена
 
 ## См. также
 

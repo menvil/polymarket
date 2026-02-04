@@ -185,17 +185,18 @@ export class QuoteFormatter {
       );
     }
 
-    if (quote.isTwoSided()) {
+    const spread = quote.spread();
+    if (spread !== null) {
       if (includeSpread) {
-        const spreadWidth = quote.spreadWidth()!;
-        const spreadPct = quote.spreadPercentage()!;
+        const spreadWidth = spread.width();
+        const spreadPct = spread.widthPercentage();
         parts.push(
           `Spread: ${spreadWidth.toFixed(priceDecimals)} (${spreadPct.toFixed(2)}%)`
         );
       }
 
       if (includeMid) {
-        const midDecimal = quote.mid()!;
+        const midDecimal = spread.mid();
         // SAFETY: mid математически в границах если bid/ask валидны
         const mid = Price.of(midDecimal);
         parts.push(`Mid: ${mid.value().toFixed(priceDecimals)}`);
@@ -260,14 +261,15 @@ export class QuoteFormatter {
       lines.push('Ask    --       --');
     }
 
-    if (quote.isTwoSided()) {
+    const spread = quote.spread();
+    if (spread !== null) {
       lines.push(separator);
 
-      const spreadWidth = quote.spreadWidth()!;
-      const spreadPct = quote.spreadPercentage()!;
+      const spreadWidth = spread.width();
+      const spreadPct = spread.widthPercentage();
       lines.push(`Spread ${spreadWidth.toFixed(priceDecimals).padEnd(8)} (${spreadPct.toFixed(2)}%)`);
 
-      const midDecimal = quote.mid()!;
+      const midDecimal = spread.mid();
       // SAFETY: mid математически в границах если bid/ask валидны
       const mid = Price.of(midDecimal);
       lines.push(`Mid    ${mid.value().toFixed(priceDecimals)}`);
@@ -304,15 +306,16 @@ export class QuoteFormatter {
    * ```
    */
   public static formatSpread(quote: Quote, includePercentage: boolean = true): string | null {
-    if (!quote.isTwoSided()) {
+    const spread = quote.spread();
+    if (spread === null) {
       return null;
     }
 
-    const spreadWidth = quote.spreadWidth()!;
+    const spreadWidth = spread.width();
     let result = spreadWidth.toFixed(4);
 
     if (includePercentage) {
-      const spreadPct = quote.spreadPercentage()!;
+      const spreadPct = spread.widthPercentage();
       result += ` (${spreadPct.toFixed(2)}%)`;
     }
 
@@ -341,11 +344,12 @@ export class QuoteFormatter {
    * ```
    */
   public static formatMid(quote: Quote, decimals: number = 4): string | null {
-    if (!quote.isTwoSided()) {
+    const spread = quote.spread();
+    if (spread === null) {
       return null;
     }
 
-    const midDecimal = quote.mid()!;
+    const midDecimal = spread.mid();
     return midDecimal.toFixed(decimals);
   }
 }

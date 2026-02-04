@@ -585,8 +585,8 @@ export class QuoteService {
    * Получает spread width или 0 если односторонняя котировка
    *
    * @remarks
-   * Утилита для безопасного получения spread.
-   * В отличие от quote.spreadWidth(), всегда возвращает значение.
+   * Утилита для безопасного получения spread width.
+   * Использует quote.spread() для получения Spread объекта.
    *
    * @param quote - Котировка
    * @returns Decimal со значением spread (0 для one-sided)
@@ -603,15 +603,16 @@ export class QuoteService {
    * ```
    */
   public static getSpreadOrZero(quote: Quote): Decimal {
-    const spread = quote.spreadWidth();
-    return spread ?? new Decimal(0);
+    const spread = quote.spread();
+    return spread !== null ? spread.width() : new Decimal(0);
   }
 
   /**
    * Получает mid price или null если односторонняя котировка
    *
    * @remarks
-   * Алиас для quote.midPrice() для консистентности API.
+   * Использует quote.spread() для получения Spread объекта.
+   * Преобразует Decimal в Price.
    *
    * @param quote - Котировка
    * @returns Price mid или null
@@ -619,17 +620,19 @@ export class QuoteService {
    * @example
    * ```typescript
    * const quote = expectOk(QuoteService.create(0.48, 0.52, 100, 150));
-   * const mid = QuoteService.getMidOrNull(quote);
+   * const mid = QuoteService.getMidPrice(quote);
    * if (mid !== null) {
    *   console.log(mid.value().toString()); // "0.5"
    * }
    * ```
    */
   public static getMidPrice(quote: Quote): Price | null {
-    const midDecimal = quote.mid();
-    if (midDecimal === null) {
+    const spread = quote.spread();
+    if (spread === null) {
       return null;
     }
+
+    const midDecimal = spread.mid();
 
     // SAFETY: mid всегда в [MIN_PRICE, MAX_PRICE] если bid/ask валидны
     // bid <= ask (инвариант) и оба в [MIN, MAX] → mid в [MIN, MAX]

@@ -468,8 +468,8 @@ describe('Quote Core', () => {
     });
   });
 
-  describe('spreadWidth()', () => {
-    it('вычисляет spread для двусторонней котировки', () => {
+  describe('spread()', () => {
+    it('создает Spread объект для двусторонней котировки', () => {
       const quote = Quote.of(
         Price.of(0.48),
         Price.of(0.52),
@@ -478,10 +478,12 @@ describe('Quote Core', () => {
         Date.now()
       );
 
-      const spread = quote.spreadWidth();
+      const spread = quote.spread();
 
       expect(spread).not.toBeNull();
-      expect(spread!.toNumber()).toBe(0.04);
+      expect(spread!.width().toNumber()).toBe(0.04);
+      expect(spread!.mid().toNumber()).toBe(0.50);
+      expect(spread!.widthPercentage().toNumber()).toBeCloseTo(8.0, 1);
     });
 
     it('возвращает null для bid-only котировки', () => {
@@ -493,7 +495,7 @@ describe('Quote Core', () => {
         Date.now()
       );
 
-      expect(quote.spreadWidth()).toBeNull();
+      expect(quote.spread()).toBeNull();
     });
 
     it('возвращает null для ask-only котировки', () => {
@@ -505,10 +507,10 @@ describe('Quote Core', () => {
         Date.now()
       );
 
-      expect(quote.spreadWidth()).toBeNull();
+      expect(quote.spread()).toBeNull();
     });
 
-    it('возвращает 0 когда bid === ask', () => {
+    it('возвращает Spread с нулевой шириной когда bid === ask', () => {
       const quote = Quote.of(
         Price.of(0.50),
         Price.of(0.50),
@@ -517,97 +519,11 @@ describe('Quote Core', () => {
         Date.now()
       );
 
-      const spread = quote.spreadWidth();
+      const spread = quote.spread();
 
       expect(spread).not.toBeNull();
-      expect(spread!.toNumber()).toBe(0);
-    });
-  });
-
-  describe('mid()', () => {
-    it('вычисляет mid для двусторонней котировки', () => {
-      const quote = Quote.of(
-        Price.of(0.48),
-        Price.of(0.52),
-        Quantity.of(100),
-        Quantity.of(150),
-        Date.now()
-      );
-
-      const mid = quote.mid();
-
-      expect(mid).not.toBeNull();
-      expect(mid!.toNumber()).toBe(0.50);
-    });
-
-    it('возвращает null для bid-only котировки', () => {
-      const quote = Quote.of(
-        Price.of(0.50),
-        null,
-        Quantity.of(100),
-        Quantity.ZERO,
-        Date.now()
-      );
-
-      expect(quote.mid()).toBeNull();
-    });
-
-    it('возвращает null для ask-only котировки', () => {
-      const quote = Quote.of(
-        null,
-        Price.of(0.51),
-        Quantity.ZERO,
-        Quantity.of(200),
-        Date.now()
-      );
-
-      expect(quote.mid()).toBeNull();
-    });
-  });
-
-  describe('spreadPercentage()', () => {
-    it('вычисляет spread в процентах', () => {
-      const quote = Quote.of(
-        Price.of(0.48),
-        Price.of(0.52),
-        Quantity.of(100),
-        Quantity.of(150),
-        Date.now()
-      );
-
-      const spreadPct = quote.spreadPercentage();
-
-      expect(spreadPct).not.toBeNull();
-      expect(spreadPct!.toNumber()).toBeCloseTo(8.0, 1); // (0.04 / 0.50) * 100 = 8%
-    });
-
-    it('возвращает null для односторонней котировки', () => {
-      const quote = Quote.of(
-        Price.of(0.50),
-        null,
-        Quantity.of(100),
-        Quantity.ZERO,
-        Date.now()
-      );
-
-      expect(quote.spreadPercentage()).toBeNull();
-    });
-
-    it('возвращает 0 когда mid === 0 (защита от деления на ноль)', () => {
-      // Это edge case который не должен произойти в реальности,
-      // но проверяем для полноты
-      const quote = Quote.of(
-        Price.of(0.0001), // MIN_PRICE
-        Price.of(0.0001),
-        Quantity.of(100),
-        Quantity.of(150),
-        Date.now()
-      );
-
-      const spreadPct = quote.spreadPercentage();
-
-      expect(spreadPct).not.toBeNull();
-      expect(spreadPct!.toNumber()).toBe(0);
+      expect(spread!.width().toNumber()).toBe(0);
+      expect(spread!.isZeroWidth()).toBe(true);
     });
   });
 

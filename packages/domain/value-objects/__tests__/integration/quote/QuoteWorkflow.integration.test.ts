@@ -41,7 +41,7 @@ describe('Quote Integration Tests', () => {
       const quote3 = skewResult.value;
       expect(quote3.bid()?.value().toNumber()).toBe(0.48);
       expect(quote3.ask()?.value().toNumber()).toBe(0.54);
-      expect(quote3.spreadWidth()?.toNumber()).toBe(0.06);
+      expect(quote3.spread()?.width().toNumber()).toBe(0.06);
 
       // Шаг 4: Обновляем размеры
       const updateResult = QuoteService.updateSizes(quote3, 200, 250);
@@ -69,8 +69,7 @@ describe('Quote Integration Tests', () => {
       expect(bidQuote.hasBid()).toBe(true);
       expect(bidQuote.hasAsk()).toBe(false);
       expect(bidQuote.isTwoSided()).toBe(false);
-      expect(bidQuote.spreadWidth()).toBeNull();
-      expect(bidQuote.mid()).toBeNull();
+      expect(bidQuote.spread()).toBeNull();
 
       // Создаём ask-only
       const askResult = QuoteService.askOnly(0.51, 150);
@@ -91,20 +90,12 @@ describe('Quote Integration Tests', () => {
 
       const quote = result.value;
 
-      // Spread width
-      const spread = quote.spreadWidth();
+      // Spread object
+      const spread = quote.spread();
       expect(spread).not.toBeNull();
-      expect(spread!.toNumber()).toBe(0.04);
-
-      // Mid price
-      const mid = quote.mid();
-      expect(mid).not.toBeNull();
-      expect(mid!.toNumber()).toBe(0.50);
-
-      // Spread percentage
-      const spreadPct = quote.spreadPercentage();
-      expect(spreadPct).not.toBeNull();
-      expect(spreadPct!.toNumber()).toBe(8); // 0.04 / 0.50 * 100 = 8%
+      expect(spread!.width().toNumber()).toBe(0.04);
+      expect(spread!.mid().toNumber()).toBe(0.50);
+      expect(spread!.widthPercentage().toNumber()).toBe(8); // 0.04 / 0.50 * 100 = 8%
     });
 
     it('market crossing detection', () => {
