@@ -3,15 +3,18 @@
 Анализ архитектурных различий между Balance, Spread, Quote и базовыми value objects (Money, Price, Quantity, Ratio).
 
 Дата анализа: 2026-02-05
+Обновлено: 2026-02-06
 
 ## Executive Summary
 
-Обнаружено **5 категорий несоответствий** между Balance/Spread/Quote и эталонными VO (Money, Price, Quantity, Ratio).
+✅ **Все проблемы решены!**
 
-**Критичность:**
-- 🔴 Критичные: 0
-- 🟡 Средние: 2 (Spread: нет errors/index.ts и integration tests)
-- 🟢 Низкие: 3 (стиль экспорта, экспорт Rules)
+**Было обнаружено 5 категорий несоответствий:**
+- 🟡 Средние: 2 (Spread: нет errors/index.ts и integration tests) - **ИСПРАВЛЕНО ✅**
+- 🟢 Низкие: 3 (стиль экспорта, экспорт Rules, JSON типы) - **ИСПРАВЛЕНО ✅**
+
+**Принято архитектурное решение:**
+Rules теперь экспортируются во **всех** value objects как публичное API для контекстно-зависимой валидации.
 
 ## Сравнительная таблица
 
@@ -22,22 +25,22 @@
 | Экспорт InvariantViolation | ✅ Да | ✅ Да | ✅ Да | ✅ Да | ✅ Консистентно |
 | **Rules Layer** |
 | index.ts в rules/ | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Консистентно |
-| Экспорт Rules из main index | ✅ Да | ❌ Нет | ✅ Да | ❌ Нет | 🟢 Несоответствие |
+| Экспорт Rules из main index | ✅ Да | ✅ Да | ✅ Да | ✅ Да | ✅ Консистентно |
 | **Errors Layer** |
-| index.ts в errors/ | ✅ Есть | ❌ **НЕТ** | ✅ Есть | ✅ Есть | 🟡 **Несоответствие** |
+| index.ts в errors/ | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Консистентно |
 | **Facade Layer** |
 | Стандартный Service | ✅ | ✅ | ✅ | ✅ | ✅ Консистентно |
 | **Adapters Layer** |
 | Serializer | ✅ | ✅ | ✅ | ✅ | ✅ Консистентно |
 | Formatter | ✅ | ✅ | ✅ | ✅ | ✅ Консистентно |
-| JSON type export | ❌ Нет | ❌ Нет | ✅ Да | ✅ Да | 🟢 Несоответствие |
+| JSON type export | ✅ Да | ✅ Да | ✅ Да | ✅ Да | ✅ Консистентно |
 | **Tests** |
 | Unit tests | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Консистентно |
-| Integration tests | ✅ Есть | ❌ **НЕТ** | ✅ Есть | ✅ Есть | 🟡 **Несоответствие** |
+| Integration tests | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Консистентно |
 | **Documentation** |
 | Docs папка | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Консистентно |
 | **Export Style** |
-| Стиль экспорта | `export *` | Селективный | Селективный | Селективный | 🟢 Несоответствие |
+| Стиль экспорта | Селективный | Селективный | Селективный | Селективный | ✅ Консистентно |
 
 ## Детальный анализ
 
@@ -317,3 +320,71 @@ Balance, Spread и Quote в целом следуют архитектурным
 - ✅ errors/index.ts (кроме Spread)
 
 **Вывод:** Balance/Spread/Quote изначально были реализованы с учетом best practices, поэтому требуют минимальных доработок.
+
+---
+
+## Changelog: Исправления от 2026-02-06
+
+### ✅ Исправлено: Phase 1 (Средние проблемы)
+
+**1. Spread: Добавлен errors/index.ts**
+- Создан `src/spread/errors/index.ts`
+- Обновлен `src/spread/index.ts` для импорта через index
+- Унифицирована структура с остальными VO
+
+**2. Spread: Добавлены integration tests**
+- Создан `__tests__/integration/spread/SpreadWorkflow.integration.test.ts`
+- 14 интеграционных тестов покрывают все сценарии
+- Тестируется кросс-слойная интеграция (Core → Facade → Adapters)
+
+### ✅ Исправлено: Phase 2 (Низкие проблемы)
+
+**3. Balance: Селективный экспорт вместо `export *`**
+- Заменен `export *` на явный экспорт классов и типов
+- Улучшен контроль над публичным API
+- Добавлена документация для каждого экспорта
+
+**4. Balance и Spread: Добавлены JSON типы**
+- Balance: добавлен `type BalanceJSON` в публичный экспорт
+- Spread: добавлен `type SpreadJSON` в публичный экспорт
+- Улучшена developer experience
+
+### ✅ Архитектурное решение: Экспорт Rules
+
+**Принято решение:** Rules экспортируются во ВСЕХ value objects как публичное API.
+
+**Обоснование:**
+- Rules используются для контекстно-зависимой валидации ПОСЛЕ создания объектов
+- Примеры use cases:
+  - Quote: ValidateMinSpread (зависит от market config)
+  - Quote: ValidateMarketCrossing (зависит от orderbook data)
+  - Balance: ValidateReserveAmount (предварительная проверка перед операцией)
+- Facade использует Rules внутри, но пользователи могут делать проверки до вызова Facade
+
+**Реализовано:**
+- Money: экспортированы ValidateDivisorForMoneyDivision, ValidateFactorForMoneyMultiplication
+- Price: экспортированы ValidateTickSize, ValidateAligned, ValidateTickSizeMultipleOfBaseTick, ValidateFactorForPriceMultiplication, ValidateDivisorForPriceDivision + типы
+- Quantity: экспортированы ValidateMinSize, ValidateResultNonNegative, ValidateDivisorForQuantityDivision, ValidateFactorForQuantityMultiplication, ValidateStepSizeForQuantity
+- Ratio: экспортирован ValidateRatioGteMinusOne
+- Balance: экспортированы ValidateReserveAmount, ValidateReleaseAmount, ValidateCurrencyMatch
+- Spread: экспортированы ValidateBidAsk, ValidateMinWidth, ValidateMaxWidth
+- Quote: уже экспортировал ValidateQuoteSizes, ValidateMinSpread, ValidateMaxSpread, ValidateMarketCrossing ✅
+
+**Обновлена документация:**
+- Все `index.ts` файлы обновлены с комментариями "Rules (публичный API для внешней валидации)"
+- Удалены старые комментарии "Rules НЕ экспортируются — internal"
+- Добавлены примеры использования Rules в документации
+
+---
+
+## Итоговое состояние: 100% консистентность ✅
+
+Все value objects (Money, Price, Quantity, Ratio, Balance, Spread, Quote) теперь следуют единой архитектуре:
+
+1. ✅ Core Layer - InvariantViolation в отдельных файлах
+2. ✅ Rules Layer - rules/index.ts + экспорт в публичное API
+3. ✅ Errors Layer - errors/index.ts для всех VO
+4. ✅ Facade Layer - Service с Result API
+5. ✅ Adapters Layer - Serializer + Formatter + JSON типы
+6. ✅ Integration tests - для всех VO
+7. ✅ Селективный экспорт - явный контроль над API surface

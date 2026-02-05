@@ -5,11 +5,10 @@ export { Spread, SpreadInvariantViolation } from './core/index.js';
 export { SpreadService } from './facade/index.js';
 
 // Adapters (публичный API)
-export { SpreadSerializer, SpreadFormatter } from './adapters/index.js';
+export { SpreadSerializer, SpreadFormatter, type SpreadJSON } from './adapters/index.js';
 
 // Errors (публичный API)
 export { SpreadErrorReason } from './errors/index.js';
 
-// Rules (только типы для потребителей)
-// ErrorContext и внутренние типы Rules НЕ экспортируются из верхнего index
-// Для type-safe error handling используй SpreadErrorReason (экспортирован выше)
+// Rules (публичный API для внешней валидации)
+export { ValidateBidAsk, ValidateMinWidth, ValidateMaxWidth } from './rules/index.js';

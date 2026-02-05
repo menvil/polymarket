@@ -20,3 +20,6 @@ export { RatioFormatter, RatioSerializer, type RatioJSON } from './adapters/inde
 
 // Errors (public API)
 export { RatioErrorReason } from './errors/index.js';
+
+// Rules (публичный API для внешней валидации)
+export { ValidateRatioGteMinusOne } from './rules/index.js';

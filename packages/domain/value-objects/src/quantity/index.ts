@@ -10,5 +10,11 @@ export { QuantitySerializer, QuantityFormatter, type QuantityJSON } from './adap
 // Errors (публичный API)
 export { QuantityErrorReason } from './errors/index.js';
 
-// Rules НЕ экспортируются — это internal implementation details.
-// Все операции должны идти через QuantityService.
+// Rules (публичный API для внешней валидации)
+export {
+  ValidateMinSize,
+  ValidateResultNonNegative,
+  ValidateDivisorForQuantityDivision,
+  ValidateFactorForQuantityMultiplication,
+  ValidateStepSizeForQuantity
+} from './rules/index.js';

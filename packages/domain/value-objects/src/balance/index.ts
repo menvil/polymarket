@@ -36,10 +36,11 @@
  *    - BalanceService.release() - освобождение зарезервированных средств
  *    - BalanceService.updateAvailable() - обновление available
  *
- * 3. **Rules Layer:**
+ * 3. **Rules Layer (публичный API для внешней валидации):**
  *    - ValidateReserveAmount - проверка резервирования
  *    - ValidateReleaseAmount - проверка освобождения
  *    - ValidateCurrencyMatch - проверка совпадения валют
+ *    - Используются для контекстно-зависимой валидации ПОСЛЕ создания Balance
  *
  * 4. **Errors Layer:**
  *    - BalanceErrorReason - типизированные причины ошибок (enum)
@@ -103,22 +104,32 @@
  * // Helpers
  * const emptyBalance = Balance.ZERO.USDC;
  * const balanceWithZeroReserved = Balance.withZeroReserved(Money.of(10000, 'USDC'));
+ *
+ * // Внешняя валидация через Rules (для проверок до операции)
+ * import { ValidateReserveAmount } from '@polymarket/value-objects/balance';
+ *
+ * const amountToReserve = Money.fromUSDC(5000);
+ * const canReserve = ValidateReserveAmount.check(amountToReserve, balance.available());
+ * if (canReserve.ok) {
+ *   // Можно резервировать
+ *   const reserveResult = BalanceService.reserve(balance, amountToReserve);
+ * }
  * ```
  *
  * @packageDocumentation
  */
 
-// Core Layer
-export * from './core/index.js';
+// Core Layer (публичный API)
+export { Balance, BalanceInvariantViolation } from './core/index.js';
 
-// Facade Layer (публичный API)
-export * from './facade/index.js';
+// Facade Layer (главный публичный API)
+export { BalanceService } from './facade/index.js';
 
-// Rules Layer
-export * from './rules/index.js';
+// Adapters Layer (публичный API)
+export { BalanceSerializer, BalanceFormatter, type BalanceJSON } from './adapters/index.js';
 
-// Errors Layer
-export * from './errors/index.js';
+// Errors Layer (публичный API)
+export { BalanceErrorReason } from './errors/index.js';
 
-// Adapters Layer
-export * from './adapters/index.js';
+// Rules Layer (публичный API для внешней валидации)
+export { ValidateReserveAmount, ValidateReleaseAmount, ValidateCurrencyMatch } from './rules/index.js';

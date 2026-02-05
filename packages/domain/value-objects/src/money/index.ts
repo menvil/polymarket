@@ -22,3 +22,6 @@ export { MoneySerializer, MoneyFormatter, type MoneyJSON } from './adapters/inde
 
 // Errors (публичный API)
 export { MoneyErrorReason } from './errors/index.js';
+
+// Rules (публичный API для внешней валидации)
+export { ValidateDivisorForMoneyDivision, ValidateFactorForMoneyMultiplication } from './rules/index.js';
