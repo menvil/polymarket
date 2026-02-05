@@ -28,8 +28,8 @@ export class Spread {
   /**
    * Private constructor - используйте static factory methods
    *
-   * @param b - Bid price
-   * @param a - Ask price
+   * @param _bid - Bid price
+   * @param _ask - Ask price
    * @throws {SpreadInvariantViolation} Если bid > ask
    *
    * @remarks
@@ -37,13 +37,13 @@ export class Spread {
    * Facade должен ловить исключения и преобразовывать в Result.
    */
   private constructor(
-    private readonly b: Price,
-    private readonly a: Price
+    private readonly _bid: Price,
+    private readonly _ask: Price
   ) {
     // Инвариант: bid <= ask
-    if (b.value().greaterThan(a.value())) {
+    if (_bid.value().greaterThan(_ask.value())) {
       throw new SpreadInvariantViolation(
-        `Bid ${b.value()} cannot be greater than ask ${a.value()}`,
+        `Bid ${_bid.value()} cannot be greater than ask ${_ask.value()}`,
         SpreadErrorReason.BID_GREATER_THAN_ASK
       );
     }
@@ -102,17 +102,13 @@ export class Spread {
     return new Spread(price, price);
   }
 
-  // ============================================================================
-  // Getters
-  // ============================================================================
-
   /**
    * Получить bid price
    *
    * @returns Bid price
    */
   public bid(): Price {
-    return this.b;
+    return this._bid;
   }
 
   /**
@@ -121,7 +117,7 @@ export class Spread {
    * @returns Ask price
    */
   public ask(): Price {
-    return this.a;
+    return this._ask;
   }
 
   /**
@@ -143,7 +139,7 @@ export class Spread {
    * ```
    */
   public width(): Decimal {
-    return this.a.value().minus(this.b.value());
+    return this._ask.value().minus(this._bid.value());
   }
 
   /**
@@ -169,9 +165,9 @@ export class Spread {
    * ```
    */
   public mid(): Decimal {
-    return this.b
+    return this._bid
       .value()
-      .plus(this.a.value())
+      .plus(this._ask.value())
       .dividedBy(2);
   }
 
@@ -235,7 +231,7 @@ export class Spread {
    * ```
    */
   public equals(other: Spread): boolean {
-    return this.b.equals(other.b) && this.a.equals(other.a);
+    return this._bid.equals(other._bid) && this._ask.equals(other._ask);
   }
 
   // ============================================================================
@@ -270,6 +266,6 @@ export class Spread {
    */
   public contains(price: Price): boolean {
     const priceValue = price.value();
-    return !priceValue.lessThan(this.b.value()) && !priceValue.greaterThan(this.a.value());
+    return !priceValue.lessThan(this._bid.value()) && !priceValue.greaterThan(this._ask.value());
   }
 }
