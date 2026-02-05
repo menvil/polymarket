@@ -27,6 +27,7 @@ export const createJestConfig = (displayName: string): Config => ({
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/src/$1',
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^@polymarket/time$': '<rootDir>/../time/src/index.ts',
   },
   transform: {
     '^.+\\.ts$': [
