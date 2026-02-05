@@ -4,6 +4,7 @@ import { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 import { QuoteService } from '../facade/QuoteService.js';
 import { rewrap } from '../../shared/facade/errorUtils.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Интерфейс для JSON-представления котировки
@@ -135,6 +136,7 @@ export class QuoteSerializer {
       return Err(
         new InvalidQuoteError('Invalid bid field in JSON', {
           context: {
+            source: ErrorSource.PARSING,
             reason: QuoteErrorReason.INVALID_FORMAT,
             raw: { field: 'bid', value: json.bid },
             ...ctx
@@ -147,6 +149,7 @@ export class QuoteSerializer {
       return Err(
         new InvalidQuoteError('Invalid ask field in JSON', {
           context: {
+            source: ErrorSource.PARSING,
             reason: QuoteErrorReason.INVALID_FORMAT,
             raw: { field: 'ask', value: json.ask },
             ...ctx
@@ -159,6 +162,7 @@ export class QuoteSerializer {
       return Err(
         new InvalidQuoteError('Invalid bidSize field in JSON', {
           context: {
+            source: ErrorSource.PARSING,
             reason: QuoteErrorReason.INVALID_FORMAT,
             raw: { field: 'bidSize', value: json.bidSize },
             ...ctx
@@ -171,6 +175,7 @@ export class QuoteSerializer {
       return Err(
         new InvalidQuoteError('Invalid askSize field in JSON', {
           context: {
+            source: ErrorSource.PARSING,
             reason: QuoteErrorReason.INVALID_FORMAT,
             raw: { field: 'askSize', value: json.askSize },
             ...ctx
@@ -183,6 +188,7 @@ export class QuoteSerializer {
       return Err(
         new InvalidQuoteError('Invalid timestamp field in JSON', {
           context: {
+            source: ErrorSource.PARSING,
             reason: QuoteErrorReason.INVALID_FORMAT,
             raw: { field: 'timestamp', value: json.timestamp },
             ...ctx
@@ -268,6 +274,7 @@ export class QuoteSerializer {
       return Err(
         new InvalidQuoteError('Failed to parse JSON string', {
           context: {
+            source: ErrorSource.PARSING,
             reason: QuoteErrorReason.INVALID_FORMAT,
             cause: error instanceof Error ? error.message : String(error),
             ...ctx

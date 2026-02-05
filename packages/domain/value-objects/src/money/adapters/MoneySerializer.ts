@@ -3,6 +3,7 @@ import { InvalidMoneyError } from '@polymarket/errors';
 import { Money, type SupportedCurrency } from '../core/Money.js';
 import { MoneyService } from '../facade/MoneyService.js';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок
@@ -94,6 +95,7 @@ export class MoneySerializer {
       return Err(
         new InvalidMoneyError(`Expected object, got ${typeof json}`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             json: safeStringify(json),
             reason: MoneyErrorReason.INVALID_FORMAT,
@@ -109,6 +111,7 @@ export class MoneySerializer {
       return Err(
         new InvalidMoneyError(`Missing required field 'amount'`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             json: safeStringify(json),
             reason: MoneyErrorReason.INVALID_FORMAT,
@@ -122,6 +125,7 @@ export class MoneySerializer {
       return Err(
         new InvalidMoneyError(`Missing required field 'currency'`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             json: safeStringify(json),
             reason: MoneyErrorReason.INVALID_FORMAT,
@@ -136,6 +140,7 @@ export class MoneySerializer {
       return Err(
         new InvalidMoneyError(`Field 'amount' must be number or string`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             amount: safeStringify(amount),
             reason: MoneyErrorReason.INVALID_FORMAT,
@@ -149,6 +154,7 @@ export class MoneySerializer {
       return Err(
         new InvalidMoneyError(`Field 'currency' must be string`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             currency: safeStringify(currency),
             reason: MoneyErrorReason.INVALID_FORMAT,

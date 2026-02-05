@@ -12,6 +12,7 @@ import {
   rewrap,
   unexpectedError
 } from '../../shared/facade/errorUtils.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Фасад для работы с Spread - публичный API
@@ -109,6 +110,7 @@ export class SpreadService {
             `Spread invariant violation: ${error.message}`,
             {
               context: {
+                source: ErrorSource.CORE_INVARIANT,
                 op: 'create',
                 bid: bid.value().toString(),
                 ask: ask.value().toString(),
@@ -250,6 +252,7 @@ export class SpreadService {
           'Tighten amount must be finite',
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               op: 'tighten',
               amount: amountDecimal.toString(),
               spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -266,6 +269,7 @@ export class SpreadService {
           'Tighten amount cannot be negative',
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               op: 'tighten',
               amount: amountDecimal.toString(),
               spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -368,6 +372,7 @@ export class SpreadService {
           'Widen amount must be finite',
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               op: 'widen',
               amount: amountDecimal.toString(),
               spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -384,6 +389,7 @@ export class SpreadService {
           'Widen amount cannot be negative',
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               op: 'widen',
               amount: amountDecimal.toString(),
               spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -484,6 +490,7 @@ export class SpreadService {
           'Shift amount must be finite',
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               op: 'shift',
               amount: amountDecimal.toString(),
               spread: `${spread.bid().value()}-${spread.ask().value()}`,

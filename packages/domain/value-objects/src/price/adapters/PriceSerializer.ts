@@ -2,6 +2,7 @@ import { Result, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import { PriceService } from '../facade/PriceService.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок
@@ -97,6 +98,7 @@ export class PriceSerializer {
           (ctx) => `Expected object, got ${ctx.type}`,
           {
             context: {
+              source: ErrorSource.PARSING,
               kind: 'invalid_json',
               type: typeof json,
               json: safeStringify(json)
@@ -113,6 +115,7 @@ export class PriceSerializer {
           () => `Expected object, got array`,
           {
             context: {
+              source: ErrorSource.PARSING,
               kind: 'invalid_json',
               type: 'array',
               json: safeStringify(json)
@@ -129,6 +132,7 @@ export class PriceSerializer {
           () => `Missing required field 'value'`,
           {
             context: {
+              source: ErrorSource.PARSING,
               kind: 'invalid_json',
               type: 'missing_field',
               json: safeStringify(json)
@@ -147,6 +151,7 @@ export class PriceSerializer {
           (ctx) => `Field 'value' must be number or string, got ${ctx.type}`,
           {
             context: {
+              source: ErrorSource.PARSING,
               kind: 'invalid_json',
               type: typeof value,
               json: safeStringify(json)

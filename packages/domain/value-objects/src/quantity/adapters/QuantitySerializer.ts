@@ -2,6 +2,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError, InvalidOperandError } from '@polymarket/errors';
 import { Quantity } from '../core/Quantity.js';
 import { QuantityService } from '../facade/QuantityService.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок
@@ -119,6 +120,7 @@ export class QuantitySerializer {
           (ctx) => `Expected object, got ${ctx.type}`,
           {
             context: {
+              source: ErrorSource.PARSING,
               kind: 'invalid_json',
               type: typeof json,
               json: safeStringify(json)
@@ -135,6 +137,7 @@ export class QuantitySerializer {
           () => `Expected object, got array`,
           {
             context: {
+              source: ErrorSource.PARSING,
               kind: 'invalid_json',
               type: 'array',
               json: safeStringify(json)
@@ -151,6 +154,7 @@ export class QuantitySerializer {
           () => `Missing required field 'value'`,
           {
             context: {
+              source: ErrorSource.PARSING,
               kind: 'invalid_json',
               type: 'missing_field',
               json: safeStringify(json)
@@ -169,6 +173,7 @@ export class QuantitySerializer {
           (ctx) => `Field 'value' must be string, got ${ctx.type}`,
           {
             context: {
+              source: ErrorSource.PARSING,
               kind: 'invalid_json',
               type: typeof value,
               json: safeStringify(json)

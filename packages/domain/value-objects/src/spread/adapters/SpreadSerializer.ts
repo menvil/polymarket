@@ -3,6 +3,7 @@ import { InvalidSpreadError } from '@polymarket/errors';
 import { Spread } from '../core/Spread.js';
 import { SpreadService } from '../facade/SpreadService.js';
 import { SpreadErrorReason } from '../core/SpreadErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * DTO для сериализации Spread
@@ -69,6 +70,7 @@ export class SpreadSerializer {
           'DTO must be an object',
           {
             context: {
+              source: ErrorSource.PARSING,
               dto: String(dto),
               reason: SpreadErrorReason.INVALID_DTO
             }
@@ -83,6 +85,7 @@ export class SpreadSerializer {
           'DTO must have bid and ask as numbers',
           {
             context: {
+              source: ErrorSource.PARSING,
               dto: JSON.stringify(dto),
               reason: SpreadErrorReason.INVALID_DTO
             }
@@ -120,6 +123,7 @@ export class SpreadSerializer {
           `Invalid JSON: ${error instanceof Error ? error.message : String(error)}`,
           {
             context: {
+              source: ErrorSource.PARSING,
               json,
               error: error instanceof Error ? error.message : String(error),
               reason: SpreadErrorReason.INVALID_JSON

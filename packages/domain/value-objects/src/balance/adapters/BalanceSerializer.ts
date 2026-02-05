@@ -4,6 +4,7 @@ import { Balance } from '../core/Balance.js';
 import { BalanceService } from '../facade/BalanceService.js';
 import { MoneySerializer } from '../../money/adapters/MoneySerializer.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок
@@ -152,6 +153,7 @@ export class BalanceSerializer {
       return Err(
         new InvalidBalanceError(`Expected object, got ${typeof json}`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             json: safeStringify(json),
             reason: BalanceErrorReason.INVALID_FORMAT
@@ -167,6 +169,7 @@ export class BalanceSerializer {
       return Err(
         new InvalidBalanceError(`Missing required field 'available'`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             json: safeStringify(json),
             reason: BalanceErrorReason.INVALID_FORMAT
@@ -180,6 +183,7 @@ export class BalanceSerializer {
       return Err(
         new InvalidBalanceError(`Missing required field 'reserved'`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             json: safeStringify(json),
             reason: BalanceErrorReason.INVALID_FORMAT
@@ -197,6 +201,7 @@ export class BalanceSerializer {
       return Err(
         new InvalidBalanceError(`Field 'available' must be an object`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             available: safeStringify(obj.available),
             reason: BalanceErrorReason.INVALID_FORMAT
@@ -214,6 +219,7 @@ export class BalanceSerializer {
       return Err(
         new InvalidBalanceError(`Field 'reserved' must be an object`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             reserved: safeStringify(obj.reserved),
             reason: BalanceErrorReason.INVALID_FORMAT
@@ -235,6 +241,7 @@ export class BalanceSerializer {
       return Err(
         new InvalidBalanceError(`Failed to deserialize 'available': ${availableResult.error.message}`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             field: 'available',
             available: safeStringify(obj.available),
@@ -261,6 +268,7 @@ export class BalanceSerializer {
       return Err(
         new InvalidBalanceError(`Failed to deserialize 'reserved': ${reservedResult.error.message}`, {
           context: {
+            source: ErrorSource.PARSING,
             op: 'fromJSON',
             field: 'reserved',
             reserved: safeStringify(obj.reserved),
