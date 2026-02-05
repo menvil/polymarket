@@ -203,6 +203,7 @@ export class Spread {
    * ```
    */
   public widthPercentage(): Decimal {
+    //@todo должен использовать ratio для единообразия и возвращать его
     const mid = this.mid();
 
     // Защита от деления на ноль
@@ -212,10 +213,6 @@ export class Spread {
 
     return this.width().dividedBy(mid).times(100);
   }
-
-  // ============================================================================
-  // Comparison (Value Object требование)
-  // ============================================================================
 
   /**
    * Проверить равенство спредов
@@ -233,10 +230,6 @@ export class Spread {
   public equals(other: Spread): boolean {
     return this._bid.equals(other._bid) && this._ask.equals(other._ask);
   }
-
-  // ============================================================================
-  // Utility Checks
-  // ============================================================================
 
   /**
    * Проверить является ли ширина нулевой (строгое сравнение)
@@ -266,6 +259,6 @@ export class Spread {
    */
   public contains(price: Price): boolean {
     const priceValue = price.value();
-    return !priceValue.lessThan(this._bid.value()) && !priceValue.greaterThan(this._ask.value());
+    return priceValue.greaterThanOrEqualTo(this._bid.value()) && priceValue.lessThanOrEqualTo(this._ask.value());
   }
 }
