@@ -1,5 +1,5 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidMoneyError, InvalidOperandError, ErrorSource } from '@polymarket/errors';
+import { Result, Err } from '@polymarket/result';
+import { InvalidMoneyError, ErrorSource } from '@polymarket/errors';
 import { Money, type SupportedCurrency } from '../core/Money.js';
 import { MoneyService } from '../facade/MoneyService.js';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
@@ -48,25 +48,6 @@ export interface MoneyJSON {
    * Amount as string для сохранения точности
    */
   amount: string;
-
-  /**
-   * Currency code (USDC, etc.)
-   */
-  currency: string;
-}
-
-/**
- * JSON контракт для lossy сериализации (number)
- *
- * @remarks
- * ⚠️ ВНИМАНИЕ: Использует number, может привести к потере точности.
- * Для точной сериализации используй MoneyJSON.
- */
-export interface MoneyLossyJSON {
-  /**
-   * Amount as number (может потерять точность)
-   */
-  amount: number;
 
   /**
    * Currency code (USDC, etc.)
@@ -247,74 +228,5 @@ export class MoneySerializer {
       amount: money.value().toString(),
       currency: money.currency(),
     };
-  }
-}
-
-/**
- * Lossy serializer для случаев когда точность не критична
- *
- * @remarks
- * ⚠️ ВНИМАНИЕ: Использует number, что может привести к потере точности.
- * Используйте только для отображения или когда точность не критична.
- * Для точной сериализации используйте MoneySerializer.
- */
-export class MoneyLossySerializer {
-  private static readonly SERVICE_NAME = 'MoneyLossySerializer';
-
-  /**
-   * Сериализует Money в JSON объект (lossy)
-   *
-   * @param money - Money для сериализации
-   * @returns Result с MoneyLossyJSON или ошибкой
-   *
-   * @remarks
-   * ⚠️ ВНИМАНИЕ: Может потерять точность для больших чисел.
-   * Использует number вместо string.
-   *
-   * @example
-   * ```typescript
-   * const result = MoneyLossySerializer.toJSON(money);
-   * if (result.ok) {
-   *   console.log(result.value); // { amount: 100.50, currency: "USDC" }
-   * }
-   * ```
-   */
-  public static toJSON(money: Money): Result<MoneyLossyJSON, InvalidOperandError> {
-    const decimalValue = money.value();
-    if (!decimalValue.isFinite()) {
-      return Err(
-        new InvalidOperandError(
-          (ctx) => `Cannot serialize non-finite Money to JSON, got ${ctx.value}`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: MoneyLossySerializer.SERVICE_NAME,
-              op: 'toJSON',
-              value: decimalValue.toString(),
-              operation: 'toJSON'
-            }
-          }
-        )
-      );
-    }
-    return Ok({
-      amount: money.toNumber(),
-      currency: money.currency()
-    });
-  }
-
-  /**
-   * Десериализует Money из JSON (lossy)
-   *
-   * @param json - MoneyLossyJSON объект { amount: number, currency: string }
-   * @returns Result с Money или InvalidMoneyError
-   *
-   * @example
-   * ```typescript
-   * const result = MoneyLossySerializer.fromJSON({ amount: 100.50, currency: 'USDC' });
-   * ```
-   */
-  public static fromJSON(json: MoneyLossyJSON): Result<Money, InvalidMoneyError> {
-    return MoneyService.create(json.amount, json.currency as SupportedCurrency);
   }
 }

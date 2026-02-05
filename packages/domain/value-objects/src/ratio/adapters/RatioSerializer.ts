@@ -25,7 +25,7 @@
  * ```
  */
 import { Result, Ok, Err, isErr } from '@polymarket/result';
-import { InvalidRatioError, InvalidOperandError, ErrorSource } from '@polymarket/errors';
+import { InvalidRatioError, ErrorSource } from '@polymarket/errors';
 import { Ratio } from '../core/Ratio.js';
 import { RatioService } from '../facade/RatioService.js';
 import { RatioErrorReason } from '../errors/RatioErrorReason.js';
@@ -35,20 +35,6 @@ import { RatioErrorReason } from '../errors/RatioErrorReason.js';
  */
 export interface RatioJSON {
   ratio: string;
-}
-
-/**
- * JSON контракт для lossy сериализации (number)
- *
- * @remarks
- * ⚠️ ВНИМАНИЕ: Использует number, может привести к потере точности.
- * Для точной сериализации используй RatioJSON.
- */
-export interface RatioLossyJSON {
-  /**
-   * Ratio value as number (может потерять точность)
-   */
-  ratio: number;
 }
 
 export class RatioSerializer {
@@ -124,71 +110,5 @@ export class RatioSerializer {
     }
 
     return Ok(ratioResult.value);
-  }
-}
-
-/**
- * Lossy serializer для случаев когда точность не критична
- *
- * @remarks
- * ⚠️ ВНИМАНИЕ: Использует number, что может привести к потере точности.
- * Используйте только для отображения или когда точность не критична.
- * Для точной сериализации используйте RatioSerializer.
- */
-export class RatioLossySerializer {
-  private static readonly SERVICE_NAME = 'RatioLossySerializer';
-
-  /**
-   * Сериализует Ratio в JSON объект (lossy)
-   *
-   * @param ratio - Ratio для сериализации
-   * @returns Result с RatioLossyJSON или ошибкой
-   *
-   * @remarks
-   * ⚠️ ВНИМАНИЕ: Может потерять точность для больших чисел.
-   * Использует number вместо string.
-   *
-   * @example
-   * ```typescript
-   * const result = RatioLossySerializer.toJSON(ratio);
-   * if (result.ok) {
-   *   console.log(result.value); // { ratio: 0.02 }
-   * }
-   * ```
-   */
-  public static toJSON(ratio: Ratio): Result<RatioLossyJSON, InvalidOperandError> {
-    const decimalValue = ratio.toDecimal();
-    if (!decimalValue.isFinite()) {
-      return Err(
-        new InvalidOperandError(
-          (ctx) => `Cannot serialize non-finite Ratio to JSON, got ${ctx.value}`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: RatioLossySerializer.SERVICE_NAME,
-              op: 'toJSON',
-              value: decimalValue.toString(),
-              operation: 'toJSON'
-            }
-          }
-        )
-      );
-    }
-    return Ok({ ratio: decimalValue.toNumber() });
-  }
-
-  /**
-   * Десериализует Ratio из JSON (lossy)
-   *
-   * @param json - RatioLossyJSON объект { ratio: number }
-   * @returns Result с Ratio или InvalidRatioError
-   *
-   * @example
-   * ```typescript
-   * const result = RatioLossySerializer.fromJSON({ ratio: 0.02 });
-   * ```
-   */
-  public static fromJSON(json: RatioLossyJSON): Result<Ratio, InvalidRatioError> {
-    return RatioService.fromDecimal(json.ratio);
   }
 }

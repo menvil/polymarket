@@ -1,5 +1,5 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidPriceError, InvalidOperandError, ErrorSource } from '@polymarket/errors';
+import { Result, Err } from '@polymarket/result';
+import { InvalidPriceError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import { PriceService } from '../facade/PriceService.js';
 
@@ -47,20 +47,6 @@ export interface PriceJSON {
    * Price value as string для сохранения точности
    */
   value: string;
-}
-
-/**
- * JSON контракт для lossy сериализации (number)
- *
- * @remarks
- * ⚠️ ВНИМАНИЕ: Использует number, может привести к потере точности.
- * Для точной сериализации используй PriceJSON.
- */
-export interface PriceLossyJSON {
-  /**
-   * Price value as number (может потерять точность)
-   */
-  value: number;
 }
 
 /**
@@ -233,71 +219,5 @@ export class PriceSerializer {
     return {
       value: price.value().toString()
     };
-  }
-}
-
-/**
- * Lossy serializer для случаев когда точность не критична
- *
- * @remarks
- * ⚠️ ВНИМАНИЕ: Использует number, что может привести к потере точности.
- * Используйте только для отображения или когда точность не критична.
- * Для точной сериализации используйте PriceSerializer.
- */
-export class PriceLossySerializer {
-  private static readonly SERVICE_NAME = 'PriceLossySerializer';
-
-  /**
-   * Сериализует Price в JSON объект (lossy)
-   *
-   * @param price - Price для сериализации
-   * @returns Result с PriceLossyJSON или ошибкой
-   *
-   * @remarks
-   * ⚠️ ВНИМАНИЕ: Может потерять точность для больших чисел.
-   * Использует number вместо string.
-   *
-   * @example
-   * ```typescript
-   * const result = PriceLossySerializer.toJSON(price);
-   * if (result.ok) {
-   *   console.log(result.value); // { value: 0.5 }
-   * }
-   * ```
-   */
-  public static toJSON(price: Price): Result<PriceLossyJSON, InvalidOperandError> {
-    const decimalValue = price.value();
-    if (!decimalValue.isFinite()) {
-      return Err(
-        new InvalidOperandError(
-          (ctx) => `Cannot serialize non-finite Price to JSON, got ${ctx.value}`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: PriceLossySerializer.SERVICE_NAME,
-              op: 'toJSON',
-              value: decimalValue.toString(),
-              operation: 'toJSON'
-            }
-          }
-        )
-      );
-    }
-    return Ok({ value: price.toNumber() });
-  }
-
-  /**
-   * Десериализует Price из JSON (lossy)
-   *
-   * @param json - PriceLossyJSON объект { value: number }
-   * @returns Result с Price или InvalidPriceError
-   *
-   * @example
-   * ```typescript
-   * const result = PriceLossySerializer.fromJSON({ value: 0.5 });
-   * ```
-   */
-  public static fromJSON(json: PriceLossyJSON): Result<Price, InvalidPriceError> {
-    return PriceService.create(json.value);
   }
 }

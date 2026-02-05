@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
-import { QuantitySerializer, QuantityLossySerializer } from '../../../../src/quantity/adapters/QuantitySerializer.js';
+import { QuantitySerializer } from '../../../../src/quantity/adapters/QuantitySerializer.js';
 import { Quantity } from '../../../../src/quantity/core/Quantity.js';
 
 describe('QuantitySerializer', () => {
@@ -214,112 +214,6 @@ describe('QuantitySerializer', () => {
       if (result.ok) {
         expect(result.value.value().toString()).toBe(original.value().toString());
       }
-    });
-  });
-});
-
-describe('QuantityLossySerializer', () => {
-  describe('toJSON()', () => {
-    it('должен сериализовать Quantity в number', () => {
-      const qty = Quantity.of(new Decimal(10));
-      const result = QuantityLossySerializer.toJSON(qty);
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value).toEqual({ value: 10 });
-        expect(typeof result.value.value).toBe('number');
-      }
-    });
-
-    it('должен сериализовать decimal значения', () => {
-      const qty = Quantity.of(new Decimal(10.5));
-      const result = QuantityLossySerializer.toJSON(qty);
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.value).toBe(10.5);
-      }
-    });
-
-    it('может потерять точность для больших чисел (ожидаемо)', () => {
-      const bigNum = "12345678901234567890.123456789";
-      const qty = Quantity.of(new Decimal(bigNum));
-      const result = QuantityLossySerializer.toJSON(qty);
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        // Проверяем что это number (может быть неточным)
-        expect(typeof result.value.value).toBe('number');
-        // НЕ проверяем точность, это lossy serializer
-      }
-    });
-  });
-
-  describe('fromJSON()', () => {
-    it('должен десериализовать из number', () => {
-      const result = QuantityLossySerializer.fromJSON({ value: 10 });
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.toNumber()).toBe(10);
-      }
-    });
-
-    it('должен десериализовать decimal значения', () => {
-      const result = QuantityLossySerializer.fromJSON({ value: 10.5 });
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.toNumber()).toBe(10.5);
-      }
-    });
-
-    it('должен вернуть Err для negative numbers', () => {
-      const result = QuantityLossySerializer.fromJSON({ value: -1 });
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBeInstanceOf(Error);
-      }
-    });
-
-    it('должен вернуть Err для NaN', () => {
-      const result = QuantityLossySerializer.fromJSON({ value: NaN });
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBeInstanceOf(Error);
-      }
-    });
-  });
-
-  describe('round-trip', () => {
-    it('должен работать для small numbers', () => {
-      const original = Quantity.of(new Decimal(10.5));
-      const jsonResult = QuantityLossySerializer.toJSON(original);
-
-      expect(jsonResult.ok).toBe(true);
-      if (!jsonResult.ok) return;
-
-      const result = QuantityLossySerializer.fromJSON(jsonResult.value);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.toNumber()).toBe(10.5);
-      }
-    });
-
-    it('НЕ требуем точности для больших чисел (lossy)', () => {
-      // Просто проверяем что round-trip не падает
-      const bigNum = "12345678901234567890";
-      const original = Quantity.of(new Decimal(bigNum));
-      const jsonResult = QuantityLossySerializer.toJSON(original);
-
-      expect(jsonResult.ok).toBe(true);
-      if (!jsonResult.ok) return;
-
-      const result = QuantityLossySerializer.fromJSON(jsonResult.value);
-      expect(result.ok).toBe(true);
-      // НЕ проверяем точность
     });
   });
 });

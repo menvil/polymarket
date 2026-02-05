@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
 import { QuantityService } from '../../../src/quantity/facade/QuantityService.js';
-import { QuantitySerializer, QuantityLossySerializer } from '../../../src/quantity/adapters/QuantitySerializer.js';
+import { QuantitySerializer } from '../../../src/quantity/adapters/QuantitySerializer.js';
 import Decimal from 'decimal.js';
 
 describe('Quantity Integration Workflow', () => {
@@ -108,25 +108,6 @@ describe('Quantity Integration Workflow', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().toString()).toBe(bigNum);
-      }
-    });
-
-    it('QuantityLossySerializer (number) round-trip (не требуем точности)', () => {
-      const qty = Quantity.of(new Decimal(10.5));
-
-      // Сериализация
-      const jsonResult = QuantityLossySerializer.toJSON(qty);
-      expect(jsonResult.ok).toBe(true);
-      if (!jsonResult.ok) return;
-
-      const json = jsonResult.value;
-      expect(typeof json.value).toBe('number');
-
-      // Десериализация
-      const result = QuantityLossySerializer.fromJSON(json);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.toNumber()).toBe(10.5);
       }
     });
 

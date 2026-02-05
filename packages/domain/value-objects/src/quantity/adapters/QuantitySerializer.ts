@@ -1,5 +1,5 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuantityError, InvalidOperandError, ErrorSource } from '@polymarket/errors';
+import { Result, Err } from '@polymarket/result';
+import { InvalidQuantityError, ErrorSource } from '@polymarket/errors';
 import { Quantity } from '../core/Quantity.js';
 import { QuantityService } from '../facade/QuantityService.js';
 
@@ -47,20 +47,6 @@ export interface QuantityJSON {
    * Quantity value as string для сохранения точности
    */
   value: string;
-}
-
-/**
- * JSON контракт для lossy сериализации (number)
- *
- * @remarks
- * ⚠️ ВНИМАНИЕ: Использует number, может привести к потере точности.
- * Для точной сериализации используй QuantityJSON.
- */
-export interface QuantityLossyJSON {
-  /**
-   * Quantity value as number (может потерять точность)
-   */
-  value: number;
 }
 
 /**
@@ -233,70 +219,5 @@ export class QuantitySerializer {
 
     // Делегируем создание QuantityService
     return QuantityService.create(value);
-  }
-}
-
-/**
- * Lossy serializer для случаев когда точность не критична
- *
- * @remarks
- * ⚠️ ВНИМАНИЕ: Использует number, что может привести к потере точности.
- * Используйте только для отображения или когда точность не критична.
- * Для точной сериализации используйте QuantitySerializer.
- */
-export class QuantityLossySerializer {
-  private static readonly SERVICE_NAME = 'QuantityLossySerializer';
-  /**
-   * Сериализует Quantity в JSON объект (lossy)
-   *
-   * @param quantity - Quantity для сериализации
-   * @returns Result с QuantityLossyJSON или ошибкой
-   *
-   * @remarks
-   * ⚠️ ВНИМАНИЕ: Может потерять точность для больших чисел.
-   * Использует number вместо string.
-   *
-   * @example
-   * ```typescript
-   * const result = QuantityLossySerializer.toJSON(qty);
-   * if (result.ok) {
-   *   console.log(result.value); // { value: 10.123456789 }
-   * }
-   * ```
-   */
-  public static toJSON(quantity: Quantity): Result<QuantityLossyJSON, InvalidOperandError> {
-    const decimalValue = quantity.value();
-    if (!decimalValue.isFinite()) {
-      return Err(
-        new InvalidOperandError(
-          (ctx) => `Cannot serialize non-finite Quantity to JSON, got ${ctx.value}`,
-          {
-            context: {
-              source: ErrorSource.PARSING,
-              service: QuantityLossySerializer.SERVICE_NAME,
-              op: 'toJSON',
-              value: decimalValue.toString(),
-              operation: 'toJSON'
-            }
-          }
-        )
-      );
-    }
-    return Ok({ value: quantity.toNumber() });
-  }
-
-  /**
-   * Десериализует Quantity из JSON (lossy)
-   *
-   * @param json - QuantityLossyJSON объект { value: number }
-   * @returns Result с Quantity или InvalidQuantityError
-   *
-   * @example
-   * ```typescript
-   * const result = QuantityLossySerializer.fromJSON({ value: 10 });
-   * ```
-   */
-  public static fromJSON(json: QuantityLossyJSON): Result<Quantity, InvalidQuantityError> {
-    return QuantityService.create(json.value);
   }
 }
