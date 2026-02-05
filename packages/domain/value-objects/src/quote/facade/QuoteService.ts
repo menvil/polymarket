@@ -942,6 +942,7 @@ export class QuoteService {
           QuoteService.SERVICE_NAME,
           op,
           {
+            source: ErrorSource.SERVICE_CALL, // Ошибка из вложенного service (PriceService)
             component: field, // Добавляем component т.к. PriceService.create возвращает field: 'value', а не 'bid'/'ask'
             reason, // Override reason с Quote-специфичной причиной
             cause: toCause(result.error) // Add cause для trace
@@ -981,6 +982,7 @@ export class QuoteService {
           QuoteService.SERVICE_NAME,
           op,
           {
+            source: ErrorSource.SERVICE_CALL, // Ошибка из вложенного service (QuantityService)
             component: field, // Добавляем component т.к. QuantityService.create возвращает field: 'value', а не 'bidSize'/'askSize'
             reason, // Override reason
             cause: toCause(result.error) // Add cause
