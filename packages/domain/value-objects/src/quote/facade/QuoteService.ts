@@ -89,9 +89,7 @@ export class QuoteService {
    * Для bid/ask которые могут быть null (one-sided quotes).
    * Если value === null, возвращает Ok(null) без парсинга.
    *
-   * @todo Использовать в refactoring create() метода для устранения дублирования
    */
-  // @ts-expect-error - TODO: will be used in create() refactoring
   private static parseOptionalDecimal(
     field: string,
     value: Decimal | number | string | null,
@@ -174,71 +172,60 @@ export class QuoteService {
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
-      // Конвертируем bid через toDecimal (если не null)
-      let bidDecimal: Decimal | null = null;
-      if (bidValue !== null) {
-        const bidResult = toDecimal(
-          'bidValue',
-          bidValue,
-          QuoteErrorReason.INVALID_FORMAT,
-          InvalidQuoteError
-        );
-        if (isErr(bidResult)) {
-          return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, bidResult.error, InvalidQuoteError));
-        }
-        bidDecimal = bidResult.value;
+      // Конвертируем bid через parseOptionalDecimal
+      const bidResult = QuoteService.parseOptionalDecimal(
+        'bidValue',
+        bidValue,
+        QuoteErrorReason.INVALID_FORMAT
+      );
+      if (isErr(bidResult)) {
+        return bidResult;
       }
+      const bidDecimal = bidResult.value;
 
-      // Конвертируем ask через toDecimal (если не null)
-      let askDecimal: Decimal | null = null;
-      if (askValue !== null) {
-        const askResult = toDecimal(
-          'askValue',
-          askValue,
-          QuoteErrorReason.INVALID_FORMAT,
-          InvalidQuoteError
-        );
-        if (isErr(askResult)) {
-          return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, askResult.error, InvalidQuoteError));
-        }
-        askDecimal = askResult.value;
+      // Конвертируем ask через parseOptionalDecimal
+      const askResult = QuoteService.parseOptionalDecimal(
+        'askValue',
+        askValue,
+        QuoteErrorReason.INVALID_FORMAT
+      );
+      if (isErr(askResult)) {
+        return askResult;
       }
+      const askDecimal = askResult.value;
 
-      // Конвертируем bidSize через toDecimal
-      const bidSizeResult = toDecimal(
+      // Конвертируем bidSize через parseDecimal
+      const bidSizeDecimalResult = QuoteService.parseDecimal(
         'bidSizeValue',
         bidSizeValue,
-        QuoteErrorReason.INVALID_FORMAT,
-        InvalidQuoteError
+        QuoteErrorReason.INVALID_FORMAT
       );
-      if (isErr(bidSizeResult)) {
-        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, bidSizeResult.error, InvalidQuoteError));
+      if (isErr(bidSizeDecimalResult)) {
+        return bidSizeDecimalResult;
       }
 
-      // Конвертируем askSize через toDecimal
-      const askSizeResult = toDecimal(
+      // Конвертируем askSize через parseDecimal
+      const askSizeDecimalResult = QuoteService.parseDecimal(
         'askSizeValue',
         askSizeValue,
-        QuoteErrorReason.INVALID_FORMAT,
-        InvalidQuoteError
+        QuoteErrorReason.INVALID_FORMAT
       );
-      if (isErr(askSizeResult)) {
-        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, askSizeResult.error, InvalidQuoteError));
+      if (isErr(askSizeDecimalResult)) {
+        return askSizeDecimalResult;
       }
 
-      // Конвертируем timestamp через toDecimal
+      // Конвертируем timestamp через parseDecimal
       let timestampDecimal: Decimal;
       if (timestamp !== undefined) {
         // Date → number (getTime)
         const tsValue = timestamp instanceof Date ? timestamp.getTime() : timestamp;
-        const tsResult = toDecimal(
+        const tsResult = QuoteService.parseDecimal(
           'timestamp',
           tsValue,
-          QuoteErrorReason.INVALID_FORMAT,
-          InvalidQuoteError
+          QuoteErrorReason.INVALID_FORMAT
         );
         if (isErr(tsResult)) {
-          return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, tsResult.error, InvalidQuoteError));
+          return tsResult;
         }
         timestampDecimal = tsResult.value;
       } else {
@@ -247,19 +234,19 @@ export class QuoteService {
       }
 
       // Создаём Price объекты через helper
-      const bidResult = this.createPrice(bidDecimal, 'bid', op);
-      if (isErr(bidResult)) return bidResult;
-      const bid = bidResult.value;
+      const bidPriceResult = this.createPrice(bidDecimal, 'bid', op);
+      if (isErr(bidPriceResult)) return bidPriceResult;
+      const bid = bidPriceResult.value;
 
-      const askResult = this.createPrice(askDecimal, 'ask', op);
-      if (isErr(askResult)) return askResult;
-      const ask = askResult.value;
+      const askPriceResult = this.createPrice(askDecimal, 'ask', op);
+      if (isErr(askPriceResult)) return askPriceResult;
+      const ask = askPriceResult.value;
 
       // Создаём Quantity объекты через helper
-      const bidSizeQuantityResult = this.createQuantity(bidSizeResult.value, 'bidSize', op);
+      const bidSizeQuantityResult = this.createQuantity(bidSizeDecimalResult.value, 'bidSize', op);
       if (isErr(bidSizeQuantityResult)) return bidSizeQuantityResult;
 
-      const askSizeQuantityResult = this.createQuantity(askSizeResult.value, 'askSize', op);
+      const askSizeQuantityResult = this.createQuantity(askSizeDecimalResult.value, 'askSize', op);
       if (isErr(askSizeQuantityResult)) return askSizeQuantityResult;
 
       // Создаём Quote через Core (может бросить QuoteInvariantViolation)
