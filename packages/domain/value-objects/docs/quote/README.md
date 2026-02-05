@@ -14,7 +14,7 @@
 - ✅ **Automatic operation tracing** — opChain для отслеживания цепочек операций
 - ✅ **Typed error reasons** — QuoteErrorReason enum (12 значений)
 - ✅ **Rich domain logic** — методы вычисления spread, mid price, проверки crossing
-- ✅ **Comprehensive tests** — 154 теста (100% покрытие)
+- ✅ **Comprehensive tests** — 216 тестов (100% покрытие)
 
 ## Быстрый старт
 
@@ -79,6 +79,7 @@ Quote следует **Throws+Facade** паттерну:
 │  Rules Layer                                                │
 │  - ValidateQuoteSizes, ValidateMinSpread                    │
 │  - ValidateMaxSpread, ValidateMarketCrossing                │
+│  - ValidateAge (с IClock для проверки свежести)             │
 │  - Result<void, InvalidQuoteError>                          │
 ├─────────────────────────────────────────────────────────────┤
 │  Adapters Layer                                             │
@@ -104,6 +105,7 @@ Quote следует **Throws+Facade** паттерну:
    - `ValidateMinSpread.ts` — проверка минимального spread
    - `ValidateMaxSpread.ts` — проверка максимального spread
    - `ValidateMarketCrossing.ts` — проверка пересечения с orderbook
+   - `ValidateAge.ts` — проверка свежести котировки (с IClock)
 
 4. **Adapters Layer** (`src/quote/adapters/`)
    - `QuoteSerializer.ts` — JSON сериализация/десериализация
@@ -242,14 +244,86 @@ if (skewResult.ok) {
 
 #### `updateSizes()`
 
-Обновляет размеры котировки.
+Обновляет размеры котировки (preserves timestamp).
 
 ```typescript
 const result = QuoteService.updateSizes(
   quote: Quote,
-  newBidSize: number | Quantity,
-  newAskSize: number | Quantity
+  newBidSize: Decimal | number | string | Quantity,
+  newAskSize: Decimal | number | string | Quantity
 ): Result<Quote, InvalidQuoteError>
+```
+
+### Timestamp Preservation & IClock
+
+Все методы трансформации (`shift`, `skew`, `updateSizes`) **сохраняют timestamp** исходной котировки. Для обновления timestamp используйте варианты с суффиксом `WithRefresh`:
+
+#### `shiftWithRefresh()`
+
+Сдвигает котировку и обновляет timestamp через IClock.
+
+```typescript
+import { LiveClock } from '@polymarket/time';
+
+const clock = new LiveClock();
+const result = QuoteService.shiftWithRefresh(
+  quote: Quote,
+  delta: Decimal,
+  clock: IClock
+): Result<Quote, InvalidQuoteError>
+```
+
+**Пример:**
+
+```typescript
+import { LiveClock } from '@polymarket/time';
+
+const clock = new LiveClock();
+const result = QuoteService.shiftWithRefresh(quote, new Decimal(0.01), clock);
+// Новая котировка с обновлённым timestamp
+```
+
+#### `skewWithRefresh()`
+
+Независимо сдвигает bid и ask, обновляя timestamp.
+
+```typescript
+const result = QuoteService.skewWithRefresh(
+  quote: Quote,
+  bidDelta: Decimal,
+  askDelta: Decimal,
+  clock: IClock
+): Result<Quote, InvalidQuoteError>
+```
+
+#### `updateSizesWithRefresh()`
+
+Обновляет размеры и timestamp.
+
+```typescript
+const result = QuoteService.updateSizesWithRefresh(
+  quote: Quote,
+  newBidSize: Decimal | number | string | Quantity,
+  newAskSize: Decimal | number | string | Quantity,
+  clock: IClock
+): Result<Quote, InvalidQuoteError>
+```
+
+**IClock Benefits:**
+- **Production**: `LiveClock` для реального времени
+- **Testing**: `PaperClock` для deterministic testing
+- **Replay**: `ReplayClock` для исторических данных
+
+**Пример в тестах:**
+
+```typescript
+import { PaperClock } from '@polymarket/time';
+
+const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+const result = QuoteService.shiftWithRefresh(quote, delta, clock);
+
+// Контролируемое время для тестов
+clock.tick(5000); // +5 секунд
 ```
 
 #### `getSpreadOrZero()`
@@ -447,6 +521,42 @@ QuoteFormatter.formatMid(quote, 2);
 // "0.50"
 ```
 
+#### `formatCompact()`
+
+Компактный формат для логов и UI с ограниченным пространством.
+
+```typescript
+QuoteFormatter.formatCompact(quote);
+// "0.48/0.52 @100×150"
+
+QuoteFormatter.formatCompact(quote, 4, 2);
+// "0.4800/0.5200 @100.00×150.00"
+```
+
+**Формат**: `bid/ask @bidSize×askSize`
+- Цены разделены "/"
+- Размеры показаны после "@" и разделены "×"
+- Для one-sided котировок используется "--"
+- По умолчанию: 2 десятичных знака для цен, 0 для размеров
+
+#### `formatWithSpread()`
+
+Формат с информацией о spread для быстрой оценки качества котировки.
+
+```typescript
+QuoteFormatter.formatWithSpread(quote);
+// "0.48-0.52 (400bp, mid=0.50)"
+
+QuoteFormatter.formatWithSpread(quote, 4);
+// "0.4800-0.5200 (400bp, mid=0.5000)"
+```
+
+**Формат для two-sided**: `bid-ask (spreadBps, mid=midPrice)`
+- Цены разделены "-"
+- Spread показан в basis points (1bp = 0.01%)
+- Mid price показан после "mid="
+- Для one-sided: "0.50 (bid only)" или "0.52 (ask only)"
+
 ## Validation Rules
 
 ### ValidateQuoteSizes
@@ -502,6 +612,45 @@ if (!result.ok) {
 }
 ```
 
+### ValidateAge
+
+Проверяет свежесть котировки через IClock.
+
+```typescript
+import { LiveClock } from '@polymarket/time';
+
+const clock = new LiveClock();
+const maxAgeMs = 5000; // 5 секунд
+
+const result = ValidateAge.check(quote, maxAgeMs, clock);
+if (!result.ok) {
+  console.error(result.error.context?.reason);
+  // QuoteErrorReason.QUOTE_TOO_OLD
+  console.error(result.error.context?.ageMs);      // Фактический возраст
+  console.error(result.error.context?.maxAgeMs);   // Максимальный возраст
+}
+```
+
+**IClock для тестирования:**
+
+```typescript
+import { PaperClock } from '@polymarket/time';
+
+const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+const quote = QuoteService.create(0.48, 0.52, 100, 150).value;
+
+// Перематываем время на 10 секунд вперёд
+clock.tick(10000);
+
+const result = ValidateAge.check(quote, 5000, clock);
+// result.ok === false (возраст 10s > maxAge 5s)
+```
+
+**Use cases:**
+- Проверка актуальности котировки перед отправкой в orderbook
+- Фильтрация устаревших котировок из кэша
+- Мониторинг задержек в получении данных
+
 ## Error Handling
 
 Quote использует типизированные ошибки через `QuoteErrorReason`:
@@ -519,7 +668,8 @@ enum QuoteErrorReason {
   ASK_SIZE_MUST_BE_POSITIVE = 'ASK_SIZE_MUST_BE_POSITIVE',
   SPREAD_TOO_NARROW = 'SPREAD_TOO_NARROW',
   SPREAD_TOO_WIDE = 'SPREAD_TOO_WIDE',
-  MARKET_CROSSING = 'MARKET_CROSSING'
+  MARKET_CROSSING = 'MARKET_CROSSING',
+  QUOTE_TOO_OLD = 'QUOTE_TOO_OLD'
 }
 ```
 
