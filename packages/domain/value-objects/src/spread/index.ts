@@ -8,7 +8,7 @@ export { SpreadService } from './facade/index.js';
 export { SpreadSerializer, SpreadFormatter } from './adapters/index.js';
 
 // Errors (публичный API)
-export { SpreadErrorReason } from './errors/SpreadErrorReason.js';
+export { SpreadErrorReason } from './errors/index.js';
 
 // Rules (только типы для потребителей)
 // ErrorContext и внутренние типы Rules НЕ экспортируются из верхнего index
