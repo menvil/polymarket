@@ -1,0 +1,250 @@
+/**
+ * Pino Logger Adapter - адаптер для production логирования
+ *
+ * @remarks
+ * Адаптирует Pino logger к нашему ILogger интерфейсу.
+ * Использует IClock для детерминированных timestamps (важно для paper trading).
+ *
+ * ## Особенности
+ *
+ * - Совместим с ILogger интерфейсом из @polymarket/logger
+ * - Поддерживает IClock для детерминированного времени
+ * - Корректная сериализация Error объектов через Pino { err: error }
+ * - Поддержка child loggers с bindings
+ * - Multiple transports (console, Datadog, CloudWatch, файлы)
+ *
+ * ## Использование
+ *
+ * ```typescript
+ * const logger = new PinoLoggerAdapter(
+ *   pino({ level: 'info' }),
+ *   new LiveClock()
+ * );
+ *
+ * logger.info('Order placed', { orderId: '123' });
+ * ```
+ */
+
+import pino from 'pino';
+import type { ILogger } from '@polymarket/logger';
+import type { IClock } from '@polymarket/time';
+
+export class PinoLoggerAdapter implements ILogger {
+  /**
+   * Создаёт Pino Logger Adapter
+   *
+   * @param pino - Экземпляр Pino logger
+   * @param clock - Источник времени для timestamps
+   *
+   * @remarks
+   * IClock используется для переопределения timestamp из Pino.
+   * Это критично для paper trading режима где нужно детерминированное время.
+   *
+   * @example
+   * ```typescript
+   * import pino from 'pino';
+   * import { LiveClock } from '@polymarket/time';
+   *
+   * const logger = new PinoLoggerAdapter(
+   *   pino({ level: 'info' }),
+   *   new LiveClock()
+   * );
+   * ```
+   */
+  constructor(
+    private readonly pino: pino.Logger,
+    private readonly clock: IClock
+  ) {}
+
+  /**
+   * Логирует трассировочное сообщение (уровень TRACE)
+   *
+   * @param message - Текст сообщения
+   * @param context - Дополнительный контекст
+   *
+   * @example
+   * ```typescript
+   * logger.trace('Entering handleOrderbookUpdate', {
+   *   marketId: '0xabc',
+   *   bidsCount: 10
+   * });
+   * ```
+   */
+  trace(message: string, context?: Record<string, unknown>): void {
+    this.pino.trace(
+      {
+        ...context,
+        time: this.clock.now().getTime(), // Переопределяем timestamp из IClock
+      },
+      message
+    );
+  }
+
+  /**
+   * Логирует отладочное сообщение (уровень DEBUG)
+   *
+   * @param message - Текст сообщения
+   * @param context - Дополнительный контекст
+   *
+   * @example
+   * ```typescript
+   * logger.debug('Processing orderbook', {
+   *   marketId: '0xabc',
+   *   bids: 10,
+   *   asks: 12
+   * });
+   * ```
+   */
+  debug(message: string, context?: Record<string, unknown>): void {
+    this.pino.debug(
+      {
+        ...context,
+        time: this.clock.now().getTime(),
+      },
+      message
+    );
+  }
+
+  /**
+   * Логирует информационное сообщение (уровень INFO)
+   *
+   * @param message - Текст сообщения
+   * @param context - Дополнительный контекст
+   *
+   * @example
+   * ```typescript
+   * logger.info('Order placed successfully', {
+   *   orderId: 'order-123',
+   *   price: 0.65,
+   *   quantity: 100
+   * });
+   * ```
+   */
+  info(message: string, context?: Record<string, unknown>): void {
+    this.pino.info(
+      {
+        ...context,
+        time: this.clock.now().getTime(),
+      },
+      message
+    );
+  }
+
+  /**
+   * Логирует предупреждение (уровень WARN)
+   *
+   * @param message - Текст сообщения
+   * @param context - Дополнительный контекст
+   *
+   * @example
+   * ```typescript
+   * logger.warn('Position limit approaching', {
+   *   currentPosition: 450,
+   *   limit: 500
+   * });
+   * ```
+   */
+  warn(message: string, context?: Record<string, unknown>): void {
+    this.pino.warn(
+      {
+        ...context,
+        time: this.clock.now().getTime(),
+      },
+      message
+    );
+  }
+
+  /**
+   * Логирует ошибку (уровень ERROR)
+   *
+   * @param message - Текст сообщения
+   * @param error - Объект ошибки (опционально)
+   * @param context - Дополнительный контекст
+   *
+   * @remarks
+   * Pino ожидает Error объект в поле { err: error }.
+   * Pino автоматически сериализует err.message, err.stack, etc.
+   *
+   * @example
+   * ```typescript
+   * try {
+   *   await placeOrder(order);
+   * } catch (error) {
+   *   logger.error('Failed to place order', error as Error, {
+   *     orderId: order.id,
+   *   });
+   * }
+   * ```
+   */
+  error(
+    message: string,
+    error?: Error,
+    context?: Record<string, unknown>
+  ): void {
+    const pinoContext = {
+      ...context,
+      ...(error && { err: error }), // Pino автоматически сериализует err
+      time: this.clock.now().getTime(),
+    };
+    this.pino.error(pinoContext, message);
+  }
+
+  /**
+   * Логирует критическую ошибку (уровень FATAL)
+   *
+   * @param message - Текст сообщения
+   * @param error - Объект ошибки (опционально)
+   * @param context - Дополнительный контекст
+   *
+   * @remarks
+   * FATAL используется для фатальных ошибок которые приводят к остановке.
+   * После логирования FATAL обычно следует process.exit(1).
+   *
+   * @example
+   * ```typescript
+   * try {
+   *   await connectToExchange();
+   * } catch (error) {
+   *   logger.fatal('Cannot connect to exchange', error as Error, {
+   *     exchange: 'Polymarket',
+   *     retryAttempts: 5
+   *   });
+   *   process.exit(1);
+   * }
+   * ```
+   */
+  fatal(
+    message: string,
+    error?: Error,
+    context?: Record<string, unknown>
+  ): void {
+    const pinoContext = {
+      ...context,
+      ...(error && { err: error }),
+      time: this.clock.now().getTime(),
+    };
+    this.pino.fatal(pinoContext, message);
+  }
+
+  /**
+   * Создаёт дочерний логгер с привязанным контекстом
+   *
+   * @param bindings - Контекст который будет добавлен ко всем логам
+   * @returns Новый логгер с добавленным контекстом
+   *
+   * @remarks
+   * Дочерний логгер наследует конфигурацию родителя и добавляет свой контекст.
+   *
+   * @example
+   * ```typescript
+   * const logger = new PinoLoggerAdapter(pino(), new LiveClock());
+   * const mmLogger = logger.child({ service: 'MarketMaker', marketId: '0xabc' });
+   *
+   * mmLogger.info('Quote sent', { price: 0.55 });
+   * // Output включает: service="MarketMaker", marketId="0xabc", price=0.55
+   * ```
+   */
+  child(bindings: Record<string, unknown>): ILogger {
+    return new PinoLoggerAdapter(this.pino.child(bindings), this.clock);
+  }
+}
