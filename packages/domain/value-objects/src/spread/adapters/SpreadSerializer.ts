@@ -2,7 +2,7 @@ import { type Result, Err } from '@polymarket/result';
 import { InvalidSpreadError, ErrorSource } from '@polymarket/errors';
 import { Spread } from '../core/Spread.js';
 import { SpreadService } from '../facade/SpreadService.js';
-import { SpreadErrorReason } from '../core/SpreadErrorReason.js';
+import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 
 /**
  * DTO для сериализации Spread

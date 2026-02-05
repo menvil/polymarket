@@ -10,7 +10,8 @@ import {
 } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { Price, PriceService } from '../../price/index.js';
-import { Spread, SpreadErrorReason } from '../core/index.js';
+import { Spread } from '../core/index.js';
+import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 import { ValidateBidAsk } from '../rules/ValidateBidAsk.js';
 import { addDecimal, subtractDecimal } from '@polymarket/math';
 

@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
-import { Spread, SpreadInvariantViolation, SpreadErrorReason } from '../../../../src/spread/core/index.js';
+import { Spread, SpreadInvariantViolation } from '../../../../src/spread/core/index.js';
+import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
 import { Price } from '../../../../src/price/index.js';
 
 describe('Spread Core', () => {

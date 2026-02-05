@@ -1,4 +1,4 @@
-import { SpreadErrorReason } from './SpreadErrorReason.js';
+import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 
 /**
  * Типизированные причины нарушения инвариантов Spread

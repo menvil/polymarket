@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
 import { ValidateMinWidth } from '../../../../src/spread/rules/ValidateMinWidth.js';
-import { SpreadErrorReason } from '../../../../src/spread/core/SpreadErrorReason.js';
+import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
 
 describe('ValidateMinWidth', () => {
   describe('check()', () => {

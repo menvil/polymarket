@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { Price } from '../../price/index.js';
 import { SpreadInvariantViolation } from './SpreadInvariantViolation.js';
-import { SpreadErrorReason } from './SpreadErrorReason.js';
+import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 
 /**
  * Core Spread Value Object

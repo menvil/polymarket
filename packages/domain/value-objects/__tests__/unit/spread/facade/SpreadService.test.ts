@@ -1,7 +1,7 @@
 import Decimal from 'decimal.js';
 import { SpreadService } from '../../../../src/spread/facade/SpreadService.js';
 import { PriceService } from '../../../../src/price/index.js';
-import { SpreadErrorReason } from '../../../../src/spread/core/SpreadErrorReason.js';
+import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
 
 describe('SpreadService', () => {
   // ==========================================================================

@@ -1,6 +1,6 @@
 import { SpreadSerializer } from '../../../../src/spread/adapters/SpreadSerializer.js';
 import { SpreadService } from '../../../../src/spread/facade/SpreadService.js';
-import { SpreadErrorReason } from '../../../../src/spread/core/SpreadErrorReason.js';
+import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
 
 describe('SpreadSerializer', () => {
   describe('toDTO()', () => {

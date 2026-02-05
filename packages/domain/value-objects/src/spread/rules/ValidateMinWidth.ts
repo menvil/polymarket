@@ -1,7 +1,7 @@
 import { type Result, Ok, Err } from '@polymarket/result';
 import { InvalidSpreadError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
-import { SpreadErrorReason } from '../core/SpreadErrorReason.js';
+import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 
 /**
  * Валидация: ширина спреда должна быть >= минимума
