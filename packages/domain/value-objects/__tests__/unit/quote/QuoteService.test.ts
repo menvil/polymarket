@@ -583,13 +583,13 @@ describe('QuoteService', () => {
     });
   });
 
-  describe('getSpreadOrZero()', () => {
+  describe('spreadWidthOrZero() (from Quote)', () => {
     it('возвращает spread для two-sided quote', () => {
       const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
-      const spread = QuoteService.getSpreadOrZero(quoteResult.value);
+      const spread = quoteResult.value.spreadWidthOrZero();
 
       expect(spread.toNumber()).toBe(0.04);
     });
@@ -599,7 +599,7 @@ describe('QuoteService', () => {
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
-      const spread = QuoteService.getSpreadOrZero(quoteResult.value);
+      const spread = quoteResult.value.spreadWidthOrZero();
 
       expect(spread.toNumber()).toBe(0);
     });
@@ -609,22 +609,22 @@ describe('QuoteService', () => {
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
-      const spread = QuoteService.getSpreadOrZero(quoteResult.value);
+      const spread = quoteResult.value.spreadWidthOrZero();
 
       expect(spread.toNumber()).toBe(0);
     });
   });
 
-  describe('getMidPrice()', () => {
+  describe('midOrNull() (from Quote)', () => {
     it('возвращает mid для two-sided quote', () => {
       const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
-      const mid = QuoteService.getMidPrice(quoteResult.value);
+      const mid = quoteResult.value.midOrNull();
 
       expect(mid).not.toBeNull();
-      expect(mid?.value().toNumber()).toBe(0.50);
+      expect(mid?.toNumber()).toBe(0.50);
     });
 
     it('возвращает null для bid-only quote', () => {
@@ -632,7 +632,7 @@ describe('QuoteService', () => {
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
-      const mid = QuoteService.getMidPrice(quoteResult.value);
+      const mid = quoteResult.value.midOrNull();
 
       expect(mid).toBeNull();
     });
@@ -642,7 +642,7 @@ describe('QuoteService', () => {
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
-      const mid = QuoteService.getMidPrice(quoteResult.value);
+      const mid = quoteResult.value.midOrNull();
 
       expect(mid).toBeNull();
     });

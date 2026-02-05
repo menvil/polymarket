@@ -551,4 +551,148 @@ export class Quote {
     // Затем проверяем timestamp (Decimal.equals для точного сравнения)
     return this._timestampMs.equals(other._timestampMs);
   }
+
+  /**
+   * Ширина spread или 0 если не two-sided
+   *
+   * @returns Ширина spread (Decimal) или 0
+   *
+   * @remarks
+   * Удобный метод для получения spread без проверки на null.
+   * Если котировка не two-sided, возвращает 0.
+   *
+   * Эквивалентно: `quote.spread()?.width() ?? Decimal.ZERO`
+   *
+   * @example
+   * ```typescript
+   * // Two-sided quote
+   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * console.log(quote.spreadWidthOrZero().toNumber()); // 0.04
+   *
+   * // Bid-only quote
+   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, Date.now());
+   * console.log(bidOnly.spreadWidthOrZero().toNumber()); // 0
+   * ```
+   */
+  public spreadWidthOrZero(): Decimal {
+    return this.spread()?.width() ?? new Decimal(0);
+  }
+
+  /**
+   * Mid price (средняя цена между bid и ask) или null
+   *
+   * @returns Decimal mid price или null если не two-sided
+   *
+   * @remarks
+   * Mid price - это метрика, не рыночная сущность.
+   * Возвращает Decimal, а не Price, чтобы избежать ложной типизации.
+   *
+   * Если нужен Price объект, вызывающий должен явно создать его:
+   * ```typescript
+   * const mid = quote.midOrNull();
+   * if (mid !== null) {
+   *   const priceResult = PriceService.create(mid);
+   * }
+   * ```
+   *
+   * Формула: (bid + ask) / 2
+   *
+   * @example
+   * ```typescript
+   * // Two-sided quote
+   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * const mid = quote.midOrNull();
+   * console.log(mid?.toNumber()); // 0.50
+   *
+   * // Bid-only quote
+   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, Date.now());
+   * console.log(bidOnly.midOrNull()); // null
+   * ```
+   */
+  public midOrNull(): Decimal | null {
+    if (!this.isTwoSided()) {
+      return null;
+    }
+
+    const bidVal = this._bid!.value();
+    const askVal = this._ask!.value();
+    return bidVal.plus(askVal).dividedBy(2);
+  }
+
+  /**
+   * Дисбаланс размеров bid/ask
+   *
+   * @returns Decimal от -1 до 1:
+   *   - `-1` = только ask (no bid)
+   *   - `0` = идеальный баланс (bidSize === askSize)
+   *   - `+1` = только bid (no ask)
+   *
+   * @remarks
+   * Формула: (bidSize - askSize) / (bidSize + askSize)
+   *
+   * Если оба размера 0, возвращает 0 (нейтральный дисбаланс).
+   *
+   * Интерпретация:
+   * - Положительный imbalance → больше bid ликвидности
+   * - Отрицательный imbalance → больше ask ликвидности
+   * - Близко к 0 → сбалансированная ликвидность
+   *
+   * @example
+   * ```typescript
+   * // Сбалансированная котировка
+   * const balanced = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(100), Date.now());
+   * console.log(balanced.imbalance().toNumber()); // 0
+   *
+   * // Больше bid ликвидности
+   * const bidHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(150), Quantity.of(50), Date.now());
+   * console.log(bidHeavy.imbalance().toNumber()); // 0.5 (50% дисбаланс в сторону bid)
+   *
+   * // Больше ask ликвидности
+   * const askHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(50), Quantity.of(150), Date.now());
+   * console.log(askHeavy.imbalance().toNumber()); // -0.5 (50% дисбаланс в сторону ask)
+   * ```
+   */
+  public imbalance(): Decimal {
+    const bidSize = this._bidSize.value();
+    const askSize = this._askSize.value();
+    const total = bidSize.plus(askSize);
+
+    // Если оба размера 0, возвращаем нейтральный дисбаланс
+    if (total.isZero()) {
+      return new Decimal(0);
+    }
+
+    return bidSize.minus(askSize).dividedBy(total);
+  }
+
+  /**
+   * Spread в процентах от mid price
+   *
+   * @returns Ratio процента или null если не two-sided
+   *
+   * @todo Реализовать после создания Ratio value object
+   * @see packages/domain/value-objects/src/ratio/
+   *
+   * @remarks
+   * Будущая реализация после создания Ratio:
+   * - Формула: (spread / mid) * 100
+   * - Возвращает Ratio объект (типобезопасный процент)
+   * - null если котировка не two-sided
+   *
+   * @example
+   * ```typescript
+   * // После реализации Ratio:
+   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * const pct = quote.spreadPercentage();
+   * console.log(pct?.value().toNumber()); // 8.0 (8%)
+   * ```
+   */
+  public spreadPercentage(): null {
+    // TODO: Реализовать после создания Ratio value object
+    // if (!this.isTwoSided()) return null;
+    // const mid = this.midOrNull()!;
+    // const spread = this.spread()!.width();
+    // return Ratio.of(spread.dividedBy(mid).times(100)); // в процентах
+    return null;
+  }
 }

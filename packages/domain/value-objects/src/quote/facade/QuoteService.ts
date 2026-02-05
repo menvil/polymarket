@@ -599,69 +599,6 @@ export class QuoteService {
   }
 
   /**
-   * Получает spread width или 0 если односторонняя котировка
-   *
-   * @remarks
-   * Утилита для безопасного получения spread width.
-   * Использует quote.spread() для получения Spread объекта.
-   *
-   * @param quote - Котировка
-   * @returns Decimal со значением spread (0 для one-sided)
-   *
-   * @example
-   * ```typescript
-   * const quote = expectOk(QuoteService.create(0.48, 0.52, 100, 150));
-   * const spread = QuoteService.getSpreadOrZero(quote);
-   * console.log(spread.toString()); // "0.04"
-   *
-   * const bidOnly = expectOk(QuoteService.bidOnly(0.50, 100));
-   * const spreadBid = QuoteService.getSpreadOrZero(bidOnly);
-   * console.log(spreadBid.toString()); // "0"
-   * ```
-   */
-  public static getSpreadOrZero(quote: Quote): Decimal {
-    const spread = quote.spread();
-    return spread !== null ? spread.width() : new Decimal(0);
-  }
-
-  /**
-   * Получает mid price или null если односторонняя котировка
-   *
-   * @remarks
-   * Использует quote.spread() для получения Spread объекта.
-   * Преобразует Decimal в Price.
-   *
-   * @param quote - Котировка
-   * @returns Price mid или null
-   *
-   * @example
-   * ```typescript
-   * const quote = expectOk(QuoteService.create(0.48, 0.52, 100, 150));
-   * const mid = QuoteService.getMidPrice(quote);
-   * if (mid !== null) {
-   *   console.log(mid.value().toString()); // "0.5"
-   * }
-   * ```
-   */
-  public static getMidPrice(quote: Quote): Price | null {
-    const spread = quote.spread();
-    if (spread === null) {
-      return null;
-    }
-
-    const midDecimal = spread.mid();
-
-    // SAFETY: mid всегда в [MIN_PRICE, MAX_PRICE] если bid/ask валидны
-    // bid <= ask (инвариант) и оба в [MIN, MAX] → mid в [MIN, MAX]
-    try {
-      return Price.of(midDecimal);
-    } catch (error) {
-      // Это не должно случиться, но если случится - возвращаем null
-      return null;
-    }
-  }
-
-  /**
    * Helper: создаёт Price из Decimal (с обработкой null)
    *
    * @internal
