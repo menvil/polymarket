@@ -192,20 +192,45 @@ export class SpreadService {
    * Сузить spread (bid ↑, ask ↓)
    *
    * @param spread - Исходный spread
-   * @param amount - Величина сужения
+   * @param amount - Величина сужения (должна быть >= 0)
    * @returns Result с новым Spread или InvalidSpreadError
    *
    * @remarks
-   * Сдвигает bid вверх и ask вниз на указанную величину.
-   * Если amount > width/2, сужает до нулевой ширины.
+   * **Операция:**
+   * - Сдвигает bid вверх на amount: `newBid = bid + amount`
+   * - Сдвигает ask вниз на amount: `newAsk = ask - amount`
+   * - Результат: ширина уменьшается на `2 * amount`
+   *
+   * **Boundary behavior:**
+   * - Если `amount > width/2`, автоматически ограничивается до `width/2`
+   * - Минимальная ширина результата: 0 (zero-width spread)
+   * - Если новые цены выходят за [MIN_PRICE, MAX_PRICE], возвращает Err
+   *
+   * **Immutability:**
+   * Исходный spread НЕ изменяется. Возвращается новый Spread объект.
+   *
+   * **Validation:**
+   * - amount должен быть finite
+   * - amount должен быть non-negative
+   * - amount может быть 0 (возвращает эквивалентный spread)
    *
    * @example
    * ```typescript
    * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
+   *
+   * // Нормальное сужение
    * const tightened = SpreadService.tighten(spread, new Decimal(0.01));
    * if (tightened.ok) {
    *   console.log(tightened.value.bid().value()); // 0.49
    *   console.log(tightened.value.ask().value()); // 0.51
+   *   console.log(tightened.value.width()); // 0.02
+   * }
+   *
+   * // Сужение > width/2 → zero-width spread
+   * const collapsed = SpreadService.tighten(spread, new Decimal(0.05));
+   * if (collapsed.ok) {
+   *   console.log(collapsed.value.width().toNumber()); // 0
+   *   console.log(collapsed.value.bid().equals(collapsed.value.ask())); // true
    * }
    * ```
    */
@@ -302,21 +327,43 @@ export class SpreadService {
    * Расширить spread (bid ↓, ask ↑)
    *
    * @param spread - Исходный spread
-   * @param amount - Величина расширения
+   * @param amount - Величина расширения (должна быть >= 0)
    * @returns Result с новым Spread или InvalidSpreadError
    *
    * @remarks
-   * Сдвигает bid вниз и ask вверх на указанную величину.
-   * Соблюдает границы цен [MIN_PRICE, MAX_PRICE].
+   * **Операция:**
+   * - Сдвигает bid вниз на amount: `newBid = bid - amount`
+   * - Сдвигает ask вверх на amount: `newAsk = ask + amount`
+   * - Результат: ширина увеличивается на `2 * amount`
+   *
+   * **Boundary behavior:**
+   * - Если новые цены выходят за [MIN_PRICE, MAX_PRICE], возвращает Err
+   * - Нет автоматического ограничения amount (в отличие от tighten)
+   * - Максимальная ширина результата: `MAX_PRICE - MIN_PRICE`
+   *
+   * **Immutability:**
+   * Исходный spread НЕ изменяется. Возвращается новый Spread объект.
+   *
+   * **Validation:**
+   * - amount должен быть finite
+   * - amount должен быть non-negative
+   * - amount может быть 0 (возвращает эквивалентный spread)
    *
    * @example
    * ```typescript
    * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
+   *
+   * // Нормальное расширение
    * const widened = SpreadService.widen(spread, new Decimal(0.02));
    * if (widened.ok) {
    *   console.log(widened.value.bid().value()); // 0.46
    *   console.log(widened.value.ask().value()); // 0.54
+   *   console.log(widened.value.width()); // 0.08
    * }
+   *
+   * // Расширение за границы → Err
+   * const tooWide = SpreadService.widen(spread, new Decimal(0.5));
+   * console.log(tooWide.ok); // false (bid < MIN_PRICE или ask > MAX_PRICE)
    * ```
    */
   public static widen(
@@ -406,23 +453,50 @@ export class SpreadService {
    * Сдвинуть spread вверх или вниз
    *
    * @param spread - Исходный spread
-   * @param amount - Величина сдвига (+ вверх, - вниз)
+   * @param amount - Величина сдвига (+ вверх, - вниз, может быть отрицательным)
    * @returns Result с новым Spread или InvalidSpreadError
    *
    * @remarks
-   * Сдвигает bid и ask на одинаковую величину.
-   * Ширина спреда сохраняется.
-   * Соблюдает границы цен.
+   * **Операция:**
+   * - Сдвигает bid на amount: `newBid = bid + amount`
+   * - Сдвигает ask на amount: `newAsk = ask + amount`
+   * - Результат: ширина сохраняется `width = ask - bid` (unchanged)
+   *
+   * **Boundary behavior:**
+   * - Если новые цены выходят за [MIN_PRICE, MAX_PRICE], возвращает Err
+   * - amount может быть отрицательным (сдвиг вниз)
+   * - amount может быть 0 (возвращает эквивалентный spread)
+   *
+   * **Immutability:**
+   * Исходный spread НЕ изменяется. Возвращается новый Spread объект.
+   *
+   * **Validation:**
+   * - amount должен быть finite
+   * - amount может быть отрицательным (в отличие от tighten/widen)
+   * - Проверка границ выполняется для обеих новых цен
    *
    * @example
    * ```typescript
    * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
-   * const shifted = SpreadService.shift(spread, new Decimal(0.05));
-   * if (shifted.ok) {
-   *   console.log(shifted.value.bid().value()); // 0.53
-   *   console.log(shifted.value.ask().value()); // 0.57
-   *   console.log(shifted.value.width()); // 0.04 (unchanged)
+   *
+   * // Сдвиг вверх
+   * const shiftedUp = SpreadService.shift(spread, new Decimal(0.05));
+   * if (shiftedUp.ok) {
+   *   console.log(shiftedUp.value.bid().value()); // 0.53
+   *   console.log(shiftedUp.value.ask().value()); // 0.57
+   *   console.log(shiftedUp.value.width()); // 0.04 (unchanged)
    * }
+   *
+   * // Сдвиг вниз (отрицательный amount)
+   * const shiftedDown = SpreadService.shift(spread, new Decimal(-0.03));
+   * if (shiftedDown.ok) {
+   *   console.log(shiftedDown.value.bid().value()); // 0.45
+   *   console.log(shiftedDown.value.ask().value()); // 0.49
+   * }
+   *
+   * // Сдвиг за границы → Err
+   * const outOfBounds = SpreadService.shift(spread, new Decimal(0.5));
+   * console.log(outOfBounds.ok); // false (ask > MAX_PRICE)
    * ```
    */
   public static shift(
