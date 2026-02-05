@@ -636,7 +636,7 @@ export class BalanceService {
         new InvalidBalanceError('Failed to compare available with amount', {
           context: {
             reason: BalanceErrorReason.INVALID_FORMAT,
-            cause: comparison.error
+            cause: toCause(comparison.error)
           }
         })
       );
