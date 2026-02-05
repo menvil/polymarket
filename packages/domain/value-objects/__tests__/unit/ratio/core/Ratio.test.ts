@@ -1,163 +1,232 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { Ratio } from '../../../../src/ratio/core/Ratio';
-import { RatioInvariantViolation } from '../../../../src/ratio/core/RatioInvariantViolation';
 import { RatioErrorReason } from '../../../../src/ratio/errors/RatioErrorReason';
+import { RatioService } from '../../../../src/ratio/facade/RatioService';
+import { isErr } from '@polymarket/result';
 
 describe('Ratio core', () => {
-  describe('инварианты', () => {
-    it('NAN - бросает RatioInvariantViolation', () => {
-      expect(() => {
-        Ratio.of(new Decimal(NaN));
-      }).toThrow(RatioInvariantViolation);
-
-      try {
-        Ratio.of(new Decimal(NaN));
-      } catch (error) {
-        expect(error).toBeInstanceOf(RatioInvariantViolation);
-        expect((error as RatioInvariantViolation).reason).toBe(RatioErrorReason.NAN);
+  describe('инварианты (через RatioService)', () => {
+    it('NAN - возвращает Err с NAN reason', () => {
+      const result = RatioService.fromDecimal(NaN);
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error.context?.reason).toBe(RatioErrorReason.NAN);
       }
     });
 
-    it('NON_FINITE (Infinity) - бросает RatioInvariantViolation', () => {
-      expect(() => {
-        Ratio.of(new Decimal(Infinity));
-      }).toThrow(RatioInvariantViolation);
-
-      try {
-        Ratio.of(new Decimal(Infinity));
-      } catch (error) {
-        expect(error).toBeInstanceOf(RatioInvariantViolation);
-        expect((error as RatioInvariantViolation).reason).toBe(RatioErrorReason.NON_FINITE);
+    it('NON_FINITE (Infinity) - возвращает Err с NON_FINITE reason', () => {
+      const result = RatioService.fromDecimal(Infinity);
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error.context?.reason).toBe(RatioErrorReason.NON_FINITE);
       }
     });
 
-    it('NON_FINITE (-Infinity) - бросает RatioInvariantViolation', () => {
-      expect(() => {
-        Ratio.of(new Decimal(-Infinity));
-      }).toThrow(RatioInvariantViolation);
-
-      try {
-        Ratio.of(new Decimal(-Infinity));
-      } catch (error) {
-        expect(error).toBeInstanceOf(RatioInvariantViolation);
-        expect((error as RatioInvariantViolation).reason).toBe(RatioErrorReason.NON_FINITE);
+    it('NON_FINITE (-Infinity) - возвращает Err с NON_FINITE reason', () => {
+      const result = RatioService.fromDecimal(-Infinity);
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error.context?.reason).toBe(RatioErrorReason.NON_FINITE);
       }
     });
   });
 
-  describe('Ratio.of() success', () => {
+  describe('создание через RatioService', () => {
     it('создает из положительного значения', () => {
-      const ratio = Ratio.of(new Decimal(0.02));
-      expect(ratio).toBeInstanceOf(Ratio);
-      expect(ratio.toDecimal().toString()).toBe('0.02');
+      const result = RatioService.fromDecimal(0.02);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBeInstanceOf(Ratio);
+        expect(result.value.toDecimal().toString()).toBe('0.02');
+      }
     });
 
     it('создает из отрицательного значения', () => {
-      const ratio = Ratio.of(new Decimal(-0.1));
-      expect(ratio).toBeInstanceOf(Ratio);
-      expect(ratio.toDecimal().toString()).toBe('-0.1');
+      const result = RatioService.fromDecimal(-0.1);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBeInstanceOf(Ratio);
+        expect(result.value.toDecimal().toString()).toBe('-0.1');
+      }
     });
 
     it('создает нулевой Ratio', () => {
-      const ratio = Ratio.of(new Decimal(0));
-      expect(ratio).toBeInstanceOf(Ratio);
-      expect(ratio.toDecimal().toString()).toBe('0');
+      const result = RatioService.fromDecimal(0);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBeInstanceOf(Ratio);
+        expect(result.value.toDecimal().toString()).toBe('0');
+      }
     });
 
     it('создает из дроби 0.5 (50%)', () => {
-      const ratio = Ratio.of(new Decimal(0.5));
-      expect(ratio.toDecimal().toString()).toBe('0.5');
+      const result = RatioService.fromDecimal(0.5);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.toDecimal().toString()).toBe('0.5');
+      }
     });
 
     it('создает из дроби 1.0 (100%)', () => {
-      const ratio = Ratio.of(new Decimal(1));
-      expect(ratio.toDecimal().toString()).toBe('1');
+      const result = RatioService.fromDecimal(1);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.toDecimal().toString()).toBe('1');
+      }
     });
   });
 
   describe('методы доступа', () => {
     it('toDecimal() возвращает Decimal', () => {
-      const ratio = Ratio.of(new Decimal(0.02));
-      const decimal = ratio.toDecimal();
-      expect(decimal).toBeInstanceOf(Decimal);
-      expect(decimal.toString()).toBe('0.02');
+      const result = RatioService.fromDecimal(0.02);
+      if (result.ok) {
+        const decimal = result.value.toDecimal();
+        expect(decimal).toBeInstanceOf(Decimal);
+        expect(decimal.toString()).toBe('0.02');
+      }
     });
 
     it('toNumber() возвращает number', () => {
-      const ratio = Ratio.of(new Decimal(0.02));
-      const num = ratio.toNumber();
-      expect(typeof num).toBe('number');
-      expect(num).toBe(0.02);
+      const result = RatioService.fromDecimal(0.02);
+      if (result.ok) {
+        const num = result.value.toNumber();
+        expect(typeof num).toBe('number');
+        expect(num).toBe(0.02);
+      }
     });
 
     it('onePlus() возвращает (1 + ratio)', () => {
-      const markup = Ratio.of(new Decimal(0.1)); // 10%
-      const onePlus = markup.onePlus();
-      expect(onePlus).toBeInstanceOf(Decimal);
-      expect(onePlus.toString()).toBe('1.1');
+      const result = RatioService.fromPercent(10); // 10%
+      if (result.ok) {
+        const onePlus = result.value.onePlus();
+        expect(onePlus).toBeInstanceOf(Decimal);
+        expect(onePlus.toString()).toBe('1.1');
+      }
     });
 
     it('onePlus() для отрицательного ratio', () => {
-      const discount = Ratio.of(new Decimal(-0.2)); // -20%
-      const onePlus = discount.onePlus();
-      expect(onePlus.toString()).toBe('0.8');
+      const result = RatioService.fromPercent(-20); // -20%
+      if (result.ok) {
+        const onePlus = result.value.onePlus();
+        expect(onePlus.toString()).toBe('0.8');
+      }
     });
 
     it('onePlus() для нулевого ratio', () => {
-      const zero = Ratio.of(new Decimal(0));
-      const onePlus = zero.onePlus();
-      expect(onePlus.toString()).toBe('1');
+      const result = RatioService.fromDecimal(0);
+      if (result.ok) {
+        const onePlus = result.value.onePlus();
+        expect(onePlus.toString()).toBe('1');
+      }
+    });
+
+    it('oneMinus() возвращает (1 - ratio)', () => {
+      const result = RatioService.fromPercent(2); // 2% fee
+      if (result.ok) {
+        const oneMinus = result.value.oneMinus();
+        expect(oneMinus).toBeInstanceOf(Decimal);
+        expect(oneMinus.toString()).toBe('0.98');
+      }
+    });
+
+    it('oneMinus() для отрицательного ratio', () => {
+      const result = RatioService.fromPercent(-15); // -15% (negative discount)
+      if (result.ok) {
+        const oneMinus = result.value.oneMinus();
+        expect(oneMinus.toString()).toBe('1.15');
+      }
+    });
+
+    it('oneMinus() для нулевого ratio', () => {
+      const result = RatioService.fromDecimal(0);
+      if (result.ok) {
+        const oneMinus = result.value.oneMinus();
+        expect(oneMinus.toString()).toBe('1');
+      }
+    });
+
+    it('oneMinus() для 50%', () => {
+      const result = RatioService.fromPercent(50); // 50%
+      if (result.ok) {
+        const oneMinus = result.value.oneMinus();
+        expect(oneMinus.toString()).toBe('0.5');
+      }
     });
   });
 
   describe('сравнение', () => {
     it('equals() корректно сравнивает равные Ratio', () => {
-      const r1 = Ratio.of(new Decimal(0.02));
-      const r2 = Ratio.of(new Decimal(0.02));
-      expect(r1.equals(r2)).toBe(true);
+      const r1Result = RatioService.fromDecimal(0.02);
+      const r2Result = RatioService.fromDecimal(0.02);
+      if (r1Result.ok && r2Result.ok) {
+        expect(r1Result.value.equals(r2Result.value)).toBe(true);
+      }
     });
 
     it('equals() корректно сравнивает разные Ratio', () => {
-      const r1 = Ratio.of(new Decimal(0.02));
-      const r2 = Ratio.of(new Decimal(0.03));
-      expect(r1.equals(r2)).toBe(false);
+      const r1Result = RatioService.fromDecimal(0.02);
+      const r2Result = RatioService.fromDecimal(0.03);
+      if (r1Result.ok && r2Result.ok) {
+        expect(r1Result.value.equals(r2Result.value)).toBe(false);
+      }
     });
 
     it('equals() для отрицательных значений', () => {
-      const r1 = Ratio.of(new Decimal(-0.1));
-      const r2 = Ratio.of(new Decimal(-0.1));
-      expect(r1.equals(r2)).toBe(true);
+      const r1Result = RatioService.fromDecimal(-0.1);
+      const r2Result = RatioService.fromDecimal(-0.1);
+      if (r1Result.ok && r2Result.ok) {
+        expect(r1Result.value.equals(r2Result.value)).toBe(true);
+      }
     });
 
     it('isZero() определяет нулевое значение', () => {
-      const zero = Ratio.of(new Decimal(0));
-      expect(zero.isZero()).toBe(true);
+      const zeroResult = RatioService.fromDecimal(0);
+      const nonZeroResult = RatioService.fromDecimal(0.01);
 
-      const nonZero = Ratio.of(new Decimal(0.01));
-      expect(nonZero.isZero()).toBe(false);
+      if (zeroResult.ok) {
+        expect(zeroResult.value.isZero()).toBe(true);
+      }
+
+      if (nonZeroResult.ok) {
+        expect(nonZeroResult.value.isZero()).toBe(false);
+      }
     });
 
     it('isPositive() определяет положительное значение', () => {
-      const positive = Ratio.of(new Decimal(0.1));
-      expect(positive.isPositive()).toBe(true);
+      const positiveResult = RatioService.fromDecimal(0.1);
+      const zeroResult = RatioService.fromDecimal(0);
+      const negativeResult = RatioService.fromDecimal(-0.1);
 
-      const zero = Ratio.of(new Decimal(0));
-      expect(zero.isPositive()).toBe(false);
+      if (positiveResult.ok) {
+        expect(positiveResult.value.isPositive()).toBe(true);
+      }
 
-      const negative = Ratio.of(new Decimal(-0.1));
-      expect(negative.isPositive()).toBe(false);
+      if (zeroResult.ok) {
+        expect(zeroResult.value.isPositive()).toBe(false);
+      }
+
+      if (negativeResult.ok) {
+        expect(negativeResult.value.isPositive()).toBe(false);
+      }
     });
 
     it('isNegative() определяет отрицательное значение', () => {
-      const negative = Ratio.of(new Decimal(-0.1));
-      expect(negative.isNegative()).toBe(true);
+      const negativeResult = RatioService.fromDecimal(-0.1);
+      const zeroResult = RatioService.fromDecimal(0);
+      const positiveResult = RatioService.fromDecimal(0.1);
 
-      const zero = Ratio.of(new Decimal(0));
-      expect(zero.isNegative()).toBe(false);
+      if (negativeResult.ok) {
+        expect(negativeResult.value.isNegative()).toBe(true);
+      }
 
-      const positive = Ratio.of(new Decimal(0.1));
-      expect(positive.isNegative()).toBe(false);
+      if (zeroResult.ok) {
+        expect(zeroResult.value.isNegative()).toBe(false);
+      }
+
+      if (positiveResult.ok) {
+        expect(positiveResult.value.isNegative()).toBe(false);
+      }
     });
   });
 

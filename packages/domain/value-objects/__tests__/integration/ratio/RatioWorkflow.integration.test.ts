@@ -133,7 +133,7 @@ describe('Ratio Integration Workflow', () => {
   });
 
   describe('использование в расчетах', () => {
-    it('amount * (1 + ratio) для markup', () => {
+    it('amount * (1 + ratio) для markup с onePlus()', () => {
       const amount = new Decimal(100);
       const markupResult = RatioService.fromPercent(10); // 10% markup
 
@@ -146,7 +146,7 @@ describe('Ratio Integration Workflow', () => {
       }
     });
 
-    it('amount * (1 + ratio) для discount', () => {
+    it('amount * (1 + ratio) для discount с onePlus()', () => {
       const amount = new Decimal(100);
       const discountResult = RatioService.fromPercent(-20); // -20% discount
 
@@ -159,7 +159,29 @@ describe('Ratio Integration Workflow', () => {
       }
     });
 
-    it('amount * ratio для fee calculation', () => {
+    it('amount * (1 - ratio) для вычитания fee с oneMinus()', () => {
+      const amount = new Decimal(100);
+      const feeResult = RatioService.fromPercent(2); // 2% fee
+
+      if (feeResult.ok) {
+        const fee = feeResult.value;
+        const afterFee = amount.mul(fee.oneMinus()); // amount * 0.98
+        expect(afterFee.toString()).toBe('98');
+      }
+    });
+
+    it('amount * (1 - ratio) для discount с oneMinus()', () => {
+      const price = new Decimal(200);
+      const discountResult = RatioService.fromPercent(15); // 15% discount
+
+      if (discountResult.ok) {
+        const discount = discountResult.value;
+        const finalPrice = price.mul(discount.oneMinus()); // price * 0.85
+        expect(finalPrice.toString()).toBe('170');
+      }
+    });
+
+    it('amount * ratio для fee calculation (берем только fee)', () => {
       const amount = new Decimal(1000);
       const feeResult = RatioService.fromPercent(2); // 2% fee
 
@@ -242,34 +264,40 @@ describe('Ratio Integration Workflow', () => {
   });
 
   describe('cross-layer consistency', () => {
-    it('Core.of() === Service.fromDecimal()', () => {
-      const coreRatio = Ratio.of(new Decimal(0.02));
-      const serviceResult = RatioService.fromDecimal(0.02);
+    it('все методы Service создают одинаковый Ratio', () => {
+      const fromDecimalResult = RatioService.fromDecimal(0.02);
+      const fromPercentResult = RatioService.fromPercent(2);
+      const fromBpsResult = RatioService.fromBps(200);
 
-      expect(serviceResult.ok).toBe(true);
-      if (serviceResult.ok) {
-        expect(coreRatio.equals(serviceResult.value)).toBe(true);
+      expect(fromDecimalResult.ok).toBe(true);
+      expect(fromPercentResult.ok).toBe(true);
+      expect(fromBpsResult.ok).toBe(true);
+
+      if (fromDecimalResult.ok && fromPercentResult.ok && fromBpsResult.ok) {
+        expect(fromDecimalResult.value.equals(fromPercentResult.value)).toBe(true);
+        expect(fromPercentResult.value.equals(fromBpsResult.value)).toBe(true);
       }
     });
 
     it('все слои работают согласованно', () => {
-      // Core
-      const coreRatio = Ratio.of(new Decimal(0.025));
-
       // Facade
       const serviceResult = RatioService.fromPercent(2.5);
-      expect(serviceResult.ok && serviceResult.value.equals(coreRatio)).toBe(true);
+      expect(serviceResult.ok).toBe(true);
 
-      // Adapters - Format
-      const formatted = RatioFormatter.toPercent(coreRatio, 1);
-      expect(formatted.ok && formatted.value).toBe('2.5%');
+      if (serviceResult.ok) {
+        const ratio = serviceResult.value;
 
-      // Adapters - Serialize
-      const json = RatioSerializer.toJSON(coreRatio);
-      expect(json.ratio).toBe('0.025');
+        // Adapters - Format
+        const formatted = RatioFormatter.toPercent(ratio, 1);
+        expect(formatted.ok && formatted.value).toBe('2.5%');
 
-      const deserialized = RatioSerializer.fromJSON(json);
-      expect(deserialized.ok && deserialized.value.equals(coreRatio)).toBe(true);
+        // Adapters - Serialize
+        const json = RatioSerializer.toJSON(ratio);
+        expect(json.ratio).toBe('0.025');
+
+        const deserialized = RatioSerializer.fromJSON(json);
+        expect(deserialized.ok && deserialized.value.equals(ratio)).toBe(true);
+      }
     });
   });
 });

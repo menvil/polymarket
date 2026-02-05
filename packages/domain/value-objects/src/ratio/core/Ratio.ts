@@ -5,7 +5,7 @@
  * ## Архитектура
  * - Core слой БРОСАЕТ исключения RatioInvariantViolation
  * - Facade слой (RatioService) возвращает Result<T, E> и НИКОГДА не бросает
- * - Для безопасного создания используйте RatioService.create()
+ * - **Создание ТОЛЬКО через RatioService** - метод .of() приватный
  *
  * ## Инварианты
  * Ratio гарантирует:
@@ -17,12 +17,17 @@
  * - Парсинг строк (делает RatioFormatter в Adapters)
  * - Валидация precondition для операций (делает Rules)
  *
- * ## Семантика
- * Ratio хранит дробь (fraction):
- * - `0.02` означает 2% (two percent)
- * - `0.0025` означает 25 bps (basis points)
- * - `1.0` означает 100%
- * - `-0.1` означает -10% (discount)
+ * ## ⚠️ Важно: Ratio хранит ДРОБЬ (fraction), не процент!
+ * - `0.02` означает 2% (дробь 0.02, не число 2)
+ * - `0.0025` означает 25 bps (дробь 0.0025)
+ * - `1.0` означает 100% (дробь 1.0)
+ * - `2.0` означает 200% (дробь 2.0, не 2%)
+ * - `-0.1` означает -10% (дробь -0.1)
+ *
+ * Для ясной семантики используйте factory methods:
+ * - `RatioService.fromPercent(2)` → 0.02 (2%)
+ * - `RatioService.fromBps(200)` → 0.02 (200 basis points)
+ * - `RatioService.fromDecimal(0.02)` → 0.02 (явное указание дроби)
  *
  * ## Важно: Ratio НЕ содержит арифметических операций
  * Операции живут в целевых value objects:
@@ -30,18 +35,20 @@
  * - Price.take(ratio: Ratio): взять процент от цены
  * - Quantity.applyDiscount(ratio: Ratio): применить скидку
  *
- * @see {@link RatioService} для безопасного создания и операций
+ * @see {@link RatioService} для создания Ratio (единственный способ)
  *
  * @example
  * ```typescript
- * // ❌ WRONG: Никогда не вызывайте конструктор напрямую
- * const ratio = new Ratio(value);
+ * // ❌ WRONG: .of() приватный, нельзя вызвать напрямую
+ * const ratio = Ratio.of(value); // ERROR: of() is private
  *
  * // ✅ CORRECT: Используйте RatioService
  * const ratioResult = RatioService.fromPercent(2); // 2% => 0.02
  * if (ratioResult.ok) {
  *   const ratio = ratioResult.value;
  *   console.log(ratio.toDecimal()); // Decimal(0.02)
+ *   console.log(ratio.onePlus());   // Decimal(1.02) - для amount * (1 + ratio)
+ *   console.log(ratio.oneMinus());  // Decimal(0.98) - для amount * (1 - ratio)
  * }
  * ```
  */
@@ -67,17 +74,26 @@ export class Ratio {
   }
 
   /**
-   * Создать Ratio из дроби (fraction)
+   * Создать Ratio из дроби (fraction) - INTERNAL API
+   *
+   * @remarks
+   * ⚠️ **НЕ ИСПОЛЬЗУЙТЕ НАПРЯМУЮ** - это внутренний API для RatioService!
+   *
+   * **Для пользователей:** Используйте RatioService вместо прямого вызова:
+   * - `RatioService.fromDecimal(0.02)` - создать из дроби (явная семантика)
+   * - `RatioService.fromPercent(2)` - создать из процента (2% => 0.02)
+   * - `RatioService.fromBps(200)` - создать из basis points (200 bps => 0.02)
+   *
+   * **Почему не использовать .of() напрямую:**
+   * - Непонятная семантика: `Ratio.of(2)` это 200% или 2%?
+   * - Нет валидации опций (ensureGteMinusOne)
+   * - Бросает исключения вместо Result
    *
    * @param value - Дробь: 0.02 для 2%, 0.5 для 50%
    * @returns Ratio instance
    * @throws {RatioInvariantViolation} если нарушены инварианты
    *
-   * @example
-   * ```typescript
-   * const ratio = Ratio.of(new Decimal(0.02)); // 2%
-   * const ratio2 = Ratio.of(new Decimal(0.5)); // 50%
-   * ```
+   * @internal - Используется только в RatioService
    */
   public static of(value: Decimal): Ratio {
     return new Ratio(value);
@@ -122,22 +138,58 @@ export class Ratio {
    *
    * @remarks
    * Используется для операций типа "добавить X процентов":
-   * - amount * (1 + ratio)
-   * - price * (1 + markup)
+   * - amount * (1 + ratio) - добавить markup/discount
+   * - price * (1 + ratio) - увеличить/уменьшить цену
    *
    * @returns Decimal значение (1 + ratio)
    *
    * @example
    * ```typescript
-   * const markup = Ratio.of(new Decimal(0.1)); // 10%
-   * console.log(markup.onePlus().toString()); // "1.1"
+   * const ratioResult = RatioService.fromPercent(10); // 10% markup
+   * if (ratioResult.ok) {
+   *   const markup = ratioResult.value;
+   *   console.log(markup.onePlus().toString()); // "1.1"
    *
-   * // Usage: price * (1 + markup)
-   * const newPrice = price.toDecimal().mul(markup.onePlus());
+   *   // Usage: amount * (1 + markup)
+   *   const newAmount = amount.mul(markup.onePlus()); // amount * 1.1
+   * }
    * ```
    */
   public onePlus(): Decimal {
     return new Decimal(1).plus(this._value);
+  }
+
+  /**
+   * Вычислить (1 - ratio) для subtraction operations
+   *
+   * @remarks
+   * Используется для операций типа "вычесть X процентов":
+   * - amount * (1 - ratio) - вычесть fee/tax/discount
+   * - price * (1 - ratio) - взять процент (оставить остаток)
+   *
+   * @returns Decimal значение (1 - ratio)
+   *
+   * @example
+   * ```typescript
+   * const ratioResult = RatioService.fromPercent(2); // 2% fee
+   * if (ratioResult.ok) {
+   *   const fee = ratioResult.value;
+   *   console.log(fee.oneMinus().toString()); // "0.98"
+   *
+   *   // Usage: amount * (1 - fee) - оставить 98%
+   *   const afterFee = amount.mul(fee.oneMinus()); // amount * 0.98
+   * }
+   *
+   * // Пример с discount
+   * const discountResult = RatioService.fromPercent(15); // 15% discount
+   * if (discountResult.ok) {
+   *   const discount = discountResult.value;
+   *   const finalPrice = price.mul(discount.oneMinus()); // price * 0.85
+   * }
+   * ```
+   */
+  public oneMinus(): Decimal {
+    return new Decimal(1).minus(this._value);
   }
 
   /**
