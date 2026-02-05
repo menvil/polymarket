@@ -5,12 +5,12 @@ import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
  *
  * @remarks
  * Ограничивает reason поле SpreadInvariantViolation только инвариантными причинами.
- * Это подмножество SpreadErrorReason, используемое в Core layer.
+ * В текущей архитектуре существует только один инвариант: bid <= ask.
+ *
+ * Price объекты уже валидированы при создании, поэтому проверка
+ * "валидности" bid/ask невозможна и не нужна в Spread конструкторе.
  */
-export type SpreadInvariantReason =
-  | typeof SpreadErrorReason.BID_GREATER_THAN_ASK
-  | typeof SpreadErrorReason.INVALID_BID
-  | typeof SpreadErrorReason.INVALID_ASK;
+export type SpreadInvariantReason = typeof SpreadErrorReason.BID_GREATER_THAN_ASK;
 
 /**
  * Исключение при нарушении инвариантов Spread
@@ -22,15 +22,19 @@ export type SpreadInvariantReason =
  * Использует типизированный SpreadInvariantReason для строгой типизации причин.
  * Это подмножество SpreadErrorReason, ограниченное только инвариантными нарушениями.
  *
- * Возможные причины (invariant violations):
- * - BID_GREATER_THAN_ASK: bid > ask (нарушение основного инварианта)
- * - INVALID_BID: bid не является валидным Price
- * - INVALID_ASK: ask не является валидным Price
+ * Единственная возможная причина (invariant violation):
+ * - BID_GREATER_THAN_ASK: bid > ask (нарушение основного инварианта спреда)
  *
- * Архитектура:
- * - Core бросает только SpreadInvariantViolation с инвариантными reasons
+ * @remarks
+ * INVALID_BID и INVALID_ASK НЕ являются инвариантами Spread, потому что:
+ * - Price объекты уже валидированы при создании
+ * - TypeScript гарантирует корректность типов параметров
+ * - Невалидный Price не может существовать в runtime
+ *
+ * Архитектура error handling:
+ * - Core бросает только SpreadInvariantViolation с BID_GREATER_THAN_ASK
  * - Rules возвращают Result с другими reasons (WIDTH_TOO_SMALL, WIDTH_TOO_LARGE)
- * - Facade возвращает Result с операционными reasons (INVALID_AMOUNT, etc.)
+ * - Facade возвращает Result с операционными reasons (INVALID_AMOUNT, INVALID_FORMAT, etc.)
  *
  * @example
  * ```typescript
