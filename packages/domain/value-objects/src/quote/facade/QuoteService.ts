@@ -106,7 +106,7 @@ export class QuoteService {
    *
    * @remarks
    * Публичный метод для создания котировок.
-   * Использует toDecimal() для безопасного парсинга всех входных параметров.
+   * Использует parseOptionalDecimal() и parseDecimal() helpers для безопасного парсинга всех входных параметров.
    * Принимает number | string | Decimal для гибкости использования.
    *
    * @param bidValue - Значение bid (Decimal | number | string | null)
@@ -386,15 +386,14 @@ export class QuoteService {
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
-      // Конвертируем shiftAmount в Decimal
-      const shiftDecimalResult = toDecimal(
+      // Конвертируем shiftAmount в Decimal через parseDecimal
+      const shiftDecimalResult = QuoteService.parseDecimal(
         'shiftAmount',
         shiftAmount,
-        QuoteErrorReason.INVALID_FORMAT,
-        InvalidQuoteError
+        QuoteErrorReason.INVALID_FORMAT
       );
       if (isErr(shiftDecimalResult)) {
-        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, shiftDecimalResult.error, InvalidQuoteError));
+        return shiftDecimalResult;
       }
       const shiftDecimal = shiftDecimalResult.value;
 
@@ -456,15 +455,14 @@ export class QuoteService {
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
-      // Конвертируем shiftAmount в Decimal
-      const shiftDecimalResult = toDecimal(
+      // Конвертируем shiftAmount в Decimal через parseDecimal
+      const shiftDecimalResult = QuoteService.parseDecimal(
         'shiftAmount',
         shiftAmount,
-        QuoteErrorReason.INVALID_FORMAT,
-        InvalidQuoteError
+        QuoteErrorReason.INVALID_FORMAT
       );
       if (isErr(shiftDecimalResult)) {
-        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, shiftDecimalResult.error, InvalidQuoteError));
+        return shiftDecimalResult;
       }
       const shiftDecimal = shiftDecimalResult.value;
 
@@ -531,27 +529,25 @@ export class QuoteService {
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
-      // Конвертируем bidAdjustment в Decimal
-      const bidAdjustmentResult = toDecimal(
+      // Конвертируем bidAdjustment в Decimal через parseDecimal
+      const bidAdjustmentResult = QuoteService.parseDecimal(
         'bidAdjustment',
         bidAdjustment,
-        QuoteErrorReason.INVALID_FORMAT,
-        InvalidQuoteError
+        QuoteErrorReason.INVALID_FORMAT
       );
       if (isErr(bidAdjustmentResult)) {
-        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, bidAdjustmentResult.error, InvalidQuoteError));
+        return bidAdjustmentResult;
       }
       const bidAdjustmentDecimal = bidAdjustmentResult.value;
 
-      // Конвертируем askAdjustment в Decimal
-      const askAdjustmentResult = toDecimal(
+      // Конвертируем askAdjustment в Decimal через parseDecimal
+      const askAdjustmentResult = QuoteService.parseDecimal(
         'askAdjustment',
         askAdjustment,
-        QuoteErrorReason.INVALID_FORMAT,
-        InvalidQuoteError
+        QuoteErrorReason.INVALID_FORMAT
       );
       if (isErr(askAdjustmentResult)) {
-        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, askAdjustmentResult.error, InvalidQuoteError));
+        return askAdjustmentResult;
       }
       const askAdjustmentDecimal = askAdjustmentResult.value;
 
@@ -616,27 +612,25 @@ export class QuoteService {
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
-      // Конвертируем bidAdjustment в Decimal
-      const bidAdjustmentResult = toDecimal(
+      // Конвертируем bidAdjustment в Decimal через parseDecimal
+      const bidAdjustmentResult = QuoteService.parseDecimal(
         'bidAdjustment',
         bidAdjustment,
-        QuoteErrorReason.INVALID_FORMAT,
-        InvalidQuoteError
+        QuoteErrorReason.INVALID_FORMAT
       );
       if (isErr(bidAdjustmentResult)) {
-        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, bidAdjustmentResult.error, InvalidQuoteError));
+        return bidAdjustmentResult;
       }
       const bidAdjustmentDecimal = bidAdjustmentResult.value;
 
-      // Конвертируем askAdjustment в Decimal
-      const askAdjustmentResult = toDecimal(
+      // Конвертируем askAdjustment в Decimal через parseDecimal
+      const askAdjustmentResult = QuoteService.parseDecimal(
         'askAdjustment',
         askAdjustment,
-        QuoteErrorReason.INVALID_FORMAT,
-        InvalidQuoteError
+        QuoteErrorReason.INVALID_FORMAT
       );
       if (isErr(askAdjustmentResult)) {
-        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, askAdjustmentResult.error, InvalidQuoteError));
+        return askAdjustmentResult;
       }
       const askAdjustmentDecimal = askAdjustmentResult.value;
 
