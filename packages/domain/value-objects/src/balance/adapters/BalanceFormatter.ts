@@ -3,7 +3,6 @@ import { MoneyFormatter } from '../../money/adapters/MoneyFormatter.js';
 import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
-
 /**
  * Форматтер для Balance
  *

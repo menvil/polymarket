@@ -2,7 +2,6 @@ import { Money } from '../core/Money.js';
 import { InvalidMoneyError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
-
 /**
  * Форматтер для Money
  *

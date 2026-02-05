@@ -2,7 +2,6 @@ import { Quantity } from '../core/Quantity.js';
 import { InvalidDecimalPlacesError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
-
 /**
  * Форматирование Quantity в строки
  */

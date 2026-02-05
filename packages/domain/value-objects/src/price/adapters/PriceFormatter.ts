@@ -2,7 +2,6 @@ import { Price } from '../core/Price.js';
 import { InvalidPriceError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
-
 /**
  * Форматтер для Price
  *
