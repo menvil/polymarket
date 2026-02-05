@@ -113,11 +113,11 @@ export class QuoteService {
   ): Result<Quote, InvalidQuoteError> {
     const op = 'create';
     const ctx = {
-      bidValue: bidValue !== null ? String(bidValue) : null,
-      askValue: askValue !== null ? String(askValue) : null,
-      bidSizeValue: String(bidSizeValue),
-      askSizeValue: String(askSizeValue),
-      timestamp: timestamp !== undefined ? String(timestamp) : undefined
+      bidValue: bidValue !== null ? bidValue.toString() : null,
+      askValue: askValue !== null ? askValue.toString() : null,
+      bidSizeValue: bidSizeValue.toString(),
+      askSizeValue: askSizeValue.toString(),
+      timestamp: timestamp !== undefined ? timestamp.toString() : undefined
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
@@ -348,7 +348,7 @@ export class QuoteService {
     const ctx = {
       quoteBid: quote.bid()?.value().toString() ?? null,
       quoteAsk: quote.ask()?.value().toString() ?? null,
-      shiftAmount: String(shiftAmount)
+      shiftAmount: shiftAmount.toString()
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
@@ -476,17 +476,29 @@ export class QuoteService {
    * Обновляет размеры котировки
    *
    * @param quote - Исходная котировка
-   * @param newBidSize - Новый bid size
-   * @param newAskSize - Новый ask size
+   * @param newBidSize - Новый bid size (number, string, Decimal или Quantity)
+   * @param newAskSize - Новый ask size (number, string, Decimal или Quantity)
    * @returns Result с новой Quote или InvalidQuoteError
    *
    * @example
    * ```typescript
    * const quote = expectOk(QuoteService.create(0.48, 0.52, 100, 150));
-   * const result = QuoteService.updateSizes(quote, 200, 300);
    *
-   * if (result.ok) {
-   *   const updated = result.value;
+   * // С number
+   * const result1 = QuoteService.updateSizes(quote, 200, 300);
+   *
+   * // С string (удобно для API данных)
+   * const result2 = QuoteService.updateSizes(quote, "200", "300");
+   *
+   * // С Decimal
+   * const result3 = QuoteService.updateSizes(quote, new Decimal(200), new Decimal(300));
+   *
+   * // С готовым Quantity
+   * const bidQty = expectOk(QuantityService.create(200));
+   * const result4 = QuoteService.updateSizes(quote, bidQty, 300);
+   *
+   * if (result1.ok) {
+   *   const updated = result1.value;
    *   console.log(updated.bidSize().value().toNumber()); // 200
    *   console.log(updated.askSize().value().toNumber()); // 300
    * }
@@ -494,15 +506,15 @@ export class QuoteService {
    */
   public static updateSizes(
     quote: Quote,
-    newBidSize: number | Quantity,
-    newAskSize: number | Quantity
+    newBidSize: Decimal | number | string | Quantity,
+    newAskSize: Decimal | number | string | Quantity
   ): Result<Quote, InvalidQuoteError> {
     const op = 'updateSizes';
     const ctx = {
       quoteBid: quote.bid()?.value().toString() ?? null,
       quoteAsk: quote.ask()?.value().toString() ?? null,
-      newBidSize: newBidSize instanceof Quantity ? newBidSize.value().toString() : String(newBidSize),
-      newAskSize: newAskSize instanceof Quantity ? newAskSize.value().toString() : String(newAskSize)
+      newBidSize: newBidSize instanceof Quantity ? newBidSize.value().toString() : newBidSize.toString(),
+      newAskSize: newAskSize instanceof Quantity ? newAskSize.value().toString() : newAskSize.toString()
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
@@ -648,8 +660,6 @@ export class QuoteService {
       return null;
     }
   }
-
-  // === Private Helper Methods ===
 
   /**
    * Helper: создаёт Price из Decimal (с обработкой null)

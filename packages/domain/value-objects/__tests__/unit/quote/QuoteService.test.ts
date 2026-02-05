@@ -520,6 +520,38 @@ describe('QuoteService', () => {
       }
     });
 
+    it('обновляет sizes из string', () => {
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      expect(quoteResult.ok).toBe(true);
+      if (!quoteResult.ok) return;
+
+      const updateResult = QuoteService.updateSizes(quoteResult.value, '200', '300');
+
+      expect(updateResult.ok).toBe(true);
+      if (updateResult.ok) {
+        expect(updateResult.value.bidSize().value().toNumber()).toBe(200);
+        expect(updateResult.value.askSize().value().toNumber()).toBe(300);
+      }
+    });
+
+    it('обновляет sizes из Decimal', () => {
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      expect(quoteResult.ok).toBe(true);
+      if (!quoteResult.ok) return;
+
+      const updateResult = QuoteService.updateSizes(
+        quoteResult.value,
+        new Decimal(200),
+        new Decimal(300)
+      );
+
+      expect(updateResult.ok).toBe(true);
+      if (updateResult.ok) {
+        expect(updateResult.value.bidSize().value().toNumber()).toBe(200);
+        expect(updateResult.value.askSize().value().toNumber()).toBe(300);
+      }
+    });
+
     it('фэйлится с invalid bidSize', () => {
       const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
       expect(quoteResult.ok).toBe(true);
