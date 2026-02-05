@@ -1,42 +1,6 @@
 import Decimal from 'decimal.js';
-import { PriceErrorReason } from '../errors/PriceErrorReason';
-
-/**
- * Исключение при нарушении инвариантов Price
- *
- * @remarks
- * Бросается только внутри Core при нарушении инвариантов существования.
- * Facade обязан ловить и оборачивать в Result<T, E>.
- *
- * Содержит reason из enum PriceErrorReason для типизированной обработки ошибок.
- *
- * Возможные причины:
- * - PriceErrorReason.NAN: значение является NaN
- * - PriceErrorReason.NON_FINITE: значение не finite (Infinity, -Infinity)
- * - PriceErrorReason.OUT_OF_RANGE_LOW: значение < MIN_PRICE
- * - PriceErrorReason.OUT_OF_RANGE_HIGH: значение > MAX_PRICE
- */
-export class PriceInvariantViolation extends Error {
-  public readonly reason:
-    | PriceErrorReason.NAN
-    | PriceErrorReason.NON_FINITE
-    | PriceErrorReason.OUT_OF_RANGE_LOW
-    | PriceErrorReason.OUT_OF_RANGE_HIGH;
-
-  constructor(
-    message: string,
-    reason:
-      | PriceErrorReason.NAN
-      | PriceErrorReason.NON_FINITE
-      | PriceErrorReason.OUT_OF_RANGE_LOW
-      | PriceErrorReason.OUT_OF_RANGE_HIGH
-  ) {
-    super(`Price invariant violation: ${message}`);
-    Object.setPrototypeOf(this, PriceInvariantViolation.prototype);
-    this.name = 'PriceInvariantViolation';
-    this.reason = reason;
-  }
-}
+import { PriceErrorReason } from '../errors/PriceErrorReason.js';
+import { PriceInvariantViolation } from './PriceInvariantViolation.js';
 
 /**
  * Core Price Value Object

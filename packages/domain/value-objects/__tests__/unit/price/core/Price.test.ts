@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { Price, PriceInvariantViolation } from '../../../../src/price/core/Price.js';
+import { Price } from '../../../../src/price/core/Price.js';
+import { PriceInvariantViolation } from '../../../../src/price/core/PriceInvariantViolation.js';
 
 describe('Price constructor', () => {
   describe('invariants', () => {

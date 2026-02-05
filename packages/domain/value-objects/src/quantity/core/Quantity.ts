@@ -1,31 +1,6 @@
 import Decimal from 'decimal.js';
-import { QuantityErrorReason } from '../errors/QuantityErrorReason';
-
-/**
- * QuantityInvariantViolation - нарушение инварианта Quantity
- *
- * @remarks
- * Содержит reason из enum QuantityErrorReason для типизированной обработки ошибок.
- *
- * Возможные причины:
- * - QuantityErrorReason.NAN: значение NaN
- * - QuantityErrorReason.NON_FINITE: значение не finite (Infinity)
- * - QuantityErrorReason.NEGATIVE: входное значение < 0
- *
- * @example
- * ```typescript
- * throw new QuantityInvariantViolation('Quantity cannot be NaN', QuantityErrorReason.NAN);
- * ```
- */
-export class QuantityInvariantViolation extends Error {
-  public readonly reason: QuantityErrorReason.NAN | QuantityErrorReason.NON_FINITE | QuantityErrorReason.NEGATIVE;
-
-  constructor(message: string, reason: QuantityErrorReason.NAN | QuantityErrorReason.NON_FINITE | QuantityErrorReason.NEGATIVE) {
-    super(`Quantity invariant violation: ${message}`);
-    this.name = 'QuantityInvariantViolation';
-    this.reason = reason;
-  }
-}
+import { QuantityErrorReason } from '../errors/QuantityErrorReason.js';
+import { QuantityInvariantViolation } from './QuantityInvariantViolation.js';
 
 /**
  * Core Quantity Value Object

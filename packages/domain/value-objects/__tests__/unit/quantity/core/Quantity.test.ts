@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { Quantity, QuantityInvariantViolation } from '../../../../src/quantity/core/Quantity.js';
+import { Quantity } from '../../../../src/quantity/core/Quantity.js';
+import { QuantityInvariantViolation } from '../../../../src/quantity/core/QuantityInvariantViolation.js';
 
 describe('Quantity constructor', () => {
   describe('invariants', () => {
