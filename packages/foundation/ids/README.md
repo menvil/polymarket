@@ -61,11 +61,21 @@ if (isSupportedCurrency(input)) {
   const money = Money.of(100, input);
 }
 
-// ConditionRef - полная ссылка на condition
-const conditionRef: ConditionRef = {
+// ConditionRef - полная ссылка на condition (discriminated union)
+
+// On-chain example (Polymarket)
+const onChainRef: ConditionRef = {
+  kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as any,
+};
+
+// Off-chain example (Kalshi)
+const offChainRef: ConditionRef = {
+  kind: 'OFFCHAIN',
+  venueId: 'KALSHI',
+  marketId: 'KXBTCUSDM-24APR',
 };
 
 // OutcomeIndex - YES/NO
@@ -139,21 +149,57 @@ getBalance('some-string');
 getBalance('some-string' as AccountId);
 ```
 
-### ConditionRef - всегда полная ссылка
+### ConditionRef - Discriminated Union для On-Chain и Off-Chain
+
+**⚠️ ВАЖНО**: ConditionRef теперь discriminated union!
+
+**Проблема**: Старая версия смешивала on-chain protocols (POLYMARKET_CTF) с off-chain venues (KALSHI), что создавало логическое противоречие (KALSHI не имеет chainId).
+
+**Решение**: Разделение на On-Chain и Off-Chain references.
+
+#### On-Chain Conditions (EVM-based)
+
+```typescript
+const polymarket: ConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: 'POLYMARKET_CTF',  // on-chain protocol
+  chainId: 137,                  // Polygon
+  conditionId: '0xabc123...'     // keccak256 hash
+};
+```
+
+#### Off-Chain Conditions (Regulated Exchanges)
+
+```typescript
+const kalshi: ConditionRef = {
+  kind: 'OFFCHAIN',
+  venueId: 'KALSHI',             // venue name
+  marketId: 'KXBTCUSDM-24APR'    // venue-specific market ID
+};
+```
+
+#### Type-Safe Processing
+
+```typescript
+function processCondition(ref: ConditionRef) {
+  if (ref.kind === 'ONCHAIN') {
+    // TypeScript knows: ref has protocolId, chainId, conditionId
+    const rpcUrl = getRpcUrl(ref.chainId);
+    console.log(`On-chain: ${ref.protocolId}`);
+  } else {
+    // TypeScript knows: ref has venueId, marketId
+    const apiUrl = getVenueApiUrl(ref.venueId);
+    console.log(`Off-chain: ${ref.venueId} market ${ref.marketId}`);
+  }
+}
+```
 
 ❌ **НИКОГДА** не используй голый `ConditionId`:
 ```typescript
-const bad = '0xabc123...'; // что это? на каком chain? в каком protocol?
+const bad = '0xabc123...'; // что это? on-chain? off-chain? какой venue?
 ```
 
-✅ **ВСЕГДА** используй `ConditionRef`:
-```typescript
-const good: ConditionRef = {
-  protocolId: 'POLYMARKET_CTF',
-  chainId: 137,
-  conditionId: '0xabc123...'
-};
-```
+✅ **ВСЕГДА** используй `ConditionRef` с полным контекстом.
 
 ### Разделение MarketDataSource vs ExecutionVenue
 

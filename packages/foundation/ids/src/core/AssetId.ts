@@ -1,7 +1,11 @@
-import type { ConditionRef } from './ConditionRef.js';
-import type { OutcomeIndex } from './OutcomeIndex.js';
+import type { OnChainConditionRef } from './ConditionRef.js';
+import type { OutcomeKey } from './OutcomeKey.js';
 import type { SupportedCurrency } from './Currency.js';
-import { KnownCurrencies } from './Currency.js';
+import type { OnChainProtocolId } from './ProtocolId.js';
+import type { ChainId } from './ChainId.js';
+import type { ConditionId } from './ConditionId.js';
+import { KnownCurrencies, isSupportedCurrency } from './Currency.js';
+import { outcomeKey } from './OutcomeKey.js';
 
 /**
  * AssetId - универсальный идентификатор актива
@@ -9,7 +13,10 @@ import { KnownCurrencies } from './Currency.js';
  * @remarks
  * Может быть:
  * - Currency (USDC и другие из SupportedCurrency)
- * - OutcomeToken (YES/NO токен конкретного рынка)
+ * - OutcomeToken (UP/DOWN токен on-chain рынка)
+ *
+ * ⚠️ ВАЖНО: OutcomeToken только для on-chain protocols!
+ * Off-chain venues (KALSHI, PREDICTIT) не имеют tokenized positions.
  *
  * Используется в generic контейнерах (AssetQuantity, events, transfers).
  *
@@ -21,11 +28,16 @@ import { KnownCurrencies } from './Currency.js';
  *   currency: 'USDC'
  * };
  *
- * // Outcome token asset
+ * // On-chain outcome token asset (Polymarket)
  * const tokenAsset: AssetId = {
  *   type: 'OUTCOME_TOKEN',
- *   conditionRef: { ... },
- *   outcomeIndex: 1
+ *   conditionRef: {
+ *     kind: 'ONCHAIN',
+ *     protocolId: 'POLYMARKET_CTF',
+ *     chainId: 137,
+ *     conditionId: '0xabc123...'
+ *   },
+ *   outcomeKey: BinaryOutcome.UP
  * };
  * ```
  */
@@ -36,8 +48,8 @@ export type AssetId =
     }
   | {
       readonly type: 'OUTCOME_TOKEN';
-      readonly conditionRef: ConditionRef;
-      readonly outcomeIndex: OutcomeIndex;
+      readonly conditionRef: OnChainConditionRef;
+      readonly outcomeKey: OutcomeKey;
     };
 
 /**
@@ -68,22 +80,32 @@ export const AssetId = {
   /**
    * Создать AssetId для outcome token
    *
-   * @param conditionRef - Полная ссылка на condition
-   * @param outcomeIndex - Индекс outcome (0 = NO, 1 = YES)
+   * @param conditionRef - On-chain ссылка на condition
+   * @param outcomeKey - Ключ outcome (BinaryOutcome.UP или BinaryOutcome.DOWN)
    * @returns AssetId для outcome token
+   *
+   * @remarks
+   * ⚠️ Только для on-chain protocols! Off-chain venues не поддерживаются.
    *
    * @example
    * ```typescript
-   * import { AssetIdHelpers, OutcomeIndexValues } from '@polymarket/ids';
+   * import { AssetIdHelpers, BinaryOutcome } from '@polymarket/ids';
    *
-   * const token = AssetIdHelpers.fromOutcomeToken(conditionRef, OutcomeIndexValues.YES);
+   * const onChainRef: OnChainConditionRef = {
+   *   kind: 'ONCHAIN',
+   *   protocolId: 'POLYMARKET_CTF',
+   *   chainId: 137,
+   *   conditionId: '0xabc123...'
+   * };
+   *
+   * const token = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
    * ```
    */
-  fromOutcomeToken(conditionRef: ConditionRef, outcomeIndex: OutcomeIndex): AssetId {
+  fromOutcomeToken(conditionRef: OnChainConditionRef, outcomeKey: OutcomeKey): AssetId {
     return {
       type: 'OUTCOME_TOKEN',
       conditionRef,
-      outcomeIndex,
+      outcomeKey,
     };
   },
 
@@ -106,6 +128,17 @@ export const AssetId = {
 
 /**
  * Сравнение двух AssetId на равенство
+ *
+ * @param a - Первый AssetId
+ * @param b - Второй AssetId
+ * @returns true если AssetId идентичны
+ *
+ * @example
+ * ```typescript
+ * const usdc1 = AssetIdHelpers.USDC;
+ * const usdc2 = AssetIdHelpers.fromCurrency('USDC');
+ * assetIdEquals(usdc1, usdc2); // → true
+ * ```
  */
 export function assetIdEquals(a: AssetId, b: AssetId): boolean {
   if (a.type !== b.type) {
@@ -117,11 +150,13 @@ export function assetIdEquals(a: AssetId, b: AssetId): boolean {
   }
 
   if (a.type === 'OUTCOME_TOKEN' && b.type === 'OUTCOME_TOKEN') {
+    // Both are OnChainConditionRef, так что можно сравнивать напрямую
     return (
+      a.conditionRef.kind === b.conditionRef.kind &&
       a.conditionRef.protocolId === b.conditionRef.protocolId &&
       a.conditionRef.chainId === b.conditionRef.chainId &&
       a.conditionRef.conditionId === b.conditionRef.conditionId &&
-      a.outcomeIndex === b.outcomeIndex
+      a.outcomeKey === b.outcomeKey
     );
   }
 
@@ -129,14 +164,113 @@ export function assetIdEquals(a: AssetId, b: AssetId): boolean {
 }
 
 /**
- * Преобразование AssetId в строку для логирования
+ * Преобразование AssetId в строку для логирования и сериализации
+ *
+ * @param asset - AssetId для преобразования
+ * @returns Строковое представление
+ *
+ * @example
+ * ```typescript
+ * const usdc = AssetIdHelpers.USDC;
+ * assetIdToString(usdc);
+ * // → 'CURRENCY:USDC'
+ *
+ * const token = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+ * assetIdToString(token);
+ * // → 'OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123:UP'
+ * ```
  */
 export function assetIdToString(asset: AssetId): string {
   if (asset.type === 'CURRENCY') {
     return `CURRENCY:${asset.currency}`;
   }
 
-  return `TOKEN:${asset.conditionRef.protocolId}:${asset.conditionRef.chainId}:${asset.conditionRef.conditionId}:${asset.outcomeIndex}`;
+  // OUTCOME_TOKEN всегда имеет OnChainConditionRef
+  const ref = asset.conditionRef;
+  return `OUTCOME_TOKEN:${ref.kind}:${ref.protocolId}:${ref.chainId}:${ref.conditionId}:${asset.outcomeKey}`;
+}
+
+/**
+ * Парсинг AssetId из строки
+ *
+ * @param str - Строка в формате assetIdToString()
+ * @returns AssetId или undefined если формат неверный
+ *
+ * @remarks
+ * Обратная функция для assetIdToString(). Гарантирует round-trip:
+ * parseAssetId(assetIdToString(id)) === id
+ *
+ * Поддерживаемые форматы:
+ * - 'CURRENCY:USDC'
+ * - 'OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123:UP'
+ *
+ * @example
+ * ```typescript
+ * const usdc = parseAssetId('CURRENCY:USDC');
+ * // → { type: 'CURRENCY', currency: 'USDC' }
+ *
+ * const token = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123:UP');
+ * // → { type: 'OUTCOME_TOKEN', conditionRef: {...}, outcomeKey: 'UP' }
+ *
+ * const invalid = parseAssetId('INVALID:FORMAT');
+ * // → undefined
+ * ```
+ */
+export function parseAssetId(str: string): AssetId | undefined {
+  const parts = str.split(':');
+
+  if (parts.length < 2) {
+    return undefined;
+  }
+
+  const type = parts[0];
+
+  if (type === 'CURRENCY') {
+    if (parts.length !== 2) {
+      return undefined;
+    }
+
+    const currency = parts[1];
+    if (!isSupportedCurrency(currency)) {
+      return undefined;
+    }
+
+    return {
+      type: 'CURRENCY',
+      currency,
+    };
+  }
+
+  if (type === 'OUTCOME_TOKEN') {
+    // Format: OUTCOME_TOKEN:ONCHAIN:protocolId:chainId:conditionId:outcomeKey
+    if (parts.length !== 6) {
+      return undefined;
+    }
+
+    const [, kind, protocolId, chainIdStr, conditionId, outcomeKeyStr] = parts;
+
+    if (kind !== 'ONCHAIN') {
+      return undefined;
+    }
+
+    const chainId = parseInt(chainIdStr, 10);
+    if (isNaN(chainId)) {
+      return undefined;
+    }
+
+    return {
+      type: 'OUTCOME_TOKEN',
+      conditionRef: {
+        kind: 'ONCHAIN',
+        protocolId: protocolId as OnChainProtocolId,
+        chainId: chainId as ChainId,
+        conditionId: conditionId as ConditionId,
+      },
+      outcomeKey: outcomeKey(outcomeKeyStr),
+    };
+  }
+
+  return undefined;
 }
 
 /**

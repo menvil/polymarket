@@ -6,23 +6,31 @@
  *
  * Используется для ответа на вопрос: "ГДЕ находятся деньги/токены?"
  *
+ * Branded string для extensibility: можно добавлять новые venues
+ * без изменения foundation layer.
+ *
  * Известные venues:
  * - POLYMARKET: Polymarket prediction market
  * - KALSHI: Kalshi prediction market
  *
  * @example
  * ```typescript
- * const venue: VenueId = 'POLYMARKET';
+ * import { KnownVenues } from '@polymarket/ids';
+ *
+ * const venue = KnownVenues.POLYMARKET;
  *
  * // Balance на конкретном venue
  * const balance = {
- *   venueId: 'POLYMARKET' as VenueId,
- *   accountId: '0x1234...' as AccountId,
+ *   venueId: KnownVenues.POLYMARKET,
+ *   accountId: accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123'),
  *   amount: 10000
  * };
+ *
+ * // Extensible: можно использовать custom venues
+ * const customVenue = 'MY_CUSTOM_VENUE' as VenueId;
  * ```
  */
-export type VenueId = 'POLYMARKET' | 'KALSHI' | (string & { readonly __brand: 'VenueId' });
+export type VenueId = string & { readonly __brand: 'VenueId' };
 
 /**
  * Известные venues
@@ -34,7 +42,17 @@ export const KnownVenues = {
 
 /**
  * Type guard для проверки известных venues
+ *
+ * @param id - Строка для проверки
+ * @returns true если id является известным venue
+ *
+ * @example
+ * ```typescript
+ * if (isKnownVenue('POLYMARKET')) {
+ *   // это известный venue
+ * }
+ * ```
  */
-export function isKnownVenue(id: string): id is 'POLYMARKET' | 'KALSHI' {
+export function isKnownVenue(id: string): id is VenueId {
   return id === 'POLYMARKET' || id === 'KALSHI';
 }

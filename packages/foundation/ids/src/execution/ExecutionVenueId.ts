@@ -73,7 +73,7 @@ export function executionToVenue(venueId: ExecutionVenueId): VenueId | undefined
     return KnownVenues.KALSHI;
   }
 
-  return venueId as VenueId;
+  return venueId as unknown as VenueId;
 }
 
 /**
