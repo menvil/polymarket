@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { Spread } from '../core/Spread.js';
 
 /**
@@ -102,26 +103,33 @@ export class SpreadFormatter {
    * Форматировать в объект
    *
    * @param spread - Spread для форматирования
-   * @returns Объект с bid, ask, width, midpoint
+   * @returns Объект с bid, ask, width, midpoint как Decimal для сохранения точности
+   *
+   * @remarks
+   * Возвращает Decimal значения вместо number для предотвращения потери точности
+   * при сериализации/десериализации. Используй Decimal.toNumber() если нужен number.
    *
    * @example
    * ```typescript
    * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
    * const obj = SpreadFormatter.toObject(spread);
-   * // { bid: 0.48, ask: 0.52, width: 0.04, midpoint: 0.50 }
+   * // { bid: Decimal(0.48), ask: Decimal(0.52), width: Decimal(0.04), midpoint: Decimal(0.50) }
+   *
+   * // Если нужны numbers:
+   * const bidNumber = obj.bid.toNumber();
    * ```
    */
   public static toObject(spread: Spread): {
-    bid: number;
-    ask: number;
-    width: number;
-    midpoint: number;
+    bid: Decimal;
+    ask: Decimal;
+    width: Decimal;
+    midpoint: Decimal;
   } {
     return {
-      bid: spread.bid().value().toNumber(),
-      ask: spread.ask().value().toNumber(),
-      width: spread.width().toNumber(),
-      midpoint: spread.mid().toNumber(),
+      bid: spread.bid().value(),
+      ask: spread.ask().value(),
+      width: spread.width(),
+      midpoint: spread.mid(),
     };
   }
 }

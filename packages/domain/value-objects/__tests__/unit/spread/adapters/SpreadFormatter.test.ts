@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { SpreadFormatter } from '../../../../src/spread/adapters/SpreadFormatter.js';
 import { SpreadService } from '../../../../src/spread/facade/SpreadService.js';
 
@@ -130,10 +131,10 @@ describe('SpreadFormatter', () => {
       if (spreadResult.ok) {
         const obj = SpreadFormatter.toObject(spreadResult.value);
 
-        expect(obj.bid).toBe(0.48);
-        expect(obj.ask).toBe(0.52);
-        expect(obj.width).toBe(0.04);
-        expect(obj.midpoint).toBe(0.50);
+        expect(obj.bid).toEqual(new Decimal(0.48));
+        expect(obj.ask).toEqual(new Decimal(0.52));
+        expect(obj.width).toEqual(new Decimal(0.04));
+        expect(obj.midpoint).toEqual(new Decimal(0.50));
       }
     });
 
@@ -144,10 +145,10 @@ describe('SpreadFormatter', () => {
       if (spreadResult.ok) {
         const obj = SpreadFormatter.toObject(spreadResult.value);
 
-        expect(obj.bid).toBe(0.50);
-        expect(obj.ask).toBe(0.50);
-        expect(obj.width).toBe(0);
-        expect(obj.midpoint).toBe(0.50);
+        expect(obj.bid).toEqual(new Decimal(0.50));
+        expect(obj.ask).toEqual(new Decimal(0.50));
+        expect(obj.width).toEqual(new Decimal(0));
+        expect(obj.midpoint).toEqual(new Decimal(0.50));
       }
     });
   });
