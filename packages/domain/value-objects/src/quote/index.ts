@@ -97,16 +97,16 @@ export { QuoteService } from './facade/index.js';
  * @remarks
  * Методы:
  * - toJSON() - Quote → QuoteJson
- * - fromJSON() - QuoteJson → Result<Quote>
- * - toString() - Quote → JSON string
- * - parse() - JSON string → Result<Quote>
+ * - fromJSON() - unknown → Result<Quote>
+ * - toJSONString() - Quote → JSON string
+ * - fromJSONString() - JSON string → Result<Quote>
  */
 export { QuoteSerializer } from './adapters/index.js';
 
 /**
- * QuoteJson - интерфейс для JSON-представления котировки
+ * QuoteJSON - интерфейс для JSON-представления котировки
  */
-export type { QuoteJson } from './adapters/index.js';
+export type { QuoteJSON } from './adapters/index.js';
 
 /**
  * QuoteFormatter - форматирование котировок для отображения

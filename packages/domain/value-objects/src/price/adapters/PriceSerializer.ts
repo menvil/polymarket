@@ -31,6 +31,25 @@ function safeStringify(value: unknown): string {
 }
 
 /**
+ * JSON контракт для Price сериализации
+ *
+ * @remarks
+ * Используется как:
+ * - Контракт API (документация структуры)
+ * - Return type для toJSON()
+ * - Type hint при создании JSON
+ *
+ * При парсинге (fromJSON) НЕ полагайся на этот тип -
+ * делай полную runtime валидацию с unknown!
+ */
+export interface PriceJSON {
+  /**
+   * Price value as string для сохранения точности
+   */
+  value: string;
+}
+
+/**
  * JSON сериализатор для Price
  *
  * @remarks
@@ -40,6 +59,11 @@ function safeStringify(value: unknown): string {
  * - Валидацию типов на границе (unknown → typed)
  * - Сериализацию/десериализацию JSON
  * - Читаемую диагностику через safeStringify
+ *
+ * Контракт:
+ * - fromJSON НИКОГДА не доверяет типам, делает полную проверку
+ * - toJSON ВСЕГДА возвращает валидный PriceJSON
+ * - Все ошибки возвращаются через Result.Err
  *
  * @example
  * ```typescript
@@ -174,14 +198,15 @@ export class PriceSerializer {
   }
 
   /**
-   * Сериализует Price в JSON
+   * Сериализует Price в JSON объект
+   *
+   * @param price - Price для сериализации
+   * @returns PriceJSON объект с value (string)
    *
    * @remarks
-   * Возвращает простой объект { value: string }.
-   * Использует string для сохранения точности Decimal.
-   *
-   * @param price - Price объект
-   * @returns JSON объект с полем value
+   * Возвращает строго типизированный PriceJSON.
+   * Используем string для value чтобы сохранить точность.
+   * Гарантирует что все поля присутствуют и имеют правильные типы.
    *
    * @example
    * ```typescript
@@ -190,7 +215,7 @@ export class PriceSerializer {
    * console.log(json); // { value: "0.5" }
    * ```
    */
-  public static toJSON(price: Price): { value: string } {
+  public static toJSON(price: Price): PriceJSON {
     return {
       value: price.value().toString()
     };

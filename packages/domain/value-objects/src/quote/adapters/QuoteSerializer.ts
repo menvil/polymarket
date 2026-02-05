@@ -1,17 +1,51 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuoteError, ErrorSource, rewrap } from '@polymarket/errors';
+import { Result, Err } from '@polymarket/result';
+import { InvalidQuoteError, ErrorSource } from '@polymarket/errors';
 import { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 import { QuoteService } from '../facade/QuoteService.js';
 
 /**
- * Интерфейс для JSON-представления котировки
+ * Безопасная сериализация в JSON с обработкой циклических ссылок
+ *
+ * @param value - Значение для сериализации
+ * @returns JSON строка
  *
  * @remarks
- * Используется для сериализации/десериализации Quote в JSON формат.
+ * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
+ * Используется для читаемой диагностики ошибок.
+ */
+function safeStringify(value: unknown): string {
+  try {
+    const seen = new WeakSet();
+    return JSON.stringify(value, (_key, val) => {
+      if (typeof val === 'object' && val !== null) {
+        if (seen.has(val)) {
+          return '[Circular]';
+        }
+        seen.add(val);
+      }
+      return val;
+    });
+  } catch {
+    return '[Unstringifiable]';
+  }
+}
+
+/**
+ * JSON контракт для Quote сериализации
+ *
+ * @remarks
+ * Используется как:
+ * - Контракт API (документация структуры)
+ * - Return type для toJSON()
+ * - Type hint при создании JSON
+ *
+ * При парсинге (fromJSON) НЕ полагайся на этот тип -
+ * делай полную runtime валидацию с unknown!
+ *
  * Все числовые значения представлены как number для совместимости с JSON.
  */
-export interface QuoteJson {
+export interface QuoteJSON {
   /**
    * Цена bid (может быть null для ask-only котировок)
    */
@@ -39,52 +73,60 @@ export interface QuoteJson {
 }
 
 /**
- * QuoteSerializer - адаптер для сериализации/десериализации Quote
+ * JSON сериализатор для Quote
  *
  * @remarks
- * Предоставляет методы для преобразования Quote в JSON и обратно.
- * Использует "Never Throw" контракт - все методы возвращают Result<T, E>.
+ * ГРАНИЦА СИСТЕМЫ: принимает unknown, валидирует структуру.
  *
- * Алгоритм:
- * 1. toJSON() - извлекает значения из Quote и формирует QuoteJson
- * 2. fromJSON() - парсит QuoteJson и создаёт Quote через QuoteService.create()
- * 3. toString() - сериализует Quote в JSON строку
- * 4. parse() - десериализует JSON строку в Quote
+ * Отвечает за:
+ * - Валидацию типов на границе (unknown → typed)
+ * - Сериализацию/десериализацию JSON
+ * - Читаемую диагностику через safeStringify
+ *
+ * Контракт:
+ * - fromJSON НИКОГДА не доверяет типам, делает полную проверку
+ * - toJSON ВСЕГДА возвращает валидный QuoteJSON
+ * - Все ошибки возвращаются через Result.Err
  *
  * @example
  * ```typescript
+ * import { QuoteSerializer } from '@polymarket/value-objects/quote';
+ *
+ * // Десериализация
+ * const result = QuoteSerializer.fromJSON({
+ *   bid: 0.48,
+ *   ask: 0.52,
+ *   bidSize: 100,
+ *   askSize: 150,
+ *   timestamp: Date.now()
+ * });
+ * if (result.ok) {
+ *   const quote = result.value;
+ *   console.log(quote.isTwoSided()); // true
+ * }
+ *
  * // Сериализация
- * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
  * const json = QuoteSerializer.toJSON(quote);
  * console.log(json); // { bid: 0.48, ask: 0.52, ... }
  *
- * const jsonString = QuoteSerializer.toString(quote);
- * console.log(jsonString); // '{"bid":0.48,"ask":0.52,...}'
- *
- * // Десериализация
- * const result = QuoteSerializer.fromJSON(json);
- * if (result.ok) {
- *   const quote = result.value;
- * }
- *
- * const parseResult = QuoteSerializer.parse(jsonString);
- * if (parseResult.ok) {
- *   const quote = parseResult.value;
- * }
+ * // String методы
+ * const jsonString = QuoteSerializer.toJSONString(quote);
+ * const parseResult = QuoteSerializer.fromJSONString(jsonString);
  * ```
  */
 export class QuoteSerializer {
   private static readonly SERVICE_NAME = 'QuoteSerializer';
 
   /**
-   * Преобразует Quote в JSON-объект
+   * Сериализует Quote в JSON объект
    *
    * @param quote - Quote для сериализации
-   * @returns JSON-представление котировки
+   * @returns QuoteJSON объект
    *
    * @remarks
-   * Метод "Never Throw" - гарантированно не бросает исключения.
-   * Извлекает числовые значения из всех компонентов Quote.
+   * Возвращает строго типизированный QuoteJSON.
+   * Гарантирует что все поля присутствуют и имеют правильные типы.
+   * Использует number для совместимости с JSON.
    *
    * @example
    * ```typescript
@@ -93,7 +135,7 @@ export class QuoteSerializer {
    * console.log(json.bid); // 0.48
    * ```
    */
-  public static toJSON(quote: Quote): QuoteJson {
+  public static toJSON(quote: Quote): QuoteJSON {
     return {
       bid: quote.bid()?.value().toNumber() ?? null,
       ask: quote.ask()?.value().toNumber() ?? null,
@@ -104,162 +146,269 @@ export class QuoteSerializer {
   }
 
   /**
-   * Создаёт Quote из JSON-объекта
+   * Десериализует Quote из JSON объекта
    *
-   * @param json - JSON-объект с данными котировки
+   * @param json - Неизвестный объект для парсинга (unknown)
    * @returns Result с Quote или InvalidQuoteError
    *
    * @remarks
-   * Использует QuoteService.create() для валидации и создания Quote.
-   * Проверяет корректность всех полей JSON-объекта.
+   * **ПОЛНАЯ RUNTIME ВАЛИДАЦИЯ:**
+   * 1. Проверяет что json это объект
+   * 2. Проверяет наличие всех обязательных полей
+   * 3. Проверяет типы всех полей
+   * 4. Делегирует создание в QuoteService для бизнес-валидации
    *
-   * @throws Никогда не бросает исключения (контракт "Never Throw")
+   * НЕ использует type casts без проверок!
+   * НЕ доверяет TypeScript types на границе системы!
    *
    * @example
    * ```typescript
-   * const json = { bid: 0.48, ask: 0.52, bidSize: 100, askSize: 150, timestamp: Date.now() };
-   * const result = QuoteSerializer.fromJSON(json);
+   * // Валидный JSON
+   * const ok = QuoteSerializer.fromJSON({
+   *   bid: 0.48,
+   *   ask: 0.52,
+   *   bidSize: 100,
+   *   askSize: 150,
+   *   timestamp: Date.now()
+   * });
    *
-   * if (result.ok) {
-   *   const quote = result.value;
-   *   console.log(quote.isTwoSided()); // true
-   * } else {
-   *   console.error(result.error.message);
-   * }
+   * // Невалидные случаи (все возвращают Err)
+   * QuoteSerializer.fromJSON(null);                     // не объект
+   * QuoteSerializer.fromJSON({});                       // отсутствуют поля
+   * QuoteSerializer.fromJSON({ bid: "0.5", ... });      // неверный тип
+   * QuoteSerializer.fromJSON({ bid: 0.6, ask: 0.5, ...}); // bid > ask (бизнес-правило)
    * ```
    */
-  public static fromJSON(json: QuoteJson): Result<Quote, InvalidQuoteError> {
-    const ctx = { json };
+  public static fromJSON(json: unknown): Result<Quote, InvalidQuoteError> {
+    const op = 'fromJSON';
 
-    // Валидация основных полей
-    if (typeof json.bid !== 'number' && json.bid !== null) {
+    // Шаг 1: Проверка что это объект
+    if (typeof json !== 'object' || json === null || Array.isArray(json)) {
       return Err(
-        new InvalidQuoteError('Invalid bid field in JSON', {
+        new InvalidQuoteError(
+          'Expected object, got ' + (json === null ? 'null' : Array.isArray(json) ? 'array' : typeof json),
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              json: safeStringify(json),
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
+    // Шаг 2: Проверка наличия поля bid
+    if (!('bid' in json)) {
+      return Err(
+        new InvalidQuoteError('Missing required field: bid', {
           context: {
             source: ErrorSource.PARSING,
             service: QuoteSerializer.SERVICE_NAME,
-            op: 'fromJSON',
-            reason: QuoteErrorReason.INVALID_FORMAT,
-            raw: { field: 'bid', value: json.bid },
-            ...ctx
+            op,
+            json: safeStringify(json),
+            reason: QuoteErrorReason.INVALID_FORMAT
           }
         })
       );
     }
 
-    if (typeof json.ask !== 'number' && json.ask !== null) {
+    // Шаг 3: Проверка наличия поля ask
+    if (!('ask' in json)) {
       return Err(
-        new InvalidQuoteError('Invalid ask field in JSON', {
+        new InvalidQuoteError('Missing required field: ask', {
           context: {
             source: ErrorSource.PARSING,
             service: QuoteSerializer.SERVICE_NAME,
-            op: 'fromJSON',
-            reason: QuoteErrorReason.INVALID_FORMAT,
-            raw: { field: 'ask', value: json.ask },
-            ...ctx
+            op,
+            json: safeStringify(json),
+            reason: QuoteErrorReason.INVALID_FORMAT
           }
         })
       );
     }
 
-    if (typeof json.bidSize !== 'number') {
+    // Шаг 4: Проверка наличия поля bidSize
+    if (!('bidSize' in json)) {
       return Err(
-        new InvalidQuoteError('Invalid bidSize field in JSON', {
+        new InvalidQuoteError('Missing required field: bidSize', {
           context: {
             source: ErrorSource.PARSING,
             service: QuoteSerializer.SERVICE_NAME,
-            op: 'fromJSON',
-            reason: QuoteErrorReason.INVALID_FORMAT,
-            raw: { field: 'bidSize', value: json.bidSize },
-            ...ctx
+            op,
+            json: safeStringify(json),
+            reason: QuoteErrorReason.INVALID_FORMAT
           }
         })
       );
     }
 
-    if (typeof json.askSize !== 'number') {
+    // Шаг 5: Проверка наличия поля askSize
+    if (!('askSize' in json)) {
       return Err(
-        new InvalidQuoteError('Invalid askSize field in JSON', {
+        new InvalidQuoteError('Missing required field: askSize', {
           context: {
             source: ErrorSource.PARSING,
             service: QuoteSerializer.SERVICE_NAME,
-            op: 'fromJSON',
-            reason: QuoteErrorReason.INVALID_FORMAT,
-            raw: { field: 'askSize', value: json.askSize },
-            ...ctx
+            op,
+            json: safeStringify(json),
+            reason: QuoteErrorReason.INVALID_FORMAT
           }
         })
       );
     }
 
-    if (typeof json.timestamp !== 'number') {
+    // Шаг 6: Проверка наличия поля timestamp
+    if (!('timestamp' in json)) {
       return Err(
-        new InvalidQuoteError('Invalid timestamp field in JSON', {
+        new InvalidQuoteError('Missing required field: timestamp', {
           context: {
             source: ErrorSource.PARSING,
             service: QuoteSerializer.SERVICE_NAME,
-            op: 'fromJSON',
-            reason: QuoteErrorReason.INVALID_FORMAT,
-            raw: { field: 'timestamp', value: json.timestamp },
-            ...ctx
+            op,
+            json: safeStringify(json),
+            reason: QuoteErrorReason.INVALID_FORMAT
           }
         })
       );
     }
 
-    // Создаём Quote через QuoteService
-    const result = QuoteService.create(
-      json.bid,
-      json.ask,
-      json.bidSize,
-      json.askSize,
-      json.timestamp
-    );
+    // Теперь безопасно извлекаем поля
+    const { bid, ask, bidSize, askSize, timestamp } = json as {
+      bid: unknown;
+      ask: unknown;
+      bidSize: unknown;
+      askSize: unknown;
+      timestamp: unknown;
+    };
 
-    if (!result.ok) {
-      return Err(rewrap(QuoteSerializer.SERVICE_NAME, 'fromJSON', ctx, result.error, InvalidQuoteError));
+    // Шаг 7: Проверка типа bid (number | null)
+    if (typeof bid !== 'number' && bid !== null) {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid type for field 'bid': expected number or null, got ${typeof bid}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'bid', value: String(bid), type: typeof bid },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
     }
 
-    return Ok(result.value);
+    // Шаг 8: Проверка типа ask (number | null)
+    if (typeof ask !== 'number' && ask !== null) {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid type for field 'ask': expected number or null, got ${typeof ask}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'ask', value: String(ask), type: typeof ask },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
+    // Шаг 9: Проверка типа bidSize
+    if (typeof bidSize !== 'number') {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid type for field 'bidSize': expected number, got ${typeof bidSize}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'bidSize', value: String(bidSize), type: typeof bidSize },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
+    // Шаг 10: Проверка типа askSize
+    if (typeof askSize !== 'number') {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid type for field 'askSize': expected number, got ${typeof askSize}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'askSize', value: String(askSize), type: typeof askSize },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
+    // Шаг 11: Проверка типа timestamp
+    if (typeof timestamp !== 'number') {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid type for field 'timestamp': expected number, got ${typeof timestamp}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'timestamp', value: String(timestamp), type: typeof timestamp },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
+    // Шаг 12: Делегируем бизнес-валидацию и создание в QuoteService
+    return QuoteService.create(bid, ask, bidSize, askSize, timestamp);
   }
 
   /**
-   * Преобразует Quote в JSON-строку
+   * Сериализует в JSON строку
    *
    * @param quote - Quote для сериализации
-   * @returns JSON-строка
-   *
-   * @remarks
-   * Метод "Never Throw" - гарантированно не бросает исключения.
-   * Использует toJSON() и JSON.stringify() для форматирования.
+   * @returns JSON строка
    *
    * @example
    * ```typescript
    * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
-   * const jsonString = QuoteSerializer.toString(quote);
+   * const jsonString = QuoteSerializer.toJSONString(quote);
    * console.log(jsonString); // '{"bid":0.48,"ask":0.52,...}'
    * ```
    */
-  public static toString(quote: Quote): string {
+  public static toJSONString(quote: Quote): string {
     return JSON.stringify(this.toJSON(quote));
   }
 
   /**
-   * Парсит JSON-строку в Quote
+   * Десериализует из JSON строки
    *
-   * @param jsonString - JSON-строка с данными котировки
+   * @param jsonString - JSON строка
    * @returns Result с Quote или InvalidQuoteError
    *
    * @remarks
-   * Парсит JSON-строку и вызывает fromJSON() для создания Quote.
+   * Парсит JSON строку и вызывает fromJSON() для валидации и создания Quote.
    * Обрабатывает ошибки парсинга JSON.
-   *
-   * @throws Никогда не бросает исключения (контракт "Never Throw")
    *
    * @example
    * ```typescript
    * const jsonString = '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890}';
-   * const result = QuoteSerializer.parse(jsonString);
+   * const result = QuoteSerializer.fromJSONString(jsonString);
    *
    * if (result.ok) {
    *   const quote = result.value;
@@ -268,30 +417,25 @@ export class QuoteSerializer {
    * }
    * ```
    */
-  public static parse(jsonString: string): Result<Quote, InvalidQuoteError> {
-    const ctx = { jsonString };
-
+  public static fromJSONString(jsonString: string): Result<Quote, InvalidQuoteError> {
     try {
-      const json = JSON.parse(jsonString);
-      const result = this.fromJSON(json);
-
-      if (!result.ok) {
-        return Err(rewrap(QuoteSerializer.SERVICE_NAME, 'parse', ctx, result.error, InvalidQuoteError));
-      }
-
-      return Ok(result.value);
+      const parsed = JSON.parse(jsonString) as unknown;
+      return this.fromJSON(parsed);
     } catch (error) {
       return Err(
-        new InvalidQuoteError('Failed to parse JSON string', {
-          context: {
-            source: ErrorSource.PARSING,
-            service: QuoteSerializer.SERVICE_NAME,
-            op: 'parse',
-            reason: QuoteErrorReason.INVALID_FORMAT,
-            cause: error instanceof Error ? error.message : String(error),
-            ...ctx
+        new InvalidQuoteError(
+          `Invalid JSON string: ${error instanceof Error ? error.message : String(error)}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op: 'fromJSONString',
+              jsonString,
+              error: error instanceof Error ? error.message : String(error),
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
           }
-        })
+        )
       );
     }
   }

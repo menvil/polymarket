@@ -7,5 +7,5 @@
  * - QuoteFormatter: форматирование для отображения
  */
 
-export { QuoteSerializer, type QuoteJson } from './QuoteSerializer.js';
+export { QuoteSerializer, type QuoteJSON } from './QuoteSerializer.js';
 export { QuoteFormatter, type QuoteFormatOptions } from './QuoteFormatter.js';

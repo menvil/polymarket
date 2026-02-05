@@ -33,9 +33,17 @@ function safeStringify(value: unknown): string {
 }
 
 /**
- * Тип для JSON представления Balance
+ * JSON контракт для Balance сериализации
  *
  * @remarks
+ * Используется как:
+ * - Контракт API (документация структуры)
+ * - Return type для toJSON()
+ * - Type hint при создании JSON
+ *
+ * При парсинге (fromJSON) НЕ полагайся на этот тип -
+ * делай полную runtime валидацию с unknown!
+ *
  * Использует string для amount чтобы сохранить точность Decimal.
  */
 export interface BalanceJSON {
@@ -60,6 +68,11 @@ export interface BalanceJSON {
  * - Сериализацию/десериализацию JSON
  * - Читаемую диагностику через safeStringify
  * - Использует string для сохранения точности Decimal
+ *
+ * Контракт:
+ * - fromJSON НИКОГДА не доверяет типам, делает полную проверку
+ * - toJSON ВСЕГДА возвращает валидный BalanceJSON
+ * - Все ошибки возвращаются через Result.Err
  *
  * **Формат JSON:**
  * ```json

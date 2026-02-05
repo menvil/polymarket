@@ -31,6 +31,39 @@ function safeStringify(value: unknown): string {
 }
 
 /**
+ * JSON контракт для Quantity сериализации
+ *
+ * @remarks
+ * Используется как:
+ * - Контракт API (документация структуры)
+ * - Return type для toJSON()
+ * - Type hint при создании JSON
+ *
+ * При парсинге (fromJSON) НЕ полагайся на этот тип -
+ * делай полную runtime валидацию с unknown!
+ */
+export interface QuantityJSON {
+  /**
+   * Quantity value as string для сохранения точности
+   */
+  value: string;
+}
+
+/**
+ * JSON контракт для lossy сериализации (number)
+ *
+ * @remarks
+ * ⚠️ ВНИМАНИЕ: Использует number, может привести к потере точности.
+ * Для точной сериализации используй QuantityJSON.
+ */
+export interface QuantityLossyJSON {
+  /**
+   * Quantity value as number (может потерять точность)
+   */
+  value: number;
+}
+
+/**
  * JSON сериализатор для Quantity
  *
  * @remarks
@@ -41,6 +74,11 @@ function safeStringify(value: unknown): string {
  * - Сериализацию/десериализацию JSON
  * - Читаемую диагностику через safeStringify
  * - Использует string для сохранения точности Decimal
+ *
+ * Контракт:
+ * - fromJSON НИКОГДА не доверяет типам, делает полную проверку
+ * - toJSON ВСЕГДА возвращает валидный QuantityJSON
+ * - Все ошибки возвращаются через Result.Err
  *
  * Для lossy сериализации (number) используй QuantityLossySerializer.
  *
@@ -63,13 +101,15 @@ function safeStringify(value: unknown): string {
 export class QuantitySerializer {
   private static readonly SERVICE_NAME = 'QuantitySerializer';
   /**
-   * Сериализует Quantity в JSON (string для точности)
+   * Сериализует Quantity в JSON объект
+   *
+   * @param quantity - Quantity для сериализации
+   * @returns QuantityJSON объект с value (string)
    *
    * @remarks
-   * Использует string для сохранения точности Decimal.
-   *
-   * @param quantity - Количество для сериализации
-   * @returns JSON объект { value: string }
+   * Возвращает строго типизированный QuantityJSON.
+   * Используем string для value чтобы сохранить точность.
+   * Гарантирует что все поля присутствуют и имеют правильные типы.
    *
    * @example
    * ```typescript
@@ -78,7 +118,7 @@ export class QuantitySerializer {
    * console.log(json); // { value: "10.5" }
    * ```
    */
-  public static toJSON(quantity: Quantity): { value: string } {
+  public static toJSON(quantity: Quantity): QuantityJSON {
     return { value: quantity.value().toString() };
   }
 
@@ -207,13 +247,14 @@ export class QuantitySerializer {
 export class QuantityLossySerializer {
   private static readonly SERVICE_NAME = 'QuantityLossySerializer';
   /**
-   * Сериализует Quantity в JSON (number, lossy)
+   * Сериализует Quantity в JSON объект (lossy)
+   *
+   * @param quantity - Quantity для сериализации
+   * @returns Result с QuantityLossyJSON или ошибкой
    *
    * @remarks
    * ⚠️ ВНИМАНИЕ: Может потерять точность для больших чисел.
-   *
-   * @param quantity - Количество для сериализации
-   * @returns Result с JSON объектом { value: number } или ошибкой
+   * Использует number вместо string.
    *
    * @example
    * ```typescript
@@ -223,7 +264,7 @@ export class QuantityLossySerializer {
    * }
    * ```
    */
-  public static toJSON(quantity: Quantity): Result<{ value: number }, InvalidOperandError> {
+  public static toJSON(quantity: Quantity): Result<QuantityLossyJSON, InvalidOperandError> {
     const decimalValue = quantity.value();
     if (!decimalValue.isFinite()) {
       return Err(
@@ -245,17 +286,17 @@ export class QuantityLossySerializer {
   }
 
   /**
-   * Десериализует Quantity из JSON (number, lossy)
+   * Десериализует Quantity из JSON (lossy)
    *
-   * @param json - JSON объект { value: number }
-   * @returns Result<Quantity, InvalidQuantityError>
+   * @param json - QuantityLossyJSON объект { value: number }
+   * @returns Result с Quantity или InvalidQuantityError
    *
    * @example
    * ```typescript
    * const result = QuantityLossySerializer.fromJSON({ value: 10 });
    * ```
    */
-  public static fromJSON(json: { value: number }): Result<Quantity, InvalidQuantityError> {
+  public static fromJSON(json: QuantityLossyJSON): Result<Quantity, InvalidQuantityError> {
     return QuantityService.create(json.value);
   }
 }

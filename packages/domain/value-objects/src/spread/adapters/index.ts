@@ -1,2 +1,2 @@
-export { SpreadSerializer, type SpreadDTO } from './SpreadSerializer.js';
+export { SpreadSerializer, type SpreadJSON } from './SpreadSerializer.js';
 export { SpreadFormatter, type SpreadFormatOptions } from './SpreadFormatter.js';

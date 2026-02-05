@@ -32,6 +32,30 @@ function safeStringify(value: unknown): string {
 }
 
 /**
+ * JSON контракт для Money сериализации
+ *
+ * @remarks
+ * Используется как:
+ * - Контракт API (документация структуры)
+ * - Return type для toJSON()
+ * - Type hint при создании JSON
+ *
+ * При парсинге (fromJSON) НЕ полагайся на этот тип -
+ * делай полную runtime валидацию с unknown!
+ */
+export interface MoneyJSON {
+  /**
+   * Amount as string для сохранения точности
+   */
+  amount: string;
+
+  /**
+   * Currency code (USDC, etc.)
+   */
+  currency: string;
+}
+
+/**
  * JSON сериализатор для Money
  *
  * @remarks
@@ -41,6 +65,11 @@ function safeStringify(value: unknown): string {
  * - Валидацию типов на границе (unknown → typed)
  * - Сериализацию/десериализацию JSON
  * - Читаемую диагностику через safeStringify
+ *
+ * Контракт:
+ * - fromJSON НИКОГДА не доверяет типам, делает полную проверку
+ * - toJSON ВСЕГДА возвращает валидный MoneyJSON
+ * - Все ошибки возвращаются через Result.Err
  *
  * @example
  * ```typescript
@@ -173,14 +202,15 @@ export class MoneySerializer {
   }
 
   /**
-   * Сериализует Money в JSON
-   *
-   * @remarks
-   * Возвращает plain object с полями amount (string) и currency.
-   * Используем string для amount чтобы избежать потери точности.
+   * Сериализует Money в JSON объект
    *
    * @param money - Money для сериализации
-   * @returns Plain object { amount: string, currency: string }
+   * @returns MoneyJSON объект с amount (string) и currency
+   *
+   * @remarks
+   * Возвращает строго типизированный MoneyJSON.
+   * Используем string для amount чтобы сохранить точность.
+   * Гарантирует что все поля присутствуют и имеют правильные типы.
    *
    * @example
    * ```typescript
@@ -193,7 +223,7 @@ export class MoneySerializer {
    * console.log(jsonString); // '{"amount":"100.5","currency":"USDC"}'
    * ```
    */
-  public static toJSON(money: Money): { amount: string; currency: string } {
+  public static toJSON(money: Money): MoneyJSON {
     return {
       amount: money.value().toString(),
       currency: money.currency(),

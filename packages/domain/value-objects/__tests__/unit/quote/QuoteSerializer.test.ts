@@ -120,7 +120,112 @@ describe('QuoteSerializer', () => {
       }
     });
 
-    it('фэйлится с invalid bid field', () => {
+    it('фэйлится когда json is null', () => {
+      const result = QuoteSerializer.fromJSON(null);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('Expected object');
+      }
+    });
+
+    it('фэйлится когда json is array', () => {
+      const result = QuoteSerializer.fromJSON([0.48, 0.52]);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('Expected object');
+      }
+    });
+
+    it('фэйлится когда отсутствует поле bid', () => {
+      const json = {
+        ask: 0.52,
+        bidSize: 100,
+        askSize: 150,
+        timestamp: 1234567890000
+      };
+
+      const result = QuoteSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('Missing required field: bid');
+      }
+    });
+
+    it('фэйлится когда отсутствует поле ask', () => {
+      const json = {
+        bid: 0.48,
+        bidSize: 100,
+        askSize: 150,
+        timestamp: 1234567890000
+      };
+
+      const result = QuoteSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('Missing required field: ask');
+      }
+    });
+
+    it('фэйлится когда отсутствует поле bidSize', () => {
+      const json = {
+        bid: 0.48,
+        ask: 0.52,
+        askSize: 150,
+        timestamp: 1234567890000
+      };
+
+      const result = QuoteSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('Missing required field: bidSize');
+      }
+    });
+
+    it('фэйлится когда отсутствует поле askSize', () => {
+      const json = {
+        bid: 0.48,
+        ask: 0.52,
+        bidSize: 100,
+        timestamp: 1234567890000
+      };
+
+      const result = QuoteSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('Missing required field: askSize');
+      }
+    });
+
+    it('фэйлится когда отсутствует поле timestamp', () => {
+      const json = {
+        bid: 0.48,
+        ask: 0.52,
+        bidSize: 100,
+        askSize: 150
+      };
+
+      const result = QuoteSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('Missing required field: timestamp');
+      }
+    });
+
+    it('фэйлится с invalid bid field type', () => {
       const json = {
         bid: 'invalid' as any,
         ask: 0.52,
@@ -134,11 +239,13 @@ describe('QuoteSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
-        expect(result.error.context?.raw).toEqual({ field: 'bid', value: 'invalid' });
+        const raw = result.error.context?.raw as any;
+        expect(raw?.field).toBe('bid');
+        expect(raw?.type).toBe('string');
       }
     });
 
-    it('фэйлится с invalid ask field', () => {
+    it('фэйлится с invalid ask field type', () => {
       const json = {
         bid: 0.48,
         ask: 'invalid' as any,
@@ -152,11 +259,13 @@ describe('QuoteSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
-        expect(result.error.context?.raw).toEqual({ field: 'ask', value: 'invalid' });
+        const raw = result.error.context?.raw as any;
+        expect(raw?.field).toBe('ask');
+        expect(raw?.type).toBe('string');
       }
     });
 
-    it('фэйлится с invalid bidSize field', () => {
+    it('фэйлится с invalid bidSize field type', () => {
       const json = {
         bid: 0.48,
         ask: 0.52,
@@ -170,11 +279,13 @@ describe('QuoteSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
-        expect(result.error.context?.raw).toEqual({ field: 'bidSize', value: 'invalid' });
+        const raw = result.error.context?.raw as any;
+        expect(raw?.field).toBe('bidSize');
+        expect(raw?.type).toBe('string');
       }
     });
 
-    it('фэйлится с invalid askSize field', () => {
+    it('фэйлится с invalid askSize field type', () => {
       const json = {
         bid: 0.48,
         ask: 0.52,
@@ -188,11 +299,13 @@ describe('QuoteSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
-        expect(result.error.context?.raw).toEqual({ field: 'askSize', value: 'invalid' });
+        const raw = result.error.context?.raw as any;
+        expect(raw?.field).toBe('askSize');
+        expect(raw?.type).toBe('string');
       }
     });
 
-    it('фэйлится с invalid timestamp field', () => {
+    it('фэйлится с invalid timestamp field type', () => {
       const json = {
         bid: 0.48,
         ask: 0.52,
@@ -206,7 +319,9 @@ describe('QuoteSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
-        expect(result.error.context?.raw).toEqual({ field: 'timestamp', value: 'invalid' });
+        const raw = result.error.context?.raw as any;
+        expect(raw?.field).toBe('timestamp');
+        expect(raw?.type).toBe('string');
       }
     });
 
@@ -245,7 +360,7 @@ describe('QuoteSerializer', () => {
     });
   });
 
-  describe('toString()', () => {
+  describe('toJSONString()', () => {
     it('сериализует Quote в JSON-строку', () => {
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
@@ -255,7 +370,7 @@ describe('QuoteSerializer', () => {
         new Decimal(1234567890000)
       );
 
-      const jsonString = QuoteSerializer.toString(quote);
+      const jsonString = QuoteSerializer.toJSONString(quote);
       const parsed = JSON.parse(jsonString);
 
       expect(parsed.bid).toBe(0.48);
@@ -274,7 +389,7 @@ describe('QuoteSerializer', () => {
         new Decimal(1234567890000)
       );
 
-      const jsonString = QuoteSerializer.toString(quote);
+      const jsonString = QuoteSerializer.toJSONString(quote);
 
       expect(jsonString).toContain('"bid":0.48');
       expect(jsonString).toContain('"ask":0.52');
@@ -284,11 +399,11 @@ describe('QuoteSerializer', () => {
     });
   });
 
-  describe('parse()', () => {
+  describe('fromJSONString()', () => {
     it('парсит валидную JSON-строку в Quote', () => {
       const jsonString = '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000}';
 
-      const result = QuoteSerializer.parse(jsonString);
+      const result = QuoteSerializer.fromJSONString(jsonString);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -302,7 +417,7 @@ describe('QuoteSerializer', () => {
     it('парсит bid-only JSON-строку', () => {
       const jsonString = '{"bid":0.50,"ask":null,"bidSize":100,"askSize":0,"timestamp":1234567890000}';
 
-      const result = QuoteSerializer.parse(jsonString);
+      const result = QuoteSerializer.fromJSONString(jsonString);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -314,19 +429,19 @@ describe('QuoteSerializer', () => {
     it('фэйлится с invalid JSON syntax', () => {
       const jsonString = '{invalid json}';
 
-      const result = QuoteSerializer.parse(jsonString);
+      const result = QuoteSerializer.fromJSONString(jsonString);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
-        expect(result.error.message).toContain('Failed to parse JSON string');
+        expect(result.error.message).toContain('Invalid JSON string');
       }
     });
 
     it('фэйлится с invalid Quote data', () => {
       const jsonString = '{"bid":0.60,"ask":0.40,"bidSize":100,"askSize":150,"timestamp":1234567890000}';
 
-      const result = QuoteSerializer.parse(jsonString);
+      const result = QuoteSerializer.fromJSONString(jsonString);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -334,7 +449,7 @@ describe('QuoteSerializer', () => {
       }
     });
 
-    it('roundtrip: toString() -> parse() сохраняет данные', () => {
+    it('roundtrip: toJSONString() -> fromJSONString() сохраняет данные', () => {
       const original = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
@@ -343,8 +458,8 @@ describe('QuoteSerializer', () => {
         new Decimal(1234567890000)
       );
 
-      const jsonString = QuoteSerializer.toString(original);
-      const result = QuoteSerializer.parse(jsonString);
+      const jsonString = QuoteSerializer.toJSONString(original);
+      const result = QuoteSerializer.fromJSONString(jsonString);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -352,8 +467,10 @@ describe('QuoteSerializer', () => {
         expect(original.equals(restored)).toBe(true);
       }
     });
+  });
 
-    it('roundtrip: toJSON() -> fromJSON() сохраняет данные', () => {
+  describe('roundtrip', () => {
+    it('toJSON() -> fromJSON() сохраняет данные', () => {
       const original = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
