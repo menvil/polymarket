@@ -1,18 +1,18 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
-import { InvalidQuoteError } from '@polymarket/errors';
-import Decimal from 'decimal.js';
-import { Price } from '../../price/core/Price.js';
-import { Quantity } from '../../quantity/core/Quantity.js';
-import { Quote, QuoteInvariantViolation } from '../core/index.js';
-import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 import {
+  InvalidQuoteError,
+  ErrorSource,
   toDecimal,
   rewrap,
   wrapOp,
   unexpectedError,
   toCause
-} from '../../shared/facade/errorUtils.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
+} from '@polymarket/errors';
+import Decimal from 'decimal.js';
+import { Price } from '../../price/core/Price.js';
+import { Quantity } from '../../quantity/core/Quantity.js';
+import { Quote, QuoteInvariantViolation } from '../core/index.js';
+import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 import { PriceService } from '../../price/facade/PriceService.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
 

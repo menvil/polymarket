@@ -1,8 +1,7 @@
 import { Result, Err } from '@polymarket/result';
-import { InvalidPriceError } from '@polymarket/errors';
+import { InvalidPriceError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import { PriceService } from '../facade/PriceService.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок

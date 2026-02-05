@@ -1,5 +1,12 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
-import { InvalidBalanceError } from '@polymarket/errors';
+import {
+  InvalidBalanceError,
+  ErrorSource,
+  rewrap,
+  currencyMismatchError,
+  wrapOp,
+  toCause
+} from '@polymarket/errors';
 import { Balance } from '../core/Balance.js';
 import { BalanceInvariantViolation } from '../core/BalanceInvariantViolation.js';
 import { Money } from '../../money/core/Money.js';
@@ -8,8 +15,6 @@ import { ValidateReserveAmount } from '../rules/ValidateReserveAmount.js';
 import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount.js';
 import { ValidateCurrencyMatch } from '../rules/ValidateCurrencyMatch.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
-import { rewrap, currencyMismatchError, wrapOp, toCause } from '../../shared/facade/errorUtils.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Фасад для работы с Balance - публичный API

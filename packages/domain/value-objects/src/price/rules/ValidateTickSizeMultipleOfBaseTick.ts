@@ -1,10 +1,9 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidTickSizeError } from '@polymarket/errors';
+import { InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import { ValidateTickSize } from './ValidateTickSize.js';
 import type { TickSizeMultipleReason } from './types.js';
 import type Decimal from 'decimal.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: TickSize должен быть кратен базовому тику Polymarket

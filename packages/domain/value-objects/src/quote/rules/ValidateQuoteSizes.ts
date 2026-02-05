@@ -1,9 +1,8 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuoteError } from '@polymarket/errors';
+import { InvalidQuoteError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Проверяет консистентность размеров котировки

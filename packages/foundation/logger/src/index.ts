@@ -4,70 +4,102 @@
  *
  * @remarks
  * Модуль предоставляет абстракции для structured logging с поддержкой
- * детерминированных timestamps через dependency injection.
+ * детерминированных timestamps через dependency injection (IClock).
  *
  * ## Основные компоненты
  *
- * - **ILogger**: интерфейс логгера с методами debug/info/warn/error
- * - **LogLevel**: enum уровней важности (DEBUG/INFO/WARN/ERROR)
- * - **ConsoleLogger**: реализация для вывода в console (JSON формат)
- * - **NoOpLogger**: пустая реализация для тестов
+ * - **ILogger**: интерфейс логгера с методами trace/debug/info/warn/error/fatal/child
+ * - **LogLevel**: enum уровней важности (TRACE/DEBUG/INFO/WARN/ERROR/FATAL)
+ * - **ConsoleLogger**: JSON structured logging (для CI/CD, парсинга)
+ * - **ColorConsoleLogger**: цветной human-readable вывод (для dev, бэктестов)
+ * - **NoOpLogger**: пустая реализация для unit-тестов
  *
  * ## Принципы
  *
  * - **Structured logging**: все сообщения включают контекст (key-value)
- * - **Dependency injection**: время берется из IClock (детерминизм)
+ * - **Dependency injection**: время берется из IClock (детерминизм для бэктестов)
  * - **Type-safe**: контекст типизирован как Record<string, unknown>
  * - **Фильтрация**: логируются только сообщения >= настроенного уровня
+ * - **Child loggers**: поддержка контекстных логгеров с bindings
+ *
+ * ## Уровни логирования
+ *
+ * TRACE < DEBUG < INFO < WARN < ERROR < FATAL
  *
  * ## Зависимости
  *
  * - **@polymarket/time**: для детерминированных timestamps через IClock
  *
- * @example
- * Production использование (LIVE режим):
- * ```typescript
- * import { ConsoleLogger, LogLevel } from '@polymarket/logger';
- * import { LiveClock } from '@polymarket/time';
+ * ## Архитектура
  *
- * const logger = new ConsoleLogger(new LiveClock(), LogLevel.INFO);
- *
- * logger.info('Server started', { port: 3000, env: 'production' });
- * logger.warn('High latency', { latency: 2500, threshold: 1000 });
- * logger.error('Database error', dbError, { operation: 'insert' });
+ * ```
+ * foundation/logger (этот модуль)
+ *   ↓ используется в
+ * infrastructure/adapters/PinoLoggerAdapter (production)
+ *   ↓ используется в
+ * domain/services (бизнес-логика)
  * ```
  *
  * @example
- * Тестирование (PAPER режим):
+ * Бэктесты (ColorConsoleLogger + PaperClock):
+ * ```typescript
+ * import { ColorConsoleLogger, LogLevel } from '@polymarket/logger';
+ * import { PaperClock } from '@polymarket/time';
+ *
+ * const clock = new PaperClock(new Date('2024-01-01T00:00:00Z'));
+ * const logger = new ColorConsoleLogger(clock, LogLevel.DEBUG);
+ *
+ * logger.info('Backtest started');
+ * // [2024-01-01T00:00:00.000Z] [INFO] Backtest started
+ *
+ * clock.tick(60000); // +1 минута симуляции
+ * logger.info('First trade executed', { price: 0.55, quantity: 100 });
+ * // [2024-01-01T00:01:00.000Z] [INFO] First trade executed { price: 0.55, quantity: 100 }
+ * ```
+ *
+ * @example
+ * CI/CD тесты (ConsoleLogger JSON):
  * ```typescript
  * import { ConsoleLogger, LogLevel } from '@polymarket/logger';
  * import { PaperClock } from '@polymarket/time';
  *
  * const clock = new PaperClock(new Date('2024-01-01'));
- * const logger = new ConsoleLogger(clock, LogLevel.DEBUG);
+ * const logger = new ConsoleLogger(clock, LogLevel.INFO);
  *
- * logger.info('Test started');
- * // Output: {"timestamp":"2024-01-01T00:00:00.000Z","level":"INFO","message":"Test started"}
- *
- * clock.tick(1000); // Продвинуть время
- * logger.info('Test step completed');
- * // Output: {"timestamp":"2024-01-01T00:00:01.000Z","level":"INFO","message":"Test step completed"}
+ * logger.info('Test started', { testId: 'test-123' });
+ * // {"timestamp":"2024-01-01T00:00:00.000Z","level":"INFO","message":"Test started","testId":"test-123"}
  * ```
  *
  * @example
- * Replay режим (детерминированные timestamps):
+ * Production (PinoLoggerAdapter в infrastructure):
  * ```typescript
- * import { ConsoleLogger, LogLevel } from '@polymarket/logger';
- * import { ReplayClock } from '@polymarket/time';
+ * // infrastructure/adapters/PinoLoggerAdapter.ts
+ * import { PinoLoggerAdapter } from '@/infrastructure/adapters/PinoLoggerAdapter';
+ * import { LiveClock } from '@polymarket/time';
+ * import pino from 'pino';
  *
- * const clock = new ReplayClock(new Date(0));
- * const logger = new ConsoleLogger(clock, LogLevel.INFO);
+ * const logger = new PinoLoggerAdapter(
+ *   pino({
+ *     transport: {
+ *       targets: [
+ *         { target: 'pino-pretty', level: 'debug' }, // Dev console
+ *         { target: 'pino-datadog', level: 'info' }  // Production Datadog
+ *       ]
+ *     }
+ *   }),
+ *   new LiveClock()
+ * );
+ * ```
  *
- * events.forEach((event) => {
- *   clock.update(event.timestamp);  // Обновить время из события
- *   logger.info('Event processed', { eventId: event.id });
- *   // Timestamp будет event.timestamp - детерминированно!
- * });
+ * @example
+ * Child loggers с контекстом:
+ * ```typescript
+ * const logger = new ColorConsoleLogger(clock, LogLevel.INFO);
+ * const mmLogger = logger.child({ service: 'MarketMaker' });
+ * const riskLogger = logger.child({ service: 'RiskManager' });
+ *
+ * mmLogger.info('Quote sent'); // [INFO] [service=MarketMaker] Quote sent
+ * riskLogger.warn('Limit exceeded'); // [WARN] [service=RiskManager] Limit exceeded
  * ```
  *
  * @example
@@ -75,10 +107,10 @@
  * ```typescript
  * import { NoOpLogger } from '@polymarket/logger';
  *
- * describe('Service', () => {
- *   it('should work', () => {
+ * describe('OrderService', () => {
+ *   it('should place order', () => {
  *     const logger = new NoOpLogger(); // Без вывода в консоль
- *     const service = new Service(logger);
+ *     const service = new OrderService(logger);
  *     // Тест без засорения консоли логами
  *   });
  * });
@@ -88,4 +120,5 @@
 export type { ILogger } from './ILogger.js';
 export { LogLevel, shouldLog } from './LogLevel.js';
 export { ConsoleLogger } from './ConsoleLogger.js';
+export { ColorConsoleLogger } from './ColorConsoleLogger.js';
 export { NoOpLogger } from './NoOpLogger.js';

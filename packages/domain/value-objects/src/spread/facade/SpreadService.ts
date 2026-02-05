@@ -1,18 +1,18 @@
 import { type Result, Ok, Err, isErr } from '@polymarket/result';
-import { InvalidSpreadError, InvalidPriceError } from '@polymarket/errors';
+import {
+  InvalidSpreadError,
+  InvalidPriceError,
+  ErrorSource,
+  toDecimal,
+  rewrap,
+  unexpectedError,
+  wrapOp
+} from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { Price, PriceService } from '../../price/index.js';
 import { Spread, SpreadErrorReason } from '../core/index.js';
 import { ValidateBidAsk } from '../rules/ValidateBidAsk.js';
 import { addDecimal, subtractDecimal } from '@polymarket/math';
-// Импорт из централизованного модуля
-import {
-  toDecimal,
-  rewrap,
-  unexpectedError,
-  wrapOp
-} from '../../shared/facade/errorUtils.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Фасад для работы с Spread - публичный API

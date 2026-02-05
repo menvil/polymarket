@@ -1,8 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuantityError, InvalidOperandError } from '@polymarket/errors';
+import { InvalidQuantityError, InvalidOperandError, ErrorSource } from '@polymarket/errors';
 import { Quantity } from '../core/Quantity.js';
 import { QuantityService } from '../facade/QuantityService.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок

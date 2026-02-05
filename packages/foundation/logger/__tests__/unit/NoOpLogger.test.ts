@@ -27,6 +27,21 @@ describe('NoOpLogger', () => {
     });
   });
 
+  describe('trace()', () => {
+    it('НЕ должен выбрасывать ошибку', () => {
+      expect(() => logger.trace('test')).not.toThrow();
+    });
+
+    it('НЕ должен выбрасывать ошибку с контекстом', () => {
+      expect(() => logger.trace('test', { key: 'value' })).not.toThrow();
+    });
+
+    it('должен возвращать void', () => {
+      const result = logger.trace('test');
+      expect(result).toBeUndefined();
+    });
+  });
+
   describe('debug()', () => {
     it('НЕ должен выбрасывать ошибку', () => {
       expect(() => logger.debug('test')).not.toThrow();
@@ -92,6 +107,43 @@ describe('NoOpLogger', () => {
     });
   });
 
+  describe('fatal()', () => {
+    it('НЕ должен выбрасывать ошибку', () => {
+      expect(() => logger.fatal('test')).not.toThrow();
+    });
+
+    it('НЕ должен выбрасывать ошибку с Error объектом', () => {
+      const error = new Error('test error');
+      expect(() => logger.fatal('test', error)).not.toThrow();
+    });
+
+    it('НЕ должен выбрасывать ошибку с контекстом', () => {
+      expect(() => logger.fatal('test', undefined, { key: 'value' })).not.toThrow();
+    });
+
+    it('должен возвращать void', () => {
+      const result = logger.fatal('test');
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe('child()', () => {
+    it('должен возвращать новый NoOpLogger', () => {
+      const child = logger.child({ service: 'Test' });
+      expect(child).toBeInstanceOf(NoOpLogger);
+    });
+
+    it('должен возвращать разные экземпляры', () => {
+      const child1 = logger.child({ service: 'Test1' });
+      const child2 = logger.child({ service: 'Test2' });
+      expect(child1).not.toBe(child2);
+    });
+
+    it('НЕ должен выбрасывать ошибку', () => {
+      expect(() => logger.child({ key: 'value' })).not.toThrow();
+    });
+  });
+
   describe('нулевой overhead', () => {
     it('не должен вызывать console методы', () => {
       const consoleSpies = {
@@ -102,10 +154,12 @@ describe('NoOpLogger', () => {
         log: jest.spyOn(console, 'log'),
       };
 
+      logger.trace('test');
       logger.debug('test');
       logger.info('test');
       logger.warn('test');
       logger.error('test', new Error('test'));
+      logger.fatal('test', new Error('test'));
 
       expect(consoleSpies.debug).not.toHaveBeenCalled();
       expect(consoleSpies.info).not.toHaveBeenCalled();

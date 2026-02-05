@@ -1,10 +1,9 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidPriceError, InvalidTickSizeError } from '@polymarket/errors';
+import { InvalidPriceError, InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import { ValidateTickSizeMultipleOfBaseTick } from './ValidateTickSizeMultipleOfBaseTick.js';
 import type { AlignedErrorReason } from './types.js';
 import type Decimal from 'decimal.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Price должен быть aligned к tickSize

@@ -1,9 +1,8 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuoteError } from '@polymarket/errors';
+import { InvalidQuoteError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../../price/core/Price.js';
 import { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Проверяет, что котировка не пересекает market

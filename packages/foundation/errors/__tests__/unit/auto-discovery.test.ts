@@ -82,7 +82,7 @@ function findTsFiles(dir: string, files: string[] = []): string[] {
 
         if (stat.isDirectory()) {
           // Игнорируем node_modules, dist, __tests__
-          if (!['node_modules', 'dist', '__tests__', 'coverage'].includes(entry)) {
+          if (!['node_modules', 'dist', '__tests__', 'coverage', 'utils'].includes(entry)) {
             findTsFiles(fullPath, files);
           }
         } else if (stat.isFile() && extname(entry) === '.ts' && !entry.endsWith('.d.ts')) {

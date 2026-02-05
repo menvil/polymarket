@@ -1,7 +1,6 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidDivisorError } from '@polymarket/errors';
+import { InvalidDivisorError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Делитель для операции деления Price должен быть валидным

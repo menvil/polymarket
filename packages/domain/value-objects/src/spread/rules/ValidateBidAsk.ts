@@ -1,8 +1,7 @@
 import { type Result, Ok, Err } from '@polymarket/result';
-import { InvalidSpreadError } from '@polymarket/errors';
+import { InvalidSpreadError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../../price/index.js';
 import { SpreadErrorReason } from '../core/SpreadErrorReason.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Валидация: bid должен быть <= ask

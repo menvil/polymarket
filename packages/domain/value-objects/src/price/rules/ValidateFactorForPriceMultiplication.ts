@@ -1,7 +1,6 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidOperandError } from '@polymarket/errors';
+import { InvalidOperandError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Factor для операции умножения Price должен быть finite и не NaN

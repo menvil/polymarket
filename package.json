@@ -35,5 +35,8 @@
     "typescript"
   ],
   "author": "Ivan Moroz",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@polymarket/time": "^0.1.0"
+  }
 }

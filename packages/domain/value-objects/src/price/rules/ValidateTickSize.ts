@@ -1,8 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidTickSizeError } from '@polymarket/errors';
+import { InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import Decimal from 'decimal.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: TickSize должен быть валидным для Price

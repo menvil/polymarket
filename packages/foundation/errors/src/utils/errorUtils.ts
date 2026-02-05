@@ -1,16 +1,14 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
-import {
-  InvalidMoneyError,
-  InvalidPriceError,
-  InvalidQuantityError,
-  InvalidPercentageError,
-  InvalidQuoteError,
-  ArithmeticOverflowError,
-  InvalidOperandError,
-  DivisionByZeroError
-} from '@polymarket/errors';
-import { ErrorSource } from './ErrorSource.js';
+import { InvalidMoneyError } from '../value-objects/InvalidMoneyError.js';
+import { InvalidPriceError } from '../value-objects/InvalidPriceError.js';
+import { InvalidQuantityError } from '../value-objects/InvalidQuantityError.js';
+import { InvalidPercentageError } from '../value-objects/InvalidPercentageError.js';
+import { InvalidQuoteError } from '../value-objects/InvalidQuoteError.js';
+import { ArithmeticOverflowError } from '../value-objects/ArithmeticOverflowError.js';
+import { InvalidOperandError } from '../math/InvalidOperandError.js';
+import { DivisionByZeroError } from '../value-objects/DivisionByZeroError.js';
+import { ErrorSource } from '../ErrorSource.js';
 
 /**
  * Utility functions для обработки ошибок в Facade сервисах
@@ -26,7 +24,7 @@ import { ErrorSource } from './ErrorSource.js';
  *
  * @example
  * ```typescript
- * import { toDecimal, wrapOp } from '../../shared/facade/errorUtils';
+ * import { toDecimal, wrapOp } from '@polymarket/errors';
  * import { MoneyErrorReason } from '../errors/MoneyErrorReason';
  *
  * const result = toDecimal(

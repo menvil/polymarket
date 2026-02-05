@@ -1,10 +1,8 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuoteError } from '@polymarket/errors';
+import { InvalidQuoteError, ErrorSource, rewrap } from '@polymarket/errors';
 import { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 import { QuoteService } from '../facade/QuoteService.js';
-import { rewrap } from '../../shared/facade/errorUtils.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Интерфейс для JSON-представления котировки

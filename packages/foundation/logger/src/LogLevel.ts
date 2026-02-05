@@ -3,26 +3,46 @@
  *
  * @remarks
  * Определяет важность лог-сообщения. Уровни упорядочены по возрастанию важности:
- * DEBUG < INFO < WARN < ERROR
+ * TRACE < DEBUG < INFO < WARN < ERROR < FATAL
+ *
+ * Совместимо с Pino и другими популярными логгерами.
  *
  * ## Применение
  *
+ * - **TRACE**: трассировка выполнения (вход/выход функций, промежуточные состояния)
  * - **DEBUG**: детальная отладочная информация (например, значения переменных)
  * - **INFO**: общая информация о работе системы (например, "Order placed")
  * - **WARN**: предупреждения о потенциальных проблемах (например, "Retry attempt 3/5")
  * - **ERROR**: ошибки требующие внимания (например, "Failed to connect to exchange")
+ * - **FATAL**: критические ошибки приводящие к остановке (например, "Cannot start server")
  *
  * @example
  * ```typescript
  * const logger = new ConsoleLogger(clock, LogLevel.INFO);
  *
+ * logger.trace('Entering function');   // Не логируется (TRACE < INFO)
  * logger.debug('Variable x = 42');     // Не логируется (DEBUG < INFO)
  * logger.info('Server started');       // ✅ Логируется
  * logger.warn('Connection slow');      // ✅ Логируется
  * logger.error('Database error', err); // ✅ Логируется
+ * logger.fatal('Fatal error', err);    // ✅ Логируется
  * ```
  */
 export enum LogLevel {
+  /**
+   * Трассировка выполнения
+   *
+   * @remarks
+   * Самый детальный уровень логирования.
+   * Используется для трассировки выполнения программы:
+   * - Вход/выход из функций
+   * - Промежуточные состояния в циклах
+   * - Детали алгоритмов
+   *
+   * Обычно используется только при глубокой отладке.
+   */
+  TRACE = 'TRACE',
+
   /**
    * Детальная отладочная информация
    *
@@ -58,6 +78,20 @@ export enum LogLevel {
    * Обычно приводят к алертам в production.
    */
   ERROR = 'ERROR',
+
+  /**
+   * Критические ошибки
+   *
+   * @remarks
+   * Фатальные ошибки которые приводят к остановке системы.
+   * После логирования FATAL обычно следует завершение процесса.
+   *
+   * Примеры:
+   * - Невозможность подключиться к exchange
+   * - Критическая ошибка в risk management
+   * - Потеря соединения с базой данных
+   */
+  FATAL = 'FATAL',
 }
 
 /**
@@ -65,14 +99,17 @@ export enum LogLevel {
  *
  * @remarks
  * Используется внутри логгера для фильтрации сообщений.
+ * Меньший вес = более детальный уровень.
  *
  * @internal
  */
 export const LOG_LEVEL_WEIGHTS: Record<LogLevel, number> = {
-  [LogLevel.DEBUG]: 0,
-  [LogLevel.INFO]: 1,
-  [LogLevel.WARN]: 2,
-  [LogLevel.ERROR]: 3,
+  [LogLevel.TRACE]: 0,
+  [LogLevel.DEBUG]: 1,
+  [LogLevel.INFO]: 2,
+  [LogLevel.WARN]: 3,
+  [LogLevel.ERROR]: 4,
+  [LogLevel.FATAL]: 5,
 };
 
 /**

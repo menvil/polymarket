@@ -1,10 +1,9 @@
 import { Result, Err } from '@polymarket/result';
-import { InvalidBalanceError } from '@polymarket/errors';
+import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
 import { Balance } from '../core/Balance.js';
 import { BalanceService } from '../facade/BalanceService.js';
 import { MoneySerializer } from '../../money/adapters/MoneySerializer.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок

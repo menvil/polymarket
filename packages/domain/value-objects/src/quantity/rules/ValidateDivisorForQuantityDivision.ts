@@ -1,7 +1,6 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuantityError } from '@polymarket/errors';
+import { InvalidQuantityError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Делитель для операции деления Quantity должен быть положительным и finite

@@ -1,9 +1,8 @@
 import { Result, Err } from '@polymarket/result';
-import { InvalidMoneyError } from '@polymarket/errors';
+import { InvalidMoneyError, ErrorSource } from '@polymarket/errors';
 import { Money, type SupportedCurrency } from '../core/Money.js';
 import { MoneyService } from '../facade/MoneyService.js';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок

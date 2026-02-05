@@ -1,8 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidBalanceError } from '@polymarket/errors';
+import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
 import { Money } from '../../money/core/Money.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Правило: Освобождаемая сумма должна быть <= зарезервированным средствам

@@ -83,6 +83,16 @@ export class NoOpLogger implements ILogger {
    * @param _message - Игнорируется
    * @param _context - Игнорируется
    */
+  trace(_message: string, _context?: Record<string, unknown>): void {
+    // No operation
+  }
+
+  /**
+   * Ничего не делает
+   *
+   * @param _message - Игнорируется
+   * @param _context - Игнорируется
+   */
   debug(_message: string, _context?: Record<string, unknown>): void {
     // No operation
   }
@@ -120,5 +130,34 @@ export class NoOpLogger implements ILogger {
     _context?: Record<string, unknown>
   ): void {
     // No operation
+  }
+
+  /**
+   * Ничего не делает
+   *
+   * @param _message - Игнорируется
+   * @param _error - Игнорируется
+   * @param _context - Игнорируется
+   */
+  fatal(
+    _message: string,
+    _error?: Error,
+    _context?: Record<string, unknown>
+  ): void {
+    // No operation
+  }
+
+  /**
+   * Возвращает новый NoOpLogger (игнорирует bindings)
+   *
+   * @param _bindings - Игнорируется
+   * @returns Новый экземпляр NoOpLogger
+   *
+   * @remarks
+   * Child logger для NoOpLogger также ничего не делает.
+   * Возвращаем новый экземпляр для соответствия интерфейсу.
+   */
+  child(_bindings: Record<string, unknown>): ILogger {
+    return new NoOpLogger();
   }
 }

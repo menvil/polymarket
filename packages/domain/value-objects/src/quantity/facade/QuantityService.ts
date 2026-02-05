@@ -1,6 +1,6 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { Quantity } from '../core/Quantity.js';
-import { InvalidQuantityError } from '@polymarket/errors';
+import { InvalidQuantityError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
 import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
 import { ValidateFactorForQuantityMultiplication } from '../rules/ValidateFactorForQuantityMultiplication.js';
 import { ValidateDivisorForQuantityDivision } from '../rules/ValidateDivisorForQuantityDivision.js';
@@ -8,7 +8,6 @@ import { ValidateStepSizeForQuantity } from '../rules/ValidateStepSizeForQuantit
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTick } from '@polymarket/math';
 import Decimal from 'decimal.js';
 import { QuantityErrorReason } from '../errors/QuantityErrorReason';
-import { toDecimal, rewrap, wrapOp } from '../../shared/facade/errorUtils';
 
 /**
  * Фасад для работы с Quantity

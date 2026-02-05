@@ -1,8 +1,8 @@
 import { Balance } from '../core/Balance.js';
 import { MoneyFormatter } from '../../money/adapters/MoneyFormatter.js';
-import { InvalidBalanceError } from '@polymarket/errors';
+import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
+
 
 /**
  * Форматтер для Balance

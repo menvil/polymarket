@@ -1,8 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuoteError } from '@polymarket/errors';
+import { InvalidQuoteError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Проверяет минимальную ширину спреда

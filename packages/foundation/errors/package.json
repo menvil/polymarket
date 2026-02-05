@@ -63,7 +63,10 @@
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@polymarket/result": "workspace:*",
+    "decimal.js": "^10.6.0"
+  },
   "publishConfig": {
     "access": "restricted"
   }

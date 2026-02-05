@@ -385,23 +385,31 @@ npm run test:coverage
 ```text
 @polymarket/errors/
 ├── src/
+│   ├── ErrorSource.ts                # Enum для классификации источника ошибки
 │   ├── base/
 │   │   ├── ITradingError.ts          # Интерфейс
 │   │   ├── TradingError.ts           # Базовый класс
 │   │   ├── ValidationError.ts        # Пример: ошибка валидации
 │   │   └── index.ts
+│   ├── math/
+│   │   ├── InvalidOperandError.ts    # Ошибка невалидного операнда (NaN/Infinity)
+│   │   ├── InvalidDecimalPlacesError.ts # Ошибка невалидного количества знаков
+│   │   ├── InvalidDivisorError.ts    # Ошибка деления на NaN/Infinity
+│   │   ├── InvalidTickSizeError.ts   # Ошибка невалидного tick size
+│   │   └── index.ts
 │   ├── value-objects/
 │   │   ├── InvalidPriceError.ts      # Ошибки валидации value objects
 │   │   ├── InvalidQuantityError.ts
-│   │   └── ... (8 классов)
+│   │   └── ... (11 классов)
+│   ├── utils/
+│   │   └── errorUtils.ts             # Утилиты для обработки ошибок
 │   └── index.ts
 ├── docs/
-│   ├── README.md                     # Этот файл
+│   ├── README.md                     # Обзорная документация
 │   ├── error-handling.md             # Best practices обработки
-│   └── value-objects/                # Документация по категориям
-│       ├── README.md
-│       ├── invalid-price.md
-│       └── ...
+│   ├── error-utilities.md            # Документация по error utilities
+│   ├── math/                         # Документация math ошибок
+│   └── value-objects/                # Документация value objects ошибок
 ├── __tests__/
 │   ├── helpers/
 │   │   └── sharedErrorTests.ts       # Helper для тестов
@@ -494,7 +502,9 @@ npm run typecheck
 ## 📚 Дополнительная документация
 
 - [Обработка ошибок](./error-handling.md) - Best practices и паттерны
+- [Error Handling Utilities](./error-utilities.md) - Документация по утилитам обработки ошибок
 - [Value Objects Errors](./value-objects/README.md) - Документация по ошибкам value objects
+- [Math Errors](./math/README.md) - Документация по математическим ошибкам
 
 ## 📄 License
 

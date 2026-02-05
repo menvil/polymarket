@@ -1,14 +1,20 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
-import { InvalidMoneyError } from '@polymarket/errors';
+import {
+  InvalidMoneyError,
+  ErrorSource,
+  toDecimal,
+  rewrap,
+  wrapOp,
+  unexpectedError,
+  currencyMismatchError
+} from '@polymarket/errors';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
 import { Money, type SupportedCurrency } from '../core/Money';
 import { MoneyInvariantViolation } from '../core/MoneyInvariantViolation';
 import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorForMoneyMultiplication';
 import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason';
-import { toDecimal, rewrap, wrapOp, unexpectedError, currencyMismatchError } from '../../shared/facade/errorUtils.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Facade для безопасного создания и операций с Money - публичный API

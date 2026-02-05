@@ -61,6 +61,7 @@ export class ConsoleLogger implements ILogger {
    *
    * @param clock - Источник времени для timestamps
    * @param level - Минимальный уровень логирования (по умолчанию INFO)
+   * @param bindings - Контекст который добавляется ко всем логам (для child logger)
    *
    * @remarks
    * Clock предоставляется через dependency injection для обеспечения
@@ -76,12 +77,39 @@ export class ConsoleLogger implements ILogger {
    *
    * // Replay
    * const logger = new ConsoleLogger(new ReplayClock(new Date(0)), LogLevel.INFO);
+   *
+   * // Child logger
+   * const childLogger = new ConsoleLogger(clock, LogLevel.INFO, { service: 'MarketMaker' });
    * ```
    */
   constructor(
     private readonly clock: IClock,
-    private readonly level: LogLevel = LogLevel.INFO
+    private readonly level: LogLevel = LogLevel.INFO,
+    private readonly bindings: Record<string, unknown> = {}
   ) {}
+
+  /**
+   * Логирует трассировочное сообщение
+   *
+   * @param message - Текст сообщения
+   * @param context - Дополнительный контекст
+   *
+   * @remarks
+   * Сообщение логируется только если уровень логгера <= TRACE.
+   *
+   * @example
+   * ```typescript
+   * logger.trace('Entering handleOrderbookUpdate', {
+   *   marketId: '0xabc',
+   *   bidsCount: 10,
+   * });
+   * ```
+   */
+  trace(message: string, context?: Record<string, unknown>): void {
+    if (shouldLog(LogLevel.TRACE, this.level)) {
+      this.log(LogLevel.TRACE, message, context);
+    }
+  }
 
   /**
    * Логирует отладочное сообщение
@@ -196,6 +224,77 @@ export class ConsoleLogger implements ILogger {
   }
 
   /**
+   * Логирует критическую ошибку
+   *
+   * @param message - Текст сообщения
+   * @param error - Объект ошибки (опционально)
+   * @param context - Дополнительный контекст
+   *
+   * @remarks
+   * Сообщение логируется если уровень логгера <= FATAL.
+   * Используется для фатальных ошибок которые приводят к остановке системы.
+   * После логирования FATAL обычно следует завершение процесса.
+   *
+   * @example
+   * ```typescript
+   * try {
+   *   await connectToExchange();
+   * } catch (err) {
+   *   logger.fatal('Cannot connect to exchange', err as Error, {
+   *     exchange: 'Polymarket',
+   *     retryAttempts: 5,
+   *   });
+   *   process.exit(1);
+   * }
+   * ```
+   */
+  fatal(
+    message: string,
+    error?: Error,
+    context?: Record<string, unknown>
+  ): void {
+    if (shouldLog(LogLevel.FATAL, this.level)) {
+      const errorContext = error
+        ? {
+            error: {
+              message: error.message,
+              name: error.name,
+              stack: error.stack,
+            },
+          }
+        : {};
+
+      this.log(LogLevel.FATAL, message, { ...context, ...errorContext });
+    }
+  }
+
+  /**
+   * Создаёт дочерний логгер с привязанным контекстом
+   *
+   * @param bindings - Контекст который будет добавлен ко всем логам дочернего логгера
+   * @returns Новый логгер с добавленным контекстом
+   *
+   * @remarks
+   * Дочерний логгер наследует конфигурацию родителя (clock, level)
+   * и объединяет bindings родителя и дочернего логгера.
+   *
+   * @example
+   * ```typescript
+   * const logger = new ConsoleLogger(clock, LogLevel.INFO);
+   * const mmLogger = logger.child({ service: 'MarketMaker', marketId: '0xabc' });
+   *
+   * mmLogger.info('Quote sent', { price: 0.55 });
+   * // Output: {"timestamp":"...","level":"INFO","service":"MarketMaker","marketId":"0xabc","message":"Quote sent","price":0.55}
+   * ```
+   */
+  child(bindings: Record<string, unknown>): ILogger {
+    return new ConsoleLogger(this.clock, this.level, {
+      ...this.bindings,
+      ...bindings,
+    });
+  }
+
+  /**
    * Внутренний метод для форматирования и вывода лога
    *
    * @param level - Уровень сообщения
@@ -203,7 +302,11 @@ export class ConsoleLogger implements ILogger {
    * @param context - Контекст
    *
    * @remarks
-   * Создает структурированный JSON объект с timestamp, level, message и контекстом.
+   * Создает структурированный JSON объект с timestamp, level, message,
+   * bindings (из child logger) и контекстом.
+   *
+   * Порядок слияния: bindings (от child) → context (от конкретного вызова)
+   * Это позволяет context переопределять bindings если нужно.
    *
    * @internal
    */
@@ -218,11 +321,15 @@ export class ConsoleLogger implements ILogger {
       timestamp: timestamp.toISOString(),
       level,
       message,
-      ...context,
+      ...this.bindings, // Bindings от child logger
+      ...context, // Context от конкретного вызова (может переопределить bindings)
     };
 
     // Используем соответствующий метод console в зависимости от уровня
     switch (level) {
+      case LogLevel.TRACE:
+        console.debug(JSON.stringify(logEntry)); // trace идёт в console.debug
+        break;
       case LogLevel.DEBUG:
         console.debug(JSON.stringify(logEntry));
         break;
@@ -234,6 +341,9 @@ export class ConsoleLogger implements ILogger {
         break;
       case LogLevel.ERROR:
         console.error(JSON.stringify(logEntry));
+        break;
+      case LogLevel.FATAL:
+        console.error(JSON.stringify(logEntry)); // fatal идёт в console.error
         break;
     }
   }

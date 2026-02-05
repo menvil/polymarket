@@ -54,3 +54,7 @@ export * from './value-objects/index.js';
 
 // Math errors
 export * from './math/index.js';
+
+// Error handling utilities
+export { ErrorSource } from './ErrorSource.js';
+export * from './utils/errorUtils.js';

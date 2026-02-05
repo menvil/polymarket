@@ -1,5 +1,10 @@
 # Структура ошибок в Value Objects
 
+> **📚 Общая документация**: Для полной документации по error handling утилитам см.
+> [@polymarket/errors/docs/error-utilities.md](../../foundation/errors/docs/error-utilities.md)
+
+Этот документ описывает **специфику использования error handling в Value Objects**.
+
 ## Обзор
 
 Все сервисы value objects используют единую структуру ошибок с явным отслеживанием источника и цепочки вызовов. Это позволяет быстро определить:
@@ -9,17 +14,19 @@
 
 ## ErrorSource - Источник ошибки
 
+> **Примечание**: `ErrorSource` теперь в `@polymarket/errors`.
+> Полное описание см. в [@polymarket/errors/docs/error-utilities.md](../../foundation/errors/docs/error-utilities.md)
+
 Каждая ошибка помечается явным `source` полем:
 
 ```typescript
-enum ErrorSource {
-  PARSING = 'parsing',              // Ошибка парсинга входных данных
-  CORE_INVARIANT = 'core_invariant', // Нарушение инварианта домена
-  RULE_VALIDATION = 'rule_validation', // Нарушение бизнес-правила
-  MATH_OPERATION = 'math_operation',  // Ошибка математической операции
-  SERVICE_CALL = 'service_call',     // Ошибка из вложенного сервиса
-  UNEXPECTED = 'unexpected'          // Неожиданная ошибка (catch-all)
-}
+import { ErrorSource } from '@polymarket/errors';
+
+// ErrorSource.PARSING - ошибка парсинга входных данных
+// ErrorSource.CORE_INVARIANT - нарушение инварианта домена
+// ErrorSource.RULE_VALIDATION - нарушение бизнес-правила
+// ErrorSource.MATH_OPERATION - ошибка математической операции
+// ErrorSource.UNEXPECTED - неожиданная ошибка (catch-all)
 ```
 
 ## Root Fields - Поля контекста
@@ -395,6 +402,6 @@ getValueName(InvalidMoneyError);  // "money"
 
 ## См. также
 
-- [errorUtils.ts](/src/shared/facade/errorUtils.ts) - утилиты для создания ошибок
-- [ErrorSource.ts](/src/shared/facade/ErrorSource.ts) - enum источников ошибок
-- [QuoteService.ts](/src/quote/facade/QuoteService.ts) - пример использования в Facade
+- [@polymarket/errors/docs/error-utilities.md](../../foundation/errors/docs/error-utilities.md) - полная документация по error handling утилитам
+- [QuoteService.ts](/src/quote/facade/QuoteService.ts) - пример использования в Value Objects Facade
+- [NAMING-CONVENTIONS.md](./NAMING-CONVENTIONS.md) - naming conventions для value objects

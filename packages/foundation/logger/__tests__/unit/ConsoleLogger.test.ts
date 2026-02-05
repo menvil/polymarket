@@ -256,61 +256,217 @@ describe('ConsoleLogger', () => {
     });
   });
 
-  describe('фильтрация по уровню', () => {
-    it('DEBUG уровень должен логировать всё', () => {
-      logger = new ConsoleLogger(clock, LogLevel.DEBUG);
+  describe('trace()', () => {
+    beforeEach(() => {
+      logger = new ConsoleLogger(clock, LogLevel.TRACE);
+    });
 
-      logger.debug('debug');
-      logger.info('info');
-      logger.warn('warn');
-      logger.error('error');
+    it('должен логировать trace сообщение', () => {
+      logger.trace('trace message', { function: 'handleOrder' });
 
       expect(consoleSpy.debug).toHaveBeenCalledTimes(1);
-      expect(consoleSpy.info).toHaveBeenCalledTimes(1);
-      expect(consoleSpy.warn).toHaveBeenCalledTimes(1);
-      expect(consoleSpy.error).toHaveBeenCalledTimes(1);
+      const loggedData = JSON.parse(consoleSpy.debug.mock.calls[0][0] as string);
+
+      expect(loggedData).toEqual({
+        timestamp: '2024-01-01T00:00:00.000Z',
+        level: 'TRACE',
+        message: 'trace message',
+        function: 'handleOrder',
+      });
     });
 
-    it('INFO уровень НЕ должен логировать DEBUG', () => {
-      logger = new ConsoleLogger(clock, LogLevel.INFO);
-
-      logger.debug('debug');
-      logger.info('info');
-      logger.warn('warn');
-      logger.error('error');
+    it('НЕ должен логировать если уровень выше TRACE', () => {
+      logger = new ConsoleLogger(clock, LogLevel.DEBUG);
+      logger.trace('trace message');
 
       expect(consoleSpy.debug).not.toHaveBeenCalled();
-      expect(consoleSpy.info).toHaveBeenCalledTimes(1);
-      expect(consoleSpy.warn).toHaveBeenCalledTimes(1);
-      expect(consoleSpy.error).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe('fatal()', () => {
+    beforeEach(() => {
+      logger = new ConsoleLogger(clock, LogLevel.FATAL);
     });
 
-    it('WARN уровень должен логировать только WARN и ERROR', () => {
-      logger = new ConsoleLogger(clock, LogLevel.WARN);
+    it('должен логировать fatal сообщение', () => {
+      logger.fatal('fatal message');
 
-      logger.debug('debug');
-      logger.info('info');
-      logger.warn('warn');
-      logger.error('error');
+      expect(consoleSpy.error).toHaveBeenCalledTimes(1);
+      const loggedData = JSON.parse(consoleSpy.error.mock.calls[0][0] as string);
+
+      expect(loggedData).toEqual({
+        timestamp: '2024-01-01T00:00:00.000Z',
+        level: 'FATAL',
+        message: 'fatal message',
+      });
+    });
+
+    it('должен включать Error объект', () => {
+      const error = new Error('Cannot connect');
+      logger.fatal('Fatal error', error, { exchange: 'Polymarket' });
+
+      const loggedData = JSON.parse(consoleSpy.error.mock.calls[0][0] as string);
+
+      expect(loggedData.level).toBe('FATAL');
+      expect(loggedData.exchange).toBe('Polymarket');
+      expect(loggedData.error.message).toBe('Cannot connect');
+    });
+  });
+
+  describe('child()', () => {
+    beforeEach(() => {
+      logger = new ConsoleLogger(clock, LogLevel.INFO);
+    });
+
+    it('должен создавать дочерний логгер', () => {
+      const child = logger.child({ service: 'MarketMaker' });
+
+      expect(child).toBeInstanceOf(ConsoleLogger);
+      expect(child).not.toBe(logger);
+    });
+
+    it('должен добавлять bindings ко всем логам дочернего логгера', () => {
+      const child = logger.child({ service: 'MarketMaker', marketId: '0xabc' });
+      child.info('Quote sent', { price: 0.55 });
+
+      const loggedData = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
+
+      expect(loggedData.service).toBe('MarketMaker');
+      expect(loggedData.marketId).toBe('0xabc');
+      expect(loggedData.price).toBe(0.55);
+    });
+
+    it('должен объединять bindings при вложенных child', () => {
+      const child1 = logger.child({ service: 'MarketMaker' });
+      const child2 = child1.child({ orderId: 'order-123' });
+
+      child2.info('Processing', { step: 'validation' });
+
+      const loggedData = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
+
+      expect(loggedData.service).toBe('MarketMaker');
+      expect(loggedData.orderId).toBe('order-123');
+      expect(loggedData.step).toBe('validation');
+    });
+
+    it('контекст должен переопределять bindings', () => {
+      const child = logger.child({ service: 'MarketMaker', version: '1.0' });
+      child.info('Updated', { version: '2.0' }); // Переопределяем version
+
+      const loggedData = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
+
+      expect(loggedData.version).toBe('2.0'); // Переопределено
+    });
+
+    it('должен наследовать уровень логирования', () => {
+      logger = new ConsoleLogger(clock, LogLevel.WARN);
+      const child = logger.child({ service: 'Test' });
+
+      child.debug('debug'); // Пропускается
+      child.info('info'); // Пропускается
+      child.warn('warn'); // Логируется
 
       expect(consoleSpy.debug).not.toHaveBeenCalled();
       expect(consoleSpy.info).not.toHaveBeenCalled();
       expect(consoleSpy.warn).toHaveBeenCalledTimes(1);
-      expect(consoleSpy.error).toHaveBeenCalledTimes(1);
     });
+  });
 
-    it('ERROR уровень должен логировать только ERROR', () => {
-      logger = new ConsoleLogger(clock, LogLevel.ERROR);
+  describe('фильтрация по уровню', () => {
+    it('TRACE уровень должен логировать всё', () => {
+      logger = new ConsoleLogger(clock, LogLevel.TRACE);
 
+      logger.trace('trace');
       logger.debug('debug');
       logger.info('info');
       logger.warn('warn');
       logger.error('error');
+      logger.fatal('fatal');
+
+      expect(consoleSpy.debug).toHaveBeenCalledTimes(2); // trace + debug
+      expect(consoleSpy.info).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.warn).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.error).toHaveBeenCalledTimes(2); // error + fatal
+    });
+
+    it('DEBUG уровень НЕ должен логировать TRACE', () => {
+      logger = new ConsoleLogger(clock, LogLevel.DEBUG);
+
+      logger.trace('trace');
+      logger.debug('debug');
+      logger.info('info');
+      logger.warn('warn');
+      logger.error('error');
+      logger.fatal('fatal');
+
+      expect(consoleSpy.debug).toHaveBeenCalledTimes(1); // только debug
+      expect(consoleSpy.info).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.warn).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.error).toHaveBeenCalledTimes(2); // error + fatal
+    });
+
+    it('INFO уровень НЕ должен логировать TRACE и DEBUG', () => {
+      logger = new ConsoleLogger(clock, LogLevel.INFO);
+
+      logger.trace('trace');
+      logger.debug('debug');
+      logger.info('info');
+      logger.warn('warn');
+      logger.error('error');
+      logger.fatal('fatal');
+
+      expect(consoleSpy.debug).not.toHaveBeenCalled();
+      expect(consoleSpy.info).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.warn).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.error).toHaveBeenCalledTimes(2); // error + fatal
+    });
+
+    it('WARN уровень должен логировать только WARN, ERROR и FATAL', () => {
+      logger = new ConsoleLogger(clock, LogLevel.WARN);
+
+      logger.trace('trace');
+      logger.debug('debug');
+      logger.info('info');
+      logger.warn('warn');
+      logger.error('error');
+      logger.fatal('fatal');
+
+      expect(consoleSpy.debug).not.toHaveBeenCalled();
+      expect(consoleSpy.info).not.toHaveBeenCalled();
+      expect(consoleSpy.warn).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.error).toHaveBeenCalledTimes(2); // error + fatal
+    });
+
+    it('ERROR уровень должен логировать только ERROR и FATAL', () => {
+      logger = new ConsoleLogger(clock, LogLevel.ERROR);
+
+      logger.trace('trace');
+      logger.debug('debug');
+      logger.info('info');
+      logger.warn('warn');
+      logger.error('error');
+      logger.fatal('fatal');
 
       expect(consoleSpy.debug).not.toHaveBeenCalled();
       expect(consoleSpy.info).not.toHaveBeenCalled();
       expect(consoleSpy.warn).not.toHaveBeenCalled();
-      expect(consoleSpy.error).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.error).toHaveBeenCalledTimes(2); // error + fatal
+    });
+
+    it('FATAL уровень должен логировать только FATAL', () => {
+      logger = new ConsoleLogger(clock, LogLevel.FATAL);
+
+      logger.trace('trace');
+      logger.debug('debug');
+      logger.info('info');
+      logger.warn('warn');
+      logger.error('error');
+      logger.fatal('fatal');
+
+      expect(consoleSpy.debug).not.toHaveBeenCalled();
+      expect(consoleSpy.info).not.toHaveBeenCalled();
+      expect(consoleSpy.warn).not.toHaveBeenCalled();
+      expect(consoleSpy.error).toHaveBeenCalledTimes(1); // только fatal
     });
   });
 

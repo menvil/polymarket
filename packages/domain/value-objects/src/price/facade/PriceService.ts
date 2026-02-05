@@ -1,8 +1,7 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
-import { InvalidPriceError } from '@polymarket/errors';
+import { InvalidPriceError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import { PriceErrorReason } from '../errors/PriceErrorReason.js';
-import { toDecimal, rewrap, wrapOp } from '../../shared/facade/errorUtils.js';
 import { ValidateTickSizeMultipleOfBaseTick } from '../rules/ValidateTickSizeMultipleOfBaseTick.js';
 import { ValidateAligned } from '../rules/ValidateAligned.js';
 import { ValidateFactorForPriceMultiplication } from '../rules/ValidateFactorForPriceMultiplication.js';

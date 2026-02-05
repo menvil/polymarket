@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { ErrorSource } from '../../../src/shared/facade/ErrorSource.js';
+import { ErrorSource } from '@polymarket/errors';
 import { QuoteService } from '../../../src/quote/facade/QuoteService.js';
 import { PriceService } from '../../../src/price/facade/PriceService.js';
 import { QuantityService } from '../../../src/quantity/facade/QuantityService.js';
