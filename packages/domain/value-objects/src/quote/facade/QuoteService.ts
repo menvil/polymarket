@@ -578,19 +578,108 @@ export class QuoteService {
         newAskDecimal = quote.ask()!.value().plus(askAdjustmentDecimal);
       }
 
-      // Используем create - он сам сконвертирует Decimal в Price/Quantity
+      // ВАЖНО: Сохраняем timestamp исходной котировки (нейтральная трансформация)
       return QuoteService.create(
         newBidDecimal,
         newAskDecimal,
         quote.bidSize().value(),
         quote.askSize().value(),
-        Date.now()
+        quote.timestampMs()
       );
     }, InvalidQuoteError);
   }
 
   /**
-   * Обновляет размеры котировки
+   * Применяет skew с обновлением timestamp
+   *
+   * @remarks
+   * То же что skew(), но создаёт новую котировку с текущим временем.
+   * Используйте когда skew означает новые рыночные данные.
+   *
+   * @param quote - Исходная котировка
+   * @param bidAdjustment - Adjustment для bid (Decimal | number | string)
+   * @param askAdjustment - Adjustment для ask (Decimal | number | string)
+   * @param clock - Источник времени (IClock)
+   * @returns Result с новой Quote или InvalidQuoteError
+   *
+   * @example
+   * ```typescript
+   * import { LiveClock } from '@polymarket/time';
+   *
+   * const quote = expectOk(QuoteService.create(0.48, 0.52, 100, 150));
+   * const clock = new LiveClock();
+   *
+   * // Skew с обновлением времени (новые данные с рынка)
+   * const refreshed = expectOk(QuoteService.skewWithRefresh(quote, -0.01, 0.01, clock));
+   * console.log(refreshed.timestampMs().greaterThan(quote.timestampMs())); // true
+   * ```
+   */
+  public static skewWithRefresh(
+    quote: Quote,
+    bidAdjustment: Decimal | number | string,
+    askAdjustment: Decimal | number | string,
+    clock: IClock
+  ): Result<Quote, InvalidQuoteError> {
+    const op = 'skewWithRefresh';
+    const ctx = {
+      quoteBid: quote.bid()?.value().toString() ?? null,
+      quoteAsk: quote.ask()?.value().toString() ?? null,
+      rawBidAdjustment: bidAdjustment.toString(),
+      rawAskAdjustment: askAdjustment.toString()
+    };
+
+    return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
+      // Конвертируем bidAdjustment в Decimal
+      const bidAdjustmentResult = toDecimal(
+        'bidAdjustment',
+        bidAdjustment,
+        QuoteErrorReason.INVALID_FORMAT,
+        InvalidQuoteError
+      );
+      if (isErr(bidAdjustmentResult)) {
+        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, bidAdjustmentResult.error, InvalidQuoteError));
+      }
+      const bidAdjustmentDecimal = bidAdjustmentResult.value;
+
+      // Конвертируем askAdjustment в Decimal
+      const askAdjustmentResult = toDecimal(
+        'askAdjustment',
+        askAdjustment,
+        QuoteErrorReason.INVALID_FORMAT,
+        InvalidQuoteError
+      );
+      if (isErr(askAdjustmentResult)) {
+        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, askAdjustmentResult.error, InvalidQuoteError));
+      }
+      const askAdjustmentDecimal = askAdjustmentResult.value;
+
+      let newBidDecimal: Decimal | null = null;
+      if (quote.bid() !== null) {
+        newBidDecimal = quote.bid()!.value().plus(bidAdjustmentDecimal);
+      }
+
+      let newAskDecimal: Decimal | null = null;
+      if (quote.ask() !== null) {
+        newAskDecimal = quote.ask()!.value().plus(askAdjustmentDecimal);
+      }
+
+      // Обновляем timestamp из clock (новая котировка)
+      return QuoteService.create(
+        newBidDecimal,
+        newAskDecimal,
+        quote.bidSize().value(),
+        quote.askSize().value(),
+        clock.now()
+      );
+    }, InvalidQuoteError);
+  }
+
+  /**
+   * Обновляет размеры котировки (нейтральная трансформация)
+   *
+   * @remarks
+   * **Важно**: Сохраняет timestamp исходной котировки.
+   * Для создания новой котировки с обновленным timestamp используйте updateSizesWithRefresh().
    *
    * @param quote - Исходная котировка
    * @param newBidSize - Новый bid size (number, string, Decimal или Quantity)
@@ -684,14 +773,14 @@ export class QuoteService {
         askSize = askSizeResult.value;
       }
 
-      // Создаём новую котировку через Core
+      // Создаём новую котировку через Core (preserving timestamp)
       try {
         const newQuote = Quote.of(
           quote.bid(),
           quote.ask(),
           bidSize,
           askSize,
-          new Decimal(Date.now())
+          quote.timestampMs()
         );
         return Ok(newQuote);
       } catch (error) {
@@ -708,6 +797,132 @@ export class QuoteService {
           );
         }
 
+        return Err(
+          unexpectedError(QuoteService.SERVICE_NAME, op, ctx, error, InvalidQuoteError)
+        );
+      }
+    }, InvalidQuoteError);
+  }
+
+  /**
+   * Обновляет размеры ставок котировки с обновлением timestamp через IClock.
+   *
+   * Использует IClock для получения актуального времени и обновления timestamp котировки.
+   * Аналогична updateSizes(), но обновляет timestamp вместо его сохранения.
+   *
+   * @param quote - Исходная котировка
+   * @param newBidSize - Новый размер bid (Decimal, number, string или Quantity)
+   * @param newAskSize - Новый размер ask (Decimal, number, string или Quantity)
+   * @param clock - IClock для получения актуального времени
+   * @returns Result с новой котировкой или InvalidQuoteError
+   *
+   * @throws {InvalidQuoteError} При некорректных размерах или нарушении инвариантов Quote
+   *
+   * @example
+   * ```typescript
+   * import { LiveClock } from '@polymarket/time';
+   * const clock = new LiveClock();
+   * const result = QuoteService.updateSizesWithRefresh(quote, 200, 150, clock);
+   * if (result.ok) {
+   *   console.log('Updated sizes with new timestamp:', result.value.timestampMs());
+   * }
+   * ```
+   *
+   * @remarks
+   * Алгоритм:
+   * 1. Парсинг newBidSize и newAskSize (поддержка Decimal | number | string | Quantity)
+   * 2. Создание новой котировки через Quote.of с теми же ценами и обновлённым timestamp
+   * 3. Обработка QuoteInvariantViolation при нарушении бизнес-правил
+   * 4. IClock dependency injection для deterministic time handling
+   */
+  public static updateSizesWithRefresh(
+    quote: Quote,
+    newBidSize: Decimal | number | string | Quantity,
+    newAskSize: Decimal | number | string | Quantity,
+    clock: IClock
+  ): Result<Quote, InvalidQuoteError> {
+    const op = 'updateSizesWithRefresh';
+    const ctx = {
+      quoteBid: quote.bid()?.value().toString() ?? null,
+      quoteAsk: quote.ask()?.value().toString() ?? null,
+      newBidSize: newBidSize instanceof Quantity ? newBidSize.value().toString() : newBidSize.toString(),
+      newAskSize: newAskSize instanceof Quantity ? newAskSize.value().toString() : newAskSize.toString()
+    };
+
+    return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
+
+      // Конвертируем в Quantity если нужно
+      let bidSize: Quantity;
+      if (newBidSize instanceof Quantity) {
+        bidSize = newBidSize;
+      } else {
+        const bidSizeResult = QuantityService.create(newBidSize);
+        if (isErr(bidSizeResult)) {
+          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
+          return Err(
+            rewrap(
+              QuoteService.SERVICE_NAME,
+              op,
+              {
+                component: 'bidSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
+                reason: QuoteErrorReason.INVALID_BID_SIZE, // Override reason
+                cause: toCause(bidSizeResult.error) // Add cause
+              },
+              bidSizeResult.error, // Передаём оригинальную ошибку
+              InvalidQuoteError
+            )
+          );
+        }
+        bidSize = bidSizeResult.value;
+      }
+
+      let askSize: Quantity;
+      if (newAskSize instanceof Quantity) {
+        askSize = newAskSize;
+      } else {
+        const askSizeResult = QuantityService.create(newAskSize);
+        if (isErr(askSizeResult)) {
+          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
+          return Err(
+            rewrap(
+              QuoteService.SERVICE_NAME,
+              op,
+              {
+                component: 'askSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
+                reason: QuoteErrorReason.INVALID_ASK_SIZE, // Override reason
+                cause: toCause(askSizeResult.error) // Add cause
+              },
+              askSizeResult.error, // Передаём оригинальную ошибку
+              InvalidQuoteError
+            )
+          );
+        }
+        askSize = askSizeResult.value;
+      }
+
+      // Создаём новую котировку через Core (refreshing timestamp)
+      try {
+        const newQuote = Quote.of(
+          quote.bid(),
+          quote.ask(),
+          bidSize,
+          askSize,
+          new Decimal(clock.now().getTime())
+        );
+        return Ok(newQuote);
+      } catch (error) {
+        if (error instanceof QuoteInvariantViolation) {
+          return Err(
+            new InvalidQuoteError(error.message, {
+              context: {
+                source: ErrorSource.CORE_INVARIANT,
+                service: QuoteService.SERVICE_NAME,
+                op,
+                reason: error.reason
+              }
+            })
+          );
+        }
         return Err(
           unexpectedError(QuoteService.SERVICE_NAME, op, ctx, error, InvalidQuoteError)
         );
