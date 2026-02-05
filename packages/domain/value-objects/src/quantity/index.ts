@@ -1,4 +1,5 @@
-export { Quantity } from './core/index.js';
+// Core (публичный API)
+export { Quantity, QuantityInvariantViolation } from './core/index.js';
 
 // Facade (единственная точка входа для операций)
 export { QuantityService } from './facade/index.js';
@@ -13,5 +14,5 @@ export {
 // Errors (публичный API)
 export { QuantityErrorReason } from './errors/QuantityErrorReason.js';
 
-// Rules и QuantityInvariantViolation НЕ экспортируются —
-// это internal implementation details. Всё должно идти через QuantityService.
+// Rules НЕ экспортируются — это internal implementation details.
+// Все операции должны идти через QuantityService.
