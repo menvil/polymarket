@@ -12,6 +12,7 @@
  * - Бизнес-правила (BID_SIZE_MUST_BE_POSITIVE, ASK_SIZE_MUST_BE_POSITIVE)
  * - Валидация spread (SPREAD_TOO_NARROW, SPREAD_TOO_WIDE)
  * - Market crossing (MARKET_CROSSING)
+ * - Валидация свежести (QUOTE_TOO_OLD)
  *
  * @example
  * ```typescript
@@ -66,5 +67,8 @@ export enum QuoteErrorReason {
   SPREAD_TOO_WIDE = 'SPREAD_TOO_WIDE',
 
   /** Quote пересекает market */
-  MARKET_CROSSING = 'MARKET_CROSSING'
+  MARKET_CROSSING = 'MARKET_CROSSING',
+
+  /** Котировка устарела (превышен максимальный возраст) */
+  QUOTE_TOO_OLD = 'QUOTE_TOO_OLD'
 }

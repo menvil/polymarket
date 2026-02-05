@@ -13,6 +13,7 @@ const config: Config = {
     '^@polymarket/result$': '<rootDir>/../../foundation/result/src/index.ts',
     '^@polymarket/errors$': '<rootDir>/../../foundation/errors/src/index.ts',
     '^@polymarket/math$': '<rootDir>/../../foundation/math/src/index.ts',
+    '^@polymarket/time$': '<rootDir>/../../foundation/time/src/index.ts',
   },
 };
 

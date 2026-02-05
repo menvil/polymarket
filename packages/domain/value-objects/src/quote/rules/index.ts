@@ -10,3 +10,4 @@ export { ValidateQuoteSizes } from './ValidateQuoteSizes.js';
 export { ValidateMinSpread } from './ValidateMinSpread.js';
 export { ValidateMaxSpread } from './ValidateMaxSpread.js';
 export { ValidateMarketCrossing } from './ValidateMarketCrossing.js';
+export { ValidateAge } from './ValidateAge.js';
