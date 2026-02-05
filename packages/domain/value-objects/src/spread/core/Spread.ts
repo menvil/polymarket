@@ -261,4 +261,80 @@ export class Spread {
     const priceValue = price.value();
     return priceValue.greaterThanOrEqualTo(this._bid.value()) && priceValue.lessThanOrEqualTo(this._ask.value());
   }
+
+  /**
+   * Вычислить ширину спреда в basis points
+   *
+   * @returns Ширина в basis points (1 bp = 0.0001 = 0.01%)
+   *
+   * @remarks
+   * Basis points - стандартная метрика в финансах для измерения спредов.
+   * 1 bp = 0.0001, поэтому width * 10000 = bp
+   *
+   * @example
+   * ```typescript
+   * const spread = Spread.of(
+   *   Price.of(new Decimal(0.48)),
+   *   Price.of(new Decimal(0.52))
+   * );
+   * spread.widthInBasisPoints(); // Decimal(400)
+   * // 0.04 * 10000 = 400 bp
+   * ```
+   */
+  public widthInBasisPoints(): Decimal {
+    return this.width().times(10000);
+  }
+
+  /**
+   * Проверить пересекается ли spread с другим
+   *
+   * @param other - Другой Spread для проверки
+   * @returns true если спреды имеют общие точки
+   *
+   * @remarks
+   * Два спреда пересекаются если существует хотя бы одна цена,
+   * принадлежащая обоим спредам.
+   *
+   * Математически: bid1 <= ask2 AND bid2 <= ask1
+   *
+   * @example
+   * ```typescript
+   * const s1 = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+   * const s2 = Spread.of(Price.of(new Decimal(0.50)), Price.of(new Decimal(0.70)));
+   * s1.overlaps(s2); // true (пересечение [0.50, 0.60])
+   *
+   * const s3 = Spread.of(Price.of(new Decimal(0.70)), Price.of(new Decimal(0.80)));
+   * s1.overlaps(s3); // false (нет пересечения)
+   * ```
+   */
+  public overlaps(other: Spread): boolean {
+    return this._bid.value().lessThanOrEqualTo(other._ask.value())
+      && other._bid.value().lessThanOrEqualTo(this._ask.value());
+  }
+
+  /**
+   * Проверить содержится ли другой spread полностью внутри этого
+   *
+   * @param other - Другой Spread для проверки
+   * @returns true если other полностью внутри this
+   *
+   * @remarks
+   * Spread A содержит spread B если:
+   * - A.bid <= B.bid
+   * - B.ask <= A.ask
+   *
+   * @example
+   * ```typescript
+   * const outer = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+   * const inner = Spread.of(Price.of(new Decimal(0.45)), Price.of(new Decimal(0.55)));
+   * outer.containsSpread(inner); // true
+   *
+   * const partial = Spread.of(Price.of(new Decimal(0.50)), Price.of(new Decimal(0.70)));
+   * outer.containsSpread(partial); // false (выходит за границы)
+   * ```
+   */
+  public containsSpread(other: Spread): boolean {
+    return other._bid.value().greaterThanOrEqualTo(this._bid.value())
+      && other._ask.value().lessThanOrEqualTo(this._ask.value());
+  }
 }

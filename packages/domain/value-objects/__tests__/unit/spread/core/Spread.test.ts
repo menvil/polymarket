@@ -191,4 +191,127 @@ describe('Spread Core', () => {
       expect(spread.contains(priceAbove)).toBe(false);
     });
   });
+
+  describe('widthInBasisPoints()', () => {
+    it('should return width in basis points', () => {
+      const bid = Price.of(new Decimal(0.48));
+      const ask = Price.of(new Decimal(0.52));
+      const spread = Spread.of(bid, ask);
+
+      // 0.04 * 10000 = 400 bp
+      expect(spread.widthInBasisPoints()).toEqual(new Decimal(400));
+    });
+
+    it('should return 0 for zero-width spread', () => {
+      const price = Price.of(new Decimal(0.50));
+      const spread = Spread.zero(price);
+
+      expect(spread.widthInBasisPoints()).toEqual(new Decimal(0));
+    });
+
+    it('should return correct bp for narrow spread', () => {
+      const bid = Price.of(new Decimal(0.4995));
+      const ask = Price.of(new Decimal(0.5005));
+      const spread = Spread.of(bid, ask);
+
+      // 0.001 * 10000 = 10 bp
+      expect(spread.widthInBasisPoints()).toEqual(new Decimal(10));
+    });
+  });
+
+  describe('overlaps()', () => {
+    it('should return true when spreads overlap', () => {
+      const s1 = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+      const s2 = Spread.of(Price.of(new Decimal(0.50)), Price.of(new Decimal(0.70)));
+
+      expect(s1.overlaps(s2)).toBe(true);
+      expect(s2.overlaps(s1)).toBe(true); // симметрично
+    });
+
+    it('should return false when spreads do not overlap', () => {
+      const s1 = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.50)));
+      const s2 = Spread.of(Price.of(new Decimal(0.60)), Price.of(new Decimal(0.70)));
+
+      expect(s1.overlaps(s2)).toBe(false);
+      expect(s2.overlaps(s1)).toBe(false); // симметрично
+    });
+
+    it('should return true when spreads touch at boundary', () => {
+      const s1 = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.50)));
+      const s2 = Spread.of(Price.of(new Decimal(0.50)), Price.of(new Decimal(0.60)));
+
+      // Граничный случай: ask1 == bid2
+      expect(s1.overlaps(s2)).toBe(true);
+      expect(s2.overlaps(s1)).toBe(true);
+    });
+
+    it('should return true when one spread contains another', () => {
+      const outer = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+      const inner = Spread.of(Price.of(new Decimal(0.45)), Price.of(new Decimal(0.55)));
+
+      expect(outer.overlaps(inner)).toBe(true);
+      expect(inner.overlaps(outer)).toBe(true);
+    });
+
+    it('should return true for identical spreads', () => {
+      const s1 = Spread.of(Price.of(new Decimal(0.48)), Price.of(new Decimal(0.52)));
+      const s2 = Spread.of(Price.of(new Decimal(0.48)), Price.of(new Decimal(0.52)));
+
+      expect(s1.overlaps(s2)).toBe(true);
+    });
+  });
+
+  describe('containsSpread()', () => {
+    it('should return true when spread fully contains another', () => {
+      const outer = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+      const inner = Spread.of(Price.of(new Decimal(0.45)), Price.of(new Decimal(0.55)));
+
+      expect(outer.containsSpread(inner)).toBe(true);
+    });
+
+    it('should return false when spread does not contain another', () => {
+      const s1 = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+      const s2 = Spread.of(Price.of(new Decimal(0.50)), Price.of(new Decimal(0.70)));
+
+      // s2 выходит за границы s1
+      expect(s1.containsSpread(s2)).toBe(false);
+    });
+
+    it('should return true for identical spreads', () => {
+      const s1 = Spread.of(Price.of(new Decimal(0.48)), Price.of(new Decimal(0.52)));
+      const s2 = Spread.of(Price.of(new Decimal(0.48)), Price.of(new Decimal(0.52)));
+
+      expect(s1.containsSpread(s2)).toBe(true);
+    });
+
+    it('should return true when inner spread touches boundaries', () => {
+      const outer = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+      const inner = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+
+      // Точное совпадение границ - содержится
+      expect(outer.containsSpread(inner)).toBe(true);
+    });
+
+    it('should return false when inner spread exceeds lower bound', () => {
+      const outer = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+      const inner = Spread.of(Price.of(new Decimal(0.35)), Price.of(new Decimal(0.55)));
+
+      expect(outer.containsSpread(inner)).toBe(false);
+    });
+
+    it('should return false when inner spread exceeds upper bound', () => {
+      const outer = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+      const inner = Spread.of(Price.of(new Decimal(0.45)), Price.of(new Decimal(0.65)));
+
+      expect(outer.containsSpread(inner)).toBe(false);
+    });
+
+    it('should not be symmetric', () => {
+      const outer = Spread.of(Price.of(new Decimal(0.40)), Price.of(new Decimal(0.60)));
+      const inner = Spread.of(Price.of(new Decimal(0.45)), Price.of(new Decimal(0.55)));
+
+      expect(outer.containsSpread(inner)).toBe(true);
+      expect(inner.containsSpread(outer)).toBe(false); // НЕ симметрично
+    });
+  });
 });
