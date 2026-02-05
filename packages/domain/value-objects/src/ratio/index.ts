@@ -16,7 +16,13 @@ export { Ratio, RatioInvariantViolation } from './core/index.js';
 export { RatioService, RatioCreateOptions } from './facade/index.js';
 
 // Adapters (public API)
-export { RatioFormatter, RatioSerializer, RatioJSON } from './adapters/index.js';
+export {
+  RatioFormatter,
+  RatioSerializer,
+  RatioLossySerializer,
+  type RatioJSON,
+  type RatioLossyJSON
+} from './adapters/index.js';
 
 // Errors (public API)
 export { RatioErrorReason } from './errors/index.js';

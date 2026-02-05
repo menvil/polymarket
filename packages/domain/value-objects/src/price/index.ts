@@ -5,10 +5,16 @@ export { Price, PriceInvariantViolation } from './core/index.js';
 export { PriceService } from './facade/index.js';
 
 // Adapters (публичный API)
-export { PriceSerializer, PriceFormatter } from './adapters/index.js';
+export {
+  PriceSerializer,
+  PriceLossySerializer,
+  PriceFormatter,
+  type PriceJSON,
+  type PriceLossyJSON
+} from './adapters/index.js';
 
 // Errors (публичный API)
-export { PriceErrorReason } from './errors/PriceErrorReason.js';
+export { PriceErrorReason } from './errors/index.js';
 
 // Rules (только типы для потребителей)
 // ErrorContext и внутренние типы Rules НЕ экспортируются из верхнего index

@@ -18,7 +18,13 @@ export { Money, SupportedCurrency, MoneyInvariantViolation } from './core/index.
 export { MoneyService } from './facade/index.js';
 
 // Adapters (публичный API)
-export { MoneySerializer, MoneyFormatter } from './adapters/index.js';
+export {
+  MoneySerializer,
+  MoneyLossySerializer,
+  MoneyFormatter,
+  type MoneyJSON,
+  type MoneyLossyJSON
+} from './adapters/index.js';
 
 // Errors (публичный API)
-export { MoneyErrorReason } from './errors/MoneyErrorReason.js';
+export { MoneyErrorReason } from './errors/index.js';

@@ -12,7 +12,7 @@ export {
 } from './adapters/index.js';
 
 // Errors (публичный API)
-export { QuantityErrorReason } from './errors/QuantityErrorReason.js';
+export { QuantityErrorReason } from './errors/index.js';
 
 // Rules НЕ экспортируются — это internal implementation details.
 // Все операции должны идти через QuantityService.
