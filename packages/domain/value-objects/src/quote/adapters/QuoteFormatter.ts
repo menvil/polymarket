@@ -352,4 +352,127 @@ export class QuoteFormatter {
     const midDecimal = spread.mid();
     return midDecimal.toFixed(decimals);
   }
+
+  /**
+   * Форматирует Quote в компактный вид "price/price @sizexsize"
+   *
+   * @param quote - Quote для форматирования
+   * @param priceDecimals - Количество десятичных знаков для цен (по умолчанию: 2)
+   * @param sizeDecimals - Количество десятичных знаков для размеров (по умолчанию: 0)
+   * @returns Форматированная строка в компактном формате
+   *
+   * @remarks
+   * Метод "Never Throw" - гарантированно не бросает исключения.
+   * Предназначен для вывода котировок в ограниченном пространстве (логи, UI).
+   *
+   * Формат: "bid/ask @bidSize×askSize"
+   * - Цены разделены "/"
+   * - Размеры показаны после "@" и разделены "×"
+   * - Для one-sided котировок используется "--" для отсутствующей стороны
+   *
+   * @example
+   * ```typescript
+   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * console.log(QuoteFormatter.formatCompact(quote));
+   * // "0.48/0.52 @100×150"
+   *
+   * // С настройкой точности
+   * console.log(QuoteFormatter.formatCompact(quote, 4, 2));
+   * // "0.4800/0.5200 @100.00×150.00"
+   *
+   * // Bid-only котировка
+   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.of(0), Date.now());
+   * console.log(QuoteFormatter.formatCompact(bidOnly));
+   * // "0.50/-- @100×0"
+   * ```
+   */
+  public static formatCompact(
+    quote: Quote,
+    priceDecimals: number = 2,
+    sizeDecimals: number = 0
+  ): string {
+    const bidPrice = quote.hasBid()
+      ? quote.bid()!.value().toFixed(priceDecimals)
+      : '--';
+
+    const askPrice = quote.hasAsk()
+      ? quote.ask()!.value().toFixed(priceDecimals)
+      : '--';
+
+    const bidSize = quote.bidSize().value().toFixed(sizeDecimals);
+    const askSize = quote.askSize().value().toFixed(sizeDecimals);
+
+    return `${bidPrice}/${askPrice} @${bidSize}×${askSize}`;
+  }
+
+  /**
+   * Форматирует Quote с информацией о spread "bid-ask (spread, mid=price)"
+   *
+   * @param quote - Quote для форматирования
+   * @param priceDecimals - Количество десятичных знаков для цен (по умолчанию: 2)
+   * @returns Форматированная строка с spread информацией или краткий вид для one-sided
+   *
+   * @remarks
+   * Метод "Never Throw" - гарантированно не бросает исключения.
+   * Предназначен для отображения котировки с метриками spread.
+   *
+   * Формат для two-sided: "bid-ask (spreadBps, mid=midPrice)"
+   * - Цены разделены "-"
+   * - Spread показан в basis points (bp)
+   * - Mid price показан после "mid="
+   * - Для one-sided возвращает только доступную сторону
+   *
+   * @example
+   * ```typescript
+   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * console.log(QuoteFormatter.formatWithSpread(quote));
+   * // "0.48-0.52 (400bp, mid=0.50)"
+   *
+   * // С настройкой точности
+   * console.log(QuoteFormatter.formatWithSpread(quote, 4));
+   * // "0.4800-0.5200 (400bp, mid=0.5000)"
+   *
+   * // Bid-only котировка
+   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.of(0), Date.now());
+   * console.log(QuoteFormatter.formatWithSpread(bidOnly));
+   * // "0.50 (bid only)"
+   *
+   * // Ask-only котировка
+   * const askOnly = Quote.of(null, Price.of(0.52), Quantity.of(0), Quantity.of(150), Date.now());
+   * console.log(QuoteFormatter.formatWithSpread(askOnly));
+   * // "0.52 (ask only)"
+   * ```
+   */
+  public static formatWithSpread(quote: Quote, priceDecimals: number = 2): string {
+    if (!quote.isTwoSided()) {
+      // One-sided котировка
+      if (quote.hasBid()) {
+        const bidPrice = quote.bid()!.value().toFixed(priceDecimals);
+        return `${bidPrice} (bid only)`;
+      } else {
+        const askPrice = quote.ask()!.value().toFixed(priceDecimals);
+        return `${askPrice} (ask only)`;
+      }
+    }
+
+    // Two-sided котировка
+    const bidPrice = quote.bid()!.value().toFixed(priceDecimals);
+    const askPrice = quote.ask()!.value().toFixed(priceDecimals);
+
+    const spread = quote.spread();
+    if (spread === null) {
+      // Не должно произойти для two-sided, но защита на всякий случай
+      return `${bidPrice}-${askPrice}`;
+    }
+
+    // Spread в basis points (1 bp = 0.01% = 0.0001)
+    const spreadWidth = spread.width();
+    const spreadBps = spreadWidth.times(10000).toNumber();
+
+    // Mid price
+    const mid = quote.midOrNull();
+    const midStr = mid !== null ? mid.toFixed(priceDecimals) : '--';
+
+    return `${bidPrice}-${askPrice} (${spreadBps.toFixed(0)}bp, mid=${midStr})`;
+  }
 }

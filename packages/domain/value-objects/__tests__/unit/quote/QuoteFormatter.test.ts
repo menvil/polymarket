@@ -438,4 +438,195 @@ describe('QuoteFormatter', () => {
       expect(mid).toBeNull();
     });
   });
+
+  describe('formatCompact()', () => {
+    it('форматирует двустороннюю котировку в компактный вид', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now())
+      );
+
+      const compact = QuoteFormatter.formatCompact(quote);
+
+      expect(compact).toBe('0.48/0.52 @100×150');
+    });
+
+    it('форматирует bid-only котировку', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.50)),
+        null,
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(0)),
+        new Decimal(Date.now())
+      );
+
+      const compact = QuoteFormatter.formatCompact(quote);
+
+      expect(compact).toBe('0.50/-- @100×0');
+    });
+
+    it('форматирует ask-only котировку', () => {
+      const quote = Quote.of(
+        null,
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(0)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now())
+      );
+
+      const compact = QuoteFormatter.formatCompact(quote);
+
+      expect(compact).toBe('--/0.52 @0×150');
+    });
+
+    it('использует custom priceDecimals', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now())
+      );
+
+      const compact = QuoteFormatter.formatCompact(quote, 4);
+
+      expect(compact).toBe('0.4800/0.5200 @100×150');
+    });
+
+    it('использует custom sizeDecimals', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100.5)),
+        Quantity.of(new Decimal(150.75)),
+        new Decimal(Date.now())
+      );
+
+      const compact = QuoteFormatter.formatCompact(quote, 2, 2);
+
+      expect(compact).toBe('0.48/0.52 @100.50×150.75');
+    });
+
+    it('использует целые числа для размеров по умолчанию', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100.999)),
+        Quantity.of(new Decimal(150.111)),
+        new Decimal(Date.now())
+      );
+
+      const compact = QuoteFormatter.formatCompact(quote);
+
+      // sizeDecimals=0 по умолчанию, округление до целых
+      expect(compact).toBe('0.48/0.52 @101×150');
+    });
+  });
+
+  describe('formatWithSpread()', () => {
+    it('форматирует двустороннюю котировку с spread информацией', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now())
+      );
+
+      const formatted = QuoteFormatter.formatWithSpread(quote);
+
+      // spread = 0.04, в basis points = 400bp, mid = 0.50
+      expect(formatted).toBe('0.48-0.52 (400bp, mid=0.50)');
+    });
+
+    it('форматирует bid-only котировку', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.50)),
+        null,
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(0)),
+        new Decimal(Date.now())
+      );
+
+      const formatted = QuoteFormatter.formatWithSpread(quote);
+
+      expect(formatted).toBe('0.50 (bid only)');
+    });
+
+    it('форматирует ask-only котировку', () => {
+      const quote = Quote.of(
+        null,
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(0)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now())
+      );
+
+      const formatted = QuoteFormatter.formatWithSpread(quote);
+
+      expect(formatted).toBe('0.52 (ask only)');
+    });
+
+    it('использует custom priceDecimals', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now())
+      );
+
+      const formatted = QuoteFormatter.formatWithSpread(quote, 4);
+
+      expect(formatted).toBe('0.4800-0.5200 (400bp, mid=0.5000)');
+    });
+
+    it('правильно вычисляет basis points для узкого spread', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.499)),
+        Price.of(new Decimal(0.501)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now())
+      );
+
+      const formatted = QuoteFormatter.formatWithSpread(quote, 3);
+
+      // spread = 0.002, в basis points = 20bp, mid = 0.500
+      expect(formatted).toBe('0.499-0.501 (20bp, mid=0.500)');
+    });
+
+    it('правильно вычисляет basis points для широкого spread', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.40)),
+        Price.of(new Decimal(0.60)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now())
+      );
+
+      const formatted = QuoteFormatter.formatWithSpread(quote, 2);
+
+      // spread = 0.20, в basis points = 2000bp, mid = 0.50
+      expect(formatted).toBe('0.40-0.60 (2000bp, mid=0.50)');
+    });
+
+    it('округляет basis points до целого числа', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.4999)),
+        Price.of(new Decimal(0.5001)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now())
+      );
+
+      const formatted = QuoteFormatter.formatWithSpread(quote, 4);
+
+      // spread = 0.0002, в basis points = 2bp, mid = 0.5000
+      expect(formatted).toBe('0.4999-0.5001 (2bp, mid=0.5000)');
+    });
+  });
 });
