@@ -76,6 +76,7 @@
   "license": "MIT",
   "dependencies": {
     "@polymarket/errors": "^0.1.0",
+    "@polymarket/ids": "^0.1.0",
     "@polymarket/math": "^0.1.0",
     "@polymarket/result": "^0.1.0",
     "@polymarket/time": "^0.1.0",

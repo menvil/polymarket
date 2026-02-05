@@ -4,6 +4,14 @@
  * @packageDocumentation
  */
 
+// Currency
+export type { SupportedCurrency } from './Currency.js';
+export {
+  SUPPORTED_CURRENCIES,
+  KnownCurrencies,
+  isSupportedCurrency,
+} from './Currency.js';
+
 // Protocol, Chain, Condition
 export type { ProtocolId } from './ProtocolId.js';
 export { isKnownProtocol } from './ProtocolId.js';

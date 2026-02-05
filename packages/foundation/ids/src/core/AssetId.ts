@@ -1,12 +1,14 @@
 import type { ConditionRef } from './ConditionRef.js';
 import type { OutcomeIndex } from './OutcomeIndex.js';
+import type { SupportedCurrency } from './Currency.js';
+import { KnownCurrencies } from './Currency.js';
 
 /**
  * AssetId - универсальный идентификатор актива
  *
  * @remarks
  * Может быть:
- * - Currency (USDC, USDT, etc)
+ * - Currency (USDC и другие из SupportedCurrency)
  * - OutcomeToken (YES/NO токен конкретного рынка)
  *
  * Используется в generic контейнерах (AssetQuantity, events, transfers).
@@ -30,7 +32,7 @@ import type { OutcomeIndex } from './OutcomeIndex.js';
 export type AssetId =
   | {
       readonly type: 'CURRENCY';
-      readonly currency: string;
+      readonly currency: SupportedCurrency;
     }
   | {
       readonly type: 'OUTCOME_TOKEN';
@@ -44,8 +46,19 @@ export type AssetId =
 export const AssetId = {
   /**
    * Создать AssetId для currency
+   *
+   * @param currency - Поддерживаемая валюта (из SupportedCurrency)
+   * @returns AssetId для currency
+   *
+   * @example
+   * ```typescript
+   * import { AssetIdHelpers, KnownCurrencies } from '@polymarket/ids';
+   *
+   * const usdc = AssetIdHelpers.fromCurrency(KnownCurrencies.USDC);
+   * const usdt = AssetIdHelpers.fromCurrency('USDT'); // если добавлен в SUPPORTED_CURRENCIES
+   * ```
    */
-  fromCurrency(currency: string): AssetId {
+  fromCurrency(currency: SupportedCurrency): AssetId {
     return {
       type: 'CURRENCY',
       currency,
@@ -54,6 +67,17 @@ export const AssetId = {
 
   /**
    * Создать AssetId для outcome token
+   *
+   * @param conditionRef - Полная ссылка на condition
+   * @param outcomeIndex - Индекс outcome (0 = NO, 1 = YES)
+   * @returns AssetId для outcome token
+   *
+   * @example
+   * ```typescript
+   * import { AssetIdHelpers, OutcomeIndexValues } from '@polymarket/ids';
+   *
+   * const token = AssetIdHelpers.fromOutcomeToken(conditionRef, OutcomeIndexValues.YES);
+   * ```
    */
   fromOutcomeToken(conditionRef: ConditionRef, outcomeIndex: OutcomeIndex): AssetId {
     return {
@@ -64,16 +88,19 @@ export const AssetId = {
   },
 
   /**
-   * Константы для известных currencies
+   * Константа для USDC currency asset
+   *
+   * @example
+   * ```typescript
+   * import { AssetIdHelpers } from '@polymarket/ids';
+   *
+   * const usdcAsset = AssetIdHelpers.USDC;
+   * const balance = getBalance(accountId, venueId, usdcAsset);
+   * ```
    */
   USDC: {
     type: 'CURRENCY',
-    currency: 'USDC',
-  } as const as AssetId,
-
-  USDT: {
-    type: 'CURRENCY',
-    currency: 'USDT',
+    currency: KnownCurrencies.USDC,
   } as const as AssetId,
 };
 

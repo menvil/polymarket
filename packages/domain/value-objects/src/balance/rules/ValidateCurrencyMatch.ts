@@ -1,7 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
+import type { SupportedCurrency } from '@polymarket/ids';
 import { Money } from '../../money/core/Money.js';
-import type { SupportedCurrency } from '../../money/core/Money.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
 /**

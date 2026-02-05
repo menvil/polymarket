@@ -1,10 +1,19 @@
-# SupportedCurrencies - Single Source of Truth
+# SupportedCurrency - Single Source of Truth
 
-**SupportedCurrencies** — единый источник истины для всех поддерживаемых валют в системе.
+**SupportedCurrency** — единый источник истины для всех поддерживаемых валют в системе.
+
+## ⚠️ Важное изменение
+
+**SupportedCurrency перемещён в `@polymarket/ids`** (foundation layer).
+
+- **Было**: `packages/domain/value-objects/src/shared/currency/SupportedCurrencies.ts`
+- **Стало**: `packages/foundation/ids/src/core/Currency.ts`
+
+**Обоснование**: `SupportedCurrency` - это foundation primitive (как `ChainId`, `ProtocolId`), а не domain logic. Правильная dependency direction: domain → foundation.
 
 ## Описание
 
-Модуль `src/shared/currency/SupportedCurrencies.ts` определяет все валюты, которые поддерживаются в value objects Money и Balance.
+Модуль `@polymarket/ids/src/core/Currency.ts` определяет все валюты, которые поддерживаются в системе.
 
 **Ключевая особенность:** При добавлении новой валюты достаточно изменить ОДИН файл, и:
 - ✅ `Money.ZERO` автоматически создаст singleton для новой валюты
@@ -15,9 +24,15 @@
 ## Структура
 
 ```typescript
-// src/shared/currency/SupportedCurrencies.ts
+// @polymarket/ids/src/core/Currency.ts
 export const SUPPORTED_CURRENCIES = ['USDC'] as const;
 export type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number];
+
+export const KnownCurrencies = {
+  USDC: 'USDC' as SupportedCurrency,
+} as const;
+
+export function isSupportedCurrency(value: string): value is SupportedCurrency;
 ```
 
 ## Использование
@@ -25,10 +40,13 @@ export type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number];
 ### Текущие валюты
 
 ```typescript
-import { SUPPORTED_CURRENCIES, SupportedCurrency } from '@polymarket/value-objects/shared';
+import { SUPPORTED_CURRENCIES, type SupportedCurrency, KnownCurrencies } from '@polymarket/ids';
 
 // Массив всех валют
 console.log(SUPPORTED_CURRENCIES); // ['USDC']
+
+// Константы
+const usdc = KnownCurrencies.USDC; // 'USDC' as SupportedCurrency
 
 // Тип валюты (автоматически выводится из массива)
 const currency: SupportedCurrency = 'USDC'; // ✅ OK
@@ -38,14 +56,16 @@ const invalid: SupportedCurrency = 'EUR';   // ❌ TypeScript error
 ### Проверка валидности
 
 ```typescript
-import { SUPPORTED_CURRENCIES } from '@polymarket/value-objects/shared';
+import { isSupportedCurrency } from '@polymarket/ids';
 
-function isValidCurrency(currency: string): currency is SupportedCurrency {
-  return SUPPORTED_CURRENCIES.includes(currency as SupportedCurrency);
+const input = getUserInput(); // string
+
+if (isSupportedCurrency(input)) {
+  // TypeScript знает: input is SupportedCurrency
+  const money = Money.of(100, input);
+} else {
+  throw new Error(`Unsupported currency: ${input}`);
 }
-
-console.log(isValidCurrency('USDC')); // true
-console.log(isValidCurrency('EUR'));  // false
 ```
 
 ### В Money и Balance
@@ -61,29 +81,56 @@ const zeroMoney = Money.ZERO.USDC;
 const zeroBalance = Balance.ZERO.USDC;
 ```
 
+### В AssetId
+
+```typescript
+import { AssetIdHelpers, KnownCurrencies } from '@polymarket/ids';
+
+// USDC asset
+const usdcAsset = AssetIdHelpers.USDC;
+
+// Custom currency (если добавлена в SUPPORTED_CURRENCIES)
+const customAsset = AssetIdHelpers.fromCurrency(KnownCurrencies.USDC);
+```
+
 ## Добавление новой валюты
 
 ### Шаг 1: Добавьте валюту в массив
 
 ```typescript
-// src/shared/currency/SupportedCurrencies.ts
-export const SUPPORTED_CURRENCIES = ['USDC', 'EUR'] as const;
-//                                             ^^^^^ добавили EUR
+// @polymarket/ids/src/core/Currency.ts
+export const SUPPORTED_CURRENCIES = ['USDC', 'USDT'] as const;
+//                                            ^^^^^^ добавили USDT
 export type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number];
+
+export const KnownCurrencies = {
+  USDC: 'USDC' as SupportedCurrency,
+  USDT: 'USDT' as SupportedCurrency,  // ← добавили константу
+} as const;
 ```
 
-### Шаг 2: Всё работает автоматически!
+### Шаг 2: Пересоберите @polymarket/ids
+
+```bash
+cd packages/foundation/ids
+npm run build
+```
+
+### Шаг 3: Всё работает автоматически!
 
 ```typescript
-// Money автоматически поддерживает EUR
-const euroMoney = Money.of(100, 'EUR'); // ✅ OK
-const zeroEuro = Money.ZERO.EUR;        // ✅ Singleton создан автоматически
+// Money автоматически поддерживает USDT
+const usdtMoney = Money.of(100, 'USDT'); // ✅ OK
+const zeroUsdt = Money.ZERO.USDT;        // ✅ Singleton создан автоматически
 
-// Balance автоматически поддерживает EUR
-const euroBalance = Balance.ZERO.EUR;   // ✅ Singleton создан автоматически
+// Balance автоматически поддерживает USDT
+const usdtBalance = Balance.ZERO.USDT;   // ✅ Singleton создан автоматически
+
+// AssetId автоматически поддерживает USDT
+const usdtAsset = AssetIdHelpers.fromCurrency('USDT'); // ✅ OK
 
 // TypeScript типы обновлены
-const currency: SupportedCurrency = 'EUR'; // ✅ OK
+const currency: SupportedCurrency = 'USDT'; // ✅ OK
 ```
 
 ### Что НЕ нужно делать
@@ -104,7 +151,7 @@ const currency: SupportedCurrency = 'EUR'; // ✅ OK
 
 ```typescript
 // Money.ts
-import { SUPPORTED_CURRENCIES, SupportedCurrency } from '../../shared/currency/SupportedCurrencies';
+import { SUPPORTED_CURRENCIES, type SupportedCurrency } from '@polymarket/ids';
 
 public static readonly ZERO: Record<SupportedCurrency, Money> =
   Object.fromEntries(
@@ -118,10 +165,11 @@ public static readonly ZERO: Record<SupportedCurrency, Money> =
 ### Type Inference
 
 ```typescript
+// Currency.ts (@polymarket/ids)
 // SupportedCurrency тип автоматически выводится
-const SUPPORTED_CURRENCIES = ['USDC', 'EUR'] as const;
+const SUPPORTED_CURRENCIES = ['USDC', 'USDT'] as const;
 type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number];
-// type SupportedCurrency = 'USDC' | 'EUR' ✅ автоматически
+// type SupportedCurrency = 'USDC' | 'USDT' ✅ автоматически
 ```
 
 ## Примеры использования
@@ -129,7 +177,7 @@ type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number];
 ### Пример 1: Итерация по всем валютам
 
 ```typescript
-import { SUPPORTED_CURRENCIES } from '@polymarket/value-objects/shared';
+import { SUPPORTED_CURRENCIES } from '@polymarket/ids';
 import { Money } from '@polymarket/value-objects/money';
 
 // Создаём zero balance для всех валют
@@ -145,13 +193,12 @@ console.log(zeroBalances);
 ### Пример 2: Валидация входных данных
 
 ```typescript
-import { SUPPORTED_CURRENCIES, SupportedCurrency } from '@polymarket/value-objects/shared';
+import { isSupportedCurrency, type SupportedCurrency } from '@polymarket/ids';
+import { Money } from '@polymarket/value-objects/money';
 
 function parseCurrency(input: string): SupportedCurrency | null {
   const upper = input.toUpperCase();
-  return SUPPORTED_CURRENCIES.includes(upper as SupportedCurrency)
-    ? (upper as SupportedCurrency)
-    : null;
+  return isSupportedCurrency(upper) ? upper : null;
 }
 
 const currency = parseCurrency('usdc');
@@ -163,20 +210,29 @@ if (currency) {
 ### Пример 3: Exhaustive checking
 
 ```typescript
-import { SupportedCurrency } from '@polymarket/value-objects/shared';
+import { type SupportedCurrency } from '@polymarket/ids';
 
 function getCurrencySymbol(currency: SupportedCurrency): string {
   switch (currency) {
     case 'USDC':
       return '$';
-    // Если добавить EUR в SUPPORTED_CURRENCIES,
-    // TypeScript потребует добавить case 'EUR'
+    // Если добавить USDT в SUPPORTED_CURRENCIES,
+    // TypeScript потребует добавить case 'USDT'
+    default:
+      // exhaustive check
+      const _exhaustive: never = currency;
+      throw new Error(`Unknown currency: ${_exhaustive}`);
   }
 }
 ```
 
 ## Связанные модули
 
+### Foundation Layer
+- **@polymarket/ids** — определяет SupportedCurrency, KnownCurrencies, isSupportedCurrency
+- **AssetId** — использует SupportedCurrency для currency assets
+
+### Domain Layer
 - **Money** — использует SupportedCurrency для валидации и ZERO singleton
 - **Balance** — использует SupportedCurrency для валидации и ZERO singleton
 - **MoneyService** — использует SupportedCurrency в сигнатурах методов
@@ -184,6 +240,7 @@ function getCurrencySymbol(currency: SupportedCurrency): string {
 ## Принципы
 
 - ✅ **Single Source of Truth** — одна точка определения валют
+- ✅ **Foundation Layer** — примитивы в foundation, не в domain
 - ✅ **Type Safety** — автоматический вывод типов
 - ✅ **Immutability** — const assertion для неизменяемости
 - ✅ **Auto-generation** — автоматическое создание singletons
@@ -194,38 +251,55 @@ function getCurrencySymbol(currency: SupportedCurrency): string {
 ### Проблема
 
 До рефакторинга:
-- Каждый value object определял свои константы валют
-- При добавлении валюты нужно было обновлять 3+ места
-- Singleton создавались вручную для каждой валюты
+- SupportedCurrency находился в value-objects (domain layer)
+- Нарушение dependency direction (foundation должен быть независим от domain)
+- Дублирование константов валют в нескольких местах
 
 ### Решение
 
 После рефакторинга:
 ```typescript
-// ✅ Единый источник истины
+// ✅ SupportedCurrency в foundation layer (@polymarket/ids)
+// packages/foundation/ids/src/core/Currency.ts
 export const SUPPORTED_CURRENCIES = ['USDC'] as const;
-
-// ✅ Автоматическая генерация типов
 export type SupportedCurrency = typeof SUPPORTED_CURRENCIES[number];
 
-// ✅ Автоматическая генерация singletons в Money/Balance
-public static readonly ZERO: Record<SupportedCurrency, Money> =
-  Object.fromEntries(
-    SUPPORTED_CURRENCIES.map(currency => [currency, Money.fromDecimal(new Decimal(0), currency)])
-  ) as Record<SupportedCurrency, Money>;
+export const KnownCurrencies = {
+  USDC: 'USDC' as SupportedCurrency,
+} as const;
+
+export function isSupportedCurrency(value: string): value is SupportedCurrency;
+
+// ✅ Money импортирует из foundation
+// packages/domain/value-objects/src/money/core/Money.ts
+import { SUPPORTED_CURRENCIES, type SupportedCurrency } from '@polymarket/ids';
+
+// ✅ AssetId использует SupportedCurrency
+// packages/foundation/ids/src/core/AssetId.ts
+export type AssetId =
+  | { readonly type: 'CURRENCY'; readonly currency: SupportedCurrency; }
+  | { readonly type: 'OUTCOME_TOKEN'; ... };
 ```
 
 ### Преимущества
 
-1. **Масштабируемость** — добавление валюты в 1 строку вместо 10+
-2. **Согласованность** — все value objects используют одни и те же валюты
-3. **Type Safety** — TypeScript гарантирует покрытие всех валют
-4. **DRY принцип** — нет дублирования кода
-5. **Автоматизация** — генерация constans через map/fromEntries
+1. **Правильная dependency direction** — domain → foundation (не наоборот)
+2. **Унификация** — один источник истины для всех layers
+3. **Type safety** — SupportedCurrency используется в AssetId, Money, Balance
+4. **Масштабируемость** — добавление валюты в 1 месте
+5. **Согласованность** — все packages используют одни и те же валюты
 
 ## История изменений
 
-**Версия 1.0** (текущая):
+**Версия 2.0** (текущая):
+- ✅ SupportedCurrency перемещён в @polymarket/ids (foundation layer)
+- ✅ AssetId использует SupportedCurrency для type safety
+- ✅ Добавлен helper isSupportedCurrency()
+- ✅ Добавлены константы KnownCurrencies
+- ✅ Правильная dependency direction: domain → foundation
+
+**Версия 1.0** (legacy):
 - Поддержка USDC
+- SupportedCurrency в value-objects/shared/currency
 - Автоматическая генерация Money.ZERO и Balance.ZERO
 - Single source of truth pattern

@@ -143,10 +143,17 @@ describe('Core IDs', () => {
     it('should compare assets', () => {
       const usdc1 = AssetIdHelpers.USDC;
       const usdc2 = AssetIdHelpers.fromCurrency('USDC');
-      const usdt = AssetIdHelpers.USDT;
+
+      // Different asset types should not be equal
+      const conditionRef: ConditionRef = {
+        protocolId: 'POLYMARKET_CTF',
+        chainId: KnownChainIds.POLYGON,
+        conditionId: '0xabc123' as any,
+      };
+      const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, OutcomeIndexValues.YES);
 
       expect(assetIdEquals(usdc1, usdc2)).toBe(true);
-      expect(assetIdEquals(usdc1, usdt)).toBe(false);
+      expect(assetIdEquals(usdc1, tokenAsset)).toBe(false);
     });
 
     it('should convert to string', () => {

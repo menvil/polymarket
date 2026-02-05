@@ -38,14 +38,28 @@ src/
 
 ```typescript
 import {
+  type SupportedCurrency,
   type ConditionRef,
   type OutcomeIndex,
   type AccountId,
   type VenueId,
   type AssetId,
+  KnownCurrencies,
   KnownChainIds,
   OutcomeIndex as OutcomeIndexConst,
+  isSupportedCurrency,
 } from '@polymarket/ids';
+
+// SupportedCurrency - поддерживаемые валюты
+const currency: SupportedCurrency = 'USDC'; // ✅ OK
+const usdc = KnownCurrencies.USDC; // 'USDC' as SupportedCurrency
+
+// Type guard для валидации
+const input = getUserInput();
+if (isSupportedCurrency(input)) {
+  // TypeScript knows: input is SupportedCurrency
+  const money = Money.of(100, input);
+}
 
 // ConditionRef - полная ссылка на condition
 const conditionRef: ConditionRef = {
