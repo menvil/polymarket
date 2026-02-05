@@ -367,37 +367,37 @@ describe('Quote Integration Tests', () => {
   });
 
   describe('Query методы в workflow', () => {
-    it('getSpreadOrZero возвращает 0 для one-sided', () => {
+    it('spreadWidthOrZero возвращает 0 для one-sided', () => {
       const bidResult = QuoteService.bidOnly(0.50, 100);
       expect(bidResult.ok).toBe(true);
       if (!bidResult.ok) return;
 
-      const spread = QuoteService.getSpreadOrZero(bidResult.value);
+      const spread = bidResult.value.spreadWidthOrZero();
       expect(spread.toNumber()).toBe(0);
 
       const twoSidedResult = QuoteService.create(0.48, 0.52, 100, 150);
       expect(twoSidedResult.ok).toBe(true);
       if (!twoSidedResult.ok) return;
 
-      const spread2 = QuoteService.getSpreadOrZero(twoSidedResult.value);
+      const spread2 = twoSidedResult.value.spreadWidthOrZero();
       expect(spread2.toNumber()).toBe(0.04);
     });
 
-    it('getMidPrice возвращает null для one-sided', () => {
+    it('midOrNull возвращает null для one-sided', () => {
       const bidResult = QuoteService.bidOnly(0.50, 100);
       expect(bidResult.ok).toBe(true);
       if (!bidResult.ok) return;
 
-      const mid = QuoteService.getMidPrice(bidResult.value);
+      const mid = bidResult.value.midOrNull();
       expect(mid).toBeNull();
 
       const twoSidedResult = QuoteService.create(0.48, 0.52, 100, 150);
       expect(twoSidedResult.ok).toBe(true);
       if (!twoSidedResult.ok) return;
 
-      const mid2 = QuoteService.getMidPrice(twoSidedResult.value);
+      const mid2 = twoSidedResult.value.midOrNull();
       expect(mid2).not.toBeNull();
-      expect(mid2!.value().toNumber()).toBe(0.50);
+      expect(mid2!.toNumber()).toBe(0.50);
     });
   });
 

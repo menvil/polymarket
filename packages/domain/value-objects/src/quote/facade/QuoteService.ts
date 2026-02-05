@@ -9,6 +9,7 @@ import {
   toCause
 } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+import type { IClock } from '@polymarket/time';
 import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { Quote, QuoteInvariantViolation } from '../core/index.js';
@@ -49,6 +50,58 @@ import { QuantityService } from '../../quantity/facade/QuantityService.js';
  */
 export class QuoteService {
   private static readonly SERVICE_NAME = 'QuoteService';
+
+  /**
+   * Helper: парсит Decimal из гибкого типа
+   *
+   * @internal
+   * @param field - Название поля для error context
+   * @param value - Значение для парсинга
+   * @param reason - Причина ошибки (QuoteErrorReason)
+   * @returns Result с Decimal или InvalidQuoteError
+   *
+   * @remarks
+   * Централизованный парсинг для всех входных параметров.
+   * Использует toDecimal() и оборачивает ошибку через rewrap().
+   */
+  private static parseDecimal(
+    field: string,
+    value: Decimal | number | string,
+    reason: QuoteErrorReason
+  ): Result<Decimal, InvalidQuoteError> {
+    const result = toDecimal(field, value, reason, InvalidQuoteError);
+    if (isErr(result)) {
+      return Err(rewrap(QuoteService.SERVICE_NAME, 'parseDecimal', {}, result.error, InvalidQuoteError));
+    }
+    return result;
+  }
+
+  /**
+   * Helper: парсит опциональный Decimal (может быть null)
+   *
+   * @internal
+   * @param field - Название поля для error context
+   * @param value - Значение для парсинга или null
+   * @param reason - Причина ошибки (QuoteErrorReason)
+   * @returns Result с Decimal | null или InvalidQuoteError
+   *
+   * @remarks
+   * Для bid/ask которые могут быть null (one-sided quotes).
+   * Если value === null, возвращает Ok(null) без парсинга.
+   *
+   * @todo Использовать в refactoring create() метода для устранения дублирования
+   */
+  // @ts-expect-error - TODO: will be used in create() refactoring
+  private static parseOptionalDecimal(
+    field: string,
+    value: Decimal | number | string | null,
+    reason: QuoteErrorReason
+  ): Result<Decimal | null, InvalidQuoteError> {
+    if (value === null) {
+      return Ok(null);
+    }
+    return QuoteService.parseDecimal(field, value, reason);
+  }
 
   /**
    * Создаёт Quote
@@ -309,13 +362,15 @@ export class QuoteService {
   }
 
   /**
-   * Сдвигает котировку на указанную величину
+   * Сдвигает котировку на указанную величину (нейтральная трансформация)
    *
    * @remarks
    * Shift - это параллельный сдвиг bid и ask на одинаковую величину.
    * Spread остаётся неизменным.
    *
-   * Использует wrapOp для автоматической обработки ошибок.
+   * **Важно**: Сохраняет timestamp исходной котировки.
+   * Это нейтральная трансформация - изменяются только цены.
+   * Для создания новой котировки с обновленным timestamp используйте shiftWithRefresh().
    *
    * @param quote - Исходная котировка
    * @param shiftAmount - Величина сдвига (Decimal | number | string, может быть отрицательной)
@@ -324,20 +379,12 @@ export class QuoteService {
    * @example
    * ```typescript
    * const quote = expectOk(QuoteService.create(0.48, 0.52, 100, 150));
+   * const originalTimestamp = quote.timestampMs();
    *
-   * // Сдвиг вверх (с number)
-   * const upResult = QuoteService.shift(quote, 0.01);
+   * // Сдвиг вверх - timestamp сохраняется
+   * const shifted = expectOk(QuoteService.shift(quote, 0.01));
+   * console.log(shifted.timestampMs().equals(originalTimestamp)); // true
    * // bid: 0.48 → 0.49, ask: 0.52 → 0.53
-   *
-   * // Сдвиг вниз (с Decimal)
-   * const downResult = QuoteService.shift(quote, new Decimal(-0.01));
-   * // bid: 0.48 → 0.47, ask: 0.52 → 0.51
-   *
-   * if (isErr(upResult)) {
-   *   // Полный контекст ошибки
-   *   console.error(upResult.error.context?.op); // 'shift'
-   *   console.error(upResult.error.context?.opChain); // ['create', 'shift']
-   * }
    * ```
    */
   public static shift(
@@ -374,13 +421,83 @@ export class QuoteService {
         newAskDecimal = quote.ask()!.value().plus(shiftDecimal);
       }
 
-      // Используем create - он сам сконвертирует Decimal в Price/Quantity
+      // ВАЖНО: Сохраняем timestamp исходной котировки (нейтральная трансформация)
       return QuoteService.create(
         newBidDecimal,
         newAskDecimal,
         quote.bidSize().value(),
         quote.askSize().value(),
-        Date.now()
+        quote.timestampMs() // Сохраняем оригинальный timestamp
+      );
+    }, InvalidQuoteError);
+  }
+
+  /**
+   * Сдвигает котировку с обновлением timestamp
+   *
+   * @remarks
+   * То же что shift(), но создаёт новую котировку с текущим временем.
+   * Используйте когда сдвиг означает новые рыночные данные.
+   *
+   * @param quote - Исходная котировка
+   * @param shiftAmount - Величина сдвига (Decimal | number | string)
+   * @param clock - Источник времени (IClock)
+   * @returns Result с новой Quote или InvalidQuoteError
+   *
+   * @example
+   * ```typescript
+   * import { LiveClock } from '@polymarket/time';
+   *
+   * const quote = expectOk(QuoteService.create(0.48, 0.52, 100, 150));
+   * const clock = new LiveClock();
+   *
+   * // Сдвиг с обновлением времени (новые данные с рынка)
+   * const refreshed = expectOk(QuoteService.shiftWithRefresh(quote, 0.01, clock));
+   * console.log(refreshed.timestampMs().greaterThan(quote.timestampMs())); // true
+   * ```
+   */
+  public static shiftWithRefresh(
+    quote: Quote,
+    shiftAmount: Decimal | number | string,
+    clock: IClock
+  ): Result<Quote, InvalidQuoteError> {
+    const op = 'shiftWithRefresh';
+    const ctx = {
+      quoteBid: quote.bid()?.value().toString() ?? null,
+      quoteAsk: quote.ask()?.value().toString() ?? null,
+      shiftAmount: shiftAmount.toString()
+    };
+
+    return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
+      // Конвертируем shiftAmount в Decimal
+      const shiftDecimalResult = toDecimal(
+        'shiftAmount',
+        shiftAmount,
+        QuoteErrorReason.INVALID_FORMAT,
+        InvalidQuoteError
+      );
+      if (isErr(shiftDecimalResult)) {
+        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, shiftDecimalResult.error, InvalidQuoteError));
+      }
+      const shiftDecimal = shiftDecimalResult.value;
+
+      let newBidDecimal: Decimal | null = null;
+      if (quote.bid() !== null) {
+        newBidDecimal = quote.bid()!.value().plus(shiftDecimal);
+      }
+
+      let newAskDecimal: Decimal | null = null;
+      if (quote.ask() !== null) {
+        newAskDecimal = quote.ask()!.value().plus(shiftDecimal);
+      }
+
+      // Обновляем timestamp из clock (новая котировка)
+      return QuoteService.create(
+        newBidDecimal,
+        newAskDecimal,
+        quote.bidSize().value(),
+        quote.askSize().value(),
+        clock.now() // Новый timestamp от clock
       );
     }, InvalidQuoteError);
   }
