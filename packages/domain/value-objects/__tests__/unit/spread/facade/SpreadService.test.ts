@@ -422,4 +422,343 @@ describe('SpreadService', () => {
       }
     });
   });
+
+  describe('adjustBid()', () => {
+    it('should adjust bid up', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustBid(spreadResult.value, new Decimal(0.01));
+        expect(adjusted.ok).toBe(true);
+
+        if (adjusted.ok) {
+          expect(adjusted.value.bid().value()).toEqual(new Decimal(0.49));
+          expect(adjusted.value.ask().value()).toEqual(new Decimal(0.52)); // unchanged
+          expect(adjusted.value.width()).toEqual(new Decimal(0.03));
+        }
+      }
+    });
+
+    it('should adjust bid down', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustBid(spreadResult.value, new Decimal(-0.02));
+        expect(adjusted.ok).toBe(true);
+
+        if (adjusted.ok) {
+          expect(adjusted.value.bid().value()).toEqual(new Decimal(0.46));
+          expect(adjusted.value.ask().value()).toEqual(new Decimal(0.52)); // unchanged
+          expect(adjusted.value.width()).toEqual(new Decimal(0.06));
+        }
+      }
+    });
+
+    it('should return Err when new bid > ask', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustBid(spreadResult.value, new Decimal(0.10));
+        expect(adjusted.ok).toBe(false);
+
+        if (!adjusted.ok) {
+          expect(adjusted.error.context?.reason).toBe(SpreadErrorReason.BID_GREATER_THAN_ASK);
+        }
+      }
+    });
+
+    it('should return Err for non-finite amount', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustBid(spreadResult.value, NaN);
+        expect(adjusted.ok).toBe(false);
+      }
+    });
+  });
+
+  describe('adjustAsk()', () => {
+    it('should adjust ask up', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustAsk(spreadResult.value, new Decimal(0.02));
+        expect(adjusted.ok).toBe(true);
+
+        if (adjusted.ok) {
+          expect(adjusted.value.bid().value()).toEqual(new Decimal(0.48)); // unchanged
+          expect(adjusted.value.ask().value()).toEqual(new Decimal(0.54));
+          expect(adjusted.value.width()).toEqual(new Decimal(0.06));
+        }
+      }
+    });
+
+    it('should adjust ask down', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustAsk(spreadResult.value, new Decimal(-0.01));
+        expect(adjusted.ok).toBe(true);
+
+        if (adjusted.ok) {
+          expect(adjusted.value.bid().value()).toEqual(new Decimal(0.48)); // unchanged
+          expect(adjusted.value.ask().value()).toEqual(new Decimal(0.51));
+          expect(adjusted.value.width()).toEqual(new Decimal(0.03));
+        }
+      }
+    });
+
+    it('should return Err when new ask < bid', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustAsk(spreadResult.value, new Decimal(-0.10));
+        expect(adjusted.ok).toBe(false);
+
+        if (!adjusted.ok) {
+          expect(adjusted.error.context?.reason).toBe(SpreadErrorReason.BID_GREATER_THAN_ASK);
+        }
+      }
+    });
+
+    it('should return Err for non-finite amount', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustAsk(spreadResult.value, Infinity);
+        expect(adjusted.ok).toBe(false);
+      }
+    });
+  });
+
+  describe('adjustBidAsk()', () => {
+    it('should adjust both bid and ask', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustBidAsk(
+          spreadResult.value,
+          new Decimal(0.01),
+          new Decimal(-0.01)
+        );
+        expect(adjusted.ok).toBe(true);
+
+        if (adjusted.ok) {
+          expect(adjusted.value.bid().value()).toEqual(new Decimal(0.49));
+          expect(adjusted.value.ask().value()).toEqual(new Decimal(0.51));
+          expect(adjusted.value.width()).toEqual(new Decimal(0.02));
+        }
+      }
+    });
+
+    it('should tighten spread when both move inward', () => {
+      const spreadResult = SpreadService.fromValues(0.40, 0.60);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustBidAsk(
+          spreadResult.value,
+          new Decimal(0.05),
+          new Decimal(-0.05)
+        );
+        expect(adjusted.ok).toBe(true);
+
+        if (adjusted.ok) {
+          expect(adjusted.value.bid().value()).toEqual(new Decimal(0.45));
+          expect(adjusted.value.ask().value()).toEqual(new Decimal(0.55));
+          expect(adjusted.value.width()).toEqual(new Decimal(0.10));
+        }
+      }
+    });
+
+    it('should return Err when adjustments cause bid > ask', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const adjusted = SpreadService.adjustBidAsk(
+          spreadResult.value,
+          new Decimal(0.10),
+          new Decimal(-0.10)
+        );
+        expect(adjusted.ok).toBe(false);
+      }
+    });
+  });
+
+  describe('merge()', () => {
+    it('should merge two non-overlapping spreads', () => {
+      const s1Result = SpreadService.fromValues(0.40, 0.50);
+      const s2Result = SpreadService.fromValues(0.60, 0.70);
+      expect(s1Result.ok).toBe(true);
+      expect(s2Result.ok).toBe(true);
+
+      if (s1Result.ok && s2Result.ok) {
+        const merged = SpreadService.merge(s1Result.value, s2Result.value);
+        expect(merged.ok).toBe(true);
+
+        if (merged.ok) {
+          expect(merged.value.bid().value()).toEqual(new Decimal(0.40)); // min
+          expect(merged.value.ask().value()).toEqual(new Decimal(0.70)); // max
+          expect(merged.value.width()).toEqual(new Decimal(0.30));
+        }
+      }
+    });
+
+    it('should merge two overlapping spreads', () => {
+      const s1Result = SpreadService.fromValues(0.40, 0.60);
+      const s2Result = SpreadService.fromValues(0.50, 0.70);
+      expect(s1Result.ok).toBe(true);
+      expect(s2Result.ok).toBe(true);
+
+      if (s1Result.ok && s2Result.ok) {
+        const merged = SpreadService.merge(s1Result.value, s2Result.value);
+        expect(merged.ok).toBe(true);
+
+        if (merged.ok) {
+          expect(merged.value.bid().value()).toEqual(new Decimal(0.40)); // min
+          expect(merged.value.ask().value()).toEqual(new Decimal(0.70)); // max
+        }
+      }
+    });
+
+    it('should be commutative', () => {
+      const s1Result = SpreadService.fromValues(0.48, 0.52);
+      const s2Result = SpreadService.fromValues(0.50, 0.54);
+      expect(s1Result.ok).toBe(true);
+      expect(s2Result.ok).toBe(true);
+
+      if (s1Result.ok && s2Result.ok) {
+        const merged1 = SpreadService.merge(s1Result.value, s2Result.value);
+        const merged2 = SpreadService.merge(s2Result.value, s1Result.value);
+
+        expect(merged1.ok).toBe(true);
+        expect(merged2.ok).toBe(true);
+
+        if (merged1.ok && merged2.ok) {
+          expect(merged1.value.bid().equals(merged2.value.bid())).toBe(true);
+          expect(merged1.value.ask().equals(merged2.value.ask())).toBe(true);
+        }
+      }
+    });
+
+    it('should handle identical spreads', () => {
+      const s1Result = SpreadService.fromValues(0.48, 0.52);
+      const s2Result = SpreadService.fromValues(0.48, 0.52);
+      expect(s1Result.ok).toBe(true);
+      expect(s2Result.ok).toBe(true);
+
+      if (s1Result.ok && s2Result.ok) {
+        const merged = SpreadService.merge(s1Result.value, s2Result.value);
+        expect(merged.ok).toBe(true);
+
+        if (merged.ok) {
+          expect(merged.value.bid().value()).toEqual(new Decimal(0.48));
+          expect(merged.value.ask().value()).toEqual(new Decimal(0.52));
+        }
+      }
+    });
+  });
+
+  describe('intersect()', () => {
+    it('should find intersection of overlapping spreads', () => {
+      const s1Result = SpreadService.fromValues(0.40, 0.60);
+      const s2Result = SpreadService.fromValues(0.50, 0.70);
+      expect(s1Result.ok).toBe(true);
+      expect(s2Result.ok).toBe(true);
+
+      if (s1Result.ok && s2Result.ok) {
+        const intersect = SpreadService.intersect(s1Result.value, s2Result.value);
+        expect(intersect.ok).toBe(true);
+
+        if (intersect.ok) {
+          expect(intersect.value.bid().value()).toEqual(new Decimal(0.50)); // max
+          expect(intersect.value.ask().value()).toEqual(new Decimal(0.60)); // min
+          expect(intersect.value.width()).toEqual(new Decimal(0.10));
+        }
+      }
+    });
+
+    it('should return Err for non-overlapping spreads', () => {
+      const s1Result = SpreadService.fromValues(0.40, 0.50);
+      const s2Result = SpreadService.fromValues(0.60, 0.70);
+      expect(s1Result.ok).toBe(true);
+      expect(s2Result.ok).toBe(true);
+
+      if (s1Result.ok && s2Result.ok) {
+        const intersect = SpreadService.intersect(s1Result.value, s2Result.value);
+        expect(intersect.ok).toBe(false);
+
+        if (!intersect.ok) {
+          expect(intersect.error.message).toContain('do not intersect');
+          expect(intersect.error.context?.reason).toBe(SpreadErrorReason.BID_GREATER_THAN_ASK);
+        }
+      }
+    });
+
+    it('should be commutative', () => {
+      const s1Result = SpreadService.fromValues(0.40, 0.60);
+      const s2Result = SpreadService.fromValues(0.50, 0.70);
+      expect(s1Result.ok).toBe(true);
+      expect(s2Result.ok).toBe(true);
+
+      if (s1Result.ok && s2Result.ok) {
+        const intersect1 = SpreadService.intersect(s1Result.value, s2Result.value);
+        const intersect2 = SpreadService.intersect(s2Result.value, s1Result.value);
+
+        expect(intersect1.ok).toBe(true);
+        expect(intersect2.ok).toBe(true);
+
+        if (intersect1.ok && intersect2.ok) {
+          expect(intersect1.value.bid().equals(intersect2.value.bid())).toBe(true);
+          expect(intersect1.value.ask().equals(intersect2.value.ask())).toBe(true);
+        }
+      }
+    });
+
+    it('should handle identical spreads', () => {
+      const s1Result = SpreadService.fromValues(0.48, 0.52);
+      const s2Result = SpreadService.fromValues(0.48, 0.52);
+      expect(s1Result.ok).toBe(true);
+      expect(s2Result.ok).toBe(true);
+
+      if (s1Result.ok && s2Result.ok) {
+        const intersect = SpreadService.intersect(s1Result.value, s2Result.value);
+        expect(intersect.ok).toBe(true);
+
+        if (intersect.ok) {
+          expect(intersect.value.bid().value()).toEqual(new Decimal(0.48));
+          expect(intersect.value.ask().value()).toEqual(new Decimal(0.52));
+        }
+      }
+    });
+
+    it('should handle touching spreads (boundary case)', () => {
+      const s1Result = SpreadService.fromValues(0.40, 0.50);
+      const s2Result = SpreadService.fromValues(0.50, 0.60);
+      expect(s1Result.ok).toBe(true);
+      expect(s2Result.ok).toBe(true);
+
+      if (s1Result.ok && s2Result.ok) {
+        const intersect = SpreadService.intersect(s1Result.value, s2Result.value);
+        expect(intersect.ok).toBe(true);
+
+        if (intersect.ok) {
+          // Пересечение в одной точке (0.50)
+          expect(intersect.value.bid().value()).toEqual(new Decimal(0.50));
+          expect(intersect.value.ask().value()).toEqual(new Decimal(0.50));
+          expect(intersect.value.isZeroWidth()).toBe(true);
+        }
+      }
+    });
+  });
 });

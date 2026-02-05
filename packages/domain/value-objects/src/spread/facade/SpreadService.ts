@@ -625,6 +625,439 @@ export class SpreadService {
   }
 
   // ============================================================================
+  // Alternative Factory Methods
+  // ============================================================================
+
+  /**
+   * Создать spread из mid и width
+   *
+   * @param mid - Midpoint (середина между bid и ask)
+   * @param width - Ширина спреда (ask - bid)
+   * @returns Result со Spread или InvalidSpreadError
+   *
+   * @remarks
+   * @todo Реализовать когда закончим с Ratio VO.
+   *
+   * Будет вычислять:
+   * - bid = mid - width/2
+   * - ask = mid + width/2
+   *
+   * @example
+   * ```typescript
+   * // TODO: Пример будет добавлен после реализации
+   * const result = SpreadService.fromMidAndWidth(0.50, 0.04);
+   * // bid = 0.48, ask = 0.52
+   * ```
+   */
+  public static fromMidAndWidth(
+    mid: Decimal | number | string,
+    width: Decimal | number | string
+  ): Result<Spread, InvalidSpreadError> {
+    void mid;
+    void width;
+    throw new Error('Not implemented yet. TODO: Implement after Ratio VO is complete.');
+  }
+
+  /**
+   * Создать spread из mid и ширины в процентах
+   *
+   * @param mid - Midpoint (середина между bid и ask)
+   * @param widthPercentage - Ширина в процентах от mid
+   * @returns Result со Spread или InvalidSpreadError
+   *
+   * @remarks
+   * @todo Реализовать когда закончим с Ratio VO.
+   *
+   * Будет вычислять:
+   * - width = mid * (widthPercentage / 100)
+   * - bid = mid - width/2
+   * - ask = mid + width/2
+   *
+   * @example
+   * ```typescript
+   * // TODO: Пример будет добавлен после реализации
+   * const result = SpreadService.fromMidAndWidthPercentage(0.50, 8);
+   * // width = 0.50 * 0.08 = 0.04
+   * // bid = 0.48, ask = 0.52
+   * ```
+   */
+  public static fromMidAndWidthPercentage(
+    mid: Decimal | number | string,
+    widthPercentage: Decimal | number | string
+  ): Result<Spread, InvalidSpreadError> {
+    void mid;
+    void widthPercentage;
+    throw new Error('Not implemented yet. TODO: Implement after Ratio VO is complete.');
+  }
+
+  // ============================================================================
+  // Asymmetric Operations
+  // ============================================================================
+
+  /**
+   * Независимо скорректировать bid цену
+   *
+   * @param spread - Исходный spread
+   * @param amount - Величина корректировки (+ вверх, - вниз)
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * **Операция:**
+   * - Изменяет только bid: `newBid = bid + amount`
+   * - Ask остаётся неизменным
+   * - Ширина изменяется на `-amount`
+   *
+   * **Boundary behavior:**
+   * - Если newBid > ask, возвращает Err (нарушение инварианта)
+   * - Если newBid выходит за [MIN_PRICE, MAX_PRICE], возвращает Err
+   *
+   * **Immutability:**
+   * Исходный spread НЕ изменяется. Возвращается новый Spread объект.
+   *
+   * @example
+   * ```typescript
+   * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
+   *
+   * // Поднять bid
+   * const adjusted = SpreadService.adjustBid(spread, new Decimal(0.01));
+   * if (adjusted.ok) {
+   *   console.log(adjusted.value.bid().value()); // 0.49
+   *   console.log(adjusted.value.ask().value()); // 0.52 (unchanged)
+   *   console.log(adjusted.value.width()); // 0.03 (was 0.04)
+   * }
+   * ```
+   */
+  public static adjustBid(
+    spread: Spread,
+    amount: Decimal | number | string
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+    const op = 'adjustBid';
+
+    // Парсим amount
+    const amountResult = toDecimal<InvalidSpreadError>(
+      'amount',
+      amount,
+      SpreadErrorReason.INVALID_FORMAT,
+      InvalidSpreadError
+    );
+    if (isErr(amountResult)) {
+      return Err(
+        rewrap(SpreadService.SERVICE_NAME, op, {
+          spread: `${spread.bid().value()}-${spread.ask().value()}`,
+          amount: String(amount)
+        }, amountResult.error, InvalidSpreadError)
+      );
+    }
+
+    const amountDecimal = amountResult.value;
+
+    // Валидация amount
+    if (!amountDecimal.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          'Adjust amount must be finite',
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              service: SpreadService.SERVICE_NAME,
+              op,
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
+    try {
+      // Новый bid через math + createPrice helper
+      const newBidValue = addDecimal(spread.bid().value(), amountDecimal);
+      const newBidResult = SpreadService.createPrice(op, 'bid', newBidValue, spread, 'adjust bid');
+      if (isErr(newBidResult)) {
+        return newBidResult;
+      }
+
+      return SpreadService.create(newBidResult.value, spread.ask());
+    } catch (error) {
+      return Err(
+        unexpectedError(SpreadService.SERVICE_NAME, op, {
+          spread: `${spread.bid().value()}-${spread.ask().value()}`,
+          amount: amountDecimal.toString()
+        }, error, InvalidSpreadError)
+      );
+    }
+  }
+
+  /**
+   * Независимо скорректировать ask цену
+   *
+   * @param spread - Исходный spread
+   * @param amount - Величина корректировки (+ вверх, - вниз)
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * **Операция:**
+   * - Изменяет только ask: `newAsk = ask + amount`
+   * - Bid остаётся неизменным
+   * - Ширина изменяется на `+amount`
+   *
+   * **Boundary behavior:**
+   * - Если newAsk < bid, возвращает Err (нарушение инварианта)
+   * - Если newAsk выходит за [MIN_PRICE, MAX_PRICE], возвращает Err
+   *
+   * **Immutability:**
+   * Исходный spread НЕ изменяется. Возвращается новый Spread объект.
+   *
+   * @example
+   * ```typescript
+   * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
+   *
+   * // Поднять ask
+   * const adjusted = SpreadService.adjustAsk(spread, new Decimal(0.02));
+   * if (adjusted.ok) {
+   *   console.log(adjusted.value.bid().value()); // 0.48 (unchanged)
+   *   console.log(adjusted.value.ask().value()); // 0.54
+   *   console.log(adjusted.value.width()); // 0.06 (was 0.04)
+   * }
+   * ```
+   */
+  public static adjustAsk(
+    spread: Spread,
+    amount: Decimal | number | string
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+    const op = 'adjustAsk';
+
+    // Парсим amount
+    const amountResult = toDecimal<InvalidSpreadError>(
+      'amount',
+      amount,
+      SpreadErrorReason.INVALID_FORMAT,
+      InvalidSpreadError
+    );
+    if (isErr(amountResult)) {
+      return Err(
+        rewrap(SpreadService.SERVICE_NAME, op, {
+          spread: `${spread.bid().value()}-${spread.ask().value()}`,
+          amount: String(amount)
+        }, amountResult.error, InvalidSpreadError)
+      );
+    }
+
+    const amountDecimal = amountResult.value;
+
+    // Валидация amount
+    if (!amountDecimal.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          'Adjust amount must be finite',
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              service: SpreadService.SERVICE_NAME,
+              op,
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
+    try {
+      // Новый ask через math + createPrice helper
+      const newAskValue = addDecimal(spread.ask().value(), amountDecimal);
+      const newAskResult = SpreadService.createPrice(op, 'ask', newAskValue, spread, 'adjust ask');
+      if (isErr(newAskResult)) {
+        return newAskResult;
+      }
+
+      return SpreadService.create(spread.bid(), newAskResult.value);
+    } catch (error) {
+      return Err(
+        unexpectedError(SpreadService.SERVICE_NAME, op, {
+          spread: `${spread.bid().value()}-${spread.ask().value()}`,
+          amount: amountDecimal.toString()
+        }, error, InvalidSpreadError)
+      );
+    }
+  }
+
+  /**
+   * Независимо скорректировать bid и ask цены
+   *
+   * @param spread - Исходный spread
+   * @param bidAmount - Величина корректировки bid (+ вверх, - вниз)
+   * @param askAmount - Величина корректировки ask (+ вверх, - вниз)
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * Комбинация adjustBid() и adjustAsk() в одной операции.
+   * Сначала применяет adjustBid(), затем adjustAsk().
+   *
+   * **Immutability:**
+   * Исходный spread НЕ изменяется. Возвращается новый Spread объект.
+   *
+   * @example
+   * ```typescript
+   * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
+   *
+   * // Поднять bid на 0.01, опустить ask на 0.01
+   * const adjusted = SpreadService.adjustBidAsk(
+   *   spread,
+   *   new Decimal(0.01),
+   *   new Decimal(-0.01)
+   * );
+   * if (adjusted.ok) {
+   *   console.log(adjusted.value.bid().value()); // 0.49
+   *   console.log(adjusted.value.ask().value()); // 0.51
+   *   console.log(adjusted.value.width()); // 0.02 (was 0.04)
+   * }
+   * ```
+   */
+  public static adjustBidAsk(
+    spread: Spread,
+    bidAmount: Decimal | number | string,
+    askAmount: Decimal | number | string
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+    // Сначала корректируем bid
+    const bidAdjusted = SpreadService.adjustBid(spread, bidAmount);
+    if (isErr(bidAdjusted)) {
+      return bidAdjusted;
+    }
+
+    // Затем корректируем ask
+    return SpreadService.adjustAsk(bidAdjusted.value, askAmount);
+  }
+
+  // ============================================================================
+  // Spread Combining
+  // ============================================================================
+
+  /**
+   * Объединить два spread в один охватывающий оба
+   *
+   * @param s1 - Первый spread
+   * @param s2 - Второй spread
+   * @returns Result со Spread охватывающим оба входных
+   *
+   * @remarks
+   * **Операция:**
+   * - Результат.bid = min(s1.bid, s2.bid)
+   * - Результат.ask = max(s1.ask, s2.ask)
+   * - Результат содержит оба входных спреда
+   *
+   * **Use case:**
+   * Объединение order books с разных бирж.
+   *
+   * **Immutability:**
+   * Входные spreads НЕ изменяются. Возвращается новый Spread объект.
+   *
+   * @example
+   * ```typescript
+   * const s1 = unwrap(SpreadService.fromValues(0.48, 0.52));
+   * const s2 = unwrap(SpreadService.fromValues(0.50, 0.54));
+   *
+   * const merged = SpreadService.merge(s1, s2);
+   * if (merged.ok) {
+   *   console.log(merged.value.bid().value()); // 0.48 (min)
+   *   console.log(merged.value.ask().value()); // 0.54 (max)
+   *   console.log(merged.value.width()); // 0.06
+   * }
+   * ```
+   */
+  public static merge(
+    s1: Spread,
+    s2: Spread
+  ): Result<Spread, InvalidSpreadError> {
+    const op = 'merge';
+
+    return wrapOp(SpreadService.SERVICE_NAME, op, {
+      s1: `${s1.bid().value()}-${s1.ask().value()}`,
+      s2: `${s2.bid().value()}-${s2.ask().value()}`
+    }, () => {
+      // Находим минимальный bid и максимальный ask
+      const minBid = s1.bid().value().lessThan(s2.bid().value()) ? s1.bid() : s2.bid();
+      const maxAsk = s1.ask().value().greaterThan(s2.ask().value()) ? s1.ask() : s2.ask();
+
+      return SpreadService.create(minBid, maxAsk);
+    }, InvalidSpreadError);
+  }
+
+  /**
+   * Найти пересечение двух spread
+   *
+   * @param s1 - Первый spread
+   * @param s2 - Второй spread
+   * @returns Result со Spread пересечением или Err если нет пересечения
+   *
+   * @remarks
+   * **Операция:**
+   * - Результат.bid = max(s1.bid, s2.bid)
+   * - Результат.ask = min(s1.ask, s2.ask)
+   * - Возвращает Err если результирующий bid > ask (нет пересечения)
+   *
+   * **Use case:**
+   * Нахождение общего диапазона цен на разных биржах.
+   *
+   * **Immutability:**
+   * Входные spreads НЕ изменяются. Возвращается новый Spread объект.
+   *
+   * @example
+   * ```typescript
+   * const s1 = unwrap(SpreadService.fromValues(0.40, 0.60));
+   * const s2 = unwrap(SpreadService.fromValues(0.50, 0.70));
+   *
+   * const intersection = SpreadService.intersect(s1, s2);
+   * if (intersection.ok) {
+   *   console.log(intersection.value.bid().value()); // 0.50 (max)
+   *   console.log(intersection.value.ask().value()); // 0.60 (min)
+   *   console.log(intersection.value.width()); // 0.10
+   * }
+   *
+   * // Нет пересечения
+   * const s3 = unwrap(SpreadService.fromValues(0.70, 0.80));
+   * const noIntersect = SpreadService.intersect(s1, s3);
+   * console.log(noIntersect.ok); // false
+   * ```
+   */
+  public static intersect(
+    s1: Spread,
+    s2: Spread
+  ): Result<Spread, InvalidSpreadError> {
+    const op = 'intersect';
+
+    return wrapOp(SpreadService.SERVICE_NAME, op, {
+      s1: `${s1.bid().value()}-${s1.ask().value()}`,
+      s2: `${s2.bid().value()}-${s2.ask().value()}`
+    }, () => {
+      // Находим максимальный bid и минимальный ask
+      const maxBid = s1.bid().value().greaterThan(s2.bid().value()) ? s1.bid() : s2.bid();
+      const minAsk = s1.ask().value().lessThan(s2.ask().value()) ? s1.ask() : s2.ask();
+
+      // Проверяем что есть пересечение (bid <= ask)
+      if (maxBid.value().greaterThan(minAsk.value())) {
+        return Err(new InvalidSpreadError(
+          'Spreads do not intersect',
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              service: SpreadService.SERVICE_NAME,
+              op,
+              s1: `${s1.bid().value()}-${s1.ask().value()}`,
+              s2: `${s2.bid().value()}-${s2.ask().value()}`,
+              reason: SpreadErrorReason.BID_GREATER_THAN_ASK
+            }
+          }
+        ));
+      }
+
+      return SpreadService.create(maxBid, minAsk);
+    }, InvalidSpreadError);
+  }
+
+  // ============================================================================
   // Private Helpers
   // ============================================================================
 
