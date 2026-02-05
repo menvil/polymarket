@@ -43,6 +43,7 @@ export interface SpreadDTO {
  * ```
  */
 export class SpreadSerializer {
+  private static readonly SERVICE_NAME = 'SpreadSerializer';
   /**
    * Сериализовать Spread в DTO
    *
@@ -71,6 +72,8 @@ export class SpreadSerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: SpreadSerializer.SERVICE_NAME,
+              op: 'fromDTO',
               dto: String(dto),
               reason: SpreadErrorReason.INVALID_DTO
             }
@@ -86,6 +89,8 @@ export class SpreadSerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: SpreadSerializer.SERVICE_NAME,
+              op: 'fromDTO',
               dto: JSON.stringify(dto),
               reason: SpreadErrorReason.INVALID_DTO
             }
@@ -124,6 +129,8 @@ export class SpreadSerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: SpreadSerializer.SERVICE_NAME,
+              op: 'fromJSON',
               json,
               error: error instanceof Error ? error.message : String(error),
               reason: SpreadErrorReason.INVALID_JSON

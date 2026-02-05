@@ -5,6 +5,7 @@ import { BalanceSerializer } from '../../../src/balance/adapters/BalanceSerializ
 import { BalanceFormatter } from '../../../src/balance/adapters/BalanceFormatter.js';
 import { Money } from '../../../src/money/core/Money.js';
 import { BalanceErrorReason } from '../../../src/balance/errors/BalanceErrorReason.js';
+import { unwrap } from '@polymarket/result';
 
 describe('Balance Integration Tests', () => {
   describe('Полный workflow: создание → reserve → release → update', () => {
@@ -367,12 +368,12 @@ describe('Balance Integration Tests', () => {
       const balance = createResult.value;
 
       // Все форматтеры работают
-      const summary = BalanceFormatter.toSummary(balance);
+      const summary = unwrap(BalanceFormatter.toSummary(balance));
       expect(summary).toContain('Available: $10000.00');
       expect(summary).toContain('Reserved: $2000.00');
       expect(summary).toContain('16.67% reserved');
 
-      const compact = BalanceFormatter.toCompact(balance);
+      const compact = unwrap(BalanceFormatter.toCompact(balance));
       expect(compact).toContain('$10.0K');
       expect(compact).toContain('$2.0K');
 
@@ -380,7 +381,7 @@ describe('Balance Integration Tests', () => {
       expect(debug).toContain('Balance(');
       expect(debug).toContain('10000 USDC');
 
-      const percentage = BalanceFormatter.toPercentageString(balance);
+      const percentage = unwrap(BalanceFormatter.toPercentageString(balance));
       expect(percentage).toBe('16.67%');
     });
 
@@ -390,14 +391,14 @@ describe('Balance Integration Tests', () => {
       expect(emptyResult.ok).toBe(true);
       if (!emptyResult.ok) return;
 
-      expect(BalanceFormatter.toPercentageString(emptyResult.value)).toBe('0.00%');
+      expect(unwrap(BalanceFormatter.toPercentageString(emptyResult.value))).toBe('0.00%');
 
       // Всё зарезервировано
       const allReservedResult = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(10000)));
       expect(allReservedResult.ok).toBe(true);
       if (!allReservedResult.ok) return;
 
-      expect(BalanceFormatter.toPercentageString(allReservedResult.value)).toBe('100.00%');
+      expect(unwrap(BalanceFormatter.toPercentageString(allReservedResult.value))).toBe('100.00%');
     });
   });
 
@@ -552,16 +553,21 @@ describe('Balance Integration Tests', () => {
       }
     });
 
-    it('Formatter бросает RangeError для невалидных decimals', () => {
+    it('Formatter возвращает Err для невалидных decimals', () => {
       const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
       const balance = createResult.value;
 
-      expect(() => BalanceFormatter.toSummary(balance, -1)).toThrow(RangeError);
-      expect(() => BalanceFormatter.toSummary(balance, 2.5)).toThrow(RangeError);
-      expect(() => BalanceFormatter.toPercentageString(balance, -1)).toThrow(RangeError);
+      const result1 = BalanceFormatter.toSummary(balance, -1);
+      expect(result1.ok).toBe(false);
+
+      const result2 = BalanceFormatter.toSummary(balance, 2.5);
+      expect(result2.ok).toBe(false);
+
+      const result3 = BalanceFormatter.toPercentageString(balance, -1);
+      expect(result3.ok).toBe(false);
     });
   });
 });

@@ -1,5 +1,8 @@
 import { Balance } from '../core/Balance.js';
 import { MoneyFormatter } from '../../money/adapters/MoneyFormatter.js';
+import { InvalidBalanceError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Форматтер для Balance
@@ -9,21 +12,23 @@ import { MoneyFormatter } from '../../money/adapters/MoneyFormatter.js';
  * для UI и логирования.
  *
  * Использует MoneyFormatter для форматирования available и reserved.
+ * Все методы возвращают Result для обработки ошибок валидации параметров.
  *
  * @example
  * ```typescript
  * import { Balance, BalanceFormatter } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
+ * import { expectOk } from '@polymarket/result';
  *
  * const balance = Balance.of(
  *   Money.fromUSDC(10000),
  *   Money.fromUSDC(2000)
  * );
  *
- * console.log(BalanceFormatter.toSummary(balance));
+ * console.log(expectOk(BalanceFormatter.toSummary(balance)));
  * // "Available: $10000.00, Reserved: $2000.00, Total: $12000.00 (16.67% reserved)"
  *
- * console.log(BalanceFormatter.toCompact(balance));
+ * console.log(expectOk(BalanceFormatter.toCompact(balance)));
  * // "Avail: $10.0K | Res: $2.0K | Total: $12.0K"
  *
  * console.log(BalanceFormatter.toDebugString(balance));
@@ -40,8 +45,8 @@ export class BalanceFormatter {
    *
    * @param balance - Balance для форматирования
    * @param decimals - Количество десятичных знаков (по умолчанию 2)
-   * @returns Строка вида "Available: $X, Reserved: $Y, Total: $Z (P% reserved)"
-   * @throws {RangeError} Если decimals отрицательное или не целое число
+   * @returns Result с отформатированной строкой вида "Available: $X, Reserved: $Y, Total: $Z (P% reserved)" или ошибкой валидации
+   * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
@@ -50,24 +55,78 @@ export class BalanceFormatter {
    *   Money.fromUSDC(2000)
    * );
    *
-   * console.log(BalanceFormatter.toSummary(balance));
-   * // "Available: $10000.00, Reserved: $2000.00, Total: $12000.00 (16.67% reserved)"
+   * const result1 = BalanceFormatter.toSummary(balance);
+   * if (result1.ok) {
+   *   console.log(result1.value);
+   *   // "Available: $10000.00, Reserved: $2000.00, Total: $12000.00 (16.67% reserved)"
+   * }
    *
-   * console.log(BalanceFormatter.toSummary(balance, 0));
-   * // "Available: $10000, Reserved: $2000, Total: $12000 (16.67% reserved)"
+   * // Ошибка валидации
+   * const result2 = BalanceFormatter.toSummary(balance, -1);
+   * if (!result2.ok) {
+   *   console.log(result2.error.message); // ошибка валидации decimals
+   * }
    * ```
    */
-  public static toSummary(balance: Balance, decimals: number = 2): string {
+  public static toSummary(balance: Balance, decimals: number = 2): Result<string, InvalidBalanceError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
-      throw new RangeError('decimals argument must be a non-negative integer');
+      return Err(
+        new InvalidBalanceError('decimals argument must be a non-negative integer', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: 'BalanceFormatter',
+            op: 'toSummary',
+            decimals: String(decimals)
+          }
+        })
+      );
     }
 
-    const available = MoneyFormatter.toCurrency(balance.available(), false, decimals);
-    const reserved = MoneyFormatter.toCurrency(balance.reserved(), false, decimals);
-    const total = MoneyFormatter.toCurrency(balance.total(), false, decimals);
+    const availableResult = MoneyFormatter.toCurrency(balance.available(), false, decimals);
+    if (!availableResult.ok) {
+      return Err(
+        new InvalidBalanceError('Failed to format available amount', {
+          context: {
+            source: ErrorSource.SERVICE_CALL,
+            service: 'BalanceFormatter',
+            op: 'toSummary',
+            cause: availableResult.error
+          }
+        })
+      );
+    }
+
+    const reservedResult = MoneyFormatter.toCurrency(balance.reserved(), false, decimals);
+    if (!reservedResult.ok) {
+      return Err(
+        new InvalidBalanceError('Failed to format reserved amount', {
+          context: {
+            source: ErrorSource.SERVICE_CALL,
+            service: 'BalanceFormatter',
+            op: 'toSummary',
+            cause: reservedResult.error
+          }
+        })
+      );
+    }
+
+    const totalResult = MoneyFormatter.toCurrency(balance.total(), false, decimals);
+    if (!totalResult.ok) {
+      return Err(
+        new InvalidBalanceError('Failed to format total amount', {
+          context: {
+            source: ErrorSource.SERVICE_CALL,
+            service: 'BalanceFormatter',
+            op: 'toSummary',
+            cause: totalResult.error
+          }
+        })
+      );
+    }
+
     const percentage = balance.reservedPercentage().toFixed(2);
 
-    return `Available: ${available}, Reserved: ${reserved}, Total: ${total} (${percentage}% reserved)`;
+    return Ok(`Available: ${availableResult.value}, Reserved: ${reservedResult.value}, Total: ${totalResult.value} (${percentage}% reserved)`);
   }
 
   /**
@@ -79,8 +138,8 @@ export class BalanceFormatter {
    *
    * @param balance - Balance для форматирования
    * @param decimals - Количество десятичных знаков после сокращения (по умолчанию 1)
-   * @returns Строка вида "Avail: $X | Res: $Y | Total: $Z"
-   * @throws {RangeError} Если decimals отрицательное или не целое число
+   * @returns Result с отформатированной строкой вида "Avail: $X | Res: $Y | Total: $Z" или ошибкой валидации
+   * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
@@ -89,28 +148,70 @@ export class BalanceFormatter {
    *   Money.fromUSDC(2000)
    * );
    *
-   * console.log(BalanceFormatter.toCompact(balance));
-   * // "Avail: $10.0K | Res: $2.0K | Total: $12.0K"
-   *
-   * const smallBalance = Balance.of(
-   *   Money.fromUSDC(500),
-   *   Money.fromUSDC(100)
-   * );
-   *
-   * console.log(BalanceFormatter.toCompact(smallBalance));
-   * // "Avail: $500.0 | Res: $100.0 | Total: $600.0"
+   * const result = BalanceFormatter.toCompact(balance);
+   * if (result.ok) {
+   *   console.log(result.value);
+   *   // "Avail: $10.0K | Res: $2.0K | Total: $12.0K"
+   * }
    * ```
    */
-  public static toCompact(balance: Balance, decimals: number = 1): string {
+  public static toCompact(balance: Balance, decimals: number = 1): Result<string, InvalidBalanceError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
-      throw new RangeError('decimals argument must be a non-negative integer');
+      return Err(
+        new InvalidBalanceError('decimals argument must be a non-negative integer', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: 'BalanceFormatter',
+            op: 'toCompact',
+            decimals: String(decimals)
+          }
+        })
+      );
     }
 
-    const available = MoneyFormatter.toCompact(balance.available(), decimals);
-    const reserved = MoneyFormatter.toCompact(balance.reserved(), decimals);
-    const total = MoneyFormatter.toCompact(balance.total(), decimals);
+    const availableResult = MoneyFormatter.toCompact(balance.available(), decimals);
+    if (!availableResult.ok) {
+      return Err(
+        new InvalidBalanceError('Failed to format available amount', {
+          context: {
+            source: ErrorSource.SERVICE_CALL,
+            service: 'BalanceFormatter',
+            op: 'toCompact',
+            cause: availableResult.error
+          }
+        })
+      );
+    }
 
-    return `Avail: ${available} | Res: ${reserved} | Total: ${total}`;
+    const reservedResult = MoneyFormatter.toCompact(balance.reserved(), decimals);
+    if (!reservedResult.ok) {
+      return Err(
+        new InvalidBalanceError('Failed to format reserved amount', {
+          context: {
+            source: ErrorSource.SERVICE_CALL,
+            service: 'BalanceFormatter',
+            op: 'toCompact',
+            cause: reservedResult.error
+          }
+        })
+      );
+    }
+
+    const totalResult = MoneyFormatter.toCompact(balance.total(), decimals);
+    if (!totalResult.ok) {
+      return Err(
+        new InvalidBalanceError('Failed to format total amount', {
+          context: {
+            source: ErrorSource.SERVICE_CALL,
+            service: 'BalanceFormatter',
+            op: 'toCompact',
+            cause: totalResult.error
+          }
+        })
+      );
+    }
+
+    return Ok(`Avail: ${availableResult.value} | Res: ${reservedResult.value} | Total: ${totalResult.value}`);
   }
 
   /**
@@ -151,8 +252,8 @@ export class BalanceFormatter {
    * @param balance - Balance для форматирования
    * @param showCurrency - Показывать ли код валюты (по умолчанию true)
    * @param decimals - Количество десятичных знаков (по умолчанию 2)
-   * @returns Строка вида "$10000.00 USDC" или "$10000.00"
-   * @throws {RangeError} Если decimals отрицательное или не целое число
+   * @returns Result с отформатированной строкой вида "$10000.00 USDC" или "$10000.00", или ошибкой валидации
+   * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
@@ -161,23 +262,45 @@ export class BalanceFormatter {
    *   Money.fromUSDC(2000)
    * );
    *
-   * console.log(BalanceFormatter.toAvailableString(balance));
-   * // "$10000.00 USDC"
-   *
-   * console.log(BalanceFormatter.toAvailableString(balance, false));
-   * // "$10000.00"
+   * const result = BalanceFormatter.toAvailableString(balance);
+   * if (result.ok) {
+   *   console.log(result.value);  // "$10000.00 USDC"
+   * }
    * ```
    */
   public static toAvailableString(
     balance: Balance,
     showCurrency: boolean = true,
     decimals: number = 2
-  ): string {
+  ): Result<string, InvalidBalanceError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
-      throw new RangeError('decimals argument must be a non-negative integer');
+      return Err(
+        new InvalidBalanceError('decimals argument must be a non-negative integer', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: 'BalanceFormatter',
+            op: 'toAvailableString',
+            decimals: String(decimals)
+          }
+        })
+      );
     }
 
-    return MoneyFormatter.toCurrency(balance.available(), showCurrency, decimals);
+    const result = MoneyFormatter.toCurrency(balance.available(), showCurrency, decimals);
+    if (!result.ok) {
+      return Err(
+        new InvalidBalanceError('Failed to format available amount', {
+          context: {
+            source: ErrorSource.SERVICE_CALL,
+            service: 'BalanceFormatter',
+            op: 'toAvailableString',
+            cause: result.error
+          }
+        })
+      );
+    }
+
+    return result;
   }
 
   /**
@@ -189,8 +312,8 @@ export class BalanceFormatter {
    * @param balance - Balance для форматирования
    * @param showCurrency - Показывать ли код валюты (по умолчанию true)
    * @param decimals - Количество десятичных знаков (по умолчанию 2)
-   * @returns Строка вида "$2000.00 USDC" или "$2000.00"
-   * @throws {RangeError} Если decimals отрицательное или не целое число
+   * @returns Result с отформатированной строкой вида "$2000.00 USDC" или "$2000.00", или ошибкой валидации
+   * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
@@ -199,23 +322,45 @@ export class BalanceFormatter {
    *   Money.fromUSDC(2000)
    * );
    *
-   * console.log(BalanceFormatter.toReservedString(balance));
-   * // "$2000.00 USDC"
-   *
-   * console.log(BalanceFormatter.toReservedString(balance, false));
-   * // "$2000.00"
+   * const result = BalanceFormatter.toReservedString(balance);
+   * if (result.ok) {
+   *   console.log(result.value);  // "$2000.00 USDC"
+   * }
    * ```
    */
   public static toReservedString(
     balance: Balance,
     showCurrency: boolean = true,
     decimals: number = 2
-  ): string {
+  ): Result<string, InvalidBalanceError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
-      throw new RangeError('decimals argument must be a non-negative integer');
+      return Err(
+        new InvalidBalanceError('decimals argument must be a non-negative integer', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: 'BalanceFormatter',
+            op: 'toReservedString',
+            decimals: String(decimals)
+          }
+        })
+      );
     }
 
-    return MoneyFormatter.toCurrency(balance.reserved(), showCurrency, decimals);
+    const result = MoneyFormatter.toCurrency(balance.reserved(), showCurrency, decimals);
+    if (!result.ok) {
+      return Err(
+        new InvalidBalanceError('Failed to format reserved amount', {
+          context: {
+            source: ErrorSource.SERVICE_CALL,
+            service: 'BalanceFormatter',
+            op: 'toReservedString',
+            cause: result.error
+          }
+        })
+      );
+    }
+
+    return result;
   }
 
   /**
@@ -227,8 +372,8 @@ export class BalanceFormatter {
    * @param balance - Balance для форматирования
    * @param showCurrency - Показывать ли код валюты (по умолчанию true)
    * @param decimals - Количество десятичных знаков (по умолчанию 2)
-   * @returns Строка вида "$12000.00 USDC" или "$12000.00"
-   * @throws {RangeError} Если decimals отрицательное или не целое число
+   * @returns Result с отформатированной строкой вида "$12000.00 USDC" или "$12000.00", или ошибкой валидации
+   * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
@@ -237,23 +382,45 @@ export class BalanceFormatter {
    *   Money.fromUSDC(2000)
    * );
    *
-   * console.log(BalanceFormatter.toTotalString(balance));
-   * // "$12000.00 USDC"
-   *
-   * console.log(BalanceFormatter.toTotalString(balance, false));
-   * // "$12000.00"
+   * const result = BalanceFormatter.toTotalString(balance);
+   * if (result.ok) {
+   *   console.log(result.value);  // "$12000.00 USDC"
+   * }
    * ```
    */
   public static toTotalString(
     balance: Balance,
     showCurrency: boolean = true,
     decimals: number = 2
-  ): string {
+  ): Result<string, InvalidBalanceError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
-      throw new RangeError('decimals argument must be a non-negative integer');
+      return Err(
+        new InvalidBalanceError('decimals argument must be a non-negative integer', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: 'BalanceFormatter',
+            op: 'toTotalString',
+            decimals: String(decimals)
+          }
+        })
+      );
     }
 
-    return MoneyFormatter.toCurrency(balance.total(), showCurrency, decimals);
+    const result = MoneyFormatter.toCurrency(balance.total(), showCurrency, decimals);
+    if (!result.ok) {
+      return Err(
+        new InvalidBalanceError('Failed to format total amount', {
+          context: {
+            source: ErrorSource.SERVICE_CALL,
+            service: 'BalanceFormatter',
+            op: 'toTotalString',
+            cause: result.error
+          }
+        })
+      );
+    }
+
+    return result;
   }
 
   /**
@@ -264,8 +431,8 @@ export class BalanceFormatter {
    *
    * @param balance - Balance для форматирования
    * @param decimals - Количество десятичных знаков (по умолчанию 2)
-   * @returns Строка вида "16.67%"
-   * @throws {RangeError} Если decimals отрицательное или не целое число
+   * @returns Result с отформатированной строкой вида "16.67%" или ошибкой валидации
+   * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
@@ -274,18 +441,26 @@ export class BalanceFormatter {
    *   Money.fromUSDC(2000)
    * );
    *
-   * console.log(BalanceFormatter.toPercentageString(balance));
-   * // "20.00%"
-   *
-   * console.log(BalanceFormatter.toPercentageString(balance, 0));
-   * // "20%"
+   * const result = BalanceFormatter.toPercentageString(balance);
+   * if (result.ok) {
+   *   console.log(result.value);  // "20.00%"
+   * }
    * ```
    */
-  public static toPercentageString(balance: Balance, decimals: number = 2): string {
+  public static toPercentageString(balance: Balance, decimals: number = 2): Result<string, InvalidBalanceError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
-      throw new RangeError('decimals argument must be a non-negative integer');
+      return Err(
+        new InvalidBalanceError('decimals argument must be a non-negative integer', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: 'BalanceFormatter',
+            op: 'toPercentageString',
+            decimals: String(decimals)
+          }
+        })
+      );
     }
 
-    return `${balance.reservedPercentage().toFixed(decimals)}%`;
+    return Ok(`${balance.reservedPercentage().toFixed(decimals)}%`);
   }
 }

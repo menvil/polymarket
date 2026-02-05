@@ -274,6 +274,40 @@ export function unexpectedError<TError extends DomainError>(
 }
 
 /**
+ * Создаёт ошибку для Core invariant violations
+ *
+ * @param serviceName - Название сервиса ('QuoteService', 'PriceService', и т.д.)
+ * @param op - Название операции
+ * @param ctx - Контекст операции
+ * @param e - Core invariant violation (Error & { reason: string })
+ * @param ErrorConstructor - Конструктор ошибки
+ * @returns TError с полным контекстом
+ *
+ * @remarks
+ * Используется для обработки нарушений инвариантов Core (PriceInvariantViolation, etc).
+ * Сохраняет reason из исключения Core в context.
+ *
+ * valueName автоматически определяется из ErrorConstructor через getValueName().
+ */
+export function coreInvariantError<TError extends DomainError>(
+  serviceName: string,
+  op: string,
+  ctx: Record<string, unknown>,
+  e: Error & { reason: string },
+  ErrorConstructor: ErrorConstructor<TError>
+): TError {
+  return new ErrorConstructor(e.message, {
+    context: {
+      source: ErrorSource.CORE_INVARIANT,
+      service: serviceName,
+      op,
+      ...ctx,
+      reason: e.reason
+    }
+  });
+}
+
+/**
  * Проверяет является ли ошибка ожидаемой math-ошибкой
  *
  * @param e - Ошибка для проверки
@@ -301,6 +335,37 @@ export function isExpectedMathError(e: unknown): e is Error {
       e.name === 'ArithmeticOverflowError' ||
       e.name === 'InvalidOperandError' ||
       e.name === 'DivisionByZeroError')
+  );
+}
+
+/**
+ * Проверяет является ли ошибка Core invariant violation
+ *
+ * @param e - Ошибка для проверки
+ * @returns true если это Core invariant violation
+ *
+ * @remarks
+ * Используется в catch блоках wrapOp для обнаружения нарушений инвариантов Core.
+ * Проверяет name для надёжности (без необходимости импортировать все классы).
+ *
+ * Поддерживаемые типы:
+ * - PriceInvariantViolation
+ * - QuantityInvariantViolation
+ * - MoneyInvariantViolation
+ * - BalanceInvariantViolation
+ * - SpreadInvariantViolation
+ * - QuoteInvariantViolation
+ */
+export function isCoreInvariantViolation(e: unknown): e is Error & { reason: string } {
+  return (
+    e instanceof Error &&
+    (e.name === 'PriceInvariantViolation' ||
+      e.name === 'QuantityInvariantViolation' ||
+      e.name === 'MoneyInvariantViolation' ||
+      e.name === 'BalanceInvariantViolation' ||
+      e.name === 'SpreadInvariantViolation' ||
+      e.name === 'QuoteInvariantViolation') &&
+    'reason' in e
   );
 }
 
@@ -459,6 +524,10 @@ export function wrapOp<T, TError extends DomainError>(
     }
     return result;
   } catch (e) {
+    // Core invariant violations (PriceInvariantViolation, etc) - обрабатываем ПЕРВЫМИ
+    if (isCoreInvariantViolation(e)) {
+      return Err(rewrap(serviceName, op, ctx, coreInvariantError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
+    }
     // Если кто-то бросил Domain Error
     if (
       e instanceof InvalidMoneyError ||

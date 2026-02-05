@@ -2,15 +2,15 @@ import { type Result, Ok, Err, isErr } from '@polymarket/result';
 import { InvalidSpreadError, InvalidPriceError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { Price, PriceService } from '../../price/index.js';
-import { Spread, SpreadInvariantViolation, SpreadErrorReason } from '../core/index.js';
+import { Spread, SpreadErrorReason } from '../core/index.js';
 import { ValidateBidAsk } from '../rules/ValidateBidAsk.js';
 import { addDecimal, subtractDecimal } from '@polymarket/math';
 // Импорт из централизованного модуля
 import {
-  toCause,
   toDecimal,
   rewrap,
-  unexpectedError
+  unexpectedError,
+  wrapOp
 } from '../../shared/facade/errorUtils.js';
 import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
@@ -102,37 +102,19 @@ export class SpreadService {
     }
 
     // Создание через Core (может бросить SpreadInvariantViolation)
-    try {
-      return Ok(Spread.of(bid, ask));
-    } catch (error) {
-      // Ловим типизированное исключение из Core
-      if (error instanceof SpreadInvariantViolation) {
-        return Err(
-          new InvalidSpreadError(
-            `Spread invariant violation: ${error.message}`,
-            {
-              context: {
-                source: ErrorSource.CORE_INVARIANT,
-                service: SpreadService.SERVICE_NAME, // Set root service field
-                op: 'create',
-                bid: bid.value().toString(),
-                ask: ask.value().toString(),
-                reason: error.reason,
-                cause: toCause(error)
-              }
-            }
-          )
-        );
-      }
-
-      // Неожиданные ошибки
-      return Err(
-        unexpectedError(SpreadService.SERVICE_NAME, 'create', {
-          bid: bid.value().toString(),
-          ask: ask.value().toString()
-        }, error, InvalidSpreadError)
-      );
-    }
+    return wrapOp(
+      SpreadService.SERVICE_NAME,
+      'create',
+      {
+        bid: bid.value().toString(),
+        ask: ask.value().toString()
+      },
+      () => {
+        const spread = Spread.of(bid, ask);
+        return Ok(spread);
+      },
+      InvalidSpreadError
+    );
   }
 
   /**
@@ -256,6 +238,7 @@ export class SpreadService {
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
+              service: SpreadService.SERVICE_NAME,
               op: 'tighten',
               amount: amountDecimal.toString(),
               spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -273,6 +256,7 @@ export class SpreadService {
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
+              service: SpreadService.SERVICE_NAME,
               op: 'tighten',
               amount: amountDecimal.toString(),
               spread: `${spread.bid().value()}-${spread.ask().value()}`,

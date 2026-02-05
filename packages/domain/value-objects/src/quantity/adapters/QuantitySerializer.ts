@@ -62,6 +62,7 @@ function safeStringify(value: unknown): string {
  * ```
  */
 export class QuantitySerializer {
+  private static readonly SERVICE_NAME = 'QuantitySerializer';
   /**
    * Сериализует Quantity в JSON (string для точности)
    *
@@ -121,6 +122,8 @@ export class QuantitySerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: QuantitySerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: typeof json,
               json: safeStringify(json)
@@ -138,6 +141,8 @@ export class QuantitySerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: QuantitySerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: 'array',
               json: safeStringify(json)
@@ -155,6 +160,8 @@ export class QuantitySerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: QuantitySerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: 'missing_field',
               json: safeStringify(json)
@@ -174,6 +181,8 @@ export class QuantitySerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: QuantitySerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: typeof value,
               json: safeStringify(json)
@@ -197,6 +206,7 @@ export class QuantitySerializer {
  * Для точной сериализации используйте QuantitySerializer.
  */
 export class QuantityLossySerializer {
+  private static readonly SERVICE_NAME = 'QuantityLossySerializer';
   /**
    * Сериализует Quantity в JSON (number, lossy)
    *
@@ -222,6 +232,9 @@ export class QuantityLossySerializer {
           (ctx) => `Cannot serialize non-finite Quantity to JSON, got ${ctx.value}`,
           {
             context: {
+              source: ErrorSource.PARSING,
+              service: QuantityLossySerializer.SERVICE_NAME,
+              op: 'toJSON',
               value: decimalValue.toString(),
               operation: 'toJSON'
             }

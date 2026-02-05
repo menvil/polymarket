@@ -60,6 +60,7 @@ function safeStringify(value: unknown): string {
  * ```
  */
 export class MoneySerializer {
+  private static readonly SERVICE_NAME = 'MoneySerializer';
   /**
    * Десериализует Money из JSON
    *
@@ -96,6 +97,7 @@ export class MoneySerializer {
         new InvalidMoneyError(`Expected object, got ${typeof json}`, {
           context: {
             source: ErrorSource.PARSING,
+            service: MoneySerializer.SERVICE_NAME,
             op: 'fromJSON',
             json: safeStringify(json),
             reason: MoneyErrorReason.INVALID_FORMAT,
@@ -112,6 +114,7 @@ export class MoneySerializer {
         new InvalidMoneyError(`Missing required field 'amount'`, {
           context: {
             source: ErrorSource.PARSING,
+            service: MoneySerializer.SERVICE_NAME,
             op: 'fromJSON',
             json: safeStringify(json),
             reason: MoneyErrorReason.INVALID_FORMAT,
@@ -126,6 +129,7 @@ export class MoneySerializer {
         new InvalidMoneyError(`Missing required field 'currency'`, {
           context: {
             source: ErrorSource.PARSING,
+            service: MoneySerializer.SERVICE_NAME,
             op: 'fromJSON',
             json: safeStringify(json),
             reason: MoneyErrorReason.INVALID_FORMAT,
@@ -141,6 +145,7 @@ export class MoneySerializer {
         new InvalidMoneyError(`Field 'amount' must be number or string`, {
           context: {
             source: ErrorSource.PARSING,
+            service: MoneySerializer.SERVICE_NAME,
             op: 'fromJSON',
             amount: safeStringify(amount),
             reason: MoneyErrorReason.INVALID_FORMAT,
@@ -155,6 +160,7 @@ export class MoneySerializer {
         new InvalidMoneyError(`Field 'currency' must be string`, {
           context: {
             source: ErrorSource.PARSING,
+            service: MoneySerializer.SERVICE_NAME,
             op: 'fromJSON',
             currency: safeStringify(currency),
             reason: MoneyErrorReason.INVALID_FORMAT,

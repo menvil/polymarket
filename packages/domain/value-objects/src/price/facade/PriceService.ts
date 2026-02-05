@@ -1,9 +1,8 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
-import { Price, PriceInvariantViolation } from '../core/Price.js';
+import { Price } from '../core/Price.js';
 import { PriceErrorReason } from '../errors/PriceErrorReason.js';
-import { toDecimal, rewrap, wrapOp, unexpectedError } from '../../shared/facade/errorUtils.js';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
+import { toDecimal, rewrap, wrapOp } from '../../shared/facade/errorUtils.js';
 import { ValidateTickSizeMultipleOfBaseTick } from '../rules/ValidateTickSizeMultipleOfBaseTick.js';
 import { ValidateAligned } from '../rules/ValidateAligned.js';
 import { ValidateFactorForPriceMultiplication } from '../rules/ValidateFactorForPriceMultiplication.js';
@@ -103,30 +102,17 @@ export class PriceService {
       return Err(rewrap(PriceService.SERVICE_NAME, 'create', {}, decimalResult.error, InvalidPriceError));
     }
 
-    try {
-      // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
-      const price = Price.of(decimalResult.value);
-      return Ok(price);
-    } catch (error) {
-      // PriceInvariantViolation - доменные ограничения Core
-      if (error instanceof PriceInvariantViolation) {
-        return Err(
-          rewrap(PriceService.SERVICE_NAME, 'create', {}, new InvalidPriceError(error.message, {
-            context: {
-              source: ErrorSource.CORE_INVARIANT,
-              service: PriceService.SERVICE_NAME, // Set root service field
-              raw: { field: 'value', value: String(value) },
-              reason: error.reason
-            }
-          }), InvalidPriceError)
-        );
-      }
-
-      // Неожиданная ошибка - unexpectedError создаёт базовую ошибку с cause, rewrap добавляет op
-      return Err(
-        rewrap(PriceService.SERVICE_NAME, 'create', { value: String(value) }, unexpectedError(PriceService.SERVICE_NAME, 'create', {}, error, InvalidPriceError), InvalidPriceError)
-      );
-    }
+    return wrapOp(
+      PriceService.SERVICE_NAME,
+      'create',
+      { raw: { field: 'value', value: String(value) } },
+      () => {
+        // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
+        const price = Price.of(decimalResult.value);
+        return Ok(price);
+      },
+      InvalidPriceError
+    );
   }
 
   /**

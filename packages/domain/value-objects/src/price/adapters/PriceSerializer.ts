@@ -59,6 +59,7 @@ function safeStringify(value: unknown): string {
  * ```
  */
 export class PriceSerializer {
+  private static readonly SERVICE_NAME = 'PriceSerializer';
   /**
    * Десериализует Price из JSON
    *
@@ -99,6 +100,8 @@ export class PriceSerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: PriceSerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: typeof json,
               json: safeStringify(json)
@@ -116,6 +119,8 @@ export class PriceSerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: PriceSerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: 'array',
               json: safeStringify(json)
@@ -133,6 +138,8 @@ export class PriceSerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: PriceSerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: 'missing_field',
               json: safeStringify(json)
@@ -152,6 +159,8 @@ export class PriceSerializer {
           {
             context: {
               source: ErrorSource.PARSING,
+              service: PriceSerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: typeof value,
               json: safeStringify(json)

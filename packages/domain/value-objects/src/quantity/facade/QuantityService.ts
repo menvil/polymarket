@@ -1,5 +1,5 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
-import { Quantity, QuantityInvariantViolation } from '../core/Quantity.js';
+import { Quantity } from '../core/Quantity.js';
 import { InvalidQuantityError } from '@polymarket/errors';
 import { ValidateResultNonNegative } from '../rules/ValidateResultNonNegative.js';
 import { ValidateFactorForQuantityMultiplication } from '../rules/ValidateFactorForQuantityMultiplication.js';
@@ -8,8 +8,7 @@ import { ValidateStepSizeForQuantity } from '../rules/ValidateStepSizeForQuantit
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTick } from '@polymarket/math';
 import Decimal from 'decimal.js';
 import { QuantityErrorReason } from '../errors/QuantityErrorReason';
-import { toDecimal, rewrap, wrapOp, unexpectedError } from '../../shared/facade/errorUtils';
-import { ErrorSource } from '../../shared/facade/ErrorSource.js';
+import { toDecimal, rewrap, wrapOp } from '../../shared/facade/errorUtils';
 
 /**
  * Фасад для работы с Quantity
@@ -74,32 +73,20 @@ export class QuantityService {
       return Err(rewrap(QuantityService.SERVICE_NAME, 'create', {}, decimalResult.error, InvalidQuantityError));
     }
 
-    try {
-      // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
-      const quantity = Quantity.of(decimalResult.value);
-      return Ok(quantity);
-    } catch (error) {
-      // QuantityInvariantViolation - доменные ограничения Core
-      if (error instanceof QuantityInvariantViolation) {
-        return Err(
-          new InvalidQuantityError(error.message, {
-            context: {
-              source: ErrorSource.CORE_INVARIANT,
-              service: QuantityService.SERVICE_NAME, // Set root service field
-              op: 'create',
-              raw: { field: 'value', value: String(value) },
-              value: decimalResult.value.toString(),
-              reason: error.reason
-            }
-          })
-        );
-      }
-
-      // Неожиданная ошибка - unexpectedError создаёт базовую ошибку с cause, rewrap добавляет op
-      return Err(
-        rewrap(QuantityService.SERVICE_NAME, 'create', { value: String(value) }, unexpectedError(QuantityService.SERVICE_NAME, 'create', {}, error, InvalidQuantityError), InvalidQuantityError)
-      );
-    }
+    return wrapOp(
+      QuantityService.SERVICE_NAME,
+      'create',
+      {
+        raw: { field: 'value', value: String(value) },
+        value: decimalResult.value.toString()
+      },
+      () => {
+        // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
+        const quantity = Quantity.of(decimalResult.value);
+        return Ok(quantity);
+      },
+      InvalidQuantityError
+    );
   }
 
   /**

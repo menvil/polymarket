@@ -8,7 +8,7 @@ import { ValidateReserveAmount } from '../rules/ValidateReserveAmount.js';
 import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount.js';
 import { ValidateCurrencyMatch } from '../rules/ValidateCurrencyMatch.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
-import { rewrap, unexpectedError, currencyMismatchError, wrapOp, toCause } from '../../shared/facade/errorUtils.js';
+import { rewrap, currencyMismatchError, wrapOp, toCause } from '../../shared/facade/errorUtils.js';
 import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
@@ -107,42 +107,20 @@ export class BalanceService {
     available: Money,
     reserved: Money
   ): Result<Balance, InvalidBalanceError> {
-    try {
-      const balance = Balance.of(available, reserved);
-      return Ok(balance);
-    } catch (error) {
-      // BalanceInvariantViolation - доменные ограничения Core
-      if (error instanceof BalanceInvariantViolation) {
-        return Err(
-          new InvalidBalanceError(error.message, {
-            context: {
-              source: ErrorSource.CORE_INVARIANT,
-              service: BalanceService.SERVICE_NAME, // Set root service field
-              op: 'create',
-              reason: error.reason as BalanceErrorReason,
-              available: available.value().toNumber(),
-              reserved: reserved.value().toNumber(),
-              currency: available.currency()
-            }
-          })
-        );
-      }
-
-      // Неожиданная ошибка
-      return Err(
-        unexpectedError(
-          BalanceService.SERVICE_NAME,
-          'create',
-          {
-            available: available.value().toString(),
-            reserved: reserved.value().toString(),
-            currency: available.currency()
-          },
-          error,
-          InvalidBalanceError
-        )
-      );
-    }
+    return wrapOp(
+      BalanceService.SERVICE_NAME,
+      'create',
+      {
+        available: available.value().toString(),
+        reserved: reserved.value().toString(),
+        currency: available.currency()
+      },
+      () => {
+        const balance = Balance.of(available, reserved);
+        return Ok(balance);
+      },
+      InvalidBalanceError
+    );
   }
 
   /**

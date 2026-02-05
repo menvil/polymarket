@@ -1,4 +1,7 @@
 import { Money } from '../core/Money.js';
+import { InvalidMoneyError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
+import { ErrorSource } from '../../shared/facade/ErrorSource.js';
 
 /**
  * Форматтер для Money
@@ -7,15 +10,18 @@ import { Money } from '../core/Money.js';
  * Предоставляет методы для форматирования Money в строки
  * для UI и логирования.
  *
+ * Все методы возвращают Result для обработки ошибок валидации параметров.
+ *
  * @example
  * ```typescript
  * import { Money, MoneyFormatter } from '@polymarket/value-objects/money';
+ * import { expectOk } from '@polymarket/result';
  *
  * const money = Money.of(100.50);
  *
- * console.log(MoneyFormatter.toFixed(money, 2));           // "100.50"
- * console.log(MoneyFormatter.toCurrency(money));           // "$100.50 USDC"
- * console.log(MoneyFormatter.toCurrency(money, false));    // "$100.50"
+ * console.log(expectOk(MoneyFormatter.toFixed(money, 2)));           // "100.50"
+ * console.log(expectOk(MoneyFormatter.toCurrency(money)));           // "$100.50 USDC"
+ * console.log(expectOk(MoneyFormatter.toCurrency(money, false)));    // "$100.50"
  * ```
  */
 export class MoneyFormatter {
@@ -28,26 +34,46 @@ export class MoneyFormatter {
    *
    * @param money - Money для форматирования
    * @param decimals - Количество десятичных знаков (по умолчанию 2)
-   * @returns Строка с фиксированным количеством знаков
-   * @throws {RangeError} Если decimals отрицательное или не целое число
+   * @returns Result с отформатированной строкой или ошибкой валидации
+   * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
    * const money = Money.of(100.5);
-   * console.log(MoneyFormatter.toFixed(money));       // "100.50"
-   * console.log(MoneyFormatter.toFixed(money, 0));    // "101"
-   * console.log(MoneyFormatter.toFixed(money, 4));    // "100.5000"
    *
-   * const money2 = Money.of(99.9999);
-   * console.log(MoneyFormatter.toFixed(money2));      // "100.00"
-   * console.log(MoneyFormatter.toFixed(money2, 2));   // "100.00"
+   * const result1 = MoneyFormatter.toFixed(money);
+   * if (result1.ok) {
+   *   console.log(result1.value);  // "100.50"
+   * }
+   *
+   * const result2 = MoneyFormatter.toFixed(money, 0);
+   * if (result2.ok) {
+   *   console.log(result2.value);  // "101"
+   * }
+   *
+   * // Ошибка валидации
+   * const result3 = MoneyFormatter.toFixed(money, -1);
+   * if (!result3.ok) {
+   *   console.log(result3.error.message); // ошибка валидации decimals
+   * }
    * ```
    */
-  public static toFixed(money: Money, decimals: number = 2): string {
+  public static toFixed(money: Money, decimals: number = 2): Result<string, InvalidMoneyError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
-      throw new RangeError('decimals argument must be a non-negative integer');
+      return Err(
+        new InvalidMoneyError('decimals argument must be a non-negative integer', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: 'MoneyFormatter',
+            op: 'toFixed',
+            decimals: String(decimals),
+            moneyValue: money.value().toString(),
+            currency: money.currency()
+          }
+        })
+      );
     }
-    return money.value().toFixed(decimals);
+    return Ok(money.value().toFixed(decimals));
   }
 
   /**
@@ -60,34 +86,55 @@ export class MoneyFormatter {
    * @param money - Money для форматирования
    * @param showCurrency - Показывать ли код валюты (по умолчанию true)
    * @param decimals - Количество десятичных знаков (по умолчанию 2)
-   * @returns Строка вида "$100.50 USDC" или "$100.50"
+   * @returns Result с отформатированной строкой вида "$100.50 USDC" или "$100.50", или ошибкой валидации
+   * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
    * const money = Money.of(100.50);
-   * console.log(MoneyFormatter.toCurrency(money));              // "$100.50 USDC"
-   * console.log(MoneyFormatter.toCurrency(money, false));       // "$100.50"
-   * console.log(MoneyFormatter.toCurrency(money, true, 0));     // "$101 USDC"
    *
-   * const money2 = Money.of(1234.5678);
-   * console.log(MoneyFormatter.toCurrency(money2));             // "$1234.57 USDC"
-   * console.log(MoneyFormatter.toCurrency(money2, true, 4));    // "$1234.5678 USDC"
+   * const result1 = MoneyFormatter.toCurrency(money);
+   * if (result1.ok) {
+   *   console.log(result1.value);  // "$100.50 USDC"
+   * }
+   *
+   * const result2 = MoneyFormatter.toCurrency(money, false);
+   * if (result2.ok) {
+   *   console.log(result2.value);  // "$100.50"
+   * }
+   *
+   * // Ошибка валидации
+   * const result3 = MoneyFormatter.toCurrency(money, true, -1);
+   * if (!result3.ok) {
+   *   console.log(result3.error.message); // ошибка валидации decimals
+   * }
    * ```
    */
   public static toCurrency(
     money: Money,
     showCurrency: boolean = true,
     decimals: number = 2
-  ): string {
+  ): Result<string, InvalidMoneyError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
-      throw new RangeError('decimals argument must be a non-negative integer');
+      return Err(
+        new InvalidMoneyError('decimals argument must be a non-negative integer', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: 'MoneyFormatter',
+            op: 'toCurrency',
+            decimals: String(decimals),
+            moneyValue: money.value().toString(),
+            currency: money.currency()
+          }
+        })
+      );
     }
 
     const amount = money.value();
     const isNegative = amount.isNegative();
     const absAmount = amount.abs().toFixed(decimals);
     const formatted = isNegative ? `-$${absAmount}` : `$${absAmount}`;
-    return showCurrency ? `${formatted} ${money.currency()}` : formatted;
+    return Ok(showCurrency ? `${formatted} ${money.currency()}` : formatted);
   }
 
   /**
@@ -99,26 +146,44 @@ export class MoneyFormatter {
    *
    * @param money - Money для форматирования
    * @param decimals - Количество десятичных знаков после сокращения (по умолчанию 1)
-   * @returns Строка вида "$1.5K", "$2.3M", "$1.0B"
+   * @returns Result с отформатированной строкой вида "$1.5K", "$2.3M", "$1.0B" или ошибкой валидации
+   * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
    * const m1 = Money.of(1500);
-   * console.log(MoneyFormatter.toCompact(m1));        // "$1.5K"
+   * const result1 = MoneyFormatter.toCompact(m1);
+   * if (result1.ok) {
+   *   console.log(result1.value);  // "$1.5K"
+   * }
    *
    * const m2 = Money.of(2300000);
-   * console.log(MoneyFormatter.toCompact(m2));        // "$2.3M"
+   * const result2 = MoneyFormatter.toCompact(m2);
+   * if (result2.ok) {
+   *   console.log(result2.value);  // "$2.3M"
+   * }
    *
-   * const m3 = Money.of(1000000000);
-   * console.log(MoneyFormatter.toCompact(m3));        // "$1.0B"
-   *
-   * const m4 = Money.of(999);
-   * console.log(MoneyFormatter.toCompact(m4));        // "$999.0"
+   * // Ошибка валидации
+   * const result3 = MoneyFormatter.toCompact(m1, -1);
+   * if (!result3.ok) {
+   *   console.log(result3.error.message); // ошибка валидации decimals
+   * }
    * ```
    */
-  public static toCompact(money: Money, decimals: number = 1): string {
+  public static toCompact(money: Money, decimals: number = 1): Result<string, InvalidMoneyError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
-      throw new RangeError('decimals argument must be a non-negative integer');
+      return Err(
+        new InvalidMoneyError('decimals argument must be a non-negative integer', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: 'MoneyFormatter',
+            op: 'toCompact',
+            decimals: String(decimals),
+            moneyValue: money.value().toString(),
+            currency: money.currency()
+          }
+        })
+      );
     }
 
     const amount = money.value();
@@ -127,19 +192,19 @@ export class MoneyFormatter {
 
     if (absAmount.greaterThanOrEqualTo(1_000_000_000)) {
       const billions = absAmount.dividedBy(1_000_000_000);
-      return `${sign}$${billions.toFixed(decimals)}B`;
+      return Ok(`${sign}$${billions.toFixed(decimals)}B`);
     }
 
     if (absAmount.greaterThanOrEqualTo(1_000_000)) {
       const millions = absAmount.dividedBy(1_000_000);
-      return `${sign}$${millions.toFixed(decimals)}M`;
+      return Ok(`${sign}$${millions.toFixed(decimals)}M`);
     }
 
     if (absAmount.greaterThanOrEqualTo(1_000)) {
       const thousands = absAmount.dividedBy(1_000);
-      return `${sign}$${thousands.toFixed(decimals)}K`;
+      return Ok(`${sign}$${thousands.toFixed(decimals)}K`);
     }
 
-    return `${sign}$${absAmount.toFixed(decimals)}`;
+    return Ok(`${sign}$${absAmount.toFixed(decimals)}`);
   }
 }

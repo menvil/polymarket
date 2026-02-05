@@ -32,9 +32,10 @@ export class QuantityFormatter {
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
+              service: 'QuantityFormatter',
+              op: 'toString',
               decimalPlaces: String(decimals),
-              quantity: quantity.value().toString(),
-              operation: 'toString'
+              quantity: quantity.value().toString()
             }
           }
         )

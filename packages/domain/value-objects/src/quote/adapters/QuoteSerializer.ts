@@ -139,6 +139,8 @@ export class QuoteSerializer {
         new InvalidQuoteError('Invalid bid field in JSON', {
           context: {
             source: ErrorSource.PARSING,
+            service: QuoteSerializer.SERVICE_NAME,
+            op: 'fromJSON',
             reason: QuoteErrorReason.INVALID_FORMAT,
             raw: { field: 'bid', value: json.bid },
             ...ctx
@@ -152,6 +154,8 @@ export class QuoteSerializer {
         new InvalidQuoteError('Invalid ask field in JSON', {
           context: {
             source: ErrorSource.PARSING,
+            service: QuoteSerializer.SERVICE_NAME,
+            op: 'fromJSON',
             reason: QuoteErrorReason.INVALID_FORMAT,
             raw: { field: 'ask', value: json.ask },
             ...ctx
@@ -165,6 +169,8 @@ export class QuoteSerializer {
         new InvalidQuoteError('Invalid bidSize field in JSON', {
           context: {
             source: ErrorSource.PARSING,
+            service: QuoteSerializer.SERVICE_NAME,
+            op: 'fromJSON',
             reason: QuoteErrorReason.INVALID_FORMAT,
             raw: { field: 'bidSize', value: json.bidSize },
             ...ctx
@@ -178,6 +184,8 @@ export class QuoteSerializer {
         new InvalidQuoteError('Invalid askSize field in JSON', {
           context: {
             source: ErrorSource.PARSING,
+            service: QuoteSerializer.SERVICE_NAME,
+            op: 'fromJSON',
             reason: QuoteErrorReason.INVALID_FORMAT,
             raw: { field: 'askSize', value: json.askSize },
             ...ctx
@@ -191,6 +199,8 @@ export class QuoteSerializer {
         new InvalidQuoteError('Invalid timestamp field in JSON', {
           context: {
             source: ErrorSource.PARSING,
+            service: QuoteSerializer.SERVICE_NAME,
+            op: 'fromJSON',
             reason: QuoteErrorReason.INVALID_FORMAT,
             raw: { field: 'timestamp', value: json.timestamp },
             ...ctx
@@ -277,6 +287,8 @@ export class QuoteSerializer {
         new InvalidQuoteError('Failed to parse JSON string', {
           context: {
             source: ErrorSource.PARSING,
+            service: QuoteSerializer.SERVICE_NAME,
+            op: 'parse',
             reason: QuoteErrorReason.INVALID_FORMAT,
             cause: error instanceof Error ? error.message : String(error),
             ...ctx
