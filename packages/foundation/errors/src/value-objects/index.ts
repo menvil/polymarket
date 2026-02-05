@@ -97,6 +97,7 @@
 export * from './InvalidPriceError.js';
 export * from './InvalidQuantityError.js';
 export * from './InvalidPercentageError.js';
+export * from './InvalidRatioError.js';
 export * from './InvalidAmountError.js';
 
 // Валидация денежных значений

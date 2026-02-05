@@ -30,6 +30,10 @@
       "types": "./dist/quote/index.d.ts",
       "import": "./dist/quote/index.js"
     },
+    "./ratio": {
+      "types": "./dist/ratio/index.d.ts",
+      "import": "./dist/ratio/index.js"
+    },
     "./spread": {
       "types": "./dist/spread/index.d.ts",
       "import": "./dist/spread/index.js"

@@ -33,5 +33,14 @@ export {
   SpreadErrorReason
 } from './spread/index.js';
 
+// Ratio модуль (только публичный API)
+export {
+  Ratio,
+  RatioService,
+  RatioSerializer,
+  RatioFormatter,
+  RatioErrorReason
+} from './ratio/index.js';
+
 // TODO: Implement these value objects
 // export { Quote } from './Quote.js';
