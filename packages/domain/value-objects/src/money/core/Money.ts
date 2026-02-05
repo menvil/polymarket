@@ -102,34 +102,37 @@ export class Money {
   }
 
   /**
-   * Создаёт Money из числа, строки или Decimal.
+   * Создаёт Money из Decimal.
    *
-   * @param value - Сумма (число, строка или Decimal)
+   * @internal ТОЛЬКО для внутреннего использования в Core и Facade
+   *
+   * @param value - Сумма (Decimal)
    * @param currency - Валюта (default 'USDC')
    * @returns Money
-   * @throws {Error} Ошибка парсинга Decimal (если value невалидный)
    * @throws {MoneyInvariantViolation} Нарушение инвариантов
    *
    * @remarks
-   * Парсит value в Decimal если нужно, затем создаёт Money.
+   * НЕ парсит - принимает готовый Decimal.
    * Все проверки инвариантов выполняются в конструкторе.
+   * Для публичного API используйте MoneyService.create().
    *
-   * Философия: данные должны быть адекватными на входе.
-   * Parse fail → бросит ошибку Decimal.
-   * Invariant fail → MoneyInvariantViolation.
+   * Конвертация number/string → Decimal делается в MoneyService (Facade layer).
    *
    * @example
    * ```typescript
-   * const m1 = Money.of(100);                    // from number
-   * const m2 = Money.of('42.50', 'USDC');        // from string
-   * const m3 = Money.of(new Decimal('100.5'));   // from Decimal
+   * // ✅ В Core и Facade
+   * const m = Money.of(new Decimal('100.5'), 'USDC');
+   *
+   * // ❌ В публичном коде - используй MoneyService.create()
+   * const result = MoneyService.create(100, 'USDC');
+   * if (!result.ok) {
+   *   console.error(result.error);
+   * }
    * ```
    */
-  public static of(value: number | string | Decimal, currency: SupportedCurrency = 'USDC'): Money {
-    // Decimal бросит свою ошибку если value невалидный
+  public static of(value: Decimal, currency: SupportedCurrency = 'USDC'): Money {
     // constructor бросит MoneyInvariantViolation если нарушены инварианты
-    const decimal = value instanceof Decimal ? value : new Decimal(value);
-    return new Money(decimal, currency);
+    return new Money(value, currency);
   }
 
   /**

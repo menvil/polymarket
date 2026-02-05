@@ -48,10 +48,14 @@ export class QuantityInvariantViolation extends Error {
  *
  * @example
  * ```typescript
- * // Создание
- * const qty1 = Quantity.of(10);              // from number
- * const qty2 = Quantity.of("15.5");          // from string
- * const qty3 = Quantity.of(new Decimal(20)); // from Decimal
+ * // Создание (только в Core/Facade)
+ * const qty = Quantity.of(new Decimal(10));
+ *
+ * // В публичном коде используй QuantityService
+ * const result = QuantityService.create(10);
+ * if (result.ok) {
+ *   const qty = result.value;
+ * }
  *
  * // Константы
  * const zero = Quantity.ZERO;
@@ -78,8 +82,8 @@ export class Quantity {
   /**
    * Константы для часто используемых значений
    */
-  public static readonly ZERO = Quantity.of(0);
-  public static readonly ONE = Quantity.of(1);
+  public static readonly ZERO = Quantity.of(new Decimal(0));
+  public static readonly ONE = Quantity.of(new Decimal(1));
 
   private constructor(private readonly _value: Decimal) {
     // Инвариант 1: Not NaN (explicit check for consistency)
@@ -99,30 +103,36 @@ export class Quantity {
   }
 
   /**
-   * Создаёт Quantity из number/string/Decimal
+   * Создаёт Quantity из Decimal
+   *
+   * @internal ТОЛЬКО для внутреннего использования в Core и Facade
    *
    * @remarks
-   * Парсит значение в Decimal через `new Decimal(value)`.
-   * Оптимизация: если value уже Decimal, используется напрямую без повторной конверсии.
-   * Без проверки minSize - это бизнес-правило.
-   * Для проверки minSize используй QuantityService.createForOrder()
-   *
+   * НЕ парсит - принимает готовый Decimal.
    * Все проверки инвариантов выполняются в конструкторе.
+   * Для публичного API используйте QuantityService.create().
    *
-   * @param value - Значение для парсинга (number, string, или Decimal)
+   * Конвертация number/string → Decimal делается в QuantityService (Facade layer).
+   * Без проверки minSize - это бизнес-правило (используй QuantityService.createForOrder()).
+   *
+   * @param value - Значение (Decimal)
    * @returns Новый Quantity
    * @throws {QuantityInvariantViolation} Если значение не соответствует инвариантам
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(10);                // from number
-   * const qty2 = Quantity.of("15.5");            // from string
-   * const qty3 = Quantity.of(new Decimal(20));   // from Decimal (без повторного парсинга)
+   * // ✅ В Core и Facade
+   * const qty = Quantity.of(new Decimal(10));
+   *
+   * // ❌ В публичном коде - используй QuantityService.create()
+   * const result = QuantityService.create(10);
+   * if (!result.ok) {
+   *   console.error(result.error);
+   * }
    * ```
    */
-  public static of(value: number | string | Decimal): Quantity {
-    const decimal = value instanceof Decimal ? value : new Decimal(value);
-    return new Quantity(decimal);
+  public static of(value: Decimal): Quantity {
+    return new Quantity(value);
   }
 
   /**

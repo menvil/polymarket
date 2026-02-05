@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { ValidateReserveAmount } from '../../../../src/balance/rules/ValidateReserveAmount.js';
 import { Money } from '../../../../src/money/core/Money.js';
@@ -6,8 +7,8 @@ import { BalanceErrorReason } from '../../../../src/balance/errors/BalanceErrorR
 describe('ValidateReserveAmount', () => {
   describe('успешная валидация', () => {
     it('проходит если reserveAmount <= available', () => {
-      const available = Money.of(10000);
-      const reserveAmount = Money.of(5000);
+      const available = Money.of(new Decimal(10000));
+      const reserveAmount = Money.of(new Decimal(5000));
 
       const result = ValidateReserveAmount.check(reserveAmount, available);
 
@@ -15,8 +16,8 @@ describe('ValidateReserveAmount', () => {
     });
 
     it('проходит если reserveAmount === available', () => {
-      const available = Money.of(10000);
-      const reserveAmount = Money.of(10000);
+      const available = Money.of(new Decimal(10000));
+      const reserveAmount = Money.of(new Decimal(10000));
 
       const result = ValidateReserveAmount.check(reserveAmount, available);
 
@@ -24,8 +25,8 @@ describe('ValidateReserveAmount', () => {
     });
 
     it('проходит для минимальной суммы (0.01)', () => {
-      const available = Money.of(10000);
-      const reserveAmount = Money.of(0.01);
+      const available = Money.of(new Decimal(10000));
+      const reserveAmount = Money.of(new Decimal(0.01));
 
       const result = ValidateReserveAmount.check(reserveAmount, available);
 
@@ -35,8 +36,8 @@ describe('ValidateReserveAmount', () => {
 
   describe('ошибка INSUFFICIENT_FUNDS', () => {
     it('возвращает ошибку если reserveAmount > available', () => {
-      const available = Money.of(10000);
-      const reserveAmount = Money.of(15000);
+      const available = Money.of(new Decimal(10000));
+      const reserveAmount = Money.of(new Decimal(15000));
 
       const result = ValidateReserveAmount.check(reserveAmount, available);
 
@@ -49,8 +50,8 @@ describe('ValidateReserveAmount', () => {
     });
 
     it('содержит читаемое сообщение об ошибке', () => {
-      const available = Money.of(500);
-      const reserveAmount = Money.of(1000);
+      const available = Money.of(new Decimal(500));
+      const reserveAmount = Money.of(new Decimal(1000));
 
       const result = ValidateReserveAmount.check(reserveAmount, available);
 
@@ -63,10 +64,10 @@ describe('ValidateReserveAmount', () => {
   });
 
   describe('ошибка INVALID_FORMAT', () => {
-    // ПРИМЕЧАНИЕ: Тест невозможен, так как Money.of(Infinity) бросает исключение
+    // ПРИМЕЧАНИЕ: Тест невозможен, так как Money.of(new Decimal(Infinity)) бросает исключение
     // до того, как ValidateReserveAmount сможет его проверить
     // it('возвращает ошибку если reserveAmount не finite', () => {
-    //   const available = Money.of(10000);
+    //   const available = Money.of(new Decimal(10000));
     //   const reserveAmount = Money.of(Infinity, 'USDC');
     //
     //   const result = ValidateReserveAmount.check(reserveAmount, available);
@@ -78,8 +79,8 @@ describe('ValidateReserveAmount', () => {
     // });
 
     it('возвращает ошибку если reserveAmount <= 0', () => {
-      const available = Money.of(10000);
-      const reserveAmount = Money.of(0);
+      const available = Money.of(new Decimal(10000));
+      const reserveAmount = Money.of(new Decimal(0));
 
       const result = ValidateReserveAmount.check(reserveAmount, available);
 
@@ -91,8 +92,8 @@ describe('ValidateReserveAmount', () => {
     });
 
     it('возвращает ошибку для отрицательного reserveAmount', () => {
-      const available = Money.of(10000);
-      const reserveAmount = Money.of(-100, 'USDC');
+      const available = Money.of(new Decimal(10000));
+      const reserveAmount = Money.of(new Decimal(-100), 'USDC');
 
       const result = ValidateReserveAmount.check(reserveAmount, available);
 

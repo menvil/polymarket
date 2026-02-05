@@ -59,6 +59,8 @@ import { ErrorSource } from '../../shared/facade/ErrorSource.js';
  * ```
  */
 export class MoneyService {
+  private static readonly SERVICE_NAME = 'MoneyService';
+
   /**
    * Создаёт Money с обработкой через Result.
    *
@@ -95,7 +97,7 @@ export class MoneyService {
     const decimalResult = toDecimal('value', value, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
     if (isErr(decimalResult)) {
       // raw уже внутри err.context.raw от toDecimal
-      return Err(rewrap('create', { currency }, decimalResult.error, InvalidMoneyError));
+      return Err(rewrap(MoneyService.SERVICE_NAME, 'create', { currency }, decimalResult.error, InvalidMoneyError));
     }
 
     // Создание через createFromDecimal (проверит инварианты)
@@ -140,7 +142,7 @@ export class MoneyService {
       }
 
       // Unexpected error - возвращаем InvalidMoneyError
-      return Err(unexpectedError(op, { value: decimal.toString(), currency, ...ctx }, error, InvalidMoneyError));
+      return Err(unexpectedError(MoneyService.SERVICE_NAME, op, { value: decimal.toString(), currency, ...ctx }, error, InvalidMoneyError));
     }
   }
 
@@ -169,6 +171,7 @@ export class MoneyService {
       new InvalidMoneyError(`Money ${op} result is invalid: ${reason}`, {
         context: {
           source: ErrorSource.CORE_INVARIANT,
+          service: MoneyService.SERVICE_NAME, // Set root service field
           op,
           ...ctx,
           reason
@@ -215,11 +218,11 @@ export class MoneyService {
           actual: b.currency()
         }
       });
-      return Err(rewrap('add', { a: a.value().toString(), b: b.value().toString(), currency: a.currency() }, baseError, InvalidMoneyError));
+      return Err(rewrap(MoneyService.SERVICE_NAME, 'add', { a: a.value().toString(), b: b.value().toString(), currency: a.currency() }, baseError, InvalidMoneyError));
     }
 
     const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
-    return wrapOp('add', ctx, () => {
+    return wrapOp(MoneyService.SERVICE_NAME, 'add', ctx, () => {
       const sum = addDecimal(a.value(), b.value());
       return this.createFromDecimal(sum, a.currency(), 'add', ctx);
     }, InvalidMoneyError);
@@ -261,11 +264,11 @@ export class MoneyService {
           actual: b.currency()
         }
       });
-      return Err(rewrap('subtract', { a: a.value().toString(), b: b.value().toString(), currency: a.currency() }, baseError, InvalidMoneyError));
+      return Err(rewrap(MoneyService.SERVICE_NAME, 'subtract', { a: a.value().toString(), b: b.value().toString(), currency: a.currency() }, baseError, InvalidMoneyError));
     }
 
     const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
-    return wrapOp('subtract', ctx, () => {
+    return wrapOp(MoneyService.SERVICE_NAME, 'subtract', ctx, () => {
       const diff = subtractDecimal(a.value(), b.value());
       return this.createFromDecimal(diff, a.currency(), 'subtract', ctx);
     }, InvalidMoneyError);
@@ -307,7 +310,7 @@ export class MoneyService {
     const factorResult = toDecimal('factor', factor, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
     if (isErr(factorResult)) {
       return Err(
-        rewrap('multiply', {
+        rewrap(MoneyService.SERVICE_NAME, 'multiply', {
           amount: m.value().toString(),
           factor: String(factor),
           currency: m.currency()
@@ -321,7 +324,7 @@ export class MoneyService {
     const validateResult = ValidateFactorForMoneyMultiplication.check(factorDecimal);
     if (isErr(validateResult)) {
       return Err(
-        rewrap('multiply', {
+        rewrap(MoneyService.SERVICE_NAME, 'multiply', {
           amount: m.value().toString(),
           factor: factorDecimal.toString(),
           currency: m.currency()
@@ -336,7 +339,7 @@ export class MoneyService {
       currency: m.currency()
     };
 
-    return wrapOp('multiply', ctx, () => {
+    return wrapOp(MoneyService.SERVICE_NAME, 'multiply', ctx, () => {
       const product = multiplyDecimal(m.value(), factorDecimal);
       return this.createFromDecimal(product, m.currency(), 'multiply', ctx);
     }, InvalidMoneyError);
@@ -378,7 +381,7 @@ export class MoneyService {
     const divisorResult = toDecimal('divisor', divisor, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
     if (isErr(divisorResult)) {
       return Err(
-        rewrap('divide', {
+        rewrap(MoneyService.SERVICE_NAME, 'divide', {
           amount: m.value().toString(),
           divisor: String(divisor),
           currency: m.currency()
@@ -392,7 +395,7 @@ export class MoneyService {
     const validateResult = ValidateDivisorForMoneyDivision.check(divisorDecimal);
     if (isErr(validateResult)) {
       return Err(
-        rewrap('divide', {
+        rewrap(MoneyService.SERVICE_NAME, 'divide', {
           amount: m.value().toString(),
           divisor: divisorDecimal.toString(),
           currency: m.currency()
@@ -407,7 +410,7 @@ export class MoneyService {
       currency: m.currency()
     };
 
-    return wrapOp('divide', ctx, () => {
+    return wrapOp(MoneyService.SERVICE_NAME, 'divide', ctx, () => {
       const quotient = divideDecimal(m.value(), divisorDecimal);
       return this.createFromDecimal(quotient, m.currency(), 'divide', ctx);
     }, InvalidMoneyError);

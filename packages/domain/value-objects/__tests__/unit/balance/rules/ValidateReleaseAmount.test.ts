@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { ValidateReleaseAmount } from '../../../../src/balance/rules/ValidateReleaseAmount.js';
 import { Money } from '../../../../src/money/core/Money.js';
@@ -6,8 +7,8 @@ import { BalanceErrorReason } from '../../../../src/balance/errors/BalanceErrorR
 describe('ValidateReleaseAmount', () => {
   describe('успешная валидация', () => {
     it('проходит если releaseAmount <= reserved', () => {
-      const reserved = Money.of(5000);
-      const releaseAmount = Money.of(2000);
+      const reserved = Money.of(new Decimal(5000));
+      const releaseAmount = Money.of(new Decimal(2000));
 
       const result = ValidateReleaseAmount.check(releaseAmount, reserved);
 
@@ -15,8 +16,8 @@ describe('ValidateReleaseAmount', () => {
     });
 
     it('проходит если releaseAmount === reserved', () => {
-      const reserved = Money.of(5000);
-      const releaseAmount = Money.of(5000);
+      const reserved = Money.of(new Decimal(5000));
+      const releaseAmount = Money.of(new Decimal(5000));
 
       const result = ValidateReleaseAmount.check(releaseAmount, reserved);
 
@@ -24,8 +25,8 @@ describe('ValidateReleaseAmount', () => {
     });
 
     it('проходит для минимальной суммы (0.01)', () => {
-      const reserved = Money.of(5000);
-      const releaseAmount = Money.of(0.01);
+      const reserved = Money.of(new Decimal(5000));
+      const releaseAmount = Money.of(new Decimal(0.01));
 
       const result = ValidateReleaseAmount.check(releaseAmount, reserved);
 
@@ -35,8 +36,8 @@ describe('ValidateReleaseAmount', () => {
 
   describe('ошибка INSUFFICIENT_RESERVED', () => {
     it('возвращает ошибку если releaseAmount > reserved', () => {
-      const reserved = Money.of(5000);
-      const releaseAmount = Money.of(10000);
+      const reserved = Money.of(new Decimal(5000));
+      const releaseAmount = Money.of(new Decimal(10000));
 
       const result = ValidateReleaseAmount.check(releaseAmount, reserved);
 
@@ -49,8 +50,8 @@ describe('ValidateReleaseAmount', () => {
     });
 
     it('содержит читаемое сообщение об ошибке', () => {
-      const reserved = Money.of(1000);
-      const releaseAmount = Money.of(2000);
+      const reserved = Money.of(new Decimal(1000));
+      const releaseAmount = Money.of(new Decimal(2000));
 
       const result = ValidateReleaseAmount.check(releaseAmount, reserved);
 
@@ -63,10 +64,10 @@ describe('ValidateReleaseAmount', () => {
   });
 
   describe('ошибка INVALID_FORMAT', () => {
-    // ПРИМЕЧАНИЕ: Тест невозможен, так как Money.of(Infinity) бросает исключение
+    // ПРИМЕЧАНИЕ: Тест невозможен, так как Money.of(new Decimal(Infinity)) бросает исключение
     // до того, как ValidateReleaseAmount сможет его проверить
     // it('возвращает ошибку если releaseAmount не finite', () => {
-    //   const reserved = Money.of(5000);
+    //   const reserved = Money.of(new Decimal(5000));
     //   const releaseAmount = Money.of(Infinity, 'USDC');
     //
     //   const result = ValidateReleaseAmount.check(releaseAmount, reserved);
@@ -78,8 +79,8 @@ describe('ValidateReleaseAmount', () => {
     // });
 
     it('возвращает ошибку если releaseAmount <= 0', () => {
-      const reserved = Money.of(5000);
-      const releaseAmount = Money.of(0);
+      const reserved = Money.of(new Decimal(5000));
+      const releaseAmount = Money.of(new Decimal(0));
 
       const result = ValidateReleaseAmount.check(releaseAmount, reserved);
 
@@ -91,8 +92,8 @@ describe('ValidateReleaseAmount', () => {
     });
 
     it('возвращает ошибку для отрицательного releaseAmount', () => {
-      const reserved = Money.of(5000);
-      const releaseAmount = Money.of(-100, 'USDC');
+      const reserved = Money.of(new Decimal(5000));
+      const releaseAmount = Money.of(new Decimal(-100), 'USDC');
 
       const result = ValidateReleaseAmount.check(releaseAmount, reserved);
 

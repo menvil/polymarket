@@ -62,6 +62,8 @@ import { ErrorSource } from '../../shared/facade/ErrorSource.js';
  * ```
  */
 export class BalanceService {
+  private static readonly SERVICE_NAME = 'BalanceService';
+
   /**
    * Создаёт Balance из available и reserved Money
    *
@@ -115,6 +117,7 @@ export class BalanceService {
           new InvalidBalanceError(error.message, {
             context: {
               source: ErrorSource.CORE_INVARIANT,
+              service: BalanceService.SERVICE_NAME, // Set root service field
               op: 'create',
               reason: error.reason as BalanceErrorReason,
               available: available.value().toNumber(),
@@ -128,6 +131,7 @@ export class BalanceService {
       // Неожиданная ошибка
       return Err(
         unexpectedError(
+          BalanceService.SERVICE_NAME,
           'create',
           {
             available: available.value().toString(),
@@ -195,28 +199,28 @@ export class BalanceService {
       currency: balance.currency()
     };
 
-    return wrapOp(op, ctx, () => {
+    return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
       // Проверка 1: Валюты должны совпадать
       const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
       if (isErr(currencyCheck)) {
-        return Err(rewrap(op, ctx, currencyCheck.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, currencyCheck.error, InvalidBalanceError));
       }
 
       // Проверка 2: Достаточно ли средств для резервирования
       const reserveCheck = ValidateReserveAmount.check(amount, balance.available());
       if (isErr(reserveCheck)) {
-        return Err(rewrap(op, ctx, reserveCheck.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, reserveCheck.error, InvalidBalanceError));
       }
 
       // Вычисляем новые значения
       const newAvailableResult = this.subtractMoney(balance.available(), amount);
       if (isErr(newAvailableResult)) {
-        return Err(rewrap(op, ctx, newAvailableResult.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newAvailableResult.error, InvalidBalanceError));
       }
 
       const newReservedResult = this.addMoney(balance.reserved(), amount);
       if (isErr(newReservedResult)) {
-        return Err(rewrap(op, ctx, newReservedResult.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
 
       // Создаём новый Balance
@@ -286,28 +290,28 @@ export class BalanceService {
       currency: balance.currency()
     };
 
-    return wrapOp(op, ctx, () => {
+    return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
       // Проверка 1: Валюты должны совпадать
       const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
       if (isErr(currencyCheck)) {
-        return Err(rewrap(op, ctx, currencyCheck.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, currencyCheck.error, InvalidBalanceError));
       }
 
       // Проверка 2: Достаточно ли зарезервированных средств
       const releaseCheck = ValidateReleaseAmount.check(amount, balance.reserved());
       if (isErr(releaseCheck)) {
-        return Err(rewrap(op, ctx, releaseCheck.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, releaseCheck.error, InvalidBalanceError));
       }
 
       // Вычисляем новые значения
       const newAvailableResult = this.addMoney(balance.available(), amount);
       if (isErr(newAvailableResult)) {
-        return Err(rewrap(op, ctx, newAvailableResult.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newAvailableResult.error, InvalidBalanceError));
       }
 
       const newReservedResult = this.subtractMoney(balance.reserved(), amount);
       if (isErr(newReservedResult)) {
-        return Err(rewrap(op, ctx, newReservedResult.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
 
       // Создаём новый Balance
@@ -392,23 +396,23 @@ export class BalanceService {
       currency: balance.currency()
     };
 
-    return wrapOp(op, ctx, () => {
+    return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
       // Проверка 1: Валюты должны совпадать
       const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
       if (isErr(currencyCheck)) {
-        return Err(rewrap(op, ctx, currencyCheck.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, currencyCheck.error, InvalidBalanceError));
       }
 
       // Проверка 2: Достаточно ли зарезервированных средств
       const releaseCheck = ValidateReleaseAmount.check(amount, balance.reserved());
       if (isErr(releaseCheck)) {
-        return Err(rewrap(op, ctx, releaseCheck.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, releaseCheck.error, InvalidBalanceError));
       }
 
       // Вычисляем новый reserved (available не меняется!)
       const newReservedResult = this.subtractMoney(balance.reserved(), amount);
       if (isErr(newReservedResult)) {
-        return Err(rewrap(op, ctx, newReservedResult.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
 
       // Создаём новый Balance: available остается тем же, reserved уменьшается
@@ -466,11 +470,11 @@ export class BalanceService {
       currency: balance.currency()
     };
 
-    return wrapOp(op, ctx, () => {
+    return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
       // Проверка: Валюты должны совпадать
       const currencyCheck = ValidateCurrencyMatch.check(newAvailable, balance.currency());
       if (isErr(currencyCheck)) {
-        return Err(rewrap(op, ctx, currencyCheck.error, InvalidBalanceError));
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, currencyCheck.error, InvalidBalanceError));
       }
 
       // Balance.of может бросить BalanceInvariantViolation - ловим локально для правильного reason
@@ -483,6 +487,7 @@ export class BalanceService {
             new InvalidBalanceError(error.message, {
               context: {
                 source: ErrorSource.CORE_INVARIANT,
+                service: BalanceService.SERVICE_NAME, // Set root service field
                 ...ctx,
                 op,
                 reason: error.reason as BalanceErrorReason

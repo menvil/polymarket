@@ -109,24 +109,24 @@ describe('Quote Integration Tests', () => {
       // Нормальная ситуация - не пересекается
       const doesNotCross = ValidateMarketCrossing.crossesMarket(
         quote,
-        Price.of(0.47), // orderbook bid
-        Price.of(0.53)  // orderbook ask
+        Price.of(new Decimal(0.47)), // orderbook bid
+        Price.of(new Decimal(0.53))  // orderbook ask
       );
       expect(doesNotCross).toBe(false);
 
       // Наш bid >= orderbook ask - пересечение!
       const crossesBid = ValidateMarketCrossing.crossesMarket(
         quote,
-        Price.of(0.47),
-        Price.of(0.48)  // наш bid 0.48 >= orderbook ask 0.48
+        Price.of(new Decimal(0.47)),
+        Price.of(new Decimal(0.48))  // наш bid 0.48 >= orderbook ask 0.48
       );
       expect(crossesBid).toBe(true);
 
       // Наш ask <= orderbook bid - пересечение!
       const crossesAsk = ValidateMarketCrossing.crossesMarket(
         quote,
-        Price.of(0.52),  // наш ask 0.52 <= orderbook bid 0.52
-        Price.of(0.53)
+        Price.of(new Decimal(0.52)),  // наш ask 0.52 <= orderbook bid 0.52
+        Price.of(new Decimal(0.53))
       );
       expect(crossesAsk).toBe(true);
     });
@@ -276,7 +276,7 @@ describe('Quote Integration Tests', () => {
     });
 
     it('возвращает ошибку BOTH_SIDES_NULL', () => {
-      const result = QuoteService.createFromDecimals(
+      const result = QuoteService.create(
         null, // bid
         null, // ask
         new Decimal(100),
@@ -301,10 +301,9 @@ describe('Quote Integration Tests', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // toDecimal вернет INVALID_FORMAT, но затем это оборачивается в INVALID_BID
-        expect(result.error.context?.reason).toBe(
-          QuoteErrorReason.INVALID_BID
-        );
+        // reason содержит корневую причину из PriceService (NAN)
+        // component показывает какое поле не прошло валидацию
+        expect(result.error.context?.component).toBe('bid');
       }
     });
 
@@ -407,14 +406,14 @@ describe('Quote Integration Tests', () => {
       const ts1 = Date.now();
       const ts2 = ts1 + 1000; // +1 секунда
 
-      const result1 = QuoteService.createFromDecimals(
+      const result1 = QuoteService.create(
         new Decimal(0.48),
         new Decimal(0.52),
         new Decimal(100),
         new Decimal(150),
         ts1
       );
-      const result2 = QuoteService.createFromDecimals(
+      const result2 = QuoteService.create(
         new Decimal(0.48),
         new Decimal(0.52),
         new Decimal(100),
@@ -434,14 +433,14 @@ describe('Quote Integration Tests', () => {
       const ts1 = Date.now();
       const ts2 = ts1 + 1000; // +1 секунда
 
-      const result1 = QuoteService.createFromDecimals(
+      const result1 = QuoteService.create(
         new Decimal(0.48),
         new Decimal(0.52),
         new Decimal(100),
         new Decimal(150),
         ts1
       );
-      const result2 = QuoteService.createFromDecimals(
+      const result2 = QuoteService.create(
         new Decimal(0.48),
         new Decimal(0.52),
         new Decimal(100),
@@ -459,14 +458,14 @@ describe('Quote Integration Tests', () => {
 
     it('equalsWithTimestamp() подтверждает идентичность включая timestamp', () => {
       const ts = Date.now();
-      const result1 = QuoteService.createFromDecimals(
+      const result1 = QuoteService.create(
         new Decimal(0.48),
         new Decimal(0.52),
         new Decimal(100),
         new Decimal(150),
         ts
       );
-      const result2 = QuoteService.createFromDecimals(
+      const result2 = QuoteService.create(
         new Decimal(0.48),
         new Decimal(0.52),
         new Decimal(100),

@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { PriceSerializer } from '../../../../src/price/adapters/PriceSerializer.js';
 import { Price } from '../../../../src/price/core/Price.js';
@@ -112,13 +113,13 @@ describe('PriceSerializer', () => {
 
   describe('toJSON()', () => {
     it('должен сериализовать Price в JSON', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const json = PriceSerializer.toJSON(price);
       expect(json).toEqual({ value: '0.5' });
     });
 
     it('должен использовать string для сохранения точности', () => {
-      const price = Price.of(0.1234);
+      const price = Price.of(new Decimal(0.1234));
       const json = PriceSerializer.toJSON(price);
       expect(typeof json.value).toBe('string');
       expect(json.value).toBe('0.1234');
@@ -139,7 +140,7 @@ describe('PriceSerializer', () => {
 
   describe('round-trip', () => {
     it('должен корректно десериализовать сериализованный Price', () => {
-      const original = Price.of(0.5);
+      const original = Price.of(new Decimal(0.5));
       const json = PriceSerializer.toJSON(original);
       const result = PriceSerializer.fromJSON(json);
       expect(result.ok).toBe(true);

@@ -8,7 +8,7 @@ import { Price } from '../../../src/price/core/Price.js';
 describe('Price Integration Tests', () => {
   describe('roundToMarketTick → ValidateAligned контракт', () => {
     it('результат roundToMarketTick всегда проходит ensureAlignedToMarketTick', () => {
-      const price = Price.of(0.12345);
+      const price = Price.of(new Decimal(0.12345));
       const tickSize = 0.001;
 
       const roundResult = PriceService.roundToMarketTick(price, tickSize);
@@ -21,7 +21,7 @@ describe('Price Integration Tests', () => {
     });
 
     it('работает для всех режимов округления', () => {
-      const price = Price.of(0.5555);
+      const price = Price.of(new Decimal(0.5555));
       const tickSize = 0.01;
 
       for (const mode of ['nearest', 'floor', 'ceil'] as const) {
@@ -36,7 +36,7 @@ describe('Price Integration Tests', () => {
     });
 
     it('работает с разными tickSize', () => {
-      const price = Price.of(0.6789);
+      const price = Price.of(new Decimal(0.6789));
       const tickSizes = [0.0001, 0.001, 0.01, 0.1];
 
       for (const tickSize of tickSizes) {
@@ -114,7 +114,7 @@ describe('Price Integration Tests', () => {
     });
 
     it('вычисление комплемента и проверка суммы', () => {
-      const price = Price.of(0.3);
+      const price = Price.of(new Decimal(0.3));
       const complementResult = PriceService.complement(price);
       expect(complementResult.ok).toBe(true);
 
@@ -157,7 +157,7 @@ describe('Price Integration Tests', () => {
 
   describe('multiply/divide семантика', () => {
     it('multiply с InvalidPriceError для невалидного factor', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.multiply(price, 'invalid');
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -169,7 +169,7 @@ describe('Price Integration Tests', () => {
     });
 
     it('divide с DivisionByZeroError для нулевого divisor', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.divide(price, 0);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -178,7 +178,7 @@ describe('Price Integration Tests', () => {
     });
 
     it('divide с InvalidDivisorError для невалидного divisor', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.divide(price, 'invalid');
       expect(result.ok).toBe(false);
       if (!result.ok) {

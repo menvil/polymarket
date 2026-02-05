@@ -48,6 +48,8 @@ import { QuantityService } from '../../quantity/facade/QuantityService.js';
  * ```
  */
 export class QuoteService {
+  private static readonly SERVICE_NAME = 'QuoteService';
+
   /**
    * Создаёт Quote
    *
@@ -118,7 +120,7 @@ export class QuoteService {
       timestamp: timestamp !== undefined ? String(timestamp) : undefined
     };
 
-    return wrapOp(op, ctx, () => {
+    return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
       // Конвертируем bid через toDecimal (если не null)
       let bidDecimal: Decimal | null = null;
       if (bidValue !== null) {
@@ -129,7 +131,7 @@ export class QuoteService {
           InvalidQuoteError
         );
         if (isErr(bidResult)) {
-          return Err(rewrap(op, {}, bidResult.error, InvalidQuoteError));
+          return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, bidResult.error, InvalidQuoteError));
         }
         bidDecimal = bidResult.value;
       }
@@ -144,7 +146,7 @@ export class QuoteService {
           InvalidQuoteError
         );
         if (isErr(askResult)) {
-          return Err(rewrap(op, {}, askResult.error, InvalidQuoteError));
+          return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, askResult.error, InvalidQuoteError));
         }
         askDecimal = askResult.value;
       }
@@ -157,7 +159,7 @@ export class QuoteService {
         InvalidQuoteError
       );
       if (isErr(bidSizeResult)) {
-        return Err(rewrap(op, {}, bidSizeResult.error, InvalidQuoteError));
+        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, bidSizeResult.error, InvalidQuoteError));
       }
 
       // Конвертируем askSize через toDecimal
@@ -168,7 +170,7 @@ export class QuoteService {
         InvalidQuoteError
       );
       if (isErr(askSizeResult)) {
-        return Err(rewrap(op, {}, askSizeResult.error, InvalidQuoteError));
+        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, askSizeResult.error, InvalidQuoteError));
       }
 
       // Конвертируем timestamp через toDecimal
@@ -183,7 +185,7 @@ export class QuoteService {
           InvalidQuoteError
         );
         if (isErr(tsResult)) {
-          return Err(rewrap(op, {}, tsResult.error, InvalidQuoteError));
+          return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, tsResult.error, InvalidQuoteError));
         }
         timestampDecimal = tsResult.value;
       } else {
@@ -224,6 +226,7 @@ export class QuoteService {
             new InvalidQuoteError(error.message, {
               context: {
                 source: ErrorSource.CORE_INVARIANT,
+                service: QuoteService.SERVICE_NAME, // Set root service field
                 op,
                 reason: error.reason
               }
@@ -233,7 +236,7 @@ export class QuoteService {
 
         // Неожиданная ошибка
         return Err(
-          unexpectedError(op, ctx, error, InvalidQuoteError)
+          unexpectedError(QuoteService.SERVICE_NAME, op, ctx, error, InvalidQuoteError)
         );
       }
     }, InvalidQuoteError);
@@ -348,7 +351,7 @@ export class QuoteService {
       shiftAmount: String(shiftAmount)
     };
 
-    return wrapOp(op, ctx, () => {
+    return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
       // Конвертируем shiftAmount в Decimal
       const shiftDecimalResult = toDecimal(
         'shiftAmount',
@@ -357,7 +360,7 @@ export class QuoteService {
         InvalidQuoteError
       );
       if (isErr(shiftDecimalResult)) {
-        return Err(rewrap(op, {}, shiftDecimalResult.error, InvalidQuoteError));
+        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, shiftDecimalResult.error, InvalidQuoteError));
       }
       const shiftDecimal = shiftDecimalResult.value;
 
@@ -423,7 +426,7 @@ export class QuoteService {
       rawAskAdjustment: askAdjustment.toString()
     };
 
-    return wrapOp(op, ctx, () => {
+    return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
       // Конвертируем bidAdjustment в Decimal
       const bidAdjustmentResult = toDecimal(
         'bidAdjustment',
@@ -432,7 +435,7 @@ export class QuoteService {
         InvalidQuoteError
       );
       if (isErr(bidAdjustmentResult)) {
-        return Err(rewrap(op, {}, bidAdjustmentResult.error, InvalidQuoteError));
+        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, bidAdjustmentResult.error, InvalidQuoteError));
       }
       const bidAdjustmentDecimal = bidAdjustmentResult.value;
 
@@ -444,7 +447,7 @@ export class QuoteService {
         InvalidQuoteError
       );
       if (isErr(askAdjustmentResult)) {
-        return Err(rewrap(op, {}, askAdjustmentResult.error, InvalidQuoteError));
+        return Err(rewrap(QuoteService.SERVICE_NAME, op, {}, askAdjustmentResult.error, InvalidQuoteError));
       }
       const askAdjustmentDecimal = askAdjustmentResult.value;
 
@@ -502,7 +505,7 @@ export class QuoteService {
       newAskSize: newAskSize instanceof Quantity ? newAskSize.value().toString() : String(newAskSize)
     };
 
-    return wrapOp(op, ctx, () => {
+    return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
       // Конвертируем в Quantity если нужно
       let bidSize: Quantity;
       if (newBidSize instanceof Quantity) {
@@ -510,17 +513,17 @@ export class QuoteService {
       } else {
         const bidSizeResult = QuantityService.create(newBidSize);
         if (isErr(bidSizeResult)) {
+          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
           return Err(
             rewrap(
+              QuoteService.SERVICE_NAME,
               op,
-              { component: 'bidSize' }, // Добавляем component т.к. QuantityService.create возвращает field: 'value'
-              new InvalidQuoteError('Invalid bid size', {
-                context: {
-                  source: ErrorSource.SERVICE_CALL,
-                  reason: QuoteErrorReason.INVALID_BID_SIZE,
-                  cause: toCause(bidSizeResult.error)
-                }
-              }),
+              {
+                component: 'bidSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
+                reason: QuoteErrorReason.INVALID_BID_SIZE, // Override reason
+                cause: toCause(bidSizeResult.error) // Add cause
+              },
+              bidSizeResult.error, // Передаём оригинальную ошибку
               InvalidQuoteError
             )
           );
@@ -534,17 +537,17 @@ export class QuoteService {
       } else {
         const askSizeResult = QuantityService.create(newAskSize);
         if (isErr(askSizeResult)) {
+          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
           return Err(
             rewrap(
+              QuoteService.SERVICE_NAME,
               op,
-              { component: 'askSize' }, // Добавляем component т.к. QuantityService.create возвращает field: 'value'
-              new InvalidQuoteError('Invalid ask size', {
-                context: {
-                  source: ErrorSource.SERVICE_CALL,
-                  reason: QuoteErrorReason.INVALID_ASK_SIZE,
-                  cause: toCause(askSizeResult.error)
-                }
-              }),
+              {
+                component: 'askSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
+                reason: QuoteErrorReason.INVALID_ASK_SIZE, // Override reason
+                cause: toCause(askSizeResult.error) // Add cause
+              },
+              askSizeResult.error, // Передаём оригинальную ошибку
               InvalidQuoteError
             )
           );
@@ -568,6 +571,7 @@ export class QuoteService {
             new InvalidQuoteError(error.message, {
               context: {
                 source: ErrorSource.CORE_INVARIANT,
+                service: QuoteService.SERVICE_NAME, // Set root service field
                 op,
                 reason: error.reason
               }
@@ -576,7 +580,7 @@ export class QuoteService {
         }
 
         return Err(
-          unexpectedError(op, ctx, error, InvalidQuoteError)
+          unexpectedError(QuoteService.SERVICE_NAME, op, ctx, error, InvalidQuoteError)
         );
       }
     }, InvalidQuoteError);
@@ -671,17 +675,18 @@ export class QuoteService {
         ? QuoteErrorReason.INVALID_BID
         : QuoteErrorReason.INVALID_ASK;
 
+      // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
+      // и добавит компонент + новую причину
       return Err(
         rewrap(
+          QuoteService.SERVICE_NAME,
           op,
-          { component: field }, // Добавляем component т.к. PriceService.create возвращает field: 'value', а не 'bid'/'ask'
-          new InvalidQuoteError(`Invalid ${field} price`, {
-            context: {
-              source: ErrorSource.SERVICE_CALL,
-              reason,
-              cause: toCause(result.error)
-            }
-          }),
+          {
+            component: field, // Добавляем component т.к. PriceService.create возвращает field: 'value', а не 'bid'/'ask'
+            reason, // Override reason с Quote-специфичной причиной
+            cause: toCause(result.error) // Add cause для trace
+          },
+          result.error, // Передаём оригинальную ошибку, чтобы сохранить opChain!
           InvalidQuoteError
         )
       );
@@ -710,17 +715,17 @@ export class QuoteService {
         ? QuoteErrorReason.INVALID_BID_SIZE
         : QuoteErrorReason.INVALID_ASK_SIZE;
 
+      // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
       return Err(
         rewrap(
+          QuoteService.SERVICE_NAME,
           op,
-          { component: field }, // Добавляем component т.к. QuantityService.create возвращает field: 'value', а не 'bidSize'/'askSize'
-          new InvalidQuoteError(`Invalid ${field}`, {
-            context: {
-              source: ErrorSource.SERVICE_CALL,
-              reason,
-              cause: toCause(result.error)
-            }
-          }),
+          {
+            component: field, // Добавляем component т.к. QuantityService.create возвращает field: 'value', а не 'bidSize'/'askSize'
+            reason, // Override reason
+            cause: toCause(result.error) // Add cause
+          },
+          result.error, // Передаём оригинальную ошибку
           InvalidQuoteError
         )
       );

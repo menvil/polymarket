@@ -57,6 +57,8 @@ import Decimal from 'decimal.js';
  * ```
  */
 export class PriceService {
+  private static readonly SERVICE_NAME = 'PriceService';
+
   /**
    * Константа для арифметических операций - избегаем создания new Decimal(1) каждый раз
    */
@@ -98,7 +100,7 @@ export class PriceService {
     const decimalResult = toDecimal('value', value, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
     if (isErr(decimalResult)) {
       // raw уже внутри err.context.raw от toDecimal
-      return Err(rewrap('create', {}, decimalResult.error, InvalidPriceError));
+      return Err(rewrap(PriceService.SERVICE_NAME, 'create', {}, decimalResult.error, InvalidPriceError));
     }
 
     try {
@@ -109,9 +111,10 @@ export class PriceService {
       // PriceInvariantViolation - доменные ограничения Core
       if (error instanceof PriceInvariantViolation) {
         return Err(
-          rewrap('create', {}, new InvalidPriceError(error.message, {
+          rewrap(PriceService.SERVICE_NAME, 'create', {}, new InvalidPriceError(error.message, {
             context: {
               source: ErrorSource.CORE_INVARIANT,
+              service: PriceService.SERVICE_NAME, // Set root service field
               raw: { field: 'value', value: String(value) },
               reason: error.reason
             }
@@ -121,7 +124,7 @@ export class PriceService {
 
       // Неожиданная ошибка - unexpectedError создаёт базовую ошибку с cause, rewrap добавляет op
       return Err(
-        rewrap('create', { value: String(value) }, unexpectedError('create', {}, error, InvalidPriceError), InvalidPriceError)
+        rewrap(PriceService.SERVICE_NAME, 'create', { value: String(value) }, unexpectedError(PriceService.SERVICE_NAME, 'create', {}, error, InvalidPriceError), InvalidPriceError)
       );
     }
   }
@@ -150,7 +153,7 @@ export class PriceService {
   public static complement(price: Price): Result<Price, InvalidPriceError> {
     const ctx = { price: price.value().toString() };
 
-    return wrapOp('complement', ctx, () => {
+    return wrapOp(PriceService.SERVICE_NAME, 'complement', ctx, () => {
       const result = subtractDecimal(this.ONE, price.value());
       return this.create(result); // wrapOp сам сделает rewrap если Err
     }, InvalidPriceError);
@@ -183,7 +186,7 @@ export class PriceService {
   ): Result<Price, InvalidPriceError> {
     const ctx = { price1: price1.value().toString(), price2: price2.value().toString() };
 
-    return wrapOp('average', ctx, () => {
+    return wrapOp(PriceService.SERVICE_NAME, 'average', ctx, () => {
       const sum = addDecimal(price1.value(), price2.value());
       const avgValue = divideDecimal(sum, this.TWO);
       return this.create(avgValue); // wrapOp сам сделает rewrap если Err
@@ -221,7 +224,7 @@ export class PriceService {
     const factorResult = toDecimal('factor', factor, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
     if (isErr(factorResult)) {
       return Err(
-        rewrap('multiply', {
+        rewrap(PriceService.SERVICE_NAME, 'multiply', {
           price: price.value().toString(),
           factor: String(factor)
         }, factorResult.error, InvalidPriceError)
@@ -234,7 +237,7 @@ export class PriceService {
     const validateResult = ValidateFactorForPriceMultiplication.check(factorDecimal);
     if (isErr(validateResult)) {
       return Err(
-        rewrap('multiply', {
+        rewrap(PriceService.SERVICE_NAME, 'multiply', {
           price: price.value().toString(),
           factor: factorDecimal.toString()
         }, validateResult.error, InvalidPriceError)
@@ -247,7 +250,7 @@ export class PriceService {
       factor: factorDecimal.toString()
     };
 
-    return wrapOp('multiply', ctx, () => {
+    return wrapOp(PriceService.SERVICE_NAME, 'multiply', ctx, () => {
       const result = multiplyDecimal(price.value(), factorDecimal);
       return this.create(result); // wrapOp сам сделает rewrap если Err
     }, InvalidPriceError);
@@ -291,7 +294,7 @@ export class PriceService {
     const divisorResult = toDecimal('divisor', divisor, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
     if (isErr(divisorResult)) {
       return Err(
-        rewrap('divide', {
+        rewrap(PriceService.SERVICE_NAME, 'divide', {
           price: price.value().toString(),
           divisor: String(divisor)
         }, divisorResult.error, InvalidPriceError)
@@ -304,7 +307,7 @@ export class PriceService {
     const validateResult = ValidateDivisorForPriceDivision.check(divisorDecimal);
     if (isErr(validateResult)) {
       return Err(
-        rewrap('divide', {
+        rewrap(PriceService.SERVICE_NAME, 'divide', {
           price: price.value().toString(),
           divisor: divisorDecimal.toString()
         }, validateResult.error, InvalidPriceError)
@@ -317,7 +320,7 @@ export class PriceService {
       divisor: divisorDecimal.toString()
     };
 
-    return wrapOp('divide', ctx, () => {
+    return wrapOp(PriceService.SERVICE_NAME, 'divide', ctx, () => {
       const result = divideDecimal(price.value(), divisorDecimal);
       return this.create(result); // wrapOp сам сделает rewrap если Err
     }, InvalidPriceError);
@@ -371,7 +374,7 @@ export class PriceService {
     const tickDecimalResult = toDecimal('tickSize', tickSize, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
     if (isErr(tickDecimalResult)) {
       return Err(
-        rewrap('roundToMarketTick', {
+        rewrap(PriceService.SERVICE_NAME, 'roundToMarketTick', {
           price: price.value().toString(),
           tickSize: String(tickSize),
           mode
@@ -383,7 +386,7 @@ export class PriceService {
     const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickDecimalResult.value);
     if (isErr(tickRes)) {
       return Err(
-        rewrap('roundToMarketTick', {
+        rewrap(PriceService.SERVICE_NAME, 'roundToMarketTick', {
           price: price.value().toString(),
           tickSize: tickDecimalResult.value.toString(),
           mode
@@ -398,7 +401,7 @@ export class PriceService {
       mode
     };
 
-    return wrapOp('roundToMarketTick', ctx, () => {
+    return wrapOp(PriceService.SERVICE_NAME, 'roundToMarketTick', ctx, () => {
       let out: Decimal;
 
       switch (mode) {
@@ -455,7 +458,7 @@ export class PriceService {
     const tickDecimalResult = toDecimal('tickSize', tickSize, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
     if (isErr(tickDecimalResult)) {
       return Err(
-        rewrap('ensureAlignedToMarketTick', {
+        rewrap(PriceService.SERVICE_NAME, 'ensureAlignedToMarketTick', {
           price: price.value().toString(),
           tickSize: String(tickSize)
         }, tickDecimalResult.error, InvalidPriceError)
@@ -466,7 +469,7 @@ export class PriceService {
     const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickDecimalResult.value);
     if (isErr(tickRes)) {
       return Err(
-        rewrap('ensureAlignedToMarketTick', {
+        rewrap(PriceService.SERVICE_NAME, 'ensureAlignedToMarketTick', {
           price: price.value().toString(),
           tickSize: tickDecimalResult.value.toString()
         }, tickRes.error, InvalidPriceError)
@@ -479,7 +482,7 @@ export class PriceService {
     const result = ValidateAligned.check(price, tick);
     if (isErr(result)) {
       return Err(
-        rewrap('ensureAlignedToMarketTick', {
+        rewrap(PriceService.SERVICE_NAME, 'ensureAlignedToMarketTick', {
           price: price.value().toString(),
           tickSize: tick.toString()
         }, result.error, InvalidPriceError)

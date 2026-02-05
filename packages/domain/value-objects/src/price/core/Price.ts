@@ -103,25 +103,25 @@ export class Price {
   }
 
   /**
-   * Создаёт Price из значения (ТОЛЬКО для Core!)
+   * Создаёт Price из Decimal (ТОЛЬКО для Core!)
    *
    * @internal ТОЛЬКО для внутреннего использования в Core и Facade
    *
    * @remarks
-   * Бросает PriceInvariantViolation при нарушении инвариантов.
+   * НЕ парсит - принимает готовый Decimal.
    * Все проверки инвариантов выполняются в конструкторе.
    * Для публичного API используйте PriceService.create().
    *
-   * @param value - Значение цены (number, string или Decimal)
+   * Конвертация number/string → Decimal делается в PriceService (Facade layer).
+   *
+   * @param value - Значение цены (Decimal)
    * @returns Price объект
    * @throws {PriceInvariantViolation} При нарушении инвариантов
    *
    * @example
    * ```typescript
    * // ✅ В Core и Facade
-   * const price = Price.of(0.5);                  // from number
-   * const price2 = Price.of('0.5');               // from string
-   * const price3 = Price.of(new Decimal('0.5'));  // from Decimal
+   * const price = Price.of(new Decimal('0.5'));
    *
    * // ❌ В публичном коде - используй PriceService.create()
    * const result = PriceService.create(0.5);
@@ -130,9 +130,8 @@ export class Price {
    * }
    * ```
    */
-  public static of(value: number | string | Decimal): Price {
-    const decimal = value instanceof Decimal ? value : new Decimal(value);
-    return new Price(decimal);
+  public static of(value: Decimal): Price {
+    return new Price(value);
   }
 
   /**

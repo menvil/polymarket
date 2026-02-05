@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { QuoteSerializer } from '../../../src/quote/adapters/QuoteSerializer.js';
 import { Quote } from '../../../src/quote/core/index.js';
@@ -9,11 +10,11 @@ describe('QuoteSerializer', () => {
   describe('toJSON()', () => {
     it('сериализует двустороннюю котировку в JSON', () => {
       const quote = Quote.of(
-        Price.of(0.48),
-        Price.of(0.52),
-        Quantity.of(100),
-        Quantity.of(150),
-        1234567890000
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(1234567890000)
       );
 
       const json = QuoteSerializer.toJSON(quote);
@@ -27,11 +28,11 @@ describe('QuoteSerializer', () => {
 
     it('сериализует bid-only котировку', () => {
       const quote = Quote.of(
-        Price.of(0.50),
+        Price.of(new Decimal(0.50)),
         null,
-        Quantity.of(100),
-        Quantity.of(0),
-        1234567890000
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(0)),
+        new Decimal(1234567890000)
       );
 
       const json = QuoteSerializer.toJSON(quote);
@@ -45,10 +46,10 @@ describe('QuoteSerializer', () => {
     it('сериализует ask-only котировку', () => {
       const quote = Quote.of(
         null,
-        Price.of(0.51),
-        Quantity.of(0),
-        Quantity.of(200),
-        1234567890000
+        Price.of(new Decimal(0.51)),
+        Quantity.of(new Decimal(0)),
+        Quantity.of(new Decimal(200)),
+        new Decimal(1234567890000)
       );
 
       const json = QuoteSerializer.toJSON(quote);
@@ -247,11 +248,11 @@ describe('QuoteSerializer', () => {
   describe('toString()', () => {
     it('сериализует Quote в JSON-строку', () => {
       const quote = Quote.of(
-        Price.of(0.48),
-        Price.of(0.52),
-        Quantity.of(100),
-        Quantity.of(150),
-        1234567890000
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(1234567890000)
       );
 
       const jsonString = QuoteSerializer.toString(quote);
@@ -266,11 +267,11 @@ describe('QuoteSerializer', () => {
 
     it('правильно форматирует JSON', () => {
       const quote = Quote.of(
-        Price.of(0.48),
-        Price.of(0.52),
-        Quantity.of(100),
-        Quantity.of(150),
-        1234567890000
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(1234567890000)
       );
 
       const jsonString = QuoteSerializer.toString(quote);
@@ -335,11 +336,11 @@ describe('QuoteSerializer', () => {
 
     it('roundtrip: toString() -> parse() сохраняет данные', () => {
       const original = Quote.of(
-        Price.of(0.48),
-        Price.of(0.52),
-        Quantity.of(100),
-        Quantity.of(150),
-        1234567890000
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(1234567890000)
       );
 
       const jsonString = QuoteSerializer.toString(original);
@@ -354,11 +355,11 @@ describe('QuoteSerializer', () => {
 
     it('roundtrip: toJSON() -> fromJSON() сохраняет данные', () => {
       const original = Quote.of(
-        Price.of(0.48),
-        Price.of(0.52),
-        Quantity.of(100),
-        Quantity.of(150),
-        1234567890000
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(1234567890000)
       );
 
       const json = QuoteSerializer.toJSON(original);

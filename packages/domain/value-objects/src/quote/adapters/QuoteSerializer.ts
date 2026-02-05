@@ -76,6 +76,8 @@ export interface QuoteJson {
  * ```
  */
 export class QuoteSerializer {
+  private static readonly SERVICE_NAME = 'QuoteSerializer';
+
   /**
    * Преобразует Quote в JSON-объект
    *
@@ -207,7 +209,7 @@ export class QuoteSerializer {
     );
 
     if (!result.ok) {
-      return Err(rewrap('fromJSON', ctx, result.error, InvalidQuoteError));
+      return Err(rewrap(QuoteSerializer.SERVICE_NAME, 'fromJSON', ctx, result.error, InvalidQuoteError));
     }
 
     return Ok(result.value);
@@ -266,7 +268,7 @@ export class QuoteSerializer {
       const result = this.fromJSON(json);
 
       if (!result.ok) {
-        return Err(rewrap('parse', ctx, result.error, InvalidQuoteError));
+        return Err(rewrap(QuoteSerializer.SERVICE_NAME, 'parse', ctx, result.error, InvalidQuoteError));
       }
 
       return Ok(result.value);

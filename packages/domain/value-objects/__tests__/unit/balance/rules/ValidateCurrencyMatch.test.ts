@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { ValidateCurrencyMatch } from '../../../../src/balance/rules/ValidateCurrencyMatch.js';
 import { Money } from '../../../../src/money/core/Money.js';
@@ -5,7 +6,7 @@ import { Money } from '../../../../src/money/core/Money.js';
 describe('ValidateCurrencyMatch', () => {
   describe('успешная валидация', () => {
     it('проходит если валюты совпадают', () => {
-      const amount = Money.of(1000);
+      const amount = Money.of(new Decimal(1000));
       const balanceCurrency = 'USDC';
 
       const result = ValidateCurrencyMatch.check(amount, balanceCurrency);

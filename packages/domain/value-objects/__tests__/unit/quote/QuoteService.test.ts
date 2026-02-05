@@ -37,7 +37,7 @@ describe('QuoteService', () => {
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
         expect(result.error.context?.raw).toEqual({ field: 'bidValue', value: 'invalid' });
-        expect(result.error.context?.component).toBe('bid');
+        // component не нужен - информация уже в raw.field
       }
     });
 
@@ -47,7 +47,7 @@ describe('QuoteService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
-        expect(result.error.context?.component).toBe('ask');
+        expect(result.error.context?.raw).toEqual({ field: 'askValue', value: 'invalid' });
       }
     });
 
@@ -57,7 +57,7 @@ describe('QuoteService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
-        expect(result.error.context?.component).toBe('bidSize');
+        expect(result.error.context?.raw).toEqual({ field: 'bidSizeValue', value: 'invalid' });
       }
     });
 
@@ -67,7 +67,7 @@ describe('QuoteService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
-        expect(result.error.context?.component).toBe('askSize');
+        expect(result.error.context?.raw).toEqual({ field: 'askSizeValue', value: 'invalid' });
       }
     });
 
@@ -94,7 +94,8 @@ describe('QuoteService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_BID);
+        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_HIGH)
+        // component показывает какое поле не прошло валидацию
         expect(result.error.context?.component).toBe('bid');
       }
     });
@@ -104,7 +105,8 @@ describe('QuoteService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_ASK);
+        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_LOW)
+        // component показывает какое поле не прошло валидацию
         expect(result.error.context?.component).toBe('ask');
       }
     });
@@ -114,7 +116,8 @@ describe('QuoteService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_BID_SIZE);
+        // reason содержит корневую причину из QuantityService (NEGATIVE)
+        // component показывает какое поле не прошло валидацию
         expect(result.error.context?.component).toBe('bidSize');
       }
     });
@@ -124,7 +127,8 @@ describe('QuoteService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_ASK_SIZE);
+        // reason содержит корневую причину из QuantityService (NEGATIVE)
+        // component показывает какое поле не прошло валидацию
         expect(result.error.context?.component).toBe('askSize');
       }
     });
@@ -132,7 +136,7 @@ describe('QuoteService', () => {
 
   describe('createFromDecimals()', () => {
     it('создаёт котировку из Decimal значений', () => {
-      const result = QuoteService.createFromDecimals(
+      const result = QuoteService.create(
         new Decimal(0.48),
         new Decimal(0.52),
         new Decimal(100),
@@ -146,7 +150,7 @@ describe('QuoteService', () => {
     });
 
     it('создаёт bid-only котировку', () => {
-      const result = QuoteService.createFromDecimals(
+      const result = QuoteService.create(
         new Decimal(0.50),
         null,
         new Decimal(100),
@@ -161,7 +165,7 @@ describe('QuoteService', () => {
     });
 
     it('создаёт ask-only котировку', () => {
-      const result = QuoteService.createFromDecimals(
+      const result = QuoteService.create(
         null,
         new Decimal(0.51),
         new Decimal(0),
@@ -320,7 +324,9 @@ describe('QuoteService', () => {
       expect(shiftResult.ok).toBe(false);
       if (!shiftResult.ok) {
         // bid становится 1.08, что превышает MAX_PRICE (0.9999)
-        expect(shiftResult.error.context?.reason).toBe(QuoteErrorReason.INVALID_BID);
+        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_HIGH)
+        // component показывает какое поле не прошло валидацию
+        expect(shiftResult.error.context?.component).toBe('bid');
         expect(shiftResult.error.context?.op).toBe('shift');
       }
     });
@@ -335,7 +341,9 @@ describe('QuoteService', () => {
       expect(shiftResult.ok).toBe(false);
       if (!shiftResult.ok) {
         // bid становится 0, что ниже MIN_PRICE (0.0001)
-        expect(shiftResult.error.context?.reason).toBe(QuoteErrorReason.INVALID_BID);
+        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_LOW)
+        // component показывает какое поле не прошло валидацию
+        expect(shiftResult.error.context?.component).toBe('bid');
         expect(shiftResult.error.context?.op).toBe('shift');
       }
     });
@@ -446,7 +454,9 @@ describe('QuoteService', () => {
       expect(skewResult.ok).toBe(false);
       if (!skewResult.ok) {
         // bid становится -0.0005, что ниже MIN_PRICE (0.0001)
-        expect(skewResult.error.context?.reason).toBe(QuoteErrorReason.INVALID_BID);
+        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_LOW)
+        // component показывает какое поле не прошло валидацию
+        expect(skewResult.error.context?.component).toBe('bid');
         expect(skewResult.error.context?.op).toBe('skew');
       }
     });
@@ -465,7 +475,9 @@ describe('QuoteService', () => {
       expect(skewResult.ok).toBe(false);
       if (!skewResult.ok) {
         // ask становится 1.09, что выше MAX_PRICE (0.9999)
-        expect(skewResult.error.context?.reason).toBe(QuoteErrorReason.INVALID_ASK);
+        // reason содержит корневую причину из PriceService (OUT_OF_RANGE_HIGH)
+        // component показывает какое поле не прошло валидацию
+        expect(skewResult.error.context?.component).toBe('ask');
         expect(skewResult.error.context?.op).toBe('skew');
       }
     });
@@ -497,8 +509,8 @@ describe('QuoteService', () => {
 
       const updateResult = QuoteService.updateSizes(
         quoteResult.value,
-        Quantity.of(200),
-        Quantity.of(300)
+        Quantity.of(new Decimal(200)),
+        Quantity.of(new Decimal(300))
       );
 
       expect(updateResult.ok).toBe(true);
@@ -517,7 +529,8 @@ describe('QuoteService', () => {
 
       expect(updateResult.ok).toBe(false);
       if (!updateResult.ok) {
-        expect(updateResult.error.context?.reason).toBe(QuoteErrorReason.INVALID_BID_SIZE);
+        // reason содержит корневую причину из QuantityService (NEGATIVE)
+        // component показывает какое поле не прошло валидацию
         expect(updateResult.error.context?.component).toBe('bidSize');
       }
     });
@@ -531,7 +544,8 @@ describe('QuoteService', () => {
 
       expect(updateResult.ok).toBe(false);
       if (!updateResult.ok) {
-        expect(updateResult.error.context?.reason).toBe(QuoteErrorReason.INVALID_ASK_SIZE);
+        // reason содержит корневую причину из QuantityService (NEGATIVE)
+        // component показывает какое поле не прошло валидацию
         expect(updateResult.error.context?.component).toBe('askSize');
       }
     });

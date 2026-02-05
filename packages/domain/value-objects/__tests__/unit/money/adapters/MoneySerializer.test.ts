@@ -6,7 +6,7 @@ import { InvalidMoneyError } from '@polymarket/errors';
 describe('MoneySerializer', () => {
   describe('toJSON', () => {
     it('сериализует Money в JSON', () => {
-      const money = Money.of(100.50);
+      const money = Money.of(new Decimal(100.50));
       const json = MoneySerializer.toJSON(money);
 
       expect(json).toEqual({
@@ -16,14 +16,14 @@ describe('MoneySerializer', () => {
     });
 
     it('сохраняет точность для больших чисел', () => {
-      const money = Money.of('999999999999.123456789');
+      const money = Money.of(new Decimal('999999999999.123456789'));
       const json = MoneySerializer.toJSON(money);
 
       expect(json.amount).toBe('999999999999.123456789');
     });
 
     it('сериализует отрицательные суммы', () => {
-      const money = Money.of(-100);
+      const money = Money.of(new Decimal(-100));
       const json = MoneySerializer.toJSON(money);
 
       expect(json.amount).toBe('-100');
@@ -161,7 +161,7 @@ describe('MoneySerializer', () => {
 
   describe('roundtrip', () => {
     it('сохраняет данные при сериализации и десериализации', () => {
-      const original = Money.of('123.456789');
+      const original = Money.of(new Decimal('123.456789'));
       const json = MoneySerializer.toJSON(original);
       const result = MoneySerializer.fromJSON(json);
 

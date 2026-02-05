@@ -6,8 +6,8 @@ import { InvalidMoneyError } from '@polymarket/errors';
 describe('MoneyService.add()', () => {
   describe('success', () => {
     it('складывает', () => {
-      const m1 = Money.of(100);
-      const m2 = Money.of(50);
+      const m1 = Money.of(new Decimal(100));
+      const m2 = Money.of(new Decimal(50));
       const result = MoneyService.add(m1, m2);
 
       expect(result.ok).toBe(true);
@@ -17,7 +17,7 @@ describe('MoneyService.add()', () => {
     });
 
     it('дробные', () => {
-      const result = MoneyService.add(Money.of('100.5'), Money.of('50.25'));
+      const result = MoneyService.add(Money.of(new Decimal('100.5')), Money.of(new Decimal('50.25')));
       expect(result.ok).toBe(true);
       if (result.ok) {
         // ✅ Decimal сравнение вместо toNumber (lossy)
@@ -26,7 +26,7 @@ describe('MoneyService.add()', () => {
     });
 
     it('отрицательные', () => {
-      const result = MoneyService.add(Money.of(-50), Money.of(100));
+      const result = MoneyService.add(Money.of(new Decimal(-50)), Money.of(new Decimal(100)));
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().toNumber()).toBe(50);
@@ -34,7 +34,7 @@ describe('MoneyService.add()', () => {
     });
 
     it('с нулём', () => {
-      const result = MoneyService.add(Money.of(100), Money.ZERO.USDC);
+      const result = MoneyService.add(Money.of(new Decimal(100)), Money.ZERO.USDC);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().toNumber()).toBe(100);
@@ -44,8 +44,8 @@ describe('MoneyService.add()', () => {
 
   describe('overflow', () => {
     it('EXCEEDS_MAX_AMOUNT', () => {
-      const m1 = Money.of('9e14');
-      const m2 = Money.of('9e14');
+      const m1 = Money.of(new Decimal('9e14'));
+      const m2 = Money.of(new Decimal('9e14'));
       const result = MoneyService.add(m1, m2);
 
       expect(result.ok).toBe(false);
@@ -62,8 +62,8 @@ describe('MoneyService.add()', () => {
     });
 
     it('граница MAX допустима', () => {
-      const m1 = Money.of('5e14');
-      const m2 = Money.of('5e14');
+      const m1 = Money.of(new Decimal('5e14'));
+      const m2 = Money.of(new Decimal('5e14'));
       const result = MoneyService.add(m1, m2);
 
       expect(result.ok).toBe(true);
@@ -80,8 +80,8 @@ describe('MoneyService.add()', () => {
 describe('MoneyService.subtract()', () => {
   describe('success', () => {
     it('вычитает', () => {
-      const m1 = Money.of(100);
-      const m2 = Money.of(30);
+      const m1 = Money.of(new Decimal(100));
+      const m2 = Money.of(new Decimal(30));
       const result = MoneyService.subtract(m1, m2);
 
       expect(result.ok).toBe(true);
@@ -91,7 +91,7 @@ describe('MoneyService.subtract()', () => {
     });
 
     it('дробные', () => {
-      const result = MoneyService.subtract(Money.of('100.5'), Money.of('50.25'));
+      const result = MoneyService.subtract(Money.of(new Decimal('100.5')), Money.of(new Decimal('50.25')));
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().equals(new Decimal('50.25'))).toBe(true);
@@ -99,7 +99,7 @@ describe('MoneyService.subtract()', () => {
     });
 
     it('отрицательный результат', () => {
-      const result = MoneyService.subtract(Money.of(50), Money.of(100));
+      const result = MoneyService.subtract(Money.of(new Decimal(50)), Money.of(new Decimal(100)));
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().toNumber()).toBe(-50);
@@ -109,8 +109,8 @@ describe('MoneyService.subtract()', () => {
 
   describe('overflow', () => {
     it('EXCEEDS_MAX_AMOUNT', () => {
-      const m1 = Money.of('1e15');
-      const m2 = Money.of('-1e15');
+      const m1 = Money.of(new Decimal('1e15'));
+      const m2 = Money.of(new Decimal('-1e15'));
       const result = MoneyService.subtract(m1, m2);
 
       expect(result.ok).toBe(false);
@@ -125,7 +125,7 @@ describe('MoneyService.subtract()', () => {
 describe('MoneyService.multiply()', () => {
   describe('success', () => {
     it('умножает на целое', () => {
-      const result = MoneyService.multiply(Money.of(100), 2);
+      const result = MoneyService.multiply(Money.of(new Decimal(100)), 2);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().toNumber()).toBe(200);
@@ -133,7 +133,7 @@ describe('MoneyService.multiply()', () => {
     });
 
     it('умножает на дробное', () => {
-      const result = MoneyService.multiply(Money.of(100), 1.5);
+      const result = MoneyService.multiply(Money.of(new Decimal(100)), 1.5);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().equals(new Decimal('150'))).toBe(true);
@@ -141,7 +141,7 @@ describe('MoneyService.multiply()', () => {
     });
 
     it('умножает на ноль', () => {
-      const result = MoneyService.multiply(Money.of(100), 0);
+      const result = MoneyService.multiply(Money.of(new Decimal(100)), 0);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().toNumber()).toBe(0);
@@ -149,7 +149,7 @@ describe('MoneyService.multiply()', () => {
     });
 
     it('умножает на отрицательное', () => {
-      const result = MoneyService.multiply(Money.of(100), -2);
+      const result = MoneyService.multiply(Money.of(new Decimal(100)), -2);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().toNumber()).toBe(-200);
@@ -159,7 +159,7 @@ describe('MoneyService.multiply()', () => {
 
   describe('validation', () => {
     it('INVALID_FORMAT', () => {
-      const result = MoneyService.multiply(Money.of(100), 'abc');
+      const result = MoneyService.multiply(Money.of(new Decimal(100)), 'abc');
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
@@ -168,7 +168,7 @@ describe('MoneyService.multiply()', () => {
     });
 
     it('NAN', () => {
-      const result = MoneyService.multiply(Money.of(100), NaN);
+      const result = MoneyService.multiply(Money.of(new Decimal(100)), NaN);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context!.reason).toBe('NAN');
@@ -176,7 +176,7 @@ describe('MoneyService.multiply()', () => {
     });
 
     it('NON_FINITE', () => {
-      const result = MoneyService.multiply(Money.of(100), Infinity);
+      const result = MoneyService.multiply(Money.of(new Decimal(100)), Infinity);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context!.reason).toBe('NON_FINITE');
@@ -186,7 +186,7 @@ describe('MoneyService.multiply()', () => {
 
   describe('overflow', () => {
     it('EXCEEDS_MAX_AMOUNT', () => {
-      const result = MoneyService.multiply(Money.of('1e14'), '1e5');
+      const result = MoneyService.multiply(Money.of(new Decimal('1e14')), '1e5');
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
@@ -199,7 +199,7 @@ describe('MoneyService.multiply()', () => {
 describe('MoneyService.divide()', () => {
   describe('success', () => {
     it('делит на целое', () => {
-      const result = MoneyService.divide(Money.of(100), 2);
+      const result = MoneyService.divide(Money.of(new Decimal(100)), 2);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().toNumber()).toBe(50);
@@ -207,7 +207,7 @@ describe('MoneyService.divide()', () => {
     });
 
     it('делит на дробное', () => {
-      const result = MoneyService.divide(Money.of(100), 4);
+      const result = MoneyService.divide(Money.of(new Decimal(100)), 4);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().equals(new Decimal('25'))).toBe(true);
@@ -215,7 +215,7 @@ describe('MoneyService.divide()', () => {
     });
 
     it('делит на отрицательное', () => {
-      const result = MoneyService.divide(Money.of(100), -2);
+      const result = MoneyService.divide(Money.of(new Decimal(100)), -2);
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.value().toNumber()).toBe(-50);
@@ -225,7 +225,7 @@ describe('MoneyService.divide()', () => {
 
   describe('validation', () => {
     it('DIVISION_BY_ZERO', () => {
-      const result = MoneyService.divide(Money.of(100), 0);
+      const result = MoneyService.divide(Money.of(new Decimal(100)), 0);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
@@ -234,7 +234,7 @@ describe('MoneyService.divide()', () => {
     });
 
     it('INVALID_FORMAT', () => {
-      const result = MoneyService.divide(Money.of(100), 'abc');
+      const result = MoneyService.divide(Money.of(new Decimal(100)), 'abc');
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
@@ -243,7 +243,7 @@ describe('MoneyService.divide()', () => {
     });
 
     it('NAN', () => {
-      const result = MoneyService.divide(Money.of(100), NaN);
+      const result = MoneyService.divide(Money.of(new Decimal(100)), NaN);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context!.reason).toBe('NAN');
@@ -251,7 +251,7 @@ describe('MoneyService.divide()', () => {
     });
 
     it('NON_FINITE', () => {
-      const result = MoneyService.divide(Money.of(100), Infinity);
+      const result = MoneyService.divide(Money.of(new Decimal(100)), Infinity);
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context!.reason).toBe('NON_FINITE');

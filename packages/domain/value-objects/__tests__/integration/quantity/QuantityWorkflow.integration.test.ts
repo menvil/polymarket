@@ -7,8 +7,8 @@ import Decimal from 'decimal.js';
 describe('Quantity Integration Workflow', () => {
   describe('Scenario 1: add + subtract + non-negative', () => {
     it('должен сложить два Quantity', () => {
-      const qty1 = Quantity.of(10);
-      const qty2 = Quantity.of(5);
+      const qty1 = Quantity.of(new Decimal(10));
+      const qty2 = Quantity.of(new Decimal(5));
       const result = QuantityService.add(qty1, qty2);
 
       expect(result.ok).toBe(true);
@@ -18,8 +18,8 @@ describe('Quantity Integration Workflow', () => {
     });
 
     it('должен вычесть где qty1 > qty2', () => {
-      const qty1 = Quantity.of(10);
-      const qty2 = Quantity.of(5);
+      const qty1 = Quantity.of(new Decimal(10));
+      const qty2 = Quantity.of(new Decimal(5));
       const result = QuantityService.subtract(qty1, qty2);
 
       expect(result.ok).toBe(true);
@@ -29,8 +29,8 @@ describe('Quantity Integration Workflow', () => {
     });
 
     it('должен вернуть Err для negative result где qty1 < qty2', () => {
-      const qty1 = Quantity.of(5);
-      const qty2 = Quantity.of(10);
+      const qty1 = Quantity.of(new Decimal(5));
+      const qty2 = Quantity.of(new Decimal(10));
       const result = QuantityService.subtract(qty1, qty2);
 
       expect(result.ok).toBe(false);
@@ -43,7 +43,7 @@ describe('Quantity Integration Workflow', () => {
 
   describe('Scenario 2: multiply + divide + round', () => {
     it('должен умножить с valid factor', () => {
-      const qty = Quantity.of(10);
+      const qty = Quantity.of(new Decimal(10));
       const result = QuantityService.multiply(qty, 2);
 
       expect(result.ok).toBe(true);
@@ -53,7 +53,7 @@ describe('Quantity Integration Workflow', () => {
     });
 
     it('должен вернуть Err для negative factor', () => {
-      const qty = Quantity.of(10);
+      const qty = Quantity.of(new Decimal(10));
       const result = QuantityService.multiply(qty, -1);
 
       expect(result.ok).toBe(false);
@@ -63,7 +63,7 @@ describe('Quantity Integration Workflow', () => {
     });
 
     it('должен разделить с valid divisor', () => {
-      const qty = Quantity.of(10);
+      const qty = Quantity.of(new Decimal(10));
       const result = QuantityService.divide(qty, 2);
 
       expect(result.ok).toBe(true);
@@ -73,7 +73,7 @@ describe('Quantity Integration Workflow', () => {
     });
 
     it('должен вернуть Err для zero divisor', () => {
-      const qty = Quantity.of(10);
+      const qty = Quantity.of(new Decimal(10));
       const result = QuantityService.divide(qty, 0);
 
       expect(result.ok).toBe(false);
@@ -84,7 +84,7 @@ describe('Quantity Integration Workflow', () => {
     });
 
     it('должен округлить с valid stepSize', () => {
-      const qty = Quantity.of(10.567);
+      const qty = Quantity.of(new Decimal(10.567));
       const result = QuantityService.roundToStep(qty, new Decimal(0.01));
 
       expect(result.ok).toBe(true);
@@ -97,7 +97,7 @@ describe('Quantity Integration Workflow', () => {
   describe('Scenario 3: serialize + deserialize', () => {
     it('QuantitySerializer (string) round-trip без потери точности', () => {
       const bigNum = "12345678901234567890.123456789";
-      const original = Quantity.of(bigNum);
+      const original = Quantity.of(new Decimal(bigNum));
 
       // Сериализация
       const json = QuantitySerializer.toJSON(original);
@@ -112,7 +112,7 @@ describe('Quantity Integration Workflow', () => {
     });
 
     it('QuantityLossySerializer (number) round-trip (не требуем точности)', () => {
-      const qty = Quantity.of(10.5);
+      const qty = Quantity.of(new Decimal(10.5));
 
       // Сериализация
       const jsonResult = QuantityLossySerializer.toJSON(qty);
@@ -132,7 +132,7 @@ describe('Quantity Integration Workflow', () => {
 
     it('String serializer сохраняет точность для больших чисел (сравнение через строки)', () => {
       const bigNum = "99999999999999999999.99999999999999999";
-      const original = Quantity.of(bigNum);
+      const original = Quantity.of(new Decimal(bigNum));
 
       const json = QuantitySerializer.toJSON(original);
       const result = QuantitySerializer.fromJSON(json);

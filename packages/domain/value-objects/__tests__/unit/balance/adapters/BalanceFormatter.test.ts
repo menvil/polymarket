@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { BalanceFormatter } from '../../../../src/balance/adapters/BalanceFormatter.js';
 import { BalanceService } from '../../../../src/balance/facade/BalanceService.js';
@@ -6,8 +7,8 @@ import { Money } from '../../../../src/money/core/Money.js';
 describe('BalanceFormatter', () => {
   const createBalance = (available: number, reserved: number) => {
     const result = BalanceService.create(
-      Money.of(available),
-      Money.of(reserved)
+      Money.of(new Decimal(available)),
+      Money.of(new Decimal(reserved))
     );
     if (!result.ok) throw new Error('Failed to create balance');
     return result.value;

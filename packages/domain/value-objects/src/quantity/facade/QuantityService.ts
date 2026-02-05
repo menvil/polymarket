@@ -37,6 +37,8 @@ import { ErrorSource } from '../../shared/facade/ErrorSource.js';
  * ОЖИДАЕМЫЕ и НЕОЖИДАННЫЕ ошибки обрабатываются через Result
  */
 export class QuantityService {
+  private static readonly SERVICE_NAME = 'QuantityService';
+
   /**
    * Извлекает структурированный cause из любой ошибки
    *
@@ -69,7 +71,7 @@ export class QuantityService {
     const decimalResult = toDecimal('value', value, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
     if (isErr(decimalResult)) {
       // raw уже внутри err.context.raw от toDecimal
-      return Err(rewrap('create', {}, decimalResult.error, InvalidQuantityError));
+      return Err(rewrap(QuantityService.SERVICE_NAME, 'create', {}, decimalResult.error, InvalidQuantityError));
     }
 
     try {
@@ -83,6 +85,7 @@ export class QuantityService {
           new InvalidQuantityError(error.message, {
             context: {
               source: ErrorSource.CORE_INVARIANT,
+              service: QuantityService.SERVICE_NAME, // Set root service field
               op: 'create',
               raw: { field: 'value', value: String(value) },
               value: decimalResult.value.toString(),
@@ -94,7 +97,7 @@ export class QuantityService {
 
       // Неожиданная ошибка - unexpectedError создаёт базовую ошибку с cause, rewrap добавляет op
       return Err(
-        rewrap('create', { value: String(value) }, unexpectedError('create', {}, error, InvalidQuantityError), InvalidQuantityError)
+        rewrap(QuantityService.SERVICE_NAME, 'create', { value: String(value) }, unexpectedError(QuantityService.SERVICE_NAME, 'create', {}, error, InvalidQuantityError), InvalidQuantityError)
       );
     }
   }
@@ -127,7 +130,7 @@ export class QuantityService {
    */
   public static add(qty1: Quantity, qty2: Quantity): Result<Quantity, InvalidQuantityError> {
     const ctx = { quantity1: qty1.value().toString(), quantity2: qty2.value().toString() };
-    return wrapOp('add', ctx, () => {
+    return wrapOp(QuantityService.SERVICE_NAME, 'add', ctx, () => {
       const sum = addDecimal(qty1.value(), qty2.value());
       return this.create(sum);
     }, InvalidQuantityError);
@@ -164,7 +167,7 @@ export class QuantityService {
     qty2: Quantity
   ): Result<Quantity, InvalidQuantityError> {
     const ctx = { quantity1: qty1.value().toString(), quantity2: qty2.value().toString() };
-    return wrapOp('subtract', ctx, () => {
+    return wrapOp(QuantityService.SERVICE_NAME, 'subtract', ctx, () => {
       const diff = subtractDecimal(qty1.value(), qty2.value());
 
       const validateResult = ValidateResultNonNegative.check(diff);
@@ -205,7 +208,7 @@ export class QuantityService {
     const factorResult = toDecimal('factor', factor, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
     if (isErr(factorResult)) {
       return Err(
-        rewrap('multiply', {
+        rewrap(QuantityService.SERVICE_NAME, 'multiply', {
           quantity: quantity.value().toString(),
           factor: String(factor)
         }, factorResult.error, InvalidQuantityError)
@@ -218,7 +221,7 @@ export class QuantityService {
     const validateResult = ValidateFactorForQuantityMultiplication.check(factorDecimal);
     if (isErr(validateResult)) {
       return Err(
-        rewrap('multiply', {
+        rewrap(QuantityService.SERVICE_NAME, 'multiply', {
           quantity: quantity.value().toString(),
           factor: factorDecimal.toString()
         }, validateResult.error, InvalidQuantityError)
@@ -231,7 +234,7 @@ export class QuantityService {
       factor: factorDecimal.toString()
     };
 
-    return wrapOp('multiply', ctx, () => {
+    return wrapOp(QuantityService.SERVICE_NAME, 'multiply', ctx, () => {
       const result = multiplyDecimal(quantity.value(), factorDecimal);
       return this.create(result);
     }, InvalidQuantityError);
@@ -279,7 +282,7 @@ export class QuantityService {
     const divisorResult = toDecimal('divisor', divisor, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
     if (isErr(divisorResult)) {
       return Err(
-        rewrap('divide', {
+        rewrap(QuantityService.SERVICE_NAME, 'divide', {
           quantity: quantity.value().toString(),
           divisor: String(divisor)
         }, divisorResult.error, InvalidQuantityError)
@@ -292,7 +295,7 @@ export class QuantityService {
     const validateResult = ValidateDivisorForQuantityDivision.check(divisorDecimal);
     if (isErr(validateResult)) {
       return Err(
-        rewrap('divide', {
+        rewrap(QuantityService.SERVICE_NAME, 'divide', {
           quantity: quantity.value().toString(),
           divisor: divisorDecimal.toString()
         }, validateResult.error, InvalidQuantityError)
@@ -305,7 +308,7 @@ export class QuantityService {
       divisor: divisorDecimal.toString()
     };
 
-    return wrapOp('divide', ctx, () => {
+    return wrapOp(QuantityService.SERVICE_NAME, 'divide', ctx, () => {
       const result = divideDecimal(quantity.value(), divisorDecimal);
       return this.create(result);
     }, InvalidQuantityError);
@@ -348,7 +351,7 @@ export class QuantityService {
     const stepSizeResult = toDecimal('stepSize', stepSize, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
     if (isErr(stepSizeResult)) {
       return Err(
-        rewrap('roundToStep', {
+        rewrap(QuantityService.SERVICE_NAME, 'roundToStep', {
           quantity: quantity.value().toString(),
           stepSize: String(stepSize)
         }, stepSizeResult.error, InvalidQuantityError)
@@ -361,7 +364,7 @@ export class QuantityService {
     const validateResult = ValidateStepSizeForQuantity.check(stepSizeDecimal);
     if (isErr(validateResult)) {
       return Err(
-        rewrap('roundToStep', {
+        rewrap(QuantityService.SERVICE_NAME, 'roundToStep', {
           quantity: quantity.value().toString(),
           stepSize: stepSizeDecimal.toString()
         }, validateResult.error, InvalidQuantityError)
@@ -374,7 +377,7 @@ export class QuantityService {
       stepSize: stepSizeDecimal.toString()
     };
 
-    return wrapOp('roundToStep', ctx, () => {
+    return wrapOp(QuantityService.SERVICE_NAME, 'roundToStep', ctx, () => {
       const rounded = roundToTick(quantity.value(), stepSizeDecimal, roundingMode);
       return this.create(rounded);
     }, InvalidQuantityError);

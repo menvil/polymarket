@@ -200,6 +200,7 @@ function getValueName(ErrorConstructor: ErrorConstructor<DomainError>): string {
 /**
  * Создаёт ошибку для ожидаемых ошибок из @polymarket/math
  *
+ * @param serviceName - Название сервиса ('QuoteService', 'PriceService', и т.д.)
  * @param op - Название операции
  * @param ctx - Контекст операции (amount, factor, divisor, etc.)
  * @param e - Ошибка из math layer (ТОЛЬКО Error объекты)
@@ -217,6 +218,7 @@ function getValueName(ErrorConstructor: ErrorConstructor<DomainError>): string {
  * valueName автоматически определяется из ErrorConstructor через getValueName().
  */
 export function expectedMathError<TError extends DomainError>(
+  serviceName: string,
   op: string,
   ctx: Record<string, unknown>,
   e: Error,
@@ -227,6 +229,7 @@ export function expectedMathError<TError extends DomainError>(
   return new ErrorConstructor(`${valueName} ${op} failed: ${cause.message}`, {
     context: {
       source: ErrorSource.MATH_OPERATION,
+      service: serviceName,
       op,
       ...ctx,
       cause
@@ -237,6 +240,7 @@ export function expectedMathError<TError extends DomainError>(
 /**
  * Создаёт ошибку для неожиданных ошибок
  *
+ * @param serviceName - Название сервиса ('QuoteService', 'PriceService', и т.д.)
  * @param op - Название операции
  * @param ctx - Контекст операции
  * @param e - Неожиданная ошибка (any type)
@@ -250,6 +254,7 @@ export function expectedMathError<TError extends DomainError>(
  * valueName автоматически определяется из ErrorConstructor через getValueName().
  */
 export function unexpectedError<TError extends DomainError>(
+  serviceName: string,
   op: string,
   ctx: Record<string, unknown>,
   e: unknown,
@@ -260,6 +265,7 @@ export function unexpectedError<TError extends DomainError>(
   return new ErrorConstructor(`Unexpected error during ${valueName} ${op}`, {
     context: {
       source: ErrorSource.UNEXPECTED,
+      service: serviceName,
       op,
       ...ctx,
       cause
@@ -342,6 +348,7 @@ export function isExpectedMathError(e: unknown): e is Error {
  * ```
  */
 export function rewrap<TError extends DomainError>(
+  serviceName: string,
   op: string,
   ctx: Record<string, unknown>,
   err: TError,
@@ -350,7 +357,7 @@ export function rewrap<TError extends DomainError>(
   const inner = (err.context ?? {}) as Record<string, unknown>;
 
   // Запрещаем ctx приносить root-поля (защита от случайного перетирания)
-  const { cause: _c, reason: _r, raw: _raw, source: _s, op: _op, opChain: _chain, ...safeCtx } = ctx;
+  const { cause: _c, reason: _r, raw: _raw, source: _s, service: _svc, op: _op, opChain: _chain, ...safeCtx } = ctx;
 
   // 1) мерджим контекст: inner база, safeCtx сверху (без root-полей)
   const merged: Record<string, unknown> = {
@@ -358,15 +365,29 @@ export function rewrap<TError extends DomainError>(
     ...safeCtx
   };
 
-  // 2) opChain строим только тут (единственное место истины)
+  // 2) Сохраняем root service (первоначальный сервис, откуда пришла ошибка)
+  if (inner.service !== undefined) {
+    merged.service = inner.service; // Root service не перетирается
+  } else {
+    merged.service = serviceName; // Устанавливаем если это первый rewrap
+  }
+
+  // 3) opChain строим с префиксами сервисов: ["ServiceA.opA", "ServiceB.opB"]
+  const fullOp = `${serviceName}.${op}`;
   const innerChain = Array.isArray(inner.opChain) ? inner.opChain : undefined;
   const filtered = (innerChain?.filter((x) => typeof x === 'string') as string[]) ?? [];
-  const base = filtered.length > 0 ? filtered : (typeof inner.op === 'string' ? [inner.op] : []);
+
+  // Формируем базу: либо existing chain, либо создаем из inner.op с сервисом
+  const base = filtered.length > 0
+    ? filtered
+    : (typeof inner.op === 'string' && typeof inner.service === 'string'
+        ? [`${inner.service}.${inner.op}`]
+        : []);
 
   merged.op = op;
   // Не добавляем op в opChain если он уже последний элемент (избегаем дублирования)
   const lastOp = base[base.length - 1];
-  merged.opChain = lastOp === op ? base : [...base, op];
+  merged.opChain = lastOp === fullOp ? base : [...base, fullOp];
 
   // 3) root-поля сохраняем из inner, если они есть (не перетираются)
   if (inner.cause !== undefined) {
@@ -388,6 +409,7 @@ export function rewrap<TError extends DomainError>(
 /**
  * Оборачивает facade операцию в try/catch с централизованной обработкой ошибок
  *
+ * @param serviceName - Название сервиса ('QuoteService', 'PriceService', и т.д.)
  * @param op - Название операции
  * @param ctx - Контекст операции
  * @param fn - Функция выполняющая операцию (может включать math, create, rules)
@@ -397,19 +419,20 @@ export function rewrap<TError extends DomainError>(
  * @remarks
  * Устраняет дублирование try/catch блоков во всех операциях.
  * Автоматически классифицирует ошибки как expected/unexpected.
- * Автоматически rewrap'ает ошибки из Result.Err.
+ * Автоматически rewrap'ает ошибки из Result.Err с добавлением serviceName в opChain.
  *
  * valueName автоматически определяется из ErrorConstructor через getValueName().
  *
  * Обрабатывает четыре типа ошибок/результатов:
- * 1. Result.Err(TError) (из create/rules) → rewrap с добавлением op
- * 2. throw TError (из вложенных операций) → rewrap с добавлением op
+ * 1. Result.Err(TError) (из create/rules) → rewrap с добавлением serviceName.op
+ * 2. throw TError (из вложенных операций) → rewrap с добавлением serviceName.op
  * 3. Expected math errors (ArithmeticOverflowError, etc.) → expectedMathError
  * 4. Unexpected errors → unexpectedError
  *
  * @example
  * ```typescript
  * return wrapOp(
+ *   'MoneyService',
  *   'add',
  *   { a: a.amount().toString(), b: b.amount().toString() },
  *   () => {
@@ -418,9 +441,11 @@ export function rewrap<TError extends DomainError>(
  *   },
  *   InvalidMoneyError
  * );
+ * // Если ошибка, opChain будет: ["MoneyService.add"]
  * ```
  */
 export function wrapOp<T, TError extends DomainError>(
+  serviceName: string,
   op: string,
   ctx: Record<string, unknown>,
   fn: () => Result<T, TError>,
@@ -430,7 +455,7 @@ export function wrapOp<T, TError extends DomainError>(
     const result = fn();
     // Если fn() вернул Err с TError - rewrap автоматически
     if (isErr(result)) {
-      return Err(rewrap(op, ctx, result.error, ErrorConstructor));
+      return Err(rewrap(serviceName, op, ctx, result.error, ErrorConstructor));
     }
     return result;
   } catch (e) {
@@ -442,14 +467,14 @@ export function wrapOp<T, TError extends DomainError>(
       e instanceof InvalidPercentageError ||
       e instanceof InvalidQuoteError
     ) {
-      return Err(rewrap(op, ctx, e as TError, ErrorConstructor));
+      return Err(rewrap(serviceName, op, ctx, e as TError, ErrorConstructor));
     }
     // Ожидаемые math ошибки - прогоняем через rewrap для opChain
     if (isExpectedMathError(e)) {
-      return Err(rewrap(op, ctx, expectedMathError(op, ctx, e, ErrorConstructor), ErrorConstructor));
+      return Err(rewrap(serviceName, op, ctx, expectedMathError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
     }
     // Неожиданные ошибки - прогоняем через rewrap для opChain
-    return Err(rewrap(op, ctx, unexpectedError(op, ctx, e, ErrorConstructor), ErrorConstructor));
+    return Err(rewrap(serviceName, op, ctx, unexpectedError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
   }
 }
 

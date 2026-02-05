@@ -10,7 +10,7 @@ describe('PriceService', () => {
   describe('Facade Error Contract - Comprehensive', () => {
     describe('Parse fail → context.op и context.raw обязательны', () => {
       it('multiply: parse fail должен содержать op, raw, factor', () => {
-        const price = Price.of(0.5);
+        const price = Price.of(new Decimal(0.5));
         const result = PriceService.multiply(price, 'invalid' as any);
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -23,7 +23,7 @@ describe('PriceService', () => {
       });
 
       it('divide: parse fail должен содержать op, raw, divisor', () => {
-        const price = Price.of(0.5);
+        const price = Price.of(new Decimal(0.5));
         const result = PriceService.divide(price, 'invalid' as any);
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -38,7 +38,7 @@ describe('PriceService', () => {
 
     describe('Rule fail → op и операционные поля обязательны', () => {
       it('multiply: rule fail должен содержать op и операционные поля', () => {
-        const price = Price.of(0.5);
+        const price = Price.of(new Decimal(0.5));
         const result = PriceService.multiply(price, NaN);
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -49,7 +49,7 @@ describe('PriceService', () => {
       });
 
       it('divide: rule fail должен содержать op и операционные поля', () => {
-        const price = Price.of(0.5);
+        const price = Price.of(new Decimal(0.5));
         const result = PriceService.divide(price, 0);
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -80,7 +80,7 @@ describe('PriceService', () => {
           throw new Error('overflow');
         });
 
-        const price = Price.of(0.5);
+        const price = Price.of(new Decimal(0.5));
         const result = PriceService.multiply(price, 2);
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -99,7 +99,7 @@ describe('PriceService', () => {
           throw 'string error'; // не Error объект
         });
 
-        const price = Price.of(0.5);
+        const price = Price.of(new Decimal(0.5));
         const result = PriceService.divide(price, 2);
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -122,7 +122,7 @@ describe('PriceService', () => {
       });
 
       it('операции: всегда возвращают Result, никогда не throw', () => {
-        const price = Price.of(0.5);
+        const price = Price.of(new Decimal(0.5));
         expect(() => PriceService.multiply(price, 'invalid' as any)).not.toThrow();
         expect(() => PriceService.divide(price, 0)).not.toThrow();
         expect(() => PriceService.roundToMarketTick(price, -1)).not.toThrow();
@@ -185,7 +185,7 @@ describe('PriceService', () => {
 
   describe('complement()', () => {
     it('должен вычислить дополнение до 1', () => {
-      const price = Price.of(0.3);
+      const price = Price.of(new Decimal(0.3));
       const result = PriceService.complement(price);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -194,7 +194,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть 0.5 для 0.5', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.complement(price);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -203,7 +203,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть Ok если результат в диапазоне', () => {
-      const price = Price.of(0.9999);
+      const price = Price.of(new Decimal(0.9999));
       const result = PriceService.complement(price);
       // 1 - 0.9999 = 0.0001, что валидно
       expect(result.ok).toBe(true);
@@ -212,8 +212,8 @@ describe('PriceService', () => {
 
   describe('average()', () => {
     it('должен вычислить среднее двух цен', () => {
-      const p1 = Price.of(0.2);
-      const p2 = Price.of(0.8);
+      const p1 = Price.of(new Decimal(0.2));
+      const p2 = Price.of(new Decimal(0.8));
       const result = PriceService.average(p1, p2);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -222,8 +222,8 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть ту же цену для двух одинаковых', () => {
-      const p1 = Price.of(0.5);
-      const p2 = Price.of(0.5);
+      const p1 = Price.of(new Decimal(0.5));
+      const p2 = Price.of(new Decimal(0.5));
       const result = PriceService.average(p1, p2);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -244,7 +244,7 @@ describe('PriceService', () => {
 
   describe('multiply()', () => {
     it('должен умножить price на number', () => {
-      const price = Price.of(0.3);
+      const price = Price.of(new Decimal(0.3));
       const result = PriceService.multiply(price, 2);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -253,7 +253,7 @@ describe('PriceService', () => {
     });
 
     it('должен умножить price на Decimal', () => {
-      const price = Price.of(0.3);
+      const price = Price.of(new Decimal(0.3));
       const result = PriceService.multiply(price, new Decimal(2));
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -262,7 +262,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть InvalidPriceError для невалидного factor (parse fail)', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.multiply(price, 'invalid');
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -275,7 +275,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть InvalidPriceError для NaN factor (rule fail)', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.multiply(price, NaN);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -287,7 +287,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть InvalidPriceError для Infinity factor (rule fail)', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.multiply(price, Infinity);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -299,14 +299,14 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть Err если результат выходит за диапазон', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.multiply(price, 2);
       // 0.5 * 2 = 1.0, что выше максимума 0.9999
       expect(result.ok).toBe(false);
     });
 
     it('должен работать с дробными множителями', () => {
-      const price = Price.of(0.6);
+      const price = Price.of(new Decimal(0.6));
       const result = PriceService.multiply(price, 0.5);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -317,7 +317,7 @@ describe('PriceService', () => {
 
   describe('divide()', () => {
     it('должен разделить price на number', () => {
-      const price = Price.of(0.6);
+      const price = Price.of(new Decimal(0.6));
       const result = PriceService.divide(price, 2);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -326,7 +326,7 @@ describe('PriceService', () => {
     });
 
     it('должен разделить price на Decimal', () => {
-      const price = Price.of(0.6);
+      const price = Price.of(new Decimal(0.6));
       const result = PriceService.divide(price, new Decimal(2));
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -335,7 +335,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть InvalidPriceError для нулевого делителя (rule fail)', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.divide(price, 0);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -347,7 +347,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть InvalidPriceError для невалидного divisor (parse fail)', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.divide(price, 'invalid');
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -360,7 +360,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть InvalidPriceError для NaN divisor (rule fail)', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.divide(price, NaN);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -372,7 +372,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть InvalidPriceError для Infinity divisor (rule fail)', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.divide(price, Infinity);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -395,7 +395,7 @@ describe('PriceService', () => {
         throw new Error('unexpected error');
       });
 
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.divide(price, 1);
 
       expect(result.ok).toBe(false);
@@ -414,7 +414,7 @@ describe('PriceService', () => {
 
   describe('roundToMarketTick()', () => {
     it('должен округлить к ближайшему тику (nearest)', () => {
-      const price = Price.of(0.12345);
+      const price = Price.of(new Decimal(0.12345));
       const result = PriceService.roundToMarketTick(price, 0.001);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -423,7 +423,7 @@ describe('PriceService', () => {
     });
 
     it('должен округлить вниз (floor)', () => {
-      const price = Price.of(0.12349);
+      const price = Price.of(new Decimal(0.12349));
       const result = PriceService.roundToMarketTick(price, 0.001, 'floor');
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -432,7 +432,7 @@ describe('PriceService', () => {
     });
 
     it('должен округлить вверх (ceil)', () => {
-      const price = Price.of(0.12301);
+      const price = Price.of(new Decimal(0.12301));
       const result = PriceService.roundToMarketTick(price, 0.001, 'ceil');
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -441,7 +441,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть Err для невалидного tickSize', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.roundToMarketTick(price, -0.01);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -450,7 +450,7 @@ describe('PriceService', () => {
     });
 
     it('должен работать с price не aligned к tickSize', () => {
-      const price = Price.of(0.5555);
+      const price = Price.of(new Decimal(0.5555));
       const result = PriceService.roundToMarketTick(price, 0.01);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -459,7 +459,7 @@ describe('PriceService', () => {
     });
 
     it('должен работать если price уже aligned', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.roundToMarketTick(price, 0.1);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -468,7 +468,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть Err для tickSize = 0', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.roundToMarketTick(price, 0);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -478,7 +478,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть Err для tickSize = NaN', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.roundToMarketTick(price, NaN);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -488,7 +488,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть Err для tickSize = Infinity', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.roundToMarketTick(price, Infinity);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -498,7 +498,7 @@ describe('PriceService', () => {
     });
 
     it('должен вернуть Err для tickSize не кратного базовому тику', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.roundToMarketTick(price, 0.00015);  // НЕ кратен 0.0001
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -509,7 +509,7 @@ describe('PriceService', () => {
     });
 
     it('должен принять tickSize кратный базовому тику', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const validTickSizes = [0.0001, 0.0002, 0.001, 0.01, 0.1];
 
       validTickSizes.forEach(tickSize => {
@@ -523,7 +523,7 @@ describe('PriceService', () => {
         throw new Error('unexpected rounding error');
       });
 
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.roundToMarketTick(price, 0.01);
 
       expect(result.ok).toBe(false);
@@ -542,13 +542,13 @@ describe('PriceService', () => {
 
   describe('ensureAlignedToMarketTick()', () => {
     it('должен вернуть Ok если price aligned', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.ensureAlignedToMarketTick(price, 0.1);
       expect(result.ok).toBe(true);
     });
 
     it('должен вернуть Err если price не aligned', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const result = PriceService.ensureAlignedToMarketTick(price, 0.3);
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -559,7 +559,7 @@ describe('PriceService', () => {
 
     it('должен делегировать ValidateAligned', () => {
       const spy = jest.spyOn(ValidateAligned, 'check');
-      const price = Price.of(0.1235);
+      const price = Price.of(new Decimal(0.1235));
       const result = PriceService.ensureAlignedToMarketTick(price, 0.01);
       expect(result.ok).toBe(false);
       expect(spy).toHaveBeenCalledWith(price, expect.any(Decimal));

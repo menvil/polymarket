@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { BalanceSerializer } from '../../../../src/balance/adapters/BalanceSerializer.js';
 import { BalanceService } from '../../../../src/balance/facade/BalanceService.js';
@@ -8,8 +9,8 @@ describe('BalanceSerializer', () => {
   describe('toJSON()', () => {
     it('сериализует баланс в JSON', () => {
       const balanceResult = BalanceService.create(
-        Money.of(10000),
-        Money.of(2000)
+        Money.of(new Decimal(10000)),
+        Money.of(new Decimal(2000))
       );
       if (!balanceResult.ok) fail('Balance creation failed');
 
@@ -23,8 +24,8 @@ describe('BalanceSerializer', () => {
 
     it('использует string для amount (сохранение точности)', () => {
       const balanceResult = BalanceService.create(
-        Money.of(100.123456),
-        Money.of(50.654321)
+        Money.of(new Decimal(100.123456)),
+        Money.of(new Decimal(50.654321))
       );
       if (!balanceResult.ok) fail('Balance creation failed');
 
@@ -38,8 +39,8 @@ describe('BalanceSerializer', () => {
 
     it('сериализует пустой баланс', () => {
       const balanceResult = BalanceService.create(
-        Money.of(0),
-        Money.of(0)
+        Money.of(new Decimal(0)),
+        Money.of(new Decimal(0))
       );
       if (!balanceResult.ok) fail('Balance creation failed');
 
@@ -246,8 +247,8 @@ describe('BalanceSerializer', () => {
     describe('round-trip сериализация', () => {
       it('сохраняет баланс через сериализацию и десериализацию', () => {
         const originalResult = BalanceService.create(
-          Money.of(12345.6789),
-          Money.of(9876.5432)
+          Money.of(new Decimal(12345.6789)),
+          Money.of(new Decimal(9876.5432))
         );
         if (!originalResult.ok) fail('Balance creation failed');
 

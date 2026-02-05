@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { BalanceService } from '../../../../src/balance/facade/BalanceService.js';
 import { Money } from '../../../../src/money/core/Money.js';
@@ -8,8 +9,8 @@ describe('BalanceService', () => {
     describe('успешное создание', () => {
       it('создаёт баланс из available и reserved', () => {
         const result = BalanceService.create(
-          Money.of(10000),
-          Money.of(2000)
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000))
         );
 
         expect(result.ok).toBe(true);
@@ -22,8 +23,8 @@ describe('BalanceService', () => {
 
       it('создаёт баланс с нулевым reserved', () => {
         const result = BalanceService.create(
-          Money.of(10000),
-          Money.of(0)
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(0))
         );
 
         expect(result.ok).toBe(true);
@@ -34,8 +35,8 @@ describe('BalanceService', () => {
 
       it('создаёт пустой баланс', () => {
         const result = BalanceService.create(
-          Money.of(0),
-          Money.of(0)
+          Money.of(new Decimal(0)),
+          Money.of(new Decimal(0))
         );
 
         expect(result.ok).toBe(true);
@@ -48,8 +49,8 @@ describe('BalanceService', () => {
     describe('ошибки создания', () => {
       it('возвращает ошибку NEGATIVE_AVAILABLE', () => {
         const result = BalanceService.create(
-          Money.of(-100, 'USDC'),
-          Money.of(0)
+          Money.of(new Decimal(-100), 'USDC'),
+          Money.of(new Decimal(0))
         );
 
         expect(result.ok).toBe(false);
@@ -61,8 +62,8 @@ describe('BalanceService', () => {
 
       it('возвращает ошибку NEGATIVE_RESERVED', () => {
         const result = BalanceService.create(
-          Money.of(10000),
-          Money.of(-100, 'USDC')
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(-100), 'USDC')
         );
 
         expect(result.ok).toBe(false);
@@ -76,7 +77,7 @@ describe('BalanceService', () => {
       // Если добавятся другие валюты, раскомментировать:
       // it('возвращает ошибку CURRENCY_MISMATCH', () => {
       //   const result = BalanceService.create(
-      //     Money.of(10000),
+      //     Money.of(new Decimal(10000)),
       //     Money.of(2000, 'EUR' as any)
       //   );
       //
@@ -92,8 +93,8 @@ describe('BalanceService', () => {
   describe('reserve()', () => {
     const createBalance = () => {
       const result = BalanceService.create(
-        Money.of(10000),
-        Money.of(2000)
+        Money.of(new Decimal(10000)),
+        Money.of(new Decimal(2000))
       );
       if (!result.ok) throw new Error('Failed to create balance');
       return result.value;
@@ -102,7 +103,7 @@ describe('BalanceService', () => {
     describe('успешное резервирование', () => {
       it('резервирует средства из available', () => {
         const balance = createBalance();
-        const result = BalanceService.reserve(balance, Money.of(3000));
+        const result = BalanceService.reserve(balance, Money.of(new Decimal(3000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -114,7 +115,7 @@ describe('BalanceService', () => {
 
       it('резервирует все available', () => {
         const balance = createBalance();
-        const result = BalanceService.reserve(balance, Money.of(10000));
+        const result = BalanceService.reserve(balance, Money.of(new Decimal(10000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -125,7 +126,7 @@ describe('BalanceService', () => {
 
       it('возвращает новый экземпляр (immutability)', () => {
         const balance = createBalance();
-        const result = BalanceService.reserve(balance, Money.of(1000));
+        const result = BalanceService.reserve(balance, Money.of(new Decimal(1000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -138,7 +139,7 @@ describe('BalanceService', () => {
     describe('ошибки резервирования', () => {
       it('возвращает ошибку INSUFFICIENT_FUNDS', () => {
         const balance = createBalance();
-        const result = BalanceService.reserve(balance, Money.of(15000));
+        const result = BalanceService.reserve(balance, Money.of(new Decimal(15000)));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -162,7 +163,7 @@ describe('BalanceService', () => {
 
       it('возвращает ошибку для нулевой суммы', () => {
         const balance = createBalance();
-        const result = BalanceService.reserve(balance, Money.of(0));
+        const result = BalanceService.reserve(balance, Money.of(new Decimal(0)));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -175,8 +176,8 @@ describe('BalanceService', () => {
   describe('unfreezeReserved()', () => {
     const createBalance = () => {
       const result = BalanceService.create(
-        Money.of(7000),
-        Money.of(5000)
+        Money.of(new Decimal(7000)),
+        Money.of(new Decimal(5000))
       );
       if (!result.ok) throw new Error('Failed to create balance');
       return result.value;
@@ -185,7 +186,7 @@ describe('BalanceService', () => {
     describe('успешное освобождение', () => {
       it('освобождает зарезервированные средства', () => {
         const balance = createBalance();
-        const result = BalanceService.unfreezeReserved(balance, Money.of(2000));
+        const result = BalanceService.unfreezeReserved(balance, Money.of(new Decimal(2000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -197,7 +198,7 @@ describe('BalanceService', () => {
 
       it('освобождает все reserved', () => {
         const balance = createBalance();
-        const result = BalanceService.unfreezeReserved(balance, Money.of(5000));
+        const result = BalanceService.unfreezeReserved(balance, Money.of(new Decimal(5000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -208,7 +209,7 @@ describe('BalanceService', () => {
 
       it('возвращает новый экземпляр (immutability)', () => {
         const balance = createBalance();
-        const result = BalanceService.unfreezeReserved(balance, Money.of(1000));
+        const result = BalanceService.unfreezeReserved(balance, Money.of(new Decimal(1000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -221,7 +222,7 @@ describe('BalanceService', () => {
     describe('ошибки освобождения', () => {
       it('возвращает ошибку INSUFFICIENT_RESERVED', () => {
         const balance = createBalance();
-        const result = BalanceService.unfreezeReserved(balance, Money.of(10000));
+        const result = BalanceService.unfreezeReserved(balance, Money.of(new Decimal(10000)));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -245,7 +246,7 @@ describe('BalanceService', () => {
 
       it('возвращает ошибку для нулевой суммы', () => {
         const balance = createBalance();
-        const result = BalanceService.unfreezeReserved(balance, Money.of(0));
+        const result = BalanceService.unfreezeReserved(balance, Money.of(new Decimal(0)));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -258,8 +259,8 @@ describe('BalanceService', () => {
   describe('consumeReserved()', () => {
     const createBalance = () => {
       const result = BalanceService.create(
-        Money.of(7000),
-        Money.of(5000)
+        Money.of(new Decimal(7000)),
+        Money.of(new Decimal(5000))
       );
       if (!result.ok) throw new Error('Failed to create balance');
       return result.value;
@@ -268,7 +269,7 @@ describe('BalanceService', () => {
     describe('успешное списание', () => {
       it('списывает часть зарезервированных средств', () => {
         const balance = createBalance();
-        const result = BalanceService.consumeReserved(balance, Money.of(2000));
+        const result = BalanceService.consumeReserved(balance, Money.of(new Decimal(2000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -280,7 +281,7 @@ describe('BalanceService', () => {
 
       it('списывает все reserved', () => {
         const balance = createBalance();
-        const result = BalanceService.consumeReserved(balance, Money.of(5000));
+        const result = BalanceService.consumeReserved(balance, Money.of(new Decimal(5000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -292,7 +293,7 @@ describe('BalanceService', () => {
 
       it('возвращает новый экземпляр (immutability)', () => {
         const balance = createBalance();
-        const result = BalanceService.consumeReserved(balance, Money.of(1000));
+        const result = BalanceService.consumeReserved(balance, Money.of(new Decimal(1000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -305,7 +306,7 @@ describe('BalanceService', () => {
       it('available остаётся неизменным при списании', () => {
         const balance = createBalance();
         const initialAvailable = balance.available().value().toNumber();
-        const result = BalanceService.consumeReserved(balance, Money.of(3000));
+        const result = BalanceService.consumeReserved(balance, Money.of(new Decimal(3000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -317,7 +318,7 @@ describe('BalanceService', () => {
     describe('ошибки списания', () => {
       it('возвращает ошибку INSUFFICIENT_RESERVED', () => {
         const balance = createBalance();
-        const result = BalanceService.consumeReserved(balance, Money.of(10000));
+        const result = BalanceService.consumeReserved(balance, Money.of(new Decimal(10000)));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -328,7 +329,7 @@ describe('BalanceService', () => {
 
       it('возвращает ошибку для нулевой суммы', () => {
         const balance = createBalance();
-        const result = BalanceService.consumeReserved(balance, Money.of(0));
+        const result = BalanceService.consumeReserved(balance, Money.of(new Decimal(0)));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -338,7 +339,7 @@ describe('BalanceService', () => {
 
       it('проверяет контракт фасада: op и context', () => {
         const balance = createBalance();
-        const result = BalanceService.consumeReserved(balance, Money.of(10000));
+        const result = BalanceService.consumeReserved(balance, Money.of(new Decimal(10000)));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -354,8 +355,8 @@ describe('BalanceService', () => {
   describe('updateAvailable()', () => {
     const createBalance = () => {
       const result = BalanceService.create(
-        Money.of(10000),
-        Money.of(2000)
+        Money.of(new Decimal(10000)),
+        Money.of(new Decimal(2000))
       );
       if (!result.ok) throw new Error('Failed to create balance');
       return result.value;
@@ -364,7 +365,7 @@ describe('BalanceService', () => {
     describe('успешное обновление', () => {
       it('обновляет available, сохраняя reserved', () => {
         const balance = createBalance();
-        const result = BalanceService.updateAvailable(balance, Money.of(15000));
+        const result = BalanceService.updateAvailable(balance, Money.of(new Decimal(15000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -376,7 +377,7 @@ describe('BalanceService', () => {
 
       it('обновляет available на 0', () => {
         const balance = createBalance();
-        const result = BalanceService.updateAvailable(balance, Money.of(0));
+        const result = BalanceService.updateAvailable(balance, Money.of(new Decimal(0)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -387,7 +388,7 @@ describe('BalanceService', () => {
 
       it('возвращает новый экземпляр (immutability)', () => {
         const balance = createBalance();
-        const result = BalanceService.updateAvailable(balance, Money.of(20000));
+        const result = BalanceService.updateAvailable(balance, Money.of(new Decimal(20000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -413,7 +414,7 @@ describe('BalanceService', () => {
 
       it('возвращает ошибку для отрицательного available', () => {
         const balance = createBalance();
-        const result = BalanceService.updateAvailable(balance, Money.of(-1000, 'USDC'));
+        const result = BalanceService.updateAvailable(balance, Money.of(new Decimal(-1000), 'USDC'));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -425,10 +426,10 @@ describe('BalanceService', () => {
 
   describe('Facade Error Contract', () => {
     it('reserve: содержит op и операционные поля', () => {
-      const balanceResult = BalanceService.create(Money.of(100), Money.of(0));
+      const balanceResult = BalanceService.create(Money.of(new Decimal(100)), Money.of(new Decimal(0)));
       if (!balanceResult.ok) fail('Balance creation failed');
 
-      const result = BalanceService.reserve(balanceResult.value, Money.of(200));
+      const result = BalanceService.reserve(balanceResult.value, Money.of(new Decimal(200)));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -441,10 +442,10 @@ describe('BalanceService', () => {
     });
 
     it('unfreezeReserved: содержит op и операционные поля', () => {
-      const balanceResult = BalanceService.create(Money.of(100), Money.of(50));
+      const balanceResult = BalanceService.create(Money.of(new Decimal(100)), Money.of(new Decimal(50)));
       if (!balanceResult.ok) fail('Balance creation failed');
 
-      const result = BalanceService.unfreezeReserved(balanceResult.value, Money.of(100));
+      const result = BalanceService.unfreezeReserved(balanceResult.value, Money.of(new Decimal(100)));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -456,10 +457,10 @@ describe('BalanceService', () => {
     });
 
     it('updateAvailable: содержит op и операционные поля', () => {
-      const balanceResult = BalanceService.create(Money.of(100), Money.of(50));
+      const balanceResult = BalanceService.create(Money.of(new Decimal(100)), Money.of(new Decimal(50)));
       if (!balanceResult.ok) fail('Balance creation failed');
 
-      const result = BalanceService.updateAvailable(balanceResult.value, Money.of(-100, 'USDC'));
+      const result = BalanceService.updateAvailable(balanceResult.value, Money.of(new Decimal(-100), 'USDC'));
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -474,8 +475,8 @@ describe('BalanceService', () => {
   describe('equals()', () => {
     describe('успешное сравнение', () => {
       it('возвращает true для идентичных балансов', () => {
-        const balance1Result = BalanceService.create(Money.of(10000), Money.of(2000));
-        const balance2Result = BalanceService.create(Money.of(10000), Money.of(2000));
+        const balance1Result = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
+        const balance2Result = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
 
         if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
 
@@ -488,8 +489,8 @@ describe('BalanceService', () => {
       });
 
       it('возвращает false для балансов с разным available', () => {
-        const balance1Result = BalanceService.create(Money.of(10000), Money.of(2000));
-        const balance2Result = BalanceService.create(Money.of(10001), Money.of(2000));
+        const balance1Result = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
+        const balance2Result = BalanceService.create(Money.of(new Decimal(10001)), Money.of(new Decimal(2000)));
 
         if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
 
@@ -502,8 +503,8 @@ describe('BalanceService', () => {
       });
 
       it('возвращает false для балансов с разным reserved', () => {
-        const balance1Result = BalanceService.create(Money.of(10000), Money.of(2000));
-        const balance2Result = BalanceService.create(Money.of(10000), Money.of(2001));
+        const balance1Result = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
+        const balance2Result = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2001)));
 
         if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
 
@@ -516,8 +517,8 @@ describe('BalanceService', () => {
       });
 
       it('возвращает true для нулевых балансов', () => {
-        const balance1Result = BalanceService.create(Money.of(0), Money.of(0));
-        const balance2Result = BalanceService.create(Money.of(0), Money.of(0));
+        const balance1Result = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(0)));
+        const balance2Result = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(0)));
 
         if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
 
@@ -533,8 +534,8 @@ describe('BalanceService', () => {
     describe('ошибки сравнения', () => {
       // ПРИМЕЧАНИЕ: Тест для CURRENCY_MISMATCH невозможен, так как Money поддерживает только USDC
       // it('возвращает ошибку CURRENCY_MISMATCH для разных валют', () => {
-      //   const balance1Result = BalanceService.create(Money.of(10000, 'USDC'), Money.of(2000, 'USDC'));
-      //   const balance2Result = BalanceService.create(Money.of(10000, 'EUR'), Money.of(2000, 'EUR'));
+      //   const balance1Result = BalanceService.create(Money.of(new Decimal(10000), 'USDC'), Money.of(new Decimal(2000), 'USDC'));
+      //   const balance2Result = BalanceService.create(Money.of(new Decimal(10000), 'EUR'), Money.of(new Decimal(2000), 'EUR'));
       //
       //   if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
       //
@@ -551,10 +552,10 @@ describe('BalanceService', () => {
   describe('canAfford()', () => {
     describe('успешная проверка', () => {
       it('возвращает true если available >= amount', () => {
-        const balanceResult = BalanceService.create(Money.of(10000), Money.of(2000));
+        const balanceResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
         if (!balanceResult.ok) fail('Balance creation failed');
 
-        const result = BalanceService.canAfford(balanceResult.value, Money.of(5000));
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(5000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -563,10 +564,10 @@ describe('BalanceService', () => {
       });
 
       it('возвращает true если available === amount (граница)', () => {
-        const balanceResult = BalanceService.create(Money.of(10000), Money.of(2000));
+        const balanceResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
         if (!balanceResult.ok) fail('Balance creation failed');
 
-        const result = BalanceService.canAfford(balanceResult.value, Money.of(10000));
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(10000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -575,10 +576,10 @@ describe('BalanceService', () => {
       });
 
       it('возвращает false если available < amount', () => {
-        const balanceResult = BalanceService.create(Money.of(10000), Money.of(2000));
+        const balanceResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
         if (!balanceResult.ok) fail('Balance creation failed');
 
-        const result = BalanceService.canAfford(balanceResult.value, Money.of(15000));
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(15000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -587,10 +588,10 @@ describe('BalanceService', () => {
       });
 
       it('возвращает true для нулевой суммы', () => {
-        const balanceResult = BalanceService.create(Money.of(10000), Money.of(2000));
+        const balanceResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
         if (!balanceResult.ok) fail('Balance creation failed');
 
-        const result = BalanceService.canAfford(balanceResult.value, Money.of(0));
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(0)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -599,10 +600,10 @@ describe('BalanceService', () => {
       });
 
       it('возвращает false для пустого баланса с ненулевой суммой', () => {
-        const balanceResult = BalanceService.create(Money.of(0), Money.of(0));
+        const balanceResult = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(0)));
         if (!balanceResult.ok) fail('Balance creation failed');
 
-        const result = BalanceService.canAfford(balanceResult.value, Money.of(100));
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(100)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -611,11 +612,11 @@ describe('BalanceService', () => {
       });
 
       it('не учитывает reserved при проверке (только available)', () => {
-        const balanceResult = BalanceService.create(Money.of(1000), Money.of(9000));
+        const balanceResult = BalanceService.create(Money.of(new Decimal(1000)), Money.of(new Decimal(9000)));
         if (!balanceResult.ok) fail('Balance creation failed');
 
         // total = 10000, но available только 1000
-        const result = BalanceService.canAfford(balanceResult.value, Money.of(5000));
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(5000)));
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -627,10 +628,10 @@ describe('BalanceService', () => {
     describe('ошибки проверки', () => {
       // ПРИМЕЧАНИЕ: Тест для CURRENCY_MISMATCH невозможен, так как Money поддерживает только USDC
       // it('возвращает ошибку CURRENCY_MISMATCH для разных валют', () => {
-      //   const balanceResult = BalanceService.create(Money.of(10000, 'USDC'), Money.of(2000, 'USDC'));
+      //   const balanceResult = BalanceService.create(Money.of(new Decimal(10000), 'USDC'), Money.of(new Decimal(2000), 'USDC'));
       //   if (!balanceResult.ok) fail('Balance creation failed');
       //
-      //   const result = BalanceService.canAfford(balanceResult.value, Money.of(5000, 'EUR'));
+      //   const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(5000), 'EUR'));
       //
       //   expect(result.ok).toBe(false);
       //   if (!result.ok) {
