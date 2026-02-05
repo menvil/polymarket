@@ -127,7 +127,7 @@ export class SpreadService {
         unexpectedError('create', {
           bid: bid.value().toString(),
           ask: ask.value().toString()
-        }, error, 'spread', InvalidSpreadError)
+        }, error, InvalidSpreadError)
       );
     }
   }
@@ -317,7 +317,7 @@ export class SpreadService {
         unexpectedError('tighten', {
           spread: `${spread.bid().value()}-${spread.ask().value()}`,
           amount: amountDecimal.toString()
-        }, error, 'spread', InvalidSpreadError)
+        }, error, InvalidSpreadError)
       );
     }
   }
@@ -433,7 +433,7 @@ export class SpreadService {
         unexpectedError('widen', {
           spread: `${spread.bid().value()}-${spread.ask().value()}`,
           amount: amountDecimal.toString()
-        }, error, 'spread', InvalidSpreadError)
+        }, error, InvalidSpreadError)
       );
     }
   }
@@ -534,7 +534,7 @@ export class SpreadService {
         unexpectedError('shift', {
           spread: `${spread.bid().value()}-${spread.ask().value()}`,
           amount: amountDecimal.toString()
-        }, error, 'spread', InvalidSpreadError)
+        }, error, InvalidSpreadError)
       );
     }
   }

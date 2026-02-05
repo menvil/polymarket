@@ -172,12 +172,37 @@ export function toDecimal<TError extends DomainError>(
 }
 
 /**
+ * Извлекает название value object из ErrorConstructor
+ *
+ * @param ErrorConstructor - Конструктор ошибки (InvalidQuoteError, InvalidPriceError, и т.д.)
+ * @returns Название value object ('quote', 'price', 'money', и т.д.)
+ *
+ * @remarks
+ * Автоматически определяет valueName из названия класса ошибки:
+ * - InvalidQuoteError → 'quote'
+ * - InvalidPriceError → 'price'
+ * - InvalidMoneyError → 'money'
+ *
+ * Это устраняет дублирование valueName параметра во всех errorUtils функциях.
+ *
+ * @example
+ * ```typescript
+ * getValueName(InvalidQuoteError) // 'quote'
+ * getValueName(InvalidPriceError) // 'price'
+ * ```
+ */
+function getValueName(ErrorConstructor: ErrorConstructor<DomainError>): string {
+  // Извлекаем название из InvalidXxxError → xxx
+  const match = ErrorConstructor.name.match(/^Invalid(.+)Error$/);
+  return match ? match[1].toLowerCase() : 'unknown';
+}
+
+/**
  * Создаёт ошибку для ожидаемых ошибок из @polymarket/math
  *
  * @param op - Название операции
  * @param ctx - Контекст операции (amount, factor, divisor, etc.)
  * @param e - Ошибка из math layer (ТОЛЬКО Error объекты)
- * @param valueName - Название value object ('money', 'price', 'quantity')
  * @param ErrorConstructor - Конструктор ошибки
  * @returns TError с полным контекстом
  *
@@ -188,15 +213,17 @@ export function toDecimal<TError extends DomainError>(
  * - DivisionByZeroError
  *
  * ВАЖНО: Принимает только Error. Если это не Error - используй unexpectedError.
+ *
+ * valueName автоматически определяется из ErrorConstructor через getValueName().
  */
 export function expectedMathError<TError extends DomainError>(
   op: string,
   ctx: Record<string, unknown>,
   e: Error,
-  valueName: string,
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
   const cause = toCause(e);
+  const valueName = getValueName(ErrorConstructor);
   return new ErrorConstructor(`${valueName} ${op} failed: ${cause.message}`, {
     context: {
       source: ErrorSource.MATH_OPERATION,
@@ -213,22 +240,23 @@ export function expectedMathError<TError extends DomainError>(
  * @param op - Название операции
  * @param ctx - Контекст операции
  * @param e - Неожиданная ошибка (any type)
- * @param valueName - Название value object ('money', 'price', 'quantity')
  * @param ErrorConstructor - Конструктор ошибки
  * @returns TError с полным контекстом
  *
  * @remarks
  * Используется когда происходит неожиданная ошибка (не из известных типов).
  * Включает полный stack trace для debugging.
+ *
+ * valueName автоматически определяется из ErrorConstructor через getValueName().
  */
 export function unexpectedError<TError extends DomainError>(
   op: string,
   ctx: Record<string, unknown>,
   e: unknown,
-  valueName: string,
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
   const cause = toCause(e);
+  const valueName = getValueName(ErrorConstructor);
   return new ErrorConstructor(`Unexpected error during ${valueName} ${op}`, {
     context: {
       source: ErrorSource.UNEXPECTED,
@@ -363,7 +391,6 @@ export function rewrap<TError extends DomainError>(
  * @param op - Название операции
  * @param ctx - Контекст операции
  * @param fn - Функция выполняющая операцию (может включать math, create, rules)
- * @param valueName - Название value object ('money', 'price', 'quantity')
  * @param ErrorConstructor - Конструктор ошибки
  * @returns Result с результатом или ошибкой
  *
@@ -371,6 +398,8 @@ export function rewrap<TError extends DomainError>(
  * Устраняет дублирование try/catch блоков во всех операциях.
  * Автоматически классифицирует ошибки как expected/unexpected.
  * Автоматически rewrap'ает ошибки из Result.Err.
+ *
+ * valueName автоматически определяется из ErrorConstructor через getValueName().
  *
  * Обрабатывает четыре типа ошибок/результатов:
  * 1. Result.Err(TError) (из create/rules) → rewrap с добавлением op
@@ -387,7 +416,6 @@ export function rewrap<TError extends DomainError>(
  *     const sum = addDecimal(a.amount(), b.amount());
  *     return createFromDecimal(sum, a.currency(), 'add', {});
  *   },
- *   'money',
  *   InvalidMoneyError
  * );
  * ```
@@ -396,7 +424,6 @@ export function wrapOp<T, TError extends DomainError>(
   op: string,
   ctx: Record<string, unknown>,
   fn: () => Result<T, TError>,
-  valueName: string,
   ErrorConstructor: ErrorConstructor<TError>
 ): Result<T, TError> {
   try {
@@ -419,10 +446,10 @@ export function wrapOp<T, TError extends DomainError>(
     }
     // Ожидаемые math ошибки - прогоняем через rewrap для opChain
     if (isExpectedMathError(e)) {
-      return Err(rewrap(op, ctx, expectedMathError(op, ctx, e, valueName, ErrorConstructor), ErrorConstructor));
+      return Err(rewrap(op, ctx, expectedMathError(op, ctx, e, ErrorConstructor), ErrorConstructor));
     }
     // Неожиданные ошибки - прогоняем через rewrap для opChain
-    return Err(rewrap(op, ctx, unexpectedError(op, ctx, e, valueName, ErrorConstructor), ErrorConstructor));
+    return Err(rewrap(op, ctx, unexpectedError(op, ctx, e, ErrorConstructor), ErrorConstructor));
   }
 }
 

@@ -94,7 +94,7 @@ export class QuantityService {
 
       // Неожиданная ошибка - unexpectedError создаёт базовую ошибку с cause, rewrap добавляет op
       return Err(
-        rewrap('create', { value: String(value) }, unexpectedError('create', {}, error, 'quantity', InvalidQuantityError), InvalidQuantityError)
+        rewrap('create', { value: String(value) }, unexpectedError('create', {}, error, InvalidQuantityError), InvalidQuantityError)
       );
     }
   }
@@ -130,7 +130,7 @@ export class QuantityService {
     return wrapOp('add', ctx, () => {
       const sum = addDecimal(qty1.value(), qty2.value());
       return this.create(sum);
-    }, 'quantity', InvalidQuantityError);
+    }, InvalidQuantityError);
   }
 
   /**
@@ -174,7 +174,7 @@ export class QuantityService {
       }
 
       return this.create(diff);
-    }, 'quantity', InvalidQuantityError);
+    }, InvalidQuantityError);
   }
 
   /**
@@ -234,7 +234,7 @@ export class QuantityService {
     return wrapOp('multiply', ctx, () => {
       const result = multiplyDecimal(quantity.value(), factorDecimal);
       return this.create(result);
-    }, 'quantity', InvalidQuantityError);
+    }, InvalidQuantityError);
   }
 
   /**
@@ -308,7 +308,7 @@ export class QuantityService {
     return wrapOp('divide', ctx, () => {
       const result = divideDecimal(quantity.value(), divisorDecimal);
       return this.create(result);
-    }, 'quantity', InvalidQuantityError);
+    }, InvalidQuantityError);
   }
 
   /**
@@ -377,6 +377,6 @@ export class QuantityService {
     return wrapOp('roundToStep', ctx, () => {
       const rounded = roundToTick(quantity.value(), stepSizeDecimal, roundingMode);
       return this.create(rounded);
-    }, 'quantity', InvalidQuantityError);
+    }, InvalidQuantityError);
   }
 }

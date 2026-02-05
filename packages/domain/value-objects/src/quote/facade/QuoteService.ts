@@ -233,10 +233,10 @@ export class QuoteService {
 
         // Неожиданная ошибка
         return Err(
-          unexpectedError(op, ctx, error, 'quote', InvalidQuoteError)
+          unexpectedError(op, ctx, error, InvalidQuoteError)
         );
       }
-    }, 'quote', InvalidQuoteError);
+    }, InvalidQuoteError);
   }
 
   /**
@@ -379,7 +379,7 @@ export class QuoteService {
         quote.askSize().value(),
         Date.now()
       );
-    }, 'quote', InvalidQuoteError);
+    }, InvalidQuoteError);
   }
 
   /**
@@ -466,7 +466,7 @@ export class QuoteService {
         quote.askSize().value(),
         Date.now()
       );
-    }, 'quote', InvalidQuoteError);
+    }, InvalidQuoteError);
   }
 
   /**
@@ -576,10 +576,10 @@ export class QuoteService {
         }
 
         return Err(
-          unexpectedError(op, ctx, error, 'quote', InvalidQuoteError)
+          unexpectedError(op, ctx, error, InvalidQuoteError)
         );
       }
-    }, 'quote', InvalidQuoteError);
+    }, InvalidQuoteError);
   }
 
   /**

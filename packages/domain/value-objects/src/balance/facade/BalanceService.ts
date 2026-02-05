@@ -135,7 +135,6 @@ export class BalanceService {
             currency: available.currency()
           },
           error,
-          'balance',
           InvalidBalanceError
         )
       );
@@ -222,7 +221,7 @@ export class BalanceService {
 
       // Создаём новый Balance
       return this.create(newAvailableResult.value, newReservedResult.value);
-    }, 'balance', InvalidBalanceError);
+    }, InvalidBalanceError);
   }
 
   /**
@@ -313,7 +312,7 @@ export class BalanceService {
 
       // Создаём новый Balance
       return this.create(newAvailableResult.value, newReservedResult.value);
-    }, 'balance', InvalidBalanceError);
+    }, InvalidBalanceError);
   }
 
   /**
@@ -414,7 +413,7 @@ export class BalanceService {
 
       // Создаём новый Balance: available остается тем же, reserved уменьшается
       return this.create(balance.available(), newReservedResult.value);
-    }, 'balance', InvalidBalanceError);
+    }, InvalidBalanceError);
   }
 
   /**
@@ -493,7 +492,7 @@ export class BalanceService {
         }
         throw error; // пробрасываем дальше, wrapOp поймает как unexpected
       }
-    }, 'balance', InvalidBalanceError);
+    }, InvalidBalanceError);
   }
 
   /**

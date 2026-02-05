@@ -121,7 +121,7 @@ export class PriceService {
 
       // Неожиданная ошибка - unexpectedError создаёт базовую ошибку с cause, rewrap добавляет op
       return Err(
-        rewrap('create', { value: String(value) }, unexpectedError('create', {}, error, 'price', InvalidPriceError), InvalidPriceError)
+        rewrap('create', { value: String(value) }, unexpectedError('create', {}, error, InvalidPriceError), InvalidPriceError)
       );
     }
   }
@@ -153,7 +153,7 @@ export class PriceService {
     return wrapOp('complement', ctx, () => {
       const result = subtractDecimal(this.ONE, price.value());
       return this.create(result); // wrapOp сам сделает rewrap если Err
-    }, 'price', InvalidPriceError);
+    }, InvalidPriceError);
   }
 
   /**
@@ -187,7 +187,7 @@ export class PriceService {
       const sum = addDecimal(price1.value(), price2.value());
       const avgValue = divideDecimal(sum, this.TWO);
       return this.create(avgValue); // wrapOp сам сделает rewrap если Err
-    }, 'price', InvalidPriceError);
+    }, InvalidPriceError);
   }
 
   /**
@@ -250,7 +250,7 @@ export class PriceService {
     return wrapOp('multiply', ctx, () => {
       const result = multiplyDecimal(price.value(), factorDecimal);
       return this.create(result); // wrapOp сам сделает rewrap если Err
-    }, 'price', InvalidPriceError);
+    }, InvalidPriceError);
   }
 
   /**
@@ -320,7 +320,7 @@ export class PriceService {
     return wrapOp('divide', ctx, () => {
       const result = divideDecimal(price.value(), divisorDecimal);
       return this.create(result); // wrapOp сам сделает rewrap если Err
-    }, 'price', InvalidPriceError);
+    }, InvalidPriceError);
   }
 
   /**
@@ -417,7 +417,7 @@ export class PriceService {
       }
 
       return this.create(out); // wrapOp сам сделает rewrap если Err
-    }, 'price', InvalidPriceError);
+    }, InvalidPriceError);
   }
 
   /**
