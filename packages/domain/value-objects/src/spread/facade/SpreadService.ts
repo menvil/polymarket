@@ -530,30 +530,58 @@ export class SpreadService {
    * Получает mid price для spread
    *
    * @remarks
-   * Создаёт Price из spread.mid() Decimal значения.
-   * Математически безопасно - mid всегда в границах если bid/ask валидны.
+   * Создаёт Price из spread.mid() Decimal значения через PriceService.
+   * Математически mid всегда в границах если bid/ask валидны, но метод возвращает
+   * Result для соблюдения контракта "Never Throw".
+   *
+   * Алгоритм:
+   * 1. Вычисляет mid через spread.mid() - (bid + ask) / 2
+   * 2. Создаёт Price объект через PriceService.create()
+   * 3. Если создание не удалось (не должно случиться), возвращает Err
    *
    * @param spread - Spread для вычисления mid
-   * @returns Price mid
+   * @returns Result с Price mid или InvalidSpreadError
+   *
+   * @throws {InvalidSpreadError} Никогда не бросает - возвращает Result
    *
    * @example
    * ```typescript
-   * const spread = unwrap(SpreadService.fromValues(0.48, 0.52));
-   * const mid = SpreadService.getMidPrice(spread);
-   * console.log(mid.value().toString()); // "0.5"
+   * const spreadResult = SpreadService.fromValues(0.48, 0.52);
+   * if (spreadResult.ok) {
+   *   const midResult = SpreadService.getMidPrice(spreadResult.value);
+   *   if (midResult.ok) {
+   *     console.log(midResult.value.value().toString()); // "0.5"
+   *   }
+   * }
    * ```
    */
-  public static getMidPrice(spread: Spread): Price {
+  public static getMidPrice(spread: Spread): Result<Price, InvalidSpreadError> {
+    const op = 'getMidPrice';
     const midDecimal = spread.mid();
 
-    // SAFETY: mid всегда в [MIN_PRICE, MAX_PRICE] если bid/ask валидны
-    // bid <= ask (инвариант) и оба в [MIN, MAX] → mid в [MIN, MAX]
-    // Price.of() не должен бросить, но используем try-catch для безопасности
-    try {
-      return Price.of(midDecimal);
-    } catch (error) {
-      // Это не должно случиться - если случилось, это баг
-      throw new Error(`Internal error: mid ${midDecimal} out of Price bounds`);
-    }
+    return wrapOp(SpreadService.SERVICE_NAME, op, {
+      bid: spread.bid().value().toString(),
+      ask: spread.ask().value().toString(),
+      mid: midDecimal.toString()
+    }, () => {
+      // SAFETY: mid всегда в [MIN_PRICE, MAX_PRICE] если bid/ask валидны
+      // bid <= ask (инвариант) и оба в [MIN, MAX] → mid в [MIN, MAX]
+      // Но мы всё равно обрабатываем через Result для безопасности
+      const priceResult = PriceService.create(midDecimal);
+      if (isErr(priceResult)) {
+        // Это не должно случиться, но если случилось - обрабатываем корректно
+        return Err(rewrap(
+          SpreadService.SERVICE_NAME,
+          op,
+          {
+            reason: SpreadErrorReason.INVALID_AMOUNT,
+            component: 'mid'
+          },
+          priceResult.error,
+          InvalidSpreadError
+        ));
+      }
+      return Ok(priceResult.value);
+    }, InvalidSpreadError);
   }
 }

@@ -1,23 +1,65 @@
 import { SpreadErrorReason } from './SpreadErrorReason.js';
 
 /**
+ * Типизированные причины нарушения инвариантов Spread
+ *
+ * @remarks
+ * Ограничивает reason поле SpreadInvariantViolation только инвариантными причинами.
+ * Это подмножество SpreadErrorReason, используемое в Core layer.
+ */
+export type SpreadInvariantReason =
+  | typeof SpreadErrorReason.BID_GREATER_THAN_ASK
+  | typeof SpreadErrorReason.INVALID_BID
+  | typeof SpreadErrorReason.INVALID_ASK;
+
+/**
  * Исключение при нарушении инвариантов Spread
  *
  * @remarks
  * Бросается только внутри Core при нарушении инвариантов существования.
  * Facade обязан ловить и оборачивать в Result<T, E>.
  *
- * Использует SpreadErrorReason enum для типизации причин.
+ * Использует типизированный SpreadInvariantReason для строгой типизации причин.
+ * Это подмножество SpreadErrorReason, ограниченное только инвариантными нарушениями.
  *
  * Возможные причины (invariant violations):
  * - BID_GREATER_THAN_ASK: bid > ask (нарушение основного инварианта)
  * - INVALID_BID: bid не является валидным Price
  * - INVALID_ASK: ask не является валидным Price
+ *
+ * Архитектура:
+ * - Core бросает только SpreadInvariantViolation с инвариантными reasons
+ * - Rules возвращают Result с другими reasons (WIDTH_TOO_SMALL, WIDTH_TOO_LARGE)
+ * - Facade возвращает Result с операционными reasons (INVALID_AMOUNT, etc.)
+ *
+ * @example
+ * ```typescript
+ * // В Core:
+ * if (bid.value().greaterThan(ask.value())) {
+ *   throw new SpreadInvariantViolation(
+ *     `Bid ${bid} cannot be greater than ask ${ask}`,
+ *     SpreadErrorReason.BID_GREATER_THAN_ASK
+ *   );
+ * }
+ *
+ * // В Facade:
+ * try {
+ *   const spread = Spread.of(bid, ask);
+ *   return Ok(spread);
+ * } catch (error) {
+ *   if (error instanceof SpreadInvariantViolation) {
+ *     // error.reason имеет тип SpreadInvariantReason (type-safe!)
+ *     return Err(new InvalidSpreadError(error.message, {
+ *       context: { reason: error.reason }
+ *     }));
+ *   }
+ * }
+ * ```
  */
 export class SpreadInvariantViolation extends Error {
-  public readonly reason: SpreadErrorReason;
+  public readonly reason: SpreadInvariantReason;
 
-  constructor(message: string, reason: SpreadErrorReason) {
+  constructor(message: string, reason: SpreadInvariantReason) {
     super(`Spread invariant violation: ${message}`);
     this.name = 'SpreadInvariantViolation';
     this.reason = reason;
