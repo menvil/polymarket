@@ -1,10 +1,15 @@
 import { describe, it, expect } from '@jest/globals';
 import { ErrorSource } from '@polymarket/errors';
+import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { QuoteService } from '../../../src/quote/facade/QuoteService.js';
 import { PriceService } from '../../../src/price/facade/PriceService.js';
 import { QuantityService } from '../../../src/quantity/facade/QuantityService.js';
 import { MoneyService } from '../../../src/money/facade/MoneyService.js';
 import Decimal from 'decimal.js';
+
+// Тестовые константы для sourceId и instrumentId
+const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
+const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 
 // Helper type для доступа к полям context
 type ErrorContext = Record<string, any>;
@@ -12,7 +17,7 @@ type ErrorContext = Record<string, any>;
 describe('Error Structure - ErrorSource & opChain tracking', () => {
   describe('ErrorSource.PARSING', () => {
     it('помечает ошибки парсинга с source=parsing', () => {
-      const result = QuoteService.create('invalid' as any, 0.52, 100, 150);
+      const result = QuoteService.create('invalid' as any, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -49,7 +54,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
   describe('ErrorSource.CORE_INVARIANT', () => {
     it('помечает нарушения инвариантов с source=core_invariant', () => {
       // Bid > Ask - нарушение инварианта Quote
-      const result = QuoteService.create(0.60, 0.40, 100, 150);
+      const result = QuoteService.create(0.60, 0.40, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -109,7 +114,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
     it('сохраняет source из вложенного сервиса (SERVICE_CALL wrapper)', () => {
       // QuoteService.create вызывает PriceService.create
       // Если Price вернёт ошибку с source=core_invariant, она должна сохраниться
-      const result = QuoteService.create(0, 0.52, 100, 150); // bid=0 - invalid price
+      const result = QuoteService.create(0, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID); // bid=0 - invalid price
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -120,7 +125,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
     });
 
     it('сохраняет source из вложенного сервиса для askSize', () => {
-      const result = QuoteService.create(0.48, 0.52, 100, -150); // askSize < 0
+      const result = QuoteService.create(0.48, 0.52, 100, -150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID); // askSize < 0
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -145,7 +150,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
     });
 
     it('создаёт opChain для nested service calls (QuoteService -> PriceService)', () => {
-      const result = QuoteService.create(1.5, 0.52, 100, 150); // bid > MAX_PRICE
+      const result = QuoteService.create(1.5, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID); // bid > MAX_PRICE
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -166,7 +171,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
     });
 
     it('создаёт opChain с nested service call через helper', () => {
-      const result = QuoteService.create(0.48, 1.5, 100, 150); // ask > MAX_PRICE
+      const result = QuoteService.create(0.48, 1.5, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID); // ask > MAX_PRICE
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -215,7 +220,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
     it('сохраняет service из nested call (root service protection)', () => {
       // QuoteService вызывает PriceService
       // service должен остаться "PriceService" (где произошла первичная ошибка)
-      const result = QuoteService.create(0, 0.52, 100, 150);
+      const result = QuoteService.create(0, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -264,7 +269,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
 
   describe('root fields protection', () => {
     it('сохраняет source через rewrap', () => {
-      const result = QuoteService.create(0, 0.52, 100, 150);
+      const result = QuoteService.create(0, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -276,7 +281,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
     });
 
     it('сохраняет reason через rewrap', () => {
-      const result = QuoteService.create(0.48, 0, 100, 150);
+      const result = QuoteService.create(0.48, 0, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -288,7 +293,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
     });
 
     it('сохраняет raw через rewrap', () => {
-      const result = QuoteService.create('invalid' as any, 0.52, 100, 150);
+      const result = QuoteService.create('invalid' as any, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -304,7 +309,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
   describe('integration: complex nested calls', () => {
     it('трассирует полный путь через multiple services', () => {
       // QuoteService.create -> createPrice -> PriceService.create
-      const result = QuoteService.create(0, 0.52, 100, 150);
+      const result = QuoteService.create(0, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -333,7 +338,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
 
     it('показывает разницу между parsing и core_invariant в nested calls', () => {
       // Parsing error в QuoteService
-      const parseResult = QuoteService.create('invalid' as any, 0.52, 100, 150);
+      const parseResult = QuoteService.create('invalid' as any, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(parseResult.ok).toBe(false);
       if (!parseResult.ok) {
         expect(parseResult.error.context?.source).toBe(ErrorSource.PARSING);
@@ -341,7 +346,7 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
       }
 
       // Core invariant error в PriceService (через QuoteService)
-      const invariantResult = QuoteService.create(0, 0.52, 100, 150);
+      const invariantResult = QuoteService.create(0, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(invariantResult.ok).toBe(false);
       if (!invariantResult.ok) {
         expect(invariantResult.error.context?.source).toBe(ErrorSource.CORE_INVARIANT);

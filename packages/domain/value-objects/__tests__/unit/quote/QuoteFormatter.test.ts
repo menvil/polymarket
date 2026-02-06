@@ -1,9 +1,14 @@
 import Decimal from 'decimal.js';
+import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { describe, it, expect } from '@jest/globals';
 import { QuoteFormatter } from '../../../src/quote/adapters/QuoteFormatter.js';
 import { Quote } from '../../../src/quote/core/index.js';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+
+// Тестовые константы для sourceId и instrumentId
+const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
+const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 
 describe('QuoteFormatter', () => {
   describe('toDisplay()', () => {
@@ -14,7 +19,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote);
 
@@ -28,7 +33,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote);
 
@@ -42,7 +47,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote);
 
@@ -56,7 +61,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote, { priceDecimals: 2 });
 
@@ -70,7 +75,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100.5)),
         Quantity.of(new Decimal(150.75)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote, { sizeDecimals: 0 });
 
@@ -86,7 +91,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(timestamp)
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote, { includeTimestamp: true });
 
@@ -103,7 +108,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const short = QuoteFormatter.toShort(quote);
 
@@ -117,7 +122,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const short = QuoteFormatter.toShort(quote);
 
@@ -131,7 +136,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const short = QuoteFormatter.toShort(quote);
 
@@ -145,7 +150,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const short = QuoteFormatter.toShort(quote, 2);
 
@@ -161,7 +166,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote);
 
@@ -178,7 +183,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote);
 
@@ -194,7 +199,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote);
 
@@ -210,7 +215,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeSpread: false });
 
@@ -227,7 +232,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeMid: false });
 
@@ -245,7 +250,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(timestamp)
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeTimestamp: true });
 
@@ -261,7 +266,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const table = QuoteFormatter.toTable(quote);
 
@@ -280,7 +285,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const table = QuoteFormatter.toTable(quote);
 
@@ -297,7 +302,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const table = QuoteFormatter.toTable(quote);
 
@@ -315,7 +320,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(timestamp)
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const table = QuoteFormatter.toTable(quote, { includeTimestamp: true });
 
@@ -331,7 +336,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const spread = QuoteFormatter.formatSpread(quote);
 
@@ -345,7 +350,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const spread = QuoteFormatter.formatSpread(quote, false);
 
@@ -359,7 +364,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const spread = QuoteFormatter.formatSpread(quote);
 
@@ -373,7 +378,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const spread = QuoteFormatter.formatSpread(quote);
 
@@ -389,7 +394,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const mid = QuoteFormatter.formatMid(quote);
 
@@ -403,7 +408,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const mid = QuoteFormatter.formatMid(quote, 2);
 
@@ -417,7 +422,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const mid = QuoteFormatter.formatMid(quote);
 
@@ -431,7 +436,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const mid = QuoteFormatter.formatMid(quote);
 
@@ -447,7 +452,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote);
 
@@ -461,7 +466,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote);
 
@@ -475,7 +480,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote);
 
@@ -489,7 +494,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote, 4);
 
@@ -503,7 +508,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100.5)),
         Quantity.of(new Decimal(150.75)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote, 2, 2);
 
@@ -517,7 +522,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100.999)),
         Quantity.of(new Decimal(150.111)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote);
 
@@ -534,7 +539,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote);
 
@@ -549,7 +554,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote);
 
@@ -563,7 +568,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote);
 
@@ -577,7 +582,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 4);
 
@@ -591,7 +596,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 3);
 
@@ -606,7 +611,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 2);
 
@@ -621,7 +626,7 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 4);
 

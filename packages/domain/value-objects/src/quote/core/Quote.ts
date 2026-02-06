@@ -1,4 +1,5 @@
 import Decimal from 'decimal.js';
+import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { Spread } from '../../spread/core/Spread.js';
@@ -158,7 +159,9 @@ export class Quote {
     private readonly _ask: Price | null,
     private readonly _bidSize: Quantity,
     private readonly _askSize: Quantity,
-    private readonly _timestampMs: Decimal
+    private readonly _timestampMs: Decimal,
+    private readonly _sourceId: MarketDataSourceId,
+    private readonly _instrumentId: InstrumentId
   ) {
     // Инвариант 1: хотя бы одна сторона определена
     if (_bid === null && _ask === null) {
@@ -221,16 +224,18 @@ export class Quote {
    * @param bidSize - Объём на покупку
    * @param askSize - Объём на продажу
    * @param timestampMs - Временная метка в Unix ms (Decimal)
+   * @param sourceId - Источник маркет-данных
+   * @param instrumentId - ID инструмента
    * @returns Новый Quote объект
    * @throws {QuoteInvariantViolation} Если нарушены инварианты
    *
    * @example
    * ```typescript
    * // ✅ В Core и Facade
-   * Quote.of(bid, ask, bidSize, askSize, new Decimal(Date.now()));
+   * Quote.of(bid, ask, bidSize, askSize, new Decimal(Date.now()), sourceId, instrumentId);
    *
    * // ❌ В публичном коде - используй QuoteService
-   * const result = QuoteService.create(0.48, 0.52, 100, 150);
+   * const result = QuoteService.create(0.48, 0.52, 100, 150, sourceId, instrumentId);
    * ```
    */
   public static of(
@@ -238,9 +243,11 @@ export class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestampMs: Decimal
+    timestampMs: Decimal,
+    sourceId: MarketDataSourceId,
+    instrumentId: InstrumentId
   ): Quote {
-    return new Quote(bid, ask, bidSize, askSize, timestampMs);
+    return new Quote(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);
   }
 
   /**
@@ -328,6 +335,47 @@ export class Quote {
    */
   public timestampMs(): Decimal {
     return this._timestampMs;
+  }
+
+  /**
+   * Возвращает source ID маркет-данных
+   *
+   * @returns MarketDataSourceId
+   *
+   * @remarks
+   * Идентифицирует источник данных (WebSocket, REST, Replay и т.д.)
+   * Позволяет отследить откуда пришла котировка.
+   *
+   * @example
+   * ```typescript
+   * const quote = Quote.of(...);
+   * const sourceId = quote.sourceId();
+   * console.log(sourceId); // 'POLYMARKET_WS'
+   * ```
+   */
+  public sourceId(): MarketDataSourceId {
+    return this._sourceId;
+  }
+
+  /**
+   * Возвращает ID инструмента
+   *
+   * @returns InstrumentId
+   *
+   * @remarks
+   * Venue-specific идентификатор инструмента:
+   * - Polymarket: token_id (ERC1155 token ID)
+   * - Kalshi: ticker (e.g., "INXD-23DEC31-T4120")
+   *
+   * @example
+   * ```typescript
+   * const quote = Quote.of(...);
+   * const instrumentId = quote.instrumentId();
+   * console.log(instrumentId); // '123456789' (Polymarket token_id)
+   * ```
+   */
+  public instrumentId(): InstrumentId {
+    return this._instrumentId;
   }
 
   /**

@@ -1,5 +1,6 @@
 import { Result, Err } from '@polymarket/result';
 import { InvalidQuoteError, ErrorSource } from '@polymarket/errors';
+import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Quote } from '../core/Quote.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 import { QuoteService } from '../facade/QuoteService.js';
@@ -70,6 +71,16 @@ export interface QuoteJSON {
    * Временная метка в миллисекундах (Unix timestamp)
    */
   timestamp: number;
+
+  /**
+   * ID источника маркет-данных
+   */
+  sourceId: string;
+
+  /**
+   * ID инструмента
+   */
+  instrumentId: string;
 }
 
 /**
@@ -141,7 +152,9 @@ export class QuoteSerializer {
       ask: quote.ask()?.value().toNumber() ?? null,
       bidSize: quote.bidSize().value().toNumber(),
       askSize: quote.askSize().value().toNumber(),
-      timestamp: quote.timestampMs().toNumber()
+      timestamp: quote.timestampMs().toNumber(),
+      sourceId: quote.sourceId() as string,
+      instrumentId: quote.instrumentId() as string
     };
   }
 
@@ -275,16 +288,48 @@ export class QuoteSerializer {
       );
     }
 
+    // Шаг 7: Проверка наличия поля sourceId
+    if (!('sourceId' in json)) {
+      return Err(
+        new InvalidQuoteError('Missing required field: sourceId', {
+          context: {
+            source: ErrorSource.PARSING,
+            service: QuoteSerializer.SERVICE_NAME,
+            op,
+            json: safeStringify(json),
+            reason: QuoteErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+
+    // Шаг 8: Проверка наличия поля instrumentId
+    if (!('instrumentId' in json)) {
+      return Err(
+        new InvalidQuoteError('Missing required field: instrumentId', {
+          context: {
+            source: ErrorSource.PARSING,
+            service: QuoteSerializer.SERVICE_NAME,
+            op,
+            json: safeStringify(json),
+            reason: QuoteErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+
     // Теперь безопасно извлекаем поля
-    const { bid, ask, bidSize, askSize, timestamp } = json as {
+    const { bid, ask, bidSize, askSize, timestamp, sourceId, instrumentId } = json as {
       bid: unknown;
       ask: unknown;
       bidSize: unknown;
       askSize: unknown;
       timestamp: unknown;
+      sourceId: unknown;
+      instrumentId: unknown;
     };
 
-    // Шаг 7: Проверка типа bid (number | null)
+    // Шаг 9: Проверка типа bid (number | null)
     if (typeof bid !== 'number' && bid !== null) {
       return Err(
         new InvalidQuoteError(
@@ -302,7 +347,7 @@ export class QuoteSerializer {
       );
     }
 
-    // Шаг 8: Проверка типа ask (number | null)
+    // Шаг 10: Проверка типа ask (number | null)
     if (typeof ask !== 'number' && ask !== null) {
       return Err(
         new InvalidQuoteError(
@@ -320,7 +365,7 @@ export class QuoteSerializer {
       );
     }
 
-    // Шаг 9: Проверка типа bidSize
+    // Шаг 11: Проверка типа bidSize
     if (typeof bidSize !== 'number') {
       return Err(
         new InvalidQuoteError(
@@ -338,7 +383,7 @@ export class QuoteSerializer {
       );
     }
 
-    // Шаг 10: Проверка типа askSize
+    // Шаг 12: Проверка типа askSize
     if (typeof askSize !== 'number') {
       return Err(
         new InvalidQuoteError(
@@ -356,7 +401,7 @@ export class QuoteSerializer {
       );
     }
 
-    // Шаг 11: Проверка типа timestamp
+    // Шаг 13: Проверка типа timestamp
     if (typeof timestamp !== 'number') {
       return Err(
         new InvalidQuoteError(
@@ -374,8 +419,52 @@ export class QuoteSerializer {
       );
     }
 
-    // Шаг 12: Делегируем бизнес-валидацию и создание в QuoteService
-    return QuoteService.create(bid, ask, bidSize, askSize, timestamp);
+    // Шаг 14: Проверка типа sourceId
+    if (typeof sourceId !== 'string') {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid type for field 'sourceId': expected string, got ${typeof sourceId}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'sourceId', value: String(sourceId), type: typeof sourceId },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
+    // Шаг 15: Проверка типа instrumentId
+    if (typeof instrumentId !== 'string') {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid type for field 'instrumentId': expected string, got ${typeof instrumentId}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'instrumentId', value: String(instrumentId), type: typeof instrumentId },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
+    // Шаг 16: Делегируем бизнес-валидацию и создание в QuoteService
+    return QuoteService.create(
+      bid,
+      ask,
+      bidSize,
+      askSize,
+      sourceId as MarketDataSourceId,
+      instrumentId as InstrumentId,
+      timestamp
+    );
   }
 
   /**

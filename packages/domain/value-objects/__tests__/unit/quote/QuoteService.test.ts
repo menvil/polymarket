@@ -1,13 +1,18 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
+import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { QuoteService } from '../../../src/quote/facade/QuoteService.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+
+// Тестовые константы для sourceId и instrumentId
+const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
+const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
 
 describe('QuoteService', () => {
   describe('create()', () => {
     it('создаёт валидную двустороннюю котировку', () => {
-      const result = QuoteService.create(0.48, 0.52, 100, 150);
+      const result = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -22,7 +27,7 @@ describe('QuoteService', () => {
 
     it('создаёт котировку с timestamp', () => {
       const timestamp = Date.now();
-      const result = QuoteService.create(0.48, 0.52, 100, 150, timestamp);
+      const result = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID, timestamp);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -31,7 +36,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится с invalid bid (parse error)', () => {
-      const result = QuoteService.create('invalid' as any, 0.52, 100, 150);
+      const result = QuoteService.create('invalid' as any, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -42,7 +47,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится с invalid ask (parse error)', () => {
-      const result = QuoteService.create(0.48, 'invalid' as any, 100, 150);
+      const result = QuoteService.create(0.48, 'invalid' as any, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -52,7 +57,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится с invalid bidSize (parse error)', () => {
-      const result = QuoteService.create(0.48, 0.52, 'invalid' as any, 150);
+      const result = QuoteService.create(0.48, 0.52, 'invalid' as any, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -62,7 +67,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится с invalid askSize (parse error)', () => {
-      const result = QuoteService.create(0.48, 0.52, 100, 'invalid' as any);
+      const result = QuoteService.create(0.48, 0.52, 100, 'invalid' as any, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -72,7 +77,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда обе стороны null (invariant)', () => {
-      const result = QuoteService.create(null, null, 0, 0);
+      const result = QuoteService.create(null, null, 0, 0, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -81,7 +86,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда bid > ask (invariant)', () => {
-      const result = QuoteService.create(0.60, 0.40, 100, 150);
+      const result = QuoteService.create(0.60, 0.40, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -90,7 +95,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда bid price вне диапазона', () => {
-      const result = QuoteService.create(1.5, 0.52, 100, 150); // bid > MAX_PRICE
+      const result = QuoteService.create(1.5, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID); // bid > MAX_PRICE
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -101,7 +106,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда ask price вне диапазона', () => {
-      const result = QuoteService.create(0.48, 0.00005, 100, 150); // ask < MIN_PRICE
+      const result = QuoteService.create(0.48, 0.00005, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID); // ask < MIN_PRICE
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -112,7 +117,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда bidSize отрицательный', () => {
-      const result = QuoteService.create(0.48, 0.52, -100, 150);
+      const result = QuoteService.create(0.48, 0.52, -100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -123,7 +128,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда askSize отрицательный', () => {
-      const result = QuoteService.create(0.48, 0.52, 100, -150);
+      const result = QuoteService.create(0.48, 0.52, 100, -150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -140,7 +145,9 @@ describe('QuoteService', () => {
         new Decimal(0.48),
         new Decimal(0.52),
         new Decimal(100),
-        new Decimal(150)
+        new Decimal(150),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
       );
 
       expect(result.ok).toBe(true);
@@ -154,7 +161,9 @@ describe('QuoteService', () => {
         new Decimal(0.50),
         null,
         new Decimal(100),
-        new Decimal(0)
+        new Decimal(0),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
       );
 
       expect(result.ok).toBe(true);
@@ -169,7 +178,9 @@ describe('QuoteService', () => {
         null,
         new Decimal(0.51),
         new Decimal(0),
-        new Decimal(200)
+        new Decimal(200),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
       );
 
       expect(result.ok).toBe(true);
@@ -182,7 +193,7 @@ describe('QuoteService', () => {
 
   describe('bidOnly()', () => {
     it('создаёт bid-only котировку из number', () => {
-      const result = QuoteService.bidOnly(0.50, 100);
+      const result = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -196,7 +207,7 @@ describe('QuoteService', () => {
     });
 
     it('создаёт bid-only котировку из Decimal', () => {
-      const result = QuoteService.bidOnly(new Decimal(0.50), new Decimal(100));
+      const result = QuoteService.bidOnly(new Decimal(0.50), new Decimal(100), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -205,7 +216,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится с invalid bid', () => {
-      const result = QuoteService.bidOnly('invalid' as any, 100);
+      const result = QuoteService.bidOnly('invalid' as any, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -214,7 +225,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится с invalid size', () => {
-      const result = QuoteService.bidOnly(0.50, 'invalid' as any);
+      const result = QuoteService.bidOnly(0.50, 'invalid' as any, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -225,7 +236,7 @@ describe('QuoteService', () => {
 
   describe('askOnly()', () => {
     it('создаёт ask-only котировку из number', () => {
-      const result = QuoteService.askOnly(0.51, 200);
+      const result = QuoteService.askOnly(0.51, 200, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -239,7 +250,7 @@ describe('QuoteService', () => {
     });
 
     it('создаёт ask-only котировку из Decimal', () => {
-      const result = QuoteService.askOnly(new Decimal(0.51), new Decimal(200));
+      const result = QuoteService.askOnly(new Decimal(0.51), new Decimal(200), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -248,7 +259,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится с invalid ask', () => {
-      const result = QuoteService.askOnly('invalid' as any, 200);
+      const result = QuoteService.askOnly('invalid' as any, 200, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -257,7 +268,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится с invalid size', () => {
-      const result = QuoteService.askOnly(0.51, 'invalid' as any);
+      const result = QuoteService.askOnly(0.51, 'invalid' as any, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -268,7 +279,7 @@ describe('QuoteService', () => {
 
   describe('shift()', () => {
     it('сдвигает котировку вверх', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -285,7 +296,7 @@ describe('QuoteService', () => {
     });
 
     it('сдвигает котировку вниз', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -300,7 +311,7 @@ describe('QuoteService', () => {
     });
 
     it('сдвигает bid-only котировку', () => {
-      const quoteResult = QuoteService.bidOnly(0.50, 100);
+      const quoteResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -315,7 +326,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда shift вверх выходит за MAX_PRICE', () => {
-      const quoteResult = QuoteService.create(0.98, 0.99, 100, 150);
+      const quoteResult = QuoteService.create(0.98, 0.99, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -332,7 +343,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда shift вниз выходит за MIN_PRICE', () => {
-      const quoteResult = QuoteService.create(0.001, 0.002, 100, 150);
+      const quoteResult = QuoteService.create(0.001, 0.002, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -349,7 +360,7 @@ describe('QuoteService', () => {
     });
 
     it('сохраняет sizes при shift', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -365,7 +376,7 @@ describe('QuoteService', () => {
 
   describe('skew()', () => {
     it('применяет skew к котировке', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -386,7 +397,7 @@ describe('QuoteService', () => {
     });
 
     it('применяет skew только к bid', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -405,7 +416,7 @@ describe('QuoteService', () => {
     });
 
     it('применяет skew только к ask', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -424,7 +435,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда skew создаёт bid > ask', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -441,7 +452,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда skew выходит за нижнюю границу', () => {
-      const quoteResult = QuoteService.create(0.0005, 0.001, 100, 150);
+      const quoteResult = QuoteService.create(0.0005, 0.001, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -462,7 +473,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится когда skew выходит за верхнюю границу', () => {
-      const quoteResult = QuoteService.create(0.98, 0.99, 100, 150);
+      const quoteResult = QuoteService.create(0.98, 0.99, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -485,7 +496,7 @@ describe('QuoteService', () => {
 
   describe('updateSizes()', () => {
     it('обновляет sizes из number', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -503,7 +514,7 @@ describe('QuoteService', () => {
     });
 
     it('обновляет sizes из Quantity', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -521,7 +532,7 @@ describe('QuoteService', () => {
     });
 
     it('обновляет sizes из string', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -535,7 +546,7 @@ describe('QuoteService', () => {
     });
 
     it('обновляет sizes из Decimal', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -553,7 +564,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится с invalid bidSize', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -568,7 +579,7 @@ describe('QuoteService', () => {
     });
 
     it('фэйлится с invalid askSize', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -585,7 +596,7 @@ describe('QuoteService', () => {
 
   describe('spreadWidthOrZero() (from Quote)', () => {
     it('возвращает spread для two-sided quote', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -595,7 +606,7 @@ describe('QuoteService', () => {
     });
 
     it('возвращает 0 для bid-only quote', () => {
-      const quoteResult = QuoteService.bidOnly(0.50, 100);
+      const quoteResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -605,7 +616,7 @@ describe('QuoteService', () => {
     });
 
     it('возвращает 0 для ask-only quote', () => {
-      const quoteResult = QuoteService.askOnly(0.51, 200);
+      const quoteResult = QuoteService.askOnly(0.51, 200, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -617,7 +628,7 @@ describe('QuoteService', () => {
 
   describe('midOrNull() (from Quote)', () => {
     it('возвращает mid для two-sided quote', () => {
-      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -628,7 +639,7 @@ describe('QuoteService', () => {
     });
 
     it('возвращает null для bid-only quote', () => {
-      const quoteResult = QuoteService.bidOnly(0.50, 100);
+      const quoteResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 
@@ -638,7 +649,7 @@ describe('QuoteService', () => {
     });
 
     it('возвращает null для ask-only quote', () => {
-      const quoteResult = QuoteService.askOnly(0.51, 200);
+      const quoteResult = QuoteService.askOnly(0.51, 200, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(quoteResult.ok).toBe(true);
       if (!quoteResult.ok) return;
 

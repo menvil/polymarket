@@ -1,9 +1,14 @@
 import Decimal from 'decimal.js';
+import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { describe, it, expect } from '@jest/globals';
 import { ValidateMarketCrossing } from '../../../src/quote/rules/ValidateMarketCrossing.js';
 import { Quote } from '../../../src/quote/core/Quote.js';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+
+// Тестовые константы для sourceId и instrumentId
+const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
+const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
 
 describe('ValidateMarketCrossing', () => {
@@ -15,7 +20,7 @@ describe('ValidateMarketCrossing', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
       const orderbookAsk = Price.of(new Decimal(0.51));
@@ -32,7 +37,7 @@ describe('ValidateMarketCrossing', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
       const orderbookAsk = Price.of(new Decimal(0.51)); // наш bid >= orderbook ask
@@ -55,7 +60,7 @@ describe('ValidateMarketCrossing', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50)); // наш ask <= orderbook bid
       const orderbookAsk = Price.of(new Decimal(0.51));
@@ -78,7 +83,7 @@ describe('ValidateMarketCrossing', () => {
         Quantity.ZERO,
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
       const orderbookAsk = Price.of(new Decimal(0.51));
@@ -95,7 +100,7 @@ describe('ValidateMarketCrossing', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
 
@@ -111,7 +116,7 @@ describe('ValidateMarketCrossing', () => {
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
       const orderbookAsk = Price.of(new Decimal(0.51));
@@ -128,7 +133,7 @@ describe('ValidateMarketCrossing', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookAsk = Price.of(new Decimal(0.51));
 
@@ -146,7 +151,7 @@ describe('ValidateMarketCrossing', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
       const orderbookAsk = Price.of(new Decimal(0.51)); // наш bid >= orderbook ask
@@ -163,7 +168,7 @@ describe('ValidateMarketCrossing', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now())
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
       const orderbookAsk = Price.of(new Decimal(0.51));

@@ -1,9 +1,14 @@
 import Decimal from 'decimal.js';
+import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { describe, it, expect } from '@jest/globals';
 import { QuoteSerializer } from '../../../src/quote/adapters/QuoteSerializer.js';
 import { Quote } from '../../../src/quote/core/index.js';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+
+// Тестовые константы для sourceId и instrumentId
+const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
+const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
 
 describe('QuoteSerializer', () => {
@@ -15,7 +20,7 @@ describe('QuoteSerializer', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(1234567890000)
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const json = QuoteSerializer.toJSON(quote);
 
@@ -24,6 +29,8 @@ describe('QuoteSerializer', () => {
       expect(json.bidSize).toBe(100);
       expect(json.askSize).toBe(150);
       expect(json.timestamp).toBe(1234567890000);
+      expect(json.sourceId).toBe(TEST_SOURCE_ID);
+      expect(json.instrumentId).toBe(TEST_INSTRUMENT_ID);
     });
 
     it('сериализует bid-only котировку', () => {
@@ -33,7 +40,7 @@ describe('QuoteSerializer', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
         new Decimal(1234567890000)
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const json = QuoteSerializer.toJSON(quote);
 
@@ -50,7 +57,7 @@ describe('QuoteSerializer', () => {
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
         new Decimal(1234567890000)
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const json = QuoteSerializer.toJSON(quote);
 
@@ -69,7 +76,9 @@ describe('QuoteSerializer', () => {
         bidSize: 100,
         askSize: 150,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -91,7 +100,9 @@ describe('QuoteSerializer', () => {
         bidSize: 100,
         askSize: 0,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -109,7 +120,9 @@ describe('QuoteSerializer', () => {
         bidSize: 0,
         askSize: 200,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -146,7 +159,9 @@ describe('QuoteSerializer', () => {
         bidSize: 100,
         askSize: 150,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -163,7 +178,9 @@ describe('QuoteSerializer', () => {
         bidSize: 100,
         askSize: 150,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -180,7 +197,9 @@ describe('QuoteSerializer', () => {
         ask: 0.52,
         askSize: 150,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -197,7 +216,9 @@ describe('QuoteSerializer', () => {
         ask: 0.52,
         bidSize: 100,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -232,7 +253,9 @@ describe('QuoteSerializer', () => {
         bidSize: 100,
         askSize: 150,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -252,7 +275,9 @@ describe('QuoteSerializer', () => {
         bidSize: 100,
         askSize: 150,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -272,7 +297,9 @@ describe('QuoteSerializer', () => {
         bidSize: 'invalid' as any,
         askSize: 150,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -292,7 +319,9 @@ describe('QuoteSerializer', () => {
         bidSize: 100,
         askSize: 'invalid' as any,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -311,7 +340,9 @@ describe('QuoteSerializer', () => {
         ask: 0.52,
         bidSize: 100,
         askSize: 150,
-        timestamp: 'invalid' as any
+        timestamp: 'invalid' as any,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'
       };
 
       const result = QuoteSerializer.fromJSON(json);
@@ -332,7 +363,9 @@ describe('QuoteSerializer', () => {
         bidSize: 100,
         askSize: 150,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -349,7 +382,9 @@ describe('QuoteSerializer', () => {
         bidSize: 0,
         askSize: 0,
         timestamp: 1234567890000
-      };
+      ,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'};
 
       const result = QuoteSerializer.fromJSON(json);
 
@@ -368,7 +403,7 @@ describe('QuoteSerializer', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(1234567890000)
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const jsonString = QuoteSerializer.toJSONString(quote);
       const parsed = JSON.parse(jsonString);
@@ -387,7 +422,7 @@ describe('QuoteSerializer', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(1234567890000)
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const jsonString = QuoteSerializer.toJSONString(quote);
 
@@ -396,12 +431,14 @@ describe('QuoteSerializer', () => {
       expect(jsonString).toContain('"bidSize":100');
       expect(jsonString).toContain('"askSize":150');
       expect(jsonString).toContain('"timestamp":1234567890000');
+      expect(jsonString).toContain('"sourceId":"TEST_SOURCE"');
+      expect(jsonString).toContain('"instrumentId":"TEST_INSTRUMENT"');
     });
   });
 
   describe('fromJSONString()', () => {
     it('парсит валидную JSON-строку в Quote', () => {
-      const jsonString = '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000}';
+      const jsonString = '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000,"sourceId":"TEST_SOURCE","instrumentId":"TEST_INSTRUMENT"}';
 
       const result = QuoteSerializer.fromJSONString(jsonString);
 
@@ -415,7 +452,7 @@ describe('QuoteSerializer', () => {
     });
 
     it('парсит bid-only JSON-строку', () => {
-      const jsonString = '{"bid":0.50,"ask":null,"bidSize":100,"askSize":0,"timestamp":1234567890000}';
+      const jsonString = '{"bid":0.50,"ask":null,"bidSize":100,"askSize":0,"timestamp":1234567890000,"sourceId":"TEST_SOURCE","instrumentId":"TEST_INSTRUMENT"}';
 
       const result = QuoteSerializer.fromJSONString(jsonString);
 
@@ -439,7 +476,7 @@ describe('QuoteSerializer', () => {
     });
 
     it('фэйлится с invalid Quote data', () => {
-      const jsonString = '{"bid":0.60,"ask":0.40,"bidSize":100,"askSize":150,"timestamp":1234567890000}';
+      const jsonString = '{"bid":0.60,"ask":0.40,"bidSize":100,"askSize":150,"timestamp":1234567890000,"sourceId":"TEST_SOURCE","instrumentId":"TEST_INSTRUMENT"}';
 
       const result = QuoteSerializer.fromJSONString(jsonString);
 
@@ -456,7 +493,7 @@ describe('QuoteSerializer', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(1234567890000)
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const jsonString = QuoteSerializer.toJSONString(original);
       const result = QuoteSerializer.fromJSONString(jsonString);
@@ -477,7 +514,7 @@ describe('QuoteSerializer', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(1234567890000)
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const json = QuoteSerializer.toJSON(original);
       const result = QuoteSerializer.fromJSON(json);

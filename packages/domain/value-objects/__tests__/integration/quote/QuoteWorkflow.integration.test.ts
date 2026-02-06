@@ -6,12 +6,17 @@ import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js'
 import { ValidateMarketCrossing } from '../../../src/quote/rules/ValidateMarketCrossing.js';
 import { Price } from '../../../src/price/core/Price.js';
 import Decimal from 'decimal.js';
+import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
+
+// Тестовые константы для sourceId и instrumentId
+const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
+const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 
 describe('Quote Integration Tests', () => {
   describe('Market making workflow', () => {
     it('создание → shift → skew → update sizes', () => {
       // Шаг 1: Создаём начальную котировку
-      const createResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const createResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -61,7 +66,7 @@ describe('Quote Integration Tests', () => {
 
     it('односторонние котировки: bid only → ask only', () => {
       // Создаём bid-only
-      const bidResult = QuoteService.bidOnly(0.50, 100);
+      const bidResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(bidResult.ok).toBe(true);
       if (!bidResult.ok) return;
 
@@ -72,7 +77,7 @@ describe('Quote Integration Tests', () => {
       expect(bidQuote.spread()).toBeNull();
 
       // Создаём ask-only
-      const askResult = QuoteService.askOnly(0.51, 150);
+      const askResult = QuoteService.askOnly(0.51, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(askResult.ok).toBe(true);
       if (!askResult.ok) return;
 
@@ -84,7 +89,7 @@ describe('Quote Integration Tests', () => {
 
     it('вычисление spread метрик на всех этапах', () => {
       // Создаём котировку
-      const result = QuoteService.create(0.48, 0.52, 100, 150);
+      const result = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
@@ -100,7 +105,7 @@ describe('Quote Integration Tests', () => {
 
     it('market crossing detection', () => {
       // Создаём котировку
-      const result = QuoteService.create(0.48, 0.52, 100, 150);
+      const result = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
@@ -135,7 +140,7 @@ describe('Quote Integration Tests', () => {
   describe('Serialization round-trip', () => {
     it('toJSON → fromJSON сохраняет two-sided quote', () => {
       // Создаём оригинальную котировку
-      const originalResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const originalResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(originalResult.ok).toBe(true);
       if (!originalResult.ok) return;
 
@@ -168,7 +173,7 @@ describe('Quote Integration Tests', () => {
 
     it('toJSON → fromJSON сохраняет one-sided quote', () => {
       // Bid-only
-      const bidResult = QuoteService.bidOnly(0.50, 100);
+      const bidResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(bidResult.ok).toBe(true);
       if (!bidResult.ok) return;
 
@@ -193,7 +198,7 @@ describe('Quote Integration Tests', () => {
         0.987654321098765,
         100.123456,
         200.654321
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
@@ -226,7 +231,7 @@ describe('Quote Integration Tests', () => {
 
   describe('Formatter integration', () => {
     it('форматирует two-sided quote в short format', () => {
-      const result = QuoteService.create(0.48, 0.52, 100, 150);
+      const result = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
@@ -236,7 +241,7 @@ describe('Quote Integration Tests', () => {
     });
 
     it('форматирует two-sided quote в display format', () => {
-      const result = QuoteService.create(0.48, 0.52, 100, 150);
+      const result = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
@@ -246,7 +251,7 @@ describe('Quote Integration Tests', () => {
     });
 
     it('форматирует quote в detailed format', () => {
-      const result = QuoteService.create(0.48, 0.52, 100, 150);
+      const result = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(result.ok).toBe(true);
       if (!result.ok) return;
 
@@ -262,7 +267,9 @@ describe('Quote Integration Tests', () => {
         0.52,  // bid
         0.48,  // ask (меньше bid!)
         100,
-        150
+        150,
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
       );
 
       expect(result.ok).toBe(false);
@@ -280,7 +287,9 @@ describe('Quote Integration Tests', () => {
         null, // bid
         null, // ask
         new Decimal(100),
-        new Decimal(150)
+        new Decimal(150),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
       );
 
       expect(result.ok).toBe(false);
@@ -297,7 +306,7 @@ describe('Quote Integration Tests', () => {
         0.52,
         100,
         150
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -313,7 +322,7 @@ describe('Quote Integration Tests', () => {
         0.48, // bid > ask
         100,
         150
-      );
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -328,7 +337,7 @@ describe('Quote Integration Tests', () => {
 
   describe('Immutability contract', () => {
     it('все операции возвращают новые экземпляры', () => {
-      const result1 = QuoteService.create(0.48, 0.52, 100, 150);
+      const result1 = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(result1.ok).toBe(true);
       if (!result1.ok) return;
 
@@ -368,14 +377,14 @@ describe('Quote Integration Tests', () => {
 
   describe('Query методы в workflow', () => {
     it('spreadWidthOrZero возвращает 0 для one-sided', () => {
-      const bidResult = QuoteService.bidOnly(0.50, 100);
+      const bidResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(bidResult.ok).toBe(true);
       if (!bidResult.ok) return;
 
       const spread = bidResult.value.spreadWidthOrZero();
       expect(spread.toNumber()).toBe(0);
 
-      const twoSidedResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const twoSidedResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(twoSidedResult.ok).toBe(true);
       if (!twoSidedResult.ok) return;
 
@@ -384,14 +393,14 @@ describe('Quote Integration Tests', () => {
     });
 
     it('midOrNull возвращает null для one-sided', () => {
-      const bidResult = QuoteService.bidOnly(0.50, 100);
+      const bidResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(bidResult.ok).toBe(true);
       if (!bidResult.ok) return;
 
       const mid = bidResult.value.midOrNull();
       expect(mid).toBeNull();
 
-      const twoSidedResult = QuoteService.create(0.48, 0.52, 100, 150);
+      const twoSidedResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       expect(twoSidedResult.ok).toBe(true);
       if (!twoSidedResult.ok) return;
 

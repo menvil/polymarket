@@ -10,6 +10,7 @@ import {
 } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import type { IClock } from '@polymarket/time';
+import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { Quote, QuoteInvariantViolation } from '../core/index.js';
@@ -113,40 +114,48 @@ export class QuoteService {
    * @param askValue - Значение ask (Decimal | number | string | null)
    * @param bidSizeValue - Значение bid size (Decimal | number | string)
    * @param askSizeValue - Значение ask size (Decimal | number | string)
+   * @param sourceId - ID источника маркет-данных
+   * @param instrumentId - ID инструмента
    * @param timestamp - Временная метка (опционально, Date | Decimal | number | string)
    * @returns Result с Quote или InvalidQuoteError
    *
    * @example
    * ```typescript
+   * import { KnownMarketDataSources } from '@polymarket/ids';
+   *
    * // С numbers
-   * const result1 = QuoteService.create(0.50, 0.51, 100, 200);
-   *
-   * // С strings
-   * const result2 = QuoteService.create("0.50", "0.51", "100", "200");
-   *
-   * // С Decimal
-   * const result3 = QuoteService.create(
-   *   new Decimal(0.50),
-   *   new Decimal(0.51),
-   *   new Decimal(100),
-   *   new Decimal(200)
+   * const result1 = QuoteService.create(
+   *   0.50, 0.51, 100, 200,
+   *   KnownMarketDataSources.POLYMARKET_WS,
+   *   '123456789' as InstrumentId
    * );
    *
-   * // С custom timestamp (Decimal)
+   * // С strings
+   * const result2 = QuoteService.create(
+   *   "0.50", "0.51", "100", "200",
+   *   KnownMarketDataSources.POLYMARKET_WS,
+   *   '123456789' as InstrumentId
+   * );
+   *
+   * // С custom timestamp
    * const result4 = QuoteService.create(
-   *   0.50,
-   *   0.51,
-   *   100,
-   *   200,
+   *   0.50, 0.51, 100, 200,
+   *   KnownMarketDataSources.POLYMARKET_WS,
+   *   '123456789' as InstrumentId,
    *   new Decimal(Date.now())
    * );
    *
    * // Односторонняя котировка
-   * const result5 = QuoteService.create(0.50, null, 100, 0);
+   * const result5 = QuoteService.create(
+   *   0.50, null, 100, 0,
+   *   KnownMarketDataSources.POLYMARKET_WS,
+   *   '123456789' as InstrumentId
+   * );
    *
    * if (result1.ok) {
    *   const quote = result1.value;
    *   console.log(quote.isTwoSided()); // true
+   *   console.log(quote.sourceId()); // 'POLYMARKET_WS'
    * } else {
    *   // Структурированная ошибка
    *   console.error(result1.error.context?.op); // 'create'
@@ -160,6 +169,8 @@ export class QuoteService {
     askValue: Decimal | number | string | null,
     bidSizeValue: Decimal | number | string,
     askSizeValue: Decimal | number | string,
+    sourceId: MarketDataSourceId,
+    instrumentId: InstrumentId,
     timestamp?: Date | Decimal | number | string
   ): Result<Quote, InvalidQuoteError> {
     const op = 'create';
@@ -256,7 +267,9 @@ export class QuoteService {
           ask,
           bidSizeQuantityResult.value,
           askSizeQuantityResult.value,
-          timestampDecimal
+          timestampDecimal,
+          sourceId,
+          instrumentId
         );
         return Ok(quote);
       } catch (error) {
@@ -287,12 +300,20 @@ export class QuoteService {
    *
    * @param bidValue - Значение bid (Decimal | number | string)
    * @param bidSizeValue - Значение bid size (Decimal | number | string)
+   * @param sourceId - ID источника маркет-данных
+   * @param instrumentId - ID инструмента
    * @param timestamp - Временная метка (опционально, Date | Decimal | number | string)
    * @returns Result с Quote или InvalidQuoteError
    *
    * @example
    * ```typescript
-   * const result = QuoteService.bidOnly(0.50, 100);
+   * import { KnownMarketDataSources } from '@polymarket/ids';
+   *
+   * const result = QuoteService.bidOnly(
+   *   0.50, 100,
+   *   KnownMarketDataSources.POLYMARKET_WS,
+   *   '123456789' as InstrumentId
+   * );
    * if (result.ok) {
    *   const quote = result.value;
    *   console.log(quote.hasBid()); // true
@@ -303,6 +324,8 @@ export class QuoteService {
   public static bidOnly(
     bidValue: Decimal | number | string,
     bidSizeValue: Decimal | number | string,
+    sourceId: MarketDataSourceId,
+    instrumentId: InstrumentId,
     timestamp?: Date | Decimal | number | string
   ): Result<Quote, InvalidQuoteError> {
     // Делегируем на create с null для ask
@@ -311,6 +334,8 @@ export class QuoteService {
       null, // ask отсутствует
       bidSizeValue,
       0, // zero ask size
+      sourceId,
+      instrumentId,
       timestamp
     );
   }
@@ -320,12 +345,20 @@ export class QuoteService {
    *
    * @param askValue - Значение ask (Decimal | number | string)
    * @param askSizeValue - Значение ask size (Decimal | number | string)
+   * @param sourceId - ID источника маркет-данных
+   * @param instrumentId - ID инструмента
    * @param timestamp - Временная метка (опционально, Date | Decimal | number | string)
    * @returns Result с Quote или InvalidQuoteError
    *
    * @example
    * ```typescript
-   * const result = QuoteService.askOnly(0.51, 200);
+   * import { KnownMarketDataSources } from '@polymarket/ids';
+   *
+   * const result = QuoteService.askOnly(
+   *   0.51, 200,
+   *   KnownMarketDataSources.POLYMARKET_WS,
+   *   '123456789' as InstrumentId
+   * );
    * if (result.ok) {
    *   const quote = result.value;
    *   console.log(quote.hasBid()); // false
@@ -336,6 +369,8 @@ export class QuoteService {
   public static askOnly(
     askValue: Decimal | number | string,
     askSizeValue: Decimal | number | string,
+    sourceId: MarketDataSourceId,
+    instrumentId: InstrumentId,
     timestamp?: Date | Decimal | number | string
   ): Result<Quote, InvalidQuoteError> {
     // Делегируем на create с null для bid
@@ -344,6 +379,8 @@ export class QuoteService {
       askValue,
       0, // zero bid size
       askSizeValue,
+      sourceId,
+      instrumentId,
       timestamp
     );
   }
@@ -413,6 +450,8 @@ export class QuoteService {
         newAskDecimal,
         quote.bidSize().value(),
         quote.askSize().value(),
+        quote.sourceId(), // Сохраняем sourceId
+        quote.instrumentId(), // Сохраняем instrumentId
         quote.timestampMs() // Сохраняем оригинальный timestamp
       );
     }, InvalidQuoteError);
@@ -482,6 +521,8 @@ export class QuoteService {
         newAskDecimal,
         quote.bidSize().value(),
         quote.askSize().value(),
+        quote.sourceId(), // Сохраняем sourceId
+        quote.instrumentId(), // Сохраняем instrumentId
         clock.now() // Новый timestamp от clock
       );
     }, InvalidQuoteError);
@@ -567,6 +608,8 @@ export class QuoteService {
         newAskDecimal,
         quote.bidSize().value(),
         quote.askSize().value(),
+        quote.sourceId(), // Сохраняем sourceId
+        quote.instrumentId(), // Сохраняем instrumentId
         quote.timestampMs()
       );
     }, InvalidQuoteError);
@@ -650,6 +693,8 @@ export class QuoteService {
         newAskDecimal,
         quote.bidSize().value(),
         quote.askSize().value(),
+        quote.sourceId(), // Сохраняем sourceId
+        quote.instrumentId(), // Сохраняем instrumentId
         clock.now()
       );
     }, InvalidQuoteError);
@@ -761,7 +806,9 @@ export class QuoteService {
           quote.ask(),
           bidSize,
           askSize,
-          quote.timestampMs()
+          quote.timestampMs(),
+          quote.sourceId(), // Сохраняем sourceId
+          quote.instrumentId() // Сохраняем instrumentId
         );
         return Ok(newQuote);
       } catch (error) {
@@ -888,7 +935,9 @@ export class QuoteService {
           quote.ask(),
           bidSize,
           askSize,
-          new Decimal(clock.now().getTime())
+          new Decimal(clock.now().getTime()),
+          quote.sourceId(), // Сохраняем sourceId
+          quote.instrumentId() // Сохраняем instrumentId
         );
         return Ok(newQuote);
       } catch (error) {

@@ -1,8 +1,13 @@
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { PaperClock } from '@polymarket/time';
 import Decimal from 'decimal.js';
+import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+
+// Тестовые константы для sourceId и instrumentId
+const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
+const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 import { Quote } from '../../../src/quote/core/Quote.js';
 import { ValidateAge } from '../../../src/quote/rules/ValidateAge.js';
 import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
@@ -20,7 +25,7 @@ describe('ValidateAge', () => {
     const ask = Price.of(new Decimal('0.52'));
     const bidSize = Quantity.of(new Decimal(100));
     const askSize = Quantity.of(new Decimal(150));
-    return Quote.of(bid, ask, bidSize, askSize, new Decimal(timestampMs));
+    return Quote.of(bid, ask, bidSize, askSize, new Decimal(timestampMs), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
   };
 
   describe('check()', () => {

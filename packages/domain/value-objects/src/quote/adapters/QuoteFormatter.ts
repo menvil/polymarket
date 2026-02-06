@@ -32,6 +32,16 @@ export interface QuoteFormatOptions {
    * Показывать mid price (по умолчанию: false)
    */
   includeMid?: boolean;
+
+  /**
+   * Показывать source ID (по умолчанию: false)
+   */
+  includeSource?: boolean;
+
+  /**
+   * Показывать instrument ID (по умолчанию: false)
+   */
+  includeInstrument?: boolean;
 }
 
 /**
@@ -208,6 +218,14 @@ export class QuoteFormatter {
       parts.push(`Time: ${timestamp}`);
     }
 
+    if (options.includeSource) {
+      parts.push(`Source: ${quote.sourceId()}`);
+    }
+
+    if (options.includeInstrument) {
+      parts.push(`Instrument: ${quote.instrumentId()}`);
+    }
+
     return parts.join(', ');
   }
 
@@ -279,6 +297,20 @@ export class QuoteFormatter {
       lines.push(separator);
       const timestamp = new Date(quote.timestampMs().toNumber()).toISOString();
       lines.push(`Time:  ${timestamp}`);
+    }
+
+    if (options.includeSource) {
+      if (!options.includeTimestamp) {
+        lines.push(separator);
+      }
+      lines.push(`Source: ${quote.sourceId()}`);
+    }
+
+    if (options.includeInstrument) {
+      if (!options.includeTimestamp && !options.includeSource) {
+        lines.push(separator);
+      }
+      lines.push(`Instrument: ${quote.instrumentId()}`);
     }
 
     return lines.join('\n');
