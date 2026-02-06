@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import {
+  type AccountId,
   type ConditionRef,
   type OnChainConditionRef,
   type OutcomeIndex,
@@ -40,6 +41,7 @@ import {
   isWalletAccount,
   isVenueAccount,
   isSubaccount,
+  getSubaccountDepth,
 } from '../src/index.js';
 
 describe('Core IDs', () => {
@@ -498,39 +500,69 @@ describe('Core IDs', () => {
 
     it('should create subaccount', () => {
       const baseAccount = accountIdFromWallet(testWallet);
-      const subaccount = accountIdForSubaccount(baseAccount, 'trading');
+      const result = accountIdForSubaccount(baseAccount, 'trading');
 
-      expect(subaccount.kind).toBe('SUBACCOUNT');
-      expect(isSubaccount(subaccount)).toBe(true);
-      if (subaccount.kind === 'SUBACCOUNT') {
-        expect(subaccount.base).toEqual(baseAccount);
-        expect(subaccount.name).toBe('trading');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const subaccount = result.value;
+        expect(subaccount.kind).toBe('SUBACCOUNT');
+        expect(isSubaccount(subaccount)).toBe(true);
+        if (subaccount.kind === 'SUBACCOUNT') {
+          expect(subaccount.base).toEqual(baseAccount);
+          expect(subaccount.name).toBe('trading');
+        }
       }
     });
 
     it('should convert to string', () => {
       // Wallet account
       const walletAcc = accountIdFromWallet(testWallet);
-      expect(accountIdToString(walletAcc)).toBe(`wallet:${testWallet}`);
+      const walletResult = accountIdToString(walletAcc);
+      expect(walletResult.ok).toBe(true);
+      if (walletResult.ok) {
+        expect(walletResult.value).toBe(`wallet:${testWallet}`);
+      }
 
       // Venue account
       const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
-      expect(accountIdToString(venueAcc)).toBe('venue:POLYMARKET:user_123');
+      const venueResult = accountIdToString(venueAcc);
+      expect(venueResult.ok).toBe(true);
+      if (venueResult.ok) {
+        expect(venueResult.value).toBe('venue:POLYMARKET:user_123');
+      }
 
       // Subaccount
-      const subAcc = accountIdForSubaccount(walletAcc, 'trading');
-      expect(accountIdToString(subAcc)).toBe(`sub:wallet:${testWallet}:trading`);
+      const subResult = accountIdForSubaccount(walletAcc, 'trading');
+      expect(subResult.ok).toBe(true);
+      if (subResult.ok) {
+        const strResult = accountIdToString(subResult.value);
+        expect(strResult.ok).toBe(true);
+        if (strResult.ok) {
+          expect(strResult.value).toBe(`sub:wallet:${testWallet}:trading`);
+        }
+      }
     });
 
     it('should escape colons in userId and name', () => {
       // Venue account with colon in userId
       const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
-      expect(accountIdToString(venueAcc)).toBe('venue:POLYMARKET:user\\:123');
+      const venueResult = accountIdToString(venueAcc);
+      expect(venueResult.ok).toBe(true);
+      if (venueResult.ok) {
+        expect(venueResult.value).toBe('venue:POLYMARKET:user\\:123');
+      }
 
       // Subaccount with colon in name
       const walletAcc = accountIdFromWallet(testWallet);
-      const subAcc = accountIdForSubaccount(walletAcc, 'strategy:main');
-      expect(accountIdToString(subAcc)).toContain('strategy\\:main');
+      const subResult = accountIdForSubaccount(walletAcc, 'strategy:main');
+      expect(subResult.ok).toBe(true);
+      if (subResult.ok) {
+        const strResult = accountIdToString(subResult.value);
+        expect(strResult.ok).toBe(true);
+        if (strResult.ok) {
+          expect(strResult.value).toContain('strategy\\:main');
+        }
+      }
     });
 
     it('should parse AccountId from string', () => {
@@ -578,21 +610,33 @@ describe('Core IDs', () => {
     it('should support round-trip serialization', () => {
       // Wallet account
       const walletAcc = accountIdFromWallet(testWallet);
-      const walletStr = accountIdToString(walletAcc);
-      const walletParsed = parseAccountId(walletStr);
-      expect(accountIdEquals(walletAcc, walletParsed!)).toBe(true);
+      const walletStrResult = accountIdToString(walletAcc);
+      expect(walletStrResult.ok).toBe(true);
+      if (walletStrResult.ok) {
+        const walletParsed = parseAccountId(walletStrResult.value);
+        expect(accountIdEquals(walletAcc, walletParsed!)).toBe(true);
+      }
 
       // Venue account
       const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
-      const venueStr = accountIdToString(venueAcc);
-      const venueParsed = parseAccountId(venueStr);
-      expect(accountIdEquals(venueAcc, venueParsed!)).toBe(true);
+      const venueStrResult = accountIdToString(venueAcc);
+      expect(venueStrResult.ok).toBe(true);
+      if (venueStrResult.ok) {
+        const venueParsed = parseAccountId(venueStrResult.value);
+        expect(accountIdEquals(venueAcc, venueParsed!)).toBe(true);
+      }
 
       // Subaccount
-      const subAcc = accountIdForSubaccount(walletAcc, 'strategy:main');
-      const subStr = accountIdToString(subAcc);
-      const subParsed = parseAccountId(subStr);
-      expect(accountIdEquals(subAcc, subParsed!)).toBe(true);
+      const subResult = accountIdForSubaccount(walletAcc, 'strategy:main');
+      expect(subResult.ok).toBe(true);
+      if (subResult.ok) {
+        const subStrResult = accountIdToString(subResult.value);
+        expect(subStrResult.ok).toBe(true);
+        if (subStrResult.ok) {
+          const subParsed = parseAccountId(subStrResult.value);
+          expect(accountIdEquals(subResult.value, subParsed!)).toBe(true);
+        }
+      }
     });
 
     it('should compare AccountIds', () => {
@@ -616,20 +660,32 @@ describe('Core IDs', () => {
 
     it('should support nested subaccounts', () => {
       const walletAcc = accountIdFromWallet(testWallet);
-      const subAcc1 = accountIdForSubaccount(walletAcc, 'main');
-      const subAcc2 = accountIdForSubaccount(subAcc1, 'strategy_a');
+      const subResult1 = accountIdForSubaccount(walletAcc, 'main');
+      expect(subResult1.ok).toBe(true);
+      if (!subResult1.ok) return;
 
-      const str = accountIdToString(subAcc2);
-      expect(str).toContain('sub:sub:wallet');
+      const subResult2 = accountIdForSubaccount(subResult1.value, 'strategy_a');
+      expect(subResult2.ok).toBe(true);
+      if (!subResult2.ok) return;
 
-      const parsed = parseAccountId(str);
-      expect(accountIdEquals(subAcc2, parsed!)).toBe(true);
+      const strResult = accountIdToString(subResult2.value);
+      expect(strResult.ok).toBe(true);
+      if (!strResult.ok) return;
+
+      expect(strResult.value).toContain('sub:sub:wallet');
+
+      const parsed = parseAccountId(strResult.value);
+      expect(accountIdEquals(subResult2.value, parsed!)).toBe(true);
     });
 
     it('should use type guards correctly', () => {
       const walletAcc = accountIdFromWallet(testWallet);
       const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
-      const subAcc = accountIdForSubaccount(walletAcc, 'trading');
+      const subResult = accountIdForSubaccount(walletAcc, 'trading');
+      expect(subResult.ok).toBe(true);
+      if (!subResult.ok) return;
+
+      const subAcc = subResult.value;
 
       expect(isWalletAccount(walletAcc)).toBe(true);
       expect(isWalletAccount(venueAcc)).toBe(false);
@@ -640,6 +696,302 @@ describe('Core IDs', () => {
 
       expect(isSubaccount(subAcc)).toBe(true);
       expect(isSubaccount(walletAcc)).toBe(false);
+    });
+
+    describe('Escaping fixes', () => {
+      it('should handle backslashes in round-trip', () => {
+        // Строка с backslash и colon
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:123');
+        const strResult = accountIdToString(venueAcc);
+        expect(strResult.ok).toBe(true);
+        if (!strResult.ok) return;
+
+        const parsed = parseAccountId(strResult.value);
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.userId).toBe('user\\:123'); // round-trip сохраняет backslash
+        }
+      });
+
+      it('should handle double backslashes', () => {
+        // Строка с двойным backslash
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'name\\\\with\\\\slashes');
+        const strResult = accountIdToString(venueAcc);
+        expect(strResult.ok).toBe(true);
+        if (!strResult.ok) return;
+
+        const parsed = parseAccountId(strResult.value);
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.userId).toBe('name\\\\with\\\\slashes');
+        }
+      });
+
+      it('should handle empty strings', () => {
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, '');
+        const strResult = accountIdToString(venueAcc);
+        expect(strResult.ok).toBe(true);
+        if (!strResult.ok) return;
+
+        const parsed = parseAccountId(strResult.value);
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.userId).toBe('');
+        }
+      });
+
+      it('should handle only colon', () => {
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, ':');
+        const strResult = accountIdToString(venueAcc);
+        expect(strResult.ok).toBe(true);
+        if (!strResult.ok) return;
+
+        const parsed = parseAccountId(strResult.value);
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.userId).toBe(':');
+        }
+      });
+
+      it('should handle only backslash', () => {
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, '\\');
+        const strResult = accountIdToString(venueAcc);
+        expect(strResult.ok).toBe(true);
+        if (!strResult.ok) return;
+
+        const parsed = parseAccountId(strResult.value);
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.userId).toBe('\\');
+        }
+      });
+
+      it('should handle complex escaped sequences', () => {
+        // Комплексная строка с различными escape-последовательностями
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'a]\\\\:b');
+        const strResult = accountIdToString(venueAcc);
+        expect(strResult.ok).toBe(true);
+        if (!strResult.ok) return;
+
+        const parsed = parseAccountId(strResult.value);
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.userId).toBe('a]\\\\:b');
+        }
+      });
+    });
+
+    describe('Depth limit protection', () => {
+      it('should calculate subaccount depth correctly', () => {
+        const walletAcc = accountIdFromWallet(testWallet);
+        expect(getSubaccountDepth(walletAcc)).toBe(0);
+
+        const result1 = accountIdForSubaccount(walletAcc, 'level1');
+        expect(result1.ok).toBe(true);
+        if (!result1.ok) return;
+        expect(getSubaccountDepth(result1.value)).toBe(1);
+
+        const result2 = accountIdForSubaccount(result1.value, 'level2');
+        expect(result2.ok).toBe(true);
+        if (!result2.ok) return;
+        expect(getSubaccountDepth(result2.value)).toBe(2);
+
+        const result3 = accountIdForSubaccount(result2.value, 'level3');
+        expect(result3.ok).toBe(true);
+        if (!result3.ok) return;
+        expect(getSubaccountDepth(result3.value)).toBe(3);
+      });
+
+      it('should return Err when creating subaccount exceeds depth limit', () => {
+        const walletAcc = accountIdFromWallet(testWallet);
+
+        // Создаём цепочку глубиной 5 (максимум)
+        let current: AccountId = walletAcc;
+        for (let i = 1; i <= 5; i++) {
+          const result = accountIdForSubaccount(current, `level${i}`);
+          expect(result.ok).toBe(true);
+          if (!result.ok) return;
+          current = result.value;
+        }
+
+        expect(getSubaccountDepth(current)).toBe(5);
+
+        // Попытка создать ещё один уровень должна вернуть Err
+        const tooDeepResult = accountIdForSubaccount(current, 'tooDeep');
+        expect(tooDeepResult.ok).toBe(false);
+        if (!tooDeepResult.ok) {
+          expect(tooDeepResult.error).toBeInstanceOf(Error);
+          expect(tooDeepResult.error.message).toMatch(/depth limit exceeded/i);
+        }
+      });
+
+      it('should return Ok when serializing max depth subaccount', () => {
+        const walletAcc = accountIdFromWallet(testWallet);
+
+        // Создаём структуру глубиной 5
+        let current: AccountId = walletAcc;
+        for (let i = 1; i <= 5; i++) {
+          const result = accountIdForSubaccount(current, `level${i}`);
+          expect(result.ok).toBe(true);
+          if (!result.ok) return;
+          current = result.value;
+        }
+
+        // Сериализация должна работать для глубины 5
+        const strResult = accountIdToString(current);
+        expect(strResult.ok).toBe(true);
+      });
+
+      it('should return undefined when parsing deeply nested string', () => {
+        // Строка с глубиной вложенности 6 (превышает лимит 5)
+        const deepStr = `sub:sub:sub:sub:sub:sub:wallet:${testWallet}:a:b:c:d:e:f`;
+
+        const parsed = parseAccountId(deepStr);
+        expect(parsed).toBeUndefined(); // должно вернуть undefined из-за превышения depth limit
+      });
+
+      it('should return undefined when parsing with custom maxDepth', () => {
+        const str = `sub:sub:wallet:${testWallet}:a:b`; // глубина 2
+
+        // С maxDepth=1 должно вернуть undefined
+        const parsed = parseAccountId(str, { maxDepth: 1 });
+        expect(parsed).toBeUndefined();
+
+        // С maxDepth=2 должно распарситься
+        const parsed2 = parseAccountId(str, { maxDepth: 2 });
+        expect(parsed2).toBeDefined();
+      });
+
+      it('should return false when comparing deeply nested subaccounts', () => {
+        const walletAcc = accountIdFromWallet(testWallet);
+
+        // Создаём структуру глубиной 5
+        let acc1: AccountId = walletAcc;
+        for (let i = 1; i <= 5; i++) {
+          const result = accountIdForSubaccount(acc1, `level${i}`);
+          expect(result.ok).toBe(true);
+          if (!result.ok) return;
+          acc1 = result.value;
+        }
+
+        let acc2: AccountId = walletAcc;
+        for (let i = 1; i <= 5; i++) {
+          const result = accountIdForSubaccount(acc2, `level${i}`);
+          expect(result.ok).toBe(true);
+          if (!result.ok) return;
+          acc2 = result.value;
+        }
+
+        // Сравнение должно работать для глубины 5
+        expect(accountIdEquals(acc1, acc2)).toBe(true);
+
+        // Для проверки fallback на false при превышении лимита
+        // создаём структуру вручную (обходя защиту)
+        const veryDeep1 = {
+          kind: 'SUBACCOUNT' as const,
+          base: {
+            kind: 'SUBACCOUNT' as const,
+            base: {
+              kind: 'SUBACCOUNT' as const,
+              base: {
+                kind: 'SUBACCOUNT' as const,
+                base: {
+                  kind: 'SUBACCOUNT' as const,
+                  base: {
+                    kind: 'SUBACCOUNT' as const,
+                    base: walletAcc,
+                    name: 'level6',
+                  },
+                  name: 'level5',
+                },
+                name: 'level4',
+              },
+              name: 'level3',
+            },
+            name: 'level2',
+          },
+          name: 'level1',
+        };
+
+        // Сравнение должно вернуть false (безопасный fallback)
+        expect(accountIdEquals(veryDeep1, veryDeep1)).toBe(false);
+      });
+    });
+
+    describe('Max length protection', () => {
+      it('should return undefined for very long strings', () => {
+        // Создаём строку длиннее 512 символов
+        const longStr = 'wallet:' + '0'.repeat(600);
+
+        const parsed = parseAccountId(longStr);
+        expect(parsed).toBeUndefined();
+      });
+
+      it('should parse strings within limit', () => {
+        // Строка близко к лимиту, но в пределах
+        const normalStr = `wallet:${testWallet}`;
+
+        const parsed = parseAccountId(normalStr);
+        expect(parsed).toBeDefined();
+      });
+
+      it('should respect custom maxLen', () => {
+        const str = `wallet:${testWallet}`;
+
+        // С maxLen=10 должно вернуть undefined (строка длиннее)
+        const parsed1 = parseAccountId(str, { maxLen: 10 });
+        expect(parsed1).toBeUndefined();
+
+        // С maxLen=1000 должно распарситься
+        const parsed2 = parseAccountId(str, { maxLen: 1000 });
+        expect(parsed2).toBeDefined();
+      });
+    });
+
+    describe('WalletAddress validation', () => {
+      it('should validate wallet address with custom validator', () => {
+        // Валидатор, который принимает только адреса с '0xabc' в начале
+        const validator = (raw: string) => {
+          return raw.toLowerCase().startsWith('0xabc') ? (raw as any) : undefined;
+        };
+
+        // Невалидный адрес
+        const invalidStr = `wallet:${testWallet}`;
+        const parsed1 = parseAccountId(invalidStr, { validateWalletAddress: validator });
+        expect(parsed1).toBeUndefined();
+
+        // Валидный адрес
+        const validStr = 'wallet:0xabc123456789012345678901234567890abcdef0';
+        const parsed2 = parseAccountId(validStr, { validateWalletAddress: validator });
+        expect(parsed2).toBeDefined();
+      });
+
+      it('should use unsafe cast without validator (backward compatibility)', () => {
+        // Без валидатора любая строка принимается как WalletAddress
+        const invalidStr = 'wallet:INVALID_ADDRESS';
+        const parsed = parseAccountId(invalidStr);
+
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'WALLET') {
+          expect(parsed.address).toBe('INVALID_ADDRESS');
+        }
+      });
+
+      it('should validate real wallet addresses', () => {
+        // Валидатор с реальной проверкой формата Ethereum адреса
+        const validator = (raw: string) => {
+          const valid = /^0x[0-9a-f]{40}$/i.test(raw);
+          return valid ? (raw.toLowerCase() as any) : undefined;
+        };
+
+        const validStr = `wallet:${testWallet}`;
+        const parsed1 = parseAccountId(validStr, { validateWalletAddress: validator });
+        expect(parsed1).toBeDefined();
+
+        const invalidStr = 'wallet:0xINVALID';
+        const parsed2 = parseAccountId(invalidStr, { validateWalletAddress: validator });
+        expect(parsed2).toBeUndefined();
+      });
     });
   });
 });

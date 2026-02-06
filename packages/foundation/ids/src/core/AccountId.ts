@@ -1,5 +1,45 @@
 import type { WalletAddress } from './WalletAddress.js';
 import type { VenueId } from './VenueId.js';
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
+
+/**
+ * Ошибка при превышении depth limit для SUBACCOUNT
+ *
+ * @remarks
+ * Выбрасывается при попытке создать или сериализовать AccountId
+ * с глубиной вложенности превышающей MAX_SUBACCOUNT_DEPTH.
+ */
+export class AccountIdDepthError extends Error {
+  constructor(
+    public readonly currentDepth: number,
+    public readonly maxDepth: number,
+    public readonly operation: 'create' | 'serialize'
+  ) {
+    super(
+      `Subaccount depth limit exceeded during ${operation}: current=${currentDepth}, max=${maxDepth}`
+    );
+    this.name = 'AccountIdDepthError';
+  }
+}
+
+/**
+ * Максимальная глубина вложенности SUBACCOUNT
+ *
+ * @remarks
+ * Защита от stack overflow при рекурсивной обработке.
+ * Ограничивает цепочки типа: sub:sub:sub:...
+ */
+const MAX_SUBACCOUNT_DEPTH = 5;
+
+/**
+ * Максимальная длина serialized AccountId строки
+ *
+ * @remarks
+ * Защита от DoS атак с аномально длинными строками.
+ * Проверяется при парсинге перед началом обработки.
+ */
+const MAX_ACCOUNT_ID_STRING_LENGTH = 512;
 
 /**
  * AccountId - универсальный идентификатор аккаунта
@@ -68,6 +108,84 @@ export type AccountId =
     };
 
 /**
+ * Опции для парсинга AccountId
+ *
+ * @remarks
+ * Позволяет кастомизировать валидацию и ограничения при парсинге.
+ */
+export interface ParseAccountIdOptions {
+  /**
+   * Максимальная глубина вложенности SUBACCOUNT
+   *
+   * @default MAX_SUBACCOUNT_DEPTH (5)
+   */
+  maxDepth?: number;
+
+  /**
+   * Максимальная длина входной строки
+   *
+   * @default MAX_ACCOUNT_ID_STRING_LENGTH (512)
+   */
+  maxLen?: number;
+
+  /**
+   * Функция валидации WalletAddress
+   *
+   * @remarks
+   * Если передана — используется для проверки формата wallet address.
+   * При невалидном адресе должна вернуть undefined.
+   * Если не передана — используется unsafe каст (обратная совместимость).
+   *
+   * @param raw - Строка с потенциальным wallet address
+   * @returns WalletAddress или undefined если формат неверный
+   *
+   * @example
+   * ```typescript
+   * parseAccountId('wallet:0xINVALID', {
+   *   validateWalletAddress: (raw) => {
+   *     return /^0x[0-9a-f]{40}$/i.test(raw) ? raw as WalletAddress : undefined;
+   *   }
+   * }); // → undefined
+   * ```
+   */
+  validateWalletAddress?: (raw: string) => WalletAddress | undefined;
+}
+
+/**
+ * Вычислить глубину вложенности SUBACCOUNT
+ *
+ * @param id - AccountId для проверки
+ * @returns Глубина вложенности (0 для WALLET/VENUE, ≥1 для SUBACCOUNT)
+ *
+ * @remarks
+ * Итеративная реализация (не рекурсивная) для безопасности.
+ * Используется для проверки depth limit перед рекурсивными операциями.
+ *
+ * @example
+ * ```typescript
+ * const wallet = accountIdFromWallet(parseWalletAddress('0x1234...')!);
+ * getSubaccountDepth(wallet); // → 0
+ *
+ * const sub1 = accountIdForSubaccount(wallet, 'level1');
+ * getSubaccountDepth(sub1); // → 1
+ *
+ * const sub2 = accountIdForSubaccount(sub1, 'level2');
+ * getSubaccountDepth(sub2); // → 2
+ * ```
+ */
+export function getSubaccountDepth(id: AccountId): number {
+  let depth = 0;
+  let current = id;
+
+  while (current.kind === 'SUBACCOUNT') {
+    depth++;
+    current = current.base;
+  }
+
+  return depth;
+}
+
+/**
  * Создать AccountId из wallet address
  *
  * @param address - WalletAddress для аккаунта
@@ -121,36 +239,58 @@ export function accountIdFromVenue(venueId: VenueId, userId: string): AccountId 
  *
  * @param base - Base account (может быть любого типа)
  * @param name - Имя subaccount
- * @returns AccountId типа SUBACCOUNT
+ * @returns Result с AccountId типа SUBACCOUNT или ошибкой при превышении depth limit
  *
  * @remarks
  * Subaccounts используются для разделения балансов внутри одного base account.
  * Например: 'main_strategy', 'arbitrage', 'hedging', etc.
  *
  * Может быть вложенным: subaccount может иметь свои subaccounts.
+ * Максимальная глубина вложенности ограничена для защиты от stack overflow.
+ *
+ * Использует Result pattern вместо exceptions для явной обработки ошибок.
  *
  * @example
  * ```typescript
  * const wallet = accountIdFromWallet(parseWalletAddress('0x1234...')!);
- * const subaccount = accountIdForSubaccount(wallet, 'trading');
+ * const result = accountIdForSubaccount(wallet, 'trading');
  *
- * console.log(accountIdToString(subaccount));
- * // → 'sub:wallet:0x1234...:trading'
+ * if (result.ok) {
+ *   console.log(accountIdToString(result.value));
+ *   // → Ok('sub:wallet:0x1234...:trading')
+ * } else {
+ *   console.error('Error:', result.error.message);
+ * }
+ *
+ * // Ошибка при превышении лимита:
+ * const deepResult = accountIdForSubaccount(deeplyNested, 'tooDeep');
+ * // → Err(AccountIdDepthError)
  * ```
  */
-export function accountIdForSubaccount(base: AccountId, name: string): AccountId {
-  return {
+export function accountIdForSubaccount(
+  base: AccountId,
+  name: string
+): Result<AccountId, AccountIdDepthError> {
+  const currentDepth = getSubaccountDepth(base);
+
+  if (currentDepth >= MAX_SUBACCOUNT_DEPTH) {
+    return Err(
+      new AccountIdDepthError(currentDepth, MAX_SUBACCOUNT_DEPTH, 'create')
+    );
+  }
+
+  return Ok({
     kind: 'SUBACCOUNT',
     base,
     name,
-  };
+  });
 }
 
 /**
  * Преобразовать AccountId в строку для serialization
  *
  * @param id - AccountId для преобразования
- * @returns Строковое представление
+ * @returns Result со строковым представлением или ошибкой при превышении depth limit
  *
  * @remarks
  * Canonical format с escaping для безопасного парсинга:
@@ -159,39 +299,78 @@ export function accountIdForSubaccount(base: AccountId, name: string): AccountId
  * - VENUE: `venue:POLYMARKET:user_123`
  * - SUBACCOUNT: `sub:wallet:0x1234...:trading`
  *
- * Escaping: ':' в userId/name заменяется на '\:'
+ * Escaping: '\' и ':' в userId/name экранируются ('\\' и '\:')
+ *
+ * Использует Result pattern вместо exceptions для явной обработки ошибок.
  *
  * @example
  * ```typescript
  * const walletAcc = accountIdFromWallet(parseWalletAddress('0x1234...')!);
- * accountIdToString(walletAcc);
- * // → 'wallet:0x1234...'
+ * const result = accountIdToString(walletAcc);
+ * if (result.ok) {
+ *   console.log(result.value);
+ *   // → 'wallet:0x1234...'
+ * }
  *
  * const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
- * accountIdToString(venueAcc);
- * // → 'venue:POLYMARKET:user\:123' (escaped colon)
+ * const result2 = accountIdToString(venueAcc);
+ * // → Ok('venue:POLYMARKET:user\\:123') (escaped colon)
+ *
+ * const specialChars = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:test');
+ * const result3 = accountIdToString(specialChars);
+ * // → Ok('venue:POLYMARKET:user\\\\\\:test') (escaped backslash and colon)
  * ```
  */
-export function accountIdToString(id: AccountId): string {
+export function accountIdToString(id: AccountId): Result<string, AccountIdDepthError> {
+  return accountIdToStringImpl(id, 0);
+}
+
+/**
+ * Internal implementation с depth tracking
+ *
+ * @param id - AccountId для преобразования
+ * @param depth - Текущая глубина рекурсии
+ * @returns Result со строковым представлением или ошибкой
+ *
+ * @remarks
+ * Рекурсивная реализация с отслеживанием глубины.
+ * При каждом вызове для SUBACCOUNT инкрементирует depth.
+ * Проверка depth > MAX_SUBACCOUNT_DEPTH предотвращает stack overflow.
+ */
+function accountIdToStringImpl(
+  id: AccountId,
+  depth: number
+): Result<string, AccountIdDepthError> {
+  if (depth > MAX_SUBACCOUNT_DEPTH) {
+    return Err(
+      new AccountIdDepthError(depth, MAX_SUBACCOUNT_DEPTH, 'serialize')
+    );
+  }
+
   if (id.kind === 'WALLET') {
-    return `wallet:${id.address}`;
+    return Ok(`wallet:${id.address}`);
   }
 
   if (id.kind === 'VENUE') {
-    const escapedUserId = escapeColon(id.userId);
-    return `venue:${id.venueId}:${escapedUserId}`;
+    const escapedUserId = escape(id.userId);
+    return Ok(`venue:${id.venueId}:${escapedUserId}`);
   }
 
   // SUBACCOUNT
-  const baseStr = accountIdToString(id.base);
-  const escapedName = escapeColon(id.name);
-  return `sub:${baseStr}:${escapedName}`;
+  const baseResult = accountIdToStringImpl(id.base, depth + 1);
+  if (!baseResult.ok) {
+    return baseResult;
+  }
+
+  const escapedName = escape(id.name);
+  return Ok(`sub:${baseResult.value}:${escapedName}`);
 }
 
 /**
  * Парсинг AccountId из строки
  *
  * @param str - Строка в формате accountIdToString()
+ * @param options - Опции парсинга (валидация, лимиты)
  * @returns AccountId или undefined если формат неверный
  *
  * @remarks
@@ -203,6 +382,11 @@ export function accountIdToString(id: AccountId): string {
  * - 'venue:POLYMARKET:user_123'
  * - 'sub:wallet:0x1234...:trading'
  *
+ * Защита от DoS:
+ * - Проверка длины строки (maxLen)
+ * - Проверка глубины вложенности (maxDepth)
+ * - Опциональная валидация WalletAddress
+ *
  * @example
  * ```typescript
  * const wallet = parseAccountId('wallet:0x1234...');
@@ -213,10 +397,59 @@ export function accountIdToString(id: AccountId): string {
  *
  * const invalid = parseAccountId('INVALID:FORMAT');
  * // → undefined
+ *
+ * // С валидацией:
+ * const validated = parseAccountId('wallet:INVALID', {
+ *   validateWalletAddress: (raw) => /^0x[0-9a-f]{40}$/i.test(raw)
+ *     ? raw as WalletAddress
+ *     : undefined
+ * });
+ * // → undefined (невалидный адрес)
  * ```
  */
-export function parseAccountId(str: string): AccountId | undefined {
-  const parts = splitWithEscape(str, ':');
+export function parseAccountId(
+  str: string,
+  options?: ParseAccountIdOptions
+): AccountId | undefined {
+  const maxLen = options?.maxLen ?? MAX_ACCOUNT_ID_STRING_LENGTH;
+  const maxDepth = options?.maxDepth ?? MAX_SUBACCOUNT_DEPTH;
+
+  // Проверка длины строки
+  if (str.length > maxLen) {
+    return undefined;
+  }
+
+  return parseAccountIdImpl(str, 0, maxDepth, options);
+}
+
+/**
+ * Internal implementation с depth tracking
+ *
+ * @param str - Строка для парсинга
+ * @param depth - Текущая глубина рекурсии
+ * @param maxDepth - Максимально допустимая глубина
+ * @param options - Опции парсинга (валидация, лимиты)
+ * @returns AccountId или undefined если формат неверный или превышен depth limit
+ *
+ * @remarks
+ * Рекурсивная реализация с отслеживанием глубины.
+ * При каждом рекурсивном вызове для SUBACCOUNT инкрементирует depth.
+ * Проверка depth > maxDepth предотвращает stack overflow при парсинге
+ * злонамеренно вложенных структур.
+ *
+ * Возвращает undefined (graceful rejection) вместо throw для внешнего ввода.
+ */
+function parseAccountIdImpl(
+  str: string,
+  depth: number,
+  maxDepth: number,
+  options?: ParseAccountIdOptions
+): AccountId | undefined {
+  if (depth > maxDepth) {
+    return undefined;
+  }
+
+  const parts = splitEscaped(str);
 
   if (parts.length < 2) {
     return undefined;
@@ -229,7 +462,22 @@ export function parseAccountId(str: string): AccountId | undefined {
       return undefined;
     }
 
-    const address = parts[1] as WalletAddress;
+    const rawAddress = parts[1];
+
+    // Валидация WalletAddress если передана функция
+    if (options?.validateWalletAddress) {
+      const validatedAddress = options.validateWalletAddress(rawAddress);
+      if (!validatedAddress) {
+        return undefined;
+      }
+      return {
+        kind: 'WALLET',
+        address: validatedAddress,
+      };
+    }
+
+    // Без валидации - unsafe каст (обратная совместимость)
+    const address = rawAddress as WalletAddress;
     return {
       kind: 'WALLET',
       address,
@@ -242,7 +490,7 @@ export function parseAccountId(str: string): AccountId | undefined {
     }
 
     const venueId = parts[1] as VenueId;
-    const userId = unescapeColon(parts[2]);
+    const userId = unescape(parts[2]);
     return {
       kind: 'VENUE',
       venueId,
@@ -256,13 +504,13 @@ export function parseAccountId(str: string): AccountId | undefined {
     }
 
     // Extract subaccount name (last part)
-    const name = unescapeColon(parts[parts.length - 1]);
+    const name = unescape(parts[parts.length - 1]);
 
     // Reconstruct base account string (everything except 'sub' and name)
     const baseParts = parts.slice(1, -1);
     const baseStr = baseParts.join(':');
 
-    const base = parseAccountId(baseStr);
+    const base = parseAccountIdImpl(baseStr, depth + 1, maxDepth, options);
     if (!base) {
       return undefined;
     }
@@ -282,12 +530,14 @@ export function parseAccountId(str: string): AccountId | undefined {
  *
  * @param a - Первый AccountId
  * @param b - Второй AccountId
- * @returns true если AccountId идентичны
+ * @returns true если AccountId идентичны, false если разные или превышен depth limit
  *
  * @remarks
  * Deep comparison для всех типов аккаунтов.
  * Для WALLET использует case-insensitive сравнение addresses.
  * Для SUBACCOUNT рекурсивно сравнивает base accounts.
+ *
+ * При превышении MAX_SUBACCOUNT_DEPTH возвращает false (безопасный fallback).
  *
  * @example
  * ```typescript
@@ -295,9 +545,36 @@ export function parseAccountId(str: string): AccountId | undefined {
  * const acc2 = accountIdFromWallet(parseWalletAddress('0xabc...')!);
  *
  * accountIdEquals(acc1, acc2); // → true (case-insensitive)
+ *
+ * // Глубоко вложенные структуры:
+ * accountIdEquals(deeplyNested1, deeplyNested2); // → false (depth limit)
  * ```
  */
 export function accountIdEquals(a: AccountId, b: AccountId): boolean {
+  return accountIdEqualsImpl(a, b, 0);
+}
+
+/**
+ * Internal implementation с depth tracking
+ *
+ * @param a - Первый AccountId
+ * @param b - Второй AccountId
+ * @param depth - Текущая глубина рекурсии
+ * @returns true если AccountId идентичны, false если разные или превышен depth limit
+ *
+ * @remarks
+ * Рекурсивная реализация с отслеживанием глубины.
+ * При каждом рекурсивном вызове для SUBACCOUNT инкрементирует depth.
+ * Проверка depth > MAX_SUBACCOUNT_DEPTH предотвращает stack overflow.
+ *
+ * Возвращает false (безопасный fallback) при превышении depth limit,
+ * вместо crash или throw.
+ */
+function accountIdEqualsImpl(a: AccountId, b: AccountId, depth: number): boolean {
+  if (depth > MAX_SUBACCOUNT_DEPTH) {
+    return false;
+  }
+
   if (a.kind !== b.kind) {
     return false;
   }
@@ -311,7 +588,7 @@ export function accountIdEquals(a: AccountId, b: AccountId): boolean {
   }
 
   if (a.kind === 'SUBACCOUNT' && b.kind === 'SUBACCOUNT') {
-    return accountIdEquals(a.base, b.base) && a.name === b.name;
+    return accountIdEqualsImpl(a.base, b.base, depth + 1) && a.name === b.name;
   }
 
   return false;
@@ -374,49 +651,144 @@ export function isSubaccount(id: AccountId): id is Extract<AccountId, { kind: 'S
 }
 
 /**
- * Helper: escape colons в строке
+ * Helper: escape backslashes и colons в строке
+ *
+ * @param str - Строка для экранирования
+ * @returns Строка с экранированными '\' и ':'
+ *
+ * @remarks
+ * Порядок важен: сначала '\' → '\\', затем ':' → '\:'
+ * Это обеспечивает правильный round-trip для строк типа "user\:123"
+ *
+ * Алгоритм:
+ * 1. Заменяем все '\' на '\\' (backslash escaping)
+ * 2. Заменяем все ':' на '\:' (colon escaping)
+ *
+ * Если поменять порядок, round-trip сломается.
  */
-function escapeColon(str: string): string {
-  return str.replace(/:/g, '\\:');
+function escape(str: string): string {
+  // Сначала escape backslash, потом colon
+  return str.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
 }
 
 /**
- * Helper: unescape colons в строке
+ * Helper: unescape backslashes и colons в строке
+ *
+ * @param str - Строка для декодирования
+ * @returns Строка с раскодированными escape-последовательностями
+ *
+ * @remarks
+ * Посимвольный автомат для корректной обработки:
+ * - '\\' → '\'
+ * - '\:' → ':'
+ * - Любой другой символ после '\' остаётся как есть
+ *
+ * Алгоритм:
+ * 1. Итерируем по символам строки
+ * 2. При встрече '\' проверяем следующий символ:
+ *    - Если '\\' → добавляем '\', пропускаем оба символа
+ *    - Если '\:' → добавляем ':', пропускаем оба символа
+ *    - Иначе → добавляем '\', продолжаем с текущей позиции
+ * 3. Обычные символы просто добавляем в результат
+ *
+ * Не использует простой replace(), так как это не обработает
+ * правильно последовательности типа '\\\:' (backslash + escaped colon).
  */
-function unescapeColon(str: string): string {
-  return str.replace(/\\:/g, ':');
-}
+function unescape(str: string): string {
+  let result = '';
+  let i = 0;
 
-/**
- * Helper: split string с учётом escaped separators
- */
-function splitWithEscape(str: string, separator: string): string[] {
-  const parts: string[] = [];
-  let current = '';
-  let escaped = false;
-
-  for (let i = 0; i < str.length; i++) {
+  while (i < str.length) {
     const char = str[i];
 
-    if (escaped) {
-      current += char;
-      escaped = false;
+    if (char === '\\' && i + 1 < str.length) {
+      const next = str[i + 1];
+
+      if (next === '\\') {
+        result += '\\';
+        i += 2;
+        continue;
+      }
+
+      if (next === ':') {
+        result += ':';
+        i += 2;
+        continue;
+      }
+
+      // Неизвестная escape-последовательность - оставляем как есть
+      result += char;
+      i++;
       continue;
     }
 
-    if (char === '\\') {
-      escaped = true;
+    result += char;
+    i++;
+  }
+
+  return result;
+}
+
+/**
+ * Helper: split строки по ':' с учётом escaped separators
+ *
+ * @param str - Строка для разбиения
+ * @returns Массив частей строки, разделённых неэкранированными ':'
+ *
+ * @remarks
+ * Посимвольный автомат:
+ * - '\\' → literal '\' (не устанавливает escape-флаг)
+ * - '\:' → literal ':' (не разделитель)
+ * - ':' → разделитель
+ *
+ * Алгоритм:
+ * 1. Итерируем по символам строки
+ * 2. При встрече '\' проверяем следующий символ:
+ *    - Если '\\' или '\:' → добавляем оба символа в current, пропускаем оба
+ *    - Иначе → добавляем '\' в current, продолжаем
+ * 3. При встрече неэкранированного ':':
+ *    - Добавляем current в parts
+ *    - Обнуляем current
+ * 4. Обычные символы просто добавляем в current
+ * 5. В конце добавляем последний current в parts
+ *
+ * Не использует простой split(':'), так как это не учитывает
+ * экранированные colons типа '\:'.
+ */
+function splitEscaped(str: string): string[] {
+  const parts: string[] = [];
+  let current = '';
+  let i = 0;
+
+  while (i < str.length) {
+    const char = str[i];
+
+    if (char === '\\' && i + 1 < str.length) {
+      const next = str[i + 1];
+
+      if (next === '\\' || next === ':') {
+        // Escaped backslash или colon - добавляем оба символа в current
+        current += char + next;
+        i += 2;
+        continue;
+      }
+
+      // Обычный backslash - не escape-последовательность
       current += char;
+      i++;
       continue;
     }
 
-    if (char === separator) {
+    if (char === ':') {
+      // Неэкранированный разделитель
       parts.push(current);
       current = '';
+      i++;
       continue;
     }
 
     current += char;
+    i++;
   }
 
   parts.push(current);

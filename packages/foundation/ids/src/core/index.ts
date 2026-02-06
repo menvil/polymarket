@@ -69,8 +69,9 @@ export {
   walletAddressToString,
 } from './WalletAddress.js';
 
-export type { AccountId } from './AccountId.js';
+export type { AccountId, ParseAccountIdOptions } from './AccountId.js';
 export {
+  AccountIdDepthError,
   accountIdFromWallet,
   accountIdFromVenue,
   accountIdForSubaccount,
@@ -80,6 +81,7 @@ export {
   isWalletAccount,
   isVenueAccount,
   isSubaccount,
+  getSubaccountDepth,
 } from './AccountId.js';
 
 // Venue

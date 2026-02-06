@@ -4,6 +4,7 @@ export default {
   extensionsToTreatAsEsm: ['.ts'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
+    '^@polymarket/result$': '<rootDir>/../result/src/index.ts',
   },
   transform: {
     '^.+\\.ts$': [

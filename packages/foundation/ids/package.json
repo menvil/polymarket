@@ -37,6 +37,9 @@
   ],
   "author": "",
   "license": "UNLICENSED",
+  "dependencies": {
+    "@polymarket/result": "workspace:*"
+  },
   "devDependencies": {
     "@jest/globals": "^29.7.0",
     "@types/node": "^20.11.0",
