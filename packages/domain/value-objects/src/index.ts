@@ -62,5 +62,15 @@ export {
   type TokenBalanceJSON
 } from './token-balance/index.js';
 
+// AssetQuantity модуль (только публичный API)
+export {
+  AssetQuantity,
+  AssetQuantityService,
+  AssetQuantitySerializer,
+  AssetQuantityFormatter,
+  AssetQuantityErrorReason,
+  type AssetQuantityJSON
+} from './asset-quantity/index.js';
+
 // TODO: Implement these value objects
 // export { Quote } from './Quote.js';
