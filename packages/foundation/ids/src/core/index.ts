@@ -27,7 +27,7 @@ export type { ChainId } from './ChainId.js';
 export { KnownChainIds, getChainName, isValidChainId, chainId, parseChainId } from './ChainId.js';
 
 export type { ConditionId } from './ConditionId.js';
-export { isValidConditionId } from './ConditionId.js';
+export { isValidConditionId, parseConditionId, normalizeConditionId } from './ConditionId.js';
 
 export type { ConditionRef, OnChainConditionRef, OffChainConditionRef } from './ConditionRef.js';
 export {
