@@ -8,6 +8,10 @@ import {
   KnownChainIds,
   KnownVenues,
   KnownOnChainProtocols,
+  isKnownVenue,
+  asVenueId,
+  isKnownOnChainProtocol,
+  asOnChainProtocolId,
   AssetIdHelpers,
   conditionRefEquals,
   conditionRefToString,
@@ -318,6 +322,67 @@ describe('Core IDs', () => {
 
       expect(polymarket).toBe('POLYMARKET');
       expect(kalshi).toBe('KALSHI');
+    });
+
+    it('should validate known venues', () => {
+      expect(isKnownVenue('POLYMARKET')).toBe(true);
+      expect(isKnownVenue('KALSHI')).toBe(true);
+      expect(isKnownVenue('CUSTOM_VENUE')).toBe(false);
+      expect(isKnownVenue('invalid')).toBe(false);
+    });
+
+    it('should parse valid venue ids', () => {
+      expect(asVenueId('POLYMARKET')).toBe('POLYMARKET');
+      expect(asVenueId('KALSHI')).toBe('KALSHI');
+      expect(asVenueId('MY_CUSTOM_VENUE')).toBe('MY_CUSTOM_VENUE');
+      expect(asVenueId('VENUE_123')).toBe('VENUE_123');
+    });
+
+    it('should reject invalid venue formats', () => {
+      expect(asVenueId('invalid-venue')).toBeUndefined(); // дефис
+      expect(asVenueId('123VENUE')).toBeUndefined(); // начинается с цифры
+      expect(asVenueId('')).toBeUndefined(); // пустая строка
+      expect(asVenueId('has:colon')).toBeUndefined(); // двоеточие
+      expect(asVenueId('has\\backslash')).toBeUndefined(); // backslash
+      expect(asVenueId('lowercase')).toBeUndefined(); // lowercase
+      expect(asVenueId('A'.repeat(33))).toBeUndefined(); // слишком длинная (>32)
+    });
+  });
+
+  describe('OnChainProtocolId', () => {
+    it('should have known protocols', () => {
+      const polymarket = KnownOnChainProtocols.POLYMARKET_CTF;
+      const uma = KnownOnChainProtocols.UMA_CTF;
+      const gnosis = KnownOnChainProtocols.GNOSIS_CTF;
+
+      expect(polymarket).toBe('POLYMARKET_CTF');
+      expect(uma).toBe('UMA_CTF');
+      expect(gnosis).toBe('GNOSIS_CTF');
+    });
+
+    it('should validate known protocols', () => {
+      expect(isKnownOnChainProtocol('POLYMARKET_CTF')).toBe(true);
+      expect(isKnownOnChainProtocol('UMA_CTF')).toBe(true);
+      expect(isKnownOnChainProtocol('GNOSIS_CTF')).toBe(true);
+      expect(isKnownOnChainProtocol('CUSTOM_PROTO')).toBe(false);
+      expect(isKnownOnChainProtocol('invalid')).toBe(false);
+    });
+
+    it('should parse valid protocol ids', () => {
+      expect(asOnChainProtocolId('POLYMARKET_CTF')).toBe('POLYMARKET_CTF');
+      expect(asOnChainProtocolId('UMA_CTF')).toBe('UMA_CTF');
+      expect(asOnChainProtocolId('CUSTOM_PROTO')).toBe('CUSTOM_PROTO');
+      expect(asOnChainProtocolId('MY_CTF_123')).toBe('MY_CTF_123');
+    });
+
+    it('should reject invalid protocol formats', () => {
+      expect(asOnChainProtocolId('invalid-proto')).toBeUndefined(); // дефис
+      expect(asOnChainProtocolId('123PROTO')).toBeUndefined(); // начинается с цифры
+      expect(asOnChainProtocolId('')).toBeUndefined(); // пустая строка
+      expect(asOnChainProtocolId('has:colon')).toBeUndefined(); // двоеточие
+      expect(asOnChainProtocolId('has\\backslash')).toBeUndefined(); // backslash
+      expect(asOnChainProtocolId('lowercase')).toBeUndefined(); // lowercase
+      expect(asOnChainProtocolId('A'.repeat(33))).toBeUndefined(); // слишком длинная (>32)
     });
   });
 

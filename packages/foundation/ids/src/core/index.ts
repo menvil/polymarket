@@ -21,6 +21,7 @@ export {
   isKnownOnChainProtocol,
   isKnownProtocol,
   KnownOnChainProtocols,
+  asOnChainProtocolId,
 } from './ProtocolId.js';
 
 export type { ChainId } from './ChainId.js';
