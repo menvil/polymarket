@@ -1,11 +1,12 @@
 import type { OnChainConditionRef } from './ConditionRef.js';
 import type { OutcomeKey } from './OutcomeKey.js';
 import type { SupportedCurrency } from './Currency.js';
-import type { OnChainProtocolId } from './ProtocolId.js';
 import type { ChainId } from './ChainId.js';
 import type { ConditionId } from './ConditionId.js';
 import { KnownCurrencies, isSupportedCurrency } from './Currency.js';
-import { outcomeKey } from './OutcomeKey.js';
+import { parseOutcomeKey } from './OutcomeKey.js';
+import { isKnownOnChainProtocol } from './ProtocolId.js';
+import { isValidConditionId } from './ConditionId.js';
 
 /**
  * AssetId - универсальный идентификатор актива
@@ -253,8 +254,28 @@ export function parseAssetId(str: string): AssetId | undefined {
       return undefined;
     }
 
-    const chainId = parseInt(chainIdStr, 10);
-    if (isNaN(chainId)) {
+    // Валидация ChainId: строгая проверка числа (не parseInt!)
+    if (!/^\d+$/.test(chainIdStr)) {
+      return undefined;
+    }
+    const chainIdNum = Number(chainIdStr);
+    if (!Number.isFinite(chainIdNum) || chainIdNum < 0 || !Number.isInteger(chainIdNum)) {
+      return undefined;
+    }
+
+    // Валидация OnChainProtocolId
+    if (!isKnownOnChainProtocol(protocolId)) {
+      return undefined;
+    }
+
+    // Валидация ConditionId
+    if (!isValidConditionId(conditionId)) {
+      return undefined;
+    }
+
+    // Валидация OutcomeKey
+    const validatedOutcomeKey = parseOutcomeKey(outcomeKeyStr);
+    if (!validatedOutcomeKey) {
       return undefined;
     }
 
@@ -262,11 +283,11 @@ export function parseAssetId(str: string): AssetId | undefined {
       type: 'OUTCOME_TOKEN',
       conditionRef: {
         kind: 'ONCHAIN',
-        protocolId: protocolId as OnChainProtocolId,
-        chainId: chainId as ChainId,
+        protocolId,
+        chainId: chainIdNum as ChainId,
         conditionId: conditionId as ConditionId,
       },
-      outcomeKey: outcomeKey(outcomeKeyStr),
+      outcomeKey: validatedOutcomeKey,
     };
   }
 

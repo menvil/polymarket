@@ -51,6 +51,7 @@ export {
 export type { OutcomeKey } from './OutcomeKey.js';
 export {
   outcomeKey,
+  parseOutcomeKey,
   BinaryOutcome,
   outcomeKeyToIndex,
   indexToOutcomeKey,

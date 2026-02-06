@@ -41,6 +41,9 @@ export type OutcomeKey = string & { readonly __brand: 'OutcomeKey' };
  * Используй эту функцию для создания custom outcome keys.
  * Для стандартных бинарных рынков используй константы BinaryOutcome.UP/DOWN.
  *
+ * ⚠️ ВАЖНО: Эта функция не выполняет валидацию!
+ * Для парсинга из внешних источников используй parseOutcomeKey().
+ *
  * @example
  * ```typescript
  * // Бинарный рынок
@@ -55,6 +58,63 @@ export type OutcomeKey = string & { readonly __brand: 'OutcomeKey' };
  */
 export function outcomeKey(key: string): OutcomeKey {
   return key as OutcomeKey;
+}
+
+/**
+ * Максимальная длина OutcomeKey
+ *
+ * @remarks
+ * Ограничение для предотвращения атак через слишком длинные ключи
+ */
+const MAX_OUTCOME_KEY_LENGTH = 32;
+
+/**
+ * Парсинг OutcomeKey из строки с валидацией
+ *
+ * @param raw - Строка для парсинга
+ * @returns OutcomeKey или undefined если формат невалидный
+ *
+ * @remarks
+ * Валидирует OutcomeKey:
+ * - Не пустая строка
+ * - Длина не более 32 символов
+ * - Не содержит двоеточие ':' (зарезервировано для сериализации)
+ *
+ * Используй эту функцию при парсинге данных из внешних источников
+ * (API, сериализация, пользовательский ввод).
+ *
+ * Для создания известных ключей используй константы BinaryOutcome или outcomeKey().
+ *
+ * @example
+ * ```typescript
+ * parseOutcomeKey('UP'); // → 'UP' as OutcomeKey
+ * parseOutcomeKey('DOWN'); // → 'DOWN' as OutcomeKey
+ * parseOutcomeKey('TEAM_A'); // → 'TEAM_A' as OutcomeKey
+ *
+ * // Валидация
+ * parseOutcomeKey(''); // → undefined (пустая строка)
+ * parseOutcomeKey('A'.repeat(33)); // → undefined (слишком длинная)
+ * parseOutcomeKey('UP:DOWN'); // → undefined (содержит ':')
+ * parseOutcomeKey('invalid:key'); // → undefined (содержит ':')
+ * ```
+ */
+export function parseOutcomeKey(raw: string): OutcomeKey | undefined {
+  // Проверка: не пустая строка
+  if (raw.length === 0) {
+    return undefined;
+  }
+
+  // Проверка: длина не более MAX_OUTCOME_KEY_LENGTH
+  if (raw.length > MAX_OUTCOME_KEY_LENGTH) {
+    return undefined;
+  }
+
+  // Проверка: не содержит ':' (зарезервировано для сериализации)
+  if (raw.includes(':')) {
+    return undefined;
+  }
+
+  return raw as OutcomeKey;
 }
 
 /**

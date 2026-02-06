@@ -20,6 +20,7 @@ import {
   assetIdToString,
   parseAssetId,
   outcomeKey,
+  parseOutcomeKey,
   BinaryOutcome,
   outcomeKeyToIndex,
   indexToOutcomeKey,
@@ -288,10 +289,10 @@ describe('Core IDs', () => {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
         chainId: KnownChainIds.POLYGON,
-        conditionId: '0xabc123' as any,
+        conditionId: '0xabc123def456' as any,
       };
       const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
-      expect(assetIdToString(token)).toBe('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123:UP');
+      expect(assetIdToString(token)).toBe('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:UP');
     });
 
     it('should parse AssetId from string', () => {
@@ -304,7 +305,7 @@ describe('Core IDs', () => {
       }
 
       // Parse OUTCOME_TOKEN
-      const token = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123:UP');
+      const token = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:UP');
       expect(token).toBeDefined();
       expect(token?.type).toBe('OUTCOME_TOKEN');
       if (token?.type === 'OUTCOME_TOKEN') {
@@ -312,13 +313,83 @@ describe('Core IDs', () => {
         expect(token.conditionRef.kind).toBe('ONCHAIN');
         expect(token.conditionRef.protocolId).toBe('POLYMARKET_CTF');
         expect(token.conditionRef.chainId).toBe(137);
-        expect(token.conditionRef.conditionId).toBe('0xabc123');
+        expect(token.conditionRef.conditionId).toBe('0xabc123def456');
       }
 
       // Invalid formats
       expect(parseAssetId('INVALID:FORMAT')).toBeUndefined();
       expect(parseAssetId('CURRENCY:UNKNOWN_CURRENCY')).toBeUndefined();
       expect(parseAssetId('OUTCOME_TOKEN:INVALID')).toBeUndefined();
+    });
+
+    describe('parseAssetId validation', () => {
+      it('should reject invalid ChainId - parseInt bypass', () => {
+        // parseInt("137abc", 10) возвращает 137, но мы должны это отклонить
+        const invalid1 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137abc:0xabc123def456:UP');
+        expect(invalid1).toBeUndefined();
+
+        // Нечисловая строка
+        const invalid2 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:abc:0xabc123def456:UP');
+        expect(invalid2).toBeUndefined();
+
+        // Отрицательное число
+        const invalid3 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:-1:0xabc123def456:UP');
+        expect(invalid3).toBeUndefined();
+
+        // Дробное число
+        const invalid4 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137.5:0xabc123def456:UP');
+        expect(invalid4).toBeUndefined();
+      });
+
+      it('should reject unknown OnChainProtocolId', () => {
+        const invalid = parseAssetId('OUTCOME_TOKEN:ONCHAIN:UNKNOWN_PROTOCOL:137:0xabc123def456:UP');
+        expect(invalid).toBeUndefined();
+      });
+
+      it('should reject invalid ConditionId', () => {
+        // Без 0x префикса
+        const invalid1 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:abc123:UP');
+        expect(invalid1).toBeUndefined();
+
+        // Не hex символы
+        const invalid2 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xGGGGGG:UP');
+        expect(invalid2).toBeUndefined();
+
+        // Слишком короткий
+        const invalid3 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc:UP');
+        expect(invalid3).toBeUndefined();
+
+        // Пустой
+        const invalid4 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137::UP');
+        expect(invalid4).toBeUndefined();
+      });
+
+      it('should reject invalid OutcomeKey', () => {
+        // Пустой OutcomeKey
+        const invalid1 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:');
+        expect(invalid1).toBeUndefined();
+
+        // OutcomeKey с двоеточием
+        const invalid2 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:UP:DOWN');
+        expect(invalid2).toBeUndefined();
+
+        // OutcomeKey слишком длинный (>32 символов)
+        const tooLong = 'A'.repeat(33);
+        const invalid3 = parseAssetId(`OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:${tooLong}`);
+        expect(invalid3).toBeUndefined();
+      });
+
+      it('should accept valid OUTCOME_TOKEN with all fields validated', () => {
+        const valid = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:UP');
+        expect(valid).toBeDefined();
+        expect(valid?.type).toBe('OUTCOME_TOKEN');
+        if (valid?.type === 'OUTCOME_TOKEN') {
+          expect(valid.conditionRef.protocolId).toBe('POLYMARKET_CTF');
+          expect(valid.conditionRef.chainId).toBe(137);
+          expect(valid.conditionRef.conditionId).toBe('0xabc123def456');
+          expect(valid.outcomeKey).toBe('UP');
+        }
+      });
     });
 
     it('should support round-trip serialization', () => {
@@ -333,7 +404,7 @@ describe('Core IDs', () => {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
         chainId: KnownChainIds.POLYGON,
-        conditionId: '0xabc123' as any,
+        conditionId: '0xabc123def456' as any,
       };
       const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
       const tokenStr = assetIdToString(token);
@@ -395,6 +466,33 @@ describe('Core IDs', () => {
       const upIndex = outcomeKeyToIndex(BinaryOutcome.UP);
       expect(upIndex).toBe(1);
       expect(indexToOutcomeKey(upIndex!)).toBe(BinaryOutcome.UP);
+    });
+
+    describe('parseOutcomeKey validation', () => {
+      it('should accept valid outcome keys', () => {
+        expect(parseOutcomeKey('UP')).toBe('UP');
+        expect(parseOutcomeKey('DOWN')).toBe('DOWN');
+        expect(parseOutcomeKey('TEAM_A')).toBe('TEAM_A');
+        expect(parseOutcomeKey('OPTION_1')).toBe('OPTION_1');
+        expect(parseOutcomeKey('A')).toBe('A');
+        expect(parseOutcomeKey('A'.repeat(32))).toBe('A'.repeat(32)); // max length
+      });
+
+      it('should reject empty string', () => {
+        expect(parseOutcomeKey('')).toBeUndefined();
+      });
+
+      it('should reject too long strings', () => {
+        const tooLong = 'A'.repeat(33); // max = 32
+        expect(parseOutcomeKey(tooLong)).toBeUndefined();
+      });
+
+      it('should reject strings containing colon', () => {
+        expect(parseOutcomeKey('UP:DOWN')).toBeUndefined();
+        expect(parseOutcomeKey('TEAM:A')).toBeUndefined();
+        expect(parseOutcomeKey(':UP')).toBeUndefined();
+        expect(parseOutcomeKey('UP:')).toBeUndefined();
+      });
     });
   });
 
