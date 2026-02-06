@@ -76,17 +76,23 @@ export function isSupportedCurrency(value: string): value is SupportedCurrency {
  * Константы для известных валют
  *
  * @remarks
- * Используются для удобного доступа к валютам без magic strings.
+ * Автоматически генерируется из SUPPORTED_CURRENCIES.
+ * При добавлении валюты в SUPPORTED_CURRENCIES, эта константа обновляется автоматически.
+ *
+ * Это предотвращает рассинхронизацию между списком валют и константами.
  *
  * @example
  * ```typescript
  * const usdc = KnownCurrencies.USDC;  // 'USDC' as SupportedCurrency
  * const money = Money.of(100, KnownCurrencies.USDC);
+ *
+ * // При добавлении USDT в SUPPORTED_CURRENCIES:
+ * // KnownCurrencies.USDT автоматически появится и будет типизирован
  * ```
  */
-export const KnownCurrencies = {
-  USDC: 'USDC' as SupportedCurrency,
-} as const;
+export const KnownCurrencies = Object.fromEntries(
+  SUPPORTED_CURRENCIES.map((c) => [c, c as SupportedCurrency])
+) as { readonly [K in SupportedCurrency]: K };
 
 /**
  * Нормализация currency code (uppercase, trimmed)
