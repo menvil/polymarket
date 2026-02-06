@@ -1,7 +1,7 @@
 import { Result, Err } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
-import type { OnChainConditionRef, OutcomeKey } from '@polymarket/ids';
-import { outcomeKey as createOutcomeKey } from '@polymarket/ids';
+import type { OnChainConditionRef } from '@polymarket/ids';
+import { parseOutcomeKey } from '@polymarket/ids';
 import { OutcomeToken } from '../core/OutcomeToken.js';
 import { OutcomeTokenService } from '../facade/OutcomeTokenService.js';
 import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/index.js';
@@ -301,6 +301,21 @@ export class OutcomeTokenSerializer {
       );
     }
 
+    // Валидация outcomeKey
+    const outcomeKey = parseOutcomeKey(outcomeKeyValue);
+    if (!outcomeKey) {
+      return Err(
+        new InvalidOutcomeTokenError(
+          `Invalid outcomeKey format: '${outcomeKeyValue}'`,
+          {
+            reason: OutcomeTokenErrorReason.INVALID_OUTCOME_KEY,
+            details: { outcomeKey: outcomeKeyValue },
+          },
+          source
+        )
+      );
+    }
+
     // Создаем OnChainConditionRef
     const onChainRef: OnChainConditionRef = {
       kind: 'ONCHAIN',
@@ -308,8 +323,6 @@ export class OutcomeTokenSerializer {
       chainId: refObj.chainId as any,
       conditionId: refObj.conditionId as any,
     };
-
-    const outcomeKey: OutcomeKey = createOutcomeKey(outcomeKeyValue);
 
     // Делегируем создание OutcomeTokenService
     return OutcomeTokenService.create(onChainRef, outcomeKey, source);

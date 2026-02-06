@@ -16,11 +16,14 @@
  *
  * @example
  * ```typescript
- * // Создание outcome key
- * const upKey = outcomeKey('UP');
- * const downKey = outcomeKey('DOWN');
+ * // Использование констант (compile-time)
+ * const upKey = BinaryOutcome.UP;
+ * const downKey = BinaryOutcome.DOWN;
  *
- * // Использование констант
+ * // Парсинг runtime значений
+ * const userKey = parseOutcomeKey(userInput);
+ *
+ * // Использование в AssetId
  * const upToken = AssetId.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
  * const downToken = AssetId.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
  *
@@ -32,31 +35,34 @@
 export type OutcomeKey = string & { readonly __brand: 'OutcomeKey' };
 
 /**
- * Создать OutcomeKey из строки
+ * @internal
+ * Создать OutcomeKey без валидации
  *
- * @param key - Строковый ключ outcome (например, 'UP', 'DOWN', 'TEAM_A')
+ * @param key - Строковый ключ outcome
  * @returns OutcomeKey с type safety
  *
  * @remarks
- * Используй эту функцию для создания custom outcome keys.
- * Для стандартных бинарных рынков используй константы BinaryOutcome.UP/DOWN.
+ * ⚠️ ВНИМАНИЕ: Эта функция НЕ выполняет валидацию!
+ * Использовать ТОЛЬКО для создания compile-time констант (BinaryOutcome).
  *
- * ⚠️ ВАЖНО: Эта функция не выполняет валидацию!
- * Для парсинга из внешних источников используй parseOutcomeKey().
+ * Для runtime-значений ВСЕГДА используй parseOutcomeKey().
  *
  * @example
  * ```typescript
- * // Бинарный рынок
- * const up = outcomeKey('UP');
- * const down = outcomeKey('DOWN');
+ * // ✅ Правильно: compile-time константы
+ * const BinaryOutcome = {
+ *   UP: unsafeOutcomeKey('UP'),
+ *   DOWN: unsafeOutcomeKey('DOWN')
+ * };
  *
- * // Multi-outcome рынок (future)
- * const teamA = outcomeKey('TEAM_A');
- * const teamB = outcomeKey('TEAM_B');
- * const draw = outcomeKey('DRAW');
+ * // ❌ Неправильно: runtime значения
+ * const userKey = unsafeOutcomeKey(userInput); // НЕТ! Используй parseOutcomeKey()
+ *
+ * // ✅ Правильно: runtime значения
+ * const userKey = parseOutcomeKey(userInput);
  * ```
  */
-export function outcomeKey(key: string): OutcomeKey {
+export function unsafeOutcomeKey(key: string): OutcomeKey {
   return key as OutcomeKey;
 }
 
@@ -109,8 +115,8 @@ export function parseOutcomeKey(raw: string): OutcomeKey | undefined {
     return undefined;
   }
 
-  // Проверка: не содержит ':' (зарезервировано для сериализации)
-  if (raw.includes(':')) {
+  // Проверка: не содержит ':' или '\' (зарезервированы для сериализации/escaping)
+  if (raw.includes(':') || raw.includes('\\')) {
     return undefined;
   }
 
@@ -146,14 +152,14 @@ export const BinaryOutcome = {
    *
    * Семантика: цена идёт вниз, событие не происходит, негативный исход
    */
-  DOWN: outcomeKey('DOWN'),
+  DOWN: unsafeOutcomeKey('DOWN'),
 
   /**
    * UP = 1 (было YES в OutcomeIndex)
    *
    * Семантика: цена идёт вверх, событие происходит, позитивный исход
    */
-  UP: outcomeKey('UP'),
+  UP: unsafeOutcomeKey('UP'),
 } as const;
 
 /**
@@ -248,13 +254,18 @@ export function outcomeKeyEquals(a: OutcomeKey, b: OutcomeKey): boolean {
  *
  * @example
  * ```typescript
- * oppositeOutcome(BinaryOutcome.UP); // → BinaryOutcome.DOWN
- * oppositeOutcome(BinaryOutcome.DOWN); // → BinaryOutcome.UP
- * oppositeOutcome(outcomeKey('CUSTOM')); // → undefined
+ * oppositeOutcomeKey(BinaryOutcome.UP); // → BinaryOutcome.DOWN
+ * oppositeOutcomeKey(BinaryOutcome.DOWN); // → BinaryOutcome.UP
+ * oppositeOutcomeKey(unsafeOutcomeKey('CUSTOM')); // → undefined
  * ```
  */
-export function oppositeOutcome(key: OutcomeKey): OutcomeKey | undefined {
+export function oppositeOutcomeKey(key: OutcomeKey): OutcomeKey | undefined {
   if (key === BinaryOutcome.UP) return BinaryOutcome.DOWN;
   if (key === BinaryOutcome.DOWN) return BinaryOutcome.UP;
   return undefined;
 }
+
+/**
+ * @deprecated Переименован в oppositeOutcomeKey для избежания коллизии с OutcomeIndex.ts
+ */
+export const oppositeOutcome = oppositeOutcomeKey;

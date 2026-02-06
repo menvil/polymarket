@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { OutcomeToken, OutcomeTokenInvariantViolation } from '../../../../src/outcome-token/core/index.js';
 import type { OnChainConditionRef } from '@polymarket/ids';
-import { BinaryOutcome, KnownOnChainProtocols, outcomeKey } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols, unsafeOutcomeKey } from '@polymarket/ids';
 
 describe('OutcomeToken (Core)', () => {
   const testConditionRef: OnChainConditionRef = {
@@ -105,7 +105,7 @@ describe('OutcomeToken (Core)', () => {
 
   describe('custom outcome keys', () => {
     it('should support custom outcome keys', () => {
-      const customKey = outcomeKey('TEAM_A');
+      const customKey = unsafeOutcomeKey('TEAM_A');
       const token = OutcomeToken.of(testConditionRef, customKey);
 
       expect(token.outcomeKey()).toBe('TEAM_A');

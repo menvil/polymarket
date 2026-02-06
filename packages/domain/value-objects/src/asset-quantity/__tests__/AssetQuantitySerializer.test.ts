@@ -10,7 +10,7 @@ describe('AssetQuantitySerializer', () => {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
     chainId: KnownChainIds.POLYGON,
-    conditionId: '0xabc123def456' as ConditionId,
+    conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as ConditionId,
   };
 
   describe('toJSON() - Currency', () => {
@@ -64,7 +64,7 @@ describe('AssetQuantitySerializer', () => {
       expect(json.asset).toContain('ONCHAIN');
       expect(json.asset).toContain(KnownOnChainProtocols.POLYMARKET_CTF);
       expect(json.asset).toContain('137');
-      expect(json.asset).toContain('0xabc123def456');
+      expect(json.asset).toContain('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
       expect(json.asset).toContain('UP');
       expect(json.amount).toBe('50.25');
     });
@@ -104,7 +104,7 @@ describe('AssetQuantitySerializer', () => {
   describe('fromJSON() - OutcomeToken', () => {
     it('десериализует валидный outcome token JSON', () => {
       const json = {
-        asset: `OUTCOME_TOKEN:ONCHAIN:${KnownOnChainProtocols.POLYMARKET_CTF}:137:0xabc123def456:UP`,
+        asset: `OUTCOME_TOKEN:ONCHAIN:${KnownOnChainProtocols.POLYMARKET_CTF}:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:UP`,
         amount: '50.25',
       };
 

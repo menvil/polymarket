@@ -43,20 +43,20 @@ export type { OutcomeIndex } from './OutcomeIndex.js';
 export {
   OutcomeIndex as OutcomeIndexValues,
   isValidOutcomeIndex,
-  oppositeOutcome,
   outcomeIndexToString,
   parseOutcomeIndex,
 } from './OutcomeIndex.js';
 
 export type { OutcomeKey } from './OutcomeKey.js';
 export {
-  outcomeKey,
+  unsafeOutcomeKey,
   parseOutcomeKey,
   BinaryOutcome,
   outcomeKeyToIndex,
   indexToOutcomeKey,
   outcomeKeyEquals,
-  oppositeOutcome as oppositeOutcomeKey,
+  oppositeOutcomeKey,
+  oppositeOutcome, // @deprecated - используй oppositeOutcomeKey
 } from './OutcomeKey.js';
 
 // Account & Wallet

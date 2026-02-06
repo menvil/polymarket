@@ -1,4 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
+import { oppositeOutcome as oppositeOutcomeIndex } from '../src/core/OutcomeIndex.js';
 import {
   type AccountId,
   type ConditionRef,
@@ -16,11 +17,10 @@ import {
   parseConditionRef,
   outcomeIndexToString,
   parseOutcomeIndex,
-  oppositeOutcome,
   assetIdEquals,
   assetIdToString,
   parseAssetId,
-  outcomeKey,
+  unsafeOutcomeKey,
   parseOutcomeKey,
   BinaryOutcome,
   outcomeKeyToIndex,
@@ -341,8 +341,8 @@ describe('Core IDs', () => {
     });
 
     it('should get opposite outcome', () => {
-      expect(oppositeOutcome(1)).toBe(0);
-      expect(oppositeOutcome(0)).toBe(1);
+      expect(oppositeOutcomeIndex(1)).toBe(0);
+      expect(oppositeOutcomeIndex(0)).toBe(1);
     });
   });
 
@@ -533,14 +533,22 @@ describe('Core IDs', () => {
   });
 
   describe('OutcomeKey', () => {
-    it('should create outcome key from string', () => {
-      const upKey = outcomeKey('UP');
-      const downKey = outcomeKey('DOWN');
-      const customKey = outcomeKey('TEAM_A');
+    describe('unsafeOutcomeKey', () => {
+      it('should create outcome key without validation (compile-time constants)', () => {
+        const upKey = unsafeOutcomeKey('UP');
+        const downKey = unsafeOutcomeKey('DOWN');
+        const customKey = unsafeOutcomeKey('TEAM_A');
 
-      expect(upKey).toBe('UP');
-      expect(downKey).toBe('DOWN');
-      expect(customKey).toBe('TEAM_A');
+        expect(upKey).toBe('UP');
+        expect(downKey).toBe('DOWN');
+        expect(customKey).toBe('TEAM_A');
+      });
+
+      it('should NOT validate input (internal use only)', () => {
+        // ⚠️ Эта функция НЕ валидирует - используется только для BinaryOutcome констант
+        const invalid = unsafeOutcomeKey(':::garbage\\\\');
+        expect(invalid).toBe(':::garbage\\\\'); // проходит без валидации
+      });
     });
 
     it('should have binary outcome constants', () => {
@@ -551,7 +559,7 @@ describe('Core IDs', () => {
     it('should convert outcome key to index', () => {
       expect(outcomeKeyToIndex(BinaryOutcome.DOWN)).toBe(0);
       expect(outcomeKeyToIndex(BinaryOutcome.UP)).toBe(1);
-      expect(outcomeKeyToIndex(outcomeKey('UNKNOWN'))).toBeUndefined();
+      expect(outcomeKeyToIndex(unsafeOutcomeKey('UNKNOWN'))).toBeUndefined();
     });
 
     it('should convert index to outcome key', () => {
@@ -562,7 +570,7 @@ describe('Core IDs', () => {
 
     it('should compare outcome keys', () => {
       const up1 = BinaryOutcome.UP;
-      const up2 = outcomeKey('UP');
+      const up2 = unsafeOutcomeKey('UP');
       const down = BinaryOutcome.DOWN;
 
       expect(outcomeKeyEquals(up1, up2)).toBe(true);
@@ -572,7 +580,7 @@ describe('Core IDs', () => {
     it('should get opposite outcome for binary', () => {
       expect(oppositeOutcomeKey(BinaryOutcome.UP)).toBe(BinaryOutcome.DOWN);
       expect(oppositeOutcomeKey(BinaryOutcome.DOWN)).toBe(BinaryOutcome.UP);
-      expect(oppositeOutcomeKey(outcomeKey('CUSTOM'))).toBeUndefined();
+      expect(oppositeOutcomeKey(unsafeOutcomeKey('CUSTOM'))).toBeUndefined();
     });
 
     it('should support round-trip conversion', () => {
@@ -611,6 +619,14 @@ describe('Core IDs', () => {
         expect(parseOutcomeKey('TEAM:A')).toBeUndefined();
         expect(parseOutcomeKey(':UP')).toBeUndefined();
         expect(parseOutcomeKey('UP:')).toBeUndefined();
+      });
+
+      it('should reject strings containing backslash', () => {
+        expect(parseOutcomeKey('UP\\DOWN')).toBeUndefined();
+        expect(parseOutcomeKey('TEAM\\A')).toBeUndefined();
+        expect(parseOutcomeKey('\\UP')).toBeUndefined();
+        expect(parseOutcomeKey('UP\\')).toBeUndefined();
+        expect(parseOutcomeKey('key\\value')).toBeUndefined();
       });
     });
   });
