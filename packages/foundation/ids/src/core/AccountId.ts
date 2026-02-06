@@ -290,7 +290,7 @@ export function accountIdForSubaccount(
  * Преобразовать AccountId в строку для serialization
  *
  * @param id - AccountId для преобразования
- * @returns Result со строковым представлением или ошибкой при превышении depth limit
+ * @returns Строковое представление
  *
  * @remarks
  * Canonical format с escaping для безопасного парсинга:
@@ -301,27 +301,26 @@ export function accountIdForSubaccount(
  *
  * Escaping: '\' и ':' в userId/name экранируются ('\\' и '\:')
  *
- * Использует Result pattern вместо exceptions для явной обработки ошибок.
+ * Тотальная функция: всегда возвращает string, никогда не падает.
+ * Инвариант depth <= MAX_SUBACCOUNT_DEPTH гарантируется фабрикой accountIdForSubaccount.
+ * Bounded loop с safety margin как страховка (dev-only assertion при превышении).
  *
  * @example
  * ```typescript
  * const walletAcc = accountIdFromWallet(parseWalletAddress('0x1234...')!);
- * const result = accountIdToString(walletAcc);
- * if (result.ok) {
- *   console.log(result.value);
- *   // → 'wallet:0x1234...'
- * }
+ * const str = accountIdToString(walletAcc);
+ * console.log(str); // → 'wallet:0x1234...'
  *
  * const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
- * const result2 = accountIdToString(venueAcc);
- * // → Ok('venue:POLYMARKET:user\\:123') (escaped colon)
+ * accountIdToString(venueAcc);
+ * // → 'venue:POLYMARKET:user\\:123' (escaped colon)
  *
  * const specialChars = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:test');
- * const result3 = accountIdToString(specialChars);
- * // → Ok('venue:POLYMARKET:user\\\\\\:test') (escaped backslash and colon)
+ * accountIdToString(specialChars);
+ * // → 'venue:POLYMARKET:user\\\\\\:test' (escaped backslash and colon)
  * ```
  */
-export function accountIdToString(id: AccountId): Result<string, AccountIdDepthError> {
+export function accountIdToString(id: AccountId): string {
   return accountIdToStringImpl(id, 0);
 }
 
@@ -330,40 +329,42 @@ export function accountIdToString(id: AccountId): Result<string, AccountIdDepthE
  *
  * @param id - AccountId для преобразования
  * @param depth - Текущая глубина рекурсии
- * @returns Result со строковым представлением или ошибкой
+ * @returns Строковое представление
  *
  * @remarks
  * Рекурсивная реализация с отслеживанием глубины.
  * При каждом вызове для SUBACCOUNT инкрементирует depth.
- * Проверка depth > MAX_SUBACCOUNT_DEPTH предотвращает stack overflow.
+ * Bounded loop с safety margin (MAX_SUBACCOUNT_DEPTH + 10).
+ * Если инвариант нарушен (depth > limit) — dev-only assertion, возвращает fallback string.
  */
-function accountIdToStringImpl(
-  id: AccountId,
-  depth: number
-): Result<string, AccountIdDepthError> {
-  if (depth > MAX_SUBACCOUNT_DEPTH) {
-    return Err(
-      new AccountIdDepthError(depth, MAX_SUBACCOUNT_DEPTH, 'serialize')
-    );
+function accountIdToStringImpl(id: AccountId, depth: number): string {
+  // Bounded loop защита с safety margin
+  const SAFETY_MARGIN = 10;
+  if (depth > MAX_SUBACCOUNT_DEPTH + SAFETY_MARGIN) {
+    // Dev-only assertion: не должно случиться если фабрика держит инвариант
+    if (process.env.NODE_ENV !== 'production') {
+      console.assert(
+        false,
+        `Unexpected depth ${depth} > ${MAX_SUBACCOUNT_DEPTH} in accountIdToString. This indicates a bug in accountIdForSubaccount.`
+      );
+    }
+    // Fallback для production: возвращаем placeholder вместо crash
+    return '[INVALID:DEPTH_EXCEEDED]';
   }
 
   if (id.kind === 'WALLET') {
-    return Ok(`wallet:${id.address}`);
+    return `wallet:${id.address}`;
   }
 
   if (id.kind === 'VENUE') {
     const escapedUserId = escape(id.userId);
-    return Ok(`venue:${id.venueId}:${escapedUserId}`);
+    return `venue:${id.venueId}:${escapedUserId}`;
   }
 
   // SUBACCOUNT
-  const baseResult = accountIdToStringImpl(id.base, depth + 1);
-  if (!baseResult.ok) {
-    return baseResult;
-  }
-
+  const baseStr = accountIdToStringImpl(id.base, depth + 1);
   const escapedName = escape(id.name);
-  return Ok(`sub:${baseResult.value}:${escapedName}`);
+  return `sub:${baseStr}:${escapedName}`;
 }
 
 /**

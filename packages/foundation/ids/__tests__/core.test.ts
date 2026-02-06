@@ -517,51 +517,31 @@ describe('Core IDs', () => {
     it('should convert to string', () => {
       // Wallet account
       const walletAcc = accountIdFromWallet(testWallet);
-      const walletResult = accountIdToString(walletAcc);
-      expect(walletResult.ok).toBe(true);
-      if (walletResult.ok) {
-        expect(walletResult.value).toBe(`wallet:${testWallet}`);
-      }
+      expect(accountIdToString(walletAcc)).toBe(`wallet:${testWallet}`);
 
       // Venue account
       const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
-      const venueResult = accountIdToString(venueAcc);
-      expect(venueResult.ok).toBe(true);
-      if (venueResult.ok) {
-        expect(venueResult.value).toBe('venue:POLYMARKET:user_123');
-      }
+      expect(accountIdToString(venueAcc)).toBe('venue:POLYMARKET:user_123');
 
       // Subaccount
       const subResult = accountIdForSubaccount(walletAcc, 'trading');
       expect(subResult.ok).toBe(true);
       if (subResult.ok) {
-        const strResult = accountIdToString(subResult.value);
-        expect(strResult.ok).toBe(true);
-        if (strResult.ok) {
-          expect(strResult.value).toBe(`sub:wallet:${testWallet}:trading`);
-        }
+        expect(accountIdToString(subResult.value)).toBe(`sub:wallet:${testWallet}:trading`);
       }
     });
 
     it('should escape colons in userId and name', () => {
       // Venue account with colon in userId
       const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
-      const venueResult = accountIdToString(venueAcc);
-      expect(venueResult.ok).toBe(true);
-      if (venueResult.ok) {
-        expect(venueResult.value).toBe('venue:POLYMARKET:user\\:123');
-      }
+      expect(accountIdToString(venueAcc)).toBe('venue:POLYMARKET:user\\:123');
 
       // Subaccount with colon in name
       const walletAcc = accountIdFromWallet(testWallet);
       const subResult = accountIdForSubaccount(walletAcc, 'strategy:main');
       expect(subResult.ok).toBe(true);
       if (subResult.ok) {
-        const strResult = accountIdToString(subResult.value);
-        expect(strResult.ok).toBe(true);
-        if (strResult.ok) {
-          expect(strResult.value).toContain('strategy\\:main');
-        }
+        expect(accountIdToString(subResult.value)).toContain('strategy\\:main');
       }
     });
 
@@ -610,32 +590,23 @@ describe('Core IDs', () => {
     it('should support round-trip serialization', () => {
       // Wallet account
       const walletAcc = accountIdFromWallet(testWallet);
-      const walletStrResult = accountIdToString(walletAcc);
-      expect(walletStrResult.ok).toBe(true);
-      if (walletStrResult.ok) {
-        const walletParsed = parseAccountId(walletStrResult.value);
-        expect(accountIdEquals(walletAcc, walletParsed!)).toBe(true);
-      }
+      const walletStr = accountIdToString(walletAcc);
+      const walletParsed = parseAccountId(walletStr);
+      expect(accountIdEquals(walletAcc, walletParsed!)).toBe(true);
 
       // Venue account
       const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
-      const venueStrResult = accountIdToString(venueAcc);
-      expect(venueStrResult.ok).toBe(true);
-      if (venueStrResult.ok) {
-        const venueParsed = parseAccountId(venueStrResult.value);
-        expect(accountIdEquals(venueAcc, venueParsed!)).toBe(true);
-      }
+      const venueStr = accountIdToString(venueAcc);
+      const venueParsed = parseAccountId(venueStr);
+      expect(accountIdEquals(venueAcc, venueParsed!)).toBe(true);
 
       // Subaccount
       const subResult = accountIdForSubaccount(walletAcc, 'strategy:main');
       expect(subResult.ok).toBe(true);
       if (subResult.ok) {
-        const subStrResult = accountIdToString(subResult.value);
-        expect(subStrResult.ok).toBe(true);
-        if (subStrResult.ok) {
-          const subParsed = parseAccountId(subStrResult.value);
-          expect(accountIdEquals(subResult.value, subParsed!)).toBe(true);
-        }
+        const subStr = accountIdToString(subResult.value);
+        const subParsed = parseAccountId(subStr);
+        expect(accountIdEquals(subResult.value, subParsed!)).toBe(true);
       }
     });
 
@@ -668,13 +639,10 @@ describe('Core IDs', () => {
       expect(subResult2.ok).toBe(true);
       if (!subResult2.ok) return;
 
-      const strResult = accountIdToString(subResult2.value);
-      expect(strResult.ok).toBe(true);
-      if (!strResult.ok) return;
+      const str = accountIdToString(subResult2.value);
+      expect(str).toContain('sub:sub:wallet');
 
-      expect(strResult.value).toContain('sub:sub:wallet');
-
-      const parsed = parseAccountId(strResult.value);
+      const parsed = parseAccountId(str);
       expect(accountIdEquals(subResult2.value, parsed!)).toBe(true);
     });
 
@@ -702,11 +670,9 @@ describe('Core IDs', () => {
       it('should handle backslashes in round-trip', () => {
         // Строка с backslash и colon
         const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:123');
-        const strResult = accountIdToString(venueAcc);
-        expect(strResult.ok).toBe(true);
-        if (!strResult.ok) return;
+        const str = accountIdToString(venueAcc);
+        const parsed = parseAccountId(str);
 
-        const parsed = parseAccountId(strResult.value);
         expect(parsed).toBeDefined();
         if (parsed?.kind === 'VENUE') {
           expect(parsed.userId).toBe('user\\:123'); // round-trip сохраняет backslash
@@ -716,11 +682,9 @@ describe('Core IDs', () => {
       it('should handle double backslashes', () => {
         // Строка с двойным backslash
         const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'name\\\\with\\\\slashes');
-        const strResult = accountIdToString(venueAcc);
-        expect(strResult.ok).toBe(true);
-        if (!strResult.ok) return;
+        const str = accountIdToString(venueAcc);
+        const parsed = parseAccountId(str);
 
-        const parsed = parseAccountId(strResult.value);
         expect(parsed).toBeDefined();
         if (parsed?.kind === 'VENUE') {
           expect(parsed.userId).toBe('name\\\\with\\\\slashes');
@@ -729,11 +693,9 @@ describe('Core IDs', () => {
 
       it('should handle empty strings', () => {
         const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, '');
-        const strResult = accountIdToString(venueAcc);
-        expect(strResult.ok).toBe(true);
-        if (!strResult.ok) return;
+        const str = accountIdToString(venueAcc);
+        const parsed = parseAccountId(str);
 
-        const parsed = parseAccountId(strResult.value);
         expect(parsed).toBeDefined();
         if (parsed?.kind === 'VENUE') {
           expect(parsed.userId).toBe('');
@@ -742,11 +704,9 @@ describe('Core IDs', () => {
 
       it('should handle only colon', () => {
         const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, ':');
-        const strResult = accountIdToString(venueAcc);
-        expect(strResult.ok).toBe(true);
-        if (!strResult.ok) return;
+        const str = accountIdToString(venueAcc);
+        const parsed = parseAccountId(str);
 
-        const parsed = parseAccountId(strResult.value);
         expect(parsed).toBeDefined();
         if (parsed?.kind === 'VENUE') {
           expect(parsed.userId).toBe(':');
@@ -755,11 +715,9 @@ describe('Core IDs', () => {
 
       it('should handle only backslash', () => {
         const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, '\\');
-        const strResult = accountIdToString(venueAcc);
-        expect(strResult.ok).toBe(true);
-        if (!strResult.ok) return;
+        const str = accountIdToString(venueAcc);
+        const parsed = parseAccountId(str);
 
-        const parsed = parseAccountId(strResult.value);
         expect(parsed).toBeDefined();
         if (parsed?.kind === 'VENUE') {
           expect(parsed.userId).toBe('\\');
@@ -769,11 +727,9 @@ describe('Core IDs', () => {
       it('should handle complex escaped sequences', () => {
         // Комплексная строка с различными escape-последовательностями
         const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'a]\\\\:b');
-        const strResult = accountIdToString(venueAcc);
-        expect(strResult.ok).toBe(true);
-        if (!strResult.ok) return;
+        const str = accountIdToString(venueAcc);
+        const parsed = parseAccountId(str);
 
-        const parsed = parseAccountId(strResult.value);
         expect(parsed).toBeDefined();
         if (parsed?.kind === 'VENUE') {
           expect(parsed.userId).toBe('a]\\\\:b');
@@ -825,7 +781,7 @@ describe('Core IDs', () => {
         }
       });
 
-      it('should return Ok when serializing max depth subaccount', () => {
+      it('should serialize max depth subaccount', () => {
         const walletAcc = accountIdFromWallet(testWallet);
 
         // Создаём структуру глубиной 5
@@ -837,9 +793,9 @@ describe('Core IDs', () => {
           current = result.value;
         }
 
-        // Сериализация должна работать для глубины 5
-        const strResult = accountIdToString(current);
-        expect(strResult.ok).toBe(true);
+        // Сериализация должна работать для глубины 5 (тотальная функция)
+        const str = accountIdToString(current);
+        expect(str).toContain('sub:sub:sub:sub:sub:wallet');
       });
 
       it('should return undefined when parsing deeply nested string', () => {
