@@ -3,6 +3,7 @@ import {
   type AccountId,
   type ConditionRef,
   type OnChainConditionRef,
+  type OffChainConditionRef,
   type OutcomeIndex,
   type VenueId,
   OutcomeIndexValues,
@@ -56,7 +57,7 @@ describe('Core IDs', () => {
           kind: 'ONCHAIN',
           protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
           chainId: KnownChainIds.POLYGON,
-          conditionId: '0xabc123' as any,
+          conditionId: '0xabc123def456' as any,
         };
 
         expect(conditionRef.kind).toBe('ONCHAIN');
@@ -71,14 +72,14 @@ describe('Core IDs', () => {
           kind: 'ONCHAIN',
           protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
           chainId: KnownChainIds.POLYGON,
-          conditionId: '0xabc123' as any,
+          conditionId: '0xabc123def456' as any,
         };
 
         const ref2: ConditionRef = {
           kind: 'ONCHAIN',
           protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
           chainId: KnownChainIds.POLYGON,
-          conditionId: '0xabc123' as any,
+          conditionId: '0xabc123def456' as any,
         };
 
         const ref3: ConditionRef = {
@@ -97,15 +98,15 @@ describe('Core IDs', () => {
           kind: 'ONCHAIN',
           protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
           chainId: KnownChainIds.POLYGON,
-          conditionId: '0xabc123' as any,
+          conditionId: '0xabc123def456' as any,
         };
 
         const str = conditionRefToString(ref);
-        expect(str).toBe('ONCHAIN:POLYMARKET_CTF:137:0xabc123');
+        expect(str).toBe('ONCHAIN:POLYMARKET_CTF:137:0xabc123def456');
       });
 
       it('should parse on-chain ref from string', () => {
-        const str = 'ONCHAIN:POLYMARKET_CTF:137:0xabc123';
+        const str = 'ONCHAIN:POLYMARKET_CTF:137:0xabc123def456';
         const ref = parseConditionRef(str);
 
         expect(ref).toBeDefined();
@@ -113,7 +114,7 @@ describe('Core IDs', () => {
         if (ref?.kind === 'ONCHAIN') {
           expect(ref.protocolId).toBe('POLYMARKET_CTF');
           expect(ref.chainId).toBe(137);
-          expect(ref.conditionId).toBe('0xabc123');
+          expect(ref.conditionId).toBe('0xabc123def456');
         }
       });
     });
@@ -186,7 +187,7 @@ describe('Core IDs', () => {
           kind: 'ONCHAIN',
           protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
           chainId: KnownChainIds.POLYGON,
-          conditionId: '0xabc123' as any,
+          conditionId: '0xabc123def456' as any,
         };
 
         const offChain: ConditionRef = {
@@ -196,6 +197,118 @@ describe('Core IDs', () => {
         };
 
         expect(conditionRefEquals(onChain, offChain)).toBe(false);
+      });
+    });
+
+    describe('parseConditionRef validation', () => {
+      describe('ONCHAIN validation', () => {
+        it('should accept valid ONCHAIN ref', () => {
+          const ref = parseConditionRef('ONCHAIN:POLYMARKET_CTF:137:0xabc123def456');
+          expect(ref).toBeDefined();
+          expect(ref?.kind).toBe('ONCHAIN');
+          if (ref?.kind === 'ONCHAIN') {
+            expect(ref.protocolId).toBe('POLYMARKET_CTF');
+            expect(ref.chainId).toBe(137);
+            expect(ref.conditionId).toBe('0xabc123def456');
+          }
+        });
+
+        it('should reject invalid ChainId - parseInt bypass', () => {
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:137abc:0xabc123def456')).toBeUndefined();
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:137.5:0xabc123def456')).toBeUndefined();
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:-1:0xabc123def456')).toBeUndefined();
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:0:0xabc123def456')).toBeUndefined();
+        });
+
+        it('should reject unknown OnChainProtocolId', () => {
+          expect(parseConditionRef('ONCHAIN:FAKE_PROTOCOL:137:0xabc123def456')).toBeUndefined();
+          expect(parseConditionRef('ONCHAIN:UNKNOWN:137:0xabc123def456')).toBeUndefined();
+        });
+
+        it('should reject invalid ConditionId format', () => {
+          // Не hex формат
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:137:not-hex')).toBeUndefined();
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:137:abc123')).toBeUndefined(); // нет 0x
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:137:0xGGGGGG')).toBeUndefined(); // не hex символы
+
+          // Слишком короткий
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:137:0xabc')).toBeUndefined();
+
+          // Пустой
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:137:')).toBeUndefined();
+        });
+
+        it('should support round-trip for valid ONCHAIN ref', () => {
+          const original: OnChainConditionRef = {
+            kind: 'ONCHAIN',
+            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+            chainId: KnownChainIds.POLYGON,
+            conditionId: '0xabc123def456789' as any,
+          };
+
+          const str = conditionRefToString(original);
+          const parsed = parseConditionRef(str);
+
+          expect(parsed).toBeDefined();
+          expect(conditionRefEquals(original, parsed!)).toBe(true);
+        });
+      });
+
+      describe('OFFCHAIN validation', () => {
+        it('should accept valid OFFCHAIN ref', () => {
+          const ref = parseConditionRef('OFFCHAIN:KALSHI:KXBTCUSDM-24APR');
+          expect(ref).toBeDefined();
+          expect(ref?.kind).toBe('OFFCHAIN');
+          if (ref?.kind === 'OFFCHAIN') {
+            expect(ref.venueId).toBe('KALSHI');
+            expect(ref.marketId).toBe('KXBTCUSDM-24APR');
+          }
+        });
+
+        it('should accept PREDICTIT with numeric marketId', () => {
+          const ref = parseConditionRef('OFFCHAIN:KALSHI:7456');
+          expect(ref).toBeDefined();
+          if (ref?.kind === 'OFFCHAIN') {
+            expect(ref.marketId).toBe('7456');
+          }
+        });
+
+        it('should reject invalid VenueId format', () => {
+          // Lowercase (не uppercase)
+          expect(parseConditionRef('OFFCHAIN:fake:MARKET123')).toBeUndefined();
+          expect(parseConditionRef('OFFCHAIN:lowercase:MARKET123')).toBeUndefined();
+
+          // Содержит дефис (не UPPER_SNAKE_CASE)
+          expect(parseConditionRef('OFFCHAIN:MY-VENUE:MARKET123')).toBeUndefined();
+
+          // Начинается с цифры
+          expect(parseConditionRef('OFFCHAIN:123VENUE:MARKET123')).toBeUndefined();
+
+          // Пустой
+          expect(parseConditionRef('OFFCHAIN::MARKET123')).toBeUndefined();
+        });
+
+        it('should reject empty marketId', () => {
+          expect(parseConditionRef('OFFCHAIN:KALSHI:')).toBeUndefined();
+        });
+
+        it('should reject marketId containing colon (breaks round-trip)', () => {
+          expect(parseConditionRef('OFFCHAIN:KALSHI:MARKET:WITH:COLON')).toBeUndefined();
+        });
+
+        it('should support round-trip for valid OFFCHAIN ref', () => {
+          const original: OffChainConditionRef = {
+            kind: 'OFFCHAIN',
+            venueId: KnownVenues.KALSHI,
+            marketId: 'KXBTCUSDM-24APR',
+          };
+
+          const str = conditionRefToString(original);
+          const parsed = parseConditionRef(str);
+
+          expect(parsed).toBeDefined();
+          expect(conditionRefEquals(original, parsed!)).toBe(true);
+        });
       });
     });
   });
@@ -255,7 +368,7 @@ describe('Core IDs', () => {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
         chainId: KnownChainIds.POLYGON,
-        conditionId: '0xabc123' as any,
+        conditionId: '0xabc123def456' as any,
       };
 
       const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
@@ -276,7 +389,7 @@ describe('Core IDs', () => {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
         chainId: KnownChainIds.POLYGON,
-        conditionId: '0xabc123' as any,
+        conditionId: '0xabc123def456' as any,
       };
       const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
 
@@ -292,10 +405,10 @@ describe('Core IDs', () => {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
         chainId: KnownChainIds.POLYGON,
-        conditionId: '0xabc123def456' as any,
+        conditionId: '0xabc123def456def456' as any,
       };
       const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
-      expect(assetIdToString(token)).toBe('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:UP');
+      expect(assetIdToString(token)).toBe('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456def456:UP');
     });
 
     it('should parse AssetId from string', () => {
@@ -308,7 +421,7 @@ describe('Core IDs', () => {
       }
 
       // Parse OUTCOME_TOKEN
-      const token = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:UP');
+      const token = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456def456:UP');
       expect(token).toBeDefined();
       expect(token?.type).toBe('OUTCOME_TOKEN');
       if (token?.type === 'OUTCOME_TOKEN') {
@@ -316,7 +429,7 @@ describe('Core IDs', () => {
         expect(token.conditionRef.kind).toBe('ONCHAIN');
         expect(token.conditionRef.protocolId).toBe('POLYMARKET_CTF');
         expect(token.conditionRef.chainId).toBe(137);
-        expect(token.conditionRef.conditionId).toBe('0xabc123def456');
+        expect(token.conditionRef.conditionId).toBe('0xabc123def456def456');
       }
 
       // Invalid formats
@@ -328,24 +441,24 @@ describe('Core IDs', () => {
     describe('parseAssetId validation', () => {
       it('should reject invalid ChainId - parseInt bypass', () => {
         // parseInt("137abc", 10) возвращает 137, но мы должны это отклонить
-        const invalid1 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137abc:0xabc123def456:UP');
+        const invalid1 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137abc:0xabc123def456def456:UP');
         expect(invalid1).toBeUndefined();
 
         // Нечисловая строка
-        const invalid2 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:abc:0xabc123def456:UP');
+        const invalid2 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:abc:0xabc123def456def456:UP');
         expect(invalid2).toBeUndefined();
 
         // Отрицательное число
-        const invalid3 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:-1:0xabc123def456:UP');
+        const invalid3 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:-1:0xabc123def456def456:UP');
         expect(invalid3).toBeUndefined();
 
         // Дробное число
-        const invalid4 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137.5:0xabc123def456:UP');
+        const invalid4 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137.5:0xabc123def456def456:UP');
         expect(invalid4).toBeUndefined();
       });
 
       it('should reject unknown OnChainProtocolId', () => {
-        const invalid = parseAssetId('OUTCOME_TOKEN:ONCHAIN:UNKNOWN_PROTOCOL:137:0xabc123def456:UP');
+        const invalid = parseAssetId('OUTCOME_TOKEN:ONCHAIN:UNKNOWN_PROTOCOL:137:0xabc123def456def456:UP');
         expect(invalid).toBeUndefined();
       });
 
@@ -369,27 +482,27 @@ describe('Core IDs', () => {
 
       it('should reject invalid OutcomeKey', () => {
         // Пустой OutcomeKey
-        const invalid1 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:');
+        const invalid1 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456def456:');
         expect(invalid1).toBeUndefined();
 
         // OutcomeKey с двоеточием
-        const invalid2 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:UP:DOWN');
+        const invalid2 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456def456:UP:DOWN');
         expect(invalid2).toBeUndefined();
 
         // OutcomeKey слишком длинный (>32 символов)
         const tooLong = 'A'.repeat(33);
-        const invalid3 = parseAssetId(`OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:${tooLong}`);
+        const invalid3 = parseAssetId(`OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456def456:${tooLong}`);
         expect(invalid3).toBeUndefined();
       });
 
       it('should accept valid OUTCOME_TOKEN with all fields validated', () => {
-        const valid = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456:UP');
+        const valid = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123def456def456:UP');
         expect(valid).toBeDefined();
         expect(valid?.type).toBe('OUTCOME_TOKEN');
         if (valid?.type === 'OUTCOME_TOKEN') {
           expect(valid.conditionRef.protocolId).toBe('POLYMARKET_CTF');
           expect(valid.conditionRef.chainId).toBe(137);
-          expect(valid.conditionRef.conditionId).toBe('0xabc123def456');
+          expect(valid.conditionRef.conditionId).toBe('0xabc123def456def456');
           expect(valid.outcomeKey).toBe('UP');
         }
       });
@@ -407,7 +520,7 @@ describe('Core IDs', () => {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
         chainId: KnownChainIds.POLYGON,
-        conditionId: '0xabc123def456' as any,
+        conditionId: '0xabc123def456def456' as any,
       };
       const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
       const tokenStr = assetIdToString(token);
@@ -1171,7 +1284,7 @@ describe('Core IDs', () => {
         expect(parsed1).toBeUndefined();
 
         // Валидный адрес
-        const validStr = 'wallet:0xabc123456789012345678901234567890abcdef0';
+        const validStr = 'wallet:0xabc123def456456789012345678901234567890abcdef0';
         const parsed2 = parseAccountId(validStr, { validateWalletAddress: validator });
         expect(parsed2).toBeDefined();
       });

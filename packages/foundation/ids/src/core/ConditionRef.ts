@@ -2,6 +2,10 @@ import type { OnChainProtocolId } from './ProtocolId.js';
 import type { ChainId } from './ChainId.js';
 import type { ConditionId } from './ConditionId.js';
 import type { VenueId } from './VenueId.js';
+import { isKnownOnChainProtocol } from './ProtocolId.js';
+import { parseChainId } from './ChainId.js';
+import { isValidConditionId } from './ConditionId.js';
+import { asVenueId } from './VenueId.js';
 
 /**
  * OnChainConditionRef - ссылка на on-chain condition
@@ -266,16 +270,27 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
     }
 
     const [, protocolId, chainIdStr, conditionId] = parts;
-    const chainId = parseInt(chainIdStr, 10);
 
-    if (isNaN(chainId)) {
+    // Валидация OnChainProtocolId
+    if (!isKnownOnChainProtocol(protocolId)) {
+      return undefined;
+    }
+
+    // Валидация ChainId
+    const validatedChainId = parseChainId(chainIdStr);
+    if (!validatedChainId) {
+      return undefined;
+    }
+
+    // Валидация ConditionId
+    if (!isValidConditionId(conditionId)) {
       return undefined;
     }
 
     return {
       kind: 'ONCHAIN',
-      protocolId: protocolId as OnChainProtocolId,
-      chainId: chainId as ChainId,
+      protocolId,
+      chainId: validatedChainId,
       conditionId: conditionId as ConditionId,
     };
   }
@@ -285,11 +300,26 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
       return undefined;
     }
 
-    const [, venueId, marketId] = parts;
+    const [, venueIdStr, marketId] = parts;
+
+    // Валидация VenueId
+    const validatedVenueId = asVenueId(venueIdStr);
+    if (!validatedVenueId) {
+      return undefined;
+    }
+
+    // Валидация marketId: не пустой, не содержит ':' (для round-trip)
+    if (!marketId || marketId.length === 0) {
+      return undefined;
+    }
+
+    if (marketId.includes(':')) {
+      return undefined;
+    }
 
     return {
       kind: 'OFFCHAIN',
-      venueId: venueId as VenueId,
+      venueId: validatedVenueId,
       marketId,
     };
   }
