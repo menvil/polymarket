@@ -5,7 +5,7 @@
  * Фундаментальные типы идентификаторов для Polymarket domain.
  *
  * Структура:
- * - core: Domain IDs (ConditionRef, OutcomeIndex, AccountId, VenueId, AssetId)
+ * - core: Domain IDs (ConditionRef, OutcomeKey, AccountId, VenueId, AssetId)
  * - market-data: Market Data IDs (MarketDataSourceId, InstrumentId)
  * - execution: Execution IDs (ExecutionVenueId, OrderId, FillId)
  *

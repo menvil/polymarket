@@ -16,7 +16,7 @@
 ```
 ┌─────────────────────────────────────────────┐
 │  Core IDs - канонические domain IDs         │
-│  (ConditionRef, OutcomeIndex, AccountId)    │
+│  (ConditionRef, OutcomeKey, AccountId)      │
 └─────────────────────────────────────────────┘
                     ▲
                     │
@@ -142,7 +142,7 @@ getBalance('0x123...' as AccountId);
 ```typescript
 type AssetId =
   | { type: 'CURRENCY'; currency: string; }
-  | { type: 'OUTCOME_TOKEN'; conditionRef: ConditionRef; outcomeIndex: OutcomeIndex; };
+  | { type: 'OUTCOME_TOKEN'; conditionRef: ConditionRef; outcomeKey: OutcomeKey; };
 ```
 
 **Преимущества**:
@@ -216,7 +216,7 @@ packages/foundation/ids/
 │   │   ├── ChainId.ts
 │   │   ├── ConditionId.ts
 │   │   ├── ConditionRef.ts      # Всегда используй ConditionRef!
-│   │   ├── OutcomeIndex.ts      # 0 | 1 для бинарных рынков
+│   │   ├── OutcomeKey.ts        # UP/DOWN для бинарных рынков (расширяемо)
 │   │   ├── WalletAddress.ts
 │   │   ├── AccountId.ts
 │   │   ├── VenueId.ts           # Где находятся балансы
@@ -251,7 +251,7 @@ packages/foundation/ids/
 
 ```typescript
 // Main export - core types
-import { type ConditionRef, OutcomeIndexValues } from '@polymarket/ids';
+import { type ConditionRef, BinaryOutcome } from '@polymarket/ids';
 
 // Subpath exports
 import { type MarketDataSourceId } from '@polymarket/ids/market-data';

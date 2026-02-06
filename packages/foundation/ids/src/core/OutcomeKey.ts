@@ -2,17 +2,17 @@
  * OutcomeKey - универсальный ключ для outcome в рынке
  *
  * @remarks
- * Замена для OutcomeIndex. Поддерживает:
- * - Бинарные рынки (UP/DOWN, бывшие YES/NO)
+ * Поддерживает:
+ * - Бинарные рынки (UP/DOWN)
  * - Multi-outcome рынки (будущее расширение)
  * - Scalar рынки (будущее расширение)
  *
  * Архитектурное решение: использовать строковые ключи вместо числовых индексов
  * для лучшей расширяемости и читаемости.
  *
- * Для обратной совместимости с on-chain индексами используй mapping functions:
- * - outcomeKeyToIndex() - преобразовать в числовой индекс
- * - indexToOutcomeKey() - преобразовать из числового индекса
+ * Для работы с on-chain индексами (контракты используют числа) используй:
+ * - outcomeKeyToIndex() - конвертировать OutcomeKey → number для отправки в контракт
+ * - indexToOutcomeKey() - конвертировать number → OutcomeKey при получении из контракта
  *
  * @example
  * ```typescript
@@ -148,14 +148,14 @@ export function parseOutcomeKey(raw: string): OutcomeKey | undefined {
  */
 export const BinaryOutcome = {
   /**
-   * DOWN = 0 (было NO в OutcomeIndex)
+   * DOWN = on-chain index 0
    *
    * Семантика: цена идёт вниз, событие не происходит, негативный исход
    */
   DOWN: unsafeOutcomeKey('DOWN'),
 
   /**
-   * UP = 1 (было YES в OutcomeIndex)
+   * UP = on-chain index 1
    *
    * Семантика: цена идёт вверх, событие происходит, позитивный исход
    */
@@ -266,6 +266,6 @@ export function oppositeOutcomeKey(key: OutcomeKey): OutcomeKey | undefined {
 }
 
 /**
- * @deprecated Переименован в oppositeOutcomeKey для избежания коллизии с OutcomeIndex.ts
+ * @deprecated Переименован в oppositeOutcomeKey
  */
 export const oppositeOutcome = oppositeOutcomeKey;

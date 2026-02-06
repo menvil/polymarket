@@ -14,11 +14,11 @@ npm install @polymarket/ids
 // Main export - core types
 import {
   type ConditionRef,
-  type OutcomeIndex,
+  type OutcomeKey,
   type AccountId,
   type VenueId,
   type AssetId,
-  OutcomeIndexValues,
+  BinaryOutcome,
   AssetIdHelpers,
   KnownChainIds,
   KnownVenues,
@@ -55,7 +55,7 @@ import {
   type ConditionRef,
   type AccountId,
   type VenueId,
-  OutcomeIndexValues,
+  BinaryOutcome,
   AssetIdHelpers,
   KnownChainIds,
 } from '@polymarket/ids';
@@ -99,7 +99,7 @@ if (balance.amount.gte(Money.of(100, 'USDC'))) {
   const order = {
     executionVenue,
     conditionRef,
-    outcomeIndex: OutcomeIndexValues.YES,
+    outcomeIndex: BinaryOutcome.UP,
     side: 'BUY',
     price: 0.52,
     quantity: 100,
@@ -146,7 +146,7 @@ if (isSimulator(executionVenue)) {
   const simulatedOrder = {
     executionVenue,
     conditionRef,
-    outcomeIndex: OutcomeIndexValues.YES,
+    outcomeIndex: BinaryOutcome.UP,
     side: 'BUY',
     price: quote.ask,
     quantity: 100,
@@ -193,7 +193,7 @@ for (const quote of historicalQuotes) {
     const order = {
       executionVenue,
       conditionRef,
-      outcomeIndex: OutcomeIndexValues.YES,
+      outcomeIndex: BinaryOutcome.UP,
       side: 'BUY',
       price: quote.ask,
       quantity: 100,
@@ -272,7 +272,7 @@ if (kalshiQuote.ask < polymarketQuote.bid) {
   await sendOrder({
     executionVenue: KnownExecutionVenues.KALSHI,
     conditionRef: kalshiCondition,
-    outcomeIndex: OutcomeIndexValues.YES,
+    outcomeIndex: BinaryOutcome.UP,
     side: 'BUY',
     price: kalshiQuote.ask,
     quantity: 100,
@@ -282,7 +282,7 @@ if (kalshiQuote.ask < polymarketQuote.bid) {
   await sendOrder({
     executionVenue: KnownExecutionVenues.POLYMARKET,
     conditionRef: polymarketCondition,
-    outcomeIndex: OutcomeIndexValues.YES,
+    outcomeIndex: BinaryOutcome.UP,
     side: 'SELL',
     price: polymarketQuote.bid,
     quantity: 100,
@@ -303,7 +303,7 @@ import {
   AssetIdHelpers,
   isCurrencyAsset,
   isOutcomeTokenAsset,
-  OutcomeIndexValues,
+  BinaryOutcome,
   assetIdToString,
 } from '@polymarket/ids';
 
@@ -319,12 +319,12 @@ const conditionRef: ConditionRef = {
 
 const yesTokenAsset: AssetId = AssetIdHelpers.fromOutcomeToken(
   conditionRef,
-  OutcomeIndexValues.YES
+  BinaryOutcome.UP
 );
 
 const noTokenAsset: AssetId = AssetIdHelpers.fromOutcomeToken(
   conditionRef,
-  OutcomeIndexValues.NO
+  BinaryOutcome.DOWN
 );
 
 // 3. Получаем все балансы
@@ -353,7 +353,7 @@ function calculatePortfolioValue(balances: Balance[]): Money {
     } else if (isOutcomeTokenAsset(balance.asset)) {
       // Outcome token оцениваем по текущей цене
       const quote = getQuote(balance.asset.conditionRef);
-      const price = balance.asset.outcomeIndex === OutcomeIndexValues.YES
+      const price = balance.asset.outcomeKey === BinaryOutcome.UP
         ? quote.bid
         : (1 - quote.ask);
 
@@ -472,61 +472,61 @@ const good: ConditionRef = {
 
 ---
 
-### 8. Outcome Index Operations
+### 8. OutcomeKey Operations
 
-**Сценарий**: Работа с YES/NO outcomes.
+**Сценарий**: Работа с UP/DOWN outcomes.
 
 ```typescript
 import {
-  type OutcomeIndex,
-  OutcomeIndexValues,
-  oppositeOutcome,
-  outcomeIndexToString,
-  parseOutcomeIndex,
-  isValidOutcomeIndex,
+  type OutcomeKey,
+  BinaryOutcome,
+  oppositeOutcomeKey,
+  parseOutcomeKey,
+  outcomeKeyToIndex,
+  indexToOutcomeKey,
 } from '@polymarket/ids';
 
 // 1. Использование констант
-const yes: OutcomeIndex = OutcomeIndexValues.YES;  // → 1
-const no: OutcomeIndex = OutcomeIndexValues.NO;    // → 0
+const up: OutcomeKey = BinaryOutcome.UP;      // → 'UP'
+const down: OutcomeKey = BinaryOutcome.DOWN;  // → 'DOWN'
 
 // 2. Opposite outcome (хеджирование)
-function hedge(currentPosition: OutcomeIndex): OutcomeIndex {
-  return oppositeOutcome(currentPosition);
+function hedge(currentPosition: OutcomeKey): OutcomeKey | undefined {
+  return oppositeOutcomeKey(currentPosition);
 }
 
-const position = OutcomeIndexValues.YES;
-const hedgePosition = hedge(position);  // → 0 (NO)
+const position = BinaryOutcome.UP;
+const hedgePosition = hedge(position);  // → 'DOWN'
 
-// 3. To string (для UI)
-const label = outcomeIndexToString(yes);  // → 'YES'
-console.log(`Buying ${label} token`);
+// 3. Для UI - OutcomeKey уже строка, используй напрямую
+console.log(`Buying ${up} token`);  // → "Buying UP token"
 
 // 4. From string (парсинг user input)
-const userInput = 'yes';  // case-insensitive
-const outcome = parseOutcomeIndex(userInput);
+const userInput = 'up';  // case-insensitive
+const outcome = parseOutcomeKey(userInput.toUpperCase());
 
 if (outcome !== undefined) {
   console.log(`User wants to buy outcome ${outcome}`);
 }
 
-// 5. Validation
-const value = 1;
-if (isValidOutcomeIndex(value)) {
-  // TypeScript знает: value is OutcomeIndex
-  const token = AssetIdHelpers.fromOutcomeToken(conditionRef, value);
-}
+// 5. Конверсия в on-chain index (для контрактов)
+const onChainIndex = outcomeKeyToIndex(BinaryOutcome.UP);  // → 1
+console.log(`On-chain index: ${onChainIndex}`);
 
-// 6. Итерация по всем outcomes
-const outcomes: OutcomeIndex[] = [
-  OutcomeIndexValues.NO,
-  OutcomeIndexValues.YES,
+// 6. Конверсия из on-chain index
+const rawIndex = 0;  // получили из контракта
+const outcomeFromChain = indexToOutcomeKey(rawIndex);  // → 'DOWN'
+
+// 7. Итерация по всем outcomes
+const outcomes: OutcomeKey[] = [
+  BinaryOutcome.DOWN,
+  BinaryOutcome.UP,
 ];
 
 for (const outcome of outcomes) {
   const token = AssetIdHelpers.fromOutcomeToken(conditionRef, outcome);
   const balance = getBalance(accountId, venueId, token);
-  console.log(`${outcomeIndexToString(outcome)}: ${balance.amount}`);
+  console.log(`${outcome}: ${balance.amount}`);
 }
 ```
 
@@ -645,13 +645,13 @@ if (isCurrencyAsset(asset)) {
 ❌ Плохо:
 ```typescript
 const venueId = 'POLYMARKET' as VenueId;
-const outcome = 1 as OutcomeIndex;
+const outcome = 'UP' as OutcomeKey;
 ```
 
 ✅ Хорошо:
 ```typescript
 const venueId = KnownVenues.POLYMARKET;
-const outcome = OutcomeIndexValues.YES;
+const outcome = BinaryOutcome.UP;
 ```
 
 ### 4. Используй mapping функции
@@ -688,23 +688,31 @@ const accountId: AccountId = accountIdFromWallet(wallet);
 
 ## Troubleshooting
 
-### TypeScript errors: duplicate identifier
+### TypeScript errors: unsafe OutcomeKey casts
 
 **Проблема**:
 ```
-Duplicate identifier 'OutcomeIndex'
+Type 'string' is not assignable to type 'OutcomeKey'
 ```
 
-**Решение**: Используй renamed exports
+**Решение**: Используй BinaryOutcome константы или parseOutcomeKey для валидации
 
 ```typescript
 // ❌ Плохо
-import { OutcomeIndex } from '@polymarket/ids';
-const yes = OutcomeIndex.YES;  // Error!
+const outcome: OutcomeKey = 'UP' as OutcomeKey;  // Unsafe cast!
 
 // ✅ Хорошо
-import { type OutcomeIndex, OutcomeIndexValues } from '@polymarket/ids';
-const yes: OutcomeIndex = OutcomeIndexValues.YES;
+import { BinaryOutcome, parseOutcomeKey } from '@polymarket/ids';
+
+// Compile-time константы
+const outcome = BinaryOutcome.UP;
+
+// Runtime валидация
+const userInput = 'UP';
+const parsed = parseOutcomeKey(userInput);
+if (parsed) {
+  const token = AssetIdHelpers.fromOutcomeToken(conditionRef, parsed);
+}
 ```
 
 ### Cannot find module '@polymarket/ids/market-data'

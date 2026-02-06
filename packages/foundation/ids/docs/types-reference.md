@@ -158,70 +158,6 @@ const conditionRef: ConditionRef = {
 
 ---
 
-### OutcomeIndex
-
-Индекс outcome для бинарных рынков (YES/NO).
-
-```typescript
-type OutcomeIndex = 0 | 1;
-```
-
-**Константы**:
-
-```typescript
-import { OutcomeIndexValues } from '@polymarket/ids';
-
-const yes = OutcomeIndexValues.YES;  // → 1
-const no = OutcomeIndexValues.NO;    // → 0
-```
-
-**Helper функции**:
-
-```typescript
-// Validation
-function isValidOutcomeIndex(value: number): value is OutcomeIndex;
-
-isValidOutcomeIndex(1);  // → true
-isValidOutcomeIndex(2);  // → false
-
-// Opposite outcome
-function oppositeOutcome(index: OutcomeIndex): OutcomeIndex;
-
-oppositeOutcome(1);  // → 0
-oppositeOutcome(0);  // → 1
-
-// To string
-function outcomeIndexToString(index: OutcomeIndex): 'YES' | 'NO';
-
-outcomeIndexToString(1);  // → 'YES'
-outcomeIndexToString(0);  // → 'NO'
-
-// From string
-function parseOutcomeIndex(str: string): OutcomeIndex | undefined;
-
-parseOutcomeIndex('YES');  // → 1
-parseOutcomeIndex('NO');   // → 0
-parseOutcomeIndex('yes');  // → 1 (case-insensitive)
-parseOutcomeIndex('1');    // → 1
-parseOutcomeIndex('0');    // → 0
-```
-
-**Использование**:
-
-```typescript
-import { type OutcomeIndex, OutcomeIndexValues } from '@polymarket/ids';
-
-function buyYes(condition: ConditionRef, outcome: OutcomeIndex) {
-  if (outcome === OutcomeIndexValues.YES) {
-    console.log('Buying YES token');
-  }
-}
-
-buyYes(conditionRef, OutcomeIndexValues.YES);
-```
-
----
-
 ### WalletAddress
 
 Ethereum-совместимый адрес кошелька.
@@ -343,7 +279,7 @@ const balance = {
 ```typescript
 type AssetId =
   | { readonly type: 'CURRENCY'; readonly currency: string; }
-  | { readonly type: 'OUTCOME_TOKEN'; readonly conditionRef: ConditionRef; readonly outcomeIndex: OutcomeIndex; };
+  | { readonly type: 'OUTCOME_TOKEN'; readonly conditionRef: ConditionRef; readonly outcomeKey: OutcomeKey; };
 ```
 
 **Helper функции**:
@@ -359,7 +295,7 @@ const usdt = AssetIdHelpers.fromCurrency('USDT');
 // → { type: 'CURRENCY', currency: 'USDT' }
 
 // Outcome token asset
-const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, OutcomeIndexValues.YES);
+const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
 // → { type: 'OUTCOME_TOKEN', conditionRef: {...}, outcomeIndex: 1 }
 
 // Сравнение
@@ -405,7 +341,7 @@ function processAsset(asset: AssetId) {
 
 // Примеры
 processAsset(AssetIdHelpers.USDC);
-processAsset(AssetIdHelpers.fromOutcomeToken(conditionRef, OutcomeIndexValues.YES));
+processAsset(AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP));
 ```
 
 ---
@@ -589,7 +525,7 @@ type FillId = string & { readonly __brand: 'FillId' };
 | Type                | Category      | Purpose                           | Example                     |
 |---------------------|---------------|-----------------------------------|-----------------------------|
 | ConditionRef        | Core          | Полная ссылка на condition        | { protocol, chain, id }     |
-| OutcomeIndex        | Core          | YES/NO индекс (0 \| 1)             | 1 (YES)                     |
+| OutcomeKey          | Core          | UP/DOWN outcome key               | 'UP', 'DOWN'                |
 | AccountId           | Core          | Аккаунт владельца                 | '0x123...'                  |
 | VenueId             | Core          | Где находятся балансы             | 'POLYMARKET'                |
 | AssetId             | Core          | Currency или OutcomeToken         | { type: 'CURRENCY', ... }   |
@@ -602,26 +538,6 @@ type FillId = string & { readonly __brand: 'FillId' };
 ---
 
 ## Naming Conflicts Resolution
-
-### OutcomeIndex
-
-**Проблема**: Тип и namespace с одинаковым именем.
-
-**Решение**:
-
-```typescript
-// В core/index.ts
-export type { OutcomeIndex } from './OutcomeIndex.js';
-export {
-  OutcomeIndex as OutcomeIndexValues,  // ← rename namespace export
-  // ... other functions
-} from './OutcomeIndex.js';
-
-// Использование
-import { type OutcomeIndex, OutcomeIndexValues } from '@polymarket/ids';
-
-const yes: OutcomeIndex = OutcomeIndexValues.YES;
-```
 
 ### AssetId
 

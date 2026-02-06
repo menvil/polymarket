@@ -38,7 +38,7 @@ export {
   isOffChainConditionRef,
 } from './ConditionRef.js';
 
-// Outcome - Primary API (используй это)
+// Outcome
 export type { OutcomeKey } from './OutcomeKey.js';
 export {
   unsafeOutcomeKey,
@@ -50,23 +50,6 @@ export {
   oppositeOutcomeKey,
   oppositeOutcome, // @deprecated - используй oppositeOutcomeKey
 } from './OutcomeKey.js';
-
-// Outcome - Legacy API (deprecated, только для on-chain адаптеров)
-/**
- * @deprecated OutcomeIndex устарел. Используй OutcomeKey (BinaryOutcome.UP/DOWN) в core/domain коде.
- * OutcomeIndex оставлен только для on-chain адаптеров.
- */
-export type { OutcomeIndex } from './OutcomeIndex.js';
-/**
- * @deprecated OutcomeIndex устарел. Используй OutcomeKey (BinaryOutcome.UP/DOWN) в core/domain коде.
- */
-export {
-  OutcomeIndex as OutcomeIndexValues,
-  isValidOutcomeIndex,
-  oppositeOutcomeIndex,
-  outcomeIndexToString,
-  parseOutcomeIndex,
-} from './OutcomeIndex.js';
 
 // Account & Wallet
 export type { WalletAddress } from './WalletAddress.js';

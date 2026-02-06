@@ -19,8 +19,7 @@ Foundation ID types для Polymarket domain.
 src/
 ├── core/              # Domain IDs
 │   ├── ConditionRef.ts
-│   ├── OutcomeKey.ts      # ✅ Primary (используй это)
-│   ├── OutcomeIndex.ts    # ⚠️ Deprecated (только для on-chain адаптеров)
+│   ├── OutcomeKey.ts
 │   ├── AccountId.ts
 │   ├── VenueId.ts
 │   └── AssetId.ts

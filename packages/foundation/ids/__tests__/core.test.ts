@@ -1,13 +1,10 @@
 import { describe, it, expect } from '@jest/globals';
-import { oppositeOutcomeIndex } from '../src/core/OutcomeIndex.js';
 import {
   type AccountId,
   type ConditionRef,
   type OnChainConditionRef,
   type OffChainConditionRef,
-  type OutcomeIndex,
   type VenueId,
-  OutcomeIndexValues,
   KnownChainIds,
   KnownVenues,
   KnownOnChainProtocols,
@@ -15,8 +12,6 @@ import {
   conditionRefEquals,
   conditionRefToString,
   parseConditionRef,
-  outcomeIndexToString,
-  parseOutcomeIndex,
   assetIdEquals,
   assetIdToString,
   parseAssetId,
@@ -313,36 +308,6 @@ describe('Core IDs', () => {
           expect(conditionRefEquals(original, parsed!)).toBe(true);
         });
       });
-    });
-  });
-
-  describe('OutcomeIndex', () => {
-    it('should have YES and NO constants', () => {
-      const yes: OutcomeIndex = OutcomeIndexValues.YES;
-      const no: OutcomeIndex = OutcomeIndexValues.NO;
-
-      expect(yes).toBe(1);
-      expect(no).toBe(0);
-    });
-
-    it('should convert to string', () => {
-      expect(outcomeIndexToString(1)).toBe('YES');
-      expect(outcomeIndexToString(0)).toBe('NO');
-    });
-
-    it('should parse from string', () => {
-      expect(parseOutcomeIndex('YES')).toBe(1);
-      expect(parseOutcomeIndex('NO')).toBe(0);
-      expect(parseOutcomeIndex('yes')).toBe(1);
-      expect(parseOutcomeIndex('no')).toBe(0);
-      expect(parseOutcomeIndex('1')).toBe(1);
-      expect(parseOutcomeIndex('0')).toBe(0);
-      expect(parseOutcomeIndex('invalid')).toBeUndefined();
-    });
-
-    it('should get opposite outcome', () => {
-      expect(oppositeOutcomeIndex(1)).toBe(0);
-      expect(oppositeOutcomeIndex(0)).toBe(1);
     });
   });
 
