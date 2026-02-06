@@ -19,7 +19,8 @@ Foundation ID types для Polymarket domain.
 src/
 ├── core/              # Domain IDs
 │   ├── ConditionRef.ts
-│   ├── OutcomeIndex.ts
+│   ├── OutcomeKey.ts      # ✅ Primary (используй это)
+│   ├── OutcomeIndex.ts    # ⚠️ Deprecated (только для on-chain адаптеров)
 │   ├── AccountId.ts
 │   ├── VenueId.ts
 │   └── AssetId.ts
@@ -40,13 +41,13 @@ src/
 import {
   type SupportedCurrency,
   type ConditionRef,
-  type OutcomeIndex,
+  type OutcomeKey,
   type AccountId,
   type VenueId,
   type AssetId,
   KnownCurrencies,
   KnownChainIds,
-  OutcomeIndex as OutcomeIndexConst,
+  BinaryOutcome,
   isSupportedCurrency,
 } from '@polymarket/ids';
 
@@ -78,9 +79,9 @@ const offChainRef: ConditionRef = {
   marketId: 'KXBTCUSDM-24APR',
 };
 
-// OutcomeIndex - YES/NO
-const yesOutcome: OutcomeIndex = OutcomeIndexConst.YES; // 1
-const noOutcome: OutcomeIndex = OutcomeIndexConst.NO; // 0
+// OutcomeKey - UP/DOWN для бинарных рынков
+const upOutcome = BinaryOutcome.UP;   // 'UP'
+const downOutcome = BinaryOutcome.DOWN; // 'DOWN'
 
 // AccountId - wallet или venue account
 const accountId: AccountId = '0x1234...' as AccountId;
@@ -90,7 +91,7 @@ const venueId: VenueId = 'POLYMARKET';
 
 // AssetId - универсальный актив
 const usdc = AssetId.USDC;
-const token = AssetId.fromOutcomeToken(conditionRef, OutcomeIndexConst.YES);
+const token = AssetId.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
 ```
 
 ### Market Data IDs

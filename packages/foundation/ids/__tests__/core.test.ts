@@ -1,5 +1,5 @@
 import { describe, it, expect } from '@jest/globals';
-import { oppositeOutcome as oppositeOutcomeIndex } from '../src/core/OutcomeIndex.js';
+import { oppositeOutcomeIndex } from '../src/core/OutcomeIndex.js';
 import {
   type AccountId,
   type ConditionRef,
