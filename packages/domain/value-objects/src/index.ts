@@ -42,5 +42,15 @@ export {
   RatioErrorReason
 } from './ratio/index.js';
 
+// OutcomeToken модуль (только публичный API)
+export {
+  OutcomeToken,
+  OutcomeTokenService,
+  OutcomeTokenSerializer,
+  OutcomeTokenFormatter,
+  OutcomeTokenErrorReason,
+  type OutcomeTokenJSON
+} from './outcome-token/index.js';
+
 // TODO: Implement these value objects
 // export { Quote } from './Quote.js';
