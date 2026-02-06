@@ -3,6 +3,7 @@ import { describe, it, expect } from '@jest/globals';
 import { Balance } from '../../../../src/balance/core/Balance.js';
 import { BalanceInvariantViolation } from '../../../../src/balance/core/BalanceInvariantViolation.js';
 import { Money } from '../../../../src/money/core/Money.js';
+import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
 
 describe('Balance Core', () => {
   describe('Balance.of() - успешное создание', () => {
@@ -10,7 +11,7 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(10000));
       const reserved = Money.of(new Decimal(2000));
 
-      const balance = Balance.of(available, reserved);
+      const balance = Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
 
       expect(balance.available()).toBe(available);
       expect(balance.reserved()).toBe(reserved);
@@ -21,7 +22,7 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(10000));
       const reserved = Money.of(new Decimal(0));
 
-      const balance = Balance.of(available, reserved);
+      const balance = Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
 
       expect(balance.available().value().toNumber()).toBe(10000);
       expect(balance.reserved().value().toNumber()).toBe(0);
@@ -31,7 +32,7 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(0));
       const reserved = Money.of(new Decimal(5000));
 
-      const balance = Balance.of(available, reserved);
+      const balance = Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
 
       expect(balance.available().value().toNumber()).toBe(0);
       expect(balance.reserved().value().toNumber()).toBe(5000);
@@ -41,7 +42,7 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(0));
       const reserved = Money.of(new Decimal(0));
 
-      const balance = Balance.of(available, reserved);
+      const balance = Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
 
       expect(balance.isZero()).toBe(true);
       expect(balance.total().value().toNumber()).toBe(0);
@@ -63,16 +64,16 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(-100), 'USDC');
       const reserved = Money.of(new Decimal(0));
 
-      expect(() => Balance.of(available, reserved)).toThrow(BalanceInvariantViolation);
-      expect(() => Balance.of(available, reserved)).toThrow('Available amount cannot be negative');
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow(BalanceInvariantViolation);
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow('Available amount cannot be negative');
     });
 
     it('бросает BalanceInvariantViolation если reserved отрицательный', () => {
       const available = Money.of(new Decimal(10000));
       const reserved = Money.of(new Decimal(-100), 'USDC');
 
-      expect(() => Balance.of(available, reserved)).toThrow(BalanceInvariantViolation);
-      expect(() => Balance.of(available, reserved)).toThrow('Reserved amount cannot be negative');
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow(BalanceInvariantViolation);
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow('Reserved amount cannot be negative');
     });
 
     // ПРИМЕЧАНИЕ: Тест невозможен, так как Money поддерживает только USDC
@@ -92,7 +93,7 @@ describe('Balance Core', () => {
       const reserved = Money.of(new Decimal(0));
 
       try {
-        Balance.of(available, reserved);
+        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
         fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
@@ -107,7 +108,7 @@ describe('Balance Core', () => {
       const reserved = Money.of(new Decimal(-100), 'USDC');
 
       try {
-        Balance.of(available, reserved);
+        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
         fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
@@ -155,7 +156,7 @@ describe('Balance Core', () => {
   describe('Balance.withZeroReserved() - helper', () => {
     it('создаёт баланс с нулевым reserved', () => {
       const available = Money.of(new Decimal(10000));
-      const balance = Balance.withZeroReserved(available);
+      const balance = Balance.withZeroReserved(available, TEST_ACCOUNT_ID, TEST_VENUE_ID);
 
       expect(balance.available().value().toNumber()).toBe(10000);
       expect(balance.reserved().value().toNumber()).toBe(0);
@@ -166,7 +167,9 @@ describe('Balance Core', () => {
   describe('Query методы', () => {
     const balance = Balance.of(
       Money.of(new Decimal(10000)),
-      Money.of(new Decimal(2000))
+      Money.of(new Decimal(2000)),
+      TEST_ACCOUNT_ID,
+      TEST_VENUE_ID
     );
 
     describe('total()', () => {
@@ -192,7 +195,7 @@ describe('Balance Core', () => {
       });
 
       it('возвращает false если есть только reserved', () => {
-        const onlyReserved = Balance.of(Money.of(new Decimal(0)), Money.of(new Decimal(100)));
+        const onlyReserved = Balance.of(Money.of(new Decimal(0)), Money.of(new Decimal(100)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
         expect(onlyReserved.isZero()).toBe(false);
       });
     });
@@ -203,7 +206,7 @@ describe('Balance Core', () => {
       });
 
       it('возвращает false если нет зарезервированных средств', () => {
-        const noReserved = Balance.withZeroReserved(Money.of(new Decimal(10000)));
+        const noReserved = Balance.withZeroReserved(Money.of(new Decimal(10000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
         expect(noReserved.hasReserved()).toBe(false);
       });
     });
@@ -221,20 +224,20 @@ describe('Balance Core', () => {
       });
 
       it('возвращает 100 если всё зарезервировано', () => {
-        const allReserved = Balance.of(Money.of(new Decimal(0)), Money.of(new Decimal(10000)));
+        const allReserved = Balance.of(Money.of(new Decimal(0)), Money.of(new Decimal(10000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
         expect(allReserved.reservedPercentage().toNumber()).toBe(100);
       });
 
       it('возвращает 50 если половина зарезервирована', () => {
-        const halfReserved = Balance.of(Money.of(new Decimal(5000)), Money.of(new Decimal(5000)));
+        const halfReserved = Balance.of(Money.of(new Decimal(5000)), Money.of(new Decimal(5000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
         expect(halfReserved.reservedPercentage().toNumber()).toBe(50);
       });
     });
 
     describe('hasSameCurrency()', () => {
       it('возвращает true для балансов с одинаковой валютой', () => {
-        const balance1 = Balance.of(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
-        const balance2 = Balance.of(Money.of(new Decimal(5000)), Money.of(new Decimal(1000)));
+        const balance1 = Balance.of(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
+        const balance2 = Balance.of(Money.of(new Decimal(5000)), Money.of(new Decimal(1000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
 
         expect(balance1.hasSameCurrency(balance2)).toBe(true);
       });

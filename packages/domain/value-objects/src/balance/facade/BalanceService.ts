@@ -1,4 +1,5 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
+import type { AccountId, VenueId } from '@polymarket/ids';
 import {
   InvalidBalanceError,
   ErrorSource,
@@ -74,6 +75,8 @@ export class BalanceService {
    *
    * @param available - Доступные средства
    * @param reserved - Зарезервированные средства
+   * @param accountId - ID аккаунта владельца
+   * @param venueId - ID площадки (venue)
    * @returns Result<Balance, InvalidBalanceError>
    * @throws Никогда - все ошибки оборачиваются в Result
    *
@@ -98,7 +101,9 @@ export class BalanceService {
    * ```typescript
    * const result = BalanceService.create(
    *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.fromUSDC(2000),
+   *   accountId,
+   *   venueId
    * );
    * if (isErr(result)) {
    *   console.error(result.error.context.reason);
@@ -110,7 +115,9 @@ export class BalanceService {
    */
   public static create(
     available: Money,
-    reserved: Money
+    reserved: Money,
+    accountId: AccountId,
+    venueId: VenueId
   ): Result<Balance, InvalidBalanceError> {
     return wrapOp(
       BalanceService.SERVICE_NAME,
@@ -121,7 +128,7 @@ export class BalanceService {
         currency: available.currency()
       },
       () => {
-        const balance = Balance.of(available, reserved);
+        const balance = Balance.of(available, reserved, accountId, venueId);
         return Ok(balance);
       },
       InvalidBalanceError
@@ -206,8 +213,13 @@ export class BalanceService {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
 
-      // Создаём новый Balance
-      return this.create(newAvailableResult.value, newReservedResult.value);
+      // Создаём новый Balance (сохраняем accountId и venueId)
+      return this.create(
+        newAvailableResult.value,
+        newReservedResult.value,
+        balance.accountId(),
+        balance.venueId()
+      );
     }, InvalidBalanceError);
   }
 
@@ -297,8 +309,13 @@ export class BalanceService {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
 
-      // Создаём новый Balance
-      return this.create(newAvailableResult.value, newReservedResult.value);
+      // Создаём новый Balance (сохраняем accountId и venueId)
+      return this.create(
+        newAvailableResult.value,
+        newReservedResult.value,
+        balance.accountId(),
+        balance.venueId()
+      );
     }, InvalidBalanceError);
   }
 
@@ -399,7 +416,12 @@ export class BalanceService {
       }
 
       // Создаём новый Balance: available остается тем же, reserved уменьшается
-      return this.create(balance.available(), newReservedResult.value);
+      return this.create(
+        balance.available(),
+        newReservedResult.value,
+        balance.accountId(),
+        balance.venueId()
+      );
     }, InvalidBalanceError);
   }
 
@@ -462,7 +484,12 @@ export class BalanceService {
 
       // Balance.of может бросить BalanceInvariantViolation - ловим локально для правильного reason
       try {
-        const newBalance = Balance.of(newAvailable, balance.reserved());
+        const newBalance = Balance.of(
+          newAvailable,
+          balance.reserved(),
+          balance.accountId(),
+          balance.venueId()
+        );
         return Ok(newBalance);
       } catch (error) {
         if (error instanceof BalanceInvariantViolation) {
@@ -508,9 +535,9 @@ export class BalanceService {
    *
    * @example
    * ```typescript
-   * const balance1 = Balance.of(Money.of(100, 'USDC'), Money.of(50, 'USDC'));
-   * const balance2 = Balance.of(Money.of(100, 'USDC'), Money.of(50, 'USDC'));
-   * const balance3 = Balance.of(Money.of(100, 'USDC'), Money.of(51, 'USDC'));
+   * const balance1 = Balance.of(Money.of(100, 'USDC'), Money.of(50, 'USDC'), accountId, venueId);
+   * const balance2 = Balance.of(Money.of(100, 'USDC'), Money.of(50, 'USDC'), accountId, venueId);
+   * const balance3 = Balance.of(Money.of(100, 'USDC'), Money.of(51, 'USDC'), accountId, venueId);
    *
    * const result1 = BalanceService.equals(balance1, balance2);
    * console.log(result1.value); // true
@@ -596,7 +623,7 @@ export class BalanceService {
    *
    * @example
    * ```typescript
-   * const balance = Balance.of(Money.of(1000, 'USDC'), Money.of(500, 'USDC'));
+   * const balance = Balance.of(Money.of(1000, 'USDC'), Money.of(500, 'USDC'), accountId, venueId);
    *
    * // Проверяем что можем зарезервировать 300
    * const canReserve = BalanceService.canAfford(balance, Money.of(300, 'USDC'));

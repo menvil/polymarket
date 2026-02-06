@@ -4,13 +4,16 @@ import { BalanceSerializer } from '../../../../src/balance/adapters/BalanceSeria
 import { BalanceService } from '../../../../src/balance/facade/BalanceService.js';
 import { Money } from '../../../../src/money/core/Money.js';
 import { BalanceErrorReason } from '../../../../src/balance/errors/BalanceErrorReason.js';
+import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
 
 describe('BalanceSerializer', () => {
   describe('toJSON()', () => {
     it('сериализует баланс в JSON', () => {
       const balanceResult = BalanceService.create(
         Money.of(new Decimal(10000)),
-        Money.of(new Decimal(2000))
+        Money.of(new Decimal(2000)),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
       );
       if (!balanceResult.ok) fail('Balance creation failed');
 
@@ -18,14 +21,18 @@ describe('BalanceSerializer', () => {
 
       expect(json).toEqual({
         available: { amount: '10000', currency: 'USDC' },
-        reserved: { amount: '2000', currency: 'USDC' }
+        reserved: { amount: '2000', currency: 'USDC' },
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET'
       });
     });
 
     it('использует string для amount (сохранение точности)', () => {
       const balanceResult = BalanceService.create(
         Money.of(new Decimal(100.123456)),
-        Money.of(new Decimal(50.654321))
+        Money.of(new Decimal(50.654321)),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
       );
       if (!balanceResult.ok) fail('Balance creation failed');
 
@@ -40,7 +47,9 @@ describe('BalanceSerializer', () => {
     it('сериализует пустой баланс', () => {
       const balanceResult = BalanceService.create(
         Money.of(new Decimal(0)),
-        Money.of(new Decimal(0))
+        Money.of(new Decimal(0)),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
       );
       if (!balanceResult.ok) fail('Balance creation failed');
 
@@ -48,7 +57,9 @@ describe('BalanceSerializer', () => {
 
       expect(json).toEqual({
         available: { amount: '0', currency: 'USDC' },
-        reserved: { amount: '0', currency: 'USDC' }
+        reserved: { amount: '0', currency: 'USDC' },
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET'
       });
     });
   });
@@ -58,7 +69,9 @@ describe('BalanceSerializer', () => {
       it('десериализует баланс из JSON', () => {
         const json = {
           available: { amount: '10000', currency: 'USDC' },
-          reserved: { amount: '2000', currency: 'USDC' }
+          reserved: { amount: '2000', currency: 'USDC' },
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET'
         };
 
         const result = BalanceSerializer.fromJSON(json);
@@ -74,7 +87,9 @@ describe('BalanceSerializer', () => {
       it('десериализует с amount как number', () => {
         const json = {
           available: { amount: 10000, currency: 'USDC' },
-          reserved: { amount: 2000, currency: 'USDC' }
+          reserved: { amount: 2000, currency: 'USDC' },
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET'
         };
 
         const result = BalanceSerializer.fromJSON(json);
@@ -88,7 +103,9 @@ describe('BalanceSerializer', () => {
       it('десериализует пустой баланс', () => {
         const json = {
           available: { amount: '0', currency: 'USDC' },
-          reserved: { amount: '0', currency: 'USDC' }
+          reserved: { amount: '0', currency: 'USDC' },
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET'
         };
 
         const result = BalanceSerializer.fromJSON(json);
@@ -189,7 +206,9 @@ describe('BalanceSerializer', () => {
       it('возвращает ошибку для отрицательного available', () => {
         const json = {
           available: { amount: '-100', currency: 'USDC' },
-          reserved: { amount: '0', currency: 'USDC' }
+          reserved: { amount: '0', currency: 'USDC' },
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET'
         };
 
         const result = BalanceSerializer.fromJSON(json);
@@ -203,7 +222,9 @@ describe('BalanceSerializer', () => {
       it('возвращает ошибку для отрицательного reserved', () => {
         const json = {
           available: { amount: '10000', currency: 'USDC' },
-          reserved: { amount: '-100', currency: 'USDC' }
+          reserved: { amount: '-100', currency: 'USDC' },
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET'
         };
 
         const result = BalanceSerializer.fromJSON(json);
@@ -217,7 +238,9 @@ describe('BalanceSerializer', () => {
       it('возвращает ошибку для неподдерживаемой валюты', () => {
         const json = {
           available: { amount: '10000', currency: 'USDC' },
-          reserved: { amount: '2000', currency: 'BTC' }
+          reserved: { amount: '2000', currency: 'BTC' },
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET'
         };
 
         const result = BalanceSerializer.fromJSON(json);
@@ -231,7 +254,9 @@ describe('BalanceSerializer', () => {
       it('возвращает ошибку для невалидного available amount', () => {
         const json = {
           available: { amount: 'invalid', currency: 'USDC' },
-          reserved: { amount: '2000', currency: 'USDC' }
+          reserved: { amount: '2000', currency: 'USDC' },
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET'
         };
 
         const result = BalanceSerializer.fromJSON(json);
@@ -248,7 +273,9 @@ describe('BalanceSerializer', () => {
       it('сохраняет баланс через сериализацию и десериализацию', () => {
         const originalResult = BalanceService.create(
           Money.of(new Decimal(12345.6789)),
-          Money.of(new Decimal(9876.5432))
+          Money.of(new Decimal(9876.5432)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
         );
         if (!originalResult.ok) fail('Balance creation failed');
 

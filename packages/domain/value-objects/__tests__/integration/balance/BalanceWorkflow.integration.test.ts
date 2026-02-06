@@ -6,6 +6,7 @@ import { BalanceFormatter } from '../../../src/balance/adapters/BalanceFormatter
 import { Money } from '../../../src/money/core/Money.js';
 import { BalanceErrorReason } from '../../../src/balance/errors/BalanceErrorReason.js';
 import { unwrap } from '@polymarket/result';
+import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../helpers/balanceTestHelpers.js';
 
 describe('Balance Integration Tests', () => {
   describe('Полный workflow: создание → reserve → release → update', () => {
@@ -13,7 +14,9 @@ describe('Balance Integration Tests', () => {
       // Шаг 1: Создаём начальный баланс
       const createResult = BalanceService.create(
         Money.of(new Decimal(10000)), // $10,000 доступно
-        Money.of(new Decimal(0))      // ничего не зарезервировано
+        Money.of(new Decimal(0)),      // ничего не зарезервировано
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
       );
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
@@ -52,7 +55,9 @@ describe('Balance Integration Tests', () => {
       // Шаг 1: Начальный баланс с зарезервированными средствами
       const createResult = BalanceService.create(
         Money.of(new Decimal(5000)),
-        Money.of(new Decimal(2000))
+        Money.of(new Decimal(2000)),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
       );
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
@@ -76,7 +81,7 @@ describe('Balance Integration Tests', () => {
     });
 
     it('сценарий множественных резервирований (открытие нескольких ордеров)', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(0)));
+      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -98,7 +103,7 @@ describe('Balance Integration Tests', () => {
     });
 
     it('сценарий частичного освобождения (частичное закрытие позиций)', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(3000)), Money.of(new Decimal(7000)));
+      const createResult = BalanceService.create(Money.of(new Decimal(3000)), Money.of(new Decimal(7000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -123,7 +128,9 @@ describe('Balance Integration Tests', () => {
       // Шаг 1: Создаём начальный баланс
       const createResult = BalanceService.create(
         Money.of(new Decimal(10000)),
-        Money.of(new Decimal(0))
+        Money.of(new Decimal(0)),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
       );
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
@@ -159,7 +166,7 @@ describe('Balance Integration Tests', () => {
 
     it('сценарий частичного исполнения: резервировали больше чем потратили', () => {
       // Резервировали $5000 для покупки, но купили только на $3000
-      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(0)));
+      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -197,7 +204,7 @@ describe('Balance Integration Tests', () => {
 
   describe('Граничные случаи и ошибки', () => {
     it('попытка резервировать больше чем available', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(1000)), Money.of(new Decimal(0)));
+      const createResult = BalanceService.create(Money.of(new Decimal(1000)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -211,7 +218,7 @@ describe('Balance Integration Tests', () => {
     });
 
     it('попытка освободить больше чем reserved', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(5000)), Money.of(new Decimal(1000)));
+      const createResult = BalanceService.create(Money.of(new Decimal(5000)), Money.of(new Decimal(1000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -225,7 +232,7 @@ describe('Balance Integration Tests', () => {
     });
 
     it('резервирование всех доступных средств', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(1000)), Money.of(new Decimal(0)));
+      const createResult = BalanceService.create(Money.of(new Decimal(1000)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -245,7 +252,7 @@ describe('Balance Integration Tests', () => {
     });
 
     it('освобождение всех зарезервированных средств', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(1000)));
+      const createResult = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(1000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -260,7 +267,7 @@ describe('Balance Integration Tests', () => {
     });
 
     it('попытка списать больше чем reserved', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(5000)), Money.of(new Decimal(1000)));
+      const createResult = BalanceService.create(Money.of(new Decimal(5000)), Money.of(new Decimal(1000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -274,7 +281,7 @@ describe('Balance Integration Tests', () => {
     });
 
     it('списание всех зарезервированных средств', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(5000)), Money.of(new Decimal(3000)));
+      const createResult = BalanceService.create(Money.of(new Decimal(5000)), Money.of(new Decimal(3000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -294,7 +301,9 @@ describe('Balance Integration Tests', () => {
     it('fromJSON → toJSON сохраняет баланс', () => {
       const original = {
         available: { amount: '10000', currency: 'USDC' },
-        reserved: { amount: '2000', currency: 'USDC' }
+        reserved: { amount: '2000', currency: 'USDC' },
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET'
       };
 
       const deserResult = BalanceSerializer.fromJSON(original);
@@ -319,7 +328,9 @@ describe('Balance Integration Tests', () => {
     it('сохраняет точность Decimal через string serialization', () => {
       const original = {
         available: { amount: '12345.6789', currency: 'USDC' },
-        reserved: { amount: '9876.5432', currency: 'USDC' }
+        reserved: { amount: '9876.5432', currency: 'USDC' },
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET'
       };
 
       const deserResult = BalanceSerializer.fromJSON(original);
@@ -333,7 +344,7 @@ describe('Balance Integration Tests', () => {
 
     it('workflow → serialize → deserialize → продолжение workflow', () => {
       // Создаём баланс и выполняем операцию
-      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(0)));
+      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -361,7 +372,7 @@ describe('Balance Integration Tests', () => {
 
   describe('Formatter интеграция', () => {
     it('форматирование на всех этапах workflow', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
+      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -387,14 +398,14 @@ describe('Balance Integration Tests', () => {
 
     it('форматирование edge cases', () => {
       // Пустой баланс
-      const emptyResult = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(0)));
+      const emptyResult = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(emptyResult.ok).toBe(true);
       if (!emptyResult.ok) return;
 
       expect(unwrap(BalanceFormatter.toPercentageString(emptyResult.value))).toBe('0.00%');
 
       // Всё зарезервировано
-      const allReservedResult = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(10000)));
+      const allReservedResult = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(10000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(allReservedResult.ok).toBe(true);
       if (!allReservedResult.ok) return;
 
@@ -404,7 +415,7 @@ describe('Balance Integration Tests', () => {
 
   describe('Query методы в workflow', () => {
     it('canAfford проверка перед резервированием', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(1000)), Money.of(new Decimal(0)));
+      const createResult = BalanceService.create(Money.of(new Decimal(1000)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -441,7 +452,7 @@ describe('Balance Integration Tests', () => {
     });
 
     it('reservedPercentage отслеживание во время workflow', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(0)));
+      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -473,7 +484,7 @@ describe('Balance Integration Tests', () => {
 
   describe('Immutability контракт', () => {
     it('все операции возвращают новые экземпляры', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
+      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 
@@ -508,7 +519,9 @@ describe('Balance Integration Tests', () => {
     it('Decimal arithmetic точна для Balance операций', () => {
       const createResult = BalanceService.create(
         Money.of(new Decimal(0.1)),
-        Money.of(new Decimal(0.2))
+        Money.of(new Decimal(0.2)),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
       );
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
@@ -521,7 +534,9 @@ describe('Balance Integration Tests', () => {
     it('reservedPercentage вычисляется точно', () => {
       const createResult = BalanceService.create(
         Money.of(new Decimal(8000)),
-        Money.of(new Decimal(2000))
+        Money.of(new Decimal(2000)),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
       );
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
@@ -554,7 +569,7 @@ describe('Balance Integration Tests', () => {
     });
 
     it('Formatter возвращает Err для невалидных decimals', () => {
-      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)));
+      const createResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
       expect(createResult.ok).toBe(true);
       if (!createResult.ok) return;
 

@@ -153,6 +153,8 @@ describe('Quote Integration Tests', () => {
         ask: 0.52,
         bidSize: 100,
         askSize: 150,
+        sourceId: TEST_SOURCE_ID,
+        instrumentId: TEST_INSTRUMENT_ID,
         timestamp: original.timestampMs().toNumber()
       });
 
@@ -420,6 +422,8 @@ describe('Quote Integration Tests', () => {
         new Decimal(0.52),
         new Decimal(100),
         new Decimal(150),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID,
         ts1
       );
       const result2 = QuoteService.create(
@@ -427,6 +431,8 @@ describe('Quote Integration Tests', () => {
         new Decimal(0.52),
         new Decimal(100),
         new Decimal(150),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID,
         ts2
       );
 
@@ -447,6 +453,8 @@ describe('Quote Integration Tests', () => {
         new Decimal(0.52),
         new Decimal(100),
         new Decimal(150),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID,
         ts1
       );
       const result2 = QuoteService.create(
@@ -454,6 +462,8 @@ describe('Quote Integration Tests', () => {
         new Decimal(0.52),
         new Decimal(100),
         new Decimal(150),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID,
         ts2
       );
 
@@ -472,6 +482,8 @@ describe('Quote Integration Tests', () => {
         new Decimal(0.52),
         new Decimal(100),
         new Decimal(150),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID,
         ts
       );
       const result2 = QuoteService.create(
@@ -479,6 +491,8 @@ describe('Quote Integration Tests', () => {
         new Decimal(0.52),
         new Decimal(100),
         new Decimal(150),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID,
         ts
       );
 

@@ -2,6 +2,7 @@ import { Balance } from '../core/Balance.js';
 import { MoneyFormatter } from '../../money/adapters/MoneyFormatter.js';
 import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
+import { accountIdToString } from '@polymarket/ids';
 
 /**
  * Форматтер для Balance
@@ -18,10 +19,16 @@ import { Result, Ok, Err } from '@polymarket/result';
  * import { Balance, BalanceFormatter } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
  * import { expectOk } from '@polymarket/result';
+ * import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+ *
+ * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+ * const venueId: VenueId = 'POLYMARKET' as VenueId;
  *
  * const balance = Balance.of(
  *   Money.fromUSDC(10000),
- *   Money.fromUSDC(2000)
+ *   Money.fromUSDC(2000),
+ *   accountId,
+ *   venueId
  * );
  *
  * console.log(expectOk(BalanceFormatter.toSummary(balance)));
@@ -31,7 +38,7 @@ import { Result, Ok, Err } from '@polymarket/result';
  * // "Avail: $10.0K | Res: $2.0K | Total: $12.0K"
  *
  * console.log(BalanceFormatter.toDebugString(balance));
- * // "Balance(available: 10000 USDC, reserved: 2000 USDC, total: 12000 USDC)"
+ * // "Balance(available: 10000 USDC, reserved: 2000 USDC, total: 12000 USDC, account: wallet:0x..., venue: POLYMARKET)"
  * ```
  */
 export class BalanceFormatter {
@@ -40,18 +47,26 @@ export class BalanceFormatter {
    *
    * @remarks
    * Показывает available, reserved, total и процент зарезервированных средств.
+   * Опционально показывает accountId и venueId.
    * Используется для детального отображения баланса.
    *
    * @param balance - Balance для форматирования
    * @param decimals - Количество десятичных знаков (по умолчанию 2)
+   * @param includeAccount - Показывать ли accountId (по умолчанию false)
+   * @param includeVenue - Показывать ли venueId (по умолчанию false)
    * @returns Result с отформатированной строкой вида "Available: $X, Reserved: $Y, Total: $Z (P% reserved)" или ошибкой валидации
    * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
+   * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+   * const venueId: VenueId = 'POLYMARKET' as VenueId;
+   *
    * const balance = Balance.of(
    *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.fromUSDC(2000),
+   *   accountId,
+   *   venueId
    * );
    *
    * const result1 = BalanceFormatter.toSummary(balance);
@@ -60,14 +75,26 @@ export class BalanceFormatter {
    *   // "Available: $10000.00, Reserved: $2000.00, Total: $12000.00 (16.67% reserved)"
    * }
    *
+   * // С accountId и venueId
+   * const result2 = BalanceFormatter.toSummary(balance, 2, true, true);
+   * if (result2.ok) {
+   *   console.log(result2.value);
+   *   // "Available: $10000.00, Reserved: $2000.00, Total: $12000.00 (16.67% reserved) [Account: wallet:0x..., Venue: POLYMARKET]"
+   * }
+   *
    * // Ошибка валидации
-   * const result2 = BalanceFormatter.toSummary(balance, -1);
-   * if (!result2.ok) {
-   *   console.log(result2.error.message); // ошибка валидации decimals
+   * const result3 = BalanceFormatter.toSummary(balance, -1);
+   * if (!result3.ok) {
+   *   console.log(result3.error.message); // ошибка валидации decimals
    * }
    * ```
    */
-  public static toSummary(balance: Balance, decimals: number = 2): Result<string, InvalidBalanceError> {
+  public static toSummary(
+    balance: Balance,
+    decimals: number = 2,
+    includeAccount: boolean = false,
+    includeVenue: boolean = false
+  ): Result<string, InvalidBalanceError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
       return Err(
         new InvalidBalanceError('decimals argument must be a non-negative integer', {
@@ -125,7 +152,21 @@ export class BalanceFormatter {
 
     const percentage = balance.reservedPercentage().toFixed(2);
 
-    return Ok(`Available: ${availableResult.value}, Reserved: ${reservedResult.value}, Total: ${totalResult.value} (${percentage}% reserved)`);
+    let result = `Available: ${availableResult.value}, Reserved: ${reservedResult.value}, Total: ${totalResult.value} (${percentage}% reserved)`;
+
+    // Добавляем accountId и venueId если запрошено
+    if (includeAccount || includeVenue) {
+      const parts: string[] = [];
+      if (includeAccount) {
+        parts.push(`Account: ${accountIdToString(balance.accountId())}`);
+      }
+      if (includeVenue) {
+        parts.push(`Venue: ${balance.venueId()}`);
+      }
+      result += ` [${parts.join(', ')}]`;
+    }
+
+    return Ok(result);
   }
 
   /**
@@ -133,18 +174,25 @@ export class BalanceFormatter {
    *
    * @remarks
    * Использует суффиксы K, M, B для тысяч, миллионов, миллиардов.
+   * Опционально показывает venueId (accountId слишком длинный для компактного формата).
    * Полезно для отображения баланса в ограниченном пространстве.
    *
    * @param balance - Balance для форматирования
    * @param decimals - Количество десятичных знаков после сокращения (по умолчанию 1)
+   * @param includeVenue - Показывать ли venueId (по умолчанию false)
    * @returns Result с отформатированной строкой вида "Avail: $X | Res: $Y | Total: $Z" или ошибкой валидации
    * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
    * ```typescript
+   * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+   * const venueId: VenueId = 'POLYMARKET' as VenueId;
+   *
    * const balance = Balance.of(
    *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.fromUSDC(2000),
+   *   accountId,
+   *   venueId
    * );
    *
    * const result = BalanceFormatter.toCompact(balance);
@@ -152,9 +200,16 @@ export class BalanceFormatter {
    *   console.log(result.value);
    *   // "Avail: $10.0K | Res: $2.0K | Total: $12.0K"
    * }
+   *
+   * // С venueId
+   * const result2 = BalanceFormatter.toCompact(balance, 1, true);
+   * if (result2.ok) {
+   *   console.log(result2.value);
+   *   // "Avail: $10.0K | Res: $2.0K | Total: $12.0K @ POLYMARKET"
+   * }
    * ```
    */
-  public static toCompact(balance: Balance, decimals: number = 1): Result<string, InvalidBalanceError> {
+  public static toCompact(balance: Balance, decimals: number = 1, includeVenue: boolean = false): Result<string, InvalidBalanceError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
       return Err(
         new InvalidBalanceError('decimals argument must be a non-negative integer', {
@@ -210,7 +265,14 @@ export class BalanceFormatter {
       );
     }
 
-    return Ok(`Avail: ${availableResult.value} | Res: ${reservedResult.value} | Total: ${totalResult.value}`);
+    let result = `Avail: ${availableResult.value} | Res: ${reservedResult.value} | Total: ${totalResult.value}`;
+
+    // Добавляем venueId если запрошено
+    if (includeVenue) {
+      result += ` @ ${balance.venueId()}`;
+    }
+
+    return Ok(result);
   }
 
   /**
@@ -219,27 +281,35 @@ export class BalanceFormatter {
    * @remarks
    * Показывает все поля баланса с валютой для отладки.
    * Использует полную точность Decimal.
+   * Всегда показывает accountId и venueId для полной диагностики.
    *
    * @param balance - Balance для форматирования
-   * @returns Строка вида "Balance(available: X USDC, reserved: Y USDC, total: Z USDC)"
+   * @returns Строка вида "Balance(available: X USDC, reserved: Y USDC, total: Z USDC, account: ..., venue: ...)"
    *
    * @example
    * ```typescript
+   * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+   * const venueId: VenueId = 'POLYMARKET' as VenueId;
+   *
    * const balance = Balance.of(
    *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.fromUSDC(2000),
+   *   accountId,
+   *   venueId
    * );
    *
    * console.log(BalanceFormatter.toDebugString(balance));
-   * // "Balance(available: 10000 USDC, reserved: 2000 USDC, total: 12000 USDC)"
+   * // "Balance(available: 10000 USDC, reserved: 2000 USDC, total: 12000 USDC, account: wallet:0x..., venue: POLYMARKET)"
    * ```
    */
   public static toDebugString(balance: Balance): string {
     const available = `${balance.available().value().toString()} ${balance.currency()}`;
     const reserved = `${balance.reserved().value().toString()} ${balance.currency()}`;
     const total = `${balance.total().value().toString()} ${balance.currency()}`;
+    const account = accountIdToString(balance.accountId());
+    const venue = balance.venueId();
 
-    return `Balance(available: ${available}, reserved: ${reserved}, total: ${total})`;
+    return `Balance(available: ${available}, reserved: ${reserved}, total: ${total}, account: ${account}, venue: ${venue})`;
   }
 
   /**

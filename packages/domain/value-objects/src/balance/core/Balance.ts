@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
 import { Money } from '../../money/core/Money.js';
-import type { SupportedCurrency } from '@polymarket/ids';
+import type { SupportedCurrency, AccountId, VenueId } from '@polymarket/ids';
 import { BalanceInvariantViolation } from './BalanceInvariantViolation.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
@@ -58,11 +58,15 @@ export class Balance {
    *
    * @param _available - Доступные средства
    * @param _reserved - Зарезервированные средства
+   * @param _accountId - ID аккаунта владельца
+   * @param _venueId - ID площадки (venue)
    * @throws {BalanceInvariantViolation} Если нарушены инварианты
    */
   private constructor(
     private readonly _available: Money,
-    private readonly _reserved: Money
+    private readonly _reserved: Money,
+    private readonly _accountId: AccountId,
+    private readonly _venueId: VenueId
   ) {
     // Инвариант 0a: Not NaN
     if (_available.value().isNaN() || _reserved.value().isNaN()) {
@@ -128,6 +132,8 @@ export class Balance {
    *
    * @param available - Доступные средства
    * @param reserved - Зарезервированные средства
+   * @param accountId - ID аккаунта владельца
+   * @param venueId - ID площадки (venue)
    * @returns Новый Balance объект
    * @throws {BalanceInvariantViolation} Если нарушены инварианты
    *
@@ -142,24 +148,35 @@ export class Balance {
    * // Прямое создание (может throw)
    * const balance = Balance.of(
    *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.fromUSDC(2000),
+   *   accountId,
+   *   venueId
    * );
    *
    * // Или через BalanceService (Result-based)
    * const result = BalanceService.create(
    *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.fromUSDC(2000),
+   *   accountId,
+   *   venueId
    * );
    * ```
    */
-  public static of(available: Money, reserved: Money): Balance {
-    return new Balance(available, reserved);
+  public static of(
+    available: Money,
+    reserved: Money,
+    accountId: AccountId,
+    venueId: VenueId
+  ): Balance {
+    return new Balance(available, reserved, accountId, venueId);
   }
 
   /**
    * Создаёт Balance с нулевым reserved
    *
    * @param available - Доступные средства
+   * @param accountId - ID аккаунта владельца
+   * @param venueId - ID площадки (venue)
    * @returns Новый Balance с reserved = 0
    * @throws {BalanceInvariantViolation} Если available < 0
    *
@@ -168,13 +185,17 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const balance = Balance.withZeroReserved(Money.of(10000));
+   * const balance = Balance.withZeroReserved(Money.of(10000), accountId, venueId);
    * // available: 10000, reserved: 0
    * ```
    */
-  public static withZeroReserved(available: Money): Balance {
+  public static withZeroReserved(
+    available: Money,
+    accountId: AccountId,
+    venueId: VenueId
+  ): Balance {
     const zeroReserved = Money.ZERO[available.currency()];
-    return new Balance(available, zeroReserved);
+    return new Balance(available, zeroReserved, accountId, venueId);
   }
 
   /**
@@ -184,6 +205,12 @@ export class Balance {
    * Автоматически создаётся для всех валют из Money.ZERO.
    * При добавлении новой валюты в SUPPORTED_CURRENCIES -
    * singleton создаётся автоматически.
+   *
+   * **Важно:** Эти балансы используют placeholder значения для accountId и venueId:
+   * - accountId: WALLET с нулевым адресом (0x000...000)
+   * - venueId: 'SYSTEM'
+   *
+   * Для создания balance с конкретным accountId/venueId используй Balance.of() или BalanceService.create().
    *
    * @example
    * ```typescript
@@ -199,7 +226,12 @@ export class Balance {
     Object.fromEntries(
       Object.entries(Money.ZERO).map(([currency, money]) => [
         currency,
-        new Balance(money, money)
+        new Balance(
+          money,
+          money,
+          { kind: 'WALLET', address: '0x0000000000000000000000000000000000000000' as any } as AccountId,
+          'SYSTEM' as VenueId
+        )
       ])
     ) as Record<SupportedCurrency, Balance>;
 
@@ -360,12 +392,44 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const balance1 = Balance.of(Money.of(100), Money.of(50));
-   * const balance2 = Balance.of(Money.of(200), Money.of(100));
+   * const balance1 = Balance.of(Money.of(100), Money.of(50), accountId, venueId);
+   * const balance2 = Balance.of(Money.of(200), Money.of(100), accountId, venueId);
    * console.log(balance1.hasSameCurrency(balance2)); // true
    * ```
    */
   public hasSameCurrency(other: Balance): boolean {
     return this.currency() === other.currency();
+  }
+
+  /**
+   * Возвращает ID аккаунта владельца
+   *
+   * @returns AccountId
+   *
+   * @example
+   * ```typescript
+   * const accountId = balance.accountId();
+   * if (accountId.kind === 'WALLET') {
+   *   console.log('Wallet address:', accountId.address);
+   * }
+   * ```
+   */
+  public accountId(): AccountId {
+    return this._accountId;
+  }
+
+  /**
+   * Возвращает ID площадки (venue)
+   *
+   * @returns VenueId
+   *
+   * @example
+   * ```typescript
+   * const venueId = balance.venueId();
+   * console.log('Venue:', venueId); // 'POLYMARKET'
+   * ```
+   */
+  public venueId(): VenueId {
+    return this._venueId;
   }
 }

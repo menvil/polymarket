@@ -4,12 +4,15 @@ import { BalanceFormatter } from '../../../../src/balance/adapters/BalanceFormat
 import { BalanceService } from '../../../../src/balance/facade/BalanceService.js';
 import { Money } from '../../../../src/money/core/Money.js';
 import { unwrap } from '@polymarket/result';
+import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
 
 describe('BalanceFormatter', () => {
   const createBalance = (available: number, reserved: number) => {
     const result = BalanceService.create(
       Money.of(new Decimal(available)),
-      Money.of(new Decimal(reserved))
+      Money.of(new Decimal(reserved)),
+      TEST_ACCOUNT_ID,
+      TEST_VENUE_ID
     );
     if (!result.ok) throw new Error('Failed to create balance');
     return result.value;

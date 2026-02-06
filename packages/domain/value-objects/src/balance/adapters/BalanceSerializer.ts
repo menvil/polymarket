@@ -1,5 +1,6 @@
 import { Result, Err } from '@polymarket/result';
 import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
+import { accountIdToString, parseAccountId, type VenueId } from '@polymarket/ids';
 import { Balance } from '../core/Balance.js';
 import { BalanceService } from '../facade/BalanceService.js';
 import { MoneySerializer } from '../../money/adapters/MoneySerializer.js';
@@ -45,6 +46,16 @@ function safeStringify(value: unknown): string {
  * делай полную runtime валидацию с unknown!
  *
  * Использует string для amount чтобы сохранить точность Decimal.
+ *
+ * @example
+ * ```json
+ * {
+ *   "available": { "amount": "10000", "currency": "USDC" },
+ *   "reserved": { "amount": "2000", "currency": "USDC" },
+ *   "accountId": "wallet:0x1234567890123456789012345678901234567890",
+ *   "venueId": "POLYMARKET"
+ * }
+ * ```
  */
 export interface BalanceJSON {
   available: {
@@ -55,6 +66,8 @@ export interface BalanceJSON {
     amount: string;
     currency: string;
   };
+  accountId: string;
+  venueId: string;
 }
 
 /**
@@ -78,7 +91,9 @@ export interface BalanceJSON {
  * ```json
  * {
  *   "available": { "amount": "10000", "currency": "USDC" },
- *   "reserved": { "amount": "2000", "currency": "USDC" }
+ *   "reserved": { "amount": "2000", "currency": "USDC" },
+ *   "accountId": "wallet:0x1234567890123456789012345678901234567890",
+ *   "venueId": "POLYMARKET"
  * }
  * ```
  *
@@ -86,26 +101,36 @@ export interface BalanceJSON {
  * ```typescript
  * import { BalanceSerializer } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
+ * import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
  *
  * // Десериализация
  * const result = BalanceSerializer.fromJSON({
  *   available: { amount: "10000", currency: "USDC" },
- *   reserved: { amount: "2000", currency: "USDC" }
+ *   reserved: { amount: "2000", currency: "USDC" },
+ *   accountId: "wallet:0x1234567890123456789012345678901234567890",
+ *   venueId: "POLYMARKET"
  * });
  * if (result.ok) {
  *   console.log(result.value.total().value()); // 12000
  * }
  *
  * // Сериализация
+ * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+ * const venueId: VenueId = 'POLYMARKET' as VenueId;
+ *
  * const balance = expectOk(BalanceService.create(
  *   Money.fromUSDC(10000),
- *   Money.fromUSDC(2000)
+ *   Money.fromUSDC(2000),
+ *   accountId,
+ *   venueId
  * ));
  * const json = BalanceSerializer.toJSON(balance);
  * console.log(json);
  * // {
  * //   available: { amount: "10000", currency: "USDC" },
- * //   reserved: { amount: "2000", currency: "USDC" }
+ * //   reserved: { amount: "2000", currency: "USDC" },
+ * //   accountId: "wallet:0x...",
+ * //   venueId: "POLYMARKET"
  * // }
  * ```
  */
@@ -121,10 +146,14 @@ export class BalanceSerializer {
    * Этапы валидации:
    * 1. Проверка что json это объект (не null, array, primitive)
    * 2. Проверка наличия обязательных полей 'available' и 'reserved'
-   * 3. Проверка типов полей (должны быть объектами)
+   * 3. Проверка типов полей available/reserved (должны быть объектами)
    * 4. Десериализация available через MoneySerializer
    * 5. Десериализация reserved через MoneySerializer
-   * 6. Делегирование BalanceService.create для бизнес-валидации
+   * 6. Проверка наличия обязательных полей 'accountId' и 'venueId'
+   * 7. Проверка типов полей accountId/venueId (должны быть строками)
+   * 8. Парсинг accountId через parseAccountId()
+   * 9. Создание VenueId (branded string)
+   * 10. Делегирование BalanceService.create для бизнес-валидации
    *
    * @param json - JSON данные (unknown)
    * @returns Result с Balance или InvalidBalanceError
@@ -134,29 +163,25 @@ export class BalanceSerializer {
    * // ✅ Валидные примеры
    * BalanceSerializer.fromJSON({
    *   available: { amount: "10000", currency: "USDC" },
-   *   reserved: { amount: "2000", currency: "USDC" }
-   * });
-   *
-   * BalanceSerializer.fromJSON({
-   *   available: { amount: 10000, currency: "USDC" },
-   *   reserved: { amount: 2000, currency: "USDC" }
+   *   reserved: { amount: "2000", currency: "USDC" },
+   *   accountId: "wallet:0x1234567890123456789012345678901234567890",
+   *   venueId: "POLYMARKET"
    * });
    *
    * // ❌ Структурные ошибки
    * BalanceSerializer.fromJSON(null);                    // Err: expected object
    * BalanceSerializer.fromJSON({ available: ... });      // Err: missing 'reserved'
-   * BalanceSerializer.fromJSON({ reserved: ... });       // Err: missing 'available'
-   * BalanceSerializer.fromJSON({ available: "...", ... }); // Err: invalid type
+   * BalanceSerializer.fromJSON({
+   *   available: ...,
+   *   reserved: ...
+   * });  // Err: missing 'accountId'
    *
    * // ❌ Бизнес-ошибки (делегированы BalanceService)
    * BalanceSerializer.fromJSON({
    *   available: { amount: "-100", currency: "USDC" },  // Err: negative available
-   *   reserved: { amount: "0", currency: "USDC" }
-   * });
-   *
-   * BalanceSerializer.fromJSON({
-   *   available: { amount: "100", currency: "USDC" },
-   *   reserved: { amount: "50", currency: "BTC" }       // Err: currency mismatch
+   *   reserved: { amount: "0", currency: "USDC" },
+   *   accountId: "wallet:0x...",
+   *   venueId: "POLYMARKET"
    * });
    * ```
    */
@@ -302,45 +327,138 @@ export class BalanceSerializer {
       );
     }
 
-    // 8. Делегирование бизнес-валидации BalanceService
-    return BalanceService.create(availableResult.value, reservedResult.value);
+    // 8. Проверка наличия поля accountId
+    if (!('accountId' in obj)) {
+      return Err(
+        new InvalidBalanceError(`Missing required field 'accountId'`, {
+          context: {
+            source: ErrorSource.PARSING,
+            service: BalanceSerializer.SERVICE_NAME,
+            op: 'fromJSON',
+            json: safeStringify(json),
+            reason: BalanceErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+
+    // 9. Проверка наличия поля venueId
+    if (!('venueId' in obj)) {
+      return Err(
+        new InvalidBalanceError(`Missing required field 'venueId'`, {
+          context: {
+            source: ErrorSource.PARSING,
+            service: BalanceSerializer.SERVICE_NAME,
+            op: 'fromJSON',
+            json: safeStringify(json),
+            reason: BalanceErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+
+    // 10. Проверка типа accountId (должен быть строкой)
+    if (typeof obj.accountId !== 'string') {
+      return Err(
+        new InvalidBalanceError(`Field 'accountId' must be a string`, {
+          context: {
+            source: ErrorSource.PARSING,
+            service: BalanceSerializer.SERVICE_NAME,
+            op: 'fromJSON',
+            accountId: safeStringify(obj.accountId),
+            reason: BalanceErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+
+    // 11. Проверка типа venueId (должен быть строкой)
+    if (typeof obj.venueId !== 'string') {
+      return Err(
+        new InvalidBalanceError(`Field 'venueId' must be a string`, {
+          context: {
+            source: ErrorSource.PARSING,
+            service: BalanceSerializer.SERVICE_NAME,
+            op: 'fromJSON',
+            venueId: safeStringify(obj.venueId),
+            reason: BalanceErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+
+    // 12. Парсинг accountId через parseAccountId()
+    const accountId = parseAccountId(obj.accountId);
+    if (!accountId) {
+      return Err(
+        new InvalidBalanceError(`Invalid accountId format: ${obj.accountId}`, {
+          context: {
+            source: ErrorSource.PARSING,
+            service: BalanceSerializer.SERVICE_NAME,
+            op: 'fromJSON',
+            accountId: obj.accountId,
+            reason: BalanceErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+
+    // 13. Создание VenueId (branded string)
+    const venueId = obj.venueId as VenueId;
+
+    // 14. Делегирование бизнес-валидации BalanceService
+    return BalanceService.create(
+      availableResult.value,
+      reservedResult.value,
+      accountId,
+      venueId
+    );
   }
 
   /**
    * Сериализует Balance в JSON
    *
    * @remarks
-   * Возвращает plain object с полями available и reserved.
-   * Каждое поле содержит { amount: string, currency: string }.
+   * Возвращает plain object с полями available, reserved, accountId и venueId.
+   * Каждое поле available/reserved содержит { amount: string, currency: string }.
    * Используем string для amount чтобы избежать потери точности.
+   * accountId сериализуется через accountIdToString() в canonical format.
+   * venueId сериализуется как string (branded VenueId).
    *
    * @param balance - Balance для сериализации
-   * @returns Plain object { available: {...}, reserved: {...} }
+   * @returns Plain object { available: {...}, reserved: {...}, accountId: string, venueId: string }
    *
    * @example
    * ```typescript
+   * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+   * const venueId: VenueId = 'POLYMARKET' as VenueId;
+   *
    * const balance = expectOk(BalanceService.create(
    *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.fromUSDC(2000),
+   *   accountId,
+   *   venueId
    * ));
    *
    * const json = BalanceSerializer.toJSON(balance);
    * console.log(json);
    * // {
    * //   available: { amount: "10000", currency: "USDC" },
-   * //   reserved: { amount: "2000", currency: "USDC" }
+   * //   reserved: { amount: "2000", currency: "USDC" },
+   * //   accountId: "wallet:0x...",
+   * //   venueId: "POLYMARKET"
    * // }
    *
    * // Можно сериализовать в JSON строку
    * const jsonString = JSON.stringify(json);
-   * console.log(jsonString);
-   * // '{"available":{"amount":"10000","currency":"USDC"},"reserved":{"amount":"2000","currency":"USDC"}}'
    * ```
    */
   public static toJSON(balance: Balance): BalanceJSON {
     return {
       available: MoneySerializer.toJSON(balance.available()),
-      reserved: MoneySerializer.toJSON(balance.reserved())
+      reserved: MoneySerializer.toJSON(balance.reserved()),
+      accountId: accountIdToString(balance.accountId()),
+      venueId: balance.venueId()
     };
   }
 }
