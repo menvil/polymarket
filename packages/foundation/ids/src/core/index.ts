@@ -86,7 +86,7 @@ export {
 
 // Venue
 export type { VenueId } from './VenueId.js';
-export { KnownVenues, isKnownVenue } from './VenueId.js';
+export { KnownVenues, isKnownVenue, asVenueId } from './VenueId.js';
 
 // Asset
 export type { AssetId } from './AssetId.js';

@@ -735,6 +735,54 @@ describe('Core IDs', () => {
           expect(parsed.userId).toBe('a]\\\\:b');
         }
       });
+
+      it('should handle user\\:123 (backslash + colon)', () => {
+        // Буквально "user\:123" (backslash перед двоеточием)
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:123');
+        const str = accountIdToString(venueAcc);
+        const parsed = parseAccountId(str);
+
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.userId).toBe('user\\:123');
+        }
+      });
+
+      it('should handle user\\\\:123 (double backslash + colon)', () => {
+        // Буквально "user\\:123" (двойной backslash + двоеточие)
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\\\:123');
+        const str = accountIdToString(venueAcc);
+        const parsed = parseAccountId(str);
+
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.userId).toBe('user\\\\:123');
+        }
+      });
+
+      it('should handle a\\b (backslash between letters)', () => {
+        // Буквально "a\b"
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'a\\b');
+        const str = accountIdToString(venueAcc);
+        const parsed = parseAccountId(str);
+
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.userId).toBe('a\\b');
+        }
+      });
+
+      it('should handle path\\to\\file (multiple backslashes)', () => {
+        // Путь с backslashes
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'path\\to\\file');
+        const str = accountIdToString(venueAcc);
+        const parsed = parseAccountId(str);
+
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.userId).toBe('path\\to\\file');
+        }
+      });
     });
 
     describe('Depth limit protection', () => {
@@ -922,14 +970,23 @@ describe('Core IDs', () => {
         expect(parsed2).toBeDefined();
       });
 
-      it('should use unsafe cast without validator (backward compatibility)', () => {
-        // Без валидатора любая строка принимается как WalletAddress
+      it('should reject invalid wallet address with default validator', () => {
+        // Дефолтная валидация через parseWalletAddress - отклоняет невалидные адреса
         const invalidStr = 'wallet:INVALID_ADDRESS';
         const parsed = parseAccountId(invalidStr);
 
+        expect(parsed).toBeUndefined(); // должно вернуть undefined
+      });
+
+      it('should accept valid wallet address with default validator', () => {
+        // Дефолтная валидация принимает валидные адреса
+        const validAddr = '0x1234567890123456789012345678901234567890';
+        const validStr = `wallet:${validAddr}`;
+        const parsed = parseAccountId(validStr);
+
         expect(parsed).toBeDefined();
         if (parsed?.kind === 'WALLET') {
-          expect(parsed.address).toBe('INVALID_ADDRESS');
+          expect(parsed.address).toBe(validAddr.toLowerCase()); // lowercase canonical
         }
       });
 
@@ -947,6 +1004,56 @@ describe('Core IDs', () => {
         const invalidStr = 'wallet:0xINVALID';
         const parsed2 = parseAccountId(invalidStr, { validateWalletAddress: validator });
         expect(parsed2).toBeUndefined();
+      });
+    });
+
+    describe('VenueId validation', () => {
+      it('should accept valid known venues', () => {
+        const str = 'venue:POLYMARKET:user_123';
+        const parsed = parseAccountId(str);
+
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.venueId).toBe('POLYMARKET');
+        }
+      });
+
+      it('should accept valid custom venues', () => {
+        const str = 'venue:MY_CUSTOM_VENUE:user_123';
+        const parsed = parseAccountId(str);
+
+        expect(parsed).toBeDefined();
+        if (parsed?.kind === 'VENUE') {
+          expect(parsed.venueId).toBe('MY_CUSTOM_VENUE');
+        }
+      });
+
+      it('should reject invalid venue format (lowercase)', () => {
+        const str = 'venue:polymarket:user_123';
+        const parsed = parseAccountId(str);
+
+        expect(parsed).toBeUndefined(); // lowercase не валидно
+      });
+
+      it('should reject invalid venue format (special chars)', () => {
+        const str = 'venue:POLY-MARKET:user_123';
+        const parsed = parseAccountId(str);
+
+        expect(parsed).toBeUndefined(); // дефис не валиден
+      });
+
+      it('should reject invalid venue format (starts with digit)', () => {
+        const str = 'venue:123VENUE:user_123';
+        const parsed = parseAccountId(str);
+
+        expect(parsed).toBeUndefined(); // не может начинаться с цифры
+      });
+
+      it('should reject empty venue', () => {
+        const str = 'venue::user_123';
+        const parsed = parseAccountId(str);
+
+        expect(parsed).toBeUndefined(); // пустой venue
       });
     });
   });

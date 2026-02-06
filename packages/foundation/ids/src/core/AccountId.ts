@@ -1,5 +1,7 @@
 import type { WalletAddress } from './WalletAddress.js';
+import { parseWalletAddress } from './WalletAddress.js';
 import type { VenueId } from './VenueId.js';
+import { asVenueId } from './VenueId.js';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 
@@ -134,13 +136,21 @@ export interface ParseAccountIdOptions {
    * @remarks
    * Если передана — используется для проверки формата wallet address.
    * При невалидном адресе должна вернуть undefined.
-   * Если не передана — используется unsafe каст (обратная совместимость).
+   *
+   * Если не передана — используется дефолтная валидация через parseWalletAddress():
+   * - Проверяет формат 0x + 40 hex символов
+   * - Возвращает lowercase canonical format
    *
    * @param raw - Строка с потенциальным wallet address
    * @returns WalletAddress или undefined если формат неверный
    *
    * @example
    * ```typescript
+   * // Дефолтная валидация (parseWalletAddress)
+   * parseAccountId('wallet:0xINVALID'); // → undefined
+   * parseAccountId('wallet:0x1234567890123456789012345678901234567890'); // → AccountId
+   *
+   * // Кастомная валидация
    * parseAccountId('wallet:0xINVALID', {
    *   validateWalletAddress: (raw) => {
    *     return /^0x[0-9a-f]{40}$/i.test(raw) ? raw as WalletAddress : undefined;
@@ -465,23 +475,17 @@ function parseAccountIdImpl(
 
     const rawAddress = parts[1];
 
-    // Валидация WalletAddress если передана функция
-    if (options?.validateWalletAddress) {
-      const validatedAddress = options.validateWalletAddress(rawAddress);
-      if (!validatedAddress) {
-        return undefined;
-      }
-      return {
-        kind: 'WALLET',
-        address: validatedAddress,
-      };
+    // Используем дефолтную валидацию или кастомную из options
+    const validate = options?.validateWalletAddress ?? parseWalletAddress;
+    const validatedAddress = validate(rawAddress);
+
+    if (!validatedAddress) {
+      return undefined;
     }
 
-    // Без валидации - unsafe каст (обратная совместимость)
-    const address = rawAddress as WalletAddress;
     return {
       kind: 'WALLET',
-      address,
+      address: validatedAddress,
     };
   }
 
@@ -490,7 +494,12 @@ function parseAccountIdImpl(
       return undefined;
     }
 
-    const venueId = parts[1] as VenueId;
+    // Валидация VenueId через asVenueId
+    const venueId = asVenueId(parts[1]);
+    if (!venueId) {
+      return undefined;
+    }
+
     const userId = unescape(parts[2]);
     return {
       kind: 'VENUE',

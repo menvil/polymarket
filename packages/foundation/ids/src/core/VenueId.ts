@@ -56,3 +56,36 @@ export const KnownVenues = {
 export function isKnownVenue(id: string): id is VenueId {
   return id === 'POLYMARKET' || id === 'KALSHI';
 }
+
+/**
+ * Валидация и парсинг VenueId
+ *
+ * @param raw - Строка для парсинга
+ * @returns VenueId или undefined если формат невалидный
+ *
+ * @remarks
+ * Валидирует формат VenueId:
+ * - Только uppercase буквы, цифры, подчеркивания
+ * - Длина 1-32 символа
+ * - Не может начинаться с цифры
+ *
+ * Поддерживает как известные venues (POLYMARKET, KALSHI),
+ * так и кастомные venues с валидным форматом.
+ *
+ * @example
+ * ```typescript
+ * asVenueId('POLYMARKET'); // → 'POLYMARKET' as VenueId
+ * asVenueId('MY_CUSTOM_VENUE'); // → 'MY_CUSTOM_VENUE' as VenueId
+ * asVenueId('invalid-venue'); // → undefined (содержит дефис)
+ * asVenueId('123VENUE'); // → undefined (начинается с цифры)
+ * asVenueId(''); // → undefined (пустая строка)
+ * ```
+ */
+export function asVenueId(raw: string): VenueId | undefined {
+  // Формат: uppercase буквы, цифры, подчеркивания, 1-32 символа, не начинается с цифры
+  if (!/^[A-Z_][A-Z0-9_]{0,31}$/.test(raw)) {
+    return undefined;
+  }
+
+  return raw as VenueId;
+}
