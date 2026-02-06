@@ -5,16 +5,19 @@
  * Branded type для type safety.
  * Представляет Ethereum address (0x...).
  *
- * Canonical format: lowercase (для equals и toString)
- * Display format: EIP-55 checksum (для UI и error detection)
+ * **Canonical format**: lowercase (для equals и toString)
+ * **Display format**: EIP-55 checksum (используй viem.getAddress() или ethers.getAddress())
  *
  * @example
  * ```typescript
+ * // Парсинг и валидация
  * const wallet = parseWalletAddress('0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed');
  * // → '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed' as WalletAddress (lowercase canonical)
  *
- * const checksum = toChecksumAddress(wallet);
- * // → '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed' (EIP-55 checksum)
+ * // Для EIP-55 checksum используй viem или ethers:
+ * import { getAddress } from 'viem';
+ * const checksum = getAddress(wallet);
+ * // → '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'
  * ```
  */
 export type WalletAddress = string & { readonly __brand: 'WalletAddress' };
@@ -27,7 +30,10 @@ export type WalletAddress = string & { readonly __brand: 'WalletAddress' };
  *
  * @remarks
  * Проверяет только формат, НЕ проверяет EIP-55 checksum.
- * Для валидации checksum используй parseWalletAddress().
+ * Для валидации и нормализации используй parseWalletAddress().
+ *
+ * Type guard позволяет TypeScript сузить тип до WalletAddress,
+ * но помни что WalletAddress должен быть lowercase canonical format.
  *
  * @example
  * ```typescript
@@ -36,7 +42,7 @@ export type WalletAddress = string & { readonly __brand: 'WalletAddress' };
  * isValidWalletAddress('5aaeb6053f3e94c9b9a09f33669435e7ef1beaed'); // → false (no 0x)
  * ```
  */
-export function isValidWalletAddress(address: string): boolean {
+export function isValidWalletAddress(address: string): address is WalletAddress {
   return /^0x[0-9a-fA-F]{40}$/.test(address);
 }
 
@@ -98,67 +104,51 @@ export function parseWalletAddress(address: string): WalletAddress | undefined {
 /**
  * Преобразовать WalletAddress в EIP-55 checksum format
  *
- * @param address - WalletAddress для преобразования
- * @returns EIP-55 checksum address (mixed case)
+ * @deprecated Требует реальной keccak256 реализации.
+ * Используй `getAddress()` из viem или ethers напрямую:
+ *
+ * ```typescript
+ * import { getAddress } from 'viem';
+ * const checksum = getAddress(wallet);
+ * ```
+ *
+ * или
+ *
+ * ```typescript
+ * import { getAddress } from 'ethers';
+ * const checksum = getAddress(wallet);
+ * ```
+ *
+ * @param _address - WalletAddress (не используется)
+ * @returns Никогда не возвращает (throws)
+ * @throws Error - всегда, так как требуется реальная keccak256 реализация
  *
  * @remarks
- * EIP-55 checksum encoding добавляет error detection через mixed case.
- * Используй для display в UI и для копирования пользователю.
+ * Предыдущая реализация использовала fake keccak256, который генерировал
+ * НЕВАЛИДНЫЕ EIP-55 checksums. Это опасно - кошельки и эксплореры отвергают
+ * такие адреса.
  *
- * Алгоритм:
- * 1. Берём lowercase address без '0x'
- * 2. Вычисляем keccak256 hash
- * 3. Для каждого char: если соответствующий hex digit >= 8, делаем uppercase
+ * Для корректного EIP-55 checksum нужна настоящая keccak256 реализация
+ * из crypto библиотеки. Так как @polymarket/ids стремится к zero dependencies,
+ * эта функция deprecated. Используй viem.getAddress() или ethers.getAddress().
  *
  * @example
  * ```typescript
- * const wallet = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
+ * // ❌ Не работает (throws)
  * const checksum = toChecksumAddress(wallet);
+ *
+ * // ✅ Используй вместо этого:
+ * import { getAddress } from 'viem';
+ * const wallet = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
+ * const checksum = getAddress(wallet);
  * // → '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'
  * ```
  */
-export function toChecksumAddress(address: WalletAddress): string {
-  const addr = address.toLowerCase().replace('0x', '');
-  const hash = keccak256(addr);
-
-  let checksumAddress = '0x';
-
-  for (let i = 0; i < addr.length; i++) {
-    // If hash byte >= 8, uppercase the char
-    if (parseInt(hash[i], 16) >= 8) {
-      checksumAddress += addr[i].toUpperCase();
-    } else {
-      checksumAddress += addr[i];
-    }
-  }
-
-  return checksumAddress;
-}
-
-/**
- * Simple keccak256 hash implementation для EIP-55 checksum
- *
- * @param str - Строка для хеширования
- * @returns Hex string hash
- *
- * @remarks
- * ⚠️ ВНИМАНИЕ: Это упрощённая реализация для demonstration.
- * В production коде используй crypto library (например, ethers или viem).
- *
- * Для целей этого модуля достаточно простой hash функции,
- * так как checksum это convenience feature, не security-critical.
- */
-function keccak256(str: string): string {
-  // Simple hash function для demonstration
-  // В production используй настоящую keccak256 из crypto library
-  let hash = '';
-  for (let i = 0; i < str.length; i++) {
-    const code = str.charCodeAt(i);
-    // Simple pseudo-hash: (code * prime) % 16
-    const hashValue = (code * 31 + i) % 16;
-    hash += hashValue.toString(16);
-  }
-  return hash.padEnd(40, '0');
+export function toChecksumAddress(_address: WalletAddress): string {
+  throw new Error(
+    'toChecksumAddress() requires a real keccak256 implementation. ' +
+      'Use viem.getAddress() or ethers.getAddress() directly for EIP-55 checksum formatting.'
+  );
 }
 
 /**

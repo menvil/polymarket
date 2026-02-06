@@ -845,13 +845,13 @@ describe('Core IDs', () => {
       expect(parseWalletAddress('0xINVALID0000000000000000000000000000000')).toBeUndefined(); // invalid hex
     });
 
-    it('should convert to checksum address', () => {
+    it('should throw error for deprecated toChecksumAddress', () => {
       const wallet = parseWalletAddress(testAddr)!;
-      const checksum = toChecksumAddress(wallet);
 
-      // Checksum should be mixed case (exact format depends on keccak256)
-      expect(checksum).toMatch(/^0x[0-9a-fA-F]{40}$/);
-      expect(checksum.toLowerCase()).toBe(testAddr);
+      // toChecksumAddress is deprecated and throws
+      expect(() => toChecksumAddress(wallet)).toThrow(
+        'toChecksumAddress() requires a real keccak256 implementation'
+      );
     });
 
     it('should compare addresses case-insensitively', () => {
@@ -868,12 +868,13 @@ describe('Core IDs', () => {
       expect(str).toBe(testAddr); // lowercase canonical
     });
 
-    it('should support round-trip: parse -> checksum -> parse', () => {
+    it('should support round-trip: parse -> lowercase -> parse', () => {
       const wallet = parseWalletAddress(testAddr)!;
-      const checksum = toChecksumAddress(wallet);
-      const parsed = parseWalletAddress(checksum)!;
+      const canonical = walletAddressToString(wallet);
+      const parsed = parseWalletAddress(canonical)!;
 
       expect(walletAddressEquals(wallet, parsed)).toBe(true);
+      expect(parsed).toBe(canonical);
     });
   });
 
