@@ -24,7 +24,7 @@ export {
 } from './ProtocolId.js';
 
 export type { ChainId } from './ChainId.js';
-export { KnownChainIds, getChainName } from './ChainId.js';
+export { KnownChainIds, getChainName, isValidChainId, chainId, parseChainId } from './ChainId.js';
 
 export type { ConditionId } from './ConditionId.js';
 export { isValidConditionId } from './ConditionId.js';

@@ -1,12 +1,12 @@
 import type { OnChainConditionRef } from './ConditionRef.js';
 import type { OutcomeKey } from './OutcomeKey.js';
 import type { SupportedCurrency } from './Currency.js';
-import type { ChainId } from './ChainId.js';
 import type { ConditionId } from './ConditionId.js';
 import { KnownCurrencies, isSupportedCurrency } from './Currency.js';
 import { parseOutcomeKey } from './OutcomeKey.js';
 import { isKnownOnChainProtocol } from './ProtocolId.js';
 import { isValidConditionId } from './ConditionId.js';
+import { parseChainId } from './ChainId.js';
 
 /**
  * AssetId - универсальный идентификатор актива
@@ -254,12 +254,9 @@ export function parseAssetId(str: string): AssetId | undefined {
       return undefined;
     }
 
-    // Валидация ChainId: строгая проверка числа (не parseInt!)
-    if (!/^\d+$/.test(chainIdStr)) {
-      return undefined;
-    }
-    const chainIdNum = Number(chainIdStr);
-    if (!Number.isFinite(chainIdNum) || chainIdNum < 0 || !Number.isInteger(chainIdNum)) {
+    // Валидация ChainId
+    const validatedChainId = parseChainId(chainIdStr);
+    if (!validatedChainId) {
       return undefined;
     }
 
@@ -284,7 +281,7 @@ export function parseAssetId(str: string): AssetId | undefined {
       conditionRef: {
         kind: 'ONCHAIN',
         protocolId,
-        chainId: chainIdNum as ChainId,
+        chainId: validatedChainId,
         conditionId: conditionId as ConditionId,
       },
       outcomeKey: validatedOutcomeKey,

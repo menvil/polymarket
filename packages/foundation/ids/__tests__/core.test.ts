@@ -29,6 +29,9 @@ import {
   normalizeCurrency,
   asSupportedCurrency,
   currencyEquals,
+  isValidChainId,
+  chainId,
+  parseChainId,
   parseWalletAddress,
   toChecksumAddress,
   walletAddressEquals,
@@ -517,6 +520,111 @@ describe('Core IDs', () => {
       expect(currencyEquals('USDC', 'USDC')).toBe(true);
       expect(currencyEquals(' USDC ', 'USDC')).toBe(true);
       expect(currencyEquals('USDC', 'USDT')).toBe(false);
+    });
+  });
+
+  describe('ChainId', () => {
+    describe('isValidChainId', () => {
+      it('should accept valid chain IDs', () => {
+        expect(isValidChainId(1)).toBe(true); // Ethereum
+        expect(isValidChainId(137)).toBe(true); // Polygon
+        expect(isValidChainId(8453)).toBe(true); // Base
+        expect(isValidChainId(999999)).toBe(true); // Arbitrary valid ID
+      });
+
+      it('should reject zero', () => {
+        expect(isValidChainId(0)).toBe(false);
+      });
+
+      it('should reject negative numbers', () => {
+        expect(isValidChainId(-1)).toBe(false);
+        expect(isValidChainId(-137)).toBe(false);
+      });
+
+      it('should reject floats', () => {
+        expect(isValidChainId(3.14)).toBe(false);
+        expect(isValidChainId(137.5)).toBe(false);
+      });
+
+      it('should reject NaN', () => {
+        expect(isValidChainId(NaN)).toBe(false);
+      });
+
+      it('should reject Infinity', () => {
+        expect(isValidChainId(Infinity)).toBe(false);
+        expect(isValidChainId(-Infinity)).toBe(false);
+      });
+
+      it('should reject unsafe integers', () => {
+        expect(isValidChainId(Number.MAX_SAFE_INTEGER + 1)).toBe(false);
+      });
+    });
+
+    describe('chainId factory', () => {
+      it('should create ChainId from valid numbers', () => {
+        const polygon = chainId(137);
+        expect(polygon).toBe(137);
+
+        const ethereum = chainId(1);
+        expect(ethereum).toBe(1);
+      });
+
+      it('should return undefined for invalid numbers', () => {
+        expect(chainId(0)).toBeUndefined();
+        expect(chainId(-1)).toBeUndefined();
+        expect(chainId(3.14)).toBeUndefined();
+        expect(chainId(NaN)).toBeUndefined();
+        expect(chainId(Infinity)).toBeUndefined();
+      });
+    });
+
+    describe('parseChainId', () => {
+      it('should parse valid chain ID strings', () => {
+        expect(parseChainId('1')).toBe(1); // Ethereum
+        expect(parseChainId('137')).toBe(137); // Polygon
+        expect(parseChainId('8453')).toBe(8453); // Base
+        expect(parseChainId('999999')).toBe(999999);
+      });
+
+      it('should reject zero string', () => {
+        expect(parseChainId('0')).toBeUndefined();
+      });
+
+      it('should reject negative number strings', () => {
+        expect(parseChainId('-1')).toBeUndefined();
+        expect(parseChainId('-137')).toBeUndefined();
+      });
+
+      it('should reject float strings', () => {
+        expect(parseChainId('3.14')).toBeUndefined();
+        expect(parseChainId('137.5')).toBeUndefined();
+      });
+
+      it('should reject strings with non-digit characters', () => {
+        expect(parseChainId('137abc')).toBeUndefined(); // parseInt bypass
+        expect(parseChainId('abc')).toBeUndefined();
+        expect(parseChainId('abc137')).toBeUndefined();
+      });
+
+      it('should reject empty string', () => {
+        expect(parseChainId('')).toBeUndefined();
+      });
+
+      it('should reject strings with whitespace', () => {
+        expect(parseChainId(' 137')).toBeUndefined();
+        expect(parseChainId('137 ')).toBeUndefined();
+        expect(parseChainId(' 137 ')).toBeUndefined();
+      });
+
+      it('should reject hex format', () => {
+        expect(parseChainId('0x89')).toBeUndefined(); // Polygon в hex
+        expect(parseChainId('0x1')).toBeUndefined();
+      });
+
+      it('should reject special values', () => {
+        expect(parseChainId('NaN')).toBeUndefined();
+        expect(parseChainId('Infinity')).toBeUndefined();
+      });
     });
   });
 
