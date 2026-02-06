@@ -52,5 +52,15 @@ export {
   type OutcomeTokenJSON
 } from './outcome-token/index.js';
 
+// TokenBalance модуль (только публичный API)
+export {
+  TokenBalance,
+  TokenBalanceService,
+  TokenBalanceSerializer,
+  TokenBalanceFormatter,
+  TokenBalanceErrorReason,
+  type TokenBalanceJSON
+} from './token-balance/index.js';
+
 // TODO: Implement these value objects
 // export { Quote } from './Quote.js';
