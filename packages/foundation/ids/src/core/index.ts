@@ -42,7 +42,6 @@ export {
 // Outcome
 export type { OutcomeKey } from './OutcomeKey.js';
 export {
-  unsafeOutcomeKey,
   parseOutcomeKey,
   BinaryOutcome,
   outcomeKeyToIndex,
@@ -51,6 +50,7 @@ export {
   oppositeOutcomeKey,
   oppositeOutcome, // @deprecated - используй oppositeOutcomeKey
 } from './OutcomeKey.js';
+// Note: unsafeOutcomeKey intentionally NOT exported (marked @internal, bypasses validation)
 
 // Account & Wallet
 export type { WalletAddress } from './WalletAddress.js';
@@ -58,10 +58,10 @@ export {
   isValidWalletAddress,
   normalizeWalletAddress,
   parseWalletAddress,
-  toChecksumAddress,
   walletAddressEquals,
   walletAddressToString,
 } from './WalletAddress.js';
+// Note: toChecksumAddress intentionally NOT exported (deprecated, always throws - use viem/ethers getAddress)
 
 export type { AccountId, ParseAccountIdOptions } from './AccountId.js';
 export {

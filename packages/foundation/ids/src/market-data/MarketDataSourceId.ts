@@ -204,6 +204,12 @@ export function asMarketDataSourceId(raw: string): MarketDataSourceId | undefine
  * Для кастомных sources пытается извлечь venue из префикса
  * (например, CUSTOM_VENUE_WS → CUSTOM_VENUE) и валидирует через asVenueId.
  *
+ * ⚠️ **Warning для custom sources:**
+ * Extraction venue из префикса это эвристика, основанная на паттерне {VENUE}_{TYPE}.
+ * Если твой custom source не следует этому паттерну, функция может вернуть
+ * неправильный venue или undefined. Для production custom sources рекомендуется
+ * добавить их в KnownMarketDataSources и SOURCE_META.
+ *
  * @example
  * ```typescript
  * sourceToVenue(KnownMarketDataSources.POLYMARKET_WS);      // → 'POLYMARKET' as VenueId
@@ -249,6 +255,12 @@ export function sourceToVenue(sourceId: MarketDataSourceId): VenueId | undefined
  * @remarks
  * Для известных sources использует SOURCE_META.
  * Для кастомных sources проверяет наличие '_REPLAY' в имени.
+ *
+ * ⚠️ **Warning для custom sources:**
+ * Проверка '_REPLAY' substring это эвристика. Если твой custom source содержит
+ * '_REPLAY' в имени но является live, или наоборот не содержит '_REPLAY' но
+ * является replay, функция вернет неправильный результат. Для production custom
+ * sources рекомендуется добавить их в KnownMarketDataSources и SOURCE_META.
  *
  * Live sources:
  * - WebSocket (POLYMARKET_WS, KALSHI_WS)

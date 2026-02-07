@@ -2,7 +2,7 @@ import type { OnChainProtocolId } from './ProtocolId.js';
 import type { ChainId } from './ChainId.js';
 import type { ConditionId } from './ConditionId.js';
 import type { VenueId } from './VenueId.js';
-import { isKnownOnChainProtocol } from './ProtocolId.js';
+import { asOnChainProtocolId } from './ProtocolId.js';
 import { parseChainId } from './ChainId.js';
 import { parseConditionId } from './ConditionId.js';
 import { asVenueId } from './VenueId.js';
@@ -269,10 +269,11 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
       return undefined;
     }
 
-    const [, protocolId, chainIdStr, conditionId] = parts;
+    const [, protocolIdRaw, chainIdStr, conditionId] = parts;
 
-    // Валидация OnChainProtocolId
-    if (!isKnownOnChainProtocol(protocolId)) {
+    // Валидация и парсинг OnChainProtocolId (поддерживает custom protocols)
+    const protocolId = asOnChainProtocolId(protocolIdRaw);
+    if (!protocolId) {
       return undefined;
     }
 

@@ -24,6 +24,8 @@
     }
   },
   "scripts": {
+    "clean": "rm -rf dist",
+    "prebuild": "npm run clean",
     "build": "tsc -p tsconfig.build.json",
     "test": "jest",
     "typecheck": "tsc --noEmit",

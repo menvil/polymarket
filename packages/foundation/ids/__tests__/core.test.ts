@@ -19,7 +19,6 @@ import {
   assetIdEquals,
   assetIdToString,
   parseAssetId,
-  unsafeOutcomeKey,
   parseOutcomeKey,
   BinaryOutcome,
   outcomeKeyToIndex,
@@ -36,7 +35,6 @@ import {
   parseConditionId,
   normalizeConditionId,
   parseWalletAddress,
-  toChecksumAddress,
   walletAddressEquals,
   walletAddressToString,
   accountIdFromWallet,
@@ -222,9 +220,30 @@ describe('Core IDs', () => {
           expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:0:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toBeUndefined();
         });
 
-        it('should reject unknown OnChainProtocolId', () => {
-          expect(parseConditionRef('ONCHAIN:FAKE_PROTOCOL:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toBeUndefined();
-          expect(parseConditionRef('ONCHAIN:UNKNOWN:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toBeUndefined();
+        it('should accept custom OnChainProtocolId with valid format', () => {
+          // Custom protocols с валидным форматом должны приниматься
+          const customProto1 = parseConditionRef('ONCHAIN:CUSTOM_PROTOCOL:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+          expect(customProto1).toBeDefined();
+          expect(customProto1?.kind).toBe('ONCHAIN');
+          if (customProto1?.kind === 'ONCHAIN') {
+            expect(customProto1.protocolId).toBe('CUSTOM_PROTOCOL');
+          }
+
+          const customProto2 = parseConditionRef('ONCHAIN:MY_CTF:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
+          expect(customProto2).toBeDefined();
+          expect(customProto2?.kind).toBe('ONCHAIN');
+          if (customProto2?.kind === 'ONCHAIN') {
+            expect(customProto2.protocolId).toBe('MY_CTF');
+          }
+        });
+
+        it('should reject invalid OnChainProtocolId format', () => {
+          // Lowercase (невалидный формат)
+          expect(parseConditionRef('ONCHAIN:custom_protocol:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toBeUndefined();
+          // Содержит дефис
+          expect(parseConditionRef('ONCHAIN:CUSTOM-PROTOCOL:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toBeUndefined();
+          // Начинается с цифры
+          expect(parseConditionRef('ONCHAIN:123PROTOCOL:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')).toBeUndefined();
         });
 
         it('should reject invalid ConditionId format', () => {
@@ -490,9 +509,24 @@ describe('Core IDs', () => {
         expect(invalid4).toBeUndefined();
       });
 
-      it('should reject unknown OnChainProtocolId', () => {
-        const invalid = parseAssetId('OUTCOME_TOKEN:ONCHAIN:UNKNOWN_PROTOCOL:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:UP');
-        expect(invalid).toBeUndefined();
+      it('should accept custom OnChainProtocolId with valid format', () => {
+        // Custom protocol с валидным форматом
+        const customAsset = parseAssetId('OUTCOME_TOKEN:ONCHAIN:CUSTOM_PROTOCOL:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:UP');
+        expect(customAsset).toBeDefined();
+        expect(customAsset?.type).toBe('OUTCOME_TOKEN');
+        if (customAsset?.type === 'OUTCOME_TOKEN') {
+          expect(customAsset.conditionRef.protocolId).toBe('CUSTOM_PROTOCOL');
+        }
+      });
+
+      it('should reject invalid OnChainProtocolId format', () => {
+        // Lowercase (невалидный формат)
+        const invalid1 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:custom_protocol:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:UP');
+        expect(invalid1).toBeUndefined();
+
+        // Содержит дефис
+        const invalid2 = parseAssetId('OUTCOME_TOKEN:ONCHAIN:CUSTOM-PROTOCOL:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:UP');
+        expect(invalid2).toBeUndefined();
       });
 
       it('should reject invalid ConditionId', () => {
@@ -563,24 +597,6 @@ describe('Core IDs', () => {
   });
 
   describe('OutcomeKey', () => {
-    describe('unsafeOutcomeKey', () => {
-      it('should create outcome key without validation (compile-time constants)', () => {
-        const upKey = unsafeOutcomeKey('UP');
-        const downKey = unsafeOutcomeKey('DOWN');
-        const customKey = unsafeOutcomeKey('TEAM_A');
-
-        expect(upKey).toBe('UP');
-        expect(downKey).toBe('DOWN');
-        expect(customKey).toBe('TEAM_A');
-      });
-
-      it('should NOT validate input (internal use only)', () => {
-        // ⚠️ Эта функция НЕ валидирует - используется только для BinaryOutcome констант
-        const invalid = unsafeOutcomeKey(':::garbage\\\\');
-        expect(invalid).toBe(':::garbage\\\\'); // проходит без валидации
-      });
-    });
-
     it('should have binary outcome constants', () => {
       expect(BinaryOutcome.UP).toBe('UP');
       expect(BinaryOutcome.DOWN).toBe('DOWN');
@@ -589,7 +605,9 @@ describe('Core IDs', () => {
     it('should convert outcome key to index', () => {
       expect(outcomeKeyToIndex(BinaryOutcome.DOWN)).toBe(0);
       expect(outcomeKeyToIndex(BinaryOutcome.UP)).toBe(1);
-      expect(outcomeKeyToIndex(unsafeOutcomeKey('UNKNOWN'))).toBeUndefined();
+      // Unknown outcome key (не UP/DOWN)
+      const unknownKey = parseOutcomeKey('UNKNOWN');
+      expect(outcomeKeyToIndex(unknownKey!)).toBeUndefined();
     });
 
     it('should convert index to outcome key', () => {
@@ -600,7 +618,7 @@ describe('Core IDs', () => {
 
     it('should compare outcome keys', () => {
       const up1 = BinaryOutcome.UP;
-      const up2 = unsafeOutcomeKey('UP');
+      const up2 = parseOutcomeKey('UP')!;
       const down = BinaryOutcome.DOWN;
 
       expect(outcomeKeyEquals(up1, up2)).toBe(true);
@@ -610,7 +628,9 @@ describe('Core IDs', () => {
     it('should get opposite outcome for binary', () => {
       expect(oppositeOutcomeKey(BinaryOutcome.UP)).toBe(BinaryOutcome.DOWN);
       expect(oppositeOutcomeKey(BinaryOutcome.DOWN)).toBe(BinaryOutcome.UP);
-      expect(oppositeOutcomeKey(unsafeOutcomeKey('CUSTOM'))).toBeUndefined();
+      // Custom outcome key (не binary)
+      const customKey = parseOutcomeKey('CUSTOM')!;
+      expect(oppositeOutcomeKey(customKey)).toBeUndefined();
     });
 
     it('should support round-trip conversion', () => {
@@ -908,15 +928,6 @@ describe('Core IDs', () => {
       expect(parseWalletAddress('0x123')).toBeUndefined(); // too short
       expect(parseWalletAddress('5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')).toBeUndefined(); // no 0x
       expect(parseWalletAddress('0xINVALID0000000000000000000000000000000')).toBeUndefined(); // invalid hex
-    });
-
-    it('should throw error for deprecated toChecksumAddress', () => {
-      const wallet = parseWalletAddress(testAddr)!;
-
-      // toChecksumAddress is deprecated and throws
-      expect(() => toChecksumAddress(wallet)).toThrow(
-        'toChecksumAddress() requires a real keccak256 implementation'
-      );
     });
 
     it('should compare addresses case-insensitively', () => {

@@ -1,11 +1,10 @@
 import type { OnChainConditionRef } from './ConditionRef.js';
 import type { OutcomeKey } from './OutcomeKey.js';
 import type { SupportedCurrency } from './Currency.js';
-import type { ConditionId } from './ConditionId.js';
 import { KnownCurrencies, isSupportedCurrency } from './Currency.js';
 import { parseOutcomeKey } from './OutcomeKey.js';
-import { isKnownOnChainProtocol } from './ProtocolId.js';
-import { isValidConditionId } from './ConditionId.js';
+import { asOnChainProtocolId } from './ProtocolId.js';
+import { parseConditionId } from './ConditionId.js';
 import { parseChainId } from './ChainId.js';
 
 /**
@@ -248,9 +247,15 @@ export function parseAssetId(str: string): AssetId | undefined {
       return undefined;
     }
 
-    const [, kind, protocolId, chainIdStr, conditionId, outcomeKeyStr] = parts;
+    const [, kind, protocolIdRaw, chainIdStr, conditionIdRaw, outcomeKeyStr] = parts;
 
     if (kind !== 'ONCHAIN') {
+      return undefined;
+    }
+
+    // Валидация и парсинг OnChainProtocolId (поддерживает custom protocols)
+    const protocolId = asOnChainProtocolId(protocolIdRaw);
+    if (!protocolId) {
       return undefined;
     }
 
@@ -260,13 +265,9 @@ export function parseAssetId(str: string): AssetId | undefined {
       return undefined;
     }
 
-    // Валидация OnChainProtocolId
-    if (!isKnownOnChainProtocol(protocolId)) {
-      return undefined;
-    }
-
-    // Валидация ConditionId
-    if (!isValidConditionId(conditionId)) {
+    // Валидация и нормализация ConditionId (lowercase canonical form)
+    const conditionId = parseConditionId(conditionIdRaw);
+    if (!conditionId) {
       return undefined;
     }
 
@@ -282,7 +283,7 @@ export function parseAssetId(str: string): AssetId | undefined {
         kind: 'ONCHAIN',
         protocolId,
         chainId: validatedChainId,
-        conditionId: conditionId as ConditionId,
+        conditionId,
       },
       outcomeKey: validatedOutcomeKey,
     };
