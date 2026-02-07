@@ -7,6 +7,7 @@ import {
   sourceToVenue,
   isLiveSource,
   isReplaySource,
+  asInstrumentId,
 } from '../src/index.js';
 
 describe('Market Data IDs', () => {
@@ -119,6 +120,53 @@ describe('Market Data IDs', () => {
       const customReplay = asMarketDataSourceId('MY_VENUE_REPLAY')!;
       expect(isLiveSource(customReplay)).toBeUndefined();
       expect(isReplaySource(customReplay)).toBeUndefined();
+    });
+  });
+
+  describe('InstrumentId', () => {
+    it('should parse valid instrument IDs', () => {
+      expect(asInstrumentId('BTC-USD')).toBe('BTC-USD');
+      expect(asInstrumentId('ETH_USDC')).toBe('ETH_USDC');
+      expect(asInstrumentId('market-123')).toBe('market-123');
+      expect(asInstrumentId('INSTRUMENT.v2')).toBe('INSTRUMENT.v2');
+    });
+
+    it('should trim whitespace', () => {
+      expect(asInstrumentId('  BTC-USD  ')).toBe('BTC-USD');
+      expect(asInstrumentId('\tETH-USD\n')).toBe('ETH-USD');
+    });
+
+    it('should reject empty strings', () => {
+      expect(asInstrumentId('')).toBeUndefined();
+      expect(asInstrumentId('  ')).toBeUndefined();
+      expect(asInstrumentId('\t\n')).toBeUndefined();
+    });
+
+    it('should reject strings exceeding max length', () => {
+      const maxLength = 'x'.repeat(128);
+      const tooLong = 'x'.repeat(129);
+
+      expect(asInstrumentId(maxLength)).toBe(maxLength);
+      expect(asInstrumentId(tooLong)).toBeUndefined();
+    });
+
+    it('should reject control characters', () => {
+      expect(asInstrumentId('BTC\x00USD')).toBeUndefined(); // null
+      expect(asInstrumentId('BTC\x01USD')).toBeUndefined(); // start of heading
+      expect(asInstrumentId('BTC\x1FUSD')).toBeUndefined(); // unit separator
+      expect(asInstrumentId('BTC\x7FUSD')).toBeUndefined(); // delete
+      expect(asInstrumentId('BTC\x9FUSD')).toBeUndefined(); // application program command
+    });
+
+    it('should accept various formats', () => {
+      // Типичные форматы instrument IDs
+      expect(asInstrumentId('BTC-USD')).toBe('BTC-USD');
+      expect(asInstrumentId('BTC_USD')).toBe('BTC_USD');
+      expect(asInstrumentId('BTC/USD')).toBe('BTC/USD');
+      expect(asInstrumentId('BTCUSD')).toBe('BTCUSD');
+      expect(asInstrumentId('btc-usd')).toBe('btc-usd'); // lowercase OK
+      expect(asInstrumentId('BTC-USD-PERP')).toBe('BTC-USD-PERP');
+      expect(asInstrumentId('Market:123')).toBe('Market:123');
     });
   });
 });

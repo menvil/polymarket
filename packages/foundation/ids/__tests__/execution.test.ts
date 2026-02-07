@@ -6,6 +6,8 @@ import {
   executionToVenue,
   isSimulator,
   isLiveVenue,
+  asOrderId,
+  asFillId,
 } from '../src/index.js';
 
 describe('Execution IDs', () => {
@@ -99,6 +101,92 @@ describe('Execution IDs', () => {
       expect(isLiveVenue(customVenue)).toBe(true);
       // Only SIMULATOR is a simulator
       expect(isSimulator(customVenue)).toBe(false);
+    });
+  });
+
+  describe('OrderId', () => {
+    it('should parse valid order IDs', () => {
+      expect(asOrderId('order-123')).toBe('order-123');
+      expect(asOrderId('ORDER_456')).toBe('ORDER_456');
+      expect(asOrderId('uuid-1234-5678')).toBe('uuid-1234-5678');
+      expect(asOrderId('12345')).toBe('12345');
+    });
+
+    it('should trim whitespace', () => {
+      expect(asOrderId('  order-123  ')).toBe('order-123');
+      expect(asOrderId('\torder-456\n')).toBe('order-456');
+    });
+
+    it('should reject empty strings', () => {
+      expect(asOrderId('')).toBeUndefined();
+      expect(asOrderId('  ')).toBeUndefined();
+      expect(asOrderId('\t\n')).toBeUndefined();
+    });
+
+    it('should reject strings exceeding max length', () => {
+      const maxLength = 'x'.repeat(256);
+      const tooLong = 'x'.repeat(257);
+
+      expect(asOrderId(maxLength)).toBe(maxLength);
+      expect(asOrderId(tooLong)).toBeUndefined();
+    });
+
+    it('should reject control characters', () => {
+      expect(asOrderId('order\x00id')).toBeUndefined(); // null
+      expect(asOrderId('order\x01id')).toBeUndefined(); // start of heading
+      expect(asOrderId('order\x1Fid')).toBeUndefined(); // unit separator
+      expect(asOrderId('order\x7Fid')).toBeUndefined(); // delete
+      expect(asOrderId('order\x9Fid')).toBeUndefined(); // application program command
+    });
+
+    it('should accept special characters except control chars', () => {
+      expect(asOrderId('order-123')).toBe('order-123');
+      expect(asOrderId('order_456')).toBe('order_456');
+      expect(asOrderId('order.789')).toBe('order.789');
+      expect(asOrderId('order@venue')).toBe('order@venue');
+    });
+  });
+
+  describe('FillId', () => {
+    it('should parse valid fill IDs', () => {
+      expect(asFillId('fill-123')).toBe('fill-123');
+      expect(asFillId('FILL_456')).toBe('FILL_456');
+      expect(asFillId('trade-uuid-1234')).toBe('trade-uuid-1234');
+      expect(asFillId('67890')).toBe('67890');
+    });
+
+    it('should trim whitespace', () => {
+      expect(asFillId('  fill-123  ')).toBe('fill-123');
+      expect(asFillId('\tfill-456\n')).toBe('fill-456');
+    });
+
+    it('should reject empty strings', () => {
+      expect(asFillId('')).toBeUndefined();
+      expect(asFillId('  ')).toBeUndefined();
+      expect(asFillId('\t\n')).toBeUndefined();
+    });
+
+    it('should reject strings exceeding max length', () => {
+      const maxLength = 'x'.repeat(256);
+      const tooLong = 'x'.repeat(257);
+
+      expect(asFillId(maxLength)).toBe(maxLength);
+      expect(asFillId(tooLong)).toBeUndefined();
+    });
+
+    it('should reject control characters', () => {
+      expect(asFillId('fill\x00id')).toBeUndefined(); // null
+      expect(asFillId('fill\x01id')).toBeUndefined(); // start of heading
+      expect(asFillId('fill\x1Fid')).toBeUndefined(); // unit separator
+      expect(asFillId('fill\x7Fid')).toBeUndefined(); // delete
+      expect(asFillId('fill\x9Fid')).toBeUndefined(); // application program command
+    });
+
+    it('should accept special characters except control chars', () => {
+      expect(asFillId('fill-123')).toBe('fill-123');
+      expect(asFillId('fill_456')).toBe('fill_456');
+      expect(asFillId('fill.789')).toBe('fill.789');
+      expect(asFillId('fill@venue')).toBe('fill@venue');
     });
   });
 });
