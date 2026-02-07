@@ -7,10 +7,14 @@
  *
  * Обычно это:
  * - Hex string (0x...)
- * - Hash от параметров condition
+ * - Hash от параметров condition (keccak256, 32 байта)
  *
- * ⚠️ ВАЖНО: ConditionId НИКОГДА не используется отдельно!
- * Всегда используй ConditionRef (protocol + chain + condition).
+ * ⚠️ ВАЖНО: В большинстве случаев используй ConditionRef вместо голого ConditionId.
+ * ConditionRef добавляет protocol и chain context, необходимый для однозначной идентификации.
+ * Голый ConditionId допустим только для:
+ * - Internal storage (когда protocol/chain известны из контекста)
+ * - Validation и parsing
+ * - Mapping/lookup в рамках одного протокола
  *
  * @example
  * ```typescript
