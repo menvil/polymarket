@@ -8,13 +8,16 @@
     "packages/domain/*"
   ],
   "scripts": {
+    "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist packages/*/*/*.tsbuildinfo",
+    "clean:dist": "rm -rf packages/*/*/dist",
+    "clean:build": "rm -rf packages/*/*/*.tsbuildinfo",
+    "prebuild": "npm run clean:dist && npm run clean:build",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",
     "lint:md": "npm run lint:md --workspaces --if-present",
     "lint:md:fix": "npm run lint:md:fix --workspaces --if-present",
-    "typecheck": "npm run typecheck --workspaces",
-    "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist"
+    "typecheck": "npm run typecheck --workspaces"
   },
   "devDependencies": {
     "markdownlint-cli2": "^0.20.0",
