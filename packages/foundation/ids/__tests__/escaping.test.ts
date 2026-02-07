@@ -21,6 +21,18 @@ describe('Escaping utils', () => {
     it('should not escape normal characters', () => {
       expect(escape('normal')).toBe('normal');
     });
+
+    it('should handle empty string', () => {
+      expect(escape('')).toBe('');
+    });
+
+    it('should handle string with only colons', () => {
+      expect(escape(':::')).toBe('\\:\\:\\:');
+    });
+
+    it('should handle string with only backslashes', () => {
+      expect(escape('\\\\\\')).toBe('\\\\\\\\\\\\');
+    });
   });
 
   describe('unescape', () => {
@@ -40,6 +52,15 @@ describe('Escaping utils', () => {
 
     it('should handle normal characters', () => {
       expect(unescape('normal')).toBe('normal');
+    });
+
+    it('should handle empty string', () => {
+      expect(unescape('')).toBe('');
+    });
+
+    it('should handle backslash at end of string', () => {
+      // Backslash at end (incomplete escape sequence)
+      expect(unescape('A\\')).toBe('A\\');
     });
   });
 
@@ -64,6 +85,23 @@ describe('Escaping utils', () => {
       expect(splitEscaped('A\\\\\\:B:C')).toEqual(['A\\\\\\:B', 'C']);
       // After unescape:
       expect(splitEscaped('A\\\\\\:B:C').map(unescape)).toEqual(['A\\:B', 'C']);
+    });
+
+    it('should handle empty string', () => {
+      expect(splitEscaped('')).toEqual(['']);
+    });
+
+    it('should handle trailing colon', () => {
+      expect(splitEscaped('A:B:')).toEqual(['A', 'B', '']);
+    });
+
+    it('should handle leading colon', () => {
+      expect(splitEscaped(':A:B')).toEqual(['', 'A', 'B']);
+    });
+
+    it('should handle consecutive colons', () => {
+      expect(splitEscaped('A::B')).toEqual(['A', '', 'B']);
+      expect(splitEscaped(':::')).toEqual(['', '', '', '']);
     });
   });
 

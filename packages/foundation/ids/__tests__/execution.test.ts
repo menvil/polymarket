@@ -72,12 +72,33 @@ describe('Execution IDs', () => {
       expect(asExecutionVenueId('A'.repeat(33))).toBeUndefined(); // 33 символа (лимит 32)
     });
 
+    it('should accept execution venue ID at max length', () => {
+      const maxLenId = 'A'.repeat(32);
+      expect(asExecutionVenueId(maxLenId)).toBe(maxLenId);
+    });
+
+    it('should accept consecutive underscores', () => {
+      expect(asExecutionVenueId('VENUE__NAME')).toBe('VENUE__NAME');
+    });
+
+    it('should accept ending with underscore', () => {
+      expect(asExecutionVenueId('VENUE_')).toBe('VENUE_');
+    });
+
     it('should map custom execution venue to venue with validation', () => {
       const customExec = asExecutionVenueId('CUSTOM_VENUE');
       expect(customExec).toBeDefined();
 
       const venue = executionToVenue(customExec!);
       expect(venue).toBe('CUSTOM_VENUE');
+    });
+
+    it('should handle custom venue live/simulator checks', () => {
+      const customVenue = asExecutionVenueId('CUSTOM_VENUE')!;
+      // Custom venues are treated as live venues by default
+      expect(isLiveVenue(customVenue)).toBe(true);
+      // Only SIMULATOR is a simulator
+      expect(isSimulator(customVenue)).toBe(false);
     });
   });
 });

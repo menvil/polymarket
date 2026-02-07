@@ -83,22 +83,26 @@ describe('Market Data IDs', () => {
       expect(asMarketDataSourceId('A'.repeat(65))).toBeUndefined(); // 65 символов (лимит 64)
     });
 
-    it('should return undefined for unknown custom sources', () => {
-      // Unknown sources не имеют mapping (эвристика убрана)
-      const customSource = asMarketDataSourceId('MY_VENUE_WS');
-      expect(customSource).toBeDefined();
-
-      const venue = sourceToVenue(customSource!);
-      expect(venue).toBeUndefined(); // Unknown source → undefined
+    it('should accept source ID at max length', () => {
+      const maxLenId = 'A'.repeat(64);
+      expect(asMarketDataSourceId(maxLenId)).toBe(maxLenId);
     });
 
-    it('should return undefined for unknown source without underscore', () => {
-      // Unknown source без underscore
-      const customSource = asMarketDataSourceId('CUSTOM');
-      expect(customSource).toBeDefined();
+    it('should accept consecutive underscores', () => {
+      expect(asMarketDataSourceId('SOURCE__NAME')).toBe('SOURCE__NAME');
+    });
 
-      const venue = sourceToVenue(customSource!);
-      expect(venue).toBeUndefined(); // Unknown source → undefined
+    it('should accept ending with underscore', () => {
+      expect(asMarketDataSourceId('SOURCE_')).toBe('SOURCE_');
+    });
+
+    it('should return undefined for unknown custom sources', () => {
+      // Unknown sources не имеют mapping (эвристика убрана)
+      const withUnderscore = asMarketDataSourceId('MY_VENUE_WS')!;
+      const withoutUnderscore = asMarketDataSourceId('CUSTOM')!;
+
+      expect(sourceToVenue(withUnderscore)).toBeUndefined();
+      expect(sourceToVenue(withoutUnderscore)).toBeUndefined();
     });
 
     it('should return undefined for RPC source venue mapping', () => {

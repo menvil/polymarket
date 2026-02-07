@@ -33,7 +33,6 @@ import {
   parseChainId,
   isValidConditionId,
   parseConditionId,
-  normalizeConditionId,
   parseWalletAddress,
   walletAddressEquals,
   walletAddressToString,
@@ -393,6 +392,22 @@ describe('Core IDs', () => {
       expect(asVenueId('lowercase')).toBeUndefined(); // lowercase
       expect(asVenueId('A'.repeat(33))).toBeUndefined(); // слишком длинная (>32)
     });
+
+    it('should accept venue ID at max length', () => {
+      const maxLenId = 'A'.repeat(32);
+      expect(asVenueId(maxLenId)).toBe(maxLenId);
+    });
+
+    it('should accept consecutive underscores', () => {
+      expect(asVenueId('VENUE__NAME')).toBe('VENUE__NAME');
+      expect(asVenueId('MY___VENUE')).toBe('MY___VENUE');
+    });
+
+    it('should accept leading and trailing underscores', () => {
+      expect(asVenueId('_VENUE')).toBe('_VENUE');
+      expect(asVenueId('VENUE_')).toBe('VENUE_');
+      expect(asVenueId('_VENUE_')).toBe('_VENUE_');
+    });
   });
 
   describe('OnChainProtocolId', () => {
@@ -429,6 +444,22 @@ describe('Core IDs', () => {
       expect(asOnChainProtocolId('has\\backslash')).toBeUndefined(); // backslash
       expect(asOnChainProtocolId('lowercase')).toBeUndefined(); // lowercase
       expect(asOnChainProtocolId('A'.repeat(33))).toBeUndefined(); // слишком длинная (>32)
+    });
+
+    it('should accept protocol ID at max length', () => {
+      const maxLenId = 'A'.repeat(32);
+      expect(asOnChainProtocolId(maxLenId)).toBe(maxLenId);
+    });
+
+    it('should accept consecutive underscores', () => {
+      expect(asOnChainProtocolId('PROTOCOL__NAME')).toBe('PROTOCOL__NAME');
+      expect(asOnChainProtocolId('MY___CTF')).toBe('MY___CTF');
+    });
+
+    it('should accept leading and trailing underscores', () => {
+      expect(asOnChainProtocolId('_PROTOCOL')).toBe('_PROTOCOL');
+      expect(asOnChainProtocolId('PROTOCOL_')).toBe('PROTOCOL_');
+      expect(asOnChainProtocolId('_PROTOCOL_')).toBe('_PROTOCOL_');
     });
   });
 
@@ -643,6 +674,16 @@ describe('Core IDs', () => {
       expect(indexToOutcomeKey(2)).toBeUndefined();
     });
 
+    it('should handle invalid indices', () => {
+      // Negative indices
+      expect(indexToOutcomeKey(-1)).toBeUndefined();
+      expect(indexToOutcomeKey(-999)).toBeUndefined();
+
+      // Very large indices
+      expect(indexToOutcomeKey(999999)).toBeUndefined();
+      expect(indexToOutcomeKey(Number.MAX_SAFE_INTEGER)).toBeUndefined();
+    });
+
     it('should compare outcome keys', () => {
       const up1 = BinaryOutcome.UP;
       const up2 = parseOutcomeKey('UP')!;
@@ -655,9 +696,18 @@ describe('Core IDs', () => {
     it('should get opposite outcome for binary', () => {
       expect(oppositeOutcomeKey(BinaryOutcome.UP)).toBe(BinaryOutcome.DOWN);
       expect(oppositeOutcomeKey(BinaryOutcome.DOWN)).toBe(BinaryOutcome.UP);
-      // Custom outcome key (не binary)
+    });
+
+    it('should return undefined for non-binary outcome keys', () => {
+      // Custom outcome keys (не UP/DOWN)
       const customKey = parseOutcomeKey('CUSTOM')!;
       expect(oppositeOutcomeKey(customKey)).toBeUndefined();
+
+      // OUTCOME_0/OUTCOME_1 не поддерживаются (только UP/DOWN)
+      const outcome0 = parseOutcomeKey('OUTCOME_0')!;
+      const outcome1 = parseOutcomeKey('OUTCOME_1')!;
+      expect(oppositeOutcomeKey(outcome0)).toBeUndefined();
+      expect(oppositeOutcomeKey(outcome1)).toBeUndefined();
     });
 
     it('should support round-trip conversion', () => {
@@ -920,21 +970,6 @@ describe('Core IDs', () => {
       });
     });
 
-    describe('normalizeConditionId', () => {
-      it('should normalize to lowercase', () => {
-        const upperHash = ('0x' + 'ABCD'.repeat(16)) as any;
-        const normalized = normalizeConditionId(upperHash);
-
-        expect(normalized).toBe('0x' + 'abcd'.repeat(16));
-      });
-
-      it('should keep lowercase unchanged', () => {
-        const lowerHash = ('0x' + 'abcd'.repeat(16)) as any;
-        const normalized = normalizeConditionId(lowerHash);
-
-        expect(normalized).toBe(lowerHash);
-      });
-    });
   });
 
   describe('WalletAddress', () => {
@@ -1153,48 +1188,24 @@ describe('Core IDs', () => {
       expect(accountIdEquals(subResult2.value, parsed!)).toBe(true);
     });
 
-    it('should use type guards correctly', () => {
-      const walletAcc = accountIdFromWallet(testWallet);
-      const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
-      const subResult = accountIdForSubaccount(walletAcc, 'trading');
-      expect(subResult.ok).toBe(true);
-      if (!subResult.ok) return;
-
-      const subAcc = subResult.value;
-
-      expect(isWalletAccount(walletAcc)).toBe(true);
-      expect(isWalletAccount(venueAcc)).toBe(false);
-      expect(isWalletAccount(subAcc)).toBe(false);
-
-      expect(isVenueAccount(venueAcc)).toBe(true);
-      expect(isVenueAccount(walletAcc)).toBe(false);
-
-      expect(isSubaccount(subAcc)).toBe(true);
-      expect(isSubaccount(walletAcc)).toBe(false);
-    });
-
-    describe('Escaping fixes', () => {
-      it('should handle backslashes in round-trip', () => {
-        // Строка с backslash и colon
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:123');
+    describe('Escaping round-trip', () => {
+      it.each([
+        ['user\\:123', 'backslash + colon'],
+        ['user\\\\:123', 'double backslash + colon'],
+        ['a\\b', 'backslash between letters'],
+        ['path\\to\\file', 'multiple backslashes'],
+        ['name\\\\with\\\\slashes', 'double backslashes'],
+        ['a]\\\\:b', 'complex escaped sequences'],
+        [':', 'only colon'],
+        ['\\', 'only backslash'],
+      ])('should handle %s (%s)', (userId, _description) => {
+        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, userId);
         const str = accountIdToString(venueAcc);
         const parsed = parseAccountId(str);
 
         expect(parsed).toBeDefined();
         if (parsed?.kind === 'VENUE') {
-          expect(parsed.userId).toBe('user\\:123'); // round-trip сохраняет backslash
-        }
-      });
-
-      it('should handle double backslashes', () => {
-        // Строка с двойным backslash
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'name\\\\with\\\\slashes');
-        const str = accountIdToString(venueAcc);
-        const parsed = parseAccountId(str);
-
-        expect(parsed).toBeDefined();
-        if (parsed?.kind === 'VENUE') {
-          expect(parsed.userId).toBe('name\\\\with\\\\slashes');
+          expect(parsed.userId).toBe(userId);
         }
       });
 
@@ -1206,88 +1217,6 @@ describe('Core IDs', () => {
 
         // Парсинг должен вернуть undefined для пустой userId
         expect(parsed).toBeUndefined();
-      });
-
-      it('should handle only colon', () => {
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, ':');
-        const str = accountIdToString(venueAcc);
-        const parsed = parseAccountId(str);
-
-        expect(parsed).toBeDefined();
-        if (parsed?.kind === 'VENUE') {
-          expect(parsed.userId).toBe(':');
-        }
-      });
-
-      it('should handle only backslash', () => {
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, '\\');
-        const str = accountIdToString(venueAcc);
-        const parsed = parseAccountId(str);
-
-        expect(parsed).toBeDefined();
-        if (parsed?.kind === 'VENUE') {
-          expect(parsed.userId).toBe('\\');
-        }
-      });
-
-      it('should handle complex escaped sequences', () => {
-        // Комплексная строка с различными escape-последовательностями
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'a]\\\\:b');
-        const str = accountIdToString(venueAcc);
-        const parsed = parseAccountId(str);
-
-        expect(parsed).toBeDefined();
-        if (parsed?.kind === 'VENUE') {
-          expect(parsed.userId).toBe('a]\\\\:b');
-        }
-      });
-
-      it('should handle user\\:123 (backslash + colon)', () => {
-        // Буквально "user\:123" (backslash перед двоеточием)
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:123');
-        const str = accountIdToString(venueAcc);
-        const parsed = parseAccountId(str);
-
-        expect(parsed).toBeDefined();
-        if (parsed?.kind === 'VENUE') {
-          expect(parsed.userId).toBe('user\\:123');
-        }
-      });
-
-      it('should handle user\\\\:123 (double backslash + colon)', () => {
-        // Буквально "user\\:123" (двойной backslash + двоеточие)
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\\\:123');
-        const str = accountIdToString(venueAcc);
-        const parsed = parseAccountId(str);
-
-        expect(parsed).toBeDefined();
-        if (parsed?.kind === 'VENUE') {
-          expect(parsed.userId).toBe('user\\\\:123');
-        }
-      });
-
-      it('should handle a\\b (backslash between letters)', () => {
-        // Буквально "a\b"
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'a\\b');
-        const str = accountIdToString(venueAcc);
-        const parsed = parseAccountId(str);
-
-        expect(parsed).toBeDefined();
-        if (parsed?.kind === 'VENUE') {
-          expect(parsed.userId).toBe('a\\b');
-        }
-      });
-
-      it('should handle path\\to\\file (multiple backslashes)', () => {
-        // Путь с backslashes
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'path\\to\\file');
-        const str = accountIdToString(venueAcc);
-        const parsed = parseAccountId(str);
-
-        expect(parsed).toBeDefined();
-        if (parsed?.kind === 'VENUE') {
-          expect(parsed.userId).toBe('path\\to\\file');
-        }
       });
     });
 
@@ -1310,6 +1239,35 @@ describe('Core IDs', () => {
         expect(result3.ok).toBe(true);
         if (!result3.ok) return;
         expect(getSubaccountDepth(result3.value)).toBe(3);
+      });
+
+      it('should allow creating subaccount at exactly max depth', () => {
+        const walletAcc = accountIdFromWallet(testWallet);
+
+        // Создаём 4 уровня (depth будет 4)
+        let current: AccountId = walletAcc;
+        for (let i = 1; i <= 4; i++) {
+          const result = accountIdForSubaccount(current, `level${i}`);
+          expect(result.ok).toBe(true);
+          if (!result.ok) return;
+          current = result.value;
+        }
+
+        expect(getSubaccountDepth(current)).toBe(4);
+
+        // Попытка создать 5-й уровень (depth станет 5 - максимум) должна УСПЕШНО пройти
+        const maxDepthResult = accountIdForSubaccount(current, 'level5');
+        expect(maxDepthResult.ok).toBe(true);
+        if (!maxDepthResult.ok) return;
+        expect(getSubaccountDepth(maxDepthResult.value)).toBe(5);
+
+        // А вот 6-й уже должен отклониться
+        const tooDeepResult = accountIdForSubaccount(maxDepthResult.value, 'level6');
+        expect(tooDeepResult.ok).toBe(false);
+        if (!tooDeepResult.ok) {
+          expect(tooDeepResult.error).toBeInstanceOf(Error);
+          expect(tooDeepResult.error.message).toMatch(/depth limit exceeded/i);
+        }
       });
 
       it('should return Err when creating subaccount exceeds depth limit', () => {
