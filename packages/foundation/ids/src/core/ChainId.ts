@@ -1,8 +1,4 @@
 /**
- * @todo реализовать поддержку Decimal
- */
-
-/**
  * ChainId - идентификатор blockchain сети
  *
  * @remarks

@@ -48,9 +48,9 @@ export {
   indexToOutcomeKey,
   outcomeKeyEquals,
   oppositeOutcomeKey,
-  oppositeOutcome, // @deprecated - используй oppositeOutcomeKey
 } from './OutcomeKey.js';
 // Note: unsafeOutcomeKey intentionally NOT exported (marked @internal, bypasses validation)
+// Note: oppositeOutcome removed (deprecated alias, use oppositeOutcomeKey)
 
 // Account & Wallet
 export type { WalletAddress } from './WalletAddress.js';

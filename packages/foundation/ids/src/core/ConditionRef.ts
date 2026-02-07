@@ -6,6 +6,7 @@ import { asOnChainProtocolId } from './ProtocolId.js';
 import { parseChainId } from './ChainId.js';
 import { parseConditionId } from './ConditionId.js';
 import { asVenueId } from './VenueId.js';
+import { escape, unescape, splitEscaped } from './utils/escaping.js';
 
 /**
  * OnChainConditionRef - ссылка на on-chain condition
@@ -234,9 +235,13 @@ export function conditionRefEquals(a: ConditionRef, b: ConditionRef): boolean {
  */
 export function conditionRefToString(ref: ConditionRef): string {
   if (ref.kind === 'ONCHAIN') {
+    // ONCHAIN: protocolId, chainId, conditionId гарантированно НЕ содержат ':'
+    // (проверяется валидацией), поэтому escaping не нужен
     return `ONCHAIN:${ref.protocolId}:${ref.chainId}:${ref.conditionId}`;
   } else {
-    return `OFFCHAIN:${ref.venueId}:${ref.marketId}`;
+    // OFFCHAIN: marketId может содержать ':', поэтому escape необходим
+    const escapedMarketId = escape(ref.marketId);
+    return `OFFCHAIN:${ref.venueId}:${escapedMarketId}`;
   }
 }
 
@@ -256,15 +261,19 @@ export function conditionRefToString(ref: ConditionRef): string {
  * ```
  */
 export function parseConditionRef(str: string): ConditionRef | undefined {
-  const parts = str.split(':');
-
-  if (parts.length < 2) {
+  // Сначала определяем kind через simple split (kind никогда не содержит ':')
+  const firstColon = str.indexOf(':');
+  if (firstColon === -1) {
     return undefined;
   }
 
-  const kind = parts[0];
+  const kind = str.substring(0, firstColon);
 
   if (kind === 'ONCHAIN') {
+    // ONCHAIN формат: ONCHAIN:protocolId:chainId:conditionId
+    // protocolId, chainId, conditionId НЕ содержат ':' (гарантировано валидацией),
+    // поэтому простой split() безопасен
+    const parts = str.split(':');
     if (parts.length !== 4) {
       return undefined;
     }
@@ -298,11 +307,15 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
   }
 
   if (kind === 'OFFCHAIN') {
+    // OFFCHAIN формат: OFFCHAIN:venueId:marketId
+    // marketId МОЖЕТ содержать escaped ':' (\:), поэтому используем splitEscaped
+    const parts = splitEscaped(str);
+
     if (parts.length !== 3) {
       return undefined;
     }
 
-    const [, venueIdStr, marketId] = parts;
+    const [, venueIdStr, escapedMarketId] = parts;
 
     // Валидация VenueId
     const validatedVenueId = asVenueId(venueIdStr);
@@ -310,12 +323,11 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
       return undefined;
     }
 
-    // Валидация marketId: не пустой, не содержит ':' (для round-trip)
-    if (!marketId || marketId.length === 0) {
-      return undefined;
-    }
+    // Unescape marketId (splitEscaped возвращает escaped части)
+    const marketId = unescape(escapedMarketId);
 
-    if (marketId.includes(':')) {
+    // Валидация marketId: не пустой
+    if (!marketId || marketId.length === 0) {
       return undefined;
     }
 

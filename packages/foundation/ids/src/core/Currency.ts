@@ -51,10 +51,19 @@ export const SUPPORTED_CURRENCIES = ['USDC'] as const;
 export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
 
 /**
+ * Set поддерживаемых валют для быстрой проверки
+ * @internal
+ */
+const SUPPORTED_CURRENCIES_SET = new Set<string>(SUPPORTED_CURRENCIES);
+
+/**
  * Type guard для проверки что строка является поддерживаемой валютой
  *
  * @param value - Строка для проверки
  * @returns true если value является SupportedCurrency
+ *
+ * @remarks
+ * Использует Set для O(1) lookup вместо array.includes() O(n).
  *
  * @example
  * ```typescript
@@ -69,7 +78,7 @@ export type SupportedCurrency = (typeof SUPPORTED_CURRENCIES)[number];
  * ```
  */
 export function isSupportedCurrency(value: string): value is SupportedCurrency {
-  return SUPPORTED_CURRENCIES.includes(value as SupportedCurrency);
+  return SUPPORTED_CURRENCIES_SET.has(value);
 }
 
 /**
