@@ -116,7 +116,7 @@ export function walletAddressEquals(a: WalletAddress, b: WalletAddress): boolean
  * - Comparison и hashing
  * - Logging
  *
- * Для display в UI используй toChecksumAddress().
+ * Для display в UI используй checksum format: viem getAddress() или ethers getAddress().
  *
  * @example
  * ```typescript
