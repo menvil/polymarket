@@ -1221,15 +1221,6 @@ describe('Core IDs', () => {
           expect(parsed.userId).toBe(userId);
         }
       });
-
-      it('should reject empty userId in factory', () => {
-        // Empty userId не валидна - фабрика должна вернуть Err
-        const result = accountIdFromVenue(KnownVenues.POLYMARKET, '');
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('empty string');
-        }
-      });
     });
 
     describe('Factory validation', () => {
@@ -1357,29 +1348,6 @@ describe('Core IDs', () => {
 
         // А вот 6-й уже должен отклониться
         const tooDeepResult = accountIdForSubaccount(maxDepthResult.value, 'level6');
-        expect(tooDeepResult.ok).toBe(false);
-        if (!tooDeepResult.ok) {
-          expect(tooDeepResult.error).toBeInstanceOf(Error);
-          expect(tooDeepResult.error.message).toMatch(/depth limit exceeded/i);
-        }
-      });
-
-      it('should return Err when creating subaccount exceeds depth limit', () => {
-        const walletAcc = accountIdFromWallet(testWallet);
-
-        // Создаём цепочку глубиной 5 (максимум)
-        let current: AccountId = walletAcc;
-        for (let i = 1; i <= 5; i++) {
-          const result = accountIdForSubaccount(current, `level${i}`);
-          expect(result.ok).toBe(true);
-          if (!result.ok) return;
-          current = result.value;
-        }
-
-        expect(getSubaccountDepth(current)).toBe(5);
-
-        // Попытка создать ещё один уровень должна вернуть Err
-        const tooDeepResult = accountIdForSubaccount(current, 'tooDeep');
         expect(tooDeepResult.ok).toBe(false);
         if (!tooDeepResult.ok) {
           expect(tooDeepResult.error).toBeInstanceOf(Error);

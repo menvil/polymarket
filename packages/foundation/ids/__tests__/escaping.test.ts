@@ -117,11 +117,7 @@ describe('Escaping utils', () => {
     it('should preserve string with backslash and colon', () => {
       const input = 'user\\:123';
       const escaped = escape(input);
-      console.log('Input:', input);
-      console.log('Escaped:', escaped);
       const parts = splitEscaped(`VENUE:POLYMARKET:${escaped}`);
-      console.log('Parts (escaped):', parts);
-      console.log('Parts (unescaped):', parts.map(unescape));
       // Need to unescape to get original value
       expect(unescape(parts[2])).toBe(input);
     });
