@@ -24,7 +24,7 @@
     }
   },
   "scripts": {
-    "clean": "rm -rf dist",
+    "clean": "rm -rf dist *.tsbuildinfo",
     "prebuild": "npm run clean",
     "build": "tsc -p tsconfig.build.json",
     "test": "jest",

@@ -30,7 +30,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist *.tsbuildinfo"
   },
   "keywords": [
     "adapter",

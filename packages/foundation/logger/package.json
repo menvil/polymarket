@@ -32,7 +32,7 @@
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
     "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"README.md\"",
     "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"README.md\"",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist *.tsbuildinfo"
   },
   "keywords": [
     "logger",

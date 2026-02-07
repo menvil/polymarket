@@ -62,7 +62,7 @@
     "ci:full": "npm run typecheck:all && npm run lint:all && npm run build && npm run test:coverage",
     "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"docs/**/*.md\" \"README.md\"",
     "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"docs/**/*.md\" \"README.md\"",
-    "clean": "rm -rf dist"
+    "clean": "rm -rf dist *.tsbuildinfo"
   },
   "keywords": [
     "value-objects",

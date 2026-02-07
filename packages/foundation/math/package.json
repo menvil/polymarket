@@ -44,7 +44,7 @@
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
     "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"docs/**/*.md\" \"README.md\"",
     "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"docs/**/*.md\" \"README.md\"",
-    "clean": "rimraf dist"
+    "clean": "rimraf dist *.tsbuildinfo"
   },
   "keywords": [
     "math",
