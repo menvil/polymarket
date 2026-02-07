@@ -83,21 +83,22 @@ describe('Market Data IDs', () => {
       expect(asMarketDataSourceId('A'.repeat(65))).toBeUndefined(); // 65 символов (лимит 64)
     });
 
-    it('should map custom source to venue with prefix extraction', () => {
+    it('should return undefined for unknown custom sources', () => {
+      // Unknown sources не имеют mapping (эвристика убрана)
       const customSource = asMarketDataSourceId('MY_VENUE_WS');
       expect(customSource).toBeDefined();
 
       const venue = sourceToVenue(customSource!);
-      expect(venue).toBe('MY_VENUE');
+      expect(venue).toBeUndefined(); // Unknown source → undefined
     });
 
-    it('should handle custom source without venue mapping', () => {
-      // Custom source без underscore (не может извлечь venue)
+    it('should return undefined for unknown source without underscore', () => {
+      // Unknown source без underscore
       const customSource = asMarketDataSourceId('CUSTOM');
       expect(customSource).toBeDefined();
 
       const venue = sourceToVenue(customSource!);
-      expect(venue).toBe('CUSTOM'); // Возвращает как VenueId если формат валидный
+      expect(venue).toBeUndefined(); // Unknown source → undefined
     });
 
     it('should return undefined for RPC source venue mapping', () => {
@@ -105,14 +106,15 @@ describe('Market Data IDs', () => {
       expect(venue).toBeUndefined(); // RPC не привязан к venue
     });
 
-    it('should detect live/replay for custom sources', () => {
+    it('should return undefined for unknown sources live/replay check', () => {
+      // Unknown sources не имеют metadata (эвристика убрана)
       const customLive = asMarketDataSourceId('MY_VENUE_WS')!;
-      expect(isLiveSource(customLive)).toBe(true);
-      expect(isReplaySource(customLive)).toBe(false);
+      expect(isLiveSource(customLive)).toBeUndefined();
+      expect(isReplaySource(customLive)).toBeUndefined();
 
       const customReplay = asMarketDataSourceId('MY_VENUE_REPLAY')!;
-      expect(isLiveSource(customReplay)).toBe(false);
-      expect(isReplaySource(customReplay)).toBe(true);
+      expect(isLiveSource(customReplay)).toBeUndefined();
+      expect(isReplaySource(customReplay)).toBeUndefined();
     });
   });
 });

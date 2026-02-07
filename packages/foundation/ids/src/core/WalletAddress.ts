@@ -47,26 +47,6 @@ export function isValidWalletAddress(address: string): address is WalletAddress 
 }
 
 /**
- * Нормализация address (lowercase)
- *
- * @param address - WalletAddress для нормализации
- * @returns Lowercase WalletAddress
- *
- * @deprecated Используй parseWalletAddress() для валидации и нормализации,
- *             или walletAddressToString() для canonical format.
- *             Эта функция оставлена для backward compatibility.
- *
- * @example
- * ```typescript
- * const normalized = normalizeWalletAddress('0xABC...' as WalletAddress);
- * // → '0xabc...' as WalletAddress
- * ```
- */
-export function normalizeWalletAddress(address: WalletAddress): WalletAddress {
-  return address.toLowerCase() as WalletAddress;
-}
-
-/**
  * Парсинг и валидация Ethereum address
  *
  * @param address - Строка address для парсинга
@@ -99,56 +79,6 @@ export function parseWalletAddress(address: string): WalletAddress | undefined {
 
   // Return lowercase canonical format
   return address.toLowerCase() as WalletAddress;
-}
-
-/**
- * Преобразовать WalletAddress в EIP-55 checksum format
- *
- * @deprecated Требует реальной keccak256 реализации.
- * Используй `getAddress()` из viem или ethers напрямую:
- *
- * ```typescript
- * import { getAddress } from 'viem';
- * const checksum = getAddress(wallet);
- * ```
- *
- * или
- *
- * ```typescript
- * import { getAddress } from 'ethers';
- * const checksum = getAddress(wallet);
- * ```
- *
- * @param _address - WalletAddress (не используется)
- * @returns Никогда не возвращает (throws)
- * @throws Error - всегда, так как требуется реальная keccak256 реализация
- *
- * @remarks
- * Предыдущая реализация использовала fake keccak256, который генерировал
- * НЕВАЛИДНЫЕ EIP-55 checksums. Это опасно - кошельки и эксплореры отвергают
- * такие адреса.
- *
- * Для корректного EIP-55 checksum нужна настоящая keccak256 реализация
- * из crypto библиотеки. Так как @polymarket/ids стремится к zero dependencies,
- * эта функция deprecated. Используй viem.getAddress() или ethers.getAddress().
- *
- * @example
- * ```typescript
- * // ❌ Не работает (throws)
- * const checksum = toChecksumAddress(wallet);
- *
- * // ✅ Используй вместо этого:
- * import { getAddress } from 'viem';
- * const wallet = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
- * const checksum = getAddress(wallet);
- * // → '0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'
- * ```
- */
-export function toChecksumAddress(_address: WalletAddress): string {
-  throw new Error(
-    'toChecksumAddress() requires a real keccak256 implementation. ' +
-      'Use viem.getAddress() or ethers.getAddress() directly for EIP-55 checksum formatting.'
-  );
 }
 
 /**

@@ -1,5 +1,5 @@
 import type { VenueId } from '../core/VenueId.js';
-import { KnownVenues, asVenueId } from '../core/VenueId.js';
+import { KnownVenues } from '../core/VenueId.js';
 
 /**
  * MarketDataSourceId - источник маркет-данных
@@ -197,18 +197,17 @@ export function asMarketDataSourceId(raw: string): MarketDataSourceId | undefine
 /**
  * Mapping: MarketDataSourceId → VenueId
  *
+ * @param sourceId - MarketDataSourceId
+ * @returns VenueId или undefined если source не привязан к venue или неизвестен
+ *
  * @remarks
  * Определяет к какому venue относится source данных.
  *
- * Для известных sources использует SOURCE_META.
- * Для кастомных sources пытается извлечь venue из префикса
- * (например, CUSTOM_VENUE_WS → CUSTOM_VENUE) и валидирует через asVenueId.
+ * **Только для известных sources из SOURCE_META.**
+ * Для unknown sources возвращает `undefined` (не угадывает).
  *
- * ⚠️ **Warning для custom sources:**
- * Extraction venue из префикса это эвристика, основанная на паттерне {VENUE}_{TYPE}.
- * Если твой custom source не следует этому паттерну, функция может вернуть
- * неправильный venue или undefined. Для production custom sources рекомендуется
- * добавить их в KnownMarketDataSources и SOURCE_META.
+ * Если нужна поддержка custom sources, добавь их в SOURCE_META через
+ * регистрацию или расширение KnownMarketDataSources.
  *
  * @example
  * ```typescript
@@ -217,50 +216,26 @@ export function asMarketDataSourceId(raw: string): MarketDataSourceId | undefine
  * sourceToVenue(KnownMarketDataSources.KALSHI_WS);          // → 'KALSHI' as VenueId
  * sourceToVenue(KnownMarketDataSources.POLYGON_RPC);        // → undefined (RPC не привязан к venue)
  *
- * // Custom source с валидацией
- * const customSource = asMarketDataSourceId('MY_VENUE_WS')!;
- * sourceToVenue(customSource); // → 'MY_VENUE' as VenueId (если MY_VENUE валидный формат)
+ * // Unknown source
+ * const unknownSource = asMarketDataSourceId('MY_CUSTOM_SOURCE')!;
+ * sourceToVenue(unknownSource); // → undefined (unknown, не угадываем)
  * ```
  */
 export function sourceToVenue(sourceId: MarketDataSourceId): VenueId | undefined {
-  // Для известных sources используем SOURCE_META
+  // Только для известных sources из SOURCE_META
   const metadata = SOURCE_META[sourceId as string];
-  if (metadata) {
-    return metadata.venue;
-  }
-
-  // Для кастомных sources пытаемся извлечь venue из префикса
-  // Паттерн: {VENUE}_{TYPE} где TYPE это WS, REST, REPLAY, RPC, etc
-  const sourceStr = sourceId as string;
-  const lastUnderscore = sourceStr.lastIndexOf('_');
-
-  if (lastUnderscore === -1) {
-    // Нет underscore — возможно это сам venue ID
-    return asVenueId(sourceStr);
-  }
-
-  // Извлекаем префикс до последнего underscore
-  const venuePrefix = sourceStr.substring(0, lastUnderscore);
-
-  // Валидируем через asVenueId
-  return asVenueId(venuePrefix);
+  return metadata?.venue;
 }
 
 /**
  * Проверка что source является live (не replay)
  *
  * @param sourceId - MarketDataSourceId для проверки
- * @returns true если source является live (реал-тайм данные)
+ * @returns true если live, false если replay, undefined если unknown source
  *
  * @remarks
- * Для известных sources использует SOURCE_META.
- * Для кастомных sources проверяет наличие '_REPLAY' в имени.
- *
- * ⚠️ **Warning для custom sources:**
- * Проверка '_REPLAY' substring это эвристика. Если твой custom source содержит
- * '_REPLAY' в имени но является live, или наоборот не содержит '_REPLAY' но
- * является replay, функция вернет неправильный результат. Для production custom
- * sources рекомендуется добавить их в KnownMarketDataSources и SOURCE_META.
+ * **Только для известных sources из SOURCE_META.**
+ * Для unknown sources возвращает `undefined` (не угадывает).
  *
  * Live sources:
  * - WebSocket (POLYMARKET_WS, KALSHI_WS)
@@ -277,31 +252,22 @@ export function sourceToVenue(sourceId: MarketDataSourceId): VenueId | undefined
  * isLiveSource(KnownMarketDataSources.POLYMARKET_REPLAY); // → false
  * isLiveSource(KnownMarketDataSources.POLYGON_RPC);       // → true
  *
- * // Custom source
- * const customLive = asMarketDataSourceId('MY_VENUE_WS')!;
- * isLiveSource(customLive); // → true (не содержит _REPLAY)
- *
- * const customReplay = asMarketDataSourceId('MY_VENUE_REPLAY')!;
- * isLiveSource(customReplay); // → false (содержит _REPLAY)
+ * // Unknown source
+ * const unknownSource = asMarketDataSourceId('MY_CUSTOM_SOURCE')!;
+ * isLiveSource(unknownSource); // → undefined (unknown, не угадываем)
  * ```
  */
-export function isLiveSource(sourceId: MarketDataSourceId): boolean {
-  // Для известных sources используем SOURCE_META
+export function isLiveSource(sourceId: MarketDataSourceId): boolean | undefined {
+  // Только для известных sources из SOURCE_META
   const metadata = SOURCE_META[sourceId as string];
-  if (metadata) {
-    return metadata.isLive;
-  }
-
-  // Для кастомных sources проверяем наличие '_REPLAY' в имени
-  const sourceStr = sourceId as string;
-  return !sourceStr.includes('_REPLAY');
+  return metadata?.isLive;
 }
 
 /**
  * Проверка что source является replay (backtest)
  *
  * @param sourceId - MarketDataSourceId для проверки
- * @returns true если source является replay (исторические данные)
+ * @returns true если replay, false если live, undefined если unknown source
  *
  * @remarks
  * Inverse функция от isLiveSource().
@@ -313,8 +279,16 @@ export function isLiveSource(sourceId: MarketDataSourceId): boolean {
  * isReplaySource(KnownMarketDataSources.KALSHI_REPLAY);     // → true
  * isReplaySource(KnownMarketDataSources.POLYMARKET_WS);     // → false
  * isReplaySource(KnownMarketDataSources.POLYGON_RPC);       // → false
+ *
+ * // Unknown source
+ * const unknownSource = asMarketDataSourceId('MY_CUSTOM_SOURCE')!;
+ * isReplaySource(unknownSource); // → undefined (unknown)
  * ```
  */
-export function isReplaySource(sourceId: MarketDataSourceId): boolean {
-  return !isLiveSource(sourceId);
+export function isReplaySource(sourceId: MarketDataSourceId): boolean | undefined {
+  const isLive = isLiveSource(sourceId);
+  if (isLive === undefined) {
+    return undefined;
+  }
+  return !isLive;
 }

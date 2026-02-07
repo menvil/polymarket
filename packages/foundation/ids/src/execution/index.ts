@@ -4,10 +4,10 @@
  * @packageDocumentation
  */
 
-export type { ExecutionVenueId } from './ExecutionVenueId.js';
+export type { ExecutionVenueId, SimulatorExecutionVenueId } from './ExecutionVenueId.js';
 export {
+  SIMULATOR,
   KnownExecutionVenues,
-  isKnownExecutionVenue,
   asExecutionVenueId,
   executionToVenue,
   isSimulator,
@@ -15,4 +15,7 @@ export {
 } from './ExecutionVenueId.js';
 
 export type { OrderId } from './OrderId.js';
+export { asOrderId, unsafeOrderId } from './OrderId.js';
+
 export type { FillId } from './FillId.js';
+export { asFillId, unsafeFillId } from './FillId.js';

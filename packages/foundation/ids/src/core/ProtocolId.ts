@@ -104,17 +104,3 @@ export function asOnChainProtocolId(raw: string): OnChainProtocolId | undefined 
 
   return raw as OnChainProtocolId;
 }
-
-/**
- * Legacy type alias для обратной совместимости
- *
- * @deprecated Используй OnChainProtocolId вместо ProtocolId
- */
-export type ProtocolId = OnChainProtocolId;
-
-/**
- * Legacy function для обратной совместимости
- *
- * @deprecated Используй isKnownOnChainProtocol
- */
-export const isKnownProtocol = isKnownOnChainProtocol;

@@ -16,10 +16,9 @@ export {
 } from './Currency.js';
 
 // Protocol, Chain, Condition
-export type { OnChainProtocolId, ProtocolId } from './ProtocolId.js';
+export type { OnChainProtocolId } from './ProtocolId.js';
 export {
   isKnownOnChainProtocol,
-  isKnownProtocol,
   KnownOnChainProtocols,
   asOnChainProtocolId,
 } from './ProtocolId.js';
@@ -50,18 +49,15 @@ export {
   oppositeOutcomeKey,
 } from './OutcomeKey.js';
 // Note: unsafeOutcomeKey intentionally NOT exported (marked @internal, bypasses validation)
-// Note: oppositeOutcome removed (deprecated alias, use oppositeOutcomeKey)
 
 // Account & Wallet
 export type { WalletAddress } from './WalletAddress.js';
 export {
   isValidWalletAddress,
-  normalizeWalletAddress,
   parseWalletAddress,
   walletAddressEquals,
   walletAddressToString,
 } from './WalletAddress.js';
-// Note: toChecksumAddress intentionally NOT exported (deprecated, always throws - use viem/ethers getAddress)
 
 export type { AccountId, ParseAccountIdOptions } from './AccountId.js';
 export {

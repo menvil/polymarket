@@ -83,9 +83,13 @@ export const AssetId = {
    * @param conditionRef - On-chain ссылка на condition
    * @param outcomeKey - Ключ outcome (BinaryOutcome.UP или BinaryOutcome.DOWN)
    * @returns AssetId для outcome token
+   * @throws {Error} Если outcomeKey невалидный (не проходит parseOutcomeKey)
    *
    * @remarks
    * ⚠️ Только для on-chain protocols! Off-chain venues не поддерживаются.
+   *
+   * Валидация outcomeKey предотвращает создание AssetId с некорректным ключом
+   * через `as OutcomeKey` casting.
    *
    * @example
    * ```typescript
@@ -99,13 +103,24 @@ export const AssetId = {
    * };
    *
    * const token = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+   *
+   * // Это throw ошибку:
+   * // const invalid = AssetIdHelpers.fromOutcomeToken(onChainRef, 'INVALID' as OutcomeKey);
    * ```
    */
   fromOutcomeToken(conditionRef: OnChainConditionRef, outcomeKey: OutcomeKey): AssetId {
+    // Валидация outcomeKey
+    const validated = parseOutcomeKey(outcomeKey);
+    if (!validated) {
+      throw new Error(
+        `Invalid outcomeKey: "${outcomeKey}". Must be valid OutcomeKey (e.g., "UP", "DOWN").`
+      );
+    }
+
     return {
       type: 'OUTCOME_TOKEN',
       conditionRef,
-      outcomeKey,
+      outcomeKey: validated,
     };
   },
 

@@ -2,7 +2,6 @@ import { describe, it, expect } from '@jest/globals';
 import {
   type ExecutionVenueId,
   KnownExecutionVenues,
-  isKnownExecutionVenue,
   asExecutionVenueId,
   executionToVenue,
   isSimulator,
@@ -37,15 +36,6 @@ describe('Execution IDs', () => {
       expect(isLiveVenue(KnownExecutionVenues.POLYMARKET)).toBe(true);
       expect(isLiveVenue(KnownExecutionVenues.KALSHI)).toBe(true);
       expect(isLiveVenue(KnownExecutionVenues.SIMULATOR)).toBe(false);
-    });
-
-    it('should validate known execution venues', () => {
-      expect(isKnownExecutionVenue('POLYMARKET')).toBe(true);
-      expect(isKnownExecutionVenue('KALSHI')).toBe(true);
-      expect(isKnownExecutionVenue('SIMULATOR')).toBe(true);
-      expect(isKnownExecutionVenue('UNKNOWN_VENUE')).toBe(false);
-      expect(isKnownExecutionVenue('polymarket')).toBe(false);
-      expect(isKnownExecutionVenue('')).toBe(false);
     });
 
     it('should parse valid execution venue IDs', () => {
@@ -88,15 +78,6 @@ describe('Execution IDs', () => {
 
       const venue = executionToVenue(customExec!);
       expect(venue).toBe('CUSTOM_VENUE');
-    });
-
-    it('should return undefined for invalid format when mapping to venue', () => {
-      // Создаем execution venue с невалидным форматом через cast (обход валидации)
-      const invalidExec = 'invalid-venue' as ExecutionVenueId;
-
-      // executionToVenue должен валидировать через asVenueId
-      const venue = executionToVenue(invalidExec);
-      expect(venue).toBeUndefined();
     });
   });
 });

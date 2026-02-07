@@ -22,6 +22,16 @@ import { escape, unescape, splitEscaped } from './utils/escaping.js';
  * - chainId: какой blockchain (137 = Polygon, 1 = Ethereum, etc)
  * - conditionId: хеш condition (обычно keccak256)
  *
+ * **Инварианты (гарантируются валидацией)**:
+ * - `protocolId` НЕ содержит ':' или '\' (проверяется при парсинге через asOnChainProtocolId)
+ * - `chainId` НЕ содержит ':' или '\' (numeric, гарантированно безопасен)
+ * - `conditionId` НЕ содержит ':' или '\' (проверяется при парсинге через parseConditionId)
+ *
+ * Благодаря этим инвариантам, сериализация ONCHAIN ref не требует escaping:
+ * ```
+ * ONCHAIN:protocolId:chainId:conditionId
+ * ```
+ *
  * @example
  * ```typescript
  * const onChainRef: OnChainConditionRef = {

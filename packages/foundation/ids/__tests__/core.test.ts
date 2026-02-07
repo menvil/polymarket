@@ -179,6 +179,33 @@ describe('Core IDs', () => {
           expect(ref.marketId).toBe('KXBTCUSDM-24APR');
         }
       });
+
+      it('should handle marketId with colons and backslashes (round-trip)', () => {
+        // marketId содержащий и ':' и '\'
+        const ref: ConditionRef = {
+          kind: 'OFFCHAIN',
+          venueId: KnownVenues.KALSHI,
+          marketId: 'market:with\\colon:and\\\\backslash',
+        };
+
+        // Сериализация
+        const str = conditionRefToString(ref);
+        expect(str).toContain('OFFCHAIN:KALSHI:');
+
+        // Парсинг обратно
+        const parsed = parseConditionRef(str);
+        expect(parsed).toBeDefined();
+        expect(parsed?.kind).toBe('OFFCHAIN');
+
+        if (parsed?.kind === 'OFFCHAIN') {
+          expect(parsed.venueId).toBe('KALSHI');
+          // Проверяем что marketId сохранился точно
+          expect(parsed.marketId).toBe('market:with\\colon:and\\\\backslash');
+        }
+
+        // Проверяем что refs равны
+        expect(conditionRefEquals(ref, parsed!)).toBe(true);
+      });
     });
 
     describe('Mixed comparisons', () => {
@@ -1171,15 +1198,14 @@ describe('Core IDs', () => {
         }
       });
 
-      it('should handle empty strings', () => {
+      it('should reject empty userId', () => {
+        // Empty userId не валидна согласно isValidStringField
         const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, '');
         const str = accountIdToString(venueAcc);
         const parsed = parseAccountId(str);
 
-        expect(parsed).toBeDefined();
-        if (parsed?.kind === 'VENUE') {
-          expect(parsed.userId).toBe('');
-        }
+        // Парсинг должен вернуть undefined для пустой userId
+        expect(parsed).toBeUndefined();
       });
 
       it('should handle only colon', () => {
@@ -1337,13 +1363,17 @@ describe('Core IDs', () => {
       it('should return undefined when parsing with custom maxDepth', () => {
         const str = `sub:sub:wallet:${testWallet}:a:b`; // глубина 2
 
-        // С maxDepth=1 должно вернуть undefined
+        // С maxDepth=1 должно вернуть undefined (разрешена только depth 0)
         const parsed = parseAccountId(str, { maxDepth: 1 });
         expect(parsed).toBeUndefined();
 
-        // С maxDepth=2 должно распарситься
+        // С maxDepth=2 должно вернуть undefined (разрешена только depth 0,1)
         const parsed2 = parseAccountId(str, { maxDepth: 2 });
-        expect(parsed2).toBeDefined();
+        expect(parsed2).toBeUndefined();
+
+        // С maxDepth=3 должно распарситься (разрешена depth 0,1,2)
+        const parsed3 = parseAccountId(str, { maxDepth: 3 });
+        expect(parsed3).toBeDefined();
       });
 
       it('should return false when comparing deeply nested subaccounts', () => {

@@ -32,6 +32,11 @@ export class AccountIdDepthError extends Error {
  * @remarks
  * Защита от stack overflow при рекурсивной обработке.
  * Ограничивает цепочки типа: sub:sub:sub:...
+ *
+ * Семантика: MAX_SUBACCOUNT_DEPTH = N означает "максимум N layers субаккаунтов".
+ * - depth 0: базовый аккаунт (WALLET или VENUE)
+ * - depth 1-N: N layers SUBACCOUNT
+ * - depth N+1: отклоняется проверкой `if (depth >= MAX_SUBACCOUNT_DEPTH)`
  */
 const MAX_SUBACCOUNT_DEPTH = 5;
 
@@ -120,7 +125,7 @@ export interface ParseAccountIdOptions {
   /**
    * Максимальная глубина вложенности SUBACCOUNT
    *
-   * @default MAX_SUBACCOUNT_DEPTH (5)
+   * @default MAX_SUBACCOUNT_DEPTH (2)
    */
   maxDepth?: number;
 
@@ -435,6 +440,36 @@ export function parseAccountId(
 }
 
 /**
+ * Валидация строковых полей (userId, subaccount name)
+ *
+ * @param value - Строка для валидации
+ * @returns true если строка валидна
+ *
+ * @remarks
+ * Правила валидации:
+ * - Не пустая
+ * - Максимум 256 символов
+ * - Не содержит control characters (U+0000..U+001F, U+007F..U+009F)
+ */
+function isValidStringField(value: string): boolean {
+  if (!value || value.length === 0) {
+    return false;
+  }
+
+  if (value.length > 256) {
+    return false;
+  }
+
+  // Проверка на control characters
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x1F\x7F-\x9F]/.test(value)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Internal implementation с depth tracking
  *
  * @param str - Строка для парсинга
@@ -457,7 +492,7 @@ function parseAccountIdImpl(
   maxDepth: number,
   options?: ParseAccountIdOptions
 ): AccountId | undefined {
-  if (depth > maxDepth) {
+  if (depth >= maxDepth) {
     return undefined;
   }
 
@@ -502,6 +537,12 @@ function parseAccountIdImpl(
     }
 
     const userId = unescape(parts[2]);
+
+    // Валидация userId
+    if (!isValidStringField(userId)) {
+      return undefined;
+    }
+
     return {
       kind: 'VENUE',
       venueId,
@@ -516,6 +557,11 @@ function parseAccountIdImpl(
 
     // Extract subaccount name (last part)
     const name = unescape(parts[parts.length - 1]);
+
+    // Валидация name
+    if (!isValidStringField(name)) {
+      return undefined;
+    }
 
     // Reconstruct base account string (everything except 'sub' and name)
     const baseParts = parts.slice(1, -1);

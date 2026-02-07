@@ -15,3 +15,4 @@ export {
 } from './MarketDataSourceId.js';
 
 export type { InstrumentId } from './InstrumentId.js';
+export { asInstrumentId, unsafeInstrumentId } from './InstrumentId.js';

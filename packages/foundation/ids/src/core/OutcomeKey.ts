@@ -264,8 +264,3 @@ export function oppositeOutcomeKey(key: OutcomeKey): OutcomeKey | undefined {
   if (key === BinaryOutcome.DOWN) return BinaryOutcome.UP;
   return undefined;
 }
-
-/**
- * @deprecated Переименован в oppositeOutcomeKey
- */
-export const oppositeOutcome = oppositeOutcomeKey;
