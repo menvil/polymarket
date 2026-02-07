@@ -1404,6 +1404,33 @@ describe('Core IDs', () => {
         expect(str).toContain('sub:sub:sub:sub:sub:wallet');
       });
 
+      it('should support round-trip for max depth (5)', () => {
+        const walletAcc = accountIdFromWallet(testWallet);
+
+        // Создаём структуру глубиной 5
+        let current: AccountId = walletAcc;
+        for (let i = 1; i <= 5; i++) {
+          const result = accountIdForSubaccount(current, `level${i}`);
+          expect(result.ok).toBe(true);
+          if (!result.ok) return;
+          current = result.value;
+        }
+
+        expect(getSubaccountDepth(current)).toBe(5);
+
+        // Сериализуем
+        const serialized = accountIdToString(current);
+        expect(serialized).toContain('sub:sub:sub:sub:sub:wallet');
+
+        // Парсим обратно - ДОЛЖНО работать для depth 5!
+        const parsed = parseAccountId(serialized);
+        expect(parsed).toBeDefined();
+        if (!parsed) return;
+
+        expect(getSubaccountDepth(parsed)).toBe(5);
+        expect(accountIdEquals(current, parsed)).toBe(true);
+      });
+
       it('should return undefined when parsing deeply nested string', () => {
         // Строка с глубиной вложенности 6 (превышает лимит 5)
         const deepStr = `sub:sub:sub:sub:sub:sub:wallet:${testWallet}:a:b:c:d:e:f`;
@@ -1415,15 +1442,15 @@ describe('Core IDs', () => {
       it('should return undefined when parsing with custom maxDepth', () => {
         const str = `sub:sub:wallet:${testWallet}:a:b`; // глубина 2
 
-        // С maxDepth=1 должно вернуть undefined (разрешена только depth 0)
+        // С maxDepth=1 должно вернуть undefined (разрешена только depth 0-1)
         const parsed = parseAccountId(str, { maxDepth: 1 });
         expect(parsed).toBeUndefined();
 
-        // С maxDepth=2 должно вернуть undefined (разрешена только depth 0,1)
+        // С maxDepth=2 должно распарситься (разрешена depth 0-2)
         const parsed2 = parseAccountId(str, { maxDepth: 2 });
-        expect(parsed2).toBeUndefined();
+        expect(parsed2).toBeDefined();
 
-        // С maxDepth=3 должно распарситься (разрешена depth 0,1,2)
+        // С maxDepth=3 тоже должно распарситься (разрешена depth 0-3)
         const parsed3 = parseAccountId(str, { maxDepth: 3 });
         expect(parsed3).toBeDefined();
       });

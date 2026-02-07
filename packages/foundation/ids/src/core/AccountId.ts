@@ -53,8 +53,8 @@ export class AccountIdValidationError extends Error {
  *
  * Семантика: MAX_SUBACCOUNT_DEPTH = N означает "максимум N layers субаккаунтов".
  * - depth 0: базовый аккаунт (WALLET или VENUE)
- * - depth 1-N: N layers SUBACCOUNT
- * - depth N+1: отклоняется проверкой `if (depth >= MAX_SUBACCOUNT_DEPTH)`
+ * - depth 1-N: N layers SUBACCOUNT (допустимо)
+ * - depth N+1: отклоняется проверкой `if (depth > MAX_SUBACCOUNT_DEPTH)`
  */
 const MAX_SUBACCOUNT_DEPTH = 5;
 
@@ -143,7 +143,13 @@ export interface ParseAccountIdOptions {
   /**
    * Максимальная глубина вложенности SUBACCOUNT
    *
-   * @default MAX_SUBACCOUNT_DEPTH (2)
+   * @remarks
+   * Семантика: maxDepth=N означает "допускать depth от 0 до N включительно".
+   * - depth 0: базовый аккаунт (WALLET или VENUE)
+   * - depth 1-N: N уровней SUBACCOUNT
+   * - depth > N: отклоняется
+   *
+   * @default MAX_SUBACCOUNT_DEPTH (5)
    */
   maxDepth?: number;
 
@@ -560,7 +566,7 @@ function parseAccountIdImpl(
   maxDepth: number,
   options?: ParseAccountIdOptions
 ): AccountId | undefined {
-  if (depth >= maxDepth) {
+  if (depth > maxDepth) {
     return undefined;
   }
 
