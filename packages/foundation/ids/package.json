@@ -28,6 +28,8 @@
     "prebuild": "npm run clean",
     "build": "tsc -p tsconfig.build.json",
     "test": "jest",
+    "test:dist": "node __tests__/dist-runtime.mjs",
+    "test:all": "npm test && npm run test:dist",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts"
   },
