@@ -48,6 +48,15 @@ import {
   getSubaccountDepth,
 } from '../src/index.js';
 
+// Helper для unwrap Result в тестах
+function unwrapVenue(venueId: VenueId, userId: string): AccountId {
+  const result = accountIdFromVenue(venueId, userId);
+  if (!result.ok) {
+    throw new Error(`Failed to create venue account: ${result.error.message}`);
+  }
+  return result.value;
+}
+
 describe('Core IDs', () => {
   describe('ConditionRef', () => {
     describe('OnChainConditionRef', () => {
@@ -1030,8 +1039,12 @@ describe('Core IDs', () => {
     });
 
     it('should create venue account', () => {
-      const accountId = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
+      const result = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
 
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+
+      const accountId = result.value;
       expect(accountId.kind).toBe('VENUE');
       expect(isVenueAccount(accountId)).toBe(true);
       if (accountId.kind === 'VENUE') {
@@ -1062,7 +1075,7 @@ describe('Core IDs', () => {
       expect(accountIdToString(walletAcc)).toBe(`wallet:${testWallet}`);
 
       // Venue account
-      const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
+      const venueAcc = unwrapVenue(KnownVenues.POLYMARKET, 'user_123');
       expect(accountIdToString(venueAcc)).toBe('venue:POLYMARKET:user_123');
 
       // Subaccount
@@ -1075,7 +1088,7 @@ describe('Core IDs', () => {
 
     it('should escape colons in userId and name', () => {
       // Venue account with colon in userId
-      const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
+      const venueAcc = unwrapVenue(KnownVenues.POLYMARKET, 'user:123');
       expect(accountIdToString(venueAcc)).toBe('venue:POLYMARKET:user\\:123');
 
       // Subaccount with colon in name
@@ -1137,7 +1150,7 @@ describe('Core IDs', () => {
       expect(accountIdEquals(walletAcc, walletParsed!)).toBe(true);
 
       // Venue account
-      const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
+      const venueAcc = unwrapVenue(KnownVenues.POLYMARKET, 'user:123');
       const venueStr = accountIdToString(venueAcc);
       const venueParsed = parseAccountId(venueStr);
       expect(accountIdEquals(venueAcc, venueParsed!)).toBe(true);
@@ -1161,13 +1174,13 @@ describe('Core IDs', () => {
       expect(accountIdEquals(acc1, acc2)).toBe(true);
 
       // Same venue accounts
-      const venue1 = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
-      const venue2 = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
+      const venue1 = unwrapVenue(KnownVenues.POLYMARKET, 'user_123');
+      const venue2 = unwrapVenue(KnownVenues.POLYMARKET, 'user_123');
       expect(accountIdEquals(venue1, venue2)).toBe(true);
 
       // Different accounts
       const walletAcc = accountIdFromWallet(testWallet);
-      const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
+      const venueAcc = unwrapVenue(KnownVenues.POLYMARKET, 'user_123');
       expect(accountIdEquals(walletAcc, venueAcc)).toBe(false);
     });
 
@@ -1199,7 +1212,7 @@ describe('Core IDs', () => {
         [':', 'only colon'],
         ['\\', 'only backslash'],
       ])('should handle %s (%s)', (userId, _description) => {
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, userId);
+        const venueAcc = unwrapVenue(KnownVenues.POLYMARKET, userId);
         const str = accountIdToString(venueAcc);
         const parsed = parseAccountId(str);
 
@@ -1209,14 +1222,95 @@ describe('Core IDs', () => {
         }
       });
 
-      it('should reject empty userId', () => {
-        // Empty userId не валидна согласно isValidStringField
-        const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, '');
-        const str = accountIdToString(venueAcc);
-        const parsed = parseAccountId(str);
+      it('should reject empty userId in factory', () => {
+        // Empty userId не валидна - фабрика должна вернуть Err
+        const result = accountIdFromVenue(KnownVenues.POLYMARKET, '');
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('empty string');
+        }
+      });
+    });
 
-        // Парсинг должен вернуть undefined для пустой userId
-        expect(parsed).toBeUndefined();
+    describe('Factory validation', () => {
+      it('should reject invalid userId in accountIdFromVenue', () => {
+        // Empty string
+        let result = accountIdFromVenue(KnownVenues.POLYMARKET, '');
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('empty string');
+        }
+
+        // Too long (> 256 chars)
+        result = accountIdFromVenue(KnownVenues.POLYMARKET, 'x'.repeat(300));
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('exceeds 256 characters');
+        }
+
+        // Control characters (generic error message)
+        result = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\x00id');
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('invalid format');
+        }
+      });
+
+      it('should reject invalid name in accountIdForSubaccount', () => {
+        const walletAcc = accountIdFromWallet(testWallet);
+
+        // Empty string
+        let result = accountIdForSubaccount(walletAcc, '');
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('empty string');
+        }
+
+        // Too long (> 256 chars)
+        result = accountIdForSubaccount(walletAcc, 'x'.repeat(300));
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('exceeds 256 characters');
+        }
+
+        // Control characters (generic error message)
+        result = accountIdForSubaccount(walletAcc, 'sub\x00name');
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('invalid format');
+        }
+      });
+
+      it('should allow valid userId and name', () => {
+        // Valid userId
+        const venueResult = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
+        expect(venueResult.ok).toBe(true);
+
+        // Valid name
+        const walletAcc = accountIdFromWallet(testWallet);
+        const subResult = accountIdForSubaccount(walletAcc, 'trading');
+        expect(subResult.ok).toBe(true);
+
+        // Max length (256 chars)
+        const maxUserId = 'a'.repeat(256);
+        const maxVenueResult = accountIdFromVenue(KnownVenues.POLYMARKET, maxUserId);
+        expect(maxVenueResult.ok).toBe(true);
+
+        const maxName = 'b'.repeat(256);
+        const maxSubResult = accountIdForSubaccount(walletAcc, maxName);
+        expect(maxSubResult.ok).toBe(true);
+      });
+
+      it('should guarantee round-trip for valid inputs', () => {
+        // Create with factory, serialize, parse - должно work
+        const venueResult = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:with:colons');
+        expect(venueResult.ok).toBe(true);
+        if (!venueResult.ok) return;
+
+        const str = accountIdToString(venueResult.value);
+        const parsed = parseAccountId(str);
+        expect(parsed).toBeDefined();
+        expect(accountIdEquals(venueResult.value, parsed!)).toBe(true);
       });
     });
 

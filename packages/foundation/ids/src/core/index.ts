@@ -62,6 +62,7 @@ export {
 export type { AccountId, ParseAccountIdOptions } from './AccountId.js';
 export {
   AccountIdDepthError,
+  AccountIdValidationError,
   accountIdFromWallet,
   accountIdFromVenue,
   accountIdForSubaccount,

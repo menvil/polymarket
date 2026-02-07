@@ -27,6 +27,24 @@ export class AccountIdDepthError extends Error {
 }
 
 /**
+ * Ошибка при невалидном строковом поле (userId или name)
+ *
+ * @remarks
+ * Выбрасывается при попытке создать AccountId с невалидным userId или name.
+ * Валидация гарантирует round-trip serialization (создать → сериализовать → распарсить).
+ */
+export class AccountIdValidationError extends Error {
+  constructor(
+    public readonly field: 'userId' | 'name',
+    public readonly value: string,
+    public readonly reason: string
+  ) {
+    super(`Invalid ${field}: ${reason} (value: "${value}")`);
+    this.name = 'AccountIdValidationError';
+  }
+}
+
+/**
  * Максимальная глубина вложенности SUBACCOUNT
  *
  * @remarks
@@ -228,26 +246,54 @@ export function accountIdFromWallet(address: WalletAddress): AccountId {
  *
  * @param venueId - ID venue (биржа/платформа)
  * @param userId - User ID на этом venue
- * @returns AccountId типа VENUE
+ * @returns Result с AccountId типа VENUE или ошибкой при невалидном userId
  *
  * @remarks
  * Используется для идентификации аккаунтов на centralized venues
  * (POLYMARKET, KALSHI, etc).
  *
+ * Валидирует userId теми же правилами что и parser для гарантии round-trip:
+ * - Не пустая строка
+ * - Максимум 256 символов
+ * - Не содержит control characters
+ *
  * @example
  * ```typescript
- * const accountId = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
+ * const result = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
  *
- * console.log(accountIdToString(accountId));
- * // → 'venue:POLYMARKET:user_123'
+ * if (result.ok) {
+ *   console.log(accountIdToString(result.value));
+ *   // → 'venue:POLYMARKET:user_123'
+ * } else {
+ *   console.error('Invalid userId:', result.error.message);
+ * }
+ *
+ * // Невалидный userId
+ * accountIdFromVenue(KnownVenues.POLYMARKET, ''); // → Err (empty string)
+ * accountIdFromVenue(KnownVenues.POLYMARKET, 'x'.repeat(300)); // → Err (too long)
  * ```
  */
-export function accountIdFromVenue(venueId: VenueId, userId: string): AccountId {
-  return {
+export function accountIdFromVenue(
+  venueId: VenueId,
+  userId: string
+): Result<AccountId, AccountIdValidationError> {
+  // Валидация userId теми же правилами что в parser
+  if (!isValidStringField(userId)) {
+    let reason = 'invalid format';
+    if (userId.length === 0) {
+      reason = 'empty string';
+    } else if (userId.length > 256) {
+      reason = 'exceeds 256 characters';
+    }
+    // Для других случаев (control chars, etc) используем generic reason
+    return Err(new AccountIdValidationError('userId', userId, reason));
+  }
+
+  return Ok({
     kind: 'VENUE',
     venueId,
     userId,
-  };
+  });
 }
 
 /**
@@ -255,7 +301,7 @@ export function accountIdFromVenue(venueId: VenueId, userId: string): AccountId 
  *
  * @param base - Base account (может быть любого типа)
  * @param name - Имя subaccount
- * @returns Result с AccountId типа SUBACCOUNT или ошибкой при превышении depth limit
+ * @returns Result с AccountId типа SUBACCOUNT или ошибкой
  *
  * @remarks
  * Subaccounts используются для разделения балансов внутри одного base account.
@@ -264,7 +310,14 @@ export function accountIdFromVenue(venueId: VenueId, userId: string): AccountId 
  * Может быть вложенным: subaccount может иметь свои subaccounts.
  * Максимальная глубина вложенности ограничена для защиты от stack overflow.
  *
- * Использует Result pattern вместо exceptions для явной обработки ошибок.
+ * Валидирует name теми же правилами что и parser для гарантии round-trip:
+ * - Не пустая строка
+ * - Максимум 256 символов
+ * - Не содержит control characters
+ *
+ * Возвращает ошибку при:
+ * - Невалидном name (AccountIdValidationError)
+ * - Превышении depth limit (AccountIdDepthError)
  *
  * @example
  * ```typescript
@@ -278,15 +331,27 @@ export function accountIdFromVenue(venueId: VenueId, userId: string): AccountId 
  *   console.error('Error:', result.error.message);
  * }
  *
- * // Ошибка при превышении лимита:
- * const deepResult = accountIdForSubaccount(deeplyNested, 'tooDeep');
- * // → Err(AccountIdDepthError)
+ * // Ошибки:
+ * accountIdForSubaccount(wallet, ''); // → Err(AccountIdValidationError)
+ * accountIdForSubaccount(deeplyNested, 'tooDeep'); // → Err(AccountIdDepthError)
  * ```
  */
 export function accountIdForSubaccount(
   base: AccountId,
   name: string
-): Result<AccountId, AccountIdDepthError> {
+): Result<AccountId, AccountIdDepthError | AccountIdValidationError> {
+  // Валидация name теми же правилами что в parser
+  if (!isValidStringField(name)) {
+    let reason = 'invalid format';
+    if (name.length === 0) {
+      reason = 'empty string';
+    } else if (name.length > 256) {
+      reason = 'exceeds 256 characters';
+    }
+    // Для других случаев (control chars, etc) используем generic reason
+    return Err(new AccountIdValidationError('name', name, reason));
+  }
+
   const currentDepth = getSubaccountDepth(base);
 
   if (currentDepth >= MAX_SUBACCOUNT_DEPTH) {
@@ -460,10 +525,13 @@ function isValidStringField(value: string): boolean {
     return false;
   }
 
-  // Проверка на control characters
-  // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1F\x7F-\x9F]/.test(value)) {
-    return false;
+  // Проверка на control characters без regex
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    // Control characters: U+0000..U+001F, U+007F..U+009F
+    if ((code >= 0x00 && code <= 0x1f) || (code >= 0x7f && code <= 0x9f)) {
+      return false;
+    }
   }
 
   return true;
