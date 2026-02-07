@@ -6,6 +6,10 @@ import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 
 /**
+ * @todo реализовать поддержку Decimal
+ */
+
+/**
  * Ошибка при превышении depth limit для SUBACCOUNT
  *
  * @remarks

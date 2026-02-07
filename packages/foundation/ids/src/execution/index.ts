@@ -7,6 +7,8 @@
 export type { ExecutionVenueId } from './ExecutionVenueId.js';
 export {
   KnownExecutionVenues,
+  isKnownExecutionVenue,
+  asExecutionVenueId,
   executionToVenue,
   isSimulator,
   isLiveVenue,
