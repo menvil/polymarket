@@ -7,6 +7,8 @@
 export type { MarketDataSourceId } from './MarketDataSourceId.js';
 export {
   KnownMarketDataSources,
+  isKnownMarketDataSource,
+  asMarketDataSourceId,
   sourceToVenue,
   isLiveSource,
   isReplaySource,
