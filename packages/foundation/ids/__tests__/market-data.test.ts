@@ -117,17 +117,14 @@ describe('Market Data IDs', () => {
       expect(asMarketDataSourceId('A'.repeat(65))).toBeUndefined(); // 65 символов (лимит 64)
     });
 
-    it('should accept source ID at max length', () => {
-      const maxLenId = 'A'.repeat(64);
-      expect(asMarketDataSourceId(maxLenId)).toBe(maxLenId);
-    });
-
-    it('should accept consecutive underscores', () => {
-      expect(asMarketDataSourceId('SOURCE__NAME')).toBe('SOURCE__NAME');
-    });
-
-    it('should accept ending with underscore', () => {
-      expect(asMarketDataSourceId('SOURCE_')).toBe('SOURCE_');
+    describe('Format validation (table-driven)', () => {
+      it.each([
+        ['max length (64 chars)', 'A'.repeat(64)],
+        ['consecutive underscores', 'SOURCE__NAME'],
+        ['ending with underscore', 'SOURCE_'],
+      ])('should accept %s', (_description, sourceId) => {
+        expect(asMarketDataSourceId(sourceId)).toBe(sourceId);
+      });
     });
 
     it('should return undefined for unknown custom sources', () => {

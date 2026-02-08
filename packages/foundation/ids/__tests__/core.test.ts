@@ -515,20 +515,17 @@ describe('Core IDs', () => {
       expect(asVenueId('A'.repeat(33))).toBeUndefined(); // слишком длинная (>32)
     });
 
-    it('should accept venue ID at max length', () => {
-      const maxLenId = 'A'.repeat(32);
-      expect(asVenueId(maxLenId)).toBe(maxLenId);
-    });
-
-    it('should accept consecutive underscores', () => {
-      expect(asVenueId('VENUE__NAME')).toBe('VENUE__NAME');
-      expect(asVenueId('MY___VENUE')).toBe('MY___VENUE');
-    });
-
-    it('should accept leading and trailing underscores', () => {
-      expect(asVenueId('_VENUE')).toBe('_VENUE');
-      expect(asVenueId('VENUE_')).toBe('VENUE_');
-      expect(asVenueId('_VENUE_')).toBe('_VENUE_');
+    describe('Format validation (table-driven)', () => {
+      it.each([
+        ['max length (32 chars)', 'A'.repeat(32)],
+        ['consecutive underscores', 'VENUE__NAME'],
+        ['triple underscores', 'MY___VENUE'],
+        ['leading underscore', '_VENUE'],
+        ['trailing underscore', 'VENUE_'],
+        ['both leading and trailing', '_VENUE_'],
+      ])('should accept %s', (_description, venueId) => {
+        expect(asVenueId(venueId)).toBe(venueId);
+      });
     });
   });
 
@@ -595,20 +592,17 @@ describe('Core IDs', () => {
       expect(asOnChainProtocolId('A'.repeat(33))).toBeUndefined(); // слишком длинная (>32)
     });
 
-    it('should accept protocol ID at max length', () => {
-      const maxLenId = 'A'.repeat(32);
-      expect(asOnChainProtocolId(maxLenId)).toBe(maxLenId);
-    });
-
-    it('should accept consecutive underscores', () => {
-      expect(asOnChainProtocolId('PROTOCOL__NAME')).toBe('PROTOCOL__NAME');
-      expect(asOnChainProtocolId('MY___CTF')).toBe('MY___CTF');
-    });
-
-    it('should accept leading and trailing underscores', () => {
-      expect(asOnChainProtocolId('_PROTOCOL')).toBe('_PROTOCOL');
-      expect(asOnChainProtocolId('PROTOCOL_')).toBe('PROTOCOL_');
-      expect(asOnChainProtocolId('_PROTOCOL_')).toBe('_PROTOCOL_');
+    describe('Format validation (table-driven)', () => {
+      it.each([
+        ['max length (32 chars)', 'A'.repeat(32)],
+        ['consecutive underscores', 'PROTOCOL__NAME'],
+        ['triple underscores', 'MY___CTF'],
+        ['leading underscore', '_PROTOCOL'],
+        ['trailing underscore', 'PROTOCOL_'],
+        ['both leading and trailing', '_PROTOCOL_'],
+      ])('should accept %s', (_description, protocolId) => {
+        expect(asOnChainProtocolId(protocolId)).toBe(protocolId);
+      });
     });
   });
 

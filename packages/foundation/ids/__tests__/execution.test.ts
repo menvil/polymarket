@@ -98,17 +98,14 @@ describe('Execution IDs', () => {
       expect(asExecutionVenueId('A'.repeat(33))).toBeUndefined(); // 33 символа (лимит 32)
     });
 
-    it('should accept execution venue ID at max length', () => {
-      const maxLenId = 'A'.repeat(32);
-      expect(asExecutionVenueId(maxLenId)).toBe(maxLenId);
-    });
-
-    it('should accept consecutive underscores', () => {
-      expect(asExecutionVenueId('VENUE__NAME')).toBe('VENUE__NAME');
-    });
-
-    it('should accept ending with underscore', () => {
-      expect(asExecutionVenueId('VENUE_')).toBe('VENUE_');
+    describe('Format validation (table-driven)', () => {
+      it.each([
+        ['max length (32 chars)', 'A'.repeat(32)],
+        ['consecutive underscores', 'VENUE__NAME'],
+        ['ending with underscore', 'VENUE_'],
+      ])('should accept %s', (_description, venueId) => {
+        expect(asExecutionVenueId(venueId)).toBe(venueId);
+      });
     });
 
     it('should map custom execution venue to venue with validation', () => {
