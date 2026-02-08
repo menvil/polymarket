@@ -2,32 +2,28 @@
 
 ## Core IDs
 
-### ProtocolId
+### OnChainProtocolId
 
-Идентификатор протокола prediction market.
+Идентификатор on-chain протокола prediction market.
 
 ```typescript
-type ProtocolId =
-  | 'POLYMARKET_CTF'
-  | 'KALSHI'
-  | 'UMA_CTF'
-  | (string & { readonly __brand: 'ProtocolId' });
+type OnChainProtocolId = string & { readonly __brand: 'OnChainProtocolId' };
 ```
 
-**Известные протоколы**:
+**Известные on-chain протоколы**:
 - `POLYMARKET_CTF` - Polymarket Conditional Token Framework (Gnosis CTF на Polygon)
-- `KALSHI` - Kalshi regulated prediction market
 - `UMA_CTF` - UMA Conditional Token Framework
+- `GNOSIS_CTF` - Generic Gnosis CTF на любом EVM chain
 
 **Использование**:
 
 ```typescript
-import { type ProtocolId, isKnownProtocol } from '@polymarket/ids';
+import { type OnChainProtocolId, isKnownOnChainProtocol, KnownOnChainProtocols } from '@polymarket/ids';
 
-const protocol: ProtocolId = 'POLYMARKET_CTF';
+const protocol: OnChainProtocolId = KnownOnChainProtocols.POLYMARKET_CTF;
 
-if (isKnownProtocol(protocol)) {
-  console.log('Known protocol');
+if (isKnownOnChainProtocol(protocol)) {
+  console.log('Known on-chain protocol');
 }
 ```
 
@@ -45,7 +41,7 @@ type ChainId = number & { readonly __brand: 'ChainId' };
 
 ```typescript
 export const KnownChainIds = {
-  ETHEREUM: 1 as ChainId,
+  ETHEREUM_MAINNET: 1 as ChainId,
   POLYGON: 137 as ChainId,
   BASE: 8453 as ChainId,
 } as const;
@@ -54,12 +50,13 @@ export const KnownChainIds = {
 **Helpers**:
 
 ```typescript
-function getChainName(chainId: ChainId): string | undefined;
+function getChainName(chainId: ChainId): string;
 
 // Примеры
-getChainName(1);     // → 'Ethereum'
-getChainName(137);   // → 'Polygon'
-getChainName(8453);  // → 'Base'
+getChainName(KnownChainIds.ETHEREUM_MAINNET); // → 'Ethereum Mainnet'
+getChainName(KnownChainIds.POLYGON);          // → 'Polygon'
+getChainName(KnownChainIds.BASE);             // → 'Base'
+getChainName(999 as ChainId);                 // → 'Chain 999'
 ```
 
 ---
@@ -91,22 +88,40 @@ isValidConditionId('invalid');      // → false
 **Полная ссылка на condition** - ВСЕГДА используй вместо голого `ConditionId`.
 
 ```typescript
-type ConditionRef = Readonly<{
-  protocolId: ProtocolId;
+type ConditionRef = OnChainConditionRef | OffChainConditionRef;
+
+type OnChainConditionRef = Readonly<{
+  kind: 'ONCHAIN';
+  protocolId: OnChainProtocolId;
   chainId: ChainId;
   conditionId: ConditionId;
+}>;
+
+type OffChainConditionRef = Readonly<{
+  kind: 'OFFCHAIN';
+  venueId: VenueId;
+  marketId: string;
 }>;
 ```
 
 **Создание**:
 
 ```typescript
-import { type ConditionRef, KnownChainIds } from '@polymarket/ids';
+import { type ConditionRef, type OnChainConditionRef, type OffChainConditionRef, KnownChainIds, KnownOnChainProtocols, KnownVenues, parseConditionId } from '@polymarket/ids';
 
-const conditionRef: ConditionRef = {
-  protocolId: 'POLYMARKET_CTF',
+// On-chain condition (Polymarket)
+const onChainRef: OnChainConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as ConditionId,
+  conditionId: parseConditionId('0xabc123...')!,
+};
+
+// Off-chain condition (KALSHI)
+const offChainRef: OffChainConditionRef = {
+  kind: 'OFFCHAIN',
+  venueId: KnownVenues.KALSHI,
+  marketId: 'KXBTCUSDM-24APR',
 };
 ```
 
@@ -116,8 +131,8 @@ const conditionRef: ConditionRef = {
 // Сравнение
 function conditionRefEquals(a: ConditionRef, b: ConditionRef): boolean;
 
-const ref1: ConditionRef = { /* ... */ };
-const ref2: ConditionRef = { /* ... */ };
+const ref1: ConditionRef = { kind: 'ONCHAIN', /* ... */ };
+const ref2: ConditionRef = { kind: 'ONCHAIN', /* ... */ };
 if (conditionRefEquals(ref1, ref2)) {
   console.log('Same condition');
 }
@@ -125,14 +140,30 @@ if (conditionRefEquals(ref1, ref2)) {
 // Преобразование в строку
 function conditionRefToString(ref: ConditionRef): string;
 
-const str = conditionRefToString(ref1);
-// → "POLYMARKET_CTF:137:0xabc123..."
+const onChainStr = conditionRefToString(onChainRef);
+// → "ONCHAIN:POLYMARKET_CTF:137:0xabc123..."
+
+const offChainStr = conditionRefToString(offChainRef);
+// → "OFFCHAIN:KALSHI:KXBTCUSDM-24APR"
 
 // Парсинг из строки
 function parseConditionRef(str: string): ConditionRef | undefined;
 
-const parsed = parseConditionRef('POLYMARKET_CTF:137:0xabc123...');
-// → { protocolId: 'POLYMARKET_CTF', chainId: 137, conditionId: '0xabc123...' }
+const parsedOnChain = parseConditionRef('ONCHAIN:POLYMARKET_CTF:137:0xabc123...');
+// → { kind: 'ONCHAIN', protocolId: 'POLYMARKET_CTF', chainId: 137, conditionId: '0xabc123...' }
+
+const parsedOffChain = parseConditionRef('OFFCHAIN:KALSHI:KXBTCUSDM-24APR');
+// → { kind: 'OFFCHAIN', venueId: 'KALSHI', marketId: 'KXBTCUSDM-24APR' }
+
+// Type guards
+function isOnChainConditionRef(ref: ConditionRef): ref is OnChainConditionRef;
+function isOffChainConditionRef(ref: ConditionRef): ref is OffChainConditionRef;
+
+if (isOnChainConditionRef(ref)) {
+  console.log(`On-chain: ${ref.protocolId} on chain ${ref.chainId}`);
+} else {
+  console.log(`Off-chain: ${ref.venueId} market ${ref.marketId}`);
+}
 ```
 
 **Почему не голый ConditionId?**
@@ -148,10 +179,11 @@ const conditionId = '0xabc123...' as ConditionId;
 
 ✅ Хорошо:
 ```typescript
-const conditionRef: ConditionRef = {
-  protocolId: 'POLYMARKET_CTF',
-  chainId: 137,
-  conditionId: '0xabc123...' as ConditionId,
+const conditionRef: OnChainConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+  chainId: KnownChainIds.POLYGON,
+  conditionId: parseConditionId('0xabc123...')!,
 };
 // Всё понятно! Polygon, Polymarket CTF, condition hash.
 ```
@@ -172,13 +204,16 @@ type WalletAddress = string & { readonly __brand: 'WalletAddress' };
 // Validation (checksum)
 function isValidWalletAddress(address: string): boolean;
 
-isValidWalletAddress('0x1234...');  // → true (if valid checksum)
+isValidWalletAddress('0x1234567890123456789012345678901234567890');  // → true (if valid format)
 
-// Normalization (lowercase)
-function normalizeWalletAddress(address: string): WalletAddress;
+// Parsing (lowercase normalization)
+function parseWalletAddress(address: string): WalletAddress | undefined;
 
-normalizeWalletAddress('0xAbC123...')
-// → '0xabc123...' as WalletAddress
+parseWalletAddress('0xAbC123...')
+// → '0xabc123...' as WalletAddress (lowercase canonical form)
+
+parseWalletAddress('INVALID')
+// → undefined
 ```
 
 ---
@@ -188,42 +223,116 @@ normalizeWalletAddress('0xAbC123...')
 Идентификатор аккаунта (wallet, venue account, или subaccount).
 
 ```typescript
-type AccountId = string & { readonly __brand: 'AccountId' };
+type AccountId =
+  | {
+      readonly kind: 'WALLET';
+      readonly address: WalletAddress;
+    }
+  | {
+      readonly kind: 'VENUE';
+      readonly venueId: VenueId;
+      readonly userId: string;
+    }
+  | {
+      readonly kind: 'SUBACCOUNT';
+      readonly base: AccountId;
+      readonly name: string;
+    };
 ```
 
 **Helper функции**:
 
 ```typescript
+import {
+  type AccountId,
+  accountIdFromWallet,
+  accountIdFromVenue,
+  accountIdForSubaccount,
+  AccountIdValidationError,
+  AccountIdDepthError,
+  parseWalletAddress,
+  KnownVenues
+} from '@polymarket/ids';
+import type { Result } from '@polymarket/result';
+
 // От wallet address
 function accountIdFromWallet(wallet: WalletAddress): AccountId;
 
-const wallet = '0x123...' as WalletAddress;
+const wallet = parseWalletAddress('0x123...')!;
 const accountId = accountIdFromWallet(wallet);
-// → '0x123...' as AccountId
+// → { kind: 'WALLET', address: '0x123...' }
 
 // От venue account
-function accountIdFromVenue(venue: VenueId, accountName: string): AccountId;
+function accountIdFromVenue(venue: VenueId, userId: string): Result<AccountId, AccountIdValidationError>;
 
-const accountId = accountIdFromVenue('KALSHI', 'user123');
-// → 'KALSHI:user123' as AccountId
+const result = accountIdFromVenue(KnownVenues.KALSHI, 'user123');
+if (result.ok) {
+  const accountId = result.value;
+  // → { kind: 'VENUE', venueId: 'KALSHI', userId: 'user123' }
+} else {
+  console.error('Invalid userId:', result.error.message);
+}
 
 // Subaccount
-function accountIdForSubaccount(wallet: WalletAddress, subaccountName: string): AccountId;
+function accountIdForSubaccount(base: AccountId, subaccountName: string): Result<AccountId, AccountIdDepthError | AccountIdValidationError>;
 
-const subaccount = accountIdForSubaccount(wallet, 'trading');
-// → '0x123...:trading' as AccountId
+const walletAcc = accountIdFromWallet(parseWalletAddress('0x123...')!);
+const subResult = accountIdForSubaccount(walletAcc, 'trading');
+if (subResult.ok) {
+  const subaccount = subResult.value;
+  // → { kind: 'SUBACCOUNT', base: { kind: 'WALLET', ... }, name: 'trading' }
+} else {
+  console.error('Error:', subResult.error.message);
+}
+
+// Сериализация
+function accountIdToString(id: AccountId): string;
+
+accountIdToString(accountId);
+// → 'wallet:0x123...'
+
+accountIdToString(result.value);
+// → 'venue:KALSHI:user123'
+
+accountIdToString(subResult.value);
+// → 'sub:wallet:0x123...:trading'
+
+// Парсинг
+function parseAccountId(str: string): AccountId | undefined;
+
+const parsed = parseAccountId('wallet:0x123...');
+// → { kind: 'WALLET', address: '0x123...' }
+
+// Type guards
+function isWalletAccount(id: AccountId): id is Extract<AccountId, { kind: 'WALLET' }>;
+function isVenueAccount(id: AccountId): id is Extract<AccountId, { kind: 'VENUE' }>;
+function isSubaccount(id: AccountId): id is Extract<AccountId, { kind: 'SUBACCOUNT' }>;
+
+if (isWalletAccount(accountId)) {
+  // TypeScript знает: accountId.address is WalletAddress
+  console.log(accountId.address);
+}
 ```
 
 **Использование**:
 
 ```typescript
-import { type AccountId, accountIdFromWallet } from '@polymarket/ids';
+import { type AccountId, accountIdFromWallet, parseWalletAddress } from '@polymarket/ids';
 
-const wallet = '0x123...' as WalletAddress;
+const wallet = parseWalletAddress('0x123...')!;
 const accountId = accountIdFromWallet(wallet);
 
 // Получить баланс для account
 const balance = getBalance(accountId, venueId);
+
+// Pattern matching
+if (accountId.kind === 'WALLET') {
+  console.log('Wallet account:', accountId.address);
+} else if (accountId.kind === 'VENUE') {
+  console.log('Venue account:', accountId.venueId, accountId.userId);
+} else {
+  console.log('Subaccount:', accountId.name);
+}
 ```
 
 ---
@@ -285,24 +394,39 @@ type AssetId =
 **Helper функции**:
 
 ```typescript
-import { AssetIdHelpers } from '@polymarket/ids';
+import {
+  AssetIdHelpers,
+  KnownCurrencies,
+  BinaryOutcome,
+  type OnChainConditionRef,
+  KnownOnChainProtocols,
+  KnownChainIds,
+  parseConditionId
+} from '@polymarket/ids';
 
 // Currency asset
 const usdc = AssetIdHelpers.USDC;
 // → { type: 'CURRENCY', currency: 'USDC' }
 
-const usdt = AssetIdHelpers.fromCurrency('USDT');
-// → { type: 'CURRENCY', currency: 'USDT' }
+const usdcExplicit = AssetIdHelpers.fromCurrency(KnownCurrencies.USDC);
+// → { type: 'CURRENCY', currency: 'USDC' }
 
 // Outcome token asset
-const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
-// → { type: 'OUTCOME_TOKEN', conditionRef: {...}, outcomeIndex: 1 }
+const onChainRef: OnChainConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+  chainId: KnownChainIds.POLYGON,
+  conditionId: parseConditionId('0xabc123...')!,
+};
+
+const tokenAsset = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+// → { type: 'OUTCOME_TOKEN', conditionRef: {...}, outcomeKey: 'UP' }
 
 // Сравнение
 function assetIdEquals(a: AssetId, b: AssetId): boolean;
 
 assetIdEquals(usdc, AssetIdHelpers.USDC);  // → true
-assetIdEquals(usdc, usdt);                 // → false
+assetIdEquals(usdc, usdcExplicit);         // → true
 
 // To string
 function assetIdToString(asset: AssetId): string;
@@ -311,37 +435,54 @@ assetIdToString(usdc);
 // → 'CURRENCY:USDC'
 
 assetIdToString(tokenAsset);
-// → 'TOKEN:POLYMARKET_CTF:137:0xabc123...:1'
+// → 'OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123...:UP'
 
 // Type guards
-function isCurrencyAsset(asset: AssetId): asset is { type: 'CURRENCY'; currency: string };
-function isOutcomeTokenAsset(asset: AssetId): asset is { type: 'OUTCOME_TOKEN'; ... };
+function isCurrencyAsset(asset: AssetId): asset is { type: 'CURRENCY'; currency: SupportedCurrency };
+function isOutcomeTokenAsset(asset: AssetId): asset is { type: 'OUTCOME_TOKEN'; conditionRef: OnChainConditionRef; outcomeKey: OutcomeKey };
 
 if (isCurrencyAsset(asset)) {
   console.log(`Currency: ${asset.currency}`);
 } else {
-  console.log(`Token: outcome ${asset.outcomeIndex}`);
+  console.log(`Token: outcome ${asset.outcomeKey}`);
 }
 ```
 
 **Использование**:
 
 ```typescript
-import { type AssetId, AssetIdHelpers, isCurrencyAsset } from '@polymarket/ids';
+import {
+  type AssetId,
+  AssetIdHelpers,
+  isCurrencyAsset,
+  BinaryOutcome,
+  type OnChainConditionRef,
+  KnownOnChainProtocols,
+  KnownChainIds,
+  parseConditionId
+} from '@polymarket/ids';
 
 function processAsset(asset: AssetId) {
   if (isCurrencyAsset(asset)) {
     // TypeScript знает: asset.currency доступен
     console.log(`Processing currency: ${asset.currency}`);
   } else {
-    // TypeScript знает: asset.conditionRef и asset.outcomeIndex доступны
+    // TypeScript знает: asset.conditionRef и asset.outcomeKey доступны
     console.log(`Processing token for condition ${asset.conditionRef.conditionId}`);
+    console.log(`Outcome: ${asset.outcomeKey}`);
   }
 }
 
 // Примеры
 processAsset(AssetIdHelpers.USDC);
-processAsset(AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP));
+
+const onChainRef: OnChainConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+  chainId: KnownChainIds.POLYGON,
+  conditionId: parseConditionId('0xabc123...')!,
+};
+processAsset(AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP));
 ```
 
 ---
@@ -522,18 +663,22 @@ type FillId = string & { readonly __brand: 'FillId' };
 
 ## Сравнительная таблица
 
-| Type                | Category      | Purpose                           | Example                     |
-|---------------------|---------------|-----------------------------------|-----------------------------|
-| ConditionRef        | Core          | Полная ссылка на condition        | { protocol, chain, id }     |
-| OutcomeKey          | Core          | UP/DOWN outcome key               | 'UP', 'DOWN'                |
-| AccountId           | Core          | Аккаунт владельца                 | '0x123...'                  |
-| VenueId             | Core          | Где находятся балансы             | 'POLYMARKET'                |
-| AssetId             | Core          | Currency или OutcomeToken         | { type: 'CURRENCY', ... }   |
-| MarketDataSourceId  | Market Data   | Откуда ЧИТАЕМ данные              | 'POLYMARKET_WS'             |
-| InstrumentId        | Market Data   | ID инструмента на source          | 'BTC-USD-2025'              |
-| ExecutionVenueId    | Execution     | Куда ОТПРАВЛЯЕМ ордера            | 'POLYMARKET'                |
-| OrderId             | Execution     | ID ордера (future)                | 'order-123'                 |
-| FillId              | Execution     | ID fill (future)                  | 'fill-456'                  |
+| Type                | Category      | Purpose                           | Example                                    |
+|---------------------|---------------|-----------------------------------|--------------------------------------------|
+| OnChainProtocolId   | Core          | Протокол on-chain market          | 'POLYMARKET_CTF'                           |
+| ChainId             | Core          | Blockchain network                | 137 (Polygon)                              |
+| ConditionId         | Core          | Hash condition                    | '0xabc123...'                              |
+| ConditionRef        | Core          | Полная ссылка на condition        | { kind: 'ONCHAIN', protocol, chain, id }   |
+| OutcomeKey          | Core          | UP/DOWN outcome key               | 'UP', 'DOWN'                               |
+| WalletAddress       | Core          | Ethereum-compatible address       | '0x1234...'                                |
+| AccountId           | Core          | Аккаунт владельца                 | { kind: 'WALLET', address }                |
+| VenueId             | Core          | Где находятся балансы             | 'POLYMARKET'                               |
+| AssetId             | Core          | Currency или OutcomeToken         | { type: 'CURRENCY', currency: 'USDC' }     |
+| MarketDataSourceId  | Market Data   | Откуда ЧИТАЕМ данные              | 'POLYMARKET_WS'                            |
+| InstrumentId        | Market Data   | ID инструмента на source          | 'BTC-USD-2025'                             |
+| ExecutionVenueId    | Execution     | Куда ОТПРАВЛЯЕМ ордера            | 'POLYMARKET'                               |
+| OrderId             | Execution     | ID ордера (future)                | 'order-123'                                |
+| FillId              | Execution     | ID fill (future)                  | 'fill-456'                                 |
 
 ---
 
