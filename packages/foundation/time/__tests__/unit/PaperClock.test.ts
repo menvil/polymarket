@@ -50,16 +50,32 @@ describe('PaperClock', () => {
       expect(time1).toEqual(initialTime);
     });
 
-    it('должен возвращать тот же объект до изменения', () => {
+    it('должен возвращать копию для предотвращения мутации', () => {
       const time1 = clock.now();
       const time2 = clock.now();
 
-      expect(time1).toBe(time2); // Та же ссылка
+      // Разные объекты (предотвращает мутацию)
+      expect(time1).not.toBe(time2);
+      // Но одинаковые значения
+      expect(time1.getTime()).toBe(time2.getTime());
+      expect(time1).toEqual(time2);
     });
 
     it('должен возвращать объект Date', () => {
       const result = clock.now();
       expect(result).toBeInstanceOf(Date);
+    });
+
+    it('должен предотвращать мутацию внутреннего состояния', () => {
+      const time = clock.now();
+      const originalHours = time.getHours();
+
+      // Попытка мутации возвращенного объекта
+      time.setHours(originalHours + 5);
+
+      // Внутреннее состояние не должно измениться
+      const newTime = clock.now();
+      expect(newTime.getHours()).toBe(originalHours);
     });
   });
 
@@ -239,6 +255,56 @@ describe('PaperClock', () => {
 
       const newTime = service.waitAndGetTime(5000);
       expect(newTime).toEqual(new Date('2024-01-01T00:00:05.000Z'));
+    });
+  });
+
+  describe('валидация', () => {
+    describe('constructor', () => {
+      it('должен выбрасывать ошибку при невалидной дате', () => {
+        expect(() => new PaperClock(new Date('invalid'))).toThrow('Invalid Date');
+        expect(() => new PaperClock(new Date(NaN))).toThrow('Invalid Date');
+      });
+
+      it('должен принимать валидные даты', () => {
+        expect(() => new PaperClock(new Date(0))).not.toThrow();
+        expect(() => new PaperClock(new Date('2024-01-01'))).not.toThrow();
+        expect(() => new PaperClock(new Date())).not.toThrow();
+      });
+    });
+
+    describe('setTime', () => {
+      it('должен выбрасывать ошибку при невалидной дате', () => {
+        expect(() => clock.setTime(new Date('invalid'))).toThrow('Invalid Date');
+        expect(() => clock.setTime(new Date(NaN))).toThrow('Invalid Date');
+      });
+
+      it('должен принимать валидные даты', () => {
+        expect(() => clock.setTime(new Date(0))).not.toThrow();
+        expect(() => clock.setTime(new Date('2024-12-31'))).not.toThrow();
+      });
+    });
+
+    describe('tick', () => {
+      it('должен выбрасывать ошибку при NaN', () => {
+        expect(() => clock.tick(NaN)).toThrow('finite number');
+      });
+
+      it('должен выбрасывать ошибку при Infinity', () => {
+        expect(() => clock.tick(Infinity)).toThrow('finite number');
+        expect(() => clock.tick(-Infinity)).toThrow('finite number');
+      });
+
+      it('должен выбрасывать ошибку при overflow', () => {
+        // Date max value ~8640000000000000
+        const clock2 = new PaperClock(new Date(8640000000000000 - 1000));
+        expect(() => clock2.tick(10000)).toThrow('invalid Date');
+      });
+
+      it('должен принимать валидные значения', () => {
+        expect(() => clock.tick(0)).not.toThrow();
+        expect(() => clock.tick(1000)).not.toThrow();
+        expect(() => clock.tick(-1000)).not.toThrow();
+      });
     });
   });
 });

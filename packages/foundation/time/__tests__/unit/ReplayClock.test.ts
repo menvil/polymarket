@@ -55,11 +55,15 @@ describe('ReplayClock', () => {
       expect(time1).toEqual(initialTime);
     });
 
-    it('должен возвращать тот же объект до обновления', () => {
+    it('должен возвращать копию для предотвращения мутации', () => {
       const time1 = clock.now();
       const time2 = clock.now();
 
-      expect(time1).toBe(time2); // Та же ссылка
+      // Разные объекты (предотвращает мутацию)
+      expect(time1).not.toBe(time2);
+      // Но одинаковые значения
+      expect(time1.getTime()).toBe(time2.getTime());
+      expect(time1).toEqual(time2);
     });
 
     it('должен возвращать объект Date', () => {
@@ -78,6 +82,18 @@ describe('ReplayClock', () => {
       // Время не должно измениться
       expect(stillFrozen).toEqual(frozenTime);
       expect(stillFrozen.getTime()).toBe(frozenTime.getTime());
+    });
+
+    it('должен предотвращать мутацию внутреннего состояния', () => {
+      const time = clock.now();
+      const originalHours = time.getHours();
+
+      // Попытка мутации возвращенного объекта
+      time.setHours(originalHours + 5);
+
+      // Внутреннее состояние не должно измениться
+      const newTime = clock.now();
+      expect(newTime.getHours()).toBe(originalHours);
     });
   });
 
@@ -323,6 +339,33 @@ describe('ReplayClock', () => {
       expect(telemetry[0].timestamp).toEqual(events[0]);
       expect(telemetry[1].timestamp).toEqual(events[1]);
       expect(telemetry[2].timestamp).toEqual(events[2]);
+    });
+  });
+
+  describe('валидация', () => {
+    describe('constructor', () => {
+      it('должен выбрасывать ошибку при невалидной дате', () => {
+        expect(() => new ReplayClock(new Date('invalid'))).toThrow('Invalid Date');
+        expect(() => new ReplayClock(new Date(NaN))).toThrow('Invalid Date');
+      });
+
+      it('должен принимать валидные даты', () => {
+        expect(() => new ReplayClock(new Date(0))).not.toThrow();
+        expect(() => new ReplayClock(new Date('2024-01-01'))).not.toThrow();
+        expect(() => new ReplayClock(new Date())).not.toThrow();
+      });
+    });
+
+    describe('update', () => {
+      it('должен выбрасывать ошибку при невалидной дате', () => {
+        expect(() => clock.update(new Date('invalid'))).toThrow('Invalid Date');
+        expect(() => clock.update(new Date(NaN))).toThrow('Invalid Date');
+      });
+
+      it('должен принимать валидные даты', () => {
+        expect(() => clock.update(new Date(0))).not.toThrow();
+        expect(() => clock.update(new Date('2024-12-31'))).not.toThrow();
+      });
     });
   });
 });

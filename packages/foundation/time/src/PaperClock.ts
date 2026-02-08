@@ -76,6 +76,8 @@ export class PaperClock implements IClock {
    *
    * @param currentTimestamp - Начальная временная метка
    *
+   * @throws {Error} Если переданная дата невалидна
+   *
    * @remarks
    * Устанавливает начальное время, которое затем можно изменить
    * через методы `setTime()` или `tick()`.
@@ -85,33 +87,42 @@ export class PaperClock implements IClock {
    * const clock = new PaperClock(new Date('2024-01-01T00:00:00Z'));
    * ```
    */
-  constructor(private currentTimestamp: Date) {}
+  constructor(private currentTimestamp: Date) {
+    if (!this.isValidDate(currentTimestamp)) {
+      throw new Error('PaperClock: Invalid Date provided to constructor');
+    }
+  }
 
   /**
    * Возвращает текущее управляемое время
    *
-   * @returns Текущая временная метка
+   * @returns Копия текущей временной метки
    *
    * @remarks
-   * Возвращает время, установленное через `setTime()` или продвинутое через `tick()`.
+   * Возвращает **копию** времени, установленного через `setTime()` или продвинутого через `tick()`.
    * Время не изменяется само по себе, только при явном вызове методов управления.
+   *
+   * Важно: возвращается копия, чтобы предотвратить мутацию внутреннего состояния.
    *
    * @example
    * ```typescript
    * const clock = new PaperClock(new Date('2024-01-01'));
    * const time1 = clock.now();
    * const time2 = clock.now();
-   * // time1 === time2 (время не движется само)
+   * // time1 !== time2 (разные объекты)
+   * // time1.getTime() === time2.getTime() (но одинаковые значения)
    * ```
    */
   now(): Date {
-    return this.currentTimestamp;
+    return new Date(this.currentTimestamp);
   }
 
   /**
    * Устанавливает абсолютное время
    *
    * @param timestamp - Новая временная метка
+   *
+   * @throws {Error} Если переданная дата невалидна
    *
    * @remarks
    * Заменяет текущее время на указанное.
@@ -125,6 +136,9 @@ export class PaperClock implements IClock {
    * ```
    */
   setTime(timestamp: Date): void {
+    if (!this.isValidDate(timestamp)) {
+      throw new Error('PaperClock.setTime(): Invalid Date provided');
+    }
     this.currentTimestamp = timestamp;
   }
 
@@ -133,9 +147,15 @@ export class PaperClock implements IClock {
    *
    * @param ms - Количество миллисекунд для продвижения
    *
+   * @throws {Error} Если ms не является конечным числом или результат невалиден
+   *
    * @remarks
    * Увеличивает текущее время на заданное количество миллисекунд.
    * Полезно для тестов, симулирующих прохождение времени.
+   *
+   * Валидация:
+   * - ms должно быть конечным числом (не NaN, не Infinity)
+   * - Результирующая дата должна быть валидной
    *
    * @example
    * ```typescript
@@ -149,6 +169,32 @@ export class PaperClock implements IClock {
    * ```
    */
   tick(ms: number): void {
-    this.currentTimestamp = new Date(this.currentTimestamp.getTime() + ms);
+    if (!Number.isFinite(ms)) {
+      throw new Error('PaperClock.tick(): ms must be a finite number');
+    }
+
+    const newTime = this.currentTimestamp.getTime() + ms;
+    const newDate = new Date(newTime);
+
+    if (!this.isValidDate(newDate)) {
+      throw new Error('PaperClock.tick(): would result in invalid Date');
+    }
+
+    this.currentTimestamp = newDate;
+  }
+
+  /**
+   * Проверяет валидность Date
+   *
+   * @param date - Дата для проверки
+   * @returns true если дата валидна
+   *
+   * @remarks
+   * Валидная дата:
+   * - Является экземпляром Date
+   * - getTime() не возвращает NaN
+   */
+  private isValidDate(date: Date): boolean {
+    return date instanceof Date && !isNaN(date.getTime());
   }
 }

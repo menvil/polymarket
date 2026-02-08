@@ -75,6 +75,8 @@ export class ReplayClock implements IClock {
    * @param currentTimestamp - Начальная временная метка
    *   (обычно new Date(0) или временная метка первого события)
    *
+   * @throws {Error} Если переданная дата невалидна
+   *
    * @remarks
    * Система воспроизведения создает ReplayClock и обновляет его
    * через `update()` при обработке каждого события.
@@ -88,34 +90,43 @@ export class ReplayClock implements IClock {
    * const clock = new ReplayClock(firstEvent.timestamp);
    * ```
    */
-  constructor(private currentTimestamp: Date) {}
+  constructor(private currentTimestamp: Date) {
+    if (!this.isValidDate(currentTimestamp)) {
+      throw new Error('ReplayClock: Invalid Date provided to constructor');
+    }
+  }
 
   /**
    * Возвращает текущую зафиксированную временную метку
    *
-   * @returns Зафиксированная временная метка (НЕ Date.now()!)
+   * @returns Копия зафиксированной временной метки (НЕ Date.now()!)
    *
    * @remarks
-   * Всегда возвращает зафиксированное время, которое обновляется только
+   * Всегда возвращает **копию** зафиксированного времени, которое обновляется только
    * через вызов метода `update()` системой воспроизведения.
    * Это обеспечивает детерминизм воспроизведения.
+   *
+   * Важно: возвращается копия, чтобы предотвратить мутацию внутреннего состояния.
    *
    * @example
    * ```typescript
    * const clock = new ReplayClock(new Date('2024-01-01'));
    * const time1 = clock.now();
    * const time2 = clock.now();
-   * // time1 === time2 (время зафиксировано)
+   * // time1 !== time2 (разные объекты)
+   * // time1.getTime() === time2.getTime() (но одинаковые значения)
    * ```
    */
   now(): Date {
-    return this.currentTimestamp;
+    return new Date(this.currentTimestamp);
   }
 
   /**
    * Обновляет зафиксированное время из события
    *
    * @param timestamp - Временная метка из события
+   *
+   * @throws {Error} Если переданная дата невалидна
    *
    * @remarks
    * Этот метод вызывается системой воспроизведения перед обработкой каждого события.
@@ -142,6 +153,24 @@ export class ReplayClock implements IClock {
    * ```
    */
   update(timestamp: Date): void {
+    if (!this.isValidDate(timestamp)) {
+      throw new Error('ReplayClock.update(): Invalid Date provided');
+    }
     this.currentTimestamp = timestamp;
+  }
+
+  /**
+   * Проверяет валидность Date
+   *
+   * @param date - Дата для проверки
+   * @returns true если дата валидна
+   *
+   * @remarks
+   * Валидная дата:
+   * - Является экземпляром Date
+   * - getTime() не возвращает NaN
+   */
+  private isValidDate(date: Date): boolean {
+    return date instanceof Date && !isNaN(date.getTime());
   }
 }
