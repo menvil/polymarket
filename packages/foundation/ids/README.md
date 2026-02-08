@@ -10,8 +10,8 @@ Foundation ID types для Polymarket domain.
 
 - **Foundation типы** - базовые building blocks, не бизнес-логика
 - **Используются везде** - в value objects, entities, services
-- **Branded types** - type safety без runtime overhead
-- **Минимум зависимостей** - только TypeScript
+- **Branded types** - compile-time type safety через branded types
+- **Валидация** - runtime валидация через Result pattern (@polymarket/result)
 
 ## Структура
 
@@ -82,15 +82,24 @@ const offChainRef: ConditionRef = {
 const upOutcome = BinaryOutcome.UP;   // 'UP'
 const downOutcome = BinaryOutcome.DOWN; // 'DOWN'
 
-// AccountId - wallet или venue account
-const accountId: AccountId = '0x1234...' as AccountId;
+// AccountId - discriminated union (НЕ строка!)
+import { accountIdFromWallet, AssetIdHelpers } from '@polymarket/ids';
+
+// Wallet account
+const walletAccount: AccountId = {
+  kind: 'WALLET',
+  address: parseWalletAddress('0x1234...')!
+};
+
+// Или через фабрику
+const walletAcc = accountIdFromWallet(parseWalletAddress('0x1234...')!);
 
 // VenueId - где находятся балансы
 const venueId: VenueId = 'POLYMARKET';
 
-// AssetId - универсальный актив
-const usdc = AssetId.USDC;
-const token = AssetId.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+// AssetId - универсальный актив (используй AssetIdHelpers)
+const usdc = AssetIdHelpers.USDC;
+const token = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
 ```
 
 ### Market Data IDs
@@ -136,7 +145,7 @@ type ChainId = number & { readonly __brand: 'ChainId' };
 
 Это даёт:
 - ✅ Type safety в compile time
-- ✅ Zero runtime overhead
+- ✅ Строгая типизация без лишних wrapper-классов
 - ✅ Невозможно случайно перепутать типы
 
 ```typescript
@@ -222,8 +231,14 @@ const bad = '0xabc123...'; // что это? on-chain? off-chain? какой ven
 # Build
 npm run build
 
-# Tests
+# Tests (unit tests через Jest)
 npm test
+
+# Runtime tests (проверка dist/ ESM imports)
+npm run test:dist
+
+# Полный набор тестов (unit + runtime)
+npm run test:all
 
 # Type check
 npm run typecheck
@@ -232,6 +247,15 @@ npm run typecheck
 npm run lint
 ```
 
+**⚠️ Важно для test:dist:**
+- Требует собранные зависимости (@polymarket/result должен иметь dist/)
+- Проверяет ESM exports и runtime import работоспособность
+- Запускается напрямую через Node.js (не через Jest)
+
 ## Dependencies
 
-Нет зависимостей кроме dev dependencies (TypeScript, Jest).
+**Runtime:**
+- `@polymarket/result` - Result pattern для error handling
+
+**Dev:**
+- TypeScript, Jest, ESLint
