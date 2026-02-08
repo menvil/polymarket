@@ -210,6 +210,42 @@ const bad = '0xabc123...'; // что это? on-chain? off-chain? какой ven
 
 ✅ **ВСЕГДА** используй `ConditionRef` с полным контекстом.
 
+### Result Pattern для Error Handling
+
+Некоторые функции возвращают `Result<T, Error>` вместо прямого значения или `undefined`.
+
+**Зачем?** Result явно показывает что операция может завершиться ошибкой и требует обработки.
+
+**Функции возвращающие Result:**
+- `accountIdFromVenue(venueId, userId)` - валидация userId
+- `accountIdForSubaccount(base, name)` - валидация name и depth limit
+
+**Два способа работы с Result:**
+
+```typescript
+import { accountIdFromVenue, accountIdForSubaccount, type Result } from '@polymarket/ids';
+
+// Способ 1: Pattern matching (безопасный)
+const result: Result<AccountId, Error> = accountIdFromVenue('POLYMARKET', 'user:123');
+if (result.ok) {
+  const accountId = result.value;
+  console.log('Success:', accountId);
+} else {
+  console.error('Error:', result.error.message);
+}
+
+// Способ 2: .unwrap() (бросает если ошибка)
+const accountId = accountIdFromVenue('POLYMARKET', 'user_valid').unwrap();
+// Используй только если уверен что ввод валидный
+
+// Пример с subaccount depth limit
+const deep1 = accountIdForSubaccount(walletAccount, 'sub1').unwrap();
+const deep2 = accountIdForSubaccount(deep1, 'sub2').unwrap();
+const deep3 = accountIdForSubaccount(deep2, 'sub3').unwrap();
+// ... до depth 5 включительно OK
+const deep6 = accountIdForSubaccount(deep5, 'sub6'); // → Err (depth > 5)
+```
+
 ### Разделение MarketDataSource vs ExecutionVenue
 
 **MarketDataSourceId** - откуда ЧИТАЕМ данные:

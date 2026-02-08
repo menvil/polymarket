@@ -524,13 +524,19 @@ sourceToVenue('POLYMARKET_WS');      // → 'POLYMARKET'
 sourceToVenue('POLYMARKET_REPLAY');  // → 'POLYMARKET'
 sourceToVenue('KALSHI_WS');          // → 'KALSHI'
 
-// Type guards
-function isLiveSource(sourceId: MarketDataSourceId): boolean;
-function isReplaySource(sourceId: MarketDataSourceId): boolean;
+// Type guards (возвращают undefined для неизвестных источников)
+function isLiveSource(sourceId: MarketDataSourceId): boolean | undefined;
+function isReplaySource(sourceId: MarketDataSourceId): boolean | undefined;
 
+// Известные источники
 isLiveSource('POLYMARKET_WS');      // → true
 isLiveSource('POLYMARKET_REPLAY');  // → false
 isReplaySource('POLYMARKET_REPLAY'); // → true
+
+// Неизвестные источники (custom)
+const customSource = 'MY_CUSTOM_SOURCE' as MarketDataSourceId;
+isLiveSource(customSource);         // → undefined (нет metadata)
+isReplaySource(customSource);       // → undefined (нет metadata)
 ```
 
 **Использование**:
