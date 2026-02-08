@@ -8,8 +8,8 @@
 
 - **Примитивные типы** - это building blocks, а не бизнес-логика
 - **Используются везде** - в value objects, entities, services, adapters
-- **Минимум зависимостей** - только TypeScript, никаких внешних библиотек
-- **Branded types** - compile-time type safety без runtime overhead
+- **Минимум зависимостей** - @polymarket/result для error handling, TypeScript
+- **Branded types** - compile-time type safety с runtime валидацией через parsers
 
 ### Трёхуровневая архитектура IDs
 
@@ -122,16 +122,16 @@ getBalance('0x123...' as AccountId);
 ```
 
 **Преимущества**:
-- ✅ Compile-time type safety
-- ✅ Zero runtime overhead (brand field не существует в runtime)
+- ✅ Compile-time type safety через branded types
+- ✅ Легковесная runtime валидация через parser функции
 - ✅ Невозможно случайно перепутать типы
 - ✅ Self-documenting code
 
 **Почему НЕ classes**:
 - Classes требуют instantiation (`new AccountId('...')`)
 - Classes требуют serialization/deserialization logic
-- Classes добавляют runtime overhead
-- Branded types - это чистый TypeScript, compile-time only
+- Branded types проще: type alias + parser функции
+- Валидация происходит в parser функциях (parseAccountId, parseConditionRef, etc.)
 
 ### 4. AssetId как Union Type
 
@@ -281,9 +281,15 @@ type ChainId = number & { readonly __brand: 'ChainId' };
 type ConditionId = string & { readonly __brand: 'ConditionId' };
 ```
 
-### 3. Zero Runtime Overhead
+### 3. Легковесная Runtime Валидация
 
-Нет classes, нет validation в runtime (только type casts).
+Parser функции (parseAccountId, parseConditionRef, asVenueId, etc.) выполняют валидацию:
+- Формат строк (регулярные выражения для ID типов)
+- Длина строк (защита от DoS)
+- Depth limit для рекурсивных структур (AccountId)
+- Control characters проверка
+
+Result pattern (@polymarket/result) для graceful error handling.
 
 ### 4. Self-Documenting
 
