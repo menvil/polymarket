@@ -60,11 +60,11 @@ function accountIdForSubaccount(
   name: string
 ): Result<AccountId, AccountIdDepthError>
 
-// Было:
-function accountIdToString(id: AccountId): string // throws Error
+// Было (в ранних версиях):
+function accountIdToString(id: AccountId): string // throws Error на превышении depth
 
 // Стало:
-function accountIdToString(id: AccountId): Result<string, AccountIdDepthError>
+function accountIdToString(id: AccountId): string // total function, всегда возвращает string
 ```
 
 **Примеры использования:**
@@ -310,10 +310,10 @@ export function getSubaccountDepth(id: AccountId): number {
 
 | Функция | Поведение |
 |---|---|
-| `accountIdForSubaccount` | `throw Error` (программист создаёт — должен узнать сразу) |
-| `accountIdToString` | `throw Error` (данные в памяти — логическая ошибка) |
-| `parseAccountId` | `return undefined` (внешний ввод — graceful rejection) |
-| `accountIdEquals` | `return false` (безопасный fallback) |
+| `accountIdForSubaccount` | `Result<AccountId, Error>` (валидация userId/name) |
+| `accountIdToString` | `string` (total function, всегда успешна) |
+| `parseAccountId` | `AccountId \| undefined` (внешний ввод — graceful rejection) |
+| `accountIdEquals` | `boolean` (безопасное сравнение) |
 
 **Примеры:**
 
@@ -388,7 +388,7 @@ export interface ParseAccountIdOptions {
    * @remarks
    * Если передана — используется для проверки формата wallet address.
    * При невалидном адресе должна вернуть undefined.
-   * Если не передана — используется unsafe каст (обратная совместимость).
+   * Если не передана — используется parseWalletAddress (default валидация).
    *
    * @param raw - Строка с потенциальным wallet address
    * @returns WalletAddress или undefined если формат неверный
@@ -405,14 +405,14 @@ export interface ParseAccountIdOptions {
    - Иначе используем валидированный адрес
 
 2. Если `validateWalletAddress` не передан:
-   - Используем unsafe каст `as WalletAddress` (обратная совместимость)
+   - Используем parseWalletAddress (default валидация формата)
 
 **Примеры:**
 
 ```typescript
-// Пример 1: Без валидации (обратная совместимость)
+// Пример 1: Default валидация (parseWalletAddress)
 const parsed1 = parseAccountId('wallet:INVALID_ADDRESS');
-// → { kind: 'WALLET', address: 'INVALID_ADDRESS' } (unsafe каст)
+// → undefined (parseWalletAddress отклоняет невалидный формат)
 
 // Пример 2: С валидацией
 const validator = (raw: string) => {
@@ -509,8 +509,8 @@ const parsed4 = parseAccountId(str, { maxLen: 1000 });
 ### 3. WalletAddress Validation
 
 ✅ Опциональная валидация:
-- С `validateWalletAddress` — проверяет формат, возвращает undefined при невалидном
-- Без `validateWalletAddress` — unsafe каст (обратная совместимость)
+- С `validateWalletAddress` — кастомная проверка формата
+- Без `validateWalletAddress` — default проверка через parseWalletAddress
 
 ### 4. Max Length
 
@@ -551,7 +551,7 @@ describe('WalletAddress validation', () => {
 
 1. **Escaping**: Новая реализация корректно обрабатывает старые данные
 2. **Depth limit**: Лимит 5 достаточен для реальных use cases
-3. **WalletAddress validation**: Опциональна, по умолчанию старое поведение (unsafe каст)
+3. **WalletAddress validation**: По умолчанию parseWalletAddress, опционально кастомная
 4. **Max length**: Лимит 512 достаточен для всех реальных AccountId
 
 ## Что НЕ изменилось
