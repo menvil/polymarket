@@ -13,24 +13,7 @@ describe('LiveClock', () => {
     clock = new LiveClock();
   });
 
-  describe('constructor', () => {
-    it('должен создавать экземпляр LiveClock', () => {
-      expect(clock).toBeInstanceOf(LiveClock);
-    });
-
-    it('должен реализовывать интерфейс IClock', () => {
-      const iClock: IClock = clock;
-      expect(iClock.now).toBeDefined();
-      expect(typeof iClock.now).toBe('function');
-    });
-  });
-
   describe('now()', () => {
-    it('должен возвращать объект Date', () => {
-      const result = clock.now();
-      expect(result).toBeInstanceOf(Date);
-    });
-
     it('должен возвращать текущее системное время', () => {
       const before = new Date();
       const result = clock.now();

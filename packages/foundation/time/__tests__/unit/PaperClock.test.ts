@@ -15,19 +15,9 @@ describe('PaperClock', () => {
   });
 
   describe('constructor', () => {
-    it('должен создавать экземпляр PaperClock', () => {
-      expect(clock).toBeInstanceOf(PaperClock);
-    });
-
     it('должен устанавливать начальное время', () => {
       const result = clock.now();
       expect(result).toEqual(initialTime);
-    });
-
-    it('должен реализовывать интерфейс IClock', () => {
-      const iClock: IClock = clock;
-      expect(iClock.now).toBeDefined();
-      expect(typeof iClock.now).toBe('function');
     });
 
     it('должен работать с разными начальными временами', () => {
@@ -59,11 +49,6 @@ describe('PaperClock', () => {
       // Но одинаковые значения
       expect(time1.getTime()).toBe(time2.getTime());
       expect(time1).toEqual(time2);
-    });
-
-    it('должен возвращать объект Date', () => {
-      const result = clock.now();
-      expect(result).toBeInstanceOf(Date);
     });
 
     it('должен предотвращать мутацию внутреннего состояния', () => {

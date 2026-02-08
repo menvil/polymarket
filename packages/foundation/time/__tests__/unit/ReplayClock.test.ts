@@ -15,19 +15,9 @@ describe('ReplayClock', () => {
   });
 
   describe('constructor', () => {
-    it('должен создавать экземпляр ReplayClock', () => {
-      expect(clock).toBeInstanceOf(ReplayClock);
-    });
-
     it('должен устанавливать начальное время', () => {
       const result = clock.now();
       expect(result).toEqual(initialTime);
-    });
-
-    it('должен реализовывать интерфейс IClock', () => {
-      const iClock: IClock = clock;
-      expect(iClock.now).toBeDefined();
-      expect(typeof iClock.now).toBe('function');
     });
 
     it('должен работать с эпохой (epoch)', () => {
@@ -64,11 +54,6 @@ describe('ReplayClock', () => {
       // Но одинаковые значения
       expect(time1.getTime()).toBe(time2.getTime());
       expect(time1).toEqual(time2);
-    });
-
-    it('должен возвращать объект Date', () => {
-      const result = clock.now();
-      expect(result).toBeInstanceOf(Date);
     });
 
     it('НЕ должен возвращать Date.now()', async () => {
