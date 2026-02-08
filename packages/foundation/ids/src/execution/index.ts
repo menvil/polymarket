@@ -15,7 +15,7 @@ export {
 } from './ExecutionVenueId.js';
 
 export type { OrderId } from './OrderId.js';
-export { asOrderId, unsafeOrderId } from './OrderId.js';
+export { asOrderId } from './OrderId.js';
 
 export type { FillId } from './FillId.js';
-export { asFillId, unsafeFillId } from './FillId.js';
+export { asFillId } from './FillId.js';
