@@ -372,6 +372,35 @@ describe('Core IDs', () => {
           expect(conditionRefEquals(original, parsed!)).toBe(true);
         });
       });
+
+      describe('Malformed input (defensive branches)', () => {
+        it('should reject string without colon', () => {
+          // Line 277: if (firstColon === -1)
+          expect(parseConditionRef('ONCHAIN')).toBeUndefined();
+          expect(parseConditionRef('OFFCHAIN')).toBeUndefined();
+          expect(parseConditionRef('INVALID')).toBeUndefined();
+          expect(parseConditionRef('')).toBeUndefined();
+        });
+
+        it('should reject ONCHAIN with wrong number of parts', () => {
+          // Line 288: if (parts.length !== 4)
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF')).toBeUndefined(); // too few
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:137')).toBeUndefined(); // missing conditionId
+          expect(parseConditionRef('ONCHAIN:POLYMARKET_CTF:137:0xaaa:extra')).toBeUndefined(); // too many
+        });
+
+        it('should reject OFFCHAIN with wrong number of parts', () => {
+          expect(parseConditionRef('OFFCHAIN:KALSHI')).toBeUndefined(); // missing marketId
+          expect(parseConditionRef('OFFCHAIN')).toBeUndefined(); // missing everything
+        });
+
+        it('should reject unknown kind', () => {
+          // Line 351: return undefined (unknown kind)
+          expect(parseConditionRef('UNKNOWN:foo:bar')).toBeUndefined();
+          expect(parseConditionRef('CUSTOM:venue:market')).toBeUndefined();
+          expect(parseConditionRef('onchain:POLYMARKET_CTF:137:0xaaa')).toBeUndefined(); // lowercase
+        });
+      });
     });
 
     describe('Type guards', () => {
@@ -776,6 +805,35 @@ describe('Core IDs', () => {
           expect(valid.conditionRef.conditionId).toBe('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
           expect(valid.outcomeKey).toBe('UP');
         }
+      });
+
+      describe('Malformed input (defensive branches)', () => {
+        it('should reject string with too few parts', () => {
+          // Line 238: if (parts.length < 2)
+          expect(parseAssetId('CURRENCY')).toBeUndefined();
+          expect(parseAssetId('OUTCOME_TOKEN')).toBeUndefined();
+          expect(parseAssetId('INVALID')).toBeUndefined();
+          expect(parseAssetId('')).toBeUndefined();
+        });
+
+        it('should reject CURRENCY with wrong number of parts', () => {
+          // Line 245: if (parts.length !== 2)
+          expect(parseAssetId('CURRENCY:USDC:extra')).toBeUndefined();
+          expect(parseAssetId('CURRENCY:USDC:extra:more')).toBeUndefined();
+        });
+
+        it('should reject OUTCOME_TOKEN with non-ONCHAIN kind', () => {
+          // Line 268: if (kind !== 'ONCHAIN')
+          expect(parseAssetId('OUTCOME_TOKEN:OFFCHAIN:KALSHI:market:UP')).toBeUndefined();
+          expect(parseAssetId('OUTCOME_TOKEN:CUSTOM:proto:137:0xaaa:UP')).toBeUndefined();
+          expect(parseAssetId('OUTCOME_TOKEN:onchain:POLYMARKET_CTF:137:0xaaa:UP')).toBeUndefined(); // lowercase
+        });
+
+        it('should reject unknown asset type', () => {
+          expect(parseAssetId('UNKNOWN:value')).toBeUndefined();
+          expect(parseAssetId('TOKEN:USDC')).toBeUndefined();
+          expect(parseAssetId('currency:USDC')).toBeUndefined(); // lowercase
+        });
       });
     });
 
