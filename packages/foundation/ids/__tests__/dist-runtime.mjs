@@ -53,13 +53,15 @@ assert(typeof marketDataModule.asMarketDataSourceId === 'function', 'asMarketDat
 assert(typeof marketDataModule.asInstrumentId === 'function', 'asInstrumentId should be exported');
 assert(typeof marketDataModule.sourceToVenue === 'function', 'sourceToVenue should be exported');
 
-// Test main barrel export
+// Test main barrel export (flat exports, not namespaces)
 console.log('  ✓ Importing main barrel export...');
 const mainModule = await import(`${distPath}/index.js`);
 
-assert(mainModule.core !== undefined, 'core namespace should be exported');
-assert(mainModule.execution !== undefined, 'execution namespace should be exported');
-assert(mainModule.marketData !== undefined, 'marketData namespace should be exported');
+// Barrel export использует export * (flat), не namespace объекты
+// Проверяем что ключевые exports доступны
+assert(typeof mainModule.parseWalletAddress === 'function', 'parseWalletAddress should be exported from barrel');
+assert(typeof mainModule.asExecutionVenueId === 'function', 'asExecutionVenueId should be exported from barrel');
+assert(typeof mainModule.asMarketDataSourceId === 'function', 'asMarketDataSourceId should be exported from barrel');
 
 // Test actual functionality (smoke test)
 console.log('  ✓ Testing actual functionality...');

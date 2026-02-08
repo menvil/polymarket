@@ -21,6 +21,8 @@ import {
   assetIdEquals,
   assetIdToString,
   parseAssetId,
+  isCurrencyAsset,
+  isOutcomeTokenAsset,
   parseOutcomeKey,
   BinaryOutcome,
   outcomeKeyToIndex,
@@ -795,6 +797,74 @@ describe('Core IDs', () => {
       const tokenStr = assetIdToString(token);
       const tokenParsed = parseAssetId(tokenStr);
       expect(assetIdEquals(token, tokenParsed!)).toBe(true);
+    });
+
+    describe('Type guards', () => {
+      it('should correctly identify currency assets', () => {
+        const usdc = AssetIdHelpers.USDC;
+        const usdc2 = AssetIdHelpers.fromCurrency('USDC');
+
+        expect(isCurrencyAsset(usdc)).toBe(true);
+        expect(isCurrencyAsset(usdc2)).toBe(true);
+
+        // TypeScript narrowing
+        if (isCurrencyAsset(usdc)) {
+          expect(usdc.currency).toBe('USDC');
+        }
+
+        // Outcome token не является currency
+        const conditionRef: OnChainConditionRef = {
+          kind: 'ONCHAIN',
+          protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+          chainId: KnownChainIds.POLYGON,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+        };
+        const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+        expect(isCurrencyAsset(token)).toBe(false);
+      });
+
+      it('should correctly identify outcome token assets', () => {
+        const conditionRef: OnChainConditionRef = {
+          kind: 'ONCHAIN',
+          protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+          chainId: KnownChainIds.POLYGON,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+        };
+        const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+
+        expect(isOutcomeTokenAsset(token)).toBe(true);
+
+        // TypeScript narrowing
+        if (isOutcomeTokenAsset(token)) {
+          expect(token.outcomeKey).toBe('UP');
+          expect(token.conditionRef.kind).toBe('ONCHAIN');
+        }
+
+        // Currency не является outcome token
+        const usdc = AssetIdHelpers.USDC;
+        expect(isOutcomeTokenAsset(usdc)).toBe(false);
+      });
+
+      it('should use type guards in routing logic', () => {
+        const usdc = AssetIdHelpers.USDC;
+        const conditionRef: OnChainConditionRef = {
+          kind: 'ONCHAIN',
+          protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+          chainId: KnownChainIds.POLYGON,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+        };
+        const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+
+        // Сценарий: routing балансов по типу актива
+        const assets = [usdc, token];
+        const currencies = assets.filter(isCurrencyAsset);
+        const tokens = assets.filter(isOutcomeTokenAsset);
+
+        expect(currencies).toHaveLength(1);
+        expect(tokens).toHaveLength(1);
+        expect(currencies[0].currency).toBe('USDC');
+        expect(tokens[0].outcomeKey).toBe('UP');
+      });
     });
   });
 
