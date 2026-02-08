@@ -232,16 +232,20 @@ import {
 } from '@polymarket/ids/execution';
 
 // 1. Настройка для нескольких venues
+
+// Polymarket - on-chain (discriminated union с kind: 'ONCHAIN')
 const polymarketCondition: ConditionRef = {
+  kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
 };
 
+// Kalshi - off-chain (discriminated union с kind: 'OFFCHAIN')
 const kalshiCondition: ConditionRef = {
-  protocolId: 'KALSHI',
-  chainId: KnownChainIds.ETHEREUM,
-  conditionId: 'market-456' as ConditionId,
+  kind: 'OFFCHAIN',
+  venueId: 'KALSHI',
+  marketId: 'KXBTCUSDM-24APR',
 };
 
 // 2. Получаем котировки с разных venues
@@ -377,29 +381,38 @@ import {
   type AccountId,
   type WalletAddress,
   type VenueId,
+  type Result,
   accountIdFromWallet,
   accountIdFromVenue,
   accountIdForSubaccount,
   KnownVenues,
+  parseWalletAddress,
 } from '@polymarket/ids';
 
 // 1. Wallet account (Polymarket)
-const wallet: WalletAddress = '0x123...' as WalletAddress;
+const wallet: WalletAddress = parseWalletAddress('0x123...')!;
 const walletAccount: AccountId = accountIdFromWallet(wallet);
-// → '0x123...' as AccountId
+// → { kind: 'WALLET', address: '0x123...' }
 
-// 2. Venue account (Kalshi)
-const kalshiAccount: AccountId = accountIdFromVenue(
+// 2. Venue account (Kalshi) - возвращает Result<AccountId>
+const kalshiAccountResult: Result<AccountId, Error> = accountIdFromVenue(
   KnownVenues.KALSHI,
   'user123'
 );
-// → 'KALSHI:user123' as AccountId
+// Используем pattern matching или .unwrap()
+if (kalshiAccountResult.ok) {
+  const kalshiAccount = kalshiAccountResult.value;
+  // → { kind: 'VENUE', venueId: 'KALSHI', userId: 'user123' }
+}
 
-// 3. Subaccount (для изоляции стратегий)
-const tradingAccount: AccountId = accountIdForSubaccount(wallet, 'trading');
-const hedgingAccount: AccountId = accountIdForSubaccount(wallet, 'hedging');
-// → '0x123...:trading' as AccountId
-// → '0x123...:hedging' as AccountId
+// 3. Subaccount (для изоляции стратегий) - возвращает Result<AccountId>
+const tradingResult = accountIdForSubaccount(wallet, 'trading');
+const hedgingResult = accountIdForSubaccount(wallet, 'hedging');
+
+// Простой способ: .unwrap() (выбросит если ошибка)
+const tradingAccount = tradingResult.unwrap();
+const hedgingAccount = hedgingResult.unwrap();
+// → { kind: 'SUBACCOUNT', base: { kind: 'WALLET', ... }, name: 'trading' }
 
 // 4. Получаем балансы для всех аккаунтов
 const accounts = [walletAccount, tradingAccount, hedgingAccount];
@@ -444,9 +457,9 @@ if (conditionRefEquals(condition1, condition2)) {
   console.log('Same condition');
 }
 
-// 3. Сериализация
+// 3. Сериализация (с kind discriminator)
 const str = conditionRefToString(condition1);
-// → "POLYMARKET_CTF:137:0xabc123..."
+// → "ONCHAIN:POLYMARKET_CTF:137:0xabc123..."
 
 // Сохраняем в БД, отправляем по сети, логируем
 await db.saveCondition(str);
