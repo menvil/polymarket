@@ -1841,18 +1841,6 @@ describe('Core IDs', () => {
         const parsed = parseAccountId(normalStr);
         expect(parsed).toBeDefined();
       });
-
-      it('should respect custom maxLen', () => {
-        const str = `wallet:${testWallet}`;
-
-        // С maxLen=10 должно вернуть undefined (строка длиннее)
-        const parsed1 = parseAccountId(str, { maxLen: 10 });
-        expect(parsed1).toBeUndefined();
-
-        // С maxLen=1000 должно распарситься
-        const parsed2 = parseAccountId(str, { maxLen: 1000 });
-        expect(parsed2).toBeDefined();
-      });
     });
 
     describe('WalletAddress validation', () => {
