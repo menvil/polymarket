@@ -16,6 +16,8 @@ import {
   conditionRefEquals,
   conditionRefToString,
   parseConditionRef,
+  isOnChainConditionRef,
+  isOffChainConditionRef,
   assetIdEquals,
   assetIdToString,
   parseAssetId,
@@ -31,8 +33,10 @@ import {
   isValidChainId,
   chainId,
   parseChainId,
+  getChainName,
   isValidConditionId,
   parseConditionId,
+  normalizeConditionId,
   parseWalletAddress,
   walletAddressEquals,
   walletAddressToString,
@@ -367,6 +371,56 @@ describe('Core IDs', () => {
         });
       });
     });
+
+    describe('Type guards', () => {
+      it('should correctly identify OnChainConditionRef', () => {
+        const onChainRef: OnChainConditionRef = {
+          kind: 'ONCHAIN',
+          protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+          chainId: KnownChainIds.POLYGON,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+        };
+
+        const offChainRef: OffChainConditionRef = {
+          kind: 'OFFCHAIN',
+          venueId: KnownVenues.POLYMARKET,
+          marketId: 'market-123',
+        };
+
+        expect(isOnChainConditionRef(onChainRef)).toBe(true);
+        expect(isOnChainConditionRef(offChainRef)).toBe(false);
+
+        // TypeScript narrowing test
+        if (isOnChainConditionRef(onChainRef)) {
+          expect(onChainRef.protocolId).toBe('POLYMARKET_CTF');
+          expect(onChainRef.chainId).toBe(137);
+        }
+      });
+
+      it('should correctly identify OffChainConditionRef', () => {
+        const onChainRef: OnChainConditionRef = {
+          kind: 'ONCHAIN',
+          protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+          chainId: KnownChainIds.POLYGON,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+        };
+
+        const offChainRef: OffChainConditionRef = {
+          kind: 'OFFCHAIN',
+          venueId: KnownVenues.POLYMARKET,
+          marketId: 'market-123',
+        };
+
+        expect(isOffChainConditionRef(offChainRef)).toBe(true);
+        expect(isOffChainConditionRef(onChainRef)).toBe(false);
+
+        // TypeScript narrowing test
+        if (isOffChainConditionRef(offChainRef)) {
+          expect(offChainRef.venueId).toBe('POLYMARKET');
+          expect(offChainRef.marketId).toBe('market-123');
+        }
+      });
+    });
   });
 
   describe('VenueId', () => {
@@ -497,6 +551,32 @@ describe('Core IDs', () => {
         expect(tokenAsset.outcomeKey).toBe(BinaryOutcome.UP);
         expect(tokenAsset.conditionRef.kind).toBe('ONCHAIN');
       }
+    });
+
+    it('should throw on invalid OutcomeKey in fromOutcomeToken', () => {
+      const conditionRef: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: KnownChainIds.POLYGON,
+        conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+      };
+
+      // Invalid OutcomeKey должен throw
+      expect(() => {
+        AssetIdHelpers.fromOutcomeToken(conditionRef, 'UP:DOWN' as any); // contains ':'
+      }).toThrow(/Invalid outcomeKey/);
+
+      expect(() => {
+        AssetIdHelpers.fromOutcomeToken(conditionRef, '' as any); // empty
+      }).toThrow(/Invalid outcomeKey/);
+
+      expect(() => {
+        AssetIdHelpers.fromOutcomeToken(conditionRef, 'x'.repeat(100) as any); // too long
+      }).toThrow(/Invalid outcomeKey/);
+
+      expect(() => {
+        AssetIdHelpers.fromOutcomeToken(conditionRef, 'KEY\\VALUE' as any); // contains backslash
+      }).toThrow(/Invalid outcomeKey/);
     });
 
     it('should compare assets', () => {
@@ -894,6 +974,19 @@ describe('Core IDs', () => {
         expect(parseChainId('Infinity')).toBeUndefined();
       });
     });
+
+    describe('getChainName', () => {
+      it('should return names for known chains', () => {
+        expect(getChainName(KnownChainIds.ETHEREUM_MAINNET)).toBe('Ethereum Mainnet');
+        expect(getChainName(KnownChainIds.POLYGON)).toBe('Polygon');
+        expect(getChainName(KnownChainIds.BASE)).toBe('Base');
+      });
+
+      it('should return generic name for unknown chains', () => {
+        expect(getChainName(999 as any)).toBe('Chain 999');
+        expect(getChainName(12345 as any)).toBe('Chain 12345');
+      });
+    });
   });
 
   describe('ConditionId', () => {
@@ -979,6 +1072,20 @@ describe('Core IDs', () => {
       });
     });
 
+    describe('normalizeConditionId', () => {
+      it('should convert to lowercase', () => {
+        const uppercase = '0x' + 'A'.repeat(64);
+        const mixed = '0x' + 'AbCdEf12'.repeat(8);
+
+        expect(normalizeConditionId(uppercase as any)).toBe(('0x' + 'a'.repeat(64)));
+        expect(normalizeConditionId(mixed as any)).toBe(mixed.toLowerCase());
+      });
+
+      it('should preserve already lowercase IDs', () => {
+        const lowercase = '0x' + 'a'.repeat(64);
+        expect(normalizeConditionId(lowercase as any)).toBe(lowercase);
+      });
+    });
   });
 
   describe('WalletAddress', () => {
@@ -1219,6 +1326,62 @@ describe('Core IDs', () => {
         expect(parsed).toBeDefined();
         if (parsed?.kind === 'VENUE') {
           expect(parsed.userId).toBe(userId);
+        }
+      });
+    });
+
+    describe('parseAccountId boundary tests', () => {
+      it('should reject strings exceeding maxLen', () => {
+        // Создаём валидный AccountId и проверяем с разными maxLen
+        const wallet = accountIdFromWallet(testWallet);
+        const serialized = accountIdToString(wallet);
+
+        // С дефолтным maxLen (512) должно парситься
+        expect(parseAccountId(serialized)).toBeDefined();
+
+        // С маленьким maxLen должно отклониться
+        expect(parseAccountId(serialized, { maxLen: 10 })).toBeUndefined();
+
+        // Создаём слишком длинную строку (> 512)
+        const tooLongStr = 'x'.repeat(600);
+        expect(parseAccountId(tooLongStr)).toBeUndefined();
+      });
+
+      it('should respect custom maxDepth', () => {
+        // Создаём depth 2
+        const wallet = accountIdFromWallet(testWallet);
+        const sub1 = accountIdForSubaccount(wallet, 'level1');
+        if (!sub1.ok) throw new Error('Failed to create sub1');
+        const sub2 = accountIdForSubaccount(sub1.value, 'level2');
+        if (!sub2.ok) throw new Error('Failed to create sub2');
+
+        const serialized = accountIdToString(sub2.value);
+
+        // С maxDepth=2 должно парситься
+        expect(parseAccountId(serialized, { maxDepth: 2 })).toBeDefined();
+
+        // С maxDepth=1 должно отклониться
+        expect(parseAccountId(serialized, { maxDepth: 1 })).toBeUndefined();
+      });
+
+      it('should handle escape sequences at boundaries', () => {
+        // userId с escape последовательностями на границах
+        const userId1 = '\\:start'; // начинается с escape
+        const venueAcc1 = unwrapVenue(KnownVenues.POLYMARKET, userId1);
+        const str1 = accountIdToString(venueAcc1);
+        const parsed1 = parseAccountId(str1);
+        expect(parsed1).toBeDefined();
+        if (parsed1?.kind === 'VENUE') {
+          expect(parsed1.userId).toBe(userId1);
+        }
+
+        const userId2 = 'end\\:'; // заканчивается на escape
+        const venueAcc2 = unwrapVenue(KnownVenues.POLYMARKET, userId2);
+        const str2 = accountIdToString(venueAcc2);
+        const parsed2 = parseAccountId(str2);
+        expect(parsed2).toBeDefined();
+        if (parsed2?.kind === 'VENUE') {
+          expect(parsed2.userId).toBe(userId2);
         }
       });
     });
