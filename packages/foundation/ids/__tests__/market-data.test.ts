@@ -20,6 +20,39 @@ describe('Market Data IDs', () => {
       expect(polymarketReplay).toBe('POLYMARKET_REPLAY');
     });
 
+    it('should use known sources in real API scenarios', () => {
+      // Сценарий 1: Routing market data по типу источника
+      const wsSource = KnownMarketDataSources.POLYMARKET_WS;
+      const replaySource = KnownMarketDataSources.POLYMARKET_REPLAY;
+      const restSource = KnownMarketDataSources.POLYMARKET_REST;
+
+      // Live sources требуют WebSocket/REST соединения
+      expect(isLiveSource(wsSource)).toBe(true);
+      expect(isLiveSource(restSource)).toBe(true);
+
+      // Replay sources читают из архива
+      expect(isReplaySource(replaySource)).toBe(true);
+      expect(isReplaySource(wsSource)).toBe(false);
+
+      // Сценарий 2: Получение venue для роутинга данных
+      const venue = sourceToVenue(wsSource);
+      expect(venue).toBe('POLYMARKET');
+
+      // Можем использовать venue для создания off-chain condition ref
+      if (venue) {
+        expect(isKnownMarketDataSource(wsSource)).toBe(true);
+      }
+
+      // Сценарий 3: Различение sources одного venue
+      // WS и REST - оба live, но разные протоколы
+      expect(isLiveSource(KnownMarketDataSources.POLYMARKET_WS)).toBe(true);
+      expect(isLiveSource(KnownMarketDataSources.POLYMARKET_REST)).toBe(true);
+
+      // Replay - для бэктестинга
+      expect(isLiveSource(KnownMarketDataSources.POLYMARKET_REPLAY)).toBe(false);
+      expect(isReplaySource(KnownMarketDataSources.POLYMARKET_REPLAY)).toBe(true);
+    });
+
     it('should map source to venue', () => {
       expect(sourceToVenue(KnownMarketDataSources.POLYMARKET_WS)).toBe('POLYMARKET');
       expect(sourceToVenue(KnownMarketDataSources.POLYMARKET_REPLAY)).toBe('POLYMARKET');

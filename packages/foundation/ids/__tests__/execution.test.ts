@@ -22,6 +22,30 @@ describe('Execution IDs', () => {
       expect(simulator).toBe('SIMULATOR');
     });
 
+    it('should use known execution venues in real API scenarios', () => {
+      // Сценарий 1: Различие между live venues и simulator
+      expect(isLiveVenue(KnownExecutionVenues.POLYMARKET)).toBe(true);
+      expect(isLiveVenue(KnownExecutionVenues.KALSHI)).toBe(true);
+      expect(isLiveVenue(KnownExecutionVenues.SIMULATOR)).toBe(false);
+
+      expect(isSimulator(KnownExecutionVenues.SIMULATOR)).toBe(true);
+      expect(isSimulator(KnownExecutionVenues.POLYMARKET)).toBe(false);
+
+      // Сценарий 2: Mapping execution venue → venue для создания account
+      const polymarketVenue = executionToVenue(KnownExecutionVenues.POLYMARKET);
+      expect(polymarketVenue).toBe('POLYMARKET');
+
+      // Можем использовать для создания venue account
+      if (polymarketVenue) {
+        const venueIdParsed = asExecutionVenueId(polymarketVenue);
+        expect(venueIdParsed).toBe('POLYMARKET');
+      }
+
+      // Сценарий 3: Simulator не имеет venue mapping (это специальный case)
+      const simulatorVenue = executionToVenue(KnownExecutionVenues.SIMULATOR);
+      expect(simulatorVenue).toBeUndefined();
+    });
+
     it('should map execution venue to venue', () => {
       expect(executionToVenue(KnownExecutionVenues.POLYMARKET)).toBe('POLYMARKET');
       expect(executionToVenue(KnownExecutionVenues.KALSHI)).toBe('KALSHI');

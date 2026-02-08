@@ -432,6 +432,34 @@ describe('Core IDs', () => {
       expect(kalshi).toBe('KALSHI');
     });
 
+    it('should use known venues in real API scenarios', () => {
+      // Сценарий 1: Создание venue account с известным venue
+      const venueResult = accountIdFromVenue(KnownVenues.POLYMARKET, 'user-123');
+      expect(venueResult.ok).toBe(true);
+      if (venueResult.ok) {
+        expect(venueResult.value.kind).toBe('VENUE');
+        if (venueResult.value.kind === 'VENUE') {
+          expect(venueResult.value.venueId).toBe('POLYMARKET');
+        }
+      }
+
+      // Сценарий 2: Создание off-chain condition ref
+      const offChainRef: OffChainConditionRef = {
+        kind: 'OFFCHAIN',
+        venueId: KnownVenues.KALSHI,
+        marketId: 'KXBTCUSDM-24APR',
+      };
+      const refString = conditionRefToString(offChainRef);
+      expect(refString).toContain('KALSHI');
+
+      // Сценарий 3: Round-trip через serialization
+      const parsed = parseConditionRef(refString);
+      expect(parsed).toBeDefined();
+      if (parsed?.kind === 'OFFCHAIN') {
+        expect(parsed.venueId).toBe(KnownVenues.KALSHI);
+      }
+    });
+
     it('should validate known venues', () => {
       expect(isKnownVenue('POLYMARKET')).toBe(true);
       expect(isKnownVenue('KALSHI')).toBe(true);
@@ -482,6 +510,33 @@ describe('Core IDs', () => {
       expect(polymarket).toBe('POLYMARKET_CTF');
       expect(uma).toBe('UMA_CTF');
       expect(gnosis).toBe('GNOSIS_CTF');
+    });
+
+    it('should use known protocols in real API scenarios', () => {
+      // Сценарий 1: Создание on-chain condition ref с протоколом
+      const conditionRef: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: KnownChainIds.POLYGON,
+        conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+      };
+
+      // Сценарий 2: Использование в AssetId (outcome token)
+      const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      expect(tokenAsset.type).toBe('OUTCOME_TOKEN');
+      if (tokenAsset.type === 'OUTCOME_TOKEN') {
+        expect(tokenAsset.conditionRef.protocolId).toBe('POLYMARKET_CTF');
+      }
+
+      // Сценарий 3: Serialization и parsing
+      const assetString = assetIdToString(tokenAsset);
+      expect(assetString).toContain('POLYMARKET_CTF');
+
+      const parsedAsset = parseAssetId(assetString);
+      expect(parsedAsset).toBeDefined();
+      if (parsedAsset?.type === 'OUTCOME_TOKEN' && parsedAsset.conditionRef.kind === 'ONCHAIN') {
+        expect(parsedAsset.conditionRef.protocolId).toBe(KnownOnChainProtocols.POLYMARKET_CTF);
+      }
     });
 
     it('should validate known protocols', () => {
