@@ -175,7 +175,7 @@ export const BinaryOutcome = {
  * - BinaryOutcome.DOWN → 0
  * - BinaryOutcome.UP → 1
  *
- * @throws {undefined} Если key не является известным бинарным outcome
+ * @returns number для известных бинарных outcomes (0 или 1), undefined для неизвестных
  *
  * @example
  * ```typescript
@@ -203,7 +203,7 @@ export function outcomeKeyToIndex(key: OutcomeKey): number | undefined {
  * - 0 → BinaryOutcome.DOWN
  * - 1 → BinaryOutcome.UP
  *
- * @throws {undefined} Если index не 0 и не 1
+ * @returns OutcomeKey для известных индексов (0 или 1), undefined для других
  *
  * @example
  * ```typescript

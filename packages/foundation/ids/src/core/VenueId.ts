@@ -15,14 +15,15 @@
  *
  * @example
  * ```typescript
- * import { KnownVenues } from '@polymarket/ids';
+ * import { KnownVenues, accountIdFromVenue } from '@polymarket/ids';
  *
  * const venue = KnownVenues.POLYMARKET;
  *
  * // Balance на конкретном venue
+ * // accountIdFromVenue возвращает Result, нужно unwrap
  * const balance = {
  *   venueId: KnownVenues.POLYMARKET,
- *   accountId: accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123'),
+ *   accountId: accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123').unwrap(),
  *   amount: 10000
  * };
  *

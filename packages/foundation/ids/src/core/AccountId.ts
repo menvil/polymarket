@@ -398,11 +398,12 @@ export function accountIdForSubaccount(
  * const str = accountIdToString(walletAcc);
  * console.log(str); // → 'wallet:0x1234...'
  *
- * const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
+ * // accountIdFromVenue возвращает Result, нужно unwrap
+ * const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123').unwrap();
  * accountIdToString(venueAcc);
  * // → 'venue:POLYMARKET:user\\:123' (escaped colon)
  *
- * const specialChars = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:test');
+ * const specialChars = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:test').unwrap();
  * accountIdToString(specialChars);
  * // → 'venue:POLYMARKET:user\\\\\\:test' (escaped backslash and colon)
  * ```
