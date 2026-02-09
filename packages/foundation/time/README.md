@@ -4,11 +4,11 @@
 
 ## ✨ Ключевые особенности
 
-- ✅ **Type-safe работа с временем** - строгая типизация для временных меток
-- ✅ **Высокоточные операции** - работа с миллисекундами и наносекундами
-- ✅ **Immutable** - все операции возвращают новые значения
+- ✅ **Type-safe работа с временем** - строгая типизация через IClock интерфейс
+- ✅ **Миллисекундная точность** - работа с Date (JavaScript millisecond precision)
+- ✅ **Dependency Injection** - подмена источника времени для тестирования
 - ✅ **Zero dependencies** - никаких внешних зависимостей в production
-- ✅ **Высокое покрытие тестами** - >90% покрытие
+- ✅ **Детерминизм** - воспроизводимое поведение в тестах и replay режиме
 
 ## 📦 Установка
 
@@ -19,21 +19,57 @@ npm install @polymarket/time
 ## 🚀 Быстрый старт
 
 ```typescript
-import { now, fromMillis, toMillis } from '@polymarket/time';
+import { IClock, LiveClock, PaperClock } from '@polymarket/time';
 
-// Получение текущего времени
-const currentTime = now();
+// Production: используй системное время
+const liveClock: IClock = new LiveClock();
+const currentTime = liveClock.now(); // Date
 
-// Создание временной метки из миллисекунд
-const timestamp = fromMillis(1609459200000);
-
-// Конвертация в миллисекунды
-const millis = toMillis(timestamp);
+// Testing: используй контролируемое время
+const paperClock = new PaperClock(new Date('2024-01-01'));
+paperClock.tick(1000); // +1 секунда
+const testTime = paperClock.now(); // Date('2024-01-01T00:00:01Z')
 ```
 
 ## 📖 API
 
-(API будет дополнен по мере разработки модуля)
+### IClock
+
+Интерфейс источника времени для Dependency Injection:
+
+```typescript
+interface IClock {
+  now(): Date;  // Получить текущее время
+}
+```
+
+### LiveClock
+
+Production реализация, использует системное время:
+
+```typescript
+const clock = new LiveClock();
+clock.now(); // new Date()
+```
+
+### PaperClock
+
+Testing реализация, контролируемое время:
+
+```typescript
+const clock = new PaperClock(new Date('2024-01-01'));
+clock.tick(1000);  // +1 секунда
+clock.tickTo(new Date('2024-01-02'));  // перейти к дате
+```
+
+### ReplayClock
+
+Replay реализация, воспроизведение событий:
+
+```typescript
+const clock = new ReplayClock(new Date(0));
+clock.update(event.timestamp);  // установить время из события
+```
 
 ## 🧪 Тестирование
 

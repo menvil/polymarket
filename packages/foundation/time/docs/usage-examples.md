@@ -81,7 +81,7 @@ console.log('Order placed at:', order1.placedAt);
 ### Пример 2: Логирование с временными метками
 
 ```typescript
-import { LiveClock } from '@polymarket/time';
+import { IClock, LiveClock } from '@polymarket/time';
 
 class Logger {
   constructor(private readonly clock: IClock) {}

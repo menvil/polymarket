@@ -8,41 +8,46 @@
 
 ### Текущая реализация НЕ нуждается в Result
 
-Все операции в модуле `@polymarket/time` **всегда успешны**:
+Операции в модуле `@polymarket/time` используют **fail-fast подход** с exceptions:
 
 ```typescript
 interface IClock {
-  now(): Date; // ✅ Всегда возвращает Date
+  now(): Date; // ✅ Всегда возвращает Date (never fails)
 }
 
 class PaperClock {
-  setTime(date: Date): void; // ✅ Всегда успешно
-  tick(ms: number): void;    // ✅ Всегда успешно
+  constructor(date: Date);       // ⚠️ Throws если Invalid Date
+  setTime(date: Date): void;     // ⚠️ Throws если Invalid Date
+  tick(ms: number): void;        // ⚠️ Throws если не finite или приведет к Invalid Date
 }
 
 class ReplayClock {
-  update(date: Date): void;  // ✅ Всегда успешно
+  constructor(date: Date);       // ⚠️ Throws если Invalid Date
+  update(date: Date): void;      // ⚠️ Throws если Invalid Date
 }
 ```
 
 **Почему не нужен Result:**
 
-1. ❌ Нет валидации которая может упасть
-2. ❌ Нет парсинга который может упасть
-3. ❌ Нет бизнес-правил которые могут нарушиться
-4. ✅ TypeScript защищает на уровне типов
-5. ✅ Операции детерминированы и безопасны
+1. ✅ Валидация есть, но throw используется для programming errors
+2. ✅ Invalid Date - это bug в коде вызывающей стороны, не ожидаемая ошибка
+3. ✅ TypeScript защищает на уровне типов (Date тип)
+4. ✅ В production эти ошибки не должны случаться
+5. ✅ Fail-fast лучше для отладки чем Result для таких случаев
 
 ### ❌ Пример избыточного использования Result
 
 ```typescript
-// ПЛОХО - Result избыточен
+// ПЛОХО - Result избыточен для programming errors
 class PaperClock {
-  now(): Result<Date, never> {
+  now(): Result<Date, never> {  // Избыточно - never fails
     return Ok(this.currentTimestamp);
   }
 
-  tick(ms: number): Result<void, never> {
+  tick(ms: number): Result<void, InvalidDateError> {  // Избыточно - это bug, не ожидаемая ошибка
+    if (!Number.isFinite(ms)) {
+      return Err(new InvalidDateError('ms must be finite'));
+    }
     this.currentTimestamp = new Date(this.currentTimestamp.getTime() + ms);
     return Ok(undefined);
   }
