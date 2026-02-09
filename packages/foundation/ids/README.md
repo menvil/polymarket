@@ -139,8 +139,14 @@ const simulator: ExecutionVenueId = KnownExecutionVenues.SIMULATOR;
 Все ID types используют branded types для type safety:
 
 ```typescript
-type AccountId = string & { readonly __brand: 'AccountId' };
+// Некоторые ID используют простые branded types:
 type ChainId = number & { readonly __brand: 'ChainId' };
+
+// AccountId использует discriminated union:
+type AccountId =
+  | { kind: 'WALLET'; address: WalletAddress }
+  | { kind: 'VENUE'; venueId: VenueId; userId: string }
+  | { kind: 'SUBACCOUNT'; base: AccountId; name: string };
 ```
 
 Это даёт:
@@ -223,10 +229,12 @@ const bad = '0xabc123...'; // что это? on-chain? off-chain? какой ven
 **Два способа работы с Result:**
 
 ```typescript
-import { accountIdFromVenue, accountIdForSubaccount, type Result } from '@polymarket/ids';
+import { accountIdFromVenue, accountIdForSubaccount, KnownVenues } from '@polymarket/ids';
+import type { Result } from '@polymarket/result';
+import { unwrap } from '@polymarket/result';
 
 // Способ 1: Pattern matching (безопасный)
-const result: Result<AccountId, Error> = accountIdFromVenue('POLYMARKET', 'user:123');
+const result: Result<AccountId, Error> = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
 if (result.ok) {
   const accountId = result.value;
   console.log('Success:', accountId);
@@ -234,14 +242,14 @@ if (result.ok) {
   console.error('Error:', result.error.message);
 }
 
-// Способ 2: .unwrap() (бросает если ошибка)
-const accountId = accountIdFromVenue('POLYMARKET', 'user_valid').unwrap();
+// Способ 2: unwrap() функция (бросает если ошибка)
+const accountId = unwrap(accountIdFromVenue(KnownVenues.POLYMARKET, 'user_valid'));
 // Используй только если уверен что ввод валидный
 
 // Пример с subaccount depth limit
-const deep1 = accountIdForSubaccount(walletAccount, 'sub1').unwrap();
-const deep2 = accountIdForSubaccount(deep1, 'sub2').unwrap();
-const deep3 = accountIdForSubaccount(deep2, 'sub3').unwrap();
+const deep1 = unwrap(accountIdForSubaccount(walletAccount, 'sub1'));
+const deep2 = unwrap(accountIdForSubaccount(deep1, 'sub2'));
+const deep3 = unwrap(accountIdForSubaccount(deep2, 'sub3'));
 // ... до depth 5 включительно OK
 const deep6 = accountIdForSubaccount(deep5, 'sub6'); // → Err (depth > 5)
 ```
