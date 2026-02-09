@@ -381,13 +381,14 @@ import {
   type AccountId,
   type WalletAddress,
   type VenueId,
-  type Result,
   accountIdFromWallet,
   accountIdFromVenue,
   accountIdForSubaccount,
   KnownVenues,
   parseWalletAddress,
 } from '@polymarket/ids';
+import type { Result } from '@polymarket/result';
+import { unwrap } from '@polymarket/result';
 
 // 1. Wallet account (Polymarket)
 const wallet: WalletAddress = parseWalletAddress('0x123...')!;
@@ -399,19 +400,20 @@ const kalshiAccountResult: Result<AccountId, Error> = accountIdFromVenue(
   KnownVenues.KALSHI,
   'user123'
 );
-// Используем pattern matching или .unwrap()
+// Используем pattern matching или unwrap()
 if (kalshiAccountResult.ok) {
   const kalshiAccount = kalshiAccountResult.value;
   // → { kind: 'VENUE', venueId: 'KALSHI', userId: 'user123' }
 }
 
 // 3. Subaccount (для изоляции стратегий) - возвращает Result<AccountId>
-const tradingResult = accountIdForSubaccount(wallet, 'trading');
-const hedgingResult = accountIdForSubaccount(wallet, 'hedging');
+// ВАЖНО: accountIdForSubaccount принимает AccountId, не WalletAddress!
+const tradingResult = accountIdForSubaccount(walletAccount, 'trading');
+const hedgingResult = accountIdForSubaccount(walletAccount, 'hedging');
 
-// Простой способ: .unwrap() (выбросит если ошибка)
-const tradingAccount = tradingResult.unwrap();
-const hedgingAccount = hedgingResult.unwrap();
+// Простой способ: unwrap() функция (выбросит если ошибка)
+const tradingAccount = unwrap(tradingResult);
+const hedgingAccount = unwrap(hedgingResult);
 // → { kind: 'SUBACCOUNT', base: { kind: 'WALLET', ... }, name: 'trading' }
 
 // 4. Получаем балансы для всех аккаунтов
@@ -439,8 +441,9 @@ import {
   parseConditionRef,
 } from '@polymarket/ids';
 
-// 1. Создание ConditionRef
+// 1. Создание ConditionRef (discriminated union с kind)
 const condition1: ConditionRef = {
+  kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
@@ -448,6 +451,7 @@ const condition1: ConditionRef = {
 
 // 2. Сравнение
 const condition2: ConditionRef = {
+  kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
@@ -469,14 +473,20 @@ const loadedStr = await db.loadCondition();
 const loadedCondition = parseConditionRef(loadedStr);
 
 if (loadedCondition) {
-  console.log(`Loaded: ${loadedCondition.protocolId}`);
+  // ВАЖНО: нужна type guard по kind перед доступом к protocolId
+  if (loadedCondition.kind === 'ONCHAIN') {
+    console.log(`Loaded: ${loadedCondition.protocolId}`);
+  } else {
+    console.log(`Loaded: ${loadedCondition.venueId} market ${loadedCondition.marketId}`);
+  }
 }
 
 // 5. ❌ Никогда не используй голый ConditionId!
 // const bad = '0xabc123...' as ConditionId;  // ПЛОХО!
 
-// 6. ✅ Всегда используй ConditionRef
+// 6. ✅ Всегда используй ConditionRef (с kind)
 const good: ConditionRef = {
+  kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
