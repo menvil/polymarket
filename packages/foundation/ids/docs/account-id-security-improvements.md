@@ -58,7 +58,7 @@ function accountIdForSubaccount(base: AccountId, name: string): AccountId // thr
 function accountIdForSubaccount(
   base: AccountId,
   name: string
-): Result<AccountId, AccountIdDepthError>
+): Result<AccountId, AccountIdDepthError | AccountIdValidationError>
 
 // Было:
 function accountIdToString(id: AccountId): string // throws Error
@@ -99,7 +99,7 @@ const finalResult = flatMap(
   )
 );
 
-// finalResult: Result<string, AccountIdDepthError>
+// finalResult: Result<string, AccountIdDepthError | AccountIdValidationError>
 // Если любая операция упадёт, вся цепочка вернёт Err
 ```
 
@@ -306,7 +306,7 @@ export function getSubaccountDepth(id: AccountId): number {
 
 | Функция | Поведение |
 |---|---|
-| `accountIdForSubaccount` | `Result<AccountId, AccountIdDepthError>` (валидация depth limit) |
+| `accountIdForSubaccount` | `Result<AccountId, AccountIdDepthError \| AccountIdValidationError>` |
 | `accountIdToString` | `string` (total function, всегда успешна) |
 | `parseAccountId` | `AccountId \| undefined` (внешний ввод — graceful rejection) |
 | `accountIdEquals` | `boolean` (безопасное сравнение) |
