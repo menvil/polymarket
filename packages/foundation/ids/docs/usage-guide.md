@@ -99,7 +99,7 @@ if (balance.amount.gte(Money.of(100, 'USDC'))) {
   const order = {
     executionVenue,
     conditionRef,
-    outcomeIndex: BinaryOutcome.UP,
+    outcomeKey: BinaryOutcome.UP,
     side: 'BUY',
     price: 0.52,
     quantity: 100,
@@ -146,7 +146,7 @@ if (isSimulator(executionVenue)) {
   const simulatedOrder = {
     executionVenue,
     conditionRef,
-    outcomeIndex: BinaryOutcome.UP,
+    outcomeKey: BinaryOutcome.UP,
     side: 'BUY',
     price: quote.ask,
     quantity: 100,
@@ -193,7 +193,7 @@ for (const quote of historicalQuotes) {
     const order = {
       executionVenue,
       conditionRef,
-      outcomeIndex: BinaryOutcome.UP,
+      outcomeKey: BinaryOutcome.UP,
       side: 'BUY',
       price: quote.ask,
       quantity: 100,
@@ -276,7 +276,7 @@ if (kalshiQuote.ask < polymarketQuote.bid) {
   await sendOrder({
     executionVenue: KnownExecutionVenues.KALSHI,
     conditionRef: kalshiCondition,
-    outcomeIndex: BinaryOutcome.UP,
+    outcomeKey: BinaryOutcome.UP,
     side: 'BUY',
     price: kalshiQuote.ask,
     quantity: 100,
@@ -286,7 +286,7 @@ if (kalshiQuote.ask < polymarketQuote.bid) {
   await sendOrder({
     executionVenue: KnownExecutionVenues.POLYMARKET,
     conditionRef: polymarketCondition,
-    outcomeIndex: BinaryOutcome.UP,
+    outcomeKey: BinaryOutcome.UP,
     side: 'SELL',
     price: polymarketQuote.bid,
     quantity: 100,

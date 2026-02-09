@@ -46,11 +46,9 @@
 **Решение**: Всегда используй `ConditionRef` с полным контекстом:
 
 ```typescript
-type ConditionRef = {
-  protocolId: ProtocolId;   // POLYMARKET_CTF | KALSHI | UMA_CTF
-  chainId: ChainId;         // 137 (Polygon) | 1 (Ethereum) | 8453 (Base)
-  conditionId: ConditionId; // 0xabc123...
-};
+type ConditionRef =
+  | { kind: 'ONCHAIN'; protocolId: ProtocolId; chainId: ChainId; conditionId: ConditionId; }
+  | { kind: 'OFFCHAIN'; venueId: VenueId; marketId: string; };
 ```
 
 **Преимущества**:
@@ -159,8 +157,8 @@ function processAsset(asset: AssetId) {
     // TypeScript знает: asset.currency доступен
     console.log(`Currency: ${asset.currency}`);
   } else {
-    // TypeScript знает: asset.conditionRef и asset.outcomeIndex доступны
-    console.log(`Token: ${asset.conditionRef.conditionId} outcome ${asset.outcomeIndex}`);
+    // TypeScript знает: asset.conditionRef и asset.outcomeKey доступны
+    console.log(`Token: ${asset.conditionRef.conditionId} outcome ${asset.outcomeKey}`);
   }
 }
 ```
@@ -265,11 +263,9 @@ import { type ExecutionVenueId } from '@polymarket/ids/execution';
 Все типы readonly:
 
 ```typescript
-export type ConditionRef = Readonly<{
-  protocolId: ProtocolId;
-  chainId: ChainId;
-  conditionId: ConditionId;
-}>;
+export type ConditionRef =
+  | Readonly<{ kind: 'ONCHAIN'; protocolId: ProtocolId; chainId: ChainId; conditionId: ConditionId; }>
+  | Readonly<{ kind: 'OFFCHAIN'; venueId: VenueId; marketId: string; }>;
 ```
 
 ### 2. Type Safety

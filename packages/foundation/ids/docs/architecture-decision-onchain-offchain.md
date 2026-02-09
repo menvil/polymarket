@@ -173,7 +173,7 @@ const polymarketCondition: ConditionRef = {
 const yesToken: AssetId = {
   type: 'OUTCOME_TOKEN',
   conditionRef: polymarketCondition,
-  outcomeIndex: 1  // YES
+  outcomeKey: BinaryOutcome.UP  // YES
 };
 ```
 

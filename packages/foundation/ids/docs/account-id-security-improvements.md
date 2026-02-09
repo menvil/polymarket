@@ -60,8 +60,8 @@ function accountIdForSubaccount(
   name: string
 ): Result<AccountId, AccountIdDepthError>
 
-// Было (в ранних версиях):
-function accountIdToString(id: AccountId): string // throws Error на превышении depth
+// Было:
+function accountIdToString(id: AccountId): string // throws Error
 
 // Стало:
 function accountIdToString(id: AccountId): string // total function, всегда возвращает string
@@ -80,25 +80,20 @@ if (result.ok) {
   // Error: Subaccount depth limit exceeded during create: current=5, max=5
 }
 
-// Сериализация с явной обработкой ошибок
-const strResult = accountIdToString(accountId);
-
-if (strResult.ok) {
-  await saveToDatabase(strResult.value);
-} else {
-  logger.error('Failed to serialize', { error: strResult.error });
-}
+// Сериализация (total function, всегда успешна)
+const str = accountIdToString(accountId);
+await saveToDatabase(str);
 
 // Railway-Oriented Programming (композиция)
-import { flatMap } from '@polymarket/result';
+import { flatMap, map } from '@polymarket/result';
 
 const walletAcc = accountIdFromWallet(parseWalletAddress('0x1234...')!);
 
 const finalResult = flatMap(
   accountIdForSubaccount(walletAcc, 'main'),
-  (sub1) => flatMap(
+  (sub1) => map(
     accountIdForSubaccount(sub1, 'trading'),
-    (sub2) => accountIdToString(sub2)
+    (sub2) => accountIdToString(sub2)  // map, не flatMap (т.к. возвращает string)
   )
 );
 
@@ -290,13 +285,12 @@ export function getSubaccountDepth(id: AccountId): number {
 
 2. **accountIdForSubaccount**:
    - Вычисляем текущую глубину base account
-   - Если depth >= MAX_SUBACCOUNT_DEPTH → throw Error
+   - Если depth >= MAX_SUBACCOUNT_DEPTH → return Err(AccountIdDepthError)
    - Иначе создаём новый SUBACCOUNT
 
 3. **accountIdToString**:
-   - Оборачиваем в impl-функцию с параметром depth
-   - При каждом рекурсивном вызове инкрементируем depth
-   - Если depth > MAX_SUBACCOUNT_DEPTH → throw Error
+   - Total function без проверки depth (всегда возвращает string)
+   - Предполагается, что AccountId уже валидирован при создании
 
 4. **parseAccountId**:
    - Аналогично: impl-функция с depth tracking
@@ -310,7 +304,7 @@ export function getSubaccountDepth(id: AccountId): number {
 
 | Функция | Поведение |
 |---|---|
-| `accountIdForSubaccount` | `Result<AccountId, Error>` (валидация userId/name) |
+| `accountIdForSubaccount` | `Result<AccountId, AccountIdDepthError>` (валидация depth limit) |
 | `accountIdToString` | `string` (total function, всегда успешна) |
 | `parseAccountId` | `AccountId \| undefined` (внешний ввод — graceful rejection) |
 | `accountIdEquals` | `boolean` (безопасное сравнение) |
@@ -320,22 +314,29 @@ export function getSubaccountDepth(id: AccountId): number {
 ```typescript
 // Пример 1: Нормальная вложенность
 const wallet = accountIdFromWallet(parseWalletAddress('0x1234...')!);
-const sub1 = accountIdForSubaccount(wallet, 'level1');
-const sub2 = accountIdForSubaccount(sub1, 'level2');
+const sub1Result = accountIdForSubaccount(wallet, 'level1');
+if (!sub1Result.ok) throw sub1Result.error;
+const sub1 = sub1Result.value;
+
+const sub2Result = accountIdForSubaccount(sub1, 'level2');
+if (!sub2Result.ok) throw sub2Result.error;
+const sub2 = sub2Result.value;
 
 console.log(getSubaccountDepth(wallet)); // 0
 console.log(getSubaccountDepth(sub1));   // 1
 console.log(getSubaccountDepth(sub2));   // 2
 
 // Пример 2: Превышение лимита при создании
+import { unwrap } from '@polymarket/result';
 let current = wallet;
 for (let i = 1; i <= 5; i++) {
-  current = accountIdForSubaccount(current, `level${i}`);
+  current = unwrap(accountIdForSubaccount(current, `level${i}`));
 }
 
 // Попытка создать 6-й уровень:
-accountIdForSubaccount(current, 'tooDeep');
-// → throws Error: "Subaccount depth limit exceeded: current=5, max=5"
+const tooDeepResult = accountIdForSubaccount(current, 'tooDeep');
+// → tooDeepResult.ok === false
+// → tooDeepResult.error: AccountIdDepthError
 
 // Пример 3: Превышение лимита при парсинге
 const deepStr = `sub:sub:sub:sub:sub:sub:wallet:0x1234...:a:b:c:d:e:f`;
@@ -501,8 +502,8 @@ const parsed4 = parseAccountId(str, { maxLen: 1000 });
 ### 2. Depth Limit
 
 ✅ Защита работает:
-- `accountIdForSubaccount` выбрасывает Error при depth ≥ 5
-- `accountIdToString` выбрасывает Error при depth > 5
+- `accountIdForSubaccount` возвращает Err(AccountIdDepthError) при depth ≥ 5
+- `accountIdToString` всегда возвращает string (total function)
 - `parseAccountId` возвращает undefined при превышении maxDepth
 - `accountIdEquals` возвращает false при depth > 5 (не крашит)
 
