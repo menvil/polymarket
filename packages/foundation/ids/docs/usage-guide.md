@@ -407,7 +407,7 @@ if (kalshiAccountResult.ok) {
 }
 
 // 3. Subaccount (для изоляции стратегий) - возвращает Result<AccountId>
-// ВАЖНО: accountIdForSubaccount принимает AccountId, не WalletAddress!
+// ВАЖНО: accountIdForSubaccount принимает AccountId (не WalletAddress!)
 const tradingResult = accountIdForSubaccount(walletAccount, 'trading');
 const hedgingResult = accountIdForSubaccount(walletAccount, 'hedging');
 
@@ -446,7 +446,7 @@ const condition1: ConditionRef = {
   kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as ConditionId,
+  conditionId: parseConditionId('0xabc123...')!,
 };
 
 // 2. Сравнение
@@ -454,7 +454,7 @@ const condition2: ConditionRef = {
   kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as ConditionId,
+  conditionId: parseConditionId('0xabc123...')!,
 };
 
 if (conditionRefEquals(condition1, condition2)) {

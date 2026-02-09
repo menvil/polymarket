@@ -47,7 +47,7 @@
 
 ```typescript
 type ConditionRef =
-  | { kind: 'ONCHAIN'; protocolId: ProtocolId; chainId: ChainId; conditionId: ConditionId; }
+  | { kind: 'ONCHAIN'; protocolId: OnChainProtocolId; chainId: ChainId; conditionId: ConditionId; }
   | { kind: 'OFFCHAIN'; venueId: VenueId; marketId: string; };
 ```
 
@@ -264,7 +264,7 @@ import { type ExecutionVenueId } from '@polymarket/ids/execution';
 
 ```typescript
 export type ConditionRef =
-  | Readonly<{ kind: 'ONCHAIN'; protocolId: ProtocolId; chainId: ChainId; conditionId: ConditionId; }>
+  | Readonly<{ kind: 'ONCHAIN'; protocolId: OnChainProtocolId; chainId: ChainId; conditionId: ConditionId; }>
   | Readonly<{ kind: 'OFFCHAIN'; venueId: VenueId; marketId: string; }>;
 ```
 

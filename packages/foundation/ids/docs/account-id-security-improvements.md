@@ -81,8 +81,10 @@ if (result.ok) {
 }
 
 // Сериализация (total function, всегда успешна)
-const str = accountIdToString(accountId);
-await saveToDatabase(str);
+if (result.ok) {
+  const str = accountIdToString(result.value);
+  await saveToDatabase(str);
+}
 
 // Railway-Oriented Programming (композиция)
 import { flatMap, map } from '@polymarket/result';
@@ -91,9 +93,9 @@ const walletAcc = accountIdFromWallet(parseWalletAddress('0x1234...')!);
 
 const finalResult = flatMap(
   accountIdForSubaccount(walletAcc, 'main'),
-  (sub1) => map(
+  (sub1) => flatMap(
     accountIdForSubaccount(sub1, 'trading'),
-    (sub2) => accountIdToString(sub2)  // map, не flatMap (т.к. возвращает string)
+    (sub2) => Ok(accountIdToString(sub2))  // wrap string в Ok для композиции
   )
 );
 
@@ -285,7 +287,7 @@ export function getSubaccountDepth(id: AccountId): number {
 
 2. **accountIdForSubaccount**:
    - Вычисляем текущую глубину base account
-   - Если depth >= MAX_SUBACCOUNT_DEPTH → return Err(AccountIdDepthError)
+   - Если depth > MAX_SUBACCOUNT_DEPTH → return Err(AccountIdDepthError)
    - Иначе создаём новый SUBACCOUNT
 
 3. **accountIdToString**:
@@ -328,7 +330,7 @@ console.log(getSubaccountDepth(sub2));   // 2
 
 // Пример 2: Превышение лимита при создании
 import { unwrap } from '@polymarket/result';
-let current = wallet;
+let current: AccountId = wallet;
 for (let i = 1; i <= 5; i++) {
   current = unwrap(accountIdForSubaccount(current, `level${i}`));
 }
@@ -502,10 +504,10 @@ const parsed4 = parseAccountId(str, { maxLen: 1000 });
 ### 2. Depth Limit
 
 ✅ Защита работает:
-- `accountIdForSubaccount` возвращает Err(AccountIdDepthError) при depth ≥ 5
+- `accountIdForSubaccount` возвращает Err(AccountIdDepthError) при depth > 5
 - `accountIdToString` всегда возвращает string (total function)
 - `parseAccountId` возвращает undefined при превышении maxDepth
-- `accountIdEquals` возвращает false при depth > 5 (не крашит)
+- `accountIdEquals` возвращает false при depth > MAX_SUBACCOUNT_DEPTH (не крашит)
 
 ### 3. WalletAddress Validation
 

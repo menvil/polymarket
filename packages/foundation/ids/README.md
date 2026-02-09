@@ -46,13 +46,17 @@ import {
   type AssetId,
   KnownCurrencies,
   KnownChainIds,
+  KnownVenues,
   BinaryOutcome,
   isSupportedCurrency,
+  accountIdFromWallet,
+  parseWalletAddress,
+  AssetIdHelpers,
 } from '@polymarket/ids';
 
 // SupportedCurrency - поддерживаемые валюты
 const currency: SupportedCurrency = 'USDC'; // ✅ OK
-const usdc = KnownCurrencies.USDC; // 'USDC' as SupportedCurrency
+const knownUsdc = KnownCurrencies.USDC; // 'USDC' as SupportedCurrency
 
 // Type guard для валидации
 const input = getUserInput();
@@ -83,8 +87,6 @@ const upOutcome = BinaryOutcome.UP;   // 'UP'
 const downOutcome = BinaryOutcome.DOWN; // 'DOWN'
 
 // AccountId - discriminated union (НЕ строка!)
-import { accountIdFromWallet, AssetIdHelpers } from '@polymarket/ids';
-
 // Wallet account
 const walletAccount: AccountId = {
   kind: 'WALLET',
@@ -95,10 +97,10 @@ const walletAccount: AccountId = {
 const walletAcc = accountIdFromWallet(parseWalletAddress('0x1234...')!);
 
 // VenueId - где находятся балансы
-const venueId: VenueId = 'POLYMARKET';
+const venueId: VenueId = KnownVenues.POLYMARKET;
 
 // AssetId - универсальный актив (используй AssetIdHelpers)
-const usdc = AssetIdHelpers.USDC;
+const usdcAsset = AssetIdHelpers.USDC;
 const token = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
 ```
 
@@ -155,7 +157,7 @@ type AccountId =
 - ✅ Невозможно случайно перепутать типы
 
 ```typescript
-function getBalance(accountId: AccountId) { ... }
+function getBalance(accountId: AccountId) { /* ... */ }
 
 // ❌ TypeScript error
 getBalance('some-string');
