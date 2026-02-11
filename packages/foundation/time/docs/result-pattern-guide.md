@@ -8,7 +8,7 @@
 
 ### Текущая реализация НЕ нуждается в Result
 
-Операции в модуле `@polymarket/time` используют **fail-fast подход** с exceptions:
+Модуль `@polymarket/time` использует **fail-fast подход** с exceptions для валидации входных данных:
 
 ```typescript
 interface IClock {
@@ -158,7 +158,7 @@ function fromUnixTimestamp(ms: number): Result<Date, ValidationError> {
 ## Сравнительная таблица
 
 | Операция | Может упасть? | Использовать Result? | Пример |
-|----------|---------------|----------------------|--------|
+| -------- | ------------- | -------------------- | ------ |
 | `clock.now()` | ❌ Нет | ❌ НЕТ | `now(): Date` |
 | `clock.tick(ms)` | ❌ Нет | ❌ НЕТ | `tick(ms: number): void` |
 | `clock.setTime(date)` | ❌ Нет | ❌ НЕТ | `setTime(date: Date): void` |
@@ -184,7 +184,7 @@ function fromUnixTimestamp(ms: number): Result<Date, ValidationError> {
 
 ### Общее правило для всех модулей
 
-```
+```text
 Используй Result ⟺ Операция может упасть
 ```
 
@@ -265,7 +265,7 @@ class Money {
 
 **Золотое правило:**
 
-```
+```text
 Result<T, never> = признак что Result избыточен
 ```
 

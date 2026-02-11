@@ -90,11 +90,15 @@ export class ReplayClock implements IClock {
    * const clock = new ReplayClock(firstEvent.timestamp);
    * ```
    */
-  constructor(private currentTimestamp: Date) {
+  constructor(currentTimestamp: Date) {
     if (!this.isValidDate(currentTimestamp)) {
       throw new Error('ReplayClock: Invalid Date provided to constructor');
     }
+    // Создаем копию для инкапсуляции (защита от мутации снаружи)
+    this.currentTimestamp = new Date(currentTimestamp.getTime());
   }
+
+  private currentTimestamp: Date;
 
   /**
    * Возвращает текущую зафиксированную временную метку
@@ -156,7 +160,8 @@ export class ReplayClock implements IClock {
     if (!this.isValidDate(timestamp)) {
       throw new Error('ReplayClock.update(): Invalid Date provided');
     }
-    this.currentTimestamp = timestamp;
+    // Создаем копию для инкапсуляции (защита от мутации снаружи)
+    this.currentTimestamp = new Date(timestamp.getTime());
   }
 
   /**

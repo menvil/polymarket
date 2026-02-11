@@ -87,11 +87,15 @@ export class PaperClock implements IClock {
    * const clock = new PaperClock(new Date('2024-01-01T00:00:00Z'));
    * ```
    */
-  constructor(private currentTimestamp: Date) {
+  constructor(currentTimestamp: Date) {
     if (!this.isValidDate(currentTimestamp)) {
       throw new Error('PaperClock: Invalid Date provided to constructor');
     }
+    // Создаем копию для инкапсуляции (защита от мутации снаружи)
+    this.currentTimestamp = new Date(currentTimestamp.getTime());
   }
+
+  private currentTimestamp: Date;
 
   /**
    * Возвращает текущее управляемое время
@@ -139,7 +143,8 @@ export class PaperClock implements IClock {
     if (!this.isValidDate(timestamp)) {
       throw new Error('PaperClock.setTime(): Invalid Date provided');
     }
-    this.currentTimestamp = timestamp;
+    // Создаем копию для инкапсуляции (защита от мутации снаружи)
+    this.currentTimestamp = new Date(timestamp.getTime());
   }
 
   /**

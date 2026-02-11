@@ -19,7 +19,7 @@ npm install @polymarket/time
 ## 🚀 Быстрый старт
 
 ```typescript
-import { IClock, LiveClock, PaperClock } from '@polymarket/time';
+import { LiveClock, PaperClock, type IClock } from '@polymarket/time';
 
 // Production: используй системное время
 const liveClock: IClock = new LiveClock();
@@ -59,7 +59,7 @@ Testing реализация, контролируемое время:
 ```typescript
 const clock = new PaperClock(new Date('2024-01-01'));
 clock.tick(1000);  // +1 секунда
-clock.tickTo(new Date('2024-01-02'));  // перейти к дате
+clock.setTime(new Date('2024-01-02'));  // установить абсолютное время
 ```
 
 ### ReplayClock

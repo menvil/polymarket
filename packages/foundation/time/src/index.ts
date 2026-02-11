@@ -24,7 +24,7 @@
  * @example
  * Использование в production (LIVE режим):
  * ```typescript
- * import { LiveClock, IClock } from '@polymarket/time';
+ * import { LiveClock, type IClock } from '@polymarket/time';
  *
  * const clock: IClock = new LiveClock();
  * const currentTime = clock.now(); // Реальное системное время
