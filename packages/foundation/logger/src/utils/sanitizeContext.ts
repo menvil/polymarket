@@ -8,8 +8,11 @@
  * - Корректную работу алертинга
  * - Надежность парсинга логов в log aggregation системах
  *
- * Если пользователь пытается передать зарезервированное поле, оно игнорируется
- * с предупреждением в console.warn (не через logger, чтобы избежать рекурсии).
+ * Функция fail-safe: не бросает исключения даже при опасных объектах с throwing getters
+ * или экзотичных объектах (Proxy). При ошибках возвращает безопасный fallback.
+ *
+ * Зарезервированные поля игнорируются молча (без console.warn) чтобы не нарушать
+ * log-level фильтр.
  *
  * @param context - Контекст от пользователя (bindings или log context)
  * @returns Sanitized контекст без зарезервированных полей
@@ -23,11 +26,14 @@
  * ```
  *
  * @example
- * Попытка подделки уровня лога:
+ * Fail-safe с throwing getter:
  * ```typescript
- * const context = { level: LogLevel.ERROR, userId: '123' };
- * const sanitized = sanitizeContext(context);
- * // { userId: '123' } - level удален + warning в console
+ * const dangerous = {
+ *   get boom() { throw new Error('explosion'); },
+ *   safe: 'value'
+ * };
+ * const sanitized = sanitizeContext(dangerous);
+ * // { safe: 'value', boom: '[Error reading property: explosion]' }
  * ```
  */
 

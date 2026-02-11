@@ -11,7 +11,7 @@ Structured logging utilities для Polymarket trading system с поддерж�
 - ✅ **Type-safe** - контекст типизирован как Record<string, unknown>
 - ✅ **6 уровней логирования** - TRACE, DEBUG, INFO, WARN, ERROR, FATAL
 - ✅ **Child loggers** - поддержка контекстных логгеров с bindings
-- ✅ **Fail-safe** - никогда не бросает исключения, даже при circular references
+- ✅ **Fail-safe** - защита от circular references, throwing getters, non-serializable данных
 - ✅ **Protected fields** - системные поля (timestamp, level, message) защищены от переопределения
 - ✅ **Минимальный overhead в тестах** - NoOpLogger не выполняет IO операций
 - ✅ **Высокое покрытие тестами** - 97%+ coverage, 174 теста

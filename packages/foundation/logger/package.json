@@ -30,8 +30,8 @@
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
-    "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"README.md\"",
-    "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"README.md\"",
+    "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"**/*.md\"",
+    "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"**/*.md\"",
     "clean": "rm -rf dist *.tsbuildinfo"
   },
   "keywords": [

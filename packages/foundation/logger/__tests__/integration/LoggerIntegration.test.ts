@@ -10,6 +10,34 @@ import { LogLevel } from '../../src/LogLevel.js';
 import { LiveClock, PaperClock, ReplayClock } from '@polymarket/time';
 
 describe('Logger Integration', () => {
+  // Mock console methods to prevent noise in test output
+  let consoleSpies: {
+    debug: jest.SpiedFunction<typeof console.debug>;
+    info: jest.SpiedFunction<typeof console.info>;
+    warn: jest.SpiedFunction<typeof console.warn>;
+    error: jest.SpiedFunction<typeof console.error>;
+    log: jest.SpiedFunction<typeof console.log>;
+  };
+
+  beforeEach(() => {
+    consoleSpies = {
+      debug: jest.spyOn(console, 'debug').mockImplementation(() => {}),
+      info: jest.spyOn(console, 'info').mockImplementation(() => {}),
+      warn: jest.spyOn(console, 'warn').mockImplementation(() => {}),
+      error: jest.spyOn(console, 'error').mockImplementation(() => {}),
+      log: jest.spyOn(console, 'log').mockImplementation(() => {}),
+    };
+  });
+
+  afterEach(() => {
+    // Restore console methods
+    consoleSpies.debug.mockRestore();
+    consoleSpies.info.mockRestore();
+    consoleSpies.warn.mockRestore();
+    consoleSpies.error.mockRestore();
+    consoleSpies.log.mockRestore();
+  });
+
   describe('Полиморфное использование через ILogger', () => {
     it('все реализации должны быть совместимы с ILogger', () => {
       const clock = new PaperClock(new Date());
