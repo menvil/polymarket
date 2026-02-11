@@ -414,8 +414,8 @@ describe('Logger Security Tests', () => {
     });
   });
 
-  describe('Getter exceptions protection', () => {
-    it('should handle context with throwing getter without crashing', () => {
+  describe('Защита от исключений в геттерах', () => {
+    it('должен обрабатывать context с throwing getter без падения', () => {
       const dangerousContext = {
         safeField: 'safe',
         get boom() {
@@ -423,21 +423,21 @@ describe('Logger Security Tests', () => {
         },
       };
 
-      // Should NOT throw - fail-safe behavior
+      // НЕ должен бросать исключение - fail-safe поведение
       expect(() => {
         consoleLogger.info('Test message', dangerousContext);
       }).not.toThrow();
 
-      // Should have logged
+      // Должен залогировать
       expect(consoleSpy.info).toHaveBeenCalledTimes(1);
 
-      // Check that log was created with safe field and error placeholder
+      // Проверяем что лог создан с безопасным полем и placeholder для ошибки
       const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
       expect(logged.safeField).toBe('safe');
       expect(logged.boom).toMatch(/Error reading property/);
     });
 
-    it('should handle multiple throwing getters', () => {
+    it('должен обрабатывать множественные throwing getters', () => {
       const multiDangerous = {
         get error1() {
           throw new TypeError('Type error');
@@ -458,7 +458,7 @@ describe('Logger Security Tests', () => {
       expect(logged.error2).toMatch(/Error reading property.*Range error/);
     });
 
-    it('should handle getter throwing non-Error object', () => {
+    it('должен обрабатывать getter бросающий не-Error объект', () => {
       const weirdContext = {
         get weird() {
           // eslint-disable-next-line no-throw-literal
@@ -474,7 +474,7 @@ describe('Logger Security Tests', () => {
       expect(logged.weird).toMatch(/Error reading property.*string error/);
     });
 
-    it('should handle ColorConsoleLogger with throwing getter', () => {
+    it('должен обрабатывать ColorConsoleLogger с throwing getter', () => {
       const dangerousContext = {
         get boom() {
           throw new Error('Boom!');
@@ -489,8 +489,8 @@ describe('Logger Security Tests', () => {
     });
   });
 
-  describe('__proto__ payload protection', () => {
-    it('should not allow __proto__ pollution via context', () => {
+  describe('Защита от __proto__ payload', () => {
+    it('не должен допускать __proto__ pollution через context', () => {
       const maliciousContext = {
         __proto__: { polluted: 'value' },
         normalField: 'normal',
@@ -500,19 +500,19 @@ describe('Logger Security Tests', () => {
 
       const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
 
-      // Should have normal field
+      // Должно быть обычное поле
       expect(logged.normalField).toBe('normal');
 
-      // Should NOT have __proto__ as own property in logged output
+      // НЕ должно быть __proto__ как собственного свойства в выводе
       expect(Object.prototype.hasOwnProperty.call(logged, '__proto__')).toBe(
         false
       );
 
-      // Verify no pollution occurred
+      // Проверяем что pollution не произошло
       expect(logged.polluted).toBeUndefined();
     });
 
-    it('should handle attempts to set constructor', () => {
+    it('должен обрабатывать попытки установить constructor', () => {
       const maliciousContext = {
         constructor: { prototype: { polluted: true } },
         validField: 'valid',
@@ -525,11 +525,11 @@ describe('Logger Security Tests', () => {
       const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
       expect(logged.validField).toBe('valid');
 
-      // Constructor should be serialized as a regular field (JSON.stringify handles it)
-      // It doesn't cause prototype pollution
+      // Constructor сериализуется как обычное поле (JSON.stringify обрабатывает)
+      // Это не вызывает prototype pollution
     });
 
-    it('should sanitize __proto__ from bindings in child logger', () => {
+    it('должен sanitize __proto__ из bindings в child logger', () => {
       const maliciousBindings = {
         __proto__: { polluted: 'bad' },
         service: 'test',
@@ -541,18 +541,18 @@ describe('Logger Security Tests', () => {
       const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
       expect(logged.service).toBe('test');
 
-      // Should NOT have __proto__ as own property
+      // НЕ должно быть __proto__ как собственного свойства
       expect(Object.prototype.hasOwnProperty.call(logged, '__proto__')).toBe(
         false
       );
 
-      // Verify no pollution
+      // Проверяем отсутствие pollution
       expect(logged.polluted).toBeUndefined();
     });
   });
 
-  describe('Circular reference with log form preservation', () => {
-    it('should preserve timestamp, level, message when circular data occurs', () => {
+  describe('Сохранение формы лога при circular reference', () => {
+    it('должен сохранять timestamp, level, message при circular data', () => {
       const circular: any = { name: 'test', value: 42 };
       circular.self = circular;
 
@@ -561,24 +561,24 @@ describe('Logger Security Tests', () => {
       expect(consoleSpy.info).toHaveBeenCalledTimes(1);
       const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
 
-      // System fields should ALWAYS be present (they are primitives)
+      // Системные поля должны ВСЕГДА присутствовать (они примитивы)
       expect(logged.timestamp).toBe('2024-01-01T00:00:00.000Z');
       expect(logged.level).toBe(LogLevel.INFO);
       expect(logged.message).toBe('Circular test');
 
-      // Should have __error marker
+      // Должен быть маркер __error
       expect(logged.__error).toBe('Circular reference detected');
 
-      // Complex 'data' field is NOT preserved (it's an object with circular ref)
-      // Only primitive fields from top-level logEntry are preserved
+      // Сложное поле 'data' НЕ сохраняется (это объект с circular ref)
+      // Сохраняются только примитивные поля из logEntry верхнего уровня
       expect(logged.data).toBeUndefined();
     });
 
-    it('should preserve log form with primitive context fields', () => {
+    it('должен сохранять форму лога с примитивными полями context', () => {
       const circular: any = { self: null };
       circular.self = circular;
 
-      // Add primitive fields alongside circular one
+      // Добавляем примитивные поля вместе с circular
       consoleLogger.info('Message', {
         id: 123,
         name: 'test',
@@ -587,23 +587,23 @@ describe('Logger Security Tests', () => {
 
       const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
 
-      // Core log structure must survive
+      // Базовая структура лога должна сохраниться
       expect(logged.timestamp).toBeDefined();
       expect(logged.level).toBeDefined();
       expect(logged.message).toBe('Message');
 
-      // Primitive fields from context are preserved
+      // Примитивные поля из context сохраняются
       expect(logged.id).toBe(123);
       expect(logged.name).toBe('test');
 
-      // Circular field is not preserved
+      // Circular поле не сохраняется
       expect(logged.circular).toBeUndefined();
 
-      // Error marker present
+      // Присутствует маркер ошибки
       expect(logged.__error).toBe('Circular reference detected');
     });
 
-    it('should extract only primitive fields when serialization fails', () => {
+    it('должен извлекать только примитивные поля при ошибке сериализации', () => {
       const complex: any = {
         id: 123,
         name: 'test',
@@ -617,28 +617,28 @@ describe('Logger Security Tests', () => {
 
       const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
 
-      // System fields present (primitives)
+      // Системные поля присутствуют (примитивы)
       expect(logged.timestamp).toBeDefined();
       expect(logged.level).toBeDefined();
       expect(logged.message).toBe('Test');
 
-      // Primitive fields from context are preserved
+      // Примитивные поля из context сохраняются
       expect(logged.id).toBe(123);
       expect(logged.name).toBe('test');
 
-      // Complex nested object is NOT preserved
+      // Сложный вложенный объект НЕ сохраняется
       expect(logged.nested).toBeUndefined();
       expect(logged.circular).toBeUndefined();
 
-      // Error marker present
+      // Присутствует маркер ошибки
       expect(logged.__error).toBe('Circular reference detected');
     });
   });
 
-  describe('Unknown serialization errors', () => {
-    it('should handle unknown JSON.stringify errors gracefully', () => {
-      // Create object that causes unusual serialization error
-      // This is hard to trigger, but we test the fallback path
+  describe('Неизвестные ошибки сериализации', () => {
+    it('должен корректно обрабатывать неизвестные ошибки JSON.stringify', () => {
+      // Создаем объект который вызывает необычную ошибку сериализации
+      // Это сложно спровоцировать, но мы тестируем fallback путь
       const problematic = {
         toJSON() {
           throw new Error('toJSON failed');
@@ -652,7 +652,7 @@ describe('Logger Security Tests', () => {
       expect(consoleSpy.info).toHaveBeenCalled();
     });
 
-    it('should handle serialization errors in ColorConsoleLogger', () => {
+    it('должен обрабатывать ошибки сериализации в ColorConsoleLogger', () => {
       const problematic = {
         toJSON() {
           throw new TypeError('Custom toJSON error');
@@ -666,12 +666,12 @@ describe('Logger Security Tests', () => {
       expect(consoleSpy.log).toHaveBeenCalled();
     });
 
-    it('should log to console.error and return fallback on unknown error', () => {
+    it('должен логировать в console.error и возвращать fallback при неизвестной ошибке', () => {
       const errorSpy = jest
         .spyOn(console, 'error')
         .mockImplementation(() => {});
 
-      // Trigger non-circular serialization error
+      // Провоцируем не-circular ошибку сериализации
       const weird = {
         toJSON() {
           throw new RangeError('Weird serialization error');
@@ -680,13 +680,13 @@ describe('Logger Security Tests', () => {
 
       consoleLogger.info('Test', { data: weird });
 
-      // Should have logged error to console.error
+      // Должно быть залогировано в console.error
       expect(errorSpy).toHaveBeenCalledWith(
         '[Logger] Serialization error:',
         expect.any(RangeError)
       );
 
-      // Should have produced fallback JSON
+      // Должен быть создан fallback JSON
       expect(consoleSpy.info).toHaveBeenCalledTimes(1);
       const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
       expect(logged.__error).toBe('Serialization failed');
@@ -695,9 +695,9 @@ describe('Logger Security Tests', () => {
     });
   });
 
-  describe('Exotic object handling in sanitizeContext', () => {
-    it('should handle Proxy that throws on Object.keys', () => {
-      // Create Proxy that breaks Object.keys
+  describe('Обработка экзотических объектов в sanitizeContext', () => {
+    it('должен обрабатывать Proxy который бросает исключение на Object.keys', () => {
+      // Создаем Proxy который ломает Object.keys
       const exoticProxy = new Proxy(
         {},
         {
@@ -707,24 +707,24 @@ describe('Logger Security Tests', () => {
         }
       );
 
-      // Should NOT throw - fallback to empty object
+      // НЕ должен бросать исключение - fallback к пустому объекту
       expect(() => {
         consoleLogger.info('Test', exoticProxy);
       }).not.toThrow();
 
-      // Should have logged with empty context (fallback)
+      // Должен залогировать с пустым context (fallback)
       expect(consoleSpy.info).toHaveBeenCalledTimes(1);
       const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
 
-      // System fields present
+      // Системные поля присутствуют
       expect(logged.timestamp).toBeDefined();
       expect(logged.level).toBeDefined();
       expect(logged.message).toBe('Test');
 
-      // No fields from exotic object (fallback to empty)
+      // Нет полей из экзотического объекта (fallback к пустому)
     });
 
-    it('should handle Proxy with throwing getOwnPropertyDescriptor', () => {
+    it('должен обрабатывать Proxy с throwing getOwnPropertyDescriptor', () => {
       const exoticProxy = new Proxy(
         { field: 'value' },
         {
@@ -741,7 +741,7 @@ describe('Logger Security Tests', () => {
       expect(consoleSpy.info).toHaveBeenCalled();
     });
 
-    it('should handle object with null prototype', () => {
+    it('должен обрабатывать объект с null prototype', () => {
       const nullProto = Object.create(null);
       nullProto.field = 'value';
 
@@ -753,7 +753,7 @@ describe('Logger Security Tests', () => {
       expect(logged.field).toBe('value');
     });
 
-    it('should handle frozen object with getter', () => {
+    it('должен обрабатывать замороженный объект с getter', () => {
       const frozen = Object.freeze({
         get boom() {
           throw new Error('Frozen getter explosion!');
