@@ -101,16 +101,21 @@ export enum LogLevel {
  * Используется внутри логгера для фильтрации сообщений.
  * Меньший вес = более детальный уровень.
  *
+ * Объект защищен от мутации через Object.freeze для предотвращения
+ * случайных или злонамеренных изменений весов, которые могли бы сломать
+ * фильтрацию логов во всем процессе.
+ *
  * @internal
  */
-export const LOG_LEVEL_WEIGHTS: Record<LogLevel, number> = {
-  [LogLevel.TRACE]: 0,
-  [LogLevel.DEBUG]: 1,
-  [LogLevel.INFO]: 2,
-  [LogLevel.WARN]: 3,
-  [LogLevel.ERROR]: 4,
-  [LogLevel.FATAL]: 5,
-};
+export const LOG_LEVEL_WEIGHTS: Readonly<Record<LogLevel, number>> =
+  Object.freeze({
+    [LogLevel.TRACE]: 0,
+    [LogLevel.DEBUG]: 1,
+    [LogLevel.INFO]: 2,
+    [LogLevel.WARN]: 3,
+    [LogLevel.ERROR]: 4,
+    [LogLevel.FATAL]: 5,
+  } as const);
 
 /**
  * Проверяет должно ли сообщение быть залогировано

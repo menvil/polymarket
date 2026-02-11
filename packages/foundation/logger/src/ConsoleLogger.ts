@@ -11,6 +11,8 @@
  * - **Детерминированные timestamps**: через IClock dependency injection
  * - **Фильтрация по уровню**: логируются только сообщения >= настроенного уровня
  * - **Stack traces**: автоматически включаются для ошибок
+ * - **Fail-safe**: никогда не бросает исключения, даже при circular references
+ * - **Protected fields**: системные поля (timestamp, level, message) защищены от переопределения
  *
  * ## Формат вывода
  *
@@ -54,6 +56,8 @@
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from './ILogger.js';
 import { LogLevel, shouldLog } from './LogLevel.js';
+import { safeStringify } from './utils/safeStringify.js';
+import { sanitizeContext } from './utils/sanitizeContext.js';
 
 export class ConsoleLogger implements ILogger {
   /**
@@ -317,33 +321,42 @@ export class ConsoleLogger implements ILogger {
   ): void {
     const timestamp = this.clock.now();
 
+    // Sanitize bindings and context to prevent overriding reserved fields
+    const sanitizedBindings = sanitizeContext(this.bindings);
+    const sanitizedContext = context ? sanitizeContext(context) : {};
+
     const logEntry = {
+      // System fields (protected from overriding)
       timestamp: timestamp.toISOString(),
       level,
       message,
-      ...this.bindings, // Bindings от child logger
-      ...context, // Context от конкретного вызова (может переопределить bindings)
+      // User-provided context (sanitized)
+      ...sanitizedBindings,
+      ...sanitizedContext,
     };
+
+    // Safe stringify - never throws
+    const logString = safeStringify(logEntry);
 
     // Используем соответствующий метод console в зависимости от уровня
     switch (level) {
       case LogLevel.TRACE:
-        console.debug(JSON.stringify(logEntry)); // trace идёт в console.debug
+        console.debug(logString); // trace идёт в console.debug
         break;
       case LogLevel.DEBUG:
-        console.debug(JSON.stringify(logEntry));
+        console.debug(logString);
         break;
       case LogLevel.INFO:
-        console.info(JSON.stringify(logEntry));
+        console.info(logString);
         break;
       case LogLevel.WARN:
-        console.warn(JSON.stringify(logEntry));
+        console.warn(logString);
         break;
       case LogLevel.ERROR:
-        console.error(JSON.stringify(logEntry));
+        console.error(logString);
         break;
       case LogLevel.FATAL:
-        console.error(JSON.stringify(logEntry)); // fatal идёт в console.error
+        console.error(logString); // fatal идёт в console.error
         break;
     }
   }

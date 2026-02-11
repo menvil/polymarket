@@ -63,6 +63,8 @@
 import type { IClock } from '@polymarket/time';
 import type { ILogger } from './ILogger.js';
 import { LogLevel, shouldLog } from './LogLevel.js';
+import { safeStringify } from './utils/safeStringify.js';
+import { sanitizeContext } from './utils/sanitizeContext.js';
 
 /**
  * ANSI color codes для консоли
@@ -347,6 +349,10 @@ export class ColorConsoleLogger implements ILogger {
     message: string,
     context?: Record<string, unknown>
   ): void {
+    // Sanitize bindings and context to prevent overriding reserved fields
+    const sanitizedBindings = sanitizeContext(this.bindings);
+    const sanitizedContext = context ? sanitizeContext(context) : undefined;
+
     // Форматируем сообщение
     const parts: string[] = [];
 
@@ -369,9 +375,9 @@ export class ColorConsoleLogger implements ILogger {
       parts.push(`[${levelStr}]`);
     }
 
-    // Bindings (от child logger)
-    if (Object.keys(this.bindings).length > 0) {
-      const bindingsStr = Object.entries(this.bindings)
+    // Bindings (от child logger) - sanitized
+    if (Object.keys(sanitizedBindings).length > 0) {
+      const bindingsStr = Object.entries(sanitizedBindings)
         .map(([key, value]) => `${key}=${value}`)
         .join(' ');
 
@@ -388,9 +394,13 @@ export class ColorConsoleLogger implements ILogger {
     // Формируем итоговую строку
     let logMessage = parts.join(' ');
 
-    // Context/Metadata
-    if (this.showMetadata && context && Object.keys(context).length > 0) {
-      const metadataStr = this.formatMetadata(context);
+    // Context/Metadata - sanitized
+    if (
+      this.showMetadata &&
+      sanitizedContext &&
+      Object.keys(sanitizedContext).length > 0
+    ) {
+      const metadataStr = this.formatMetadata(sanitizedContext);
       logMessage += ` ${metadataStr}`;
     }
 
@@ -438,23 +448,20 @@ export class ColorConsoleLogger implements ILogger {
       delete otherContext.error;
 
       if (Object.keys(otherContext).length > 0) {
-        const otherStr = JSON.stringify(otherContext);
+        // Use safeStringify to prevent exceptions on circular refs
+        const otherStr = safeStringify(otherContext);
         return `{ ${errorStr}, ${otherStr.slice(1, -1)} }`;
       }
       return `{ ${errorStr} }`;
     }
 
-    // Обычный контекст
-    try {
-      const str = JSON.stringify(context);
-      if (str.length < 100) {
-        return str;
-      }
-
-      // Для больших объектов делаем pretty print
-      return '\n' + JSON.stringify(context, null, 2);
-    } catch {
-      return '[Circular or non-serializable object]';
+    // Обычный контекст - используем safeStringify
+    const str = safeStringify(context);
+    if (str.length < 100) {
+      return str;
     }
+
+    // Для больших объектов делаем pretty print
+    return '\n' + safeStringify(context, 2);
   }
 }

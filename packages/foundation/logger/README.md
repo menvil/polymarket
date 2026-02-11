@@ -4,14 +4,17 @@ Structured logging utilities для Polymarket trading system с поддерж�
 
 ## ✨ Ключевые особенности
 
-- ✅ **Structured logging** - все логи в JSON формате с контекстом
+- ✅ **Structured logging** - поддержка структурированных логов с контекстом
+  - **ConsoleLogger**: JSON формат (машиночитаемый, для production/CI)
+  - **ColorConsoleLogger**: Human-readable формат с цветами (для разработки/backtests)
 - ✅ **Детерминированные timestamps** - через IClock dependency injection
 - ✅ **Type-safe** - контекст типизирован как Record<string, unknown>
 - ✅ **6 уровней логирования** - TRACE, DEBUG, INFO, WARN, ERROR, FATAL
 - ✅ **Child loggers** - поддержка контекстных логгеров с bindings
-- ✅ **Два формата вывода** - JSON (машиночитаемый) и Color (human-readable)
-- ✅ **Zero overhead в тестах** - NoOpLogger для тихого логирования
-- ✅ **Высокое покрытие тестами** - 96.58% coverage, 150 тестов
+- ✅ **Fail-safe** - никогда не бросает исключения, даже при circular references
+- ✅ **Protected fields** - системные поля (timestamp, level, message) защищены от переопределения
+- ✅ **Минимальный overhead в тестах** - NoOpLogger не выполняет IO операций
+- ✅ **Высокое покрытие тестами** - 97%+ coverage, 174 теста
 
 ## 📦 Установка
 
