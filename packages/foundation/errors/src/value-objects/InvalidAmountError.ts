@@ -58,7 +58,7 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity } from '../base';
+import { TradingError, ErrorSeverity } from '../base/index.js';
 
 /**
  * InvalidAmountError - ошибка валидации универсального числового значения

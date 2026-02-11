@@ -51,7 +51,7 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity } from '../base';
+import { TradingError, ErrorSeverity } from '../base/index.js';
 
 /**
  * InvalidBalanceError - ошибка валидации баланса

@@ -13,13 +13,13 @@
  *
  * **Семантика:**
  * - `source` - это root-field в error context
- * - При rewrap() `source` сохраняется как `cause`, `reason`, `raw`
+ * - При rewrap() `source` сохраняется из inner error вместе с `cause`, `reason`, `raw`
  * - Используется для быстрой диагностики без анализа полей `raw`, `cause`, `reason`
  *
  * @example
  * ```typescript
  * // Parsing error
- * const result = toDecimal('invalid');
+ * const result = toDecimal('amount', 'invalid', 'INVALID_FORMAT', InvalidMoneyError);
  * // result.error.context.source === ErrorSource.PARSING
  *
  * // Core invariant violation

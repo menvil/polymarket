@@ -13,8 +13,9 @@
  */
 
 import { describe, it, expect, beforeAll } from '@jest/globals';
-import { existsSync } from 'node:fs';
+import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { execSync } from 'node:child_process';
 
 // Импорты из исходного кода (для проверки API)
 import { TradingError } from '../../src/base/TradingError.js';
@@ -63,6 +64,58 @@ describe('Runtime Publication Smoke Tests', () => {
       const pkg = require(pkgPath);
       expect(pkg.main).toBeDefined();
       expect(pkg.types).toBeDefined();
+    });
+  });
+
+  describe('Runtime dist/ validation', () => {
+    it('should have syntactically valid ES modules in dist/', () => {
+      // Проверяем что dist/index.js синтаксически корректный ESM
+      // Полный runtime-тест с workspace-зависимостями требует npm link/publish
+      const script = `
+// Проверяем что файл можно распарсить как ESM
+import('./dist/index.js')
+  .then(() => {
+    console.log('PARSE_SUCCESS: dist/index.js is valid ESM');
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error('PARSE_ERROR:', err.message);
+    process.exit(1);
+  });
+`;
+
+      const pkgRoot = resolve(__dirname, '../..');
+      const testScriptPath = resolve(pkgRoot, '__test_dist_parse__.mjs');
+
+      try {
+        writeFileSync(testScriptPath, script, 'utf-8');
+
+        const result = execSync(`node ${testScriptPath}`, {
+          cwd: pkgRoot,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+          timeout: 5000,
+        });
+
+        expect(result).toContain('PARSE_SUCCESS');
+      } finally {
+        if (existsSync(testScriptPath)) {
+          unlinkSync(testScriptPath);
+        }
+      }
+    });
+
+    it('should have correct ESM imports with .js extensions in dist/', () => {
+      // Проверяем что в dist/ все относительные импорты имеют .js расширения
+      const indexPath = resolve(distPath, 'value-objects/InvalidPriceError.js');
+      const content = require('fs').readFileSync(indexPath, 'utf-8');
+
+      // Проверяем что нет импортов вида "from '../base'" (без .js)
+      const badImports = content.match(/from ['"]\.\.\/[^'"]+(?<!\.js)['"]/g);
+      expect(badImports).toBeNull();
+
+      // Проверяем что есть правильные импорты с .js
+      expect(content).toMatch(/from ['"]\.\.\/base\/index\.js['"]/);
     });
   });
 

@@ -409,10 +409,11 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
  *   context: { reason: 'INVALID_FORMAT', raw: { field: 'value', value: 'abc' } }
  * });
  *
- * const wrappedError = rewrap('create', { currency: 'USDC' }, innerError, InvalidMoneyError);
+ * const wrappedError = rewrap('MoneyService', 'create', { currency: 'USDC' }, innerError, InvalidMoneyError);
  * // wrappedError.context = {
+ * //   service: 'MoneyService',
  * //   op: 'create',
- * //   opChain: ['create'],
+ * //   opChain: ['MoneyService.create'],
  * //   currency: 'USDC',
  * //   reason: 'INVALID_FORMAT',  // сохранён из inner
  * //   raw: { field: 'value', value: 'abc' }  // сохранён из inner
