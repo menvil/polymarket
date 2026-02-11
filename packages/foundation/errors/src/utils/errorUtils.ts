@@ -1,5 +1,6 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
+import { TradingError } from '../base/TradingError.js';
 import { InvalidMoneyError } from '../value-objects/InvalidMoneyError.js';
 import { InvalidPriceError } from '../value-objects/InvalidPriceError.js';
 import { InvalidQuantityError } from '../value-objects/InvalidQuantityError.js';
@@ -38,6 +39,14 @@ import { ErrorSource } from '../ErrorSource.js';
 
 /**
  * Тип Domain Error для параметризации функций
+ *
+ * @deprecated Используется для обратной совместимости.
+ * Новый код может использовать TradingError напрямую для большей гибкости.
+ *
+ * @remarks
+ * Исторически это был whitelist конкретных типов ошибок.
+ * Теперь wrapOp() обрабатывает ВСЕ TradingError, не только этот union.
+ * Этот тип сохранен для обратной совместимости с существующим кодом.
  */
 export type DomainError =
   | InvalidMoneyError
@@ -466,7 +475,23 @@ export function rewrap<TError extends DomainError>(
     merged.source = inner.source;
   }
 
-  return new ErrorConstructor(err.message, { context: merged });
+  // 4) Создаем новую ошибку с сохранением code и innerError
+  const rewrappedError = new ErrorConstructor(err.message, {
+    code: err.code, // Сохраняем code из исходной ошибки
+    context: merged,
+  });
+
+  // Сохраняем innerError через Object.defineProperty (readonly поле)
+  if (err.innerError !== undefined) {
+    Object.defineProperty(rewrappedError, 'innerError', {
+      value: err.innerError,
+      writable: false,
+      enumerable: true,
+      configurable: false,
+    });
+  }
+
+  return rewrappedError;
 }
 
 /**
@@ -526,14 +551,10 @@ export function wrapOp<T, TError extends DomainError>(
     if (isCoreInvariantViolation(e)) {
       return Err(rewrap(serviceName, op, ctx, coreInvariantError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
     }
-    // Если кто-то бросил Domain Error
-    if (
-      e instanceof InvalidMoneyError ||
-      e instanceof InvalidPriceError ||
-      e instanceof InvalidQuantityError ||
-      e instanceof InvalidPercentageError ||
-      e instanceof InvalidQuoteError
-    ) {
+    // Если кто-то бросил любой TradingError (более гибко чем whitelist)
+    // Это включает все domain errors: InvalidMoneyError, InvalidPriceError, InvalidQuantityError,
+    // InvalidPercentageError, InvalidQuoteError, InvalidBalanceError, InvalidRatioError и т.д.
+    if (e instanceof TradingError) {
       return Err(rewrap(serviceName, op, ctx, e as TError, ErrorConstructor));
     }
     // Ожидаемые math ошибки - прогоняем через rewrap для opChain
