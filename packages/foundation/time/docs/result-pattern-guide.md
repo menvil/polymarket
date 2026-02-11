@@ -27,10 +27,17 @@ class ReplayClock {
 }
 ```
 
+### Два типа ошибок
+
+| Тип ошибки | Когда используем | Паттерн |
+| ---------- | ---------------- | ------- |
+| **Programming error** | Invalid Date передан в конструктор/setter | `throw new Error()` |
+| **Expected business failure** | Парсинг user input может не удаться | `Result<T, E>` |
+
 **Почему не нужен Result:**
 
-1. ✅ Валидация есть, но throw используется для programming errors
-2. ✅ Invalid Date - это bug в коде вызывающей стороны, не ожидаемая ошибка
+1. ✅ Валидация есть, но throw используется для **programming errors**
+2. ✅ Invalid Date - это **bug в коде** вызывающей стороны, не ожидаемая бизнес-ошибка
 3. ✅ TypeScript защищает на уровне типов (Date тип)
 4. ✅ В production эти ошибки не должны случаться
 5. ✅ Fail-fast лучше для отладки чем Result для таких случаев
@@ -166,13 +173,18 @@ function fromUnixTimestamp(ms: number): Result<Date, ValidationError> {
 | `validateRange(date)` | ✅ Да | ✅ ДА | `validateRange(...): Result<Date, RangeError>` |
 | `fromTimestamp(ms)` | ✅ Да | ✅ ДА | `fromTimestamp(ms: number): Result<Date, ValidationError>` |
 
+**Примечание:** "Может упасть?" означает **ожидаемую бизнес-ошибку** при валидном использовании API.
+Методы `tick/setTime/update` бросают исключения только при **programming errors** (Invalid Date, non-finite numbers),
+что является нарушением контракта типов и не требует Result pattern.
+
 ## Рекомендации
 
 ### Для модуля @polymarket/time
 
 1. **НЕ добавляйте Result** в текущие классы:
    - `IClock`, `LiveClock`, `PaperClock`, `ReplayClock`
-   - Все их методы всегда успешны
+   - Их методы успешны при валидном input (TypeScript гарантирует типы)
+   - Throws только при programming errors (Invalid Date, non-finite), не при expected failures
 
 2. **Используйте Result** если добавите новые функции:
    - Парсинг строк → `parseISODate(): Result<Date, ParseError>`
