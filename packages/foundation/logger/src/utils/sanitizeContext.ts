@@ -49,17 +49,27 @@ export function sanitizeContext(
 ): Record<string, unknown> {
   const sanitized: Record<string, unknown> = {};
 
-  for (const [key, value] of Object.entries(context)) {
-    if (!RESERVED_FIELDS.has(key)) {
-      sanitized[key] = value;
-    } else {
-      // Log warning (но не через logger! Используем console напрямую)
-      // eslint-disable-next-line no-console
-      console.warn(
-        `[Logger] Attempt to override reserved field "${key}" ignored. ` +
-          'Reserved fields: timestamp, level, message'
-      );
+  // Используем Object.keys() + bracket notation вместо Object.entries()
+  // чтобы избежать вызова геттеров, которые могут бросать исключения
+  try {
+    const keys = Object.keys(context);
+    for (const key of keys) {
+      if (!RESERVED_FIELDS.has(key)) {
+        try {
+          // Безопасное чтение значения - геттер может бросить исключение
+          sanitized[key] = context[key];
+        } catch (error) {
+          // Геттер бросил исключение - заменяем на error placeholder
+          sanitized[key] = `[Error reading property: ${error instanceof Error ? error.message : String(error)}]`;
+        }
+      }
+      // Убираем console.warn - не нарушаем log-level фильтр
+      // Если нужно логировать попытки override, это должен делать caller
     }
+  } catch (error) {
+    // Object.keys может упасть на Proxy или экзотичном объекте
+    // Возвращаем пустой объект - fail-safe
+    return {};
   }
 
   return sanitized;

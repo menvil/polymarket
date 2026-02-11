@@ -47,6 +47,7 @@
  * ```
  */
 export function safeStringify(obj: unknown, indent?: number): string {
+  // Первая попытка - стандартная сериализация
   try {
     return JSON.stringify(
       obj,
@@ -71,14 +72,65 @@ export function safeStringify(obj: unknown, indent?: number): string {
       indent
     );
   } catch (error) {
-    // Circular reference detection
+    // Circular reference - попытка сохранить хотя бы примитивные поля
     if (error instanceof TypeError && error.message.includes('circular')) {
-      return '{"__error":"Circular reference detected"}';
+      try {
+        // Пытаемся извлечь примитивные значения из объекта
+        const safe = extractPrimitiveFields(obj);
+        const result = JSON.stringify(safe, null, indent);
+        // Добавляем метку о circular reference
+        return result.slice(0, -1) + ',"__error":"Circular reference detected"}';
+      } catch {
+        // Даже это не помогло - возвращаем минимальный fallback
+        return '{"__error":"Circular reference detected"}';
+      }
     }
 
-    // Unknown serialization error - log to console.error (не через logger!)
+    // Unknown serialization error
     // eslint-disable-next-line no-console
     console.error('[Logger] Serialization error:', error);
     return '{"__error":"Serialization failed"}';
   }
+}
+
+/**
+ * Извлекает примитивные поля из объекта (без circular references)
+ *
+ * @param obj - Объект для извлечения
+ * @returns Объект только с примитивными полями
+ *
+ * @internal
+ */
+function extractPrimitiveFields(obj: unknown): Record<string, unknown> {
+  if (typeof obj !== 'object' || obj === null) {
+    return {};
+  }
+
+  const result: Record<string, unknown> = {};
+
+  try {
+    for (const key of Object.keys(obj)) {
+      try {
+        const value = (obj as Record<string, unknown>)[key];
+        const type = typeof value;
+
+        // Сохраняем только примитивы и null
+        if (
+          type === 'string' ||
+          type === 'number' ||
+          type === 'boolean' ||
+          value === null ||
+          value === undefined
+        ) {
+          result[key] = value;
+        }
+      } catch {
+        // Геттер бросил исключение - пропускаем
+      }
+    }
+  } catch {
+    // Object.keys упал - возвращаем пустой объект
+  }
+
+  return result;
 }

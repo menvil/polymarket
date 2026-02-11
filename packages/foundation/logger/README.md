@@ -24,7 +24,7 @@ npm install @polymarket/logger
 
 ## 🎯 Архитектура
 
-```
+```text
 foundation/logger (этот модуль)
   - ILogger интерфейс
   - ConsoleLogger (JSON)
@@ -136,7 +136,9 @@ enum LogLevel {
 ```
 
 **Фильтрация:**
+
 Логируются только сообщения с уровнем >= настроенного:
+
 - `LogLevel.TRACE` - логирует всё (TRACE, DEBUG, INFO, WARN, ERROR, FATAL)
 - `LogLevel.DEBUG` - логирует DEBUG, INFO, WARN, ERROR, FATAL
 - `LogLevel.INFO` - логирует INFO, WARN, ERROR, FATAL (production default)
@@ -167,6 +169,7 @@ class ConsoleLogger implements ILogger {
 ```
 
 **Использование:**
+
 ```typescript
 // CI/CD тесты - JSON для парсинга
 const logger = new ConsoleLogger(new PaperClock(new Date()), LogLevel.INFO);
@@ -184,16 +187,21 @@ class ColorConsoleLogger implements ILogger {
     clock: IClock,
     level: LogLevel = LogLevel.INFO,
     bindings?: Record<string, unknown>,
-    useColors?: boolean,        // по умолчанию true
-    showTimestamp?: boolean,    // по умолчанию true
-    showMetadata?: boolean      // по умолчанию true
+    options?: ColorConsoleLoggerOptions
   );
 
   // ... те же методы что и ConsoleLogger
 }
+
+interface ColorConsoleLoggerOptions {
+  useColors?: boolean;      // по умолчанию true
+  showTimestamp?: boolean;  // по умолчанию true
+  showMetadata?: boolean;   // по умолчанию true
+}
 ```
 
 **Использование:**
+
 ```typescript
 // Бэктесты - цветной для удобства чтения
 const logger = new ColorConsoleLogger(paperClock, LogLevel.DEBUG);
@@ -205,7 +213,7 @@ const noColorLogger = new ColorConsoleLogger(
   clock,
   LogLevel.INFO,
   {},
-  false // useColors = false
+  { useColors: false }
 );
 ```
 

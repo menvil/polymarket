@@ -82,6 +82,33 @@ const COLORS = {
 } as const;
 
 /**
+ * Опции форматирования для ColorConsoleLogger
+ *
+ * @remarks
+ * Используйте этот interface вместо позиционных boolean параметров
+ * для более явного и безопасного API.
+ */
+export interface ColorConsoleLoggerOptions {
+  /**
+   * Использовать цветовое кодирование
+   * @default true
+   */
+  useColors?: boolean;
+
+  /**
+   * Показывать timestamp в логах
+   * @default true
+   */
+  showTimestamp?: boolean;
+
+  /**
+   * Показывать metadata в логах
+   * @default true
+   */
+  showMetadata?: boolean;
+}
+
+/**
  * Color Console Logger
  *
  * @remarks
@@ -95,16 +122,15 @@ export class ColorConsoleLogger implements ILogger {
    * @param clock - Источник времени для timestamps
    * @param level - Минимальный уровень логирования (по умолчанию INFO)
    * @param bindings - Контекст который добавляется ко всем логам (для child logger)
-   * @param useColors - Использовать цветовое кодирование (по умолчанию true)
-   * @param showTimestamp - Показывать timestamp (по умолчанию true)
-   * @param showMetadata - Показывать metadata (по умолчанию true)
+   * @param options - Опции форматирования (useColors, showTimestamp, showMetadata)
    *
    * @remarks
    * Clock предоставляется через dependency injection для детерминированных timestamps.
+   * Options object заменяет старый подход с позиционными boolean параметрами.
    *
    * @example
    * ```typescript
-   * // Бэктест с цветным выводом
+   * // Бэктест с цветным выводом (default options)
    * const clock = new PaperClock(new Date('2024-01-01'));
    * const logger = new ColorConsoleLogger(clock, LogLevel.DEBUG);
    *
@@ -112,17 +138,32 @@ export class ColorConsoleLogger implements ILogger {
    * const logger = new ColorConsoleLogger(new LiveClock(), LogLevel.INFO);
    *
    * // Без цветов (для CI/CD)
-   * const logger = new ColorConsoleLogger(clock, LogLevel.INFO, {}, false);
+   * const logger = new ColorConsoleLogger(clock, LogLevel.INFO, {}, {
+   *   useColors: false
+   * });
+   *
+   * // Минимальный вывод (без timestamp и metadata)
+   * const logger = new ColorConsoleLogger(clock, LogLevel.INFO, {}, {
+   *   showTimestamp: false,
+   *   showMetadata: false
+   * });
    * ```
    */
   constructor(
     private readonly clock: IClock,
     private readonly level: LogLevel = LogLevel.INFO,
     private readonly bindings: Record<string, unknown> = {},
-    private readonly useColors: boolean = true,
-    private readonly showTimestamp: boolean = true,
-    private readonly showMetadata: boolean = true
-  ) {}
+    options: ColorConsoleLoggerOptions = {}
+  ) {
+    // Извлекаем options с default значениями
+    this.useColors = options.useColors ?? true;
+    this.showTimestamp = options.showTimestamp ?? true;
+    this.showMetadata = options.showMetadata ?? true;
+  }
+
+  private readonly useColors: boolean;
+  private readonly showTimestamp: boolean;
+  private readonly showMetadata: boolean;
 
   /**
    * Логирует трассировочное сообщение (уровень TRACE)
@@ -320,9 +361,11 @@ export class ColorConsoleLogger implements ILogger {
       this.clock,
       this.level,
       { ...this.bindings, ...bindings },
-      this.useColors,
-      this.showTimestamp,
-      this.showMetadata
+      {
+        useColors: this.useColors,
+        showTimestamp: this.showTimestamp,
+        showMetadata: this.showMetadata,
+      }
     );
   }
 

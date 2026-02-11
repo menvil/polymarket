@@ -260,7 +260,7 @@ describe('Logger Security Tests', () => {
         expect(logged.service).toBe('test-service');
       });
 
-      it('should warn when attempting to override reserved fields', () => {
+      it('should silently ignore reserved fields without warning', () => {
         const warnSpy = jest
           .spyOn(console, 'warn')
           .mockImplementation(() => {});
@@ -268,13 +268,13 @@ describe('Logger Security Tests', () => {
         // Attempt to override timestamp
         consoleLogger.info('Test', { timestamp: '1970-01-01' });
 
-        // Should have warned about reserved field
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining('reserved field')
-        );
-        expect(warnSpy).toHaveBeenCalledWith(
-          expect.stringContaining('timestamp')
-        );
+        // Should NOT warn (to avoid breaking log-level filter)
+        expect(warnSpy).not.toHaveBeenCalled();
+
+        // But reserved field should still be ignored
+        expect(consoleSpy.info).toHaveBeenCalledTimes(1);
+        const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
+        expect(logged.timestamp).toBe('2024-01-01T00:00:00.000Z'); // Real timestamp, not overridden
 
         warnSpy.mockRestore();
       });

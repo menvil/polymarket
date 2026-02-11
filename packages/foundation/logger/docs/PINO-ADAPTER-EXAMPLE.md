@@ -4,11 +4,12 @@
 
 ## 📍 Расположение
 
-```
+```text
 infrastructure/adapters/PinoLoggerAdapter.ts
 ```
 
 **Почему infrastructure, а не foundation?**
+
 - PinoLoggerAdapter зависит от внешней библиотеки `pino` (npm package)
 - Foundation layer должен быть **zero external dependencies**
 - Adapters к внешним системам живут в infrastructure layer
@@ -21,6 +22,7 @@ npm install pino-pretty --save-dev  # Для цветного вывода в de
 ```
 
 Опционально для production:
+
 ```bash
 npm install pino-datadog  # Для отправки в Datadog
 npm install pino-cloudwatch  # Для отправки в CloudWatch

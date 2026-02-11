@@ -72,7 +72,8 @@ child.info('Test'); // Будет записано с подделанными �
 **Архитектурная причина:**
 
 JavaScript spread operator (`...`) перезаписывает одноименные ключи. Порядок:
-```
+
+```javascript
 { a: 1, ...{ a: 2 } } === { a: 2 }  // Последний wins
 ```
 
@@ -131,6 +132,7 @@ const logEntry = {
 ### 2. Logger может бросать исключения на некорректных данных
 
 **Локации:**
+
 - `src/ConsoleLogger.ts:331` - JSON.stringify без try/catch
 - `src/ColorConsoleLogger.ts:441` - JSON.stringify в ветке error без try/catch
 
@@ -182,6 +184,7 @@ try {
 Логгер — это **инфраструктурный компонент**, который должен быть **fail-safe**. Его падение приводит к:
 
 1. **Потере данных о реальной ошибке:**
+
    ```typescript
    try {
      executeOrder(order);
@@ -200,7 +203,7 @@ try {
    - Пытаясь отладить проблему, мы добавляем логи
    - Логи сами падают, усугубляя проблему
 
-**Контекст: ColorConsoleLogger частично защищен**
+#### Контекст: ColorConsoleLogger частично защищен
 
 ```typescript
 // ColorConsoleLogger.ts:448-458
@@ -287,6 +290,7 @@ console.info(safeStringify(logEntry));  // ✅ Никогда не бросае�
 **Alternative: Вариант B (less preferred):**
 
 Использовать сторонние библиотеки:
+
 - `safe-stable-stringify` - детерминированная сериализация с защитой от циклов
 - `flatted` - сериализация циклических структур
 
@@ -609,6 +613,7 @@ constructor(
 ### 6. "Zero overhead" для NoOpLogger не полностью точен
 
 **Локация:**
+
 - `README.md:13` - заявление
 - `src/NoOpLogger.ts:160` - реализация
 
@@ -649,6 +654,7 @@ for (let i = 0; i < 1000; i++) {
 **Контекст:**
 
 На практике это **не проблема**, потому что:
+
 - NoOpLogger очень легкий (нет полей состояния)
 - Количество child loggers обычно небольшое
 - V8 оптимизирует такие паттерны
@@ -844,31 +850,31 @@ describe('LogLevel - immutability', () => {
 
 ### Phase 2: Средние (ближайший релиз)
 
-3. **[P1] Immutable LOG_LEVEL_WEIGHTS** (проблема #4)
+1. **[P1] Immutable LOG_LEVEL_WEIGHTS** (проблема #4)
    - Impact: MEDIUM - стабильность
    - Effort: LOW - добавить Object.freeze
    - Risk: VERY LOW - backward compatible
 
-4. **[P1] Уточнить документацию** (проблема #3)
+2. **[P1] Уточнить документацию** (проблема #3)
    - Impact: MEDIUM - правильные ожидания
    - Effort: LOW - правка README
    - Risk: NONE
 
 ### Phase 3: Рефакторинг (v2.0)
 
-5. **[P2] Options object API** (проблема #5)
+1. **[P2] Options object API** (проблема #5)
    - Impact: MEDIUM - developer experience
    - Effort: HIGH - breaking change + migration
    - Risk: MEDIUM - breaking change
 
-6. **[P3] NoOpLogger документация** (проблема #6)
+2. **[P3] NoOpLogger документация** (проблема #6)
    - Impact: LOW - точность формулировок
    - Effort: LOW - правка README
    - Risk: NONE
 
 ### Phase 4: Тестовое покрытие (continuous)
 
-7. **[P1] Добавить негативные тесты** (проблема #7)
+1. **[P1] Добавить негативные тесты** (проблема #7)
    - Impact: HIGH - уверенность в коде
    - Effort: MEDIUM - ~30 новых тестов
    - Risk: NONE

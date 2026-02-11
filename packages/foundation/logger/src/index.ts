@@ -120,5 +120,8 @@
 export type { ILogger } from './ILogger.js';
 export { LogLevel, shouldLog } from './LogLevel.js';
 export { ConsoleLogger } from './ConsoleLogger.js';
-export { ColorConsoleLogger } from './ColorConsoleLogger.js';
+export {
+  ColorConsoleLogger,
+  type ColorConsoleLoggerOptions,
+} from './ColorConsoleLogger.js';
 export { NoOpLogger } from './NoOpLogger.js';

@@ -385,7 +385,7 @@ describe('ColorConsoleLogger', () => {
         clock,
         LogLevel.INFO,
         {}, // bindings
-        false // useColors = false
+        { useColors: false }
       );
 
       noColorLogger.info('No color message');
@@ -405,8 +405,7 @@ describe('ColorConsoleLogger', () => {
         clock,
         LogLevel.INFO,
         {},
-        true,
-        false // showTimestamp = false
+        { showTimestamp: false }
       );
 
       noTimestampLogger.info('No timestamp');
@@ -424,9 +423,7 @@ describe('ColorConsoleLogger', () => {
         clock,
         LogLevel.INFO,
         {},
-        true,
-        true,
-        false // showMetadata = false
+        { showMetadata: false }
       );
 
       noMetadataLogger.info('No metadata', { key: 'value' });
