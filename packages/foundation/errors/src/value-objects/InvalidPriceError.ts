@@ -43,7 +43,7 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity } from '../base/index.js';
+import { TradingError, ErrorSeverity } from '../base';
 
 /**
  * InvalidPriceError - ошибка валидации цены

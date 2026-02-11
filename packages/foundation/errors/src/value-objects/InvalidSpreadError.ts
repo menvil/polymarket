@@ -20,7 +20,7 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity } from '../base/index.js';
+import { TradingError, ErrorSeverity } from '../base';
 
 export class InvalidSpreadError extends TradingError {
   public readonly severity: ErrorSeverity = 'low';

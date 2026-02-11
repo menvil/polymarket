@@ -31,7 +31,7 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity } from '../base/index.js';
+import { TradingError, ErrorSeverity } from '../base';
 
 export class InvalidQuoteError extends TradingError {
   public readonly severity: ErrorSeverity = 'low';

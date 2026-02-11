@@ -40,7 +40,7 @@
  */
 
 import { Result, Ok, Err, formatValue } from './result.js';
-import { ResultChain, toChain } from './ResultChain.js';
+import { ResultChain, toChain } from './ResultChain';
 
 /**
  * Класс для method chaining с Promise<Result<T, E>>

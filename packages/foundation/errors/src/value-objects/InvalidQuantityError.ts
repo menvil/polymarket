@@ -46,7 +46,7 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity } from '../base/index.js';
+import { TradingError, ErrorSeverity } from '../base';
 
 /**
  * InvalidQuantityError - ошибка валидации количества акций

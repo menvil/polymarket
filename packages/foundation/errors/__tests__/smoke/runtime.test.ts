@@ -68,24 +68,25 @@ describe('Runtime Publication Smoke Tests', () => {
   });
 
   describe('Runtime dist/ validation', () => {
-    it('should have syntactically valid ES modules in dist/', () => {
-      // Проверяем что dist/index.js синтаксически корректный ESM
-      // Полный runtime-тест с workspace-зависимостями требует npm link/publish
+    it('should import main package entrypoint in Node.js runtime', () => {
+      // Тест реального импорта пакета (как после npm install)
       const script = `
-// Проверяем что файл можно распарсить как ESM
-import('./dist/index.js')
-  .then(() => {
-    console.log('PARSE_SUCCESS: dist/index.js is valid ESM');
+import('@polymarket/errors')
+  .then((mod) => {
+    if (!mod.TradingError) throw new Error('TradingError not exported');
+    if (!mod.InvalidPriceError) throw new Error('InvalidPriceError not exported');
+    if (!mod.ErrorSource) throw new Error('ErrorSource not exported');
+    console.log('SUCCESS: @polymarket/errors imports correctly');
     process.exit(0);
   })
   .catch((err) => {
-    console.error('PARSE_ERROR:', err.message);
+    console.error('IMPORT_ERROR:', err.message);
     process.exit(1);
   });
 `;
 
       const pkgRoot = resolve(__dirname, '../..');
-      const testScriptPath = resolve(pkgRoot, '__test_dist_parse__.mjs');
+      const testScriptPath = resolve(pkgRoot, '__test_package_import__.mjs');
 
       try {
         writeFileSync(testScriptPath, script, 'utf-8');
@@ -97,7 +98,80 @@ import('./dist/index.js')
           timeout: 5000,
         });
 
-        expect(result).toContain('PARSE_SUCCESS');
+        expect(result).toContain('SUCCESS');
+      } finally {
+        if (existsSync(testScriptPath)) {
+          unlinkSync(testScriptPath);
+        }
+      }
+    });
+
+    it('should import /base subpath export in Node.js runtime', () => {
+      // Тест subpath export @polymarket/errors/base
+      const script = `
+import('@polymarket/errors/base')
+  .then((mod) => {
+    if (!mod.TradingError) throw new Error('TradingError not exported from /base');
+    console.log('SUCCESS: @polymarket/errors/base imports correctly');
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error('IMPORT_ERROR:', err.message);
+    process.exit(1);
+  });
+`;
+
+      const pkgRoot = resolve(__dirname, '../..');
+      const testScriptPath = resolve(pkgRoot, '__test_base_import__.mjs');
+
+      try {
+        writeFileSync(testScriptPath, script, 'utf-8');
+
+        const result = execSync(`node ${testScriptPath}`, {
+          cwd: pkgRoot,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+          timeout: 5000,
+        });
+
+        expect(result).toContain('SUCCESS');
+      } finally {
+        if (existsSync(testScriptPath)) {
+          unlinkSync(testScriptPath);
+        }
+      }
+    });
+
+    it('should import /value-objects subpath export in Node.js runtime', () => {
+      // Тест subpath export @polymarket/errors/value-objects
+      const script = `
+import('@polymarket/errors/value-objects')
+  .then((mod) => {
+    if (!mod.InvalidPriceError) throw new Error('InvalidPriceError not exported from /value-objects');
+    if (!mod.InvalidMoneyError) throw new Error('InvalidMoneyError not exported from /value-objects');
+    console.log('SUCCESS: @polymarket/errors/value-objects imports correctly');
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error('IMPORT_ERROR:', err.message);
+    process.exit(1);
+  });
+`;
+
+      const pkgRoot = resolve(__dirname, '../..');
+      const testScriptPath = resolve(pkgRoot, '__test_vo_import__.mjs');
+
+      try {
+        writeFileSync(testScriptPath, script, 'utf-8');
+
+        const result = execSync(`node ${testScriptPath}`, {
+          cwd: pkgRoot,
+          encoding: 'utf-8',
+          stdio: 'pipe',
+          timeout: 5000,
+        });
+
+        expect(result).toContain('SUCCESS');
       } finally {
         if (existsSync(testScriptPath)) {
           unlinkSync(testScriptPath);

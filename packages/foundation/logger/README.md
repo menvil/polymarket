@@ -14,7 +14,7 @@ Structured logging utilities для Polymarket trading system с поддерж�
 - ✅ **Fail-safe** - защита от circular references, throwing getters, non-serializable данных
 - ✅ **Protected fields** - системные поля (timestamp, level, message) защищены от переопределения
 - ✅ **Минимальный overhead в тестах** - NoOpLogger не выполняет IO операций
-- ✅ **Высокое покрытие тестами** - 96%+ coverage, 186 тестов
+- ✅ **Высокое покрытие тестами** - 96%+ coverage, 191 тест
 
 ## 📦 Установка
 

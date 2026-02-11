@@ -46,7 +46,7 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity } from '../base/index.js';
+import { TradingError, ErrorSeverity } from '../base';
 
 /**
  * InvalidRatioError - ошибка валидации коэффициента

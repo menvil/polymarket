@@ -24,11 +24,12 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/fix-esm-imports.mjs",
     "build:watch": "tsc -p tsconfig.build.json --watch",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "smoke:check": "node --input-type=module -e \"import('@polymarket/errors')\" && node --input-type=module -e \"import('@polymarket/errors/base')\" && node --input-type=module -e \"import('@polymarket/errors/value-objects')\"",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "lint:tests": "eslint __tests__ --ext .ts",
