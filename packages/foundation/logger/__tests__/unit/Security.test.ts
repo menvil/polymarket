@@ -665,5 +665,109 @@ describe('Logger Security Tests', () => {
 
       expect(consoleSpy.log).toHaveBeenCalled();
     });
+
+    it('should log to console.error and return fallback on unknown error', () => {
+      const errorSpy = jest
+        .spyOn(console, 'error')
+        .mockImplementation(() => {});
+
+      // Trigger non-circular serialization error
+      const weird = {
+        toJSON() {
+          throw new RangeError('Weird serialization error');
+        },
+      };
+
+      consoleLogger.info('Test', { data: weird });
+
+      // Should have logged error to console.error
+      expect(errorSpy).toHaveBeenCalledWith(
+        '[Logger] Serialization error:',
+        expect.any(RangeError)
+      );
+
+      // Should have produced fallback JSON
+      expect(consoleSpy.info).toHaveBeenCalledTimes(1);
+      const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
+      expect(logged.__error).toBe('Serialization failed');
+
+      errorSpy.mockRestore();
+    });
+  });
+
+  describe('Exotic object handling in sanitizeContext', () => {
+    it('should handle Proxy that throws on Object.keys', () => {
+      // Create Proxy that breaks Object.keys
+      const exoticProxy = new Proxy(
+        {},
+        {
+          ownKeys() {
+            throw new Error('Object.keys not allowed!');
+          },
+        }
+      );
+
+      // Should NOT throw - fallback to empty object
+      expect(() => {
+        consoleLogger.info('Test', exoticProxy);
+      }).not.toThrow();
+
+      // Should have logged with empty context (fallback)
+      expect(consoleSpy.info).toHaveBeenCalledTimes(1);
+      const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
+
+      // System fields present
+      expect(logged.timestamp).toBeDefined();
+      expect(logged.level).toBeDefined();
+      expect(logged.message).toBe('Test');
+
+      // No fields from exotic object (fallback to empty)
+    });
+
+    it('should handle Proxy with throwing getOwnPropertyDescriptor', () => {
+      const exoticProxy = new Proxy(
+        { field: 'value' },
+        {
+          getOwnPropertyDescriptor() {
+            throw new TypeError('No property descriptor access!');
+          },
+        }
+      );
+
+      expect(() => {
+        consoleLogger.info('Test', { data: exoticProxy });
+      }).not.toThrow();
+
+      expect(consoleSpy.info).toHaveBeenCalled();
+    });
+
+    it('should handle object with null prototype', () => {
+      const nullProto = Object.create(null);
+      nullProto.field = 'value';
+
+      expect(() => {
+        consoleLogger.info('Test', nullProto);
+      }).not.toThrow();
+
+      const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
+      expect(logged.field).toBe('value');
+    });
+
+    it('should handle frozen object with getter', () => {
+      const frozen = Object.freeze({
+        get boom() {
+          throw new Error('Frozen getter explosion!');
+        },
+        safe: 'value',
+      });
+
+      expect(() => {
+        consoleLogger.info('Test', frozen);
+      }).not.toThrow();
+
+      const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
+      expect(logged.safe).toBe('value');
+      expect(logged.boom).toMatch(/Error reading property/);
+    });
   });
 });

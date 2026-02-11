@@ -14,7 +14,7 @@ Structured logging utilities для Polymarket trading system с поддерж�
 - ✅ **Fail-safe** - защита от circular references, throwing getters, non-serializable данных
 - ✅ **Protected fields** - системные поля (timestamp, level, message) защищены от переопределения
 - ✅ **Минимальный overhead в тестах** - NoOpLogger не выполняет IO операций
-- ✅ **Высокое покрытие тестами** - 97%+ coverage, 174 теста
+- ✅ **Высокое покрытие тестами** - 96%+ coverage, 186 тестов
 
 ## 📦 Установка
 
@@ -215,6 +215,30 @@ const noColorLogger = new ColorConsoleLogger(
   {},
   { useColors: false }
 );
+```
+
+**Миграция с предыдущей версии API:**
+
+В предыдущих версиях ColorConsoleLogger использовал позиционные boolean параметры:
+
+```typescript
+// ❌ Старый API (deprecated)
+new ColorConsoleLogger(clock, level, bindings, false, true, false);
+//                                             ↑     ↑     ↑
+//                                        useColors  showTimestamp  showMetadata
+// Хрупко: легко перепутать порядок параметров
+```
+
+Новый API использует options object:
+
+```typescript
+// ✅ Новый API (recommended)
+new ColorConsoleLogger(clock, level, bindings, {
+  useColors: false,
+  showTimestamp: true,
+  showMetadata: false,
+});
+// Явно и безопасно
 ```
 
 ### NoOpLogger

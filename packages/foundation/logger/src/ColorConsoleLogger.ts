@@ -128,6 +128,19 @@ export class ColorConsoleLogger implements ILogger {
    * Clock предоставляется через dependency injection для детерминированных timestamps.
    * Options object заменяет старый подход с позиционными boolean параметрами.
    *
+   * **Миграция с предыдущей версии:**
+   * ```typescript
+   * // Старый API (deprecated):
+   * new ColorConsoleLogger(clock, level, bindings, false, true, false);
+   *
+   * // Новый API (recommended):
+   * new ColorConsoleLogger(clock, level, bindings, {
+   *   useColors: false,
+   *   showTimestamp: true,
+   *   showMetadata: false
+   * });
+   * ```
+   *
    * @example
    * ```typescript
    * // Бэктест с цветным выводом (default options)
