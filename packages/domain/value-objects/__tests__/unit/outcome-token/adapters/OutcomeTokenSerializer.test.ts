@@ -6,11 +6,12 @@ import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
 import { OutcomeTokenErrorReason } from '../../../../src/outcome-token/errors/index.js';
 
 describe('OutcomeTokenSerializer', () => {
+  // Валидные тестовые данные (32-byte hex conditionId)
   const testConditionRef: OnChainConditionRef = {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
     chainId: 137 as any,
-    conditionId: '0xabc123' as any,
+    conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
   };
 
   describe('toJSON()', () => {
@@ -25,7 +26,7 @@ describe('OutcomeTokenSerializer', () => {
         expect(json.conditionRef.kind).toBe('ONCHAIN');
         expect(json.conditionRef.protocolId).toBe('POLYMARKET_CTF');
         expect(json.conditionRef.chainId).toBe(137);
-        expect(json.conditionRef.conditionId).toBe('0xabc123');
+        expect(json.conditionRef.conditionId).toBe('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa');
       }
     });
   });
@@ -37,7 +38,7 @@ describe('OutcomeTokenSerializer', () => {
           kind: 'ONCHAIN' as const,
           protocolId: 'POLYMARKET_CTF',
           chainId: 137,
-          conditionId: '0xabc123',
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         },
         outcomeKey: 'UP',
       };
@@ -79,7 +80,7 @@ describe('OutcomeTokenSerializer', () => {
           kind: 'OFFCHAIN',
           protocolId: 'POLYMARKET_CTF',
           chainId: 137,
-          conditionId: '0xabc123',
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
         },
         outcomeKey: 'UP',
       };

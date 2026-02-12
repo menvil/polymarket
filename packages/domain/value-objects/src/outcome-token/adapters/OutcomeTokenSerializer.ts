@@ -1,7 +1,12 @@
 import { Result, Err } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
 import type { OnChainConditionRef } from '@polymarket/ids';
-import { parseOutcomeKey } from '@polymarket/ids';
+import {
+  parseOutcomeKey,
+  asOnChainProtocolId,
+  parseChainId,
+  parseConditionId,
+} from '@polymarket/ids';
 import { OutcomeToken } from '../core/OutcomeToken.js';
 import { OutcomeTokenService } from '../facade/OutcomeTokenService.js';
 import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/index.js';
@@ -316,12 +321,57 @@ export class OutcomeTokenSerializer {
       );
     }
 
-    // Создаем OnChainConditionRef
+    // Валидация protocolId (формат: UPPERCASE_WITH_UNDERSCORES)
+    const validatedProtocolId = asOnChainProtocolId(refObj.protocolId);
+    if (!validatedProtocolId) {
+      return Err(
+        new InvalidOutcomeTokenError(
+          `Invalid protocolId format: '${refObj.protocolId}'. Must be UPPERCASE_WITH_UNDERSCORES`,
+          {
+            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
+            details: { protocolId: refObj.protocolId },
+          },
+          source
+        )
+      );
+    }
+
+    // Валидация chainId (должен быть валидным положительным integer)
+    const validatedChainId = parseChainId(String(refObj.chainId));
+    if (!validatedChainId) {
+      return Err(
+        new InvalidOutcomeTokenError(
+          `Invalid chainId: ${refObj.chainId}. Must be positive integer`,
+          {
+            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
+            details: { chainId: refObj.chainId },
+          },
+          source
+        )
+      );
+    }
+
+    // Валидация conditionId (должен быть 32-byte hex с 0x префиксом)
+    const validatedConditionId = parseConditionId(refObj.conditionId);
+    if (!validatedConditionId) {
+      return Err(
+        new InvalidOutcomeTokenError(
+          `Invalid conditionId format: '${refObj.conditionId}'. Must be 32-byte hex (0x...)`,
+          {
+            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
+            details: { conditionId: refObj.conditionId },
+          },
+          source
+        )
+      );
+    }
+
+    // Создаем OnChainConditionRef с валидированными данными
     const onChainRef: OnChainConditionRef = {
       kind: 'ONCHAIN',
-      protocolId: refObj.protocolId as any,
-      chainId: refObj.chainId as any,
-      conditionId: refObj.conditionId as any,
+      protocolId: validatedProtocolId,
+      chainId: validatedChainId,
+      conditionId: validatedConditionId,
     };
 
     // Делегируем создание OutcomeTokenService
