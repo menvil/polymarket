@@ -132,9 +132,17 @@ export class OutcomeToken {
       );
     }
 
-    // После проверки TypeScript знает: assetId это OutcomeTokenAssetId
-    // Constructor доверяет типу и не проверяет
-    return new OutcomeToken(assetId);
+    // Defensive copy + freeze: пересоздаём AssetId через AssetIdHelpers
+    // Это гарантирует иммутабельность даже если входной assetId был mutable
+    // (например, из parseAssetId или других источников)
+    const frozenAssetId = AssetIdHelpers.fromOutcomeToken(
+      assetId.conditionRef,
+      assetId.outcomeKey
+    );
+
+    // fromOutcomeToken ГАРАНТИРОВАННО возвращает OUTCOME_TOKEN,
+    // но TypeScript видит AssetId (union type). Используем type assertion.
+    return new OutcomeToken(frozenAssetId as OutcomeTokenAssetId);
   }
 
   /**

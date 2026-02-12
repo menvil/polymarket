@@ -94,8 +94,14 @@ public static fromAssetId(assetId: AssetId): OutcomeToken {
     );
   }
 
-  // После проверки TypeScript знает: assetId это OutcomeTokenAssetId
-  return new OutcomeToken(assetId);
+  // Defensive copy + freeze: пересоздаём AssetId через AssetIdHelpers
+  // Это гарантирует иммутабельность даже если входной assetId был mutable
+  const frozenAssetId = AssetIdHelpers.fromOutcomeToken(
+    assetId.conditionRef,
+    assetId.outcomeKey
+  );
+
+  return new OutcomeToken(frozenAssetId as OutcomeTokenAssetId);
 }
 ```
 
@@ -111,6 +117,11 @@ const token = OutcomeToken.fromAssetId(assetId);  // ✅
 const currencyAssetId = AssetIdHelpers.fromCurrency('USDC');
 const token2 = OutcomeToken.fromAssetId(currencyAssetId);  // ❌ Throws
 ```
+
+**Defensive Copy:**
+- fromAssetId() делает defensive copy через AssetIdHelpers.fromOutcomeToken()
+- Это защищает от мутации входного assetId (например, из parseAssetId)
+- Даже если входной assetId mutable, OutcomeToken получит frozen copy
 
 **Когда использовать:**
 - В infrastructure/adapters слое (например, десериализация)
@@ -470,6 +481,31 @@ describe('OutcomeToken Immutability', () => {
 
     // Токен не изменился (использует frozen copy)
     expect(token.conditionRef().chainId).toBe(137);
+  });
+
+  it('should create frozen copy in fromAssetId() - mutation of input does not affect token', () => {
+    // Create mutable AssetId (simulating parseAssetId behavior)
+    const mutableAssetId = {
+      type: 'OUTCOME_TOKEN' as const,
+      conditionRef: {
+        kind: 'ONCHAIN' as const,
+        protocolId: testConditionRef.protocolId,
+        chainId: testConditionRef.chainId,
+        conditionId: testConditionRef.conditionId,
+      },
+      outcomeKey: BinaryOutcome.UP,
+    };
+
+    // Create token from mutable AssetId
+    const token = OutcomeToken.fromAssetId(mutableAssetId);
+
+    // Mutate input AssetId
+    (mutableAssetId.conditionRef as any).chainId = 999;
+    (mutableAssetId as any).outcomeKey = 'MUTATED';
+
+    // Token should NOT be affected (defensive copy was made)
+    expect(token.conditionRef().chainId).toBe(137);
+    expect(token.outcomeKey()).toBe('UP');
   });
 });
 ```

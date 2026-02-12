@@ -101,4 +101,31 @@ describe('OutcomeToken (Core)', () => {
       expect(token.outcomeKey()).toBe('TEAM_A');
     });
   });
+
+  describe('immutability (defensive copy)', () => {
+    it('should create frozen copy in fromAssetId() - mutation of input does not affect token', () => {
+      // Create mutable AssetId (simulating parseAssetId behavior)
+      const mutableAssetId = {
+        type: 'OUTCOME_TOKEN' as const,
+        conditionRef: {
+          kind: 'ONCHAIN' as const,
+          protocolId: testConditionRef.protocolId,
+          chainId: testConditionRef.chainId,
+          conditionId: testConditionRef.conditionId,
+        },
+        outcomeKey: BinaryOutcome.UP,
+      };
+
+      // Create token from mutable AssetId
+      const token = OutcomeToken.fromAssetId(mutableAssetId);
+
+      // Mutate input AssetId
+      (mutableAssetId.conditionRef as any).chainId = 999;
+      (mutableAssetId as any).outcomeKey = 'MUTATED';
+
+      // Token should NOT be affected (defensive copy was made)
+      expect(token.conditionRef().chainId).toBe(137);
+      expect(token.outcomeKey()).toBe('UP');
+    });
+  });
 });

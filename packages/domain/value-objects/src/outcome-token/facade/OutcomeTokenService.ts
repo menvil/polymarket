@@ -12,7 +12,8 @@ import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/ind
  * Оркестрирует Core + error handling.
  *
  * **Контракт "Never Throw":**
- * ВСЕ методы OutcomeTokenService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+ * Методы создания (create) ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+ * Утилиты (equals) возвращают простые типы (boolean) и тоже не бросают исключения.
  *
  * **Error Contract:**
  * Любой Err из Facade содержит:
