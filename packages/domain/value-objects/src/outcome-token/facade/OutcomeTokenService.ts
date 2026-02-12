@@ -1,4 +1,4 @@
-import { Result, Ok, Err } from '@polymarket/result';
+import { Result, Ok } from '@polymarket/result';
 import { InvalidOutcomeTokenError, wrapOp } from '@polymarket/errors';
 import type { ConditionRef, OutcomeKey } from '@polymarket/ids';
 import { OutcomeToken } from '../core/index.js';
@@ -68,7 +68,7 @@ export class OutcomeTokenService {
    * - Если conditionRef.kind !== 'ONCHAIN' (тип не подходит для OutcomeToken)
    * - Если AssetIdHelpers.fromOutcomeToken() бросит (невалидные conditionRef/outcomeKey)
    *
-   * Все исключения из core оборачиваются в InvalidOutcomeTokenError через wrapOp.
+   * Все ошибки проходят через wrapOp → гарантирован полный error context (op, opChain, cause).
    *
    * @example
    * ```typescript
@@ -81,6 +81,7 @@ export class OutcomeTokenService {
    * const result = OutcomeTokenService.create(offChainRef, BinaryOutcome.UP);
    * if (!result.ok) {
    *   console.log(result.error.message); // OutcomeToken requires on-chain condition
+   *   console.log(result.error.context?.op); // 'create'
    * }
    * ```
    */
@@ -88,35 +89,20 @@ export class OutcomeTokenService {
     conditionRef: ConditionRef,
     outcomeKey: OutcomeKey
   ): Result<OutcomeToken, InvalidOutcomeTokenError> {
-    // Type narrowing: OutcomeToken только для on-chain conditions
-    if (conditionRef.kind !== 'ONCHAIN') {
-      return Err(
-        new InvalidOutcomeTokenError(
-          `OutcomeToken requires on-chain condition, got: ${conditionRef.kind}`,
-          {
-            context: {
-              service: OutcomeTokenService.SERVICE_NAME,
-              op: 'create',
-              conditionRef,
-              outcomeKey,
-            },
-          }
-        )
-      );
-    }
-
-    // После проверки TypeScript знает: conditionRef это OnChainConditionRef
     return wrapOp(
       OutcomeTokenService.SERVICE_NAME,
       'create',
-      {
-        conditionRef,
-        outcomeKey,
-      },
+      { conditionRef, outcomeKey },
       () => {
-        // Core получает валидированные данные
+        // Type narrowing: OutcomeToken только для on-chain conditions
+        if (conditionRef.kind !== 'ONCHAIN') {
+          throw new Error(
+            `OutcomeToken requires on-chain condition, got: ${conditionRef.kind}`
+          );
+        }
+
+        // После проверки TypeScript знает: conditionRef это OnChainConditionRef
         // Может бросить Error из AssetIdHelpers.fromOutcomeToken()
-        // (невалидный outcomeKey, conditionId format, etc)
         const token = OutcomeToken.of(conditionRef, outcomeKey);
         return Ok(token);
       },
