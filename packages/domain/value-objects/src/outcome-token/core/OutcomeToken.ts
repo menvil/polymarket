@@ -15,21 +15,9 @@ import { OutcomeTokenInvariantViolation } from './OutcomeTokenInvariantViolation
  * **⚠️ ВАЖНО**: OutcomeToken только для **on-chain** markets!
  * Off-chain venues (KALSHI, PREDICTIT) не имеют tokenized positions.
  *
- * Содержит:
- * 1. **Инварианты существования** (проверки при создании):
- *    - conditionRef должен быть OnChainConditionRef (KIND = 'ONCHAIN')
- *    - assetId должен иметь тип OUTCOME_TOKEN
- *
- * 2. **Чистые accessors** (query методы):
- *    - assetId() - полный идентификатор актива
- *    - conditionRef() - извлекается из assetId
- *    - outcomeKey() - извлекается из assetId
- *    - equals() - сравнение двух outcome tokens
- *
- * НЕ содержит:
- * - Балансы (используй TokenBalance)
- * - Количества (используй AssetQuantity)
- * - Settlement логику (используй domain services)
+ * **Инварианты (проверяются в constructor)**:
+ * 1. AssetId должен иметь type === 'OUTCOME_TOKEN'
+ * 2. После создания инварианты гарантированы - accessor'ы не проверяют
  *
  * **Внутреннее представление**: Только AssetId (Single Source of Truth)
  * - conditionRef и outcomeKey извлекаются из assetId при обращении
@@ -41,12 +29,27 @@ import { OutcomeTokenInvariantViolation } from './OutcomeTokenInvariantViolation
  * - Попытка мутации через `as any` или `@ts-ignore` бросит исключение в strict mode
  * - Это критично для value object pattern: невозможно нарушить инварианты после создания
  *
+ * **Публичные фабрики**:
+ * - `of(conditionRef, outcomeKey)` - создание из domain объектов
+ * - `fromAssetId(assetId)` - создание из AssetId (для infrastructure/adapters)
+ *
+ * **Чистые accessors** (без проверок - инварианты гарантированы constructor'ом):
+ * - `assetId()` - полный идентификатор актива
+ * - `conditionRef()` - извлекается из assetId
+ * - `outcomeKey()` - извлекается из assetId
+ * - `equals()` - сравнение двух outcome tokens
+ *
+ * НЕ содержит:
+ * - Балансы (используй TokenBalance)
+ * - Количества (используй AssetQuantity)
+ * - Settlement логику (используй domain services)
+ *
  * @example
  * ```typescript
  * import { OutcomeToken } from '@polymarket/value-objects';
  * import { BinaryOutcome, KnownOnChainProtocols, KnownChainIds } from '@polymarket/ids';
  *
- * // ✅ В Core и Facade (throws)
+ * // ✅ Создание из domain объектов
  * const onChainRef: OnChainConditionRef = {
  *   kind: 'ONCHAIN',
  *   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
@@ -57,7 +60,11 @@ import { OutcomeTokenInvariantViolation } from './OutcomeTokenInvariantViolation
  * const upToken = OutcomeToken.of(onChainRef, BinaryOutcome.UP);
  * const downToken = OutcomeToken.of(onChainRef, BinaryOutcome.DOWN);
  *
- * // Query methods (conditionRef и outcomeKey извлекаются из assetId)
+ * // ✅ Создание из AssetId (для adapters/infrastructure)
+ * const assetId = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+ * const token = OutcomeToken.fromAssetId(assetId);
+ *
+ * // Query methods (просто извлекают из assetId без проверок)
  * console.log(upToken.assetId()); // { type: 'OUTCOME_TOKEN', ... }
  * console.log(upToken.outcomeKey()); // 'UP'
  * console.log(upToken.conditionRef()); // { kind: 'ONCHAIN', ... }
@@ -73,7 +80,59 @@ import { OutcomeTokenInvariantViolation } from './OutcomeTokenInvariantViolation
  * ```
  */
 export class OutcomeToken {
-  private constructor(private readonly _assetId: AssetId) {}
+  /**
+   * Private constructor с проверкой инвариантов
+   *
+   * @param _assetId - AssetId для хранения (Single Source of Truth)
+   * @throws {OutcomeTokenInvariantViolation} Если assetId нарушает инварианты
+   *
+   * @remarks
+   * Инварианты проверяются ОДИН РАЗ при создании:
+   * - assetId.type === 'OUTCOME_TOKEN'
+   *
+   * После создания accessor'ы могут НЕ проверять - инварианты гарантированы.
+   *
+   * Используй публичные фабрики: of() или fromAssetId()
+   */
+  private constructor(private readonly _assetId: AssetId) {
+    // Инвариант: AssetId должен быть типа OUTCOME_TOKEN
+    if (_assetId.type !== 'OUTCOME_TOKEN') {
+      throw new OutcomeTokenInvariantViolation(
+        'OutcomeToken requires AssetId of type OUTCOME_TOKEN',
+        { assetId: _assetId }
+      );
+    }
+
+    // После этой проверки гарантировано:
+    // - this._assetId.type === 'OUTCOME_TOKEN'
+    // - this._assetId.conditionRef существует и является OnChainConditionRef
+    // - this._assetId.outcomeKey существует
+    //
+    // Accessor'ы могут просто возвращать поля без проверок
+  }
+
+  /**
+   * Создать OutcomeToken из AssetId
+   *
+   * @param assetId - AssetId с type OUTCOME_TOKEN
+   * @returns Новый OutcomeToken
+   * @throws {OutcomeTokenInvariantViolation} Если assetId.type !== 'OUTCOME_TOKEN'
+   *
+   * @remarks
+   * Фабрика для создания из готового AssetId (например, из adapters/infrastructure).
+   *
+   * Constructor проверит инвариант: assetId.type === 'OUTCOME_TOKEN'
+   *
+   * @example
+   * ```typescript
+   * const assetId = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+   * const token = OutcomeToken.fromAssetId(assetId);
+   * ```
+   */
+  public static fromAssetId(assetId: AssetId): OutcomeToken {
+    // Constructor проверит инварианты
+    return new OutcomeToken(assetId);
+  }
 
   /**
    * Создать OutcomeToken из on-chain condition ref и outcome key
@@ -81,9 +140,12 @@ export class OutcomeToken {
    * @param conditionRef - On-chain ссылка на condition
    * @param outcomeKey - Ключ outcome (UP, DOWN, etc)
    * @returns Новый OutcomeToken
-   * @throws {Error} Если AssetId не может быть создан (невалидный outcomeKey)
+   * @throws {OutcomeTokenInvariantViolation} Если AssetId создан некорректно
+   * @throws {Error} Если AssetIdHelpers.fromOutcomeToken() бросит (невалидный outcomeKey)
    *
    * @remarks
+   * Фабрика для создания из domain объектов (conditionRef + outcomeKey).
+   *
    * Автоматически создает AssetId из conditionRef + outcomeKey.
    * AssetId становится единственным источником данных (Single Source of Truth).
    *
@@ -94,6 +156,7 @@ export class OutcomeToken {
    *
    * **Может бросить**:
    * - Error из AssetIdHelpers.fromOutcomeToken() если outcomeKey невалидный
+   * - OutcomeTokenInvariantViolation из constructor если AssetId создан некорректно
    *
    * @example
    * ```typescript
@@ -111,16 +174,10 @@ export class OutcomeToken {
     conditionRef: OnChainConditionRef,
     outcomeKey: OutcomeKey
   ): OutcomeToken {
-    // Create AssetId from conditionRef + outcomeKey
-    // AssetId содержит всю информацию - больше ничего хранить не нужно
-    //
-    // ПРИМЕЧАНИЕ: Мы НЕ проверяем conditionRef.kind === 'ONCHAIN' потому что:
-    // 1. TypeScript гарантирует это через тип OnChainConditionRef
-    // 2. Если данные могут быть невалидными (runtime JSON/any), валидация
-    //    должна происходить в facade (OutcomeTokenService.create), а не здесь
-    // 3. Core доверяет типам и не дублирует проверки
+    // Create AssetId from conditionRef + outcomeKey (доверяем AssetIdHelpers)
     const assetId = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
 
+    // Constructor проверит инвариант: assetId.type === 'OUTCOME_TOKEN'
     return new OutcomeToken(assetId);
   }
 
@@ -145,10 +202,10 @@ export class OutcomeToken {
    * @returns OnChainConditionRef (протокол, chain, condition ID)
    *
    * @remarks
-   * Извлекается из AssetId. AssetId типа OUTCOME_TOKEN всегда содержит
-   * conditionRef внутри себя, поэтому нет необходимости хранить отдельно.
+   * Извлекается из AssetId.
    *
-   * @throws {OutcomeTokenInvariantViolation} Если assetId имеет неверный тип
+   * **Проверка типа**: Присутствует для TypeScript type narrowing (AssetId это union type).
+   * В runtime эта проверка никогда не должна сработать - инварианты гарантированы constructor'ом.
    *
    * @example
    * ```typescript
@@ -159,13 +216,15 @@ export class OutcomeToken {
    * ```
    */
   public conditionRef(): OnChainConditionRef {
-    // AssetId типа OUTCOME_TOKEN содержит conditionRef
+    // Type narrowing для TypeScript (AssetId это union: CURRENCY | OUTCOME_TOKEN)
+    // В runtime это никогда не должно произойти - инварианты проверены в constructor
     if (this._assetId.type !== 'OUTCOME_TOKEN') {
       throw new OutcomeTokenInvariantViolation(
-        'Invalid AssetId type: expected OUTCOME_TOKEN',
+        'Invariant violation: AssetId must be OUTCOME_TOKEN (this should never happen)',
         { assetId: this._assetId }
       );
     }
+
     return this._assetId.conditionRef;
   }
 
@@ -175,10 +234,10 @@ export class OutcomeToken {
    * @returns OutcomeKey
    *
    * @remarks
-   * Извлекается из AssetId. AssetId типа OUTCOME_TOKEN всегда содержит
-   * outcomeKey внутри себя, поэтому нет необходимости хранить отдельно.
+   * Извлекается из AssetId.
    *
-   * @throws {OutcomeTokenInvariantViolation} Если assetId имеет неверный тип
+   * **Проверка типа**: Присутствует для TypeScript type narrowing (AssetId это union type).
+   * В runtime эта проверка никогда не должна сработать - инварианты гарантированы constructor'ом.
    *
    * @example
    * ```typescript
@@ -189,13 +248,15 @@ export class OutcomeToken {
    * ```
    */
   public outcomeKey(): OutcomeKey {
-    // AssetId типа OUTCOME_TOKEN содержит outcomeKey
+    // Type narrowing для TypeScript (AssetId это union: CURRENCY | OUTCOME_TOKEN)
+    // В runtime это никогда не должно произойти - инварианты проверены в constructor
     if (this._assetId.type !== 'OUTCOME_TOKEN') {
       throw new OutcomeTokenInvariantViolation(
-        'Invalid AssetId type: expected OUTCOME_TOKEN',
+        'Invariant violation: AssetId must be OUTCOME_TOKEN (this should never happen)',
         { assetId: this._assetId }
       );
     }
+
     return this._assetId.outcomeKey;
   }
 
