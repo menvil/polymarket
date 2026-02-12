@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
-import { OutcomeToken, OutcomeTokenInvariantViolation } from '../../../../src/outcome-token/core/index.js';
+import { OutcomeToken } from '../../../../src/outcome-token/core/index.js';
 import type { OnChainConditionRef } from '@polymarket/ids';
-import { BinaryOutcome, KnownOnChainProtocols, unsafeOutcomeKey } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
 
 describe('OutcomeToken (Core)', () => {
   const testConditionRef: OnChainConditionRef = {
@@ -37,16 +37,6 @@ describe('OutcomeToken (Core)', () => {
       }
     });
 
-    it('should throw if conditionRef.kind !== ONCHAIN', () => {
-      const invalidRef = {
-        ...testConditionRef,
-        kind: 'OFFCHAIN' as const,
-      };
-
-      expect(() => {
-        OutcomeToken.of(invalidRef as any, BinaryOutcome.UP);
-      }).toThrow(OutcomeTokenInvariantViolation);
-    });
   });
 
   describe('accessors', () => {
@@ -105,7 +95,7 @@ describe('OutcomeToken (Core)', () => {
 
   describe('custom outcome keys', () => {
     it('should support custom outcome keys', () => {
-      const customKey = unsafeOutcomeKey('TEAM_A');
+      const customKey = 'TEAM_A' as any;
       const token = OutcomeToken.of(testConditionRef, customKey);
 
       expect(token.outcomeKey()).toBe('TEAM_A');

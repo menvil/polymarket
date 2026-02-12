@@ -1,7 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { OutcomeTokenService } from '../../../../src/outcome-token/facade/OutcomeTokenService.js';
 import type { OnChainConditionRef } from '@polymarket/ids';
-import { BinaryOutcome, KnownOnChainProtocols, unsafeOutcomeKey } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
 import { OutcomeTokenErrorReason } from '../../../../src/outcome-token/errors/OutcomeTokenErrorReason.js';
 import { ErrorSource } from '@polymarket/errors';
 
@@ -48,7 +48,7 @@ describe('OutcomeTokenService', () => {
     });
 
     it('should support custom outcome keys', () => {
-      const customKey = unsafeOutcomeKey('CUSTOM');
+      const customKey = 'CUSTOM' as any;
       const result = OutcomeTokenService.create(testConditionRef, customKey);
 
       expect(result.ok).toBe(true);

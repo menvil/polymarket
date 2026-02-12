@@ -37,6 +37,10 @@
     "./spread": {
       "types": "./dist/spread/index.d.ts",
       "import": "./dist/spread/index.js"
+    },
+    "./outcome-token": {
+      "types": "./dist/outcome-token/index.d.ts",
+      "import": "./dist/outcome-token/index.js"
     }
   },
   "files": [
