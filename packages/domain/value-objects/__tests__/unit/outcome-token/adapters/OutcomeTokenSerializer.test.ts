@@ -3,7 +3,6 @@ import { OutcomeTokenSerializer } from '../../../../src/outcome-token/adapters/O
 import { OutcomeTokenService } from '../../../../src/outcome-token/facade/OutcomeTokenService.js';
 import type { OnChainConditionRef } from '@polymarket/ids';
 import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
-import { OutcomeTokenErrorReason } from '../../../../src/outcome-token/errors/index.js';
 
 describe('OutcomeTokenSerializer', () => {
   // Валидные тестовые данные (32-byte hex conditionId)
@@ -57,7 +56,7 @@ describe('OutcomeTokenSerializer', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(OutcomeTokenErrorReason.INVALID_FORMAT);
+        expect(result.error.context?.kind).toBe('invalid_json');
       }
     });
 
@@ -70,7 +69,7 @@ describe('OutcomeTokenSerializer', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(OutcomeTokenErrorReason.INVALID_FORMAT);
+        expect(result.error.context?.kind).toBe('invalid_json');
       }
     });
 
@@ -89,7 +88,7 @@ describe('OutcomeTokenSerializer', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION);
+        expect(result.error.context?.kind).toBe('not_onchain_condition');
       }
     });
 

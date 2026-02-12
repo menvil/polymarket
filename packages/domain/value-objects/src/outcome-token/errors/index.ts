@@ -1,2 +1,2 @@
-export { OutcomeTokenErrorReason } from './OutcomeTokenErrorReason.js';
-export { InvalidOutcomeTokenError } from './InvalidOutcomeTokenError.js';
+// InvalidOutcomeTokenError теперь экспортируется из @polymarket/errors
+// OutcomeTokenErrorReason удалён - используем 'kind' strings как в других value objects

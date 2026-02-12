@@ -108,6 +108,7 @@ export * from './CurrencyMismatchError.js';
 // Валидация торговых объектов
 export * from './InvalidSpreadError.js';
 export * from './InvalidQuoteError.js';
+export * from './InvalidOutcomeTokenError.js';
 
 // Математические ошибки
 export * from './DivisionByZeroError.js';

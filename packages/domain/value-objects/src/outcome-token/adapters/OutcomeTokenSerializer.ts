@@ -1,5 +1,5 @@
 import { Result, Err } from '@polymarket/result';
-import { ErrorSource } from '@polymarket/errors';
+import { ErrorSource, InvalidOutcomeTokenError } from '@polymarket/errors';
 import type { OnChainConditionRef } from '@polymarket/ids';
 import {
   parseOutcomeKey,
@@ -9,7 +9,6 @@ import {
 } from '@polymarket/ids';
 import { OutcomeToken } from '../core/OutcomeToken.js';
 import { OutcomeTokenService } from '../facade/OutcomeTokenService.js';
-import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/index.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок
@@ -108,6 +107,8 @@ export interface OutcomeTokenJSON {
  * ```
  */
 export class OutcomeTokenSerializer {
+  private static readonly SERVICE_NAME = 'OutcomeTokenSerializer';
+
   /**
    * Десериализует OutcomeToken из JSON
    *
@@ -147,12 +148,17 @@ export class OutcomeTokenSerializer {
     if (typeof json !== 'object' || json === null) {
       return Err(
         new InvalidOutcomeTokenError(
-          `Expected object, got ${typeof json}`,
+          (ctx) => `Expected object, got ${ctx.type}`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_FORMAT,
-            details: { type: typeof json, json: safeStringify(json) },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_json',
+              type: typeof json,
+              json: safeStringify(json),
+            },
+          }
         )
       );
     }
@@ -161,12 +167,17 @@ export class OutcomeTokenSerializer {
     if (Array.isArray(json)) {
       return Err(
         new InvalidOutcomeTokenError(
-          'Expected object, got array',
+          () => 'Expected object, got array',
           {
-            reason: OutcomeTokenErrorReason.INVALID_FORMAT,
-            details: { type: 'array', json: safeStringify(json) },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_json',
+              type: 'array',
+              json: safeStringify(json),
+            },
+          }
         )
       );
     }
@@ -177,12 +188,17 @@ export class OutcomeTokenSerializer {
     if (!('conditionRef' in obj)) {
       return Err(
         new InvalidOutcomeTokenError(
-          "Missing required field 'conditionRef'",
+          () => "Missing required field 'conditionRef'",
           {
-            reason: OutcomeTokenErrorReason.INVALID_FORMAT,
-            details: { json: safeStringify(json) },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_json',
+              type: 'missing_field',
+              json: safeStringify(json),
+            },
+          }
         )
       );
     }
@@ -191,12 +207,17 @@ export class OutcomeTokenSerializer {
     if (!('outcomeKey' in obj)) {
       return Err(
         new InvalidOutcomeTokenError(
-          "Missing required field 'outcomeKey'",
+          () => "Missing required field 'outcomeKey'",
           {
-            reason: OutcomeTokenErrorReason.INVALID_FORMAT,
-            details: { json: safeStringify(json) },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_json',
+              type: 'missing_field',
+              json: safeStringify(json),
+            },
+          }
         )
       );
     }
@@ -206,12 +227,17 @@ export class OutcomeTokenSerializer {
     if (typeof conditionRef !== 'object' || conditionRef === null) {
       return Err(
         new InvalidOutcomeTokenError(
-          "Field 'conditionRef' must be object",
+          (ctx) => `Field 'conditionRef' must be object, got ${ctx.type}`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
-            details: { type: typeof conditionRef, json: safeStringify(json) },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_condition_ref',
+              type: typeof conditionRef,
+              json: safeStringify(json),
+            },
+          }
         )
       );
     }
@@ -227,12 +253,17 @@ export class OutcomeTokenSerializer {
     ) {
       return Err(
         new InvalidOutcomeTokenError(
-          'ConditionRef missing required fields (kind, protocolId, chainId, conditionId)',
+          () =>
+            'ConditionRef missing required fields (kind, protocolId, chainId, conditionId)',
           {
-            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
-            details: { conditionRef: safeStringify(conditionRef) },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_condition_ref',
+              conditionRef: safeStringify(conditionRef),
+            },
+          }
         )
       );
     }
@@ -241,12 +272,16 @@ export class OutcomeTokenSerializer {
     if (refObj.kind !== 'ONCHAIN') {
       return Err(
         new InvalidOutcomeTokenError(
-          `ConditionRef.kind must be 'ONCHAIN', got ${refObj.kind}`,
+          (ctx) => `ConditionRef.kind must be 'ONCHAIN', got ${ctx.kind}`,
           {
-            reason: OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION,
-            details: { kind: refObj.kind },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'not_onchain_condition',
+              conditionRefKind: refObj.kind,
+            },
+          }
         )
       );
     }
@@ -255,12 +290,16 @@ export class OutcomeTokenSerializer {
     if (typeof refObj.protocolId !== 'string') {
       return Err(
         new InvalidOutcomeTokenError(
-          "Field 'protocolId' must be string",
+          (ctx) => `Field 'protocolId' must be string, got ${ctx.type}`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
-            details: { type: typeof refObj.protocolId },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_condition_ref',
+              type: typeof refObj.protocolId,
+            },
+          }
         )
       );
     }
@@ -268,12 +307,16 @@ export class OutcomeTokenSerializer {
     if (typeof refObj.chainId !== 'number') {
       return Err(
         new InvalidOutcomeTokenError(
-          "Field 'chainId' must be number",
+          (ctx) => `Field 'chainId' must be number, got ${ctx.type}`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
-            details: { type: typeof refObj.chainId },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_condition_ref',
+              type: typeof refObj.chainId,
+            },
+          }
         )
       );
     }
@@ -281,12 +324,16 @@ export class OutcomeTokenSerializer {
     if (typeof refObj.conditionId !== 'string') {
       return Err(
         new InvalidOutcomeTokenError(
-          "Field 'conditionId' must be string",
+          (ctx) => `Field 'conditionId' must be string, got ${ctx.type}`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
-            details: { type: typeof refObj.conditionId },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_condition_ref',
+              type: typeof refObj.conditionId,
+            },
+          }
         )
       );
     }
@@ -296,12 +343,16 @@ export class OutcomeTokenSerializer {
     if (typeof outcomeKeyValue !== 'string') {
       return Err(
         new InvalidOutcomeTokenError(
-          "Field 'outcomeKey' must be string",
+          (ctx) => `Field 'outcomeKey' must be string, got ${ctx.type}`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_OUTCOME_KEY,
-            details: { type: typeof outcomeKeyValue },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_outcome_key',
+              type: typeof outcomeKeyValue,
+            },
+          }
         )
       );
     }
@@ -311,12 +362,16 @@ export class OutcomeTokenSerializer {
     if (!outcomeKey) {
       return Err(
         new InvalidOutcomeTokenError(
-          `Invalid outcomeKey format: '${outcomeKeyValue}'`,
+          (ctx) => `Invalid outcomeKey format: '${ctx.outcomeKey}'`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_OUTCOME_KEY,
-            details: { outcomeKey: outcomeKeyValue },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_outcome_key',
+              outcomeKey: outcomeKeyValue,
+            },
+          }
         )
       );
     }
@@ -326,12 +381,17 @@ export class OutcomeTokenSerializer {
     if (!validatedProtocolId) {
       return Err(
         new InvalidOutcomeTokenError(
-          `Invalid protocolId format: '${refObj.protocolId}'. Must be UPPERCASE_WITH_UNDERSCORES`,
+          (ctx) =>
+            `Invalid protocolId format: '${ctx.protocolId}'. Must be UPPERCASE_WITH_UNDERSCORES`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
-            details: { protocolId: refObj.protocolId },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_condition_ref',
+              protocolId: refObj.protocolId,
+            },
+          }
         )
       );
     }
@@ -341,12 +401,16 @@ export class OutcomeTokenSerializer {
     if (!validatedChainId) {
       return Err(
         new InvalidOutcomeTokenError(
-          `Invalid chainId: ${refObj.chainId}. Must be positive integer`,
+          (ctx) => `Invalid chainId: ${ctx.chainId}. Must be positive integer`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
-            details: { chainId: refObj.chainId },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_condition_ref',
+              chainId: refObj.chainId,
+            },
+          }
         )
       );
     }
@@ -356,12 +420,17 @@ export class OutcomeTokenSerializer {
     if (!validatedConditionId) {
       return Err(
         new InvalidOutcomeTokenError(
-          `Invalid conditionId format: '${refObj.conditionId}'. Must be 32-byte hex (0x...)`,
+          (ctx) =>
+            `Invalid conditionId format: '${ctx.conditionId}'. Must be 32-byte hex (0x...)`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
-            details: { conditionId: refObj.conditionId },
-          },
-          source
+            context: {
+              source,
+              service: OutcomeTokenSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              kind: 'invalid_condition_ref',
+              conditionId: refObj.conditionId,
+            },
+          }
         )
       );
     }
@@ -375,7 +444,7 @@ export class OutcomeTokenSerializer {
     };
 
     // Делегируем создание OutcomeTokenService
-    return OutcomeTokenService.create(onChainRef, outcomeKey, source);
+    return OutcomeTokenService.create(onChainRef, outcomeKey);
   }
 
   /**

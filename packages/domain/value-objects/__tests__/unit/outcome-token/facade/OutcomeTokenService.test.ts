@@ -2,8 +2,6 @@ import { describe, it, expect } from '@jest/globals';
 import { OutcomeTokenService } from '../../../../src/outcome-token/facade/OutcomeTokenService.js';
 import type { OnChainConditionRef } from '@polymarket/ids';
 import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
-import { OutcomeTokenErrorReason } from '../../../../src/outcome-token/errors/OutcomeTokenErrorReason.js';
-import { ErrorSource } from '@polymarket/errors';
 
 describe('OutcomeTokenService', () => {
   const testConditionRef: OnChainConditionRef = {
@@ -43,7 +41,7 @@ describe('OutcomeTokenService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION);
+        expect(result.error.message).toContain('on-chain condition');
       }
     });
 
@@ -54,38 +52,6 @@ describe('OutcomeTokenService', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.outcomeKey()).toBe('CUSTOM');
-      }
-    });
-
-    it('should set error source to SERVICE_CALL by default', () => {
-      const invalidRef = {
-        ...testConditionRef,
-        kind: 'OFFCHAIN' as const,
-      };
-
-      const result = OutcomeTokenService.create(invalidRef as any, BinaryOutcome.UP);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.source).toBe(ErrorSource.SERVICE_CALL);
-      }
-    });
-
-    it('should use custom error source if provided', () => {
-      const invalidRef = {
-        ...testConditionRef,
-        kind: 'OFFCHAIN' as const,
-      };
-
-      const result = OutcomeTokenService.create(
-        invalidRef as any,
-        BinaryOutcome.UP,
-        ErrorSource.PARSING
-      );
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.source).toBe(ErrorSource.PARSING);
       }
     });
   });
@@ -126,23 +92,14 @@ describe('OutcomeTokenService', () => {
       }
     });
 
-    it('should have reason in error context', () => {
+    it('should have service and op in error context', () => {
       const invalidRef = { ...testConditionRef, kind: 'OFFCHAIN' as const };
       const result = OutcomeTokenService.create(invalidRef as any, BinaryOutcome.UP);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION);
-      }
-    });
-
-    it('should have details in error context', () => {
-      const invalidRef = { ...testConditionRef, kind: 'OFFCHAIN' as const };
-      const result = OutcomeTokenService.create(invalidRef as any, BinaryOutcome.UP);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.details).toBeDefined();
+        expect(result.error.context?.service).toBe('OutcomeTokenService');
+        expect(result.error.context?.op).toBe('create');
       }
     });
   });

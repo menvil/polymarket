@@ -15,6 +15,4 @@ export { OutcomeTokenService } from './facade/OutcomeTokenService.js';
 export { OutcomeTokenSerializer, type OutcomeTokenJSON } from './adapters/OutcomeTokenSerializer.js';
 export { OutcomeTokenFormatter } from './adapters/OutcomeTokenFormatter.js';
 
-// Errors
-export { OutcomeTokenErrorReason } from './errors/OutcomeTokenErrorReason.js';
-export { InvalidOutcomeTokenError } from './errors/InvalidOutcomeTokenError.js';
+// Errors (InvalidOutcomeTokenError теперь в @polymarket/errors)

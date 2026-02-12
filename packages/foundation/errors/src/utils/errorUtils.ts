@@ -6,6 +6,7 @@ import { InvalidPriceError } from '../value-objects/InvalidPriceError.js';
 import { InvalidQuantityError } from '../value-objects/InvalidQuantityError.js';
 import { InvalidPercentageError } from '../value-objects/InvalidPercentageError.js';
 import { InvalidQuoteError } from '../value-objects/InvalidQuoteError.js';
+import { InvalidOutcomeTokenError } from '../value-objects/InvalidOutcomeTokenError.js';
 import { ArithmeticOverflowError } from '../value-objects/ArithmeticOverflowError.js';
 import { InvalidOperandError } from '../math/InvalidOperandError.js';
 import { DivisionByZeroError } from '../value-objects/DivisionByZeroError.js';
@@ -53,7 +54,8 @@ export type DomainError =
   | InvalidPriceError
   | InvalidQuantityError
   | InvalidPercentageError
-  | InvalidQuoteError;
+  | InvalidQuoteError
+  | InvalidOutcomeTokenError;
 
 /**
  * Конструктор Domain Error

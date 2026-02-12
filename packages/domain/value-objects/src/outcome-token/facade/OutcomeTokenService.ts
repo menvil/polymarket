@@ -1,8 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { ErrorSource } from '@polymarket/errors';
+import { InvalidOutcomeTokenError, wrapOp } from '@polymarket/errors';
 import type { ConditionRef, OutcomeKey } from '@polymarket/ids';
-import { OutcomeToken, OutcomeTokenInvariantViolation } from '../core/index.js';
-import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/index.js';
+import { OutcomeToken } from '../core/index.js';
 
 /**
  * Фасад для работы с OutcomeToken - публичный API
@@ -15,10 +14,12 @@ import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/ind
  * Методы создания (create) ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
  * Утилиты (equals) возвращают простые типы (boolean) и тоже не бросают исключения.
  *
- * **Error Contract:**
+ * **Facade Error Contract:**
  * Любой Err из Facade содержит:
- * - context.reason - типизированная причина (OutcomeTokenErrorReason)
- * - context.details - дополнительная информация (входные данные, errorName, errorMessage, etc)
+ * - context.op - название операции (верхний уровень)
+ * - context.opChain - цепочка операций (внутренние op не теряются)
+ * - context.cause - для core/math исключений: { name, message, stack? }
+ * - context дополнительная информация (входные данные, etc)
  *
  * @example
  * ```typescript
@@ -44,6 +45,12 @@ import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/ind
  */
 export class OutcomeTokenService {
   /**
+   * Название сервиса для error tracking
+   * @internal
+   */
+  private static readonly SERVICE_NAME = 'OutcomeTokenService';
+
+  /**
    * Создать OutcomeToken из condition reference и outcome key
    *
    * @param conditionRef - Ссылка на condition (on-chain или off-chain)
@@ -59,8 +66,8 @@ export class OutcomeTokenService {
    * происходить эта проверка - core доверяет типам и не дублирует валидацию.
    *
    * Возможные ошибки:
-   * - NOT_ONCHAIN_CONDITION: если conditionRef.kind !== 'ONCHAIN'
-   * - INVALID_OUTCOME_KEY: если outcomeKey невалидный (из AssetIdHelpers)
+   * - Если conditionRef.kind !== 'ONCHAIN'
+   * - Если outcomeKey невалидный (из AssetIdHelpers)
    *
    * @example
    * ```typescript
@@ -68,18 +75,17 @@ export class OutcomeTokenService {
    * const onChainRef: OnChainConditionRef = { kind: 'ONCHAIN', ... };
    * const result = OutcomeTokenService.create(onChainRef, BinaryOutcome.UP);
    *
-   * // Неправильный тип - возвращает NOT_ONCHAIN_CONDITION
+   * // Неправильный тип - возвращает ошибку
    * const offChainRef: OffChainConditionRef = { kind: 'OFFCHAIN', ... };
    * const result = OutcomeTokenService.create(offChainRef, BinaryOutcome.UP);
    * if (!result.ok) {
-   *   console.log(result.error.context?.reason); // NOT_ONCHAIN_CONDITION
+   *   console.log(result.error.message); // OutcomeToken requires on-chain condition
    * }
    * ```
    */
   public static create(
     conditionRef: ConditionRef,
-    outcomeKey: OutcomeKey,
-    source: ErrorSource = ErrorSource.SERVICE_CALL
+    outcomeKey: OutcomeKey
   ): Result<OutcomeToken, InvalidOutcomeTokenError> {
     // Type narrowing: OutcomeToken только для on-chain conditions
     if (conditionRef.kind !== 'ONCHAIN') {
@@ -87,65 +93,35 @@ export class OutcomeTokenService {
         new InvalidOutcomeTokenError(
           `OutcomeToken requires on-chain condition, got: ${conditionRef.kind}`,
           {
-            reason: OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION,
-            details: { conditionRef, outcomeKey },
-          },
-          source
+            context: {
+              service: OutcomeTokenService.SERVICE_NAME,
+              op: 'create',
+              conditionRef,
+              outcomeKey,
+            },
+          }
         )
       );
     }
 
     // После проверки TypeScript знает: conditionRef это OnChainConditionRef
-    try {
-      // Create OutcomeToken
-      // Может бросить:
-      // - Error из AssetIdHelpers.fromOutcomeToken() (невалидный outcomeKey)
-      // - OutcomeTokenInvariantViolation из fromAssetId() (assetId.type !== 'OUTCOME_TOKEN')
-      const token = OutcomeToken.of(conditionRef, outcomeKey);
-
-      return Ok(token);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // Точный маппинг по типам ошибок
-      if (error instanceof OutcomeTokenInvariantViolation) {
-        // fromAssetId() бросил - assetId.type !== 'OUTCOME_TOKEN'
-        return Err(
-          new InvalidOutcomeTokenError(
-            `Failed to create OutcomeToken: ${errorMessage}`,
-            {
-              reason: OutcomeTokenErrorReason.INVALID_ASSET_ID_TYPE,
-              details: {
-                conditionRef,
-                outcomeKey,
-                errorName: error.name,
-                errorMessage,
-              },
-            },
-            source
-          )
-        );
-      }
-
-      // Любая другая ошибка (из AssetIdHelpers, внутренний баг, etc)
-      // НЕ мапим всё в INVALID_OUTCOME_KEY - это самообман
-      return Err(
-        new InvalidOutcomeTokenError(
-          `Failed to create OutcomeToken: ${errorMessage}`,
-          {
-            reason: OutcomeTokenErrorReason.UNEXPECTED,
-            details: {
-              conditionRef,
-              outcomeKey,
-              errorName: error instanceof Error ? error.name : 'Unknown',
-              errorMessage,
-              errorStack: error instanceof Error ? error.stack : undefined,
-            },
-          },
-          source
-        )
-      );
-    }
+    return wrapOp(
+      OutcomeTokenService.SERVICE_NAME,
+      'create',
+      {
+        conditionRef,
+        outcomeKey,
+      },
+      () => {
+        // Core получает валидированные данные -> только проверка инвариантов
+        // Может бросить:
+        // - Error из AssetIdHelpers.fromOutcomeToken() (невалидный outcomeKey, conditionId, etc)
+        // - OutcomeTokenInvariantViolation из fromAssetId() (assetId.type !== 'OUTCOME_TOKEN')
+        const token = OutcomeToken.of(conditionRef, outcomeKey);
+        return Ok(token);
+      },
+      InvalidOutcomeTokenError
+    );
   }
 
   /**

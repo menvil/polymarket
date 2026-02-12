@@ -48,7 +48,6 @@ export {
   OutcomeTokenService,
   OutcomeTokenSerializer,
   OutcomeTokenFormatter,
-  OutcomeTokenErrorReason,
   type OutcomeTokenJSON
 } from './outcome-token/index.js';
 
