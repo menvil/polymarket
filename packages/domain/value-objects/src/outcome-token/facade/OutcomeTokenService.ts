@@ -65,8 +65,10 @@ export class OutcomeTokenService {
    * происходить эта проверка - core доверяет типам и не дублирует валидацию.
    *
    * Возможные ошибки:
-   * - Если conditionRef.kind !== 'ONCHAIN'
-   * - Если outcomeKey невалидный (из AssetIdHelpers)
+   * - Если conditionRef.kind !== 'ONCHAIN' (тип не подходит для OutcomeToken)
+   * - Если AssetIdHelpers.fromOutcomeToken() бросит (невалидные conditionRef/outcomeKey)
+   *
+   * Все исключения из core оборачиваются в InvalidOutcomeTokenError через wrapOp.
    *
    * @example
    * ```typescript
@@ -112,10 +114,9 @@ export class OutcomeTokenService {
         outcomeKey,
       },
       () => {
-        // Core получает валидированные данные -> только проверка инвариантов
-        // Может бросить:
-        // - Error из AssetIdHelpers.fromOutcomeToken() (невалидный outcomeKey, conditionId, etc)
-        // - OutcomeTokenInvariantViolation из fromAssetId() (assetId.type !== 'OUTCOME_TOKEN')
+        // Core получает валидированные данные
+        // Может бросить Error из AssetIdHelpers.fromOutcomeToken()
+        // (невалидный outcomeKey, conditionId format, etc)
         const token = OutcomeToken.of(conditionRef, outcomeKey);
         return Ok(token);
       },

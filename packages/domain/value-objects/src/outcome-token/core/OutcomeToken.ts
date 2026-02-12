@@ -33,11 +33,10 @@ type OutcomeTokenAssetId = Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
  * - conditionRef и outcomeKey извлекаются из assetId при обращении
  * - Это гарантирует согласованность и устраняет избыточность данных
  *
- * **Иммутабельность (гарантии)**:
- * - AssetId защищен через Object.freeze() на уровне @polymarket/ids
- * - Вложенные объекты (conditionRef) также заморожены (deep freeze)
- * - Попытка мутации через `as any` или `@ts-ignore` бросит исключение в strict mode
- * - Это критично для value object pattern: невозможно нарушить инварианты после создания
+ * **Иммутабельность**:
+ * - Гарантируется через defensive copy в fromAssetId()
+ * - Внешний AssetId пересоздаётся через AssetIdHelpers, не сохраняется напрямую
+ * - После создания OutcomeToken нет публичных методов для изменения состояния
  *
  * **Публичные фабрики**:
  * - `of(conditionRef, outcomeKey)` - создание из domain объектов
@@ -91,18 +90,27 @@ type OutcomeTokenAssetId = Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
  */
 export class OutcomeToken {
   /**
-   * Private constructor - принимает уже валидированный OutcomeTokenAssetId
+   * Private constructor - принимает канонический OutcomeTokenAssetId
    *
-   * @param _assetId - OutcomeTokenAssetId (уже проверенный в fromAssetId)
+   * @param _assetId - OutcomeTokenAssetId (канонический, прошедший через AssetIdHelpers)
    *
    * @remarks
-   * Инварианты УЖЕ проверены в fromAssetId() - constructor доверяет входному типу.
-   *
    * Используй публичные фабрики: of() или fromAssetId()
    */
-  private constructor(private readonly _assetId: OutcomeTokenAssetId) {
-    // Никаких проверок - доверяем типу OutcomeTokenAssetId
-    // Валидация происходит в fromAssetId()
+  private constructor(private readonly _assetId: OutcomeTokenAssetId) {}
+
+  /**
+   * Приватная фабрика для создания из канонического AssetId
+   *
+   * @param assetId - Канонический OutcomeTokenAssetId (из AssetIdHelpers.fromOutcomeToken)
+   * @returns Новый OutcomeToken
+   *
+   * @remarks
+   * Вызывается из of() и fromAssetId() после создания канонического AssetId.
+   * НЕ делает повторную каноникализацию - доверяет что assetId уже канонический.
+   */
+  private static fromCanonicalAssetId(assetId: OutcomeTokenAssetId): OutcomeToken {
+    return new OutcomeToken(assetId);
   }
 
   /**
@@ -111,11 +119,17 @@ export class OutcomeToken {
    * @param assetId - AssetId с type OUTCOME_TOKEN
    * @returns Новый OutcomeToken
    * @throws {OutcomeTokenInvariantViolation} Если assetId.type !== 'OUTCOME_TOKEN'
+   * @throws {Error} Если AssetIdHelpers.fromOutcomeToken() бросит при пересоздании
    *
    * @remarks
    * Фабрика для создания из готового AssetId (например, из adapters/infrastructure).
    *
-   * **ЕДИНСТВЕННОЕ место проверки type** - после этого accessor'ы не проверяют.
+   * **Defensive copy**: Пересоздаёт AssetId через AssetIdHelpers для гарантии иммутабельности.
+   * Входной assetId может быть из ненадёжного источника (JSON, parseAssetId).
+   *
+   * **Может бросить**:
+   * - OutcomeTokenInvariantViolation если assetId.type !== 'OUTCOME_TOKEN'
+   * - Error из AssetIdHelpers.fromOutcomeToken() если conditionRef/outcomeKey невалидны
    *
    * @example
    * ```typescript
@@ -132,17 +146,15 @@ export class OutcomeToken {
       );
     }
 
-    // Defensive copy + freeze: пересоздаём AssetId через AssetIdHelpers
-    // Это гарантирует иммутабельность даже если входной assetId был mutable
-    // (например, из parseAssetId или других источников)
-    const frozenAssetId = AssetIdHelpers.fromOutcomeToken(
+    // Defensive copy: пересоздаём AssetId через AssetIdHelpers
+    // Это гарантирует иммутабельность + каноническую форму
+    const canonicalAssetId = AssetIdHelpers.fromOutcomeToken(
       assetId.conditionRef,
       assetId.outcomeKey
     );
 
-    // fromOutcomeToken ГАРАНТИРОВАННО возвращает OUTCOME_TOKEN,
-    // но TypeScript видит AssetId (union type). Используем type assertion.
-    return new OutcomeToken(frozenAssetId as OutcomeTokenAssetId);
+    // fromOutcomeToken ГАРАНТИРОВАННО возвращает OUTCOME_TOKEN
+    return OutcomeToken.fromCanonicalAssetId(canonicalAssetId as OutcomeTokenAssetId);
   }
 
   /**
@@ -151,13 +163,12 @@ export class OutcomeToken {
    * @param conditionRef - On-chain ссылка на condition
    * @param outcomeKey - Ключ outcome (UP, DOWN, etc)
    * @returns Новый OutcomeToken
-   * @throws {OutcomeTokenInvariantViolation} Если AssetId создан некорректно
-   * @throws {Error} Если AssetIdHelpers.fromOutcomeToken() бросит (невалидный outcomeKey)
+   * @throws {Error} Если AssetIdHelpers.fromOutcomeToken() бросит
    *
    * @remarks
    * Фабрика для создания из domain объектов (conditionRef + outcomeKey).
    *
-   * Автоматически создает AssetId из conditionRef + outcomeKey.
+   * Автоматически создает канонический AssetId из conditionRef + outcomeKey.
    * AssetId становится единственным источником данных (Single Source of Truth).
    *
    * **Гарантии типа**:
@@ -166,8 +177,7 @@ export class OutcomeToken {
    * - Если данные могут быть невалидными (JSON/API), валидация должна быть в facade
    *
    * **Может бросить**:
-   * - Error из AssetIdHelpers.fromOutcomeToken() если outcomeKey невалидный
-   * - OutcomeTokenInvariantViolation из fromAssetId() если AssetId создан некорректно
+   * - Error из AssetIdHelpers.fromOutcomeToken() если inputs невалидны
    *
    * @example
    * ```typescript
@@ -185,11 +195,12 @@ export class OutcomeToken {
     conditionRef: OnChainConditionRef,
     outcomeKey: OutcomeKey
   ): OutcomeToken {
-    // Create AssetId from conditionRef + outcomeKey (доверяем AssetIdHelpers)
+    // Создаём канонический AssetId (доверяем AssetIdHelpers)
     const assetId = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
 
-    // Единый путь валидации через fromAssetId (проверит type === 'OUTCOME_TOKEN')
-    return OutcomeToken.fromAssetId(assetId);
+    // fromOutcomeToken ГАРАНТИРОВАННО возвращает OUTCOME_TOKEN
+    // Напрямую передаём в приватную фабрику - без повторной каноникализации
+    return OutcomeToken.fromCanonicalAssetId(assetId as OutcomeTokenAssetId);
   }
 
   /**
