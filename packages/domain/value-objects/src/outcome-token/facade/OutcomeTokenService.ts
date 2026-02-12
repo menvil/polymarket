@@ -1,7 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
 import type { ConditionRef, OutcomeKey } from '@polymarket/ids';
-import { OutcomeToken } from '../core/index.js';
+import { OutcomeToken, OutcomeTokenInvariantViolation } from '../core/index.js';
 import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/index.js';
 
 /**
@@ -14,12 +14,10 @@ import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/ind
  * **Контракт "Never Throw":**
  * ВСЕ методы OutcomeTokenService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
  *
- * **Facade Error Contract:**
+ * **Error Contract:**
  * Любой Err из Facade содержит:
- * - context.op - название операции (верхний уровень)
- * - context.opChain - цепочка операций (внутренние op не теряются)
- * - context.cause - для core исключений: { name, message, stack? }
  * - context.reason - типизированная причина (OutcomeTokenErrorReason)
+ * - context.details - дополнительная информация (входные данные, errorName, errorMessage, etc)
  *
  * @example
  * ```typescript
@@ -98,21 +96,49 @@ export class OutcomeTokenService {
 
     // После проверки TypeScript знает: conditionRef это OnChainConditionRef
     try {
-      // Create OutcomeToken (может бросить Error из AssetIdHelpers если outcomeKey невалидный)
+      // Create OutcomeToken
+      // Может бросить:
+      // - Error из AssetIdHelpers.fromOutcomeToken() (невалидный outcomeKey)
+      // - OutcomeTokenInvariantViolation из fromAssetId() (assetId.type !== 'OUTCOME_TOKEN')
       const token = OutcomeToken.of(conditionRef, outcomeKey);
 
       return Ok(token);
     } catch (error) {
-      // Ловим ошибки из AssetIdHelpers.fromOutcomeToken (невалидный outcomeKey)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+
+      // Точный маппинг по типам ошибок
+      if (error instanceof OutcomeTokenInvariantViolation) {
+        // fromAssetId() бросил - assetId.type !== 'OUTCOME_TOKEN'
+        return Err(
+          new InvalidOutcomeTokenError(
+            `Failed to create OutcomeToken: ${errorMessage}`,
+            {
+              reason: OutcomeTokenErrorReason.INVALID_ASSET_ID_TYPE,
+              details: {
+                conditionRef,
+                outcomeKey,
+                errorName: error.name,
+                errorMessage,
+              },
+            },
+            source
+          )
+        );
+      }
+
+      // Любая другая ошибка (из AssetIdHelpers, внутренний баг, etc)
+      // НЕ мапим всё в INVALID_OUTCOME_KEY - это самообман
       return Err(
         new InvalidOutcomeTokenError(
-          `Failed to create OutcomeToken: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to create OutcomeToken: ${errorMessage}`,
           {
-            reason: OutcomeTokenErrorReason.INVALID_OUTCOME_KEY,
+            reason: OutcomeTokenErrorReason.UNEXPECTED,
             details: {
               conditionRef,
               outcomeKey,
-              error: error instanceof Error ? error.message : String(error),
+              errorName: error instanceof Error ? error.name : 'Unknown',
+              errorMessage,
+              errorStack: error instanceof Error ? error.stack : undefined,
             },
           },
           source
