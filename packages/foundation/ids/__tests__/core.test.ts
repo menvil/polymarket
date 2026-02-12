@@ -918,6 +918,137 @@ describe('Core IDs', () => {
         expect(tokens[0].outcomeKey).toBe('UP');
       });
     });
+
+    describe('Immutability (Object.freeze)', () => {
+      it('should freeze CURRENCY assets to prevent mutations', () => {
+        const usdc = AssetIdHelpers.fromCurrency('USDC');
+
+        // Проверяем что объект заморожен
+        expect(Object.isFrozen(usdc)).toBe(true);
+
+        // Попытка мутации должна быть проигнорирована (или throw в strict mode)
+        expect(() => {
+          (usdc as any).type = 'HACKED';
+        }).toThrow();
+
+        expect(() => {
+          (usdc as any).currency = 'HACKED';
+        }).toThrow();
+
+        // Исходное значение должно остаться неизменным
+        expect(usdc.type).toBe('CURRENCY');
+        if (usdc.type === 'CURRENCY') {
+          expect(usdc.currency).toBe('USDC');
+        }
+      });
+
+      it('should freeze USDC constant to prevent mutations', () => {
+        const usdc = AssetIdHelpers.USDC;
+
+        // USDC константа должна быть замороженной
+        expect(Object.isFrozen(usdc)).toBe(true);
+
+        // Попытка мутации должна быть проигнорирована (или throw в strict mode)
+        expect(() => {
+          (usdc as any).currency = 'HACKED';
+        }).toThrow();
+
+        // Исходное значение должно остаться неизменным
+        expect(usdc.type).toBe('CURRENCY');
+        if (usdc.type === 'CURRENCY') {
+          expect(usdc.currency).toBe('USDC');
+        }
+      });
+
+      it('should deep freeze OUTCOME_TOKEN assets (including conditionRef)', () => {
+        const conditionRef: OnChainConditionRef = {
+          kind: 'ONCHAIN',
+          protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+          chainId: KnownChainIds.POLYGON,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+        };
+
+        const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+
+        // Проверяем что AssetId заморожен
+        expect(Object.isFrozen(token)).toBe(true);
+
+        // Проверяем что вложенный conditionRef тоже заморожен (deep freeze)
+        if (token.type === 'OUTCOME_TOKEN') {
+          expect(Object.isFrozen(token.conditionRef)).toBe(true);
+        }
+
+        // Попытка мутации AssetId должна быть заблокирована
+        expect(() => {
+          (token as any).type = 'HACKED';
+        }).toThrow();
+
+        expect(() => {
+          (token as any).outcomeKey = 'HACKED';
+        }).toThrow();
+
+        // Попытка мутации вложенного conditionRef должна быть заблокирована
+        if (token.type === 'OUTCOME_TOKEN') {
+          expect(() => {
+            (token.conditionRef as any).conditionId = 'HACKED';
+          }).toThrow();
+
+          expect(() => {
+            (token.conditionRef as any).chainId = 999;
+          }).toThrow();
+
+          expect(() => {
+            (token.conditionRef as any).protocolId = 'HACKED';
+          }).toThrow();
+        }
+
+        // Исходное значение должно остаться неизменным
+        expect(token.type).toBe('OUTCOME_TOKEN');
+        if (token.type === 'OUTCOME_TOKEN') {
+          expect(token.outcomeKey).toBe('UP');
+          expect(token.conditionRef.kind).toBe('ONCHAIN');
+          expect(token.conditionRef.protocolId).toBe('POLYMARKET_CTF');
+          expect(token.conditionRef.chainId).toBe(137);
+          expect(token.conditionRef.conditionId).toBe(
+            '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+          );
+        }
+      });
+
+      it('should not mutate input conditionRef when creating frozen AssetId', () => {
+        // Создаем не замороженный conditionRef
+        const conditionRef: OnChainConditionRef = {
+          kind: 'ONCHAIN',
+          protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+          chainId: KnownChainIds.POLYGON,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+        };
+
+        // Входной объект НЕ должен быть заморожен (defensive design)
+        expect(Object.isFrozen(conditionRef)).toBe(false);
+
+        const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+
+        // AssetId и его conditionRef должны быть замороженными
+        expect(Object.isFrozen(token)).toBe(true);
+        if (token.type === 'OUTCOME_TOKEN') {
+          expect(Object.isFrozen(token.conditionRef)).toBe(true);
+        }
+
+        // ВАЖНО: Входной conditionRef НЕ должен мутироваться (defensive copy + freeze)
+        // fromOutcomeToken создает НОВЫЙ замороженный объект, а не замораживает входной
+        expect(Object.isFrozen(conditionRef)).toBe(false);
+
+        // Входной объект можно продолжать использовать
+        (conditionRef as any).chainId = 1; // Должно работать без ошибки
+        expect(conditionRef.chainId).toBe(1);
+
+        // Но AssetId остается неизменным (использует свою копию)
+        if (token.type === 'OUTCOME_TOKEN') {
+          expect(token.conditionRef.chainId).toBe(137); // Оригинальное значение
+        }
+      });
+    });
   });
 
   describe('OutcomeKey', () => {

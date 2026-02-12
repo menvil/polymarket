@@ -53,6 +53,38 @@ export type AssetId =
     };
 
 /**
+ * Deep freeze AssetId для гарантии иммутабельности value object
+ *
+ * @param asset - AssetId для заморозки
+ * @returns Замороженный AssetId
+ *
+ * @remarks
+ * TypeScript `readonly` это только compile-time проверка.
+ * В runtime JavaScript позволяет мутировать объекты через `as any` или `@ts-ignore`.
+ *
+ * Object.freeze() гарантирует иммутабельность в runtime:
+ * - Для CURRENCY: замораживает сам AssetId
+ * - Для OUTCOME_TOKEN: замораживает AssetId + вложенный conditionRef
+ *
+ * Это критично для value objects, чтобы предотвратить:
+ * - Нарушение инвариантов
+ * - Непредсказуемое поведение equals()
+ * - Security issues (подмена conditionId)
+ *
+ * @internal
+ */
+function deepFreezeAssetId(asset: AssetId): AssetId {
+  if (asset.type === 'CURRENCY') {
+    // Currency AssetId не имеет вложенных объектов
+    return Object.freeze(asset);
+  }
+
+  // OUTCOME_TOKEN: freeze conditionRef и сам AssetId
+  Object.freeze(asset.conditionRef);
+  return Object.freeze(asset);
+}
+
+/**
  * Вспомогательные функции для создания AssetId
  */
 export const AssetId = {
@@ -60,7 +92,11 @@ export const AssetId = {
    * Создать AssetId для currency
    *
    * @param currency - Поддерживаемая валюта (из SupportedCurrency)
-   * @returns AssetId для currency
+   * @returns Замороженный (immutable) AssetId для currency
+   *
+   * @remarks
+   * Возвращаемый AssetId защищен через Object.freeze() для гарантии
+   * иммутабельности value object в runtime.
    *
    * @example
    * ```typescript
@@ -68,13 +104,16 @@ export const AssetId = {
    *
    * const usdc = AssetIdHelpers.fromCurrency(KnownCurrencies.USDC);
    * const usdt = AssetIdHelpers.fromCurrency('USDT'); // если добавлен в SUPPORTED_CURRENCIES
+   *
+   * // ❌ Попытка мутации не сработает в runtime:
+   * // (usdc as any).currency = 'HACKED'; // Throws in strict mode
    * ```
    */
   fromCurrency(currency: SupportedCurrency): AssetId {
-    return {
+    return deepFreezeAssetId({
       type: 'CURRENCY',
       currency,
-    };
+    });
   },
 
   /**
@@ -82,7 +121,7 @@ export const AssetId = {
    *
    * @param conditionRef - On-chain ссылка на condition
    * @param outcomeKey - Ключ outcome (BinaryOutcome.UP или BinaryOutcome.DOWN)
-   * @returns AssetId для outcome token
+   * @returns Замороженный (immutable) AssetId для outcome token
    * @throws {Error} Если outcomeKey невалидный (не проходит parseOutcomeKey)
    *
    * @remarks
@@ -90,6 +129,9 @@ export const AssetId = {
    *
    * Валидация outcomeKey предотвращает создание AssetId с некорректным ключом
    * через `as OutcomeKey` casting.
+   *
+   * Возвращаемый AssetId защищен через Object.freeze() (включая вложенный
+   * conditionRef) для гарантии иммутабельности value object в runtime.
    *
    * @example
    * ```typescript
@@ -104,6 +146,9 @@ export const AssetId = {
    *
    * const token = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
    *
+   * // ❌ Попытка мутации не сработает в runtime:
+   * // (token as any).conditionRef.conditionId = 'HACKED'; // Throws in strict mode
+   *
    * // Это throw ошибку:
    * // const invalid = AssetIdHelpers.fromOutcomeToken(onChainRef, 'INVALID' as OutcomeKey);
    * ```
@@ -117,15 +162,27 @@ export const AssetId = {
       );
     }
 
-    return {
+    // Deep freeze: создаем новый замороженный conditionRef
+    // (не мутируем входной параметр!)
+    const frozenConditionRef: OnChainConditionRef = Object.freeze({
+      kind: 'ONCHAIN' as const,
+      protocolId: conditionRef.protocolId,
+      chainId: conditionRef.chainId,
+      conditionId: conditionRef.conditionId,
+    });
+
+    return deepFreezeAssetId({
       type: 'OUTCOME_TOKEN',
-      conditionRef,
+      conditionRef: frozenConditionRef,
       outcomeKey: validated,
-    };
+    });
   },
 
   /**
    * Константа для USDC currency asset
+   *
+   * @remarks
+   * Защищена через Object.freeze() для гарантии иммутабельности.
    *
    * @example
    * ```typescript
@@ -133,12 +190,15 @@ export const AssetId = {
    *
    * const usdcAsset = AssetIdHelpers.USDC;
    * const balance = getBalance(accountId, venueId, usdcAsset);
+   *
+   * // ❌ Попытка мутации не сработает в runtime:
+   * // (usdcAsset as any).currency = 'HACKED'; // Throws in strict mode
    * ```
    */
-  USDC: {
-    type: 'CURRENCY',
+  USDC: Object.freeze({
+    type: 'CURRENCY' as const,
     currency: KnownCurrencies.USDC,
-  } as const as AssetId,
+  }) as AssetId,
 };
 
 /**

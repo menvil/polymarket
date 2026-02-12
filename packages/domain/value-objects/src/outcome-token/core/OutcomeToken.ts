@@ -35,6 +35,12 @@ import { OutcomeTokenInvariantViolation } from './OutcomeTokenInvariantViolation
  * - conditionRef и outcomeKey извлекаются из assetId при обращении
  * - Это гарантирует согласованность и устраняет избыточность данных
  *
+ * **Иммутабельность (гарантии)**:
+ * - AssetId защищен через Object.freeze() на уровне @polymarket/ids
+ * - Вложенные объекты (conditionRef) также заморожены (deep freeze)
+ * - Попытка мутации через `as any` или `@ts-ignore` бросит исключение в strict mode
+ * - Это критично для value object pattern: невозможно нарушить инварианты после создания
+ *
  * @example
  * ```typescript
  * import { OutcomeToken } from '@polymarket/value-objects';
