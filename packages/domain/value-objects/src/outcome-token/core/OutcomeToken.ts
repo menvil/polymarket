@@ -81,15 +81,19 @@ export class OutcomeToken {
    * @param conditionRef - On-chain ссылка на condition
    * @param outcomeKey - Ключ outcome (UP, DOWN, etc)
    * @returns Новый OutcomeToken
-   * @throws {OutcomeTokenInvariantViolation} Если нарушены инварианты
+   * @throws {Error} Если AssetId не может быть создан (невалидный outcomeKey)
    *
    * @remarks
    * Автоматически создает AssetId из conditionRef + outcomeKey.
    * AssetId становится единственным источником данных (Single Source of Truth).
    *
-   * Инварианты:
-   * - conditionRef должен быть ONCHAIN (проверяется типом)
-   * - AssetId создается корректно (гарантируется AssetIdHelpers)
+   * **Гарантии типа**:
+   * - conditionRef имеет тип OnChainConditionRef → kind === 'ONCHAIN' гарантировано TypeScript
+   * - Проверка kind в runtime НЕ нужна (доверяем типам)
+   * - Если данные могут быть невалидными (JSON/API), валидация должна быть в facade
+   *
+   * **Может бросить**:
+   * - Error из AssetIdHelpers.fromOutcomeToken() если outcomeKey невалидный
    *
    * @example
    * ```typescript
@@ -107,16 +111,14 @@ export class OutcomeToken {
     conditionRef: OnChainConditionRef,
     outcomeKey: OutcomeKey
   ): OutcomeToken {
-    // Validate that conditionRef is on-chain (type system guarantees this)
-    if (conditionRef.kind !== 'ONCHAIN') {
-      throw new OutcomeTokenInvariantViolation(
-        'ConditionRef must be ONCHAIN for outcome tokens',
-        { conditionRef, outcomeKey }
-      );
-    }
-
     // Create AssetId from conditionRef + outcomeKey
     // AssetId содержит всю информацию - больше ничего хранить не нужно
+    //
+    // ПРИМЕЧАНИЕ: Мы НЕ проверяем conditionRef.kind === 'ONCHAIN' потому что:
+    // 1. TypeScript гарантирует это через тип OnChainConditionRef
+    // 2. Если данные могут быть невалидными (runtime JSON/any), валидация
+    //    должна происходить в facade (OutcomeTokenService.create), а не здесь
+    // 3. Core доверяет типам и не дублирует проверки
     const assetId = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
 
     return new OutcomeToken(assetId);

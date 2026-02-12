@@ -1,7 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
-import type { OnChainConditionRef, OutcomeKey } from '@polymarket/ids';
-import { OutcomeToken, OutcomeTokenInvariantViolation } from '../core/index.js';
+import type { ConditionRef, OutcomeKey } from '@polymarket/ids';
+import { OutcomeToken } from '../core/index.js';
 import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/index.js';
 
 /**
@@ -45,9 +45,9 @@ import { InvalidOutcomeTokenError, OutcomeTokenErrorReason } from '../errors/ind
  */
 export class OutcomeTokenService {
   /**
-   * Создать OutcomeToken из on-chain condition и outcome key
+   * Создать OutcomeToken из condition reference и outcome key
    *
-   * @param conditionRef - On-chain ссылка на condition
+   * @param conditionRef - Ссылка на condition (on-chain или off-chain)
    * @param outcomeKey - Ключ outcome (UP, DOWN, etc)
    * @param source - Источник ошибки (опционально)
    * @returns Result с OutcomeToken или InvalidOutcomeTokenError
@@ -55,66 +55,65 @@ export class OutcomeTokenService {
    * @remarks
    * Никогда не бросает исключения - всегда возвращает Result.
    *
+   * **Type narrowing**: Принимает `ConditionRef` (union type) и проверяет что это
+   * `OnChainConditionRef` (kind === 'ONCHAIN'). Это единственное место где должна
+   * происходить эта проверка - core доверяет типам и не дублирует валидацию.
+   *
    * Возможные ошибки:
    * - NOT_ONCHAIN_CONDITION: если conditionRef.kind !== 'ONCHAIN'
-   * - INVALID_CONDITION_REF: если conditionRef некорректен
-   * - INVALID_OUTCOME_KEY: если outcomeKey некорректен
+   * - INVALID_OUTCOME_KEY: если outcomeKey невалидный (из AssetIdHelpers)
    *
    * @example
    * ```typescript
+   * // Правильный тип - создаётся успешно
+   * const onChainRef: OnChainConditionRef = { kind: 'ONCHAIN', ... };
    * const result = OutcomeTokenService.create(onChainRef, BinaryOutcome.UP);
+   *
+   * // Неправильный тип - возвращает NOT_ONCHAIN_CONDITION
+   * const offChainRef: OffChainConditionRef = { kind: 'OFFCHAIN', ... };
+   * const result = OutcomeTokenService.create(offChainRef, BinaryOutcome.UP);
    * if (!result.ok) {
-   *   if (result.error.context?.reason === OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION) {
-   *     console.error('OutcomeToken requires on-chain condition');
-   *   }
+   *   console.log(result.error.context?.reason); // NOT_ONCHAIN_CONDITION
    * }
    * ```
    */
   public static create(
-    conditionRef: OnChainConditionRef,
+    conditionRef: ConditionRef,
     outcomeKey: OutcomeKey,
     source: ErrorSource = ErrorSource.SERVICE_CALL
   ): Result<OutcomeToken, InvalidOutcomeTokenError> {
-    try {
-      // Validate conditionRef kind
-      if (conditionRef.kind !== 'ONCHAIN') {
-        return Err(
-          new InvalidOutcomeTokenError(
-            `ConditionRef must be ONCHAIN for outcome tokens, got: ${conditionRef.kind}`,
-            {
-              reason: OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION,
-              details: { conditionRef, outcomeKey },
-            },
-            source
-          )
-        );
-      }
+    // Type narrowing: OutcomeToken только для on-chain conditions
+    if (conditionRef.kind !== 'ONCHAIN') {
+      return Err(
+        new InvalidOutcomeTokenError(
+          `OutcomeToken requires on-chain condition, got: ${conditionRef.kind}`,
+          {
+            reason: OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION,
+            details: { conditionRef, outcomeKey },
+          },
+          source
+        )
+      );
+    }
 
-      // Create OutcomeToken (may throw OutcomeTokenInvariantViolation)
+    // После проверки TypeScript знает: conditionRef это OnChainConditionRef
+    try {
+      // Create OutcomeToken (может бросить Error из AssetIdHelpers если outcomeKey невалидный)
       const token = OutcomeToken.of(conditionRef, outcomeKey);
 
       return Ok(token);
     } catch (error) {
-      // Catch OutcomeTokenInvariantViolation and other unexpected errors
-      if (error instanceof OutcomeTokenInvariantViolation) {
-        return Err(
-          new InvalidOutcomeTokenError(
-            `Failed to create OutcomeToken: ${error.message}`,
-            {
-              reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF,
-              details: { conditionRef, outcomeKey },
-            },
-            source
-          )
-        );
-      }
-
-      // Unexpected error
+      // Ловим ошибки из AssetIdHelpers.fromOutcomeToken (невалидный outcomeKey)
       return Err(
         new InvalidOutcomeTokenError(
-          `Unexpected error creating OutcomeToken: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to create OutcomeToken: ${error instanceof Error ? error.message : String(error)}`,
           {
-            details: { conditionRef, outcomeKey, error: String(error) },
+            reason: OutcomeTokenErrorReason.INVALID_OUTCOME_KEY,
+            details: {
+              conditionRef,
+              outcomeKey,
+              error: error instanceof Error ? error.message : String(error),
+            },
           },
           source
         )
