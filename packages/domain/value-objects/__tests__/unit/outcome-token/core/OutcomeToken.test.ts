@@ -8,7 +8,7 @@ describe('OutcomeToken (Core)', () => {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
     chainId: 137 as any,
-    conditionId: '0xabc123' as any,
+    conditionId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as any,
   };
 
   describe('of()', () => {
@@ -47,7 +47,7 @@ describe('OutcomeToken (Core)', () => {
       expect(ref.kind).toBe('ONCHAIN');
       expect(ref.protocolId).toBe(KnownOnChainProtocols.POLYMARKET_CTF);
       expect(ref.chainId).toBe(137);
-      expect(ref.conditionId).toBe('0xabc123');
+      expect(ref.conditionId).toBe('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef');
     });
 
     it('should provide outcomeKey()', () => {

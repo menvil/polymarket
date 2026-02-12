@@ -8,7 +8,7 @@ describe('OutcomeTokenService', () => {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
     chainId: 137 as any,
-    conditionId: '0xabc123' as any,
+    conditionId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as any,
   };
 
   describe('create()', () => {

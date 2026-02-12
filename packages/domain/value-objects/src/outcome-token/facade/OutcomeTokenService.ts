@@ -39,7 +39,7 @@ import { OutcomeToken } from '../core/index.js';
  *   console.log(token.outcomeKey()); // 'UP'
  * } else {
  *   console.error(result.error.message);
- *   console.error(result.error.context?.reason);
+ *   console.error(result.error.context);
  * }
  * ```
  */
@@ -55,7 +55,6 @@ export class OutcomeTokenService {
    *
    * @param conditionRef - Ссылка на condition (on-chain или off-chain)
    * @param outcomeKey - Ключ outcome (UP, DOWN, etc)
-   * @param source - Источник ошибки (опционально)
    * @returns Result с OutcomeToken или InvalidOutcomeTokenError
    *
    * @remarks
