@@ -2,8 +2,14 @@ import { Result, Ok } from '@polymarket/result';
 import { wrapOp, InvalidAssetQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import type { AssetId, OnChainConditionRef, OutcomeKey } from '@polymarket/ids';
+import {
+  asOnChainProtocolId,
+  parseChainId,
+  parseConditionId,
+} from '@polymarket/ids';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { AssetQuantity } from '../core/index.js';
+import { AssetQuantityErrorReason } from '../errors/index.js';
 
 /**
  * Фасад для работы с AssetQuantity - публичный API
@@ -18,10 +24,10 @@ import { AssetQuantity } from '../core/index.js';
  *
  * **Facade Error Contract:**
  * Любой Err из Facade содержит:
- * - message - человекочитаемое описание
- * - context.reason - типизированная причина (AssetQuantityErrorReason)
- * - context.details - дополнительная информация для диагностики
+ * - context.op - название операции (верхний уровень)
+ * - context.cause - для core/math исключений: { name, message, stack? }
  * - context.source - источник ошибки (ErrorSource)
+ * - context дополнительная информация (входные данные, reason если применимо, etc)
  *
  * @example
  * ```typescript
@@ -129,6 +135,7 @@ export class AssetQuantityService {
             (ctx) => `Failed to parse amount as Decimal: ${ctx.error}`,
             {
               context: {
+                reason: AssetQuantityErrorReason.INVALID_AMOUNT,
                 amountValue,
                 error: error instanceof Error ? error.message : String(error),
               },
@@ -145,6 +152,7 @@ export class AssetQuantityService {
             (ctx) => `Failed to create Quantity: ${ctx.error}`,
             {
               context: {
+                reason: AssetQuantityErrorReason.INVALID_AMOUNT,
                 amountValue,
                 error: error instanceof Error ? error.message : String(error),
               },
@@ -196,6 +204,51 @@ export class AssetQuantityService {
       'createOutcomeToken',
       { conditionRef, outcomeKey, amountValue },
       () => {
+        // Runtime валидация conditionRef (защита от as any)
+        // Валидация protocolId
+        const validatedProtocolId = asOnChainProtocolId(conditionRef.protocolId as string);
+        if (!validatedProtocolId) {
+          throw new InvalidAssetQuantityError(
+            (ctx) =>
+              `Invalid protocolId format: '${ctx.protocolId}'. Must be UPPERCASE_WITH_UNDERSCORES`,
+            {
+              context: {
+                reason: AssetQuantityErrorReason.INVALID_ASSET,
+                protocolId: conditionRef.protocolId,
+              },
+            }
+          );
+        }
+
+        // Валидация chainId
+        const validatedChainId = parseChainId(String(conditionRef.chainId));
+        if (!validatedChainId) {
+          throw new InvalidAssetQuantityError(
+            (ctx) => `Invalid chainId: ${ctx.chainId}. Must be positive integer`,
+            {
+              context: {
+                reason: AssetQuantityErrorReason.INVALID_ASSET,
+                chainId: conditionRef.chainId,
+              },
+            }
+          );
+        }
+
+        // Валидация conditionId
+        const validatedConditionId = parseConditionId(conditionRef.conditionId as string);
+        if (!validatedConditionId) {
+          throw new InvalidAssetQuantityError(
+            (ctx) =>
+              `Invalid conditionId format: '${ctx.conditionId}'. Must be 32-byte hex (0x...)`,
+            {
+              context: {
+                reason: AssetQuantityErrorReason.INVALID_ASSET,
+                conditionId: conditionRef.conditionId,
+              },
+            }
+          );
+        }
+
         // Parse amount as Decimal
         let amountDecimal: Decimal;
         try {
@@ -205,6 +258,7 @@ export class AssetQuantityService {
             (ctx) => `Failed to parse amount as Decimal: ${ctx.error}`,
             {
               context: {
+                reason: AssetQuantityErrorReason.INVALID_AMOUNT,
                 conditionRef,
                 outcomeKey,
                 amountValue,
@@ -223,6 +277,7 @@ export class AssetQuantityService {
             (ctx) => `Failed to create Quantity: ${ctx.error}`,
             {
               context: {
+                reason: AssetQuantityErrorReason.INVALID_AMOUNT,
                 conditionRef,
                 outcomeKey,
                 amountValue,
@@ -232,8 +287,14 @@ export class AssetQuantityService {
           );
         }
 
-        // Create AssetQuantity with outcome token
-        const assetQty = AssetQuantity.outcomeToken(conditionRef, outcomeKey, quantity);
+        // Create AssetQuantity with outcome token (используем валидированные значения)
+        const validatedConditionRef: OnChainConditionRef = {
+          kind: 'ONCHAIN',
+          protocolId: validatedProtocolId,
+          chainId: validatedChainId,
+          conditionId: validatedConditionId,
+        };
+        const assetQty = AssetQuantity.outcomeToken(validatedConditionRef, outcomeKey, quantity);
 
         return Ok(assetQty);
       },

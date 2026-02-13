@@ -10,7 +10,7 @@ describe('AssetQuantity Core', () => {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
     chainId: KnownChainIds.POLYGON,
-    conditionId: '0xabc123def456' as ConditionId,
+    conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
   };
 
   const usdcAsset = AssetIdHelpers.USDC;

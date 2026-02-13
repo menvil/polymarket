@@ -415,36 +415,27 @@ console.log(`- Venue: ${balance.venue()}`);
 ### Пример 10: OutcomeToken + AssetQuantity
 
 ```typescript
-import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
-import { AssetQuantityService } from '@polymarket/value-objects/quantity';
+import { AssetQuantityService } from '@polymarket/value-objects/asset-quantity';
 import { BinaryOutcome } from '@polymarket/ids';
-import Decimal from 'decimal.js';
 
-// Создание OutcomeToken
-const tokenResult = OutcomeTokenService.create(onChainRef, BinaryOutcome.UP);
-if (!tokenResult.ok) {
-  console.error('Failed to create token');
-  return;
-}
-
-const token = tokenResult.value;
-
-// Создание AssetQuantity для этого токена
-const quantityResult = AssetQuantityService.create(
-  token.assetId(),  // AssetId из OutcomeToken
-  new Decimal('50')
+// Создание AssetQuantity для outcome token напрямую
+const quantityResult = AssetQuantityService.createOutcomeToken(
+  onChainRef,
+  BinaryOutcome.UP,
+  50  // amount
 );
 
 if (!quantityResult.ok) {
-  console.error('Failed to create quantity');
+  console.error('Failed to create asset quantity');
   return;
 }
 
 const quantity = quantityResult.value;
 
 console.log(`Asset quantity:`);
-console.log(`- Asset type: ${quantity.assetId().type}`);
-console.log(`- Amount: ${quantity.amount().toString()}`);
+console.log(`- Asset type: ${quantity.asset().type}`);
+console.log(`- Amount: ${quantity.amount().toNumber()}`);
+console.log(`- Is outcome token: ${quantity.isOutcomeToken()}`);
 ```
 
 ### Пример 11: Полная торговая операция
@@ -452,7 +443,7 @@ console.log(`- Amount: ${quantity.amount().toString()}`);
 ```typescript
 import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
 import { TokenBalanceService } from '@polymarket/value-objects/balance';
-import { AssetQuantityService } from '@polymarket/value-objects/quantity';
+import { AssetQuantityService } from '@polymarket/value-objects/asset-quantity';
 import { BinaryOutcome } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
@@ -496,14 +487,15 @@ console.log('=== User Balances ===');
 console.log(`UP tokens: ${upBalance.amount().toString()}`);
 console.log(`DOWN tokens: ${downBalance.amount().toString()}`);
 
-// Торговое количество
-const tradeQuantityResult = AssetQuantityService.create(
-  upToken.assetId(),
-  new Decimal('10')
+// Торговое количество - используем createOutcomeToken напрямую
+const tradeQuantityResult = AssetQuantityService.createOutcomeToken(
+  onChainRef,
+  BinaryOutcome.UP,
+  10  // amount
 );
 
 if (tradeQuantityResult.ok) {
-  console.log(`\nTrade quantity: ${tradeQuantityResult.value.amount().toString()} UP tokens`);
+  console.log(`\nTrade quantity: ${tradeQuantityResult.value.amount().toNumber()} UP tokens`);
 }
 ```
 

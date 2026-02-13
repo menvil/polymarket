@@ -9,7 +9,7 @@ describe('AssetQuantityFormatter', () => {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
     chainId: KnownChainIds.POLYGON,
-    conditionId: '0xabc123def456789' as ConditionId,
+    conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
   };
 
   describe('toString() - Currency', () => {
@@ -66,7 +66,7 @@ describe('AssetQuantityFormatter', () => {
       expect(display).toContain('UP');
       expect(display).toContain(KnownOnChainProtocols.POLYMARKET_CTF);
       expect(display).toContain('137');
-      expect(display).toContain('0xabc1'); // сокращенный conditionId
+      expect(display).toContain('0x1234'); // сокращенный conditionId
     });
   });
 
