@@ -221,6 +221,20 @@ describe('AssetQuantityService', () => {
       }
     });
 
+    it('фэйлится с невалидным outcomeKey', () => {
+      const result = AssetQuantityService.createOutcomeToken(
+        conditionRef,
+        'IN:VALID' as any, // недопустимый формат outcomeKey
+        50
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Invalid outcomeKey format');
+        expect(result.error.context?.reason).toBe(AssetQuantityErrorReason.INVALID_ASSET);
+      }
+    });
+
     it('никогда не бросает исключения', () => {
       expect(() => {
         AssetQuantityService.createOutcomeToken(conditionRef, BinaryOutcome.UP, 50);

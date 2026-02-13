@@ -479,9 +479,10 @@ const balanceResult = TokenBalanceService.create(
 );
 
 // ✅ AssetQuantity — универсальное количество
-const quantityResult = AssetQuantityService.create(
-  tokenResult.value.assetId(),
-  new Decimal('100')
+const quantityResult = AssetQuantityService.createOutcomeToken(
+  onChainRef,
+  BinaryOutcome.UP,
+  100
 );
 ```
 

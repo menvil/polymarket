@@ -1,11 +1,12 @@
 import { Result, Ok } from '@polymarket/result';
-import { wrapOp, InvalidAssetQuantityError } from '@polymarket/errors';
+import { wrapOp, InvalidAssetQuantityError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import type { AssetId, OnChainConditionRef, OutcomeKey } from '@polymarket/ids';
 import {
   asOnChainProtocolId,
   parseChainId,
   parseConditionId,
+  parseOutcomeKey,
 } from '@polymarket/ids';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { AssetQuantity } from '../core/index.js';
@@ -135,6 +136,7 @@ export class AssetQuantityService {
             (ctx) => `Failed to parse amount as Decimal: ${ctx.error}`,
             {
               context: {
+                source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_AMOUNT,
                 amountValue,
                 error: error instanceof Error ? error.message : String(error),
@@ -152,6 +154,7 @@ export class AssetQuantityService {
             (ctx) => `Failed to create Quantity: ${ctx.error}`,
             {
               context: {
+                source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_AMOUNT,
                 amountValue,
                 error: error instanceof Error ? error.message : String(error),
@@ -204,7 +207,23 @@ export class AssetQuantityService {
       'createOutcomeToken',
       { conditionRef, outcomeKey, amountValue },
       () => {
-        // Runtime валидация conditionRef (защита от as any)
+        // Runtime валидация conditionRef и outcomeKey (защита от as any)
+
+        // Валидация outcomeKey
+        const validatedOutcomeKey = parseOutcomeKey(outcomeKey as string);
+        if (!validatedOutcomeKey) {
+          throw new InvalidAssetQuantityError(
+            (ctx) => `Invalid outcomeKey format: '${ctx.outcomeKey}'`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: AssetQuantityErrorReason.INVALID_ASSET,
+                outcomeKey,
+              },
+            }
+          );
+        }
+
         // Валидация protocolId
         const validatedProtocolId = asOnChainProtocolId(conditionRef.protocolId as string);
         if (!validatedProtocolId) {
@@ -213,6 +232,7 @@ export class AssetQuantityService {
               `Invalid protocolId format: '${ctx.protocolId}'. Must be UPPERCASE_WITH_UNDERSCORES`,
             {
               context: {
+                source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_ASSET,
                 protocolId: conditionRef.protocolId,
               },
@@ -227,6 +247,7 @@ export class AssetQuantityService {
             (ctx) => `Invalid chainId: ${ctx.chainId}. Must be positive integer`,
             {
               context: {
+                source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_ASSET,
                 chainId: conditionRef.chainId,
               },
@@ -242,6 +263,7 @@ export class AssetQuantityService {
               `Invalid conditionId format: '${ctx.conditionId}'. Must be 32-byte hex (0x...)`,
             {
               context: {
+                source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_ASSET,
                 conditionId: conditionRef.conditionId,
               },
@@ -294,7 +316,11 @@ export class AssetQuantityService {
           chainId: validatedChainId,
           conditionId: validatedConditionId,
         };
-        const assetQty = AssetQuantity.outcomeToken(validatedConditionRef, outcomeKey, quantity);
+        const assetQty = AssetQuantity.outcomeToken(
+          validatedConditionRef,
+          validatedOutcomeKey,
+          quantity
+        );
 
         return Ok(assetQty);
       },
