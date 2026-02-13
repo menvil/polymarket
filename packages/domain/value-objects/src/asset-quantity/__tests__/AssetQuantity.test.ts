@@ -141,6 +141,20 @@ describe('AssetQuantity Core', () => {
       expect(qty1.equals(qty2)).toBe(false);
     });
 
+    it('возвращает false для разных conditionRef', () => {
+      const conditionRef2: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: KnownChainIds.POLYGON,
+        conditionId: '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff' as ConditionId,
+      };
+
+      const qty1 = AssetQuantity.outcomeToken(conditionRef, BinaryOutcome.UP, qty100);
+      const qty2 = AssetQuantity.outcomeToken(conditionRef2, BinaryOutcome.UP, qty100);
+
+      expect(qty1.equals(qty2)).toBe(false);
+    });
+
     it('возвращает false для разных asset types (Currency vs OutcomeToken)', () => {
       const usdcQty = AssetQuantity.usdc(qty100);
       const tokenQty = AssetQuantity.outcomeToken(conditionRef, BinaryOutcome.UP, qty100);

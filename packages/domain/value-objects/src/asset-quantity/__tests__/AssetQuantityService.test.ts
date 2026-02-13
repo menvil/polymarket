@@ -4,6 +4,7 @@ import { KnownOnChainProtocols, KnownChainIds, BinaryOutcome, AssetIdHelpers } f
 import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { AssetQuantityService } from '../facade/AssetQuantityService.js';
+import { AssetQuantityErrorReason } from '../errors/index.js';
 
 describe('AssetQuantityService', () => {
   const conditionRef: OnChainConditionRef = {
@@ -145,12 +146,90 @@ describe('AssetQuantityService', () => {
       );
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Failed to parse amount');
+      }
+    });
+
+    it('фэйлится с negative amount', () => {
+      const result = AssetQuantityService.createOutcomeToken(
+        conditionRef,
+        BinaryOutcome.UP,
+        -50
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Failed to create Quantity');
+      }
+    });
+
+    it('фэйлится с невалидным protocolId', () => {
+      const invalidRef: OnChainConditionRef = {
+        ...conditionRef,
+        protocolId: 'invalid-format' as any, // lowercase не допускается
+      };
+
+      const result = AssetQuantityService.createOutcomeToken(
+        invalidRef,
+        BinaryOutcome.UP,
+        50
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Invalid protocolId format');
+        expect(result.error.context?.reason).toBe(AssetQuantityErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('фэйлится с невалидным chainId', () => {
+      const invalidRef: OnChainConditionRef = {
+        ...conditionRef,
+        chainId: -1 as any, // отрицательный chainId не допускается
+      };
+
+      const result = AssetQuantityService.createOutcomeToken(
+        invalidRef,
+        BinaryOutcome.UP,
+        50
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Invalid chainId');
+        expect(result.error.context?.reason).toBe(AssetQuantityErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('фэйлится с невалидным conditionId', () => {
+      const invalidRef: OnChainConditionRef = {
+        ...conditionRef,
+        conditionId: '0xshort' as any, // слишком короткий conditionId
+      };
+
+      const result = AssetQuantityService.createOutcomeToken(
+        invalidRef,
+        BinaryOutcome.UP,
+        50
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Invalid conditionId format');
+        expect(result.error.context?.reason).toBe(AssetQuantityErrorReason.INVALID_ASSET);
+      }
     });
 
     it('никогда не бросает исключения', () => {
       expect(() => {
         AssetQuantityService.createOutcomeToken(conditionRef, BinaryOutcome.UP, 50);
         AssetQuantityService.createOutcomeToken(conditionRef, BinaryOutcome.UP, 'invalid' as any);
+        AssetQuantityService.createOutcomeToken(
+          { ...conditionRef, protocolId: 'invalid' as any },
+          BinaryOutcome.UP,
+          50
+        );
       }).not.toThrow();
     });
   });
