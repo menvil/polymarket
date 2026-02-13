@@ -10,6 +10,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./asset-quantity": {
+      "types": "./dist/asset-quantity/index.d.ts",
+      "import": "./dist/asset-quantity/index.js"
+    },
     "./balance": {
       "types": "./dist/balance/index.d.ts",
       "import": "./dist/balance/index.js"
@@ -17,6 +21,10 @@
     "./money": {
       "types": "./dist/money/index.d.ts",
       "import": "./dist/money/index.js"
+    },
+    "./outcome-token": {
+      "types": "./dist/outcome-token/index.d.ts",
+      "import": "./dist/outcome-token/index.js"
     },
     "./price": {
       "types": "./dist/price/index.d.ts",
@@ -38,9 +46,9 @@
       "types": "./dist/spread/index.d.ts",
       "import": "./dist/spread/index.js"
     },
-    "./outcome-token": {
-      "types": "./dist/outcome-token/index.d.ts",
-      "import": "./dist/outcome-token/index.js"
+    "./token-balance": {
+      "types": "./dist/token-balance/index.d.ts",
+      "import": "./dist/token-balance/index.js"
     }
   },
   "files": [

@@ -14,7 +14,8 @@ import { InvalidAssetQuantityError, AssetQuantityErrorReason } from '../errors/i
  * Оркестрирует Core + error handling.
  *
  * **Контракт "Never Throw":**
- * ВСЕ методы AssetQuantityService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+ * Методы создания/модификации ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+ * Утилитарные методы (equals, isZero, isPositive) возвращают простые типы (boolean).
  *
  * **Facade Error Contract:**
  * Любой Err из Facade содержит:
