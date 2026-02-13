@@ -61,7 +61,7 @@ console.log(QuoteFormatter.toShort(quote));
 
 Quote следует **Throws+Facade** паттерну:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                       Public API                            │
 │                    (Never Throw)                            │
@@ -310,6 +310,7 @@ const result = QuoteService.updateSizesWithRefresh(
 ```
 
 **IClock Benefits:**
+
 - **Production**: `LiveClock` для реального времени
 - **Testing**: `PaperClock` для deterministic testing
 - **Replay**: `ReplayClock` для исторических данных
@@ -534,6 +535,7 @@ QuoteFormatter.formatCompact(quote, 4, 2);
 ```
 
 **Формат**: `bid/ask @bidSize×askSize`
+
 - Цены разделены "/"
 - Размеры показаны после "@" и разделены "×"
 - Для one-sided котировок используется "--"
@@ -552,6 +554,7 @@ QuoteFormatter.formatWithSpread(quote, 4);
 ```
 
 **Формат для two-sided**: `bid-ask (spreadBps, mid=midPrice)`
+
 - Цены разделены "-"
 - Spread показан в basis points (1bp = 0.01%)
 - Mid price показан после "mid="
@@ -647,6 +650,7 @@ const result = ValidateAge.check(quote, 5000, clock);
 ```
 
 **Use cases:**
+
 - Проверка актуальности котировки перед отправкой в orderbook
 - Фильтрация устаревших котировок из кэша
 - Мониторинг задержек в получении данных

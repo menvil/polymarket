@@ -17,6 +17,7 @@
 `Ratio` - Core слой value object для представления относительных величин (коэффициентов, долей).
 
 **Ключевые характеристики:**
+
 - ✅ Иммутабельный (все операции возвращают новые значения)
 - ✅ Type-safe через Decimal.js
 - ✅ Бросает `RatioInvariantViolation` при нарушении инвариантов
@@ -24,6 +25,7 @@
 - ✅ Минимальная абстракция (только вспомогательные методы)
 
 **⚠️ Важно:** Ratio хранит **дробь (fraction)**, не процент!
+
 - `0.02` = 2% (дробь)
 - `2.0` = 200% (дробь, НЕ 2%)
 - `1.0` = 100%
@@ -42,11 +44,13 @@ public static of(value: Decimal): Ratio
 **⚠️ НЕ ИСПОЛЬЗУЙТЕ НАПРЯМУЮ** - это внутренний API для `RatioService`!
 
 **Почему не использовать `.of()` напрямую:**
+
 1. **Непонятная семантика:** `Ratio.of(2)` это 200% или 2%? 🤔
 2. **Нет валидации опций:** `ensureGteMinusOne` не проверяется
 3. **Бросает исключения:** вместо type-safe Result
 
 **Вместо этого используйте:**
+
 ```typescript
 // ✅ ПРАВИЛЬНО: Используйте RatioService
 RatioService.fromDecimal(0.02)  // явная дробь
@@ -55,15 +59,19 @@ RatioService.fromBps(200)       // явные basis points
 ```
 
 **Параметры:**
+
 - `value: Decimal` - Дробь: `0.02` для 2%, `0.5` для 50%
 
 **Возвращает:**
+
 - `Ratio` instance
 
 **Бросает:**
+
 - `RatioInvariantViolation` - если `value` NaN или не finite
 
 **Пример (только для RatioService):**
+
 ```typescript
 // Внутри RatioService.fromPercent()
 const fraction = percent.div(100); // 2 → 0.02
@@ -82,9 +90,11 @@ public toDecimal(): Decimal
 Получить значение как Decimal (fraction).
 
 **Возвращает:**
+
 - `Decimal` - дробь: `0.02` для 2%, `0.5` для 50%
 
 **Примеры:**
+
 ```typescript
 const ratioResult = RatioService.fromPercent(2); // 2%
 if (ratioResult.ok) {
@@ -102,6 +112,7 @@ if (feeResult.ok) {
 ```
 
 **Когда использовать:**
+
 - Для прямых вычислений: `amount * ratio.toDecimal()`
 - Для взятия процента: `price * ratio.toDecimal()`
 - Для получения доли: `total * ratio.toDecimal()`
@@ -116,13 +127,16 @@ public toNumber(): number
 Получить значение как number.
 
 **⚠️ ВНИМАНИЕ: Lossy conversion!**
+
 - Преобразование `Decimal → number` может потерять точность
 - Используйте **только для отображения**, НЕ для вычислений
 
 **Возвращает:**
+
 - `number` - дробь: `0.02` для 2%
 
 **Примеры:**
+
 ```typescript
 const ratioResult = RatioService.fromPercent(2.5);
 if (ratioResult.ok) {
@@ -140,6 +154,7 @@ const result = amount * ratio.toNumber(); // Может потерять точ�
 ```
 
 **Когда использовать:**
+
 - ✅ Отображение в UI
 - ✅ Логирование
 - ✅ JSON с ограниченной точностью
@@ -157,10 +172,12 @@ public onePlus(): Decimal
 Вычислить `(1 + ratio)` для compound operations.
 
 **Возвращает:**
+
 - `Decimal` - значение `(1 + ratio)`
 
 **Когда использовать:**
 Операции типа "добавить X процентов":
+
 - `amount * (1 + ratio)` - добавить markup/discount
 - `price * (1 + ratio)` - увеличить/уменьшить цену
 - `value * (1 + rate)` - применить ставку
@@ -213,6 +230,7 @@ if (growthResult.ok) {
 ```
 
 **Математика:**
+
 ```typescript
 ratio = 0.1  (10%)
 onePlus() = 1 + 0.1 = 1.1
@@ -229,10 +247,12 @@ public oneMinus(): Decimal
 Вычислить `(1 - ratio)` для subtraction operations.
 
 **Возвращает:**
+
 - `Decimal` - значение `(1 - ratio)`
 
 **Когда использовать:**
 Операции типа "вычесть X процентов":
+
 - `amount * (1 - ratio)` - вычесть fee/tax/discount
 - `price * (1 - ratio)` - взять процент (оставить остаток)
 - `value * (1 - loss)` - применить потерю
@@ -301,6 +321,7 @@ if (negativeRatioResult.ok) {
 ```
 
 **Математика:**
+
 ```typescript
 ratio = 0.02  (2% fee)
 oneMinus() = 1 - 0.02 = 0.98
@@ -328,12 +349,15 @@ public equals(other: Ratio): boolean
 Проверить равенство с другим Ratio.
 
 **Параметры:**
+
 - `other: Ratio` - Другой Ratio для сравнения
 
 **Возвращает:**
+
 - `boolean` - `true` если значения равны
 
 **Примеры:**
+
 ```typescript
 const r1Result = RatioService.fromDecimal(0.02);
 const r2Result = RatioService.fromPercent(2);
@@ -365,9 +389,11 @@ public isZero(): boolean
 Проверить, равно ли значение нулю.
 
 **Возвращает:**
+
 - `boolean` - `true` если `ratio === 0`
 
 **Примеры:**
+
 ```typescript
 const zeroResult = RatioService.fromDecimal(0);
 if (zeroResult.ok) {
@@ -384,6 +410,7 @@ console.log(Ratio.ZERO.isZero()); // true
 ```
 
 **Когда использовать:**
+
 - Проверка нулевой комиссии: `if (fee.isZero()) { /* no fee */ }`
 - Проверка нулевого discount: `if (discount.isZero()) { /* no discount */ }`
 
@@ -397,9 +424,11 @@ public isPositive(): boolean
 Проверить, положительно ли значение.
 
 **Возвращает:**
+
 - `boolean` - `true` если `ratio > 0`
 
 **Примеры:**
+
 ```typescript
 const markupResult = RatioService.fromPercent(10);
 if (markupResult.ok) {
@@ -418,6 +447,7 @@ if (discountResult.ok) {
 ```
 
 **Когда использовать:**
+
 - Проверка положительного markup: `if (markup.isPositive()) { /* increase */ }`
 - Валидация: `if (!fee.isPositive() && !fee.isZero()) { /* invalid fee */ }`
 
@@ -431,9 +461,11 @@ public isNegative(): boolean
 Проверить, отрицательно ли значение.
 
 **Возвращает:**
+
 - `boolean` - `true` если `ratio < 0`
 
 **Примеры:**
+
 ```typescript
 const discountResult = RatioService.fromPercent(-20);
 if (discountResult.ok) {
@@ -452,6 +484,7 @@ if (markupResult.ok) {
 ```
 
 **Когда использовать:**
+
 - Проверка discount: `if (ratio.isNegative()) { /* это discount */ }`
 - Логика применения: `if (ratio.isNegative()) { applyDiscount() } else { applyMarkup() }`
 
@@ -469,6 +502,7 @@ public static readonly ZERO: Ratio
 **Значение:** `0` (дробь)
 
 **Примеры:**
+
 ```typescript
 console.log(Ratio.ZERO.toDecimal().toString()); // "0"
 console.log(Ratio.ZERO.isZero()); // true
@@ -486,6 +520,7 @@ if (ratioResult.ok && ratioResult.value.equals(Ratio.ZERO)) {
 ```
 
 **Когда использовать:**
+
 - Default значение: `const fee = options.fee ?? Ratio.ZERO;`
 - Сравнение: `if (ratio.equals(Ratio.ZERO)) { /* no fee */ }`
 - Тесты: `expect(calculatedRatio.equals(Ratio.ZERO)).toBe(true);`
@@ -502,6 +537,7 @@ public static readonly ONE: Ratio
 **Значение:** `1` (дробь) = 100%
 
 **Примеры:**
+
 ```typescript
 console.log(Ratio.ONE.toDecimal().toString()); // "1"
 console.log(Ratio.ONE.toNumber()); // 1
@@ -518,6 +554,7 @@ console.log(all.toString()); // "500"
 ```
 
 **Когда использовать:**
+
 - Взять всё: `amount.mul(Ratio.ONE.toDecimal())`
 - 100% markup: `price.mul(Ratio.ONE.onePlus())` (удваивает)
 - Сравнение: `if (ratio.equals(Ratio.ONE)) { /* 100% */ }`

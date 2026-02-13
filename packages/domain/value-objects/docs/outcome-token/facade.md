@@ -20,6 +20,7 @@ Facade Layer предоставляет публичный API для работ
 - **OutcomeTokenService** — фасад с методами create(), equals()
 
 **Контракт "Never Throw":**
+
 - ВСЕ методы ГАРАНТИРОВАННО возвращают `Result<T, E>`
 - НИКОГДА не бросают исключения
 - Все domain exceptions ловятся и мапятся в Result.Err
@@ -76,6 +77,7 @@ public static create(
 ### Возвращает
 
 `Result<OutcomeToken, InvalidOutcomeTokenError>`:
+
 - **Ok(OutcomeToken)** — успешное создание
 - **Err(InvalidOutcomeTokenError)** — ошибка с типизированной причиной
 
@@ -156,6 +158,7 @@ public static create(
 ```
 
 **Преимущества**:
+
 - Проверка `kind === 'ONCHAIN'` происходит ОДИН РАЗ в facade
 - Core доверяет типу `OnChainConditionRef`
 - Нет дублирования проверок
@@ -178,6 +181,7 @@ public static equals(a: OutcomeToken, b: OutcomeToken): boolean
 ### Возвращает
 
 `boolean`:
+
 - **true** — tokens представляют одинаковый актив (same conditionRef, same outcomeKey)
 - **false** — разные активы
 
@@ -267,6 +271,7 @@ try {
 ```
 
 **Преимущества**:
+
 - Точная диагностика (не "всё в одну кучу")
 - Честность (UNEXPECTED вместо ложных причин)
 - Подробный контекст для debugging

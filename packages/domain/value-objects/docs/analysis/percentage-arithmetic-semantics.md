@@ -29,11 +29,13 @@ const feeAmount = totalFee.applyTo(tradeAmount);  // $50
 ```
 
 **Почему имеет смысл:**
+
 - Комиссии **аддитивны** - они независимо вычитаются из суммы
 - Maker fee 2% + Taker fee 3% = Total fee 5%
 - Реальный use case в Polymarket trading
 
 **Примеры:**
+
 - Exchange fees: maker + taker + network
 - Transaction costs: base + premium + insurance
 - Service charges: processing + handling + expedite
@@ -52,6 +54,7 @@ const totalTaxAmount = totalTax.applyTo(income);  // $5000
 ```
 
 **Почему имеет смысл:**
+
 - Налоги накладываются **независимо**
 - Federal 3% + State 2% = Total 5%
 
@@ -66,6 +69,7 @@ const spread = subtract(askPercent, bidPercent);  // 4% ✅
 ```
 
 **Почему имеет смысл:**
+
 - Spread - это **разница** между двумя процентами
 - Ask 52% - Bid 48% = Spread 4%
 - Реальный use case в market making
@@ -81,6 +85,7 @@ const totalMargin = add(baseMargin, seasonalMarkup);  // 15% ✅
 ```
 
 **Почему имеет смысл:**
+
 - Margins добавляются **последовательно**
 - Base 10% + Seasonal 5% = Total 15%
 
@@ -103,6 +108,7 @@ const actualDiscount = Percentage.of(44);  // 44%, не 50%!
 ```
 
 **Почему НЕ имеет смысл:**
+
 - Скидки **мультипликативны**, не аддитивны
 - 20% скидка, затем 30% скидка = 44% общая скидка, не 50%
 - Математика: `(1 - 0.20) × (1 - 0.30) = 0.56` → 44% скидка
@@ -124,6 +130,7 @@ const actualGrowth = Percentage.of(32);  // 32%, не 30%!
 ```
 
 **Почему НЕ имеет смысл:**
+
 - Рост **компаундится**
 - +10%, затем +20% = +32% общий рост, не +30%
 - Математика: `1.10 × 1.20 = 1.32` → 32% рост
@@ -143,6 +150,7 @@ const totalRate = add(rate1, rate2);  // 8% ❌ СМОТРЯ КАК
 ```
 
 **Почему сложно:**
+
 - Зависит от модели начисления процентов
 - Simple interest: аддитивно
 - Compound interest: мультипликативно
@@ -152,34 +160,43 @@ const totalRate = add(rate1, rate2);  // 8% ❌ СМОТРЯ КАК
 ## 📊 Сравнение с другими Value Objects
 
 ### Money
+
 ```typescript
 Money.add(100$, 50$) = 150$  // ✅ ВСЕГДА имеет смысл
 Money.subtract(100$, 30$) = 70$  // ✅ ВСЕГДА имеет смысл
 ```
+
 **Вывод:** Деньги всегда аддитивны.
 
 ### Quantity
+
 ```typescript
 Quantity.add(10, 5) = 15  // ✅ ВСЕГДА имеет смысл
 Quantity.subtract(10, 3) = 7  // ✅ ВСЕГДА имеет смысл
 ```
+
 **Вывод:** Количество всегда аддитивно.
 
 ### Price
+
 ```typescript
 Price.add(0.5, 0.3) = 0.8  // ❓ ЗАВИСИТ
 Price.subtract(0.5, 0.2) = 0.3  // ❓ ЗАВИСИТ
 ```
+
 **Вопрос:** Когда складываешь цены?
+
 - Средняя цена: (price1 + price2) / 2 ✅
 - Суммарная стоимость: price × quantity, не price + price ❌
 **Вывод:** Price.add тоже семантически спорная операция!
 
 ### Percentage
+
 ```typescript
 Percentage.add(25%, 35%) = 60%  // ❓ ЗАВИСИТ ОТ КОНТЕКСТА
 Percentage.subtract(60%, 25%) = 35%  // ❓ ЗАВИСИТ ОТ КОНТЕКСТА
 ```
+
 **Вывод:** Зависит от того, что проценты представляют.
 
 ---
@@ -208,6 +225,7 @@ public static add(
 ```
 
 **Что делает:**
+
 - Простое арифметическое сложение: `a + b`
 - Не учитывает семантику (fees vs discounts vs growth)
 
@@ -222,6 +240,7 @@ const totalFee = PercentageService.add(makerFee, takerFee);  // 7%
 ```
 
 **Что задокументировано:**
+
 - Use case: суммирование комиссий (fees)
 - Валидация через ValidateTotalFee (max 10%)
 - Применение к трейдам через applyTo()
@@ -245,9 +264,11 @@ const wrongTotal = PercentageService.add(discount1, discount2);  // 50%
 ### 2. Нет предупреждений в документации
 
 **Что есть:**
+
 - ✅ Примеры с fees (правильное использование)
 
 **Чего нет:**
+
 - ❌ Предупреждение о неправильных use cases
 - ❌ Объяснение когда НЕ использовать
 - ❌ Альтернативы для compound operations
@@ -268,15 +289,18 @@ add(discount1, discount2)  // Simple addition или compound?
 ### Решение 1: Оставить как есть + Документировать ограничения
 
 **Pros:**
+
 - ✅ Простота API
 - ✅ Покрывает основной use case (fees)
 - ✅ Не ломает существующий код
 
 **Cons:**
+
 - ❌ Возможны семантические ошибки
 - ❌ Требует понимания от разработчика
 
 **Реализация:**
+
 ```markdown
 ## ⚠️ Warning: Semantic Context Matters
 
@@ -306,10 +330,12 @@ addFees(a, b)     // Explicit: for fees
 ```
 
 **Pros:**
+
 - ✅ Ясная семантика
 - ✅ Самодокументирующийся код
 
 **Cons:**
+
 - ❌ Breaking change
 - ❌ Verbose API
 
@@ -327,10 +353,12 @@ subtractCompound(a, b) // (1-0.20)×(1-0.30) - 1 = 44%
 ```
 
 **Pros:**
+
 - ✅ Покрывает оба use cases
 - ✅ Явная семантика
 
 **Cons:**
+
 - ❌ Усложнение API
 - ❌ Больше методов
 
@@ -350,10 +378,12 @@ subtractCompound(a, b) // (1-0.20)×(1-0.30) - 1 = 44%
 ```
 
 **Pros:**
+
 - ✅ Убирает семантическую неясность
 - ✅ Forced to think about context
 
 **Cons:**
+
 - ❌ Breaking change
 - ❌ Неудобно для валидных use cases (fees)
 
@@ -460,18 +490,21 @@ const afterSecond = afterFirst.times(1 - discount2.toDecimal());
 ### 1. Value Objects ≠ Pure Math
 
 Value objects представляют **domain concepts**, не просто числа.
+
 - Money.add() - деньги аддитивны ✅
 - Percentage.add() - зависит от контекста ⚠️
 
 ### 2. Семантика важнее синтаксиса
 
 API должен отражать **business logic**, не только математику.
+
 - `25% + 35%` математически = 60%
 - Но business meaning зависит от context
 
 ### 3. Документация критична
 
 Когда операция **context-dependent**, документация обязательна.
+
 - Explain когда use
 - Warn когда не use
 - Show examples (both correct and incorrect)

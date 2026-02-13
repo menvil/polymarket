@@ -19,7 +19,7 @@ class QuoteService {
 
 В нашей архитектуре есть разные типы классов:
 
-```
+```text
 ├── Core (Domain Model)
 │   ├── Quote (Value Object)          ← Это класс
 │   ├── Price (Value Object)          ← Это класс
@@ -56,40 +56,52 @@ class QuoteService {
 ```
 
 Если бы мы использовали `className`, это было бы менее понятно:
+
 - Какой класс? Core? Facade? Adapter?
 - Это имя сущности или имя обработчика?
 
 ### 4. Альтернативные варианты (рассмотрены и отклонены)
 
 #### ❌ `className`
+
 ```typescript
 const className = 'QuoteService';  // ← Слишком общее
 ```
+
 **Проблема**: "Class" может быть что угодно (Core, Facade, Adapter, Error class)
 
 #### ❌ `entityName`
+
 ```typescript
 const entityName = 'QuoteService';  // ← Неточное
 ```
+
 **Проблема**: QuoteService - это НЕ entity (entity это Balance, User, Order)
 
 #### ❌ `handlerName`
+
 ```typescript
 const handlerName = 'QuoteService';  // ← Слишком техническое
 ```
+
 **Проблема**: "Handler" - низкоуровневый термин, непонятно что именно
 
 #### ❌ `componentName`
+
 ```typescript
 const componentName = 'QuoteService';  // ← Конфликт с полем component
 ```
+
 **Проблема**: У нас уже есть поле `component` для bid/ask/bidSize/askSize
 
 #### ✅ `serviceName`
+
 ```typescript
 const serviceName = 'QuoteService';  // ← Точное и ясное!
 ```
+
 **Почему лучше**:
+
 - Соответствует архитектурному слою (Service/Facade layer)
 - Ясно указывает на роль класса
 - Не конфликтует с другими полями
@@ -118,6 +130,7 @@ const serviceName = 'QuoteService';  // ← Точное и ясное!
 ### 6. Примеры из кода
 
 #### errorUtils.ts
+
 ```typescript
 export function rewrap<TError extends DomainError>(
   serviceName: string,  // ← Используем serviceName
@@ -132,6 +145,7 @@ export function rewrap<TError extends DomainError>(
 ```
 
 #### QuoteService.ts
+
 ```typescript
 class QuoteService {
   private static readonly SERVICE_NAME = 'QuoteService';
@@ -149,6 +163,7 @@ class QuoteService {
 ## Итоговое обоснование
 
 **`serviceName`** выбран, потому что:
+
 1. ✅ Семантически точное - это имя **сервиса** (Facade layer)
 2. ✅ Архитектурно ясное - соответствует слою приложения
 3. ✅ Консистентное - аналогично distributed tracing

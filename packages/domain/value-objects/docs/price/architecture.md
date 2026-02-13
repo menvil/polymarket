@@ -204,7 +204,7 @@ ValidateTickSizeMultipleOfBaseTick.check(0.01);
 
 **Иерархия правил:**
 
-```
+```text
 ValidateTickSize (базовое)
     ↓ наследуется
 ValidateTickSizeMultipleOfBaseTick (Polymarket-специфичное)
@@ -273,7 +273,7 @@ roundToMarketTick(price, tickSize, mode)
 
 ### Поток создания Price
 
-```
+```text
 User Input (number/string/Decimal)
     ↓
 PriceService.create()
@@ -297,7 +297,7 @@ catch (PriceInvariantViolation) {
 
 ### Поток арифметической операции (complement)
 
-```
+```text
 price
     ↓
 PriceService.complement()
@@ -313,7 +313,7 @@ Result<Price, InvalidPriceError>
 
 ### Поток округления к тику
 
-```
+```text
 price, tickSize, mode
     ↓
 PriceService.roundToMarketTick()
@@ -341,7 +341,7 @@ Result<Price, InvalidPriceError>
 
 ### Поток деления с валидацией
 
-```
+```text
 price, divisor
     ↓
 PriceService.divide()

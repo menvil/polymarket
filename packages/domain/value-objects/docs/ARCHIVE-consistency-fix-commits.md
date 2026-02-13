@@ -238,7 +238,7 @@ git log --oneline HEAD~7..HEAD
 
 Ожидаемый вывод:
 
-```
+```text
 9a1b2c3 docs: update all documentation for consistency changes
 8d7e6f5 feat(core): add comparison methods to Price and Money
 7c5d4e3 refactor(money)!: rename amount() to value() for consistency
@@ -352,7 +352,7 @@ QuantityErrorReason.NEGATIVE_QUANTITY
 QuantityErrorReason.NEGATIVE
 ```
 
-```
+```text
 
 ---
 

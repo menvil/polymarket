@@ -78,7 +78,7 @@ if (qty1Result.ok && qty2Result.ok) {
 
 Quantity модуль построен на **4-слойной архитектуре** с паттерном **Throws+Facade**:
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │           Adapters Layer                        │
 │  (Serializers, Formatters)                      │

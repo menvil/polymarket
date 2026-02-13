@@ -19,7 +19,7 @@
 
 OutcomeToken построен на архитектуре **Throws+Facade** с чётким разделением на 4 слоя:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     ADAPTERS LAYER                          │
 │  ┌──────────────────────┐  ┌──────────────────────┐        │
@@ -66,6 +66,7 @@ OutcomeToken построен на архитектуре **Throws+Facade** с �
 ### 1. AssetId как Single Source of Truth
 
 **Проблема**: Ранее OutcomeToken хранил избыточные данные:
+
 - `_assetId: AssetId`
 - `_conditionRef: OnChainConditionRef` (дубликат из assetId)
 - `_outcomeKey: OutcomeKey` (дубликат из assetId)
@@ -89,6 +90,7 @@ class OutcomeToken {
 ```
 
 **Преимущества**:
+
 - Невозможна рассинхронизация (нечего синхронизировать)
 - Меньше памяти
 - Проще тестирование (один источник данных)
@@ -144,6 +146,7 @@ public static of(
 ```
 
 **Преимущества**:
+
 - Нет дублирования кода
 - Граница ответственности чёткая: facade валидирует, core доверяет
 - TypeScript гарантирует корректность после narrowing
@@ -188,6 +191,7 @@ class OutcomeToken {
 ```
 
 **Преимущества**:
+
 - Единая точка валидации в `fromAssetId()`
 - Accessor'ы без проверок (доверяют типу OutcomeTokenAssetId)
 - TypeScript гарантирует что type === 'OUTCOME_TOKEN'
@@ -240,6 +244,7 @@ export const AssetIdHelpers = {
 ```
 
 **Преимущества**:
+
 - Runtime защита от мутаций (бросает TypeError в strict mode)
 - Невозможно нарушить инварианты после создания
 - Defensive copy — не мутируем входные параметры
@@ -251,17 +256,20 @@ export const AssetIdHelpers = {
 ### Core Layer: Domain Model
 
 **Ответственность**:
+
 - Инкапсуляция domain логики
 - Гарантия инвариантов
 - Чистые операции (без side effects)
 
 **Ключевые решения**:
+
 - AssetId как Single Source of Truth
 - Единая точка валидации в `fromAssetId()`
 - Accessor'ы без проверок (доверяют типу)
 - Может бросать domain exceptions
 
 **Инварианты**:
+
 1. `_assetId.type === 'OUTCOME_TOKEN'` (проверяется в fromAssetId)
 2. После создания инварианты ГАРАНТИРОВАНЫ (accessor'ы не проверяют)
 
@@ -305,12 +313,14 @@ export class OutcomeToken {
 ### Facade Layer: Public API
 
 **Ответственность**:
+
 - Публичный API с Result<T, E>
 - Type narrowing для union types
 - Error handling (catch domain exceptions)
 - Never throws — ВСЕГДА возвращает Result
 
 **Ключевые решения**:
+
 - Принимает `ConditionRef` (union type)
 - Делает type narrowing ОДИН РАЗ
 - Точный error mapping по instanceof
@@ -372,11 +382,13 @@ export class OutcomeTokenService {
 ### Adapters Layer: Граница системы
 
 **Ответственность**:
+
 - Сериализация/десериализация (JSON ↔ Domain)
 - Валидация ЗНАЧЕНИЙ (не только типов)
 - Форматирование для display
 
 **Ключевые решения**:
+
 - `fromJSON()` принимает `unknown` (граница типов)
 - Валидация значений через валидаторы из @polymarket/ids
 - Использование facade для создания (не core напрямую)
@@ -455,6 +467,7 @@ export class OutcomeTokenSerializer {
 ### Errors Layer: Типизированные ошибки
 
 **Ответственность**:
+
 - Domain errors с типизированным контекстом
 - Enum для причин ошибок (не строки!)
 
@@ -511,8 +524,9 @@ class OutcomeToken {
 ```
 
 **Проблемы**:
+
 - Память: 3 поля вместо 1
-- Синхронизация: _assetId и _conditionRef могут рассинхрониться (если кто-то мутирует)
+- Синхронизация: _assetId и_conditionRef могут рассинхрониться (если кто-то мутирует)
 - Сложность: Нужно поддерживать согласованность
 
 ### Решение: AssetId как единственный источник
@@ -539,6 +553,7 @@ class OutcomeToken {
 ```
 
 **Преимущества**:
+
 - Память: 1 поле вместо 3
 - Синхронизация: Нечего синхронизировать (Single Source of Truth)
 - Простота: Accessor'ы просто извлекают из assetId
@@ -620,6 +635,7 @@ public static of(
 ```
 
 **Преимущества**:
+
 - Нет дублирования проверок (facade проверяет ОДИН РАЗ)
 - Core доверяет типу (чистая domain логика)
 - TypeScript гарантирует корректность
@@ -707,6 +723,7 @@ export const AssetIdHelpers = {
 ```
 
 **Преимущества**:
+
 - Runtime защита от мутаций (TypeError в strict mode)
 - Невозможно нарушить инварианты после создания
 - Defensive copy — входные параметры не мутируются
@@ -771,6 +788,7 @@ try {
 ```
 
 **Преимущества**:
+
 - Type-safe error handling
 - Точная диагностика (не "всё в одну кучу")
 - Честность (UNEXPECTED вместо ложных причин)

@@ -42,6 +42,7 @@ return { ok: true, value: result.value };
 ```
 
 **Плюсы для JavaScript:**
+
 - ✅ Короткая и читаемая запись
 - ✅ Стандартный паттерн проверки boolean
 - ✅ Нет необходимости в дополнительных imports
@@ -62,6 +63,7 @@ if (!result.ok) {
 ```
 
 **Проблемы для TypeScript:**
+
 - ❌ Negation operator `!` не триггерит type narrowing
 - ❌ TypeScript требует явные type predicates
 - ❌ Discriminated union не распознается автоматически
@@ -157,6 +159,7 @@ export const isErr = <T, E>(
 ```
 
 **Ключевой момент:**
+
 - ✅ Использует `result.ok === false` вместо `!result.ok`
 - ✅ Имеет type predicate `result is { ok: false; error: E }`
 - ✅ TypeScript ПРАВИЛЬНО сужает тип
@@ -174,11 +177,13 @@ export const isErr = <T, E>(
 ### Вывод
 
 **Foundation packages написаны ПРАВИЛЬНО:**
+
 - ✅ Result package предоставляет `isErr()` helper
 - ✅ Сам Result package НЕ использует problematic pattern
 - ✅ Все остальные packages компилируются без ошибок
 
 **Value objects написаны НЕПРАВИЛЬНО:**
+
 - ❌ Используют `!result.ok` вместо `isErr()`
 - ❌ Игнорируют provided helper из @polymarket/result
 - ❌ Имеют 15+ ошибок компиляции в трех модулях
@@ -257,6 +262,7 @@ npx tsc --noEmit src/money/facade/MoneyService.ts
 ```
 
 **Эффект:**
+
 - ✅ Все packages будут проверяться
 - ❌ Билд СЛОМАЕТСЯ до исправления ошибок
 - ✅ CI/CD будет ловить проблемы автоматически
@@ -277,6 +283,7 @@ npx tsc --noEmit src/money/facade/MoneyService.ts
 ```
 
 **Эффект:**
+
 - ✅ Только value-objects будет проверяться строго
 - ✅ Другие packages не затронуты
 - ⚠️ Меньше защиты для остальных packages
@@ -295,6 +302,7 @@ npx tsc --noEmit src/money/facade/MoneyService.ts
 ```
 
 **Эффект:**
+
 - ✅ Локальный build работает как раньше
 - ✅ CI/CD падает при type errors
 - ⚠️ Разработчики могут пропустить проблемы локально
@@ -345,6 +353,7 @@ npx tsc --noEmit src/money/facade/MoneyService.ts
 ```
 
 **Результат:**
+
 - ✅ CI/CD падает при type errors
 - ✅ Pull requests блокируются
 - ✅ Не влияет на локальную разработку
@@ -396,6 +405,7 @@ npx tsc --noEmit src/money/facade/MoneyService.ts
 ```
 
 **Файлы для изменения:**
+
 - `src/money/facade/MoneyService.ts` - 5 замен
 
 ---
@@ -414,6 +424,7 @@ import { Result, Ok, Err, isErr } from '@polymarket/result';
 ```
 
 **Файлы для изменения:**
+
 - `src/price/facade/PriceService.ts` - 5 замен
 
 ---
@@ -432,6 +443,7 @@ import { Result, Ok, Err, isErr } from '@polymarket/result';
 ```
 
 **Файлы для изменения:**
+
 - `src/quantity/facade/QuantityService.ts` - 5 замен
 
 ---
@@ -648,12 +660,14 @@ Use explicit type guard `isErr()` instead.
 ### Главный вывод
 
 **Percentage module - это ПРАВИЛЬНАЯ implementation:**
+
 - ✅ Использует `isErr()` type guard
 - ✅ 0 TypeScript errors
 - ✅ Full compile-time type safety
 - ✅ Best IDE experience
 
 **Остальные модули нуждаются в исправлении:**
+
 - ❌ 15+ TypeScript errors
 - ❌ Использует problematic `!result.ok` pattern
 - ⚠️ Работают только благодаря JavaScript runtime

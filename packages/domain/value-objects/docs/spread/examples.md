@@ -742,6 +742,7 @@ describe('Spread operations', () => {
 ### Почему строгие сравнения?
 
 **Преимущества:**
+
 - ✅ Предсказуемость — нет сюрпризов с epsilon
 - ✅ Детерминированность — результат всегда одинаковый
 - ✅ Type-safety — Decimal.js гарантирует точность
@@ -749,6 +750,7 @@ describe('Spread operations', () => {
 - ✅ Простота — не нужно выбирать epsilon
 
 **Когда это важно:**
+
 ```typescript
 // Проверка после сериализации/десериализации
 const original = SpreadService.fromValues(0.48, 0.52).value;

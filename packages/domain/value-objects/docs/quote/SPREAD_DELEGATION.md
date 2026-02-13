@@ -7,6 +7,7 @@
 Quote и Spread содержали дублирующуюся логику вычислений:
 
 **Quote.ts:**
+
 ```typescript
 public spreadWidth(): Decimal | null {
   if (!this.isTwoSided()) return null;
@@ -29,6 +30,7 @@ public spreadPercentage(): Decimal | null {
 ```
 
 **Spread.ts:**
+
 ```typescript
 public width(): Decimal {
   return this._ask.value().minus(this._bid.value());
@@ -47,6 +49,7 @@ public widthPercentage(): Decimal {
 ```
 
 **Проблемы:**
+
 1. ❌ Логика вычисления spread width дублируется
 2. ❌ Логика вычисления mid дублируется
 3. ❌ Логика вычисления spread percentage дублируется
@@ -72,6 +75,7 @@ public static fromQuote(quote: Quote): Result<Spread, InvalidSpreadError> {
 ```
 
 **Проблемы:**
+
 1. ❌ **Circular dependency:** Spread → Quote
    - Spread импортирует Quote
    - Quote уже импортирует Price
@@ -87,7 +91,7 @@ public static fromQuote(quote: Quote): Result<Spread, InvalidSpreadError> {
 
 ### Правильное направление зависимости
 
-```
+```text
 Quote → Spread → Price
 ```
 
@@ -131,6 +135,7 @@ public spread(): Spread | null {
 ```
 
 **Почему удалили:** Если есть метод `spread()`, зачем дублировать его методы? Это создает избыточность API:
+
 - Пользователь получает Spread объект
 - У него уже есть все нужные методы: `width()`, `mid()`, `widthPercentage()`
 - Дублирующие методы только усложняют API без добавления ценности
@@ -150,6 +155,7 @@ public spread(): Spread | null {
 ### ✅ Единственный источник истины
 
 Вся логика вычислений находится в `Spread`:
+
 - `width()` — единственная реализация
 - `mid()` — единственная реализация
 - `widthPercentage()` — единственная реализация
@@ -158,7 +164,7 @@ Quote просто делегирует вычисления.
 
 ### ✅ Нет circular dependencies
 
-```
+```text
 Quote → Spread → Price
   ↓
 Quantity
@@ -175,18 +181,21 @@ Quantity
 ### ✅ Проще поддерживать
 
 Изменение формулы требует правки только в одном месте:
+
 - Изменили `Spread.width()` → автоматически работает в `Quote.spreadWidth()`
 - Изменили `Spread.mid()` → автоматически работает в `Quote.mid()`
 
 ### ✅ Меньше кода
 
 **До:**
+
 - Quote: ~60 строк методов-оберток (spreadWidth, mid, spreadPercentage)
 - Spread: ~30 строк оригинальной логики
 - SpreadService.fromQuote: ~70 строк
 - **Итого: ~160 строк**
 
 **После:**
+
 - Quote: ~30 строк метод spread()
 - Spread: ~30 строк оригинальной логики
 - **Итого: ~60 строк**
@@ -242,18 +251,20 @@ const spread = bidOnly.spread();  // null - нет spread для односто�
 ### Принцип открытости/закрытости (OCP)
 
 Если нужно добавить новое вычисление для spread:
+
 1. Добавляем метод в `Spread` (один раз)
 2. Опционально добавляем делегирующий метод в `Quote`
 
 ### DRY (Don't Repeat Yourself)
 
 Логика вычислений не дублируется:
+
 - Spread — единственный источник истины
 - Quote — делегирует в Spread
 
 ### Правильные зависимости
 
-```
+```text
 ┌──────────────────┐
 │      Quote       │  Высокий уровень
 │  (composition)   │
@@ -275,6 +286,7 @@ const spread = bidOnly.spread();  // null - нет spread для односто�
 ## Тестирование
 
 Все тесты проходят после рефакторинга:
+
 - ✅ 53 tests в Quote.test.ts
 - ✅ 912 tests всего (было 938 — удалили 4 теста fromQuote + 26 tests SpreadService)
 - ✅ Поведение методов `spreadWidth()`, `mid()`, `spreadPercentage()` не изменилось

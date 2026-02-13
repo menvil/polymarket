@@ -24,7 +24,7 @@
 
 ### 1. Архитектура слоёв - ОТЛИЧНО
 
-```
+```text
 src/quote/
 ├── core/           ✅ Quote.ts + QuoteInvariantViolation
 ├── facade/         ✅ QuoteService.ts
@@ -35,6 +35,7 @@ src/quote/
 ```
 
 **Сравнение с Balance:**
+
 - ✅ Идентичная структура директорий
 - ✅ Четкое разделение ответственности
 - ✅ Core не зависит от Facade
@@ -51,6 +52,7 @@ src/quote/
 ```
 
 **Сравнение с Balance:**
+
 ```typescript
 // Balance инварианты:
 1. available >= 0
@@ -79,6 +81,7 @@ private constructor(
 ```
 
 **Сравнение с Balance:**
+
 ```typescript
 // Balance - аналогично
 private readonly _available: Money;  // ✅
@@ -88,10 +91,12 @@ private readonly _reserved: Money;   // ✅
 ✅ **Консистентность:** Оба используют `private readonly`.
 
 **❌ ПРОБЛЕМА:** Naming inconsistency
+
 - Balance: `_available`, `_reserved` (с underscore)
 - Quote: `b`, `a`, `bSize`, `aSize` (без underscore, сокращения)
 
 **Рекомендация:**
+
 ```typescript
 // Должно быть (как в Balance):
 private readonly _bid: Price | null;
@@ -116,6 +121,7 @@ equals(other: Quote): boolean
 ```
 
 **Сравнение с Balance:**
+
 ```typescript
 // Balance queries:
 total(): Money
@@ -140,6 +146,7 @@ public static create(...): Result<Quote, InvalidQuoteError> {
 ```
 
 **Сравнение с Balance:**
+
 ```typescript
 public static create(...): Result<Balance, InvalidBalanceError> {
   return wrapOp('create', ctx, () => {
@@ -164,6 +171,7 @@ updateSizes() - op: 'updateSizes'     ✅ OK
 ```
 
 **Balance для сравнения:**
+
 ```typescript
 // Balance - всегда op === method name
 create() - op: 'create'                          ✅
@@ -195,6 +203,7 @@ if (isErr(bidResult)) {
 ```
 
 **Balance для сравнения:**
+
 ```typescript
 // Balance - helper методы для DRY:
 private static subtractMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
@@ -207,6 +216,7 @@ private static subtractMoney(a: Money, b: Money): Result<Money, InvalidBalanceEr
 ```
 
 **Рекомендация:** Создать helper методы:
+
 ```typescript
 private static createPrice(
   value: Decimal | null,
@@ -248,7 +258,7 @@ Balance не имеет timestamp, поэтому проблемы нет.
 
 ### 4. Rules Layer - ОТЛИЧНО
 
-```
+```text
 rules/
 ├── ValidateMarketCrossing.ts  ✅ Проверка пересечения с рынком
 ├── ValidateMaxSpread.ts       ✅ Максимальный spread
@@ -257,7 +267,8 @@ rules/
 ```
 
 **Сравнение с Balance:**
-```
+
+```text
 rules/
 ├── ValidateCurrencyMatch.ts   ✅ Совпадение валют
 ├── ValidateReleaseAmount.ts   ✅ Валидация суммы освобождения
@@ -280,6 +291,7 @@ export class ValidateMinSpread {
 ```
 
 **Идентично Balance:**
+
 ```typescript
 export class ValidateReserveAmount {
   public static check(
@@ -310,11 +322,13 @@ toJSON(quote: Quote): QuoteJSON {
 ```
 
 ✅ **ХОРОШО:**
+
 - Использует `.toString()` для Decimal (сохранение точности)
 - Обрабатывает nullable bid/ask
 - Timestamp как number (Unix ms)
 
 **Сравнение с BalanceSerializer:**
+
 ```typescript
 toJSON(balance: Balance): BalanceJSON {
   return {
@@ -371,6 +385,7 @@ enum QuoteErrorReason {
 ```
 
 **Сравнение с BalanceErrorReason:**
+
 ```typescript
 enum BalanceErrorReason {
   NEGATIVE_AVAILABLE
@@ -386,7 +401,7 @@ enum BalanceErrorReason {
 
 ### 7. Тесты - ОТЛИЧНО
 
-```
+```text
 154 тестов passed
 8 test файлов
 
@@ -402,7 +417,8 @@ __tests__/unit/quote/
 ```
 
 **Сравнение с Balance:**
-```
+
+```text
 141 тестов passed
 8 test файлов (7 unit + 1 integration)
 ```
@@ -428,6 +444,7 @@ __tests__/unit/quote/
 **Рекомендации:**
 
 1. **Переименовать private fields:**
+
 ```typescript
 // Было:
 private readonly b: Price | null;
@@ -444,7 +461,8 @@ private readonly _askSize: Quantity;
 private readonly _timestampMs: number;
 ```
 
-2. **Исправить operation name:**
+1. **Исправить operation name:**
+
 ```typescript
 // Было:
 return wrapOp('creates', ctx, () => { ... }
@@ -453,7 +471,8 @@ return wrapOp('creates', ctx, () => { ... }
 return wrapOp('createFromDecimals', ctx, () => { ... }
 ```
 
-3. **Добавить helper methods:**
+1. **Добавить helper methods:**
+
 ```typescript
 private static createPrice(value: Decimal | null, field: 'bid' | 'ask', op: string)
 private static createQuantity(value: Decimal, field: 'bidSize' | 'askSize', op: string)
@@ -470,6 +489,7 @@ timestamp: Date.now()      // ❌ Всегда новый
 ```
 
 **Вопросы:**
+
 1. Почему shift/skew не принимают timestamp?
 2. Нужен ли timestamp вообще в Quote? (Price, Money, Quantity его не имеют)
 3. Если нужен - должен ли он обновляться при операциях?
@@ -477,6 +497,7 @@ timestamp: Date.now()      // ❌ Всегда новый
 **Рекомендации:**
 
 **Вариант A:** Timestamp - часть state, обновляется при операциях
+
 ```typescript
 public static shift(
   quote: Quote,
@@ -489,6 +510,7 @@ public static shift(
 ```
 
 **Вариант B:** Timestamp - read-only, не изменяется
+
 ```typescript
 // shift/skew/updateSizes сохраняют оригинальный timestamp:
 return QuoteService.createFromDecimals(
@@ -501,6 +523,7 @@ return QuoteService.createFromDecimals(
 ```
 
 **Вариант C:** Удалить timestamp из Quote
+
 - Price, Money, Quantity не имеют timestamp
 - Timestamp можно хранить на уровень выше (в QuoteBook, QuoteHistory)
 
@@ -514,6 +537,7 @@ $ ls docs/quote/
 ```
 
 **Balance для сравнения:**
+
 ```bash
 $ ls docs/balance/
 README.md           ✅
@@ -523,6 +547,7 @@ facade.md           ✅
 ```
 
 **Рекомендация:** Создать полную документацию:
+
 - `docs/quote/README.md` - обзор и quick start
 - `docs/quote/architecture.md` - архитектурные решения
 - `docs/quote/facade.md` - API reference
@@ -532,7 +557,8 @@ facade.md           ✅
 ### 4. Отсутствие Integration тестов - ПРОБЛЕМА
 
 Balance имеет:
-```
+
+```text
 __tests__/integration/balance/
 └── BalanceWorkflow.integration.test.ts  ✅ 24 теста
 ```
@@ -540,6 +566,7 @@ __tests__/integration/balance/
 Quote не имеет integration тестов! ❌
 
 **Рекомендация:** Добавить `QuoteWorkflow.integration.test.ts`:
+
 ```typescript
 describe('Quote Integration Tests', () => {
   describe('Market making workflow', () => {
@@ -574,6 +601,7 @@ const spreadCheck = ValidateMinSpread.check(quote.value, minSpread);
 ```
 
 **Сравнение с Balance:**
+
 ```typescript
 // BalanceService ИСПОЛЬЗУЕТ Rules внутри:
 public static reserve(balance: Balance, amount: Money) {
@@ -595,10 +623,12 @@ public static reserve(balance: Balance, amount: Money) {
 **Варианты:**
 
 **A. Не вызывать (текущая реализация)**
+
 - ✅ Гибкость - пользователь решает какие правила применять
 - ❌ Можно создать невалидные Quote (spread нарушает min/max)
 
 **B. Вызывать опционально**
+
 ```typescript
 public static create(
   bidValue: number | null,
@@ -615,6 +645,7 @@ public static create(
 ```
 
 **C. Создать отдельный validated метод**
+
 ```typescript
 public static createValidated(
   bidValue: number | null,
@@ -636,6 +667,7 @@ public static createValidated(
 ### Quote vs Balance: Композиция VO
 
 **Quote:**
+
 ```typescript
 class Quote {
   private readonly b: Price | null;        // VO композиция
@@ -647,6 +679,7 @@ class Quote {
 ```
 
 **Balance:**
+
 ```typescript
 class Balance {
   private readonly _available: Money;      // VO композиция
@@ -659,12 +692,14 @@ class Balance {
 ### Quote vs Price/Quantity: Nullable fields
 
 **Quote:**
+
 ```typescript
 private readonly b: Price | null;  // ✅ Nullable для one-sided quotes
 private readonly a: Price | null;  // ✅ Nullable для one-sided quotes
 ```
 
 **Price/Money/Quantity:**
+
 ```typescript
 private readonly _value: Decimal;  // ❌ Не nullable
 ```
@@ -672,12 +707,14 @@ private readonly _value: Decimal;  // ❌ Не nullable
 ✅ **Оценка:** Quote правильно использует nullable для опциональных сторон.
 
 **Но:** Это создаёт сложность в API:
+
 ```typescript
 quote.bid()?.value().toString() ?? null  // Need ?. operator
 quote.bidSize().value().toString()       // No ?. needed
 ```
 
 **Альтернативный дизайн (не рекомендуется):**
+
 ```typescript
 // Вместо null использовать ZERO constants
 private readonly b: Price;  // Price.ZERO если нет bid
@@ -714,29 +751,29 @@ quote.isTwoSided() {
 
 ### 🟡 Средний приоритет (улучшение качества)
 
-4. **Добавить документацию** (docs/quote/)
+1. **Добавить документацию** (docs/quote/)
    - Влияние: onboarding, понимание API
    - Усилия: средние
    - Breaking change: нет
 
-5. **Добавить integration тесты**
+2. **Добавить integration тесты**
    - Влияние: confidence в real-world scenarios
    - Усилия: средние
    - Breaking change: нет
 
-6. **Решить вопрос с timestamp**
+3. **Решить вопрос с timestamp**
    - Влияние: API clarity
    - Усилия: низкие
    - Breaking change: да (API методов)
 
 ### 🟢 Низкий приоритет (опциональные улучшения)
 
-7. **Добавить createValidated()**
+1. **Добавить createValidated()**
    - Влияние: удобство для strict validation
    - Усилия: средние
    - Breaking change: нет (новый метод)
 
-8. **Добавить больше query methods**
+2. **Добавить больше query methods**
    - Влияние: удобство API
    - Усилия: низкие
    - Breaking change: нет
@@ -791,6 +828,7 @@ quote.isTwoSided() {
 **Quote Value Object** - это **хорошо спроектированная и реализованная** абстракция, которая следует архитектурным паттернам проекта.
 
 **Сильные стороны:**
+
 - ✅ Чёткое разделение слоёв
 - ✅ Правильные инварианты
 - ✅ Хорошее использование wrapOp
@@ -798,6 +836,7 @@ quote.isTwoSided() {
 - ✅ Comprehensive тесты (154)
 
 **Основные проблемы:**
+
 - ⚠️ Naming inconsistency с другими VO
 - ⚠️ Отсутствие helper methods (дублирование кода)
 - ⚠️ Нет документации в docs/quote/

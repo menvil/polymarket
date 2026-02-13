@@ -15,6 +15,7 @@
 Реализация Percentage демонстрирует **высокое качество** и **хорошее соответствие** архитектурным паттернам проекта. Модуль является самым полным по документации и наиболее современным по применению best practices, но имеет несколько отклонений от устоявшихся конвенций других модулей.
 
 ### Ключевые достижения ✅
+
 - Самая полная документация (5073 строки vs 3307-4236 в других)
 - Единственный модуль с `rules.md` документацией
 - Применение `isErr()` type guard для type safety
@@ -22,6 +23,7 @@
 - Полное TSDoc покрытие
 
 ### Ключевые проблемы ⚠️
+
 - Использование string literals вместо enum в InvariantViolation
 - ErrorReason в `core/` вместо `errors/`
 - Смешанное использование `isErr()` и `!result.ok`
@@ -36,12 +38,14 @@
 **Сильные стороны:**
 
 ✅ **Полное соответствие Throws+Facade паттерну**
+
 - Core бросает исключения при нарушении инвариантов
 - Facade ловит и оборачивает в Result
 - Чёткое разделение ответственности
 
 ✅ **Правильная слоистость**
-```
+
+```text
 percentage/
 ├── core/          # Инварианты и Value Object
 ├── facade/        # Result-based API
@@ -50,6 +54,7 @@ percentage/
 ```
 
 ✅ **Полная интеграция errorUtils**
+
 - Использует `toDecimal()`, `wrapOp()`, `rewrap()`
 - Устраняет дублирование кода
 - Единообразие с Money/Price/Quantity
@@ -57,12 +62,14 @@ percentage/
 **Отклонения:**
 
 ⚠️ **ErrorReason location**
+
 - **Текущее:** `core/PercentageErrorReason.ts`
 - **Эталон:** `errors/MoneyErrorReason.ts`, `errors/PriceErrorReason.ts`
 - **Влияние:** Низкое (не влияет на функциональность)
 - **Рекомендация:** Переместить в `errors/PercentageErrorReason.ts`
 
 ⚠️ **InvariantViolation в отдельном файле**
+
 - **Текущее:** `core/PercentageInvariantViolation.ts` (отдельный файл)
 - **Эталон:** Money использует отдельный файл, Price/Quantity встраивают
 - **Оценка:** Следует паттерну Money (более чистый подход)
@@ -77,6 +84,7 @@ percentage/
 **Сильные стороны:**
 
 ✅ **Полный набор методов создания**
+
 ```typescript
 // Стандартные (как у всех)
 PercentageService.create(50)                    // ✅
@@ -89,6 +97,7 @@ PercentageService.fromBasisPoints(5000)         // ✅ Уникально
 ```
 
 ✅ **Математические операции**
+
 ```typescript
 add(a, b)         // ✅ Как Money, Quantity
 subtract(a, b)    // ✅ Как Money, Quantity
@@ -98,6 +107,7 @@ applyTo(p, v)     // ✅ Уникально (применение процент
 ```
 
 ✅ **Конверсии (богаче чем у эталонов)**
+
 ```typescript
 toNumber()          // ✅ Стандартно
 value()             // ✅ Стандартно
@@ -106,6 +116,7 @@ toBasisPoints()     // ✅ Уникально (bp)
 ```
 
 ✅ **Константы**
+
 ```typescript
 Percentage.ZERO          // ✅ Как у всех
 Percentage.ONE_HUNDRED   // ✅ Уникально, логично
@@ -116,11 +127,13 @@ Percentage.max()         // ✅ Как у Price
 **Отклонения:**
 
 ⚠️ **Comparison methods в Core (правильно)**
+
 - **Текущее:** `isLessThan()`, `isGreaterThan()` и т.д. в Core
 - **Эталон:** Money выносит в Service из-за валют, Price/Quantity в Core
 - **Оценка:** Следует паттерну Price/Quantity (правильный подход для Percentage)
 
 ⚠️ **Отсутствие `Percentage.ONE`**
+
 - **Наблюдение:** Quantity имеет `Quantity.ONE`, Percentage нет
 - **Оценка:** `ONE_HUNDRED` более семантично для процентов чем `ONE`
 - **Действие:** Не требуется
@@ -134,6 +147,7 @@ Percentage.max()         // ✅ Как у Price
 **Сильные стороны:**
 
 ✅ **Полная интеграция errorUtils**
+
 ```typescript
 // toDecimal usage
 const decimalResult = toDecimal(
@@ -151,6 +165,7 @@ return Err(rewrap('create', {}, error, InvalidPercentageError));
 ```
 
 ✅ **Богатый ErrorReason enum (13 значений)**
+
 ```typescript
 INVALID_FORMAT, NAN, NON_FINITE          // ✅ Базовые (как у всех)
 OUT_OF_RANGE_LOW, OUT_OF_RANGE_HIGH      // ✅ Базовые (как у всех)
@@ -164,6 +179,7 @@ EXCEEDS_MAX_SPREAD                       // ✅ Доменные (spreads)
 **Критические проблемы:**
 
 ❌ **String literals в InvariantViolation.reason**
+
 ```typescript
 // Текущее (НЕПРАВИЛЬНО)
 public readonly reason: 'NAN' | 'NON_FINITE' | 'OUT_OF_RANGE_LOW' | 'OUT_OF_RANGE_HIGH';
@@ -180,6 +196,7 @@ public readonly reason:
 **Действие:** Обязательный рефакторинг
 
 ⚠️ **Смешанное использование isErr() и !result.ok**
+
 ```typescript
 // В PercentageService.ts (6 мест)
 if (isErr(result)) { ... }
@@ -201,13 +218,15 @@ if (!result.ok) { ... }
 **Выдающиеся достижения:**
 
 ✅ **Самая полная документация**
+
 - **Percentage:** 5073 строки
 - Money: 3307 строк
 - Price: 4125 строк
 - Quantity: 4236 строк
 
 ✅ **Уникальные документы**
-```
+
+```text
 docs/percentage/
 ├── README.md         (381 строка)  ✅ Как у всех
 ├── architecture.md   (713 строк)   ✅ Как у всех
@@ -220,6 +239,7 @@ docs/percentage/
 ```
 
 ✅ **Полное TSDoc покрытие**
+
 - 100% публичных методов документированы
 - @param для всех параметров
 - @returns для всех возвращаемых значений
@@ -228,6 +248,7 @@ docs/percentage/
 - @remarks с деталями реализации
 
 ✅ **Практические примеры**
+
 - Trading fees scenarios
 - Spread calculation
 - PnL calculation
@@ -243,6 +264,7 @@ docs/percentage/
 **Сильные стороны:**
 
 ✅ **Type safety (частично улучшенная)**
+
 ```typescript
 import { isErr } from '@polymarket/result';
 
@@ -253,17 +275,20 @@ if (isErr(result)) {
 ```
 
 ✅ **Naming conventions**
+
 - ✅ Следует паттерну всех модулей
 - ✅ Понятные, семантичные имена
 - ✅ Консистентность префиксов/суффиксов
 
 ✅ **Архитектурная чистота**
+
 - ✅ Core только инварианты, без side effects
 - ✅ Facade только orchestration
 - ✅ Adapters только границы
 - ✅ Rules только бизнес-политики
 
 ✅ **DRY principle**
+
 - ✅ Полная интеграция errorUtils
 - ✅ -100% дублирования error handling
 - ✅ Переиспользование helper functions
@@ -271,6 +296,7 @@ if (isErr(result)) {
 **Проблемы:**
 
 ⚠️ **Inconsistent error handling patterns**
+
 ```typescript
 // 6 мест с isErr()
 if (isErr(result)) { ... }
@@ -280,6 +306,7 @@ if (!result.ok) { ... }
 ```
 
 ⚠️ **Отсутствие тестов**
+
 - ❌ Unit tests
 - ❌ Integration tests (есть файл, но не в src/)
 - ❌ E2E tests
@@ -293,6 +320,7 @@ if (!result.ok) { ... }
 **Выдающиеся достижения:**
 
 ✅ **Полная поддержка Polymarket use cases**
+
 ```typescript
 // Fees
 ValidateFeeNonNegative      // fee >= 0%
@@ -305,6 +333,7 @@ ValidateSpreadRange         // spread в [min, max]
 ```
 
 ✅ **Financial representations**
+
 ```typescript
 // Процентная шкала (0-100)
 const pct = Percentage.of(50);  // 50%
@@ -317,6 +346,7 @@ pct.toBasisPoints();  // 5000 bp
 ```
 
 ✅ **Применение процентов**
+
 ```typescript
 const fee = PercentageService.create(2.5);  // 2.5%
 const amount = new Decimal(1000);
@@ -325,6 +355,7 @@ const result = PercentageService.applyTo(fee.value, amount);
 ```
 
 ✅ **Поддержка отрицательных значений**
+
 ```typescript
 // PnL calculation
 const pnl = PercentageService.create(-15);  // -15% loss
@@ -352,7 +383,7 @@ pnl.value.isNegative();  // true
 
 ### Позиционирование
 
-```
+```text
      ┌─────────────────────────────────────────┐
      │          Quality Benchmark              │
      └─────────────────────────────────────────┘
@@ -375,11 +406,13 @@ pnl.value.isNegative();  // true
 #### 1. Заменить string literals на enum в InvariantViolation
 
 **Текущее:**
+
 ```typescript
 public readonly reason: 'NAN' | 'NON_FINITE' | 'OUT_OF_RANGE_LOW' | 'OUT_OF_RANGE_HIGH';
 ```
 
 **Должно быть:**
+
 ```typescript
 public readonly reason:
   | PercentageErrorReason.NAN
@@ -401,6 +434,7 @@ public readonly reason:
 #### 2. Стандартизировать на !result.ok вместо isErr()
 
 **Заменить 6 мест:**
+
 ```typescript
 // Было
 if (isErr(result)) { ... }
@@ -436,6 +470,7 @@ if (!result.ok) { ... }
 #### 4. Добавить тесты
 
 **Создать:**
+
 - `src/percentage/__tests__/core/Percentage.test.ts`
 - `src/percentage/__tests__/facade/PercentageService.test.ts`
 - `src/percentage/__tests__/adapters/PercentageFormatter.test.ts`

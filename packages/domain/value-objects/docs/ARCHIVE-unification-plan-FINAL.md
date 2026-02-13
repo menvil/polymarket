@@ -12,10 +12,12 @@
 **Убрать дубликаты:**
 
 **PriceErrorReason:**
+
 - ❌ Удалить: `EXCEEDS_MAX_PRICE`, `NEGATIVE_PRICE`
 - ✅ Использовать: `OUT_OF_RANGE_HIGH`, `OUT_OF_RANGE_LOW`
 
 **QuantityErrorReason:**
+
 - ❌ Удалить: `NEGATIVE_QUANTITY`, `EXCEEDS_MAX_QUANTITY`
 - ✅ Использовать: `NEGATIVE`
 
@@ -24,6 +26,7 @@
 ### ✅ Коммит 2: Унификация констант на static readonly
 
 **Price:**
+
 ```typescript
 // УДАЛИТЬ методы и приватные константы:
 private static readonly MIN_PRICE = ...
@@ -37,6 +40,7 @@ public static readonly HALF = new Price(new Decimal('0.5'));
 ```
 
 **Money:**
+
 ```typescript
 // БЫЛО:
 private static _zeroUSDC?: Money;
@@ -57,6 +61,7 @@ public static readonly ZERO: Record<SupportedCurrency, Money> = {
 ### ✅ Коммит 3: Убрать ParseError из Money
 
 **Упростить Money.of():**
+
 ```typescript
 // БЫЛО:
 try {
@@ -73,6 +78,7 @@ return Money.create(new Decimal(value), currency);
 **Удалить файл:** `src/money/core/MoneyParseError.ts`
 
 **Обновить MoneyService.create():**
+
 ```typescript
 try {
   const money = Money.of(value, currency);
@@ -97,6 +103,7 @@ try {
 **Price:** Оставить как есть (уже правильно)
 
 **Quantity:** Добавить явную проверку NaN
+
 ```typescript
 // БЫЛО:
 if (!v.isFinite()) throw ...NON_FINITE;
@@ -109,6 +116,7 @@ if (v.isNegative()) throw new QuantityInvariantViolation('...', QuantityErrorRea
 ```
 
 **Money:** Переупорядочить
+
 ```typescript
 // NaN → Finite → Currency → Max
 if (amount.isNaN()) throw ...NAN;
@@ -124,6 +132,7 @@ if (amount.abs().greaterThan(MAX_AMOUNT)) throw ...EXCEEDS_MAX_AMOUNT;
 **BREAKING CHANGE**
 
 **Money.ts:**
+
 ```typescript
 // БЫЛО:
 public amount(): Decimal { return this.amt; }
@@ -135,6 +144,7 @@ public value(): Decimal { return this.amt; }
 ```
 
 **Обновить вручную файл за файлом:**
+
 - `src/money/facade/MoneyService.ts`
 - `src/money/adapters/MoneyFormatter.ts`
 - `src/money/adapters/MoneySerializer.ts`
@@ -142,6 +152,7 @@ public value(): Decimal { return this.amt; }
 - Документация (~10 файлов)
 
 **Проверка после каждого файла:**
+
 ```bash
 npm run build
 npm test
@@ -152,6 +163,7 @@ npm test
 ### ✅ Коммит 6: Методы сравнения
 
 **Price - добавить в Core:**
+
 ```typescript
 isLessThan(other: Price): boolean
 isLessThanOrEqual(other: Price): boolean
@@ -164,6 +176,7 @@ isGreaterThanOrEqual(other: Price): boolean
 **Money - ТОЛЬКО в Facade:**
 
 **Core (Money.ts):**
+
 ```typescript
 // ОСТАВИТЬ:
 hasSameCurrency(other: Money): boolean
@@ -173,6 +186,7 @@ equals(other: Money): boolean  // Перенести в Facade
 ```
 
 **Facade (MoneyService.ts) - добавить:**
+
 ```typescript
 public static isLessThan(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
   if (!a.hasSameCurrency(b)) {
@@ -203,6 +217,7 @@ public static isLessThan(a: Money, b: Money): Result<boolean, InvalidMoneyError>
 ### ✅ Коммит 7: Обновление документации
 
 **Обновить:**
+
 - Все примеры с `.value()` → `.value()`
 - Все примеры с `Price.MIN` → `Price.MIN`
 - Все примеры с `Money.ZERO.USDC` → `Money.ZERO.USDC`
@@ -222,6 +237,7 @@ public static isLessThan(a: Money, b: Money): Result<boolean, InvalidMoneyError>
 7. **Коммит 7** - Документация (без кода)
 
 **Проверка после каждого коммита:**
+
 ```bash
 npm run build
 npm test

@@ -24,12 +24,14 @@
 - **RatioSerializer** - сериализация Ratio в/из JSON
 
 **Общие характеристики:**
+
 - ✅ Все методы возвращают `Result<T, E>` (Never Throw Contract)
 - ✅ Типизированные ошибки через `InvalidRatioError`
 - ✅ Inline валидация параметров
 - ✅ Используют RatioService для создания Ratio
 
 **Import:**
+
 ```typescript
 import {
   RatioFormatter,
@@ -54,10 +56,12 @@ public static toDecimal(
 Форматировать Ratio как decimal string.
 
 **Параметры:**
+
 - `ratio: Ratio` - Ratio для форматирования
 - `decimals: number = 4` - Количество десятичных знаков (по умолчанию 4)
 
 **Возвращает:**
+
 - `Ok(string)` - отформатированная строка (например, `"0.0200"`)
 - `Err(InvalidRatioError)` - если `decimals` невалиден
 
@@ -117,6 +121,7 @@ if (!invalid2.ok) {
 ```
 
 **Когда использовать:**
+
 - Отображение в UI (raw value)
 - Логирование
 - API responses (если формат decimal)
@@ -135,14 +140,17 @@ public static toPercent(
 Форматировать Ratio как процент (с символом `%`).
 
 **Параметры:**
+
 - `ratio: Ratio` - Ratio для форматирования
 - `decimals: number = 2` - Количество десятичных знаков (по умолчанию 2)
 
 **Возвращает:**
+
 - `Ok(string)` - отформатированная строка (например, `"2.50%"`)
 - `Err(InvalidRatioError)` - если `decimals` невалиден
 
 **Конверсия:**
+
 ```typescript
 ratio (fraction) → percent = ratio * 100
 
@@ -223,6 +231,7 @@ if (changeResult.ok) {
 ```
 
 **Когда использовать:**
+
 - ✅ UI отображение процентов
 - ✅ Reports и dashboards
 - ✅ User-facing output
@@ -238,17 +247,20 @@ public static toBps(
 ```
 
 **Описание:**
-Форматировать Ratio как basis points (с суффиксом ` bps`).
+Форматировать Ratio как basis points (с суффиксом `bps`).
 
 **Параметры:**
+
 - `ratio: Ratio` - Ratio для форматирования
 - `decimals: number = 0` - Количество десятичных знаков (по умолчанию 0)
 
 **Возвращает:**
+
 - `Ok(string)` - отформатированная строка (например, `"200 bps"`)
 - `Err(InvalidRatioError)` - если `decimals` невалиден
 
 **Конверсия:**
+
 ```typescript
 ratio (fraction) → bps = ratio * 10000
 
@@ -315,6 +327,7 @@ if (negativeResult.ok) {
 ```
 
 **Когда использовать:**
+
 - ✅ Финансовые инструменты (bonds, rates, spreads)
 - ✅ Trading dashboards
 - ✅ Interest rates
@@ -331,14 +344,17 @@ public static parse(input: string): Result<Ratio, InvalidRatioError>
 Парсинг строки в Ratio. Автоматически определяет формат.
 
 **Поддерживаемые форматы:**
+
 - `"0.02"` - decimal (дробь)
 - `"2%"` - percent (процент)
 - `"200 bps"` - basis points
 
 **Параметры:**
+
 - `input: string` - Строка для парсинга
 
 **Возвращает:**
+
 - `Ok(Ratio)` - успешно распарсенный Ratio
 - `Err(InvalidRatioError)` - если формат невалиден
 
@@ -486,6 +502,7 @@ parseUserInput("invalid"); // null
 ```
 
 **Когда использовать:**
+
 - ✅ Парсинг пользовательского ввода
 - ✅ Чтение из конфигурационных файлов
 - ✅ Импорт данных из CSV/text
@@ -504,6 +521,7 @@ interface RatioJSON {
 ```
 
 **Пример:**
+
 ```json
 {
   "ratio": "0.02"
@@ -511,6 +529,7 @@ interface RatioJSON {
 ```
 
 **Почему decimal string:**
+
 - ✅ Сохраняет точность (Decimal.js precision)
 - ✅ Избегает lossy conversion через JSON number
 - ✅ Работает с очень большими/малыми числами
@@ -525,9 +544,11 @@ public static toJSON(ratio: Ratio): RatioJSON
 Сериализовать Ratio в JSON объект.
 
 **Параметры:**
+
 - `ratio: Ratio` - Ratio для сериализации
 
 **Возвращает:**
+
 - `RatioJSON` - JSON объект с полем `ratio` (decimal string)
 
 **Примеры:**
@@ -615,9 +636,11 @@ public static fromJSON(json: unknown): Result<Ratio, InvalidRatioError>
 Десериализовать Ratio из JSON объекта.
 
 **Параметры:**
+
 - `json: unknown` - JSON объект (type-safe: accepts unknown)
 
 **Возвращает:**
+
 - `Ok(Ratio)` - успешно десериализованный Ratio
 - `Err(InvalidRatioError)` - если структура невалидна
 

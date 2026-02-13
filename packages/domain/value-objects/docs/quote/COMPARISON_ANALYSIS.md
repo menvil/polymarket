@@ -18,7 +18,7 @@
 
 Все четыре модуля следуют одинаковой структуре:
 
-```
+```text
 {module}/
 ├── core/              # Value object + InvariantViolation
 │   ├── {Module}.ts
@@ -75,6 +75,7 @@ export class Money {
 ```
 
 **Особенности:**
+
 - ✅ Константы: SUPPORTED_CURRENCIES, MAX_AMOUNT, ZERO
 - ✅ Factory methods: `of()`, `fromDecimal()`, `zero()`
 - ✅ Геттеры + Query методы
@@ -109,6 +110,7 @@ export class Price {
 ```
 
 **Особенности:**
+
 - ✅ Константы: MIN, MAX, HALF
 - ✅ Factory methods: `of()`, `fromDecimal()`
 - ✅ Геттеры + Query методы
@@ -142,6 +144,7 @@ export class Quantity {
 ```
 
 **Особенности:**
+
 - ✅ Константы: ZERO, ONE
 - ✅ Factory methods: `of()`, `fromDecimal()`
 - ✅ Геттеры + Query методы
@@ -198,6 +201,7 @@ export class Quote {
 #### 1. Отсутствие констант
 
 **Money/Price/Quantity:**
+
 ```typescript
 public static readonly ZERO = ...
 public static readonly MIN = ...
@@ -205,6 +209,7 @@ public static readonly MAX = ...
 ```
 
 **Quote:**
+
 ```typescript
 // НЕТ КОНСТАНТ
 ```
@@ -216,12 +221,14 @@ public static readonly MAX = ...
 #### 2. Один factory method vs два
 
 **Money/Price/Quantity:**
+
 ```typescript
 public static of(value: number | string | Decimal): T
 public static fromDecimal(decimal: Decimal): T
 ```
 
 **Quote:**
+
 ```typescript
 public static of(
   bid: Price | null,
@@ -233,6 +240,7 @@ public static of(
 ```
 
 **⚠️ ПРОБЛЕМА:** Quote не имеет `fromDecimal()`, хотя паттерн предполагает два factory:
+
 - `of()` — принимает простые типы (number, string)
 - `fromDecimal()` — принимает уже распарсенные Decimal
 
@@ -263,11 +271,13 @@ public static fromComponents(
 #### 3. Domain logic в Core
 
 **Money/Price/Quantity:**
+
 - ❌ Нет математических методов
 - ❌ Нет бизнес-логики
 - ✅ Только геттеры + простые query методы (`isZero()`, `equals()`)
 
 **Quote:**
+
 - ✅ Делегирует вычисления в Spread:
   - `spread()` — создает Spread объект (Spread | null)
   - Далее используются методы Spread: `spread.width()`, `spread.mid()`, `spread.widthPercentage()`
@@ -277,6 +287,7 @@ public static fromComponents(
 Quote не дублирует API Spread. Вместо прямых методов `spreadWidth()`, `mid()`, `spreadPercentage()` предоставляет метод `spread(): Spread | null`.
 
 **Преимущества подхода:**
+
 1. **Нет дублирования логики** — единственный источник истины для вычислений Spread
 2. **Нет дублирования API** — если есть метод `spread()`, зачем дублировать его методы?
 3. **Более четкий API** — пользователь получает объект Spread и использует все его методы
@@ -284,6 +295,7 @@ Quote не дублирует API Spread. Вместо прямых методо
 5. **Правильная архитектура** — Quote зависит от Spread (высокий → низкий уровень)
 
 **Использование:**
+
 ```typescript
 const spread = quote.spread();
 if (spread !== null) {
@@ -317,6 +329,7 @@ if (spread !== null) {
 #### 1. Более сложная валидация входных данных
 
 **Money/Price/Quantity:**
+
 ```typescript
 public static create(value: number | string | Decimal): Result<T, Error> {
   const ctx = { value };
@@ -333,6 +346,7 @@ public static create(value: number | string | Decimal): Result<T, Error> {
 ```
 
 **Quote:**
+
 ```typescript
 public static create(
   bidValue: number | null,
@@ -387,26 +401,31 @@ public static create(
 #### 2. Многоуровневый create (create → createFromDecimals → Core)
 
 **Money/Price/Quantity:**
-```
+
+```text
 create() → toDecimal() → Core.of()
 ```
 
 **Quote:**
-```
+
+```text
 create() → toDecimal() × 4 → createFromDecimals() → PriceService.create() × 2 + QuantityService.create() × 2 → ValidateQuoteSizes → Quote.of()
 ```
 
 Quote имеет **двухуровневую фабрику**:
+
 1. `create()` — парсит numbers → Decimals
 2. `createFromDecimals()` — создаёт Price/Quantity → Quote
 
 #### 3. Больше валидации
 
 **Money/Price/Quantity:**
+
 - Одно значение → один toDecimal()
 - Простая валидация диапазона
 
 **Quote:**
+
 - 4 значения → 4× toDecimal()
 - Создание 2 Price + 2 Quantity через их Facade
 - Валидация sizes через Rules
@@ -415,6 +434,7 @@ Quote имеет **двухуровневую фабрику**:
 ### ✅ Оценка Quote Facade: 9/10
 
 **Плюсы:**
+
 - ✅ Правильная интеграция с errorUtils
 - ✅ Полный opChain tracking
 - ✅ Root-cause preservation
@@ -423,6 +443,7 @@ Quote имеет **двухуровневую фабрику**:
 - ✅ "Never Throw" контракт
 
 **Минусы:**
+
 - ⚠️ Большой размер (702 строки) из-за repetitive парсинга
 - ⚠️ Могло быть DRY-er с helper функцией для парсинга nullable параметров
 
@@ -514,6 +535,7 @@ ValidateMarketCrossing      // quote не пересекает orderbook
 3. **Композитная валидация** — проверяют взаимодействие нескольких параметров
 
 **Консистентность:**
+
 - ✅ Тот же паттерн: `static check()` возвращает `Result<void, Error>`
 - ✅ Типизированные ErrorReason
 - ✅ Детальный контекст в ошибках
@@ -543,6 +565,7 @@ ValidateMarketCrossing      // quote не пересекает orderbook
 #### QuoteSerializer
 
 **Money/Price/Quantity Serializer:**
+
 ```typescript
 export interface MoneyJson {
   amount: string;
@@ -563,6 +586,7 @@ fromJSON(json: MoneyJson): Result<Money, InvalidMoneyError> {
 ```
 
 **Quote Serializer:**
+
 ```typescript
 export interface QuoteJson {
   bid: number | null;
@@ -614,6 +638,7 @@ fromJSON(json: QuoteJson): Result<Quote, InvalidQuoteError> {
 #### QuoteFormatter
 
 **Money/Price/Quantity Formatter:**
+
 ```typescript
 format(value: T): string {
   // Один формат: числовое значение
@@ -625,6 +650,7 @@ formatDetailed(value: T): string {
 ```
 
 **Quote Formatter:**
+
 ```typescript
 toDisplay(quote: Quote): string {
   // "0.4800 @ 100.00 / 0.5200 @ 150.00"
@@ -656,19 +682,22 @@ formatMid(quote: Quote): string | null {
 ### ✅ Оценка Quote Adapters: 8/10
 
 **Плюсы:**
+
 - ✅ Все методы "Never Throw"
 - ✅ Детальная валидация JSON
 - ✅ Типизированные ошибки
 - ✅ Много полезных форматов
 
 **Минусы:**
+
 - ⚠️ Repetitive валидация JSON (5 одинаковых if-блоков)
 - ⚠️ Formatter слишком большой (363 строки) — могли бы вынести formatters в отдельные файлы
 
 **Предложение:**
 
 Структура Formatter для больших модулей:
-```
+
+```text
 adapters/
 ├── QuoteSerializer.ts
 ├── formatters/
@@ -760,6 +789,7 @@ export enum QuoteErrorReason {
 5. **Business-rule ошибки** — SPREAD_TOO_NARROW, SPREAD_TOO_WIDE, MARKET_CROSSING
 
 **Консистентность:**
+
 - ✅ Тот же паттерн enum
 - ✅ SCREAMING_SNAKE_CASE
 - ✅ Описательные имена
@@ -818,6 +848,7 @@ export namespace QuoteErrorReason {
 4. ✅ **examples.md (600 строк)** — практические примеры использования
 
 **Преимущества:**
+
 - Детальное описание каждого метода
 - Примеры использования для каждого случая
 - Диаграммы архитектуры
@@ -845,12 +876,14 @@ export namespace QuoteErrorReason {
 ### ⚠️ НЕСООТВЕТСТВИЕ: InvariantViolation
 
 **Money + Quote:**
+
 ```typescript
 export class MoneyInvariantViolation extends Error { ... }
 export class QuoteInvariantViolation extends Error { ... }
 ```
 
 **Price + Quantity:**
+
 ```typescript
 // ❌ НЕТ InvariantViolation класса
 // Бросают простой Error или используют другой механизм
@@ -861,6 +894,7 @@ export class QuoteInvariantViolation extends Error { ... }
 ### ✅ Оценка Quote Naming: 10/10
 
 Все имена следуют консистентному паттерну:
+
 - `Quote` (core)
 - `QuoteInvariantViolation` (exception)
 - `QuoteErrorReason` (enum)
@@ -897,6 +931,7 @@ export class QuoteInvariantViolation extends Error { ... }
 ### Высокий приоритет
 
 1. **Добавить второй factory method для консистентности**
+
    ```typescript
    public static fromComponents(
      bid: Price | null,
@@ -908,13 +943,15 @@ export class QuoteInvariantViolation extends Error { ... }
    ```
 
 2. **DRY-ify парсинг nullable параметров**
+
    ```typescript
    private static parseNullable(...): Result<Decimal | null, InvalidQuoteError>
    ```
 
 ### Средний приоритет
 
-3. **Разбить QuoteFormatter на несколько файлов**
+1. **Разбить QuoteFormatter на несколько файлов**
+
    ```
    formatters/
    ├── QuoteDisplayFormatter.ts
@@ -922,16 +959,17 @@ export class QuoteInvariantViolation extends Error { ... }
    └── QuoteComponentFormatter.ts
    ```
 
-4. **DRY-ify JSON валидацию в QuoteSerializer**
+2. **DRY-ify JSON валидацию в QuoteSerializer**
+
    ```typescript
    private static validateJsonField(field: string, value: unknown, expectedType: string): Result<void, InvalidQuoteError>
    ```
 
 ### Низкий приоритет
 
-5. **Группировать ErrorReason по категориям** (в документации или namespace)
+1. **Группировать ErrorReason по категориям** (в документации или namespace)
 
-6. **Документировать почему Quote имеет domain logic в Core**
+2. **Документировать почему Quote имеет domain logic в Core**
    > Quote оставляет derived properties в Core, потому что это естественные геттеры композитного объекта, которые не могут fail.
 
 ---
@@ -972,11 +1010,13 @@ export class QuoteInvariantViolation extends Error { ... }
 **Quote — отличная реализация, которая следует паттерну Money/Price/Quantity, но адаптирует его под композитный объект.**
 
 **Основные различия обоснованы:**
+
 - Отсутствие констант — котировка не имеет смысловых "ZERO" или "MIN"
 - Domain logic в Core — derived properties не могут fail
 - Больше кода — 4 компонента vs 1 значение
 
 **Quote даже ПРЕВОСХОДИТ эталоны в:**
+
 - Документации (в 2× полнее)
 - Adapters (в 2× больше форматов)
 - Валидации (component-specific ошибки)

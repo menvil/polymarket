@@ -23,12 +23,14 @@ npm run ci
 ```
 
 Выполняет в строгой последовательности:
+
 1. `typecheck` - проверка типов TypeScript
 2. `lint` - проверка code style (ESLint)
 3. `build` - компиляция проекта
 4. `test` - запуск тестов
 
 **Когда использовать:**
+
 - ✅ Pre-commit hooks
 - ✅ Pull request validation
 - ✅ Quick CI checks
@@ -46,12 +48,14 @@ npm run ci:full
 ```
 
 Выполняет в строгой последовательности:
+
 1. `typecheck:all` - проверка типов src + tests
 2. `lint:all` - проверка code style src + tests
 3. `build` - компиляция проекта
 4. `test:coverage` - тесты с coverage отчетом
 
 **Когда использовать:**
+
 - ✅ Pre-release validation
 - ✅ Main branch protection
 - ✅ Nightly builds
@@ -70,20 +74,24 @@ npm run typecheck
 ```
 
 **Проверяет:**
+
 - ✅ TypeScript type errors в src/
 - ✅ Правильность использования generic типов
 - ✅ Type narrowing в Result<T, E>
 - ✅ Соответствие interfaces и types
 
 **НЕ проверяет:**
+
 - ❌ Тесты (для этого используй `typecheck:all`)
 
 **Выход:**
+
 - Exit code 0 - все ОК
 - Exit code != 0 - есть type errors
 
 **Пример ошибки:**
-```
+
+```text
 src/money/facade/MoneyService.ts(97,63): error TS2339:
   Property 'error' does not exist on type 'Result<Decimal, InvalidMoneyError>'.
 ```
@@ -97,12 +105,14 @@ npm run lint
 ```
 
 **Проверяет:**
+
 - ✅ ESLint rules
 - ✅ Code style consistency
 - ✅ Best practices violations
 - ✅ Unused imports
 
 **Автофикс:**
+
 ```bash
 npm run lint:fix
 ```
@@ -116,11 +126,13 @@ npm run build
 ```
 
 **Проверяет:**
+
 - ✅ Успешная компиляция TypeScript
 - ✅ Генерация .d.ts declaration files
 - ✅ Отсутствие circular dependencies
 
 **Результат:**
+
 - Генерирует `dist/` директорию
 - Создает declaration maps для IDE
 
@@ -133,11 +145,13 @@ npm run test
 ```
 
 **Запускает:**
-- ✅ Все unit тесты (__tests__/)
+
+- ✅ Все unit тесты (**tests**/)
 - ✅ Integration тесты
 - ✅ Snapshot тесты
 
 **С coverage:**
+
 ```bash
 npm run test:coverage
 ```
@@ -308,6 +322,7 @@ npm run typecheck && npm run lint
 ### Success Criteria
 
 **Pull Request должен:**
+
 - ✅ Пройти `npm run ci` с exit code 0
 - ✅ Иметь 0 TypeScript errors
 - ✅ Иметь 0 ESLint errors
@@ -319,12 +334,14 @@ npm run typecheck && npm run lint
 **Если CI падает:**
 
 1. **Type errors:**
+
    ```bash
    npm run typecheck
    # Исправь ошибки в выводе
    ```
 
 2. **Lint errors:**
+
    ```bash
    npm run lint:fix
    # Review изменения
@@ -332,12 +349,14 @@ npm run typecheck && npm run lint
    ```
 
 3. **Test failures:**
+
    ```bash
    npm test
    # Исправь failed тесты
    ```
 
 4. **Build errors:**
+
    ```bash
    npm run build
    # Проверь circular dependencies
@@ -400,6 +419,7 @@ npm run pre-push
 **Причина:** Разные версии TypeScript или node_modules
 
 **Решение:**
+
 ```bash
 # Очисти и переустанови dependencies
 rm -rf node_modules package-lock.json
@@ -416,6 +436,7 @@ npx tsc --version  # Должно быть 5.9.3+
 **Причина:** TypeScript генерирует JS даже с type errors (по умолчанию)
 
 **Решение:**
+
 - ✅ CI script запускает `typecheck` ПЕРЕД build
 - ✅ Если typecheck падает - build не запустится
 - ✅ Это гарантирует type safety
@@ -427,6 +448,7 @@ npx tsc --version  # Должно быть 5.9.3+
 **Причина:** Временные зависимости или порядок выполнения
 
 **Решение:**
+
 ```bash
 # Запусти тесты в случайном порядке
 npm test -- --randomize
@@ -439,7 +461,7 @@ npm test -- --runInBand
 
 ## 📈 Metrics
 
-### Рекомендуемые метрики для отслеживания:
+### Рекомендуемые метрики для отслеживания
 
 1. **Type Safety:**
    - 0 TypeScript errors на main branch

@@ -20,6 +20,7 @@
 `RatioService` - это Facade слой для безопасного создания Ratio value objects.
 
 **Ключевые характеристики:**
+
 - ✅ **Never Throw Contract**: все методы возвращают `Result<T, E>`, никогда не бросают исключения
 - ✅ **Type-Safe Errors**: типизированные ошибки через `InvalidRatioError` с `RatioErrorReason`
 - ✅ **Multiple Formats**: поддержка decimal, percent, basis points
@@ -27,6 +28,7 @@
 - ✅ **Consistent API**: все методы следуют единому паттерну
 
 **Основной интерфейс:**
+
 ```typescript
 // Import
 import { RatioService } from '@polymarket/value-objects';
@@ -59,6 +61,7 @@ if (result.ok) {
 ```
 
 **Контраст с Core слоем:**
+
 ```typescript
 // ❌ Core слой БРОСАЕТ исключения
 try {
@@ -86,10 +89,12 @@ public static fromDecimal(
 Создать Ratio из дроби (fraction).
 
 **Параметры:**
+
 - `value: number | string | Decimal` - Дробь: `0.02` для 2%, `0.5` для 50%
 - `options?: RatioCreateOptions` - Опции валидации (см. [Validation Options](#validation-options))
 
 **Возвращает:**
+
 - `Ok(Ratio)` - успешно создан Ratio
 - `Err(InvalidRatioError)` - ошибка валидации с typed context
 
@@ -164,6 +169,7 @@ if (!invalidResult.ok) {
 #### Когда использовать fromDecimal()
 
 Используйте `fromDecimal()` когда:
+
 - ✅ У вас уже есть дробь (`0.02`, `0.5`, `1.0`)
 - ✅ Значение из математического вычисления
 - ✅ Хотите явно указать, что это дробь
@@ -187,14 +193,17 @@ public static fromPercent(
 Создать Ratio из процента (2 для 2%).
 
 **Параметры:**
+
 - `percent: number | string | Decimal` - Процент: `2` для 2%, `50` для 50%
 - `options?: RatioCreateOptions` - Опции валидации
 
 **Возвращает:**
+
 - `Ok(Ratio)` - успешно создан Ratio (значение будет `percent / 100`)
 - `Err(InvalidRatioError)` - ошибка валидации
 
 **Конверсия:**
+
 ```typescript
 percent → fraction = percent / 100
 
@@ -279,6 +288,7 @@ if (!invalidDiscount.ok) {
 #### Когда использовать fromPercent()
 
 Используйте `fromPercent()` когда:
+
 - ✅ Пользовательский ввод в процентах
 - ✅ Конфигурация/настройки (fee: 2%)
 - ✅ Отображение в UI (2%, 50%, 100%)
@@ -303,14 +313,17 @@ public static fromBps(
 Создать Ratio из basis points (200 для 2%).
 
 **Параметры:**
+
 - `bps: number | string | Decimal` - Basis points: `200` для 2%, `100` для 1%
 - `options?: RatioCreateOptions` - Опции валидации
 
 **Возвращает:**
+
 - `Ok(Ratio)` - успешно создан Ratio (значение будет `bps / 10000`)
 - `Err(InvalidRatioError)` - ошибка валидации
 
 **Конверсия:**
+
 ```typescript
 bps → fraction = bps / 10000
 
@@ -381,6 +394,7 @@ if (negSpreadResult.ok) {
 #### Когда использовать fromBps()
 
 Используйте `fromBps()` когда:
+
 - ✅ Финансовые инструменты (rates, spreads, yields)
 - ✅ Высокоточные коэффициенты
 - ✅ Данные из trading APIs (часто используют bps)
@@ -413,6 +427,7 @@ interface RatioCreateOptions {
 **Зачем:** Защита от бессмысленных операций.
 
 **Проблема:**
+
 ```typescript
 // Если ratio < -1, то операция (1 + ratio) даст отрицательный результат
 const amount = new Decimal(100);
@@ -422,6 +437,7 @@ const result = amount.mul(new Decimal(1).plus(ratio)); // 100 * (1 + (-1.5)) = 1
 ```
 
 **Решение:**
+
 ```typescript
 const ratioResult = RatioService.fromPercent(-150, { ensureGteMinusOne: true });
 if (!ratioResult.ok) {
@@ -435,6 +451,7 @@ if (!ratioResult.ok) {
 #### ✅ Используйте ensureGteMinusOne
 
 Для операций типа `amount * (1 + ratio)`:
+
 ```typescript
 // Markup/Discount применяемый к amount
 const markupResult = RatioService.fromPercent(10, { ensureGteMinusOne: true });
@@ -449,6 +466,7 @@ const feeResult = RatioService.fromPercent(2, { ensureGteMinusOne: true });
 #### ❌ НЕ используйте ensureGteMinusOne
 
 Для других операций:
+
 ```typescript
 // Просто процент от суммы (не применяется (1 + ratio))
 const commissionResult = RatioService.fromPercent(2); // amount * 0.02 - OK без валидации
@@ -490,10 +508,12 @@ public static equals(a: Ratio, b: Ratio): Result<boolean, never>
 Проверить равенство двух Ratio.
 
 **Параметры:**
+
 - `a: Ratio` - Первый Ratio
 - `b: Ratio` - Второй Ratio
 
 **Возвращает:**
+
 - `Ok(true)` - если значения равны
 - `Ok(false)` - если значения различны
 
@@ -651,6 +671,7 @@ const ratio = Ratio.of(new Decimal(0.02)); // @internal API!
 ```
 
 **Почему:**
+
 - Семантическая ясность (`fromPercent(2)` vs `of(0.02)` - что это?)
 - Type-safe errors через Result
 - Опциональная валидация (ensureGteMinusOne)

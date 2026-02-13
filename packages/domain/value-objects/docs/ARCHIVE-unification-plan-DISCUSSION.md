@@ -8,6 +8,7 @@
 ## ✅ Коммит 1: Очистка ErrorReason enums
 
 **Что делаем:**
+
 - Убрать дубликаты из PriceErrorReason (EXCEEDS_MAX_PRICE, NEGATIVE_PRICE)
 - Убрать дубликаты из QuantityErrorReason (NEGATIVE_QUANTITY, EXCEEDS_MAX_QUANTITY)
 - Заменить все использования на OUT_OF_RANGE_LOW/HIGH и NEGATIVE
@@ -21,6 +22,7 @@
 **Что предлагаю:**
 
 ### Price
+
 ```typescript
 // БЫЛО:
 public static min(): Price { return new Price(Price.MIN_PRICE); }
@@ -37,6 +39,7 @@ public static readonly HALF = Price.fromDecimal(Price.HALF_PRICE);
 ```
 
 **Использование:**
+
 ```typescript
 // БЫЛО:
 const min = Price.MIN;
@@ -46,6 +49,7 @@ const min = Price.MIN;
 ```
 
 ### Money
+
 ```typescript
 // БЫЛО:
 private static _zeroUSDC?: Money;
@@ -58,7 +62,9 @@ public static readonly ZERO_USDC = Money.fromDecimal(new Decimal(0), 'USDC');
 ```
 
 ### Quantity
+
 Уже правильно! Оставить как есть:
+
 ```typescript
 public static readonly ZERO = Quantity.of(0);
 public static readonly ONE = Quantity.of(1);
@@ -67,6 +73,7 @@ public static readonly ONE = Quantity.of(1);
 **РЕШЕНИЕ:**
 
 ### Price - переименовать константы
+
 ```typescript
 // БЫЛО:
 private static readonly MIN_PRICE = new Decimal('0.0001');
@@ -88,6 +95,7 @@ public static readonly HALF = new Price(new Decimal('0.5'));
 ```
 
 **Использование:**
+
 ```typescript
 // БЫЛО:
 const min = Price.MIN;
@@ -99,6 +107,7 @@ const minVal = Price.MIN.value();  // Вместо minValue()
 ```
 
 ### Money - Record с константами для каждой валюты
+
 ```typescript
 // БЫЛО:
 private static _zeroUSDC?: Money;
@@ -115,6 +124,7 @@ public static readonly ZERO: Record<SupportedCurrency, Money> = {
 ```
 
 **Использование:**
+
 ```typescript
 // БЫЛО:
 const zero = Money.ZERO.USDC;
@@ -125,17 +135,20 @@ const zeroUsdt = Money.ZERO.USDT;  // Когда добавим
 ```
 
 **Преимущества:**
+
 - ✅ Понятно о какой валюте речь
 - ✅ Легко добавить новые валюты
 - ✅ Type-safe (TypeScript знает все валюты)
 
 ### Quantity - оставить как есть
+
 ```typescript
 public static readonly ZERO = Quantity.of(0);
 public static readonly ONE = Quantity.of(1);
 ```
 
 **Затронутые файлы:**
+
 - `src/price/core/Price.ts` - константы, удаление методов
 - `src/price/facade/PriceService.ts` - `Price.MIN` → `Price.MIN`
 - `src/price/rules/**` - `Price.MIN.value()` → `Price.MIN.value()`
@@ -154,6 +167,7 @@ public static readonly ONE = Quantity.of(1);
 **Что делаем:**
 
 ### 1. Упростить Money.of()
+
 ```typescript
 // БЫЛО:
 public static of(value: number | string, currency: SupportedCurrency = 'USDC'): Money {
@@ -177,6 +191,7 @@ public static of(value: number | string, currency: SupportedCurrency = 'USDC'): 
 ### 2. Удалить MoneyParseError.ts
 
 ### 3. Обновить MoneyService.create()
+
 ```typescript
 // БЫЛО:
 try {
@@ -206,6 +221,7 @@ try {
 ```
 
 ### 4. Price и Quantity - оставить как есть
+
 ```typescript
 // Уже правильно - просто пробрасываем:
 public static of(value: number | string | Decimal): Price {
@@ -216,6 +232,7 @@ public static of(value: number | string | Decimal): Price {
 ```
 
 **Преимущества:**
+
 - ✅ Меньше кода (убираем MoneyParseError.ts)
 - ✅ Проще логика (меньше типов ошибок)
 - ✅ Единообразие (все три value objects одинаковые)
@@ -230,6 +247,7 @@ public static of(value: number | string | Decimal): Price {
 **Текущая ситуация:**
 
 ### Price (проверяет отдельно NaN и Finite)
+
 ```typescript
 if (v.isNaN()) throw ...NAN;
 if (!v.isFinite()) throw ...NON_FINITE;
@@ -238,12 +256,14 @@ if (v.greaterThan(MAX)) throw ...OUT_OF_RANGE_HIGH;
 ```
 
 ### Quantity (только Finite)
+
 ```typescript
 if (!v.isFinite()) throw ...NON_FINITE;  // isFinite() покрывает NaN
 if (v.isNegative()) throw ...NEGATIVE;
 ```
 
 ### Money (проверяет отдельно)
+
 ```typescript
 if (amount.isNaN()) throw ...NAN;
 if (!amount.isFinite()) throw ...NON_FINITE;
@@ -252,10 +272,12 @@ if (amount.abs().greaterThan(MAX)) throw ...EXCEEDS_MAX_AMOUNT;
 ```
 
 **Вопрос:**
+
 1. Нужно ли проверять NaN отдельно если isFinite() его покрывает?
 2. Или проверять отдельно чтобы давать разные error reasons (NAN vs NON_FINITE)?
 
 **Decimal.js поведение:**
+
 ```javascript
 new Decimal(NaN).isFinite()     // false
 new Decimal(Infinity).isFinite() // false
@@ -266,25 +288,30 @@ new Decimal(Infinity).isNaN()   // false
 **Варианты:**
 
 **Вариант A: Проверять отдельно (как Price/Money)**
+
 ```typescript
 if (v.isNaN()) throw ...NAN;
 if (!v.isFinite()) throw ...NON_FINITE;
 ```
+
 - Pros: Разные error reasons для NaN и Infinity
 - Cons: Дублирование проверки
 
 **Вариант B: Только isFinite (как Quantity)**
+
 ```typescript
 if (!v.isFinite()) throw ...NON_FINITE;  // Покрывает NaN
 ```
+
 - Pros: Одна проверка
 - Cons: Не различаем NaN и Infinity
 
 **РЕШЕНИЕ: Вариант A** - проверять отдельно для разных error reasons
 
-### Что делаем:
+### Что делаем
 
 **Price - оставить как есть** (уже правильно):
+
 ```typescript
 if (v.isNaN()) throw new PriceInvariantViolation('...', PriceErrorReason.NAN);
 if (!v.isFinite()) throw new PriceInvariantViolation('...', PriceErrorReason.NON_FINITE);
@@ -293,6 +320,7 @@ if (v.greaterThan(MAX_PRICE)) throw ...OUT_OF_RANGE_HIGH;
 ```
 
 **Quantity - добавить явную проверку NaN**:
+
 ```typescript
 // БЫЛО:
 if (!v.isFinite()) throw new QuantityInvariantViolation('...', QuantityErrorReason.NON_FINITE);
@@ -305,6 +333,7 @@ if (v.isNegative()) throw new QuantityInvariantViolation('Quantity cannot be neg
 ```
 
 **Money - переупорядочить для единообразия**:
+
 ```typescript
 // БЫЛО (в методе create()):
 // 1. Currency check
@@ -324,11 +353,13 @@ if (amount.abs().greaterThan(MAX_AMOUNT)) throw ...EXCEEDS_MAX_AMOUNT;
 ```
 
 **Единый порядок проверок для всех value objects:**
+
 1. ✅ NaN check (explicit)
 2. ✅ Finite check (explicit)
 3. ✅ Domain-specific (Range/Negative/Currency/Max)
 
 **Преимущества:**
+
 - ✅ Разные error reasons для NaN и Infinity
 - ✅ Более детальная диагностика
 - ✅ Единообразие во всех value objects
@@ -342,6 +373,7 @@ if (amount.abs().greaterThan(MAX_AMOUNT)) throw ...EXCEEDS_MAX_AMOUNT;
 **BREAKING CHANGE**
 
 **РЕШЕНИЕ:**
+
 - ✅ Переименовать amount() → value()
 - ✅ Удалить toDecimal() алиас
 - ✅ Замена вручную файл за файлом для максимального контроля
@@ -349,6 +381,7 @@ if (amount.abs().greaterThan(MAX_AMOUNT)) throw ...EXCEEDS_MAX_AMOUNT;
 **Что делаем:**
 
 ### 1. Money.ts
+
 ```typescript
 // БЫЛО:
 public amount(): Decimal { return this.amt; }
@@ -359,14 +392,16 @@ public value(): Decimal { return this.amt; }
 // toDecimal() удалить полностью
 ```
 
-### 2. Обновить все файлы (вручную):
+### 2. Обновить все файлы (вручную)
 
 **Код (проверить каждый файл):**
+
 - `src/money/facade/MoneyService.ts` - все `.value()` → `.value()`
 - `src/money/adapters/MoneyFormatter.ts` - все `.value()` → `.value()`
 - `src/money/adapters/MoneySerializer.ts` - все `.value()` → `.value()`
 
 **Тесты (проверить каждый файл):**
+
 - `__tests__/unit/money/core/Money.test.ts`
 - `__tests__/unit/money/facade/MoneyService.create.test.ts`
 - `__tests__/unit/money/facade/MoneyService.math.test.ts`
@@ -374,19 +409,22 @@ public value(): Decimal { return this.amt; }
 - `__tests__/unit/money/adapters/MoneySerializer.test.ts`
 
 **Документация (проверить каждый файл):**
+
 - `docs/money/core.md`
 - `docs/money/facade.md`
 - `docs/money/adapters.md`
 - `docs/money/examples.md`
 - `docs/money/migration.md`
 
-### 3. Проверки после каждого файла:
+### 3. Проверки после каждого файла
+
 ```bash
 npm run build   # Должно компилироваться
 npm test        # Все тесты должны проходить
 ```
 
 **Преимущества ручной замены:**
+
 - ✅ Максимальный контроль
 - ✅ Видим что именно меняем
 - ✅ Не заменим случайно что-то не то
@@ -401,6 +439,7 @@ npm test        # Все тесты должны проходить
 **Что предлагаю добавить:**
 
 ### Price
+
 ```typescript
 isLessThan(other: Price): boolean
 isLessThanOrEqual(other: Price): boolean
@@ -409,6 +448,7 @@ isGreaterThanOrEqual(other: Price): boolean
 ```
 
 ### Money
+
 ```typescript
 isLessThan(other: Money): boolean
 isLessThanOrEqual(other: Money): boolean
@@ -420,6 +460,7 @@ isNegative(): boolean
 ```
 
 **Для Money нужна проверка валюты:**
+
 ```typescript
 private assertSameCurrency(other: Money): void {
   if (!this.hasSameCurrency(other)) {
@@ -435,12 +476,14 @@ private assertSameCurrency(other: Money): void {
 ## ❓ Коммит 7: Документация
 
 **Что обновлять:**
+
 - Все примеры с `.value()` → `.value()`
 - Все примеры с `Price.MIN` → `Price.MIN`
 - Добавить примеры ParseError (если решим добавить)
 - Добавить примеры методов сравнения (если решим добавить)
 
 **Вопросы:**
+
 1. Какие еще части документации нужно обновить?
 2. Нужны ли migration guides?
 
@@ -490,6 +533,7 @@ isGreaterThanOrEqual(other: Price): boolean {
 ### Money - ТОЛЬКО в Facade (есть контекст валюты)
 
 **Core (Money.ts):**
+
 ```typescript
 // ОСТАВИТЬ только:
 hasSameCurrency(other: Money): boolean
@@ -499,6 +543,7 @@ equals(other: Money): boolean  // Перенести в Facade
 ```
 
 **Facade (MoneyService.ts):**
+
 ```typescript
 public static isLessThan(a: Money, b: Money): Result<boolean, InvalidMoneyError>
 public static isGreaterThan(a: Money, b: Money): Result<boolean, InvalidMoneyError>

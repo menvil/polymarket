@@ -16,6 +16,7 @@
 Модуль `@polymarket/ids/src/core/Currency.ts` определяет все валюты, которые поддерживаются в системе.
 
 **Ключевая особенность:** При добавлении новой валюты достаточно изменить ОДИН файл, и:
+
 - ✅ `Money.ZERO` автоматически создаст singleton для новой валюты
 - ✅ `Balance.ZERO` автоматически создаст singleton для новой валюты
 - ✅ TypeScript типы автоматически обновятся
@@ -116,7 +117,7 @@ cd packages/foundation/ids
 npm run build
 ```
 
-### Шаг 3: Всё работает автоматически!
+### Шаг 3: Всё работает автоматически
 
 ```typescript
 // Money автоматически поддерживает USDT
@@ -141,6 +142,7 @@ const currency: SupportedCurrency = 'USDT'; // ✅ OK
 ❌ **Не нужно** обновлять валидацию валют
 
 Всё работает автоматически через:
+
 - `Object.fromEntries()` для генерации Record
 - `typeof ARRAY[number]` для вывода union типа
 - `const assertion (as const)` для immutable массива
@@ -229,10 +231,12 @@ function getCurrencySymbol(currency: SupportedCurrency): string {
 ## Связанные модули
 
 ### Foundation Layer
+
 - **@polymarket/ids** — определяет SupportedCurrency, KnownCurrencies, isSupportedCurrency
 - **AssetId** — использует SupportedCurrency для currency assets
 
 ### Domain Layer
+
 - **Money** — использует SupportedCurrency для валидации и ZERO singleton
 - **Balance** — использует SupportedCurrency для валидации и ZERO singleton
 - **MoneyService** — использует SupportedCurrency в сигнатурах методов
@@ -251,6 +255,7 @@ function getCurrencySymbol(currency: SupportedCurrency): string {
 ### Проблема
 
 До рефакторинга:
+
 - SupportedCurrency находился в value-objects (domain layer)
 - Нарушение dependency direction (foundation должен быть независим от domain)
 - Дублирование константов валют в нескольких местах
@@ -258,6 +263,7 @@ function getCurrencySymbol(currency: SupportedCurrency): string {
 ### Решение
 
 После рефакторинга:
+
 ```typescript
 // ✅ SupportedCurrency в foundation layer (@polymarket/ids)
 // packages/foundation/ids/src/core/Currency.ts
@@ -292,6 +298,7 @@ export type AssetId =
 ## История изменений
 
 **Версия 2.0** (текущая):
+
 - ✅ SupportedCurrency перемещён в @polymarket/ids (foundation layer)
 - ✅ AssetId использует SupportedCurrency для type safety
 - ✅ Добавлен helper isSupportedCurrency()
@@ -299,6 +306,7 @@ export type AssetId =
 - ✅ Правильная dependency direction: domain → foundation
 
 **Версия 1.0** (legacy):
+
 - Поддержка USDC
 - SupportedCurrency в value-objects/shared/currency
 - Автоматическая генерация Money.ZERO и Balance.ZERO

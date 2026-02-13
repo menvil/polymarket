@@ -71,6 +71,7 @@ if (isErr(result)) {
 ### Что изменилось
 
 **TypeScript < 5.5:**
+
 ```typescript
 if (!result.ok) {
   // ❌ Тип: Result<T, E> (НЕ сужен)
@@ -79,6 +80,7 @@ if (!result.ok) {
 ```
 
 **TypeScript 5.9.3:**
+
 ```typescript
 if (!result.ok) {
   // ✅ Тип: { ok: false; error: E } (сужен!)
@@ -94,7 +96,8 @@ if (!result.ok) {
 
 **Выбор паттерна зависит от контекста:**
 
-#### Используй `!result.ok` когда:
+#### Используй `!result.ok` когда
+
 - ✅ Код будет использоваться только с TS 5.9+
 - ✅ Команда предпочитает краткость
 - ✅ Consistency с существующим кодом
@@ -105,7 +108,8 @@ if (!result.ok) {
 }
 ```
 
-#### Используй `isErr()` когда:
+#### Используй `isErr()` когда
+
 - ✅ Нужна backwards compatibility с TS < 5.5
 - ✅ Важна явная семантика
 - ✅ Следуешь foundation package best practices
@@ -167,6 +171,7 @@ export const isErr = <T, E>(
 ```
 
 Это:
+
 - ✅ Документирует намерение
 - ✅ Видно в IDE tooltips
 - ✅ Упрощает понимание кода
@@ -209,6 +214,7 @@ if (isErr(decimalResult)) {
 ```
 
 **Преимущества:**
+
 - ✅ Explicit semantic intent
 - ✅ Foundation package alignment
 - ✅ Backwards compatible
@@ -216,6 +222,7 @@ if (isErr(decimalResult)) {
 - ✅ More maintainable
 
 **Недостатки:**
+
 - 🟡 Требует import
 - 🟡 Чуть длиннее
 
@@ -232,11 +239,13 @@ if (!decimalResult.ok) {
 ```
 
 **Преимущества:**
+
 - ✅ Короче (no import needed)
 - ✅ Работает в TS 5.9.3+
 - ✅ Более компактная запись
 
 **Недостатки:**
+
 - 🟡 Менее явная семантика
 - 🟡 Не работает в TS < 5.5
 - 🟡 Не использует foundation helpers
@@ -248,11 +257,13 @@ if (!decimalResult.ok) {
 ### Из type-narrowing-problem.md
 
 **Что было неправильно:**
+
 - ❌ "Money/Price/Quantity имеют ошибки компиляции"
 - ❌ "`!result.ok` не работает в TypeScript"
 - ❌ "Требуется критическое исправление"
 
 **Правильное понимание:**
+
 - ✅ В TypeScript 5.9.3 оба паттерна работают корректно
 - ✅ `!result.ok` компилируется без ошибок
 - ✅ `isErr()` остается best practice для явности
@@ -272,6 +283,7 @@ Percentage по-прежнему **лучший модуль**, но по дру
 5. **Backwards compatibility** - работает на любой версии TS
 
 **НЕ потому что:**
+
 - ~~Единственный без ошибок компиляции~~ (все компилируются корректно)
 - ~~Единственный с working type narrowing~~ (narrowing работает везде)
 
@@ -282,6 +294,7 @@ Percentage по-прежнему **лучший модуль**, но по дру
 ### ❌ НЕ требуется
 
 **Все модули работают корректно в TypeScript 5.9.3:**
+
 - ✅ Money компилируется без ошибок
 - ✅ Price компилируется без ошибок
 - ✅ Quantity компилируется без ошибок
@@ -292,18 +305,21 @@ Percentage по-прежнему **лучший модуль**, но по дру
 **Если команда хочет consistency**, можно выбрать один паттерн:
 
 **Вариант 1: Все на `isErr()`**
+
 ```typescript
 // Плюсы: explicit, foundation-aligned, backwards compatible
 // Минусы: требует imports, чуть длиннее
 ```
 
 **Вариант 2: Все на `!result.ok`**
+
 ```typescript
 // Плюсы: короче, no imports
 // Минусы: менее явный, требует TS 5.9+
 ```
 
 **Вариант 3: Оставить как есть**
+
 ```typescript
 // ✅ РЕКОМЕНДУЕТСЯ
 // Оба паттерна валидны
@@ -318,6 +334,7 @@ Percentage по-прежнему **лучший модуль**, но по дру
 ### 1. Проверяй версию TypeScript
 
 При анализе type narrowing проблем всегда проверяй:
+
 ```bash
 npx tsc --version
 ```
@@ -327,6 +344,7 @@ TypeScript быстро эволюционирует, и поведение мо
 ### 2. Тестируй реальное поведение
 
 Вместо предположений о том "как должно работать", создавай test files:
+
 ```typescript
 // test-type-narrowing.ts
 const result: Result<T, E> = ...;

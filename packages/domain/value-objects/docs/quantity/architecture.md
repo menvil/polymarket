@@ -287,7 +287,7 @@ if (!result.ok) {
 
 ### Поток создания Quantity
 
-```
+```text
 User Input (number/string/Decimal)
     ↓
 QuantityService.create()
@@ -305,7 +305,7 @@ catch (QuantityInvariantViolation) {
 
 ### Поток арифметической операции (add)
 
-```
+```text
 qty1, qty2
     ↓
 QuantityService.add()
@@ -321,7 +321,7 @@ Result<Quantity, Error>
 
 ### Поток валидации через Facade
 
-```
+```text
 User Input
     ↓
 QuantityService.create(value)

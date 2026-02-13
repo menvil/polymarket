@@ -91,7 +91,7 @@ if (money1Result.ok && money2Result.ok) {
 
 Money модуль построен на **4-слойной архитектуре** с паттерном **Throws+Facade**:
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │           Adapters Layer                        │
 │  (Serializers, Formatters)                      │

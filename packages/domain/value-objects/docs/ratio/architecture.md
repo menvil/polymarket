@@ -59,17 +59,20 @@ graph TB
 ### Слой 1: Core (Ratio)
 
 **Ответственность:**
+
 - Хранение значения (Decimal)
 - Проверка инвариантов
 - Базовые операции (toDecimal, onePlus, oneMinus)
 
 **Характеристики:**
+
 - ✅ Бросает `RatioInvariantViolation` при нарушении инвариантов
 - ✅ Private конструктор
 - ✅ Static factory `.of()` (internal, не рекомендуется для прямого использования)
 - ✅ Иммутабельность через `readonly`
 
 **Инварианты:**
+
 ```typescript
 // 1. Значение не NaN
 if (value.isNaN()) {
@@ -83,6 +86,7 @@ if (!value.isFinite()) {
 ```
 
 **НЕ-инварианты (не проверяются в Core):**
+
 - Границы значений (min/max) - проверяются в Rules при необходимости
 - Парсинг строк - делает RatioFormatter
 - Валидация для специфических операций - делает Rules
@@ -90,6 +94,7 @@ if (!value.isFinite()) {
 ### Слой 2: Rules (Validation)
 
 **Ответственность:**
+
 - Domain-specific валидация
 - Precondition checks для операций
 - Бизнес-правила
@@ -106,10 +111,12 @@ public static check(value: Decimal, operation: string): Result<void, InvalidRati
 ```
 
 **Когда используется:**
+
 - `ensureGteMinusOne` опция в RatioService
 - Защита от бессмысленных операций: `amount * (1 + ratio)` где `ratio < -1` приведет к отрицательному результату
 
 **Принципы:**
+
 - ✅ Static-only classes (никогда не инстанцируются)
 - ✅ Single responsibility (одно правило = один класс)
 - ✅ Возвращают `Result<void, InvalidRatioError>`
@@ -118,12 +125,14 @@ public static check(value: Decimal, operation: string): Result<void, InvalidRati
 ### Слой 3: Facade (RatioService)
 
 **Ответственность:**
+
 - Публичный API для создания Ratio
 - Never Throw Contract
 - Оркестрация Core + Rules
 - Преобразование исключений в Result
 
 **Factory Methods:**
+
 ```typescript
 fromDecimal(value, options?)  // из дроби
 fromPercent(percent, options?) // из процента
@@ -131,6 +140,7 @@ fromBps(bps, options?)        // из basis points
 ```
 
 **Never Throw Contract:**
+
 ```typescript
 // ✅ Всегда возвращает Result
 public static fromPercent(percent, options?): Result<Ratio, InvalidRatioError> {
@@ -155,6 +165,7 @@ public static fromPercent(percent, options?): Result<Ratio, InvalidRatioError> {
 ```
 
 **Принципы:**
+
 - ✅ Никогда не бросает исключения
 - ✅ Все ошибки возвращаются через Result
 - ✅ Typed error context с reason enum
@@ -163,11 +174,13 @@ public static fromPercent(percent, options?): Result<Ratio, InvalidRatioError> {
 ### Слой 4: Adapters (RatioFormatter, RatioSerializer)
 
 **Ответственность:**
+
 - Форматирование в строки (decimal, percent, bps)
 - Парсинг строк обратно в Ratio
 - JSON сериализация/десериализация
 
 **RatioFormatter:**
+
 ```typescript
 toDecimal(ratio, decimals?)  // "0.0200"
 toPercent(ratio, decimals?)  // "2.00%"
@@ -176,12 +189,14 @@ parse(input)                 // "2%" → Ratio
 ```
 
 **RatioSerializer:**
+
 ```typescript
 toJSON(ratio)   // { ratio: "0.02" }
 fromJSON(json)  // JSON → Ratio
 ```
 
 **Принципы:**
+
 - ✅ Все методы возвращают Result
 - ✅ Inline валидация параметров (decimals >= 0)
 - ✅ Используют RatioService для создания Ratio
@@ -192,16 +207,19 @@ fromJSON(json)  // JSON → Ratio
 ### Зачем?
 
 **Проблема:** Исключения vs Type Safety
+
 - Исключения удобны для invariant checks в Core
 - Result pattern удобен для API и композиции
 
 **Решение:** Throws+Facade
+
 - Core бросает исключения (простота проверки инвариантов)
 - Facade ловит и оборачивает в Result (type-safe API)
 
 ### Преимущества
 
 1. **Type Safety на границе API**
+
    ```typescript
    // ✅ Компилятор заставляет обработать ошибку
    const result = RatioService.fromPercent(2);
@@ -213,6 +231,7 @@ fromJSON(json)  // JSON → Ratio
    ```
 
 2. **Простота Core слоя**
+
    ```typescript
    // Проверка инвариантов - просто throw
    if (value.isNaN()) {
@@ -221,6 +240,7 @@ fromJSON(json)  // JSON → Ratio
    ```
 
 3. **Exhaustive Error Handling**
+
    ```typescript
    // Typed errors позволяют exhaustive checking
    if (isErr(result)) {
@@ -296,7 +316,9 @@ sequenceDiagram
 **Решение:** Храним `0.02` для 2%, а не `2`
 
 **Причины:**
+
 1. **Математическая корректность**: арифметика работает с дробями
+
    ```typescript
    amount * (1 + 0.02) = amount * 1.02 // правильно
    amount * (1 + 2) = amount * 3      // неправильно
@@ -313,12 +335,15 @@ sequenceDiagram
 **Решение:** `.of()` публичный, но помечен как @internal
 
 **Причины:**
+
 1. **Неясная семантика прямого вызова**:
+
    ```typescript
    Ratio.of(new Decimal(2)) // Это 2% или 200%? 🤔
    ```
 
 2. **Рекомендуем factory methods**:
+
    ```typescript
    RatioService.fromPercent(2)   // Явно: 2%
    RatioService.fromDecimal(0.02) // Явно: дробь 0.02
@@ -333,12 +358,15 @@ sequenceDiagram
 **Решение:** Ratio не содержит add/subtract/multiply/divide
 
 **Причины:**
+
 1. **Бессмысленность без контекста**:
+
    ```typescript
    ratio1.add(ratio2) // 2% + 3% = 5%? Процентов чего?
    ```
 
 2. **Операции живут в целевых объектах**:
+
    ```typescript
    Money.addRate(ratio)    // amount * (1 + ratio) - ясный смысл
    Price.take(ratio)       // price * ratio - взять процент
@@ -351,8 +379,10 @@ sequenceDiagram
 **Решение:** Вспомогательные методы для частых операций
 
 **Причины:**
+
 1. **Частая операция**: `(1 + ratio)` и `(1 - ratio)` используются постоянно
 2. **Читаемость**:
+
    ```typescript
    // ✅ С методом
    amount.mul(ratio.onePlus())
@@ -360,6 +390,7 @@ sequenceDiagram
    // ❌ Без метода
    amount.mul(new Decimal(1).plus(ratio.toDecimal()))
    ```
+
 3. **Симметрия**: onePlus для markup, oneMinus для discount/fee
 
 ## Error Handling

@@ -6,7 +6,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 
 ## Архитектурные слои
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │                         PUBLIC API                              │
 │                  ("Never Throw" Contract)                       │
@@ -97,6 +97,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 3. **Immutable представление** - все поля readonly, методы возвращают новые значения
 
 **НЕ содержит:**
+
 - Бизнес-правила (используй Rules layer)
 - Валидацию spread границ (используй ValidateMinSpread/ValidateMaxSpread)
 - Market crossing detection (используй ValidateMarketCrossing)
@@ -175,6 +176,7 @@ class QuoteInvariantViolation extends Error {
 ```
 
 **Внутреннее представление:**
+
 - `_bid`, `_ask`: `Price | null`
 - `_bidSize`, `_askSize`: `Quantity`
 - `_timestampMs`: `Decimal` (для единообразия и валидации, возвращается как `number`)
@@ -566,7 +568,7 @@ public static create(...) {
 
 ## Зависимости
 
-```
+```text
 Quote
 ├── Price (value object)
 │   └── PriceService (facade)

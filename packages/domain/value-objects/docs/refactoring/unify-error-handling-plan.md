@@ -51,7 +51,7 @@
 
 ### Затронутые файлы
 
-```
+```text
 packages/domain/value-objects/src/
 ├── money/facade/MoneyService.ts        (5 замен)
 ├── price/facade/PriceService.ts        (10 замен)
@@ -80,6 +80,7 @@ packages/domain/value-objects/src/
 **Найдено 5 использований `!result.ok`:**
 
 1. **Line 95 - create()**
+
 ```diff
 const decimalResult = toDecimal('value', value, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
 - if (!decimalResult.ok) {
@@ -88,7 +89,8 @@ const decimalResult = toDecimal('value', value, MoneyErrorReason.INVALID_FORMAT,
 }
 ```
 
-2. **Line 306 - multiply()**
+1. **Line 306 - multiply()**
+
 ```diff
 const factorResult = toDecimal('factor', factor, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
 - if (!factorResult.ok) {
@@ -97,7 +99,8 @@ const factorResult = toDecimal('factor', factor, MoneyErrorReason.INVALID_FORMAT
 }
 ```
 
-3. **Line 320 - multiply() validation**
+1. **Line 320 - multiply() validation**
+
 ```diff
 const validateResult = ValidateFactorForMoneyMultiplication.check(factorResult.value);
 - if (!validateResult.ok) {
@@ -106,7 +109,8 @@ const validateResult = ValidateFactorForMoneyMultiplication.check(factorResult.v
 }
 ```
 
-4. **Line 377 - divide()**
+1. **Line 377 - divide()**
+
 ```diff
 const divisorResult = toDecimal('divisor', divisor, MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
 - if (!divisorResult.ok) {
@@ -115,7 +119,8 @@ const divisorResult = toDecimal('divisor', divisor, MoneyErrorReason.INVALID_FOR
 }
 ```
 
-5. **Line 391 - divide() validation**
+1. **Line 391 - divide() validation**
+
 ```diff
 const validateResult = ValidateDivisorForMoneyDivision.check(divisorResult.value);
 - if (!validateResult.ok) {
@@ -168,6 +173,7 @@ npm run ci
 #### Complexity: Medium
 
 Price имеет больше использований (10) из-за дополнительных методов:
+
 - `alignToTickSize()` - 4 использования
 - `roundToTickSize()` - 2 использования
 - Standard methods - 4 использования
@@ -183,6 +189,7 @@ Price имеет больше использований (10) из-за допо
 #### Шаг 2.2: Заменить все вхождения (10 замен)
 
 **Group 1: Standard methods (4)**
+
 - Line 99 - create()
 - Line 221 - multiply()
 - Line 234 - multiply() validation
@@ -190,12 +197,14 @@ Price имеет больше использований (10) из-за допо
 - Line 304 - divide() validation
 
 **Group 2: alignToTickSize() (4)**
+
 - Line 371 - toDecimal для tickSize
 - Line 383 - ValidateTickSize check
 - Line ~390 - ValidateTickSizeMultipleOfBaseTick check
 - Line ~400 - aligned result check
 
 **Group 3: roundToTickSize() (2)**
+
 - Line 455 - toDecimal для tickSize
 - Line 466 - ValidateTickSize check
 - Line 479 - rounded result check
@@ -225,6 +234,7 @@ npm run ci
 #### Шаг 3.2: Заменить все вхождения (7 замен)
 
 **Найдено 7 использований:**
+
 1. Line 69 - create()
 2. Line 169 - add() validation
 3. Line 204 - multiply()
@@ -259,6 +269,7 @@ npm run ci
 #### Шаг 4.2: Заменить все вхождения (6 замен)
 
 **Найдено 6 использований:**
+
 1. reserve() - validation check
 2. release() - validation check
 3. add() - currency match check
@@ -293,6 +304,7 @@ Quote - самый сложный модуль с большим количес�
 #### Шаг 5.2: Заменить все вхождения (8 замен)
 
 **Найдено 8 использований:**
+
 1. create() - ValidateMarketCrossing
 2. create() - ValidateQuoteSizes
 3. create() - ValidateMinSpread
@@ -325,6 +337,7 @@ npm run ci
 #### Шаг 6.2: Заменить все вхождения (5 замен)
 
 **Найдено 5 использований:**
+
 1. create() - ValidateBidAsk
 2. create() - ValidateMinWidth
 3. create() - ValidateMaxWidth
@@ -374,6 +387,7 @@ npm run test:coverage
 ```
 
 **Expected:**
+
 - ✅ All 48 test suites pass
 - ✅ 879+ tests pass
 - ✅ Coverage remains same or better
@@ -393,11 +407,13 @@ npm run ci:full
 ### Опция 1: Manual (Recommended)
 
 **Плюсы:**
+
 - ✅ Полный контроль
 - ✅ Review каждого изменения
 - ✅ Обучение архитектуре
 
 **Минусы:**
+
 - ⏱️ Занимает больше времени (~8-12 часов)
 
 ### Опция 2: Script-assisted
@@ -430,6 +446,7 @@ done
 ```
 
 **⚠️ Предупреждение:**
+
 - Regex замены могут быть опасны
 - Могут сломать форматирование
 - Могут пропустить edge cases
@@ -479,17 +496,20 @@ files.forEach(filePath => {
 ```
 
 **Запуск:**
+
 ```bash
 npm install --save-dev ts-morph
 npx ts-node scripts/refactor-to-isErr.ts
 ```
 
 **Плюсы:**
+
 - ✅ AST-based - безопасно
 - ✅ Сохраняет форматирование
 - ✅ Точные замены
 
 **Минусы:**
+
 - ⚠️ Требует настройки ts-morph
 - ⚠️ Нужно тестировать скрипт
 
@@ -534,6 +554,7 @@ npx ts-node scripts/refactor-to-isErr.ts
 ### Вариант 1: По одному модулю (Recommended)
 
 **День 1:**
+
 1. Money (утро) - 1-2 часа
 2. Quantity (день) - 1-2 часа
 3. Spread (вечер) - 1 час
@@ -551,15 +572,19 @@ npx ts-node scripts/refactor-to-isErr.ts
 ### Вариант 2: Parallel (если команда)
 
 **Developer 1:**
+
 - Money + Quantity + Spread (4-5 часов)
 
 **Developer 2:**
+
 - Balance + Price (3-5 часов)
 
 **Developer 3:**
+
 - Quote (2-3 часа)
 
 **Together:**
+
 - Final Verification + Merge
 
 **Total:** 1 день (параллельно)
@@ -571,6 +596,7 @@ npx ts-node scripts/refactor-to-isErr.ts
 ### Unit Tests
 
 После каждого модуля:
+
 ```bash
 npm test -- <module-name>
 ```
@@ -580,6 +606,7 @@ npm test -- <module-name>
 ### Integration Tests
 
 После всех изменений:
+
 ```bash
 npm test -- --testPathPattern=integration
 ```
@@ -589,6 +616,7 @@ npm test -- --testPathPattern=integration
 ### Regression Testing
 
 Особое внимание на:
+
 - Error handling paths
 - Validation logic
 - Type narrowing в conditional branches
@@ -600,6 +628,7 @@ npm run test:coverage
 ```
 
 **Expected:**
+
 - ✅ Coverage не снизился
 - ✅ Все критические paths покрыты
 
@@ -616,6 +645,7 @@ git commit -m "refactor(price): unify error handling to isErr() pattern"
 ```
 
 **Плюсы:**
+
 - ✅ Легко review по модулям
 - ✅ Легко revert отдельный модуль
 - ✅ Понятная история изменений
@@ -634,6 +664,7 @@ git commit -m "refactor: unify all value objects to isErr() pattern"
 ```
 
 **Минусы:**
+
 - ❌ Сложно review
 - ❌ Сложно найти проблемы
 - ❌ Невозможно partial revert
@@ -647,6 +678,7 @@ git commit -m "refactor: unify all value objects to isErr() pattern"
 **Вероятность:** Low (изменения механические)
 
 **Митигация:**
+
 - ✅ Comprehensive test suite уже есть
 - ✅ CI проверяет каждый коммит
 - ✅ Manual review каждого изменения
@@ -657,11 +689,14 @@ git commit -m "refactor: unify all value objects to isErr() pattern"
 **Вероятность:** Medium (если использовать автоматизацию)
 
 **Митигация:**
+
 - ✅ Grep проверка после рефакторинга:
+
   ```bash
   grep -r "!.*\.ok" src/*/facade/*.ts
   # Should return 0 results после завершения
   ```
+
 - ✅ Manual review каждого файла
 - ✅ TypeScript catch missing changes
 
@@ -670,6 +705,7 @@ git commit -m "refactor: unify all value objects to isErr() pattern"
 **Вероятность:** Medium (8-12 часов работы)
 
 **Митигация:**
+
 - ✅ Можно делать параллельно (если команда)
 - ✅ Можно растянуть на несколько дней
 - ✅ Низкая приоритет - не блокирует другую работу
@@ -679,6 +715,7 @@ git commit -m "refactor: unify all value objects to isErr() pattern"
 **Вероятность:** High (если другие изменения в тех же файлах)
 
 **Митигация:**
+
 - ✅ Координация с командой
 - ✅ Feature freeze на время рефакторинга
 - ✅ Или делать после release
@@ -718,12 +755,14 @@ npm run test:coverage
 ```
 
 **Before:**
+
 - Statements: X%
 - Branches: Y%
 - Functions: Z%
 - Lines: W%
 
 **After:**
+
 - Statements: >= X%
 - Branches: >= Y%
 - Functions: >= Z%
@@ -748,6 +787,7 @@ npm run test:coverage
 ### Documentation updates
 
 После завершения обновить:
+
 - [ ] docs/development/coding-guidelines.md
   - Добавить правило: "Always use isErr() for error checking"
 - [ ] docs/examples/*.md
@@ -776,12 +816,14 @@ npm run test:coverage
 ## 📋 Final Checklist
 
 ### Preparation
+
 - [ ] Team alignment on refactoring
 - [ ] Schedule time allocation
 - [ ] Create feature branch
 - [ ] Baseline metrics collected
 
 ### Execution
+
 - [ ] Money refactored
 - [ ] Price refactored
 - [ ] Quantity refactored
@@ -790,6 +832,7 @@ npm run test:coverage
 - [ ] Spread refactored
 
 ### Verification
+
 - [ ] All type checks pass
 - [ ] All lint checks pass
 - [ ] All tests pass (879+ tests)
@@ -797,6 +840,7 @@ npm run test:coverage
 - [ ] `npm run ci:full` passes
 
 ### Finalization
+
 - [ ] Documentation updated
 - [ ] PR created and reviewed
 - [ ] Merged to main

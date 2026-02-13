@@ -113,7 +113,7 @@ BalanceFormatter.toDebugString(balance);
 
 Balance реализован по паттерну **Throws+Facade**:
 
-```
+```text
 ┌──────────────────────────────────────────────┐
 │  Core Layer (Balance)                        │
 │  - Throws на нарушение инвариантов           │

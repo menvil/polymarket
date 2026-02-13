@@ -860,7 +860,7 @@ try {
 }
 ```
 
-```
+```text
 
 ### 7.3. Обновить примеры с константами
 
@@ -904,7 +904,7 @@ m1.isZero();        // false
 m1.isPositive();    // true
 ```
 
-```
+```text
 
 ### 7.5. Обновить architecture.md
 

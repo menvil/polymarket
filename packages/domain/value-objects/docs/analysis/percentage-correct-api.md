@@ -9,6 +9,7 @@
 ## ❌ Что ЛИШНЕЕ в текущем API
 
 ### 1. add/subtract процентов
+
 ```typescript
 // ❌ ЛИШНЕЕ:
 PercentageService.add(Percentage.of(2), Percentage.of(3));  // 5%
@@ -18,6 +19,7 @@ const total = Percentage.of(2 + 3);  // 5%
 ```
 
 **Почему лишнее:**
+
 - Процент - это отношение, не абсолютное значение
 - Сложение чисел проще чем сложение объектов
 - Семантически некорректно без привязки к базе
@@ -25,6 +27,7 @@ const total = Percentage.of(2 + 3);  // 5%
 ---
 
 ### 2. multiply/divide процентов
+
 ```typescript
 // ❌ ЛИШНЕЕ:
 const doubled = Percentage.of(2).multiply(2);  // 4%
@@ -34,6 +37,7 @@ const doubled = Percentage.of(2 * 2);  // 4%
 ```
 
 **Почему лишнее:**
+
 - Нет реального domain use case
 - Умножение чисел проще чем умножение объектов
 - Overcomplicated для простой операции
@@ -214,6 +218,7 @@ PercentageService.divide(p, divisor);
 ```
 
 **Причины:**
+
 - add/subtract: складывай числа, не объекты
 - multiply/divide: нет реального use case
 
@@ -227,6 +232,7 @@ PercentageService.fromBasisPoints(bp);        // Factory
 ```
 
 **Все операции на базе** - в Core (методы экземпляра):
+
 ```typescript
 percentage.of(base);
 percentage.addTo(base);

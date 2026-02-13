@@ -52,6 +52,7 @@ export const isErr = <T, E>(
 ### Money/Price/Quantity (НЕ РАБОТАЕТ)
 
 **MoneyService.ts:93-98**
+
 ```typescript
 const decimalResult = toDecimal(
   'value',
@@ -78,6 +79,7 @@ return this.createFromDecimal(decimalResult.value, currency, 'create', {});
 ```
 
 **Что происходит:**
+
 1. TypeScript видит `!decimalResult.ok`
 2. НЕ понимает, что это означает `ok === false`
 3. НЕ сужает тип Result до `{ ok: false; error: E }`
@@ -89,6 +91,7 @@ return this.createFromDecimal(decimalResult.value, currency, 'create', {});
 ### Percentage (РАБОТАЕТ)
 
 **PercentageService.ts:99-110**
+
 ```typescript
 const decimalResult = toDecimal(
   'value',
@@ -113,6 +116,7 @@ return this.createFromDecimal(decimalResult.value, 'create', {});
 ```
 
 **Что происходит:**
+
 1. TypeScript видит `isErr(decimalResult)`
 2. Находит определение type guard: `result is { ok: false; error: E }`
 3. **СУЖАЕТ тип** до `{ ok: false; error: InvalidPercentageError }`
@@ -184,11 +188,13 @@ if (isErr(result)) {
 ```
 
 **Плюсы:**
+
 - ✅ Полный type safety
 - ✅ Нет ошибок компиляции
 - ✅ Явное указание намерения
 
 **Минусы:**
+
 - ⚠️ Требует import isErr
 - ⚠️ Inconsistency с существующим кодом
 
@@ -207,10 +213,12 @@ if (result.ok === false) {
 ```
 
 **Плюсы:**
+
 - ✅ Работает в TypeScript
 - ✅ Не требует imports
 
 **Минусы:**
+
 - ⚠️ Verbose (`=== false` вместо `!`)
 - ⚠️ Менее идиоматично
 
@@ -228,9 +236,11 @@ if (result.ok === false) {
 ```
 
 **Плюсы:**
+
 - ✅ Может решить проблему глобально
 
 **Минусы:**
+
 - ⚠️ Требует тестирования всей кодебазы
 - ⚠️ Может сломать другие части
 
@@ -240,7 +250,7 @@ if (result.ok === false) {
 
 ### Type Narrowing Flow
 
-```
+```text
 Начало:
   result: Result<T, E>
      ↓
@@ -273,6 +283,7 @@ Percentage:
 ### Пример 1: Создание Value Object
 
 **Money (НЕ компилируется):**
+
 ```typescript
 export class MoneyService {
   public static create(
@@ -293,6 +304,7 @@ export class MoneyService {
 ```
 
 **Percentage (компилируется):**
+
 ```typescript
 export class PercentageService {
   public static create(
@@ -316,6 +328,7 @@ export class PercentageService {
 ### Пример 2: Математические операции
 
 **Money (НЕ компилируется):**
+
 ```typescript
 public static multiply(
   money: Money,
@@ -334,6 +347,7 @@ public static multiply(
 ```
 
 **Percentage (компилируется):**
+
 ```typescript
 public static multiply(
   pct: Percentage,
@@ -402,6 +416,7 @@ if (isErr(result)) {
 ### Для Percentage (текущее состояние)
 
 ✅ **СОХРАНИТЬ** использование `isErr()`
+
 - Единственный модуль без ошибок компиляции
 - Reference implementation для type safety
 - Лучшая IDE поддержка
@@ -411,6 +426,7 @@ if (isErr(result)) {
 🔴 **КРИТИЧНО:** Исправить type narrowing проблему
 
 **Вариант 1 (рекомендуется):** Использовать `isErr()`
+
 ```typescript
 // Заменить во всех Service файлах
 - if (!result.ok) {
@@ -418,6 +434,7 @@ if (isErr(result)) {
 ```
 
 **Вариант 2:** Использовать `=== false`
+
 ```typescript
 // Более verbose, но работает
 - if (!result.ok) {

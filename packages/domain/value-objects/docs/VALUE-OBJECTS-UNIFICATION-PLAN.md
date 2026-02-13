@@ -11,6 +11,7 @@
 Устранить все несогласованности между Price, Quantity и Money для создания единообразного API.
 
 **Найденные проблемы:**
+
 - Money.value() ≠ Price/Quantity.value()
 - Разные подходы к константам (методы vs static readonly vs lazy)
 - Дублирование в ErrorReason enums
@@ -28,10 +29,12 @@
 #### PriceErrorReason
 
 **Удалить:**
+
 - `EXCEEDS_MAX_PRICE` (дублирует `OUT_OF_RANGE_HIGH`)
 - `NEGATIVE_PRICE` (дублирует `OUT_OF_RANGE_LOW`)
 
 **Заменить все использования:**
+
 ```bash
 # Найти все места:
 grep -r "EXCEEDS_MAX_PRICE\|NEGATIVE_PRICE" packages/domain/value-objects/
@@ -42,27 +45,32 @@ grep -r "EXCEEDS_MAX_PRICE\|NEGATIVE_PRICE" packages/domain/value-objects/
 ```
 
 **Файлы:**
+
 - `src/price/errors/PriceErrorReason.ts`
 - Все места использования (~5-10 мест)
 
 #### QuantityErrorReason
 
 **Удалить:**
+
 - `NEGATIVE_QUANTITY` (заменить на `NEGATIVE`)
 - `EXCEEDS_MAX_QUANTITY` (не используется)
 
 **Заменить все использования:**
+
 ```bash
 grep -r "NEGATIVE_QUANTITY\|EXCEEDS_MAX_QUANTITY" packages/domain/value-objects/
 # NEGATIVE_QUANTITY → NEGATIVE
 ```
 
 **Файлы:**
+
 - `src/quantity/errors/QuantityErrorReason.ts`
 - `src/quantity/core/Quantity.ts`
 - Все тесты Quantity
 
 **Проверка:**
+
 ```bash
 npm run build
 npm test
@@ -77,6 +85,7 @@ npm test
 #### Price - заменить методы на константы
 
 **Удалить:**
+
 ```typescript
 // Price.ts - удалить эти методы:
 public static min(): Price { ... }
@@ -87,6 +96,7 @@ public static maxValue(): Decimal { ... }
 ```
 
 **Добавить:**
+
 ```typescript
 // Price.ts
 public static readonly MIN = new Price(new Decimal('0.0001'));
@@ -95,6 +105,7 @@ public static readonly HALF = new Price(new Decimal('0.5'));
 ```
 
 **Обновить все использования:**
+
 ```bash
 # Найти:
 grep -r "Price\.min()\|Price\.max()\|Price\.half()\|Price\.minValue()\|Price\.maxValue()" packages/domain/value-objects/
@@ -108,6 +119,7 @@ grep -r "Price\.min()\|Price\.max()\|Price\.half()\|Price\.minValue()\|Price\.ma
 ```
 
 **Затронутые файлы:**
+
 - `src/price/core/Price.ts`
 - `src/price/facade/PriceService.ts`
 - `src/price/rules/**/*.ts`
@@ -116,6 +128,7 @@ grep -r "Price\.min()\|Price\.max()\|Price\.half()\|Price\.minValue()\|Price\.ma
 #### Money - Record для мультивалютности
 
 **Удалить:**
+
 ```typescript
 // Money.ts
 private static _zeroUSDC?: Money;
@@ -125,6 +138,7 @@ public static get ZERO_USDC(): Money {
 ```
 
 **Добавить:**
+
 ```typescript
 // Money.ts
 public static readonly ZERO: Record<SupportedCurrency, Money> = {
@@ -135,6 +149,7 @@ public static readonly ZERO: Record<SupportedCurrency, Money> = {
 ```
 
 **Обновить все использования:**
+
 ```bash
 grep -r "Money\.ZERO_USDC\|Money\.zero()" packages/domain/value-objects/
 
@@ -143,6 +158,7 @@ grep -r "Money\.ZERO_USDC\|Money\.zero()" packages/domain/value-objects/
 ```
 
 **Затронутые файлы:**
+
 - `src/money/core/Money.ts`
 - `src/money/facade/MoneyService.ts`
 - Все тесты Money
@@ -156,6 +172,7 @@ public static readonly ONE = Quantity.of(1);
 ```
 
 **Проверка:**
+
 ```bash
 npm run build
 npm test
@@ -170,6 +187,7 @@ npm test
 #### Упростить Money.of()
 
 **Было:**
+
 ```typescript
 public static of(value: number | string, currency: SupportedCurrency = 'USDC'): Money {
   let decimal: Decimal;
@@ -183,6 +201,7 @@ public static of(value: number | string, currency: SupportedCurrency = 'USDC'): 
 ```
 
 **Стало:**
+
 ```typescript
 public static of(value: number | string, currency: SupportedCurrency = 'USDC'): Money {
   return Money.create(new Decimal(value), currency);
@@ -198,6 +217,7 @@ rm src/money/core/MoneyParseError.ts
 ```
 
 **Обновить exports:**
+
 ```typescript
 // src/money/core/index.ts
 // Удалить: export { MoneyParseError } from './MoneyParseError';
@@ -206,6 +226,7 @@ rm src/money/core/MoneyParseError.ts
 #### Обновить MoneyService.create()
 
 **Было:**
+
 ```typescript
 try {
   const money = Money.of(value, currency);
@@ -224,6 +245,7 @@ try {
 ```
 
 **Стало:**
+
 ```typescript
 try {
   const money = Money.of(value, currency);
@@ -251,6 +273,7 @@ try {
 ```
 
 **Файлы:**
+
 - `src/money/core/Money.ts`
 - `src/money/core/MoneyParseError.ts` (удалить)
 - `src/money/core/index.ts`
@@ -260,6 +283,7 @@ try {
 **Price/Quantity:** Оставить как есть (уже правильно)
 
 **Проверка:**
+
 ```bash
 npm run build
 npm test
@@ -286,6 +310,7 @@ if (v.greaterThan(Price.MAX_PRICE)) throw ...OUT_OF_RANGE_HIGH;
 **Файл:** `src/quantity/core/Quantity.ts`
 
 **Было:**
+
 ```typescript
 private constructor(private readonly v: Decimal) {
   if (!v.isFinite()) {
@@ -298,6 +323,7 @@ private constructor(private readonly v: Decimal) {
 ```
 
 **Стало:**
+
 ```typescript
 private constructor(private readonly v: Decimal) {
   // Инвариант 1: Not NaN (explicit check)
@@ -324,6 +350,7 @@ private constructor(private readonly v: Decimal) {
 **Файл:** `src/money/core/Money.ts`
 
 **Было:**
+
 ```typescript
 private static create(amount: Decimal, currency: SupportedCurrency): Money {
   if (!Money.SUPPORTED_CURRENCIES.has(currency)) throw ...UNSUPPORTED_CURRENCY;
@@ -335,6 +362,7 @@ private static create(amount: Decimal, currency: SupportedCurrency): Money {
 ```
 
 **Стало:**
+
 ```typescript
 private static create(amount: Decimal, currency: SupportedCurrency): Money {
   // Инвариант 1: Not NaN (самое базовое)
@@ -368,11 +396,13 @@ private static create(amount: Decimal, currency: SupportedCurrency): Money {
 ```
 
 **Файлы:**
+
 - `src/quantity/core/Quantity.ts`
 - `src/money/core/Money.ts`
 - Тесты (проверить что NaN выбрасывает NAN reason)
 
 **Проверка:**
+
 ```bash
 npm run build
 npm test
@@ -391,6 +421,7 @@ npm test
 **Файл:** `src/money/core/Money.ts`
 
 **Было:**
+
 ```typescript
 public amount(): Decimal {
   return this.amt;
@@ -402,6 +433,7 @@ public toDecimal(): Decimal {
 ```
 
 **Стало:**
+
 ```typescript
 public value(): Decimal {
   return this.amt;
@@ -415,6 +447,7 @@ public value(): Decimal {
 **Порядок обновления (проверяем после каждого файла):**
 
 1. **MoneyService.ts** (~20 вызовов)
+
    ```bash
    # Заменить все .value() на .value()
    # Проверить:
@@ -422,11 +455,13 @@ public value(): Decimal {
    ```
 
 2. **MoneyFormatter.ts** (~5 вызовов)
+
    ```bash
    npm run build && npm test
    ```
 
 3. **MoneySerializer.ts** (~2 вызова)
+
    ```bash
    npm run build && npm test
    ```
@@ -437,6 +472,7 @@ public value(): Decimal {
    - `MoneyService.math.test.ts`
    - `MoneyFormatter.test.ts`
    - `MoneySerializer.test.ts`
+
    ```bash
    # После каждого теста:
    npm test
@@ -450,6 +486,7 @@ public value(): Decimal {
    - `docs/money/migration.md`
 
 **Команда для поиска всех мест:**
+
 ```bash
 grep -rn "\.value()" packages/domain/value-objects/src/money/
 grep -rn "\.value()" packages/domain/value-objects/__tests__/unit/money/
@@ -457,6 +494,7 @@ grep -rn "\.value()" packages/domain/value-objects/docs/money/
 ```
 
 **Финальная проверка:**
+
 ```bash
 npm run build
 npm test
@@ -475,6 +513,7 @@ npm run typecheck
 **Файл:** `src/price/core/Price.ts`
 
 **Добавить методы:**
+
 ```typescript
 /**
  * Проверяет что эта цена меньше другой
@@ -509,6 +548,7 @@ public isGreaterThanOrEqual(other: Price): boolean {
 ```
 
 **Добавить тесты:**
+
 ```typescript
 // __tests__/unit/price/core/Price.test.ts
 describe('Price comparison methods', () => {
@@ -533,6 +573,7 @@ describe('Price comparison methods', () => {
 #### Quantity - оставить как есть
 
 Уже есть полный набор:
+
 - `isZero()`
 - `isPositive()`
 - `isLessThan()`
@@ -545,6 +586,7 @@ describe('Price comparison methods', () => {
 **Core (Money.ts) - минимум:**
 
 **Удалить:**
+
 ```typescript
 // Удалить этот метод:
 public equals(other: Money): boolean {
@@ -553,6 +595,7 @@ public equals(other: Money): boolean {
 ```
 
 **Оставить только:**
+
 ```typescript
 // Money.ts
 public hasSameCurrency(other: Money): boolean {
@@ -668,6 +711,7 @@ public static isNegative(money: Money): boolean {
 ```
 
 **Добавить тесты:**
+
 ```typescript
 // __tests__/unit/money/facade/MoneyService.test.ts
 describe('MoneyService comparison methods', () => {
@@ -703,6 +747,7 @@ describe('MoneyService comparison methods', () => {
 ```
 
 **Файлы:**
+
 - `src/price/core/Price.ts`
 - `src/money/core/Money.ts` (удалить equals)
 - `src/money/facade/MoneyService.ts` (добавить все методы)
@@ -710,6 +755,7 @@ describe('MoneyService comparison methods', () => {
 - `__tests__/unit/money/facade/MoneyService.test.ts`
 
 **Проверка:**
+
 ```bash
 npm run build
 npm test
@@ -724,6 +770,7 @@ npm test
 #### Обновить примеры
 
 **1. Money.value() → value():**
+
 ```bash
 # Найти все:
 grep -rn "\.value()" packages/domain/value-objects/docs/money/
@@ -733,6 +780,7 @@ const decimal = money.value();  → const decimal = money.value();
 ```
 
 **Файлы:**
+
 - `docs/money/core.md`
 - `docs/money/facade.md`
 - `docs/money/adapters.md`
@@ -740,6 +788,7 @@ const decimal = money.value();  → const decimal = money.value();
 - `docs/money/migration.md`
 
 **2. Price константы:**
+
 ```bash
 # Найти:
 grep -rn "Price\.min()\|Price\.max()" packages/domain/value-objects/docs/
@@ -750,22 +799,26 @@ const max = Price.MAX;  → const max = Price.MAX;
 ```
 
 **Файлы:**
+
 - `docs/price/core.md`
 - `docs/price/facade.md`
 - `docs/price/examples.md`
 
 **3. Money константы:**
+
 ```bash
 # Заменить:
 Money.ZERO.USDC  → Money.ZERO.USDC
 ```
 
 **Файлы:**
+
 - `docs/money/*.md`
 
 #### Добавить примеры новых методов
 
 **Price - методы сравнения:**
+
 ```markdown
 ## Методы сравнения
 
@@ -780,7 +833,8 @@ p1.isGreaterThan(p2);       // false
 p1.isGreaterThanOrEqual(p2); // false
 p1.equals(p2);              // false
 ```
-```
+
+```text
 
 **Money - методы сравнения через Facade:**
 ```markdown
@@ -808,7 +862,8 @@ MoneyService.isZero(money);     // boolean
 MoneyService.isPositive(money); // boolean
 MoneyService.isNegative(money); // boolean
 ```
-```
+
+```text
 
 #### Обновить architecture.md
 
@@ -848,10 +903,12 @@ MoneyService.isNegative(money); // boolean
 ```
 
 **Файлы:**
+
 - Все `docs/**/*.md`
 - `docs/README.md`
 
 **Проверка:**
+
 ```bash
 npm run lint:md
 ```
@@ -881,6 +938,7 @@ git status  # Должно быть чисто
 ```
 
 **Ожидаемый результат:**
+
 - ✅ Сборка без ошибок
 - ✅ Все 476+ тестов проходят
 - ✅ Линтер без ошибок
@@ -964,7 +1022,8 @@ QuantityErrorReason.NEGATIVE_QUANTITY
 PriceErrorReason.OUT_OF_RANGE_LOW
 QuantityErrorReason.NEGATIVE
 ```
-```
+
+```text
 
 ---
 

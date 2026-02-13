@@ -10,6 +10,7 @@
 ✅ **Все проблемы решены!**
 
 **Было обнаружено 5 категорий несоответствий:**
+
 - 🟡 Средние: 2 (Spread: нет errors/index.ts и integration tests) - **ИСПРАВЛЕНО ✅**
 - 🟢 Низкие: 3 (стиль экспорта, экспорт Rules, JSON типы) - **ИСПРАВЛЕНО ✅**
 
@@ -49,6 +50,7 @@ Rules теперь экспортируются во **всех** value objects 
 **Проблема:** Spread экспортирует ErrorReason напрямую из файла, без промежуточного `errors/index.ts`.
 
 **Текущее состояние:**
+
 ```typescript
 // src/spread/index.ts
 export { SpreadErrorReason } from './errors/SpreadErrorReason.js'; // ❌ Прямой импорт
@@ -58,11 +60,13 @@ export { MoneyErrorReason } from './errors/index.js'; // ✅ Через index.ts
 ```
 
 **Влияние:**
+
 - Нарушает единообразие структуры
 - Усложняет рефакторинг (нужно менять import в главном index.ts)
 - Несоответствие архитектурному паттерну
 
 **Рекомендация:**
+
 ```bash
 # Создать файл
 + src/spread/errors/index.ts
@@ -84,7 +88,8 @@ export { SpreadErrorReason } from './SpreadErrorReason.js';
 **Проблема:** У Spread нет интеграционных тестов, хотя у всех остальных VO они есть.
 
 **Текущее состояние:**
-```
+
+```text
 ✅ Money:    __tests__/integration/money/MoneyWorkflow.integration.test.ts
 ✅ Price:    __tests__/integration/price/PriceWorkflow.integration.test.ts
 ✅ Quantity: __tests__/integration/quantity/QuantityWorkflow.integration.test.ts
@@ -95,11 +100,13 @@ export { SpreadErrorReason } from './SpreadErrorReason.js';
 ```
 
 **Влияние:**
+
 - Нет проверки end-to-end workflow
 - Нет проверки кросс-слойной интеграции (Core → Facade → Adapters)
 - Риск регрессии при рефакторинге
 
 **Рекомендация:**
+
 ```bash
 # Создать файл
 + __tests__/integration/spread/SpreadWorkflow.integration.test.ts
@@ -121,6 +128,7 @@ export { SpreadErrorReason } from './SpreadErrorReason.js';
 **Проблема:** Balance использует `export *` вместо селективного экспорта.
 
 **Текущее состояние:**
+
 ```typescript
 // src/balance/index.ts
 export * from './core/index.js';      // ❌ Экспортирует ВСЁ
@@ -136,12 +144,14 @@ export { MoneyService } from './facade/index.js';                 // ✅ Сел�
 ```
 
 **Влияние:**
+
 - Экспортирует внутренние детали реализации
 - Усложняет контроль публичного API
 - Риск breaking changes при изменении внутренних типов
 - Нарушает принцип "explicit is better than implicit"
 
 **Рекомендация:**
+
 ```typescript
 // src/balance/index.ts - использовать селективный экспорт
 export { Balance, BalanceInvariantViolation } from './core/index.js';
@@ -160,6 +170,7 @@ export { BalanceErrorReason } from './errors/index.js';
 **Проблема:** Balance и Quote экспортируют Rules из главного index.ts, что противоречит паттерну "Rules - internal".
 
 **Текущее состояние:**
+
 ```typescript
 // Balance и Quote:
 export * from './rules/index.js';  // ❌ Экспортируют Rules
@@ -172,11 +183,13 @@ export * from './rules/index.js';  // ❌ Экспортируют Rules
 Rules - это internal implementation details. Вся валидация должна идти через Service/Facade.
 
 **Влияние:**
+
 - Соблазняет использовать Rules напрямую (bypassing Facade)
 - Нарушает инкапсуляцию бизнес-логики
 - Усложняет рефакторинг Rules (нужно поддерживать обратную совместимость)
 
 **Рекомендация:**
+
 ```typescript
 // src/balance/index.ts и src/quote/index.ts
 - export * from './rules/index.js';  // Удалить
@@ -195,6 +208,7 @@ Rules - это internal implementation details. Вся валидация дол
 **Проблема:** Balance и Spread не экспортируют JSON интерфейсы из главного index.ts.
 
 **Текущее состояние:**
+
 ```typescript
 // Balance и Spread:
 // Нет экспорта BalanceJSON / SpreadJSON
@@ -204,11 +218,13 @@ export { MoneySerializer, type MoneyJSON } from './adapters/index.js'; // ✅
 ```
 
 **Влияние:**
+
 - Пользователям нужно импортировать из adapters напрямую
 - Менее удобный API
 - Нарушение единообразия
 
 **Рекомендация:**
+
 ```typescript
 // src/balance/index.ts
 export { BalanceSerializer, BalanceFormatter, type BalanceJSON } from './adapters/index.js';
@@ -226,6 +242,7 @@ export { SpreadSerializer, SpreadFormatter, type SpreadJSON } from './adapters/i
 ### Phase 1: Средние проблемы (рекомендуется)
 
 **Задача 1.1: Создать errors/index.ts для Spread**
+
 ```bash
 # 1. Создать файл
 echo 'export { SpreadErrorReason } from "./SpreadErrorReason.js";' > src/spread/errors/index.ts
@@ -241,6 +258,7 @@ npm run build && npm test
 ```
 
 **Задача 1.2: Создать integration tests для Spread**
+
 ```bash
 # Создать __tests__/integration/spread/SpreadWorkflow.integration.test.ts
 # Покрыть:
@@ -253,13 +271,16 @@ npm run build && npm test
 ### Phase 2: Низкие проблемы (опционально)
 
 **Задача 2.1: Рефакторинг Balance на селективный export**
+
 - Заменить `export *` на селективный экспорт
 - Убрать экспорт Rules
 
 **Задача 2.2: Убрать экспорт Rules из Quote**
+
 - Удалить экспорт Rules из src/quote/index.ts
 
 **Задача 2.3: Добавить экспорт JSON типов**
+
 - Добавить `type BalanceJSON` в src/balance/index.ts
 - Добавить `type SpreadJSON` в src/spread/index.ts
 
@@ -307,6 +328,7 @@ Balance, Spread и Quote в целом следуют архитектурным
 ## Сравнение с предыдущим анализом
 
 **Что было исправлено в Money/Price/Quantity/Ratio:**
+
 - ✅ InvariantViolation вынесены в отдельные файлы
 - ✅ Добавлены integration tests для Money
 - ✅ Унифицирована структура errors/index.ts
@@ -314,6 +336,7 @@ Balance, Spread и Quote в целом следуют архитектурным
 - ✅ Удален LossySerializer (no practical use case)
 
 **Balance/Spread/Quote уже имеют:**
+
 - ✅ InvariantViolation в отдельных файлах
 - ✅ rules/index.ts для всех
 - ✅ Integration tests (кроме Spread)
@@ -328,11 +351,13 @@ Balance, Spread и Quote в целом следуют архитектурным
 ### ✅ Исправлено: Phase 1 (Средние проблемы)
 
 **1. Spread: Добавлен errors/index.ts**
+
 - Создан `src/spread/errors/index.ts`
 - Обновлен `src/spread/index.ts` для импорта через index
 - Унифицирована структура с остальными VO
 
 **2. Spread: Добавлены integration tests**
+
 - Создан `__tests__/integration/spread/SpreadWorkflow.integration.test.ts`
 - 14 интеграционных тестов покрывают все сценарии
 - Тестируется кросс-слойная интеграция (Core → Facade → Adapters)
@@ -340,11 +365,13 @@ Balance, Spread и Quote в целом следуют архитектурным
 ### ✅ Исправлено: Phase 2 (Низкие проблемы)
 
 **3. Balance: Селективный экспорт вместо `export *`**
+
 - Заменен `export *` на явный экспорт классов и типов
 - Улучшен контроль над публичным API
 - Добавлена документация для каждого экспорта
 
 **4. Balance и Spread: Добавлены JSON типы**
+
 - Balance: добавлен `type BalanceJSON` в публичный экспорт
 - Spread: добавлен `type SpreadJSON` в публичный экспорт
 - Улучшена developer experience
@@ -354,6 +381,7 @@ Balance, Spread и Quote в целом следуют архитектурным
 **Принято решение:** Rules экспортируются во ВСЕХ value objects как публичное API.
 
 **Обоснование:**
+
 - Rules используются для контекстно-зависимой валидации ПОСЛЕ создания объектов
 - Примеры use cases:
   - Quote: ValidateMinSpread (зависит от market config)
@@ -362,6 +390,7 @@ Balance, Spread и Quote в целом следуют архитектурным
 - Facade использует Rules внутри, но пользователи могут делать проверки до вызова Facade
 
 **Реализовано:**
+
 - Money: экспортированы ValidateDivisorForMoneyDivision, ValidateFactorForMoneyMultiplication
 - Price: экспортированы ValidateTickSize, ValidateAligned, ValidateTickSizeMultipleOfBaseTick, ValidateFactorForPriceMultiplication, ValidateDivisorForPriceDivision + типы
 - Quantity: экспортированы ValidateMinSize, ValidateResultNonNegative, ValidateDivisorForQuantityDivision, ValidateFactorForQuantityMultiplication, ValidateStepSizeForQuantity
@@ -371,6 +400,7 @@ Balance, Spread и Quote в целом следуют архитектурным
 - Quote: уже экспортировал ValidateQuoteSizes, ValidateMinSpread, ValidateMaxSpread, ValidateMarketCrossing ✅
 
 **Обновлена документация:**
+
 - Все `index.ts` файлы обновлены с комментариями "Rules (публичный API для внешней валидации)"
 - Удалены старые комментарии "Rules НЕ экспортируются — internal"
 - Добавлены примеры использования Rules в документации

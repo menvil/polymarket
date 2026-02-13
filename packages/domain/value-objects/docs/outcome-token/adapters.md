@@ -14,6 +14,7 @@
 ## Обзор
 
 Adapters Layer отвечает за:
+
 - Сериализацию/десериализацию (JSON ↔ Domain)
 - Валидацию ЗНАЧЕНИЙ (не только типов)
 - Форматирование для display
@@ -34,10 +35,12 @@ public static fromJSON(
 ```
 
 **Параметры:**
+
 - **json** — `unknown` (граница типов!)
 - **source** — `ErrorSource` (опционально)
 
 **Возвращает:**
+
 - `Result<OutcomeToken, InvalidOutcomeTokenError>`
 
 **Валидация (3 уровня):**
@@ -86,9 +89,11 @@ public static toJSON(token: OutcomeToken): OutcomeTokenJSON
 ```
 
 **Параметры:**
+
 - **token** — OutcomeToken для сериализации
 
 **Возвращает:**
+
 - `OutcomeTokenJSON` объект
 
 **Пример:**
@@ -137,9 +142,11 @@ public static format(token: OutcomeToken): string
 ```
 
 **Параметры:**
+
 - **token** — OutcomeToken для форматирования
 
 **Возвращает:**
+
 - `string` — человекочитаемое представление
 
 **Пример:**

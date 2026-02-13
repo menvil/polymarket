@@ -74,6 +74,7 @@ const ratioFromDecimal = RatioService.fromDecimal(0.02);  // 0.02 fraction (яв
 ```
 
 **Почему это важно:**
+
 - `0.02` = 2% (дробь 0.02)
 - `2.0` = 200% (дробь 2.0, НЕ 2%)
 - `1.0` = 100%
@@ -106,6 +107,7 @@ graph TB
 ```
 
 **Слои:**
+
 1. **Core** (`Ratio`) - инварианты, бросает исключения
 2. **Rules** (`ValidateRatioGteMinusOne`) - бизнес-правила валидации
 3. **Facade** (`RatioService`) - публичный API, возвращает Result, Never Throw
@@ -248,6 +250,7 @@ Ratio заменяет удаленный Percentage value object. Ключев�
 | **Арифметика** | В Percentage классе | В Money/Price/Quantity |
 
 **Почему Percentage был удален:**
+
 - Операции `Percentage.add(25%, 35%)` бессмысленны без базы
 - "Процент это доля ОТ ЧИСЛА" - нужен контекст
 - Ratio решает эту проблему минимальной абстракцией
@@ -291,6 +294,7 @@ import {
 ## 🧪 Тестирование
 
 Все компоненты покрыты тестами:
+
 - Unit tests: Core, Facade, Adapters, Rules
 - Integration tests: full workflows
 - Coverage: >90%
@@ -310,6 +314,7 @@ MIT
 ---
 
 **Следующие шаги:**
+
 - [Architecture Guide](./architecture.md) - глубокое погружение в архитектуру
 - [Examples](./examples.md) - больше примеров использования
 - [API Reference](./facade.md) - полная документация RatioService

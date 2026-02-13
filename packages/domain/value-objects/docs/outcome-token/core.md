@@ -22,6 +22,7 @@ Core Layer содержит чистую domain логику для OutcomeToken
 - **OutcomeTokenInvariantViolation** — domain exception для нарушения инвариантов
 
 **Ключевые принципы**:
+
 - Доверяет TypeScript типам (нет дублирования проверок)
 - AssetId как единственный источник данных
 - Может бросать domain exceptions (facade их ловит)
@@ -67,11 +68,13 @@ private constructor(private readonly _assetId: OutcomeTokenAssetId) {
 ```
 
 **Почему private?**
+
 - Гарантирует что создание идёт через фабрики (fromAssetId, of)
 - Фабрики валидируют инварианты ПЕРЕД вызовом constructor
 - Constructor доверяет типу и не дублирует проверки
 
 **Почему OutcomeTokenAssetId (узкий тип)?**
+
 - `Extract<>` извлекает только AssetId с type === 'OUTCOME_TOKEN'
 - TypeScript **гарантирует** что _assetId.type === 'OUTCOME_TOKEN'
 - Accessor'ы могут обращаться к conditionRef/outcomeKey без проверок
@@ -119,11 +122,13 @@ const token2 = OutcomeToken.fromAssetId(currencyAssetId);  // ❌ Throws
 ```
 
 **Defensive Copy:**
+
 - fromAssetId() делает defensive copy через AssetIdHelpers.fromOutcomeToken()
 - Это защищает от мутации входного assetId (например, из parseAssetId)
 - Даже если входной assetId mutable, OutcomeToken получит frozen copy
 
 **Когда использовать:**
+
 - В infrastructure/adapters слое (например, десериализация)
 - Когда уже есть готовый AssetId
 
@@ -161,10 +166,12 @@ const token = OutcomeToken.of(onChainRef, BinaryOutcome.UP);  // ✅
 ```
 
 **Когда использовать:**
+
 - В domain/application слое
 - Когда есть conditionRef и outcomeKey
 
 **Может бросить:**
+
 - `Error` из AssetIdHelpers.fromOutcomeToken() если outcomeKey невалидный
 - `OutcomeTokenInvariantViolation` из fromAssetId() если AssetId создан некорректно
 
@@ -181,6 +188,7 @@ public assetId(): OutcomeTokenAssetId {
 ```
 
 **Возвращает:**
+
 - OutcomeTokenAssetId (узкий тип, type === 'OUTCOME_TOKEN' гарантировано)
 
 **Пример:**
@@ -204,6 +212,7 @@ public conditionRef(): OnChainConditionRef {
 ```
 
 **Возвращает:**
+
 - OnChainConditionRef (протокол, chain, condition ID)
 
 **Пример:**
@@ -219,6 +228,7 @@ console.log(ref.conditionId);  // "0x..."
 ```
 
 **Почему нет проверок:**
+
 - Поле `_assetId` имеет тип `OutcomeTokenAssetId`
 - TypeScript **гарантирует** что `_assetId.conditionRef` существует
 - Проверка в fromAssetId() гарантирует инвариант
@@ -233,6 +243,7 @@ public outcomeKey(): OutcomeKey {
 ```
 
 **Возвращает:**
+
 - OutcomeKey (UP, DOWN, etc)
 
 **Пример:**
@@ -259,6 +270,7 @@ public equals(other: OutcomeToken): boolean {
 ```
 
 **Сравнивает:**
+
 - AssetId полностью (type, conditionRef, outcomeKey)
 
 **Пример:**
@@ -273,6 +285,7 @@ token1.equals(token3);  // → false (different outcomeKey)
 ```
 
 **Детали:**
+
 - Использует `assetIdEquals()` из `@polymarket/ids`
 - Deep comparison conditionRef (protocolId, chainId, conditionId)
 - String comparison outcomeKey
@@ -300,6 +313,7 @@ public static fromAssetId(assetId: AssetId): OutcomeToken {
 ```
 
 **Гарантия:**
+
 - После создания `_assetId.type === 'OUTCOME_TOKEN'` ВСЕГДА
 - Accessor'ы не проверяют (доверяют типу OutcomeTokenAssetId)
 
@@ -312,6 +326,7 @@ type OutcomeTokenAssetId = Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
 ```
 
 **Как работает:**
+
 - `Extract<>` извлекает только AssetId с type === 'OUTCOME_TOKEN'
 - TypeScript знает что этот тип имеет поле `conditionRef`
 - `conditionRef()` accessor может вернуть поле без проверок
@@ -325,6 +340,7 @@ type OutcomeTokenAssetId = Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
 ```
 
 **Как работает:**
+
 - Аналогично Инварианту 2
 - TypeScript знает что этот тип имеет поле `outcomeKey`
 - `outcomeKey()` accessor может вернуть поле без проверок
@@ -351,6 +367,7 @@ function deepFreezeAssetId(asset: AssetId): AssetId {
 ```
 
 **Гарантии:**
+
 - Невозможно мутировать AssetId после создания
 - Невозможно мутировать вложенный conditionRef
 - Попытка мутации бросит TypeError в strict mode
@@ -394,6 +411,7 @@ export const AssetIdHelpers = {
 ```
 
 **Гарантия:**
+
 - Входной `conditionRef` не мутируется
 - AssetId содержит frozen copy
 
@@ -530,6 +548,7 @@ export class OutcomeTokenInvariantViolation extends Error {
 ```
 
 **Когда бросается:**
+
 - `fromAssetId()` если assetId.type !== 'OUTCOME_TOKEN'
 
 **Пример:**

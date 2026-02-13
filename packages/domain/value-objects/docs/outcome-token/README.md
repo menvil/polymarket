@@ -156,7 +156,7 @@ if (token1Result.ok && token2Result.ok && token3Result.ok) {
 
 OutcomeToken построен на архитектуре **Throws+Facade** с 4 слоями:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │                     ADAPTERS LAYER                          │
 │  OutcomeTokenSerializer, OutcomeTokenFormatter              │
@@ -204,6 +204,7 @@ OutcomeToken построен на архитектуре **Throws+Facade** с 4
 - `OutcomeTokenInvariantViolation` — domain exception для нарушения инвариантов
 
 **Ключевые решения:**
+
 - AssetId защищён через `Object.freeze()` (deep freeze для вложенных объектов)
 - `OutcomeTokenAssetId` тип для узкого типа (Extract<AssetId, { type: 'OUTCOME_TOKEN' }>)
 - Единая точка проверки type в `fromAssetId()` фабрике
@@ -217,10 +218,12 @@ OutcomeToken построен на архитектуре **Throws+Facade** с 4
 - `OutcomeTokenService.equals()` — безопасное сравнение
 
 **Контракт "Never Throw":**
+
 - ВСЕ методы ГАРАНТИРОВАННО возвращают `Result<T, E>`
 - НИКОГДА не бросают исключения
 
 **Type Narrowing:**
+
 - Принимает `ConditionRef` (union: OnChainConditionRef | OffChainConditionRef)
 - Проверяет `kind === 'ONCHAIN'` ОДИН РАЗ в facade
 - Core доверяет типу `OnChainConditionRef`
@@ -233,6 +236,7 @@ OutcomeToken построен на архитектуре **Throws+Facade** с 4
 - `OutcomeTokenFormatter` — человекочитаемое представление
 
 **Ключевые решения:**
+
 - `fromJSON()` принимает `unknown` и делает полную валидацию
 - Валидация ЗНАЧЕНИЙ, не только типов (protocolId format, chainId range, conditionId format)
 - Использование валидаторов из `@polymarket/ids`: `asOnChainProtocolId()`, `parseChainId()`, `parseConditionId()`
@@ -245,6 +249,7 @@ OutcomeToken построен на архитектуре **Throws+Facade** с 4
 - `OutcomeTokenErrorReason` — enum для дифференциации ошибок
 
 **Возможные причины:**
+
 - `NOT_ONCHAIN_CONDITION` — conditionRef не является OnChainConditionRef
 - `INVALID_FORMAT` — невалидный формат JSON
 - `INVALID_CONDITION_REF` — невалидный condition reference (format/type)
@@ -459,6 +464,7 @@ const result = OutcomeTokenService.create(offChainRef, BinaryOutcome.UP);
 ### ⚠️ Не содержит количества
 
 OutcomeToken — это только идентификатор токена. Для работы с количествами используй:
+
 - `TokenBalance` — баланс конкретного токена (с account)
 - `AssetQuantity` — универсальное количество актива
 

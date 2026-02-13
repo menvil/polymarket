@@ -5,6 +5,7 @@
 **Цель**: Реализовать Ratio value object для представления относительных величин (коэффициентов, долей) с точной арифметикой.
 
 **Ключевые принципы**:
+
 - Ratio хранит дробь (fraction): `0.02` для 2%, `0.0025` для 25 bps
 - Ratio - это минимальная абстракция, НЕ содержит арифметические операции
 - Доменные операции (addRate, take, applyDiscount) живут в Money/Price/Quantity
@@ -1115,7 +1116,7 @@ export {
 
 ### 7.1 Unit Tests Structure
 
-```
+```text
 __tests__/unit/ratio/
 ├── core/
 │   └── Ratio.test.ts
@@ -1131,6 +1132,7 @@ __tests__/unit/ratio/
 ### 7.2 Создать `__tests__/unit/ratio/core/Ratio.test.ts`
 
 **Тестируемые аспекты:**
+
 - ✅ Успешное создание через `Ratio.of()`
 - ❌ Броски исключений при нарушении инвариантов (NaN, non-finite)
 - ✅ Методы: `toDecimal()`, `toNumber()`, `onePlus()`
@@ -1138,6 +1140,7 @@ __tests__/unit/ratio/
 - ✅ Константы: `Ratio.ZERO`, `Ratio.ONE`
 
 **Примерная структура:**
+
 ```typescript
 describe('Ratio core', () => {
   describe('инварианты', () => {
@@ -1174,6 +1177,7 @@ describe('Ratio core', () => {
 ### 7.3 Создать `__tests__/unit/ratio/facade/RatioService.test.ts`
 
 **Тестируемые аспекты:**
+
 - ✅ `fromDecimal()` - успешное создание и ошибки
 - ✅ `fromPercent()` - конверсия процентов
 - ✅ `fromBps()` - конверсия basis points
@@ -1183,6 +1187,7 @@ describe('Ratio core', () => {
 - ✅ Контекст ошибок (reason, op, values)
 
 **Примерная структура:**
+
 ```typescript
 describe('RatioService', () => {
   describe('fromDecimal()', () => {
@@ -1220,6 +1225,7 @@ describe('RatioService', () => {
 ### 7.4 Создать `__tests__/unit/ratio/adapters/RatioFormatter.test.ts`
 
 **Тестируемые аспекты:**
+
 - ✅ `toDecimal()` - форматирование с разными decimals
 - ✅ `toPercent()` - форматирование процентов
 - ✅ `toBps()` - форматирование basis points
@@ -1229,6 +1235,7 @@ describe('RatioService', () => {
 ### 7.5 Создать `__tests__/unit/ratio/adapters/RatioSerializer.test.ts`
 
 **Тестируемые аспекты:**
+
 - ✅ `toJSON()` - сериализация в JSON
 - ✅ `fromJSON()` - десериализация из JSON
 - ❌ Валидация структуры JSON
@@ -1237,6 +1244,7 @@ describe('RatioService', () => {
 ### 7.6 Создать `__tests__/unit/ratio/rules/ValidateRatioGteMinusOne.test.ts`
 
 **Тестируемые аспекты:**
+
 - ✅ Принимает значения >= -1
 - ❌ Отклоняет значения < -1
 - ✅ Граничные случаи: -1, -0.9999, -1.0001
@@ -1246,6 +1254,7 @@ describe('RatioService', () => {
 **Создать `__tests__/integration/ratio/RatioWorkflow.integration.test.ts`**
 
 **Тестируемые сценарии:**
+
 - ✅ Создание → Форматирование → Парсинг → Равенство
 - ✅ Создание → Сериализация → Десериализация → Равенство
 - ✅ Разные форматы создания (decimal, percent, bps) приводят к одинаковым значениям
@@ -1259,6 +1268,7 @@ describe('RatioService', () => {
 ### 8.1 Создать `docs/ratio/README.md`
 
 **Содержание:**
+
 - Введение: что такое Ratio, зачем нужен
 - Quick start: основные примеры использования
 - Ключевые особенности:
@@ -1271,6 +1281,7 @@ describe('RatioService', () => {
 ### 8.2 Создать `docs/ratio/architecture.md`
 
 **Содержание:**
+
 - Throws+Facade pattern объяснение
 - 4-layer architecture diagram (Mermaid)
 - Ответственность каждого слоя
@@ -1284,6 +1295,7 @@ describe('RatioService', () => {
 ### 8.3 Создать `docs/ratio/core.md`
 
 **Содержание:**
+
 - Полная API reference для Ratio class
 - Описание инвариантов
 - Методы: `of()`, `toDecimal()`, `toNumber()`, `onePlus()`
@@ -1294,6 +1306,7 @@ describe('RatioService', () => {
 ### 8.4 Создать `docs/ratio/facade.md`
 
 **Содержание:**
+
 - Полная API reference для RatioService
 - Factory methods: `fromDecimal()`, `fromPercent()`, `fromBps()`
 - Опции: `RatioCreateOptions`, `ensureGteMinusOne`
@@ -1305,6 +1318,7 @@ describe('RatioService', () => {
 ### 8.5 Создать `docs/ratio/adapters.md`
 
 **Содержание:**
+
 - RatioFormatter API reference
   - `toDecimal()`, `toPercent()`, `toBps()`
   - `parse()` - поддерживаемые форматы
@@ -1316,31 +1330,41 @@ describe('RatioService', () => {
 ### 8.6 Создать `docs/ratio/examples.md`
 
 **Содержание:**
+
 - Real-world сценарии использования
 - Примеры с Money:
+
   ```typescript
   // Добавить 10% markup к цене
   const markup = RatioService.fromPercent(10).value;
   const newPrice = money.toDecimal().mul(markup.onePlus());
   ```
+
 - Примеры с Price:
+
   ```typescript
   // Взять 2% fee от суммы
   const fee = RatioService.fromPercent(2).value;
   const feeAmount = price.toDecimal().mul(fee.toDecimal());
   ```
+
 - Примеры с Quantity:
+
   ```typescript
   // Применить 15% discount к количеству
   const discount = RatioService.fromPercent(-15).value;
   const newQty = qty.toDecimal().mul(discount.onePlus());
   ```
+
 - Примеры форматирования:
+
   ```typescript
   // Показать пользователю
   const formatted = RatioFormatter.toPercent(ratio, 2).value; // "10.00%"
   ```
+
 - Примеры сериализации:
+
   ```typescript
   // Сохранить в API
   const json = RatioSerializer.toJSON(ratio); // { ratio: "0.1" }
@@ -1349,6 +1373,7 @@ describe('RatioService', () => {
 ### 8.7 Создать `docs/ratio/comparison-with-percentage.md`
 
 **Содержание:**
+
 - Почему Percentage был удален
 - Фундаментальная проблема Percentage.add/subtract
 - Почему Ratio - правильное решение
@@ -1368,6 +1393,7 @@ describe('RatioService', () => {
 ### 9.1 Правила для TSDoc
 
 Каждый класс/метод должен иметь TSDoc комментарий с:
+
 - **@remarks**: архитектурные решения, алгоритмы, контракты
 - **@param**: описание каждого параметра
 - **@returns**: что возвращает метод
@@ -1377,6 +1403,7 @@ describe('RatioService', () => {
 ### 9.2 Примеры TSDoc
 
 **Для Core класса:**
+
 ```typescript
 /**
  * Ratio - value object для представления относительных величин
@@ -1404,6 +1431,7 @@ describe('RatioService', () => {
 ```
 
 **Для Facade метода:**
+
 ```typescript
 /**
  * Создать Ratio из процента
@@ -1433,6 +1461,7 @@ npm run build
 ```
 
 Должны сгенерироваться:
+
 - `dist/ratio/core/Ratio.js` + `.d.ts`
 - `dist/ratio/facade/RatioService.js` + `.d.ts`
 - `dist/ratio/adapters/RatioFormatter.js` + `.d.ts`
@@ -1446,8 +1475,9 @@ npm run typecheck:all
 ```
 
 Проверяет:
+
 - Типизация src/
-- Типизация __tests__/
+- Типизация **tests**/
 
 ### 10.3 Linting
 
@@ -1456,8 +1486,9 @@ npm run lint:all
 ```
 
 Проверяет:
+
 - ESLint правила для src/
-- ESLint правила для __tests__/
+- ESLint правила для **tests**/
 
 ### 10.4 Testing
 
@@ -1466,6 +1497,7 @@ npm run test
 ```
 
 Должны пройти все тесты:
+
 - Unit tests (Core, Facade, Adapters, Rules)
 - Integration tests
 
@@ -1482,6 +1514,7 @@ npm run ci:full
 ```
 
 Полная проверка перед коммитом:
+
 - Typecheck all
 - Lint all
 - Build
@@ -1494,6 +1527,7 @@ npm run ci:full
 ### 11.1 Обновить Money для работы с Ratio
 
 **Пример метода в Money (будущая реализация):**
+
 ```typescript
 /**
  * Добавить процент к сумме (amount * (1 + ratio))
@@ -1519,6 +1553,7 @@ public addRate(ratio: Ratio): Money {
 ### 11.2 Обновить Price для работы с Ratio
 
 **Пример метода в Price (будущая реализация):**
+
 ```typescript
 /**
  * Взять процент от цены (price * ratio)
@@ -1543,6 +1578,7 @@ public take(ratio: Ratio): Price {
 ### 11.3 Обновить Quantity для работы с Ratio
 
 **Пример метода в Quantity (будущая реализация):**
+
 ```typescript
 /**
  * Применить скидку к количеству (qty * (1 + ratio))
@@ -1572,6 +1608,7 @@ public applyDiscount(ratio: Ratio): Quantity {
 ## Фаза 12: Final Checklist
 
 ### 12.1 Структура файлов
+
 - [ ] `src/ratio/core/Ratio.ts`
 - [ ] `src/ratio/core/RatioInvariantViolation.ts`
 - [ ] `src/ratio/core/index.ts`
@@ -1589,6 +1626,7 @@ public applyDiscount(ratio: Ratio): Quantity {
 - [ ] `package.json` (updated)
 
 ### 12.2 Тесты
+
 - [ ] `__tests__/unit/ratio/core/Ratio.test.ts`
 - [ ] `__tests__/unit/ratio/facade/RatioService.test.ts`
 - [ ] `__tests__/unit/ratio/adapters/RatioFormatter.test.ts`
@@ -1597,6 +1635,7 @@ public applyDiscount(ratio: Ratio): Quantity {
 - [ ] `__tests__/integration/ratio/RatioWorkflow.integration.test.ts`
 
 ### 12.3 Документация
+
 - [ ] `docs/ratio/README.md`
 - [ ] `docs/ratio/architecture.md`
 - [ ] `docs/ratio/core.md`
@@ -1606,6 +1645,7 @@ public applyDiscount(ratio: Ratio): Quantity {
 - [ ] `docs/ratio/comparison-with-percentage.md`
 
 ### 12.4 Качество кода
+
 - [ ] Все TSDoc комментарии добавлены
 - [ ] `npm run build` - успешно
 - [ ] `npm run typecheck:all` - без ошибок
@@ -1615,6 +1655,7 @@ public applyDiscount(ratio: Ratio): Quantity {
 - [ ] `npm run ci:full` - полная проверка проходит
 
 ### 12.5 Интеграция
+
 - [ ] Ratio экспортируется в `src/index.ts`
 - [ ] `package.json` содержит `./ratio` export path
 - [ ] Можно импортировать: `import { Ratio, RatioService } from '@polymarket/value-objects/ratio'`
@@ -1669,6 +1710,7 @@ public applyDiscount(ratio: Ratio): Quantity {
 **Итого:** ~24 файла
 
 **Строки кода (приблизительно):**
+
 - Core: ~200 строк
 - Rules: ~50 строк (только ValidateRatioGteMinusOne)
 - Facade: ~250 строк

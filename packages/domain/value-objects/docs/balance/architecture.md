@@ -316,7 +316,7 @@ private static addMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> 
 
 ## Диаграмма потока данных
 
-```
+```text
 User Code
    │
    │ BalanceService.reserve(balance, amount)
