@@ -316,6 +316,31 @@ describe('RatioFormatter', () => {
           expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_FORMAT);
         }
       });
+
+      // Regression tests для parseFloat trailing garbage bug
+      it('отклоняет процент с trailing garbage', () => {
+        const result = RatioFormatter.parse('2abc%');
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_FORMAT);
+        }
+      });
+
+      it('отклоняет bps с trailing garbage', () => {
+        const result = RatioFormatter.parse('1.2oops bps');
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_FORMAT);
+        }
+      });
+
+      it('отклоняет decimal с trailing garbage', () => {
+        const result = RatioFormatter.parse('0.02xyz');
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_FORMAT);
+        }
+      });
     });
   });
 

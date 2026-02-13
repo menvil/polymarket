@@ -150,6 +150,20 @@ export class RatioFormatter {
   public static parse(input: string): Result<Ratio, InvalidRatioError> {
     const trimmed = input.trim();
 
+    // Reject empty string (Number("") returns 0, which is unexpected)
+    if (trimmed === '') {
+      return Err(
+        new InvalidRatioError(`Invalid format: empty string`, {
+          context: {
+            source: ErrorSource.PARSING,
+            op: 'parse',
+            input,
+            reason: RatioErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+
     // Format: "2%"
     if (trimmed.endsWith('%')) {
       const percentStr = trimmed.slice(0, -1).trim();

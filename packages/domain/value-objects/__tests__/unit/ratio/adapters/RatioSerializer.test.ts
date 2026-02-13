@@ -132,6 +132,18 @@ describe('RatioSerializer', () => {
       const result = RatioSerializer.fromJSON(json);
       expect(isErr(result)).toBe(true);
     });
+
+    // Regression test для circular JSON throw bug
+    it('обрабатывает circular JSON структуру без throw', () => {
+      const circular: any = { ratio: 123 };
+      circular.self = circular; // создаем циклическую ссылку
+
+      const result = RatioSerializer.fromJSON(circular);
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_JSON_STRUCTURE);
+      }
+    });
   });
 
   describe('round-trip сериализация', () => {
