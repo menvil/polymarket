@@ -705,7 +705,7 @@ export class RatioService {
 ### 4.2 Создать `src/ratio/facade/index.ts`
 
 ```typescript
-export { RatioService, RatioCreateOptions } from './RatioService.js';
+export { RatioService, type RatioCreateOptions } from './RatioService.js';
 ```
 
 ---
@@ -1074,10 +1074,10 @@ export { RatioSerializer, RatioJSON } from './RatioSerializer.js';
 export { Ratio, RatioInvariantViolation } from './core/index.js';
 
 // Facade (primary API)
-export { RatioService, RatioCreateOptions } from './facade/index.js';
+export { RatioService, type RatioCreateOptions } from './facade/index.js';
 
 // Adapters (public API)
-export { RatioFormatter, RatioSerializer, RatioJSON } from './adapters/index.js';
+export { RatioFormatter, RatioSerializer, type RatioJSON } from './adapters/index.js';
 
 // Errors (public API)
 export { RatioErrorReason } from './errors/index.js';
