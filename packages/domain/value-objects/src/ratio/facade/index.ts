@@ -1,1 +1,1 @@
-export { RatioService, RatioCreateOptions } from './RatioService.js';
+export { RatioService, type RatioCreateOptions } from './RatioService.js';

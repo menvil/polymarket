@@ -153,8 +153,10 @@ export class RatioFormatter {
     // Format: "2%"
     if (trimmed.endsWith('%')) {
       const percentStr = trimmed.slice(0, -1).trim();
-      const percentNum = parseFloat(percentStr);
-      if (isNaN(percentNum)) {
+      // Используем Number() вместо parseFloat() чтобы отвергать trailing garbage
+      // parseFloat("2abc") -> 2, Number("2abc") -> NaN
+      const percentNum = Number(percentStr);
+      if (isNaN(percentNum) || !isFinite(percentNum)) {
         return Err(
           new InvalidRatioError(`Invalid percent format: "${input}"`, {
             context: {
@@ -172,8 +174,9 @@ export class RatioFormatter {
     // Format: "200 bps"
     if (trimmed.endsWith('bps')) {
       const bpsStr = trimmed.slice(0, -3).trim();
-      const bpsNum = parseFloat(bpsStr);
-      if (isNaN(bpsNum)) {
+      // Используем Number() вместо parseFloat() чтобы отвергать trailing garbage
+      const bpsNum = Number(bpsStr);
+      if (isNaN(bpsNum) || !isFinite(bpsNum)) {
         return Err(
           new InvalidRatioError(`Invalid bps format: "${input}"`, {
             context: {
@@ -189,8 +192,9 @@ export class RatioFormatter {
     }
 
     // Format: "0.02" (decimal)
-    const decimalNum = parseFloat(trimmed);
-    if (isNaN(decimalNum)) {
+    // Используем Number() вместо parseFloat() чтобы отвергать trailing garbage
+    const decimalNum = Number(trimmed);
+    if (isNaN(decimalNum) || !isFinite(decimalNum)) {
       return Err(
         new InvalidRatioError(`Invalid decimal format: "${input}"`, {
           context: {

@@ -91,12 +91,14 @@ export class RatioSerializer {
 
     // Validate "ratio" field
     if (typeof obj.ratio !== 'string') {
+      // Не используем JSON.stringify(json) - может бросить TypeError на циклической структуре
+      // Вместо этого передаем описание проблемы
       return Err(
         new InvalidRatioError('Invalid JSON: "ratio" field must be string', {
           context: {
             source: ErrorSource.PARSING,
             op: 'fromJSON',
-            json: JSON.stringify(json),
+            json: `{ ratio: ${typeof obj.ratio} }`,
             reason: RatioErrorReason.INVALID_JSON_STRUCTURE
           }
         })

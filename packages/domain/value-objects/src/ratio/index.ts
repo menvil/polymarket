@@ -13,7 +13,7 @@
 export { Ratio, RatioInvariantViolation } from './core/index.js';
 
 // Facade (primary API)
-export { RatioService, RatioCreateOptions } from './facade/index.js';
+export { RatioService, type RatioCreateOptions } from './facade/index.js';
 
 // Adapters (public API)
 export { RatioFormatter, RatioSerializer, type RatioJSON } from './adapters/index.js';

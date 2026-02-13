@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { isErr } from '@polymarket/result';
+import { Decimal } from 'decimal.js';
 import { RatioService } from '../../../../src/ratio/facade/RatioService';
 import { RatioSerializer } from '../../../../src/ratio/adapters/RatioSerializer';
 import { RatioErrorReason } from '../../../../src/ratio/errors/RatioErrorReason';
@@ -179,7 +180,9 @@ describe('RatioSerializer', () => {
     });
 
     it('сохраняет точность после round-trip', () => {
-      const original = RatioService.fromDecimal(0.123456789123456789);
+      // Используем строку для создания Decimal с высокой точностью
+      // Избегаем number literal с потерей точности (@typescript-eslint/no-loss-of-precision)
+      const original = RatioService.fromDecimal(new Decimal('0.123456789123456789'));
       if (original.ok) {
         const json = RatioSerializer.toJSON(original.value);
         const deserialized = RatioSerializer.fromJSON(json);
