@@ -69,8 +69,8 @@ if (feeResult.ok) {
 const ratio = Ratio.of(new Decimal(2)); // 2 как дробь = 200%! (не 2%)
 
 // ✅ ПРАВИЛЬНО: используйте RatioService для ясной семантики
-const ratio = RatioService.fromPercent(2);     // 2% => 0.02 (явно)
-const ratio = RatioService.fromDecimal(0.02);  // 0.02 fraction (явно)
+const ratioFromPercent = RatioService.fromPercent(2);     // 2% => 0.02 (явно)
+const ratioFromDecimal = RatioService.fromDecimal(0.02);  // 0.02 fraction (явно)
 ```
 
 **Почему это важно:**

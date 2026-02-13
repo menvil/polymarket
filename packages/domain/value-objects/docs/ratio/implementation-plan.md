@@ -27,7 +27,7 @@
  * ## Архитектура
  * - Core слой БРОСАЕТ исключения RatioInvariantViolation
  * - Facade слой (RatioService) возвращает Result<T, E> и НИКОГДА не бросает
- * - Для безопасного создания используйте RatioService.create()
+ * - Для безопасного создания используйте RatioService.fromDecimal() / fromPercent() / fromBps()
  *
  * ## Инварианты
  * Ratio гарантирует:
@@ -333,7 +333,7 @@ export enum RatioErrorReason {
    * - amount * (1 + ratio) где (1 + ratio) должно быть >= 0
    *
    * @example
-   * RatioService.create(new Decimal(-1.5), { ensureGteMinusOne: true })
+   * RatioService.fromDecimal(new Decimal(-1.5), { ensureGteMinusOne: true })
    * // reason: LESS_THAN_MINUS_ONE
    */
   LESS_THAN_MINUS_ONE = 'LESS_THAN_MINUS_ONE',

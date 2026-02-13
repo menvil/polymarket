@@ -730,10 +730,10 @@ async function fetchRatioFromApi(url: string): Promise<Result<Ratio, Error>> {
 
 ### Общий контракт
 
-Все методы Adapters следуют Never Throw Contract:
+**Методы с валидацией** (parsing, formatting с параметрами) следуют Never Throw Contract:
 
 ```typescript
-// ✅ Всегда возвращают Result, никогда не бросают
+// ✅ Методы с валидацией возвращают Result, никогда не бросают
 const result = RatioFormatter.toPercent(ratio, decimals);
 
 if (result.ok) {
@@ -744,6 +744,13 @@ if (result.ok) {
   const error = result.error;
   console.error(error.context?.reason);
 }
+```
+
+**Инфаллибильные методы** (toJSON) возвращают значение напрямую:
+
+```typescript
+// ✅ Инфаллибильные методы не могут упасть, возвращают значение напрямую
+const json = RatioSerializer.toJSON(ratio); // RatioJSON
 ```
 
 ### Error Reasons
