@@ -1,10 +1,9 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { ErrorSource } from '@polymarket/errors';
+import { Result, Ok } from '@polymarket/result';
+import { wrapOp, InvalidAssetQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import type { AssetId, OnChainConditionRef, OutcomeKey } from '@polymarket/ids';
 import { Quantity } from '../../quantity/core/Quantity.js';
-import { AssetQuantity, AssetQuantityInvariantViolation } from '../core/index.js';
-import { InvalidAssetQuantityError, AssetQuantityErrorReason } from '../errors/index.js';
+import { AssetQuantity } from '../core/index.js';
 
 /**
  * Фасад для работы с AssetQuantity - публичный API
@@ -48,20 +47,23 @@ import { InvalidAssetQuantityError, AssetQuantityErrorReason } from '../errors/i
  * ```
  */
 export class AssetQuantityService {
+  private static readonly SERVICE_NAME = 'AssetQuantityService';
+
   /**
    * Создать AssetQuantity из AssetId и Quantity
    *
-   * @param asset - Asset identifier (Currency или OutcomeToken)
+   * @param asset - Asset identifier (может быть из ненадёжного источника)
    * @param amount - Quantity актива
-   * @param source - Источник ошибки (опционально)
    * @returns Result с AssetQuantity или InvalidAssetQuantityError
    *
    * @remarks
    * Никогда не бросает исключения - всегда возвращает Result.
    *
+   * **Defensive copy**: Использует fromAssetId() который пересоздаёт AssetId
+   * для гарантии иммутабельности (asset может быть из parseAssetId).
+   *
    * Возможные ошибки:
-   * - INVALID_ASSET: если asset некорректен
-   * - INVALID_AMOUNT: если amount некорректен
+   * - Если AssetIdHelpers.fromOutcomeToken() бросит (для OUTCOME_TOKEN)
    *
    * @example
    * ```typescript
@@ -70,53 +72,31 @@ export class AssetQuantityService {
    *
    * const result = AssetQuantityService.create(assetId, qty);
    * if (!result.ok) {
-   *   console.error(result.error.context?.reason);
+   *   console.error(result.error.message);
    * }
    * ```
    */
   public static create(
     asset: AssetId,
-    amount: Quantity,
-    source: ErrorSource = ErrorSource.SERVICE_CALL
+    amount: Quantity
   ): Result<AssetQuantity, InvalidAssetQuantityError> {
-    try {
-      // Create AssetQuantity (may throw AssetQuantityInvariantViolation, but unlikely)
-      const assetQty = AssetQuantity.of(asset, amount);
-
-      return Ok(assetQty);
-    } catch (error) {
-      // Catch AssetQuantityInvariantViolation and other unexpected errors
-      if (error instanceof AssetQuantityInvariantViolation) {
-        return Err(
-          new InvalidAssetQuantityError(
-            `Failed to create AssetQuantity: ${error.message}`,
-            {
-              reason: error.reason || AssetQuantityErrorReason.INVALID_INPUT,
-              details: { asset, amount },
-            },
-            source
-          )
-        );
-      }
-
-      // Unexpected error
-      return Err(
-        new InvalidAssetQuantityError(
-          `Unexpected error creating AssetQuantity: ${error instanceof Error ? error.message : String(error)}`,
-          {
-            details: { asset, amount, error: String(error) },
-          },
-          source
-        )
-      );
-    }
+    return wrapOp(
+      AssetQuantityService.SERVICE_NAME,
+      'create',
+      { asset, amount },
+      () => {
+        // fromAssetId делает defensive copy для гарантии иммутабельности
+        const assetQty = AssetQuantity.fromAssetId(asset, amount);
+        return Ok(assetQty);
+      },
+      InvalidAssetQuantityError
+    );
   }
 
   /**
    * Создать AssetQuantity для USDC из числа или строки
    *
    * @param amountValue - Количество USDC (number, string, Decimal)
-   * @param source - Источник ошибки (опционально)
    * @returns Result с AssetQuantity для USDC или InvalidAssetQuantityError
    *
    * @remarks
@@ -133,46 +113,52 @@ export class AssetQuantityService {
    * ```
    */
   public static createUsdc(
-    amountValue: number | string | Decimal,
-    source: ErrorSource = ErrorSource.SERVICE_CALL
+    amountValue: number | string | Decimal
   ): Result<AssetQuantity, InvalidAssetQuantityError> {
-    try {
-      // Parse amount as Decimal
-      const amountDecimal = new Decimal(amountValue);
-
-      // Create Quantity
-      let quantity: Quantity;
-      try {
-        quantity = Quantity.of(amountDecimal);
-      } catch (error) {
-        return Err(
-          new InvalidAssetQuantityError(
-            `Failed to create Quantity: ${error instanceof Error ? error.message : String(error)}`,
+    return wrapOp(
+      AssetQuantityService.SERVICE_NAME,
+      'createUsdc',
+      { amountValue },
+      () => {
+        // Parse amount as Decimal
+        let amountDecimal: Decimal;
+        try {
+          amountDecimal = new Decimal(amountValue);
+        } catch (error) {
+          throw new InvalidAssetQuantityError(
+            (ctx) => `Failed to parse amount as Decimal: ${ctx.error}`,
             {
-              reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-              details: { amountValue, error: String(error) },
-            },
-            source
-          )
-        );
-      }
+              context: {
+                amountValue,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            }
+          );
+        }
 
-      // Create AssetQuantity with USDC
-      const assetQty = AssetQuantity.usdc(quantity);
+        // Create Quantity
+        let quantity: Quantity;
+        try {
+          quantity = Quantity.of(amountDecimal);
+        } catch (error) {
+          throw new InvalidAssetQuantityError(
+            (ctx) => `Failed to create Quantity: ${ctx.error}`,
+            {
+              context: {
+                amountValue,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            }
+          );
+        }
 
-      return Ok(assetQty);
-    } catch (error) {
-      return Err(
-        new InvalidAssetQuantityError(
-          `Failed to parse amount as Decimal: ${error instanceof Error ? error.message : String(error)}`,
-          {
-            reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-            details: { amountValue, error: String(error) },
-          },
-          source
-        )
-      );
-    }
+        // Create AssetQuantity with USDC
+        const assetQty = AssetQuantity.usdc(quantity);
+
+        return Ok(assetQty);
+      },
+      InvalidAssetQuantityError
+    );
   }
 
   /**
@@ -181,7 +167,6 @@ export class AssetQuantityService {
    * @param conditionRef - On-chain condition reference
    * @param outcomeKey - Outcome key (UP, DOWN, etc)
    * @param amountValue - Количество токенов (number, string, Decimal)
-   * @param source - Источник ошибки (опционально)
    * @returns Result с AssetQuantity для outcome token или InvalidAssetQuantityError
    *
    * @remarks
@@ -204,46 +189,56 @@ export class AssetQuantityService {
   public static createOutcomeToken(
     conditionRef: OnChainConditionRef,
     outcomeKey: OutcomeKey,
-    amountValue: number | string | Decimal,
-    source: ErrorSource = ErrorSource.SERVICE_CALL
+    amountValue: number | string | Decimal
   ): Result<AssetQuantity, InvalidAssetQuantityError> {
-    try {
-      // Parse amount as Decimal
-      const amountDecimal = new Decimal(amountValue);
-
-      // Create Quantity
-      let quantity: Quantity;
-      try {
-        quantity = Quantity.of(amountDecimal);
-      } catch (error) {
-        return Err(
-          new InvalidAssetQuantityError(
-            `Failed to create Quantity: ${error instanceof Error ? error.message : String(error)}`,
+    return wrapOp(
+      AssetQuantityService.SERVICE_NAME,
+      'createOutcomeToken',
+      { conditionRef, outcomeKey, amountValue },
+      () => {
+        // Parse amount as Decimal
+        let amountDecimal: Decimal;
+        try {
+          amountDecimal = new Decimal(amountValue);
+        } catch (error) {
+          throw new InvalidAssetQuantityError(
+            (ctx) => `Failed to parse amount as Decimal: ${ctx.error}`,
             {
-              reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-              details: { amountValue, conditionRef, outcomeKey, error: String(error) },
-            },
-            source
-          )
-        );
-      }
+              context: {
+                conditionRef,
+                outcomeKey,
+                amountValue,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            }
+          );
+        }
 
-      // Create AssetQuantity with outcome token
-      const assetQty = AssetQuantity.outcomeToken(conditionRef, outcomeKey, quantity);
+        // Create Quantity
+        let quantity: Quantity;
+        try {
+          quantity = Quantity.of(amountDecimal);
+        } catch (error) {
+          throw new InvalidAssetQuantityError(
+            (ctx) => `Failed to create Quantity: ${ctx.error}`,
+            {
+              context: {
+                conditionRef,
+                outcomeKey,
+                amountValue,
+                error: error instanceof Error ? error.message : String(error),
+              },
+            }
+          );
+        }
 
-      return Ok(assetQty);
-    } catch (error) {
-      return Err(
-        new InvalidAssetQuantityError(
-          `Failed to parse amount as Decimal: ${error instanceof Error ? error.message : String(error)}`,
-          {
-            reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-            details: { amountValue, conditionRef, outcomeKey, error: String(error) },
-          },
-          source
-        )
-      );
-    }
+        // Create AssetQuantity with outcome token
+        const assetQty = AssetQuantity.outcomeToken(conditionRef, outcomeKey, quantity);
+
+        return Ok(assetQty);
+      },
+      InvalidAssetQuantityError
+    );
   }
 
   /**

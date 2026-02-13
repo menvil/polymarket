@@ -106,6 +106,7 @@ export * from './InvalidBalanceError.js';
 export * from './CurrencyMismatchError.js';
 
 // Валидация торговых объектов
+export * from './InvalidAssetQuantityError.js';
 export * from './InvalidSpreadError.js';
 export * from './InvalidQuoteError.js';
 export * from './InvalidOutcomeTokenError.js';

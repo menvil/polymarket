@@ -14,18 +14,15 @@ import { Quantity } from '../../quantity/core/Quantity.js';
  * - AssetQuantity: Generic для ANY assets (runtime type checks)
  *
  * **Иммутабельность:**
- * - Все поля readonly
- * - Не предоставляет методов изменения
- * - Для изменений создавайте новый AssetQuantity
+ * - Гарантируется через defensive copy в fromAssetId()
+ * - Внешний AssetId пересоздаётся, не сохраняется напрямую
+ * - После создания нет публичных методов для изменения состояния
  *
- * **Инварианты:**
- * - asset должен быть валидным AssetId
- * - amount должен быть валидным Quantity (non-negative, finite)
- * - Нет дополнительных инвариантов
- *
- * **Core не использует Result:**
- * Если нарушены инварианты — бросает AssetQuantityInvariantViolation.
- * Facade перехватывает и конвертирует в Result.Err.
+ * **Публичные фабрики**:
+ * - `of(asset, amount)` - создание из канонических domain объектов
+ * - `fromAssetId(assetId, amount)` - создание с defensive copy (для adapters/boundary)
+ * - `usdc(amount)` - convenience для USDC
+ * - `outcomeToken(ref, key, amount)` - convenience для outcome tokens
  *
  * @example
  * ```typescript
@@ -50,36 +47,85 @@ export class AssetQuantity {
   ) {}
 
   /**
-   * Создаёт AssetQuantity из AssetId и Quantity
+   * Приватная фабрика для создания из канонического AssetId
+   *
+   * @param asset - Канонический AssetId (из AssetIdHelpers)
+   * @param amount - Количество актива
+   * @returns Новый AssetQuantity
+   *
+   * @remarks
+   * Вызывается из of() и fromAssetId() после создания канонического AssetId.
+   * НЕ делает повторную каноникализацию - доверяет что asset уже канонический.
+   */
+  private static fromCanonicalAssetId(asset: AssetId, amount: Quantity): AssetQuantity {
+    return new AssetQuantity(asset, amount);
+  }
+
+  /**
+   * Создаёт AssetQuantity из AssetId с defensive copy
+   *
+   * @param asset - Asset identifier (может быть из ненадёжного источника)
+   * @param amount - Количество актива
+   * @returns Новый AssetQuantity
+   * @throws {Error} Если AssetIdHelpers бросит при пересоздании
+   *
+   * @remarks
+   * **Defensive copy**: Пересоздаёт AssetId для гарантии иммутабельности.
+   * Входной asset может быть из parseAssetId (mutable).
+   *
+   * - CURRENCY: использует исходный (constants уже frozen)
+   * - OUTCOME_TOKEN: пересоздаёт через AssetIdHelpers.fromOutcomeToken()
+   *
+   * @example
+   * ```typescript
+   * const assetId = parseAssetId("outcome_token:...");  // mutable
+   * const qty = Quantity.of(new Decimal(100));
+   * const assetQty = AssetQuantity.fromAssetId(assetId, qty);
+   * ```
+   */
+  public static fromAssetId(asset: AssetId, amount: Quantity): AssetQuantity {
+    let canonicalAsset: AssetId;
+
+    if (asset.type === 'CURRENCY') {
+      // Currency constants уже frozen, можно использовать напрямую
+      canonicalAsset = asset;
+    } else {
+      // OUTCOME_TOKEN: defensive copy через AssetIdHelpers
+      canonicalAsset = AssetIdHelpers.fromOutcomeToken(
+        asset.conditionRef,
+        asset.outcomeKey
+      );
+    }
+
+    return AssetQuantity.fromCanonicalAssetId(canonicalAsset, amount);
+  }
+
+  /**
+   * Создаёт AssetQuantity из канонического AssetId и Quantity
    *
    * @internal ТОЛЬКО для внутреннего использования в Core и Facade
    *
    * @remarks
-   * Валидация минимальна - проверяет что объекты существуют.
-   * Invariants уже гарантированы AssetId и Quantity структурами.
+   * Для создания из AssetIdHelpers (уже канонический).
+   * НЕ делает defensive copy - доверяет что asset уже канонический.
    *
-   * Для публичного API используйте AssetQuantityService.create().
+   * Для boundary/adapters используйте fromAssetId() с defensive copy.
    *
-   * @param asset - Asset identifier (Currency или OutcomeToken)
-   * @param amount - Количество актива (должно быть non-negative, уже проверено в Quantity)
+   * @param asset - Канонический AssetId (из AssetIdHelpers)
+   * @param amount - Количество актива
    * @returns Новый AssetQuantity
-   * @throws {AssetQuantityInvariantViolation} Если инварианты нарушены (не должно происходить)
    *
    * @example
    * ```typescript
-   * // ✅ В Core/Facade
+   * // ✅ В Core/Facade с AssetIdHelpers
    * const assetId = AssetIdHelpers.USDC;
    * const qty = Quantity.of(new Decimal(100));
    * const assetQty = AssetQuantity.of(assetId, qty);
-   *
-   * // ❌ В публичном коде - используй AssetQuantityService
-   * const result = AssetQuantityService.create(assetId, qty);
    * ```
    */
   public static of(asset: AssetId, amount: Quantity): AssetQuantity {
-    // Инварианты уже проверены в AssetId и Quantity
-    // Amount non-negative гарантирован Quantity конструктором
-    return new AssetQuantity(asset, amount);
+    // AssetId уже канонический (из AssetIdHelpers)
+    return AssetQuantity.fromCanonicalAssetId(asset, amount);
   }
 
   /**
@@ -105,7 +151,7 @@ export class AssetQuantity {
    * ```
    */
   public static usdc(amount: Quantity): AssetQuantity {
-    return new AssetQuantity(AssetIdHelpers.USDC, amount);
+    return AssetQuantity.fromCanonicalAssetId(AssetIdHelpers.USDC, amount);
   }
 
   /**
@@ -115,7 +161,7 @@ export class AssetQuantity {
    *
    * @remarks
    * Convenience метод для создания outcome token asset quantity.
-   * Создаёт AssetId из conditionRef + outcomeKey и оборачивает в AssetQuantity.
+   * Создаёт канонический AssetId из conditionRef + outcomeKey.
    *
    * Для публичного API используйте AssetQuantityService.createOutcomeToken().
    *
@@ -123,6 +169,7 @@ export class AssetQuantity {
    * @param outcomeKey - Outcome key (UP, DOWN, etc)
    * @param amount - Количество токенов
    * @returns AssetQuantity для outcome token
+   * @throws {Error} Если AssetIdHelpers.fromOutcomeToken() бросит
    *
    * @example
    * ```typescript
@@ -139,8 +186,9 @@ export class AssetQuantity {
     outcomeKey: OutcomeKey,
     amount: Quantity
   ): AssetQuantity {
+    // Создаём канонический AssetId
     const assetId = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
-    return new AssetQuantity(assetId, amount);
+    return AssetQuantity.fromCanonicalAssetId(assetId, amount);
   }
 
   /**

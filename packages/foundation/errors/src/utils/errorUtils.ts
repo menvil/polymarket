@@ -1,12 +1,13 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
 import { TradingError } from '../base/TradingError.js';
+import { InvalidAssetQuantityError } from '../value-objects/InvalidAssetQuantityError.js';
 import { InvalidMoneyError } from '../value-objects/InvalidMoneyError.js';
+import { InvalidOutcomeTokenError } from '../value-objects/InvalidOutcomeTokenError.js';
+import { InvalidPercentageError } from '../value-objects/InvalidPercentageError.js';
 import { InvalidPriceError } from '../value-objects/InvalidPriceError.js';
 import { InvalidQuantityError } from '../value-objects/InvalidQuantityError.js';
-import { InvalidPercentageError } from '../value-objects/InvalidPercentageError.js';
 import { InvalidQuoteError } from '../value-objects/InvalidQuoteError.js';
-import { InvalidOutcomeTokenError } from '../value-objects/InvalidOutcomeTokenError.js';
 import { ArithmeticOverflowError } from '../value-objects/ArithmeticOverflowError.js';
 import { InvalidOperandError } from '../math/InvalidOperandError.js';
 import { DivisionByZeroError } from '../value-objects/DivisionByZeroError.js';
@@ -50,12 +51,13 @@ import { ErrorSource } from '../ErrorSource.js';
  * Этот тип сохранен для обратной совместимости с существующим кодом.
  */
 export type DomainError =
+  | InvalidAssetQuantityError
   | InvalidMoneyError
+  | InvalidOutcomeTokenError
+  | InvalidPercentageError
   | InvalidPriceError
   | InvalidQuantityError
-  | InvalidPercentageError
-  | InvalidQuoteError
-  | InvalidOutcomeTokenError;
+  | InvalidQuoteError;
 
 /**
  * Конструктор Domain Error

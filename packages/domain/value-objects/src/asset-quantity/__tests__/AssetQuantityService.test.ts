@@ -35,7 +35,8 @@ describe('AssetQuantityService', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.asset()).toBe(tokenAsset);
+        // After defensive copy, asset() returns a new object with same values
+        expect(result.value.asset()).toStrictEqual(tokenAsset);
         expect(result.value.amount()).toBe(qty100);
         expect(result.value.isOutcomeToken()).toBe(true);
       }

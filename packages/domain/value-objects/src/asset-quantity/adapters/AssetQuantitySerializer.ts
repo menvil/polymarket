@@ -1,11 +1,11 @@
 import { Result, Err } from '@polymarket/result';
-import { ErrorSource } from '@polymarket/errors';
+import { ErrorSource, InvalidAssetQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { parseAssetId, assetIdToString } from '@polymarket/ids';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { AssetQuantity } from '../core/AssetQuantity.js';
 import { AssetQuantityService } from '../facade/AssetQuantityService.js';
-import { InvalidAssetQuantityError, AssetQuantityErrorReason } from '../errors/index.js';
+import { AssetQuantityErrorReason } from '../errors/index.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок
@@ -145,12 +145,17 @@ export class AssetQuantitySerializer {
     if (typeof json !== 'object' || json === null) {
       return Err(
         new InvalidAssetQuantityError(
-          `Expected object, got ${typeof json}`,
+          (ctx) => `Expected object, got ${ctx.type}`,
           {
-            reason: AssetQuantityErrorReason.INVALID_FORMAT,
-            details: { type: typeof json, json: safeStringify(json) },
-          },
-          source
+            context: {
+              source,
+              service: 'AssetQuantitySerializer',
+              op: 'fromJSON',
+              reason: AssetQuantityErrorReason.INVALID_FORMAT,
+              type: typeof json,
+              json: safeStringify(json),
+            },
+          }
         )
       );
     }
@@ -159,12 +164,17 @@ export class AssetQuantitySerializer {
     if (Array.isArray(json)) {
       return Err(
         new InvalidAssetQuantityError(
-          'Expected object, got array',
+          () => 'Expected object, got array',
           {
-            reason: AssetQuantityErrorReason.INVALID_FORMAT,
-            details: { type: 'array', json: safeStringify(json) },
-          },
-          source
+            context: {
+              source,
+              service: 'AssetQuantitySerializer',
+              op: 'fromJSON',
+              reason: AssetQuantityErrorReason.INVALID_FORMAT,
+              type: 'array',
+              json: safeStringify(json),
+            },
+          }
         )
       );
     }
@@ -175,12 +185,16 @@ export class AssetQuantitySerializer {
     if (!('asset' in obj)) {
       return Err(
         new InvalidAssetQuantityError(
-          "Missing required field 'asset'",
+          () => "Missing required field 'asset'",
           {
-            reason: AssetQuantityErrorReason.INVALID_FORMAT,
-            details: { json: safeStringify(json) },
-          },
-          source
+            context: {
+              source,
+              service: 'AssetQuantitySerializer',
+              op: 'fromJSON',
+              reason: AssetQuantityErrorReason.INVALID_FORMAT,
+              json: safeStringify(json),
+            },
+          }
         )
       );
     }
@@ -189,12 +203,16 @@ export class AssetQuantitySerializer {
     if (!('amount' in obj)) {
       return Err(
         new InvalidAssetQuantityError(
-          "Missing required field 'amount'",
+          () => "Missing required field 'amount'",
           {
-            reason: AssetQuantityErrorReason.INVALID_FORMAT,
-            details: { json: safeStringify(json) },
-          },
-          source
+            context: {
+              source,
+              service: 'AssetQuantitySerializer',
+              op: 'fromJSON',
+              reason: AssetQuantityErrorReason.INVALID_FORMAT,
+              json: safeStringify(json),
+            },
+          }
         )
       );
     }
@@ -204,12 +222,16 @@ export class AssetQuantitySerializer {
     if (typeof assetValue !== 'string') {
       return Err(
         new InvalidAssetQuantityError(
-          "Field 'asset' must be string",
+          (ctx) => `Field 'asset' must be string, got ${ctx.type}`,
           {
-            reason: AssetQuantityErrorReason.INVALID_ASSET,
-            details: { type: typeof assetValue },
-          },
-          source
+            context: {
+              source,
+              service: 'AssetQuantitySerializer',
+              op: 'fromJSON',
+              reason: AssetQuantityErrorReason.INVALID_ASSET,
+              type: typeof assetValue,
+            },
+          }
         )
       );
     }
@@ -218,12 +240,16 @@ export class AssetQuantitySerializer {
     if (!assetId) {
       return Err(
         new InvalidAssetQuantityError(
-          `Failed to parse asset: ${assetValue}`,
+          (ctx) => `Failed to parse asset: '${ctx.asset}'`,
           {
-            reason: AssetQuantityErrorReason.INVALID_ASSET,
-            details: { asset: assetValue },
-          },
-          source
+            context: {
+              source,
+              service: 'AssetQuantitySerializer',
+              op: 'fromJSON',
+              reason: AssetQuantityErrorReason.INVALID_ASSET,
+              asset: assetValue,
+            },
+          }
         )
       );
     }
@@ -233,12 +259,16 @@ export class AssetQuantitySerializer {
     if (typeof amountValue !== 'string') {
       return Err(
         new InvalidAssetQuantityError(
-          "Field 'amount' must be string",
+          (ctx) => `Field 'amount' must be string, got ${ctx.type}`,
           {
-            reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-            details: { type: typeof amountValue },
-          },
-          source
+            context: {
+              source,
+              service: 'AssetQuantitySerializer',
+              op: 'fromJSON',
+              reason: AssetQuantityErrorReason.INVALID_AMOUNT,
+              type: typeof amountValue,
+            },
+          }
         )
       );
     }
@@ -250,12 +280,18 @@ export class AssetQuantitySerializer {
     } catch (error) {
       return Err(
         new InvalidAssetQuantityError(
-          `Failed to parse amount as Decimal: ${error instanceof Error ? error.message : String(error)}`,
+          (ctx) =>
+            `Failed to parse amount as Decimal: ${ctx.error}`,
           {
-            reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-            details: { amount: amountValue, error: String(error) },
-          },
-          source
+            context: {
+              source,
+              service: 'AssetQuantitySerializer',
+              op: 'fromJSON',
+              reason: AssetQuantityErrorReason.INVALID_AMOUNT,
+              amount: amountValue,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          }
         )
       );
     }
@@ -267,18 +303,24 @@ export class AssetQuantitySerializer {
     } catch (error) {
       return Err(
         new InvalidAssetQuantityError(
-          `Failed to create Quantity: ${error instanceof Error ? error.message : String(error)}`,
+          (ctx) =>
+            `Failed to create Quantity: ${ctx.error}`,
           {
-            reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-            details: { amount: amountValue, error: String(error) },
-          },
-          source
+            context: {
+              source,
+              service: 'AssetQuantitySerializer',
+              op: 'fromJSON',
+              reason: AssetQuantityErrorReason.INVALID_AMOUNT,
+              amount: amountValue,
+              error: error instanceof Error ? error.message : String(error),
+            },
+          }
         )
       );
     }
 
-    // Создаём AssetQuantity через сервис
-    return AssetQuantityService.create(assetId, quantity, source);
+    // Создаём AssetQuantity через сервис (без source - он определяется wrapOp)
+    return AssetQuantityService.create(assetId, quantity);
   }
 
   /**

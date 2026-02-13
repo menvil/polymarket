@@ -6,4 +6,3 @@
  */
 
 export { AssetQuantity } from './AssetQuantity.js';
-export { AssetQuantityInvariantViolation } from './AssetQuantityInvariantViolation.js';

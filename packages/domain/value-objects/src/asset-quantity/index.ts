@@ -6,7 +6,6 @@
 
 // Core
 export { AssetQuantity } from './core/AssetQuantity.js';
-export { AssetQuantityInvariantViolation } from './core/AssetQuantityInvariantViolation.js';
 
 // Facade
 export { AssetQuantityService } from './facade/AssetQuantityService.js';
@@ -17,4 +16,4 @@ export { AssetQuantityFormatter } from './adapters/AssetQuantityFormatter.js';
 
 // Errors
 export { AssetQuantityErrorReason } from './errors/AssetQuantityErrorReason.js';
-export { InvalidAssetQuantityError } from './errors/InvalidAssetQuantityError.js';
+// InvalidAssetQuantityError теперь в @polymarket/errors
