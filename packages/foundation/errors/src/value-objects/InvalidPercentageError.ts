@@ -45,7 +45,7 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity } from '../base';
+import { TradingError, ErrorSeverity } from '../base/index.js';
 
 /**
  * InvalidPercentageError - ошибка валидации процентного значения

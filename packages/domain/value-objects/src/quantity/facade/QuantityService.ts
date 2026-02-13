@@ -7,7 +7,7 @@ import { ValidateDivisorForQuantityDivision } from '../rules/ValidateDivisorForQ
 import { ValidateStepSizeForQuantity } from '../rules/ValidateStepSizeForQuantity.js';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTick } from '@polymarket/math';
 import Decimal from 'decimal.js';
-import { QuantityErrorReason } from '../errors/QuantityErrorReason';
+import { QuantityErrorReason } from '../errors/QuantityErrorReason.js';
 
 /**
  * Фасад для работы с Quantity
