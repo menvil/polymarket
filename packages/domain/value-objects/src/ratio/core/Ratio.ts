@@ -39,10 +39,10 @@
  *
  * @example
  * ```typescript
- * // ❌ WRONG: .of() приватный, нельзя вызвать напрямую
- * const ratio = Ratio.of(value); // ERROR: of() is private
+ * // ❌ WRONG: .of() помечен @internal, не используйте напрямую
+ * const ratio = Ratio.of(value); // Неясная семантика: 2 это 200% или 2%?
  *
- * // ✅ CORRECT: Используйте RatioService
+ * // ✅ CORRECT: Используйте RatioService для ясной семантики
  * const ratioResult = RatioService.fromPercent(2); // 2% => 0.02
  * if (ratioResult.ok) {
  *   const ratio = ratioResult.value;
