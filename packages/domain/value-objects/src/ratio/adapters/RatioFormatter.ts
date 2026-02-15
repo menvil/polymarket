@@ -147,6 +147,20 @@ export class RatioFormatter {
    * RatioFormatter.parse("invalid"); // Err(InvalidRatioError)
    * ```
    */
+  /**
+   * Проверяет что строка не содержит hex/bin/oct литералы
+   *
+   * @remarks
+   * Decimal.js принимает 0x, 0b, 0o префиксы, но для Ratio это нежелательно
+   *
+   * @param value - Значение для проверки
+   * @returns true если строка содержит недопустимые префиксы
+   */
+  private static hasInvalidPrefix(value: string): boolean {
+    const lower = value.toLowerCase().trim();
+    return lower.startsWith('0x') || lower.startsWith('0b') || lower.startsWith('0o');
+  }
+
   public static parse(input: string): Result<Ratio, InvalidRatioError> {
     const trimmed = input.trim();
 
@@ -167,6 +181,20 @@ export class RatioFormatter {
     // Format: "2%"
     if (trimmed.endsWith('%')) {
       const percentStr = trimmed.slice(0, -1).trim();
+
+      // Reject hex/bin/oct literals
+      if (this.hasInvalidPrefix(percentStr)) {
+        return Err(
+          new InvalidRatioError(`Invalid percent format: hex/bin/oct literals not allowed: "${input}"`, {
+            context: {
+              source: ErrorSource.PARSING,
+              op: 'parse',
+              input,
+              reason: RatioErrorReason.INVALID_FORMAT
+            }
+          })
+        );
+      }
       // Передаем строку напрямую в RatioService.fromPercent для сохранения точности
       // RatioService сам валидирует формат через toDecimal()
       const result = RatioService.fromPercent(percentStr);
@@ -190,6 +218,21 @@ export class RatioFormatter {
     // Format: "200 bps"
     if (trimmed.endsWith('bps')) {
       const bpsStr = trimmed.slice(0, -3).trim();
+
+      // Reject hex/bin/oct literals
+      if (this.hasInvalidPrefix(bpsStr)) {
+        return Err(
+          new InvalidRatioError(`Invalid bps format: hex/bin/oct literals not allowed: "${input}"`, {
+            context: {
+              source: ErrorSource.PARSING,
+              op: 'parse',
+              input,
+              reason: RatioErrorReason.INVALID_FORMAT
+            }
+          })
+        );
+      }
+
       // Передаем строку напрямую в RatioService.fromBps для сохранения точности
       // RatioService сам валидирует формат через toDecimal()
       const result = RatioService.fromBps(bpsStr);
@@ -211,6 +254,20 @@ export class RatioFormatter {
     }
 
     // Format: "0.02" (decimal)
+    // Reject hex/bin/oct literals
+    if (this.hasInvalidPrefix(trimmed)) {
+      return Err(
+        new InvalidRatioError(`Invalid decimal format: hex/bin/oct literals not allowed: "${input}"`, {
+          context: {
+            source: ErrorSource.PARSING,
+            op: 'parse',
+            input,
+            reason: RatioErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+
     // Передаем строку напрямую в RatioService.fromDecimal для сохранения точности
     // RatioService сам валидирует формат через toDecimal()
     const result = RatioService.fromDecimal(trimmed);

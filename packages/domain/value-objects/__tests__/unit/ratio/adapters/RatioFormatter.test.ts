@@ -394,6 +394,52 @@ describe('RatioFormatter', () => {
           expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_FORMAT);
         }
       });
+
+      // Regression tests для hex/bin/oct literals (Problem 2)
+      it('отклоняет hex literal в percent формате', () => {
+        const result = RatioFormatter.parse('0x10%');
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_FORMAT);
+          expect(result.error.message).toContain('hex/bin/oct literals not allowed');
+        }
+      });
+
+      it('отклоняет hex literal в bps формате', () => {
+        const result = RatioFormatter.parse('0x10 bps');
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_FORMAT);
+          expect(result.error.message).toContain('hex/bin/oct literals not allowed');
+        }
+      });
+
+      it('отклоняет hex literal в decimal формате', () => {
+        const result = RatioFormatter.parse('0x10');
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_FORMAT);
+          expect(result.error.message).toContain('hex/bin/oct literals not allowed');
+        }
+      });
+
+      it('отклоняет binary literal', () => {
+        const result = RatioFormatter.parse('0b1010%');
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_FORMAT);
+          expect(result.error.message).toContain('hex/bin/oct literals not allowed');
+        }
+      });
+
+      it('отклоняет octal literal', () => {
+        const result = RatioFormatter.parse('0o12%');
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_FORMAT);
+          expect(result.error.message).toContain('hex/bin/oct literals not allowed');
+        }
+      });
     });
   });
 
