@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidRatioError } from '@polymarket/errors';
+import { InvalidRatioError, ErrorSource } from '@polymarket/errors';
 import { RatioErrorReason } from '../errors/RatioErrorReason.js';
 
 /**
@@ -37,6 +37,7 @@ export class ValidateRatioLteOne {
       return Err(
         new InvalidRatioError(`Ratio must be <= 1 for oneMinus() operations, got ${value.toString()}`, {
           context: {
+            source: ErrorSource.RULE_VALIDATION,
             op: operation,
             ratioValue: value.toString(),
             reason: RatioErrorReason.GREATER_THAN_ONE,

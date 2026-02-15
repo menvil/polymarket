@@ -160,7 +160,7 @@ export class TokenBalanceSerializer {
     // Проверка что это объект
     if (typeof json !== 'object' || json === null) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           `Expected object, got ${typeof json}`,
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
@@ -174,7 +174,7 @@ export class TokenBalanceSerializer {
     // Проверка что это не массив
     if (Array.isArray(json)) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           'Expected object, got array',
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
@@ -190,7 +190,7 @@ export class TokenBalanceSerializer {
     // Проверка наличия token
     if (!('token' in obj)) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           "Missing required field 'token'",
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
@@ -204,7 +204,7 @@ export class TokenBalanceSerializer {
     // Проверка наличия amount
     if (!('amount' in obj)) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           "Missing required field 'amount'",
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
@@ -219,7 +219,7 @@ export class TokenBalanceSerializer {
     const tokenResult = OutcomeTokenSerializer.fromJSON(obj.token, source);
     if (!tokenResult.ok) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           `Failed to parse token: ${tokenResult.error.message}`,
           {
             reason: TokenBalanceErrorReason.INVALID_TOKEN,
@@ -234,7 +234,7 @@ export class TokenBalanceSerializer {
     const amountValue = obj.amount;
     if (typeof amountValue !== 'string') {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           "Field 'amount' must be string",
           {
             reason: TokenBalanceErrorReason.INVALID_AMOUNT,
@@ -251,7 +251,7 @@ export class TokenBalanceSerializer {
       amountDecimal = new Decimal(amountValue);
     } catch (error) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           `Failed to parse amount as Decimal: ${error instanceof Error ? error.message : String(error)}`,
           {
             reason: TokenBalanceErrorReason.INVALID_AMOUNT,
@@ -268,7 +268,7 @@ export class TokenBalanceSerializer {
       quantity = Quantity.of(amountDecimal);
     } catch (error) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           `Failed to create Quantity: ${error instanceof Error ? error.message : String(error)}`,
           {
             reason: TokenBalanceErrorReason.INVALID_AMOUNT,
@@ -282,7 +282,7 @@ export class TokenBalanceSerializer {
     // Проверка наличия accountId
     if (!('accountId' in obj)) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           "Missing required field 'accountId'",
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
@@ -297,7 +297,7 @@ export class TokenBalanceSerializer {
     const accountIdValue = obj.accountId;
     if (typeof accountIdValue !== 'string') {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           "Field 'accountId' must be string",
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
@@ -312,7 +312,7 @@ export class TokenBalanceSerializer {
     const accountIdParsed = parseAccountId(accountIdValue);
     if (!accountIdParsed) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           `Failed to parse accountId: invalid format`,
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
@@ -326,7 +326,7 @@ export class TokenBalanceSerializer {
     // Проверка наличия venueId
     if (!('venueId' in obj)) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           "Missing required field 'venueId'",
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
@@ -341,7 +341,7 @@ export class TokenBalanceSerializer {
     const venueIdValue = obj.venueId;
     if (typeof venueIdValue !== 'string') {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           "Field 'venueId' must be string",
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
@@ -356,7 +356,7 @@ export class TokenBalanceSerializer {
     const venueId = asVenueId(venueIdValue);
     if (!venueId) {
       return Err(
-        new InvalidTokenBalanceError(
+        InvalidTokenBalanceError.fromLegacy(
           "Field 'venueId' has invalid format. Must be uppercase letters, digits, underscores, 1-32 chars, not starting with digit",
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
@@ -368,7 +368,7 @@ export class TokenBalanceSerializer {
     }
 
     // Создаём TokenBalance через сервис
-    return TokenBalanceService.create(tokenResult.value, quantity, accountIdParsed, venueId, source);
+    return TokenBalanceService.create(tokenResult.value, quantity, accountIdParsed, venueId);
   }
 
   /**

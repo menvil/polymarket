@@ -1,46 +1,72 @@
-import { ErrorSource } from '@polymarket/errors';
+import { TradingError, ErrorSeverity, ErrorSource } from '@polymarket/errors';
 import { TokenBalanceErrorReason } from './TokenBalanceErrorReason.js';
 
 /**
- * Ошибка создания или операции с TokenBalance
+ * InvalidTokenBalanceError - ошибка валидации token balance
  *
  * @remarks
- * Используется в TokenBalanceService для возврата типизированных ошибок через Result<T, E>.
+ * Выбрасывается когда token balance имеет некорректное значение:
+ * - Невалидный token
+ * - Невалидное количество (отрицательное, NaN, Infinity)
+ * - Невалидный accountId
+ * - Невалидный venueId
  *
- * Содержит:
- * - message - человекочитаемое описание
- * - context.reason - типизированная причина (TokenBalanceErrorReason)
- * - context.details - дополнительная информация (входные данные, причина)
- * - source - откуда пришла ошибка (ErrorSource)
+ * Используется в TokenBalanceService для валидации операций с балансом токенов.
+ * Уровень серьезности: low (проблемы валидации данных не критичны).
  *
  * @example
  * ```typescript
- * const result = TokenBalanceService.create(token, qty, accountId, venueId);
- * if (!result.ok) {
- *   if (result.error.context?.reason === TokenBalanceErrorReason.INVALID_AMOUNT) {
- *     console.error('Invalid amount provided');
+ * import { InvalidTokenBalanceError } from '@polymarket/value-objects';
+ *
+ * // Статическое сообщение
+ * throw new InvalidTokenBalanceError('Token cannot be null');
+ *
+ * // С кодом и контекстом (рекомендуется)
+ * throw new InvalidTokenBalanceError('Invalid token balance', {
+ *   code: InvalidTokenBalanceError.code,
+ *   context: { token: 'OUTCOME_TOKEN', amount: -100 }
+ * });
+ *
+ * // Динамическое сообщение из контекста
+ * throw new InvalidTokenBalanceError(
+ *   (ctx) => `Amount cannot be negative: ${ctx.amount}`,
+ *   {
+ *     code: InvalidTokenBalanceError.code,
+ *     context: { amount: -100, reason: 'INVALID_AMOUNT' }
  *   }
- * }
+ * );
  * ```
  */
-export class InvalidTokenBalanceError extends Error {
-  public readonly context?: {
-    reason?: TokenBalanceErrorReason;
-    details?: unknown;
-    source?: ErrorSource;
-  };
+export class InvalidTokenBalanceError extends TradingError {
+  public readonly severity: ErrorSeverity = 'low';
 
-  constructor(
+  /**
+   * Рекомендуемый код ошибки
+   */
+  public static readonly code = 'INVALID_TOKEN_BALANCE';
+
+  /**
+   * Создать InvalidTokenBalanceError из legacy формата (для обратной совместимости)
+   *
+   * @param message - Сообщение об ошибке
+   * @param context - Контекст с reason и details
+   * @param source - Источник ошибки
+   * @returns InvalidTokenBalanceError в новом формате
+   */
+  public static fromLegacy(
     message: string,
     context?: {
       reason?: TokenBalanceErrorReason;
       details?: unknown;
     },
     source?: ErrorSource
-  ) {
-    super(message);
-    Object.setPrototypeOf(this, InvalidTokenBalanceError.prototype);
-    this.name = 'InvalidTokenBalanceError';
-    this.context = { ...context, source };
+  ): InvalidTokenBalanceError {
+    return new InvalidTokenBalanceError(message, {
+      code: InvalidTokenBalanceError.code,
+      context: {
+        ...context,
+        source
+      }
+    });
   }
 }

@@ -1,10 +1,10 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { ErrorSource } from '@polymarket/errors';
+import { Result, Ok } from '@polymarket/result';
+import { wrapOp } from '@polymarket/errors';
 import type { AccountId, VenueId } from '@polymarket/ids';
 import { OutcomeToken } from '../../outcome-token/core/index.js';
 import { Quantity } from '../../quantity/core/index.js';
-import { TokenBalance, TokenBalanceInvariantViolation } from '../core/index.js';
-import { InvalidTokenBalanceError, TokenBalanceErrorReason } from '../errors/index.js';
+import { TokenBalance } from '../core/index.js';
+import { InvalidTokenBalanceError } from '../errors/index.js';
 
 /**
  * Фасад для работы с TokenBalance - публичный API
@@ -58,6 +58,8 @@ import { InvalidTokenBalanceError, TokenBalanceErrorReason } from '../errors/ind
  * ```
  */
 export class TokenBalanceService {
+  private static readonly SERVICE_NAME = 'TokenBalanceService';
+
   /**
    * Создать TokenBalance из OutcomeToken, Quantity, AccountId и VenueId
    *
@@ -65,7 +67,6 @@ export class TokenBalanceService {
    * @param amount - Количество токенов (должно быть non-negative, уже проверено в Quantity)
    * @param accountId - ID аккаунта владельца баланса
    * @param venueId - ID площадки (venue) где находится баланс
-   * @param source - Источник ошибки (опционально)
    * @returns Result с TokenBalance или InvalidTokenBalanceError
    *
    * @remarks
@@ -96,40 +97,24 @@ export class TokenBalanceService {
     token: OutcomeToken,
     amount: Quantity,
     accountId: AccountId,
-    venueId: VenueId,
-    source: ErrorSource = ErrorSource.SERVICE_CALL
+    venueId: VenueId
   ): Result<TokenBalance, InvalidTokenBalanceError> {
-    try {
-      // Create TokenBalance (may throw TokenBalanceInvariantViolation, but unlikely)
-      const balance = TokenBalance.of(token, amount, accountId, venueId);
-
-      return Ok(balance);
-    } catch (error) {
-      // Catch TokenBalanceInvariantViolation and other unexpected errors
-      if (error instanceof TokenBalanceInvariantViolation) {
-        return Err(
-          new InvalidTokenBalanceError(
-            `Failed to create TokenBalance: ${error.message}`,
-            {
-              reason: error.reason || TokenBalanceErrorReason.INVALID_INPUT,
-              details: { token, amount },
-            },
-            source
-          )
-        );
-      }
-
-      // Unexpected error
-      return Err(
-        new InvalidTokenBalanceError(
-          `Unexpected error creating TokenBalance: ${error instanceof Error ? error.message : String(error)}`,
-          {
-            details: { token, amount, error: String(error) },
-          },
-          source
-        )
-      );
-    }
+    return wrapOp(
+      TokenBalanceService.SERVICE_NAME,
+      'create',
+      {
+        token: token.assetId(),
+        amount: amount.value().toString(),
+        accountId,
+        venueId
+      },
+      () => {
+        // Create TokenBalance (may throw TokenBalanceInvariantViolation)
+        const balance = TokenBalance.of(token, amount, accountId, venueId);
+        return Ok(balance);
+      },
+      InvalidTokenBalanceError
+    );
   }
 
   /**

@@ -266,6 +266,10 @@ export class RatioService {
    * Простой делегирующий метод для симметрии API с другими Service классами.
    * Используйте напрямую `a.equals(b)` если предпочитаете более короткую запись.
    *
+   * **Never Throw Contract:**
+   * Гарантированно не бросает исключений. Если a или b равны null/undefined,
+   * возвращает false.
+   *
    * @example
    * ```typescript
    * const r1 = RatioService.fromPercent(2);
@@ -274,9 +278,16 @@ export class RatioService {
    *   const isEqual = RatioService.equals(r1.value, r2.value);
    *   console.log(isEqual); // true
    * }
+   *
+   * // Never throws
+   * RatioService.equals(null as any, r1.value); // false
    * ```
    */
   public static equals(a: Ratio, b: Ratio): boolean {
+    // Never Throw: проверка на null/undefined
+    if (a == null || b == null) {
+      return false;
+    }
     return a.equals(b);
   }
 }

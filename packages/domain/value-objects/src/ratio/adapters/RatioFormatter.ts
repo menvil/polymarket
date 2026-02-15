@@ -167,59 +167,67 @@ export class RatioFormatter {
     // Format: "2%"
     if (trimmed.endsWith('%')) {
       const percentStr = trimmed.slice(0, -1).trim();
-      // Используем Number() вместо parseFloat() чтобы отвергать trailing garbage
-      // parseFloat("2abc") -> 2, Number("2abc") -> NaN
-      const percentNum = Number(percentStr);
-      if (isNaN(percentNum) || !isFinite(percentNum)) {
+      // Передаем строку напрямую в RatioService.fromPercent для сохранения точности
+      // RatioService сам валидирует формат через toDecimal()
+      const result = RatioService.fromPercent(percentStr);
+      if (!result.ok) {
+        // Re-wrap error с правильным source и op
         return Err(
           new InvalidRatioError(`Invalid percent format: "${input}"`, {
             context: {
               source: ErrorSource.PARSING,
               op: 'parse',
               input,
-              reason: RatioErrorReason.INVALID_FORMAT
+              reason: RatioErrorReason.INVALID_FORMAT,
+              cause: result.error.message
             }
           })
         );
       }
-      return RatioService.fromPercent(percentNum);
+      return result;
     }
 
     // Format: "200 bps"
     if (trimmed.endsWith('bps')) {
       const bpsStr = trimmed.slice(0, -3).trim();
-      // Используем Number() вместо parseFloat() чтобы отвергать trailing garbage
-      const bpsNum = Number(bpsStr);
-      if (isNaN(bpsNum) || !isFinite(bpsNum)) {
+      // Передаем строку напрямую в RatioService.fromBps для сохранения точности
+      // RatioService сам валидирует формат через toDecimal()
+      const result = RatioService.fromBps(bpsStr);
+      if (!result.ok) {
+        // Re-wrap error с правильным source и op
         return Err(
           new InvalidRatioError(`Invalid bps format: "${input}"`, {
             context: {
               source: ErrorSource.PARSING,
               op: 'parse',
               input,
-              reason: RatioErrorReason.INVALID_FORMAT
+              reason: RatioErrorReason.INVALID_FORMAT,
+              cause: result.error.message
             }
           })
         );
       }
-      return RatioService.fromBps(bpsNum);
+      return result;
     }
 
     // Format: "0.02" (decimal)
-    // Используем Number() вместо parseFloat() чтобы отвергать trailing garbage
-    const decimalNum = Number(trimmed);
-    if (isNaN(decimalNum) || !isFinite(decimalNum)) {
+    // Передаем строку напрямую в RatioService.fromDecimal для сохранения точности
+    // RatioService сам валидирует формат через toDecimal()
+    const result = RatioService.fromDecimal(trimmed);
+    if (!result.ok) {
+      // Re-wrap error с правильным source и op
       return Err(
         new InvalidRatioError(`Invalid decimal format: "${input}"`, {
           context: {
             source: ErrorSource.PARSING,
             op: 'parse',
             input,
-            reason: RatioErrorReason.INVALID_FORMAT
+            reason: RatioErrorReason.INVALID_FORMAT,
+            cause: result.error.message
           }
         })
       );
     }
-    return RatioService.fromDecimal(decimalNum);
+    return result;
   }
 }
