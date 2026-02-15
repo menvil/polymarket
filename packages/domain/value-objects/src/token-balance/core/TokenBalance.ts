@@ -2,6 +2,8 @@ import type { AssetId, OnChainConditionRef, OutcomeKey, AccountId, VenueId } fro
 import { accountIdEquals } from '@polymarket/ids';
 import { OutcomeToken } from '../../outcome-token/core/OutcomeToken.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
+import { TokenBalanceInvariantViolation } from './TokenBalanceInvariantViolation.js';
+import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
 
 /**
  * Core TokenBalance Value Object
@@ -82,11 +84,12 @@ export class TokenBalance {
    * @example
    * ```typescript
    * // ✅ В Core/Facade
-   * import { accountIdFromWallet, KnownVenues } from '@polymarket/ids';
+   * import { accountIdFromWallet, parseWalletAddress, KnownVenues } from '@polymarket/ids';
    *
    * const token = OutcomeToken.of(conditionRef, outcomeKey);
    * const qty = Quantity.of(new Decimal(100));
-   * const accountId = accountIdFromWallet('0x1234...').unwrap();
+   * const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+   * const accountId = accountIdFromWallet(walletAddress);
    * const balance = TokenBalance.of(token, qty, accountId, KnownVenues.POLYMARKET);
    *
    * // ❌ В публичном коде - используй TokenBalanceService
@@ -99,6 +102,35 @@ export class TokenBalance {
     accountId: AccountId,
     venueId: VenueId
   ): TokenBalance {
+    // Минимальная валидация на null/undefined
+    if (!token) {
+      throw new TokenBalanceInvariantViolation(
+        'TokenBalance.of: token is required',
+        TokenBalanceErrorReason.INVALID_TOKEN
+      );
+    }
+
+    if (!amount) {
+      throw new TokenBalanceInvariantViolation(
+        'TokenBalance.of: amount is required',
+        TokenBalanceErrorReason.INVALID_AMOUNT
+      );
+    }
+
+    if (!accountId) {
+      throw new TokenBalanceInvariantViolation(
+        'TokenBalance.of: accountId is required',
+        TokenBalanceErrorReason.INVALID_FORMAT
+      );
+    }
+
+    if (!venueId) {
+      throw new TokenBalanceInvariantViolation(
+        'TokenBalance.of: venueId is required',
+        TokenBalanceErrorReason.INVALID_FORMAT
+      );
+    }
+
     // Инварианты уже проверены в OutcomeToken, Quantity, AccountId и VenueId
     // Amount non-negative гарантирован Quantity конструктором
     return new TokenBalance(token, amount, accountId, venueId);

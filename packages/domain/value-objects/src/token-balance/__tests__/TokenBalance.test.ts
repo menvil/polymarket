@@ -12,6 +12,7 @@ import type { OnChainConditionRef, ConditionId, AccountId, VenueId } from '@poly
 import { OutcomeToken } from '../../outcome-token/core/OutcomeToken.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { TokenBalance } from '../core/TokenBalance.js';
+import { TokenBalanceInvariantViolation } from '../core/TokenBalanceInvariantViolation.js';
 
 describe('TokenBalance Core', () => {
   const conditionRef: OnChainConditionRef = {
@@ -44,6 +45,46 @@ describe('TokenBalance Core', () => {
       const balance = TokenBalance.of(token, qtyZero, accountId, venueId);
 
       expect(balance.amount().isZero()).toBe(true);
+    });
+
+    it('бросает TokenBalanceInvariantViolation если token null/undefined', () => {
+      expect(() => {
+        TokenBalance.of(null as any, qty100, accountId, venueId);
+      }).toThrow(TokenBalanceInvariantViolation);
+
+      expect(() => {
+        TokenBalance.of(undefined as any, qty100, accountId, venueId);
+      }).toThrow(TokenBalanceInvariantViolation);
+    });
+
+    it('бросает TokenBalanceInvariantViolation если amount null/undefined', () => {
+      expect(() => {
+        TokenBalance.of(token, null as any, accountId, venueId);
+      }).toThrow(TokenBalanceInvariantViolation);
+
+      expect(() => {
+        TokenBalance.of(token, undefined as any, accountId, venueId);
+      }).toThrow(TokenBalanceInvariantViolation);
+    });
+
+    it('бросает TokenBalanceInvariantViolation если accountId null/undefined', () => {
+      expect(() => {
+        TokenBalance.of(token, qty100, null as any, venueId);
+      }).toThrow(TokenBalanceInvariantViolation);
+
+      expect(() => {
+        TokenBalance.of(token, qty100, undefined as any, venueId);
+      }).toThrow(TokenBalanceInvariantViolation);
+    });
+
+    it('бросает TokenBalanceInvariantViolation если venueId null/undefined', () => {
+      expect(() => {
+        TokenBalance.of(token, qty100, accountId, null as any);
+      }).toThrow(TokenBalanceInvariantViolation);
+
+      expect(() => {
+        TokenBalance.of(token, qty100, accountId, undefined as any);
+      }).toThrow(TokenBalanceInvariantViolation);
     });
   });
 
