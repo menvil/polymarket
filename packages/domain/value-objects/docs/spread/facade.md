@@ -346,6 +346,292 @@ if (spreadResult.ok) {
 
 ---
 
+## Ratio Operations (Относительные операции)
+
+### `getSpreadWidth(spread)`
+
+Возвращает ширину spread как Decimal.
+
+```typescript
+getSpreadWidth(spread: Spread): Result<Decimal, InvalidSpreadError>
+```
+
+**Параметры:**
+
+- `spread: Spread` — спред для анализа
+
+**Возвращает:**
+
+- `Ok(Decimal)` — ширина spread (ask - bid)
+- Всегда успешно для валидного spread
+
+**Пример:**
+
+```typescript
+const spread = SpreadService.fromValues(0.48, 0.52).value;
+const widthResult = SpreadService.getSpreadWidth(spread);
+
+if (widthResult.ok) {
+  console.log(widthResult.value.toString());  // "0.04"
+}
+```
+
+---
+
+### `getSpreadRatio(spread)`
+
+Вычисляет относительный spread (width / midpoint).
+
+```typescript
+getSpreadRatio(spread: Spread): Result<Ratio, InvalidSpreadError>
+```
+
+**Параметры:**
+
+- `spread: Spread` — спред для анализа
+
+**Возвращает:**
+
+- `Ok(Ratio)` — относительный spread как Ratio
+- `Err(InvalidSpreadError)` — если midpoint = 0
+
+**Пример:**
+
+```typescript
+const spread = SpreadService.fromValues(0.48, 0.52).value;
+const ratioResult = SpreadService.getSpreadRatio(spread);
+
+if (ratioResult.ok) {
+  const ratio = ratioResult.value;
+  console.log(ratio.toDecimal().toString());  // "0.08" (8%)
+  console.log(ratio.toDecimal().times(100).toNumber());  // 8
+}
+```
+
+**Ошибки:**
+
+- `SpreadErrorReason.MID_UNAVAILABLE` — если midpoint = 0
+
+---
+
+### `shiftByRatio(spread, shiftRatio)`
+
+Сдвигает spread на процент от midpoint.
+
+```typescript
+shiftByRatio(
+  spread: Spread,
+  shiftRatio: Ratio
+): Result<Spread, InvalidSpreadError>
+```
+
+**Логика:**
+
+- `shiftAbs = midpoint * shiftRatio`
+- Новый bid = текущий bid + shiftAbs
+- Новый ask = текущий ask + shiftAbs
+
+**Параметры:**
+
+- `spread: Spread` — исходный спред
+- `shiftRatio: Ratio` — доля для сдвига (может быть отрицательной)
+
+**Возвращает:**
+
+- `Ok(Spread)` — новый сдвинутый спред
+- `Err(InvalidSpreadError)` — если результат выходит за пределы
+
+**Пример:**
+
+```typescript
+import { Ratio } from '@polymarket/value-objects';
+
+const spread = SpreadService.fromValues(0.48, 0.52).value;
+// midpoint = 0.50
+
+// Сдвиг вверх на 10% от mid
+const shiftRatio = Ratio.of(new Decimal(0.10));
+const result = SpreadService.shiftByRatio(spread, shiftRatio);
+
+if (result.ok) {
+  console.log(result.value.bid().toNumber());  // 0.53 (0.48 + 0.05)
+  console.log(result.value.ask().toNumber());  // 0.57 (0.52 + 0.05)
+  console.log(result.value.width().toNumber());  // 0.04 (сохранена!)
+}
+```
+
+**Ошибки:**
+
+- `SpreadErrorReason.NOT_TWO_SIDED` — если spread не two-sided
+- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+
+---
+
+### `widenByRatio(spread, deltaWidthRatio)`
+
+Расширяет spread на процент от midpoint.
+
+```typescript
+widenByRatio(
+  spread: Spread,
+  deltaWidthRatio: Ratio
+): Result<Spread, InvalidSpreadError>
+```
+
+**Логика:**
+
+- `deltaWidthAbs = midpoint * deltaWidthRatio`
+- `amountAbs = deltaWidthAbs / 2`
+- Новый bid = текущий bid - amountAbs
+- Новый ask = текущий ask + amountAbs
+
+**Параметры:**
+
+- `spread: Spread` — исходный спред
+- `deltaWidthRatio: Ratio` — доля для расширения (должна быть ≥ 0)
+
+**Возвращает:**
+
+- `Ok(Spread)` — новый расширенный спред
+- `Err(InvalidSpreadError)` — если ratio невалиден или результат выходит за пределы
+
+**Пример:**
+
+```typescript
+const spread = SpreadService.fromValues(0.48, 0.52).value;
+// midpoint = 0.50, width = 0.04
+
+// Расширение на 10% от mid
+const deltaRatio = Ratio.of(new Decimal(0.10));
+const result = SpreadService.widenByRatio(spread, deltaRatio);
+
+if (result.ok) {
+  console.log(result.value.bid().toNumber());  // 0.455 (0.48 - 0.025)
+  console.log(result.value.ask().toNumber());  // 0.545 (0.52 + 0.025)
+  console.log(result.value.width().toNumber());  // 0.09 (0.04 + 0.05)
+  console.log(result.value.midpoint().toNumber());  // 0.50 (сохранен!)
+}
+```
+
+**Ошибки:**
+
+- `SpreadErrorReason.NEGATIVE_RATIO_NOT_ALLOWED` — если deltaWidthRatio < 0
+- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+
+---
+
+### `tightenByRatio(spread, deltaWidthRatio)`
+
+Сужает spread на процент от midpoint.
+
+```typescript
+tightenByRatio(
+  spread: Spread,
+  deltaWidthRatio: Ratio
+): Result<Spread, InvalidSpreadError>
+```
+
+**Логика:**
+
+- `deltaWidthAbs = midpoint * deltaWidthRatio`
+- Делегирует в `tighten(spread, deltaWidthAbs)`
+
+**Параметры:**
+
+- `spread: Spread` — исходный спред
+- `deltaWidthRatio: Ratio` — доля для сужения (должна быть ≥ 0)
+
+**Возвращает:**
+
+- `Ok(Spread)` — новый суженный спред
+- `Err(InvalidSpreadError)` — если ratio невалиден
+
+**Пример:**
+
+```typescript
+const spread = SpreadService.fromValues(0.48, 0.52).value;
+// midpoint = 0.50, width = 0.04
+
+// Сужение на 4% от mid
+const deltaRatio = Ratio.of(new Decimal(0.04));
+const result = SpreadService.tightenByRatio(spread, deltaRatio);
+
+if (result.ok) {
+  console.log(result.value.bid().toNumber());  // 0.49 (0.48 + 0.01)
+  console.log(result.value.ask().toNumber());  // 0.51 (0.52 - 0.01)
+  console.log(result.value.width().toNumber());  // 0.02 (0.04 - 0.02)
+  console.log(result.value.midpoint().toNumber());  // 0.50 (сохранен!)
+}
+```
+
+**Ограничения:**
+
+- Автоматически ограничивается до zero-width spread если deltaWidthAbs > width / 2
+
+**Ошибки:**
+
+- `SpreadErrorReason.NEGATIVE_RATIO_NOT_ALLOWED` — если deltaWidthRatio < 0
+
+---
+
+### `skewByRatio(spread, bidRatio, askRatio)`
+
+Наклоняет spread применяя разные проценты к bid и ask.
+
+```typescript
+skewByRatio(
+  spread: Spread,
+  bidRatio: Ratio,
+  askRatio: Ratio
+): Result<Spread, InvalidSpreadError>
+```
+
+**Логика:**
+
+- `bidAdjAbs = midpoint * bidRatio`
+- `askAdjAbs = midpoint * askRatio`
+- Делегирует в `adjustBidAsk(spread, bidAdjAbs, askAdjAbs)`
+
+**Параметры:**
+
+- `spread: Spread` — исходный спред
+- `bidRatio: Ratio` — доля для bid (может быть отрицательной)
+- `askRatio: Ratio` — доля для ask (может быть отрицательной)
+
+**Возвращает:**
+
+- `Ok(Spread)` — новый наклоненный спред
+- `Err(InvalidSpreadError)` — если результат невалиден или выходит за пределы
+
+**Пример:**
+
+```typescript
+const spread = SpreadService.fromValues(0.48, 0.52).value;
+// midpoint = 0.50
+
+// Поднять bid на 4%, опустить ask на 2%
+const bidRatio = Ratio.of(new Decimal(0.04));  // +4%
+const askRatio = Ratio.of(new Decimal(-0.02)); // -2%
+
+const result = SpreadService.skewByRatio(spread, bidRatio, askRatio);
+
+if (result.ok) {
+  console.log(result.value.bid().toNumber());  // 0.50 (0.48 + 0.02)
+  console.log(result.value.ask().toNumber());  // 0.51 (0.52 - 0.01)
+  console.log(result.value.width().toNumber());  // 0.01 (сузился)
+  console.log(result.value.midpoint().toNumber());  // 0.505 (сдвинулся!)
+}
+```
+
+**Use case:** Inventory adjustment — при excess long позиции поднимаем bid, опускаем ask для стимулирования продажи.
+
+**Ошибки:**
+
+- `SpreadErrorReason.BID_GREATER_THAN_ASK` — если новый bid > новый ask
+- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+
+---
+
 ## Обработка ошибок
 
 ### Error Context

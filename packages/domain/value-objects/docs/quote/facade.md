@@ -264,6 +264,330 @@ const updated = QuoteService.updateSizes(quote, 200, 300);
 // updated: bid=0.48@200, ask=0.52@300 (только sizes изменились)
 ```
 
+### Ratio Operations (Относительные операции)
+
+Операции с Quote, основанные на процентах от midpoint.
+
+#### getMidPrice()
+
+Вычисляет midpoint quote.
+
+```typescript
+public static getMidPrice(quote: Quote): Result<Price, InvalidQuoteError>
+```
+
+**Параметры:**
+
+- `quote: Quote` — котировка для анализа
+
+**Возвращает:**
+
+- `Ok(Price)` — midpoint price
+- `Err(InvalidQuoteError)` — если quote не two-sided
+
+**Пример:**
+
+```typescript
+const quote = QuoteService.create(0.48, 0.52, 100, 100).value;
+const midResult = QuoteService.getMidPrice(quote);
+
+if (midResult.ok) {
+  console.log(midResult.value.value().toString());  // "0.5"
+}
+```
+
+**Делегирование:** Делегирует в `SpreadService.getMidPrice(quote.spread()!)`.
+
+**Ошибки:**
+
+- `QuoteErrorReason.NOT_TWO_SIDED` — если quote не two-sided
+
+---
+
+#### getSpreadRatio()
+
+Вычисляет относительный spread quote (width / midpoint).
+
+```typescript
+public static getSpreadRatio(quote: Quote): Result<Ratio, InvalidQuoteError>
+```
+
+**Параметры:**
+
+- `quote: Quote` — котировка для анализа
+
+**Возвращает:**
+
+- `Ok(Ratio)` — относительный spread как Ratio
+- `Err(InvalidQuoteError)` — если quote не two-sided или midpoint = 0
+
+**Пример:**
+
+```typescript
+const quote = QuoteService.create(0.48, 0.52, 100, 100).value;
+const ratioResult = QuoteService.getSpreadRatio(quote);
+
+if (ratioResult.ok) {
+  const ratio = ratioResult.value;
+  console.log(ratio.toDecimal().toString());  // "0.08" (8%)
+}
+```
+
+**Делегирование:** Делегирует в `SpreadService.getSpreadRatio(quote.spread()!)`.
+
+**Ошибки:**
+
+- `QuoteErrorReason.MID_UNAVAILABLE` — если midpoint = 0
+- `QuoteErrorReason.NOT_TWO_SIDED` — если quote не two-sided
+
+---
+
+#### shiftByRatio()
+
+Сдвигает quote на процент от midpoint (цены меняются, sizes сохраняются).
+
+```typescript
+public static shiftByRatio(
+  quote: Quote,
+  shiftRatio: Ratio
+): Result<Quote, InvalidQuoteError>
+```
+
+**Логика:**
+
+1. `newSpread = SpreadService.shiftByRatio(quote.spread(), shiftRatio)`
+2. `Quote.of(newSpread, quote.bidSize(), quote.askSize(), ...)`
+
+**Параметры:**
+
+- `quote: Quote` — исходная котировка
+- `shiftRatio: Ratio` — доля для сдвига (может быть отрицательной)
+
+**Возвращает:**
+
+- `Ok(Quote)` — новая сдвинутая котировка
+- `Err(InvalidQuoteError)` — если результат выходит за пределы
+
+**Пример:**
+
+```typescript
+const quote = QuoteService.create(0.48, 0.52, 100, 200).value;
+// midpoint = 0.50
+
+// Сдвиг вверх на 5% от mid
+const shiftRatio = Ratio.of(new Decimal(0.05));
+const result = QuoteService.shiftByRatio(quote, shiftRatio);
+
+if (result.ok) {
+  console.log(result.value.spread()!.bid()!.value().toString());  // "0.505"
+  console.log(result.value.spread()!.ask()!.value().toString());  // "0.545"
+  console.log(result.value.bidSize().toNumber());  // 100 (сохранен!)
+  console.log(result.value.askSize().toNumber());  // 200 (сохранен!)
+}
+```
+
+**Ошибки:**
+
+- `QuoteErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+
+---
+
+#### widenByRatio()
+
+Расширяет spread quote на процент от midpoint.
+
+```typescript
+public static widenByRatio(
+  quote: Quote,
+  deltaWidthRatio: Ratio
+): Result<Quote, InvalidQuoteError>
+```
+
+**Логика:**
+
+Делегирует в `SpreadService.widenByRatio(quote.spread(), deltaWidthRatio)`,
+пересоздает Quote с новым spread и теми же sizes.
+
+**Параметры:**
+
+- `quote: Quote` — исходная котировка
+- `deltaWidthRatio: Ratio` — доля для расширения (должна быть ≥ 0)
+
+**Возвращает:**
+
+- `Ok(Quote)` — новая расширенная котировка
+- `Err(InvalidQuoteError)` — если ratio невалиден или результат выходит за пределы
+
+**Пример:**
+
+```typescript
+const quote = QuoteService.create(0.48, 0.52, 50, 75).value;
+const deltaRatio = Ratio.of(new Decimal(0.02)); // 2% от mid
+
+const result = QuoteService.widenByRatio(quote, deltaRatio);
+
+if (result.ok) {
+  console.log(result.value.spread()!.bid()!.value().toString());  // "0.475"
+  console.log(result.value.spread()!.ask()!.value().toString());  // "0.525"
+  console.log(result.value.bidSize().toNumber());  // 50 (сохранен!)
+}
+```
+
+**Ошибки:**
+
+- `QuoteErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+
+---
+
+#### tightenByRatio()
+
+Сужает spread quote на процент от midpoint.
+
+```typescript
+public static tightenByRatio(
+  quote: Quote,
+  deltaWidthRatio: Ratio
+): Result<Quote, InvalidQuoteError>
+```
+
+**Логика:**
+
+Делегирует в `SpreadService.tightenByRatio(quote.spread(), deltaWidthRatio)`,
+пересоздает Quote с новым spread и теми же sizes.
+
+**Параметры:**
+
+- `quote: Quote` — исходная котировка
+- `deltaWidthRatio: Ratio` — доля для сужения (должна быть ≥ 0)
+
+**Возвращает:**
+
+- `Ok(Quote)` — новая суженная котировка
+- `Err(InvalidQuoteError)` — если ratio невалиден
+
+**Пример:**
+
+```typescript
+const quote = QuoteService.create(0.48, 0.52, 150, 250).value;
+const deltaRatio = Ratio.of(new Decimal(0.02)); // 2% от mid
+
+const result = QuoteService.tightenByRatio(quote, deltaRatio);
+
+if (result.ok) {
+  console.log(result.value.spread()!.bid()!.value().toString());  // "0.485"
+  console.log(result.value.spread()!.ask()!.value().toString());  // "0.515"
+  console.log(result.value.bidSize().toNumber());  // 150 (сохранен!)
+}
+```
+
+**Ошибки:**
+
+- `QuoteErrorReason.RATIO_OUT_OF_BOUNDS` — если ratio невалиден
+
+---
+
+#### skewByRatio()
+
+Наклоняет spread quote применяя разные проценты к bid и ask.
+
+```typescript
+public static skewByRatio(
+  quote: Quote,
+  bidRatio: Ratio,
+  askRatio: Ratio
+): Result<Quote, InvalidQuoteError>
+```
+
+**Логика:**
+
+Делегирует в `SpreadService.skewByRatio(quote.spread(), bidRatio, askRatio)`,
+пересоздает Quote с новым spread и теми же sizes.
+
+**Параметры:**
+
+- `quote: Quote` — исходная котировка
+- `bidRatio: Ratio` — доля для bid (может быть отрицательной)
+- `askRatio: Ratio` — доля для ask (может быть отрицательной)
+
+**Возвращает:**
+
+- `Ok(Quote)` — новая наклоненная котировка
+- `Err(InvalidQuoteError)` — если результат невалиден или выходит за пределы
+
+**Пример:**
+
+```typescript
+const quote = QuoteService.create(0.48, 0.52, 80, 120).value;
+const bidRatio = Ratio.of(new Decimal(0.02));  // +2%
+const askRatio = Ratio.of(new Decimal(-0.01)); // -1%
+
+const result = QuoteService.skewByRatio(quote, bidRatio, askRatio);
+
+if (result.ok) {
+  console.log(result.value.spread()!.bid()!.value().toString());  // "0.49"
+  console.log(result.value.spread()!.ask()!.value().toString());  // "0.515"
+}
+```
+
+**Use case:** Inventory adjustment — при избытке long позиции поднимаем bid, опускаем ask для стимулирования продажи.
+
+**Ошибки:**
+
+- `QuoteErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
+
+---
+
+#### scaleSizesByRatio()
+
+Масштабирует sizes quote на factor (цены сохраняются).
+
+```typescript
+public static scaleSizesByRatio(
+  quote: Quote,
+  sizeFactor: Ratio
+): Result<Quote, InvalidQuoteError>
+```
+
+**Логика:**
+
+1. Валидация `sizeFactor > 0`
+2. `newBidSize = QuantityService.multiply(quote.bidSize(), sizeFactor)`
+3. `newAskSize = QuantityService.multiply(quote.askSize(), sizeFactor)`
+4. Создание новой Quote с теми же prices, новыми sizes
+
+**Параметры:**
+
+- `quote: Quote` — исходная котировка
+- `sizeFactor: Ratio` — factor для масштабирования sizes (должен быть > 0)
+
+**Возвращает:**
+
+- `Ok(Quote)` — новая котировка с масштабированными sizes
+- `Err(InvalidQuoteError)` — если sizeFactor ≤ 0
+
+**Пример:**
+
+```typescript
+const quote = QuoteService.create(0.48, 0.52, 100, 200).value;
+const sizeFactor = Ratio.of(new Decimal(0.5)); // 50%
+
+const result = QuoteService.scaleSizesByRatio(quote, sizeFactor);
+
+if (result.ok) {
+  console.log(result.value.bidSize().toNumber());  // 50
+  console.log(result.value.askSize().toNumber());  // 100
+  console.log(result.value.spread()!.bid()!.value().toString());  // "0.48" (сохранена!)
+}
+```
+
+**⚠️ ВАЖНО:** Этот метод НЕ применяет venue-specific stepSize/minSize/maxSize constraints. Для безопасного масштабирования используйте venue-specific размещение ордеров.
+
+**Ошибки:**
+
+- `QuoteErrorReason.INVALID_SIZE_FACTOR` — если sizeFactor ≤ 0
+
+---
+
 ### Utility методы
 
 #### getSpreadOrZero()
