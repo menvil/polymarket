@@ -86,6 +86,28 @@ describe('TokenBalance Core', () => {
         TokenBalance.of(token, qty100, accountId, undefined as any);
       }).toThrow(TokenBalanceInvariantViolation);
     });
+
+    it('бросает TokenBalanceInvariantViolation если token не OutcomeToken instance', () => {
+      const fakeToken = { assetId: () => 'fake' };
+
+      expect(() => {
+        TokenBalance.of(fakeToken as any, qty100, accountId, venueId);
+      }).toThrow(TokenBalanceInvariantViolation);
+      expect(() => {
+        TokenBalance.of(fakeToken as any, qty100, accountId, venueId);
+      }).toThrow('token must be OutcomeToken instance');
+    });
+
+    it('бросает TokenBalanceInvariantViolation если amount не Quantity instance', () => {
+      const fakeAmount = { value: () => 100 };
+
+      expect(() => {
+        TokenBalance.of(token, fakeAmount as any, accountId, venueId);
+      }).toThrow(TokenBalanceInvariantViolation);
+      expect(() => {
+        TokenBalance.of(token, fakeAmount as any, accountId, venueId);
+      }).toThrow('amount must be Quantity instance');
+    });
   });
 
   describe('Accessors', () => {

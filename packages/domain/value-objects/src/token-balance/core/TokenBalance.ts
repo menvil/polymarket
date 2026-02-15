@@ -110,9 +110,25 @@ export class TokenBalance {
       );
     }
 
+    // Валидация что token это действительно OutcomeToken (не просто объект)
+    if (!(token instanceof OutcomeToken)) {
+      throw new TokenBalanceInvariantViolation(
+        'TokenBalance.of: token must be OutcomeToken instance',
+        TokenBalanceErrorReason.INVALID_TOKEN
+      );
+    }
+
     if (!amount) {
       throw new TokenBalanceInvariantViolation(
         'TokenBalance.of: amount is required',
+        TokenBalanceErrorReason.INVALID_AMOUNT
+      );
+    }
+
+    // Валидация что amount это действительно Quantity (не просто объект)
+    if (!(amount instanceof Quantity)) {
+      throw new TokenBalanceInvariantViolation(
+        'TokenBalance.of: amount must be Quantity instance',
         TokenBalanceErrorReason.INVALID_AMOUNT
       );
     }

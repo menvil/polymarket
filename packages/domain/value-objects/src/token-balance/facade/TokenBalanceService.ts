@@ -99,15 +99,30 @@ export class TokenBalanceService {
     accountId: AccountId,
     venueId: VenueId
   ): Result<TokenBalance, InvalidTokenBalanceError> {
-    return wrapOp(
-      TokenBalanceService.SERVICE_NAME,
-      'create',
-      {
+    // Безопасное формирование ctx - НЕ вызываем методы, которые могут бросить
+    // Используем только примитивные значения
+    let ctx: Record<string, unknown>;
+    try {
+      ctx = {
         token: token?.assetId?.() ?? 'null',
         amount: amount?.value?.()?.toString() ?? 'null',
         accountId: accountId ?? 'null',
         venueId: venueId ?? 'null'
-      },
+      };
+    } catch {
+      // Если даже формирование ctx бросило - используем безопасный fallback
+      ctx = {
+        token: 'error',
+        amount: 'error',
+        accountId: 'error',
+        venueId: 'error'
+      };
+    }
+
+    return wrapOp(
+      TokenBalanceService.SERVICE_NAME,
+      'create',
+      ctx,
       () => {
         // Create TokenBalance (may throw TokenBalanceInvariantViolation)
         const balance = TokenBalance.of(token, amount, accountId, venueId);

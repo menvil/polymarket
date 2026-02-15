@@ -238,5 +238,40 @@ describe('TokenBalanceService', () => {
         TokenBalanceService.create(undefined as any, undefined as any, undefined as any, undefined as any);
       }).not.toThrow();
     });
+
+    it('create() возвращает Err при "грязном объекте" с throwing методом (не бросает)', () => {
+      // Создаём объект с методом assetId(), который бросает исключение
+      const badToken = {
+        assetId: () => {
+          throw new Error('assetId() throws');
+        }
+      };
+
+      // Создаём объект с методом value(), который бросает исключение
+      const badAmount = {
+        value: () => {
+          throw new Error('value() throws');
+        }
+      };
+
+      // КРИТИЧНО: create() НЕ должен бросать, даже если методы входных объектов бросают
+      const result = TokenBalanceService.create(badToken as any, badAmount as any, accountId, venueId);
+
+      expect(result.ok).toBe(false);
+      // Важно: проверяем что НЕ бросает, а возвращает Err
+    });
+
+    it('create() возвращает Err при частично "грязном объекте" (не бросает)', () => {
+      // token нормальный, но amount с throwing методом
+      const badAmount = {
+        value: () => {
+          throw new Error('boom');
+        }
+      };
+
+      const result = TokenBalanceService.create(token, badAmount as any, accountId, venueId);
+
+      expect(result.ok).toBe(false);
+    });
   });
 });
