@@ -235,7 +235,7 @@ public static getSpreadRatio(
 
 **Файл:** `src/spread/facade/SpreadService.ts`
 
-#### 4.1. shiftByRatio(spread, shiftRatio): Result<Spread, InvalidSpreadError>
+#### 3.1. shiftByRatio(spread, shiftRatio): Result<Spread, InvalidSpreadError>
 
 ```typescript
 /**
@@ -340,7 +340,7 @@ public static shiftByRatio(
 }
 ```
 
-#### 4.2. widenByRatio(spread, deltaWidthRatio): Result<Spread, InvalidSpreadError>
+#### 3.2. widenByRatio(spread, deltaWidthRatio): Result<Spread, InvalidSpreadError>
 
 ```typescript
 /**
@@ -469,7 +469,7 @@ public static widenByRatio(
 }
 ```
 
-#### 4.3. tightenByRatio(spread, deltaWidthRatio): Result<Spread, InvalidSpreadError>
+#### 3.3. tightenByRatio(spread, deltaWidthRatio): Result<Spread, InvalidSpreadError>
 
 ```typescript
 /**
@@ -599,7 +599,7 @@ public static tightenByRatio(
 }
 ```
 
-#### 4.4. skewByRatio(spread, bidRatio, askRatio): Result<Spread, InvalidSpreadError>
+#### 3.4. skewByRatio(spread, bidRatio, askRatio): Result<Spread, InvalidSpreadError>
 
 ```typescript
 /**
@@ -723,7 +723,7 @@ public static skewByRatio(
 
 **Файл:** `src/quote/facade/QuoteService.ts`
 
-#### 6.1. getMidPrice(quote): Result<Price, InvalidQuoteError>
+#### 4.1. getMidPrice(quote): Result<Price, InvalidQuoteError>
 
 ```typescript
 /**
@@ -783,7 +783,7 @@ public static getMidPrice(
 }
 ```
 
-#### 6.2. getSpreadRatio(quote): Result<Ratio, InvalidQuoteError>
+#### 4.2. getSpreadRatio(quote): Result<Ratio, InvalidQuoteError>
 
 ```typescript
 /**
@@ -849,7 +849,7 @@ public static getSpreadRatio(
 
 **Файл:** `src/quote/facade/QuoteService.ts`
 
-#### 7.1. shiftByRatio(quote, shiftRatio): Result<Quote, InvalidQuoteError>
+#### 5.1. shiftByRatio(quote, shiftRatio): Result<Quote, InvalidQuoteError>
 
 ```typescript
 /**
@@ -927,11 +927,11 @@ public static shiftByRatio(
 }
 ```
 
-#### 7.2-7.4. widenByRatio, tightenByRatio, skewByRatio
+#### 5.2-5.4. widenByRatio, tightenByRatio, skewByRatio
 
 Аналогично shiftByRatio - делегируют в SpreadService, пересоздают Quote с новым spread.
 
-#### 7.5. scaleSizesByRatio(quote, sizeFactor): Result<Quote, InvalidQuoteError>
+#### 5.2. scaleSizesByRatio(quote, sizeFactor): Result<Quote, InvalidQuoteError>
 
 ```typescript
 /**
@@ -1086,19 +1086,19 @@ public static scaleSizesByRatio(
 
 ### Phase 7: Documentation
 
-#### 9.1. Update Spread Documentation
+#### 7.1. Update Spread Documentation
 
 **Файлы:**
 - `docs/spread/README.md` — добавить примеры Ratio operations
 - `docs/spread/facade.md` — документировать новые методы
 
-#### 9.2. Update Quote Documentation
+#### 7.2. Update Quote Documentation
 
 **Файлы:**
 - `docs/quote/README.md` — добавить примеры Ratio operations
 - `docs/quote/facade.md` — документировать новые методы
 
-#### 9.3. Update Main README
+#### 7.3. Update Main README
 
 **Файл:** `docs/README.md`
 

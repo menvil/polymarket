@@ -1,5 +1,6 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
+import type { AccountId, VenueId } from '@polymarket/ids';
 import { OutcomeToken } from '../../outcome-token/core/index.js';
 import { Quantity } from '../../quantity/core/index.js';
 import { TokenBalance, TokenBalanceInvariantViolation } from '../core/index.js';
@@ -53,10 +54,12 @@ import { InvalidTokenBalanceError, TokenBalanceErrorReason } from '../errors/ind
  */
 export class TokenBalanceService {
   /**
-   * Создать TokenBalance из OutcomeToken и Quantity
+   * Создать TokenBalance из OutcomeToken, Quantity, AccountId и VenueId
    *
    * @param token - Outcome token
    * @param amount - Количество токенов (должно быть non-negative, уже проверено в Quantity)
+   * @param accountId - ID аккаунта владельца баланса
+   * @param venueId - ID площадки (venue) где находится баланс
    * @param source - Источник ошибки (опционально)
    * @returns Result с TokenBalance или InvalidTokenBalanceError
    *
@@ -69,10 +72,13 @@ export class TokenBalanceService {
    *
    * @example
    * ```typescript
+   * import { accountIdFromWallet, KnownVenues } from '@polymarket/ids';
+   *
    * const token = expectOk(OutcomeTokenService.create(conditionRef, BinaryOutcome.UP));
    * const qty = expectOk(QuantityService.create(100));
+   * const accountId = accountIdFromWallet('0x1234...').unwrap();
    *
-   * const result = TokenBalanceService.create(token, qty);
+   * const result = TokenBalanceService.create(token, qty, accountId, KnownVenues.POLYMARKET);
    * if (!result.ok) {
    *   if (result.error.context?.reason === TokenBalanceErrorReason.INVALID_AMOUNT) {
    *     console.error('Invalid amount');
@@ -83,11 +89,13 @@ export class TokenBalanceService {
   public static create(
     token: OutcomeToken,
     amount: Quantity,
+    accountId: AccountId,
+    venueId: VenueId,
     source: ErrorSource = ErrorSource.SERVICE_CALL
   ): Result<TokenBalance, InvalidTokenBalanceError> {
     try {
       // Create TokenBalance (may throw TokenBalanceInvariantViolation, but unlikely)
-      const balance = TokenBalance.of(token, amount);
+      const balance = TokenBalance.of(token, amount, accountId, venueId);
 
       return Ok(balance);
     } catch (error) {

@@ -1,7 +1,14 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { KnownOnChainProtocols, KnownChainIds, BinaryOutcome } from '@polymarket/ids';
-import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
+import {
+  parseWalletAddress,
+  KnownOnChainProtocols,
+  KnownChainIds,
+  BinaryOutcome,
+  KnownVenues,
+  accountIdFromWallet,
+} from '@polymarket/ids';
+import type { OnChainConditionRef, ConditionId, AccountId, VenueId } from '@polymarket/ids';
 import { OutcomeToken } from '../../outcome-token/core/OutcomeToken.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { TokenBalanceService } from '../facade/TokenBalanceService.js';
@@ -19,9 +26,14 @@ describe('TokenBalanceService', () => {
   const qty200 = Quantity.of(new Decimal(200));
   const qtyZero = Quantity.ZERO;
 
+  // Test fixtures для accountId и venueId
+  const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+  const accountId: AccountId = accountIdFromWallet(walletAddress);
+  const venueId: VenueId = KnownVenues.POLYMARKET;
+
   describe('create()', () => {
     it('создаёт TokenBalance с валидными входными данными', () => {
-      const result = TokenBalanceService.create(token, qty100);
+      const result = TokenBalanceService.create(token, qty100, accountId, venueId);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -31,7 +43,7 @@ describe('TokenBalanceService', () => {
     });
 
     it('создаёт TokenBalance с нулевым amount', () => {
-      const result = TokenBalanceService.create(token, qtyZero);
+      const result = TokenBalanceService.create(token, qtyZero, accountId, venueId);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -44,7 +56,7 @@ describe('TokenBalanceService', () => {
       const downToken = OutcomeToken.of(conditionRef, BinaryOutcome.DOWN);
 
       const upResult = TokenBalanceService.create(upToken, qty100);
-      const downResult = TokenBalanceService.create(downToken, qty200);
+      const downResult = TokenBalanceService.create(downToken, qty200, accountId, venueId);
 
       expect(upResult.ok).toBe(true);
       expect(downResult.ok).toBe(true);
@@ -58,15 +70,15 @@ describe('TokenBalanceService', () => {
 
     it('никогда не бросает исключения', () => {
       expect(() => {
-        TokenBalanceService.create(token, qty100);
+        TokenBalanceService.create(token, qty100, accountId, venueId);
       }).not.toThrow();
     });
   });
 
   describe('equals()', () => {
     it('возвращает true для равных балансов', () => {
-      const balance1 = TokenBalanceService.create(token, qty100);
-      const balance2 = TokenBalanceService.create(token, qty100);
+      const balance1 = TokenBalanceService.create(token, qty100, accountId, venueId);
+      const balance2 = TokenBalanceService.create(token, qty100, accountId, venueId);
 
       expect(balance1.ok && balance2.ok).toBe(true);
       if (balance1.ok && balance2.ok) {
@@ -76,8 +88,8 @@ describe('TokenBalanceService', () => {
     });
 
     it('возвращает false для разных amount', () => {
-      const balance1 = TokenBalanceService.create(token, qty100);
-      const balance2 = TokenBalanceService.create(token, qty200);
+      const balance1 = TokenBalanceService.create(token, qty100, accountId, venueId);
+      const balance2 = TokenBalanceService.create(token, qty200, accountId, venueId);
 
       expect(balance1.ok && balance2.ok).toBe(true);
       if (balance1.ok && balance2.ok) {
@@ -91,7 +103,7 @@ describe('TokenBalanceService', () => {
       const downToken = OutcomeToken.of(conditionRef, BinaryOutcome.DOWN);
 
       const balance1 = TokenBalanceService.create(upToken, qty100);
-      const balance2 = TokenBalanceService.create(downToken, qty100);
+      const balance2 = TokenBalanceService.create(downToken, qty100, accountId, venueId);
 
       expect(balance1.ok && balance2.ok).toBe(true);
       if (balance1.ok && balance2.ok) {
@@ -101,8 +113,8 @@ describe('TokenBalanceService', () => {
     });
 
     it('никогда не бросает исключения', () => {
-      const balance1 = TokenBalanceService.create(token, qty100);
-      const balance2 = TokenBalanceService.create(token, qty200);
+      const balance1 = TokenBalanceService.create(token, qty100, accountId, venueId);
+      const balance2 = TokenBalanceService.create(token, qty200, accountId, venueId);
 
       expect(balance1.ok && balance2.ok).toBe(true);
       if (balance1.ok && balance2.ok) {
@@ -115,7 +127,7 @@ describe('TokenBalanceService', () => {
 
   describe('isZero()', () => {
     it('возвращает true для нулевого баланса', () => {
-      const result = TokenBalanceService.create(token, qtyZero);
+      const result = TokenBalanceService.create(token, qtyZero, accountId, venueId);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -125,7 +137,7 @@ describe('TokenBalanceService', () => {
     });
 
     it('возвращает false для ненулевого баланса', () => {
-      const result = TokenBalanceService.create(token, qty100);
+      const result = TokenBalanceService.create(token, qty100, accountId, venueId);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -135,7 +147,7 @@ describe('TokenBalanceService', () => {
     });
 
     it('никогда не бросает исключения', () => {
-      const result = TokenBalanceService.create(token, qty100);
+      const result = TokenBalanceService.create(token, qty100, accountId, venueId);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -148,7 +160,7 @@ describe('TokenBalanceService', () => {
 
   describe('isPositive()', () => {
     it('возвращает false для нулевого баланса', () => {
-      const result = TokenBalanceService.create(token, qtyZero);
+      const result = TokenBalanceService.create(token, qtyZero, accountId, venueId);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -158,7 +170,7 @@ describe('TokenBalanceService', () => {
     });
 
     it('возвращает true для положительного баланса', () => {
-      const result = TokenBalanceService.create(token, qty100);
+      const result = TokenBalanceService.create(token, qty100, accountId, venueId);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -168,7 +180,7 @@ describe('TokenBalanceService', () => {
     });
 
     it('никогда не бросает исключения', () => {
-      const result = TokenBalanceService.create(token, qty100);
+      const result = TokenBalanceService.create(token, qty100, accountId, venueId);
 
       expect(result.ok).toBe(true);
       if (result.ok) {

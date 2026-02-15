@@ -1,4 +1,5 @@
-import type { AssetId, OnChainConditionRef, OutcomeKey } from '@polymarket/ids';
+import type { AssetId, OnChainConditionRef, OutcomeKey, AccountId, VenueId } from '@polymarket/ids';
+import { accountIdEquals } from '@polymarket/ids';
 import { OutcomeToken } from '../../outcome-token/core/OutcomeToken.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 
@@ -6,8 +7,12 @@ import { Quantity } from '../../quantity/core/Quantity.js';
  * Core TokenBalance Value Object
  *
  * @remarks
- * Представляет баланс outcome token на кошельке/venue.
- * Сочетает информацию о токене (OutcomeToken) и количестве (Quantity).
+ * Представляет баланс outcome token на кошельке/venue конкретного пользователя.
+ * Сочетает информацию о токене (OutcomeToken), количестве (Quantity), владельце (AccountId) и площадке (VenueId).
+ *
+ * **Отличие от AssetQuantity:**
+ * - **TokenBalance**: Баланс outcome token конкретного аккаунта на конкретном venue (account-specific)
+ * - **AssetQuantity**: Generic количество любого актива БЕЗ привязки к владельцу (account-agnostic)
  *
  * **Иммутабельность:**
  * - Все поля readonly
@@ -17,6 +22,8 @@ import { Quantity } from '../../quantity/core/Quantity.js';
  * **Инварианты:**
  * - token должен быть валидным OutcomeToken
  * - amount должен быть валидным Quantity (non-negative, finite)
+ * - accountId должен быть валидным AccountId
+ * - venueId должен быть валидным VenueId
  * - Нет дополнительных инвариантов (amount может быть 0)
  *
  * **Core не использует Result:**
@@ -30,55 +37,71 @@ import { Quantity } from '../../quantity/core/Quantity.js';
  * @example
  * ```typescript
  * // ✅ В Core/Facade layer
+ * import { accountIdFromWallet, KnownVenues } from '@polymarket/ids';
+ *
  * const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
  * const qty = Quantity.of(new Decimal(100));
- * const balance = TokenBalance.of(token, qty);
+ * const accountId = accountIdFromWallet('0x1234...').unwrap();
+ * const balance = TokenBalance.of(token, qty, accountId, KnownVenues.POLYMARKET);
  *
  * // ❌ В публичном коде - используй TokenBalanceService
- * const result = TokenBalanceService.create(token, qty);
+ * const result = TokenBalanceService.create(token, qty, accountId, venueId);
  * if (result.ok) {
  *   const balance = result.value;
  *   console.log(balance.amount().toNumber()); // 100
+ *   console.log(balance.venueId()); // 'POLYMARKET'
  * }
  * ```
  */
 export class TokenBalance {
   private constructor(
     private readonly _token: OutcomeToken,
-    private readonly _amount: Quantity
+    private readonly _amount: Quantity,
+    private readonly _accountId: AccountId,
+    private readonly _venueId: VenueId
   ) {}
 
   /**
-   * Создаёт TokenBalance из OutcomeToken и Quantity
+   * Создаёт TokenBalance из OutcomeToken, Quantity, AccountId и VenueId
    *
    * @internal ТОЛЬКО для внутреннего использования в Core и Facade
    *
    * @remarks
    * Валидация минимальна - проверяет что объекты существуют.
-   * Invariants уже гарантированы OutcomeToken и Quantity конструкторами.
+   * Invariants уже гарантированы OutcomeToken, Quantity, AccountId и VenueId.
    *
    * Для публичного API используйте TokenBalanceService.create().
    *
    * @param token - Outcome token
    * @param amount - Количество токенов (должно быть non-negative, уже проверено в Quantity)
+   * @param accountId - ID аккаунта владельца баланса
+   * @param venueId - ID площадки (venue) где находится баланс
    * @returns Новый TokenBalance
    * @throws {TokenBalanceInvariantViolation} Если инварианты нарушены (не должно происходить)
    *
    * @example
    * ```typescript
    * // ✅ В Core/Facade
+   * import { accountIdFromWallet, KnownVenues } from '@polymarket/ids';
+   *
    * const token = OutcomeToken.of(conditionRef, outcomeKey);
    * const qty = Quantity.of(new Decimal(100));
-   * const balance = TokenBalance.of(token, qty);
+   * const accountId = accountIdFromWallet('0x1234...').unwrap();
+   * const balance = TokenBalance.of(token, qty, accountId, KnownVenues.POLYMARKET);
    *
    * // ❌ В публичном коде - используй TokenBalanceService
-   * const result = TokenBalanceService.create(token, qty);
+   * const result = TokenBalanceService.create(token, qty, accountId, venueId);
    * ```
    */
-  public static of(token: OutcomeToken, amount: Quantity): TokenBalance {
-    // Инварианты уже проверены в OutcomeToken и Quantity
+  public static of(
+    token: OutcomeToken,
+    amount: Quantity,
+    accountId: AccountId,
+    venueId: VenueId
+  ): TokenBalance {
+    // Инварианты уже проверены в OutcomeToken, Quantity, AccountId и VenueId
     // Amount non-negative гарантирован Quantity конструктором
-    return new TokenBalance(token, amount);
+    return new TokenBalance(token, amount, accountId, venueId);
   }
 
   /**
@@ -88,7 +111,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty);
+   * const balance = TokenBalance.of(token, qty, accountId, venueId);
    * const token = balance.token();
    * console.log(token.outcomeKey()); // 'UP'
    * ```
@@ -104,13 +127,45 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty);
+   * const balance = TokenBalance.of(token, qty, accountId, venueId);
    * const amount = balance.amount();
    * console.log(amount.toNumber()); // 100
    * ```
    */
   public amount(): Quantity {
     return this._amount;
+  }
+
+  /**
+   * Возвращает ID аккаунта владельца баланса
+   *
+   * @returns AccountId
+   *
+   * @example
+   * ```typescript
+   * const balance = TokenBalance.of(token, qty, accountId, venueId);
+   * const accId = balance.accountId();
+   * console.log(accId.kind); // 'WALLET' | 'VENUE' | 'SUBACCOUNT'
+   * ```
+   */
+  public accountId(): AccountId {
+    return this._accountId;
+  }
+
+  /**
+   * Возвращает ID площадки (venue) где находится баланс
+   *
+   * @returns VenueId
+   *
+   * @example
+   * ```typescript
+   * const balance = TokenBalance.of(token, qty, accountId, venueId);
+   * const venue = balance.venueId();
+   * console.log(venue); // 'POLYMARKET'
+   * ```
+   */
+  public venueId(): VenueId {
+    return this._venueId;
   }
 
   /**
@@ -123,7 +178,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty);
+   * const balance = TokenBalance.of(token, qty, accountId, venueId);
    * const assetId = balance.assetId();
    * // Эквивалентно: balance.token().assetId()
    * ```
@@ -142,7 +197,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty);
+   * const balance = TokenBalance.of(token, qty, accountId, venueId);
    * const ref = balance.conditionRef();
    * console.log(ref.protocolId); // 'POLYMARKET_CTF'
    * ```
@@ -161,7 +216,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty);
+   * const balance = TokenBalance.of(token, qty, accountId, venueId);
    * const key = balance.outcomeKey();
    * console.log(key); // 'UP'
    * ```
@@ -177,22 +232,29 @@ export class TokenBalance {
    * Два баланса равны если:
    * - Их токены равны (token.equals)
    * - Их количества равны (amount.equals)
+   * - Их аккаунты равны (accountIdEquals)
+   * - Их venues равны (venueId === venueId)
    *
    * @param other - Другой TokenBalance для сравнения
-   * @returns true если балансы представляют одинаковый токен и количество
+   * @returns true если балансы представляют одинаковый токен, количество, аккаунт и venue
    *
    * @example
    * ```typescript
-   * const balance1 = TokenBalance.of(token, Quantity.of(new Decimal(100)));
-   * const balance2 = TokenBalance.of(token, Quantity.of(new Decimal(100)));
-   * const balance3 = TokenBalance.of(token, Quantity.of(new Decimal(200)));
+   * const balance1 = TokenBalance.of(token, Quantity.of(new Decimal(100)), accountId, venueId);
+   * const balance2 = TokenBalance.of(token, Quantity.of(new Decimal(100)), accountId, venueId);
+   * const balance3 = TokenBalance.of(token, Quantity.of(new Decimal(200)), accountId, venueId);
    *
    * balance1.equals(balance2); // true
    * balance1.equals(balance3); // false (разное количество)
    * ```
    */
   public equals(other: TokenBalance): boolean {
-    return this._token.equals(other._token) && this._amount.equals(other._amount);
+    return (
+      this._token.equals(other._token) &&
+      this._amount.equals(other._amount) &&
+      accountIdEquals(this._accountId, other._accountId) &&
+      this._venueId === other._venueId
+    );
   }
 
   /**

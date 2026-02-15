@@ -1,5 +1,6 @@
 import { Result, Err } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
+import { accountIdToString, parseAccountId, type VenueId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { OutcomeTokenSerializer, type OutcomeTokenJSON } from '../../outcome-token/adapters/OutcomeTokenSerializer.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
@@ -56,6 +57,22 @@ export interface TokenBalanceJSON {
    * Amount as string (preserves precision)
    */
   amount: string;
+
+  /**
+   * Account ID (serialized as string)
+   *
+   * @remarks
+   * Формат зависит от kind:
+   * - WALLET: wallet:<address>
+   * - VENUE: venue:<venueId>:<userId>
+   * - SUBACCOUNT: sub:<name>:<base>
+   */
+  accountId: string;
+
+  /**
+   * Venue ID (string identifier)
+   */
+  venueId: VenueId;
 }
 
 /**
@@ -260,8 +277,84 @@ export class TokenBalanceSerializer {
       );
     }
 
+    // Проверка наличия accountId
+    if (!('accountId' in obj)) {
+      return Err(
+        new InvalidTokenBalanceError(
+          "Missing required field 'accountId'",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { json: safeStringify(json) },
+          },
+          source
+        )
+      );
+    }
+
+    // Проверка что accountId это строка
+    const accountIdValue = obj.accountId;
+    if (typeof accountIdValue !== 'string') {
+      return Err(
+        new InvalidTokenBalanceError(
+          "Field 'accountId' must be string",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { type: typeof accountIdValue },
+          },
+          source
+        )
+      );
+    }
+
+    // Парсим accountId
+    const accountIdParsed = parseAccountId(accountIdValue);
+    if (!accountIdParsed) {
+      return Err(
+        new InvalidTokenBalanceError(
+          `Failed to parse accountId: invalid format`,
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { accountId: accountIdValue },
+          },
+          source
+        )
+      );
+    }
+
+    // Проверка наличия venueId
+    if (!('venueId' in obj)) {
+      return Err(
+        new InvalidTokenBalanceError(
+          "Missing required field 'venueId'",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { json: safeStringify(json) },
+          },
+          source
+        )
+      );
+    }
+
+    // Проверка что venueId это строка
+    const venueIdValue = obj.venueId;
+    if (typeof venueIdValue !== 'string') {
+      return Err(
+        new InvalidTokenBalanceError(
+          "Field 'venueId' must be string",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { type: typeof venueIdValue },
+          },
+          source
+        )
+      );
+    }
+
+    // VenueId это branded string, просто приводим к типу
+    const venueId = venueIdValue as VenueId;
+
     // Создаём TokenBalance через сервис
-    return TokenBalanceService.create(tokenResult.value, quantity, source);
+    return TokenBalanceService.create(tokenResult.value, quantity, accountIdParsed, venueId, source);
   }
 
   /**
@@ -275,14 +368,20 @@ export class TokenBalanceSerializer {
    * Гарантирует что все поля присутствуют и имеют правильные типы.
    *
    * Amount сериализуется как строка для сохранения точности.
+   * AccountId сериализуется в строковый формат через accountIdToString().
    *
    * @example
    * ```typescript
-   * const balance = expectOk(TokenBalanceService.create(token, qty));
+   * import { accountIdFromWallet, KnownVenues } from '@polymarket/ids';
+   *
+   * const accountId = accountIdFromWallet('0x1234...').unwrap();
+   * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, KnownVenues.POLYMARKET));
    * const json = TokenBalanceSerializer.toJSON(balance);
    * // → {
    * //   token: { conditionRef: { kind: 'ONCHAIN', ... }, outcomeKey: 'UP' },
-   * //   amount: '100.5'
+   * //   amount: '100.5',
+   * //   accountId: 'wallet:0x1234...',
+   * //   venueId: 'POLYMARKET'
    * // }
    * ```
    */
@@ -290,6 +389,8 @@ export class TokenBalanceSerializer {
     return {
       token: OutcomeTokenSerializer.toJSON(balance.token()),
       amount: balance.amount().value().toString(),
+      accountId: accountIdToString(balance.accountId()),
+      venueId: balance.venueId(),
     };
   }
 }

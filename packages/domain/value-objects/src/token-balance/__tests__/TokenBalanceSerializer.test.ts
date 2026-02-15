@@ -1,7 +1,14 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { KnownOnChainProtocols, KnownChainIds, BinaryOutcome } from '@polymarket/ids';
-import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
+import {
+  parseWalletAddress,
+  KnownOnChainProtocols,
+  KnownChainIds,
+  BinaryOutcome,
+  KnownVenues,
+  accountIdFromWallet,
+} from '@polymarket/ids';
+import type { OnChainConditionRef, ConditionId, AccountId, VenueId } from '@polymarket/ids';
 import { OutcomeToken } from '../../outcome-token/core/OutcomeToken.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { TokenBalanceService } from '../facade/TokenBalanceService.js';
@@ -19,9 +26,14 @@ describe('TokenBalanceSerializer', () => {
   const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
   const qty = Quantity.of(new Decimal('100.5'));
 
+  // Test fixtures для accountId и venueId
+  const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+  const accountId: AccountId = accountIdFromWallet(walletAddress);
+  const venueId: VenueId = KnownVenues.POLYMARKET;
+
   describe('toJSON()', () => {
     it('сериализует TokenBalance в JSON', () => {
-      const balance = TokenBalanceService.create(token, qty);
+      const balance = TokenBalanceService.create(token, qty, accountId, venueId);
       expect(balance.ok).toBe(true);
       if (!balance.ok) return;
 
@@ -38,12 +50,14 @@ describe('TokenBalanceSerializer', () => {
           outcomeKey: BinaryOutcome.UP,
         },
         amount: '100.5',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET',
       });
     });
 
     it('сохраняет точность amount в строке', () => {
       const preciseQty = Quantity.of(new Decimal('123.45678901234567890123456789'));
-      const balance = TokenBalanceService.create(token, preciseQty);
+      const balance = TokenBalanceService.create(token, preciseQty, accountId, venueId);
       expect(balance.ok).toBe(true);
       if (!balance.ok) return;
 
@@ -54,7 +68,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('сериализует нулевой баланс', () => {
       const zeroQty = Quantity.ZERO;
-      const balance = TokenBalanceService.create(token, zeroQty);
+      const balance = TokenBalanceService.create(token, zeroQty, accountId, venueId);
       expect(balance.ok).toBe(true);
       if (!balance.ok) return;
 
@@ -77,6 +91,8 @@ describe('TokenBalanceSerializer', () => {
           outcomeKey: 'UP',
         },
         amount: '100.5',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -101,6 +117,8 @@ describe('TokenBalanceSerializer', () => {
           outcomeKey: 'UP',
         },
         amount: '0',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -113,7 +131,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('сохраняет точность при round-trip', () => {
       const preciseQty = Quantity.of(new Decimal('123.45678901234567890123456789'));
-      const originalBalance = TokenBalanceService.create(token, preciseQty);
+      const originalBalance = TokenBalanceService.create(token, preciseQty, accountId, venueId);
       expect(originalBalance.ok).toBe(true);
       if (!originalBalance.ok) return;
 
