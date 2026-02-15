@@ -49,12 +49,12 @@ export class AssetQuantity {
   /**
    * Приватная фабрика для создания из канонического AssetId
    *
-   * @param asset - Канонический AssetId (из AssetIdHelpers)
+   * @param asset - Канонический AssetId (из AssetId)
    * @param amount - Количество актива
    * @returns Новый AssetQuantity
    *
    * @remarks
-   * Вызывается из of() и fromAssetId() после создания канонического AssetId.
+   * Вызывается из of() и fromAssetId() после создания канонического AssetIdHelpers.
    * НЕ делает повторную каноникализацию - доверяет что asset уже канонический.
    */
   private static fromCanonicalAssetId(asset: AssetId, amount: Quantity): AssetQuantity {
@@ -67,7 +67,7 @@ export class AssetQuantity {
    * @param asset - Asset identifier (может быть из ненадёжного источника)
    * @param amount - Количество актива
    * @returns Новый AssetQuantity
-   * @throws {Error} Если AssetIdHelpers бросит при пересоздании
+   * @throws {Error} Если AssetId бросит при пересоздании
    *
    * @remarks
    * **Defensive copy**: Пересоздаёт AssetId для гарантии иммутабельности.
@@ -84,18 +84,22 @@ export class AssetQuantity {
    * ```
    */
   public static fromAssetId(asset: AssetId, amount: Quantity): AssetQuantity {
-    let canonicalAsset: AssetId;
+    // Проверяем, frozen ли AssetId (гарантия иммутабельности)
+    // Если frozen - можно использовать напрямую (уже из AssetId)
+    // Если нет - пересоздаём через AssetId для гарантии freeze
+    const isFrozen = Object.isFrozen(asset);
 
-    if (asset.type === 'CURRENCY') {
-      // Currency constants уже frozen, можно использовать напрямую
-      canonicalAsset = asset;
-    } else {
-      // OUTCOME_TOKEN: defensive copy через AssetIdHelpers
-      canonicalAsset = AssetIdHelpers.fromOutcomeToken(
-        asset.conditionRef,
-        asset.outcomeKey
-      );
+    if (isFrozen) {
+      // AssetId уже frozen (из AssetId), используем напрямую
+      return AssetQuantity.fromCanonicalAssetId(asset, amount);
     }
+
+    // AssetId не frozen (из parseAssetId или создан вручную)
+    // Пересоздаём через AssetId для гарантии иммутабельности
+    const canonicalAsset =
+      asset.type === 'CURRENCY'
+        ? AssetIdHelpers.fromCurrency(asset.currency)
+        : AssetIdHelpers.fromOutcomeToken(asset.conditionRef, asset.outcomeKey);
 
     return AssetQuantity.fromCanonicalAssetId(canonicalAsset, amount);
   }
@@ -106,25 +110,25 @@ export class AssetQuantity {
    * @internal ТОЛЬКО для внутреннего использования в Core и Facade
    *
    * @remarks
-   * Для создания из AssetIdHelpers (уже канонический).
+   * Для создания из AssetId (уже канонический).
    * НЕ делает defensive copy - доверяет что asset уже канонический.
    *
    * Для boundary/adapters используйте fromAssetId() с defensive copy.
    *
-   * @param asset - Канонический AssetId (из AssetIdHelpers)
+   * @param asset - Канонический AssetId (из AssetId)
    * @param amount - Количество актива
    * @returns Новый AssetQuantity
    *
    * @example
    * ```typescript
-   * // ✅ В Core/Facade с AssetIdHelpers
+   * // ✅ В Core/Facade с AssetId
    * const assetId = AssetIdHelpers.USDC;
    * const qty = Quantity.of(new Decimal(100));
    * const assetQty = AssetQuantity.of(assetId, qty);
    * ```
    */
   public static of(asset: AssetId, amount: Quantity): AssetQuantity {
-    // AssetId уже канонический (из AssetIdHelpers)
+    // AssetId уже канонический (из AssetId)
     return AssetQuantity.fromCanonicalAssetId(asset, amount);
   }
 
@@ -196,12 +200,22 @@ export class AssetQuantity {
    *
    * @returns AssetId (может быть Currency или OutcomeToken)
    *
+   * @remarks
+   * **Иммутабельность гарантирована:**
+   * - _asset всегда создаётся через AssetId (fromAssetId, of, usdc, outcomeToken)
+   * - AssetId всегда возвращает deep frozen AssetId
+   * - Object.freeze() предотвращает мутации в runtime
+   * - Поэтому можно безопасно возвращать _asset напрямую без копирования
+   *
    * @example
    * ```typescript
    * const assetQty = AssetQuantity.usdc(qty);
    * const asset = assetQty.asset();
    * console.log(asset.type); // 'CURRENCY'
    * console.log(asset.currency); // 'USDC'
+   *
+   * // ❌ Попытка мутации не сработает (frozen):
+   * // (asset as any).currency = 'HACKED'; // Throws in strict mode
    * ```
    */
   public asset(): AssetId {
@@ -291,38 +305,10 @@ export class AssetQuantity {
    * ```
    */
   public equals(other: AssetQuantity): boolean {
-    // Проверка типа актива
-    if (this._asset.type !== other._asset.type) {
+    // Используем AssetIdHelpers.equals() для проверки равенства asset (DRY)
+    // Если AssetId изменится, логика обновится автоматически в одном месте
+    if (!AssetIdHelpers.equals(this._asset, other._asset)) {
       return false;
-    }
-
-    // Проверка равенства asset identifier
-    if (this._asset.type === 'CURRENCY') {
-      if (this._asset.currency !== (other._asset as Extract<AssetId, { type: 'CURRENCY' }>).currency) {
-        return false;
-      }
-    } else {
-      // OUTCOME_TOKEN
-      const thisToken = this._asset as Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
-      const otherToken = other._asset as Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
-
-      // Сравниваем conditionRef
-      const thisRef = thisToken.conditionRef;
-      const otherRef = otherToken.conditionRef;
-
-      if (
-        thisRef.kind !== otherRef.kind ||
-        thisRef.protocolId !== otherRef.protocolId ||
-        thisRef.chainId !== otherRef.chainId ||
-        thisRef.conditionId !== otherRef.conditionId
-      ) {
-        return false;
-      }
-
-      // Сравниваем outcomeKey
-      if (thisToken.outcomeKey !== otherToken.outcomeKey) {
-        return false;
-      }
     }
 
     // Проверка равенства amount

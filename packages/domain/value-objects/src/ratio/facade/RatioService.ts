@@ -37,9 +37,8 @@
 import Decimal from 'decimal.js';
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { InvalidRatioError } from '@polymarket/errors';
-import { ErrorSource, rewrap, toDecimal } from '@polymarket/errors';
+import { rewrap, toDecimal, wrapOp } from '@polymarket/errors';
 import { Ratio } from '../core/Ratio.js';
-import { RatioInvariantViolation } from '../core/RatioInvariantViolation.js';
 import { RatioErrorReason } from '../errors/RatioErrorReason.js';
 import { ValidateRatioGteMinusOne } from '../rules/ValidateRatioGteMinusOne.js';
 
@@ -98,8 +97,18 @@ export class RatioService {
       }
     }
 
-    // Step 3: Create Ratio (throws on invariant violation)
-    return this.createFromDecimal(decimal, 'fromDecimal');
+    // Step 3: Create Ratio (wrapOp catches invariant violations)
+    const ctx = { raw: { field: 'value', value: String(value) } };
+    return wrapOp(
+      this.SERVICE_NAME,
+      'fromDecimal',
+      ctx,
+      () => {
+        const ratio = Ratio.of(decimal);
+        return Ok(ratio);
+      },
+      InvalidRatioError
+    );
   }
 
   /**
@@ -138,8 +147,18 @@ export class RatioService {
       }
     }
 
-    // Step 4: Create Ratio
-    return this.createFromDecimal(fraction, 'fromPercent');
+    // Step 4: Create Ratio (wrapOp catches invariant violations)
+    const ctx = { raw: { field: 'percent', value: String(percent) } };
+    return wrapOp(
+      this.SERVICE_NAME,
+      'fromPercent',
+      ctx,
+      () => {
+        const ratio = Ratio.of(fraction);
+        return Ok(ratio);
+      },
+      InvalidRatioError
+    );
   }
 
   /**
@@ -178,8 +197,18 @@ export class RatioService {
       }
     }
 
-    // Step 4: Create Ratio
-    return this.createFromDecimal(fraction, 'fromBps');
+    // Step 4: Create Ratio (wrapOp catches invariant violations)
+    const ctx = { raw: { field: 'bps', value: String(bps) } };
+    return wrapOp(
+      this.SERVICE_NAME,
+      'fromBps',
+      ctx,
+      () => {
+        const ratio = Ratio.of(fraction);
+        return Ok(ratio);
+      },
+      InvalidRatioError
+    );
   }
 
   /**
@@ -201,56 +230,5 @@ export class RatioService {
    */
   public static equals(a: Ratio, b: Ratio): Result<boolean, never> {
     return Ok(a.equals(b));
-  }
-
-  // ============================================================================
-  // Private helpers
-  // ============================================================================
-
-  /**
-   * Внутренний helper: создать Ratio из Decimal
-   */
-  private static createFromDecimal(
-    value: Decimal,
-    operation: string
-  ): Result<Ratio, InvalidRatioError> {
-    try {
-      const ratio = Ratio.of(value);
-      return Ok(ratio);
-    } catch (error) {
-      return Err(this.mapInvariantToError(error, value, operation));
-    }
-  }
-
-  /**
-   * Внутренний helper: преобразовать RatioInvariantViolation в InvalidRatioError
-   */
-  private static mapInvariantToError(
-    error: unknown,
-    value: Decimal,
-    operation: string
-  ): InvalidRatioError {
-    if (error instanceof RatioInvariantViolation) {
-      return new InvalidRatioError(error.message, {
-        context: {
-          source: ErrorSource.CORE_INVARIANT,
-          op: operation,
-          service: this.SERVICE_NAME,
-          ratioValue: value.toString(),
-          reason: error.reason
-        }
-      });
-    }
-
-    // Unexpected error
-    return new InvalidRatioError(`Unexpected error in ${operation}: ${String(error)}`, {
-      context: {
-        source: ErrorSource.UNEXPECTED,
-        op: operation,
-        service: this.SERVICE_NAME,
-        ratioValue: value.toString(),
-        reason: RatioErrorReason.DECIMAL_ERROR
-      }
-    });
   }
 }

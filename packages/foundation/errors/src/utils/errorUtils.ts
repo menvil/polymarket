@@ -366,6 +366,7 @@ export function isExpectedMathError(e: unknown): e is Error {
  * - BalanceInvariantViolation
  * - SpreadInvariantViolation
  * - QuoteInvariantViolation
+ * - RatioInvariantViolation
  */
 export function isCoreInvariantViolation(e: unknown): e is Error & { reason: string } {
   return (
@@ -375,7 +376,8 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
       e.name === 'MoneyInvariantViolation' ||
       e.name === 'BalanceInvariantViolation' ||
       e.name === 'SpreadInvariantViolation' ||
-      e.name === 'QuoteInvariantViolation') &&
+      e.name === 'QuoteInvariantViolation' ||
+      e.name === 'RatioInvariantViolation') &&
     'reason' in e
   );
 }

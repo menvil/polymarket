@@ -199,6 +199,67 @@ export const AssetId = {
     type: 'CURRENCY' as const,
     currency: KnownCurrencies.USDC,
   }) as AssetId,
+
+  /**
+   * Проверяет равенство двух AssetId
+   *
+   * @param a - Первый AssetId
+   * @param b - Второй AssetId
+   * @returns true если AssetId представляют одинаковый актив
+   *
+   * @remarks
+   * Два AssetId равны если:
+   * - Их типы совпадают (CURRENCY или OUTCOME_TOKEN)
+   * - Для CURRENCY: currency совпадает
+   * - Для OUTCOME_TOKEN: conditionRef + outcomeKey совпадают
+   *
+   * **Зачем централизовать:**
+   * - DRY: единая точка правды для логики сравнения
+   * - Maintainability: если AssetId изменится, обновляем в одном месте
+   * - Consistency: одинаковая логика во всех слоях
+   *
+   * @example
+   * ```typescript
+   * const usdc1 = AssetIdHelpers.USDC;
+   * const usdc2 = AssetIdHelpers.fromCurrency(KnownCurrencies.USDC);
+   * AssetIdHelpers.equals(usdc1, usdc2); // true
+   *
+   * const token1 = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+   * const token2 = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.DOWN);
+   * AssetIdHelpers.equals(token1, token2); // false (different outcome)
+   * ```
+   */
+  equals(a: AssetId, b: AssetId): boolean {
+    // Проверка типа актива
+    if (a.type !== b.type) {
+      return false;
+    }
+
+    // Проверка равенства asset identifier
+    if (a.type === 'CURRENCY') {
+      return a.currency === (b as Extract<AssetId, { type: 'CURRENCY' }>).currency;
+    }
+
+    // OUTCOME_TOKEN
+    const aToken = a as Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
+    const bToken = b as Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
+
+    // Сравниваем conditionRef
+    const aRef = aToken.conditionRef;
+    const bRef = bToken.conditionRef;
+
+    if (
+      aRef.kind !== bRef.kind ||
+      aRef.protocolId !== bRef.protocolId ||
+      aRef.chainId !== bRef.chainId ||
+      aRef.conditionId !== bRef.conditionId
+    ) {
+      return false;
+    }
+
+    // Сравниваем outcomeKey
+    return aToken.outcomeKey === bToken.outcomeKey;
+  },
 };
 
 /**
