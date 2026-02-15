@@ -97,7 +97,7 @@ export class RatioService {
     options?: RatioCreateOptions
   ): Result<Ratio, InvalidRatioError> {
     // Заранее собираем ctx для rewrap
-    const ctx = { raw: { field: 'value', value: String(value) } };
+    const ctx = { raw: { field: 'decimal', value: String(value) } };
 
     // Step 1: Parse to Decimal
     const decimalResult = toDecimal('value', value, RatioErrorReason.INVALID_FORMAT, InvalidRatioError);

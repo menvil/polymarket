@@ -164,7 +164,7 @@ export class RatioFormatter {
   public static parse(input: string): Result<Ratio, InvalidRatioError> {
     const trimmed = input.trim();
 
-    // Reject empty string (Number("") returns 0, which is unexpected)
+    // Reject empty string (пустая строка недопустима как ratio)
     if (trimmed === '') {
       return Err(
         new InvalidRatioError(`Invalid format: empty string`, {
