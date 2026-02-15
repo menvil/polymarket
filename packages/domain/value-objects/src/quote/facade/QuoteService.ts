@@ -997,10 +997,10 @@ export class QuoteService {
     return wrapOp(
       QuoteService.SERVICE_NAME,
       'getMidPrice',
-      { bidPrice: quote.bidPrice().value().toString(), askPrice: quote.askPrice().value().toString() },
+      { bid: quote.spread()!.bid()!.value().toString(), ask: quote.spread()!.ask()!.value().toString() },
       () => {
         // Delegate to SpreadService
-        const spreadMidResult = SpreadService.getMidPrice(quote.spread());
+        const spreadMidResult = SpreadService.getMidPrice(quote.spread()!);
 
         if (isErr(spreadMidResult)) {
           // Re-wrap SpreadError as QuoteError
@@ -1010,8 +1010,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.NOT_TWO_SIDED,
-                bidPrice: quote.bidPrice().value().toString(),
-                askPrice: quote.askPrice().value().toString(),
+                bid: quote.spread()!.bid()!.value().toString(),
+                ask: quote.spread()!.ask()!.value().toString(),
                 spreadError: spreadMidResult.error.message,
               },
             }
@@ -1055,10 +1055,10 @@ export class QuoteService {
     return wrapOp(
       QuoteService.SERVICE_NAME,
       'getSpreadRatio',
-      { bidPrice: quote.bidPrice().value().toString(), askPrice: quote.askPrice().value().toString() },
+      { bid: quote.spread()!.bid()!.value().toString(), ask: quote.spread()!.ask()!.value().toString() },
       () => {
         // Delegate to SpreadService
-        const spreadRatioResult = SpreadService.getSpreadRatio(quote.spread());
+        const spreadRatioResult = SpreadService.getSpreadRatio(quote.spread()!);
 
         if (isErr(spreadRatioResult)) {
           // Re-wrap SpreadError as QuoteError
@@ -1068,8 +1068,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.MID_UNAVAILABLE,
-                bidPrice: quote.bidPrice().value().toString(),
-                askPrice: quote.askPrice().value().toString(),
+                bid: quote.spread()!.bid()!.value().toString(),
+                ask: quote.spread()!.ask()!.value().toString(),
                 spreadError: spreadRatioResult.error.message,
               },
             }
@@ -1123,12 +1123,12 @@ export class QuoteService {
       QuoteService.SERVICE_NAME,
       'shiftByRatio',
       {
-        bidPrice: quote.bidPrice().value().toString(),
-        askPrice: quote.askPrice().value().toString(),
+        bid: quote.spread()!.bid()!.value().toString(),
+        ask: quote.spread()!.ask()!.value().toString(),
         shiftRatio: shiftRatio.toDecimal().toString()
       },
       () => {
-        const newSpreadResult = SpreadService.shiftByRatio(quote.spread(), shiftRatio);
+        const newSpreadResult = SpreadService.shiftByRatio(quote.spread()!, shiftRatio);
 
         if (isErr(newSpreadResult)) {
           throw new InvalidQuoteError(
@@ -1137,8 +1137,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
-                bidPrice: quote.bidPrice().value().toString(),
-                askPrice: quote.askPrice().value().toString(),
+                bid: quote.spread()!.bid()!.value().toString(),
+                ask: quote.spread()!.ask()!.value().toString(),
                 shiftRatio: shiftRatio.toDecimal().toString(),
                 spreadError: newSpreadResult.error.message,
               },
@@ -1146,13 +1146,15 @@ export class QuoteService {
           );
         }
 
+        const newSpread = newSpreadResult.value;
         const newQuote = Quote.of(
-          newSpreadResult.value,
+          newSpread.bid()!,
+          newSpread.ask()!,
           quote.bidSize(),
           quote.askSize(),
-          quote.marketDataSourceId(),
-          quote.instrumentId(),
-          quote.timestamp()
+          quote.timestampMs(),
+          quote.sourceId(),
+          quote.instrumentId()
         );
 
         return Ok(newQuote);
@@ -1172,12 +1174,12 @@ export class QuoteService {
       QuoteService.SERVICE_NAME,
       'widenByRatio',
       {
-        bidPrice: quote.bidPrice().value().toString(),
-        askPrice: quote.askPrice().value().toString(),
+        bid: quote.spread()!.bid()!.value().toString(),
+        ask: quote.spread()!.ask()!.value().toString(),
         deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
       },
       () => {
-        const newSpreadResult = SpreadService.widenByRatio(quote.spread(), deltaWidthRatio);
+        const newSpreadResult = SpreadService.widenByRatio(quote.spread()!, deltaWidthRatio);
 
         if (isErr(newSpreadResult)) {
           throw new InvalidQuoteError(
@@ -1186,8 +1188,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
-                bidPrice: quote.bidPrice().value().toString(),
-                askPrice: quote.askPrice().value().toString(),
+                bid: quote.spread()!.bid()!.value().toString(),
+                ask: quote.spread()!.ask()!.value().toString(),
                 deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
                 spreadError: newSpreadResult.error.message,
               },
@@ -1195,13 +1197,15 @@ export class QuoteService {
           );
         }
 
+        const newSpread = newSpreadResult.value;
         const newQuote = Quote.of(
-          newSpreadResult.value,
+          newSpread.bid()!,
+          newSpread.ask()!,
           quote.bidSize(),
           quote.askSize(),
-          quote.marketDataSourceId(),
-          quote.instrumentId(),
-          quote.timestamp()
+          quote.timestampMs(),
+          quote.sourceId(),
+          quote.instrumentId()
         );
 
         return Ok(newQuote);
@@ -1221,12 +1225,12 @@ export class QuoteService {
       QuoteService.SERVICE_NAME,
       'tightenByRatio',
       {
-        bidPrice: quote.bidPrice().value().toString(),
-        askPrice: quote.askPrice().value().toString(),
+        bid: quote.spread()!.bid()!.value().toString(),
+        ask: quote.spread()!.ask()!.value().toString(),
         deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
       },
       () => {
-        const newSpreadResult = SpreadService.tightenByRatio(quote.spread(), deltaWidthRatio);
+        const newSpreadResult = SpreadService.tightenByRatio(quote.spread()!, deltaWidthRatio);
 
         if (isErr(newSpreadResult)) {
           throw new InvalidQuoteError(
@@ -1235,8 +1239,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
-                bidPrice: quote.bidPrice().value().toString(),
-                askPrice: quote.askPrice().value().toString(),
+                bid: quote.spread()!.bid()!.value().toString(),
+                ask: quote.spread()!.ask()!.value().toString(),
                 deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
                 spreadError: newSpreadResult.error.message,
               },
@@ -1244,13 +1248,15 @@ export class QuoteService {
           );
         }
 
+        const newSpread = newSpreadResult.value;
         const newQuote = Quote.of(
-          newSpreadResult.value,
+          newSpread.bid()!,
+          newSpread.ask()!,
           quote.bidSize(),
           quote.askSize(),
-          quote.marketDataSourceId(),
-          quote.instrumentId(),
-          quote.timestamp()
+          quote.timestampMs(),
+          quote.sourceId(),
+          quote.instrumentId()
         );
 
         return Ok(newQuote);
@@ -1271,13 +1277,13 @@ export class QuoteService {
       QuoteService.SERVICE_NAME,
       'skewByRatio',
       {
-        bidPrice: quote.bidPrice().value().toString(),
-        askPrice: quote.askPrice().value().toString(),
+        bid: quote.spread()!.bid()!.value().toString(),
+        ask: quote.spread()!.ask()!.value().toString(),
         bidRatio: bidRatio.toDecimal().toString(),
         askRatio: askRatio.toDecimal().toString()
       },
       () => {
-        const newSpreadResult = SpreadService.skewByRatio(quote.spread(), bidRatio, askRatio);
+        const newSpreadResult = SpreadService.skewByRatio(quote.spread()!, bidRatio, askRatio);
 
         if (isErr(newSpreadResult)) {
           throw new InvalidQuoteError(
@@ -1286,8 +1292,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
-                bidPrice: quote.bidPrice().value().toString(),
-                askPrice: quote.askPrice().value().toString(),
+                bid: quote.spread()!.bid()!.value().toString(),
+                ask: quote.spread()!.ask()!.value().toString(),
                 bidRatio: bidRatio.toDecimal().toString(),
                 askRatio: askRatio.toDecimal().toString(),
                 spreadError: newSpreadResult.error.message,
@@ -1296,13 +1302,15 @@ export class QuoteService {
           );
         }
 
+        const newSpread = newSpreadResult.value;
         const newQuote = Quote.of(
-          newSpreadResult.value,
+          newSpread.bid()!,
+          newSpread.ask()!,
           quote.bidSize(),
           quote.askSize(),
-          quote.marketDataSourceId(),
-          quote.instrumentId(),
-          quote.timestamp()
+          quote.timestampMs(),
+          quote.sourceId(),
+          quote.instrumentId()
         );
 
         return Ok(newQuote);
@@ -1423,12 +1431,13 @@ export class QuoteService {
 
         // 4. Create new Quote with same spread, new sizes
         const newQuote = Quote.of(
-          quote.spread(),
+          quote.spread()!.bid()!,
+          quote.spread()!.ask()!,
           newBidSizeResult.value,
           newAskSizeResult.value,
-          quote.marketDataSourceId(),
-          quote.instrumentId(),
-          quote.timestamp()
+          quote.timestampMs(),
+          quote.sourceId(),
+          quote.instrumentId()
         );
 
         return Ok(newQuote);
