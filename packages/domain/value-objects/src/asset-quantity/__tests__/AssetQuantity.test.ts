@@ -20,9 +20,9 @@ describe('AssetQuantity Core', () => {
   const qty200 = Quantity.of(new Decimal(200));
   const qtyZero = Quantity.ZERO;
 
-  describe('of()', () => {
+  describe('constructor', () => {
     it('создаёт AssetQuantity для Currency', () => {
-      const assetQty = AssetQuantity.of(usdcAsset, qty100);
+      const assetQty = new AssetQuantity(usdcAsset, qty100);
 
       expect(assetQty).toBeInstanceOf(AssetQuantity);
       expect(assetQty.asset()).toBe(usdcAsset);
@@ -32,7 +32,7 @@ describe('AssetQuantity Core', () => {
     });
 
     it('создаёт AssetQuantity для OutcomeToken', () => {
-      const assetQty = AssetQuantity.of(tokenAsset, qty100);
+      const assetQty = new AssetQuantity(tokenAsset, qty100);
 
       expect(assetQty).toBeInstanceOf(AssetQuantity);
       expect(assetQty.asset()).toBe(tokenAsset);
@@ -42,7 +42,7 @@ describe('AssetQuantity Core', () => {
     });
 
     it('создаёт AssetQuantity с нулевым amount', () => {
-      const assetQty = AssetQuantity.of(usdcAsset, qtyZero);
+      const assetQty = new AssetQuantity(usdcAsset, qtyZero);
 
       expect(assetQty.amount().isZero()).toBe(true);
     });

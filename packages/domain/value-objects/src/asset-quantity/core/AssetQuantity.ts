@@ -29,18 +29,21 @@ import { Quantity } from '../../quantity/core/Quantity.js';
  * - Внешний AssetId пересоздаётся, не сохраняется напрямую
  * - После создания нет публичных методов для изменения состояния
  *
- * **Публичные фабрики**:
- * - `of(asset, amount)` - создание из канонических domain объектов
+ * **Публичные точки входа**:
+ * - `new AssetQuantity(asset, amount)` - публичный конструктор с defensive copy
  * - `fromAssetId(assetId, amount)` - создание с defensive copy (для adapters/boundary)
  * - `usdc(amount)` - convenience для USDC
  * - `outcomeToken(ref, key, amount)` - convenience для outcome tokens
  *
  * @example
  * ```typescript
- * // ✅ В Core/Facade layer
+ * // ✅ В Core/Facade layer - через конструктор
  * const assetId = AssetIdHelpers.USDC;
  * const qty = Quantity.of(new Decimal(100));
- * const assetQty = AssetQuantity.of(assetId, qty);
+ * const assetQty = new AssetQuantity(assetId, qty);
+ *
+ * // ✅ В Core/Facade layer - через фабрику
+ * const assetQty2 = AssetQuantity.usdc(qty);
  *
  * // ❌ В публичном коде - используй AssetQuantityService
  * const result = AssetQuantityService.create(assetId, qty);
@@ -52,24 +55,56 @@ import { Quantity } from '../../quantity/core/Quantity.js';
  * ```
  */
 export class AssetQuantity {
-  private constructor(
-    private readonly _asset: AssetId,
-    private readonly _amount: Quantity
-  ) {}
+  private readonly _asset: AssetId;
+  private readonly _amount: Quantity;
 
   /**
-   * Приватная фабрика для создания из канонического AssetId
+   * Создаёт AssetQuantity из AssetId с defensive copy
    *
-   * @param asset - Канонический AssetId (из AssetId)
+   * @param asset - Asset identifier (может быть из ненадёжного источника)
    * @param amount - Количество актива
-   * @returns Новый AssetQuantity
+   * @throws {Error} Если AssetIdHelpers.fromOutcomeToken() бросит при пересоздании
    *
    * @remarks
-   * Вызывается из of() и fromAssetId() после создания канонического AssetIdHelpers.
-   * НЕ делает повторную каноникализацию - доверяет что asset уже канонический.
+   * **Публичный конструктор** - можно использовать напрямую в Core/Facade.
+   *
+   * **Defensive copy**: Пересоздаёт AssetId для гарантии иммутабельности.
+   * Входной asset может быть из parseAssetId (mutable).
+   *
+   * - CURRENCY (frozen): использует исходный
+   * - OUTCOME_TOKEN (не frozen): пересоздаёт через AssetIdHelpers.fromOutcomeToken()
+   *
+   * @example
+   * ```typescript
+   * const assetId = parseAssetId("outcome_token:...");  // mutable
+   * const qty = Quantity.of(new Decimal(100));
+   * const assetQty = new AssetQuantity(assetId, qty);
+   * ```
    */
-  private static fromCanonicalAssetId(asset: AssetId, amount: Quantity): AssetQuantity {
-    return new AssetQuantity(asset, amount);
+  public constructor(
+    asset: AssetId,
+    amount: Quantity
+  ) {
+    // Проверяем, frozen ли AssetId (гарантия иммутабельности)
+    // Если frozen - можно использовать напрямую (уже из AssetIdHelpers)
+    // Если нет - пересоздаём через AssetIdHelpers для гарантии freeze
+    const isFrozen = Object.isFrozen(asset);
+
+    if (isFrozen) {
+      // AssetId уже frozen (из AssetIdHelpers), используем напрямую
+      this._asset = asset;
+      this._amount = amount;
+    } else {
+      // AssetId не frozen (из parseAssetId или создан вручную)
+      // Пересоздаём через AssetIdHelpers для гарантии иммутабельности
+      const canonicalAsset =
+        asset.type === 'CURRENCY'
+          ? AssetIdHelpers.fromCurrency(asset.currency)
+          : AssetIdHelpers.fromOutcomeToken(asset.conditionRef, asset.outcomeKey);
+
+      this._asset = canonicalAsset;
+      this._amount = amount;
+    }
   }
 
   /**
@@ -78,69 +113,25 @@ export class AssetQuantity {
    * @param asset - Asset identifier (может быть из ненадёжного источника)
    * @param amount - Количество актива
    * @returns Новый AssetQuantity
-   * @throws {Error} Если AssetId бросит при пересоздании
+   * @throws {Error} Если AssetIdHelpers.fromOutcomeToken() бросит при пересоздании
    *
    * @remarks
+   * **Алиас для конструктора** - для обратной совместимости.
+   * Рекомендуется использовать `new AssetQuantity(asset, amount)` напрямую.
+   *
    * **Defensive copy**: Пересоздаёт AssetId для гарантии иммутабельности.
    * Входной asset может быть из parseAssetId (mutable).
-   *
-   * - CURRENCY: использует исходный (constants уже frozen)
-   * - OUTCOME_TOKEN: пересоздаёт через AssetIdHelpers.fromOutcomeToken()
    *
    * @example
    * ```typescript
    * const assetId = parseAssetId("outcome_token:...");  // mutable
    * const qty = Quantity.of(new Decimal(100));
    * const assetQty = AssetQuantity.fromAssetId(assetId, qty);
+   * // Эквивалентно: new AssetQuantity(assetId, qty)
    * ```
    */
   public static fromAssetId(asset: AssetId, amount: Quantity): AssetQuantity {
-    // Проверяем, frozen ли AssetId (гарантия иммутабельности)
-    // Если frozen - можно использовать напрямую (уже из AssetId)
-    // Если нет - пересоздаём через AssetId для гарантии freeze
-    const isFrozen = Object.isFrozen(asset);
-
-    if (isFrozen) {
-      // AssetId уже frozen (из AssetId), используем напрямую
-      return AssetQuantity.fromCanonicalAssetId(asset, amount);
-    }
-
-    // AssetId не frozen (из parseAssetId или создан вручную)
-    // Пересоздаём через AssetId для гарантии иммутабельности
-    const canonicalAsset =
-      asset.type === 'CURRENCY'
-        ? AssetIdHelpers.fromCurrency(asset.currency)
-        : AssetIdHelpers.fromOutcomeToken(asset.conditionRef, asset.outcomeKey);
-
-    return AssetQuantity.fromCanonicalAssetId(canonicalAsset, amount);
-  }
-
-  /**
-   * Создаёт AssetQuantity из канонического AssetId и Quantity
-   *
-   * @internal ТОЛЬКО для внутреннего использования в Core и Facade
-   *
-   * @remarks
-   * Для создания из AssetId (уже канонический).
-   * НЕ делает defensive copy - доверяет что asset уже канонический.
-   *
-   * Для boundary/adapters используйте fromAssetId() с defensive copy.
-   *
-   * @param asset - Канонический AssetId (из AssetId)
-   * @param amount - Количество актива
-   * @returns Новый AssetQuantity
-   *
-   * @example
-   * ```typescript
-   * // ✅ В Core/Facade с AssetId
-   * const assetId = AssetIdHelpers.USDC;
-   * const qty = Quantity.of(new Decimal(100));
-   * const assetQty = AssetQuantity.of(assetId, qty);
-   * ```
-   */
-  public static of(asset: AssetId, amount: Quantity): AssetQuantity {
-    // AssetId уже канонический (из AssetId)
-    return AssetQuantity.fromCanonicalAssetId(asset, amount);
+    return new AssetQuantity(asset, amount);
   }
 
   /**
@@ -166,7 +157,7 @@ export class AssetQuantity {
    * ```
    */
   public static usdc(amount: Quantity): AssetQuantity {
-    return AssetQuantity.fromCanonicalAssetId(AssetIdHelpers.USDC, amount);
+    return new AssetQuantity(AssetIdHelpers.USDC, amount);
   }
 
   /**
@@ -203,7 +194,7 @@ export class AssetQuantity {
   ): AssetQuantity {
     // Создаём канонический AssetId
     const assetId = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
-    return AssetQuantity.fromCanonicalAssetId(assetId, amount);
+    return new AssetQuantity(assetId, amount);
   }
 
   /**

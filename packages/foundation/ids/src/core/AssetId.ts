@@ -154,27 +154,52 @@ export const AssetId = {
    * ```
    */
   fromOutcomeToken(conditionRef: OnChainConditionRef, outcomeKey: OutcomeKey): AssetId {
+    // Централизованная валидация всех полей (DRY - единая точка правды)
+
     // Валидация outcomeKey
-    const validated = parseOutcomeKey(outcomeKey);
-    if (!validated) {
+    const validatedOutcomeKey = parseOutcomeKey(outcomeKey);
+    if (!validatedOutcomeKey) {
       throw new Error(
         `Invalid outcomeKey: "${outcomeKey}". Must be valid OutcomeKey (e.g., "UP", "DOWN").`
       );
     }
 
-    // Deep freeze: создаем новый замороженный conditionRef
-    // (не мутируем входной параметр!)
+    // Валидация protocolId
+    const validatedProtocolId = asOnChainProtocolId(conditionRef.protocolId);
+    if (!validatedProtocolId) {
+      throw new Error(
+        `Invalid protocolId: "${conditionRef.protocolId}". Must be UPPERCASE_WITH_UNDERSCORES (e.g., "POLYMARKET_CTF").`
+      );
+    }
+
+    // Валидация chainId
+    const validatedChainId = parseChainId(String(conditionRef.chainId));
+    if (!validatedChainId) {
+      throw new Error(
+        `Invalid chainId: ${conditionRef.chainId}. Must be positive integer (e.g., 137 for Polygon).`
+      );
+    }
+
+    // Валидация conditionId
+    const validatedConditionId = parseConditionId(conditionRef.conditionId);
+    if (!validatedConditionId) {
+      throw new Error(
+        `Invalid conditionId: "${conditionRef.conditionId}". Must be 32-byte hex string (0x...).`
+      );
+    }
+
+    // Deep freeze: создаем новый замороженный conditionRef с валидированными значениями
     const frozenConditionRef: OnChainConditionRef = Object.freeze({
       kind: 'ONCHAIN' as const,
-      protocolId: conditionRef.protocolId,
-      chainId: conditionRef.chainId,
-      conditionId: conditionRef.conditionId,
+      protocolId: validatedProtocolId,
+      chainId: validatedChainId,
+      conditionId: validatedConditionId,
     });
 
     return deepFreezeAssetId({
       type: 'OUTCOME_TOKEN',
       conditionRef: frozenConditionRef,
-      outcomeKey: validated,
+      outcomeKey: validatedOutcomeKey,
     });
   },
 

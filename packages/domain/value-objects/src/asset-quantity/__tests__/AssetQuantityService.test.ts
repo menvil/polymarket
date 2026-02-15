@@ -4,7 +4,6 @@ import { KnownOnChainProtocols, KnownChainIds, BinaryOutcome, AssetIdHelpers } f
 import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { AssetQuantityService } from '../facade/AssetQuantityService.js';
-import { AssetQuantityErrorReason } from '../errors/index.js';
 
 describe('AssetQuantityService', () => {
   const conditionRef: OnChainConditionRef = {
@@ -84,7 +83,7 @@ describe('AssetQuantityService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Failed to parse amount');
+        expect(result.error.message).toContain('Invalid amount for USDC');
       }
     });
 
@@ -93,7 +92,7 @@ describe('AssetQuantityService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Failed to create Quantity');
+        expect(result.error.message).toContain('Invalid amount for USDC');
       }
     });
 
@@ -147,7 +146,7 @@ describe('AssetQuantityService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Failed to parse amount');
+        expect(result.error.message).toContain('Invalid amount for outcome token');
       }
     });
 
@@ -160,7 +159,7 @@ describe('AssetQuantityService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Failed to create Quantity');
+        expect(result.error.message).toContain('Invalid amount for outcome token');
       }
     });
 
@@ -178,8 +177,8 @@ describe('AssetQuantityService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Invalid protocolId format');
-        expect(result.error.context?.reason).toBe(AssetQuantityErrorReason.INVALID_ASSET);
+        expect(result.error.message).toContain('Invalid protocolId');
+        expect(result.error.context?.op).toBe('createOutcomeToken');
       }
     });
 
@@ -198,7 +197,7 @@ describe('AssetQuantityService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('Invalid chainId');
-        expect(result.error.context?.reason).toBe(AssetQuantityErrorReason.INVALID_ASSET);
+        expect(result.error.context?.op).toBe('createOutcomeToken');
       }
     });
 
@@ -216,8 +215,8 @@ describe('AssetQuantityService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Invalid conditionId format');
-        expect(result.error.context?.reason).toBe(AssetQuantityErrorReason.INVALID_ASSET);
+        expect(result.error.message).toContain('Invalid conditionId');
+        expect(result.error.context?.op).toBe('createOutcomeToken');
       }
     });
 
@@ -230,8 +229,8 @@ describe('AssetQuantityService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Invalid outcomeKey format');
-        expect(result.error.context?.reason).toBe(AssetQuantityErrorReason.INVALID_ASSET);
+        expect(result.error.message).toContain('Invalid outcomeKey');
+        expect(result.error.context?.op).toBe('createOutcomeToken');
       }
     });
 
