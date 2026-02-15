@@ -74,7 +74,7 @@ if (result.ok) {
 **Возможные ошибки:**
 
 | Причина | Когда возникает |
-|---------|-----------------|
+| --------- | ----------------- |
 | `INVALID_FORMAT` | Невалидная структура JSON |
 | `NOT_ONCHAIN_CONDITION` | conditionRef.kind !== 'ONCHAIN' |
 | `INVALID_CONDITION_REF` | Невалидный формат conditionRef полей |

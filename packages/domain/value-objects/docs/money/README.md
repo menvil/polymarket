@@ -39,7 +39,7 @@
 ### Money vs Price vs Quantity
 
 | Аспект | Money | Price | Quantity |
-|--------|-------|-------|----------|
+| -------- | ------- | ------- | ---------- |
 | **Что представляет** | Денежная сумма с валютой | Вероятность исхода | Количество токенов |
 | **Диапазон** | [0, 1e15] | [0.0001, 0.9999] | [0, +∞) |
 | **Валюта** | ✅ Обязательна (USDC) | ❌ Нет | ❌ Нет |
@@ -143,7 +143,7 @@ Money модуль построен на **4-слойной архитектур
 
 1. Валюта поддерживается (сейчас только `USDC`)
 2. Сумма finite (не `NaN`, не `Infinity`)
-3. |Сумма| <= MAX_AMOUNT (1e15)
+3. | Сумма | <= MAX_AMOUNT (1e15)
 
 **НЕ инварианты** (контекстные правила):
 
@@ -202,9 +202,9 @@ divide(m: Money, divisor: number | string | Decimal): Result<Money, DivisionByZe
 Все ошибки содержат:
 
 - `context.op` — название операции (`'create'`, `'add'`, `'divide'`, etc.)
-- `context.value|amount` — входные значения
+- `context.value | amount` — входные значения
 - `context.currency` — валюта (если применимо)
-- `context.divisor|factor` — параметры операции
+- `context.divisor | factor` — параметры операции
 - `context.reason` — причина из Core (`'UNSUPPORTED_CURRENCY'`, `'NAN'`, `'NON_FINITE'`, `'EXCEEDS_MAX_AMOUNT'`, `'INVALID_FORMAT'`)
 
 **Специфика MoneyService:**

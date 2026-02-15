@@ -270,7 +270,7 @@ if (!validationResult.ok) {
 ### Кто что делает
 
 | Слой | Знает о | Не знает о | Пример |
-|------|---------|------------|--------|
+| ------ | --------- | ------------ | -------- |
 | **Core** | Price, Decimal, инварианты | Result, errors, валидации | `Spread.of()` throws |
 | **Rules** | Price, валидации | Core создание | `ValidateBidAsk.check()` |
 | **Facade** | Core, Rules, errorUtils | UI, сериализация | `SpreadService.create()` |

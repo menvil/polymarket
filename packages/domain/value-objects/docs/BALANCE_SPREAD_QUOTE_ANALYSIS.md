@@ -20,27 +20,27 @@ Rules теперь экспортируются во **всех** value objects 
 ## Сравнительная таблица
 
 | Аспект | Balance | Spread | Quote | Эталон (Money/Price/Quantity/Ratio) | Статус |
-|--------|---------|--------|-------|-------------------------------------|--------|
-| **Core Layer** |
+| -------- | --------- | -------- | ------- | ------------------------------------- | -------- |
+| **Core Layer** | | | | | |
 | InvariantViolation файл | ✅ Отдельный | ✅ Отдельный | ✅ Отдельный | ✅ Отдельный | ✅ Консистентно |
 | Экспорт InvariantViolation | ✅ Да | ✅ Да | ✅ Да | ✅ Да | ✅ Консистентно |
-| **Rules Layer** |
+| **Rules Layer** | | | | | |
 | index.ts в rules/ | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Консистентно |
 | Экспорт Rules из main index | ✅ Да | ✅ Да | ✅ Да | ✅ Да | ✅ Консистентно |
-| **Errors Layer** |
+| **Errors Layer** | | | | | |
 | index.ts в errors/ | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Консистентно |
-| **Facade Layer** |
+| **Facade Layer** | | | | | |
 | Стандартный Service | ✅ | ✅ | ✅ | ✅ | ✅ Консистентно |
-| **Adapters Layer** |
+| **Adapters Layer** | | | | | |
 | Serializer | ✅ | ✅ | ✅ | ✅ | ✅ Консистентно |
 | Formatter | ✅ | ✅ | ✅ | ✅ | ✅ Консистентно |
 | JSON type export | ✅ Да | ✅ Да | ✅ Да | ✅ Да | ✅ Консистентно |
-| **Tests** |
+| **Tests** | | | | | |
 | Unit tests | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Консистентно |
 | Integration tests | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Консистентно |
-| **Documentation** |
+| **Documentation** | | | | | |
 | Docs папка | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Есть | ✅ Консистентно |
-| **Export Style** |
+| **Export Style** | | | | | |
 | Стиль экспорта | Селективный | Селективный | Селективный | Селективный | ✅ Консистентно |
 
 ## Детальный анализ
@@ -241,7 +241,7 @@ export { SpreadSerializer, SpreadFormatter, type SpreadJSON } from './adapters/i
 
 ### Phase 1: Средние проблемы (рекомендуется)
 
-**Задача 1.1: Создать errors/index.ts для Spread**
+#### Задача 1.1: Создать errors/index.ts для Spread
 
 ```bash
 # 1. Создать файл
@@ -257,7 +257,7 @@ echo 'export { SpreadErrorReason } from "./SpreadErrorReason.js";' > src/spread/
 npm run build && npm test
 ```
 
-**Задача 1.2: Создать integration tests для Spread**
+#### Задача 1.2: Создать integration tests для Spread
 
 ```bash
 # Создать __tests__/integration/spread/SpreadWorkflow.integration.test.ts
@@ -270,16 +270,16 @@ npm run build && npm test
 
 ### Phase 2: Низкие проблемы (опционально)
 
-**Задача 2.1: Рефакторинг Balance на селективный export**
+#### Задача 2.1: Рефакторинг Balance на селективный export
 
 - Заменить `export *` на селективный экспорт
 - Убрать экспорт Rules
 
-**Задача 2.2: Убрать экспорт Rules из Quote**
+#### Задача 2.2: Убрать экспорт Rules из Quote
 
 - Удалить экспорт Rules из src/quote/index.ts
 
-**Задача 2.3: Добавить экспорт JSON типов**
+#### Задача 2.3: Добавить экспорт JSON типов
 
 - Добавить `type BalanceJSON` в src/balance/index.ts
 - Добавить `type SpreadJSON` в src/spread/index.ts
@@ -304,7 +304,7 @@ npm run build && npm test
 
 ## Заключение
 
-**Общее состояние: ХОРОШЕЕ ✅**
+### Общее состояние: ХОРОШЕЕ ✅
 
 Balance, Spread и Quote в целом следуют архитектурным паттернам проекта. Обнаруженные несоответствия:
 
@@ -350,13 +350,13 @@ Balance, Spread и Quote в целом следуют архитектурным
 
 ### ✅ Исправлено: Phase 1 (Средние проблемы)
 
-**1. Spread: Добавлен errors/index.ts**
+#### 1. Spread: Добавлен errors/index.ts
 
 - Создан `src/spread/errors/index.ts`
 - Обновлен `src/spread/index.ts` для импорта через index
 - Унифицирована структура с остальными VO
 
-**2. Spread: Добавлены integration tests**
+#### 2. Spread: Добавлены integration tests
 
 - Создан `__tests__/integration/spread/SpreadWorkflow.integration.test.ts`
 - 14 интеграционных тестов покрывают все сценарии
@@ -370,7 +370,7 @@ Balance, Spread и Quote в целом следуют архитектурным
 - Улучшен контроль над публичным API
 - Добавлена документация для каждого экспорта
 
-**4. Balance и Spread: Добавлены JSON типы**
+#### 4. Balance и Spread: Добавлены JSON типы
 
 - Balance: добавлен `type BalanceJSON` в публичный экспорт
 - Spread: добавлен `type SpreadJSON` в публичный экспорт

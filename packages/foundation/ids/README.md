@@ -152,6 +152,7 @@ type AccountId =
 ```
 
 Это даёт:
+
 - ✅ Type safety в compile time
 - ✅ Строгая типизация без лишних wrapper-классов
 - ✅ Невозможно случайно перепутать типы
@@ -212,6 +213,7 @@ function processCondition(ref: ConditionRef) {
 ```
 
 ❌ **НИКОГДА** не используй голый `ConditionId`:
+
 ```typescript
 const bad = '0xabc123...'; // что это? on-chain? off-chain? какой venue?
 ```
@@ -225,6 +227,7 @@ const bad = '0xabc123...'; // что это? on-chain? off-chain? какой ven
 **Зачем?** Result явно показывает что операция может завершиться ошибкой и требует обработки.
 
 **Функции возвращающие Result:**
+
 - `accountIdFromVenue(venueId, userId)` - валидация userId
 - `accountIdForSubaccount(base, name)` - валидация name и depth limit
 
@@ -259,14 +262,17 @@ const deep6 = accountIdForSubaccount(deep5, 'sub6'); // → Err (depth > 5)
 ### Разделение MarketDataSource vs ExecutionVenue
 
 **MarketDataSourceId** - откуда ЧИТАЕМ данные:
+
 - Live: `POLYMARKET_WS`, `KALSHI_WS`
 - Replay: `POLYMARKET_REPLAY`, `KALSHI_REPLAY`
 
 **ExecutionVenueId** - куда ОТПРАВЛЯЕМ ордера:
+
 - Live: `POLYMARKET`, `KALSHI`
 - Simulation: `SIMULATOR`
 
 Это позволяет:
+
 - Читать live данные Polymarket + торговать в симуляторе (paper trading)
 - Читать replay данные + торговать в симуляторе (backtest)
 - Читать live данные + торговать реально (live trading)
@@ -294,6 +300,7 @@ npm run lint
 ```
 
 **⚠️ Важно для test:dist:**
+
 - Требует собранные зависимости (@polymarket/result должен иметь dist/)
 - Проверяет ESM exports и runtime import работоспособность
 - Запускается напрямую через Node.js (не через Jest)
@@ -301,7 +308,9 @@ npm run lint
 ## Dependencies
 
 **Runtime:**
+
 - `@polymarket/result` - Result pattern для error handling
 
 **Dev:**
+
 - TypeScript, Jest, ESLint

@@ -634,11 +634,13 @@ const balance = new Balance(
 ### 1. Всегда используй ConditionRef
 
 ❌ Плохо:
+
 ```typescript
 const conditionId = '0xabc123...';
 ```
 
 ✅ Хорошо:
+
 ```typescript
 const conditionRef: ConditionRef = {
   protocolId: 'POLYMARKET_CTF',
@@ -650,6 +652,7 @@ const conditionRef: ConditionRef = {
 ### 2. Используй type guards для AssetId
 
 ❌ Плохо:
+
 ```typescript
 if (asset.type === 'CURRENCY') {
   console.log(asset.currency);  // TypeScript не знает что currency существует
@@ -657,6 +660,7 @@ if (asset.type === 'CURRENCY') {
 ```
 
 ✅ Хорошо:
+
 ```typescript
 if (isCurrencyAsset(asset)) {
   console.log(asset.currency);  // TypeScript знает что currency существует
@@ -666,12 +670,14 @@ if (isCurrencyAsset(asset)) {
 ### 3. Используй константы вместо magic strings
 
 ❌ Плохо:
+
 ```typescript
 const venueId = 'POLYMARKET' as VenueId;
 const outcome = 'UP' as OutcomeKey;
 ```
 
 ✅ Хорошо:
+
 ```typescript
 const venueId = KnownVenues.POLYMARKET;
 const outcome = BinaryOutcome.UP;
@@ -680,6 +686,7 @@ const outcome = BinaryOutcome.UP;
 ### 4. Используй mapping функции
 
 ❌ Плохо:
+
 ```typescript
 let venueId: VenueId;
 if (quote.sourceId === 'POLYMARKET_WS') {
@@ -690,6 +697,7 @@ if (quote.sourceId === 'POLYMARKET_WS') {
 ```
 
 ✅ Хорошо:
+
 ```typescript
 const venueId = sourceToVenue(quote.sourceId);
 ```
@@ -697,11 +705,13 @@ const venueId = sourceToVenue(quote.sourceId);
 ### 5. Явные типы для branded types
 
 ❌ Плохо:
+
 ```typescript
 const accountId = '0x123...' as AccountId;  // неявно
 ```
 
 ✅ Хорошо:
+
 ```typescript
 const wallet = '0x123...' as WalletAddress;
 const accountId: AccountId = accountIdFromWallet(wallet);
@@ -714,6 +724,7 @@ const accountId: AccountId = accountIdFromWallet(wallet);
 ### TypeScript errors: unsafe OutcomeKey casts
 
 **Проблема**:
+
 ```
 Type 'string' is not assignable to type 'OutcomeKey'
 ```
@@ -755,6 +766,7 @@ if (parsed) {
 ### Branded type not assignable to string
 
 **Проблема**:
+
 ```typescript
 const str: string = accountId;  // Error: AccountId is not assignable to string
 ```
@@ -762,6 +774,7 @@ const str: string = accountId;  // Error: AccountId is not assignable to string
 **Решение**: Это ожидаемое поведение! Branded types специально НЕ assignable к string для type safety.
 
 Если нужна строка:
+
 ```typescript
 const str = accountId as string;  // Explicit cast
 ```

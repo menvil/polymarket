@@ -8,7 +8,7 @@
 ## 📊 Executive Summary
 
 | Критерий | Оценка | Комментарий |
-|----------|--------|-------------|
+| ---------- | -------- | ------------- |
 | **Архитектура** | ✅ Отлично | Четкое разделение слоёв Core/Facade/Rules/Adapters |
 | **Error Handling** | ⚠️ Хорошо | Использует wrapOp, но есть inconsistency |
 | **Immutability** | ✅ Отлично | Полная иммутабельность, private fields |
@@ -436,7 +436,7 @@ __tests__/unit/quote/
 ### 1. Naming Inconsistency - ПРОБЛЕМА
 
 | Аспект | Balance | Quote | Консистентность |
-|--------|---------|-------|-----------------|
+| -------- | --------- | ------- | ----------------- |
 | Private fields | `_available`, `_reserved` | `b`, `a`, `bSize`, `aSize` | ❌ Разные стили |
 | Operation names | method name === op | `'creates'` vs `'createFromDecimals'` | ❌ Inconsistent |
 | Helper methods | `subtractMoney()`, `addMoney()` | Нет helpers | ❌ Дублирование |
@@ -622,12 +622,12 @@ public static reserve(balance: Balance, amount: Money) {
 
 **Варианты:**
 
-**A. Не вызывать (текущая реализация)**
+#### A. Не вызывать (текущая реализация)
 
 - ✅ Гибкость - пользователь решает какие правила применять
 - ❌ Можно создать невалидные Quote (spread нарушает min/max)
 
-**B. Вызывать опционально**
+#### B. Вызывать опционально
 
 ```typescript
 public static create(
@@ -644,7 +644,7 @@ public static create(
 ): Result<Quote, InvalidQuoteError>
 ```
 
-**C. Создать отдельный validated метод**
+#### C. Создать отдельный validated метод
 
 ```typescript
 public static createValidated(
@@ -783,7 +783,7 @@ quote.isTwoSided() {
 ## 📊 Итоговая оценка по категориям
 
 | Категория | Оценка | Детали |
-|-----------|--------|--------|
+| ----------- | -------- | -------- |
 | **Архитектура слоёв** | 9/10 | Отлично, minor naming issues |
 | **Core layer** | 9/10 | Отлично, чёткие инварианты |
 | **Facade layer** | 7/10 | Хорошо, но inconsistency в naming/helpers |

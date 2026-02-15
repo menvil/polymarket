@@ -31,14 +31,17 @@ enum ErrorSource {
 ### Когда использовать каждый источник
 
 #### PARSING
+
 **Когда**: Невалидные входные данные (не число, не строка, некорректный формат)
 
 **Примеры**:
+
 - `"abc"` вместо числа
 - `undefined` или `null` вместо Decimal
 - Некорректный формат строки
 
 **Контекст**:
+
 ```typescript
 {
   source: ErrorSource.PARSING,
@@ -51,14 +54,17 @@ enum ErrorSource {
 ```
 
 #### CORE_INVARIANT
+
 **Когда**: Данные прошли парсинг, но нарушают фундаментальное правило домена
 
 **Примеры**:
+
 - Отрицательная цена
 - Отрицательное количество
 - Недопустимое значение (0 для price)
 
 **Контекст**:
+
 ```typescript
 {
   source: ErrorSource.CORE_INVARIANT,
@@ -71,14 +77,17 @@ enum ErrorSource {
 ```
 
 #### RULE_VALIDATION
+
 **Когда**: Объект валиден, но не проходит бизнес-проверку
 
 **Примеры**:
+
 - quantity < minSize
 - Несоответствие tick size
 - Несовпадение валют
 
 **Контекст**:
+
 ```typescript
 {
   source: ErrorSource.RULE_VALIDATION,
@@ -89,14 +98,17 @@ enum ErrorSource {
 ```
 
 #### MATH_OPERATION
+
 **Когда**: Операция из @polymarket/math выбросила ошибку
 
 **Примеры**:
+
 - Arithmetic overflow
 - Division by zero
 - Invalid operand (NaN, Infinity)
 
 **Контекст**:
+
 ```typescript
 {
   source: ErrorSource.MATH_OPERATION,
@@ -108,14 +120,17 @@ enum ErrorSource {
 ```
 
 #### UNEXPECTED
+
 **Когда**: Неожиданное исключение (TypeError, ReferenceError, и т.д.)
 
 **Примеры**:
+
 - Программная ошибка
 - Незапланированное исключение
 - Баг в коде
 
 **Контекст**:
+
 ```typescript
 {
   source: ErrorSource.UNEXPECTED,
@@ -153,6 +168,7 @@ enum ErrorSource {
 ```
 
 Это позволяет:
+
 - Определить точку входа пользователя (первый элемент)
 - Найти место возникновения ошибки (последний элемент)
 - Понять путь через вложенные вызовы (промежуточные элементы)
@@ -164,6 +180,7 @@ enum ErrorSource {
 Оборачивает операцию в try-catch с автоматической обработкой ошибок.
 
 **Сигнатура**:
+
 ```typescript
 function wrapOp<T, TError extends DomainError>(
   serviceName: string,
@@ -175,11 +192,13 @@ function wrapOp<T, TError extends DomainError>(
 ```
 
 **Что делает**:
+
 1. Выполняет `fn()`
 2. Если `Result.Err` → автоматически rewrap с добавлением `serviceName.op` в opChain
 3. Если exception → классифицирует и создает ошибку с правильным source
 
 **Пример**:
+
 ```typescript
 return wrapOp(
   'MoneyService',
@@ -198,6 +217,7 @@ return wrapOp(
 Переупаковывает ошибку, сохраняя root fields и добавляя новый контекст.
 
 **Сигнатура**:
+
 ```typescript
 function rewrap<TError extends DomainError>(
   serviceName: string,
@@ -209,12 +229,14 @@ function rewrap<TError extends DomainError>(
 ```
 
 **Порядок мерджа контекста**:
+
 1. **inner** (err.context) - база из вложенной ошибки
 2. **ctx** - операционные поля (amount, factor, divisor) - перетирают inner
 3. **op + opChain** - строит цепочку операций, НЕ теряя внутренний op
 4. **preserve root-полей**: cause, reason, raw (первопричина не перетирается)
 
 **Пример**:
+
 ```typescript
 const innerError = new InvalidMoneyError('Parse failed', {
   context: {
@@ -246,6 +268,7 @@ const wrappedError = rewrap(
 Безопасная конвертация `number | string | Decimal` в Decimal с автоматическим ErrorSource.PARSING.
 
 **Сигнатура**:
+
 ```typescript
 function toDecimal<TError extends DomainError>(
   field: string,
@@ -256,11 +279,13 @@ function toDecimal<TError extends DomainError>(
 ```
 
 **Что делает**:
+
 - Нормализует вход (primitives напрямую, объекты через toString())
 - Корректно работает с двумя копиями decimal.js
 - При ошибке → TError с source: PARSING, raw: { field, value }, cause
 
 **Пример**:
+
 ```typescript
 const result = toDecimal(
   'amount',
@@ -279,6 +304,7 @@ if (result.ok) {
 Создает ошибку для ожидаемых math-ошибок (ArithmeticOverflowError, InvalidOperandError, DivisionByZeroError).
 
 **Сигнатура**:
+
 ```typescript
 function expectedMathError<TError extends DomainError>(
   serviceName: string,
@@ -290,6 +316,7 @@ function expectedMathError<TError extends DomainError>(
 ```
 
 **Пример**:
+
 ```typescript
 try {
   return multiplyDecimal(amount, factor);
@@ -311,6 +338,7 @@ try {
 Обрабатывает неожиданные ошибки с полным контекстом.
 
 **Сигнатура**:
+
 ```typescript
 function unexpectedError<TError extends DomainError>(
   serviceName: string,
@@ -322,6 +350,7 @@ function unexpectedError<TError extends DomainError>(
 ```
 
 **Пример**:
+
 ```typescript
 try {
   // ... операция
@@ -341,6 +370,7 @@ try {
 Создает стандартизированную ошибку несовпадения валют.
 
 **Сигнатура**:
+
 ```typescript
 function currencyMismatchError<TError extends DomainError>(
   op: string,
@@ -352,6 +382,7 @@ function currencyMismatchError<TError extends DomainError>(
 ```
 
 **Пример**:
+
 ```typescript
 if (!a.hasSameCurrency(b)) {
   return Err(currencyMismatchError(
@@ -375,6 +406,7 @@ function isExpectedMathError(e: unknown): e is Error
 ```
 
 **Whitelist**:
+
 - ArithmeticOverflowError
 - InvalidOperandError
 - DivisionByZeroError
@@ -388,6 +420,7 @@ function isCoreInvariantViolation(e: unknown): e is Error & { reason: string }
 ```
 
 **Поддерживаемые типы**:
+
 - PriceInvariantViolation
 - QuantityInvariantViolation
 - MoneyInvariantViolation

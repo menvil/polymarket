@@ -114,7 +114,7 @@ npm test
 
 ## Коммит 5: refactor(money)!: rename amount() to value() for consistency
 
-**BREAKING CHANGE**
+### BREAKING CHANGE
 
 **Изменения:**
 
@@ -190,7 +190,7 @@ npm test
 
 ## Коммит 7: docs: update all documentation for consistency changes
 
-**BREAKING CHANGE documentation**
+### BREAKING CHANGE documentation
 
 **Изменения:**
 

@@ -39,6 +39,7 @@
 **Проблема**: Голый `ConditionId` (просто hash `0xabc123...`) бесполезен без контекста.
 
 **Почему плохо**:
+
 - Может быть collision между разными chains (Polygon vs Ethereum)
 - Может быть collision между разными protocols (Polymarket vs Kalshi)
 - Непонятно где искать данные (какой RPC endpoint использовать)
@@ -52,6 +53,7 @@ type ConditionRef =
 ```
 
 **Преимущества**:
+
 - ✅ Однозначная идентификация condition в мультивенью системе
 - ✅ Можно определить RPC endpoint по chainId
 - ✅ Можно определить contract address по protocolId
@@ -87,6 +89,7 @@ type ExecutionVenueId =
 ```
 
 **Почему разделили**:
+
 - Читать live Polymarket + торговать в симуляторе (paper trading)
 - Читать replay данные + торговать в симуляторе (backtest)
 - Читать live Kalshi + торговать реально на Kalshi (live trading)
@@ -120,12 +123,14 @@ getBalance('0x123...' as AccountId);
 ```
 
 **Преимущества**:
+
 - ✅ Compile-time type safety через branded types
 - ✅ Легковесная runtime валидация через parser функции
 - ✅ Невозможно случайно перепутать типы
 - ✅ Self-documenting code
 
 **Почему НЕ classes**:
+
 - Classes требуют instantiation (`new AccountId('...')`)
 - Classes требуют serialization/deserialization logic
 - Branded types проще: type alias + parser функции
@@ -144,6 +149,7 @@ type AssetId =
 ```
 
 **Преимущества**:
+
 - ✅ Type-safe discriminated union
 - ✅ Exhaustive checking в switch/if
 - ✅ Явная семантика (не может быть одновременно currency и token)
@@ -280,6 +286,7 @@ type ConditionId = string & { readonly __brand: 'ConditionId' };
 ### 3. Легковесная Runtime Валидация
 
 Parser функции (parseAccountId, parseConditionRef, asVenueId, etc.) выполняют валидацию:
+
 - Формат строк (регулярные выражения для ID типов)
 - Длина строк (защита от DoS)
 - Depth limit для рекурсивных структур (AccountId)

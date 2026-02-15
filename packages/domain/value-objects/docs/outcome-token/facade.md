@@ -84,7 +84,7 @@ public static create(
 ### Возможные ошибки
 
 | Причина | Когда возникает |
-|---------|-----------------|
+| --------- | ----------------- |
 | `NOT_ONCHAIN_CONDITION` | conditionRef.kind !== 'ONCHAIN' |
 | `INVALID_ASSET_ID_TYPE` | AssetId создан с неправильным type (внутренний баг) |
 | `UNEXPECTED` | Неожиданная ошибка (неизвестная причина) |

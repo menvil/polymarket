@@ -287,7 +287,7 @@ new Decimal(Infinity).isNaN()   // false
 
 **Варианты:**
 
-**Вариант A: Проверять отдельно (как Price/Money)**
+#### Вариант A: Проверять отдельно (как Price/Money)
 
 ```typescript
 if (v.isNaN()) throw ...NAN;
@@ -297,7 +297,7 @@ if (!v.isFinite()) throw ...NON_FINITE;
 - Pros: Разные error reasons для NaN и Infinity
 - Cons: Дублирование проверки
 
-**Вариант B: Только isFinite (как Quantity)**
+#### Вариант B: Только isFinite (как Quantity)
 
 ```typescript
 if (!v.isFinite()) throw ...NON_FINITE;  // Покрывает NaN
@@ -370,7 +370,7 @@ if (amount.abs().greaterThan(MAX_AMOUNT)) throw ...EXCEEDS_MAX_AMOUNT;
 
 ## ✅ Коммит 5: Money.value() → value()
 
-**BREAKING CHANGE**
+### BREAKING CHANGE
 
 **РЕШЕНИЕ:**
 

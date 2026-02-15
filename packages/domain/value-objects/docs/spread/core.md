@@ -74,7 +74,7 @@ export class Spread {
 ### Свойства
 
 | Свойство | Тип | Описание |
-|----------|-----|----------|
+| ---------- | ----- | ---------- |
 | `_bid` | `Price` | Цена покупки (private, readonly) |
 | `_ask` | `Price` | Цена продажи (private, readonly) |
 
@@ -426,7 +426,7 @@ export enum SpreadErrorReason {
 ### Описание причин
 
 | Причина | Слой | Описание |
-|---------|------|----------|
+| --------- | ------ | ---------- |
 | `BID_GREATER_THAN_ASK` | Core | bid > ask |
 | `INVALID_BID` | Facade | Невалидное значение bid |
 | `INVALID_ASK` | Facade | Невалидное значение ask |

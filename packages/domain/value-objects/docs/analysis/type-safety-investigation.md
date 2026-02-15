@@ -557,7 +557,7 @@ Use explicit type guard `isErr()` instead.
 ### Общая оценка
 
 | Phase | Задача | Время | Приоритет |
-|-------|--------|-------|-----------|
+| ------- | -------- | ------- | ----------- |
 | 1 | CI/CD Protection | 1 день | 🔴 CRITICAL |
 | 2 | Fix Money | 2-3 дня | 🔴 HIGH |
 | 3 | Fix Price | 2-3 дня | 🔴 HIGH |
@@ -570,7 +570,7 @@ Use explicit type guard `isErr()` instead.
 ### Минимальный путь (только критичное)
 
 | Phase | Задача | Время |
-|-------|--------|-------|
+| ------- | -------- | ------- |
 | 1 | CI/CD Protection | 1 день |
 | 2-4 | Fix all Services | 6-9 дней |
 | **ИТОГО** | **Critical Fix** | **7-10 дней** |

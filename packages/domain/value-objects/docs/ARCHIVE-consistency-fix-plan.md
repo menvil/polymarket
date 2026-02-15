@@ -213,7 +213,7 @@ try {
 }
 ```
 
-**Аналогично для QuantityService.ts**
+#### 1.2.6. Аналогично для QuantityService.ts
 
 ---
 

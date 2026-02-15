@@ -11,7 +11,7 @@
 ### Текущая ситуация
 
 | Module | Pattern | Status |
-|--------|---------|--------|
+| -------- | --------- | -------- |
 | **Percentage** | `isErr()` | ✅ Best practice |
 | **Money** | `!result.ok` | 🟡 Работает, но inconsistent |
 | **Price** | `!result.ok` | 🟡 Работает, но inconsistent |
@@ -40,7 +40,7 @@
 ```
 
 | Module | Files | Occurrences | Estimated Lines Changed |
-|--------|-------|-------------|------------------------|
+| -------- | ------- | ------------- | ------------------------ |
 | Money | 1 (MoneyService.ts) | 5 | ~5 |
 | Price | 1 (PriceService.ts) | 10 | ~10 |
 | Quantity | 1 (QuantityService.ts) | 7 | ~7 |
@@ -188,7 +188,7 @@ Price имеет больше использований (10) из-за допо
 
 #### Шаг 2.2: Заменить все вхождения (10 замен)
 
-**Group 1: Standard methods (4)**
+##### Group 1: Standard methods (4)
 
 - Line 99 - create()
 - Line 221 - multiply()
@@ -196,14 +196,14 @@ Price имеет больше использований (10) из-за допо
 - Line 291 - divide()
 - Line 304 - divide() validation
 
-**Group 2: alignToTickSize() (4)**
+##### Group 2: alignToTickSize() (4)
 
 - Line 371 - toDecimal для tickSize
 - Line 383 - ValidateTickSize check
 - Line ~390 - ValidateTickSizeMultipleOfBaseTick check
 - Line ~400 - aligned result check
 
-**Group 3: roundToTickSize() (2)**
+##### Group 3: roundToTickSize() (2)
 
 - Line 455 - toDecimal для tickSize
 - Line 466 - ValidateTickSize check

@@ -98,7 +98,7 @@ try {
 
 ### ✅ Коммит 4: Унификация проверок инвариантов
 
-**Единый порядок для всех: NaN → Finite → Domain-specific**
+#### Единый порядок для всех: NaN → Finite → Domain-specific
 
 **Price:** Оставить как есть (уже правильно)
 
@@ -129,7 +129,7 @@ if (amount.abs().greaterThan(MAX_AMOUNT)) throw ...EXCEEDS_MAX_AMOUNT;
 
 ### ✅ Коммит 5: Money.value() → value()
 
-**BREAKING CHANGE**
+#### BREAKING CHANGE
 
 **Money.ts:**
 

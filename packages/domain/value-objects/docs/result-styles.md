@@ -204,7 +204,7 @@ const amount = map(result, b => b.getAmount());
 ## 📊 Сравнение стилей
 
 | Аспект | Функциональный | OOP |
-|--------|----------------|-----|
+| -------- | ---------------- | ----- |
 | **Тип** | Plain object | Class instance |
 | **Проверка** | `result.ok` | `result.isOk()` |
 | **Доступ к значению** | `result.value` | `result.unwrap()` |

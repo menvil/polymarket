@@ -99,7 +99,7 @@ if (!value.isFinite()) {
 - Precondition checks для операций
 - Бизнес-правила
 
-**Пример: ValidateRatioGteMinusOne**
+#### Пример: ValidateRatioGteMinusOne
 
 ```typescript
 public static check(value: Decimal, operation: string): Result<void, InvalidRatioError> {
@@ -449,7 +449,7 @@ graph TD
 Ratio использует ту же архитектуру что Money, Price, Quantity:
 
 | Аспект | Money | Price | Ratio |
-|--------|-------|-------|-------|
+| -------- | ------- | ------- | ------- |
 | Core throws | ✅ | ✅ | ✅ |
 | Facade Result | ✅ | ✅ | ✅ |
 | Rules validation | ✅ | ✅ | ✅ |

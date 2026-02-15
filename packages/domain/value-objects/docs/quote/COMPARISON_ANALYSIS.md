@@ -3,7 +3,7 @@
 ## Общая сводка
 
 | Критерий | Money | Price | Quantity | Quote |
-|----------|-------|-------|----------|-------|
+| ---------- | ------- | ------- | ---------- | ------- |
 | **Размер кода** | 1,405 строк | 1,728 строк | 1,431 строк | **2,235 строк** |
 | **Core Layer** | 338 строк | 340 строк | 344 строк | **496 строк** |
 | **Facade Layer** | 543 строк | 490 строк | 381 строк | **702 строк** |
@@ -316,7 +316,7 @@ if (spread !== null) {
 ### Сравнение размеров Facade
 
 | Модуль | Строк Facade | Методов (примерно) |
-|--------|--------------|-------------------|
+| -------- | -------------- | ------------------- |
 | Quantity | 381 | ~8 методов |
 | Price | 490 | ~10 методов |
 | Money | 543 | ~12 методов |
@@ -476,7 +476,7 @@ private static parseNullable(
 ### Сравнение Rules
 
 | Модуль | Строк Rules | Количество правил |
-|--------|-------------|-------------------|
+| -------- | ------------- | ------------------- |
 | Money | 138 | 2 правила |
 | Quantity | 322 | 5 правил |
 | Quote | **332** | **4 правила** |
@@ -552,7 +552,7 @@ ValidateMarketCrossing      // quote не пересекает orderbook
 ### Сравнение Adapters
 
 | Модуль | Строк Adapters | Serializer | Formatter |
-|--------|----------------|------------|-----------|
+| -------- | ---------------- | ------------ | ----------- |
 | Price | 269 | ✅ | ✅ |
 | Money | 339 | ✅ | ✅ |
 | Quantity | 349 | ✅ | ✅ |
@@ -832,7 +832,7 @@ export namespace QuoteErrorReason {
 ### Сравнение документации
 
 | Модуль | Документация |
-|--------|--------------|
+| -------- | -------------- |
 | Money | README.md (~1000 строк) |
 | Price | README.md + architecture.md (~1500 строк) |
 | Quantity | README.md (~1000 строк) |
@@ -865,7 +865,7 @@ export namespace QuoteErrorReason {
 ### Сравнение именования
 
 | Тип | Money | Price | Quantity | Quote |
-|-----|-------|-------|----------|-------|
+| ----- | ------- | ------- | ---------- | ------- |
 | **Core class** | Money | Price | Quantity | Quote |
 | **Invariant violation** | MoneyInvariantViolation | ❌ Нет | ❌ Нет | QuoteInvariantViolation |
 | **ErrorReason enum** | MoneyErrorReason | PriceErrorReason | QuantityErrorReason | QuoteErrorReason |
@@ -910,7 +910,7 @@ export class QuoteInvariantViolation extends Error { ... }
 ### Сводная таблица оценок
 
 | Критерий | Оценка | Комментарий |
-|----------|--------|-------------|
+| ---------- | -------- | ------------- |
 | **Структурная единообразность** | ✅ 10/10 | Идеальное соответствие паттерну |
 | **Core Layer** | ⚠️ 8/10 | Отсутствие второго factory, domain logic в Core |
 | **Facade Layer** | ✅ 9/10 | Отличная интеграция errorUtils, но код repetitive |
@@ -952,7 +952,7 @@ export class QuoteInvariantViolation extends Error { ... }
 
 1. **Разбить QuoteFormatter на несколько файлов**
 
-   ```
+   ```text
    formatters/
    ├── QuoteDisplayFormatter.ts
    ├── QuoteDetailedFormatter.ts

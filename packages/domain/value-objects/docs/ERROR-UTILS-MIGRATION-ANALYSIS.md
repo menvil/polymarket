@@ -136,7 +136,7 @@ packages/foundation/error-handling/src/
 
 2. **Архитектурно чисто:**
 
-   ```
+   ```text
    foundation/errors
    ├── Error classes (InvalidMoneyError, etc)
    ├── ErrorSource enum
@@ -145,7 +145,7 @@ packages/foundation/error-handling/src/
 
 3. **Нет циклических зависимостей:**
 
-   ```
+   ```text
    @polymarket/errors
    ├── depends on: @polymarket/result ✓
    ├── depends on: decimal.js ✓
@@ -236,7 +236,7 @@ npm test
 
 ## Итоговое решение
 
-**✅ Рекомендую: @polymarket/errors**
+### ✅ Рекомендую: @polymarket/errors
 
 Это семантически правильное, архитектурно чистое и практичное решение.
 

@@ -27,12 +27,14 @@ packages/
 **Назначение:** Переиспользуемые утилиты без бизнес-логики
 
 **Характеристики:**
+
 - ✅ Zero dependencies на другие слои
 - ✅ Нет бизнес-логики
 - ✅ Чистые функции и утилиты
 - ✅ Переиспользуемость в любых проектах
 
 **Текущие модули:**
+
 - `@polymarket/errors` - базовые классы ошибок
 - `@polymarket/math` - математические операции над Decimal
 - `@polymarket/result` - Result<T, E> для Railway-Oriented Programming
@@ -45,16 +47,19 @@ packages/
 **Назначение:** Неизменяемые domain-специфичные примитивы
 
 **Характеристики:**
+
 - ✅ Immutable
 - ✅ Инварианты в конструкторе
 - ✅ Бизнес-логика внутри value object
 - ✅ Зависит ТОЛЬКО от foundation
 
 **Текущие модули:**
+
 - `@polymarket/value-objects`
   - Money, Price, Quantity, Quote, Balance, Spread, Percentage
 
 **Зависимости:**
+
 ```
 value-objects → foundation (errors, math, result, time)
 ```
@@ -64,17 +69,20 @@ value-objects → foundation (errors, math, result, time)
 **Назначение:** Бизнес-сущности и события
 
 **Характеристики:**
+
 - ✅ Mutable state
 - ✅ Identity (ID)
 - ✅ Бизнес-логика и правила
 - ✅ Зависит от value-objects и foundation
 
 **Текущие модули:**
+
 - `@polymarket/entities` (Order, Market, Portfolio, Position, Trade)
 - `@polymarket/events` (domain events)
 - `@polymarket/ports` (интерфейсы для infrastructure)
 
 **Зависимости:**
+
 ```
 entities → value-objects → foundation
 events → value-objects → foundation
@@ -88,6 +96,7 @@ ports → entities → value-objects → foundation
 **Сейчас:** `core/` пустой
 
 **Что может быть:**
+
 - Application Services (use cases)
 - Infrastructure Services (адаптеры к внешним системам)
 - Observability (logging, telemetry, metrics)
@@ -97,6 +106,7 @@ ports → entities → value-objects → foundation
 ### 🟢 Logger → `packages/foundation/logger`
 
 **Почему foundation?**
+
 - ✅ Это базовая утилита
 - ✅ Используется на ВСЕХ слоях
 - ✅ Нет бизнес-логики
@@ -104,6 +114,7 @@ ports → entities → value-objects → foundation
 - ✅ Аналогично time, result, errors
 
 **Зависимости:**
+
 ```typescript
 @polymarket/logger
   → @polymarket/time (для timestamps)
@@ -111,6 +122,7 @@ ports → entities → value-objects → foundation
 ```
 
 **Структура:**
+
 ```
 packages/foundation/logger/
 ├── src/
@@ -125,6 +137,7 @@ packages/foundation/logger/
 ```
 
 **Пример API:**
+
 ```typescript
 interface ILogger {
   debug(message: string, context?: Record<string, unknown>): void;
@@ -155,12 +168,14 @@ class ConsoleLogger implements ILogger {
 ### 🟡 Telemetry → `packages/infrastructure/telemetry` или `packages/observability/telemetry`
 
 **Почему НЕ foundation?**
+
 - ❌ Зависит от domain-специфичных типов (Order, Trade, Market)
 - ❌ Содержит бизнес-логику (метрики трейдинга)
 - ❌ Может использовать сторонние библиотеки (prometheus, datadog)
 - ❌ Это infrastructure concern, не foundation utility
 
 **Зависимости:**
+
 ```typescript
 @polymarket/telemetry
   → @polymarket/entities (Order, Trade, Market)
@@ -171,6 +186,7 @@ class ConsoleLogger implements ILogger {
 ```
 
 **Структура:**
+
 ```
 packages/infrastructure/telemetry/
 ├── src/
@@ -188,6 +204,7 @@ packages/infrastructure/telemetry/
 ```
 
 **Пример API:**
+
 ```typescript
 interface ITelemetryCollector {
   recordOrderPlaced(order: Order, timestamp: Date): void;
@@ -277,7 +294,8 @@ packages/
 
 ## Критерии размещения модуля
 
-### ✅ Foundation если:
+### ✅ Foundation если
+
 - [ ] Нет зависимостей на domain
 - [ ] Нет бизнес-логики
 - [ ] Переиспользуемо в любом проекте
@@ -285,14 +303,16 @@ packages/
 
 **Примеры:** errors, result, math, time, logger
 
-### ✅ Domain если:
+### ✅ Domain если
+
 - [ ] Содержит бизнес-логику
 - [ ] Специфично для трейдинговой системы
 - [ ] Использует domain термины (Order, Price, Market)
 
 **Примеры:** value-objects, entities, events
 
-### ✅ Infrastructure если:
+### ✅ Infrastructure если
+
 - [ ] Зависит от внешних библиотек
 - [ ] Адаптер к внешним системам
 - [ ] Технический сервис (логирование метрик, персистентность)
@@ -307,6 +327,7 @@ packages/
 **✅ ДА, абсолютно правильно!**
 
 **Причины:**
+
 - ✅ Базовая утилита без бизнес-логики
 - ✅ Используется на всех слоях
 - ✅ Нет зависимостей на domain
@@ -319,6 +340,7 @@ packages/
 **✅ `packages/foundation/logger`**
 
 **Причины:**
+
 - ✅ Базовая утилита
 - ✅ Используется везде (foundation, domain, infrastructure)
 - ✅ Нет бизнес-логики
@@ -333,12 +355,14 @@ packages/
 **🟡 `packages/observability/telemetry` (альтернатива)**
 
 **Причины:**
+
 - ✅ Зависит от domain types (Order, Trade, Market)
 - ✅ Содержит бизнес-логику метрик
 - ✅ Может использовать внешние библиотеки
 - ✅ Это infrastructure concern
 
 **НЕ foundation потому что:**
+
 - ❌ Зависит от domain-специфичных типов
 - ❌ Не переиспользуемо в других проектах
 - ❌ Содержит бизнес-логику
@@ -358,6 +382,7 @@ packages/
    - Зависит от domain types и logger
 
 4. 📁 Создать папки infrastructure/ и application/
+
    ```bash
    mkdir -p packages/infrastructure/telemetry
    mkdir -p packages/application/use-cases

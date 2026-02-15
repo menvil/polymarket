@@ -150,7 +150,7 @@ const newBalance = result.value;
 **Отличие от unfreezeReserved():**
 
 | Метод | available | reserved | total | Сценарий |
-|-------|-----------|----------|-------|----------|
+| ------- | ----------- | ---------- | ------- | ---------- |
 | `unfreezeReserved()` | +amount | -amount | без изменений | Отмена, возврат средств |
 | `consumeReserved()` | без изменений | -amount | -amount | Исполнение, трата средств |
 

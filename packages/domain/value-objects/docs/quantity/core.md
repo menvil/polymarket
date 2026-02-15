@@ -300,7 +300,7 @@ console.log(qty2.value() === decimal); // true
 ## Сравнение с примитивами
 
 | Feature | number | Decimal | Quantity |
-|---------|--------|---------|----------|
+| --------- | -------- | --------- | ---------- |
 | Precision | Limited | Arbitrary | Arbitrary |
 | Immutable | Yes | Yes | Yes |
 | Domain validation | No | No | **Yes** |

@@ -174,6 +174,7 @@ npm run clean        # Очистка dist/
 ## Документация
 
 Полная документация с примерами доступна в:
+
 - `@polymarket/logger/docs/PINO-ADAPTER-EXAMPLE.md`
 
 ## License

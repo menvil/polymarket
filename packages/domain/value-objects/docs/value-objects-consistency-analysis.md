@@ -18,13 +18,13 @@
 ## 2. Сравнительная таблица Core классов
 
 | Аспект | Price | Quantity | Money |
-|--------|-------|----------|-------|
+| -------- | ------- | ---------- | ------- |
 | **Invariant Violation** | PriceInvariantViolation | QuantityInvariantViolation | MoneyInvariantViolation |
 | **Parse Error** | ❌ Отсутствует | ❌ Отсутствует | ✅ MoneyParseError |
 | **Количество инвариантов** | 4 (NaN, Finite, Low, High) | 2 (Finite, Negative) | 4 (Currency, NaN, Finite, MaxAmount) |
 | **Метод доступа к значению** | `value()` | `value()` | `amount()` ❗ |
 | **Константы** | MIN, MAX, HALF + методы | ZERO, ONE (static readonly) | ZERO_USDC (lazy singleton) |
-| **Методы сравнения** | equals, isMin, isMax | equals, isZero, isPositive, is(Less\|Greater)Than* | equals, hasSameCurrency |
+| **Методы сравнения** | equals, isMin, isMax | equals, isZero, isPositive, is(Less/Greater)Than* | equals, hasSameCurrency |
 | **Дополнительные поля** | - | - | currency: SupportedCurrency |
 
 ---

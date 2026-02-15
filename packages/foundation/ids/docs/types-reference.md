@@ -11,6 +11,7 @@ type OnChainProtocolId = string & { readonly __brand: 'OnChainProtocolId' };
 ```
 
 **Известные on-chain протоколы**:
+
 - `POLYMARKET_CTF` - Polymarket Conditional Token Framework (Gnosis CTF на Polygon)
 - `UMA_CTF` - UMA Conditional Token Framework
 - `GNOSIS_CTF` - Generic Gnosis CTF на любом EVM chain
@@ -169,6 +170,7 @@ if (isOnChainConditionRef(ref)) {
 **Почему не голый ConditionId?**
 
 ❌ Плохо:
+
 ```typescript
 const conditionId = '0xabc123...' as ConditionId;
 // Вопросы:
@@ -178,6 +180,7 @@ const conditionId = '0xabc123...' as ConditionId;
 ```
 
 ✅ Хорошо:
+
 ```typescript
 const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',

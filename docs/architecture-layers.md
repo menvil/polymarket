@@ -123,7 +123,7 @@ Direction: ⬆ All layers depend on Foundation
 
 ## Критерии размещения
 
-### ✅ Поместить в Foundation если:
+### ✅ Поместить в Foundation если
 
 ```typescript
 // Проверочный список:
@@ -138,12 +138,13 @@ const shouldBeInFoundation = (module: Module): boolean => {
 ```
 
 **Примеры:**
+
 - ✅ `time` - абстракция времени без бизнес-логики
 - ✅ `logger` - логирование без domain типов
 - ✅ `result` - обработка ошибок без бизнес-логики
 - ✅ `math` - математика без domain контекста
 
-### ❌ НЕ помещать в Foundation если:
+### ❌ НЕ помещать в Foundation если
 
 ```typescript
 const shouldNotBeInFoundation = (module: Module): boolean => {
@@ -157,6 +158,7 @@ const shouldNotBeInFoundation = (module: Module): boolean => {
 ```
 
 **Примеры:**
+
 - ❌ `telemetry` - использует Order, Trade, Market
 - ❌ `persistence` - domain repositories
 - ❌ `messaging` - domain events
@@ -224,6 +226,7 @@ packages/foundation/time/  ← ПРАВИЛЬНО ✅
 ```
 
 **Аргументы:**
+
 - ✅ Нет бизнес-логики
 - ✅ Используется везде (domain, infrastructure, application)
 - ✅ Нет зависимостей на domain
@@ -238,6 +241,7 @@ packages/foundation/logger/  ← РЕКОМЕНДУЕТСЯ ✅
 ```
 
 **Аргументы:**
+
 - ✅ Базовая утилита для всех слоев
 - ✅ Нет domain зависимостей
 - ✅ Зависит только от time (тоже foundation)
@@ -252,12 +256,14 @@ packages/infrastructure/telemetry/  ← РЕКОМЕНДУЕТСЯ ✅
 ```
 
 **Аргументы:**
+
 - ✅ Использует domain types (Order, Trade, Market)
 - ✅ Содержит бизнес-логику метрик трейдинга
 - ✅ Infrastructure concern
 - ✅ Может зависеть от logger и time
 
 **НЕ foundation потому что:**
+
 - ❌ Зависит от @polymarket/entities
 - ❌ Специфично для trading системы
 - ❌ Не переиспользуемо в других проектах
@@ -338,5 +344,6 @@ mkdir -p packages/application/services
 **@polymarket/time в foundation - правильное решение! ✅**
 
 Создавайте:
+
 - `@polymarket/logger` рядом с time в foundation
 - `@polymarket/telemetry` в новой папке infrastructure

@@ -16,10 +16,12 @@
 
 **Проблема.**
 Исходная реализация выбрасывала исключения при ошибках:
+
 - `accountIdForSubaccount()` выбрасывал Error при превышении depth limit
 - `accountIdToString()` выбрасывал Error при превышении depth limit
 
 Это создавало проблемы:
+
 - Неожиданные crashes при невалидном вводе
 - Невозможность композиции функций без try-catch
 - Нарушение принципа явной обработки ошибок
@@ -494,6 +496,7 @@ const parsed4 = parseAccountId(str, { maxLen: 1000 });
 ### 1. Escaping
 
 ✅ Round-trip проходит для строк:
+
 - `"user\:123"` — backslash и colon
 - `"name\\with\\slashes"` — двойные backslashes
 - `"a]\\:b"` — комплексная последовательность
@@ -504,6 +507,7 @@ const parsed4 = parseAccountId(str, { maxLen: 1000 });
 ### 2. Depth Limit
 
 ✅ Защита работает:
+
 - `accountIdForSubaccount` возвращает Err(AccountIdDepthError) при depth > 5
 - `accountIdToString` всегда возвращает string (total function)
 - `parseAccountId` возвращает undefined при превышении maxDepth
@@ -512,12 +516,14 @@ const parsed4 = parseAccountId(str, { maxLen: 1000 });
 ### 3. WalletAddress Validation
 
 ✅ Опциональная валидация:
+
 - С `validateWalletAddress` — кастомная проверка формата
 - Без `validateWalletAddress` — default проверка через parseWalletAddress
 
 ### 4. Max Length
 
 ✅ Защита от длинных строк:
+
 - `parseAccountId` возвращает undefined при str.length > maxLen
 - Кастомный `maxLen` может быть передан через опции
 
@@ -544,6 +550,7 @@ describe('WalletAddress validation', () => {
 ```
 
 **Результаты тестирования:**
+
 - ✅ 65 тестов прошли успешно
 - ✅ Линтер не нашел ошибок
 - ✅ TypeScript компиляция успешна

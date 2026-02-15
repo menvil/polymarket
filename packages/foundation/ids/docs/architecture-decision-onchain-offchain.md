@@ -15,6 +15,7 @@ type ConditionRef = {
 ```
 
 **Логическое противоречие:**
+
 - `ProtocolId` включает `'KALSHI'`
 - `ConditionRef` обязывает иметь `chainId: ChainId` (EVM chain ID)
 - **Но KALSHI не EVM-сеть!** Это regulated off-chain exchange в США
@@ -78,6 +79,7 @@ type ConditionRef = OnChainConditionRef | OffChainConditionRef;
 #### 1. ✅ Type Safety
 
 **До:**
+
 ```typescript
 // Можно создать невалидный ConditionRef
 const invalid: ConditionRef = {
@@ -88,6 +90,7 @@ const invalid: ConditionRef = {
 ```
 
 **После:**
+
 ```typescript
 // ❌ TypeScript error - KALSHI не on-chain protocol
 const invalid: OnChainConditionRef = {
@@ -126,12 +129,14 @@ function processCondition(ref: ConditionRef) {
 #### 3. ✅ Явная семантика
 
 **On-Chain:**
+
 - EVM-based protocols
 - Имеет chainId (blockchain network)
 - Имеет conditionId (keccak256 hash)
 - Примеры: Polymarket CTF, UMA CTF
 
 **Off-Chain:**
+
 - Regulated exchanges
 - Имеет venueId (platform name)
 - Имеет marketId (venue-specific ID)
@@ -140,6 +145,7 @@ function processCondition(ref: ConditionRef) {
 #### 4. ✅ Легко расширять
 
 Добавление нового on-chain protocol:
+
 ```typescript
 type OnChainProtocolId =
   | 'POLYMARKET_CTF'
@@ -149,6 +155,7 @@ type OnChainProtocolId =
 ```
 
 Добавление нового off-chain venue:
+
 ```typescript
 type VenueId =
   | 'POLYMARKET'
@@ -255,6 +262,7 @@ const parsed2 = parseConditionRef('OFFCHAIN:KALSHI:KXBTCUSDM-24APR');
 ### Для consumers
 
 **До:**
+
 ```typescript
 const ref: ConditionRef = {
   protocolId: 'POLYMARKET_CTF',
@@ -264,6 +272,7 @@ const ref: ConditionRef = {
 ```
 
 **После:**
+
 ```typescript
 const ref: ConditionRef = {
   kind: 'ONCHAIN',  // ← добавили discriminator
@@ -276,6 +285,7 @@ const ref: ConditionRef = {
 ### Для KALSHI
 
 **До:**
+
 ```typescript
 // ❌ Невозможно создать валидный ref
 const kalshi: ConditionRef = {
@@ -286,6 +296,7 @@ const kalshi: ConditionRef = {
 ```
 
 **После:**
+
 ```typescript
 // ✅ Теперь возможно и type-safe
 const kalshi: ConditionRef = {
@@ -344,6 +355,7 @@ const polymarketOffChain: ConditionRef = {
 ## Заключение
 
 Discriminated union для ConditionRef:
+
 - ✅ Устраняет логическое противоречие (Protocol vs Venue)
 - ✅ Добавляет type safety (невозможно создать невалидные refs)
 - ✅ Делает семантику явной (On-Chain vs Off-Chain)

@@ -128,7 +128,7 @@ return this.createFromDecimal(decimalResult.value, 'create', {});
 ## 📊 Сравнительная таблица
 
 | Аспект | Money/Price/Quantity | Percentage |
-|--------|---------------------|------------|
+| -------- | --------------------- | ------------ |
 | **Паттерн** | `if (!result.ok)` | `if (isErr(result))` |
 | **Type Guard** | ❌ Нет | ✅ `result is { ok: false; error: E }` |
 | **Type Narrowing** | ❌ НЕ работает | ✅ Работает |
