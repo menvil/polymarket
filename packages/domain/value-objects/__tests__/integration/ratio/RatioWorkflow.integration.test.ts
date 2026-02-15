@@ -1,9 +1,12 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
+import { isErr } from '@polymarket/result';
+import { ErrorSource, InvalidRatioError } from '@polymarket/errors';
 import { RatioService } from '../../../src/ratio/facade/RatioService';
 import { RatioFormatter } from '../../../src/ratio/adapters/RatioFormatter';
 import { RatioSerializer } from '../../../src/ratio/adapters/RatioSerializer';
 import { Ratio } from '../../../src/ratio/core/Ratio';
+import { RatioErrorReason } from '../../../src/ratio/errors/RatioErrorReason';
 
 describe('Ratio Integration Workflow', () => {
   describe('создание через разные форматы приводит к одинаковым значениям', () => {
@@ -298,6 +301,64 @@ describe('Ratio Integration Workflow', () => {
         const deserialized = RatioSerializer.fromJSON(json);
         expect(deserialized.ok && deserialized.value.equals(ratio)).toBe(true);
       }
+    });
+  });
+
+  describe('barrel-export contract: публичный API', () => {
+    it('все основные классы доступны через main index.ts', () => {
+      // Проверяем что можем импортировать через barrel export
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const ratioModule = require('../../../src/ratio/index.js');
+
+      // Core
+      expect(ratioModule.Ratio).toBeDefined();
+      expect(ratioModule.RatioInvariantViolation).toBeDefined();
+
+      // Facade
+      expect(ratioModule.RatioService).toBeDefined();
+
+      // Adapters
+      expect(ratioModule.RatioFormatter).toBeDefined();
+      expect(ratioModule.RatioSerializer).toBeDefined();
+
+      // Errors
+      expect(ratioModule.RatioErrorReason).toBeDefined();
+
+      // Rules (Problem 13: ValidateRatioLteOne должен быть доступен)
+      expect(ratioModule.ValidateRatioGteMinusOne).toBeDefined();
+      expect(ratioModule.ValidateRatioLteOne).toBeDefined();
+    });
+
+    it('ValidateRatioLteOne работает через barrel export', () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { ValidateRatioLteOne } = require('../../../src/ratio/index.js');
+
+      const invalidResult = ValidateRatioLteOne.check(new Decimal(1.5), 'test');
+      expect(isErr(invalidResult)).toBe(true);
+      if (isErr(invalidResult)) {
+        const error = invalidResult.error as InvalidRatioError;
+        expect(error.context?.reason).toBe(RatioErrorReason.GREATER_THAN_ONE);
+        expect(error.context?.source).toBe(ErrorSource.RULE_VALIDATION);
+      }
+
+      const validResult = ValidateRatioLteOne.check(new Decimal(0.5), 'test');
+      expect(validResult.ok).toBe(true);
+    });
+
+    it('ValidateRatioGteMinusOne работает через barrel export', () => {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { ValidateRatioGteMinusOne } = require('../../../src/ratio/index.js');
+
+      const invalidResult = ValidateRatioGteMinusOne.check(new Decimal(-1.5), 'test');
+      expect(isErr(invalidResult)).toBe(true);
+      if (isErr(invalidResult)) {
+        const error = invalidResult.error as InvalidRatioError;
+        expect(error.context?.reason).toBe(RatioErrorReason.LESS_THAN_MINUS_ONE);
+        expect(error.context?.source).toBe(ErrorSource.RULE_VALIDATION);
+      }
+
+      const validResult = ValidateRatioGteMinusOne.check(new Decimal(-0.5), 'test');
+      expect(validResult.ok).toBe(true);
     });
   });
 });

@@ -282,6 +282,40 @@ describe('RatioService', () => {
         }
       });
     });
+
+    describe('с ensureLteOne', () => {
+      it('принимает 100% (1)', () => {
+        const result = RatioService.fromPercent(100, { ensureLteOne: true });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toDecimal().toString()).toBe('1');
+        }
+      });
+
+      it('принимает 50% (0.5)', () => {
+        const result = RatioService.fromPercent(50, { ensureLteOne: true });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toDecimal().toString()).toBe('0.5');
+        }
+      });
+
+      it('отклоняет 150% (1.5)', () => {
+        const result = RatioService.fromPercent(150, { ensureLteOne: true });
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.GREATER_THAN_ONE);
+        }
+      });
+
+      it('отклоняет 200% (2)', () => {
+        const result = RatioService.fromPercent(200, { ensureLteOne: true });
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.GREATER_THAN_ONE);
+        }
+      });
+    });
   });
 
   describe('fromBps()', () => {
@@ -352,6 +386,40 @@ describe('RatioService', () => {
         expect(isErr(result)).toBe(true);
         if (isErr(result)) {
           expect(result.error.context?.reason).toBe(RatioErrorReason.LESS_THAN_MINUS_ONE);
+        }
+      });
+    });
+
+    describe('с ensureLteOne', () => {
+      it('принимает 10000 bps (100%, 1)', () => {
+        const result = RatioService.fromBps(10000, { ensureLteOne: true });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toDecimal().toString()).toBe('1');
+        }
+      });
+
+      it('принимает 5000 bps (50%, 0.5)', () => {
+        const result = RatioService.fromBps(5000, { ensureLteOne: true });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toDecimal().toString()).toBe('0.5');
+        }
+      });
+
+      it('отклоняет 15000 bps (150%, 1.5)', () => {
+        const result = RatioService.fromBps(15000, { ensureLteOne: true });
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.GREATER_THAN_ONE);
+        }
+      });
+
+      it('отклоняет 20000 bps (200%, 2)', () => {
+        const result = RatioService.fromBps(20000, { ensureLteOne: true });
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.GREATER_THAN_ONE);
         }
       });
     });

@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { isErr } from '@polymarket/result';
+import { ErrorSource } from '@polymarket/errors';
 import { ValidateRatioLteOne } from '../../../../src/ratio/rules/ValidateRatioLteOne.js';
 import { RatioErrorReason } from '../../../../src/ratio/errors/RatioErrorReason.js';
 
@@ -41,6 +42,14 @@ describe('ValidateRatioLteOne', () => {
       expect(isErr(result)).toBe(true);
       if (isErr(result)) {
         expect(result.error.context?.op).toBe('fromPercent');
+      }
+    });
+
+    it('error содержит source = RULE_VALIDATION в контексте', () => {
+      const result = ValidateRatioLteOne.check(new Decimal(2), 'fromPercent');
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error.context?.source).toBe(ErrorSource.RULE_VALIDATION);
       }
     });
   });

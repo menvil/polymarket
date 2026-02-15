@@ -287,6 +287,59 @@ describe('RatioFormatter', () => {
       });
     });
 
+    describe('high-precision формат', () => {
+      it('сохраняет точность для decimal с множеством знаков', () => {
+        // Regression test для Problem 1: precision loss при Number() конверсии
+        const highPrecisionStr = '0.123456789123456789';
+        const result = RatioFormatter.parse(highPrecisionStr);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          // Decimal.js должен сохранить полную точность
+          expect(result.value.toDecimal().toString()).toBe(highPrecisionStr);
+        }
+      });
+
+      it('сохраняет точность для percent с множеством знаков', () => {
+        const highPrecisionStr = '12.3456789123456789%';
+        const result = RatioFormatter.parse(highPrecisionStr);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          // 12.3456789123456789% => 0.123456789123456789
+          expect(result.value.toDecimal().toString()).toBe('0.123456789123456789');
+        }
+      });
+
+      it('сохраняет точность для bps с множеством знаков', () => {
+        const highPrecisionStr = '1234.56789123456789 bps';
+        const result = RatioFormatter.parse(highPrecisionStr);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          // 1234.56789123456789 bps => 0.123456789123456789
+          expect(result.value.toDecimal().toString()).toBe('0.123456789123456789');
+        }
+      });
+
+      it('сохраняет точность для отрицательного decimal', () => {
+        const highPrecisionStr = '-0.987654321987654321';
+        const result = RatioFormatter.parse(highPrecisionStr);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toDecimal().toString()).toBe(highPrecisionStr);
+        }
+      });
+
+      it('сохраняет точность для очень малого decimal', () => {
+        const highPrecisionStr = '0.000000000123456789';
+        const result = RatioFormatter.parse(highPrecisionStr);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          // Decimal.js может использовать экспоненциальную нотацию для очень малых чисел
+          // Проверяем что значение сохранено точно через toFixed
+          expect(result.value.toDecimal().toFixed(18)).toBe(highPrecisionStr);
+        }
+      });
+    });
+
     describe('ошибки парсинга', () => {
       it('отклоняет некорректный формат', () => {
         const result = RatioFormatter.parse('invalid');

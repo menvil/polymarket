@@ -404,6 +404,7 @@ enum RatioErrorReason {
   INVALID_FORMAT = 'INVALID_FORMAT',
   INVALID_JSON_STRUCTURE = 'INVALID_JSON_STRUCTURE',
   LESS_THAN_MINUS_ONE = 'LESS_THAN_MINUS_ONE',
+  GREATER_THAN_ONE = 'GREATER_THAN_ONE',
   INVALID_DECIMALS = 'INVALID_DECIMALS',
   DECIMAL_ERROR = 'DECIMAL_ERROR'
 }
@@ -416,11 +417,10 @@ enum RatioErrorReason {
 ```typescript
 {
   source: ErrorSource.PARSING | CORE_INVARIANT | RULE_VALIDATION,
-  op: 'fromPercent' | 'fromDecimal' | ...,
-  reason: RatioErrorReason.NAN | ...,
+  op: 'fromPercent' | 'fromDecimal' | 'fromBps' | ...,
+  reason: RatioErrorReason.NAN | LESS_THAN_MINUS_ONE | GREATER_THAN_ONE | ...,
   ratioValue?: string,
-  percent?: string,
-  decimals?: string
+  raw?: { field: string, value: string } // Сырые входные данные
 }
 ```
 

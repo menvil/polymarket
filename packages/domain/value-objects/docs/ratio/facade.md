@@ -415,7 +415,8 @@ if (yieldResult.ok) {
 
 ```typescript
 interface RatioCreateOptions {
-  ensureGteMinusOne?: boolean;
+  ensureGteMinusOne?: boolean; // валидировать ratio >= -1
+  ensureLteOne?: boolean;      // валидировать ratio <= 1
 }
 ```
 
@@ -496,12 +497,100 @@ if (!belowBoundaryResult.ok) {
 }
 ```
 
+---
+
+### `ensureLteOne`
+
+**Описание:**
+Проверить, что `ratio <= 1`.
+
+**Зачем:** Защита от бессмысленных операций типа `(1 - ratio)`.
+
+**Проблема:**
+
+```typescript
+// Если ratio > 1, то операция (1 - ratio) даст отрицательный результат
+const amount = new Decimal(100);
+const ratio = 1.5; // 150%
+const result = amount.mul(new Decimal(1).minus(ratio)); // 100 * (1 - 1.5) = 100 * (-0.5) = -50
+// ❌ Отрицательная сумма! Бессмысленно для amount/price
+```
+
+**Решение:**
+
+```typescript
+const ratioResult = RatioService.fromPercent(150, { ensureLteOne: true });
+if (!ratioResult.ok) {
+  // Ошибка: ratio > 1 приведет к отрицательному результату
+  console.error(ratioResult.error.context?.reason); // GREATER_THAN_ONE
+}
+```
+
+**Когда использовать:**
+
+#### ✅ Используйте ensureLteOne
+
+Для операций типа `amount * (1 - ratio)`:
+
+```typescript
+// Discount применяемый к amount
+const discountResult = RatioService.fromPercent(15, { ensureLteOne: true });
+if (discountResult.ok) {
+  const amount = new Decimal(100);
+  const discounted = amount.mul(discountResult.value.oneMinus()); // 100 * 0.85 = 85
+}
+
+// Fee deduction
+const feeResult = RatioService.fromPercent(2.5, { ensureLteOne: true });
+if (feeResult.ok) {
+  const gross = new Decimal(1000);
+  const net = gross.mul(feeResult.value.oneMinus()); // 1000 * 0.975 = 975
+}
+```
+
+#### ❌ НЕ используйте ensureLteOne
+
+Для операций где ratio > 1 допустим:
+
+```typescript
+// ❌ Markup может быть > 100%
+const markupResult = RatioService.fromPercent(200, { ensureLteOne: true });
+// Err! Но markup 200% вполне допустим для (1 + ratio) операций
+
+// ✅ Правильно - используйте ensureGteMinusOne вместо ensureLteOne
+const markupResult = RatioService.fromPercent(200, { ensureGteMinusOne: true });
+if (markupResult.ok) {
+  const cost = new Decimal(100);
+  const price = cost.mul(markupResult.value.onePlus()); // 100 * 3 = 300 ✅
+}
+```
+
+**Граничный случай:**
+
+```typescript
+// ratio = 1.0 (ровно граница) - Ok
+const boundaryResult = RatioService.fromDecimal(1.0, { ensureLteOne: true });
+if (boundaryResult.ok) {
+  const amount = new Decimal(100);
+  const result = amount.mul(boundaryResult.value.oneMinus());
+  console.log(result.toString()); // "0" - корректно
+}
+
+// ratio = 1.0001 (чуть больше) - Err
+const aboveBoundaryResult = RatioService.fromDecimal(1.0001, { ensureLteOne: true });
+if (!aboveBoundaryResult.ok) {
+  console.error('Invalid: would result in negative amount');
+}
+```
+
+---
+
 ## Utility Methods
 
 ### `equals()`
 
 ```typescript
-public static equals(a: Ratio, b: Ratio): Result<boolean, never>
+public static equals(a: Ratio, b: Ratio): boolean
 ```
 
 **Описание:**
@@ -514,8 +603,10 @@ public static equals(a: Ratio, b: Ratio): Result<boolean, never>
 
 **Возвращает:**
 
-- `Ok(true)` - если значения равны
-- `Ok(false)` - если значения различны
+- `boolean` - `true` если значения равны, `false` если различны
+
+**Never Throw Contract:**
+Гарантированно не бросает исключений. Если `a` или `b` равны null/undefined, возвращает `false`.
 
 **Примеры:**
 
@@ -527,18 +618,21 @@ const r3 = RatioService.fromBps(200);
 
 if (r1.ok && r2.ok && r3.ok) {
   const eq1 = RatioService.equals(r1.value, r2.value);
-  console.log(eq1.value); // true
+  console.log(eq1); // true
 
   const eq2 = RatioService.equals(r2.value, r3.value);
-  console.log(eq2.value); // true
+  console.log(eq2); // true
 }
 
 // Сравнение с константой
 const zeroResult = RatioService.fromDecimal(0);
 if (zeroResult.ok) {
   const isZero = RatioService.equals(zeroResult.value, Ratio.ZERO);
-  console.log(isZero.value); // true
+  console.log(isZero); // true
 }
+
+// Never throws
+RatioService.equals(null as any, Ratio.ZERO); // false (не бросает)
 ```
 
 **Альтернатива:**
@@ -579,6 +673,7 @@ enum RatioErrorReason {
   NON_FINITE = 'NON_FINITE',             // Значение Infinity/-Infinity
   INVALID_FORMAT = 'INVALID_FORMAT',     // Невалидная строка/число
   LESS_THAN_MINUS_ONE = 'LESS_THAN_MINUS_ONE', // ratio < -1 (с ensureGteMinusOne)
+  GREATER_THAN_ONE = 'GREATER_THAN_ONE', // ratio > 1 (с ensureLteOne)
   DECIMAL_ERROR = 'DECIMAL_ERROR'        // Ошибка Decimal.js
 }
 ```
@@ -615,6 +710,9 @@ if (!result.ok) {
       break;
     case RatioErrorReason.LESS_THAN_MINUS_ONE:
       console.error('Ratio must be >= -1 for this operation');
+      break;
+    case RatioErrorReason.GREATER_THAN_ONE:
+      console.error('Ratio must be <= 1 for this operation');
       break;
     case RatioErrorReason.INVALID_FORMAT:
       console.error('Invalid input format');

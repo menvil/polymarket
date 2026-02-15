@@ -135,6 +135,7 @@ RatioService.fromBps(bps, options?)         // из basis points
 // Опции
 interface RatioCreateOptions {
   ensureGteMinusOne?: boolean; // валидировать ratio >= -1
+  ensureLteOne?: boolean;      // валидировать ratio <= 1
 }
 
 // Сравнение
@@ -306,10 +307,6 @@ npm test -- ratio
 ## 📝 Лицензия
 
 MIT
-
-## 🤝 Contributing
-
-См. [CONTRIBUTING.md](../../CONTRIBUTING.md)
 
 ---
 
