@@ -15,7 +15,7 @@ import { Spread } from '../core/index.js';
 import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 import { ValidateBidAsk } from '../rules/ValidateBidAsk.js';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
-import { RatioService } from '../../ratio/index.js';
+import { Ratio, RatioService } from '../../ratio/index.js';
 
 /**
  * Фасад для работы с Spread - публичный API
@@ -766,6 +766,132 @@ export class SpreadService {
       }
       return Ok(priceResult.value);
     }, InvalidSpreadError);
+  }
+
+  /**
+   * Вычисляет абсолютную ширину spread
+   *
+   * @param spread - Spread для анализа
+   * @returns Result с Decimal (width = ask - bid)
+   *
+   * @remarks
+   * Простая утилита для явного получения width через Result API.
+   * Всегда успешна (т.к. bid <= ask инвариант).
+   *
+   * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
+   *
+   * @example
+   * ```typescript
+   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const widthResult = SpreadService.getSpreadWidth(spread);
+   *
+   * if (widthResult.ok) {
+   *   console.log(widthResult.value.toString()); // "0.04"
+   * }
+   * ```
+   */
+  public static getSpreadWidth(
+    spread: Spread
+  ): Result<Decimal, InvalidSpreadError> {
+    return wrapOp(
+      SpreadService.SERVICE_NAME,
+      'getSpreadWidth',
+      { bid: spread.bid().value().toString(), ask: spread.ask().value().toString() },
+      () => {
+        const width = spread.width();
+        return Ok(width);
+      },
+      InvalidSpreadError
+    );
+  }
+
+  /**
+   * Вычисляет относительный spread (width / midpoint)
+   *
+   * @param spread - Spread для анализа
+   * @returns Result с Ratio или InvalidSpreadError
+   *
+   * @remarks
+   * **Формула:** spreadRatio = width / midpoint
+   *
+   * **Use cases:**
+   * - Скоринг качества котировки (меньше = лучше ликвидность)
+   * - Нормализация спреда для сравнения рынков
+   * - Оценка transaction costs
+   *
+   * **Процесс:**
+   * 1. Вычисляем midpoint через getMidPrice(spread)
+   * 2. width / mid
+   * 3. Создаем Ratio.of(result)
+   *
+   * **Возможные ошибки:**
+   * - MID_UNAVAILABLE — если midpoint = 0 (теоретически невозможно для Price, но защита)
+   *
+   * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
+   *
+   * @example
+   * ```typescript
+   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const ratioResult = SpreadService.getSpreadRatio(spread);
+   *
+   * if (ratioResult.ok) {
+   *   console.log(ratioResult.value.toDecimal().toString()); // "0.08" (8%)
+   *   console.log(ratioResult.value.toPercent());             // 8%
+   * }
+   * ```
+   */
+  public static getSpreadRatio(
+    spread: Spread
+  ): Result<Ratio, InvalidSpreadError> {
+    return wrapOp(
+      SpreadService.SERVICE_NAME,
+      'getSpreadRatio',
+      { bid: spread.bid().value().toString(), ask: spread.ask().value().toString() },
+      () => {
+        // 1. Get midpoint
+        const midResult = SpreadService.getMidPrice(spread);
+        if (isErr(midResult)) {
+          throw new InvalidSpreadError(
+            () => 'Cannot compute spread ratio: midpoint unavailable',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.MID_UNAVAILABLE,
+                bid: spread.bid().value().toString(),
+                ask: spread.ask().value().toString(),
+              },
+            }
+          );
+        }
+
+        const mid = midResult.value.value();
+
+        // 2. Check for zero midpoint (теоретически невозможно для Price, но защита)
+        if (mid.isZero()) {
+          throw new InvalidSpreadError(
+            () => 'Cannot compute spread ratio: midpoint is zero',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.MID_UNAVAILABLE,
+                bid: spread.bid().value().toString(),
+                ask: spread.ask().value().toString(),
+              },
+            }
+          );
+        }
+
+        // 3. width / mid
+        const width = spread.width();
+        const ratioValue = width.dividedBy(mid);
+
+        // 4. Create Ratio
+        const ratio = Ratio.of(ratioValue);
+
+        return Ok(ratio);
+      },
+      InvalidSpreadError
+    );
   }
 
   // ============================================================================
