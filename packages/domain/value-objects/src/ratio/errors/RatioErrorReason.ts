@@ -61,6 +61,19 @@ export enum RatioErrorReason {
   LESS_THAN_MINUS_ONE = 'LESS_THAN_MINUS_ONE',
 
   /**
+   * Ratio больше 1 когда требуется <= 1
+   *
+   * @remarks
+   * Используется в ValidateRatioLteOne для операций типа:
+   * - amount * (1 - ratio) где (1 - ratio) должно быть >= 0
+   *
+   * @example
+   * RatioService.fromDecimal(new Decimal(1.5), { ensureLteOne: true })
+   * // reason: GREATER_THAN_ONE
+   */
+  GREATER_THAN_ONE = 'GREATER_THAN_ONE',
+
+  /**
    * Некорректное значение decimals (должно быть >= 0 и целое)
    *
    * @example

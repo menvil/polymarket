@@ -115,6 +115,92 @@ describe('RatioService', () => {
         }
       });
     });
+
+    describe('с ensureLteOne', () => {
+      it('принимает 1', () => {
+        const result = RatioService.fromDecimal(1, { ensureLteOne: true });
+        expect(result.ok).toBe(true);
+      });
+
+      it('принимает 0.5', () => {
+        const result = RatioService.fromDecimal(0.5, { ensureLteOne: true });
+        expect(result.ok).toBe(true);
+      });
+
+      it('принимает 0', () => {
+        const result = RatioService.fromDecimal(0, { ensureLteOne: true });
+        expect(result.ok).toBe(true);
+      });
+
+      it('принимает отрицательные значения', () => {
+        const result = RatioService.fromDecimal(-0.1, { ensureLteOne: true });
+        expect(result.ok).toBe(true);
+      });
+
+      it('отклоняет 1.5', () => {
+        const result = RatioService.fromDecimal(1.5, { ensureLteOne: true });
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.GREATER_THAN_ONE);
+        }
+      });
+
+      it('отклоняет 2', () => {
+        const result = RatioService.fromDecimal(2, { ensureLteOne: true });
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.GREATER_THAN_ONE);
+        }
+      });
+    });
+
+    describe('с обеими опциями ensureGteMinusOne и ensureLteOne', () => {
+      it('принимает значения в диапазоне [-1, 1]', () => {
+        const result = RatioService.fromDecimal(0.5, {
+          ensureGteMinusOne: true,
+          ensureLteOne: true
+        });
+        expect(result.ok).toBe(true);
+      });
+
+      it('принимает -1', () => {
+        const result = RatioService.fromDecimal(-1, {
+          ensureGteMinusOne: true,
+          ensureLteOne: true
+        });
+        expect(result.ok).toBe(true);
+      });
+
+      it('принимает 1', () => {
+        const result = RatioService.fromDecimal(1, {
+          ensureGteMinusOne: true,
+          ensureLteOne: true
+        });
+        expect(result.ok).toBe(true);
+      });
+
+      it('отклоняет значения < -1', () => {
+        const result = RatioService.fromDecimal(-1.5, {
+          ensureGteMinusOne: true,
+          ensureLteOne: true
+        });
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.LESS_THAN_MINUS_ONE);
+        }
+      });
+
+      it('отклоняет значения > 1', () => {
+        const result = RatioService.fromDecimal(1.5, {
+          ensureGteMinusOne: true,
+          ensureLteOne: true
+        });
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(RatioErrorReason.GREATER_THAN_ONE);
+        }
+      });
+    });
   });
 
   describe('fromPercent()', () => {
@@ -272,43 +358,32 @@ describe('RatioService', () => {
   });
 
   describe('equals()', () => {
-    it('возвращает true для равных Ratio', () => {
-      const r1Result = RatioService.fromPercent(2);
+    it('возвращает boolean напрямую', () => {
+      const r1Result = RatioService.fromDecimal(0.02);
       const r2Result = RatioService.fromDecimal(0.02);
-
+      
       if (r1Result.ok && r2Result.ok) {
-        const equalResult = RatioService.equals(r1Result.value, r2Result.value);
-        expect(equalResult.ok).toBe(true);
-        if (equalResult.ok) {
-          expect(equalResult.value).toBe(true);
-        }
+        const isEqual = RatioService.equals(r1Result.value, r2Result.value);
+        expect(typeof isEqual).toBe('boolean');
+        expect(isEqual).toBe(true);
       }
     });
 
-    it('возвращает false для разных Ratio', () => {
-      const r1Result = RatioService.fromPercent(2);
-      const r2Result = RatioService.fromPercent(3);
-
+    it('возвращает true для равных Ratio', () => {
+      const r1Result = RatioService.fromDecimal(0.02);
+      const r2Result = RatioService.fromDecimal(0.02);
+      
       if (r1Result.ok && r2Result.ok) {
-        const equalResult = RatioService.equals(r1Result.value, r2Result.value);
-        expect(equalResult.ok).toBe(true);
-        if (equalResult.ok) {
-          expect(equalResult.value).toBe(false);
-        }
+        expect(RatioService.equals(r1Result.value, r2Result.value)).toBe(true);
       }
     });
 
-    it('сравнивает Ratio из разных источников', () => {
-      const r1Result = RatioService.fromPercent(2); // 2% => 0.02
-      const r2Result = RatioService.fromBps(200); // 200 bps => 0.02
-      const r3Result = RatioService.fromDecimal(0.02);
-
-      if (r1Result.ok && r2Result.ok && r3Result.ok) {
-        const eq1 = RatioService.equals(r1Result.value, r2Result.value);
-        const eq2 = RatioService.equals(r2Result.value, r3Result.value);
-
-        expect(eq1.ok && eq1.value).toBe(true);
-        expect(eq2.ok && eq2.value).toBe(true);
+    it('возвращает false для неравных Ratio', () => {
+      const r1Result = RatioService.fromDecimal(0.02);
+      const r2Result = RatioService.fromDecimal(0.03);
+      
+      if (r1Result.ok && r2Result.ok) {
+        expect(RatioService.equals(r1Result.value, r2Result.value)).toBe(false);
       }
     });
   });

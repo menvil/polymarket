@@ -29,8 +29,12 @@
  * - `RatioService.fromBps(200)` → 0.02 (200 basis points)
  * - `RatioService.fromDecimal(0.02)` → 0.02 (явное указание дроби)
  *
- * ## Важно: Ratio НЕ содержит арифметических операций
- * Операции живут в целевых value objects:
+ * ## Важно: Ratio НЕ содержит операций между Ratio
+ * Но содержит helpers для compound operations:
+ * - onePlus(): вычислить (1 + ratio) для операций "добавить %"
+ * - oneMinus(): вычислить (1 - ratio) для операций "вычесть %"
+ *
+ * Арифметика с другими VO живет в целевых классах:
  * - Money.addRate(ratio: Ratio): добавить процент к сумме
  * - Price.take(ratio: Ratio): взять процент от цены
  * - Quantity.applyDiscount(ratio: Ratio): применить скидку
@@ -39,10 +43,7 @@
  *
  * @example
  * ```typescript
- * // ❌ WRONG: .of() помечен @internal, не используйте напрямую
- * const ratio = Ratio.of(value); // Неясная семантика: 2 это 200% или 2%?
- *
- * // ✅ CORRECT: Используйте RatioService для ясной семантики
+ * // ✅ CORRECT: Используйте RatioService для создания
  * const ratioResult = RatioService.fromPercent(2); // 2% => 0.02
  * if (ratioResult.ok) {
  *   const ratio = ratioResult.value;
@@ -50,6 +51,9 @@
  *   console.log(ratio.onePlus());   // Decimal(1.02) - для amount * (1 + ratio)
  *   console.log(ratio.oneMinus());  // Decimal(0.98) - для amount * (1 - ratio)
  * }
+ *
+ * // ❌ WRONG: НЕ используйте Ratio.of() напрямую
+ * // Создание ТОЛЬКО через RatioService
  * ```
  */
 import Decimal from 'decimal.js';
@@ -74,26 +78,24 @@ export class Ratio {
   }
 
   /**
-   * Создать Ratio из дроби (fraction) - INTERNAL API
+   * Создать Ratio из дроби (fraction)
    *
    * @remarks
-   * ⚠️ **НЕ ИСПОЛЬЗУЙТЕ НАПРЯМУЮ** - это внутренний API для RatioService!
-   *
-   * **Для пользователей:** Используйте RatioService вместо прямого вызова:
-   * - `RatioService.fromDecimal(0.02)` - создать из дроби (явная семантика)
-   * - `RatioService.fromPercent(2)` - создать из процента (2% => 0.02)
-   * - `RatioService.fromBps(200)` - создать из basis points (200 bps => 0.02)
-   *
-   * **Почему не использовать .of() напрямую:**
-   * - Непонятная семантика: `Ratio.of(2)` это 200% или 2%?
-   * - Нет валидации опций (ensureGteMinusOne)
-   * - Бросает исключения вместо Result
+   * Используется внутри RatioService для создания Ratio.
+   * Можно использовать напрямую, если нужен прямой доступ к Core API (бросает исключения).
    *
    * @param value - Дробь: 0.02 для 2%, 0.5 для 50%
    * @returns Ratio instance
    * @throws {RatioInvariantViolation} если нарушены инварианты
    *
-   * @internal - Используется только в RatioService
+   * @example
+   * ```typescript
+   * // Прямой вызов (бросает исключения)
+   * const ratio = Ratio.of(new Decimal(0.02));
+   *
+   * // Через RatioService (возвращает Result, безопаснее)
+   * const result = RatioService.fromDecimal(0.02);
+   * ```
    */
   public static of(value: Decimal): Ratio {
     return new Ratio(value);
@@ -257,10 +259,10 @@ export class Ratio {
   /**
    * Константа: нулевой коэффициент
    */
-  public static readonly ZERO: Ratio = new Ratio(new Decimal(0));
+  public static readonly ZERO: Ratio = Ratio.of(new Decimal(0));
 
   /**
    * Константа: единичный коэффициент (100%)
    */
-  public static readonly ONE: Ratio = new Ratio(new Decimal(1));
+  public static readonly ONE: Ratio = Ratio.of(new Decimal(1));
 }
