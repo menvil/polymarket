@@ -477,11 +477,12 @@ if (tokenResult.ok) {
 }
 
 // ✅ TokenBalance — идентификатор + количество + account
+const qtyResult = QuantityService.create(100);
 const balanceResult = TokenBalanceService.create(
-  accountId,
-  tokenResult.value,
-  venueId,
-  new Decimal('100')
+  tokenResult.value,  // OutcomeToken
+  qtyResult.value,    // Quantity
+  accountId,          // AccountId
+  venueId             // VenueId
 );
 
 // ✅ AssetQuantity — универсальное количество

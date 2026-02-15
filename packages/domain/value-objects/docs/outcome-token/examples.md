@@ -378,9 +378,9 @@ function createTokenOrDefault(
 
 ```typescript
 import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
-import { TokenBalanceService } from '@polymarket/value-objects/balance';
-import { BinaryOutcome } from '@polymarket/ids';
-import Decimal from 'decimal.js';
+import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
+import { QuantityService } from '@polymarket/value-objects/quantity';
+import { BinaryOutcome, KnownVenues, accountIdFromWallet, parseWalletAddress } from '@polymarket/ids';
 
 // Создание OutcomeToken
 const tokenResult = OutcomeTokenService.create(onChainRef, BinaryOutcome.UP);
@@ -391,12 +391,23 @@ if (!tokenResult.ok) {
 
 const token = tokenResult.value;
 
+// Создание Quantity
+const qtyResult = QuantityService.create(100);
+if (!qtyResult.ok) {
+  console.error('Failed to create quantity');
+  return;
+}
+
+// Создание AccountId
+const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+const accountId = accountIdFromWallet(walletAddress);
+
 // Создание TokenBalance для этого токена
 const balanceResult = TokenBalanceService.create(
-  accountId,       // AccountId
-  token,           // OutcomeToken
-  venueId,         // VenueId
-  new Decimal('100')  // Количество
+  token,              // OutcomeToken
+  qtyResult.value,    // Quantity
+  accountId,          // AccountId
+  KnownVenues.POLYMARKET  // VenueId
 );
 
 if (!balanceResult.ok) {
@@ -409,7 +420,7 @@ const balance = balanceResult.value;
 console.log(`Account balance:`);
 console.log(`- Token: ${balance.token().outcomeKey()}`);
 console.log(`- Amount: ${balance.amount().toString()}`);
-console.log(`- Venue: ${balance.venue()}`);
+console.log(`- Venue: ${balance.venueId()}`);
 ```
 
 ### Пример 10: OutcomeToken + AssetQuantity
@@ -442,10 +453,10 @@ console.log(`- Is outcome token: ${quantity.isOutcomeToken()}`);
 
 ```typescript
 import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
-import { TokenBalanceService } from '@polymarket/value-objects/balance';
+import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
+import { QuantityService } from '@polymarket/value-objects/quantity';
 import { AssetQuantityService } from '@polymarket/value-objects/asset-quantity';
-import { BinaryOutcome } from '@polymarket/ids';
-import Decimal from 'decimal.js';
+import { BinaryOutcome, KnownVenues, accountIdFromWallet, parseWalletAddress } from '@polymarket/ids';
 
 // Создание UP и DOWN токенов
 const upTokenResult = OutcomeTokenService.create(onChainRef, BinaryOutcome.UP);
@@ -459,19 +470,33 @@ if (!upTokenResult.ok || !downTokenResult.ok) {
 const upToken = upTokenResult.value;
 const downToken = downTokenResult.value;
 
+// Создание AccountId
+const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+const accountId = accountIdFromWallet(walletAddress);
+const venueId = KnownVenues.POLYMARKET;
+
+// Создание количеств
+const qty100Result = QuantityService.create(100);
+const qty50Result = QuantityService.create(50);
+
+if (!qty100Result.ok || !qty50Result.ok) {
+  console.error('Failed to create quantities');
+  return;
+}
+
 // Балансы пользователя
 const upBalanceResult = TokenBalanceService.create(
-  accountId,
   upToken,
-  venueId,
-  new Decimal('100')
+  qty100Result.value,
+  accountId,
+  venueId
 );
 
 const downBalanceResult = TokenBalanceService.create(
-  accountId,
   downToken,
-  venueId,
-  new Decimal('50')
+  qty50Result.value,
+  accountId,
+  venueId
 );
 
 if (!upBalanceResult.ok || !downBalanceResult.ok) {
