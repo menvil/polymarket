@@ -255,7 +255,7 @@ describe('AssetQuantityService', () => {
 
       expect(qty1.ok && qty2.ok).toBe(true);
       if (qty1.ok && qty2.ok) {
-        const same = AssetQuantityService.equals(qty1.value, qty2.value);
+        const same = qty1.value.equals(qty2.value);
         expect(same).toBe(true);
       }
     });
@@ -266,7 +266,7 @@ describe('AssetQuantityService', () => {
 
       expect(qty1.ok && qty2.ok).toBe(true);
       if (qty1.ok && qty2.ok) {
-        const same = AssetQuantityService.equals(qty1.value, qty2.value);
+        const same = qty1.value.equals(qty2.value);
         expect(same).toBe(false);
       }
     });
@@ -277,7 +277,7 @@ describe('AssetQuantityService', () => {
 
       expect(usdcQty.ok && tokenQty.ok).toBe(true);
       if (usdcQty.ok && tokenQty.ok) {
-        const same = AssetQuantityService.equals(usdcQty.value, tokenQty.value);
+        const same = usdcQty.value.equals(tokenQty.value);
         expect(same).toBe(false);
       }
     });

@@ -13,6 +13,17 @@ import { Quantity } from '../../quantity/core/Quantity.js';
  * - TokenBalance: Type-safe для outcome tokens specifically (compile-time guarantee)
  * - AssetQuantity: Generic для ANY assets (runtime type checks)
  *
+ * **Инварианты:**
+ * AssetQuantity гарантирует (через делегирование в Quantity):
+ * - amount >= 0 (non-negative, проверяется Quantity инвариантом)
+ * - amount is finite (не NaN, не Infinity)
+ * - asset is frozen (иммутабельность через AssetIdHelpers.deepFreeze)
+ *
+ * **Допустимые значения:**
+ * - ✅ amount = 0 (zero balance)
+ * - ✅ amount > 0 (positive balance)
+ * - ❌ amount < 0 (negative не допускается, Quantity бросит QuantityInvariantViolation)
+ *
  * **Иммутабельность:**
  * - Гарантируется через defensive copy в fromAssetId()
  * - Внешний AssetId пересоздаётся, не сохраняется напрямую

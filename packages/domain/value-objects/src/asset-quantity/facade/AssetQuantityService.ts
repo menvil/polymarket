@@ -280,6 +280,7 @@ export class AssetQuantityService {
             (ctx) => `Failed to parse amount as Decimal: ${ctx.error}`,
             {
               context: {
+                source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_AMOUNT,
                 conditionRef,
                 outcomeKey,
@@ -299,6 +300,7 @@ export class AssetQuantityService {
             (ctx) => `Failed to create Quantity: ${ctx.error}`,
             {
               context: {
+                source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_AMOUNT,
                 conditionRef,
                 outcomeKey,
@@ -326,30 +328,6 @@ export class AssetQuantityService {
       },
       InvalidAssetQuantityError
     );
-  }
-
-  /**
-   * Сравнить два AssetQuantity на равенство
-   *
-   * @param a - Первый AssetQuantity
-   * @param b - Второй AssetQuantity
-   * @returns true если asset quantities представляют одинаковый актив и количество
-   *
-   * @remarks
-   * Never throws - безопасная утилита для сравнения.
-   * Использует метод equals() из AssetQuantity core.
-   *
-   * @example
-   * ```typescript
-   * const qty1 = expectOk(AssetQuantityService.createUsdc(100));
-   * const qty2 = expectOk(AssetQuantityService.createUsdc(100));
-   *
-   * const same = AssetQuantityService.equals(qty1, qty2);
-   * console.log(same); // → true
-   * ```
-   */
-  public static equals(a: AssetQuantity, b: AssetQuantity): boolean {
-    return a.equals(b);
   }
 
   /**
