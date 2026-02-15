@@ -17,6 +17,8 @@ import { Quote, QuoteInvariantViolation } from '../core/index.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 import { PriceService } from '../../price/facade/PriceService.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
+import { Ratio } from '../../ratio/core/Ratio.js';
+import { SpreadService } from '../../spread/facade/SpreadService.js';
 
 /**
  * Фасад для работы с Quote - публичный API
@@ -959,6 +961,130 @@ export class QuoteService {
       }
     }, InvalidQuoteError);
   }
+
+  // ============================================================================
+  // Ratio Operations (Metrics)
+  // ============================================================================
+
+  /**
+   * Вычисляет midpoint quote
+   *
+   * @param quote - Quote для анализа
+   * @returns Result с Price (midpoint) или InvalidQuoteError
+   *
+   * @remarks
+   * Делегирует в SpreadService.getMidPrice(quote.spread()).
+   * Переупаковывает SpreadError в QuoteError.
+   *
+   * **Возможные ошибки:**
+   * - NOT_TWO_SIDED — если quote не two-sided (не применимо для Spread, но для Quote может быть)
+   *
+   * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
+   *
+   * @example
+   * ```typescript
+   * const quote = QuoteService.create(...);
+   * const midResult = QuoteService.getMidPrice(quote);
+   *
+   * if (midResult.ok) {
+   *   console.log(midResult.value.value().toString()); // "0.50"
+   * }
+   * ```
+   */
+  public static getMidPrice(
+    quote: Quote
+  ): Result<Price, InvalidQuoteError> {
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
+      'getMidPrice',
+      { bidPrice: quote.bidPrice().value().toString(), askPrice: quote.askPrice().value().toString() },
+      () => {
+        // Delegate to SpreadService
+        const spreadMidResult = SpreadService.getMidPrice(quote.spread());
+
+        if (isErr(spreadMidResult)) {
+          // Re-wrap SpreadError as QuoteError
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot get mid price: ${ctx.spreadError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bidPrice: quote.bidPrice().value().toString(),
+                askPrice: quote.askPrice().value().toString(),
+                spreadError: spreadMidResult.error.message,
+              },
+            }
+          );
+        }
+
+        return Ok(spreadMidResult.value);
+      },
+      InvalidQuoteError
+    );
+  }
+
+  /**
+   * Вычисляет относительный spread quote (width / midpoint)
+   *
+   * @param quote - Quote для анализа
+   * @returns Result с Ratio или InvalidQuoteError
+   *
+   * @remarks
+   * Делегирует в SpreadService.getSpreadRatio(quote.spread()).
+   *
+   * **Возможные ошибки:**
+   * - NOT_TWO_SIDED — если quote не two-sided
+   * - MID_UNAVAILABLE — если midpoint = 0
+   *
+   * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
+   *
+   * @example
+   * ```typescript
+   * const quote = QuoteService.create(...);
+   * const ratioResult = QuoteService.getSpreadRatio(quote);
+   *
+   * if (ratioResult.ok) {
+   *   console.log(ratioResult.value.toPercent()); // "8%"
+   * }
+   * ```
+   */
+  public static getSpreadRatio(
+    quote: Quote
+  ): Result<Ratio, InvalidQuoteError> {
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
+      'getSpreadRatio',
+      { bidPrice: quote.bidPrice().value().toString(), askPrice: quote.askPrice().value().toString() },
+      () => {
+        // Delegate to SpreadService
+        const spreadRatioResult = SpreadService.getSpreadRatio(quote.spread());
+
+        if (isErr(spreadRatioResult)) {
+          // Re-wrap SpreadError as QuoteError
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot get spread ratio: ${ctx.spreadError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.MID_UNAVAILABLE,
+                bidPrice: quote.bidPrice().value().toString(),
+                askPrice: quote.askPrice().value().toString(),
+                spreadError: spreadRatioResult.error.message,
+              },
+            }
+          );
+        }
+
+        return Ok(spreadRatioResult.value);
+      },
+      InvalidQuoteError
+    );
+  }
+
+  // ============================================================================
+  // Private Helpers
+  // ============================================================================
 
   /**
    * Helper: создаёт Price из Decimal (с обработкой null)
