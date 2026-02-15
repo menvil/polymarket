@@ -1083,6 +1083,361 @@ export class QuoteService {
   }
 
   // ============================================================================
+  // Ratio Operations (Transformations)
+  // ============================================================================
+
+  /**
+   * Сдвигает quote на долю от midpoint (цены меняются, sizes сохраняются)
+   *
+   * @param quote - Исходный quote
+   * @param shiftRatio - Доля для сдвига (Ratio)
+   * @returns Result с новым Quote или InvalidQuoteError
+   *
+   * @remarks
+   * Делегирует spread операцию в SpreadService.shiftByRatio,
+   * пересоздает Quote с новым spread и теми же sizes.
+   *
+   * **Процесс:**
+   * 1. newSpread = SpreadService.shiftByRatio(quote.spread(), shiftRatio)
+   * 2. Quote.of(newSpread, quote.bidSize(), quote.askSize(), ...)
+   *
+   * **Never Throw Contract**: Гарантированно возвращает Result.
+   *
+   * @example
+   * ```typescript
+   * const quote = QuoteService.create(...);
+   * const shiftRatio = Ratio.of(new Decimal(0.05)); // 5% вверх
+   *
+   * const result = QuoteService.shiftByRatio(quote, shiftRatio);
+   * if (result.ok) {
+   *   console.log(result.value.bidPrice().value()); // shifted bid
+   *   console.log(result.value.bidSize().toNumber()); // same size
+   * }
+   * ```
+   */
+  public static shiftByRatio(
+    quote: Quote,
+    shiftRatio: Ratio
+  ): Result<Quote, InvalidQuoteError> {
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
+      'shiftByRatio',
+      {
+        bidPrice: quote.bidPrice().value().toString(),
+        askPrice: quote.askPrice().value().toString(),
+        shiftRatio: shiftRatio.toDecimal().toString()
+      },
+      () => {
+        const newSpreadResult = SpreadService.shiftByRatio(quote.spread(), shiftRatio);
+
+        if (isErr(newSpreadResult)) {
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot shift quote by ratio: ${ctx.spreadError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
+                bidPrice: quote.bidPrice().value().toString(),
+                askPrice: quote.askPrice().value().toString(),
+                shiftRatio: shiftRatio.toDecimal().toString(),
+                spreadError: newSpreadResult.error.message,
+              },
+            }
+          );
+        }
+
+        const newQuote = Quote.of(
+          newSpreadResult.value,
+          quote.bidSize(),
+          quote.askSize(),
+          quote.marketDataSourceId(),
+          quote.instrumentId(),
+          quote.timestamp()
+        );
+
+        return Ok(newQuote);
+      },
+      InvalidQuoteError
+    );
+  }
+
+  /**
+   * Расширяет spread quote на долю от midpoint
+   */
+  public static widenByRatio(
+    quote: Quote,
+    deltaWidthRatio: Ratio
+  ): Result<Quote, InvalidQuoteError> {
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
+      'widenByRatio',
+      {
+        bidPrice: quote.bidPrice().value().toString(),
+        askPrice: quote.askPrice().value().toString(),
+        deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
+      },
+      () => {
+        const newSpreadResult = SpreadService.widenByRatio(quote.spread(), deltaWidthRatio);
+
+        if (isErr(newSpreadResult)) {
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot widen quote by ratio: ${ctx.spreadError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
+                bidPrice: quote.bidPrice().value().toString(),
+                askPrice: quote.askPrice().value().toString(),
+                deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
+                spreadError: newSpreadResult.error.message,
+              },
+            }
+          );
+        }
+
+        const newQuote = Quote.of(
+          newSpreadResult.value,
+          quote.bidSize(),
+          quote.askSize(),
+          quote.marketDataSourceId(),
+          quote.instrumentId(),
+          quote.timestamp()
+        );
+
+        return Ok(newQuote);
+      },
+      InvalidQuoteError
+    );
+  }
+
+  /**
+   * Сужает spread quote на долю от midpoint
+   */
+  public static tightenByRatio(
+    quote: Quote,
+    deltaWidthRatio: Ratio
+  ): Result<Quote, InvalidQuoteError> {
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
+      'tightenByRatio',
+      {
+        bidPrice: quote.bidPrice().value().toString(),
+        askPrice: quote.askPrice().value().toString(),
+        deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
+      },
+      () => {
+        const newSpreadResult = SpreadService.tightenByRatio(quote.spread(), deltaWidthRatio);
+
+        if (isErr(newSpreadResult)) {
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot tighten quote by ratio: ${ctx.spreadError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
+                bidPrice: quote.bidPrice().value().toString(),
+                askPrice: quote.askPrice().value().toString(),
+                deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
+                spreadError: newSpreadResult.error.message,
+              },
+            }
+          );
+        }
+
+        const newQuote = Quote.of(
+          newSpreadResult.value,
+          quote.bidSize(),
+          quote.askSize(),
+          quote.marketDataSourceId(),
+          quote.instrumentId(),
+          quote.timestamp()
+        );
+
+        return Ok(newQuote);
+      },
+      InvalidQuoteError
+    );
+  }
+
+  /**
+   * Наклоняет quote spread на доли от midpoint
+   */
+  public static skewByRatio(
+    quote: Quote,
+    bidRatio: Ratio,
+    askRatio: Ratio
+  ): Result<Quote, InvalidQuoteError> {
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
+      'skewByRatio',
+      {
+        bidPrice: quote.bidPrice().value().toString(),
+        askPrice: quote.askPrice().value().toString(),
+        bidRatio: bidRatio.toDecimal().toString(),
+        askRatio: askRatio.toDecimal().toString()
+      },
+      () => {
+        const newSpreadResult = SpreadService.skewByRatio(quote.spread(), bidRatio, askRatio);
+
+        if (isErr(newSpreadResult)) {
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot skew quote by ratio: ${ctx.spreadError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
+                bidPrice: quote.bidPrice().value().toString(),
+                askPrice: quote.askPrice().value().toString(),
+                bidRatio: bidRatio.toDecimal().toString(),
+                askRatio: askRatio.toDecimal().toString(),
+                spreadError: newSpreadResult.error.message,
+              },
+            }
+          );
+        }
+
+        const newQuote = Quote.of(
+          newSpreadResult.value,
+          quote.bidSize(),
+          quote.askSize(),
+          quote.marketDataSourceId(),
+          quote.instrumentId(),
+          quote.timestamp()
+        );
+
+        return Ok(newQuote);
+      },
+      InvalidQuoteError
+    );
+  }
+
+  /**
+   * Масштабирует sizes quote на factor (цены сохраняются)
+   *
+   * @param quote - Исходный quote
+   * @param sizeFactor - Factor для масштабирования sizes (Ratio), должен быть > 0
+   * @returns Result с новым Quote или InvalidQuoteError
+   *
+   * @remarks
+   * **⚠️ UNSAFE: Не применяет venue-specific stepSize/minSize/maxSize.**
+   *
+   * **Семантика:** "Масштабировать размеры на X%"
+   *
+   * **Use cases:**
+   * - Risk management: shrink sizes на 50% при большой позиции
+   * - Scaling: увеличить sizes на 200% при высокой confidence
+   *
+   * **Процесс:**
+   * 1. Validate sizeFactor > 0
+   * 2. newBidSize = QuantityService.multiply(quote.bidSize(), sizeFactor.toDecimal())
+   * 3. newAskSize = QuantityService.multiply(quote.askSize(), sizeFactor.toDecimal())
+   * 4. Quote.of(quote.spread(), newBidSize, newAskSize, ...)
+   *
+   * **Возможные ошибки:**
+   * - INVALID_SIZE_FACTOR — если sizeFactor <= 0
+   * - INVALID_FORMAT — если результат не валиден для Quantity
+   *
+   * **Never Throw Contract**: Гарантированно возвращает Result.
+   *
+   * @example
+   * ```typescript
+   * const quote = QuoteService.create(...); // bidSize=100, askSize=100
+   * const factor = Ratio.of(new Decimal(0.5)); // 50%
+   *
+   * const result = QuoteService.scaleSizesByRatio(quote, factor);
+   * if (result.ok) {
+   *   console.log(result.value.bidSize().toNumber()); // 50
+   *   console.log(result.value.askSize().toNumber()); // 50
+   *   console.log(result.value.bidPrice().value()); // same price
+   * }
+   * ```
+   */
+  public static scaleSizesByRatio(
+    quote: Quote,
+    sizeFactor: Ratio
+  ): Result<Quote, InvalidQuoteError> {
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
+      'scaleSizesByRatio',
+      {
+        bidSize: quote.bidSize().toNumber(),
+        askSize: quote.askSize().toNumber(),
+        sizeFactor: sizeFactor.toDecimal().toString()
+      },
+      () => {
+        // 1. Validate sizeFactor > 0
+        if (sizeFactor.toDecimal().lessThanOrEqualTo(0)) {
+          throw new InvalidQuoteError(
+            () => 'Size factor must be positive',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.INVALID_SIZE_FACTOR,
+                sizeFactor: sizeFactor.toDecimal().toString(),
+              },
+            }
+          );
+        }
+
+        // 2. Scale bid size
+        const newBidSizeResult = QuantityService.multiply(
+          quote.bidSize(),
+          sizeFactor.toDecimal()
+        );
+
+        if (isErr(newBidSizeResult)) {
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot scale bid size: ${ctx.quantityError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.INVALID_FORMAT,
+                bidSize: quote.bidSize().toNumber(),
+                sizeFactor: sizeFactor.toDecimal().toString(),
+                quantityError: newBidSizeResult.error.message,
+              },
+            }
+          );
+        }
+
+        // 3. Scale ask size
+        const newAskSizeResult = QuantityService.multiply(
+          quote.askSize(),
+          sizeFactor.toDecimal()
+        );
+
+        if (isErr(newAskSizeResult)) {
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot scale ask size: ${ctx.quantityError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.INVALID_FORMAT,
+                askSize: quote.askSize().toNumber(),
+                sizeFactor: sizeFactor.toDecimal().toString(),
+                quantityError: newAskSizeResult.error.message,
+              },
+            }
+          );
+        }
+
+        // 4. Create new Quote with same spread, new sizes
+        const newQuote = Quote.of(
+          quote.spread(),
+          newBidSizeResult.value,
+          newAskSizeResult.value,
+          quote.marketDataSourceId(),
+          quote.instrumentId(),
+          quote.timestamp()
+        );
+
+        return Ok(newQuote);
+      },
+      InvalidQuoteError
+    );
+  }
+
+  // ============================================================================
   // Private Helpers
   // ============================================================================
 
