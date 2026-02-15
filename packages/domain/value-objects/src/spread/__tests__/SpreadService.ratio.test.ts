@@ -102,6 +102,142 @@ describe('SpreadService Ratio Operations', () => {
     });
   });
 
+  describe('fromMidAndWidthRatio()', () => {
+    it('создаёт spread от mid и widthRatio (Price и Ratio)', () => {
+      const mid = Price.of(new Decimal(0.50));
+      const widthRatio = Ratio.of(new Decimal(0.08)); // 8% width
+
+      const result = SpreadService.fromMidAndWidthRatio(mid, widthRatio);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // widthAbs = 0.50 * 0.08 = 0.04
+        // half = 0.04 / 2 = 0.02
+        // bid = 0.50 - 0.02 = 0.48
+        // ask = 0.50 + 0.02 = 0.52
+        expect(result.value.bid().value().toString()).toBe('0.48');
+        expect(result.value.ask().value().toString()).toBe('0.52');
+        expect(result.value.width().toString()).toBe('0.04');
+        expect(result.value.midpoint().toString()).toBe('0.5');
+      }
+    });
+
+    it('создаёт spread от чисел', () => {
+      const result = SpreadService.fromMidAndWidthRatio(0.50, 0.08);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bid().value().toString()).toBe('0.48');
+        expect(result.value.ask().value().toString()).toBe('0.52');
+      }
+    });
+
+    it('создаёт spread от Decimal', () => {
+      const result = SpreadService.fromMidAndWidthRatio(
+        new Decimal(0.50),
+        new Decimal(0.08)
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bid().value().toString()).toBe('0.48');
+        expect(result.value.ask().value().toString()).toBe('0.52');
+      }
+    });
+
+    it('создаёт spread от строк', () => {
+      const result = SpreadService.fromMidAndWidthRatio('0.50', '0.08');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bid().value().toString()).toBe('0.48');
+        expect(result.value.ask().value().toString()).toBe('0.52');
+      }
+    });
+
+    it('создаёт zero-width spread при widthRatio = 0', () => {
+      const result = SpreadService.fromMidAndWidthRatio(0.50, 0);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bid().value().toString()).toBe('0.5');
+        expect(result.value.ask().value().toString()).toBe('0.5');
+        expect(result.value.width().toString()).toBe('0');
+        expect(result.value.isZeroWidth()).toBe(true);
+      }
+    });
+
+    it('работает с очень малым widthRatio', () => {
+      const result = SpreadService.fromMidAndWidthRatio(0.50, 0.0001); // 0.01%
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.width().toString()).toBe('0.00005');
+      }
+    });
+
+    it('фэйлится при отрицательном widthRatio', () => {
+      const result = SpreadService.fromMidAndWidthRatio(0.50, -0.08);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.NEGATIVE_RATIO_NOT_ALLOWED);
+        expect(result.error.message).toContain('non-negative');
+      }
+    });
+
+    it('фэйлится когда bid выходит за MIN_PRICE', () => {
+      // mid = 0.0002, widthRatio = 10 (1000% width)
+      // widthAbs = 0.0002 * 10 = 0.002
+      // half = 0.001
+      // bid = 0.0002 - 0.001 = -0.0008 < MIN_PRICE (0.0001)
+      const result = SpreadService.fromMidAndWidthRatio(0.0002, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.RATIO_OUT_OF_BOUNDS);
+      }
+    });
+
+    it('фэйлится когда ask выходит за MAX_PRICE', () => {
+      // mid = 0.9998, widthRatio = 10 (1000% width)
+      // widthAbs = 0.9998 * 10 = 9.998
+      // half = 4.999
+      // ask = 0.9998 + 4.999 > MAX_PRICE (0.9999)
+      const result = SpreadService.fromMidAndWidthRatio(0.9998, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.RATIO_OUT_OF_BOUNDS);
+      }
+    });
+
+    it('фэйлится при невалидном mid', () => {
+      const result = SpreadService.fromMidAndWidthRatio(1.5, 0.08); // mid > MAX_PRICE
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_FORMAT);
+      }
+    });
+
+    it('фэйлится при невалидном widthRatio', () => {
+      const result = SpreadService.fromMidAndWidthRatio(0.50, NaN);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_RATIO);
+      }
+    });
+
+    it('никогда не бросает исключения', () => {
+      expect(() => SpreadService.fromMidAndWidthRatio(0.50, 0.08)).not.toThrow();
+      expect(() => SpreadService.fromMidAndWidthRatio(0.50, -0.08)).not.toThrow();
+      expect(() => SpreadService.fromMidAndWidthRatio(1.5, 0.08)).not.toThrow();
+      expect(() => SpreadService.fromMidAndWidthRatio(0.50, NaN)).not.toThrow();
+    });
+  });
+
   describe('shiftByRatio()', () => {
     it('сдвигает spread вверх на 5% от mid', () => {
       const spread = createSpread(0.48, 0.52);

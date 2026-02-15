@@ -186,6 +186,177 @@ export class SpreadService {
     return Spread.zero(price);
   }
 
+  /**
+   * Создать Spread от midpoint и относительной ширины
+   *
+   * @param mid - Midpoint цена (Price | Decimal | number | string)
+   * @param widthRatio - Относительная ширина как Ratio (Ratio | Decimal | number | string)
+   * @returns Result со Spread или InvalidSpreadError
+   *
+   * @remarks
+   * **Алгоритм:**
+   * 1. Parse mid to Price
+   * 2. Parse widthRatio to Ratio
+   * 3. Validate widthRatio >= 0
+   * 4. widthAbs = mid * widthRatio
+   * 5. half = widthAbs / 2
+   * 6. bid = mid - half
+   * 7. ask = mid + half
+   * 8. Create spread через create(bid, ask)
+   *
+   * **Validation:**
+   * - widthRatio должен быть >= 0 (отрицательная ширина запрещена)
+   * - Результирующие bid/ask должны быть в пределах [MIN_PRICE, MAX_PRICE]
+   *
+   * **Never Throw Contract:**
+   * Гарантированно возвращает Result, никогда не бросает.
+   *
+   * @example
+   * ```typescript
+   * // Создать spread с mid=0.50, width=8% от mid
+   * const result = SpreadService.fromMidAndWidthRatio(
+   *   0.50,
+   *   Ratio.of(new Decimal(0.08))
+   * );
+   *
+   * if (result.ok) {
+   *   const spread = result.value;
+   *   console.log(spread.bid().value().toString());  // "0.48" (0.50 - 0.02)
+   *   console.log(spread.ask().value().toString());  // "0.52" (0.50 + 0.02)
+   *   console.log(spread.width().toString());        // "0.04" (0.50 * 0.08)
+   * }
+   *
+   * // Из чисел
+   * const result2 = SpreadService.fromMidAndWidthRatio(0.50, 0.08);
+   * ```
+   */
+  public static fromMidAndWidthRatio(
+    mid: Price | Decimal | number | string,
+    widthRatio: Ratio | Decimal | number | string
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError | InvalidRatioError> {
+    return wrapOp(
+      SpreadService.SERVICE_NAME,
+      'fromMidAndWidthRatio',
+      {
+        mid: mid instanceof Price ? mid.value().toString() : String(mid),
+        widthRatio: widthRatio instanceof Ratio ? widthRatio.toDecimal().toString() : String(widthRatio)
+      },
+      () => {
+        // 1. Parse mid to Price
+        let midPrice: Price;
+        if (mid instanceof Price) {
+          midPrice = mid;
+        } else {
+          const midDecimal = mid instanceof Decimal ? mid : new Decimal(mid);
+          const midResult = PriceService.create(midDecimal);
+          if (isErr(midResult)) {
+            throw new InvalidSpreadError(
+              (ctx) => `Invalid mid price: ${ctx.midError}`,
+              {
+                context: {
+                  source: ErrorSource.SERVICE_CALL,
+                  reason: SpreadErrorReason.INVALID_FORMAT,
+                  mid: midDecimal.toString(),
+                  midError: midResult.error.message,
+                },
+              }
+            );
+          }
+          midPrice = midResult.value;
+        }
+
+        // 2. Parse widthRatio to Ratio
+        let ratio: Ratio;
+        if (widthRatio instanceof Ratio) {
+          ratio = widthRatio;
+        } else {
+          const ratioDecimal = widthRatio instanceof Decimal ? widthRatio : new Decimal(widthRatio);
+          const ratioResult = RatioService.fromDecimal(ratioDecimal);
+          if (isErr(ratioResult)) {
+            throw new InvalidSpreadError(
+              (ctx) => `Invalid width ratio: ${ctx.ratioError}`,
+              {
+                context: {
+                  source: ErrorSource.SERVICE_CALL,
+                  reason: SpreadErrorReason.INVALID_RATIO,
+                  widthRatio: ratioDecimal.toString(),
+                  ratioError: ratioResult.error.message,
+                },
+              }
+            );
+          }
+          ratio = ratioResult.value;
+        }
+
+        // 3. Validate widthRatio >= 0
+        if (ratio.toDecimal().lessThan(0)) {
+          throw new InvalidSpreadError(
+            () => 'Width ratio must be non-negative',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.NEGATIVE_RATIO_NOT_ALLOWED,
+                widthRatio: ratio.toDecimal().toString(),
+              },
+            }
+          );
+        }
+
+        // 4. widthAbs = mid * widthRatio
+        const widthAbs = midPrice.value().times(ratio.toDecimal());
+
+        // 5. half = widthAbs / 2
+        const half = widthAbs.dividedBy(2);
+
+        // 6. bid = mid - half
+        const bidValue = midPrice.value().minus(half);
+
+        // 7. ask = mid + half
+        const askValue = midPrice.value().plus(half);
+
+        // 8. Create Price objects
+        const bidResult = PriceService.create(bidValue);
+        if (isErr(bidResult)) {
+          throw new InvalidSpreadError(
+            (ctx) => `Cannot create bid price from mid and widthRatio: ${ctx.bidError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.RATIO_OUT_OF_BOUNDS,
+                mid: midPrice.value().toString(),
+                widthRatio: ratio.toDecimal().toString(),
+                bidValue: bidValue.toString(),
+                bidError: bidResult.error.message,
+              },
+            }
+          );
+        }
+
+        const askResult = PriceService.create(askValue);
+        if (isErr(askResult)) {
+          throw new InvalidSpreadError(
+            (ctx) => `Cannot create ask price from mid and widthRatio: ${ctx.askError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.RATIO_OUT_OF_BOUNDS,
+                mid: midPrice.value().toString(),
+                widthRatio: ratio.toDecimal().toString(),
+                askValue: askValue.toString(),
+                askError: askResult.error.message,
+              },
+            }
+          );
+        }
+
+        // 9. Create spread
+        const spread = Spread.of(bidResult.value, askResult.value);
+        return Ok(spread);
+      },
+      InvalidSpreadError
+    );
+  }
+
   // ============================================================================
   // Operations
   // ============================================================================

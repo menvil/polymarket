@@ -160,6 +160,104 @@ if (priceResult.ok) {
 
 ---
 
+### `fromMidAndWidthRatio(mid, widthRatio)`
+
+Создаёт спред от midpoint и относительной ширины.
+
+```typescript
+fromMidAndWidthRatio(
+  mid: Price | Decimal | number | string,
+  widthRatio: Ratio | Decimal | number | string
+): Result<Spread, InvalidSpreadError>
+```
+
+**Параметры:**
+
+- `mid: Price | Decimal | number | string` — midpoint цена
+- `widthRatio: Ratio | Decimal | number | string` — относительная ширина (должна быть ≥ 0)
+
+**Возвращает:**
+
+- `Ok(Spread)` — если оба значения валидны и результат в пределах [MIN_PRICE, MAX_PRICE]
+- `Err(InvalidSpreadError)` — при любых ошибках
+
+**Алгоритм:**
+
+1. Parse mid to Price
+2. Parse widthRatio to Ratio
+3. Validate widthRatio ≥ 0
+4. `widthAbs = mid * widthRatio`
+5. `half = widthAbs / 2`
+6. `bid = mid - half`
+7. `ask = mid + half`
+8. Create spread через `create(bid, ask)`
+
+**Пример:**
+
+```typescript
+// Из объектов Price и Ratio
+import { PriceService, SpreadService } from '@polymarket/value-objects';
+import { Ratio } from '@polymarket/value-objects/ratio';
+
+const mid = PriceService.create(0.50).value;
+const widthRatio = Ratio.of(new Decimal(0.08)); // 8% ширина
+
+const result = SpreadService.fromMidAndWidthRatio(mid, widthRatio);
+
+if (result.ok) {
+  const spread = result.value;
+  console.log(spread.bid().toNumber());      // 0.48 (0.50 - 0.02)
+  console.log(spread.ask().toNumber());      // 0.52 (0.50 + 0.02)
+  console.log(spread.width().toNumber());    // 0.04 (0.50 * 0.08)
+  console.log(spread.midpoint().toNumber()); // 0.50
+}
+
+// Из чисел
+const result2 = SpreadService.fromMidAndWidthRatio(0.50, 0.08);
+
+// Из строк
+const result3 = SpreadService.fromMidAndWidthRatio('0.50', '0.08');
+
+// Из Decimal
+import Decimal from 'decimal.js';
+const result4 = SpreadService.fromMidAndWidthRatio(
+  new Decimal(0.50),
+  new Decimal(0.08)
+);
+```
+
+**Use case: Market Making**
+
+```typescript
+// Создать симметричный спред вокруг справедливой цены
+const fairPrice = 0.50;
+const desiredSpreadPercent = 0.04; // 4% spread относительно mid
+
+const spreadResult = SpreadService.fromMidAndWidthRatio(
+  fairPrice,
+  desiredSpreadPercent
+);
+
+if (spreadResult.ok) {
+  // Спред: 0.49-0.51 (ширина 2% от 0.50)
+  console.log(`Quote: ${spreadResult.value.bid().toNumber()}-${spreadResult.value.ask().toNumber()}`);
+}
+```
+
+**Валидация:**
+
+- widthRatio должен быть ≥ 0 (отрицательная ширина запрещена)
+- Результирующие bid/ask должны быть в пределах [0.0001, 0.9999]
+
+**Ошибки:**
+
+- `SpreadErrorReason.INVALID_FORMAT` — невалидный mid
+- `SpreadErrorReason.INVALID_RATIO` — невалидный widthRatio (NaN, Infinity)
+- `SpreadErrorReason.NEGATIVE_RATIO_NOT_ALLOWED` — widthRatio < 0
+- `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — результат выходит за пределы Price
+
+---
+
 ## Операции со спредами
 
 ### `tighten(spread, amount)`
