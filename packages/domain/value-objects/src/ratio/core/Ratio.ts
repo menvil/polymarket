@@ -3,9 +3,29 @@
  *
  * @remarks
  * ## Архитектура
- * - Core слой БРОСАЕТ исключения RatioInvariantViolation
+ * - Core слой (Ratio.of) БРОСАЕТ исключения RatioInvariantViolation
  * - Facade слой (RatioService) возвращает Result<T, E> и НИКОГДА не бросает
- * - **Создание ТОЛЬКО через RatioService** - метод .of() помечен @internal и НЕ должен использоваться напрямую
+ *
+ * ## Способы создания
+ *
+ * ### 1. Через Facade (рекомендуется для большинства случаев)
+ * ```typescript
+ * const result = RatioService.fromPercent(2); // Result<Ratio, InvalidRatioError>
+ * if (result.ok) {
+ *   const ratio = result.value; // безопасно
+ * }
+ * ```
+ *
+ * ### 2. Через Core API (когда нужны исключения)
+ * ```typescript
+ * try {
+ *   const ratio = Ratio.of(new Decimal(0.02)); // может бросить RatioInvariantViolation
+ * } catch (e) {
+ *   if (e instanceof RatioInvariantViolation) {
+ *     // обработка нарушения инвариантов
+ *   }
+ * }
+ * ```
  *
  * ## Инварианты
  * Ratio гарантирует:
@@ -14,7 +34,7 @@
  *
  * ## НЕ-инварианты (не проверяются на этом уровне)
  * - Минимальные/максимальные границы (проверяются Rules при необходимости)
- * - Парсинг строк (делает RatioFormatter в Adapters)
+ * - Парсинг строк делает фасад через toDecimal
  * - Валидация precondition для операций (делает Rules)
  *
  * ## ⚠️ Важно: Ratio хранит ДРОБЬ (fraction), не процент!
@@ -39,11 +59,12 @@
  * - Price.take(ratio: Ratio): взять процент от цены
  * - Quantity.applyDiscount(ratio: Ratio): применить скидку
  *
- * @see {@link RatioService} для создания Ratio (единственный способ)
+ * @see {@link RatioService} для безопасного создания через Result
+ * @see {@link Ratio.of} для прямого создания (бросает исключения)
  *
  * @example
  * ```typescript
- * // ✅ CORRECT: Используйте RatioService для создания
+ * // ✅ РЕКОМЕНДУЕТСЯ: Через RatioService (безопасно, Result)
  * const ratioResult = RatioService.fromPercent(2); // 2% => 0.02
  * if (ratioResult.ok) {
  *   const ratio = ratioResult.value;
@@ -52,8 +73,15 @@
  *   console.log(ratio.oneMinus());  // Decimal(0.98) - для amount * (1 - ratio)
  * }
  *
- * // ❌ WRONG: НЕ используйте Ratio.of() напрямую
- * // Создание ТОЛЬКО через RatioService
+ * // ⚠️ АЛЬТЕРНАТИВА: Прямой вызов Ratio.of() (бросает исключения)
+ * try {
+ *   const ratio = Ratio.of(new Decimal(0.02));
+ *   console.log(ratio.toDecimal()); // Decimal(0.02)
+ * } catch (e) {
+ *   if (e instanceof RatioInvariantViolation) {
+ *     console.error('Invariant violation:', e.reason);
+ *   }
+ * }
  * ```
  */
 import Decimal from 'decimal.js';
@@ -78,23 +106,43 @@ export class Ratio {
   }
 
   /**
-   * Создать Ratio из дроби (fraction)
+   * Создать Ratio из дроби (fraction) - Core API
    *
    * @remarks
-   * Используется внутри RatioService для создания Ratio.
-   * Можно использовать напрямую, если нужен прямой доступ к Core API (бросает исключения).
+   * **⚠️ ВНИМАНИЕ: Этот метод БРОСАЕТ исключения при нарушении инвариантов.**
+   *
+   * Используйте этот метод когда:
+   * - Вы работаете в контексте, где исключения предпочтительнее Result
+   * - Вы уверены что значение валидно (например, константы)
+   * - Вам нужен прямой доступ к Core API
+   *
+   * Для большинства случаев рекомендуется использовать RatioService.fromDecimal(),
+   * который возвращает Result<Ratio, InvalidRatioError> и не бросает исключения.
    *
    * @param value - Дробь: 0.02 для 2%, 0.5 для 50%
    * @returns Ratio instance
-   * @throws {RatioInvariantViolation} если нарушены инварианты
+   * @throws {RatioInvariantViolation} если value - NaN или не конечно
    *
    * @example
    * ```typescript
-   * // Прямой вызов (бросает исключения)
+   * // ✅ Безопасно - валидное значение
    * const ratio = Ratio.of(new Decimal(0.02));
    *
-   * // Через RatioService (возвращает Result, безопаснее)
+   * // ✅ С обработкой исключений
+   * try {
+   *   const ratio = Ratio.of(new Decimal(userInput));
+   *   console.log(ratio.toDecimal());
+   * } catch (e) {
+   *   if (e instanceof RatioInvariantViolation) {
+   *     console.error('Invalid ratio:', e.reason);
+   *   }
+   * }
+   *
+   * // ✅ РЕКОМЕНДУЕТСЯ: Через RatioService (безопаснее, Result)
    * const result = RatioService.fromDecimal(0.02);
+   * if (result.ok) {
+   *   const ratio = result.value;
+   * }
    * ```
    */
   public static of(value: Decimal): Ratio {
