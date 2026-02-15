@@ -8,6 +8,7 @@ import { ValidateStepSizeForQuantity } from '../rules/ValidateStepSizeForQuantit
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTick } from '@polymarket/math';
 import Decimal from 'decimal.js';
 import { QuantityErrorReason } from '../errors/QuantityErrorReason.js';
+import { Ratio } from '../../ratio/core/Ratio.js';
 
 /**
  * Фасад для работы с Quantity
@@ -365,6 +366,191 @@ export class QuantityService {
 
     return wrapOp(QuantityService.SERVICE_NAME, 'roundToStep', ctx, () => {
       const rounded = roundToTick(quantity.value(), stepSizeDecimal, roundingMode);
+      return this.create(rounded);
+    }, InvalidQuantityError);
+  }
+
+  /**
+   * Вычисляет часть (порцию) количества по заданному коэффициенту
+   *
+   * @param quantity - Исходное количество
+   * @param rate - Коэффициент (Ratio) для вычисления части
+   * @returns Result с новым количеством или InvalidQuantityError
+   * @throws Никогда - все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * Вычисляет: `quantity * rate`
+   *
+   * **Use cases:**
+   * - Partial close позиции: закрыть 50% позиции
+   * - Расчёт комиссий: fee = amount * feeRate
+   * - Risk management: maxPosition = balance * maxPositionRatio
+   *
+   * **Валидация:**
+   * - Ratio уже валидирован (через RatioService)
+   * - Результат может быть > исходного qty если rate > 1 (это нормально)
+   * - Результат должен быть non-negative (проверится в Quantity.of)
+   *
+   * **Контракт "Never Throw":**
+   * Все ошибки (math, инварианты) оборачиваются в InvalidQuantityError.
+   *
+   * @example
+   * ```typescript
+   * import { QuantityService, RatioService } from '@polymarket/value-objects';
+   *
+   * // Взять 25% от позиции
+   * const position = expectOk(QuantityService.create(1000));
+   * const rate = expectOk(RatioService.fromPercent(25));
+   * const result = QuantityService.portion(position, rate.value);
+   * // → 250
+   *
+   * // Комиссия 0.2%
+   * const orderSize = expectOk(QuantityService.create(100000));
+   * const feeRate = expectOk(RatioService.fromPercent(0.2));
+   * const fee = QuantityService.portion(orderSize, feeRate.value);
+   * // → 200
+   *
+   * // Rate > 100% (валидно)
+   * const rate150 = expectOk(RatioService.fromPercent(150));
+   * const result2 = QuantityService.portion(position, rate150.value);
+   * // → 1500 (150% от 1000)
+   * ```
+   */
+  public static portion(
+    quantity: Quantity,
+    rate: Ratio
+  ): Result<Quantity, InvalidQuantityError> {
+    const ctx = {
+      quantity: quantity.value().toString(),
+      rate: rate.toDecimal().toString()
+    };
+
+    return wrapOp(QuantityService.SERVICE_NAME, 'portion', ctx, () => {
+      const result = multiplyDecimal(quantity.value(), rate.toDecimal());
+      return this.create(result);
+    }, InvalidQuantityError);
+  }
+
+  /**
+   * Увеличивает/уменьшает количество на заданный процент с округлением к stepSize
+   *
+   * @param quantity - Исходное количество
+   * @param delta - Относительное изменение (Ratio), может быть отрицательным
+   * @param stepSize - Размер шага для округления результата
+   * @param options - Опции округления
+   * @returns Result с новым количеством или InvalidQuantityError
+   * @throws Никогда - все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * Вычисляет: `quantity * (1 + delta)` → округляет к stepSize
+   *
+   * **Use cases:**
+   * - Увеличение ордера на X%
+   * - DCA (dollar-cost averaging) стратегии
+   * - Position sizing с учётом минимального лота
+   *
+   * **Delta может быть отрицательным:**
+   * - Положительный: увеличение (+10% → delta = 0.10)
+   * - Отрицательный: уменьшение (-5% → delta = -0.05)
+   * - Ограничение: delta >= -1 (иначе результат будет отрицательным)
+   *
+   * **Режимы округления:**
+   * - `ROUND_HALF_UP` (по умолчанию): к ближайшему stepSize
+   * - `ROUND_DOWN`: вниз (conservative для покупок)
+   * - `ROUND_UP`: вверх (conservative для продаж)
+   *
+   * **Валидация:**
+   * - stepSize должен быть > 0 (через ValidateStepSizeForQuantity)
+   * - delta может быть отрицательным (для decrease)
+   * - Результат должен быть non-negative (проверится в Quantity.of)
+   *
+   * **Edge cases:**
+   * - delta = 0 → qty остаётся неизменным (после округления к step)
+   * - delta = -1 (-100%) → qty = 0 (граничный случай)
+   * - delta < -1 (< -100%) → результат отрицательный → InvalidQuantityError
+   *
+   * **Контракт "Never Throw":**
+   * Все ошибки (парсинг, валидация, math, инварианты) оборачиваются в InvalidQuantityError.
+   *
+   * @example
+   * ```typescript
+   * import { QuantityService, RatioService } from '@polymarket/value-objects';
+   *
+   * // Увеличить на 10% с округлением к шагу 1
+   * const qty = expectOk(QuantityService.create(95));
+   * const delta = expectOk(RatioService.fromPercent(10));
+   * const result = QuantityService.increaseBy(qty, delta.value, 1);
+   * // 95 * 1.10 = 104.5 → round to 105
+   *
+   * // Уменьшить на 5% (отрицательный delta)
+   * const decrease = expectOk(RatioService.fromPercent(-5));
+   * const result2 = QuantityService.increaseBy(qty, decrease.value, 1);
+   * // 95 * 0.95 = 90.25 → round to 90
+   *
+   * // С округлением вниз (conservative)
+   * const result3 = QuantityService.increaseBy(
+   *   qty, delta.value, 1, { roundingMode: Decimal.ROUND_DOWN }
+   * );
+   * // 95 * 1.10 = 104.5 → floor to 104
+   *
+   * // DCA стратегия: увеличивать на 10% каждый раз
+   * const baseSize = expectOk(QuantityService.create(100));
+   * const increment = expectOk(RatioService.fromPercent(10));
+   * const order1 = baseSize; // 100
+   * const order2 = expectOk(QuantityService.increaseBy(order1, increment.value, 1)); // 110
+   * const order3 = expectOk(QuantityService.increaseBy(order2, increment.value, 1)); // 121
+   * ```
+   */
+  public static increaseBy(
+    quantity: Quantity,
+    delta: Ratio,
+    stepSize: number | string | Decimal,
+    options?: { roundingMode?: Decimal.Rounding }
+  ): Result<Quantity, InvalidQuantityError> {
+    const roundingMode = options?.roundingMode ?? Decimal.ROUND_HALF_UP;
+
+    // Безопасный парсинг stepSize через toDecimal
+    const stepSizeResult = toDecimal('stepSize', stepSize, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError);
+    if (isErr(stepSizeResult)) {
+      return Err(
+        rewrap(QuantityService.SERVICE_NAME, 'increaseBy', {
+          quantity: quantity.value().toString(),
+          delta: delta.toDecimal().toString(),
+          stepSize: String(stepSize)
+        }, stepSizeResult.error, InvalidQuantityError)
+      );
+    }
+
+    const stepSizeDecimal = stepSizeResult.value;
+
+    // Валидация stepSize через rule
+    const validateResult = ValidateStepSizeForQuantity.check(stepSizeDecimal);
+    if (isErr(validateResult)) {
+      return Err(
+        rewrap(QuantityService.SERVICE_NAME, 'increaseBy', {
+          quantity: quantity.value().toString(),
+          delta: delta.toDecimal().toString(),
+          stepSize: stepSizeDecimal.toString()
+        }, validateResult.error, InvalidQuantityError)
+      );
+    }
+
+    const ctx = {
+      quantity: quantity.value().toString(),
+      delta: delta.toDecimal().toString(),
+      stepSize: stepSizeDecimal.toString(),
+      roundingMode: String(roundingMode)
+    };
+
+    return wrapOp(QuantityService.SERVICE_NAME, 'increaseBy', ctx, () => {
+      // Вычисляем новое значение: quantity * (1 + delta)
+      const multiplier = delta.onePlus();
+      const newValue = multiplyDecimal(quantity.value(), multiplier);
+
+      // Округляем к stepSize
+      const rounded = roundToTick(newValue, stepSizeDecimal, roundingMode);
+
+      // Создаём Quantity (автоматически проверит non-negative)
       return this.create(rounded);
     }, InvalidQuantityError);
   }

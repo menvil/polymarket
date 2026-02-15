@@ -4,6 +4,7 @@ import { Quantity } from '../../../../src/quantity/core/Quantity.js';
 import { InvalidQuantityError, DivisionByZeroError, ArithmeticOverflowError, InvalidOperandError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import * as math from '@polymarket/math';
+import { Ratio } from '../../../../src/ratio/core/Ratio.js';
 
 describe('QuantityService', () => {
   describe('create()', () => {
@@ -1144,6 +1145,294 @@ describe('QuantityService', () => {
         expect(() => QuantityService.multiply(qty, -1)).not.toThrow();
         expect(() => QuantityService.divide(qty, 0)).not.toThrow();
         expect(() => QuantityService.roundToStep(qty, new Decimal(0))).not.toThrow();
+      });
+    });
+  });
+
+  describe('portion()', () => {
+    describe('happy path', () => {
+      it('должен вычислить 25% от количества', () => {
+        const qty = Quantity.of(new Decimal(1000));
+        const rate = Ratio.of(new Decimal(0.25)); // 25%
+
+        const result = QuantityService.portion(qty, rate);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.toNumber()).toBe(250);
+      });
+
+      it('должен вычислить комиссию 0.2%', () => {
+        const orderSize = Quantity.of(new Decimal(100000));
+        const feeRate = Ratio.of(new Decimal(0.002)); // 0.2%
+
+        const result = QuantityService.portion(orderSize, feeRate);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.toNumber()).toBe(200);
+      });
+
+      it('должен работать с очень малым rate', () => {
+        const qty = Quantity.of(new Decimal(1000000));
+        const rate = Ratio.of(new Decimal(0.00001)); // 0.001%
+
+        const result = QuantityService.portion(qty, rate);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.toNumber()).toBe(10);
+      });
+    });
+
+    describe('edge cases', () => {
+      it('должен вернуть 0 для rate = 0', () => {
+        const qty = Quantity.of(new Decimal(1000));
+        const rate = Ratio.ZERO;
+
+        const result = QuantityService.portion(qty, rate);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.toNumber()).toBe(0);
+      });
+
+      it('должен вернуть исходное qty для rate = 1 (100%)', () => {
+        const qty = Quantity.of(new Decimal(1000));
+        const rate = Ratio.ONE;
+
+        const result = QuantityService.portion(qty, rate);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.toNumber()).toBe(1000);
+      });
+
+      it('должен работать с rate > 1 (> 100%)', () => {
+        const qty = Quantity.of(new Decimal(1000));
+        const rate = Ratio.of(new Decimal(1.5)); // 150%
+
+        const result = QuantityService.portion(qty, rate);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.toNumber()).toBe(1500);
+      });
+
+      it('должен сохранять точность для десятичных значений', () => {
+        const qty = Quantity.of(new Decimal('123.456789'));
+        const rate = Ratio.of(new Decimal(0.333)); // 33.3%
+
+        const result = QuantityService.portion(qty, rate);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        expect(result.value.value().toString()).toBe('41.111110737');
+      });
+    });
+
+    describe('контракт Never Throw', () => {
+      it('никогда не бросает исключения', () => {
+        const qty = Quantity.of(new Decimal(100));
+        const rate = Ratio.of(new Decimal(0.5));
+
+        expect(() => QuantityService.portion(qty, rate)).not.toThrow();
+      });
+    });
+  });
+
+  describe('increaseBy()', () => {
+    describe('happy path - increase', () => {
+      it('должен увеличить на 10% с округлением', () => {
+        const qty = Quantity.of(new Decimal(95));
+        const delta = Ratio.of(new Decimal(0.10)); // +10%
+
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // 95 * 1.10 = 104.5 → round to 105
+        expect(result.value.toNumber()).toBe(105);
+      });
+
+      it('должен увеличить на 20% с шагом 0.1', () => {
+        const qty = Quantity.of(new Decimal('15.3'));
+        const delta = Ratio.of(new Decimal(0.20)); // +20%
+
+        const result = QuantityService.increaseBy(qty, delta, 0.1);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // 15.3 * 1.20 = 18.36 → round to 18.4
+        expect(result.value.toNumber()).toBe(18.4);
+      });
+    });
+
+    describe('happy path - decrease', () => {
+      it('должен уменьшить на 5% с округлением', () => {
+        const qty = Quantity.of(new Decimal(95));
+        const delta = Ratio.of(new Decimal(-0.05)); // -5%
+
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // 95 * 0.95 = 90.25 → round to 90
+        expect(result.value.toNumber()).toBe(90);
+      });
+
+      it('должен уменьшить на 50%', () => {
+        const qty = Quantity.of(new Decimal(1000));
+        const delta = Ratio.of(new Decimal(-0.50)); // -50%
+
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // 1000 * 0.50 = 500
+        expect(result.value.toNumber()).toBe(500);
+      });
+    });
+
+    describe('rounding modes', () => {
+      it('должен использовать ROUND_HALF_UP по умолчанию', () => {
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(0.105)); // +10.5%
+
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // 100 * 1.105 = 110.5 → round to 111
+        expect(result.value.toNumber()).toBe(111);
+      });
+
+      it('должен округлять вниз с ROUND_DOWN', () => {
+        const qty = Quantity.of(new Decimal(95));
+        const delta = Ratio.of(new Decimal(0.10)); // +10%
+
+        const result = QuantityService.increaseBy(
+          qty, delta, 1, { roundingMode: Decimal.ROUND_DOWN }
+        );
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // 95 * 1.10 = 104.5 → floor to 104
+        expect(result.value.toNumber()).toBe(104);
+      });
+
+      it('должен округлять вверх с ROUND_UP', () => {
+        const qty = Quantity.of(new Decimal(95));
+        const delta = Ratio.of(new Decimal(0.10)); // +10%
+
+        const result = QuantityService.increaseBy(
+          qty, delta, 1, { roundingMode: Decimal.ROUND_UP }
+        );
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // 95 * 1.10 = 104.5 → ceil to 105
+        expect(result.value.toNumber()).toBe(105);
+      });
+    });
+
+    describe('edge cases', () => {
+      it('должен обработать delta = 0 (no change)', () => {
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.ZERO;
+
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // 100 * 1.0 = 100
+        expect(result.value.toNumber()).toBe(100);
+      });
+
+      it('должен обработать delta = -1 (-100%, граничный случай)', () => {
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(-1)); // -100%
+
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // 100 * 0 = 0
+        expect(result.value.toNumber()).toBe(0);
+      });
+
+      it('должен отклонить delta < -1 (результат отрицательный)', () => {
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(-1.5)); // -150%
+
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(false);
+        // 100 * (-0.5) = -50 → negative не допускается
+      });
+    });
+
+    describe('stepSize validation', () => {
+      it('должен отклонить невалидный stepSize', () => {
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(0.10));
+
+        const result = QuantityService.increaseBy(qty, delta, 'invalid' as any);
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error.context?.op).toBe('increaseBy');
+      });
+
+      it('должен отклонить stepSize = 0', () => {
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(0.10));
+
+        const result = QuantityService.increaseBy(qty, delta, 0);
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+        expect(result.error.context?.op).toBe('increaseBy');
+      });
+
+      it('должен отклонить отрицательный stepSize', () => {
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(0.10));
+
+        const result = QuantityService.increaseBy(qty, delta, -1);
+
+        expect(result.ok).toBe(false);
+      });
+    });
+
+    describe('DCA strategy example', () => {
+      it('должен увеличивать размер ордера на 10% каждый раз', () => {
+        const baseSize = Quantity.of(new Decimal(100));
+        const increment = Ratio.of(new Decimal(0.10)); // +10%
+
+        const order1 = baseSize;
+        expect(order1.toNumber()).toBe(100);
+
+        const order2Result = QuantityService.increaseBy(order1, increment, 1);
+        expect(order2Result.ok).toBe(true);
+        if (!order2Result.ok) return;
+        expect(order2Result.value.toNumber()).toBe(110);
+
+        const order3Result = QuantityService.increaseBy(order2Result.value, increment, 1);
+        expect(order3Result.ok).toBe(true);
+        if (!order3Result.ok) return;
+        expect(order3Result.value.toNumber()).toBe(121); // 110 * 1.10 = 121
+      });
+    });
+
+    describe('контракт Never Throw', () => {
+      it('никогда не бросает исключения', () => {
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(0.10));
+
+        expect(() => QuantityService.increaseBy(qty, delta, 1)).not.toThrow();
+        expect(() => QuantityService.increaseBy(qty, delta, 'invalid' as any)).not.toThrow();
+        expect(() => QuantityService.increaseBy(qty, delta, 0)).not.toThrow();
       });
     });
   });
