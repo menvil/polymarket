@@ -142,6 +142,55 @@ qty.match({
 
 ---
 
+### 📦 [AssetQuantity](./asset-quantity/README.md)
+
+Количество актива (USDC или outcome token).
+
+```typescript
+import { AssetQuantityService } from '@polymarket/value-objects/asset-quantity';
+import { Ratio } from '@polymarket/value-objects/ratio';
+import { BinaryOutcome } from '@polymarket/ids';
+import Decimal from 'decimal.js';
+
+// Создание USDC quantity
+const usdcResult = AssetQuantityService.createUsdc(100);
+if (usdcResult.ok) {
+  console.log(usdcResult.value.amount().toNumber());  // 100
+  console.log(usdcResult.value.isCurrency());         // true
+}
+
+// Создание outcome token quantity
+const tokenResult = AssetQuantityService.createOutcomeToken(
+  conditionRef,
+  BinaryOutcome.UP,
+  50
+);
+
+// Операции с Ratio: portion (доля актива)
+const orderQty = AssetQuantityService.createUsdc(1000);
+if (orderQty.ok) {
+  // Fee calculation: 2% от 1000 USDC
+  const feeRate = Ratio.of(new Decimal(0.02));
+  const feeResult = AssetQuantityService.portion(orderQty.value, feeRate);
+
+  if (feeResult.ok) {
+    console.log(feeResult.value.amount().toNumber()); // 20 USDC (2% fee)
+  }
+}
+```
+
+**Особенности:**
+
+- Комбинирует AssetId (currency/token) + Quantity
+- Railway-Oriented Programming через `Result<T, E>`
+- Операция `portion()` для вычисления доли (fee calculation, allocation, partial fills)
+- Defensive copy для гарантии иммутабельности
+- Never Throw Contract в Facade layer
+
+**[→ Подробная документация](./asset-quantity/README.md)**
+
+---
+
 ### 📈 Quote
 
 Котировка с ценой покупки (bid) и продажи (ask).
@@ -312,6 +361,7 @@ if (pnl.isNegative()) {
 - 💰 **[Money](./money.md)** — денежные суммы с высокой точностью
 - 📊 **[Percentage](./percentage.md)** — процентные значения для комиссий и расчётов
 - 💵 **[Balance](./balance.md)** — балансы счетов пользователей
+- 📦 **[AssetQuantity](./asset-quantity/README.md)** — количество актива с операциями Ratio
 
 ### Архитектурные документы
 

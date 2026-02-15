@@ -6,6 +6,7 @@ import { Quantity } from '../../quantity/core/Quantity.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
 import { AssetQuantity } from '../core/index.js';
 import { AssetQuantityErrorReason } from '../errors/index.js';
+import { Ratio } from '../../ratio/core/Ratio.js';
 
 /**
  * Фасад для работы с AssetQuantity - публичный API
@@ -271,5 +272,96 @@ export class AssetQuantityService {
    */
   public static isPositive(assetQty: AssetQuantity): boolean {
     return assetQty.isPositive();
+  }
+
+  /**
+   * Вычисляет долю (portion) от AssetQuantity
+   *
+   * @param assetQty - Исходное количество актива
+   * @param rate - Доля (Ratio) - например, 0.02 для 2%
+   * @returns Result с AssetQuantity той же доли или InvalidAssetQuantityError
+   *
+   * @remarks
+   * **Семантика:** "Сколько актива составляет доля rate от количества assetQty"
+   *
+   * **Формула:** result.amount = assetQty.amount * rate
+   *
+   * **Asset сохраняется:** результат имеет тот же asset (currency/token) что и исходный
+   *
+   * **Use cases:**
+   * - Fee calculation: `portion(orderQty, Ratio.fromPercent(2))` → 2% trading fee
+   * - Allocation: `portion(totalQty, Ratio.fromDecimal(0.3))` → 30% allocation
+   * - Partial fill: `portion(orderQty, Ratio.fromDecimal(0.5))` → 50% filled
+   *
+   * **Процесс:**
+   * 1. Multiply: assetQty.amount() * rate.toDecimal()
+   * 2. Create Quantity через QuantityService
+   * 3. Create AssetQuantity с тем же asset
+   *
+   * **Возможные ошибки:**
+   * - Invalid amount: результат отрицательный (если rate < 0) или превышает максимум
+   *
+   * @example
+   * ```typescript
+   * // Fee calculation: 2% от 1000 USDC
+   * const orderQty = expectOk(AssetQuantityService.createUsdc(1000));
+   * const feeRate = Ratio.of(new Decimal(0.02)); // 2%
+   *
+   * const feeResult = AssetQuantityService.portion(orderQty, feeRate);
+   * if (feeResult.ok) {
+   *   console.log(feeResult.value.amount().toNumber()); // 20 USDC
+   *   console.log(feeResult.value.asset()); // Same asset as orderQty
+   * }
+   *
+   * // Allocation: 30% от 5000 tokens
+   * const totalTokens = expectOk(AssetQuantityService.createOutcomeToken(
+   *   conditionRef, BinaryOutcome.UP, 5000
+   * ));
+   * const allocRate = Ratio.of(new Decimal(0.3)); // 30%
+   *
+   * const allocResult = AssetQuantityService.portion(totalTokens, allocRate);
+   * if (allocResult.ok) {
+   *   console.log(allocResult.value.amount().toNumber()); // 1500 tokens
+   * }
+   * ```
+   */
+  public static portion(
+    assetQty: AssetQuantity,
+    rate: Ratio
+  ): Result<AssetQuantity, InvalidAssetQuantityError> {
+    const ctx = {
+      amount: assetQty.amount().value().toString(),
+      asset: assetQty.asset(),
+      rate: rate.toDecimal().toString()
+    };
+
+    return wrapOp(AssetQuantityService.SERVICE_NAME, 'portion', ctx, () => {
+      // Multiply: amount * rate
+      const resultAmount = assetQty.amount().value().times(rate.toDecimal());
+
+      // Create Quantity через QuantityService
+      const quantityResult = QuantityService.create(resultAmount);
+
+      if (isErr(quantityResult)) {
+        // Переупаковываем ошибку QuantityService в InvalidAssetQuantityError
+        throw new InvalidAssetQuantityError(
+          (ctx) => `Invalid result amount for portion: ${ctx.quantityError}`,
+          {
+            context: {
+              source: ErrorSource.SERVICE_CALL,
+              reason: AssetQuantityErrorReason.INVALID_AMOUNT,
+              amount: assetQty.amount().value().toString(),
+              rate: rate.toDecimal().toString(),
+              quantityError: quantityResult.error.message,
+            },
+          }
+        );
+      }
+
+      // Create AssetQuantity с тем же asset
+      const result = new AssetQuantity(assetQty.asset(), quantityResult.value);
+
+      return Ok(result);
+    }, InvalidAssetQuantityError);
   }
 }
