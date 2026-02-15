@@ -586,7 +586,7 @@ static fromMarketData(
 
 ### Medium Priority (Should Have)
 
-7. **improveBid()** / **improveAsk()** - улучшение цен
+1. **improveBid()** / **improveAsk()** - улучшение цен
 2. **merge()** - агрегация источников
 3. **flip()** - для двусторонних рынков
 4. **imbalance()** - анализ баланса
@@ -595,7 +595,7 @@ static fromMarketData(
 
 ### Low Priority (Nice to Have)
 
-13. worsenBid() / worsenAsk() - редко нужны
+1. worsenBid() / worsenAsk() - редко нужны
 2. weightedMerge() - сложная агрегация
 3. qualityScore() - субъективная метрика
 4. effectiveSpread() - продвинутая аналитика

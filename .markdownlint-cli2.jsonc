@@ -41,7 +41,16 @@
     // MD050: Strong style - consistent
     "MD050": {
       "style": "asterisk"
-    }
+    },
+
+    // MD036: Emphasis as heading - отключаем, т.к. используем **bold** для псевдо-заголовков в списках
+    "MD036": false,
+
+    // MD040: Fenced code language - отключаем, т.к. иногда код без языка (plain text output)
+    "MD040": false,
+
+    // MD060: Table column style - отключаем, т.к. compact vs consistent style не критичен
+    "MD060": false
   },
 
   // Форматтер для красивого вывода
