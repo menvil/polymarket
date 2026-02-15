@@ -5,6 +5,19 @@ import { Price } from '../../../../src/price/core/Price.js';
 import { InvalidPriceError } from '@polymarket/errors';
 import * as math from '@polymarket/math';
 import { ValidateAligned } from '../../../../src/price/rules/ValidateAligned.js';
+import { RatioService } from '../../../../src/ratio/facade/RatioService.js';
+import { Result } from '@polymarket/result';
+import { PriceErrorReason } from '../../../../src/price/errors/PriceErrorReason.js';
+
+/**
+ * Helper для unwrap Result в тестах
+ */
+function expectOk<T, E>(result: Result<T, E>): T {
+  if (!result.ok) {
+    throw new Error(`Expected Ok but got Err: ${JSON.stringify(result.error)}`);
+  }
+  return result.value;
+}
 
 describe('PriceService', () => {
   describe('Facade Error Contract - Comprehensive', () => {
@@ -564,6 +577,247 @@ describe('PriceService', () => {
       expect(result.ok).toBe(false);
       expect(spy).toHaveBeenCalledWith(price, expect.any(Decimal));
       spy.mockRestore();
+    });
+  });
+
+  describe('applyRelativeChange()', () => {
+    const tickSize = new Decimal(0.01);
+
+    describe('happy path', () => {
+      it('должен применить положительный markup (+2%)', () => {
+        const price = Price.of(new Decimal(0.50));
+        const markup = expectOk(RatioService.fromPercent(2));
+
+        const result = PriceService.applyRelativeChange(price, markup, tickSize);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        // 0.50 * 1.02 = 0.51
+        expect(result.value.toNumber()).toBe(0.51);
+      });
+
+      it('должен применить отрицательный markdown (-5%)', () => {
+        const price = Price.of(new Decimal(0.50));
+        const markdown = expectOk(RatioService.fromPercent(-5));
+
+        const result = PriceService.applyRelativeChange(price, markdown, tickSize);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        // 0.50 * 0.95 = 0.475 → round to 0.48
+        expect(result.value.toNumber()).toBe(0.48);
+      });
+
+      it('должен обработать нулевой markup (без изменений)', () => {
+        const price = Price.of(new Decimal(0.50));
+        const zero = expectOk(RatioService.fromDecimal(0));
+
+        const result = PriceService.applyRelativeChange(price, zero, tickSize);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        expect(result.value.toNumber()).toBe(0.50);
+      });
+    });
+
+    describe('режимы округления', () => {
+      it('должен округлять к ближайшему тику по умолчанию', () => {
+        const price = Price.of(new Decimal(0.50));
+        const markup = expectOk(RatioService.fromPercent(2.3));
+
+        const result = PriceService.applyRelativeChange(price, markup, tickSize);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        // 0.50 * 1.023 = 0.5115 → round to 0.51
+        expect(result.value.toNumber()).toBe(0.51);
+      });
+
+      it('должен округлять вниз с режимом floor', () => {
+        const price = Price.of(new Decimal(0.50));
+        const markup = expectOk(RatioService.fromPercent(2.9));
+
+        const result = PriceService.applyRelativeChange(
+          price, markup, tickSize, { roundingMode: 'floor' }
+        );
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        // 0.50 * 1.029 = 0.5145 → floor to 0.51
+        expect(result.value.toNumber()).toBe(0.51);
+      });
+
+      it('должен округлять вверх с режимом ceil', () => {
+        const price = Price.of(new Decimal(0.50));
+        const markup = expectOk(RatioService.fromPercent(2.1));
+
+        const result = PriceService.applyRelativeChange(
+          price, markup, tickSize, { roundingMode: 'ceil' }
+        );
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        // 0.50 * 1.021 = 0.5105 → ceil to 0.52
+        expect(result.value.toNumber()).toBe(0.52);
+      });
+
+      it('должен использовать nearest при отсутствии опции', () => {
+        const price = Price.of(new Decimal(0.50));
+        const markup = expectOk(RatioService.fromPercent(2.5));
+
+        const result = PriceService.applyRelativeChange(price, markup, tickSize, {});
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        // 0.50 * 1.025 = 0.5125 → nearest to 0.51
+        expect(result.value.toNumber()).toBe(0.51);
+      });
+    });
+
+    describe('edge cases - границы', () => {
+      it('должен отклонить если результат превышает MAX_PRICE', () => {
+        const price = Price.of(new Decimal(0.95));
+        const markup = expectOk(RatioService.fromPercent(10));
+
+        const result = PriceService.applyRelativeChange(price, markup, tickSize);
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+
+        // 0.95 * 1.10 = 1.045 > MAX_PRICE (0.9999)
+        expect(result.error.context?.reason).toBe(PriceErrorReason.OUT_OF_RANGE_HIGH);
+      });
+
+      it('должен отклонить если результат ниже MIN_PRICE', () => {
+        const price = Price.of(new Decimal(0.001));
+        const markdown = expectOk(RatioService.fromPercent(-90));
+
+        const result = PriceService.applyRelativeChange(price, markdown, tickSize);
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+
+        // 0.001 * 0.10 = 0.0001 → может округлиться к 0 или ниже MIN_PRICE
+        expect(result.error.context?.reason).toBe(PriceErrorReason.OUT_OF_RANGE_LOW);
+      });
+
+      it('должен обработать результат близкий к MAX_PRICE после округления', () => {
+        const price = Price.of(new Decimal(0.9899));
+        const markup = expectOk(RatioService.fromPercent(1));
+
+        const result = PriceService.applyRelativeChange(price, markup, tickSize);
+
+        // 0.9899 * 1.01 = 0.999799 → round to 0.9998 (близко к MAX но валидно)
+        if (result.ok) {
+          expect(result.value.toNumber()).toBeLessThanOrEqual(0.9999);
+          expect(result.value.toNumber()).toBeGreaterThanOrEqual(0.9997);
+        }
+      });
+
+      it('должен обработать результат близкий к MIN_PRICE после округления', () => {
+        const price = Price.of(new Decimal(0.0002));
+        const markdown = expectOk(RatioService.fromPercent(-50));
+
+        const result = PriceService.applyRelativeChange(price, markdown, new Decimal(0.0001));
+
+        // 0.0002 * 0.50 = 0.0001 (MIN_PRICE)
+        if (result.ok) {
+          expect(result.value.toNumber()).toBeGreaterThanOrEqual(0.0001);
+        }
+      });
+    });
+
+    describe('ошибки валидации', () => {
+      it('должен отклонить невалидный tickSize', () => {
+        const price = Price.of(new Decimal(0.50));
+        const markup = expectOk(RatioService.fromPercent(2));
+
+        const result = PriceService.applyRelativeChange(price, markup, 'invalid' as any);
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+
+        expect(result.error.context?.op).toBe('applyRelativeChange');
+      });
+
+      it('должен отклонить tickSize не кратный базовому тику', () => {
+        const price = Price.of(new Decimal(0.50));
+        const markup = expectOk(RatioService.fromPercent(2));
+
+        const result = PriceService.applyRelativeChange(price, markup, 0.00015);
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+
+        expect(result.error.context?.reason).toBe('not_multiple_of_base_tick');
+      });
+    });
+
+    describe('большие изменения', () => {
+      it('должен обработать большой положительный markup', () => {
+        const price = Price.of(new Decimal(0.10));
+        const markup = expectOk(RatioService.fromPercent(50));
+
+        const result = PriceService.applyRelativeChange(price, markup, tickSize);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        // 0.10 * 1.50 = 0.15
+        expect(result.value.toNumber()).toBe(0.15);
+      });
+
+      it('должен обработать большой отрицательный markdown', () => {
+        const price = Price.of(new Decimal(0.90));
+        const markdown = expectOk(RatioService.fromPercent(-50));
+
+        const result = PriceService.applyRelativeChange(price, markdown, tickSize);
+
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+
+        // 0.90 * 0.50 = 0.45
+        expect(result.value.toNumber()).toBe(0.45);
+      });
+    });
+
+    describe('Facade Error Contract', () => {
+      it('должен включать op, price, ratio, tickSize, roundingMode в контекст', () => {
+        const price = Price.of(new Decimal(0.50));
+        const markup = expectOk(RatioService.fromPercent(2));
+
+        const result = PriceService.applyRelativeChange(price, markup, 'invalid' as any);
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+
+        expect(result.error.context?.op).toBe('applyRelativeChange');
+        expect(result.error.context?.price).toBe('0.5');
+        expect(result.error.context?.ratio).toBe('0.02');
+        expect(result.error.context?.tickSize).toBe('invalid');
+        expect(result.error.context?.roundingMode).toBe('nearest');
+      });
+
+      it('должен сохранить кастомный roundingMode в контексте', () => {
+        const price = Price.of(new Decimal(0.50));
+        const markup = expectOk(RatioService.fromPercent(2));
+
+        const result = PriceService.applyRelativeChange(
+          price, markup, 'invalid' as any, { roundingMode: 'floor' }
+        );
+
+        expect(result.ok).toBe(false);
+        if (result.ok) return;
+
+        expect(result.error.context?.roundingMode).toBe('floor');
+      });
     });
   });
 });

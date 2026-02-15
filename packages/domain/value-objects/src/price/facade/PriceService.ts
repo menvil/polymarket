@@ -16,6 +16,7 @@ import {
   ceilToTick
 } from '@polymarket/math';
 import Decimal from 'decimal.js';
+import { Ratio } from '../../ratio/core/Ratio.js';
 
 /**
  * Фасад для работы с Price - публичный API
@@ -474,5 +475,134 @@ export class PriceService {
       );
     }
     return result;
+  }
+
+  /**
+   * Применяет относительное изменение (markup/markdown) к цене
+   *
+   * @remarks
+   * Вычисляет новую цену как: `price * (1 + ratio)`
+   *
+   * **Примеры:**
+   * - Markup +2%: `price * 1.02`
+   * - Markdown -5%: `price * 0.95`
+   *
+   * **Округление к тику:**
+   * Результат округляется с учётом режима:
+   * - `nearest` (по умолчанию): к ближайшему тику
+   * - `floor`: вниз — используй для агрессивных bid quotes
+   * - `ceil`: вверх — используй для агрессивных ask quotes
+   *
+   * **Валидация:**
+   * - Ratio может быть отрицательным (для markdown)
+   * - Результат должен оставаться в диапазоне [MIN_PRICE, MAX_PRICE]
+   * - Результат должен быть кратен tickSize после округления
+   *
+   * **Контракт "Never Throw":**
+   * Все ошибки (парсинг, валидация, math, выход за границы) оборачиваются в InvalidPriceError.
+   *
+   * @param price - Исходная цена
+   * @param ratio - Относительное изменение (например, 0.02 для +2%, -0.05 для -5%)
+   * @param tickSize - Размер тика рынка
+   * @param options - Опции округления
+   * @returns Result с новой ценой или InvalidPriceError
+   *
+   * @example
+   * ```typescript
+   * import { PriceService, RatioService } from '@polymarket/value-objects';
+   *
+   * // Markup +2%
+   * const price = expectOk(PriceService.create(0.50));
+   * const markup = expectOk(RatioService.fromPercent(2));
+   * const result = PriceService.applyRelativeChange(price, markup, 0.01);
+   * if (result.ok) {
+   *   console.log(result.value.toNumber()); // 0.51 (0.50 * 1.02 = 0.51)
+   * }
+   *
+   * // Markdown -5%
+   * const markdown = expectOk(RatioService.fromPercent(-5));
+   * const result2 = PriceService.applyRelativeChange(price, markdown, 0.01);
+   * if (result2.ok) {
+   *   console.log(result2.value.toNumber()); // 0.48 (0.50 * 0.95 = 0.475 → round to 0.48)
+   * }
+   *
+   * // С округлением вниз (для bid)
+   * const result3 = PriceService.applyRelativeChange(
+   *   price, markup, 0.01, { roundingMode: 'floor' }
+   * );
+   *
+   * // С округлением вверх (для ask)
+   * const result4 = PriceService.applyRelativeChange(
+   *   price, markup, 0.01, { roundingMode: 'ceil' }
+   * );
+   * ```
+   */
+  public static applyRelativeChange(
+    price: Price,
+    ratio: Ratio,
+    tickSize: number | string | Decimal,
+    options?: { roundingMode?: 'nearest' | 'floor' | 'ceil' }
+  ): Result<Price, InvalidPriceError> {
+    const roundingMode = options?.roundingMode ?? 'nearest';
+
+    // Безопасный парсинг tickSize через toDecimal
+    const tickDecimalResult = toDecimal('tickSize', tickSize, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
+    if (isErr(tickDecimalResult)) {
+      return Err(
+        rewrap(PriceService.SERVICE_NAME, 'applyRelativeChange', {
+          price: price.value().toString(),
+          ratio: ratio.toDecimal().toString(),
+          tickSize: String(tickSize),
+          roundingMode
+        }, tickDecimalResult.error, InvalidPriceError)
+      );
+    }
+
+    // Валидация tickSize через ValidateTickSizeMultipleOfBaseTick
+    const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickDecimalResult.value);
+    if (isErr(tickRes)) {
+      return Err(
+        rewrap(PriceService.SERVICE_NAME, 'applyRelativeChange', {
+          price: price.value().toString(),
+          ratio: ratio.toDecimal().toString(),
+          tickSize: tickDecimalResult.value.toString(),
+          roundingMode
+        }, tickRes.error, InvalidPriceError)
+      );
+    }
+    const tick = tickRes.value;
+
+    const ctx = {
+      price: price.value().toString(),
+      ratio: ratio.toDecimal().toString(),
+      tickSize: tick.toString(),
+      roundingMode
+    };
+
+    return wrapOp(PriceService.SERVICE_NAME, 'applyRelativeChange', ctx, () => {
+      // Вычисляем новое значение: price * (1 + ratio)
+      const multiplier = ratio.onePlus();
+      const newValue = multiplyDecimal(price.value(), multiplier);
+
+      // Округляем к тику с учётом режима
+      let rounded: Decimal;
+      switch (roundingMode) {
+        case 'floor':
+          rounded = floorToTick(newValue, tick);
+          break;
+
+        case 'ceil':
+          rounded = ceilToTick(newValue, tick);
+          break;
+
+        case 'nearest':
+        default:
+          rounded = roundToTick(newValue, tick, Decimal.ROUND_HALF_UP);
+          break;
+      }
+
+      // Создаём Price (автоматически проверит границы [MIN_PRICE, MAX_PRICE])
+      return this.create(rounded);
+    }, InvalidPriceError);
   }
 }

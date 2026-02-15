@@ -263,13 +263,13 @@ const adjusted = SpreadService.adjustBid(spread, new Decimal(0.47));
 - [x] Tests и документация
 - [x] wrapOp integration
 
-### Phase 2: Spread методы с Ratio (текущая)
-- [ ] `SpreadService.fromMidAndWidth()` - создание из mid + абсолютная ширина
-- [ ] `SpreadService.fromMidAndWidthPercentage()` - создание из mid + % ширина
-- [ ] `SpreadService.widenBy(spread, ratio)` - расширить на % (вместо абсолютных bps)
-- [ ] `SpreadService.tightenBy(spread, ratio)` - сузить на %
+### Phase 2: Spread методы с Ratio ✅ COMPLETE
+- [x] `SpreadService.fromMidAndWidth()` - создание из mid + абсолютная ширина
+- [x] `SpreadService.fromMidAndWidthPercentage()` - создание из mid + % ширина
+- [x] `SpreadService.widenBy(spread, ratio)` - расширить на % (вместо абсолютных bps)
+- [x] `SpreadService.tightenBy(spread, ratio)` - сузить на %
 
-**Приоритет**: HIGH - требуется для quoting policies
+**Status**: ✅ COMPLETE - All 88 tests passing (commit: `89aa9d2`)
 
 ---
 
