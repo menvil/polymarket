@@ -100,6 +100,53 @@ export enum SpreadErrorReason {
   OPERATION_OUT_OF_BOUNDS = 'OPERATION_OUT_OF_BOUNDS',
 
   // ============================================================================
+  // Ratio Operations (Facade)
+  // ============================================================================
+
+  /**
+   * Операция требует two-sided spread (bid и ask определены)
+   *
+   * @remarks
+   * Используется в Ratio operations (shiftByRatio, widenByRatio, etc.)
+   * которые требуют вычисления midpoint.
+   */
+  NOT_TWO_SIDED = 'NOT_TWO_SIDED',
+
+  /**
+   * Midpoint недоступен или равен нулю
+   *
+   * @remarks
+   * Используется в getSpreadRatio когда midpoint = 0
+   * (теоретически невозможно для Price, но защита).
+   */
+  MID_UNAVAILABLE = 'MID_UNAVAILABLE',
+
+  /**
+   * Невалидный Ratio объект
+   *
+   * @remarks
+   * Ratio не является валидным (NaN, Infinity, etc.)
+   */
+  INVALID_RATIO = 'INVALID_RATIO',
+
+  /**
+   * Отрицательный Ratio не разрешён для операции
+   *
+   * @remarks
+   * Используется в widenByRatio/tightenByRatio где deltaWidthRatio должен быть >= 0.
+   */
+  NEGATIVE_RATIO_NOT_ALLOWED = 'NEGATIVE_RATIO_NOT_ALLOWED',
+
+  /**
+   * Результат Ratio операции выходит за границы валидных значений
+   *
+   * @remarks
+   * После применения Ratio операции результат выходит за границы Price [0.0001, 0.9999]
+   * или нарушает bid <= ask инвариант.
+   */
+  RATIO_OUT_OF_BOUNDS = 'RATIO_OUT_OF_BOUNDS',
+
+  // ============================================================================
   // Parse/Serialization Errors (Adapters)
   // ============================================================================
 

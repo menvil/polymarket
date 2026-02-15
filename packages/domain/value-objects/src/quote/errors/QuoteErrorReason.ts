@@ -70,5 +70,27 @@ export enum QuoteErrorReason {
   MARKET_CROSSING = 'MARKET_CROSSING',
 
   /** Котировка устарела (превышен максимальный возраст) */
-  QUOTE_TOO_OLD = 'QUOTE_TOO_OLD'
+  QUOTE_TOO_OLD = 'QUOTE_TOO_OLD',
+
+  // ============================================================================
+  // Ratio Operations
+  // ============================================================================
+
+  /** Операция требует two-sided quote (bid и ask определены) */
+  NOT_TWO_SIDED = 'NOT_TWO_SIDED',
+
+  /** Midpoint недоступен или равен нулю */
+  MID_UNAVAILABLE = 'MID_UNAVAILABLE',
+
+  /** Невалидный Ratio объект */
+  INVALID_RATIO = 'INVALID_RATIO',
+
+  /** Отрицательный Ratio не разрешён для операции (widen/tighten) */
+  NEGATIVE_RATIO_NOT_ALLOWED = 'NEGATIVE_RATIO_NOT_ALLOWED',
+
+  /** Результат Ratio операции выходит за границы валидных значений */
+  RATIO_OUT_OF_BOUNDS = 'RATIO_OUT_OF_BOUNDS',
+
+  /** Невалидный size factor для scaleSizesByRatio (должен быть > 0) */
+  INVALID_SIZE_FACTOR = 'INVALID_SIZE_FACTOR'
 }
