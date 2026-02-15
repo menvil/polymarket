@@ -1412,6 +1412,484 @@ export class SpreadService {
   }
 
   // ============================================================================
+  // Ratio Operations
+  // ============================================================================
+
+  /**
+   * Сдвигает spread на долю от midpoint
+   *
+   * @param spread - Исходный spread
+   * @param shiftRatio - Доля для сдвига (Ratio), положительная = вверх, отрицательная = вниз
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * **Семантика:** "Сдвинуть котировку на X% от midpoint"
+   *
+   * **Формула:**
+   * 1. mid = (bid + ask) / 2
+   * 2. shiftAbs = mid * shiftRatio
+   * 3. shift(spread, shiftAbs)
+   *
+   * **Use cases:**
+   * - Market making: сдвиг котировки на 5% вверх при росте volatility
+   * - Risk adjustment: сдвиг на -2% при большой позиции
+   *
+   * **Процесс:**
+   * 1. Вычисляем midpoint через getMidPrice(spread)
+   * 2. shiftAbs = mid * shiftRatio.toDecimal()
+   * 3. Вызываем существующий shift(spread, shiftAbs)
+   *
+   * **Возможные ошибки:**
+   * - MID_UNAVAILABLE — если getMidPrice вернул ошибку
+   * - RATIO_OUT_OF_BOUNDS — если после сдвига bid/ask выходят за границы Price [0.0001, 0.9999]
+   *
+   * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
+   *
+   * @example
+   * ```typescript
+   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const shiftRatio = Ratio.of(new Decimal(0.05)); // 5% вверх
+   *
+   * const result = SpreadService.shiftByRatio(spread, shiftRatio);
+   * if (result.ok) {
+   *   // mid = 0.50, shiftAbs = 0.50 * 0.05 = 0.025
+   *   console.log(result.value.bid().value()); // 0.505
+   *   console.log(result.value.ask().value()); // 0.545
+   * }
+   * ```
+   */
+  public static shiftByRatio(
+    spread: Spread,
+    shiftRatio: Ratio
+  ): Result<Spread, InvalidSpreadError> {
+    return wrapOp(
+      SpreadService.SERVICE_NAME,
+      'shiftByRatio',
+      {
+        bid: spread.bid().value().toString(),
+        ask: spread.ask().value().toString(),
+        shiftRatio: shiftRatio.toDecimal().toString()
+      },
+      () => {
+        // 1. Get midpoint
+        const midResult = SpreadService.getMidPrice(spread);
+        if (isErr(midResult)) {
+          throw new InvalidSpreadError(
+            (ctx) => `Cannot shift by ratio: ${ctx.midError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.MID_UNAVAILABLE,
+                bid: spread.bid().value().toString(),
+                ask: spread.ask().value().toString(),
+                midError: midResult.error.message,
+              },
+            }
+          );
+        }
+
+        const mid = midResult.value.value();
+
+        // 2. Calculate absolute shift
+        const shiftAbs = mid.times(shiftRatio.toDecimal());
+
+        // 3. Call existing shift()
+        const shiftResult = SpreadService.shift(spread, shiftAbs);
+        if (isErr(shiftResult)) {
+          throw new InvalidSpreadError(
+            (ctx) => `Shift by ratio failed: ${ctx.shiftError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.RATIO_OUT_OF_BOUNDS,
+                bid: spread.bid().value().toString(),
+                ask: spread.ask().value().toString(),
+                shiftRatio: shiftRatio.toDecimal().toString(),
+                shiftAbs: shiftAbs.toString(),
+                shiftError: shiftResult.error.message,
+              },
+            }
+          );
+        }
+
+        return Ok(shiftResult.value);
+      },
+      InvalidSpreadError
+    );
+  }
+
+  /**
+   * Расширяет spread на долю от midpoint
+   *
+   * @param spread - Исходный spread
+   * @param deltaWidthRatio - Доля для расширения (Ratio), должен быть >= 0
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * **Семантика:** "Расширить spread на X% от midpoint"
+   *
+   * **Формула:**
+   * 1. mid = (bid + ask) / 2
+   * 2. deltaWidthAbs = mid * deltaWidthRatio
+   * 3. amountAbs = deltaWidthAbs / 2
+   * 4. newBid = bid - amountAbs
+   * 5. newAsk = ask + amountAbs
+   *
+   * **Реализация через adjustBidAsk:**
+   * - adjustBidAsk(spread, -amountAbs, +amountAbs)
+   *
+   * **Use cases:**
+   * - Market making: расширение spread на 2% при низкой ликвидности
+   * - Risk management: расширение spread на 5% при высокой volatility
+   *
+   * **Процесс:**
+   * 1. Проверяем deltaWidthRatio >= 0
+   * 2. Вычисляем midpoint через getMidPrice(spread)
+   * 3. deltaWidthAbs = mid * deltaWidthRatio.toDecimal()
+   * 4. amountAbs = deltaWidthAbs / 2
+   * 5. Вызываем adjustBidAsk(spread, -amountAbs, +amountAbs)
+   *
+   * **Возможные ошибки:**
+   * - NEGATIVE_RATIO_NOT_ALLOWED — если deltaWidthRatio < 0
+   * - MID_UNAVAILABLE — если getMidPrice вернул ошибку
+   * - RATIO_OUT_OF_BOUNDS — если после расширения bid/ask выходят за границы Price
+   *
+   * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
+   *
+   * @example
+   * ```typescript
+   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const deltaRatio = Ratio.of(new Decimal(0.02)); // 2% от mid
+   *
+   * const result = SpreadService.widenByRatio(spread, deltaRatio);
+   * if (result.ok) {
+   *   // mid = 0.50, deltaAbs = 0.01, amountAbs = 0.005
+   *   console.log(result.value.bid().value()); // 0.475
+   *   console.log(result.value.ask().value()); // 0.525
+   * }
+   * ```
+   */
+  public static widenByRatio(
+    spread: Spread,
+    deltaWidthRatio: Ratio
+  ): Result<Spread, InvalidSpreadError> {
+    return wrapOp(
+      SpreadService.SERVICE_NAME,
+      'widenByRatio',
+      {
+        bid: spread.bid().value().toString(),
+        ask: spread.ask().value().toString(),
+        deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
+      },
+      () => {
+        // 1. Validate deltaWidthRatio >= 0
+        if (deltaWidthRatio.toDecimal().isNegative()) {
+          throw new InvalidSpreadError(
+            () => 'Delta width ratio must be non-negative for widen operation',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.NEGATIVE_RATIO_NOT_ALLOWED,
+                deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
+              },
+            }
+          );
+        }
+
+        // 2. Get midpoint
+        const midResult = SpreadService.getMidPrice(spread);
+        if (isErr(midResult)) {
+          throw new InvalidSpreadError(
+            (ctx) => `Cannot widen by ratio: ${ctx.midError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.MID_UNAVAILABLE,
+                bid: spread.bid().value().toString(),
+                ask: spread.ask().value().toString(),
+                midError: midResult.error.message,
+              },
+            }
+          );
+        }
+
+        const mid = midResult.value.value();
+
+        // 3. Calculate absolute delta width and amount
+        const deltaWidthAbs = mid.times(deltaWidthRatio.toDecimal());
+        const amountAbs = deltaWidthAbs.dividedBy(2);
+
+        // 4. Widen via adjustBidAsk: bid -= amountAbs, ask += amountAbs
+        const adjustResult = SpreadService.adjustBidAsk(spread, amountAbs.negated(), amountAbs);
+        if (isErr(adjustResult)) {
+          throw new InvalidSpreadError(
+            (ctx) => `Widen by ratio failed: ${ctx.adjustError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.RATIO_OUT_OF_BOUNDS,
+                bid: spread.bid().value().toString(),
+                ask: spread.ask().value().toString(),
+                deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
+                deltaWidthAbs: deltaWidthAbs.toString(),
+                amountAbs: amountAbs.toString(),
+                adjustError: adjustResult.error.message,
+              },
+            }
+          );
+        }
+
+        return Ok(adjustResult.value);
+      },
+      InvalidSpreadError
+    );
+  }
+
+  /**
+   * Сужает spread на долю от midpoint
+   *
+   * @param spread - Исходный spread
+   * @param deltaWidthRatio - Доля для сужения (Ratio), должен быть >= 0
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * **Семантика:** "Сузить spread на X% от midpoint"
+   *
+   * **Формула:**
+   * 1. mid = (bid + ask) / 2
+   * 2. deltaWidthAbs = mid * deltaWidthRatio
+   * 3. amountAbs = deltaWidthAbs / 2
+   * 4. Clamp: amountAbs = min(amountAbs, currentWidth/2) (чтобы не пересечь bid/ask)
+   * 5. newBid = bid + amountAbs
+   * 6. newAsk = ask - amountAbs
+   *
+   * **Реализация через tighten:**
+   * - Вызываем существующий tighten(spread, amountAbs) который уже делает clamp
+   *
+   * **Use cases:**
+   * - Market making: сужение spread на 1% при высокой ликвидности
+   * - Competitive pricing: сужение spread на 0.5% чтобы быть внутри рынка
+   *
+   * **Процесс:**
+   * 1. Проверяем deltaWidthRatio >= 0
+   * 2. Вычисляем midpoint через getMidPrice(spread)
+   * 3. deltaWidthAbs = mid * deltaWidthRatio.toDecimal()
+   * 4. amountAbs = deltaWidthAbs / 2
+   * 5. Вызываем существующий tighten(spread, amountAbs) (он делает clamp)
+   *
+   * **Возможные ошибки:**
+   * - NEGATIVE_RATIO_NOT_ALLOWED — если deltaWidthRatio < 0
+   * - MID_UNAVAILABLE — если getMidPrice вернул ошибку
+   * - RATIO_OUT_OF_BOUNDS — если после сужения bid/ask выходят за границы Price
+   *
+   * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
+   *
+   * @example
+   * ```typescript
+   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const deltaRatio = Ratio.of(new Decimal(0.02)); // 2% от mid
+   *
+   * const result = SpreadService.tightenByRatio(spread, deltaRatio);
+   * if (result.ok) {
+   *   // mid = 0.50, deltaAbs = 0.01, amountAbs = 0.005
+   *   console.log(result.value.bid().value()); // 0.485
+   *   console.log(result.value.ask().value()); // 0.515
+   * }
+   * ```
+   */
+  public static tightenByRatio(
+    spread: Spread,
+    deltaWidthRatio: Ratio
+  ): Result<Spread, InvalidSpreadError> {
+    return wrapOp(
+      SpreadService.SERVICE_NAME,
+      'tightenByRatio',
+      {
+        bid: spread.bid().value().toString(),
+        ask: spread.ask().value().toString(),
+        deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
+      },
+      () => {
+        // 1. Validate deltaWidthRatio >= 0
+        if (deltaWidthRatio.toDecimal().isNegative()) {
+          throw new InvalidSpreadError(
+            () => 'Delta width ratio must be non-negative for tighten operation',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.NEGATIVE_RATIO_NOT_ALLOWED,
+                deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
+              },
+            }
+          );
+        }
+
+        // 2. Get midpoint
+        const midResult = SpreadService.getMidPrice(spread);
+        if (isErr(midResult)) {
+          throw new InvalidSpreadError(
+            (ctx) => `Cannot tighten by ratio: ${ctx.midError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.MID_UNAVAILABLE,
+                bid: spread.bid().value().toString(),
+                ask: spread.ask().value().toString(),
+                midError: midResult.error.message,
+              },
+            }
+          );
+        }
+
+        const mid = midResult.value.value();
+
+        // 3. Calculate absolute delta width and amount
+        const deltaWidthAbs = mid.times(deltaWidthRatio.toDecimal());
+        const amountAbs = deltaWidthAbs.dividedBy(2);
+
+        // 4. Tighten (existing method already does clamp)
+        const tightenResult = SpreadService.tighten(spread, amountAbs);
+        if (isErr(tightenResult)) {
+          throw new InvalidSpreadError(
+            (ctx) => `Tighten by ratio failed: ${ctx.tightenError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.RATIO_OUT_OF_BOUNDS,
+                bid: spread.bid().value().toString(),
+                ask: spread.ask().value().toString(),
+                deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
+                deltaWidthAbs: deltaWidthAbs.toString(),
+                amountAbs: amountAbs.toString(),
+                tightenError: tightenResult.error.message,
+              },
+            }
+          );
+        }
+
+        return Ok(tightenResult.value);
+      },
+      InvalidSpreadError
+    );
+  }
+
+  /**
+   * Наклоняет spread на доли от midpoint
+   *
+   * @param spread - Исходный spread
+   * @param bidRatio - Доля для изменения bid (Ratio), положительная = вверх
+   * @param askRatio - Доля для изменения ask (Ratio), положительная = вверх
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * **Семантика:** "Наклонить spread на X% и Y% от midpoint"
+   *
+   * **Формула:**
+   * 1. mid = (bid + ask) / 2
+   * 2. bidAdjAbs = mid * bidRatio
+   * 3. askAdjAbs = mid * askRatio
+   * 4. newBid = bid + bidAdjAbs
+   * 5. newAsk = ask + askAdjAbs
+   *
+   * **Реализация через adjustBidAsk:**
+   * - adjustBidAsk(spread, bidAdjAbs, askAdjAbs)
+   *
+   * **Use cases:**
+   * - Inventory skew: bidRatio=+2%, askRatio=-1% (сдвиг вверх с наклоном)
+   * - Asymmetric adjustment: bidRatio=+1%, askRatio=+3% (расширение с наклоном вверх)
+   *
+   * **Процесс:**
+   * 1. Вычисляем midpoint через getMidPrice(spread)
+   * 2. bidAdjAbs = mid * bidRatio.toDecimal()
+   * 3. askAdjAbs = mid * askRatio.toDecimal()
+   * 4. Вызываем существующий adjustBidAsk(spread, bidAdjAbs, askAdjAbs)
+   *
+   * **Возможные ошибки:**
+   * - MID_UNAVAILABLE — если getMidPrice вернул ошибку
+   * - RATIO_OUT_OF_BOUNDS — если после skew bid/ask выходят за границы Price или bid > ask
+   *
+   * **Never Throw Contract**: Гарантированно возвращает Result, никогда не бросает.
+   *
+   * @example
+   * ```typescript
+   * const spread = Spread.of(Price.of(0.48), Price.of(0.52));
+   * const bidRatio = Ratio.of(new Decimal(0.02));  // +2% от mid
+   * const askRatio = Ratio.of(new Decimal(-0.01)); // -1% от mid
+   *
+   * const result = SpreadService.skewByRatio(spread, bidRatio, askRatio);
+   * if (result.ok) {
+   *   // mid = 0.50, bidAdj = 0.01, askAdj = -0.005
+   *   console.log(result.value.bid().value()); // 0.49
+   *   console.log(result.value.ask().value()); // 0.515
+   * }
+   * ```
+   */
+  public static skewByRatio(
+    spread: Spread,
+    bidRatio: Ratio,
+    askRatio: Ratio
+  ): Result<Spread, InvalidSpreadError> {
+    return wrapOp(
+      SpreadService.SERVICE_NAME,
+      'skewByRatio',
+      {
+        bid: spread.bid().value().toString(),
+        ask: spread.ask().value().toString(),
+        bidRatio: bidRatio.toDecimal().toString(),
+        askRatio: askRatio.toDecimal().toString()
+      },
+      () => {
+        // 1. Get midpoint
+        const midResult = SpreadService.getMidPrice(spread);
+        if (isErr(midResult)) {
+          throw new InvalidSpreadError(
+            (ctx) => `Cannot skew by ratio: ${ctx.midError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.MID_UNAVAILABLE,
+                bid: spread.bid().value().toString(),
+                ask: spread.ask().value().toString(),
+                midError: midResult.error.message,
+              },
+            }
+          );
+        }
+
+        const mid = midResult.value.value();
+
+        // 2. Calculate absolute adjustments
+        const bidAdjAbs = mid.times(bidRatio.toDecimal());
+        const askAdjAbs = mid.times(askRatio.toDecimal());
+
+        // 3. Skew via adjustBidAsk
+        const adjustResult = SpreadService.adjustBidAsk(spread, bidAdjAbs, askAdjAbs);
+        if (isErr(adjustResult)) {
+          throw new InvalidSpreadError(
+            (ctx) => `Skew by ratio failed: ${ctx.adjustError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: SpreadErrorReason.RATIO_OUT_OF_BOUNDS,
+                bid: spread.bid().value().toString(),
+                ask: spread.ask().value().toString(),
+                bidRatio: bidRatio.toDecimal().toString(),
+                askRatio: askRatio.toDecimal().toString(),
+                bidAdjAbs: bidAdjAbs.toString(),
+                askAdjAbs: askAdjAbs.toString(),
+                adjustError: adjustResult.error.message,
+              },
+            }
+          );
+        }
+
+        return Ok(adjustResult.value);
+      },
+      InvalidSpreadError
+    );
+  }
+
+  // ============================================================================
   // Private Helpers
   // ============================================================================
 
