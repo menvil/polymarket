@@ -300,8 +300,8 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const zeroBalance = TokenBalance.of(token, Quantity.ZERO);
-   * const nonZeroBalance = TokenBalance.of(token, Quantity.of(new Decimal(100)));
+   * const zeroBalance = TokenBalance.of(token, Quantity.ZERO, accountId, venueId);
+   * const nonZeroBalance = TokenBalance.of(token, Quantity.of(new Decimal(100)), accountId, venueId);
    *
    * zeroBalance.isZero();    // true
    * nonZeroBalance.isZero(); // false
@@ -322,8 +322,8 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const zeroBalance = TokenBalance.of(token, Quantity.ZERO);
-   * const positiveBalance = TokenBalance.of(token, Quantity.of(new Decimal(100)));
+   * const zeroBalance = TokenBalance.of(token, Quantity.ZERO, accountId, venueId);
+   * const positiveBalance = TokenBalance.of(token, Quantity.of(new Decimal(100)), accountId, venueId);
    *
    * zeroBalance.isPositive();    // false
    * positiveBalance.isPositive(); // true

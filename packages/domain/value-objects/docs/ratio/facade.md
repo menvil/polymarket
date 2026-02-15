@@ -659,8 +659,10 @@ interface InvalidRatioError {
     service: string;             // 'RatioService'
     reason: RatioErrorReason;    // Typed enum (см. ниже)
     ratioValue?: string;         // Значение, вызвавшее ошибку
-    percent?: string;            // Исходный процент (если fromPercent)
-    bps?: string;                // Исходные bps (если fromBps)
+    raw?: {                      // Сырые входные данные
+      field: string;             // Имя поля ('percent', 'bps', 'decimal')
+      value: string;             // Исходное значение
+    };
   };
 }
 ```

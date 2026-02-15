@@ -8,24 +8,27 @@ import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
  * Означает что внутренний стейт будет некорректным и объект не может существовать.
  *
  * Core НЕ использует Result<T, E> - бросает исключения напрямую.
- * Facade перехватывает исключения и конвертирует в Result.Err с InvalidTokenBalanceError.
+ * Facade перехватывает исключения через wrapOp и конвертирует в Result.Err с InvalidTokenBalanceError.
  *
  * @example
  * ```typescript
  * // В Core (internal)
- * if (condition) {
- *   throw new TokenBalanceInvariantViolation('Cannot create TokenBalance', reason);
+ * if (!token) {
+ *   throw new TokenBalanceInvariantViolation('token is required', TokenBalanceErrorReason.INVALID_TOKEN);
  * }
  *
- * // В Facade (catching)
- * try {
- *   const balance = TokenBalance.of(token, amount);
- *   return Ok(balance);
- * } catch (error) {
- *   if (error instanceof TokenBalanceInvariantViolation) {
- *     return Err(new InvalidTokenBalanceError(...));
- *   }
- * }
+ * // В Facade (wrapOp automatically catches)
+ * return wrapOp(
+ *   TokenBalanceService.SERVICE_NAME,
+ *   'create',
+ *   { token, amount, accountId, venueId },
+ *   () => {
+ *     const balance = TokenBalance.of(token, amount, accountId, venueId);
+ *     return Ok(balance);
+ *   },
+ *   InvalidTokenBalanceError
+ * );
+ * // TokenBalanceInvariantViolation автоматически ловится и конвертируется в InvalidTokenBalanceError
  * ```
  */
 export class TokenBalanceInvariantViolation extends Error {

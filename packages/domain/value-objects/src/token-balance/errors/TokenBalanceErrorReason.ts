@@ -6,7 +6,7 @@
  *
  * @example
  * ```typescript
- * const result = TokenBalanceService.create(token, qty);
+ * const result = TokenBalanceService.create(token, qty, accountId, venueId);
  * if (!result.ok) {
  *   if (result.error.context?.reason === TokenBalanceErrorReason.INVALID_TOKEN) {
  *     console.error('Token is invalid');

@@ -190,4 +190,53 @@ describe('TokenBalanceService', () => {
       }
     });
   });
+
+  describe('Error handling (грязный ввод)', () => {
+    it('create() возвращает Err при null token (не бросает)', () => {
+      const result = TokenBalanceService.create(null as any, qty100, accountId, venueId);
+
+      expect(result.ok).toBe(false);
+      // Важно: проверяем что НЕ бросает, а возвращает Err
+    });
+
+    it('create() возвращает Err при undefined token (не бросает)', () => {
+      const result = TokenBalanceService.create(undefined as any, qty100, accountId, venueId);
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('create() возвращает Err при null amount (не бросает)', () => {
+      const result = TokenBalanceService.create(token, null as any, accountId, venueId);
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('create() возвращает Err при undefined amount (не бросает)', () => {
+      const result = TokenBalanceService.create(token, undefined as any, accountId, venueId);
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('create() возвращает Err при null accountId (не бросает)', () => {
+      const result = TokenBalanceService.create(token, qty100, null as any, venueId);
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('create() возвращает Err при null venueId (не бросает)', () => {
+      const result = TokenBalanceService.create(token, qty100, accountId, null as any);
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('create() никогда не бросает исключения (контракт Never Throw)', () => {
+      expect(() => {
+        TokenBalanceService.create(null as any, null as any, null as any, null as any);
+      }).not.toThrow();
+
+      expect(() => {
+        TokenBalanceService.create(undefined as any, undefined as any, undefined as any, undefined as any);
+      }).not.toThrow();
+    });
+  });
 });

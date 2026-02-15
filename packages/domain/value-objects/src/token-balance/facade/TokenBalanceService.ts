@@ -103,10 +103,10 @@ export class TokenBalanceService {
       TokenBalanceService.SERVICE_NAME,
       'create',
       {
-        token: token.assetId(),
-        amount: amount.value().toString(),
-        accountId,
-        venueId
+        token: token?.assetId?.() ?? 'null',
+        amount: amount?.value?.()?.toString() ?? 'null',
+        accountId: accountId ?? 'null',
+        venueId: venueId ?? 'null'
       },
       () => {
         // Create TokenBalance (may throw TokenBalanceInvariantViolation)
@@ -153,7 +153,7 @@ export class TokenBalanceService {
    *
    * @example
    * ```typescript
-   * const balance = expectOk(TokenBalanceService.create(token, Quantity.ZERO));
+   * const balance = expectOk(TokenBalanceService.create(token, Quantity.ZERO, accountId, venueId));
    * const isZero = TokenBalanceService.isZero(balance); // true
    * ```
    */
@@ -173,7 +173,7 @@ export class TokenBalanceService {
    *
    * @example
    * ```typescript
-   * const balance = expectOk(TokenBalanceService.create(token, qty));
+   * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, venueId));
    * const isPositive = TokenBalanceService.isPositive(balance); // true if qty > 0
    * ```
    */
