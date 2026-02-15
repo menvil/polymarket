@@ -558,15 +558,15 @@ export function wrapOp<T, TError extends DomainError>(
     if (isCoreInvariantViolation(e)) {
       return Err(rewrap(serviceName, op, ctx, coreInvariantError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
     }
+    // Ожидаемые math ошибки - проверяем ДО TradingError, так как они тоже extends TradingError
+    if (isExpectedMathError(e)) {
+      return Err(rewrap(serviceName, op, ctx, expectedMathError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
+    }
     // Если кто-то бросил любой TradingError (более гибко чем whitelist)
     // Это включает все domain errors: InvalidMoneyError, InvalidPriceError, InvalidQuantityError,
     // InvalidPercentageError, InvalidQuoteError, InvalidBalanceError, InvalidRatioError и т.д.
     if (e instanceof TradingError) {
       return Err(rewrap(serviceName, op, ctx, e as TError, ErrorConstructor));
-    }
-    // Ожидаемые math ошибки - прогоняем через rewrap для opChain
-    if (isExpectedMathError(e)) {
-      return Err(rewrap(serviceName, op, ctx, expectedMathError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
     }
     // Неожиданные ошибки - прогоняем через rewrap для opChain
     return Err(rewrap(serviceName, op, ctx, unexpectedError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
