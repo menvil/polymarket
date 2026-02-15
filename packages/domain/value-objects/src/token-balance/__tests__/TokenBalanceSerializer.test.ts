@@ -282,5 +282,153 @@ describe('TokenBalanceSerializer', () => {
         expect(result.error.message).toContain('Failed to create Quantity');
       }
     });
+
+    it('фэйлится если отсутствует accountId', () => {
+      const json = {
+        token: {
+          conditionRef: {
+            kind: 'ONCHAIN',
+            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+            chainId: 137,
+            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+          },
+          outcomeKey: 'UP',
+        },
+        amount: '100.5',
+        venueId: 'POLYMARKET',
+      };
+
+      const result = TokenBalanceSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain("Missing required field 'accountId'");
+      }
+    });
+
+    it('фэйлится если accountId не строка', () => {
+      const json = {
+        token: {
+          conditionRef: {
+            kind: 'ONCHAIN',
+            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+            chainId: 137,
+            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+          },
+          outcomeKey: 'UP',
+        },
+        amount: '100.5',
+        accountId: 123, // number вместо string
+        venueId: 'POLYMARKET',
+      };
+
+      const result = TokenBalanceSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain("Field 'accountId' must be string");
+      }
+    });
+
+    it('фэйлится если accountId невалидный', () => {
+      const json = {
+        token: {
+          conditionRef: {
+            kind: 'ONCHAIN',
+            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+            chainId: 137,
+            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+          },
+          outcomeKey: 'UP',
+        },
+        amount: '100.5',
+        accountId: 'invalid-format', // невалидный формат
+        venueId: 'POLYMARKET',
+      };
+
+      const result = TokenBalanceSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('Failed to parse accountId');
+      }
+    });
+
+    it('фэйлится если отсутствует venueId', () => {
+      const json = {
+        token: {
+          conditionRef: {
+            kind: 'ONCHAIN',
+            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+            chainId: 137,
+            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+          },
+          outcomeKey: 'UP',
+        },
+        amount: '100.5',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+      };
+
+      const result = TokenBalanceSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain("Missing required field 'venueId'");
+      }
+    });
+
+    it('фэйлится если venueId не строка', () => {
+      const json = {
+        token: {
+          conditionRef: {
+            kind: 'ONCHAIN',
+            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+            chainId: 137,
+            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+          },
+          outcomeKey: 'UP',
+        },
+        amount: '100.5',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 123, // number вместо string
+      };
+
+      const result = TokenBalanceSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain("Field 'venueId' must be string");
+      }
+    });
+
+    it('фэйлится если venueId невалидный формат', () => {
+      const json = {
+        token: {
+          conditionRef: {
+            kind: 'ONCHAIN',
+            protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+            chainId: 137,
+            conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+          },
+          outcomeKey: 'UP',
+        },
+        amount: '100.5',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'invalid-venue-id', // содержит дефисы (недопустимо)
+      };
+
+      const result = TokenBalanceSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('invalid format');
+      }
+    });
   });
 });

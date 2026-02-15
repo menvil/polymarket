@@ -1,7 +1,14 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { KnownOnChainProtocols, KnownChainIds, BinaryOutcome } from '@polymarket/ids';
-import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
+import {
+  KnownOnChainProtocols,
+  KnownChainIds,
+  BinaryOutcome,
+  KnownVenues,
+  parseWalletAddress,
+  accountIdFromWallet,
+} from '@polymarket/ids';
+import type { OnChainConditionRef, ConditionId, AccountId, VenueId } from '@polymarket/ids';
 import { OutcomeToken } from '../../outcome-token/core/OutcomeToken.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { TokenBalanceService } from '../facade/TokenBalanceService.js';
@@ -18,7 +25,12 @@ describe('TokenBalanceFormatter', () => {
   const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
   const qty = Quantity.of(new Decimal('100.5'));
 
-  const balance = TokenBalanceService.create(token, qty);
+  // Test fixtures для accountId и venueId
+  const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+  const accountId: AccountId = accountIdFromWallet(walletAddress);
+  const venueId: VenueId = KnownVenues.POLYMARKET;
+
+  const balance = TokenBalanceService.create(token, qty, accountId, venueId);
   if (!balance.ok) throw new Error('Failed to create balance');
   const testBalance = balance.value;
 
@@ -110,7 +122,7 @@ describe('TokenBalanceFormatter', () => {
 
     it('округляет amount при необходимости', () => {
       const preciseQty = Quantity.of(new Decimal('100.12345'));
-      const preciseBalance = TokenBalanceService.create(token, preciseQty);
+      const preciseBalance = TokenBalanceService.create(token, preciseQty, accountId, venueId);
       expect(preciseBalance.ok).toBe(true);
       if (!preciseBalance.ok) return;
 
@@ -121,7 +133,7 @@ describe('TokenBalanceFormatter', () => {
 
     it('форматирует нулевой баланс', () => {
       const zeroQty = Quantity.ZERO;
-      const zeroBalance = TokenBalanceService.create(token, zeroQty);
+      const zeroBalance = TokenBalanceService.create(token, zeroQty, accountId, venueId);
       expect(zeroBalance.ok).toBe(true);
       if (!zeroBalance.ok) return;
 

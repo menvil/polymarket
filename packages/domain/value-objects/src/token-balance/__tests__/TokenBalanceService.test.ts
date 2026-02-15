@@ -55,7 +55,7 @@ describe('TokenBalanceService', () => {
       const upToken = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
       const downToken = OutcomeToken.of(conditionRef, BinaryOutcome.DOWN);
 
-      const upResult = TokenBalanceService.create(upToken, qty100);
+      const upResult = TokenBalanceService.create(upToken, qty100, accountId, venueId);
       const downResult = TokenBalanceService.create(downToken, qty200, accountId, venueId);
 
       expect(upResult.ok).toBe(true);
@@ -102,7 +102,7 @@ describe('TokenBalanceService', () => {
       const upToken = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
       const downToken = OutcomeToken.of(conditionRef, BinaryOutcome.DOWN);
 
-      const balance1 = TokenBalanceService.create(upToken, qty100);
+      const balance1 = TokenBalanceService.create(upToken, qty100, accountId, venueId);
       const balance2 = TokenBalanceService.create(downToken, qty100, accountId, venueId);
 
       expect(balance1.ok && balance2.ok).toBe(true);

@@ -15,11 +15,13 @@ import { TokenBalance } from '../core/TokenBalance.js';
  * import { TokenBalanceService, TokenBalanceFormatter } from '@polymarket/value-objects/token-balance';
  * import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
  * import { QuantityService } from '@polymarket/value-objects/quantity';
- * import { BinaryOutcome } from '@polymarket/ids';
+ * import { BinaryOutcome, KnownVenues, accountIdFromWallet, parseWalletAddress } from '@polymarket/ids';
  *
  * const token = expectOk(OutcomeTokenService.create(onChainRef, BinaryOutcome.UP));
  * const qty = expectOk(QuantityService.create(100.5));
- * const balance = expectOk(TokenBalanceService.create(token, qty));
+ * const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+ * const accountId = accountIdFromWallet(walletAddress);
+ * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, KnownVenues.POLYMARKET));
  *
  * const display = TokenBalanceFormatter.toDisplayString(balance);
  * console.log(display);  // "100.5 UP (POLYMARKET_CTF:137:0xabc...)"
@@ -41,7 +43,7 @@ export class TokenBalanceFormatter {
    *
    * @example
    * ```typescript
-   * const balance = expectOk(TokenBalanceService.create(token, qty));
+   * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, venueId));
    *
    * const str = TokenBalanceFormatter.toString(balance);
    * // → "TokenBalance[amount=100.5, token=OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc...:UP]"
@@ -66,7 +68,7 @@ export class TokenBalanceFormatter {
    *
    * @example
    * ```typescript
-   * const balance = expectOk(TokenBalanceService.create(token, qty));
+   * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, venueId));
    *
    * const display = TokenBalanceFormatter.toDisplayString(balance);
    * // → "100.5 UP (POLYMARKET_CTF:137:0xabc...)"
@@ -91,7 +93,7 @@ export class TokenBalanceFormatter {
    *
    * @example
    * ```typescript
-   * const balance = expectOk(TokenBalanceService.create(token, qty));
+   * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, venueId));
    *
    * const short = TokenBalanceFormatter.toShortString(balance);
    * // → "100.5 UP"
@@ -116,7 +118,7 @@ export class TokenBalanceFormatter {
    *
    * @example
    * ```typescript
-   * const balance = expectOk(TokenBalanceService.create(token, qty));
+   * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, venueId));
    *
    * const verbose = TokenBalanceFormatter.toVerboseString(balance);
    * // → "TokenBalance[amount=100.5, token=OutcomeToken[outcomeKey=UP, condition=ONCHAIN:POLYMARKET_CTF:137:0xabc...]]"
@@ -142,7 +144,7 @@ export class TokenBalanceFormatter {
    *
    * @example
    * ```typescript
-   * const balance = expectOk(TokenBalanceService.create(token, qty));
+   * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, venueId));
    *
    * const formatted = TokenBalanceFormatter.toFixedString(balance, 2);
    * // → "100.50 UP"

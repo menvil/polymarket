@@ -27,7 +27,7 @@ import { InvalidTokenBalanceError, TokenBalanceErrorReason } from '../errors/ind
  * ```typescript
  * import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
  * import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
- * import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
+ * import { BinaryOutcome, KnownOnChainProtocols, KnownVenues, accountIdFromWallet, parseWalletAddress } from '@polymarket/ids';
  *
  * const tokenResult = OutcomeTokenService.create(conditionRef, BinaryOutcome.UP);
  * if (!tokenResult.ok) {
@@ -41,11 +41,16 @@ import { InvalidTokenBalanceError, TokenBalanceErrorReason } from '../errors/ind
  *   return;
  * }
  *
- * const balanceResult = TokenBalanceService.create(tokenResult.value, qtyResult.value);
+ * const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+ * const accountId = accountIdFromWallet(walletAddress);
+ *
+ * const balanceResult = TokenBalanceService.create(tokenResult.value, qtyResult.value, accountId, KnownVenues.POLYMARKET);
  * if (balanceResult.ok) {
  *   const balance = balanceResult.value;
  *   console.log(balance.amount().toNumber()); // 100
  *   console.log(balance.outcomeKey()); // 'UP'
+ *   console.log(balance.accountId()); // accountId
+ *   console.log(balance.venueId()); // 'POLYMARKET'
  * } else {
  *   console.error(balanceResult.error.message);
  *   console.error(balanceResult.error.context?.reason);
@@ -72,11 +77,12 @@ export class TokenBalanceService {
    *
    * @example
    * ```typescript
-   * import { accountIdFromWallet, KnownVenues } from '@polymarket/ids';
+   * import { accountIdFromWallet, parseWalletAddress, KnownVenues } from '@polymarket/ids';
    *
    * const token = expectOk(OutcomeTokenService.create(conditionRef, BinaryOutcome.UP));
    * const qty = expectOk(QuantityService.create(100));
-   * const accountId = accountIdFromWallet('0x1234...').unwrap();
+   * const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+   * const accountId = accountIdFromWallet(walletAddress);
    *
    * const result = TokenBalanceService.create(token, qty, accountId, KnownVenues.POLYMARKET);
    * if (!result.ok) {
@@ -139,8 +145,8 @@ export class TokenBalanceService {
    *
    * @example
    * ```typescript
-   * const balance1 = expectOk(TokenBalanceService.create(token, qty1));
-   * const balance2 = expectOk(TokenBalanceService.create(token, qty2));
+   * const balance1 = expectOk(TokenBalanceService.create(token, qty1, accountId, venueId));
+   * const balance2 = expectOk(TokenBalanceService.create(token, qty2, accountId, venueId));
    *
    * const same = TokenBalanceService.equals(balance1, balance2);
    * console.log(same); // → true if amounts equal

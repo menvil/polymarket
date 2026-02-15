@@ -1,6 +1,6 @@
 import { Result, Err } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
-import { accountIdToString, parseAccountId, type VenueId } from '@polymarket/ids';
+import { accountIdToString, parseAccountId, asVenueId, type VenueId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { OutcomeTokenSerializer, type OutcomeTokenJSON } from '../../outcome-token/adapters/OutcomeTokenSerializer.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
@@ -114,7 +114,7 @@ export interface TokenBalanceJSON {
  * }
  *
  * // Сериализация
- * const balance = expectOk(TokenBalanceService.create(token, qty));
+ * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, venueId));
  * const serialized = TokenBalanceSerializer.toJSON(balance);
  * ```
  */
@@ -128,10 +128,12 @@ export class TokenBalanceSerializer {
    *
    * Этапы валидации:
    * 1. Проверка что json это объект
-   * 2. Проверка наличия обязательных полей (token, amount)
+   * 2. Проверка наличия обязательных полей (token, amount, accountId, venueId)
    * 3. Делегирование OutcomeTokenSerializer.fromJSON для парсинга token
    * 4. Парсинг amount как Decimal
-   * 5. Создание TokenBalance через TokenBalanceService.create
+   * 5. Валидация accountId через parseAccountId
+   * 6. Валидация venueId через asVenueId
+   * 7. Создание TokenBalance через TokenBalanceService.create
    *
    * @param json - JSON данные (unknown)
    * @param source - Источник ошибки (опционально)
@@ -350,8 +352,20 @@ export class TokenBalanceSerializer {
       );
     }
 
-    // VenueId это branded string, просто приводим к типу
-    const venueId = venueIdValue as VenueId;
+    // Валидация VenueId через asVenueId
+    const venueId = asVenueId(venueIdValue);
+    if (!venueId) {
+      return Err(
+        new InvalidTokenBalanceError(
+          "Field 'venueId' has invalid format. Must be uppercase letters, digits, underscores, 1-32 chars, not starting with digit",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { venueId: venueIdValue },
+          },
+          source
+        )
+      );
+    }
 
     // Создаём TokenBalance через сервис
     return TokenBalanceService.create(tokenResult.value, quantity, accountIdParsed, venueId, source);
