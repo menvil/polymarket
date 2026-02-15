@@ -2,6 +2,7 @@ import { type Result, Ok, Err, isErr } from '@polymarket/result';
 import {
   InvalidSpreadError,
   InvalidPriceError,
+  InvalidRatioError,
   ErrorSource,
   toDecimal,
   rewrap,
@@ -13,7 +14,8 @@ import { Price, PriceService } from '../../price/index.js';
 import { Spread } from '../core/index.js';
 import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 import { ValidateBidAsk } from '../rules/ValidateBidAsk.js';
-import { addDecimal, subtractDecimal } from '@polymarket/math';
+import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
+import { RatioService } from '../../ratio/index.js';
 
 /**
  * Фасад для работы с Spread - публичный API
@@ -324,6 +326,79 @@ export class SpreadService {
   }
 
   /**
+   * Сузить spread на процент от текущей ширины
+   *
+   * @param spread - Исходный spread
+   * @param ratio - Процент сужения как Ratio (например, 10% = Ratio.fromPercent(10))
+   * @param options - Опции для валидации Ratio
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * **Операция:**
+   * - Вычисляет текущую ширину: `currentWidth = ask - bid`
+   * - Вычисляет уменьшение: `decrease = currentWidth * ratio`
+   * - Сужает на половину с каждой стороны: `tighten(spread, decrease / 2)`
+   *
+   * **Отличие от tighten():**
+   * - `tighten(spread, 0.01)` - сузить на абсолютную величину 0.01
+   * - `tightenBy(spread, Ratio.fromPercent(10))` - сузить на 10% от текущей ширины
+   *
+   * **Валидация:**
+   * - ratio должен быть валидным Ratio
+   * - Опциональная ensureLteOne: гарантировать ratio <= 1 (не можем сузить > 100%)
+   *
+   * **Boundary behavior:**
+   * - Если decrease > текущая ширина, spread сжимается до минимума (bid = ask = mid)
+   * - Делегируется в tighten(), который ограничивает amount до halfWidth
+   *
+   * @example
+   * ```typescript
+   * const spread = unwrap(SpreadService.fromValues(0.48, 0.52)); // width = 0.04
+   *
+   * // Сузить на 25%
+   * const ratio = unwrap(RatioService.fromPercent(25));
+   * const tightened = SpreadService.tightenBy(spread, ratio);
+   * if (tightened.ok) {
+   *   // decrease = 0.04 * 0.25 = 0.01
+   *   // tighten each side by 0.005
+   *   console.log(tightened.value.bid().value()); // 0.485
+   *   console.log(tightened.value.ask().value()); // 0.515
+   *   console.log(tightened.value.width());       // 0.03
+   * }
+   * ```
+   */
+  public static tightenBy(
+    spread: Spread,
+    ratio: Decimal | number | string,
+    options?: { ensureLteOne?: boolean }
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError | InvalidRatioError> {
+    return wrapOp(this.SERVICE_NAME, 'tightenBy', {}, () => {
+      const ctx = {
+        spread: `${spread.bid().value()}-${spread.ask().value()}`,
+        ratio: String(ratio)
+      };
+
+      // 1. Parse ratio
+      const ratioResult = RatioService.fromDecimal(ratio, options);
+      if (isErr(ratioResult)) {
+        return Err(rewrap(this.SERVICE_NAME, 'tightenBy', ctx, ratioResult.error, InvalidSpreadError));
+      }
+
+      // 2. Calculate current width
+      const currentWidth = spread.width();
+
+      // 3. Calculate decrease: width * ratio
+      const decrease = multiplyDecimal(currentWidth, ratioResult.value.toDecimal());
+
+      // 4. Tighten by half of decrease on each side
+      const tightenAmount = divideDecimal(decrease, new Decimal(2));
+
+      // 5. Delegate to tighten (which handles boundary cases)
+      return this.tighten(spread, tightenAmount);
+    }, InvalidSpreadError);
+  }
+
+  /**
    * Расширить spread (bid ↓, ask ↑)
    *
    * @param spread - Исходный spread
@@ -447,6 +522,75 @@ export class SpreadService {
         }, error, InvalidSpreadError)
       );
     }
+  }
+
+  /**
+   * Расширить spread на процент от текущей ширины
+   *
+   * @param spread - Исходный spread
+   * @param ratio - Процент расширения как Ratio (например, 10% = Ratio.fromPercent(10))
+   * @param options - Опции для валидации Ratio
+   * @returns Result с новым Spread или InvalidSpreadError
+   *
+   * @remarks
+   * **Операция:**
+   * - Вычисляет текущую ширину: `currentWidth = ask - bid`
+   * - Вычисляет увеличение: `increase = currentWidth * ratio`
+   * - Расширяет на половину с каждой стороны: `widen(spread, increase / 2)`
+   *
+   * **Отличие от widen():**
+   * - `widen(spread, 0.01)` - расширить на абсолютную величину 0.01
+   * - `widenBy(spread, Ratio.fromPercent(10))` - расширить на 10% от текущей ширины
+   *
+   * **Валидация:**
+   * - ratio должен быть валидным Ratio
+   * - Опциональная ensureGteMinusOne: гарантировать ratio >= -1
+   *
+   * @example
+   * ```typescript
+   * const spread = unwrap(SpreadService.fromValues(0.48, 0.52)); // width = 0.04
+   *
+   * // Расширить на 25%
+   * const ratio = unwrap(RatioService.fromPercent(25));
+   * const widened = SpreadService.widenBy(spread, ratio);
+   * if (widened.ok) {
+   *   // increase = 0.04 * 0.25 = 0.01
+   *   // widen each side by 0.005
+   *   console.log(widened.value.bid().value()); // 0.475
+   *   console.log(widened.value.ask().value()); // 0.525
+   *   console.log(widened.value.width());       // 0.05
+   * }
+   * ```
+   */
+  public static widenBy(
+    spread: Spread,
+    ratio: Decimal | number | string,
+    options?: { ensureGteMinusOne?: boolean }
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError | InvalidRatioError> {
+    return wrapOp(this.SERVICE_NAME, 'widenBy', {}, () => {
+      const ctx = {
+        spread: `${spread.bid().value()}-${spread.ask().value()}`,
+        ratio: String(ratio)
+      };
+
+      // 1. Parse ratio
+      const ratioResult = RatioService.fromDecimal(ratio, options);
+      if (isErr(ratioResult)) {
+        return Err(rewrap(this.SERVICE_NAME, 'widenBy', ctx, ratioResult.error, InvalidSpreadError));
+      }
+
+      // 2. Calculate current width
+      const currentWidth = spread.width();
+
+      // 3. Calculate increase: width * ratio
+      const increase = multiplyDecimal(currentWidth, ratioResult.value.toDecimal());
+
+      // 4. Widen by half of increase on each side
+      const widenAmount = divideDecimal(increase, new Decimal(2));
+
+      // 5. Delegate to widen
+      return this.widen(spread, widenAmount);
+    }, InvalidSpreadError);
   }
 
   /**
@@ -636,26 +780,77 @@ export class SpreadService {
    * @returns Result со Spread или InvalidSpreadError
    *
    * @remarks
-   * @todo Реализовать когда закончим с Ratio VO.
-   *
-   * Будет вычислять:
+   * Вычисляет:
    * - bid = mid - width/2
    * - ask = mid + width/2
    *
+   * **Валидация:**
+   * - mid и width должны быть finite
+   * - width должен быть неотрицательным
+   * - Результирующие bid и ask должны быть валидными Price
+   *
    * @example
    * ```typescript
-   * // TODO: Пример будет добавлен после реализации
    * const result = SpreadService.fromMidAndWidth(0.50, 0.04);
-   * // bid = 0.48, ask = 0.52
+   * if (result.ok) {
+   *   console.log(result.value.bid().value()); // 0.48
+   *   console.log(result.value.ask().value()); // 0.52
+   * }
    * ```
    */
   public static fromMidAndWidth(
     mid: Decimal | number | string,
     width: Decimal | number | string
-  ): Result<Spread, InvalidSpreadError> {
-    void mid;
-    void width;
-    throw new Error('Not implemented yet. TODO: Implement after Ratio VO is complete.');
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+    return wrapOp(this.SERVICE_NAME, 'fromMidAndWidth', {}, () => {
+      const ctx = { mid: String(mid), width: String(width) };
+
+      // 1. Parse mid
+      const midResult = toDecimal('mid', mid, SpreadErrorReason.INVALID_FORMAT, InvalidSpreadError);
+      if (isErr(midResult)) {
+        return Err(rewrap(this.SERVICE_NAME, 'fromMidAndWidth', ctx, midResult.error, InvalidSpreadError));
+      }
+      const midDecimal = midResult.value;
+
+      // 2. Parse width
+      const widthResult = toDecimal('width', width, SpreadErrorReason.INVALID_FORMAT, InvalidSpreadError);
+      if (isErr(widthResult)) {
+        return Err(rewrap(this.SERVICE_NAME, 'fromMidAndWidth', ctx, widthResult.error, InvalidSpreadError));
+      }
+      const widthDecimal = widthResult.value;
+
+      // 3. Validate width >= 0
+      if (widthDecimal.isNegative()) {
+        return Err(new InvalidSpreadError('Width cannot be negative', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: this.SERVICE_NAME,
+            op: 'fromMidAndWidth',
+            ...ctx,
+            reason: SpreadErrorReason.INVALID_WIDTH
+          }
+        }));
+      }
+
+      // 4. Calculate bid and ask
+      const halfWidth = divideDecimal(widthDecimal, new Decimal(2));
+      const bidDecimal = subtractDecimal(midDecimal, halfWidth);
+      const askDecimal = addDecimal(midDecimal, halfWidth);
+
+      // 5. Create prices
+      const bidResult = PriceService.create(bidDecimal);
+      if (isErr(bidResult)) {
+        return Err(rewrap(this.SERVICE_NAME, 'fromMidAndWidth', ctx, bidResult.error, InvalidSpreadError));
+      }
+
+      const askResult = PriceService.create(askDecimal);
+      if (isErr(askResult)) {
+        return Err(rewrap(this.SERVICE_NAME, 'fromMidAndWidth', ctx, askResult.error, InvalidSpreadError));
+      }
+
+      // 6. Create spread
+      return this.create(bidResult.value, askResult.value);
+    }, InvalidSpreadError);
   }
 
   /**
@@ -663,31 +858,64 @@ export class SpreadService {
    *
    * @param mid - Midpoint (середина между bid и ask)
    * @param widthPercentage - Ширина в процентах от mid
+   * @param options - Опции для валидации Ratio
    * @returns Result со Spread или InvalidSpreadError
    *
    * @remarks
-   * @todo Реализовать когда закончим с Ratio VO.
-   *
-   * Будет вычислять:
+   * Вычисляет:
    * - width = mid * (widthPercentage / 100)
    * - bid = mid - width/2
    * - ask = mid + width/2
    *
+   * **Валидация:**
+   * - mid должен быть finite
+   * - widthPercentage должен быть валидным процентом (через RatioService)
+   * - Результирующие bid и ask должны быть валидными Price
+   *
+   * **Опции:**
+   * - ensureLteOne: гарантировать что ratio <= 1 (для ширины <= 100%)
+   *
    * @example
    * ```typescript
-   * // TODO: Пример будет добавлен после реализации
    * const result = SpreadService.fromMidAndWidthPercentage(0.50, 8);
-   * // width = 0.50 * 0.08 = 0.04
-   * // bid = 0.48, ask = 0.52
+   * if (result.ok) {
+   *   // width = 0.50 * 0.08 = 0.04
+   *   console.log(result.value.bid().value()); // 0.48
+   *   console.log(result.value.ask().value()); // 0.52
+   * }
+   *
+   * // С валидацией: ширина не может быть > 100%
+   * const result2 = SpreadService.fromMidAndWidthPercentage(0.50, 150, { ensureLteOne: true });
+   * // isErr(result2) === true, reason: GREATER_THAN_ONE
    * ```
    */
   public static fromMidAndWidthPercentage(
     mid: Decimal | number | string,
-    widthPercentage: Decimal | number | string
-  ): Result<Spread, InvalidSpreadError> {
-    void mid;
-    void widthPercentage;
-    throw new Error('Not implemented yet. TODO: Implement after Ratio VO is complete.');
+    widthPercentage: Decimal | number | string,
+    options?: { ensureLteOne?: boolean }
+  ): Result<Spread, InvalidSpreadError | InvalidPriceError | InvalidRatioError> {
+    return wrapOp(this.SERVICE_NAME, 'fromMidAndWidthPercentage', {}, () => {
+      const ctx = { mid: String(mid), widthPercentage: String(widthPercentage) };
+
+      // 1. Parse mid
+      const midResult = toDecimal('mid', mid, SpreadErrorReason.INVALID_FORMAT, InvalidSpreadError);
+      if (isErr(midResult)) {
+        return Err(rewrap(this.SERVICE_NAME, 'fromMidAndWidthPercentage', ctx, midResult.error, InvalidSpreadError));
+      }
+      const midDecimal = midResult.value;
+
+      // 2. Parse widthPercentage as Ratio
+      const widthRatioResult = RatioService.fromPercent(widthPercentage, options);
+      if (isErr(widthRatioResult)) {
+        return Err(rewrap(this.SERVICE_NAME, 'fromMidAndWidthPercentage', ctx, widthRatioResult.error, InvalidSpreadError));
+      }
+
+      // 3. Calculate width: mid * ratio
+      const width = multiplyDecimal(midDecimal, widthRatioResult.value.toDecimal());
+
+      // 4. Delegate to fromMidAndWidth
+      return this.fromMidAndWidth(midDecimal, width);
+    }, InvalidSpreadError);
   }
 
   // ============================================================================

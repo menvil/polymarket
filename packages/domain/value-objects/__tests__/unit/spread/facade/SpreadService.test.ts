@@ -761,4 +761,364 @@ describe('SpreadService', () => {
       }
     });
   });
+
+  // ==========================================================================
+  // Ratio-based Operations (Phase 2)
+  // ==========================================================================
+
+  describe('fromMidAndWidth()', () => {
+    it('should create spread from mid and width', () => {
+      const result = SpreadService.fromMidAndWidth(0.50, 0.04);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bid().value()).toEqual(new Decimal(0.48));
+        expect(result.value.ask().value()).toEqual(new Decimal(0.52));
+        expect(result.value.mid()).toEqual(new Decimal(0.50));
+        expect(result.value.width()).toEqual(new Decimal(0.04));
+      }
+    });
+
+    it('should create zero-width spread when width = 0', () => {
+      const result = SpreadService.fromMidAndWidth(0.50, 0);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.isZeroWidth()).toBe(true);
+        expect(result.value.bid().value()).toEqual(new Decimal(0.50));
+        expect(result.value.ask().value()).toEqual(new Decimal(0.50));
+      }
+    });
+
+    it('should accept Decimal inputs', () => {
+      const result = SpreadService.fromMidAndWidth(new Decimal(0.50), new Decimal(0.04));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.width()).toEqual(new Decimal(0.04));
+      }
+    });
+
+    it('should accept string inputs', () => {
+      const result = SpreadService.fromMidAndWidth('0.50', '0.04');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bid().value()).toEqual(new Decimal(0.48));
+        expect(result.value.ask().value()).toEqual(new Decimal(0.52));
+      }
+    });
+
+    it('should return Err when width is negative', () => {
+      const result = SpreadService.fromMidAndWidth(0.50, -0.04);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
+      }
+    });
+
+    it('should return Err when mid is invalid', () => {
+      const result = SpreadService.fromMidAndWidth(NaN, 0.04);
+
+      expect(result.ok).toBe(false);
+      // Error from wrapOp - reason may not be preserved
+    });
+
+    it('should return Err when width is invalid', () => {
+      const result = SpreadService.fromMidAndWidth(0.50, Infinity);
+
+      expect(result.ok).toBe(false);
+      // Error from wrapOp - reason may not be preserved
+    });
+
+    it('should handle boundary case: width pushes beyond Price limits', () => {
+      // mid = 0.50, width = 1.00 → bid = 0, ask = 1.00
+      const result = SpreadService.fromMidAndWidth(0.50, 1.00);
+
+      // Should fail because bid = 0 is below MIN_PRICE (0.0001)
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  describe('fromMidAndWidthPercentage()', () => {
+    it('should create spread from mid and width percentage', () => {
+      const result = SpreadService.fromMidAndWidthPercentage(0.50, 8);
+      // width = 0.50 * 0.08 = 0.04
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bid().value()).toEqual(new Decimal(0.48));
+        expect(result.value.ask().value()).toEqual(new Decimal(0.52));
+        expect(result.value.width()).toEqual(new Decimal(0.04));
+      }
+    });
+
+    it('should handle small percentages', () => {
+      const result = SpreadService.fromMidAndWidthPercentage(0.50, 1);
+      // width = 0.50 * 0.01 = 0.005
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.width()).toEqual(new Decimal(0.005));
+        expect(result.value.bid().value()).toEqual(new Decimal(0.4975));
+        expect(result.value.ask().value()).toEqual(new Decimal(0.5025));
+      }
+    });
+
+    it('should handle zero percentage', () => {
+      const result = SpreadService.fromMidAndWidthPercentage(0.50, 0);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.isZeroWidth()).toBe(true);
+      }
+    });
+
+    it('should accept Decimal and string inputs', () => {
+      const result = SpreadService.fromMidAndWidthPercentage(new Decimal('0.50'), '8');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.width()).toEqual(new Decimal(0.04));
+      }
+    });
+
+    it('should return Err when widthPercentage is invalid', () => {
+      const result = SpreadService.fromMidAndWidthPercentage(0.50, NaN);
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('should reject negative percentages', () => {
+      const result = SpreadService.fromMidAndWidthPercentage(0.50, -10);
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('should work with ensureLteOne option', () => {
+      // widthPercentage = 50% is valid
+      const result1 = SpreadService.fromMidAndWidthPercentage(0.50, 50, { ensureLteOne: true });
+      expect(result1.ok).toBe(true);
+
+      // widthPercentage = 150% should fail with ensureLteOne
+      const result2 = SpreadService.fromMidAndWidthPercentage(0.50, 150, { ensureLteOne: true });
+      expect(result2.ok).toBe(false);
+    });
+
+    it('should handle large percentages without ensureLteOne', () => {
+      // 200% width of 0.50 = 1.00, which pushes beyond Price bounds
+      const result = SpreadService.fromMidAndWidthPercentage(0.50, 200);
+      
+      // Should fail due to Price bounds, not Ratio validation
+      expect(result.ok).toBe(false);
+    });
+  });
+
+  describe('widenBy()', () => {
+    it('should widen spread by percentage', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52); // width = 0.04
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.widenBy(spreadResult.value, 0.25); // 25%
+        // increase = 0.04 * 0.25 = 0.01
+        // widen each side by 0.005
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.bid().value()).toEqual(new Decimal(0.475));
+          expect(result.value.ask().value()).toEqual(new Decimal(0.525));
+          expect(result.value.width()).toEqual(new Decimal(0.05));
+        }
+      }
+    });
+
+    it('should accept percentage as number (50%)', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52); // width = 0.04
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.widenBy(spreadResult.value, 0.5); // 50%
+        // increase = 0.04 * 0.5 = 0.02
+        // widen each side by 0.01
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.width()).toEqual(new Decimal(0.06));
+        }
+      }
+    });
+
+    it('should handle zero percentage (no change)', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.widenBy(spreadResult.value, 0);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.bid().value()).toEqual(new Decimal(0.48));
+          expect(result.value.ask().value()).toEqual(new Decimal(0.52));
+        }
+      }
+    });
+
+    it('should accept string input', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.widenBy(spreadResult.value, '0.25');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.width()).toEqual(new Decimal(0.05));
+        }
+      }
+    });
+
+    it('should return Err when ratio is invalid', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.widenBy(spreadResult.value, NaN);
+        expect(result.ok).toBe(false);
+      }
+    });
+
+    it('should reject negative ratios (negative widening not supported)', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        // Negative ratio would produce negative widen amount, which is rejected by widen()
+        const result = SpreadService.widenBy(spreadResult.value, -0.5);
+        expect(result.ok).toBe(false);
+        // Use tightenBy() instead for reducing width
+      }
+    });
+  });
+
+  describe('tightenBy()', () => {
+    it('should tighten spread by percentage', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52); // width = 0.04
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.tightenBy(spreadResult.value, 0.25); // 25%
+        // decrease = 0.04 * 0.25 = 0.01
+        // tighten each side by 0.005
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.bid().value()).toEqual(new Decimal(0.485));
+          expect(result.value.ask().value()).toEqual(new Decimal(0.515));
+          expect(result.value.width()).toEqual(new Decimal(0.03));
+        }
+      }
+    });
+
+    it('should accept percentage as number (50%)', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52); // width = 0.04
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.tightenBy(spreadResult.value, 0.5); // 50%
+        // decrease = 0.04 * 0.5 = 0.02
+        // tighten each side by 0.01
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.width()).toEqual(new Decimal(0.02));
+        }
+      }
+    });
+
+    it('should handle 100% tightening (collapse to zero width)', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.tightenBy(spreadResult.value, 1.0); // 100%
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.isZeroWidth()).toBe(true);
+          expect(result.value.mid()).toEqual(new Decimal(0.50));
+        }
+      }
+    });
+
+    it('should handle > 100% tightening (capped at zero width)', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.tightenBy(spreadResult.value, 2.0); // 200%
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          // tighten() caps at halfWidth, so spread collapses to mid
+          expect(result.value.isZeroWidth()).toBe(true);
+        }
+      }
+    });
+
+    it('should handle zero percentage (no change)', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.tightenBy(spreadResult.value, 0);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.bid().value()).toEqual(new Decimal(0.48));
+          expect(result.value.ask().value()).toEqual(new Decimal(0.52));
+        }
+      }
+    });
+
+    it('should accept string input', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.tightenBy(spreadResult.value, '0.25');
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.width()).toEqual(new Decimal(0.03));
+        }
+      }
+    });
+
+    it('should return Err when ratio is invalid', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        const result = SpreadService.tightenBy(spreadResult.value, NaN);
+        expect(result.ok).toBe(false);
+      }
+    });
+
+    it('should work with ensureLteOne option', () => {
+      const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
+
+      if (spreadResult.ok) {
+        // 50% is valid
+        const result1 = SpreadService.tightenBy(spreadResult.value, 0.5, { ensureLteOne: true });
+        expect(result1.ok).toBe(true);
+
+        // 150% should fail with ensureLteOne
+        const result2 = SpreadService.tightenBy(spreadResult.value, 1.5, { ensureLteOne: true });
+        expect(result2.ok).toBe(false);
+      }
+    });
+  });
 });

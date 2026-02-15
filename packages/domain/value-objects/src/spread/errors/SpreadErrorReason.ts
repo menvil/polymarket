@@ -79,6 +79,17 @@ export enum SpreadErrorReason {
   INVALID_AMOUNT = 'INVALID_AMOUNT',
 
   /**
+   * Невалидная ширина spread
+   *
+   * @remarks
+   * Width должна быть:
+   * - Finite
+   * - Non-negative
+   * Используется в fromMidAndWidth
+   */
+  INVALID_WIDTH = 'INVALID_WIDTH',
+
+  /**
    * Операция приведёт к выходу за границы валидных значений
    *
    * @remarks
