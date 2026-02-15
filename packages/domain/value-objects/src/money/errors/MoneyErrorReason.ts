@@ -43,5 +43,14 @@ export enum MoneyErrorReason {
   INVALID_FORMAT = 'INVALID_FORMAT',
 
   /** Результат операции меньше нуля */
-  NEGATIVE_RESULT = 'NEGATIVE_RESULT'
+  NEGATIVE_RESULT = 'NEGATIVE_RESULT',
+
+  /** Невалидный Ratio для операции */
+  INVALID_RATIO = 'INVALID_RATIO',
+
+  /** Ratio вне допустимого диапазона для операции */
+  RATIO_OUT_OF_RANGE = 'RATIO_OUT_OF_RANGE',
+
+  /** Delta для increaseBy приведёт к отрицательному результату (delta < -1) */
+  DELTA_LESS_THAN_MINUS_ONE = 'DELTA_LESS_THAN_MINUS_ONE'
 }

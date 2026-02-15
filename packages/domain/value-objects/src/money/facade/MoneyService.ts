@@ -14,7 +14,9 @@ import { Money, type SupportedCurrency } from '../core/Money';
 import { MoneyInvariantViolation } from '../core/MoneyInvariantViolation';
 import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorForMoneyMultiplication';
 import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision';
+import { ValidateDeltaForIncreaseBy } from '../rules/ValidateDeltaForIncreaseBy';
 import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { Ratio } from '../../ratio/core/Ratio';
 
 /**
  * Facade для безопасного создания и операций с Money - публичный API
@@ -543,5 +545,194 @@ export class MoneyService {
       ));
     }
     return Ok(a.value().equals(b.value()));
+  }
+
+  /**
+   * Увеличивает (или уменьшает) сумму на delta процентов
+   *
+   * @param m - Исходная сумма
+   * @param delta - Изменение в долях (Ratio) - например, 0.05 для +5%, -0.1 для -10%
+   * @returns Result<Money, InvalidMoneyError>
+   * @throws Никогда - все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * **Семантика:** "Увеличить сумму на delta процентов"
+   *
+   * **Формула:** result = m * (1 + delta)
+   *
+   * **Use cases:**
+   * - Price markup: `increaseBy(cost, Ratio.fromPercent(5))` → +5% markup
+   * - Interest: `increaseBy(principal, Ratio.fromPercent(3))` → +3% interest
+   * - Discount: `increaseBy(price, Ratio.fromPercent(-10))` → -10% discount
+   *
+   * **Инвариант:** delta >= -1
+   * - delta = 0.1 → factor = 1.1 → увеличение на 10%
+   * - delta = -0.5 → factor = 0.5 → уменьшение на 50%
+   * - delta = -1 → factor = 0 → уменьшение на 100% (zero result)
+   * - delta = -1.5 → ❌ DELTA_LESS_THAN_MINUS_ONE (factor отрицательный)
+   *
+   * **Процесс:**
+   * 1. Валидация: delta >= -1 (через ValidateDeltaForIncreaseBy)
+   * 2. Вычисление factor: 1 + delta (используем delta.onePlus())
+   * 3. Multiply: m * factor
+   * 4. Create Money через createFromDecimal()
+   *
+   * **Возможные ошибки:**
+   * - DELTA_LESS_THAN_MINUS_ONE: delta < -1
+   * - EXCEEDS_MAX_AMOUNT: результат превышает максимум
+   *
+   * @example
+   * ```typescript
+   * // Увеличение на 10%: $100 → $110
+   * const price = Money.of(new Decimal(100), 'USDC');
+   * const markup = Ratio.of(new Decimal(0.1)); // +10%
+   * const result = MoneyService.increaseBy(price, markup);
+   * if (result.ok) {
+   *   console.log(result.value.value().toString()); // 110 USDC
+   * }
+   *
+   * // Discount 20%: $100 → $80
+   * const discount = Ratio.of(new Decimal(-0.2)); // -20%
+   * const discounted = MoneyService.increaseBy(price, discount);
+   * if (discounted.ok) {
+   *   console.log(discounted.value.value().toString()); // 80 USDC
+   * }
+   *
+   * // Ошибка: delta < -1
+   * const invalidDelta = Ratio.of(new Decimal(-1.5)); // -150%
+   * const invalid = MoneyService.increaseBy(price, invalidDelta);
+   * if (!invalid.ok) {
+   *   console.error(invalid.error.context.reason); // DELTA_LESS_THAN_MINUS_ONE
+   * }
+   * ```
+   */
+  public static increaseBy(m: Money, delta: Ratio): Result<Money, InvalidMoneyError> {
+    const ctx = {
+      amount: m.value().toString(),
+      currency: m.currency(),
+      delta: delta.toDecimal().toString()
+    };
+
+    return wrapOp(MoneyService.SERVICE_NAME, 'increaseBy', ctx, () => {
+      // Валидация: delta >= -1
+      const validateResult = ValidateDeltaForIncreaseBy.check(delta);
+      if (isErr(validateResult)) {
+        return validateResult;
+      }
+
+      // Вычисление factor: 1 + delta (используем Ratio.onePlus() для читаемости)
+      const factor = delta.onePlus();
+
+      // Multiply: m * factor
+      const product = multiplyDecimal(m.value(), factor);
+
+      // Create Money (проверит инварианты)
+      return this.createFromDecimal(product, m.currency(), 'increaseBy', ctx);
+    }, InvalidMoneyError);
+  }
+
+  /**
+   * Уменьшает сумму на delta процентов
+   *
+   * @param m - Исходная сумма
+   * @param delta - Уменьшение в долях (Ratio) - например, 0.1 для -10%
+   * @returns Result<Money, InvalidMoneyError>
+   * @throws Никогда - все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * **Семантика:** "Уменьшить сумму на delta процентов"
+   *
+   * **Convenience метод для increaseBy(-delta)**
+   *
+   * **Формула:** result = m * (1 - delta) = increaseBy(m, -delta)
+   *
+   * **Use cases:**
+   * - Discount: `decreaseBy(price, Ratio.fromPercent(10))` → -10% скидка
+   * - Depreciation: `decreaseBy(value, Ratio.fromPercent(15))` → -15% износ
+   *
+   * **Инвариант:** delta <= 1 (чтобы после отрицания было >= -1)
+   * - delta = 0.1 → -delta = -0.1 → factor = 0.9 → уменьшение на 10%
+   * - delta = 1 → -delta = -1 → factor = 0 → уменьшение на 100%
+   * - delta = 1.5 → -delta = -1.5 → ❌ DELTA_LESS_THAN_MINUS_ONE
+   *
+   * @example
+   * ```typescript
+   * // Скидка 20%: $100 → $80
+   * const price = Money.of(new Decimal(100), 'USDC');
+   * const discount = Ratio.of(new Decimal(0.2)); // 20%
+   * const result = MoneyService.decreaseBy(price, discount);
+   * if (result.ok) {
+   *   console.log(result.value.value().toString()); // 80 USDC
+   * }
+   * ```
+   */
+  public static decreaseBy(m: Money, delta: Ratio): Result<Money, InvalidMoneyError> {
+    // Convenience: decreaseBy(m, delta) = increaseBy(m, -delta)
+    const negatedDelta = delta.negate();
+    return this.increaseBy(m, negatedDelta);
+  }
+
+  /**
+   * Вычисляет долю (portion) от суммы Money
+   *
+   * @param m - Исходная сумма
+   * @param rate - Доля (Ratio) - например, 0.02 для 2%
+   * @returns Result<Money, InvalidMoneyError>
+   * @throws Никогда - все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * **Семантика:** "Сколько денег составляет доля rate от суммы m"
+   *
+   * **Формула:** result = m * rate
+   *
+   * **Use cases:**
+   * - Fee: `portion(orderAmount, Ratio.fromPercent(2))` → 2% trading fee
+   * - Rebate: `portion(paidAmount, Ratio.fromBps(25))` → 0.25% cashback
+   * - Allocation: `portion(budget, Ratio.fromDecimal(0.3))` → 30% от бюджета
+   *
+   * **Знак rate:**
+   * - Положительный rate (>= 0): стандартный случай (fees, allocations)
+   * - Отрицательный rate (< 0): допустимо, результат будет отрицательным
+   *
+   * **Процесс:**
+   * 1. Multiply: m.value() * rate.toDecimal()
+   * 2. Create Money через createFromDecimal() (проверит инварианты)
+   *
+   * **Возможные ошибки:**
+   * - EXCEEDS_MAX_AMOUNT: результат превышает максимум
+   *
+   * @example
+   * ```typescript
+   * // Fee calculation: 2% от $1000
+   * const orderAmount = Money.of(new Decimal(1000), 'USDC');
+   * const feeRate = Ratio.of(new Decimal(0.02)); // 2%
+   * const feeResult = MoneyService.portion(orderAmount, feeRate);
+   * if (feeResult.ok) {
+   *   console.log(feeResult.value.value().toString()); // 20 USDC
+   * }
+   *
+   * // Allocation: 30% от бюджета $5000
+   * const budget = Money.of(new Decimal(5000), 'USDC');
+   * const allocRate = Ratio.of(new Decimal(0.3)); // 30%
+   * const allocResult = MoneyService.portion(budget, allocRate);
+   * if (allocResult.ok) {
+   *   console.log(allocResult.value.value().toString()); // 1500 USDC
+   * }
+   * ```
+   */
+  public static portion(m: Money, rate: Ratio): Result<Money, InvalidMoneyError> {
+    const ctx = {
+      amount: m.value().toString(),
+      currency: m.currency(),
+      rate: rate.toDecimal().toString()
+    };
+
+    return wrapOp(MoneyService.SERVICE_NAME, 'portion', ctx, () => {
+      // Multiply: m * rate
+      const product = multiplyDecimal(m.value(), rate.toDecimal());
+
+      // Create Money (проверит инварианты: non-negative, finite, max)
+      return this.createFromDecimal(product, m.currency(), 'portion', ctx);
+    }, InvalidMoneyError);
   }
 }

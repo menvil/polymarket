@@ -243,6 +243,30 @@ export class Ratio {
   }
 
   /**
+   * Возвращает отрицание ratio (-ratio)
+   *
+   * @remarks
+   * Используется для операций типа "decrease by X%" через increaseBy(-X%):
+   * - decreaseBy(amount, ratio) = increaseBy(amount, ratio.negate())
+   *
+   * @returns Новый Ratio с отрицательным значением
+   * @throws {RatioInvariantViolation} если -ratio нарушает инварианты (NaN, infinite)
+   *
+   * @example
+   * ```typescript
+   * const discount = Ratio.of(new Decimal(0.2)); // 20%
+   * const negated = discount.negate(); // -20%
+   * console.log(negated.toDecimal().toString()); // "-0.2"
+   *
+   * // Usage в decreaseBy
+   * const result = increaseBy(amount, discount.negate()); // amount * (1 - 0.2)
+   * ```
+   */
+  public negate(): Ratio {
+    return Ratio.of(this._value.negated());
+  }
+
+  /**
    * Проверить равенство с другим Ratio
    *
    * @param other - Другой Ratio для сравнения

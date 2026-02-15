@@ -195,6 +195,11 @@ add(a: Money, b: Money): Result<Money, CurrencyMismatchError | ArithmeticOverflo
 subtract(a: Money, b: Money): Result<Money, CurrencyMismatchError | ArithmeticOverflowError>
 multiply(m: Money, factor: number | string | Decimal): Result<Money, InvalidMoneyError | ArithmeticOverflowError>
 divide(m: Money, divisor: number | string | Decimal): Result<Money, DivisionByZeroError | InvalidMoneyError | ArithmeticOverflowError>
+
+// Операции с Ratio (проценты, доли)
+portion(m: Money, rate: Ratio): Result<Money, InvalidMoneyError>
+increaseBy(m: Money, delta: Ratio): Result<Money, InvalidMoneyError>
+decreaseBy(m: Money, delta: Ratio): Result<Money, InvalidMoneyError>
 ```
 
 **Facade Error Contract:**
@@ -431,6 +436,57 @@ console.log(MoneyFormatter.toCurrency(money, false));  // "$1234.56"
 // Компактный формат для dashboard
 console.log(MoneyFormatter.toCompact(Money.of(1500)));  // "$1.5K"
 console.log(MoneyFormatter.toCompact(Money.of(2300000)));  // "$2.3M"
+```
+
+### Операции с Ratio (проценты, доли)
+
+```typescript
+import { MoneyService, Money } from '@polymarket/value-objects/money';
+import { Ratio } from '@polymarket/value-objects/ratio';
+
+// 1. Вычисление доли (portion) - fees, allocations
+const orderAmount = Money.of(new Decimal(1000), 'USDC');
+const feeRate = Ratio.of(new Decimal(0.02)); // 2%
+
+const feeResult = MoneyService.portion(orderAmount, feeRate);
+if (feeResult.ok) {
+  console.log(feeResult.value.value().toString()); // "20" USDC (2% от $1000)
+}
+
+// 2. Увеличение на процент (increaseBy) - markup, interest
+const baseCost = Money.of(new Decimal(100), 'USDC');
+const markup = Ratio.of(new Decimal(0.2)); // +20%
+
+const priceResult = MoneyService.increaseBy(baseCost, markup);
+if (priceResult.ok) {
+  console.log(priceResult.value.value().toString()); // "120" USDC (+20%)
+}
+
+// 3. Уменьшение на процент (decreaseBy) - discount
+const originalPrice = Money.of(new Decimal(100), 'USDC');
+const discount = Ratio.of(new Decimal(0.15)); // 15% discount
+
+const finalPriceResult = MoneyService.decreaseBy(originalPrice, discount);
+if (finalPriceResult.ok) {
+  console.log(finalPriceResult.value.value().toString()); // "85" USDC (-15%)
+}
+
+// 4. Workflow: fee calculation + discount
+const total = Money.of(new Decimal(5000), 'USDC');
+
+// Вычисляем allocation 30%
+const allocRate = Ratio.of(new Decimal(0.3));
+const allocResult = MoneyService.portion(total, allocRate);
+if (allocResult.ok) {
+  console.log(`Allocation: $${allocResult.value.value()}`); // $1500
+
+  // Применяем discount 10% к allocation
+  const discountRate = Ratio.of(new Decimal(0.1));
+  const finalResult = MoneyService.decreaseBy(allocResult.value, discountRate);
+  if (finalResult.ok) {
+    console.log(`After discount: $${finalResult.value.value()}`); // $1350
+  }
+}
 ```
 
 Больше примеров: [examples.md](./examples.md)
