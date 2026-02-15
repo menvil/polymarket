@@ -9,7 +9,7 @@ describe('OutcomeTokenFormatter', () => {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
     chainId: 137 as any,
-    conditionId: '0xabc1234567890' as any,
+    conditionId: '0xabc1234567890000000000000000000000000000000000000000000000000000' as any,
   };
 
   describe('toString()', () => {

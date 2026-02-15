@@ -83,7 +83,7 @@ describe('OutcomeToken (Core)', () => {
       const ref1 = testConditionRef;
       const ref2: OnChainConditionRef = {
         ...testConditionRef,
-        conditionId: '0xdifferent' as any,
+        conditionId: '0x1234567890abcdef000000000000000000000000000000000000000000000000' as any,
       };
 
       const token1 = OutcomeToken.of(ref1, BinaryOutcome.UP);
