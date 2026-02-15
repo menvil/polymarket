@@ -11,7 +11,7 @@ describe('TokenBalance Core', () => {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
     chainId: KnownChainIds.POLYGON,
-    conditionId: '0xabc123def456' as ConditionId,
+    conditionId: '0xabc123def4560000000000000000000000000000000000000000000000000000' as ConditionId,
   };
 
   const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
