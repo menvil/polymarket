@@ -99,8 +99,8 @@ export class TokenBalanceService {
     accountId: AccountId,
     venueId: VenueId
   ): Result<TokenBalance, InvalidTokenBalanceError> {
-    // Безопасное формирование ctx - НЕ вызываем методы, которые могут бросить
-    // Используем только примитивные значения
+    // Безопасное формирование ctx с защитой от throwing методов
+    // Вызываем методы внутри try-catch, чтобы "грязные объекты" не сломали контракт "Never Throw"
     let ctx: Record<string, unknown>;
     try {
       ctx = {

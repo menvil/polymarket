@@ -17,6 +17,7 @@ import {
   rewrap,
   wrapOp,
   isExpectedMathError,
+  isCoreInvariantViolation,
 } from '../../src/utils/errorUtils.js';
 import { InvalidMoneyError } from '../../src/value-objects/InvalidMoneyError.js';
 import { InvalidPriceError } from '../../src/value-objects/InvalidPriceError.js';
@@ -539,6 +540,96 @@ describe('errorUtils', () => {
         expect(quoteResult.error.context?.price).toBe('100');
         expect(quoteResult.error.context?.quoteId).toBe('quote-1');
       }
+    });
+  });
+
+  describe('isCoreInvariantViolation', () => {
+    it('should return true for PriceInvariantViolation', () => {
+      const error = new Error('Price must be positive');
+      error.name = 'PriceInvariantViolation';
+      (error as any).reason = 'NEGATIVE_VALUE';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+
+    it('should return true for QuantityInvariantViolation', () => {
+      const error = new Error('Quantity must be non-negative');
+      error.name = 'QuantityInvariantViolation';
+      (error as any).reason = 'NEGATIVE_VALUE';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+
+    it('should return true for MoneyInvariantViolation', () => {
+      const error = new Error('Money amount invalid');
+      error.name = 'MoneyInvariantViolation';
+      (error as any).reason = 'INVALID_AMOUNT';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+
+    it('should return true for BalanceInvariantViolation', () => {
+      const error = new Error('Balance invariant violated');
+      error.name = 'BalanceInvariantViolation';
+      (error as any).reason = 'NEGATIVE_AVAILABLE';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+
+    it('should return true for TokenBalanceInvariantViolation', () => {
+      const error = new Error('TokenBalance invariant violated');
+      error.name = 'TokenBalanceInvariantViolation';
+      (error as any).reason = 'INVALID_TOKEN';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+
+    it('should return true for SpreadInvariantViolation', () => {
+      const error = new Error('Spread invariant violated');
+      error.name = 'SpreadInvariantViolation';
+      (error as any).reason = 'BID_EXCEEDS_ASK';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+
+    it('should return true for QuoteInvariantViolation', () => {
+      const error = new Error('Quote invariant violated');
+      error.name = 'QuoteInvariantViolation';
+      (error as any).reason = 'INVALID_SPREAD';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+
+    it('should return true for RatioInvariantViolation', () => {
+      const error = new Error('Ratio invariant violated');
+      error.name = 'RatioInvariantViolation';
+      (error as any).reason = 'NEGATIVE_VALUE';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+
+    it('should return false for unknown error type', () => {
+      const error = new Error('Some error');
+      error.name = 'UnknownError';
+      (error as any).reason = 'SOME_REASON';
+
+      expect(isCoreInvariantViolation(error)).toBe(false);
+    });
+
+    it('should return false for Error without reason property', () => {
+      const error = new Error('Price must be positive');
+      error.name = 'PriceInvariantViolation';
+      // No reason property
+
+      expect(isCoreInvariantViolation(error)).toBe(false);
+    });
+
+    it('should return false for non-Error objects', () => {
+      expect(isCoreInvariantViolation('string')).toBe(false);
+      expect(isCoreInvariantViolation(123)).toBe(false);
+      expect(isCoreInvariantViolation(null)).toBe(false);
+      expect(isCoreInvariantViolation(undefined)).toBe(false);
+      expect(isCoreInvariantViolation({})).toBe(false);
     });
   });
 });
