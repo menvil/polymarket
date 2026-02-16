@@ -791,42 +791,26 @@ const chain = await AsyncResult.ok(Promise.resolve(42)).toChain();
 const doubled = chain.map(x => x * 2).unwrap(); // 84
 ```
 
-### .and(other) / .andAsync(other)
+### .orAsyncLazy(fn)
 
-Возвращает второй Result, если первый - Ok, иначе первую ошибку.
-
-```typescript
-const result = await AsyncResult.ok(Promise.resolve(1))
-  .and(Ok(2))
-  .unwrap(); // 2
-
-const asyncResult = await AsyncResult.ok(Promise.resolve(1))
-  .andAsync(AsyncResult.ok(Promise.resolve(2)))
-  .unwrap(); // 2
-```
-
-### .or(other) / .orAsync(other) / .orAsyncLazy(fn)
-
-Возвращает первый Result, если он Ok, иначе альтернативный Result.
+Ленивая фабрика для альтернативного Result (вызывается только при Err).
 
 ```typescript
-// or - sync альтернатива
-const result = await AsyncResult.err('error 1')
-  .or(Ok(42))
-  .unwrap(); // 42
-
-// orAsync - async альтернатива
-const result2 = await AsyncResult.err('error')
-  .orAsync(AsyncResult.ok(Promise.resolve(42)))
-  .unwrap(); // 42
-
 // orAsyncLazy - ленивая фабрика (вызывается только при Err)
-const result3 = await AsyncResult.ok(Promise.resolve(10))
+const result = await AsyncResult.ok(Promise.resolve(10))
   .orAsyncLazy(async () => {
     console.log('Not called!'); // Не вызывается для Ok
     return Ok(42);
   })
   .unwrap(); // 10
+
+// При Err фабрика вызывается
+const result2 = await AsyncResult.err('error')
+  .orAsyncLazy(async () => {
+    console.log('Called!'); // Вызывается для Err
+    return Ok(42);
+  })
+  .unwrap(); // 42
 ```
 
 ## 💡 Примеры использования

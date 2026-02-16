@@ -25,7 +25,9 @@ const result = QuoteService.create(
   0.48,  // bid price
   0.52,  // ask price
   100,   // bid size
-  150    // ask size
+  150,   // ask size
+  'POLYMARKET_WS',  // sourceId
+  'TEST_MARKET'     // instrumentId
 );
 
 if (!result.ok) {
@@ -95,6 +97,8 @@ const timestampResult = QuoteService.create(
   0.52,
   100,
   150,
+  'POLYMARKET_WS',
+  'TEST_MARKET',
   new Date('2024-01-15T12:30:00Z')
 );
 
@@ -115,7 +119,9 @@ const result = QuoteService.create(
   new Decimal('0.48'),
   new Decimal('0.52'),
   new Decimal('100'),
-  new Decimal('150')
+  new Decimal('150'),
+  'POLYMARKET_WS',
+  'TEST_MARKET'
 );
 ```
 
@@ -445,13 +451,15 @@ console.log(json);
 //   ask: 0.52,
 //   bidSize: 100,
 //   askSize: 150,
-//   timestamp: 1234567890000
+//   timestamp: 1234567890000,
+//   sourceId: 'POLYMARKET_WS',
+//   instrumentId: 'TEST_MARKET'
 // }
 
 // В JSON строку
 const jsonString = QuoteSerializer.toJSONString(quote);
 console.log(jsonString);
-// '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000}'
+// '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000,"sourceId":"POLYMARKET_WS","instrumentId":"TEST_MARKET"}'
 ```
 
 ### JSON deserialization
@@ -463,7 +471,9 @@ const json: QuoteJSON = {
   ask: 0.52,
   bidSize: 100,
   askSize: 150,
-  timestamp: 1234567890000
+  timestamp: 1234567890000,
+  sourceId: 'POLYMARKET_WS',
+  instrumentId: 'TEST_MARKET'
 };
 
 const result = QuoteSerializer.fromJSON(json);
@@ -473,7 +483,7 @@ if (result.ok) {
 }
 
 // Из JSON строки
-const jsonString = '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000}';
+const jsonString = '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000,"sourceId":"POLYMARKET_WS","instrumentId":"TEST_MARKET"}';
 
 const parseResult = QuoteSerializer.fromJSONString(jsonString);
 if (parseResult.ok) {

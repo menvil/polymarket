@@ -112,9 +112,11 @@ public static create(
 
 ```typescript
 public static bidOnly(
-  bidValue: number | Decimal,
-  bidSizeValue: number | Decimal,
-  timestamp?: Date | number
+  bidValue: Decimal | number | string,
+  bidSizeValue: Decimal | number | string,
+  sourceId: MarketDataSourceId,
+  instrumentId: InstrumentId,
+  timestamp?: Date | Decimal | number | string
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -132,6 +134,8 @@ return QuoteService.create(
   null,           // ask = null
   bidSizeDecimal,
   new Decimal(0), // askSize = 0
+  sourceId,
+  instrumentId,
   timestamp
 );
 ```
@@ -142,9 +146,11 @@ return QuoteService.create(
 
 ```typescript
 public static askOnly(
-  askValue: number | Decimal,
-  askSizeValue: number | Decimal,
-  timestamp?: Date | number
+  askValue: Decimal | number | string,
+  askSizeValue: Decimal | number | string,
+  sourceId: MarketDataSourceId,
+  instrumentId: InstrumentId,
+  timestamp?: Date | Decimal | number | string
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -267,7 +273,7 @@ public static getMidPrice(quote: Quote): Result<Price, InvalidQuoteError>
 **Пример:**
 
 ```typescript
-const quote = QuoteService.create(0.48, 0.52, 100, 100).value;
+const quote = QuoteService.create(0.48, 0.52, 100, 100, 'POLYMARKET_WS', 'TEST_MARKET').value;
 const midResult = QuoteService.getMidPrice(quote);
 
 if (midResult.ok) {
@@ -303,7 +309,7 @@ public static getSpreadRatio(quote: Quote): Result<Ratio, InvalidQuoteError>
 **Пример:**
 
 ```typescript
-const quote = QuoteService.create(0.48, 0.52, 100, 100).value;
+const quote = QuoteService.create(0.48, 0.52, 100, 100, 'POLYMARKET_WS', 'TEST_MARKET').value;
 const ratioResult = QuoteService.getSpreadRatio(quote);
 
 if (ratioResult.ok) {

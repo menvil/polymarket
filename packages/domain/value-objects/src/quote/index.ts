@@ -101,7 +101,7 @@ export { QuoteService } from './facade/index.js';
  *
  * @remarks
  * Методы:
- * - toJSON() - Quote → QuoteJson
+ * - toJSON() - Quote → QuoteJSON
  * - fromJSON() - unknown → Result<Quote>
  * - toJSONString() - Quote → JSON string
  * - fromJSONString() - JSON string → Result<Quote>

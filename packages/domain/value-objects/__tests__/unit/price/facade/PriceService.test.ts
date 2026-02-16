@@ -602,6 +602,17 @@ describe('PriceService', () => {
       }
     });
 
+    it('должен вернуть Err для tickSize не кратного базовому тику (rule fail)', () => {
+      const price = Price.of(new Decimal(0.5));
+      const result = PriceService.ensureAlignedToMarketTick(price, 0.00015);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.op).toBe('ensureAlignedToMarketTick');
+        expect(result.error.context?.tickSize).toBe('0.00015');
+        expect(result.error.context?.reason).toBe('not_multiple_of_base_tick');
+      }
+    });
+
     it('должен вернуть Ok если price aligned', () => {
       const price = Price.of(new Decimal(0.5));
       const result = PriceService.ensureAlignedToMarketTick(price, 0.1);
