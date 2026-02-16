@@ -19,7 +19,7 @@ Core Layer отвечает за:
 
 - Представление денежной суммы с валютой как immutable value object
 - Гарантию инвариантов через typed exceptions
-- Базовые операции (equals, hasSameCurrency)
+- Базовые операции (hasSameCurrency, isZero, isPositive, isNegative)
 
 **НЕ отвечает за:**
 
@@ -52,45 +52,19 @@ public static readonly SUPPORTED_CURRENCIES = new Set<SupportedCurrency>(['USDC'
 // Максимальная абсолютная сумма
 public static readonly MAX_AMOUNT = new Decimal('1e15');
 
-// Singleton zero USDC (lazy init)
-public static get ZERO_USDC(): Money
+// Singleton zero для каждой валюты
+public static readonly ZERO: Record<SupportedCurrency, Money> = {
+  USDC: Money.of(new Decimal(0), 'USDC')
+};
 ```
 
 ---
 
 ## Исключения
 
-Core бросает два типа исключений:
+Core бросает ТОЛЬКО один тип исключений:
 
-### 1. MoneyParseError
-
-**Когда:** Ошибка парсинга входного значения в Decimal (ДО создания Decimal)
-
-**Extends:** `Error`
-
-**Структура:**
-
-```typescript
-export class MoneyParseError extends Error {
-  public readonly value: string;  // сырое значение
-
-  constructor(value: string) {
-    super(`Failed to parse Money value: ${value}`);
-    this.name = 'MoneyParseError';
-    this.value = value;
-  }
-}
-```
-
-**Примеры:**
-
-- `Money.of("abc")` → MoneyParseError
-- `Money.of(undefined)` → MoneyParseError
-- `Money.of({})` → MoneyParseError
-
----
-
-### 2. MoneyInvariantViolation
+### MoneyInvariantViolation
 
 **Когда:** Нарушение инвариантов после успешного парсинга (ПОСЛЕ создания Decimal)
 
@@ -118,10 +92,10 @@ export class MoneyInvariantViolation extends Error {
 
 **Примеры:**
 
-- `Money.fromDecimal(new Decimal(NaN), 'USDC')` → reason: 'NAN'
-- `Money.fromDecimal(new Decimal(Infinity), 'USDC')` → reason: 'NON_FINITE'
-- `Money.fromDecimal(new Decimal('1e16'), 'USDC')` → reason: 'EXCEEDS_MAX_AMOUNT'
-- `Money.fromDecimal(new Decimal(100), 'EUR')` → reason: 'UNSUPPORTED_CURRENCY'
+- `Money.of(new Decimal(NaN), 'USDC')` → reason: 'NAN'
+- `Money.of(new Decimal(Infinity), 'USDC')` → reason: 'NON_FINITE'
+- `Money.of(new Decimal('1e16'), 'USDC')` → reason: 'EXCEEDS_MAX_AMOUNT'
+- `Money.of(new Decimal(100), 'EUR')` → reason: 'UNSUPPORTED_CURRENCY'
 
 ---
 
@@ -227,60 +201,12 @@ new Decimal('9999999999999999')
 
 #### `Money.of(value, currency?)`
 
-Создаёт Money из number или string.
+Создаёт Money из Decimal.
 
 **Сигнатура:**
 
 ```typescript
 public static of(
-  value: number | string,
-  currency: SupportedCurrency = 'USDC'
-): Money
-```
-
-**Параметры:**
-
-- `value` — сумма (number или string)
-- `currency` — валюта (default: 'USDC')
-
-**Возвращает:** `Money`
-
-**Бросает:**
-
-- `MoneyParseError` — если не удалось parse value в Decimal
-- `MoneyInvariantViolation` — если нарушены инварианты
-
-**Процесс:**
-
-1. Парсит value в Decimal через `new Decimal(value)`
-2. Если parse fail → бросает `MoneyParseError`
-3. Вызывает `Money.create(decimal, currency)`
-4. Если invariant fail → бросает `MoneyInvariantViolation`
-
-**Примеры:**
-
-```typescript
-const m1 = Money.of(100);                 // Money(100 USDC)
-const m2 = Money.of('42.50', 'USDC');     // Money(42.50 USDC)
-const m3 = Money.of(100.123456789);       // Money(100.123456789 USDC)
-
-// Ошибки:
-Money.of("abc");       // throws MoneyParseError
-Money.of(NaN);         // throws MoneyInvariantViolation (NAN)
-Money.of(Infinity);    // throws MoneyInvariantViolation (NON_FINITE)
-Money.of('1e16');      // throws MoneyInvariantViolation (EXCEEDS_MAX_AMOUNT)
-```
-
----
-
-#### `Money.fromDecimal(value, currency?)`
-
-Создаёт Money из Decimal (zero-copy).
-
-**Сигнатура:**
-
-```typescript
-public static fromDecimal(
   value: Decimal,
   currency: SupportedCurrency = 'USDC'
 ): Money
@@ -288,7 +214,7 @@ public static fromDecimal(
 
 **Параметры:**
 
-- `value` — Decimal сумма
+- `value` — сумма (Decimal)
 - `currency` — валюта (default: 'USDC')
 
 **Возвращает:** `Money`
@@ -299,64 +225,48 @@ public static fromDecimal(
 
 **Использование:**
 
-- В Facade после арифметики
-- В тестах для точного контроля
-- Когда уже есть Decimal (zero-copy)
+- **ТОЛЬКО в Core и Facade layers**
+- Для публичного API используйте `MoneyService.create()`
+- Парсинг number/string → Decimal делается в MoneyService
 
 **Примеры:**
 
 ```typescript
-const decimal = new Decimal('123.456');
-const money = Money.fromDecimal(decimal);  // Money(123.456 USDC)
+// ✅ В Core/Facade
+const m1 = Money.of(new Decimal('100'));        // Money(100 USDC)
+const m2 = Money.of(new Decimal('42.50'), 'USDC'); // Money(42.50 USDC)
+
+// ❌ В публичном коде - используй MoneyService
+const result = MoneyService.create(100, 'USDC');
+if (result.ok) {
+  const money = result.value;
+}
 
 // Ошибки:
-Money.fromDecimal(new Decimal(NaN));      // throws MoneyInvariantViolation
-Money.fromDecimal(new Decimal('1e16'));   // throws MoneyInvariantViolation
+Money.of(new Decimal(NaN));         // throws MoneyInvariantViolation (NAN)
+Money.of(new Decimal(Infinity));    // throws MoneyInvariantViolation (NON_FINITE)
+Money.of(new Decimal('1e16'));      // throws MoneyInvariantViolation (EXCEEDS_MAX_AMOUNT)
 ```
 
 ---
 
-#### `Money.zero(currency?)`
+### Статические константы
 
-Создаёт Money с нулевой суммой.
+#### `Money.ZERO`
 
-**Сигнатура:**
-
-```typescript
-public static zero(currency: SupportedCurrency = 'USDC'): Money
-```
-
-**Параметры:**
-
-- `currency` — валюта (default: 'USDC')
-
-**Возвращает:** `Money` с amount = 0
-
-**Примеры:**
-
-```typescript
-const zero = Money.zero();        // Money(0 USDC)
-const zeroEUR = Money.zero('EUR'); // throws (EUR not supported)
-```
-
----
-
-#### `Money.ZERO.USDC`
-
-Singleton константа для нулевой суммы USDC.
+Record с singleton константами для нулевых сумм каждой валюты.
 
 **Сигнатура:**
 
 ```typescript
-public static get ZERO_USDC(): Money
+public static readonly ZERO: Record<SupportedCurrency, Money>
 ```
-
-**Возвращает:** `Money(0 USDC)` (ленивая инициализация)
 
 **Использование:**
 
-- Вместо `Money.zero()` когда нужен USDC
-- Singleton — всегда один и тот же объект
+- Доступ по валюте: `Money.ZERO.USDC`
+- Singleton — всегда один и тот же объект для каждой валюты
+- Автоматически создаётся для всех валют из SUPPORTED_CURRENCIES
 
 **Примеры:**
 
@@ -365,26 +275,31 @@ const zero = Money.ZERO.USDC;  // Money(0 USDC)
 
 // Singleton:
 Money.ZERO.USDC === Money.ZERO.USDC;  // true
+
+// Проверка нуля
+if (money.value().equals(Money.ZERO.USDC.value())) {
+  console.log('Zero amount');
+}
 ```
 
 ---
 
 ### Методы экземпляра
 
-#### `amount()`
+#### `value()`
 
 Возвращает сумму как Decimal.
 
 **Сигнатура:**
 
 ```typescript
-public amount(): Decimal
+public value(): Decimal
 ```
 
 **Примеры:**
 
 ```typescript
-const money = Money.of(100.5);
+const money = Money.of(new Decimal('100.5'));
 const decimal = money.value();  // Decimal(100.5)
 console.log(decimal.toString()); // "100.5"
 ```
@@ -404,7 +319,7 @@ public currency(): SupportedCurrency
 **Примеры:**
 
 ```typescript
-const money = Money.of(100, 'USDC');
+const money = Money.of(new Decimal(100), 'USDC');
 console.log(money.currency());  // "USDC"
 ```
 
@@ -427,55 +342,11 @@ public toNumber(): number
 **Примеры:**
 
 ```typescript
-const money = Money.of('123.456');
+const money = Money.of(new Decimal('123.456'));
 console.log(money.toNumber());  // 123.456
 
-// Для вычислений используйте amount()
+// Для вычислений используйте value()
 const decimal = money.value();  // Decimal (точный)
-```
-
----
-
-#### `toDecimal()`
-
-Алиас для `amount()`.
-
-**Сигнатура:**
-
-```typescript
-public toDecimal(): Decimal
-```
-
-**Примеры:**
-
-```typescript
-const money = Money.of(100);
-const decimal = money.toDecimal();  // Decimal(100)
-```
-
----
-
-#### `equals(other)`
-
-Проверяет строгое равенство (валюта и сумма).
-
-**Сигнатура:**
-
-```typescript
-public equals(other: Money): boolean
-```
-
-**Возвращает:** `true` если валюта и сумма идентичны.
-
-**Примеры:**
-
-```typescript
-const m1 = Money.of(100, 'USDC');
-const m2 = Money.of(100, 'USDC');
-const m3 = Money.of(100.01, 'USDC');
-
-m1.equals(m2);  // true (одинаковая валюта и сумма)
-m1.equals(m3);  // false (разные суммы)
 ```
 
 ---
@@ -495,8 +366,8 @@ public hasSameCurrency(other: Money): boolean
 **Примеры:**
 
 ```typescript
-const usd1 = Money.of(100, 'USDC');
-const usd2 = Money.of(200, 'USDC');
+const usd1 = Money.of(new Decimal(100), 'USDC');
+const usd2 = Money.of(new Decimal(200), 'USDC');
 
 usd1.hasSameCurrency(usd2);  // true
 ```
@@ -574,40 +445,38 @@ Money.ZERO.USDC.isNegative();   // false
 
 ## Примеры использования
 
-### Создание Money
+### Создание Money (Core layer)
 
 ```typescript
-// Из числа
-const m1 = Money.of(100);           // 100 USDC
-const m2 = Money.of(100.50);        // 100.50 USDC
-
-// Из строки (для точности)
-const m3 = Money.of("99.999999999"); // 99.999999999 USDC
-
-// С явной валютой
-const m4 = Money.of(100, 'USDC');
+// ⚠️ Используйте MoneyService.create() в публичном коде!
+// Money.of() - ТОЛЬКО для Core/Facade layers
 
 // Из Decimal
-const decimal = new Decimal('123.456');
-const m5 = Money.fromDecimal(decimal);
+const m1 = Money.of(new Decimal('100'));           // 100 USDC
+const m2 = Money.of(new Decimal('100.50'));        // 100.50 USDC
+
+// Из строки через Decimal (для точности)
+const m3 = Money.of(new Decimal("99.999999999")); // 99.999999999 USDC
+
+// С явной валютой
+const m4 = Money.of(new Decimal(100), 'USDC');
 
 // Ноль
-const zero = Money.zero();          // 0 USDC
-const zero2 = Money.ZERO.USDC;      // 0 USDC (singleton)
+const zero = Money.ZERO.USDC;      // 0 USDC (singleton)
 ```
 
 ### Работа с инвариантами
 
 ```typescript
 // ✅ Валидные значения
-Money.of(0);              // OK: ноль разрешён
-Money.of(-100);           // OK: отрицательные разрешены
-Money.of('1e15');         // OK: ровно MAX_AMOUNT
-Money.of('999999999999999.999'); // OK
+Money.of(new Decimal(0));              // OK: ноль разрешён
+Money.of(new Decimal(-100));           // OK: отрицательные разрешены
+Money.of(new Decimal('1e15'));         // OK: ровно MAX_AMOUNT
+Money.of(new Decimal('999999999999999.999')); // OK
 
 // ❌ Нарушения инвариантов
 try {
-  Money.of(NaN);
+  Money.of(new Decimal(NaN));
 } catch (e) {
   if (e instanceof MoneyInvariantViolation) {
     console.log(e.reason);  // 'NAN'
@@ -615,7 +484,7 @@ try {
 }
 
 try {
-  Money.of(Infinity);
+  Money.of(new Decimal(Infinity));
 } catch (e) {
   if (e instanceof MoneyInvariantViolation) {
     console.log(e.reason);  // 'NON_FINITE'
@@ -623,19 +492,10 @@ try {
 }
 
 try {
-  Money.of('1e16');  // > MAX_AMOUNT
+  Money.of(new Decimal('1e16'));  // > MAX_AMOUNT
 } catch (e) {
   if (e instanceof MoneyInvariantViolation) {
     console.log(e.reason);  // 'EXCEEDS_MAX_AMOUNT'
-  }
-}
-
-// ❌ Ошибки парсинга
-try {
-  Money.of("abc");
-} catch (e) {
-  if (e instanceof MoneyParseError) {
-    console.log(e.value);  // "abc"
   }
 }
 ```
@@ -643,28 +503,28 @@ try {
 ### Сравнение и проверки
 
 ```typescript
-const m1 = Money.of(100, 'USDC');
-const m2 = Money.of(100, 'USDC');
-const m3 = Money.of(100.01, 'USDC');
+const m1 = Money.of(new Decimal(100), 'USDC');
+const m2 = Money.of(new Decimal(100), 'USDC');
+const m3 = Money.of(new Decimal('100.01'), 'USDC');
 
 // Проверка валюты
 m1.hasSameCurrency(m2);  // true
 m1.hasSameCurrency(m3);  // true
 
 // Проверка нуля
-Money.ZERO.USDC.isZero();  // true
-Money.of(0).isZero();      // true
-Money.of(100).isZero();    // false
+Money.ZERO.USDC.isZero();           // true
+Money.of(new Decimal(0)).isZero();  // true
+Money.of(new Decimal(100)).isZero(); // false
 
 // Проверка положительности
-Money.of(100).isPositive();   // true
-Money.ZERO.USDC.isPositive(); // false
-Money.of(-100).isPositive();  // false
+Money.of(new Decimal(100)).isPositive();   // true
+Money.ZERO.USDC.isPositive();              // false
+Money.of(new Decimal(-100)).isPositive();  // false
 
 // Проверка отрицательности
-Money.of(-100).isNegative();  // true
-Money.of(100).isNegative();   // false
-Money.ZERO.USDC.isNegative(); // false
+Money.of(new Decimal(-100)).isNegative();  // true
+Money.of(new Decimal(100)).isNegative();   // false
+Money.ZERO.USDC.isNegative();              // false
 ```
 
 ### Константы
@@ -689,9 +549,9 @@ console.log(zero.currency());           // "USDC"
 Core Layer:
 
 - ✅ Простой, чистый value object
-- ✅ Гарантия инвариантов через typed exceptions
-- ✅ Разделение parse errors и invariant violations
+- ✅ Гарантия инвариантов через MoneyInvariantViolation
 - ✅ Иммутабельность
 - ✅ Type-safe API
+- ✅ Только для Core/Facade layers
 
-Для создания Money из внешних данных используйте [MoneyService](./facade.md) (Result-based).
+**Для публичного API используйте [MoneyService](./facade.md)** (Result-based, парсинг number/string).
