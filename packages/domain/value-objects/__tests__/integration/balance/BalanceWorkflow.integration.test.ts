@@ -499,7 +499,7 @@ describe('Balance Integration Tests', () => {
       expect(reserveResult.value).not.toBe(original);
       expect(original.available().value().toNumber()).toBe(originalAvailable);
 
-      // release возвращает новый экземпляр
+      // unfreezeReserved возвращает новый экземпляр
       const releaseResult = BalanceService.unfreezeReserved(original, Money.of(new Decimal(1000)));
       expect(releaseResult.ok).toBe(true);
       if (!releaseResult.ok) return;

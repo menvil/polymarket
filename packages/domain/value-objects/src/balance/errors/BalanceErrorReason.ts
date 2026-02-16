@@ -15,7 +15,7 @@
  *
  * 1. **Недостаточно средств:**
  *    - INSUFFICIENT_FUNDS - недостаточно available для reserve
- *    - INSUFFICIENT_RESERVED - недостаточно reserved для release
+ *    - INSUFFICIENT_RESERVED - недостаточно reserved для unfreezeReserved/consumeReserved
  *
  * 2. **Валидация валюты:**
  *    - CURRENCY_MISMATCH - несовпадение валют
