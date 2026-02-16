@@ -172,4 +172,46 @@ describe('MoneySerializer', () => {
       }
     });
   });
+
+  describe('safeStringify edge cases', () => {
+    it('обрабатывает циклические ссылки в error context', () => {
+      // Создаём объект с циклической ссылкой внутри amount
+      const circular: any = { foo: 'bar' };
+      circular.self = circular;
+
+      const invalidJson = {
+        amount: circular, // amount - объект с циклической ссылкой
+        currency: 'USDC',
+      };
+
+      const result = MoneySerializer.fromJSON(invalidJson);
+
+      // fromJSON должен вернуть ошибку, т.к. amount не number и не string
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // Проверяем что error.context содержит amount без краша
+        expect(result.error.context).toBeDefined();
+        // safeStringify должен был обработать циклическую ссылку в amount
+        expect(result.error.context?.amount).toContain('[Circular]');
+      }
+    });
+
+    it('обрабатывает unstringifiable значения в error context', () => {
+      // BigInt - это пример значения, которое JSON.stringify не поддерживает
+      const invalidJson = {
+        amount: BigInt(9007199254740991), // amount - BigInt (unstringifiable)
+        currency: 'USDC',
+      };
+
+      const result = MoneySerializer.fromJSON(invalidJson);
+
+      // fromJSON должен вернуть ошибку, т.к. amount не number и не string
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context).toBeDefined();
+        // safeStringify должен был вернуть [Unstringifiable] для BigInt
+        expect(result.error.context?.amount).toBe('[Unstringifiable]');
+      }
+    });
+  });
 });
