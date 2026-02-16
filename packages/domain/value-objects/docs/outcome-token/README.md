@@ -477,12 +477,14 @@ if (tokenResult.ok) {
 }
 
 // ✅ TokenBalance — идентификатор + количество + account
-const qtyResult = QuantityService.create(100);
+const availableResult = QuantityService.create(100);
+const reservedResult = QuantityService.create(0);
 const balanceResult = TokenBalanceService.create(
-  tokenResult.value,  // OutcomeToken
-  qtyResult.value,    // Quantity
-  accountId,          // AccountId
-  venueId             // VenueId
+  tokenResult.value,     // OutcomeToken
+  availableResult.value, // Quantity (available)
+  reservedResult.value,  // Quantity (reserved)
+  accountId,             // AccountId
+  venueId                // VenueId
 );
 
 // ✅ AssetQuantity — универсальное количество

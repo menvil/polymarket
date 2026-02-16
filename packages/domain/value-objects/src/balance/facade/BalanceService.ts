@@ -42,7 +42,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
  * ОЖИДАЕМЫЕ и НЕОЖИДАННЫЕ ошибки обрабатываются через Result
  *
  * **Immutability:**
- * Все операции (reserve, release, updateAvailable) возвращают НОВЫЙ экземпляр Balance.
+ * Все операции (reserve, unfreezeReserved, consumeReserved, updateAvailable) возвращают НОВЫЙ экземпляр Balance.
  * Исходный баланс никогда не модифицируется.
  *
  * @example

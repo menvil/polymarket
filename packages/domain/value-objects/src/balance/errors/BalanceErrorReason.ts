@@ -107,7 +107,7 @@ export enum BalanceErrorReason {
    *
    * @remarks
    * Возникает когда валюта amount не совпадает с валютой баланса
-   * в операциях reserve/release/updateAvailable.
+   * в операциях reserve/unfreezeReserved/consumeReserved/updateAvailable.
    * Используется в ValidateCurrencyMatch rule.
    *
    * Контекст обычно содержит:

@@ -429,15 +429,20 @@ if (!moneyResult.ok) return;
 const money = moneyResult.value;
 
 // Для детального отображения
-console.log(MoneyFormatter.toFixed(money, 2));  // "1234.56"
+const fixed = MoneyFormatter.toFixed(money, 2);
+if (fixed.ok) console.log(fixed.value);  // "1234.56"
 
 // С символом валюты
-console.log(MoneyFormatter.toCurrency(money));  // "$1234.56 USDC"
-console.log(MoneyFormatter.toCurrency(money, false));  // "$1234.56"
+const withCurrency = MoneyFormatter.toCurrency(money);
+if (withCurrency.ok) console.log(withCurrency.value);  // "$1234.56 USDC"
+const withoutCurrency = MoneyFormatter.toCurrency(money, false);
+if (withoutCurrency.ok) console.log(withoutCurrency.value);  // "$1234.56"
 
 // Компактный формат для dashboard
-console.log(MoneyFormatter.toCompact(Money.of(new Decimal(1500))));  // "$1.5K"
-console.log(MoneyFormatter.toCompact(Money.of(2300000)));  // "$2.3M"
+const compact1 = MoneyFormatter.toCompact(Money.of(new Decimal(1500)));
+if (compact1.ok) console.log(compact1.value);  // "$1.5K"
+const compact2 = MoneyFormatter.toCompact(Money.of(new Decimal(2300000)));
+if (compact2.ok) console.log(compact2.value);  // "$2.3M"
 ```
 
 ### Операции с Ratio (проценты, доли)

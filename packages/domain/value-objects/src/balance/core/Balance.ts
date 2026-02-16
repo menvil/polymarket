@@ -22,7 +22,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
  * - total = available + reserved (общая сумма средств)
  *
  * **Immutability:**
- * Это immutable value object. Все операции (reserve, release, update)
+ * Это immutable value object. Все операции (reserve, unfreezeReserved, consumeReserved, updateAvailable)
  * выполняются через BalanceService и возвращают НОВЫЙ экземпляр Balance.
  *
  * **Архитектура Throws+Facade:**

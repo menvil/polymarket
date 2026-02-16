@@ -9,7 +9,7 @@ import { unwrap } from '@polymarket/result';
 import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../helpers/balanceTestHelpers.js';
 
 describe('Balance Integration Tests', () => {
-  describe('Полный workflow: создание → reserve → release → update', () => {
+  describe('Полный workflow: создание → reserve → unfreezeReserved/consumeReserved → update', () => {
     it('сценарий торговли: создание → резервирование для ордера → освобождение после закрытия', () => {
       // Шаг 1: Создаём начальный баланс
       const createResult = BalanceService.create(
