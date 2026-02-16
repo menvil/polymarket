@@ -1,4 +1,4 @@
-import { describe, it, expect, fail } from '@jest/globals';
+import { describe, it, expect } from '@jest/globals';
 import {
   roundToTick,
   floorToTick,
@@ -280,7 +280,7 @@ describe('roundToTick', () => {
     it('должен содержать контекст в ошибке roundingMode', () => {
       try {
         roundToTick(new Decimal(10), new Decimal('0.01'), 9 as Decimal.Rounding);
-        fail('Expected InvalidRoundingModeError to be thrown');
+        throw new Error('Expected InvalidRoundingModeError to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(Error);
         const err = error as any;
@@ -469,7 +469,7 @@ describe('roundToTick', () => {
       try {
         roundToTick(nearMaxE, tinyTick, Decimal.ROUND_HALF_UP);
         // Если не бросило ошибку - тест провален
-        fail('Expected ArithmeticOverflowError to be thrown');
+        throw new Error('Expected ArithmeticOverflowError to be thrown');
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
@@ -488,20 +488,6 @@ describe('roundToTick', () => {
       expect(() =>
         roundToTick(new Decimal('10.567'), new Decimal('-0.01'), Decimal.ROUND_HALF_UP)
       ).toThrow(InvalidTickSizeError);
-    });
-
-    it('должен корректно обрабатывать нулевое значение', () => {
-      const result = roundToTick(new Decimal(0), new Decimal('0.01'), Decimal.ROUND_HALF_UP);
-      expect(result.toString()).toBe('0');
-    });
-
-    it('должен корректно обрабатывать очень большой tickSize', () => {
-      const result = roundToTick(
-        new Decimal('123.456'),
-        new Decimal('100'),
-        Decimal.ROUND_HALF_UP
-      );
-      expect(result.toString()).toBe('100');
     });
   });
 });

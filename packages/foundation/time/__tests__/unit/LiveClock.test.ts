@@ -27,7 +27,7 @@ describe('LiveClock', () => {
       const time1 = clock.now();
 
       // Небольшая задержка для гарантии продвижения времени
-      await new Promise((resolve) => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 20));
 
       const time2 = clock.now();
 
@@ -57,8 +57,6 @@ describe('LiveClock', () => {
 
       // Разница должна быть разумной (< 1000ms для стабильности на загруженном CI)
       expect(Math.abs(clockTime - systemTime)).toBeLessThan(1000);
-      // Проверяем что время вообще в разумном диапазоне (не сильно в прошлом/будущем)
-      expect(Math.abs(clockTime - systemTime)).toBeLessThan(5000);
     });
   });
 
