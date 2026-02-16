@@ -591,7 +591,7 @@ function displayMarketData(data: APIResponse) {
     if (spreadResult.ok) {
       return {
         type: 'spread',
-        display: SpreadFormatter.format(spreadResult.ok.value, { decimals: 4 }),
+        display: SpreadFormatter.format(spreadResult.value, { decimals: 4 }),
         midPrice: spreadResult.value.midpoint().toNumber()
       };
     }

@@ -274,7 +274,7 @@ if (!validationResult.ok) {
 | **Core** | Price, Decimal, инварианты | Result, errors, валидации | `Spread.of()` throws |
 | **Rules** | Price, валидации | Core создание | `ValidateBidAsk.check()` |
 | **Facade** | Core, Rules, errorUtils | UI, сериализация | `SpreadService.create()` |
-| **Adapters** | Facade, форматы данных | Core, Rules | `SpreadSerializer.toDTO()` |
+| **Adapters** | Facade, форматы данных | Core, Rules | `SpreadSerializer.toJSON()` |
 
 ### Зависимости
 
@@ -465,11 +465,12 @@ Spread не форсирует alignment к базовому тику (0.0001):
 
 ### 3. Width в процентах
 
-`widthPercentage(): number` возвращает относительную ширину в процентах от midpoint:
+`widthPercentage(): Decimal` возвращает относительную ширину в процентах от midpoint:
 
 ```typescript
 const spread = SpreadService.fromValues(0.48, 0.52).value;
-spread.widthPercentage();  // 8% (0.04 / 0.50 = 0.08 = 8%)
+spread.widthPercentage();  // Decimal(8)
+spread.widthPercentage().toNumber();  // 8 (8% = 0.04 / 0.50 = 0.08 = 8%)
 ```
 
 **Обоснование:**
@@ -558,7 +559,7 @@ export class ValidateMinimumLiquidity {
     spread: Spread,
     minWidthBps: number
   ): Result<void, InvalidSpreadError> {
-    const widthBps = spread.widthPercentage() * 100;
+    const widthBps = spread.widthPercentage().toNumber() * 100;
     
     if (widthBps < minWidthBps) {
       return Err(

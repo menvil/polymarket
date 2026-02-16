@@ -102,12 +102,9 @@ fromValues(
 // Из чисел
 const result1 = SpreadService.fromValues(0.48, 0.52);
 
-// Из строк
-const result2 = SpreadService.fromValues('0.48', '0.52');
-
 // Из Decimal
 import Decimal from 'decimal.js';
-const result3 = SpreadService.fromValues(
+const result2 = SpreadService.fromValues(
   new Decimal(0.48),
   new Decimal(0.52)
 );
@@ -119,8 +116,7 @@ if (result1.ok) {
 
 **Ошибки:**
 
-- `SpreadErrorReason.INVALID_BID` — невалидное значение bid
-- `SpreadErrorReason.INVALID_ASK` — невалидное значение ask
+- Ошибки валидации Price (из PriceService) — невалидные значения bid или ask
 - `SpreadErrorReason.BID_GREATER_THAN_ASK` — bid > ask
 
 ---
@@ -560,7 +556,7 @@ if (result.ok) {
 
 **Ошибки:**
 
-- `SpreadErrorReason.NOT_TWO_SIDED` — если spread не two-sided
+- `SpreadErrorReason.MID_UNAVAILABLE` — если не удаётся вычислить midpoint
 - `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — если результат выходит за пределы Price
 
 ---

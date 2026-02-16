@@ -405,19 +405,25 @@ try {
 export enum SpreadErrorReason {
   // Инварианты Core
   BID_GREATER_THAN_ASK = 'BID_GREATER_THAN_ASK',
-  
+
   // Валидация входных данных (Facade)
-  INVALID_BID = 'INVALID_BID',
-  INVALID_ASK = 'INVALID_ASK',
+  INVALID_FORMAT = 'INVALID_FORMAT',
   INVALID_AMOUNT = 'INVALID_AMOUNT',
-  
+  INVALID_WIDTH = 'INVALID_WIDTH',
+
   // Валидация Rules
   WIDTH_TOO_SMALL = 'WIDTH_TOO_SMALL',
   WIDTH_TOO_LARGE = 'WIDTH_TOO_LARGE',
-  
+
   // Операции Facade
   OPERATION_OUT_OF_BOUNDS = 'OPERATION_OUT_OF_BOUNDS',
-  
+
+  // Ratio операции
+  MID_UNAVAILABLE = 'MID_UNAVAILABLE',
+  INVALID_RATIO = 'INVALID_RATIO',
+  NEGATIVE_RATIO_NOT_ALLOWED = 'NEGATIVE_RATIO_NOT_ALLOWED',
+  RATIO_OUT_OF_BOUNDS = 'RATIO_OUT_OF_BOUNDS',
+
   // Сериализация (Adapters)
   INVALID_JSON = 'INVALID_JSON',
   INVALID_DTO = 'INVALID_DTO'
@@ -429,12 +435,16 @@ export enum SpreadErrorReason {
 | Причина | Слой | Описание |
 | --------- | ------ | ---------- |
 | `BID_GREATER_THAN_ASK` | Core | bid > ask |
-| `INVALID_BID` | Facade | Невалидное значение bid |
-| `INVALID_ASK` | Facade | Невалидное значение ask |
+| `INVALID_FORMAT` | Facade | Невалидный формат входных данных |
 | `INVALID_AMOUNT` | Facade | Невалидный amount в операциях |
+| `INVALID_WIDTH` | Facade | Невалидная ширина спреда |
 | `WIDTH_TOO_SMALL` | Rules | Ширина спреда меньше минимальной |
 | `WIDTH_TOO_LARGE` | Rules | Ширина спреда больше максимальной |
 | `OPERATION_OUT_OF_BOUNDS` | Facade | Операция выходит за допустимые пределы |
+| `MID_UNAVAILABLE` | Facade | Midpoint недоступен |
+| `INVALID_RATIO` | Facade | Невалидный Ratio |
+| `NEGATIVE_RATIO_NOT_ALLOWED` | Facade | Отрицательный Ratio не разрешён |
+| `RATIO_OUT_OF_BOUNDS` | Facade | Результат Ratio операции выходит за границы |
 | `INVALID_JSON` | Adapters | Невалидный JSON |
 | `INVALID_DTO` | Adapters | Невалидный DTO объект |
 
@@ -451,10 +461,11 @@ throw new SpreadInvariantViolation(
 
 // В Facade (через errorUtils)
 return Err(
-  new InvalidSpreadError('Invalid bid value', {
+  new InvalidSpreadError('Invalid amount for tighten operation', {
     context: {
-      reason: SpreadErrorReason.INVALID_BID,
-      bid: '1.5'
+      source: ErrorSource.RULE_VALIDATION,
+      reason: SpreadErrorReason.INVALID_AMOUNT,
+      amount: 'NaN'
     }
   })
 );
