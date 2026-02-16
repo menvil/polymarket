@@ -247,7 +247,7 @@ console.log(spread.midpoint().toNumber());  // 0.50
 #### `widthPercentage()`
 
 ```typescript
-widthPercentage(): number
+widthPercentage(): Decimal
 ```
 
 Возвращает относительную ширину спреда в процентах от midpoint.
@@ -262,7 +262,8 @@ const spread = Spread.of(
   Price.of(new Decimal(0.52))
 );
 
-console.log(spread.widthPercentage());  // 8
+console.log(spread.widthPercentage());  // Decimal(8)
+console.log(spread.widthPercentage().toNumber());  // 8
 // 0.04 / 0.50 = 0.08 = 8%
 ```
 

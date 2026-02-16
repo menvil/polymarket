@@ -716,7 +716,7 @@ const result = QuoteService.shift(quote, new Decimal(0.10));
 if (!result.ok) {
   // Можно увидеть всю цепочку операций
   console.error(result.error.context?.opChain);
-  // ['shift', 'createFromDecimals', 'create:bid']
+  // ['shift', 'create', 'create:bid']
 
   console.error(result.error.context?.op);
   // 'shift'

@@ -85,7 +85,7 @@ console.log(spread.ask().toNumber());  // 0.52
 // Вычисление характеристик спреда
 console.log(spread.width().toNumber());     // 0.04
 console.log(spread.midpoint().toNumber());  // 0.50
-console.log(spread.widthPercentage());      // 8%
+console.log(spread.widthPercentage().toNumber());  // 8 (8%)
 
 // Сужение спреда (tighten)
 const tightenResult = SpreadService.tighten(spread, 0.01);
@@ -322,7 +322,7 @@ spread.bid(): Price              // Цена покупки
 spread.ask(): Price              // Цена продажи
 spread.width(): Decimal          // Ширина спреда (ask - bid)
 spread.midpoint(): Decimal       // Середина (bid + ask) / 2
-spread.widthPercentage(): number // Ширина в % от mid price
+spread.widthPercentage(): Decimal // Ширина в % от mid price
 ```
 
 #### Утилиты
@@ -336,10 +336,10 @@ spread.contains(price: Price): boolean    // Проверка вхождения
 ### SpreadSerializer
 
 ```typescript
-SpreadSerializer.toDTO(spread: Spread): SpreadDTO
-SpreadSerializer.fromDTO(dto: unknown): Result<Spread, InvalidSpreadError>
-SpreadSerializer.toJSON(spread: Spread): string
-SpreadSerializer.fromJSON(json: string): Result<Spread, InvalidSpreadError>
+SpreadSerializer.toJSON(spread: Spread): SpreadJSON
+SpreadSerializer.fromJSON(json: unknown): Result<Spread, InvalidSpreadError>
+SpreadSerializer.toJSONString(spread: Spread): string
+SpreadSerializer.fromJSONString(jsonString: string): Result<Spread, InvalidSpreadError>
 ```
 
 ### SpreadFormatter

@@ -168,12 +168,18 @@ describe('QuantitySerializer', () => {
         }
       });
 
-      it('должен использовать safeStringify для циклических ссылок', () => {
-        const circular: any = { value: "10" };
-        circular.self = circular;
+      it('должен обработать циклические ссылки через safeStringify', () => {
+        const circular: any = { value: 123 }; // number вместо string - вызовет ошибку
+        circular.self = circular; // создаем циклическую ссылку
+
         const result = QuantitySerializer.fromJSON(circular);
-        // Должен успешно десериализовать (value валиден)
-        expect(result.ok).toBe(true);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          // Проверяем что error context содержит json с [Circular]
+          expect(result.error.context?.json).toBeDefined();
+          expect(result.error.context?.json).toContain('[Circular]');
+        }
       });
     });
 
