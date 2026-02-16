@@ -736,7 +736,7 @@ export class Quote {
    *   'TEST_MARKET' as InstrumentId
    * );
    * const pct = quote.spreadPercentage();
-   * console.log(pct?.toDecimal().toNumber()); // ~8.333 (примерно 8.33%)
+   * console.log(pct?.toDecimal().toNumber()); // 0.08 (8% как дробь)
    * ```
    */
   public spreadPercentage(): Ratio | null {
@@ -750,9 +750,10 @@ export class Quote {
 
     const width = spread.width();
 
-    // Процент спреда: (width / mid) * 100
-    const percentage = width.dividedBy(mid).times(new Decimal(100));
+    // Ratio хранит ДРОБЬ (fraction), не процент!
+    // 0.08 означает 8%, не число 8
+    const fraction = width.dividedBy(mid);
 
-    return Ratio.of(percentage);
+    return Ratio.of(fraction);
   }
 }

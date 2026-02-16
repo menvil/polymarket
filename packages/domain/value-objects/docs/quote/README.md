@@ -48,7 +48,7 @@ const quote = result.value;
 
 // Вычисления
 console.log(quote.spreadWidthOrZero());      // Decimal(0.04)
-console.log(quote.spreadPercentage()?.toDecimal()); // Ratio: ~8 (8% от mid price)
+console.log(quote.spreadPercentage()?.toDecimal()); // Decimal(0.08) - 8% как дробь
 console.log(quote.midOrNull());         // Decimal(0.50) | null
 
 // Форматирование
@@ -853,9 +853,9 @@ const quote = quoteResult.value;
 const spreadWidth = quote.spreadWidthOrZero();
 console.log(spreadWidth?.toNumber());  // 0.04
 
-// Spread в процентах от mid price: (width / mid) * 100
+// Spread в процентах от mid price: width / mid (как дробь)
 const spreadPct = quote.spreadPercentage();
-console.log(spreadPct?.toDecimal().toNumber());  // ~8.333 (примерно 8.33%)
+console.log(spreadPct?.toDecimal().toNumber());  // 0.08 (8% как дробь)
 
 // Mid price
 const mid = quote.midOrNull();

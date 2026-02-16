@@ -43,7 +43,7 @@ console.log(QuoteFormatter.toDisplay(quote));
 
 // Вычисления
 console.log('Spread:', quote.spreadWidthOrZero().toNumber());        // 0.04
-console.log('Spread %:', quote.spreadPercentage()?.toDecimal().toNumber());  // ~8.333
+console.log('Spread %:', quote.spreadPercentage()?.toDecimal().toNumber());  // 0.08 (8% как дробь)
 console.log('Mid:', quote.midOrNull()?.toNumber());      // 0.50
 ```
 
@@ -284,7 +284,7 @@ if (maxResult.ok) {
 
 // Проверка spread в процентах
 const spreadPct = quote.spreadPercentage();
-if (spreadPct && spreadPct.toDecimal().lessThan(new Decimal(1))) {
+if (spreadPct && spreadPct.toDecimal().lessThan(new Decimal(0.01))) {
   console.log('Spread less than 1%');
 }
 ```
@@ -634,7 +634,8 @@ class MarketMaker {
 
     if (!spreadCheck.ok) {
       const spreadPct = quote.spreadPercentage();
-      console.error('Spread too wide:', spreadPct?.toDecimal().toNumber(), '%');
+      const pctDisplay = spreadPct ? (spreadPct.toDecimal().toNumber() * 100).toFixed(2) : 'N/A';
+      console.error('Spread too wide:', pctDisplay, '%');
       return null;
     }
 
@@ -759,7 +760,8 @@ class QuoteMonitor {
 
       const spreadCheck = ValidateMaxSpread.check(spread, this.maxAllowedSpread);
       if (!spreadCheck.ok) {
-        this.alerts.push(`Spread too wide: ${spreadPct?.toDecimal().toFixed(2)}%`);
+        const pctDisplay = spreadPct ? (spreadPct.toDecimal().toNumber() * 100).toFixed(2) : 'N/A';
+        this.alerts.push(`Spread too wide: ${pctDisplay}%`);
       }
     }
 

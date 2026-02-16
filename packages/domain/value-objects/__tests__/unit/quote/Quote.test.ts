@@ -976,7 +976,7 @@ describe('Quote Core', () => {
   describe('spreadPercentage()', () => {
     it('вычисляет процент спреда для two-sided quote', () => {
       // bid=0.48, ask=0.52, mid=0.50, spread=0.04
-      // percentage = (0.04 / 0.50) * 100 = 8%
+      // Ratio хранит ДРОБЬ: (0.04 / 0.50) = 0.08 (8% как дробь)
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
@@ -988,12 +988,12 @@ describe('Quote Core', () => {
       );
       const pct = quote.spreadPercentage();
       expect(pct).not.toBeNull();
-      expect(pct?.toDecimal().toNumber()).toBeCloseTo(8, 5);
+      expect(pct?.toDecimal().toNumber()).toBeCloseTo(0.08, 5);
     });
 
     it('вычисляет процент спреда с точностью', () => {
       // bid=0.48, ask=0.52, mid=0.50, spread=0.04
-      // percentage = (0.04 / 0.50) * 100 = 8.0
+      // Ratio хранит ДРОБЬ: (0.04 / 0.50) = 0.08 (8% как дробь)
       const quote = Quote.of(
         Price.of(new Decimal('0.48')),
         Price.of(new Decimal('0.52')),
@@ -1004,12 +1004,12 @@ describe('Quote Core', () => {
         TEST_INSTRUMENT_ID
       );
       const pct = quote.spreadPercentage();
-      expect(pct?.toDecimal().toString()).toBe('8');
+      expect(pct?.toDecimal().toString()).toBe('0.08');
     });
 
     it('вычисляет процент для узкого спреда', () => {
       // bid=0.6400, ask=0.6600, mid=0.65, spread=0.02
-      // percentage = (0.02 / 0.65) * 100 ≈ 3.077%
+      // Ratio хранит ДРОБЬ: (0.02 / 0.65) ≈ 0.03077 (примерно 3.077% как дробь)
       const quote = Quote.of(
         Price.of(new Decimal('0.6400')),
         Price.of(new Decimal('0.6600')),
@@ -1021,7 +1021,7 @@ describe('Quote Core', () => {
       );
       const pct = quote.spreadPercentage();
       expect(pct).not.toBeNull();
-      expect(pct?.toDecimal().toNumber()).toBeCloseTo(3.077, 2);
+      expect(pct?.toDecimal().toNumber()).toBeCloseTo(0.03077, 5);
     });
 
     it('возвращает null для one-sided quote (bid only)', () => {
