@@ -9,11 +9,11 @@ import {
   accountIdFromWallet,
 } from '@polymarket/ids';
 import type { OnChainConditionRef, ConditionId, AccountId, VenueId } from '@polymarket/ids';
-import { OutcomeToken } from '../../outcome-token/core/OutcomeToken.js';
-import { Quantity } from '../../quantity/core/Quantity.js';
-import { TokenBalanceService } from '../facade/TokenBalanceService.js';
-import { TokenBalanceSerializer } from '../adapters/TokenBalanceSerializer.js';
-import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
+import { OutcomeToken } from '../../../../src/outcome-token/core/OutcomeToken.js';
+import { Quantity } from '../../../../src/quantity/core/Quantity.js';
+import { TokenBalanceService } from '../../../../src/token-balance/facade/TokenBalanceService.js';
+import { TokenBalanceSerializer } from '../../../../src/token-balance/adapters/TokenBalanceSerializer.js';
+import { TokenBalanceErrorReason } from '../../../../src/token-balance/errors/TokenBalanceErrorReason.js';
 
 describe('TokenBalanceSerializer', () => {
   const conditionRef: OnChainConditionRef = {
@@ -33,7 +33,7 @@ describe('TokenBalanceSerializer', () => {
 
   describe('toJSON()', () => {
     it('сериализует TokenBalance в JSON', () => {
-      const balance = TokenBalanceService.create(token, qty, accountId, venueId);
+      const balance = TokenBalanceService.create(token, qty, Quantity.ZERO, accountId, venueId);
       expect(balance.ok).toBe(true);
       if (!balance.ok) return;
 
@@ -49,32 +49,35 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: BinaryOutcome.UP,
         },
-        amount: '100.5',
+        available: '100.5',
+        reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
         venueId: 'POLYMARKET',
       });
     });
 
-    it('сохраняет точность amount в строке', () => {
+    it('сохраняет точность available в строке', () => {
       const preciseQty = Quantity.of(new Decimal('123.45678901234567890123456789'));
-      const balance = TokenBalanceService.create(token, preciseQty, accountId, venueId);
+      const balance = TokenBalanceService.create(token, preciseQty, Quantity.ZERO, accountId, venueId);
       expect(balance.ok).toBe(true);
       if (!balance.ok) return;
 
       const json = TokenBalanceSerializer.toJSON(balance.value);
 
-      expect(json.amount).toBe('123.45678901234567890123456789');
+      expect(json.available).toBe('123.45678901234567890123456789');
+      expect(json.reserved).toBe('0');
     });
 
     it('сериализует нулевой баланс', () => {
       const zeroQty = Quantity.ZERO;
-      const balance = TokenBalanceService.create(token, zeroQty, accountId, venueId);
+      const balance = TokenBalanceService.create(token, zeroQty, Quantity.ZERO, accountId, venueId);
       expect(balance.ok).toBe(true);
       if (!balance.ok) return;
 
       const json = TokenBalanceSerializer.toJSON(balance.value);
 
-      expect(json.amount).toBe('0');
+      expect(json.available).toBe('0');
+      expect(json.reserved).toBe('0');
     });
   });
 
@@ -90,7 +93,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: '100.5',
+        available: '100.5',
+        reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
         venueId: 'POLYMARKET',
       };
@@ -100,7 +104,8 @@ describe('TokenBalanceSerializer', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.outcomeKey()).toBe(BinaryOutcome.UP);
-        expect(result.value.amount().toNumber()).toBe(100.5);
+        expect(result.value.available().toNumber()).toBe(100.5);
+        expect(result.value.reserved().toNumber()).toBe(0);
         expect(result.value.conditionRef()).toEqual(conditionRef);
       }
     });
@@ -116,7 +121,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: '0',
+        available: '0',
+        reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
         venueId: 'POLYMARKET',
       };
@@ -131,7 +137,7 @@ describe('TokenBalanceSerializer', () => {
 
     it('сохраняет точность при round-trip', () => {
       const preciseQty = Quantity.of(new Decimal('123.45678901234567890123456789'));
-      const originalBalance = TokenBalanceService.create(token, preciseQty, accountId, venueId);
+      const originalBalance = TokenBalanceService.create(token, preciseQty, Quantity.ZERO, accountId, venueId);
       expect(originalBalance.ok).toBe(true);
       if (!originalBalance.ok) return;
 
@@ -140,7 +146,8 @@ describe('TokenBalanceSerializer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.amount().value().toString()).toBe('123.45678901234567890123456789');
+        expect(result.value.available().value().toString()).toBe('123.45678901234567890123456789');
+        expect(result.value.reserved().value().toString()).toBe('0');
       }
     });
 
@@ -164,7 +171,8 @@ describe('TokenBalanceSerializer', () => {
 
     it('фэйлится если отсутствует token', () => {
       const json = {
-        amount: '100.5',
+        available: '100.5',
+        reserved: '0',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -194,7 +202,7 @@ describe('TokenBalanceSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
-        expect(result.error.message).toContain("Missing required field 'amount'");
+        expect(result.error.message).toContain("Missing required field 'available'");
       }
     });
 
@@ -203,7 +211,8 @@ describe('TokenBalanceSerializer', () => {
         token: {
           invalid: 'data',
         },
-        amount: '100.5',
+        available: '100.5',
+        reserved: '0',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -225,7 +234,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: 100.5, // number вместо string
+        available: 100.5, // number вместо string
+        reserved: '0',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -233,7 +243,7 @@ describe('TokenBalanceSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
-        expect(result.error.message).toContain("Field 'amount' must be string");
+        expect(result.error.message).toContain("Field 'available' must be string");
       }
     });
 
@@ -248,7 +258,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: 'invalid',
+        available: 'invalid',
+        reserved: '0',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -256,7 +267,7 @@ describe('TokenBalanceSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
-        expect(result.error.message).toContain('Failed to parse amount as Decimal');
+        expect(result.error.message).toContain('Failed to parse available as Decimal');
       }
     });
 
@@ -271,7 +282,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: '-100.5',
+        available: '-100.5',
+        reserved: '0',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -294,7 +306,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: '100.5',
+        available: '100.5',
+        reserved: '0',
         venueId: 'POLYMARKET',
       };
 
@@ -318,7 +331,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: '100.5',
+        available: '100.5',
+        reserved: '0',
         accountId: 123, // number вместо string
         venueId: 'POLYMARKET',
       };
@@ -343,7 +357,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: '100.5',
+        available: '100.5',
+        reserved: '0',
         accountId: 'invalid-format', // невалидный формат
         venueId: 'POLYMARKET',
       };
@@ -368,7 +383,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: '100.5',
+        available: '100.5',
+        reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
       };
 
@@ -392,7 +408,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: '100.5',
+        available: '100.5',
+        reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
         venueId: 123, // number вместо string
       };
@@ -417,7 +434,8 @@ describe('TokenBalanceSerializer', () => {
           },
           outcomeKey: 'UP',
         },
-        amount: '100.5',
+        available: '100.5',
+        reserved: '0',
         accountId: 'wallet:0x1234567890123456789012345678901234567890',
         venueId: 'invalid-venue-id', // содержит дефисы (недопустимо)
       };

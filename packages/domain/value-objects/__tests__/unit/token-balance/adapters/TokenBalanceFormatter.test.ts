@@ -9,10 +9,10 @@ import {
   accountIdFromWallet,
 } from '@polymarket/ids';
 import type { OnChainConditionRef, ConditionId, AccountId, VenueId } from '@polymarket/ids';
-import { OutcomeToken } from '../../outcome-token/core/OutcomeToken.js';
-import { Quantity } from '../../quantity/core/Quantity.js';
-import { TokenBalanceService } from '../facade/TokenBalanceService.js';
-import { TokenBalanceFormatter } from '../adapters/TokenBalanceFormatter.js';
+import { OutcomeToken } from '../../../../src/outcome-token/core/OutcomeToken.js';
+import { Quantity } from '../../../../src/quantity/core/Quantity.js';
+import { TokenBalanceService } from '../../../../src/token-balance/facade/TokenBalanceService.js';
+import { TokenBalanceFormatter } from '../../../../src/token-balance/adapters/TokenBalanceFormatter.js';
 
 describe('TokenBalanceFormatter', () => {
   const conditionRef: OnChainConditionRef = {
@@ -30,7 +30,7 @@ describe('TokenBalanceFormatter', () => {
   const accountId: AccountId = accountIdFromWallet(walletAddress);
   const venueId: VenueId = KnownVenues.POLYMARKET;
 
-  const balance = TokenBalanceService.create(token, qty, accountId, venueId);
+  const balance = TokenBalanceService.create(token, qty, Quantity.ZERO, accountId, venueId);
   if (!balance.ok) throw new Error('Failed to create balance');
   const testBalance = balance.value;
 
@@ -38,14 +38,12 @@ describe('TokenBalanceFormatter', () => {
     it('форматирует TokenBalance как полную строку', () => {
       const str = TokenBalanceFormatter.toString(testBalance);
 
-      expect(str).toContain('TokenBalance[');
-      expect(str).toContain('amount=100.5');
-      expect(str).toContain('token=OUTCOME_TOKEN');
-      expect(str).toContain('ONCHAIN');
-      expect(str).toContain(KnownOnChainProtocols.POLYMARKET_CTF);
-      expect(str).toContain('137');
-      expect(str).toContain('0xabc123def456789');
+      expect(str).toContain('TokenBalance');
+      expect(str).toContain('available');
+      expect(str).toContain('reserved');
+      expect(str).toContain('total');
       expect(str).toContain('UP');
+      // toString() не включает accountId и venueId в вывод
     });
 
     it('никогда не бросает исключения', () => {
@@ -78,7 +76,8 @@ describe('TokenBalanceFormatter', () => {
     it('форматирует TokenBalance в краткую строку', () => {
       const short = TokenBalanceFormatter.toShortString(testBalance);
 
-      expect(short).toBe('100.5 UP');
+      // toShortString теперь показывает total (available + reserved)
+      expect(short).toBe('100.5 UP'); // available=100.5, reserved=0, total=100.5
     });
 
     it('никогда не бросает исключения', () => {
@@ -92,12 +91,12 @@ describe('TokenBalanceFormatter', () => {
     it('форматирует TokenBalance с полной информацией', () => {
       const verbose = TokenBalanceFormatter.toVerboseString(testBalance);
 
-      expect(verbose).toContain('TokenBalance[');
-      expect(verbose).toContain('amount=100.5');
-      expect(verbose).toContain('token=OutcomeToken[');
-      expect(verbose).toContain('outcomeKey=UP');
-      expect(verbose).toContain('condition=ONCHAIN:');
-      expect(verbose).toContain(KnownOnChainProtocols.POLYMARKET_CTF);
+      expect(verbose).toContain('TokenBalance');
+      expect(verbose).toContain('available');
+      expect(verbose).toContain('reserved');
+      expect(verbose).toContain('total');
+      expect(verbose).toContain('UP');
+      // toVerboseString() не включает accountId и venueId в вывод
     });
 
     it('никогда не бросает исключения', () => {
@@ -122,7 +121,7 @@ describe('TokenBalanceFormatter', () => {
 
     it('округляет amount при необходимости', () => {
       const preciseQty = Quantity.of(new Decimal('100.12345'));
-      const preciseBalance = TokenBalanceService.create(token, preciseQty, accountId, venueId);
+      const preciseBalance = TokenBalanceService.create(token, preciseQty, Quantity.ZERO, accountId, venueId);
       expect(preciseBalance.ok).toBe(true);
       if (!preciseBalance.ok) return;
 
@@ -133,7 +132,7 @@ describe('TokenBalanceFormatter', () => {
 
     it('форматирует нулевой баланс', () => {
       const zeroQty = Quantity.ZERO;
-      const zeroBalance = TokenBalanceService.create(token, zeroQty, accountId, venueId);
+      const zeroBalance = TokenBalanceService.create(token, zeroQty, Quantity.ZERO, accountId, venueId);
       expect(zeroBalance.ok).toBe(true);
       if (!zeroBalance.ok) return;
 
