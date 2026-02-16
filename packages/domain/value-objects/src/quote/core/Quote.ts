@@ -20,8 +20,8 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  *    - Валидный timestamp (finite, integer, >= 0, <= MAX)
  *
  * 2. **Чистую математику** (query методы, вычисления):
- *    - spreadWidth() - вычисление ширины спреда
- *    - mid() - вычисление средней цены
+ *    - spreadWidthOrZero() - вычисление ширины спреда
+ *    - midOrNull() - вычисление средней цены
  *    - spreadPercentage() - вычисление процента спреда
  *    - equals() - сравнение рыночных данных
  *
@@ -54,11 +54,11 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  *
  * // Query methods (чистая математика)
  * console.log(quote.isTwoSided()); // true
- * const spread = quote.spreadWidth(); // Decimal | null
- * const mid = quote.mid(); // Decimal | null
+ * const spread = quote.spreadWidthOrZero(); // Decimal
+ * const mid = quote.midOrNull(); // Decimal | null
  *
  * // ❌ В публичном коде - используй QuoteService:
- * const result = QuoteService.create(0.48, 0.52, 100, 150);
+ * const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
  * if (!result.ok) {
  *   console.error(result.error);
  * }

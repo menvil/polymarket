@@ -36,11 +36,10 @@ export class ValidateMaxSpread {
    * @example
    * ```typescript
    * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
-   * const spread = quote.spreadWidth();
+   * const spread = quote.spreadWidthOrZero();
    *
-   * if (spread !== null) {
-   *   const result = ValidateMaxSpread.check(spread, new Decimal(0.10));
-   *   if (!result.ok) {
+   * const result = ValidateMaxSpread.check(spread, new Decimal(0.10));
+   * if (!result.ok) {
    *     console.error('Spread too wide - possible error or manipulation');
    *   }
    * }

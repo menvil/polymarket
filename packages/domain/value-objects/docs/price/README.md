@@ -153,8 +153,7 @@ Price модуль построен на **4-слойной архитектур
 
 ```typescript
 // Создание
-Price.of(value: Decimal.Value): Price
-Price.fromDecimal(decimal: Decimal): Price  // zero-copy
+Price.of(value: Decimal): Price  // ТОЛЬКО для Core/Facade - принимает Decimal
 Price.MIN: Price  // 0.0001
 Price.MAX: Price  // 0.9999
 Price.HALF: Price // 0.5
@@ -185,8 +184,6 @@ price.isMax(): boolean
 
 **Принцип:** Одно правило = одна проверка
 
-Подробнее: [rules.md](./rules.md)
-
 ---
 
 ### 3. Facade Layer
@@ -210,6 +207,14 @@ average(price1: Price, price2: Price): Result<Price, InvalidPriceError>
 // Округление и выравнивание
 roundToMarketTick(price: Price, tickSize: number | string | Decimal, mode?: 'nearest' | 'floor' | 'ceil'): Result<Price, InvalidPriceError>
 ensureAlignedToMarketTick(price: Price, tickSize: number | string | Decimal): Result<void, InvalidPriceError>
+
+// Применение относительного изменения (markup/markdown)
+applyRelativeChange(
+  price: Price,
+  ratio: Ratio,
+  tickSize: number | string | Decimal,
+  options?: { roundingMode?: 'nearest' | 'floor' | 'ceil' }
+): Result<Price, InvalidPriceError>
 ```
 
 **Facade Error Contract:**
@@ -248,8 +253,6 @@ console.log(formatted);  // "0.5000"
 
 console.log(PriceFormatter.toPercentage(price));  // "50.00%"
 ```
-
-Подробнее: [adapters.md](./adapters.md)
 
 ---
 
@@ -536,19 +539,14 @@ if (!result.ok) {
 const price = result.value;
 ```
 
-Подробное руководство: [migration.md](./migration.md)
-
 ---
 
 ## Дополнительные ресурсы
 
 - [Архитектура и паттерны](./architecture.md)
 - [Core Layer API](./core.md)
-- [Rules Layer](./rules.md)
 - [Facade Layer API](./facade.md)
-- [Adapters Layer](./adapters.md)
 - [Примеры использования](./examples.md)
-- [Миграция со старого Price](./migration.md)
 
 ---
 

@@ -390,15 +390,15 @@ public static create(
       return Err(rewrap('create', { component: 'askSize' }, askSizeResult.error, ...));
     }
 
-    // 5. Create via createFromDecimals
-    return QuoteService.createFromDecimals(bidDecimal, askDecimal, ...);
+    // 5. Create Price and Quantity objects, then Quote
+    return PriceService.create() × 2 + QuantityService.create() × 2 → Quote.of();
   }, 'quote', InvalidQuoteError);
 }
 ```
 
 **Вывод:** Quote парсит **4 параметра** (bid, ask, bidSize, askSize) вместо одного → в 4 раза больше кода.
 
-#### 2. Многоуровневый create (create → createFromDecimals → Core)
+#### 2. Многоуровневый create (create → Core)
 
 **Money/Price/Quantity:**
 
@@ -409,13 +409,12 @@ create() → toDecimal() → Core.of()
 **Quote:**
 
 ```text
-create() → toDecimal() × 4 → createFromDecimals() → PriceService.create() × 2 + QuantityService.create() × 2 → ValidateQuoteSizes → Quote.of()
+create() → toDecimal() × 4 → PriceService.create() × 2 + QuantityService.create() × 2 → ValidateQuoteSizes → Quote.of()
 ```
 
-Quote имеет **двухуровневую фабрику**:
+Quote имеет **однуровневую фабрику** (как и другие value objects):
 
-1. `create()` — парсит numbers → Decimals
-2. `createFromDecimals()` — создаёт Price/Quantity → Quote
+1. `create()` — парсит numbers → Decimals → создаёт Price/Quantity → Quote
 
 #### 3. Больше валидации
 
@@ -588,7 +587,7 @@ fromJSON(json: MoneyJson): Result<Money, InvalidMoneyError> {
 **Quote Serializer:**
 
 ```typescript
-export interface QuoteJson {
+export interface QuoteJSON {
   bid: number | null;
   ask: number | null;
   bidSize: number;
@@ -596,7 +595,7 @@ export interface QuoteJson {
   timestamp: number;
 }
 
-toJSON(quote: Quote): QuoteJson {
+toJSON(quote: Quote): QuoteJSON {
   return {
     bid: quote.bid()?.value().toNumber() ?? null,
     ask: quote.ask()?.value().toNumber() ?? null,
@@ -606,7 +605,7 @@ toJSON(quote: Quote): QuoteJson {
   };
 }
 
-fromJSON(json: QuoteJson): Result<Quote, InvalidQuoteError> {
+fromJSON(json: QuoteJSON): Result<Quote, InvalidQuoteError> {
   // Валидация 5 полей (каждое отдельно!)
   if (typeof json.bid !== 'number' && json.bid !== null) {
     return Err(new InvalidQuoteError('Invalid bid field in JSON', { ... }));

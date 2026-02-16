@@ -21,7 +21,11 @@ Facade оборачивает все операции в Result<T, E>:
 
 ```typescript
 // ✅ Никогда не бросает
-const result = QuoteService.create(0.48, 0.52, 100, 150);
+const result = QuoteService.create(
+  0.48, 0.52, 100, 150,
+  'POLYMARKET_WS',
+  'TEST_MARKET'
+);
 
 if (!result.ok) {
   // Обработка ошибки
@@ -42,11 +46,13 @@ const quote = result.value;
 
 ```typescript
 public static create(
-  bidValue: number | null,
-  askValue: number | null,
-  bidSizeValue: number,
-  askSizeValue: number,
-  timestamp?: Date | number
+  bidValue: Decimal | number | string | null,
+  askValue: Decimal | number | string | null,
+  bidSizeValue: Decimal | number | string,
+  askSizeValue: Decimal | number | string,
+  sourceId: MarketDataSourceId,
+  instrumentId: InstrumentId,
+  timestamp?: Date | Decimal | number | string
 ): Result<Quote, InvalidQuoteError>
 ```
 

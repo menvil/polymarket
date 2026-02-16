@@ -52,7 +52,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 │  │  - of() → throws QuoteInvariantViolation                  │ │
 │  │  - bid(), ask(), bidSize(), askSize()                     │ │
 │  │  - spread() → делегирование в Spread                      │ │
-│  │  - spreadWidth(), mid(), spreadPercentage()               │ │
+│  │  - spreadWidthOrZero(), midOrNull(), spreadPercentage()    │ │
 │  │  - Инварианты:                                            │ │
 │  │    * Хотя бы одна сторона определена                      │ │
 │  │    * bid <= ask (для two-sided)                           │ │
@@ -91,7 +91,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 2. **Чистая математика** (query методы без side effects):
    - Делегирование в Spread для устранения дублирования логики
    - spread() создает Spread объект для two-sided котировок
-   - spreadWidth(), mid(), spreadPercentage() делегируют вычисления в Spread
+   - spreadWidthOrZero(), midOrNull(), spreadPercentage() делегируют вычисления в Spread
    - Сравнение котировок
 
 3. **Immutable представление** - все поля readonly, методы возвращают новые значения
@@ -442,10 +442,10 @@ if (quoteAsk !== null && orderbookBid !== null) {
 
 **Методы:**
 
-- `toJSON(quote)` → `QuoteJson`
+- `toJSON(quote)` → `QuoteJSON`
 - `fromJSON(json)` → `Result<Quote, InvalidQuoteError>`
-- `toString(quote)` → `string`
-- `parse(jsonString)` → `Result<Quote, InvalidQuoteError>`
+- `toJSONString(quote)` → `string`
+- `fromJSONString(jsonString)` → `Result<Quote, InvalidQuoteError>`
 
 ### QuoteFormatter
 

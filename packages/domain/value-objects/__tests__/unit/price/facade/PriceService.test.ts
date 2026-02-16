@@ -590,8 +590,8 @@ describe('PriceService', () => {
 
         const result = PriceService.applyRelativeChange(price, markup, tickSize);
 
+        if (!result.ok) fail(`Expected Ok but got Err: ${result.error.message}`);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
 
         // 0.50 * 1.02 = 0.51
         expect(result.value.toNumber()).toBe(0.51);
@@ -603,8 +603,8 @@ describe('PriceService', () => {
 
         const result = PriceService.applyRelativeChange(price, markdown, tickSize);
 
+        if (!result.ok) fail(`Expected Ok but got Err: ${result.error.message}`);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
 
         // 0.50 * 0.95 = 0.475 → round to 0.48
         expect(result.value.toNumber()).toBe(0.48);
@@ -616,8 +616,8 @@ describe('PriceService', () => {
 
         const result = PriceService.applyRelativeChange(price, zero, tickSize);
 
+        if (!result.ok) fail(`Expected Ok but got Err: ${result.error.message}`);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
 
         expect(result.value.toNumber()).toBe(0.50);
       });
@@ -630,8 +630,8 @@ describe('PriceService', () => {
 
         const result = PriceService.applyRelativeChange(price, markup, tickSize);
 
+        if (!result.ok) fail(`Expected Ok but got Err: ${result.error.message}`);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
 
         // 0.50 * 1.023 = 0.5115 → round to 0.51
         expect(result.value.toNumber()).toBe(0.51);
@@ -645,8 +645,8 @@ describe('PriceService', () => {
           price, markup, tickSize, { roundingMode: 'floor' }
         );
 
+        if (!result.ok) fail(`Expected Ok but got Err: ${result.error.message}`);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
 
         // 0.50 * 1.029 = 0.5145 → floor to 0.51
         expect(result.value.toNumber()).toBe(0.51);
@@ -660,8 +660,8 @@ describe('PriceService', () => {
           price, markup, tickSize, { roundingMode: 'ceil' }
         );
 
+        if (!result.ok) fail(`Expected Ok but got Err: ${result.error.message}`);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
 
         // 0.50 * 1.021 = 0.5105 → ceil to 0.52
         expect(result.value.toNumber()).toBe(0.52);
@@ -673,8 +673,8 @@ describe('PriceService', () => {
 
         const result = PriceService.applyRelativeChange(price, markup, tickSize, {});
 
+        if (!result.ok) fail(`Expected Ok but got Err: ${result.error.message}`);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
 
         // 0.50 * 1.025 = 0.5125 → nearest to 0.51
         expect(result.value.toNumber()).toBe(0.51);
@@ -767,8 +767,8 @@ describe('PriceService', () => {
 
         const result = PriceService.applyRelativeChange(price, markup, tickSize);
 
+        if (!result.ok) fail(`Expected Ok but got Err: ${result.error.message}`);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
 
         // 0.10 * 1.50 = 0.15
         expect(result.value.toNumber()).toBe(0.15);
@@ -780,8 +780,8 @@ describe('PriceService', () => {
 
         const result = PriceService.applyRelativeChange(price, markdown, tickSize);
 
+        if (!result.ok) fail(`Expected Ok but got Err: ${result.error.message}`);
         expect(result.ok).toBe(true);
-        if (!result.ok) return;
 
         // 0.90 * 0.50 = 0.45
         expect(result.value.toNumber()).toBe(0.45);

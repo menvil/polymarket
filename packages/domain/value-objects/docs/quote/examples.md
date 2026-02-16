@@ -40,9 +40,9 @@ console.log(QuoteFormatter.toDisplay(quote));
 // "0.4800 @ 100.00 / 0.5200 @ 150.00"
 
 // Вычисления
-console.log('Spread:', quote.spreadWidthOrZero()?.toNumber());        // 0.04
+console.log('Spread:', quote.spreadWidthOrZero().toNumber());        // 0.04
 console.log('Spread %:', quote.spreadPercentage()?.toNumber()); // 8.0
-console.log('Mid:', quote.midOrNull()?.value().toNumber());      // 0.50
+console.log('Mid:', quote.midOrNull()?.toNumber());      // 0.50
 ```
 
 ### Bid-only котировка
@@ -56,7 +56,7 @@ if (bidResult.ok) {
 
   console.log(quote.hasBid());   // true
   console.log(quote.hasAsk());   // false
-  console.log(quote.spreadWidthOrZero());  // null (нет ask)
+  console.log(quote.spreadWidthOrZero());  // 0 (нет ask)
   console.log(quote.midOrNull());     // null (нет ask)
 
   console.log(QuoteFormatter.toDisplay(quote));
@@ -99,7 +99,11 @@ const timestampResult = QuoteService.create(
 );
 
 // Текущее время
-const nowResult = QuoteService.create(0.48, 0.52, 100, 150, Date.now(, 'POLYMARKET_WS', 'TEST_MARKET'));
+const nowResult = QuoteService.create(
+  0.48, 0.52, 100, 150,
+  'POLYMARKET_WS', 'TEST_MARKET',
+  Date.now()
+);
 ```
 
 ### Из Decimal значений
@@ -426,15 +430,15 @@ console.log(QuoteFormatter.formatMid(quote, 2));
 ### JSON serialization
 
 ```typescript
-import { QuoteSerializer, type QuoteJson } from '@polymarket/value-objects/quote';
+import { QuoteSerializer, type QuoteJSON } from '@polymarket/value-objects/quote';
 
-const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, 1234567890000, 'POLYMARKET_WS', 'TEST_MARKET');
+const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET', 1234567890000);
 if (!quoteResult.ok) return;
 
 const quote = quoteResult.value;
 
 // В JSON объект
-const json: QuoteJson = QuoteSerializer.toJSON(quote);
+const json: QuoteJSON = QuoteSerializer.toJSON(quote);
 console.log(json);
 // {
 //   bid: 0.48,
@@ -454,7 +458,7 @@ console.log(jsonString);
 
 ```typescript
 // Из JSON объекта
-const json: QuoteJson = {
+const json: QuoteJSON = {
   bid: 0.48,
   ask: 0.52,
   bidSize: 100,
@@ -481,7 +485,7 @@ if (parseResult.ok) {
 
 ```typescript
 // Создание → Сериализация → Десериализация
-const original = QuoteService.create(0.48, 0.52, 100, 150, 1234567890000, 'POLYMARKET_WS', 'TEST_MARKET').value;
+const original = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET', 1234567890000).value;
 
 const jsonString = QuoteSerializer.toJSONString(original);
 const restored = QuoteSerializer.fromJSONString(jsonString).value;
@@ -788,7 +792,7 @@ const monitor = new QuoteMonitor();
 
 const quote1 = QuoteService.create(0.45, 0.55, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;  // Wide spread
 const quote2 = QuoteService.create(0.48, 0.52, 5, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;    // Small bid size
-const quote3 = QuoteService.create(0.48, 0.52, 100, 150, Date.now(, 'POLYMARKET_WS', 'TEST_MARKET') - 10000).value;  // Stale
+const quote3 = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET', Date.now() - 10000).value;  // Stale
 
 monitor.checkQuote(quote1);  // Alert: spread too wide
 monitor.checkQuote(quote2);  // Alert: bid size too small
@@ -805,7 +809,7 @@ import {
 } from '@polymarket/value-objects/quote';
 
 class QuoteStorage {
-  private quotes: Map<string, QuoteJson> = new Map();
+  private quotes: Map<string, QuoteJSON> = new Map();
 
   saveQuote(marketId: string, quote: Quote) {
     const json = QuoteSerializer.toJSON(quote);
@@ -837,7 +841,7 @@ class QuoteStorage {
 
     for (const item of data) {
       const { marketId, ...json } = item;
-      this.quotes.set(marketId, json as QuoteJson);
+      this.quotes.set(marketId, json as QuoteJSON);
     }
   }
 }

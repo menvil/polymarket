@@ -478,6 +478,92 @@ if (roundedResult.ok) {
 
 ---
 
+### Применение относительного изменения (markup/markdown)
+
+#### `applyRelativeChange(price, ratio, tickSize, options?)`
+
+Применяет относительное изменение (markup/markdown) к цене.
+
+**Сигнатура:**
+
+```typescript
+applyRelativeChange(
+  price: Price,
+  ratio: Ratio,
+  tickSize: number | string | Decimal,
+  options?: { roundingMode?: 'nearest' | 'floor' | 'ceil' }
+): Result<Price, InvalidPriceError>
+```
+
+**Семантика:**
+
+Вычисляет новую цену как: `price * (1 + ratio)`
+
+- **Markup +2%**: `price * 1.02`
+- **Markdown -5%**: `price * 0.95`
+
+**Округление к тику:**
+
+Результат округляется с учётом режима:
+- `nearest` (по умолчанию): к ближайшему тику
+- `floor`: вниз — используй для агрессивных bid quotes
+- `ceil`: вверх — используй для агрессивных ask quotes
+
+**Валидация:**
+
+- Ratio может быть отрицательным (для markdown)
+- Результат должен оставаться в диапазоне [MIN_PRICE, MAX_PRICE]
+- Результат должен быть кратен tickSize после округления
+
+**Примеры:**
+
+```typescript
+import { PriceService, RatioService } from '@polymarket/value-objects';
+
+// Markup +2%
+const price = Price.of(new Decimal(0.50));
+const markupResult = RatioService.fromPercent(2);
+if (!markupResult.ok) return;
+
+const result = PriceService.applyRelativeChange(price, markupResult.value, 0.01);
+if (result.ok) {
+  console.log(result.value.toNumber());  // 0.51 (0.50 * 1.02 = 0.51)
+}
+
+// Markdown -5%
+const markdownResult = RatioService.fromPercent(-5);
+if (!markdownResult.ok) return;
+
+const result2 = PriceService.applyRelativeChange(price, markdownResult.value, 0.01);
+if (result2.ok) {
+  console.log(result2.value.toNumber());  // 0.48 (0.50 * 0.95 = 0.475 → round to 0.48)
+}
+
+// С округлением вниз (для bid)
+const result3 = PriceService.applyRelativeChange(
+  price, markupResult.value, 0.01, { roundingMode: 'floor' }
+);
+
+// С округлением вверх (для ask)
+const result4 = PriceService.applyRelativeChange(
+  price, markupResult.value, 0.01, { roundingMode: 'ceil' }
+);
+
+// Ошибка: результат выходит за диапазон
+const extremeMarkup = RatioService.fromPercent(200); // +200%
+if (!extremeMarkup.ok) return;
+
+const errorResult = PriceService.applyRelativeChange(
+  Price.of(new Decimal(0.5)), extremeMarkup.value, 0.01
+);
+if (!errorResult.ok) {
+  // 0.5 * 3 = 1.5 > MAX_PRICE (0.9999)
+  console.log(errorResult.error.context?.op);  // 'applyRelativeChange'
+}
+```
+
+---
+
 ## Error Handling Patterns
 
 ### Базовая обработка

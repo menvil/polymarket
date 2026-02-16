@@ -35,11 +35,10 @@ export class ValidateMinSpread {
    * @example
    * ```typescript
    * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
-   * const spread = quote.spreadWidth();
+   * const spread = quote.spreadWidthOrZero();
    *
-   * if (spread !== null) {
-   *   const result = ValidateMinSpread.check(spread, new Decimal(0.001));
-   *   if (!result.ok) {
+   * const result = ValidateMinSpread.check(spread, new Decimal(0.001));
+   * if (!result.ok) {
    *     console.error('Spread too narrow');
    *   }
    * }

@@ -571,16 +571,31 @@ if (!invalid.ok) {
 
 Для работы с асинхронными операциями используйте `AsyncResultChain`.
 
-### AsyncResult.from(promise)
+### AsyncResult.from(promise, onReject?)
 
 Создает AsyncResultChain из Promise<Result<T, E>>.
+
+**Автоматическая обработка ошибок:** Если Promise реджектится, rejection автоматически преобразуется в `Err<E>`. Опциональный параметр `onReject` позволяет безопасно трансформировать `unknown` error в тип `E`.
 
 ```typescript
 import { AsyncResult } from '@polymarket/result';
 
+// Базовое использование
 const result = await AsyncResult.from(fetchUser('123'))
   .mapAsync(user => enrichUserData(user))
   .unwrap();
+
+// Обработка Promise rejection с трансформацией
+const result2 = await AsyncResult.from(
+  Promise.reject('Network error'),
+  (error) => new Error(String(error))
+).unwrapErr();
+// result2: Error('Network error')
+
+// Promise rejection без onReject (type assertion)
+const result3 = await AsyncResult.from<User, string>(
+  fetchData() // может реджектиться
+).unwrapErr();
 ```
 
 ### AsyncResult.ok(promise)

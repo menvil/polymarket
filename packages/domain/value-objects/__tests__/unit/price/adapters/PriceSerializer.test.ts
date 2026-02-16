@@ -86,12 +86,20 @@ describe('PriceSerializer', () => {
         }
       });
 
-      it('должен использовать safeStringify для циклических ссылок', () => {
-        const circular: any = { value: 0.5 };
+      it('должен использовать safeStringify для циклических ссылок в ошибках', () => {
+        // Создаём объект с циклической ссылкой И невалидным value (чтобы вызвать ошибку)
+        const circular: any = { value: [1, 2, 3] }; // array вместо number/string
         circular.self = circular;
+
         const result = PriceSerializer.fromJSON(circular);
-        // Должен успешно сериализовать с [Circular]
-        expect(result.ok).toBe(true);
+
+        // Должен вернуть Err из-за невалидного типа value
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          // safeStringify должен заменить циклическую ссылку на '[Circular]'
+          expect(result.error.context?.json).toContain('[Circular]');
+          expect(result.error.context?.kind).toBe('invalid_json');
+        }
       });
     });
 

@@ -75,7 +75,7 @@ Quote следует **Throws+Facade** паттерну:
 ├─────────────────────────────────────────────────────────────┤
 │  Quote (Core Layer)                                         │
 │  - of() → throws QuoteInvariantViolation                    │
-│  - bid(), ask(), spreadWidth(), midPrice()                  │
+│  - bid(), ask(), spread(), spreadWidthOrZero(), midOrNull() │
 │  - Immutable, private constructor                           │
 ├─────────────────────────────────────────────────────────────┤
 │  Rules Layer                                                │
@@ -95,7 +95,7 @@ Quote следует **Throws+Facade** паттерну:
 1. **Core Layer** (`src/quote/core/`)
    - `Quote.ts` — основной value object
    - `QuoteInvariantViolation.ts` — исключение при нарушении инвариантов
-   - Методы: `of()`, `bid()`, `ask()`, `spreadWidth()`, `midPrice()`, etc.
+   - Методы: `of()`, `bid()`, `ask()`, `spread()`, `spreadWidthOrZero()`, `midOrNull()`, etc.
 
 2. **Facade Layer** (`src/quote/facade/`)
    - `QuoteService.ts` — публичный API с Result
@@ -378,7 +378,7 @@ quote.hasAsk(): boolean      // Есть ask
 
 ```typescript
 // Spread между bid и ask
-quote.spreadWidthOrZero(): Decimal | null  // null для one-sided
+quote.spreadWidthOrZero(): Decimal  // 0 для one-sided
 
 // Spread в процентах
 quote.spreadPercentage(): Decimal | null  // null для one-sided
@@ -742,6 +742,8 @@ const askOnly = QuoteService.askOnly(0.51, 200, 'POLYMARKET_WS', 'TEST_MARKET');
 // С кастомным timestamp
 const withTimestamp = QuoteService.create(
   0.48, 0.52, 100, 150,
+  'POLYMARKET_WS',
+  'TEST_MARKET',
   new Date('2024-01-15T12:30:00Z')
 );
 ```
