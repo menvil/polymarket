@@ -34,7 +34,9 @@ const result = QuoteService.create(
   0.48,  // bid
   0.52,  // ask
   100,   // bidSize
-  150    // askSize
+  150,   // askSize
+  'POLYMARKET_WS',  // sourceId
+  'TEST_MARKET'     // instrumentId
 );
 
 if (!result.ok) {
@@ -212,7 +214,7 @@ const result = QuoteService.shift(
 **Пример:**
 
 ```typescript
-const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 if (!quoteResult.ok) return;
 
 // Сдвиг вверх на 0.01
@@ -237,7 +239,7 @@ const result = QuoteService.skew(
 **Пример:**
 
 ```typescript
-const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 if (!quoteResult.ok) return;
 
 // Bid вниз на 0.01, ask вверх на 0.01
@@ -635,7 +637,7 @@ if (!result.ok) {
 import { PaperClock } from '@polymarket/time';
 
 const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
-const quote = QuoteService.create(0.48, 0.52, 100, 150).value;
+const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
 
 // Перематываем время на 10 секунд вперёд
 clock.tick(10000);
@@ -675,7 +677,7 @@ enum QuoteErrorReason {
 ### Обработка ошибок
 
 ```typescript
-const result = QuoteService.create(0.48, 0.52, 100, 150);
+const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 
 if (!result.ok) {
   const error = result.error;
@@ -729,13 +731,13 @@ if (!result.ok) {
 
 ```typescript
 // Двусторонняя котировка
-const twoSided = QuoteService.create(0.48, 0.52, 100, 150);
+const twoSided = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 
 // Bid-only
-const bidOnly = QuoteService.bidOnly(0.50, 100);
+const bidOnly = QuoteService.bidOnly(0.50, 100, 'POLYMARKET_WS', 'TEST_MARKET');
 
 // Ask-only
-const askOnly = QuoteService.askOnly(0.51, 200);
+const askOnly = QuoteService.askOnly(0.51, 200, 'POLYMARKET_WS', 'TEST_MARKET');
 
 // С кастомным timestamp
 const withTimestamp = QuoteService.create(
@@ -747,7 +749,7 @@ const withTimestamp = QuoteService.create(
 ### Операции с котировками
 
 ```typescript
-const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
+const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 if (!quoteResult.ok) return;
 
 const quote = quoteResult.value;
@@ -923,7 +925,7 @@ npm test -- quote
 
 ```typescript
 // Используйте QuoteService для создания
-const result = QuoteService.create(0.48, 0.52, 100, 150);
+const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 if (!result.ok) {
   // Обработка ошибки
   return;
@@ -945,7 +947,7 @@ console.log(QuoteFormatter.toDisplay(result.value));
 const quote = Quote.of(bid, ask, bidSize, askSize, timestamp);  // Может бросить!
 
 // Не игнорируйте Result
-const result = QuoteService.create(0.48, 0.52, 100, 150);
+const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 const quote = result.value;  // ❌ TypeError если result.ok === false!
 
 // Не форматируйте вручную

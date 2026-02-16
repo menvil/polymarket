@@ -25,7 +25,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 │  │  QuoteService - Result API                                │ │
 │  │  - create(), bidOnly(), askOnly()                         │ │
 │  │  - shift(), skew(), updateSizes()                         │ │
-│  │  - getSpreadOrZero(), getMidOrNull()                      │ │
+│  │  - getSpreadRatio(), getMidPrice()                      │ │
 │  │  ───────────────────────────────────────────────────────  │ │
 │  │  Uses errorUtils:                                         │ │
 │  │  - toDecimal() - парсинг с валидацией                     │ │
@@ -601,7 +601,7 @@ Quote
    - bidOnly(), askOnly()
    - shift(), skew()
    - updateSizes()
-   - getSpreadOrZero(), getMidOrNull()
+   - getSpreadRatio(), getMidPrice()
 
 4. **Adapters (49 tests):**
    - QuoteSerializer: 27 tests
