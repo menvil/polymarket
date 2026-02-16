@@ -44,7 +44,7 @@ public static create(
 **Процесс:**
 
 1. Парсит value в Decimal (try/catch → INVALID_FORMAT)
-2. Вызывает `Money.fromDecimal()` (try/catch → reason из Core)
+2. Вызывает `Money.of()` (try/catch → reason из Core)
 3. Возвращает Result
 
 **Ошибки:**
@@ -87,7 +87,7 @@ public static add(
 
 1. Валюты совпадают → иначе InvalidMoneyError (reason: 'CURRENCY_MISMATCH')
 2. Арифметика через @polymarket/math (try/catch)
-3. Создание через Money.fromDecimal (try/catch)
+3. Создание через Money.of (try/catch)
 
 **Пример:**
 
@@ -225,6 +225,7 @@ public static portion(
 **Формула:** `result = m * rate`
 
 **Use cases:**
+
 - Fee: `portion(orderAmount, Ratio.fromPercent(2))` → 2% trading fee
 - Rebate: `portion(paidAmount, Ratio.fromBps(25))` → 0.25% cashback
 - Allocation: `portion(budget, Ratio.of(new Decimal(0.3)))` → 30% от бюджета
@@ -271,6 +272,7 @@ public static increaseBy(
 **Инвариант:** `delta >= -1` (иначе `DELTA_LESS_THAN_MINUS_ONE`)
 
 **Use cases:**
+
 - Price increase: `increaseBy(price, Ratio.fromPercent(10))` → +10% наценка
 - Interest: `increaseBy(principal, Ratio.fromPercent(5))` → +5% проценты
 - Growth: `increaseBy(value, Ratio.fromPercent(15))` → +15% рост
@@ -316,6 +318,7 @@ public static decreaseBy(
 **Инвариант:** `delta <= 1` (иначе после отрицания будет `DELTA_LESS_THAN_MINUS_ONE`)
 
 **Use cases:**
+
 - Discount: `decreaseBy(price, Ratio.fromPercent(10))` → -10% скидка
 - Depreciation: `decreaseBy(value, Ratio.fromPercent(15))` → -15% износ
 
@@ -360,7 +363,7 @@ public static create(value: number | string | Decimal, currency: SupportedCurren
 
   // Шаг 2: создание через Core
   try {
-    return Ok(Money.fromDecimal(decimal, currency));
+    return Ok(Money.of(decimal, currency));
   } catch (error) {
     if (error instanceof MoneyInvariantViolation) {
       return Err(InvalidMoneyError with reason from Core);

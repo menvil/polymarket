@@ -8,16 +8,17 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
  * Правило: Валюта amount должна совпадать с валютой баланса
  *
  * @remarks
- * Policy для операций reserve(), release(), updateAvailable() баланса.
+ * Policy для операций reserve(), unfreezeReserved(), consumeReserved(), updateAvailable() баланса.
  *
  * Проверяет:
- * - amount.currency() === balanceCurrency (нельзя резервировать/освобождать средства в другой валюте)
+ * - amount.currency() === balanceCurrency (нельзя резервировать/размораживать/списывать средства в другой валюте)
  *
  * Возвращает InvalidBalanceError — стандарт домена Polymarket для валидации Balance.
  *
  * **Когда применяется:**
  * - reserve(amount) - проверяем что amount в той же валюте что и баланс
- * - release(amount) - проверяем что amount в той же валюте что и баланс
+ * - unfreezeReserved(amount) - проверяем что amount в той же валюте что и баланс
+ * - consumeReserved(amount) - проверяем что amount в той же валюте что и баланс
  * - updateAvailable(amount) - проверяем что amount в той же валюте что и баланс
  *
  * **Когда НЕ применяется:**

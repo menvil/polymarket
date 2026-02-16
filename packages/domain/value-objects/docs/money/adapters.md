@@ -84,7 +84,7 @@ MoneySerializer.fromJSON(null);              // Err: expected object
 MoneySerializer.fromJSON({ });               // Err: missing fields
 MoneySerializer.fromJSON({ amount: 123 });   // Err: missing currency
 
-// ❌ Бизнес-ошибки (из Money.fromDecimal)
+// ❌ Бизнес-ошибки (из MoneyService.create)
 MoneySerializer.fromJSON({
   amount: "1e16",    // > MAX_AMOUNT
   currency: "USDC"

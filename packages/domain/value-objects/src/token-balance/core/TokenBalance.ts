@@ -230,6 +230,9 @@ export class TokenBalance {
    * Convenience метод для создания баланса без зарезервированных токенов.
    * Используется при первичной загрузке баланса с blockchain.
    *
+   * **ВАЖНО:** Использует полную валидацию через of(), включая проверки на null/undefined
+   * и instanceof. Не обходит валидацию в отличие от прямого вызова конструктора.
+   *
    * @example
    * ```typescript
    * const balance = TokenBalance.withZeroReserved(
@@ -247,7 +250,8 @@ export class TokenBalance {
     accountId: AccountId,
     venueId: VenueId
   ): TokenBalance {
-    return new TokenBalance(token, available, Quantity.ZERO, accountId, venueId);
+    // Делегируем к of() для полной валидации (не bypass конструктор!)
+    return TokenBalance.of(token, available, Quantity.ZERO, accountId, venueId);
   }
 
   /**

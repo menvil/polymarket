@@ -16,12 +16,19 @@
  * 2. **reserve(balance, amount)** - резервирование средств
  *    - Проверяет валюту и достаточность средств
  *    - Возвращает новый Balance с обновлёнными available/reserved
+ *    - available - amount, reserved + amount
  *
- * 3. **release(balance, amount)** - освобождение зарезервированных средств
+ * 3. **unfreezeReserved(balance, amount)** - размораживание зарезервированных средств
  *    - Проверяет валюту и достаточность reserved
  *    - Возвращает новый Balance с обновлёнными available/reserved
+ *    - available + amount, reserved - amount (total не изменяется)
  *
- * 4. **updateAvailable(balance, newAvailable)** - обновление available
+ * 4. **consumeReserved(balance, amount)** - списание зарезервированных средств
+ *    - Проверяет валюту и достаточность reserved
+ *    - Возвращает новый Balance с уменьшенным reserved
+ *    - available не изменяется, reserved - amount (total уменьшается)
+ *
+ * 5. **updateAvailable(balance, newAvailable)** - обновление available
  *    - Проверяет валюту
  *    - Возвращает новый Balance с новым available (reserved не изменяется)
  *
@@ -35,9 +42,13 @@
  * import { Money } from '@polymarket/value-objects/money';
  *
  * // Создание баланса
+ * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+ * const venueId: VenueId = 'POLYMARKET' as VenueId;
  * const balanceResult = BalanceService.create(
  *   Money.fromUSDC(10000),
- *   Money.fromUSDC(2000)
+ *   Money.fromUSDC(2000),
+ *   accountId,
+ *   venueId
  * );
  *
  * if (!balanceResult.ok) {
@@ -58,15 +69,27 @@
  *   console.log(reserveResult.value.reserved().value());  // 5000
  * }
  *
- * // Освобождение
- * const releaseResult = BalanceService.release(
+ * // Размораживание (reserved → available)
+ * const unfreezeResult = BalanceService.unfreezeReserved(
  *   reserveResult.value,
  *   Money.fromUSDC(1000)
  * );
  *
- * if (releaseResult.ok) {
- *   console.log(releaseResult.value.available().value()); // 8000
- *   console.log(releaseResult.value.reserved().value());  // 4000
+ * if (unfreezeResult.ok) {
+ *   console.log(unfreezeResult.value.available().value()); // 8000
+ *   console.log(unfreezeResult.value.reserved().value());  // 4000
+ * }
+ *
+ * // Списание (уменьшает total)
+ * const consumeResult = BalanceService.consumeReserved(
+ *   reserveResult.value,
+ *   Money.fromUSDC(1000)
+ * );
+ *
+ * if (consumeResult.ok) {
+ *   console.log(consumeResult.value.available().value()); // 7000 (не изменился)
+ *   console.log(consumeResult.value.reserved().value());  // 4000
+ *   console.log(consumeResult.value.total().value());     // 11000 (уменьшился)
  * }
  * ```
  *

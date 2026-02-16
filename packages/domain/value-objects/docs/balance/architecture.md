@@ -144,7 +144,9 @@ export class BalanceService {
   // Создание
   public static create(
     available: Money,
-    reserved: Money
+    reserved: Money,
+    accountId: AccountId,
+    venueId: VenueId
   ): Result<Balance, InvalidBalanceError>
 
   // Резервирование: available - amount, reserved + amount
@@ -243,19 +245,27 @@ type BalanceJSON = {
 ```typescript
 export class BalanceFormatter {
   // "Available: $X, Reserved: $Y, Total: $Z (P% reserved)"
-  public static toSummary(balance: Balance, decimals?: number): string
+  // Возвращает Result для обработки ошибок валидации
+  public static toSummary(
+    balance: Balance,
+    decimals?: number,
+    includeAccount?: boolean,
+    includeVenue?: boolean
+  ): Result<string, InvalidBalanceError>
 
   // "Avail: $X | Res: $Y | Total: $Z" (с K/M/B)
-  public static toCompact(balance: Balance, decimals?: number): string
+  // Возвращает Result для обработки ошибок валидации
+  public static toCompact(balance: Balance, decimals?: number): Result<string, InvalidBalanceError>
 
-  // "Balance(available: X USDC, reserved: Y USDC, total: Z USDC)"
+  // "Balance(available: X USDC, reserved: Y USDC, total: Z USDC, account: ..., venue: ...)"
+  // НЕ возвращает Result, всегда возвращает string (fallback на error message при ошибке)
   public static toDebugString(balance: Balance): string
 
-  // Вспомогательные методы
-  public static toAvailableString(balance, showCurrency?, decimals?): string
-  public static toReservedString(balance, showCurrency?, decimals?): string
-  public static toTotalString(balance, showCurrency?, decimals?): string
-  public static toPercentageString(balance, decimals?): string
+  // Вспомогательные методы - все возвращают Result
+  public static toAvailableString(balance, showCurrency?, decimals?): Result<string, InvalidBalanceError>
+  public static toReservedString(balance, showCurrency?, decimals?): Result<string, InvalidBalanceError>
+  public static toTotalString(balance, showCurrency?, decimals?): Result<string, InvalidBalanceError>
+  public static toPercentageString(balance, decimals?): Result<string, InvalidBalanceError>
 }
 ```
 

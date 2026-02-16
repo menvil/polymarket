@@ -7,10 +7,20 @@
 ```typescript
 import { BalanceService } from '@polymarket/value-objects/balance';
 import { Money } from '@polymarket/value-objects/money';
+import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+
+// Подготовка идентификаторов
+const accountId: AccountId = {
+  kind: 'WALLET',
+  address: '0x1234567890123456789012345678901234567890' as WalletAddress
+};
+const venueId: VenueId = 'POLYMARKET' as VenueId;
 
 const result = BalanceService.create(
   Money.of(10000), // $100.00 available
-  Money.of(2000)   // $20.00 reserved
+  Money.of(2000),  // $20.00 reserved
+  accountId,       // ID аккаунта владельца
+  venueId          // ID площадки (venue)
 );
 
 if (isErr(result)) {
@@ -178,14 +188,24 @@ async function fetchUserBalance(userId: string): Promise<Balance | null> {
 
 ```typescript
 import { BalanceFormatter } from '@polymarket/value-objects/balance';
+import { expectOk } from '@polymarket/result';
 
-const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000)));
+const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+const venueId: VenueId = 'POLYMARKET' as VenueId;
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
 
-// Полная сводка
-console.log(BalanceFormatter.toSummary(balance));
+// Полная сводка (возвращает Result<string, InvalidBalanceError>)
+const summaryResult = BalanceFormatter.toSummary(balance);
+if (summaryResult.ok) {
+  console.log(summaryResult.value);
+  // "Available: $100.00, Reserved: $20.00, Total: $120.00 (16.67% reserved)"
+}
+
+// или с expectOk для краткости (бросает если Err)
+console.log(expectOk(BalanceFormatter.toSummary(balance)));
 // "Available: $100.00, Reserved: $20.00, Total: $120.00 (16.67% reserved)"
 
-console.log(BalanceFormatter.toSummary(balance, 0));
+console.log(expectOk(BalanceFormatter.toSummary(balance, 0)));
 // "Available: $100, Reserved: $20, Total: $120 (17% reserved)"
 ```
 
@@ -379,19 +399,26 @@ interface BalanceDisplayProps {
 }
 
 function BalanceDisplay({ balance }: BalanceDisplayProps) {
+  // Форматтеры возвращают Result, нужно обработать
+  const summaryResult = BalanceFormatter.toSummary(balance);
+  const availableResult = BalanceFormatter.toAvailableString(balance);
+  const reservedResult = BalanceFormatter.toReservedString(balance);
+  const totalResult = BalanceFormatter.toTotalString(balance);
+  const percentageResult = BalanceFormatter.toPercentageString(balance);
+
   return (
     <div className="balance-display">
       <div className="balance-summary">
-        {BalanceFormatter.toSummary(balance)}
+        {summaryResult.ok ? summaryResult.value : 'Error formatting balance'}
       </div>
       <div className="balance-breakdown">
-        <div>Available: {BalanceFormatter.toAvailableString(balance)}</div>
-        <div>Reserved: {BalanceFormatter.toReservedString(balance)}</div>
-        <div>Total: {BalanceFormatter.toTotalString(balance)}</div>
+        <div>Available: {availableResult.ok ? availableResult.value : '-'}</div>
+        <div>Reserved: {reservedResult.ok ? reservedResult.value : '-'}</div>
+        <div>Total: {totalResult.ok ? totalResult.value : '-'}</div>
       </div>
-      {balance.hasReserved() && (
+      {balance.hasReserved() && percentageResult.ok && (
         <div className="reserved-percentage">
-          Reserved: {BalanceFormatter.toPercentageString(balance)}
+          Reserved: {percentageResult.value}
         </div>
       )}
     </div>

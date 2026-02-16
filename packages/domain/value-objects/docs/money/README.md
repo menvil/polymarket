@@ -114,8 +114,8 @@ Money модуль построен на **4-слойной архитектур
 
 **Core кидает исключения** → **Facade оборачивает в Result<T, E>**
 
-- **Core слой**: Кидает типизированные исключения (`MoneyInvariantViolation`, `MoneyParseError`)
-- **Facade слой**: Ловит исключения и возвращает `Result<Money, InvalidMoneyError | ...>`
+- **Core слой**: Кидает типизированные исключения (`MoneyInvariantViolation`)
+- **Facade слой**: Ловит исключения и возвращает `Result<Money, InvalidMoneyError>`
 
 Это обеспечивает:
 
@@ -137,7 +137,6 @@ Money модуль построен на **4-слойной архитектур
 
 - `Money` — иммутабельный value object
 - `MoneyInvariantViolation` — типизированное исключение для нарушения инвариантов
-- `MoneyParseError` — исключение для ошибок парсинга
 
 **Инварианты:**
 
@@ -159,22 +158,23 @@ Money модуль построен на **4-слойной архитектур
 **API:**
 
 ```typescript
-// Создание
-Money.of(value: number | string, currency?: 'USDC'): Money
-Money.fromDecimal(decimal: Decimal, currency?: 'USDC'): Money
-Money.zero(currency?: 'USDC'): Money
+// Создание (ТОЛЬКО для внутреннего использования, принимает ТОЛЬКО Decimal)
+Money.of(value: Decimal, currency?: SupportedCurrency): Money
 
-// Константы
-Money.ZERO.USDC: Money
+// Константы (singleton для каждой валюты)
+Money.ZERO: Record<SupportedCurrency, Money>  // Money.ZERO.USDC
 
 // Методы
 money.value(): Decimal
 money.currency(): SupportedCurrency
-money.toNumber(): number  // lossy
-money.toDecimal(): Decimal
-money.equals(other: Money): boolean
+money.toNumber(): number  // lossy conversion
 money.hasSameCurrency(other: Money): boolean
+money.isZero(): boolean
+money.isPositive(): boolean
+money.isNegative(): boolean
 ```
+
+**Важно:** Для создания Money из `number` или `string` используйте `MoneyService.create()`, а не `Money.of()` напрямую.
 
 Подробнее: [core.md](./core.md)
 
@@ -520,8 +520,6 @@ if (!result.ok) {
 const money = result.value;
 ```
 
-Подробное руководство: [migration.md](./migration.md)
-
 ---
 
 ## Дополнительные ресурсы
@@ -531,7 +529,6 @@ const money = result.value;
 - [Facade Layer API](./facade.md)
 - [Adapters Layer](./adapters.md)
 - [Примеры использования](./examples.md)
-- [Миграция со старого Money](./migration.md)
 
 ---
 

@@ -87,6 +87,90 @@ describe('TokenBalanceService', () => {
       // ПРИМЕЧАНИЕ: Тесты на NAN и NON_FINITE невозможны,
       // так как Quantity.of() бросает исключение для NaN и Infinity.
       // Валидация происходит на уровне Quantity, не TokenBalance.
+
+      it('возвращает Err для null token', () => {
+        const result = TokenBalanceService.create(
+          null as any,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_TOKEN);
+          expect(result.error.message).toContain('token is required');
+        }
+      });
+
+      it('возвращает Err для null available', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.create(
+          token,
+          null as any,
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
+          expect(result.error.message).toContain('available is required');
+        }
+      });
+
+      it('возвращает Err для null reserved', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          null as any,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
+          expect(result.error.message).toContain('reserved is required');
+        }
+      });
+
+      it('возвращает Err для null accountId', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          null as any,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+          expect(result.error.message).toContain('accountId is required');
+        }
+      });
+
+      it('возвращает Err для null venueId', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          null as any
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+          expect(result.error.message).toContain('venueId is required');
+        }
+      });
     });
   });
 
@@ -111,6 +195,71 @@ describe('TokenBalanceService', () => {
 
     // ПРИМЕЧАНИЕ: Тест на NEGATIVE_AVAILABLE невозможен,
     // так как Quantity.of() бросает исключение для отрицательных значений.
+
+    describe('валидация инвариантов (null inputs)', () => {
+      it('возвращает Err для null token', () => {
+        const result = TokenBalanceService.createWithZeroReserved(
+          null as any,
+          Quantity.of(new Decimal(100)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_TOKEN);
+          expect(result.error.message).toContain('token is required');
+        }
+      });
+
+      it('возвращает Err для null available', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.createWithZeroReserved(
+          token,
+          null as any,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
+          expect(result.error.message).toContain('available is required');
+        }
+      });
+
+      it('возвращает Err для null accountId', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.createWithZeroReserved(
+          token,
+          Quantity.of(new Decimal(100)),
+          null as any,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+          expect(result.error.message).toContain('accountId is required');
+        }
+      });
+
+      it('возвращает Err для null venueId', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.createWithZeroReserved(
+          token,
+          Quantity.of(new Decimal(100)),
+          TEST_ACCOUNT_ID,
+          null as any
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+          expect(result.error.message).toContain('venueId is required');
+        }
+      });
+    });
   });
 
   describe('reserve()', () => {

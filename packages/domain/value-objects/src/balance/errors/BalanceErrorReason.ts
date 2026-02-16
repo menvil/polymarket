@@ -90,14 +90,14 @@ export enum BalanceErrorReason {
   INSUFFICIENT_FUNDS = 'INSUFFICIENT_FUNDS',
 
   /**
-   * Недостаточно reserved средств для освобождения
+   * Недостаточно reserved средств для размораживания или списания
    *
    * @remarks
-   * Возникает в операции release() когда releaseAmount > reserved.
+   * Возникает в операциях unfreezeReserved() или consumeReserved() когда amount > reserved.
    * Используется в ValidateReleaseAmount rule.
    *
    * Контекст обычно содержит:
-   * - requested: number - запрошенная сумма для освобождения
+   * - requested: number - запрошенная сумма для размораживания/списания
    * - reserved: number - зарезервированная сумма
    */
   INSUFFICIENT_RESERVED = 'INSUFFICIENT_RESERVED',

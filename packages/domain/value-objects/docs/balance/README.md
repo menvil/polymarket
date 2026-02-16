@@ -15,11 +15,21 @@ Balance инкапсулирует логику управления средс�
 ```typescript
 import { Balance, BalanceService } from '@polymarket/value-objects/balance';
 import { Money } from '@polymarket/value-objects/money';
+import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+
+// Подготовка идентификаторов
+const accountId: AccountId = {
+  kind: 'WALLET',
+  address: '0x1234567890123456789012345678901234567890' as WalletAddress
+};
+const venueId: VenueId = 'POLYMARKET' as VenueId;
 
 // Создание баланса
 const result = BalanceService.create(
   Money.of(10000), // available: $100.00
-  Money.of(2000)   // reserved: $20.00
+  Money.of(2000),  // reserved: $20.00
+  accountId,       // ID аккаунта владельца
+  venueId          // ID площадки (venue)
 );
 
 if (isErr(result)) {
@@ -95,18 +105,27 @@ if (result.ok) {
 
 ```typescript
 import { BalanceFormatter } from '@polymarket/value-objects/balance';
+import { expectOk } from '@polymarket/result';
 
-// Полная сводка
-BalanceFormatter.toSummary(balance);
-// "Available: $100.00, Reserved: $20.00, Total: $120.00 (16.67% reserved)"
+// Полная сводка (возвращает Result)
+const summaryResult = BalanceFormatter.toSummary(balance);
+if (summaryResult.ok) {
+  console.log(summaryResult.value);
+  // "Available: $100.00, Reserved: $20.00, Total: $120.00 (16.67% reserved)"
+}
+// или с expectOk (бросает исключение если Err)
+console.log(expectOk(BalanceFormatter.toSummary(balance)));
 
-// Компактный формат
-BalanceFormatter.toCompact(balance);
-// "Avail: $100.00 | Res: $20.00 | Total: $120.00"
+// Компактный формат (возвращает Result)
+const compactResult = BalanceFormatter.toCompact(balance);
+if (compactResult.ok) {
+  console.log(compactResult.value);
+  // "Avail: $100.00 | Res: $20.00 | Total: $120.00"
+}
 
-// Debug-строка
-BalanceFormatter.toDebugString(balance);
-// "Balance(available: 10000 USDC, reserved: 2000 USDC, total: 12000 USDC)"
+// Debug-строка (не возвращает Result, всегда string)
+console.log(BalanceFormatter.toDebugString(balance));
+// "Balance(available: 10000 USDC, reserved: 2000 USDC, total: 12000 USDC, account: wallet:0x..., venue: POLYMARKET)"
 ```
 
 ## Архитектура

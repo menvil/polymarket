@@ -4,14 +4,24 @@
 
 ## Методы
 
-### `create(available, reserved)`
+### `create(available, reserved, accountId, venueId)`
 
-Создаёт новый Balance из available и reserved Money.
+Создаёт новый Balance из available и reserved Money, accountId и venueId.
 
 ```typescript
+import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+
+const accountId: AccountId = {
+  kind: 'WALLET',
+  address: '0x1234567890123456789012345678901234567890' as WalletAddress
+};
+const venueId: VenueId = 'POLYMARKET' as VenueId;
+
 const result = BalanceService.create(
   Money.of(10000), // $100.00 available
-  Money.of(2000)   // $20.00 reserved
+  Money.of(2000),  // $20.00 reserved
+  accountId,       // ID аккаунта владельца
+  venueId          // ID площадки (venue)
 );
 
 if (isErr(result)) {

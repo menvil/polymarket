@@ -4,10 +4,10 @@ import { Money } from '../../money/core/Money.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
 /**
- * Правило: Освобождаемая сумма должна быть <= зарезервированным средствам
+ * Правило: Освобождаемая/списываемая сумма должна быть <= зарезервированным средствам
  *
  * @remarks
- * Policy для операции release() баланса.
+ * Policy для операций unfreezeReserved() и consumeReserved() баланса.
  *
  * Проверяет:
  * - releaseAmount <= reserved (достаточно зарезервированных средств для освобождения)

@@ -55,7 +55,6 @@ User Code
 ┌─────────────────────────────────┐
 │  Core Layer (Money)             │
 │  - Throws MoneyInvariant...     │
-│  - Throws MoneyParseError       │
 │  - Pure domain logic            │
 └─────────────────────────────────┘
 ```
@@ -83,10 +82,10 @@ try {
 
 // Если парсинг успешен, идём в Core
 try {
-  const money = Money.fromDecimal(decimal);
+  const money = Money.of(decimal);  // Core принимает ТОЛЬКО Decimal
   return Ok(money);
 } catch (error) {
-  // 3. Core: Money.fromDecimal() бросил MoneyInvariantViolation
+  // 3. Core: Money.of() бросил MoneyInvariantViolation
   if (error instanceof MoneyInvariantViolation) {
     // 4. Facade: оборачивает в InvalidMoneyError и Result
     return Err(new InvalidMoneyError('Failed to create Money', {
@@ -158,8 +157,8 @@ Money имеет **4 слоя** по аналогии с Price и Quantity.
 
 - Представление денежной суммы с валютой как value object
 - Гарантия инвариантов (supported currency, finite, |amount| <= MAX_AMOUNT)
-- Базовые операции (equals, hasSameCurrency)
-- **Два типа ошибок**: MoneyParseError (до создания Decimal) и MoneyInvariantViolation (после)
+- Базовые операции (hasSameCurrency, isZero, isPositive, isNegative)
+- **Исключения**: MoneyInvariantViolation при нарушении инвариантов
 
 **НЕ делает:**
 
@@ -172,7 +171,6 @@ Money имеет **4 слоя** по аналогии с Price и Quantity.
 
 - `src/money/core/Money.ts`
 - `src/money/core/MoneyInvariantViolation.ts`
-- `src/money/core/MoneyParseError.ts`
 
 **Инварианты:**
 
@@ -181,19 +179,7 @@ Money имеет **4 слоя** по аналогии с Price и Quantity.
 3. **Finite**: `amount.isFinite()`
 4. **Не превышает MAX**: `|amount| <= 1e15`
 
-**Parse vs Invariant Errors:**
-
-Money различает два типа ошибок на Core уровне:
-
-1. **MoneyParseError** — ошибка парсинга входного значения в Decimal
-   - Происходит ПЕРЕД созданием Decimal
-   - Пример: `Money.of("abc")` → parse error
-   - НЕ является нарушением инварианта
-
-2. **MoneyInvariantViolation** — нарушение инвариантов после успешного парсинга
-   - Происходит ПОСЛЕ создания Decimal
-   - Пример: `Money.fromDecimal(new Decimal(Infinity))` → invariant violation
-   - Является нарушением доменных правил
+**Важно:** Core слой принимает ТОЛЬКО `Decimal`. Парсинг из `number` или `string` происходит в Facade слое (MoneyService).
 
 ---
 
@@ -285,7 +271,7 @@ private static mapInvariantToOverflow(
 
 **НЕ делает:**
 
-- Не создаёт Money напрямую (делегирует MoneyService или Money.fromDecimal)
+- Не создаёт Money напрямую (делегирует MoneyService)
 
 **Файлы:**
 
@@ -295,7 +281,7 @@ private static mapInvariantToOverflow(
 **MoneySerializer:**
 
 - `toJSON(money)` → `{ amount: string, currency: string }`
-- `fromJSON(json: unknown)` → валидирует структуру, делегирует `Money.fromDecimal`
+- `fromJSON(json: unknown)` → валидирует структуру, делегирует `MoneyService.create`
 
 **MoneyFormatter:**
 
@@ -316,17 +302,15 @@ MoneyService.create("100.5")
     ↓
 1. Parse to Decimal (try/catch)
     ↓ success
-2. Money.fromDecimal(decimal, 'USDC')
+2. Money.of(decimal, 'USDC')
     ↓ calls
-3. Money.create(decimal, 'USDC') [PRIVATE]
-    ↓
-4. Validate Invariants:
+3. Validate Invariants:
    - SUPPORTED_CURRENCIES.has('USDC') ✅
    - !decimal.isNaN() ✅
    - decimal.isFinite() ✅
    - decimal.abs() <= 1e15 ✅
     ↓ all pass
-5. new Money(decimal, 'USDC')
+4. new Money(decimal, 'USDC')
     ↓
 Result.Ok(Money)
 ```
@@ -361,7 +345,7 @@ MoneyService.create("99999999999999999")
     ↓
 1. Parse to Decimal (try/catch)
     ↓ success
-2. Money.fromDecimal(decimal, 'USDC')
+2. Money.of(decimal, 'USDC')
     ↓ calls
 3. Money.create(decimal, 'USDC')
     ↓
@@ -389,7 +373,7 @@ MoneyService.add(money1, money2)
     ↓ if yes
 2. addDecimal(money1.value(), money2.value())  // @polymarket/math
     ↓
-3. Money.fromDecimal(sum, currency)
+3. Money.of(sum, currency)
     ↓
 4. Validate invariants (can throw)
     ↓ if throws MoneyInvariantViolation
@@ -428,71 +412,46 @@ Result.Ok(Money)
 
 **Итого:** Money использует все четыре слоя (Core, Rules, Facade, Adapters), но Rules Layer минимален — только для валидации входных операндов.
 
-### 2. Почему два типа ошибок (Parse vs Invariant)?
+### 2. Почему Money.of() принимает ТОЛЬКО Decimal?
 
 **Разделение ответственности:**
 
-1. **MoneyParseError** — внешний мир дал невалидный формат
-   - Происходит до Decimal
-   - Не является доменной ошибкой
-   - Пример: `"abc"`, `undefined`, `{}`
+Money - это Core value object, который должен работать ТОЛЬКО с уже валидированными данными (Decimal).
 
-2. **MoneyInvariantViolation** — значение нарушает доменные правила
-   - Происходит после Decimal
-   - Является доменной ошибкой
-   - Пример: `Infinity`, `1e16`, `EUR`
+Парсинг из `number` или `string` - это ответственность Facade слоя (MoneyService).
 
-Это позволяет:
+**Преимущества такого подхода:**
 
-- Чётко разделить "bad input format" vs "violates business rules"
-- Логировать по-разному (parse errors — user error, invariant violations — logic bug)
+1. **Чёткое разделение:**
+   - Parse errors (невалидный формат: `"abc"`, `undefined`) → MoneyService
+   - Invariant violations (нарушение доменных правил: `Infinity`, `1e16`) → Money
 
-### 3. Почему Facade парсит сам (не использует Money.of)?
+2. **Контроль над error mapping:**
+   - MoneyService контролирует как парсинг ошибки мапятся в InvalidMoneyError
+   - Money бросает ТОЛЬКО MoneyInvariantViolation
 
-**Причина:** Контроль над error mapping.
+3. **Core остаётся чистым:**
+   - Money не знает про форматы (number/string)
+   - Money работает ТОЛЬКО с Decimal - типобезопасно
 
-`Money.of()` бросает MoneyParseError при ошибке парсинга.
-`MoneyService.create()` хочет маппить это в InvalidMoneyError с контекстом.
-
-**Два подхода:**
-
-**А) Facade использует Money.of (не выбран):**
+**Реальная реализация:**
 
 ```typescript
+// MoneyService.create() - Facade
 try {
-  return Ok(Money.of(value));
-} catch (error) {
-  if (error instanceof MoneyParseError) {
-    // Map to InvalidMoneyError
-  } else if (error instanceof MoneyInvariantViolation) {
-    // Map to InvalidMoneyError
-  }
-}
-```
-
-**Б) Facade парсит сам (выбран):**
-
-```typescript
-try {
-  decimal = new Decimal(value);
+  decimal = new Decimal(value);  // Парсинг в Facade
 } catch {
   return Err(InvalidMoneyError with INVALID_FORMAT);
 }
 
 try {
-  return Ok(Money.fromDecimal(decimal));
+  return Ok(Money.of(decimal));  // Core принимает ТОЛЬКО Decimal
 } catch (error) {
   if (error instanceof MoneyInvariantViolation) {
     return Err(InvalidMoneyError with reason from Core);
   }
 }
 ```
-
-**Преимущество Б:**
-
-- Разделение parse errors и invariant errors явное
-- Контроль над error context (raw value vs normalized value)
-- Money.of остаётся для Core-only использования
 
 ### 4. Почему MAX_AMOUNT = 1e15?
 
@@ -519,7 +478,7 @@ JavaScript `Number.MAX_SAFE_INTEGER = 9007199254740991 ≈ 9e15`.
 2. **number** — литералы в коде, простые тесты
 3. **Decimal** — результаты вычислений (zero-copy)
 
-**Facade парсит всё в Decimal** и делегирует `Money.fromDecimal()` для zero-copy.
+**Facade парсит всё в Decimal** и делегирует `Money.of()` для zero-copy.
 
 ### 6. Почему Currency обязательна, но есть default?
 
