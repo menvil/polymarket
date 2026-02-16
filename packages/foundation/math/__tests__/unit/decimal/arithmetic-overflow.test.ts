@@ -184,7 +184,10 @@ describe('Arithmetic Overflow Tests', () => {
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
-          expect(error.context?.operation).toBeDefined();
+          expect(error.context?.operation).toBe('average');
+          expect(error.context?.a).toBeDefined();
+          expect(error.context?.b).toBeDefined();
+          expect(error.context?.result).toBe('Infinity');
         } else {
           throw error;
         }

@@ -1,4 +1,4 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, fail } from '@jest/globals';
 import {
   roundToTick,
   floorToTick,

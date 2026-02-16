@@ -77,7 +77,9 @@ export type DomainError =
   | InvalidOutcomeTokenError
   // Математические операции
   | DivisionByZeroError
-  | ArithmeticOverflowError;
+  | ArithmeticOverflowError
+  | InvalidOperandError
+  | InvalidRoundingModeError;
 
 /**
  * Конструктор Domain Error
