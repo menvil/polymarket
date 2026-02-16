@@ -1486,5 +1486,126 @@ describe('QuantityService', () => {
         expect(() => QuantityService.increaseBy(qty, delta, 0)).not.toThrow();
       });
     });
+
+    describe('Math exception handling - multiplyDecimal', () => {
+      it('должен ловить InvalidOperandError из multiplyDecimal', () => {
+        jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
+          throw new InvalidOperandError(() => 'invalid operand', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(0.10));
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('increaseBy failed');
+          expect(result.error.context?.op).toBe('increaseBy');
+          expect(result.error.context?.quantity).toBe('100');
+          expect(result.error.context?.delta).toBe('0.1');
+          expect(result.error.context?.stepSize).toBe('1');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('InvalidOperandError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен ловить ArithmeticOverflowError из multiplyDecimal', () => {
+        jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
+          throw new ArithmeticOverflowError(() => 'overflow', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(0.10));
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('increaseBy failed');
+          expect(result.error.context?.op).toBe('increaseBy');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('ArithmeticOverflowError');
+        }
+
+        jest.restoreAllMocks();
+      });
+    });
+
+    describe('Math exception handling - roundToTick', () => {
+      it('должен ловить InvalidOperandError из roundToTick', () => {
+        jest.spyOn(math, 'roundToTick').mockImplementation(() => {
+          throw new InvalidOperandError(() => 'invalid operand', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(0.10));
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('increaseBy failed');
+          expect(result.error.context?.op).toBe('increaseBy');
+          expect(result.error.context?.quantity).toBe('100');
+          expect(result.error.context?.delta).toBe('0.1');
+          expect(result.error.context?.stepSize).toBe('1');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('InvalidOperandError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен ловить ArithmeticOverflowError из roundToTick', () => {
+        jest.spyOn(math, 'roundToTick').mockImplementation(() => {
+          throw new ArithmeticOverflowError(() => 'overflow', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(0.10));
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('increaseBy failed');
+          expect(result.error.context?.op).toBe('increaseBy');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('ArithmeticOverflowError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен обернуть неожиданные ошибки в Result', () => {
+        jest.spyOn(math, 'roundToTick').mockImplementation(() => {
+          throw new Error('unexpected rounding error');
+        });
+
+        const qty = Quantity.of(new Decimal(100));
+        const delta = Ratio.of(new Decimal(0.10));
+        const result = QuantityService.increaseBy(qty, delta, 1);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Unexpected error during quantity increaseBy');
+          expect(result.error.context?.op).toBe('increaseBy');
+          expect(result.error.context?.cause).toBeDefined();
+        }
+
+        jest.restoreAllMocks();
+      });
+    });
   });
 });
