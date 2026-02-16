@@ -238,6 +238,28 @@ describe('roundToTick', () => {
         }
       }
     });
+
+    it('должен throw InvalidTickSizeError на не-Decimal tickSize', () => {
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => roundToTick(new Decimal(10), null, Decimal.ROUND_HALF_UP)).toThrow(
+        InvalidTickSizeError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => roundToTick(new Decimal(10), undefined, Decimal.ROUND_HALF_UP)).toThrow(
+        InvalidTickSizeError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => roundToTick(new Decimal(10), 0.01, Decimal.ROUND_HALF_UP)).toThrow(
+        InvalidTickSizeError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => roundToTick(new Decimal(10), '0.01', Decimal.ROUND_HALF_UP)).toThrow(
+        InvalidTickSizeError
+      );
+    });
   });
 
   describe('ошибки валидации roundingMode', () => {

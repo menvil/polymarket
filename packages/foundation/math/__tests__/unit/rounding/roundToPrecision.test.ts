@@ -273,6 +273,7 @@ describe('roundToPrecision', () => {
     });
 
     it('должен содержать контекст в InvalidDecimalPlacesError при превышении максимума', () => {
+      expect.assertions(5);
       try {
         roundToPrecision(new Decimal('10.567'), 1e9 + 1, Decimal.ROUND_HALF_UP);
       } catch (error) {

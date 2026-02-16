@@ -125,9 +125,9 @@ describe('divideDecimal', () => {
         InvalidDivisorError
       );
 
+      expect.assertions(4);
       try {
         divideDecimal(new Decimal(10), new Decimal(NaN));
-        expect(true).toBe(false); // Expected InvalidDivisorError to be thrown
       } catch (error) {
         if (error instanceof InvalidDivisorError) {
           expect(error.context).toBeDefined();
@@ -137,6 +137,28 @@ describe('divideDecimal', () => {
           throw error;
         }
       }
+    });
+
+    it('должен throw InvalidDivisorError на не-Decimal делитель', () => {
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), null)).toThrow(
+        InvalidDivisorError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), undefined)).toThrow(
+        InvalidDivisorError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), 5)).toThrow(
+        InvalidDivisorError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), '5')).toThrow(
+        InvalidDivisorError
+      );
     });
   });
 
@@ -165,9 +187,9 @@ describe('divideDecimal', () => {
 
       expect(() => divideDecimal(inf, value)).toThrow(InvalidOperandError);
 
+      expect.assertions(5);
       try {
         divideDecimal(inf, value);
-        expect(true).toBe(false); // Expected InvalidOperandError to be thrown
       } catch (error) {
         if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();

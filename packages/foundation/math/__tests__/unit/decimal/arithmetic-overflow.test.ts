@@ -86,9 +86,9 @@ describe('Arithmetic Overflow Tests', () => {
     it('должен содержать контекст в ошибке overflow', () => {
       const negHuge = NEAR_MAX_FOR_ADD.neg();
 
+      expect.assertions(5);
       try {
         subtractDecimal(NEAR_MAX_FOR_ADD, negHuge);
-        expect(true).toBe(false);
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
@@ -118,9 +118,9 @@ describe('Arithmetic Overflow Tests', () => {
      * Тест проверяет контекст ошибки для multiplyDecimal.
      */
     it('должен содержать контекст в ошибке overflow', () => {
+      expect.assertions(5);
       try {
         multiplyDecimal(SQRT_MAX_E, SQRT_MAX_E);
-        expect(true).toBe(false);
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
@@ -150,9 +150,9 @@ describe('Arithmetic Overflow Tests', () => {
      * Тест проверяет, что контекст содержит a, b и result.
      */
     it('должен содержать контекст в ошибке overflow', () => {
+      expect.assertions(5);
       try {
         divideDecimal(NEAR_MAX_E, TINY);
-        expect(true).toBe(false);
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
@@ -182,9 +182,9 @@ describe('Arithmetic Overflow Tests', () => {
      * Тест проверяет контекст ошибки для averageDecimal.
      */
     it('должен содержать контекст в ошибке overflow', () => {
+      expect.assertions(5);
       try {
         averageDecimal(NEAR_MAX_FOR_ADD, NEAR_MAX_FOR_ADD);
-        expect(true).toBe(false);
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
