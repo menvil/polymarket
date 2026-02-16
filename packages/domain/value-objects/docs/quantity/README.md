@@ -223,7 +223,6 @@ roundToStep(quantity: Quantity, stepSize: number | string | Decimal, roundingMod
 **Компоненты:**
 
 - `QuantitySerializer` — точная сериализация через `string`
-- `QuantityLossySerializer` — lossy сериализация через `number`
 - `QuantityFormatter` — форматирование в строки
 
 **Пример:**
@@ -232,12 +231,6 @@ roundToStep(quantity: Quantity, stepSize: number | string | Decimal, roundingMod
 // Точная сериализация (для больших чисел)
 const json = QuantitySerializer.toJSON(qty);  // { value: "12345678901234567890.123" }
 const result = QuantitySerializer.fromJSON(json);
-
-// Lossy сериализация (для UI)
-const lossyResult = QuantityLossySerializer.toJSON(qty);
-if (lossyResult.ok) {
-  console.log(lossyResult.value);  // { value: 123.45 }
-}
 
 // Форматирование
 const formattedResult = QuantityFormatter.toString(qty, 2);

@@ -818,28 +818,6 @@ if (result.ok) {
 }
 ```
 
-### Lossy сериализация (number)
-
-```typescript
-import { Quantity, QuantityLossySerializer } from '@polymarket/value-objects/quantity';
-
-// Для UI или когда точность не критична
-const qty = Quantity.of(new Decimal("123.456789"));
-
-// Lossy сериализация → JSON
-const jsonResult = QuantityLossySerializer.toJSON(qty);
-if (jsonResult.ok) {
-  console.log(jsonResult.value); // { value: 123.456789 }
-}
-
-// ⚠️ Внимание: lossy для больших чисел!
-const bigQty = Quantity.of(new Decimal("99999999999999999999.123"));
-const bigJsonResult = QuantityLossySerializer.toJSON(bigQty);
-if (bigJsonResult.ok) {
-  console.log(bigJsonResult.value); // { value: 1e+20 } - потеря точности!
-}
-```
-
 ### Сериализация для хранения в БД
 
 ```typescript

@@ -38,8 +38,9 @@ import { Ratio, RatioService } from '../../ratio/index.js';
  * - context.reason - для инвариантов Core (SpreadErrorReason enum)
  *
  * **Правило возвращаемых типов:**
- * ВСЕ операции возвращают Result<T, InvalidSpreadError | InvalidPriceError>
+ * ВСЕ операции возвращают Result<T, InvalidSpreadError>
  * ОЖИДАЕМЫЕ и НЕОЖИДАННЫЕ ошибки обрабатываются через Result
+ * Все внутренние ошибки (InvalidPriceError, InvalidRatioError) преобразуются в InvalidSpreadError через rewrap
  *
  * @example
  * ```typescript
@@ -125,7 +126,7 @@ export class SpreadService {
    *
    * @param bidValue - Значение bid
    * @param askValue - Значение ask
-   * @returns Result со Spread или InvalidPriceError/InvalidSpreadError
+   * @returns Result со Spread или InvalidSpreadError
    *
    * @example
    * ```typescript
@@ -233,7 +234,7 @@ export class SpreadService {
   public static fromMidAndWidthRatio(
     mid: Price | Decimal | number | string,
     widthRatio: Ratio | Decimal | number | string
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError | InvalidRatioError> {
+  ): Result<Spread, InvalidSpreadError> {
     return wrapOp(
       SpreadService.SERVICE_NAME,
       'fromMidAndWidthRatio',
@@ -410,7 +411,7 @@ export class SpreadService {
   public static tighten(
     spread: Spread,
     amount: Decimal | number | string
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+  ): Result<Spread, InvalidSpreadError> {
     // Парсим amount через toDecimal
     const amountResult = toDecimal<InvalidSpreadError>(
       'amount',
@@ -542,7 +543,7 @@ export class SpreadService {
     spread: Spread,
     ratio: Decimal | number | string,
     options?: { ensureLteOne?: boolean }
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError | InvalidRatioError> {
+  ): Result<Spread, InvalidSpreadError> {
     return wrapOp(this.SERVICE_NAME, 'tightenBy', {}, () => {
       const ctx = {
         spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -615,7 +616,7 @@ export class SpreadService {
   public static widen(
     spread: Spread,
     amount: Decimal | number | string
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+  ): Result<Spread, InvalidSpreadError> {
     // Парсим amount через toDecimal
     const amountResult = toDecimal<InvalidSpreadError>(
       'amount',
@@ -737,7 +738,7 @@ export class SpreadService {
     spread: Spread,
     ratio: Decimal | number | string,
     options?: { ensureGteMinusOne?: boolean }
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError | InvalidRatioError> {
+  ): Result<Spread, InvalidSpreadError> {
     return wrapOp(this.SERVICE_NAME, 'widenBy', {}, () => {
       const ctx = {
         spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -817,7 +818,7 @@ export class SpreadService {
   public static shift(
     spread: Spread,
     amount: Decimal | number | string
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+  ): Result<Spread, InvalidSpreadError> {
     // Парсим amount через toDecimal
     const amountResult = toDecimal<InvalidSpreadError>(
       'amount',
@@ -1098,7 +1099,7 @@ export class SpreadService {
   public static fromMidAndWidth(
     mid: Decimal | number | string,
     width: Decimal | number | string
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+  ): Result<Spread, InvalidSpreadError> {
     return wrapOp(this.SERVICE_NAME, 'fromMidAndWidth', {}, () => {
       const ctx = { mid: String(mid), width: String(width) };
 
@@ -1190,7 +1191,7 @@ export class SpreadService {
     mid: Decimal | number | string,
     widthPercentage: Decimal | number | string,
     options?: { ensureLteOne?: boolean }
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError | InvalidRatioError> {
+  ): Result<Spread, InvalidSpreadError> {
     return wrapOp(this.SERVICE_NAME, 'fromMidAndWidthPercentage', {}, () => {
       const ctx = { mid: String(mid), widthPercentage: String(widthPercentage) };
 
@@ -1255,7 +1256,7 @@ export class SpreadService {
   public static adjustBid(
     spread: Spread,
     amount: Decimal | number | string
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+  ): Result<Spread, InvalidSpreadError> {
     const op = 'adjustBid';
 
     // Парсим amount
@@ -1350,7 +1351,7 @@ export class SpreadService {
   public static adjustAsk(
     spread: Spread,
     amount: Decimal | number | string
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+  ): Result<Spread, InvalidSpreadError> {
     const op = 'adjustAsk';
 
     // Парсим amount
@@ -1445,7 +1446,7 @@ export class SpreadService {
     spread: Spread,
     bidAmount: Decimal | number | string,
     askAmount: Decimal | number | string
-  ): Result<Spread, InvalidSpreadError | InvalidPriceError> {
+  ): Result<Spread, InvalidSpreadError> {
     // Сначала корректируем bid
     const bidAdjusted = SpreadService.adjustBid(spread, bidAmount);
     if (isErr(bidAdjusted)) {

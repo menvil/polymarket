@@ -997,7 +997,7 @@ export class QuoteService {
     return wrapOp(
       QuoteService.SERVICE_NAME,
       'getMidPrice',
-      { bid: quote.spread()!.bid()!.value().toString(), ask: quote.spread()!.ask()!.value().toString() },
+      { bid: quote.spread()?.bid()?.value()?.toString() ?? 'null', ask: quote.spread()?.ask()?.value()?.toString() ?? 'null' },
       () => {
         // Delegate to SpreadService
         const spreadMidResult = SpreadService.getMidPrice(quote.spread()!);
@@ -1010,8 +1010,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.NOT_TWO_SIDED,
-                bid: quote.spread()!.bid()!.value().toString(),
-                ask: quote.spread()!.ask()!.value().toString(),
+                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
                 spreadError: spreadMidResult.error.message,
               },
             }
@@ -1055,7 +1055,7 @@ export class QuoteService {
     return wrapOp(
       QuoteService.SERVICE_NAME,
       'getSpreadRatio',
-      { bid: quote.spread()!.bid()!.value().toString(), ask: quote.spread()!.ask()!.value().toString() },
+      { bid: quote.spread()?.bid()?.value()?.toString() ?? 'null', ask: quote.spread()?.ask()?.value()?.toString() ?? 'null' },
       () => {
         // Delegate to SpreadService
         const spreadRatioResult = SpreadService.getSpreadRatio(quote.spread()!);
@@ -1068,8 +1068,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.MID_UNAVAILABLE,
-                bid: quote.spread()!.bid()!.value().toString(),
-                ask: quote.spread()!.ask()!.value().toString(),
+                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
                 spreadError: spreadRatioResult.error.message,
               },
             }
@@ -1123,8 +1123,8 @@ export class QuoteService {
       QuoteService.SERVICE_NAME,
       'shiftByRatio',
       {
-        bid: quote.spread()!.bid()!.value().toString(),
-        ask: quote.spread()!.ask()!.value().toString(),
+        bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+        ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
         shiftRatio: shiftRatio.toDecimal().toString()
       },
       () => {
@@ -1137,8 +1137,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
-                bid: quote.spread()!.bid()!.value().toString(),
-                ask: quote.spread()!.ask()!.value().toString(),
+                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
                 shiftRatio: shiftRatio.toDecimal().toString(),
                 spreadError: newSpreadResult.error.message,
               },
@@ -1174,8 +1174,8 @@ export class QuoteService {
       QuoteService.SERVICE_NAME,
       'widenByRatio',
       {
-        bid: quote.spread()!.bid()!.value().toString(),
-        ask: quote.spread()!.ask()!.value().toString(),
+        bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+        ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
         deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
       },
       () => {
@@ -1188,8 +1188,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
-                bid: quote.spread()!.bid()!.value().toString(),
-                ask: quote.spread()!.ask()!.value().toString(),
+                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
                 deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
                 spreadError: newSpreadResult.error.message,
               },
@@ -1225,8 +1225,8 @@ export class QuoteService {
       QuoteService.SERVICE_NAME,
       'tightenByRatio',
       {
-        bid: quote.spread()!.bid()!.value().toString(),
-        ask: quote.spread()!.ask()!.value().toString(),
+        bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+        ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
         deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
       },
       () => {
@@ -1239,8 +1239,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
-                bid: quote.spread()!.bid()!.value().toString(),
-                ask: quote.spread()!.ask()!.value().toString(),
+                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
                 deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
                 spreadError: newSpreadResult.error.message,
               },
@@ -1277,8 +1277,8 @@ export class QuoteService {
       QuoteService.SERVICE_NAME,
       'skewByRatio',
       {
-        bid: quote.spread()!.bid()!.value().toString(),
-        ask: quote.spread()!.ask()!.value().toString(),
+        bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+        ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
         bidRatio: bidRatio.toDecimal().toString(),
         askRatio: askRatio.toDecimal().toString()
       },
@@ -1292,8 +1292,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
-                bid: quote.spread()!.bid()!.value().toString(),
-                ask: quote.spread()!.ask()!.value().toString(),
+                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
                 bidRatio: bidRatio.toDecimal().toString(),
                 askRatio: askRatio.toDecimal().toString(),
                 spreadError: newSpreadResult.error.message,
@@ -1429,7 +1429,22 @@ export class QuoteService {
           );
         }
 
-        // 4. Create new Quote with same spread, new sizes
+        // 4. Validate two-sided quote (required for accessing spread)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot scale sizes for one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bidPrice: quote.bidPrice()?.value()?.toString() ?? 'null',
+                askPrice: quote.askPrice()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
+        // 5. Create new Quote with same spread, new sizes
         const newQuote = Quote.of(
           quote.spread()!.bid()!,
           quote.spread()!.ask()!,

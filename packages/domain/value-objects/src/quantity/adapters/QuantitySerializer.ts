@@ -66,8 +66,6 @@ export interface QuantityJSON {
  * - toJSON ВСЕГДА возвращает валидный QuantityJSON
  * - Все ошибки возвращаются через Result.Err
  *
- * Для lossy сериализации (number) используй QuantityLossySerializer.
- *
  * @example
  * ```typescript
  * import { QuantitySerializer } from '@polymarket/value-objects/quantity';

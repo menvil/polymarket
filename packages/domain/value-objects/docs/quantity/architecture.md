@@ -95,7 +95,6 @@ try {
 ┌─────────────────────────────────────────────────────┐
 │  Layer 4: Adapters                                  │
 │  - QuantitySerializer (точная)                      │
-│  - QuantityLossySerializer (lossy)                  │
 │  - QuantityFormatter (форматирование)               │
 │                                                     │
 │  Зависит от: Core, Facade                          │
@@ -429,23 +428,7 @@ const quantity = value instanceof Decimal
 
 ---
 
-### 6. Почему QuantitySerializer и QuantityLossySerializer раздельно?
-
-**Решение:** Два отдельных класса вместо флага `lossy`.
-
-**Альтернативы:**
-
-- ❌ `QuantitySerializer.toJSON(qty, { lossy: true })`
-
-**Почему выбрали:**
-
-- ✅ Explicit intent (явное намерение)
-- ✅ Разные типы возврата (`{ value: string }` vs `{ value: number }`)
-- ✅ Компилятор видит разницу
-
----
-
-### 7. Централизованная обработка ошибок (DRY)
+### 6. Централизованная обработка ошибок (DRY)
 
 **Решение:** 5 helper methods для всех catch blocks вместо дублирования кода.
 
