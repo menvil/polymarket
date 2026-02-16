@@ -7,7 +7,7 @@
 - ✅ **Type-safe работа с временем** - строгая типизация через IClock интерфейс
 - ✅ **Миллисекундная точность** - работа с Date (JavaScript millisecond precision)
 - ✅ **Dependency Injection** - подмена источника времени для тестирования
-- ✅ **Zero dependencies** - никаких внешних зависимостей в production
+- ✅ **Minimal dependencies** - только @polymarket/result для type-safe error handling
 - ✅ **Детерминизм** - воспроизводимое поведение в тестах и replay режиме
 
 ## 📦 Установка
