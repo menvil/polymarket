@@ -690,7 +690,7 @@ function roundWithLogging(
 ### Обработка в расчётах
 
 ```typescript
-import { InvalidRoundingModeError } from '@polymarket/errors';
+import { InvalidRoundingModeError, InvalidMoneyError } from '@polymarket/errors';
 
 /**
  * Рассчитать комиссию с округлением

@@ -152,7 +152,7 @@ try {
   if (DivisionByZeroError.is(error)) {
     console.error('Cannot divide by zero');
     console.error('Context:', error.context);
-    // Context: { dividend: '10', divisor: '0' }
+    // Context: { operation: 'divide', a: '10', b: '0' }
   }
 }
 ```
@@ -170,7 +170,7 @@ try {
   if (InvalidDivisorError.is(error)) {
     console.error('Invalid divisor:', error.message);
     console.error('Context:', error.context);
-    // Context: { dividend: '10', divisor: 'NaN' }
+    // Context: { operation: 'divide', a: '10', b: 'NaN' }
   }
 }
 
@@ -201,7 +201,7 @@ try {
   if (ArithmeticOverflowError.is(error)) {
     console.error('Division overflow:', error.message);
     console.error('Context:', error.context);
-    // Context: { dividend: '5e8999999999999000', divisor: '1e-1500', result: 'Infinity' }
+    // Context: { operation: 'divide', a: '5e8999999999999000', b: '1e-1500' }
   }
 }
 ```
@@ -219,7 +219,7 @@ try {
   if (InvalidOperandError.is(error)) {
     console.error('Invalid dividend:', error.message);
     console.error('Context:', error.context);
-    // Context: { value: 'NaN', operation: 'divideDecimal', parameter: 'dividend' }
+    // Context: { operation: 'divide', a: 'NaN', b: '10', paramName: 'a', value: 'NaN' }
   }
 }
 
