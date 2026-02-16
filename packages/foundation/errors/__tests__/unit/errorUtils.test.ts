@@ -642,7 +642,7 @@ describe('errorUtils', () => {
   });
 
   describe('toCause', () => {
-    it('should handle Error objects', () => {
+    it('обрабатывает Error объекты', () => {
       const error = new Error('Test error');
       const cause = toCause(error);
       expect(cause.name).toBe('Error');
@@ -650,42 +650,42 @@ describe('errorUtils', () => {
       expect(cause.stack).toBeDefined();
     });
 
-    it('should handle TypeError objects', () => {
+    it('обрабатывает TypeError объекты', () => {
       const error = new TypeError('Type error');
       const cause = toCause(error);
       expect(cause.name).toBe('TypeError');
       expect(cause.message).toBe('Type error');
     });
 
-    it('should handle string thrown as error', () => {
+    it('обрабатывает string брошенный как ошибка', () => {
       const cause = toCause('string error');
       expect(cause.name).toBe('UnknownError');
       expect(cause.message).toBe('string error');
       expect(cause.stack).toBeUndefined();
     });
 
-    it('should handle number thrown as error', () => {
+    it('обрабатывает number брошенный как ошибка', () => {
       const cause = toCause(123);
       expect(cause.name).toBe('UnknownError');
       expect(cause.message).toBe('123');
       expect(cause.stack).toBeUndefined();
     });
 
-    it('should handle null thrown as error', () => {
+    it('обрабатывает null брошенный как ошибка', () => {
       const cause = toCause(null);
       expect(cause.name).toBe('UnknownError');
       expect(cause.message).toBe('null');
       expect(cause.stack).toBeUndefined();
     });
 
-    it('should handle undefined thrown as error', () => {
+    it('обрабатывает undefined брошенный как ошибка', () => {
       const cause = toCause(undefined);
       expect(cause.name).toBe('UnknownError');
       expect(cause.message).toBe('undefined');
       expect(cause.stack).toBeUndefined();
     });
 
-    it('should handle object thrown as error', () => {
+    it('обрабатывает object брошенный как ошибка', () => {
       const cause = toCause({ foo: 'bar' });
       expect(cause.name).toBe('UnknownError');
       expect(cause.message).toBe('[object Object]');
@@ -694,7 +694,7 @@ describe('errorUtils', () => {
   });
 
   describe('toDecimal edge cases', () => {
-    it('should return Err for object with non-callable toString', () => {
+    it('возвращает Err для объекта с non-callable toString', () => {
       // Object with toString property that's not a function
       const objWithBadToString = {
         toString: 'not a function',
@@ -711,7 +711,7 @@ describe('errorUtils', () => {
       }
     });
 
-    it('should return Err for object without callable toString', () => {
+    it('возвращает Err для объекта без callable toString', () => {
       // Object where toString exists but returns undefined
       const objWithBadToString = {
         toString: undefined,
@@ -725,7 +725,7 @@ describe('errorUtils', () => {
       }
     });
 
-    it('should handle Decimal parse error with non-Error', () => {
+    it('обрабатывает ошибку парсинга Decimal с non-Error', () => {
       // Test the else branch in catch by passing invalid input to Decimal
       // When Decimal constructor fails, it throws an Error, so we test the toCause path
       const result = toDecimal('amount', 'not-a-number-xyz', 'INVALID_FORMAT', InvalidMoneyError);
@@ -741,7 +741,7 @@ describe('errorUtils', () => {
   });
 
   describe('coreInvariantError', () => {
-    it('should create error from core invariant violation', () => {
+    it('создаёт ошибку из core invariant violation', () => {
       const violation = {
         name: 'PriceInvariantViolation',
         message: 'Price out of range',
@@ -765,7 +765,7 @@ describe('errorUtils', () => {
       expect((error.context as any).value).toBe(1.5);
     });
 
-    it('should work with different error types', () => {
+    it('работает с разными типами ошибок', () => {
       const violation = {
         name: 'QuantityInvariantViolation',
         message: 'Invalid quantity',
@@ -786,7 +786,7 @@ describe('errorUtils', () => {
   });
 
   describe('wrapOp with core invariant violations', () => {
-    it('should catch and wrap core invariant violations', () => {
+    it('ловит и оборачивает core invariant violations', () => {
       class PriceInvariantViolation extends Error {
         reason = 'OUT_OF_RANGE_HIGH';
         constructor(message: string) {
@@ -819,7 +819,7 @@ describe('errorUtils', () => {
   });
 
   describe('currencyMismatchError', () => {
-    it('should create currency mismatch error', () => {
+    it('создаёт ошибку несовпадения валют', () => {
       const error = currencyMismatchError(
         'add',
         'USD',
@@ -836,7 +836,7 @@ describe('errorUtils', () => {
       expect((error.context as any).actual).toBe('EUR');
     });
 
-    it('should work with different operations', () => {
+    it('работает с разными операциями', () => {
       const error = currencyMismatchError(
         'isLessThan',
         'USDC',
@@ -850,7 +850,7 @@ describe('errorUtils', () => {
       expect((error.context as any).actual).toBe('DAI');
     });
 
-    it('should work with different error types', () => {
+    it('работает с разными типами ошибок', () => {
       const error = currencyMismatchError(
         'equals',
         'USDC',
