@@ -15,14 +15,16 @@
 
 ## Философия
 
-### Два подхода к ошибкам:
+### Два подхода к ошибкам
 
 **1. Exceptions (throw/catch)**
+
 - Для исключительных ситуаций
 - Когда нужно прервать выполнение
 - В старом коде
 
 **2. Result<T,E> (Railway-Oriented Programming)**
+
 - Для ожидаемых ошибок
 - Явная обработка в типах
 - В новом коде (рекомендуется)
@@ -63,6 +65,7 @@ try {
 ```
 
 **Проблемы:**
+
 - ❌ Неявная обработка (компилятор не заставляет обработать ошибку)
 - ❌ Сложно понять что функция может выбросить
 - ❌ Performance overhead
@@ -100,6 +103,7 @@ result.match({
 ```
 
 **Преимущества:**
+
 - ✅ Явная обработка (компилятор требует обработать Result)
 - ✅ Типобезопасность
 - ✅ Композиция через map/flatMap
@@ -112,6 +116,7 @@ result.match({
 ### Концепция
 
 Представьте железную дорогу с двумя путями:
+
 - **Success track** (ok) - всё идёт по плану
 - **Failure track** (err) - произошла ошибка
 
@@ -539,27 +544,32 @@ class AlertManager {
 ### ✅ DO
 
 1. **Используйте Result<T,E> для ожидаемых ошибок**
+
    ```typescript
    function validatePrice(value: number): Result<Price, InvalidPriceError>
    ```
 
 2. **Используйте специфичные типы ошибок**
+
    ```typescript
    throw new InvalidPriceError(...) // ✅
    throw new Error('Invalid price') // ❌
    ```
 
 3. **Включайте context для отладки**
+
    ```typescript
    { context: { value, min, max, field: 'price' } }
    ```
 
 4. **Используйте коды ошибок**
+
    ```typescript
    { code: InvalidPriceError.code }
    ```
 
 5. **Логируйте все ошибки**
+
    ```typescript
    logger.error('Operation failed', error.toJSON());
    ```
@@ -567,21 +577,25 @@ class AlertManager {
 ### ❌ DON'T
 
 1. **Не глушите ошибки**
+
    ```typescript
    try { ... } catch (e) { /* nothing */ } // ❌
    ```
 
 2. **Не используйте общие ошибки**
+
    ```typescript
    throw new Error('Something went wrong') // ❌
    ```
 
 3. **Не включайте секреты в context**
+
    ```typescript
    { context: { password: '...' } } // ❌
    ```
 
 4. **Не игнорируйте severity**
+
    ```typescript
    if (error.severity === 'critical') {
      console.log('oops'); // ❌ Нужны экстренные меры!
@@ -589,6 +603,7 @@ class AlertManager {
    ```
 
 5. **Не создавайте дубликаты кодов**
+
    ```typescript
    // Два разных класса с одним кодом - ❌
    InvalidPriceError.code === InvalidQuantityError.code

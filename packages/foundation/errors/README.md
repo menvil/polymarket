@@ -4,8 +4,8 @@
 
 ## ✨ Ключевые особенности
 
-- ✅ **Zero dependencies** - никаких зависимостей в production
-- ✅ **100% покрытие тестами** - все классы автоматически тестируются
+- ✅ **Минимальные зависимости** - только `decimal.js` и `@polymarket/result`
+- ✅ **Высокое покрытие тестами** - 90%+ lines, 85%+ branches, автоматическое тестирование классов
 - ✅ **Автоматические фичи** - `name`, `toJSON()`, `is()` работают автоматически
 - ✅ **Динамические сообщения** - поддержка шаблонов с контекстом
 - ✅ **Graceful error handling** - ошибки в template функциях не роняют программу
@@ -46,7 +46,7 @@ throw new ValidationError(
 #### Вариант 1: Минимальный (1 строка!) 🎉
 
 ```typescript
-// src/errors/OrderNotFoundError.ts
+// src/base/OrderNotFoundError.ts
 import { TradingError } from '@polymarket/errors';
 
 export class OrderNotFoundError extends TradingError {}
@@ -58,15 +58,16 @@ export class OrderNotFoundError extends TradingError {}
 #### Вариант 2: С переопределением severity (3 строки)
 
 ```typescript
-// src/errors/ValidationError.ts
+// src/base/InsufficientFundsError.ts
 import { TradingError } from '@polymarket/errors';
 
-export class ValidationError extends TradingError {
-  public readonly severity = 'low' as const;
+export class InsufficientFundsError extends TradingError {
+  public readonly severity = 'high' as const;
 }
 ```
 
 **Что работает автоматически:**
+
 - ✨ `constructor()` - наследуется
 - ✨ `this.name` - устанавливается из имени класса
 - ✨ `toJSON()` - наследуется
@@ -78,8 +79,9 @@ export class ValidationError extends TradingError {
 
 ```typescript
 // src/base/index.ts
+export * from './TradingError.js';
 export * from './ValidationError.js';
-export * from './InsufficientFundsError.js'; // ← добавьте эту строку
+export * from './InsufficientFundsError.js'; // ← добавьте эту строку для нового класса
 ```
 
 **Всё! При запуске `npm test` автоматически запустятся 28 базовых тестов для вашего класса!** ✨
@@ -115,6 +117,7 @@ class TradingError extends Error {
 ```
 
 **Свойства:**
+
 - `severity` - уровень серьёзности ошибки (обязательно)
 - `timestamp` - время возникновения ошибки
 - `code` - опциональный код для детальной классификации
@@ -134,6 +137,7 @@ constructor(
 ```
 
 **Параметры:**
+
 - `message` - статическая строка или функция-шаблон для динамических сообщений
 - `options.code` - опциональный код для детальной классификации
 - `options.context` - опциональный контекст с дополнительными данными
@@ -303,6 +307,7 @@ const json = error.toJSON();
 ```
 
 **Преимущества:**
+
 - ✅ Программа не падает при ошибках в template
 - ✅ Оригинальная ошибка сохраняется для отладки
 - ✅ Context остаётся доступным
@@ -323,8 +328,8 @@ npm test
 ```
 
 **Как это работает?**
-- Тест `auto-discovery.test.ts` рекурсивно сканирует директорию `src/`
-- Находит все `.ts` файлы с классами, наследующими `TradingError`
+
+- Тест `auto-discovery.test.ts` рекурсивно сканирует директорию `src/` и находит все `.ts` файлы с классами, наследующими `TradingError`
 - Автоматически импортирует их и генерирует тесты
 - **Никаких registry или ручной регистрации не требуется!**
 
@@ -333,17 +338,17 @@ npm test
 Для специфичных тестов создайте отдельный файл:
 
 ```typescript
-// __tests__/unit/errors/InsufficientFundsError.test.ts
+// __tests__/unit/base/InsufficientFundsError.test.ts
 import { describe, it, expect } from '@jest/globals';
 import { testTradingError } from '../../helpers/sharedErrorTests';
-import { InsufficientFundsError } from '../../../src/errors/InsufficientFundsError';
+import { InsufficientFundsError } from '../../../src/base/InsufficientFundsError';
 
 describe('InsufficientFundsError', () => {
   // 28 базовых тестов автоматически
   testTradingError({
     ErrorClass: InsufficientFundsError,
     expectedName: 'InsufficientFundsError',
-    expectedSeverity: 'medium',
+    expectedSeverity: 'high',
     testMessage: 'Not enough funds',
   });
 
@@ -356,7 +361,7 @@ describe('InsufficientFundsError', () => {
       );
 
       expect(error.message).toBe('Insufficient funds: required 1000, available 500');
-      expect(error.severity).toBe('medium');
+      expect(error.severity).toBe('high');
     });
   });
 });
@@ -369,6 +374,7 @@ npm run test:coverage
 ```
 
 Целевые показатели:
+
 - **Statements:** 90%+
 - **Branches:** 85%+
 - **Functions:** 90%+
@@ -379,6 +385,7 @@ npm run test:coverage
 ```text
 @polymarket/errors/
 ├── src/
+│   ├── ErrorSource.ts                # Enum для классификации источника ошибки
 │   ├── base/
 │   │   ├── ITradingError.ts          # Интерфейс
 │   │   ├── TradingError.ts           # Базовый класс
@@ -390,7 +397,19 @@ npm run test:coverage
 │   │   ├── InvalidDivisorError.ts    # Ошибка деления на NaN/Infinity
 │   │   ├── InvalidTickSizeError.ts   # Ошибка невалидного tick size
 │   │   └── index.ts
+│   ├── value-objects/
+│   │   ├── InvalidPriceError.ts      # Ошибки валидации value objects
+│   │   ├── InvalidQuantityError.ts
+│   │   └── ... (11 классов)
+│   ├── utils/
+│   │   └── errorUtils.ts             # Утилиты для обработки ошибок
 │   └── index.ts
+├── docs/
+│   ├── README.md                     # Обзорная документация
+│   ├── error-handling.md             # Best practices обработки
+│   ├── error-utilities.md            # Документация по error utilities
+│   ├── math/                         # Документация math ошибок
+│   └── value-objects/                # Документация value objects ошибок
 ├── __tests__/
 │   ├── helpers/
 │   │   └── sharedErrorTests.ts       # Helper для тестов
@@ -480,6 +499,48 @@ npm run typecheck
 'The price you entered is not valid because it is negative' // Слишком длинное
 ```
 
+## 🛠️ Error Handling Utilities
+
+В дополнение к error классам, пакет предоставляет утилиты для обработки ошибок:
+
+- **ErrorSource** - enum для классификации источника ошибки (parsing, core_invariant, rule_validation, math_operation, unexpected)
+- **wrapOp()** - автоматическое оборачивание операций в try-catch с rewrap
+- **rewrap()** - переупаковка ошибок с сохранением root-контекста (cause, reason, raw)
+- **toDecimal()** - безопасная конвертация в Decimal с error handling
+- **expectedMathError()** / **unexpectedError()** - создание ошибок с правильным source
+- **currencyMismatchError()** - стандартизированные ошибки валют
+
+См. [docs/error-utilities.md](./docs/error-utilities.md) для полной документации.
+
+**Пример использования**:
+
+```typescript
+import { wrapOp, toDecimal, ErrorSource } from '@polymarket/errors';
+
+// wrapOp автоматически обрабатывает Result.Err и exceptions
+return wrapOp(
+  'MoneyService',
+  'create',
+  { currency },
+  () => {
+    // toDecimal безопасно парсит с автоматическим ErrorSource.PARSING
+    const amountResult = toDecimal(
+      'amount',
+      input,
+      MoneyErrorReason.INVALID_FORMAT,
+      InvalidMoneyError
+    );
+    if (isErr(amountResult)) {
+      return amountResult;
+    }
+
+    // Core создание с автоматической обработкой invariant violations
+    return Ok(Money.of(amountResult.value, currency));
+  },
+  InvalidMoneyError
+);
+```
+
 ## 📄 License
 
 MIT
@@ -488,7 +549,7 @@ MIT
 
 При добавлении нового класса ошибки:
 
-1. **Создайте класс** в `src/base/` или `src/domain/`
+1. **Создайте класс** в `src/base/` или `src/value-objects/`
 
    ```typescript
    export class MyError extends TradingError {
@@ -505,5 +566,7 @@ MIT
 3. **Запустите `npm test`** - базовые тесты найдут ваш класс и запустятся автоматически! ✨
 
 4. **(Опционально)** Создайте специфичные тесты если нужна дополнительная логика
+
+5. **Добавьте документацию** в `docs/[category]/[error-name].md`
 
 **Никаких registry! Никакой ручной регистрации!** Всё работает через автоматическое обнаружение классов в файловой системе.
