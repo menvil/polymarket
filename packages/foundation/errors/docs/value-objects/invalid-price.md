@@ -337,18 +337,17 @@ import { InvalidPriceError, TradingError } from '@polymarket/errors';
 
 const result = Price.fromNumber(userInput);
 
-result.match({
-  ok: (price) => submitOrder(price),
-  err: (error) => {
-    if (error.code === InvalidPriceError.code) {
-      // Обработка InvalidPriceError
-      showError('Invalid price', error.context);
-    } else {
-      // Другие ошибки
-      showError('Unexpected error', error);
-    }
+if (result.ok) {
+  submitOrder(result.value);
+} else {
+  if (result.error.code === InvalidPriceError.code) {
+    // Обработка InvalidPriceError
+    showError('Invalid price', result.error.context);
+  } else {
+    // Другие ошибки
+    showError('Unexpected error', result.error);
   }
-});
+}
 ```
 
 ### С логированием

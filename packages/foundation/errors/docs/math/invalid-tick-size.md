@@ -204,10 +204,11 @@ const result = Price.create(
   new Decimal('0.01')
 );
 
-result.match({
-  ok: (price) => console.log('Valid price:', price.getValue().toString()),
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log('Valid price:', result.value.getValue().toString());
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ### 4. Price grid для order book

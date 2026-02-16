@@ -170,10 +170,11 @@ class Amount {
 // Использование
 const result = Amount.fromNumber(50, 'leverage', 1, 100);
 
-result.match({
-  ok: (amount) => console.log(`Valid ${amount.getField()}: ${amount.getValue()}`),
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log(`Valid ${result.value.getField()}: ${result.value.getValue()}`);
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ### 3. Валидация с кастомными правилами
