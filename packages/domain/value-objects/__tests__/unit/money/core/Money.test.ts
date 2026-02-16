@@ -180,4 +180,35 @@ describe('Money core', () => {
       expect(Money.of(new Decimal(0)).isNegative()).toBe(false);
     });
   });
+
+  describe('toNumber()', () => {
+    it('должен преобразовать Decimal в number', () => {
+      const money = Money.of(new Decimal(100.5));
+      expect(money.toNumber()).toBe(100.5);
+    });
+
+    it('должен работать с нулевой суммой', () => {
+      expect(Money.ZERO.USDC.toNumber()).toBe(0);
+    });
+
+    it('должен работать с отрицательными суммами', () => {
+      const money = Money.of(new Decimal(-50.25));
+      expect(money.toNumber()).toBe(-50.25);
+    });
+
+    it('должен работать с очень маленькими числами', () => {
+      const money = Money.of(new Decimal('0.000001'));
+      expect(money.toNumber()).toBe(0.000001);
+    });
+
+    it('должен работать с большими числами', () => {
+      const money = Money.of(new Decimal('999999999.99'));
+      expect(money.toNumber()).toBe(999999999.99);
+    });
+
+    it('должен сохранять точность для разумных чисел', () => {
+      const money = Money.of(new Decimal('123.456789'));
+      expect(money.toNumber()).toBe(123.456789);
+    });
+  });
 });
