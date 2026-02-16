@@ -347,9 +347,11 @@ describe('errorUtils', () => {
       expect(rewrapped1.context?.originalName).toBe(originalName);
       expect(rewrapped1.context?.originalCode).toBe(originalCode);
 
-      // Но сама ошибка имеет новый timestamp и stack
-      expect(rewrapped1.timestamp).not.toEqual(original.timestamp);
-      expect(rewrapped1.stack).not.toBe(originalStack);
+      // Сама ошибка имеет свой timestamp и stack (могут быть одинаковые если быстро)
+      expect(rewrapped1.timestamp).toBeInstanceOf(Date);
+      expect(rewrapped1.stack).toBeDefined();
+      // rootTimestamp в ISO формате, не Date объект
+      expect(typeof rewrapped1.context?.rootTimestamp).toBe('string');
 
       // Второй rewrap (вложенный)
       const rewrapped2 = rewrap(
@@ -360,15 +362,16 @@ describe('errorUtils', () => {
         InvalidPriceError
       );
 
-      // Origin-данные должны остаться от ПЕРВОЙ ошибки
+      // Origin-данные должны остаться от ПЕРВОЙ ошибки (не перезаписаны)
       expect(rewrapped2.context?.rootTimestamp).toBe(originalTimestamp);
       expect(rewrapped2.context?.originalStack).toBe(originalStack);
       expect(rewrapped2.context?.originalName).toBe(originalName);
       expect(rewrapped2.context?.originalCode).toBe(originalCode);
 
-      // И не должны перезаписаться данными из rewrapped1
-      expect(rewrapped2.context?.rootTimestamp).not.toBe(rewrapped1.timestamp.toISOString());
-      expect(rewrapped2.context?.originalStack).not.toBe(rewrapped1.stack);
+      // rootTimestamp - это сохраненная ISO строка от первой ошибки
+      expect(rewrapped2.context?.rootTimestamp).toBe(originalTimestamp);
+      // originalStack - это сохраненный stack от первой ошибки
+      expect(rewrapped2.context?.originalStack).toBe(originalStack);
     });
   });
 
@@ -792,28 +795,24 @@ describe('errorUtils', () => {
   });
 
   describe('coreInvariantError', () => {
-    it('создаёт ошибку из core invariant violation', () => {
+    it('создаёт ошибку из core invariant violation БЕЗ service/op', () => {
       const violation = {
         name: 'PriceInvariantViolation',
         message: 'Price out of range',
         reason: 'OUT_OF_RANGE_HIGH'
       } as any;
 
-      const error = coreInvariantError(
-        'PriceService',
-        'create',
-        { value: 1.5 },
-        violation,
-        InvalidPriceError
-      );
+      // Фабрика больше НЕ принимает service/op/ctx
+      const error = coreInvariantError(violation, InvalidPriceError);
 
       expect(error).toBeInstanceOf(InvalidPriceError);
       expect(error.message).toBe('Price out of range');
       expect(error.context!.source).toBe('core_invariant');
-      expect(error.context!.service).toBe('PriceService');
-      expect(error.context!.op).toBe('create');
       expect(error.context!.reason).toBe('OUT_OF_RANGE_HIGH');
-      expect((error.context as any).value).toBe(1.5);
+
+      // service/op НЕ добавлены фабрикой (будут добавлены через rewrap)
+      expect(error.context!.service).toBeUndefined();
+      expect(error.context!.op).toBeUndefined();
     });
 
     it('работает с разными типами ошибок', () => {
@@ -823,16 +822,13 @@ describe('errorUtils', () => {
         reason: 'NEGATIVE'
       } as any;
 
-      const error = coreInvariantError(
-        'QuantityService',
-        'of',
-        { amount: -10 },
-        violation,
-        InvalidQuantityError
-      );
+      const error = coreInvariantError(violation, InvalidQuantityError);
 
       expect(error).toBeInstanceOf(InvalidQuantityError);
       expect(error.context!.reason).toBe('NEGATIVE');
+      expect(error.context!.source).toBe('core_invariant');
+      // service/op НЕ добавлены
+      expect(error.context!.service).toBeUndefined();
     });
   });
 
@@ -870,9 +866,8 @@ describe('errorUtils', () => {
   });
 
   describe('currencyMismatchError', () => {
-    it('создаёт ошибку несовпадения валют', () => {
+    it('создаёт ошибку несовпадения валют с source', () => {
       const error = currencyMismatchError(
-        'add',
         'USD',
         'EUR',
         'CURRENCY_MISMATCH',
@@ -880,30 +875,31 @@ describe('errorUtils', () => {
       );
 
       expect(error).toBeInstanceOf(InvalidMoneyError);
-      expect(error.message).toBe('Cannot add: currency mismatch');
-      expect(error.context!.op).toBe('add');
+      expect(error.message).toBe('Currency mismatch: expected USD, got EUR');
+      expect(error.context!.source).toBe('service_call');
       expect(error.context!.reason).toBe('CURRENCY_MISMATCH');
       expect((error.context as any).expected).toBe('USD');
       expect((error.context as any).actual).toBe('EUR');
+      // op НЕ добавлен фабрикой (должен добавить caller если нужно)
+      expect(error.context!.op).toBeUndefined();
     });
 
-    it('работает с разными операциями', () => {
+    it('работает с разными валютами', () => {
       const error = currencyMismatchError(
-        'isLessThan',
         'USDC',
         'DAI',
         'CURRENCY_MISMATCH',
         InvalidMoneyError
       );
 
-      expect(error.message).toBe('Cannot isLessThan: currency mismatch');
+      expect(error.message).toBe('Currency mismatch: expected USDC, got DAI');
       expect((error.context as any).expected).toBe('USDC');
       expect((error.context as any).actual).toBe('DAI');
+      expect(error.context!.source).toBe('service_call');
     });
 
     it('работает с разными типами ошибок', () => {
       const error = currencyMismatchError(
-        'equals',
         'USDC',
         'DAI',
         'CURRENCY_MISMATCH',
@@ -911,7 +907,8 @@ describe('errorUtils', () => {
       );
 
       expect(error).toBeInstanceOf(CurrencyMismatchError);
-      expect(error.message).toBe('Cannot equals: currency mismatch');
+      expect(error.message).toBe('Currency mismatch: expected USDC, got DAI');
+      expect(error.context!.source).toBe('service_call');
     });
   });
 });

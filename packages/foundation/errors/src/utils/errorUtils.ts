@@ -202,32 +202,6 @@ export function toDecimal<TError extends DomainError>(
 }
 
 /**
- * Извлекает название value object из ErrorConstructor
- *
- * @param ErrorConstructor - Конструктор ошибки (InvalidQuoteError, InvalidPriceError, и т.д.)
- * @returns Название value object ('quote', 'price', 'money', и т.д.)
- *
- * @remarks
- * Автоматически определяет valueName из названия класса ошибки:
- * - InvalidQuoteError → 'quote'
- * - InvalidPriceError → 'price'
- * - InvalidMoneyError → 'money'
- *
- * Это устраняет дублирование valueName параметра во всех errorUtils функциях.
- *
- * @example
- * ```typescript
- * getValueName(InvalidQuoteError) // 'quote'
- * getValueName(InvalidPriceError) // 'price'
- * ```
- */
-function getValueName(ErrorConstructor: ErrorConstructor<DomainError>): string {
-  // Извлекаем название из InvalidXxxError → xxx
-  const match = ErrorConstructor.name.match(/^Invalid(.+)Error$/);
-  return match ? match[1].toLowerCase() : 'unknown';
-}
-
-/**
  * Создаёт ошибку для ожидаемых ошибок из @polymarket/math
  *
  * @param e - Ошибка из math layer (ТОЛЬКО Error объекты)
@@ -261,34 +235,25 @@ export function expectedMathError<TError extends DomainError>(
 /**
  * Создаёт ошибку для неожиданных ошибок
  *
- * @param serviceName - Название сервиса ('QuoteService', 'PriceService', и т.д.)
- * @param op - Название операции
- * @param ctx - Контекст операции
  * @param e - Неожиданная ошибка (any type)
  * @param ErrorConstructor - Конструктор ошибки
- * @returns TError с полным контекстом
+ * @returns TError с source и cause (без service/op - добавятся через rewrap)
  *
  * @remarks
  * Используется когда происходит неожиданная ошибка (не из известных типов).
  * Включает полный stack trace для debugging.
  *
- * valueName автоматически определяется из ErrorConstructor через getValueName().
+ * Фабрика ТОЛЬКО добавляет семантику (source, cause).
+ * Трассировка (service, op, opChain) добавляется через rewrap в wrapOp.
  */
 export function unexpectedError<TError extends DomainError>(
-  serviceName: string,
-  op: string,
-  ctx: Record<string, unknown>,
   e: unknown,
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
   const cause = toCause(e);
-  const valueName = getValueName(ErrorConstructor);
-  return new ErrorConstructor(`Unexpected error during ${valueName} ${op}`, {
+  return new ErrorConstructor(`Unexpected error: ${cause.message}`, {
     context: {
       source: ErrorSource.UNEXPECTED,
-      service: serviceName,
-      op,
-      ...ctx,
       cause
     }
   });
@@ -297,32 +262,24 @@ export function unexpectedError<TError extends DomainError>(
 /**
  * Создаёт ошибку для Core invariant violations
  *
- * @param serviceName - Название сервиса ('QuoteService', 'PriceService', и т.д.)
- * @param op - Название операции
- * @param ctx - Контекст операции
  * @param e - Core invariant violation (Error & { reason: string })
  * @param ErrorConstructor - Конструктор ошибки
- * @returns TError с полным контекстом
+ * @returns TError с source и reason (без service/op - добавятся через rewrap)
  *
  * @remarks
  * Используется для обработки нарушений инвариантов Core (PriceInvariantViolation, etc).
  * Сохраняет reason из исключения Core в context.
  *
- * valueName автоматически определяется из ErrorConstructor через getValueName().
+ * Фабрика ТОЛЬКО добавляет семантику (source, reason).
+ * Трассировка (service, op, opChain) добавляется через rewrap в wrapOp.
  */
 export function coreInvariantError<TError extends DomainError>(
-  serviceName: string,
-  op: string,
-  ctx: Record<string, unknown>,
   e: Error & { reason: string },
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
   return new ErrorConstructor(e.message, {
     context: {
       source: ErrorSource.CORE_INVARIANT,
-      service: serviceName,
-      op,
-      ...ctx,
       reason: e.reason
     }
   });
@@ -596,11 +553,15 @@ export function wrapOp<T, TError extends DomainError>(
   } catch (e) {
     // Core invariant violations (PriceInvariantViolation, etc) - обрабатываем ПЕРВЫМИ
     if (isCoreInvariantViolation(e)) {
-      return Err(rewrap(serviceName, op, ctx, coreInvariantError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
+      // Фабрика добавляет source+reason, rewrap добавляет service+op+opChain
+      const factoryError = coreInvariantError(e, ErrorConstructor);
+      return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));
     }
     // Ожидаемые math ошибки - проверяем ДО TradingError, так как они тоже extends TradingError
     if (isExpectedMathError(e)) {
-      return Err(rewrap(serviceName, op, ctx, expectedMathError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
+      // Фабрика добавляет source+cause, rewrap добавляет service+op+opChain
+      const factoryError = expectedMathError(e, ErrorConstructor);
+      return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));
     }
     // Если кто-то бросил любой TradingError (более гибко чем whitelist)
     // Это включает все domain errors: InvalidMoneyError, InvalidPriceError, InvalidQuantityError,
@@ -608,27 +569,27 @@ export function wrapOp<T, TError extends DomainError>(
     if (e instanceof TradingError) {
       return Err(rewrap(serviceName, op, ctx, e as TError, ErrorConstructor));
     }
-    // Неожиданные ошибки - прогоняем через rewrap для opChain
-    return Err(rewrap(serviceName, op, ctx, unexpectedError(serviceName, op, ctx, e, ErrorConstructor), ErrorConstructor));
+    // Неожиданные ошибки - фабрика добавляет source+cause, rewrap добавляет service+op+opChain
+    const factoryError = unexpectedError(e, ErrorConstructor);
+    return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));
   }
 }
 
 /**
  * Создаёт стандартизированную ошибку несовпадения валют
  *
- * @param op - Название операции ('isLessThan', 'equals', 'add', etc.)
  * @param expected - Ожидаемая валюта
  * @param actual - Фактическая валюта
  * @param reasonEnum - Enum значение для CURRENCY_MISMATCH (напр. MoneyErrorReason.CURRENCY_MISMATCH)
  * @param ErrorConstructor - Конструктор ошибки
- * @returns TError с стандартизированным контекстом
+ * @returns TError с source, reason, expected, actual (без op - добавляется caller'ом)
  *
  * @remarks
  * Стандартизирует создание ошибок несовпадения валют во всех Services.
  * Устраняет дублирование кода в comparison и math операциях.
  *
  * **Стандартный контекст:**
- * - op - название операции
+ * - source - SERVICE_CALL (ошибка валидации при вызове операции)
  * - reason - CURRENCY_MISMATCH enum
  * - expected - ожидаемая валюта
  * - actual - фактическая валюта
@@ -637,41 +598,33 @@ export function wrapOp<T, TError extends DomainError>(
  * - MoneyService: isLessThan, equals, add, subtract, и т.д.
  * - BalanceService: equals, canAfford
  *
+ * **ВАЖНО:** Caller должен добавить op в context при необходимости.
+ *
  * @example
  * ```typescript
  * // В MoneyService.isLessThan:
  * if (!a.hasSameCurrency(b)) {
- *   return Err(currencyMismatchError(
- *     'isLessThan',
+ *   const err = currencyMismatchError(
  *     a.currency(),
  *     b.currency(),
  *     MoneyErrorReason.CURRENCY_MISMATCH,
  *     InvalidMoneyError
- *   ));
- * }
- *
- * // В BalanceService.equals:
- * if (!balance1.hasSameCurrency(balance2)) {
- *   return Err(currencyMismatchError(
- *     'equals',
- *     balance1.currency(),
- *     balance2.currency(),
- *     BalanceErrorReason.CURRENCY_MISMATCH,
- *     InvalidBalanceError
- *   ));
+ *   );
+ *   // Добавляем op через контекст если нужно
+ *   err.context = { ...err.context, op: 'isLessThan' };
+ *   return Err(err);
  * }
  * ```
  */
 export function currencyMismatchError<TError extends DomainError>(
-  op: string,
   expected: string,
   actual: string,
   reasonEnum: string,
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
-  return new ErrorConstructor(`Cannot ${op}: currency mismatch`, {
+  return new ErrorConstructor(`Currency mismatch: expected ${expected}, got ${actual}`, {
     context: {
-      op,
+      source: ErrorSource.SERVICE_CALL,
       reason: reasonEnum,
       expected,
       actual
