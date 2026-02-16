@@ -94,37 +94,10 @@ public static create(
 
 ```json
 {
-  "opChain": ["create", "createFromDecimals"],
+  "opChain": ["create", "create"],
   "op": "create",
   "component": "bid"
 }
-```
-
-#### createFromDecimals()
-
-Создаёт Quote из Decimal значений.
-
-```typescript
-public static createFromDecimals(
-  bidValue: Decimal | null,
-  askValue: Decimal | null,
-  bidSizeValue: Decimal,
-  askSizeValue: Decimal,
-  timestamp?: Date | number
-): Result<Quote, InvalidQuoteError>
-```
-
-**Использование:**
-
-```typescript
-import Decimal from 'decimal.js';
-
-const result = QuoteService.createFromDecimals(
-  new Decimal(0.48),
-  new Decimal(0.52),
-  new Decimal(100),
-  new Decimal(150)
-);
 ```
 
 #### bidOnly()
@@ -147,8 +120,8 @@ const bidDecimal = typeof bidValue === 'number'
   ? toDecimal('bidValue', bidValue, ...)
   : bidValue;
 
-// Создание через createFromDecimals с ask = null
-return QuoteService.createFromDecimals(
+// Создание через create с ask = null
+return QuoteService.create(
   bidDecimal,
   null,           // ask = null
   bidSizeDecimal,
@@ -187,7 +160,7 @@ public static shift(
 1. Если есть bid → `newBid = bid + delta`
 2. Если есть ask → `newAsk = ask + delta`
 3. Sizes остаются прежними
-4. Создание новой котировки через `createFromDecimals()`
+4. Создание новой котировки через `create()`
 
 **Пример:**
 
@@ -201,7 +174,7 @@ const shifted = QuoteService.shift(quote, new Decimal(0.01));
 
 ```json
 {
-  "opChain": ["shift", "createFromDecimals"],
+  "opChain": ["shift", "create"],
   "op": "shift",
   "delta": 0.01
 }
@@ -224,7 +197,7 @@ public static skew(
 1. Если есть bid → `newBid = bid + bidDelta`
 2. Если есть ask → `newAsk = ask + askDelta`
 3. Sizes остаются прежними
-4. Создание новой котировки через `createFromDecimals()`
+4. Создание новой котировки через `create()`
 
 **Пример:**
 
@@ -588,57 +561,6 @@ if (result.ok) {
 
 ---
 
-### Utility методы
-
-#### getSpreadOrZero()
-
-Возвращает spread или 0 для one-sided котировок.
-
-```typescript
-public static getSpreadOrZero(quote: Quote): Decimal
-```
-
-**Логика:**
-
-```typescript
-const spread = quote.spreadWidth();
-return spread ?? new Decimal(0);
-```
-
-**Пример:**
-
-```typescript
-const twoSided = QuoteService.create(0.48, 0.52, 100, 150).value;
-console.log(QuoteService.getSpreadOrZero(twoSided).toNumber());  // 0.04
-
-const bidOnly = QuoteService.bidOnly(0.50, 100).value;
-console.log(QuoteService.getSpreadOrZero(bidOnly).toNumber());   // 0
-```
-
-#### getMidOrNull()
-
-Возвращает mid price или null для one-sided котировок.
-
-```typescript
-public static getMidOrNull(quote: Quote): Price | null
-```
-
-**Логика:**
-
-```typescript
-return quote.midPrice();
-```
-
-**Пример:**
-
-```typescript
-const twoSided = QuoteService.create(0.48, 0.52, 100, 150).value;
-console.log(QuoteService.getMidOrNull(twoSided)?.value().toNumber());  // 0.50
-
-const bidOnly = QuoteService.bidOnly(0.50, 100).value;
-console.log(QuoteService.getMidOrNull(bidOnly));  // null
-```
-
 ## errorUtils Integration
 
 ### toDecimal()
@@ -708,8 +630,8 @@ return wrapOp('create', ctx, () => {
     return Err(rewrap('create', { component: 'bid' }, bidResult.error, InvalidQuoteError));
   }
 
-  // Создание через createFromDecimals...
-  return QuoteService.createFromDecimals(bidDecimal, askDecimal, ...);
+  // Создание через create...
+  return QuoteService.create(bidDecimal, askDecimal, ...);
 }, 'quote', InvalidQuoteError);
 ```
 
@@ -741,7 +663,7 @@ const bidResult = PriceService.create(bidDecimal);
 if (!bidResult.ok) {
   return Err(
     rewrap(
-      'createFromDecimals',              // текущая операция
+      'create',              // текущая операция
       { component: 'bid' },              // доп. контекст
       new InvalidQuoteError('Invalid bid price', {
         context: {
@@ -763,8 +685,8 @@ if (!bidResult.ok) {
   "context": {
     "reason": "INVALID_BID",
     "component": "bid",
-    "opChain": ["create", "createFromDecimals"],
-    "op": "createFromDecimals",
+    "opChain": ["create", "create"],
+    "op": "create",
     "cause": {
       "message": "Price out of range",
       "context": {
@@ -804,7 +726,7 @@ try {
         context: {
           reason: error.reason as QuoteErrorReason,
           component: 'quote',
-          op: 'createFromDecimals'
+          op: 'create'
         }
       })
     );
@@ -828,9 +750,9 @@ QuoteService.create(0.48, 0.52, 100, 150)
     toDecimal('bidSizeValue', 100) → Ok(Decimal(100))
     toDecimal('askSizeValue', 150) → Ok(Decimal(150))
     ↓
-    createFromDecimals(...)
+    create(...)
       ↓
-      wrapOp('createFromDecimals', ...)
+      wrapOp('create', ...)
         ↓
         PriceService.create(0.48) → Ok(Price(0.48))
         PriceService.create(0.52) → Ok(Price(0.52))
@@ -886,9 +808,9 @@ QuoteService.create(1.5, 0.52, 100, 150)  // 1.5 > MAX_PRICE
     ↓
     toDecimal('bidValue', 1.5) → Ok(Decimal(1.5))
     ↓
-    createFromDecimals(Decimal(1.5), ...)
+    create(Decimal(1.5), ...)
       ↓
-      wrapOp('createFromDecimals', ...)
+      wrapOp('create', ...)
         ↓
         PriceService.create(Decimal(1.5))
           ↓
@@ -900,7 +822,7 @@ QuoteService.create(1.5, 0.52, 100, 150)  // 1.5 > MAX_PRICE
             }
           })
         ↓
-        rewrap('createFromDecimals', { component: 'bid' },
+        rewrap('create', { component: 'bid' },
           new InvalidQuoteError('Invalid bid price', {
             context: {
               reason: 'INVALID_BID',
@@ -914,8 +836,8 @@ QuoteService.create(1.5, 0.52, 100, 150)  // 1.5 > MAX_PRICE
           context: {
             reason: 'INVALID_BID',
             component: 'bid',
-            opChain: ['create', 'createFromDecimals'],
-            op: 'createFromDecimals',
+            opChain: ['create', 'create'],
+            op: 'create',
             cause: InvalidPriceError { ... }
           }
         })
@@ -931,9 +853,9 @@ QuoteService.create(0.60, 0.40, 100, 150)  // bid > ask
     toDecimal('bidValue', 0.60) → Ok(Decimal(0.60))
     toDecimal('askValue', 0.40) → Ok(Decimal(0.40))
     ↓
-    createFromDecimals(Decimal(0.60), Decimal(0.40), ...)
+    create(Decimal(0.60), Decimal(0.40), ...)
       ↓
-      wrapOp('createFromDecimals', ...)
+      wrapOp('create', ...)
         ↓
         PriceService.create(0.60) → Ok(Price(0.60))
         PriceService.create(0.40) → Ok(Price(0.40))
@@ -954,7 +876,7 @@ QuoteService.create(0.60, 0.40, 100, 150)  // bid > ask
           context: {
             reason: 'BID_GREATER_THAN_ASK',
             component: 'quote',
-            op: 'createFromDecimals',
+            op: 'create',
             bidValue: 0.60,
             askValue: 0.40
           }
@@ -981,7 +903,7 @@ if (result.error.context?.reason === QuoteErrorReason.BID_GREATER_THAN_ASK) {
 }
 
 // Используйте opChain для диагностики
-console.error(result.error.context?.opChain);  // ['create', 'createFromDecimals']
+console.error(result.error.context?.opChain);  // ['create', 'create']
 ```
 
 ### ❌ DON'T
