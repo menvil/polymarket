@@ -66,8 +66,8 @@ function canAfford(balance: Money, price: Money): boolean {
   return balance.value().greaterThanOrEqualTo(price.value());
 }
 
-const userBalance = Money.of(1000, 'USDC');
-const orderCost = Money.of(150, 'USDC');
+const userBalance = Money.of(new Decimal(1000), 'USDC');
+const orderCost = Money.of(new Decimal(150), 'USDC');
 
 if (canAfford(userBalance, orderCost)) {
   console.log('Sufficient funds');
@@ -114,8 +114,8 @@ function executeTrade(
 }
 
 // Использование
-const balance = Money.of(1000, 'USDC');
-const trade = Money.of(150.50, 'USDC');
+const balance = Money.of(new Decimal(1000), 'USDC');
+const trade = Money.of(new Decimal(150.50), 'USDC');
 
 const tradeResult = executeTrade(balance, trade);
 if ('error' in tradeResult) {
@@ -158,9 +158,9 @@ function calculateTotalSpent(transactions: Money[]): Money | { error: string } {
 
 // Использование
 const transactions = [
-  Money.of(100, 'USDC'),
-  Money.of(50.50, 'USDC'),
-  Money.of(25.75, 'USDC')
+  Money.of(new Decimal(100), 'USDC'),
+  Money.of(new Decimal(50.50), 'USDC'),
+  Money.of(new Decimal(25.75), 'USDC')
 ];
 
 const total = calculateTotalSpent(transactions);
@@ -194,7 +194,7 @@ function calculateFee(amount: Money, feePercent: number): Money | { error: strin
 }
 
 // Использование
-const orderAmount = Money.of(1000, 'USDC');
+const orderAmount = Money.of(new Decimal(1000), 'USDC');
 const fee = calculateFee(orderAmount, 0.2);  // 0.2% fee
 
 if ('error' in fee) {
@@ -225,7 +225,7 @@ function calculateTotalWithFee(
 }
 
 // Использование
-const orderCost = Money.of(1000, 'USDC');
+const orderCost = Money.of(new Decimal(1000), 'USDC');
 const totalWithFee = calculateTotalWithFee(orderCost, 0.2);
 
 if ('error' in totalWithFee) {
@@ -259,8 +259,8 @@ function calculateProfit(
 }
 
 // Использование
-const bought = Money.of(950, 'USDC');
-const sold = Money.of(1100, 'USDC');
+const bought = Money.of(new Decimal(950), 'USDC');
+const sold = Money.of(new Decimal(1100), 'USDC');
 
 const profit = calculateProfit(sold, bought);
 if ('error' in profit) {
@@ -304,8 +304,8 @@ function calculateROI(
 }
 
 // Использование
-const invested = Money.of(1000, 'USDC');
-const currentValue = Money.of(1150, 'USDC');
+const invested = Money.of(new Decimal(1000), 'USDC');
+const currentValue = Money.of(new Decimal(1150), 'USDC');
 
 const profitResult = MoneyService.subtract(currentValue, invested);
 if (profitResult.ok) {
@@ -371,29 +371,32 @@ async function getBalance(userId: string): Promise<Money | { error: string }> {
 ```typescript
 import { Money, MoneyFormatter } from '@polymarket/value-objects/money';
 
-function formatBalance(balance: Money): string {
+function formatBalance(balance: Money): string | null {
   // Для детального отображения (2 знака)
-  return MoneyFormatter.toFixed(balance, 2);
+  const result = MoneyFormatter.toFixed(balance, 2);
+  return result.ok ? result.value : null;
 }
 
-function formatCurrency(amount: Money, showCurrency = true): string {
+function formatCurrency(amount: Money, showCurrency = true): string | null {
   // С символом валюты
-  return MoneyFormatter.toCurrency(amount, showCurrency);
+  const result = MoneyFormatter.toCurrency(amount, showCurrency);
+  return result.ok ? result.value : null;
 }
 
-function formatCompact(amount: Money): string {
+function formatCompact(amount: Money): string | null {
   // Компактный формат (K, M, B)
-  return MoneyFormatter.toCompact(amount);
+  const result = MoneyFormatter.toCompact(amount);
+  return result.ok ? result.value : null;
 }
 
 // Использование
-const balance = Money.of(1234.567, 'USDC');
+const balance = Money.of(new Decimal(1234.567), 'USDC');
 
 console.log(formatBalance(balance));           // "1234.57"
 console.log(formatCurrency(balance));          // "$1234.57 USDC"
 console.log(formatCurrency(balance, false));   // "$1234.57"
 
-const large = Money.of(1500000, 'USDC');
+const large = Money.of(new Decimal(1500000), 'USDC');
 console.log(formatCompact(large));             // "$1.5M"
 ```
 

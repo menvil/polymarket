@@ -44,7 +44,7 @@ public static toJSON(money: Money): { amount: string; currency: string }
 **Пример:**
 
 ```typescript
-const money = Money.of(123.456, 'USDC');
+const money = Money.of(new Decimal(123.456), 'USDC');
 const json = MoneySerializer.toJSON(money);
 // { amount: "123.456", currency: "USDC" }
 ```
@@ -231,7 +231,7 @@ if (r5.ok) console.log(r5.value); // "$1.23K"
 import { Money, MoneySerializer } from '@polymarket/value-objects/money';
 
 // Отправка на сервер
-const balance = Money.of(1234.56, 'USDC');
+const balance = Money.of(new Decimal(1234.56), 'USDC');
 const payload = {
   userId: "123",
   balance: MoneySerializer.toJSON(balance)
@@ -264,24 +264,30 @@ if (result.ok) {
 ```typescript
 import { Money, MoneyFormatter } from '@polymarket/value-objects/money';
 
-const balance = Money.of(1234567.89, 'USDC');
+const balance = Money.of(new Decimal(1234567.89), 'USDC');
 
 // Детальное отображение (для таблиц)
-console.log(MoneyFormatter.toFixed(balance, 2));
-// "1234567.89"
+const fixed = MoneyFormatter.toFixed(balance, 2);
+if (fixed.ok) {
+  console.log(fixed.value);  // "1234567.89"
+}
 
 // С символом валюты (для форм)
-console.log(MoneyFormatter.toCurrency(balance));
-// "$1234567.89 USDC"
+const currency = MoneyFormatter.toCurrency(balance);
+if (currency.ok) {
+  console.log(currency.value);  // "$1234567.89 USDC"
+}
 
 // Компактное (для dashboard)
-console.log(MoneyFormatter.toCompact(balance));
-// "$1.2M"
+const compact = MoneyFormatter.toCompact(balance);
+if (compact.ok) {
+  console.log(compact.value);  // "$1.2M"
+}
 
 // Различные варианты
-const small = Money.of(99.99, 'USDC');
-const medium = Money.of(1500, 'USDC');
-const large = Money.of(2500000, 'USDC');
+const small = Money.of(new Decimal(99.99), 'USDC');
+const medium = Money.of(new Decimal(1500), 'USDC');
+const large = Money.of(new Decimal(2500000), 'USDC');
 
 console.log(MoneyFormatter.toCompact(small));   // "$100.0"
 console.log(MoneyFormatter.toCompact(medium));  // "$1.5K"
