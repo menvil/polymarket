@@ -8,7 +8,7 @@ import { PinoLoggerAdapter } from '../src/PinoLoggerAdapter.js';
 import { PaperClock } from '@polymarket/time';
 
 describe('PinoLoggerAdapter - Timestamp Integration', () => {
-  it('должен выводить только ОДНО поле time в JSON (текущее поведение - баг)', () => {
+  it('должен выводить только ОДНО поле time в JSON', () => {
     // Capture serialized output
     const chunks: Buffer[] = [];
     const dest = new Writable({
@@ -26,28 +26,22 @@ describe('PinoLoggerAdapter - Timestamp Integration', () => {
     // Get serialized JSON
     const output = Buffer.concat(chunks).toString();
 
-    console.log('=== RAW JSON STRING ===');
-    console.log(output);
-    console.log('');
-
     // Count how many "time" fields exist in raw JSON
     const timeMatches = output.match(/"time":/g);
-    console.log('Number of "time" fields in raw JSON:', timeMatches ? timeMatches.length : 0);
 
-    // Parse to see which one wins
+    // Parse to see timestamp value
     const parsed = JSON.parse(output);
-    console.log('Parsed "time" value:', parsed.time);
-    console.log('Expected (from IClock):', clock.now().getTime());
-    console.log('');
 
-    // ОЖИДАЕМ: В raw JSON ОДНО поле "time" (от IClock)
+    // В raw JSON должно быть ОДНО поле "time" (от IClock)
     // Pino настроен использовать IClock через custom timestamp function
-
     expect(timeMatches).toBeDefined();
-    expect(timeMatches!.length).toBe(1); // ИСПРАВЛЕНО: теперь одно поле
+    expect(timeMatches!.length).toBe(1);
+
+    // Проверяем что значение из IClock
+    expect(parsed.time).toBe(clock.now().getTime());
   });
 
-  it('должен использовать timestamp из IClock (текущее поведение - не работает)', () => {
+  it('должен использовать timestamp из IClock', () => {
     const chunks: Buffer[] = [];
     const dest = new Writable({
       write(chunk: Buffer, _encoding: string, callback: () => void) {
@@ -68,12 +62,7 @@ describe('PinoLoggerAdapter - Timestamp Integration', () => {
     // IClock timestamp (milliseconds since epoch)
     const expectedTime = fixedTime.getTime();
 
-    console.log('Expected time (from IClock):', expectedTime);
-    console.log('Actual time (from Pino):', parsed.time);
-    console.log('Difference:', Math.abs(parsed.time - expectedTime));
-
-    // ОЖИДАЕМ: parsed.time === expectedTime
-    // РЕАЛЬНО: parsed.time !== expectedTime (Pino использует Date.now())
-    // TODO: Исправить
+    // Проверяем что timestamp из IClock используется в логе
+    expect(parsed.time).toBe(expectedTime);
   });
 });

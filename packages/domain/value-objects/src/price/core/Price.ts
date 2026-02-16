@@ -105,7 +105,7 @@ export class Price {
    *
    * @example
    * ```typescript
-   * const price = Price.of(0.5);
+   * const price = Price.of(new Decimal(0.5));
    * const decimal = price.value();
    * console.log(decimal.toString()); // "0.5"
    * ```
@@ -125,7 +125,7 @@ export class Price {
    *
    * @example
    * ```typescript
-   * const price = Price.of(0.5);
+   * const price = Price.of(new Decimal(0.5));
    * const num = price.toNumber();
    * console.log(num); // 0.5
    * ```
@@ -162,8 +162,8 @@ export class Price {
    *
    * @example
    * ```typescript
-   * const p1 = Price.of(0.5);
-   * const p2 = Price.of(0.6);
+   * const p1 = Price.of(new Decimal(0.5));
+   * const p2 = Price.of(new Decimal(0.6));
    * console.log(p1.isLessThan(p2)); // true
    * ```
    */
@@ -179,8 +179,8 @@ export class Price {
    *
    * @example
    * ```typescript
-   * const p1 = Price.of(0.5);
-   * const p2 = Price.of(0.5);
+   * const p1 = Price.of(new Decimal(0.5));
+   * const p2 = Price.of(new Decimal(0.5));
    * console.log(p1.isLessThanOrEqual(p2)); // true
    * ```
    */
@@ -196,8 +196,8 @@ export class Price {
    *
    * @example
    * ```typescript
-   * const p1 = Price.of(0.6);
-   * const p2 = Price.of(0.5);
+   * const p1 = Price.of(new Decimal(0.6));
+   * const p2 = Price.of(new Decimal(0.5));
    * console.log(p1.isGreaterThan(p2)); // true
    * ```
    */
@@ -213,8 +213,8 @@ export class Price {
    *
    * @example
    * ```typescript
-   * const p1 = Price.of(0.5);
-   * const p2 = Price.of(0.5);
+   * const p1 = Price.of(new Decimal(0.5));
+   * const p2 = Price.of(new Decimal(0.5));
    * console.log(p1.isGreaterThanOrEqual(p2)); // true
    * ```
    */
@@ -233,7 +233,7 @@ export class Price {
    *
    * @example
    * ```typescript
-   * const price = Price.of(0.5);
+   * const price = Price.of(new Decimal(0.5));
    * console.log(price.isZero()); // false (всегда)
    * ```
    */

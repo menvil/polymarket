@@ -32,6 +32,7 @@ Production-ready logger на базе [Pino](https://getpino.io/).
 - ✅ Реализует `ILogger` из `@polymarket/logger`
 - ✅ **IClock integration**: timestamps генерируются через IClock (детерминированное время для paper trading)
 - ✅ **Одно поле time**: правильная настройка Pino через custom timestamp function
+- ✅ **Защита от коллизий**: автоматическая фильтрация системных полей Pino (time, msg, level, pid, hostname, err) из context и child bindings
 - ✅ Корректная сериализация Error через `{ err: error }`
 - ✅ Child loggers с bindings
 - ✅ Multiple transports (console, Datadog, CloudWatch, файлы)
@@ -111,13 +112,43 @@ clock.tick(60000); // +1 минута симуляции
 logger.info('First event'); // Timestamp увеличился на 1 минуту
 ```
 
+#### Child Loggers с защитой от коллизий
+
+```typescript
+import { PinoLoggerAdapter } from '@polymarket/adapters';
+import { LiveClock } from '@polymarket/time';
+
+const logger = new PinoLoggerAdapter({ level: 'info' }, new LiveClock());
+
+// Создание child logger с bindings
+const apiLogger = logger.child({ service: 'api', version: '1.0' });
+apiLogger.info('Request received', { endpoint: '/users' });
+// Output: { time: ..., level: 30, msg: "Request received", service: "api", version: "1.0", endpoint: "/users" }
+
+// Защита от коллизий: системные поля фильтруются
+const badLogger = logger.child({
+  time: 999,           // Отфильтровано! time будет из IClock
+  msg: 'wrong',        // Отфильтровано! msg будет из параметра message
+  level: 60,           // Отфильтровано! level будет соответствовать методу (info/error/etc)
+  service: 'valid'     // Сохранено! Пользовательское поле
+});
+
+badLogger.info('Safe message');
+// Output: { time: 1704067200000 (из IClock), level: 30 (INFO), msg: "Safe message", service: "valid" }
+// Инвариант "одно поле time" защищен!
+```
+
 ## API Reference
 
 ### PinoLoggerAdapter
 
 ```typescript
 class PinoLoggerAdapter implements ILogger {
-  constructor(pino: pino.Logger, clock: IClock);
+  constructor(
+    options: pino.LoggerOptions,
+    clock: IClock,
+    destination?: pino.DestinationStream
+  );
 
   trace(message: string, context?: Record<string, unknown>): void;
   debug(message: string, context?: Record<string, unknown>): void;
@@ -129,10 +160,13 @@ class PinoLoggerAdapter implements ILogger {
 }
 ```
 
+> **Примечание**: Конструктор внутренне также поддерживает `pino.Logger` вместо `options` (используется методом `child()` для создания дочерних логгеров). Пользователям API следует использовать только публичную сигнатуру с `pino.LoggerOptions`.
+
 ### Параметры
 
-- **pino** - Экземпляр Pino logger с настроенной конфигурацией
+- **options** - Опции Pino logger (level, transport, etc.)
 - **clock** - Источник времени (`LiveClock`, `PaperClock`, `ReplayClock`)
+- **destination** - Опциональный destination stream (для тестов или кастомного вывода)
 
 ## Зависимости
 

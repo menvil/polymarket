@@ -643,8 +643,12 @@ public static validateSpread(
 ❌ **Плохо:**
 
 ```typescript
+import Decimal from 'decimal.js';
+
 try {
-  const price = Price.of(userInput);
+  // userInput может быть string/number
+  const decimal = new Decimal(userInput); // может бросить
+  const price = Price.of(decimal); // может бросить
 } catch (e) {
   // Легко забыть обработать
 }

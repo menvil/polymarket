@@ -266,7 +266,7 @@ console.log(halfComplement.toString());  // "0.5" (симметрично!)
 
 ```typescript
 try {
-  Price.of(NaN);
+  Price.of(new Decimal(NaN));
 } catch (e) {
   console.log(e instanceof PriceInvariantViolation);  // true
   console.log(e.message);  // "Price invariant violation: Price cannot be NaN"
@@ -281,13 +281,13 @@ try {
 
 ```typescript
 try {
-  Price.of(Infinity);
+  Price.of(new Decimal(Infinity));
 } catch (e) {
   console.log(e.message);  // "Price invariant violation: Price must be finite"
 }
 
 try {
-  Price.of(-Infinity);
+  Price.of(new Decimal(-Infinity));
 } catch (e) {
   console.log(e.message);  // "Price invariant violation: Price must be finite"
 }
@@ -313,7 +313,7 @@ try {
 }
 
 try {
-  Price.of(-0.5);  // Отрицательное значение
+  Price.of(new Decimal(-0.5));  // Отрицательное значение
 } catch (e) {
   console.log(e.message);  // "Price invariant violation: Price -0.5 is below minimum 0.0001"
 }
@@ -383,7 +383,7 @@ try {
 ```typescript
 function createPriceFromUser(input: string): Price {
   try {
-    return Price.of(input);
+    return Price.of(new Decimal(input));
   } catch (e) {
     if (e instanceof PriceInvariantViolation) {
       throw new Error(`Invalid price: ${e.message}`);
@@ -457,6 +457,7 @@ if (complementResult.ok) {
 
 ```typescript
 import { describe, it, expect } from '@jest/globals';
+import Decimal from 'decimal.js';
 import { Price, PriceInvariantViolation } from './Price.js';
 
 describe('Price invariants', () => {
@@ -465,11 +466,11 @@ describe('Price invariants', () => {
   });
 
   it('должен отклонить NaN', () => {
-    expect(() => Price.of(NaN)).toThrow(PriceInvariantViolation);
+    expect(() => Price.of(new Decimal(NaN))).toThrow(PriceInvariantViolation);
   });
 
   it('должен отклонить Infinity', () => {
-    expect(() => Price.of(Infinity)).toThrow(PriceInvariantViolation);
+    expect(() => Price.of(new Decimal(Infinity))).toThrow(PriceInvariantViolation);
   });
 
   it('должен отклонить значение ниже MIN', () => {
@@ -501,18 +502,11 @@ if (!result.ok) {
 ### ❌ DON'T: Не используйте Price.of() в production
 
 ```typescript
-// ❌ Плохо (может бросить исключение)
-const price = Price.of(userInput);
-```
+import Decimal from 'decimal.js';
 
----
-
-### ❌ DON'T: Не парсите повторно
-
-```typescript
-// ❌ Плохо (двойной парсинг)
-const decimal = new Decimal(0.5);
-const price = Price.of(decimal);  // парсит снова!
+// ❌ Плохо (может бросить исключение если значение невалидно)
+const userDecimal = new Decimal(userInput); // может бросить при парсинге
+const price = Price.of(userDecimal); // может бросить при валидации инвариантов
 ```
 
 ---

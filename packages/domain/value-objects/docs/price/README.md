@@ -26,7 +26,7 @@
 ✅ **Высокоточный** — использует `Decimal.js` для произвольной точности
 ✅ **Polymarket-aligned** — диапазон [0.0001, 0.9999], базовый тик 0.0001
 ✅ **Layered Architecture** — чёткое разделение ответственности
-✅ **Comprehensive Test Coverage** — все слои покрыты тестами (180 unit тестов)
+✅ **Comprehensive Test Coverage** — все слои покрыты тестами (182 unit теста)
 
 ### Когда использовать Price
 

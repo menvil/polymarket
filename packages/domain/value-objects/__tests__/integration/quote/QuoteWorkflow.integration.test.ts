@@ -258,8 +258,13 @@ describe('Quote Integration Tests', () => {
       if (!result.ok) return;
 
       const formatted = QuoteFormatter.toDetailed(result.value);
-      expect(formatted).toBeDefined();
       expect(typeof formatted).toBe('string');
+      // Проверяем что formatted содержит ключевые данные quote
+      expect(formatted).toContain('0.48'); // bid price
+      expect(formatted).toContain('0.52'); // ask price
+      expect(formatted).toContain('100');  // bid size
+      expect(formatted).toContain('150');  // ask size
+      expect(formatted).toContain('0.04'); // spread
     });
   });
 
@@ -331,7 +336,6 @@ describe('Quote Integration Tests', () => {
         // Проверяем наличие полей context
         expect(result.error.context).toBeDefined();
         expect(result.error.context?.op).toBe('create');
-        expect(result.error.context?.reason).toBeDefined();
         expect(result.error.context?.reason).toBe(QuoteErrorReason.BID_GREATER_THAN_ASK);
       }
     });

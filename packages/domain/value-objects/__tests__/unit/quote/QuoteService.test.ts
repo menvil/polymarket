@@ -635,6 +635,40 @@ describe('QuoteService', () => {
         expect(updateResult.error.context?.component).toBe('askSize');
       }
     });
+
+    it('фэйлится при попытке установить non-zero size на null стороне (bid-only)', () => {
+      // Создаём bid-only котировку
+      const bidOnlyResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      expect(bidOnlyResult.ok).toBe(true);
+      if (!bidOnlyResult.ok) return;
+
+      // Пытаемся установить non-zero askSize при отсутствии ask
+      const updateResult = QuoteService.updateSizes(bidOnlyResult.value, 100, 200);
+
+      expect(updateResult.ok).toBe(false);
+      if (!updateResult.ok) {
+        // QuoteInvariantViolation catch branch (line 817)
+        expect(updateResult.error.context?.source).toBe('core_invariant');
+        expect(updateResult.error.context?.reason).toBe('INCONSISTENT_ASK_SIZE');
+      }
+    });
+
+    it('фэйлится при попытке установить non-zero size на null стороне (ask-only)', () => {
+      // Создаём ask-only котировку
+      const askOnlyResult = QuoteService.askOnly(0.51, 200, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      expect(askOnlyResult.ok).toBe(true);
+      if (!askOnlyResult.ok) return;
+
+      // Пытаемся установить non-zero bidSize при отсутствии bid
+      const updateResult = QuoteService.updateSizes(askOnlyResult.value, 150, 200);
+
+      expect(updateResult.ok).toBe(false);
+      if (!updateResult.ok) {
+        // QuoteInvariantViolation catch branch (line 817)
+        expect(updateResult.error.context?.source).toBe('core_invariant');
+        expect(updateResult.error.context?.reason).toBe('INCONSISTENT_BID_SIZE');
+      }
+    });
   });
 
   describe('spreadWidthOrZero() (from Quote)', () => {
@@ -873,6 +907,40 @@ describe('QuoteService', () => {
         if (!result.ok) {
           expect(result.error.context?.component).toBe('askSize');
           // Rewrap branch покрыт (QuantityService.create для askSize возвращает Err)
+        }
+      });
+
+      it('фэйлится при попытке установить non-zero size на null стороне (bid-only)', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const bidOnlyResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        expect(bidOnlyResult.ok).toBe(true);
+        if (!bidOnlyResult.ok) return;
+
+        // Пытаемся установить non-zero askSize при отсутствии ask
+        const result = QuoteService.updateSizesWithRefresh(bidOnlyResult.value, 100, 200, clock);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          // QuoteInvariantViolation catch branch (line 946)
+          expect(result.error.context?.source).toBe('core_invariant');
+          expect(result.error.context?.reason).toBe('INCONSISTENT_ASK_SIZE');
+        }
+      });
+
+      it('фэйлится при попытке установить non-zero size на null стороне (ask-only)', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const askOnlyResult = QuoteService.askOnly(0.51, 200, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        expect(askOnlyResult.ok).toBe(true);
+        if (!askOnlyResult.ok) return;
+
+        // Пытаемся установить non-zero bidSize при отсутствии bid
+        const result = QuoteService.updateSizesWithRefresh(askOnlyResult.value, 150, 200, clock);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          // QuoteInvariantViolation catch branch (line 946)
+          expect(result.error.context?.source).toBe('core_invariant');
+          expect(result.error.context?.reason).toBe('INCONSISTENT_BID_SIZE');
         }
       });
     });

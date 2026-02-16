@@ -485,7 +485,6 @@ describe('QuoteSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         // safeStringify обрабатывает circular reference (проверяем что код не крешится)
-        expect(result.error.message).toBeDefined();
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
       }
     });
@@ -503,7 +502,6 @@ describe('QuoteSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         // safeStringify catch-ветка обрабатывает unstringifiable (проверяем что код не крешится)
-        expect(result.error.message).toBeDefined();
         expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
       }
     });

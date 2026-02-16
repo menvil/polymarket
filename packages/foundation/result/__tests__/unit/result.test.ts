@@ -585,5 +585,18 @@ describe('Result<T, E>', () => {
       const result = formatValue(func);
       expect(result).toBe('[Function]');
     });
+
+    it('должен использовать String() fallback когда toJSON возвращает undefined', () => {
+      // Реальный edge case: JSON.stringify возвращает undefined когда toJSON возвращает undefined
+      const objWithUndefinedToJSON = {
+        value: 42,
+        toJSON() {
+          return undefined;
+        },
+      };
+
+      const result = formatValue(objWithUndefinedToJSON);
+      expect(result).toBe('[object Object]');
+    });
   });
 });

@@ -230,8 +230,8 @@ const skewed = QuoteService.skew(
 ```typescript
 public static updateSizes(
   quote: Quote,
-  newBidSize: number | Quantity,
-  newAskSize: number | Quantity
+  newBidSize: Decimal | number | string | Quantity,
+  newAskSize: Decimal | number | string | Quantity
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -261,7 +261,7 @@ const updated = QuoteService.updateSizes(quote, 200, 300);
 public static shiftWithRefresh(
   quote: Quote,
   shiftAmount: Decimal | number | string,
-  clock: Clock
+  clock: IClock
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -269,7 +269,7 @@ public static shiftWithRefresh(
 
 - `quote: Quote` — исходная котировка
 - `shiftAmount` — величина сдвига (может быть отрицательной)
-- `clock: Clock` — источник времени для нового timestamp
+- `clock: IClock` — источник времени для нового timestamp
 
 **Возвращает:**
 
@@ -297,7 +297,7 @@ public static skewWithRefresh(
   quote: Quote,
   bidAdjustment: Decimal | number | string,
   askAdjustment: Decimal | number | string,
-  clock: Clock
+  clock: IClock
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -306,7 +306,7 @@ public static skewWithRefresh(
 - `quote: Quote` — исходная котировка
 - `bidAdjustment` — adjustment для bid (может быть отрицательным)
 - `askAdjustment` — adjustment для ask (может быть отрицательным)
-- `clock: Clock` — источник времени для нового timestamp
+- `clock: IClock` — источник времени для нового timestamp
 
 **Возвращает:**
 
@@ -335,9 +335,9 @@ const skewed = QuoteService.skewWithRefresh(
 ```typescript
 public static updateSizesWithRefresh(
   quote: Quote,
-  newBidSize: number | Quantity,
-  newAskSize: number | Quantity,
-  clock: Clock
+  newBidSize: Decimal | number | string | Quantity,
+  newAskSize: Decimal | number | string | Quantity,
+  clock: IClock
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -346,7 +346,7 @@ public static updateSizesWithRefresh(
 - `quote: Quote` — исходная котировка
 - `newBidSize` — новый bid size
 - `newAskSize` — новый ask size
-- `clock: Clock` — источник времени для нового timestamp
+- `clock: IClock` — источник времени для нового timestamp
 
 **Возвращает:**
 
@@ -867,7 +867,7 @@ try {
 ### Успешный случай
 
 ```typescript
-QuoteService.create(0.48, 0.52, 100, 150)
+QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')
   ↓
   wrapOp('create', { bidValue, askValue, ... })
     ↓
@@ -897,7 +897,7 @@ QuoteService.create(0.48, 0.52, 100, 150)
 ### Ошибка парсинга
 
 ```typescript
-QuoteService.create('invalid', 0.52, 100, 150)
+QuoteService.create('invalid', 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')
   ↓
   wrapOp('create', { bidValue: 'invalid', ... })
     ↓
@@ -928,7 +928,7 @@ QuoteService.create('invalid', 0.52, 100, 150)
 ### Ошибка в Price
 
 ```typescript
-QuoteService.create(1.5, 0.52, 100, 150)  // 1.5 > MAX_PRICE
+QuoteService.create(1.5, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')  // 1.5 > MAX_PRICE
   ↓
   wrapOp('create', ...)
     ↓
@@ -972,7 +972,7 @@ QuoteService.create(1.5, 0.52, 100, 150)  // 1.5 > MAX_PRICE
 ### Ошибка инварианта
 
 ```typescript
-QuoteService.create(0.60, 0.40, 100, 150)  // bid > ask
+QuoteService.create(0.60, 0.40, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')  // bid > ask
   ↓
   wrapOp('create', ...)
     ↓
@@ -1015,7 +1015,7 @@ QuoteService.create(0.60, 0.40, 100, 150)  // bid > ask
 
 ```typescript
 // Всегда используйте QuoteService, а не Quote.of()
-const result = QuoteService.create(0.48, 0.52, 100, 150);
+const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 
 // Проверяйте Result
 if (!result.ok) {
@@ -1039,7 +1039,7 @@ console.error(result.error.context?.opChain);  // ['create', 'create']
 const quote = Quote.of(bid, ask, bidSize, askSize, timestamp);  // Может бросить!
 
 // Не игнорируйте Result
-const result = QuoteService.create(0.48, 0.52, 100, 150);
+const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 const quote = result.value;  // TypeError если result.ok === false!
 
 // Не пишите свой error handling
@@ -1063,7 +1063,7 @@ try {
 
 ```typescript
 // Create: ~0.05ms
-const result = QuoteService.create(0.48, 0.52, 100, 150);
+const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 
 // Shift: ~0.03ms
 const shifted = QuoteService.shift(quote, new Decimal(0.01));

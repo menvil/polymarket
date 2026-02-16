@@ -57,6 +57,7 @@ console.log(handleUserPriceInput('invalid'));   // "Невалидная цен�
 ### Вычисление противоположной цены
 
 ```typescript
+import Decimal from 'decimal.js';
 import { PriceService, Price } from '@polymarket/value-objects/price';
 
 function calculateOppositePrice(yesPrice: Price) {
@@ -70,7 +71,7 @@ function calculateOppositePrice(yesPrice: Price) {
 }
 
 // Пример: YES/NO рынок
-const yesPrice = Price.of(0.65);
+const yesPrice = Price.of(new Decimal(0.65));
 const noPrice = calculateOppositePrice(yesPrice);
 
 console.log(`YES: ${(yesPrice.toNumber() * 100).toFixed(2)}%`);  // "YES: 65.00%"
@@ -124,6 +125,7 @@ console.log(`Balanced: ${market.isBalanced}`);      // true
 ### Расчёт implied probability
 
 ```typescript
+import Decimal from 'decimal.js';
 import { Price } from '@polymarket/value-objects/price';
 
 function displayProbability(price: Price): string {
@@ -159,11 +161,11 @@ function classifyProbability(price: Price): string {
 
 // Примеры
 const scenarios = [
-  Price.of(0.95),
-  Price.of(0.65),
+  Price.of(new Decimal(0.95)),
+  Price.of(new Decimal(0.65)),
   Price.HALF,
-  Price.of(0.35),
-  Price.of(0.05)
+  Price.of(new Decimal(0.35)),
+  Price.of(new Decimal(0.05))
 ];
 
 scenarios.forEach(price => {
@@ -221,12 +223,12 @@ function calculateMidPrice(orderbook: Orderbook): Price | null {
 // Пример использования
 const orderbook: Orderbook = {
   bids: [
-    { price: Price.of(0.64), size: new Decimal(100) },
-    { price: Price.of(0.63), size: new Decimal(200) }
+    { price: Price.of(new Decimal(0.64)), size: new Decimal(100) },
+    { price: Price.of(new Decimal(0.63)), size: new Decimal(200) }
   ],
   asks: [
-    { price: Price.of(0.66), size: new Decimal(150) },
-    { price: Price.of(0.67), size: new Decimal(250) }
+    { price: Price.of(new Decimal(0.66)), size: new Decimal(150) },
+    { price: Price.of(new Decimal(0.67)), size: new Decimal(250) }
   ]
 };
 
@@ -242,6 +244,7 @@ if (midPrice) {
 ### Округление цен для размещения ордеров
 
 ```typescript
+import Decimal from 'decimal.js';
 import { PriceService, Price } from '@polymarket/value-objects/price';
 
 function roundPriceForOrder(
@@ -264,7 +267,7 @@ function roundPriceForOrder(
 }
 
 // Пример: пользователь хочет купить по 0.6543
-const userPrice = Price.of(0.6543);
+const userPrice = Price.of(new Decimal(0.6543));
 const tickSize = 0.01;
 
 const buyPrice = roundPriceForOrder(userPrice, tickSize, 'buy');
@@ -280,6 +283,7 @@ console.log(`Sell order price: ${sellPrice?.toNumber()}`); // 0.66 (ceil)
 ### Валидация ордера
 
 ```typescript
+import Decimal from 'decimal.js';
 import { PriceService, Price } from '@polymarket/value-objects/price';
 
 interface OrderValidationResult {
@@ -324,14 +328,14 @@ function validateOrderPrice(
 // Примеры
 const tickSize = 0.01;
 
-console.log(validateOrderPrice(Price.of(0.65), tickSize));
+console.log(validateOrderPrice(Price.of(new Decimal(0.65)), tickSize));
 // { valid: true }
 
-console.log(validateOrderPrice(Price.of(0.6543), tickSize));
+console.log(validateOrderPrice(Price.of(new Decimal(0.6543)), tickSize));
 // { valid: false, error: "Price 0.6543 is not aligned to tick size 0.01" }
 
-console.log(validateOrderPrice(Price.of(1.5), tickSize));
-// Не дойдёт сюда - Price.of(1.5) бросит исключение
+console.log(validateOrderPrice(Price.of(new Decimal(1.5)), tickSize));
+// Не дойдёт сюда - Price.of(new Decimal(1.5)) бросит исключение
 // Используйте PriceService.create() для безопасного создания!
 ```
 
@@ -501,6 +505,7 @@ if (result.ok) {
 ### Сериализация для отправки на сервер
 
 ```typescript
+import Decimal from 'decimal.js';
 import { PriceService, PriceSerializer, Price } from '@polymarket/value-objects/price';
 
 interface CreateOrderRequest {
@@ -525,7 +530,7 @@ function createOrderRequest(
 }
 
 // Пример
-const price = Price.of(0.65);
+const price = Price.of(new Decimal(0.65));
 const request = createOrderRequest('market-123', 'buy', price, 100);
 
 console.log(JSON.stringify(request, null, 2));
@@ -644,6 +649,7 @@ validPrices.forEach(price => {
 ### Кэширование округлённых цен
 
 ```typescript
+import Decimal from 'decimal.js';
 import { PriceService, Price } from '@polymarket/value-objects/price';
 
 class PriceRounder {
@@ -682,7 +688,7 @@ class PriceRounder {
 // Пример использования
 const rounder = new PriceRounder();
 
-const prices = Array.from({ length: 1000 }, (_, i) => Price.of(0.5 + i * 0.0001));
+const prices = Array.from({ length: 1000 }, (_, i) => Price.of(new Decimal(0.5 + i * 0.0001)));
 
 console.time('First run');
 prices.forEach(p => rounder.roundToTick(p, 0.01));
@@ -700,6 +706,7 @@ console.log(`Cache size: ${rounder.cacheSize}`);  // 1000
 ### Переиспользование констант
 
 ```typescript
+import Decimal from 'decimal.js';
 import { Price } from '@polymarket/value-objects/price';
 
 // ❌ Плохо: создаём каждый раз
@@ -725,7 +732,7 @@ function processPriceOptimized(price: Price) {
 }
 
 // Benchmark
-const testPrices = Array.from({ length: 10000 }, () => Price.of(0.5 + Math.random() * 0.4));
+const testPrices = Array.from({ length: 10000 }, () => Price.of(new Decimal(0.5 + Math.random() * 0.4)));
 
 console.time('Without caching');
 testPrices.forEach(p => processPrice(p));

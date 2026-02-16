@@ -815,7 +815,7 @@ monitor.checkQuote(quote3);  // Alert: quote is stale
 import {
   QuoteService,
   QuoteSerializer,
-  type QuoteJson
+  type QuoteJSON
 } from '@polymarket/value-objects/quote';
 
 class QuoteStorage {

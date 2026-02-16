@@ -704,8 +704,11 @@ const midPrice = PriceService.average(bid, ask);
 ### ❌ DON'T: Не используйте generic арифметику для domain операций
 
 ```typescript
+import Decimal from 'decimal.js';
+import { PriceService, Price } from '@polymarket/value-objects/price';
+
 // ❌ Плохо (неясное намерение - вместо complement используется умножение)
-const yesPrice = Price.of(0.6);
+const yesPrice = Price.of(new Decimal(0.6));
 const factor = 1 / yesPrice.toNumber() - 1;  // Сложный расчёт вместо complement
 const noPrice = PriceService.multiply(yesPrice, factor);
 ```

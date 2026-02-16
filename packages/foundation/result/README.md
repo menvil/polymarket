@@ -598,14 +598,24 @@ const result3 = await AsyncResult.from<User, string>(
 ).unwrapErr();
 ```
 
-### AsyncResult.ok(promise)
+### AsyncResult.ok(promise, onError?)
 
-Создает AsyncResultChain из Promise<T>.
+Создает AsyncResultChain из Promise<T>, автоматически оборачивая успешные значения в Ok.
+
+**Автоматическая обработка ошибок:** Ловит Promise rejections и преобразует их в `Err<E>`. Опциональный параметр `onError` позволяет безопасно трансформировать `unknown` error в тип `E`.
 
 ```typescript
+// Базовое использование
 const result = await AsyncResult.ok(Promise.resolve(42))
   .map(x => x * 2)
   .unwrap(); // 84
+
+// С обработкой rejection и трансформацией
+const result2 = await AsyncResult.ok(
+  fetch('/api/user'),
+  (error) => new Error(String(error))
+).unwrapErr();
+// При reject: Error с сообщением
 ```
 
 ### AsyncResult.err(error)

@@ -6,7 +6,6 @@ import { describe, it, expect, beforeEach } from '@jest/globals';
 import { Writable } from 'stream';
 import { PinoLoggerAdapter } from '../src/PinoLoggerAdapter.js';
 import { PaperClock } from '@polymarket/time';
-import type { ILogger } from '@polymarket/logger';
 
 describe('PinoLoggerAdapter', () => {
   let clock: PaperClock;
@@ -37,12 +36,6 @@ describe('PinoLoggerAdapter', () => {
   describe('constructor', () => {
     it('должен создавать экземпляр PinoLoggerAdapter', () => {
       expect(logger).toBeInstanceOf(PinoLoggerAdapter);
-    });
-
-    it('должен реализовывать интерфейс ILogger', () => {
-      // TypeScript проверяет это на этапе компиляции
-      const iLogger: ILogger = logger;
-      expect(iLogger).toBe(logger);
     });
   });
 
@@ -188,6 +181,95 @@ describe('PinoLoggerAdapter', () => {
       const log = JSON.parse(output[0]);
       expect(log.time).toBe(clock.now().getTime());
     });
+
+    it('должен отфильтровывать поле time из child bindings', () => {
+      const childLogger = logger.child({ time: 999, service: 'test' });
+
+      childLogger.info('Child message');
+
+      const log = JSON.parse(output[0]);
+
+      // time должен быть из IClock, не из bindings
+      expect(log.time).toBe(clock.now().getTime());
+      expect(log.time).not.toBe(999);
+
+      // service должен сохраниться
+      expect(log.service).toBe('test');
+    });
+
+    it('должен отфильтровывать поле msg из child bindings', () => {
+      const childLogger = logger.child({ msg: 'wrong message', component: 'api' });
+
+      childLogger.info('Correct message');
+
+      const log = JSON.parse(output[0]);
+
+      // msg должен быть из параметра message, не из bindings
+      expect(log.msg).toBe('Correct message');
+      expect(log.msg).not.toBe('wrong message');
+
+      // component должен сохраниться
+      expect(log.component).toBe('api');
+    });
+
+    it('должен отфильтровывать поле level из child bindings', () => {
+      const childLogger = logger.child({ level: 60, module: 'auth' });
+
+      childLogger.debug('Debug message');
+
+      const log = JSON.parse(output[0]);
+
+      // level должен быть DEBUG (20), не FATAL (60) из bindings
+      expect(log.level).toBe(20);
+      expect(log.level).not.toBe(60);
+
+      // module должен сохраниться
+      expect(log.module).toBe('auth');
+    });
+
+    it('должен отфильтровывать все системные поля из child bindings', () => {
+      const childLogger = logger.child({
+        time: 999,
+        msg: 'wrong',
+        level: 60,
+        pid: 12345,
+        hostname: 'fake',
+        err: new Error('fake'),
+        validField: 'should remain'
+      });
+
+      childLogger.info('Test message');
+
+      const log = JSON.parse(output[0]);
+
+      // validField должен остаться
+      expect(log.validField).toBe('should remain');
+
+      // Системные поля не из bindings
+      expect(log.time).toBe(clock.now().getTime());
+      expect(log.msg).toBe('Test message');
+      expect(log.level).toBe(30); // INFO
+      expect(log.pid).not.toBe(12345);
+      expect(log.hostname).not.toBe('fake');
+      expect(log.err).toBeUndefined(); // Нет параметра error
+    });
+
+    it('child logger должен наследовать защиту от коллизий в context', () => {
+      const childLogger = logger.child({ service: 'api' });
+
+      // Пытаемся передать системные поля через context
+      childLogger.info('Message', { time: 888, requestId: '123' });
+
+      const log = JSON.parse(output[0]);
+
+      // time должен быть из IClock
+      expect(log.time).toBe(clock.now().getTime());
+      expect(log.time).not.toBe(888);
+
+      // Оба поля должны присутствовать
+      expect(log.service).toBe('api'); // Из child bindings
+      expect(log.requestId).toBe('123'); // Из context
+    });
   });
 
   describe('IClock integration', () => {
@@ -203,6 +285,113 @@ describe('PinoLoggerAdapter', () => {
 
       expect(log1.time).toBe(fixedTime);
       expect(log2.time).toBe(fixedTime + 5000);
+    });
+  });
+
+  describe('фильтрация системных полей', () => {
+    it('должен отфильтровывать поле time из context', () => {
+      logger.info('Test', { time: 999, userId: '123' });
+
+      expect(output.length).toBe(1);
+      const log = JSON.parse(output[0]);
+
+      // time должен быть из IClock, не из context
+      expect(log.time).toBe(clock.now().getTime());
+      expect(log.time).not.toBe(999);
+
+      // userId должен сохраниться
+      expect(log.userId).toBe('123');
+    });
+
+    it('должен отфильтровывать поле msg из context', () => {
+      logger.info('Correct message', { msg: 'Wrong message', data: 'test' });
+
+      const log = JSON.parse(output[0]);
+
+      // msg должен быть из параметра message, не из context
+      expect(log.msg).toBe('Correct message');
+      expect(log.msg).not.toBe('Wrong message');
+
+      // data должен сохраниться
+      expect(log.data).toBe('test');
+    });
+
+    it('должен отфильтровывать поле level из context', () => {
+      logger.info('Info message', { level: 60, tag: 'test' });
+
+      const log = JSON.parse(output[0]);
+
+      // level должен быть INFO (30), не FATAL (60) из context
+      expect(log.level).toBe(30);
+      expect(log.level).not.toBe(60);
+
+      // tag должен сохраниться
+      expect(log.tag).toBe('test');
+    });
+
+    it('должен отфильтровывать системные поля из error context', () => {
+      const error = new Error('Test error');
+      logger.error('Error occurred', error, {
+        time: 999,
+        msg: 'wrong',
+        level: 10,
+        orderId: '456'
+      });
+
+      const log = JSON.parse(output[0]);
+
+      // Системные поля должны быть правильные
+      expect(log.time).toBe(clock.now().getTime());
+      expect(log.msg).toBe('Error occurred');
+      expect(log.level).toBe(50); // ERROR
+
+      // orderId должен сохраниться
+      expect(log.orderId).toBe('456');
+
+      // err должен быть из параметра error
+      expect(log.err).toBeDefined();
+      expect(log.err.message).toBe('Test error');
+    });
+
+    it('должен отфильтровывать все зарезервированные поля (time, msg, level, pid, hostname, err)', () => {
+      logger.info('Test', {
+        time: 999,
+        msg: 'wrong',
+        level: 60,
+        pid: 12345,
+        hostname: 'fake',
+        err: new Error('fake'),
+        validField: 'should remain'
+      });
+
+      const log = JSON.parse(output[0]);
+
+      // validField должен остаться
+      expect(log.validField).toBe('should remain');
+
+      // Системные поля не из context
+      expect(log.time).toBe(clock.now().getTime());
+      expect(log.msg).toBe('Test');
+      expect(log.level).toBe(30); // INFO
+      expect(log.pid).not.toBe(12345); // Реальный PID процесса
+      expect(log.hostname).not.toBe('fake'); // Реальный hostname
+      expect(log.err).toBeUndefined(); // Не должно быть err без параметра error
+    });
+
+    it('должен работать без context (покрытие ветки)', () => {
+      logger.debug('Debug without context');
+
+      const log = JSON.parse(output[0]);
+      expect(log.msg).toBe('Debug without context');
+      expect(log.level).toBe(20); // DEBUG
+    });
+
+    it('должен работать с пустым context (покрытие ветки)', () => {
+      logger.warn('Warn with empty context', {});
+
+      const log = JSON.parse(output[0]);
+      expect(log.msg).toBe('Warn with empty context');
+      expect(log.level).toBe(40); // WARN
     });
   });
 });

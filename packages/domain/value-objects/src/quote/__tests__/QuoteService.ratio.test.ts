@@ -6,6 +6,7 @@ import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
 import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
+import { InvalidQuoteError } from '@polymarket/errors';
 import { KnownMarketDataSources, asInstrumentId } from '@polymarket/ids';
 
 describe('QuoteService Ratio Operations', () => {
@@ -429,6 +430,24 @@ describe('QuoteService Ratio Operations', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.RATIO_OUT_OF_BOUNDS);
+      }
+    });
+
+    it('tightenByRatio возвращает Err при негативном ratio (SpreadService error)', () => {
+      // Создаём валидную quote
+      const quote = createQuote(0.48, 0.52, 100, 100);
+      // Пытаемся сузить spread на негативный ratio (невалидная операция)
+      const negativeRatio = Ratio.of(new Decimal(-0.1));
+
+      const result = QuoteService.tightenByRatio(quote, negativeRatio);
+
+      // Должно фэйлиться из-за ошибки SpreadService (line 1311 rewrap branch)
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // SpreadService вернёт ошибку, которая rewrap'ится в InvalidQuoteError
+        expect(result.error).toBeInstanceOf(InvalidQuoteError);
+        // Проверяем reason/контекст для фиксации маппинга причин
         expect(result.error.context?.reason).toBe(QuoteErrorReason.RATIO_OUT_OF_BOUNDS);
       }
     });

@@ -33,6 +33,19 @@ export class PinoLoggerAdapter implements ILogger {
   private readonly pino: pino.Logger;
 
   /**
+   * Системные поля Pino которые нельзя перезаписывать через context
+   * @see https://getpino.io/#/docs/api?id=logger
+   */
+  private static readonly RESERVED_FIELDS = new Set([
+    'time',    // Timestamp (контролируется через IClock)
+    'msg',     // Message (передается отдельным параметром)
+    'level',   // Log level (устанавливается методом trace/debug/info/etc)
+    'pid',     // Process ID (автоматически добавляется Pino)
+    'hostname',// Hostname (автоматически добавляется Pino)
+    'err'      // Error object (управляется через параметр error)
+  ]);
+
+  /**
    * Создаёт Pino Logger Adapter
    *
    * @param optionsOrPino - Опции Pino logger или готовый pino.Logger (для child)
@@ -80,6 +93,34 @@ export class PinoLoggerAdapter implements ILogger {
   }
 
   /**
+   * Фильтрует зарезервированные поля Pino из пользовательского context
+   *
+   * @param context - Пользовательский контекст
+   * @returns Очищенный контекст без системных полей
+   *
+   * @remarks
+   * Предотвращает коллизии с системными полями Pino (time, msg, level, etc.).
+   * Если пользователь передаст { time: 123 }, это поле будет удалено из context.
+   *
+   * @example
+   * ```typescript
+   * sanitizeContext({ userId: '123', time: 999 })
+   * // Результат: { userId: '123' }
+   * ```
+   */
+  private sanitizeContext(context?: Record<string, unknown>): Record<string, unknown> {
+    if (!context) return {};
+
+    const sanitized: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(context)) {
+      if (!PinoLoggerAdapter.RESERVED_FIELDS.has(key)) {
+        sanitized[key] = value;
+      }
+    }
+    return sanitized;
+  }
+
+  /**
    * Логирует трассировочное сообщение (уровень TRACE)
    *
    * @param message - Текст сообщения
@@ -94,7 +135,7 @@ export class PinoLoggerAdapter implements ILogger {
    * ```
    */
   trace(message: string, context?: Record<string, unknown>): void {
-    this.pino.trace(context || {}, message);
+    this.pino.trace(this.sanitizeContext(context), message);
   }
 
   /**
@@ -113,7 +154,7 @@ export class PinoLoggerAdapter implements ILogger {
    * ```
    */
   debug(message: string, context?: Record<string, unknown>): void {
-    this.pino.debug(context || {}, message);
+    this.pino.debug(this.sanitizeContext(context), message);
   }
 
   /**
@@ -132,7 +173,7 @@ export class PinoLoggerAdapter implements ILogger {
    * ```
    */
   info(message: string, context?: Record<string, unknown>): void {
-    this.pino.info(context || {}, message);
+    this.pino.info(this.sanitizeContext(context), message);
   }
 
   /**
@@ -150,7 +191,7 @@ export class PinoLoggerAdapter implements ILogger {
    * ```
    */
   warn(message: string, context?: Record<string, unknown>): void {
-    this.pino.warn(context || {}, message);
+    this.pino.warn(this.sanitizeContext(context), message);
   }
 
   /**
@@ -181,7 +222,7 @@ export class PinoLoggerAdapter implements ILogger {
     context?: Record<string, unknown>
   ): void {
     const pinoContext = {
-      ...context,
+      ...this.sanitizeContext(context),
       ...(error && { err: error }) // Pino автоматически сериализует err
     };
     this.pino.error(pinoContext, message);
@@ -217,7 +258,7 @@ export class PinoLoggerAdapter implements ILogger {
     context?: Record<string, unknown>
   ): void {
     const pinoContext = {
-      ...context,
+      ...this.sanitizeContext(context),
       ...(error && { err: error })
     };
     this.pino.fatal(pinoContext, message);
@@ -231,17 +272,26 @@ export class PinoLoggerAdapter implements ILogger {
    *
    * @remarks
    * Дочерний логгер наследует конфигурацию родителя и добавляет свой контекст.
+   * Bindings автоматически фильтруются от системных полей Pino (time, msg, level, etc.)
+   * через sanitizeContext(), предотвращая коллизии с системными полями.
    *
    * @example
    * ```typescript
-   * const logger = new PinoLoggerAdapter(pino(), new LiveClock());
+   * const logger = new PinoLoggerAdapter({ level: 'info' }, new LiveClock());
    * const mmLogger = logger.child({ service: 'MarketMaker', marketId: '0xabc' });
    *
    * mmLogger.info('Quote sent', { price: 0.55 });
    * // Output включает: service="MarketMaker", marketId="0xabc", price=0.55
+   *
+   * // Системные поля фильтруются
+   * const badLogger = logger.child({ time: 999, service: 'Test' });
+   * badLogger.info('Message'); // time будет из IClock, не 999
    * ```
    */
   child(bindings: Record<string, unknown>): ILogger {
-    return new PinoLoggerAdapter(this.pino.child(bindings), this.clock);
+    return new PinoLoggerAdapter(
+      this.pino.child(this.sanitizeContext(bindings)),
+      this.clock
+    );
   }
 }

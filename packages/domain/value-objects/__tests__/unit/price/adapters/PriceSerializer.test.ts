@@ -102,20 +102,23 @@ describe('PriceSerializer', () => {
         }
       });
 
-      it('должен использовать [Unstringifiable] fallback в safeStringify', () => {
-        // Создаём объект с toJSON который бросает исключение
-        const unstringifiable: any = {
-          value: 'test',
-          toJSON() {
-            throw new Error('Cannot stringify');
+      it('должен использовать [Unstringifiable] fallback в safeStringify при непредвиденной ошибке', () => {
+        // Создаём объект который вызовет ошибку при stringify через getter
+        const unstringifiable: any = { value: {} }; // object вместо number/string - вызовет ошибку
+
+        // Добавляем getter который бросает исключение при попытке stringify
+        Object.defineProperty(unstringifiable, 'badProperty', {
+          enumerable: true,
+          get() {
+            throw new Error('Getter throws');
           }
-        };
+        });
 
         const result = PriceSerializer.fromJSON(unstringifiable);
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          // safeStringify должен использовать fallback '[Unstringifiable]'
+          // safeStringify должен обработать ошибку и вернуть '[Unstringifiable]'
           expect(result.error.context?.json).toBe('[Unstringifiable]');
         }
       });

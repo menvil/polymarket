@@ -50,7 +50,7 @@ export class ValidateAligned {
    *
    * @example
    * ```typescript
-   * const price = Price.of(0.5);
+   * const price = Price.of(new Decimal(0.5));
    *
    * // ✅ Валидные комбинации
    * ValidateAligned.check(price, new Decimal(0.0001)); // Ok (0.5 % 0.0001 === 0)

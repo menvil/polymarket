@@ -284,7 +284,7 @@ if (!bidResult.ok) {
 ### Пример потока
 
 ```typescript
-QuoteService.create(0.48, 0.52, 100, 150)
+QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')
   ↓
   wrapOp('create', { bidValue, askValue, ... }, () => {
     ↓
