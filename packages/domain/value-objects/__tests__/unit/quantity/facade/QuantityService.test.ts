@@ -192,11 +192,23 @@ describe('QuantityService', () => {
     });
 
     // Примечание: Decimal.js не производит Infinity при арифметических операциях,
-    // так как работает с arbitrary precision. Overflow проверяется при создании
-    // Quantity из результатов math операций, если математическая библиотека
-    // вернёт non-finite значение (что маловероятно с Decimal.js).
+    // так как работает с arbitrary precision. Следующий тест проверяет контракт
+    // через mock, но реальный сценарий с валидными Quantity невозможен.
+    it('должен вернуть Err если math операция вернет non-finite результат (контракт через mock)', () => {
+      jest.spyOn(math, 'addDecimal').mockReturnValue(new Decimal(Infinity));
 
-    it.todo('должен вернуть Err если результат non-finite (overflow) - невозможно с Decimal.js');
+      const qty1 = Quantity.of(new Decimal(10));
+      const qty2 = Quantity.of(new Decimal(5));
+      const result = QuantityService.add(qty1, qty2);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be finite');
+        expect(result.error.context?.reason).toBe('NON_FINITE');
+      }
+
+      jest.restoreAllMocks();
+    });
 
     describe('Math exception handling', () => {
       it('должен ловить InvalidOperandError из @polymarket/math', () => {
