@@ -30,7 +30,8 @@ Production-ready logger на базе [Pino](https://getpino.io/).
 #### Особенности
 
 - ✅ Реализует `ILogger` из `@polymarket/logger`
-- ✅ Поддержка `IClock` для детерминированных timestamps
+- ✅ **IClock integration**: timestamps генерируются через IClock (детерминированное время для paper trading)
+- ✅ **Одно поле time**: правильная настройка Pino через custom timestamp function
 - ✅ Корректная сериализация Error через `{ err: error }`
 - ✅ Child loggers с bindings
 - ✅ Multiple transports (console, Datadog, CloudWatch, файлы)
@@ -39,11 +40,10 @@ Production-ready logger на базе [Pino](https://getpino.io/).
 
 ```typescript
 import { PinoLoggerAdapter } from '@polymarket/adapters';
-import pino from 'pino';
 import { LiveClock } from '@polymarket/time';
 
 const logger = new PinoLoggerAdapter(
-  pino({ level: 'info' }),
+  { level: 'info' },
   new LiveClock()
 );
 
@@ -54,11 +54,10 @@ logger.info('Server started', { port: 3000 });
 
 ```typescript
 import { PinoLoggerAdapter } from '@polymarket/adapters';
-import pino from 'pino';
 import { LiveClock } from '@polymarket/time';
 
 const logger = new PinoLoggerAdapter(
-  pino({
+  {
     level: process.env.LOG_LEVEL || 'info',
     transport: {
       targets: [
@@ -72,7 +71,7 @@ const logger = new PinoLoggerAdapter(
         },
       ],
     },
-  }),
+  },
   new LiveClock()
 );
 ```
@@ -81,7 +80,7 @@ const logger = new PinoLoggerAdapter(
 
 ```typescript
 const logger = new PinoLoggerAdapter(
-  pino({
+  {
     level: 'debug',
     transport: {
       target: 'pino-pretty',
@@ -90,7 +89,7 @@ const logger = new PinoLoggerAdapter(
         translateTime: 'HH:MM:ss',
       },
     },
-  }),
+  },
   new LiveClock()
 );
 ```
@@ -103,8 +102,8 @@ import { PaperClock } from '@polymarket/time';
 const clock = new PaperClock(new Date('2024-01-01T00:00:00Z'));
 
 const logger = new PinoLoggerAdapter(
-  pino({ level: 'debug' }),
-  clock // Детерминированные timestamps!
+  { level: 'debug' },
+  clock // Детерминированные timestamps через IClock!
 );
 
 logger.info('Backtest started');
