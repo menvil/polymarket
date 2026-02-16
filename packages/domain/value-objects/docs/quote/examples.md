@@ -40,9 +40,9 @@ console.log(QuoteFormatter.toDisplay(quote));
 // "0.4800 @ 100.00 / 0.5200 @ 150.00"
 
 // Вычисления
-console.log('Spread:', quote.spreadWidth()?.toNumber());        // 0.04
+console.log('Spread:', quote.spreadWidthOrZero()?.toNumber());        // 0.04
 console.log('Spread %:', quote.spreadPercentage()?.toNumber()); // 8.0
-console.log('Mid:', quote.midPrice()?.value().toNumber());      // 0.50
+console.log('Mid:', quote.midOrNull()?.value().toNumber());      // 0.50
 ```
 
 ### Bid-only котировка
@@ -56,8 +56,8 @@ if (bidResult.ok) {
 
   console.log(quote.hasBid());   // true
   console.log(quote.hasAsk());   // false
-  console.log(quote.spreadWidth());  // null (нет ask)
-  console.log(quote.midPrice());     // null (нет ask)
+  console.log(quote.spreadWidthOrZero());  // null (нет ask)
+  console.log(quote.midOrNull());     // null (нет ask)
 
   console.log(QuoteFormatter.toDisplay(quote));
   // "0.5000 @ 100.00 / --"
@@ -145,7 +145,7 @@ if (shiftedUp.ok) {
   const q = shiftedUp.value;
   console.log(q.bid()?.value().toNumber());  // 0.49
   console.log(q.ask()?.value().toNumber());  // 0.53
-  console.log(q.spreadWidth()?.toNumber());  // 0.04 (сохранился!)
+  console.log(q.spreadWidthOrZero()?.toNumber());  // 0.04 (сохранился!)
 }
 
 // Сдвиг вниз на 0.01
@@ -176,7 +176,7 @@ if (wider.ok) {
   const q = wider.value;
   console.log(q.bid()?.value().toNumber());  // 0.47
   console.log(q.ask()?.value().toNumber());  // 0.53
-  console.log(q.spreadWidth()?.toNumber());  // 0.06 (увеличился!)
+  console.log(q.spreadWidthOrZero()?.toNumber());  // 0.06 (увеличился!)
 }
 
 // Bid вверх, ask вниз (сужение spread)
@@ -188,7 +188,7 @@ const narrower = QuoteService.skew(
 
 if (narrower.ok) {
   const q = narrower.value;
-  console.log(q.spreadWidth()?.toNumber());  // 0.02 (уменьшился!)
+  console.log(q.spreadWidthOrZero()?.toNumber());  // 0.02 (уменьшился!)
 }
 ```
 
@@ -258,7 +258,7 @@ const quoteResult = QuoteService.create(0.48, 0.52, 100, 150);
 if (!quoteResult.ok) return;
 
 const quote = quoteResult.value;
-const spread = quote.spreadWidth()!;
+const spread = quote.spreadWidthOrZero()!;
 
 // Минимальный spread: 1%
 const minResult = ValidateMinSpread.check(spread, new Decimal(0.01));
@@ -445,7 +445,7 @@ console.log(json);
 // }
 
 // В JSON строку
-const jsonString = QuoteSerializer.toString(quote);
+const jsonString = QuoteSerializer.toJSONString(quote);
 console.log(jsonString);
 // '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000}'
 ```
@@ -471,7 +471,7 @@ if (result.ok) {
 // Из JSON строки
 const jsonString = '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000}';
 
-const parseResult = QuoteSerializer.parse(jsonString);
+const parseResult = QuoteSerializer.fromJSONString(jsonString);
 if (parseResult.ok) {
   const quote = parseResult.value;
 }
@@ -483,8 +483,8 @@ if (parseResult.ok) {
 // Создание → Сериализация → Десериализация
 const original = QuoteService.create(0.48, 0.52, 100, 150, 1234567890000).value;
 
-const jsonString = QuoteSerializer.toString(original);
-const restored = QuoteSerializer.parse(jsonString).value;
+const jsonString = QuoteSerializer.toJSONString(original);
+const restored = QuoteSerializer.fromJSONString(jsonString).value;
 
 // equals() сравнивает рыночные данные
 console.log(original.equals(restored));  // true
@@ -616,7 +616,7 @@ class MarketMaker {
 
     // Валидация spread
     const spreadCheck = ValidateMaxSpread.check(
-      quote.spreadWidth()!,
+      quote.spreadWidthOrZero()!,
       this.maxSpread
     );
 
@@ -739,7 +739,7 @@ class QuoteMonitor {
 
     // 1. Проверка spread
     if (quote.isTwoSided()) {
-      const spread = quote.spreadWidth()!;
+      const spread = quote.spreadWidthOrZero()!;
       const spreadPct = quote.spreadPercentage()!;
 
       const spreadCheck = ValidateMaxSpread.check(spread, this.maxAllowedSpread);

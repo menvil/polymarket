@@ -182,11 +182,19 @@ describe('QuantitySerializer', () => {
         }
       });
 
-      // Примечание: Ветка [Unstringifiable] (QuantitySerializer.ts:29) не покрыта тестами.
-      // Эта ветка срабатывает только когда JSON.stringify бросает исключение внутри
-      // replacer функции, что практически невозможно воспроизвести в тесте.
-      // WeakSet.has() и WeakSet.add() не бросают исключения для валидных объектов.
-      // Геттеры бросают исключения ДО вызова JSON.stringify, а не внутри replacer.
+      it('должен обработать unstringifiable значения через safeStringify', () => {
+        // BigInt не может быть сериализован через JSON.stringify
+        const withBigInt: any = { value: 123, bigint: BigInt(9007199254740991) };
+
+        const result = QuantitySerializer.fromJSON(withBigInt);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          // Проверяем что error context содержит json с [Unstringifiable]
+          expect(result.error.context?.json).toBeDefined();
+          expect(result.error.context?.json).toContain('[Unstringifiable]');
+        }
+      });
     });
 
     describe('бизнес-ошибки (делегированы QuantityService)', () => {

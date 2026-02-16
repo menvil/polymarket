@@ -45,9 +45,9 @@ if (!result.ok) {
 const quote = result.value;
 
 // Вычисления
-console.log(quote.spreadWidth());      // Decimal(0.04)
+console.log(quote.spreadWidthOrZero());      // Decimal(0.04)
 console.log(quote.spreadPercentage()); // Decimal(8.0)
-console.log(quote.midPrice());         // Price(0.50)
+console.log(quote.midOrNull());         // Price(0.50)
 
 // Форматирование
 console.log(QuoteFormatter.toDisplay(quote));
@@ -376,13 +376,13 @@ quote.hasAsk(): boolean      // Есть ask
 
 ```typescript
 // Spread между bid и ask
-quote.spreadWidth(): Decimal | null  // null для one-sided
+quote.spreadWidthOrZero(): Decimal | null  // null для one-sided
 
 // Spread в процентах
 quote.spreadPercentage(): Decimal | null  // null для one-sided
 
 // Средняя цена
-quote.mid(): Decimal | null  // null для one-sided
+quote.midOrNull(): Decimal | null  // null для one-sided
 ```
 
 #### Сравнение
@@ -772,14 +772,14 @@ const withNewSizes = QuoteService.updateSizes(quote, 200, 300);
 const quote = quoteResult.value;
 
 // Spread
-const spreadWidth = quote.spreadWidth();
+const spreadWidth = quote.spreadWidthOrZero();
 console.log(spreadWidth?.toNumber());  // 0.04
 
 const spreadPct = quote.spreadPercentage();
 console.log(spreadPct?.toNumber());    // 8.0
 
 // Mid price
-const mid = quote.midPrice();
+const mid = quote.midOrNull();
 console.log(mid?.value().toNumber());  // 0.50
 
 // Проверка crossing (через Rules layer)
@@ -874,13 +874,13 @@ if (!sizesResult.ok) {
 
 // Проверка минимального spread
 const minSpreadResult = ValidateMinSpread.check(
-  quote.spreadWidth()!,
+  quote.spreadWidthOrZero()!,
   new Decimal(0.01)  // минимум 1%
 );
 
 // Проверка максимального spread
 const maxSpreadResult = ValidateMaxSpread.check(
-  quote.spreadWidth()!,
+  quote.spreadWidthOrZero()!,
   new Decimal(0.10)  // максимум 10%
 );
 

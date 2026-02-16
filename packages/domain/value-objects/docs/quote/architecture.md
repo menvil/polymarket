@@ -623,7 +623,7 @@ const shifted = QuoteService.shift(quote, delta);
 Используется для точных вычислений с плавающей точкой:
 
 ```typescript
-const spread = quote.spreadWidth();  // Decimal
+const spread = quote.spreadWidthOrZero();  // Decimal
 const spreadPct = quote.spreadPercentage();  // Decimal
 ```
 
@@ -632,7 +632,7 @@ const spreadPct = quote.spreadPercentage();  // Decimal
 Вычисления выполняются on-demand:
 
 ```typescript
-const mid = quote.midPrice();  // Вычисляется при вызове
+const mid = quote.midOrNull();  // Вычисляется при вызове
 ```
 
 ## Future Extensions
