@@ -8,6 +8,8 @@ import Decimal from 'decimal.js';
  * Использование констант вместо создания новых Decimal объектов
  * повышает читаемость и снижает количество повторов.
  *
+ * Объект защищён от runtime-перезаписи через Object.freeze().
+ *
  * @example
  * ```typescript
  * import { MATH_CONSTANTS } from '@polymarket/math';
@@ -17,9 +19,12 @@ import Decimal from 'decimal.js';
  *
  * // Вместо new Decimal(1)
  * const one = MATH_CONSTANTS.ONE;
+ *
+ * // Защита от перезаписи
+ * MATH_CONSTANTS.ZERO = new Decimal(999); // Не изменит значение
  * ```
  */
-export const MATH_CONSTANTS = {
+export const MATH_CONSTANTS = Object.freeze({
   /** Ноль */
   ZERO: new Decimal(0),
 
@@ -34,4 +39,4 @@ export const MATH_CONSTANTS = {
 
   /** Сто */
   HUNDRED: new Decimal(100),
-} as const;
+} as const);

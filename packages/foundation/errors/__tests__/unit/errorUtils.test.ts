@@ -991,6 +991,26 @@ describe('errorUtils', () => {
       }
     });
 
+    it('обрабатывает toString(), который возвращает не-строку (объект)', () => {
+      // Defensive programming: toString() возвращает объект вместо строки
+      const objectReturningToString = {
+        toString() {
+          return {}; // Возвращаем объект вместо строки
+        }
+      };
+
+      const result = toDecimal('amount', objectReturningToString as any, 'INVALID_FORMAT', InvalidMoneyError);
+
+      // toDecimal должен обработать это через String() и вернуть Err при парсинге
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        // String({}) дает "[object Object]", Decimal бросит ошибку парсинга
+        expect(result.error.context!.source).toBe('parsing');
+        expect(result.error.context!.raw).toBeDefined();
+      }
+    });
+
     it('обрабатывает toString(), который бросает non-Error (строку)', () => {
       // Defensive programming: toString() бросает строку вместо Error
       const evilObjectThrowsString = {

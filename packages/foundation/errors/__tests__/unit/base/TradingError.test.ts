@@ -212,6 +212,66 @@ describe('TradingError', () => {
       expect(parsed.message).toBe('Test error');
       expect(parsed.severity).toBe('medium');
     });
+
+    it('должен безопасно сериализовать циклический context', () => {
+      // Создаём context с циклической ссылкой
+      const context: Record<string, unknown> = {
+        field: 'price',
+        value: 100
+      };
+      context.self = context; // Циклическая ссылка
+
+      const error = new TestError('Test error', { context });
+
+      // toJSON() должен успешно выполниться без TypeError
+      const json = error.toJSON();
+
+      expect(json.name).toBe('TestError');
+      expect(json.message).toBe('Test error');
+      expect(json.context).toBeDefined();
+
+      // Циклическая ссылка заменена на маркер
+      expect((json.context as Record<string, unknown>).self).toBe('[Circular]');
+      expect((json.context as Record<string, unknown>).field).toBe('price');
+      expect((json.context as Record<string, unknown>).value).toBe(100);
+
+      // JSON.stringify тоже должен работать без ошибок
+      expect(() => JSON.stringify(json)).not.toThrow();
+    });
+
+    it('должен обрабатывать вложенные циклические ссылки', () => {
+      const inner: Record<string, unknown> = { level: 'inner' };
+      const outer: Record<string, unknown> = { level: 'outer', inner };
+      inner.parent = outer; // Циклическая ссылка
+
+      const error = new TestError('Test error', { context: outer });
+      const json = error.toJSON();
+
+      expect((json.context as Record<string, unknown>).level).toBe('outer');
+      expect(((json.context as Record<string, unknown>).inner as Record<string, unknown>).level).toBe('inner');
+      expect(((json.context as Record<string, unknown>).inner as Record<string, unknown>).parent).toBe('[Circular]');
+
+      // JSON.stringify должен работать
+      expect(() => JSON.stringify(json)).not.toThrow();
+    });
+
+    it('должен обрабатывать массивы с циклическими ссылками', () => {
+      const arr: unknown[] = [1, 2, 3];
+      arr.push(arr); // Циклическая ссылка в массиве
+
+      const context = { items: arr };
+      const error = new TestError('Test error', { context });
+      const json = error.toJSON();
+
+      const items = (json.context as Record<string, unknown>).items as unknown[];
+      expect(items[0]).toBe(1);
+      expect(items[1]).toBe(2);
+      expect(items[2]).toBe(3);
+      expect(items[3]).toBe('[Circular]');
+
+      // JSON.stringify должен работать
+      expect(() => JSON.stringify(json)).not.toThrow();
+    });
   });
 
   describe('innerError handling', () => {

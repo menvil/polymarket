@@ -352,6 +352,7 @@ export class TradingError extends Error implements ITradingError {
    *
    * @remarks
    * Дефолтная реализация - можно переопределить в дочернем классе.
+   * Безопасно обрабатывает циклические ссылки в context.
    */
   public toJSON(): Record<string, unknown> {
     return {
@@ -360,7 +361,7 @@ export class TradingError extends Error implements ITradingError {
       message: this.message,
       severity: this.severity,
       timestamp: this.timestamp.toISOString(),
-      ...(this.context !== undefined && { context: this.context }),
+      ...(this.context !== undefined && { context: this.safeSerializeContext(this.context) }),
       ...(this.innerError && {
         innerError: {
           name: this.innerError.name,
@@ -369,6 +370,59 @@ export class TradingError extends Error implements ITradingError {
         },
       }),
     };
+  }
+
+  /**
+   * Безопасно сериализует context с защитой от циклических ссылок
+   *
+   * @param obj - Объект для сериализации
+   * @param seen - WeakSet для отслеживания уже обработанных объектов
+   * @returns Сериализованный объект с маркерами "[Circular]" вместо циклических ссылок
+   *
+   * @remarks
+   * Использует WeakSet для детектирования циклов. Циклические ссылки заменяются на "[Circular]".
+   */
+  private safeSerializeContext(
+    obj: Record<string, unknown>,
+    seen: WeakSet<object> = new WeakSet()
+  ): Record<string, unknown> {
+    // Проверяем примитивы и null
+    if (obj === null || typeof obj !== 'object') {
+      return obj as Record<string, unknown>;
+    }
+
+    // Обнаружен цикл
+    if (seen.has(obj)) {
+      return '[Circular]' as unknown as Record<string, unknown>;
+    }
+
+    // Отмечаем объект как обработанный
+    seen.add(obj);
+
+    // Обрабатываем массивы
+    if (Array.isArray(obj)) {
+      return obj.map((item) => {
+        if (item !== null && typeof item === 'object') {
+          return this.safeSerializeContext(item as Record<string, unknown>, seen);
+        }
+        return item;
+      }) as unknown as Record<string, unknown>;
+    }
+
+    // Обрабатываем обычные объекты
+    const result: Record<string, unknown> = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const value = obj[key];
+        if (value !== null && typeof value === 'object') {
+          result[key] = this.safeSerializeContext(value as Record<string, unknown>, seen);
+        } else {
+          result[key] = value;
+        }
+      }
+    }
+
+    return result;
   }
 
   /**

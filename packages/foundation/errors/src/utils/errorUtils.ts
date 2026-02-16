@@ -90,6 +90,36 @@ export type ErrorConstructor<TError extends DomainError> = new (
 ) => TError;
 
 /**
+ * Безопасно конвертирует значение в строку с fallback
+ *
+ * @param value - Значение для конвертации
+ * @returns Строковое представление или "[unserializable input]"
+ *
+ * @remarks
+ * Защищает от "плохих" объектов с toString(), который:
+ * - Выбрасывает исключение
+ * - Возвращает не-строку
+ * - Отсутствует
+ *
+ * @example
+ * ```typescript
+ * safeToString({ toString: () => ({}) }); // "[unserializable input]"
+ * safeToString({ toString: () => { throw new Error(); } }); // "[unserializable input]"
+ * safeToString("hello"); // "hello"
+ * ```
+ */
+function safeToString(value: unknown): string {
+  try {
+    const result = String(value);
+    // String() может вернуть "[object Object]" для некоторых объектов,
+    // но это валидная строка для отладки
+    return result;
+  } catch {
+    return '[unserializable input]';
+  }
+}
+
+/**
  * Извлекает структурированный cause из любой ошибки
  *
  * @param e - Ошибка (Error или unknown)
@@ -175,8 +205,10 @@ export function toDecimal<TError extends DomainError>(
       const obj = input as unknown as { toString?: unknown };
       if (typeof obj.toString === 'function') {
         try {
-          // toString() может выбросить исключение на "злых" объектах
-          normalized = obj.toString();
+          // toString() может выбросить исключение или вернуть не-строку
+          // Обёртываем в String() для безопасности
+          const toStringResult = obj.toString();
+          normalized = String(toStringResult);
         } catch (toStringError) {
           return Err(
             new ErrorConstructor(
@@ -184,7 +216,7 @@ export function toDecimal<TError extends DomainError>(
               {
                 context: {
                   source: ErrorSource.PARSING,
-                  raw: { field, value: '[object with throwing toString]' },
+                  raw: { field, value: safeToString(input) },
                   cause: toCause(toStringError),
                   reason: reasonEnum
                 }
@@ -235,7 +267,7 @@ export function toDecimal<TError extends DomainError>(
         {
           context: {
             source: ErrorSource.PARSING,
-            raw: { field, value: String(input) },
+            raw: { field, value: safeToString(input) },
             cause: toCause(error),
             reason: reasonEnum
           }
