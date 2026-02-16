@@ -38,6 +38,15 @@ Value Objects представляют неизменяемые бизнес-к�
 | `INVALID_MONEY` | InvalidMoneyError | Некорректная денежная сумма (NaN, отрицательная) | [→](./invalid-money.md) |
 | `CURRENCY_MISMATCH` | CurrencyMismatchError | Операции с разными валютами | [→](./currency-mismatch.md) |
 
+### Валидация value objects для domain layer
+
+| Код | Класс | Когда использовать | Документация |
+|-----|-------|-------------------|--------------|
+| `INVALID_ASSET_QUANTITY` | InvalidAssetQuantityError | Некорректное количество актива (AssetId + amount) | [→](./invalid-asset-quantity.md) |
+| `INVALID_BALANCE` | InvalidBalanceError | Некорректный баланс (available/reserved отрицательные или невалидные) | [→](./invalid-balance.md) |
+| `INVALID_OUTCOME_TOKEN` | InvalidOutcomeTokenError | Некорректный токен исхода (ConditionRef + outcomeKey) | [→](./invalid-outcome-token.md) |
+| `INVALID_RATIO` | InvalidRatioError | Некорректное соотношение (NaN, Infinity, нарушение доменных правил) | [→](./invalid-ratio.md) |
+
 ### Математические ошибки
 
 | Код | Класс | Когда использовать | Документация |
@@ -430,11 +439,23 @@ class Money {
 
 ## Полный список ошибок
 
+### Базовые value objects
+
 - [InvalidPriceError](./invalid-price.md)
 - [InvalidQuantityError](./invalid-quantity.md)
 - [InvalidMoneyError](./invalid-money.md)
 - [InvalidPercentageError](./invalid-percentage.md)
 - [InvalidAmountError](./invalid-amount.md)
+
+### Domain value objects
+
+- [InvalidAssetQuantityError](./invalid-asset-quantity.md)
+- [InvalidBalanceError](./invalid-balance.md)
+- [InvalidOutcomeTokenError](./invalid-outcome-token.md)
+- [InvalidRatioError](./invalid-ratio.md)
+
+### Математические и валютные ошибки
+
 - [DivisionByZeroError](./division-by-zero.md)
 - [ArithmeticOverflowError](./arithmetic-overflow.md)
 - [CurrencyMismatchError](./currency-mismatch.md)
