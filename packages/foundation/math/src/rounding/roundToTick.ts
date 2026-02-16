@@ -4,6 +4,7 @@ import {
   assertValidTickSize,
   assertValidRoundingMode,
   assertFiniteResult,
+  toStringSafe,
 } from '../shared/index.js';
 
 /**
@@ -70,14 +71,8 @@ export function roundToTick(
   // После валидации roundingMode безопасно формируем полный context
   const context = {
     operation: 'roundToTick',
-    value:
-      value && typeof value.toString === 'function'
-        ? value.toString()
-        : String(value),
-    tickSize:
-      tickSize && typeof tickSize.toString === 'function'
-        ? tickSize.toString()
-        : String(tickSize),
+    value: toStringSafe(value),
+    tickSize: toStringSafe(tickSize),
     roundingMode: String(roundingMode),
   };
 

@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { assertFiniteOperands } from '../shared/index.js';
+import { assertFiniteOperands, toStringSafe } from '../shared/index.js';
 
 /**
  * Строгое сравнение двух Decimal на равенство
@@ -48,8 +48,8 @@ export function equalsDecimal(a: Decimal, b: Decimal): boolean {
   // Создаём context безопасным способом
   const context = {
     operation: 'equals',
-    a: a && typeof a.toString === 'function' ? a.toString() : String(a),
-    b: b && typeof b.toString === 'function' ? b.toString() : String(b),
+    a: toStringSafe(a),
+    b: toStringSafe(b),
   };
 
   assertFiniteOperands(a, b, context);
@@ -77,8 +77,8 @@ export function lessThanDecimal(a: Decimal, b: Decimal): boolean {
   // Создаём context безопасным способом
   const context = {
     operation: 'lessThan',
-    a: a && typeof a.toString === 'function' ? a.toString() : String(a),
-    b: b && typeof b.toString === 'function' ? b.toString() : String(b),
+    a: toStringSafe(a),
+    b: toStringSafe(b),
   };
 
   assertFiniteOperands(a, b, context);
@@ -107,8 +107,8 @@ export function lessThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
   // Создаём context безопасным способом
   const context = {
     operation: 'lessThanOrEqual',
-    a: a && typeof a.toString === 'function' ? a.toString() : String(a),
-    b: b && typeof b.toString === 'function' ? b.toString() : String(b),
+    a: toStringSafe(a),
+    b: toStringSafe(b),
   };
 
   assertFiniteOperands(a, b, context);
@@ -136,8 +136,8 @@ export function greaterThanDecimal(a: Decimal, b: Decimal): boolean {
   // Создаём context безопасным способом
   const context = {
     operation: 'greaterThan',
-    a: a && typeof a.toString === 'function' ? a.toString() : String(a),
-    b: b && typeof b.toString === 'function' ? b.toString() : String(b),
+    a: toStringSafe(a),
+    b: toStringSafe(b),
   };
 
   assertFiniteOperands(a, b, context);
@@ -166,8 +166,8 @@ export function greaterThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
   // Создаём context безопасным способом
   const context = {
     operation: 'greaterThanOrEqual',
-    a: a && typeof a.toString === 'function' ? a.toString() : String(a),
-    b: b && typeof b.toString === 'function' ? b.toString() : String(b),
+    a: toStringSafe(a),
+    b: toStringSafe(b),
   };
 
   assertFiniteOperands(a, b, context);
@@ -209,8 +209,8 @@ export function compareDecimal(a: Decimal, b: Decimal): -1 | 0 | 1 {
   // Создаём context безопасным способом
   const context = {
     operation: 'compare',
-    a: a && typeof a.toString === 'function' ? a.toString() : String(a),
-    b: b && typeof b.toString === 'function' ? b.toString() : String(b),
+    a: toStringSafe(a),
+    b: toStringSafe(b),
   };
 
   assertFiniteOperands(a, b, context);

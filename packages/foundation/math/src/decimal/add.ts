@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { assertFiniteOperands, assertFiniteResult } from '../shared/index.js';
+import { assertFiniteOperands, assertFiniteResult, toStringSafe } from '../shared/index.js';
 
 /**
  * Складывает два Decimal значения
@@ -32,21 +32,24 @@ import { assertFiniteOperands, assertFiniteResult } from '../shared/index.js';
  * ```
  */
 export function addDecimal(a: Decimal, b: Decimal): Decimal {
-  // Создаём context безопасным способом
+  // Создаём context (assertFiniteOperands добавит a/b автоматически)
   const context = {
     operation: 'add',
-    a: a && typeof a.toString === 'function' ? a.toString() : String(a),
-    b: b && typeof b.toString === 'function' ? b.toString() : String(b),
   };
 
-  // Валидация операндов
+  // Валидация операндов (формирует a/b внутри)
   assertFiniteOperands(a, b, context);
 
   // Выполняем сложение
   const result = a.plus(b);
 
   // Проверка результата
-  assertFiniteResult(result, { ...context, result: result.toString() });
+  assertFiniteResult(result, {
+    operation: 'add',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+    result: toStringSafe(result),
+  });
 
   return result;
 }

@@ -3,6 +3,8 @@ import {
   assertFiniteOperand,
   assertValidDecimalPlaces,
   assertValidRoundingMode,
+  assertFiniteResult,
+  toStringSafe,
 } from '../shared/index.js';
 
 /**
@@ -15,6 +17,7 @@ import {
  * @throws {InvalidOperandError} При невалидном value (NaN, ±Infinity)
  * @throws {InvalidDecimalPlacesError} При невалидном количестве знаков (не finite, не integer, отрицательное, больше 1e9)
  * @throws {InvalidRoundingModeError} При невалидном roundingMode (не integer, вне диапазона 0-8)
+ * @throws {ArithmeticOverflowError} Если результат не конечное число
  *
  * @remarks
  * Обёртка над Decimal.toDecimalPlaces() с валидацией для единообразного API.
@@ -73,14 +76,10 @@ export function roundToPrecision(
   decimalPlaces: number,
   roundingMode: Decimal.Rounding
 ): Decimal {
-  // Создаём context безопасным способом
-  // Для value используем тернарный оператор для проверки наличия toString
+  // Создаём context используя toStringSafe для единообразия
   const context = {
     operation: 'roundToPrecision',
-    value:
-      value && typeof value.toString === 'function'
-        ? value.toString()
-        : String(value),
+    value: toStringSafe(value),
     decimalPlaces: String(decimalPlaces),
     roundingMode: String(roundingMode),
   };
@@ -91,5 +90,10 @@ export function roundToPrecision(
   assertValidRoundingMode(roundingMode, context);
 
   // Выполняем округление
-  return value.toDecimalPlaces(decimalPlaces, roundingMode);
+  const result = value.toDecimalPlaces(decimalPlaces, roundingMode);
+
+  // Проверка результата (единообразие с остальными операциями)
+  assertFiniteResult(result, { ...context, result: result.toString() });
+
+  return result;
 }

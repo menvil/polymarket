@@ -34,6 +34,98 @@ export interface MathOperationContext {
 }
 
 /**
+ * Безопасно конвертирует значение в строку
+ *
+ * @param value - Значение для конвертации
+ * @returns Строковое представление значения
+ *
+ * @remarks
+ * Используется для безопасного формирования контекста ошибок.
+ * Проверяет наличие метода toString перед вызовом.
+ *
+ * @example
+ * ```typescript
+ * const context = {
+ *   operation: 'add',
+ *   a: toStringSafe(a),
+ *   b: toStringSafe(b)
+ * };
+ * ```
+ */
+export function toStringSafe(value: unknown): string {
+  return value && typeof (value as any).toString === 'function'
+    ? (value as any).toString()
+    : String(value);
+}
+
+/**
+ * Тип конструктора ошибки для assertion функций
+ *
+ * @remarks
+ * Используется в generic assertions для создания ошибок нужного типа.
+ */
+export type ErrorConstructor<TError> = new (
+  message: string | ((ctx: Record<string, unknown>) => string),
+  options?: { code?: string; context?: Record<string, unknown> }
+) => TError;
+
+/**
+ * Проверяет, что значение является конечным числом (generic версия)
+ *
+ * @param value - Decimal значение для проверки
+ * @param paramName - Имя параметра для сообщения об ошибке
+ * @param context - Контекст операции
+ * @param ErrorCtor - Конструктор ошибки для создания исключения
+ * @throws {TError} Если значение не конечно
+ *
+ * @remarks
+ * Generic функция позволяет использовать разные типы ошибок для одной и той же валидации.
+ * Например, для обычных операндов - InvalidOperandError, для делителя - InvalidDivisorError.
+ *
+ * @example
+ * ```typescript
+ * // Валидация обычного операнда
+ * assertFiniteOperandWith(a, 'a', context, InvalidOperandError);
+ *
+ * // Валидация делителя
+ * assertFiniteOperandWith(b, 'b', context, InvalidDivisorError);
+ * ```
+ */
+export function assertFiniteOperandWith<TError>(
+  value: Decimal,
+  paramName: string,
+  context: MathOperationContext,
+  ErrorCtor: ErrorConstructor<TError>
+): void {
+  // Проверка на undefined/null и instanceof Decimal
+  if (!(value instanceof Decimal)) {
+    throw new ErrorCtor(
+      (ctx) => `${ctx.paramName} must be a valid Decimal instance, got ${ctx.value}`,
+      {
+        context: {
+          ...context,
+          paramName,
+          value: toStringSafe(value),
+        },
+      }
+    );
+  }
+
+  if (!value.isFinite()) {
+    throw new ErrorCtor(
+      (ctx) => `${ctx.paramName} must be finite, got ${ctx.value}`,
+      {
+        context: {
+          ...context,
+          paramName,
+          value: toStringSafe(value),
+        },
+      }
+    );
+  }
+}
+
+/**
  * Проверяет, что значение является конечным числом
  *
  * @param value - Decimal значение для проверки
@@ -43,6 +135,7 @@ export interface MathOperationContext {
  *
  * @remarks
  * Используется для валидации всех входных операндов математических операций.
+ * Обёртка над assertFiniteOperandWith с InvalidOperandError.
  *
  * @example
  * ```typescript
@@ -54,32 +147,7 @@ export function assertFiniteOperand(
   paramName: string,
   context: MathOperationContext
 ): void {
-  // Проверка на undefined/null и instanceof Decimal
-  if (!(value instanceof Decimal)) {
-    throw new InvalidOperandError(
-      (ctx) => `${ctx.paramName} must be a valid Decimal instance, got ${ctx.value}`,
-      {
-        context: {
-          ...context,
-          paramName,
-          value: String(value),
-        },
-      }
-    );
-  }
-
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `${ctx.paramName} must be finite, got ${ctx.value}`,
-      {
-        context: {
-          ...context,
-          paramName,
-          value: value.toString(),
-        },
-      }
-    );
-  }
+  assertFiniteOperandWith(value, paramName, context, InvalidOperandError);
 }
 
 /**
@@ -92,11 +160,11 @@ export function assertFiniteOperand(
  *
  * @remarks
  * Удобная функция для бинарных операций (add, subtract, multiply, divide, etc).
- * Использует единый формат context с ключами 'a' и 'b'.
+ * Формирует a/b из реальных параметров, не доверяя внешнему context.
  *
  * @example
  * ```typescript
- * assertFiniteOperands(a, b, { operation: 'add', a: a.toString(), b: b.toString() });
+ * assertFiniteOperands(a, b, { operation: 'add' });
  * ```
  */
 export function assertFiniteOperands(
@@ -104,32 +172,39 @@ export function assertFiniteOperands(
   b: Decimal,
   context: MathOperationContext
 ): void {
+  // Формируем a/b из реальных параметров, не доверяя context
+  const fullContext = {
+    ...context,
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
+
   // Проверка на undefined/null перед вызовом методов
   if (!a || typeof a.isFinite !== 'function') {
     throw new InvalidOperandError(
       (ctx) => `Operand 'a' must be a valid Decimal, got ${ctx.a}`,
-      { context }
+      { context: fullContext }
     );
   }
 
   if (!b || typeof b.isFinite !== 'function') {
     throw new InvalidOperandError(
       (ctx) => `Operand 'b' must be a valid Decimal, got ${ctx.b}`,
-      { context }
+      { context: fullContext }
     );
   }
 
   if (!a.isFinite()) {
     throw new InvalidOperandError(
       (ctx) => `Operand 'a' must be finite, got ${ctx.a}`,
-      { context }
+      { context: fullContext }
     );
   }
 
   if (!b.isFinite()) {
     throw new InvalidOperandError(
       (ctx) => `Operand 'b' must be finite, got ${ctx.b}`,
-      { context }
+      { context: fullContext }
     );
   }
 }

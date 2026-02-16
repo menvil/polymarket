@@ -2,8 +2,9 @@ import Decimal from 'decimal.js';
 import {
   DivisionByZeroError,
   InvalidDivisorError,
+  InvalidOperandError,
 } from '@polymarket/errors';
-import { assertFiniteResult, assertFiniteOperand } from '../shared/index.js';
+import { assertFiniteResult, assertFiniteOperandWith, toStringSafe } from '../shared/index.js';
 
 /**
  * Делит одно Decimal значение на другое
@@ -55,32 +56,20 @@ import { assertFiniteResult, assertFiniteOperand } from '../shared/index.js';
  * ```
  */
 export function divideDecimal(a: Decimal, b: Decimal): Decimal {
-  // Создаём context безопасным способом
+  // Создаём context используя toStringSafe для единообразия
   const context = {
     operation: 'divide',
-    a: a && typeof a.toString === 'function' ? a.toString() : String(a),
-    b: b && typeof b.toString === 'function' ? b.toString() : String(b),
+    a: toStringSafe(a),
+    b: toStringSafe(b),
   };
 
-  // Проверка делимого через shared assertion
-  assertFiniteOperand(a, 'a', context);
+  // Проверка делимого через unified assertion (InvalidOperandError)
+  assertFiniteOperandWith(a, 'a', context, InvalidOperandError);
 
-  // Проверка делителя - специальные проверки для деления
-  if (!(b instanceof Decimal)) {
-    throw new InvalidDivisorError(
-      (ctx) => `Operand 'b' (divisor) must be a valid Decimal instance, got ${ctx.b}`,
-      { context }
-    );
-  }
+  // Проверка делителя через unified assertion (InvalidDivisorError)
+  assertFiniteOperandWith(b, 'b', context, InvalidDivisorError);
 
-  if (!b.isFinite()) {
-    throw new InvalidDivisorError(
-      (ctx) => `Operand 'b' (divisor) must be finite, got ${ctx.b}`,
-      { context }
-    );
-  }
-
-  // Проверка на ноль
+  // Проверка на ноль (специфично для деления)
   if (b.isZero()) {
     throw new DivisionByZeroError(
       (ctx) => `Cannot divide by zero (operand 'b' is ${ctx.b})`,
