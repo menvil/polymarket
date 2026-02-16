@@ -92,4 +92,42 @@ describe('addDecimal', () => {
       expect(result.toString()).toBe('4.11111111111111111');
     });
   });
+
+  describe('защита от TypeError при не-Decimal входах', () => {
+    it('должен throw InvalidOperandError (не TypeError) при a = undefined', () => {
+      expect(() =>
+        addDecimal(undefined as unknown as Decimal, new Decimal(5))
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError (не TypeError) при b = undefined', () => {
+      expect(() =>
+        addDecimal(new Decimal(5), undefined as unknown as Decimal)
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError (не TypeError) при a = null', () => {
+      expect(() =>
+        addDecimal(null as unknown as Decimal, new Decimal(5))
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError (не TypeError) при b = null', () => {
+      expect(() =>
+        addDecimal(new Decimal(5), null as unknown as Decimal)
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError (не TypeError) при a = number', () => {
+      expect(() =>
+        addDecimal(123 as unknown as Decimal, new Decimal(5))
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError (не TypeError) при b = string', () => {
+      expect(() =>
+        addDecimal(new Decimal(5), '123' as unknown as Decimal)
+      ).toThrow(InvalidOperandError);
+    });
+  });
 });

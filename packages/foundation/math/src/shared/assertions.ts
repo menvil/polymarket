@@ -262,6 +262,14 @@ export function assertValidTickSize(
   tickSize: Decimal,
   context: MathOperationContext
 ): void {
+  // Проверка на undefined/null перед вызовом методов
+  if (!tickSize || typeof tickSize.isFinite !== 'function') {
+    throw new InvalidTickSizeError(
+      (ctx) => `Tick size must be a valid Decimal, got ${ctx.tickSize}`,
+      { context }
+    );
+  }
+
   if (!tickSize.isFinite()) {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be finite, got ${ctx.tickSize}`,

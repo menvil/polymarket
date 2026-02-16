@@ -70,8 +70,14 @@ export function roundToTick(
   // После валидации roundingMode безопасно формируем полный context
   const context = {
     operation: 'roundToTick',
-    value: value.toString(),
-    tickSize: tickSize.toString(),
+    value:
+      value && typeof value.toString === 'function'
+        ? value.toString()
+        : String(value),
+    tickSize:
+      tickSize && typeof tickSize.toString === 'function'
+        ? tickSize.toString()
+        : String(tickSize),
     roundingMode: String(roundingMode),
   };
 

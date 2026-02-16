@@ -27,10 +27,9 @@ import { assertFiniteOperands, assertFiniteResult } from '../shared/index.js';
  * multiplyDecimal(new Decimal(Infinity), new Decimal(5)); // throws InvalidOperandError
  *
  * // Throw на overflow (при превышении Decimal.maxE = 9e15)
- * // Примечание: 1e308 * 1e308 = 1e616 это finite (в пределах maxE)
- * // Реальный overflow требует экстремальных значений, превышающих maxE
- * const huge = new Decimal('1e9000000000000001'); // Уже Infinity (превышает maxE)
- * multiplyDecimal(huge, new Decimal(2)); // throws InvalidOperandError (operand не finite)
+ * // Операнды валидны (finite), но результат превышает maxE
+ * const huge = new Decimal('1e' + (Math.floor(Decimal.maxE / 2) + 1));
+ * multiplyDecimal(huge, huge); // throws ArithmeticOverflowError (результат = Infinity)
  * ```
  */
 export function multiplyDecimal(a: Decimal, b: Decimal): Decimal {
