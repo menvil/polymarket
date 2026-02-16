@@ -669,7 +669,20 @@ export class MoneyService {
   public static decreaseBy(m: Money, delta: Ratio): Result<Money, InvalidMoneyError> {
     // Convenience: decreaseBy(m, delta) = increaseBy(m, -delta)
     const negatedDelta = delta.negate();
-    return this.increaseBy(m, negatedDelta);
+    const result = this.increaseBy(m, negatedDelta);
+
+    // Rewrap error чтобы заменить op с "increaseBy" на "decreaseBy"
+    if (!result.ok) {
+      return Err(rewrap(
+        MoneyService.SERVICE_NAME,
+        'decreaseBy',
+        { m: m.value().toString(), delta: delta.toDecimal().toString(), currency: m.currency() },
+        result.error,
+        InvalidMoneyError
+      ));
+    }
+
+    return result;
   }
 
   /**
