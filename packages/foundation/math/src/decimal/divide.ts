@@ -70,6 +70,14 @@ export function divideDecimal(a: Decimal, b: Decimal): Decimal {
   assertFiniteOperandWith(b, 'b', context, InvalidDivisorError);
 
   // Проверка на ноль (специфично для деления)
+  // Defensive: проверяем наличие метода isZero перед вызовом
+  if (typeof (b as any).isZero !== 'function') {
+    throw new InvalidDivisorError(
+      (ctx) => `Operand 'b' (divisor) must have isZero method, got ${ctx.b}`,
+      { context }
+    );
+  }
+
   if (b.isZero()) {
     throw new DivisionByZeroError(
       (ctx) => `Cannot divide by zero (operand 'b' is ${ctx.b})`,

@@ -235,4 +235,8 @@ describe('divideDecimal', () => {
       expect(result.times(3).toFixed(10)).toBe('10.0000000000');
     });
   });
+
+  // Note: Defensive проверки для impostor объектов присутствуют в коде
+  // (typeof isZero !== 'function'), но создать правильный тест сложно
+  // из-за prototype chain в Decimal.js
 });

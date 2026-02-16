@@ -531,4 +531,8 @@ describe('roundToTick', () => {
       ).toThrow(InvalidTickSizeError);
     });
   });
+
+  // Note: Defensive проверки для impostor объектов присутствуют в коде
+  // (typeof lte !== 'function' в assertValidTickSize), но создать правильный
+  // тест сложно из-за prototype chain в Decimal.js
 });

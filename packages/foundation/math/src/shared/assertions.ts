@@ -352,6 +352,14 @@ export function assertValidTickSize(
     );
   }
 
+  // Defensive: проверяем наличие метода lte перед вызовом
+  if (typeof (tickSize as any).lte !== 'function') {
+    throw new InvalidTickSizeError(
+      (ctx) => `Tick size must have lte method, got ${ctx.tickSize}`,
+      { context }
+    );
+  }
+
   if (tickSize.lte(0)) {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
