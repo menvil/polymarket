@@ -266,6 +266,7 @@ try {
 - `DivisionByZeroError` - деление на ноль
 - `InvalidTickSizeError` - tick size <= 0 или не конечен
 - `InvalidDecimalPlacesError` - decimalPlaces невалидно (отрицательное, не integer, превышает лимит)
+- `InvalidRoundingModeError` - roundingMode невалидный (не integer, вне диапазона [0, 8])
 
 ### @polymarket/value-objects
 

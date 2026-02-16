@@ -107,7 +107,8 @@ try {
 - `InvalidDivisorError` - делитель не является конечным числом (NaN, Infinity)
 - `DivisionByZeroError` - деление на ноль
 - `InvalidTickSizeError` - tick size не является положительным конечным числом
-- `InvalidDecimalPlacesError` - количество десятичных знаков невалидно
+- `InvalidDecimalPlacesError` - количество десятичных знаков невалидно (не integer, отрицательное, > 1e9)
+- `InvalidRoundingModeError` - режим округления невалидный (не integer, вне диапазона [0, 8])
 - `ArithmeticOverflowError` - результат операции вышел за пределы
 
 ## Разработка

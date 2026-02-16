@@ -30,6 +30,7 @@ import {
   currencyMismatchError,
 } from '../../src/utils/errorUtils.js';
 import { ErrorSource } from '../../src/ErrorSource.js';
+import { TradingError } from '../../src/base/TradingError.js';
 import { InvalidMoneyError } from '../../src/value-objects/InvalidMoneyError.js';
 import { InvalidPriceError } from '../../src/value-objects/InvalidPriceError.js';
 import { InvalidQuantityError } from '../../src/value-objects/InvalidQuantityError.js';
@@ -490,6 +491,49 @@ describe('errorUtils', () => {
         expect(result.error).toBeInstanceOf(InvalidPriceError);
         expect(result.error.context?.service).toBe('PriceService');
         expect(result.error.context?.op).toBe('multiply');
+        expect(result.error.context?.source).toBe('math_operation');
+      }
+    });
+
+    it('классифицирует foreign TradingError из whitelist как math_operation', () => {
+      // InvalidOperandError является expected math error из whitelist
+      // Бросаем его в функции которая ожидает InvalidPriceError
+      // Должен быть классифицирован как math_operation, а не unexpected
+      const result = wrapOp(
+        'PriceService',
+        'divide',
+        { dividend: '10', divisor: 'NaN' },
+        () => {
+          throw new InvalidOperandError(
+            (ctx) => `Operand must be finite, got ${ctx.operand}`,
+            {
+              code: 'INVALID_OPERAND',
+              context: { operand: 'NaN', operation: 'divide' },
+            }
+          );
+        },
+        InvalidPriceError
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // Конвертирован в ожидаемый тип
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error).not.toBeInstanceOf(InvalidOperandError);
+
+        // Классифицирован как math_operation, не unexpected
+        expect(result.error.context?.source).toBe('math_operation');
+
+        // Код и контекст сохранены
+        expect(result.error.code).toBe('INVALID_OPERAND');
+        expect(result.error.context?.operand).toBe('NaN');
+        expect(result.error.context?.operation).toBe('divide');
+
+        // Трассировка добавлена
+        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error.context?.op).toBe('divide');
+        expect(result.error.context?.dividend).toBe('10');
+        expect(result.error.context?.divisor).toBe('NaN');
       }
     });
 
@@ -956,6 +1000,42 @@ describe('errorUtils', () => {
       expect(error.context!.source).toBe('math_operation');
       expect(error.context!.cause).toBeDefined();
       expect((error.context!.cause as any).message).toBe('Arithmetic overflow');
+    });
+
+    it('сохраняет code и context при преобразовании TradingError', () => {
+      const tradingError = new InvalidQuantityError(
+        (ctx) => `Invalid quantity: ${ctx.value}`,
+        {
+          code: 'INVALID_QUANTITY',
+          context: { value: -5, min: 0, operation: 'divide' },
+        }
+      );
+
+      const error = expectedMathError(tradingError, InvalidPriceError);
+
+      expect(error).toBeInstanceOf(InvalidPriceError);
+      expect(error.message).toContain('Math operation failed');
+      expect(error.code).toBe('INVALID_QUANTITY');
+      expect(error.context!.source).toBe('math_operation');
+      expect(error.context!.originalCode).toBe('INVALID_QUANTITY');
+      expect(error.context!.value).toBe(-5);
+      expect(error.context!.min).toBe(0);
+      expect(error.context!.operation).toBe('divide');
+      expect(error.context!.cause).toBeDefined();
+    });
+
+    it('работает с TradingError без code', () => {
+      const tradingError = new TradingError('Generic error', {
+        context: { field: 'price', userId: 123 },
+      });
+
+      const error = expectedMathError(tradingError, InvalidMoneyError);
+
+      expect(error).toBeInstanceOf(InvalidMoneyError);
+      expect(error.code).toBeUndefined();
+      expect(error.context!.source).toBe('math_operation');
+      expect(error.context!.field).toBe('price');
+      expect(error.context!.userId).toBe(123);
     });
   });
 

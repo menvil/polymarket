@@ -704,21 +704,27 @@ export function wrapOp<T, TError extends DomainError>(
       return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));
     }
     // Если кто-то бросил TradingError того же типа (ErrorConstructor) - просто rewrap
-    // Если бросил "чужой" TradingError - конвертируем в TError через unexpectedError
-    // ВАЖНО: Проверяем ДО isExpectedMathError, т.к. expected math errors extends TradingError
-    // и если бросили InvalidRoundingModeError (того же типа) - это не "foreign"
+    // Если бросил "чужой" TradingError - классифицируем по isExpectedMathError
+    // ВАЖНО: Проверяем ДО isExpectedMathError (для non-TradingError), т.к. expected math errors extends TradingError
     if (e instanceof TradingError) {
       if (e instanceof ErrorConstructor) {
         // Тот же тип - rewrap с добавлением service+op+opChain
         return Err(rewrap(serviceName, op, ctx, e, ErrorConstructor));
+      } else if (isExpectedMathError(e)) {
+        // Чужой TradingError НО это expected math error (например InvalidRoundingModeError при ErrorConstructor=InvalidPriceError)
+        // Классифицируем как math_operation, НЕ unexpected
+        const factoryError = expectedMathError(e, ErrorConstructor);
+        return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));
       } else {
-        // Чужой TradingError - конвертируем в TError, сохраняя оригинальные данные
+        // Чужой TradingError И НЕ expected math error - конвертируем через unexpectedError
+        // TypeScript выводит тип 'never' здесь, но мы знаем что это TradingError (не того типа и не expected math)
+        const tradingError = e as TradingError;
         const originalContext = {
-          originalErrorName: e.name,
-          originalErrorCode: e.code,
-          originalErrorContext: e.context,
+          originalErrorName: tradingError.name,
+          originalErrorCode: tradingError.code,
+          originalErrorContext: tradingError.context,
         };
-        const factoryError = unexpectedError(e, ErrorConstructor);
+        const factoryError = unexpectedError(tradingError, ErrorConstructor);
         return Err(rewrap(serviceName, op, { ...ctx, ...originalContext }, factoryError, ErrorConstructor));
       }
     }

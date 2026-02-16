@@ -44,7 +44,6 @@ Value Objects представляют неизменяемые бизнес-к�
 |-----|-------|-------------------|--------------|
 | `DIVISION_BY_ZERO` | DivisionByZeroError | Деление на ноль в расчетах | [→](./division-by-zero.md) |
 | `ARITHMETIC_OVERFLOW` | ArithmeticOverflowError | Результат операции = Infinity | [→](./arithmetic-overflow.md) |
-| `INVALID_ROUNDING_MODE` | InvalidRoundingModeError | Невалидный режим округления (не 0-8) | [→](./invalid-rounding-mode.md) |
 
 ### Валидация котировок и спредов
 
@@ -123,25 +122,25 @@ import {
 
 const result = createOrder(priceInput, qtyInput, balanceInput);
 
-result.match({
-  ok: (order) => submitOrder(order),
-  err: (error) => {
-    // Обработка по типу
-    if (InvalidPriceError.is(error)) {
-      showFieldError('price', `Price must be between ${error.context?.min} and ${error.context?.max}`);
-    } else if (InvalidQuantityError.is(error)) {
-      showFieldError('quantity', 'Quantity must be positive');
-    } else if (InvalidMoneyError.is(error)) {
-      showFieldError('balance', 'Invalid balance amount');
-    }
-
-    // Логирование
-    logger.error('Order creation failed', {
-      code: error.code,
-      context: error.context
-    });
+if (result.ok) {
+  submitOrder(result.value);
+} else {
+  const error = result.error;
+  // Обработка по типу
+  if (InvalidPriceError.is(error)) {
+    showFieldError('price', `Price must be between ${error.context?.min} and ${error.context?.max}`);
+  } else if (InvalidQuantityError.is(error)) {
+    showFieldError('quantity', 'Quantity must be positive');
+  } else if (InvalidMoneyError.is(error)) {
+    showFieldError('balance', 'Invalid balance amount');
   }
-});
+
+  // Логирование
+  logger.error('Order creation failed', {
+    code: error.code,
+    context: error.context
+  });
+}
 ```
 
 ### 4. Композиция с ResultChain
@@ -224,27 +223,26 @@ function validateOrderForm(
   }
 
   return Ok({
-    price: priceResult.unwrap(),
-    quantity: qtyResult.unwrap(),
-    balance: balanceResult.unwrap()
+    price: priceResult.value,
+    quantity: qtyResult.value,
+    balance: balanceResult.value
   });
 }
 
 // Использование
 const validationResult = validateOrderForm(priceInput, qtyInput, balanceInput);
 
-validationResult.match({
-  ok: (validated) => submitOrder(validated),
-  err: (errors) => {
-    // Показываем все ошибки сразу
-    errors.forEach(error => {
-      showFieldError(
-        error.context?.field as string,
-        error.message
-      );
-    });
-  }
-});
+if (validationResult.ok) {
+  submitOrder(validationResult.value);
+} else {
+  // Показываем все ошибки сразу
+  validationResult.error.forEach(error => {
+    showFieldError(
+      error.context?.field as string,
+      error.message
+    );
+  });
+}
 ```
 
 ---
@@ -440,5 +438,6 @@ class Money {
 - [InvalidAmountError](./invalid-amount.md)
 - [DivisionByZeroError](./division-by-zero.md)
 - [ArithmeticOverflowError](./arithmetic-overflow.md)
-- [InvalidRoundingModeError](./invalid-rounding-mode.md)
 - [CurrencyMismatchError](./currency-mismatch.md)
+
+Примечание: InvalidRoundingModeError теперь находится в [Math Errors](../math/invalid-rounding-mode.md)

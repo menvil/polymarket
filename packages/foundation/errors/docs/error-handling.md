@@ -297,31 +297,31 @@ import { InvalidPriceError, InvalidQuantityError } from '@polymarket/errors';
 
 const result = validateOrder(orderData);
 
-result.match({
-  ok: (order) => submitOrder(order),
-  err: (error) => {
-    // Обработка по коду
-    switch (error.code) {
-      case InvalidPriceError.code: // 'INVALID_PRICE'
-        showFieldError('price', 'Price must be between 0.0001 and 0.9999');
-        break;
+if (result.ok) {
+  submitOrder(result.value);
+} else {
+  const error = result.error;
+  // Обработка по коду
+  switch (error.code) {
+    case InvalidPriceError.code: // 'INVALID_PRICE'
+      showFieldError('price', 'Price must be between 0.0001 and 0.9999');
+      break;
 
-      case InvalidQuantityError.code: // 'INVALID_QUANTITY'
-        showFieldError('quantity', 'Quantity must be positive');
-        break;
+    case InvalidQuantityError.code: // 'INVALID_QUANTITY'
+      showFieldError('quantity', 'Quantity must be positive');
+      break;
 
-      default:
-        showGeneralError('Validation failed. Please check your input.');
-    }
-
-    // Логирование для всех ошибок
-    logger.error('Order validation failed', {
-      code: error.code,
-      context: error.context,
-      timestamp: error.timestamp
-    });
+    default:
+      showGeneralError('Validation failed. Please check your input.');
   }
-});
+
+  // Логирование для всех ошибок
+  logger.error('Order validation failed', {
+    code: error.code,
+    context: error.context,
+    timestamp: error.timestamp
+  });
+}
 ```
 
 ### 4. Обработка с fallback
@@ -341,7 +341,9 @@ function getPriceOrDefault(input: number, defaultPrice: Price): Price {
 }
 
 // Использование
-const price = getPriceOrDefault(userInput, Price.fromNumber(0.5).unwrap());
+const defaultPriceResult = Price.fromNumber(0.5);
+if (!defaultPriceResult.ok) throw new Error('Invalid default price');
+const price = getPriceOrDefault(userInput, defaultPriceResult.value);
 ```
 
 ### 5. Aggregate errors (множественные ошибки)
@@ -356,18 +358,18 @@ function validateOrderFields(data: OrderData): Result<ValidatedOrder, Validation
   const errors: TradingError[] = [];
 
   const priceResult = validatePrice(data.price);
-  if (priceResult.isErr()) {
-    errors.push(priceResult.unwrapErr());
+  if (!priceResult.ok) {
+    errors.push(priceResult.error);
   }
 
   const qtyResult = validateQuantity(data.quantity);
-  if (qtyResult.isErr()) {
-    errors.push(qtyResult.unwrapErr());
+  if (!qtyResult.ok) {
+    errors.push(qtyResult.error);
   }
 
   const balanceResult = validateBalance(data.balance);
-  if (balanceResult.isErr()) {
-    errors.push(balanceResult.unwrapErr());
+  if (!balanceResult.ok) {
+    errors.push(balanceResult.error);
   }
 
   if (errors.length > 0) {
@@ -375,24 +377,23 @@ function validateOrderFields(data: OrderData): Result<ValidatedOrder, Validation
   }
 
   return Ok({
-    price: priceResult.unwrap(),
-    quantity: qtyResult.unwrap(),
-    balance: balanceResult.unwrap()
+    price: priceResult.value,
+    quantity: qtyResult.value,
+    balance: balanceResult.value
   });
 }
 
 // Использование
 const result = validateOrderFields(formData);
 
-result.match({
-  ok: (validated) => submitOrder(validated),
-  err: (errors) => {
-    // Показываем все ошибки пользователю
-    errors.forEach(error => {
-      showFieldError(error.context?.field as string, error.message);
-    });
-  }
-});
+if (result.ok) {
+  submitOrder(result.value);
+} else {
+  // Показываем все ошибки пользователю
+  result.error.forEach(error => {
+    showFieldError(error.context?.field as string, error.message);
+  });
+}
 ```
 
 ---

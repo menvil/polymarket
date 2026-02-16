@@ -189,6 +189,24 @@ describe('roundToPrecision', () => {
         }
       }
     });
+
+    it('должен throw InvalidOperandError (не TypeError) при value = undefined', () => {
+      // Проверяем, что ранняя валидация decimalPlaces/roundingMode
+      // предотвращает вызов value.toString() на undefined
+      expect(() =>
+        roundToPrecision(
+          undefined as unknown as Decimal,
+          2,
+          Decimal.ROUND_HALF_UP
+        )
+      ).toThrow(InvalidOperandError);
+    });
+
+    it('должен throw InvalidOperandError (не TypeError) при value = null', () => {
+      expect(() =>
+        roundToPrecision(null as unknown as Decimal, 2, Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidOperandError);
+    });
   });
 
   describe('валидация decimalPlaces', () => {

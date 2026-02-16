@@ -23,7 +23,7 @@ import {
  * - decimalPlaces должно быть в диапазоне [0, 1e9]
  * - roundingMode должен быть в диапазоне [0, 8]
  * - Превышение максимума decimalPlaces вызывает InvalidDecimalPlacesError
- * - Невалидный roundingMode вызывает Error от Decimal.js
+ * - Невалидный roundingMode вызывает InvalidRoundingModeError
  *
  * Режимы округления:
  * - 0 (Decimal.ROUND_UP) - округление от нуля
@@ -73,9 +73,14 @@ export function roundToPrecision(
   decimalPlaces: number,
   roundingMode: Decimal.Rounding
 ): Decimal {
+  // Создаём context безопасным способом
+  // Для value используем тернарный оператор для проверки наличия toString
   const context = {
     operation: 'roundToPrecision',
-    value: value.toString(),
+    value:
+      value && typeof value.toString === 'function'
+        ? value.toString()
+        : String(value),
     decimalPlaces: String(decimalPlaces),
     roundingMode: String(roundingMode),
   };

@@ -54,6 +54,20 @@ export function assertFiniteOperand(
   paramName: string,
   context: MathOperationContext
 ): void {
+  // Проверка на undefined/null перед вызовом методов
+  if (!value || typeof value.isFinite !== 'function') {
+    throw new InvalidOperandError(
+      (ctx) => `${ctx.paramName} must be a valid Decimal, got ${ctx.value}`,
+      {
+        context: {
+          ...context,
+          paramName,
+          value: String(value),
+        },
+      }
+    );
+  }
+
   if (!value.isFinite()) {
     throw new InvalidOperandError(
       (ctx) => `${ctx.paramName} must be finite, got ${ctx.value}`,

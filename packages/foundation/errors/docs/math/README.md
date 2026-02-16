@@ -29,6 +29,7 @@ Math Errors представляют математические невозмо
 |`INVALID_OPERAND`|InvalidOperandError|Операнд NaN/Infinity|[→](./invalid-operand.md)|
 |`INVALID_DECIMAL_PLACES`|InvalidDecimalPlacesError|Decimal places < 0, не целое, не конечно|[→](./invalid-decimal-places.md)|
 |`INVALID_DIVISOR`|InvalidDivisorError|Деление на NaN/Infinity|[→](./invalid-divisor.md)|
+|`INVALID_ROUNDING_MODE`|InvalidRoundingModeError|Режим округления вне диапазона 0-8|[→](./invalid-rounding-mode.md)|
 |`INVALID_TICK_SIZE`|InvalidTickSizeError|Tick size <= 0 или не конечен|[→](./invalid-tick-size.md)|
 
 ---

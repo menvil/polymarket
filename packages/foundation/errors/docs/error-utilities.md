@@ -449,6 +449,7 @@ function isExpectedMathError(e: unknown): e is Error
 - ArithmeticOverflowError
 - InvalidOperandError
 - DivisionByZeroError
+- InvalidRoundingModeError
 
 ### isCoreInvariantViolation()
 

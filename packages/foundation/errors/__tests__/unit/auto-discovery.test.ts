@@ -232,10 +232,6 @@ const discoveredClasses = discoverErrorClasses();
 describe('Auto-discovery: All TradingError classes', () => {
   it(`должен найти хотя бы один класс ошибки (найдено: ${discoveredClasses.length})`, () => {
     expect(discoveredClasses.length).toBeGreaterThan(0);
-    console.log(
-      `\n✨ Автоматически обнаружено ${discoveredClasses.length} класс(ов) ошибок:\n` +
-        discoveredClasses.map((c) => `   - ${c.name} (severity: ${c.severity})`).join('\n')
-    );
   });
 
   // Динамически создаём describe блоки для каждого класса

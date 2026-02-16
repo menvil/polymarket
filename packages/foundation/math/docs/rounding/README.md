@@ -114,6 +114,11 @@ Throws `InvalidTickSizeError` если:
 - `tickSize <= 0`
 - `tickSize` не конечное число (NaN, Infinity)
 
+Throws `InvalidRoundingModeError` если:
+
+- `roundingMode` не integer
+- `roundingMode` вне диапазона [0, 8]
+
 Throws `ArithmeticOverflowError` если:
 
 - Результат операции не конечное число (overflow при делении или умножении)
@@ -128,6 +133,11 @@ roundToTick(new Decimal(10), new Decimal(0), Decimal.ROUND_HALF_UP);        // t
 roundToTick(new Decimal(10), new Decimal(-0.01), Decimal.ROUND_HALF_UP);    // throws
 roundToTick(new Decimal(10), new Decimal(NaN), Decimal.ROUND_HALF_UP);      // throws
 roundToTick(new Decimal(10), new Decimal(Infinity), Decimal.ROUND_HALF_UP); // throws
+
+// InvalidRoundingModeError
+roundToTick(new Decimal(10), new Decimal(0.01), -1 as Decimal.Rounding);    // throws
+roundToTick(new Decimal(10), new Decimal(0.01), 9 as Decimal.Rounding);     // throws
+roundToTick(new Decimal(10), new Decimal(0.01), 1.5 as Decimal.Rounding);   // throws
 ```
 
 ---
@@ -167,12 +177,25 @@ Throws `InvalidDecimalPlacesError` если:
 - `decimalPlaces` не конечное число (NaN, Infinity)
 - `decimalPlaces > 1e9` (превышен максимум)
 
+Throws `InvalidRoundingModeError` если:
+
+- `roundingMode` не integer
+- `roundingMode` вне диапазона [0, 8]
+
 ```typescript
-roundToPrecision(new Decimal(NaN), 2, Decimal.ROUND_HALF_UP);     // throws InvalidOperandError
-roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP);  // throws InvalidDecimalPlacesError
-roundToPrecision(new Decimal('10.567'), NaN, Decimal.ROUND_HALF_UP); // throws InvalidDecimalPlacesError
-roundToPrecision(new Decimal('10.567'), 1.5, Decimal.ROUND_HALF_UP); // throws InvalidDecimalPlacesError
-roundToPrecision(new Decimal('10.567'), 1e10, Decimal.ROUND_HALF_UP); // throws InvalidDecimalPlacesError (превышен максимум)
+// InvalidOperandError
+roundToPrecision(new Decimal(NaN), 2, Decimal.ROUND_HALF_UP);     // throws
+
+// InvalidDecimalPlacesError
+roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP);  // throws
+roundToPrecision(new Decimal('10.567'), NaN, Decimal.ROUND_HALF_UP); // throws
+roundToPrecision(new Decimal('10.567'), 1.5, Decimal.ROUND_HALF_UP); // throws
+roundToPrecision(new Decimal('10.567'), 1e10, Decimal.ROUND_HALF_UP); // throws (превышен максимум)
+
+// InvalidRoundingModeError
+roundToPrecision(new Decimal('10.567'), 2, -1 as Decimal.Rounding);   // throws
+roundToPrecision(new Decimal('10.567'), 2, 9 as Decimal.Rounding);    // throws
+roundToPrecision(new Decimal('10.567'), 2, 1.5 as Decimal.Rounding);  // throws
 ```
 
 ### Примеры

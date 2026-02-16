@@ -87,194 +87,33 @@ describe('InvalidRoundingModeError', () => {
     });
   });
 
-  describe('валидация режимов округления', () => {
-    describe('валидные режимы (0-8)', () => {
-      const validModes = [0, 1, 2, 3, 4, 5, 6, 7, 8];
+  describe('создание с различными типами значений', () => {
+    it('должен сохранять context для невалидных режимов', () => {
+      const error = new InvalidRoundingModeError(
+        (ctx) => `Rounding mode must be between 0 and 8, got ${ctx.roundingMode}`,
+        {
+          code: InvalidRoundingModeError.code,
+          context: { roundingMode: 9, min: 0, max: 8 },
+        }
+      );
 
-      validModes.forEach((mode) => {
-        it(`должен принимать режим ${mode} как валидный`, () => {
-          // Проверяем что можем создать объект Decimal с таким режимом
-          const decimal = new Decimal('10.567');
-          expect(() => decimal.toDecimalPlaces(2, mode as any)).not.toThrow();
-        });
-      });
-
-      it('должен принимать 0 (ROUND_UP)', () => {
-        expect(Decimal.ROUND_UP).toBe(0);
-      });
-
-      it('должен принимать 1 (ROUND_DOWN)', () => {
-        expect(Decimal.ROUND_DOWN).toBe(1);
-      });
-
-      it('должен принимать 4 (ROUND_HALF_UP)', () => {
-        expect(Decimal.ROUND_HALF_UP).toBe(4);
-      });
-
-      it('должен принимать 6 (ROUND_HALF_EVEN - banker\'s rounding)', () => {
-        expect(Decimal.ROUND_HALF_EVEN).toBe(6);
-      });
-
-      it('должен принимать 8 (ROUND_HALF_FLOOR)', () => {
-        expect(Decimal.ROUND_HALF_FLOOR).toBe(8);
-      });
+      expect(error.message).toContain('Rounding mode must be between 0 and 8, got 9');
+      expect(error.context?.roundingMode).toBe(9);
+      expect(error.context?.min).toBe(0);
+      expect(error.context?.max).toBe(8);
     });
 
-    describe('невалидные режимы', () => {
-      it('должен отклонять режим -1 (ниже минимума)', () => {
-        const error = new InvalidRoundingModeError(
-          (ctx) => `Rounding mode ${ctx.roundingMode} is below minimum ${ctx.min}`,
-          {
-            code: InvalidRoundingModeError.code,
-            context: { roundingMode: -1, min: 0, max: 8 },
-          }
-        );
-
-        expect(error.message).toContain('Rounding mode -1 is below minimum 0');
-        expect(error.context?.roundingMode).toBe(-1);
-      });
-
-      it('должен отклонять режим 9 (выше максимума)', () => {
-        const error = new InvalidRoundingModeError(
-          (ctx) => `Rounding mode ${ctx.roundingMode} is above maximum ${ctx.max}`,
-          {
-            code: InvalidRoundingModeError.code,
-            context: { roundingMode: 9, min: 0, max: 8 },
-          }
-        );
-
-        expect(error.message).toContain('Rounding mode 9 is above maximum 8');
-        expect(error.context?.roundingMode).toBe(9);
-      });
-
-      it('должен отклонять режим 10', () => {
-        const error = new InvalidRoundingModeError(
-          'Rounding mode must be between 0 and 8',
-          {
-            code: InvalidRoundingModeError.code,
-            context: { roundingMode: 10 },
-          }
-        );
-
-        expect(error.context?.roundingMode).toBe(10);
-      });
-
-      it('должен отклонять режим 100', () => {
-        const error = new InvalidRoundingModeError(
-          'Rounding mode out of range',
-          {
-            code: InvalidRoundingModeError.code,
-            context: { roundingMode: 100 },
-          }
-        );
-
-        expect(error.context?.roundingMode).toBe(100);
-      });
-    });
-
-    describe('специальные значения', () => {
-      it('должен отклонять NaN', () => {
-        const error = new InvalidRoundingModeError('Rounding mode cannot be NaN', {
+    it('должен сохранять context для специальных значений', () => {
+      const error = new InvalidRoundingModeError(
+        'Rounding mode must be an integer',
+        {
           code: InvalidRoundingModeError.code,
-          context: { roundingMode: NaN, reason: 'NaN' },
-        });
+          context: { roundingMode: 4.5, reason: 'not an integer' },
+        }
+      );
 
-        expect(error.context?.reason).toBe('NaN');
-        expect(Number.isNaN(error.context?.roundingMode as number)).toBe(true);
-      });
-
-      it('должен отклонять Infinity', () => {
-        const error = new InvalidRoundingModeError('Rounding mode must be finite', {
-          code: InvalidRoundingModeError.code,
-          context: { roundingMode: Infinity, reason: 'Infinity' },
-        });
-
-        expect(error.context?.roundingMode).toBe(Infinity);
-        expect(error.context?.reason).toBe('Infinity');
-      });
-
-      it('должен отклонять -Infinity', () => {
-        const error = new InvalidRoundingModeError('Rounding mode must be finite', {
-          code: InvalidRoundingModeError.code,
-          context: { roundingMode: -Infinity, reason: '-Infinity' },
-        });
-
-        expect(error.context?.roundingMode).toBe(-Infinity);
-        expect(error.context?.reason).toBe('-Infinity');
-      });
-
-      it('должен отклонять дробные значения', () => {
-        const error = new InvalidRoundingModeError(
-          (ctx) => `Rounding mode must be an integer, got ${ctx.roundingMode}`,
-          {
-            code: InvalidRoundingModeError.code,
-            context: { roundingMode: 4.5, reason: 'not an integer' },
-          }
-        );
-
-        expect(error.message).toContain('Rounding mode must be an integer, got 4.5');
-        expect(error.context?.roundingMode).toBe(4.5);
-      });
-
-      it('должен отклонять 0.1', () => {
-        const error = new InvalidRoundingModeError('Rounding mode must be an integer', {
-          code: InvalidRoundingModeError.code,
-          context: { roundingMode: 0.1 },
-        });
-
-        expect(error.context?.roundingMode).toBe(0.1);
-      });
-
-      it('должен отклонять 7.999', () => {
-        const error = new InvalidRoundingModeError('Rounding mode must be an integer', {
-          code: InvalidRoundingModeError.code,
-          context: { roundingMode: 7.999 },
-        });
-
-        expect(error.context?.roundingMode).toBe(7.999);
-      });
-    });
-
-    describe('не-числовые значения', () => {
-      it('должен отклонять строку "4"', () => {
-        const error = new InvalidRoundingModeError(
-          (ctx) => `Rounding mode must be a number, got ${ctx.type}`,
-          {
-            code: InvalidRoundingModeError.code,
-            context: { roundingMode: '4', type: 'string' },
-          }
-        );
-
-        expect(error.context?.roundingMode).toBe('4');
-        expect(error.context?.type).toBe('string');
-      });
-
-      it('должен отклонять null', () => {
-        const error = new InvalidRoundingModeError('Rounding mode must be a number', {
-          code: InvalidRoundingModeError.code,
-          context: { roundingMode: null, type: 'object' },
-        });
-
-        expect(error.context?.roundingMode).toBe(null);
-      });
-
-      it('должен отклонять undefined', () => {
-        const error = new InvalidRoundingModeError('Rounding mode must be a number', {
-          code: InvalidRoundingModeError.code,
-          context: { roundingMode: undefined, type: 'undefined' },
-        });
-
-        expect(error.context?.roundingMode).toBe(undefined);
-      });
-
-      it('должен отклонять объект', () => {
-        const error = new InvalidRoundingModeError('Rounding mode must be a number', {
-          code: InvalidRoundingModeError.code,
-          context: { roundingMode: {}, type: 'object' },
-        });
-
-        expect(error.context?.type).toBe('object');
-      });
+      expect(error.context?.roundingMode).toBe(4.5);
+      expect(error.context?.reason).toBe('not an integer');
     });
   });
 
