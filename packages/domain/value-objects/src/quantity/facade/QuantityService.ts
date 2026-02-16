@@ -23,10 +23,16 @@ import { Ratio } from '../../ratio/core/Ratio.js';
  *
  * **Facade Error Contract:**
  * Любой Err из Facade содержит:
- * - context.op - название операции (верхний уровень)
+ * - context.op - название операции ('create', 'add', 'divide', 'portion', 'increaseBy', etc.)
  * - context.opChain - цепочка операций (внутренние op не теряются)
  * - context.quantity - входной quantity (если применимо)
- * - context.divisor|factor|stepSize - входные параметры (если применимо)
+ * - context.quantity1, quantity2 - для бинарных операций (add, subtract)
+ * - context.divisor - для divide
+ * - context.factor - для multiply
+ * - context.stepSize - для roundToStep, increaseBy
+ * - context.rate - для portion
+ * - context.delta - для increaseBy
+ * - context.roundingMode - для increaseBy
  * - context.raw - сырой ввод (для ошибок парсинга): { field, value }
  * - context.cause - для math-исключений: { name, message, stack? } (root-cause, не перетирается)
  * - context.reason - для инвариантов Core (root, не перетирается)
