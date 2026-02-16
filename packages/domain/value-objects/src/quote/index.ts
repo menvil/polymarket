@@ -12,10 +12,15 @@
  *
  * @example
  * ```typescript
- * import { QuoteService, QuoteFormatter, type QuoteJson } from '@polymarket/value-objects/quote';
+ * import { QuoteService, QuoteFormatter, type QuoteJSON } from '@polymarket/value-objects/quote';
+ * import { KnownMarketDataSources, asInstrumentId } from '@polymarket/ids';
  *
  * // Создание котировки через Facade
- * const result = QuoteService.create(0.48, 0.52, 100, 150);
+ * const result = QuoteService.create(
+ *   0.48, 0.52, 100, 150,
+ *   KnownMarketDataSources.POLYMARKET_WS,
+ *   asInstrumentId('ETH-USD')!
+ * );
  * if (!result.ok) {
  *   console.error(result.error.message);
  *   return;
@@ -24,9 +29,9 @@
  * const quote = result.value;
  *
  * // Вычисления
- * console.log(quote.spreadWidth());      // 0.04
- * console.log(quote.spreadPercentage()); // 8.0%
- * console.log(quote.midPrice());         // 0.50
+ * console.log(quote.spread()?.width());         // 0.04
+ * console.log(quote.spreadPercentage());        // null (stub)
+ * console.log(quote.midOrNull());               // 0.50
  *
  * // Форматирование
  * console.log(QuoteFormatter.toDisplay(quote));
@@ -37,7 +42,7 @@
  *
  * // Сериализация
  * const json = QuoteSerializer.toJSON(quote);
- * const jsonString = QuoteSerializer.toString(quote);
+ * const jsonString = QuoteSerializer.toJSONString(quote);
  * ```
  */
 
@@ -75,15 +80,15 @@ export { QuoteInvariantViolation } from './core/index.js';
  * Рекомендуется использовать этот сервис вместо прямого создания Quote.
  *
  * Методы:
- * - createFromDecimals() - создание из Decimal значений
- * - create() - создание из number значений
+ * - create() - создание котировки из number/Decimal/string значений
  * - bidOnly() - создание bid-only котировки
  * - askOnly() - создание ask-only котировки
- * - shift() - сдвиг котировки на дельту
+ * - shift() - сдвиг котировки на дельту (сохраняет spread)
  * - skew() - независимый сдвиг bid и ask
  * - updateSizes() - обновление размеров
- * - getSpreadOrZero() - получение spread (0 для one-sided)
- * - getMidOrNull() - получение mid price (null для one-sided)
+ * - getMidPrice() - получение mid price через Result
+ * - getSpreadRatio() - получение spread ratio через Result
+ * - shiftByRatio/widenByRatio/tightenByRatio/skewByRatio - ratio операции
  */
 export { QuoteService } from './facade/index.js';
 
