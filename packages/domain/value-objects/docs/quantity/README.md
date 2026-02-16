@@ -208,9 +208,15 @@ increaseBy(quantity: Quantity, delta: Ratio, stepSize: number | string | Decimal
 
 Все ошибки содержат:
 
-- `context.op` — название операции (`'create'`, `'add'`, `'divide'`, etc.) — **ВСЕГДА присутствует**
+- `context.op` — название операции (`'create'`, `'add'`, `'divide'`, `'portion'`, `'increaseBy'`, etc.) — **ВСЕГДА присутствует**
 - `context.quantity` — входное количество (если применимо)
-- `context.divisor|factor|stepSize` — параметры операции (операционные поля)
+- `context.quantity1`, `context.quantity2` — для бинарных операций (`add`, `subtract`)
+- `context.divisor` — делитель для `divide`
+- `context.factor` — множитель для `multiply`
+- `context.stepSize` — размер шага для `roundToStep`, `increaseBy`
+- `context.rate` — коэффициент для `portion`
+- `context.delta` — изменение для `increaseBy`
+- `context.roundingMode` — режим округления для `increaseBy`
 - `context.raw` — сырой ввод для toDecimal (для ошибок парсинга)
 - `context.reason` — причина из Core/Rules (`'NEGATIVE'`, `'NON_FINITE'`)
 - `context.cause` — для math-исключений и unexpected errors: `{ name, message, stack? }`

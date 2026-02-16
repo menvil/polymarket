@@ -20,7 +20,7 @@
 import { QuantityErrorReason } from '@polymarket/value-objects/quantity';
 
 interface InvalidQuantityErrorContext {
-  op: string;  // Название операции: 'create', 'add', 'divide', etc. (ВСЕГДА присутствует)
+  op: string;  // Название операции: 'create', 'add', 'divide', 'portion', 'increaseBy', etc. (ВСЕГДА присутствует)
   opChain?: string[];  // Цепочка вложенных операций для трассировки
 
   // Входные данные (операционные поля)
@@ -31,10 +31,13 @@ interface InvalidQuantityErrorContext {
   divisor?: string;
   factor?: string;
   stepSize?: string;
+  rate?: string;           // Для portion()
+  delta?: string;          // Для increaseBy()
+  roundingMode?: string;   // Для increaseBy()
 
   // Сырой ввод (для ошибок парсинга)
   raw?: {
-    field: string;  // Имя поля: 'value', 'factor', 'divisor', 'stepSize'
+    field: string;  // Имя поля: 'value', 'factor', 'divisor', 'stepSize', 'rate', 'delta'
     value: string;  // Сырое значение перед парсингом
   };
 
