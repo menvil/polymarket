@@ -163,6 +163,8 @@ describe('Money Integration Workflow', () => {
       const original = MoneyService.create(100, 'USDC');
       const toAdd = MoneyService.create(50, 'USDC');
 
+      expect(original.ok).toBe(true);
+      expect(toAdd.ok).toBe(true);
       if (original.ok && toAdd.ok) {
         const added = MoneyService.add(original.value, toAdd.value);
         expect(added.ok).toBe(true);
@@ -185,6 +187,7 @@ describe('Money Integration Workflow', () => {
       const original = MoneyService.create(100, 'USDC');
       const factor = new Decimal(3);
 
+      expect(original.ok).toBe(true);
       if (original.ok) {
         const multiplied = MoneyService.multiply(original.value, factor);
         expect(multiplied.ok).toBe(true);
@@ -232,6 +235,7 @@ describe('Money Integration Workflow', () => {
       const amount = MoneyService.create(100, 'USDC');
       const divisor = new Decimal(3);
 
+      expect(amount.ok).toBe(true);
       if (amount.ok) {
         const result = MoneyService.divide(amount.value, divisor);
         expect(result.ok).toBe(true);
@@ -346,6 +350,8 @@ describe('Money Integration Workflow', () => {
       const small = MoneyService.create(10, 'USDC');
       const large = MoneyService.create(100, 'USDC');
 
+      expect(small.ok).toBe(true);
+      expect(large.ok).toBe(true);
       if (small.ok && large.ok) {
         const result = MoneyService.subtract(small.value, large.value);
         // MoneyService.subtract не валидирует на отрицательность
@@ -401,6 +407,7 @@ describe('Money Integration Workflow', () => {
         expect(json.currency).toBe('USDC');
 
         const deserialized = MoneySerializer.fromJSON(json);
+        expect(deserialized.ok).toBe(true);
         if (deserialized.ok) {
           const eq = MoneyService.equals(deserialized.value, money);
           expect(eq.ok && eq.value).toBe(true);
@@ -412,6 +419,8 @@ describe('Money Integration Workflow', () => {
       const m1 = MoneyService.create(100, 'USDC');
       const m2 = MoneyService.create(50, 'USDC');
 
+      expect(m1.ok).toBe(true);
+      expect(m2.ok).toBe(true);
       if (m1.ok && m2.ok) {
         const sum = MoneyService.add(m1.value, m2.value);
         expect(sum.ok).toBe(true);
@@ -438,6 +447,9 @@ describe('Money Integration Workflow', () => {
       const m2 = MoneyService.create(100, 'USDC');
       const m3 = MoneyService.create(200, 'USDC');
 
+      expect(m1.ok).toBe(true);
+      expect(m2.ok).toBe(true);
+      expect(m3.ok).toBe(true);
       if (m1.ok && m2.ok && m3.ok) {
         // Одинаковая сумма и валюта = равны
         const eq1 = MoneyService.equals(m1.value, m2.value);
@@ -453,6 +465,8 @@ describe('Money Integration Workflow', () => {
       const m1 = MoneyService.create(100, 'USDC');
       const m2 = MoneyService.create(100, 'USDC');
 
+      expect(m1.ok).toBe(true);
+      expect(m2.ok).toBe(true);
       if (m1.ok && m2.ok) {
         const eq = MoneyService.equals(m1.value, m2.value);
         expect(eq.ok && eq.value).toBe(true);
