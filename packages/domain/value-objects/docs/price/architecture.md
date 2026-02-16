@@ -644,6 +644,7 @@ public static validateSpread(
 
 ```typescript
 import Decimal from 'decimal.js';
+import { Price } from '@polymarket/value-objects/price';
 
 try {
   // userInput может быть string/number

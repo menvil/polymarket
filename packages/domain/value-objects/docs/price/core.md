@@ -503,6 +503,7 @@ if (!result.ok) {
 
 ```typescript
 import Decimal from 'decimal.js';
+import { Price } from '@polymarket/value-objects/price';
 
 // ❌ Плохо (может бросить исключение если значение невалидно)
 const userDecimal = new Decimal(userInput); // может бросить при парсинге
