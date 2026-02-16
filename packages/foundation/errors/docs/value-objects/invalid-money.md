@@ -110,7 +110,7 @@ class Money {
   ): Result<Money, InvalidMoneyError> {
     // Валидация валюты
     if (!currency || currency.trim().length === 0) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Currency must be a non-empty string',
           {
@@ -123,7 +123,7 @@ class Money {
 
     // Валидация NaN
     if (isNaN(amount)) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Amount must be a valid number',
           {
@@ -136,7 +136,7 @@ class Money {
 
     // Валидация Infinity
     if (!isFinite(amount)) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Amount must be finite',
           {
@@ -149,7 +149,7 @@ class Money {
 
     // Валидация отрицательных значений
     if (amount < 0) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Amount cannot be negative: ${ctx.amount} ${ctx.currency}`,
           {
@@ -160,7 +160,7 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(amount, currency));
+    return Ok(new Money(amount, currency));
   }
 
   static fromString(
@@ -172,7 +172,7 @@ class Money {
 
     // Проверка что парсинг успешен
     if (isNaN(amount)) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Invalid amount format: "${ctx.amountStr}"`,
           {
@@ -226,7 +226,7 @@ class Money {
 
   add(other: Money): Result<Money, CurrencyMismatchError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot add ${ctx.actual} to ${ctx.expected}`,
           {
@@ -249,7 +249,7 @@ class Money {
 
   subtract(other: Money): Result<Money, CurrencyMismatchError | InvalidMoneyError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot subtract ${ctx.actual} from ${ctx.expected}`,
           {
@@ -268,7 +268,7 @@ class Money {
 
     // Вычитание может дать отрицательное значение
     if (newAmount < 0) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Insufficient funds: ${ctx.available} - ${ctx.required} = ${ctx.result}`,
           {
@@ -284,7 +284,7 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(newAmount, this.currency));
+    return Ok(new Money(newAmount, this.currency));
   }
 }
 ```
@@ -352,7 +352,7 @@ class Money {
   ): Result<Money, InvalidMoneyError> {
     // Валидация валюты
     if (!currency || currency.trim().length === 0) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Currency must be a non-empty string',
           {
@@ -365,7 +365,7 @@ class Money {
 
     // Валидация Infinity
     if (!amount.isFinite()) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Amount must be finite',
           {
@@ -378,7 +378,7 @@ class Money {
 
     // Валидация отрицательных значений
     if (amount.isNegative()) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Amount cannot be negative: ${ctx.amount} ${ctx.currency}`,
           {
@@ -389,7 +389,7 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(amount, currency));
+    return Ok(new Money(amount, currency));
   }
 
   static fromNumber(
@@ -399,7 +399,7 @@ class Money {
     try {
       return Money.fromDecimal(new Decimal(amount), currency);
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Invalid amount format: ${ctx.amount}`,
           {
@@ -418,7 +418,7 @@ class Money {
     try {
       return Money.fromDecimal(new Decimal(amount), currency);
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Invalid amount format: "${ctx.amount}"`,
           {
@@ -436,7 +436,7 @@ class Money {
 
   add(other: Money): Result<Money, CurrencyMismatchError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot add ${ctx.actual} to ${ctx.expected}`,
           {
@@ -452,7 +452,7 @@ class Money {
     }
 
     const sum = this.amount.plus(other.amount);
-    return Result.ok(new Money(sum, this.currency));
+    return Ok(new Money(sum, this.currency));
   }
 }
 ```
@@ -465,50 +465,50 @@ class Money {
 
 ```typescript
 // Ноль (допустимо)
-Money.fromAmount(0, 'USDC'); // ✅ Result.ok(Money)
+Money.fromAmount(0, 'USDC'); // ✅ Ok(Money)
 
 // Очень малые суммы
-Money.fromAmount(0.0001, 'USDC'); // ✅ Result.ok(Money)
-Money.fromAmount(Number.MIN_VALUE, 'USDC'); // ✅ Result.ok(Money)
+Money.fromAmount(0.0001, 'USDC'); // ✅ Ok(Money)
+Money.fromAmount(Number.MIN_VALUE, 'USDC'); // ✅ Ok(Money)
 
 // Отрицательные (недопустимо)
-Money.fromAmount(-0.01, 'USDC'); // ❌ Result.err(InvalidMoneyError)
-Money.fromAmount(-100, 'USDC'); // ❌ Result.err(InvalidMoneyError)
+Money.fromAmount(-0.01, 'USDC'); // ❌ Err(InvalidMoneyError)
+Money.fromAmount(-100, 'USDC'); // ❌ Err(InvalidMoneyError)
 
 // Большие суммы
-Money.fromAmount(1e10, 'USDC'); // ✅ Result.ok(Money)
-Money.fromAmount(Number.MAX_SAFE_INTEGER, 'USDC'); // ✅ Result.ok(Money)
+Money.fromAmount(1e10, 'USDC'); // ✅ Ok(Money)
+Money.fromAmount(Number.MAX_SAFE_INTEGER, 'USDC'); // ✅ Ok(Money)
 ```
 
 ### Специальные значения
 
 ```typescript
 // NaN
-Money.fromAmount(NaN, 'USDC'); // ❌ Result.err(InvalidMoneyError)
-Money.fromAmount(0 / 0, 'USDC'); // ❌ Result.err(InvalidMoneyError)
+Money.fromAmount(NaN, 'USDC'); // ❌ Err(InvalidMoneyError)
+Money.fromAmount(0 / 0, 'USDC'); // ❌ Err(InvalidMoneyError)
 
 // Infinity
-Money.fromAmount(Infinity, 'USDC'); // ❌ Result.err(InvalidMoneyError)
-Money.fromAmount(-Infinity, 'USDC'); // ❌ Result.err(InvalidMoneyError)
-Money.fromAmount(1 / 0, 'USDC'); // ❌ Result.err(InvalidMoneyError)
+Money.fromAmount(Infinity, 'USDC'); // ❌ Err(InvalidMoneyError)
+Money.fromAmount(-Infinity, 'USDC'); // ❌ Err(InvalidMoneyError)
+Money.fromAmount(1 / 0, 'USDC'); // ❌ Err(InvalidMoneyError)
 
 // Отрицательный ноль (допустимо, т.к. -0 === 0)
-Money.fromAmount(-0, 'USDC'); // ✅ Result.ok(Money)
+Money.fromAmount(-0, 'USDC'); // ✅ Ok(Money)
 ```
 
 ### Валидация валюты
 
 ```typescript
 // Корректные валюты
-Money.fromAmount(100, 'USDC'); // ✅ Result.ok(Money)
-Money.fromAmount(100, 'BTC'); // ✅ Result.ok(Money)
-Money.fromAmount(100, 'EUR'); // ✅ Result.ok(Money)
+Money.fromAmount(100, 'USDC'); // ✅ Ok(Money)
+Money.fromAmount(100, 'BTC'); // ✅ Ok(Money)
+Money.fromAmount(100, 'EUR'); // ✅ Ok(Money)
 
 // Некорректные валюты
-Money.fromAmount(100, ''); // ❌ Result.err(InvalidMoneyError)
-Money.fromAmount(100, '   '); // ❌ Result.err(InvalidMoneyError)
-Money.fromAmount(100, null as any); // ❌ Result.err(InvalidMoneyError)
-Money.fromAmount(100, undefined as any); // ❌ Result.err(InvalidMoneyError)
+Money.fromAmount(100, ''); // ❌ Err(InvalidMoneyError)
+Money.fromAmount(100, '   '); // ❌ Err(InvalidMoneyError)
+Money.fromAmount(100, null as any); // ❌ Err(InvalidMoneyError)
+Money.fromAmount(100, undefined as any); // ❌ Err(InvalidMoneyError)
 ```
 
 ### Точность с decimal.js
@@ -533,7 +533,7 @@ const balance = Money.fromAmount(100, 'USDC').unwrap();
 const cost = Money.fromAmount(150, 'USDC').unwrap();
 
 const result = balance.subtract(cost);
-// ❌ Result.err(InvalidMoneyError)
+// ❌ Err(InvalidMoneyError)
 // context: { available: 100, required: 150, result: -50 }
 
 // Операции с разными валютами
@@ -541,7 +541,7 @@ const usdc = Money.fromAmount(100, 'USDC').unwrap();
 const btc = Money.fromAmount(1, 'BTC').unwrap();
 
 const result2 = usdc.add(btc);
-// ❌ Result.err(CurrencyMismatchError)
+// ❌ Err(CurrencyMismatchError)
 ```
 
 ---

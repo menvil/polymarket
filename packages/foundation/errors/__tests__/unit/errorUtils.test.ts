@@ -26,6 +26,7 @@ import {
   coreInvariantError,
   currencyMismatchError,
 } from '../../src/utils/errorUtils.js';
+import { ErrorSource } from '../../src/ErrorSource.js';
 import { InvalidMoneyError } from '../../src/value-objects/InvalidMoneyError.js';
 import { InvalidPriceError } from '../../src/value-objects/InvalidPriceError.js';
 import { InvalidQuantityError } from '../../src/value-objects/InvalidQuantityError.js';
@@ -451,10 +452,11 @@ describe('errorUtils', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // Должно быть rewrapped как InvalidPriceError (ErrorConstructor)
-        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        // Должно сохранить тип InvalidBalanceError (не конвертировать в InvalidPriceError)
+        expect(result.error).toBeInstanceOf(InvalidBalanceError);
         expect(result.error.context?.service).toBe('PriceService');
         expect(result.error.context?.op).toBe('validate');
+        expect((result.error.context as any).balance).toBe('0');
       }
     });
 
@@ -918,6 +920,42 @@ describe('errorUtils', () => {
         expect((result.error.context as any).opChain).toEqual(['PriceService.create']);
       }
     });
+
+    it('сохраняет исходный cause и stack из core invariant violation', () => {
+      class PriceInvariantViolation extends Error {
+        reason = 'OUT_OF_RANGE_HIGH';
+        kind = 'INVARIANT_VIOLATION' as const;
+        constructor(message: string) {
+          super(message);
+          this.name = 'PriceInvariantViolation';
+          // Симулируем реальный stack trace
+          Error.captureStackTrace(this, PriceInvariantViolation);
+        }
+      }
+
+      const result = wrapOp(
+        'PriceService',
+        'create',
+        { value: 1.5 },
+        () => {
+          throw new PriceInvariantViolation('Price 1.5 exceeds maximum 0.9999');
+        },
+        InvalidPriceError
+      );
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        // Проверяем что cause сохранён
+        expect(result.error.context!.cause).toBeDefined();
+        expect((result.error.context!.cause as any).name).toBe('PriceInvariantViolation');
+        expect((result.error.context!.cause as any).message).toBe('Price 1.5 exceeds maximum 0.9999');
+        // Проверяем что stack trace сохранён
+        expect((result.error.context!.cause as any).stack).toBeDefined();
+        expect((result.error.context!.cause as any).stack).toContain('PriceInvariantViolation');
+        // Проверяем что reason тоже сохранён
+        expect(result.error.context!.reason).toBe('OUT_OF_RANGE_HIGH');
+      }
+    });
   });
 
   describe('currencyMismatchError', () => {
@@ -964,6 +1002,171 @@ describe('errorUtils', () => {
       expect(error).toBeInstanceOf(CurrencyMismatchError);
       expect(error.message).toBe('Currency mismatch: expected USDC, got DAI');
       expect(error.context!.source).toBe('service_call');
+    });
+  });
+
+  describe('wrapOp с "чужим" TradingError', () => {
+    it('сохраняет тип "чужого" TradingError без переклассификации', () => {
+      // MoneyService бросил InvalidMoneyError
+      const originalError = new InvalidMoneyError('Amount must be positive', {
+        code: 'NEGATIVE_AMOUNT',
+        context: {
+          source: ErrorSource.PARSING,
+          reason: 'NEGATIVE_VALUE',
+          value: -100
+        }
+      });
+
+      // PriceService ловит эту ошибку в wrapOp с ErrorConstructor=InvalidPriceError
+      const result = wrapOp(
+        'PriceService',
+        'calculateTotal',
+        { price: 1.5, quantity: 10 },
+        () => {
+          throw originalError;
+        },
+        InvalidPriceError
+      );
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        // ВАЖНО: тип должен остаться InvalidMoneyError, а не стать InvalidPriceError
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        expect(result.error).not.toBeInstanceOf(InvalidPriceError);
+
+        // Проверяем что сообщение и код сохранены
+        expect(result.error.message).toBe('Amount must be positive');
+        expect(result.error.code).toBe('NEGATIVE_AMOUNT');
+
+        // Проверяем что source и reason сохранены (из оригинальной ошибки)
+        expect(result.error.context!.source).toBe('parsing');
+        expect(result.error.context!.reason).toBe('NEGATIVE_VALUE');
+        expect((result.error.context as any).value).toBe(-100);
+
+        // Проверяем что трассировка добавлена
+        expect(result.error.context!.service).toBe('PriceService');
+        expect(result.error.context!.op).toBe('calculateTotal');
+        expect((result.error.context as any).opChain).toContain('PriceService.calculateTotal');
+      }
+    });
+
+    it('сохраняет полную диагностику при вложенных вызовах', () => {
+      // Создаем ошибку с полным контекстом
+      const moneyError = new InvalidMoneyError('Invalid amount', {
+        context: {
+          source: ErrorSource.PARSING,
+          reason: 'INVALID_FORMAT',
+          raw: { field: 'amount', value: 'abc' },
+          cause: {
+            name: 'TypeError',
+            message: 'Cannot convert abc to number'
+          }
+        }
+      });
+
+      // QuantityService оборачивает эту ошибку
+      const quantityResult = wrapOp(
+        'QuantityService',
+        'create',
+        { asset: 'USDC' },
+        () => {
+          throw moneyError;
+        },
+        InvalidQuantityError
+      );
+
+      expect(isErr(quantityResult)).toBe(true);
+      if (isErr(quantityResult)) {
+        // Тип остался InvalidMoneyError
+        expect(quantityResult.error).toBeInstanceOf(InvalidMoneyError);
+
+        // Диагностика сохранена
+        expect(quantityResult.error.context!.source).toBe('parsing');
+        expect(quantityResult.error.context!.reason).toBe('INVALID_FORMAT');
+        expect((quantityResult.error.context as any).raw).toEqual({
+          field: 'amount',
+          value: 'abc'
+        });
+        expect((quantityResult.error.context as any).cause).toBeDefined();
+
+        // Трассировка добавлена
+        expect(quantityResult.error.context!.service).toBe('QuantityService');
+        expect(quantityResult.error.context!.op).toBe('create');
+      }
+    });
+  });
+
+  describe('rewrap edge cases', () => {
+    it('обрабатывает ошибку с undefined context', () => {
+      const error = new InvalidPriceError('Test error');
+      // Явно устанавливаем context в undefined через any cast
+      (error as any).context = undefined;
+
+      const rewrapped = rewrap('PriceService', 'validate', { value: 1.5 }, error, InvalidPriceError);
+
+      expect(rewrapped.context).toBeDefined();
+      expect(rewrapped.context!.service).toBe('PriceService');
+      expect(rewrapped.context!.op).toBe('validate');
+      expect((rewrapped.context as any).value).toBe(1.5);
+    });
+
+    it('не дублирует opChain когда lastOp === fullOp', () => {
+      const error1 = new InvalidPriceError('Error 1', {
+        context: {
+          service: 'PriceService',
+          op: 'create',
+          opChain: ['PriceService.create']
+        }
+      });
+
+      // Повторный rewrap с теми же service/op
+      const error2 = rewrap('PriceService', 'create', {}, error1, InvalidPriceError);
+
+      expect((error2.context as any).opChain).toEqual(['PriceService.create']);
+      // НЕ должно быть ['PriceService.create', 'PriceService.create']
+    });
+  });
+
+  describe('isCoreInvariantViolation edge cases', () => {
+    it('возвращает false когда reason не строка', () => {
+      const fakeError = new Error('Test');
+      (fakeError as any).reason = 123; // number вместо string
+
+      expect(isCoreInvariantViolation(fakeError)).toBe(false);
+    });
+
+    it('возвращает false когда reason это объект', () => {
+      const fakeError = new Error('Test');
+      (fakeError as any).reason = { code: 'INVALID' };
+
+      expect(isCoreInvariantViolation(fakeError)).toBe(false);
+    });
+
+    it('возвращает true когда reason это строка и есть kind маркер', () => {
+      const error = new Error('Test');
+      (error as any).reason = 'OUT_OF_RANGE';
+      (error as any).kind = 'INVARIANT_VIOLATION';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+  });
+
+  describe('toDecimal edge cases', () => {
+    it('обрабатывает invalid string с правильным cause', () => {
+      const result = toDecimal(
+        'amount',
+        'not-a-valid-number-xyz',
+        'INVALID_FORMAT',
+        InvalidPriceError
+      );
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error.context!.source).toBe('parsing');
+        expect(result.error.context!.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context!.cause).toBeDefined();
+        expect((result.error.context!.cause as any).message).toContain('Invalid argument');
+      }
     });
   });
 });

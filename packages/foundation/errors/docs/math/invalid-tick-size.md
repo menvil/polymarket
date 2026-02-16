@@ -158,7 +158,7 @@ class Price {
   ): Result<Price, InvalidTickSizeError | InvalidPriceError> {
     // Валидация tick size
     if (!tickSize.isFinite() || tickSize.isNegative() || tickSize.isZero()) {
-      return Result.err(
+      return Err(
         new InvalidTickSizeError(
           (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
           {
@@ -172,7 +172,7 @@ class Price {
     // Валидация что value кратен tick size
     const divided = value.dividedBy(tickSize);
     if (!divided.equals(divided.round())) {
-      return Result.err(
+      return Err(
         new InvalidPriceError(
           (ctx) => `Price ${ctx.value} is not a multiple of tick size ${ctx.tickSize}`,
           {
@@ -186,7 +186,7 @@ class Price {
       );
     }
 
-    return Result.ok(new Price(value, tickSize));
+    return Ok(new Price(value, tickSize));
   }
 
   getValue(): Decimal {

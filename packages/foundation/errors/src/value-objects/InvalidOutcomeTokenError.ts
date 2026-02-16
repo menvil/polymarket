@@ -3,7 +3,7 @@
  *
  * @remarks
  * Выбрасывается когда outcome token невалиден.
- * Уровень серьезности: medium (проблемы валидации могут повлиять на операции).
+ * Уровень серьезности: low (ошибка валидации, пользователь может исправить).
  *
  * Причины невалидности:
  * - ConditionRef не является OnChainConditionRef
@@ -24,7 +24,7 @@
 import { TradingError, ErrorSeverity } from '../base/index.js';
 
 export class InvalidOutcomeTokenError extends TradingError {
-  public readonly severity: ErrorSeverity = 'medium';
+  public readonly severity: ErrorSeverity = 'low';
 
   /**
    * Рекомендуемый код ошибки

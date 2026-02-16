@@ -24,7 +24,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node scripts/fix-esm-imports.mjs",
+    "build": "tsc -p tsconfig.build.json",
     "build:watch": "tsc -p tsconfig.build.json --watch",
     "test": "jest",
     "test:watch": "jest --watch",

@@ -103,7 +103,7 @@ class Money {
 
   static fromAmount(amount: number, currency: string): Result<Money, InvalidMoneyError | ArithmeticOverflowError> {
     if (!isFinite(amount)) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           'Amount is not finite',
           {
@@ -115,7 +115,7 @@ class Money {
     }
 
     if (amount < 0) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Amount cannot be negative',
           {
@@ -126,12 +126,12 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(amount, currency));
+    return Ok(new Money(amount, currency));
   }
 
   add(other: Money): Result<Money, ArithmeticOverflowError | CurrencyMismatchError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot add ${ctx.actual} to ${ctx.expected}`,
           {
@@ -145,7 +145,7 @@ class Money {
     const result = this.amount + other.amount;
 
     if (!isFinite(result)) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           (ctx) => `Addition overflow: ${ctx.a} + ${ctx.b} = ${ctx.result}`,
           {
@@ -162,14 +162,14 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(result, this.currency));
+    return Ok(new Money(result, this.currency));
   }
 
   multiply(factor: number): Result<Money, ArithmeticOverflowError> {
     const result = this.amount * factor;
 
     if (!isFinite(result)) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           (ctx) => `Multiplication overflow: ${ctx.a} * ${ctx.b} = ${ctx.result}`,
           {
@@ -186,7 +186,7 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(result, this.currency));
+    return Ok(new Money(result, this.currency));
   }
 
   getAmount(): number {
@@ -218,7 +218,7 @@ class SafeMath {
     const result = a + b;
 
     if (!isFinite(result)) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           (ctx) => `Addition overflow: ${ctx.a} + ${ctx.b} = ${ctx.result}`,
           {
@@ -229,7 +229,7 @@ class SafeMath {
       );
     }
 
-    return Result.ok(result);
+    return Ok(result);
   }
 
   /**
@@ -239,7 +239,7 @@ class SafeMath {
     const result = a - b;
 
     if (!isFinite(result)) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           (ctx) => `Subtraction overflow: ${ctx.a} - ${ctx.b} = ${ctx.result}`,
           {
@@ -250,7 +250,7 @@ class SafeMath {
       );
     }
 
-    return Result.ok(result);
+    return Ok(result);
   }
 
   /**
@@ -260,7 +260,7 @@ class SafeMath {
     const result = a * b;
 
     if (!isFinite(result)) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           (ctx) => `Multiplication overflow: ${ctx.a} * ${ctx.b} = ${ctx.result}`,
           {
@@ -271,7 +271,7 @@ class SafeMath {
       );
     }
 
-    return Result.ok(result);
+    return Ok(result);
   }
 
   /**
@@ -279,7 +279,7 @@ class SafeMath {
    */
   static divide(a: number, b: number): Result<number, ArithmeticOverflowError | DivisionByZeroError> {
     if (b === 0) {
-      return Result.err(
+      return Err(
         new DivisionByZeroError(
           (ctx) => `Cannot divide ${ctx.a} by zero`,
           {
@@ -293,7 +293,7 @@ class SafeMath {
     const result = a / b;
 
     if (!isFinite(result)) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           (ctx) => `Division overflow: ${ctx.a} / ${ctx.b} = ${ctx.result}`,
           {
@@ -304,7 +304,7 @@ class SafeMath {
       );
     }
 
-    return Result.ok(result);
+    return Ok(result);
   }
 }
 
@@ -336,7 +336,7 @@ class InterestCalculator {
     // Вычисляем (1 + rate) используя SafeMath (см. Пример 3)
     const rateResult = SafeMath.add(1, rate);
     if (rateResult.isErr()) {
-      return Result.err(rateResult.unwrapErr());
+      return Err(rateResult.unwrapErr());
     }
 
     const base = rateResult.unwrap();
@@ -345,7 +345,7 @@ class InterestCalculator {
     const power = Math.pow(base, periods);
 
     if (!isFinite(power)) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           (ctx) => `Power overflow: ${ctx.base}^${ctx.periods} = ${ctx.result}`,
           {
@@ -360,7 +360,7 @@ class InterestCalculator {
     const finalResult = principal * power;
 
     if (!isFinite(finalResult)) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           (ctx) => `Interest calculation overflow: ${ctx.principal} * ${ctx.multiplier} = ${ctx.result}`,
           {
@@ -371,7 +371,7 @@ class InterestCalculator {
       );
     }
 
-    return Result.ok(finalResult);
+    return Ok(finalResult);
   }
 }
 
@@ -403,7 +403,7 @@ class DecimalMoney {
   ): Result<DecimalMoney, ArithmeticOverflowError | InvalidMoneyError> {
     // Проверка на Infinity
     if (!amount.isFinite()) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           'Amount is not finite',
           {
@@ -416,7 +416,7 @@ class DecimalMoney {
 
     // Проверка на отрицательные значения
     if (amount.isNegative()) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Amount cannot be negative',
           {
@@ -427,12 +427,12 @@ class DecimalMoney {
       );
     }
 
-    return Result.ok(new DecimalMoney(amount, currency));
+    return Ok(new DecimalMoney(amount, currency));
   }
 
   add(other: DecimalMoney): Result<DecimalMoney, ArithmeticOverflowError | CurrencyMismatchError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot add ${ctx.actual} to ${ctx.expected}`,
           {
@@ -447,7 +447,7 @@ class DecimalMoney {
       const result = this.amount.plus(other.amount);
 
       if (!result.isFinite()) {
-        return Result.err(
+        return Err(
           new ArithmeticOverflowError(
             'Addition resulted in overflow',
             {
@@ -464,9 +464,9 @@ class DecimalMoney {
         );
       }
 
-      return Result.ok(new DecimalMoney(result, this.currency));
+      return Ok(new DecimalMoney(result, this.currency));
     } catch (error) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           (ctx) => `Addition error: ${ctx.error}`,
           {
@@ -489,7 +489,7 @@ class DecimalMoney {
       const result = this.amount.mul(factor);
 
       if (!result.isFinite()) {
-        return Result.err(
+        return Err(
           new ArithmeticOverflowError(
             'Multiplication resulted in overflow',
             {
@@ -506,9 +506,9 @@ class DecimalMoney {
         );
       }
 
-      return Result.ok(new DecimalMoney(result, this.currency));
+      return Ok(new DecimalMoney(result, this.currency));
     } catch (error) {
-      return Result.err(
+      return Err(
         new ArithmeticOverflowError(
           (ctx) => `Multiplication error: ${ctx.error}`,
           {
@@ -541,15 +541,15 @@ class DecimalMoney {
 ```typescript
 // Number.MAX_VALUE + Number.MAX_VALUE = Infinity
 SafeMath.add(Number.MAX_VALUE, Number.MAX_VALUE);
-// ❌ Result.err(ArithmeticOverflowError)
+// ❌ Err(ArithmeticOverflowError)
 
 // Очень большие числа
 SafeMath.add(1e308, 1e308);
-// ❌ Result.err(ArithmeticOverflowError)
+// ❌ Err(ArithmeticOverflowError)
 
 // Безопасные значения
 SafeMath.add(1000, 2000);
-// ✅ Result.ok(3000)
+// ✅ Ok(3000)
 ```
 
 ### Переполнение при умножении
@@ -557,15 +557,15 @@ SafeMath.add(1000, 2000);
 ```typescript
 // 1e200 * 1e200 = Infinity
 SafeMath.multiply(1e200, 1e200);
-// ❌ Result.err(ArithmeticOverflowError)
+// ❌ Err(ArithmeticOverflowError)
 
 // Number.MAX_VALUE * 2 = Infinity
 SafeMath.multiply(Number.MAX_VALUE, 2);
-// ❌ Result.err(ArithmeticOverflowError)
+// ❌ Err(ArithmeticOverflowError)
 
 // Безопасные значения
 SafeMath.multiply(1000, 1000);
-// ✅ Result.ok(1000000)
+// ✅ Ok(1000000)
 ```
 
 ### Переполнение при экспоненциации
@@ -592,11 +592,11 @@ const result3 = Math.pow(2, 10); // ✅ 1024
 ```typescript
 // -1e308 - 1e308 = -Infinity
 SafeMath.subtract(-1e308, 1e308);
-// ❌ Result.err(ArithmeticOverflowError)
+// ❌ Err(ArithmeticOverflowError)
 
 // Number.MIN_VALUE (самое малое положительное) не переполняется
 SafeMath.subtract(0, Number.MIN_VALUE);
-// ✅ Result.ok(-5e-324)
+// ✅ Ok(-5e-324)
 ```
 
 ### Граничные значения
@@ -604,13 +604,13 @@ SafeMath.subtract(0, Number.MIN_VALUE);
 ```typescript
 // Максимальное безопасное целое
 const max = Number.MAX_SAFE_INTEGER; // 9007199254740991
-SafeMath.add(max, 1); // ✅ Result.ok(9007199254740992) - все еще конечное
+SafeMath.add(max, 1); // ✅ Ok(9007199254740992) - все еще конечное
 
 // Но за пределами MAX_SAFE_INTEGER точность теряется
-SafeMath.add(Number.MAX_SAFE_INTEGER, 2); // ✅ Result.ok(...) - но может быть неточным
+SafeMath.add(Number.MAX_SAFE_INTEGER, 2); // ✅ Ok(...) - но может быть неточным
 
 // Number.MAX_VALUE
-SafeMath.multiply(Number.MAX_VALUE, 2); // ❌ Result.err(ArithmeticOverflowError)
+SafeMath.multiply(Number.MAX_VALUE, 2); // ❌ Err(ArithmeticOverflowError)
 ```
 
 ### Деление с переполнением (редкий случай)
@@ -618,11 +618,11 @@ SafeMath.multiply(Number.MAX_VALUE, 2); // ❌ Result.err(ArithmeticOverflowErro
 ```typescript
 // Деление очень малого на очень большое
 SafeMath.divide(Number.MIN_VALUE, Number.MAX_VALUE);
-// ✅ Result.ok(0) или очень малое число
+// ✅ Ok(0) или очень малое число
 
 // Деление очень большого на очень малое может привести к Infinity
 SafeMath.divide(Number.MAX_VALUE, Number.MIN_VALUE);
-// ❌ Result.err(ArithmeticOverflowError) - результат Infinity
+// ❌ Err(ArithmeticOverflowError) - результат Infinity
 ```
 
 ---

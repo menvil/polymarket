@@ -78,7 +78,7 @@ class Price {
 
   static fromNumber(value: number): Result<Price, InvalidPriceError> {
     if (value < 0.0001 || value > 0.9999) {
-      return Result.err(
+      return Err(
         new InvalidPriceError(
           (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -88,7 +88,7 @@ class Price {
         )
       );
     }
-    return Result.ok(new Price(value));
+    return Ok(new Price(value));
   }
 
   getValue(): number {
@@ -112,7 +112,7 @@ import { InvalidPriceError } from '@polymarket/errors';
 
 function validatePrice(value: number): Result<Price, InvalidPriceError> {
   if (value <= 0) {
-    return Result.err(
+    return Err(
       new InvalidPriceError(
         'Price must be positive',
         {
@@ -124,7 +124,7 @@ function validatePrice(value: number): Result<Price, InvalidPriceError> {
   }
 
   if (value >= 1) {
-    return Result.err(
+    return Err(
       new InvalidPriceError(
         'Price cannot be 100%',
         {
@@ -136,7 +136,7 @@ function validatePrice(value: number): Result<Price, InvalidPriceError> {
   }
 
   if (value < 0.0001) {
-    return Result.err(
+    return Err(
       new InvalidPriceError(
         'Price too small (minimum: 0.0001)',
         {
@@ -202,7 +202,7 @@ class Price {
 
   static fromDecimal(value: Decimal): Result<Price, InvalidPriceError> {
     if (value.lessThan(Price.MIN) || value.greaterThan(Price.MAX)) {
-      return Result.err(
+      return Err(
         new InvalidPriceError(
           (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -216,14 +216,14 @@ class Price {
         )
       );
     }
-    return Result.ok(new Price(value));
+    return Ok(new Price(value));
   }
 
   static fromNumber(value: number): Result<Price, InvalidPriceError> {
     try {
       return Price.fromDecimal(new Decimal(value));
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidPriceError(
           (ctx) => `Invalid price format: ${ctx.value}`,
           {
@@ -249,34 +249,34 @@ class Price {
 
 ```typescript
 // Минимальная допустимая цена
-Price.fromNumber(0.0001); // ✅ Result.ok(Price)
+Price.fromNumber(0.0001); // ✅ Ok(Price)
 
 // Максимальная допустимая цена
-Price.fromNumber(0.9999); // ✅ Result.ok(Price)
+Price.fromNumber(0.9999); // ✅ Ok(Price)
 
 // Ниже минимума
-Price.fromNumber(0.0000); // ❌ Result.err(InvalidPriceError)
+Price.fromNumber(0.0000); // ❌ Err(InvalidPriceError)
 
 // Выше максимума
-Price.fromNumber(1.0000); // ❌ Result.err(InvalidPriceError)
+Price.fromNumber(1.0000); // ❌ Err(InvalidPriceError)
 ```
 
 ### Специальные значения
 
 ```typescript
 // NaN
-Price.fromNumber(NaN);      // ❌ Result.err(InvalidPriceError)
+Price.fromNumber(NaN);      // ❌ Err(InvalidPriceError)
 
 // Infinity
-Price.fromNumber(Infinity); // ❌ Result.err(InvalidPriceError)
-Price.fromNumber(-Infinity); // ❌ Result.err(InvalidPriceError)
+Price.fromNumber(Infinity); // ❌ Err(InvalidPriceError)
+Price.fromNumber(-Infinity); // ❌ Err(InvalidPriceError)
 
 // Отрицательный ноль
-Price.fromNumber(-0);       // ❌ Result.err(InvalidPriceError)
+Price.fromNumber(-0);       // ❌ Err(InvalidPriceError)
                             // Технически -0 === 0, но меньше 0.0001
 
 // Очень малые числа
-Price.fromNumber(1e-10);    // ❌ Result.err(InvalidPriceError)
+Price.fromNumber(1e-10);    // ❌ Err(InvalidPriceError)
                             // 0.0000000001 < 0.0001
 ```
 
@@ -289,7 +289,7 @@ function clampPrice(value: number): Result<Price, InvalidPriceError> {
   const MAX = 0.9999;
 
   if (isNaN(value) || !isFinite(value)) {
-    return Result.err(
+    return Err(
       new InvalidPriceError(
         'Price must be a valid number',
         { code: InvalidPriceError.code, context: { value } }

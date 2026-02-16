@@ -105,7 +105,7 @@ class Amount {
   ): Result<Amount, InvalidAmountError> {
     // Валидация NaN
     if (isNaN(value)) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} must be a valid number`,
           {
@@ -118,7 +118,7 @@ class Amount {
 
     // Валидация Infinity
     if (!isFinite(value)) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} must be finite`,
           {
@@ -131,7 +131,7 @@ class Amount {
 
     // Валидация минимума
     if (min !== undefined && value < min) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} ${ctx.value} is below minimum of ${ctx.min}`,
           {
@@ -144,7 +144,7 @@ class Amount {
 
     // Валидация максимума
     if (max !== undefined && value > max) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} ${ctx.value} exceeds maximum of ${ctx.max}`,
           {
@@ -155,7 +155,7 @@ class Amount {
       );
     }
 
-    return Result.ok(new Amount(value, field));
+    return Ok(new Amount(value, field));
   }
 
   getValue(): number {
@@ -188,7 +188,7 @@ class Multiplier {
   static fromNumber(value: number): Result<Multiplier, InvalidAmountError> {
     // Multiplier должен быть положительным
     if (value <= 0) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           'Multiplier must be positive',
           {
@@ -201,7 +201,7 @@ class Multiplier {
 
     // Multiplier не может быть дробным (для некоторых случаев)
     if (!Number.isInteger(value)) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           'Multiplier must be a whole number',
           {
@@ -214,7 +214,7 @@ class Multiplier {
 
     // Multiplier не может быть слишком большим
     if (value > 1000) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `Multiplier ${ctx.value} is too large (max: ${ctx.max})`,
           {
@@ -225,7 +225,7 @@ class Multiplier {
       );
     }
 
-    return Result.ok(new Multiplier(value));
+    return Ok(new Multiplier(value));
   }
 
   getValue(): number {
@@ -285,10 +285,10 @@ function validateTradingSettings(
   }
 
   if (errors.length > 0) {
-    return Result.err(errors);
+    return Err(errors);
   }
 
-  return Result.ok(settings);
+  return Ok(settings);
 }
 
 // Использование
@@ -333,7 +333,7 @@ class DecimalAmount {
   ): Result<DecimalAmount, InvalidAmountError> {
     // Валидация finite
     if (!value.isFinite()) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} must be finite`,
           {
@@ -346,7 +346,7 @@ class DecimalAmount {
 
     // Валидация минимума
     if (min !== undefined && value.lessThan(min)) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} ${ctx.value} is below minimum of ${ctx.min}`,
           {
@@ -359,7 +359,7 @@ class DecimalAmount {
 
     // Валидация максимума
     if (max !== undefined && value.greaterThan(max)) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} ${ctx.value} exceeds maximum of ${ctx.max}`,
           {
@@ -370,7 +370,7 @@ class DecimalAmount {
       );
     }
 
-    return Result.ok(new DecimalAmount(value, field));
+    return Ok(new DecimalAmount(value, field));
   }
 
   static fromNumber(
@@ -386,7 +386,7 @@ class DecimalAmount {
 
       return DecimalAmount.fromDecimal(decimal, field, minDecimal, maxDecimal);
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `Invalid ${ctx.field} format: ${ctx.value}`,
           {
@@ -418,43 +418,43 @@ class DecimalAmount {
 // Использует класс Amount из Примера 2
 
 // С минимумом и максимумом
-Amount.fromNumber(50, 'leverage', 1, 100); // ✅ Result.ok(Amount)
-Amount.fromNumber(1, 'leverage', 1, 100); // ✅ Result.ok(Amount) - граница
-Amount.fromNumber(100, 'leverage', 1, 100); // ✅ Result.ok(Amount) - граница
+Amount.fromNumber(50, 'leverage', 1, 100); // ✅ Ok(Amount)
+Amount.fromNumber(1, 'leverage', 1, 100); // ✅ Ok(Amount) - граница
+Amount.fromNumber(100, 'leverage', 1, 100); // ✅ Ok(Amount) - граница
 
-Amount.fromNumber(0, 'leverage', 1, 100); // ❌ Result.err(InvalidAmountError)
-Amount.fromNumber(101, 'leverage', 1, 100); // ❌ Result.err(InvalidAmountError)
+Amount.fromNumber(0, 'leverage', 1, 100); // ❌ Err(InvalidAmountError)
+Amount.fromNumber(101, 'leverage', 1, 100); // ❌ Err(InvalidAmountError)
 
 // Без минимума
-Amount.fromNumber(-100, 'value'); // ✅ Result.ok(Amount) - нет ограничений
-Amount.fromNumber(0, 'value'); // ✅ Result.ok(Amount)
+Amount.fromNumber(-100, 'value'); // ✅ Ok(Amount) - нет ограничений
+Amount.fromNumber(0, 'value'); // ✅ Ok(Amount)
 
 // Только минимум
-Amount.fromNumber(50, 'positive', 0); // ✅ Result.ok(Amount)
-Amount.fromNumber(-1, 'positive', 0); // ❌ Result.err(InvalidAmountError)
+Amount.fromNumber(50, 'positive', 0); // ✅ Ok(Amount)
+Amount.fromNumber(-1, 'positive', 0); // ❌ Err(InvalidAmountError)
 
 // Только максимум
-Amount.fromNumber(50, 'limited', undefined, 100); // ✅ Result.ok(Amount)
-Amount.fromNumber(150, 'limited', undefined, 100); // ❌ Result.err(InvalidAmountError)
+Amount.fromNumber(50, 'limited', undefined, 100); // ✅ Ok(Amount)
+Amount.fromNumber(150, 'limited', undefined, 100); // ❌ Err(InvalidAmountError)
 ```
 
 ### Специальные значения
 
 ```typescript
 // NaN
-Amount.fromNumber(NaN, 'value'); // ❌ Result.err(InvalidAmountError)
+Amount.fromNumber(NaN, 'value'); // ❌ Err(InvalidAmountError)
 
 // Infinity
-Amount.fromNumber(Infinity, 'value'); // ❌ Result.err(InvalidAmountError)
-Amount.fromNumber(-Infinity, 'value'); // ❌ Result.err(InvalidAmountError)
+Amount.fromNumber(Infinity, 'value'); // ❌ Err(InvalidAmountError)
+Amount.fromNumber(-Infinity, 'value'); // ❌ Err(InvalidAmountError)
 
 // Очень большие числа
-Amount.fromNumber(Number.MAX_VALUE, 'value'); // ✅ Result.ok(Amount)
-Amount.fromNumber(Number.MAX_SAFE_INTEGER, 'value'); // ✅ Result.ok(Amount)
+Amount.fromNumber(Number.MAX_VALUE, 'value'); // ✅ Ok(Amount)
+Amount.fromNumber(Number.MAX_SAFE_INTEGER, 'value'); // ✅ Ok(Amount)
 
 // Очень малые числа
-Amount.fromNumber(Number.MIN_VALUE, 'value'); // ✅ Result.ok(Amount)
-Amount.fromNumber(Number.EPSILON, 'value'); // ✅ Result.ok(Amount)
+Amount.fromNumber(Number.MIN_VALUE, 'value'); // ✅ Ok(Amount)
+Amount.fromNumber(Number.EPSILON, 'value'); // ✅ Ok(Amount)
 ```
 
 ### Различные типы полей
@@ -495,18 +495,18 @@ class OrderLimit {
     // Валидация минимума
     const minResult = Amount.fromNumber(min, 'minOrderSize', 0);
     if (minResult.isErr()) {
-      return Result.err(minResult.unwrapErr());
+      return Err(minResult.unwrapErr());
     }
 
     // Валидация максимума
     const maxResult = Amount.fromNumber(max, 'maxOrderSize', 0);
     if (maxResult.isErr()) {
-      return Result.err(maxResult.unwrapErr());
+      return Err(maxResult.unwrapErr());
     }
 
     // Проверка что min <= max
     if (min > max) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `Min ${ctx.min} cannot exceed max ${ctx.max}`,
           {
@@ -517,7 +517,7 @@ class OrderLimit {
       );
     }
 
-    return Result.ok(new OrderLimit(min, max));
+    return Ok(new OrderLimit(min, max));
   }
 
   getMin(): number {

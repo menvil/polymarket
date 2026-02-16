@@ -104,12 +104,12 @@ class Money {
 
   static fromAmount(amount: number, currency: string): Result<Money, InvalidMoneyError> {
     // ... валидация
-    return Result.ok(new Money(amount, currency));
+    return Ok(new Money(amount, currency));
   }
 
   add(other: Money): Result<Money, CurrencyMismatchError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot add ${ctx.actual} to ${ctx.expected}. Convert currencies first.`,
           {
@@ -126,12 +126,12 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(this.amount + other.amount, this.currency));
+    return Ok(new Money(this.amount + other.amount, this.currency));
   }
 
   subtract(other: Money): Result<Money, CurrencyMismatchError | InvalidMoneyError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot subtract ${ctx.actual} from ${ctx.expected}`,
           {
@@ -149,7 +149,7 @@ class Money {
     const newAmount = this.amount - other.amount;
 
     if (newAmount < 0) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Insufficient funds: ${ctx.available} - ${ctx.required} = ${ctx.result}`,
           {
@@ -165,7 +165,7 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(newAmount, this.currency));
+    return Ok(new Money(newAmount, this.currency));
   }
 
   getAmount(): number {
@@ -206,7 +206,7 @@ class Money {
    */
   compareTo(other: Money): Result<number, CurrencyMismatchError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot compare ${ctx.expected} with ${ctx.actual}`,
           {
@@ -221,9 +221,9 @@ class Money {
       );
     }
 
-    if (this.amount < other.amount) return Result.ok(-1);
-    if (this.amount > other.amount) return Result.ok(1);
-    return Result.ok(0);
+    if (this.amount < other.amount) return Ok(-1);
+    if (this.amount > other.amount) return Ok(1);
+    return Ok(0);
   }
 
   /**
@@ -286,20 +286,20 @@ class CurrencyConverter {
    */
   getRate(from: string, to: string): Result<number, Error> {
     if (from === to) {
-      return Result.ok(1);
+      return Ok(1);
     }
 
     const fromRates = this.rates.get(from);
     if (!fromRates) {
-      return Result.err(new Error(`No rates available for ${from}`));
+      return Err(new Error(`No rates available for ${from}`));
     }
 
     const rate = fromRates.get(to);
     if (rate === undefined) {
-      return Result.err(new Error(`No rate available for ${from} -> ${to}`));
+      return Err(new Error(`No rate available for ${from} -> ${to}`));
     }
 
-    return Result.ok(rate);
+    return Ok(rate);
   }
 
   /**
@@ -371,12 +371,12 @@ class DecimalMoney {
 
   static fromDecimal(amount: Decimal, currency: string): Result<DecimalMoney, InvalidMoneyError> {
     // ... валидация
-    return Result.ok(new DecimalMoney(amount, currency));
+    return Ok(new DecimalMoney(amount, currency));
   }
 
   add(other: DecimalMoney): Result<DecimalMoney, CurrencyMismatchError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot add ${ctx.actual} to ${ctx.expected}`,
           {
@@ -394,12 +394,12 @@ class DecimalMoney {
     }
 
     const sum = this.amount.plus(other.amount);
-    return Result.ok(new DecimalMoney(sum, this.currency));
+    return Ok(new DecimalMoney(sum, this.currency));
   }
 
   subtract(other: DecimalMoney): Result<DecimalMoney, CurrencyMismatchError | InvalidMoneyError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot subtract ${ctx.actual} from ${ctx.expected}`,
           {
@@ -417,7 +417,7 @@ class DecimalMoney {
     const difference = this.amount.minus(other.amount);
 
     if (difference.isNegative()) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Insufficient funds',
           {
@@ -433,7 +433,7 @@ class DecimalMoney {
       );
     }
 
-    return Result.ok(new DecimalMoney(difference, this.currency));
+    return Ok(new DecimalMoney(difference, this.currency));
   }
 
   toDecimal(): Decimal {
@@ -457,14 +457,14 @@ const usdc1 = Money.fromAmount(100, 'USDC').unwrap();
 const usdc2 = Money.fromAmount(50, 'usdc').unwrap(); // lowercase
 
 const result = usdc1.add(usdc2);
-// ❌ Result.err(CurrencyMismatchError) - 'USDC' !== 'usdc'
+// ❌ Err(CurrencyMismatchError) - 'USDC' !== 'usdc'
 
 // Решение: нормализация валюты при создании
 class Money {
   static fromAmount(amount: number, currency: string): Result<Money, InvalidMoneyError> {
     const normalizedCurrency = currency.toUpperCase();
     // ... валидация
-    return Result.ok(new Money(amount, normalizedCurrency));
+    return Ok(new Money(amount, normalizedCurrency));
   }
 }
 ```
@@ -476,13 +476,13 @@ const money1 = Money.fromAmount(100, 'USDC').unwrap();
 const money2 = Money.fromAmount(50, '').unwrap(); // Пустая валюта
 
 const result = money1.add(money2);
-// ❌ Result.err(CurrencyMismatchError) - 'USDC' !== ''
+// ❌ Err(CurrencyMismatchError) - 'USDC' !== ''
 
 // Лучше: валидировать при создании
 class Money {
   static fromAmount(amount: number, currency: string): Result<Money, InvalidMoneyError> {
     if (!currency || currency.trim().length === 0) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Currency must be a non-empty string',
           {
@@ -510,7 +510,7 @@ const result = ResultChain
   .flatMap(total => total.add(btc))
   .run();
 
-// ❌ Result.err(CurrencyMismatchError) на первой же операции (USDC + EUR)
+// ❌ Err(CurrencyMismatchError) на первой же операции (USDC + EUR)
 
 // Решение: конвертация перед операциями
 const result2 = ResultChain
@@ -528,7 +528,7 @@ const usdc = Money.fromAmount(100, 'USDC').unwrap();
 const zeroEur = Money.fromAmount(0, 'EUR').unwrap();
 
 const result = usdc.add(zeroEur);
-// ❌ Result.err(CurrencyMismatchError)
+// ❌ Err(CurrencyMismatchError)
 // Даже если сумма 0, валюты разные
 
 // Если нужна специальная логика для нуля:
@@ -536,14 +536,14 @@ class Money {
   add(other: Money): Result<Money, CurrencyMismatchError> {
     // Специальный случай: добавление нуля любой валюты
     if (other.amount === 0) {
-      return Result.ok(this); // Возвращаем текущую сумму без изменений
+      return Ok(this); // Возвращаем текущую сумму без изменений
     }
 
     if (this.currency !== other.currency) {
-      return Result.err(/* ... */);
+      return Err(/* ... */);
     }
 
-    return Result.ok(new Money(this.amount + other.amount, this.currency));
+    return Ok(new Money(this.amount + other.amount, this.currency));
   }
 }
 ```
@@ -619,7 +619,7 @@ function addWithAutoConvert(
   converter: CurrencyConverter
 ): Result<Money, Error> {
   return money1.add(money2).match({
-    ok: (sum) => Result.ok(sum),
+    ok: (sum) => Ok(sum),
     err: (error) => {
       if (CurrencyMismatchError.is(error)) {
         logger.info('Currency mismatch, attempting conversion', error.toJSON());
@@ -628,7 +628,7 @@ function addWithAutoConvert(
         return money1.addWithConversion(money2, converter);
       }
 
-      return Result.err(error);
+      return Err(error);
     }
   });
 }

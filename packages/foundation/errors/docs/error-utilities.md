@@ -307,29 +307,25 @@ if (result.ok) {
 
 ```typescript
 function expectedMathError<TError extends DomainError>(
-  serviceName: string,
-  op: string,
-  ctx: Record<string, unknown>,
   e: Error,
   ErrorConstructor: ErrorConstructor<TError>
 ): TError
 ```
 
+**Что делает**:
+
+- Классифицирует ошибку как ErrorSource.MATH_OPERATION
+- Сохраняет полный cause с stack trace
+- Фабрика ТОЛЬКО добавляет семантику (source, cause)
+- Трассировка (service, op, opChain) добавляется через rewrap в wrapOp
+
 **Пример**:
 
 ```typescript
-try {
-  return multiplyDecimal(amount, factor);
-} catch (e) {
-  if (isExpectedMathError(e)) {
-    return Err(expectedMathError(
-      'MoneyService',
-      'multiply',
-      { amount: amount.toString(), factor: factor.toString() },
-      e,
-      InvalidMoneyError
-    ));
-  }
+// Внутри wrapOp:
+if (isExpectedMathError(e)) {
+  const factoryError = expectedMathError(e, InvalidMoneyError);
+  return Err(rewrap('MoneyService', 'multiply', ctx, factoryError, InvalidMoneyError));
 }
 ```
 
@@ -341,28 +337,25 @@ try {
 
 ```typescript
 function unexpectedError<TError extends DomainError>(
-  serviceName: string,
-  op: string,
-  ctx: Record<string, unknown>,
   e: unknown,
   ErrorConstructor: ErrorConstructor<TError>
 ): TError
 ```
 
+**Что делает**:
+
+- Классифицирует ошибку как ErrorSource.UNEXPECTED
+- Сохраняет полный cause с stack trace
+- Обрабатывает любой тип thrown значения (Error, string, object, etc.)
+- Фабрика ТОЛЬКО добавляет семантику (source, cause)
+- Трассировка (service, op, opChain) добавляется через rewrap в wrapOp
+
 **Пример**:
 
 ```typescript
-try {
-  // ... операция
-} catch (e) {
-  return Err(unexpectedError(
-    'QuoteService',
-    'create',
-    { timestamp, bid, ask },
-    e,
-    InvalidQuoteError
-  ));
-}
+// Внутри wrapOp:
+const factoryError = unexpectedError(e, InvalidQuoteError);
+return Err(rewrap('QuoteService', 'create', ctx, factoryError, InvalidQuoteError));
 ```
 
 ### currencyMismatchError()
@@ -373,7 +366,6 @@ try {
 
 ```typescript
 function currencyMismatchError<TError extends DomainError>(
-  op: string,
   expected: string,
   actual: string,
   reasonEnum: string,
@@ -381,12 +373,19 @@ function currencyMismatchError<TError extends DomainError>(
 ): TError
 ```
 
+**Что делает**:
+
+- Классифицирует ошибку как ErrorSource.SERVICE_CALL
+- Добавляет reason, expected, actual в контекст
+- Создает стандартизированное сообщение: "Currency mismatch: expected X, got Y"
+- Фабрика ТОЛЬКО добавляет семантику (source, reason, expected, actual)
+- Трассировка (service, op, opChain) добавляется через rewrap если нужно
+
 **Пример**:
 
 ```typescript
 if (!a.hasSameCurrency(b)) {
   return Err(currencyMismatchError(
-    'add',
     a.currency(),
     b.currency(),
     MoneyErrorReason.CURRENCY_MISMATCH,
@@ -470,8 +469,8 @@ return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
 ✅ **Правильно** (один проход):
 
 ```typescript
-// Фабрика создаёт ошибку только с reason/source
-const err = coreInvariantError(ctx, e, InvalidPriceError);
+// Фабрика создаёт ошибку только с reason/source/cause
+const err = coreInvariantError(e, InvalidPriceError);
 // rewrap добавляет service/op один раз
 return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
 ```
@@ -501,16 +500,27 @@ return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
 - `raw` - первичные невалидные данные
 - `source` - источник ошибки (не перезаписывается)
 
-**НЕ сохраняются** (обновляются на каждом rewrap):
+**Origin-данные сохраняются** (данные самой первой ошибки в цепочке):
+
+- `rootTimestamp` - timestamp первой ошибки (ISO string)
+- `originalStack` - stack trace первой ошибки
+- `originalName` - name первой ошибки
+- `originalCode` - code первой ошибки
+
+**Обновляются на каждом rewrap**:
 
 - `timestamp` - время создания новой ошибки
 - `stack` - стек места где произошёл rewrap
+- `name` - имя типа новой ошибки
+- `code` - код новой ошибки (если изменился)
 - `service`/`op`/`opChain` - обогащаются на каждом уровне
 
 Это позволяет увидеть:
 
 - **Что пошло не так** (cause, reason, raw, source) - сохраняется
-- **Где это произошло** (service, op, opChain, stack) - обновляется
+- **Первоисточник** (rootTimestamp, originalStack, originalName, originalCode) - сохраняется
+- **Где это произошло** (service, op, opChain) - накапливается в цепочке
+- **Текущее состояние** (timestamp, stack, name) - обновляется
 
 ## См. также
 

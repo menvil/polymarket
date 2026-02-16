@@ -78,7 +78,7 @@ class Quantity {
 
   static fromNumber(value: number): Result<Quantity, InvalidQuantityError> {
     if (!isFinite(value) || isNaN(value)) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Invalid quantity: ${ctx.reason}`,
           {
@@ -90,7 +90,7 @@ class Quantity {
     }
 
     if (value <= 0) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Quantity ${ctx.value} must be positive (min: ${ctx.min})`,
           {
@@ -101,7 +101,7 @@ class Quantity {
       );
     }
 
-    return Result.ok(new Quantity(value));
+    return Ok(new Quantity(value));
   }
 
   getValue(): number {
@@ -125,7 +125,7 @@ import { InvalidQuantityError } from '@polymarket/errors';
 
 function validateQuantity(value: number, min: number = 0): Result<Quantity, InvalidQuantityError> {
   if (isNaN(value)) {
-    return Result.err(
+    return Err(
       new InvalidQuantityError(
         'Quantity must be a valid number',
         {
@@ -137,7 +137,7 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
   }
 
   if (!isFinite(value)) {
-    return Result.err(
+    return Err(
       new InvalidQuantityError(
         'Quantity cannot be infinite',
         {
@@ -149,7 +149,7 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
   }
 
   if (value < 0) {
-    return Result.err(
+    return Err(
       new InvalidQuantityError(
         'Quantity cannot be negative',
         {
@@ -161,7 +161,7 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
   }
 
   if (value === 0 && min > 0) {
-    return Result.err(
+    return Err(
       new InvalidQuantityError(
         (ctx) => `Quantity must be at least ${ctx.min}`,
         {
@@ -173,7 +173,7 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
   }
 
   if (value < min) {
-    return Result.err(
+    return Err(
       new InvalidQuantityError(
         (ctx) => `Quantity ${ctx.value} is below minimum ${ctx.min}`,
         {
@@ -250,7 +250,7 @@ class Quantity {
 
   static fromDecimal(value: Decimal): Result<Quantity, InvalidQuantityError> {
     if (!value.isFinite()) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Invalid quantity: ${ctx.reason}`,
           {
@@ -262,7 +262,7 @@ class Quantity {
     }
 
     if (value.lessThanOrEqualTo(Quantity.MIN)) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Quantity ${ctx.value} must be positive`,
           {
@@ -273,14 +273,14 @@ class Quantity {
       );
     }
 
-    return Result.ok(new Quantity(value));
+    return Ok(new Quantity(value));
   }
 
   static fromNumber(value: number): Result<Quantity, InvalidQuantityError> {
     try {
       return Quantity.fromDecimal(new Decimal(value));
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Invalid quantity format: ${ctx.value}`,
           {
@@ -296,7 +296,7 @@ class Quantity {
     try {
       return Quantity.fromDecimal(new Decimal(value));
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Invalid quantity format: "${ctx.value}"`,
           {
@@ -326,41 +326,41 @@ class Quantity {
 
 ```typescript
 // Минимальное положительное
-Quantity.fromNumber(0.0001); // ✅ Result.ok(Quantity)
-Quantity.fromNumber(Number.MIN_VALUE); // ✅ Result.ok(Quantity) - 5e-324
+Quantity.fromNumber(0.0001); // ✅ Ok(Quantity)
+Quantity.fromNumber(Number.MIN_VALUE); // ✅ Ok(Quantity) - 5e-324
 
 // Ноль
-Quantity.fromNumber(0); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromNumber(0); // ❌ Err(InvalidQuantityError)
 
 // Отрицательные
-Quantity.fromNumber(-1); // ❌ Result.err(InvalidQuantityError)
-Quantity.fromNumber(-0.0001); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromNumber(-1); // ❌ Err(InvalidQuantityError)
+Quantity.fromNumber(-0.0001); // ❌ Err(InvalidQuantityError)
 
 // Большие числа
-Quantity.fromNumber(1e10); // ✅ Result.ok(Quantity)
-Quantity.fromNumber(Number.MAX_SAFE_INTEGER); // ✅ Result.ok(Quantity)
+Quantity.fromNumber(1e10); // ✅ Ok(Quantity)
+Quantity.fromNumber(Number.MAX_SAFE_INTEGER); // ✅ Ok(Quantity)
 ```
 
 ### Специальные значения
 
 ```typescript
 // NaN
-Quantity.fromNumber(NaN); // ❌ Result.err(InvalidQuantityError)
-Quantity.fromNumber(0 / 0); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromNumber(NaN); // ❌ Err(InvalidQuantityError)
+Quantity.fromNumber(0 / 0); // ❌ Err(InvalidQuantityError)
 
 // Infinity
-Quantity.fromNumber(Infinity); // ❌ Result.err(InvalidQuantityError)
-Quantity.fromNumber(-Infinity); // ❌ Result.err(InvalidQuantityError)
-Quantity.fromNumber(1 / 0); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromNumber(Infinity); // ❌ Err(InvalidQuantityError)
+Quantity.fromNumber(-Infinity); // ❌ Err(InvalidQuantityError)
+Quantity.fromNumber(1 / 0); // ❌ Err(InvalidQuantityError)
 
 // Отрицательный ноль
-Quantity.fromNumber(-0); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromNumber(-0); // ❌ Err(InvalidQuantityError)
                         // Технически -0 === 0, но не положительное
 
 // Строковые значения
-Quantity.fromString('100'); // ✅ Result.ok(Quantity)
-Quantity.fromString('abc'); // ❌ Result.err(InvalidQuantityError)
-Quantity.fromString(''); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromString('100'); // ✅ Ok(Quantity)
+Quantity.fromString('abc'); // ❌ Err(InvalidQuantityError)
+Quantity.fromString(''); // ❌ Err(InvalidQuantityError)
 ```
 
 ### Округление и точность
@@ -371,11 +371,11 @@ Quantity.fromNumber(0.5); // ✅ Допустимо (если протокол �
 Quantity.fromNumber(1.23456789); // ✅ Допустимо
 
 // Очень малые числа
-Quantity.fromNumber(1e-18); // ✅ Result.ok(Quantity)
+Quantity.fromNumber(1e-18); // ✅ Ok(Quantity)
 
 // Проблемы с точностью float
 const qty1 = Quantity.fromNumber(0.1 + 0.2); // 0.30000000000000004
-// ✅ Result.ok(Quantity) - но значение может быть неточным
+// ✅ Ok(Quantity) - но значение может быть неточным
 
 // Использование decimal.js решает эту проблему
 const qty2 = Quantity.fromString('0.1');
@@ -393,7 +393,7 @@ class Quantity {
     min: number = 0
   ): Result<Quantity, InvalidQuantityError> {
     if (value < min) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Quantity ${ctx.value} must be >= ${ctx.min}`,
           {
@@ -409,8 +409,8 @@ class Quantity {
 
 // Использование
 Quantity.fromNumberWithMin(0, 1); // ❌ min = 1, значит 0 недопустим
-Quantity.fromNumberWithMin(1, 1); // ✅ Result.ok(Quantity)
-Quantity.fromNumberWithMin(100, 10); // ✅ Result.ok(Quantity)
+Quantity.fromNumberWithMin(1, 1); // ✅ Ok(Quantity)
+Quantity.fromNumberWithMin(100, 10); // ✅ Ok(Quantity)
 ```
 
 ---

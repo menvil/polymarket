@@ -92,12 +92,12 @@ class Money {
 
   static fromAmount(amount: number, currency: string): Result<Money, InvalidMoneyError> {
     // ... валидация
-    return Result.ok(new Money(amount, currency));
+    return Ok(new Money(amount, currency));
   }
 
   divide(divisor: number): Result<Money, DivisionByZeroError> {
     if (divisor === 0) {
-      return Result.err(
+      return Err(
         new DivisionByZeroError(
           (ctx) => `Cannot divide ${ctx.dividend} ${ctx.currency} by zero`,
           {
@@ -108,7 +108,7 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(this.amount / divisor, this.currency));
+    return Ok(new Money(this.amount / divisor, this.currency));
   }
 
   getAmount(): number {
@@ -143,7 +143,7 @@ class AveragePrice {
     quantity: number
   ): Result<AveragePrice, DivisionByZeroError> {
     if (quantity === 0) {
-      return Result.err(
+      return Err(
         new DivisionByZeroError(
           (ctx) => `Cannot calculate average price: quantity is zero (total cost: ${ctx.totalCost})`,
           {
@@ -155,7 +155,7 @@ class AveragePrice {
     }
 
     const avgPrice = totalCost / quantity;
-    return Result.ok(new AveragePrice(avgPrice));
+    return Ok(new AveragePrice(avgPrice));
   }
 
   getValue(): number {
@@ -192,7 +192,7 @@ class ProfitPercentage {
     currentValue: number
   ): Result<ProfitPercentage, DivisionByZeroError> {
     if (investment === 0) {
-      return Result.err(
+      return Err(
         new DivisionByZeroError(
           'Cannot calculate profit percentage: investment is zero',
           {
@@ -212,7 +212,7 @@ class ProfitPercentage {
     const profit = currentValue - investment;
     const percentage = (profit / investment) * 100;
 
-    return Result.ok(new ProfitPercentage(percentage));
+    return Ok(new ProfitPercentage(percentage));
   }
 
   getValue(): number {
@@ -248,12 +248,12 @@ class DecimalMoney {
 
   static fromDecimal(amount: Decimal, currency: string): Result<DecimalMoney, InvalidMoneyError> {
     // ... валидация
-    return Result.ok(new DecimalMoney(amount, currency));
+    return Ok(new DecimalMoney(amount, currency));
   }
 
   divide(divisor: Decimal): Result<DecimalMoney, DivisionByZeroError> {
     if (divisor.isZero()) {
-      return Result.err(
+      return Err(
         new DivisionByZeroError(
           (ctx) => `Cannot divide ${ctx.dividend} ${ctx.currency} by zero`,
           {
@@ -270,7 +270,7 @@ class DecimalMoney {
     }
 
     const result = this.amount.div(divisor);
-    return Result.ok(new DecimalMoney(result, this.currency));
+    return Ok(new DecimalMoney(result, this.currency));
   }
 
   divideByNumber(divisor: number): Result<DecimalMoney, DivisionByZeroError> {
@@ -302,7 +302,7 @@ result.match({
 // 0 / 0 = неопределенность (NaN в JavaScript)
 const zero = Money.fromAmount(0, 'USDC').unwrap();
 const result = zero.divide(0);
-// ❌ Result.err(DivisionByZeroError)
+// ❌ Err(DivisionByZeroError)
 // Важно: даже если делимое = 0, деление на ноль недопустимо
 ```
 
@@ -312,11 +312,11 @@ const result = zero.divide(0);
 // Деление на ноль недопустимо для любых значений
 const money = Money.fromAmount(100, 'USDC').unwrap();
 const result = money.divide(0);
-// ❌ Result.err(DivisionByZeroError)
+// ❌ Err(DivisionByZeroError)
 
 const smallMoney = Money.fromAmount(0.01, 'USDC').unwrap();
 const result2 = smallMoney.divide(0);
-// ❌ Result.err(DivisionByZeroError)
+// ❌ Err(DivisionByZeroError)
 ```
 
 ### Очень малые делители (почти ноль)
@@ -324,7 +324,7 @@ const result2 = smallMoney.divide(0);
 ```typescript
 // Технически не ноль, но результат может быть огромным
 const money = Money.fromAmount(100, 'USDC').unwrap();
-const result = money.divide(0.0000001); // ✅ Result.ok(Money(1000000000))
+const result = money.divide(0.0000001); // ✅ Ok(Money(1000000000))
 
 // Если нужна защита от слишком малых делителей:
 function safeDivide(
@@ -333,7 +333,7 @@ function safeDivide(
   minDivisor: number = 0.0001
 ): Result<Money, DivisionByZeroError> {
   if (Math.abs(divisor) < minDivisor) {
-    return Result.err(
+    return Err(
       new DivisionByZeroError(
         (ctx) => `Divisor ${ctx.divisor} is too close to zero (min: ${ctx.minDivisor})`,
         {
@@ -354,7 +354,7 @@ function safeDivide(
 // JavaScript имеет -0, который === 0
 const money = Money.fromAmount(100, 'USDC').unwrap();
 const result = money.divide(-0);
-// ❌ Result.err(DivisionByZeroError)
+// ❌ Err(DivisionByZeroError)
 // Проверка divisor === 0 ловит и -0
 ```
 
@@ -515,7 +515,7 @@ function calculatePE(
 ): Result<number, DivisionByZeroError | ArithmeticOverflowError> {
   // Проверка деления на ноль
   if (earnings === 0) {
-    return Result.err(
+    return Err(
       new DivisionByZeroError(
         'Cannot calculate P/E ratio: earnings are zero',
         {
@@ -530,7 +530,7 @@ function calculatePE(
 
   // Проверка переполнения
   if (!isFinite(pe)) {
-    return Result.err(
+    return Err(
       new ArithmeticOverflowError(
         'P/E ratio calculation resulted in overflow',
         {
@@ -541,7 +541,7 @@ function calculatePE(
     );
   }
 
-  return Result.ok(pe);
+  return Ok(pe);
 }
 
 // Использование

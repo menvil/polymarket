@@ -308,7 +308,7 @@ export class Price {
       return Price.fromDecimal(result);
     } catch (error) {
       if (InvalidDivisorError.is(error)) {
-        return Result.err(error);
+        return Err(error);
       }
       throw error;
     }
@@ -320,7 +320,7 @@ export class Price {
       return Price.fromDecimal(rounded);
     } catch (error) {
       if (InvalidTickSizeError.is(error)) {
-        return Result.err(error);
+        return Err(error);
       }
       throw error;
     }

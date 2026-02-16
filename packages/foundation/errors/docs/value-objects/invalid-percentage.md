@@ -116,7 +116,7 @@ class Percentage {
     const max = 100;
 
     if (!isFinite(value) || isNaN(value)) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           'Percentage must be a finite number',
           {
@@ -128,7 +128,7 @@ class Percentage {
     }
 
     if (value < min || value > max) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Invalid percentage ${ctx.value}%: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -139,7 +139,7 @@ class Percentage {
       );
     }
 
-    return Result.ok(new Percentage(value, 'whole'));
+    return Ok(new Percentage(value, 'whole'));
   }
 
   /**
@@ -150,7 +150,7 @@ class Percentage {
     const max = 1;
 
     if (!isFinite(value) || isNaN(value)) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           'Percentage must be a finite number',
           {
@@ -162,7 +162,7 @@ class Percentage {
     }
 
     if (value < min || value > max) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Invalid percentage ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -173,7 +173,7 @@ class Percentage {
       );
     }
 
-    return Result.ok(new Percentage(value, 'decimal'));
+    return Ok(new Percentage(value, 'decimal'));
   }
 
   getValue(): number {
@@ -221,7 +221,7 @@ class SlippageTolerance {
     maxAllowed: number = SlippageTolerance.DEFAULT_MAX
   ): Result<SlippageTolerance, InvalidPercentageError> {
     if (value < 0) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           'Slippage cannot be negative',
           {
@@ -233,7 +233,7 @@ class SlippageTolerance {
     }
 
     if (value > SlippageTolerance.ABSOLUTE_MAX) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Slippage ${ctx.value}% is too high (max: ${ctx.max}%)`,
           {
@@ -245,7 +245,7 @@ class SlippageTolerance {
     }
 
     if (value > maxAllowed) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Warning: High slippage ${ctx.value}% (recommended max: ${ctx.recommended}%)`,
           {
@@ -333,7 +333,7 @@ class Percentage {
 
   static fromDecimalValue(value: Decimal): Result<Percentage, InvalidPercentageError> {
     if (!value.isFinite()) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           'Percentage must be finite',
           {
@@ -345,7 +345,7 @@ class Percentage {
     }
 
     if (value.lessThan(Percentage.MIN_DECIMAL) || value.greaterThan(Percentage.MAX_DECIMAL)) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Invalid percentage ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -356,12 +356,12 @@ class Percentage {
       );
     }
 
-    return Result.ok(new Percentage(value, 'decimal'));
+    return Ok(new Percentage(value, 'decimal'));
   }
 
   static fromWholeValue(value: Decimal): Result<Percentage, InvalidPercentageError> {
     if (!value.isFinite()) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           'Percentage must be finite',
           {
@@ -373,7 +373,7 @@ class Percentage {
     }
 
     if (value.lessThan(Percentage.MIN_WHOLE) || value.greaterThan(Percentage.MAX_WHOLE)) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Invalid percentage ${ctx.value}%: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -384,7 +384,7 @@ class Percentage {
       );
     }
 
-    return Result.ok(new Percentage(value, 'whole'));
+    return Ok(new Percentage(value, 'whole'));
   }
 
   toDecimal(): Decimal {
@@ -417,37 +417,37 @@ const fee = feePercent.applyTo(orderAmount); // 5 USDC
 
 ```typescript
 // Формат [0, 100]
-Percentage.fromWhole(0); // ✅ Result.ok(Percentage) - 0%
-Percentage.fromWhole(100); // ✅ Result.ok(Percentage) - 100%
-Percentage.fromWhole(50.5); // ✅ Result.ok(Percentage) - 50.5%
+Percentage.fromWhole(0); // ✅ Ok(Percentage) - 0%
+Percentage.fromWhole(100); // ✅ Ok(Percentage) - 100%
+Percentage.fromWhole(50.5); // ✅ Ok(Percentage) - 50.5%
 
-Percentage.fromWhole(-1); // ❌ Result.err(InvalidPercentageError)
-Percentage.fromWhole(101); // ❌ Result.err(InvalidPercentageError)
+Percentage.fromWhole(-1); // ❌ Err(InvalidPercentageError)
+Percentage.fromWhole(101); // ❌ Err(InvalidPercentageError)
 
 // Формат [0, 1]
-Percentage.fromDecimal(0); // ✅ Result.ok(Percentage) - 0%
-Percentage.fromDecimal(1); // ✅ Result.ok(Percentage) - 100%
-Percentage.fromDecimal(0.505); // ✅ Result.ok(Percentage) - 50.5%
+Percentage.fromDecimal(0); // ✅ Ok(Percentage) - 0%
+Percentage.fromDecimal(1); // ✅ Ok(Percentage) - 100%
+Percentage.fromDecimal(0.505); // ✅ Ok(Percentage) - 50.5%
 
-Percentage.fromDecimal(-0.01); // ❌ Result.err(InvalidPercentageError)
-Percentage.fromDecimal(1.01); // ❌ Result.err(InvalidPercentageError)
+Percentage.fromDecimal(-0.01); // ❌ Err(InvalidPercentageError)
+Percentage.fromDecimal(1.01); // ❌ Err(InvalidPercentageError)
 ```
 
 ### Специальные значения
 
 ```typescript
 // NaN
-Percentage.fromWhole(NaN); // ❌ Result.err(InvalidPercentageError)
-Percentage.fromDecimal(NaN); // ❌ Result.err(InvalidPercentageError)
+Percentage.fromWhole(NaN); // ❌ Err(InvalidPercentageError)
+Percentage.fromDecimal(NaN); // ❌ Err(InvalidPercentageError)
 
 // Infinity
-Percentage.fromWhole(Infinity); // ❌ Result.err(InvalidPercentageError)
-Percentage.fromWhole(-Infinity); // ❌ Result.err(InvalidPercentageError)
-Percentage.fromDecimal(Infinity); // ❌ Result.err(InvalidPercentageError)
+Percentage.fromWhole(Infinity); // ❌ Err(InvalidPercentageError)
+Percentage.fromWhole(-Infinity); // ❌ Err(InvalidPercentageError)
+Percentage.fromDecimal(Infinity); // ❌ Err(InvalidPercentageError)
 
 // Очень малые значения
-Percentage.fromWhole(0.0001); // ✅ Result.ok(Percentage) - 0.0001%
-Percentage.fromDecimal(0.000001); // ✅ Result.ok(Percentage) - 0.0001%
+Percentage.fromWhole(0.0001); // ✅ Ok(Percentage) - 0.0001%
+Percentage.fromDecimal(0.000001); // ✅ Ok(Percentage) - 0.0001%
 ```
 
 ### Конвертация между форматами
@@ -492,7 +492,7 @@ const currentValue = 1200;
 const profitAmount = currentValue - costBasis; // 200
 const profitPercent = (profitAmount / costBasis) * 100; // 20%
 
-Percentage.fromWhole(profitPercent); // ✅ Result.ok(Percentage)
+Percentage.fromWhole(profitPercent); // ✅ Ok(Percentage)
 ```
 
 ---

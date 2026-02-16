@@ -87,7 +87,7 @@ class Price {
 
   static fromNumber(value: number): Result<Price, InvalidPriceError> {
     if (value < 0.0001 || value > 0.9999) {
-      return Result.err(
+      return Err(
         new InvalidPriceError(
           (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -97,7 +97,7 @@ class Price {
         )
       );
     }
-    return Result.ok(new Price(value));
+    return Ok(new Price(value));
   }
 }
 
@@ -219,10 +219,10 @@ function validateOrderForm(
   }
 
   if (errors.length > 0) {
-    return Result.err(errors);
+    return Err(errors);
   }
 
-  return Result.ok({
+  return Ok({
     price: priceResult.unwrap(),
     quantity: qtyResult.unwrap(),
     balance: balanceResult.unwrap()
@@ -276,7 +276,7 @@ class Money {
       const decimal = new Decimal(amount);
 
       if (!decimal.isFinite()) {
-        return Result.err(
+        return Err(
           new ArithmeticOverflowError(
             (ctx) => `Amount overflow: ${ctx.amount}`,
             {
@@ -288,7 +288,7 @@ class Money {
       }
 
       if (decimal.isNegative()) {
-        return Result.err(
+        return Err(
           new InvalidMoneyError(
             (ctx) => `Amount cannot be negative: ${ctx.amount}`,
             {
@@ -299,9 +299,9 @@ class Money {
         );
       }
 
-      return Result.ok(new Money(decimal, currency));
+      return Ok(new Money(decimal, currency));
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Invalid amount: ${ctx.amount}`,
           {
@@ -315,7 +315,7 @@ class Money {
 
   divide(divisor: Money): Result<Money, DivisionByZeroError | CurrencyMismatchError> {
     if (this.currency !== divisor.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot divide ${ctx.expected} by ${ctx.actual}`,
           {
@@ -331,7 +331,7 @@ class Money {
     }
 
     if (divisor.amount.isZero()) {
-      return Result.err(
+      return Err(
         new DivisionByZeroError(
           (ctx) => `Cannot divide ${ctx.dividend} by zero`,
           {
@@ -347,7 +347,7 @@ class Money {
     }
 
     const result = this.amount.div(divisor.amount);
-    return Result.ok(new Money(result, this.currency));
+    return Ok(new Money(result, this.currency));
   }
 }
 ```

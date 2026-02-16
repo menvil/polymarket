@@ -73,13 +73,13 @@ try {
 ### ✅ Новый подход: Result<T,E>
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 class Price {
   static fromNumber(value: number): Result<Price, InvalidPriceError> {
     if (value < 0.0001 || value > 0.9999) {
-      return Result.err(
+      return Err(
         new InvalidPriceError(
           (ctx) => `Invalid price ${ctx.value}`,
           {
@@ -89,17 +89,18 @@ class Price {
         )
       );
     }
-    return Result.ok(new Price(value));
+    return Ok(new Price(value));
   }
 }
 
 // Использование
 const result = Price.fromNumber(userInput);
 
-result.match({
-  ok: (price) => console.log('Valid price:', price),
-  err: (error) => console.error('Invalid price:', error.context?.value)
-});
+if (result.ok) {
+  console.log('Valid price:', result.value);
+} else {
+  console.error('Invalid price:', result.error.context?.value);
+}
 ```
 
 **Преимущества:**
@@ -174,7 +175,7 @@ const orderResult = ResultChain
     // Проверка достаточности средств
     const cost = price.value * qty.value;
     if (balance.amount < cost) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Insufficient balance: required ${ctx.required}, available ${ctx.available}`,
           {
@@ -184,7 +185,7 @@ const orderResult = ResultChain
         )
       );
     }
-    return Result.ok(new Order(price, qty));
+    return Ok(new Order(price, qty));
   })
   .run();
 
@@ -370,10 +371,10 @@ function validateOrderFields(data: OrderData): Result<ValidatedOrder, Validation
   }
 
   if (errors.length > 0) {
-    return Result.err(errors);
+    return Err(errors);
   }
 
-  return Result.ok({
+  return Ok({
     price: priceResult.unwrap(),
     quantity: qtyResult.unwrap(),
     balance: balanceResult.unwrap()
