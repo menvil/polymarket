@@ -62,7 +62,7 @@ class TradingStrategy {
   }
 
   private generateOrderId(): string {
-    return `order-${Date.now()}-${Math.random()}`;
+    return `order-${this.clock.now().getTime()}-${Math.random()}`;
   }
 
   getOrders(): Order[] {

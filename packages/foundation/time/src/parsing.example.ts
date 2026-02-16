@@ -176,6 +176,18 @@ export function validateDateRange(
     );
   }
 
+  if (isNaN(minTime)) {
+    return Err(
+      new TimestampValidationError(minTime, 'Invalid min Date object')
+    );
+  }
+
+  if (isNaN(maxTime)) {
+    return Err(
+      new TimestampValidationError(maxTime, 'Invalid max Date object')
+    );
+  }
+
   if (time < minTime) {
     return Err(
       new TimestampValidationError(
