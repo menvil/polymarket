@@ -405,7 +405,8 @@ const accountId = accountIdFromWallet(walletAddress);
 // Создание TokenBalance для этого токена
 const balanceResult = TokenBalanceService.create(
   token,              // OutcomeToken
-  qtyResult.value,    // Quantity
+  qtyResult.value,    // available Quantity
+  QuantityService.create(0).value,  // reserved Quantity (0 для нового баланса)
   accountId,          // AccountId
   KnownVenues.POLYMARKET  // VenueId
 );
@@ -419,7 +420,9 @@ const balance = balanceResult.value;
 
 console.log(`Account balance:`);
 console.log(`- Token: ${balance.token().outcomeKey()}`);
-console.log(`- Amount: ${balance.amount().toString()}`);
+console.log(`- Available: ${balance.available().toString()}`);
+console.log(`- Reserved: ${balance.reserved().toString()}`);
+console.log(`- Total: ${balance.total().toString()}`);
 console.log(`- Venue: ${balance.venueId()}`);
 ```
 
@@ -487,14 +490,16 @@ if (!qty100Result.ok || !qty50Result.ok) {
 // Балансы пользователя
 const upBalanceResult = TokenBalanceService.create(
   upToken,
-  qty100Result.value,
+  qty100Result.value,  // available
+  QuantityService.create(0).value,  // reserved
   accountId,
   venueId
 );
 
 const downBalanceResult = TokenBalanceService.create(
   downToken,
-  qty50Result.value,
+  qty50Result.value,  // available
+  QuantityService.create(0).value,  // reserved
   accountId,
   venueId
 );
@@ -509,8 +514,10 @@ const downBalance = downBalanceResult.value;
 
 // Вывод балансов
 console.log('=== User Balances ===');
-console.log(`UP tokens: ${upBalance.amount().toString()}`);
-console.log(`DOWN tokens: ${downBalance.amount().toString()}`);
+console.log(`UP tokens (available): ${upBalance.available().toString()}`);
+console.log(`UP tokens (total): ${upBalance.total().toString()}`);
+console.log(`DOWN tokens (available): ${downBalance.available().toString()}`);
+console.log(`DOWN tokens (total): ${downBalance.total().toString()}`);
 
 // Торговое количество - используем createOutcomeToken напрямую
 const tradeQuantityResult = AssetQuantityService.createOutcomeToken(
