@@ -810,4 +810,121 @@ describe('Quote Core', () => {
       expect(quote1.equalsWithTimestamp(quote2)).toBe(false);
     });
   });
+
+  describe('imbalance()', () => {
+    it('возвращает 0 для сбалансированной котировки', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(100)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      expect(quote.imbalance().toNumber()).toBe(0);
+    });
+
+    it('возвращает положительный imbalance для bid-heavy', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(150)),
+        Quantity.of(new Decimal(100)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      const imbalance = quote.imbalance();
+      // (150 - 100) / (150 + 100) = 50 / 250 = 0.2
+      expect(imbalance.toNumber()).toBeCloseTo(0.2);
+    });
+
+    it('возвращает отрицательный imbalance для ask-heavy', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(200)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      const imbalance = quote.imbalance();
+      // (100 - 200) / (100 + 200) = -100 / 300 = -0.333...
+      expect(imbalance.toNumber()).toBeCloseTo(-0.333, 2);
+    });
+
+    it('возвращает 1 для bid-only (askSize = 0)', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        null,
+        Quantity.of(new Decimal(100)),
+        Quantity.ZERO,
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      const imbalance = quote.imbalance();
+      // (100 - 0) / (100 + 0) = 100 / 100 = 1
+      expect(imbalance.toNumber()).toBe(1);
+    });
+
+    it('возвращает -1 для ask-only (bidSize = 0)', () => {
+      const quote = Quote.of(
+        null,
+        Price.of(new Decimal(0.52)),
+        Quantity.ZERO,
+        Quantity.of(new Decimal(100)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      const imbalance = quote.imbalance();
+      // (0 - 100) / (0 + 100) = -100 / 100 = -1
+      expect(imbalance.toNumber()).toBe(-1);
+    });
+
+    it('возвращает 0 когда оба размера равны 0', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.ZERO,
+        Quantity.ZERO,
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      const imbalance = quote.imbalance();
+      expect(imbalance.toNumber()).toBe(0);
+    });
+  });
+
+  describe('spreadPercentage()', () => {
+    it('возвращает null (stub не реализован)', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      expect(quote.spreadPercentage()).toBeNull();
+    });
+
+    it('возвращает null для one-sided quote', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.50)),
+        null,
+        Quantity.of(new Decimal(100)),
+        Quantity.ZERO,
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      expect(quote.spreadPercentage()).toBeNull();
+    });
+  });
 });
