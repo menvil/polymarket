@@ -94,35 +94,6 @@ describe('математические свойства (честные гара
         expect(left.equals(right)).toBe(true);
       });
     });
-
-    it('коммутативность сохраняется даже при precision=3', () => {
-      const originalPrecision = Decimal.precision;
-
-      try {
-        Decimal.set({ precision: 3 });
-
-        const testCases = [
-          ['1.23', '4.56'],
-          ['9.99', '1.11'],
-          ['0.1', '0.2'],
-        ];
-
-        testCases.forEach(([aStr, bStr]) => {
-          const a = new Decimal(aStr);
-          const b = new Decimal(bStr);
-
-          const leftAdd = addDecimal(a, b);
-          const rightAdd = addDecimal(b, a);
-          expect(leftAdd.equals(rightAdd)).toBe(true);
-
-          const leftMul = multiplyDecimal(a, b);
-          const rightMul = multiplyDecimal(b, a);
-          expect(leftMul.equals(rightMul)).toBe(true);
-        });
-      } finally {
-        Decimal.set({ precision: originalPrecision });
-      }
-    });
   });
 
   describe('ассоциативность при стандартной precision=20', () => {

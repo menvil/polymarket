@@ -41,10 +41,9 @@ import { MATH_CONSTANTS } from '../constants.js';
  * averageDecimal(new Decimal(Infinity), new Decimal(5)); // throws InvalidOperandError
  *
  * // Overflow при превышении Decimal.maxE = 9e15
- * // Примечание: average(a, b) = (a + b) / 2, overflow может произойти при сложении
- * // Значение 1e9000000000000001 уже превышает maxE и создаётся как Infinity
- * const huge = new Decimal('1e9000000000000001'); // Уже Infinity
- * averageDecimal(huge, huge); // throws InvalidOperandError (operand не finite)
+ * // Операнды валидны (finite), но результат сложения превышает maxE
+ * const huge = new Decimal('5e' + Decimal.maxE);
+ * averageDecimal(huge, huge); // throws ArithmeticOverflowError (a + b = Infinity)
  * ```
  */
 export function averageDecimal(a: Decimal, b: Decimal): Decimal {

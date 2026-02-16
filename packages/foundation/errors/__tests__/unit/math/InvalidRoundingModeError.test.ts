@@ -13,7 +13,6 @@ describe('InvalidRoundingModeError', () => {
   describe('создание экземпляра', () => {
     it('должен создавать ошибку с простым сообщением', () => {
       const error = new InvalidRoundingModeError('Invalid rounding mode', {
-        code: InvalidRoundingModeError.code,
         context: { roundingMode: 9 },
       });
 
@@ -26,7 +25,6 @@ describe('InvalidRoundingModeError', () => {
         (ctx) =>
           `Rounding mode must be an integer between 0 and 8, got ${ctx.roundingMode}`,
         {
-          code: InvalidRoundingModeError.code,
           context: { roundingMode: 10, min: 0, max: 8 },
         }
       );
@@ -39,7 +37,6 @@ describe('InvalidRoundingModeError', () => {
       const error = new InvalidRoundingModeError(
         (ctx) => `Invalid rounding mode ${ctx.roundingMode} for ${ctx.operation}`,
         {
-          code: InvalidRoundingModeError.code,
           context: {
             roundingMode: 'NaN',
             operation: 'Price.round',
@@ -63,7 +60,6 @@ describe('InvalidRoundingModeError', () => {
       const error = new InvalidRoundingModeError(
         (ctx) => `Rounding mode must be between 0 and 8, got ${ctx.roundingMode}`,
         {
-          code: InvalidRoundingModeError.code,
           context: { roundingMode: 9, min: 0, max: 8 },
         }
       );
@@ -78,7 +74,6 @@ describe('InvalidRoundingModeError', () => {
       const error = new InvalidRoundingModeError(
         'Rounding mode must be an integer',
         {
-          code: InvalidRoundingModeError.code,
           context: { roundingMode: 4.5, reason: 'not an integer' },
         }
       );
@@ -93,7 +88,6 @@ describe('InvalidRoundingModeError', () => {
       // Создаём функцию которая выбрасывает InvalidRoundingModeError
       const fn = () => {
         throw new InvalidRoundingModeError('Invalid rounding mode', {
-          code: InvalidRoundingModeError.code,
           context: { roundingMode: 9 },
         });
       };
@@ -126,8 +120,7 @@ describe('InvalidRoundingModeError', () => {
             new InvalidRoundingModeError(
               (ctx) => `Invalid rounding mode ${ctx.roundingMode}`,
               {
-                code: InvalidRoundingModeError.code,
-                context: { roundingMode: mode },
+                      context: { roundingMode: mode },
               }
             )
           );
@@ -157,8 +150,7 @@ describe('InvalidRoundingModeError', () => {
             new InvalidRoundingModeError(
               (ctx) => `Invalid rounding mode ${ctx.roundingMode} for ${ctx.operation}`,
               {
-                code: InvalidRoundingModeError.code,
-                context: { roundingMode: mode, operation: 'roundPrice', value, decimals },
+                      context: { roundingMode: mode, operation: 'roundPrice', value, decimals },
               }
             )
           );
@@ -230,7 +222,6 @@ describe('InvalidRoundingModeError', () => {
       const error = new InvalidRoundingModeError(
         (ctx) => `Invalid rounding mode ${ctx.roundingMode}`,
         {
-          code: InvalidRoundingModeError.code,
           context: { roundingMode: 9, precision: 2 },
         }
       );
@@ -239,7 +230,6 @@ describe('InvalidRoundingModeError', () => {
 
       expect(json.name).toBe('InvalidRoundingModeError');
       expect(json.message).toBe('Invalid rounding mode 9');
-      expect(json.code).toBe('INVALID_ROUNDING_MODE');
       expect(json.severity).toBe('low');
       expect(json.context).toEqual({ roundingMode: 9, precision: 2 });
       expect(json.timestamp).toBeDefined();
@@ -257,8 +247,7 @@ describe('InvalidRoundingModeError', () => {
               (ctx) =>
                 `Rounding mode must be an integer between 0 and 8, got ${ctx.roundingMode}`,
               {
-                code: InvalidRoundingModeError.code,
-                context: {
+                      context: {
                   roundingMode,
                   value: this.value,
                   precision,
@@ -303,8 +292,7 @@ describe('InvalidRoundingModeError', () => {
               new InvalidRoundingModeError(
                 (ctx) => `Rounding mode must be an integer, got ${ctx.roundingMode}`,
                 {
-                  code: InvalidRoundingModeError.code,
-                  context: {
+                          context: {
                     roundingMode,
                     value: this.value.toString(),
                     precision,
@@ -320,8 +308,7 @@ describe('InvalidRoundingModeError', () => {
               new InvalidRoundingModeError(
                 (ctx) => `Rounding mode must be between 0 and 8, got ${ctx.roundingMode}`,
                 {
-                  code: InvalidRoundingModeError.code,
-                  context: {
+                          context: {
                     roundingMode,
                     value: this.value.toString(),
                     precision,

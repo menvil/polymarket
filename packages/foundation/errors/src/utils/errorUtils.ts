@@ -547,8 +547,21 @@ export function rewrap<TError extends DomainError>(
 ): TError {
   const inner = (err.context ?? {}) as Record<string, unknown>;
 
-  // Запрещаем ctx приносить root-поля (защита от случайного перетирания)
-  const { cause: _c, reason: _r, raw: _raw, source: _s, service: _svc, op: _op, opChain: _chain, ...safeCtx } = ctx;
+  // Запрещаем ctx приносить root-поля и trace-поля (защита от случайного перетирания и спуфинга)
+  const {
+    cause: _c,
+    reason: _r,
+    raw: _raw,
+    source: _s,
+    service: _svc,
+    op: _op,
+    opChain: _chain,
+    firstTradingErrorTimestamp: _ftets,
+    firstTradingErrorStack: _ftes,
+    originalName: _on,
+    originalCode: _oc,
+    ...safeCtx
+  } = ctx;
 
   // 1) мерджим контекст: inner база, safeCtx сверху (без root-полей)
   const merged: Record<string, unknown> = {
@@ -596,28 +609,21 @@ export function rewrap<TError extends DomainError>(
 
   // 4) Сохраняем origin-данные из первоначальной ошибки (если это первый rewrap)
   // Эти поля позволяют отследить самую первую ошибку в цепочке
+  // Если поле уже есть в inner, оно уже скопировано через spread на строке 567
   if (inner.firstTradingErrorTimestamp === undefined && err.timestamp) {
     merged.firstTradingErrorTimestamp = err.timestamp.toISOString();
-  } else if (inner.firstTradingErrorTimestamp !== undefined) {
-    merged.firstTradingErrorTimestamp = inner.firstTradingErrorTimestamp; // Сохраняем из inner если уже был rewrap
   }
 
   if (inner.firstTradingErrorStack === undefined && err.stack) {
     merged.firstTradingErrorStack = err.stack;
-  } else if (inner.firstTradingErrorStack !== undefined) {
-    merged.firstTradingErrorStack = inner.firstTradingErrorStack; // Сохраняем из inner если уже был rewrap
   }
 
   if (inner.originalName === undefined && err.name) {
     merged.originalName = err.name;
-  } else if (inner.originalName !== undefined) {
-    merged.originalName = inner.originalName; // Сохраняем из inner если уже был rewrap
   }
 
   if (inner.originalCode === undefined && err.code) {
     merged.originalCode = err.code;
-  } else if (inner.originalCode !== undefined) {
-    merged.originalCode = inner.originalCode; // Сохраняем из inner если уже был rewrap
   }
 
   // 5) Создаем новую ошибку с сохранением code и innerError

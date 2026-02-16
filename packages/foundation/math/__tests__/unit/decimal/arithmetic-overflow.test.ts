@@ -56,6 +56,7 @@ describe('Arithmetic Overflow Tests', () => {
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
+          expect(error.context?.operation).toBe('add');
           expect(error.context?.a).toBeDefined();
           expect(error.context?.b).toBeDefined();
           expect(error.context?.result).toBe('Infinity');
@@ -91,6 +92,7 @@ describe('Arithmetic Overflow Tests', () => {
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
+          expect(error.context?.operation).toBe('subtract');
           expect(error.context?.a).toBeDefined();
           expect(error.context?.b).toBeDefined();
           expect(error.context?.result).toBe('Infinity');
@@ -122,6 +124,7 @@ describe('Arithmetic Overflow Tests', () => {
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
+          expect(error.context?.operation).toBe('multiply');
           expect(error.context?.a).toBeDefined();
           expect(error.context?.b).toBeDefined();
           expect(error.context?.result).toBe('Infinity');
@@ -153,6 +156,7 @@ describe('Arithmetic Overflow Tests', () => {
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
+          expect(error.context?.operation).toBe('divide');
           expect(error.context?.a).toBeDefined();
           expect(error.context?.b).toBeDefined();
           expect(error.context?.result).toBe('Infinity');

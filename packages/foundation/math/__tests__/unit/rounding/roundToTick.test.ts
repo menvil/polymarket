@@ -282,11 +282,12 @@ describe('roundToTick', () => {
         roundToTick(new Decimal(10), new Decimal('0.01'), 9 as Decimal.Rounding);
         throw new Error('Expected InvalidRoundingModeError to be thrown');
       } catch (error) {
-        expect(error).toBeInstanceOf(Error);
-        const err = error as any;
-        expect(err.context).toBeDefined();
-        expect(err.context?.operation).toBe('roundToTick');
-        expect(err.context?.roundingMode).toBe('9');
+        expect(error).toBeInstanceOf(InvalidRoundingModeError);
+        if (error instanceof InvalidRoundingModeError) {
+          expect(error.context).toBeDefined();
+          expect(error.context?.operation).toBe('roundToTick');
+          expect(error.context?.roundingMode).toBe('9');
+        }
       }
     });
   });

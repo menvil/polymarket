@@ -343,7 +343,7 @@ if (result.ok) {
 
 ### expectedMathError()
 
-Создает ошибку для ожидаемых math-ошибок (ArithmeticOverflowError, InvalidOperandError, DivisionByZeroError).
+Создает ошибку для ожидаемых math-ошибок (ArithmeticOverflowError, InvalidOperandError, DivisionByZeroError, InvalidRoundingModeError).
 
 **Сигнатура**:
 

@@ -127,7 +127,7 @@ describe('divideDecimal', () => {
 
       try {
         divideDecimal(new Decimal(10), new Decimal(NaN));
-        throw new Error('Expected InvalidDivisorError to be thrown');
+        expect(true).toBe(false); // Expected InvalidDivisorError to be thrown
       } catch (error) {
         if (error instanceof InvalidDivisorError) {
           expect(error.context).toBeDefined();
@@ -167,7 +167,7 @@ describe('divideDecimal', () => {
 
       try {
         divideDecimal(inf, value);
-        throw new Error('Expected InvalidOperandError to be thrown');
+        expect(true).toBe(false); // Expected InvalidOperandError to be thrown
       } catch (error) {
         if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();

@@ -990,6 +990,26 @@ describe('errorUtils', () => {
         expect(result.error.context!.source).toBe('parsing');
       }
     });
+
+    it('обрабатывает toString(), который бросает non-Error (строку)', () => {
+      // Defensive programming: toString() бросает строку вместо Error
+      const evilObjectThrowsString = {
+        toString() {
+          throw 'Evil string thrown from toString!'; // Бросаем строку, не Error
+        }
+      };
+
+      const result = toDecimal('amount', evilObjectThrowsString as any, 'INVALID_FORMAT', InvalidMoneyError);
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        // Fallback message для non-Error
+        expect(result.error.message).toBe('toString() threw exception');
+        expect(result.error.context!.source).toBe('parsing');
+        expect(result.error.context!.cause).toBeDefined();
+      }
+    });
   });
 
   describe('coreInvariantError', () => {
