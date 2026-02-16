@@ -3,6 +3,7 @@ import Decimal from 'decimal.js';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { QuoteService } from '../../../src/quote/facade/QuoteService.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+import { PaperClock } from '@polymarket/time';
 
 // Тестовые константы для sourceId и instrumentId
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
@@ -656,6 +657,130 @@ describe('QuoteService', () => {
       const mid = quoteResult.value.midOrNull();
 
       expect(mid).toBeNull();
+    });
+  });
+
+  describe('WithRefresh methods (timestamp update)', () => {
+    describe('shiftWithRefresh()', () => {
+      it('сдвигает quote и обновляет timestamp', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID, 1000);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+        const quote = quoteResult.value;
+
+        const result = QuoteService.shiftWithRefresh(quote, new Decimal(0.10), clock);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.bid()?.value().toNumber()).toBeCloseTo(0.58);
+          expect(result.value.ask()?.value().toNumber()).toBeCloseTo(0.62);
+          expect(result.value.timestampMs().toNumber()).toBe(clock.now().getTime());
+          expect(result.value.timestampMs().toNumber()).not.toBe(1000);
+        }
+      });
+
+      it('работает с bid-only quote (сдвигает только bid)', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.shiftWithRefresh(quoteResult.value, new Decimal(0.05), clock);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.bid()?.value().toNumber()).toBeCloseTo(0.55);
+          expect(result.value.ask()).toBeNull();
+          expect(result.value.timestampMs().toNumber()).toBe(clock.now().getTime());
+        }
+      });
+    });
+
+    describe('skewWithRefresh()', () => {
+      it('наклоняет quote и обновляет timestamp', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID, 1000);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+        const quote = quoteResult.value;
+
+        const result = QuoteService.skewWithRefresh(quote, new Decimal(0.02), new Decimal(-0.01), clock);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.bid()?.value().toNumber()).toBeCloseTo(0.50);
+          expect(result.value.ask()?.value().toNumber()).toBeCloseTo(0.51);
+          expect(result.value.timestampMs().toNumber()).toBe(clock.now().getTime());
+          expect(result.value.timestampMs().toNumber()).not.toBe(1000);
+        }
+      });
+
+      it('работает с bid-only quote (наклоняет только bid)', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.bidOnly(0.50, 100, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.skewWithRefresh(quoteResult.value, new Decimal(0.02), new Decimal(-0.01), clock);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.bid()?.value().toNumber()).toBeCloseTo(0.52);
+          expect(result.value.ask()).toBeNull();
+        }
+      });
+    });
+
+    describe('updateSizesWithRefresh()', () => {
+      it('обновляет sizes и timestamp', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID, 1000);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+        const quote = quoteResult.value;
+
+        const result = QuoteService.updateSizesWithRefresh(quote, 200, 300, clock);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.bidSize().value().toNumber()).toBe(200);
+          expect(result.value.askSize().value().toNumber()).toBe(300);
+          expect(result.value.timestampMs().toNumber()).toBe(clock.now().getTime());
+          expect(result.value.timestampMs().toNumber()).not.toBe(1000);
+        }
+      });
+
+      it('работает с Quantity объектами', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.updateSizesWithRefresh(
+          quoteResult.value,
+          Quantity.of(new Decimal(250)),
+          Quantity.of(new Decimal(350)),
+          clock
+        );
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.bidSize().value().toNumber()).toBe(250);
+          expect(result.value.askSize().value().toNumber()).toBe(350);
+        }
+      });
+
+      it('возвращает Err для невалидных sizes', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.updateSizesWithRefresh(quoteResult.value, -100, 200, clock);
+
+        expect(result.ok).toBe(false);
+      });
     });
   });
 });
