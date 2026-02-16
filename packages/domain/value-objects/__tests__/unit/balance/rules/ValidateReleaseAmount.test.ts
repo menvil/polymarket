@@ -57,7 +57,7 @@ describe('ValidateReleaseAmount', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Cannot release 2000');
+        expect(result.error.message).toContain('Cannot unfreeze/consume 2000');
         expect(result.error.message).toContain('only 1000 reserved');
       }
     });

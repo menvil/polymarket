@@ -66,7 +66,7 @@ export class ValidateReleaseAmount {
     // Проверка 1: releaseAmount должен быть finite
     if (!amount.isFinite()) {
       return Err(
-        new InvalidBalanceError('Release amount must be finite', {
+        new InvalidBalanceError('Amount to unfreeze/consume must be finite', {
           context: {
             source: ErrorSource.RULE_VALIDATION,
             reason: BalanceErrorReason.INVALID_FORMAT,
@@ -81,7 +81,7 @@ export class ValidateReleaseAmount {
     if (amount.lessThanOrEqualTo(0)) {
       return Err(
         new InvalidBalanceError(
-          (ctx) => `Release amount must be positive, got ${ctx.releaseAmount}`,
+          (ctx) => `Amount to unfreeze/consume must be positive, got ${ctx.releaseAmount}`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
@@ -99,7 +99,7 @@ export class ValidateReleaseAmount {
       return Err(
         new InvalidBalanceError(
           (ctx) =>
-            `Cannot release ${ctx.requested}: only ${ctx.reserved} reserved`,
+            `Cannot unfreeze/consume ${ctx.requested}: only ${ctx.reserved} reserved`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,

@@ -6,6 +6,7 @@ import { Quantity } from '../../quantity/core/index.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
 import { TokenBalance } from '../core/index.js';
 import { InvalidTokenBalanceError } from '../errors/index.js';
+import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
 import { ValidateReserveAmount } from '../rules/ValidateReserveAmount.js';
 import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount.js';
 
@@ -587,6 +588,7 @@ export class TokenBalanceService {
   ): Result<Quantity, InvalidTokenBalanceError> {
     const result = QuantityService.add(qty1, qty2);
     if (isErr(result)) {
+      // Просто передаём ошибку дальше - context уже установлен в wrapOp
       return Err(new InvalidTokenBalanceError(result.error.message));
     }
     return result;
@@ -601,6 +603,7 @@ export class TokenBalanceService {
   ): Result<Quantity, InvalidTokenBalanceError> {
     const result = QuantityService.subtract(qty1, qty2);
     if (isErr(result)) {
+      // Просто передаём ошибку дальше - context уже установлен в wrapOp
       return Err(new InvalidTokenBalanceError(result.error.message));
     }
     return result;
