@@ -7,6 +7,13 @@ const config: Config = {
   ...baseConfig,
   roots: ['<rootDir>'],
   testMatch: ['**/__tests__/**/*.test.ts'],
+  // Явно исключаем barrel файлы (index.ts) из coverage
+  collectCoverageFrom: [
+    'src/**/*.ts',
+    '!src/**/*.d.ts',
+    '!src/**/index.ts',
+    '!src/**/*.example.ts',
+  ],
   moduleNameMapper: {
     ...baseConfig.moduleNameMapper,
     // Переопределяем базовые правила нашими (важен порядок! наши идут после)

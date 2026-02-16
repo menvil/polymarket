@@ -580,6 +580,11 @@ export class TokenBalanceService {
 
   /**
    * Private helper: Сложение Quantity
+   *
+   * @remarks
+   * Defensive programming: эта ветка ошибки практически недостижима,
+   * так как Rules валидация гарантирует валидные входы для QuantityService.
+   * Но оставляем для будущих изменений и полноты обработки ошибок.
    */
   private static addQuantity(
     qty1: Quantity,
@@ -588,6 +593,7 @@ export class TokenBalanceService {
     const result = QuantityService.add(qty1, qty2);
     if (isErr(result)) {
       // Просто передаём ошибку дальше - context уже установлен в wrapOp
+      // NOTE: Эта ветка не покрыта тестами (defensive programming)
       return Err(new InvalidTokenBalanceError(result.error.message));
     }
     return result;
@@ -595,6 +601,11 @@ export class TokenBalanceService {
 
   /**
    * Private helper: Вычитание Quantity
+   *
+   * @remarks
+   * Defensive programming: эта ветка ошибки практически недостижима,
+   * так как Rules валидация гарантирует валидные входы для QuantityService.
+   * Но оставляем для будущих изменений и полноты обработки ошибок.
    */
   private static subtractQuantity(
     qty1: Quantity,
@@ -603,6 +614,7 @@ export class TokenBalanceService {
     const result = QuantityService.subtract(qty1, qty2);
     if (isErr(result)) {
       // Просто передаём ошибку дальше - context уже установлен в wrapOp
+      // NOTE: Эта ветка не покрыта тестами (defensive programming)
       return Err(new InvalidTokenBalanceError(result.error.message));
     }
     return result;

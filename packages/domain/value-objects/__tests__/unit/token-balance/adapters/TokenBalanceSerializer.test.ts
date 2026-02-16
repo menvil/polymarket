@@ -654,6 +654,27 @@ describe('TokenBalanceSerializer', () => {
         }
       });
 
+      it('обрабатывает unstringifiable values через catch-ветку', () => {
+        // Создаём объект с getter который бросает ошибку при stringify
+        // Это покроет catch-ветку safeStringify (строка 34)
+        const unstringifiable = {
+          get badProperty() {
+            throw new Error('Cannot serialize this property');
+          }
+        };
+
+        const result = TokenBalanceSerializer.fromJSON(unstringifiable);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+          expect(result.error.context?.details).toBeDefined();
+          // safeStringify должен был поймать ошибку и вернуть [Unstringifiable]
+          const details = JSON.stringify(result.error.context?.details);
+          expect(details).toContain('[Unstringifiable]');
+        }
+      });
+
       it('никогда не бросает исключения при сериализации error details', () => {
         expect(() => {
           // Различные проблемные входы
@@ -664,6 +685,14 @@ describe('TokenBalanceSerializer', () => {
           const circular: any = {};
           circular.self = circular;
           TokenBalanceSerializer.fromJSON(circular);
+
+          // Unstringifiable object
+          const unstringifiable = {
+            get bad() {
+              throw new Error('test');
+            }
+          };
+          TokenBalanceSerializer.fromJSON(unstringifiable);
         }).not.toThrow();
       });
     });

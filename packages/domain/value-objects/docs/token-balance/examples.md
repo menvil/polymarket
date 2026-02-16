@@ -335,8 +335,8 @@ function handleTokenBalanceOperation(
       case TokenBalanceErrorReason.INSUFFICIENT_RESERVED:
         console.error(`Недостаточно reserved для ${op}`);
         break;
-      case TokenBalanceErrorReason.INVALID_AMOUNT:
-        console.error(`Невалидное количество в ${op}`);
+      case TokenBalanceErrorReason.INVALID_FORMAT:
+        console.error(`Невалидный формат количества в ${op}`);
         break;
       default:
         console.error(`Неожиданная ошибка: ${result.error.message}`);
