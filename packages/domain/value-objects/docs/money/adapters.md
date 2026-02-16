@@ -108,21 +108,31 @@ MoneySerializer.fromJSON({
 **Сигнатура:**
 
 ```typescript
-public static toFixed(money: Money, decimals: number = 2): string
+public static toFixed(
+  money: Money,
+  decimals: number = 2
+): Result<string, InvalidMoneyError>
 ```
 
 **Параметры:**
 
 - `decimals` — количество знаков после запятой (default: 2)
 
+**Возвращает:** `Result<string, InvalidMoneyError>`
+
 **Примеры:**
 
 ```typescript
-const money = Money.of(100.5, 'USDC');
+const money = Money.of(new Decimal(100.5), 'USDC');
 
-MoneyFormatter.toFixed(money);      // "100.50"
-MoneyFormatter.toFixed(money, 0);   // "101" (rounded)
-MoneyFormatter.toFixed(money, 4);   // "100.5000"
+const result1 = MoneyFormatter.toFixed(money);
+if (result1.ok) console.log(result1.value); // "100.50"
+
+const result2 = MoneyFormatter.toFixed(money, 0);
+if (result2.ok) console.log(result2.value); // "101" (rounded)
+
+const result3 = MoneyFormatter.toFixed(money, 4);
+if (result3.ok) console.log(result3.value); // "100.5000"
 ```
 
 ---
@@ -138,7 +148,7 @@ public static toCurrency(
   money: Money,
   showCurrency: boolean = true,
   decimals: number = 2
-): string
+): Result<string, InvalidMoneyError>
 ```
 
 **Параметры:**
@@ -146,14 +156,21 @@ public static toCurrency(
 - `showCurrency` — показывать код валюты (default: true)
 - `decimals` — количество знаков (default: 2)
 
+**Возвращает:** `Result<string, InvalidMoneyError>`
+
 **Примеры:**
 
 ```typescript
-const money = Money.of(100.5, 'USDC');
+const money = Money.of(new Decimal(100.5), 'USDC');
 
-MoneyFormatter.toCurrency(money);           // "$100.50 USDC"
-MoneyFormatter.toCurrency(money, false);    // "$100.50"
-MoneyFormatter.toCurrency(money, true, 4);  // "$100.5000 USDC"
+const result1 = MoneyFormatter.toCurrency(money);
+if (result1.ok) console.log(result1.value); // "$100.50 USDC"
+
+const result2 = MoneyFormatter.toCurrency(money, false);
+if (result2.ok) console.log(result2.value); // "$100.50"
+
+const result3 = MoneyFormatter.toCurrency(money, true, 4);
+if (result3.ok) console.log(result3.value); // "$100.5000 USDC"
 ```
 
 ---
@@ -165,12 +182,17 @@ MoneyFormatter.toCurrency(money, true, 4);  // "$100.5000 USDC"
 **Сигнатура:**
 
 ```typescript
-public static toCompact(money: Money, decimals: number = 1): string
+public static toCompact(
+  money: Money,
+  decimals: number = 1
+): Result<string, InvalidMoneyError>
 ```
 
 **Параметры:**
 
 - `decimals` — количество знаков после запятой (default: 1)
+
+**Возвращает:** `Result<string, InvalidMoneyError>`
 
 **Суффиксы:**
 
@@ -182,13 +204,21 @@ public static toCompact(money: Money, decimals: number = 1): string
 **Примеры:**
 
 ```typescript
-MoneyFormatter.toCompact(Money.of(999));       // "$999.0"
-MoneyFormatter.toCompact(Money.of(1500));      // "$1.5K"
-MoneyFormatter.toCompact(Money.of(2300000));   // "$2.3M"
-MoneyFormatter.toCompact(Money.of(1e9));       // "$1.0B"
+const r1 = MoneyFormatter.toCompact(Money.of(new Decimal(999)));
+if (r1.ok) console.log(r1.value); // "$999.0"
+
+const r2 = MoneyFormatter.toCompact(Money.of(new Decimal(1500)));
+if (r2.ok) console.log(r2.value); // "$1.5K"
+
+const r3 = MoneyFormatter.toCompact(Money.of(new Decimal(2300000)));
+if (r3.ok) console.log(r3.value); // "$2.3M"
+
+const r4 = MoneyFormatter.toCompact(Money.of(new Decimal(1e9)));
+if (r4.ok) console.log(r4.value); // "$1.0B"
 
 // С разными decimals
-MoneyFormatter.toCompact(Money.of(1234), 2);   // "$1.23K"
+const r5 = MoneyFormatter.toCompact(Money.of(new Decimal(1234)), 2);
+if (r5.ok) console.log(r5.value); // "$1.23K"
 ```
 
 ---
