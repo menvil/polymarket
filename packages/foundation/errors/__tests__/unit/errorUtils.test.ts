@@ -38,6 +38,7 @@ import { CurrencyMismatchError } from '../../src/value-objects/CurrencyMismatchE
 import { ArithmeticOverflowError } from '../../src/value-objects/ArithmeticOverflowError.js';
 import { DivisionByZeroError } from '../../src/value-objects/DivisionByZeroError.js';
 import { InvalidOperandError } from '../../src/math/InvalidOperandError.js';
+import { InvalidRoundingModeError } from '../../src/math/InvalidRoundingModeError.js';
 
 describe('errorUtils', () => {
   describe('toDecimal', () => {
@@ -574,6 +575,14 @@ describe('errorUtils', () => {
 
     it('should return true for InvalidOperandError', () => {
       const error = new InvalidOperandError('Invalid operand', { context: {} });
+      expect(isExpectedMathError(error)).toBe(true);
+    });
+
+    it('should return true for InvalidRoundingModeError', () => {
+      const error = new InvalidRoundingModeError('Invalid rounding mode', {
+        code: InvalidRoundingModeError.code,
+        context: { roundingMode: 9 },
+      });
       expect(isExpectedMathError(error)).toBe(true);
     });
 

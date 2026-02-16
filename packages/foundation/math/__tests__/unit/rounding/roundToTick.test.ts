@@ -9,6 +9,7 @@ import {
 import {
   InvalidTickSizeError,
   InvalidOperandError,
+  InvalidRoundingModeError,
   ArithmeticOverflowError,
 } from '@polymarket/errors';
 import Decimal from 'decimal.js';
@@ -235,6 +236,57 @@ describe('roundToTick', () => {
           expect(error.context?.tickSize).toBe('0');
           expect(error.context?.value).toBe('10');
         }
+      }
+    });
+  });
+
+  describe('ошибки валидации roundingMode', () => {
+    it('должен throw InvalidRoundingModeError на roundingMode = -1', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), -1 as Decimal.Rounding)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен throw InvalidRoundingModeError на roundingMode = 9', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), 9 as Decimal.Rounding)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен throw InvalidRoundingModeError на roundingMode = 1.5 (не integer)', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), 1.5 as Decimal.Rounding)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен throw InvalidRoundingModeError на roundingMode = NaN', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), NaN as Decimal.Rounding)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен throw InvalidRoundingModeError (не TypeError) на roundingMode = undefined', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), undefined as any)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен throw InvalidRoundingModeError (не TypeError) на roundingMode = null', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), null as any)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен содержать контекст в ошибке roundingMode', () => {
+      try {
+        roundToTick(new Decimal(10), new Decimal('0.01'), 9 as Decimal.Rounding);
+        fail('Expected InvalidRoundingModeError to be thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(Error);
+        const err = error as any;
+        expect(err.context).toBeDefined();
+        expect(err.context?.operation).toBe('roundToTick');
+        expect(err.context?.roundingMode).toBe('9');
       }
     });
   });

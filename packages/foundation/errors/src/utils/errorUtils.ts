@@ -248,13 +248,19 @@ export function toDecimal<TError extends DomainError>(
  *
  * @param e - Ошибка из math layer (ТОЛЬКО Error объекты)
  * @param ErrorConstructor - Конструктор ошибки
- * @returns TError с source и cause (без service/op - добавятся через rewrap)
+ * @returns TError с source, cause и сохранённым code/context если e - TradingError (без service/op - добавятся через rewrap)
  *
  * @remarks
  * Используется для обработки ожидаемых ошибок:
  * - InvalidOperandError
  * - ArithmeticOverflowError
  * - DivisionByZeroError
+ * - InvalidRoundingModeError
+ *
+ * Если исходная ошибка - TradingError:
+ * - Сохраняет её code и context (включая roundingMode, value и т.д.)
+ * - Добавляет originalCode в context
+ * - Устанавливает source = MATH_OPERATION
  *
  * ВАЖНО: Принимает только Error. Если это не Error - используй unexpectedError.
  *
@@ -266,11 +272,30 @@ export function expectedMathError<TError extends DomainError>(
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
   const cause = toCause(e);
-  return new ErrorConstructor(`Math operation failed: ${cause.message}`, {
-    context: {
-      source: ErrorSource.MATH_OPERATION,
-      cause
+
+  // Если исходная ошибка - TradingError, сохраняем её code и context
+  const baseContext: Record<string, unknown> = {
+    source: ErrorSource.MATH_OPERATION,
+    cause
+  };
+
+  if (e instanceof TradingError) {
+    // Сохраняем оригинальный code и context
+    if (e.code !== undefined) {
+      baseContext.originalCode = e.code;
     }
+    if (e.context !== undefined) {
+      // Мерджим с сохранением source и cause
+      Object.assign(baseContext, e.context);
+      // Гарантируем что source и cause не перезаписаны
+      baseContext.source = ErrorSource.MATH_OPERATION;
+      baseContext.cause = cause;
+    }
+  }
+
+  return new ErrorConstructor(`Math operation failed: ${cause.message}`, {
+    code: e instanceof TradingError ? e.code : undefined,
+    context: baseContext
   });
 }
 
@@ -729,7 +754,7 @@ export function wrapOp<T, TError extends DomainError>(
  * Устраняет дублирование кода в comparison и math операциях.
  *
  * **Стандартный контекст:**
- * - source - SERVICE_CALL (ошибка валидации при вызове операции)
+ * - source - RULE_VALIDATION (нарушение бизнес-правила совместимости валют)
  * - reason - CURRENCY_MISMATCH enum
  * - expected - ожидаемая валюта
  * - actual - фактическая валюта

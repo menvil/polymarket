@@ -169,13 +169,20 @@ class Price {
 }
 
 // Использование
-const price = Price.fromDecimal(new Decimal('10.567')).unwrap();
+const priceResult = Price.fromDecimal(new Decimal('10.567'));
+if (!priceResult.ok) {
+  console.error('Failed to create price');
+  return;
+}
+
+const price = priceResult.value;
 const result = price.round(2, 4); // ROUND_HALF_UP
 
-result.match({
-  ok: (rounded) => console.log('Rounded price:', rounded.toDecimal().toString()), // "10.57"
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log('Rounded price:', result.value.toDecimal().toString()); // "10.57"
+} else {
+  console.error('Error:', result.error.message);
+}
 
 // Невалидный режим
 const invalidResult = price.round(2, 10);
@@ -287,18 +294,19 @@ function validateRoundingMode(
 const userInput = 4; // ROUND_HALF_UP
 const result = validateRoundingMode(userInput);
 
-result.match({
-  ok: (mode) => {
-    console.log('Valid rounding mode:', mode);
-    // Можно использовать для округления
-    const price = Price.fromDecimal(new Decimal('10.567')).unwrap();
-    const rounded = price.round(2, mode);
-  },
-  err: (error) => {
-    console.error('Invalid rounding mode:', error.message);
-    showUserError('Please select a valid rounding mode (0-8)');
+if (result.ok) {
+  const mode = result.value;
+  console.log('Valid rounding mode:', mode);
+
+  // Можно использовать для округления
+  const priceResult = Price.fromDecimal(new Decimal('10.567'));
+  if (priceResult.ok) {
+    const rounded = priceResult.value.round(2, mode);
   }
-});
+} else {
+  console.error('Invalid rounding mode:', result.error.message);
+  showUserError('Please select a valid rounding mode (0-8)');
+}
 ```
 
 ### 4. Обработка в форме настроек
@@ -316,46 +324,45 @@ function handleRoundingModeInput(input: string): void {
 
   const result = validateRoundingMode(value);
 
-  result.match({
-    ok: (mode) => {
-      // Обновляем настройки
-      setRoundingMode(mode);
-      clearError('roundingMode');
+  if (result.ok) {
+    const mode = result.value;
+    // Обновляем настройки
+    setRoundingMode(mode);
+    clearError('roundingMode');
 
-      // Показываем описание режима
-      const descriptions: Record<number, string> = {
-        0: 'Round up (away from zero)',
-        1: 'Round down (towards zero)',
-        2: 'Round towards +Infinity',
-        3: 'Round towards -Infinity',
-        4: 'Round to nearest, .5 up',
-        5: 'Round to nearest, .5 down',
-        6: 'Round to nearest, .5 to even (banker\'s)',
-        7: 'Round to nearest, .5 towards +Infinity',
-        8: 'Round to nearest, .5 towards -Infinity',
-      };
+    // Показываем описание режима
+    const descriptions: Record<number, string> = {
+      0: 'Round up (away from zero)',
+      1: 'Round down (towards zero)',
+      2: 'Round towards +Infinity',
+      3: 'Round towards -Infinity',
+      4: 'Round to nearest, .5 up',
+      5: 'Round to nearest, .5 down',
+      6: 'Round to nearest, .5 to even (banker\'s)',
+      7: 'Round to nearest, .5 towards +Infinity',
+      8: 'Round to nearest, .5 towards -Infinity',
+    };
 
-      showInfo(descriptions[mode]);
-    },
-    err: (error) => {
-      if (InvalidRoundingModeError.is(error)) {
-        const reason = error.context?.reason as string;
+    showInfo(descriptions[mode]);
+  } else {
+    const error = result.error;
+    if (InvalidRoundingModeError.is(error)) {
+      const reason = error.context?.reason as string;
 
-        let userMessage = 'Rounding mode must be an integer between 0 and 8';
-        if (reason === 'not a number') {
-          userMessage = 'Please enter a valid number';
-        } else if (reason === 'NaN') {
-          userMessage = 'Rounding mode cannot be NaN';
-        } else if (reason === 'not an integer') {
-          userMessage = 'Rounding mode must be a whole number';
-        } else if (reason === 'out of range') {
-          userMessage = 'Rounding mode must be between 0 and 8';
-        }
-
-        showFieldError('roundingMode', userMessage);
+      let userMessage = 'Rounding mode must be an integer between 0 and 8';
+      if (reason === 'not a number') {
+        userMessage = 'Please enter a valid number';
+      } else if (reason === 'NaN') {
+        userMessage = 'Rounding mode cannot be NaN';
+      } else if (reason === 'not an integer') {
+        userMessage = 'Rounding mode must be a whole number';
+      } else if (reason === 'out of range') {
+        userMessage = 'Rounding mode must be between 0 and 8';
       }
+
+      showFieldError('roundingMode', userMessage);
     }
-  });
+  }
 }
 ```
 
@@ -435,7 +442,13 @@ class Money {
 }
 
 // Использование
-const money = Money.fromDecimal(new Decimal('123.456'), 'USDC').unwrap();
+const moneyResult = Money.fromDecimal(new Decimal('123.456'), 'USDC');
+if (!moneyResult.ok) {
+  console.error('Failed to create money');
+  return;
+}
+
+const money = moneyResult.value;
 
 // Округление до 2 знаков с ROUND_HALF_UP
 const rounded = money.round(2, Decimal.ROUND_HALF_UP); // 4
@@ -513,8 +526,10 @@ validateRoundingMode(Decimal.ROUND_HALF_CEIL); // ✅ Ok(7)
 validateRoundingMode(Decimal.ROUND_HALF_FLOOR); // ✅ Ok(8)
 
 // Это гарантирует использование правильных значений
-const price = Price.fromDecimal(new Decimal('10.567')).unwrap();
-const rounded = price.round(2, Decimal.ROUND_HALF_UP); // ✅ Безопасно
+const priceResult = Price.fromDecimal(new Decimal('10.567'));
+if (priceResult.ok) {
+  const rounded = priceResult.value.round(2, Decimal.ROUND_HALF_UP); // ✅ Безопасно
+}
 ```
 
 ### Цепочка операций
@@ -580,20 +595,20 @@ import { InvalidRoundingModeError } from '@polymarket/errors';
 
 const result = price.round(precision, roundingMode);
 
-result.match({
-  ok: (rounded) => processPrice(rounded),
-  err: (error) => {
-    if (error.code === InvalidRoundingModeError.code) {
-      showError('Invalid rounding mode', error.context);
+if (result.ok) {
+  processPrice(result.value);
+} else {
+  const error = result.error;
+  if (error.code === InvalidRoundingModeError.code) {
+    showError('Invalid rounding mode', error.context);
 
-      // Использовать безопасное значение по умолчанию
-      const defaultMode = Decimal.ROUND_HALF_UP;
-      return price.round(precision, defaultMode);
-    } else {
-      showError('Unexpected error', error);
-    }
+    // Использовать безопасное значение по умолчанию
+    const defaultMode = Decimal.ROUND_HALF_UP;
+    return price.round(precision, defaultMode);
+  } else {
+    showError('Unexpected error', error);
   }
-});
+}
 ```
 
 ### С fallback значением
@@ -607,20 +622,26 @@ function roundOrDefault(
   roundingMode: number,
   defaultMode: number = Decimal.ROUND_HALF_UP
 ): Price {
-  return price.round(precision, roundingMode).match({
-    ok: (rounded) => rounded,
-    err: (error) => {
-      if (InvalidRoundingModeError.is(error)) {
-        logger.warn('Invalid rounding mode, using default', {
-          error: error.toJSON(),
-          defaultMode
-        });
-        // Используем fallback режим
-        return price.round(precision, defaultMode).unwrap();
+  const result = price.round(precision, roundingMode);
+
+  if (result.ok) {
+    return result.value;
+  } else {
+    const error = result.error;
+    if (InvalidRoundingModeError.is(error)) {
+      logger.warn('Invalid rounding mode, using default', {
+        error: error.toJSON(),
+        defaultMode
+      });
+      // Используем fallback режим
+      const fallbackResult = price.round(precision, defaultMode);
+      if (fallbackResult.ok) {
+        return fallbackResult.value;
       }
-      throw error;
+      throw new Error('Fallback rounding also failed');
     }
-  });
+    throw error;
+  }
 }
 
 // Использование
@@ -645,26 +666,23 @@ function roundWithLogging(
 ): Result<Price, InvalidRoundingModeError> {
   const result = price.round(precision, roundingMode);
 
-  result.match({
-    ok: (rounded) => {
-      logger.info('Rounding successful', {
-        operation: operationName,
-        price: price.toDecimal().toString(),
-        precision,
-        roundingMode,
-        result: rounded.toDecimal().toString()
-      });
-    },
-    err: (error) => {
-      logger.error('Invalid rounding mode', {
-        operation: operationName,
-        error: error.toJSON(),
-        price: price.toDecimal().toString(),
-        precision,
-        roundingMode
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Rounding successful', {
+      operation: operationName,
+      price: price.toDecimal().toString(),
+      precision,
+      roundingMode,
+      result: result.value.toDecimal().toString()
+    });
+  } else {
+    logger.error('Invalid rounding mode', {
+      operation: operationName,
+      error: result.error.toJSON(),
+      price: price.toDecimal().toString(),
+      precision,
+      roundingMode
+    });
+  }
 
   return result;
 }
@@ -692,24 +710,38 @@ function calculateFee(
 
   // Вычисление комиссии
   const feeDecimal = amount.toDecimal().mul(feePercentage).div(100);
-  const fee = Money.fromDecimal(feeDecimal, amount.currency).unwrap();
+  const feeResult = Money.fromDecimal(feeDecimal, amount.currency);
+
+  if (!feeResult.ok) {
+    return Err(new InvalidRoundingModeError('Failed to create fee money', {
+      code: InvalidRoundingModeError.code,
+      context: { feeDecimal: feeDecimal.toString(), currency: amount.currency }
+    }));
+  }
+
+  const fee = feeResult.value;
 
   // Округление комиссии
   return fee.round(decimals, roundingMode);
 }
 
 // Использование
-const amount = Money.fromDecimal(new Decimal('1000'), 'USDC').unwrap();
+const amountResult = Money.fromDecimal(new Decimal('1000'), 'USDC');
+if (!amountResult.ok) {
+  console.error('Failed to create money');
+  return;
+}
+
+const amount = amountResult.value;
 const feeResult = calculateFee(amount, 0.5, 2, Decimal.ROUND_HALF_UP);
 
-feeResult.match({
-  ok: (fee) => console.log('Fee:', fee.toDecimal().toString()), // "5.00"
-  err: (error) => {
-    if (error.code === InvalidRoundingModeError.code) {
-      console.error('Invalid rounding mode for fee calculation');
-    }
+if (feeResult.ok) {
+  console.log('Fee:', feeResult.value.toDecimal().toString()); // "5.00"
+} else {
+  if (feeResult.error.code === InvalidRoundingModeError.code) {
+    console.error('Invalid rounding mode for fee calculation');
   }
-});
+}
 ```
 
 ---

@@ -25,6 +25,7 @@ import { InvalidQuantityError } from '../../src/value-objects/InvalidQuantityErr
 import { InvalidBalanceError } from '../../src/value-objects/InvalidBalanceError.js';
 import { ArithmeticOverflowError } from '../../src/value-objects/ArithmeticOverflowError.js';
 import { DivisionByZeroError } from '../../src/value-objects/DivisionByZeroError.js';
+import { InvalidRoundingModeError } from '../../src/math/InvalidRoundingModeError.js';
 import {
   toDecimal,
   rewrap,
@@ -206,6 +207,7 @@ import('@polymarket/errors/value-objects')
       expect(InvalidBalanceError).toBeDefined();
       expect(ArithmeticOverflowError).toBeDefined();
       expect(DivisionByZeroError).toBeDefined();
+      expect(InvalidRoundingModeError).toBeDefined();
     });
 
     it('should export error utils', () => {

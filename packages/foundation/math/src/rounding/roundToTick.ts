@@ -11,8 +11,9 @@ import {
  *
  * @param value - Значение для округления
  * @param tickSize - Размер тика (например, 0.01 для центов)
- * @param roundingMode - Режим округления Decimal
+ * @param roundingMode - Режим округления Decimal (0-8)
  * @returns Округлённое значение
+ * @throws {InvalidRoundingModeError} Если roundingMode невалидный (не integer, вне диапазона 0-8, undefined, null)
  * @throws {InvalidOperandError} Если value не finite (NaN или Infinity)
  * @throws {InvalidTickSizeError} Если tickSize невалидный (<= 0 или не finite)
  * @throws {ArithmeticOverflowError} Если результат округления не finite
@@ -58,17 +59,25 @@ export function roundToTick(
   tickSize: Decimal,
   roundingMode: Decimal.Rounding
 ): Decimal {
+  // Ранняя валидация roundingMode БЕЗ использования методов
+  // (защита от TypeError при undefined/null)
+  const baseContext = {
+    operation: 'roundToTick',
+    roundingMode: String(roundingMode), // String() безопасен для undefined/null
+  };
+  assertValidRoundingMode(roundingMode, baseContext);
+
+  // После валидации roundingMode безопасно формируем полный context
   const context = {
     operation: 'roundToTick',
     value: value.toString(),
     tickSize: tickSize.toString(),
-    roundingMode: roundingMode.toString(),
+    roundingMode: String(roundingMode),
   };
 
-  // Валидация через shared assertions
+  // Валидация операндов
   assertFiniteOperand(value, 'value', context);
   assertValidTickSize(tickSize, context);
-  assertValidRoundingMode(roundingMode, context);
 
   // Алгоритм округления до тика (полностью на Decimal)
   const divided = value.dividedBy(tickSize);
