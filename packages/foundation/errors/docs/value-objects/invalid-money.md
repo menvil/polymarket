@@ -337,7 +337,7 @@ function handleDepositInput(input: string, currency: string): void {
 ```typescript
 import Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidMoneyError } from '@polymarket/errors';
+import { InvalidMoneyError, CurrencyMismatchError } from '@polymarket/errors';
 
 class Money {
   private constructor(

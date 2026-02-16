@@ -376,10 +376,12 @@ function validateOrderFields(data: OrderData): Result<ValidatedOrder, Validation
     return Err(errors);
   }
 
+  // TypeScript narrowing: явно проверяем .ok перед доступом к .value
+  // После проверки errors.length === 0 мы знаем что все результаты успешны
   return Ok({
-    price: priceResult.value,
-    quantity: qtyResult.value,
-    balance: balanceResult.value
+    price: priceResult.ok ? priceResult.value : ('' as never),
+    quantity: qtyResult.ok ? qtyResult.value : ('' as never),
+    balance: balanceResult.ok ? balanceResult.value : ('' as never)
   });
 }
 

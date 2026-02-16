@@ -494,14 +494,14 @@ class OrderLimit {
   ): Result<OrderLimit, InvalidAmountError> {
     // Валидация минимума
     const minResult = Amount.fromNumber(min, 'minOrderSize', 0);
-    if (minResult.isErr()) {
-      return Err(minResult.unwrapErr());
+    if (!minResult.ok) {
+      return Err(minResult.error);
     }
 
     // Валидация максимума
     const maxResult = Amount.fromNumber(max, 'maxOrderSize', 0);
-    if (maxResult.isErr()) {
-      return Err(maxResult.unwrapErr());
+    if (!maxResult.ok) {
+      return Err(maxResult.error);
     }
 
     // Проверка что min <= max

@@ -230,10 +230,11 @@ class ProfitPercentage {
 // Использование
 const profitResult = ProfitPercentage.calculate(1000, 1200);
 
-profitResult.match({
-  ok: (profit) => console.log('Profit:', profit.format()), // "+20.00%"
-  err: (error) => console.error('Error:', error.message)
-});
+if (profitResult.ok) {
+  console.log('Profit:', profitResult.value.format()); // "+20.00%"
+} else {
+  console.error('Error:', profitResult.error.message);
+}
 ```
 
 ### 5. Интеграция с decimal.js для точных вычислений
@@ -307,31 +308,39 @@ if (divideResult.ok) {
 
 ```typescript
 // 0 / 0 = неопределенность (NaN в JavaScript)
-const zero = Money.fromAmount(0, 'USDC').unwrap();
-const result = zero.divide(0);
-// ❌ Err(DivisionByZeroError)
-// Важно: даже если делимое = 0, деление на ноль недопустимо
+const zeroResult = Money.fromAmount(0, 'USDC');
+if (zeroResult.ok) {
+  const result = zeroResult.value.divide(0);
+  // ❌ Err(DivisionByZeroError)
+  // Важно: даже если делимое = 0, деление на ноль недопустимо
+}
 ```
 
 ### Деление любых чисел на ноль
 
 ```typescript
 // Деление на ноль недопустимо для любых значений
-const money = Money.fromAmount(100, 'USDC').unwrap();
-const result = money.divide(0);
-// ❌ Err(DivisionByZeroError)
+const moneyResult = Money.fromAmount(100, 'USDC');
+if (moneyResult.ok) {
+  const result = moneyResult.value.divide(0);
+  // ❌ Err(DivisionByZeroError)
+}
 
-const smallMoney = Money.fromAmount(0.01, 'USDC').unwrap();
-const result2 = smallMoney.divide(0);
-// ❌ Err(DivisionByZeroError)
+const smallMoneyResult = Money.fromAmount(0.01, 'USDC');
+if (smallMoneyResult.ok) {
+  const result2 = smallMoneyResult.value.divide(0);
+  // ❌ Err(DivisionByZeroError)
+}
 ```
 
 ### Очень малые делители (почти ноль)
 
 ```typescript
 // Технически не ноль, но результат может быть огромным
-const money = Money.fromAmount(100, 'USDC').unwrap();
-const result = money.divide(0.0000001); // ✅ Ok(Money(1000000000))
+const moneyResult = Money.fromAmount(100, 'USDC');
+if (moneyResult.ok) {
+  const result = moneyResult.value.divide(0.0000001); // ✅ Ok(Money(1000000000))
+}
 
 // Если нужна защита от слишком малых делителей:
 function safeDivide(
@@ -359,10 +368,12 @@ function safeDivide(
 
 ```typescript
 // JavaScript имеет -0, который === 0
-const money = Money.fromAmount(100, 'USDC').unwrap();
-const result = money.divide(-0);
-// ❌ Err(DivisionByZeroError)
-// Проверка divisor === 0 ловит и -0
+const moneyResult = Money.fromAmount(100, 'USDC');
+if (moneyResult.ok) {
+  const result = moneyResult.value.divide(-0);
+  // ❌ Err(DivisionByZeroError)
+  // Проверка divisor === 0 ловит и -0
+}
 ```
 
 ### Цепочка делений
@@ -423,19 +434,19 @@ import { DivisionByZeroError } from '@polymarket/errors';
 
 const result = money.divide(divisor);
 
-result.match({
-  ok: (divided) => processMoney(divided),
-  err: (error) => {
-    if (error.code === DivisionByZeroError.code) {
-      showError('Cannot divide by zero', error.context);
+if (result.ok) {
+  processMoney(result.value);
+} else {
+  const error = result.error;
+  if (error.code === DivisionByZeroError.code) {
+    showError('Cannot divide by zero', error.context);
 
-      // Использовать альтернативный подход
-      return handleZeroDivisor();
-    } else {
-      showError('Unexpected error', error);
-    }
+    // Использовать альтернативный подход
+    handleZeroDivisor();
+  } else {
+    showError('Unexpected error', error);
   }
-});
+}
 ```
 
 ### С fallback значением
@@ -448,27 +459,31 @@ function divideOrDefault(
   divisor: number,
   defaultValue: Money
 ): Money {
-  return money.divide(divisor).match({
-    ok: (result) => result,
-    err: (error) => {
-      if (DivisionByZeroError.is(error)) {
-        logger.warn('Division by zero, using default', {
-          error: error.toJSON(),
-          default: defaultValue.getAmount()
-        });
-        return defaultValue;
-      }
-      throw error;
+  const result = money.divide(divisor);
+
+  if (result.ok) {
+    return result.value;
+  } else {
+    if (DivisionByZeroError.is(result.error)) {
+      logger.warn('Division by zero, using default', {
+        error: result.error.toJSON(),
+        default: defaultValue.getAmount()
+      });
+      return defaultValue;
     }
-  });
+    throw result.error;
+  }
 }
 
 // Использование
-const result = divideOrDefault(
-  money,
-  userInput,
-  Money.fromAmount(0, 'USDC').unwrap() // Fallback = 0
-);
+const fallbackResult = Money.fromAmount(0, 'USDC');
+if (fallbackResult.ok) {
+  const result = divideOrDefault(
+    money,
+    userInput,
+    fallbackResult.value // Fallback = 0
+  );
+}
 ```
 
 ### С логированием
@@ -483,24 +498,21 @@ function divideWithLogging(
 ): Result<Money, DivisionByZeroError> {
   const result = money.divide(divisor);
 
-  result.match({
-    ok: (divided) => {
-      logger.info('Division successful', {
-        operation: operationName,
-        dividend: money.getAmount(),
-        divisor,
-        result: divided.getAmount()
-      });
-    },
-    err: (error) => {
-      logger.error('Division by zero', {
-        operation: operationName,
-        error: error.toJSON(),
-        dividend: money.getAmount(),
-        divisor
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Division successful', {
+      operation: operationName,
+      dividend: money.getAmount(),
+      divisor,
+      result: result.value.getAmount()
+    });
+  } else {
+    logger.error('Division by zero', {
+      operation: operationName,
+      error: result.error.toJSON(),
+      dividend: money.getAmount(),
+      divisor
+    });
+  }
 
   return result;
 }
@@ -552,16 +564,16 @@ function calculatePE(
 // Использование
 const peResult = calculatePE(100, 0);
 
-peResult.match({
-  ok: (pe) => console.log('P/E ratio:', pe),
-  err: (error) => {
-    if (error.code === DivisionByZeroError.code) {
-      console.error('Earnings are zero');
-    } else if (error.code === ArithmeticOverflowError.code) {
-      console.error('Calculation overflow');
-    }
+if (peResult.ok) {
+  console.log('P/E ratio:', peResult.value);
+} else {
+  const error = peResult.error;
+  if (error.code === DivisionByZeroError.code) {
+    console.error('Earnings are zero');
+  } else if (error.code === ArithmeticOverflowError.code) {
+    console.error('Calculation overflow');
   }
-});
+}
 ```
 
 ---

@@ -539,9 +539,8 @@ import { toChain } from '@polymarket/result';
 
 const result = toChain(validateRoundingMode(userInput))
   .flatMap(mode =>
-    Price.fromDecimal(new Decimal('10.567')).flatMap(price =>
-      price.round(2, mode)
-    )
+    toChain(Price.fromDecimal(new Decimal('10.567')))
+      .flatMap(price => price.round(2, mode))
   )
   .toResult();
 
@@ -701,7 +700,7 @@ function calculateFee(
   feePercentage: number,
   decimals: number,
   roundingMode: number
-): Result<Money, InvalidRoundingModeError> {
+): Result<Money, InvalidRoundingModeError | InvalidMoneyError> {
   // Валидация roundingMode
   const modeResult = validateRoundingMode(roundingMode);
   if (!modeResult.ok) {
@@ -713,8 +712,8 @@ function calculateFee(
   const feeResult = Money.fromDecimal(feeDecimal, amount.currency);
 
   if (!feeResult.ok) {
-    // Возвращаем оригинальную ошибку из Money.fromDecimal, а не оборачиваем в InvalidRoundingModeError
-    return feeResult;
+    // Возвращаем InvalidMoneyError из Money.fromDecimal
+    return Err(feeResult.error);
   }
 
   const fee = feeResult.value;

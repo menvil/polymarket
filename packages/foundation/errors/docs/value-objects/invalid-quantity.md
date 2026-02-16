@@ -388,6 +388,9 @@ Quantity.fromDecimal(sum); // ✅ Точно 0.3
 ### Валидация с минимальным значением
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
+
 class Quantity {
   static fromNumberWithMin(
     value: number,
@@ -470,6 +473,7 @@ result.match({
 ### С логированием
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 
 function validateAndLogQuantity(
@@ -478,21 +482,18 @@ function validateAndLogQuantity(
 ): Result<Quantity, InvalidQuantityError> {
   const result = Quantity.fromNumber(value);
 
-  result.match({
-    ok: (quantity) => {
-      logger.info('Quantity validated', {
-        orderId,
-        quantity: quantity.getValue()
-      });
-    },
-    err: (error) => {
-      logger.error('Quantity validation failed', {
-        orderId,
-        error: error.toJSON(),
-        userInput: value
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Quantity validated', {
+      orderId,
+      quantity: result.value.getValue()
+    });
+  } else {
+    logger.error('Quantity validation failed', {
+      orderId,
+      error: result.error.toJSON(),
+      userInput: value
+    });
+  }
 
   return result;
 }

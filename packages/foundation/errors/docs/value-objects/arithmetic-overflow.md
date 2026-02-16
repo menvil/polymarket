@@ -93,7 +93,7 @@ try {
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { ArithmeticOverflowError, InvalidMoneyError, CurrencyMismatchError } from '@polymarket/errors';
 
 class Money {
   private constructor(
@@ -208,7 +208,7 @@ result.match({
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { ArithmeticOverflowError, DivisionByZeroError } from '@polymarket/errors';
 
 class SafeMath {
   /**
@@ -389,7 +389,7 @@ result.match({
 ```typescript
 import Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { ArithmeticOverflowError, InvalidMoneyError, CurrencyMismatchError } from '@polymarket/errors';
 
 class DecimalMoney {
   private constructor(

@@ -311,7 +311,7 @@ class EventReplaySystem {
   }
 
   getTelemetry(): Array<{ event: string; timestamp: Date }> {
-    return this.telemetry;
+    return [...this.telemetry];
   }
 }
 

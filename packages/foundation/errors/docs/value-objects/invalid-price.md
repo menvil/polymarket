@@ -285,6 +285,9 @@ Price.fromNumber(1e-10);    // ❌ Err(InvalidPriceError)
 ### Округление
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidPriceError } from '@polymarket/errors';
+
 // Если нужно округлить до допустимого диапазона
 function clampPrice(value: number): Result<Price, InvalidPriceError> {
   const MIN = 0.0001;
@@ -354,6 +357,7 @@ result.match({
 ### С логированием
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 function validateAndLogPrice(
@@ -362,21 +366,18 @@ function validateAndLogPrice(
 ): Result<Price, InvalidPriceError> {
   const result = Price.fromNumber(value);
 
-  result.match({
-    ok: (price) => {
-      logger.info('Price validated', {
-        orderId,
-        price: price.getValue()
-      });
-    },
-    err: (error) => {
-      logger.error('Price validation failed', {
-        orderId,
-        error: error.toJSON(),
-        userInput: value
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Price validated', {
+      orderId,
+      price: result.value.getValue()
+    });
+  } else {
+    logger.error('Price validation failed', {
+      orderId,
+      error: result.error.toJSON(),
+      userInput: value
+    });
+  }
 
   return result;
 }

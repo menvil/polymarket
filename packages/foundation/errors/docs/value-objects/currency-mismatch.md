@@ -178,14 +178,18 @@ class Money {
 }
 
 // Использование
-const usdc = Money.fromAmount(100, 'USDC').unwrap();
-const eur = Money.fromAmount(50, 'EUR').unwrap();
-const result = usdc.add(eur);
+const usdcResult = Money.fromAmount(100, 'USDC');
+const eurResult = Money.fromAmount(50, 'EUR');
 
-result.match({
-  ok: (total) => console.log(`Total: ${total.getAmount()} ${total.getCurrency()}`),
-  err: (error) => console.error('Error:', error.message)
-});
+if (usdcResult.ok && eurResult.ok) {
+  const result = usdcResult.value.add(eurResult.value);
+
+  if (result.ok) {
+    console.log(`Total: ${result.value.getAmount()} ${result.value.getCurrency()}`);
+  } else {
+    console.error('Error:', result.error.message);
+  }
+}
 ```
 
 ### 3. Сравнение денежных сумм
@@ -249,21 +253,27 @@ class Money {
 }
 
 // Использование
-const usdc1 = Money.fromAmount(100, 'USDC').unwrap();
-const usdc2 = Money.fromAmount(50, 'USDC').unwrap();
-const btc = Money.fromAmount(0.5, 'BTC').unwrap();
+const usdc1Result = Money.fromAmount(100, 'USDC');
+const usdc2Result = Money.fromAmount(50, 'USDC');
+const btcResult = Money.fromAmount(0.5, 'BTC');
 
-// Сравнение одинаковых валют
-usdc1.isGreaterThan(usdc2).match({
-  ok: (result) => console.log('100 USDC > 50 USDC:', result), // true
-  err: (error) => console.error('Error:', error.message)
-});
+if (usdc1Result.ok && usdc2Result.ok && btcResult.ok) {
+  // Сравнение одинаковых валют
+  const comparisonResult = usdc1Result.value.isGreaterThan(usdc2Result.value);
+  if (comparisonResult.ok) {
+    console.log('100 USDC > 50 USDC:', comparisonResult.value); // true
+  } else {
+    console.error('Error:', comparisonResult.error.message);
+  }
 
-// Сравнение разных валют
-usdc1.isGreaterThan(btc).match({
-  ok: (result) => console.log('Result:', result),
-  err: (error) => console.error('Cannot compare USDC with BTC') // ❌
-});
+  // Сравнение разных валют
+  const btcComparisonResult = usdc1Result.value.isGreaterThan(btcResult.value);
+  if (btcComparisonResult.ok) {
+    console.log('Result:', btcComparisonResult.value);
+  } else {
+    console.error('Cannot compare USDC with BTC'); // ❌
+  }
+}
 ```
 
 ### 4. Конвертация валют
@@ -344,16 +354,19 @@ const rates = new Map([
 
 const converter = new CurrencyConverter(rates);
 
-const usdc = Money.fromAmount(100, 'USDC').unwrap();
-const eur = Money.fromAmount(50, 'EUR').unwrap();
+const usdcResult = Money.fromAmount(100, 'USDC');
+const eurResult = Money.fromAmount(50, 'EUR');
 
-const totalResult = usdc.addWithConversion(eur, converter);
+if (usdcResult.ok && eurResult.ok) {
+  const totalResult = usdcResult.value.addWithConversion(eurResult.value, converter);
 
-totalResult.match({
-  ok: (total) => console.log(`Total: ${total.getAmount()} ${total.getCurrency()}`),
-  // Total: 154.5 USDC (100 USDC + 50 EUR * 1.09)
-  err: (error) => console.error('Conversion error:', error.message)
-});
+  if (totalResult.ok) {
+    console.log(`Total: ${totalResult.value.getAmount()} ${totalResult.value.getCurrency()}`);
+    // Total: 154.5 USDC (100 USDC + 50 EUR * 1.09)
+  } else {
+    console.error('Conversion error:', totalResult.error.message);
+  }
+}
 ```
 
 ### 5. Интеграция с decimal.js
@@ -361,7 +374,7 @@ totalResult.match({
 ```typescript
 import Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
-import { CurrencyMismatchError } from '@polymarket/errors';
+import { CurrencyMismatchError, InvalidMoneyError } from '@polymarket/errors';
 
 class DecimalMoney {
   private constructor(
@@ -453,11 +466,13 @@ class DecimalMoney {
 ### Одинаковые валюты (регистр)
 
 ```typescript
-const usdc1 = Money.fromAmount(100, 'USDC').unwrap();
-const usdc2 = Money.fromAmount(50, 'usdc').unwrap(); // lowercase
+const usdc1Result = Money.fromAmount(100, 'USDC');
+const usdc2Result = Money.fromAmount(50, 'usdc'); // lowercase
 
-const result = usdc1.add(usdc2);
-// ❌ Err(CurrencyMismatchError) - 'USDC' !== 'usdc'
+if (usdc1Result.ok && usdc2Result.ok) {
+  const result = usdc1Result.value.add(usdc2Result.value);
+  // ❌ Err(CurrencyMismatchError) - 'USDC' !== 'usdc'
+}
 
 // Решение: нормализация валюты при создании
 class Money {
@@ -472,11 +487,13 @@ class Money {
 ### Пустые или некорректные валюты
 
 ```typescript
-const money1 = Money.fromAmount(100, 'USDC').unwrap();
-const money2 = Money.fromAmount(50, '').unwrap(); // Пустая валюта
+const money1Result = Money.fromAmount(100, 'USDC');
+const money2Result = Money.fromAmount(50, ''); // Пустая валюта
 
-const result = money1.add(money2);
-// ❌ Err(CurrencyMismatchError) - 'USDC' !== ''
+if (money1Result.ok && money2Result.ok) {
+  const result = money1Result.value.add(money2Result.value);
+  // ❌ Err(CurrencyMismatchError) - 'USDC' !== ''
+}
 
 // Лучше: валидировать при создании
 class Money {
@@ -531,12 +548,14 @@ const result2 = toChain(converter.convert(eur, 'USDC'))
 ### Операции с нулевыми суммами
 
 ```typescript
-const usdc = Money.fromAmount(100, 'USDC').unwrap();
-const zeroEur = Money.fromAmount(0, 'EUR').unwrap();
+const usdcResult = Money.fromAmount(100, 'USDC');
+const zeroEurResult = Money.fromAmount(0, 'EUR');
 
-const result = usdc.add(zeroEur);
-// ❌ Err(CurrencyMismatchError)
-// Даже если сумма 0, валюты разные
+if (usdcResult.ok && zeroEurResult.ok) {
+  const result = usdcResult.value.add(zeroEurResult.value);
+  // ❌ Err(CurrencyMismatchError)
+  // Даже если сумма 0, валюты разные
+}
 
 // Если нужна специальная логика для нуля:
 class Money {
@@ -595,24 +614,24 @@ import { CurrencyMismatchError, InvalidMoneyError } from '@polymarket/errors';
 
 const result = money1.subtract(money2);
 
-result.match({
-  ok: (difference) => processMoney(difference),
-  err: (error) => {
-    if (error.code === CurrencyMismatchError.code) {
-      const expected = error.context?.expected as string;
-      const actual = error.context?.actual as string;
+if (result.ok) {
+  processMoney(result.value);
+} else {
+  const error = result.error;
+  if (error.code === CurrencyMismatchError.code) {
+    const expected = error.context?.expected as string;
+    const actual = error.context?.actual as string;
 
-      showError(`Currency mismatch: ${expected} vs ${actual}`, error.context);
+    showError(`Currency mismatch: ${expected} vs ${actual}`, error.context);
 
-      // Предложить конвертацию
-      return offerConversion(money2, expected);
-    } else if (error.code === InvalidMoneyError.code) {
-      showError('Insufficient funds', error.context);
-    } else {
-      showError('Unexpected error', error);
-    }
+    // Предложить конвертацию
+    offerConversion(money2, expected);
+  } else if (error.code === InvalidMoneyError.code) {
+    showError('Insufficient funds', error.context);
+  } else {
+    showError('Unexpected error', error);
   }
-});
+}
 ```
 
 ### С автоматической конвертацией
@@ -625,19 +644,20 @@ function addWithAutoConvert(
   money2: Money,
   converter: CurrencyConverter
 ): Result<Money, Error> {
-  return money1.add(money2).match({
-    ok: (sum) => Ok(sum),
-    err: (error) => {
-      if (CurrencyMismatchError.is(error)) {
-        logger.info('Currency mismatch, attempting conversion', error.toJSON());
+  const result = money1.add(money2);
 
-        // Автоматическая конвертация
-        return money1.addWithConversion(money2, converter);
-      }
+  if (result.ok) {
+    return Ok(result.value);
+  } else {
+    if (CurrencyMismatchError.is(result.error)) {
+      logger.info('Currency mismatch, attempting conversion', result.error.toJSON());
 
-      return Err(error);
+      // Автоматическая конвертация
+      return money1.addWithConversion(money2, converter);
     }
-  });
+
+    return Err(result.error);
+  }
 }
 ```
 
@@ -653,23 +673,20 @@ function operateWithLogging(
 ): Result<Money, CurrencyMismatchError | InvalidMoneyError> {
   const result = operation === 'add' ? money1.add(money2) : money1.subtract(money2);
 
-  result.match({
-    ok: (resultMoney) => {
-      logger.info('Operation successful', {
+  if (result.ok) {
+    logger.info('Operation successful', {
+      operation,
+      currency: result.value.getCurrency(),
+      result: result.value.getAmount()
+    });
+  } else {
+    if (CurrencyMismatchError.is(result.error)) {
+      logger.error('Currency mismatch', {
         operation,
-        currency: resultMoney.getCurrency(),
-        result: resultMoney.getAmount()
+        error: result.error.toJSON()
       });
-    },
-    err: (error) => {
-      if (CurrencyMismatchError.is(error)) {
-        logger.error('Currency mismatch', {
-          operation,
-          error: error.toJSON()
-        });
-      }
     }
-  });
+  }
 
   return result;
 }
