@@ -731,7 +731,9 @@ export class Quote {
    *   Price.of(new Decimal(0.52)),
    *   Quantity.of(new Decimal(100)),
    *   Quantity.of(new Decimal(150)),
-   *   new Decimal(Date.now())
+   *   new Decimal(Date.now()),
+   *   'POLYMARKET_WS' as MarketDataSourceId,
+   *   'TEST_MARKET' as InstrumentId
    * );
    * const pct = quote.spreadPercentage();
    * console.log(pct?.toDecimal().toNumber()); // ~8.333 (примерно 8.33%)

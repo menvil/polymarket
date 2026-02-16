@@ -855,7 +855,7 @@ console.log(spreadWidth?.toNumber());  // 0.04
 
 // Spread в процентах от mid price: (width / mid) * 100
 const spreadPct = quote.spreadPercentage();
-console.log(spreadPct?.toDecimal().toNumber());  // 8.0 (8%)
+console.log(spreadPct?.toDecimal().toNumber());  // ~8.333 (примерно 8.33%)
 
 // Mid price
 const mid = quote.midOrNull();

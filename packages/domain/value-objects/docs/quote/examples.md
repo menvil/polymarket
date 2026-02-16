@@ -43,7 +43,7 @@ console.log(QuoteFormatter.toDisplay(quote));
 
 // Вычисления
 console.log('Spread:', quote.spreadWidthOrZero().toNumber());        // 0.04
-// spreadPercentage() не реализовано (stub, всегда null)
+console.log('Spread %:', quote.spreadPercentage()?.toDecimal().toNumber());  // ~8.333
 console.log('Mid:', quote.midOrNull()?.toNumber());      // 0.50
 ```
 
@@ -283,11 +283,10 @@ if (maxResult.ok) {
 }
 
 // Проверка spread в процентах
-// spreadPercentage() не реализовано (stub, всегда null)
-// const spreadPct = quote.spreadPercentage()!;
-// if (spreadPct.lessThan(new Decimal(1))) {
-//   console.log('Spread less than 1%');
-// }
+const spreadPct = quote.spreadPercentage();
+if (spreadPct && spreadPct.toDecimal().lessThan(new Decimal(1))) {
+  console.log('Spread less than 1%');
+}
 ```
 
 ### Проверка market crossing
@@ -634,8 +633,8 @@ class MarketMaker {
     );
 
     if (!spreadCheck.ok) {
-      // spreadPercentage() не реализовано (stub, всегда null)
-      console.error('Spread too wide:', quote.spreadWidthOrZero()?.value().toNumber());
+      const spreadPct = quote.spreadPercentage();
+      console.error('Spread too wide:', spreadPct?.toDecimal().toNumber(), '%');
       return null;
     }
 
@@ -756,11 +755,11 @@ class QuoteMonitor {
     // 1. Проверка spread
     if (quote.isTwoSided()) {
       const spread = quote.spreadWidthOrZero()!;
-      // spreadPercentage() не реализовано (stub, всегда null)
+      const spreadPct = quote.spreadPercentage();
 
       const spreadCheck = ValidateMaxSpread.check(spread, this.maxAllowedSpread);
       if (!spreadCheck.ok) {
-        this.alerts.push(`Spread too wide: ${spread.value().toFixed(2)}`);
+        this.alerts.push(`Spread too wide: ${spreadPct?.toDecimal().toFixed(2)}%`);
       }
     }
 

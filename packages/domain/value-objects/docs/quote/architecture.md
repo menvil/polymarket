@@ -91,8 +91,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 2. **Чистая математика** (query методы без side effects):
    - Делегирование в Spread для устранения дублирования логики
    - spread() создает Spread объект для two-sided котировок
-   - spreadWidthOrZero(), midOrNull() делегируют вычисления в Spread
-   - spreadPercentage() - не реализовано (stub, всегда возвращает null)
+   - spreadWidthOrZero(), midOrNull(), spreadPercentage() делегируют вычисления в Spread
    - Сравнение котировок
 
 3. **Immutable представление** - все поля readonly, методы возвращают новые значения
@@ -629,7 +628,7 @@ const shifted = QuoteService.shift(quote, delta);
 
 ```typescript
 const spread = quote.spreadWidthOrZero();  // Decimal
-// spreadPercentage() - не реализовано, всегда возвращает null
+const spreadPct = quote.spreadPercentage();  // Ratio | null
 ```
 
 ### Lazy computation

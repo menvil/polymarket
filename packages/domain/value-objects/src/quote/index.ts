@@ -30,7 +30,7 @@
  *
  * // Вычисления
  * console.log(quote.spread()?.width());         // 0.04
- * console.log(quote.spreadPercentage());        // null (stub)
+ * console.log(quote.spreadPercentage()?.toDecimal().toNumber());  // ~8.333
  * console.log(quote.midOrNull());               // 0.50
  *
  * // Форматирование
