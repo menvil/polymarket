@@ -260,6 +260,39 @@ export function unexpectedError<TError extends DomainError>(
 }
 
 /**
+ * Создаёт ошибку для developer misuse (TypeError)
+ *
+ * @param e - TypeError от неправильного использования API
+ * @param ErrorConstructor - Конструктор ошибки
+ * @returns TError с source=UNEXPECTED, reason=MISUSE
+ *
+ * @remarks
+ * Используется для TypeError ошибок, которые указывают на неправильное использование API.
+ * Например: вызов метода с wrong types, обращение к undefined property, и т.д.
+ *
+ * **Отличается от unexpectedError:**
+ * - Добавляет reason: 'MISUSE' для явной идентификации
+ * - Помогает отличить ошибки разработчика от runtime ошибок
+ * - В логах/мониторинге видно что это developer error
+ *
+ * Фабрика ТОЛЬКО добавляет семантику (source, reason, cause).
+ * Трассировка (service, op, opChain) добавляется через rewrap в wrapOp.
+ */
+export function developerMisuseError<TError extends DomainError>(
+  e: Error,
+  ErrorConstructor: ErrorConstructor<TError>
+): TError {
+  const cause = toCause(e);
+  return new ErrorConstructor(`Developer misuse: ${cause.message}`, {
+    context: {
+      source: ErrorSource.UNEXPECTED,
+      reason: 'MISUSE',
+      cause
+    }
+  });
+}
+
+/**
  * Создаёт ошибку для Core invariant violations
  *
  * @param e - Core invariant violation (Error & { reason: string })
@@ -324,9 +357,16 @@ export function isExpectedMathError(e: unknown): e is Error {
  *
  * @remarks
  * Используется в catch блоках wrapOp для обнаружения нарушений инвариантов Core.
- * Проверяет name для надёжности (без необходимости импортировать все классы).
  *
- * Поддерживаемые типы:
+ * **Проверка в два этапа:**
+ * 1. Стабильный маркер: проверяет `kind === 'INVARIANT_VIOLATION'` (рекомендуется)
+ * 2. Fallback: проверяет name по whitelist (для обратной совместимости)
+ *
+ * **Рекомендация для новых ошибок:**
+ * Добавляйте `kind: 'INVARIANT_VIOLATION'` в invariant violation ошибки.
+ * Это устойчивее к переименованию классов.
+ *
+ * Поддерживаемые типы (по name):
  * - PriceInvariantViolation
  * - QuantityInvariantViolation
  * - MoneyInvariantViolation
@@ -335,19 +375,40 @@ export function isExpectedMathError(e: unknown): e is Error {
  * - SpreadInvariantViolation
  * - QuoteInvariantViolation
  * - RatioInvariantViolation
+ *
+ * @example
+ * ```typescript
+ * // Новый подход (стабильный):
+ * class PriceInvariantViolation extends Error {
+ *   kind = 'INVARIANT_VIOLATION' as const;
+ *   reason: string;
+ *   constructor(message: string, reason: string) {
+ *     super(message);
+ *     this.reason = reason;
+ *   }
+ * }
+ * ```
  */
 export function isCoreInvariantViolation(e: unknown): e is Error & { reason: string } {
+  if (!(e instanceof Error) || !('reason' in e)) {
+    return false;
+  }
+
+  // Проверяем стабильный маркер (рекомендуемый подход)
+  if ('kind' in e && e.kind === 'INVARIANT_VIOLATION') {
+    return true;
+  }
+
+  // Fallback: проверяем по name (для обратной совместимости)
   return (
-    e instanceof Error &&
-    (e.name === 'PriceInvariantViolation' ||
-      e.name === 'QuantityInvariantViolation' ||
-      e.name === 'MoneyInvariantViolation' ||
-      e.name === 'BalanceInvariantViolation' ||
-      e.name === 'TokenBalanceInvariantViolation' ||
-      e.name === 'SpreadInvariantViolation' ||
-      e.name === 'QuoteInvariantViolation' ||
-      e.name === 'RatioInvariantViolation') &&
-    'reason' in e
+    e.name === 'PriceInvariantViolation' ||
+    e.name === 'QuantityInvariantViolation' ||
+    e.name === 'MoneyInvariantViolation' ||
+    e.name === 'BalanceInvariantViolation' ||
+    e.name === 'TokenBalanceInvariantViolation' ||
+    e.name === 'SpreadInvariantViolation' ||
+    e.name === 'QuoteInvariantViolation' ||
+    e.name === 'RatioInvariantViolation'
   );
 }
 
@@ -568,6 +629,11 @@ export function wrapOp<T, TError extends DomainError>(
     // InvalidPercentageError, InvalidQuoteError, InvalidBalanceError, InvalidRatioError и т.д.
     if (e instanceof TradingError) {
       return Err(rewrap(serviceName, op, ctx, e as TError, ErrorConstructor));
+    }
+    // Developer misuse (TypeError) - отличаем от обычных unexpected ошибок
+    if (e instanceof TypeError) {
+      const factoryError = developerMisuseError(e, ErrorConstructor);
+      return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));
     }
     // Неожиданные ошибки - фабрика добавляет source+cause, rewrap добавляет service+op+opChain
     const factoryError = unexpectedError(e, ErrorConstructor);

@@ -495,6 +495,32 @@ describe('errorUtils', () => {
         expect(result.error.context?.op).toBe('validate');
         // Should have cause from unexpected error
         expect(result.error.context?.cause).toBeDefined();
+        expect(result.error.context?.source).toBe('unexpected');
+      }
+    });
+
+    it('различает TypeError (developer misuse) от обычных unexpected', () => {
+      const result = wrapOp(
+        'PriceService',
+        'calculate',
+        {},
+        () => {
+          // TypeError indicates developer misuse (wrong API usage)
+          throw new TypeError('Cannot read property "value" of undefined');
+        },
+        InvalidPriceError
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error.message).toContain('Developer misuse');
+        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error.context?.op).toBe('calculate');
+        expect(result.error.context?.source).toBe('unexpected');
+        // MISUSE reason помогает отличить от обычных unexpected
+        expect(result.error.context?.reason).toBe('MISUSE');
+        expect(result.error.context?.cause).toBeDefined();
       }
     });
 
@@ -692,6 +718,35 @@ describe('errorUtils', () => {
       expect(isCoreInvariantViolation(null)).toBe(false);
       expect(isCoreInvariantViolation(undefined)).toBe(false);
       expect(isCoreInvariantViolation({})).toBe(false);
+    });
+
+    it('возвращает true для ошибок с kind=INVARIANT_VIOLATION (стабильный маркер)', () => {
+      const error = new Error('Invariant violated');
+      (error as any).kind = 'INVARIANT_VIOLATION';
+      (error as any).reason = 'CUSTOM_VIOLATION';
+      // name может быть любым - kind имеет приоритет
+      error.name = 'CustomInvariantViolation';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+
+    it('kind маркер имеет приоритет над name whitelist', () => {
+      const error = new Error('Invariant violated');
+      (error as any).kind = 'INVARIANT_VIOLATION';
+      (error as any).reason = 'TEST_REASON';
+      // Даже с неизвестным name - распознается по kind
+      error.name = 'SomeUnknownInvariantViolation';
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
+    });
+
+    it('fallback на name whitelist если kind отсутствует', () => {
+      const error = new Error('Price must be positive');
+      error.name = 'PriceInvariantViolation';
+      (error as any).reason = 'NEGATIVE_VALUE';
+      // kind НЕ установлен - используется fallback по name
+
+      expect(isCoreInvariantViolation(error)).toBe(true);
     });
   });
 
