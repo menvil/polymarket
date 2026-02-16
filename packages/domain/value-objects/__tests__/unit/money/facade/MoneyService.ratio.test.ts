@@ -295,9 +295,12 @@ describe('MoneyService Ratio Operations', () => {
       if (!result.ok) {
         // Проверяем что в контексте negatedDelta (-1.5), а не оригинальный (1.5)
         expect(result.error.context?.delta).toBe('-1.5');
-        // Проверяем правильный op и service
+        // Проверяем правильный op, service и opChain
         expect(result.error.context?.op).toBe('decreaseBy');
         expect(result.error.context?.service).toBe('MoneyService');
+        // opChain должен показывать цепочку: decreaseBy → increaseBy → ...
+        expect(result.error.context?.opChain).toContain('decreaseBy');
+        expect(result.error.context?.opChain).toContain('increaseBy');
         // Проверяем что reason корректный
         expect(result.error.context?.reason).toBe(MoneyErrorReason.DELTA_LESS_THAN_MINUS_ONE);
       }
