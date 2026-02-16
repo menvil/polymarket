@@ -1,7 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidMoneyError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
-import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
 
 /**
  * Правило: Factor для операции умножения Money должен быть finite и не NaN

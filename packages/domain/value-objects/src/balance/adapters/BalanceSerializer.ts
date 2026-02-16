@@ -1,6 +1,6 @@
 import { Result, Err } from '@polymarket/result';
 import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
-import { accountIdToString, parseAccountId, type VenueId } from '@polymarket/ids';
+import { accountIdToString, parseAccountId, asVenueId } from '@polymarket/ids';
 import { Balance } from '../core/Balance.js';
 import { BalanceService } from '../facade/BalanceService.js';
 import { MoneySerializer } from '../../money/adapters/MoneySerializer.js';
@@ -403,8 +403,24 @@ export class BalanceSerializer {
       );
     }
 
-    // 13. Создание VenueId (branded string)
-    const venueId = obj.venueId as VenueId;
+    // 13. Валидация venueId через asVenueId()
+    const venueId = asVenueId(obj.venueId);
+    if (!venueId) {
+      return Err(
+        new InvalidBalanceError(
+          `Field 'venueId' has invalid format. Must be uppercase letters, digits, underscores, 1-32 chars, not starting with digit`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: BalanceSerializer.SERVICE_NAME,
+              op: 'fromJSON',
+              venueId: obj.venueId,
+              reason: BalanceErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
 
     // 14. Делегирование бизнес-валидации BalanceService
     return BalanceService.create(

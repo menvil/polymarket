@@ -1,4 +1,4 @@
-import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
 
 /**
  * Исключение, выбрасываемое при нарушении инвариантов Money.

@@ -10,13 +10,13 @@ import {
   currencyMismatchError
 } from '@polymarket/errors';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
-import { Money, type SupportedCurrency } from '../core/Money';
-import { MoneyInvariantViolation } from '../core/MoneyInvariantViolation';
-import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorForMoneyMultiplication';
-import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision';
-import { ValidateDeltaForIncreaseBy } from '../rules/ValidateDeltaForIncreaseBy';
-import { MoneyErrorReason } from '../errors/MoneyErrorReason';
-import { Ratio } from '../../ratio/core/Ratio';
+import { Money, type SupportedCurrency } from '../core/Money.js';
+import { MoneyInvariantViolation } from '../core/MoneyInvariantViolation.js';
+import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorForMoneyMultiplication.js';
+import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision.js';
+import { ValidateDeltaForIncreaseBy } from '../rules/ValidateDeltaForIncreaseBy.js';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
+import { Ratio } from '../../ratio/core/Ratio.js';
 
 /**
  * Facade для безопасного создания и операций с Money - публичный API

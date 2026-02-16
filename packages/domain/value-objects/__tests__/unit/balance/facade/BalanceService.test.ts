@@ -4,6 +4,7 @@ import { BalanceService } from '../../../../src/balance/facade/BalanceService.js
 import { Money } from '../../../../src/money/core/Money.js';
 import { BalanceErrorReason } from '../../../../src/balance/errors/BalanceErrorReason.js';
 import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
+import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
 
 describe('BalanceService', () => {
   describe('create()', () => {
@@ -546,6 +547,169 @@ describe('BalanceService', () => {
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value).toBe(true);
+        }
+      });
+
+      it('возвращает false для балансов с разными accountId (WALLET)', () => {
+        const accountId1: AccountId = {
+          kind: 'WALLET',
+          address: '0x1234567890123456789012345678901234567890' as WalletAddress
+        };
+        const accountId2: AccountId = {
+          kind: 'WALLET',
+          address: '0xABCDEF1234567890123456789012345678901234' as WalletAddress
+        };
+
+        const balance1Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          accountId1,
+          TEST_VENUE_ID
+        );
+        const balance2Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          accountId2,
+          TEST_VENUE_ID
+        );
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('возвращает false для балансов с разными venueId', () => {
+        const venueId1: VenueId = 'POLYMARKET' as VenueId;
+        const venueId2: VenueId = 'KALSHI' as VenueId;
+
+        const balance1Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          venueId1
+        );
+        const balance2Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          venueId2
+        );
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('возвращает false для балансов с разными accountId И venueId', () => {
+        const accountId1: AccountId = {
+          kind: 'WALLET',
+          address: '0x1234567890123456789012345678901234567890' as WalletAddress
+        };
+        const accountId2: AccountId = {
+          kind: 'WALLET',
+          address: '0xABCDEF1234567890123456789012345678901234' as WalletAddress
+        };
+        const venueId1: VenueId = 'POLYMARKET' as VenueId;
+        const venueId2: VenueId = 'KALSHI' as VenueId;
+
+        const balance1Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          accountId1,
+          venueId1
+        );
+        const balance2Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          accountId2,
+          venueId2
+        );
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('возвращает true для wallet address case-insensitive (accountIdEquals)', () => {
+        const accountId1: AccountId = {
+          kind: 'WALLET',
+          address: '0x1234567890123456789012345678901234567890' as WalletAddress
+        };
+        const accountId2: AccountId = {
+          kind: 'WALLET',
+          address: '0X1234567890123456789012345678901234567890' as WalletAddress // uppercase 0X
+        };
+
+        const balance1Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          accountId1,
+          TEST_VENUE_ID
+        );
+        const balance2Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          accountId2,
+          TEST_VENUE_ID
+        );
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(true);
+        }
+      });
+
+      it('возвращает false для VENUE accountId с разными userId', () => {
+        const accountId1: AccountId = {
+          kind: 'VENUE',
+          venueId: 'POLYMARKET' as VenueId,
+          userId: 'user123'
+        };
+        const accountId2: AccountId = {
+          kind: 'VENUE',
+          venueId: 'POLYMARKET' as VenueId,
+          userId: 'user456'
+        };
+
+        const balance1Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          accountId1,
+          TEST_VENUE_ID
+        );
+        const balance2Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          accountId2,
+          TEST_VENUE_ID
+        );
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
         }
       });
     });

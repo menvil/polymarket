@@ -269,6 +269,164 @@ describe('BalanceSerializer', () => {
       });
     });
 
+    describe('валидация venueId', () => {
+      describe('негативные кейсы', () => {
+        it('возвращает ошибку для lowercase venueId', () => {
+          const json = {
+            available: { amount: '10000', currency: 'USDC' },
+            reserved: { amount: '2000', currency: 'USDC' },
+            accountId: 'wallet:0x1234567890123456789012345678901234567890',
+            venueId: 'polymarket' // lowercase
+          };
+
+          const result = BalanceSerializer.fromJSON(json);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('invalid format');
+            expect(result.error.context?.op).toBe('fromJSON');
+            expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+            expect(result.error.context?.venueId).toBe('polymarket');
+          }
+        });
+
+        it('возвращает ошибку для venueId начинающегося с цифры', () => {
+          const json = {
+            available: { amount: '10000', currency: 'USDC' },
+            reserved: { amount: '2000', currency: 'USDC' },
+            accountId: 'wallet:0x1234567890123456789012345678901234567890',
+            venueId: '123VENUE'
+          };
+
+          const result = BalanceSerializer.fromJSON(json);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('invalid format');
+            expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+          }
+        });
+
+        it('возвращает ошибку для venueId с дефисом', () => {
+          const json = {
+            available: { amount: '10000', currency: 'USDC' },
+            reserved: { amount: '2000', currency: 'USDC' },
+            accountId: 'wallet:0x1234567890123456789012345678901234567890',
+            venueId: 'POLY-MARKET'
+          };
+
+          const result = BalanceSerializer.fromJSON(json);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('invalid format');
+            expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+          }
+        });
+
+        it('возвращает ошибку для venueId с двоеточием', () => {
+          const json = {
+            available: { amount: '10000', currency: 'USDC' },
+            reserved: { amount: '2000', currency: 'USDC' },
+            accountId: 'wallet:0x1234567890123456789012345678901234567890',
+            venueId: 'POLY:MARKET'
+          };
+
+          const result = BalanceSerializer.fromJSON(json);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('invalid format');
+            expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+          }
+        });
+
+        it('возвращает ошибку для пустой строки venueId', () => {
+          const json = {
+            available: { amount: '10000', currency: 'USDC' },
+            reserved: { amount: '2000', currency: 'USDC' },
+            accountId: 'wallet:0x1234567890123456789012345678901234567890',
+            venueId: ''
+          };
+
+          const result = BalanceSerializer.fromJSON(json);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('invalid format');
+            expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+          }
+        });
+
+        it('возвращает ошибку для venueId превышающего длину (33 символа)', () => {
+          const json = {
+            available: { amount: '10000', currency: 'USDC' },
+            reserved: { amount: '2000', currency: 'USDC' },
+            accountId: 'wallet:0x1234567890123456789012345678901234567890',
+            venueId: 'A'.repeat(33) // 33 символа
+          };
+
+          const result = BalanceSerializer.fromJSON(json);
+
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('invalid format');
+            expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+          }
+        });
+      });
+
+      describe('позитивные кейсы', () => {
+        it('принимает валидный venueId (POLYMARKET)', () => {
+          const json = {
+            available: { amount: '10000', currency: 'USDC' },
+            reserved: { amount: '2000', currency: 'USDC' },
+            accountId: 'wallet:0x1234567890123456789012345678901234567890',
+            venueId: 'POLYMARKET'
+          };
+
+          const result = BalanceSerializer.fromJSON(json);
+
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            expect(result.value.venueId()).toBe('POLYMARKET');
+          }
+        });
+
+        it('принимает venueId с подчеркиваниями', () => {
+          const json = {
+            available: { amount: '10000', currency: 'USDC' },
+            reserved: { amount: '2000', currency: 'USDC' },
+            accountId: 'wallet:0x1234567890123456789012345678901234567890',
+            venueId: 'MY_CUSTOM_VENUE'
+          };
+
+          const result = BalanceSerializer.fromJSON(json);
+
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            expect(result.value.venueId()).toBe('MY_CUSTOM_VENUE');
+          }
+        });
+
+        it('принимает venueId с цифрами не в начале', () => {
+          const json = {
+            available: { amount: '10000', currency: 'USDC' },
+            reserved: { amount: '2000', currency: 'USDC' },
+            accountId: 'wallet:0x1234567890123456789012345678901234567890',
+            venueId: 'VENUE_123'
+          };
+
+          const result = BalanceSerializer.fromJSON(json);
+
+          expect(result.ok).toBe(true);
+          if (result.ok) {
+            expect(result.value.venueId()).toBe('VENUE_123');
+          }
+        });
+      });
+    });
+
     describe('round-trip сериализация', () => {
       it('сохраняет баланс через сериализацию и десериализацию', () => {
         const originalResult = BalanceService.create(

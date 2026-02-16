@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
-import { MoneyInvariantViolation } from './MoneyInvariantViolation';
-import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { MoneyInvariantViolation } from './MoneyInvariantViolation.js';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
 import { SUPPORTED_CURRENCIES, type SupportedCurrency } from '@polymarket/ids';
 
 // Re-export SupportedCurrency для удобства
