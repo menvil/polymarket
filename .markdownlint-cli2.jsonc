@@ -1,0 +1,60 @@
+// Конфигурация markdownlint для автоматического исправления
+{
+  // Файлы для проверки
+  "globs": [
+    "**/*.md"
+  ],
+
+  // Игнорировать
+  "ignores": [
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/coverage/**"
+  ],
+
+  // Правила
+  "config": {
+    // MD013: Line length - отключаем, т.к. в коде могут быть длинные строки
+    "MD013": false,
+
+    // MD033: Inline HTML - разрешаем, т.к. иногда нужен HTML
+    "MD033": false,
+
+    // MD041: First line in file should be a top level heading - отключаем
+    "MD041": false,
+
+    // MD024: Multiple headings with the same content - разрешаем дубликаты заголовков
+    "MD024": {
+      "siblings_only": true
+    },
+
+    // MD046: Code block style - consistent
+    "MD046": {
+      "style": "fenced"
+    },
+
+    // MD049: Emphasis style - consistent
+    "MD049": {
+      "style": "underscore"
+    },
+
+    // MD050: Strong style - consistent
+    "MD050": {
+      "style": "asterisk"
+    },
+
+    // MD036: Emphasis as heading - отключаем, т.к. используем **bold** для псевдо-заголовков в списках
+    "MD036": false,
+
+    // MD040: Fenced code language - отключаем, т.к. иногда код без языка (plain text output)
+    "MD040": false,
+
+    // MD060: Table column style - отключаем, т.к. compact vs consistent style не критичен
+    "MD060": false
+  },
+
+  // Форматтер для красивого вывода
+  "outputFormatters": [
+    ["markdownlint-cli2-formatter-pretty"]
+  ]
+}
