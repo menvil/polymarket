@@ -77,7 +77,7 @@ if (bidResult.ok && askResult.ok) {
 
 ### `fromValues(bid, ask)`
 
-Создаёт спред из чисел, строк или Decimal.
+Создаёт спред из чисел или Decimal.
 
 ```typescript
 fromValues(

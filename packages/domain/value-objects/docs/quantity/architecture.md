@@ -70,7 +70,7 @@ const result = QuantityService.create(-1);
 
 // 1. Facade: QuantityService.create()
 try {
-  const quantity = Quantity.of(-1);  // -> идёт в Core
+  const quantity = Quantity.of(new Decimal(-1));  // -> идёт в Core
   return Ok(quantity);
 } catch (error) {
   // 2. Core: Quantity.of() бросил QuantityInvariantViolation

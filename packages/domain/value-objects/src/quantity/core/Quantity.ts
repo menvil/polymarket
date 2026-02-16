@@ -88,7 +88,6 @@ export class Quantity {
    * Для публичного API используйте QuantityService.create().
    *
    * Конвертация number/string → Decimal делается в QuantityService (Facade layer).
-   * Без проверки minSize - это бизнес-правило (используй QuantityService.createForOrder()).
    *
    * @param value - Значение (Decimal)
    * @returns Новый Quantity
@@ -117,7 +116,7 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty = Quantity.of(10);
+   * const qty = Quantity.of(new Decimal(10));
    * const decimal = qty.value(); // Decimal
    * ```
    */
@@ -137,7 +136,7 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty = Quantity.of("12345678901234567890.123456789");
+   * const qty = Quantity.of(new Decimal("12345678901234567890.123456789"));
    * const num = qty.toNumber(); // Может потерять точность!
    * const decimal = qty.value(); // Сохраняет точность
    * ```
@@ -158,9 +157,9 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(10);
-   * const qty2 = Quantity.of(10);
-   * const qty3 = Quantity.of(10.0000001);
+   * const qty1 = Quantity.of(new Decimal(10));
+   * const qty2 = Quantity.of(new Decimal(10));
+   * const qty3 = Quantity.of(new Decimal(10.0000001));
    *
    * qty1.equals(qty2); // true
    * qty1.equals(qty3); // false (точное сравнение)
@@ -181,8 +180,8 @@ export class Quantity {
    * @example
    * ```typescript
    * Quantity.ZERO.isZero();     // true
-   * Quantity.of(0).isZero();    // true
-   * Quantity.of(0.0001).isZero(); // false (точное сравнение)
+   * Quantity.of(new Decimal(0)).isZero();    // true
+   * Quantity.of(new Decimal(0.0001)).isZero(); // false (точное сравнение)
    * ```
    */
   public isZero(): boolean {
@@ -196,8 +195,8 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * Quantity.of(10).isPositive();  // true
-   * Quantity.of(0).isPositive();   // false
+   * Quantity.of(new Decimal(10)).isPositive();  // true
+   * Quantity.of(new Decimal(0)).isPositive();   // false
    * Quantity.ZERO.isPositive();    // false
    * ```
    */
@@ -216,8 +215,8 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(5);
-   * const qty2 = Quantity.of(10);
+   * const qty1 = Quantity.of(new Decimal(5));
+   * const qty2 = Quantity.of(new Decimal(10));
    *
    * qty1.isLessThan(qty2);  // true
    * qty2.isLessThan(qty1);  // false
@@ -239,8 +238,8 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(5);
-   * const qty2 = Quantity.of(10);
+   * const qty1 = Quantity.of(new Decimal(5));
+   * const qty2 = Quantity.of(new Decimal(10));
    *
    * qty1.isLessThanOrEqual(qty2);  // true
    * qty2.isLessThanOrEqual(qty1);  // false
@@ -262,8 +261,8 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(10);
-   * const qty2 = Quantity.of(5);
+   * const qty1 = Quantity.of(new Decimal(10));
+   * const qty2 = Quantity.of(new Decimal(5));
    *
    * qty1.isGreaterThan(qty2);  // true
    * qty2.isGreaterThan(qty1);  // false
@@ -285,8 +284,8 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(10);
-   * const qty2 = Quantity.of(5);
+   * const qty1 = Quantity.of(new Decimal(10));
+   * const qty2 = Quantity.of(new Decimal(5));
    *
    * qty1.isGreaterThanOrEqual(qty2);  // true
    * qty2.isGreaterThanOrEqual(qty1);  // false

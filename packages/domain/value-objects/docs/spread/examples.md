@@ -518,34 +518,21 @@ console.table([
 ```typescript
 import { SpreadService, SpreadErrorReason } from '@polymarket/value-objects';
 
-function validateUserSpread(bidInput: string, askInput: string) {
+function validateUserSpread(bidInput: number, askInput: number) {
   const result = SpreadService.fromValues(bidInput, askInput);
-  
+
   if (!result.ok) {
     const ctx = result.error.context;
-    
+
+    // Проверяем reason из вложенной ошибки (может быть из PriceService)
     switch (ctx?.reason) {
-      case SpreadErrorReason.INVALID_BID:
-        return {
-          valid: false,
-          field: 'bid',
-          message: 'Bid цена должна быть в диапазоне 0.0001-0.9999'
-        };
-      
-      case SpreadErrorReason.INVALID_ASK:
-        return {
-          valid: false,
-          field: 'ask',
-          message: 'Ask цена должна быть в диапазоне 0.0001-0.9999'
-        };
-      
       case SpreadErrorReason.BID_GREATER_THAN_ASK:
         return {
           valid: false,
           field: 'both',
           message: `Bid (${ctx.bid}) не может быть больше Ask (${ctx.ask})`
         };
-      
+
       default:
         return {
           valid: false,
