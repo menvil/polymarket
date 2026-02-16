@@ -16,6 +16,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
  * 1. available >= 0 (доступные средства не могут быть отрицательными)
  * 2. reserved >= 0 (зарезервированные средства не могут быть отрицательными)
  * 3. available.currency === reserved.currency (одинаковая валюта)
+ * 4. available + reserved <= Money.MAX_AMOUNT (защита от overflow в total())
  *
  * **Derived values:**
  * - total = available + reserved (общая сумма средств)
@@ -122,6 +123,21 @@ export class Balance {
           reason: BalanceErrorReason.CURRENCY_MISMATCH,
           availableCurrency: _available.currency(),
           reservedCurrency: _reserved.currency()
+        }
+      );
+    }
+
+    // Инвариант 4: available + reserved <= Money.MAX_AMOUNT
+    const totalAmount = _available.value().plus(_reserved.value());
+    if (totalAmount.greaterThan(Money.MAX_AMOUNT)) {
+      throw new BalanceInvariantViolation(
+        `Total balance (available + reserved) exceeds maximum: ${Money.MAX_AMOUNT}`,
+        {
+          reason: BalanceErrorReason.TOTAL_EXCEEDS_MAX_AMOUNT,
+          available: _available.value().toString(),
+          reserved: _reserved.value().toString(),
+          total: totalAmount.toString(),
+          maxAmount: Money.MAX_AMOUNT.toString()
         }
       );
     }
@@ -274,10 +290,10 @@ export class Balance {
    * Derived value - вычисляется каждый раз при вызове.
    *
    * Безопасно потому что:
-   * - Валюты гарантированно совпадают (инвариант Balance)
-   * - Оба значения >= 0 (инварианты Balance)
-   * - Оба значения finite и not NaN (инварианты Balance)
-   * - Сумма не может превысить Money.MAX_AMOUNT (гарантируется бизнес-логикой)
+   * - Валюты гарантированно совпадают (инвариант #3)
+   * - Оба значения >= 0 (инварианты #1, #2)
+   * - Оба значения finite и not NaN (инварианты #0a, #0b)
+   * - Сумма не может превысить Money.MAX_AMOUNT (инвариант #4)
    *
    * @example
    * ```typescript

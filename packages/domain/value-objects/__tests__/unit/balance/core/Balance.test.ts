@@ -118,6 +118,47 @@ describe('Balance Core', () => {
       }
     });
 
+    it('бросает BalanceInvariantViolation если available + reserved > Money.MAX_AMOUNT', () => {
+      // Money.MAX_AMOUNT = 1e15
+      // Создаём два больших валидных Money, сумма которых превышает лимит
+      const available = Money.of(new Decimal('6e14')); // 600 триллионов
+      const reserved = Money.of(new Decimal('5e14'));  // 500 триллионов
+      // total = 1.1e15 > 1e15 (MAX_AMOUNT)
+
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow(BalanceInvariantViolation);
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow('exceeds maximum');
+    });
+
+    it('проверяет reason в BalanceInvariantViolation для TOTAL_EXCEEDS_MAX_AMOUNT', () => {
+      const available = Money.of(new Decimal('6e14'));
+      const reserved = Money.of(new Decimal('5e14'));
+
+      try {
+        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
+        fail('Should have thrown');
+      } catch (error) {
+        expect(error).toBeInstanceOf(BalanceInvariantViolation);
+        if (error instanceof BalanceInvariantViolation) {
+          expect(error.reason).toBe('TOTAL_EXCEEDS_MAX_AMOUNT');
+          expect((error as any).total).toBeDefined();
+          expect((error as any).maxAmount).toBeDefined();
+          expect((error as any).available).toBeDefined();
+          expect((error as any).reserved).toBeDefined();
+        }
+      }
+    });
+
+    it('принимает баланс на границе MAX_AMOUNT (available + reserved = MAX_AMOUNT)', () => {
+      // Money.MAX_AMOUNT = 1e15
+      const available = Money.of(new Decimal('6e14'));
+      const reserved = Money.of(new Decimal('4e14'));
+      // total = 1e15 = MAX_AMOUNT (граница, должно пройти)
+
+      const balance = Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
+
+      expect(balance.total().value().toString()).toBe('1000000000000000');
+    });
+
     // ПРИМЕЧАНИЕ: Тест невозможен, так как Money поддерживает только USDC
     // it('проверяет reason в BalanceInvariantViolation для CURRENCY_MISMATCH', () => {
     //   const available = Money.of(new Decimal(10000));

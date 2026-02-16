@@ -189,5 +189,23 @@ export enum BalanceErrorReason {
    * Контекст обычно содержит:
    * - currency: string - неподдерживаемая валюта
    */
-  UNSUPPORTED_CURRENCY = 'UNSUPPORTED_CURRENCY'
+  UNSUPPORTED_CURRENCY = 'UNSUPPORTED_CURRENCY',
+
+  /**
+   * Сумма available + reserved превышает максимально допустимое значение
+   *
+   * @remarks
+   * Нарушение Core инварианта: available + reserved <= Money.MAX_AMOUNT (1e15).
+   * Бросается из Balance.of() constructor при проверке инвариантов.
+   *
+   * Защищает от runtime throw в query-методе total(), который создаёт
+   * Money.of(available + reserved) и может упасть при превышении лимита.
+   *
+   * Контекст обычно содержит:
+   * - available: string - значение available
+   * - reserved: string - значение reserved
+   * - total: string - сумма available + reserved
+   * - maxAmount: string - максимально допустимая сумма (Money.MAX_AMOUNT)
+   */
+  TOTAL_EXCEEDS_MAX_AMOUNT = 'TOTAL_EXCEEDS_MAX_AMOUNT'
 }
