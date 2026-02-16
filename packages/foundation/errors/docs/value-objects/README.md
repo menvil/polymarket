@@ -173,19 +173,18 @@ function createOrder(
 // Использование
 const orderResult = createOrder(0.5, 100, money1, money2);
 
-orderResult.match({
-  ok: (order) => console.log('Order created:', order),
-  err: (error) => {
-    // Все типы ошибок обрабатываются в одном месте
-    if (error.code === InvalidPriceError.code) {
-      showError('Invalid price');
-    } else if (error.code === InvalidQuantityError.code) {
-      showError('Invalid quantity');
-    } else if (error.code === CurrencyMismatchError.code) {
-      showError('Currency mismatch');
-    }
+if (orderResult.ok) {
+  console.log('Order created:', orderResult.value);
+} else {
+  // Все типы ошибок обрабатываются в одном месте
+  if (orderResult.error.code === InvalidPriceError.code) {
+    showError('Invalid price');
+  } else if (orderResult.error.code === InvalidQuantityError.code) {
+    showError('Invalid quantity');
+  } else if (orderResult.error.code === CurrencyMismatchError.code) {
+    showError('Currency mismatch');
   }
-});
+}
 ```
 
 ### 5. Множественная валидация (aggregate errors)

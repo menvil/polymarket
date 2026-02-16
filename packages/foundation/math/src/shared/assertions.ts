@@ -104,6 +104,21 @@ export function assertFiniteOperands(
   b: Decimal,
   context: MathOperationContext
 ): void {
+  // Проверка на undefined/null перед вызовом методов
+  if (!a || typeof a.isFinite !== 'function') {
+    throw new InvalidOperandError(
+      (ctx) => `Operand 'a' must be a valid Decimal, got ${ctx.a}`,
+      { context }
+    );
+  }
+
+  if (!b || typeof b.isFinite !== 'function') {
+    throw new InvalidOperandError(
+      (ctx) => `Operand 'b' must be a valid Decimal, got ${ctx.b}`,
+      { context }
+    );
+  }
+
   if (!a.isFinite()) {
     throw new InvalidOperandError(
       (ctx) => `Operand 'a' must be finite, got ${ctx.a}`,

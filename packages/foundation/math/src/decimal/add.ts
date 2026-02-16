@@ -32,10 +32,11 @@ import { assertFiniteOperands, assertFiniteResult } from '../shared/index.js';
  * ```
  */
 export function addDecimal(a: Decimal, b: Decimal): Decimal {
+  // Создаём context безопасным способом
   const context = {
     operation: 'add',
-    a: a.toString(),
-    b: b.toString(),
+    a: a && typeof a.toString === 'function' ? a.toString() : String(a),
+    b: b && typeof b.toString === 'function' ? b.toString() : String(b),
   };
 
   // Валидация операндов

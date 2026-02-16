@@ -109,6 +109,7 @@ if (result.ok) {
 ### 3. С кастомным сообщением
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 function validatePrice(value: number): Result<Price, InvalidPriceError> {

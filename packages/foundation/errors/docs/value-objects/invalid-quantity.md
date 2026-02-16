@@ -121,6 +121,7 @@ result.match({
 ### 3. С кастомным сообщением для разных случаев
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 
 function validateQuantity(value: number, min: number = 0): Result<Quantity, InvalidQuantityError> {

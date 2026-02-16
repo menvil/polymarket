@@ -127,11 +127,14 @@ describe('divideDecimal', () => {
 
       try {
         divideDecimal(new Decimal(10), new Decimal(NaN));
+        throw new Error('Expected InvalidDivisorError to be thrown');
       } catch (error) {
         if (error instanceof InvalidDivisorError) {
           expect(error.context).toBeDefined();
           expect(error.context?.a).toBe('10');
           expect(error.context?.b).toBe('NaN');
+        } else {
+          throw error;
         }
       }
     });
@@ -164,12 +167,15 @@ describe('divideDecimal', () => {
 
       try {
         divideDecimal(inf, value);
+        throw new Error('Expected InvalidOperandError to be thrown');
       } catch (error) {
         if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
           expect(error.context?.a).toBe('Infinity');
           expect(error.context?.b).toBe('2');
           expect(error.context?.operation).toBe('divide');
+        } else {
+          throw error;
         }
       }
     });

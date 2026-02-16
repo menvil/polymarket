@@ -170,13 +170,12 @@ class AveragePrice {
 // Использование
 const avgResult = AveragePrice.calculate(1000, 0);
 
-avgResult.match({
-  ok: (avg) => console.log('Average price:', avg.getValue()),
-  err: (error) => {
-    console.error('Cannot calculate average:', error.message);
-    // Использовать fallback или показать ошибку пользователю
-  }
-});
+if (avgResult.ok) {
+  console.log('Average price:', avgResult.value.getValue());
+} else {
+  console.error('Cannot calculate average:', avgResult.error.message);
+  // Использовать fallback или показать ошибку пользователю
+}
 ```
 
 ### 4. Вычисление процента прибыли
@@ -287,13 +286,17 @@ class DecimalMoney {
 }
 
 // Использование
-const money = DecimalMoney.fromDecimal(new Decimal('1000.50'), 'USDC').unwrap();
-const result = money.divideByNumber(0);
+const moneyResult = DecimalMoney.fromDecimal(new Decimal('1000.50'), 'USDC');
+if (!moneyResult.ok) {
+  throw new Error('Invalid money');
+}
 
-result.match({
-  ok: (divided) => console.log('Result:', divided.toDecimal().toString()),
-  err: (error) => console.error('Error:', error.message)
-});
+const divideResult = moneyResult.value.divideByNumber(0);
+if (divideResult.ok) {
+  console.log('Result:', divideResult.value.toDecimal().toString());
+} else {
+  console.error('Error:', divideResult.error.message);
+}
 ```
 
 ---

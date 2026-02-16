@@ -89,6 +89,7 @@ console.log(rounded.toString()); // "10.57"
 Все функции **выбрасывают ошибки** из `@polymarket/errors` при математических невозможностях:
 
 ```typescript
+import Decimal from 'decimal.js';
 import { divideDecimal } from '@polymarket/math';
 import { InvalidDivisorError, DivisionByZeroError } from '@polymarket/errors';
 
