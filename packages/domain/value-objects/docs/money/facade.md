@@ -205,6 +205,141 @@ const zeroResult = MoneyService.divide(money, 0);
 
 ---
 
+### Ratio Operations
+
+#### `portion(m, rate)`
+
+Вычисляет долю (portion) от суммы Money.
+
+**Сигнатура:**
+
+```typescript
+public static portion(
+  m: Money,
+  rate: Ratio
+): Result<Money, InvalidMoneyError>
+```
+
+**Семантика:** "Сколько денег составляет доля rate от суммы m"
+
+**Формула:** `result = m * rate`
+
+**Use cases:**
+- Fee: `portion(orderAmount, Ratio.fromPercent(2))` → 2% trading fee
+- Rebate: `portion(paidAmount, Ratio.fromBps(25))` → 0.25% cashback
+- Allocation: `portion(budget, Ratio.of(new Decimal(0.3)))` → 30% от бюджета
+
+**Пример:**
+
+```typescript
+// Fee calculation: 2% от $1000
+const orderAmount = Money.of(new Decimal(1000), 'USDC');
+const feeRate = Ratio.of(new Decimal(0.02)); // 2%
+const feeResult = MoneyService.portion(orderAmount, feeRate);
+if (feeResult.ok) {
+  console.log(feeResult.value.value().toString()); // "20"
+}
+
+// Allocation: 30% от бюджета $5000
+const budget = Money.of(new Decimal(5000), 'USDC');
+const allocRate = Ratio.of(new Decimal(0.3)); // 30%
+const allocResult = MoneyService.portion(budget, allocRate);
+if (allocResult.ok) {
+  console.log(allocResult.value.value().toString()); // "1500"
+}
+```
+
+---
+
+#### `increaseBy(m, delta)`
+
+Увеличивает сумму на delta процентов.
+
+**Сигнатура:**
+
+```typescript
+public static increaseBy(
+  m: Money,
+  delta: Ratio
+): Result<Money, InvalidMoneyError>
+```
+
+**Семантика:** "Увеличить сумму на delta процентов"
+
+**Формула:** `result = m * (1 + delta)`
+
+**Инвариант:** `delta >= -1` (иначе `DELTA_LESS_THAN_MINUS_ONE`)
+
+**Use cases:**
+- Price increase: `increaseBy(price, Ratio.fromPercent(10))` → +10% наценка
+- Interest: `increaseBy(principal, Ratio.fromPercent(5))` → +5% проценты
+- Growth: `increaseBy(value, Ratio.fromPercent(15))` → +15% рост
+
+**Пример:**
+
+```typescript
+// Наценка 20%: $100 → $120
+const price = Money.of(new Decimal(100), 'USDC');
+const markup = Ratio.of(new Decimal(0.2)); // 20%
+const result = MoneyService.increaseBy(price, markup);
+if (result.ok) {
+  console.log(result.value.value().toString()); // "120"
+}
+
+// Удвоить цену: +100%
+const double = Ratio.of(new Decimal(1)); // 100%
+const doubled = MoneyService.increaseBy(price, double);
+if (doubled.ok) {
+  console.log(doubled.value.value().toString()); // "200"
+}
+```
+
+---
+
+#### `decreaseBy(m, delta)`
+
+Уменьшает сумму на delta процентов.
+
+**Сигнатура:**
+
+```typescript
+public static decreaseBy(
+  m: Money,
+  delta: Ratio
+): Result<Money, InvalidMoneyError>
+```
+
+**Семантика:** "Уменьшить сумму на delta процентов"
+
+**Формула:** `result = m * (1 - delta)` (эквивалентно `increaseBy(m, -delta)`)
+
+**Инвариант:** `delta <= 1` (иначе после отрицания будет `DELTA_LESS_THAN_MINUS_ONE`)
+
+**Use cases:**
+- Discount: `decreaseBy(price, Ratio.fromPercent(10))` → -10% скидка
+- Depreciation: `decreaseBy(value, Ratio.fromPercent(15))` → -15% износ
+
+**Пример:**
+
+```typescript
+// Скидка 20%: $100 → $80
+const price = Money.of(new Decimal(100), 'USDC');
+const discount = Ratio.of(new Decimal(0.2)); // 20%
+const result = MoneyService.decreaseBy(price, discount);
+if (result.ok) {
+  console.log(result.value.value().toString()); // "80"
+}
+
+// Снижение цены на 100% (обнуление)
+const full = Ratio.of(new Decimal(1)); // 100%
+const zeroed = MoneyService.decreaseBy(price, full);
+if (zeroed.ok) {
+  console.log(zeroed.value.value().toString()); // "0"
+}
+```
+
+---
+
 ## Never Throw Contract
 
 **ГАРАНТИЯ:** MoneyService НИКОГДА не бросает исключения.
