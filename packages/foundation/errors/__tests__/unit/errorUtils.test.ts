@@ -1499,6 +1499,51 @@ describe('errorUtils', () => {
       // Но обычные поля из ctx должны пройти
       expect((rewrapped.context as any).orderId).toBe('order-123');
     });
+
+    it('защищает originalError* поля от подмены через ctx (anti-spoof)', () => {
+      // Создаём ошибку с оригинальными данными (используем InvalidMoneyError как foreign error)
+      const originalError = new InvalidMoneyError('Invalid currency', {
+        code: InvalidMoneyError.code,
+        context: { currency: 'INVALID', amount: 100 }
+      });
+
+      // wrapOp устанавливает originalError* только при foreign TradingError
+      // Эмулируем это поведение:
+      const internalCtx = {
+        originalErrorName: 'InvalidMoneyError',
+        originalErrorCode: 'INVALID_MONEY',
+        originalErrorContext: { currency: 'INVALID', amount: 100 }
+      };
+
+      // Создаём unexpectedError для rewrap
+      const wrapped = rewrap('PriceService', 'validate', internalCtx, originalError, InvalidPriceError);
+
+      // Проверяем что поля установлены из internalCtx (через wrapOp)
+      expect((wrapped.context as any).originalErrorName).toBe('InvalidMoneyError');
+      expect((wrapped.context as any).originalErrorCode).toBe('INVALID_MONEY');
+      expect((wrapped.context as any).originalErrorContext).toEqual({ currency: 'INVALID', amount: 100 });
+
+      // Теперь ЗЛОУМЫШЛЕННИК пытается подменить через ctx
+      const maliciousCtx = {
+        orderId: 'order-456',
+        originalErrorName: 'FakeError',      // Spoof attempt
+        originalErrorCode: 'FAKE_CODE',      // Spoof attempt
+        originalErrorContext: { fake: true } // Spoof attempt
+      };
+
+      const rewrapped = rewrap('OrderService', 'process', maliciousCtx, wrapped, InvalidPriceError);
+
+      // originalError* поля НЕ должны быть переписаны из maliciousCtx
+      expect((rewrapped.context as any).originalErrorName).toBe('InvalidMoneyError');
+      expect((rewrapped.context as any).originalErrorName).not.toBe('FakeError');
+      expect((rewrapped.context as any).originalErrorCode).toBe('INVALID_MONEY');
+      expect((rewrapped.context as any).originalErrorCode).not.toBe('FAKE_CODE');
+      expect((rewrapped.context as any).originalErrorContext).toEqual({ currency: 'INVALID', amount: 100 });
+      expect((rewrapped.context as any).originalErrorContext).not.toEqual({ fake: true });
+
+      // Но обычные поля из ctx должны пройти
+      expect((rewrapped.context as any).orderId).toBe('order-456');
+    });
   });
 
   describe('isCoreInvariantViolation edge cases', () => {

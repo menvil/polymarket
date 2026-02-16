@@ -548,6 +548,7 @@ export function rewrap<TError extends DomainError>(
   const inner = (err.context ?? {}) as Record<string, unknown>;
 
   // Запрещаем ctx приносить root-поля и trace-поля (защита от случайного перетирания и спуфинга)
+  // originalError* поля НЕ вырезаем - они нужны wrapOp, но используем write-once логику ниже
   const {
     cause: _c,
     reason: _r,
@@ -624,6 +625,18 @@ export function rewrap<TError extends DomainError>(
 
   if (inner.originalCode === undefined && err.code) {
     merged.originalCode = err.code;
+  }
+
+  // 4b) originalError* поля write-once (приоритет у inner для защиты от спуфинга)
+  // wrapOp передает их через ctx при foreign TradingError, но повторный rewrap НЕ должен их перезаписывать
+  if (inner.originalErrorName !== undefined) {
+    merged.originalErrorName = inner.originalErrorName;
+  }
+  if (inner.originalErrorCode !== undefined) {
+    merged.originalErrorCode = inner.originalErrorCode;
+  }
+  if (inner.originalErrorContext !== undefined) {
+    merged.originalErrorContext = inner.originalErrorContext;
   }
 
   // 5) Создаем новую ошибку с сохранением code и innerError
