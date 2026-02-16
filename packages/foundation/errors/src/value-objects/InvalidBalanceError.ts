@@ -19,9 +19,8 @@
  * // Статическое сообщение
  * throw new InvalidBalanceError('Available amount cannot be negative');
  *
- * // С кодом и контекстом (рекомендуется)
+ * // С контекстом (рекомендуется)
  * throw new InvalidBalanceError('Invalid balance', {
- *   code: InvalidBalanceError.code,
  *   context: { available: -100, reserved: 0, currency: 'USDC' }
  * });
  *
@@ -29,7 +28,6 @@
  * throw new InvalidBalanceError(
  *   (ctx) => `Cannot reserve ${ctx.amount}: only ${ctx.available} available`,
  *   {
- *     code: InvalidBalanceError.code,
  *     context: { amount: 1000, available: 500, currency: 'USDC', reason: 'INSUFFICIENT_FUNDS' }
  *   }
  * );
@@ -43,7 +41,6 @@
  *     return `Invalid balance operation`;
  *   },
  *   {
- *     code: InvalidBalanceError.code,
  *     context: { reason: 'INSUFFICIENT_FUNDS', available: 100, requested: 500 }
  *   }
  * );
@@ -53,13 +50,6 @@
 
 import { TradingError, ErrorSeverity } from '../base/index.js';
 
-/**
- * InvalidBalanceError - ошибка валидации баланса
- *
- * @remarks
- * Уровень серьезности: low (незначительная)
- * Рекомендуемый код ошибки: INVALID_BALANCE
- */
 export class InvalidBalanceError extends TradingError {
   public readonly severity: ErrorSeverity = 'low';
 

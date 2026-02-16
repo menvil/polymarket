@@ -18,9 +18,8 @@
  * // Статическое сообщение
  * throw new InvalidRatioError('Ratio cannot be NaN');
  *
- * // С кодом и контекстом (рекомендуется)
+ * // С контекстом (рекомендуется)
  * throw new InvalidRatioError('Invalid ratio value', {
- *   code: InvalidRatioError.code,
  *   context: { ratioValue: NaN }
  * });
  *
@@ -28,7 +27,6 @@
  * throw new InvalidRatioError(
  *   (ctx) => `Invalid ratio value ${ctx.ratioValue}: must be finite`,
  *   {
- *     code: InvalidRatioError.code,
  *     context: { ratioValue: Infinity }
  *   }
  * );
@@ -36,7 +34,6 @@
  *
  * // С типизированной причиной ошибки
  * throw new InvalidRatioError('Ratio must be >= -1', {
- *   code: InvalidRatioError.code,
  *   context: {
  *     ratioValue: '-1.5',
  *     reason: 'LESS_THAN_MINUS_ONE',

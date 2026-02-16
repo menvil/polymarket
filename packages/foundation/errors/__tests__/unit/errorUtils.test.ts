@@ -98,8 +98,8 @@ describe('errorUtils', () => {
       }
     });
 
-    it('should accept NaN (Decimal.js behavior)', () => {
-      // Note: Decimal.js accepts NaN and creates a NaN Decimal
+    it('should reject NaN (validation)', () => {
+      // toDecimal теперь проверяет isFinite и отвергает NaN
       const result = toDecimal(
         'quantity',
         NaN,
@@ -107,14 +107,15 @@ describe('errorUtils', () => {
         InvalidQuantityError
       );
 
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.isNaN()).toBe(true);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context!.source).toBe('parsing');
+        expect(result.error.message).toContain('finite');
       }
     });
 
-    it('should accept Infinity (Decimal.js behavior)', () => {
-      // Note: Decimal.js accepts Infinity and creates an Infinity Decimal
+    it('should reject Infinity (validation)', () => {
+      // toDecimal теперь проверяет isFinite и отвергает Infinity
       const result = toDecimal(
         'price',
         Infinity,
@@ -122,9 +123,10 @@ describe('errorUtils', () => {
         InvalidPriceError
       );
 
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.isFinite()).toBe(false);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context!.source).toBe('parsing');
+        expect(result.error.message).toContain('finite');
       }
     });
 
@@ -436,8 +438,9 @@ describe('errorUtils', () => {
       }
     });
 
-    it('should catch and rewrap thrown TradingError (NON-whitelist type)', () => {
-      // InvalidBalanceError НЕ в whitelist DomainError, но является TradingError
+    it('should catch and rewrap thrown TradingError (foreign type preserved)', () => {
+      // InvalidBalanceError является DomainError, но ErrorConstructor ожидает InvalidPriceError
+      // Тест проверяет что wrapOp сохраняет оригинальный тип (не переклассифицирует)
       const result = wrapOp<Decimal, InvalidPriceError>(
         'PriceService',
         'validate',

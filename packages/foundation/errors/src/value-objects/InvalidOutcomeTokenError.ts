@@ -15,9 +15,7 @@
  * ```typescript
  * import { InvalidOutcomeTokenError } from '@polymarket/errors';
  *
- * throw new InvalidOutcomeTokenError('OutcomeToken requires on-chain condition', {
- *   code: InvalidOutcomeTokenError.code
- * });
+ * throw new InvalidOutcomeTokenError('OutcomeToken requires on-chain condition');
  * ```
  */
 

@@ -424,8 +424,10 @@ function isCoreInvariantViolation(e: unknown): e is Error & { reason: string }
 - QuantityInvariantViolation
 - MoneyInvariantViolation
 - BalanceInvariantViolation
+- TokenBalanceInvariantViolation
 - SpreadInvariantViolation
 - QuoteInvariantViolation
+- RatioInvariantViolation
 
 ### toCause()
 
@@ -524,6 +526,6 @@ return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
 
 ## См. также
 
-- [errorUtils.ts](/src/utils/errorUtils.ts) - реализация утилит
-- [ErrorSource.ts](/src/ErrorSource.ts) - enum источников ошибок
-- [README.md](/README.md) - основная документация @polymarket/errors
+- [errorUtils.ts](../src/utils/errorUtils.ts) - реализация утилит
+- [ErrorSource.ts](../src/ErrorSource.ts) - enum источников ошибок
+- [README.md](../README.md) - основная документация @polymarket/errors

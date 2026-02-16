@@ -14,9 +14,7 @@
  * ```typescript
  * import { InvalidAssetQuantityError } from '@polymarket/errors';
  *
- * throw new InvalidAssetQuantityError('Invalid asset quantity', {
- *   code: InvalidAssetQuantityError.code
- * });
+ * throw new InvalidAssetQuantityError('Invalid asset quantity');
  * ```
  */
 

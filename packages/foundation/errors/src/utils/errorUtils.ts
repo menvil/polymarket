@@ -137,6 +137,10 @@ export function toCause(e: unknown): { name: string; message: string; stack?: st
  * - Primitives (number, string) парсим напрямую
  * - Объекты (Decimal из другой копии) → toString() → парсим
  *
+ * **Валидация**:
+ * - Отвергает NaN и Infinity по умолчанию
+ * - Используйте decimal.js проверки для обеспечения finite значений
+ *
  * При ошибке парсинга → TError с raw: { field, value } и cause.
  *
  * Не добавляет op в контекст - внешний код добавит через rewrap.
@@ -183,6 +187,20 @@ export function toDecimal<TError extends DomainError>(
 
     // normalized точно number | string после проверки выше
     const decimal = new Decimal(normalized);
+
+    // Проверяем что результат finite (не NaN и не Infinity)
+    if (!decimal.isFinite()) {
+      return Err(
+        new ErrorConstructor('Value must be finite (not NaN or Infinity)', {
+          context: {
+            source: ErrorSource.PARSING,
+            raw: { field, value: String(normalized) },
+            reason: reasonEnum
+          }
+        })
+      );
+    }
+
     return Ok(decimal);
   } catch (error) {
     return Err(
@@ -507,7 +525,7 @@ export function rewrap<TError extends DomainError>(
   const lastOp = base[base.length - 1];
   merged.opChain = lastOp === fullOp ? base : [...base, fullOp];
 
-  // 3) root-поля сохраняем из inner, если они есть (не перетираются)
+  // 4) root-поля сохраняем из inner, если они есть (не перетираются)
   if (inner.cause !== undefined) {
     merged.cause = inner.cause;
   }
@@ -803,9 +821,8 @@ export function wrapOp<T, TError extends DomainError>(
  *     MoneyErrorReason.CURRENCY_MISMATCH,
  *     InvalidMoneyError
  *   );
- *   // Добавляем op через контекст если нужно
- *   err.context = { ...err.context, op: 'isLessThan' };
- *   return Err(err);
+ *   // Добавляем tracing через rewrap если нужно
+ *   return Err(rewrap('MoneyService', 'isLessThan', {}, err, InvalidMoneyError));
  * }
  * ```
  */
