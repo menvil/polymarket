@@ -298,7 +298,7 @@ describe('MoneyService Ratio Operations', () => {
         // Проверяем правильный op, service и opChain
         expect(result.error.context?.op).toBe('decreaseBy');
         expect(result.error.context?.service).toBe('MoneyService');
-        // opChain должен показывать цепочку: MoneyService.decreaseBy → MoneyService.increaseBy
+        // opChain показывает стек вызовов: increaseBy (внутри) → decreaseBy (внешний)
         expect(result.error.context?.opChain).toContain('MoneyService.decreaseBy');
         expect(result.error.context?.opChain).toContain('MoneyService.increaseBy');
         // Проверяем что reason корректный

@@ -150,22 +150,6 @@ describe('Balance Core', () => {
 
       expect(balance.total().value().toString()).toBe('1000000000000000');
     });
-
-    // ПРИМЕЧАНИЕ: Тест невозможен, так как Money поддерживает только USDC
-    // it('проверяет reason в BalanceInvariantViolation для CURRENCY_MISMATCH', () => {
-    //   const available = Money.of(new Decimal(10000));
-    //   const reserved = Money.of(2000, 'EUR' as any);
-    //
-    //   try {
-    //     Balance.of(available, reserved);
-    //     fail('Should have thrown');
-    //   } catch (error) {
-    //     expect(error).toBeInstanceOf(BalanceInvariantViolation);
-    //     if (error instanceof BalanceInvariantViolation) {
-    //       expect(error.reason).toBe('CURRENCY_MISMATCH');
-    //     }
-    //   }
-    // });
   });
 
   describe('Balance.ZERO - singleton', () => {

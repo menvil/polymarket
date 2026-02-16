@@ -1,10 +1,12 @@
 import Decimal from 'decimal.js';
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
 import { BalanceFormatter } from '../../../../src/balance/adapters/BalanceFormatter.js';
 import { BalanceService } from '../../../../src/balance/facade/BalanceService.js';
 import { Money } from '../../../../src/money/core/Money.js';
-import { unwrap } from '@polymarket/result';
+import { MoneyFormatter } from '../../../../src/money/adapters/MoneyFormatter.js';
+import { unwrap, Err } from '@polymarket/result';
 import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
+import { InvalidMoneyError } from '@polymarket/errors';
 
 describe('BalanceFormatter', () => {
   const createBalance = (available: number, reserved: number) => {
@@ -388,8 +390,144 @@ describe('BalanceFormatter', () => {
     });
   });
 
-  // ПРИМЕЧАНИЕ: Error branches для MoneyFormatter.toCurrency/toCompact трудно протестировать
-  // без моков, так как они редко возвращают Err для валидных Money объектов.
-  // Эти ветки (строки 113, 127, 141, 228, 242, 256, 360, 420, 480) покрываются
-  // косвенно через edge cases выше и являются defensive programming.
+  describe('MoneyFormatter error branches coverage', () => {
+    describe('toSummary() MoneyFormatter errors', () => {
+      it('обрабатывает ошибку MoneyFormatter.toCurrency для available', () => {
+        const balance = createBalance(10000, 2000);
+
+        // Мокируем MoneyFormatter.toCurrency чтобы вернуть Err
+        const formatSpy = jest.spyOn(MoneyFormatter, 'toCurrency').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock format error'))
+        );
+
+        const result = BalanceFormatter.toSummary(balance);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to format available amount');
+        }
+
+        formatSpy.mockRestore();
+      });
+
+      it('обрабатывает ошибку MoneyFormatter.toCurrency для reserved', () => {
+        const balance = createBalance(10000, 2000);
+
+        // Первый вызов toCurrency для available проходит Ok
+        // Второй вызов toCurrency для reserved возвращает Err
+        const formatSpy = jest.spyOn(MoneyFormatter, 'toCurrency')
+          .mockReturnValueOnce({ ok: true, value: '$10000.00' } as any)
+          .mockReturnValueOnce(Err(new InvalidMoneyError('Mock format error')));
+
+        const result = BalanceFormatter.toSummary(balance);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to format reserved amount');
+        }
+
+        formatSpy.mockRestore();
+      });
+
+      it('обрабатывает ошибку MoneyFormatter.toCurrency для total', () => {
+        const balance = createBalance(10000, 2000);
+
+        // Первый и второй вызовы toCurrency проходят Ok
+        // Третий вызов toCurrency для total возвращает Err
+        const formatSpy = jest.spyOn(MoneyFormatter, 'toCurrency')
+          .mockReturnValueOnce({ ok: true, value: '$10000.00' } as any)
+          .mockReturnValueOnce({ ok: true, value: '$2000.00' } as any)
+          .mockReturnValueOnce(Err(new InvalidMoneyError('Mock format error')));
+
+        const result = BalanceFormatter.toSummary(balance);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to format total amount');
+        }
+
+        formatSpy.mockRestore();
+      });
+    });
+
+    describe('toCompact() MoneyFormatter errors', () => {
+      it('обрабатывает ошибку MoneyFormatter.toCompact', () => {
+        const balance = createBalance(10000, 2000);
+
+        // Мокируем MoneyFormatter.toCompact чтобы вернуть Err
+        const formatSpy = jest.spyOn(MoneyFormatter, 'toCompact').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock format error'))
+        );
+
+        const result = BalanceFormatter.toCompact(balance);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to format available amount');
+        }
+
+        formatSpy.mockRestore();
+      });
+    });
+
+    describe('toAvailableString() MoneyFormatter errors', () => {
+      it('обрабатывает ошибку MoneyFormatter.toCurrency', () => {
+        const balance = createBalance(10000, 2000);
+
+        // Мокируем MoneyFormatter.toCurrency чтобы вернуть Err
+        const formatSpy = jest.spyOn(MoneyFormatter, 'toCurrency').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock format error'))
+        );
+
+        const result = BalanceFormatter.toAvailableString(balance);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to format available amount');
+        }
+
+        formatSpy.mockRestore();
+      });
+    });
+
+    describe('toReservedString() MoneyFormatter errors', () => {
+      it('обрабатывает ошибку MoneyFormatter.toCurrency', () => {
+        const balance = createBalance(10000, 2000);
+
+        // Мокируем MoneyFormatter.toCurrency чтобы вернуть Err
+        const formatSpy = jest.spyOn(MoneyFormatter, 'toCurrency').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock format error'))
+        );
+
+        const result = BalanceFormatter.toReservedString(balance);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to format reserved amount');
+        }
+
+        formatSpy.mockRestore();
+      });
+    });
+
+    describe('toTotalString() MoneyFormatter errors', () => {
+      it('обрабатывает ошибку MoneyFormatter.toCurrency', () => {
+        const balance = createBalance(10000, 2000);
+
+        // Мокируем MoneyFormatter.toCurrency чтобы вернуть Err
+        const formatSpy = jest.spyOn(MoneyFormatter, 'toCurrency').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock format error'))
+        );
+
+        const result = BalanceFormatter.toTotalString(balance);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to format total amount');
+        }
+
+        formatSpy.mockRestore();
+      });
+    });
+  });
 });

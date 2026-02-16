@@ -1,10 +1,13 @@
 import Decimal from 'decimal.js';
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
 import { BalanceService } from '../../../../src/balance/facade/BalanceService.js';
 import { Money } from '../../../../src/money/core/Money.js';
+import { MoneyService } from '../../../../src/money/facade/MoneyService.js';
 import { BalanceErrorReason } from '../../../../src/balance/errors/BalanceErrorReason.js';
 import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
 import type { AccountId, VenueId, WalletAddress, SupportedCurrency } from '@polymarket/ids';
+import { Err } from '@polymarket/result';
+import { InvalidMoneyError } from '@polymarket/errors';
 
 describe('BalanceService', () => {
   describe('create()', () => {
@@ -1145,5 +1148,199 @@ describe('BalanceService', () => {
         }
       });
     });
+  });
+
+  describe('MoneyService error branches coverage', () => {
+    describe('reserve() MoneyService errors', () => {
+      it('обрабатывает ошибку MoneyService.subtract для available', () => {
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
+
+        // Мокируем MoneyService.subtract чтобы вернуть Err
+        const subtractSpy = jest.spyOn(MoneyService, 'subtract').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock subtract error'))
+        );
+
+        const result = BalanceService.reserve(balanceResult.value, Money.of(new Decimal(1000)));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Mock subtract error');
+        }
+
+        subtractSpy.mockRestore();
+      });
+
+      it('обрабатывает ошибку MoneyService.add для reserved', () => {
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
+
+        // Мокируем MoneyService.add чтобы вернуть Err (вызывается после subtract)
+        const addSpy = jest.spyOn(MoneyService, 'add').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock add error'))
+        );
+
+        const result = BalanceService.reserve(balanceResult.value, Money.of(new Decimal(1000)));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Mock add error');
+        }
+
+        addSpy.mockRestore();
+      });
+    });
+
+    describe('unfreezeReserved() MoneyService errors', () => {
+      it('обрабатывает ошибку MoneyService.add для available', () => {
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
+
+        // Мокируем MoneyService.add чтобы вернуть Err
+        const addSpy = jest.spyOn(MoneyService, 'add').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock add error'))
+        );
+
+        const result = BalanceService.unfreezeReserved(balanceResult.value, Money.of(new Decimal(1000)));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Mock add error');
+        }
+
+        addSpy.mockRestore();
+      });
+
+      it('обрабатывает ошибку MoneyService.subtract для reserved', () => {
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
+
+        // Мокируем MoneyService.subtract чтобы вернуть Err (вызывается после add)
+        const subtractSpy = jest.spyOn(MoneyService, 'subtract').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock subtract error'))
+        );
+
+        const result = BalanceService.unfreezeReserved(balanceResult.value, Money.of(new Decimal(1000)));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Mock subtract error');
+        }
+
+        subtractSpy.mockRestore();
+      });
+    });
+
+    describe('consumeReserved() MoneyService errors', () => {
+      it('обрабатывает ошибку MoneyService.subtract для reserved', () => {
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
+
+        // Мокируем MoneyService.subtract чтобы вернуть Err
+        const subtractSpy = jest.spyOn(MoneyService, 'subtract').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock subtract error'))
+        );
+
+        const result = BalanceService.consumeReserved(balanceResult.value, Money.of(new Decimal(1000)));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Mock subtract error');
+        }
+
+        subtractSpy.mockRestore();
+      });
+    });
+
+    describe('equals() MoneyService errors', () => {
+      it('обрабатывает ошибку MoneyService.equals для available', () => {
+        // Создаем балансы ДО установки мока
+        const balance1Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        const balance2Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
+
+        // Мокируем MoneyService.equals чтобы вернуть Err
+        const equalsSpy = jest.spyOn(MoneyService, 'equals').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock equals error'))
+        );
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to compare available amounts');
+        }
+
+        equalsSpy.mockRestore();
+      });
+
+      it('обрабатывает ошибку MoneyService.equals для reserved', () => {
+        // Создаем балансы ДО установки мока
+        const balance1Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        const balance2Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
+
+        // Первый вызов equals для available проходит Ok(true)
+        // Второй вызов equals для reserved возвращает Err
+        const equalsSpy = jest.spyOn(MoneyService, 'equals')
+          .mockReturnValueOnce({ ok: true, value: true } as any)
+          .mockReturnValueOnce(Err(new InvalidMoneyError('Mock equals error')));
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to compare reserved amounts');
+        }
+
+        equalsSpy.mockRestore();
+      });
+    });
+
   });
 });
