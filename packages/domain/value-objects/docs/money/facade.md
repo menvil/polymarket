@@ -226,8 +226,8 @@ public static portion(
 
 **Use cases:**
 
-- Fee: `portion(orderAmount, Ratio.fromPercent(2))` → 2% trading fee
-- Rebate: `portion(paidAmount, Ratio.fromBps(25))` → 0.25% cashback
+- Fee: `portion(orderAmount, RatioService.fromPercent(2))` → 2% trading fee
+- Rebate: `portion(paidAmount, RatioService.fromBps(25))` → 0.25% cashback
 - Allocation: `portion(budget, Ratio.of(new Decimal(0.3)))` → 30% от бюджета
 
 **Пример:**
@@ -273,9 +273,9 @@ public static increaseBy(
 
 **Use cases:**
 
-- Price increase: `increaseBy(price, Ratio.fromPercent(10))` → +10% наценка
-- Interest: `increaseBy(principal, Ratio.fromPercent(5))` → +5% проценты
-- Growth: `increaseBy(value, Ratio.fromPercent(15))` → +15% рост
+- Price increase: `increaseBy(price, RatioService.fromPercent(10))` → +10% наценка
+- Interest: `increaseBy(principal, RatioService.fromPercent(5))` → +5% проценты
+- Growth: `increaseBy(value, RatioService.fromPercent(15))` → +15% рост
 
 **Пример:**
 
@@ -319,8 +319,8 @@ public static decreaseBy(
 
 **Use cases:**
 
-- Discount: `decreaseBy(price, Ratio.fromPercent(10))` → -10% скидка
-- Depreciation: `decreaseBy(value, Ratio.fromPercent(15))` → -15% износ
+- Discount: `decreaseBy(price, RatioService.fromPercent(10))` → -10% скидка
+- Depreciation: `decreaseBy(value, RatioService.fromPercent(15))` → -15% износ
 
 **Пример:**
 

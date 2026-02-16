@@ -22,9 +22,16 @@
  * import { Money } from '@polymarket/value-objects/money';
  *
  * // Прямое создание (может throw BalanceInvariantViolation)
+ * import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+ *
+ * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+ * const venueId: VenueId = 'POLYMARKET' as VenueId;
+ *
  * const balance = Balance.of(
  *   Money.fromUSDC(10000),
- *   Money.fromUSDC(2000)
+ *   Money.fromUSDC(2000),
+ *   accountId,
+ *   venueId
  * );
  *
  * // Query методы (чистые, не могут fail)
@@ -37,7 +44,7 @@
  *
  * // Helpers
  * const empty = Balance.ZERO.USDC;
- * const withZero = Balance.withZeroReserved(Money.of(10000, 'USDC'));
+ * const withZero = Balance.withZeroReserved(Money.of(10000, 'USDC'), accountId, venueId);
  * ```
  *
  * @packageDocumentation

@@ -575,9 +575,9 @@ export class MoneyService {
    * **Формула:** result = m * (1 + delta)
    *
    * **Use cases:**
-   * - Price markup: `increaseBy(cost, Ratio.fromPercent(5))` → +5% markup
-   * - Interest: `increaseBy(principal, Ratio.fromPercent(3))` → +3% interest
-   * - Discount: `increaseBy(price, Ratio.fromPercent(-10))` → -10% discount
+   * - Price markup: `increaseBy(cost, RatioService.fromPercent(5))` → +5% markup
+   * - Interest: `increaseBy(principal, RatioService.fromPercent(3))` → +3% interest
+   * - Discount: `increaseBy(price, RatioService.fromPercent(-10))` → -10% discount
    *
    * **Инвариант:** delta >= -1
    * - delta = 0.1 → factor = 1.1 → увеличение на 10%
@@ -661,8 +661,8 @@ export class MoneyService {
    * **Формула:** result = m * (1 - delta) = increaseBy(m, -delta)
    *
    * **Use cases:**
-   * - Discount: `decreaseBy(price, Ratio.fromPercent(10))` → -10% скидка
-   * - Depreciation: `decreaseBy(value, Ratio.fromPercent(15))` → -15% износ
+   * - Discount: `decreaseBy(price, RatioService.fromPercent(10))` → -10% скидка
+   * - Depreciation: `decreaseBy(value, RatioService.fromPercent(15))` → -15% износ
    *
    * **Инвариант:** delta <= 1 (чтобы после отрицания было >= -1)
    * - delta = 0.1 → -delta = -0.1 → factor = 0.9 → уменьшение на 10%
@@ -690,7 +690,7 @@ export class MoneyService {
       return Err(rewrap(
         MoneyService.SERVICE_NAME,
         'decreaseBy',
-        { m: m.value().toString(), delta: delta.toDecimal().toString(), currency: m.currency() },
+        { m: m.value().toString(), delta: negatedDelta.toDecimal().toString(), currency: m.currency() },
         result.error,
         InvalidMoneyError
       ));
@@ -713,9 +713,9 @@ export class MoneyService {
    * **Формула:** result = m * rate
    *
    * **Use cases:**
-   * - Fee: `portion(orderAmount, Ratio.fromPercent(2))` → 2% trading fee
-   * - Rebate: `portion(paidAmount, Ratio.fromBps(25))` → 0.25% cashback
-   * - Allocation: `portion(budget, Ratio.fromDecimal(0.3))` → 30% от бюджета
+   * - Fee: `portion(orderAmount, RatioService.fromPercent(2))` → 2% trading fee
+   * - Rebate: `portion(paidAmount, RatioService.fromBps(25))` → 0.25% cashback
+   * - Allocation: `portion(budget, RatioService.fromDecimal(0.3))` → 30% от бюджета
    *
    * **Знак rate:**
    * - Положительный rate (>= 0): стандартный случай (fees, allocations)

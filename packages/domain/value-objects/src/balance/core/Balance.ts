@@ -35,11 +35,17 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
  * ```typescript
  * import { Balance } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
+ * import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+ *
+ * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+ * const venueId: VenueId = 'POLYMARKET' as VenueId;
  *
  * // Создание баланса (может throw при нарушении инвариантов)
  * const balance = Balance.of(
  *   Money.fromUSDC(10000),  // available
- *   Money.fromUSDC(2000)    // reserved
+ *   Money.fromUSDC(2000),   // reserved
+ *   accountId,              // ID аккаунта владельца
+ *   venueId                 // ID площадки
  * );
  *
  * // Query методы (чистые, не могут fail)
@@ -50,7 +56,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
  *
  * // Helpers
  * const empty = Balance.ZERO.USDC;
- * const withZero = Balance.withZeroReserved(Money.of(10000));
+ * const withZero = Balance.withZeroReserved(Money.of(10000), accountId, venueId);
  * ```
  */
 export class Balance {
@@ -299,7 +305,9 @@ export class Balance {
    * ```typescript
    * const balance = Balance.of(
    *   Money.of(10000),
-   *   Money.of(2000)
+   *   Money.of(2000),
+   *   accountId,
+   *   venueId
    * );
    * console.log(balance.total().value().toNumber()); // 12000
    * ```
@@ -341,7 +349,7 @@ export class Balance {
    * const zero = Balance.ZERO.USDC;
    * console.log(zero.isZero()); // true
    *
-   * const withReserved = Balance.of(Money.ZERO.USDC, Money.of(100, 'USDC'));
+   * const withReserved = Balance.of(Money.ZERO.USDC, Money.of(100, 'USDC'), accountId, venueId);
    * console.log(withReserved.isZero()); // false
    * ```
    */
@@ -358,7 +366,9 @@ export class Balance {
    * ```typescript
    * const balance = Balance.of(
    *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.fromUSDC(2000),
+   *   accountId,
+   *   venueId
    * );
    * console.log(balance.hasReserved()); // true
    * ```
@@ -380,7 +390,9 @@ export class Balance {
    * ```typescript
    * const balance = Balance.of(
    *   Money.of(8000, 'USDC'),
-   *   Money.of(2000, 'USDC')
+   *   Money.of(2000, 'USDC'),
+   *   accountId,
+   *   venueId
    * );
    * console.log(balance.reservedPercentage().toFixed(2)); // "20.00"
    *

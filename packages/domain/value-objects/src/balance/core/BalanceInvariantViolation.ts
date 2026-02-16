@@ -28,7 +28,7 @@
  *
  * // В BalanceService.create() - ловим и мапим в InvalidBalanceError
  * try {
- *   const balance = Balance.of(available, reserved);
+ *   const balance = Balance.of(available, reserved, accountId, venueId);
  *   return Ok(balance);
  * } catch (error) {
  *   if (error instanceof BalanceInvariantViolation) {

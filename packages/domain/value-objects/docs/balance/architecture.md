@@ -190,9 +190,14 @@ export class BalanceService {
 **Алгоритм обработки ошибок:**
 
 ```typescript
-public static create(available: Money, reserved: Money): Result<Balance, InvalidBalanceError> {
+public static create(
+  available: Money,
+  reserved: Money,
+  accountId: AccountId,
+  venueId: VenueId
+): Result<Balance, InvalidBalanceError> {
   try {
-    const balance = Balance.of(available, reserved); // может throw
+    const balance = Balance.of(available, reserved, accountId, venueId); // может throw
     return Ok(balance);
   } catch (error) {
     if (error instanceof BalanceInvariantViolation) {
@@ -337,7 +342,7 @@ User Code
 │ 2. ValidateReserveAmount.check()         │
 │ 3. MoneyService.subtract(available, amt) │
 │ 4. MoneyService.add(reserved, amt)       │
-│ 5. Balance.of(newAvail, newRes)          │
+│ 5. Balance.of(newAvail, newRes, acc, ven)│
 │ 6. Catch → Result                        │
 └──────────────────────────────────────────┘
    │

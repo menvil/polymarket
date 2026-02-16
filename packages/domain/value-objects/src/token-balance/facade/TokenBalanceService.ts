@@ -248,10 +248,10 @@ export class TokenBalanceService {
   ): Result<TokenBalance, InvalidTokenBalanceError> {
     const op = 'reserve';
     const ctx = {
-      token: balance.assetId(),
-      available: balance.available().value().toString(),
-      reserved: balance.reserved().value().toString(),
-      qty: qty.value().toString()
+      token: balance?.assetId?.() ?? 'null',
+      available: balance?.available?.()?.value?.()?.toString() ?? 'null',
+      reserved: balance?.reserved?.()?.value?.()?.toString() ?? 'null',
+      qty: qty?.value?.()?.toString() ?? 'null'
     };
 
     return wrapOp(TokenBalanceService.SERVICE_NAME, op, ctx, () => {
@@ -339,10 +339,10 @@ export class TokenBalanceService {
   ): Result<TokenBalance, InvalidTokenBalanceError> {
     const op = 'unfreezeReserved';
     const ctx = {
-      token: balance.assetId(),
-      available: balance.available().value().toString(),
-      reserved: balance.reserved().value().toString(),
-      qty: qty.value().toString()
+      token: balance?.assetId?.() ?? 'null',
+      available: balance?.available?.()?.value?.()?.toString() ?? 'null',
+      reserved: balance?.reserved?.()?.value?.()?.toString() ?? 'null',
+      qty: qty?.value?.()?.toString() ?? 'null'
     };
 
     return wrapOp(TokenBalanceService.SERVICE_NAME, op, ctx, () => {
@@ -438,10 +438,10 @@ export class TokenBalanceService {
   ): Result<TokenBalance, InvalidTokenBalanceError> {
     const op = 'consumeReserved';
     const ctx = {
-      token: balance.assetId(),
-      available: balance.available().value().toString(),
-      reserved: balance.reserved().value().toString(),
-      qty: qty.value().toString()
+      token: balance?.assetId?.() ?? 'null',
+      available: balance?.available?.()?.value?.()?.toString() ?? 'null',
+      reserved: balance?.reserved?.()?.value?.()?.toString() ?? 'null',
+      qty: qty?.value?.()?.toString() ?? 'null'
     };
 
     return wrapOp(TokenBalanceService.SERVICE_NAME, op, ctx, () => {
@@ -514,10 +514,10 @@ export class TokenBalanceService {
   ): Result<TokenBalance, InvalidTokenBalanceError> {
     const op = 'updateAvailable';
     const ctx = {
-      token: balance.assetId(),
-      currentAvailable: balance.available().value().toString(),
-      newAvailable: newAvailable.value().toString(),
-      reserved: balance.reserved().value().toString()
+      token: balance?.assetId?.() ?? 'null',
+      currentAvailable: balance?.available?.()?.value?.()?.toString() ?? 'null',
+      newAvailable: newAvailable?.value?.()?.toString() ?? 'null',
+      reserved: balance?.reserved?.()?.value?.()?.toString() ?? 'null'
     };
 
     return wrapOp(TokenBalanceService.SERVICE_NAME, op, ctx, () => {
