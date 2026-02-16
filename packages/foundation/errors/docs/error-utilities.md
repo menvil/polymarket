@@ -358,7 +358,8 @@ function expectedMathError<TError extends DomainError>(
 
 - Классифицирует ошибку как ErrorSource.MATH_OPERATION
 - Сохраняет полный cause с stack trace
-- Фабрика ТОЛЬКО добавляет семантику (source, cause)
+- Если ошибка TradingError - переносит code и context (с приоритетом source/cause)
+- Если ошибка не TradingError - создает новый контекст с source/cause
 - Трассировка (service, op, opChain) добавляется через rewrap в wrapOp
 
 **Пример**:

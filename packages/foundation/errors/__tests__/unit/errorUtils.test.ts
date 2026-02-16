@@ -1463,6 +1463,42 @@ describe('errorUtils', () => {
       expect((error2.context as any).opChain).toEqual(['PriceService.create']);
       // НЕ должно быть ['PriceService.create', 'PriceService.create']
     });
+
+    it('защищает trace-поля от подмены через ctx (anti-spoof)', () => {
+      // Попытка подменить trace-поля через ctx
+      const error = new InvalidPriceError('Original error', {
+        code: InvalidPriceError.code,
+        context: {
+          value: 100
+        }
+      });
+
+      // Устанавливаем timestamp на ошибке для trace
+      (error as any).timestamp = new Date('2024-01-01T10:00:00Z');
+
+      // Пытаемся подменить trace-поля через ctx
+      const maliciousCtx = {
+        orderId: 'order-123',
+        firstTradingErrorTimestamp: '2025-12-31T23:59:59Z', // Попытка спуфинга
+        firstTradingErrorStack: 'Fake stack trace',         // Попытка спуфинга
+        originalName: 'FakeError',                           // Попытка спуфинга
+        originalCode: 'FAKE_CODE'                            // Попытка спуфинга
+      };
+
+      const rewrapped = rewrap('PriceService', 'validate', maliciousCtx, error, InvalidPriceError);
+
+      // Trace-поля должны быть установлены из error, НЕ из ctx
+      expect(rewrapped.context!.firstTradingErrorTimestamp).toBe('2024-01-01T10:00:00.000Z');
+      expect(rewrapped.context!.firstTradingErrorStack).toBeDefined();
+      expect(rewrapped.context!.firstTradingErrorStack).not.toBe('Fake stack trace');
+      expect(rewrapped.context!.originalName).toBe('InvalidPriceError');
+      expect(rewrapped.context!.originalName).not.toBe('FakeError');
+      expect(rewrapped.context!.originalCode).toBeDefined();
+      expect(rewrapped.context!.originalCode).not.toBe('FAKE_CODE');
+
+      // Но обычные поля из ctx должны пройти
+      expect((rewrapped.context as any).orderId).toBe('order-123');
+    });
   });
 
   describe('isCoreInvariantViolation edge cases', () => {

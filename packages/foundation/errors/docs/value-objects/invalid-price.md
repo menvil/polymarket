@@ -171,21 +171,18 @@ function handlePriceInput(input: string): void {
 
   const result = Price.fromNumber(value);
 
-  result.match({
-    ok: (price) => {
-      // Обновляем UI
-      setPrice(price);
-      clearError('price');
-    },
-    err: (error) => {
-      // Показываем ошибку пользователю
-      if (InvalidPriceError.is(error)) {
-        const min = error.context?.min as number;
-        const max = error.context?.max as number;
-        showFieldError('price', `Price must be between ${min} and ${max}`);
-      }
+  if (result.ok) {
+    // Обновляем UI
+    setPrice(result.value);
+    clearError('price');
+  } else {
+    // Показываем ошибку пользователю
+    if (InvalidPriceError.is(result.error)) {
+      const min = result.error.context?.min as number;
+      const max = result.error.context?.max as number;
+      showFieldError('price', `Price must be between ${min} and ${max}`);
     }
-  });
+  }
 }
 ```
 
