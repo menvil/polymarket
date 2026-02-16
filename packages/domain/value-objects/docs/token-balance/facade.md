@@ -504,13 +504,13 @@ const newAvailableResult = this.subtractQuantity(balance.available(), qty);
 const newReservedResult = this.addQuantity(balance.reserved(), qty);
 
 // subtractQuantity делегирует QuantityService
+// Вызывается внутри wrapOp, поэтому просто передаёт ошибку
 private static subtractQuantity(a: Quantity, b: Quantity): Result<Quantity, InvalidTokenBalanceError> {
   const result = QuantityService.subtract(a, b);
   if (isErr(result)) {
-    return Err(new InvalidTokenBalanceError(result.error.message, {
-      context: { reason: TokenBalanceErrorReason.INVALID_AMOUNT, ... }
-    }));
+    // wrapOp уже добавит context
+    return Err(new InvalidTokenBalanceError(result.error.message));
   }
-  return Ok(result.value);
+  return result;
 }
 ```

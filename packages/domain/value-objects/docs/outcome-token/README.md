@@ -477,6 +477,7 @@ if (tokenResult.ok) {
 }
 
 // ✅ TokenBalance — идентификатор + количество + account
+if (!tokenResult.ok) throw new Error('Failed to create token');
 const availableResult = QuantityService.create(100);
 if (!availableResult.ok) throw new Error('Failed to create available');
 const reservedResult = QuantityService.create(0);
