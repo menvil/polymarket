@@ -2,6 +2,7 @@ import Decimal from 'decimal.js';
 import {
   assertFiniteOperand,
   assertValidTickSize,
+  assertValidRoundingMode,
   assertFiniteResult,
 } from '../shared/index.js';
 
@@ -67,6 +68,7 @@ export function roundToTick(
   // Валидация через shared assertions
   assertFiniteOperand(value, 'value', context);
   assertValidTickSize(tickSize, context);
+  assertValidRoundingMode(roundingMode, context);
 
   // Алгоритм округления до тика (полностью на Decimal)
   const divided = value.dividedBy(tickSize);

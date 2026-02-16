@@ -415,7 +415,7 @@ function currencyMismatchError<TError extends DomainError>(
 
 **Что делает**:
 
-- Классифицирует ошибку как ErrorSource.SERVICE_CALL
+- Классифицирует ошибку как ErrorSource.RULE_VALIDATION
 - Добавляет reason, expected, actual в контекст
 - Создает стандартизированное сообщение: "Currency mismatch: expected X, got Y"
 - Фабрика ТОЛЬКО добавляет семантику (source, reason, expected, actual)

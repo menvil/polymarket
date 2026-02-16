@@ -16,6 +16,7 @@ import { InvalidSpreadError } from '../value-objects/InvalidSpreadError.js';
 import { ArithmeticOverflowError } from '../value-objects/ArithmeticOverflowError.js';
 import { DivisionByZeroError } from '../value-objects/DivisionByZeroError.js';
 import { InvalidOperandError } from '../math/InvalidOperandError.js';
+import { InvalidRoundingModeError } from '../math/InvalidRoundingModeError.js';
 import { ErrorSource } from '../ErrorSource.js';
 
 /**
@@ -305,16 +306,17 @@ export function unexpectedError<TError extends DomainError>(
  *
  * @param e - TypeError от неправильного использования API
  * @param ErrorConstructor - Конструктор ошибки
- * @returns TError с source=UNEXPECTED, reason=MISUSE
+ * @returns TError с source=DEVELOPER_MISUSE, reason=MISUSE
  *
  * @remarks
  * Используется для TypeError ошибок, которые указывают на неправильное использование API.
  * Например: вызов метода с wrong types, обращение к undefined property, и т.д.
  *
  * **Отличается от unexpectedError:**
+ * - Использует source: DEVELOPER_MISUSE вместо UNEXPECTED
  * - Добавляет reason: 'MISUSE' для явной идентификации
  * - Помогает отличить ошибки разработчика от runtime ошибок
- * - В логах/мониторинге видно что это developer error
+ * - В логах/мониторинге/аналитике видно что это developer error, а не runtime issue
  *
  * Фабрика ТОЛЬКО добавляет семантику (source, reason, cause).
  * Трассировка (service, op, opChain) добавляется через rewrap в wrapOp.
@@ -379,6 +381,7 @@ export function coreInvariantError<TError extends DomainError>(
  * - ArithmeticOverflowError - переполнение при арифметике
  * - InvalidOperandError - невалидный операнд (NaN, Infinity)
  * - DivisionByZeroError - деление на ноль
+ * - InvalidRoundingModeError - невалидный режим округления
  */
 export function isExpectedMathError(e: unknown): e is Error {
   return (
@@ -386,9 +389,11 @@ export function isExpectedMathError(e: unknown): e is Error {
     (e instanceof ArithmeticOverflowError ||
       e instanceof InvalidOperandError ||
       e instanceof DivisionByZeroError ||
+      e instanceof InvalidRoundingModeError ||
       e.name === 'ArithmeticOverflowError' ||
       e.name === 'InvalidOperandError' ||
-      e.name === 'DivisionByZeroError')
+      e.name === 'DivisionByZeroError' ||
+      e.name === 'InvalidRoundingModeError')
   );
 }
 

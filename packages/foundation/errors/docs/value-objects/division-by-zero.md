@@ -361,22 +361,20 @@ const result = money.divide(-0);
 ### Цепочка делений
 
 ```typescript
-import { ResultChain } from '@polymarket/result';
+import { toChain } from '@polymarket/result';
 
-const result = ResultChain
-  .from(Money.fromAmount(1000, 'USDC'))
+const result = toChain(Money.fromAmount(1000, 'USDC'))
   .flatMap(money => money.divide(2))    // 500
   .flatMap(money => money.divide(5))    // 100
   .flatMap(money => money.divide(0))    // ❌ DivisionByZeroError
-  .run();
+  .toResult();
 
-result.match({
-  ok: (money) => console.log('Result:', money.getAmount()),
-  err: (error) => {
-    // Остановится на первой ошибке (деление на ноль)
-    console.error('Error in chain:', error.message);
-  }
-});
+if (result.ok) {
+  console.log('Result:', result.value.getAmount());
+} else {
+  // Остановится на первой ошибке (деление на ноль)
+  console.error('Error in chain:', result.error.message);
+}
 ```
 
 ---

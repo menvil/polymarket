@@ -191,18 +191,17 @@ const orderResult = toChain(validatePrice(priceInput))
   .toResult();
 
 // Обработка
-orderResult.match({
-  ok: (order) => placeOrder(order),
-  err: (error) => {
-    if (InvalidPriceError.is(error)) {
-      showError('Invalid price', error.context);
-    } else if (InvalidQuantityError.is(error)) {
-      showError('Invalid quantity', error.context);
-    } else if (InvalidMoneyError.is(error)) {
-      showError('Insufficient funds', error.context);
-    }
+if (orderResult.ok) {
+  placeOrder(orderResult.value);
+} else {
+  if (InvalidPriceError.is(orderResult.error)) {
+    showError('Invalid price', orderResult.error.context);
+  } else if (InvalidQuantityError.is(orderResult.error)) {
+    showError('Invalid quantity', orderResult.error.context);
+  } else if (InvalidMoneyError.is(orderResult.error)) {
+    showError('Insufficient funds', orderResult.error.context);
   }
-});
+}
 ```
 
 ---

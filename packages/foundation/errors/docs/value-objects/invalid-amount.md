@@ -651,8 +651,7 @@ function validateConfig(
   maxInput: number,
   minInput: number
 ): Result<Config, InvalidAmountError> {
-  return ResultChain
-    .from(Amount.fromNumber(leverageInput, 'leverage', 1, 100))
+  return toChain(Amount.fromNumber(leverageInput, 'leverage', 1, 100))
     .flatMap(leverage =>
       Amount.fromNumber(maxInput, 'maxOrderSize', 0).map(max => ({ leverage, max }))
     )
@@ -664,22 +663,20 @@ function validateConfig(
       maxOrderSize: max,
       minOrderSize: min
     }))
-    .run();
+    .toResult();
 }
 
 // Использование
 const configResult = validateConfig(50, 10000, 100);
 
-configResult.match({
-  ok: (config) => {
-    console.log('Config validated:', config);
-    saveConfig(config);
-  },
-  err: (error) => {
-    const field = error.context?.field as string;
-    showFieldError(field, error.message);
-  }
-});
+if (configResult.ok) {
+  const config = configResult.value;
+  console.log('Config validated:', config);
+  saveConfig(config);
+} else {
+  const field = configResult.error.context?.field as string;
+  showFieldError(field, configResult.error.message);
+}
 ```
 
 ---

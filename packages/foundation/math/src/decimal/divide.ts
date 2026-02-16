@@ -9,9 +9,9 @@ import { assertFiniteResult } from '../shared/index.js';
 /**
  * Делит одно Decimal значение на другое
  *
- * @param dividend - Делимое
- * @param divisor - Делитель
- * @returns Частное dividend / divisor
+ * @param a - Делимое (dividend)
+ * @param b - Делитель (divisor)
+ * @returns Частное a / b
  * @throws {InvalidOperandError} Если делимое не конечное число (NaN/Infinity)
  * @throws {InvalidDivisorError} Если делитель не конечное число (NaN/Infinity)
  * @throws {DivisionByZeroError} Если делитель равен нулю
@@ -21,9 +21,9 @@ import { assertFiniteResult } from '../shared/index.js';
  * Чистая математическая операция.
  *
  * Проверяет только математическую корректность:
- * - dividend должен быть finite (не NaN, не Infinity)
- * - divisor должен быть finite (не NaN, не Infinity)
- * - divisor не должен быть нулём
+ * - a (делимое) должен быть finite (не NaN, не Infinity)
+ * - b (делитель) должен быть finite (не NaN, не Infinity)
+ * - b (делитель) не должен быть нулём
  * - result должен быть finite
  *
  * НЕ проверяет:
@@ -55,36 +55,39 @@ import { assertFiniteResult } from '../shared/index.js';
  * divideDecimal(huge, tiny); // throws ArithmeticOverflowError
  * ```
  */
-export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
+export function divideDecimal(a: Decimal, b: Decimal): Decimal {
   const context = {
     operation: 'divide',
-    dividend: dividend.toString(),
-    divisor: divisor.toString(),
+    a: a.toString(),
+    b: b.toString(),
   };
 
   // Проверка делимого
-  if (!dividend.isFinite()) {
+  if (!a.isFinite()) {
     throw new InvalidOperandError(
-      (ctx) => `Dividend must be finite, got ${ctx.dividend}`,
+      (ctx) => `Operand 'a' (dividend) must be finite, got ${ctx.a}`,
       { context }
     );
   }
 
   // Проверка делителя
-  if (!divisor.isFinite()) {
+  if (!b.isFinite()) {
     throw new InvalidDivisorError(
-      (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
+      (ctx) => `Operand 'b' (divisor) must be finite, got ${ctx.b}`,
       { context }
     );
   }
 
   // Проверка на ноль
-  if (divisor.isZero()) {
-    throw new DivisionByZeroError(() => 'Cannot divide by zero', { context });
+  if (b.isZero()) {
+    throw new DivisionByZeroError(
+      (ctx) => `Cannot divide by zero (operand 'b' is ${ctx.b})`,
+      { context }
+    );
   }
 
   // Выполняем деление
-  const result = dividend.div(divisor);
+  const result = a.div(b);
 
   // Проверка результата
   assertFiniteResult(result, { ...context, result: result.toString() });

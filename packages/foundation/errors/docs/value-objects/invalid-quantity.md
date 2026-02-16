@@ -507,29 +507,27 @@ function createOrder(
   priceInput: number,
   qtyInput: number
 ): Result<Order, InvalidPriceError | InvalidQuantityError> {
-  return ResultChain
-    .from(Price.fromNumber(priceInput))
+  return toChain(Price.fromNumber(priceInput))
     .flatMap(price =>
       Quantity.fromNumber(qtyInput).map(qty => ({ price, qty }))
     )
     .map(({ price, qty }) => new Order(price, qty))
-    .run();
+    .toResult();
 }
 
 // Использование
 const orderResult = createOrder(0.5, 100);
 
-orderResult.match({
-  ok: (order) => console.log('Order created:', order),
-  err: (error) => {
-    // Обработка обоих типов ошибок
-    if (error.code === InvalidPriceError.code) {
-      showError('Invalid price');
-    } else if (error.code === InvalidQuantityError.code) {
-      showError('Invalid quantity');
-    }
+if (orderResult.ok) {
+  console.log('Order created:', orderResult.value);
+} else {
+  // Обработка обоих типов ошибок
+  if (orderResult.error.code === InvalidPriceError.code) {
+    showError('Invalid price');
+  } else if (orderResult.error.code === InvalidQuantityError.code) {
+    showError('Invalid quantity');
   }
-});
+}
 ```
 
 ---

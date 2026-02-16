@@ -144,7 +144,7 @@ describe('Arithmetic Overflow Tests', () => {
     });
 
     /**
-     * Тест проверяет, что контекст содержит dividend, divisor и result.
+     * Тест проверяет, что контекст содержит a, b и result.
      */
     it('должен содержать контекст в ошибке overflow', () => {
       try {
@@ -153,8 +153,8 @@ describe('Arithmetic Overflow Tests', () => {
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
-          expect(error.context?.dividend).toBeDefined();
-          expect(error.context?.divisor).toBeDefined();
+          expect(error.context?.a).toBeDefined();
+          expect(error.context?.b).toBeDefined();
           expect(error.context?.result).toBe('Infinity');
         } else {
           throw error;
