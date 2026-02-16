@@ -319,6 +319,57 @@ describe('errorUtils', () => {
       expect(rewrapped.context?.raw).toBe('raw-data');
       expect(rewrapped.context?.source).toBe('external-api');
     });
+
+    it('сохраняет origin-данные первой ошибки (timestamp, stack, name, code)', () => {
+      const original = new InvalidPriceError('Original error', {
+        code: 'ORIGINAL_CODE',
+        context: { value: -1 },
+      });
+
+      // Сохраняем оригинальные значения до rewrap
+      const originalTimestamp = original.timestamp.toISOString();
+      const originalStack = original.stack;
+      const originalName = original.name;
+      const originalCode = original.code;
+
+      // Первый rewrap
+      const rewrapped1 = rewrap(
+        'PriceService',
+        'create',
+        {},
+        original,
+        InvalidPriceError
+      );
+
+      // Проверяем что origin-данные сохранены в context
+      expect(rewrapped1.context?.rootTimestamp).toBe(originalTimestamp);
+      expect(rewrapped1.context?.originalStack).toBe(originalStack);
+      expect(rewrapped1.context?.originalName).toBe(originalName);
+      expect(rewrapped1.context?.originalCode).toBe(originalCode);
+
+      // Но сама ошибка имеет новый timestamp и stack
+      expect(rewrapped1.timestamp).not.toEqual(original.timestamp);
+      expect(rewrapped1.stack).not.toBe(originalStack);
+
+      // Второй rewrap (вложенный)
+      const rewrapped2 = rewrap(
+        'OrderService',
+        'validate',
+        {},
+        rewrapped1,
+        InvalidPriceError
+      );
+
+      // Origin-данные должны остаться от ПЕРВОЙ ошибки
+      expect(rewrapped2.context?.rootTimestamp).toBe(originalTimestamp);
+      expect(rewrapped2.context?.originalStack).toBe(originalStack);
+      expect(rewrapped2.context?.originalName).toBe(originalName);
+      expect(rewrapped2.context?.originalCode).toBe(originalCode);
+
+      // И не должны перезаписаться данными из rewrapped1
+      expect(rewrapped2.context?.rootTimestamp).not.toBe(rewrapped1.timestamp.toISOString());
+      expect(rewrapped2.context?.originalStack).not.toBe(rewrapped1.stack);
+    });
   });
 
   describe('wrapOp', () => {

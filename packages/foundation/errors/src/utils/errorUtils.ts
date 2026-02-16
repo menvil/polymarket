@@ -230,12 +230,9 @@ function getValueName(ErrorConstructor: ErrorConstructor<DomainError>): string {
 /**
  * Создаёт ошибку для ожидаемых ошибок из @polymarket/math
  *
- * @param serviceName - Название сервиса ('QuoteService', 'PriceService', и т.д.)
- * @param op - Название операции
- * @param ctx - Контекст операции (amount, factor, divisor, etc.)
  * @param e - Ошибка из math layer (ТОЛЬКО Error объекты)
  * @param ErrorConstructor - Конструктор ошибки
- * @returns TError с полным контекстом
+ * @returns TError с source и cause (без service/op - добавятся через rewrap)
  *
  * @remarks
  * Используется для обработки ожидаемых ошибок:
@@ -245,23 +242,17 @@ function getValueName(ErrorConstructor: ErrorConstructor<DomainError>): string {
  *
  * ВАЖНО: Принимает только Error. Если это не Error - используй unexpectedError.
  *
- * valueName автоматически определяется из ErrorConstructor через getValueName().
+ * Фабрика ТОЛЬКО добавляет семантику (source, cause).
+ * Трассировка (service, op, opChain) добавляется через rewrap в wrapOp.
  */
 export function expectedMathError<TError extends DomainError>(
-  serviceName: string,
-  op: string,
-  ctx: Record<string, unknown>,
   e: Error,
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
   const cause = toCause(e);
-  const valueName = getValueName(ErrorConstructor);
-  return new ErrorConstructor(`${valueName} ${op} failed: ${cause.message}`, {
+  return new ErrorConstructor(`Math operation failed: ${cause.message}`, {
     context: {
       source: ErrorSource.MATH_OPERATION,
-      service: serviceName,
-      op,
-      ...ctx,
       cause
     }
   });
@@ -422,13 +413,15 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
  * 4. preserve root-полей: cause, reason, raw (первопричина не перетирается)
  *
  * **Root-cause semantics:**
- * - cause, reason, raw сохраняются из inner (это первопричина)
+ * - cause, reason, raw, source сохраняются из inner (это первопричина)
+ * - rootTimestamp, originalStack, originalName, originalCode сохраняют данные самой первой ошибки
  * - opChain накапливает историю операций: [innerOp, ..., op]
  *
  * Это гарантирует:
  * - Операционный контекст (amount, factor) всегда актуален для текущего op
  * - Первопричина (cause, reason, raw) не теряется
  * - История операций сохраняется в opChain
+ * - Origin-данные (timestamp, stack, name, code первой ошибки) сохраняются для отладки
  *
  * @example
  * ```typescript
@@ -503,7 +496,33 @@ export function rewrap<TError extends DomainError>(
     merged.source = inner.source;
   }
 
-  // 4) Создаем новую ошибку с сохранением code и innerError
+  // 4) Сохраняем origin-данные из первоначальной ошибки (если это первый rewrap)
+  // Эти поля позволяют отследить самую первую ошибку в цепочке
+  if (inner.rootTimestamp === undefined && err.timestamp) {
+    merged.rootTimestamp = err.timestamp.toISOString();
+  } else if (inner.rootTimestamp !== undefined) {
+    merged.rootTimestamp = inner.rootTimestamp; // Сохраняем из inner если уже был rewrap
+  }
+
+  if (inner.originalStack === undefined && err.stack) {
+    merged.originalStack = err.stack;
+  } else if (inner.originalStack !== undefined) {
+    merged.originalStack = inner.originalStack; // Сохраняем из inner если уже был rewrap
+  }
+
+  if (inner.originalName === undefined && err.name) {
+    merged.originalName = err.name;
+  } else if (inner.originalName !== undefined) {
+    merged.originalName = inner.originalName; // Сохраняем из inner если уже был rewrap
+  }
+
+  if (inner.originalCode === undefined && err.code) {
+    merged.originalCode = err.code;
+  } else if (inner.originalCode !== undefined) {
+    merged.originalCode = inner.originalCode; // Сохраняем из inner если уже был rewrap
+  }
+
+  // 5) Создаем новую ошибку с сохранением code и innerError
   const rewrappedError = new ErrorConstructor(err.message, {
     code: err.code, // Сохраняем code из исходной ошибки
     context: merged,

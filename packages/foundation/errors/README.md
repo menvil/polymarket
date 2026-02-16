@@ -512,7 +512,15 @@ npm run typecheck
 - **expectedMathError()** / **unexpectedError()** - создание ошибок с правильным source
 - **currencyMismatchError()** - стандартизированные ошибки валют
 
-См. [docs/error-utilities.md](./docs/error-utilities.md) для полной документации.
+### Модель трассировки ошибок
+
+**Разделение ответственности**:
+- **rewrap()** добавляет трассировку: `service`, `op`, `opChain`
+- **Фабрики** добавляют семантику: `source`, `reason`, `context`
+
+**Правило одного прохода**: каждая ошибка обогащается трассировкой один раз через rewrap(), без двойной упаковки.
+
+См. [docs/error-utilities.md](./docs/error-utilities.md) для полной документации и примеров.
 
 **Пример использования**:
 

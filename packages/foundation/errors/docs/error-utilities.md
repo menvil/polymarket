@@ -436,6 +436,75 @@ function isCoreInvariantViolation(e: unknown): e is Error & { reason: string }
 function toCause(e: unknown): { name: string; message: string; stack?: string }
 ```
 
+## Единая модель трассировки ошибок
+
+### Принцип разделения ответственности
+
+В пакете `@polymarket/errors` используется чёткое разделение ответственности между функциями обработки ошибок:
+
+**rewrap() отвечает за трассировку:**
+- `service` - имя сервиса где произошла ошибка
+- `op` - операция которая выполнялась
+- `opChain` - цепочка вызовов через сервисы
+
+**Фабрики (factories) отвечают за семантику:**
+- `source` - источник ошибки (ErrorSource enum)
+- `reason` - причина ошибки (domain-specific)
+- `context` - дополнительный контекст (значения, параметры)
+
+### Правило одного прохода
+
+**ВАЖНО**: Каждая ошибка обогащается трассировкой ОДИН РАЗ через `rewrap()`.
+
+❌ **Неправильно** (двойная упаковка):
+```typescript
+// Фабрика создаёт ошибку с service/op
+const err = coreInvariantError('PriceService', 'create', ctx, e, InvalidPriceError);
+// rewrap добавляет service/op снова
+return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
+```
+
+✅ **Правильно** (один проход):
+```typescript
+// Фабрика создаёт ошибку только с reason/source
+const err = coreInvariantError(ctx, e, InvalidPriceError);
+// rewrap добавляет service/op один раз
+return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
+```
+
+### Поток обработки ошибок
+
+```
+[Входные данные]
+     ↓
+[toDecimal()] → source=PARSING, reason=INVALID_FORMAT
+     ↓
+[Price.of()] → бросает PriceInvariantViolation
+     ↓
+[coreInvariantError()] → source=CORE_INVARIANT, reason=OUT_OF_RANGE_HIGH
+     ↓
+[rewrap()] → добавляет service="PriceService", op="create", opChain=["PriceService.create"]
+     ↓
+[Result<Price, InvalidPriceError>]
+```
+
+### Сохранение root-данных
+
+При переупаковке через `rewrap()` сохраняются **root-поля**:
+- `cause` - оригинальная причина ошибки
+- `reason` - исходная причина из domain
+- `raw` - первичные невалидные данные
+- `source` - источник ошибки (не перезаписывается)
+
+**НЕ сохраняются** (обновляются на каждом rewrap):
+- `timestamp` - время создания новой ошибки
+- `stack` - стек места где произошёл rewrap
+- `service`/`op`/`opChain` - обогащаются на каждом уровне
+
+Это позволяет увидеть:
+- **Что пошло не так** (cause, reason, raw, source) - сохраняется
+- **Где это произошло** (service, op, opChain, stack) - обновляется
+
 ## См. также
 
 - [errorUtils.ts](/src/utils/errorUtils.ts) - реализация утилит
