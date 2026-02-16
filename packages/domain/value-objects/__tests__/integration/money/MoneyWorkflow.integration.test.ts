@@ -249,6 +249,9 @@ describe('Money Integration Workflow', () => {
       const m1 = MoneyService.create(100, 'USDC');
       const m2 = MoneyService.create(50, 'USDC');
 
+      expect(m1.ok).toBe(true);
+      expect(m2.ok).toBe(true);
+
       if (m1.ok && m2.ok) {
         const result = MoneyService.add(m1.value, m2.value);
         expect(result.ok).toBe(true);
@@ -263,6 +266,9 @@ describe('Money Integration Workflow', () => {
     it('subtract работает с USDC', () => {
       const m1 = MoneyService.create(100, 'USDC');
       const m2 = MoneyService.create(50, 'USDC');
+
+      expect(m1.ok).toBe(true);
+      expect(m2.ok).toBe(true);
 
       if (m1.ok && m2.ok) {
         const result = MoneyService.subtract(m1.value, m2.value);
@@ -280,6 +286,8 @@ describe('Money Integration Workflow', () => {
     it('Money.ZERO используется в расчетах', () => {
       const amount = MoneyService.create(100, 'USDC');
 
+      expect(amount.ok).toBe(true);
+
       if (amount.ok) {
         const zeroUsdc = Money.of(new Decimal(0), 'USDC');
         const result = MoneyService.add(amount.value, zeroUsdc);
@@ -295,6 +303,8 @@ describe('Money Integration Workflow', () => {
     it('сравнение с нулевым Money', () => {
       const zero = Money.of(new Decimal(0), 'USDC');
       const amount = MoneyService.create(0, 'USDC');
+
+      expect(amount.ok).toBe(true);
 
       if (amount.ok) {
         const eq = MoneyService.equals(amount.value, zero);
