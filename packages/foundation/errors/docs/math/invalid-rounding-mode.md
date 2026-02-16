@@ -713,10 +713,8 @@ function calculateFee(
   const feeResult = Money.fromDecimal(feeDecimal, amount.currency);
 
   if (!feeResult.ok) {
-    return Err(new InvalidRoundingModeError('Failed to create fee money', {
-      code: InvalidRoundingModeError.code,
-      context: { feeDecimal: feeDecimal.toString(), currency: amount.currency }
-    }));
+    // Возвращаем оригинальную ошибку из Money.fromDecimal, а не оборачиваем в InvalidRoundingModeError
+    return feeResult;
   }
 
   const fee = feeResult.value;

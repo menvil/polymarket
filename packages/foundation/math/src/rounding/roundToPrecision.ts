@@ -22,8 +22,8 @@ import {
  * Ограничения:
  * - decimalPlaces должно быть в диапазоне [0, 1e9]
  * - roundingMode должен быть в диапазоне [0, 8]
- * - Превышение максимума decimalPlaces вызывает InvalidDecimalPlacesError
- * - Невалидный roundingMode вызывает InvalidRoundingModeError
+ * - Превышение максимума decimalPlaces вызывает InvalidDecimalPlacesError (через assertValidDecimalPlaces)
+ * - Невалидный roundingMode вызывает InvalidRoundingModeError (через assertValidRoundingMode)
  *
  * Режимы округления:
  * - 0 (Decimal.ROUND_UP) - округление от нуля

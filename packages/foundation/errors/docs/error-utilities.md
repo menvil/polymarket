@@ -438,7 +438,7 @@ if (!a.hasSameCurrency(b)) {
 
 ### isExpectedMathError()
 
-Проверяет является ли ошибка ожидаемой math-ошибкой.
+Проверяет, является ли ошибка ожидаемой math-ошибкой.
 
 ```typescript
 function isExpectedMathError(e: unknown): e is Error
@@ -453,7 +453,7 @@ function isExpectedMathError(e: unknown): e is Error
 
 ### isCoreInvariantViolation()
 
-Проверяет является ли ошибка Core invariant violation.
+Проверяет, является ли ошибка Core invariant violation.
 
 ```typescript
 function isCoreInvariantViolation(e: unknown): e is Error & { reason: string }
