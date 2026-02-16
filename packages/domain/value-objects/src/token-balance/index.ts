@@ -11,6 +11,11 @@ export { TokenBalanceInvariantViolation } from './core/TokenBalanceInvariantViol
 // Facade
 export { TokenBalanceService } from './facade/TokenBalanceService.js';
 
+// Rules
+export { ValidateReserveAmount } from './rules/ValidateReserveAmount.js';
+export { ValidateReleaseAmount } from './rules/ValidateReleaseAmount.js';
+export { ValidateTokenMatch } from './rules/ValidateTokenMatch.js';
+
 // Adapters
 export { TokenBalanceSerializer, type TokenBalanceJSON } from './adapters/TokenBalanceSerializer.js';
 export { TokenBalanceFormatter } from './adapters/TokenBalanceFormatter.js';

@@ -46,6 +46,9 @@ function safeStringify(value: unknown): string {
  *
  * При парсинге (fromJSON) НЕ полагайся на этот тип -
  * делай полную runtime валидацию с unknown!
+ *
+ * **BREAKING CHANGE:** Заменён формат с amount на available/reserved.
+ * Старый формат с полем amount больше не поддерживается.
  */
 export interface TokenBalanceJSON {
   /**
@@ -54,9 +57,14 @@ export interface TokenBalanceJSON {
   token: OutcomeTokenJSON;
 
   /**
-   * Amount as string (preserves precision)
+   * Available amount as string (preserves precision)
    */
-  amount: string;
+  available: string;
+
+  /**
+   * Reserved amount as string (preserves precision)
+   */
+  reserved: string;
 
   /**
    * Account ID (serialized as string)
@@ -106,15 +114,20 @@ export interface TokenBalanceJSON {
  *     },
  *     outcomeKey: 'UP'
  *   },
- *   amount: '100.5'
+ *   available: '100',
+ *   reserved: '20',
+ *   accountId: 'wallet:0x1234...',
+ *   venueId: 'POLYMARKET'
  * };
  * const result = TokenBalanceSerializer.fromJSON(json);
  * if (result.ok) {
- *   console.log(result.value.amount().toNumber()); // 100.5
+ *   console.log(result.value.available().toNumber()); // 100
+ *   console.log(result.value.reserved().toNumber()); // 20
+ *   console.log(result.value.total().toNumber()); // 120
  * }
  *
  * // Сериализация
- * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, venueId));
+ * const balance = expectOk(TokenBalanceService.create(token, available, reserved, accountId, venueId));
  * const serialized = TokenBalanceSerializer.toJSON(balance);
  * ```
  */
@@ -128,12 +141,13 @@ export class TokenBalanceSerializer {
    *
    * Этапы валидации:
    * 1. Проверка что json это объект
-   * 2. Проверка наличия обязательных полей (token, amount, accountId, venueId)
+   * 2. Проверка наличия обязательных полей (token, available, reserved, accountId, venueId)
    * 3. Делегирование OutcomeTokenSerializer.fromJSON для парсинга token
-   * 4. Парсинг amount как Decimal
-   * 5. Валидация accountId через parseAccountId
-   * 6. Валидация venueId через asVenueId
-   * 7. Создание TokenBalance через TokenBalanceService.create
+   * 4. Парсинг available как Decimal и создание Quantity
+   * 5. Парсинг reserved как Decimal и создание Quantity
+   * 6. Валидация accountId через parseAccountId
+   * 7. Валидация venueId через asVenueId
+   * 8. Создание TokenBalance через TokenBalanceService.create
    *
    * @param json - JSON данные (unknown)
    * @param source - Источник ошибки (опционально)
@@ -144,13 +158,16 @@ export class TokenBalanceSerializer {
    * // ✅ Валидный пример
    * TokenBalanceSerializer.fromJSON({
    *   token: { conditionRef: { kind: 'ONCHAIN', ... }, outcomeKey: 'UP' },
-   *   amount: '100.5'
+   *   available: '100',
+   *   reserved: '20',
+   *   accountId: 'wallet:0x1234...',
+   *   venueId: 'POLYMARKET'
    * });
    *
    * // ❌ Структурные ошибки
    * TokenBalanceSerializer.fromJSON(null);                    // Err: expected object
    * TokenBalanceSerializer.fromJSON({});                      // Err: missing fields
-   * TokenBalanceSerializer.fromJSON({ token: {}, amount: 'invalid' }); // Err: invalid amount
+   * TokenBalanceSerializer.fromJSON({ token: {}, available: 'invalid' }); // Err: invalid available
    * ```
    */
   public static fromJSON(
@@ -201,11 +218,25 @@ export class TokenBalanceSerializer {
       );
     }
 
-    // Проверка наличия amount
-    if (!('amount' in obj)) {
+    // Проверка наличия available
+    if (!('available' in obj)) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
-          "Missing required field 'amount'",
+          "Missing required field 'available'",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { json: safeStringify(json) },
+          },
+          source
+        )
+      );
+    }
+
+    // Проверка наличия reserved
+    if (!('reserved' in obj)) {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          "Missing required field 'reserved'",
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
             details: { json: safeStringify(json) },
@@ -230,49 +261,98 @@ export class TokenBalanceSerializer {
       );
     }
 
-    // Проверка что amount это строка
-    const amountValue = obj.amount;
-    if (typeof amountValue !== 'string') {
+    // Проверка что available это строка
+    const availableValue = obj.available;
+    if (typeof availableValue !== 'string') {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
-          "Field 'amount' must be string",
+          "Field 'available' must be string",
           {
             reason: TokenBalanceErrorReason.INVALID_AMOUNT,
-            details: { type: typeof amountValue },
+            details: { type: typeof availableValue },
           },
           source
         )
       );
     }
 
-    // Парсим amount как Decimal
-    let amountDecimal: Decimal;
-    try {
-      amountDecimal = new Decimal(amountValue);
-    } catch (error) {
+    // Проверка что reserved это строка
+    const reservedValue = obj.reserved;
+    if (typeof reservedValue !== 'string') {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
-          `Failed to parse amount as Decimal: ${error instanceof Error ? error.message : String(error)}`,
+          "Field 'reserved' must be string",
           {
             reason: TokenBalanceErrorReason.INVALID_AMOUNT,
-            details: { amount: amountValue, error: String(error) },
+            details: { type: typeof reservedValue },
           },
           source
         )
       );
     }
 
-    // Создаём Quantity
-    let quantity: Quantity;
+    // Парсим available как Decimal
+    let availableDecimal: Decimal;
     try {
-      quantity = Quantity.of(amountDecimal);
+      availableDecimal = new Decimal(availableValue);
     } catch (error) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
-          `Failed to create Quantity: ${error instanceof Error ? error.message : String(error)}`,
+          `Failed to parse available as Decimal: ${error instanceof Error ? error.message : String(error)}`,
           {
             reason: TokenBalanceErrorReason.INVALID_AMOUNT,
-            details: { amount: amountValue, error: String(error) },
+            details: { available: availableValue, error: String(error) },
+          },
+          source
+        )
+      );
+    }
+
+    // Парсим reserved как Decimal
+    let reservedDecimal: Decimal;
+    try {
+      reservedDecimal = new Decimal(reservedValue);
+    } catch (error) {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          `Failed to parse reserved as Decimal: ${error instanceof Error ? error.message : String(error)}`,
+          {
+            reason: TokenBalanceErrorReason.INVALID_AMOUNT,
+            details: { reserved: reservedValue, error: String(error) },
+          },
+          source
+        )
+      );
+    }
+
+    // Создаём Quantity для available
+    let availableQty: Quantity;
+    try {
+      availableQty = Quantity.of(availableDecimal);
+    } catch (error) {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          `Failed to create Quantity for available: ${error instanceof Error ? error.message : String(error)}`,
+          {
+            reason: TokenBalanceErrorReason.INVALID_AMOUNT,
+            details: { available: availableValue, error: String(error) },
+          },
+          source
+        )
+      );
+    }
+
+    // Создаём Quantity для reserved
+    let reservedQty: Quantity;
+    try {
+      reservedQty = Quantity.of(reservedDecimal);
+    } catch (error) {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          `Failed to create Quantity for reserved: ${error instanceof Error ? error.message : String(error)}`,
+          {
+            reason: TokenBalanceErrorReason.INVALID_AMOUNT,
+            details: { reserved: reservedValue, error: String(error) },
           },
           source
         )
@@ -368,7 +448,7 @@ export class TokenBalanceSerializer {
     }
 
     // Создаём TokenBalance через сервис
-    return TokenBalanceService.create(tokenResult.value, quantity, accountIdParsed, venueId);
+    return TokenBalanceService.create(tokenResult.value, availableQty, reservedQty, accountIdParsed, venueId);
   }
 
   /**
@@ -381,7 +461,7 @@ export class TokenBalanceSerializer {
    * Возвращает строго типизированный TokenBalanceJSON.
    * Гарантирует что все поля присутствуют и имеют правильные типы.
    *
-   * Amount сериализуется как строка для сохранения точности.
+   * Available и reserved сериализуются как строки для сохранения точности.
    * AccountId сериализуется в строковый формат через accountIdToString().
    *
    * @example
@@ -389,11 +469,18 @@ export class TokenBalanceSerializer {
    * import { accountIdFromWallet, KnownVenues } from '@polymarket/ids';
    *
    * const accountId = accountIdFromWallet('0x1234...').unwrap();
-   * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, KnownVenues.POLYMARKET));
+   * const balance = expectOk(TokenBalanceService.create(
+   *   token,
+   *   Quantity.of(new Decimal(100)),
+   *   Quantity.of(new Decimal(20)),
+   *   accountId,
+   *   KnownVenues.POLYMARKET
+   * ));
    * const json = TokenBalanceSerializer.toJSON(balance);
    * // → {
    * //   token: { conditionRef: { kind: 'ONCHAIN', ... }, outcomeKey: 'UP' },
-   * //   amount: '100.5',
+   * //   available: '100',
+   * //   reserved: '20',
    * //   accountId: 'wallet:0x1234...',
    * //   venueId: 'POLYMARKET'
    * // }
@@ -402,7 +489,8 @@ export class TokenBalanceSerializer {
   public static toJSON(balance: TokenBalance): TokenBalanceJSON {
     return {
       token: OutcomeTokenSerializer.toJSON(balance.token()),
-      amount: balance.amount().value().toString(),
+      available: balance.available().value().toString(),
+      reserved: balance.reserved().value().toString(),
       accountId: accountIdToString(balance.accountId()),
       venueId: balance.venueId(),
     };
