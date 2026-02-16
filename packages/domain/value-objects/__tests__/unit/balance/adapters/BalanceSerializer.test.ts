@@ -269,6 +269,97 @@ describe('BalanceSerializer', () => {
       });
     });
 
+    describe('валидация accountId и venueId', () => {
+      it('возвращает ошибку если отсутствует accountId', () => {
+        const json = {
+          available: { amount: '10000', currency: 'USDC' },
+          reserved: { amount: '2000', currency: 'USDC' },
+          venueId: 'POLYMARKET'
+          // accountId отсутствует
+        };
+
+        const result = BalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain("Missing required field 'accountId'");
+          expect(result.error.context?.op).toBe('fromJSON');
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+        }
+      });
+
+      it('возвращает ошибку если отсутствует venueId', () => {
+        const json = {
+          available: { amount: '10000', currency: 'USDC' },
+          reserved: { amount: '2000', currency: 'USDC' },
+          accountId: 'wallet:0x1234567890123456789012345678901234567890'
+          // venueId отсутствует
+        };
+
+        const result = BalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain("Missing required field 'venueId'");
+          expect(result.error.context?.op).toBe('fromJSON');
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+        }
+      });
+
+      it('возвращает ошибку если accountId не строка', () => {
+        const json = {
+          available: { amount: '10000', currency: 'USDC' },
+          reserved: { amount: '2000', currency: 'USDC' },
+          accountId: 12345, // number вместо string
+          venueId: 'POLYMARKET'
+        };
+
+        const result = BalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain("Field 'accountId' must be a string");
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+        }
+      });
+
+      it('возвращает ошибку если venueId не строка', () => {
+        const json = {
+          available: { amount: '10000', currency: 'USDC' },
+          reserved: { amount: '2000', currency: 'USDC' },
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 12345 // number вместо string
+        };
+
+        const result = BalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain("Field 'venueId' must be a string");
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+        }
+      });
+
+      it('возвращает ошибку для невалидного формата accountId', () => {
+        const json = {
+          available: { amount: '10000', currency: 'USDC' },
+          reserved: { amount: '2000', currency: 'USDC' },
+          accountId: 'invalid-format', // невалидный формат
+          venueId: 'POLYMARKET'
+        };
+
+        const result = BalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Invalid accountId format');
+          expect(result.error.context?.op).toBe('fromJSON');
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
+          expect(result.error.context?.accountId).toBe('invalid-format');
+        }
+      });
+    });
+
     describe('валидация venueId', () => {
       describe('негативные кейсы', () => {
         it('возвращает ошибку для lowercase venueId', () => {

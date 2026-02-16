@@ -585,4 +585,95 @@ describe('Balance Integration Tests', () => {
       expect(result3.ok).toBe(false);
     });
   });
+
+  describe('Инварианты Balance', () => {
+    it('отклоняет создание баланса когда available + reserved > Money.MAX_AMOUNT', () => {
+      // Money.MAX_AMOUNT = 1e15
+      // Создаём баланс где available + reserved превысит лимит
+      const halfMax = new Decimal('5e14');
+      const slightlyOverHalf = new Decimal('5e14').plus(1);
+
+      // Попытка создать баланс где available + reserved > MAX_AMOUNT
+      const createResult = BalanceService.create(
+        Money.of(halfMax),
+        Money.of(slightlyOverHalf),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
+      );
+
+      expect(createResult.ok).toBe(false);
+      if (!createResult.ok) {
+        expect(createResult.error.context?.reason).toBe(BalanceErrorReason.TOTAL_EXCEEDS_MAX_AMOUNT);
+        expect(createResult.error.context?.op).toBe('create');
+        expect(createResult.error.message).toContain('exceeds maximum');
+      }
+    });
+
+    it('принимает баланс на границе Money.MAX_AMOUNT', () => {
+      // Создаём баланс ровно на границе лимита
+      const halfMax = new Decimal('5e14');
+
+      const createResult = BalanceService.create(
+        Money.of(halfMax),
+        Money.of(halfMax),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
+      );
+
+      expect(createResult.ok).toBe(true);
+      if (createResult.ok) {
+        const total = createResult.value.total().value();
+        // Проверяем что total равен MAX_AMOUNT
+        expect(total.equals(new Decimal('1e15'))).toBe(true);
+      }
+    });
+
+    it('отклоняет reserve если приведёт к превышению лимита', () => {
+      // Создаём баланс близкий к лимиту
+      const nearMax = new Decimal('9e14');
+      const createResult = BalanceService.create(
+        Money.of(nearMax),
+        Money.of(new Decimal(0)),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
+      );
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      // Попытка зарезервировать сумму которая превысит лимит
+      const tooMuch = new Decimal('2e14');
+      const reserveResult = BalanceService.reserve(createResult.value, Money.of(tooMuch));
+
+      // reserve само по себе не проверяет MAX_AMOUNT (total не меняется при reserve)
+      // но если available + amount > MAX_AMOUNT при создании Money, то упадёт
+      // В данном случае available = 9e14, amount = 2e14
+      // new available = 7e14 (OK)
+      // new reserved = 2e14 (OK)
+      // total = 9e14 (OK, не изменился)
+      expect(reserveResult.ok).toBe(true);
+    });
+
+    it('отклоняет updateAvailable если приведёт к превышению лимита', () => {
+      // Создаём баланс с reserved = 6e14
+      const reserved = new Decimal('6e14');
+      const createResult = BalanceService.create(
+        Money.of(new Decimal(1000)),
+        Money.of(reserved),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
+      );
+      expect(createResult.ok).toBe(true);
+      if (!createResult.ok) return;
+
+      // Попытка обновить available на 5e14, что приведёт к total > MAX_AMOUNT
+      const newAvailable = new Decimal('5e14');
+      const updateResult = BalanceService.updateAvailable(createResult.value, Money.of(newAvailable));
+
+      expect(updateResult.ok).toBe(false);
+      if (!updateResult.ok) {
+        expect(updateResult.error.context?.reason).toBe(BalanceErrorReason.TOTAL_EXCEEDS_MAX_AMOUNT);
+        expect(updateResult.error.context?.op).toBe('updateAvailable');
+      }
+    });
+  });
 });

@@ -148,6 +148,17 @@ describe('BalanceService', () => {
           expect(balance.available().value().toNumber()).toBe(10000); // оригинал не изменён
         }
       });
+
+      it('сохраняет accountId и venueId после резервирования', () => {
+        const balance = createBalance();
+        const result = BalanceService.reserve(balance, Money.of(new Decimal(3000)));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.accountId()).toEqual(TEST_ACCOUNT_ID);
+          expect(result.value.venueId()).toBe(TEST_VENUE_ID);
+        }
+      });
     });
 
     describe('ошибки резервирования', () => {
@@ -231,6 +242,17 @@ describe('BalanceService', () => {
         if (result.ok) {
           expect(result.value).not.toBe(balance);
           expect(balance.reserved().value().toNumber()).toBe(5000); // оригинал не изменён
+        }
+      });
+
+      it('сохраняет accountId и venueId после размораживания', () => {
+        const balance = createBalance();
+        const result = BalanceService.unfreezeReserved(balance, Money.of(new Decimal(2000)));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.accountId()).toEqual(TEST_ACCOUNT_ID);
+          expect(result.value.venueId()).toBe(TEST_VENUE_ID);
         }
       });
     });
@@ -331,6 +353,17 @@ describe('BalanceService', () => {
           expect(result.value.available().value().toNumber()).toBe(initialAvailable);
         }
       });
+
+      it('сохраняет accountId и venueId после списания', () => {
+        const balance = createBalance();
+        const result = BalanceService.consumeReserved(balance, Money.of(new Decimal(2000)));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.accountId()).toEqual(TEST_ACCOUNT_ID);
+          expect(result.value.venueId()).toBe(TEST_VENUE_ID);
+        }
+      });
     });
 
     describe('ошибки списания', () => {
@@ -414,6 +447,17 @@ describe('BalanceService', () => {
         if (result.ok) {
           expect(result.value).not.toBe(balance);
           expect(balance.available().value().toNumber()).toBe(10000); // оригинал не изменён
+        }
+      });
+
+      it('сохраняет accountId и venueId после обновления available', () => {
+        const balance = createBalance();
+        const result = BalanceService.updateAvailable(balance, Money.of(new Decimal(15000)));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.accountId()).toEqual(TEST_ACCOUNT_ID);
+          expect(result.value.venueId()).toBe(TEST_VENUE_ID);
         }
       });
     });

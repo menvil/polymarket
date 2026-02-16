@@ -1,6 +1,6 @@
 import Decimal from 'decimal.js';
 import { Money } from '../../money/core/Money.js';
-import type { SupportedCurrency, AccountId, VenueId } from '@polymarket/ids';
+import type { SupportedCurrency, AccountId, VenueId, WalletAddress } from '@polymarket/ids';
 import { BalanceInvariantViolation } from './BalanceInvariantViolation.js';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
@@ -245,7 +245,7 @@ export class Balance {
         new Balance(
           money,
           money,
-          { kind: 'WALLET', address: '0x0000000000000000000000000000000000000000' as any } as AccountId,
+          { kind: 'WALLET', address: '0x0000000000000000000000000000000000000000' as WalletAddress } as AccountId,
           'SYSTEM' as VenueId
         )
       ])
