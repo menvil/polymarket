@@ -585,125 +585,6 @@ export function rewrap<TError extends DomainError>(
 }
 
 /**
- * Добавляет трассировку к ошибке сохраняя её оригинальный тип
- *
- * @param serviceName - Название сервиса
- * @param op - Название операции
- * @param ctx - Дополнительный контекст
- * @param err - Исходная TradingError
- * @returns Новая ошибка того же типа с добавленной трассировкой
- *
- * @remarks
- * В отличие от rewrap(), эта функция сохраняет оригинальный тип ошибки,
- * используя err.constructor вместо фиксированного ErrorConstructor.
- *
- * Используется когда "чужой" TradingError (например InvalidMoneyError)
- * ловится в wrapOp с другим ErrorConstructor (например InvalidPriceError).
- * В этом случае мы хотим сохранить InvalidMoneyError, а не конвертировать в InvalidPriceError.
- */
-function addTracingPreservingType<TError extends TradingError>(
-  serviceName: string,
-  op: string,
-  ctx: Record<string, unknown>,
-  err: TError
-): TError {
-  const inner = (err.context ?? {}) as Record<string, unknown>;
-
-  // Запрещаем ctx приносить root-поля
-  const { cause: _c, reason: _r, raw: _raw, source: _s, service: _svc, op: _op, opChain: _chain, ...safeCtx } = ctx;
-
-  // Мерджим контекст
-  const merged: Record<string, unknown> = {
-    ...inner,
-    ...safeCtx
-  };
-
-  // Сохраняем root service
-  if (inner.service !== undefined) {
-    merged.service = inner.service;
-  } else {
-    merged.service = serviceName;
-  }
-
-  // opChain строим с префиксами сервисов
-  const fullOp = `${serviceName}.${op}`;
-  const innerChain = Array.isArray(inner.opChain) ? inner.opChain : undefined;
-  const filtered = (innerChain?.filter((x) => typeof x === 'string') as string[]) ?? [];
-
-  const base = filtered.length > 0
-    ? filtered
-    : (typeof inner.op === 'string' && typeof inner.service === 'string'
-        ? [`${inner.service}.${inner.op}`]
-        : []);
-
-  merged.op = op;
-  const lastOp = base[base.length - 1];
-  merged.opChain = lastOp === fullOp ? base : [...base, fullOp];
-
-  // Сохраняем root-поля
-  if (inner.cause !== undefined) {
-    merged.cause = inner.cause;
-  }
-  if (inner.reason !== undefined) {
-    merged.reason = inner.reason;
-  }
-  if (inner.raw !== undefined) {
-    merged.raw = inner.raw;
-  }
-  if (inner.source !== undefined) {
-    merged.source = inner.source;
-  }
-
-  // Сохраняем origin-данные
-  if (inner.rootTimestamp === undefined && err.timestamp) {
-    merged.rootTimestamp = err.timestamp.toISOString();
-  } else if (inner.rootTimestamp !== undefined) {
-    merged.rootTimestamp = inner.rootTimestamp;
-  }
-
-  if (inner.originalStack === undefined && err.stack) {
-    merged.originalStack = err.stack;
-  } else if (inner.originalStack !== undefined) {
-    merged.originalStack = inner.originalStack;
-  }
-
-  if (inner.originalName === undefined && err.name) {
-    merged.originalName = err.name;
-  } else if (inner.originalName !== undefined) {
-    merged.originalName = inner.originalName;
-  }
-
-  if (inner.originalCode === undefined && err.code) {
-    merged.originalCode = err.code;
-  } else if (inner.originalCode !== undefined) {
-    merged.originalCode = inner.originalCode;
-  }
-
-  // КЛЮЧЕВОЕ ОТЛИЧИЕ: используем оригинальный конструктор, а не ErrorConstructor
-  const ErrorConstructor = err.constructor as new (
-    message: string,
-    options?: { code?: string; context?: Record<string, unknown> }
-  ) => TError;
-
-  const rewrappedError = new ErrorConstructor(err.message, {
-    code: err.code,
-    context: merged,
-  });
-
-  // Сохраняем innerError
-  if (err.innerError !== undefined) {
-    Object.defineProperty(rewrappedError, 'innerError', {
-      value: err.innerError,
-      writable: false,
-      enumerable: true,
-      configurable: false,
-    });
-  }
-
-  return rewrappedError;
-}
-
-/**
  * Оборачивает facade операцию в try/catch с централизованной обработкой ошибок
  *
  * @param serviceName - Название сервиса ('QuoteService', 'PriceService', и т.д.)
@@ -718,20 +599,20 @@ function addTracingPreservingType<TError extends TradingError>(
  * Автоматически классифицирует ошибки как expected/unexpected.
  * Автоматически rewrap'ает ошибки из Result.Err с добавлением serviceName в opChain.
  *
- * **Типовое ограничение:**
- * Сигнатура обещает `Result<T, TError>`, но при ловле "чужого" TradingError
- * (например InvalidMoneyError когда ожидается InvalidPriceError) возвращается
- * оригинальный тип ошибки с добавленной трассировкой. TypeScript cast `as TError`
- * используется для совместимости, но реальный runtime тип может отличаться.
- * Это осознанный компромисс для сохранения семантики ошибки.
+ * **Строгий типовой контракт:**
+ * Гарантирует `Result<T, TError>` - всегда возвращается ошибка типа TError.
+ * "Чужие" TradingError (например InvalidMoneyError в контексте InvalidPriceError)
+ * конвертируются в TError через unexpectedError, с сохранением оригинальных данных
+ * в полях originalErrorName, originalErrorCode, originalErrorContext.
  *
  * Обрабатывает типы ошибок/результатов:
  * 1. Result.Err(TError) (из create/rules) → rewrap с добавлением serviceName.op
  * 2. Core invariant violations → coreInvariantError + rewrap
  * 3. Expected math errors → expectedMathError + rewrap
- * 4. Foreign TradingError → addTracingPreservingType (сохраняет тип!)
- * 5. TypeError → developerMisuseError + rewrap
- * 6. Unexpected errors → unexpectedError + rewrap
+ * 4. Same-type TradingError (instanceof ErrorConstructor) → rewrap
+ * 5. Foreign TradingError → unexpectedError + rewrap (с сохранением originalError*)
+ * 6. TypeError → developerMisuseError + rewrap
+ * 7. Unexpected errors → unexpectedError + rewrap
  *
  * @example
  * ```typescript
@@ -775,12 +656,22 @@ export function wrapOp<T, TError extends DomainError>(
       const factoryError = expectedMathError(e, ErrorConstructor);
       return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));
     }
-    // Если кто-то бросил любой TradingError (более гибко чем whitelist)
-    // Это включает все domain errors: InvalidMoneyError, InvalidPriceError, InvalidQuantityError,
-    // InvalidPercentageError, InvalidQuoteError, InvalidBalanceError, InvalidRatioError и т.д.
-    // ВАЖНО: Сохраняем оригинальный тип ошибки (не конвертируем InvalidMoneyError в InvalidPriceError)
+    // Если кто-то бросил TradingError того же типа (ErrorConstructor) - просто rewrap
+    // Если бросил "чужой" TradingError - конвертируем в TError через unexpectedError
     if (e instanceof TradingError) {
-      return Err(addTracingPreservingType(serviceName, op, ctx, e) as TError);
+      if (e instanceof ErrorConstructor) {
+        // Тот же тип - rewrap с добавлением service+op+opChain
+        return Err(rewrap(serviceName, op, ctx, e, ErrorConstructor));
+      } else {
+        // Чужой TradingError - конвертируем в TError, сохраняя оригинальные данные
+        const originalContext = {
+          originalErrorName: e.name,
+          originalErrorCode: e.code,
+          originalErrorContext: e.context,
+        };
+        const factoryError = unexpectedError(e, ErrorConstructor);
+        return Err(rewrap(serviceName, op, { ...ctx, ...originalContext }, factoryError, ErrorConstructor));
+      }
     }
     // Developer misuse (TypeError) - отличаем от обычных unexpected ошибок
     if (e instanceof TypeError) {

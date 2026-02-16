@@ -197,6 +197,17 @@ function wrapOp<T, TError extends DomainError>(
 2. Если `Result.Err` → автоматически rewrap с добавлением `serviceName.op` в opChain
 3. Если exception → классифицирует и создает ошибку с правильным source
 
+**Строгий типовой контракт**:
+
+Гарантирует `Result<T, TError>` - всегда возвращает ошибку типа TError:
+
+- **Same-type TradingError** (instanceof ErrorConstructor) → rewrap с сохранением типа
+- **Foreign TradingError** (другой тип) → конвертация в TError через unexpectedError, с сохранением оригинальных данных в полях `originalErrorName`, `originalErrorCode`, `originalErrorContext`
+- **Core invariant violations** → coreInvariantError + rewrap
+- **Expected math errors** → expectedMathError + rewrap
+- **TypeError** → developerMisuseError + rewrap
+- **Unexpected errors** → unexpectedError + rewrap
+
 **Пример**:
 
 ```typescript

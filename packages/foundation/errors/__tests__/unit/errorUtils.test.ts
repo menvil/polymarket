@@ -438,9 +438,9 @@ describe('errorUtils', () => {
       }
     });
 
-    it('should catch and rewrap thrown TradingError (foreign type preserved)', () => {
+    it('should catch and convert foreign TradingError to expected type (strict contract)', () => {
       // InvalidBalanceError является DomainError, но ErrorConstructor ожидает InvalidPriceError
-      // Тест проверяет что wrapOp сохраняет оригинальный тип (не переклассифицирует)
+      // Тест проверяет что wrapOp конвертирует в TError, сохраняя оригинальные данные
       const result = wrapOp<Decimal, InvalidPriceError>(
         'PriceService',
         'validate',
@@ -455,11 +455,18 @@ describe('errorUtils', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // Должно сохранить тип InvalidBalanceError (не конвертировать в InvalidPriceError)
-        expect(result.error).toBeInstanceOf(InvalidBalanceError);
+        // Должен конвертировать в InvalidPriceError (strict контракт)
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error).not.toBeInstanceOf(InvalidBalanceError);
+
+        // Оригинальные данные сохранены в context
+        expect((result.error.context as any).originalErrorName).toBe('InvalidBalanceError');
+        expect((result.error.context as any).originalErrorContext).toEqual({ balance: '0' });
+
+        // Трассировка добавлена
         expect(result.error.context?.service).toBe('PriceService');
         expect(result.error.context?.op).toBe('validate');
-        expect((result.error.context as any).balance).toBe('0');
+        expect((result.error.context as any).orderId).toBe('order-1');
       }
     });
 
@@ -1008,8 +1015,8 @@ describe('errorUtils', () => {
     });
   });
 
-  describe('wrapOp с "чужим" TradingError', () => {
-    it('сохраняет тип "чужого" TradingError без переклассификации', () => {
+  describe('wrapOp с "чужим" TradingError (strict контракт)', () => {
+    it('конвертирует чужой TradingError в TError, сохраняя оригинальные данные', () => {
       // MoneyService бросил InvalidMoneyError
       const originalError = new InvalidMoneyError('Amount must be positive', {
         code: 'NEGATIVE_AMOUNT',
@@ -1033,29 +1040,31 @@ describe('errorUtils', () => {
 
       expect(isErr(result)).toBe(true);
       if (isErr(result)) {
-        // ВАЖНО: тип должен остаться InvalidMoneyError, а не стать InvalidPriceError
-        expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        expect(result.error).not.toBeInstanceOf(InvalidPriceError);
+        // ВАЖНО: тип должен конвертироваться в InvalidPriceError (strict контракт)
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error).not.toBeInstanceOf(InvalidMoneyError);
 
-        // Проверяем что сообщение и код сохранены
-        expect(result.error.message).toBe('Amount must be positive');
-        expect(result.error.code).toBe('NEGATIVE_AMOUNT');
+        // Оригинальные данные сохранены в context
+        expect((result.error.context as any).originalErrorName).toBe('InvalidMoneyError');
+        expect((result.error.context as any).originalErrorCode).toBe('NEGATIVE_AMOUNT');
+        expect((result.error.context as any).originalErrorContext).toEqual({
+          source: ErrorSource.PARSING,
+          reason: 'NEGATIVE_VALUE',
+          value: -100
+        });
 
-        // Проверяем что source и reason сохранены (из оригинальной ошибки)
-        expect(result.error.context!.source).toBe('parsing');
-        expect(result.error.context!.reason).toBe('NEGATIVE_VALUE');
-        expect((result.error.context as any).value).toBe(-100);
-
-        // Проверяем что трассировка добавлена
+        // Трассировка добавлена
         expect(result.error.context!.service).toBe('PriceService');
         expect(result.error.context!.op).toBe('calculateTotal');
-        expect((result.error.context as any).opChain).toContain('PriceService.calculateTotal');
+        expect((result.error.context as any).price).toBe(1.5);
+        expect((result.error.context as any).quantity).toBe(10);
       }
     });
 
-    it('сохраняет полную диагностику при вложенных вызовах', () => {
+    it('конвертирует чужой TradingError с полным контекстом', () => {
       // Создаем ошибку с полным контекстом
       const moneyError = new InvalidMoneyError('Invalid amount', {
+        code: 'INVALID_FORMAT',
         context: {
           source: ErrorSource.PARSING,
           reason: 'INVALID_FORMAT',
@@ -1080,39 +1089,47 @@ describe('errorUtils', () => {
 
       expect(isErr(quantityResult)).toBe(true);
       if (isErr(quantityResult)) {
-        // Тип остался InvalidMoneyError
-        expect(quantityResult.error).toBeInstanceOf(InvalidMoneyError);
+        // Тип конвертирован в InvalidQuantityError
+        expect(quantityResult.error).toBeInstanceOf(InvalidQuantityError);
+        expect(quantityResult.error).not.toBeInstanceOf(InvalidMoneyError);
 
-        // Диагностика сохранена
-        expect(quantityResult.error.context!.source).toBe('parsing');
-        expect(quantityResult.error.context!.reason).toBe('INVALID_FORMAT');
-        expect((quantityResult.error.context as any).raw).toEqual({
-          field: 'amount',
-          value: 'abc'
+        // Оригинальные данные сохранены
+        expect((quantityResult.error.context as any).originalErrorName).toBe('InvalidMoneyError');
+        expect((quantityResult.error.context as any).originalErrorCode).toBe('INVALID_FORMAT');
+        expect((quantityResult.error.context as any).originalErrorContext).toEqual({
+          source: ErrorSource.PARSING,
+          reason: 'INVALID_FORMAT',
+          raw: { field: 'amount', value: 'abc' },
+          cause: {
+            name: 'TypeError',
+            message: 'Cannot convert abc to number'
+          }
         });
-        expect((quantityResult.error.context as any).cause).toBeDefined();
 
         // Трассировка добавлена
         expect(quantityResult.error.context!.service).toBe('QuantityService');
         expect(quantityResult.error.context!.op).toBe('create');
+        expect((quantityResult.error.context as any).asset).toBe('USDC');
       }
     });
 
-    it('сохраняет inner.service при повторном addTracingPreservingType', () => {
-      // Создаем ошибку которая уже прошла через один rewrap
-      const error1 = new InvalidMoneyError('First error', {
+    it('rewrap для того же типа TradingError (не конвертирует)', () => {
+      // Создаем InvalidPriceError, который будет обработан wrapOp<InvalidPriceError>
+      const error1 = new InvalidPriceError('Price too low', {
+        code: 'PRICE_TOO_LOW',
         context: {
-          service: 'MoneyService',
-          op: 'create',
-          source: 'parsing'
+          service: 'PriceService',
+          op: 'validate',
+          source: ErrorSource.RULE_VALIDATION,
+          price: '0.001'
         }
       });
 
-      // Второй уровень с другим service
+      // Повторный wrapOp с тем же ErrorConstructor
       const result = wrapOp(
-        'PriceService',
-        'calculate',
-        {},
+        'OrderService',
+        'create',
+        { orderId: 'order-123' },
         () => {
           throw error1;
         },
@@ -1121,77 +1138,24 @@ describe('errorUtils', () => {
 
       expect(isErr(result)).toBe(true);
       if (isErr(result)) {
-        // service должен остаться MoneyService (первоначальный)
-        expect(result.error.context!.service).toBe('MoneyService');
-        expect(result.error.context!.op).toBe('calculate');
-        expect((result.error.context as any).opChain).toContain('MoneyService.create');
-        expect((result.error.context as any).opChain).toContain('PriceService.calculate');
-      }
-    });
+        // Тип должен остаться InvalidPriceError (instanceof ErrorConstructor)
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
 
-    it('сохраняет origin-данные при повторном addTracingPreservingType', () => {
-      // Создаем ошибку с уже заполненными origin-данными
-      const originalTimestamp = new Date('2024-01-01').toISOString();
-      const error1 = new InvalidMoneyError('Original', {
-        code: 'ORIGINAL_CODE',
-        context: {
-          rootTimestamp: originalTimestamp,
-          originalStack: 'Original stack trace',
-          originalName: 'InvalidMoneyError',
-          originalCode: 'ORIGINAL_CODE'
-        }
-      });
+        // Оригинальный код сохранен
+        expect(result.error.code).toBe('PRICE_TOO_LOW');
 
-      // Второй rewrap через wrapOp
-      const result = wrapOp(
-        'PriceService',
-        'convert',
-        {},
-        () => {
-          throw error1;
-        },
-        InvalidPriceError
-      );
+        // service остался PriceService (первоначальный)
+        expect(result.error.context!.service).toBe('PriceService');
+        expect(result.error.context!.op).toBe('create');
+        expect((result.error.context as any).opChain).toContain('PriceService.validate');
+        expect((result.error.context as any).opChain).toContain('OrderService.create');
 
-      expect(isErr(result)).toBe(true);
-      if (isErr(result)) {
-        // Origin-данные должны сохраниться из inner
-        expect((result.error.context as any).rootTimestamp).toBe(originalTimestamp);
-        expect((result.error.context as any).originalStack).toBe('Original stack trace');
-        expect((result.error.context as any).originalName).toBe('InvalidMoneyError');
-        expect((result.error.context as any).originalCode).toBe('ORIGINAL_CODE');
-      }
-    });
+        // Новый контекст добавлен
+        expect((result.error.context as any).orderId).toBe('order-123');
 
-    it('переносит innerError через addTracingPreservingType', () => {
-      // Создаем ошибку с innerError (от template function failure)
-      const templateError = new TypeError('Template failed');
-      const error1 = new InvalidMoneyError('Template error', {
-        context: { value: 100 }
-      });
-      // Добавляем innerError через defineProperty
-      Object.defineProperty(error1, 'innerError', {
-        value: templateError,
-        writable: false,
-        enumerable: true
-      });
-
-      const result = wrapOp(
-        'PriceService',
-        'format',
-        {},
-        () => {
-          throw error1;
-        },
-        InvalidPriceError
-      );
-
-      expect(isErr(result)).toBe(true);
-      if (isErr(result)) {
-        // innerError должен сохраниться
-        expect(result.error.innerError).toBeDefined();
-        expect(result.error.innerError).toBeInstanceOf(TypeError);
-        expect(result.error.innerError?.message).toBe('Template failed');
+        // НЕТ originalError* полей (same-type rewrap)
+        expect((result.error.context as any).originalErrorName).toBeUndefined();
+        expect((result.error.context as any).originalErrorCode).toBeUndefined();
       }
     });
   });
