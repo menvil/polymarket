@@ -224,7 +224,7 @@ class Money {
     // ... валидация (см. пример выше)
   }
 
-  add(other: Money): Result<Money, CurrencyMismatchError> {
+  add(other: Money): Result<Money, CurrencyMismatchError | InvalidMoneyError> {
     if (this.currency !== other.currency) {
       return Err(
         new CurrencyMismatchError(
@@ -241,10 +241,9 @@ class Money {
       );
     }
 
-    // add не может вернуть InvalidMoneyError т.к. оба значения уже валидны
-    // но для безопасности можно проверить на overflow
+    // Сложение может вызвать overflow (Infinity), который fromAmount отклонит как InvalidMoneyError
     const newAmount = this.amount + other.amount;
-    return Money.fromAmount(newAmount, this.currency) as Result<Money, CurrencyMismatchError>;
+    return Money.fromAmount(newAmount, this.currency);
   }
 
   subtract(other: Money): Result<Money, CurrencyMismatchError | InvalidMoneyError> {

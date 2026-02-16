@@ -208,6 +208,7 @@ result1.match({
 ### 3. Slippage Tolerance с кастомными сообщениями
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPercentageError } from '@polymarket/errors';
 
 class SlippageTolerance {

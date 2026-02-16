@@ -94,7 +94,7 @@ try {
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { CurrencyMismatchError } from '@polymarket/errors';
+import { CurrencyMismatchError, InvalidMoneyError } from '@polymarket/errors';
 
 class Money {
   private constructor(

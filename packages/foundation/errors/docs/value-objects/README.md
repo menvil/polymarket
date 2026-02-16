@@ -425,7 +425,7 @@ class Money {
 
 - [Обработка ошибок](../error-handling.md) - Best practices
 - [Главная документация](../README.md)
-- [Result<T,E> документация](../../../types/docs/result.md)
+- [Result<T,E> документация](../../../result/README.md)
 
 ---
 

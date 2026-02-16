@@ -616,6 +616,6 @@ class AlertManager {
 
 ## См. также
 
-- [Документация Result<T,E>](../../types/docs/result.md)
+- [Документация Result<T,E>](../../result/README.md)
 - [Value Objects Errors](./value-objects/README.md)
 - [Главная документация](./README.md)

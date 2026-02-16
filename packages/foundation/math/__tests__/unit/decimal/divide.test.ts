@@ -73,7 +73,9 @@ describe('divideDecimal', () => {
 
       try {
         divideDecimal(new Decimal(10), new Decimal(0));
+        fail('Expected DivisionByZeroError to be thrown');
       } catch (error) {
+        expect(error).toBeInstanceOf(DivisionByZeroError);
         if (error instanceof DivisionByZeroError) {
           expect(error.context).toBeDefined();
           expect(error.context?.a).toBe('10');
