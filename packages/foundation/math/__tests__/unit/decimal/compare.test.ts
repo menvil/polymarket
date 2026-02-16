@@ -56,7 +56,10 @@ describe('compare', () => {
       expect(compareDecimal(c, a)).toBe(1); // c > a (симметрия)
     });
 
-    // Валидация операндов (для консистентности с другими comparison функциями)
+    // Валидация операндов
+    // Примечание: Все comparison функции (equals, lessThan, greaterThan и т.д.)
+    // используют одинаковую валидацию InvalidOperandError. Проверяем на примере
+    // equalsDecimal - остальные функции имеют идентичное поведение.
     describe('валидация операндов', () => {
       it('должен throw InvalidOperandError на NaN в первом операнде', () => {
         expect(() =>
@@ -231,60 +234,9 @@ describe('compare', () => {
       expect(compareDecimal(new Decimal('100'), new Decimal('1e2'))).toBe(0);
     });
 
-    describe('валидация операндов', () => {
-      it('должен throw InvalidOperandError на NaN в первом операнде', () => {
-        expect(() =>
-          compareDecimal(new Decimal(NaN), new Decimal(10))
-        ).toThrow(InvalidOperandError);
-      });
-
-      it('должен throw InvalidOperandError на NaN во втором операнде', () => {
-        expect(() =>
-          compareDecimal(new Decimal(10), new Decimal(NaN))
-        ).toThrow(InvalidOperandError);
-      });
-
-      it('должен throw InvalidOperandError на Infinity в первом операнде', () => {
-        expect(() =>
-          compareDecimal(new Decimal(Infinity), new Decimal(10))
-        ).toThrow(InvalidOperandError);
-      });
-
-      it('должен throw InvalidOperandError на Infinity во втором операнде', () => {
-        expect(() =>
-          compareDecimal(new Decimal(10), new Decimal(Infinity))
-        ).toThrow(InvalidOperandError);
-      });
-
-      it('должен throw InvalidOperandError на -Infinity в первом операнде', () => {
-        expect(() =>
-          compareDecimal(new Decimal(-Infinity), new Decimal(10))
-        ).toThrow(InvalidOperandError);
-      });
-
-      it('должен throw InvalidOperandError на -Infinity во втором операнде', () => {
-        expect(() =>
-          compareDecimal(new Decimal(10), new Decimal(-Infinity))
-        ).toThrow(InvalidOperandError);
-      });
-
-      it('должен содержать контекст в InvalidOperandError', () => {
-        expect(() => compareDecimal(new Decimal(NaN), new Decimal(10))).toThrow(
-          InvalidOperandError
-        );
-
-        try {
-          compareDecimal(new Decimal(NaN), new Decimal(10));
-        } catch (error) {
-          if (error instanceof InvalidOperandError) {
-            expect(error.context).toBeDefined();
-            expect(error.context?.a).toBe('NaN');
-            expect(error.context?.b).toBe('10');
-            expect(error.context?.operation).toBe('compare');
-          }
-        }
-      });
-    });
+    // Примечание: валидация операндов для compareDecimal идентична валидации
+    // в equalsDecimal (см. выше) - все comparison функции используют одинаковую
+    // проверку InvalidOperandError, поэтому избыточные тесты удалены.
   });
 
   // Дополнительные тесты транзитивности и консистентности

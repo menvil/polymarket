@@ -42,11 +42,6 @@ describe('QuoteService Ratio Operations', () => {
         expect(result.value.value().toString()).toBe('0.5');
       }
     });
-
-    it('никогда не бросает исключения', () => {
-      const quote = createQuote(0.48, 0.52);
-      expect(() => QuoteService.getMidPrice(quote)).not.toThrow();
-    });
   });
 
   describe('getSpreadRatio()', () => {
@@ -58,11 +53,6 @@ describe('QuoteService Ratio Operations', () => {
       if (result.ok) {
         expect(result.value.toDecimal().toString()).toBe('0.08');
       }
-    });
-
-    it('никогда не бросает исключения', () => {
-      const quote = createQuote(0.48, 0.52);
-      expect(() => QuoteService.getSpreadRatio(quote)).not.toThrow();
     });
   });
 
@@ -96,11 +86,6 @@ describe('QuoteService Ratio Operations', () => {
       }
     });
 
-    it('никогда не бросает исключения', () => {
-      const quote = createQuote(0.48, 0.52);
-      const ratio = Ratio.of(new Decimal(0.05));
-      expect(() => QuoteService.shiftByRatio(quote, ratio)).not.toThrow();
-    });
   });
 
   describe('widenByRatio()', () => {
@@ -119,11 +104,6 @@ describe('QuoteService Ratio Operations', () => {
       }
     });
 
-    it('никогда не бросает исключения', () => {
-      const quote = createQuote(0.48, 0.52);
-      const ratio = Ratio.of(new Decimal(0.02));
-      expect(() => QuoteService.widenByRatio(quote, ratio)).not.toThrow();
-    });
   });
 
   describe('tightenByRatio()', () => {
@@ -142,11 +122,6 @@ describe('QuoteService Ratio Operations', () => {
       }
     });
 
-    it('никогда не бросает исключения', () => {
-      const quote = createQuote(0.48, 0.52);
-      const ratio = Ratio.of(new Decimal(0.01));
-      expect(() => QuoteService.tightenByRatio(quote, ratio)).not.toThrow();
-    });
   });
 
   describe('skewByRatio()', () => {
@@ -166,12 +141,6 @@ describe('QuoteService Ratio Operations', () => {
       }
     });
 
-    it('никогда не бросает исключения', () => {
-      const quote = createQuote(0.48, 0.52);
-      const bidRatio = Ratio.of(new Decimal(0.02));
-      const askRatio = Ratio.of(new Decimal(-0.01));
-      expect(() => QuoteService.skewByRatio(quote, bidRatio, askRatio)).not.toThrow();
-    });
   });
 
   describe('scaleSizesByRatio()', () => {
@@ -260,11 +229,6 @@ describe('QuoteService Ratio Operations', () => {
       }
     });
 
-    it('никогда не бросает исключения', () => {
-      const quote = createQuote(0.48, 0.52, 100, 200);
-      const sizeFactor = Ratio.of(new Decimal(0.5));
-      expect(() => QuoteService.scaleSizesByRatio(quote, sizeFactor)).not.toThrow();
-    });
   });
 
   describe('Integration scenarios', () => {

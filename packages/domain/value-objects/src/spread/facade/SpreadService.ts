@@ -136,34 +136,90 @@ export class SpreadService {
    * ```
    */
   public static fromValues(
-    bidValue: number | Decimal,
-    askValue: number | Decimal
+    bidValue: number | string | Decimal,
+    askValue: number | string | Decimal
   ): Result<Spread, InvalidSpreadError> {
-    // Создаём Price объекты через PriceService
-    const bidDecimal = bidValue instanceof Decimal ? bidValue : new Decimal(bidValue);
-    const askDecimal = askValue instanceof Decimal ? askValue : new Decimal(askValue);
+    return wrapOp(
+      SpreadService.SERVICE_NAME,
+      'fromValues',
+      {
+        bidValue: String(bidValue),
+        askValue: String(askValue)
+      },
+      () => {
+        // Парсим bid value через toDecimal (безопасно для строк)
+        const bidDecimalResult = toDecimal<InvalidSpreadError>(
+          'bidValue',
+          bidValue,
+          SpreadErrorReason.INVALID_FORMAT,
+          InvalidSpreadError
+        );
+        if (isErr(bidDecimalResult)) {
+          throw rewrap(
+            SpreadService.SERVICE_NAME,
+            'fromValues',
+            { bidValue: String(bidValue), askValue: String(askValue) },
+            bidDecimalResult.error,
+            InvalidSpreadError
+          );
+        }
 
-    const bidResult = PriceService.create(bidDecimal);
-    if (isErr(bidResult)) {
-      return Err(
-        rewrap(SpreadService.SERVICE_NAME, 'fromValues', {
-          bidValue: bidDecimal.toString(),
-          askValue: askDecimal.toString()
-        }, bidResult.error, InvalidSpreadError)
-      );
-    }
+        // Парсим ask value через toDecimal (безопасно для строк)
+        const askDecimalResult = toDecimal<InvalidSpreadError>(
+          'askValue',
+          askValue,
+          SpreadErrorReason.INVALID_FORMAT,
+          InvalidSpreadError
+        );
+        if (isErr(askDecimalResult)) {
+          throw rewrap(
+            SpreadService.SERVICE_NAME,
+            'fromValues',
+            { bidValue: String(bidValue), askValue: String(askValue) },
+            askDecimalResult.error,
+            InvalidSpreadError
+          );
+        }
 
-    const askResult = PriceService.create(askDecimal);
-    if (isErr(askResult)) {
-      return Err(
-        rewrap(SpreadService.SERVICE_NAME, 'fromValues', {
-          bidValue: bidDecimal.toString(),
-          askValue: askDecimal.toString()
-        }, askResult.error, InvalidSpreadError)
-      );
-    }
+        // Создаём Price объекты через PriceService
+        const bidResult = PriceService.create(bidDecimalResult.value);
+        if (isErr(bidResult)) {
+          throw rewrap(
+            SpreadService.SERVICE_NAME,
+            'fromValues',
+            {
+              bidValue: bidDecimalResult.value.toString(),
+              askValue: askDecimalResult.value.toString()
+            },
+            bidResult.error,
+            InvalidSpreadError
+          );
+        }
 
-    return SpreadService.create(bidResult.value, askResult.value);
+        const askResult = PriceService.create(askDecimalResult.value);
+        if (isErr(askResult)) {
+          throw rewrap(
+            SpreadService.SERVICE_NAME,
+            'fromValues',
+            {
+              bidValue: bidDecimalResult.value.toString(),
+              askValue: askDecimalResult.value.toString()
+            },
+            askResult.error,
+            InvalidSpreadError
+          );
+        }
+
+        // Создаём spread через create
+        const createResult = SpreadService.create(bidResult.value, askResult.value);
+        if (isErr(createResult)) {
+          throw createResult.error;
+        }
+
+        return Ok(createResult.value);
+      },
+      InvalidSpreadError
+    );
   }
 
   /**

@@ -77,19 +77,19 @@ if (bidResult.ok && askResult.ok) {
 
 ### `fromValues(bid, ask)`
 
-Создаёт спред из чисел или Decimal.
+Создаёт спред из чисел, строк или Decimal.
 
 ```typescript
 fromValues(
-  bid: number | Decimal,
-  ask: number | Decimal
+  bid: number | string | Decimal,
+  ask: number | string | Decimal
 ): Result<Spread, InvalidSpreadError>
 ```
 
 **Параметры:**
 
-- `bid: number | Decimal` — значение bid цены
-- `ask: number | Decimal` — значение ask цены
+- `bid: number | string | Decimal` — значение bid цены
+- `ask: number | string | Decimal` — значение ask цены
 
 **Возвращает:**
 
@@ -102,9 +102,12 @@ fromValues(
 // Из чисел
 const result1 = SpreadService.fromValues(0.48, 0.52);
 
+// Из строк
+const result2 = SpreadService.fromValues('0.48', '0.52');
+
 // Из Decimal
 import Decimal from 'decimal.js';
-const result2 = SpreadService.fromValues(
+const result3 = SpreadService.fromValues(
   new Decimal(0.48),
   new Decimal(0.52)
 );

@@ -78,6 +78,55 @@ describe('SpreadService', () => {
       }
     });
 
+    it('should create spread from string values', () => {
+      const result = SpreadService.fromValues('0.48', '0.52');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.width().toNumber()).toBe(0.04);
+        expect(result.value.bid().value().toNumber()).toBe(0.48);
+        expect(result.value.ask().value().toNumber()).toBe(0.52);
+      }
+    });
+
+    it('should return Err for invalid string bid (Never Throw)', () => {
+      const result = SpreadService.fromValues('abc', '0.52');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.opChain).toContain('SpreadService.fromValues');
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.bidValue).toBe('abc');
+      }
+    });
+
+    it('should return Err for empty string bid (Never Throw)', () => {
+      const result = SpreadService.fromValues('', '0.52');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.opChain).toContain('SpreadService.fromValues');
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+      }
+    });
+
+    it('should return Err for invalid string ask (Never Throw)', () => {
+      const result = SpreadService.fromValues('0.48', 'xyz');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.opChain).toContain('SpreadService.fromValues');
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.askValue).toBe('xyz');
+      }
+    });
+
+    it('should never throw exceptions for any string input', () => {
+      expect(() => SpreadService.fromValues('abc', 'xyz')).not.toThrow();
+      expect(() => SpreadService.fromValues('', '')).not.toThrow();
+      expect(() => SpreadService.fromValues('NaN', 'Infinity')).not.toThrow();
+    });
+
     it('should return Err when bid value is invalid', () => {
       const result = SpreadService.fromValues(1.5, 0.52);
 

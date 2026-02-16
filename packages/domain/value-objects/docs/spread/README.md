@@ -246,7 +246,7 @@ if (!result.ok) {
 **Основные методы:**
 
 - `create(bid, ask)` — создание из Price объектов
-- `fromValues(bid, ask)` — создание из чисел/Decimal
+- `fromValues(bid, ask)` — создание из чисел/строк/Decimal
 - `zero(price)` — спред нулевой ширины
 - `tighten(spread, amount)` — сужение спреда
 - `widen(spread, amount)` — расширение спреда
@@ -281,7 +281,7 @@ if (!result.ok) {
 // Создание из Price объектов
 SpreadService.create(bid: Price, ask: Price): Result<Spread, InvalidSpreadError>
 
-// Создание из чисел/Decimal
+// Создание из чисел/строк/Decimal
 SpreadService.fromValues(
   bid: number | string | Decimal,
   ask: number | string | Decimal

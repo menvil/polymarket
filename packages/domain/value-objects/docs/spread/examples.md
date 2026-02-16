@@ -518,7 +518,7 @@ console.table([
 ```typescript
 import { SpreadService, SpreadErrorReason } from '@polymarket/value-objects';
 
-function validateUserSpread(bidInput: number, askInput: number) {
+function validateUserSpread(bidInput: string, askInput: string) {
   const result = SpreadService.fromValues(bidInput, askInput);
 
   if (!result.ok) {

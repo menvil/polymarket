@@ -140,7 +140,7 @@ describe('QuoteService', () => {
     });
   });
 
-  describe('createFromDecimals()', () => {
+  describe('create() с Decimal parameters', () => {
     it('создаёт котировку из Decimal значений', () => {
       const result = QuoteService.create(
         new Decimal(0.48),

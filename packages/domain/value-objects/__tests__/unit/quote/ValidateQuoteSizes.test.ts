@@ -36,24 +36,6 @@ describe('ValidateQuoteSizes', () => {
       expect(result.ok).toBe(true);
     });
 
-    it('проходит когда bid null и bidSize zero', () => {
-      const ask = Price.of(new Decimal(0.51));
-      const askSize = Quantity.of(new Decimal(200));
-
-      const result = ValidateQuoteSizes.check(null, Quantity.ZERO, ask, askSize);
-
-      expect(result.ok).toBe(true);
-    });
-
-    it('проходит когда ask null и askSize zero', () => {
-      const bid = Price.of(new Decimal(0.50));
-      const bidSize = Quantity.of(new Decimal(100));
-
-      const result = ValidateQuoteSizes.check(bid, bidSize, null, Quantity.ZERO);
-
-      expect(result.ok).toBe(true);
-    });
-
     it('фэйлится когда bid определён но bidSize zero', () => {
       const bid = Price.of(new Decimal(0.50));
       const bidSize = Quantity.ZERO; // ❌

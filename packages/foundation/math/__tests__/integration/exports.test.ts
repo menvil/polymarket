@@ -16,8 +16,11 @@ import { describe, it, expect } from '@jest/globals';
  * - Сборку в dist/
  * - Реальный package contract после публикации
  *
- * Для проверки реального package exports используйте интеграционные
- * тесты в отдельном пакете после `npm pack` или установки из registry.
+ * **Для проверки реального package exports используйте:**
+ * ```bash
+ * npm run build
+ * node __tests__/integration/verify-package-exports.mjs
+ * ```
  */
 describe('Package exports contract', () => {
   describe('root exports - decimal функции', () => {
