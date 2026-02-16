@@ -393,14 +393,16 @@ describe('roundToTick', () => {
      *
      * @remarks
      * Overflow возможен при округлении огромного числа с крошечным tickSize,
-     * когда промежуточные вычисления (value / tickSize) дают Infinity.
+     * когда промежуточные вычисления (value / tickSize * tickSize) дают Infinity.
+     * Decimal.js maxE = 9e15, используем значения близкие к этой границе.
      */
     it('должен throw ArithmeticOverflowError при overflow', () => {
-      // Создаём кейс, где result после округления станет Infinity
-      const huge = new Decimal('1e308');
-      const tinyTick = new Decimal('1e-10');
+      // Создаём кейс, где промежуточный/финальный результат превысит maxE
+      // value близкое к maxE, делённое на крошечный tick даст overflow
+      const nearMaxE = new Decimal('5e' + (Decimal.maxE - 1000));
+      const tinyTick = new Decimal('1e-2000');
 
-      expect(() => roundToTick(huge, tinyTick, Decimal.ROUND_HALF_UP)).toThrow(
+      expect(() => roundToTick(nearMaxE, tinyTick, Decimal.ROUND_HALF_UP)).toThrow(
         ArithmeticOverflowError
       );
     });
@@ -409,11 +411,11 @@ describe('roundToTick', () => {
      * Тест проверяет, что ошибка overflow содержит полный контекст операции.
      */
     it('должен содержать контекст в ошибке overflow', () => {
-      const huge = new Decimal('1e308');
-      const tinyTick = new Decimal('1e-10');
+      const nearMaxE = new Decimal('5e' + (Decimal.maxE - 1000));
+      const tinyTick = new Decimal('1e-2000');
 
       try {
-        roundToTick(huge, tinyTick, Decimal.ROUND_HALF_UP);
+        roundToTick(nearMaxE, tinyTick, Decimal.ROUND_HALF_UP);
         // Если не бросило ошибку - тест провален
         expect(true).toBe(false);
       } catch (error) {

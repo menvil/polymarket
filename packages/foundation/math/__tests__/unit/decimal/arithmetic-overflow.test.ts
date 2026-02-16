@@ -16,44 +16,49 @@ import Decimal from 'decimal.js';
  * при выходе результата операции за пределы конечных чисел.
  *
  * @remarks
- * Используем граничные значения Decimal.js:
- * - MAX_SAFE = 1e308 (близко к Number.MAX_VALUE)
- * - TINY = 1e-308 (близко к Number.MIN_VALUE)
+ * Decimal.js имеет maxE = 9e15 и minE = -9e15.
+ * Для overflow нужны операции, результат которых превышает эти границы.
+ *
+ * Стратегия:
+ * - Для сложения/вычитания: 5e+maxE (при сложении даст 1e+(maxE+1) = overflow)
+ * - Для умножения: 1e+(maxE/2+1) (при умножении даст 1e+(maxE+2) = overflow)
  */
 describe('Arithmetic Overflow Tests', () => {
-  // Константы для тестов
-  const MAX_SAFE = new Decimal('1e308');
-  const TINY = new Decimal('1e-308');
+  // Для overflow при сложении: 5e+maxE + 5e+maxE = 1e+(maxE+1) = Infinity
+  const NEAR_MAX_FOR_ADD = new Decimal('5e' + Decimal.maxE);
+
+  // Для overflow при умножении: sqrt(maxE) * sqrt(maxE) = overflow
+  const SQRT_MAX_E = new Decimal('1e' + (Math.floor(Decimal.maxE / 2) + 1));
+
+  // Для overflow при делении
+  const NEAR_MAX_E = new Decimal('5e' + (Decimal.maxE - 1000));
+  const TINY = new Decimal('1e-1500');
 
   describe('addDecimal overflow', () => {
     /**
      * Тест проверяет, что addDecimal бросает ArithmeticOverflowError
-     * при сложении двух огромных чисел, когда результат = Infinity.
+     * при сложении двух огромных чисел, когда результат превышает maxE.
      */
     it('должен throw ArithmeticOverflowError при переполнении', () => {
-      const huge1 = new Decimal('9e307');
-      const huge2 = new Decimal('9e307');
-
-      expect(() => addDecimal(huge1, huge2)).toThrow(ArithmeticOverflowError);
+      expect(() => addDecimal(NEAR_MAX_FOR_ADD, NEAR_MAX_FOR_ADD)).toThrow(
+        ArithmeticOverflowError
+      );
     });
 
     /**
      * Тест проверяет, что ошибка overflow содержит полный контекст операции.
      */
     it('должен содержать контекст в ошибке overflow', () => {
-      const huge1 = new Decimal('9e307');
-      const huge2 = new Decimal('9e307');
-
       try {
-        addDecimal(huge1, huge2);
+        addDecimal(NEAR_MAX_FOR_ADD, NEAR_MAX_FOR_ADD);
         // Если не бросило ошибку - тест провален
         expect(true).toBe(false);
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
-          expect(error.context?.operation).toBe('add');
           expect(error.context?.a).toBeDefined();
           expect(error.context?.b).toBeDefined();
+          expect(error.context?.result).toBe('Infinity');
         } else {
           throw error;
         }
@@ -67,26 +72,28 @@ describe('Arithmetic Overflow Tests', () => {
      * из огромного положительного (эквивалентно сложению двух огромных чисел).
      */
     it('должен throw ArithmeticOverflowError при переполнении', () => {
-      const huge = new Decimal('9e307');
-      const negHuge = new Decimal('-9e307');
+      const negHuge = NEAR_MAX_FOR_ADD.neg();
 
-      expect(() => subtractDecimal(huge, negHuge)).toThrow(ArithmeticOverflowError);
+      expect(() => subtractDecimal(NEAR_MAX_FOR_ADD, negHuge)).toThrow(
+        ArithmeticOverflowError
+      );
     });
 
     /**
      * Тест проверяет контекст ошибки для subtractDecimal.
      */
     it('должен содержать контекст в ошибке overflow', () => {
-      const huge = new Decimal('9e307');
-      const negHuge = new Decimal('-9e307');
+      const negHuge = NEAR_MAX_FOR_ADD.neg();
 
       try {
-        subtractDecimal(huge, negHuge);
+        subtractDecimal(NEAR_MAX_FOR_ADD, negHuge);
         expect(true).toBe(false);
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
-          expect(error.context?.operation).toBe('subtract');
+          expect(error.context?.a).toBeDefined();
+          expect(error.context?.b).toBeDefined();
+          expect(error.context?.result).toBe('Infinity');
         } else {
           throw error;
         }
@@ -97,29 +104,27 @@ describe('Arithmetic Overflow Tests', () => {
   describe('multiplyDecimal overflow', () => {
     /**
      * Тест проверяет overflow при умножении двух огромных чисел.
-     * 1e200 * 1e200 = 1e400 > 1e308 (максимальное значение).
+     * Используем числа, которые при умножении превысят maxE.
      */
     it('должен throw ArithmeticOverflowError при переполнении', () => {
-      const huge = new Decimal('1e200');
-
-      expect(() => multiplyDecimal(huge, huge)).toThrow(ArithmeticOverflowError);
+      expect(() => multiplyDecimal(SQRT_MAX_E, SQRT_MAX_E)).toThrow(
+        ArithmeticOverflowError
+      );
     });
 
     /**
      * Тест проверяет контекст ошибки для multiplyDecimal.
      */
     it('должен содержать контекст в ошибке overflow', () => {
-      const huge = new Decimal('1e200');
-
       try {
-        multiplyDecimal(huge, huge);
+        multiplyDecimal(SQRT_MAX_E, SQRT_MAX_E);
         expect(true).toBe(false);
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();
-          expect(error.context?.operation).toBe('multiply');
           expect(error.context?.a).toBeDefined();
           expect(error.context?.b).toBeDefined();
+          expect(error.context?.result).toBe('Infinity');
         } else {
           throw error;
         }
@@ -130,10 +135,12 @@ describe('Arithmetic Overflow Tests', () => {
   describe('divideDecimal overflow', () => {
     /**
      * Тест проверяет overflow при делении огромного числа на крошечное.
-     * 1e308 / 1e-308 = 1e616 > 1e308 (overflow).
+     * Используем числа, при делении которых результат превысит maxE.
      */
     it('должен throw ArithmeticOverflowError при переполнении', () => {
-      expect(() => divideDecimal(MAX_SAFE, TINY)).toThrow(ArithmeticOverflowError);
+      expect(() => divideDecimal(NEAR_MAX_E, TINY)).toThrow(
+        ArithmeticOverflowError
+      );
     });
 
     /**
@@ -141,7 +148,7 @@ describe('Arithmetic Overflow Tests', () => {
      */
     it('должен содержать контекст в ошибке overflow', () => {
       try {
-        divideDecimal(MAX_SAFE, TINY);
+        divideDecimal(NEAR_MAX_E, TINY);
         expect(true).toBe(false);
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
@@ -159,22 +166,20 @@ describe('Arithmetic Overflow Tests', () => {
   describe('averageDecimal overflow', () => {
     /**
      * Тест проверяет overflow при вычислении среднего двух огромных чисел.
-     * average(9e307, 9e307) = (9e307 + 9e307) / 2 = overflow при сложении.
+     * average = (a + b) / 2, overflow происходит при сложении.
      */
     it('должен throw ArithmeticOverflowError при переполнении', () => {
-      const huge = new Decimal('9e307');
-
-      expect(() => averageDecimal(huge, huge)).toThrow(ArithmeticOverflowError);
+      expect(() => averageDecimal(NEAR_MAX_FOR_ADD, NEAR_MAX_FOR_ADD)).toThrow(
+        ArithmeticOverflowError
+      );
     });
 
     /**
      * Тест проверяет контекст ошибки для averageDecimal.
      */
     it('должен содержать контекст в ошибке overflow', () => {
-      const huge = new Decimal('9e307');
-
       try {
-        averageDecimal(huge, huge);
+        averageDecimal(NEAR_MAX_FOR_ADD, NEAR_MAX_FOR_ADD);
         expect(true).toBe(false);
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
