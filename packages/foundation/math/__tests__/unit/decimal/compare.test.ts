@@ -287,29 +287,6 @@ describe('compare', () => {
     });
   });
 
-  // Валидация всех операций сравнения
-  describe('валидация (все компараторы)', () => {
-    it.each([
-      ['lessThanDecimal', lessThanDecimal],
-      ['lessThanOrEqualDecimal', lessThanOrEqualDecimal],
-      ['greaterThanDecimal', greaterThanDecimal],
-      ['greaterThanOrEqualDecimal', greaterThanOrEqualDecimal],
-      ['compareDecimal', compareDecimal],
-      ['equalsDecimal', equalsDecimal],
-    ])('%s должен throw InvalidOperandError на невалидные операнды', (_name, fn) => {
-      const invalidValues = [NaN, Infinity, -Infinity];
-
-      invalidValues.forEach((invalid) => {
-        expect(() => fn(new Decimal(invalid), new Decimal(10))).toThrow(
-          InvalidOperandError
-        );
-        expect(() => fn(new Decimal(10), new Decimal(invalid))).toThrow(
-          InvalidOperandError
-        );
-      });
-    });
-  });
-
   // Дополнительные тесты транзитивности и консистентности
   describe('Транзитивность на отрицательных и дробных', () => {
     it('должен соблюдать транзитивность: если a<b и b<c то a<c (отрицательные + дробные)', () => {

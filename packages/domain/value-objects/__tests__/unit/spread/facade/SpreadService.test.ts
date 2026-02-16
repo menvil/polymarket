@@ -83,7 +83,17 @@ describe('SpreadService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.op).toBe('fromValues');
+        // opChain должна содержать вызов SpreadService.fromValues
+        expect(result.error.context?.opChain).toContain('SpreadService.fromValues');
+        // source должен быть определён (это граница системы)
+        expect(result.error.context?.source).toBeDefined();
+        // reason должен быть определён (ошибка из PriceService)
+        expect(result.error.context?.reason).toBeDefined();
+        // Контекст должен содержать bidValue и askValue
+        expect(result.error.context).toMatchObject({
+          bidValue: expect.any(String),
+          askValue: expect.any(String)
+        });
       }
     });
 
@@ -92,7 +102,17 @@ describe('SpreadService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.op).toBe('fromValues');
+        // opChain должна содержать вызов SpreadService.fromValues
+        expect(result.error.context?.opChain).toContain('SpreadService.fromValues');
+        // source должен быть определён (это граница системы)
+        expect(result.error.context?.source).toBeDefined();
+        // reason должен быть определён (ошибка из PriceService)
+        expect(result.error.context?.reason).toBeDefined();
+        // Контекст должен содержать bidValue и askValue
+        expect(result.error.context).toMatchObject({
+          bidValue: expect.any(String),
+          askValue: expect.any(String)
+        });
       }
     });
 

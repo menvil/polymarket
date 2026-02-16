@@ -1219,6 +1219,77 @@ describe('QuantityService', () => {
         expect(() => QuantityService.portion(qty, rate)).not.toThrow();
       });
     });
+
+    describe('Math exception handling', () => {
+      it('должен ловить InvalidOperandError из @polymarket/math', () => {
+        jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
+          throw new InvalidOperandError(() => 'invalid operand', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(new Decimal(100));
+        const rate = Ratio.of(new Decimal(0.5));
+        const result = QuantityService.portion(qty, rate);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('portion failed');
+          expect(result.error.context?.op).toBe('portion');
+          expect(result.error.context?.quantity).toBe('100');
+          expect(result.error.context?.rate).toBe('0.5');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('InvalidOperandError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
+        jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
+          throw new ArithmeticOverflowError(() => 'overflow', {
+            context: {}
+          });
+        });
+
+        const qty = Quantity.of(new Decimal(100));
+        const rate = Ratio.of(new Decimal(0.5));
+        const result = QuantityService.portion(qty, rate);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('portion failed');
+          expect(result.error.context?.op).toBe('portion');
+          expect(result.error.context?.quantity).toBe('100');
+          expect(result.error.context?.rate).toBe('0.5');
+          expect(result.error.context?.cause).toBeDefined();
+          const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
+          expect(cause.name).toBe('ArithmeticOverflowError');
+        }
+
+        jest.restoreAllMocks();
+      });
+
+      it('должен обернуть неожиданные ошибки в Result', () => {
+        jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
+          throw new Error('unexpected multiply error');
+        });
+
+        const qty = Quantity.of(new Decimal(100));
+        const rate = Ratio.of(new Decimal(0.5));
+        const result = QuantityService.portion(qty, rate);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Unexpected error during quantity portion');
+          expect(result.error.context?.op).toBe('portion');
+          expect(result.error.context?.cause).toBeDefined();
+        }
+
+        jest.restoreAllMocks();
+      });
+    });
   });
 
   describe('increaseBy()', () => {

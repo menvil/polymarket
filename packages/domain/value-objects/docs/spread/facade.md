@@ -16,7 +16,7 @@
 
 **SpreadService** — это единственный публичный API для работы со спредами. Все методы:
 
-- ✅ Возвращают `Result<Spread, InvalidSpreadError>`
+- ✅ Возвращают `Result<T, InvalidSpreadError>` (где T может быть Spread, Price, Decimal или Ratio)
 - ✅ Никогда не бросают исключений (Never Throw Contract)
 - ✅ Перехватывают ошибки из Core и Rules слоёв
 - ✅ Предоставляют rich error context
@@ -81,15 +81,15 @@ if (bidResult.ok && askResult.ok) {
 
 ```typescript
 fromValues(
-  bid: number | string | Decimal,
-  ask: number | string | Decimal
+  bid: number | Decimal,
+  ask: number | Decimal
 ): Result<Spread, InvalidSpreadError>
 ```
 
 **Параметры:**
 
-- `bid: number | string | Decimal` — значение bid цены
-- `ask: number | string | Decimal` — значение ask цены
+- `bid: number | Decimal` — значение bid цены
+- `ask: number | Decimal` — значение ask цены
 
 **Возвращает:**
 

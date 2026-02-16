@@ -107,7 +107,7 @@ const nowResult = QuoteService.create(0.48, 0.52, 100, 150, Date.now());
 ```typescript
 import Decimal from 'decimal.js';
 
-const result = QuoteService.createFromDecimals(
+const result = QuoteService.create(
   new Decimal('0.48'),
   new Decimal('0.52'),
   new Decimal('100'),
@@ -534,7 +534,7 @@ if (!result.ok) {
 
   // Operation chain для диагностики
   console.error('Operation chain:', error.context?.opChain);
-  // ['create', 'createFromDecimals']
+  // ['create', 'create']
 }
 ```
 
@@ -555,7 +555,7 @@ if (!shiftResult.ok) {
   console.error('Shift failed:', error.message);
   console.error('Reason:', error.context?.reason);  // INVALID_BID
   console.error('Operation chain:', error.context?.opChain);
-  // ['shift', 'createFromDecimals', 'create:bid']
+  // ['shift', 'create', 'create:bid']
 
   // Можно увидеть где именно произошла ошибка
   console.error('Failed at:', error.context?.op);  // 'shift'
@@ -600,7 +600,7 @@ class MarketMaker {
     const askPrice = mid.add(halfSpread).add(inventorySkew);
 
     // Создание котировки
-    const quoteResult = QuoteService.createFromDecimals(
+    const quoteResult = QuoteService.create(
       bidPrice,
       askPrice,
       new Decimal(1000),  // bidSize
@@ -697,7 +697,7 @@ class QuoteAggregator {
     }
 
     // Создание агрегированной котировки
-    const result = QuoteService.createFromDecimals(
+    const result = QuoteService.create(
       bestBidPrice,
       bestAskPrice,
       bestBidSize,

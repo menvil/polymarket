@@ -149,7 +149,7 @@ export class SpreadService {
         rewrap(SpreadService.SERVICE_NAME, 'fromValues', {
           bidValue: bidDecimal.toString(),
           askValue: askDecimal.toString()
-        }, bidResult.error as InvalidSpreadError, InvalidSpreadError)
+        }, bidResult.error, InvalidSpreadError)
       );
     }
 
@@ -159,7 +159,7 @@ export class SpreadService {
         rewrap(SpreadService.SERVICE_NAME, 'fromValues', {
           bidValue: bidDecimal.toString(),
           askValue: askDecimal.toString()
-        }, askResult.error as InvalidSpreadError, InvalidSpreadError)
+        }, askResult.error, InvalidSpreadError)
       );
     }
 

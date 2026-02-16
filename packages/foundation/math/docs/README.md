@@ -24,15 +24,18 @@
 | `lessThan/greaterThan...` | Decimal | Операторы сравнения | [→](./decimal/compare.md) |
 | `roundDecimal(value)` | Decimal | Округление half-up | [→](./decimal/round.md) |
 | `floor/ceil/truncDecimal` | Decimal | Округление к/от нуля | [→](./decimal/round.md) |
-| `roundToTick(value, tickSize, mode?)` | Rounding | Округление к tick size | [→](./rounding/README.md#roundtotick) |
+| `mathFloorDecimal(value)` | Decimal | Math floor (к -Infinity) | [→](./decimal/round.md#mathfloordecimal) |
+| `mathCeilDecimal(value)` | Decimal | Math ceil (к +Infinity) | [→](./decimal/round.md#mathceildecimal) |
+| `roundToTick(value, tickSize, roundingMode)` | Rounding | Округление к tick size | [→](./rounding/README.md#roundtotick) |
 | `floorToTick(value, tickSize)` | Rounding | Floor к tick size | [→](./rounding/README.md#floortotick) |
 | `ceilToTick(value, tickSize)` | Rounding | Ceil к tick size | [→](./rounding/README.md#ceiltotick) |
 | `mathFloorToTick(value, tickSize)` | Rounding | Math floor к tick | [→](./rounding/README.md#mathfloortotick) |
 | `mathCeilToTick(value, tickSize)` | Rounding | Math ceil к tick | [→](./rounding/README.md#mathceiltotick) |
-| `roundToPrecision(value, places, mode?)` | Rounding | Округление до N знаков | [→](./rounding/README.md#roundtoprecision) |
+| `roundToPrecision(value, places, roundingMode)` | Rounding | Округление до N знаков | [→](./rounding/README.md#roundtoprecision) |
 | `isFiniteDecimal(value)` | Validation | Проверка конечности | [→](./validation/README.md#isfinitedecimal) |
 | `isPositiveDecimal(value)` | Validation | Проверка > 0 | [→](./validation/README.md#ispositivedecimal) |
 | `isNonNegativeDecimal(value)` | Validation | Проверка >= 0 | [→](./validation/README.md#isnonnegativedecimal) |
+| `isZeroDecimal(value)` | Validation | Проверка === 0 | [→](./validation/README.md#iszerodecimal) |
 
 ## Философия пакета
 

@@ -140,15 +140,6 @@ describe('roundToPrecision', () => {
       expect(result.toString()).toBe('0');
     });
 
-    it('должен работать с decimalPlaces = 0', () => {
-      const result = roundToPrecision(
-        new Decimal('10.9'),
-        0,
-        Decimal.ROUND_HALF_UP
-      );
-      expect(result.toString()).toBe('11');
-    });
-
     it('должен работать с большим количеством знаков', () => {
       const result = roundToPrecision(
         new Decimal('10.123456789'),

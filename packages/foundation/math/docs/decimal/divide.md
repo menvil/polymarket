@@ -37,6 +37,7 @@ function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal
 
 ### Выбрасываемые ошибки
 
+- **InvalidOperandError** - Если делимое не является конечным числом (NaN, Infinity, -Infinity)
 - **InvalidDivisorError** - Если делитель не является конечным числом (NaN, Infinity, -Infinity)
 - **DivisionByZeroError** - Если делитель равен нулю
 - **ArithmeticOverflowError** - Если результат не является конечным числом (Infinity, -Infinity)
@@ -190,15 +191,16 @@ import { divideDecimal } from '@polymarket/math';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
 try {
-  const inf = new Decimal(Infinity);
-  const value = new Decimal(2);
+  // Overflow возникает при делении огромного числа на крошечное
+  const huge = new Decimal('1e308');
+  const tiny = new Decimal('1e-308');
 
-  const result = divideDecimal(inf, value);
+  const result = divideDecimal(huge, tiny);
 } catch (error) {
   if (ArithmeticOverflowError.is(error)) {
     console.error('Division overflow:', error.message);
     console.error('Context:', error.context);
-    // Context: { dividend: 'Infinity', divisor: '2', result: 'Infinity' }
+    // Context: { dividend: '1e308', divisor: '1e-308', result: 'Infinity' }
   }
 }
 ```

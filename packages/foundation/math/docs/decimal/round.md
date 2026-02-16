@@ -96,7 +96,6 @@ try {
 **Выбрасывает ошибки:**
 
 - `InvalidOperandError` - если value не конечное число (NaN/Infinity)
-- `ArithmeticOverflowError` - если результат не конечен
 
 ---
 

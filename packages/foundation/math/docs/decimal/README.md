@@ -66,6 +66,8 @@ class Price {
 | `roundTowardZeroDecimal(value)` | Округление к нулю | [→](./round.md#roundtowardzerodecimal) |
 | `roundAwayFromZeroDecimal(value)` | Округление от нуля | [→](./round.md#roundawayfromzerodecimal) |
 | `truncDecimal(value)` | Округление к нулю (усечение) | [→](./round.md#truncdecimal) |
+| `mathFloorDecimal(value)` | Math floor (к -Infinity) | [→](./round.md#mathfloordecimal) |
+| `mathCeilDecimal(value)` | Math ceil (к +Infinity) | [→](./round.md#mathceildecimal) |
 
 ## Общие паттерны использования
 

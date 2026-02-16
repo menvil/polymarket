@@ -322,10 +322,10 @@ toObject(spread: Spread): SpreadObject
 
 ```typescript
 interface SpreadObject {
-  bid: number;
-  ask: number;
-  width: number;
-  midpoint: number;
+  bid: Decimal;
+  ask: Decimal;
+  width: Decimal;
+  midpoint: Decimal;
 }
 ```
 
@@ -337,11 +337,14 @@ const obj = SpreadFormatter.toObject(spread);
 
 console.log(obj);
 // {
-//   bid: 0.48,
-//   ask: 0.52,
-//   width: 0.04,
-//   midpoint: 0.50
+//   bid: Decimal(0.48),
+//   ask: Decimal(0.52),
+//   width: Decimal(0.04),
+//   midpoint: Decimal(0.50)
 // }
+
+// Для получения numbers:
+console.log(obj.bid.toNumber());  // 0.48
 ```
 
 **Использование для таблиц:**
@@ -506,8 +509,8 @@ export const SpreadBadge: React.FC<SpreadBadgeProps> = ({
   const formatted = variant === 'detailed'
     ? SpreadFormatter.toDetailedString(spread, 4)
     : SpreadFormatter.toBidAskString(spread, 4);
-  
-  const widthBps = spread.widthPercentage() * 100;
+
+  const widthBps = spread.widthPercentage().toNumber() * 100;
   const liquidityClass = 
     widthBps < 50 ? 'high-liquidity' :
     widthBps < 200 ? 'medium-liquidity' : 'low-liquidity';

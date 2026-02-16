@@ -20,7 +20,7 @@ npm install @polymarket/math
 - ✅ **Чистые функции** - без побочных эффектов, легко тестировать
 - ✅ **Throw на невозможности** - выбрасывает ошибки при математических невозможностях (NaN, Infinity, деление на ноль)
 - ✅ **Type-safe** - полная типобезопасность с TypeScript
-- ✅ **100% покрытие тестами** - все функции покрыты unit и integration тестами
+- ✅ **Высокое покрытие тестами** - все функции покрыты unit и integration тестами
 - ✅ **Минимальные зависимости** - только decimal.js и @polymarket/errors
 
 ## Модули
@@ -35,18 +35,20 @@ npm install @polymarket/math
 - ✅ `divideDecimal(a, b)` - деление ([docs](./docs/decimal/divide.md))
 - ✅ `averageDecimal(a, b)` - среднее значение ([docs](./docs/decimal/average.md))
 - ✅ `compareDecimal(a, b)` и другие операции сравнения
-- ✅ `roundDecimal(value)`, `roundTowardZeroDecimal`, `roundAwayFromZeroDecimal`, `truncDecimal` - округление
+- ✅ `roundDecimal(value)` - округление half-up
+- ✅ `roundTowardZeroDecimal`, `roundAwayFromZeroDecimal`, `truncDecimal` - округление к/от нуля
+- ✅ `mathFloorDecimal`, `mathCeilDecimal` - математическое floor/ceil
 
 ### Rounding Operations (`@polymarket/math/rounding`)
 
 Операции округления к tick size:
 
-- ✅ `roundToTick(value, tickSize, mode?)` - округление к tick size
+- ✅ `roundToTick(value, tickSize, roundingMode)` - округление к tick size
 - ✅ `floorToTick(value, tickSize)` - округление вниз (к нулю)
 - ✅ `ceilToTick(value, tickSize)` - округление вверх (от нуля)
 - ✅ `mathFloorToTick(value, tickSize)` - floor к -Infinity
 - ✅ `mathCeilToTick(value, tickSize)` - ceil к +Infinity
-- ✅ `roundToPrecision(value, decimalPlaces, mode?)` - округление до N знаков
+- ✅ `roundToPrecision(value, decimalPlaces, roundingMode)` - округление до N знаков
 
 ### Validation (`@polymarket/math/validation`)
 
@@ -55,8 +57,7 @@ npm install @polymarket/math
 - ✅ `isFiniteDecimal(value)` - проверка что число конечное
 - ✅ `isPositiveDecimal(value)` - проверка что число положительное (> 0)
 - ✅ `isNonNegativeDecimal(value)` - проверка что число неотрицательное (>= 0)
-
-Для строгого сравнения с нулем используйте `value.isZero()` из Decimal.js
+- ✅ `isZeroDecimal(value)` - проверка строгого равенства нулю
 
 ## Быстрый старт
 

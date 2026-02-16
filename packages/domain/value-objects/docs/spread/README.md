@@ -378,7 +378,7 @@ function displayOrderBook(bidPrice: number, askPrice: number) {
     bid: spread.bid().toNumber(),
     ask: spread.ask().toNumber(),
     midPrice: spread.midpoint().toNumber(),
-    spreadBps: (spread.widthPercentage() * 100).toFixed(0) + ' bps'
+    spreadBps: (spread.widthPercentage().toNumber() * 100).toFixed(0) + ' bps'
   };
 }
 
@@ -401,7 +401,7 @@ function applyMarketMakingStrategy(
   currentSpread: Spread,
   targetWidthBps: number
 ) {
-  const currentWidthBps = currentSpread.widthPercentage() * 100;
+  const currentWidthBps = currentSpread.widthPercentage().toNumber() * 100;
   const mid = currentSpread.midpoint();
   
   // Рассчитываем новую ширину в абсолютных величинах

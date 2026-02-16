@@ -6,7 +6,11 @@ import {
   mathFloorToTick,
   mathCeilToTick,
 } from '../../../src/rounding/roundToTick.js';
-import { InvalidTickSizeError, InvalidOperandError } from '@polymarket/errors';
+import {
+  InvalidTickSizeError,
+  InvalidOperandError,
+  ArithmeticOverflowError,
+} from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('roundToTick', () => {
@@ -379,6 +383,49 @@ describe('roundToTick', () => {
         // ROUND_UP: abs(result) >= abs(value) (от нуля)
         expect(result.abs().greaterThanOrEqualTo(valueDecimal.abs())).toBe(true);
       });
+    });
+  });
+
+  describe('overflow errors', () => {
+    /**
+     * Тест проверяет, что roundToTick бросает ArithmeticOverflowError
+     * когда результат округления выходит за пределы конечных чисел.
+     *
+     * @remarks
+     * Overflow возможен при округлении огромного числа с крошечным tickSize,
+     * когда промежуточные вычисления (value / tickSize) дают Infinity.
+     */
+    it('должен throw ArithmeticOverflowError при overflow', () => {
+      // Создаём кейс, где result после округления станет Infinity
+      const huge = new Decimal('1e308');
+      const tinyTick = new Decimal('1e-10');
+
+      expect(() => roundToTick(huge, tinyTick, Decimal.ROUND_HALF_UP)).toThrow(
+        ArithmeticOverflowError
+      );
+    });
+
+    /**
+     * Тест проверяет, что ошибка overflow содержит полный контекст операции.
+     */
+    it('должен содержать контекст в ошибке overflow', () => {
+      const huge = new Decimal('1e308');
+      const tinyTick = new Decimal('1e-10');
+
+      try {
+        roundToTick(huge, tinyTick, Decimal.ROUND_HALF_UP);
+        // Если не бросило ошибку - тест провален
+        expect(true).toBe(false);
+      } catch (error) {
+        if (error instanceof ArithmeticOverflowError) {
+          expect(error.context).toBeDefined();
+          expect(error.context?.value).toBeDefined();
+          expect(error.context?.tickSize).toBeDefined();
+          expect(error.context?.result).toBe('Infinity');
+        } else {
+          throw error;
+        }
+      }
     });
   });
 });

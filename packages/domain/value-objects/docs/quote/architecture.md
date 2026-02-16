@@ -242,7 +242,7 @@ const bidDecimal = bidResult.value;
 ```typescript
 return wrapOp('create', ctx, () => {
   // Логика создания...
-  return QuoteService.createFromDecimals(bidDecimal, askDecimal, ...);
+  return QuoteService.create(bidDecimal, askDecimal, ...);
 }, 'quote', InvalidQuoteError);
 ```
 
@@ -261,7 +261,7 @@ const bidResult = PriceService.create(bidDecimal);
 if (!bidResult.ok) {
   return Err(
     rewrap(
-      'createFromDecimals',
+      'create',
       { component: 'bid' },
       new InvalidQuoteError('Invalid bid price', {
         context: {
@@ -296,13 +296,13 @@ QuoteService.create(0.48, 0.52, 100, 150)
     ↓
     toDecimal('askSizeValue', 150, ...) → Ok(Decimal(150))
     ↓
-    QuoteService.createFromDecimals(...)
+    QuoteService.create(...)
       ↓
-      wrapOp('createFromDecimals', ..., () => {
+      wrapOp('create', ..., () => {
         ↓
         PriceService.create(Decimal(0.48))
           ↓ (если ошибка)
-          rewrap('createFromDecimals', { component: 'bid' }, error, ...)
+          rewrap('create', { component: 'bid' }, error, ...)
         ↓
         Quote.of(Price, Price, Quantity, Quantity, timestamp)
           ↓ (если QuoteInvariantViolation)
@@ -315,8 +315,8 @@ QuoteService.create(0.48, 0.52, 100, 150)
 
 ```json
 {
-  "opChain": ["create", "createFromDecimals"],
-  "op": "createFromDecimals",
+  "opChain": ["create", "create"],
+  "op": "create",
   "component": "bid",
   "reason": "INVALID_BID"
 }
@@ -597,7 +597,7 @@ Quote
    - ValidateMarketCrossing: 11 tests
 
 3. **Facade (42 tests):** QuoteService.test.ts
-   - create(), createFromDecimals()
+   - create(), create()
    - bidOnly(), askOnly()
    - shift(), skew()
    - updateSizes()
