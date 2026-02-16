@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
+import { asInstrumentId } from '@polymarket/ids';
 import { QuoteService } from '../../../src/quote/facade/QuoteService.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
 import { PaperClock } from '@polymarket/time';
@@ -962,6 +963,56 @@ describe('QuoteService', () => {
           // QuoteInvariantViolation catch branch (line 946)
           expect(result.error.context?.source).toBe('core_invariant');
           expect(result.error.context?.reason).toBe('INCONSISTENT_BID_SIZE');
+        }
+      });
+    });
+
+    describe('Preservation of sourceId and instrumentId in WithRefresh methods', () => {
+      const customSourceId = 'CUSTOM_SOURCE' as MarketDataSourceId;
+      const customInstrumentId = asInstrumentId('CUSTOM_INSTRUMENT')!;
+
+      it('shiftWithRefresh сохраняет sourceId и instrumentId', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, customSourceId, customInstrumentId);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.shiftWithRefresh(quoteResult.value, new Decimal(0.05), clock);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.sourceId()).toBe(customSourceId);
+          expect(result.value.instrumentId()).toBe(customInstrumentId);
+        }
+      });
+
+      it('skewWithRefresh сохраняет sourceId и instrumentId', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, customSourceId, customInstrumentId);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.skewWithRefresh(quoteResult.value, new Decimal(0.02), new Decimal(-0.02), clock);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.sourceId()).toBe(customSourceId);
+          expect(result.value.instrumentId()).toBe(customInstrumentId);
+        }
+      });
+
+      it('updateSizesWithRefresh сохраняет sourceId и instrumentId', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, customSourceId, customInstrumentId);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.updateSizesWithRefresh(quoteResult.value, 200, 300, clock);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.sourceId()).toBe(customSourceId);
+          expect(result.value.instrumentId()).toBe(customInstrumentId);
         }
       });
     });

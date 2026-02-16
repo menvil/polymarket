@@ -376,6 +376,97 @@ describe('QuoteService Ratio Operations', () => {
     });
   });
 
+  describe('Ask-only quote негативные сценарии (симметричные bid-only)', () => {
+    // Helper: создать ask-only quote
+    const createAskOnly = (askPrice: number, askSize = 100): Quote => {
+      const result = QuoteService.askOnly(
+        new Decimal(askPrice),
+        new Decimal(askSize),
+        KnownMarketDataSources.POLYMARKET_WS,
+        asInstrumentId('TEST_INSTRUMENT')!,
+        Date.now()
+      );
+      if (!result.ok) throw new Error('Failed to create ask-only quote');
+      return result.value;
+    };
+
+    it('getMidPrice возвращает Err для ask-only quote (без TypeError)', () => {
+      const askOnly = createAskOnly(0.55, 100);
+      const result = QuoteService.getMidPrice(askOnly);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+
+    it('getSpreadRatio возвращает Err для ask-only quote (без TypeError)', () => {
+      const askOnly = createAskOnly(0.55, 100);
+      const result = QuoteService.getSpreadRatio(askOnly);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.MID_UNAVAILABLE);
+      }
+    });
+
+    it('shiftByRatio возвращает Err для ask-only quote (без TypeError)', () => {
+      const askOnly = createAskOnly(0.55, 100);
+      const shiftRatio = Ratio.of(new Decimal(0.02));
+      const result = QuoteService.shiftByRatio(askOnly, shiftRatio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+
+    it('widenByRatio возвращает Err для ask-only quote (без TypeError)', () => {
+      const askOnly = createAskOnly(0.55, 100);
+      const ratio = Ratio.of(new Decimal(0.05));
+      const result = QuoteService.widenByRatio(askOnly, ratio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+
+    it('tightenByRatio возвращает Err для ask-only quote (без TypeError)', () => {
+      const askOnly = createAskOnly(0.55, 100);
+      const ratio = Ratio.of(new Decimal(0.05));
+      const result = QuoteService.tightenByRatio(askOnly, ratio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+
+    it('skewByRatio возвращает Err для ask-only quote (без TypeError)', () => {
+      const askOnly = createAskOnly(0.55, 100);
+      const bidRatio = Ratio.of(new Decimal(0.95));
+      const askRatio = Ratio.of(new Decimal(1.05));
+      const result = QuoteService.skewByRatio(askOnly, bidRatio, askRatio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+
+    it('scaleSizesByRatio возвращает Err для ask-only quote с NOT_TWO_SIDED reason', () => {
+      const askOnly = createAskOnly(0.55, 100);
+      const factor = Ratio.of(new Decimal(1.5));
+      const result = QuoteService.scaleSizesByRatio(askOnly, factor);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+  });
+
   describe('Out-of-bounds сценарии (SpreadService errors)', () => {
     it('shiftByRatio возвращает Err когда результат выходит за MAX_PRICE', () => {
       // Создаём quote близко к верхней границе

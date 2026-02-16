@@ -3,6 +3,7 @@ import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { Spread } from '../../spread/core/Spread.js';
+import { Ratio } from '../../ratio/core/Ratio.js';
 import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
 
 /**
@@ -718,29 +719,38 @@ export class Quote {
    *
    * @returns Ratio процента или null если не two-sided
    *
-   * @todo Реализовать после создания Ratio value object
-   * @see packages/domain/value-objects/src/ratio/
-   *
    * @remarks
-   * Будущая реализация после создания Ratio:
-   * - Формула: (spread / mid) * 100
+   * Формула: (spread / mid) * 100
    * - Возвращает Ratio объект (типобезопасный процент)
-   * - null если котировка не two-sided
+   * - null если котировка не two-sided или нет mid price
    *
    * @example
    * ```typescript
-   * // После реализации Ratio:
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * const quote = Quote.of(
+   *   Price.of(new Decimal(0.48)),
+   *   Price.of(new Decimal(0.52)),
+   *   Quantity.of(new Decimal(100)),
+   *   Quantity.of(new Decimal(150)),
+   *   new Decimal(Date.now())
+   * );
    * const pct = quote.spreadPercentage();
-   * console.log(pct?.value().toNumber()); // 8.0 (8%)
+   * console.log(pct?.toDecimal().toNumber()); // ~8.333 (примерно 8.33%)
    * ```
    */
-  public spreadPercentage(): null {
-    // TODO: Реализовать после создания Ratio value object
-    // if (!this.isTwoSided()) return null;
-    // const mid = this.midOrNull()!;
-    // const spread = this.spread()!.width();
-    // return Ratio.of(spread.dividedBy(mid).times(100)); // в процентах
-    return null;
+  public spreadPercentage(): Ratio | null {
+    if (!this.isTwoSided()) return null;
+
+    const mid = this.midOrNull();
+    if (!mid) return null;
+
+    const spread = this.spread();
+    if (!spread) return null;
+
+    const width = spread.width();
+
+    // Процент спреда: (width / mid) * 100
+    const percentage = width.dividedBy(mid).times(new Decimal(100));
+
+    return Ratio.of(percentage);
   }
 }

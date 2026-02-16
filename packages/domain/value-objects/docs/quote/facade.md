@@ -436,8 +436,7 @@ if (ratioResult.ok) {
 
 **Ошибки:**
 
-- `QuoteErrorReason.MID_UNAVAILABLE` — если midpoint = 0
-- `QuoteErrorReason.NOT_TWO_SIDED` — если quote не two-sided
+- `QuoteErrorReason.MID_UNAVAILABLE` — если quote не two-sided или midpoint = 0
 
 ---
 
@@ -455,7 +454,7 @@ public static shiftByRatio(
 **Логика:**
 
 1. `newSpread = SpreadService.shiftByRatio(quote.spread(), shiftRatio)`
-2. `Quote.of(newSpread, quote.bidSize(), quote.askSize(), ...)`
+2. `Quote.of(newSpread.bid(), newSpread.ask(), quote.bidSize(), quote.askSize(), ...)`
 
 **Параметры:**
 

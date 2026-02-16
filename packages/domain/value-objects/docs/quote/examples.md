@@ -779,7 +779,7 @@ class QuoteMonitor {
 
     // 3. Проверка устаревания
     const now = Date.now();
-    const age = now - quote.timestampMs();
+    const age = now - quote.timestampMs().toNumber();
     const maxAge = 5000;  // 5 секунд
 
     if (age > maxAge) {
@@ -817,7 +817,7 @@ monitor.checkQuote(quote3);  // Alert: quote is stale
 import {
   QuoteService,
   QuoteSerializer,
-  type QuoteJson
+  type QuoteJSON
 } from '@polymarket/value-objects/quote';
 
 class QuoteStorage {

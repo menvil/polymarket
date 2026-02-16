@@ -974,7 +974,9 @@ describe('Quote Core', () => {
   });
 
   describe('spreadPercentage()', () => {
-    it('возвращает null (stub не реализован)', () => {
+    it('вычисляет процент спреда для two-sided quote', () => {
+      // bid=0.48, ask=0.52, mid=0.50, spread=0.04
+      // percentage = (0.04 / 0.50) * 100 = 8%
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
@@ -984,15 +986,63 @@ describe('Quote Core', () => {
         TEST_SOURCE_ID,
         TEST_INSTRUMENT_ID
       );
-      expect(quote.spreadPercentage()).toBeNull();
+      const pct = quote.spreadPercentage();
+      expect(pct).not.toBeNull();
+      expect(pct?.toDecimal().toNumber()).toBeCloseTo(8, 5);
     });
 
-    it('возвращает null для one-sided quote', () => {
+    it('вычисляет процент спреда с точностью', () => {
+      // bid=0.48, ask=0.52, mid=0.50, spread=0.04
+      // percentage = (0.04 / 0.50) * 100 = 8.0
+      const quote = Quote.of(
+        Price.of(new Decimal('0.48')),
+        Price.of(new Decimal('0.52')),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      const pct = quote.spreadPercentage();
+      expect(pct?.toDecimal().toString()).toBe('8');
+    });
+
+    it('вычисляет процент для узкого спреда', () => {
+      // bid=0.6400, ask=0.6600, mid=0.65, spread=0.02
+      // percentage = (0.02 / 0.65) * 100 ≈ 3.077%
+      const quote = Quote.of(
+        Price.of(new Decimal('0.6400')),
+        Price.of(new Decimal('0.6600')),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(100)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      const pct = quote.spreadPercentage();
+      expect(pct).not.toBeNull();
+      expect(pct?.toDecimal().toNumber()).toBeCloseTo(3.077, 2);
+    });
+
+    it('возвращает null для one-sided quote (bid only)', () => {
       const quote = Quote.of(
         Price.of(new Decimal(0.50)),
         null,
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+      expect(quote.spreadPercentage()).toBeNull();
+    });
+
+    it('возвращает null для one-sided quote (ask only)', () => {
+      const quote = Quote.of(
+        null,
+        Price.of(new Decimal(0.50)),
+        Quantity.ZERO,
+        Quantity.of(new Decimal(100)),
         new Decimal(Date.now()),
         TEST_SOURCE_ID,
         TEST_INSTRUMENT_ID

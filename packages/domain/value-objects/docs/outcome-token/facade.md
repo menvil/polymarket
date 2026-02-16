@@ -115,8 +115,9 @@ if (!result.ok) {
   const error = result.error;
   console.error(error.message);
 
-  if (error.message.includes('on-chain condition')) {
-    console.error('OutcomeToken requires on-chain condition');
+  // Используйте typed reason вместо string matching
+  if (error.context?.reason === OutcomeTokenErrorReason.INVALID_CONDITION_REF) {
+    console.error('OutcomeToken requires valid on-chain condition');
   }
 }
 ```

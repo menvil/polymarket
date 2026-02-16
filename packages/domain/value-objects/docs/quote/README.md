@@ -48,7 +48,7 @@ const quote = result.value;
 
 // Вычисления
 console.log(quote.spreadWidthOrZero());      // Decimal(0.04)
-// spreadPercentage() не реализовано (stub), возвращает null
+console.log(quote.spreadPercentage()?.toDecimal()); // Ratio: ~8 (8% от mid price)
 console.log(quote.midOrNull());         // Decimal(0.50) | null
 
 // Форматирование
@@ -454,8 +454,8 @@ quote.hasAsk(): boolean      // Есть ask
 // Spread между bid и ask
 quote.spreadWidthOrZero(): Decimal  // 0 для one-sided
 
-// Spread в процентах (⚠️ не реализовано)
-quote.spreadPercentage(): null  // Stub, всегда возвращает null
+// Spread в процентах от mid price
+quote.spreadPercentage(): Ratio | null  // null для one-sided
 
 // Средняя цена
 quote.midOrNull(): Decimal | null  // null для one-sided
@@ -853,12 +853,13 @@ const quote = quoteResult.value;
 const spreadWidth = quote.spreadWidthOrZero();
 console.log(spreadWidth?.toNumber());  // 0.04
 
+// Spread в процентах от mid price: (width / mid) * 100
 const spreadPct = quote.spreadPercentage();
-console.log(spreadPct?.toNumber());    // 8.0
+console.log(spreadPct?.toDecimal().toNumber());  // 8.0 (8%)
 
 // Mid price
 const mid = quote.midOrNull();
-console.log(mid?.value().toNumber());  // 0.50
+console.log(mid?.toNumber());  // 0.50
 
 // Проверка crossing (через Rules layer)
 import { ValidateMarketCrossing } from '@polymarket/value-objects/quote';
