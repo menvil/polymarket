@@ -43,7 +43,7 @@ const result3 = QuantityService.create(decimal);
 // ❌ Ошибка: negative
 const negResult = QuantityService.create(-1);
 if (!negResult.ok) {
-  console.log(negResult.error.context?.reason === QuantityErrorReason.NEGATIVE_QUANTITY); // true
+  console.log(negResult.error.context?.reason === QuantityErrorReason.NEGATIVE); // true
   console.log(negResult.error.message); // "Quantity value cannot be negative"
 }
 
@@ -64,7 +64,7 @@ const zero = Quantity.ZERO;
 const one = Quantity.ONE;
 
 // Пример: проверяем закрытую позицию
-const position = Quantity.of(0);
+const position = Quantity.of(new Decimal(0));
 
 // ✅ Хорошо: используем константу
 if (position.equals(Quantity.ZERO)) {
@@ -72,7 +72,7 @@ if (position.equals(Quantity.ZERO)) {
 }
 
 // ❌ Плохо: создаёт новый экземпляр каждый раз
-if (position.equals(Quantity.of(0))) { ... }
+if (position.equals(Quantity.of(new Decimal(0)))) { ... }
 ```
 
 ### Арифметика
@@ -338,17 +338,17 @@ function closePartialPosition(
 // Использование
 const position: Position = {
   marketId: "market-123",
-  quantity: Quantity.of(100)
+  quantity: Quantity.of(new Decimal(100))
 };
 
 // Закрываем 30
-const result1 = closePartialPosition(position, Quantity.of(30));
+const result1 = closePartialPosition(position, Quantity.of(new Decimal(30)));
 if (result1.ok) {
   console.log(`Remaining: ${result1.value.quantity.value()}`); // "70"
 }
 
 // Пытаемся закрыть 150 (больше чем есть!)
-const result2 = closePartialPosition(position, Quantity.of(150));
+const result2 = closePartialPosition(position, Quantity.of(new Decimal(150)));
 if (!result2.ok) {
   console.error(result2.error.message); // "Cannot close 150: position is only 100"
 }
@@ -395,9 +395,9 @@ function mergePositions(positions: Position[]): Result<Quantity, InvalidQuantity
 
 // Использование
 const positions: Position[] = [
-  { marketId: "market-1", quantity: Quantity.of(10) },
-  { marketId: "market-2", quantity: Quantity.of(20) },
-  { marketId: "market-3", quantity: Quantity.of(30) }
+  { marketId: "market-1", quantity: Quantity.of(new Decimal(10)) },
+  { marketId: "market-2", quantity: Quantity.of(new Decimal(20)) },
+  { marketId: "market-3", quantity: Quantity.of(new Decimal(30)) }
 ];
 
 const result = mergePositions(positions);
@@ -464,9 +464,9 @@ function calculatePnL(trades: Trade[]): Result<PnL, InvalidQuantityError> {
 
 // Использование
 const trades: Trade[] = [
-  { quantity: Quantity.of(10), price: new Decimal("0.5") },
-  { quantity: Quantity.of(20), price: new Decimal("0.6") },
-  { quantity: Quantity.of(30), price: new Decimal("0.55") }
+  { quantity: Quantity.of(new Decimal(10)), price: new Decimal("0.5") },
+  { quantity: Quantity.of(new Decimal(20)), price: new Decimal("0.6") },
+  { quantity: Quantity.of(new Decimal(30)), price: new Decimal("0.55") }
 ];
 
 const result = calculatePnL(trades);
@@ -489,7 +489,7 @@ import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
 import Decimal from 'decimal.js';
 
 // Различные режимы округления
-const qty = Quantity.of("10.567");
+const qty = Quantity.of(new Decimal("10.567"));
 
 // С number (простой вариант)
 const rounded1 = QuantityService.roundToStep(qty, 0.01);
@@ -547,8 +547,8 @@ if (rounded6.ok) {
 import { Quantity, QuantityFormatter } from '@polymarket/value-objects/quantity';
 
 // Различные форматы для отображения
-const qty1 = Quantity.of(1500);
-const qty2 = Quantity.of("10.567891");
+const qty1 = Quantity.of(new Decimal(1500));
+const qty2 = Quantity.of(new Decimal("10.567891"));
 
 // Для детального отображения
 const formatted1 = QuantityFormatter.toString(qty1, 2);
@@ -563,7 +563,7 @@ console.log(QuantityFormatter.toCompactString(qty2)); // "10.567891"
 
 // Для dashboard (K/M суффиксы)
 console.log(QuantityFormatter.toDisplayString(qty1)); // "1.50K"
-console.log(QuantityFormatter.toDisplayString(Quantity.of(1500000))); // "1.50M"
+console.log(QuantityFormatter.toDisplayString(Quantity.of(new Decimal(1500000)))); // "1.50M"
 
 // Для отладки
 console.log(QuantityFormatter.toDebugString(qty1)); // "Quantity(1500)"
@@ -716,9 +716,9 @@ function sumQuantities(
 
 // Использование
 const quantities = [
-  Quantity.of(10),
-  Quantity.of(20),
-  Quantity.of(30)
+  Quantity.of(new Decimal(10)),
+  Quantity.of(new Decimal(20)),
+  Quantity.of(new Decimal(30))
 ];
 
 const result = sumQuantities(quantities);
@@ -770,9 +770,9 @@ function getTotalVolumeAbovePrice(
 
 // Использование
 const trades: Trade[] = [
-  { id: "1", quantity: Quantity.of(10), price: new Decimal("0.5") },
-  { id: "2", quantity: Quantity.of(20), price: new Decimal("0.6") },
-  { id: "3", quantity: Quantity.of(30), price: new Decimal("0.4") }
+  { id: "1", quantity: Quantity.of(new Decimal(10)), price: new Decimal("0.5") },
+  { id: "2", quantity: Quantity.of(new Decimal(20)), price: new Decimal("0.6") },
+  { id: "3", quantity: Quantity.of(new Decimal(30)), price: new Decimal("0.4") }
 ];
 
 const result = getTotalVolumeAbovePrice(trades, new Decimal("0.45"));
@@ -791,7 +791,7 @@ if (result.ok) {
 import { Quantity, QuantitySerializer } from '@polymarket/value-objects/quantity';
 
 // Для больших чисел или высокой точности
-const qty = Quantity.of("99999999999999999999.123456789");
+const qty = Quantity.of(new Decimal("99999999999999999999.123456789"));
 
 // Сериализация → JSON
 const json = QuantitySerializer.toJSON(qty);
@@ -824,7 +824,7 @@ if (result.ok) {
 import { Quantity, QuantityLossySerializer } from '@polymarket/value-objects/quantity';
 
 // Для UI или когда точность не критична
-const qty = Quantity.of("123.456789");
+const qty = Quantity.of(new Decimal("123.456789"));
 
 // Lossy сериализация → JSON
 const jsonResult = QuantityLossySerializer.toJSON(qty);
@@ -833,7 +833,7 @@ if (jsonResult.ok) {
 }
 
 // ⚠️ Внимание: lossy для больших чисел!
-const bigQty = Quantity.of("99999999999999999999.123");
+const bigQty = Quantity.of(new Decimal("99999999999999999999.123"));
 const bigJsonResult = QuantityLossySerializer.toJSON(bigQty);
 if (bigJsonResult.ok) {
   console.log(bigJsonResult.value); // { value: 1e+20 } - потеря точности!
@@ -896,7 +896,7 @@ function handleQuantityError(error: InvalidQuantityError): string {
   // Проверяем операцию
   switch (ctx?.op) {
     case 'create':
-      if (ctx.reason === QuantityErrorReason.NEGATIVE_QUANTITY) {
+      if (ctx.reason === QuantityErrorReason.NEGATIVE) {
         return 'Quantity cannot be negative';
       }
       if (ctx.reason === QuantityErrorReason.NON_FINITE) {
@@ -917,7 +917,7 @@ function handleQuantityError(error: InvalidQuantityError): string {
       break;
 
     case 'multiply':
-      if (ctx.reason === QuantityErrorReason.NEGATIVE_QUANTITY) {
+      if (ctx.reason === QuantityErrorReason.NEGATIVE) {
         return 'Cannot multiply by negative factor';
       }
       break;
@@ -965,7 +965,7 @@ async function createOrderWithRetry(
     lastError = result.error;
 
     // Если ошибка валидации - не ретраим
-    if (result.error.context?.reason === QuantityErrorReason.NEGATIVE_QUANTITY ||
+    if (result.error.context?.reason === QuantityErrorReason.NEGATIVE ||
         result.error.context?.reason === QuantityErrorReason.NON_FINITE) {
       throw result.error;
     }
@@ -1121,10 +1121,10 @@ class QuantityCalculator {
 }
 
 // Использование
-const result = new QuantityCalculator(Quantity.of(100))
-  .add(Quantity.of(50))
+const result = new QuantityCalculator(Quantity.of(new Decimal(100)))
+  .add(Quantity.of(new Decimal(50)))
   .multiply(2)
-  .subtract(Quantity.of(100))
+  .subtract(Quantity.of(new Decimal(100)))
   .divide(5)
   .roundToStep(new Decimal("0.01"))
   .build();
@@ -1164,7 +1164,7 @@ class MemoizedQuantityFormatter {
 // Использование
 const formatter = new MemoizedQuantityFormatter();
 
-const qty = Quantity.of("123.456789");
+const qty = Quantity.of(new Decimal("123.456789"));
 
 // Первый вызов: форматирует
 console.log(formatter.format(qty, 2)); // "123.46"

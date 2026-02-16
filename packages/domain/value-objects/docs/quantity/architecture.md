@@ -154,7 +154,7 @@ try {
 
 ```typescript
 // ✅ Делает
-const qty = Quantity.of(10);
+const qty = Quantity.of(new Decimal(10));
 qty.isZero();  // false
 qty.equals(other);
 
@@ -328,7 +328,7 @@ QuantityService.create(value)
     ↓
 decimal = parse(value)
     ↓
-Quantity.fromDecimal(decimal)  ← Core (проверяет инварианты)
+Quantity.of(decimal)  ← Core (проверяет инварианты)
     ↓
   если non-negative && finite → Ok
   иначе → QuantityInvariantViolation
@@ -407,14 +407,14 @@ Result<Quantity, InvalidQuantityError>
 
 ---
 
-### 5. Почему zero-copy в fromDecimal()?
+### 5. Почему zero-copy в of()?
 
-**Решение:** `fromDecimal()` не парсит Decimal повторно.
+**Решение:** `of()` не парсит Decimal повторно.
 
 ```typescript
 // Оптимизация: если value уже Decimal
 const quantity = value instanceof Decimal
-  ? Quantity.fromDecimal(value)  // zero-copy
+  ? Quantity.of(value)  // zero-copy
   : Quantity.of(value);           // parse
 ```
 

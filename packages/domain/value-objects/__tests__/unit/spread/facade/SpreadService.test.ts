@@ -909,7 +909,7 @@ describe('SpreadService', () => {
     it('should handle large percentages without ensureLteOne', () => {
       // 200% width of 0.50 = 1.00, which pushes beyond Price bounds
       const result = SpreadService.fromMidAndWidthPercentage(0.50, 200);
-      
+
       // Should fail due to Price bounds, not Ratio validation
       expect(result.ok).toBe(false);
     });

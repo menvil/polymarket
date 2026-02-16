@@ -83,7 +83,7 @@ if (result.ok) {
 const negResult = QuantityService.create(-1);
 if (!negResult.ok) {
   console.log(negResult.error.context?.op);     // 'create'
-  console.log(negResult.error.context?.reason); // 'NEGATIVE_QUANTITY'
+  console.log(negResult.error.context?.reason); // 'NEGATIVE'
 }
 
 // Ошибка: non-finite
@@ -93,7 +93,7 @@ if (!nanResult.ok) {
 }
 ```
 
-**Оптимизация:** Если `value` уже `Decimal`, используется `fromDecimal()` без повторного парсинга.
+**Оптимизация:** Если `value` уже `Decimal`, используется `of()` без повторного парсинга.
 
 ---
 
@@ -104,8 +104,8 @@ if (!nanResult.ok) {
 Складывает два Quantity.
 
 ```typescript
-const qty1 = Quantity.of(10);
-const qty2 = Quantity.of(5);
+const qty1 = Quantity.of(new Decimal(10));
+const qty2 = Quantity.of(new Decimal(5));
 
 const result = QuantityService.add(qty1, qty2);
 if (result.ok) {
@@ -113,7 +113,7 @@ if (result.ok) {
 }
 
 // Overflow detection
-const huge = Quantity.fromDecimal(new Decimal('1e308'));
+const huge = Quantity.of(new Decimal('1e308'));
 const overflowResult = QuantityService.add(huge, huge);
 if (!overflowResult.ok) {
   console.log(overflowResult.error.context?.reason);  // 'NON_FINITE'
@@ -125,8 +125,8 @@ if (!overflowResult.ok) {
 Вычитает qty2 из qty1 с проверкой неотрицательности результата.
 
 ```typescript
-const qty1 = Quantity.of(10);
-const qty2 = Quantity.of(5);
+const qty1 = Quantity.of(new Decimal(10));
+const qty2 = Quantity.of(new Decimal(5));
 
 // Успех
 const result = QuantityService.subtract(qty1, qty2);
@@ -153,7 +153,7 @@ if (zeroResult.ok) {
 Умножает Quantity на коэффициент.
 
 ```typescript
-const qty = Quantity.of(10);
+const qty = Quantity.of(new Decimal(10));
 
 // Успех (number)
 const result = QuantityService.multiply(qty, 2);
@@ -199,7 +199,7 @@ if (!invalid.ok) {
 Делит Quantity на делитель.
 
 ```typescript
-const qty = Quantity.of(10);
+const qty = Quantity.of(new Decimal(10));
 
 // Успех (number)
 const result = QuantityService.divide(qty, 2);
@@ -259,7 +259,7 @@ if (!invalid.ok) {
 Округляет Quantity к размеру шага (step).
 
 ```typescript
-const qty = Quantity.of("10.567");
+const qty = Quantity.of(new Decimal("10.567"));
 
 // С number
 const result1 = QuantityService.roundToStep(qty, 0.01);
@@ -509,7 +509,7 @@ if (!result.ok) {
 - Может содержать `context.result` для rule failures
 
 ```typescript
-const result = QuantityService.subtract(Quantity.of(5), Quantity.of(10));
+const result = QuantityService.subtract(Quantity.of(new Decimal(5)), Quantity.of(new Decimal(10)));
 if (!result.ok) {
   expect(result.error.context?.op).toBe('subtract');
   expect(result.error.context?.quantity1).toBeDefined();
@@ -600,15 +600,15 @@ describe('QuantityService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.op).toBe('create');
-        expect(result.error.context?.reason).toBe('NEGATIVE_QUANTITY');
+        expect(result.error.context?.reason).toBe('NEGATIVE');
       }
     });
   });
 
   describe('add', () => {
     it('should add two quantities', () => {
-      const qty1 = Quantity.of(10);
-      const qty2 = Quantity.of(5);
+      const qty1 = Quantity.of(new Decimal(10));
+      const qty2 = Quantity.of(new Decimal(5));
       const result = QuantityService.add(qty1, qty2);
 
       expect(result.ok).toBe(true);

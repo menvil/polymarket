@@ -137,8 +137,7 @@ Quantity модуль построен на **4-слойной архитект�
 
 ```typescript
 // Создание
-Quantity.of(value: Decimal.Value): Quantity
-Quantity.fromDecimal(decimal: Decimal): Quantity  // zero-copy
+Quantity.of(value: Decimal): Quantity
 
 // Константы
 Quantity.ZERO: Quantity

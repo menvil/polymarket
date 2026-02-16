@@ -139,7 +139,7 @@ export class SpreadService {
   public static fromValues(
     bidValue: number | Decimal,
     askValue: number | Decimal
-  ): Result<Spread, InvalidPriceError | InvalidSpreadError> {
+  ): Result<Spread, InvalidSpreadError> {
     // Создаём Price объекты через PriceService
     const bidDecimal = bidValue instanceof Decimal ? bidValue : new Decimal(bidValue);
     const askDecimal = askValue instanceof Decimal ? askValue : new Decimal(askValue);
