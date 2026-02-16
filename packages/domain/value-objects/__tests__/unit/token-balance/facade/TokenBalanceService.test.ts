@@ -1107,4 +1107,136 @@ describe('TokenBalanceService', () => {
       });
     });
   });
+
+  describe('Never Throw контракт для null/undefined входов', () => {
+    const token = createTestToken();
+    const testBalance = TokenBalanceService.create(
+      token,
+      Quantity.of(new Decimal(100)),
+      Quantity.of(new Decimal(20)),
+      TEST_ACCOUNT_ID,
+      TEST_VENUE_ID
+    );
+    if (!testBalance.ok) throw new Error('Failed to create test balance');
+    const balance = testBalance.value;
+    const qty = Quantity.of(new Decimal(10));
+
+    describe('reserve()', () => {
+      it('возвращает Result.Err при null balance', () => {
+        const result = TokenBalanceService.reserve(null as any, qty);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('возвращает Result.Err при undefined balance', () => {
+        const result = TokenBalanceService.reserve(undefined as any, qty);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('возвращает Result.Err при null qty', () => {
+        const result = TokenBalanceService.reserve(balance, null as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('никогда не бросает исключения', () => {
+        expect(() => {
+          TokenBalanceService.reserve(null as any, null as any);
+          TokenBalanceService.reserve(undefined as any, qty);
+          TokenBalanceService.reserve(balance, undefined as any);
+        }).not.toThrow();
+      });
+    });
+
+    describe('unfreezeReserved()', () => {
+      it('возвращает Result.Err при null balance', () => {
+        const result = TokenBalanceService.unfreezeReserved(null as any, qty);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('возвращает Result.Err при null qty', () => {
+        const result = TokenBalanceService.unfreezeReserved(balance, null as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('никогда не бросает исключения', () => {
+        expect(() => {
+          TokenBalanceService.unfreezeReserved(null as any, null as any);
+          TokenBalanceService.unfreezeReserved(undefined as any, qty);
+        }).not.toThrow();
+      });
+    });
+
+    describe('consumeReserved()', () => {
+      it('возвращает Result.Err при null balance', () => {
+        const result = TokenBalanceService.consumeReserved(null as any, qty);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('возвращает Result.Err при null qty', () => {
+        const result = TokenBalanceService.consumeReserved(balance, null as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('никогда не бросает исключения', () => {
+        expect(() => {
+          TokenBalanceService.consumeReserved(null as any, null as any);
+          TokenBalanceService.consumeReserved(undefined as any, qty);
+        }).not.toThrow();
+      });
+    });
+
+    describe('updateAvailable()', () => {
+      it('возвращает Result.Err при null balance', () => {
+        const result = TokenBalanceService.updateAvailable(null as any, qty);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('возвращает Result.Err при null newAvailable', () => {
+        const result = TokenBalanceService.updateAvailable(balance, null as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('никогда не бросает исключения', () => {
+        expect(() => {
+          TokenBalanceService.updateAvailable(null as any, null as any);
+          TokenBalanceService.updateAvailable(undefined as any, qty);
+        }).not.toThrow();
+      });
+    });
+  });
 });
