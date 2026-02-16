@@ -6,8 +6,7 @@ import {
   toDecimal,
   rewrap,
   wrapOp,
-  unexpectedError,
-  currencyMismatchError
+  unexpectedError
 } from '@polymarket/errors';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
 import { Money, type SupportedCurrency } from '../core/Money.js';
@@ -443,16 +442,19 @@ export class MoneyService {
    * ```
    */
   public static isLessThan(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
-    if (!a.hasSameCurrency(b)) {
-      return Err(currencyMismatchError(
-        'isLessThan',
-        a.currency(),
-        b.currency(),
-        MoneyErrorReason.CURRENCY_MISMATCH,
-        InvalidMoneyError
-      ));
-    }
-    return Ok(a.value().lessThan(b.value()));
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
+    return wrapOp(MoneyService.SERVICE_NAME, 'isLessThan', ctx, () => {
+      if (!a.hasSameCurrency(b)) {
+        throw new InvalidMoneyError('Cannot compare Money with different currencies', {
+          context: {
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
+            expected: a.currency(),
+            actual: b.currency()
+          }
+        });
+      }
+      return Ok(a.value().lessThan(b.value()));
+    }, InvalidMoneyError);
   }
 
   /**
@@ -464,16 +466,19 @@ export class MoneyService {
    * @throws Никогда - все ошибки в Result
    */
   public static isLessThanOrEqual(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
-    if (!a.hasSameCurrency(b)) {
-      return Err(currencyMismatchError(
-        'isLessThanOrEqual',
-        a.currency(),
-        b.currency(),
-        MoneyErrorReason.CURRENCY_MISMATCH,
-        InvalidMoneyError
-      ));
-    }
-    return Ok(a.value().lessThanOrEqualTo(b.value()));
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
+    return wrapOp(MoneyService.SERVICE_NAME, 'isLessThanOrEqual', ctx, () => {
+      if (!a.hasSameCurrency(b)) {
+        throw new InvalidMoneyError('Cannot compare Money with different currencies', {
+          context: {
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
+            expected: a.currency(),
+            actual: b.currency()
+          }
+        });
+      }
+      return Ok(a.value().lessThanOrEqualTo(b.value()));
+    }, InvalidMoneyError);
   }
 
   /**
@@ -485,16 +490,19 @@ export class MoneyService {
    * @throws Никогда - все ошибки в Result
    */
   public static isGreaterThan(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
-    if (!a.hasSameCurrency(b)) {
-      return Err(currencyMismatchError(
-        'isGreaterThan',
-        a.currency(),
-        b.currency(),
-        MoneyErrorReason.CURRENCY_MISMATCH,
-        InvalidMoneyError
-      ));
-    }
-    return Ok(a.value().greaterThan(b.value()));
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
+    return wrapOp(MoneyService.SERVICE_NAME, 'isGreaterThan', ctx, () => {
+      if (!a.hasSameCurrency(b)) {
+        throw new InvalidMoneyError('Cannot compare Money with different currencies', {
+          context: {
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
+            expected: a.currency(),
+            actual: b.currency()
+          }
+        });
+      }
+      return Ok(a.value().greaterThan(b.value()));
+    }, InvalidMoneyError);
   }
 
   /**
@@ -506,16 +514,19 @@ export class MoneyService {
    * @throws Никогда - все ошибки в Result
    */
   public static isGreaterThanOrEqual(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
-    if (!a.hasSameCurrency(b)) {
-      return Err(currencyMismatchError(
-        'isGreaterThanOrEqual',
-        a.currency(),
-        b.currency(),
-        MoneyErrorReason.CURRENCY_MISMATCH,
-        InvalidMoneyError
-      ));
-    }
-    return Ok(a.value().greaterThanOrEqualTo(b.value()));
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
+    return wrapOp(MoneyService.SERVICE_NAME, 'isGreaterThanOrEqual', ctx, () => {
+      if (!a.hasSameCurrency(b)) {
+        throw new InvalidMoneyError('Cannot compare Money with different currencies', {
+          context: {
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
+            expected: a.currency(),
+            actual: b.currency()
+          }
+        });
+      }
+      return Ok(a.value().greaterThanOrEqualTo(b.value()));
+    }, InvalidMoneyError);
   }
 
   /**
@@ -535,16 +546,19 @@ export class MoneyService {
    * ```
    */
   public static equals(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
-    if (!a.hasSameCurrency(b)) {
-      return Err(currencyMismatchError(
-        'equals',
-        a.currency(),
-        b.currency(),
-        MoneyErrorReason.CURRENCY_MISMATCH,
-        InvalidMoneyError
-      ));
-    }
-    return Ok(a.value().equals(b.value()));
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
+    return wrapOp(MoneyService.SERVICE_NAME, 'equals', ctx, () => {
+      if (!a.hasSameCurrency(b)) {
+        throw new InvalidMoneyError('Cannot compare Money with different currencies', {
+          context: {
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
+            expected: a.currency(),
+            actual: b.currency()
+          }
+        });
+      }
+      return Ok(a.value().equals(b.value()));
+    }, InvalidMoneyError);
   }
 
   /**
