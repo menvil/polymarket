@@ -44,7 +44,6 @@ snapshots/
 *.zip
 
 #ignore claude plans
-/docs/
 /docs/refactoring/
 
 # Domain entities (will be added later)
