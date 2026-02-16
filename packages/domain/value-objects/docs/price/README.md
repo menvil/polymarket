@@ -26,7 +26,7 @@
 ✅ **Высокоточный** — использует `Decimal.js` для произвольной точности
 ✅ **Polymarket-aligned** — диапазон [0.0001, 0.9999], базовый тик 0.0001
 ✅ **Layered Architecture** — чёткое разделение ответственности
-✅ **100% Test Coverage** — все слои покрыты тестами (323 теста)
+✅ **Comprehensive Test Coverage** — все слои покрыты тестами (180 unit тестов)
 
 ### Когда использовать Price
 
@@ -179,8 +179,8 @@ price.isMax(): boolean
 - `ValidateTickSize` — проверка tick size (positive, finite, <= MAX_PRICE)
 - `ValidateTickSizeMultipleOfBaseTick` — проверка кратности базовому тику (0.0001)
 - `ValidateAligned` — проверка выравнивания цены по tick size
-- `ValidateDivisorForPriceDivision` — валидация делителя (isNaN, isFinite, isZero)
-- `ValidateFactorForPriceMultiplication` — валидация множителя (isNaN, isFinite)
+- `ValidateDivisorForPriceDivision` — валидация делителя (isNaN, isFinite, isZero, isNegative)
+- `ValidateFactorForPriceMultiplication` — валидация множителя (isNaN, isFinite, isNegative)
 
 **Принцип:** Одно правило = одна проверка
 

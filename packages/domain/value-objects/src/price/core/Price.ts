@@ -139,15 +139,14 @@ export class Price {
    *
    * @remarks
    * СТРОГОЕ равенство по Decimal.equals().
-   * Для approximate equality используй PriceService.approximatelyEquals().
    *
    * @param other - Другая цена
    * @returns true если значения строго равны
    *
    * @example
    * ```typescript
-   * const price1 = Price.of(0.5);
-   * const price2 = Price.of(0.5);
+   * const price1 = Price.of(new Decimal(0.5));
+   * const price2 = Price.of(new Decimal(0.5));
    * console.log(price1.equals(price2)); // true
    * ```
    */
@@ -249,7 +248,7 @@ export class Price {
    *
    * @example
    * ```typescript
-   * const price = Price.min();
+   * const price = Price.MIN;
    * console.log(price.isMin()); // true
    * ```
    */
@@ -264,7 +263,7 @@ export class Price {
    *
    * @example
    * ```typescript
-   * const price = Price.max();
+   * const price = Price.MAX;
    * console.log(price.isMax()); // true
    * ```
    */

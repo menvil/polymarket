@@ -256,7 +256,7 @@ export class PriceService {
    *
    * Алгоритм:
    * 1. Парсинг divisor через toDecimal
-   * 2. Валидация divisor через ValidateDivisorForPriceDivision (isNaN, isFinite, isZero)
+   * 2. Валидация divisor через ValidateDivisorForPriceDivision (isNaN, isFinite, isZero, isNegative)
    * 3. Деление через divideDecimal() из @polymarket/math
    * 4. Создание Price из результата
    *

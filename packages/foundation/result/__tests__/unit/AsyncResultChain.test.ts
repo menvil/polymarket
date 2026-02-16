@@ -412,6 +412,17 @@ describe('AsyncResultChain', () => {
 
       expect(value).toBe(5); // "error".length === 5
     });
+
+    it('должен ловить exceptions из fallback функции и reject с wrapped message', async () => {
+      const throwingFallback = (_err: string): number => {
+        throw new Error('Fallback computation failed');
+      };
+
+      const errorResult: Result<number, string> = Err('error');
+      await expect(
+        AsyncResult.from(Promise.resolve(errorResult)).unwrapOrElse(throwingFallback)
+      ).rejects.toThrow('Fallback computation failed');
+    });
   });
 
   describe('Метод unwrapErr()', () => {
@@ -554,6 +565,32 @@ describe('AsyncResultChain', () => {
       });
 
       expect(result).toBe(84);
+    });
+
+    it('должен ловить exceptions из ok handler и reject с wrapped message', async () => {
+      const throwingOkHandler = (_value: number): string => {
+        throw new Error('Ok handler failed');
+      };
+
+      await expect(
+        AsyncResult.ok(Promise.resolve(42)).match({
+          ok: throwingOkHandler,
+          err: () => 'error',
+        })
+      ).rejects.toThrow('Ok handler failed');
+    });
+
+    it('должен ловить exceptions из err handler и reject с wrapped message', async () => {
+      const throwingErrHandler = (_err: string): string => {
+        throw new Error('Err handler failed');
+      };
+
+      await expect(
+        AsyncResult.err('error').match({
+          ok: () => 'ok',
+          err: throwingErrHandler,
+        })
+      ).rejects.toThrow('Err handler failed');
     });
   });
 
@@ -754,7 +791,7 @@ describe('AsyncResultChain', () => {
     });
 
     it('должен ловить exceptions из async recovery и преобразовывать в Err', async () => {
-      const throwingRecovery = async (_err: string): Promise<Result<number, Error>> => {
+      const throwingRecovery = async (_err: Error): Promise<Result<number, Error>> => {
         throw new Error('Recovery failed');
       };
 
@@ -768,7 +805,7 @@ describe('AsyncResultChain', () => {
     });
 
     it('должен ловить Promise rejection из async recovery и преобразовывать в Err', async () => {
-      const rejectingRecovery = async (_err: string): Promise<Result<number, Error>> => {
+      const rejectingRecovery = async (_err: Error): Promise<Result<number, Error>> => {
         return Promise.reject(new Error('Async recovery failed'));
       };
 
@@ -807,7 +844,7 @@ describe('AsyncResultChain', () => {
     });
 
     it('должен ловить exceptions из sync recovery и преобразовывать в Err', async () => {
-      const throwingRecovery = (_err: string): Result<number, Error> => {
+      const throwingRecovery = (_err: Error): Result<number, Error> => {
         throw new Error('Sync recovery failed');
       };
 

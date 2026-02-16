@@ -181,6 +181,18 @@ describe('ResultChain', () => {
       expect(result.isErr()).toBe(true);
       expect(result.unwrapErr()).toBe('error');
     });
+
+    it('должен пропускать flatMapChain если исходный Result - Err', () => {
+      let called = false;
+
+      const result = ErrChain('initial error').flatMapChain((x) => {
+        called = true;
+        return OkChain(x * 2);
+      });
+
+      expect(called).toBe(false);
+      expect(result.unwrapErr()).toBe('initial error');
+    });
   });
 
   describe('mapErr method', () => {

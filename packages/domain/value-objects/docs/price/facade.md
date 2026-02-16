@@ -74,7 +74,7 @@ create(value: number | string | Decimal): Result<Price, InvalidPriceError>
 - finite (не NaN, не Infinity)
 - диапазон [0.0001, 0.9999]
 
-**Оптимизация:** Если `value` уже `Decimal`, используется `fromDecimal()` без повторного парсинга.
+**Оптимизация:** Если `value` уже `Decimal`, Price.of() использует его напрямую без повторного парсинга (zero-copy).
 
 **Примеры:**
 
@@ -126,7 +126,7 @@ multiply(
 **Алгоритм:**
 
 1. Парсинг factor в Decimal (try/catch для parse errors)
-2. Валидация factor через `ValidateFactorForPriceMultiplication` (isNaN, isFinite)
+2. Валидация factor через `ValidateFactorForPriceMultiplication` (isNaN, isFinite, isNegative)
 3. Умножение через `multiplyDecimal()` из @polymarket/math
 4. Создание Price из результата
 
@@ -188,7 +188,7 @@ divide(
 **Алгоритм:**
 
 1. Парсинг divisor в Decimal (try/catch для parse errors)
-2. Валидация divisor через `ValidateDivisorForPriceDivision` (isNaN, isFinite, isZero)
+2. Валидация divisor через `ValidateDivisorForPriceDivision` (isNaN, isFinite, isZero, isNegative)
 3. Деление через `divideDecimal()` из @polymarket/math
 4. Создание Price из результата
 
@@ -505,6 +505,7 @@ applyRelativeChange(
 **Округление к тику:**
 
 Результат округляется с учётом режима:
+
 - `nearest` (по умолчанию): к ближайшему тику
 - `floor`: вниз — используй для агрессивных bid quotes
 - `ceil`: вверх — используй для агрессивных ask quotes
@@ -751,7 +752,7 @@ if (roundedResult.ok) {
 ```typescript
 // ✅ Быстро (если у вас уже есть Decimal)
 const decimal = calculateSomething();  // returns Decimal
-const result = PriceService.create(decimal);  // Использует fromDecimal() внутри
+const result = PriceService.create(decimal);  // Zero-copy: использует Decimal напрямую
 ```
 
 ### 2. Избегайте повторных проверок

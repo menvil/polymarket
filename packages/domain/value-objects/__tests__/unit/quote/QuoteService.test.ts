@@ -138,6 +138,18 @@ describe('QuoteService', () => {
         expect(result.error.context?.component).toBe('askSize');
       }
     });
+
+    it('возвращает Err для invalid timestamp (non-parseable string)', () => {
+      const result = QuoteService.create(
+        0.48, 0.52, 100, 150,
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID,
+        'invalid-timestamp' as any
+      );
+
+      expect(result.ok).toBe(false);
+      // Parse-error branch покрыт (parseDecimal возвращает Err)
+    });
   });
 
   describe('create() с Decimal parameters', () => {
@@ -373,6 +385,16 @@ describe('QuoteService', () => {
         expect(shiftResult.value.askSize().value().toNumber()).toBe(150);
       }
     });
+
+    it('возвращает Err для invalid shiftAmount (non-parseable string)', () => {
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      if (!quoteResult.ok) return;
+
+      const result = QuoteService.shift(quoteResult.value, 'invalid' as any);
+
+      expect(result.ok).toBe(false);
+      // Parse-error branch покрыт (parseDecimal для shiftAmount возвращает Err)
+    });
   });
 
   describe('skew()', () => {
@@ -492,6 +514,26 @@ describe('QuoteService', () => {
         expect(skewResult.error.context?.component).toBe('ask');
         expect(skewResult.error.context?.op).toBe('skew');
       }
+    });
+
+    it('возвращает Err для invalid bidAdjustment (non-parseable string)', () => {
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      if (!quoteResult.ok) return;
+
+      const result = QuoteService.skew(quoteResult.value, 'invalid' as any, new Decimal(0));
+
+      expect(result.ok).toBe(false);
+      // Parse-error branch покрыт (parseDecimal для bidAdjustment возвращает Err)
+    });
+
+    it('возвращает Err для invalid askAdjustment (non-parseable string)', () => {
+      const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      if (!quoteResult.ok) return;
+
+      const result = QuoteService.skew(quoteResult.value, new Decimal(0), 'invalid' as any);
+
+      expect(result.ok).toBe(false);
+      // Parse-error branch покрыт (parseDecimal для askAdjustment возвращает Err)
     });
   });
 
@@ -695,6 +737,17 @@ describe('QuoteService', () => {
           expect(result.value.timestampMs().toNumber()).toBe(clock.now().getTime());
         }
       });
+
+      it('возвращает Err для invalid shiftAmount (non-parseable string)', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.shiftWithRefresh(quoteResult.value, 'invalid' as any, clock);
+
+        expect(result.ok).toBe(false);
+        // Parse-error branch покрыт (parseDecimal для shiftAmount возвращает Err)
+      });
     });
 
     describe('skewWithRefresh()', () => {
@@ -729,6 +782,28 @@ describe('QuoteService', () => {
           expect(result.value.bid()?.value().toNumber()).toBeCloseTo(0.52);
           expect(result.value.ask()).toBeNull();
         }
+      });
+
+      it('возвращает Err для invalid bidAdjustment (non-parseable string)', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.skewWithRefresh(quoteResult.value, 'invalid' as any, new Decimal(0), clock);
+
+        expect(result.ok).toBe(false);
+        // Parse-error branch покрыт (parseDecimal для bidAdjustment возвращает Err)
+      });
+
+      it('возвращает Err для invalid askAdjustment (non-parseable string)', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.skewWithRefresh(quoteResult.value, new Decimal(0), 'invalid' as any, clock);
+
+        expect(result.ok).toBe(false);
+        // Parse-error branch покрыт (parseDecimal для askAdjustment возвращает Err)
       });
     });
 
@@ -771,7 +846,7 @@ describe('QuoteService', () => {
         }
       });
 
-      it('возвращает Err для невалидных sizes', () => {
+      it('возвращает Err для невалидного bidSize', () => {
         const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
         const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
         expect(quoteResult.ok).toBe(true);
@@ -780,6 +855,25 @@ describe('QuoteService', () => {
         const result = QuoteService.updateSizesWithRefresh(quoteResult.value, -100, 200, clock);
 
         expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.component).toBe('bidSize');
+          // Rewrap branch покрыт (QuantityService.create для bidSize возвращает Err)
+        }
+      });
+
+      it('возвращает Err для невалидного askSize', () => {
+        const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
+        const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        expect(quoteResult.ok).toBe(true);
+        if (!quoteResult.ok) return;
+
+        const result = QuoteService.updateSizesWithRefresh(quoteResult.value, 200, -150, clock);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.component).toBe('askSize');
+          // Rewrap branch покрыт (QuantityService.create для askSize возвращает Err)
+        }
       });
     });
   });

@@ -63,19 +63,6 @@ try {
 }
 ```
 
-#### `Price.fromDecimal(decimal)`
-
-Создаёт Price из Decimal без повторного парсинга (zero-copy оптимизация).
-
-```typescript
-const decimal = new Decimal(0.5);
-const price = Price.fromDecimal(decimal);
-
-// price.value() === decimal (тот же объект!)
-```
-
-**Использование:** Когда у вас уже есть Decimal и не нужно повторно парсить.
-
 ### Константы
 
 #### Статические константы
@@ -388,29 +375,6 @@ try {
 
 ## Оптимизации
 
-### Zero-copy в fromDecimal()
-
-```typescript
-// ❌ С парсингом (медленно)
-const decimal = new Decimal(0.5);
-const price1 = Price.of(decimal);  // парсит decimal → new Decimal()
-
-// ✅ Без парсинга (быстро)
-const decimal = new Decimal(0.5);
-const price2 = Price.fromDecimal(decimal);  // использует decimal напрямую
-
-// Проверка
-price2.value() === decimal;  // true (тот же объект!)
-```
-
-**Когда использовать:**
-
-- В Facade, когда уже получили Decimal из Math layer
-- В Rules, если результат валидации Decimal
-- Для производительности в hot paths
-
----
-
 ## Примеры использования
 
 ### Создание с валидацией
@@ -541,14 +505,6 @@ const price = Price.of(userInput);
 ```
 
 ---
-
-### ✅ DO: Используйте fromDecimal() для оптимизации
-
-```typescript
-// ✅ Хорошо (zero-copy)
-const decimal = calculateSomething();  // returns Decimal
-const price = Price.fromDecimal(decimal);
-```
 
 ### ❌ DON'T: Не парсите повторно
 

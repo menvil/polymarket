@@ -108,7 +108,7 @@ try {
 │  - Единая точка входа                              │
 │  - Result<T, E> обёртка                            │
 │  - Error Contract                                   │
-│  - withOperationContext helper                      │
+│  - wrapOp/rewrap helpers                            │
 │                                                     │
 │  Зависит от: Core, Rules, Math                     │
 └─────────────────────────────────────────────────────┘
@@ -219,7 +219,7 @@ ValidateTickSizeMultipleOfBaseTick (Polymarket-специфичное)
 - Единая точка входа для всех операций
 - Оркестрация Core + Math + Rules
 - Обёртка исключений в Result<T, E>
-- Facade Error Contract (withOperationContext)
+- Facade Error Contract (wrapOp/rewrap)
 - Semantic операции (complement, average)
 
 **НЕ делает:**

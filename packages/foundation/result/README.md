@@ -276,6 +276,76 @@ const success = Ok(10);
 const value = unwrapOr(success, 42); // 10
 ```
 
+### unwrapOrElse(result, fn)
+
+Извлекает значение из Ok или вычисляет fallback из функции.
+
+```typescript
+const result = Err('network error');
+const value = unwrapOrElse(result, (err) => {
+  console.error('Failed:', err);
+  return 0; // Вычисляемый fallback
+}); // 0
+
+const success = Ok(10);
+const value = unwrapOrElse(success, () => 0); // 10 (функция не вызвана)
+```
+
+### mapErr(result, fn)
+
+Трансформирует ошибку, не затрагивая Ok-значение.
+
+```typescript
+const result = Err({ code: 404, message: 'Not found' });
+const transformed = mapErr(result, (err) => err.message);
+// Err('Not found')
+
+const success = Ok(42);
+const unchanged = mapErr(success, (err) => 'error');
+// Ok(42) - функция не вызвана
+```
+
+### and(result1, result2)
+
+Возвращает второй Result, если первый - Ok, иначе первую ошибку.
+
+```typescript
+const ok1 = Ok(1);
+const ok2 = Ok(2);
+const result = and(ok1, ok2); // Ok(2)
+
+const err1 = Err('error 1');
+const result2 = and(err1, ok2); // Err('error 1')
+```
+
+### or(result1, result2)
+
+Возвращает первый Result, если он Ok, иначе второй Result.
+
+```typescript
+const ok1 = Ok(1);
+const ok2 = Ok(2);
+const result = or(ok1, ok2); // Ok(1)
+
+const err1 = Err('error 1');
+const err2 = Err('error 2');
+const result2 = or(err1, err2); // Err('error 2')
+```
+
+### isOk(result) / isErr(result)
+
+Проверяет, является ли Result успешным или ошибочным.
+
+```typescript
+const success = Ok(42);
+isOk(success); // true
+isErr(success); // false
+
+const failure = Err('error');
+isOk(failure); // false
+isErr(failure); // true
+```
+
 ## 🔗 ResultChain API (Method Chaining)
 
 Для удобства работы с цепочками методов доступен OOP-стиль через `ResultChain`.
@@ -709,6 +779,96 @@ const value = await AsyncResult.ok(Promise.resolve(42))
 
 await AsyncResult.err('oops')
   .expect('Should be ok'); // Throws: "Should be ok: oops"
+```
+
+### .mapErrAsync(fn) / .mapErr(fn)
+
+Трансформирует ошибку (async или sync), не затрагивая Ok-значение.
+
+```typescript
+const result = await AsyncResult.err({ code: 404 })
+  .mapErrAsync(async err => `Error ${err.code}`)
+  .unwrapErr(); // 'Error 404'
+
+// sync версия
+const result2 = await AsyncResult.err('network error')
+  .mapErr(err => err.toUpperCase())
+  .unwrapErr(); // 'NETWORK ERROR'
+```
+
+### .unwrapOrElse(fn)
+
+Извлекает значение из Ok или вычисляет fallback из функции.
+
+```typescript
+const result = await AsyncResult.err('network error').unwrapOrElse((err) => {
+  console.error('Failed:', err);
+  return 0; // Вычисляемый fallback
+}); // 0
+
+const success = await AsyncResult.ok(Promise.resolve(10)).unwrapOrElse(() => 0);
+// 10 (функция не вызвана)
+```
+
+### .isOk() / .isErr()
+
+Проверяет, является ли Result успешным или ошибочным.
+
+```typescript
+const success = await AsyncResult.ok(Promise.resolve(42)).isOk(); // true
+const failure = await AsyncResult.err('error').isErr(); // true
+```
+
+### .toPromise() / .toChain()
+
+Конвертирует AsyncResultChain в Promise<Result> или ResultChain.
+
+```typescript
+// toPromise - получить Promise<Result>
+const promise: Promise<Result<number, string>> =
+  AsyncResult.ok(Promise.resolve(42)).toPromise();
+
+// toChain - конвертировать в ResultChain после await
+const chain = await AsyncResult.ok(Promise.resolve(42)).toChain();
+const doubled = chain.map(x => x * 2).unwrap(); // 84
+```
+
+### .and(other) / .andAsync(other)
+
+Возвращает второй Result, если первый - Ok, иначе первую ошибку.
+
+```typescript
+const result = await AsyncResult.ok(Promise.resolve(1))
+  .and(Ok(2))
+  .unwrap(); // 2
+
+const asyncResult = await AsyncResult.ok(Promise.resolve(1))
+  .andAsync(AsyncResult.ok(Promise.resolve(2)))
+  .unwrap(); // 2
+```
+
+### .or(other) / .orAsync(other) / .orAsyncLazy(fn)
+
+Возвращает первый Result, если он Ok, иначе альтернативный Result.
+
+```typescript
+// or - sync альтернатива
+const result = await AsyncResult.err('error 1')
+  .or(Ok(42))
+  .unwrap(); // 42
+
+// orAsync - async альтернатива
+const result2 = await AsyncResult.err('error')
+  .orAsync(AsyncResult.ok(Promise.resolve(42)))
+  .unwrap(); // 42
+
+// orAsyncLazy - ленивая фабрика (вызывается только при Err)
+const result3 = await AsyncResult.ok(Promise.resolve(10))
+  .orAsyncLazy(async () => {
+    console.log('Not called!'); // Не вызывается для Ok
+    return Ok(42);
+  })
+  .unwrap(); // 10
 ```
 
 ## 💡 Примеры использования
