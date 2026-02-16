@@ -301,7 +301,7 @@ describe('QuantityService', () => {
 
       it('должен обработать non-Error выброс из math', () => {
         jest.spyOn(math, 'addDecimal').mockImplementation(() => {
-          throw 'string error'; // eslint-disable-line @typescript-eslint/only-throw-error
+          throw 'string error'; // eslint-disable-line @typescript-eslint/no-throw-literal
         });
 
         const qty1 = Quantity.of(new Decimal(10));
@@ -1112,7 +1112,7 @@ describe('QuantityService', () => {
 
       it('unexpected error: должен содержать cause даже для non-Error', () => {
         jest.spyOn(math, 'multiplyDecimal').mockImplementation(() => {
-          throw 'string error'; // eslint-disable-line @typescript-eslint/only-throw-error
+          throw 'string error'; // eslint-disable-line @typescript-eslint/no-throw-literal
         });
 
         const qty = Quantity.of(new Decimal(10));
