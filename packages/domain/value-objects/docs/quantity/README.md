@@ -194,6 +194,10 @@ divide(quantity: Quantity, divisor: number | string | Decimal): Result<Quantity,
 
 // Округление
 roundToStep(quantity: Quantity, stepSize: number | string | Decimal, roundingMode?: Decimal.Rounding): Result<Quantity, InvalidQuantityError>
+
+// Процентные операции
+portion(quantity: Quantity, rate: Ratio): Result<Quantity, InvalidQuantityError>
+increaseBy(quantity: Quantity, delta: Ratio, stepSize: number | string | Decimal, options?: { roundingMode?: Decimal.Rounding }): Result<Quantity, InvalidQuantityError>
 ```
 
 **Контракт "Never Throw":**

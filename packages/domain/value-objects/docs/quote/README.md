@@ -120,39 +120,37 @@ Quote следует **Throws+Facade** паттерну:
 
 #### `create()`
 
-Создаёт Quote из number значений.
+Создаёт Quote из number/Decimal/string значений.
 
 ```typescript
 const result = QuoteService.create(
-  bidValue: number | null,
-  askValue: number | null,
-  bidSizeValue: number,
-  askSizeValue: number,
-  timestamp?: Date | number
+  bidValue: Decimal | number | string | null,
+  askValue: Decimal | number | string | null,
+  bidSizeValue: Decimal | number | string,
+  askSizeValue: Decimal | number | string,
+  sourceId: MarketDataSourceId,
+  instrumentId: InstrumentId,
+  timestamp?: Date | Decimal | number | string
 ): Result<Quote, InvalidQuoteError>
 ```
 
 **Пример:**
 
 ```typescript
-const result = QuoteService.create(0.48, 0.52, 100, 150);
+import { KnownMarketDataSources, asInstrumentId } from '@polymarket/ids';
+
+const result = QuoteService.create(
+  0.48,                                      // bid price
+  0.52,                                      // ask price
+  100,                                       // bid size
+  150,                                       // ask size
+  KnownMarketDataSources.POLYMARKET_WS,      // source
+  asInstrumentId('ETH-USD')!,                // instrument
+  Date.now()                                 // timestamp (optional)
+);
 if (result.ok) {
   const quote = result.value;
 }
-```
-
-#### `createFromDecimals()`
-
-Создаёт Quote из Decimal значений.
-
-```typescript
-const result = QuoteService.createFromDecimals(
-  bidValue: Decimal | null,
-  askValue: Decimal | null,
-  bidSizeValue: Decimal,
-  askSizeValue: Decimal,
-  timestamp?: Date | number
-): Result<Quote, InvalidQuoteError>
 ```
 
 #### `bidOnly()`

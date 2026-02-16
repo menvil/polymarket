@@ -305,6 +305,141 @@ if (!invalidStr.ok) {
 }
 ```
 
+#### `portion(quantity: Quantity, rate: Ratio)`
+
+Вычисляет часть (долю) от количества по заданному коэффициенту.
+
+**Формула:** `quantity × rate`
+
+**Use cases:**
+- Вычисление комиссий (например, 0.5% от суммы)
+- Расчет частичного заполнения ордера (заполнено 75%)
+- Алгоритмы ребалансировки портфеля
+
+```typescript
+import { QuantityService, RatioService } from '@polymarket/value-objects';
+
+// Вычисление комиссии 0.5% от 1000
+const position = QuantityService.create(new Decimal(1000));
+const feeRate = RatioService.fromPercent(0.5);
+if (position.ok && feeRate.ok) {
+  const fee = QuantityService.portion(position.value, feeRate.value);
+  if (fee.ok) {
+    console.log(fee.value.value().toString()); // "5" (0.5% от 1000)
+  }
+}
+
+// Частичное заполнение ордера (75%)
+const orderSize = QuantityService.create(new Decimal(100));
+const fillRate = RatioService.fromPercent(75);
+if (orderSize.ok && fillRate.ok) {
+  const filled = QuantityService.portion(orderSize.value, fillRate.value);
+  if (filled.ok) {
+    console.log(filled.value.value().toString()); // "75"
+  }
+}
+
+// Увеличение на 150%
+const base = QuantityService.create(new Decimal(1000));
+const rate150 = RatioService.fromPercent(150);
+if (base.ok && rate150.ok) {
+  const result = QuantityService.portion(base.value, rate150.value);
+  if (result.ok) {
+    console.log(result.value.value().toString()); // "1500" (150% от 1000)
+  }
+}
+```
+
+**Ошибки:**
+- `INVALID_FORMAT` — некорректный rate
+- `NON_FINITE` — overflow/underflow в вычислениях
+- `NEGATIVE` — результат отрицательный (если rate < 0)
+
+#### `increaseBy(quantity: Quantity, delta: Ratio, stepSize, options?)`
+
+Увеличивает/уменьшает количество на заданный процент с округлением к stepSize.
+
+**Формула:** `quantity × (1 + delta)` → округление к stepSize
+
+**Параметры:**
+- `quantity` — исходное количество
+- `delta` — относительное изменение (Ratio), может быть отрицательным
+- `stepSize` — размер шага для округления результата
+- `options.roundingMode` — режим округления (по умолчанию ROUND_HALF_UP)
+
+**Use cases:**
+- Увеличение ордера на X%
+- DCA (dollar-cost averaging) стратегии
+- Position sizing с учётом минимального лота
+
+**Delta может быть отрицательным:**
+- Положительный: увеличение (+10% → delta = 0.10)
+- Отрицательный: уменьшение (-5% → delta = -0.05)
+- Ограничение: delta ≥ -1 (иначе результат отрицательный)
+
+```typescript
+import { QuantityService, RatioService } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
+
+// Увеличить на 10% с округлением к шагу 1
+const qty = QuantityService.create(new Decimal(95));
+const delta = RatioService.fromPercent(10);
+if (qty.ok && delta.ok) {
+  const result = QuantityService.increaseBy(qty.value, delta.value, 1);
+  if (result.ok) {
+    console.log(result.value.value().toString()); // "105" (95 × 1.10 = 104.5 → round to 105)
+  }
+}
+
+// Уменьшить на 5% (отрицательный delta)
+const decrease = RatioService.fromPercent(-5);
+if (qty.ok && decrease.ok) {
+  const result = QuantityService.increaseBy(qty.value, decrease.value, 1);
+  if (result.ok) {
+    console.log(result.value.value().toString()); // "90" (95 × 0.95 = 90.25 → round to 90)
+  }
+}
+
+// С округлением вниз (conservative для покупок)
+if (qty.ok && delta.ok) {
+  const result = QuantityService.increaseBy(
+    qty.value,
+    delta.value,
+    1,
+    { roundingMode: Decimal.ROUND_DOWN }
+  );
+  if (result.ok) {
+    console.log(result.value.value().toString()); // "104" (95 × 1.10 = 104.5 → floor to 104)
+  }
+}
+
+// DCA стратегия: увеличивать на 10% каждый раз
+const baseSize = QuantityService.create(new Decimal(100));
+const increment = RatioService.fromPercent(10);
+if (baseSize.ok && increment.ok) {
+  const order1 = baseSize.value; // 100
+  const order2Result = QuantityService.increaseBy(order1, increment.value, 1);
+  if (order2Result.ok) {
+    const order2 = order2Result.value; // 110
+    const order3Result = QuantityService.increaseBy(order2, increment.value, 1);
+    if (order3Result.ok) {
+      console.log(order3Result.value.value().toString()); // "121"
+    }
+  }
+}
+```
+
+**Edge cases:**
+- delta = 0 → количество остаётся неизменным (после округления к step)
+- delta = -1 (-100%) → результат = 0 (граничный случай)
+- delta < -1 (< -100%) → результат отрицательный → InvalidQuantityError
+
+**Ошибки:**
+- `INVALID_FORMAT` — некорректный delta или stepSize
+- `INVALID_STEP_SIZE` — stepSize ≤ 0
+- `NON_FINITE` — overflow/underflow в вычислениях
+- `NEGATIVE` — результат отрицательный (delta < -1)
+
 ---
 
 ## Паттерны использования
