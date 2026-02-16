@@ -173,7 +173,6 @@ quantity.isGreaterThanOrEqual(other: Quantity): boolean
 
 **Принцип:** Одно правило = одна проверка
 
-Подробнее: [rules.md](./rules.md)
 
 ---
 
@@ -240,7 +239,6 @@ if (formattedResult.ok) {
 console.log(QuantityFormatter.toDisplayString(qty));  // "1.50K" для 1500
 ```
 
-Подробнее: [adapters.md](./adapters.md)
 
 ---
 
@@ -445,7 +443,6 @@ if (!result.ok) {
 const qty = result.value;
 ```
 
-Подробное руководство: [migration.md](./migration.md)
 
 ---
 
@@ -453,11 +450,8 @@ const qty = result.value;
 
 - [Архитектура и паттерны](./architecture.md)
 - [Core Layer API](./core.md)
-- [Rules Layer](./rules.md)
 - [Facade Layer API](./facade.md)
-- [Adapters Layer](./adapters.md)
 - [Примеры использования](./examples.md)
-- [Миграция со старого Quantity](./migration.md)
 
 ---
 

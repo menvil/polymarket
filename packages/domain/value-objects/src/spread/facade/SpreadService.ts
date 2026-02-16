@@ -1,8 +1,6 @@
 import { type Result, Ok, Err, isErr } from '@polymarket/result';
 import {
   InvalidSpreadError,
-  InvalidPriceError,
-  InvalidRatioError,
   ErrorSource,
   toDecimal,
   rewrap,

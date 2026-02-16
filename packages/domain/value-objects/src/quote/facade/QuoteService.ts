@@ -1437,8 +1437,8 @@ export class QuoteService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: QuoteErrorReason.NOT_TWO_SIDED,
-                bidPrice: quote.bidPrice()?.value()?.toString() ?? 'null',
-                askPrice: quote.askPrice()?.value()?.toString() ?? 'null',
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
               },
             }
           );
