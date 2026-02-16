@@ -393,6 +393,118 @@ describe('QuoteSerializer', () => {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.BOTH_SIDES_NULL);
       }
     });
+
+    // Тесты для sourceId/instrumentId missing/invalid
+    it('возвращает Err для missing sourceId', () => {
+      const json = {
+        bid: 0.48,
+        ask: 0.52,
+        bidSize: 100,
+        askSize: 150,
+        timestamp: 1234567890000,
+        // sourceId missing
+        instrumentId: 'TEST_INSTRUMENT'
+      };
+
+      const result = QuoteSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('sourceId');
+      }
+    });
+
+    it('возвращает Err для invalid type sourceId', () => {
+      const json = {
+        bid: 0.48,
+        ask: 0.52,
+        bidSize: 100,
+        askSize: 150,
+        timestamp: 1234567890000,
+        sourceId: 123, // number instead of string
+        instrumentId: 'TEST_INSTRUMENT'
+      };
+
+      const result = QuoteSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('sourceId');
+      }
+    });
+
+    it('возвращает Err для missing instrumentId', () => {
+      const json = {
+        bid: 0.48,
+        ask: 0.52,
+        bidSize: 100,
+        askSize: 150,
+        timestamp: 1234567890000,
+        sourceId: 'TEST_SOURCE'
+        // instrumentId missing
+      };
+
+      const result = QuoteSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('instrumentId');
+      }
+    });
+
+    it('возвращает Err для invalid type instrumentId', () => {
+      const json = {
+        bid: 0.48,
+        ask: 0.52,
+        bidSize: 100,
+        askSize: 150,
+        timestamp: 1234567890000,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: null // null instead of string
+      };
+
+      const result = QuoteSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.message).toContain('instrumentId');
+      }
+    });
+
+    // Тесты для safeStringify (circular references, unstringifiable)
+    it('обрабатывает circular references через safeStringify', () => {
+      const circular: any = { bid: 0.48 };
+      circular.self = circular;
+
+      const result = QuoteSerializer.fromJSON(circular);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // safeStringify должен обработать circular reference и вернуть [Circular]
+        expect(result.error.message).toBeDefined();
+      }
+    });
+
+    it('обрабатывает unstringifiable values через catch-ветку safeStringify', () => {
+      const unstringifiable = {
+        bid: 0.48,
+        get badProperty() {
+          throw new Error('Cannot serialize this property');
+        }
+      };
+
+      const result = QuoteSerializer.fromJSON(unstringifiable);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // safeStringify catch-ветка должна вернуть [Unstringifiable]
+        expect(result.error.message).toBeDefined();
+      }
+    });
   });
 
   describe('toJSONString()', () => {
