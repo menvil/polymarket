@@ -437,6 +437,79 @@ describe('Quote Core', () => {
       expect(age.toNumber()).toBeGreaterThanOrEqual(5000);
       expect(age.toNumber()).toBeLessThan(6000);
     });
+
+    // Негативные тесты для error-веток validateTimestamp(context='now')
+    it('бросает Error для NaN nowMs', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+
+      expect(() => quote.age(new Decimal(NaN))).toThrow('Timestamp cannot be NaN');
+    });
+
+    it('бросает Error для Infinity nowMs', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+
+      expect(() => quote.age(new Decimal(Infinity))).toThrow('Timestamp must be finite');
+    });
+
+    it('бросает Error для fractional nowMs', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+
+      expect(() => quote.age(new Decimal(123.456))).toThrow('Timestamp must be integer (Unix ms)');
+    });
+
+    it('бросает Error для negative nowMs', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+
+      expect(() => quote.age(new Decimal(-1000))).toThrow('Timestamp cannot be negative');
+    });
+
+    it('бросает Error для nowMs превышающего MAX_TIMESTAMP', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+
+      const MAX_TIMESTAMP = new Decimal('10000000000000'); // год 2286
+      const tooLarge = MAX_TIMESTAMP.plus(1);
+      expect(() => quote.age(tooLarge)).toThrow('exceeds maximum');
+    });
   });
 
   describe('isTwoSided()', () => {
