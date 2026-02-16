@@ -31,7 +31,7 @@
 import { InvalidAmountError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E>:
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 ```
 
 ---
@@ -88,7 +88,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidAmountError } from '@polymarket/errors';
 
 class Amount {
@@ -179,7 +179,7 @@ result.match({
 ### 3. Валидация с кастомными правилами
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidAmountError } from '@polymarket/errors';
 
 class Multiplier {
@@ -238,7 +238,7 @@ class Multiplier {
 
 ```typescript
 import { InvalidAmountError } from '@polymarket/errors';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 
 // Используем класс Amount из Примера 2
 
@@ -316,7 +316,7 @@ settingsResult.match({
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidAmountError } from '@polymarket/errors';
 
 class DecimalAmount {
@@ -638,7 +638,7 @@ function validateAndLogAmount(
 
 ```typescript
 import { InvalidAmountError } from '@polymarket/errors';
-import { ResultChain } from '@polymarket/result';
+import { toChain } from '@polymarket/result';
 
 interface Config {
   leverage: Amount;

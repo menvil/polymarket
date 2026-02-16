@@ -144,7 +144,7 @@ roundToTickSizeWithMode(value, tickSize, 'ceil');  // ✅ 10.57
 ```typescript
 import Decimal from 'decimal.js';
 import { InvalidTickSizeError, InvalidPriceError } from '@polymarket/errors';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 
 class Price {
   private constructor(

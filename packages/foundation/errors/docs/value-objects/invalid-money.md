@@ -32,7 +32,7 @@ import { InvalidMoneyError } from '@polymarket/errors';
 
 // Для примеров с операциями также понадобятся:
 import { CurrencyMismatchError, ArithmeticOverflowError } from '@polymarket/errors';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 ```
 
 ---
@@ -95,7 +95,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidMoneyError } from '@polymarket/errors';
 
 class Money {
@@ -208,7 +208,7 @@ result.match({
 ### 3. Операции с Money и обработка ошибок
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidMoneyError, CurrencyMismatchError } from '@polymarket/errors';
 
 class Money {
@@ -337,7 +337,7 @@ function handleDepositInput(input: string, currency: string): void {
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidMoneyError } from '@polymarket/errors';
 
 class Money {

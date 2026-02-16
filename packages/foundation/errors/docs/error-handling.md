@@ -327,7 +327,7 @@ if (result.ok) {
 ### 4. Обработка с fallback
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 function getPriceOrDefault(input: number, defaultPrice: Price): Price {
@@ -349,7 +349,7 @@ const price = getPriceOrDefault(userInput, defaultPriceResult.value);
 ### 5. Aggregate errors (множественные ошибки)
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 
 type ValidationErrors = TradingError[];
@@ -438,6 +438,7 @@ try {
 ### Логирование с контекстом
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 function validateAndLogPrice(value: number, orderId: string): Result<Price, InvalidPriceError> {

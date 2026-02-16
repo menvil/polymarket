@@ -32,7 +32,7 @@ import { CurrencyMismatchError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E> также понадобятся:
 import { InvalidMoneyError } from '@polymarket/errors';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 ```
 
 ---
@@ -93,7 +93,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { CurrencyMismatchError } from '@polymarket/errors';
 
 class Money {
@@ -191,7 +191,7 @@ result.match({
 ### 3. Сравнение денежных сумм
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { CurrencyMismatchError } from '@polymarket/errors';
 
 class Money {
@@ -269,7 +269,7 @@ usdc1.isGreaterThan(btc).match({
 ### 4. Конвертация валют
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { CurrencyMismatchError } from '@polymarket/errors';
 
 interface ExchangeRate {
@@ -360,7 +360,7 @@ totalResult.match({
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { CurrencyMismatchError } from '@polymarket/errors';
 
 class DecimalMoney {

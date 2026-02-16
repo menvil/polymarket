@@ -298,7 +298,7 @@ Value objects используют math operations и обрабатывают �
 // packages/domain/value-objects/src/Price.ts
 import { divideDecimal, roundToTickSize } from '@polymarket/math';
 import { InvalidDivisorError, InvalidTickSizeError } from '@polymarket/errors';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 
 export class Price {
   // ...

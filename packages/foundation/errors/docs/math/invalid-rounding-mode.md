@@ -104,7 +104,7 @@ try {
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidRoundingModeError } from '@polymarket/errors';
+import { InvalidRoundingModeError, InvalidPriceError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 class Price {
@@ -371,7 +371,7 @@ function handleRoundingModeInput(input: string): void {
 ```typescript
 import Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidRoundingModeError } from '@polymarket/errors';
+import { InvalidRoundingModeError, InvalidMoneyError } from '@polymarket/errors';
 
 class Money {
   private constructor(

@@ -32,7 +32,7 @@ import { ArithmeticOverflowError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E> и SafeMath также понадобятся:
 import { InvalidMoneyError, CurrencyMismatchError, DivisionByZeroError } from '@polymarket/errors';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 ```
 
 ---
@@ -92,7 +92,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
 class Money {
@@ -207,7 +207,7 @@ result.match({
 ### 3. Проверка всех арифметических операций
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
 class SafeMath {
@@ -320,7 +320,7 @@ result.match({
 ### 4. Расчёт процентов с защитой от переполнения
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
 // Примечание: SafeMath определён в Примере 3 выше
@@ -388,7 +388,7 @@ result.match({
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
 class DecimalMoney {

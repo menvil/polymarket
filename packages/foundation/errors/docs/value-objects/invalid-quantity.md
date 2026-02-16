@@ -30,7 +30,7 @@
 import { InvalidQuantityError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E>:
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 ```
 
 ---
@@ -70,7 +70,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 
 class Quantity {
@@ -240,7 +240,7 @@ function handleQuantityInput(input: string): void {
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 
 class Quantity {
@@ -500,7 +500,7 @@ function validateAndLogQuantity(
 ### Обработка в цепочке валидаций
 
 ```typescript
-import { ResultChain } from '@polymarket/result';
+import { toChain } from '@polymarket/result';
 import { InvalidPriceError, InvalidQuantityError } from '@polymarket/errors';
 
 function createOrder(
