@@ -44,6 +44,7 @@ Value Objects представляют неизменяемые бизнес-к�
 |-----|-------|-------------------|--------------|
 | `DIVISION_BY_ZERO` | DivisionByZeroError | Деление на ноль в расчетах | [→](./division-by-zero.md) |
 | `ARITHMETIC_OVERFLOW` | ArithmeticOverflowError | Результат операции = Infinity | [→](./arithmetic-overflow.md) |
+| `INVALID_ROUNDING_MODE` | InvalidRoundingModeError | Невалидный режим округления (не 0-8) | [→](./invalid-rounding-mode.md) |
 
 ### Валидация котировок и спредов
 
@@ -439,4 +440,5 @@ class Money {
 - [InvalidAmountError](./invalid-amount.md)
 - [DivisionByZeroError](./division-by-zero.md)
 - [ArithmeticOverflowError](./arithmetic-overflow.md)
+- [InvalidRoundingModeError](./invalid-rounding-mode.md)
 - [CurrencyMismatchError](./currency-mismatch.md)

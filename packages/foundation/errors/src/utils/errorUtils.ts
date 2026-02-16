@@ -678,14 +678,10 @@ export function wrapOp<T, TError extends DomainError>(
       const factoryError = coreInvariantError(e, ErrorConstructor);
       return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));
     }
-    // Ожидаемые math ошибки - проверяем ДО TradingError, так как они тоже extends TradingError
-    if (isExpectedMathError(e)) {
-      // Фабрика добавляет source+cause, rewrap добавляет service+op+opChain
-      const factoryError = expectedMathError(e, ErrorConstructor);
-      return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));
-    }
     // Если кто-то бросил TradingError того же типа (ErrorConstructor) - просто rewrap
     // Если бросил "чужой" TradingError - конвертируем в TError через unexpectedError
+    // ВАЖНО: Проверяем ДО isExpectedMathError, т.к. expected math errors extends TradingError
+    // и если бросили InvalidRoundingModeError (того же типа) - это не "foreign"
     if (e instanceof TradingError) {
       if (e instanceof ErrorConstructor) {
         // Тот же тип - rewrap с добавлением service+op+opChain
@@ -700,6 +696,13 @@ export function wrapOp<T, TError extends DomainError>(
         const factoryError = unexpectedError(e, ErrorConstructor);
         return Err(rewrap(serviceName, op, { ...ctx, ...originalContext }, factoryError, ErrorConstructor));
       }
+    }
+    // Ожидаемые math ошибки (NON-TradingError, например native Error('Division by zero'))
+    // Проверяем ПОСЛЕ TradingError, т.к. если бросили TradingError того же типа - это уже обработано выше
+    if (isExpectedMathError(e)) {
+      // Фабрика добавляет source+cause, rewrap добавляет service+op+opChain
+      const factoryError = expectedMathError(e, ErrorConstructor);
+      return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor));
     }
     // Developer misuse (TypeError) - отличаем от обычных unexpected ошибок
     if (e instanceof TypeError) {
