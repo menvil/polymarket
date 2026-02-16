@@ -181,6 +181,12 @@ describe('QuantitySerializer', () => {
           expect(result.error.context?.json).toContain('[Circular]');
         }
       });
+
+      // Примечание: Ветка [Unstringifiable] (QuantitySerializer.ts:29) не покрыта тестами.
+      // Эта ветка срабатывает только когда JSON.stringify бросает исключение внутри
+      // replacer функции, что практически невозможно воспроизвести в тесте.
+      // WeakSet.has() и WeakSet.add() не бросают исключения для валидных объектов.
+      // Геттеры бросают исключения ДО вызова JSON.stringify, а не внутри replacer.
     });
 
     describe('бизнес-ошибки (делегированы QuantityService)', () => {

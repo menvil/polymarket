@@ -198,24 +198,6 @@ describe('QuantityService', () => {
 
     it.todo('должен вернуть Err если результат non-finite (overflow) - невозможно с Decimal.js');
 
-    // Примечание: Тесты Facade Error Contract невозможны для add(), так как
-    // Decimal.js не производит overflow/Infinity (arbitrary precision).
-    // Error contract задокументирован, но реально протестировать его для add()
-    // невозможно с валидными Quantity объектами.
-    //   });
-    //
-    //   it('error должен содержать context.quantity1 и quantity2', () => {
-    //     // Decimal.js не даёт Infinity при сложении
-    //     const bigQty = Quantity.of(new Decimal('1e308'));
-    //     const result = QuantityService.add(bigQty, bigQty);
-    //
-    //     if (!result.ok) {
-    //       expect(result.error.context).toHaveProperty('quantity1');
-    //       expect(result.error.context).toHaveProperty('quantity2');
-    //     }
-    //   });
-    // });
-
     describe('Math exception handling', () => {
       it('должен ловить InvalidOperandError из @polymarket/math', () => {
         jest.spyOn(math, 'addDecimal').mockImplementation(() => {
