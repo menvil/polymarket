@@ -42,9 +42,9 @@
  * ```
  */
 import Decimal from 'decimal.js';
-import { Result, Ok, Err, isErr } from '@polymarket/result';
+import { Result, Ok, isErr } from '@polymarket/result';
 import { InvalidRatioError } from '@polymarket/errors';
-import { rewrap, toDecimal, wrapOp } from '@polymarket/errors';
+import { toDecimal, wrapOp } from '@polymarket/errors';
 import { Ratio } from '../core/Ratio.js';
 import { RatioErrorReason } from '../errors/RatioErrorReason.js';
 import { ValidateRatioGteMinusOne } from '../rules/ValidateRatioGteMinusOne.js';
@@ -76,6 +76,26 @@ export class RatioService {
    * @param value - Дробь: 0.02 для 2%, 0.5 для 50%
    * @param options - Опции валидации
    * @returns Result с Ratio или InvalidRatioError
+   * @throws Никогда - все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * Алгоритм работы (все шаги внутри wrapOp):
+   * 1. Парсим value в Decimal через toDecimal()
+   *    - Проверка на NaN, Infinity, невалидный формат
+   *    - При ошибке возвращаем Err с reason INVALID_FORMAT
+   * 2. Опциональная валидация ensureGteMinusOne
+   *    - Проверяем decimal >= -1
+   *    - При ошибке возвращаем Err с reason LESS_THAN_MINUS_ONE
+   * 3. Опциональная валидация ensureLteOne
+   *    - Проверяем decimal <= 1
+   *    - При ошибке возвращаем Err с reason GREATER_THAN_ONE
+   * 4. Создаём Ratio через Ratio.of(decimal)
+   *    - Если invariant нарушен (NaN/Infinity) - wrapOp ловит и оборачивает
+   *
+   * Все ошибки автоматически обогащаются контекстом через wrapOp:
+   * - service: 'RatioService'
+   * - op: 'fromDecimal'
+   * - raw: { field: 'decimal', value: String(value) }
    *
    * @example
    * ```typescript
@@ -89,50 +109,43 @@ export class RatioService {
    * // OK: -0.5 >= -1
    *
    * const invalidRatio = RatioService.fromDecimal(-1.5, { ensureGteMinusOne: true });
-   * // Err: -1.5 < -1
+   * // Err: -1.5 < -1, reason = LESS_THAN_MINUS_ONE
    * ```
    */
   public static fromDecimal(
     value: number | string | Decimal,
     options?: RatioCreateOptions
   ): Result<Ratio, InvalidRatioError> {
-    // Заранее собираем ctx для rewrap
     const ctx = { raw: { field: 'decimal', value: String(value) } };
 
-    // Step 1: Parse to Decimal
-    const decimalResult = toDecimal('value', value, RatioErrorReason.INVALID_FORMAT, InvalidRatioError);
-    if (isErr(decimalResult)) {
-      return Err(rewrap(this.SERVICE_NAME, 'fromDecimal', ctx, decimalResult.error, InvalidRatioError));
-    }
-    const decimal = decimalResult.value;
-
-    // Step 2: Optional validation (ensureGteMinusOne)
-    if (options?.ensureGteMinusOne) {
-      const validationResult = ValidateRatioGteMinusOne.check(decimal, 'fromDecimal');
-      if (isErr(validationResult)) {
-        return Err(rewrap(this.SERVICE_NAME, 'fromDecimal', ctx, validationResult.error, InvalidRatioError));
+    return wrapOp(this.SERVICE_NAME, 'fromDecimal', ctx, () => {
+      // Step 1: Parse to Decimal
+      const decimalResult = toDecimal('decimal', value, RatioErrorReason.INVALID_FORMAT, InvalidRatioError);
+      if (isErr(decimalResult)) {
+        return decimalResult;
       }
-    }
+      const decimal = decimalResult.value;
 
-    // Step 3: Optional validation (ensureLteOne)
-    if (options?.ensureLteOne) {
-      const validationResult = ValidateRatioLteOne.check(decimal, 'fromDecimal');
-      if (isErr(validationResult)) {
-        return Err(rewrap(this.SERVICE_NAME, 'fromDecimal', ctx, validationResult.error, InvalidRatioError));
+      // Step 2: Optional validation (ensureGteMinusOne)
+      if (options?.ensureGteMinusOne) {
+        const validationResult = ValidateRatioGteMinusOne.check(decimal, 'fromDecimal');
+        if (isErr(validationResult)) {
+          return validationResult;
+        }
       }
-    }
 
-    // Step 4: Create Ratio (wrapOp catches invariant violations)
-    return wrapOp(
-      this.SERVICE_NAME,
-      'fromDecimal',
-      ctx,
-      () => {
-        const ratio = Ratio.of(decimal);
-        return Ok(ratio);
-      },
-      InvalidRatioError
-    );
+      // Step 3: Optional validation (ensureLteOne)
+      if (options?.ensureLteOne) {
+        const validationResult = ValidateRatioLteOne.check(decimal, 'fromDecimal');
+        if (isErr(validationResult)) {
+          return validationResult;
+        }
+      }
+
+      // Step 4: Create Ratio
+      const ratio = Ratio.of(decimal);
+      return Ok(ratio);
+    }, InvalidRatioError);
   }
 
   /**
@@ -141,6 +154,26 @@ export class RatioService {
    * @param percent - Процент: 2 для 2%, 50 для 50%
    * @param options - Опции валидации
    * @returns Result с Ratio или InvalidRatioError
+   * @throws Никогда - все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * Алгоритм работы (все шаги внутри wrapOp):
+   * 1. Парсим percent в Decimal через toDecimal()
+   *    - Проверка на NaN, Infinity, невалидный формат
+   *    - При ошибке возвращаем Err с reason INVALID_FORMAT
+   * 2. Конвертируем процент в дробь: fraction = percent / 100
+   *    - 2% → 0.02
+   *    - 50% → 0.5
+   * 3. Опциональная валидация ensureGteMinusOne
+   *    - Проверяем fraction >= -1 (например, -100% = -1)
+   * 4. Опциональная валидация ensureLteOne
+   *    - Проверяем fraction <= 1 (например, 100% = 1)
+   * 5. Создаём Ratio через Ratio.of(fraction)
+   *
+   * Все ошибки автоматически обогащаются контекстом через wrapOp:
+   * - service: 'RatioService'
+   * - op: 'fromPercent'
+   * - raw: { field: 'percent', value: String(percent) }
    *
    * @example
    * ```typescript
@@ -154,45 +187,38 @@ export class RatioService {
     percent: number | string | Decimal,
     options?: RatioCreateOptions
   ): Result<Ratio, InvalidRatioError> {
-    // Заранее собираем ctx для rewrap
     const ctx = { raw: { field: 'percent', value: String(percent) } };
 
-    // Step 1: Parse to Decimal
-    const decimalResult = toDecimal('percent', percent, RatioErrorReason.INVALID_FORMAT, InvalidRatioError);
-    if (isErr(decimalResult)) {
-      return Err(rewrap(this.SERVICE_NAME, 'fromPercent', ctx, decimalResult.error, InvalidRatioError));
-    }
-
-    // Step 2: Convert percent to fraction (divide by 100)
-    const fraction = decimalResult.value.div(100);
-
-    // Step 3: Optional validation (ensureGteMinusOne)
-    if (options?.ensureGteMinusOne) {
-      const validationResult = ValidateRatioGteMinusOne.check(fraction, 'fromPercent');
-      if (isErr(validationResult)) {
-        return Err(rewrap(this.SERVICE_NAME, 'fromPercent', ctx, validationResult.error, InvalidRatioError));
+    return wrapOp(this.SERVICE_NAME, 'fromPercent', ctx, () => {
+      // Step 1: Parse to Decimal
+      const decimalResult = toDecimal('percent', percent, RatioErrorReason.INVALID_FORMAT, InvalidRatioError);
+      if (isErr(decimalResult)) {
+        return decimalResult;
       }
-    }
 
-    // Step 4: Optional validation (ensureLteOne)
-    if (options?.ensureLteOne) {
-      const validationResult = ValidateRatioLteOne.check(fraction, 'fromPercent');
-      if (isErr(validationResult)) {
-        return Err(rewrap(this.SERVICE_NAME, 'fromPercent', ctx, validationResult.error, InvalidRatioError));
+      // Step 2: Convert percent to fraction (divide by 100)
+      const fraction = decimalResult.value.div(100);
+
+      // Step 3: Optional validation (ensureGteMinusOne)
+      if (options?.ensureGteMinusOne) {
+        const validationResult = ValidateRatioGteMinusOne.check(fraction, 'fromPercent');
+        if (isErr(validationResult)) {
+          return validationResult;
+        }
       }
-    }
 
-    // Step 5: Create Ratio (wrapOp catches invariant violations)
-    return wrapOp(
-      this.SERVICE_NAME,
-      'fromPercent',
-      ctx,
-      () => {
-        const ratio = Ratio.of(fraction);
-        return Ok(ratio);
-      },
-      InvalidRatioError
-    );
+      // Step 4: Optional validation (ensureLteOne)
+      if (options?.ensureLteOne) {
+        const validationResult = ValidateRatioLteOne.check(fraction, 'fromPercent');
+        if (isErr(validationResult)) {
+          return validationResult;
+        }
+      }
+
+      // Step 5: Create Ratio
+      const ratio = Ratio.of(fraction);
+      return Ok(ratio);
+    }, InvalidRatioError);
   }
 
   /**
@@ -201,6 +227,27 @@ export class RatioService {
    * @param bps - Basis points: 200 для 2%, 100 для 1%
    * @param options - Опции валидации
    * @returns Result с Ratio или InvalidRatioError
+   * @throws Никогда - все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * Алгоритм работы (все шаги внутри wrapOp):
+   * 1. Парсим bps в Decimal через toDecimal()
+   *    - Проверка на NaN, Infinity, невалидный формат
+   *    - При ошибке возвращаем Err с reason INVALID_FORMAT
+   * 2. Конвертируем basis points в дробь: fraction = bps / 10000
+   *    - 200 bps → 0.02 (2%)
+   *    - 100 bps → 0.01 (1%)
+   *    - 10000 bps → 1.0 (100%)
+   * 3. Опциональная валидация ensureGteMinusOne
+   *    - Проверяем fraction >= -1 (например, -10000 bps = -1)
+   * 4. Опциональная валидация ensureLteOne
+   *    - Проверяем fraction <= 1 (например, 10000 bps = 1)
+   * 5. Создаём Ratio через Ratio.of(fraction)
+   *
+   * Все ошибки автоматически обогащаются контекстом через wrapOp:
+   * - service: 'RatioService'
+   * - op: 'fromBps'
+   * - raw: { field: 'bps', value: String(bps) }
    *
    * @example
    * ```typescript
@@ -214,45 +261,38 @@ export class RatioService {
     bps: number | string | Decimal,
     options?: RatioCreateOptions
   ): Result<Ratio, InvalidRatioError> {
-    // Заранее собираем ctx для rewrap
     const ctx = { raw: { field: 'bps', value: String(bps) } };
 
-    // Step 1: Parse to Decimal
-    const decimalResult = toDecimal('bps', bps, RatioErrorReason.INVALID_FORMAT, InvalidRatioError);
-    if (isErr(decimalResult)) {
-      return Err(rewrap(this.SERVICE_NAME, 'fromBps', ctx, decimalResult.error, InvalidRatioError));
-    }
-
-    // Step 2: Convert bps to fraction (divide by 10000)
-    const fraction = decimalResult.value.div(10000);
-
-    // Step 3: Optional validation (ensureGteMinusOne)
-    if (options?.ensureGteMinusOne) {
-      const validationResult = ValidateRatioGteMinusOne.check(fraction, 'fromBps');
-      if (isErr(validationResult)) {
-        return Err(rewrap(this.SERVICE_NAME, 'fromBps', ctx, validationResult.error, InvalidRatioError));
+    return wrapOp(this.SERVICE_NAME, 'fromBps', ctx, () => {
+      // Step 1: Parse to Decimal
+      const decimalResult = toDecimal('bps', bps, RatioErrorReason.INVALID_FORMAT, InvalidRatioError);
+      if (isErr(decimalResult)) {
+        return decimalResult;
       }
-    }
 
-    // Step 4: Optional validation (ensureLteOne)
-    if (options?.ensureLteOne) {
-      const validationResult = ValidateRatioLteOne.check(fraction, 'fromBps');
-      if (isErr(validationResult)) {
-        return Err(rewrap(this.SERVICE_NAME, 'fromBps', ctx, validationResult.error, InvalidRatioError));
+      // Step 2: Convert bps to fraction (divide by 10000)
+      const fraction = decimalResult.value.div(10000);
+
+      // Step 3: Optional validation (ensureGteMinusOne)
+      if (options?.ensureGteMinusOne) {
+        const validationResult = ValidateRatioGteMinusOne.check(fraction, 'fromBps');
+        if (isErr(validationResult)) {
+          return validationResult;
+        }
       }
-    }
 
-    // Step 5: Create Ratio (wrapOp catches invariant violations)
-    return wrapOp(
-      this.SERVICE_NAME,
-      'fromBps',
-      ctx,
-      () => {
-        const ratio = Ratio.of(fraction);
-        return Ok(ratio);
-      },
-      InvalidRatioError
-    );
+      // Step 4: Optional validation (ensureLteOne)
+      if (options?.ensureLteOne) {
+        const validationResult = ValidateRatioLteOne.check(fraction, 'fromBps');
+        if (isErr(validationResult)) {
+          return validationResult;
+        }
+      }
+
+      // Step 5: Create Ratio
+      const ratio = Ratio.of(fraction);
+      return Ok(ratio);
+    }, InvalidRatioError);
   }
 
   /**
