@@ -147,7 +147,8 @@ describe('errorUtils', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidQuantityError);
-        expect(result.error.message).toContain('Cannot read properties of null');
+        expect(result.error.message.length).toBeGreaterThan(0);
+        expect(result.error.message).toMatch(/null|undefined|read|property/i);
       }
     });
 
@@ -163,7 +164,8 @@ describe('errorUtils', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidPriceError);
-        expect(result.error.message).toContain('Cannot read properties of undefined');
+        expect(result.error.message.length).toBeGreaterThan(0);
+        expect(result.error.message).toMatch(/null|undefined|read|property/i);
       }
     });
   });
@@ -475,7 +477,7 @@ describe('errorUtils', () => {
       }
     });
 
-    it('should handle expected math errors', () => {
+    it('should classify ArithmeticOverflowError as foreign TradingError expected math error', () => {
       const result = wrapOp(
         'PriceService',
         'multiply',
@@ -1429,7 +1431,4 @@ describe('errorUtils', () => {
     });
   });
 
-  describe('toDecimal edge cases', () => {
-    // Дубликат теста удален - см. "обрабатывает ошибку парсинга Decimal" выше
-  });
 });

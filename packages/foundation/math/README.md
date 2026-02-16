@@ -20,7 +20,7 @@ npm install @polymarket/math
 - ✅ **Чистые функции** - без побочных эффектов, легко тестировать
 - ✅ **Throw на невозможности** - выбрасывает ошибки при математических невозможностях (NaN, Infinity, деление на ноль)
 - ✅ **Type-safe** - полная типобезопасность с TypeScript
-- ✅ **Высокое покрытие тестами** - все функции покрыты unit и integration тестами
+- ✅ **Высокое покрытие тестами** - большинство критичных функций покрыто unit и integration тестами
 - ✅ **Минимальные зависимости** - только decimal.js и @polymarket/errors
 
 ## Модули
@@ -34,10 +34,13 @@ npm install @polymarket/math
 - ✅ `multiplyDecimal(a, b)` - умножение ([docs](./docs/decimal/multiply.md))
 - ✅ `divideDecimal(a, b)` - деление ([docs](./docs/decimal/divide.md))
 - ✅ `averageDecimal(a, b)` - среднее значение ([docs](./docs/decimal/average.md))
-- ✅ `compareDecimal(a, b)` и другие операции сравнения
-- ✅ `roundDecimal(value)` - округление half-up
-- ✅ `roundTowardZeroDecimal`, `roundAwayFromZeroDecimal`, `truncDecimal` - округление к/от нуля
-- ✅ `mathFloorDecimal`, `mathCeilDecimal` - математическое floor/ceil
+- ✅ `compareDecimal(a, b)` - сравнение и другие операции сравнения ([docs](./docs/decimal/compare.md))
+- ✅ `roundDecimal(value)` - округление half-up ([docs](./docs/decimal/round.md))
+- ✅ `roundTowardZeroDecimal(value)` - округление к нулю ([docs](./docs/decimal/round.md))
+- ✅ `roundAwayFromZeroDecimal(value)` - округление от нуля ([docs](./docs/decimal/round.md))
+- ✅ `truncDecimal(value)` - усечение дробной части ([docs](./docs/decimal/round.md))
+- ✅ `mathFloorDecimal(value)` - математическое floor ([docs](./docs/decimal/round.md))
+- ✅ `mathCeilDecimal(value)` - математическое ceil ([docs](./docs/decimal/round.md))
 
 ### Rounding Operations (`@polymarket/math/rounding`)
 

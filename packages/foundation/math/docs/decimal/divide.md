@@ -206,6 +206,32 @@ try {
 }
 ```
 
+### Обработка невалидного делимого
+
+```typescript
+import Decimal from 'decimal.js';
+import { divideDecimal } from '@polymarket/math';
+import { InvalidOperandError } from '@polymarket/errors';
+
+try {
+  const result = divideDecimal(new Decimal(NaN), new Decimal(10));
+} catch (error) {
+  if (InvalidOperandError.is(error)) {
+    console.error('Invalid dividend:', error.message);
+    console.error('Context:', error.context);
+    // Context: { value: 'NaN', operation: 'divideDecimal', parameter: 'dividend' }
+  }
+}
+
+try {
+  const result = divideDecimal(new Decimal(Infinity), new Decimal(10));
+} catch (error) {
+  if (InvalidOperandError.is(error)) {
+    console.error('Dividend must be finite');
+  }
+}
+```
+
 ### Цепочка операций
 
 ```typescript
@@ -458,5 +484,6 @@ console.log(multiplyDecimal(quotient, b).equals(a)); // true
 - [multiplyDecimal](./multiply.md) - Умножение Decimal чисел
 - [averageDecimal](./average.md) - Среднее значение двух чисел
 - [DivisionByZeroError](../../../errors/docs/value-objects/division-by-zero.md) - Ошибка деления на ноль
+- [InvalidOperandError](../../../errors/docs/math/invalid-operand.md) - Ошибка невалидного операнда
 - [InvalidDivisorError](../../../errors/docs/math/invalid-divisor.md) - Ошибка невалидного делителя
 - [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow
