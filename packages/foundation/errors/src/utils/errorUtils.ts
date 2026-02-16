@@ -415,7 +415,7 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
   }
 
   // Проверяем что reason действительно строка
-  if (typeof (e as any).reason !== 'string') {
+  if (typeof (e as Error & { reason: unknown }).reason !== 'string') {
     return false;
   }
 
@@ -718,13 +718,20 @@ function addTracingPreservingType<TError extends TradingError>(
  * Автоматически классифицирует ошибки как expected/unexpected.
  * Автоматически rewrap'ает ошибки из Result.Err с добавлением serviceName в opChain.
  *
- * valueName автоматически определяется из ErrorConstructor через getValueName().
+ * **Типовое ограничение:**
+ * Сигнатура обещает `Result<T, TError>`, но при ловле "чужого" TradingError
+ * (например InvalidMoneyError когда ожидается InvalidPriceError) возвращается
+ * оригинальный тип ошибки с добавленной трассировкой. TypeScript cast `as TError`
+ * используется для совместимости, но реальный runtime тип может отличаться.
+ * Это осознанный компромисс для сохранения семантики ошибки.
  *
- * Обрабатывает четыре типа ошибок/результатов:
+ * Обрабатывает типы ошибок/результатов:
  * 1. Result.Err(TError) (из create/rules) → rewrap с добавлением serviceName.op
- * 2. throw TError (из вложенных операций) → rewrap с добавлением serviceName.op
- * 3. Expected math errors (ArithmeticOverflowError, etc.) → expectedMathError
- * 4. Unexpected errors → unexpectedError
+ * 2. Core invariant violations → coreInvariantError + rewrap
+ * 3. Expected math errors → expectedMathError + rewrap
+ * 4. Foreign TradingError → addTracingPreservingType (сохраняет тип!)
+ * 5. TypeError → developerMisuseError + rewrap
+ * 6. Unexpected errors → unexpectedError + rewrap
  *
  * @example
  * ```typescript

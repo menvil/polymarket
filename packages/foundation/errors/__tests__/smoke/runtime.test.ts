@@ -13,7 +13,7 @@
  */
 
 import { describe, it, expect, beforeAll } from '@jest/globals';
-import { existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { existsSync, writeFileSync, unlinkSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { execSync } from 'node:child_process';
 
@@ -182,7 +182,7 @@ import('@polymarket/errors/value-objects')
     it('should have correct ESM imports with .js extensions in dist/', () => {
       // Проверяем что в dist/ все относительные импорты имеют .js расширения
       const indexPath = resolve(distPath, 'value-objects/InvalidPriceError.js');
-      const content = require('fs').readFileSync(indexPath, 'utf-8');
+      const content = readFileSync(indexPath, 'utf-8');
 
       // Проверяем что нет импортов вида "from '../base'" (без .js)
       const badImports = content.match(/from ['"]\.\.\/[^'"]+(?<!\.js)['"]/g);

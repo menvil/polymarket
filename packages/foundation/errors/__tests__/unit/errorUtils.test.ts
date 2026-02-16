@@ -1097,6 +1097,103 @@ describe('errorUtils', () => {
         expect(quantityResult.error.context!.op).toBe('create');
       }
     });
+
+    it('сохраняет inner.service при повторном addTracingPreservingType', () => {
+      // Создаем ошибку которая уже прошла через один rewrap
+      const error1 = new InvalidMoneyError('First error', {
+        context: {
+          service: 'MoneyService',
+          op: 'create',
+          source: 'parsing'
+        }
+      });
+
+      // Второй уровень с другим service
+      const result = wrapOp(
+        'PriceService',
+        'calculate',
+        {},
+        () => {
+          throw error1;
+        },
+        InvalidPriceError
+      );
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        // service должен остаться MoneyService (первоначальный)
+        expect(result.error.context!.service).toBe('MoneyService');
+        expect(result.error.context!.op).toBe('calculate');
+        expect((result.error.context as any).opChain).toContain('MoneyService.create');
+        expect((result.error.context as any).opChain).toContain('PriceService.calculate');
+      }
+    });
+
+    it('сохраняет origin-данные при повторном addTracingPreservingType', () => {
+      // Создаем ошибку с уже заполненными origin-данными
+      const originalTimestamp = new Date('2024-01-01').toISOString();
+      const error1 = new InvalidMoneyError('Original', {
+        code: 'ORIGINAL_CODE',
+        context: {
+          rootTimestamp: originalTimestamp,
+          originalStack: 'Original stack trace',
+          originalName: 'InvalidMoneyError',
+          originalCode: 'ORIGINAL_CODE'
+        }
+      });
+
+      // Второй rewrap через wrapOp
+      const result = wrapOp(
+        'PriceService',
+        'convert',
+        {},
+        () => {
+          throw error1;
+        },
+        InvalidPriceError
+      );
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        // Origin-данные должны сохраниться из inner
+        expect((result.error.context as any).rootTimestamp).toBe(originalTimestamp);
+        expect((result.error.context as any).originalStack).toBe('Original stack trace');
+        expect((result.error.context as any).originalName).toBe('InvalidMoneyError');
+        expect((result.error.context as any).originalCode).toBe('ORIGINAL_CODE');
+      }
+    });
+
+    it('переносит innerError через addTracingPreservingType', () => {
+      // Создаем ошибку с innerError (от template function failure)
+      const templateError = new TypeError('Template failed');
+      const error1 = new InvalidMoneyError('Template error', {
+        context: { value: 100 }
+      });
+      // Добавляем innerError через defineProperty
+      Object.defineProperty(error1, 'innerError', {
+        value: templateError,
+        writable: false,
+        enumerable: true
+      });
+
+      const result = wrapOp(
+        'PriceService',
+        'format',
+        {},
+        () => {
+          throw error1;
+        },
+        InvalidPriceError
+      );
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        // innerError должен сохраниться
+        expect(result.error.innerError).toBeDefined();
+        expect(result.error.innerError).toBeInstanceOf(TypeError);
+        expect(result.error.innerError?.message).toBe('Template failed');
+      }
+    });
   });
 
   describe('rewrap edge cases', () => {
@@ -1155,7 +1252,8 @@ describe('errorUtils', () => {
   });
 
   describe('toDecimal edge cases', () => {
-    it('обрабатывает invalid string с правильным cause', () => {
+    it('обрабатывает Decimal parsing error с правильным cause', () => {
+      // Decimal бросает Error при парсинге невалидной строки
       const result = toDecimal(
         'amount',
         'not-a-valid-number-xyz',
@@ -1167,7 +1265,9 @@ describe('errorUtils', () => {
       if (isErr(result)) {
         expect(result.error.context!.source).toBe('parsing');
         expect(result.error.context!.reason).toBe('INVALID_FORMAT');
+        // Проверяем что Error попал в cause (error instanceof Error ветка)
         expect(result.error.context!.cause).toBeDefined();
+        expect((result.error.context!.cause as any).name).toBe('Error');
         expect((result.error.context!.cause as any).message).toContain('Invalid argument');
       }
     });
