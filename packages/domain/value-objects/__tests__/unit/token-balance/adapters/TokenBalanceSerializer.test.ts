@@ -608,5 +608,64 @@ describe('TokenBalanceSerializer', () => {
         }
       });
     });
+
+    describe('safeStringify в error details', () => {
+      it('обрабатывает circular references в error details', () => {
+        // Создаём JSON с circular reference для проверки safeStringify
+        const circular: any = { name: 'test' };
+        circular.self = circular;
+
+        const result = TokenBalanceSerializer.fromJSON(circular);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          // Проверяем что error был создан и содержит details
+          expect(result.error).toBeDefined();
+          expect(result.error.context?.details).toBeDefined();
+          // safeStringify должен был обработать circular и вернуть строку с [Circular]
+          const details = JSON.stringify(result.error.context?.details);
+          expect(details).toContain('[Circular]');
+        }
+      });
+
+      it('обрабатывает массив (не объект) в error details', () => {
+        const arr = [1, 2, 3];
+
+        const result = TokenBalanceSerializer.fromJSON(arr);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+          expect(result.error.context?.details).toBeDefined();
+          // safeStringify должен был сериализовать массив
+          const details = JSON.stringify(result.error.context?.details);
+          expect(details).toContain('array');
+        }
+      });
+
+      it('обрабатывает null в error details', () => {
+        const result = TokenBalanceSerializer.fromJSON(null);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+          expect(result.error.context?.details).toBeDefined();
+          // safeStringify должен был сериализовать null как "null"
+        }
+      });
+
+      it('никогда не бросает исключения при сериализации error details', () => {
+        expect(() => {
+          // Различные проблемные входы
+          TokenBalanceSerializer.fromJSON(null);
+          TokenBalanceSerializer.fromJSON([]);
+          TokenBalanceSerializer.fromJSON(undefined);
+
+          const circular: any = {};
+          circular.self = circular;
+          TokenBalanceSerializer.fromJSON(circular);
+        }).not.toThrow();
+      });
+    });
   });
 });

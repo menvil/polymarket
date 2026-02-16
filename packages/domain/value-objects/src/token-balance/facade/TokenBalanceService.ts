@@ -6,7 +6,6 @@ import { Quantity } from '../../quantity/core/index.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
 import { TokenBalance } from '../core/index.js';
 import { InvalidTokenBalanceError } from '../errors/index.js';
-import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
 import { ValidateReserveAmount } from '../rules/ValidateReserveAmount.js';
 import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount.js';
 

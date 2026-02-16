@@ -364,17 +364,14 @@ public total(): Quantity {
 import { isErr } from '@polymarket/result';
 
 // Внутри TokenBalanceService - делегируем QuantityService
+// Вызывается внутри wrapOp, поэтому просто передаём ошибку дальше
 private static addQuantity(a: Quantity, b: Quantity): Result<Quantity, InvalidTokenBalanceError> {
   const result = QuantityService.add(a, b);
   if (isErr(result)) {
-    return Err(new InvalidTokenBalanceError(result.error.message, {
-      context: {
-        ...result.error.context,
-        reason: TokenBalanceErrorReason.INVALID_AMOUNT
-      }
-    }));
+    // wrapOp уже обернёт это и добавит context
+    return Err(new InvalidTokenBalanceError(result.error.message));
   }
-  return Ok(result.value);
+  return result;
 }
 ```
 
