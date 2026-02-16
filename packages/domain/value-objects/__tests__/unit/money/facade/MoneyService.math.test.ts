@@ -262,15 +262,24 @@ describe('MoneyService.divide()', () => {
 
 describe('MoneyService - unexpected error handling', () => {
   it('createFromDecimal обрабатывает unexpected error из Money.of()', () => {
+    const m1 = Money.of(new Decimal(100));
+    const m2 = Money.of(new Decimal(50));
+
     // Мокаем Money.of() чтобы бросить generic Error (не MoneyInvariantViolation)
-    const unexpectedError = new Error('Unexpected error from Money.of()');
-    const spyMoneyOf = jest.spyOn(Money, 'of').mockImplementationOnce(() => {
-      throw unexpectedError;
+    // Используем mockImplementationOnce чтобы сработал только на следующем вызове
+    const originalMoneyOf = Money.of;
+    let callCount = 0;
+    const spyMoneyOf = jest.spyOn(Money, 'of').mockImplementation((value: Decimal, currency?: any) => {
+      callCount++;
+      // Первый вызов (внутри add) бросает unexpected error
+      if (callCount === 1) {
+        throw new Error('Unexpected error from Money.of()');
+      }
+      // Остальные вызовы работают нормально
+      return originalMoneyOf.call(Money, value, currency);
     });
 
     // Пытаемся выполнить операцию, которая использует createFromDecimal
-    const m1 = Money.of(new Decimal(100));
-    const m2 = Money.of(new Decimal(50));
     const result = MoneyService.add(m1, m2);
 
     // Должен вернуть Err с InvalidMoneyError (не бросить исключение)
