@@ -289,9 +289,14 @@ const small = Money.of(new Decimal(99.99), 'USDC');
 const medium = Money.of(new Decimal(1500), 'USDC');
 const large = Money.of(new Decimal(2500000), 'USDC');
 
-console.log(MoneyFormatter.toCompact(small));   // "$100.0"
-console.log(MoneyFormatter.toCompact(medium));  // "$1.5K"
-console.log(MoneyFormatter.toCompact(large));   // "$2.5M"
+const r1 = MoneyFormatter.toCompact(small);
+if (r1.ok) console.log(r1.value);   // "$100.0"
+
+const r2 = MoneyFormatter.toCompact(medium);
+if (r2.ok) console.log(r2.value);  // "$1.5K"
+
+const r3 = MoneyFormatter.toCompact(large);
+if (r3.ok) console.log(r3.value);   // "$2.5M"
 ```
 
 ### Граница системы (API validation)

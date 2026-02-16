@@ -874,4 +874,151 @@ describe('BalanceService', () => {
       });
     });
   });
+
+  describe('Error branches coverage', () => {
+    describe('equals() error branches', () => {
+      it('equals() returns Ok(false) for balances with different available', () => {
+        const balance1Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        const balance2Result = BalanceService.create(
+          Money.of(new Decimal(5000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+
+      it('equals() returns Ok(false) for balances with different reserved', () => {
+        const balance1Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        const balance2Result = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(3000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+
+        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe(false);
+        }
+      });
+    });
+
+    describe('Currency mismatch in operations', () => {
+      it('reserve() returns CURRENCY_MISMATCH for different currencies', () => {
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        // Мокируем Money с другой валютой (включая value метод)
+        const baseMoney = Money.of(new Decimal(1000));
+        const mockAmount = {
+          value: () => baseMoney.value(),
+          currency: () => 'EUR' as SupportedCurrency
+        } as Money;
+
+        const result = BalanceService.reserve(balanceResult.value, mockAmount);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
+        }
+      });
+
+      it('unfreezeReserved() returns CURRENCY_MISMATCH for different currencies', () => {
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        const baseMoney = Money.of(new Decimal(1000));
+        const mockAmount = {
+          value: () => baseMoney.value(),
+          currency: () => 'EUR' as SupportedCurrency
+        } as Money;
+
+        const result = BalanceService.unfreezeReserved(balanceResult.value, mockAmount);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
+        }
+      });
+
+      it('consumeReserved() returns CURRENCY_MISMATCH for different currencies', () => {
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        const baseMoney = Money.of(new Decimal(1000));
+        const mockAmount = {
+          value: () => baseMoney.value(),
+          currency: () => 'EUR' as SupportedCurrency
+        } as Money;
+
+        const result = BalanceService.consumeReserved(balanceResult.value, mockAmount);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
+        }
+      });
+
+      it('updateAvailable() returns CURRENCY_MISMATCH for different currencies', () => {
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        const baseMoney = Money.of(new Decimal(15000));
+        const mockAmount = {
+          value: () => baseMoney.value(),
+          currency: () => 'EUR' as SupportedCurrency
+        } as Money;
+
+        const result = BalanceService.updateAvailable(balanceResult.value, mockAmount);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
+        }
+      });
+    });
+  });
 });

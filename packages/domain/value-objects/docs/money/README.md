@@ -240,10 +240,13 @@ const result = MoneySerializer.fromJSON(json);
 
 // Форматирование
 const formatted = MoneyFormatter.toFixed(money, 2);
-console.log(formatted);  // "100.50"
+if (formatted.ok) console.log(formatted.value);  // "100.50"
 
-console.log(MoneyFormatter.toCurrency(money));  // "$100.50 USDC"
-console.log(MoneyFormatter.toCompact(Money.of(new Decimal(1500))));  // "$1.5K"
+const withCurrency = MoneyFormatter.toCurrency(money);
+if (withCurrency.ok) console.log(withCurrency.value);  // "$100.50 USDC"
+
+const compact = MoneyFormatter.toCompact(Money.of(new Decimal(1500)));
+if (compact.ok) console.log(compact.value);  // "$1.5K"
 ```
 
 Подробнее: [adapters.md](./adapters.md)
@@ -283,7 +286,18 @@ interface InvalidMoneyErrorContext {
   currency?: SupportedCurrency;
   divisor?: string;
   factor?: string;
-  reason?: 'UNSUPPORTED_CURRENCY' | 'NAN' | 'NON_FINITE' | 'EXCEEDS_MAX_AMOUNT' | 'INVALID_FORMAT';
+  reason?:
+    | 'NAN'
+    | 'NON_FINITE'
+    | 'EXCEEDS_MAX_AMOUNT'
+    | 'CURRENCY_MISMATCH'
+    | 'DIVISION_BY_ZERO'
+    | 'UNSUPPORTED_CURRENCY'
+    | 'INVALID_FORMAT'
+    | 'NEGATIVE_RESULT'
+    | 'INVALID_RATIO'
+    | 'RATIO_OUT_OF_RANGE'
+    | 'DELTA_LESS_THAN_MINUS_ONE';
 }
 
 // Для ошибок CURRENCY_MISMATCH контекст содержит:

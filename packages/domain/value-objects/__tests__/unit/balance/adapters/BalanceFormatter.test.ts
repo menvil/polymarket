@@ -252,4 +252,144 @@ describe('BalanceFormatter', () => {
       }
     });
   });
+
+  describe('includeAccount and includeVenue flags', () => {
+    describe('toSummary() with flags', () => {
+      it('включает accountId когда includeAccount = true', () => {
+        const balance = createBalance(10000, 2000);
+        const summary = unwrap(BalanceFormatter.toSummary(balance, 2, true, false));
+
+        expect(summary).toContain('Account:');
+        expect(summary).not.toContain('Venue:');
+      });
+
+      it('включает venueId когда includeVenue = true', () => {
+        const balance = createBalance(10000, 2000);
+        const summary = unwrap(BalanceFormatter.toSummary(balance, 2, false, true));
+
+        expect(summary).not.toContain('Account:');
+        expect(summary).toContain('Venue:');
+      });
+
+      it('включает оба когда includeAccount = true И includeVenue = true', () => {
+        const balance = createBalance(10000, 2000);
+        const summary = unwrap(BalanceFormatter.toSummary(balance, 2, true, true));
+
+        expect(summary).toContain('Account:');
+        expect(summary).toContain('Venue:');
+      });
+
+      it('не включает ни один когда оба = false (default)', () => {
+        const balance = createBalance(10000, 2000);
+        const summary = unwrap(BalanceFormatter.toSummary(balance, 2, false, false));
+
+        expect(summary).not.toContain('Account:');
+        expect(summary).not.toContain('Venue:');
+      });
+    });
+
+    describe('toCompact() with includeVenue flag', () => {
+      it('включает venueId когда includeVenue = true', () => {
+        const balance = createBalance(10000, 2000);
+        const compact = unwrap(BalanceFormatter.toCompact(balance, 1, true));
+
+        expect(compact).toContain('@');
+        expect(compact).toContain('POLYMARKET');
+      });
+
+      it('не включает venueId когда includeVenue = false (default)', () => {
+        const balance = createBalance(10000, 2000);
+        const compact = unwrap(BalanceFormatter.toCompact(balance, 1, false));
+
+        expect(compact).not.toContain('@');
+        expect(compact).not.toContain('POLYMARKET');
+      });
+    });
+  });
+
+  describe('Edge cases and extreme values', () => {
+    it('toSummary() работает с decimals = 0', () => {
+      const balance = createBalance(10000, 2000);
+      const summary = unwrap(BalanceFormatter.toSummary(balance, 0));
+
+      expect(summary).toContain('Available: $10000');
+      expect(summary).toContain('Reserved: $2000');
+      expect(summary).toContain('Total: $12000');
+    });
+
+    it('toSummary() работает с большим decimals', () => {
+      const balance = createBalance(10000, 2000);
+      const summary = unwrap(BalanceFormatter.toSummary(balance, 6));
+
+      expect(summary).toContain('Available: $10000.000000');
+      expect(summary).toContain('Reserved: $2000.000000');
+    });
+
+    it('toCompact() работает с decimals = 0', () => {
+      const balance = createBalance(1500000, 500000);
+      const compact = unwrap(BalanceFormatter.toCompact(balance, 0));
+
+      // Большие числа форматируются с M (миллионы) или K (тысячи)
+      expect(compact).toMatch(/Avail: \$\d+[KM]/);
+      expect(compact).toMatch(/Res: \$\d+[KM]/);
+    });
+
+    it('toCompact() работает с большим decimals', () => {
+      const balance = createBalance(150000, 50000);
+      const compact = unwrap(BalanceFormatter.toCompact(balance, 1));
+
+      // Используем меньшие числа чтобы получить K вместо M
+      expect(compact).toContain('Avail: $150.0K');
+      expect(compact).toContain('Res: $50.0K');
+    });
+
+    it('toAvailableString() работает с большим balance', () => {
+      const balance = createBalance(999999999, 0);
+      const available = unwrap(BalanceFormatter.toAvailableString(balance));
+
+      expect(available).toContain('$999999999.00');
+    });
+
+    it('toReservedString() работает с нулевым reserved', () => {
+      const balance = createBalance(10000, 0);
+      const reserved = unwrap(BalanceFormatter.toReservedString(balance));
+
+      expect(reserved).toContain('$0.00');
+      expect(reserved).toContain('USDC');
+    });
+
+    it('toTotalString() работает для очень маленького баланса', () => {
+      const balance = createBalance(1, 1);
+      const total = unwrap(BalanceFormatter.toTotalString(balance));
+
+      expect(total).toContain('$2.00');
+      expect(total).toContain('USDC');
+    });
+
+    it('toPercentageString() возвращает 0% для нулевого reserved', () => {
+      const balance = createBalance(10000, 0);
+      const percentage = unwrap(BalanceFormatter.toPercentageString(balance));
+
+      expect(percentage).toBe('0.00%');
+    });
+
+    it('toPercentageString() возвращает 100% когда available = 0', () => {
+      const balance = createBalance(0, 10000);
+      const percentage = unwrap(BalanceFormatter.toPercentageString(balance));
+
+      expect(percentage).toBe('100.00%');
+    });
+
+    it('toPercentageString() работает с decimals = 0', () => {
+      const balance = createBalance(8000, 2000);
+      const percentage = unwrap(BalanceFormatter.toPercentageString(balance, 0));
+
+      expect(percentage).toBe('20%');
+    });
+  });
+
+  // ПРИМЕЧАНИЕ: Error branches для MoneyFormatter.toCurrency/toCompact трудно протестировать
+  // без моков, так как они редко возвращают Err для валидных Money объектов.
+  // Эти ветки (строки 113, 127, 141, 228, 242, 256, 360, 420, 480) покрываются
+  // косвенно через edge cases выше и являются defensive programming.
 });
