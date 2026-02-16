@@ -305,7 +305,7 @@ class EventReplaySystem {
       // 3. Записать telemetry с детерминированным временем
       this.telemetry.push({
         event: event.type,
-        timestamp: this.clock.now(), // === event.timestamp
+        timestamp: this.clock.now(), // .getTime() === event.timestamp.getTime()
       });
     });
   }

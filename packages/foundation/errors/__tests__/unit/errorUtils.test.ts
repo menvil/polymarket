@@ -24,6 +24,9 @@ import {
   isCoreInvariantViolation,
   toCause,
   coreInvariantError,
+  expectedMathError,
+  unexpectedError,
+  developerMisuseError,
   currencyMismatchError,
 } from '../../src/utils/errorUtils.js';
 import { ErrorSource } from '../../src/ErrorSource.js';
@@ -138,7 +141,7 @@ describe('errorUtils', () => {
         InvalidQuantityError
       );
 
-      // Decimal(null) throws exception → catch block → Err
+      // toString() on null throws TypeError → catch block → Err
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidQuantityError);
@@ -146,7 +149,7 @@ describe('errorUtils', () => {
       }
     });
 
-    it('should return Err for undefined (Decimal throws)', () => {
+    it('should return Err for undefined (toString throws)', () => {
       const result = toDecimal(
         'price',
         undefined as any,
@@ -154,7 +157,7 @@ describe('errorUtils', () => {
         InvalidPriceError
       );
 
-      // Decimal(undefined) throws exception → catch block → Err
+      // toString() on undefined throws TypeError → catch block → Err
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidPriceError);
@@ -934,6 +937,54 @@ describe('errorUtils', () => {
     });
   });
 
+  describe('expectedMathError', () => {
+    it('создаёт ошибку для math operation с правильным source', () => {
+      const mathError = new Error('Arithmetic overflow');
+      const error = expectedMathError(mathError, InvalidPriceError);
+
+      expect(error).toBeInstanceOf(InvalidPriceError);
+      expect(error.message).toBe('Math operation failed: Arithmetic overflow');
+      expect(error.context!.source).toBe('math_operation');
+      expect(error.context!.cause).toBeDefined();
+      expect((error.context!.cause as any).message).toBe('Arithmetic overflow');
+    });
+  });
+
+  describe('unexpectedError', () => {
+    it('создаёт ошибку для unexpected exception с правильным source', () => {
+      const unexpectedErr = new Error('Network timeout');
+      const error = unexpectedError(unexpectedErr, InvalidMoneyError);
+
+      expect(error).toBeInstanceOf(InvalidMoneyError);
+      expect(error.message).toBe('Unexpected error: Network timeout');
+      expect(error.context!.source).toBe('unexpected');
+      expect(error.context!.cause).toBeDefined();
+      expect((error.context!.cause as any).message).toBe('Network timeout');
+    });
+
+    it('обрабатывает non-Error exceptions', () => {
+      const error = unexpectedError('string error' as any, InvalidPriceError);
+
+      expect(error).toBeInstanceOf(InvalidPriceError);
+      expect(error.message).toBe('Unexpected error: string error');
+      expect(error.context!.source).toBe('unexpected');
+      expect(error.context!.cause).toBeDefined();
+    });
+  });
+
+  describe('developerMisuseError', () => {
+    it('создаёт ошибку для developer mistake с правильным source', () => {
+      const typeError = new TypeError('Cannot read property of null');
+      const error = developerMisuseError(typeError, InvalidQuantityError);
+
+      expect(error).toBeInstanceOf(InvalidQuantityError);
+      expect(error.message).toBe('Developer misuse: Cannot read property of null');
+      expect(error.context!.source).toBe('developer_misuse');
+      expect(error.context!.reason).toBe('MISUSE');
+      expect(error.context!.cause).toBeDefined();
+    });
+  });
+
   describe('wrapOp with core invariant violations', () => {
     it('ловит и оборачивает core invariant violations', () => {
       class PriceInvariantViolation extends Error {
@@ -1014,7 +1065,7 @@ describe('errorUtils', () => {
 
       expect(error).toBeInstanceOf(InvalidMoneyError);
       expect(error.message).toBe('Currency mismatch: expected USD, got EUR');
-      expect(error.context!.source).toBe('service_call');
+      expect(error.context!.source).toBe('rule_validation');
       expect(error.context!.reason).toBe('CURRENCY_MISMATCH');
       expect((error.context as any).expected).toBe('USD');
       expect((error.context as any).actual).toBe('EUR');
@@ -1033,7 +1084,7 @@ describe('errorUtils', () => {
       expect(error.message).toBe('Currency mismatch: expected USDC, got DAI');
       expect((error.context as any).expected).toBe('USDC');
       expect((error.context as any).actual).toBe('DAI');
-      expect(error.context!.source).toBe('service_call');
+      expect(error.context!.source).toBe('rule_validation');
     });
 
     it('работает с разными типами ошибок', () => {
@@ -1046,7 +1097,7 @@ describe('errorUtils', () => {
 
       expect(error).toBeInstanceOf(CurrencyMismatchError);
       expect(error.message).toBe('Currency mismatch: expected USDC, got DAI');
-      expect(error.context!.source).toBe('service_call');
+      expect(error.context!.source).toBe('rule_validation');
     });
   });
 
@@ -1193,6 +1244,45 @@ describe('errorUtils', () => {
         expect((result.error.context as any).originalErrorCode).toBeUndefined();
       }
     });
+
+    it('конвертирует foreign TradingError возвращенный из fn (не thrown)', () => {
+      // Edge case: fn возвращает Err с чужой TradingError, не бросает её
+      const foreignError = new InvalidMoneyError('Wrong currency', {
+        code: 'WRONG_CURRENCY',
+        context: {
+          source: ErrorSource.RULE_VALIDATION,
+          currency: 'EUR'
+        }
+      });
+
+      const result = wrapOp(
+        'PriceService',
+        'validate',
+        { expectedCurrency: 'USD' },
+        () => {
+          // fn возвращает Err напрямую (не throw)
+          return Err(foreignError);
+        },
+        InvalidPriceError
+      );
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        // Должен rewrap ошибку (добавить tracing)
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error.message).toBe('Wrong currency');
+        expect(result.error.code).toBe('WRONG_CURRENCY');
+
+        // Tracing добавлен
+        expect(result.error.context!.service).toBe('PriceService');
+        expect(result.error.context!.op).toBe('validate');
+        expect((result.error.context as any).expectedCurrency).toBe('USD');
+
+        // Оригинальные данные сохранены
+        expect(result.error.context!.source).toBe('rule_validation');
+        expect((result.error.context as any).currency).toBe('EUR');
+      }
+    });
   });
 
   describe('rewrap edge cases', () => {
@@ -1251,24 +1341,6 @@ describe('errorUtils', () => {
   });
 
   describe('toDecimal edge cases', () => {
-    it('обрабатывает Decimal parsing error с правильным cause', () => {
-      // Decimal бросает Error при парсинге невалидной строки
-      const result = toDecimal(
-        'amount',
-        'not-a-valid-number-xyz',
-        'INVALID_FORMAT',
-        InvalidPriceError
-      );
-
-      expect(isErr(result)).toBe(true);
-      if (isErr(result)) {
-        expect(result.error.context!.source).toBe('parsing');
-        expect(result.error.context!.reason).toBe('INVALID_FORMAT');
-        // Проверяем что Error попал в cause (error instanceof Error ветка)
-        expect(result.error.context!.cause).toBeDefined();
-        expect((result.error.context!.cause as any).name).toBe('Error');
-        expect((result.error.context!.cause as any).message).toContain('Invalid argument');
-      }
-    });
+    // Дубликат теста удален - см. "обрабатывает ошибку парсинга Decimal" выше
   });
 });

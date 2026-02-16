@@ -505,7 +505,7 @@ npm run typecheck
 
 В дополнение к error классам, пакет предоставляет утилиты для обработки ошибок:
 
-- **ErrorSource** - enum для классификации источника ошибки (parsing, core_invariant, rule_validation, math_operation, service_call, unexpected)
+- **ErrorSource** - enum для классификации источника ошибки (parsing, core_invariant, rule_validation, math_operation, service_call, developer_misuse, unexpected)
 - **wrapOp()** - автоматическое оборачивание операций в try-catch с rewrap
 - **rewrap()** - переупаковка ошибок с сохранением root-контекста (cause, reason, raw)
 - **toDecimal()** - безопасная конвертация в Decimal с error handling

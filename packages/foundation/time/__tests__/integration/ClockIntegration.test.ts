@@ -70,9 +70,9 @@ describe('Clock Integration', () => {
       const time1 = ctx.now();
       const systemTime = new Date();
 
-      // Время должно быть близко к системному
+      // Время должно быть близко к системному (< 1000ms для стабильности на CI)
       expect(Math.abs(time1.getTime() - systemTime.getTime())).toBeLessThan(
-        100
+        1000
       );
     });
 

@@ -1,10 +1,10 @@
 import Decimal from 'decimal.js';
 import {
   DivisionByZeroError,
-  ArithmeticOverflowError,
   InvalidDivisorError,
   InvalidOperandError,
 } from '@polymarket/errors';
+import { assertFiniteResult } from '../shared/index.js';
 
 /**
  * Делит одно Decimal значение на другое
@@ -56,60 +56,38 @@ import {
  * ```
  */
 export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
-  // Проверка 1: Делимое должно быть конечным числом
+  const context = {
+    operation: 'divide',
+    dividend: dividend.toString(),
+    divisor: divisor.toString(),
+  };
+
+  // Проверка делимого
   if (!dividend.isFinite()) {
     throw new InvalidOperandError(
       (ctx) => `Dividend must be finite, got ${ctx.dividend}`,
-      {
-        context: {
-          dividend: dividend.toString(),
-          divisor: divisor.toString(),
-          operation: 'divide',
-        },
-      }
+      { context }
     );
   }
 
-  // Проверка 2: Делитель должен быть конечным числом
+  // Проверка делителя
   if (!divisor.isFinite()) {
     throw new InvalidDivisorError(
       (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
-      {
-        context: {
-          divisor: divisor.toString(),
-          dividend: dividend.toString(),
-        },
-      }
+      { context }
     );
   }
 
-  // Проверка 3: Делитель не должен быть нулём
+  // Проверка на ноль
   if (divisor.isZero()) {
-    throw new DivisionByZeroError(() => 'Cannot divide by zero', {
-      context: {
-        dividend: dividend.toString(),
-        divisor: divisor.toString(),
-      },
-    });
+    throw new DivisionByZeroError(() => 'Cannot divide by zero', { context });
   }
 
   // Выполняем деление
   const result = dividend.div(divisor);
 
-  // Проверка 4: Результат должен быть конечным
-  if (!result.isFinite()) {
-    throw new ArithmeticOverflowError(
-      (ctx) =>
-        `Division overflow: ${ctx.dividend} / ${ctx.divisor} = ${ctx.result}`,
-      {
-        context: {
-          dividend: dividend.toString(),
-          divisor: divisor.toString(),
-          result: result.toString(),
-        },
-      }
-    );
-  }
+  // Проверка результата
+  assertFiniteResult(result, { ...context, result: result.toString() });
 
   return result;
 }

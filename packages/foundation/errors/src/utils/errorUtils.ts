@@ -755,7 +755,7 @@ export function currencyMismatchError<TError extends DomainError>(
 ): TError {
   return new ErrorConstructor(`Currency mismatch: expected ${expected}, got ${actual}`, {
     context: {
-      source: ErrorSource.SERVICE_CALL,
+      source: ErrorSource.RULE_VALIDATION,
       reason: reasonEnum,
       expected,
       actual

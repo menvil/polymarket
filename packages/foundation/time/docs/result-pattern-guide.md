@@ -224,6 +224,7 @@ TypeScript защищает на уровне типов, но runtime вали�
    - ❌ Нет (только programming errors) → НЕ используй Result
 
 **Важное различие:**
+
 - ✅ Result: парсинг `parseDate(userInput)` - пользователь может ввести что угодно
 - ❌ Result: валидация `setTime(date)` - TypeScript гарантирует тип, Invalid Date = bug в коде
 

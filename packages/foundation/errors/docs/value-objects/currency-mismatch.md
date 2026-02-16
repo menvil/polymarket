@@ -501,24 +501,31 @@ class Money {
 
 ```typescript
 // Попытка сложить три разные валюты
-const usdc = Money.fromAmount(100, 'USDC').unwrap();
-const eur = Money.fromAmount(50, 'EUR').unwrap();
-const btc = Money.fromAmount(0.5, 'BTC').unwrap();
+const usdcResult = Money.fromAmount(100, 'USDC');
+const eurResult = Money.fromAmount(50, 'EUR');
+const btcResult = Money.fromAmount(0.5, 'BTC');
 
-const result = ResultChain
-  .from(usdc.add(eur))
+// Предполагаем что все Result успешны для примера
+if (!usdcResult.ok || !eurResult.ok || !btcResult.ok) {
+  throw new Error('Invalid amounts');
+}
+
+const usdc = usdcResult.value;
+const eur = eurResult.value;
+const btc = btcResult.value;
+
+const result = toChain(usdc.add(eur))
   .flatMap(total => total.add(btc))
-  .run();
+  .toResult();
 
 // ❌ Err(CurrencyMismatchError) на первой же операции (USDC + EUR)
 
 // Решение: конвертация перед операциями
-const result2 = ResultChain
-  .from(converter.convert(eur, 'USDC'))
+const result2 = toChain(converter.convert(eur, 'USDC'))
   .flatMap(eurInUsdc => usdc.add(eurInUsdc))
   .flatMap(total => converter.convert(btc, 'USDC'))
   .flatMap(btcInUsdc => total.add(btcInUsdc))
-  .run(); // ✅ Все в USDC
+  .toResult(); // ✅ Все в USDC
 ```
 
 ### Операции с нулевыми суммами

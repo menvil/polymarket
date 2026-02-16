@@ -1,9 +1,9 @@
 import Decimal from 'decimal.js';
 import {
-  InvalidTickSizeError,
-  InvalidOperandError,
-  ArithmeticOverflowError,
-} from '@polymarket/errors';
+  assertFiniteOperand,
+  assertValidTickSize,
+  assertFiniteResult,
+} from '../shared/index.js';
 
 /**
  * Округляет значение до размера тика
@@ -57,52 +57,24 @@ export function roundToTick(
   tickSize: Decimal,
   roundingMode: Decimal.Rounding
 ): Decimal {
-  // Валидация value
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Value must be finite, got ${ctx.value}`,
-      {
-        context: {
-          value: value.toString(),
-          operation: 'roundToTick',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'roundToTick',
+    value: value.toString(),
+    tickSize: tickSize.toString(),
+    roundingMode: roundingMode.toString(),
+  };
 
-  // Валидация tickSize
-  if (!tickSize.isFinite() || tickSize.lessThanOrEqualTo(0)) {
-    throw new InvalidTickSizeError(
-      (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
-      {
-        context: {
-          tickSize: tickSize.toString(),
-          value: value.toString(),
-        },
-      }
-    );
-  }
+  // Валидация через shared assertions
+  assertFiniteOperand(value, 'value', context);
+  assertValidTickSize(tickSize, context);
 
   // Алгоритм округления до тика (полностью на Decimal)
   const divided = value.dividedBy(tickSize);
   const rounded = divided.toDecimalPlaces(0, roundingMode);
   const result = rounded.times(tickSize);
 
-  // Проверка результата на конечность
-  if (!result.isFinite()) {
-    throw new ArithmeticOverflowError(
-      (ctx) =>
-        `Round to tick overflow: ${ctx.value} rounded to ${ctx.tickSize} = ${ctx.result}`,
-      {
-        context: {
-          value: value.toString(),
-          tickSize: tickSize.toString(),
-          roundingMode: roundingMode.toString(),
-          result: result.toString(),
-        },
-      }
-    );
-  }
+  // Проверка результата
+  assertFiniteResult(result, { ...context, result: result.toString() });
 
   return result;
 }

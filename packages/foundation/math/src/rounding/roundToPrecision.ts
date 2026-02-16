@@ -1,28 +1,9 @@
 import Decimal from 'decimal.js';
 import {
-  InvalidDecimalPlacesError,
-  InvalidOperandError,
-  InvalidRoundingModeError,
-} from '@polymarket/errors';
-
-/**
- * Максимально допустимое количество десятичных знаков
- *
- * @remarks
- * Ограничение Decimal.js для toDecimalPlaces().
- * Значения больше этого вызывают внутреннюю ошибку библиотеки.
- */
-const MAX_DECIMAL_PLACES = 1e9;
-
-/**
- * Минимальный допустимый режим округления Decimal.js
- */
-const MIN_ROUNDING_MODE = 0;
-
-/**
- * Максимальный допустимый режим округления Decimal.js
- */
-const MAX_ROUNDING_MODE = 8;
+  assertFiniteOperand,
+  assertValidDecimalPlaces,
+  assertValidRoundingMode,
+} from '../shared/index.js';
 
 /**
  * Округляет значение до указанного количества десятичных знаков
@@ -92,108 +73,17 @@ export function roundToPrecision(
   decimalPlaces: number,
   roundingMode: Decimal.Rounding
 ): Decimal {
-  const operation = 'roundToPrecision';
+  const context = {
+    operation: 'roundToPrecision',
+    value: value.toString(),
+    decimalPlaces: String(decimalPlaces),
+    roundingMode: String(roundingMode),
+  };
 
-  // Валидация value
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Value must be finite, got ${ctx.value}`,
-      {
-        context: {
-          value: value.toString(),
-          decimalPlaces: String(decimalPlaces),
-          roundingMode: String(roundingMode),
-          operation,
-        },
-      }
-    );
-  }
-
-  // Валидация decimalPlaces как number (без new Decimal)
-  if (!Number.isFinite(decimalPlaces)) {
-    throw new InvalidDecimalPlacesError(
-      (ctx) => `Decimal places must be a finite number, got ${ctx.decimalPlaces}`,
-      {
-        context: {
-          decimalPlaces: String(decimalPlaces),
-          value: value.toString(),
-          operation,
-        },
-      }
-    );
-  }
-
-  if (!Number.isInteger(decimalPlaces)) {
-    throw new InvalidDecimalPlacesError(
-      (ctx) => `Decimal places must be an integer, got ${ctx.decimalPlaces}`,
-      {
-        context: {
-          decimalPlaces: String(decimalPlaces),
-          value: value.toString(),
-          operation,
-        },
-      }
-    );
-  }
-
-  if (decimalPlaces < 0) {
-    throw new InvalidDecimalPlacesError(
-      (ctx) => `Decimal places must be non-negative, got ${ctx.decimalPlaces}`,
-      {
-        context: {
-          decimalPlaces: String(decimalPlaces),
-          value: value.toString(),
-          operation,
-        },
-      }
-    );
-  }
-
-  if (decimalPlaces > MAX_DECIMAL_PLACES) {
-    throw new InvalidDecimalPlacesError(
-      (ctx) => `Decimal places must not exceed ${ctx.max}, got ${ctx.decimalPlaces}`,
-      {
-        context: {
-          decimalPlaces: String(decimalPlaces),
-          max: String(MAX_DECIMAL_PLACES),
-          value: value.toString(),
-          operation,
-        },
-      }
-    );
-  }
-
-  // Валидация roundingMode
-  if (!Number.isInteger(roundingMode)) {
-    throw new InvalidRoundingModeError(
-      (ctx) => `Rounding mode must be an integer, got ${ctx.roundingMode}`,
-      {
-        context: {
-          roundingMode: String(roundingMode),
-          value: value.toString(),
-          decimalPlaces: String(decimalPlaces),
-          operation,
-        },
-      }
-    );
-  }
-
-  if (roundingMode < MIN_ROUNDING_MODE || roundingMode > MAX_ROUNDING_MODE) {
-    throw new InvalidRoundingModeError(
-      (ctx) =>
-        `Rounding mode must be between ${ctx.min} and ${ctx.max}, got ${ctx.roundingMode}`,
-      {
-        context: {
-          roundingMode: String(roundingMode),
-          min: String(MIN_ROUNDING_MODE),
-          max: String(MAX_ROUNDING_MODE),
-          value: value.toString(),
-          decimalPlaces: String(decimalPlaces),
-          operation,
-        },
-      }
-    );
-  }
+  // Валидация через shared assertions
+  assertFiniteOperand(value, 'value', context);
+  assertValidDecimalPlaces(decimalPlaces, context);
+  assertValidRoundingMode(roundingMode, context);
 
   // Выполняем округление
   return value.toDecimalPlaces(decimalPlaces, roundingMode);

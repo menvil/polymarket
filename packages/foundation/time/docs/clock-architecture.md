@@ -253,7 +253,7 @@ class ReplaySystem {
       // 3. Записать telemetry (timestamp будет из события)
       telemetry.push({
         event: event.type,
-        timestamp: this.clock.now(), // === event.timestamp
+        timestamp: this.clock.now(), // .getTime() === event.timestamp.getTime()
         result,
       });
     });

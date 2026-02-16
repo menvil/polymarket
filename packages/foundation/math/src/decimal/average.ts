@@ -1,8 +1,5 @@
 import Decimal from 'decimal.js';
-import {
-  ArithmeticOverflowError,
-  InvalidOperandError,
-} from '@polymarket/errors';
+import { assertFiniteOperands, assertFiniteResult } from '../shared/index.js';
 import { MATH_CONSTANTS } from '../constants.js';
 
 /**
@@ -51,52 +48,21 @@ import { MATH_CONSTANTS } from '../constants.js';
  * ```
  */
 export function averageDecimal(a: Decimal, b: Decimal): Decimal {
-  // Проверка 1: Оба операнда должны быть конечными числами
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'a' must be finite, got ${ctx.a}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'average',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'average',
+    a: a.toString(),
+    b: b.toString(),
+  };
 
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'b' must be finite, got ${ctx.b}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'average',
-        },
-      }
-    );
-  }
+  // Валидация операндов
+  assertFiniteOperands(a, b, context);
 
   // Выполняем операцию
   const sum = a.plus(b);
   const result = sum.dividedBy(MATH_CONSTANTS.TWO);
 
-  // Проверка 2: Результат должен быть конечным
-  if (!result.isFinite()) {
-    throw new ArithmeticOverflowError(
-      (ctx) =>
-        `Average operation resulted in non-finite value: ${ctx.result}`,
-      {
-        context: {
-          operation: 'average',
-          operand1: a.toString(),
-          operand2: b.toString(),
-          result: result.toString(),
-        },
-      }
-    );
-  }
+  // Проверка результата
+  assertFiniteResult(result, { ...context, result: result.toString() });
 
   return result;
 }

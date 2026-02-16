@@ -305,6 +305,9 @@ describe('ReplayClock', () => {
 
       const result = usesClock(clock);
       expect(result).toBeInstanceOf(Date);
+      // Усиленная проверка: timestamp валидный и соответствует ожидаемому времени
+      expect(Number.isFinite(result.getTime())).toBe(true);
+      expect(result).toEqual(initialTime);
     });
 
     it('должен работать в системе требующей IClock', () => {
