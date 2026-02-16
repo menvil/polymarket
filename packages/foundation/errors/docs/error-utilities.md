@@ -544,7 +544,7 @@ return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
 
 **Origin-данные сохраняются** (данные первого TradingError в цепочке):
 
-- `rootTimestamp` - timestamp первого TradingError (ISO string)
+- `firstTradingErrorTimestamp` - timestamp первого TradingError (ISO string)
 - `firstTradingErrorStack` - stack trace первого TradingError
 - `originalName` - name первого TradingError
 - `originalCode` - code первого TradingError
@@ -567,7 +567,7 @@ return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
 
 - **Что пошло не так** (cause, reason, raw, source) - сохраняется
 - **Root cause** (cause.stack исходного exception) - сохраняется в cause
-- **Первый TradingError** (rootTimestamp, firstTradingErrorStack, originalName, originalCode) - сохраняется
+- **Первый TradingError** (firstTradingErrorTimestamp, firstTradingErrorStack, originalName, originalCode) - сохраняется
 - **Где это произошло** (service, op, opChain) - накапливается в цепочке
 - **Текущее состояние** (timestamp, stack, name) - обновляется
 

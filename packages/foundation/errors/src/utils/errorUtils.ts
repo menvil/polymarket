@@ -485,7 +485,7 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
  *
  * **Root-cause semantics:**
  * - cause, reason, raw, source сохраняются из inner (это первопричина)
- * - rootTimestamp, firstTradingErrorStack, originalName, originalCode сохраняют данные самой первой ошибки
+ * - firstTradingErrorTimestamp, firstTradingErrorStack, originalName, originalCode сохраняют данные самой первой ошибки
  * - opChain накапливает историю операций: [innerOp, ..., op]
  *
  * Это гарантирует:
@@ -569,10 +569,10 @@ export function rewrap<TError extends DomainError>(
 
   // 4) Сохраняем origin-данные из первоначальной ошибки (если это первый rewrap)
   // Эти поля позволяют отследить самую первую ошибку в цепочке
-  if (inner.rootTimestamp === undefined && err.timestamp) {
-    merged.rootTimestamp = err.timestamp.toISOString();
-  } else if (inner.rootTimestamp !== undefined) {
-    merged.rootTimestamp = inner.rootTimestamp; // Сохраняем из inner если уже был rewrap
+  if (inner.firstTradingErrorTimestamp === undefined && err.timestamp) {
+    merged.firstTradingErrorTimestamp = err.timestamp.toISOString();
+  } else if (inner.firstTradingErrorTimestamp !== undefined) {
+    merged.firstTradingErrorTimestamp = inner.firstTradingErrorTimestamp; // Сохраняем из inner если уже был rewrap
   }
 
   if (inner.firstTradingErrorStack === undefined && err.stack) {

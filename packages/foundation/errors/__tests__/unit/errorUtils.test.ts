@@ -348,7 +348,7 @@ describe('errorUtils', () => {
       );
 
       // Проверяем что origin-данные сохранены в context
-      expect(rewrapped1.context?.rootTimestamp).toBe(originalTimestamp);
+      expect(rewrapped1.context?.firstTradingErrorTimestamp).toBe(originalTimestamp);
       expect(rewrapped1.context?.firstTradingErrorStack).toBe(firstTradingErrorStack);
       expect(rewrapped1.context?.originalName).toBe(originalName);
       expect(rewrapped1.context?.originalCode).toBe(originalCode);
@@ -356,8 +356,8 @@ describe('errorUtils', () => {
       // Сама ошибка имеет свой timestamp и stack (могут быть одинаковые если быстро)
       expect(rewrapped1.timestamp).toBeInstanceOf(Date);
       expect(rewrapped1.stack).toBeDefined();
-      // rootTimestamp в ISO формате, не Date объект
-      expect(typeof rewrapped1.context?.rootTimestamp).toBe('string');
+      // firstTradingErrorTimestamp в ISO формате, не Date объект
+      expect(typeof rewrapped1.context?.firstTradingErrorTimestamp).toBe('string');
 
       // Второй rewrap (вложенный)
       const rewrapped2 = rewrap(
@@ -369,13 +369,13 @@ describe('errorUtils', () => {
       );
 
       // Origin-данные должны остаться от ПЕРВОЙ ошибки (не перезаписаны)
-      expect(rewrapped2.context?.rootTimestamp).toBe(originalTimestamp);
+      expect(rewrapped2.context?.firstTradingErrorTimestamp).toBe(originalTimestamp);
       expect(rewrapped2.context?.firstTradingErrorStack).toBe(firstTradingErrorStack);
       expect(rewrapped2.context?.originalName).toBe(originalName);
       expect(rewrapped2.context?.originalCode).toBe(originalCode);
 
-      // rootTimestamp - это сохраненная ISO строка от первой ошибки
-      expect(rewrapped2.context?.rootTimestamp).toBe(originalTimestamp);
+      // firstTradingErrorTimestamp - это сохраненная ISO строка от первой ошибки
+      expect(rewrapped2.context?.firstTradingErrorTimestamp).toBe(originalTimestamp);
       // firstTradingErrorStack - это сохраненный stack от первой ошибки
       expect(rewrapped2.context?.firstTradingErrorStack).toBe(firstTradingErrorStack);
     });
