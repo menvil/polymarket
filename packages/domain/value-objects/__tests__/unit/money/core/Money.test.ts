@@ -118,19 +118,10 @@ describe('Money core', () => {
   });
 
   describe('hasSameCurrency()', () => {
-    it('true для одной валюты', () => {
-      const m1 = Money.of(new Decimal(100));
-      const m2 = Money.of(new Decimal(200));
-      expect(m1.hasSameCurrency(m2)).toBe(true);
-    });
-
     it('true для одного объекта', () => {
       const m = Money.of(new Decimal(100));
       expect(m.hasSameCurrency(m)).toBe(true);
     });
-  });
-
-  describe('hasSameCurrency()', () => {
     it('true для USDC', () => {
       const m1 = Money.of(new Decimal(100), 'USDC');
       const m2 = Money.of(new Decimal(200), 'USDC');
