@@ -11,9 +11,9 @@
  *
  * **Обработка Promise rejections:**
  * - `AsyncResult.ok(promise)` - автоматически ловит rejections через `.catch()` и преобразует их в Err<E>
- * - `AsyncResult.from(promise)` - НЕ ловит rejections, ожидает что входной Promise<Result<T,E>>
- *   уже resolved или caller сам обработает rejections. Если Promise будет rejected, это приведёт
- *   к unhandled rejection (не к Err<E>)
+ * - `AsyncResult.from(promise, onReject?)` - автоматически ловит rejections через `.catch()` и преобразует
+ *   их в Err<E>. Опциональный параметр `onReject` позволяет безопасно трансформировать unknown error в E.
+ *   Без `onReject` используется type assertion (error as E)
  *
  * **Обработка exceptions в методах цепочки:**
  * - Трансформирующие методы (*Async, flatMap*) ловят exceptions и преобразуют их в Err<E>

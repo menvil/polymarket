@@ -622,10 +622,10 @@ public static validateSpread(
   );
 
   if (!result.ok) {
-    return Err(withOperationContext(result.error, 'validateSpread', {
+    return Err(rewrap('PriceService', 'validateSpread', {
       bid: bidPrice.value().toString(),
       ask: askPrice.value().toString()
-    }));
+    }, result.error, InvalidPriceError));
   }
 
   return Ok(undefined);

@@ -276,21 +276,6 @@ const success = Ok(10);
 const value = unwrapOr(success, 42); // 10
 ```
 
-### unwrapOrElse(result, fn)
-
-Извлекает значение из Ok или вычисляет fallback из функции.
-
-```typescript
-const result = Err('network error');
-const value = unwrapOrElse(result, (err) => {
-  console.error('Failed:', err);
-  return 0; // Вычисляемый fallback
-}); // 0
-
-const success = Ok(10);
-const value = unwrapOrElse(success, () => 0); // 10 (функция не вызвана)
-```
-
 ### mapErr(result, fn)
 
 Трансформирует ошибку, не затрагивая Ok-значение.
@@ -303,33 +288,6 @@ const transformed = mapErr(result, (err) => err.message);
 const success = Ok(42);
 const unchanged = mapErr(success, (err) => 'error');
 // Ok(42) - функция не вызвана
-```
-
-### and(result1, result2)
-
-Возвращает второй Result, если первый - Ok, иначе первую ошибку.
-
-```typescript
-const ok1 = Ok(1);
-const ok2 = Ok(2);
-const result = and(ok1, ok2); // Ok(2)
-
-const err1 = Err('error 1');
-const result2 = and(err1, ok2); // Err('error 1')
-```
-
-### or(result1, result2)
-
-Возвращает первый Result, если он Ok, иначе второй Result.
-
-```typescript
-const ok1 = Ok(1);
-const ok2 = Ok(2);
-const result = or(ok1, ok2); // Ok(1)
-
-const err1 = Err('error 1');
-const err2 = Err('error 2');
-const result2 = or(err1, err2); // Err('error 2')
 ```
 
 ### isOk(result) / isErr(result)
