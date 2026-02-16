@@ -259,3 +259,28 @@ describe('MoneyService.divide()', () => {
     });
   });
 });
+
+describe('MoneyService - unexpected error handling', () => {
+  it('createFromDecimal обрабатывает unexpected error из Money.of()', () => {
+    // Мокаем Money.of() чтобы бросить generic Error (не MoneyInvariantViolation)
+    const unexpectedError = new Error('Unexpected error from Money.of()');
+    const spyMoneyOf = jest.spyOn(Money, 'of').mockImplementationOnce(() => {
+      throw unexpectedError;
+    });
+
+    // Пытаемся выполнить операцию, которая использует createFromDecimal
+    const m1 = Money.of(new Decimal(100));
+    const m2 = Money.of(new Decimal(50));
+    const result = MoneyService.add(m1, m2);
+
+    // Должен вернуть Err с InvalidMoneyError (не бросить исключение)
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(InvalidMoneyError);
+      expect(result.error.message).toContain('Unexpected error');
+    }
+
+    // Восстанавливаем оригинальную реализацию
+    spyMoneyOf.mockRestore();
+  });
+});
