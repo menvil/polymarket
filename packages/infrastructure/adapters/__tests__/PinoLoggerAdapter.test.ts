@@ -9,28 +9,19 @@ import { PaperClock } from '@polymarket/time';
 import type { ILogger } from '@polymarket/logger';
 
 describe('PinoLoggerAdapter', () => {
-  let pinoLogger: pino.Logger;
   let clock: PaperClock;
   let logger: PinoLoggerAdapter;
 
   beforeEach(() => {
     clock = new PaperClock(new Date('2024-01-01T00:00:00Z'));
 
-    // Создаём Pino logger с минимальной конфигурацией для тестов
-    pinoLogger = pino({
-      level: 'trace',
-    });
-
-    // Мокаем все методы Pino для проверки вызовов
-    jest.spyOn(pinoLogger, 'trace');
-    jest.spyOn(pinoLogger, 'debug');
-    jest.spyOn(pinoLogger, 'info');
-    jest.spyOn(pinoLogger, 'warn');
-    jest.spyOn(pinoLogger, 'error');
-    jest.spyOn(pinoLogger, 'fatal');
-    jest.spyOn(pinoLogger, 'child');
-
-    logger = new PinoLoggerAdapter(pinoLogger, clock);
+    // Создаём adapter с минимальной конфигурацией для тестов
+    logger = new PinoLoggerAdapter(
+      {
+        level: 'trace'
+      },
+      clock
+    );
   });
 
   describe('constructor', () => {

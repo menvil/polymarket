@@ -30,31 +30,44 @@ import type { ILogger } from '@polymarket/logger';
 import type { IClock } from '@polymarket/time';
 
 export class PinoLoggerAdapter implements ILogger {
+  private readonly pino: pino.Logger;
+
   /**
    * Создаёт Pino Logger Adapter
    *
-   * @param pino - Экземпляр Pino logger
+   * @param options - Опции Pino logger (level, transport, etc.)
    * @param clock - Источник времени для timestamps
+   * @param destination - Опциональный destination stream (для тестов)
    *
    * @remarks
-   * IClock используется для переопределения timestamp из Pino.
+   * IClock используется для генерации timestamp в логах.
+   * Pino настраивается использовать IClock через custom timestamp function.
    * Это критично для paper trading режима где нужно детерминированное время.
+   *
+   * **ВАЖНО:** timestamp генерируется через IClock, не через Date.now().
+   * В serialized JSON будет ОДНО поле "time" с значением из IClock.
    *
    * @example
    * ```typescript
-   * import pino from 'pino';
    * import { LiveClock } from '@polymarket/time';
    *
    * const logger = new PinoLoggerAdapter(
-   *   pino({ level: 'info' }),
+   *   { level: 'info' },
    *   new LiveClock()
    * );
    * ```
    */
   constructor(
-    private readonly pino: pino.Logger,
-    private readonly clock: IClock
-  ) {}
+    options: pino.LoggerOptions,
+    private readonly clock: IClock,
+    destination?: pino.DestinationStream
+  ) {
+    // Настраиваем Pino использовать IClock для timestamp
+    this.pino = pino({
+      ...options,
+      timestamp: () => `,"time":${this.clock.now().getTime()}`
+    }, destination);
+  }
 
   /**
    * Логирует трассировочное сообщение (уровень TRACE)
@@ -71,13 +84,7 @@ export class PinoLoggerAdapter implements ILogger {
    * ```
    */
   trace(message: string, context?: Record<string, unknown>): void {
-    this.pino.trace(
-      {
-        ...context,
-        time: this.clock.now().getTime(), // Переопределяем timestamp из IClock
-      },
-      message
-    );
+    this.pino.trace(context || {}, message);
   }
 
   /**
@@ -96,13 +103,7 @@ export class PinoLoggerAdapter implements ILogger {
    * ```
    */
   debug(message: string, context?: Record<string, unknown>): void {
-    this.pino.debug(
-      {
-        ...context,
-        time: this.clock.now().getTime(),
-      },
-      message
-    );
+    this.pino.debug(context || {}, message);
   }
 
   /**
@@ -121,13 +122,7 @@ export class PinoLoggerAdapter implements ILogger {
    * ```
    */
   info(message: string, context?: Record<string, unknown>): void {
-    this.pino.info(
-      {
-        ...context,
-        time: this.clock.now().getTime(),
-      },
-      message
-    );
+    this.pino.info(context || {}, message);
   }
 
   /**
@@ -145,13 +140,7 @@ export class PinoLoggerAdapter implements ILogger {
    * ```
    */
   warn(message: string, context?: Record<string, unknown>): void {
-    this.pino.warn(
-      {
-        ...context,
-        time: this.clock.now().getTime(),
-      },
-      message
-    );
+    this.pino.warn(context || {}, message);
   }
 
   /**
@@ -183,8 +172,7 @@ export class PinoLoggerAdapter implements ILogger {
   ): void {
     const pinoContext = {
       ...context,
-      ...(error && { err: error }), // Pino автоматически сериализует err
-      time: this.clock.now().getTime(),
+      ...(error && { err: error }) // Pino автоматически сериализует err
     };
     this.pino.error(pinoContext, message);
   }
@@ -220,8 +208,7 @@ export class PinoLoggerAdapter implements ILogger {
   ): void {
     const pinoContext = {
       ...context,
-      ...(error && { err: error }),
-      time: this.clock.now().getTime(),
+      ...(error && { err: error })
     };
     this.pino.fatal(pinoContext, message);
   }
