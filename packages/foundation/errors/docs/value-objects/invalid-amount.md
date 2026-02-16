@@ -586,17 +586,16 @@ import { InvalidAmountError } from '@polymarket/errors';
 
 const result = Amount.fromNumber(value, field, min, max);
 
-result.match({
-  ok: (amount) => processAmount(amount),
-  err: (error) => {
-    if (error.code === InvalidAmountError.code) {
-      const field = error.context?.field as string;
-      showFieldError(field, error.message);
-    } else {
-      showError('Unexpected error', error);
-    }
+if (result.ok) {
+  processAmount(result.value);
+} else {
+  if (result.error.code === InvalidAmountError.code) {
+    const field = result.error.context?.field as string;
+    showFieldError(field, result.error.message);
+  } else {
+    showError('Unexpected error', result.error);
   }
-});
+}
 ```
 
 ### С логированием
@@ -613,20 +612,18 @@ function validateAndLogAmount(
 ): Result<Amount, InvalidAmountError> {
   const result = Amount.fromNumber(value, field, min, max);
 
-  result.match({
-    ok: (amount) => {
-      logger.info('Amount validated', {
-        userId,
-        field: amount.getField(),
-        value: amount.getValue()
-      });
-    },
-    err: (error) => {
-      logger.error('Amount validation failed', {
-        userId,
-        field,
-        error: error.toJSON(),
-        userInput: { value, min, max }
+  if (result.ok) {
+    logger.info('Amount validated', {
+      userId,
+      field: result.value.getField(),
+      value: result.value.getValue()
+    });
+  } else {
+    logger.error('Amount validation failed', {
+      userId,
+      field,
+      error: result.error.toJSON(),
+      userInput: { value, min, max }
       });
     }
   });

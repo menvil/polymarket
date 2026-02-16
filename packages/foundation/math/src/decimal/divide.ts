@@ -66,9 +66,9 @@ export function divideDecimal(a: Decimal, b: Decimal): Decimal {
   assertFiniteOperand(a, 'a', context);
 
   // Проверка делителя - специальные проверки для деления
-  if (!b || typeof b.isFinite !== 'function') {
+  if (!(b instanceof Decimal)) {
     throw new InvalidDivisorError(
-      (ctx) => `Operand 'b' (divisor) must be a valid Decimal, got ${ctx.b}`,
+      (ctx) => `Operand 'b' (divisor) must be a valid Decimal instance, got ${ctx.b}`,
       { context }
     );
   }

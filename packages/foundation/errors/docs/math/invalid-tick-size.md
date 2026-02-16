@@ -304,10 +304,11 @@ function normalizeUserPrice(
 // Использование
 const result = normalizeUserPrice('10.567', new Decimal('0.01'));
 
-result.match({
-  ok: (normalized) => console.log('Normalized:', normalized.toString()), // "10.57"
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log('Normalized:', result.value.toString()); // "10.57"
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ---

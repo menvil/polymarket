@@ -112,10 +112,11 @@ class Quantity {
 // Использование
 const result = Quantity.fromNumber(userInput);
 
-result.match({
-  ok: (qty) => console.log('Valid quantity:', qty.getValue()),
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log('Valid quantity:', result.value.getValue());
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ### 3. С кастомным сообщением для разных случаев

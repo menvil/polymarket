@@ -516,12 +516,16 @@ Money.fromAmount(100, undefined as any); // ❌ Err(InvalidMoneyError)
 // Проблемы с float
 const m1 = Money.fromNumber(0.1, 'USDC');
 const m2 = Money.fromNumber(0.2, 'USDC');
-const sum1 = m1.unwrap().add(m2.unwrap()); // 0.30000000000000004 (float precision)
+if (m1.ok && m2.ok) {
+  const sum1 = m1.value.add(m2.value); // 0.30000000000000004 (float precision)
+}
 
 // Решение с decimal.js
 const m3 = Money.fromString('0.1', 'USDC');
 const m4 = Money.fromString('0.2', 'USDC');
-const sum2 = m3.unwrap().add(m4.unwrap()); // Точно 0.3 ✅
+if (m3.ok && m4.ok) {
+  const sum2 = m3.value.add(m4.value); // Точно 0.3 ✅
+}
 ```
 
 ### Операции приводящие к ошибкам

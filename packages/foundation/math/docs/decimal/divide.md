@@ -201,7 +201,7 @@ try {
   if (ArithmeticOverflowError.is(error)) {
     console.error('Division overflow:', error.message);
     console.error('Context:', error.context);
-    // Context: { operation: 'divide', a: '5e8999999999999000', b: '1e-1500' }
+    // Context: { operation: 'divide', a: '5e8999999999999000', b: '1e-1500', result: 'Infinity' }
   }
 }
 ```

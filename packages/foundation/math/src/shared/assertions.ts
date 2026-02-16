@@ -54,10 +54,10 @@ export function assertFiniteOperand(
   paramName: string,
   context: MathOperationContext
 ): void {
-  // Проверка на undefined/null перед вызовом методов
-  if (!value || typeof value.isFinite !== 'function') {
+  // Проверка на undefined/null и instanceof Decimal
+  if (!(value instanceof Decimal)) {
     throw new InvalidOperandError(
-      (ctx) => `${ctx.paramName} must be a valid Decimal, got ${ctx.value}`,
+      (ctx) => `${ctx.paramName} must be a valid Decimal instance, got ${ctx.value}`,
       {
         context: {
           ...context,
@@ -262,10 +262,10 @@ export function assertValidTickSize(
   tickSize: Decimal,
   context: MathOperationContext
 ): void {
-  // Проверка на undefined/null перед вызовом методов
-  if (!tickSize || typeof tickSize.isFinite !== 'function') {
+  // Проверка на undefined/null и instanceof Decimal
+  if (!(tickSize instanceof Decimal)) {
     throw new InvalidTickSizeError(
-      (ctx) => `Tick size must be a valid Decimal, got ${ctx.tickSize}`,
+      (ctx) => `Tick size must be a valid Decimal instance, got ${ctx.tickSize}`,
       { context }
     );
   }

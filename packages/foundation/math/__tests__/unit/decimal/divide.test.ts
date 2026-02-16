@@ -160,6 +160,25 @@ describe('divideDecimal', () => {
         InvalidDivisorError
       );
     });
+
+    it('должен throw InvalidDivisorError на fake Decimal объект (имеет isFinite, но не instanceof)', () => {
+      // Создаём объект-импостер с isFinite методом
+      const fakeDecimal = {
+        isFinite: () => true,
+        toString: () => 'fake',
+      };
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), fakeDecimal)).toThrow(
+        InvalidDivisorError
+      );
+
+      // Должна быть доменная ошибка, а не TypeError
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), fakeDecimal)).not.toThrow(
+        TypeError
+      );
+    });
   });
 
   describe('ошибки invalid operand (a)', () => {

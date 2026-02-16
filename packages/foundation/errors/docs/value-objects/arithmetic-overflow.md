@@ -335,11 +335,11 @@ class InterestCalculator {
   ): Result<number, ArithmeticOverflowError> {
     // Вычисляем (1 + rate) используя SafeMath (см. Пример 3)
     const rateResult = SafeMath.add(1, rate);
-    if (rateResult.isErr()) {
-      return Err(rateResult.unwrapErr());
+    if (!rateResult.ok) {
+      return Err(rateResult.error);
     }
 
-    const base = rateResult.unwrap();
+    const base = rateResult.value;
 
     // Вычисляем base^periods
     const power = Math.pow(base, periods);
