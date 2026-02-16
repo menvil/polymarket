@@ -6,9 +6,9 @@
  * наследующие TradingError, и запускает для них базовые тесты.
  *
  * ✨ При создании нового класса ошибки:
- * 1. Создайте файл в src/base/ или src/domain/ (например, MyError.ts)
+ * 1. Создайте файл в src/base/, src/value-objects/, или src/math/ (например, MyError.ts)
  * 2. Экспортируйте класс: export class MyError extends TradingError { ... }
- * 3. Добавьте в src/base/index.ts: export * from './MyError.js';
+ * 3. Добавьте в соответствующий index.ts: export * from './MyError.js';
  * 4. Запустите npm test - базовые тесты запустятся автоматически!
  *
  * Ничего больше не нужно! Никаких registry, никакой ручной регистрации!

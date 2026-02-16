@@ -32,7 +32,7 @@ import { DivisionByZeroError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E> также понадобятся:
 import { InvalidMoneyError, ArithmeticOverflowError } from '@polymarket/errors';
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 ```
 
 ---
@@ -81,7 +81,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { DivisionByZeroError } from '@polymarket/errors';
 
 class Money {
@@ -129,7 +129,7 @@ result.match({
 ### 3. Вычисление средней цены
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { DivisionByZeroError } from '@polymarket/errors';
 
 class AveragePrice {
@@ -178,7 +178,7 @@ avgResult.match({
 ### 4. Вычисление процента прибыли
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { DivisionByZeroError } from '@polymarket/errors';
 
 class ProfitPercentage {
@@ -237,7 +237,7 @@ profitResult.match({
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { DivisionByZeroError } from '@polymarket/errors';
 
 class DecimalMoney {
@@ -361,7 +361,7 @@ const result = money.divide(-0);
 ### Цепочка делений
 
 ```typescript
-import { ResultChain } from '@polymarket/types';
+import { ResultChain } from '@polymarket/result';
 
 const result = ResultChain
   .from(Money.fromAmount(1000, 'USDC'))

@@ -73,7 +73,7 @@ try {
 ### ✅ Новый подход: Result<T,E>
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 class Price {
@@ -125,7 +125,7 @@ result.match({
 ### Базовый пример
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { InvalidPriceError, InvalidQuantityError } from '@polymarket/errors';
 
 // Каждая функция возвращает Result
@@ -154,7 +154,7 @@ orderResult.match({
 ### Цепочка операций (ResultChain)
 
 ```typescript
-import { ResultChain } from '@polymarket/types';
+import { ResultChain } from '@polymarket/result';
 import {
   InvalidPriceError,
   InvalidQuantityError,
@@ -326,7 +326,7 @@ result.match({
 ### 4. Обработка с fallback
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 function getPriceOrDefault(input: number, defaultPrice: Price): Price {
@@ -346,7 +346,7 @@ const price = getPriceOrDefault(userInput, Price.fromNumber(0.5).unwrap());
 ### 5. Aggregate errors (множественные ошибки)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 
 type ValidationErrors = TradingError[];

@@ -79,7 +79,7 @@ class Price {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 class Price {
@@ -145,7 +145,7 @@ result.match({
 ### 4. Композиция с ResultChain
 
 ```typescript
-import { ResultChain } from '@polymarket/types';
+import { ResultChain } from '@polymarket/result';
 import {
   InvalidPriceError,
   InvalidQuantityError,
@@ -191,7 +191,7 @@ orderResult.match({
 ### 5. Множественная валидация (aggregate errors)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 
 type ValidationErrors = TradingError[];
@@ -254,7 +254,7 @@ validationResult.match({
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import {
   InvalidMoneyError,
   ArithmeticOverflowError,

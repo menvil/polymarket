@@ -3,14 +3,18 @@
  *
  * @remarks
  * Проверяет критичные утилиты:
- * - toDecimal: парсинг Decimal значений
+ * - toDecimal: парсинг Decimal значений (включая edge cases)
+ * - toCause: извлечение cause из любых thrown значений
  * - rewrap: сохранение метаданных (code, innerError) при rewrap
  * - wrapOp: централизованная обработка ошибок, классификация TradingError
+ * - coreInvariantError: обработка core invariant violations
+ * - currencyMismatchError: создание ошибок несовпадения валют
  * - isExpectedMathError: определение expected math errors
+ * - isCoreInvariantViolation: определение core invariant violations
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Err, Ok } from '@polymarket/result';
+import { Err, Ok, isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
 import {
   toDecimal,
@@ -18,11 +22,15 @@ import {
   wrapOp,
   isExpectedMathError,
   isCoreInvariantViolation,
+  toCause,
+  coreInvariantError,
+  currencyMismatchError,
 } from '../../src/utils/errorUtils.js';
 import { InvalidMoneyError } from '../../src/value-objects/InvalidMoneyError.js';
 import { InvalidPriceError } from '../../src/value-objects/InvalidPriceError.js';
 import { InvalidQuantityError } from '../../src/value-objects/InvalidQuantityError.js';
 import { InvalidBalanceError } from '../../src/value-objects/InvalidBalanceError.js';
+import { CurrencyMismatchError } from '../../src/value-objects/CurrencyMismatchError.js';
 import { ArithmeticOverflowError } from '../../src/value-objects/ArithmeticOverflowError.js';
 import { DivisionByZeroError } from '../../src/value-objects/DivisionByZeroError.js';
 import { InvalidOperandError } from '../../src/math/InvalidOperandError.js';
@@ -630,6 +638,229 @@ describe('errorUtils', () => {
       expect(isCoreInvariantViolation(null)).toBe(false);
       expect(isCoreInvariantViolation(undefined)).toBe(false);
       expect(isCoreInvariantViolation({})).toBe(false);
+    });
+  });
+
+  describe('toCause', () => {
+    it('should handle Error objects', () => {
+      const error = new Error('Test error');
+      const cause = toCause(error);
+      expect(cause.name).toBe('Error');
+      expect(cause.message).toBe('Test error');
+      expect(cause.stack).toBeDefined();
+    });
+
+    it('should handle TypeError objects', () => {
+      const error = new TypeError('Type error');
+      const cause = toCause(error);
+      expect(cause.name).toBe('TypeError');
+      expect(cause.message).toBe('Type error');
+    });
+
+    it('should handle string thrown as error', () => {
+      const cause = toCause('string error');
+      expect(cause.name).toBe('UnknownError');
+      expect(cause.message).toBe('string error');
+      expect(cause.stack).toBeUndefined();
+    });
+
+    it('should handle number thrown as error', () => {
+      const cause = toCause(123);
+      expect(cause.name).toBe('UnknownError');
+      expect(cause.message).toBe('123');
+      expect(cause.stack).toBeUndefined();
+    });
+
+    it('should handle null thrown as error', () => {
+      const cause = toCause(null);
+      expect(cause.name).toBe('UnknownError');
+      expect(cause.message).toBe('null');
+      expect(cause.stack).toBeUndefined();
+    });
+
+    it('should handle undefined thrown as error', () => {
+      const cause = toCause(undefined);
+      expect(cause.name).toBe('UnknownError');
+      expect(cause.message).toBe('undefined');
+      expect(cause.stack).toBeUndefined();
+    });
+
+    it('should handle object thrown as error', () => {
+      const cause = toCause({ foo: 'bar' });
+      expect(cause.name).toBe('UnknownError');
+      expect(cause.message).toBe('[object Object]');
+      expect(cause.stack).toBeUndefined();
+    });
+  });
+
+  describe('toDecimal edge cases', () => {
+    it('should return Err for object with non-callable toString', () => {
+      // Object with toString property that's not a function
+      const objWithBadToString = {
+        toString: 'not a function',
+        // Add valueOf to prevent String() from throwing
+        valueOf() { return '[object Object]'; }
+      };
+      const result = toDecimal('amount', objWithBadToString as any, 'INVALID_FORMAT', InvalidMoneyError);
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        expect(result.error.message).toContain('Failed to normalize value');
+        expect(result.error.context!.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context!.source).toBe('parsing');
+      }
+    });
+
+    it('should return Err for object without callable toString', () => {
+      // Object where toString exists but returns undefined
+      const objWithBadToString = {
+        toString: undefined,
+        valueOf() { return '[BadObject]'; }
+      };
+      const result = toDecimal('amount', objWithBadToString as any, 'INVALID_FORMAT', InvalidMoneyError);
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        expect(result.error.message).toContain('Failed to normalize value');
+      }
+    });
+
+    it('should handle Decimal parse error with non-Error', () => {
+      // Test the else branch in catch by passing invalid input to Decimal
+      // When Decimal constructor fails, it throws an Error, so we test the toCause path
+      const result = toDecimal('amount', 'not-a-number-xyz', 'INVALID_FORMAT', InvalidMoneyError);
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        expect(result.error.context!.cause).toBeDefined();
+        // cause should have been created by toCause from the Decimal error
+        expect((result.error.context!.cause as any).name).toBeDefined();
+      }
+    });
+  });
+
+  describe('coreInvariantError', () => {
+    it('should create error from core invariant violation', () => {
+      const violation = {
+        name: 'PriceInvariantViolation',
+        message: 'Price out of range',
+        reason: 'OUT_OF_RANGE_HIGH'
+      } as any;
+
+      const error = coreInvariantError(
+        'PriceService',
+        'create',
+        { value: 1.5 },
+        violation,
+        InvalidPriceError
+      );
+
+      expect(error).toBeInstanceOf(InvalidPriceError);
+      expect(error.message).toBe('Price out of range');
+      expect(error.context!.source).toBe('core_invariant');
+      expect(error.context!.service).toBe('PriceService');
+      expect(error.context!.op).toBe('create');
+      expect(error.context!.reason).toBe('OUT_OF_RANGE_HIGH');
+      expect((error.context as any).value).toBe(1.5);
+    });
+
+    it('should work with different error types', () => {
+      const violation = {
+        name: 'QuantityInvariantViolation',
+        message: 'Invalid quantity',
+        reason: 'NEGATIVE'
+      } as any;
+
+      const error = coreInvariantError(
+        'QuantityService',
+        'of',
+        { amount: -10 },
+        violation,
+        InvalidQuantityError
+      );
+
+      expect(error).toBeInstanceOf(InvalidQuantityError);
+      expect(error.context!.reason).toBe('NEGATIVE');
+    });
+  });
+
+  describe('wrapOp with core invariant violations', () => {
+    it('should catch and wrap core invariant violations', () => {
+      class PriceInvariantViolation extends Error {
+        reason = 'OUT_OF_RANGE_HIGH';
+        constructor(message: string) {
+          super(message);
+          this.name = 'PriceInvariantViolation';
+        }
+      }
+
+      const result = wrapOp(
+        'PriceService',
+        'create',
+        { value: 1.5 },
+        () => {
+          throw new PriceInvariantViolation('Price 1.5 exceeds maximum 0.9999');
+        },
+        InvalidPriceError
+      );
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+        expect(result.error.message).toBe('Price 1.5 exceeds maximum 0.9999');
+        expect(result.error.context!.source).toBe('core_invariant');
+        expect(result.error.context!.service).toBe('PriceService');
+        expect(result.error.context!.op).toBe('create');
+        expect(result.error.context!.reason).toBe('OUT_OF_RANGE_HIGH');
+        expect((result.error.context as any).opChain).toEqual(['PriceService.create']);
+      }
+    });
+  });
+
+  describe('currencyMismatchError', () => {
+    it('should create currency mismatch error', () => {
+      const error = currencyMismatchError(
+        'add',
+        'USD',
+        'EUR',
+        'CURRENCY_MISMATCH',
+        InvalidMoneyError
+      );
+
+      expect(error).toBeInstanceOf(InvalidMoneyError);
+      expect(error.message).toBe('Cannot add: currency mismatch');
+      expect(error.context!.op).toBe('add');
+      expect(error.context!.reason).toBe('CURRENCY_MISMATCH');
+      expect((error.context as any).expected).toBe('USD');
+      expect((error.context as any).actual).toBe('EUR');
+    });
+
+    it('should work with different operations', () => {
+      const error = currencyMismatchError(
+        'isLessThan',
+        'USDC',
+        'DAI',
+        'CURRENCY_MISMATCH',
+        InvalidMoneyError
+      );
+
+      expect(error.message).toBe('Cannot isLessThan: currency mismatch');
+      expect((error.context as any).expected).toBe('USDC');
+      expect((error.context as any).actual).toBe('DAI');
+    });
+
+    it('should work with different error types', () => {
+      const error = currencyMismatchError(
+        'equals',
+        'USDC',
+        'DAI',
+        'CURRENCY_MISMATCH',
+        CurrencyMismatchError
+      );
+
+      expect(error).toBeInstanceOf(CurrencyMismatchError);
+      expect(error.message).toBe('Cannot equals: currency mismatch');
     });
   });
 });

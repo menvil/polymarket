@@ -8,9 +8,14 @@ import { InvalidPercentageError } from '../value-objects/InvalidPercentageError.
 import { InvalidPriceError } from '../value-objects/InvalidPriceError.js';
 import { InvalidQuantityError } from '../value-objects/InvalidQuantityError.js';
 import { InvalidQuoteError } from '../value-objects/InvalidQuoteError.js';
+import { InvalidRatioError } from '../value-objects/InvalidRatioError.js';
+import { InvalidAmountError } from '../value-objects/InvalidAmountError.js';
+import { InvalidBalanceError } from '../value-objects/InvalidBalanceError.js';
+import { CurrencyMismatchError } from '../value-objects/CurrencyMismatchError.js';
+import { InvalidSpreadError } from '../value-objects/InvalidSpreadError.js';
 import { ArithmeticOverflowError } from '../value-objects/ArithmeticOverflowError.js';
-import { InvalidOperandError } from '../math/InvalidOperandError.js';
 import { DivisionByZeroError } from '../value-objects/DivisionByZeroError.js';
+import { InvalidOperandError } from '../math/InvalidOperandError.js';
 import { ErrorSource } from '../ErrorSource.js';
 
 /**
@@ -42,22 +47,36 @@ import { ErrorSource } from '../ErrorSource.js';
 /**
  * Тип Domain Error для параметризации функций
  *
- * @deprecated Используется для обратной совместимости.
- * Новый код может использовать TradingError напрямую для большей гибкости.
- *
  * @remarks
- * Исторически это был whitelist конкретных типов ошибок.
- * Теперь wrapOp() обрабатывает ВСЕ TradingError, не только этот union.
- * Этот тип сохранен для обратной совместимости с существующим кодом.
+ * Включает ВСЕ value object ошибки, которые могут возникнуть в Facade services.
+ * wrapOp() обрабатывает любой TradingError, но этот union обеспечивает типобезопасность
+ * для конкретных Service методов.
+ *
+ * Категории ошибок:
+ * - Валидация диапазонов: Price, Quantity, Percentage, Ratio, Amount
+ * - Денежные значения: Money, Balance, CurrencyMismatch
+ * - Торговые объекты: AssetQuantity, Spread, Quote, OutcomeToken
+ * - Математические операции: DivisionByZero, ArithmeticOverflow
  */
 export type DomainError =
-  | InvalidAssetQuantityError
-  | InvalidMoneyError
-  | InvalidOutcomeTokenError
-  | InvalidPercentageError
+  // Валидация диапазонов
   | InvalidPriceError
   | InvalidQuantityError
-  | InvalidQuoteError;
+  | InvalidPercentageError
+  | InvalidRatioError
+  | InvalidAmountError
+  // Денежные значения
+  | InvalidMoneyError
+  | InvalidBalanceError
+  | CurrencyMismatchError
+  // Торговые объекты
+  | InvalidAssetQuantityError
+  | InvalidSpreadError
+  | InvalidQuoteError
+  | InvalidOutcomeTokenError
+  // Математические операции
+  | DivisionByZeroError
+  | ArithmeticOverflowError;
 
 /**
  * Конструктор Domain Error

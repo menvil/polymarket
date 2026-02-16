@@ -36,7 +36,7 @@
 import { InvalidPercentageError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E>:
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 ```
 
 ---
@@ -99,7 +99,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { InvalidPercentageError } from '@polymarket/errors';
 
 class Percentage {
@@ -317,7 +317,7 @@ function handleSlippageInput(input: string): void {
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/types';
+import { Result } from '@polymarket/result';
 import { InvalidPercentageError } from '@polymarket/errors';
 
 class Percentage {

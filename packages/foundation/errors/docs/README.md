@@ -400,7 +400,7 @@ npm run test:coverage
 │   ├── value-objects/
 │   │   ├── InvalidPriceError.ts      # Ошибки валидации value objects
 │   │   ├── InvalidQuantityError.ts
-│   │   └── ... (11 классов)
+│   │   └── ... (14 классов)
 │   ├── utils/
 │   │   └── errorUtils.ts             # Утилиты для обработки ошибок
 │   └── index.ts
@@ -413,11 +413,13 @@ npm run test:coverage
 ├── __tests__/
 │   ├── helpers/
 │   │   └── sharedErrorTests.ts       # Helper для тестов
+│   ├── smoke/
+│   │   └── runtime.test.ts           # Smoke tests экспортов и рантайма
 │   └── unit/
 │       ├── auto-discovery.test.ts    # Автоматическое обнаружение и тестирование
+│       ├── errorUtils.test.ts        # Тесты error utilities
 │       └── base/
-│           ├── TradingError.test.ts
-│           └── ValidationError.test.ts
+│           └── TradingError.test.ts
 └── package.json
 ```
 
