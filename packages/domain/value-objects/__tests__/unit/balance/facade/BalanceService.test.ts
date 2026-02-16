@@ -875,6 +875,31 @@ describe('BalanceService', () => {
           expect(result.error.message).toContain('currency mismatch');
         }
       });
+
+      it('обрабатывает ошибку MoneyService.isGreaterThanOrEqual', () => {
+        // Создаем баланс ДО установки мока
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
+
+        // Мокируем MoneyService.isGreaterThanOrEqual чтобы вернуть Err
+        const compareSpy = jest.spyOn(MoneyService, 'isGreaterThanOrEqual').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock comparison error'))
+        );
+
+        const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(5000)));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to compare available with amount');
+        }
+
+        compareSpy.mockRestore();
+      });
     });
   });
 

@@ -451,7 +451,7 @@ describe('BalanceFormatter', () => {
     });
 
     describe('toCompact() MoneyFormatter errors', () => {
-      it('обрабатывает ошибку MoneyFormatter.toCompact', () => {
+      it('обрабатывает ошибку MoneyFormatter.toCompact для available', () => {
         const balance = createBalance(10000, 2000);
 
         // Мокируем MoneyFormatter.toCompact чтобы вернуть Err
@@ -464,6 +464,45 @@ describe('BalanceFormatter', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.message).toContain('Failed to format available amount');
+        }
+
+        formatSpy.mockRestore();
+      });
+
+      it('обрабатывает ошибку MoneyFormatter.toCompact для reserved', () => {
+        const balance = createBalance(10000, 2000);
+
+        // Первый вызов toCompact для available проходит Ok
+        // Второй вызов toCompact для reserved возвращает Err
+        const formatSpy = jest.spyOn(MoneyFormatter, 'toCompact')
+          .mockReturnValueOnce({ ok: true, value: '$10.0K' } as any)
+          .mockReturnValueOnce(Err(new InvalidMoneyError('Mock format error')));
+
+        const result = BalanceFormatter.toCompact(balance);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to format reserved amount');
+        }
+
+        formatSpy.mockRestore();
+      });
+
+      it('обрабатывает ошибку MoneyFormatter.toCompact для total', () => {
+        const balance = createBalance(10000, 2000);
+
+        // Первый и второй вызовы toCompact проходят Ok
+        // Третий вызов toCompact для total возвращает Err
+        const formatSpy = jest.spyOn(MoneyFormatter, 'toCompact')
+          .mockReturnValueOnce({ ok: true, value: '$10.0K' } as any)
+          .mockReturnValueOnce({ ok: true, value: '$2.0K' } as any)
+          .mockReturnValueOnce(Err(new InvalidMoneyError('Mock format error')));
+
+        const result = BalanceFormatter.toCompact(balance);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Failed to format total amount');
         }
 
         formatSpy.mockRestore();
