@@ -48,12 +48,18 @@
  * }
  * const balance = result.value;
  *
- * // Форматирование
- * console.log(BalanceFormatter.toSummary(balance));
- * // "Available: $10000.00, Reserved: $2000.00, Total: $12000.00 (16.67% reserved)"
+ * // Форматирование (все форматтеры возвращают Result)
+ * const summaryResult = BalanceFormatter.toSummary(balance);
+ * if (summaryResult.ok) {
+ *   console.log(summaryResult.value);
+ *   // "Available: $10000.00, Reserved: $2000.00, Total: $12000.00 (16.67% reserved)"
+ * }
  *
- * console.log(BalanceFormatter.toCompact(balance));
- * // "Avail: $10.0K | Res: $2.0K | Total: $12.0K"
+ * const compactResult = BalanceFormatter.toCompact(balance);
+ * if (compactResult.ok) {
+ *   console.log(compactResult.value);
+ *   // "Avail: $10.0K | Res: $2.0K | Total: $12.0K"
+ * }
  *
  * console.log(BalanceFormatter.toDebugString(balance));
  * // "Balance(available: 10000 USDC, reserved: 2000 USDC, total: 12000 USDC)"

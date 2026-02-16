@@ -233,30 +233,52 @@ console.log(expectOk(BalanceFormatter.toSummary(balance, 0)));
 ### Компактный формат
 
 ```typescript
-console.log(BalanceFormatter.toCompact(balance));
-// "Avail: $100.00 | Res: $20.00 | Total: $120.00"
+const compactResult = BalanceFormatter.toCompact(balance);
+if (compactResult.ok) {
+  console.log(compactResult.value);
+  // "Avail: $100.00 | Res: $20.00 | Total: $120.00"
+}
 
 // Большие суммы
 const bigBalance = expectOk(BalanceService.create(Money.of(1500000), Money.of(500000), accountId, venueId));
-console.log(BalanceFormatter.toCompact(bigBalance));
-// "Avail: $1.5K | Res: $0.5K | Total: $2.0K"
+const bigCompactResult = BalanceFormatter.toCompact(bigBalance);
+if (bigCompactResult.ok) {
+  console.log(bigCompactResult.value);
+  // "Avail: $1.5K | Res: $0.5K | Total: $2.0K"
+}
 ```
 
 ### Отдельные компоненты
 
 ```typescript
 // Available
-console.log(BalanceFormatter.toAvailableString(balance)); // "$100.00"
-console.log(BalanceFormatter.toAvailableString(balance, false)); // "100.00"
+const availableResult = BalanceFormatter.toAvailableString(balance);
+if (availableResult.ok) {
+  console.log(availableResult.value); // "$100.00"
+}
+
+const availableNoSymbolResult = BalanceFormatter.toAvailableString(balance, false);
+if (availableNoSymbolResult.ok) {
+  console.log(availableNoSymbolResult.value); // "100.00"
+}
 
 // Reserved
-console.log(BalanceFormatter.toReservedString(balance)); // "$20.00"
+const reservedResult = BalanceFormatter.toReservedString(balance);
+if (reservedResult.ok) {
+  console.log(reservedResult.value); // "$20.00"
+}
 
 // Total
-console.log(BalanceFormatter.toTotalString(balance)); // "$120.00"
+const totalResult = BalanceFormatter.toTotalString(balance);
+if (totalResult.ok) {
+  console.log(totalResult.value); // "$120.00"
+}
 
 // Процент резервирования
-console.log(BalanceFormatter.toPercentageString(balance)); // "16.67%"
+const percentageResult = BalanceFormatter.toPercentageString(balance);
+if (percentageResult.ok) {
+  console.log(percentageResult.value); // "16.67%"
+}
 console.log(BalanceFormatter.toPercentageString(balance, 0)); // "17%"
 ```
 
@@ -400,7 +422,10 @@ console.log(Balance.ZERO.USDC === Balance.ZERO.USDC); // true
 ### Создание баланса без резерва
 
 ```typescript
-const balanceWithoutReserved = Balance.withZeroReserved(Money.of(10000));
+const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+const venueId: VenueId = 'POLYMARKET' as VenueId;
+
+const balanceWithoutReserved = Balance.withZeroReserved(Money.of(10000), accountId, venueId);
 console.log(balanceWithoutReserved.available().value()); // 10000
 console.log(balanceWithoutReserved.reserved().value());  // 0
 console.log(balanceWithoutReserved.hasReserved()); // false

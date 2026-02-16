@@ -108,7 +108,7 @@ Money модуль построен на **4-слойной архитектур
 └─────────────────────────────────────────────────┘
 ```
 
-**Примечание:** Money НЕ имеет Rules Layer, т.к. все правила — это инварианты Core.
+**Примечание:** Money имеет Rules Layer для валидации операндов арифметических операций (ValidateDivisorForMoneyDivision, ValidateFactorForMoneyMultiplication, ValidateDeltaForIncreaseBy).
 
 ### Паттерн Throws+Facade
 

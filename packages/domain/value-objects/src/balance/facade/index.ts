@@ -9,8 +9,9 @@
  *
  * **Основные операции:**
  *
- * 1. **create(available, reserved)** - создание баланса
- *    - Проверяет инварианты (available >= 0, reserved >= 0, same currency)
+ * 1. **create(available, reserved, accountId, venueId)** - создание баланса
+ *    - Проверяет инварианты (available >= 0, reserved >= 0, same currency, available + reserved <= MAX_AMOUNT)
+ *    - Принимает accountId и venueId для идентификации владельца и площадки
  *    - Возвращает Result<Balance, InvalidBalanceError>
  *
  * 2. **reserve(balance, amount)** - резервирование средств
