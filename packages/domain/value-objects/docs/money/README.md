@@ -191,10 +191,10 @@ money.hasSameCurrency(other: Money): boolean
 create(value: number | string | Decimal, currency?: 'USDC'): Result<Money, InvalidMoneyError>
 
 // Арифметика
-add(a: Money, b: Money): Result<Money, CurrencyMismatchError | ArithmeticOverflowError>
-subtract(a: Money, b: Money): Result<Money, CurrencyMismatchError | ArithmeticOverflowError>
-multiply(m: Money, factor: number | string | Decimal): Result<Money, InvalidMoneyError | ArithmeticOverflowError>
-divide(m: Money, divisor: number | string | Decimal): Result<Money, DivisionByZeroError | InvalidMoneyError | ArithmeticOverflowError>
+add(a: Money, b: Money): Result<Money, InvalidMoneyError>
+subtract(a: Money, b: Money): Result<Money, InvalidMoneyError>
+multiply(m: Money, factor: number | string | Decimal): Result<Money, InvalidMoneyError>
+divide(m: Money, divisor: number | string | Decimal): Result<Money, InvalidMoneyError>
 
 // Операции с Ratio (проценты, доли)
 portion(m: Money, rate: Ratio): Result<Money, InvalidMoneyError>
@@ -286,7 +286,7 @@ interface InvalidMoneyErrorContext {
   reason?: 'UNSUPPORTED_CURRENCY' | 'NAN' | 'NON_FINITE' | 'EXCEEDS_MAX_AMOUNT' | 'INVALID_FORMAT';
 }
 
-interface CurrencyMismatchErrorContext {
+interface InvalidMoneyError (reason: CURRENCY_MISMATCH)Context {
   op: string;
   expected: SupportedCurrency;
   actual: SupportedCurrency;
@@ -384,7 +384,7 @@ const usd2 = Money.of(50, 'USDC');
 const sumResult = MoneyService.add(usd1, usd2);
 
 if (!sumResult.ok) {
-  // CurrencyMismatchError
+  // InvalidMoneyError (reason: CURRENCY_MISMATCH)
   console.error(sumResult.error.context?.expected);  // "USDC"
   console.error(sumResult.error.context?.actual);    // "EUR" (example)
   return;

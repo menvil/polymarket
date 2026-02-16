@@ -241,10 +241,10 @@ Money различает два типа ошибок на Core уровне:
 
 ```typescript
 create(value: number | string | Decimal, currency?: 'USDC'): Result<Money, InvalidMoneyError>
-add(a: Money, b: Money): Result<Money, CurrencyMismatchError | ArithmeticOverflowError>
-subtract(a: Money, b: Money): Result<Money, CurrencyMismatchError | ArithmeticOverflowError>
-multiply(m: Money, factor: number | string | Decimal): Result<Money, InvalidMoneyError | ArithmeticOverflowError>
-divide(m: Money, divisor: number | string | Decimal): Result<Money, DivisionByZeroError | InvalidMoneyError | ArithmeticOverflowError>
+add(a: Money, b: Money): Result<Money, InvalidMoneyError (reason: CURRENCY_MISMATCH) | InvalidMoneyError (reason: EXCEEDS_MAX_AMOUNT)>
+subtract(a: Money, b: Money): Result<Money, InvalidMoneyError (reason: CURRENCY_MISMATCH) | InvalidMoneyError (reason: EXCEEDS_MAX_AMOUNT)>
+multiply(m: Money, factor: number | string | Decimal): Result<Money, InvalidMoneyError | InvalidMoneyError (reason: EXCEEDS_MAX_AMOUNT)>
+divide(m: Money, divisor: number | string | Decimal): Result<Money, InvalidMoneyError (reason: DIVISION_BY_ZERO) | InvalidMoneyError | InvalidMoneyError (reason: EXCEEDS_MAX_AMOUNT)>
 ```
 
 **Never Throw Contract:**
@@ -252,9 +252,9 @@ divide(m: Money, divisor: number | string | Decimal): Result<Money, DivisionByZe
 MoneyService ГАРАНТИРУЕТ что ВСЕ методы возвращают Result и НИКОГДА не бросают исключения:
 
 1. **Core exceptions** → Result.Err(InvalidMoneyError)
-2. **Math exceptions** → Result.Err(ArithmeticOverflowError)
+2. **Math exceptions** → Result.Err(InvalidMoneyError (reason: EXCEEDS_MAX_AMOUNT))
 3. **Parse errors** → Result.Err(InvalidMoneyError)
-4. **Validation errors** → Result.Err(CurrencyMismatchError, DivisionByZeroError)
+4. **Validation errors** → Result.Err(InvalidMoneyError (reason: CURRENCY_MISMATCH), InvalidMoneyError (reason: DIVISION_BY_ZERO))
 
 Каждая операция обёрнута в try/catch для гарантии.
 
@@ -267,7 +267,7 @@ private static mapInvariantToOverflow(
   op: string,
   ctx: Record<string, unknown>,
   e: MoneyInvariantViolation
-): Result<never, ArithmeticOverflowError>
+): Result<never, InvalidMoneyError (reason: EXCEEDS_MAX_AMOUNT)>
 ```
 
 Ожидаемые reason: `EXCEEDS_MAX_AMOUNT`, `NON_FINITE`, `NAN`.
@@ -385,7 +385,7 @@ MoneyService.create("99999999999999999")
 MoneyService.add(money1, money2)
     ↓
 1. Check currencies match
-    ↓ if not → Err(CurrencyMismatchError)
+    ↓ if not → Err(InvalidMoneyError (reason: CURRENCY_MISMATCH))
     ↓ if yes
 2. addDecimal(money1.value(), money2.value())  // @polymarket/math
     ↓
@@ -393,9 +393,9 @@ MoneyService.add(money1, money2)
     ↓
 4. Validate invariants (can throw)
     ↓ if throws MoneyInvariantViolation
-5. Map to ArithmeticOverflowError
+5. Map to InvalidMoneyError (reason: EXCEEDS_MAX_AMOUNT)
     ↓
-Result.Err(ArithmeticOverflowError)
+Result.Err(InvalidMoneyError (reason: EXCEEDS_MAX_AMOUNT))
     OR
 Result.Ok(Money)
 ```
