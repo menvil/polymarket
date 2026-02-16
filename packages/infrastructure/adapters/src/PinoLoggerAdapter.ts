@@ -35,7 +35,7 @@ export class PinoLoggerAdapter implements ILogger {
   /**
    * Создаёт Pino Logger Adapter
    *
-   * @param options - Опции Pino logger (level, transport, etc.)
+   * @param optionsOrPino - Опции Pino logger или готовый pino.Logger (для child)
    * @param clock - Источник времени для timestamps
    * @param destination - Опциональный destination stream (для тестов)
    *
@@ -46,6 +46,9 @@ export class PinoLoggerAdapter implements ILogger {
    *
    * **ВАЖНО:** timestamp генерируется через IClock, не через Date.now().
    * В serialized JSON будет ОДНО поле "time" с значением из IClock.
+   *
+   * **Internal use:** Конструктор может принимать готовый pino.Logger для создания
+   * child loggers через метод child(). В этом случае передается результат pino.child().
    *
    * @example
    * ```typescript
@@ -58,15 +61,22 @@ export class PinoLoggerAdapter implements ILogger {
    * ```
    */
   constructor(
-    options: pino.LoggerOptions,
+    optionsOrPino: pino.LoggerOptions | pino.Logger,
     private readonly clock: IClock,
     destination?: pino.DestinationStream
   ) {
-    // Настраиваем Pino использовать IClock для timestamp
-    this.pino = pino({
-      ...options,
-      timestamp: () => `,"time":${this.clock.now().getTime()}`
-    }, destination);
+    // Type guard: проверяем есть ли метод child (признак pino.Logger)
+    if ('child' in optionsOrPino && typeof optionsOrPino.child === 'function') {
+      // Это готовый pino.Logger (для child loggers)
+      this.pino = optionsOrPino;
+    } else {
+      // Это options (для новых loggers)
+      // Настраиваем Pino использовать IClock для timestamp
+      this.pino = pino({
+        ...optionsOrPino,
+        timestamp: () => `,"time":${this.clock.now().getTime()}`
+      }, destination);
+    }
   }
 
   /**

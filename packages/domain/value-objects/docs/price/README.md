@@ -327,10 +327,12 @@ console.log(`Price: ${price.toNumber()}`);  // 0.65
 ### Вычисление дополнения (1 - price)
 
 ```typescript
-import { PriceService, Price } from '@polymarket/value-objects/price';
+import { PriceService } from '@polymarket/value-objects/price';
 
-// YES цена
-const yesPrice = Price.of(0.65);
+// YES цена (используем PriceService для создания)
+const yesPriceResult = PriceService.create(0.65);
+if (!yesPriceResult.ok) return;
+const yesPrice = yesPriceResult.value;
 
 // Вычисляем NO цену (complement)
 const noResult = PriceService.complement(yesPrice);
@@ -348,11 +350,16 @@ console.log(`NO: ${noPrice.toNumber()}`);     // 0.35
 ### Усреднение bid/ask
 
 ```typescript
-import { PriceService, Price } from '@polymarket/value-objects/price';
+import { PriceService } from '@polymarket/value-objects/price';
+import Decimal from 'decimal.js';
 
-// Bid и Ask цены
-const bidPrice = Price.of(0.64);
-const askPrice = Price.of(0.66);
+// Bid и Ask цены (используем PriceService)
+const bidResult = PriceService.create(0.64);
+const askResult = PriceService.create(0.66);
+if (!bidResult.ok || !askResult.ok) return;
+
+const bidPrice = bidResult.value;
+const askPrice = askResult.value;
 
 // Вычисляем mid price
 const midResult = PriceService.average(bidPrice, askPrice);
@@ -365,10 +372,12 @@ if (midResult.ok) {
 ### Округление к market tick
 
 ```typescript
-import { PriceService, Price } from '@polymarket/value-objects/price';
+import { PriceService } from '@polymarket/value-objects/price';
 
-// Результат вычисления
-const calculated = Price.of(0.65432);
+// Результат вычисления (используем PriceService)
+const calcResult = PriceService.create(0.65432);
+if (!calcResult.ok) return;
+const calculated = calcResult.value;
 
 // Tick size рынка (должен быть кратен 0.0001)
 const tickSize = 0.01;
@@ -407,9 +416,11 @@ if (midResult.ok) {
 ### Валидация выравнивания
 
 ```typescript
-import { PriceService, Price } from '@polymarket/value-objects/price';
+import { PriceService } from '@polymarket/value-objects/price';
 
-const price = Price.of(0.65);
+const priceResult = PriceService.create(0.65);
+if (!priceResult.ok) return;
+const price = priceResult.value;
 const tickSize = 0.01;
 
 // Проверяем что цена aligned к tick size

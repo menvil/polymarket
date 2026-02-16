@@ -249,6 +249,120 @@ const updated = QuoteService.updateSizes(quote, 200, 300);
 // updated: bid=0.48@200, ask=0.52@300 (только sizes изменились)
 ```
 
+### WithRefresh методы (обновление timestamp)
+
+Варианты операций, которые автоматически обновляют timestamp котировки.
+
+#### shiftWithRefresh()
+
+Сдвигает котировку и обновляет timestamp на текущее время.
+
+```typescript
+public static shiftWithRefresh(
+  quote: Quote,
+  shiftAmount: Decimal | number | string,
+  clock: Clock
+): Result<Quote, InvalidQuoteError>
+```
+
+**Параметры:**
+
+- `quote: Quote` — исходная котировка
+- `shiftAmount` — величина сдвига (может быть отрицательной)
+- `clock: Clock` — источник времени для нового timestamp
+
+**Возвращает:**
+
+- `Ok(Quote)` — новая котировка с обновлённым timestamp
+- `Err(InvalidQuoteError)` — при ошибках валидации или парсинга
+
+**Пример:**
+
+```typescript
+import { PaperClock } from '@polymarket/time';
+
+const clock = new PaperClock(new Date('2024-01-15T12:00:00Z'));
+const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
+
+const shifted = QuoteService.shiftWithRefresh(quote, new Decimal(0.01), clock);
+// shifted: bid=0.49, ask=0.53, timestamp=clock.now()
+```
+
+#### skewWithRefresh()
+
+Наклоняет котировку (независимые adjustment для bid/ask) и обновляет timestamp.
+
+```typescript
+public static skewWithRefresh(
+  quote: Quote,
+  bidAdjustment: Decimal | number | string,
+  askAdjustment: Decimal | number | string,
+  clock: Clock
+): Result<Quote, InvalidQuoteError>
+```
+
+**Параметры:**
+
+- `quote: Quote` — исходная котировка
+- `bidAdjustment` — adjustment для bid (может быть отрицательным)
+- `askAdjustment` — adjustment для ask (может быть отрицательным)
+- `clock: Clock` — источник времени для нового timestamp
+
+**Возвращает:**
+
+- `Ok(Quote)` — новая котировка с обновлённым timestamp
+- `Err(InvalidQuoteError)` — при ошибках валидации или парсинга
+
+**Пример:**
+
+```typescript
+const clock = new PaperClock(new Date('2024-01-15T12:00:00Z'));
+const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
+
+const skewed = QuoteService.skewWithRefresh(
+  quote,
+  new Decimal(0.02),   // bid +0.02
+  new Decimal(-0.01),  // ask -0.01
+  clock
+);
+// skewed: bid=0.50, ask=0.51, timestamp=clock.now()
+```
+
+#### updateSizesWithRefresh()
+
+Обновляет sizes и timestamp котировки.
+
+```typescript
+public static updateSizesWithRefresh(
+  quote: Quote,
+  newBidSize: number | Quantity,
+  newAskSize: number | Quantity,
+  clock: Clock
+): Result<Quote, InvalidQuoteError>
+```
+
+**Параметры:**
+
+- `quote: Quote` — исходная котировка
+- `newBidSize` — новый bid size
+- `newAskSize` — новый ask size
+- `clock: Clock` — источник времени для нового timestamp
+
+**Возвращает:**
+
+- `Ok(Quote)` — новая котировка с обновлёнными sizes и timestamp
+- `Err(InvalidQuoteError)` — при невалидных sizes
+
+**Пример:**
+
+```typescript
+const clock = new PaperClock(new Date('2024-01-15T12:00:00Z'));
+const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
+
+const updated = QuoteService.updateSizesWithRefresh(quote, 200, 300, clock);
+// updated: bid=0.48@200, ask=0.52@300, timestamp=clock.now()
+```
+
 ### Ratio Operations (Относительные операции)
 
 Операции с Quote, основанные на процентах от midpoint.

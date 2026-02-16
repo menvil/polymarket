@@ -72,7 +72,7 @@ const result = PriceService.create(1.5);
 
 // 1. Facade: PriceService.create()
 try {
-  const price = Price.of(1.5);  // -> идёт в Core
+  const price = Price.of(new Decimal(1.5));  // -> идёт в Core
   return Ok(price);
 } catch (error) {
   // 2. Core: Price.of() бросил PriceInvariantViolation
@@ -158,7 +158,7 @@ try {
 
 ```typescript
 // ✅ Делает
-const price = Price.of(0.5);
+const price = Price.of(new Decimal(0.5));
 price.isMin();    // false
 price.isMax();    // false
 price.equals(other);
@@ -545,7 +545,7 @@ complement(price) → 1 - price
 average(p1, p2) → (p1 + p2) / 2
 
 // ❌ Generic
-subtract(Price.of(1), price)
+subtract(Price.of(new Decimal(1)), price)
 divide(add(p1, p2), 2)
 ```
 

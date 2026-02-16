@@ -139,7 +139,11 @@ multiply(
 **Примеры:**
 
 ```typescript
-const price = Price.of(0.3);
+import Decimal from 'decimal.js';
+import { Price } from '../core/Price.js';
+
+// Создаём цену (в реальном коде используйте PriceService.create)
+const price = Price.of(new Decimal(0.3));
 
 // Успех
 const result = PriceService.multiply(price, 2);
@@ -148,7 +152,8 @@ if (result.ok) {
 }
 
 // Успех: дробный множитель
-const result2 = PriceService.multiply(Price.of(0.6), 0.5);
+const price2 = Price.of(new Decimal(0.6));
+const result2 = PriceService.multiply(price2, 0.5);
 if (result2.ok) {
   console.log(result2.value.toNumber());  // 0.3
 }
@@ -163,7 +168,8 @@ if (!nanResult.ok) {
 }
 
 // Ошибка: результат выходит за диапазон
-const overflowResult = PriceService.multiply(Price.of(0.5), 2);
+const price3 = Price.of(new Decimal(0.5));
+const overflowResult = PriceService.multiply(price3, 2);
 if (!overflowResult.ok) {
   // 0.5 * 2 = 1.0 > MAX_PRICE (0.9999)
   console.log(overflowResult.error.context?.op);  // 'multiply'
@@ -203,7 +209,7 @@ divide(
 **Примеры:**
 
 ```typescript
-const price = Price.of(0.6);
+const price = Price.of(new Decimal(0.6));
 
 // Успех
 const result = PriceService.divide(price, 2);
@@ -252,7 +258,7 @@ complement(price: Price): Result<Price, InvalidPriceError>
 **Примеры:**
 
 ```typescript
-const yesPrice = Price.of(0.65);
+const yesPrice = Price.of(new Decimal(0.65));
 
 const noResult = PriceService.complement(yesPrice);
 if (noResult.ok) {
@@ -295,8 +301,8 @@ average(price1: Price, price2: Price): Result<Price, InvalidPriceError>
 **Примеры:**
 
 ```typescript
-const bidPrice = Price.of(0.64);
-const askPrice = Price.of(0.66);
+const bidPrice = Price.of(new Decimal(0.64));
+const askPrice = Price.of(new Decimal(0.66));
 
 const midResult = PriceService.average(bidPrice, askPrice);
 if (midResult.ok) {
@@ -362,7 +368,7 @@ roundToMarketTick(
 **Примеры:**
 
 ```typescript
-const calculated = Price.of(0.6543);
+const calculated = Price.of(new Decimal(0.6543));
 
 // Округление к ближайшему (по умолчанию)
 const nearestResult = PriceService.roundToMarketTick(calculated, 0.01);
@@ -383,7 +389,7 @@ if (ceilResult.ok) {
 }
 
 // Разные tick sizes (все кратны 0.0001)
-const p = Price.of(0.12345);
+const p = Price.of(new Decimal(0.12345));
 
 const tick1 = PriceService.roundToMarketTick(p, 0.001);
 if (tick1.ok) {
@@ -441,7 +447,7 @@ ensureAlignedToMarketTick(
 **Примеры:**
 
 ```typescript
-const price = Price.of(0.5);
+const price = Price.of(new Decimal(0.5));
 
 // Успех: aligned
 const result1 = PriceService.ensureAlignedToMarketTick(price, 0.01);
@@ -464,7 +470,7 @@ if (!misalignedResult.ok) {
 }
 
 // Валидация после округления
-const calculated = Price.of(0.6543);
+const calculated = Price.of(new Decimal(0.6543));
 const roundedResult = PriceService.roundToMarketTick(calculated, 0.01);
 
 if (roundedResult.ok) {

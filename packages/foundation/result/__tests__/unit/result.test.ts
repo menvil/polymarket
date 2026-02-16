@@ -585,13 +585,5 @@ describe('Result<T, E>', () => {
       const result = formatValue(func);
       expect(result).toBe('[Function]');
     });
-
-    it('должен использовать String() fallback когда JSON.stringify возвращает undefined', () => {
-      // JSON.stringify возвращает undefined для undefined значения (edge case)
-      // Но undefined уже обработан ранее, поэтому этот кейс сложно воспроизвести напрямую
-      // Тест покрывает логику ?? оператора на строке 320
-      const result = formatValue(undefined);
-      expect(result).toBe('undefined');
-    });
   });
 });

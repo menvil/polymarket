@@ -129,11 +129,11 @@ console.log(decimal.toString());  // "0.65"
 Конвертирует в number (может потерять точность).
 
 ```typescript
-const price = Price.of("0.6543");
+const price = Price.of(new Decimal("0.6543"));
 const num: number = price.toNumber();  // 0.6543
 
 // ⚠️ Lossy для очень точных чисел
-const precise = Price.of("0.123456789012345");
+const precise = Price.of(new Decimal("0.123456789012345"));
 console.log(precise.toNumber());  // Может потерять точность!
 ```
 
@@ -145,7 +145,7 @@ console.log(precise.toNumber());  // Может потерять точност�
 
 ```typescript
 const price1 = Price.of(new Decimal(0.5));
-const price2 = Price.of("0.5");
+const price2 = Price.of(new Decimal("0.5"));
 const price3 = Price.of(new Decimal(0.6));
 
 price1.equals(price2);  // true

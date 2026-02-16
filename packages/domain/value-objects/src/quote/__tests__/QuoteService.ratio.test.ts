@@ -374,4 +374,63 @@ describe('QuoteService Ratio Operations', () => {
       }
     });
   });
+
+  describe('Out-of-bounds сценарии (SpreadService errors)', () => {
+    it('shiftByRatio возвращает Err когда результат выходит за MAX_PRICE', () => {
+      // Создаём quote близко к верхней границе
+      const quote = createQuote(0.98, 0.99, 100, 100);
+      // Сдвигаем вверх на 10% от mid (mid=0.985, 10%=0.0985), результат превысит 0.9999
+      const shiftRatio = Ratio.of(new Decimal(0.10));
+
+      const result = QuoteService.shiftByRatio(quote, shiftRatio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.RATIO_OUT_OF_BOUNDS);
+      }
+    });
+
+    it('shiftByRatio возвращает Err когда результат выходит за MIN_PRICE', () => {
+      // Создаём quote близко к нижней границе
+      const quote = createQuote(0.001, 0.002, 100, 100);
+      // Сдвигаем вниз на 90% (результат будет ниже MIN_PRICE)
+      const shiftRatio = Ratio.of(new Decimal(-0.90));
+
+      const result = QuoteService.shiftByRatio(quote, shiftRatio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.RATIO_OUT_OF_BOUNDS);
+      }
+    });
+
+    it('widenByRatio возвращает Err когда расширение выходит за границы', () => {
+      // Создаём quote близко к верхней границе
+      const quote = createQuote(0.98, 0.99, 100, 100);
+      // Расширяем на 5% от mid, ask выйдет за MAX_PRICE
+      const deltaRatio = Ratio.of(new Decimal(0.05));
+
+      const result = QuoteService.widenByRatio(quote, deltaRatio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.RATIO_OUT_OF_BOUNDS);
+      }
+    });
+
+    it('skewByRatio возвращает Err когда skew выходит за границы', () => {
+      // Создаём quote близко к верхней границе
+      const quote = createQuote(0.98, 0.99, 100, 100);
+      // Поднимаем обе стороны, ask выйдет за MAX_PRICE
+      const bidRatio = Ratio.of(new Decimal(0.05));
+      const askRatio = Ratio.of(new Decimal(0.05));
+
+      const result = QuoteService.skewByRatio(quote, bidRatio, askRatio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.RATIO_OUT_OF_BOUNDS);
+      }
+    });
+  });
 });

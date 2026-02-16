@@ -101,6 +101,24 @@ describe('PriceSerializer', () => {
           expect(result.error.context?.kind).toBe('invalid_json');
         }
       });
+
+      it('должен использовать [Unstringifiable] fallback в safeStringify', () => {
+        // Создаём объект с toJSON который бросает исключение
+        const unstringifiable: any = {
+          value: 'test',
+          toJSON() {
+            throw new Error('Cannot stringify');
+          }
+        };
+
+        const result = PriceSerializer.fromJSON(unstringifiable);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          // safeStringify должен использовать fallback '[Unstringifiable]'
+          expect(result.error.context?.json).toBe('[Unstringifiable]');
+        }
+      });
     });
 
     describe('бизнес-ошибки (делегирование PriceService)', () => {

@@ -276,34 +276,6 @@ const success = Ok(10);
 const value = unwrapOr(success, 42); // 10
 ```
 
-### mapErr(result, fn)
-
-Трансформирует ошибку, не затрагивая Ok-значение.
-
-```typescript
-const result = Err({ code: 404, message: 'Not found' });
-const transformed = mapErr(result, (err) => err.message);
-// Err('Not found')
-
-const success = Ok(42);
-const unchanged = mapErr(success, (err) => 'error');
-// Ok(42) - функция не вызвана
-```
-
-### isOk(result) / isErr(result)
-
-Проверяет, является ли Result успешным или ошибочным.
-
-```typescript
-const success = Ok(42);
-isOk(success); // true
-isErr(success); // false
-
-const failure = Err('error');
-isOk(failure); // false
-isErr(failure); // true
-```
-
 ## 🔗 ResultChain API (Method Chaining)
 
 Для удобства работы с цепочками методов доступен OOP-стиль через `ResultChain`.
@@ -789,6 +761,46 @@ const promise: Promise<Result<number, string>> =
 // toChain - конвертировать в ResultChain после await
 const chain = await AsyncResult.ok(Promise.resolve(42)).toChain();
 const doubled = chain.map(x => x * 2).unwrap(); // 84
+```
+
+### .and(other) / .andAsync(other)
+
+Возвращает второй Result, если первый - Ok, иначе первую ошибку.
+
+```typescript
+// and - sync комбинация
+const result = await AsyncResult.ok(Promise.resolve(1))
+  .and(Ok(2))
+  .unwrap(); // 2
+
+// andAsync - async комбинация
+const fetchUser = async (id: number): Promise<Result<User, string>> => {
+  // ...
+};
+
+const result2 = await AsyncResult.ok(Promise.resolve(123))
+  .andAsync(fetchUser(123))
+  .unwrap();
+```
+
+### .or(other) / .orAsync(other)
+
+Возвращает первый Result, если он Ok, иначе альтернативный Result.
+
+```typescript
+// or - sync альтернатива
+const result = await AsyncResult.err('error 1')
+  .or(Ok(42))
+  .unwrap(); // 42
+
+// orAsync - async альтернатива
+const fallbackSource = async (): Promise<Result<number, string>> => {
+  return Ok(42);
+};
+
+const result2 = await AsyncResult.err('error')
+  .orAsync(fallbackSource())
+  .unwrap(); // 42
 ```
 
 ### .orAsyncLazy(fn)

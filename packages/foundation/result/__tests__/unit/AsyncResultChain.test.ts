@@ -69,6 +69,36 @@ describe('AsyncResultChain', () => {
       expect(number).toBe(123);
       expect(string).toBe('hello');
     });
+
+    it('должен ловить Promise.reject и преобразовывать в Err', async () => {
+      const rejectedPromise = Promise.reject('Network error');
+
+      const result = await AsyncResult.ok(rejectedPromise).unwrapErr();
+
+      expect(result).toBe('Network error');
+    });
+
+    it('должен ловить Promise.reject с onError трансформацией', async () => {
+      const rejectedPromise = Promise.reject('Network error');
+
+      const result = await AsyncResult.ok(
+        rejectedPromise,
+        (error) => new Error(String(error))
+      ).unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Network error');
+    });
+
+    it('должен ловить Promise.reject с Error объектом', async () => {
+      const error = new Error('Something went wrong');
+      const rejectedPromise = Promise.reject(error);
+
+      const result = await AsyncResult.ok(rejectedPromise).unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Something went wrong');
+    });
   });
 
   describe('AsyncResult.err()', () => {
