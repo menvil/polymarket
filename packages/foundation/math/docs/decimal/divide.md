@@ -21,15 +21,15 @@
 ## Сигнатура
 
 ```typescript
-function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal
+function divideDecimal(a: Decimal, b: Decimal): Decimal
 ```
 
 ### Параметры
 
 |Параметр|Тип|Описание|
 |----------|----------|----------|
-|`dividend`|`Decimal`|Делимое|
-|`divisor`|`Decimal`|Делитель|
+|`a`|`Decimal`|Делимое (dividend)|
+|`b`|`Decimal`|Делитель (divisor)|
 
 ### Возвращаемое значение
 

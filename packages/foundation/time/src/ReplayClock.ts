@@ -131,10 +131,15 @@ export class ReplayClock implements IClock {
    * @param timestamp - Временная метка из события
    *
    * @throws {Error} Если переданная дата невалидна
+   * @throws {Error} Если новая метка времени нарушает монотонность (идёт назад)
    *
    * @remarks
    * Этот метод вызывается системой воспроизведения перед обработкой каждого события.
    * Обновление времени перед обработкой обеспечивает детерминизм.
+   *
+   * **Монотонность времени:**
+   * Метод enforce строгую монотонность - новое время должно быть >= текущего.
+   * Это предотвращает нарушение временных инвариантов при воспроизведении.
    *
    * ## Порядок вызова
    *
@@ -160,6 +165,18 @@ export class ReplayClock implements IClock {
     if (!this.isValidDate(timestamp)) {
       throw new Error('ReplayClock.update(): Invalid Date provided');
     }
+
+    // Enforce монотонность: новое время должно быть >= текущего
+    const newTime = timestamp.getTime();
+    const currentTime = this.currentTimestamp.getTime();
+    if (newTime < currentTime) {
+      throw new Error(
+        `ReplayClock.update(): Time cannot go backwards. ` +
+        `Current: ${this.currentTimestamp.toISOString()}, ` +
+        `Attempted: ${timestamp.toISOString()}`
+      );
+    }
+
     // Создаем копию для инкапсуляции (защита от мутации снаружи)
     this.currentTimestamp = new Date(timestamp.getTime());
   }

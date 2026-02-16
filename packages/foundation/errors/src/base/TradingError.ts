@@ -341,7 +341,9 @@ export class TradingError extends Error implements ITradingError {
     if (typeof ErrorConstructor.captureStackTrace === 'function') {
       ErrorConstructor.captureStackTrace(this, this.constructor);
     } else {
-      this.stack = new Error().stack;
+      // Создаём Error с сообщением для получения привязанного stack trace
+      // В non-V8 окружениях (Safari, Firefox) stack будет содержать this.message
+      this.stack = new Error(this.message).stack;
     }
   }
 

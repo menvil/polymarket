@@ -147,15 +147,17 @@ describe('ReplayClock', () => {
       expect(clock.now().getMilliseconds()).toBe(789);
     });
 
-    it('должен позволять обновлять время назад (для replay)', () => {
+    it('должен запрещать обновлять время назад (enforce монотонность)', () => {
       const time1 = new Date('2024-01-01T12:00:00.000Z');
       const time2 = new Date('2024-01-01T11:00:00.000Z'); // Раньше
 
       clock.update(time1);
       expect(clock.now()).toEqual(time1);
 
-      clock.update(time2);
-      expect(clock.now()).toEqual(time2);
+      // Попытка обновить время назад должна throw Error
+      expect(() => clock.update(time2)).toThrow('Time cannot go backwards');
+      // Время остаётся неизменным после неудачной попытки
+      expect(clock.now()).toEqual(time1);
     });
   });
 
@@ -385,8 +387,9 @@ describe('ReplayClock', () => {
         expect(() => clock.update(new Date(NaN))).toThrow('Invalid Date');
       });
 
-      it('должен принимать валидные даты', () => {
-        expect(() => clock.update(new Date(0))).not.toThrow();
+      it('должен принимать валидные даты (с учётом монотонности)', () => {
+        // Даты должны быть >= текущего времени (2024-01-01)
+        expect(() => clock.update(new Date('2024-01-01T00:00:00.000Z'))).not.toThrow();
         expect(() => clock.update(new Date('2024-12-31'))).not.toThrow();
       });
 

@@ -59,6 +59,36 @@ export function toStringSafe(value: unknown): string {
 }
 
 /**
+ * Создаёт контекст для бинарных математических операций
+ *
+ * @param operation - Название операции (add, subtract, multiply, divide, compare, etc)
+ * @param a - Первый операнд
+ * @param b - Второй операнд
+ * @returns Объект контекста с operation, a, b
+ *
+ * @remarks
+ * Helper для устранения дублирования при создании context в бинарных операциях.
+ * Используется для унификации формирования контекста в compare.ts и других файлах.
+ *
+ * @example
+ * ```typescript
+ * const context = createBinaryContext('equals', a, b);
+ * // { operation: 'equals', a: '10', b: '20' }
+ * ```
+ */
+export function createBinaryContext(
+  operation: string,
+  a: Decimal,
+  b: Decimal
+): MathOperationContext {
+  return {
+    operation,
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
+}
+
+/**
  * Тип конструктора ошибки для assertion функций
  *
  * @remarks
