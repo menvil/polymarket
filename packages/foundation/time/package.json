@@ -1,0 +1,64 @@
+{
+  "name": "@polymarket/time",
+  "version": "0.1.0",
+  "description": "Time utilities and timestamp handling for Polymarket trading system",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "lint:tests": "eslint __tests__ --ext .ts",
+    "lint:tests:fix": "eslint __tests__ --ext .ts --fix",
+    "lint:all": "eslint src __tests__ --ext .ts",
+    "lint:all:fix": "eslint src __tests__ --ext .ts --fix",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
+    "typecheck:all": "npm run typecheck && npm run typecheck:tests",
+    "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"README.md\" \"docs/**/*.md\"",
+    "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"README.md\" \"docs/**/*.md\"",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "keywords": [
+    "time",
+    "timestamp",
+    "datetime",
+    "utilities",
+    "trading",
+    "polymarket",
+    "foundation"
+  ],
+  "author": "Ivan Moroz",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/jest": "^29.5.0",
+    "typescript": "^5.3.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.0",
+    "@jest/globals": "^29.7.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0"
+  },
+  "dependencies": {},
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

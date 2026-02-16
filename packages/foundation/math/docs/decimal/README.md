@@ -5,10 +5,13 @@
 ## Обзор
 
 Decimal operations - это чистые математические функции для работы с `Decimal` числами. Все функции:
+
 - ✅ **Throw на математические невозможности** (overflow, division by zero)
 - ✅ **НЕ проверяют бизнес-правила** (это задача Value Objects)
-- ✅ **Сохраняют математические свойства** (коммутативность, ассоциативность)
+- ✅ **Сохраняют математические свойства** (коммутативность всегда, ассоциативность/дистрибутивность при стандартной precision)
 - ✅ **Используют Decimal.js** для высокой точности
+
+**Примечание о математических свойствах:** Ассоциативность и дистрибутивность могут нарушаться при ограниченной точности, так как каждая операция округляется согласно настроенной `precision` Decimal.js. При стандартных настройках (precision = 20) эти свойства сохраняются для большинства практических случаев. Коммутативность гарантирована всегда.
 
 ## Философия
 
@@ -65,6 +68,8 @@ class Price {
 | `roundTowardZeroDecimal(value)` | Округление к нулю | [→](./round.md#roundtowardzerodecimal) |
 | `roundAwayFromZeroDecimal(value)` | Округление от нуля | [→](./round.md#roundawayfromzerodecimal) |
 | `truncDecimal(value)` | Округление к нулю (усечение) | [→](./round.md#truncdecimal) |
+| `mathFloorDecimal(value)` | Math floor (к -Infinity) | [→](./round.md#mathfloordecimal) |
+| `mathCeilDecimal(value)` | Math ceil (к +Infinity) | [→](./round.md#mathceildecimal) |
 
 ## Общие паттерны использования
 

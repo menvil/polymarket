@@ -37,6 +37,7 @@ function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal
 
 ### Выбрасываемые ошибки
 
+- **InvalidOperandError** - Если делимое не является конечным числом (NaN, Infinity, -Infinity)
 - **InvalidDivisorError** - Если делитель не является конечным числом (NaN, Infinity, -Infinity)
 - **DivisionByZeroError** - Если делитель равен нулю
 - **ArithmeticOverflowError** - Если результат не является конечным числом (Infinity, -Infinity)
@@ -190,15 +191,17 @@ import { divideDecimal } from '@polymarket/math';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
 try {
-  const inf = new Decimal(Infinity);
-  const value = new Decimal(2);
+  // Overflow возникает при делении огромного числа на крошечное
+  // Decimal.js имеет maxE = 9e15, используем значения близкие к этой границе
+  const huge = new Decimal('5e' + (Decimal.maxE - 1000));
+  const tiny = new Decimal('1e-1500');
 
-  const result = divideDecimal(inf, value);
+  const result = divideDecimal(huge, tiny);
 } catch (error) {
   if (ArithmeticOverflowError.is(error)) {
     console.error('Division overflow:', error.message);
     console.error('Context:', error.context);
-    // Context: { dividend: 'Infinity', divisor: '2', result: 'Infinity' }
+    // Context: { dividend: '5e8999999999999000', divisor: '1e-1500', result: 'Infinity' }
   }
 }
 ```
@@ -453,7 +456,7 @@ console.log(multiplyDecimal(quotient, b).equals(a)); // true
 - [addDecimal](./add.md) - Сложение Decimal чисел
 - [subtractDecimal](./subtract.md) - Вычитание Decimal чисел
 - [multiplyDecimal](./multiply.md) - Умножение Decimal чисел
-- [averageDecimal](./average.md) - Среднее значение двух чисел *(в разработке)*
+- [averageDecimal](./average.md) - Среднее значение двух чисел
 - [DivisionByZeroError](../../../errors/docs/value-objects/division-by-zero.md) - Ошибка деления на ноль
 - [InvalidDivisorError](../../../errors/docs/math/invalid-divisor.md) - Ошибка невалидного делителя
 - [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow

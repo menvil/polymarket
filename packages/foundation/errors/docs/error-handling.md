@@ -126,7 +126,7 @@ if (result.ok) {
 ### Базовый пример
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, toChain } from '@polymarket/result';
 import { InvalidPriceError, InvalidQuantityError } from '@polymarket/errors';
 
 // Каждая функция возвращает Result
@@ -138,24 +138,26 @@ function validateQuantity(value: number): Result<Quantity, InvalidQuantityError>
   // ...
 }
 
-// Композиция через map/flatMap
-const orderResult = validatePrice(priceInput)
+// Композиция через ResultChain
+const orderResult = toChain(validatePrice(priceInput))
   .flatMap(price =>
     validateQuantity(qtyInput).map(qty => ({ price, qty }))
   )
-  .map(({ price, qty }) => new Order(price, qty));
+  .map(({ price, qty }) => new Order(price, qty))
+  .toResult();
 
-// Обработка результата
-orderResult.match({
-  ok: (order) => console.log('Order created:', order),
-  err: (error) => console.error('Validation failed:', error.message)
-});
+// Обработка результата через pattern matching
+if (orderResult.ok) {
+  console.log('Order created:', orderResult.value);
+} else {
+  console.error('Validation failed:', orderResult.error.message);
+}
 ```
 
 ### Цепочка операций (ResultChain)
 
 ```typescript
-import { ResultChain } from '@polymarket/result';
+import { toChain, Ok, Err } from '@polymarket/result';
 import {
   InvalidPriceError,
   InvalidQuantityError,
@@ -163,8 +165,7 @@ import {
 } from '@polymarket/errors';
 
 // Создание ордера через цепочку валидаций
-const orderResult = ResultChain
-  .from(validatePrice(priceInput))
+const orderResult = toChain(validatePrice(priceInput))
   .flatMap(price =>
     validateQuantity(qtyInput).map(qty => ({ price, qty }))
   )
@@ -187,7 +188,7 @@ const orderResult = ResultChain
     }
     return Ok(new Order(price, qty));
   })
-  .run();
+  .toResult();
 
 // Обработка
 orderResult.match({
@@ -331,13 +332,13 @@ import { Result } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 function getPriceOrDefault(input: number, defaultPrice: Price): Price {
-  return Price.fromNumber(input).match({
-    ok: (price) => price,
-    err: (error) => {
-      console.warn('Using default price due to error:', error.message);
-      return defaultPrice;
-    }
-  });
+  const result = Price.fromNumber(input);
+  if (result.ok) {
+    return result.value;
+  } else {
+    console.warn('Using default price due to error:', result.error.message);
+    return defaultPrice;
+  }
 }
 
 // Использование

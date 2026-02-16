@@ -23,16 +23,21 @@
 | `equalsDecimal(a, b)` | Decimal | Строгое равенство | [→](./decimal/compare.md#equalsdecimal) |
 | `lessThan/greaterThan...` | Decimal | Операторы сравнения | [→](./decimal/compare.md) |
 | `roundDecimal(value)` | Decimal | Округление half-up | [→](./decimal/round.md) |
-| `floor/ceil/truncDecimal` | Decimal | Округление к/от нуля | [→](./decimal/round.md) |
-| `roundToTick(value, tickSize, mode?)` | Rounding | Округление к tick size | [→](./rounding/README.md#roundtotick) |
+| `roundTowardZeroDecimal(value)` | Decimal | Округление к нулю | [→](./decimal/round.md#roundtowardzerodecimal) |
+| `roundAwayFromZeroDecimal(value)` | Decimal | Округление от нуля | [→](./decimal/round.md#roundawayfromzerodecimal) |
+| `truncDecimal(value)` | Decimal | Отбрасывание дробной части | [→](./decimal/round.md#truncdecimal) |
+| `mathFloorDecimal(value)` | Decimal | Math floor (к -Infinity) | [→](./decimal/round.md#mathfloordecimal) |
+| `mathCeilDecimal(value)` | Decimal | Math ceil (к +Infinity) | [→](./decimal/round.md#mathceildecimal) |
+| `roundToTick(value, tickSize, roundingMode)` | Rounding | Округление к tick size | [→](./rounding/README.md#roundtotick) |
 | `floorToTick(value, tickSize)` | Rounding | Floor к tick size | [→](./rounding/README.md#floortotick) |
 | `ceilToTick(value, tickSize)` | Rounding | Ceil к tick size | [→](./rounding/README.md#ceiltotick) |
 | `mathFloorToTick(value, tickSize)` | Rounding | Math floor к tick | [→](./rounding/README.md#mathfloortotick) |
 | `mathCeilToTick(value, tickSize)` | Rounding | Math ceil к tick | [→](./rounding/README.md#mathceiltotick) |
-| `roundToPrecision(value, places, mode?)` | Rounding | Округление до N знаков | [→](./rounding/README.md#roundtoprecision) |
+| `roundToPrecision(value, places, roundingMode)` | Rounding | Округление до N знаков | [→](./rounding/README.md#roundtoprecision) |
 | `isFiniteDecimal(value)` | Validation | Проверка конечности | [→](./validation/README.md#isfinitedecimal) |
 | `isPositiveDecimal(value)` | Validation | Проверка > 0 | [→](./validation/README.md#ispositivedecimal) |
 | `isNonNegativeDecimal(value)` | Validation | Проверка >= 0 | [→](./validation/README.md#isnonnegativedecimal) |
+| `isZeroDecimal(value)` | Validation | Проверка === 0 | [→](./validation/README.md#iszerodecimal) |
 
 ## Философия пакета
 
@@ -51,12 +56,14 @@
 ```
 
 **Что делает Core Layer:**
+
 - ✅ Чистые математические операции
 - ✅ Throw на математические невозможности (overflow, division by zero)
 - ✅ Высокая точность с Decimal.js
 - ✅ Без зависимости от бизнес-контекста
 
 **Что НЕ делает Core Layer:**
+
 - ❌ Не проверяет бизнес-правила (min/max значения)
 - ❌ Не использует Result pattern (это для Domain Layer)
 - ❌ Не зависит от других domain concepts
@@ -108,6 +115,7 @@ class Price {
 ### 1. Throw vs Result
 
 **В @polymarket/math используется throw:**
+
 ```typescript
 // Математическая невозможность = throw
 function divideDecimal(a: Decimal, b: Decimal): Decimal {
@@ -122,6 +130,7 @@ function divideDecimal(a: Decimal, b: Decimal): Decimal {
 ```
 
 **В Value Objects используется Result:**
+
 ```typescript
 // Бизнес-правило = Result
 class Price {
@@ -142,6 +151,7 @@ class Price {
 ### 2. Чистые функции
 
 Все функции в `@polymarket/math`:
+
 - Не имеют побочных эффектов
 - Детерминированные (одинаковый вход → одинаковый выход)
 - Легко тестируются
@@ -164,18 +174,23 @@ function addDecimalWithLogging(a: Decimal, b: Decimal): Decimal {
 
 ### 3. Математические свойства
 
-Функции сохраняют математические свойства:
+Функции сохраняют математические свойства (с оговорками):
 
 ```typescript
-// Коммутативность сложения
+// Коммутативность - ВСЕГДА сохраняется
 addDecimal(a, b) === addDecimal(b, a)
+multiplyDecimal(a, b) === multiplyDecimal(b, a)
 
-// Ассоциативность сложения
-addDecimal(addDecimal(a, b), c) === addDecimal(a, addDecimal(b, c))
+// Ассоциативность - может нарушаться при ограниченной precision
+// При стандартной precision (20 цифр) сохраняется для большинства случаев
+addDecimal(addDecimal(a, b), c) ≈ addDecimal(a, addDecimal(b, c))
 
-// Нейтральный элемент
+// Нейтральный элемент - ВСЕГДА сохраняется
 addDecimal(a, MATH_CONSTANTS.ZERO) === a
+multiplyDecimal(a, MATH_CONSTANTS.ONE) === a
 ```
+
+**Важно:** Ассоциативность и дистрибутивность могут нарушаться из-за округления при каждой операции согласно настроенной `precision`. Коммутативность и свойства нейтральных элементов гарантированы всегда.
 
 ## Использование
 
@@ -220,22 +235,37 @@ console.log(newPrice.toString()); // "1.65"
 
 ```typescript
 import { addDecimal } from '@polymarket/math';
-import { ArithmeticOverflowError } from '@polymarket/errors';
+import { InvalidOperandError, ArithmeticOverflowError } from '@polymarket/errors';
 
 try {
-  const result = addDecimal(new Decimal(Infinity), new Decimal(100));
+  // Пример 1: Invalid operand (Infinity в операнде)
+  const result1 = addDecimal(new Decimal(Infinity), new Decimal(100));
+} catch (error) {
+  if (InvalidOperandError.is(error)) {
+    console.error('Invalid operand:', error.context);
+  }
+}
+
+try {
+  // Пример 2: Arithmetic overflow (результат операции превышает пределы)
+  const huge1 = new Decimal('9e9000000000000000');
+  const huge2 = new Decimal('9e9000000000000000');
+  const result2 = addDecimal(huge1, huge2); // Результат = Infinity
 } catch (error) {
   if (ArithmeticOverflowError.is(error)) {
-    console.error('Math error:', error.context);
+    console.error('Arithmetic overflow:', error.context);
   }
 }
 ```
 
 **Используемые ошибки:**
-- `ArithmeticOverflowError` - результат операции = Infinity
-- `InvalidDivisorError` - делитель NaN/Infinity
+
+- `InvalidOperandError` - операнд не конечное число (NaN, Infinity в параметрах)
+- `ArithmeticOverflowError` - результат операции не конечен (overflow/underflow)
+- `InvalidDivisorError` - делитель NaN/Infinity (специальный случай InvalidOperandError)
 - `DivisionByZeroError` - деление на ноль
 - `InvalidTickSizeError` - tick size <= 0 или не конечен
+- `InvalidDecimalPlacesError` - decimalPlaces невалидно (отрицательное, не integer, превышает лимит)
 
 ### @polymarket/value-objects
 

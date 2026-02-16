@@ -104,10 +104,11 @@ class Price {
 // Использование
 const priceResult = Price.fromNumber(userInput);
 
-priceResult.match({
-  ok: (price) => console.log('Valid price:', price),
-  err: (error) => console.error('Invalid price:', error.message)
-});
+if (priceResult.ok) {
+  console.log('Valid price:', priceResult.value);
+} else {
+  console.error('Invalid price:', priceResult.error.message);
+}
 ```
 
 ### 3. Обработка ошибок
@@ -145,7 +146,7 @@ result.match({
 ### 4. Композиция с ResultChain
 
 ```typescript
-import { ResultChain } from '@polymarket/result';
+import { toChain } from '@polymarket/result';
 import {
   InvalidPriceError,
   InvalidQuantityError,
@@ -158,8 +159,7 @@ function createOrder(
   money1: Money,
   money2: Money
 ): Result<Order, InvalidPriceError | InvalidQuantityError | CurrencyMismatchError> {
-  return ResultChain
-    .from(Price.fromNumber(priceInput))
+  return toChain(Price.fromNumber(priceInput))
     .flatMap(price =>
       Quantity.fromNumber(qtyInput).map(qty => ({ price, qty }))
     )
@@ -167,7 +167,7 @@ function createOrder(
       money1.add(money2).map(total => ({ price, qty, total }))
     )
     .map(({ price, qty, total }) => new Order(price, qty, total))
-    .run();
+    .toResult();
 }
 
 // Использование

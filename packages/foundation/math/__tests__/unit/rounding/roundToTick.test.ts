@@ -6,7 +6,11 @@ import {
   mathFloorToTick,
   mathCeilToTick,
 } from '../../../src/rounding/roundToTick.js';
-import { InvalidTickSizeError, InvalidOperandError } from '@polymarket/errors';
+import {
+  InvalidTickSizeError,
+  InvalidOperandError,
+  ArithmeticOverflowError,
+} from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('roundToTick', () => {
@@ -379,6 +383,73 @@ describe('roundToTick', () => {
         // ROUND_UP: abs(result) >= abs(value) (от нуля)
         expect(result.abs().greaterThanOrEqualTo(valueDecimal.abs())).toBe(true);
       });
+    });
+  });
+
+  describe('overflow errors', () => {
+    /**
+     * Тест проверяет, что roundToTick бросает ArithmeticOverflowError
+     * когда результат округления выходит за пределы конечных чисел.
+     *
+     * @remarks
+     * Overflow возможен при округлении огромного числа с крошечным tickSize,
+     * когда промежуточные вычисления (value / tickSize * tickSize) дают Infinity.
+     * Decimal.js maxE = 9e15, используем значения близкие к этой границе.
+     */
+    it('должен throw ArithmeticOverflowError при overflow', () => {
+      // Создаём кейс, где промежуточный/финальный результат превысит maxE
+      // value близкое к maxE, делённое на крошечный tick даст overflow
+      const nearMaxE = new Decimal('5e' + (Decimal.maxE - 1000));
+      const tinyTick = new Decimal('1e-2000');
+
+      expect(() => roundToTick(nearMaxE, tinyTick, Decimal.ROUND_HALF_UP)).toThrow(
+        ArithmeticOverflowError
+      );
+    });
+
+    /**
+     * Тест проверяет, что ошибка overflow содержит полный контекст операции.
+     */
+    it('должен содержать контекст в ошибке overflow', () => {
+      const nearMaxE = new Decimal('5e' + (Decimal.maxE - 1000));
+      const tinyTick = new Decimal('1e-2000');
+
+      try {
+        roundToTick(nearMaxE, tinyTick, Decimal.ROUND_HALF_UP);
+        // Если не бросило ошибку - тест провален
+        fail('Expected ArithmeticOverflowError to be thrown');
+      } catch (error) {
+        if (error instanceof ArithmeticOverflowError) {
+          expect(error.context).toBeDefined();
+          expect(error.context?.value).toBeDefined();
+          expect(error.context?.tickSize).toBeDefined();
+          expect(error.context?.result).toBe('Infinity');
+        } else {
+          throw error;
+        }
+      }
+    });
+  });
+
+  describe('дополнительные граничные случаи', () => {
+    it('должен корректно обрабатывать отрицательный tickSize', () => {
+      expect(() =>
+        roundToTick(new Decimal('10.567'), new Decimal('-0.01'), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidTickSizeError);
+    });
+
+    it('должен корректно обрабатывать нулевое значение', () => {
+      const result = roundToTick(new Decimal(0), new Decimal('0.01'), Decimal.ROUND_HALF_UP);
+      expect(result.toString()).toBe('0');
+    });
+
+    it('должен корректно обрабатывать очень большой tickSize', () => {
+      const result = roundToTick(
+        new Decimal('123.456'),
+        new Decimal('100'),
+        Decimal.ROUND_HALF_UP
+      );
+      expect(result.toString()).toBe('100');
     });
   });
 });

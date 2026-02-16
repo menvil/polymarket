@@ -90,6 +90,23 @@ export enum ErrorSource {
   SERVICE_CALL = 'service_call',
 
   /**
+   * Ошибка неправильного использования API (developer mistake)
+   *
+   * @remarks
+   * Возникает при нарушении контракта API (TypeError, null/undefined где не ожидалось).
+   * Отличается от UNEXPECTED - это баг в коде разработчика, а не runtime issue.
+   * Содержит context.reason = 'MISUSE' и context.cause с TypeError.
+   *
+   * @example
+   * ```typescript
+   * // TypeError: Cannot read property 'amount' of null
+   * const result = MoneyService.add(null, money2);
+   * // result.error.context.source === ErrorSource.DEVELOPER_MISUSE
+   * ```
+   */
+  DEVELOPER_MISUSE = 'developer_misuse',
+
+  /**
    * Неожиданная ошибка (catch-all)
    *
    * @remarks

@@ -48,9 +48,10 @@ import {
  * // Throw на деление на ноль
  * divideDecimal(new Decimal(10), new Decimal(0)); // throws DivisionByZeroError
  *
- * // Throw на overflow
- * const huge = new Decimal('1e308');
- * const tiny = new Decimal('1e-308');
+ * // Throw на overflow (при превышении Decimal.maxE)
+ * // Примечание: Decimal.maxE = 9e15, поэтому 1e308 / 1e-308 = 1e616 это finite
+ * const huge = new Decimal('1e9000000000000000');
+ * const tiny = new Decimal('1e-100');
  * divideDecimal(huge, tiny); // throws ArithmeticOverflowError
  * ```
  */

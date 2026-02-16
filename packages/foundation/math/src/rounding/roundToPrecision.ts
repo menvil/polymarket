@@ -1,25 +1,59 @@
 import Decimal from 'decimal.js';
-import { InvalidDecimalPlacesError, InvalidOperandError } from '@polymarket/errors';
+import {
+  InvalidDecimalPlacesError,
+  InvalidOperandError,
+  InvalidRoundingModeError,
+} from '@polymarket/errors';
+
+/**
+ * Максимально допустимое количество десятичных знаков
+ *
+ * @remarks
+ * Ограничение Decimal.js для toDecimalPlaces().
+ * Значения больше этого вызывают внутреннюю ошибку библиотеки.
+ */
+const MAX_DECIMAL_PLACES = 1e9;
+
+/**
+ * Минимальный допустимый режим округления Decimal.js
+ */
+const MIN_ROUNDING_MODE = 0;
+
+/**
+ * Максимальный допустимый режим округления Decimal.js
+ */
+const MAX_ROUNDING_MODE = 8;
 
 /**
  * Округляет значение до указанного количества десятичных знаков
  *
  * @param value - Значение для округления
- * @param decimalPlaces - Количество десятичных знаков (0 для целых чисел)
- * @param roundingMode - Режим округления Decimal
+ * @param decimalPlaces - Количество десятичных знаков (0 для целых чисел, максимум 1e9)
+ * @param roundingMode - Режим округления Decimal (0-8)
  * @returns Округлённое значение
  * @throws {InvalidOperandError} При невалидном value (NaN, ±Infinity)
- * @throws {InvalidDecimalPlacesError} При невалидном количестве знаков (отрицательное, NaN, Infinity, не integer)
+ * @throws {InvalidDecimalPlacesError} При невалидном количестве знаков (не finite, не integer, отрицательное, больше 1e9)
+ * @throws {InvalidRoundingModeError} При невалидном roundingMode (не integer, вне диапазона 0-8)
  *
  * @remarks
  * Обёртка над Decimal.toDecimalPlaces() с валидацией для единообразного API.
  *
+ * Ограничения:
+ * - decimalPlaces должно быть в диапазоне [0, 1e9]
+ * - roundingMode должен быть в диапазоне [0, 8]
+ * - Превышение максимума decimalPlaces вызывает InvalidDecimalPlacesError
+ * - Невалидный roundingMode вызывает Error от Decimal.js
+ *
  * Режимы округления:
- * - Decimal.ROUND_HALF_UP - округление к ближайшему, .5 вверх
- * - Decimal.ROUND_DOWN - округление к нулю
- * - Decimal.ROUND_UP - округление от нуля
- * - Decimal.ROUND_FLOOR - округление к -Infinity
- * - Decimal.ROUND_CEIL - округление к +Infinity
+ * - 0 (Decimal.ROUND_UP) - округление от нуля
+ * - 1 (Decimal.ROUND_DOWN) - округление к нулю
+ * - 2 (Decimal.ROUND_CEIL) - округление к +Infinity
+ * - 3 (Decimal.ROUND_FLOOR) - округление к -Infinity
+ * - 4 (Decimal.ROUND_HALF_UP) - округление к ближайшему, .5 вверх
+ * - 5 (Decimal.ROUND_HALF_DOWN) - округление к ближайшему, .5 вниз
+ * - 6 (Decimal.ROUND_HALF_EVEN) - округление к ближайшему, .5 к чётному
+ * - 7 (Decimal.ROUND_HALF_CEIL) - округление к ближайшему, .5 к +Infinity
+ * - 8 (Decimal.ROUND_HALF_FLOOR) - округление к ближайшему, .5 к -Infinity
  *
  * @example
  * ```typescript
@@ -50,6 +84,7 @@ import { InvalidDecimalPlacesError, InvalidOperandError } from '@polymarket/erro
  * roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP); // throws
  * roundToPrecision(new Decimal('10.567'), NaN, Decimal.ROUND_HALF_UP); // throws
  * roundToPrecision(new Decimal('10.567'), 1.5, Decimal.ROUND_HALF_UP); // throws
+ * roundToPrecision(new Decimal('10.567'), 1e9 + 1, Decimal.ROUND_HALF_UP); // throws (превышен максимум)
  * ```
  */
 export function roundToPrecision(
@@ -57,6 +92,8 @@ export function roundToPrecision(
   decimalPlaces: number,
   roundingMode: Decimal.Rounding
 ): Decimal {
+  const operation = 'roundToPrecision';
+
   // Валидация value
   if (!value.isFinite()) {
     throw new InvalidOperandError(
@@ -65,27 +102,99 @@ export function roundToPrecision(
         context: {
           value: value.toString(),
           decimalPlaces: String(decimalPlaces),
-          operation: 'roundToPrecision'
-        }
+          roundingMode: String(roundingMode),
+          operation,
+        },
       }
     );
   }
 
-  // Валидация decimalPlaces через Decimal
-  const decimalPlacesDecimal = new Decimal(decimalPlaces);
-
-  if (!decimalPlacesDecimal.isFinite() || decimalPlacesDecimal.isNegative() || !decimalPlacesDecimal.isInteger()) {
+  // Валидация decimalPlaces как number (без new Decimal)
+  if (!Number.isFinite(decimalPlaces)) {
     throw new InvalidDecimalPlacesError(
-      (ctx) => `Decimal places must be a non-negative integer, got ${ctx.decimalPlaces}`,
+      (ctx) => `Decimal places must be a finite number, got ${ctx.decimalPlaces}`,
       {
         context: {
-          decimalPlaces: decimalPlacesDecimal.toString(),
+          decimalPlaces: String(decimalPlaces),
           value: value.toString(),
-          operation: 'roundToPrecision'
-        }
+          operation,
+        },
       }
     );
   }
 
+  if (!Number.isInteger(decimalPlaces)) {
+    throw new InvalidDecimalPlacesError(
+      (ctx) => `Decimal places must be an integer, got ${ctx.decimalPlaces}`,
+      {
+        context: {
+          decimalPlaces: String(decimalPlaces),
+          value: value.toString(),
+          operation,
+        },
+      }
+    );
+  }
+
+  if (decimalPlaces < 0) {
+    throw new InvalidDecimalPlacesError(
+      (ctx) => `Decimal places must be non-negative, got ${ctx.decimalPlaces}`,
+      {
+        context: {
+          decimalPlaces: String(decimalPlaces),
+          value: value.toString(),
+          operation,
+        },
+      }
+    );
+  }
+
+  if (decimalPlaces > MAX_DECIMAL_PLACES) {
+    throw new InvalidDecimalPlacesError(
+      (ctx) => `Decimal places must not exceed ${ctx.max}, got ${ctx.decimalPlaces}`,
+      {
+        context: {
+          decimalPlaces: String(decimalPlaces),
+          max: String(MAX_DECIMAL_PLACES),
+          value: value.toString(),
+          operation,
+        },
+      }
+    );
+  }
+
+  // Валидация roundingMode
+  if (!Number.isInteger(roundingMode)) {
+    throw new InvalidRoundingModeError(
+      (ctx) => `Rounding mode must be an integer, got ${ctx.roundingMode}`,
+      {
+        context: {
+          roundingMode: String(roundingMode),
+          value: value.toString(),
+          decimalPlaces: String(decimalPlaces),
+          operation,
+        },
+      }
+    );
+  }
+
+  if (roundingMode < MIN_ROUNDING_MODE || roundingMode > MAX_ROUNDING_MODE) {
+    throw new InvalidRoundingModeError(
+      (ctx) =>
+        `Rounding mode must be between ${ctx.min} and ${ctx.max}, got ${ctx.roundingMode}`,
+      {
+        context: {
+          roundingMode: String(roundingMode),
+          min: String(MIN_ROUNDING_MODE),
+          max: String(MAX_ROUNDING_MODE),
+          value: value.toString(),
+          decimalPlaces: String(decimalPlaces),
+          operation,
+        },
+      }
+    );
+  }
+
+  // Выполняем округление
   return value.toDecimalPlaces(decimalPlaces, roundingMode);
 }

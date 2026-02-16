@@ -20,7 +20,7 @@ npm install @polymarket/math
 - ✅ **Чистые функции** - без побочных эффектов, легко тестировать
 - ✅ **Throw на невозможности** - выбрасывает ошибки при математических невозможностях (NaN, Infinity, деление на ноль)
 - ✅ **Type-safe** - полная типобезопасность с TypeScript
-- ✅ **100% покрытие тестами** - все функции покрыты unit и integration тестами
+- ✅ **Высокое покрытие тестами** - все функции покрыты unit и integration тестами
 - ✅ **Минимальные зависимости** - только decimal.js и @polymarket/errors
 
 ## Модули
@@ -28,32 +28,36 @@ npm install @polymarket/math
 ### Decimal Operations (`@polymarket/math/decimal`)
 
 Базовые арифметические операции с Decimal:
+
 - ✅ `addDecimal(a, b)` - сложение ([docs](./docs/decimal/add.md))
 - ✅ `subtractDecimal(a, b)` - вычитание ([docs](./docs/decimal/subtract.md))
 - ✅ `multiplyDecimal(a, b)` - умножение ([docs](./docs/decimal/multiply.md))
 - ✅ `divideDecimal(a, b)` - деление ([docs](./docs/decimal/divide.md))
 - ✅ `averageDecimal(a, b)` - среднее значение ([docs](./docs/decimal/average.md))
 - ✅ `compareDecimal(a, b)` и другие операции сравнения
-- ✅ `roundDecimal(value)`, `roundTowardZeroDecimal`, `roundAwayFromZeroDecimal`, `truncDecimal` - округление
+- ✅ `roundDecimal(value)` - округление half-up
+- ✅ `roundTowardZeroDecimal`, `roundAwayFromZeroDecimal`, `truncDecimal` - округление к/от нуля
+- ✅ `mathFloorDecimal`, `mathCeilDecimal` - математическое floor/ceil
 
 ### Rounding Operations (`@polymarket/math/rounding`)
 
 Операции округления к tick size:
-- ✅ `roundToTick(value, tickSize, mode?)` - округление к tick size
+
+- ✅ `roundToTick(value, tickSize, roundingMode)` - округление к tick size
 - ✅ `floorToTick(value, tickSize)` - округление вниз (к нулю)
 - ✅ `ceilToTick(value, tickSize)` - округление вверх (от нуля)
 - ✅ `mathFloorToTick(value, tickSize)` - floor к -Infinity
 - ✅ `mathCeilToTick(value, tickSize)` - ceil к +Infinity
-- ✅ `roundToPrecision(value, decimalPlaces, mode?)` - округление до N знаков
+- ✅ `roundToPrecision(value, decimalPlaces, roundingMode)` - округление до N знаков
 
 ### Validation (`@polymarket/math/validation`)
 
 Валидация чисел (все проверки строгие):
+
 - ✅ `isFiniteDecimal(value)` - проверка что число конечное
 - ✅ `isPositiveDecimal(value)` - проверка что число положительное (> 0)
 - ✅ `isNonNegativeDecimal(value)` - проверка что число неотрицательное (>= 0)
-
-Для строгого сравнения с нулем используйте `value.isZero()` из Decimal.js
+- ✅ `isZeroDecimal(value)` - проверка строгого равенства нулю
 
 ## Быстрый старт
 
@@ -98,9 +102,12 @@ try {
 ```
 
 **Типы ошибок:**
+
+- `InvalidOperandError` - операнд не является конечным числом (NaN, Infinity, -Infinity)
 - `InvalidDivisorError` - делитель не является конечным числом (NaN, Infinity)
 - `DivisionByZeroError` - деление на ноль
 - `InvalidTickSizeError` - tick size не является положительным конечным числом
+- `InvalidDecimalPlacesError` - количество десятичных знаков невалидно
 - `ArithmeticOverflowError` - результат операции вышел за пределы
 
 ## Разработка
@@ -149,6 +156,7 @@ npm run typecheck
 ### Core Layer - Чистые функции
 
 Все функции в `@polymarket/math` - это **чистые функции**:
+
 - Нет побочных эффектов
 - Один и тот же вход всегда даёт один и тот же выход
 - Не зависят от внешнего состояния
@@ -157,6 +165,7 @@ npm run typecheck
 ### Throw vs Result
 
 В этом пакете используется **throw** для ошибок, потому что:
+
 - Математические невозможности (деление на NaN) - это **исключительные ситуации**
 - Они не являются частью нормального flow программы
 - Бизнес-логика обрабатывается на уровне Value Objects (там используется Result)

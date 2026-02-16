@@ -331,7 +331,7 @@ describe('errorUtils', () => {
 
       // Сохраняем оригинальные значения до rewrap
       const originalTimestamp = original.timestamp.toISOString();
-      const originalStack = original.stack;
+      const firstTradingErrorStack = original.stack;
       const originalName = original.name;
       const originalCode = original.code;
 
@@ -346,7 +346,7 @@ describe('errorUtils', () => {
 
       // Проверяем что origin-данные сохранены в context
       expect(rewrapped1.context?.rootTimestamp).toBe(originalTimestamp);
-      expect(rewrapped1.context?.originalStack).toBe(originalStack);
+      expect(rewrapped1.context?.firstTradingErrorStack).toBe(firstTradingErrorStack);
       expect(rewrapped1.context?.originalName).toBe(originalName);
       expect(rewrapped1.context?.originalCode).toBe(originalCode);
 
@@ -367,14 +367,14 @@ describe('errorUtils', () => {
 
       // Origin-данные должны остаться от ПЕРВОЙ ошибки (не перезаписаны)
       expect(rewrapped2.context?.rootTimestamp).toBe(originalTimestamp);
-      expect(rewrapped2.context?.originalStack).toBe(originalStack);
+      expect(rewrapped2.context?.firstTradingErrorStack).toBe(firstTradingErrorStack);
       expect(rewrapped2.context?.originalName).toBe(originalName);
       expect(rewrapped2.context?.originalCode).toBe(originalCode);
 
       // rootTimestamp - это сохраненная ISO строка от первой ошибки
       expect(rewrapped2.context?.rootTimestamp).toBe(originalTimestamp);
-      // originalStack - это сохраненный stack от первой ошибки
-      expect(rewrapped2.context?.originalStack).toBe(originalStack);
+      // firstTradingErrorStack - это сохраненный stack от первой ошибки
+      expect(rewrapped2.context?.firstTradingErrorStack).toBe(firstTradingErrorStack);
     });
   });
 
@@ -529,8 +529,7 @@ describe('errorUtils', () => {
         expect(result.error.message).toContain('Developer misuse');
         expect(result.error.context?.service).toBe('PriceService');
         expect(result.error.context?.op).toBe('calculate');
-        expect(result.error.context?.source).toBe('unexpected');
-        // MISUSE reason помогает отличить от обычных unexpected
+        expect(result.error.context?.source).toBe('developer_misuse');
         expect(result.error.context?.reason).toBe('MISUSE');
         expect(result.error.context?.cause).toBeDefined();
       }
@@ -846,9 +845,8 @@ describe('errorUtils', () => {
       }
     });
 
-    it('обрабатывает ошибку парсинга Decimal с non-Error', () => {
-      // Test the else branch in catch by passing invalid input to Decimal
-      // When Decimal constructor fails, it throws an Error, so we test the toCause path
+    it('обрабатывает ошибку парсинга Decimal', () => {
+      // Decimal constructor throws Error on invalid input
       const result = toDecimal('amount', 'not-a-number-xyz', 'INVALID_FORMAT', InvalidMoneyError);
 
       expect(isErr(result)).toBe(true);
@@ -857,6 +855,43 @@ describe('errorUtils', () => {
         expect(result.error.context!.cause).toBeDefined();
         // cause should have been created by toCause from the Decimal error
         expect((result.error.context!.cause as any).name).toBeDefined();
+        // Message from the Decimal Error (not the fallback 'Failed to parse value')
+        expect(result.error.message).not.toBe('Failed to parse value');
+      }
+    });
+
+    it('обрабатывает злой объект с throwing toString() без throw', () => {
+      // Создаем "злой" объект который бросает исключение при вызове toString()
+      const evilObject = {
+        toString() {
+          throw new Error('Evil toString!');
+        }
+      };
+
+      // toDecimal должен вернуть Err, а не выбросить исключение
+      const result = toDecimal('amount', evilObject as any, 'INVALID_FORMAT', InvalidMoneyError);
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        expect(result.error.message).toBe('Evil toString!');
+        expect(result.error.context!.source).toBe('parsing');
+        expect(result.error.context!.cause).toBeDefined();
+        expect((result.error.context!.cause as any).message).toBe('Evil toString!');
+      }
+    });
+
+    it('обрабатывает объект без toString() без throw', () => {
+      // Объект без метода toString
+      const noToStringObject = Object.create(null);
+
+      const result = toDecimal('amount', noToStringObject, 'INVALID_FORMAT', InvalidMoneyError);
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        expect(result.error.message).toContain('no valid toString()');
+        expect(result.error.context!.source).toBe('parsing');
       }
     });
   });

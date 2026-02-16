@@ -19,12 +19,13 @@
 
 ```typescript
 enum ErrorSource {
-  PARSING = 'parsing',              // Ошибка парсинга входных данных
-  CORE_INVARIANT = 'core_invariant', // Нарушение инварианта домена
+  PARSING = 'parsing',                 // Ошибка парсинга входных данных
+  CORE_INVARIANT = 'core_invariant',   // Нарушение инварианта домена
   RULE_VALIDATION = 'rule_validation', // Нарушение бизнес-правила
-  MATH_OPERATION = 'math_operation',  // Ошибка математической операции
-  SERVICE_CALL = 'service_call',     // Ошибка из вложенного сервиса
-  UNEXPECTED = 'unexpected'          // Неожиданная ошибка (catch-all)
+  MATH_OPERATION = 'math_operation',   // Ошибка математической операции
+  SERVICE_CALL = 'service_call',       // Ошибка из вложенного сервиса
+  DEVELOPER_MISUSE = 'developer_misuse', // Developer mistake (TypeError, etc)
+  UNEXPECTED = 'unexpected'            // Неожиданная runtime ошибка
 }
 ```
 
@@ -119,15 +120,43 @@ enum ErrorSource {
 }
 ```
 
-#### UNEXPECTED
+#### DEVELOPER_MISUSE
 
-**Когда**: Неожиданное исключение (TypeError, ReferenceError, и т.д.)
+**Когда**: Неправильное использование API (developer mistake)
 
 **Примеры**:
 
-- Программная ошибка
-- Незапланированное исключение
-- Баг в коде
+- `TypeError`: передан `null`/`undefined` вместо объекта
+- `TypeError`: вызов метода на `null`
+- Нарушение контракта API (неправильный тип аргумента)
+
+**Контекст**:
+
+```typescript
+{
+  source: ErrorSource.DEVELOPER_MISUSE,
+  reason: 'MISUSE',
+  cause: {
+    name: "TypeError",
+    message: "Cannot read property 'amount' of null"
+  }
+}
+```
+
+**Отличие от UNEXPECTED**:
+
+- **DEVELOPER_MISUSE** - баг в коде разработчика (неправильное использование API)
+- **UNEXPECTED** - runtime ошибка вне контроля разработчика (network, disk, etc)
+
+#### UNEXPECTED
+
+**Когда**: Неожиданная runtime ошибка (не баг разработчика)
+
+**Примеры**:
+
+- Network errors
+- File system errors
+- Неизвестные exceptions из внешних библиотек
 
 **Контекст**:
 
@@ -135,8 +164,8 @@ enum ErrorSource {
 {
   source: ErrorSource.UNEXPECTED,
   cause: {
-    name: "TypeError",
-    message: "Cannot read property 'foo' of undefined"
+    name: "NetworkError",
+    message: "Request timeout"
   }
 }
 ```
@@ -513,12 +542,18 @@ return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
 - `raw` - первичные невалидные данные
 - `source` - источник ошибки (не перезаписывается)
 
-**Origin-данные сохраняются** (данные самой первой ошибки в цепочке):
+**Origin-данные сохраняются** (данные первого TradingError в цепочке):
 
-- `rootTimestamp` - timestamp первой ошибки (ISO string)
-- `originalStack` - stack trace первой ошибки
-- `originalName` - name первой ошибки
-- `originalCode` - code первой ошибки
+- `rootTimestamp` - timestamp первого TradingError (ISO string)
+- `firstTradingErrorStack` - stack trace первого TradingError
+- `originalName` - name первого TradingError
+- `originalCode` - code первого TradingError
+
+**Root cause данные** (исходный exception, не TradingError):
+
+- `cause.stack` - stack trace исходного exception (root cause)
+- `cause.message` - сообщение исходного exception
+- `cause.name` - name исходного exception
 
 **Обновляются на каждом rewrap**:
 
@@ -531,7 +566,8 @@ return Err(rewrap('PriceService', 'create', ctx, err, InvalidPriceError));
 Это позволяет увидеть:
 
 - **Что пошло не так** (cause, reason, raw, source) - сохраняется
-- **Первоисточник** (rootTimestamp, originalStack, originalName, originalCode) - сохраняется
+- **Root cause** (cause.stack исходного exception) - сохраняется в cause
+- **Первый TradingError** (rootTimestamp, firstTradingErrorStack, originalName, originalCode) - сохраняется
 - **Где это произошло** (service, op, opChain) - накапливается в цепочке
 - **Текущее состояние** (timestamp, stack, name) - обновляется
 

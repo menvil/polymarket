@@ -170,7 +170,28 @@ export function toDecimal<TError extends DomainError>(
       // input это Decimal (возможно из другой копии decimal.js)
       // Безопасно извлекаем toString если он есть
       const obj = input as unknown as { toString?: unknown };
-      normalized = typeof obj.toString === 'function' ? obj.toString() : undefined;
+      if (typeof obj.toString === 'function') {
+        try {
+          // toString() может выбросить исключение на "злых" объектах
+          normalized = obj.toString();
+        } catch (toStringError) {
+          return Err(
+            new ErrorConstructor(
+              toStringError instanceof Error ? toStringError.message : 'toString() threw exception',
+              {
+                context: {
+                  source: ErrorSource.PARSING,
+                  raw: { field, value: '[object with throwing toString]' },
+                  cause: toCause(toStringError),
+                  reason: reasonEnum
+                }
+              }
+            )
+          );
+        }
+      } else {
+        normalized = undefined;
+      }
     }
 
     if (normalized === undefined) {
@@ -178,7 +199,7 @@ export function toDecimal<TError extends DomainError>(
         new ErrorConstructor('Failed to normalize value: no valid toString()', {
           context: {
             source: ErrorSource.PARSING,
-            raw: { field, value: String(input) },
+            raw: { field, value: '[object without toString]' },
             reason: reasonEnum
           }
         })
@@ -203,6 +224,8 @@ export function toDecimal<TError extends DomainError>(
 
     return Ok(decimal);
   } catch (error) {
+    // NOTE: Decimal.js always throws Error, but we handle non-Error for defensive programming
+    // Coverage: non-Error branch is unreachable with current Decimal.js implementation
     return Err(
       new ErrorConstructor(
         error instanceof Error ? error.message : 'Failed to parse value',
@@ -303,7 +326,7 @@ export function developerMisuseError<TError extends DomainError>(
   const cause = toCause(e);
   return new ErrorConstructor(`Developer misuse: ${cause.message}`, {
     context: {
-      source: ErrorSource.UNEXPECTED,
+      source: ErrorSource.DEVELOPER_MISUSE,
       reason: 'MISUSE',
       cause
     }
@@ -457,7 +480,7 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
  *
  * **Root-cause semantics:**
  * - cause, reason, raw, source сохраняются из inner (это первопричина)
- * - rootTimestamp, originalStack, originalName, originalCode сохраняют данные самой первой ошибки
+ * - rootTimestamp, firstTradingErrorStack, originalName, originalCode сохраняют данные самой первой ошибки
  * - opChain накапливает историю операций: [innerOp, ..., op]
  *
  * Это гарантирует:
@@ -547,10 +570,10 @@ export function rewrap<TError extends DomainError>(
     merged.rootTimestamp = inner.rootTimestamp; // Сохраняем из inner если уже был rewrap
   }
 
-  if (inner.originalStack === undefined && err.stack) {
-    merged.originalStack = err.stack;
-  } else if (inner.originalStack !== undefined) {
-    merged.originalStack = inner.originalStack; // Сохраняем из inner если уже был rewrap
+  if (inner.firstTradingErrorStack === undefined && err.stack) {
+    merged.firstTradingErrorStack = err.stack;
+  } else if (inner.firstTradingErrorStack !== undefined) {
+    merged.firstTradingErrorStack = inner.firstTradingErrorStack; // Сохраняем из inner если уже был rewrap
   }
 
   if (inner.originalName === undefined && err.name) {
