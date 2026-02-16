@@ -715,14 +715,21 @@ export class Quote {
   }
 
   /**
-   * Spread в процентах от mid price
+   * Spread в процентах от mid price (как дробь)
    *
-   * @returns Ratio процента или null если не two-sided
+   * @returns Ratio с дробным представлением процента, или null если не two-sided
    *
    * @remarks
-   * Формула: (spread / mid) * 100
-   * - Возвращает Ratio объект (типобезопасный процент)
-   * - null если котировка не two-sided или нет mid price
+   * **ВАЖНО:** Возвращает дробь (fraction), не проценты!
+   * - Ratio хранит дробь: 0.08 означает 8%, не число 8
+   * - Для отображения: умножьте на 100 (например, `ratio.toDecimal().times(100)`)
+   *
+   * Формула: spread.width / mid (БЕЗ умножения на 100)
+   *
+   * Пример для bid 0.48, ask 0.52:
+   * - mid = 0.50
+   * - spread = 0.04
+   * - результат = 0.04 / 0.50 = 0.08 (представляет 8%)
    *
    * @example
    * ```typescript
@@ -735,8 +742,11 @@ export class Quote {
    *   'POLYMARKET_WS' as MarketDataSourceId,
    *   'TEST_MARKET' as InstrumentId
    * );
-   * const pct = quote.spreadPercentage();
-   * console.log(pct?.toDecimal().toNumber()); // 0.08 (8% как дробь)
+   * const ratio = quote.spreadPercentage();
+   * console.log(ratio?.toDecimal().toNumber()); // 0.08 (8% как дробь)
+   *
+   * // Для отображения в процентах:
+   * const percent = ratio?.toDecimal().times(100).toNumber(); // 8.0
    * ```
    */
   public spreadPercentage(): Ratio | null {
