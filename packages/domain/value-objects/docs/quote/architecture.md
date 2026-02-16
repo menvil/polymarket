@@ -122,7 +122,9 @@ class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestamp: Date | number
+    timestampMs: Decimal,
+    sourceId: MarketDataSourceId,
+    instrumentId: InstrumentId
   ): Quote
 
   // Геттеры
@@ -304,7 +306,7 @@ QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')
           ↓ (если ошибка)
           rewrap('create', { component: 'bid' }, error, ...)
         ↓
-        Quote.of(Price, Price, Quantity, Quantity, timestamp)
+        Quote.of(Price, Price, Quantity, Quantity, timestampMs, sourceId, instrumentId)
           ↓ (если QuoteInvariantViolation)
           unexpectedError(...)
       })
@@ -581,31 +583,33 @@ Quote
 
 ## Testing Strategy
 
-**154 теста:**
+**293 теста:**
 
-1. **Core (37 tests):** Quote.test.ts
+1. **Core:** Quote.test.ts
    - Создание через of()
-   - Инварианты
-   - Геттеры
-   - Вычисления (spread, mid, crossing)
-   - Equals
+   - Инварианты (BOTH_SIDES_NULL, BID_GREATER_THAN_ASK, INVALID_TIMESTAMP, INCONSISTENT_*_SIZE)
+   - Геттеры (bid, ask, sizes, timestamp)
+   - Вычисления (spread, mid, age)
+   - Equals и сравнения
 
-2. **Rules (26 tests):**
-   - ValidateQuoteSizes: 7 tests
-   - ValidateMinSpread: 4 tests
-   - ValidateMaxSpread: 4 tests
-   - ValidateMarketCrossing: 11 tests
+2. **Rules:** ValidateQuoteSizes, ValidateMinSpread, ValidateMaxSpread, ValidateMarketCrossing, ValidateAge
+   - Бизнес-правила валидации
+   - Проверка размеров, spread границ, market crossing, свежести
 
-3. **Facade (42 tests):** QuoteService.test.ts
-   - create(), create()
-   - bidOnly(), askOnly()
-   - shift(), skew()
-   - updateSizes()
-   - getSpreadRatio(), getMidPrice()
+3. **Facade:** QuoteService.test.ts, QuoteService.ratio.test.ts
+   - create(), bidOnly(), askOnly()
+   - shift(), skew(), updateSizes()
+   - WithRefresh методы (timestamp update)
+   - Ratio операции (getMidPrice, getSpreadRatio, shiftByRatio, widenByRatio, tightenByRatio, skewByRatio, scaleSizesByRatio)
+   - Parse-error и invariant-error coverage
 
-4. **Adapters (49 tests):**
-   - QuoteSerializer: 27 tests
-   - QuoteFormatter: 22 tests
+4. **Adapters:** QuoteSerializer.test.ts, QuoteFormatter.test.ts
+   - JSON сериализация/десериализация
+   - Форматирование (toDisplay, toDetailed, toShort)
+
+5. **Integration:** QuoteWorkflow.integration.test.ts
+   - End-to-end сценарии
+   - Immutability контракт
 
 ## Performance Considerations
 
@@ -624,7 +628,7 @@ const shifted = QuoteService.shift(quote, delta);
 
 ```typescript
 const spread = quote.spreadWidthOrZero();  // Decimal
-const spreadPct = quote.spreadPercentage();  // Decimal
+// spreadPercentage() - не реализовано, всегда возвращает null
 ```
 
 ### Lazy computation

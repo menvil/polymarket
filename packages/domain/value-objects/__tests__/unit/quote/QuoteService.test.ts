@@ -148,7 +148,10 @@ describe('QuoteService', () => {
       );
 
       expect(result.ok).toBe(false);
-      // Parse-error branch покрыт (parseDecimal возвращает Err)
+      if (!result.ok) {
+        // Parse-error branch покрыт (parseDecimal возвращает Err)
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+      }
     });
   });
 
@@ -393,7 +396,10 @@ describe('QuoteService', () => {
       const result = QuoteService.shift(quoteResult.value, 'invalid' as any);
 
       expect(result.ok).toBe(false);
-      // Parse-error branch покрыт (parseDecimal для shiftAmount возвращает Err)
+      if (!result.ok) {
+        // Parse-error branch покрыт (parseDecimal для shiftAmount возвращает Err)
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+      }
     });
   });
 
@@ -523,7 +529,10 @@ describe('QuoteService', () => {
       const result = QuoteService.skew(quoteResult.value, 'invalid' as any, new Decimal(0));
 
       expect(result.ok).toBe(false);
-      // Parse-error branch покрыт (parseDecimal для bidAdjustment возвращает Err)
+      if (!result.ok) {
+        // Parse-error branch покрыт (parseDecimal для bidAdjustment возвращает Err)
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+      }
     });
 
     it('возвращает Err для invalid askAdjustment (non-parseable string)', () => {
@@ -533,7 +542,10 @@ describe('QuoteService', () => {
       const result = QuoteService.skew(quoteResult.value, new Decimal(0), 'invalid' as any);
 
       expect(result.ok).toBe(false);
-      // Parse-error branch покрыт (parseDecimal для askAdjustment возвращает Err)
+      if (!result.ok) {
+        // Parse-error branch покрыт (parseDecimal для askAdjustment возвращает Err)
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+      }
     });
   });
 
@@ -780,7 +792,10 @@ describe('QuoteService', () => {
         const result = QuoteService.shiftWithRefresh(quoteResult.value, 'invalid' as any, clock);
 
         expect(result.ok).toBe(false);
-        // Parse-error branch покрыт (parseDecimal для shiftAmount возвращает Err)
+        if (!result.ok) {
+          // Parse-error branch покрыт (parseDecimal для shiftAmount возвращает Err)
+          expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        }
       });
     });
 
@@ -826,7 +841,10 @@ describe('QuoteService', () => {
         const result = QuoteService.skewWithRefresh(quoteResult.value, 'invalid' as any, new Decimal(0), clock);
 
         expect(result.ok).toBe(false);
-        // Parse-error branch покрыт (parseDecimal для bidAdjustment возвращает Err)
+        if (!result.ok) {
+          // Parse-error branch покрыт (parseDecimal для bidAdjustment возвращает Err)
+          expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        }
       });
 
       it('возвращает Err для invalid askAdjustment (non-parseable string)', () => {
@@ -837,7 +855,10 @@ describe('QuoteService', () => {
         const result = QuoteService.skewWithRefresh(quoteResult.value, new Decimal(0), 'invalid' as any, clock);
 
         expect(result.ok).toBe(false);
-        // Parse-error branch покрыт (parseDecimal для askAdjustment возвращает Err)
+        if (!result.ok) {
+          // Parse-error branch покрыт (parseDecimal для askAdjustment возвращает Err)
+          expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        }
       });
     });
 

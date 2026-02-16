@@ -12,9 +12,9 @@
 - ✅ **"Never Throw" Contract** — QuoteService гарантированно не бросает исключения
 - ✅ **Централизованная обработка ошибок** — через errorUtils (toDecimal, wrapOp, rewrap)
 - ✅ **Automatic operation tracing** — opChain для отслеживания цепочек операций
-- ✅ **Typed error reasons** — QuoteErrorReason enum (12 значений)
+- ✅ **Typed error reasons** — QuoteErrorReason enum (22 значения)
 - ✅ **Rich domain logic** — методы вычисления spread, mid price, проверки crossing
-- ✅ **Comprehensive tests** — 216 тестов (100% покрытие)
+- ✅ **Comprehensive tests** — 293 теста с высоким покрытием
 
 ## Быстрый старт
 
@@ -48,8 +48,8 @@ const quote = result.value;
 
 // Вычисления
 console.log(quote.spreadWidthOrZero());      // Decimal(0.04)
-console.log(quote.spreadPercentage()); // Decimal(8.0)
-console.log(quote.midOrNull());         // Price(0.50)
+// spreadPercentage() не реализовано (stub), возвращает null
+console.log(quote.midOrNull());         // Decimal(0.50) | null
 
 // Форматирование
 console.log(QuoteFormatter.toDisplay(quote));
@@ -207,7 +207,7 @@ const result = QuoteService.askOnly(
 ```typescript
 const result = QuoteService.shift(
   quote: Quote,
-  delta: Decimal
+  shiftAmount: Decimal | number | string
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -231,8 +231,8 @@ if (shiftResult.ok) {
 ```typescript
 const result = QuoteService.skew(
   quote: Quote,
-  bidDelta: Decimal,
-  askDelta: Decimal
+  bidAdjustment: Decimal | number | string,
+  askAdjustment: Decimal | number | string
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -279,7 +279,7 @@ import { LiveClock } from '@polymarket/time';
 const clock = new LiveClock();
 const result = QuoteService.shiftWithRefresh(
   quote: Quote,
-  delta: Decimal,
+  shiftAmount: Decimal | number | string,
   clock: IClock
 ): Result<Quote, InvalidQuoteError>
 ```
@@ -301,8 +301,8 @@ const result = QuoteService.shiftWithRefresh(quote, new Decimal(0.01), clock);
 ```typescript
 const result = QuoteService.skewWithRefresh(
   quote: Quote,
-  bidDelta: Decimal,
-  askDelta: Decimal,
+  bidAdjustment: Decimal | number | string,
+  askAdjustment: Decimal | number | string,
   clock: IClock
 ): Result<Quote, InvalidQuoteError>
 ```
@@ -332,11 +332,83 @@ const result = QuoteService.updateSizesWithRefresh(
 import { PaperClock } from '@polymarket/time';
 
 const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
-const result = QuoteService.shiftWithRefresh(quote, delta, clock);
+const result = QuoteService.shiftWithRefresh(quote, new Decimal(0.01), clock);
 
 // Контролируемое время для тестов
 clock.tick(5000); // +5 секунд
 ```
+
+### Ratio Operations
+
+#### `getMidPrice()`
+
+Возвращает midpoint цену.
+
+```typescript
+const result = QuoteService.getMidPrice(quote: Quote): Result<Price, InvalidQuoteError>
+```
+
+**Требует:** Two-sided quote (bid и ask определены)
+
+#### `getSpreadRatio()`
+
+Возвращает spread как Ratio (относительно mid).
+
+```typescript
+const result = QuoteService.getSpreadRatio(quote: Quote): Result<Ratio, InvalidQuoteError>
+```
+
+**Требует:** Two-sided quote с ненулевым mid
+
+#### `shiftByRatio()`
+
+Сдвигает котировку на процент от mid.
+
+```typescript
+const result = QuoteService.shiftByRatio(quote: Quote, shiftRatio: Ratio): Result<Quote, InvalidQuoteError>
+```
+
+**Пример:** `shiftRatio = 0.05` → сдвиг вверх на 5% от mid
+
+#### `widenByRatio()`
+
+Расширяет spread на процент от mid.
+
+```typescript
+const result = QuoteService.widenByRatio(quote: Quote, deltaRatio: Ratio): Result<Quote, InvalidQuoteError>
+```
+
+**Пример:** `deltaRatio = 0.02` → bid -= 2% mid, ask += 2% mid
+
+#### `tightenByRatio()`
+
+Сужает spread на процент от mid.
+
+```typescript
+const result = QuoteService.tightenByRatio(quote: Quote, deltaRatio: Ratio): Result<Quote, InvalidQuoteError>
+```
+
+**Пример:** `deltaRatio = 0.01` → bid += 1% mid, ask -= 1% mid
+
+#### `skewByRatio()`
+
+Независимо сдвигает bid и ask на проценты от mid.
+
+```typescript
+const result = QuoteService.skewByRatio(quote: Quote, bidRatio: Ratio, askRatio: Ratio): Result<Quote, InvalidQuoteError>
+```
+
+**Пример:** `bidRatio = 0.02, askRatio = -0.01` → bid += 2% mid, ask -= 1% mid
+
+#### `scaleSizesByRatio()`
+
+Масштабирует размеры на коэффициент.
+
+```typescript
+const result = QuoteService.scaleSizesByRatio(quote: Quote, sizeFactor: Ratio): Result<Quote, InvalidQuoteError>
+```
+
+**Пример:** `sizeFactor = 0.5` → bidSize и askSize уменьшаются в 2 раза
 
 ### Quote (Core)
 
@@ -349,7 +421,9 @@ const quote = Quote.of(
   ask: Price | null,
   bidSize: Quantity,
   askSize: Quantity,
-  timestamp: Date | number
+  timestampMs: Decimal,
+  sourceId: MarketDataSourceId,
+  instrumentId: InstrumentId
 );
 ```
 
@@ -362,7 +436,7 @@ quote.bid(): Price | null
 quote.ask(): Price | null
 quote.bidSize(): Quantity
 quote.askSize(): Quantity
-quote.timestampMs(): number
+quote.timestampMs(): Decimal
 quote.getTimestamp(): Date
 ```
 
@@ -380,8 +454,8 @@ quote.hasAsk(): boolean      // Есть ask
 // Spread между bid и ask
 quote.spreadWidthOrZero(): Decimal  // 0 для one-sided
 
-// Spread в процентах
-quote.spreadPercentage(): Decimal | null  // null для one-sided
+// Spread в процентах (⚠️ не реализовано)
+quote.spreadPercentage(): null  // Stub, всегда возвращает null
 
 // Средняя цена
 quote.midOrNull(): Decimal | null  // null для one-sided
@@ -779,7 +853,6 @@ const quote = quoteResult.value;
 const spreadWidth = quote.spreadWidthOrZero();
 console.log(spreadWidth?.toNumber());  // 0.04
 
-const spreadPct = quote.spreadPercentage();
 console.log(spreadPct?.toNumber());    // 8.0
 
 // Mid price
@@ -904,7 +977,7 @@ if (!crossingResult.ok) {
 
 ## Testing
 
-Quote имеет 154 теста с полным покрытием:
+Quote имеет 293 теста с высоким покрытием:
 
 ```bash
 npm test -- quote
@@ -912,14 +985,12 @@ npm test -- quote
 
 Результаты:
 
-- ✅ Quote.test.ts: 37 тестов (Core)
-- ✅ ValidateQuoteSizes.test.ts: 7 тестов
-- ✅ ValidateMinSpread.test.ts: 4 теста
-- ✅ ValidateMaxSpread.test.ts: 4 теста
-- ✅ ValidateMarketCrossing.test.ts: 11 тестов
-- ✅ QuoteService.test.ts: 42 теста (Facade)
-- ✅ QuoteSerializer.test.ts: 27 тестов (Adapters)
-- ✅ QuoteFormatter.test.ts: 22 теста (Adapters)
+- ✅ Quote.test.ts: Core тесты
+- ✅ QuoteService.test.ts + QuoteService.ratio.test.ts: Facade тесты (включая ratio операции)
+- ✅ Validate*.test.ts: Rules тесты (sizes, spread, crossing, age)
+- ✅ QuoteSerializer.test.ts: JSON сериализация
+- ✅ QuoteFormatter.test.ts: Форматирование
+- ✅ QuoteWorkflow.integration.test.ts: Интеграционные тесты
 
 ## Best Practices
 
@@ -946,7 +1017,7 @@ console.log(QuoteFormatter.toDisplay(result.value));
 
 ```typescript
 // Не создавайте Quote напрямую без try-catch
-const quote = Quote.of(bid, ask, bidSize, askSize, timestamp);  // Может бросить!
+const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);  // Может бросить!
 
 // Не игнорируйте Result
 const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
@@ -960,8 +1031,7 @@ console.log(`${quote.bid()?.value()}/${quote.ask()?.value()}`);  // ❌
 
 - [Architecture Guide](./architecture.md) — подробное описание архитектуры
 - [Examples](./examples.md) — больше примеров использования
-- [Facade Pattern](./facade.md) — детали Facade Layer
-- [Error Handling](./error-handling.md) — стратегии обработки ошибок
+- [Facade Pattern](./facade.md) — детали Facade Layer и обработка ошибок
 
 ## Changelog
 
@@ -970,7 +1040,7 @@ console.log(`${quote.bid()?.value()}/${quote.ask()?.value()}`);  // ❌
 - ✅ Начальная реализация Quote value object
 - ✅ Throws+Facade архитектура
 - ✅ Интеграция с errorUtils (toDecimal, wrapOp, rewrap)
-- ✅ QuoteErrorReason enum (12 значений)
+- ✅ QuoteErrorReason enum (22 значения)
 - ✅ 4 валидационных правила
 - ✅ QuoteSerializer и QuoteFormatter
-- ✅ 154 теста с полным покрытием
+- ✅ 293 теста с высоким покрытием

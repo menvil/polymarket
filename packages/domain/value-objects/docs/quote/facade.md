@@ -12,7 +12,7 @@ Core Layer (Quote) использует throws для инвариантов:
 
 ```typescript
 // ⚠️ Может бросить QuoteInvariantViolation
-const quote = Quote.of(bid, ask, bidSize, askSize, timestamp);
+const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);
 ```
 
 ### Решение
@@ -89,7 +89,7 @@ public static create(
 
    ```typescript
    try {
-     const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs);
+     const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);
      return Ok(quote);
    } catch (error) {
      return Err(unexpectedError(error, 'quote', InvalidQuoteError));
@@ -163,7 +163,7 @@ public static askOnly(
 ```typescript
 public static shift(
   quote: Quote,
-  delta: Decimal
+  shiftAmount: Decimal | number | string
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -199,8 +199,8 @@ const shifted = QuoteService.shift(quote, new Decimal(0.01));
 ```typescript
 public static skew(
   quote: Quote,
-  bidDelta: Decimal,
-  askDelta: Decimal
+  bidAdjustment: Decimal | number | string,
+  askAdjustment: Decimal | number | string
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -470,7 +470,7 @@ public static shiftByRatio(
 **Пример:**
 
 ```typescript
-const quote = QuoteService.create(0.48, 0.52, 100, 200).value;
+const quote = QuoteService.create(0.48, 0.52, 100, 200, 'POLYMARKET_WS', 'TEST_MARKET').value;
 // midpoint = 0.50
 
 // Сдвиг вверх на 5% от mid
@@ -520,7 +520,7 @@ public static widenByRatio(
 **Пример:**
 
 ```typescript
-const quote = QuoteService.create(0.48, 0.52, 50, 75).value;
+const quote = QuoteService.create(0.48, 0.52, 50, 75, 'POLYMARKET_WS', 'TEST_MARKET').value;
 const deltaRatio = Ratio.of(new Decimal(0.02)); // 2% от mid
 
 const result = QuoteService.widenByRatio(quote, deltaRatio);
@@ -567,7 +567,7 @@ public static tightenByRatio(
 **Пример:**
 
 ```typescript
-const quote = QuoteService.create(0.48, 0.52, 150, 250).value;
+const quote = QuoteService.create(0.48, 0.52, 150, 250, 'POLYMARKET_WS', 'TEST_MARKET').value;
 const deltaRatio = Ratio.of(new Decimal(0.02)); // 2% от mid
 
 const result = QuoteService.tightenByRatio(quote, deltaRatio);
@@ -616,7 +616,7 @@ public static skewByRatio(
 **Пример:**
 
 ```typescript
-const quote = QuoteService.create(0.48, 0.52, 80, 120).value;
+const quote = QuoteService.create(0.48, 0.52, 80, 120, 'POLYMARKET_WS', 'TEST_MARKET').value;
 const bidRatio = Ratio.of(new Decimal(0.02));  // +2%
 const askRatio = Ratio.of(new Decimal(-0.01)); // -1%
 
@@ -667,7 +667,7 @@ public static scaleSizesByRatio(
 **Пример:**
 
 ```typescript
-const quote = QuoteService.create(0.48, 0.52, 100, 200).value;
+const quote = QuoteService.create(0.48, 0.52, 100, 200, 'POLYMARKET_WS', 'TEST_MARKET').value;
 const sizeFactor = Ratio.of(new Decimal(0.5)); // 50%
 
 const result = QuoteService.scaleSizesByRatio(quote, sizeFactor);
@@ -1036,7 +1036,7 @@ console.error(result.error.context?.opChain);  // ['create', 'create']
 
 ```typescript
 // Не создавайте Quote напрямую
-const quote = Quote.of(bid, ask, bidSize, askSize, timestamp);  // Может бросить!
+const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);  // Может бросить!
 
 // Не игнорируйте Result
 const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');

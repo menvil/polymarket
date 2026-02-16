@@ -334,7 +334,6 @@ describe('Quote Integration Tests', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         // Проверяем наличие полей context
-        expect(result.error.context).toBeDefined();
         expect(result.error.context?.op).toBe('create');
         expect(result.error.context?.reason).toBe(QuoteErrorReason.BID_GREATER_THAN_ASK);
       }
