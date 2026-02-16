@@ -60,6 +60,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:coverage:money": "jest --coverage --testPathPattern=money --collectCoverageFrom='src/money/**/*.ts' --collectCoverageFrom='!src/money/**/index.ts'",
     "test:smoke": "node __tests__/smoke/money-package-import.mjs",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
