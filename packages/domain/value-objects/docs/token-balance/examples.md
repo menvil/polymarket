@@ -259,7 +259,7 @@ console.log(TokenBalanceFormatter.toSummary(balance, 0));
 
 ```typescript
 console.log(TokenBalanceFormatter.toCompact(balance));
-// "Avail: 100 | Res: 20 | Total: 120 [UP]"
+// "Avail: 100.0 | Res: 20.0 | Total: 120.0"
 
 // Большие количества
 const bigBalance = expectOk(TokenBalanceService.create(
@@ -270,7 +270,7 @@ const bigBalance = expectOk(TokenBalanceService.create(
   venueId
 ));
 console.log(TokenBalanceFormatter.toCompact(bigBalance));
-// "Avail: 1500000 | Res: 500000 | Total: 2000000 [UP]"
+// "Avail: 1500000.0 | Res: 500000.0 | Total: 2000000.0"
 ```
 
 ### Отдельные компоненты

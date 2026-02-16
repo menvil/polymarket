@@ -76,17 +76,9 @@ describe('Balance Core', () => {
       expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow('Reserved amount cannot be negative');
     });
 
-    // ПРИМЕЧАНИЕ: Тест невозможен, так как Money поддерживает только USDC
-    // it('бросает BalanceInvariantViolation если валюты не совпадают', () => {
-    //   const available = Money.of(new Decimal(10000));
-    //   const reserved = Money.of(2000, 'EUR' as any); // разные валюты
-    //
-    //   expect(() => Balance.of(available, reserved)).toThrow(BalanceInvariantViolation);
-    //   expect(() => Balance.of(available, reserved)).toThrow('Available and reserved must have the same currency');
-    // });
+    it.todo('бросает BalanceInvariantViolation если валюты не совпадают (невозможно: Money поддерживает только USDC)');
 
-    // ПРИМЕЧАНИЕ: Тесты для NAN/NON_FINITE reason невозможны
-    // (см. комментарий выше о defense-in-depth проверках)
+    it.todo('бросает BalanceInvariantViolation для NaN/NON_FINITE values (невозможно: Decimal уже валидирует)');
 
     it('проверяет reason в BalanceInvariantViolation для NEGATIVE_AVAILABLE', () => {
       const available = Money.of(new Decimal(-100), 'USDC');

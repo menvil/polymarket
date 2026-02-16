@@ -287,6 +287,22 @@ describe('MoneyService Ratio Operations', () => {
       }
     });
 
+    it('контекст ошибки содержит negatedDelta, а не оригинальный delta', () => {
+      const delta = Ratio.of(new Decimal(1.5)); // 150%
+      const result = MoneyService.decreaseBy(money100, delta);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // Проверяем что в контексте negatedDelta (-1.5), а не оригинальный (1.5)
+        expect(result.error.context?.delta).toBe('-1.5');
+        // Проверяем правильный op и opChain
+        expect(result.error.context?.op).toBe('decreaseBy');
+        expect(result.error.context?.service).toBe('MoneyService');
+        // Проверяем что reason корректный
+        expect(result.error.context?.reason).toBe(MoneyErrorReason.DELTA_LESS_THAN_MINUS_ONE);
+      }
+    });
+
     it('эквивалентно increaseBy с отрицательным delta', () => {
       const delta = Ratio.of(new Decimal(0.2)); // 20%
 

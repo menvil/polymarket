@@ -58,11 +58,14 @@ console.log(balance.reservedPercentage().toNumber()); // 16.67%
 
 // Резервирование токенов (для открытия ордера)
 const reserveResult = TokenBalanceService.reserve(balance, Quantity.of(new Decimal(30)));
-if (reserveResult.ok) {
-  const newBalance = reserveResult.value;
-  console.log(newBalance.available().value().toNumber()); // 70 токенов
-  console.log(newBalance.reserved().value().toNumber());  // 50 токенов
+if (!reserveResult.ok) {
+  console.error(reserveResult.error);
+  return;
 }
+
+const newBalance = reserveResult.value;
+console.log(newBalance.available().value().toNumber()); // 70 токенов
+console.log(newBalance.reserved().value().toNumber());  // 50 токенов
 
 // Отмена ордера (размораживание токенов)
 const unfreezeResult = TokenBalanceService.unfreezeReserved(newBalance, Quantity.of(new Decimal(30)));
@@ -134,7 +137,7 @@ console.log(TokenBalanceFormatter.toSummary(balance));
 
 // Компактный формат
 console.log(TokenBalanceFormatter.toCompact(balance));
-// "Avail: 100 | Res: 20 | Total: 120 [UP]"
+// "Avail: 100.0 | Res: 20.0 | Total: 120.0"
 
 // Debug-строка
 console.log(TokenBalanceFormatter.toDebugString(balance));
