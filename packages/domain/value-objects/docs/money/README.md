@@ -243,7 +243,7 @@ const formatted = MoneyFormatter.toFixed(money, 2);
 console.log(formatted);  // "100.50"
 
 console.log(MoneyFormatter.toCurrency(money));  // "$100.50 USDC"
-console.log(MoneyFormatter.toCompact(Money.of(1500)));  // "$1.5K"
+console.log(MoneyFormatter.toCompact(Money.of(new Decimal(1500))));  // "$1.5K"
 ```
 
 Подробнее: [adapters.md](./adapters.md)
@@ -377,8 +377,8 @@ console.log(`Fee: $${fee.value()}`);  // $2.00
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
 
-const usd1 = Money.of(100, 'USDC');
-const usd2 = Money.of(50, 'USDC');
+const usd1 = Money.of(new Decimal(100), 'USDC');
+const usd2 = Money.of(new Decimal(50), 'USDC');
 
 // Попытка сложить разные валюты
 const sumResult = MoneyService.add(usd1, usd2);
@@ -434,7 +434,7 @@ console.log(MoneyFormatter.toCurrency(money));  // "$1234.56 USDC"
 console.log(MoneyFormatter.toCurrency(money, false));  // "$1234.56"
 
 // Компактный формат для dashboard
-console.log(MoneyFormatter.toCompact(Money.of(1500)));  // "$1.5K"
+console.log(MoneyFormatter.toCompact(Money.of(new Decimal(1500))));  // "$1.5K"
 console.log(MoneyFormatter.toCompact(Money.of(2300000)));  // "$2.3M"
 ```
 

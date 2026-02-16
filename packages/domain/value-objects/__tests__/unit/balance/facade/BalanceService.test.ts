@@ -4,7 +4,7 @@ import { BalanceService } from '../../../../src/balance/facade/BalanceService.js
 import { Money } from '../../../../src/money/core/Money.js';
 import { BalanceErrorReason } from '../../../../src/balance/errors/BalanceErrorReason.js';
 import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
-import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+import type { AccountId, VenueId, WalletAddress, SupportedCurrency } from '@polymarket/ids';
 
 describe('BalanceService', () => {
   describe('create()', () => {
@@ -853,18 +853,25 @@ describe('BalanceService', () => {
     });
 
     describe('ошибки проверки', () => {
-      // ПРИМЕЧАНИЕ: Тест для CURRENCY_MISMATCH невозможен, так как Money поддерживает только USDC
-      // it('возвращает ошибку CURRENCY_MISMATCH для разных валют', () => {
-      //   const balanceResult = BalanceService.create(Money.of(new Decimal(10000), 'USDC'), Money.of(new Decimal(2000), 'USDC'));
-      //   if (!balanceResult.ok) fail('Balance creation failed');
-      //
-      //   const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(5000), 'EUR'));
-      //
-      //   expect(result.ok).toBe(false);
-      //   if (!result.ok) {
-      //     expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
-      //   }
-      // });
+      it('возвращает ошибку CURRENCY_MISMATCH для разных валют', () => {
+        const balanceResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
+        if (!balanceResult.ok) fail('Balance creation failed');
+
+        // Создаем мок Money с другой валютой для тестирования ветки currency mismatch
+        const amount = Money.of(new Decimal(5000));
+        const mockAmount = {
+          ...amount,
+          currency: () => 'EUR' as SupportedCurrency
+        } as Money;
+
+        const result = BalanceService.canAfford(balanceResult.value, mockAmount);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
+          expect(result.error.message).toContain('currency mismatch');
+        }
+      });
     });
   });
 });

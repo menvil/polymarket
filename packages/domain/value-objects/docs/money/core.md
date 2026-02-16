@@ -390,9 +390,9 @@ public isZero(): boolean
 
 ```typescript
 Money.ZERO.USDC.isZero();  // true
-Money.of(0).isZero();      // true
-Money.of(100).isZero();    // false
-Money.of(-100).isZero();   // false
+Money.of(new Decimal(0)).isZero();      // true
+Money.of(new Decimal(100)).isZero();    // false
+Money.of(new Decimal(-100)).isZero();   // false
 ```
 
 ---
@@ -412,10 +412,10 @@ public isPositive(): boolean
 **Примеры:**
 
 ```typescript
-Money.of(100).isPositive();     // true
-Money.of(0.01).isPositive();    // true
+Money.of(new Decimal(100)).isPositive();     // true
+Money.of(new Decimal(0.01)).isPositive();    // true
 Money.ZERO.USDC.isPositive();   // false
-Money.of(-100).isPositive();    // false
+Money.of(new Decimal(-100)).isPositive();    // false
 ```
 
 ---
@@ -435,9 +435,9 @@ public isNegative(): boolean
 **Примеры:**
 
 ```typescript
-Money.of(-100).isNegative();    // true
-Money.of(-0.01).isNegative();   // true
-Money.of(100).isNegative();     // false
+Money.of(new Decimal(-100)).isNegative();    // true
+Money.of(new Decimal(-0.01)).isNegative();   // true
+Money.of(new Decimal(100)).isNegative();     // false
 Money.ZERO.USDC.isNegative();   // false
 ```
 

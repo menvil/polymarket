@@ -448,5 +448,165 @@ describe('TokenBalanceSerializer', () => {
         expect(result.error.message).toContain('invalid format');
       }
     });
+
+    describe('валидация поля reserved', () => {
+      it('фэйлится если отсутствует reserved', () => {
+        const json = {
+          token: {
+            conditionRef: {
+              kind: 'ONCHAIN',
+              protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+              chainId: 137,
+              conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+            },
+            outcomeKey: 'UP',
+          },
+          available: '100.5',
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET',
+        };
+
+        const result = TokenBalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+          expect(result.error.message).toContain("Missing required field 'reserved'");
+        }
+      });
+
+      it('фэйлится если reserved не строка', () => {
+        const json = {
+          token: {
+            conditionRef: {
+              kind: 'ONCHAIN',
+              protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+              chainId: 137,
+              conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+            },
+            outcomeKey: 'UP',
+          },
+          available: '100.5',
+          reserved: 20.5, // number вместо string
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET',
+        };
+
+        const result = TokenBalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
+          expect(result.error.message).toContain("Field 'reserved' must be string");
+        }
+      });
+
+      it('фэйлится если reserved не парсится как Decimal', () => {
+        const json = {
+          token: {
+            conditionRef: {
+              kind: 'ONCHAIN',
+              protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+              chainId: 137,
+              conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+            },
+            outcomeKey: 'UP',
+          },
+          available: '100.5',
+          reserved: 'not-a-number',
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET',
+        };
+
+        const result = TokenBalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
+          expect(result.error.message).toContain('Failed to parse reserved as Decimal');
+        }
+      });
+
+      it('фэйлится если reserved отрицательное', () => {
+        const json = {
+          token: {
+            conditionRef: {
+              kind: 'ONCHAIN',
+              protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+              chainId: 137,
+              conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+            },
+            outcomeKey: 'UP',
+          },
+          available: '100.5',
+          reserved: '-20.5',
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET',
+        };
+
+        const result = TokenBalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
+          expect(result.error.message).toContain('Failed to create Quantity');
+        }
+      });
+
+      it('сохраняет точность reserved при round-trip', () => {
+        const preciseAvailable = Quantity.of(new Decimal('100.123456789'));
+        const preciseReserved = Quantity.of(new Decimal('20.987654321'));
+        const originalBalance = TokenBalanceService.create(
+          token,
+          preciseAvailable,
+          preciseReserved,
+          accountId,
+          venueId
+        );
+        expect(originalBalance.ok).toBe(true);
+        if (!originalBalance.ok) return;
+
+        const json = TokenBalanceSerializer.toJSON(originalBalance.value);
+        const result = TokenBalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.available().value().toString()).toBe('100.123456789');
+          expect(result.value.reserved().value().toString()).toBe('20.987654321');
+        }
+      });
+
+      it('корректно сериализует баланс с reserved > available', () => {
+        const json = {
+          token: {
+            conditionRef: {
+              kind: 'ONCHAIN',
+              protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+              chainId: 137,
+              conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+            },
+            outcomeKey: 'UP',
+          },
+          available: '50.25',
+          reserved: '75.75', // reserved > available
+          accountId: 'wallet:0x1234567890123456789012345678901234567890',
+          venueId: 'POLYMARKET',
+        };
+
+        const result = TokenBalanceSerializer.fromJSON(json);
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.available().toNumber()).toBe(50.25);
+          expect(result.value.reserved().toNumber()).toBe(75.75);
+          expect(result.value.total().toNumber()).toBe(126); // 50.25 + 75.75
+
+          // Round-trip должен сохранить оба значения
+          const serialized = TokenBalanceSerializer.toJSON(result.value);
+          expect(serialized.available).toBe('50.25');
+          expect(serialized.reserved).toBe('75.75');
+        }
+      });
+    });
   });
 });

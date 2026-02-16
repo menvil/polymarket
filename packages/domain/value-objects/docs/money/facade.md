@@ -92,8 +92,8 @@ public static add(
 **Пример:**
 
 ```typescript
-const m1 = Money.of(100, 'USDC');
-const m2 = Money.of(50, 'USDC');
+const m1 = Money.of(new Decimal(100), 'USDC');
+const m2 = Money.of(new Decimal(50), 'USDC');
 
 const result = MoneyService.add(m1, m2);
 if (result.ok) {
@@ -121,8 +121,8 @@ public static subtract(
 **Пример:**
 
 ```typescript
-const m1 = Money.of(100, 'USDC');
-const m2 = Money.of(30, 'USDC');
+const m1 = Money.of(new Decimal(100), 'USDC');
+const m2 = Money.of(new Decimal(30), 'USDC');
 
 const result = MoneyService.subtract(m1, m2);
 if (result.ok) {
@@ -155,7 +155,7 @@ public static multiply(
 **Пример:**
 
 ```typescript
-const money = Money.of(100, 'USDC');
+const money = Money.of(new Decimal(100), 'USDC');
 
 const result = MoneyService.multiply(money, 1.5);
 if (result.ok) {
@@ -189,7 +189,7 @@ public static divide(
 **Пример:**
 
 ```typescript
-const money = Money.of(100, 'USDC');
+const money = Money.of(new Decimal(100), 'USDC');
 
 const result = MoneyService.divide(money, 2);
 if (result.ok) {
@@ -555,7 +555,7 @@ function calculateFee(amount: Money, feeRate: string): Money | null {
   return result.value;
 }
 
-const orderAmount = Money.of(1000, 'USDC');
+const orderAmount = Money.of(new Decimal(1000), 'USDC');
 const fee = calculateFee(orderAmount, "0.002");  // 0.2% fee
 if (fee) {
   console.log(`Fee: $${fee.value()}`);  // $2.00
