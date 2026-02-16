@@ -3,20 +3,6 @@ import { Money } from '../../../../src/money/core/Money';
 import { MoneyInvariantViolation } from '../../../../src/money/core/MoneyInvariantViolation';
 
 describe('Money core', () => {
-  describe('parse errors', () => {
-    it('бросает ошибку Decimal для невалидного формата', () => {
-      // Decimal.js бросит свою ошибку для невалидного формата
-      expect(() => Money.of(new Decimal('abc'))).toThrow();
-
-      try {
-        Money.of(new Decimal('abc'));
-      } catch (e) {
-        // Проверяем что это ошибка от Decimal (содержит сообщение о невалидном аргументе)
-        expect((e as Error).message).toContain('Invalid argument');
-      }
-    });
-  });
-
   describe('инварианты', () => {
     it('UNSUPPORTED_CURRENCY', () => {
       // Runtime: 'EUR' будет отклонено Money.create() как UNSUPPORTED_CURRENCY

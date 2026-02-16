@@ -346,14 +346,12 @@ MoneyService.create("99999999999999999")
 1. Parse to Decimal (try/catch)
     ↓ success
 2. Money.of(decimal, 'USDC')
-    ↓ calls
-3. Money.create(decimal, 'USDC')
-    ↓
-4. Validate: decimal.abs() <= 1e15
+    ↓ inside Money.of()
+3. Validate: decimal.abs() <= 1e15
     ↓ FAIL → throws MoneyInvariantViolation
-5. Catch MoneyInvariantViolation
+4. Catch MoneyInvariantViolation
     ↓
-6. Return Err(InvalidMoneyError {
+5. Return Err(InvalidMoneyError {
      context: {
        op: 'create',
        value: "99999999999999999",

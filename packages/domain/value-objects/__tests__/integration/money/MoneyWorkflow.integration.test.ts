@@ -477,6 +477,10 @@ describe('Money Integration Workflow', () => {
       const positive = MoneyService.create(100, 'USDC');
       const zero = MoneyService.create(0, 'USDC');
 
+      // Гарантируем что операции успешны
+      expect(positive.ok).toBe(true);
+      expect(zero.ok).toBe(true);
+
       if (positive.ok && zero.ok) {
         expect(positive.value.isPositive()).toBe(true);
         expect(positive.value.isZero()).toBe(false);

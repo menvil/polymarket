@@ -297,20 +297,21 @@ console.log(MoneyFormatter.toCompact(large));   // "$2.5M"
 ### Граница системы (API validation)
 
 ```typescript
-import { MoneySerializer } from '@polymarket/value-objects/money';
+import { MoneySerializer, MoneyFormatter } from '@polymarket/value-objects/money';
+import { ErrorSource } from '@polymarket/errors';
 
 // Валидация входных данных от API
 function parseApiBalance(data: unknown) {
   const result = MoneySerializer.fromJSON(data);
 
   if (!result.ok) {
-    const kind = result.error.context?.kind;
+    const source = result.error.context?.source;
 
-    if (kind === 'invalid_json') {
-      // Структурная ошибка
+    if (source === ErrorSource.PARSING) {
+      // Структурная ошибка (невалидный JSON)
       console.error('Invalid JSON structure');
     } else {
-      // Бизнес-ошибка (из Money.fromDecimal)
+      // Бизнес-ошибка (из MoneyService.create)
       console.error('Invalid money value');
     }
 
@@ -327,7 +328,10 @@ const balance = parseApiBalance({
 });
 
 if (balance) {
-  console.log(`Balance: ${MoneyFormatter.toCurrency(balance)}`);
+  const formatted = MoneyFormatter.toCurrency(balance);
+  if (formatted.ok) {
+    console.log(`Balance: ${formatted.value}`);
+  }
 }
 ```
 

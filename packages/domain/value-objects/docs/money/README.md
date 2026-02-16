@@ -286,8 +286,10 @@ interface InvalidMoneyErrorContext {
   reason?: 'UNSUPPORTED_CURRENCY' | 'NAN' | 'NON_FINITE' | 'EXCEEDS_MAX_AMOUNT' | 'INVALID_FORMAT';
 }
 
-interface InvalidMoneyError (reason: CURRENCY_MISMATCH)Context {
+// Для ошибок CURRENCY_MISMATCH контекст содержит:
+interface InvalidMoneyErrorCurrencyMismatchContext {
   op: string;
+  reason: 'CURRENCY_MISMATCH';
   expected: SupportedCurrency;
   actual: SupportedCurrency;
 }
