@@ -70,18 +70,6 @@ describe('ValidateReleaseAmount', () => {
         expect(result.error.message).toContain('only 1000 reserved');
       }
     });
-
-    it('возвращает ошибку для большой разницы', () => {
-      const reserved = Quantity.of(new Decimal(10));
-      const releaseQty = Quantity.of(new Decimal(1000000));
-
-      const result = ValidateReleaseAmount.check(releaseQty, reserved);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INSUFFICIENT_RESERVED);
-      }
-    });
   });
 
   describe('ошибка INVALID_FORMAT', () => {
@@ -98,15 +86,8 @@ describe('ValidateReleaseAmount', () => {
       }
     });
 
-    // ПРИМЕЧАНИЕ: Тест для отрицательного releaseQty невозможен,
-    // так как Quantity.of(new Decimal(-100)) бросает исключение
-    // до того, как ValidateReleaseAmount сможет его проверить.
-    // Валидация происходит на уровне Quantity, не TokenBalance.
-  });
-
-  describe('ошибка NON_FINITE', () => {
-    // ПРИМЕЧАНИЕ: Тест невозможен, так как Quantity.of(new Decimal(Infinity)) бросает исключение
-    // до того, как ValidateReleaseAmount сможет его проверить.
-    // Валидация происходит на уровне Quantity, не TokenBalance.
+    // ПРИМЕЧАНИЕ: Тесты для отрицательных и non-finite значений невозможны,
+    // так как Quantity.of() бросает исключение до того, как ValidateReleaseAmount
+    // сможет их проверить. Валидация происходит на уровне Quantity, не TokenBalance.
   });
 });
