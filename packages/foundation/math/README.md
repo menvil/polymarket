@@ -103,9 +103,11 @@ try {
 
 **Типы ошибок:**
 
+- `InvalidOperandError` - операнд не является конечным числом (NaN, Infinity, -Infinity)
 - `InvalidDivisorError` - делитель не является конечным числом (NaN, Infinity)
 - `DivisionByZeroError` - деление на ноль
 - `InvalidTickSizeError` - tick size не является положительным конечным числом
+- `InvalidDecimalPlacesError` - количество десятичных знаков невалидно
 - `ArithmeticOverflowError` - результат операции вышел за пределы
 
 ## Разработка

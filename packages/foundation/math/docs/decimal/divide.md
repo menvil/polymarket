@@ -192,15 +192,16 @@ import { ArithmeticOverflowError } from '@polymarket/errors';
 
 try {
   // Overflow возникает при делении огромного числа на крошечное
-  const huge = new Decimal('1e308');
-  const tiny = new Decimal('1e-308');
+  // Decimal.js имеет maxE = 9e15, используем значения близкие к этой границе
+  const huge = new Decimal('5e' + (Decimal.maxE - 1000));
+  const tiny = new Decimal('1e-1500');
 
   const result = divideDecimal(huge, tiny);
 } catch (error) {
   if (ArithmeticOverflowError.is(error)) {
     console.error('Division overflow:', error.message);
     console.error('Context:', error.context);
-    // Context: { dividend: '1e308', divisor: '1e-308', result: 'Infinity' }
+    // Context: { dividend: '5e8999999999999000', divisor: '1e-1500', result: 'Infinity' }
   }
 }
 ```

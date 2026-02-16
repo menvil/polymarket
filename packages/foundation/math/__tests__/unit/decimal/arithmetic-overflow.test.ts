@@ -52,7 +52,7 @@ describe('Arithmetic Overflow Tests', () => {
       try {
         addDecimal(NEAR_MAX_FOR_ADD, NEAR_MAX_FOR_ADD);
         // Если не бросило ошибку - тест провален
-        expect(true).toBe(false);
+        fail('Expected ArithmeticOverflowError to be thrown');
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();

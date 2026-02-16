@@ -417,7 +417,7 @@ describe('roundToTick', () => {
       try {
         roundToTick(nearMaxE, tinyTick, Decimal.ROUND_HALF_UP);
         // Если не бросило ошибку - тест провален
-        expect(true).toBe(false);
+        fail('Expected ArithmeticOverflowError to be thrown');
       } catch (error) {
         if (error instanceof ArithmeticOverflowError) {
           expect(error.context).toBeDefined();

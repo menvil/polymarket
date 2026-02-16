@@ -316,7 +316,7 @@ const rounded = roundToTick(value, userInputTick, Decimal.ROUND_HALF_UP);
 
 ```typescript
 // ❌ Плохо: roundToPrecision не учитывает tick size
-const price = roundToPrecision(new Decimal('10.567'), 2); // 10.57
+const price = roundToPrecision(new Decimal('10.567'), 2, Decimal.ROUND_HALF_UP); // 10.57
 
 // ✅ Хорошо: roundToTick гарантирует кратность тику
 const price = roundToTick(new Decimal('10.567'), marketTickSize, Decimal.ROUND_HALF_UP);

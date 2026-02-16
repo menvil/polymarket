@@ -3,12 +3,21 @@ import { describe, it, expect } from '@jest/globals';
 /**
  * Smoke-тесты для проверки exports контракта пакета @polymarket/math.
  *
- * Эти тесты проверяют, что все публичные функции и константы
- * корректно экспортируются из главного index.ts и subpath exports.
+ * Эти тесты проверяют структуру экспортов - что все функции доступны
+ * через правильные entry points (index.ts, decimal/index.ts и т.д.).
  *
  * @remarks
- * Цель: обнаружить проблемы с exports на раннем этапе (например,
- * забыли добавить новую функцию в index.ts или package.json exports).
+ * Цель: обнаружить проблемы со структурой exports на раннем этапе:
+ * - Забыли добавить новую функцию в index.ts
+ * - Неправильные re-exports в subpath модулях
+ *
+ * **Ограничение**: Эти тесты импортируют из src/, поэтому НЕ проверяют:
+ * - Корректность package.json exports map
+ * - Сборку в dist/
+ * - Реальный package contract после публикации
+ *
+ * Для проверки реального package exports используйте интеграционные
+ * тесты в отдельном пакете после `npm pack` или установки из registry.
  */
 describe('Package exports contract', () => {
   describe('root exports - decimal функции', () => {
