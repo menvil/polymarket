@@ -293,11 +293,17 @@ export class TokenBalanceFormatter {
   // "Available: X, Reserved: Y, Total: Z (P% reserved) [OUTCOME]"
   public static toSummary(
     balance: TokenBalance,
-    decimals?: number
+    decimals?: number,
+    includeAccount?: boolean,
+    includeVenue?: boolean
   ): string
 
-  // "Avail: X | Res: Y | Total: Z [OUTCOME]"
-  public static toCompact(balance: TokenBalance, decimals?: number): string
+  // "Avail: X | Res: Y | Total: Z" (опционально @ venue)
+  public static toCompact(
+    balance: TokenBalance,
+    decimals?: number,
+    includeVenue?: boolean
+  ): string
 
   // "TokenBalance(available: X, reserved: Y, total: Z, token: OUTCOME, account: ..., venue: ...)"
   public static toDebugString(balance: TokenBalance): string
@@ -355,6 +361,8 @@ public total(): Quantity {
 **Арифметика в TokenBalanceService (Facade Layer):**
 
 ```typescript
+import { isErr } from '@polymarket/result';
+
 // Внутри TokenBalanceService - делегируем QuantityService
 private static addQuantity(a: Quantity, b: Quantity): Result<Quantity, InvalidTokenBalanceError> {
   const result = QuantityService.add(a, b);

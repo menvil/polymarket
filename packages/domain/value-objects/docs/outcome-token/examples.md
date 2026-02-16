@@ -406,7 +406,7 @@ const accountId = accountIdFromWallet(walletAddress);
 const balanceResult = TokenBalanceService.create(
   token,              // OutcomeToken
   qtyResult.value,    // available Quantity
-  QuantityService.create(0).value,  // reserved Quantity (0 для нового баланса)
+  Quantity.ZERO,      // reserved Quantity (0 для нового баланса)
   accountId,          // AccountId
   KnownVenues.POLYMARKET  // VenueId
 );
@@ -491,7 +491,7 @@ if (!qty100Result.ok || !qty50Result.ok) {
 const upBalanceResult = TokenBalanceService.create(
   upToken,
   qty100Result.value,  // available
-  QuantityService.create(0).value,  // reserved
+  Quantity.ZERO,  // reserved
   accountId,
   venueId
 );
@@ -499,7 +499,7 @@ const upBalanceResult = TokenBalanceService.create(
 const downBalanceResult = TokenBalanceService.create(
   downToken,
   qty50Result.value,  // available
-  QuantityService.create(0).value,  // reserved
+  Quantity.ZERO,  // reserved
   accountId,
   venueId
 );

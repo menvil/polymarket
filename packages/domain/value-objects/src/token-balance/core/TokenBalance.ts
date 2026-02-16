@@ -342,7 +342,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty, accountId, venueId);
+   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
    * const accId = balance.accountId();
    * console.log(accId.kind); // 'WALLET' | 'VENUE' | 'SUBACCOUNT'
    * ```
@@ -358,7 +358,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty, accountId, venueId);
+   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
    * const venue = balance.venueId();
    * console.log(venue); // 'POLYMARKET'
    * ```
@@ -377,7 +377,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty, accountId, venueId);
+   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
    * const assetId = balance.assetId();
    * // Эквивалентно: balance.token().assetId()
    * ```
@@ -396,7 +396,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty, accountId, venueId);
+   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
    * const ref = balance.conditionRef();
    * console.log(ref.protocolId); // 'POLYMARKET_CTF'
    * ```
@@ -415,7 +415,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty, accountId, venueId);
+   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
    * const key = balance.outcomeKey();
    * console.log(key); // 'UP'
    * ```

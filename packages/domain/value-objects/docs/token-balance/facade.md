@@ -15,6 +15,7 @@ import { Quantity } from '@polymarket/value-objects/quantity';
 import { BinaryOutcome, KnownOnChainProtocols, KnownVenues } from '@polymarket/ids';
 import type { OnChainConditionRef, AccountId, VenueId } from '@polymarket/ids';
 import { parseWalletAddress, accountIdFromWallet } from '@polymarket/ids';
+import { isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
 
 const conditionRef: OnChainConditionRef = {
@@ -113,8 +114,7 @@ const newBalance = result.value;
 **Возможные ошибки:**
 
 - `INSUFFICIENT_AVAILABLE` — qty > available
-- `INVALID_AMOUNT` — qty <= 0 или не finite
-- `NON_FINITE` — qty не является finite
+- `INVALID_FORMAT` — qty <= 0 или не finite
 
 ---
 
@@ -151,8 +151,7 @@ const newBalance = result.value;
 **Возможные ошибки:**
 
 - `INSUFFICIENT_RESERVED` — qty > reserved
-- `INVALID_AMOUNT` — qty <= 0 или не finite
-- `NON_FINITE` — qty не является finite
+- `INVALID_FORMAT` — qty <= 0 или не finite
 
 **Примеры использования:**
 
@@ -196,8 +195,7 @@ const newBalance = result.value;
 **Возможные ошибки:**
 
 - `INSUFFICIENT_RESERVED` — qty > reserved
-- `INVALID_AMOUNT` — qty <= 0 или не finite
-- `NON_FINITE` — qty не является finite
+- `INVALID_FORMAT` — qty <= 0 или не finite
 
 **Примеры использования:**
 
@@ -465,11 +463,8 @@ if (isErr(result)) {
     case TokenBalanceErrorReason.INSUFFICIENT_AVAILABLE:
       // Обработка недостаточных токенов
       break;
-    case TokenBalanceErrorReason.INVALID_AMOUNT:
-      // Обработка невалидного количества
-      break;
-    case TokenBalanceErrorReason.NON_FINITE:
-      // Обработка non-finite значения
+    case TokenBalanceErrorReason.INVALID_FORMAT:
+      // Обработка невалидного формата (qty <= 0 или не finite)
       break;
     // TypeScript проверит, что все cases покрыты
   }
