@@ -199,9 +199,17 @@ if (result.ok) {
 Сравнивает два баланса на точное равенство (strict equality, без epsilon).
 
 ```typescript
-const balance1 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000)));
-const balance2 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000)));
-const balance3 = expectOk(BalanceService.create(Money.of(10001), Money.of(2000)));
+import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+
+const accountId: AccountId = {
+  kind: 'WALLET',
+  address: '0x1234567890123456789012345678901234567890' as WalletAddress
+};
+const venueId: VenueId = 'POLYMARKET' as VenueId;
+
+const balance1 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
+const balance2 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
+const balance3 = expectOk(BalanceService.create(Money.of(10001), Money.of(2000), accountId, venueId));
 
 const equals1 = BalanceService.equals(balance1, balance2);
 console.log(equals1.ok && equals1.value); // true
@@ -234,7 +242,15 @@ console.log(equals2.ok && equals2.value); // false
 Проверяет, достаточно ли доступных средств для указанной суммы.
 
 ```typescript
-const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000)));
+import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+
+const accountId: AccountId = {
+  kind: 'WALLET',
+  address: '0x1234567890123456789012345678901234567890' as WalletAddress
+};
+const venueId: VenueId = 'POLYMARKET' as VenueId;
+
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
 
 // Проверка доступности
 const canAfford1 = BalanceService.canAfford(balance, Money.of(5000));
@@ -279,7 +295,15 @@ console.log(canAfford3.ok && canAfford3.value); // true
 **Все операции возвращают новый Balance:**
 
 ```typescript
-const balance1 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000)));
+import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+
+const accountId: AccountId = {
+  kind: 'WALLET',
+  address: '0x1234567890123456789012345678901234567890' as WalletAddress
+};
+const venueId: VenueId = 'POLYMARKET' as VenueId;
+
+const balance1 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
 const balance2 = expectOk(BalanceService.reserve(balance1, Money.of(3000)));
 
 // balance1 не изменился!

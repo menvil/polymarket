@@ -199,10 +199,8 @@ if (isErr(result)) {
 ## Документация
 
 - [architecture.md](./architecture.md) — архитектура и слои
-- [core.md](./core.md) — Core Layer (Balance, инварианты, query методы)
 - [facade.md](./facade.md) — Facade Layer (BalanceService API)
 - [examples.md](./examples.md) — примеры использования
-- [migration.md](./migration.md) — миграция с предыдущих версий
 
 ## Связанные модули
 

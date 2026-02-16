@@ -52,8 +52,16 @@ console.log(balance.hasReserved()); // true
 ### Открытие ордера (резервирование)
 
 ```typescript
+import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+
+const accountId: AccountId = {
+  kind: 'WALLET',
+  address: '0x1234567890123456789012345678901234567890' as WalletAddress
+};
+const venueId: VenueId = 'POLYMARKET' as VenueId;
+
 // У пользователя $100 available, $20 reserved
-const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000)));
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
 
 // Открываем ордер на покупку за $30
 const orderAmount = Money.of(3000);
@@ -104,7 +112,13 @@ if (consumeResult.ok) {
 **Разница между unfreezeReserved и consumeReserved:**
 
 ```typescript
-const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(5000)));
+const accountId: AccountId = {
+  kind: 'WALLET',
+  address: '0x1234567890123456789012345678901234567890' as WalletAddress
+};
+const venueId: VenueId = 'POLYMARKET' as VenueId;
+
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(5000), accountId, venueId));
 // total: 15000
 
 // Вариант 1: Размораживание (отмена)
@@ -142,8 +156,15 @@ console.log(updatedBalance.reserved().value());  // 2000 ($20, без измен
 
 ```typescript
 import { BalanceSerializer } from '@polymarket/value-objects/balance';
+import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
 
-const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000)));
+const accountId: AccountId = {
+  kind: 'WALLET',
+  address: '0x1234567890123456789012345678901234567890' as WalletAddress
+};
+const venueId: VenueId = 'POLYMARKET' as VenueId;
+
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
 
 // Сериализация
 const json = BalanceSerializer.toJSON(balance);
@@ -216,7 +237,7 @@ console.log(BalanceFormatter.toCompact(balance));
 // "Avail: $100.00 | Res: $20.00 | Total: $120.00"
 
 // Большие суммы
-const bigBalance = expectOk(BalanceService.create(Money.of(1500000), Money.of(500000)));
+const bigBalance = expectOk(BalanceService.create(Money.of(1500000), Money.of(500000), accountId, venueId));
 console.log(BalanceFormatter.toCompact(bigBalance));
 // "Avail: $1.5K | Res: $0.5K | Total: $2.0K"
 ```
