@@ -624,11 +624,11 @@ export class TokenBalanceService {
    *
    * @example
    * ```typescript
-   * const balance1 = expectOk(TokenBalanceService.create(token, qty1, accountId, venueId));
-   * const balance2 = expectOk(TokenBalanceService.create(token, qty2, accountId, venueId));
+   * const balance1 = expectOk(TokenBalanceService.create(token, available1, reserved1, accountId, venueId));
+   * const balance2 = expectOk(TokenBalanceService.create(token, available2, reserved2, accountId, venueId));
    *
    * const same = TokenBalanceService.equals(balance1, balance2);
-   * console.log(same); // → true if amounts equal
+   * console.log(same); // → true if available and reserved equal
    *
    * // Безопасно работает с невалидными входами
    * TokenBalanceService.equals(null, balance1); // → false (не бросает)

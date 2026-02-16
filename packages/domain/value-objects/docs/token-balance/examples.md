@@ -276,17 +276,17 @@ console.log(TokenBalanceFormatter.toCompact(bigBalance));
 ### Отдельные компоненты
 
 ```typescript
-// Available
-console.log(TokenBalanceFormatter.toAvailableString(balance)); // "100"
-console.log(TokenBalanceFormatter.toAvailableString(balance, 2)); // "100.00"
+// Available (default: 2 decimals)
+console.log(TokenBalanceFormatter.toAvailableString(balance)); // "100.00"
+console.log(TokenBalanceFormatter.toAvailableString(balance, 0)); // "100"
 
-// Reserved
-console.log(TokenBalanceFormatter.toReservedString(balance)); // "20"
+// Reserved (default: 2 decimals)
+console.log(TokenBalanceFormatter.toReservedString(balance)); // "20.00"
 
-// Total
-console.log(TokenBalanceFormatter.toTotalString(balance)); // "120"
+// Total (default: 2 decimals)
+console.log(TokenBalanceFormatter.toTotalString(balance)); // "120.00"
 
-// Процент резервирования
+// Процент резервирования (default: 2 decimals)
 console.log(TokenBalanceFormatter.toPercentageString(balance)); // "16.67%"
 console.log(TokenBalanceFormatter.toPercentageString(balance, 0)); // "17%"
 ```

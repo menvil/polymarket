@@ -261,7 +261,7 @@ export class TokenBalance {
    *
    * @example
    * ```typescript
-   * const balance = TokenBalance.of(token, qty, accountId, venueId);
+   * const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
    * const token = balance.token();
    * console.log(token.outcomeKey()); // 'UP'
    * ```

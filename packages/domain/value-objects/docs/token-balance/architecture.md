@@ -106,7 +106,7 @@ export class ValidateReserveAmount {
         {
           context: {
             op,
-            reason: TokenBalanceErrorReason.NON_FINITE,
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
             requested: reserveQty.value().toString()
           },
           source: ErrorSource.RULE_VALIDATION
@@ -121,7 +121,7 @@ export class ValidateReserveAmount {
         {
           context: {
             op,
-            reason: TokenBalanceErrorReason.INVALID_AMOUNT,
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
             requested: reserveQty.value().toString()
           },
           source: ErrorSource.RULE_VALIDATION

@@ -21,9 +21,9 @@ import { TokenBalanceErrorReason } from '../errors/TokenBalanceErrorReason.js';
  * return wrapOp(
  *   TokenBalanceService.SERVICE_NAME,
  *   'create',
- *   { token, amount, accountId, venueId },
+ *   { token, available, reserved, accountId, venueId },
  *   () => {
- *     const balance = TokenBalance.of(token, amount, accountId, venueId);
+ *     const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
  *     return Ok(balance);
  *   },
  *   InvalidTokenBalanceError
