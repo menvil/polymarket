@@ -263,6 +263,7 @@ if (result.ok) {
 
 ```typescript
 import { Money, MoneyFormatter } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
 
 const balance = Money.of(new Decimal(1234567.89), 'USDC');
 

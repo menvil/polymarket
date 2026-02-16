@@ -413,8 +413,8 @@ Result<Quantity, InvalidQuantityError>
 ```typescript
 // Оптимизация: если value уже Decimal
 const quantity = value instanceof Decimal
-  ? Quantity.of(value)  // zero-copy
-  : Quantity.of(value);           // parse
+  ? Quantity.of(value)           // zero-copy
+  : Quantity.of(Number(value));  // parse
 ```
 
 **Альтернативы:**

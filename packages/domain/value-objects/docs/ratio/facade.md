@@ -848,7 +848,7 @@ function applyDiscount(
 ): Result<Decimal, InvalidRatioError> {
   // Создать Ratio из пользовательского ввода
   const discountResult = RatioService.fromPercent(discountPercent, {
-    ensureGteMinusOne: true
+    ensureLteOne: true
   });
 
   if (!discountResult.ok) {

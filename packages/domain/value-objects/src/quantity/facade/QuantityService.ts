@@ -407,18 +407,18 @@ export class QuantityService {
    * // Взять 25% от позиции
    * const position = expectOk(QuantityService.create(1000));
    * const rate = expectOk(RatioService.fromPercent(25));
-   * const result = QuantityService.portion(position, rate.value);
+   * const result = QuantityService.portion(position, rate);
    * // → 250
    *
    * // Комиссия 0.2%
    * const orderSize = expectOk(QuantityService.create(100000));
    * const feeRate = expectOk(RatioService.fromPercent(0.2));
-   * const fee = QuantityService.portion(orderSize, feeRate.value);
+   * const fee = QuantityService.portion(orderSize, feeRate);
    * // → 200
    *
    * // Rate > 100% (валидно)
    * const rate150 = expectOk(RatioService.fromPercent(150));
-   * const result2 = QuantityService.portion(position, rate150.value);
+   * const result2 = QuantityService.portion(position, rate150);
    * // → 1500 (150% от 1000)
    * ```
    */

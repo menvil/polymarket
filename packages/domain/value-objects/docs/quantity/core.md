@@ -276,7 +276,7 @@ console.log(qty1.value() === decimal); // true
 console.log(qty2.value() === decimal); // true
 ```
 
-**Когда использовать `of()` вместо `of()`:**
+**Когда передавать Decimal в `of()`:**
 
 - Когда важна семантика (явно показываем что ожидаем Decimal)
 - В type-narrowed контексте (когда TypeScript уже знает что это Decimal)

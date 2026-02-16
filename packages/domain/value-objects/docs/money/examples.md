@@ -55,6 +55,7 @@ if (deposit.success) {
 
 ```typescript
 import { Money } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
 
 function canAfford(balance: Money, price: Money): boolean {
   // Балансы должны быть в одной валюте

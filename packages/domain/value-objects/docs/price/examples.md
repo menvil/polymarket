@@ -688,7 +688,9 @@ class PriceRounder {
 // Пример использования
 const rounder = new PriceRounder();
 
-const prices = Array.from({ length: 1000 }, (_, i) => Price.of(new Decimal(0.5 + i * 0.0001)));
+const prices = Array.from({ length: 1000 }, (_, i) =>
+  Price.of(new Decimal('0.5').plus(new Decimal(i).times('0.0001')))
+);
 
 console.time('First run');
 prices.forEach(p => rounder.roundToTick(p, 0.01));

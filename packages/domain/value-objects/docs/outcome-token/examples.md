@@ -17,7 +17,7 @@
 ### Пример 1: Создание OutcomeToken
 
 ```typescript
-import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
+import { OutcomeTokenService, type OutcomeToken } from '@polymarket/value-objects/outcome-token';
 import { BinaryOutcome, KnownOnChainProtocols, type OnChainConditionRef } from '@polymarket/ids';
 
 // On-chain condition reference
@@ -141,7 +141,7 @@ const token2 = createTokenSafely(offChainRef, 'UP');  // → null
 ### Пример 4: Валидация перед созданием
 
 ```typescript
-import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
+import { OutcomeTokenService, type OutcomeToken } from '@polymarket/value-objects/outcome-token';
 import type { ConditionRef } from '@polymarket/ids';
 
 function createOutcomeTokenIfValid(
@@ -272,6 +272,7 @@ import {
   OutcomeTokenService,
   OutcomeTokenErrorReason
 } from '@polymarket/value-objects/outcome-token';
+import type { ConditionRef } from '@polymarket/ids';
 import { ErrorSource } from '@polymarket/errors';
 
 function createTokenWithErrorHandling(
@@ -330,7 +331,8 @@ function createTokenWithErrorHandling(
 ### Пример 8: Fallback стратегия
 
 ```typescript
-import { OutcomeTokenService, OutcomeTokenErrorReason } from '@polymarket/value-objects/outcome-token';
+import { OutcomeTokenService, OutcomeTokenErrorReason, type OutcomeToken } from '@polymarket/value-objects/outcome-token';
+import type { ConditionRef } from '@polymarket/ids';
 import { BinaryOutcome } from '@polymarket/ids';
 
 function createTokenOrDefault(
@@ -379,7 +381,7 @@ function createTokenOrDefault(
 ```typescript
 import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
 import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
-import { QuantityService } from '@polymarket/value-objects/quantity';
+import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
 import { BinaryOutcome, KnownVenues, accountIdFromWallet, parseWalletAddress } from '@polymarket/ids';
 
 // Создание OutcomeToken
@@ -457,7 +459,7 @@ console.log(`- Is outcome token: ${quantity.isOutcomeToken()}`);
 ```typescript
 import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
 import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
-import { QuantityService } from '@polymarket/value-objects/quantity';
+import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
 import { AssetQuantityService } from '@polymarket/value-objects/asset-quantity';
 import { BinaryOutcome, KnownVenues, accountIdFromWallet, parseWalletAddress } from '@polymarket/ids';
 

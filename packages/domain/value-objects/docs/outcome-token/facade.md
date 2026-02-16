@@ -92,7 +92,7 @@ public static create(
 ### Пример использования
 
 ```typescript
-import { OutcomeTokenService, OutcomeTokenErrorReason } from '@polymarket/value-objects/outcome-token';
+import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
 import { BinaryOutcome } from '@polymarket/ids';
 import type { OnChainConditionRef } from '@polymarket/ids';
 
@@ -115,8 +115,7 @@ if (!result.ok) {
   const error = result.error;
   console.error(error.message);
 
-  const reason = error.context?.reason;
-  if (reason === OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION) {
+  if (error.message.includes('on-chain condition')) {
     console.error('OutcomeToken requires on-chain condition');
   }
 }

@@ -25,10 +25,11 @@
 
 **Общие характеристики:**
 
-- ✅ Все методы возвращают `Result<T, E>` (Never Throw Contract)
+- ✅ Большинство методов возвращают `Result<T, E>` (Never Throw Contract)
 - ✅ Типизированные ошибки через `InvalidRatioError`
 - ✅ Inline валидация параметров
 - ✅ Используют RatioService для создания Ratio
+- ⚠️ `toJSON()` является инфаллибильным и возвращает `RatioJSON` напрямую
 
 **Import:**
 

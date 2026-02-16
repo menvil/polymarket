@@ -62,7 +62,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 │                                                                 │
 │  Errors (src/quote/errors/)                                     │
 │  ┌───────────────────────────────────────────────────────────┐ │
-│  │  QuoteErrorReason - typed enum (12 values)                │ │
+│  │  QuoteErrorReason - typed enum (22 values)                │ │
 │  │  - BOTH_SIDES_NULL, BID_GREATER_THAN_ASK                  │ │
 │  │  - INVALID_FORMAT, INVALID_BID, INVALID_ASK               │ │
 │  │  - INVALID_BID_SIZE, INVALID_ASK_SIZE                     │ │
@@ -91,7 +91,8 @@ Quote value object построен по паттерну **Throws+Facade** с �
 2. **Чистая математика** (query методы без side effects):
    - Делегирование в Spread для устранения дублирования логики
    - spread() создает Spread объект для two-sided котировок
-   - spreadWidthOrZero(), midOrNull(), spreadPercentage() делегируют вычисления в Spread
+   - spreadWidthOrZero(), midOrNull() делегируют вычисления в Spread
+   - spreadPercentage() - не реализовано (stub, всегда возвращает null)
    - Сравнение котировок
 
 3. **Immutable представление** - все поля readonly, методы возвращают новые значения

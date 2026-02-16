@@ -525,7 +525,8 @@ applyRelativeChange(
 **Примеры:**
 
 ```typescript
-import { PriceService, RatioService } from '@polymarket/value-objects';
+import { PriceService, RatioService, Price } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
 
 // Markup +2%
 const price = Price.of(new Decimal(0.50));

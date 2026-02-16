@@ -853,6 +853,7 @@ const quote = quoteResult.value;
 const spreadWidth = quote.spreadWidthOrZero();
 console.log(spreadWidth?.toNumber());  // 0.04
 
+const spreadPct = quote.spreadPercentage();
 console.log(spreadPct?.toNumber());    // 8.0
 
 // Mid price

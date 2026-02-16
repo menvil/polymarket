@@ -58,6 +58,7 @@ if (!nanResult.ok) {
 
 ```typescript
 import { Quantity } from '@polymarket/value-objects/quantity';
+import Decimal from 'decimal.js';
 
 // Переиспользуйте константы вместо создания новых экземпляров
 const zero = Quantity.ZERO;
@@ -336,6 +337,8 @@ function closePartialPosition(
 }
 
 // Использование
+import Decimal from 'decimal.js';
+
 const position: Position = {
   marketId: "market-123",
   quantity: Quantity.of(new Decimal(100))
@@ -394,6 +397,8 @@ function mergePositions(positions: Position[]): Result<Quantity, InvalidQuantity
 }
 
 // Использование
+import Decimal from 'decimal.js';
+
 const positions: Position[] = [
   { marketId: "market-1", quantity: Quantity.of(new Decimal(10)) },
   { marketId: "market-2", quantity: Quantity.of(new Decimal(20)) },
@@ -545,6 +550,7 @@ if (rounded6.ok) {
 
 ```typescript
 import { Quantity, QuantityFormatter } from '@polymarket/value-objects/quantity';
+import Decimal from 'decimal.js';
 
 // Различные форматы для отображения
 const qty1 = Quantity.of(new Decimal(1500));
@@ -715,6 +721,8 @@ function sumQuantities(
 }
 
 // Использование
+import Decimal from 'decimal.js';
+
 const quantities = [
   Quantity.of(new Decimal(10)),
   Quantity.of(new Decimal(20)),
@@ -789,6 +797,7 @@ if (result.ok) {
 
 ```typescript
 import { Quantity, QuantitySerializer } from '@polymarket/value-objects/quantity';
+import Decimal from 'decimal.js';
 
 // Для больших чисел или высокой точности
 const qty = Quantity.of(new Decimal("99999999999999999999.123456789"));
@@ -1116,6 +1125,7 @@ if (result.ok) {
 
 ```typescript
 import { Quantity, QuantityFormatter } from '@polymarket/value-objects/quantity';
+import Decimal from 'decimal.js';
 
 class MemoizedQuantityFormatter {
   private cache = new Map<string, string>();

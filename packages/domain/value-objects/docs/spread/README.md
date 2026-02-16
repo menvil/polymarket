@@ -466,7 +466,10 @@ if (bidResult.ok && askResult.ok) {
 }
 
 // Или напрямую из чисел
-const spread = SpreadService.fromValues(0.48, 0.52);
+const spreadResult = SpreadService.fromValues(0.48, 0.52);
+if (spreadResult.ok) {
+  const spread = spreadResult.value;
+}
 ```
 
 ---

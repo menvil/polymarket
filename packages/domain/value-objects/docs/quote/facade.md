@@ -843,7 +843,7 @@ unexpectedError<E extends DomainError>(
 
 ```typescript
 try {
-  const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs);
+  const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);
   return Ok(quote);
 } catch (error) {
   if (error instanceof QuoteInvariantViolation) {
