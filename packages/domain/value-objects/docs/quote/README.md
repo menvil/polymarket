@@ -159,16 +159,25 @@ if (result.ok) {
 
 ```typescript
 const result = QuoteService.bidOnly(
-  bidValue: number | Decimal,
-  bidSizeValue: number | Decimal,
-  timestamp?: Date | number
+  bidValue: Decimal | number | string,
+  bidSizeValue: Decimal | number | string,
+  sourceId: MarketDataSourceId,
+  instrumentId: InstrumentId,
+  timestamp?: Date | Decimal | number | string
 ): Result<Quote, InvalidQuoteError>
 ```
 
 **Пример:**
 
 ```typescript
-const result = QuoteService.bidOnly(0.50, 100);
+import { KnownMarketDataSources, asInstrumentId } from '@polymarket/ids';
+
+const result = QuoteService.bidOnly(
+  0.50,
+  100,
+  KnownMarketDataSources.POLYMARKET_WS,
+  asInstrumentId('ETH-USD')!
+);
 if (result.ok) {
   console.log(result.value.hasBid());  // true
   console.log(result.value.hasAsk());  // false
@@ -181,9 +190,11 @@ if (result.ok) {
 
 ```typescript
 const result = QuoteService.askOnly(
-  askValue: number | Decimal,
-  askSizeValue: number | Decimal,
-  timestamp?: Date | number
+  askValue: Decimal | number | string,
+  askSizeValue: Decimal | number | string,
+  sourceId: MarketDataSourceId,
+  instrumentId: InstrumentId,
+  timestamp?: Date | Decimal | number | string
 ): Result<Quote, InvalidQuoteError>
 ```
 
@@ -325,22 +336,6 @@ const result = QuoteService.shiftWithRefresh(quote, delta, clock);
 clock.tick(5000); // +5 секунд
 ```
 
-#### `getSpreadOrZero()`
-
-Возвращает spread или 0 для one-sided котировок.
-
-```typescript
-const spread: Decimal = QuoteService.getSpreadOrZero(quote);
-```
-
-#### `getMidOrNull()`
-
-Возвращает mid price или null для one-sided котировок.
-
-```typescript
-const mid: Price | null = QuoteService.getMidOrNull(quote);
-```
-
 ### Quote (Core)
 
 #### Создание
@@ -405,13 +400,15 @@ quote.equalsWithTimestamp(other: Quote): boolean
 #### `toJSON()`
 
 ```typescript
-const json: QuoteJson = QuoteSerializer.toJSON(quote);
+const json: QuoteJSON = QuoteSerializer.toJSON(quote);
 // {
 //   bid: 0.48,
 //   ask: 0.52,
 //   bidSize: 100,
 //   askSize: 150,
-//   timestamp: 1234567890000
+//   timestamp: 1234567890000,
+//   sourceId: 'polymarket-ws',
+//   instrumentId: 'ETH-USD'
 // }
 ```
 
@@ -424,17 +421,17 @@ if (result.ok) {
 }
 ```
 
-#### `toString()`
+#### `toJSONString()`
 
 ```typescript
-const jsonString = QuoteSerializer.toString(quote);
-// '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000}'
+const jsonString = QuoteSerializer.toJSONString(quote);
+// '{"bid":0.48,"ask":0.52,"bidSize":100,"askSize":150,"timestamp":1234567890000,"sourceId":"polymarket-ws","instrumentId":"ETH-USD"}'
 ```
 
-#### `parse()`
+#### `fromJSONString()`
 
 ```typescript
-const result = QuoteSerializer.parse(jsonString);
+const result = QuoteSerializer.fromJSONString(jsonString);
 if (result.ok) {
   const quote = result.value;
 }
@@ -838,10 +835,10 @@ console.log(json);
 // }
 
 // В строку
-const jsonString = QuoteSerializer.toString(quote);
+const jsonString = QuoteSerializer.toJSONString(quote);
 
 // Обратно в Quote
-const parsed = QuoteSerializer.parse(jsonString);
+const parsed = QuoteSerializer.fromJSONString(jsonString);
 if (parsed.ok) {
   // equals() сравнивает только рыночные данные (без timestamp)
   console.log(quote.equals(parsed.value));  // true

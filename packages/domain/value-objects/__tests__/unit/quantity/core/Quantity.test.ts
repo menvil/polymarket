@@ -88,17 +88,8 @@ describe('Quantity.of()', () => {
   it('должен бросить для invalid string', () => {
     expect(() => Quantity.of(new Decimal("not a number"))).toThrow();
   });
-});
 
-describe('Quantity.of()', () => {
-  it('должен создать Quantity из Decimal', () => {
-    const decimal = new Decimal(10);
-    const qty = Quantity.of(decimal);
-    expect(qty).toBeInstanceOf(Quantity);
-    expect(qty.value().toNumber()).toBe(10);
-  });
-
-  it('не должен клонировать Decimal (использует как есть)', () => {
+  it('не должен клонировать Decimal (zero-copy оптимизация)', () => {
     const decimal = new Decimal(10);
     const qty = Quantity.of(decimal);
     // Проверяем что это тот же объект (ссылка)
