@@ -444,21 +444,18 @@ import { InvalidPriceError } from '@polymarket/errors';
 function validateAndLogPrice(value: number, orderId: string): Result<Price, InvalidPriceError> {
   const result = Price.fromNumber(value);
 
-  result.match({
-    ok: (price) => {
-      logger.info('Price validated', {
-        orderId,
-        price: price.value
-      });
-    },
-    err: (error) => {
-      logger.error('Price validation failed', {
-        orderId,
-        error: error.toJSON(),
-        userInput: value
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Price validated', {
+      orderId,
+      price: result.value.value
+    });
+  } else {
+    logger.error('Price validation failed', {
+      orderId,
+      error: result.error.toJSON(),
+      userInput: value
+    });
+  }
 
   return result;
 }

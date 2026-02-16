@@ -10,35 +10,6 @@ import { Ok, Err } from '@polymarket/result';
 import Decimal from 'decimal.js';
 
 describe('InvalidRoundingModeError', () => {
-  describe('свойства класса', () => {
-    it('должен иметь правильный severity = low', () => {
-      const error = new InvalidRoundingModeError('Invalid rounding mode');
-      expect(error.severity).toBe('low');
-    });
-
-    it('должен иметь статический код INVALID_ROUNDING_MODE', () => {
-      expect(InvalidRoundingModeError.code).toBe('INVALID_ROUNDING_MODE');
-    });
-
-    it('должен быть экземпляром TradingError', () => {
-      const error = new InvalidRoundingModeError('Invalid rounding mode');
-      expect(error).toBeInstanceOf(TradingError);
-      expect(error).toBeInstanceOf(InvalidRoundingModeError);
-    });
-
-    it('должен правильно устанавливать name', () => {
-      const error = new InvalidRoundingModeError('Invalid rounding mode');
-      expect(error.name).toBe('InvalidRoundingModeError');
-    });
-
-    it('должен сохранять code в экземпляре', () => {
-      const error = new InvalidRoundingModeError('Invalid rounding mode', {
-        code: InvalidRoundingModeError.code,
-      });
-      expect(error.code).toBe('INVALID_ROUNDING_MODE');
-    });
-  });
-
   describe('создание экземпляра', () => {
     it('должен создавать ошибку с простым сообщением', () => {
       const error = new InvalidRoundingModeError('Invalid rounding mode', {

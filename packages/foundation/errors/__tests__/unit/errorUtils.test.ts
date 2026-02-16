@@ -539,6 +539,44 @@ describe('errorUtils', () => {
       }
     });
 
+    it('классифицирует NON-TradingError с name из whitelist как math_operation', () => {
+      // Тест для непокрытой ветки: строки 735-738 в errorUtils.ts
+      // Создаем обычный Error (не TradingError), но с name из expected math whitelist
+      const result = wrapOp(
+        'PriceService',
+        'divide',
+        { dividend: '10', divisor: '0' },
+        () => {
+          // Симулируем legacy код или external библиотеку, которая бросает Error по name
+          const error = new Error('Division by zero detected');
+          error.name = 'DivisionByZeroError'; // Whitelist name
+          throw error;
+        },
+        InvalidPriceError
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // Конвертирован в ожидаемый тип
+        expect(result.error).toBeInstanceOf(InvalidPriceError);
+
+        // Классифицирован как math_operation (не unexpected!)
+        expect(result.error.context?.source).toBe('math_operation');
+
+        // Оригинальная ошибка сохранена в cause
+        expect(result.error.context?.cause).toBeDefined();
+        const cause = result.error.context?.cause as any;
+        expect(cause.message).toBe('Division by zero detected');
+        expect(cause.name).toBe('DivisionByZeroError');
+
+        // Трассировка добавлена
+        expect(result.error.context?.service).toBe('PriceService');
+        expect(result.error.context?.op).toBe('divide');
+        expect(result.error.context?.dividend).toBe('10');
+        expect(result.error.context?.divisor).toBe('0');
+      }
+    });
+
     it('should handle unexpected errors', () => {
       const result = wrapOp(
         'PriceService',

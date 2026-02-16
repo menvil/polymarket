@@ -99,10 +99,11 @@ class Price {
 // Использование
 const result = Price.fromNumber(userInput);
 
-result.match({
-  ok: (price) => console.log('Valid price:', price.getValue()),
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log('Valid price:', result.value.getValue());
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ### 3. С кастомным сообщением

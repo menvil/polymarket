@@ -231,9 +231,11 @@ function wrapOp<T, TError extends DomainError>(
 Гарантирует `Result<T, TError>` - всегда возвращает ошибку типа TError:
 
 - **Same-type TradingError** (instanceof ErrorConstructor) → rewrap с сохранением типа
-- **Foreign TradingError** (другой тип) → конвертация в TError через unexpectedError, с сохранением оригинальных данных в полях `originalErrorName`, `originalErrorCode`, `originalErrorContext`
+- **Foreign TradingError** (другой тип TradingError):
+  - Если это expected math error (ArithmeticOverflowError, InvalidOperandError и т.д.) → expectedMathError + rewrap (классификация: math_operation)
+  - Иначе → unexpectedError + rewrap, с сохранением оригинальных данных в полях `originalErrorName`, `originalErrorCode`, `originalErrorContext`
+- **Expected math errors (non-TradingError)** → expectedMathError + rewrap
 - **Core invariant violations** → coreInvariantError + rewrap
-- **Expected math errors** → expectedMathError + rewrap
 - **TypeError** → developerMisuseError + rewrap
 - **Unexpected errors** → unexpectedError + rewrap
 

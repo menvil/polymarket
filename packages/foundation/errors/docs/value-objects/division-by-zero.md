@@ -117,13 +117,17 @@ class Money {
 }
 
 // Использование
-const money = Money.fromAmount(1000, 'USDC').unwrap();
-const result = money.divide(userInput);
+const moneyResult = Money.fromAmount(1000, 'USDC');
+if (!moneyResult.ok) {
+  throw new Error('Invalid money');
+}
 
-result.match({
-  ok: (divided) => console.log('Result:', divided.getAmount()),
-  err: (error) => console.error('Error:', error.message)
-});
+const divideResult = moneyResult.value.divide(userInput);
+if (divideResult.ok) {
+  console.log('Result:', divideResult.value.getAmount());
+} else {
+  console.error('Error:', divideResult.error.message);
+}
 ```
 
 ### 3. Вычисление средней цены

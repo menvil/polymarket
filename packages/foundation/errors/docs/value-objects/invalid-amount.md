@@ -255,20 +255,20 @@ function validateTradingSettings(
 
   // Валидация leverage
   const leverageResult = Amount.fromNumber(settings.leverage, 'leverage', 1, 100);
-  if (leverageResult.isErr()) {
-    errors.push(leverageResult.unwrapErr());
+  if (!leverageResult.ok) {
+    errors.push(leverageResult.error);
   }
 
   // Валидация maxOrderSize
   const maxResult = Amount.fromNumber(settings.maxOrderSize, 'maxOrderSize', 0, 1000000);
-  if (maxResult.isErr()) {
-    errors.push(maxResult.unwrapErr());
+  if (!maxResult.ok) {
+    errors.push(maxResult.error);
   }
 
   // Валидация minOrderSize
   const minResult = Amount.fromNumber(settings.minOrderSize, 'minOrderSize', 0, settings.maxOrderSize);
-  if (minResult.isErr()) {
-    errors.push(minResult.unwrapErr());
+  if (!minResult.ok) {
+    errors.push(minResult.error);
   }
 
   // Проверка что min <= max
