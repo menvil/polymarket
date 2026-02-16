@@ -319,4 +319,95 @@ describe('QuoteService Ratio Operations', () => {
       }
     });
   });
+
+  describe('One-sided quote негативные сценарии (Never Throw контракт)', () => {
+    // Helper: создать bid-only quote
+    const createBidOnly = (bidPrice: number, bidSize = 100): Quote => {
+      const result = QuoteService.bidOnly(
+        new Decimal(bidPrice),
+        new Decimal(bidSize),
+        KnownMarketDataSources.POLYMARKET_WS,
+        asInstrumentId('TEST_INSTRUMENT')!,
+        Date.now()
+      );
+      if (!result.ok) throw new Error('Failed to create bid-only quote');
+      return result.value;
+    };
+
+    it('getMidPrice возвращает Err для bid-only quote (без TypeErrror)', () => {
+      const bidOnly = createBidOnly(0.50, 100);
+      const result = QuoteService.getMidPrice(bidOnly);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+
+    it('getSpreadRatio возвращает Err для bid-only quote (без TypeError)', () => {
+      const bidOnly = createBidOnly(0.50, 100);
+      const result = QuoteService.getSpreadRatio(bidOnly);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.MID_UNAVAILABLE);
+      }
+    });
+
+    it('shiftByRatio возвращает Err для bid-only quote (без TypeError)', () => {
+      const bidOnly = createBidOnly(0.50, 100);
+      const ratio = Ratio.of(new Decimal(0.05));
+      const result = QuoteService.shiftByRatio(bidOnly, ratio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+
+    it('widenByRatio возвращает Err для bid-only quote (без TypeError)', () => {
+      const bidOnly = createBidOnly(0.50, 100);
+      const ratio = Ratio.of(new Decimal(0.05));
+      const result = QuoteService.widenByRatio(bidOnly, ratio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+
+    it('tightenByRatio возвращает Err для bid-only quote (без TypeError)', () => {
+      const bidOnly = createBidOnly(0.50, 100);
+      const ratio = Ratio.of(new Decimal(0.05));
+      const result = QuoteService.tightenByRatio(bidOnly, ratio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+
+    it('skewByRatio возвращает Err для bid-only quote (без TypeError)', () => {
+      const bidOnly = createBidOnly(0.50, 100);
+      const bidRatio = Ratio.of(new Decimal(0.95));
+      const askRatio = Ratio.of(new Decimal(1.05));
+      const result = QuoteService.skewByRatio(bidOnly, bidRatio, askRatio);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+
+    it('scaleSizesByRatio возвращает Err для bid-only quote с NOT_TWO_SIDED reason', () => {
+      const bidOnly = createBidOnly(0.50, 100);
+      const factor = Ratio.of(new Decimal(1.5));
+      const result = QuoteService.scaleSizesByRatio(bidOnly, factor);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+      }
+    });
+  });
 });

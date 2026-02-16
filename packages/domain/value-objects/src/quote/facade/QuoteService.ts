@@ -999,6 +999,21 @@ export class QuoteService {
       'getMidPrice',
       { bid: quote.spread()?.bid()?.value()?.toString() ?? 'null', ask: quote.spread()?.ask()?.value()?.toString() ?? 'null' },
       () => {
+        // Validate two-sided quote (required for mid price)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot get mid price for one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
         // Delegate to SpreadService
         const spreadMidResult = SpreadService.getMidPrice(quote.spread()!);
 
@@ -1057,6 +1072,21 @@ export class QuoteService {
       'getSpreadRatio',
       { bid: quote.spread()?.bid()?.value()?.toString() ?? 'null', ask: quote.spread()?.ask()?.value()?.toString() ?? 'null' },
       () => {
+        // Validate two-sided quote (required for spread ratio)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot get spread ratio for one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.MID_UNAVAILABLE,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
         // Delegate to SpreadService
         const spreadRatioResult = SpreadService.getSpreadRatio(quote.spread()!);
 
@@ -1128,6 +1158,21 @@ export class QuoteService {
         shiftRatio: shiftRatio.toDecimal().toString()
       },
       () => {
+        // Validate two-sided quote (required for shift operation)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot shift one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
         const newSpreadResult = SpreadService.shiftByRatio(quote.spread()!, shiftRatio);
 
         if (isErr(newSpreadResult)) {
@@ -1179,6 +1224,21 @@ export class QuoteService {
         deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
       },
       () => {
+        // Validate two-sided quote (required for widen operation)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot widen one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
         const newSpreadResult = SpreadService.widenByRatio(quote.spread()!, deltaWidthRatio);
 
         if (isErr(newSpreadResult)) {
@@ -1230,6 +1290,21 @@ export class QuoteService {
         deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
       },
       () => {
+        // Validate two-sided quote (required for tighten operation)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot tighten one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
         const newSpreadResult = SpreadService.tightenByRatio(quote.spread()!, deltaWidthRatio);
 
         if (isErr(newSpreadResult)) {
@@ -1283,6 +1358,21 @@ export class QuoteService {
         askRatio: askRatio.toDecimal().toString()
       },
       () => {
+        // Validate two-sided quote (required for skew operation)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot skew one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
         const newSpreadResult = SpreadService.skewByRatio(quote.spread()!, bidRatio, askRatio);
 
         if (isErr(newSpreadResult)) {

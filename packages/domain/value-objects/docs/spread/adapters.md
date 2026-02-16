@@ -15,13 +15,13 @@
 
 Adapters слой предоставляет утилиты для:
 
-- **Сериализации** — конвертация Spread в JSON/DTO
-- **Десериализации** — создание Spread из JSON/DTO
+- **Сериализации** — конвертация Spread в JSON объекты и строки
+- **Десериализации** — создание Spread из JSON объектов и строк
 - **Форматирования** — отображение для UI
 
 **Файлы:**
 
-- `SpreadSerializer.ts` — JSON/DTO конвертация
+- `SpreadSerializer.ts` — JSON конвертация (объекты и строки)
 - `SpreadFormatter.ts` — форматирование для отображения
 
 ---
@@ -38,18 +38,18 @@ import { SpreadSerializer } from '@polymarket/value-objects/spread';
 
 ---
 
-### `toDTO(spread)`
+### `toJSON(spread)`
 
-Конвертирует Spread в простой DTO объект.
+Конвертирует Spread в JSON объект.
 
 ```typescript
-toDTO(spread: Spread): SpreadDTO
+toJSON(spread: Spread): SpreadJSON
 ```
 
 **Возвращает:**
 
 ```typescript
-interface SpreadDTO {
+interface SpreadJSON {
   bid: number;
   ask: number;
 }
@@ -60,57 +60,57 @@ interface SpreadDTO {
 ```typescript
 const spreadResult = SpreadService.fromValues(0.48, 0.52);
 if (spreadResult.ok) {
-  const dto = SpreadSerializer.toDTO(spreadResult.value);
-  console.log(dto);
+  const json = SpreadSerializer.toJSON(spreadResult.value);
+  console.log(json);
   // { bid: 0.48, ask: 0.52 }
 }
 ```
 
-**Примечание:** Точная сериализация, без потери точности для стандартных цен.
+**Примечание:** Возвращает объект (не строку). Для получения JSON строки используйте `toJSONString()`.
 
 ---
 
-### `fromDTO(dto)`
+### `fromJSON(json)`
 
-Создаёт Spread из DTO объекта.
+Создаёт Spread из JSON объекта (с полной runtime валидацией).
 
 ```typescript
-fromDTO(dto: unknown): Result<Spread, InvalidSpreadError>
+fromJSON(json: unknown): Result<Spread, InvalidSpreadError>
 ```
 
 **Параметры:**
 
-- `dto: unknown` — любой объект (валидируется)
+- `json: unknown` — любой объект (валидируется на runtime)
 
 **Возвращает:**
 
-- `Ok(Spread)` — если DTO валиден
-- `Err(InvalidSpreadError)` — если DTO невалиден
+- `Ok(Spread)` — если JSON объект валиден
+- `Err(InvalidSpreadError)` — если JSON объект невалиден
 
 **Валидация:**
 
-- DTO должен быть объектом
+- JSON должен быть объектом (не null)
 - Должны присутствовать поля `bid` и `ask`
-- Оба поля должны быть числами
+- Оба поля должны быть numbers
 - Значения должны быть валидными ценами
 
 **Пример:**
 
 ```typescript
-const dto = { bid: 0.48, ask: 0.52 };
-const result = SpreadSerializer.fromDTO(dto);
+const json = { bid: 0.48, ask: 0.52 };
+const result = SpreadSerializer.fromJSON(json);
 
 if (result.ok) {
   const spread = result.value;
-  console.log(spread.midpoint().toNumber());  // 0.50
+  console.log(spread.mid());  // Decimal(0.50)
 }
 ```
 
 **Обработка ошибок:**
 
 ```typescript
-const invalidDTO = { bid: 'invalid', ask: 0.52 };
-const result = SpreadSerializer.fromDTO(invalidDTO);
+const invalidJSON = { bid: 'invalid', ask: 0.52 };
+const result = SpreadSerializer.fromJSON(invalidJSON);
 
 if (!result.ok) {
   console.log(result.error.context?.reason);
@@ -118,14 +118,16 @@ if (!result.ok) {
 }
 ```
 
+**Примечание:** Принимает объект (не строку). Для парсинга JSON строки используйте `fromJSONString()`.
+
 ---
 
-### `toJSON(spread)`
+### `toJSONString(spread)`
 
 Конвертирует Spread в JSON строку.
 
 ```typescript
-toJSON(spread: Spread): string
+toJSONString(spread: Spread): string
 ```
 
 **Пример:**
@@ -133,40 +135,40 @@ toJSON(spread: Spread): string
 ```typescript
 const spreadResult = SpreadService.fromValues(0.48, 0.52);
 if (spreadResult.ok) {
-  const json = SpreadSerializer.toJSON(spreadResult.value);
-  console.log(json);
+  const jsonString = SpreadSerializer.toJSONString(spreadResult.value);
+  console.log(jsonString);
   // '{"bid":0.48,"ask":0.52}'
 }
 ```
 
 ---
 
-### `fromJSON(json)`
+### `fromJSONString(jsonString)`
 
 Создаёт Spread из JSON строки.
 
 ```typescript
-fromJSON(json: string): Result<Spread, InvalidSpreadError>
+fromJSONString(jsonString: string): Result<Spread, InvalidSpreadError>
 ```
 
 **Параметры:**
 
-- `json: string` — JSON строка
+- `jsonString: string` — JSON строка
 
 **Возвращает:**
 
-- `Ok(Spread)` — если JSON валиден
-- `Err(InvalidSpreadError)` — если JSON невалиден
+- `Ok(Spread)` — если JSON строка валидна
+- `Err(InvalidSpreadError)` — если JSON строка невалидна
 
 **Пример:**
 
 ```typescript
-const json = '{"bid":0.48,"ask":0.52}';
-const result = SpreadSerializer.fromJSON(json);
+const jsonString = '{"bid":0.48,"ask":0.52}';
+const result = SpreadSerializer.fromJSONString(jsonString);
 
 if (result.ok) {
   const spread = result.value;
-  console.log(spread.width().toNumber());  // 0.04
+  console.log(spread.width());  // Decimal(0.04)
 }
 ```
 
@@ -174,7 +176,7 @@ if (result.ok) {
 
 ```typescript
 const invalidJSON = 'invalid json';
-const result = SpreadSerializer.fromJSON(invalidJSON);
+const result = SpreadSerializer.fromJSONString(invalidJSON);
 
 if (!result.ok) {
   console.log(result.error.context?.reason);
@@ -191,14 +193,14 @@ if (!result.ok) {
 ```typescript
 const original = SpreadService.fromValues(0.48, 0.52).value;
 
-// toJSON -> fromJSON
-const json = SpreadSerializer.toJSON(original);
-const restored = SpreadSerializer.fromJSON(json).value;
-console.log(original.equals(restored));  // true
+// toJSONString -> fromJSONString (через строки)
+const jsonString = SpreadSerializer.toJSONString(original);
+const restored1 = SpreadSerializer.fromJSONString(jsonString).value;
+console.log(original.equals(restored1));  // true
 
-// toDTO -> fromDTO
-const dto = SpreadSerializer.toDTO(original);
-const restored2 = SpreadSerializer.fromDTO(dto).value;
+// toJSON -> fromJSON (через объекты)
+const json = SpreadSerializer.toJSON(original);
+const restored2 = SpreadSerializer.fromJSON(json).value;
 console.log(original.equals(restored2));  // true
 ```
 
@@ -373,8 +375,8 @@ interface APISpread {
   ask: number;
 }
 
-function parseAPIResponse(data: APISpread): Result<Spread, InvalidSpreadError> {
-  return SpreadSerializer.fromDTO(data);
+function parseAPIResponse(data: unknown): Result<Spread, InvalidSpreadError> {
+  return SpreadSerializer.fromJSON(data);
 }
 
 // Использование
@@ -396,20 +398,20 @@ import { SpreadSerializer } from '@polymarket/value-objects';
 
 class SpreadRepository {
   async save(id: string, spread: Spread): Promise<void> {
-    const dto = SpreadSerializer.toDTO(spread);
+    const json = SpreadSerializer.toJSON(spread);
     await db.spreads.upsert({
       id,
-      bid: dto.bid,
-      ask: dto.ask
+      bid: json.bid,
+      ask: json.ask
     });
   }
-  
+
   async load(id: string): Promise<Result<Spread, InvalidSpreadError>> {
     const row = await db.spreads.findOne({ id });
     if (!row) {
       return Err(new InvalidSpreadError('Spread not found'));
     }
-    return SpreadSerializer.fromDTO(row);
+    return SpreadSerializer.fromJSON(row);
   }
 }
 ```
@@ -428,20 +430,20 @@ interface SpreadUpdate {
 }
 
 function handleSpreadUpdate(message: SpreadUpdate) {
-  const result = SpreadSerializer.fromDTO(message.spread);
-  
+  const result = SpreadSerializer.fromJSON(message.spread);
+
   if (!result.ok) {
     console.error('Invalid spread update:', result.error.message);
     return;
   }
-  
+
   const spread = result.value;
-  
+
   // Отправляем в UI
   ui.updateMarket(message.marketId, {
     display: SpreadFormatter.format(spread, { decimals: 4 }),
-    widthBps: (spread.widthPercentage() * 100).toFixed(0),
-    midPrice: spread.midpoint().toNumber()
+    widthBps: (spread.widthPercentage().toNumber() * 100).toFixed(0),
+    midPrice: spread.mid().toNumber()
   });
 }
 ```
@@ -525,8 +527,8 @@ export const SpreadBadge: React.FC<SpreadBadgeProps> = ({
 ### ✅ DO
 
 ```typescript
-// Используйте Serializer для внешних данных
-const result = SpreadSerializer.fromDTO(apiData);
+// Используйте Serializer для внешних данных (объекты)
+const result = SpreadSerializer.fromJSON(apiData);
 if (result.ok) {
   useSpread(result.value);
 }
@@ -535,7 +537,7 @@ if (result.ok) {
 const display = SpreadFormatter.format(spread, { decimals: 4 });
 
 // Проверяйте результаты десериализации
-const jsonResult = SpreadSerializer.fromJSON(json);
+const jsonResult = SpreadSerializer.fromJSONString(jsonString);
 if (!jsonResult.ok) {
   handleError(jsonResult.error);
 }
@@ -579,14 +581,14 @@ function getCachedFormat(spread: Spread, decimals: number = 4): string {
 
 ```typescript
 function serializeBatch(spreads: Spread[]): string {
-  const dtos = spreads.map(s => SpreadSerializer.toDTO(s));
-  return JSON.stringify(dtos);
+  const jsons = spreads.map(s => SpreadSerializer.toJSON(s));
+  return JSON.stringify(jsons);
 }
 
-function deserializeBatch(json: string): Result<Spread[], InvalidSpreadError>[] {
+function deserializeBatch(jsonString: string): Result<Spread[], InvalidSpreadError>[] {
   try {
-    const dtos = JSON.parse(json);
-    return dtos.map((dto: unknown) => SpreadSerializer.fromDTO(dto));
+    const jsons = JSON.parse(jsonString);
+    return jsons.map((json: unknown) => SpreadSerializer.fromJSON(json));
   } catch (error) {
     return [Err(new InvalidSpreadError('Invalid JSON array'))];
   }
