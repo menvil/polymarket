@@ -209,7 +209,7 @@ export class Money {
    * ```typescript
    * Money.ZERO.USDC.isZero(); // true
    * Money.of(0).isZero();     // true
-   * Money.of(100).isZero();   // false
+   * Money.of(new Decimal(100)).isZero();   // false
    * ```
    */
   public isZero(): boolean {
@@ -223,7 +223,7 @@ export class Money {
    *
    * @example
    * ```typescript
-   * Money.of(100).isPositive();   // true
+   * Money.of(new Decimal(100)).isPositive();   // true
    * Money.ZERO.USDC.isPositive(); // false
    * Money.of(-100).isPositive();  // false
    * ```
@@ -240,7 +240,7 @@ export class Money {
    * @example
    * ```typescript
    * Money.of(-100).isNegative(); // true
-   * Money.of(100).isNegative();  // false
+   * Money.of(new Decimal(100)).isNegative();  // false
    * Money.ZERO.USDC.isNegative(); // false
    * ```
    */

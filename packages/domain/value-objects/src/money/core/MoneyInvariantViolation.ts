@@ -11,7 +11,7 @@ import { MoneyErrorReason } from '../errors/MoneyErrorReason';
  * - Сумма не должна превышать MAX_AMOUNT (1e15)
  *
  * ## НЕ инвариант:
- * - Формат входных данных (это parse error → {@link MoneyParseError})
+ * - Формат входных данных (парсинг number/string делается в MoneyService)
  *
  * Это исключение используется только внутри core слоя Money.
  * Facade слой (MoneyService) ловит это исключение и преобразует в Result.

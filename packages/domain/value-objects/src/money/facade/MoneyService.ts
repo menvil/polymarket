@@ -207,7 +207,7 @@ export class MoneyService {
    *
    * @example
    * ```typescript
-   * const result = MoneyService.add(Money.of(100), Money.of(50));
+   * const result = MoneyService.add(Money.of(new Decimal(100)), Money.of(new Decimal(50)));
    * if (result.ok) {
    *   console.log(result.value.value().toNumber()); // 150
    * }
@@ -253,7 +253,7 @@ export class MoneyService {
    *
    * @example
    * ```typescript
-   * const result = MoneyService.subtract(Money.of(100), Money.of(30));
+   * const result = MoneyService.subtract(Money.of(new Decimal(100)), Money.of(new Decimal(30)));
    * if (result.ok) {
    *   console.log(result.value.value().toNumber()); // 70
    * }
@@ -304,7 +304,7 @@ export class MoneyService {
    *
    * @example
    * ```typescript
-   * const result = MoneyService.multiply(Money.of(100), 1.5);
+   * const result = MoneyService.multiply(Money.of(new Decimal(100)), 1.5);
    * if (result.ok) {
    *   console.log(result.value.value().toNumber()); // 150
    * }
@@ -375,7 +375,7 @@ export class MoneyService {
    *
    * @example
    * ```typescript
-   * const result = MoneyService.divide(Money.of(100), 2);
+   * const result = MoneyService.divide(Money.of(new Decimal(100)), 2);
    * if (result.ok) {
    *   console.log(result.value.value().toNumber()); // 50
    * }
@@ -434,7 +434,7 @@ export class MoneyService {
    *
    * @example
    * ```typescript
-   * const result = MoneyService.isLessThan(Money.of(100), Money.of(200));
+   * const result = MoneyService.isLessThan(Money.of(new Decimal(100)), Money.of(new Decimal(200)));
    * if (isErr(result)) {
    *   console.error('Currency mismatch');
    * } else if (result.value) {
@@ -528,7 +528,7 @@ export class MoneyService {
    *
    * @example
    * ```typescript
-   * const result = MoneyService.equals(Money.of(100), Money.of(100));
+   * const result = MoneyService.equals(Money.of(new Decimal(100)), Money.of(new Decimal(100)));
    * if (result.ok && result.value) {
    *   console.log('Equal');
    * }
