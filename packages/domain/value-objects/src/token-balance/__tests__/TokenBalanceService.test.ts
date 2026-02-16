@@ -112,6 +112,50 @@ describe('TokenBalanceService', () => {
       }
     });
 
+    it('возвращает false при null аргументах (не бросает)', () => {
+      const balance = TokenBalanceService.create(token, qty100, accountId, venueId);
+      expect(balance.ok).toBe(true);
+      if (balance.ok) {
+        expect(TokenBalanceService.equals(null as any, balance.value)).toBe(false);
+        expect(TokenBalanceService.equals(balance.value, null as any)).toBe(false);
+        expect(TokenBalanceService.equals(null as any, null as any)).toBe(false);
+      }
+    });
+
+    it('возвращает false при undefined аргументах (не бросает)', () => {
+      const balance = TokenBalanceService.create(token, qty100, accountId, venueId);
+      expect(balance.ok).toBe(true);
+      if (balance.ok) {
+        expect(TokenBalanceService.equals(undefined as any, balance.value)).toBe(false);
+        expect(TokenBalanceService.equals(balance.value, undefined as any)).toBe(false);
+        expect(TokenBalanceService.equals(undefined as any, undefined as any)).toBe(false);
+      }
+    });
+
+    it('возвращает false при поддельных объектах (не бросает)', () => {
+      const balance = TokenBalanceService.create(token, qty100, accountId, venueId);
+      const fakeBalance = { equals: () => true };
+      expect(balance.ok).toBe(true);
+      if (balance.ok) {
+        expect(TokenBalanceService.equals(fakeBalance as any, balance.value)).toBe(false);
+        expect(TokenBalanceService.equals(balance.value, fakeBalance as any)).toBe(false);
+      }
+    });
+
+    it('возвращает false при грязном объекте с бросающим методом equals() (не бросает)', () => {
+      const balance = TokenBalanceService.create(token, qty100, accountId, venueId);
+      const dirtyBalance = {
+        equals: () => {
+          throw new Error('equals() throws');
+        }
+      };
+      expect(balance.ok).toBe(true);
+      if (balance.ok) {
+        // Должен поймать исключение и вернуть false
+        expect(TokenBalanceService.equals(dirtyBalance as any, balance.value)).toBe(false);
+      }
+    });
+
     it('никогда не бросает исключения', () => {
       const balance1 = TokenBalanceService.create(token, qty100, accountId, venueId);
       const balance2 = TokenBalanceService.create(token, qty200, accountId, venueId);
@@ -146,6 +190,29 @@ describe('TokenBalanceService', () => {
       }
     });
 
+    it('возвращает false при null аргументе (не бросает)', () => {
+      expect(TokenBalanceService.isZero(null as any)).toBe(false);
+    });
+
+    it('возвращает false при undefined аргументе (не бросает)', () => {
+      expect(TokenBalanceService.isZero(undefined as any)).toBe(false);
+    });
+
+    it('возвращает false при поддельном объекте (не бросает)', () => {
+      const fakeBalance = { isZero: () => true };
+      expect(TokenBalanceService.isZero(fakeBalance as any)).toBe(false);
+    });
+
+    it('возвращает false при грязном объекте с бросающим методом isZero() (не бросает)', () => {
+      const dirtyBalance = {
+        isZero: () => {
+          throw new Error('isZero() throws');
+        }
+      };
+      // Должен поймать исключение и вернуть false
+      expect(TokenBalanceService.isZero(dirtyBalance as any)).toBe(false);
+    });
+
     it('никогда не бросает исключения', () => {
       const result = TokenBalanceService.create(token, qty100, accountId, venueId);
 
@@ -177,6 +244,29 @@ describe('TokenBalanceService', () => {
         const isPositive = TokenBalanceService.isPositive(result.value);
         expect(isPositive).toBe(true);
       }
+    });
+
+    it('возвращает false при null аргументе (не бросает)', () => {
+      expect(TokenBalanceService.isPositive(null as any)).toBe(false);
+    });
+
+    it('возвращает false при undefined аргументе (не бросает)', () => {
+      expect(TokenBalanceService.isPositive(undefined as any)).toBe(false);
+    });
+
+    it('возвращает false при поддельном объекте (не бросает)', () => {
+      const fakeBalance = { isPositive: () => true };
+      expect(TokenBalanceService.isPositive(fakeBalance as any)).toBe(false);
+    });
+
+    it('возвращает false при грязном объекте с бросающим методом isPositive() (не бросает)', () => {
+      const dirtyBalance = {
+        isPositive: () => {
+          throw new Error('isPositive() throws');
+        }
+      };
+      // Должен поймать исключение и вернуть false
+      expect(TokenBalanceService.isPositive(dirtyBalance as any)).toBe(false);
     });
 
     it('никогда не бросает исключения', () => {

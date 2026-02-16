@@ -137,11 +137,16 @@ export class TokenBalanceService {
    *
    * @param a - Первый TokenBalance
    * @param b - Второй TokenBalance
-   * @returns true если балансы представляют одинаковый токен и количество
+   * @returns true если балансы представляют одинаковый токен и количество, false в остальных случаях
    *
    * @remarks
    * Never throws - безопасная утилита для сравнения.
    * Использует метод equals() из TokenBalance core.
+   *
+   * **Безопасность:**
+   * - Если любой из аргументов null/undefined - возвращает false
+   * - Если любой из аргументов не является TokenBalance instance - возвращает false
+   * - Перехватывает любые исключения и возвращает false
    *
    * @example
    * ```typescript
@@ -150,49 +155,86 @@ export class TokenBalanceService {
    *
    * const same = TokenBalanceService.equals(balance1, balance2);
    * console.log(same); // → true if amounts equal
+   *
+   * // Безопасно работает с невалидными входами
+   * TokenBalanceService.equals(null, balance1); // → false (не бросает)
    * ```
    */
   public static equals(a: TokenBalance, b: TokenBalance): boolean {
-    return a.equals(b);
+    try {
+      if (!a || !b) return false;
+      if (!(a instanceof TokenBalance) || !(b instanceof TokenBalance)) return false;
+      return a.equals(b);
+    } catch {
+      return false;
+    }
   }
 
   /**
    * Проверяет что баланс нулевой
    *
    * @param balance - TokenBalance для проверки
-   * @returns true если amount равно 0
+   * @returns true если amount равно 0, false в остальных случаях
    *
    * @remarks
    * Never throws - безопасная утилита для проверки.
    * Делегирует к balance.isZero().
    *
+   * **Безопасность:**
+   * - Если balance null/undefined - возвращает false
+   * - Если balance не является TokenBalance instance - возвращает false
+   * - Перехватывает любые исключения и возвращает false
+   *
    * @example
    * ```typescript
    * const balance = expectOk(TokenBalanceService.create(token, Quantity.ZERO, accountId, venueId));
    * const isZero = TokenBalanceService.isZero(balance); // true
+   *
+   * // Безопасно работает с невалидными входами
+   * TokenBalanceService.isZero(null); // → false (не бросает)
    * ```
    */
   public static isZero(balance: TokenBalance): boolean {
-    return balance.isZero();
+    try {
+      if (!balance) return false;
+      if (!(balance instanceof TokenBalance)) return false;
+      return balance.isZero();
+    } catch {
+      return false;
+    }
   }
 
   /**
    * Проверяет что баланс положительный
    *
    * @param balance - TokenBalance для проверки
-   * @returns true если amount > 0
+   * @returns true если amount > 0, false в остальных случаях
    *
    * @remarks
    * Never throws - безопасная утилита для проверки.
    * Делегирует к balance.isPositive().
    *
+   * **Безопасность:**
+   * - Если balance null/undefined - возвращает false
+   * - Если balance не является TokenBalance instance - возвращает false
+   * - Перехватывает любые исключения и возвращает false
+   *
    * @example
    * ```typescript
    * const balance = expectOk(TokenBalanceService.create(token, qty, accountId, venueId));
    * const isPositive = TokenBalanceService.isPositive(balance); // true if qty > 0
+   *
+   * // Безопасно работает с невалидными входами
+   * TokenBalanceService.isPositive(null); // → false (не бросает)
    * ```
    */
   public static isPositive(balance: TokenBalance): boolean {
-    return balance.isPositive();
+    try {
+      if (!balance) return false;
+      if (!(balance instanceof TokenBalance)) return false;
+      return balance.isPositive();
+    } catch {
+      return false;
+    }
   }
 }
