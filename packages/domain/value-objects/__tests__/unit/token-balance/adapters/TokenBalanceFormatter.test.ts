@@ -181,6 +181,28 @@ describe('TokenBalanceFormatter', () => {
         TokenBalanceFormatter.toSummary(testBalance);
       }).not.toThrow();
     });
+
+    it('включает accountId когда includeAccount=true', () => {
+      const summary = TokenBalanceFormatter.toSummary(testBalance, 2, true, false);
+
+      expect(summary).toContain('Account: wallet:0x1234567890123456789012345678901234567890');
+      expect(summary).not.toContain('Venue:');
+    });
+
+    it('включает venueId когда includeVenue=true', () => {
+      const summary = TokenBalanceFormatter.toSummary(testBalance, 2, false, true);
+
+      expect(summary).toContain('Venue: POLYMARKET');
+      expect(summary).not.toContain('Account:');
+    });
+
+    it('включает оба когда includeAccount и includeVenue=true', () => {
+      const summary = TokenBalanceFormatter.toSummary(testBalance, 2, true, true);
+
+      expect(summary).toContain('Account: wallet:0x1234567890123456789012345678901234567890');
+      expect(summary).toContain('Venue: POLYMARKET');
+      expect(summary).toContain(', '); // разделитель между account и venue
+    });
   });
 
   describe('toCompact()', () => {
@@ -213,6 +235,20 @@ describe('TokenBalanceFormatter', () => {
       expect(() => {
         TokenBalanceFormatter.toCompact(testBalance);
       }).not.toThrow();
+    });
+
+    it('включает venueId когда includeVenue=true', () => {
+      const compact = TokenBalanceFormatter.toCompact(testBalance, 1, true);
+
+      expect(compact).toContain('Avail: 100.5');
+      expect(compact).toContain('@ POLYMARKET');
+    });
+
+    it('не включает venue по умолчанию (includeVenue=false)', () => {
+      const compact = TokenBalanceFormatter.toCompact(testBalance);
+
+      expect(compact).not.toContain('@');
+      expect(compact).not.toContain('POLYMARKET');
     });
   });
 
