@@ -256,6 +256,38 @@ describe('QuoteFormatter', () => {
 
       expect(detailed).toContain('Time: 2024-01-15T12:30:00.000Z');
     });
+
+    it('включает sourceId когда includeSource: true', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        'BINANCE_WS' as any,
+        'BTC-USDT' as any
+      );
+
+      const detailed = QuoteFormatter.toDetailed(quote, { includeSource: true });
+
+      expect(detailed).toContain('Source: BINANCE_WS');
+    });
+
+    it('включает instrumentId когда includeInstrument: true', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        'BINANCE_WS' as any,
+        'BTC-USDT' as any
+      );
+
+      const detailed = QuoteFormatter.toDetailed(quote, { includeInstrument: true });
+
+      expect(detailed).toContain('Instrument: BTC-USDT');
+    });
   });
 
   describe('toTable()', () => {
@@ -325,6 +357,61 @@ describe('QuoteFormatter', () => {
       const table = QuoteFormatter.toTable(quote, { includeTimestamp: true });
 
       expect(table).toContain('Time:  2024-01-15T12:30:00.000Z');
+    });
+
+    it('включает sourceId когда includeSource: true', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        'BINANCE_WS' as any,
+        'BTC-USDT' as any
+      );
+
+      const table = QuoteFormatter.toTable(quote, { includeSource: true });
+
+      expect(table).toContain('Source: BINANCE_WS');
+    });
+
+    it('включает instrumentId когда includeInstrument: true', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        'BINANCE_WS' as any,
+        'BTC-USDT' as any
+      );
+
+      const table = QuoteFormatter.toTable(quote, { includeInstrument: true });
+
+      expect(table).toContain('Instrument: BTC-USDT');
+    });
+
+    it('включает все метаданные когда все флаги true', () => {
+      const timestamp = new Date('2024-01-15T12:30:00.000Z').getTime();
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(timestamp),
+        'BINANCE_WS' as any,
+        'BTC-USDT' as any
+      );
+
+      const table = QuoteFormatter.toTable(quote, {
+        includeTimestamp: true,
+        includeSource: true,
+        includeInstrument: true
+      });
+
+      expect(table).toContain('Time:  2024-01-15T12:30:00.000Z');
+      expect(table).toContain('Source: BINANCE_WS');
+      expect(table).toContain('Instrument: BTC-USDT');
     });
   });
 
