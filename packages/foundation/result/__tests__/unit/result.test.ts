@@ -13,10 +13,10 @@ import {
   flatMap,
   mapErr,
   combine,
-  unwrap,
   unwrapOr,
   formatValue,
 } from '../../src/result';
+import { unwrap } from '../../src/unsafe.js';
 
 describe('Result<T, E>', () => {
   describe('Ok constructor', () => {

@@ -27,7 +27,36 @@
 
 import { Result, formatValue } from './result.js';
 
-export { unwrap } from './result.js';
+/**
+ * Unwrap успешного Result (небезопасно)
+ *
+ * @param result - Result для unwrap
+ * @returns Значение если ok = true
+ * @throws {Error} Если ok = false
+ *
+ * @remarks
+ * ⚠️ НЕБЕЗОПАСНО — бросает `Error` если result содержит ошибку.
+ * Предпочитайте: `unwrapOr`, `unwrapOrElse`, `match` или `if (result.ok)`.
+ *
+ * Единственная точка доступа к `unwrap` — этот модуль (`@polymarket/result/unsafe`).
+ * Функция намеренно НЕ экспортируется из основного `@polymarket/result`.
+ *
+ * @example
+ * ```typescript
+ * const result = Ok(42);
+ * const value = unwrap(result); // 42
+ *
+ * const error = Err('упс');
+ * unwrap(error); // throws Error: 'Called unwrap on Err result: упс'
+ * ```
+ */
+export const unwrap = <T, E>(result: Result<T, E>): T => {
+  if (!result.ok) {
+    const errorInfo = formatValue(result.error);
+    throw new Error(`Called unwrap on Err result: ${errorInfo}`);
+  }
+  return result.value;
+};
 
 /**
  * Извлекает значение из Ok с кастомным сообщением ошибки

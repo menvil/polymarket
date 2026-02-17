@@ -325,36 +325,6 @@ export function formatValue(value: unknown): string {
 }
 
 /**
- * Unwrap успешного Result (небезопасно)
- *
- * @param result - Result для unwrap
- * @returns Значение если ok = true
- * @throws {Error} Если ok = false
- *
- * @remarks
- * ⚠️ НЕБЕЗОПАСНО — бросает `Error` если result содержит ошибку.
- * Предпочитайте: `unwrapOr`, `unwrapOrElse`, `match` или `if (result.ok)`.
- *
- * Для явного импорта unsafe API используйте `@polymarket/result/unsafe`.
- *
- * @example
- * ```typescript
- * const result = Ok(42);
- * const value = unwrap(result); // 42
- *
- * const error = Err('упс');
- * unwrap(error); // throws Error: 'Called unwrap on Err result: упс'
- * ```
- */
-export const unwrap = <T, E>(result: Result<T, E>): T => {
-  if (!result.ok) {
-    const errorInfo = formatValue(result.error);
-    throw new Error(`Called unwrap on Err result: ${errorInfo}`);
-  }
-  return result.value;
-};
-
-/**
  * Unwrap с fallback значением
  *
  * @param result - Result для unwrap

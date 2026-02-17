@@ -30,13 +30,13 @@ import {
   map as mapFn,
   mapErr as mapErrFn,
   match as matchFn,
-  unwrap as unwrapFn,
   unwrapOr as unwrapOrFn,
   unwrapOrElse as unwrapOrElseFn,
   isOk,
   isErr,
   formatValue,
 } from './result.js';
+import { unwrap as unwrapFn } from './unsafe.js';
 
 /**
  * Класс для method chaining с Result

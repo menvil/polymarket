@@ -57,6 +57,11 @@
 import { Result, Ok, Err, formatValue } from './result.js';
 import { ResultChain, toChain } from './ResultChain.js';
 
+// console доступен во всех целевых Node.js средах.
+// Объявление необходимо при "types":[] в tsconfig.build.json (без @types/node и без DOM lib).
+// eslint-disable-next-line no-var
+declare var console: { error: (...args: unknown[]) => void };
+
 /**
  * Класс для method chaining с Promise<Result<T, E>>
  */
@@ -102,13 +107,22 @@ export class AsyncResultChain<T, E> {
    * @returns Нормализованная ошибка типа E
    *
    * @remarks
-   * Если сам normalizer выбросит исключение, возвращает error as E.
+   * Если сам normalizer выбросит исключение, логирует диагностику и возвращает
+   * оригинальную ошибку через небезопасный cast `error as E`.
    * Гарантирует, что Promise остаётся resolved, даже если normalizer некорректен.
    */
   private normalize(error: unknown): E {
     try {
       return this.onError(error);
-    } catch {
+    } catch (normalizerError) {
+      // Normalizer выбросил исключение — это баг в normalizer.
+      // Логируем диагностику: без этого ошибка normalizer полностью теряется.
+      console.error(
+        `[AsyncResultChain] normalizer threw while handling error. ` +
+          `Original error: ${formatValue(error)}. ` +
+          `Normalizer error: ${formatValue(normalizerError)}. ` +
+          `Falling back to original error (unsafe cast to E).`
+      );
       return error as E;
     }
   }
@@ -130,16 +144,16 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   mapAsync<U>(fn: (value: T) => Promise<U>): AsyncResultChain<U, E> {
-    const newPromise = this.promise.then(async (result) => {
+    const newPromise = this.promise.then(async (result): Promise<Result<U, E>> => {
       if (result.ok) {
         try {
           const newValue = await fn(result.value);
-          return Ok(newValue) as Result<U, E>;
+          return Ok(newValue);
         } catch (error) {
-          return Err(this.normalize(error)) as Result<U, E>;
+          return Err(this.normalize(error));
         }
       }
-      return result as Result<U, E>;
+      return result;
     });
     return this.chain(newPromise);
   }
@@ -163,15 +177,15 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   map<U>(fn: (value: T) => U): AsyncResultChain<U, E> {
-    const newPromise = this.promise.then((result) => {
+    const newPromise = this.promise.then((result): Result<U, E> => {
       if (result.ok) {
         try {
-          return Ok(fn(result.value)) as Result<U, E>;
+          return Ok(fn(result.value));
         } catch (error) {
-          return Err(this.normalize(error)) as Result<U, E>;
+          return Err(this.normalize(error));
         }
       }
-      return result as Result<U, E>;
+      return result;
     });
     return this.chain(newPromise);
   }
@@ -197,11 +211,11 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   mapUnsafe<U>(fn: (value: T) => U): AsyncResultChain<U, E> {
-    const newPromise = this.promise.then((result) => {
+    const newPromise = this.promise.then((result): Result<U, E> => {
       if (result.ok) {
-        return Ok(fn(result.value)) as Result<U, E>;
+        return Ok(fn(result.value));
       }
-      return result as Result<U, E>;
+      return result;
     });
     return this.chain(newPromise);
   }
@@ -227,15 +241,15 @@ export class AsyncResultChain<T, E> {
     fn: (value: T) => Promise<Result<U, F>>
   ): AsyncResultChain<U, E | F> {
     const normalizer = (e: unknown): E | F => this.normalize(e);
-    const newPromise = this.promise.then(async (result) => {
+    const newPromise = this.promise.then(async (result): Promise<Result<U, E | F>> => {
       if (result.ok) {
         try {
-          return (await fn(result.value)) as Result<U, E | F>;
+          return await fn(result.value);
         } catch (error) {
-          return Err(normalizer(error)) as Result<U, E | F>;
+          return Err(normalizer(error));
         }
       }
-      return result as Result<U, E | F>;
+      return result;
     });
     return new AsyncResultChain<U, E | F>(newPromise, normalizer);
   }
@@ -258,15 +272,15 @@ export class AsyncResultChain<T, E> {
    */
   flatMap<U, F>(fn: (value: T) => Result<U, F>): AsyncResultChain<U, E | F> {
     const normalizer = (e: unknown): E | F => this.normalize(e);
-    const newPromise = this.promise.then((result) => {
+    const newPromise = this.promise.then((result): Result<U, E | F> => {
       if (result.ok) {
         try {
-          return fn(result.value) as Result<U, E | F>;
+          return fn(result.value);
         } catch (error) {
-          return Err(normalizer(error)) as Result<U, E | F>;
+          return Err(normalizer(error));
         }
       }
-      return result as Result<U, E | F>;
+      return result;
     });
     return new AsyncResultChain<U, E | F>(newPromise, normalizer);
   }
@@ -291,16 +305,16 @@ export class AsyncResultChain<T, E> {
   mapErrAsync<F>(fn: (error: E) => Promise<F>): AsyncResultChain<T, F> {
     // Normalizer для F недоступен: используем e as F (честный cast без вызова E-normalizer).
     const normalizerF = (e: unknown): F => e as F;
-    const newPromise = this.promise.then(async (result) => {
+    const newPromise = this.promise.then(async (result): Promise<Result<T, F>> => {
       if (!result.ok) {
         try {
           const newError = await fn(result.error);
-          return Err(newError) as Result<T, F>;
+          return Err(newError);
         } catch (error) {
-          return Err(normalizerF(error)) as Result<T, F>;
+          return Err(normalizerF(error));
         }
       }
-      return result as Result<T, F>;
+      return result;
     });
     return new AsyncResultChain<T, F>(newPromise, normalizerF);
   }
@@ -325,15 +339,15 @@ export class AsyncResultChain<T, E> {
   mapErr<F>(fn: (error: E) => F): AsyncResultChain<T, F> {
     // Normalizer для F недоступен: используем e as F (честный cast без вызова E-normalizer).
     const normalizerF = (e: unknown): F => e as F;
-    const newPromise = this.promise.then((result) => {
+    const newPromise = this.promise.then((result): Result<T, F> => {
       if (!result.ok) {
         try {
-          return Err(fn(result.error)) as Result<T, F>;
+          return Err(fn(result.error));
         } catch (error) {
-          return Err(normalizerF(error)) as Result<T, F>;
+          return Err(normalizerF(error));
         }
       }
-      return result as Result<T, F>;
+      return result;
     });
     return new AsyncResultChain<T, F>(newPromise, normalizerF);
   }
@@ -561,11 +575,11 @@ export class AsyncResultChain<T, E> {
    */
   and<U, F>(other: Result<U, F>): AsyncResultChain<U, E | F> {
     const normalizer = (e: unknown): E | F => this.normalize(e);
-    const newPromise = this.promise.then((result) => {
+    const newPromise = this.promise.then((result): Result<U, E | F> => {
       if (result.ok) {
-        return other as Result<U, E | F>;
+        return other;
       }
-      return result as Result<U, E | F>;
+      return result;
     });
     return new AsyncResultChain<U, E | F>(newPromise, normalizer);
   }
@@ -584,20 +598,20 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   andAsync<U, F>(other: Promise<Result<U, F>>): AsyncResultChain<U, E | F> {
-    // Предотвращаем unhandledRejection когда берётся ветка Err (short-circuit),
-    // и other никогда не awaiting-ся.
-    void other.catch(() => {});
     const normalizer = (e: unknown): E | F => this.normalize(e);
-    const newPromise = this.promise.then(async (result) => {
+    const newPromise = this.promise.then(async (result): Promise<Result<U, E | F>> => {
       if (result.ok) {
         try {
-          return (await other) as Result<U, E | F>;
+          return await other;
         } catch (err) {
           // other реджектится (не содержит Result<U,F>) → Err с нормализованной ошибкой
-          return { ok: false, error: normalizer(err) } as Result<U, E | F>;
+          return { ok: false, error: normalizer(err) };
         }
       }
-      return result as Result<U, E | F>;
+      // Ветка Err: other не будет awaiting-ся — предотвращаем unhandledRejection.
+      // Вызов внутри .then() гарантирует, что guard навешивается только когда нужен.
+      void other.catch(() => {});
+      return result;
     });
     return new AsyncResultChain<U, E | F>(newPromise, normalizer);
   }
@@ -617,9 +631,9 @@ export class AsyncResultChain<T, E> {
    */
   or<F>(other: Result<T, F>): AsyncResultChain<T, F> {
     const normalizerF = (e: unknown): F => e as F;
-    const newPromise = this.promise.then((result) => {
+    const newPromise = this.promise.then((result): Result<T, F> => {
       if (result.ok) {
-        return result as Result<T, F>;
+        return result;
       }
       return other;
     });
@@ -644,15 +658,15 @@ export class AsyncResultChain<T, E> {
     // и other никогда не awaiting-ся.
     void other.catch(() => {});
     const normalizerF = (e: unknown): F => e as F;
-    const newPromise = this.promise.then(async (result) => {
+    const newPromise = this.promise.then(async (result): Promise<Result<T, F>> => {
       if (result.ok) {
-        return result as Result<T, F>;
+        return result;
       }
       try {
         return await other;
       } catch (e) {
         // other реджектится → Err с best-effort cast (F-normalizer недоступен)
-        return { ok: false, error: normalizerF(e) } as Result<T, F>;
+        return { ok: false, error: normalizerF(e) };
       }
     });
     return new AsyncResultChain<T, F>(newPromise, normalizerF);
@@ -681,14 +695,14 @@ export class AsyncResultChain<T, E> {
    */
   orAsyncLazy<F>(fn: () => Promise<Result<T, F>>): AsyncResultChain<T, F> {
     const normalizer = (e: unknown): F => e as F;
-    const newPromise = this.promise.then(async (result) => {
+    const newPromise = this.promise.then(async (result): Promise<Result<T, F>> => {
       if (result.ok) {
-        return result as Result<T, F>;
+        return result;
       }
       try {
         return await fn();
       } catch (error) {
-        return Err(normalizer(error)) as Result<T, F>;
+        return Err(normalizer(error));
       }
     });
     return new AsyncResultChain<T, F>(newPromise, normalizer);
@@ -716,14 +730,14 @@ export class AsyncResultChain<T, E> {
    */
   orElseAsync<F>(fn: (error: E) => Promise<Result<T, F>>): AsyncResultChain<T, F> {
     const normalizer = (e: unknown): F => e as F;
-    const newPromise = this.promise.then(async (result) => {
+    const newPromise = this.promise.then(async (result): Promise<Result<T, F>> => {
       if (result.ok) {
-        return result as Result<T, F>;
+        return result;
       }
       try {
         return await fn(result.error);
       } catch (error) {
-        return Err(normalizer(error)) as Result<T, F>;
+        return Err(normalizer(error));
       }
     });
     return new AsyncResultChain<T, F>(newPromise, normalizer);
@@ -751,14 +765,14 @@ export class AsyncResultChain<T, E> {
    */
   orElse<F>(fn: (error: E) => Result<T, F>): AsyncResultChain<T, F> {
     const normalizer = (e: unknown): F => e as F;
-    const newPromise = this.promise.then((result) => {
+    const newPromise = this.promise.then((result): Result<T, F> => {
       if (result.ok) {
-        return result as Result<T, F>;
+        return result;
       }
       try {
         return fn(result.error);
       } catch (error) {
-        return Err(normalizer(error)) as Result<T, F>;
+        return Err(normalizer(error));
       }
     });
     return new AsyncResultChain<T, F>(newPromise, normalizer);
@@ -910,14 +924,22 @@ export const AsyncResult = {
     promise: Promise<Result<T, E>>,
     onReject?: (error: unknown) => E
   ): AsyncResultChain<T, E> => {
-    const safePromise = promise.catch((error) => {
+    const safePromise = promise.catch((error): Result<T, E> => {
       if (onReject) {
         // Защищаем от исключений в onReject: если onReject бросает,
         // оборачиваем брошенное значение в Err чтобы Promise оставался resolved.
         try {
-          return Err(onReject(error)) as Result<T, E>;
+          return Err(onReject(error));
         } catch (onRejectError) {
-          return Err(onRejectError as E) as Result<T, E>;
+          // onReject выбросил исключение — это баг в onReject.
+          // Логируем диагностику: без этого ошибка onReject полностью теряется.
+          console.error(
+            `[AsyncResult.from] onReject threw while handling rejection. ` +
+              `Original error: ${formatValue(error)}. ` +
+              `onReject error: ${formatValue(onRejectError)}. ` +
+              `Falling back to onReject error (unsafe cast to E).`
+          );
+          return Err(onRejectError as E);
         }
       }
       return Err(error) as Result<T, E>;
