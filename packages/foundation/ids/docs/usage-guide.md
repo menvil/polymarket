@@ -740,7 +740,7 @@ class Quote {
 // Создание Quote
 const quote = new Quote(
   KnownMarketDataSources.POLYMARKET_WS,
-  asInstrumentId('BTC-USD-2025'),
+  asInstrumentId('BTC-USD-2025')!,
   {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,

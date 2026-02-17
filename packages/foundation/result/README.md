@@ -41,7 +41,7 @@ Type-safe обработка ошибок: явные типы вместо exce
 | `AsyncResultChain.tap`      | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 | `AsyncResultChain.tapErr`   | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 
-> **Правило для E-preserving методов AsyncResultChain** (AsyncResultChain.map, mapAsync, flatMapAsync):
+> **Правило для E-preserving методов AsyncResultChain** (AsyncResultChain.map, mapAsync, flatMapAsync, flatMap):
 > исключения из callback → `Err(onError(e))` через chain normalizer. Promise остаётся resolved.
 > (Для core `map`/`flatMap` из `result.ts` исключения propagate напрямую — там normalizer не задействован.)
 >
