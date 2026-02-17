@@ -145,6 +145,7 @@ import {
   type ExecutionVenueId,
   KnownExecutionVenues,
 } from '@polymarket/ids/execution';
+// external: import { Money, getBalance, sendOrder } from your money/market modules
 
 // 1. Настройка
 const marketDataSource: MarketDataSourceId = KnownMarketDataSources.POLYMARKET_WS;
@@ -325,6 +326,7 @@ console.log(`PnL: ${results.pnl}, Sharpe: ${results.sharpe}`);
 
 ```typescript
 import {
+  type AccountId,
   type VenueId,
   type ConditionRef,
   type ConditionId,
@@ -333,6 +335,8 @@ import {
   KnownOnChainProtocols,
   AssetIdHelpers,
   BinaryOutcome,
+  accountIdFromWallet,
+  parseWalletAddress,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
@@ -377,6 +381,9 @@ const kalshiQuote = {
 };
 
 // 3. Проверяем балансы на каждом venue
+const accountId: AccountId = accountIdFromWallet(
+  parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!
+);
 const polymarketVenue = sourceToVenue(polymarketQuote.sourceId)!;
 const kalshiVenue = sourceToVenue(kalshiQuote.sourceId)!;
 
@@ -418,15 +425,21 @@ import {
   type AssetId,
   type ConditionRef,
   type OnChainConditionRef,
+  type AccountId,
+  type VenueId,
   AssetIdHelpers,
   isCurrencyAsset,
   isOutcomeTokenAsset,
   BinaryOutcome,
+  KnownVenues,
   KnownChainIds,
   KnownOnChainProtocols,
   assetIdToString,
   parseConditionId,
+  accountIdFromWallet,
+  parseWalletAddress,
 } from '@polymarket/ids';
+// external: import { Money, MoneyService, Balance, getBalance, getQuote } from your money/market modules
 
 // 1. Currency asset
 const usdcAsset: AssetId = AssetIdHelpers.USDC;
@@ -454,6 +467,10 @@ const yesTokenAsset: AssetId = yesResult.value;
 const noTokenAsset: AssetId = noResult.value;
 
 // 3. Получаем все балансы
+const accountId: AccountId = accountIdFromWallet(
+  parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!
+);
+const venueId: VenueId = KnownVenues.POLYMARKET;
 const assets = [usdcAsset, yesTokenAsset, noTokenAsset];
 
 for (const asset of assets) {
@@ -509,13 +526,14 @@ import {
   accountIdFromVenue,
   accountIdForSubaccount,
   KnownVenues,
+  AssetIdHelpers,
   parseWalletAddress,
 } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
 import { unwrap } from '@polymarket/result/unsafe';
 
 // 1. Wallet account (Polymarket)
-const wallet: WalletAddress = parseWalletAddress('0x123...')!;
+const wallet: WalletAddress = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
 const walletAccount: AccountId = accountIdFromWallet(wallet);
 // → { kind: 'WALLET', address: '0x123...' }
 

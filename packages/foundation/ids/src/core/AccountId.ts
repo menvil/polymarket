@@ -18,8 +18,12 @@ export { AccountIdDepthError, AccountIdValidationError };
  *
  * Семантика: MAX_SUBACCOUNT_DEPTH = N означает "максимум N layers субаккаунтов".
  * - depth 0: базовый аккаунт (WALLET или VENUE)
- * - depth 1-N: N layers SUBACCOUNT (допустимо)
- * - depth N+1: отклоняется проверкой `if (depth > MAX_SUBACCOUNT_DEPTH)`
+ * - depth 1..N: допустимо (N layers SUBACCOUNT)
+ * - depth N+1 и выше: отклоняется
+ *
+ * Два разных check в коде реализуют это:
+ * - accountIdForSubaccount: `currentDepth >= N` (currentDepth — глубина base)
+ * - parseAccountIdImpl: `depth > maxDepth` (depth — счётчик рекурсии, начинается с 0)
  */
 const MAX_SUBACCOUNT_DEPTH = 5;
 
@@ -732,6 +736,12 @@ function parseAccountIdImpl(
  * Для SUBACCOUNT рекурсивно сравнивает base accounts.
  *
  * При превышении MAX_SUBACCOUNT_DEPTH возвращает false (безопасный fallback).
+ *
+ * @remarks
+ * Depth limit намеренно фиксирован на MAX_SUBACCOUNT_DEPTH.
+ * AccountId созданные через parseAccountId с кастомным maxDepth > MAX_SUBACCOUNT_DEPTH
+ * будут некорректно сравниваться (вернут false). Используйте accountIdForSubaccount
+ * для создания AccountId — он enforces тот же MAX_SUBACCOUNT_DEPTH.
  *
  * @example
  * ```typescript

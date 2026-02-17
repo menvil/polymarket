@@ -158,8 +158,7 @@ export function normalizeCurrency(code: unknown): string | undefined {
  * }
  * ```
  */
-export function asSupportedCurrency(code: string): SupportedCurrency | undefined {
-  // Защита от non-string runtime-ввода через as any
+export function asSupportedCurrency(code: unknown): SupportedCurrency | undefined {
   if (typeof code !== 'string') {
     return undefined;
   }
@@ -189,7 +188,7 @@ export function asSupportedCurrency(code: string): SupportedCurrency | undefined
  * currencyEquals(' USDC ', 'USDC'); // → true
  * ```
  */
-export function currencyEquals(a: string, b: string): boolean {
+export function currencyEquals(a: unknown, b: unknown): boolean {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
   const normalizedA = normalizeCurrency(a);
   const normalizedB = normalizeCurrency(b);

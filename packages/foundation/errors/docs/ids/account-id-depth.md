@@ -204,12 +204,14 @@ function handleSubaccountError(
 ### Создание допустимой максимальной глубины
 
 ```typescript
+import { unwrap } from '@polymarket/result/unsafe';
+
 const wallet = accountIdFromWallet(parseWalletAddress('0x...')!);
 
 // depth=0: базовый аккаунт
 // depth=1..5: допустимо
 const sub5 = [1, 2, 3, 4, 5].reduce(
-  (acc, i) => accountIdForSubaccount(acc, `level${i}`).unwrap(),
+  (acc, i) => unwrap(accountIdForSubaccount(acc, `level${i}`)),
   wallet as AccountId
 );
 
@@ -227,6 +229,8 @@ if (!result.ok) {
 ### Проверка граничного значения
 
 ```typescript
+import { unwrap } from '@polymarket/result/unsafe';
+
 // currentDepth === maxDepth → ошибка (условие >=)
 // currentDepth === maxDepth - 1 → допустимо
 
@@ -235,7 +239,7 @@ const sub4 = buildSubaccountChain(wallet, 4); // depth=4
 const valid = accountIdForSubaccount(sub4, 'level5'); // depth станет 5
 console.log(valid.ok); // → true (5 <= 5 допустимо)
 
-const invalid = accountIdForSubaccount(valid.unwrap(), 'level6'); // depth стал бы 6
+const invalid = accountIdForSubaccount(unwrap(valid), 'level6'); // depth стал бы 6
 console.log(invalid.ok); // → false (6 > 5)
 ```
 

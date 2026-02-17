@@ -324,6 +324,13 @@ export const AssetId = {
  * @param asset - AssetId для преобразования
  * @returns Строковое представление
  *
+ * @remarks
+ * Использует ':' как разделитель без экранирования.
+ * Инвариант: все поля AssetId (currency, protocolId, conditionId, outcomeKey)
+ * гарантированно не содержат ':' — это enforced валидаторами при создании
+ * (isSupportedCurrency, asOnChainProtocolId, parseConditionId, parseOutcomeKey).
+ * Это обеспечивает корректный round-trip: parseAssetId(assetIdToString(id)) === id.
+ *
  * @example
  * ```typescript
  * const usdc = AssetIdHelpers.USDC;
