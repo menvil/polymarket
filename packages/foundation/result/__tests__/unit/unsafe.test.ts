@@ -6,15 +6,42 @@
  * и что root-экспорт (@polymarket/result) не содержит `unwrap`.
  */
 import { describe, it, expect } from '@jest/globals';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { unwrap, expectOk, unwrapErr, expectErr } from '../../src/unsafe.js';
 import { Ok, Err } from '../../src/result.js';
-// Проверка root-экспорта: убеждаемся что unwrap НЕ экспортируется из основного индекса.
-// Используем src/index.ts (а не dist/) — идентичная проверка без зависимости от сборки.
 import * as rootExports from '../../src/index.js';
 
 describe('@polymarket/result root не содержит unwrap', () => {
-  it('не должен экспортировать unwrap из root', () => {
+  it('не должен экспортировать unwrap из root (src)', () => {
     expect('unwrap' in rootExports).toBe(false);
+  });
+
+  it('dist/index.d.ts не должен объявлять экспорт unwrap (packaging regression)', () => {
+    // Симулирует реальный потребительский контракт через скомпилированные декларации.
+    // Пропускается если dist не собран — полную гарантию даёт `npm run build && npm test`.
+    // process.cwd() — это корень пакета, откуда запускается jest
+    const dtsPath = resolve(process.cwd(), 'dist/index.d.ts');
+    if (!existsSync(dtsPath)) {
+      return;
+    }
+    const content = readFileSync(dtsPath, 'utf8');
+
+    // Извлекаем имена из всех export { } блоков декларации
+    const exportPattern = /^export\s*\{([^}]+)\}/gm;
+    const allExported: string[] = [];
+    let match: RegExpExecArray | null;
+    while ((match = exportPattern.exec(content)) !== null) {
+      const names = match[1]
+        .split(',')
+        .map((s) => s.replace(/\btype\b/g, '').trim()) // убрать 'type' keyword
+        .filter(Boolean);
+      allExported.push(...names);
+    }
+
+    // 'unwrap' не должен быть среди экспортов (только unwrapOr, unwrapOrElse допустимы)
+    const hasUnwrap = allExported.some((name) => name === 'unwrap');
+    expect(hasUnwrap).toBe(false);
   });
 });
 
