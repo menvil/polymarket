@@ -23,9 +23,11 @@
  * // Парсинг runtime значений
  * const userKey = parseOutcomeKey(userInput);
  *
- * // Использование в AssetId
- * const upToken = AssetId.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
- * const downToken = AssetId.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
+ * // Использование в AssetId — fromOutcomeToken возвращает Result, не бросает
+ * const upResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+ * if (upResult.ok) {
+ *   const upToken = upResult.value;
+ * }
  *
  * // Mapping в on-chain index
  * const index = outcomeKeyToIndex(BinaryOutcome.UP); // → 1
@@ -105,6 +107,11 @@ const MAX_OUTCOME_KEY_LENGTH = 32;
  * ```
  */
 export function parseOutcomeKey(raw: string): OutcomeKey | undefined {
+  // Защита от грязного runtime-ввода через as any (null, undefined, число, объект)
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+
   // Проверка: не пустая строка
   if (raw.length === 0) {
     return undefined;
@@ -135,11 +142,16 @@ export function parseOutcomeKey(raw: string): OutcomeKey | undefined {
  *
  * @example
  * ```typescript
- * import { BinaryOutcome } from '@polymarket/ids';
+ * import { AssetIdHelpers, BinaryOutcome } from '@polymarket/ids';
  *
  * // Price movement market: "BTC > $100k?"
- * const upToken = AssetId.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
- * const downToken = AssetId.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
+ * // fromOutcomeToken — safe-контракт: Result, не throw
+ * const upResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+ * const downResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
+ * if (upResult.ok && downResult.ok) {
+ *   const upToken = upResult.value;
+ *   const downToken = downResult.value;
+ * }
  *
  * // Mapping в on-chain index
  * outcomeKeyToIndex(BinaryOutcome.UP); // → 1

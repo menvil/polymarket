@@ -1172,6 +1172,43 @@ describe('Core IDs', () => {
           expect(result.error.context?.field).toBe('conditionId');
         }
       });
+
+      it('should return Err when outcomeKey is null (passed as any)', () => {
+        // Защита от runtime-атаки через as any: null не является валидным OutcomeKey
+        const result = AssetIdHelpers.fromOutcomeToken(validRef, null as any);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AssetIdValidationError);
+          expect(result.error.context?.field).toBe('outcomeKey');
+        }
+      });
+
+      it('should return Err when outcomeKey is undefined (passed as any)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken(validRef, undefined as any);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AssetIdValidationError);
+          expect(result.error.context?.field).toBe('outcomeKey');
+        }
+      });
+
+      it('should return Err when outcomeKey is number 0 (passed as any)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken(validRef, 0 as any);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AssetIdValidationError);
+          expect(result.error.context?.field).toBe('outcomeKey');
+        }
+      });
+
+      it('should return Err when outcomeKey is plain object (passed as any)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken(validRef, {} as any);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AssetIdValidationError);
+          expect(result.error.context?.field).toBe('outcomeKey');
+        }
+      });
     });
 
     describe('AssetIdHelpers.equals', () => {
@@ -2211,6 +2248,43 @@ describe('Core IDs', () => {
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(AccountIdDepthError);
         }
+      });
+
+      it('should handle corrupted SUBACCOUNT with base: null without throwing', () => {
+        // Corrupted AccountId: base = null (нарушение типа через as any)
+        // Узел сам имеет kind='SUBACCOUNT' (depth=1), затем base=null — null-guard останавливает цикл
+        const corrupted = { kind: 'SUBACCOUNT' as const, base: null, name: 'broken' } as any as AccountId;
+        // Не должен бросать, должен завершиться корректно
+        const depth = getSubaccountDepth(corrupted);
+        expect(typeof depth).toBe('number');
+        expect(depth).toBe(1); // сам узел — SUBACCOUNT (depth=1), null-base останавливает цикл
+      });
+
+      it('should handle corrupted SUBACCOUNT with base: undefined without throwing', () => {
+        // Corrupted AccountId: base = undefined (нарушение типа через as any)
+        // Узел сам имеет kind='SUBACCOUNT' (depth=1), затем base=undefined — undefined-guard останавливает цикл
+        const corrupted = { kind: 'SUBACCOUNT' as const, base: undefined, name: 'broken' } as any as AccountId;
+        const depth = getSubaccountDepth(corrupted);
+        expect(typeof depth).toBe('number');
+        expect(depth).toBe(1); // сам узел — SUBACCOUNT (depth=1), undefined-base останавливает цикл
+      });
+
+      it('should handle corrupted SUBACCOUNT with base: plain object without throwing', () => {
+        // Corrupted AccountId: base = {} (объект без kind)
+        // Узел сам имеет kind='SUBACCOUNT' (depth=1), затем base={} без kind — цикл останавливается
+        const corrupted = { kind: 'SUBACCOUNT' as const, base: {}, name: 'broken' } as any as AccountId;
+        const depth = getSubaccountDepth(corrupted);
+        expect(typeof depth).toBe('number');
+        expect(depth).toBe(1); // сам узел — SUBACCOUNT (depth=1), {}.kind != 'SUBACCOUNT' останавливает цикл
+      });
+
+      it('should not throw for accountIdForSubaccount with corrupted base: null', () => {
+        // accountIdForSubaccount с corrupted base не должен бросать исключения
+        // depth(corrupted) = 1, что не превышает MAX_SUBACCOUNT_DEPTH (5) — результат Ok или Err
+        const corrupted = { kind: 'SUBACCOUNT' as const, base: null, name: 'broken' } as any as AccountId;
+        // Проверяем только отсутствие исключения (результат может быть Ok)
+        const result = accountIdForSubaccount(corrupted, 'child');
+        expect(typeof result.ok).toBe('boolean');
       });
     });
 

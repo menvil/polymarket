@@ -21,11 +21,13 @@
  *
  * // Balance на конкретном venue
  * // accountIdFromVenue возвращает Result, нужно unwrap
- * const balance = {
+ * // accountIdFromVenue возвращает Result — нужно проверить ok
+ * const venueResult = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
+ * const balance = venueResult.ok ? {
  *   venueId: KnownVenues.POLYMARKET,
- *   accountId: accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123').unwrap(),
+ *   accountId: venueResult.value,
  *   amount: 10000
- * };
+ * } : undefined;
  *
  * // Extensible: можно использовать custom venues
  * const customVenue = 'MY_CUSTOM_VENUE' as VenueId;

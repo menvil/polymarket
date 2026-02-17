@@ -238,14 +238,22 @@ export function getSubaccountDepth(id: AccountId): number {
   // Используем WeakSet: не удерживает ссылки и работает с объектами любого типа
   const visited = new WeakSet<object>();
   let depth = 0;
-  let current: AccountId = id;
+  // unknown позволяет безопасно проверить повреждённые структуры без as any
+  let current: unknown = id;
 
-  while (current.kind === 'SUBACCOUNT') {
+  while (
+    current !== null &&
+    current !== undefined &&
+    typeof current === 'object' &&
+    (current as { kind?: unknown }).kind === 'SUBACCOUNT'
+  ) {
+    const node = current as Extract<AccountId, { kind: 'SUBACCOUNT' }>;
+
     // Детект цикла: объект уже встречался в цепочке → зацикленный граф
-    if (visited.has(current)) {
+    if (visited.has(node)) {
       return MAX_SUBACCOUNT_DEPTH + 1;
     }
-    visited.add(current);
+    visited.add(node);
 
     depth++;
 
@@ -254,7 +262,7 @@ export function getSubaccountDepth(id: AccountId): number {
       return MAX_SUBACCOUNT_DEPTH + 1;
     }
 
-    current = current.base;
+    current = node.base;
   }
 
   return depth;

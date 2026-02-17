@@ -513,7 +513,8 @@ function toCanonicalInstrument(
 - OFFCHAIN: `OFFCHAIN:KALSHI:MARKET_ID`
 
 При этом в системе существуют параллельные именования площадок:
-- **VenueId** (`wallet`, `venue`, `sub` в AccountId-контексте)
+- **AccountId-префиксы** (`wallet:`, `venue:`, `sub:` в строковом формате AccountId — не имеют отношения к VenueId)
+- **VenueId** (`POLYMARKET`, `KALSHI`, ... — используется в AccountId kind=VENUE и балансах)
 - **MarketDataSourceId** (`POLYMARKET_WS`, `POLYMARKET_REPLAY`, ...)
 - **ExecutionVenueId** (`POLYMARKET`, `KALSHI`, `SIMULATOR`)
 
