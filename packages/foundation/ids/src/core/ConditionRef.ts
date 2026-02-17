@@ -272,6 +272,11 @@ export function conditionRefToString(ref: ConditionRef): string {
  * ```
  */
 export function parseConditionRef(str: string): ConditionRef | undefined {
+  // Защита от non-string runtime-ввода через as any
+  if (typeof str !== 'string') {
+    return undefined;
+  }
+
   // Сначала определяем kind через simple split (kind никогда не содержит ':')
   const firstColon = str.indexOf(':');
   if (firstColon === -1) {

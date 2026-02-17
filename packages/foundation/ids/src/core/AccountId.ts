@@ -436,14 +436,18 @@ export function accountIdForSubaccount(
  * const str = accountIdToString(walletAcc);
  * console.log(str); // → 'wallet:0x1234...'
  *
- * // accountIdFromVenue возвращает Result, нужно unwrap
- * const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123').unwrap();
- * accountIdToString(venueAcc);
- * // → 'venue:POLYMARKET:user\\:123' (escaped colon)
+ * // accountIdFromVenue возвращает Result — нужно проверить ok
+ * const venueResult = accountIdFromVenue(KnownVenues.POLYMARKET, 'user:123');
+ * if (venueResult.ok) {
+ *   accountIdToString(venueResult.value);
+ *   // → 'venue:POLYMARKET:user\\:123' (escaped colon)
+ * }
  *
- * const specialChars = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:test').unwrap();
- * accountIdToString(specialChars);
- * // → 'venue:POLYMARKET:user\\\\\\:test' (escaped backslash and colon)
+ * const specialResult = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\\:test');
+ * if (specialResult.ok) {
+ *   accountIdToString(specialResult.value);
+ *   // → 'venue:POLYMARKET:user\\\\\\:test' (escaped backslash and colon)
+ * }
  * ```
  */
 export function accountIdToString(id: AccountId): string {
@@ -478,6 +482,13 @@ function accountIdToStringImpl(id: AccountId, depth: number): string {
     return '[INVALID:DEPTH_EXCEEDED]';
   }
 
+  // Runtime-защита от corrupted base (null/undefined вместо AccountId)
+  // Достижимо только при нарушении инварианта через as any
+  const idRaw = id as unknown;
+  if (idRaw === null || idRaw === undefined || typeof idRaw !== 'object') {
+    return '[INVALID:NULL_BASE]';
+  }
+
   if (id.kind === 'WALLET') {
     return `wallet:${id.address}`;
   }
@@ -487,10 +498,14 @@ function accountIdToStringImpl(id: AccountId, depth: number): string {
     return `venue:${id.venueId}:${escapedUserId}`;
   }
 
-  // SUBACCOUNT
-  const baseStr = accountIdToStringImpl(id.base, depth + 1);
-  const escapedName = escapeId(id.name);
-  return `sub:${baseStr}:${escapedName}`;
+  if (id.kind === 'SUBACCOUNT') {
+    const baseStr = accountIdToStringImpl(id.base, depth + 1);
+    const escapedName = escapeId(id.name);
+    return `sub:${baseStr}:${escapedName}`;
+  }
+
+  // Runtime-защита от corrupted AccountId с неизвестным kind (достижимо только через as any)
+  return '[INVALID:UNKNOWN_KIND]';
 }
 
 /**
@@ -538,6 +553,11 @@ export function parseAccountId(
   str: string,
   options?: ParseAccountIdOptions
 ): AccountId | undefined {
+  // Защита от non-string runtime-ввода через as any
+  if (typeof str !== 'string') {
+    return undefined;
+  }
+
   const maxLen = options?.maxLen ?? MAX_ACCOUNT_ID_STRING_LENGTH;
   const maxDepth = options?.maxDepth ?? MAX_SUBACCOUNT_DEPTH;
 

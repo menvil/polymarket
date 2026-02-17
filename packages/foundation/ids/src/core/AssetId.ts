@@ -168,6 +168,15 @@ export const AssetId = {
     conditionRef: OnChainConditionRef,
     outcomeKey: OutcomeKey
   ): Result<AssetId, AssetIdValidationError> {
+    // Защита от corrupted runtime-ввода (as any): conditionRef должен быть объектом
+    const conditionRefRaw = conditionRef as unknown;
+    if (conditionRefRaw === null || conditionRefRaw === undefined || typeof conditionRefRaw !== 'object') {
+      return Err(new AssetIdValidationError(
+        () => `Invalid conditionRef: must be an OnChainConditionRef object, got ${conditionRefRaw === null ? 'null' : typeof conditionRefRaw}.`,
+        { code: AssetIdValidationError.code, context: { field: 'conditionRef', value: String(conditionRefRaw) } }
+      ));
+    }
+
     // Валидация outcomeKey
     const validatedOutcomeKey = parseOutcomeKey(outcomeKey);
     if (!validatedOutcomeKey) {
@@ -321,9 +330,11 @@ export const AssetId = {
  * assetIdToString(usdc);
  * // → 'CURRENCY:USDC'
  *
- * const token = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
- * assetIdToString(token);
- * // → 'OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123:UP'
+ * const tokenResult = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+ * if (tokenResult.ok) {
+ *   assetIdToString(tokenResult.value);
+ *   // → 'OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123:UP'
+ * }
  * ```
  */
 export function assetIdToString(asset: AssetId): string {
@@ -366,6 +377,11 @@ export function assetIdToString(asset: AssetId): string {
  * ```
  */
 export function parseAssetId(str: string): AssetId | undefined {
+  // Защита от non-string runtime-ввода через as any
+  if (typeof str !== 'string') {
+    return undefined;
+  }
+
   const parts = str.split(':');
 
   if (parts.length < 2) {

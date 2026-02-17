@@ -262,6 +262,24 @@ describe('Core IDs', () => {
       });
     });
 
+    describe('parseConditionRef non-string input guard', () => {
+      it('should return undefined for null input (not throw)', () => {
+        expect(parseConditionRef(null as any)).toBeUndefined();
+      });
+
+      it('should return undefined for undefined input (not throw)', () => {
+        expect(parseConditionRef(undefined as any)).toBeUndefined();
+      });
+
+      it('should return undefined for number input (not throw)', () => {
+        expect(parseConditionRef(0 as any)).toBeUndefined();
+      });
+
+      it('should return undefined for object input (not throw)', () => {
+        expect(parseConditionRef({} as any)).toBeUndefined();
+      });
+    });
+
     describe('parseConditionRef validation', () => {
       describe('ONCHAIN validation', () => {
         it('should accept valid ONCHAIN ref', () => {
@@ -759,6 +777,24 @@ describe('Core IDs', () => {
       expect(parseAssetId('OUTCOME_TOKEN:INVALID')).toBeUndefined();
     });
 
+    describe('parseAssetId non-string input guard', () => {
+      it('should return undefined for null input (not throw)', () => {
+        expect(parseAssetId(null as any)).toBeUndefined();
+      });
+
+      it('should return undefined for undefined input (not throw)', () => {
+        expect(parseAssetId(undefined as any)).toBeUndefined();
+      });
+
+      it('should return undefined for number input (not throw)', () => {
+        expect(parseAssetId(137 as any)).toBeUndefined();
+      });
+
+      it('should return undefined for object input (not throw)', () => {
+        expect(parseAssetId({ type: 'CURRENCY' } as any)).toBeUndefined();
+      });
+    });
+
     describe('parseAssetId validation', () => {
       it('should reject invalid ChainId - parseInt bypass', () => {
         // parseInt("137abc", 10) возвращает 137, но мы должны это отклонить
@@ -1207,6 +1243,34 @@ describe('Core IDs', () => {
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(AssetIdValidationError);
           expect(result.error.context?.field).toBe('outcomeKey');
+        }
+      });
+
+      it('should return Err when conditionRef is null (passed as any)', () => {
+        // Safe-контракт: null conditionRef → Err, не TypeError
+        const result = AssetIdHelpers.fromOutcomeToken(null as any, BinaryOutcome.UP);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AssetIdValidationError);
+          expect(result.error.context?.field).toBe('conditionRef');
+        }
+      });
+
+      it('should return Err when conditionRef is undefined (passed as any)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken(undefined as any, BinaryOutcome.UP);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AssetIdValidationError);
+          expect(result.error.context?.field).toBe('conditionRef');
+        }
+      });
+
+      it('should return Err when conditionRef is plain string (passed as any)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken('not-an-object' as any, BinaryOutcome.UP);
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AssetIdValidationError);
+          expect(result.error.context?.field).toBe('conditionRef');
         }
       });
     });
@@ -2278,13 +2342,34 @@ describe('Core IDs', () => {
         expect(depth).toBe(1); // сам узел — SUBACCOUNT (depth=1), {}.kind != 'SUBACCOUNT' останавливает цикл
       });
 
-      it('should not throw for accountIdForSubaccount with corrupted base: null', () => {
-        // accountIdForSubaccount с corrupted base не должен бросать исключения
-        // depth(corrupted) = 1, что не превышает MAX_SUBACCOUNT_DEPTH (5) — результат Ok или Err
+      it('should return Ok for accountIdForSubaccount with corrupted base: null (depth=1 < MAX)', () => {
+        // corrupted имеет depth=1 (узел — SUBACCOUNT, null-base останавливает цикл)
+        // depth 1 < MAX_SUBACCOUNT_DEPTH (5) → accountIdForSubaccount должен вернуть Ok
         const corrupted = { kind: 'SUBACCOUNT' as const, base: null, name: 'broken' } as any as AccountId;
-        // Проверяем только отсутствие исключения (результат может быть Ok)
         const result = accountIdForSubaccount(corrupted, 'child');
-        expect(typeof result.ok).toBe('boolean');
+        expect(result.ok).toBe(true); // depth=1 не превышает лимит
+        if (result.ok) {
+          expect(result.value.kind).toBe('SUBACCOUNT');
+          expect((result.value as Extract<AccountId, { kind: 'SUBACCOUNT' }>).name).toBe('child');
+        }
+      });
+    });
+
+    describe('parseAccountId non-string input guard', () => {
+      it('should return undefined for null input (not throw)', () => {
+        expect(parseAccountId(null as any)).toBeUndefined();
+      });
+
+      it('should return undefined for undefined input (not throw)', () => {
+        expect(parseAccountId(undefined as any)).toBeUndefined();
+      });
+
+      it('should return undefined for number input (not throw)', () => {
+        expect(parseAccountId(42 as any)).toBeUndefined();
+      });
+
+      it('should return undefined for object input (not throw)', () => {
+        expect(parseAccountId({} as any)).toBeUndefined();
       });
     });
 
@@ -2432,6 +2517,32 @@ describe('Core IDs', () => {
               base: wallet, name: 'l0' }, name: 'l1' }, name: 'l2' }, name: 'l3' }, name: 'l4' }, name: 'l5' };
         // accountIdEquals должен вернуть false при превышении depth, а не упасть
         expect(accountIdEquals(deepId, deepId)).toBe(false);
+      });
+    });
+
+    describe('accountIdToString corrupted base guard', () => {
+      it('should return fallback string for SUBACCOUNT with base: null, not throw', () => {
+        // accountIdToString должен быть тотальным — не падать на corrupted base
+        const corrupted = { kind: 'SUBACCOUNT' as const, base: null, name: 'broken' } as any as AccountId;
+        const result = accountIdToString(corrupted);
+        expect(typeof result).toBe('string');
+        expect(result).toContain('[INVALID:NULL_BASE]');
+      });
+
+      it('should return fallback string for SUBACCOUNT with base: undefined, not throw', () => {
+        const corrupted = { kind: 'SUBACCOUNT' as const, base: undefined, name: 'broken' } as any as AccountId;
+        const result = accountIdToString(corrupted);
+        expect(typeof result).toBe('string');
+        expect(result).toContain('[INVALID:NULL_BASE]');
+      });
+
+      it('should return fallback string for SUBACCOUNT with base: plain object, not throw', () => {
+        // base = {} имеет kind === undefined → UNKNOWN_KIND fallback (не crash)
+        const corrupted = { kind: 'SUBACCOUNT' as const, base: {}, name: 'broken' } as any as AccountId;
+        const result = accountIdToString(corrupted);
+        expect(typeof result).toBe('string');
+        // {} пройдёт typeof object check, но kind === undefined → UNKNOWN_KIND fallback
+        expect(result).toContain('[INVALID:UNKNOWN_KIND]');
       });
     });
 
