@@ -46,8 +46,8 @@
   "author": "Ivan Moroz",
   "license": "UNLICENSED",
   "dependencies": {
-    "@polymarket/errors": "workspace:*",
-    "@polymarket/result": "workspace:*"
+    "@polymarket/errors": "file:../errors",
+    "@polymarket/result": "file:../result"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",
