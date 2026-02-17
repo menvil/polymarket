@@ -198,13 +198,20 @@ export function testTradingError(options: SharedErrorTestOptions): void {
 
         const json = error.toJSON();
 
-        expect(json).toEqual({
+        // Если класс имеет статический code — он автоматически применяется конструктором
+        const staticCode = (ErrorClass as unknown as { code?: string }).code;
+        const expected: Record<string, unknown> = {
           name: expectedName,
           message: testMessage,
           severity: expectedSeverity,
           timestamp: error.timestamp.toISOString(),
           context: { field: 'price', value: -10 },
-        });
+        };
+        if (staticCode !== undefined) {
+          expected.code = staticCode;
+        }
+
+        expect(json).toEqual(expected);
       });
 
       it('должен сериализовать с code', () => {

@@ -62,7 +62,6 @@ function accountIdForSubaccount(
     return Err(new AccountIdDepthError(
       (ctx) => `Subaccount depth limit exceeded during ${ctx.operation}: current=${ctx.currentDepth}, max=${ctx.maxDepth}`,
       {
-        code: AccountIdDepthError.code,
         context: {
           currentDepth,
           maxDepth: MAX_SUBACCOUNT_DEPTH,
@@ -157,7 +156,6 @@ function checkDepthLimit(
     return Err(new AccountIdDepthError(
       (ctx) => `Cannot add subaccount: depth ${ctx.currentDepth} exceeds limit ${ctx.maxDepth}`,
       {
-        code: AccountIdDepthError.code,
         context: { currentDepth, maxDepth, operation: 'create' }
       }
     ));

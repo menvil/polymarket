@@ -329,7 +329,7 @@ export class TradingError extends Error implements ITradingError {
     // Автоматически устанавливаем имя из класса
     this.name = this.constructor.name;
     this.timestamp = new Date();
-    this.code = options?.code;
+    this.code = options?.code ?? (this.constructor as { code?: string }).code;
     this.context = options?.context;
     this.innerError = innerError;
 

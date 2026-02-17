@@ -45,7 +45,6 @@ function createVenueAccount(
     return Err(new AccountIdValidationError(
       (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
       {
-        code: AccountIdValidationError.code,
         context: { field: 'userId', value: userId, reason: 'empty string' }
       }
     ));
@@ -102,7 +101,6 @@ function createSubaccount(
     return Err(new AccountIdDepthError(
       (ctx) => `Subaccount depth limit exceeded during ${ctx.operation}: current=${ctx.currentDepth}, max=${ctx.maxDepth}`,
       {
-        code: AccountIdDepthError.code,
         context: { currentDepth, maxDepth: MAX_DEPTH, operation: 'create' }
       }
     ));

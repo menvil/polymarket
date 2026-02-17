@@ -31,7 +31,6 @@ describe('AccountIdValidationError', () => {
       const error = new AccountIdValidationError(
         (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
         {
-          code: AccountIdValidationError.code,
           context: {
             field: 'userId',
             value: 'user:invalid',
@@ -55,7 +54,6 @@ describe('AccountIdValidationError', () => {
       const error = new AccountIdValidationError(
         (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
         {
-          code: AccountIdValidationError.code,
           context: {
             field: 'name',
             value: '',
@@ -76,7 +74,6 @@ describe('AccountIdValidationError', () => {
       const error = new AccountIdValidationError(
         (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
         {
-          code: AccountIdValidationError.code,
           context: {
             field: 'userId',
             value: longValue,
@@ -97,7 +94,6 @@ describe('AccountIdValidationError', () => {
 
     it('должен совпадать с кодом экземпляра', () => {
       const error = new AccountIdValidationError('Invalid userId', {
-        code: AccountIdValidationError.code,
         context: { field: 'userId', value: '', reason: 'empty string' },
       });
 
@@ -113,7 +109,6 @@ describe('AccountIdValidationError', () => {
             new AccountIdValidationError(
               (ctx) => `Invalid ${ctx.field}: ${ctx.reason}`,
               {
-                code: AccountIdValidationError.code,
                 context: { field: 'userId', value: userId, reason: 'empty string' },
               }
             )
@@ -185,7 +180,6 @@ describe('AccountIdDepthError', () => {
         (ctx) =>
           `Subaccount depth limit exceeded during ${ctx.operation}: current=${ctx.currentDepth}, max=${ctx.maxDepth}`,
         {
-          code: AccountIdDepthError.code,
           context: { currentDepth: 5, maxDepth: 5, operation: 'create' },
         }
       );
@@ -205,7 +199,6 @@ describe('AccountIdDepthError', () => {
       const error = new AccountIdDepthError(
         (ctx) => `Depth ${ctx.currentDepth} exceeds max ${ctx.maxDepth}`,
         {
-          code: AccountIdDepthError.code,
           context: { currentDepth: 10, maxDepth: 5, operation: 'serialize' },
         }
       );
@@ -224,7 +217,6 @@ describe('AccountIdDepthError', () => {
 
     it('должен совпадать с кодом экземпляра', () => {
       const error = new AccountIdDepthError('Depth exceeded', {
-        code: AccountIdDepthError.code,
         context: { currentDepth: 6, maxDepth: 5, operation: 'create' },
       });
 
@@ -243,7 +235,6 @@ describe('AccountIdDepthError', () => {
               (ctx) =>
                 `Subaccount depth limit exceeded during ${ctx.operation}: current=${ctx.currentDepth}, max=${ctx.maxDepth}`,
               {
-                code: AccountIdDepthError.code,
                 context: { currentDepth, maxDepth: MAX_DEPTH, operation: 'create' },
               }
             )

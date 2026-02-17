@@ -173,7 +173,7 @@ export const AssetId = {
     if (conditionRefRaw === null || conditionRefRaw === undefined || typeof conditionRefRaw !== 'object') {
       return Err(new AssetIdValidationError(
         () => `Invalid conditionRef: must be an OnChainConditionRef object, got ${conditionRefRaw === null ? 'null' : typeof conditionRefRaw}.`,
-        { code: AssetIdValidationError.code, context: { field: 'conditionRef', value: String(conditionRefRaw) } }
+        { context:{ field: 'conditionRef', value: String(conditionRefRaw) } }
       ));
     }
 
@@ -183,7 +183,7 @@ export const AssetId = {
       return Err(new AssetIdValidationError(
         (ctx: Record<string, unknown>) =>
           `Invalid outcomeKey: "${ctx.value}". Must be valid OutcomeKey (e.g., "UP", "DOWN").`,
-        { code: AssetIdValidationError.code, context: { field: 'outcomeKey', value: String(outcomeKey) } }
+        { context:{ field: 'outcomeKey', value: String(outcomeKey) } }
       ));
     }
 
@@ -193,7 +193,7 @@ export const AssetId = {
       return Err(new AssetIdValidationError(
         (ctx: Record<string, unknown>) =>
           `Invalid protocolId: "${ctx.value}". Must be UPPERCASE_WITH_UNDERSCORES (e.g., "POLYMARKET_CTF").`,
-        { code: AssetIdValidationError.code, context: { field: 'protocolId', value: String(conditionRef.protocolId) } }
+        { context:{ field: 'protocolId', value: String(conditionRef.protocolId) } }
       ));
     }
 
@@ -202,7 +202,7 @@ export const AssetId = {
       return Err(new AssetIdValidationError(
         (ctx: Record<string, unknown>) =>
           `Invalid chainId: ${ctx.value}. Must be positive integer (e.g., 137 for Polygon).`,
-        { code: AssetIdValidationError.code, context: { field: 'chainId', value: conditionRef.chainId } }
+        { context:{ field: 'chainId', value: conditionRef.chainId } }
       ));
     }
 
@@ -212,7 +212,7 @@ export const AssetId = {
       return Err(new AssetIdValidationError(
         (ctx: Record<string, unknown>) =>
           `Invalid conditionId: "${ctx.value}". Must be 32-byte hex string (0x...).`,
-        { code: AssetIdValidationError.code, context: { field: 'conditionId', value: String(conditionRef.conditionId) } }
+        { context:{ field: 'conditionId', value: String(conditionRef.conditionId) } }
       ));
     }
 

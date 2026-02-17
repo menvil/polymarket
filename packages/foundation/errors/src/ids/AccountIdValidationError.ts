@@ -23,7 +23,6 @@ import type { ErrorSeverity } from '../base/index.js';
  * return Err(new AccountIdValidationError(
  *   (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
  *   {
- *     code: AccountIdValidationError.code,
  *     context: { field: 'userId', value: 'user:invalid', reason: 'contains separator character' }
  *   }
  * ));

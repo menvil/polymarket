@@ -59,7 +59,6 @@ function validateUserId(
     return Err(new AccountIdValidationError(
       (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
       {
-        code: AccountIdValidationError.code,
         context: { field: 'userId', value: userId, reason: 'empty string' }
       }
     ));
@@ -69,7 +68,6 @@ function validateUserId(
     return Err(new AccountIdValidationError(
       (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
       {
-        code: AccountIdValidationError.code,
         context: { field: 'userId', value: userId, reason: 'exceeds 256 characters' }
       }
     ));
@@ -110,7 +108,6 @@ function accountIdFromVenue(
     return Err(new AccountIdValidationError(
       (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
       {
-        code: AccountIdValidationError.code,
         context: { field: 'userId', value: userId, reason }
       }
     ));
@@ -148,7 +145,6 @@ function accountIdForSubaccount(
     return Err(new AccountIdValidationError(
       (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
       {
-        code: AccountIdValidationError.code,
         context: { field: 'name', value: name, reason }
       }
     ));

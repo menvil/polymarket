@@ -353,7 +353,7 @@ export function accountIdFromVenue(
     const reason = stringFieldFailReason(userId);
     return Err(new AccountIdValidationError(
       (ctx: Record<string, unknown>) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
-      { code: AccountIdValidationError.code, context: { field: 'userId', value: truncateForError(userId), reason } }
+      { context: { field: 'userId', value: truncateForError(userId), reason } }
     ));
   }
 
@@ -413,7 +413,7 @@ export function accountIdForSubaccount(
     const reason = stringFieldFailReason(name);
     return Err(new AccountIdValidationError(
       (ctx: Record<string, unknown>) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
-      { code: AccountIdValidationError.code, context: { field: 'name', value: truncateForError(name), reason } }
+      { context: { field: 'name', value: truncateForError(name), reason } }
     ));
   }
 
@@ -422,7 +422,7 @@ export function accountIdForSubaccount(
   if (currentDepth >= MAX_SUBACCOUNT_DEPTH) {
     return Err(new AccountIdDepthError(
       (ctx: Record<string, unknown>) => `Subaccount depth limit exceeded during ${ctx.operation}: current=${ctx.currentDepth}, max=${ctx.maxDepth}`,
-      { code: AccountIdDepthError.code, context: { currentDepth, maxDepth: MAX_SUBACCOUNT_DEPTH, operation: 'create' } }
+      { context: { currentDepth, maxDepth: MAX_SUBACCOUNT_DEPTH, operation: 'create' } }
     ));
   }
 

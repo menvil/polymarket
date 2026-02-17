@@ -1138,7 +1138,7 @@ describe('errorUtils', () => {
       const error = expectedMathError(tradingError, InvalidMoneyError);
 
       expect(error).toBeInstanceOf(InvalidMoneyError);
-      expect(error.code).toBeUndefined();
+      expect(error.code).toBe(InvalidMoneyError.code);
       expect(error.context!.source).toBe('math_operation');
       expect(error.context!.field).toBe('price');
       expect(error.context!.userId).toBe(123);

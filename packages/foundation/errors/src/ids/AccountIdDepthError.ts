@@ -23,7 +23,6 @@ import type { ErrorSeverity } from '../base/index.js';
  * return Err(new AccountIdDepthError(
  *   (ctx) => `Subaccount depth limit exceeded during ${ctx.operation}: current=${ctx.currentDepth}, max=${ctx.maxDepth}`,
  *   {
- *     code: AccountIdDepthError.code,
  *     context: { currentDepth: 6, maxDepth: 5, operation: 'create' }
  *   }
  * ));
