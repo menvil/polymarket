@@ -127,6 +127,14 @@ export function parseOutcomeKey(raw: string): OutcomeKey | undefined {
     return undefined;
   }
 
+  // Проверка: не содержит control characters (U+0000..U+001F, U+007F..U+009F)
+  for (let i = 0; i < raw.length; i++) {
+    const code = raw.charCodeAt(i);
+    if ((code >= 0x00 && code <= 0x1f) || (code >= 0x7f && code <= 0x9f)) {
+      return undefined;
+    }
+  }
+
   return raw as OutcomeKey;
 }
 

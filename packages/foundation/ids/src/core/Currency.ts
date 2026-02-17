@@ -99,8 +99,8 @@ export function isSupportedCurrency(value: string): value is SupportedCurrency {
  * // KnownCurrencies.USDT автоматически появится и будет типизирован
  * ```
  */
-export const KnownCurrencies = Object.fromEntries(
-  SUPPORTED_CURRENCIES.map((c) => [c, c as SupportedCurrency])
+export const KnownCurrencies = Object.freeze(
+  Object.fromEntries(SUPPORTED_CURRENCIES.map((c) => [c, c as SupportedCurrency]))
 ) as { readonly [K in SupportedCurrency]: K };
 
 /**
@@ -124,6 +124,7 @@ export const KnownCurrencies = Object.fromEntries(
  * ```
  */
 export function normalizeCurrency(code: string): string {
+  if (typeof code !== 'string') throw new TypeError('normalizeCurrency expects a string');
   return code.trim().toUpperCase();
 }
 

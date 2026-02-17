@@ -154,7 +154,7 @@ const accountId: AccountId = accountIdFromWallet(walletAddr);
 // 2. Создание ConditionRef
 const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
 };
@@ -219,7 +219,7 @@ const executionVenue: ExecutionVenueId = KnownExecutionVenues.SIMULATOR;
 // ConditionRef для конкретного предсказательного рынка (on-chain Polymarket)
 const conditionRef: ConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,  // реальный 32-byte hex в продакшене
 };
@@ -346,7 +346,7 @@ import {
 // Polymarket - on-chain (discriminated union с kind: 'ONCHAIN')
 const polymarketCondition: ConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
 };
@@ -430,7 +430,7 @@ const usdcAsset: AssetId = AssetIdHelpers.USDC;
 // 2. Outcome token asset
 const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
   conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
@@ -440,7 +440,10 @@ const yesResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP
 const noResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
 
 if (!yesResult.ok || !noResult.ok) {
-  console.error('Invalid asset parameters:', (yesResult.ok ? noResult : yesResult).error.message);
+  const errors: string[] = [];
+  if (!yesResult.ok) errors.push(`yes: ${yesResult.error.message}`);
+  if (!noResult.ok) errors.push(`no: ${noResult.error.message}`);
+  console.error('Invalid asset parameters:', errors.join(', '));
 } else {
 
 const yesTokenAsset: AssetId = yesResult.value;
@@ -562,7 +565,7 @@ import {
 // 1. Создание ConditionRef (discriminated union с kind)
 const condition1: ConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
   conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
@@ -570,7 +573,7 @@ const condition1: ConditionRef = {
 // 2. Сравнение
 const condition2: ConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
   conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
@@ -605,7 +608,7 @@ if (loadedCondition) {
 // 6. ✅ Всегда используй ConditionRef (с kind)
 const good: ConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
 };
@@ -715,7 +718,7 @@ const quote = new Quote(
   'BTC-USD-2025' as InstrumentId,
   {
     kind: 'ONCHAIN',
-    protocolId: 'POLYMARKET_CTF',
+    protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
     chainId: KnownChainIds.POLYGON,
     conditionId: '0xabc123...' as ConditionId,
   },
@@ -778,7 +781,7 @@ const conditionId = '0xabc123...';
 ```typescript
 const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
 };
@@ -790,15 +793,15 @@ const conditionRef: OnChainConditionRef = {
 
 ```typescript
 if (asset.type === 'CURRENCY') {
-  console.log(asset.currency);  // TypeScript не знает что currency существует
+  console.log(asset.currency);  // Дискриминантная проверка сужает тип, но менее читаема
 }
 ```
 
-✅ Хорошо:
+✅ Хорошо (переиспользуемый type guard):
 
 ```typescript
 if (isCurrencyAsset(asset)) {
-  console.log(asset.currency);  // TypeScript знает что currency существует
+  console.log(asset.currency);  // TypeScript знает: asset is CurrencyAsset
 }
 ```
 

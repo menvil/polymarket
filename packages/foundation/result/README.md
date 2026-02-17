@@ -44,11 +44,33 @@ Type-safe обработка ошибок: явные типы вместо exce
 > Если chain normalizer бросает → `Err(оригинальная ошибка callback as E)` (last-resort fallback).
 > Если onReject/onError в `AsyncResult.from`/`ok` бросает → `Err(исключение из normalizer as E)`.
 >
+> ```typescript
+> // callback бросает → Err через normalizer (Promise остаётся resolved)
+> const r1 = await AsyncResult.ok(Promise.resolve(1), (e) => new Error(String(e)))
+>   .map(() => { throw new RangeError('boom'); }) // → Err(new Error('RangeError: boom'))
+>   .unwrapOr(null); // null
+> ```
+>
 > **Правило для E→F методов** (mapErr, mapErrAsync, or, orAsync, orAsyncLazy, orElse, orElseAsync):
 > исключения из callback → `Err(e as F)`. Normalizer для F недоступен; E-normalizer не вызывается.
 >
+> ```typescript
+> // callback в mapErr бросает → Err(e as F), E-normalizer не вызывается
+> const r2 = await AsyncResult.from(Promise.reject('oops'), (e) => new Error(String(e)))
+>   .mapErr(() => { throw new TypeError('mapErr failed'); }) // → Err(TypeError as F)
+>   .unwrapOr(null); // null
+> ```
+>
 > **`AsyncResult.from` без normalizer** → `AsyncResultChain<T, unknown>`.
 > Для конкретного E нужен `onReject`. `AsyncResult.ok` без normalizer тоже возвращает `unknown`.
+>
+> ```typescript
+> // Без normalizer: E = unknown (нельзя получить AsyncResultChain<T, SpecificError>)
+> const r3: AsyncResultChain<number, unknown> = AsyncResult.ok(Promise.resolve(42));
+>
+> // С normalizer: E = string (тип задаётся возвращаемым типом onError)
+> const r4: AsyncResultChain<number, string> = AsyncResult.ok(Promise.resolve(42), (e) => String(e));
+> ```
 >
 > **`mapUnsafe`** сохраняет старое поведение `map` (rejected Promise при throw).
 > Используйте, когда rejected Promise является желаемым поведением.
@@ -157,10 +179,10 @@ function divide(a: number, b: number): Result<number, string> {
 }
 
 // Используем с method chaining
-const result = toChain(divide(10, 2))
+const result = toChain(divide(10, 0))
   .map(x => x * 2)
   .map(x => x + 1)
-  .unwrapOr(0); // 11 (используйте unwrapOr вместо unwrap в production-коде)
+  .unwrapOr(0); // 0 (divide(10,0) вернул Err, unwrapOr возвращает fallback)
 
 // Или создаём chain и конвертируем в plain object
 const chain = OkChain(42).map(x => x * 2);
@@ -871,7 +893,7 @@ const message = await AsyncResult.ok(Promise.resolve(42)).match({
 
 ```typescript
 const value = await AsyncResult.ok(Promise.resolve(42)).unwrap(); // 42
-const fallback = await AsyncResult.ok(Promise.reject<number>('error')).unwrapOr(0); // 0
+const fallback = await AsyncResult.ok(Promise.reject<number>('error'), (err) => String(err)).unwrapOr(0); // 0
 const error = await AsyncResult.err('error').unwrapErr(); // 'error'
 ```
 

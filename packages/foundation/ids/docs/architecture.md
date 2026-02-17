@@ -277,7 +277,7 @@ function getSubaccountDepth(id: AccountId): number {
 
 #### Защита от длинных строк
 
-`parseAccountId` проверяет `str.length > maxLen` (default: `MAX_ACCOUNT_ID_STRING_LENGTH = 512`) до начала обработки. Кастомный лимит через `ParseAccountIdOptions.maxLen`.
+`parseAccountId` проверяет `str.length > maxLen` (default: `MAX_ACCOUNT_ID_STRING_LENGTH = 4096`) до начала обработки. Кастомный лимит через `ParseAccountIdOptions.maxLen`.
 
 ---
 
@@ -288,7 +288,11 @@ function getSubaccountDepth(id: AccountId): number {
 **Решение**: `VenueId` указывает площадку, где хранятся балансы/tokens.
 
 ```typescript
-type VenueId = 'POLYMARKET' | 'KALSHI' | ...;
+// Branded string (открытый тип): любой валидный идентификатор venue
+type VenueId = string & { readonly __brand: 'VenueId' };
+
+// Известные venues доступны через KnownVenues:
+// KnownVenues.POLYMARKET, KnownVenues.KALSHI, и др.
 
 // Balance всегда привязан к venue
 type Balance = {

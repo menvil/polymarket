@@ -737,7 +737,7 @@ describe('AsyncResultChain', () => {
           ok: throwingOkHandler,
           err: () => 'error',
         })
-      ).rejects.toThrow('Ok handler failed');
+      ).rejects.toThrow(/Exception in match handler:.*Ok handler failed/);
     });
 
     it('должен ловить exceptions из err handler и reject с wrapped message', async () => {
@@ -750,7 +750,7 @@ describe('AsyncResultChain', () => {
           ok: () => 'ok',
           err: throwingErrHandler,
         })
-      ).rejects.toThrow('Err handler failed');
+      ).rejects.toThrow(/Exception in match handler:.*Err handler failed/);
     });
   });
 
@@ -1220,8 +1220,8 @@ describe('AsyncResultChain', () => {
 
         expect(result.ok).toBe(true);
         if (result.ok) expect(result.value).toBe(42);
-        // Даём microtask queue возможность доставить unhandledRejection, если бы он был
-        await Promise.resolve();
+        // Даём macrotask queue возможность доставить unhandledRejection, если бы он был
+        await new Promise<void>((r) => setTimeout(r, 0));
         expect(handler).not.toHaveBeenCalled();
       } finally {
         process.off('unhandledRejection', handler);

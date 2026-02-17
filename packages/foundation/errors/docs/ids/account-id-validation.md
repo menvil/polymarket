@@ -127,7 +127,7 @@ if (result.ok) {
 } else {
   const error = result.error;
   console.error('Error:', error.message);
-  // "Invalid userId: invalid format (value: "user\x00name")"
+  // "Invalid userId: contains control characters (value: "user\x00name")"
 }
 ```
 
@@ -143,12 +143,7 @@ function accountIdForSubaccount(
 ): Result<AccountId, AccountIdDepthError | AccountIdValidationError> {
   // Сначала валидация имени...
   if (!isValidStringField(name)) {
-    let reason = 'invalid format';
-    if (name.length === 0) {
-      reason = 'empty string';
-    } else if (name.length > 256) {
-      reason = 'exceeds 256 characters';
-    }
+    const reason = stringFieldFailReason(name);
 
     return Err(new AccountIdValidationError(
       (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,

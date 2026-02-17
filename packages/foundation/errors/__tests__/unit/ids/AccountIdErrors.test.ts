@@ -108,7 +108,7 @@ describe('AccountIdValidationError', () => {
   describe('интеграция с wrapOp', () => {
     it('должен работать через Result и wrapOp', () => {
       const resultFn = (userId: string) => {
-        if (!userId || userId.length === 0) {
+        if (!userId) {
           return Err(
             new AccountIdValidationError(
               (ctx) => `Invalid ${ctx.field}: ${ctx.reason}`,

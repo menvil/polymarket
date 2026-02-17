@@ -1,5 +1,5 @@
 import type { WalletAddress } from './WalletAddress.js';
-import { parseWalletAddress } from './WalletAddress.js';
+import { parseWalletAddress, walletAddressEquals } from './WalletAddress.js';
 import type { VenueId } from './VenueId.js';
 import { asVenueId } from './VenueId.js';
 import type { Result } from '@polymarket/result';
@@ -171,7 +171,7 @@ export interface ParseAccountIdOptions {
   /**
    * Максимальная длина входной строки
    *
-   * @default MAX_ACCOUNT_ID_STRING_LENGTH (512)
+   * @default MAX_ACCOUNT_ID_STRING_LENGTH (4096)
    */
   maxLen?: number;
 
@@ -243,7 +243,6 @@ export interface ParseAccountIdOptions {
  * ```
  */
 export function getSubaccountDepth(id: AccountId): number {
-  const SAFETY_MARGIN = 10;
   const MAX_ITERATIONS = MAX_SUBACCOUNT_DEPTH + SAFETY_MARGIN;
 
   // Используем WeakSet: не удерживает ссылки и работает с объектами любого типа
@@ -307,10 +306,10 @@ export function getSubaccountDepth(id: AccountId): number {
  * ```
  */
 export function accountIdFromWallet(address: WalletAddress): AccountId {
-  return {
+  return Object.freeze({
     kind: 'WALLET',
     address,
-  };
+  });
 }
 
 /**
@@ -358,11 +357,11 @@ export function accountIdFromVenue(
     ));
   }
 
-  return Ok({
+  return Ok(Object.freeze({
     kind: 'VENUE',
     venueId,
     userId,
-  });
+  }));
 }
 
 /**
@@ -427,11 +426,11 @@ export function accountIdForSubaccount(
     ));
   }
 
-  return Ok({
+  return Ok(Object.freeze({
     kind: 'SUBACCOUNT',
     base,
     name,
-  });
+  }));
 }
 
 /**
@@ -804,7 +803,7 @@ function accountIdEqualsImpl(a: AccountId, b: AccountId, depth: number): boolean
   }
 
   if (a.kind === 'WALLET' && b.kind === 'WALLET') {
-    return a.address.toLowerCase() === b.address.toLowerCase();
+    return walletAddressEquals(a.address, b.address);
   }
 
   if (a.kind === 'VENUE' && b.kind === 'VENUE') {

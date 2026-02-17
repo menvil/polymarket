@@ -152,6 +152,7 @@ const KNOWN_SOURCE_SET = new Set<string>(Object.values(KnownMarketDataSources));
  * ```
  */
 export function isKnownMarketDataSource(id: string): id is MarketDataSourceId {
+  if (typeof id !== 'string') return false;
   return KNOWN_SOURCE_SET.has(id);
 }
 

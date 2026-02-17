@@ -542,7 +542,7 @@ export class AsyncResultChain<T, E> {
     try {
       return result.ok ? await handlers.ok(result.value) : await handlers.err(result.error);
     } catch (error) {
-      throw new Error(`Exception in match handler: ${formatValue(error)}`);
+      throw new Error(`Exception in match handler: ${formatValue(error)}`, { cause: error });
     }
   }
 

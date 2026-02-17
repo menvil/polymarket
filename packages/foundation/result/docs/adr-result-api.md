@@ -140,7 +140,7 @@ AsyncResult.ok(promise, onError: (e: unknown) => E): AsyncResultChain<T, E>
 | `mapUnsafe` (sync)    | Да                   | → rejected Promise     |
 | `tap`                 | Да                   | → rejected Promise     |
 | `tapErr`              | Да                   | → rejected Promise     |
-| `match`               | Да                   | → rejected Promise     |
+| `match`               | Да                   | → rejected Promise (wrapped) |
 
 `map` перехватывает исключения и возвращает `Err` — **safe по умолчанию**.
 
@@ -153,7 +153,7 @@ AsyncResult.ok(promise, onError: (e: unknown) => E): AsyncResultChain<T, E>
 намеренно отличается: они не являются transform-методами и не должны
 маскировать ошибки пользователя.
 
-### 5. Структура экспортов
+### 5. Структура экспортов и unsafe граница
 
 **Основной путь (рекомендован для новых пользователей):**
 ```typescript
@@ -170,16 +170,7 @@ import { OkChain, ErrChain, toChain, R } from '@polymarket/result/chain';
 import { AsyncResult, AsyncResultChain } from '@polymarket/result/async';
 ```
 
-**Unsafe-операции (явно помечены):**
-```typescript
-import { unwrap, expectOk } from '@polymarket/result/unsafe';
-```
-
-### 6. Структура экспортов и unsafe граница
-
-`unwrap` **удалён из root-экспорта** `@polymarket/result`.
-Он доступен только через `@polymarket/result/unsafe`:
-
+**Unsafe-операции** (`unwrap` удалён из root-экспорта; доступен только через `/unsafe`):
 ```typescript
 // ✅ Правильно:
 import { unwrap, expectOk } from '@polymarket/result/unsafe';
@@ -191,7 +182,7 @@ import { unwrap, expectOk } from '@polymarket/result/unsafe';
 Root-экспорт содержит только safe операции. Это исключает случайное
 использование unsafe функций без явного намерения.
 
-### 7. Обратная совместимость
+### 6. Обратная совместимость
 
 Начиная с 0.1.0 `unwrap` перемещён из root в `/unsafe` субпуть.
 Это breaking change для кода импортирующего `unwrap` из `@polymarket/result`.
