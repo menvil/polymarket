@@ -21,7 +21,7 @@
  * 1. Trim крайних пробелов
  * 2. Отклонить пустую строку
  * 3. Отклонить строки длиннее maxLength
- * 4. Отклонить строки с control characters (U+0000..U+001F, U+007F..U+009F)
+ * 4. Отклонить строки с control characters (U+0000..U+001F, U+007F..U+009F) — проверка через charCodeAt
  *
  * @example
  * ```typescript
@@ -47,9 +47,11 @@ export function validateBrandedId(raw: string, maxLength: number): string | unde
   }
 
   // Control characters check (U+0000..U+001F, U+007F..U+009F)
-  // eslint-disable-next-line no-control-regex
-  if (/[\u0000-\u001F\u007F-\u009F]/.test(trimmed)) {
-    return undefined;
+  for (let i = 0; i < trimmed.length; i++) {
+    const code = trimmed.charCodeAt(i);
+    if ((code >= 0x00 && code <= 0x1f) || (code >= 0x7f && code <= 0x9f)) {
+      return undefined;
+    }
   }
 
   return trimmed;
