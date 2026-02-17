@@ -30,16 +30,20 @@ Type-safe обработка ошибок: явные типы вместо exce
 | `fromNullable`              | Никогда             | —                            | Ядро              |
 | `fromThrowable`             | Никогда             | **Да** → `Err`               | Ядро              |
 | `unwrapOr`, `unwrapOrElse`  | Никогда             | Нет — propagate              | Ядро              |
-| `unwrap`                    | **Да** при Err      | —                            | `result.ts`, `/unsafe` |
+| `unwrap`                    | **Да** при Err      | —                            | `/unsafe` только  |
 | `expectOk` (unsafe)         | **Да** при Err      | —                            | `/unsafe`         |
 | `AsyncResultChain.mapAsync` | Никогда             | **Да** → `Err`               | AsyncResultChain  |
 | `AsyncResultChain.flatMapAsync` | Никогда         | **Да** → `Err`               | AsyncResultChain  |
-| `AsyncResultChain.map`      | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
+| `AsyncResultChain.map`      | Никогда             | **Да** → `Err`               | AsyncResultChain  |
+| `AsyncResultChain.mapUnsafe`| Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 | `AsyncResultChain.tap`      | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 | `AsyncResultChain.tapErr`   | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 
-> **Правило для transform-методов AsyncResultChain** (mapAsync, flatMapAsync, mapErr и др.):
+> **Правило для transform-методов AsyncResultChain** (map, mapAsync, flatMapAsync, mapErr и др.):
 > исключения из callback превращаются в `Err`. Promise цепочки остаётся resolved.
+>
+> **`mapUnsafe`** сохраняет старое поведение `map` (rejected Promise при throw).
+> Используйте когда rejected Promise является желаемым поведением.
 >
 > **Правило для side-effect методов** (tap, tapErr, match):
 > исключения из callback → rejected Promise. Это намеренно: баг в side-effect не должен маскироваться.
@@ -1278,14 +1282,12 @@ const value = unwrapOrElse(result, err => computeDefault(err));
 ### Unsafe API (явно изолирован)
 
 ```typescript
-// ⛔ Раньше (неочевидно что unwrap бросает):
-import { unwrap } from '@polymarket/result';
-
-// ✅ Сейчас (явный imports из unsafe):
+// ✅ Unsafe операции — только через /unsafe субпуть:
 import { unwrap, expectOk, unwrapErr } from '@polymarket/result/unsafe';
-// или по-прежнему из основного пути (backward compat):
-import { unwrap } from '@polymarket/result';
 ```
+
+> ⚠️ `unwrap` **удалён из root-экспорта** `@polymarket/result`.
+> Используйте `@polymarket/result/unsafe` для явного импорта unsafe операций.
 
 ### AsyncResultChain — normalizer для исключений
 
@@ -1303,7 +1305,7 @@ const chain = AsyncResult.from(
 ### Subpath imports (рекомендуется для новых проектов)
 
 ```typescript
-// ⛔ Было (всё из одного импорта):
+// ⛔ Было (всё из одного импорта, unsafe вместе с safe):
 import { OkChain, AsyncResult, unwrap, fromPromise } from '@polymarket/result';
 
 // ✅ Стало (явное разделение по назначению):

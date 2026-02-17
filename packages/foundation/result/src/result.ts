@@ -433,7 +433,7 @@ export const flatMapW = <T, U, E, F>(
   result: Result<T, E>,
   fn: (value: T) => Result<U, F>
 ): Result<U, E | F> => {
-  return result.ok ? (fn(result.value) as Result<U, E | F>) : result;
+  return result.ok ? fn(result.value) : result;
 };
 
 /**
@@ -465,7 +465,7 @@ export const mapErrW = <T, E, F>(
   result: Result<T, E>,
   fn: (error: E) => F
 ): Result<T, F> => {
-  return result.ok ? (result as unknown as Result<T, F>) : Err(fn(result.error));
+  return result.ok ? (result as Result<T, F>) : Err(fn(result.error));
 };
 
 /**
@@ -499,7 +499,7 @@ export const orElseW = <T, E, F>(
   result: Result<T, E>,
   fn: (error: E) => Result<T, F>
 ): Result<T, F> => {
-  return result.ok ? (result as unknown as Result<T, F>) : fn(result.error);
+  return result.ok ? (result as Result<T, F>) : fn(result.error);
 };
 
 /**

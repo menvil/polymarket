@@ -245,16 +245,30 @@ describe('[Parity] unwrapOr - FP vs Chain vs Async', () => {
 
 // ============================================================
 // AsyncResultChain.map — throw из callback
-// (ADR: sync map НЕ перехватывает throw — это rejected Promise)
+// (ADR: sync map перехватывает throw и возвращает Err — safe по умолчанию)
 // ============================================================
 describe('AsyncResultChain.map — throw из callback', () => {
-  it('должен стать rejected Promise если fn бросает синхронно', async () => {
+  it('должен перехватить синхронный throw и вернуть Err (safe по умолчанию)', async () => {
     const chain = AsyncResult.from(Promise.resolve(Ok(42)))
       .map((value) => {
         throw new Error(`Sync throw from map: ${value}`);
       });
 
-    await expect(chain.toPromise()).rejects.toThrow('Sync throw from map: 42');
+    const result = await chain.toPromise();
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(Error);
+      expect((result.error as Error).message).toBe('Sync throw from map: 42');
+    }
+  });
+
+  it('mapUnsafe должен стать rejected Promise если fn бросает синхронно', async () => {
+    const chain = AsyncResult.from(Promise.resolve(Ok(42)))
+      .mapUnsafe((value) => {
+        throw new Error(`Sync throw from mapUnsafe: ${value}`);
+      });
+
+    await expect(chain.toPromise()).rejects.toThrow('Sync throw from mapUnsafe: 42');
   });
 
   it('mapAsync должен перехватить throw и вернуть Err', async () => {

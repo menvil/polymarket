@@ -194,6 +194,53 @@ describe('AsyncResultChain', () => {
 
       expect(result).toBe('12');
     });
+
+    it('должен перехватить throw из fn и вернуть Err (safe по умолчанию)', async () => {
+      const result = await AsyncResult.ok(Promise.resolve(5))
+        .map((x) => {
+          if (x === 5) throw new Error('map threw');
+          return x * 2;
+        })
+        .toPromise();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(Error);
+        expect((result.error as Error).message).toBe('map threw');
+      }
+    });
+  });
+
+  describe('Метод mapUnsafe()', () => {
+    it('должен трансформировать значение синхронно', async () => {
+      const result = await AsyncResult.ok(Promise.resolve(5))
+        .mapUnsafe((x) => x * 2)
+        .unwrap();
+
+      expect(result).toBe(10);
+    });
+
+    it('должен стать rejected Promise если fn бросает', async () => {
+      const chain = AsyncResult.ok(Promise.resolve(5))
+        .mapUnsafe((x) => {
+          throw new Error(`mapUnsafe throw: ${x}`);
+        });
+
+      await expect(chain.toPromise()).rejects.toThrow('mapUnsafe throw: 5');
+    });
+
+    it('должен пропускать Err (fn не вызывается)', async () => {
+      let called = false;
+      const result = await AsyncResult.err('error')
+        .mapUnsafe(() => {
+          called = true;
+          return 99;
+        })
+        .toPromise();
+
+      expect(called).toBe(false);
+      expect(result.ok).toBe(false);
+    });
   });
 
   describe('Метод flatMapAsync()', () => {

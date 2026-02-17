@@ -82,6 +82,25 @@ unsafe.ts = явный модуль для операций, бросающих 
   когда `E = unknown` (тип известен из контекста); в этом случае `E` честно отражает `unknown`
 - Явный `onError` даёт полный контроль над нормализацией — рекомендуемый подход
 
+**Overload-контракт `AsyncResult.from` / `AsyncResult.ok`:**
+
+```typescript
+// from — без normalizer: E берётся из Promise<Result<T, E>>
+AsyncResult.from(promise: Promise<Result<T, E>>): AsyncResultChain<T, E>
+
+// from — с normalizer: E определяется возвращаемым типом onReject
+AsyncResult.from(promise, onReject: (e: unknown) => E): AsyncResultChain<T, E>
+
+// ok — без normalizer: E = unknown (rejection reason неизвестен)
+AsyncResult.ok(promise: Promise<T>): AsyncResultChain<T, unknown>
+
+// ok — с normalizer: E определяется возвращаемым типом onError
+AsyncResult.ok(promise, onError: (e: unknown) => E): AsyncResultChain<T, E>
+```
+
+Без normalizer нельзя получить `AsyncResultChain<*, SpecificError>` "из воздуха"
+через `AsyncResult.ok` — тип ошибки честно отражает `unknown`.
+
 **Widen-варианты (W-суффикс):**
 - `flatMapW<U, F>(fn: (T) => Result<U, F>): Result<U, E | F>` — fn может вернуть
   другой тип ошибки, результирующий тип расширяется до `E | F`
@@ -95,6 +114,7 @@ unsafe.ts = явный модуль для операций, бросающих 
 
 | Метод                 | Бросает из callback  | Поведение              |
 |-----------------------|----------------------|------------------------|
+| `map` (sync, safe)    | Да                   | → `Err(onError(e))`    |
 | `mapAsync`            | Да                   | → `Err(onError(e))`    |
 | `flatMapAsync`        | Да                   | → `Err(onError(e))`    |
 | `flatMap` (sync)      | Да                   | → `Err(onError(e))`    |
@@ -103,9 +123,15 @@ unsafe.ts = явный модуль для операций, бросающих 
 | `orElseAsync`         | Да                   | → `Err(onError(e))`    |
 | `orElse` (sync)       | Да                   | → `Err(onError(e))`    |
 | `orAsyncLazy`         | Да                   | → `Err(onError(e))`    |
+| `mapUnsafe` (sync)    | Да                   | → rejected Promise     |
 | `tap`                 | Да                   | → rejected Promise     |
 | `tapErr`              | Да                   | → rejected Promise     |
 | `match`               | Да                   | → rejected Promise     |
+
+`map` перехватывает исключения и возвращает `Err` — **safe по умолчанию**.
+
+`mapUnsafe` — явно unsafe вариант: исключение → rejected Promise.
+Используйте только когда rejected Promise является желаемым поведением.
 
 `tap`/`tapErr`/`match` — *side-effect методы*, их поведение при исключении
 намеренно отличается: они не являются transform-методами и не должны
@@ -133,10 +159,27 @@ import { AsyncResult, AsyncResultChain } from '@polymarket/result/async';
 import { unwrap, expectOk } from '@polymarket/result/unsafe';
 ```
 
-### 6. Обратная совместимость
+### 6. Структура экспортов и unsafe граница
 
-Для текущей версии (0.1.x) все API доступны через основной путь `@polymarket/result`
-для backward compatibility. Начиная с 0.2.0 рекомендуется использовать subpath imports.
+`unwrap` **удалён из root-экспорта** `@polymarket/result`.
+Он доступен только через `@polymarket/result/unsafe`:
+
+```typescript
+// ✅ Правильно:
+import { unwrap, expectOk } from '@polymarket/result/unsafe';
+
+// ⛔ Больше не работает:
+// import { unwrap } from '@polymarket/result';
+```
+
+Root-экспорт содержит только safe операции. Это исключает случайное
+использование unsafe функций без явного намерения.
+
+### 7. Обратная совместимость
+
+Начиная с 0.1.0 `unwrap` перемещён из root в `/unsafe` субпуть.
+Это breaking change для кода импортирующего `unwrap` из `@polymarket/result`.
+Обновление: заменить `from '@polymarket/result'` на `from '@polymarket/result/unsafe'`.
 
 ---
 

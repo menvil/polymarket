@@ -56,8 +56,6 @@
  *
  * ```typescript
  * import { unwrap, expectOk } from '@polymarket/result/unsafe';
- * // или из основного пути (для backward compatibility):
- * import { unwrap } from '@polymarket/result';
  * ```
  *
  * ## Widen-варианты для union-типов ошибок
@@ -101,8 +99,6 @@ export {
   // Извлечение значения (safe)
   unwrapOr,
   unwrapOrElse,
-  // Unsafe (для backward compatibility — предпочитайте @polymarket/result/unsafe)
-  unwrap,
   // Хелперы для интеграции с внешним миром
   tryCatch,
   tryAsync,

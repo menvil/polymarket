@@ -7,9 +7,13 @@
  *
  * ## Единая политика обработки исключений
  *
- * **Transform-методы** (mapAsync, flatMapAsync, flatMap, mapErrAsync, mapErr,
+ * **Transform-методы** (map, mapAsync, flatMapAsync, flatMap, mapErrAsync, mapErr,
  * orElseAsync, orElse, orAsyncLazy) **перехватывают** исключения из callback
  * и преобразуют их в `Err(onError(exception))`. Promise цепочки остаётся resolved.
+ *
+ * **Небезопасный transform** (`mapUnsafe`) **НЕ перехватывает** исключения —
+ * они приводят к rejected Promise. Используйте только когда rejected Promise
+ * является желаемым поведением.
  *
  * **Side-effect методы** (tap, tapErr) **НЕ перехватывают** исключения —
  * они приводят к rejected Promise. Исключение в side-effect методе — это баг
@@ -137,17 +141,16 @@ export class AsyncResultChain<T, E> {
   }
 
   /**
-   * Трансформирует успешное значение синхронно
+   * Трансформирует успешное значение синхронно (safe по умолчанию)
    *
    * @param fn - Функция для трансформации значения
    * @returns Новый AsyncResultChain
    *
    * @remarks
-   * ⚠️ Если fn выбросит исключение, Promise будет rejected.
-   * Для безопасной обработки исключений используйте mapAsync.
+   * Автоматически перехватывает исключения из fn и преобразует их в `Err`
+   * через normalizer onError. Promise цепочки остаётся resolved (не rejected).
    *
-   * Side-effect semantics: этот метод не перехватывает исключения намеренно —
-   * исключение в синхронной трансформации является багом, который не следует маскировать.
+   * Для поведения при котором исключение → rejected Promise используйте `mapUnsafe`.
    *
    * @example
    * ```typescript
@@ -156,6 +159,40 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   map<U>(fn: (value: T) => U): AsyncResultChain<U, E> {
+    const newPromise = this.promise.then((result) => {
+      if (result.ok) {
+        try {
+          return Ok(fn(result.value)) as Result<U, E>;
+        } catch (error) {
+          return Err(this.normalize(error)) as Result<U, E>;
+        }
+      }
+      return result as Result<U, E>;
+    });
+    return new AsyncResultChain(newPromise, this.onError);
+  }
+
+  /**
+   * Трансформирует успешное значение синхронно (небезопасная версия)
+   *
+   * @param fn - Функция для трансформации значения
+   * @returns Новый AsyncResultChain
+   *
+   * @remarks
+   * ⚠️ Если fn выбросит исключение, Promise будет rejected.
+   * Это небезопасная версия `map`. Для автоматического перехвата исключений
+   * используйте `map` (safe по умолчанию) или `mapAsync`.
+   *
+   * Предназначен для случаев когда rejected Promise является желаемым поведением
+   * (например, если исключение из callback должно прервать всю цепочку).
+   *
+   * @example
+   * ```typescript
+   * const result = AsyncResult.from(getUser('123'))
+   *   .mapUnsafe(user => user.name); // rejected если fn бросает
+   * ```
+   */
+  mapUnsafe<U>(fn: (value: T) => U): AsyncResultChain<U, E> {
     const newPromise = this.promise.then((result) => {
       if (result.ok) {
         return Ok(fn(result.value)) as Result<U, E>;
@@ -843,7 +880,7 @@ export const AsyncResult = {
    * // result2: Error('Network error')
    * ```
    */
-  from: <T, E>(
+  from: (<T, E>(
     promise: Promise<Result<T, E>>,
     onReject?: (error: unknown) => E
   ): AsyncResultChain<T, E> => {
@@ -860,6 +897,18 @@ export const AsyncResult = {
       return Err(error as E) as Result<T, E>;
     });
     return new AsyncResultChain(safePromise, onReject);
+  }) as {
+    /**
+     * Без normalizer — тип ошибки из Promise<Result<T,E>>.
+     * Promise rejections будут обёрнуты в Err через небезопасный каст (error as E).
+     * Для строгой типизации rejection используйте перегрузку с onReject.
+     */
+    <T, E>(promise: Promise<Result<T, E>>): AsyncResultChain<T, E>;
+    /**
+     * С normalizer — E определяется возвращаемым типом onReject.
+     * Гарантирует type-safe обработку Promise rejections.
+     */
+    <T, E>(promise: Promise<Result<T, E>>, onReject: (error: unknown) => E): AsyncResultChain<T, E>;
   },
 
   /**
@@ -884,7 +933,7 @@ export const AsyncResult = {
    * ).unwrap();
    * ```
    */
-  ok: <T, E = unknown>(
+  ok: (<T, E = unknown>(
     promise: Promise<T>,
     onError?: (error: unknown) => E
   ): AsyncResultChain<T, E> => {
@@ -902,6 +951,16 @@ export const AsyncResult = {
       }),
       mapError
     );
+  }) as {
+    /**
+     * Без normalizer — E = unknown (rejection reason неизвестен).
+     */
+    <T>(promise: Promise<T>): AsyncResultChain<T, unknown>;
+    /**
+     * С normalizer — E определяется возвращаемым типом onError.
+     * Гарантирует type-safe обработку Promise rejections.
+     */
+    <T, E>(promise: Promise<T>, onError: (error: unknown) => E): AsyncResultChain<T, E>;
   },
 
   /**
