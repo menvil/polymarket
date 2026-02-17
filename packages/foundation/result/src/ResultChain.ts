@@ -34,9 +34,13 @@ import {
   unwrapOrElse as unwrapOrElseFn,
   isOk,
   isErr,
-  formatValue,
 } from './result.js';
-import { unwrap as unwrapFn } from './unsafe.js';
+import {
+  unwrap as unwrapFn,
+  expectOk as expectOkFn,
+  unwrapErr as unwrapErrFn,
+  expectErr as expectErrFn,
+} from './unsafe.js';
 
 /**
  * Класс для method chaining с Result
@@ -218,11 +222,7 @@ export class ResultChain<T, E> {
    * ```
    */
   unwrapErr(): E {
-    if (this.data.ok) {
-      const valueInfo = formatValue(this.data.value);
-      throw new Error(`Called unwrapErr on Ok result: ${valueInfo}`);
-    }
-    return this.data.error;
+    return unwrapErrFn(this.data);
   }
 
   /**
@@ -428,11 +428,7 @@ export class ResultChain<T, E> {
    * ```
    */
   expect(message: string): T {
-    if (!this.data.ok) {
-      const errorInfo = formatValue(this.data.error);
-      throw new Error(`${message}: ${errorInfo}`);
-    }
-    return this.data.value;
+    return expectOkFn(this.data, message);
   }
 
   /**
@@ -449,11 +445,7 @@ export class ResultChain<T, E> {
    * ```
    */
   expectErr(message: string): E {
-    if (this.data.ok) {
-      const valueInfo = formatValue(this.data.value);
-      throw new Error(`${message}: expected Err but got Ok(${valueInfo})`);
-    }
-    return this.data.error;
+    return expectErrFn(this.data, message);
   }
 
   /**

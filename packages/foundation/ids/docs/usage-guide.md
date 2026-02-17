@@ -22,7 +22,7 @@ import {
 } from '@polymarket/ids';
 
 // Wallet account
-const walletAccount: AccountId = accountIdFromWallet(parseWalletAddress('0x1234...')!);
+const walletAccount: AccountId = accountIdFromWallet(parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!);
 
 // ConditionRef — on-chain (Polymarket)
 const conditionId = parseConditionId('0x4869df2f6745f3c59c91af1c9d6dc75a5282a3d6a15b7c8e9f2d1a3b4c5e6f7a');
@@ -158,7 +158,7 @@ const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as ConditionId,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
 // 3. Получаем котировку
@@ -224,7 +224,7 @@ const conditionRef: ConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as ConditionId,  // реальный 32-byte hex в продакшене
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
 // 3. Получаем live котировку
@@ -247,6 +247,7 @@ if (isSimulator(executionVenue)) {
     quantity: 100,
   };
 
+  // external: simulateOrder
   await simulateOrder(simulatedOrder);
 }
 ```
@@ -291,6 +292,7 @@ const conditionRef: ConditionRef = {
   conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
+// external: loadHistoricalQuotes, strategy.evaluate, simulateOrder, getBacktestResults
 // 2. Загружаем исторические данные
 const historicalQuotes = loadHistoricalQuotes(marketDataSource, conditionRef);
 
@@ -355,7 +357,7 @@ const polymarketCondition: ConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as ConditionId,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
 // Kalshi - off-chain (discriminated union с kind: 'OFFCHAIN')
@@ -525,6 +527,7 @@ import {
   accountIdFromWallet,
   accountIdFromVenue,
   accountIdForSubaccount,
+  accountIdToString,
   KnownVenues,
   AssetIdHelpers,
   parseWalletAddress,
@@ -563,7 +566,7 @@ const accounts = [walletAccount, tradingAccount, hedgingAccount];
 
 for (const account of accounts) {
   const balance = getBalance(account, KnownVenues.POLYMARKET, AssetIdHelpers.USDC);
-  console.log(`Account ${account}: ${balance.amount}`);
+  console.log(`Account ${accountIdToString(account)}: ${balance.amount}`);
 }
 ```
 
@@ -633,7 +636,7 @@ const good: ConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as ConditionId,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 ```
 
@@ -744,7 +747,7 @@ const quote = new Quote(
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
     chainId: KnownChainIds.POLYGON,
-    conditionId: '0xabc123...' as ConditionId,
+    conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
   },
   0.48,
   0.52,
@@ -765,6 +768,7 @@ import {
   parseWalletAddress,
   accountIdFromWallet,
 } from '@polymarket/ids';
+// external: Money
 
 // Balance entity теперь содержит venueId и AssetId
 class Balance {
@@ -807,7 +811,7 @@ const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as ConditionId,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 ```
 
@@ -899,7 +903,7 @@ Type 'string' is not assignable to type 'OutcomeKey'
 const outcome: OutcomeKey = 'UP' as OutcomeKey;  // Unsafe cast!
 
 // ✅ Хорошо
-import { BinaryOutcome, parseOutcomeKey } from '@polymarket/ids';
+import { BinaryOutcome, parseOutcomeKey, AssetIdHelpers } from '@polymarket/ids';
 
 // Compile-time константы
 const outcome = BinaryOutcome.UP;
@@ -908,6 +912,8 @@ const outcome = BinaryOutcome.UP;
 const userInput = 'UP';
 const parsed = parseOutcomeKey(userInput);
 if (parsed) {
+  // conditionRef — OnChainConditionRef, полученный ранее (см. примеры выше)
+  const conditionRef = /* your OnChainConditionRef here */ null as never;
   // fromOutcomeToken — safe-контракт: Result, не throw
   const tokenResult = AssetIdHelpers.fromOutcomeToken(conditionRef, parsed);
   if (tokenResult.ok) {
@@ -949,7 +955,7 @@ const str: string = accountIdToString(accountId);  // ✅ корректная �
 **`WalletAddress` — branded string, assignable к `string`**:
 
 ```typescript
-const wallet: WalletAddress = parseWalletAddress('0x...')!;
+const wallet: WalletAddress = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
 const str: string = wallet;  // ✅ OK — WalletAddress является подтипом string
 ```
 

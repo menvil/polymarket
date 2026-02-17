@@ -81,8 +81,14 @@ function truncateForError(value: string): string {
  * - Не содержит control characters (U+0000..U+001F, U+007F..U+009F)
  */
 function validateStringField(value: string): string | null {
-  if (value.length === 0) return 'empty string';
-  if (value.length > 256) return 'exceeds 256 characters';
+  // Предел 256 измеряется в Unicode code points, а не UTF-16 code units.
+  // [...value] разбивает строку по code points (суррогатные пары считаются как один символ).
+  const codePoints = [...value];
+  if (codePoints.length === 0) return 'empty string';
+  if (codePoints.length > 256) return 'exceeds 256 characters';
+  // Цикл по UTF-16 code units: control characters в диапазонах U+0000..U+001F и
+  // U+007F..U+009F являются однобайтовыми и никогда не составляют суррогатные пары,
+  // поэтому charCodeAt корректен для их обнаружения.
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);
     if ((code >= 0x00 && code <= 0x1f) || (code >= 0x7f && code <= 0x9f)) {
@@ -692,7 +698,10 @@ function parseAccountIdImpl(
   }
 
   if (kind === 'sub') {
-    if (parts.length < 3) {
+    // Минимальная структура: ['sub', 'wallet', '0x...', 'name'] — 4 элемента.
+    // 3-элементные строки вроде 'sub:something:name' не имеют валидного base account,
+    // отклоняем сразу, не тратя ресурсы на рекурсивный вызов parse.
+    if (parts.length < 4) {
       return undefined;
     }
 

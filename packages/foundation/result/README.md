@@ -12,7 +12,7 @@ Type-safe обработка ошибок: явные типы вместо exce
 - ✅ **Plain objects** - легкая сериализация через JSON.stringify
 - ✅ **Три стиля API**: FP-функции / OOP-chain / Async-chain
 - ✅ **Subpath exports**: `/chain`, `/async`, `/unsafe` для чистых импортов
-- ✅ **Высокое покрытие тестами** - >90% покрытие (пороги: 84% branches, 90% functions/lines/statements)
+- ✅ **Высокое покрытие тестами** - пороги: 84% branches, 90% functions, 90% lines, 90% statements
 
 ## 🛡️ Матрица гарантий API
 
@@ -350,6 +350,48 @@ const value = unwrap(result); // 42
 
 const error = Err('упс');
 unwrap(error); // throws Error: 'Called unwrap on Err result: упс'
+```
+
+### expectOk(result, message) ⚠️ Unsafe — только через `/unsafe`
+
+Извлекает значение из Ok с кастомным сообщением ошибки. **Небезопасно** — выбрасывает исключение если Err.
+
+```typescript
+import { expectOk } from '@polymarket/result/unsafe';
+
+const result = Ok(42);
+const value = expectOk(result, 'Результат должен быть Ok'); // 42
+
+const error = Err('validation failed');
+expectOk(error, 'Результат должен быть Ok'); // throws Error: 'Результат должен быть Ok: validation failed'
+```
+
+### unwrapErr(result) ⚠️ Unsafe — только через `/unsafe`
+
+Извлекает ошибку из Err. **Небезопасно** — выбрасывает исключение если Ok. Используется преимущественно в тестах.
+
+```typescript
+import { unwrapErr } from '@polymarket/result/unsafe';
+
+const result = Err('network error');
+const error = unwrapErr(result); // 'network error'
+
+const success = Ok(42);
+unwrapErr(success); // throws Error: 'Called unwrapErr on Ok result: 42'
+```
+
+### expectErr(result, message) ⚠️ Unsafe — только через `/unsafe`
+
+Извлекает ошибку из Err с кастомным сообщением. **Небезопасно** — выбрасывает исключение если Ok. Используется преимущественно в тестах.
+
+```typescript
+import { expectErr } from '@polymarket/result/unsafe';
+
+const result = Err('validation failed');
+const err = expectErr(result, 'Should have failed'); // 'validation failed'
+
+const success = Ok(42);
+expectErr(success, 'Should have failed'); // throws Error: 'Should have failed: expected Err but got Ok(42)'
 ```
 
 ### unwrapOr(result, defaultValue)
@@ -1287,7 +1329,7 @@ if (userResult.ok) {
 
 ### Новые функции в ядре (result.ts)
 
-С версии текущего рефакторинга следующие функции переехали из `ResultChain.ts` в `result.ts`
+Начиная с версии **v0.1.0** следующие функции переехали из `ResultChain.ts` в `result.ts`
 и стали частью FP-ядра. Они по-прежнему re-exported из `ResultChain` для обратной совместимости.
 
 ```typescript

@@ -16,7 +16,7 @@ import {
   unwrapOr,
   formatValue,
 } from '../../src/result';
-import { unwrap } from '../../src/unsafe.js';
+import { unwrap } from '../../src/unsafe';
 
 describe('Result<T, E>', () => {
   describe('Ok constructor', () => {

@@ -42,9 +42,9 @@ export const SUPPORTED_CURRENCIES = ['USDC'] as const;
  * const currency: SupportedCurrency = 'USDC'; // ✅ OK
  * const currency2: SupportedCurrency = 'BTC'; // ❌ Compile error (не в списке)
  *
- * // Type guard
- * function isSupportedCurrency(value: string): value is SupportedCurrency {
- *   return SUPPORTED_CURRENCIES.includes(value as any);
+ * // Используй экспортируемый type guard (принимает unknown, O(1) через Set):
+ * if (isSupportedCurrency(input)) {
+ *   // TypeScript знает: input is SupportedCurrency
  * }
  * ```
  */

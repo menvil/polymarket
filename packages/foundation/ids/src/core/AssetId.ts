@@ -168,9 +168,11 @@ export const AssetId = {
     conditionRef: OnChainConditionRef,
     outcomeKey: OutcomeKey
   ): Result<AssetId, AssetIdValidationError> {
-    // Защита от corrupted runtime-ввода (as any): conditionRef должен быть объектом
+    // Защита от corrupted runtime-ввода (as any): conditionRef должен быть объектом.
+    // null проверяется явно, т.к. typeof null === 'object'; undefined отбрасывается
+    // через typeof !== 'object' (typeof undefined === 'undefined').
     const conditionRefRaw = conditionRef as unknown;
-    if (conditionRefRaw === null || conditionRefRaw === undefined || typeof conditionRefRaw !== 'object') {
+    if (conditionRefRaw === null || typeof conditionRefRaw !== 'object') {
       return Err(new AssetIdValidationError(
         () => `Invalid conditionRef: must be an OnChainConditionRef object, got ${conditionRefRaw === null ? 'null' : typeof conditionRefRaw}.`,
         { context:{ field: 'conditionRef', value: String(conditionRefRaw) } }
@@ -317,6 +319,11 @@ export const AssetId = {
     return a.outcomeKey === b.outcomeKey;
   },
 };
+
+// Замораживаем namespace объект, чтобы его члены (fromCurrency, fromOutcomeToken,
+// equals, USDC) нельзя было перезаписать в runtime через as any / monkey-patching.
+// deepFreezeAssetId отдельно заморозит значения AssetId (применяется к экземплярам).
+Object.freeze(AssetId);
 
 /**
  * Преобразование AssetId в строку для логирования и сериализации
