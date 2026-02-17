@@ -42,7 +42,7 @@
 
 - Может быть collision между разными chains (Polygon vs Ethereum)
 - Может быть collision между разными protocols (Polymarket vs Kalshi)
-- Непонятно где искать данные (какой RPC endpoint использовать)
+- Непонятно, где искать данные (какой RPC endpoint использовать)
 
 **Решение**: Всегда используй `ConditionRef` с полным контекстом:
 
@@ -178,9 +178,9 @@ function processAsset(asset: AssetId) {
 
 ### 5. VenueId для matching балансов
 
-**Проблема**: В мультивенью системе нужно понимать где находятся активы.
+**Проблема**: В мультивенью системе нужно понимать, где находятся активы.
 
-**Решение**: `VenueId` указывает площадку где хранятся балансы/tokens.
+**Решение**: `VenueId` указывает площадку, где хранятся балансы/tokens.
 
 ```typescript
 type VenueId = 'POLYMARKET' | 'KALSHI' | ...;
@@ -239,8 +239,8 @@ packages/foundation/ids/
 │   │   └── index.ts
 │   ├── execution/         # Execution IDs (куда ОТПРАВЛЯЕМ)
 │   │   ├── ExecutionVenueId.ts
-│   │   ├── OrderId.ts     # Для будущих Order entities
-│   │   ├── FillId.ts      # Для будущих Fill entities
+│   │   ├── OrderId.ts     # Phase 2: branded ID для биржевых ордеров
+│   │   ├── FillId.ts      # Phase 2: branded ID для исполненных сделок
 │   │   └── index.ts
 │   └── index.ts
 ```

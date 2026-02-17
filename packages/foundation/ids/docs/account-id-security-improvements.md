@@ -509,7 +509,7 @@ const parsed4 = parseAccountId(str, { maxLen: 1000 });
 
 ✅ Защита работает:
 
-- `accountIdForSubaccount` возвращает Err(AccountIdDepthError) при depth > 5
+- `accountIdForSubaccount` возвращает Err(AccountIdDepthError) при base depth >= 5 (currentDepth >= MAX_SUBACCOUNT_DEPTH)
 - `accountIdToString` всегда возвращает string (total function)
 - `parseAccountId` возвращает undefined при превышении maxDepth
 - `accountIdEquals` возвращает false при depth > MAX_SUBACCOUNT_DEPTH (не крашит)
@@ -584,8 +584,13 @@ import { unwrap } from '@polymarket/result';
 const wallet = parseWalletAddress('0x1234...')!;
 const walletAcc = accountIdFromWallet(wallet);
 
-// Venue account (не может упасть)
-const venueAcc = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
+// Venue account — возвращает Result<AccountId, AccountIdValidationError>, нужно обработать
+const venueResult = accountIdFromVenue(KnownVenues.POLYMARKET, 'user_123');
+if (!venueResult.ok) {
+  console.error('Failed to create venue account:', venueResult.error.message);
+  return;
+}
+const venueAcc = venueResult.value;
 
 // Subaccount - возвращает Result
 const subResult = accountIdForSubaccount(walletAcc, 'trading');

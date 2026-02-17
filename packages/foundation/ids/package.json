@@ -43,7 +43,7 @@
     "types",
     "foundation"
   ],
-  "author": "",
+  "author": "Ivan Moroz",
   "license": "UNLICENSED",
   "dependencies": {
     "@polymarket/errors": "workspace:*",

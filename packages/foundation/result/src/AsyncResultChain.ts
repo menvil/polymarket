@@ -314,7 +314,7 @@ export class AsyncResultChain<T, E> {
    * @returns Promise с значением или результатом fn
    *
    * @remarks
-   * Если callback fn бросает исключение, оно будет обёрнуто в новое Error.
+   * Если callback fn бросает исключение, оно пробрасывается как есть (без обёртки).
    *
    * @example
    * ```typescript
@@ -330,11 +330,7 @@ export class AsyncResultChain<T, E> {
     if (result.ok) {
       return result.value;
     }
-    try {
-      return fn(result.error);
-    } catch (error) {
-      throw new Error(`Exception in unwrapOrElse handler: ${formatValue(error)}`);
-    }
+    return fn(result.error);
   }
 
   /**

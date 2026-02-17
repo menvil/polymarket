@@ -2085,7 +2085,9 @@ describe('Core IDs', () => {
         expect(accountIdEquals(acc1, acc2)).toBe(true);
 
         // Для проверки fallback на false при превышении лимита
-        // создаём структуру вручную (обходя защиту)
+        // создаём структуру вручную (обходя защиту фабрики).
+        // veryDeep1: wallet + 6 SUBACCOUNT = depth 6, превышает MAX_SUBACCOUNT_DEPTH (5),
+        // поэтому accountIdEquals возвращает false вместо рекурсивного сравнения.
         const veryDeep1 = {
           kind: 'SUBACCOUNT' as const,
           base: {

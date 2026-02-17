@@ -124,6 +124,9 @@ if (balance.amount.gte(Money.of(100, 'USDC'))) {
 
 ```typescript
 import {
+  BinaryOutcome,
+} from '@polymarket/ids';
+import {
   type MarketDataSourceId,
   KnownMarketDataSources,
 } from '@polymarket/ids/market-data';
@@ -225,6 +228,7 @@ console.log(`PnL: ${results.pnl}, Sharpe: ${results.sharpe}`);
 import {
   type VenueId,
   type ConditionRef,
+  type ConditionId,
   KnownVenues,
   KnownChainIds,
 } from '@polymarket/ids';
@@ -618,7 +622,10 @@ import {
   type VenueId,
   type AssetId,
   KnownVenues,
+  KnownChainIds,
   AssetIdHelpers,
+  parseWalletAddress,
+  accountIdFromWallet,
 } from '@polymarket/ids';
 
 // Balance entity теперь содержит venueId и AssetId
@@ -631,9 +638,12 @@ class Balance {
   ) {}
 }
 
-// Создание Balance
+// Создание Balance — accountId это discriminated union объект, не строка
+const wallet = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
+const accountId: AccountId = accountIdFromWallet(wallet);
+
 const balance = new Balance(
-  '0x123...' as AccountId,
+  accountId,
   KnownVenues.POLYMARKET,
   AssetIdHelpers.USDC,
   Money.of(100, 'USDC')

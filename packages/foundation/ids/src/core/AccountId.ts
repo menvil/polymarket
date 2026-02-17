@@ -523,7 +523,7 @@ export function parseAccountId(
  * - Не содержит control characters (U+0000..U+001F, U+007F..U+009F)
  */
 function isValidStringField(value: string): boolean {
-  if (!value || value.length === 0) {
+  if (value.length === 0) {
     return false;
   }
 
