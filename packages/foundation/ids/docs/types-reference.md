@@ -372,10 +372,11 @@ isKnownVenue('UNKNOWN');     // → false
 **Использование**:
 
 ```typescript
-import { type VenueId, KnownVenues } from '@polymarket/ids';
+import { type VenueId, KnownVenues, accountIdFromWallet, parseWalletAddress } from '@polymarket/ids';
 
+const wallet = parseWalletAddress('0x1234567890abcdef1234567890abcdef12345678')!;
 const balance = {
-  accountId: '0x123...' as AccountId,
+  accountId: accountIdFromWallet(wallet),
   venueId: KnownVenues.POLYMARKET,  // ← где находится баланс
   asset: { type: 'CURRENCY', currency: 'USDC' },
   amount: Money.of(100, 'USDC'),
@@ -426,10 +427,8 @@ const tokenAsset = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP)
 // → { type: 'OUTCOME_TOKEN', conditionRef: {...}, outcomeKey: 'UP' }
 
 // Сравнение
-function assetIdEquals(a: AssetId, b: AssetId): boolean;
-
-assetIdEquals(usdc, AssetIdHelpers.USDC);  // → true
-assetIdEquals(usdc, usdcExplicit);         // → true
+AssetIdHelpers.equals(usdc, AssetIdHelpers.USDC);  // → true
+AssetIdHelpers.equals(usdc, usdcExplicit);         // → true
 
 // To string
 function assetIdToString(asset: AssetId): string;
@@ -648,25 +647,37 @@ const paperOrder = {
 
 ### OrderId
 
-Идентификатор ордера (для будущих Order entities).
+Идентификатор ордера (Phase 2).
 
 ```typescript
 type OrderId = string & { readonly __brand: 'OrderId' };
 ```
 
-**Замечание**: Пока placeholder. Будет использоваться в Phase 2 для Order entity.
+**Helper функции**:
+
+```typescript
+import { asOrderId } from '@polymarket/ids';
+
+const orderId = asOrderId('order-123');  // → OrderId | undefined
+```
 
 ---
 
 ### FillId
 
-Идентификатор fill (для будущих Fill entities).
+Идентификатор fill (Phase 2).
 
 ```typescript
 type FillId = string & { readonly __brand: 'FillId' };
 ```
 
-**Замечание**: Пока placeholder. Будет использоваться в Phase 2 для Fill entity.
+**Helper функции**:
+
+```typescript
+import { asFillId } from '@polymarket/ids';
+
+const fillId = asFillId('fill-456');  // → FillId | undefined
+```
 
 ---
 

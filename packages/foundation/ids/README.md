@@ -262,7 +262,9 @@ const accountId = unwrap(accountIdFromVenue(KnownVenues.POLYMARKET, 'user_valid'
 const deep1 = unwrap(accountIdForSubaccount(walletAccount, 'sub1'));
 const deep2 = unwrap(accountIdForSubaccount(deep1, 'sub2'));
 const deep3 = unwrap(accountIdForSubaccount(deep2, 'sub3'));
-// ... до depth 5 включительно OK
+const deep4 = unwrap(accountIdForSubaccount(deep3, 'sub4'));
+const deep5 = unwrap(accountIdForSubaccount(deep4, 'sub5'));
+// до depth 5 включительно OK
 const deep6 = accountIdForSubaccount(deep5, 'sub6'); // → Err (depth > 5)
 ```
 

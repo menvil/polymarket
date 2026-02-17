@@ -1,3 +1,5 @@
+import { validateBrandedId } from '../core/utils/validateBrandedId.js';
+
 /**
  * InstrumentId - идентификатор инструмента на market data source
  *
@@ -22,8 +24,6 @@
  * ```
  */
 export type InstrumentId = string & { readonly __brand: 'InstrumentId' };
-
-import { validateBrandedId } from '../core/utils/validateBrandedId.js';
 
 /**
  * Максимальная длина InstrumentId

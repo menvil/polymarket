@@ -286,28 +286,6 @@ export const AssetId = {
 };
 
 /**
- * Сравнение двух AssetId на равенство
- *
- * @param a - Первый AssetId
- * @param b - Второй AssetId
- * @returns true если AssetId идентичны
- *
- * @remarks
- * Делегирует к `AssetId.equals` во избежание дублирования логики.
- * При добавлении новых вариантов AssetId достаточно обновить только `AssetId.equals`.
- *
- * @example
- * ```typescript
- * const usdc1 = AssetIdHelpers.USDC;
- * const usdc2 = AssetIdHelpers.fromCurrency('USDC');
- * assetIdEquals(usdc1, usdc2); // → true
- * ```
- */
-export function assetIdEquals(a: AssetId, b: AssetId): boolean {
-  return AssetId.equals(a, b);
-}
-
-/**
  * Преобразование AssetId в строку для логирования и сериализации
  *
  * @param asset - AssetId для преобразования

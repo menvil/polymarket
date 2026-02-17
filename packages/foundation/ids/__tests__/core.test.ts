@@ -25,7 +25,6 @@ import {
   parseConditionRef,
   isOnChainConditionRef,
   isOffChainConditionRef,
-  assetIdEquals,
   assetIdToString,
   parseAssetId,
   isCurrencyAsset,
@@ -694,8 +693,8 @@ describe('Core IDs', () => {
       };
       const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
 
-      expect(assetIdEquals(usdc1, usdc2)).toBe(true);
-      expect(assetIdEquals(usdc1, tokenAsset)).toBe(false);
+      expect(AssetIdHelpers.equals(usdc1, usdc2)).toBe(true);
+      expect(AssetIdHelpers.equals(usdc1, tokenAsset)).toBe(false);
     });
 
     it('should convert to string', () => {
@@ -858,7 +857,7 @@ describe('Core IDs', () => {
       const usdc = AssetIdHelpers.USDC;
       const usdcStr = assetIdToString(usdc);
       const usdcParsed = parseAssetId(usdcStr);
-      expect(assetIdEquals(usdc, usdcParsed!)).toBe(true);
+      expect(AssetIdHelpers.equals(usdc, usdcParsed!)).toBe(true);
 
       // OUTCOME_TOKEN round-trip
       const conditionRef: OnChainConditionRef = {
@@ -870,7 +869,7 @@ describe('Core IDs', () => {
       const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
       const tokenStr = assetIdToString(token);
       const tokenParsed = parseAssetId(tokenStr);
-      expect(assetIdEquals(token, tokenParsed!)).toBe(true);
+      expect(AssetIdHelpers.equals(token, tokenParsed!)).toBe(true);
     });
 
     describe('Type guards', () => {
@@ -1186,10 +1185,10 @@ describe('Core IDs', () => {
         expect(AssetIdHelpers.equals(a, b)).toBe(false);
       });
 
-      it('should agree with assetIdEquals (delegate check)', () => {
+      it('should return true for two equal outcome tokens', () => {
         const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
         const b = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
-        expect(AssetIdHelpers.equals(a, b)).toBe(assetIdEquals(a, b));
+        expect(AssetIdHelpers.equals(a, b)).toBe(true);
       });
     });
 
