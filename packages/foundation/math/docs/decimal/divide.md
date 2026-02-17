@@ -37,10 +37,29 @@ function divideDecimal(a: Decimal, b: Decimal): Decimal
 
 ### Выбрасываемые ошибки
 
-- **InvalidOperandError** - Если делимое не является конечным числом (NaN, Infinity, -Infinity)
-- **InvalidDivisorError** - Если делитель не является конечным числом (NaN, Infinity, -Infinity)
-- **DivisionByZeroError** - Если делитель равен нулю
-- **ArithmeticOverflowError** - Если результат не является конечным числом (Infinity, -Infinity)
+- **InvalidOperandError** — делимое `a` не является конечным числом (NaN, ±Infinity) или не Decimal-like
+- **InvalidDivisorError** — делитель `b` не конечен, не Decimal-like или не имеет метода `isZero`
+- **DivisionByZeroError** — делитель равен нулю
+- **ArithmeticOverflowError** — результат не конечен (overflow при делении очень большого на очень малое)
+
+### Порядок проверок
+
+```
+1. assertFiniteOperandWith(a, 'a', ..., InvalidOperandError)
+   → a не Decimal-like или не finite: InvalidOperandError
+
+2. assertNonZeroDivisor(b, ...)
+   → b не Decimal-like или не finite: InvalidDivisorError
+   → b не имеет isZero():             InvalidDivisorError
+   → b.isZero() === true:             DivisionByZeroError
+
+3. result = a.div(b)
+
+4. assertFiniteResult(result, withResult(context, result))
+   → result не finite: ArithmeticOverflowError
+```
+
+Это гарантирует детерминированный порядок: `InvalidOperandError` всегда выбрасывается **до** `DivisionByZeroError`, даже если оба условия выполнены одновременно.
 
 ## Математические свойства
 
@@ -484,13 +503,44 @@ console.log(divideDecimal(product, b).equals(a)); // true
 console.log(multiplyDecimal(quotient, b).equals(a)); // true
 ```
 
+## Внутренняя архитектура
+
+`divideDecimal` использует centralized assertion helpers из `shared/assertions`:
+
+```typescript
+export function divideDecimal(a: Decimal, b: Decimal): Decimal {
+  const context = {
+    operation: 'divide',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
+
+  // Проверка делимого (InvalidOperandError при ошибке)
+  assertFiniteOperandWith(a, 'a', context, InvalidOperandError);
+
+  // Проверка делителя: конечность + isZero + ненулевое
+  // (InvalidDivisorError или DivisionByZeroError при ошибке)
+  assertNonZeroDivisor(b, context);
+
+  const result = a.div(b);
+
+  // Проверка переполнения результата
+  assertFiniteResult(result, withResult(context, result));
+
+  return result;
+}
+```
+
+`assertNonZeroDivisor` централизует все проверки делителя — они не дублируются между `divideDecimal` и другими возможными операциями деления. Подробнее: [Shared Assertions](../shared/assertions.md).
+
 ## См. также
 
-- [addDecimal](./add.md) - Сложение Decimal чисел
-- [subtractDecimal](./subtract.md) - Вычитание Decimal чисел
-- [multiplyDecimal](./multiply.md) - Умножение Decimal чисел
-- [averageDecimal](./average.md) - Среднее значение двух чисел
-- [DivisionByZeroError](../../../errors/docs/value-objects/division-by-zero.md) - Ошибка деления на ноль
-- [InvalidOperandError](../../../errors/docs/math/invalid-operand.md) - Ошибка невалидного операнда
-- [InvalidDivisorError](../../../errors/docs/math/invalid-divisor.md) - Ошибка невалидного делителя
-- [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow
+- [addDecimal](./add.md) — Сложение Decimal чисел
+- [subtractDecimal](./subtract.md) — Вычитание Decimal чисел
+- [multiplyDecimal](./multiply.md) — Умножение Decimal чисел
+- [averageDecimal](./average.md) — Среднее значение двух чисел
+- [Shared Assertions](../shared/assertions.md) — assertNonZeroDivisor, withResult и другие helpers
+- [DivisionByZeroError](../../../errors/docs/value-objects/division-by-zero.md) — Ошибка деления на ноль
+- [InvalidOperandError](../../../errors/docs/math/invalid-operand.md) — Ошибка невалидного операнда
+- [InvalidDivisorError](../../../errors/docs/math/invalid-divisor.md) — Ошибка невалидного делителя
+- [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) — Ошибка overflow

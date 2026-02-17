@@ -4,9 +4,10 @@
 
 ## Содержание
 
-- [Decimal Operations](./decimal/README.md) - Арифметические операции
-- [Rounding Operations](./rounding/README.md) - Операции округления к tick size
-- [Validation Utilities](./validation/README.md) - Валидация чисел
+- [Decimal Operations](./decimal/README.md) — Арифметические операции
+- [Rounding Operations](./rounding/README.md) — Операции округления к tick size
+- [Validation Utilities](./validation/README.md) — Валидация чисел
+- [Shared Assertion Helpers](./shared/assertions.md) — Внутренние утилиты валидации операндов
 
 ## Быстрая навигация
 
@@ -38,6 +39,10 @@
 | `isPositiveDecimal(value)` | Validation | Проверка > 0 | [→](./validation/README.md#ispositivedecimal) |
 | `isNonNegativeDecimal(value)` | Validation | Проверка >= 0 | [→](./validation/README.md#isnonnegativedecimal) |
 | `isZeroDecimal(value)` | Validation | Проверка === 0 | [→](./validation/README.md#iszerodecimal) |
+| `assertFiniteOperandWith(v, name, ctx, Ctor)` | Shared | Generic assertion операнда | [→](./shared/assertions.md#assertfiniteoperandwith) |
+| `assertFiniteOperands(a, b, ctx)` | Shared | Assertion обоих операндов | [→](./shared/assertions.md#assertfiniteoperands) |
+| `assertNonZeroDivisor(divisor, ctx)` | Shared | Assertion делителя (централизованно) | [→](./shared/assertions.md#assertnonzerodivisor) |
+| `withResult(ctx, result)` | Shared | Добавление result к контексту | [→](./shared/assertions.md#withresult) |
 
 ## Философия пакета
 
@@ -118,14 +123,14 @@ class Price {
 
 ```typescript
 // Математическая невозможность = throw
+// Все проверки делителя централизованы в assertNonZeroDivisor
 function divideDecimal(a: Decimal, b: Decimal): Decimal {
-  if (!b.isFinite()) {
-    throw new InvalidDivisorError('Divisor must be finite');
-  }
-  if (b.isZero()) {
-    throw new DivisionByZeroError('Cannot divide by zero');
-  }
-  return a.dividedBy(b);
+  const context = { operation: 'divide', a: toStringSafe(a), b: toStringSafe(b) };
+  assertFiniteOperandWith(a, 'a', context, InvalidOperandError); // NaN/Infinity → throw
+  assertNonZeroDivisor(b, context); // NaN/Infinity/0 → throw
+  const result = a.div(b);
+  assertFiniteResult(result, withResult(context, result)); // overflow → throw
+  return result;
 }
 ```
 
