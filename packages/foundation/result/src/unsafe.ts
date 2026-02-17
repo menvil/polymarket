@@ -41,18 +41,21 @@ export { unwrap } from './result.js';
  * ⚠️ НЕБЕЗОПАСНО — бросает `Error` если result содержит ошибку.
  * Используйте только когда логически невозможно получить Err в данном месте.
  *
+ * Название `expectOk` (а не `expect`) выбрано намеренно — чтобы не конфликтовать
+ * с глобальным `expect` из Jest/Vitest при импорте в тестовых файлах.
+ *
  * **Безопасные альтернативы:** `unwrapOr`, `match`, if/else.
  *
  * @example
  * ```typescript
  * // В тестах:
  * const result = Ok(42);
- * const value = expect(result, 'Результат должен быть Ok'); // 42
+ * const value = expectOk(result, 'Результат должен быть Ok'); // 42
  *
  * // При Err бросит: Error: 'Результат должен быть Ok: описание_ошибки'
  * ```
  */
-export const expect = <T, E>(result: Result<T, E>, message: string): T => {
+export const expectOk = <T, E>(result: Result<T, E>, message: string): T => {
   if (!result.ok) {
     const errorInfo = formatValue(result.error);
     throw new Error(`${message}: ${errorInfo}`);

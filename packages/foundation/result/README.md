@@ -31,7 +31,7 @@ Type-safe обработка ошибок: явные типы вместо exce
 | `fromThrowable`             | Никогда             | **Да** → `Err`               | Ядро              |
 | `unwrapOr`, `unwrapOrElse`  | Никогда             | Нет — propagate              | Ядро              |
 | `unwrap`                    | **Да** при Err      | —                            | `result.ts`, `/unsafe` |
-| `expect` (unsafe)           | **Да** при Err      | —                            | `/unsafe`         |
+| `expectOk` (unsafe)         | **Да** при Err      | —                            | `/unsafe`         |
 | `AsyncResultChain.mapAsync` | Никогда             | **Да** → `Err`               | AsyncResultChain  |
 | `AsyncResultChain.flatMapAsync` | Никогда         | **Да** → `Err`               | AsyncResultChain  |
 | `AsyncResultChain.map`      | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
@@ -170,7 +170,7 @@ import { OkChain, ErrChain, toChain, R } from '@polymarket/result/chain';
 import { AsyncResult, AsyncResultChain } from '@polymarket/result/async';
 
 // ⚠️ Unsafe: функции которые могут бросить исключения
-import { unwrap, expect, unwrapErr } from '@polymarket/result/unsafe';
+import { unwrap, expectOk, unwrapErr } from '@polymarket/result/unsafe';
 ```
 
 ### Использование с @polymarket/errors
@@ -1282,7 +1282,7 @@ const value = unwrapOrElse(result, err => computeDefault(err));
 import { unwrap } from '@polymarket/result';
 
 // ✅ Сейчас (явный imports из unsafe):
-import { unwrap, expect, unwrapErr } from '@polymarket/result/unsafe';
+import { unwrap, expectOk, unwrapErr } from '@polymarket/result/unsafe';
 // или по-прежнему из основного пути (backward compat):
 import { unwrap } from '@polymarket/result';
 ```

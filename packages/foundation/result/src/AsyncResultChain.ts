@@ -79,7 +79,7 @@ export class AsyncResultChain<T, E> {
    * Создаёт новый AsyncResultChain с тем же normalizer
    */
   private chain<U>(promise: Promise<Result<U, E>>): AsyncResultChain<U, E> {
-    return new AsyncResultChain(promise, this.onError as unknown as (error: unknown) => E);
+    return new AsyncResultChain(promise, this.onError);
   }
 
   /**
@@ -110,7 +110,7 @@ export class AsyncResultChain<T, E> {
       }
       return result as Result<U, E>;
     });
-    return new AsyncResultChain(newPromise, this.onError as unknown as (e: unknown) => E);
+    return new AsyncResultChain(newPromise, this.onError);
   }
 
   /**
@@ -139,7 +139,7 @@ export class AsyncResultChain<T, E> {
       }
       return result as Result<U, E>;
     });
-    return new AsyncResultChain(newPromise, this.onError as unknown as (e: unknown) => E);
+    return new AsyncResultChain(newPromise, this.onError);
   }
 
   /**
@@ -589,7 +589,6 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   orAsyncLazy<F>(fn: () => Promise<Result<T, F>>): AsyncResultChain<T, F> {
-    const normalizer = this.onError as unknown as (error: unknown) => F;
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
         return result as Result<T, F>;
@@ -597,10 +596,10 @@ export class AsyncResultChain<T, E> {
       try {
         return await fn();
       } catch (error) {
-        return Err(normalizer(error)) as Result<T, F>;
+        return Err(error as F) as Result<T, F>;
       }
     });
-    return new AsyncResultChain<T, F>(newPromise, normalizer);
+    return new AsyncResultChain<T, F>(newPromise);
   }
 
   /**
@@ -623,7 +622,6 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   orElseAsync<F>(fn: (error: E) => Promise<Result<T, F>>): AsyncResultChain<T, F> {
-    const normalizer = this.onError as unknown as (error: unknown) => F;
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
         return result as Result<T, F>;
@@ -631,10 +629,10 @@ export class AsyncResultChain<T, E> {
       try {
         return await fn(result.error);
       } catch (error) {
-        return Err(normalizer(error)) as Result<T, F>;
+        return Err(error as F) as Result<T, F>;
       }
     });
-    return new AsyncResultChain<T, F>(newPromise, normalizer);
+    return new AsyncResultChain<T, F>(newPromise);
   }
 
   /**
@@ -657,7 +655,6 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   orElse<F>(fn: (error: E) => Result<T, F>): AsyncResultChain<T, F> {
-    const normalizer = this.onError as unknown as (error: unknown) => F;
     const newPromise = this.promise.then((result) => {
       if (result.ok) {
         return result as Result<T, F>;
@@ -665,10 +662,10 @@ export class AsyncResultChain<T, E> {
       try {
         return fn(result.error);
       } catch (error) {
-        return Err(normalizer(error)) as Result<T, F>;
+        return Err(error as F) as Result<T, F>;
       }
     });
-    return new AsyncResultChain<T, F>(newPromise, normalizer);
+    return new AsyncResultChain<T, F>(newPromise);
   }
 
   /**

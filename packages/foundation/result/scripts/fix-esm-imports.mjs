@@ -82,8 +82,8 @@ for (const filePath of jsFiles) {
   // Единый проход: для каждого относительного импорта без расширения
   // определяем через statSync — это файл или директория.
   content = content.replace(
-    /from ['"](\.\.[/\\][^'"]+|\.\/[^'"]+)['"]/g,
-    (match, importPath) => {
+    /from (['"])(\.\.[/\\][^'"]+|\.\/[^'"]+)\1/g,
+    (match, quote, importPath) => {
       // Пропускаем импорты у которых уже есть расширение файла
       if (extname(importPath) !== '') {
         return match;
@@ -94,7 +94,7 @@ for (const filePath of jsFiles) {
       // Приоритет: сначала проверяем наличие foo.js (файл),
       // только если его нет — проверяем foo/ (директория → index.js)
       if (existsSync(resolved + '.js')) {
-        return `from '${importPath}.js'`;
+        return `from ${quote}${importPath}.js${quote}`;
       }
 
       let isDirectory = false;
@@ -106,7 +106,7 @@ for (const filePath of jsFiles) {
         isDirectory = false;
       }
 
-      return `from '${importPath}${isDirectory ? '/index.js' : '.js'}'`;
+      return `from ${quote}${importPath}${isDirectory ? '/index.js' : '.js'}${quote}`;
     }
   );
 

@@ -8,7 +8,7 @@
  * ## Архитектура
  *
  * - `result.ts` — **ядро**: все FP-функции, единственный источник бизнес-логики
- * - `unsafe.ts` — операции бросающие исключения (unwrap, expect)
+ * - `unsafe.ts` — операции бросающие исключения (unwrap, expectOk)
  * - `ResultChain.ts` — тонкий OOP-адаптер поверх ядра
  * - `AsyncResultChain.ts` — тонкий async-адаптер поверх ядра
  *
@@ -55,7 +55,7 @@
  * ## Unsafe операции (явно помечены)
  *
  * ```typescript
- * import { unwrap, expect } from '@polymarket/result/unsafe';
+ * import { unwrap, expectOk } from '@polymarket/result/unsafe';
  * // или из основного пути (для backward compatibility):
  * import { unwrap } from '@polymarket/result';
  * ```

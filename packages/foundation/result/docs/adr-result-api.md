@@ -60,7 +60,7 @@ unsafe.ts = явный модуль для операций, бросающих 
 | `unwrapOr`              | Никогда             | result.ts (ядро) |
 | `unwrapOrElse`          | Никогда¹            | result.ts (ядро) |
 | `unwrap`                | **Да** (unsafe)     | unsafe.ts        |
-| `expect`                | **Да** (unsafe)     | unsafe.ts        |
+| `expectOk`              | **Да** (unsafe)     | unsafe.ts        |
 
 > ¹ FP-функции (`unwrapOrElse`, `orElse` и т.п.) сами не бросают. Если callback
 > пользователя бросает — исключение propagate как есть (это задокументированное поведение;
@@ -130,7 +130,7 @@ import { AsyncResult, AsyncResultChain } from '@polymarket/result/async';
 
 **Unsafe-операции (явно помечены):**
 ```typescript
-import { unwrap, expect } from '@polymarket/result/unsafe';
+import { unwrap, expectOk } from '@polymarket/result/unsafe';
 ```
 
 ### 6. Обратная совместимость

@@ -28,7 +28,7 @@ import {
 } from '../../src/result';
 import {
   unwrap as unsafeUnwrap,
-  expect as unsafeExpect,
+  expectOk as unsafeExpect,
   unwrapErr as unsafeUnwrapErr,
   expectErr as unsafeExpectErr,
 } from '../../src/unsafe';
