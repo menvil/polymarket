@@ -83,6 +83,7 @@ export { KnownVenues, isKnownVenue, asVenueId } from './VenueId.js';
 export type { AssetId } from './AssetId.js';
 export {
   AssetId as AssetIdHelpers,
+  AssetIdValidationError,
   assetIdToString,
   parseAssetId,
   isCurrencyAsset,

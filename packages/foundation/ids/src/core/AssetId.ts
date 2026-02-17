@@ -6,6 +6,11 @@ import { parseOutcomeKey } from './OutcomeKey.js';
 import { asOnChainProtocolId } from './ProtocolId.js';
 import { parseConditionId } from './ConditionId.js';
 import { parseChainId, isValidChainId } from './ChainId.js';
+import type { Result } from '@polymarket/result';
+import { Ok, Err } from '@polymarket/result';
+import { AssetIdValidationError } from '@polymarket/errors';
+
+export { AssetIdValidationError };
 
 /**
  * AssetId - универсальный идентификатор актива
@@ -117,18 +122,19 @@ export const AssetId = {
   },
 
   /**
-   * Создать AssetId для outcome token
+   * Создать AssetId для outcome token (safe-контракт: возвращает Result)
    *
    * @param conditionRef - On-chain ссылка на condition
    * @param outcomeKey - Ключ outcome (BinaryOutcome.UP или BinaryOutcome.DOWN)
-   * @returns Замороженный (immutable) AssetId для outcome token
-   * @throws {Error} Если outcomeKey невалидный (не проходит parseOutcomeKey)
+   * @returns `Ok(AssetId)` при успехе или `Err(AssetIdValidationError)` при
+   *   невалидном значении любого из полей
    *
    * @remarks
    * ⚠️ Только для on-chain protocols! Off-chain venues не поддерживаются.
    *
-   * Валидация outcomeKey предотвращает создание AssetId с некорректным ключом
-   * через `as OutcomeKey` casting.
+   * Тотальная функция — никогда не бросает исключений.
+   * Валидация выполняется для всех полей: outcomeKey → protocolId → chainId → conditionId.
+   * Первое невалидное поле порождает `Err(AssetIdValidationError)`.
    *
    * Возвращаемый AssetId защищен через Object.freeze() (включая вложенный
    * conditionRef) для гарантии иммутабельности value object в runtime.
@@ -144,51 +150,65 @@ export const AssetId = {
    *   conditionId: '0xabc123...'
    * };
    *
-   * const token = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+   * const result = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+   * if (result.ok) {
+   *   const token = result.value;
+   *   // ❌ Попытка мутации не сработает в runtime:
+   *   // (token as any).conditionRef.conditionId = 'HACKED'; // Throws in strict mode
+   * } else {
+   *   console.error('Validation failed:', result.error.message);
+   * }
    *
-   * // ❌ Попытка мутации не сработает в runtime:
-   * // (token as any).conditionRef.conditionId = 'HACKED'; // Throws in strict mode
-   *
-   * // Это throw ошибку:
-   * // const invalid = AssetIdHelpers.fromOutcomeToken(onChainRef, 'INVALID' as OutcomeKey);
+   * // Невалидный outcomeKey → Err, а не throw:
+   * const invalid = AssetIdHelpers.fromOutcomeToken(onChainRef, 'INVALID' as OutcomeKey);
+   * console.log(invalid.ok); // false
    * ```
    */
-  fromOutcomeToken(conditionRef: OnChainConditionRef, outcomeKey: OutcomeKey): AssetId {
-    // Централизованная валидация всех полей (DRY - единая точка правды)
-
+  fromOutcomeToken(
+    conditionRef: OnChainConditionRef,
+    outcomeKey: OutcomeKey
+  ): Result<AssetId, AssetIdValidationError> {
     // Валидация outcomeKey
     const validatedOutcomeKey = parseOutcomeKey(outcomeKey);
     if (!validatedOutcomeKey) {
-      throw new Error(
-        `Invalid outcomeKey: "${outcomeKey}". Must be valid OutcomeKey (e.g., "UP", "DOWN").`
-      );
+      return Err(new AssetIdValidationError(
+        (ctx: Record<string, unknown>) =>
+          `Invalid outcomeKey: "${ctx.value}". Must be valid OutcomeKey (e.g., "UP", "DOWN").`,
+        { code: AssetIdValidationError.code, context: { field: 'outcomeKey', value: String(outcomeKey) } }
+      ));
     }
 
     // Валидация protocolId
     const validatedProtocolId = asOnChainProtocolId(conditionRef.protocolId);
     if (!validatedProtocolId) {
-      throw new Error(
-        `Invalid protocolId: "${conditionRef.protocolId}". Must be UPPERCASE_WITH_UNDERSCORES (e.g., "POLYMARKET_CTF").`
-      );
+      return Err(new AssetIdValidationError(
+        (ctx: Record<string, unknown>) =>
+          `Invalid protocolId: "${ctx.value}". Must be UPPERCASE_WITH_UNDERSCORES (e.g., "POLYMARKET_CTF").`,
+        { code: AssetIdValidationError.code, context: { field: 'protocolId', value: String(conditionRef.protocolId) } }
+      ));
     }
 
     // Валидация chainId
     if (!isValidChainId(conditionRef.chainId)) {
-      throw new Error(
-        `Invalid chainId: ${conditionRef.chainId}. Must be positive integer (e.g., 137 for Polygon).`
-      );
+      return Err(new AssetIdValidationError(
+        (ctx: Record<string, unknown>) =>
+          `Invalid chainId: ${ctx.value}. Must be positive integer (e.g., 137 for Polygon).`,
+        { code: AssetIdValidationError.code, context: { field: 'chainId', value: conditionRef.chainId } }
+      ));
     }
 
     // Валидация conditionId
     const validatedConditionId = parseConditionId(conditionRef.conditionId);
     if (!validatedConditionId) {
-      throw new Error(
-        `Invalid conditionId: "${conditionRef.conditionId}". Must be 32-byte hex string (0x...).`
-      );
+      return Err(new AssetIdValidationError(
+        (ctx: Record<string, unknown>) =>
+          `Invalid conditionId: "${ctx.value}". Must be 32-byte hex string (0x...).`,
+        { code: AssetIdValidationError.code, context: { field: 'conditionId', value: String(conditionRef.conditionId) } }
+      ));
     }
 
     // deepFreezeAssetId заморозит conditionRef и сам AssetId — не нужен явный Object.freeze здесь
-    return deepFreezeAssetId({
+    return Ok(deepFreezeAssetId({
       type: 'OUTCOME_TOKEN',
       conditionRef: {
         kind: 'ONCHAIN' as const,
@@ -197,7 +217,7 @@ export const AssetId = {
         conditionId: validatedConditionId,
       },
       outcomeKey: validatedOutcomeKey,
-    });
+    }));
   },
 
   /**
@@ -246,9 +266,11 @@ export const AssetId = {
    * const usdc2 = AssetIdHelpers.fromCurrency(KnownCurrencies.USDC);
    * AssetIdHelpers.equals(usdc1, usdc2); // true
    *
-   * const token1 = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
-   * const token2 = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.DOWN);
-   * AssetIdHelpers.equals(token1, token2); // false (different outcome)
+   * const r1 = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+   * const r2 = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.DOWN);
+   * if (r1.ok && r2.ok) {
+   *   AssetIdHelpers.equals(r1.value, r2.value); // false (different outcome)
+   * }
    * ```
    */
   equals(a: AssetId, b: AssetId): boolean {

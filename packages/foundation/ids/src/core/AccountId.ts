@@ -199,11 +199,23 @@ export interface ParseAccountIdOptions {
  * Вычислить глубину вложенности SUBACCOUNT
  *
  * @param id - AccountId для проверки
- * @returns Глубина вложенности (0 для WALLET/VENUE, ≥1 для SUBACCOUNT)
+ * @returns Глубина вложенности (0 для WALLET/VENUE, ≥1 для SUBACCOUNT).
+ *   При обнаружении цикла или аномальной глубины возвращает значение
+ *   `> MAX_SUBACCOUNT_DEPTH`, что гарантирует отказ `accountIdForSubaccount`
+ *   с `Err(AccountIdDepthError)`.
  *
  * @remarks
- * Итеративная реализация (не рекурсивная) для безопасности.
- * Используется для проверки depth limit перед рекурсивными операциями.
+ * Тотальная функция — никогда не бросает и не зависает в бесконечном цикле.
+ *
+ * Защита реализована двумя независимыми механизмами:
+ * 1. **Детект цикла через `visited`** (WeakSet): если текущий объект уже был
+ *    посещён, граф содержит цикл вида `a.base === a`. Немедленно возвращаем
+ *    `MAX_SUBACCOUNT_DEPTH + 1`.
+ * 2. **Hard cap по итерациям** (`MAX_SUBACCOUNT_DEPTH + SAFETY_MARGIN`):
+ *    страховка на случай аномально длинной, но технически ациклической цепочки.
+ *    Возвращаем `MAX_SUBACCOUNT_DEPTH + 1`.
+ *
+ * Итеративная реализация — не рекурсивная.
  *
  * @example
  * ```typescript
@@ -211,18 +223,37 @@ export interface ParseAccountIdOptions {
  * getSubaccountDepth(wallet); // → 0
  *
  * const sub1 = accountIdForSubaccount(wallet, 'level1');
- * getSubaccountDepth(sub1); // → 1
+ * getSubaccountDepth(sub1.value!); // → 1
  *
- * const sub2 = accountIdForSubaccount(sub1, 'level2');
- * getSubaccountDepth(sub2); // → 2
+ * // Защита от цикла (обходится TypeScript через as any):
+ * const mutable = { kind: 'SUBACCOUNT' as const, base: wallet, name: 'x' };
+ * (mutable as any).base = mutable; // цикл
+ * getSubaccountDepth(mutable as AccountId); // → 6 (> MAX_SUBACCOUNT_DEPTH)
  * ```
  */
 export function getSubaccountDepth(id: AccountId): number {
+  const SAFETY_MARGIN = 10;
+  const MAX_ITERATIONS = MAX_SUBACCOUNT_DEPTH + SAFETY_MARGIN;
+
+  // Используем WeakSet: не удерживает ссылки и работает с объектами любого типа
+  const visited = new WeakSet<object>();
   let depth = 0;
-  let current = id;
+  let current: AccountId = id;
 
   while (current.kind === 'SUBACCOUNT') {
+    // Детект цикла: объект уже встречался в цепочке → зацикленный граф
+    if (visited.has(current)) {
+      return MAX_SUBACCOUNT_DEPTH + 1;
+    }
+    visited.add(current);
+
     depth++;
+
+    // Hard cap: страховка на аномально длинную (но ациклическую) цепочку
+    if (depth > MAX_ITERATIONS) {
+      return MAX_SUBACCOUNT_DEPTH + 1;
+    }
+
     current = current.base;
   }
 

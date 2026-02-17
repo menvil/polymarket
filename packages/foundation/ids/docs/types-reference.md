@@ -413,7 +413,7 @@ const usdc = AssetIdHelpers.USDC;
 const usdcExplicit = AssetIdHelpers.fromCurrency(KnownCurrencies.USDC);
 // → { type: 'CURRENCY', currency: 'USDC' }
 
-// Outcome token asset
+// Outcome token asset — fromOutcomeToken возвращает Result (не бросает исключений)
 const onChainRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
@@ -421,8 +421,16 @@ const onChainRef: OnChainConditionRef = {
   conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
-const tokenAsset = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
-// → { type: 'OUTCOME_TOKEN', conditionRef: {...}, outcomeKey: 'UP' }
+const tokenResult = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+// → Result<AssetId, AssetIdValidationError>
+
+if (tokenResult.ok) {
+  const tokenAsset = tokenResult.value;
+  // → { type: 'OUTCOME_TOKEN', conditionRef: {...}, outcomeKey: 'UP' }
+} else {
+  // tokenResult.error: AssetIdValidationError
+  // tokenResult.error.context?.field — имя невалидного поля
+}
 
 // Сравнение
 AssetIdHelpers.equals(usdc, AssetIdHelpers.USDC);  // → true
@@ -434,7 +442,7 @@ function assetIdToString(asset: AssetId): string;
 assetIdToString(usdc);
 // → 'CURRENCY:USDC'
 
-assetIdToString(tokenAsset);
+// assetIdToString(tokenResult.value)  ← после проверки result.ok
 // → 'OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123...:UP'
 
 // Type guards
@@ -482,7 +490,12 @@ const onChainRef: OnChainConditionRef = {
   chainId: KnownChainIds.POLYGON,
   conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
-processAsset(AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP));
+
+// fromOutcomeToken — safe-контракт: Result, а не throw
+const tokenResult = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+if (tokenResult.ok) {
+  processAsset(tokenResult.value);
+}
 ```
 
 ---

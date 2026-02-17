@@ -177,6 +177,22 @@ function processAsset(asset: AssetId) {
 }
 ```
 
+**Safe-контракт `fromOutcomeToken`**:
+
+Публичная фабрика `AssetId.fromOutcomeToken` (экспортируется как `AssetIdHelpers.fromOutcomeToken`)
+возвращает `Result<AssetId, AssetIdValidationError>` — **никогда не бросает исключения**.
+Первое невалидное поле (в порядке outcomeKey → protocolId → chainId → conditionId) порождает `Err`.
+
+```typescript
+const result = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+if (result.ok) {
+  const asset: AssetId = result.value; // замороженный immutable объект
+} else {
+  // result.error: AssetIdValidationError с context.field и context.value
+  console.error(result.error.message);
+}
+```
+
 ### 5. AccountId: Безопасная сериализация
 
 `AccountId` — рекурсивная структура (SUBACCOUNT содержит base AccountId). Это требует двух защитных механизмов.
@@ -212,6 +228,8 @@ unescapeId('user\\\\\\:123') // → 'user\\:123' ✅
 #### Depth limit protection
 
 Рекурсивный обход SUBACCOUNT без ограничения глубины → DoS через глубоко вложенные структуры.
+Дополнительная угроза: **цикличные ссылки** вида `a.base === a` (создаются в обход TypeScript через `as any`),
+которые без специальной защиты приводят к бесконечному циклу.
 
 Константа `MAX_SUBACCOUNT_DEPTH = 5`. Поведение при превышении:
 
@@ -222,14 +240,30 @@ unescapeId('user\\\\\\:123') // → 'user\\:123' ✅
 | `parseAccountId` | `undefined` (graceful rejection) |
 | `accountIdEquals` | `false` (безопасный fallback) |
 
-`getSubaccountDepth` — итеративная (не рекурсивная) функция:
+`getSubaccountDepth` — тотальная итеративная функция с двойной защитой:
+
+1. **Детект цикла** через `WeakSet`: если текущий объект уже посещался — возвращает
+   `MAX_SUBACCOUNT_DEPTH + 1`, что гарантирует `Err(AccountIdDepthError)` в `accountIdForSubaccount`.
+2. **Hard cap** (`MAX_SUBACCOUNT_DEPTH + 10 = 15 итераций`): страховка на случай
+   аномально длинной, но ациклической цепочки.
 
 ```typescript
 function getSubaccountDepth(id: AccountId): number {
+  const SAFETY_MARGIN = 10;
+  const MAX_ITERATIONS = MAX_SUBACCOUNT_DEPTH + SAFETY_MARGIN;
+  const visited = new WeakSet<object>();
   let depth = 0;
-  let current = id;
+  let current: AccountId = id;
+
   while (current.kind === 'SUBACCOUNT') {
+    if (visited.has(current)) {
+      return MAX_SUBACCOUNT_DEPTH + 1; // цикл → гарантированно > MAX
+    }
+    visited.add(current);
     depth++;
+    if (depth > MAX_ITERATIONS) {
+      return MAX_SUBACCOUNT_DEPTH + 1; // hard cap
+    }
     current = current.base;
   }
   return depth;
@@ -463,3 +497,26 @@ function toCanonicalInstrument(
   venueInstrumentId: string
 ): InstrumentId;
 ```
+
+---
+
+## Tech Debt: несогласованность форматов ConditionRef
+
+> **⚠️ Известное расхождение** — не блокирует текущий функционал, запланировано к устранению.
+
+`ConditionRef` имеет два формата:
+- `ONCHAIN` — on-chain протоколы: `{ kind, protocolId, chainId, conditionId }`
+- `OFFCHAIN` — off-chain площадки: `{ kind, venueId, marketId }`
+
+Строковый формат `conditionRefToString`:
+- ONCHAIN: `ONCHAIN:POLYMARKET_CTF:137:0xabc...`
+- OFFCHAIN: `OFFCHAIN:KALSHI:MARKET_ID`
+
+При этом в системе существуют параллельные именования площадок:
+- **VenueId** (`wallet`, `venue`, `sub` в AccountId-контексте)
+- **MarketDataSourceId** (`POLYMARKET_WS`, `POLYMARKET_REPLAY`, ...)
+- **ExecutionVenueId** (`POLYMARKET`, `KALSHI`, `SIMULATOR`)
+
+Эти форматы частично дублируют друг друга. Унификация требует breaking change в
+serialization-формате и миграции хранимых данных — **в данной задаче не реализовывалась**.
+Задача отслеживается отдельно.

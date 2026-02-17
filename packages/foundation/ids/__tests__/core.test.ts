@@ -9,11 +9,13 @@ import {
 } from '../src/market-data/index.js';
 import {
   type AccountId,
+  type AssetId,
   type ConditionRef,
   type OnChainConditionRef,
   type OffChainConditionRef,
   type VenueId,
   type ConditionId,
+  type OutcomeKey,
   KnownChainIds,
   KnownVenues,
   KnownOnChainProtocols,
@@ -22,6 +24,7 @@ import {
   isKnownOnChainProtocol,
   asOnChainProtocolId,
   AssetIdHelpers,
+  AssetIdValidationError,
   conditionRefEquals,
   conditionRefToString,
   parseConditionRef,
@@ -60,6 +63,7 @@ import {
   isVenueAccount,
   isSubaccount,
   getSubaccountDepth,
+  AccountIdDepthError,
 } from '../src/index.js';
 
 // Helper для unwrap Result в тестах
@@ -67,6 +71,15 @@ function unwrapVenue(venueId: VenueId, userId: string): AccountId {
   const result = accountIdFromVenue(venueId, userId);
   if (!result.ok) {
     throw new Error(`Failed to create venue account: ${result.error.message}`);
+  }
+  return result.value;
+}
+
+// Helper для unwrap fromOutcomeToken Result в тестах
+function unwrapToken(conditionRef: OnChainConditionRef, outcomeKey: OutcomeKey): AssetId {
+  const result = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
+  if (!result.ok) {
+    throw new Error(`Failed to create outcome token: ${result.error.message}`);
   }
   return result.value;
 }
@@ -573,7 +586,7 @@ describe('Core IDs', () => {
       };
 
       // Сценарий 2: Использование в AssetId (outcome token)
-      const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      const tokenAsset = unwrapToken(conditionRef, BinaryOutcome.UP);
       expect(tokenAsset.type).toBe('OUTCOME_TOKEN');
       if (tokenAsset.type === 'OUTCOME_TOKEN') {
         expect(tokenAsset.conditionRef.protocolId).toBe('POLYMARKET_CTF');
@@ -647,16 +660,18 @@ describe('Core IDs', () => {
         conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
       };
 
-      const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
-
-      expect(tokenAsset.type).toBe('OUTCOME_TOKEN');
-      if (tokenAsset.type === 'OUTCOME_TOKEN') {
-        expect(tokenAsset.outcomeKey).toBe(BinaryOutcome.UP);
-        expect(tokenAsset.conditionRef.kind).toBe('ONCHAIN');
+      const result = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.type).toBe('OUTCOME_TOKEN');
+        if (result.value.type === 'OUTCOME_TOKEN') {
+          expect(result.value.outcomeKey).toBe(BinaryOutcome.UP);
+          expect(result.value.conditionRef.kind).toBe('ONCHAIN');
+        }
       }
     });
 
-    it('should throw on invalid OutcomeKey in fromOutcomeToken', () => {
+    it('should return Err on invalid OutcomeKey in fromOutcomeToken', () => {
       const conditionRef: OnChainConditionRef = {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
@@ -664,22 +679,26 @@ describe('Core IDs', () => {
         conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
       };
 
-      // Invalid OutcomeKey должен throw
-      expect(() => {
-        AssetIdHelpers.fromOutcomeToken(conditionRef, 'UP:DOWN' as any); // contains ':'
-      }).toThrow(/Invalid outcomeKey/);
+      // Invalid OutcomeKey — должен возвращать Err, а не throw
+      const r1 = AssetIdHelpers.fromOutcomeToken(conditionRef, 'UP:DOWN' as any);
+      expect(r1.ok).toBe(false);
+      if (!r1.ok) {
+        expect(r1.error).toBeInstanceOf(AssetIdValidationError);
+        expect(r1.error.message).toMatch(/Invalid outcomeKey/);
+        expect(r1.error.context?.field).toBe('outcomeKey');
+      }
 
-      expect(() => {
-        AssetIdHelpers.fromOutcomeToken(conditionRef, '' as any); // empty
-      }).toThrow(/Invalid outcomeKey/);
+      const r2 = AssetIdHelpers.fromOutcomeToken(conditionRef, '' as any);
+      expect(r2.ok).toBe(false);
+      if (!r2.ok) expect(r2.error.message).toMatch(/Invalid outcomeKey/);
 
-      expect(() => {
-        AssetIdHelpers.fromOutcomeToken(conditionRef, 'x'.repeat(100) as any); // too long
-      }).toThrow(/Invalid outcomeKey/);
+      const r3 = AssetIdHelpers.fromOutcomeToken(conditionRef, 'x'.repeat(100) as any);
+      expect(r3.ok).toBe(false);
+      if (!r3.ok) expect(r3.error.message).toMatch(/Invalid outcomeKey/);
 
-      expect(() => {
-        AssetIdHelpers.fromOutcomeToken(conditionRef, 'KEY\\VALUE' as any); // contains backslash
-      }).toThrow(/Invalid outcomeKey/);
+      const r4 = AssetIdHelpers.fromOutcomeToken(conditionRef, 'KEY\\VALUE' as any);
+      expect(r4.ok).toBe(false);
+      if (!r4.ok) expect(r4.error.message).toMatch(/Invalid outcomeKey/);
     });
 
     it('should compare assets', () => {
@@ -693,7 +712,7 @@ describe('Core IDs', () => {
         chainId: KnownChainIds.POLYGON,
         conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
       };
-      const tokenAsset = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      const tokenAsset = unwrapToken(conditionRef, BinaryOutcome.UP);
 
       expect(AssetIdHelpers.equals(usdc1, usdc2)).toBe(true);
       expect(AssetIdHelpers.equals(usdc1, tokenAsset)).toBe(false);
@@ -709,7 +728,7 @@ describe('Core IDs', () => {
         chainId: KnownChainIds.POLYGON,
         conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
       };
-      const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      const token = unwrapToken(conditionRef, BinaryOutcome.UP);
       expect(assetIdToString(token)).toBe('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:UP');
     });
 
@@ -868,7 +887,7 @@ describe('Core IDs', () => {
         chainId: KnownChainIds.POLYGON,
         conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
       };
-      const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
+      const token = unwrapToken(conditionRef, BinaryOutcome.DOWN);
       const tokenStr = assetIdToString(token);
       const tokenParsed = parseAssetId(tokenStr);
       expect(AssetIdHelpers.equals(token, tokenParsed!)).toBe(true);
@@ -894,7 +913,7 @@ describe('Core IDs', () => {
           chainId: KnownChainIds.POLYGON,
           conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
         };
-        const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+        const token = unwrapToken(conditionRef, BinaryOutcome.UP);
         expect(isCurrencyAsset(token)).toBe(false);
       });
 
@@ -905,7 +924,7 @@ describe('Core IDs', () => {
           chainId: KnownChainIds.POLYGON,
           conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
         };
-        const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+        const token = unwrapToken(conditionRef, BinaryOutcome.UP);
 
         expect(isOutcomeTokenAsset(token)).toBe(true);
 
@@ -928,7 +947,7 @@ describe('Core IDs', () => {
           chainId: KnownChainIds.POLYGON,
           conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
         };
-        const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+        const token = unwrapToken(conditionRef, BinaryOutcome.UP);
 
         // Сценарий: routing балансов по типу актива
         const assets = [usdc, token];
@@ -991,7 +1010,7 @@ describe('Core IDs', () => {
           conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
         };
 
-        const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+        const token = unwrapToken(conditionRef, BinaryOutcome.UP);
 
         // Проверяем что AssetId заморожен
         expect(Object.isFrozen(token)).toBe(true);
@@ -1050,7 +1069,7 @@ describe('Core IDs', () => {
         // Входной объект НЕ должен быть заморожен (defensive design)
         expect(Object.isFrozen(conditionRef)).toBe(false);
 
-        const token = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+        const token = unwrapToken(conditionRef, BinaryOutcome.UP);
 
         // AssetId и его conditionRef должны быть замороженными
         expect(Object.isFrozen(token)).toBe(true);
@@ -1073,7 +1092,7 @@ describe('Core IDs', () => {
       });
     });
 
-    describe('fromOutcomeToken validation throws', () => {
+    describe('fromOutcomeToken validation safe-контракт (возвращает Err)', () => {
       const validRef: OnChainConditionRef = {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
@@ -1081,58 +1100,77 @@ describe('Core IDs', () => {
         conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
       };
 
-      it('should throw on invalid protocolId (lowercase)', () => {
-        expect(() =>
-          AssetIdHelpers.fromOutcomeToken(
-            { ...validRef, protocolId: 'polymarket_ctf' as any },
-            BinaryOutcome.UP
-          )
-        ).toThrow(/Invalid protocolId/);
+      it('should return Err on invalid protocolId (lowercase)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken(
+          { ...validRef, protocolId: 'polymarket_ctf' as any },
+          BinaryOutcome.UP
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AssetIdValidationError);
+          expect(result.error.message).toMatch(/Invalid protocolId/);
+          expect(result.error.context?.field).toBe('protocolId');
+        }
       });
 
-      it('should throw on invalid protocolId (contains dash)', () => {
-        expect(() =>
-          AssetIdHelpers.fromOutcomeToken(
-            { ...validRef, protocolId: 'POLY-MARKET' as any },
-            BinaryOutcome.UP
-          )
-        ).toThrow(/Invalid protocolId/);
+      it('should return Err on invalid protocolId (contains dash)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken(
+          { ...validRef, protocolId: 'POLY-MARKET' as any },
+          BinaryOutcome.UP
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toMatch(/Invalid protocolId/);
+          expect(result.error.context?.field).toBe('protocolId');
+        }
       });
 
-      it('should throw on invalid chainId (zero)', () => {
-        expect(() =>
-          AssetIdHelpers.fromOutcomeToken(
-            { ...validRef, chainId: 0 as any },
-            BinaryOutcome.UP
-          )
-        ).toThrow(/Invalid chainId/);
+      it('should return Err on invalid chainId (zero)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken(
+          { ...validRef, chainId: 0 as any },
+          BinaryOutcome.UP
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toMatch(/Invalid chainId/);
+          expect(result.error.context?.field).toBe('chainId');
+        }
       });
 
-      it('should throw on invalid chainId (negative)', () => {
-        expect(() =>
-          AssetIdHelpers.fromOutcomeToken(
-            { ...validRef, chainId: -1 as any },
-            BinaryOutcome.UP
-          )
-        ).toThrow(/Invalid chainId/);
+      it('should return Err on invalid chainId (negative)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken(
+          { ...validRef, chainId: -1 as any },
+          BinaryOutcome.UP
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toMatch(/Invalid chainId/);
+          expect(result.error.context?.field).toBe('chainId');
+        }
       });
 
-      it('should throw on invalid conditionId (too short)', () => {
-        expect(() =>
-          AssetIdHelpers.fromOutcomeToken(
-            { ...validRef, conditionId: '0xabcd' as any },
-            BinaryOutcome.UP
-          )
-        ).toThrow(/Invalid conditionId/);
+      it('should return Err on invalid conditionId (too short)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken(
+          { ...validRef, conditionId: '0xabcd' as any },
+          BinaryOutcome.UP
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toMatch(/Invalid conditionId/);
+          expect(result.error.context?.field).toBe('conditionId');
+        }
       });
 
-      it('should throw on invalid conditionId (not hex)', () => {
-        expect(() =>
-          AssetIdHelpers.fromOutcomeToken(
-            { ...validRef, conditionId: '0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG' as any },
-            BinaryOutcome.UP
-          )
-        ).toThrow(/Invalid conditionId/);
+      it('should return Err on invalid conditionId (not hex)', () => {
+        const result = AssetIdHelpers.fromOutcomeToken(
+          { ...validRef, conditionId: '0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG' as any },
+          BinaryOutcome.UP
+        );
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toMatch(/Invalid conditionId/);
+          expect(result.error.context?.field).toBe('conditionId');
+        }
       });
     });
 
@@ -1165,32 +1203,32 @@ describe('Core IDs', () => {
 
       it('should return false when types differ (CURRENCY vs OUTCOME_TOKEN)', () => {
         const currency = AssetIdHelpers.fromCurrency('USDC');
-        const token = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+        const token = unwrapToken(ref, BinaryOutcome.UP);
         expect(AssetIdHelpers.equals(currency, token)).toBe(false);
       });
 
       it('should return true for identical OUTCOME_TOKEN assets', () => {
-        const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
-        const b = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+        const a = unwrapToken(ref, BinaryOutcome.UP);
+        const b = unwrapToken(ref, BinaryOutcome.UP);
         expect(AssetIdHelpers.equals(a, b)).toBe(true);
       });
 
       it('should return false for OUTCOME_TOKEN with different conditionId', () => {
         const refB = { ...ref, conditionId: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' as ConditionId };
-        const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
-        const b = AssetIdHelpers.fromOutcomeToken(refB, BinaryOutcome.UP);
+        const a = unwrapToken(ref, BinaryOutcome.UP);
+        const b = unwrapToken(refB, BinaryOutcome.UP);
         expect(AssetIdHelpers.equals(a, b)).toBe(false);
       });
 
       it('should return false for OUTCOME_TOKEN with different outcomeKey', () => {
-        const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
-        const b = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.DOWN);
+        const a = unwrapToken(ref, BinaryOutcome.UP);
+        const b = unwrapToken(ref, BinaryOutcome.DOWN);
         expect(AssetIdHelpers.equals(a, b)).toBe(false);
       });
 
       it('should return false for OUTCOME_TOKEN with different chainId', () => {
-        const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
-        const b = AssetIdHelpers.fromOutcomeToken(refDifferentChain, BinaryOutcome.UP);
+        const a = unwrapToken(ref, BinaryOutcome.UP);
+        const b = unwrapToken(refDifferentChain, BinaryOutcome.UP);
         expect(AssetIdHelpers.equals(a, b)).toBe(false);
       });
 
@@ -2139,6 +2177,40 @@ describe('Core IDs', () => {
 
         // Сравнение должно вернуть false (безопасный fallback)
         expect(accountIdEquals(veryDeep1, veryDeep1)).toBe(false);
+      });
+
+      it('should handle cyclic base in getSubaccountDepth without infinite loop', () => {
+        // Создаём цикл в обход TypeScript через as any — тест защитного кода
+        const mutableSub = {
+          kind: 'SUBACCOUNT' as const,
+          base: accountIdFromWallet(testWallet),
+          name: 'cyclic',
+        };
+        // Цикл: mutableSub.base → mutableSub
+        (mutableSub as { base: object }).base = mutableSub;
+        const cyclicId = mutableSub as AccountId;
+
+        // Функция должна завершиться быстро и вернуть > MAX_SUBACCOUNT_DEPTH (5)
+        const depth = getSubaccountDepth(cyclicId);
+        expect(depth).toBeGreaterThan(5);
+      });
+
+      it('should return Err(AccountIdDepthError) for accountIdForSubaccount with cyclic base', () => {
+        // Создаём цикл аналогичным образом
+        const mutableSub = {
+          kind: 'SUBACCOUNT' as const,
+          base: accountIdFromWallet(testWallet),
+          name: 'cyclic',
+        };
+        (mutableSub as { base: object }).base = mutableSub;
+        const cyclicId = mutableSub as AccountId;
+
+        // Попытка добавить child к цикличному base — должна вернуть Err
+        const result = accountIdForSubaccount(cyclicId, 'child');
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AccountIdDepthError);
+        }
       });
     });
 

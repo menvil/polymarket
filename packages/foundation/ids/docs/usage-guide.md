@@ -40,9 +40,10 @@ const offChainRef: ConditionRef = {
   marketId: 'KXBTCUSDM-24APR',
 };
 
-// AssetId
+// AssetId — fromOutcomeToken возвращает Result, не бросает исключений
 const usdcAsset = AssetIdHelpers.USDC;
-const yesToken = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+const yesTokenResult = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+const yesToken = yesTokenResult.ok ? yesTokenResult.value : undefined;
 ```
 
 ```typescript
@@ -421,15 +422,17 @@ const conditionRef: OnChainConditionRef = {
   conditionId: '0xabc123...' as ConditionId,
 };
 
-const yesTokenAsset: AssetId = AssetIdHelpers.fromOutcomeToken(
-  conditionRef,
-  BinaryOutcome.UP
-);
+// fromOutcomeToken — safe-контракт: возвращает Result, не бросает исключений
+const yesResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+const noResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
 
-const noTokenAsset: AssetId = AssetIdHelpers.fromOutcomeToken(
-  conditionRef,
-  BinaryOutcome.DOWN
-);
+if (!yesResult.ok || !noResult.ok) {
+  console.error('Invalid asset parameters:', (yesResult.ok ? noResult : yesResult).error.message);
+  return;
+}
+
+const yesTokenAsset: AssetId = yesResult.value;
+const noTokenAsset: AssetId = noResult.value;
 
 // 3. Получаем все балансы
 const assets = [usdcAsset, yesTokenAsset, noTokenAsset];
@@ -648,8 +651,13 @@ const outcomes: OutcomeKey[] = [
 ];
 
 for (const outcome of outcomes) {
-  const token = AssetIdHelpers.fromOutcomeToken(conditionRef, outcome);
-  const balance = getBalance(accountId, venueId, token);
+  // fromOutcomeToken — safe: возвращает Result, не бросает исключений
+  const tokenResult = AssetIdHelpers.fromOutcomeToken(conditionRef, outcome);
+  if (!tokenResult.ok) {
+    console.error(`Invalid outcome token: ${tokenResult.error.message}`);
+    continue;
+  }
+  const balance = getBalance(accountId, venueId, tokenResult.value);
   console.log(`${outcome}: ${balance.amount}`);
 }
 ```
@@ -855,7 +863,12 @@ const outcome = BinaryOutcome.UP;
 const userInput = 'UP';
 const parsed = parseOutcomeKey(userInput);
 if (parsed) {
-  const token = AssetIdHelpers.fromOutcomeToken(conditionRef, parsed);
+  // fromOutcomeToken — safe-контракт: Result, не throw
+  const tokenResult = AssetIdHelpers.fromOutcomeToken(conditionRef, parsed);
+  if (tokenResult.ok) {
+    const token = tokenResult.value;
+    // использование token...
+  }
 }
 ```
 
