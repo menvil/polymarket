@@ -123,14 +123,14 @@ function accountIdFromVenue(
 }
 
 // Использование
-const result = accountIdFromVenue('POLYMARKET', 'user:with:colons');
+const result = accountIdFromVenue('POLYMARKET', 'user\x00name');
 
 if (result.ok) {
   console.log('Account:', result.value);
 } else {
   const error = result.error;
   console.error('Error:', error.message);
-  // "Invalid userId: invalid format (value: "user:with:colons")"
+  // "Invalid userId: invalid format (value: "user\x00name")"
 }
 ```
 

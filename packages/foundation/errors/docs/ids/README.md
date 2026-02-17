@@ -35,6 +35,7 @@ ID Errors представляют проблемы валидации и стр
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
 import { AccountIdValidationError } from '@polymarket/errors';
+import type { AccountId } from '@polymarket/ids';
 
 function createVenueAccount(
   venueId: string,
@@ -77,9 +78,9 @@ if (!result.ok) {
   console.error(`Asset validation failed [${error.context?.field}]:`, error.message);
   // error.context?.field: 'outcomeKey' | 'protocolId' | 'chainId' | 'conditionId'
   // error.context?.value: невалидное значение (строка)
+} else {
+  const token: AssetId = result.value;
 }
-
-const token: AssetId = result.value;
 ```
 
 ### 3. AccountIdDepthError (лимит вложенности)
@@ -87,6 +88,7 @@ const token: AssetId = result.value;
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
 import { AccountIdDepthError } from '@polymarket/errors';
+import type { AccountId } from '@polymarket/ids';
 
 const MAX_DEPTH = 5;
 
