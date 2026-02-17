@@ -1256,8 +1256,11 @@ if (result.ok) {
 } else {
   console.error(result.error);
 }
+```
 
+```typescript
 // ❌ Избегайте - может выбросить исключение
+import { unwrap } from '@polymarket/result/unsafe';
 const value = unwrap(result);
 ```
 
