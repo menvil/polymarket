@@ -306,7 +306,8 @@ export class ColorConsoleLogger implements ILogger {
           }
         : {};
 
-      this.log(LogLevel.ERROR, message, { ...context, ...errorContext });
+      const safeContext = context ? sanitizeContext(context) : {};
+      this.log(LogLevel.ERROR, message, { ...safeContext, ...errorContext });
     }
   }
 
@@ -345,7 +346,8 @@ export class ColorConsoleLogger implements ILogger {
           }
         : {};
 
-      this.log(LogLevel.FATAL, message, { ...context, ...errorContext });
+      const safeContext = context ? sanitizeContext(context) : {};
+      this.log(LogLevel.FATAL, message, { ...safeContext, ...errorContext });
     }
   }
 

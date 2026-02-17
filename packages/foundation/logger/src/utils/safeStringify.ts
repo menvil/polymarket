@@ -77,9 +77,9 @@ export function safeStringify(obj: unknown, indent?: number): string {
       try {
         // Пытаемся извлечь примитивные значения из объекта
         const safe = extractPrimitiveFields(obj);
-        const result = JSON.stringify(safe, null, indent);
-        // Добавляем метку о circular reference
-        return result.slice(0, -1) + ',"__error":"Circular reference detected"}';
+        // Добавляем метку о circular reference в сам объект, а не через slice,
+        // чтобы избежать невалидного JSON при пустом safe (иначе получили бы {,"__error":...}).
+        return JSON.stringify({ ...safe, __error: 'Circular reference detected' }, null, indent);
       } catch {
         // Даже это не помогло - возвращаем минимальный fallback
         return '{"__error":"Circular reference detected"}';

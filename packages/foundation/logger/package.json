@@ -58,7 +58,7 @@
     "typescript": "^5.3.0"
   },
   "dependencies": {
-    "@polymarket/time": "file:../time"
+    "@polymarket/time": "^0.1.0"
   },
   "publishConfig": {
     "access": "restricted"
