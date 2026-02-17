@@ -47,6 +47,7 @@ export function validateBrandedId(raw: string, maxLength: number): string | unde
   }
 
   // Control characters check (U+0000..U+001F, U+007F..U+009F)
+  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001F\u007F-\u009F]/.test(trimmed)) {
     return undefined;
   }
