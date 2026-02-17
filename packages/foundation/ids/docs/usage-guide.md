@@ -246,10 +246,10 @@ if (isSimulator(executionVenue)) {
 ```typescript
 import {
   type ConditionRef,
-  type ConditionId,
   BinaryOutcome,
   KnownChainIds,
   KnownOnChainProtocols,
+  parseConditionId,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
@@ -274,7 +274,7 @@ const conditionRef: ConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as ConditionId,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
 // 2. Загружаем исторические данные
@@ -402,13 +402,13 @@ import {
   type AssetId,
   type ConditionRef,
   type OnChainConditionRef,
-  type ConditionId,
   AssetIdHelpers,
   isCurrencyAsset,
   isOutcomeTokenAsset,
   BinaryOutcome,
   KnownChainIds,
   assetIdToString,
+  parseConditionId,
 } from '@polymarket/ids';
 
 // 1. Currency asset
@@ -419,7 +419,7 @@ const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as ConditionId,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
 // fromOutcomeToken — safe-контракт: возвращает Result, не бросает исключений
@@ -428,8 +428,7 @@ const noResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.DOW
 
 if (!yesResult.ok || !noResult.ok) {
   console.error('Invalid asset parameters:', (yesResult.ok ? noResult : yesResult).error.message);
-  return;
-}
+} else {
 
 const yesTokenAsset: AssetId = yesResult.value;
 const noTokenAsset: AssetId = noResult.value;
@@ -448,6 +447,8 @@ for (const asset of assets) {
     );
   }
 }
+
+} // end else (yesResult.ok && noResult.ok)
 
 // 4. Portfolio value
 function calculatePortfolioValue(balances: Balance[]): Money {
