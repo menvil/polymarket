@@ -140,7 +140,7 @@ AsyncResult.ok(promise, onError: (e: unknown) => E): AsyncResultChain<T, E>
 | `mapUnsafe` (sync)    | Да                   | → rejected Promise     | —              |
 | `tap`                 | Да                   | → rejected Promise     | —              |
 | `tapErr`              | Да                   | → rejected Promise     | —              |
-| `match`               | Да                   | → rejected Promise (wrapped) |
+| `match`               | Да                   | → rejected Promise (wrapped) | —              |
 
 `map` перехватывает исключения и возвращает `Err` — **safe по умолчанию**.
 

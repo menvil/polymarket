@@ -1461,6 +1461,21 @@ describe('Core IDs', () => {
         expect(parseOutcomeKey('UP\\')).toBeUndefined();
         expect(parseOutcomeKey('key\\value')).toBeUndefined();
       });
+
+      it('should reject strings containing control characters (U+0000..U+001F)', () => {
+        expect(parseOutcomeKey('\x00')).toBeUndefined();      // NUL
+        expect(parseOutcomeKey('\x01UP')).toBeUndefined();    // SOH prefix
+        expect(parseOutcomeKey('UP\x09')).toBeUndefined();    // HT (tab)
+        expect(parseOutcomeKey('UP\x0A')).toBeUndefined();    // LF (newline)
+        expect(parseOutcomeKey('UP\x0D')).toBeUndefined();    // CR
+        expect(parseOutcomeKey('UP\x1F')).toBeUndefined();    // US (unit separator)
+      });
+
+      it('should reject strings containing control characters (U+007F..U+009F)', () => {
+        expect(parseOutcomeKey('UP\x7F')).toBeUndefined();    // DEL
+        expect(parseOutcomeKey('UP\x80')).toBeUndefined();    // PAD
+        expect(parseOutcomeKey('UP\x9F')).toBeUndefined();    // APC
+      });
     });
   });
 

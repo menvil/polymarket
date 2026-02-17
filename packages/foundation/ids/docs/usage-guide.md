@@ -200,6 +200,7 @@ import {
   type ConditionRef,
   type ConditionId,
   KnownChainIds,
+  KnownOnChainProtocols,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
@@ -422,6 +423,7 @@ import {
   isOutcomeTokenAsset,
   BinaryOutcome,
   KnownChainIds,
+  KnownOnChainProtocols,
   assetIdToString,
   parseConditionId,
 } from '@polymarket/ids';
@@ -558,6 +560,7 @@ import {
   type ConditionRef,
   type ConditionId,
   KnownChainIds,
+  KnownOnChainProtocols,
   conditionRefEquals,
   conditionRefToString,
   parseConditionRef,
@@ -696,6 +699,7 @@ import {
   type ConditionId,
   type InstrumentId,
   KnownChainIds,
+  KnownOnChainProtocols,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
