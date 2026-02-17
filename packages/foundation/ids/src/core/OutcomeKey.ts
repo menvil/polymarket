@@ -64,7 +64,7 @@ export type OutcomeKey = string & { readonly __brand: 'OutcomeKey' };
  * const userKey = parseOutcomeKey(userInput);
  * ```
  */
-export function unsafeOutcomeKey(key: string): OutcomeKey {
+function unsafeOutcomeKey(key: string): OutcomeKey {
   return key as OutcomeKey;
 }
 

@@ -75,17 +75,22 @@ type ConditionRef =
 
 ```typescript
 // MarketDataSourceId - ОТКУДА мы ЧИТАЕМ
-type MarketDataSourceId =
-  | 'POLYMARKET_WS'      // Live WebSocket
-  | 'POLYMARKET_REPLAY'  // Historical data
-  | 'KALSHI_WS'
-  | ...;
+// Branded string (открытый тип): любой валидный идентификатор источника
+type MarketDataSourceId = string & { readonly __brand: 'MarketDataSourceId' };
+
+// Известные sources доступны через KnownMarketDataSources:
+// KnownMarketDataSources.POLYMARKET_WS      // Live WebSocket
+// KnownMarketDataSources.POLYMARKET_REPLAY  // Historical data
+// KnownMarketDataSources.KALSHI_WS          // и др.
 
 // ExecutionVenueId - КУДА мы ОТПРАВЛЯЕМ
-type ExecutionVenueId =
-  | 'POLYMARKET'   // Real venue
-  | 'KALSHI'       // Real venue
-  | 'SIMULATOR';   // Paper trading
+// Union: VenueId (реальная биржа) | SimulatorExecutionVenueId ('SIMULATOR')
+type ExecutionVenueId = VenueId | SimulatorExecutionVenueId;
+
+// Известные venues доступны через KnownExecutionVenues:
+// KnownExecutionVenues.POLYMARKET  // Real venue (VenueId)
+// KnownExecutionVenues.KALSHI      // Real venue (VenueId)
+// KnownExecutionVenues.SIMULATOR   // Paper trading
 ```
 
 **Почему разделили**:
