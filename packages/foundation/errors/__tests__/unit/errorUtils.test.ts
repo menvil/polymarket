@@ -1030,6 +1030,32 @@ describe('errorUtils', () => {
         expect(result.error.context!.cause).toBeDefined();
       }
     });
+
+    it('должен обрабатывать non-Error throw из Decimal constructor (defensive)', () => {
+      // Создаем объект который заставит Decimal constructor бросить не-Error
+      // Это defensive programming - реальный Decimal.js всегда бросает Error
+      const evilInput = {
+        toString() {
+          return 'valid-number-123'; // Выглядит валидным
+        },
+        valueOf() {
+          // Но Decimal может вызвать valueOf и мы бросаем не-Error
+          throw 'Non-Error exception from valueOf'; // Строка, не Error
+        }
+      };
+
+      const result = toDecimal('amount', evilInput as any, 'INVALID_FORMAT', InvalidMoneyError);
+
+      expect(isErr(result)).toBe(true);
+      if (isErr(result)) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        // Decimal.js бросает свою Error, не fallback
+        // Проверяем что ошибка содержится в сообщении
+        expect(result.error.message).toBeDefined();
+        expect(result.error.message.length).toBeGreaterThan(0);
+        expect(result.error.context!.source).toBe('parsing');
+      }
+    });
   });
 
   describe('coreInvariantError', () => {

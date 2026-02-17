@@ -301,6 +301,38 @@ describe('TradingError', () => {
       // JSON.stringify должен работать
       expect(() => JSON.stringify(json)).not.toThrow();
     });
+
+    it('должен корректно обрабатывать примитивы и null в context (defensive)', () => {
+      const context: Record<string, unknown> = {
+        stringValue: 'test',
+        numberValue: 123,
+        boolValue: true,
+        nullValue: null,
+        undefinedValue: undefined,
+        nested: {
+          primitive: 'nested string',
+          nullInside: null
+        }
+      };
+
+      const error = new TestError('Test error', { context });
+      const json = error.toJSON();
+
+      expect(json.context).toBeDefined();
+      const ctx = json.context as Record<string, unknown>;
+
+      expect(ctx.stringValue).toBe('test');
+      expect(ctx.numberValue).toBe(123);
+      expect(ctx.boolValue).toBe(true);
+      expect(ctx.nullValue).toBe(null);
+      expect(ctx.undefinedValue).toBe(undefined);
+
+      const nested = ctx.nested as Record<string, unknown>;
+      expect(nested.primitive).toBe('nested string');
+      expect(nested.nullInside).toBe(null);
+
+      expect(() => JSON.stringify(json)).not.toThrow();
+    });
   });
 
   describe('innerError handling', () => {

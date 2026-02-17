@@ -39,6 +39,29 @@ describe('MATH_CONSTANTS', () => {
       expect(Object.isFrozen(MATH_CONSTANTS)).toBe(true);
     });
 
+    it('каждый Decimal инстанс должен быть frozen', () => {
+      // Проверяем что сами Decimal инстансы заморожены
+      expect(Object.isFrozen(MATH_CONSTANTS.ZERO)).toBe(true);
+      expect(Object.isFrozen(MATH_CONSTANTS.ONE)).toBe(true);
+      expect(Object.isFrozen(MATH_CONSTANTS.TWO)).toBe(true);
+      expect(Object.isFrozen(MATH_CONSTANTS.TEN)).toBe(true);
+      expect(Object.isFrozen(MATH_CONSTANTS.HUNDRED)).toBe(true);
+    });
+
+    it('должен защищать от мутации Decimal свойств (strict mode throws)', () => {
+      const originalSign = MATH_CONSTANTS.ONE.s;
+
+      // В strict mode попытка изменить свойство frozen Decimal бросает TypeError
+      expect(() => {
+        // @ts-expect-error - intentionally testing runtime protection
+        MATH_CONSTANTS.ONE.s = -1;
+      }).toThrow(TypeError);
+
+      // Знак не изменился
+      expect(MATH_CONSTANTS.ONE.s).toBe(originalSign);
+      expect(MATH_CONSTANTS.ONE.toString()).toBe('1');
+    });
+
     it('должен защищать от runtime-перезаписи свойств (strict mode throws)', () => {
       const originalZero = MATH_CONSTANTS.ZERO;
 

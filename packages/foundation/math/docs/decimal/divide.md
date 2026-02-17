@@ -424,6 +424,7 @@ import { divideDecimal } from '@polymarket/math';
 import {
   DivisionByZeroError,
   InvalidDivisorError,
+  InvalidOperandError,
   ArithmeticOverflowError,
 } from '@polymarket/errors';
 
@@ -441,6 +442,11 @@ function safeDivide(a: Decimal, b: Decimal): Decimal | null {
       return null;
     }
 
+    if (InvalidOperandError.is(error)) {
+      console.error('Invalid operand (NaN or Infinity)');
+      return null;
+    }
+
     if (ArithmeticOverflowError.is(error)) {
       console.error('Division resulted in overflow');
       return null;
@@ -455,6 +461,7 @@ function safeDivide(a: Decimal, b: Decimal): Decimal | null {
 const result1 = safeDivide(new Decimal(10), new Decimal(2)); // 5
 const result2 = safeDivide(new Decimal(10), new Decimal(0)); // null (division by zero)
 const result3 = safeDivide(new Decimal(10), new Decimal(NaN)); // null (invalid divisor)
+const result4 = safeDivide(new Decimal(NaN), new Decimal(10)); // null (invalid operand)
 ```
 
 ## Сравнение с умножением

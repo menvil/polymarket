@@ -53,9 +53,15 @@ export interface MathOperationContext {
  * ```
  */
 export function toStringSafe(value: unknown): string {
-  return value && typeof (value as any).toString === 'function'
-    ? (value as any).toString()
-    : String(value);
+  if (value && typeof (value as any).toString === 'function') {
+    try {
+      return (value as any).toString();
+    } catch {
+      // Fallback if toString() throws
+      return String(value);
+    }
+  }
+  return String(value);
 }
 
 /**
@@ -382,14 +388,7 @@ export function assertValidTickSize(
     );
   }
 
-  // Defensive: проверяем наличие метода lte перед вызовом
-  if (typeof (tickSize as any).lte !== 'function') {
-    throw new InvalidTickSizeError(
-      (ctx) => `Tick size must have lte method, got ${ctx.tickSize}`,
-      { context }
-    );
-  }
-
+  // После проверки instanceof Decimal метод lte() гарантированно существует
   if (tickSize.lte(0)) {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
