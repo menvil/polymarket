@@ -299,18 +299,15 @@ const settingsResult = validateTradingSettings({
   minOrderSize: 100
 });
 
-settingsResult.match({
-  ok: (settings) => {
-    saveSettings(settings);
-    showSuccess('Settings saved');
-  },
-  err: (errors) => {
-    errors.forEach((error) => {
-      const field = error.context?.field as string;
-      showFieldError(field, error.message);
-    });
-  }
-});
+if (settingsResult.ok) {
+  saveSettings(settingsResult.value);
+  showSuccess('Settings saved');
+} else {
+  settingsResult.error.forEach((error) => {
+    const field = error.context?.field as string;
+    showFieldError(field, error.message);
+  });
+}
 ```
 
 ### 5. Интеграция с decimal.js
@@ -537,13 +534,12 @@ class OrderLimit {
 // Использование
 const limitResult = OrderLimit.fromNumbers(100, 10000);
 
-limitResult.match({
-  ok: (limit) => {
-    console.log(`Order limits: ${limit.getMin()} - ${limit.getMax()}`);
-    console.log(limit.isWithinLimit(500)); // true
-  },
-  err: (error) => console.error('Invalid limits:', error.message)
-});
+if (limitResult.ok) {
+  console.log(`Order limits: ${limitResult.value.getMin()} - ${limitResult.value.getMax()}`);
+  console.log(limitResult.value.isWithinLimit(500)); // true
+} else {
+  console.error('Invalid limits:', limitResult.error.message);
+}
 ```
 
 ---
@@ -624,9 +620,8 @@ function validateAndLogAmount(
       field,
       error: result.error.toJSON(),
       userInput: { value, min, max }
-      });
-    }
-  });
+    });
+  }
 
   return result;
 }

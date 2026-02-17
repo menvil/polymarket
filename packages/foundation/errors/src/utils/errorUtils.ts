@@ -640,7 +640,7 @@ export function rewrap<TError extends DomainError>(
     merged.source = inner.source;
   }
 
-  // 4) Сохраняем origin-данные из первоначальной ошибки (если это первый rewrap)
+  // 5) Сохраняем origin-данные из первоначальной ошибки (если это первый rewrap)
   // Эти поля позволяют отследить самую первую ошибку в цепочке
   // Если поле уже есть в inner, оно уже скопировано через spread на строке 567
   if (inner.firstTradingErrorTimestamp === undefined && err.timestamp) {

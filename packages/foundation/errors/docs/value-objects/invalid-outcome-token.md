@@ -55,7 +55,7 @@ class OutcomeToken {
       throw new InvalidOutcomeTokenError(
         (ctx) => `Outcome key cannot be empty for condition ${ctx.conditionRef}`,
         {
-          code: InvalidOutcomeTokenError.code,
+          
           context: {
             conditionRef: conditionRef.toString(),
             outcomeKey,
@@ -99,7 +99,7 @@ class OutcomeToken {
         new InvalidOutcomeTokenError(
           (ctx) => `Outcome key must be a string, got ${typeof ctx.outcomeKey}`,
           {
-            code: InvalidOutcomeTokenError.code,
+            
             context: {
               conditionRef: conditionRef.toString(),
               outcomeKey: String(outcomeKey),
@@ -115,7 +115,7 @@ class OutcomeToken {
         new InvalidOutcomeTokenError(
           (ctx) => `Outcome key cannot be empty for condition ${ctx.conditionRef}`,
           {
-            code: InvalidOutcomeTokenError.code,
+            
             context: {
               conditionRef: conditionRef.toString(),
               outcomeKey,
@@ -173,7 +173,7 @@ class OutcomeToken {
         new InvalidOutcomeTokenError(
           (ctx) => `Invalid binary outcome key: ${ctx.outcomeKey}. Must be YES or NO`,
           {
-            code: InvalidOutcomeTokenError.code,
+            
             context: {
               conditionRef: conditionRef.toString(),
               outcomeKey,
@@ -198,7 +198,7 @@ class OutcomeToken {
         new InvalidOutcomeTokenError(
           (ctx) => `Outcome index must be a non-negative integer, got ${ctx.outcomeIndex}`,
           {
-            code: InvalidOutcomeTokenError.code,
+            
             context: {
               conditionRef: conditionRef.toString(),
               outcomeIndex: String(outcomeIndex),
@@ -214,7 +214,7 @@ class OutcomeToken {
         new InvalidOutcomeTokenError(
           (ctx) => `Outcome index ${ctx.outcomeIndex} out of range [0, ${ctx.maxIndex}]`,
           {
-            code: InvalidOutcomeTokenError.code,
+            
             context: {
               conditionRef: conditionRef.toString(),
               outcomeIndex: String(outcomeIndex),
@@ -273,7 +273,7 @@ class OutcomeToken {
         new InvalidOutcomeTokenError(
           (ctx) => `Outcome slot index must be an integer, got ${ctx.index}`,
           {
-            code: InvalidOutcomeTokenError.code,
+            
             context: {
               conditionId: event.conditionId,
               index: String(event.outcomeSlotIndex),
@@ -289,7 +289,7 @@ class OutcomeToken {
         new InvalidOutcomeTokenError(
           (ctx) => `Outcome slot index cannot be negative: ${ctx.index}`,
           {
-            code: InvalidOutcomeTokenError.code,
+            
             context: {
               conditionId: event.conditionId,
               index: String(event.outcomeSlotIndex),
@@ -349,7 +349,7 @@ class OutcomeTokenSet {
         new InvalidOutcomeTokenError(
           (ctx) => `Outcome keys array cannot be empty for condition ${ctx.conditionRef}`,
           {
-            code: InvalidOutcomeTokenError.code,
+            
             context: {
               conditionRef: conditionRef.toString(),
               reason: 'empty-outcomes-array'
@@ -369,7 +369,7 @@ class OutcomeTokenSet {
           new InvalidOutcomeTokenError(
             (ctx) => `Duplicate outcome key: ${ctx.outcomeKey}`,
             {
-              code: InvalidOutcomeTokenError.code,
+              
               context: {
                 conditionRef: conditionRef.toString(),
                 outcomeKey,

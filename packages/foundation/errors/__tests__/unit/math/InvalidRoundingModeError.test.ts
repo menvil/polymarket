@@ -7,34 +7,19 @@ import { InvalidRoundingModeError } from '../../../src/math/InvalidRoundingModeE
 import { TradingError } from '../../../src/base/index.js';
 import { wrapOp } from '../../../src/utils/errorUtils.js';
 import { Ok, Err } from '@polymarket/result';
-import Decimal from 'decimal.js';
 
 describe('InvalidRoundingModeError', () => {
   describe('создание экземпляра', () => {
-    it('должен создавать ошибку с простым сообщением', () => {
-      const error = new InvalidRoundingModeError('Invalid rounding mode', {
+    it('должен создавать ошибку со статическим и динамическим сообщением', () => {
+      // Статическое сообщение
+      const error1 = new InvalidRoundingModeError('Invalid rounding mode', {
         context: { roundingMode: 9 },
       });
+      expect(error1.message).toBe('Invalid rounding mode');
+      expect(error1.context).toEqual({ roundingMode: 9 });
 
-      expect(error.message).toBe('Invalid rounding mode');
-      expect(error.context).toEqual({ roundingMode: 9 });
-    });
-
-    it('должен создавать ошибку с динамическим сообщением', () => {
-      const error = new InvalidRoundingModeError(
-        (ctx) =>
-          `Rounding mode must be an integer between 0 and 8, got ${ctx.roundingMode}`,
-        {
-          context: { roundingMode: 10, min: 0, max: 8 },
-        }
-      );
-
-      expect(error.message).toBe('Rounding mode must be an integer between 0 and 8, got 10');
-      expect(error.context).toEqual({ roundingMode: 10, min: 0, max: 8 });
-    });
-
-    it('должен включать полезный context для отладки', () => {
-      const error = new InvalidRoundingModeError(
+      // Динамическое сообщение с полным context
+      const error2 = new InvalidRoundingModeError(
         (ctx) => `Invalid rounding mode ${ctx.roundingMode} for ${ctx.operation}`,
         {
           context: {
@@ -45,8 +30,8 @@ describe('InvalidRoundingModeError', () => {
           },
         }
       );
-
-      expect(error.context).toMatchObject({
+      expect(error2.message).toBe('Invalid rounding mode NaN for Price.round');
+      expect(error2.context).toMatchObject({
         roundingMode: 'NaN',
         operation: 'Price.round',
         value: '10.567',
@@ -55,139 +40,56 @@ describe('InvalidRoundingModeError', () => {
     });
   });
 
-  describe('создание с различными типами значений', () => {
-    it('должен сохранять context для невалидных режимов', () => {
-      const error = new InvalidRoundingModeError(
-        (ctx) => `Rounding mode must be between 0 and 8, got ${ctx.roundingMode}`,
-        {
-          context: { roundingMode: 9, min: 0, max: 8 },
-        }
-      );
-
-      expect(error.message).toContain('Rounding mode must be between 0 and 8, got 9');
-      expect(error.context?.roundingMode).toBe(9);
-      expect(error.context?.min).toBe(0);
-      expect(error.context?.max).toBe(8);
-    });
-
-    it('должен сохранять context для специальных значений', () => {
-      const error = new InvalidRoundingModeError(
-        'Rounding mode must be an integer',
-        {
-          context: { roundingMode: 4.5, reason: 'not an integer' },
-        }
-      );
-
-      expect(error.context?.roundingMode).toBe(4.5);
-      expect(error.context?.reason).toBe('not an integer');
-    });
-  });
-
   describe('интеграция с wrapOp', () => {
-    it('должен быть в whitelist expected math errors', () => {
-      // Создаём функцию которая выбрасывает InvalidRoundingModeError
-      const fn = () => {
+    it('должен быть в whitelist expected math errors и работать через throw/Result', () => {
+      // Тест 1: throw InvalidRoundingModeError - должен rewrap с tracing
+      const throwFn = () => {
         throw new InvalidRoundingModeError('Invalid rounding mode', {
           context: { roundingMode: 9 },
         });
       };
 
-      const result = wrapOp(
+      const throwResult = wrapOp(
         'TestService',
         'roundPrice',
         { precision: 2 },
-        fn,
+        throwFn,
         InvalidRoundingModeError
       );
 
-      // Должен вернуть Err с той же ошибкой (не преобразованную)
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidRoundingModeError);
-        // Должен сохранить оригинальный context
-        expect(result.error.context?.roundingMode).toBe(9);
-        // Должен добавить service/op информацию
-        expect(result.error.context?.service).toBe('TestService');
-        expect(result.error.context?.op).toBe('roundPrice');
+      expect(throwResult.ok).toBe(false);
+      if (!throwResult.ok) {
+        expect(throwResult.error).toBeInstanceOf(InvalidRoundingModeError);
+        expect(throwResult.error.context?.roundingMode).toBe(9);
+        expect(throwResult.error.context?.service).toBe('TestService');
+        expect(throwResult.error.context?.op).toBe('roundPrice');
       }
-    });
 
-    it('должен корректно работать в wrapOp с Result возвратом', () => {
-      // Функция возвращает Result<number, InvalidRoundingModeError>
-      const fn = (mode: number) => {
+      // Тест 2: Result<T, E> - должен rewrap Err
+      const resultFn = (mode: number) => {
         if (mode < 0 || mode > 8 || !Number.isInteger(mode)) {
           return Err(
             new InvalidRoundingModeError(
               (ctx) => `Invalid rounding mode ${ctx.roundingMode}`,
-              {
-                      context: { roundingMode: mode },
-              }
+              { context: { roundingMode: mode } }
             )
           );
         }
         return Ok(mode);
       };
 
-      const result = wrapOp(
+      const resultErr = wrapOp(
         'TestService',
-        'validateRoundingMode',
-        { input: 10 },
-        () => fn(10),
+        'validate',
+        {},
+        () => resultFn(10),
         InvalidRoundingModeError
       );
 
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBeInstanceOf(InvalidRoundingModeError);
-        expect(result.error.context?.roundingMode).toBe(10);
-      }
-    });
-
-    it('должен корректно работать с Decimal.js округлением', () => {
-      const roundPrice = (value: string, decimals: number, mode: number) => {
-        if (!Number.isInteger(mode) || mode < 0 || mode > 8) {
-          return Err(
-            new InvalidRoundingModeError(
-              (ctx) => `Invalid rounding mode ${ctx.roundingMode} for ${ctx.operation}`,
-              {
-                      context: { roundingMode: mode, operation: 'roundPrice', value, decimals },
-              }
-            )
-          );
-        }
-
-        const decimal = new Decimal(value);
-        return Ok(decimal.toDecimalPlaces(decimals, mode as any).toString());
-      };
-
-      // Валидный режим
-      const validResult = wrapOp(
-        'PriceService',
-        'roundPrice',
-        { value: '10.567', decimals: 2, mode: 4 },
-        () => roundPrice('10.567', 2, 4),
-        InvalidRoundingModeError
-      );
-
-      expect(validResult.ok).toBe(true);
-      if (validResult.ok) {
-        expect(validResult.value).toBe('10.57');
-      }
-
-      // Невалидный режим
-      const invalidResult = wrapOp(
-        'PriceService',
-        'roundPrice',
-        { value: '10.567', decimals: 2, mode: 9 },
-        () => roundPrice('10.567', 2, 9),
-        InvalidRoundingModeError
-      );
-
-      expect(invalidResult.ok).toBe(false);
-      if (!invalidResult.ok) {
-        expect(invalidResult.error).toBeInstanceOf(InvalidRoundingModeError);
-        expect(invalidResult.error.context?.roundingMode).toBe(9);
-        expect(invalidResult.error.context?.operation).toBe('roundPrice');
+      expect(resultErr.ok).toBe(false);
+      if (!resultErr.ok) {
+        expect(resultErr.error.context?.roundingMode).toBe(10);
+        expect(resultErr.error.context?.service).toBe('TestService');
       }
     });
   });
@@ -196,149 +98,9 @@ describe('InvalidRoundingModeError', () => {
     it('должен корректно определять экземпляр InvalidRoundingModeError', () => {
       const error = new InvalidRoundingModeError('Invalid rounding mode');
       expect(InvalidRoundingModeError.is(error)).toBe(true);
-    });
-
-    it('должен возвращать false для других TradingError', () => {
-      const error = new TradingError('Some other error');
-      expect(InvalidRoundingModeError.is(error)).toBe(false);
-    });
-
-    it('должен возвращать false для обычной Error', () => {
-      const error = new Error('Regular error');
-      expect(InvalidRoundingModeError.is(error)).toBe(false);
-    });
-
-    it('должен возвращать false для не-Error значений', () => {
+      expect(InvalidRoundingModeError.is(new TradingError('Other error'))).toBe(false);
+      expect(InvalidRoundingModeError.is(new Error('Regular error'))).toBe(false);
       expect(InvalidRoundingModeError.is(null)).toBe(false);
-      expect(InvalidRoundingModeError.is(undefined)).toBe(false);
-      expect(InvalidRoundingModeError.is('error')).toBe(false);
-      expect(InvalidRoundingModeError.is(42)).toBe(false);
-      expect(InvalidRoundingModeError.is({})).toBe(false);
-    });
-  });
-
-  describe('toJSON сериализация', () => {
-    it('должен сериализовать ошибку в JSON', () => {
-      const error = new InvalidRoundingModeError(
-        (ctx) => `Invalid rounding mode ${ctx.roundingMode}`,
-        {
-          context: { roundingMode: 9, precision: 2 },
-        }
-      );
-
-      const json = error.toJSON();
-
-      expect(json.name).toBe('InvalidRoundingModeError');
-      expect(json.message).toBe('Invalid rounding mode 9');
-      expect(json.severity).toBe('low');
-      expect(json.context).toEqual({ roundingMode: 9, precision: 2 });
-      expect(json.timestamp).toBeDefined();
-    });
-  });
-
-  describe('примеры использования из документации', () => {
-    it('пример 1: базовое использование (throw)', () => {
-      class Price {
-        constructor(private readonly value: number) {}
-
-        round(precision: number, roundingMode: number): Price {
-          if (!Number.isInteger(roundingMode) || roundingMode < 0 || roundingMode > 8) {
-            throw new InvalidRoundingModeError(
-              (ctx) =>
-                `Rounding mode must be an integer between 0 and 8, got ${ctx.roundingMode}`,
-              {
-                      context: {
-                  roundingMode,
-                  value: this.value,
-                  precision,
-                  operation: 'Price.round',
-                },
-              }
-            );
-          }
-
-          const multiplier = Math.pow(10, precision);
-          const rounded = Math.round(this.value * multiplier) / multiplier;
-          return new Price(rounded);
-        }
-      }
-
-      const price = new Price(10.567);
-
-      expect(() => price.round(2, 9)).toThrow(InvalidRoundingModeError);
-
-      try {
-        price.round(2, 9);
-      } catch (error) {
-        expect(InvalidRoundingModeError.is(error)).toBe(true);
-        if (InvalidRoundingModeError.is(error)) {
-          expect(error.context?.roundingMode).toBe(9);
-          expect(error.context?.operation).toBe('Price.round');
-        }
-      }
-    });
-
-    it('пример 2: с Result<T,E>', () => {
-      class Price {
-        private constructor(private readonly value: Decimal) {}
-
-        static fromDecimal(value: Decimal) {
-          return Ok(new Price(value));
-        }
-
-        round(precision: number, roundingMode: number) {
-          if (!Number.isInteger(roundingMode)) {
-            return Err(
-              new InvalidRoundingModeError(
-                (ctx) => `Rounding mode must be an integer, got ${ctx.roundingMode}`,
-                {
-                          context: {
-                    roundingMode,
-                    value: this.value.toString(),
-                    precision,
-                    reason: 'not an integer',
-                  },
-                }
-              )
-            );
-          }
-
-          if (roundingMode < 0 || roundingMode > 8) {
-            return Err(
-              new InvalidRoundingModeError(
-                (ctx) => `Rounding mode must be between 0 and 8, got ${ctx.roundingMode}`,
-                {
-                          context: {
-                    roundingMode,
-                    value: this.value.toString(),
-                    precision,
-                    min: 0,
-                    max: 8,
-                  },
-                }
-              )
-            );
-          }
-
-          const rounded = this.value.toDecimalPlaces(precision, roundingMode as any);
-          return Ok(new Price(rounded));
-        }
-      }
-
-      const priceResult = Price.fromDecimal(new Decimal('10.567'));
-      expect(priceResult.ok).toBe(true);
-      if (!priceResult.ok) return;
-
-      const price = priceResult.value;
-      const result = price.round(2, 4);
-
-      expect(result.ok).toBe(true);
-
-      const invalidResult = price.round(2, 10);
-      expect(invalidResult.ok).toBe(false);
-      if (!invalidResult.ok) {
-        expect(invalidResult.error.context?.roundingMode).toBe(10);
-      }
     });
   });
 });

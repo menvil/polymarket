@@ -57,7 +57,7 @@ class Ratio {
       throw new InvalidRatioError(
         (ctx) => `Ratio must be finite, got ${ctx.value}`,
         {
-          code: InvalidRatioError.code,
+          
           context: {
             value: value.toString(),
             reason: 'non-finite'
@@ -94,7 +94,7 @@ class Ratio {
         new InvalidRatioError(
           (ctx) => `Ratio must be finite, got ${ctx.value}`,
           {
-            code: InvalidRatioError.code,
+            
             context: {
               value: value.toString(),
               reason: 'non-finite'
@@ -134,7 +134,7 @@ class Ratio {
         new InvalidRatioError(
           (ctx) => `Ratio calculation resulted in non-finite value: ${ctx.numerator} / ${ctx.denominator}`,
           {
-            code: InvalidRatioError.code,
+            
             context: {
               numerator: numerator.toString(),
               denominator: denominator.toString(),
@@ -193,7 +193,7 @@ class Ratio {
         new InvalidRatioError(
           (ctx) => `Ratio must be finite, got ${ctx.value}`,
           {
-            code: InvalidRatioError.code,
+            
             context: { value: value.toString(), reason: 'non-finite' }
           }
         )
@@ -205,7 +205,7 @@ class Ratio {
         new InvalidRatioError(
           (ctx) => `Ratio must be positive, got ${ctx.value}`,
           {
-            code: InvalidRatioError.code,
+            
             context: {
               value: value.toString(),
               min: Ratio.MIN_POSITIVE.toString(),
@@ -232,7 +232,7 @@ class Ratio {
         new InvalidRatioError(
           (ctx) => `Leverage ratio cannot exceed ${ctx.max}, got ${ctx.value}`,
           {
-            code: InvalidRatioError.code,
+            
             context: {
               value: value.toString(),
               max: Ratio.MAX_LEVERAGE.toString(),
@@ -254,7 +254,7 @@ class Ratio {
         new InvalidRatioError(
           (ctx) => `Percentage ratio must be finite, got ${ctx.value}`,
           {
-            code: InvalidRatioError.code,
+            
             context: { value: value.toString(), reason: 'non-finite' }
           }
         )
@@ -266,7 +266,7 @@ class Ratio {
         new InvalidRatioError(
           (ctx) => `Percentage ratio must be in [0, 1], got ${ctx.value}`,
           {
-            code: InvalidRatioError.code,
+            
             context: {
               value: value.toString(),
               min: '0',
@@ -431,7 +431,7 @@ class MarginRatio extends Ratio {
         new InvalidRatioError(
           (ctx) => `Invalid total value for margin calculation: ${ctx.totalValue}`,
           {
-            code: InvalidRatioError.code,
+            
             context: {
               equity: equity.toString(),
               borrowed: borrowed.toString(),
@@ -450,7 +450,7 @@ class MarginRatio extends Ratio {
         new InvalidRatioError(
           (ctx) => `Margin ratio calculation resulted in non-finite value`,
           {
-            code: InvalidRatioError.code,
+            
             context: {
               equity: equity.toString(),
               totalValue: totalValue.toString(),

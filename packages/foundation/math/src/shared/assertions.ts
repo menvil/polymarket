@@ -106,6 +106,43 @@ export type ErrorConstructor<TError> = new (
 ) => TError;
 
 /**
+ * Проверяет, является ли значение Decimal-подобным объектом (duck-typing)
+ *
+ * @param value - Значение для проверки
+ * @returns true если объект имеет необходимые методы Decimal
+ *
+ * @remarks
+ * Использует duck-typing вместо instanceof для совместимости с разными
+ * копиями decimal.js библиотеки (например, в monorepo или при bundling).
+ *
+ * Проверяет наличие ключевых методов Decimal.js:
+ * - isFinite() - проверка конечности
+ * - toString() - сериализация
+ * - toNumber() - конвертация в number
+ *
+ * @example
+ * ```typescript
+ * // Работает с любой копией Decimal
+ * const d1 = new Decimal('1.5');  // копия A
+ * const d2 = new OtherDecimal('2.5');  // копия B
+ * isDecimalLike(d1); // true
+ * isDecimalLike(d2); // true (если это тоже Decimal.js)
+ * isDecimalLike(null); // false
+ * isDecimalLike({ isFinite: () => true }); // true (duck-typing)
+ * ```
+ */
+function isDecimalLike(value: unknown): value is Decimal {
+  return (
+    value !== null &&
+    value !== undefined &&
+    typeof value === 'object' &&
+    typeof (value as any).isFinite === 'function' &&
+    typeof (value as any).toString === 'function' &&
+    typeof (value as any).toNumber === 'function'
+  );
+}
+
+/**
  * Проверяет, что значение является конечным числом (generic версия)
  *
  * @param value - Decimal значение для проверки
@@ -133,8 +170,8 @@ export function assertFiniteOperandWith<TError>(
   context: MathOperationContext,
   ErrorCtor: ErrorConstructor<TError>
 ): void {
-  // Проверка на undefined/null и instanceof Decimal
-  if (!(value instanceof Decimal)) {
+  // Проверка на undefined/null и Decimal-подобный объект (duck-typing)
+  if (!isDecimalLike(value)) {
     throw new ErrorCtor(
       (ctx) => `${ctx.paramName} must be a valid Decimal instance, got ${ctx.value}`,
       {
@@ -373,8 +410,8 @@ export function assertValidTickSize(
   tickSize: Decimal,
   context: MathOperationContext
 ): void {
-  // Проверка на undefined/null и instanceof Decimal
-  if (!(tickSize instanceof Decimal)) {
+  // Проверка на undefined/null и Decimal-подобный объект (duck-typing)
+  if (!isDecimalLike(tickSize)) {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be a valid Decimal instance, got ${ctx.tickSize}`,
       { context }
@@ -388,7 +425,14 @@ export function assertValidTickSize(
     );
   }
 
-  // После проверки instanceof Decimal метод lte() гарантированно существует
+  // Defensive: проверяем наличие метода lte перед вызовом
+  if (typeof (tickSize as any).lte !== 'function') {
+    throw new InvalidTickSizeError(
+      (ctx) => `Tick size must have lte method, got ${ctx.tickSize}`,
+      { context }
+    );
+  }
+
   if (tickSize.lte(0)) {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,

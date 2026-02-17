@@ -48,7 +48,7 @@ class Price {
       throw new InvalidPriceError(
         (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
         {
-          code: InvalidPriceError.code,
+          
           context: { value, min: 0.0001, max: 0.9999 }
         }
       );
@@ -82,7 +82,7 @@ class Price {
         new InvalidPriceError(
           (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
-            code: InvalidPriceError.code,
+            
             context: { value, min: 0.0001, max: 0.9999 }
           }
         )
@@ -118,7 +118,7 @@ function validatePrice(value: number): Result<Price, InvalidPriceError> {
       new InvalidPriceError(
         'Price must be positive',
         {
-          code: InvalidPriceError.code,
+          
           context: { value, reason: 'non-positive' }
         }
       )
@@ -130,7 +130,7 @@ function validatePrice(value: number): Result<Price, InvalidPriceError> {
       new InvalidPriceError(
         'Price cannot be 100%',
         {
-          code: InvalidPriceError.code,
+          
           context: { value, reason: 'too-high' }
         }
       )
@@ -142,7 +142,7 @@ function validatePrice(value: number): Result<Price, InvalidPriceError> {
       new InvalidPriceError(
         'Price too small (minimum: 0.0001)',
         {
-          code: InvalidPriceError.code,
+          
           context: { value, min: 0.0001 }
         }
       )
@@ -205,7 +205,7 @@ class Price {
         new InvalidPriceError(
           (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
-            code: InvalidPriceError.code,
+            
             context: {
               value: value.toNumber(),
               min: Price.MIN.toNumber(),
@@ -226,7 +226,7 @@ class Price {
         new InvalidPriceError(
           (ctx) => `Invalid price format: ${ctx.value}`,
           {
-            code: InvalidPriceError.code,
+            
             context: { value, error: String(error) }
           }
         )
@@ -294,7 +294,7 @@ function clampPrice(value: number): Result<Price, InvalidPriceError> {
     return Err(
       new InvalidPriceError(
         'Price must be a valid number',
-        { code: InvalidPriceError.code, context: { value } }
+        {context: { value } }
       )
     );
   }

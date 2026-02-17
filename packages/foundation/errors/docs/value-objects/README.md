@@ -76,7 +76,7 @@ class Price {
       throw new InvalidPriceError(
         (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
         {
-          code: InvalidPriceError.code,
+          
           context: { value, min: 0.0001, max: 0.9999 }
         }
       );
@@ -100,7 +100,7 @@ class Price {
         new InvalidPriceError(
           (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
-            code: InvalidPriceError.code,
+            
             context: { value, min: 0.0001, max: 0.9999 }
           }
         )
@@ -152,7 +152,7 @@ if (result.ok) {
 }
 ```
 
-### 4. Композиция с ResultChain
+### 4. Композиция с toChain
 
 ```typescript
 import { toChain } from '@polymarket/result';
@@ -299,7 +299,7 @@ class Money {
           new InvalidMoneyError(
             (ctx) => `Amount cannot be negative: ${ctx.amount}`,
             {
-              code: InvalidMoneyError.code,
+              
               context: { amount: decimal.toNumber(), currency }
             }
           )
@@ -312,7 +312,7 @@ class Money {
         new InvalidMoneyError(
           (ctx) => `Invalid amount: ${ctx.amount}`,
           {
-            code: InvalidMoneyError.code,
+            
             context: { amount, currency }
           }
         )
