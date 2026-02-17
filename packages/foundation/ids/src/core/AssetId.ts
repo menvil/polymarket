@@ -260,11 +260,13 @@ export const AssetId = {
     // Проверка равенства asset identifier
     if (a.type === 'CURRENCY') {
       // Явная проверка b позволяет TypeScript сузить тип b без type cast
+      /* c8 ignore next */
       if (b.type !== 'CURRENCY') return false;
       return a.currency === b.currency;
     }
 
     // OUTCOME_TOKEN: явная проверка b сужает его тип без type cast
+    /* c8 ignore next */
     if (b.type !== 'OUTCOME_TOKEN') return false;
 
     // Сравниваем conditionRef

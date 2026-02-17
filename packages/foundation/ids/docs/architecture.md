@@ -151,8 +151,9 @@ getBalance(accountIdFromWallet(wallet));
 
 ```typescript
 type AssetId =
-  | { type: 'CURRENCY'; currency: string; }
-  | { type: 'OUTCOME_TOKEN'; conditionRef: ConditionRef; outcomeKey: OutcomeKey; };
+  | { type: 'CURRENCY'; currency: SupportedCurrency; }
+  | { type: 'OUTCOME_TOKEN'; conditionRef: OnChainConditionRef; outcomeKey: OutcomeKey; };
+// Только OnChainConditionRef: outcome tokens существуют только на-chain
 ```
 
 **Преимущества**:
@@ -304,8 +305,8 @@ packages/foundation/ids/
 │   │   └── index.ts
 │   ├── execution/         # Execution IDs (куда ОТПРАВЛЯЕМ)
 │   │   ├── ExecutionVenueId.ts
-│   │   ├── OrderId.ts     # Phase 2: branded ID для биржевых ордеров
-│   │   ├── FillId.ts      # Phase 2: branded ID для исполненных сделок
+│   │   ├── OrderId.ts     # branded ID для биржевых ордеров
+│   │   ├── FillId.ts      # branded ID для исполненных сделок
 │   │   └── index.ts
 │   └── index.ts
 ```
@@ -375,10 +376,9 @@ Result pattern (@polymarket/result) для graceful error handling.
 Open union types для будущих расширений:
 
 ```typescript
-type MarketDataSourceId =
-  | 'POLYMARKET_WS'
-  | 'KALSHI_WS'
-  | (string & { readonly __brand: 'MarketDataSourceId' });  // ← extensibility
+type MarketDataSourceId = string & { readonly __brand: 'MarketDataSourceId' };
+// Известные значения доступны через KnownMarketDataSources:
+// KnownMarketDataSources.POLYMARKET_WS, KnownMarketDataSources.KALSHI_WS, etc.
 ```
 
 ## Интеграция с другими пакетами

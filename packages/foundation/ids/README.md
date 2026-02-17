@@ -55,6 +55,6 @@ npm run lint           # ESLint
 
 ## Dependencies
 
-**Runtime:** `@polymarket/result` — Result pattern для error handling
+**Runtime:** `@polymarket/result` — Result pattern для error handling, `@polymarket/errors` — typed error classes
 
 **Dev:** TypeScript, Jest, ESLint

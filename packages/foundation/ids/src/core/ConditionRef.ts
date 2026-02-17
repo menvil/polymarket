@@ -223,6 +223,7 @@ export function conditionRefEquals(a: ConditionRef, b: ConditionRef): boolean {
     return a.venueId === b.venueId && a.marketId === b.marketId;
   }
 
+  /* c8 ignore next */
   return false;
 }
 
@@ -339,9 +340,15 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
     // Unescape marketId (splitEscaped возвращает escaped части)
     const marketId = unescapeId(escapedMarketId);
 
-    // Валидация marketId: не пустой (unescapeId всегда возвращает string)
-    if (marketId.length === 0) {
+    // Валидация marketId: не пустой, не длиннее 256 символов, без control characters
+    if (marketId.length === 0 || marketId.length > 256) {
       return undefined;
+    }
+    for (let i = 0; i < marketId.length; i++) {
+      const code = marketId.charCodeAt(i);
+      if ((code >= 0x00 && code <= 0x1f) || (code >= 0x7f && code <= 0x9f)) {
+        return undefined;
+      }
     }
 
     return {

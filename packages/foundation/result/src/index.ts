@@ -109,8 +109,6 @@ export {
   fromPromise,
   fromNullable,
   fromThrowable,
-  // Внутренний хелпер (для advanced usage)
-  formatValue,
 } from './result.js';
 
 // ============================================================

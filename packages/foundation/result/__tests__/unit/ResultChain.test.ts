@@ -251,6 +251,33 @@ describe('ResultChain', () => {
     });
   });
 
+  describe('unwrapOrElse method', () => {
+    it('должен возвращать значение из Ok без вызова fn', () => {
+      let called = false;
+      const value = OkChain(42).unwrapOrElse((_err) => {
+        called = true;
+        return 0;
+      });
+      expect(value).toBe(42);
+      expect(called).toBe(false);
+    });
+
+    it('должен вызывать fn с ошибкой для Err и возвращать результат', () => {
+      const result: Result<number, string> = Err('oops');
+      const value = toChain(result).unwrapOrElse((err) => err.length);
+      expect(value).toBe(4); // 'oops'.length === 4
+    });
+
+    it('должен пробрасывать исключение из fn', () => {
+      const result: Result<number, string> = Err('error');
+      expect(() =>
+        toChain(result).unwrapOrElse(() => {
+          throw new TypeError('callback error');
+        })
+      ).toThrow(TypeError);
+    });
+  });
+
   describe('unwrapErr method', () => {
     it('должен извлекать ошибку из Err', () => {
       const error = ErrChain('error').unwrapErr();

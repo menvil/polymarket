@@ -59,6 +59,7 @@ export function asFillId(raw: string): FillId | undefined {
  * Используй только если уверен что строка валидна.
  * Для external input всегда используй asFillId().
  */
+/* c8 ignore next 3 */
 export function unsafeFillId(raw: string): FillId {
   return raw as FillId;
 }

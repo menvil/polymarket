@@ -329,12 +329,12 @@ describe('AsyncResultChain — normalizer (onError)', () => {
 
     const result = await chain.toPromise();
     expect(result.ok).toBe(false);
-    // Normalizer был передан, но mapAsync использует this.onError
-    // При исключении типизация через assertion остаётся, т.к. тип E уже определён
     if (!result.ok) {
-      // Normalizer преобразует Error в AppError
+      // Normalizer (err) => ({ code: `ERR_${String(err)}` }) преобразует Error в AppError
       const error = result.error as AppError;
-      expect(error).toBeDefined();
+      expect(error).toHaveProperty('code');
+      expect(typeof error.code).toBe('string');
+      expect(error.code).toMatch(/^ERR_/);
     }
   });
 

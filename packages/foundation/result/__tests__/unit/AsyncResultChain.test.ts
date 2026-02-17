@@ -1028,4 +1028,78 @@ describe('AsyncResultChain', () => {
       expect(result.name).toBe('Guest');
     });
   });
+
+  // ============================================================
+  // Тесты на unhandledRejection
+  // ============================================================
+  describe('unhandledRejection защита', () => {
+    it('orAsync: rejected fallback не вызывает unhandledRejection когда this — Ok', async () => {
+      const rejectedFallback = Promise.reject(new Error('fallback rejected'));
+
+      // Результат остаётся Ok — fallback никогда не awaiting-ся
+      const result = await AsyncResult.ok(Promise.resolve(42))
+        .orAsync(rejectedFallback as Promise<Result<number, Error>>)
+        .toPromise();
+
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toBe(42);
+    });
+
+    it('andAsync: rejected other не вызывает unhandledRejection когда this — Err', async () => {
+      const rejectedOther = Promise.reject(new Error('other rejected'));
+
+      // Результат остаётся первая ошибка — other никогда не awaiting-ся
+      const result = await AsyncResult.from(
+        Promise.resolve(Err('first error') as Result<number, string>)
+      )
+        .andAsync(rejectedOther as Promise<Result<number, Error>>)
+        .toPromise();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error).toBe('first error');
+    });
+  });
+
+  // ============================================================
+  // Тесты на ветки когда normalizer/onError сам бросает
+  // ============================================================
+  describe('AsyncResult.from — onReject сам бросает', () => {
+    it('должен завершиться Err без rejected Promise когда onReject бросает', async () => {
+      const throwingOnReject = (_err: unknown): Error => {
+        throw new Error('onReject failed');
+      };
+
+      const result = await AsyncResult.from(
+        Promise.reject('original') as Promise<Result<number, Error>>,
+        throwingOnReject
+      ).toPromise();
+
+      // Promise должен остаться resolved — ошибка из onReject идёт как Err
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(Error);
+        expect((result.error as Error).message).toBe('onReject failed');
+      }
+    });
+  });
+
+  describe('AsyncResult.ok — onError сам бросает', () => {
+    it('должен завершиться Err без rejected Promise когда onError бросает', async () => {
+      const throwingOnError = (_err: unknown): Error => {
+        throw new Error('onError failed');
+      };
+
+      const result = await AsyncResult.ok(
+        Promise.reject('original'),
+        throwingOnError
+      ).toPromise();
+
+      // Promise должен остаться resolved — ошибка из onError идёт как Err
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(Error);
+        expect((result.error as Error).message).toBe('onError failed');
+      }
+    });
+  });
 });

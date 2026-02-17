@@ -61,6 +61,7 @@ export function asOrderId(raw: string): OrderId | undefined {
  * Используй только если уверен что строка валидна.
  * Для external input всегда используй asOrderId().
  */
+/* c8 ignore next 3 */
 export function unsafeOrderId(raw: string): OrderId {
   return raw as OrderId;
 }

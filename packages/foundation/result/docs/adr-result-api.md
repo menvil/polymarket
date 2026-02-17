@@ -49,7 +49,7 @@ unsafe.ts = явный модуль для операций, бросающих 
 | `map`, `flatMap`        | Никогда¹            | result.ts (ядро) |
 | `mapErr`                | Никогда¹            | result.ts (ядро) |
 | `flatMapW`, `mapErrW`   | Никогда¹            | result.ts (ядро) |
-| `orElse`, `orElseW`     | Никогда¹            | result.ts (ядро) |
+| `orElseW`               | Никогда¹            | result.ts (ядро) |
 | `match`                 | Никогда¹            | result.ts (ядро) |
 | `combine`               | Никогда             | result.ts (ядро) |
 | `tryCatch`              | Никогда²            | result.ts (ядро) |
@@ -62,7 +62,7 @@ unsafe.ts = явный модуль для операций, бросающих 
 | `unwrap`                | **Да** (unsafe)     | unsafe.ts        |
 | `expectOk`              | **Да** (unsafe)     | unsafe.ts        |
 
-> ¹ FP-функции (`unwrapOrElse`, `orElse` и т.п.) сами не бросают. Если callback
+> ¹ FP-функции (`unwrapOrElse`, `orElseW` и т.п.) сами не бросают. Если callback
 > пользователя бросает — исключение propagate как есть (это задокументированное поведение;
 > пользователь несёт ответственность за callback). Методы класса `AsyncResultChain`
 > (transform-методы: `mapAsync`, `flatMapAsync`, `mapErr` и др.) ведут себя иначе:
@@ -74,18 +74,18 @@ unsafe.ts = явный модуль для операций, бросающих 
 
 ### 3. Политика типа ошибки `E`
 
-**Правило:** В safe-методах тип `E` **не расширяется** неявно через `error as E`.
+**Правило:** В safe-методах тип `E` **не расширяется** неявно через `error as E` в прикладном коде.
 
 **Вместо этого:**
 - Методы `AsyncResultChain` принимают опциональный `onError: (e: unknown) => E`
-- Без `onError` используется `E = unknown` (честный тип), а не `E` через assertion
-- Пользователь явно указывает тип ошибки
+- Без `onError` по умолчанию применяется `(error) => error as E` — это безопасно только
+  когда `E = unknown` (тип известен из контекста); в этом случае `E` честно отражает `unknown`
+- Явный `onError` даёт полный контроль над нормализацией — рекомендуемый подход
 
 **Widen-варианты (W-суффикс):**
 - `flatMapW<U, F>(fn: (T) => Result<U, F>): Result<U, E | F>` — fn может вернуть
   другой тип ошибки, результирующий тип расширяется до `E | F`
-- `mapErrW<T, E, F>(result, fn: (E) => F): Result<T, E | F>` — добавляет новый
-  тип ошибки к существующему
+- `mapErrW<T, E, F>(result, fn: (E) => F): Result<T, F>` — заменяет тип ошибки E на F
 - `orElseW<T, E, F>(result, fn: (E) => Result<T, F>): Result<T, F>` — recovery
   с другим типом ошибки
 

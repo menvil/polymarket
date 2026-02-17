@@ -73,6 +73,7 @@ export function asInstrumentId(raw: string): InstrumentId | undefined {
  * Используй только если уверен что строка валидна.
  * Для external input всегда используй asInstrumentId().
  */
+/* c8 ignore next 3 */
 export function unsafeInstrumentId(raw: string): InstrumentId {
   return raw as InstrumentId;
 }

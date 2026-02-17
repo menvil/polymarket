@@ -43,6 +43,7 @@ describe('flatMapW', () => {
     const r = Ok(42);
     const result = flatMapW(r, (): Result<never, ValidationError> => Err({ type: 'validation' }));
     expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error).toEqual({ type: 'validation' });
   });
 
   it('должен правильно цеплять разные типы ошибок', () => {
@@ -84,6 +85,7 @@ describe('flatMapW', () => {
     });
 
     expect(r3.ok).toBe(false);
+    if (!r3.ok) expect(r3.error).toEqual({ kind: 'a' });
   });
 });
 

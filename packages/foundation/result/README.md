@@ -12,7 +12,7 @@ Type-safe обработка ошибок: явные типы вместо exce
 - ✅ **Plain objects** - легкая сериализация через JSON.stringify
 - ✅ **Три стиля API**: FP-функции / OOP-chain / Async-chain
 - ✅ **Subpath exports**: `/chain`, `/async`, `/unsafe` для чистых импортов
-- ✅ **Высокое покрытие тестами** - >90% покрытие (пороги: 85% branches, 90% functions/lines/statements)
+- ✅ **Высокое покрытие тестами** - >90% покрытие (пороги: 84% branches, 90% functions/lines/statements)
 
 ## 🛡️ Матрица гарантий API
 

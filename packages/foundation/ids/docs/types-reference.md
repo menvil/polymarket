@@ -77,9 +77,10 @@ type ConditionId = string & { readonly __brand: 'ConditionId' };
 ```typescript
 function isValidConditionId(id: string): boolean;
 
-// Примеры
-isValidConditionId('0xabc123...');  // → true
-isValidConditionId('invalid');      // → false
+// Примеры (ConditionId — ровно 64 hex символа после '0x')
+isValidConditionId('0x' + 'a'.repeat(64));  // → true
+isValidConditionId('0xabc123');             // → false (слишком короткий)
+isValidConditionId('invalid');              // → false
 ```
 
 ---
@@ -115,7 +116,7 @@ const onChainRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: parseConditionId('0xabc123...')!,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
 // Off-chain condition (KALSHI)
@@ -186,7 +187,7 @@ const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: parseConditionId('0xabc123...')!,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 // Всё понятно! Polygon, Polymarket CTF, condition hash.
 ```
@@ -345,13 +346,10 @@ if (accountId.kind === 'WALLET') {
 Идентификатор площадки, где находятся балансы/tokens.
 
 ```typescript
-type VenueId =
-  | 'POLYMARKET'
-  | 'KALSHI'
-  | (string & { readonly __brand: 'VenueId' });
+type VenueId = string & { readonly __brand: 'VenueId' };
 ```
 
-**Константы**:
+**Константы** (известные значения доступны через `KnownVenues`):
 
 ```typescript
 export const KnownVenues = {
@@ -420,7 +418,7 @@ const onChainRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: parseConditionId('0xabc123...')!,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
 const tokenAsset = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
@@ -482,7 +480,7 @@ const onChainRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
-  conditionId: parseConditionId('0xabc123...')!,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 processAsset(AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP));
 ```

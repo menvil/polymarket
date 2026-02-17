@@ -12,6 +12,7 @@ import {
   KnownCurrencies,
   KnownChainIds,
   KnownVenues,
+  KnownOnChainProtocols,
   BinaryOutcome,
   isSupportedCurrency,
   accountIdFromWallet,
@@ -27,7 +28,7 @@ const walletAccount: AccountId = accountIdFromWallet(parseWalletAddress('0x1234.
 const conditionId = parseConditionId('0x4869df2f6745f3c59c91af1c9d6dc75a5282a3d6a15b7c8e9f2d1a3b4c5e6f7a');
 const onChainRef: ConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
   chainId: KnownChainIds.POLYGON,
   conditionId: conditionId!,
 };
@@ -35,7 +36,7 @@ const onChainRef: ConditionRef = {
 // ConditionRef — off-chain (Kalshi)
 const offChainRef: ConditionRef = {
   kind: 'OFFCHAIN',
-  venueId: 'KALSHI',
+  venueId: KnownVenues.KALSHI,
   marketId: 'KXBTCUSDM-24APR',
 };
 
@@ -243,6 +244,13 @@ if (isSimulator(executionVenue)) {
 
 ```typescript
 import {
+  type ConditionRef,
+  type ConditionId,
+  BinaryOutcome,
+  KnownChainIds,
+  KnownOnChainProtocols,
+} from '@polymarket/ids';
+import {
   type MarketDataSourceId,
   KnownMarketDataSources,
   isReplaySource,
@@ -259,6 +267,14 @@ const executionVenue: ExecutionVenueId = KnownExecutionVenues.SIMULATOR;
 if (isReplaySource(marketDataSource)) {
   console.log('Running backtest');
 }
+
+// Пример ConditionRef для backtest
+const conditionRef: ConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+  chainId: KnownChainIds.POLYGON,
+  conditionId: '0xabc123...' as ConditionId,
+};
 
 // 2. Загружаем исторические данные
 const historicalQuotes = loadHistoricalQuotes(marketDataSource, conditionRef);
@@ -531,7 +547,7 @@ const condition1: ConditionRef = {
   kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
-  conditionId: parseConditionId('0xabc123...')!,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
 // 2. Сравнение
@@ -539,7 +555,7 @@ const condition2: ConditionRef = {
   kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
-  conditionId: parseConditionId('0xabc123...')!,
+  conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
 };
 
 if (conditionRefEquals(condition1, condition2)) {
@@ -647,6 +663,7 @@ for (const outcome of outcomes) {
 ```typescript
 import {
   type ConditionRef,
+  type ConditionId,
   type InstrumentId,
   KnownChainIds,
 } from '@polymarket/ids';

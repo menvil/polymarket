@@ -1,4 +1,5 @@
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
+import { validateBrandedId } from '../src/core/utils/validateBrandedId.js';
 import {
   KnownMarketDataSources,
   isKnownMarketDataSource,
@@ -12,6 +13,7 @@ import {
   type OnChainConditionRef,
   type OffChainConditionRef,
   type VenueId,
+  type ConditionId,
   KnownChainIds,
   KnownVenues,
   KnownOnChainProtocols,
@@ -502,7 +504,7 @@ describe('Core IDs', () => {
         marketId: 'KXBTCUSDM-24APR',
       };
       const refString = conditionRefToString(offChainRef);
-      expect(refString).toContain('KALSHI');
+      expect(refString).toBe('OFFCHAIN:KALSHI:KXBTCUSDM-24APR');
 
       // Сценарий 3: Round-trip через serialization
       const parsed = parseConditionRef(refString);
@@ -579,7 +581,7 @@ describe('Core IDs', () => {
 
       // Сценарий 3: Serialization и parsing
       const assetString = assetIdToString(tokenAsset);
-      expect(assetString).toContain('POLYMARKET_CTF');
+      expect(assetString).toBe('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:UP');
 
       const parsedAsset = parseAssetId(assetString);
       expect(parsedAsset).toBeDefined();
@@ -1173,6 +1175,13 @@ describe('Core IDs', () => {
         expect(AssetIdHelpers.equals(a, b)).toBe(true);
       });
 
+      it('should return false for OUTCOME_TOKEN with different conditionId', () => {
+        const refB = { ...ref, conditionId: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' as ConditionId };
+        const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+        const b = AssetIdHelpers.fromOutcomeToken(refB, BinaryOutcome.UP);
+        expect(AssetIdHelpers.equals(a, b)).toBe(false);
+      });
+
       it('should return false for OUTCOME_TOKEN with different outcomeKey', () => {
         const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
         const b = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.DOWN);
@@ -1185,11 +1194,6 @@ describe('Core IDs', () => {
         expect(AssetIdHelpers.equals(a, b)).toBe(false);
       });
 
-      it('should return true for two equal outcome tokens', () => {
-        const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
-        const b = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
-        expect(AssetIdHelpers.equals(a, b)).toBe(true);
-      });
     });
 
     describe('parseAssetId immutability', () => {
@@ -1860,6 +1864,26 @@ describe('Core IDs', () => {
       });
     });
 
+    describe('parseAccountId invalid kind and extra parts', () => {
+      it('should reject wallet with extra parts', () => {
+        const addr = '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed';
+        expect(parseAccountId(`wallet:${addr}:extra`)).toBeUndefined();
+      });
+
+      it('should reject venue with extra parts', () => {
+        expect(parseAccountId('venue:POLYMARKET:user:extra')).toBeUndefined();
+      });
+
+      it('should reject sub with too few parts', () => {
+        // 'sub:name' → splitEscaped gives 2 parts → parts.length < 3 → undefined
+        expect(parseAccountId('sub:onlyone')).toBeUndefined();
+      });
+
+      it('should reject unknown kind', () => {
+        expect(parseAccountId('unknown:payload')).toBeUndefined();
+      });
+    });
+
     describe('Factory validation', () => {
       it('should reject invalid userId in accountIdFromVenue', () => {
         // Empty string
@@ -2273,7 +2297,10 @@ describe('Core IDs', () => {
         for (let i = 0; i < 16; i++) {
           deep = { kind: 'SUBACCOUNT', base: deep, name: `l${i}` };
         }
+        // Тест намеренно триггерит console.assert — подавляем шум в выводе
+        const assertSpy = jest.spyOn(console, 'assert').mockImplementation(() => {});
         const result = accountIdToString(deep);
+        assertSpy.mockRestore();
         // Должен вернуть строку (не упасть), содержащую fallback
         expect(typeof result).toBe('string');
         expect(result).toContain('[INVALID:DEPTH_EXCEEDED]');
@@ -2341,5 +2368,44 @@ describe('MarketDataSource metadata completeness', () => {
     for (const source of allKeys) {
       expect(isLiveSource(source)).not.toBeUndefined();
     }
+  });
+});
+
+describe('validateBrandedId', () => {
+  it('should return trimmed valid string', () => {
+    expect(validateBrandedId('fill_456', 256)).toBe('fill_456');
+    expect(validateBrandedId('  valid  ', 256)).toBe('valid');
+  });
+
+  it('should return undefined for empty string after trim', () => {
+    expect(validateBrandedId('', 256)).toBeUndefined();
+    expect(validateBrandedId('   ', 256)).toBeUndefined();
+  });
+
+  it('should return undefined for string exceeding maxLength', () => {
+    expect(validateBrandedId('x'.repeat(300), 256)).toBeUndefined();
+    expect(validateBrandedId('x'.repeat(257), 256)).toBeUndefined();
+    expect(validateBrandedId('x'.repeat(256), 256)).toBe('x'.repeat(256));
+  });
+
+  it('should return undefined for string with control characters', () => {
+    expect(validateBrandedId('a\u0000b', 256)).toBeUndefined();
+    expect(validateBrandedId('a\u001fb', 256)).toBeUndefined();
+    expect(validateBrandedId('a\u007fb', 256)).toBeUndefined();
+    expect(validateBrandedId('a\u009fb', 256)).toBeUndefined();
+  });
+
+  describe('invalid maxLength values', () => {
+    it('should return undefined for NaN maxLength', () => {
+      expect(validateBrandedId('valid', NaN)).toBeUndefined();
+    });
+
+    it('should return undefined for Infinity maxLength', () => {
+      expect(validateBrandedId('valid', Infinity)).toBeUndefined();
+    });
+
+    it('should return undefined for negative maxLength', () => {
+      expect(validateBrandedId('valid', -1)).toBeUndefined();
+    });
   });
 });
