@@ -42,6 +42,7 @@
   "author": "",
   "license": "UNLICENSED",
   "dependencies": {
+    "@polymarket/errors": "workspace:*",
     "@polymarket/result": "workspace:*"
   },
   "devDependencies": {

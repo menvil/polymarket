@@ -72,12 +72,12 @@ export function isValidWalletAddress(address: string): address is WalletAddress 
  * ```
  */
 export function parseWalletAddress(address: string): WalletAddress | undefined {
-  if (!isValidWalletAddress(address)) {
+  // Нормализуем до lowercase перед валидацией: isValidWalletAddress принимает только lowercase
+  const lower = address.toLowerCase() as WalletAddress;
+  if (!isValidWalletAddress(lower)) {
     return undefined;
   }
-
-  // Return lowercase canonical format
-  return address.toLowerCase() as WalletAddress;
+  return lower;
 }
 
 /**

@@ -5,44 +5,9 @@ import { asVenueId } from './VenueId.js';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { escape, unescape, splitEscaped } from './utils/escaping.js';
+import { AccountIdDepthError, AccountIdValidationError } from '@polymarket/errors';
 
-/**
- * Ошибка при превышении depth limit для SUBACCOUNT
- *
- * @remarks
- * Выбрасывается при попытке создать или сериализовать AccountId
- * с глубиной вложенности превышающей MAX_SUBACCOUNT_DEPTH.
- */
-export class AccountIdDepthError extends Error {
-  constructor(
-    public readonly currentDepth: number,
-    public readonly maxDepth: number,
-    public readonly operation: 'create' | 'serialize'
-  ) {
-    super(
-      `Subaccount depth limit exceeded during ${operation}: current=${currentDepth}, max=${maxDepth}`
-    );
-    this.name = 'AccountIdDepthError';
-  }
-}
-
-/**
- * Ошибка при невалидном строковом поле (userId или name)
- *
- * @remarks
- * Выбрасывается при попытке создать AccountId с невалидным userId или name.
- * Валидация гарантирует round-trip serialization (создать → сериализовать → распарсить).
- */
-export class AccountIdValidationError extends Error {
-  constructor(
-    public readonly field: 'userId' | 'name',
-    public readonly value: string,
-    public readonly reason: string
-  ) {
-    super(`Invalid ${field}: ${reason} (value: "${value}")`);
-    this.name = 'AccountIdValidationError';
-  }
-}
+export { AccountIdDepthError, AccountIdValidationError };
 
 /**
  * Максимальная глубина вложенности SUBACCOUNT
@@ -292,7 +257,10 @@ export function accountIdFromVenue(
       reason = 'exceeds 256 characters';
     }
     // Для других случаев (control chars, etc) используем generic reason
-    return Err(new AccountIdValidationError('userId', userId, reason));
+    return Err(new AccountIdValidationError(
+      (ctx: Record<string, unknown>) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
+      { code: AccountIdValidationError.code, context: { field: 'userId', value: userId, reason } }
+    ));
   }
 
   return Ok({
@@ -355,15 +323,19 @@ export function accountIdForSubaccount(
       reason = 'exceeds 256 characters';
     }
     // Для других случаев (control chars, etc) используем generic reason
-    return Err(new AccountIdValidationError('name', name, reason));
+    return Err(new AccountIdValidationError(
+      (ctx: Record<string, unknown>) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
+      { code: AccountIdValidationError.code, context: { field: 'name', value: name, reason } }
+    ));
   }
 
   const currentDepth = getSubaccountDepth(base);
 
   if (currentDepth >= MAX_SUBACCOUNT_DEPTH) {
-    return Err(
-      new AccountIdDepthError(currentDepth, MAX_SUBACCOUNT_DEPTH, 'create')
-    );
+    return Err(new AccountIdDepthError(
+      (ctx: Record<string, unknown>) => `Subaccount depth limit exceeded during ${ctx.operation}: current=${ctx.currentDepth}, max=${ctx.maxDepth}`,
+      { code: AccountIdDepthError.code, context: { currentDepth, maxDepth: MAX_SUBACCOUNT_DEPTH, operation: 'create' } }
+    ));
   }
 
   return Ok({
