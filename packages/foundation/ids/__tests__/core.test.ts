@@ -2437,18 +2437,18 @@ describe('Core IDs', () => {
     describe('ParseAccountIdOptions corruption guard', () => {
       const validWalletStr = `wallet:${testWallet}`;
 
-      it('should return undefined (not throw) when validateWalletAddress is null as any', () => {
+      it('should fall back to default validation and return defined when validateWalletAddress is null as any', () => {
         // validate is not a function — дефолтная валидация должна использоваться
         const result = parseAccountId(validWalletStr, { validateWalletAddress: null as any });
         expect(result).toBeDefined(); // null → fallback to parseWalletAddress → Ok
       });
 
-      it('should return undefined (not throw) when validateWalletAddress is number as any', () => {
+      it('should fall back to default validation and return defined when validateWalletAddress is number as any', () => {
         const result = parseAccountId(validWalletStr, { validateWalletAddress: 42 as any });
         expect(result).toBeDefined(); // 42 → fallback to parseWalletAddress → Ok
       });
 
-      it('should return undefined (not throw) when validateWalletAddress is object as any', () => {
+      it('should fall back to default validation and return defined when validateWalletAddress is object as any', () => {
         const result = parseAccountId(validWalletStr, { validateWalletAddress: {} as any });
         expect(result).toBeDefined(); // {} → fallback to parseWalletAddress → Ok
       });
