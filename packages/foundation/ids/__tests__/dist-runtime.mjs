@@ -25,6 +25,8 @@ const distPath = resolve(__dirname, '../dist');
 
 console.log('🧪 Testing runtime import from dist/...');
 
+try {
+
 // Test core exports
 console.log('  ✓ Importing core exports...');
 const coreModule = await import(pathToFileURL(`${distPath}/core/index.js`).href);
@@ -105,7 +107,11 @@ const instrumentId = marketDataModule.asInstrumentId('BTC-USD');
 assert(instrumentId === 'BTC-USD', 'asInstrumentId should accept valid id');
 assert(marketDataModule.asInstrumentId('') === undefined, 'asInstrumentId should reject empty string');
 
-console.log('\n✅ All runtime tests passed!');
-console.log('   ESM imports work correctly');
-console.log('   Public API is functional');
-console.log('   Round-trip serialization works');
+  console.log('\n✅ All runtime tests passed!');
+  console.log('   ESM imports work correctly');
+  console.log('   Public API is functional');
+  console.log('   Round-trip serialization works');
+} catch (err) {
+  console.error('\n❌ Runtime test failed:', err.message);
+  process.exitCode = 1;
+}

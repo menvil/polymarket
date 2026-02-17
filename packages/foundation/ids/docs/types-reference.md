@@ -204,10 +204,10 @@ type WalletAddress = string & { readonly __brand: 'WalletAddress' };
 **Helper функции**:
 
 ```typescript
-// Validation (format: 0x + 40 lowercase hex chars)
-function isValidWalletAddress(address: string): boolean;
+// Validation (format: 0x + 40 lowercase hex chars only — mixed case returns false)
+function isValidWalletAddressFormat(address: string): boolean;
 
-isValidWalletAddress('0x1234567890123456789012345678901234567890');  // → true (if valid format)
+isValidWalletAddressFormat('0x1234567890123456789012345678901234567890');  // → true (if valid format)
 
 // Parsing (lowercase normalization)
 function parseWalletAddress(address: string): WalletAddress | undefined;
@@ -342,7 +342,7 @@ if (accountId.kind === 'WALLET') {
 
 ### VenueId
 
-Идентификатор площадки где находятся балансы/tokens.
+Идентификатор площадки, где находятся балансы/tokens.
 
 ```typescript
 type VenueId =

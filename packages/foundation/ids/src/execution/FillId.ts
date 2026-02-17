@@ -13,6 +13,8 @@
  */
 export type FillId = string & { readonly __brand: 'FillId' };
 
+import { validateBrandedId } from '../core/utils/validateBrandedId.js';
+
 /**
  * Максимальная длина FillId
  * @internal
@@ -38,31 +40,12 @@ const MAX_FILL_ID_LENGTH = 256;
  * asFillId('  valid  '); // → 'valid' as FillId (trimmed)
  * asFillId(''); // → undefined (пустая строка)
  * asFillId('  '); // → undefined (только пробелы)
- * asFillId('a\x00b'); // → undefined (control character)
+ * asFillId('a\u0000b'); // → undefined (control character)
  * asFillId('x'.repeat(300)); // → undefined (слишком длинная)
  * ```
  */
 export function asFillId(raw: string): FillId | undefined {
-  // Trim whitespace
-  const trimmed = raw.trim();
-
-  // Non-empty check
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-
-  // Length check
-  if (trimmed.length > MAX_FILL_ID_LENGTH) {
-    return undefined;
-  }
-
-  // Control characters check
-  // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1F\x7F-\x9F]/.test(trimmed)) {
-    return undefined;
-  }
-
-  return trimmed as FillId;
+  return validateBrandedId(raw, MAX_FILL_ID_LENGTH) as FillId | undefined;
 }
 
 /**

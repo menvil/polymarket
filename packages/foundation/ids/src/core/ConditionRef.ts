@@ -6,7 +6,7 @@ import { asOnChainProtocolId } from './ProtocolId.js';
 import { parseChainId } from './ChainId.js';
 import { parseConditionId } from './ConditionId.js';
 import { asVenueId } from './VenueId.js';
-import { escape, unescape, splitEscaped } from './utils/escaping.js';
+import { escapeId, unescapeId, splitEscaped } from './utils/escaping.js';
 
 /**
  * OnChainConditionRef - ссылка на on-chain condition
@@ -250,7 +250,7 @@ export function conditionRefToString(ref: ConditionRef): string {
     return `ONCHAIN:${ref.protocolId}:${ref.chainId}:${ref.conditionId}`;
   } else {
     // OFFCHAIN: marketId может содержать ':', поэтому escape необходим
-    const escapedMarketId = escape(ref.marketId);
+    const escapedMarketId = escapeId(ref.marketId);
     return `OFFCHAIN:${ref.venueId}:${escapedMarketId}`;
   }
 }
@@ -319,13 +319,16 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
   if (kind === 'OFFCHAIN') {
     // OFFCHAIN формат: OFFCHAIN:venueId:marketId
     // marketId МОЖЕТ содержать escaped ':' (\:), поэтому используем splitEscaped
-    const parts = splitEscaped(str);
+    // Передаём только подстроку после первого ':' (т.е. "venueId:marketId"),
+    // чтобы not re-parse the 'OFFCHAIN' prefix
+    const rest = str.substring(firstColon + 1);
+    const parts = splitEscaped(rest);
 
-    if (parts.length !== 3) {
+    if (parts.length !== 2) {
       return undefined;
     }
 
-    const [, venueIdStr, escapedMarketId] = parts;
+    const [venueIdStr, escapedMarketId] = parts;
 
     // Валидация VenueId
     const validatedVenueId = asVenueId(venueIdStr);
@@ -334,7 +337,7 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
     }
 
     // Unescape marketId (splitEscaped возвращает escaped части)
-    const marketId = unescape(escapedMarketId);
+    const marketId = unescapeId(escapedMarketId);
 
     // Валидация marketId: не пустой
     if (!marketId || marketId.length === 0) {

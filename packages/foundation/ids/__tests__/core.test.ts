@@ -361,8 +361,23 @@ describe('Core IDs', () => {
           expect(parseConditionRef('OFFCHAIN:KALSHI:')).toBeUndefined();
         });
 
-        it('should reject marketId containing unescaped colon (breaks round-trip)', () => {
+        it('should reject raw unescaped marketId containing colon', () => {
           expect(parseConditionRef('OFFCHAIN:KALSHI:MARKET:WITH:COLON')).toBeUndefined();
+        });
+
+        it('should support round-trip for OFFCHAIN ref with colon in marketId (via conditionRefToString)', () => {
+          const original: OffChainConditionRef = {
+            kind: 'OFFCHAIN',
+            venueId: KnownVenues.KALSHI,
+            marketId: 'MARKET:WITH:COLON',
+          };
+
+          // conditionRefToString escapes colons in marketId automatically
+          const str = conditionRefToString(original);
+          const parsed = parseConditionRef(str);
+
+          expect(parsed).toBeDefined();
+          expect(conditionRefEquals(original, parsed!)).toBe(true);
         });
 
         it('should support round-trip for valid OFFCHAIN ref', () => {
@@ -1862,11 +1877,11 @@ describe('Core IDs', () => {
           expect(result.error.message).toContain('exceeds 256 characters');
         }
 
-        // Control characters (generic error message)
+        // Control characters → explicit reason
         result = accountIdFromVenue(KnownVenues.POLYMARKET, 'user\x00id');
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.message).toContain('invalid format');
+          expect(result.error.message).toContain('contains control characters');
         }
       });
 
@@ -1887,11 +1902,11 @@ describe('Core IDs', () => {
           expect(result.error.message).toContain('exceeds 256 characters');
         }
 
-        // Control characters (generic error message)
+        // Control characters → explicit reason
         result = accountIdForSubaccount(walletAcc, 'sub\x00name');
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.message).toContain('invalid format');
+          expect(result.error.message).toContain('contains control characters');
         }
       });
 

@@ -15,6 +15,8 @@
  */
 export type OrderId = string & { readonly __brand: 'OrderId' };
 
+import { validateBrandedId } from '../core/utils/validateBrandedId.js';
+
 /**
  * Максимальная длина OrderId
  * @internal
@@ -40,31 +42,12 @@ const MAX_ORDER_ID_LENGTH = 256;
  * asOrderId('  valid  '); // → 'valid' as OrderId (trimmed)
  * asOrderId(''); // → undefined (пустая строка)
  * asOrderId('  '); // → undefined (только пробелы)
- * asOrderId('a\x00b'); // → undefined (control character)
+ * asOrderId('a\u0000b'); // → undefined (control character)
  * asOrderId('x'.repeat(300)); // → undefined (слишком длинная)
  * ```
  */
 export function asOrderId(raw: string): OrderId | undefined {
-  // Trim whitespace
-  const trimmed = raw.trim();
-
-  // Non-empty check
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-
-  // Length check
-  if (trimmed.length > MAX_ORDER_ID_LENGTH) {
-    return undefined;
-  }
-
-  // Control characters check
-  // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1F\x7F-\x9F]/.test(trimmed)) {
-    return undefined;
-  }
-
-  return trimmed as OrderId;
+  return validateBrandedId(raw, MAX_ORDER_ID_LENGTH) as OrderId | undefined;
 }
 
 /**

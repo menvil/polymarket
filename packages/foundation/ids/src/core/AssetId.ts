@@ -188,17 +188,15 @@ export const AssetId = {
       );
     }
 
-    // Deep freeze: создаем новый замороженный conditionRef с валидированными значениями
-    const frozenConditionRef: OnChainConditionRef = Object.freeze({
-      kind: 'ONCHAIN' as const,
-      protocolId: validatedProtocolId,
-      chainId: validatedChainId,
-      conditionId: validatedConditionId,
-    });
-
+    // deepFreezeAssetId заморозит conditionRef и сам AssetId — не нужен явный Object.freeze здесь
     return deepFreezeAssetId({
       type: 'OUTCOME_TOKEN',
-      conditionRef: frozenConditionRef,
+      conditionRef: {
+        kind: 'ONCHAIN' as const,
+        protocolId: validatedProtocolId,
+        chainId: validatedChainId,
+        conditionId: validatedConditionId,
+      },
       outcomeKey: validatedOutcomeKey,
     });
   },

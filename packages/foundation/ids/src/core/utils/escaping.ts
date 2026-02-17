@@ -31,7 +31,7 @@
  * escape('normal');   // → 'normal'
  * ```
  */
-export function escape(str: string): string {
+export function escapeId(str: string): string {
   return str.replace(/\\/g, '\\\\').replace(/:/g, '\\:');
 }
 
@@ -55,7 +55,7 @@ export function escape(str: string): string {
  * unescape('normal');       // → 'normal'
  * ```
  */
-export function unescape(str: string): string {
+export function unescapeId(str: string): string {
   let result = '';
   let i = 0;
 
@@ -110,7 +110,7 @@ export function unescape(str: string): string {
  * splitEscaped('');                   // → ['']
  *
  * // Чтобы получить unescape'нутые части:
- * const parts = splitEscaped('A\\:B:C').map(unescape);  // → ['A:B', 'C']
+ * const parts = splitEscaped('A\\:B:C').map(unescapeId);  // → ['A:B', 'C']
  * ```
  */
 export function splitEscaped(str: string): string[] {

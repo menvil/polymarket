@@ -23,6 +23,8 @@
  */
 export type InstrumentId = string & { readonly __brand: 'InstrumentId' };
 
+import { validateBrandedId } from '../core/utils/validateBrandedId.js';
+
 /**
  * Максимальная длина InstrumentId
  * @internal
@@ -52,31 +54,12 @@ const MAX_INSTRUMENT_ID_LENGTH = 128;
  * asInstrumentId('  valid  '); // → 'valid' as InstrumentId (trimmed)
  * asInstrumentId(''); // → undefined (пустая строка)
  * asInstrumentId('  '); // → undefined (только пробелы)
- * asInstrumentId('a\x00b'); // → undefined (control character)
+ * asInstrumentId('a\u0000b'); // → undefined (control character)
  * asInstrumentId('x'.repeat(200)); // → undefined (слишком длинная)
  * ```
  */
 export function asInstrumentId(raw: string): InstrumentId | undefined {
-  // Trim whitespace
-  const trimmed = raw.trim();
-
-  // Non-empty check
-  if (trimmed.length === 0) {
-    return undefined;
-  }
-
-  // Length check
-  if (trimmed.length > MAX_INSTRUMENT_ID_LENGTH) {
-    return undefined;
-  }
-
-  // Control characters check
-  // eslint-disable-next-line no-control-regex
-  if (/[\x00-\x1F\x7F-\x9F]/.test(trimmed)) {
-    return undefined;
-  }
-
-  return trimmed as InstrumentId;
+  return validateBrandedId(raw, MAX_INSTRUMENT_ID_LENGTH) as InstrumentId | undefined;
 }
 
 /**

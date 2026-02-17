@@ -16,9 +16,8 @@
  * добавляя правильные .js расширения.
  *
  * Patterns:
- *   - from '../base' -> from '../base/index.js'
- *   - from './foo' -> from './foo.js'
- *   - from '../foo' -> from '../foo.js'
+ *   - from './foo' or '../foo' -> from './foo.js'  (file)
+ *   - from '../base'           -> from '../base/index.js'  (directory)
  *
  * НЕ трогает:
  *   - Абсолютные импорты (from '@polymarket/...')
@@ -26,8 +25,8 @@
  *   - Node.js встроенные модули (from 'node:fs')
  */
 
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
-import { resolve, dirname, join } from 'node:path';
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { resolve, dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -37,8 +36,17 @@ console.log('🔧 Fixing ESM imports in dist/...');
 
 /**
  * Рекурсивно найти все .js файлы в директории
+ *
+ * @param dir - Директория для поиска
+ * @param files - Аккумулятор файлов (для рекурсии)
+ * @returns Массив путей к .js файлам, или пустой массив если dir не существует
  */
 function findJsFiles(dir, files = []) {
+  if (!existsSync(dir)) {
+    console.warn(`⚠️  dist/ directory not found at ${dir} — skipping import fix`);
+    return files;
+  }
+
   const entries = readdirSync(dir);
 
   for (const entry of entries) {
@@ -58,27 +66,41 @@ function findJsFiles(dir, files = []) {
 // Найти все .js файлы в dist/
 const jsFiles = findJsFiles(distPath);
 
+if (jsFiles.length === 0 && existsSync(distPath)) {
+  console.log('ℹ️  No .js files found in dist/');
+  process.exit(0);
+}
+
 let totalFixed = 0;
 let totalFiles = 0;
 
 for (const filePath of jsFiles) {
   let content = readFileSync(filePath, 'utf-8');
   const originalContent = content;
+  const fileDir = dirname(filePath);
 
-  // Fix 1: from '../base' -> from '../base/index.js'
-  // Это специальный case для директорий с index.js
-  content = content.replace(/from ['"](\.\.[\/\\]base)['"]/g, "from '$1/index.js'");
-
-  // Fix 2: from './foo' or '../foo' -> from './foo.js' or '../foo.js'
-  // Только для импортов БЕЗ расширения и не '../base' (уже обработан выше)
+  // Единый проход: для каждого относительного импорта без расширения
+  // определяем через statSync — это файл или директория.
   content = content.replace(
-    /from ['"](\.\.[\/\\][^'"]+|\.\/[^'"]+)(?<!\.js)['"]/g,
+    /from ['"](\.\.[/\\][^'"]+|\.\/[^'"]+)['"]/g,
     (match, importPath) => {
-      // Пропускаем если уже есть .js или это импорт '../base' (уже обработан выше)
-      if (importPath.endsWith('.js') || importPath === '../base') {
+      // Пропускаем импорты у которых уже есть расширение файла
+      if (extname(importPath) !== '') {
         return match;
       }
-      return `from '${importPath}.js'`;
+
+      const resolved = resolve(fileDir, importPath);
+
+      let isDirectory = false;
+      try {
+        const s = statSync(resolved);
+        isDirectory = s.isDirectory();
+      } catch {
+        // Файл не найден без расширения — значит это файл, добавляем .js
+        isDirectory = false;
+      }
+
+      return `from '${importPath}${isDirectory ? '/index.js' : '.js'}'`;
     }
   );
 
@@ -92,6 +114,6 @@ for (const filePath of jsFiles) {
 
 console.log(`✅ Fixed ${totalFixed} of ${totalFiles} files`);
 
-if (totalFixed === 0) {
+if (totalFixed === 0 && totalFiles > 0) {
   console.log('ℹ️  No files needed fixing (already correct)');
 }

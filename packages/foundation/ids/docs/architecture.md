@@ -360,12 +360,16 @@ const balance = balanceRepository.get(accountId, venueId);
 
 ## Будущие расширения
 
-### Phase 2: OrderId и FillId
+### Phase 2: OrderId и FillId ✓ (реализовано)
+
+`OrderId` и `FillId` уже реализованы в `execution/` и доступны через `@polymarket/ids/execution`:
 
 ```typescript
-// Для Order и Fill entities
-type OrderId = string & { readonly __brand: 'OrderId' };
-type FillId = string & { readonly __brand: 'FillId' };
+import { asOrderId, asFillId } from '@polymarket/ids/execution';
+
+// Парсинг/валидация ID
+const orderId = asOrderId('order-123');  // OrderId | undefined
+const fillId  = asFillId('fill-456');   // FillId  | undefined
 ```
 
 ### Phase 3: Multi-chain support

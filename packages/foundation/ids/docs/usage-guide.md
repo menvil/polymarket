@@ -57,6 +57,7 @@ import {
   type AccountId,
   type VenueId,
   type WalletAddress,
+  type ConditionId,
   parseWalletAddress,
   accountIdFromWallet,
   BinaryOutcome,
@@ -773,21 +774,30 @@ if (parsed) {
 }
 ```
 
-### Branded type not assignable to string
+### AccountId не assignable к string
 
-**Проблема**:
-
-```typescript
-const str: string = accountId;  // Error: AccountId is not assignable to string
-```
-
-**Решение**: Это ожидаемое поведение! Branded types специально НЕ assignable к string для type safety.
-
-Если нужна строка:
+**`AccountId` — discriminated union объектов, не строка**:
 
 ```typescript
-const str = accountId as string;  // Explicit cast
+const str: string = accountId;  // Error: тип-объединение объектов не является строкой
 ```
+
+`AccountId` — это discriminated union (`{ kind: 'WALLET' } | { kind: 'VENUE' } | { kind: 'SUBACCOUNT' }`), а не строка.
+Для сериализации используй `accountIdToString()`:
+
+```typescript
+const str: string = accountIdToString(accountId);  // ✅ корректная сериализация
+```
+
+**`WalletAddress` — branded string, assignable к `string`**:
+
+```typescript
+const wallet: WalletAddress = parseWalletAddress('0x...')!;
+const str: string = wallet;  // ✅ OK — WalletAddress является подтипом string
+```
+
+`WalletAddress` это `string & { readonly __brand: 'WalletAddress' }`, что является _подтипом_ `string`,
+поэтому присваивание к `string` разрешено без явного приведения типа.
 
 ---
 

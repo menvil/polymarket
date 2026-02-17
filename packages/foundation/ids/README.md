@@ -51,6 +51,7 @@ import {
   isSupportedCurrency,
   accountIdFromWallet,
   parseWalletAddress,
+  parseConditionId,
   AssetIdHelpers,
 } from '@polymarket/ids';
 
@@ -68,11 +69,13 @@ if (isSupportedCurrency(input)) {
 // ConditionRef - полная ссылка на condition (discriminated union)
 
 // On-chain example (Polymarket)
+// parseConditionId validates the 32-byte hex format and returns a branded ConditionId
+const conditionId = parseConditionId('0x4869df2f6745f3c59c91af1c9d6dc75a5282a3d');
 const onChainRef: ConditionRef = {
   kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc123...' as any,
+  conditionId: conditionId!,
 };
 
 // Off-chain example (Kalshi)
@@ -160,11 +163,15 @@ type AccountId =
 ```typescript
 function getBalance(accountId: AccountId) { /* ... */ }
 
-// ❌ TypeScript error
+// ❌ TypeScript error (string is not a discriminated union AccountId)
 getBalance('some-string');
 
-// ✅ OK
-getBalance('some-string' as AccountId);
+// ❌ TypeScript error even with cast (string is not structurally compatible)
+// getBalance('some-string' as AccountId);
+
+// ✅ OK — create via factory function
+const wallet = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
+getBalance(accountIdFromWallet(wallet));
 ```
 
 ### ConditionRef - Discriminated Union для On-Chain и Off-Chain

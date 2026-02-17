@@ -85,7 +85,7 @@ interface SourceMetadata {
  * Structured metadata для известных market data sources
  * @internal
  */
-const SOURCE_META: Readonly<Record<string, SourceMetadata>> = {
+const SOURCE_META: Readonly<Record<keyof typeof KnownMarketDataSources, SourceMetadata>> = {
   // Polymarket
   POLYMARKET_WS: {
     venue: KnownVenues.POLYMARKET,
@@ -223,7 +223,8 @@ export function asMarketDataSourceId(raw: string): MarketDataSourceId | undefine
  */
 export function sourceToVenue(sourceId: MarketDataSourceId): VenueId | undefined {
   // Только для известных sources из SOURCE_META
-  const metadata = SOURCE_META[sourceId as string];
+  // Приводим к Record<string, ...> для безопасного обращения с custom/unknown sources
+  const metadata = (SOURCE_META as Record<string, SourceMetadata | undefined>)[sourceId];
   return metadata?.venue;
 }
 
@@ -259,7 +260,8 @@ export function sourceToVenue(sourceId: MarketDataSourceId): VenueId | undefined
  */
 export function isLiveSource(sourceId: MarketDataSourceId): boolean | undefined {
   // Только для известных sources из SOURCE_META
-  const metadata = SOURCE_META[sourceId as string];
+  // Приводим к Record<string, ...> для безопасного обращения с custom/unknown sources
+  const metadata = (SOURCE_META as Record<string, SourceMetadata | undefined>)[sourceId];
   return metadata?.isLive;
 }
 

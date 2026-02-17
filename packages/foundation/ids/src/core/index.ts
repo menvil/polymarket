@@ -53,7 +53,7 @@ export {
 // Account & Wallet
 export type { WalletAddress } from './WalletAddress.js';
 export {
-  isValidWalletAddress,
+  isValidWalletAddressFormat,
   parseWalletAddress,
   walletAddressEquals,
   walletAddressToString,

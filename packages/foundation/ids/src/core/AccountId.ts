@@ -4,7 +4,7 @@ import type { VenueId } from './VenueId.js';
 import { asVenueId } from './VenueId.js';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
-import { escape, unescape, splitEscaped } from './utils/escaping.js';
+import { escapeId, unescapeId, splitEscaped } from './utils/escaping.js';
 import { AccountIdDepthError, AccountIdValidationError } from '@polymarket/errors';
 
 export { AccountIdDepthError, AccountIdValidationError };
@@ -31,6 +31,45 @@ const MAX_SUBACCOUNT_DEPTH = 5;
  * Проверяется при парсинге перед началом обработки.
  */
 const MAX_ACCOUNT_ID_STRING_LENGTH = 512;
+
+/**
+ * Максимальная длина значения в сообщении об ошибке
+ *
+ * @remarks
+ * Ограничивает длину пользовательских данных в error messages для защиты от
+ * утечки больших объёмов данных в логах и от аномально длинных сообщений.
+ */
+const MAX_ERROR_VALUE_LENGTH = 64;
+
+/**
+ * Обрезать строку для включения в error message
+ *
+ * @param value - Исходная строка
+ * @returns Строка длиной не более MAX_ERROR_VALUE_LENGTH с '...' если обрезана
+ */
+function truncateForError(value: string): string {
+  return value.length > MAX_ERROR_VALUE_LENGTH
+    ? `${value.substring(0, MAX_ERROR_VALUE_LENGTH)}...`
+    : value;
+}
+
+/**
+ * Определить причину невалидного строкового поля
+ *
+ * @param value - Строка, не прошедшая isValidStringField
+ * @returns Строка-описание причины отказа
+ */
+function stringFieldFailReason(value: string): string {
+  if (value.length === 0) return 'empty string';
+  if (value.length > 256) return 'exceeds 256 characters';
+  for (let i = 0; i < value.length; i++) {
+    const code = value.charCodeAt(i);
+    if ((code >= 0x00 && code <= 0x1f) || (code >= 0x7f && code <= 0x9f)) {
+      return 'contains control characters';
+    }
+  }
+  return 'invalid format';
+}
 
 /**
  * AccountId - универсальный идентификатор аккаунта
@@ -250,16 +289,10 @@ export function accountIdFromVenue(
 ): Result<AccountId, AccountIdValidationError> {
   // Валидация userId теми же правилами что в parser
   if (!isValidStringField(userId)) {
-    let reason = 'invalid format';
-    if (userId.length === 0) {
-      reason = 'empty string';
-    } else if (userId.length > 256) {
-      reason = 'exceeds 256 characters';
-    }
-    // Для других случаев (control chars, etc) используем generic reason
+    const reason = stringFieldFailReason(userId);
     return Err(new AccountIdValidationError(
       (ctx: Record<string, unknown>) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
-      { code: AccountIdValidationError.code, context: { field: 'userId', value: userId, reason } }
+      { code: AccountIdValidationError.code, context: { field: 'userId', value: truncateForError(userId), reason } }
     ));
   }
 
@@ -316,16 +349,10 @@ export function accountIdForSubaccount(
 ): Result<AccountId, AccountIdDepthError | AccountIdValidationError> {
   // Валидация name теми же правилами что в parser
   if (!isValidStringField(name)) {
-    let reason = 'invalid format';
-    if (name.length === 0) {
-      reason = 'empty string';
-    } else if (name.length > 256) {
-      reason = 'exceeds 256 characters';
-    }
-    // Для других случаев (control chars, etc) используем generic reason
+    const reason = stringFieldFailReason(name);
     return Err(new AccountIdValidationError(
       (ctx: Record<string, unknown>) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
-      { code: AccountIdValidationError.code, context: { field: 'name', value: name, reason } }
+      { code: AccountIdValidationError.code, context: { field: 'name', value: truncateForError(name), reason } }
     ));
   }
 
@@ -417,13 +444,13 @@ function accountIdToStringImpl(id: AccountId, depth: number): string {
   }
 
   if (id.kind === 'VENUE') {
-    const escapedUserId = escape(id.userId);
+    const escapedUserId = escapeId(id.userId);
     return `venue:${id.venueId}:${escapedUserId}`;
   }
 
   // SUBACCOUNT
   const baseStr = accountIdToStringImpl(id.base, depth + 1);
-  const escapedName = escape(id.name);
+  const escapedName = escapeId(id.name);
   return `sub:${baseStr}:${escapedName}`;
 }
 
@@ -583,7 +610,7 @@ function parseAccountIdImpl(
       return undefined;
     }
 
-    const userId = unescape(parts[2]);
+    const userId = unescapeId(parts[2]);
 
     // Валидация userId
     if (!isValidStringField(userId)) {
@@ -603,14 +630,24 @@ function parseAccountIdImpl(
     }
 
     // Extract subaccount name (last part)
-    const name = unescape(parts[parts.length - 1]);
+    const name = unescapeId(parts[parts.length - 1]);
 
     // Валидация name
     if (!isValidStringField(name)) {
       return undefined;
     }
 
-    // Reconstruct base account string (everything except 'sub' and name)
+    // Reconstruct base account string (everything except 'sub' prefix and trailing name).
+    //
+    // `parts` was produced by splitEscaped, so each element still contains its
+    // original escape sequences (e.g. '\:' for a literal colon, '\\' for a backslash).
+    // Joining with ':' is the exact inverse of splitEscaped for unescaped separators,
+    // so baseParts.join(':') correctly rebuilds the serialized base AccountId string,
+    // including any nested SUBACCOUNT layers.
+    //
+    // Escaped colons ('\:') and backslashes ('\\') inside individual parts are
+    // preserved as-is by join — they will be correctly unescaped when
+    // parseAccountIdImpl recurses into baseStr.
     const baseParts = parts.slice(1, -1);
     const baseStr = baseParts.join(':');
 
