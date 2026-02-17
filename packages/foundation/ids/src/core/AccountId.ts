@@ -65,12 +65,18 @@ function truncateForError(value: string): string {
 }
 
 /**
- * Определить причину невалидного строкового поля
+ * Валидация строкового поля (userId или name субаккаунта)
  *
- * @param value - Строка, не прошедшая isValidStringField
- * @returns Строка-описание причины отказа
+ * @param value - Строка для валидации
+ * @returns null если поле валидно, или строка-описание причины отказа
+ *
+ * @remarks
+ * Правила валидации:
+ * - Не пустая
+ * - Максимум 256 символов
+ * - Не содержит control characters (U+0000..U+001F, U+007F..U+009F)
  */
-function stringFieldFailReason(value: string): string {
+function validateStringField(value: string): string | null {
   if (value.length === 0) return 'empty string';
   if (value.length > 256) return 'exceeds 256 characters';
   for (let i = 0; i < value.length; i++) {
@@ -79,7 +85,7 @@ function stringFieldFailReason(value: string): string {
       return 'contains control characters';
     }
   }
-  return 'invalid format';
+  return null;
 }
 
 /**
@@ -349,11 +355,11 @@ export function accountIdFromVenue(
   userId: string
 ): Result<AccountId, AccountIdValidationError> {
   // Валидация userId теми же правилами что в parser
-  if (!isValidStringField(userId)) {
-    const reason = stringFieldFailReason(userId);
+  const userIdReason = validateStringField(userId);
+  if (userIdReason !== null) {
     return Err(new AccountIdValidationError(
       (ctx: Record<string, unknown>) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
-      { context: { field: 'userId', value: truncateForError(userId), reason } }
+      { context: { field: 'userId', value: truncateForError(userId), reason: userIdReason } }
     ));
   }
 
@@ -409,11 +415,11 @@ export function accountIdForSubaccount(
   name: string
 ): Result<AccountId, AccountIdDepthError | AccountIdValidationError> {
   // Валидация name теми же правилами что в parser
-  if (!isValidStringField(name)) {
-    const reason = stringFieldFailReason(name);
+  const nameReason = validateStringField(name);
+  if (nameReason !== null) {
     return Err(new AccountIdValidationError(
       (ctx: Record<string, unknown>) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,
-      { context: { field: 'name', value: truncateForError(name), reason } }
+      { context: { field: 'name', value: truncateForError(name), reason: nameReason } }
     ));
   }
 
@@ -591,39 +597,6 @@ export function parseAccountId(
 }
 
 /**
- * Валидация строковых полей (userId, subaccount name)
- *
- * @param value - Строка для валидации
- * @returns true если строка валидна
- *
- * @remarks
- * Правила валидации:
- * - Не пустая
- * - Максимум 256 символов
- * - Не содержит control characters (U+0000..U+001F, U+007F..U+009F)
- */
-function isValidStringField(value: string): boolean {
-  if (value.length === 0) {
-    return false;
-  }
-
-  if (value.length > 256) {
-    return false;
-  }
-
-  // Проверка на control characters без regex
-  for (let i = 0; i < value.length; i++) {
-    const code = value.charCodeAt(i);
-    // Control characters: U+0000..U+001F, U+007F..U+009F
-    if ((code >= 0x00 && code <= 0x1f) || (code >= 0x7f && code <= 0x9f)) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-/**
  * Internal implementation с depth tracking
  *
  * @param str - Строка для парсинга
@@ -693,7 +666,7 @@ function parseAccountIdImpl(
     const userId = unescapeId(parts[2]);
 
     // Валидация userId
-    if (!isValidStringField(userId)) {
+    if (validateStringField(userId) !== null) {
       return undefined;
     }
 
@@ -713,7 +686,7 @@ function parseAccountIdImpl(
     const name = unescapeId(parts[parts.length - 1]);
 
     // Валидация name
-    if (!isValidStringField(name)) {
+    if (validateStringField(name) !== null) {
       return undefined;
     }
 
@@ -755,7 +728,7 @@ function parseAccountIdImpl(
  *
  * @remarks
  * Deep comparison для всех типов аккаунтов.
- * Для WALLET использует case-insensitive сравнение addresses.
+ * Для WALLET сравнивает нормализованные (lowercase) адреса через walletAddressEquals.
  * Для SUBACCOUNT рекурсивно сравнивает base accounts.
  *
  * При превышении MAX_SUBACCOUNT_DEPTH возвращает false (безопасный fallback).
@@ -765,7 +738,7 @@ function parseAccountIdImpl(
  * const acc1 = accountIdFromWallet(parseWalletAddress('0xABC...')!);
  * const acc2 = accountIdFromWallet(parseWalletAddress('0xabc...')!);
  *
- * accountIdEquals(acc1, acc2); // → true (case-insensitive)
+ * accountIdEquals(acc1, acc2); // → true (оба нормализованы в lowercase parseWalletAddress)
  *
  * // Глубоко вложенные структуры:
  * accountIdEquals(deeplyNested1, deeplyNested2); // → false (depth limit)

@@ -246,10 +246,10 @@ export const AssetId = {
    * // (usdcAsset as any).currency = 'HACKED'; // Throws in strict mode
    * ```
    */
-  USDC: Object.freeze({
+  USDC: deepFreezeAssetId({
     type: 'CURRENCY' as const,
     currency: KnownCurrencies.USDC,
-  }) as AssetId,
+  }),
 
   /**
    * Проверяет равенство двух AssetId

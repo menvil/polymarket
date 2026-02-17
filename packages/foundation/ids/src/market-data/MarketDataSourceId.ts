@@ -135,6 +135,12 @@ const SOURCE_META: Readonly<Record<keyof typeof KnownMarketDataSources, SourceMe
 const KNOWN_SOURCE_SET = new Set<string>(Object.values(KnownMarketDataSources));
 
 /**
+ * Lookup-таблица для metadata по строковому ключу (включает unknown sources → undefined)
+ * @internal
+ */
+const SOURCE_LOOKUP: Readonly<Record<string, SourceMetadata | undefined>> = SOURCE_META;
+
+/**
  * Type guard для проверки известных market data sources
  *
  * @param id - Строка для проверки
@@ -230,9 +236,7 @@ export function asMarketDataSourceId(raw: string): MarketDataSourceId | undefine
  * ```
  */
 export function sourceToVenue(sourceId: MarketDataSourceId): VenueId | undefined {
-  // Только для известных sources из SOURCE_META
-  // Приводим к Record<string, ...> для безопасного обращения с custom/unknown sources
-  const metadata = (SOURCE_META as Record<string, SourceMetadata | undefined>)[sourceId];
+  const metadata = SOURCE_LOOKUP[sourceId];
   return metadata?.venue;
 }
 
@@ -267,9 +271,7 @@ export function sourceToVenue(sourceId: MarketDataSourceId): VenueId | undefined
  * ```
  */
 export function isLiveSource(sourceId: MarketDataSourceId): boolean | undefined {
-  // Только для известных sources из SOURCE_META
-  // Приводим к Record<string, ...> для безопасного обращения с custom/unknown sources
-  const metadata = (SOURCE_META as Record<string, SourceMetadata | undefined>)[sourceId];
+  const metadata = SOURCE_LOOKUP[sourceId];
   return metadata?.isLive;
 }
 

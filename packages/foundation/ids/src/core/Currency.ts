@@ -77,7 +77,8 @@ const SUPPORTED_CURRENCIES_SET = new Set<string>(SUPPORTED_CURRENCIES);
  * }
  * ```
  */
-export function isSupportedCurrency(value: string): value is SupportedCurrency {
+export function isSupportedCurrency(value: unknown): value is SupportedCurrency {
+  if (typeof value !== 'string') return false;
   return SUPPORTED_CURRENCIES_SET.has(value);
 }
 

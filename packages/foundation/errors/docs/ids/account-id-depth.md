@@ -75,12 +75,14 @@ function accountIdForSubaccount(
 }
 
 // Использование
+import { unwrap } from '@polymarket/result/unsafe';
+
 const wallet = accountIdFromWallet(parseWalletAddress('0x1234...')!);
-const sub1 = accountIdForSubaccount(wallet, 'level1').unwrap();
-const sub2 = accountIdForSubaccount(sub1, 'level2').unwrap();
-const sub3 = accountIdForSubaccount(sub2, 'level3').unwrap();
-const sub4 = accountIdForSubaccount(sub3, 'level4').unwrap();
-const sub5 = accountIdForSubaccount(sub4, 'level5').unwrap();
+const sub1 = unwrap(accountIdForSubaccount(wallet, 'level1'));
+const sub2 = unwrap(accountIdForSubaccount(sub1, 'level2'));
+const sub3 = unwrap(accountIdForSubaccount(sub2, 'level3'));
+const sub4 = unwrap(accountIdForSubaccount(sub3, 'level4'));
+const sub5 = unwrap(accountIdForSubaccount(sub4, 'level5'));
 
 // Попытка создать 6-й уровень
 const result = accountIdForSubaccount(sub5, 'tooDeep');
@@ -217,7 +219,9 @@ console.log(getSubaccountDepth(sub5)); // → 5
 // depth=6: ошибка
 const result = accountIdForSubaccount(sub5, 'tooDeep');
 console.log(result.ok); // → false
-console.log(AccountIdDepthError.is(result.error)); // → true
+if (!result.ok) {
+  console.log(AccountIdDepthError.is(result.error)); // → true
+}
 ```
 
 ### Проверка граничного значения
