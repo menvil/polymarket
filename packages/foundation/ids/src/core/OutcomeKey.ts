@@ -86,7 +86,7 @@ const MAX_OUTCOME_KEY_LENGTH = 32;
  * Валидирует OutcomeKey:
  * - Не пустая строка
  * - Длина не более 32 символов
- * - Не содержит двоеточие ':' (зарезервировано для сериализации)
+ * - Не содержит ':' или '\' (зарезервированы для сериализации/escaping)
  *
  * Используй эту функцию при парсинге данных из внешних источников
  * (API, сериализация, пользовательский ввод).
@@ -103,7 +103,7 @@ const MAX_OUTCOME_KEY_LENGTH = 32;
  * parseOutcomeKey(''); // → undefined (пустая строка)
  * parseOutcomeKey('A'.repeat(33)); // → undefined (слишком длинная)
  * parseOutcomeKey('UP:DOWN'); // → undefined (содержит ':')
- * parseOutcomeKey('invalid:key'); // → undefined (содержит ':')
+ * parseOutcomeKey('UP\\DOWN'); // → undefined (содержит '\')
  * ```
  */
 export function parseOutcomeKey(raw: string): OutcomeKey | undefined {

@@ -631,7 +631,7 @@ const hedgePosition = hedge(position);  // → 'DOWN'
 console.log(`Buying ${up} token`);  // → "Buying UP token"
 
 // 4. From string (парсинг user input)
-// parseOutcomeKey принимает любую строку без ':' и длиной ≤32 — нет требования UPPERCASE
+// parseOutcomeKey принимает любую строку без ':' и '\', длиной ≤32 — нет требования UPPERCASE
 const userInput = 'up';
 const outcome = parseOutcomeKey(userInput);
 
