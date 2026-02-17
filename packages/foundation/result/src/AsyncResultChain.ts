@@ -925,6 +925,17 @@ export const AsyncResult = {
     promise: Promise<Result<T, E>>,
     onReject?: (error: unknown) => E
   ): AsyncResultChain<T, E> => {
+    // Флаг в замыкании: если onReject выбросил исключение, последующие вызовы
+    // guardedNormalizer коротко замкнуться на identity-fallback, не вызывая
+    // сломанный onReject повторно и не генерируя дублирующих console.error.
+    let normalizerBroken = false;
+    const guardedNormalizer: ((error: unknown) => E) | undefined = onReject
+      ? (error: unknown): E => {
+          if (normalizerBroken) return error as E;
+          return onReject(error);
+        }
+      : undefined;
+
     const safePromise = promise.catch((error): Result<T, E> => {
       if (onReject) {
         // Защищаем от исключений в onReject: если onReject бросает,
@@ -935,6 +946,7 @@ export const AsyncResult = {
           // onReject выбросил исключение — это баг в onReject.
           // Логируем диагностику: без этого ошибка onReject полностью теряется.
           // Возвращаем оригинальную rejection (не ошибку из onReject), как в normalize().
+          normalizerBroken = true;
           console.error(
             `[AsyncResult.from] onReject threw while handling rejection. ` +
               `Original error: ${formatValue(error)}. ` +
@@ -946,7 +958,7 @@ export const AsyncResult = {
       }
       return Err(error) as Result<T, E>;
     });
-    return new AsyncResultChain(safePromise, onReject);
+    return new AsyncResultChain(safePromise, guardedNormalizer);
   }) as {
     /**
      * Без normalizer — тип ошибки фиксирован как `unknown`.
@@ -987,7 +999,16 @@ export const AsyncResult = {
     promise: Promise<T>,
     onError?: (error: unknown) => E
   ): AsyncResultChain<T, E> => {
-    const mapError = onError ?? ((error) => error as E);
+    // Флаг в замыкании: если onError выбросил исключение, последующие вызовы
+    // guardedNormalizer коротко замкнуться на identity-fallback.
+    let normalizerBroken = false;
+    const guardedNormalizer: ((error: unknown) => E) | undefined = onError
+      ? (error: unknown): E => {
+          if (normalizerBroken) return error as E;
+          return onError(error);
+        }
+      : undefined;
+    const mapError = guardedNormalizer ?? ((error) => error as E);
 
     return new AsyncResultChain(
       promise.then((value) => Ok(value)).catch((error) => {
@@ -995,12 +1016,21 @@ export const AsyncResult = {
         // оборачиваем брошенное значение в Err чтобы Promise оставался resolved.
         try {
           return Err(mapError(error));
-        } catch {
-          // mapError выбросил исключение — возвращаем оригинальную rejection (как в normalize()).
+        } catch (mapErrorError) {
+          // mapError выбросил исключение — это баг в onError.
+          // Логируем диагностику: без этого ошибка mapError полностью теряется.
+          // Возвращаем оригинальную rejection (как в normalize() и AsyncResult.from).
+          normalizerBroken = true;
+          console.error(
+            `[AsyncResult.ok] onError threw while handling rejection. ` +
+              `Original error: ${formatValue(error)}. ` +
+              `onError error: ${formatValue(mapErrorError)}. ` +
+              `Falling back to original error (unsafe cast to E).`
+          );
           return Err(error as E);
         }
       }),
-      mapError
+      guardedNormalizer
     );
   }) as {
     /**

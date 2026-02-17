@@ -36,6 +36,7 @@ Type-safe обработка ошибок: явные типы вместо exce
 | `expectErr` (unsafe)        | **Да** при Ok       | —                            | `/unsafe`         |
 | `AsyncResultChain.mapAsync` | Никогда             | **Да** → `Err`               | AsyncResultChain  |
 | `AsyncResultChain.flatMapAsync` | Никогда         | **Да** → `Err`               | AsyncResultChain  |
+| `AsyncResultChain.flatMap`  | Никогда             | **Да** → `Err`               | AsyncResultChain  |
 | `AsyncResultChain.map`      | Никогда             | **Да** → `Err`               | AsyncResultChain  |
 | `AsyncResultChain.mapUnsafe`| Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 | `AsyncResultChain.tap`      | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
@@ -643,7 +644,8 @@ ErrChain('error').isErr(); // true
 Короткие алиасы для быстрого создания ResultChain.
 
 ```typescript
-import { R } from '@polymarket/result';
+import { OkChain, ErrChain, toChain, R } from '@polymarket/result/chain';
+import { Ok } from '@polymarket/result';
 
 // Вместо OkChain(42)
 const result = R.ok(42);
@@ -1327,7 +1329,7 @@ const value = unwrapOrElse(result, err => computeDefault(err));
 
 ```typescript
 // ✅ Unsafe операции — только через /unsafe субпуть:
-import { unwrap, expectOk, unwrapErr } from '@polymarket/result/unsafe';
+import { unwrap, expectOk, unwrapErr, expectErr } from '@polymarket/result/unsafe';
 ```
 
 > ⚠️ `unwrap` **удалён из root-экспорта** `@polymarket/result`.

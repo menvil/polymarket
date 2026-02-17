@@ -112,6 +112,11 @@ if (!result.ok) {
 
 ```typescript
 import { AccountIdDepthError, AccountIdValidationError } from '@polymarket/errors';
+import {
+  type AccountId,
+  accountIdForSubaccount,
+  accountIdToString,
+} from '@polymarket/ids';
 
 async function addSubaccount(
   base: AccountId,
@@ -152,6 +157,8 @@ async function addSubaccount(
 
 ```typescript
 import { AccountIdDepthError } from '@polymarket/errors';
+import { type AccountId, getSubaccountDepth } from '@polymarket/ids';
+import { type Result, Ok, Err } from '@polymarket/result';
 
 const MAX_DEPTH = 5;
 
@@ -214,6 +221,14 @@ function handleSubaccountError(
 ### Создание допустимой максимальной глубины
 
 ```typescript
+import { AccountIdDepthError } from '@polymarket/errors';
+import {
+  type AccountId,
+  accountIdFromWallet,
+  parseWalletAddress,
+  accountIdForSubaccount,
+  getSubaccountDepth,
+} from '@polymarket/ids';
 import { unwrap } from '@polymarket/result/unsafe';
 
 const wallet = accountIdFromWallet(parseWalletAddress('0x...')!);
@@ -239,7 +254,14 @@ if (!result.ok) {
 ### Проверка граничного значения
 
 ```typescript
+import {
+  accountIdFromWallet,
+  parseWalletAddress,
+  accountIdForSubaccount,
+} from '@polymarket/ids';
 import { unwrap } from '@polymarket/result/unsafe';
+
+const wallet = accountIdFromWallet(parseWalletAddress('0x...')!);
 
 // currentDepth === maxDepth → ошибка (условие >=)
 // currentDepth === maxDepth - 1 → допустимо
@@ -262,6 +284,8 @@ console.log(invalid.ok); // → false (6 > 5)
 Используйте опцию `maxDepth` при необходимости более строгих ограничений:
 
 ```typescript
+import { parseAccountId } from '@polymarket/ids';
+
 // parseAccountId поддерживает опциональный maxDepth для парсинга
 const parsed = parseAccountId('sub:sub:sub:wallet:0x...', { maxDepth: 2 });
 // → undefined (превышает кастомный лимит)

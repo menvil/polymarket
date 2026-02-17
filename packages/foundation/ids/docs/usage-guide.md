@@ -670,8 +670,10 @@ const hedgePosition = hedge(position);  // → 'DOWN'
 console.log(`Buying ${up} token`);  // → "Buying UP token"
 
 // 4. From string (парсинг user input)
-// parseOutcomeKey принимает любую строку без ':' и '\', длиной ≤32 — нет требования UPPERCASE
-const userInput = 'up';
+// parseOutcomeKey принимает любую строку без ':' и '\', длиной ≤32 — нет нормализации регистра.
+// ВАЖНО: для использования с AssetIdHelpers.fromOutcomeToken значение должно совпадать
+// с ожидаемым ключом (например, 'UP', 'DOWN') — регистр имеет значение.
+const userInput = 'UP';
 const outcome = parseOutcomeKey(userInput);
 
 if (outcome !== undefined) {
@@ -900,17 +902,18 @@ Type 'string' is not assignable to type 'OutcomeKey'
 const outcome: OutcomeKey = 'UP' as OutcomeKey;  // Unsafe cast!
 
 // ✅ Хорошо
-import { BinaryOutcome, parseOutcomeKey, AssetIdHelpers } from '@polymarket/ids';
+import { type OnChainConditionRef, BinaryOutcome, parseOutcomeKey, AssetIdHelpers } from '@polymarket/ids';
 
 // Compile-time константы
 const outcome = BinaryOutcome.UP;
+
+// conditionRef — OnChainConditionRef, полученный ранее (см. примеры выше)
+declare const conditionRef: OnChainConditionRef;
 
 // Runtime валидация
 const userInput = 'UP';
 const parsed = parseOutcomeKey(userInput);
 if (parsed) {
-  // conditionRef — OnChainConditionRef, полученный ранее (см. примеры выше)
-  const conditionRef = /* your OnChainConditionRef here */ null as never;
   // fromOutcomeToken — safe-контракт: Result, не throw
   const tokenResult = AssetIdHelpers.fromOutcomeToken(conditionRef, parsed);
   if (tokenResult.ok) {
