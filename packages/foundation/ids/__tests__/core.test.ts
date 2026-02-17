@@ -1,5 +1,12 @@
 import { describe, it, expect } from '@jest/globals';
 import {
+  KnownMarketDataSources,
+  isKnownMarketDataSource,
+  sourceToVenue,
+  isLiveSource,
+  isReplaySource,
+} from '../src/market-data/index.js';
+import {
   type AccountId,
   type ConditionRef,
   type OnChainConditionRef,
@@ -327,7 +334,7 @@ describe('Core IDs', () => {
           }
         });
 
-        it('should accept PREDICTIT with numeric marketId', () => {
+        it('should accept KALSHI with numeric marketId', () => {
           const ref = parseConditionRef('OFFCHAIN:KALSHI:7456');
           expect(ref).toBeDefined();
           if (ref?.kind === 'OFFCHAIN') {
@@ -354,7 +361,7 @@ describe('Core IDs', () => {
           expect(parseConditionRef('OFFCHAIN:KALSHI:')).toBeUndefined();
         });
 
-        it('should reject marketId containing colon (breaks round-trip)', () => {
+        it('should reject marketId containing unescaped colon (breaks round-trip)', () => {
           expect(parseConditionRef('OFFCHAIN:KALSHI:MARKET:WITH:COLON')).toBeUndefined();
         });
 
@@ -1046,6 +1053,151 @@ describe('Core IDs', () => {
         // Но AssetId остается неизменным (использует свою копию)
         if (token.type === 'OUTCOME_TOKEN') {
           expect(token.conditionRef.chainId).toBe(137); // Оригинальное значение
+        }
+      });
+    });
+
+    describe('fromOutcomeToken validation throws', () => {
+      const validRef: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: KnownChainIds.POLYGON,
+        conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+      };
+
+      it('should throw on invalid protocolId (lowercase)', () => {
+        expect(() =>
+          AssetIdHelpers.fromOutcomeToken(
+            { ...validRef, protocolId: 'polymarket_ctf' as any },
+            BinaryOutcome.UP
+          )
+        ).toThrow(/Invalid protocolId/);
+      });
+
+      it('should throw on invalid protocolId (contains dash)', () => {
+        expect(() =>
+          AssetIdHelpers.fromOutcomeToken(
+            { ...validRef, protocolId: 'POLY-MARKET' as any },
+            BinaryOutcome.UP
+          )
+        ).toThrow(/Invalid protocolId/);
+      });
+
+      it('should throw on invalid chainId (zero)', () => {
+        expect(() =>
+          AssetIdHelpers.fromOutcomeToken(
+            { ...validRef, chainId: 0 as any },
+            BinaryOutcome.UP
+          )
+        ).toThrow(/Invalid chainId/);
+      });
+
+      it('should throw on invalid chainId (negative)', () => {
+        expect(() =>
+          AssetIdHelpers.fromOutcomeToken(
+            { ...validRef, chainId: -1 as any },
+            BinaryOutcome.UP
+          )
+        ).toThrow(/Invalid chainId/);
+      });
+
+      it('should throw on invalid conditionId (too short)', () => {
+        expect(() =>
+          AssetIdHelpers.fromOutcomeToken(
+            { ...validRef, conditionId: '0xabcd' as any },
+            BinaryOutcome.UP
+          )
+        ).toThrow(/Invalid conditionId/);
+      });
+
+      it('should throw on invalid conditionId (not hex)', () => {
+        expect(() =>
+          AssetIdHelpers.fromOutcomeToken(
+            { ...validRef, conditionId: '0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG' as any },
+            BinaryOutcome.UP
+          )
+        ).toThrow(/Invalid conditionId/);
+      });
+    });
+
+    describe('AssetIdHelpers.equals', () => {
+      const ref: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: KnownChainIds.POLYGON,
+        conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+      };
+      const refDifferentChain: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: parseChainId('1')!, // Ethereum mainnet
+        conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+      };
+
+      it('should return true for identical CURRENCY assets', () => {
+        const a = AssetIdHelpers.fromCurrency('USDC');
+        const b = AssetIdHelpers.fromCurrency('USDC');
+        expect(AssetIdHelpers.equals(a, b)).toBe(true);
+      });
+
+      it('should return false for CURRENCY assets with different currency values', () => {
+        const a = AssetIdHelpers.fromCurrency('USDC');
+        // Создаём asset с другой валютой через прямое приведение типа (для теста)
+        const b = { type: 'CURRENCY' as const, currency: 'USDT' as any };
+        expect(AssetIdHelpers.equals(a, b)).toBe(false);
+      });
+
+      it('should return false when types differ (CURRENCY vs OUTCOME_TOKEN)', () => {
+        const currency = AssetIdHelpers.fromCurrency('USDC');
+        const token = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+        expect(AssetIdHelpers.equals(currency, token)).toBe(false);
+      });
+
+      it('should return true for identical OUTCOME_TOKEN assets', () => {
+        const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+        const b = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+        expect(AssetIdHelpers.equals(a, b)).toBe(true);
+      });
+
+      it('should return false for OUTCOME_TOKEN with different outcomeKey', () => {
+        const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+        const b = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.DOWN);
+        expect(AssetIdHelpers.equals(a, b)).toBe(false);
+      });
+
+      it('should return false for OUTCOME_TOKEN with different chainId', () => {
+        const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+        const b = AssetIdHelpers.fromOutcomeToken(refDifferentChain, BinaryOutcome.UP);
+        expect(AssetIdHelpers.equals(a, b)).toBe(false);
+      });
+
+      it('should agree with assetIdEquals (delegate check)', () => {
+        const a = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+        const b = AssetIdHelpers.fromOutcomeToken(ref, BinaryOutcome.UP);
+        expect(AssetIdHelpers.equals(a, b)).toBe(assetIdEquals(a, b));
+      });
+    });
+
+    describe('parseAssetId immutability', () => {
+      it('should return frozen CURRENCY object from parseAssetId', () => {
+        const parsed = parseAssetId('CURRENCY:USDC');
+        expect(parsed).toBeDefined();
+        expect(Object.isFrozen(parsed)).toBe(true);
+        expect(() => {
+          (parsed as any).type = 'HACKED';
+        }).toThrow();
+      });
+
+      it('should return frozen OUTCOME_TOKEN object from parseAssetId (including conditionRef)', () => {
+        const str = 'OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:UP';
+        const parsed = parseAssetId(str);
+        expect(parsed).toBeDefined();
+        expect(Object.isFrozen(parsed)).toBe(true);
+        if (parsed && parsed.type === 'OUTCOME_TOKEN') {
+          expect(Object.isFrozen(parsed.conditionRef)).toBe(true);
+          expect(() => {
+            (parsed.conditionRef as any).chainId = 999;
+          }).toThrow();
         }
       });
     });
@@ -2072,5 +2224,106 @@ describe('Core IDs', () => {
         expect(parsed).toBeUndefined(); // пустой venue
       });
     });
+
+    describe('accountIdEquals defensive depth guard', () => {
+      it('should return false (not crash) when comparing deeply nested structures exceeding MAX_SUBACCOUNT_DEPTH', () => {
+        // Создаём два идентичных дерева глубиной 5 (максимум), проверяем что equals работает
+        const wallet = accountIdFromWallet(parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!);
+        let base: AccountId = wallet;
+        for (let i = 0; i < 5; i++) {
+          const result = accountIdForSubaccount(base, `level${i}`);
+          if (!result.ok) break;
+          base = result.value;
+        }
+        // deep=5: сравниваем с собой — должно быть true (5 === MAX_SUBACCOUNT_DEPTH, depth tracking с 0)
+        expect(accountIdEquals(base, base)).toBe(true);
+
+        // Handcrafted структура с depth > MAX через прямое построение объекта (обходим фабрику)
+        const deepId: AccountId = {
+          kind: 'SUBACCOUNT',
+          base: { kind: 'SUBACCOUNT', base: { kind: 'SUBACCOUNT', base: { kind: 'SUBACCOUNT',
+            base: { kind: 'SUBACCOUNT', base: { kind: 'SUBACCOUNT',
+              base: wallet, name: 'l0' }, name: 'l1' }, name: 'l2' }, name: 'l3' }, name: 'l4' }, name: 'l5' };
+        // accountIdEquals должен вернуть false при превышении depth, а не упасть
+        expect(accountIdEquals(deepId, deepId)).toBe(false);
+      });
+    });
+
+    describe('accountIdToString depth safety guard', () => {
+      it('should return fallback string instead of crashing for handcrafted over-deep structure', () => {
+        const wallet = accountIdFromWallet(parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!);
+        // Создаём структуру depth=16 (превышает MAX+SAFETY_MARGIN=5+10=15)
+        let deep: AccountId = wallet;
+        for (let i = 0; i < 16; i++) {
+          deep = { kind: 'SUBACCOUNT', base: deep, name: `l${i}` };
+        }
+        const result = accountIdToString(deep);
+        // Должен вернуть строку (не упасть), содержащую fallback
+        expect(typeof result).toBe('string');
+        expect(result).toContain('[INVALID:DEPTH_EXCEEDED]');
+      });
+    });
+  });
+});
+
+describe('MarketDataSource metadata completeness', () => {
+  it('should have sourceToVenue defined for all known sources', () => {
+    // POLYGON_RPC не имеет venue (RPC не привязан к venue — это ожидаемо)
+    const sourcesWithVenue = [
+      KnownMarketDataSources.POLYMARKET_WS,
+      KnownMarketDataSources.POLYMARKET_REST,
+      KnownMarketDataSources.POLYMARKET_REPLAY,
+      KnownMarketDataSources.KALSHI_WS,
+      KnownMarketDataSources.KALSHI_REST,
+      KnownMarketDataSources.KALSHI_REPLAY,
+    ];
+    for (const source of sourcesWithVenue) {
+      expect(sourceToVenue(source)).toBeDefined();
+    }
+    // POLYGON_RPC осознанно возвращает undefined
+    expect(sourceToVenue(KnownMarketDataSources.POLYGON_RPC)).toBeUndefined();
+  });
+
+  it('should have isLiveSource defined for all known sources', () => {
+    const allSources = Object.values(KnownMarketDataSources);
+    for (const source of allSources) {
+      expect(isLiveSource(source)).not.toBeUndefined();
+    }
+    // Unknown source возвращает undefined
+    const unknownSource = 'MY_CUSTOM_SOURCE' as any;
+    expect(isLiveSource(unknownSource)).toBeUndefined();
+  });
+
+  it('should correctly classify live vs replay sources', () => {
+    expect(isLiveSource(KnownMarketDataSources.POLYMARKET_WS)).toBe(true);
+    expect(isLiveSource(KnownMarketDataSources.POLYMARKET_REST)).toBe(true);
+    expect(isLiveSource(KnownMarketDataSources.POLYMARKET_REPLAY)).toBe(false);
+    expect(isLiveSource(KnownMarketDataSources.KALSHI_WS)).toBe(true);
+    expect(isLiveSource(KnownMarketDataSources.KALSHI_REST)).toBe(true);
+    expect(isLiveSource(KnownMarketDataSources.KALSHI_REPLAY)).toBe(false);
+    expect(isLiveSource(KnownMarketDataSources.POLYGON_RPC)).toBe(true);
+  });
+
+  it('should have isReplaySource as inverse of isLiveSource for known sources', () => {
+    const allSources = Object.values(KnownMarketDataSources);
+    for (const source of allSources) {
+      const live = isLiveSource(source);
+      const replay = isReplaySource(source);
+      if (live !== undefined && replay !== undefined) {
+        expect(live).toBe(!replay);
+      }
+    }
+  });
+
+  it('should have metadata for every key in KnownMarketDataSources (coverage invariant)', () => {
+    const allKeys = Object.values(KnownMarketDataSources);
+    // Каждый known source должен быть известен isKnownMarketDataSource
+    for (const source of allKeys) {
+      expect(isKnownMarketDataSource(source)).toBe(true);
+    }
+    // isLiveSource должен возвращать non-undefined для каждого known source
+    for (const source of allKeys) {
+      expect(isLiveSource(source)).not.toBeUndefined();
+    }
   });
 });

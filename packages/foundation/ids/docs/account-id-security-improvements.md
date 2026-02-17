@@ -289,12 +289,13 @@ export function getSubaccountDepth(id: AccountId): number {
 
 2. **accountIdForSubaccount**:
    - Вычисляем текущую глубину base account
-   - Если depth > MAX_SUBACCOUNT_DEPTH → return Err(AccountIdDepthError)
+   - Если depth >= MAX_SUBACCOUNT_DEPTH → return Err(AccountIdDepthError)
    - Иначе создаём новый SUBACCOUNT
 
 3. **accountIdToString**:
-   - Total function без проверки depth (всегда возвращает string)
-   - Предполагается, что AccountId уже валидирован при создании
+   - Total function: всегда возвращает string
+   - Содержит bounded-loop guard с safety margin (MAX_SUBACCOUNT_DEPTH + 10)
+   - При превышении guard: dev-only assert + fallback string '[INVALID:DEPTH_EXCEEDED]'
 
 4. **parseAccountId**:
    - Аналогично: impl-функция с depth tracking
@@ -551,7 +552,7 @@ describe('WalletAddress validation', () => {
 
 **Результаты тестирования:**
 
-- ✅ 65 тестов прошли успешно
+- ✅ 239 тестов прошли успешно
 - ✅ Линтер не нашел ошибок
 - ✅ TypeScript компиляция успешна
 

@@ -112,14 +112,21 @@ getBalance('0x123...');  // это WalletAddress, не AccountId!
 **Решение**: Branded types
 
 ```typescript
-type AccountId = string & { readonly __brand: 'AccountId' };
+// WalletAddress — branded string:
 type WalletAddress = string & { readonly __brand: 'WalletAddress' };
+
+// AccountId — discriminated union (не строка!):
+type AccountId =
+  | { kind: 'WALLET'; address: WalletAddress }
+  | { kind: 'VENUE'; venueId: VenueId; userId: string }
+  | { kind: 'SUBACCOUNT'; base: AccountId; name: string };
 
 // ✅ TypeScript ошибка!
 getBalance('0x123...');  // Type 'string' is not assignable to AccountId
 
-// ✅ OK
-getBalance('0x123...' as AccountId);
+// ✅ OK — создаётся через фабрику, а не cast
+const wallet = parseWalletAddress('0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed')!;
+getBalance(accountIdFromWallet(wallet));
 ```
 
 **Преимущества**:

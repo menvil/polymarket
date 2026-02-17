@@ -66,10 +66,10 @@ assert(typeof mainModule.asMarketDataSourceId === 'function', 'asMarketDataSourc
 // Test actual functionality (smoke test)
 console.log('  ✓ Testing actual functionality...');
 
-// Test WalletAddress parsing
-const wallet = coreModule.parseWalletAddress('0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb');
+// Test WalletAddress parsing (40 hex chars после 0x, case-insensitive input)
+const wallet = coreModule.parseWalletAddress('0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed');
 assert(wallet !== undefined, 'parseWalletAddress should parse valid address');
-assert(wallet === '0x742d35cc6634c0532925a3b844bc9e7595f0beb', 'should return lowercase canonical format');
+assert(wallet === '0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed', 'should return lowercase canonical format');
 
 // Test AccountId creation
 const accountId = coreModule.accountIdFromWallet(wallet);
@@ -85,9 +85,11 @@ assert(parsed !== undefined, 'parseAccountId should parse serialized string');
 assert(coreModule.accountIdEquals(accountId, parsed), 'round-trip should preserve equality');
 
 // Test VenueId
+// asVenueId принимает любой валидный формат (известные + custom venues)
 const venueId = coreModule.asVenueId('POLYMARKET');
 assert(venueId === 'POLYMARKET', 'asVenueId should accept known venue');
-assert(coreModule.asVenueId('UNKNOWN') === undefined, 'asVenueId should reject unknown venue');
+assert(coreModule.asVenueId('MY_CUSTOM_VENUE') !== undefined, 'asVenueId should accept custom venues with valid format');
+assert(coreModule.asVenueId('invalid-venue') === undefined, 'asVenueId should reject venues with invalid format (lowercase/dash)');
 
 // Test execution parsers
 const orderId = executionModule.asOrderId('order-123');

@@ -204,7 +204,7 @@ type WalletAddress = string & { readonly __brand: 'WalletAddress' };
 **Helper функции**:
 
 ```typescript
-// Validation (checksum)
+// Validation (format: 0x + 40 lowercase hex chars)
 function isValidWalletAddress(address: string): boolean;
 
 isValidWalletAddress('0x1234567890123456789012345678901234567890');  // → true (if valid format)
@@ -391,7 +391,7 @@ const balance = {
 ```typescript
 type AssetId =
   | { readonly type: 'CURRENCY'; readonly currency: string; }
-  | { readonly type: 'OUTCOME_TOKEN'; readonly conditionRef: ConditionRef; readonly outcomeKey: OutcomeKey; };
+  | { readonly type: 'OUTCOME_TOKEN'; readonly conditionRef: OnChainConditionRef; readonly outcomeKey: OutcomeKey; };
 ```
 
 **Helper функции**:

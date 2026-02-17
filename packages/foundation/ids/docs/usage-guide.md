@@ -53,8 +53,12 @@ import {
 ```typescript
 import {
   type ConditionRef,
+  type OnChainConditionRef,
   type AccountId,
   type VenueId,
+  type WalletAddress,
+  parseWalletAddress,
+  accountIdFromWallet,
   BinaryOutcome,
   AssetIdHelpers,
   KnownChainIds,
@@ -72,10 +76,11 @@ import {
 // 1. Настройка
 const marketDataSource: MarketDataSourceId = KnownMarketDataSources.POLYMARKET_WS;
 const executionVenue: ExecutionVenueId = KnownExecutionVenues.POLYMARKET;
-const accountId: AccountId = '0x123...' as AccountId;
+const walletAddr = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
+const accountId: AccountId = accountIdFromWallet(walletAddr);
 
 // 2. Создание ConditionRef
-const conditionRef: ConditionRef = {
+const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
@@ -316,7 +321,8 @@ import {
 const usdcAsset: AssetId = AssetIdHelpers.USDC;
 
 // 2. Outcome token asset
-const conditionRef: ConditionRef = {
+const conditionRef: OnChainConditionRef = {
+  kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
@@ -440,6 +446,7 @@ import {
   conditionRefEquals,
   conditionRefToString,
   parseConditionRef,
+  parseConditionId,
 } from '@polymarket/ids';
 
 // 1. Создание ConditionRef (discriminated union с kind)
@@ -588,6 +595,7 @@ const quote = new Quote(
   KnownMarketDataSources.POLYMARKET_WS,
   'BTC-USD-2025' as InstrumentId,
   {
+    kind: 'ONCHAIN',
     protocolId: 'POLYMARKET_CTF',
     chainId: KnownChainIds.POLYGON,
     conditionId: '0xabc123...' as ConditionId,
@@ -643,7 +651,8 @@ const conditionId = '0xabc123...';
 ✅ Хорошо:
 
 ```typescript
-const conditionRef: ConditionRef = {
+const conditionRef: OnChainConditionRef = {
+  kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
