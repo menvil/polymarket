@@ -103,9 +103,17 @@ AsyncResult.ok(promise, onError: (e: unknown) => E): AsyncResultChain<T, E>
 Без normalizer нельзя получить `AsyncResultChain<*, SpecificError>` "из воздуха"
 через `AsyncResult.from` или `AsyncResult.ok` — тип ошибки честно фиксирован как `unknown`.
 
-**normalize() fallback:** Если сам E-normalizer (`onReject`/`onError`) бросает исключение,
-используется `error as E` — last-resort cast без типовой гарантии. Promise при этом
-остаётся resolved. Это крайний случай: некорректный normalizer не должен ломать цепочку.
+**normalize() fallback — два сценария:**
+
+1. **`AsyncResult.from` / `AsyncResult.ok` onReject/onError сам бросает:**
+   `Err` содержит **исключение из normalizer** (`onRejectError as E`).
+   Rejection оригинального Promise при этом заменяется ошибкой normalizer.
+
+2. **Chain normalizer (`this.normalize(e)`) в transform-методах (map, mapAsync, …):**
+   Если `onError(e)` бросает — `Err` содержит **оригинальную ошибку callback** (`e as E`),
+   а не исключение из normalizer. Normalizer не должен скрывать исходную ошибку.
+
+В обоих случаях Promise остаётся resolved. Это крайний случай: normalizer должен быть надёжным.
 
 **Widen-варианты (W-суффикс):**
 - `flatMapW<U, F>(fn: (T) => Result<U, F>): Result<U, E | F>` — fn может вернуть

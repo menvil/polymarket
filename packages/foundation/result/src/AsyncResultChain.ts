@@ -590,7 +590,12 @@ export class AsyncResultChain<T, E> {
     const normalizer = (e: unknown): E | F => this.normalize(e);
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
-        return (await other) as Result<U, E | F>;
+        try {
+          return (await other) as Result<U, E | F>;
+        } catch (err) {
+          // other реджектится (не содержит Result<U,F>) → Err с нормализованной ошибкой
+          return { ok: false, error: normalizer(err) } as Result<U, E | F>;
+        }
       }
       return result as Result<U, E | F>;
     });
@@ -643,7 +648,12 @@ export class AsyncResultChain<T, E> {
       if (result.ok) {
         return result as Result<T, F>;
       }
-      return await other;
+      try {
+        return await other;
+      } catch (e) {
+        // other реджектится → Err с best-effort cast (F-normalizer недоступен)
+        return { ok: false, error: normalizerF(e) } as Result<T, F>;
+      }
     });
     return new AsyncResultChain<T, F>(newPromise, normalizerF);
   }

@@ -185,8 +185,14 @@ export function isKnownMarketDataSource(id: string): id is MarketDataSourceId {
  * ```
  */
 export function asMarketDataSourceId(raw: string): MarketDataSourceId | undefined {
+  // Защита от non-string runtime-ввода через as any
+  if (typeof raw !== 'string') return undefined;
+
   // Формат: uppercase буквы, цифры, подчеркивания, 1-64 символа,
-  // начинается с заглавной буквы (не цифры и не подчёркивания)
+  // начинается с заглавной буквы [A-Z] (не цифры и не подчёркивания).
+  // Намеренное отличие от asVenueId/asExecutionVenueId ([A-Z_]), где '_PREFIX' допустим:
+  // MarketDataSourceId ссылается на internal identifiers внешних data providers,
+  // которые по конвенции начинаются с буквы, а не с подчёркивания.
   // Regex автоматически запрещает ':' и '\' (не входят в [A-Z0-9_])
   if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(raw)) {
     return undefined;

@@ -66,6 +66,8 @@ const KNOWN_VENUE_SET = new Set<string>(Object.values(KnownVenues));
  * ```
  */
 export function isKnownVenue(id: string): id is VenueId {
+  // typeof guard: non-string inputs (via as any) return false instead of throwing
+  if (typeof id !== 'string') return false;
   return KNOWN_VENUE_SET.has(id);
 }
 
@@ -102,7 +104,14 @@ export function isKnownVenue(id: string): id is VenueId {
  * ```
  */
 export function asVenueId(raw: string): VenueId | undefined {
-  // Формат: uppercase буквы, цифры, подчеркивания, 1-32 символа, не начинается с цифры
+  // Защита от non-string runtime-ввода через as any
+  if (typeof raw !== 'string') return undefined;
+
+  // Формат: uppercase буквы, цифры, подчеркивания, 1-32 символа, не начинается с цифры.
+  // Паттерн [A-Z_] разрешает ведущее подчёркивание '_' — это намеренно:
+  // VenueId и ExecutionVenueId разрешают '_PREFIX' для системных/internal venues.
+  // MarketDataSourceId использует [A-Z] без подчёркивания: ключи внешних data sources
+  // должны начинаться с буквы для совместимости с external system identifiers.
   // Regex автоматически запрещает ':' и '\' (не входят в [A-Z0-9_])
   if (!/^[A-Z_][A-Z0-9_]{0,31}$/.test(raw)) {
     return undefined;

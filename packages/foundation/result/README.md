@@ -41,7 +41,8 @@ Type-safe обработка ошибок: явные типы вместо exce
 
 > **Правило для E-preserving методов** (map, mapAsync, flatMapAsync, flatMap):
 > исключения из callback → `Err(onError(e))` через chain normalizer. Promise остаётся resolved.
-> Если сам normalizer бросает → `Err(error as E)` (last-resort fallback, без типовой гарантии).
+> Если chain normalizer бросает → `Err(оригинальная ошибка callback as E)` (last-resort fallback).
+> Если onReject/onError в `AsyncResult.from`/`ok` бросает → `Err(исключение из normalizer as E)`.
 >
 > **Правило для E→F методов** (mapErr, mapErrAsync, or, orAsync, orAsyncLazy, orElse, orElseAsync):
 > исключения из callback → `Err(e as F)`. Normalizer для F недоступен; E-normalizer не вызывается.
@@ -363,7 +364,7 @@ const message = match(result, {
 
 ### flatMapW(result, fn) — Widen-вариант
 
-flatMap с расширением типа ошибки. Используйте когда fn возвращает Result с другим типом ошибки.
+flatMap с расширением типа ошибки. Используйте, когда fn возвращает Result с другим типом ошибки.
 
 ```typescript
 type FetchError = { type: 'fetch' };

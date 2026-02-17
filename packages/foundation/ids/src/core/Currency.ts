@@ -182,5 +182,8 @@ export function asSupportedCurrency(code: string): SupportedCurrency | undefined
  * ```
  */
 export function currencyEquals(a: string, b: string): boolean {
+  // Защита от non-string runtime-ввода через as any: normalizeCurrency вызывает .trim(),
+  // что бросает TypeError для не-строк
+  if (typeof a !== 'string' || typeof b !== 'string') return false;
   return normalizeCurrency(a) === normalizeCurrency(b);
 }

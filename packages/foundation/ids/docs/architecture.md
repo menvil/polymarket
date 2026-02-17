@@ -298,7 +298,7 @@ type Balance = {
 
 ```typescript
 // При получении Quote нужно проверить баланс на том же venue
-if (quote.sourceId === 'POLYMARKET_WS') {
+if (quote.sourceId === KnownMarketDataSources.POLYMARKET_WS) {
   const venueId = sourceToVenue(quote.sourceId);  // → 'POLYMARKET'
   const balance = getBalance(accountId, venueId);
   // ...

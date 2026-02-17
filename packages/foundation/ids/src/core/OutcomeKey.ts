@@ -158,7 +158,7 @@ export function parseOutcomeKey(raw: string): OutcomeKey | undefined {
  * outcomeKeyToIndex(BinaryOutcome.DOWN); // → 0
  * ```
  */
-export const BinaryOutcome = {
+export const BinaryOutcome = Object.freeze({
   /**
    * DOWN = on-chain index 0
    *
@@ -172,7 +172,7 @@ export const BinaryOutcome = {
    * Семантика: цена идёт вверх, событие происходит, позитивный исход
    */
   UP: unsafeOutcomeKey('UP'),
-} as const;
+} as const);
 
 /**
  * Преобразовать OutcomeKey в on-chain index

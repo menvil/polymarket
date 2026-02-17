@@ -24,7 +24,7 @@
 |---------|--------|--------|
 | Пустая строка | `'empty string'` | `''` |
 | Длина > 256 символов | `'exceeds 256 characters'` | `'x'.repeat(300)` |
-| Control characters (U+0000..U+001F, U+007F..U+009F) | `'invalid format'` | `'user\x00name'` |
+| Control characters (U+0000..U+001F, U+007F..U+009F) | `'contains control characters'` | `'user\x00name'` |
 
 ## Когда использовать
 
@@ -103,12 +103,9 @@ function accountIdFromVenue(
   userId: string
 ): Result<AccountId, AccountIdValidationError> {
   if (!isValidStringField(userId)) {
-    let reason = 'invalid format';
-    if (userId.length === 0) {
-      reason = 'empty string';
-    } else if (userId.length > 256) {
-      reason = 'exceeds 256 characters';
-    }
+    // stringFieldFailReason возвращает точную причину:
+    // 'empty string' | 'exceeds 256 characters' | 'contains control characters'
+    const reason = stringFieldFailReason(userId);
 
     return Err(new AccountIdValidationError(
       (ctx) => `Invalid ${ctx.field}: ${ctx.reason} (value: "${ctx.value}")`,

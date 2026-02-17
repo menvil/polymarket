@@ -196,6 +196,9 @@ if (balance.amount.gte(Money.of(100, 'USDC'))) {
 ```typescript
 import {
   BinaryOutcome,
+  type ConditionRef,
+  type ConditionId,
+  KnownChainIds,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
@@ -212,6 +215,14 @@ const marketDataSource: MarketDataSourceId = KnownMarketDataSources.POLYMARKET_W
 
 // 2. Simulator execution
 const executionVenue: ExecutionVenueId = KnownExecutionVenues.SIMULATOR;
+
+// ConditionRef для конкретного предсказательного рынка (on-chain Polymarket)
+const conditionRef: ConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: 'POLYMARKET_CTF',
+  chainId: KnownChainIds.POLYGON,
+  conditionId: '0xabc123...' as ConditionId,  // реальный 32-byte hex в продакшене
+};
 
 // 3. Получаем live котировку
 const quote = {
@@ -317,6 +328,8 @@ import {
   type ConditionId,
   KnownVenues,
   KnownChainIds,
+  AssetIdHelpers,
+  BinaryOutcome,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
@@ -492,7 +505,7 @@ import {
   parseWalletAddress,
 } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
-import { unwrap } from '@polymarket/result';
+import { unwrap } from '@polymarket/result/unsafe';
 
 // 1. Wallet account (Polymarket)
 const wallet: WalletAddress = parseWalletAddress('0x123...')!;
@@ -835,7 +848,8 @@ const accountId = '0x123...' as AccountId;  // неявно
 ✅ Хорошо:
 
 ```typescript
-const wallet = '0x123...' as WalletAddress;
+// parseWalletAddress валидирует 42-символьный hex-адрес (0x + 40 hex цифр)
+const wallet = parseWalletAddress('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')!;
 const accountId: AccountId = accountIdFromWallet(wallet);
 ```
 

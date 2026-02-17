@@ -129,6 +129,9 @@ export function chainId(n: number): ChainId | undefined {
  * parseChainId(''); // → undefined (пустая строка)
  * parseChainId(' 137'); // → undefined (пробел)
  * parseChainId('0x89'); // → undefined (hex формат)
+ *
+ * // Ведущие нули нормализуются: '0137' → 137 (Number('0137') === 137)
+ * parseChainId('0137'); // → 137 as ChainId (leading zeros normalized by Number())
  * ```
  */
 export function parseChainId(str: string): ChainId | undefined {

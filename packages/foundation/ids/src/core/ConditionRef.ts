@@ -314,12 +314,12 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
       return undefined;
     }
 
-    return {
+    return Object.freeze({
       kind: 'ONCHAIN',
       protocolId,
       chainId: validatedChainId,
       conditionId: validatedConditionId,
-    };
+    });
   }
 
   if (kind === 'OFFCHAIN') {
@@ -356,11 +356,11 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
       }
     }
 
-    return {
+    return Object.freeze({
       kind: 'OFFCHAIN',
       venueId: validatedVenueId,
       marketId,
-    };
+    });
   }
 
   return undefined;

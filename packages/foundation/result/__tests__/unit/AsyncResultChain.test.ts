@@ -1208,29 +1208,46 @@ describe('AsyncResultChain', () => {
   // ============================================================
   describe('unhandledRejection защита', () => {
     it('orAsync: rejected fallback не вызывает unhandledRejection когда this — Ok', async () => {
-      const rejectedFallback = Promise.reject(new Error('fallback rejected'));
+      const handler = jest.fn();
+      process.on('unhandledRejection', handler);
+      try {
+        const rejectedFallback = Promise.reject(new Error('fallback rejected'));
 
-      // Результат остаётся Ok — fallback никогда не awaiting-ся
-      const result = await AsyncResult.ok(Promise.resolve(42))
-        .orAsync(rejectedFallback as Promise<Result<number, Error>>)
-        .toPromise();
+        // Результат остаётся Ok — fallback никогда не awaiting-ся
+        const result = await AsyncResult.ok(Promise.resolve(42))
+          .orAsync(rejectedFallback as Promise<Result<number, Error>>)
+          .toPromise();
 
-      expect(result.ok).toBe(true);
-      if (result.ok) expect(result.value).toBe(42);
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.value).toBe(42);
+        // Даём microtask queue возможность доставить unhandledRejection, если бы он был
+        await Promise.resolve();
+        expect(handler).not.toHaveBeenCalled();
+      } finally {
+        process.off('unhandledRejection', handler);
+      }
     });
 
     it('andAsync: rejected other не вызывает unhandledRejection когда this — Err', async () => {
-      const rejectedOther = Promise.reject(new Error('other rejected'));
+      const handler = jest.fn();
+      process.on('unhandledRejection', handler);
+      try {
+        const rejectedOther = Promise.reject(new Error('other rejected'));
 
-      // Результат остаётся первая ошибка — other никогда не awaiting-ся
-      const result = await AsyncResult.from(
-        Promise.resolve(Err('first error') as Result<number, string>)
-      )
-        .andAsync(rejectedOther as Promise<Result<number, Error>>)
-        .toPromise();
+        // Результат остаётся первая ошибка — other никогда не awaiting-ся
+        const result = await AsyncResult.from(
+          Promise.resolve(Err('first error') as Result<number, string>)
+        )
+          .andAsync(rejectedOther as Promise<Result<number, Error>>)
+          .toPromise();
 
-      expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error).toBe('first error');
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toBe('first error');
+        await Promise.resolve();
+        expect(handler).not.toHaveBeenCalled();
+      } finally {
+        process.off('unhandledRejection', handler);
+      }
     });
   });
 

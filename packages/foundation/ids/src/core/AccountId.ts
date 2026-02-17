@@ -30,7 +30,9 @@ const MAX_SUBACCOUNT_DEPTH = 5;
  * Защита от DoS атак с аномально длинными строками.
  * Проверяется при парсинге перед началом обработки.
  */
-const MAX_ACCOUNT_ID_STRING_LENGTH = 512;
+// 4096 покрывает worst-case: venue:VENUE_32:escaped_userId_512 плюс 5 уровней subaccount.
+// Исходные 512 были слишком малы: venue + max userId (256 chars, doubled by escaping) = 551.
+const MAX_ACCOUNT_ID_STRING_LENGTH = 4096;
 
 /**
  * Максимальная длина значения в сообщении об ошибке
@@ -40,6 +42,15 @@ const MAX_ACCOUNT_ID_STRING_LENGTH = 512;
  * утечки больших объёмов данных в логах и от аномально длинных сообщений.
  */
 const MAX_ERROR_VALUE_LENGTH = 64;
+
+/**
+ * Дополнительный запас глубины для bounded-loop защиты
+ *
+ * @remarks
+ * Используется в accountIdToStringImpl и accountIdEqualsImpl для единого лимита:
+ * depth > MAX_SUBACCOUNT_DEPTH + SAFETY_MARGIN → безопасный fallback вместо crash.
+ */
+const SAFETY_MARGIN = 10;
 
 /**
  * Обрезать строку для включения в error message
@@ -480,8 +491,7 @@ export function accountIdToString(id: AccountId): string {
  * Если инвариант нарушен (depth > limit) — dev-only assertion, возвращает fallback string.
  */
 function accountIdToStringImpl(id: AccountId, depth: number): string {
-  // Bounded loop защита с safety margin
-  const SAFETY_MARGIN = 10;
+  // Bounded loop защита с safety margin (модульная константа SAFETY_MARGIN)
   if (depth > MAX_SUBACCOUNT_DEPTH + SAFETY_MARGIN) {
     // Dev-only assertion: не должно случиться если фабрика держит инвариант
     if (process.env.NODE_ENV !== 'production') {
@@ -783,6 +793,8 @@ export function accountIdEquals(a: AccountId, b: AccountId): boolean {
  * вместо crash или throw.
  */
 function accountIdEqualsImpl(a: AccountId, b: AccountId, depth: number): boolean {
+  // Намеренно строгий лимит без SAFETY_MARGIN: идентификаторы глубже MAX_SUBACCOUNT_DEPTH
+  // не могут быть созданы через accountIdForSubaccount, поэтому равенство == false — корректный fallback.
   if (depth > MAX_SUBACCOUNT_DEPTH) {
     return false;
   }
