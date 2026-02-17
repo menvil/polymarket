@@ -60,7 +60,11 @@ import { ResultChain, toChain } from './ResultChain.js';
 // console доступен во всех целевых Node.js средах.
 // Объявление необходимо при "types":[] в tsconfig.build.json (без @types/node и без DOM lib).
 // eslint-disable-next-line no-var
-declare var console: { error: (...args: unknown[]) => void };
+declare var console: {
+  error: (...args: unknown[]) => void;
+  warn: (...args: unknown[]) => void;
+  log: (...args: unknown[]) => void;
+};
 
 /**
  * Класс для method chaining с Promise<Result<T, E>>
@@ -609,7 +613,7 @@ export class AsyncResultChain<T, E> {
           return await other;
         } catch (err) {
           // other реджектится (не содержит Result<U,F>) → Err с нормализованной ошибкой
-          return { ok: false, error: normalizer(err) };
+          return Err(normalizer(err));
         }
       }
       return result;
@@ -667,7 +671,7 @@ export class AsyncResultChain<T, E> {
         return await other;
       } catch (e) {
         // other реджектится → Err с best-effort cast (F-normalizer недоступен)
-        return { ok: false, error: normalizerF(e) };
+        return Err(normalizerF(e));
       }
     });
     return new AsyncResultChain<T, F>(newPromise, normalizerF);
@@ -963,7 +967,7 @@ export const AsyncResult = {
           return Err(error as E);
         }
       }
-      return Err(error) as Result<T, E>;
+      return Err(error as E);
     });
     return new AsyncResultChain(safePromise, guardedNormalizer);
   }) as {

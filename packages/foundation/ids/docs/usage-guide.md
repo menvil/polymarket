@@ -193,7 +193,6 @@ if (balance.amount.gte(Money.of(100, 'USDC'))) {
 import {
   BinaryOutcome,
   type ConditionRef,
-  type ConditionId,
   KnownChainIds,
   KnownOnChainProtocols,
   parseConditionId,
@@ -460,29 +459,27 @@ if (!yesResult.ok || !noResult.ok) {
   if (!noResult.ok) errors.push(`no: ${noResult.error.message}`);
   console.error('Invalid asset parameters:', errors.join(', '));
 } else {
+  const yesTokenAsset: AssetId = yesResult.value;
+  const noTokenAsset: AssetId = noResult.value;
 
-const yesTokenAsset: AssetId = yesResult.value;
-const noTokenAsset: AssetId = noResult.value;
+  // 3. Получаем все балансы
+  const accountId: AccountId = accountIdFromWallet(
+    parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!
+  );
+  const venueId: VenueId = KnownVenues.POLYMARKET;
+  const assets = [usdcAsset, yesTokenAsset, noTokenAsset];
 
-// 3. Получаем все балансы
-const accountId: AccountId = accountIdFromWallet(
-  parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!
-);
-const venueId: VenueId = KnownVenues.POLYMARKET;
-const assets = [usdcAsset, yesTokenAsset, noTokenAsset];
+  for (const asset of assets) {
+    const balance = getBalance(accountId, venueId, asset);
 
-for (const asset of assets) {
-  const balance = getBalance(accountId, venueId, asset);
-
-  if (isCurrencyAsset(asset)) {
-    console.log(`Currency ${asset.currency}: ${balance.amount}`);
-  } else if (isOutcomeTokenAsset(asset)) {
-    console.log(
-      `Token ${assetIdToString(asset)}: ${balance.amount}`
-    );
+    if (isCurrencyAsset(asset)) {
+      console.log(`Currency ${asset.currency}: ${balance.amount}`);
+    } else if (isOutcomeTokenAsset(asset)) {
+      console.log(
+        `Token ${assetIdToString(asset)}: ${balance.amount}`
+      );
+    }
   }
-}
-
 } // end else (yesResult.ok && noResult.ok)
 
 // 4. Portfolio value
@@ -575,7 +572,6 @@ for (const account of accounts) {
 ```typescript
 import {
   type ConditionRef,
-  type ConditionId,
   KnownChainIds,
   KnownOnChainProtocols,
   conditionRefEquals,

@@ -276,7 +276,7 @@ const valid = accountIdForSubaccount(sub4, 'level5'); // результирую�
 console.log(valid.ok); // → true (base depth 4 < max 5, проверка: 4 >= 5 → false → допустимо)
 
 const invalid = accountIdForSubaccount(unwrap(valid), 'level6'); // depth стал бы 6
-console.log(invalid.ok); // → false (6 > 5)
+console.log(invalid.ok); // → false (проверка: 5 >= 5 → true)
 ```
 
 ### Кастомный лимит глубины

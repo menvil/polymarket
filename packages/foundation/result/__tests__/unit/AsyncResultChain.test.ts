@@ -571,7 +571,7 @@ describe('AsyncResultChain', () => {
       expect(value).toBe(5); // "error".length === 5
     });
 
-    it('должен ловить exceptions из fallback функции и reject с wrapped message', async () => {
+    it('должен пробрасывать exceptions из fallback функции', async () => {
       const throwingFallback = (_err: unknown): number => {
         throw new Error('Fallback computation failed');
       };
@@ -810,6 +810,27 @@ describe('AsyncResultChain', () => {
         .unwrapErr();
 
       expect(result).toBe('error1');
+    });
+
+    it('должен применять E-normalizer из from() на последующих шагах после andAsync()', async () => {
+      const thrownError = new Error('map step failed');
+      const normalizer = jest.fn((_e: unknown) => 'normalized-error' as string);
+
+      const result = await AsyncResult.from(
+        Promise.resolve(Ok(1) as Result<number, string>),
+        normalizer
+      )
+        .andAsync(Promise.resolve(Ok(2) as Result<number, string>))
+        .map(() => {
+          throw thrownError;
+        })
+        .toPromise();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe('normalized-error');
+      }
+      expect(normalizer).toHaveBeenCalledWith(thrownError);
     });
   });
 

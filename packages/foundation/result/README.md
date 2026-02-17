@@ -39,8 +39,16 @@ Type-safe обработка ошибок: явные типы вместо exce
 | `AsyncResultChain.flatMap`  | Никогда             | **Да** → `Err`               | AsyncResultChain  |
 | `AsyncResultChain.map`      | Никогда             | **Да** → `Err`               | AsyncResultChain  |
 | `AsyncResultChain.mapUnsafe`| Никогда             | Нет → rejected Promise       | AsyncResultChain  |
+| `AsyncResultChain.mapErr`   | Никогда             | **Да** → `Err(e as F)`       | AsyncResultChain  |
+| `AsyncResultChain.mapErrAsync` | Никогда          | **Да** → `Err(e as F)`       | AsyncResultChain  |
+| `AsyncResultChain.or`       | Никогда             | —                            | AsyncResultChain  |
+| `AsyncResultChain.orAsync`  | Никогда             | **Да** → `Err(e as F)`       | AsyncResultChain  |
+| `AsyncResultChain.orAsyncLazy` | Никогда          | **Да** → `Err(e as F)`       | AsyncResultChain  |
+| `AsyncResultChain.orElse`   | Никогда             | **Да** → `Err(e as F)`       | AsyncResultChain  |
+| `AsyncResultChain.orElseAsync` | Никогда          | **Да** → `Err(e as F)`       | AsyncResultChain  |
 | `AsyncResultChain.tap`      | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 | `AsyncResultChain.tapErr`   | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
+| `AsyncResultChain.match`    | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 
 > **Правило для E-preserving методов AsyncResultChain** (AsyncResultChain.map, mapAsync, flatMapAsync, flatMap):
 > исключения из callback → `Err(onError(e))` через chain normalizer. Promise остаётся resolved.
@@ -58,6 +66,10 @@ Type-safe обработка ошибок: явные типы вместо exce
 >
 > **Правило для E→F методов** (mapErr, mapErrAsync, or, orAsync, orAsyncLazy, orElse, orElseAsync):
 > исключения из callback → `Err(e as F)`. Normalizer для F недоступен; E-normalizer не вызывается.
+>
+> **Правило для методов с rejected Promise** (mapUnsafe, tap, tapErr, match):
+> исключения из callback → rejected Promise. `match` является терминальной трансформацией (возвращает
+> значение), а не side-effect методом; поведение при исключениях одинаково — rejected Promise.
 >
 > ```typescript
 > // callback в mapErr бросает → Err(e as F), E-normalizer не вызывается
