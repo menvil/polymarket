@@ -197,7 +197,7 @@ class Money {
 // Использование
 const moneyResult = Money.fromAmount(1e308, 'USDC');
 if (!moneyResult.ok) {
-  throw new Error('Failed to create money');
+  throw moneyResult.error;
 }
 
 const result = moneyResult.value.multiply(10);

@@ -294,7 +294,7 @@ function clampPrice(value: number): Result<Price, InvalidPriceError> {
     return Err(
       new InvalidPriceError(
         'Price must be a valid number',
-        {context: { value } }
+        { context: { value } }
       )
     );
   }

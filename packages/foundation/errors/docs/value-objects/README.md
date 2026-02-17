@@ -76,7 +76,6 @@ class Price {
       throw new InvalidPriceError(
         (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
         {
-          
           context: { value, min: 0.0001, max: 0.9999 }
         }
       );

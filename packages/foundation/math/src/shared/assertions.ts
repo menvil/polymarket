@@ -53,15 +53,21 @@ export interface MathOperationContext {
  * ```
  */
 export function toStringSafe(value: unknown): string {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if (value && typeof (value as any).toString === 'function') {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (value as any).toString();
-    } catch {
-      // Fallback if toString() throws
-      return String(value);
+  if (value !== null && value !== undefined && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    if (typeof obj.toString === 'function') {
+      try {
+        const result = (obj as { toString(): unknown }).toString();
+        if (typeof result === 'string') {
+          return result;
+        }
+      } catch {
+        // toString() бросает — используем Object.prototype.toString
+        // для безопасного fallback без повторного вызова переопределённого toString()
+        return Object.prototype.toString.call(value);
+      }
     }
+    return Object.prototype.toString.call(value);
   }
   return String(value);
 }

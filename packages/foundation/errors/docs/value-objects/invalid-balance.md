@@ -391,7 +391,7 @@ const balanceResult = Balance.create(
 );
 
 if (!balanceResult.ok) {
-  throw new Error('Failed to create balance');
+  throw balanceResult.error;
 }
 
 const balance = balanceResult.value;
