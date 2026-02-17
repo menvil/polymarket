@@ -185,9 +185,10 @@ export function isKnownMarketDataSource(id: string): id is MarketDataSourceId {
  * ```
  */
 export function asMarketDataSourceId(raw: string): MarketDataSourceId | undefined {
-  // Формат: uppercase буквы, цифры, подчеркивания, 1-64 символа, не начинается с цифры
+  // Формат: uppercase буквы, цифры, подчеркивания, 1-64 символа,
+  // начинается с заглавной буквы (не цифры и не подчёркивания)
   // Regex автоматически запрещает ':' и '\' (не входят в [A-Z0-9_])
-  if (!/^[A-Z_][A-Z0-9_]{0,63}$/.test(raw)) {
+  if (!/^[A-Z][A-Z0-9_]{0,63}$/.test(raw)) {
     return undefined;
   }
 

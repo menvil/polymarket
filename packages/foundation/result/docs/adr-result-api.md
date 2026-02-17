@@ -12,7 +12,7 @@
 для явной обработки ошибок без исключений. В процессе роста пакета накопились
 противоречия:
 
-- README обещал «нет неожиданных exceptions», но `unwrap` и `expect` их бросают
+- README обещал «никаких неожиданных исключений», но `unwrap` и `expect` бросают исключения
 - `AsyncResultChain` использовал `error as E` (небезопасный type assertion)
 - `fromPromise`/`fromNullable`/`fromThrowable` жили в `ResultChain`, а не в ядре
 - Три конкурирующих API (FP / OOP / Async) без чёткой иерархии рекомендации
@@ -62,8 +62,12 @@ unsafe.ts = явный модуль для операций, бросающих 
 | `unwrap`                | **Да** (unsafe)     | unsafe.ts        |
 | `expect`                | **Да** (unsafe)     | unsafe.ts        |
 
-> ¹ Функция сама не бросает. Если callback пользователя бросает — исключение propagate.
-> Это задокументированное поведение. Пользователь несёт ответственность за callback.
+> ¹ FP-функции (`unwrapOrElse`, `orElse` и т.п.) сами не бросают. Если callback
+> пользователя бросает — исключение propagate как есть (это задокументированное поведение;
+> пользователь несёт ответственность за callback). Методы класса `AsyncResultChain`
+> (transform-методы: `mapAsync`, `flatMapAsync`, `mapErr` и др.) ведут себя иначе:
+> внутренние исключения из callback перехватываются и возвращаются как `Err(onError(e))`,
+> т.е. Promise цепочки остаётся resolved и исключение не propagate.
 >
 > ² Функция перехватывает исключения/rejections из пользовательского кода
 > и оборачивает их в `Err`.
@@ -151,7 +155,7 @@ import { unwrap, expect } from '@polymarket/result/unsafe';
 
 ### В. E = unknown везде по умолчанию
 
-**Отклонено:** Потеря типизации в цепочках где тип ошибки точно известен.
+**Отклонено:** Потеря типизации в цепочках, где тип ошибки точно известен.
 Решение: сохранить строгую типизацию, добавить `onError` normalizer для границ.
 
 ---
@@ -167,4 +171,4 @@ import { unwrap, expect } from '@polymarket/result/unsafe';
 **Негативные:**
 - Небольшой breaking change: `fromPromise`/`fromNullable`/`fromThrowable`
   переехали из ResultChain в ядро (но re-exported для совместимости)
-- `AsyncResultChain` требует указывать `onError` в местах где тип ошибки строгий
+- `AsyncResultChain` требует указывать `onError` в местах, где тип ошибки строгий

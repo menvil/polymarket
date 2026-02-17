@@ -339,8 +339,8 @@ export function parseConditionRef(str: string): ConditionRef | undefined {
     // Unescape marketId (splitEscaped возвращает escaped части)
     const marketId = unescapeId(escapedMarketId);
 
-    // Валидация marketId: не пустой
-    if (!marketId || marketId.length === 0) {
+    // Валидация marketId: не пустой (unescapeId всегда возвращает string)
+    if (marketId.length === 0) {
       return undefined;
     }
 

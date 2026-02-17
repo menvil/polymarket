@@ -93,7 +93,7 @@ describe('Market Data IDs', () => {
       expect(asMarketDataSourceId('CUSTOM_SOURCE')).toBe('CUSTOM_SOURCE');
       expect(asMarketDataSourceId('MY_VENUE_WS')).toBe('MY_VENUE_WS');
       expect(asMarketDataSourceId('EXCHANGE_123_REST')).toBe('EXCHANGE_123_REST');
-      expect(asMarketDataSourceId('_UNDERSCORE_WS')).toBe('_UNDERSCORE_WS');
+      expect(asMarketDataSourceId('A')).toBe('A'); // single uppercase letter
     });
 
     it('should reject invalid market data source IDs', () => {
@@ -108,9 +108,10 @@ describe('Market Data IDs', () => {
       expect(asMarketDataSourceId('SOURCE\\NAME')).toBeUndefined(); // обратный слеш
       expect(asMarketDataSourceId('SOURCE NAME')).toBeUndefined(); // пробел
 
-      // Начинается с цифры
+      // Начинается с цифры или подчёркивания
       expect(asMarketDataSourceId('123SOURCE')).toBeUndefined();
       expect(asMarketDataSourceId('1_SOURCE')).toBeUndefined();
+      expect(asMarketDataSourceId('_UNDERSCORE_WS')).toBeUndefined(); // leading underscore
 
       // Пустая строка или слишком длинная
       expect(asMarketDataSourceId('')).toBeUndefined();

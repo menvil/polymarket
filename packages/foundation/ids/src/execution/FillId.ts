@@ -1,3 +1,5 @@
+import { validateBrandedId } from '../core/utils/validateBrandedId.js';
+
 /**
  * FillId - идентификатор исполнения (fill/trade)
  *
@@ -12,8 +14,6 @@
  * ```
  */
 export type FillId = string & { readonly __brand: 'FillId' };
-
-import { validateBrandedId } from '../core/utils/validateBrandedId.js';
 
 /**
  * Максимальная длина FillId

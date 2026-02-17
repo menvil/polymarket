@@ -265,6 +265,10 @@ describe('AsyncResultChain.map — throw из callback', () => {
 
     const result = await chain.toPromise();
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(Error);
+      expect((result.error as Error).message).toBe('Async throw: 42');
+    }
   });
 
   it('map не вызывает fn при Err (throw не происходит)', async () => {

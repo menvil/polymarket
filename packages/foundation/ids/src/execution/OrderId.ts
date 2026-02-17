@@ -1,3 +1,5 @@
+import { validateBrandedId } from '../core/utils/validateBrandedId.js';
+
 /**
  * OrderId - идентификатор ордера
  *
@@ -14,8 +16,6 @@
  * ```
  */
 export type OrderId = string & { readonly __brand: 'OrderId' };
-
-import { validateBrandedId } from '../core/utils/validateBrandedId.js';
 
 /**
  * Максимальная длина OrderId

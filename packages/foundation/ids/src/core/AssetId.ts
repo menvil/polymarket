@@ -5,7 +5,7 @@ import { KnownCurrencies, isSupportedCurrency } from './Currency.js';
 import { parseOutcomeKey } from './OutcomeKey.js';
 import { asOnChainProtocolId } from './ProtocolId.js';
 import { parseConditionId } from './ConditionId.js';
-import { parseChainId } from './ChainId.js';
+import { parseChainId, isValidChainId } from './ChainId.js';
 
 /**
  * AssetId - универсальный идентификатор актива
@@ -173,8 +173,7 @@ export const AssetId = {
     }
 
     // Валидация chainId
-    const validatedChainId = parseChainId(String(conditionRef.chainId));
-    if (!validatedChainId) {
+    if (!isValidChainId(conditionRef.chainId)) {
       throw new Error(
         `Invalid chainId: ${conditionRef.chainId}. Must be positive integer (e.g., 137 for Polygon).`
       );
@@ -194,7 +193,7 @@ export const AssetId = {
       conditionRef: {
         kind: 'ONCHAIN' as const,
         protocolId: validatedProtocolId,
-        chainId: validatedChainId,
+        chainId: conditionRef.chainId,
         conditionId: validatedConditionId,
       },
       outcomeKey: validatedOutcomeKey,
@@ -260,16 +259,17 @@ export const AssetId = {
 
     // Проверка равенства asset identifier
     if (a.type === 'CURRENCY') {
-      return a.currency === (b as Extract<AssetId, { type: 'CURRENCY' }>).currency;
+      // Явная проверка b позволяет TypeScript сузить тип b без type cast
+      if (b.type !== 'CURRENCY') return false;
+      return a.currency === b.currency;
     }
 
-    // OUTCOME_TOKEN
-    const aToken = a as Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
-    const bToken = b as Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
+    // OUTCOME_TOKEN: явная проверка b сужает его тип без type cast
+    if (b.type !== 'OUTCOME_TOKEN') return false;
 
     // Сравниваем conditionRef
-    const aRef = aToken.conditionRef;
-    const bRef = bToken.conditionRef;
+    const aRef = a.conditionRef;
+    const bRef = b.conditionRef;
 
     if (
       aRef.kind !== bRef.kind ||
@@ -281,7 +281,7 @@ export const AssetId = {
     }
 
     // Сравниваем outcomeKey
-    return aToken.outcomeKey === bToken.outcomeKey;
+    return a.outcomeKey === b.outcomeKey;
   },
 };
 
