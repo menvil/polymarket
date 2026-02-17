@@ -7,9 +7,13 @@
  *
  * ## Единая политика обработки исключений
  *
- * **Transform-методы** (map, mapAsync, flatMapAsync, flatMap, mapErrAsync, mapErr,
- * orElseAsync, orElse, orAsyncLazy) **перехватывают** исключения из callback
- * и преобразуют их в `Err(onError(exception))`. Promise цепочки остаётся resolved.
+ * **E-сохраняющие transform-методы** (map, mapAsync, flatMapAsync, flatMap) **перехватывают**
+ * исключения из callback и преобразуют их в `Err(onError(exception))` через chain normalizer.
+ * Promise цепочки остаётся resolved.
+ *
+ * **E→F transform-методы** (mapErrAsync, mapErr, orElseAsync, orElse, orAsyncLazy)
+ * **перехватывают** исключения из callback и преобразуют их в `Err(e as F)` —
+ * best-effort cast без нормализации (F-normalizer недоступен). Promise остаётся resolved.
  *
  * **Небезопасный transform** (`mapUnsafe`) **НЕ перехватывает** исключения —
  * они приводят к rejected Promise. Используйте только когда rejected Promise
@@ -275,7 +279,8 @@ export class AsyncResultChain<T, E> {
    *
    * @remarks
    * Автоматически перехватывает исключения из fn и преобразует их в `Err<F>`
-   * через normalizer onError. Promise цепочки остаётся resolved (не rejected).
+   * через best-effort cast `e as F` (F-normalizer недоступен — метод меняет тип E→F).
+   * Promise цепочки остаётся resolved (не rejected).
    *
    * @example
    * ```typescript
@@ -308,7 +313,8 @@ export class AsyncResultChain<T, E> {
    *
    * @remarks
    * Автоматически перехватывает исключения из fn и преобразует их в `Err<F>`
-   * через normalizer onError. Promise цепочки остаётся resolved (не rejected).
+   * через best-effort cast `e as F` (F-normalizer недоступен — метод меняет тип E→F).
+   * Promise цепочки остаётся resolved (не rejected).
    *
    * @example
    * ```typescript
@@ -653,7 +659,8 @@ export class AsyncResultChain<T, E> {
    * только когда результат — Err. Это позволяет избежать ненужных side-effects
    * и вычислений если основной результат успешный.
    *
-   * Исключения из fn перехватываются и преобразуются в Err через normalizer.
+   * Исключения из fn перехватываются и преобразуются в `Err(e as F)`
+   * через best-effort cast (F-normalizer недоступен — метод меняет тип E→F).
    *
    * @example
    * ```typescript
@@ -684,7 +691,8 @@ export class AsyncResultChain<T, E> {
    * @returns AsyncResultChain с восстановленным значением или новой ошибкой
    *
    * @remarks
-   * Исключения из fn перехватываются и преобразуются в Err через normalizer.
+   * Исключения из fn перехватываются и преобразуются в `Err(e as F)`
+   * через best-effort cast (F-normalizer недоступен — метод меняет тип E→F).
    *
    * @example
    * ```typescript
@@ -718,7 +726,8 @@ export class AsyncResultChain<T, E> {
    * @returns AsyncResultChain с восстановленным значением или новой ошибкой
    *
    * @remarks
-   * Исключения из fn перехватываются и преобразуются в Err через normalizer.
+   * Исключения из fn перехватываются и преобразуются в `Err(e as F)`
+   * через best-effort cast (F-normalizer недоступен — метод меняет тип E→F).
    *
    * @example
    * ```typescript

@@ -56,6 +56,10 @@ describe('AsyncResultChain', () => {
       expect((result as Error).message).toBe('Something went wrong');
     });
 
+    // Примечание: @ts-expect-error ниже проверяется только TypeScript-компилятором
+    // при запуске `npm run typecheck:tests` (или `npm run ci`), а не `npm test`.
+    // Если в CI не запускается typecheck:tests — этот тип-контракт может быть нарушен
+    // без видимого провала в тестах.
     it('type-контракт: from без onReject — E строго unknown, не конкретный тип', async () => {
       type MyError = { code: number };
       const promise: Promise<Result<number, MyError>> = Promise.resolve(Ok(1));

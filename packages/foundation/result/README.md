@@ -736,27 +736,31 @@ if (!invalid.ok) {
 
 Создает AsyncResultChain из Promise<Result<T, E>>.
 
-**Автоматическая обработка ошибок:** Если Promise реджектится, rejection автоматически преобразуется в `Err<E>`. Опциональный параметр `onReject` позволяет безопасно трансформировать `unknown` error в тип `E`.
+**Строгий overload-контракт:**
+- **Без `onReject`** → `AsyncResultChain<T, unknown>`. Тип ошибки честно фиксирован как `unknown`;
+  rejection попадает в `Err` как есть, без какого-либо cast.
+- **С `onReject`** → `AsyncResultChain<T, E>`, где `E` — возвращаемый тип `onReject`.
+  Normalizer отвечает за преобразование `unknown` rejection в конкретный `E`.
 
 ```typescript
 import { AsyncResult } from '@polymarket/result';
 
-// Базовое использование
+// Базовое использование (E = unknown)
 const result = await AsyncResult.from(fetchUser('123'))
   .mapAsync(user => enrichUserData(user))
   .unwrap();
 
-// Обработка Promise rejection с трансформацией
+// Обработка Promise rejection с onReject — получаем конкретный E
 const result2 = await AsyncResult.from(
   Promise.reject('Network error'),
-  (error) => new Error(String(error))
+  (error) => new Error(String(error))  // onReject: unknown → Error
 ).unwrapErr();
-// result2: Error('Network error')
+// result2: Error('Network error'), тип: AsyncResultChain<never, Error>
 
-// Promise rejection без onReject (type assertion)
-const result3 = await AsyncResult.from<User, string>(
-  fetchData() // может реджектиться
-).unwrapErr();
+// Без onReject — E строго unknown, явные type args без onReject не компилируются:
+// AsyncResult.from<User, string>(promise) // ⛔ ошибка компиляции
+const result3 = await AsyncResult.from(fetchData()).toPromise();
+// result3: Result<User, unknown>
 ```
 
 ### AsyncResult.ok(promise, onError?)

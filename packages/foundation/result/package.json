@@ -42,6 +42,7 @@
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
+    "ci": "npm run typecheck:all && npm test",
     "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"README.md\"",
     "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"README.md\"",
     "clean": "rm -rf dist *.tsbuildinfo"

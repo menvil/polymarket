@@ -6,6 +6,9 @@
  * и что root-экспорт (@polymarket/result) не содержит `unwrap`.
  */
 import { describe, it, expect } from '@jest/globals';
+// Примечание: тесты импортируют из src/, а не из dist/ (публичного пакетного entry).
+// Это означает, что регрессию в exports-карте package.json (сломанный dist/unsafe.js)
+// данный тест не поймает. Полную гарантию даёт только `npm run build && npm run ci`.
 import { unwrap, expectOk, unwrapErr, expectErr } from '../../src/unsafe.js';
 import { Ok, Err } from '../../src/result.js';
 import * as rootExports from '../../src/index.js';

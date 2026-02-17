@@ -64,10 +64,12 @@ unsafe.ts = явный модуль для операций, бросающих 
 
 > ¹ FP-функции (`unwrapOrElse`, `orElseW` и т.п.) сами не бросают. Если callback
 > пользователя бросает — исключение propagate как есть (это задокументированное поведение;
-> пользователь несёт ответственность за callback). Методы класса `AsyncResultChain`
-> (transform-методы: `mapAsync`, `flatMapAsync`, `mapErr` и др.) ведут себя иначе:
-> внутренние исключения из callback перехватываются и возвращаются как `Err(onError(e))`,
-> т.е. Promise цепочки остаётся resolved и исключение не propagate.
+> пользователь несёт ответственность за callback). E-сохраняющие методы `AsyncResultChain`
+> (`map`, `mapAsync`, `flatMap`, `flatMapAsync`) ведут себя иначе: исключения из callback
+> перехватываются и возвращаются как `Err(onError(e))` через chain normalizer.
+> E→F методы (`mapErr`, `mapErrAsync`, `orElse`, `orElseAsync`, `orAsyncLazy`)
+> перехватывают исключения, но возвращают `Err(e as F)` (см. §4) — F-normalizer недоступен.
+> Promise цепочки в обоих случаях остаётся resolved.
 >
 > ² Функция перехватывает исключения/rejections из пользовательского кода
 > и оборачивает их в `Err`.
