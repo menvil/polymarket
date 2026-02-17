@@ -10,7 +10,12 @@ import Decimal from 'decimal.js';
  *
  * Объект защищён от runtime-перезаписи через Object.freeze():
  * - Контейнер MATH_CONSTANTS заморожен (нельзя добавить/удалить/изменить ключи)
- * - Каждый Decimal инстанс заморожен (нельзя мутировать .s, .e, .d поля)
+ * - Каждый Decimal инстанс заморожен (нельзя переназначить .s, .e, .d свойства)
+ *
+ * **Ограничение:** Object.freeze() работает shallow - внутренний массив digits (d)
+ * технически остаётся мутабельным. Однако Decimal.js спроектирован как immutable -
+ * все операции возвращают новые инстансы, и прямая мутация d[] никогда не происходит
+ * при нормальном использовании API.
  *
  * @example
  * ```typescript
@@ -22,12 +27,12 @@ import Decimal from 'decimal.js';
  * // Вместо new Decimal(1)
  * const one = MATH_CONSTANTS.ONE;
  *
- * // Защита от перезаписи контейнера
- * MATH_CONSTANTS.ZERO = new Decimal(999); // Не изменит значение (frozen)
+ * // Защита от перезаписи ключей контейнера (strict mode throws TypeError)
+ * MATH_CONSTANTS.ZERO = new Decimal(999); // ❌ TypeError
  *
- * // Защита от мутации внутренних полей Decimal
- * MATH_CONSTANTS.ONE.s = -1; // Не изменит знак (frozen)
- * MATH_CONSTANTS.ONE.e = 100; // Не изменит экспоненту (frozen)
+ * // Защита от переназначения свойств Decimal (strict mode throws TypeError)
+ * MATH_CONSTANTS.ONE.s = -1; // ❌ TypeError
+ * MATH_CONSTANTS.ONE.e = 100; // ❌ TypeError
  *
  * // Математические операции продолжают работать (создают новые Decimal)
  * const two = MATH_CONSTANTS.ONE.plus(MATH_CONSTANTS.ONE); // ✅ Работает

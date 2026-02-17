@@ -272,6 +272,35 @@ describe('TradingError', () => {
       // JSON.stringify должен работать
       expect(() => JSON.stringify(json)).not.toThrow();
     });
+
+    it('должен корректно обрабатывать shared references (не циклы)', () => {
+      // Shared reference - один объект используется в нескольких местах,
+      // но без циклов (это НЕ должно быть помечено как [Circular])
+      const shared = { value: 42, name: 'shared' };
+      const context = {
+        a: shared,
+        b: shared,  // Тот же объект, но не цикл
+        c: { nested: shared }  // И еще раз
+      };
+
+      const error = new TestError('Test error', { context });
+      const json = error.toJSON();
+
+      // Все три reference должны быть сериализованы как отдельные копии,
+      // а не как "[Circular]"
+      const ctx = json.context as Record<string, unknown>;
+      expect(ctx.a).toEqual({ value: 42, name: 'shared' });
+      expect(ctx.b).toEqual({ value: 42, name: 'shared' });
+      expect((ctx.c as Record<string, unknown>).nested).toEqual({ value: 42, name: 'shared' });
+
+      // Ни один не должен быть "[Circular]"
+      expect(ctx.a).not.toBe('[Circular]');
+      expect(ctx.b).not.toBe('[Circular]');
+      expect((ctx.c as Record<string, unknown>).nested).not.toBe('[Circular]');
+
+      // JSON.stringify должен работать
+      expect(() => JSON.stringify(json)).not.toThrow();
+    });
   });
 
   describe('innerError handling', () => {

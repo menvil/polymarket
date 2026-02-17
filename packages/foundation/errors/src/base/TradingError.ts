@@ -378,11 +378,27 @@ export class TradingError extends Error implements ITradingError {
    * Безопасно сериализует context с защитой от циклических ссылок
    *
    * @param obj - Объект для сериализации
-   * @param seen - WeakSet для отслеживания уже обработанных объектов
+   * @param seen - WeakSet для отслеживания текущего пути рекурсии
    * @returns Сериализованный объект с маркерами "[Circular]" вместо циклических ссылок
    *
    * @remarks
-   * Использует WeakSet для детектирования циклов. Циклические ссылки заменяются на "[Circular]".
+   * Использует WeakSet для детектирования циклов в текущем пути рекурсии.
+   * Объекты добавляются в seen перед обработкой детей и удаляются после,
+   * чтобы различать настоящие циклы от shared references (один объект в разных местах).
+   *
+   * @example
+   * ```typescript
+   * const shared = { value: 1 };
+   * const context = {
+   *   a: shared,
+   *   b: shared  // НЕ цикл - просто shared reference
+   * };
+   * // Результат: { a: { value: 1 }, b: { value: 1 } }
+   *
+   * const circular: any = { name: 'root' };
+   * circular.self = circular;  // Настоящий цикл
+   * // Результат: { name: 'root', self: '[Circular]' }
+   * ```
    */
   private safeSerializeContext(
     obj: Record<string, unknown>,
@@ -393,22 +409,26 @@ export class TradingError extends Error implements ITradingError {
       return obj as Record<string, unknown>;
     }
 
-    // Обнаружен цикл
+    // Обнаружен цикл (объект уже в текущем пути рекурсии)
     if (seen.has(obj)) {
       return '[Circular]' as unknown as Record<string, unknown>;
     }
 
-    // Отмечаем объект как обработанный
+    // Добавляем объект в текущий путь
     seen.add(obj);
 
     // Обрабатываем массивы
     if (Array.isArray(obj)) {
-      return obj.map((item) => {
+      const result = obj.map((item) => {
         if (item !== null && typeof item === 'object') {
           return this.safeSerializeContext(item as Record<string, unknown>, seen);
         }
         return item;
       }) as unknown as Record<string, unknown>;
+
+      // Удаляем из пути после обработки детей
+      seen.delete(obj);
+      return result;
     }
 
     // Обрабатываем обычные объекты
@@ -423,6 +443,9 @@ export class TradingError extends Error implements ITradingError {
         }
       }
     }
+
+    // Удаляем из пути после обработки всех детей
+    seen.delete(obj);
 
     return result;
   }

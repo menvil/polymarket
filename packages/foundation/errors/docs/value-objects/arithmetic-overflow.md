@@ -195,13 +195,18 @@ class Money {
 }
 
 // Использование
-const money = Money.fromAmount(1e308, 'USDC').unwrap();
-const result = money.multiply(10);
+const moneyResult = Money.fromAmount(1e308, 'USDC');
+if (!moneyResult.ok) {
+  throw new Error('Failed to create money');
+}
 
-result.match({
-  ok: (multiplied) => console.log('Result:', multiplied.getAmount()),
-  err: (error) => console.error('Error:', error.message)
-});
+const result = moneyResult.value.multiply(10);
+
+if (result.ok) {
+  console.log('Result:', result.value.getAmount());
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ### 3. Проверка всех арифметических операций
@@ -311,10 +316,11 @@ class SafeMath {
 // Использование
 const result = SafeMath.multiply(1e308, 10);
 
-result.match({
-  ok: (value) => console.log('Result:', value),
-  err: (error) => console.error('Overflow:', error.message)
-});
+if (result.ok) {
+  console.log('Result:', result.value);
+} else {
+  console.error('Overflow:', result.error.message);
+}
 ```
 
 ### 4. Расчёт процентов с защитой от переполнения
@@ -378,10 +384,11 @@ class InterestCalculator {
 // Использование
 const result = InterestCalculator.calculateCompoundInterest(1000, 0.1, 100);
 
-result.match({
-  ok: (finalAmount) => console.log('Final amount:', finalAmount),
-  err: (error) => console.error('Calculation overflow:', error.message)
-});
+if (result.ok) {
+  console.log('Final amount:', result.value);
+} else {
+  console.error('Calculation overflow:', result.error.message);
+}
 ```
 
 ### 5. Интеграция с decimal.js для точных вычислений
@@ -664,18 +671,17 @@ import { ArithmeticOverflowError, DivisionByZeroError } from '@polymarket/errors
 
 const result = SafeMath.divide(a, b);
 
-result.match({
-  ok: (value) => processValue(value),
-  err: (error) => {
-    if (error.code === ArithmeticOverflowError.code) {
-      showError('Calculation overflow - result too large', error.context);
-    } else if (error.code === DivisionByZeroError.code) {
-      showError('Cannot divide by zero', error.context);
-    } else {
-      showError('Unexpected error', error);
-    }
+if (result.ok) {
+  processValue(result.value);
+} else {
+  if (result.error.code === ArithmeticOverflowError.code) {
+    showError('Calculation overflow - result too large', result.error.context);
+  } else if (result.error.code === DivisionByZeroError.code) {
+    showError('Cannot divide by zero', result.error.context);
+  } else {
+    showError('Unexpected error', result.error);
   }
-});
+}
 ```
 
 ### С fallback на decimal.js
@@ -685,22 +691,23 @@ import Decimal from 'decimal.js';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
 function multiplyWithFallback(a: number, b: number): number {
-  return SafeMath.multiply(a, b).match({
-    ok: (result) => result,
-    err: (error) => {
-      if (ArithmeticOverflowError.is(error)) {
-        logger.warn('Overflow detected, using decimal.js', error.toJSON());
+  const result = SafeMath.multiply(a, b);
 
-        // Fallback на decimal.js для больших чисел
-        const decimalA = new Decimal(a);
-        const decimalB = new Decimal(b);
-        const result = decimalA.mul(decimalB);
+  if (result.ok) {
+    return result.value;
+  } else {
+    if (ArithmeticOverflowError.is(result.error)) {
+      logger.warn('Overflow detected, using decimal.js', result.error.toJSON());
 
-        return result.toNumber();
-      }
-      throw error;
+      // Fallback на decimal.js для больших чисел
+      const decimalA = new Decimal(a);
+      const decimalB = new Decimal(b);
+      const decimalResult = decimalA.mul(decimalB);
+
+      return decimalResult.toNumber();
     }
-  });
+    throw result.error;
+  }
 }
 ```
 
@@ -715,20 +722,17 @@ function calculateWithLogging(
 ): Result<number, ArithmeticOverflowError> {
   const result = fn();
 
-  result.match({
-    ok: (value) => {
-      logger.info('Calculation successful', {
-        operation,
-        result: value
-      });
-    },
-    err: (error) => {
-      logger.error('Arithmetic overflow', {
-        operation,
-        error: error.toJSON()
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Calculation successful', {
+      operation,
+      result: result.value
+    });
+  } else {
+    logger.error('Arithmetic overflow', {
+      operation,
+      error: result.error.toJSON()
+    });
+  }
 
   return result;
 }

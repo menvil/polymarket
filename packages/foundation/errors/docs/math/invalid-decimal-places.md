@@ -252,10 +252,11 @@ const result = safeRoundToPrecision(
   Decimal.ROUND_HALF_UP
 );
 
-result.match({
-  ok: (rounded) => console.log('Rounded:', rounded.toString()),
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log('Rounded:', result.value.toString());
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ### 5. Округление массива значений
@@ -551,13 +552,12 @@ function validateFormattingConfig(
 // Использование при загрузке конфигурации
 const configResult = validateFormattingConfig(userConfig);
 
-configResult.match({
-  ok: (config) => initializeFormatter(config),
-  err: (error) => {
-    logger.error('Invalid formatting configuration', { error: error.toJSON() });
-    throw error;
-  }
-});
+if (configResult.ok) {
+  initializeFormatter(configResult.value);
+} else {
+  logger.error('Invalid formatting configuration', { error: configResult.error.toJSON() });
+  throw configResult.error;
+}
 ```
 
 ---

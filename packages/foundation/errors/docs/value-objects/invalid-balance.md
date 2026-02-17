@@ -40,6 +40,9 @@ import { InvalidBalanceError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E>:
 import { Result, Ok, Err } from '@polymarket/result';
+
+// Для работы с высокой точностью:
+import Decimal from 'decimal.js';
 ```
 
 ---

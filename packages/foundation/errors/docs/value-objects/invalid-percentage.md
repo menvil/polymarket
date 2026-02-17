@@ -283,34 +283,31 @@ function handleSlippageInput(input: string): void {
 
   const result = SlippageTolerance.fromPercentage(value);
 
-  result.match({
-    ok: (slippage) => {
-      // Обновляем настройки
-      setSlippage(slippage);
-      clearError('slippage');
+  if (result.ok) {
+    // Обновляем настройки
+    setSlippage(result.value);
+    clearError('slippage');
 
-      // Показываем предупреждение для высоких значений
-      if (slippage.getPercentage().toWhole() > 1) {
-        showWarning('High slippage tolerance may result in unfavorable trades');
-      }
-    },
-    err: (error) => {
-      if (InvalidPercentageError.is(error)) {
-        const value = error.context?.value as number;
-        const max = error.context?.max as number;
-
-        let userMessage = `Slippage must be between 0% and ${max}%`;
-
-        if (value < 0) {
-          userMessage = 'Slippage cannot be negative';
-        } else if (value > 50) {
-          userMessage = 'Slippage is too high (maximum: 50%)';
-        }
-
-        showFieldError('slippage', userMessage);
-      }
+    // Показываем предупреждение для высоких значений
+    if (result.value.getPercentage().toWhole() > 1) {
+      showWarning('High slippage tolerance may result in unfavorable trades');
     }
-  });
+  } else {
+    if (InvalidPercentageError.is(result.error)) {
+      const value = result.error.context?.value as number;
+      const max = result.error.context?.max as number;
+
+      let userMessage = `Slippage must be between 0% and ${max}%`;
+
+      if (value < 0) {
+        userMessage = 'Slippage cannot be negative';
+      } else if (value > 50) {
+        userMessage = 'Slippage is too high (maximum: 50%)';
+      }
+
+      showFieldError('slippage', userMessage);
+    }
+  }
 }
 ```
 
@@ -405,9 +402,11 @@ class Percentage {
 }
 
 // Пример: расчет комиссии
-const feePercent = Percentage.fromWholeValue(new Decimal('0.5')).unwrap(); // 0.5%
-const orderAmount = new Decimal('1000');
-const fee = feePercent.applyTo(orderAmount); // 5 USDC
+const feePercentResult = Percentage.fromWholeValue(new Decimal('0.5')); // 0.5%
+if (feePercentResult.ok) {
+  const orderAmount = new Decimal('1000');
+  const fee = feePercentResult.value.applyTo(orderAmount); // 5 USDC
+}
 ```
 
 ---
@@ -455,37 +454,49 @@ Percentage.fromDecimal(0.000001); // ✅ Ok(Percentage) - 0.0001%
 
 ```typescript
 // Из обычного в дробный
-const pct1 = Percentage.fromWhole(50).unwrap();
-console.log(pct1.toDecimal()); // 0.5
-console.log(pct1.toWhole()); // 50
+const pct1Result = Percentage.fromWhole(50);
+if (pct1Result.ok) {
+  console.log(pct1Result.value.toDecimal()); // 0.5
+  console.log(pct1Result.value.toWhole()); // 50
+}
 
 // Из дробного в обычный
-const pct2 = Percentage.fromDecimal(0.5).unwrap();
-console.log(pct2.toDecimal()); // 0.5
-console.log(pct2.toWhole()); // 50
+const pct2Result = Percentage.fromDecimal(0.5);
+if (pct2Result.ok) {
+  console.log(pct2Result.value.toDecimal()); // 0.5
+  console.log(pct2Result.value.toWhole()); // 50
+}
 
 // Точность при конвертации
-const pct3 = Percentage.fromWhole(33.33).unwrap();
-console.log(pct3.toDecimal()); // 0.3333 (возможна потеря точности с float)
+const pct3Result = Percentage.fromWhole(33.33);
+if (pct3Result.ok) {
+  console.log(pct3Result.value.toDecimal()); // 0.3333 (возможна потеря точности с float)
+}
 
 // Использование decimal.js для точности
-const pct4 = Percentage.fromWholeValue(new Decimal('33.33')).unwrap();
-console.log(pct4.toDecimal().toString()); // "0.3333" (точно)
+const pct4Result = Percentage.fromWholeValue(new Decimal('33.33'));
+if (pct4Result.ok) {
+  console.log(pct4Result.value.toDecimal().toString()); // "0.3333" (точно)
+}
 ```
 
 ### Применение процентов к суммам
 
 ```typescript
 // Расчет комиссии
-const tradingFee = Percentage.fromWhole(0.1).unwrap(); // 0.1%
-const tradeAmount = 10000;
-const fee = tradeAmount * tradingFee.toDecimal(); // 10
+const tradingFeeResult = Percentage.fromWhole(0.1); // 0.1%
+if (tradingFeeResult.ok) {
+  const tradeAmount = 10000;
+  const fee = tradeAmount * tradingFeeResult.value.toDecimal(); // 10
+}
 
 // Расчет со slippage
 const price = 100;
-const slippage = Percentage.fromWhole(1).unwrap(); // 1%
-const maxPrice = price * (1 + slippage.toDecimal()); // 101
-const minPrice = price * (1 - slippage.toDecimal()); // 99
+const slippageResult = Percentage.fromWhole(1); // 1%
+if (slippageResult.ok) {
+  const maxPrice = price * (1 + slippageResult.value.toDecimal()); // 101
+  const minPrice = price * (1 - slippageResult.value.toDecimal()); // 99
+}
 
 // Расчет прибыли
 const costBasis = 1000;
@@ -534,16 +545,15 @@ import { InvalidPercentageError } from '@polymarket/errors';
 
 const result = Percentage.fromWhole(userInput);
 
-result.match({
-  ok: (percentage) => applyPercentage(percentage),
-  err: (error) => {
-    if (error.code === InvalidPercentageError.code) {
-      showError('Invalid percentage', error.context);
-    } else {
-      showError('Unexpected error', error);
-    }
+if (result.ok) {
+  applyPercentage(result.value);
+} else {
+  if (result.error.code === InvalidPercentageError.code) {
+    showError('Invalid percentage', result.error.context);
+  } else {
+    showError('Unexpected error', result.error);
   }
-});
+}
 ```
 
 ### С логированием
@@ -557,21 +567,18 @@ function validateAndLogPercentage(
 ): Result<Percentage, InvalidPercentageError> {
   const result = Percentage.fromWhole(value);
 
-  result.match({
-    ok: (pct) => {
-      logger.info('Percentage validated', {
-        field,
-        value: pct.toWhole() + '%'
-      });
-    },
-    err: (error) => {
-      logger.error('Percentage validation failed', {
-        field,
-        error: error.toJSON(),
-        userInput: value
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Percentage validated', {
+      field,
+      value: result.value.toWhole() + '%'
+    });
+  } else {
+    logger.error('Percentage validation failed', {
+      field,
+      error: result.error.toJSON(),
+      userInput: value
+    });
+  }
 
   return result;
 }

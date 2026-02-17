@@ -199,10 +199,11 @@ class Money {
 // Использование
 const result = Money.fromAmount(userInput, 'USDC');
 
-result.match({
-  ok: (money) => console.log(`Valid: ${money.getAmount()} ${money.getCurrency()}`),
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log(`Valid: ${result.value.getAmount()} ${result.value.getCurrency()}`);
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ### 3. Операции с Money и обработка ошибок
@@ -299,36 +300,33 @@ function handleDepositInput(input: string, currency: string): void {
   // используйте версию Money с decimal.js (пример 5)
   const result = Money.fromString(input, currency);
 
-  result.match({
-    ok: (money) => {
-      // Обновляем UI
-      setDepositAmount(money);
-      clearError('deposit');
+  if (result.ok) {
+    // Обновляем UI
+    setDepositAmount(result.value);
+    clearError('deposit');
 
-      // Показываем подтверждение
-      showConfirmation(
-        `Deposit ${money.getAmount()} ${money.getCurrency()}`
-      );
-    },
-    err: (error) => {
-      // Показываем ошибку пользователю
-      if (InvalidMoneyError.is(error)) {
-        const reason = error.context?.reason as string;
+    // Показываем подтверждение
+    showConfirmation(
+      `Deposit ${result.value.getAmount()} ${result.value.getCurrency()}`
+    );
+  } else {
+    // Показываем ошибку пользователю
+    if (InvalidMoneyError.is(result.error)) {
+      const reason = result.error.context?.reason as string;
 
-        let userMessage = 'Invalid deposit amount';
+      let userMessage = 'Invalid deposit amount';
 
-        if (reason === 'NaN') {
-          userMessage = 'Please enter a valid number';
-        } else if (reason === 'Infinity') {
-          userMessage = 'Amount is too large';
-        } else if (error.context?.amount < 0) {
-          userMessage = 'Amount cannot be negative';
-        }
-
-        showFieldError('deposit', userMessage);
+      if (reason === 'NaN') {
+        userMessage = 'Please enter a valid number';
+      } else if (reason === 'Infinity') {
+        userMessage = 'Amount is too large';
+      } else if (result.error.context?.amount < 0) {
+        userMessage = 'Amount cannot be negative';
       }
+
+      showFieldError('deposit', userMessage);
     }
-  });
+  }
 }
 ```
 
@@ -532,16 +530,30 @@ if (m3.ok && m4.ok) {
 
 ```typescript
 // Вычитание больше чем есть
-const balance = Money.fromAmount(100, 'USDC').unwrap();
-const cost = Money.fromAmount(150, 'USDC').unwrap();
+const balanceResult = Money.fromAmount(100, 'USDC');
+const costResult = Money.fromAmount(150, 'USDC');
+
+if (!balanceResult.ok || !costResult.ok) {
+  throw new Error('Failed to create money');
+}
+
+const balance = balanceResult.value;
+const cost = costResult.value;
 
 const result = balance.subtract(cost);
 // ❌ Err(InvalidMoneyError)
 // context: { available: 100, required: 150, result: -50 }
 
 // Операции с разными валютами
-const usdc = Money.fromAmount(100, 'USDC').unwrap();
-const btc = Money.fromAmount(1, 'BTC').unwrap();
+const usdcResult = Money.fromAmount(100, 'USDC');
+const btcResult = Money.fromAmount(1, 'BTC');
+
+if (!usdcResult.ok || !btcResult.ok) {
+  throw new Error('Failed to create money');
+}
+
+const usdc = usdcResult.value;
+const btc = btcResult.value;
 
 const result2 = usdc.add(btc);
 // ❌ Err(CurrencyMismatchError)
@@ -589,18 +601,17 @@ import { InvalidMoneyError, CurrencyMismatchError } from '@polymarket/errors';
 
 const result = money1.add(money2);
 
-result.match({
-  ok: (total) => console.log('Total:', total),
-  err: (error) => {
-    if (error.code === InvalidMoneyError.code) {
-      showError('Invalid money amount', error.context);
-    } else if (error.code === CurrencyMismatchError.code) {
-      showError('Currency mismatch', error.context);
-    } else {
-      showError('Unexpected error', error);
-    }
+if (result.ok) {
+  console.log('Total:', result.value);
+} else {
+  if (result.error.code === InvalidMoneyError.code) {
+    showError('Invalid money amount', result.error.context);
+  } else if (result.error.code === CurrencyMismatchError.code) {
+    showError('Currency mismatch', result.error.context);
+  } else {
+    showError('Unexpected error', result.error);
   }
-});
+}
 ```
 
 ### С логированием
@@ -615,22 +626,19 @@ function validateAndLogMoney(
 ): Result<Money, InvalidMoneyError> {
   const result = Money.fromAmount(amount, currency);
 
-  result.match({
-    ok: (money) => {
-      logger.info('Money validated', {
-        userId,
-        amount: money.getAmount(),
-        currency: money.getCurrency()
-      });
-    },
-    err: (error) => {
-      logger.error('Money validation failed', {
-        userId,
-        error: error.toJSON(),
-        userInput: { amount, currency }
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Money validated', {
+      userId,
+      amount: result.value.getAmount(),
+      currency: result.value.getCurrency()
+    });
+  } else {
+    logger.error('Money validation failed', {
+      userId,
+      error: result.error.toJSON(),
+      userInput: { amount, currency }
+    });
+  }
 
   return result;
 }
@@ -655,10 +663,11 @@ function validateBalances(
   for (const { amount, currency } of balances) {
     const result = Money.fromAmount(amount, currency);
 
-    result.match({
-      ok: (money) => valid.push(money),
-      err: (error) => errors.push(error)
-    });
+    if (result.ok) {
+      valid.push(result.value);
+    } else {
+      errors.push(result.error);
+    }
   }
 
   return { valid, errors };

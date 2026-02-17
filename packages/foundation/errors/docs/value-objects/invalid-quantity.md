@@ -207,34 +207,31 @@ function handleQuantityInput(input: string): void {
 
   const result = Quantity.fromNumber(value);
 
-  result.match({
-    ok: (qty) => {
-      // Обновляем UI
-      setQuantity(qty);
-      clearError('quantity');
+  if (result.ok) {
+    // Обновляем UI
+    setQuantity(result.value);
+    clearError('quantity');
 
-      // Рассчитываем стоимость
-      const totalCost = price.getValue() * qty.getValue();
-      setTotalCost(totalCost);
-    },
-    err: (error) => {
-      // Показываем ошибку пользователю
-      if (InvalidQuantityError.is(error)) {
-        const reason = error.context?.reason as string;
+    // Рассчитываем стоимость
+    const totalCost = price.getValue() * result.value.getValue();
+    setTotalCost(totalCost);
+  } else {
+    // Показываем ошибку пользователю
+    if (InvalidQuantityError.is(result.error)) {
+      const reason = result.error.context?.reason as string;
 
-        let userMessage = 'Quantity must be a positive number';
-        if (reason === 'NaN') {
-          userMessage = 'Please enter a valid number';
-        } else if (reason === 'negative') {
-          userMessage = 'Quantity cannot be negative';
-        } else if (reason === 'Infinity') {
-          userMessage = 'Quantity value is too large';
-        }
-
-        showFieldError('quantity', userMessage);
+      let userMessage = 'Quantity must be a positive number';
+      if (reason === 'NaN') {
+        userMessage = 'Please enter a valid number';
+      } else if (reason === 'negative') {
+        userMessage = 'Quantity cannot be negative';
+      } else if (reason === 'Infinity') {
+        userMessage = 'Quantity value is too large';
       }
+
+      showFieldError('quantity', userMessage);
     }
-  });
+  }
 }
 ```
 
@@ -380,10 +377,12 @@ const qty1 = Quantity.fromNumber(0.1 + 0.2); // 0.30000000000000004
 // ✅ Ok(Quantity) - но значение может быть неточным
 
 // Использование decimal.js решает эту проблему
-const qty2 = Quantity.fromString('0.1');
-const qty3 = Quantity.fromString('0.2');
-const sum = qty2.unwrap().toDecimal().plus(qty3.unwrap().toDecimal());
-Quantity.fromDecimal(sum); // ✅ Точно 0.3
+const qty2Result = Quantity.fromString('0.1');
+const qty3Result = Quantity.fromString('0.2');
+if (qty2Result.ok && qty3Result.ok) {
+  const sum = qty2Result.value.toDecimal().plus(qty3Result.value.toDecimal());
+  Quantity.fromDecimal(sum); // ✅ Точно 0.3
+}
 ```
 
 ### Валидация с минимальным значением
@@ -457,18 +456,17 @@ import { InvalidQuantityError, TradingError } from '@polymarket/errors';
 
 const result = Quantity.fromNumber(userInput);
 
-result.match({
-  ok: (quantity) => submitOrder(quantity),
-  err: (error) => {
-    if (error.code === InvalidQuantityError.code) {
-      // Обработка InvalidQuantityError
-      showError('Invalid quantity', error.context);
-    } else {
-      // Другие ошибки
-      showError('Unexpected error', error);
-    }
+if (result.ok) {
+  submitOrder(result.value);
+} else {
+  if (result.error.code === InvalidQuantityError.code) {
+    // Обработка InvalidQuantityError
+    showError('Invalid quantity', result.error.context);
+  } else {
+    // Другие ошибки
+    showError('Unexpected error', result.error);
   }
-});
+}
 ```
 
 ### С логированием
