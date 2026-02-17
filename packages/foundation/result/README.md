@@ -571,26 +571,51 @@ if (!invalid.ok) {
 
 Для работы с асинхронными операциями используйте `AsyncResultChain`.
 
-### AsyncResult.from(promise)
+### AsyncResult.from(promise, onReject?)
 
 Создает AsyncResultChain из Promise<Result<T, E>>.
+
+**Автоматическая обработка ошибок:** Если Promise реджектится, rejection автоматически преобразуется в `Err<E>`. Опциональный параметр `onReject` позволяет безопасно трансформировать `unknown` error в тип `E`.
 
 ```typescript
 import { AsyncResult } from '@polymarket/result';
 
+// Базовое использование
 const result = await AsyncResult.from(fetchUser('123'))
   .mapAsync(user => enrichUserData(user))
   .unwrap();
+
+// Обработка Promise rejection с трансформацией
+const result2 = await AsyncResult.from(
+  Promise.reject('Network error'),
+  (error) => new Error(String(error))
+).unwrapErr();
+// result2: Error('Network error')
+
+// Promise rejection без onReject (type assertion)
+const result3 = await AsyncResult.from<User, string>(
+  fetchData() // может реджектиться
+).unwrapErr();
 ```
 
-### AsyncResult.ok(promise)
+### AsyncResult.ok(promise, onError?)
 
-Создает AsyncResultChain из Promise<T>.
+Создает AsyncResultChain из Promise<T>, автоматически оборачивая успешные значения в Ok.
+
+**Автоматическая обработка ошибок:** Ловит Promise rejections и преобразует их в `Err<E>`. Опциональный параметр `onError` позволяет безопасно трансформировать `unknown` error в тип `E`.
 
 ```typescript
+// Базовое использование
 const result = await AsyncResult.ok(Promise.resolve(42))
   .map(x => x * 2)
   .unwrap(); // 84
+
+// С обработкой rejection и трансформацией
+const result2 = await AsyncResult.ok(
+  fetch('/api/user'),
+  (error) => new Error(String(error))
+).unwrapErr();
+// При reject: Error с сообщением
 ```
 
 ### AsyncResult.err(error)
@@ -694,6 +719,120 @@ const value = await AsyncResult.ok(Promise.resolve(42))
 
 await AsyncResult.err('oops')
   .expect('Should be ok'); // Throws: "Should be ok: oops"
+```
+
+### .mapErrAsync(fn) / .mapErr(fn)
+
+Трансформирует ошибку (async или sync), не затрагивая Ok-значение.
+
+```typescript
+const result = await AsyncResult.err({ code: 404 })
+  .mapErrAsync(async err => `Error ${err.code}`)
+  .unwrapErr(); // 'Error 404'
+
+// sync версия
+const result2 = await AsyncResult.err('network error')
+  .mapErr(err => err.toUpperCase())
+  .unwrapErr(); // 'NETWORK ERROR'
+```
+
+### .unwrapOrElse(fn)
+
+Извлекает значение из Ok или вычисляет fallback из функции.
+
+```typescript
+const result = await AsyncResult.err('network error').unwrapOrElse((err) => {
+  console.error('Failed:', err);
+  return 0; // Вычисляемый fallback
+}); // 0
+
+const success = await AsyncResult.ok(Promise.resolve(10)).unwrapOrElse(() => 0);
+// 10 (функция не вызвана)
+```
+
+### .isOk() / .isErr()
+
+Проверяет, является ли Result успешным или ошибочным.
+
+```typescript
+const success = await AsyncResult.ok(Promise.resolve(42)).isOk(); // true
+const failure = await AsyncResult.err('error').isErr(); // true
+```
+
+### .toPromise() / .toChain()
+
+Конвертирует AsyncResultChain в Promise<Result> или ResultChain.
+
+```typescript
+// toPromise - получить Promise<Result>
+const promise: Promise<Result<number, string>> =
+  AsyncResult.ok(Promise.resolve(42)).toPromise();
+
+// toChain - конвертировать в ResultChain после await
+const chain = await AsyncResult.ok(Promise.resolve(42)).toChain();
+const doubled = chain.map(x => x * 2).unwrap(); // 84
+```
+
+### .and(other) / .andAsync(other)
+
+Возвращает второй Result, если первый - Ok, иначе первую ошибку.
+
+```typescript
+// and - sync комбинация
+const result = await AsyncResult.ok(Promise.resolve(1))
+  .and(Ok(2))
+  .unwrap(); // 2
+
+// andAsync - async комбинация
+const fetchUser = async (id: number): Promise<Result<User, string>> => {
+  // ...
+};
+
+const result2 = await AsyncResult.ok(Promise.resolve(123))
+  .andAsync(fetchUser(123))
+  .unwrap();
+```
+
+### .or(other) / .orAsync(other)
+
+Возвращает первый Result, если он Ok, иначе альтернативный Result.
+
+```typescript
+// or - sync альтернатива
+const result = await AsyncResult.err('error 1')
+  .or(Ok(42))
+  .unwrap(); // 42
+
+// orAsync - async альтернатива
+const fallbackSource = async (): Promise<Result<number, string>> => {
+  return Ok(42);
+};
+
+const result2 = await AsyncResult.err('error')
+  .orAsync(fallbackSource())
+  .unwrap(); // 42
+```
+
+### .orAsyncLazy(fn)
+
+Ленивая фабрика для альтернативного Result (вызывается только при Err).
+
+```typescript
+// orAsyncLazy - ленивая фабрика (вызывается только при Err)
+const result = await AsyncResult.ok(Promise.resolve(10))
+  .orAsyncLazy(async () => {
+    console.log('Not called!'); // Не вызывается для Ok
+    return Ok(42);
+  })
+  .unwrap(); // 10
+
+// При Err фабрика вызывается
+const result2 = await AsyncResult.err('error')
+  .orAsyncLazy(async () => {
+    console.log('Called!'); // Вызывается для Err
+    return Ok(42);
+  })
+  .unwrap(); // 42
 ```
 
 ## 💡 Примеры использования

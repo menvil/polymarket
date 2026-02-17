@@ -34,7 +34,7 @@ import {
   isOk,
   isErr,
   formatValue,
-} from './result.js';
+} from './result';
 
 /**
  * Класс для method chaining с Result

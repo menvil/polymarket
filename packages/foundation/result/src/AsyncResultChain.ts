@@ -11,9 +11,9 @@
  *
  * **Обработка Promise rejections:**
  * - `AsyncResult.ok(promise)` - автоматически ловит rejections через `.catch()` и преобразует их в Err<E>
- * - `AsyncResult.from(promise)` - НЕ ловит rejections, ожидает что входной Promise<Result<T,E>>
- *   уже resolved или caller сам обработает rejections. Если Promise будет rejected, это приведёт
- *   к unhandled rejection (не к Err<E>)
+ * - `AsyncResult.from(promise, onReject?)` - автоматически ловит rejections через `.catch()` и преобразует
+ *   их в Err<E>. Опциональный параметр `onReject` позволяет безопасно трансформировать unknown error в E.
+ *   Без `onReject` используется type assertion (error as E)
  *
  * **Обработка exceptions в методах цепочки:**
  * - Трансформирующие методы (*Async, flatMap*) ловят exceptions и преобразуют их в Err<E>
@@ -40,7 +40,7 @@
  */
 
 import { Result, Ok, Err, formatValue } from './result.js';
-import { ResultChain, toChain } from './ResultChain.js';
+import { ResultChain, toChain } from './ResultChain';
 
 /**
  * Класс для method chaining с Promise<Result<T, E>>
@@ -751,9 +751,46 @@ export class AsyncResultChain<T, E> {
 export const AsyncResult = {
   /**
    * Создаёт AsyncResultChain из Promise<Result<T, E>>
+   *
+   * @remarks
+   * Автоматически ловит Promise rejections и преобразует их в Err.
+   * Если Promise реджектится, rejection будет обёрнут в Err<E>.
+   * Можно указать функцию onReject для безопасной трансформации unknown error в E.
+   *
+   * @param promise - Promise<Result<T, E>> для оборачивания
+   * @param onReject - Опциональная функция для трансформации rejection в E
+   * @returns AsyncResultChain<T, E>
+   *
+   * @example
+   * ```typescript
+   * // Базовое использование
+   * const result1 = await AsyncResult.from(fetchUser('123')).unwrap();
+   *
+   * // С обработкой rejection
+   * const result2 = await AsyncResult.from(
+   *   Promise.reject('Network error'),
+   *   (error) => new Error(String(error))
+   * ).unwrapErr();
+   * // result2: Error('Network error')
+   *
+   * // Promise.reject без onReject (type assertion)
+   * const result3 = await AsyncResult.from<User, string>(
+   *   Promise.reject('Failed')
+   * ).unwrapErr();
+   * // result3: 'Failed'
+   * ```
    */
-  from: <T, E>(promise: Promise<Result<T, E>>): AsyncResultChain<T, E> => {
-    return new AsyncResultChain(promise);
+  from: <T, E>(
+    promise: Promise<Result<T, E>>,
+    onReject?: (error: unknown) => E
+  ): AsyncResultChain<T, E> => {
+    const safePromise = promise.catch((error) => {
+      if (onReject) {
+        return Err(onReject(error)) as Result<T, E>;
+      }
+      return Err(error as E) as Result<T, E>;
+    });
+    return new AsyncResultChain(safePromise);
   },
 
   /**

@@ -19,6 +19,40 @@ describe('AsyncResultChain', () => {
 
       expect(result).toBe('error');
     });
+
+    it('должен ловить Promise.reject с onReject трансформацией', async () => {
+      const rejectedPromise = Promise.reject('Network error');
+
+      const result = await AsyncResult.from(
+        rejectedPromise as Promise<Result<number, Error>>,
+        (error) => new Error(String(error))
+      ).unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toBe('Network error');
+    });
+
+    it('должен ловить Promise.reject без onReject (type assertion)', async () => {
+      const rejectedPromise = Promise.reject('Failed');
+
+      const result = await AsyncResult.from<number, string>(
+        rejectedPromise as Promise<Result<number, string>>
+      ).unwrapErr();
+
+      expect(result).toBe('Failed');
+    });
+
+    it('должен ловить Promise.reject с Error объектом', async () => {
+      const error = new Error('Something went wrong');
+      const rejectedPromise = Promise.reject(error);
+
+      const result = await AsyncResult.from<number, Error>(
+        rejectedPromise as Promise<Result<number, Error>>
+      ).unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect(result.message).toBe('Something went wrong');
+    });
   });
 
   describe('AsyncResult.ok()', () => {
@@ -34,6 +68,36 @@ describe('AsyncResultChain', () => {
 
       expect(number).toBe(123);
       expect(string).toBe('hello');
+    });
+
+    it('должен ловить Promise.reject и преобразовывать в Err', async () => {
+      const rejectedPromise = Promise.reject('Network error');
+
+      const result = await AsyncResult.ok(rejectedPromise).unwrapErr();
+
+      expect(result).toBe('Network error');
+    });
+
+    it('должен ловить Promise.reject с onError трансформацией', async () => {
+      const rejectedPromise = Promise.reject('Network error');
+
+      const result = await AsyncResult.ok(
+        rejectedPromise,
+        (error) => new Error(String(error))
+      ).unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Network error');
+    });
+
+    it('должен ловить Promise.reject с Error объектом', async () => {
+      const error = new Error('Something went wrong');
+      const rejectedPromise = Promise.reject(error);
+
+      const result = await AsyncResult.ok(rejectedPromise).unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Something went wrong');
     });
   });
 
@@ -81,6 +145,32 @@ describe('AsyncResultChain', () => {
 
       expect(called).toBe(false);
       expect(result).toBe('error');
+    });
+
+    it('должен ловить exceptions из async функции и преобразовывать в Err', async () => {
+      const throwingFn = async (_x: number) => {
+        throw new Error('Transformation failed');
+      };
+
+      const result = await AsyncResult.ok(Promise.resolve(42))
+        .mapAsync(throwingFn)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Transformation failed');
+    });
+
+    it('должен ловить Promise rejection из async функции и преобразовывать в Err', async () => {
+      const rejectingFn = async (_x: number) => {
+        return Promise.reject(new Error('Async operation failed'));
+      };
+
+      const result = await AsyncResult.ok(Promise.resolve(42))
+        .mapAsync(rejectingFn)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Async operation failed');
     });
   });
 
@@ -141,6 +231,32 @@ describe('AsyncResultChain', () => {
       expect(called).toBe(false);
       expect(result).toBe('initial error');
     });
+
+    it('должен ловить exceptions из async Result функции и преобразовывать в Err', async () => {
+      const throwingFn = async (_x: number): Promise<Result<string, Error>> => {
+        throw new Error('FlatMap transformation failed');
+      };
+
+      const result = await AsyncResult.ok(Promise.resolve(42))
+        .flatMapAsync(throwingFn)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('FlatMap transformation failed');
+    });
+
+    it('должен ловить Promise rejection из async Result функции и преобразовывать в Err', async () => {
+      const rejectingFn = async (_x: number): Promise<Result<string, Error>> => {
+        return Promise.reject(new Error('FlatMap async operation failed'));
+      };
+
+      const result = await AsyncResult.ok(Promise.resolve(42))
+        .flatMapAsync(rejectingFn)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('FlatMap async operation failed');
+    });
   });
 
   describe('Метод flatMap()', () => {
@@ -178,6 +294,19 @@ describe('AsyncResultChain', () => {
       expect(called).toBe(false);
       expect(result).toBe('initial error');
     });
+
+    it('должен ловить exceptions из sync Result функции и преобразовывать в Err', async () => {
+      const throwingFn = (_x: number): Result<string, Error> => {
+        throw new Error('FlatMap sync transformation failed');
+      };
+
+      const result = await AsyncResult.ok(Promise.resolve(42))
+        .flatMap(throwingFn)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('FlatMap sync transformation failed');
+    });
   });
 
   describe('Метод mapErrAsync()', () => {
@@ -204,6 +333,32 @@ describe('AsyncResultChain', () => {
       expect(called).toBe(false);
       expect(result).toBe(42);
     });
+
+    it('должен ловить exceptions из async error transformation и преобразовывать в Err', async () => {
+      const throwingTransform = async (_err: string) => {
+        throw new Error('Error transformation failed');
+      };
+
+      const result = await AsyncResult.err('original error')
+        .mapErrAsync(throwingTransform)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Error transformation failed');
+    });
+
+    it('должен ловить Promise rejection из async error transformation и преобразовывать в Err', async () => {
+      const rejectingTransform = async (_err: string) => {
+        return Promise.reject(new Error('Async error transformation failed'));
+      };
+
+      const result = await AsyncResult.err('original error')
+        .mapErrAsync(rejectingTransform)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Async error transformation failed');
+    });
   });
 
   describe('Метод mapErr()', () => {
@@ -227,6 +382,19 @@ describe('AsyncResultChain', () => {
 
       expect(called).toBe(false);
       expect(result).toBe(42);
+    });
+
+    it('должен ловить exceptions из sync error transformation и преобразовывать в Err', async () => {
+      const throwingTransform = (_err: string) => {
+        throw new Error('Sync error transformation failed');
+      };
+
+      const result = await AsyncResult.err('original error')
+        .mapErr(throwingTransform)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Sync error transformation failed');
     });
   });
 
@@ -273,6 +441,17 @@ describe('AsyncResultChain', () => {
       });
 
       expect(value).toBe(5); // "error".length === 5
+    });
+
+    it('должен ловить exceptions из fallback функции и reject с wrapped message', async () => {
+      const throwingFallback = (_err: string): number => {
+        throw new Error('Fallback computation failed');
+      };
+
+      const errorResult: Result<number, string> = Err('error');
+      await expect(
+        AsyncResult.from(Promise.resolve(errorResult)).unwrapOrElse(throwingFallback)
+      ).rejects.toThrow('Fallback computation failed');
     });
   });
 
@@ -417,6 +596,32 @@ describe('AsyncResultChain', () => {
 
       expect(result).toBe(84);
     });
+
+    it('должен ловить exceptions из ok handler и reject с wrapped message', async () => {
+      const throwingOkHandler = (_value: number): string => {
+        throw new Error('Ok handler failed');
+      };
+
+      await expect(
+        AsyncResult.ok(Promise.resolve(42)).match({
+          ok: throwingOkHandler,
+          err: () => 'error',
+        })
+      ).rejects.toThrow('Ok handler failed');
+    });
+
+    it('должен ловить exceptions из err handler и reject с wrapped message', async () => {
+      const throwingErrHandler = (_err: string): string => {
+        throw new Error('Err handler failed');
+      };
+
+      await expect(
+        AsyncResult.err('error').match({
+          ok: () => 'ok',
+          err: throwingErrHandler,
+        })
+      ).rejects.toThrow('Err handler failed');
+    });
   });
 
   describe('Метод and()', () => {
@@ -557,6 +762,34 @@ describe('AsyncResultChain', () => {
 
       expect(sideEffects).toEqual([]); // Фабрика не вызвана, side-effects не произошли
     });
+
+    it('должен ловить exceptions из lazy factory и преобразовывать в Err', async () => {
+      const throwingFactory = async (): Promise<Result<number, Error>> => {
+        throw new Error('Factory failed');
+      };
+
+      const errorResult: Result<number, Error> = Err(new Error('original error'));
+      const result = await AsyncResult.from(Promise.resolve(errorResult))
+        .orAsyncLazy(throwingFactory)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Factory failed');
+    });
+
+    it('должен ловить Promise rejection из lazy factory и преобразовывать в Err', async () => {
+      const rejectingFactory = async (): Promise<Result<number, Error>> => {
+        return Promise.reject(new Error('Async factory failed'));
+      };
+
+      const errorResult: Result<number, Error> = Err(new Error('original error'));
+      const result = await AsyncResult.from(Promise.resolve(errorResult))
+        .orAsyncLazy(rejectingFactory)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Async factory failed');
+    });
   });
 
   describe('Метод orElseAsync()', () => {
@@ -586,6 +819,34 @@ describe('AsyncResultChain', () => {
       expect(called).toBe(false);
       expect(result).toBe(42);
     });
+
+    it('должен ловить exceptions из async recovery и преобразовывать в Err', async () => {
+      const throwingRecovery = async (_err: Error): Promise<Result<number, Error>> => {
+        throw new Error('Recovery failed');
+      };
+
+      const errorResult: Result<number, Error> = Err(new Error('original error'));
+      const result = await AsyncResult.from(Promise.resolve(errorResult))
+        .orElseAsync(throwingRecovery)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Recovery failed');
+    });
+
+    it('должен ловить Promise rejection из async recovery и преобразовывать в Err', async () => {
+      const rejectingRecovery = async (_err: Error): Promise<Result<number, Error>> => {
+        return Promise.reject(new Error('Async recovery failed'));
+      };
+
+      const errorResult: Result<number, Error> = Err(new Error('original error'));
+      const result = await AsyncResult.from(Promise.resolve(errorResult))
+        .orElseAsync(rejectingRecovery)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Async recovery failed');
+    });
   });
 
   describe('Метод orElse()', () => {
@@ -610,6 +871,20 @@ describe('AsyncResultChain', () => {
 
       expect(called).toBe(false);
       expect(result).toBe(42);
+    });
+
+    it('должен ловить exceptions из sync recovery и преобразовывать в Err', async () => {
+      const throwingRecovery = (_err: Error): Result<number, Error> => {
+        throw new Error('Sync recovery failed');
+      };
+
+      const errorResult: Result<number, Error> = Err(new Error('original error'));
+      const result = await AsyncResult.from(Promise.resolve(errorResult))
+        .orElse(throwingRecovery)
+        .unwrapErr();
+
+      expect(result).toBeInstanceOf(Error);
+      expect((result as Error).message).toBe('Sync recovery failed');
     });
   });
 

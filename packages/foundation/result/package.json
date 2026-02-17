@@ -16,7 +16,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/fix-esm-imports.mjs",
     "build:watch": "tsc -p tsconfig.build.json --watch",
     "test": "jest",
     "test:watch": "jest --watch",
@@ -30,7 +30,9 @@
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
-    "clean": "rm -rf dist"
+    "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"README.md\" \"src_bundle.md\"",
+    "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"README.md\" \"src_bundle.md\"",
+    "clean": "rm -rf dist *.tsbuildinfo"
   },
   "keywords": [
     "types",
