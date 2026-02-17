@@ -307,12 +307,14 @@ const failed = combine(withError);
 // failed: Err('упс')
 ```
 
-### unwrap(result) ⚠️ Unsafe
+### unwrap(result) ⚠️ Unsafe — только через `/unsafe`
 
 Извлекает значение из Ok. **Небезопасно** — выбрасывает исключение если Err.
 Предпочитайте `unwrapOr`, `match` или `if (result.ok)`.
 
 ```typescript
+import { unwrap } from '@polymarket/result/unsafe';
+
 const result = Ok(42);
 const value = unwrap(result); // 42
 

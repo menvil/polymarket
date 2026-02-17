@@ -284,7 +284,9 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   mapErrAsync<F>(fn: (error: E) => Promise<F>): AsyncResultChain<T, F> {
-    const normalizerF = (e: unknown): F => e as F;
+    // Используем chain normalizer для F, приводя E → F через as unknown as F.
+    // Это единственный доступный normalizer; честнее, чем e as F без нормализации.
+    const normalizerF = (e: unknown): F => this.normalize(e) as unknown as F;
     const newPromise = this.promise.then(async (result) => {
       if (!result.ok) {
         try {
@@ -316,7 +318,9 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   mapErr<F>(fn: (error: E) => F): AsyncResultChain<T, F> {
-    const normalizerF = (e: unknown): F => e as F;
+    // Используем chain normalizer для F, приводя E → F через as unknown as F.
+    // Это единственный доступный normalizer; честнее, чем e as F без нормализации.
+    const normalizerF = (e: unknown): F => this.normalize(e) as unknown as F;
     const newPromise = this.promise.then((result) => {
       if (!result.ok) {
         try {
@@ -603,13 +607,14 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   or<F>(other: Result<T, F>): AsyncResultChain<T, F> {
+    const normalizerF = (e: unknown): F => this.normalize(e) as unknown as F;
     const newPromise = this.promise.then((result) => {
       if (result.ok) {
         return result as Result<T, F>;
       }
       return other;
     });
-    return new AsyncResultChain<T, F>(newPromise);
+    return new AsyncResultChain<T, F>(newPromise, normalizerF);
   }
 
   /**
@@ -629,13 +634,14 @@ export class AsyncResultChain<T, E> {
     // Предотвращаем unhandledRejection когда берётся ветка Ok (short-circuit),
     // и other никогда не awaiting-ся.
     void other.catch(() => {});
+    const normalizerF = (e: unknown): F => this.normalize(e) as unknown as F;
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
         return result as Result<T, F>;
       }
       return await other;
     });
-    return new AsyncResultChain<T, F>(newPromise);
+    return new AsyncResultChain<T, F>(newPromise, normalizerF);
   }
 
   /**
@@ -900,8 +906,9 @@ export const AsyncResult = {
   }) as {
     /**
      * Без normalizer — тип ошибки из Promise<Result<T,E>>.
-     * Promise rejections будут обёрнуты в Err через небезопасный каст (error as E).
-     * Для строгой типизации rejection используйте перегрузку с onReject.
+     * ⚠️ Promise rejections обёртываются через `error as E` (небезопасный каст).
+     * Если E = unknown — корректно. Если E — конкретный тип, rejections не будут
+     * честно нормализованы; используйте перегрузку с onReject для type safety.
      */
     <T, E>(promise: Promise<Result<T, E>>): AsyncResultChain<T, E>;
     /**

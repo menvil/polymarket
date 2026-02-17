@@ -406,6 +406,23 @@ describe('AsyncResultChain', () => {
       expect(result).toBeInstanceOf(Error);
       expect((result as Error).message).toBe('Async error transformation failed');
     });
+
+    it('должен использовать chain normalizer при throw внутри async callback', async () => {
+      type AppError = { code: string };
+      const normalizer = (e: unknown): AppError => ({ code: `NORM:${String(e)}` });
+
+      const result = await AsyncResult.from(
+        Promise.resolve(Err('original') as Result<number, AppError>),
+        normalizer
+      )
+        .mapErrAsync(async (_err: AppError) => {
+          throw new Error('mapErrAsync threw');
+        })
+        .unwrapErr();
+
+      // normalizer применяется через chain — результат нормализован
+      expect((result as AppError).code).toMatch(/^NORM:/);
+    });
   });
 
   describe('Метод mapErr()', () => {
@@ -442,6 +459,40 @@ describe('AsyncResultChain', () => {
 
       expect(result).toBeInstanceOf(Error);
       expect((result as Error).message).toBe('Sync error transformation failed');
+    });
+
+    it('должен использовать chain normalizer при throw внутри callback', async () => {
+      type AppError = { code: string };
+      const normalizer = (e: unknown): AppError => ({ code: `NORM:${String(e)}` });
+
+      const result = await AsyncResult.from(
+        Promise.resolve(Err('original') as Result<number, AppError>),
+        normalizer
+      )
+        .mapErr((_err: AppError) => {
+          throw new Error('mapErr threw');
+        })
+        .unwrapErr();
+
+      // normalizer применяется через chain — результат нормализован
+      expect((result as AppError).code).toMatch(/^NORM:/);
+    });
+
+    it('должен сохранять normalizer в последующих шагах после mapErr', async () => {
+      type AppError = { code: string };
+      const normalizer = (e: unknown): AppError => ({ code: `NORM:${String(e)}` });
+
+      const result = await AsyncResult.from(
+        Promise.resolve(Err('original') as Result<number, AppError>),
+        normalizer
+      )
+        .mapErr((err: AppError) => err.code)
+        .map((_v) => {
+          throw new Error('map after mapErr threw');
+        })
+        .toPromise();
+
+      expect(result.ok).toBe(false);
     });
   });
 
@@ -733,6 +784,26 @@ describe('AsyncResultChain', () => {
 
       expect(result).toBe(42);
     });
+
+    it('должен сохранять chain normalizer для последующих шагов', async () => {
+      type AppError = { code: string };
+      const normalizer = (e: unknown): AppError => ({ code: `NORM:${String(e)}` });
+
+      const result = await AsyncResult.from(
+        Promise.resolve(Err('original') as Result<number, AppError>),
+        normalizer
+      )
+        .or(Ok(0))
+        .map((_v: number) => {
+          throw new Error('after .or threw');
+        })
+        .toPromise();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect((result.error as AppError).code).toMatch(/^NORM:/);
+      }
+    });
   });
 
   describe('Метод orAsync()', () => {
@@ -759,6 +830,26 @@ describe('AsyncResultChain', () => {
         .unwrap();
 
       expect(result).toBe(10);
+    });
+
+    it('должен сохранять chain normalizer для последующих шагов', async () => {
+      type AppError = { code: string };
+      const normalizer = (e: unknown): AppError => ({ code: `NORM:${String(e)}` });
+
+      const result = await AsyncResult.from(
+        Promise.resolve(Err('original') as Result<number, AppError>),
+        normalizer
+      )
+        .orAsync(Promise.resolve(Ok(0) as Result<number, AppError>))
+        .map((_v: number) => {
+          throw new Error('after .orAsync threw');
+        })
+        .toPromise();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect((result.error as AppError).code).toMatch(/^NORM:/);
+      }
     });
   });
 
@@ -1147,6 +1238,33 @@ describe('AsyncResultChain', () => {
         expect(result.error).toBeInstanceOf(Error);
         expect((result.error as Error).message).toBe('onError failed');
       }
+    });
+  });
+
+  // ============================================================
+  // normalize() fallback: когда chain normalizer сам бросает
+  // внутри transform-метода, fallback — error as E
+  // ============================================================
+  describe('normalize() fallback когда chain normalizer бросает внутри transform', () => {
+    it('map: Promise остаётся resolved если normalizer бросает при обработке throw из fn', async () => {
+      let callCount = 0;
+      const throwingNormalizer = (_e: unknown): Error => {
+        callCount++;
+        throw new Error('normalizer itself failed');
+      };
+
+      const result = await AsyncResult.ok(
+        Promise.resolve(42),
+        throwingNormalizer
+      )
+        .map((_v) => {
+          throw new Error('map callback threw');
+        })
+        .toPromise();
+
+      // Promise должен остаться resolved — fallback error as E
+      expect(result.ok).toBe(false);
+      expect(callCount).toBe(1); // normalizer был вызван (хотя и бросил)
     });
   });
 });
