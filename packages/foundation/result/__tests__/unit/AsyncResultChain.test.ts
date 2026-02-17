@@ -1247,6 +1247,30 @@ describe('AsyncResultChain', () => {
         process.off('unhandledRejection', handler);
       }
     });
+
+    it('andAsync: rejected other не вызывает unhandledRejection при race (this резолвится позже)', async () => {
+      const handler = jest.fn();
+      process.on('unhandledRejection', handler);
+      try {
+        // other реджектится немедленно, this.promise резолвится через macrotask —
+        // именно это race window закрывает eager guard
+        const rejectedOther = Promise.reject(new Error('early rejection'));
+        const delayedErr = new Promise<Result<number, string>>((resolve) =>
+          setTimeout(() => resolve(Err('delayed error')), 10)
+        );
+
+        const result = await AsyncResult.from(delayedErr)
+          .andAsync(rejectedOther as Promise<Result<number, Error>>)
+          .toPromise();
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) expect(result.error).toBe('delayed error');
+        await new Promise<void>((r) => setTimeout(r, 20));
+        expect(handler).not.toHaveBeenCalled();
+      } finally {
+        process.off('unhandledRejection', handler);
+      }
+    });
   });
 
   // ============================================================

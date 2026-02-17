@@ -598,6 +598,10 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   andAsync<U, F>(other: Promise<Result<U, F>>): AsyncResultChain<U, E | F> {
+    // Навешиваем guard немедленно (как в orAsync), чтобы закрыть race window:
+    // если other реджектится до того как this.promise разрешится,
+    // ленивый guard внутри .then() не успеет — возникнет unhandledRejection.
+    void other.catch(() => {});
     const normalizer = (e: unknown): E | F => this.normalize(e);
     const newPromise = this.promise.then(async (result): Promise<Result<U, E | F>> => {
       if (result.ok) {
@@ -608,9 +612,6 @@ export class AsyncResultChain<T, E> {
           return { ok: false, error: normalizer(err) };
         }
       }
-      // Ветка Err: other не будет awaiting-ся — предотвращаем unhandledRejection.
-      // Вызов внутри .then() гарантирует, что guard навешивается только когда нужен.
-      void other.catch(() => {});
       return result;
     });
     return new AsyncResultChain<U, E | F>(newPromise, normalizer);
