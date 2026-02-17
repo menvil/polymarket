@@ -5,48 +5,45 @@
  * Базовые типы для функционального программирования в Polymarket trading system.
  * Railway-Oriented Programming через Result<T, E>.
  *
- * Архитектура:
- * - Result<T, E> - явная обработка ошибок без exceptions
- * - Ok/Err - конструкторы для создания Result (plain objects)
- * - OkChain/ErrChain - конструкторы для method chaining (OOP)
- * - AsyncResultChain - method chaining для async операций
- * - map/flatMap - композиция операций (функции)
- * - .map()/.flatMap() - композиция операций (методы)
- * - Type-safe error handling
+ * ## Архитектура
  *
- * Три стиля использования:
+ * - `result.ts` — **ядро**: все FP-функции, единственный источник бизнес-логики
+ * - `unsafe.ts` — операции бросающие исключения (unwrap, expect)
+ * - `ResultChain.ts` — тонкий OOP-адаптер поверх ядра
+ * - `AsyncResultChain.ts` — тонкий async-адаптер поверх ядра
  *
- * **1. Функциональный стиль (plain objects):**
+ * ## Рекомендуемый путь импорта (для новых пользователей)
+ *
+ * Основной API — функциональный стиль, все функции safe по умолчанию:
+ *
  * ```typescript
- * import { Result, Ok, Err, map, flatMap } from '@polymarket/result';
- *
- * function divide(a: number, b: number): Result<number, string> {
- *   if (b === 0) return Err('Division by zero');
- *   return Ok(a / b);
- * }
- *
- * const result = divide(10, 2);
- * if (result.ok) {
- *   console.log('Result:', result.value); // 5
- * }
- *
- * // Композиция через функции
- * const doubled = map(result, x => x * 2);
+ * import {
+ *   Result, Ok, Err,
+ *   map, flatMap, flatMapW, mapErr, combine,
+ *   match, tryCatch, tryAsync,
+ *   fromPromise, fromNullable, fromThrowable,
+ *   unwrapOr, unwrapOrElse,
+ * } from '@polymarket/result';
  * ```
  *
- * **2. OOP стиль (method chaining):**
+ * ## OOP-стиль (method chaining)
+ *
  * ```typescript
+ * import { OkChain, ErrChain, toChain } from '@polymarket/result/chain';
+ * // или из основного пути для backward compatibility:
  * import { OkChain, ErrChain } from '@polymarket/result';
  *
  * const result = OkChain(10)
  *   .map(x => x / 2)
  *   .map(x => x * 2)
  *   .unwrapOr(0);
- * // result: 10
  * ```
  *
- * **3. Async стиль (для Promise<Result>):**
+ * ## Async-стиль (для Promise<Result>)
+ *
  * ```typescript
+ * import { AsyncResult } from '@polymarket/result/async';
+ * // или из основного пути для backward compatibility:
  * import { AsyncResult } from '@polymarket/result';
  *
  * const user = await AsyncResult.from(fetchUser('123'))
@@ -55,44 +52,79 @@
  *   .unwrapOr({ id: 'guest', name: 'Guest' });
  * ```
  *
- * **Advanced patterns:**
+ * ## Unsafe операции (явно помечены)
  *
- * *Union error types:*
+ * ```typescript
+ * import { unwrap, expect } from '@polymarket/result/unsafe';
+ * // или из основного пути (для backward compatibility):
+ * import { unwrap } from '@polymarket/result';
+ * ```
+ *
+ * ## Widen-варианты для union-типов ошибок
+ *
  * ```typescript
  * type NetworkError = { type: 'network'; code: number };
  * type ValidationError = { type: 'validation'; field: string };
- * type AppError = NetworkError | ValidationError;
  *
- * function fetchAndValidate(id: string): Result<User, AppError> {
- *   return OkChain({ id, name: 'Test' })
- *     .flatMap(user => validateUser(user))
- *     .toResult();
- * }
- * ```
- *
- * *Recovery patterns:*
- * ```typescript
- * const result = await AsyncResult.from(primaryAPI())
- *   .orElseAsync(err => {
- *     console.log('Primary failed:', err);
- *     return fallbackAPI(); // Fallback при ошибке
- *   })
- *   .unwrapOr(defaultValue);
- * ```
- *
- * *Safe wrapping throwable functions:*
- * ```typescript
- * const safeJSON = fromThrowable(
- *   JSON.parse,
- *   (error) => `Parse error: ${error}`
+ * const result = flatMapW(
+ *   fetchUser('123'),                      // Result<User, NetworkError>
+ *   user => validateUser(user)              // Result<ValidUser, ValidationError>
  * );
- * const result = safeJSON('{"name":"John"}');
- * // result: Ok({name: "John"})
+ * // result: Result<ValidUser, NetworkError | ValidationError>
  * ```
  *
  * @packageDocumentation
  */
 
-export * from './result.js';
-export * from './ResultChain.js';
-export * from './AsyncResultChain.js';
+// ============================================================
+// Ядро (рекомендуемый путь, safe API)
+// ============================================================
+export {
+  // Тип и конструкторы
+  type Result,
+  Ok,
+  Err,
+  // Type guards
+  isOk,
+  isErr,
+  // Трансформации (safe)
+  map,
+  flatMap,
+  flatMapW,
+  mapErr,
+  mapErrW,
+  // Recovery
+  orElseW,
+  match,
+  // Комбинаторы
+  combine,
+  // Извлечение значения (safe)
+  unwrapOr,
+  unwrapOrElse,
+  // Unsafe (для backward compatibility — предпочитайте @polymarket/result/unsafe)
+  unwrap,
+  // Хелперы для интеграции с внешним миром
+  tryCatch,
+  tryAsync,
+  fromPromise,
+  fromNullable,
+  fromThrowable,
+  // Внутренний хелпер (для advanced usage)
+  formatValue,
+} from './result.js';
+
+// ============================================================
+// OOP-адаптер (backward compatibility — предпочитайте /chain)
+// ============================================================
+export {
+  ResultChain,
+  OkChain,
+  ErrChain,
+  toChain,
+  R,
+} from './ResultChain.js';
+
+// ============================================================
+// Async-адаптер (backward compatibility — предпочитайте /async)
+// ============================================================
+export { AsyncResultChain, AsyncResult } from './AsyncResultChain.js';

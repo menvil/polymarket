@@ -1,6 +1,7 @@
 # @polymarket/result
 
-Result<T, E> тип для Railway-Oriented Programming в Polymarket trading system. Type-safe обработка ошибок без exceptions.
+Result<T, E> тип для Railway-Oriented Programming в Polymarket trading system.
+Type-safe обработка ошибок: явные типы вместо exceptions в прикладном коде.
 
 ## ✨ Ключевые особенности
 
@@ -9,7 +10,39 @@ Result<T, E> тип для Railway-Oriented Programming в Polymarket trading sy
 - ✅ **Railway-Oriented Programming** - элегантная композиция операций
 - ✅ **Функциональный подход** - immutable, composable, предсказуемо
 - ✅ **Plain objects** - легкая сериализация через JSON.stringify
+- ✅ **Три стиля API**: FP-функции / OOP-chain / Async-chain
+- ✅ **Subpath exports**: `/chain`, `/async`, `/unsafe` для чистых импортов
 - ✅ **Высокое покрытие тестами** - >90% покрытие (пороги: 85% branches, 90% functions/lines/statements)
+
+## 🛡️ Матрица гарантий API
+
+| Функция / Метод             | Бросает исключение? | Ловит exceptions из callback | Где находится     |
+|-----------------------------|---------------------|------------------------------|-------------------|
+| `Ok`, `Err`                 | Никогда             | —                            | Ядро (`result.ts`)|
+| `isOk`, `isErr`             | Никогда             | —                            | Ядро              |
+| `map`, `flatMap`, `mapErr`  | Никогда             | Нет — propagate              | Ядро              |
+| `flatMapW`, `mapErrW`       | Никогда             | Нет — propagate              | Ядро              |
+| `orElseW`, `match`          | Никогда             | Нет — propagate              | Ядро              |
+| `combine`                   | Никогда             | —                            | Ядро              |
+| `tryCatch`                  | Никогда             | **Да** → `Err`               | Ядро              |
+| `tryAsync`                  | Никогда             | **Да** → `Err`               | Ядро              |
+| `fromPromise`               | Никогда             | **Да** → `Err`               | Ядро              |
+| `fromNullable`              | Никогда             | —                            | Ядро              |
+| `fromThrowable`             | Никогда             | **Да** → `Err`               | Ядро              |
+| `unwrapOr`, `unwrapOrElse`  | Никогда             | Нет — propagate              | Ядро              |
+| `unwrap`                    | **Да** при Err      | —                            | `result.ts`, `/unsafe` |
+| `expect` (unsafe)           | **Да** при Err      | —                            | `/unsafe`         |
+| `AsyncResultChain.mapAsync` | Никогда             | **Да** → `Err`               | AsyncResultChain  |
+| `AsyncResultChain.flatMapAsync` | Никогда         | **Да** → `Err`               | AsyncResultChain  |
+| `AsyncResultChain.map`      | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
+| `AsyncResultChain.tap`      | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
+| `AsyncResultChain.tapErr`   | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
+
+> **Правило для transform-методов AsyncResultChain** (mapAsync, flatMapAsync, mapErr и др.):
+> исключения из callback превращаются в `Err`. Promise цепочки остаётся resolved.
+>
+> **Правило для side-effect методов** (tap, tapErr, match):
+> исключения из callback → rejected Promise. Это намеренно: баг в side-effect не должен маскироваться.
 
 ## 📦 Установка
 
@@ -100,7 +133,7 @@ const result = await AsyncResult.from(fetchData())
 
 ### Гибридный подход
 
-Оба стиля полностью совместимы!
+Все три стиля полностью совместимы!
 
 ```typescript
 import { Result, Ok, Err, OkChain, toChain } from '@polymarket/result';
@@ -115,11 +148,29 @@ function divide(a: number, b: number): Result<number, string> {
 const result = toChain(divide(10, 2))
   .map(x => x * 2)
   .map(x => x + 1)
-  .unwrap(); // 11
+  .unwrapOr(0); // 11 (используйте unwrapOr вместо unwrap в production-коде)
 
 // Или создаём chain и конвертируем в plain object
 const chain = OkChain(42).map(x => x * 2);
 const plain = chain.toResult(); // { ok: true, value: 84 }
+```
+
+### Subpath Imports (рекомендуется)
+
+Для явного разделения API используйте subpath imports:
+
+```typescript
+// Рекомендуемый путь: FP-ядро (safe API)
+import { Ok, Err, map, flatMap, flatMapW, tryCatch, fromPromise } from '@polymarket/result';
+
+// OOP-адаптер: method chaining
+import { OkChain, ErrChain, toChain, R } from '@polymarket/result/chain';
+
+// Async-адаптер: Promise<Result> chaining
+import { AsyncResult, AsyncResultChain } from '@polymarket/result/async';
+
+// ⚠️ Unsafe: функции которые могут бросить исключения
+import { unwrap, expect, unwrapErr } from '@polymarket/result/unsafe';
 ```
 
 ### Использование с @polymarket/errors
@@ -252,16 +303,17 @@ const failed = combine(withError);
 // failed: Err('упс')
 ```
 
-### unwrap(result)
+### unwrap(result) ⚠️ Unsafe
 
-Извлекает значение из Ok. **Небезопасно** - выбрасывает исключение если Err.
+Извлекает значение из Ok. **Небезопасно** — выбрасывает исключение если Err.
+Предпочитайте `unwrapOr`, `match` или `if (result.ok)`.
 
 ```typescript
 const result = Ok(42);
 const value = unwrap(result); // 42
 
 const error = Err('упс');
-const value = unwrap(error); // выбрасывает Error
+unwrap(error); // throws Error: 'Called unwrap on Err result: упс'
 ```
 
 ### unwrapOr(result, defaultValue)
@@ -274,6 +326,102 @@ const value = unwrapOr(result, 42); // 42
 
 const success = Ok(10);
 const value = unwrapOr(success, 42); // 10
+```
+
+### unwrapOrElse(result, fn)
+
+Извлекает значение из Ok или вычисляет fallback через функцию.
+
+```typescript
+const result = Err({ code: 404, message: 'Not found' });
+const value = unwrapOrElse(result, err => err.message); // 'Not found'
+```
+
+### match(result, { ok, err })
+
+Pattern matching — выполняет один из двух обработчиков.
+
+```typescript
+const message = match(result, {
+  ok: value => `Success: ${value}`,
+  err: error => `Error: ${error}`,
+});
+```
+
+### flatMapW(result, fn) — Widen-вариант
+
+flatMap с расширением типа ошибки. Используйте когда fn возвращает Result с другим типом ошибки.
+
+```typescript
+type FetchError = { type: 'fetch' };
+type ValidationError = { type: 'validation' };
+
+// flatMap потребовал бы одинаковый тип ошибки
+// flatMapW позволяет расширить до E | F:
+const result = flatMapW(
+  fetchUser('123'),       // Result<User, FetchError>
+  validateUser            // Result<ValidUser, ValidationError>
+);
+// result: Result<ValidUser, FetchError | ValidationError>
+```
+
+### tryCatch(fn, onError)
+
+Безопасно выполняет синхронную функцию, оборачивая исключения в Err.
+
+```typescript
+const result = tryCatch(
+  () => JSON.parse('{"name":"Ivan"}') as unknown,
+  (err) => `Parse error: ${err}`
+);
+// result: Ok({ name: 'Ivan' })
+```
+
+### tryAsync(fn, onError)
+
+Безопасно выполняет асинхронную функцию, оборачивая исключения/rejections в Err.
+
+```typescript
+const result = await tryAsync(
+  () => fetch('/api/user').then(r => r.json()),
+  (err) => ({ type: 'network', message: String(err) })
+);
+// result: Ok(user) или Err({ type: 'network', ... })
+```
+
+### fromPromise(promise, onError)
+
+Конвертирует Promise в Result, оборачивая rejections в Err.
+
+```typescript
+const result = await fromPromise(
+  fetch('/api/user').then(r => r.json()),
+  (error) => ({ type: 'network', message: String(error) })
+);
+```
+
+### fromNullable(value, error)
+
+Конвертирует nullable значение в Result.
+
+```typescript
+const user: User | null = findUser('123');
+const result = fromNullable(user, 'User not found');
+// Ok(user) или Err('User not found')
+```
+
+### fromThrowable(fn, onError)
+
+Создаёт "safe" обёртку над потенциально бросающей функцией.
+
+```typescript
+const safeParseJSON = fromThrowable(
+  (text: string) => JSON.parse(text) as unknown,
+  (err) => `Parse error: ${err}`
+);
+
+const result = safeParseJSON('{"name":"Ivan"}'); // Ok(...)
+const failed = safeParseJSON('invalid');          // Err('Parse error: ...')
 ```
 
 ## 🔗 ResultChain API (Method Chaining)
@@ -1090,6 +1238,79 @@ if (userResult.ok) {
     // ...
   }
 }
+```
+
+## 🔄 Migration Guide
+
+### Новые функции в ядре (result.ts)
+
+С версии текущего рефакторинга следующие функции переехали из `ResultChain.ts` в `result.ts`
+и стали частью FP-ядра. Они по-прежнему re-exported из `ResultChain` для обратной совместимости.
+
+```typescript
+// Раньше: import { fromPromise } from '@polymarket/result' (из ResultChain)
+// Сейчас: то же самое, но функция живёт в result.ts
+import { fromPromise, fromNullable, fromThrowable } from '@polymarket/result';
+```
+
+### Новые функции (flatMapW, match, tryCatch и др.)
+
+```typescript
+// Widen-варианты для union error types:
+import { flatMapW, mapErrW, orElseW } from '@polymarket/result';
+
+// Pattern matching:
+import { match } from '@polymarket/result';
+const message = match(result, {
+  ok: value => `Success: ${value}`,
+  err: error => `Error: ${error}`,
+});
+
+// Безопасный перехват исключений:
+import { tryCatch, tryAsync } from '@polymarket/result';
+const parsed = tryCatch(() => JSON.parse(text), err => `Parse error: ${err}`);
+
+// Безопасное извлечение с fallback-функцией:
+import { unwrapOrElse } from '@polymarket/result';
+const value = unwrapOrElse(result, err => computeDefault(err));
+```
+
+### Unsafe API (явно изолирован)
+
+```typescript
+// ⛔ Раньше (неочевидно что unwrap бросает):
+import { unwrap } from '@polymarket/result';
+
+// ✅ Сейчас (явный imports из unsafe):
+import { unwrap, expect, unwrapErr } from '@polymarket/result/unsafe';
+// или по-прежнему из основного пути (backward compat):
+import { unwrap } from '@polymarket/result';
+```
+
+### AsyncResultChain — normalizer для исключений
+
+```typescript
+// ⛔ Раньше: error as E (небезопасно без normalizer)
+const chain = AsyncResult.from(promise);
+
+// ✅ Сейчас: передайте onReject для type safety
+const chain = AsyncResult.from(
+  promise,
+  (err) => new AppError(String(err))  // явный normalizer
+);
+```
+
+### Subpath imports (рекомендуется для новых проектов)
+
+```typescript
+// ⛔ Было (всё из одного импорта):
+import { OkChain, AsyncResult, unwrap, fromPromise } from '@polymarket/result';
+
+// ✅ Стало (явное разделение по назначению):
+import { fromPromise, tryCatch } from '@polymarket/result';
+import { OkChain } from '@polymarket/result/chain';
+import { AsyncResult } from '@polymarket/result/async';
+import { unwrap } from '@polymarket/result/unsafe';
 ```
 
 ## 📄 License
