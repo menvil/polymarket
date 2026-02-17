@@ -39,8 +39,11 @@ Type-safe обработка ошибок: явные типы вместо exce
 | `AsyncResultChain.tap`      | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 | `AsyncResultChain.tapErr`   | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 
-> **Правило для transform-методов AsyncResultChain** (map, mapAsync, flatMapAsync, mapErr и др.):
-> исключения из callback превращаются в `Err`. Promise цепочки остаётся resolved.
+> **Правило для E-preserving методов** (map, mapAsync, flatMapAsync, flatMap):
+> исключения из callback → `Err(onError(e))` через chain normalizer. Promise остаётся resolved.
+>
+> **Правило для E→F методов** (mapErr, mapErrAsync, or, orAsync, orAsyncLazy, orElse, orElseAsync):
+> исключения из callback → `Err(e as F)`. Normalizer для F недоступен; E-normalizer не вызывается.
 >
 > **`mapUnsafe`** сохраняет старое поведение `map` (rejected Promise при throw).
 > Используйте, когда rejected Promise является желаемым поведением.

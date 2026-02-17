@@ -112,23 +112,25 @@ AsyncResult.ok(promise, onError: (e: unknown) => E): AsyncResultChain<T, E>
 
 **AsyncResultChain — единое правило:**
 
-| Метод                 | Бросает из callback  | Поведение              |
-|-----------------------|----------------------|------------------------|
-| `map` (sync, safe)    | Да                   | → `Err(onError(e))`    |
-| `mapAsync`            | Да                   | → `Err(onError(e))`    |
-| `flatMapAsync`        | Да                   | → `Err(onError(e))`    |
-| `flatMap` (sync)      | Да                   | → `Err(onError(e))`    |
-| `mapErrAsync`         | Да                   | → `Err(onError(e))`    |
-| `mapErr` (sync)       | Да                   | → `Err(onError(e))`    |
-| `orElseAsync`         | Да                   | → `Err(onError(e))`    |
-| `orElse` (sync)       | Да                   | → `Err(onError(e))`    |
-| `orAsyncLazy`         | Да                   | → `Err(onError(e))`    |
+| Метод                 | Бросает из callback  | Поведение              | Тип normalizer |
+|-----------------------|----------------------|------------------------|----------------|
+| `map` (sync, safe)    | Да                   | → `Err(onError(e))`    | E-normalizer   |
+| `mapAsync`            | Да                   | → `Err(onError(e))`    | E-normalizer   |
+| `flatMapAsync`        | Да                   | → `Err(onError(e))`    | E-normalizer   |
+| `flatMap` (sync)      | Да                   | → `Err(onError(e))`    | E-normalizer   |
+| `mapErrAsync`         | Да                   | → `Err(e as F)`        | best-effort cast (F-normalizer недоступен) |
+| `mapErr` (sync)       | Да                   | → `Err(e as F)`        | best-effort cast (F-normalizer недоступен) |
+| `orElseAsync`         | Да                   | → `Err(e as F)`        | best-effort cast (F-normalizer недоступен) |
+| `orElse` (sync)       | Да                   | → `Err(e as F)`        | best-effort cast (F-normalizer недоступен) |
+| `orAsyncLazy`         | Да                   | → `Err(e as F)`        | best-effort cast (F-normalizer недоступен) |
 | `mapUnsafe` (sync)    | Да                   | → rejected Promise     |
 | `tap`                 | Да                   | → rejected Promise     |
 | `tapErr`              | Да                   | → rejected Promise     |
 | `match`               | Да                   | → rejected Promise     |
 
 `map` перехватывает исключения и возвращает `Err` — **safe по умолчанию**.
+
+**E→F методы и normalizer:** Методы изменяющие тип ошибки с E на F (`mapErr`, `or`, `orElse` и др.) не имеют доступа к F-normalizer. Если их callback бросает исключение, оно возвращается как `Err(e as F)` — без нормализации. Normalizer E, установленный в цепочке, не вызывается для F.
 
 `mapUnsafe` — явно unsafe вариант: исключение → rejected Promise.
 Используйте только когда rejected Promise является желаемым поведением.

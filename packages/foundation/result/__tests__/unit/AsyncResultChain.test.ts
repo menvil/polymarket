@@ -407,7 +407,7 @@ describe('AsyncResultChain', () => {
       expect((result as Error).message).toBe('Async error transformation failed');
     });
 
-    it('должен использовать chain normalizer при throw внутри async callback', async () => {
+    it('при throw внутри async callback возвращает сырое исключение (не E-normalizer)', async () => {
       type AppError = { code: string };
       const normalizer = (e: unknown): AppError => ({ code: `NORM:${String(e)}` });
 
@@ -415,13 +415,14 @@ describe('AsyncResultChain', () => {
         Promise.resolve(Err('original') as Result<number, AppError>),
         normalizer
       )
-        .mapErrAsync(async (_err: AppError) => {
+        .mapErrAsync(async (_err: AppError): Promise<string> => {
           throw new Error('mapErrAsync threw');
         })
         .unwrapErr();
 
-      // normalizer применяется через chain — результат нормализован
-      expect((result as AppError).code).toMatch(/^NORM:/);
+      // E-normalizer НЕ вызывается для F — возвращается сырое исключение
+      expect(result).toBeInstanceOf(Error);
+      expect((result as unknown as Error).message).toBe('mapErrAsync threw');
     });
   });
 
@@ -461,7 +462,7 @@ describe('AsyncResultChain', () => {
       expect((result as Error).message).toBe('Sync error transformation failed');
     });
 
-    it('должен использовать chain normalizer при throw внутри callback', async () => {
+    it('при throw внутри callback возвращает сырое исключение (не E-normalizer)', async () => {
       type AppError = { code: string };
       const normalizer = (e: unknown): AppError => ({ code: `NORM:${String(e)}` });
 
@@ -469,30 +470,38 @@ describe('AsyncResultChain', () => {
         Promise.resolve(Err('original') as Result<number, AppError>),
         normalizer
       )
-        .mapErr((_err: AppError) => {
+        .mapErr((_err: AppError): string => {
           throw new Error('mapErr threw');
         })
         .unwrapErr();
 
-      // normalizer применяется через chain — результат нормализован
-      expect((result as AppError).code).toMatch(/^NORM:/);
+      // E-normalizer НЕ вызывается для F — возвращается сырое исключение
+      expect(result).toBeInstanceOf(Error);
+      expect((result as unknown as Error).message).toBe('mapErr threw');
     });
 
-    it('должен сохранять normalizer в последующих шагах после mapErr', async () => {
+    it('последующие шаги после mapErr используют e as F normalizer', async () => {
       type AppError = { code: string };
       const normalizer = (e: unknown): AppError => ({ code: `NORM:${String(e)}` });
+      const thrownError = new Error('map after mapErr threw');
 
+      // Начинаем с Ok, чтобы map() вызвал fn и бросил исключение.
+      // mapErr — no-op для Ok, но меняет тип нормализатора цепочки на F=string.
       const result = await AsyncResult.from(
-        Promise.resolve(Err('original') as Result<number, AppError>),
+        Promise.resolve(Ok(42) as Result<number, AppError>),
         normalizer
       )
         .mapErr((err: AppError) => err.code)
         .map((_v) => {
-          throw new Error('map after mapErr threw');
+          throw thrownError;
         })
         .toPromise();
 
       expect(result.ok).toBe(false);
+      // normalizerF после mapErr = (e) => e as F, поэтому error — сырое исключение
+      if (!result.ok) {
+        expect(result.error).toBe(thrownError);
+      }
     });
   });
 
@@ -785,9 +794,10 @@ describe('AsyncResultChain', () => {
       expect(result).toBe(42);
     });
 
-    it('должен сохранять chain normalizer для последующих шагов', async () => {
+    it('после .or() последующие шаги используют e as F normalizer (без E-normalizer)', async () => {
       type AppError = { code: string };
       const normalizer = (e: unknown): AppError => ({ code: `NORM:${String(e)}` });
+      const thrownError = new Error('after .or threw');
 
       const result = await AsyncResult.from(
         Promise.resolve(Err('original') as Result<number, AppError>),
@@ -795,13 +805,14 @@ describe('AsyncResultChain', () => {
       )
         .or(Ok(0))
         .map((_v: number) => {
-          throw new Error('after .or threw');
+          throw thrownError;
         })
         .toPromise();
 
       expect(result.ok).toBe(false);
+      // normalizerF после or() = (e) => e as F — не вызывает исходный E-normalizer
       if (!result.ok) {
-        expect((result.error as AppError).code).toMatch(/^NORM:/);
+        expect(result.error).toBe(thrownError);
       }
     });
   });
@@ -832,9 +843,10 @@ describe('AsyncResultChain', () => {
       expect(result).toBe(10);
     });
 
-    it('должен сохранять chain normalizer для последующих шагов', async () => {
+    it('после .orAsync() последующие шаги используют e as F normalizer (без E-normalizer)', async () => {
       type AppError = { code: string };
       const normalizer = (e: unknown): AppError => ({ code: `NORM:${String(e)}` });
+      const thrownError = new Error('after .orAsync threw');
 
       const result = await AsyncResult.from(
         Promise.resolve(Err('original') as Result<number, AppError>),
@@ -842,13 +854,14 @@ describe('AsyncResultChain', () => {
       )
         .orAsync(Promise.resolve(Ok(0) as Result<number, AppError>))
         .map((_v: number) => {
-          throw new Error('after .orAsync threw');
+          throw thrownError;
         })
         .toPromise();
 
       expect(result.ok).toBe(false);
+      // normalizerF после orAsync() = (e) => e as F — не вызывает исходный E-normalizer
       if (!result.ok) {
-        expect((result.error as AppError).code).toMatch(/^NORM:/);
+        expect(result.error).toBe(thrownError);
       }
     });
   });
@@ -1253,18 +1266,122 @@ describe('AsyncResultChain', () => {
         throw new Error('normalizer itself failed');
       };
 
+      const mapError = new Error('map callback threw');
       const result = await AsyncResult.ok(
         Promise.resolve(42),
         throwingNormalizer
       )
         .map((_v) => {
-          throw new Error('map callback threw');
+          throw mapError;
         })
         .toPromise();
 
       // Promise должен остаться resolved — fallback error as E
       expect(result.ok).toBe(false);
       expect(callCount).toBe(1); // normalizer был вызван (хотя и бросил)
+      // fallback: возвращается исходное исключение из callback (error as E), а не из normalizer
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(Error);
+        expect((result.error as Error).message).toBe('map callback threw');
+      }
+    });
+  });
+
+  // ============================================================
+  // E→F методы: поведение normalizer при F ≠ E
+  // Когда тип ошибки меняется (E→F), исключения из callback
+  // оборачиваются через e as F — без вызова E-normalizer.
+  // ============================================================
+  describe('E→F методы: normalizer при F ≠ E', () => {
+    type AppError = { code: string; tag: 'AppError' };
+    const mkNormalizer = () => (e: unknown): AppError => ({
+      code: `NORM:${String(e)}`,
+      tag: 'AppError',
+    });
+
+    it('mapErr: throw в callback → сырое исключение, не E-normalizer', async () => {
+      const thrown = new TypeError('mapErr cb threw');
+      const result = await AsyncResult.from(
+        Promise.resolve(Err('err') as Result<number, AppError>),
+        mkNormalizer()
+      )
+        .mapErr((_e: AppError): string => {
+          throw thrown;
+        })
+        .toPromise();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe(thrown);
+      }
+    });
+
+    it('mapErrAsync: throw в callback → сырое исключение, не E-normalizer', async () => {
+      const thrown = new TypeError('mapErrAsync cb threw');
+      const result = await AsyncResult.from(
+        Promise.resolve(Err('err') as Result<number, AppError>),
+        mkNormalizer()
+      )
+        .mapErrAsync(async (_e: AppError): Promise<string> => {
+          throw thrown;
+        })
+        .toPromise();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe(thrown);
+      }
+    });
+
+    it('orElse: throw в callback → сырое исключение, не E-normalizer', async () => {
+      const thrown = new TypeError('orElse cb threw');
+      const result = await AsyncResult.from(
+        Promise.resolve(Err({ code: 'E', tag: 'AppError' as const } as AppError) as Result<number, AppError>),
+        mkNormalizer()
+      )
+        .orElse((_e: AppError): Result<number, string> => {
+          throw thrown;
+        })
+        .toPromise();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe(thrown);
+      }
+    });
+
+    it('orElseAsync: throw в callback → сырое исключение, не E-normalizer', async () => {
+      const thrown = new TypeError('orElseAsync cb threw');
+      const result = await AsyncResult.from(
+        Promise.resolve(Err({ code: 'E', tag: 'AppError' as const } as AppError) as Result<number, AppError>),
+        mkNormalizer()
+      )
+        .orElseAsync(async (_e: AppError): Promise<Result<number, string>> => {
+          throw thrown;
+        })
+        .toPromise();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe(thrown);
+      }
+    });
+
+    it('orAsyncLazy: throw в factory → сырое исключение, не E-normalizer', async () => {
+      const thrown = new TypeError('orAsyncLazy factory threw');
+      const result = await AsyncResult.from(
+        Promise.resolve(Err({ code: 'E', tag: 'AppError' as const } as AppError) as Result<number, AppError>),
+        mkNormalizer()
+      )
+        .orAsyncLazy((): Promise<Result<number, string>> => {
+          throw thrown;
+        })
+        .toPromise();
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBe(thrown);
+      }
     });
   });
 });
