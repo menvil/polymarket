@@ -246,16 +246,24 @@ export function indexToOutcomeKey(index: number): OutcomeKey | undefined {
  * @returns true если ключи идентичны
  *
  * @remarks
- * Простое строковое сравнение, так как OutcomeKey это branded string.
+ * Семантический хелпер для сравнения OutcomeKey.
+ * Реализован через строгое равенство (`===`), так как OutcomeKey — branded string
+ * с canonical форматом (parse уже нормализует ввод).
+ *
+ * Функция намеренно сохранена как часть публичного API вместо замены на прямое `===`,
+ * чтобы:
+ * - Поддерживать семантическое единообразие с другими equals-функциями в пакете
+ *   (walletAddressEquals, currencyEquals, conditionRefEquals)
+ * - Служить точкой расширения, если в будущем понадобится нормализация
+ *   (например, case-insensitive сравнение для кастомных ключей)
  *
  * @example
  * ```typescript
  * outcomeKeyEquals(BinaryOutcome.UP, BinaryOutcome.UP); // → true
  * outcomeKeyEquals(BinaryOutcome.UP, BinaryOutcome.DOWN); // → false
  *
- * const customKey1 = unsafeOutcomeKey('TEAM_A');
- * const customKey2 = unsafeOutcomeKey('TEAM_A');
- * outcomeKeyEquals(customKey1, customKey2); // → true
+ * const key = parseOutcomeKey('TEAM_A')!;
+ * outcomeKeyEquals(key, key); // → true
  * ```
  */
 export function outcomeKeyEquals(a: OutcomeKey, b: OutcomeKey): boolean {

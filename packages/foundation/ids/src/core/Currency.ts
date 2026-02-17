@@ -107,25 +107,31 @@ export const KnownCurrencies = Object.freeze(
  * Нормализация currency code (uppercase, trimmed)
  *
  * @param code - Currency code для нормализации
- * @returns Нормализованный currency code
+ * @returns Нормализованный currency code, или undefined если входное значение не строка или пустое
  *
  * @remarks
  * Приводит currency code к каноническому формату:
  * - Убирает пробелы в начале и конце
  * - Переводит в uppercase
+ * - Возвращает undefined для не-строк и пустых/пробельных строк
  *
- * Используется для case-insensitive сравнения и валидации user input.
+ * Поведение согласовано с asSupportedCurrency и currencyEquals:
+ * все три функции возвращают «нет результата» для невалидного ввода
+ * вместо выброса исключения.
  *
  * @example
  * ```typescript
  * normalizeCurrency('usdc'); // → 'USDC'
  * normalizeCurrency(' USDC '); // → 'USDC'
  * normalizeCurrency('UsD c'); // → 'USD C'
+ * normalizeCurrency(''); // → undefined
+ * normalizeCurrency(42); // → undefined
  * ```
  */
-export function normalizeCurrency(code: string): string {
-  if (typeof code !== 'string') throw new TypeError('normalizeCurrency expects a string');
-  return code.trim().toUpperCase();
+export function normalizeCurrency(code: unknown): string | undefined {
+  if (typeof code !== 'string') return undefined;
+  const normalized = code.trim().toUpperCase();
+  return normalized.length > 0 ? normalized : undefined;
 }
 
 /**
@@ -158,7 +164,7 @@ export function asSupportedCurrency(code: string): SupportedCurrency | undefined
   }
 
   const normalized = normalizeCurrency(code);
-  if (isSupportedCurrency(normalized)) {
+  if (normalized && isSupportedCurrency(normalized)) {
     return normalized;
   }
   return undefined;
@@ -183,8 +189,9 @@ export function asSupportedCurrency(code: string): SupportedCurrency | undefined
  * ```
  */
 export function currencyEquals(a: string, b: string): boolean {
-  // Защита от non-string runtime-ввода через as any: normalizeCurrency вызывает .trim(),
-  // что бросает TypeError для не-строк
   if (typeof a !== 'string' || typeof b !== 'string') return false;
-  return normalizeCurrency(a) === normalizeCurrency(b);
+  const normalizedA = normalizeCurrency(a);
+  const normalizedB = normalizeCurrency(b);
+  if (!normalizedA || !normalizedB) return false;
+  return normalizedA === normalizedB;
 }

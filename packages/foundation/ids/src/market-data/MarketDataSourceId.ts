@@ -126,7 +126,7 @@ const SOURCE_META: Readonly<Record<keyof typeof KnownMarketDataSources, SourceMe
     isLive: true,
     type: 'rpc',
   },
-} as const;
+};
 
 /**
  * Set известных market data sources для быстрой проверки
@@ -151,7 +151,7 @@ const KNOWN_SOURCE_SET = new Set<string>(Object.values(KnownMarketDataSources));
  * isKnownMarketDataSource('CUSTOM_SOURCE'); // → false (неизвестный source)
  * ```
  */
-export function isKnownMarketDataSource(id: string): id is MarketDataSourceId {
+export function isKnownMarketDataSource(id: unknown): id is MarketDataSourceId {
   if (typeof id !== 'string') return false;
   return KNOWN_SOURCE_SET.has(id);
 }

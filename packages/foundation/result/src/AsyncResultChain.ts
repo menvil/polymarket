@@ -290,7 +290,7 @@ export class AsyncResultChain<T, E> {
    */
   mapErrAsync<F>(fn: (error: E) => Promise<F>): AsyncResultChain<T, F> {
     // Normalizer для F недоступен: используем e as F (честный cast без вызова E-normalizer).
-    const normalizerF = (e: unknown): F => e as unknown as F;
+    const normalizerF = (e: unknown): F => e as F;
     const newPromise = this.promise.then(async (result) => {
       if (!result.ok) {
         try {
@@ -324,7 +324,7 @@ export class AsyncResultChain<T, E> {
    */
   mapErr<F>(fn: (error: E) => F): AsyncResultChain<T, F> {
     // Normalizer для F недоступен: используем e as F (честный cast без вызова E-normalizer).
-    const normalizerF = (e: unknown): F => e as unknown as F;
+    const normalizerF = (e: unknown): F => e as F;
     const newPromise = this.promise.then((result) => {
       if (!result.ok) {
         try {
@@ -616,7 +616,7 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   or<F>(other: Result<T, F>): AsyncResultChain<T, F> {
-    const normalizerF = (e: unknown): F => e as unknown as F;
+    const normalizerF = (e: unknown): F => e as F;
     const newPromise = this.promise.then((result) => {
       if (result.ok) {
         return result as Result<T, F>;
@@ -643,7 +643,7 @@ export class AsyncResultChain<T, E> {
     // Предотвращаем unhandledRejection когда берётся ветка Ok (short-circuit),
     // и other никогда не awaiting-ся.
     void other.catch(() => {});
-    const normalizerF = (e: unknown): F => e as unknown as F;
+    const normalizerF = (e: unknown): F => e as F;
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
         return result as Result<T, F>;
@@ -680,7 +680,7 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   orAsyncLazy<F>(fn: () => Promise<Result<T, F>>): AsyncResultChain<T, F> {
-    const normalizer = (e: unknown): F => e as unknown as F;
+    const normalizer = (e: unknown): F => e as F;
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
         return result as Result<T, F>;
@@ -715,7 +715,7 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   orElseAsync<F>(fn: (error: E) => Promise<Result<T, F>>): AsyncResultChain<T, F> {
-    const normalizer = (e: unknown): F => e as unknown as F;
+    const normalizer = (e: unknown): F => e as F;
     const newPromise = this.promise.then(async (result) => {
       if (result.ok) {
         return result as Result<T, F>;
@@ -750,7 +750,7 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   orElse<F>(fn: (error: E) => Result<T, F>): AsyncResultChain<T, F> {
-    const normalizer = (e: unknown): F => e as unknown as F;
+    const normalizer = (e: unknown): F => e as F;
     const newPromise = this.promise.then((result) => {
       if (result.ok) {
         return result as Result<T, F>;

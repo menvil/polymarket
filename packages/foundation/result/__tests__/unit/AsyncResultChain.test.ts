@@ -1243,7 +1243,7 @@ describe('AsyncResultChain', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) expect(result.error).toBe('first error');
-        await Promise.resolve();
+        await new Promise<void>((r) => setTimeout(r, 0));
         expect(handler).not.toHaveBeenCalled();
       } finally {
         process.off('unhandledRejection', handler);

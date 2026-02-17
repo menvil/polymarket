@@ -134,6 +134,7 @@ import {
   BinaryOutcome,
   AssetIdHelpers,
   KnownChainIds,
+  KnownOnChainProtocols,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
@@ -328,6 +329,7 @@ import {
   type ConditionId,
   KnownVenues,
   KnownChainIds,
+  KnownOnChainProtocols,
   AssetIdHelpers,
   BinaryOutcome,
 } from '@polymarket/ids';
@@ -354,7 +356,7 @@ const polymarketCondition: ConditionRef = {
 // Kalshi - off-chain (discriminated union с kind: 'OFFCHAIN')
 const kalshiCondition: ConditionRef = {
   kind: 'OFFCHAIN',
-  venueId: 'KALSHI',
+  venueId: KnownVenues.KALSHI,
   marketId: 'KXBTCUSDM-24APR',
 };
 

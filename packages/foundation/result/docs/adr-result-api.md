@@ -137,9 +137,9 @@ AsyncResult.ok(promise, onError: (e: unknown) => E): AsyncResultChain<T, E>
 | `orElseAsync`         | Да                   | → `Err(e as F)`        | best-effort cast (F-normalizer недоступен) |
 | `orElse` (sync)       | Да                   | → `Err(e as F)`        | best-effort cast (F-normalizer недоступен) |
 | `orAsyncLazy`         | Да                   | → `Err(e as F)`        | best-effort cast (F-normalizer недоступен) |
-| `mapUnsafe` (sync)    | Да                   | → rejected Promise     |
-| `tap`                 | Да                   | → rejected Promise     |
-| `tapErr`              | Да                   | → rejected Promise     |
+| `mapUnsafe` (sync)    | Да                   | → rejected Promise     | —              |
+| `tap`                 | Да                   | → rejected Promise     | —              |
+| `tapErr`              | Да                   | → rejected Promise     | —              |
 | `match`               | Да                   | → rejected Promise (wrapped) |
 
 `map` перехватывает исключения и возвращает `Err` — **safe по умолчанию**.
@@ -185,7 +185,7 @@ Root-экспорт содержит только safe операции. Это 
 ### 6. Обратная совместимость
 
 Начиная с 0.1.0 `unwrap` перемещён из root в `/unsafe` субпуть.
-Это breaking change для кода импортирующего `unwrap` из `@polymarket/result`.
+Это breaking change для кода, импортирующего `unwrap` из `@polymarket/result`.
 Обновление: заменить `from '@polymarket/result'` на `from '@polymarket/result/unsafe'`.
 
 ---

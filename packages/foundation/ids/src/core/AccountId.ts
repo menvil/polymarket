@@ -673,10 +673,10 @@ function parseAccountIdImpl(
       return undefined;
     }
 
-    return {
+    return Object.freeze({
       kind: 'WALLET',
       address: validatedAddress,
-    };
+    });
   }
 
   if (kind === 'venue') {
@@ -697,11 +697,11 @@ function parseAccountIdImpl(
       return undefined;
     }
 
-    return {
+    return Object.freeze({
       kind: 'VENUE',
       venueId,
       userId,
-    };
+    });
   }
 
   if (kind === 'sub') {
@@ -736,11 +736,11 @@ function parseAccountIdImpl(
       return undefined;
     }
 
-    return {
+    return Object.freeze({
       kind: 'SUBACCOUNT',
       base,
       name,
-    };
+    });
   }
 
   return undefined;
