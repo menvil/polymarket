@@ -73,6 +73,11 @@ export function isValidWalletAddressFormat(address: string): boolean {
  * ```
  */
 export function parseWalletAddress(address: string): WalletAddress | undefined {
+  // Защита от non-string runtime-ввода через as any
+  if (typeof address !== 'string') {
+    return undefined;
+  }
+
   // Нормализуем до lowercase перед валидацией: isValidWalletAddressFormat принимает только lowercase
   const lower = address.toLowerCase();
   if (!isValidWalletAddressFormat(lower)) {

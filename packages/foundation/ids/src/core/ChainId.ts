@@ -132,6 +132,11 @@ export function chainId(n: number): ChainId | undefined {
  * ```
  */
 export function parseChainId(str: string): ChainId | undefined {
+  // Защита от non-string runtime-ввода через as any — regex коэрсит числа, что нарушает контракт
+  if (typeof str !== 'string') {
+    return undefined;
+  }
+
   // Проверка формата: только цифры
   if (!/^\d+$/.test(str)) {
     return undefined;

@@ -91,7 +91,7 @@ const MAX_OUTCOME_KEY_LENGTH = 32;
  * Используй эту функцию при парсинге данных из внешних источников
  * (API, сериализация, пользовательский ввод).
  *
- * Для создания известных ключей используй константы BinaryOutcome или outcomeKey().
+ * Для создания известных ключей используй константы BinaryOutcome или unsafeOutcomeKey().
  *
  * @example
  * ```typescript
@@ -193,7 +193,7 @@ export const BinaryOutcome = {
  * ```typescript
  * outcomeKeyToIndex(BinaryOutcome.UP); // → 1
  * outcomeKeyToIndex(BinaryOutcome.DOWN); // → 0
- * outcomeKeyToIndex(outcomeKey('UNKNOWN')); // → undefined
+ * outcomeKeyToIndex(unsafeOutcomeKey('UNKNOWN')); // → undefined
  * ```
  */
 export function outcomeKeyToIndex(key: OutcomeKey): number | undefined {
@@ -245,8 +245,8 @@ export function indexToOutcomeKey(index: number): OutcomeKey | undefined {
  * outcomeKeyEquals(BinaryOutcome.UP, BinaryOutcome.UP); // → true
  * outcomeKeyEquals(BinaryOutcome.UP, BinaryOutcome.DOWN); // → false
  *
- * const customKey1 = outcomeKey('TEAM_A');
- * const customKey2 = outcomeKey('TEAM_A');
+ * const customKey1 = unsafeOutcomeKey('TEAM_A');
+ * const customKey2 = unsafeOutcomeKey('TEAM_A');
  * outcomeKeyEquals(customKey1, customKey2); // → true
  * ```
  */

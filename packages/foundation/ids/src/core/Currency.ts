@@ -151,6 +151,11 @@ export function normalizeCurrency(code: string): string {
  * ```
  */
 export function asSupportedCurrency(code: string): SupportedCurrency | undefined {
+  // Защита от non-string runtime-ввода через as any
+  if (typeof code !== 'string') {
+    return undefined;
+  }
+
   const normalized = normalizeCurrency(code);
   if (isSupportedCurrency(normalized)) {
     return normalized;

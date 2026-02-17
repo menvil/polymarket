@@ -166,6 +166,14 @@ describe('Execution IDs', () => {
       expect(asOrderId('order.789')).toBe('order.789');
       expect(asOrderId('order@venue')).toBe('order@venue');
     });
+
+    it('should return undefined for non-string input (not throw)', () => {
+      // Защита от as any через validateBrandedId — не должен вызывать null.trim()
+      expect(asOrderId(null as any)).toBeUndefined();
+      expect(asOrderId(undefined as any)).toBeUndefined();
+      expect(asOrderId(0 as any)).toBeUndefined();
+      expect(asOrderId({} as any)).toBeUndefined();
+    });
   });
 
   describe('FillId', () => {
@@ -208,6 +216,14 @@ describe('Execution IDs', () => {
       expect(asFillId('fill_456')).toBe('fill_456');
       expect(asFillId('fill.789')).toBe('fill.789');
       expect(asFillId('fill@venue')).toBe('fill@venue');
+    });
+
+    it('should return undefined for non-string input (not throw)', () => {
+      // Защита от as any через validateBrandedId — не должен вызывать null.trim()
+      expect(asFillId(null as any)).toBeUndefined();
+      expect(asFillId(undefined as any)).toBeUndefined();
+      expect(asFillId(0 as any)).toBeUndefined();
+      expect(asFillId({} as any)).toBeUndefined();
     });
   });
 });

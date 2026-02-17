@@ -1480,6 +1480,14 @@ describe('Core IDs', () => {
       expect(asSupportedCurrency('btc')).toBeUndefined();
     });
 
+    it('should return undefined for non-string input (not throw)', () => {
+      // Защита от as any — не должен вызывать null.trim()
+      expect(asSupportedCurrency(null as any)).toBeUndefined();
+      expect(asSupportedCurrency(undefined as any)).toBeUndefined();
+      expect(asSupportedCurrency(0 as any)).toBeUndefined();
+      expect(asSupportedCurrency({} as any)).toBeUndefined();
+    });
+
     it('should compare currency codes case-insensitively', () => {
       expect(currencyEquals('USDC', 'usdc')).toBe(true);
       expect(currencyEquals('USDC', 'USDC')).toBe(true);
@@ -1589,6 +1597,14 @@ describe('Core IDs', () => {
       it('should reject special values', () => {
         expect(parseChainId('NaN')).toBeUndefined();
         expect(parseChainId('Infinity')).toBeUndefined();
+      });
+
+      it('should return undefined for non-string input (not throw)', () => {
+        // Защита от as any: regex коэрсирует числа в строку, что нарушает parser-контракт
+        expect(parseChainId(137 as any)).toBeUndefined(); // без guard: 137 → '137' → valid!
+        expect(parseChainId(null as any)).toBeUndefined();
+        expect(parseChainId(undefined as any)).toBeUndefined();
+        expect(parseChainId({} as any)).toBeUndefined();
       });
     });
 
@@ -1723,6 +1739,14 @@ describe('Core IDs', () => {
       expect(parseWalletAddress('0x123')).toBeUndefined(); // too short
       expect(parseWalletAddress('5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')).toBeUndefined(); // no 0x
       expect(parseWalletAddress('0xINVALID0000000000000000000000000000000')).toBeUndefined(); // invalid hex
+    });
+
+    it('should return undefined for non-string input (not throw)', () => {
+      // Защита от as any runtime-ввода — не должен вызывать null.toLowerCase()
+      expect(parseWalletAddress(null as any)).toBeUndefined();
+      expect(parseWalletAddress(undefined as any)).toBeUndefined();
+      expect(parseWalletAddress(42 as any)).toBeUndefined();
+      expect(parseWalletAddress({} as any)).toBeUndefined();
     });
 
     it('should compare addresses case-insensitively', () => {
@@ -2314,43 +2338,47 @@ describe('Core IDs', () => {
         }
       });
 
-      it('should handle corrupted SUBACCOUNT with base: null without throwing', () => {
-        // Corrupted AccountId: base = null (нарушение типа через as any)
-        // Узел сам имеет kind='SUBACCOUNT' (depth=1), затем base=null — null-guard останавливает цикл
+      it('should return > MAX_SUBACCOUNT_DEPTH for corrupted SUBACCOUNT with base: null', () => {
+        // Инвариант цепочки: SUBACCOUNT.base должен завершиться на WALLET или VENUE.
+        // null-base нарушает инвариант — getSubaccountDepth возвращает MAX+1 (как corrupted chain)
         const corrupted = { kind: 'SUBACCOUNT' as const, base: null, name: 'broken' } as any as AccountId;
-        // Не должен бросать, должен завершиться корректно
         const depth = getSubaccountDepth(corrupted);
         expect(typeof depth).toBe('number');
-        expect(depth).toBe(1); // сам узел — SUBACCOUNT (depth=1), null-base останавливает цикл
+        expect(depth).toBeGreaterThan(5); // цепочка не заканчивается на WALLET/VENUE → MAX+1
       });
 
-      it('should handle corrupted SUBACCOUNT with base: undefined without throwing', () => {
-        // Corrupted AccountId: base = undefined (нарушение типа через as any)
-        // Узел сам имеет kind='SUBACCOUNT' (depth=1), затем base=undefined — undefined-guard останавливает цикл
+      it('should return > MAX_SUBACCOUNT_DEPTH for corrupted SUBACCOUNT with base: undefined', () => {
+        // undefined-base нарушает инвариант — chain не завершается на валидном корне
         const corrupted = { kind: 'SUBACCOUNT' as const, base: undefined, name: 'broken' } as any as AccountId;
         const depth = getSubaccountDepth(corrupted);
         expect(typeof depth).toBe('number');
-        expect(depth).toBe(1); // сам узел — SUBACCOUNT (depth=1), undefined-base останавливает цикл
+        expect(depth).toBeGreaterThan(5); // chain не заканчивается на WALLET/VENUE → MAX+1
       });
 
-      it('should handle corrupted SUBACCOUNT with base: plain object without throwing', () => {
-        // Corrupted AccountId: base = {} (объект без kind)
-        // Узел сам имеет kind='SUBACCOUNT' (depth=1), затем base={} без kind — цикл останавливается
+      it('should return > MAX_SUBACCOUNT_DEPTH for corrupted SUBACCOUNT with base: plain object', () => {
+        // {} без known kind — chain не завершается на WALLET/VENUE
         const corrupted = { kind: 'SUBACCOUNT' as const, base: {}, name: 'broken' } as any as AccountId;
         const depth = getSubaccountDepth(corrupted);
         expect(typeof depth).toBe('number');
-        expect(depth).toBe(1); // сам узел — SUBACCOUNT (depth=1), {}.kind != 'SUBACCOUNT' останавливает цикл
+        expect(depth).toBeGreaterThan(5); // {}.kind !== 'WALLET'/'VENUE' → MAX+1
       });
 
-      it('should return Ok for accountIdForSubaccount with corrupted base: null (depth=1 < MAX)', () => {
-        // corrupted имеет depth=1 (узел — SUBACCOUNT, null-base останавливает цикл)
-        // depth 1 < MAX_SUBACCOUNT_DEPTH (5) → accountIdForSubaccount должен вернуть Ok
+      it('should return Err(AccountIdDepthError) for accountIdForSubaccount with corrupted base: null', () => {
+        // getSubaccountDepth(corrupted) → MAX+1 → accountIdForSubaccount возвращает Err
         const corrupted = { kind: 'SUBACCOUNT' as const, base: null, name: 'broken' } as any as AccountId;
         const result = accountIdForSubaccount(corrupted, 'child');
-        expect(result.ok).toBe(true); // depth=1 не превышает лимит
-        if (result.ok) {
-          expect(result.value.kind).toBe('SUBACCOUNT');
-          expect((result.value as Extract<AccountId, { kind: 'SUBACCOUNT' }>).name).toBe('child');
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AccountIdDepthError);
+        }
+      });
+
+      it('should return Err(AccountIdDepthError) for accountIdForSubaccount with null as any base', () => {
+        // null напрямую как base — chain не начинается с объекта → MAX+1
+        const result = accountIdForSubaccount(null as any, 'child');
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeInstanceOf(AccountIdDepthError);
         }
       });
     });

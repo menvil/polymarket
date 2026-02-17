@@ -265,6 +265,18 @@ export function getSubaccountDepth(id: AccountId): number {
     current = node.base;
   }
 
+  // Инвариант: цепочка должна завершиться на WALLET или VENUE-узле.
+  // Если current — не объект или его kind неизвестен (null/undefined/{}), цепочка повреждена.
+  const terminal = current as { kind?: unknown } | null | undefined;
+  if (
+    terminal === null ||
+    terminal === undefined ||
+    typeof terminal !== 'object' ||
+    (terminal.kind !== 'WALLET' && terminal.kind !== 'VENUE')
+  ) {
+    return MAX_SUBACCOUNT_DEPTH + 1;
+  }
+
   return depth;
 }
 

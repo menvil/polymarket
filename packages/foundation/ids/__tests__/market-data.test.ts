@@ -199,5 +199,13 @@ describe('Market Data IDs', () => {
       expect(asInstrumentId('BTC-USD-PERP')).toBe('BTC-USD-PERP');
       expect(asInstrumentId('Market:123')).toBe('Market:123');
     });
+
+    it('should return undefined for non-string input (not throw)', () => {
+      // Защита от as any через validateBrandedId — не должен вызывать null.trim()
+      expect(asInstrumentId(null as any)).toBeUndefined();
+      expect(asInstrumentId(undefined as any)).toBeUndefined();
+      expect(asInstrumentId(0 as any)).toBeUndefined();
+      expect(asInstrumentId({} as any)).toBeUndefined();
+    });
   });
 });

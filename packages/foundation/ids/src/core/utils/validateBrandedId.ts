@@ -39,6 +39,11 @@ export function validateBrandedId(raw: string, maxLength: number): string | unde
     return undefined;
   }
 
+  // Guard against non-string runtime-ввода через as any (null, undefined, number, object)
+  if (typeof raw !== 'string') {
+    return undefined;
+  }
+
   // Trim whitespace
   const trimmed = raw.trim();
 
