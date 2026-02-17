@@ -55,8 +55,9 @@ export function sanitizeContext(
 ): Record<string, unknown> {
   const sanitized: Record<string, unknown> = {};
 
-  // Используем Object.keys() + bracket notation вместо Object.entries()
-  // чтобы избежать вызова геттеров, которые могут бросать исключения
+  // Используем Object.keys() для итерации по ключам; значения читаем через bracket notation
+  // в отдельном try/catch — если геттер бросит исключение, ошибка изолируется на уровне
+  // одного поля и не прерывает обработку остальных
   try {
     const keys = Object.keys(context);
     for (const key of keys) {
@@ -72,7 +73,7 @@ export function sanitizeContext(
       // Убираем console.warn - не нарушаем log-level фильтр
       // Если нужно логировать попытки override, это должен делать caller
     }
-  } catch (error) {
+  } catch {
     // Object.keys может упасть на Proxy или экзотичном объекте
     // Возвращаем пустой объект - fail-safe
     return {};

@@ -2,7 +2,7 @@
  * Тесты для NoOpLogger
  */
 
-import { describe, it, expect, jest } from '@jest/globals';
+import { describe, it, expect, jest, beforeEach } from '@jest/globals';
 import { NoOpLogger } from '../../src/NoOpLogger.js';
 import type { ILogger } from '../../src/ILogger.js';
 
@@ -20,10 +20,12 @@ describe('NoOpLogger', () => {
 
     it('должен реализовывать интерфейс ILogger', () => {
       const iLogger: ILogger = logger;
+      expect(iLogger.trace).toBeDefined();
       expect(iLogger.debug).toBeDefined();
       expect(iLogger.info).toBeDefined();
       expect(iLogger.warn).toBeDefined();
       expect(iLogger.error).toBeDefined();
+      expect(iLogger.fatal).toBeDefined();
     });
   });
 
@@ -212,7 +214,7 @@ describe('NoOpLogger', () => {
       expect(result).toBe('done');
     });
 
-    it('должен быть взаимозаменяемым с ConsoleLogger', () => {
+    it('должен соответствовать интерфейсу ILogger', () => {
       interface Config {
         logger: ILogger;
       }

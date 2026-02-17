@@ -436,7 +436,11 @@ export class ColorConsoleLogger implements ILogger {
     // Bindings (от child logger) - sanitized
     if (Object.keys(sanitizedBindings).length > 0) {
       const bindingsStr = Object.entries(sanitizedBindings)
-        .map(([key, value]) => `${key}=${value}`)
+        .map(([key, value]) =>
+          typeof value === 'object' && value !== null
+            ? `${key}=${safeStringify(value as Record<string, unknown>)}`
+            : `${key}=${value}`
+        )
         .join(' ');
 
       if (this.useColors) {
@@ -501,7 +505,9 @@ export class ColorConsoleLogger implements ILogger {
     // Если есть вложенный error object (от error/fatal методов)
     if (context.error && typeof context.error === 'object') {
       const err = context.error as { message?: string; stack?: string };
-      const errorStr = `error: "${err.message}", stack: "${err.stack?.split('\n')[0]}"`;
+      const stackLines = err.stack?.split('\n');
+      const stackFrame = stackLines && stackLines.length > 1 ? stackLines[1] : err.message;
+      const errorStr = `error: "${err.message}", stack: "${stackFrame?.trim()}"`;
       const otherContext = { ...context };
       delete otherContext.error;
 

@@ -7,8 +7,6 @@ node_modules/
 dist/
 build/
 *.tsbuildinfo
-tsconfig.tsbuildinfo
-tsconfig.build.tsbuildinfo
 
 # Testing
 coverage/
@@ -20,7 +18,6 @@ coverage/
 *.swp
 *.swo
 *~
-.DS_Store
 
 # Logs
 logs/
@@ -44,4 +41,5 @@ lerna-debug.log*
 .cache/
 
 # OS
+.DS_Store
 Thumbs.db
