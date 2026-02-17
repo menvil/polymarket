@@ -82,7 +82,7 @@ try {
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidRatioError } from '@polymarket/errors';
+import { InvalidRatioError, DivisionByZeroError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 class Ratio {
@@ -116,7 +116,6 @@ class Ratio {
         new DivisionByZeroError(
           (ctx) => `Cannot create ratio: denominator is zero`,
           {
-            code: DivisionByZeroError.code,
             context: {
               numerator: numerator.toString(),
               denominator: '0',
@@ -310,7 +309,6 @@ class Ratio {
         new ArithmeticOverflowError(
           (ctx) => `Ratio multiplication resulted in overflow: ${ctx.a} * ${ctx.b}`,
           {
-            code: ArithmeticOverflowError.code,
             context: {
               operation: 'multiply',
               a: this.value.toString(),
@@ -331,7 +329,6 @@ class Ratio {
         new DivisionByZeroError(
           (ctx) => `Cannot divide ratio by zero`,
           {
-            code: DivisionByZeroError.code,
             context: {
               dividend: this.value.toString(),
               divisor: '0',
@@ -349,7 +346,6 @@ class Ratio {
         new ArithmeticOverflowError(
           (ctx) => `Ratio division resulted in overflow: ${ctx.a} / ${ctx.b}`,
           {
-            code: ArithmeticOverflowError.code,
             context: {
               operation: 'divide',
               a: this.value.toString(),
@@ -370,7 +366,6 @@ class Ratio {
         new DivisionByZeroError(
           (ctx) => `Cannot invert zero ratio`,
           {
-            code: DivisionByZeroError.code,
             context: {
               value: '0',
               operation: 'Ratio.invert'
@@ -386,8 +381,15 @@ class Ratio {
 }
 
 // Использование
-const ratio1 = Ratio.create(new Decimal('2')).value;
-const ratio2 = Ratio.create(new Decimal('3')).value;
+const ratio1Result = Ratio.create(new Decimal('2'));
+const ratio2Result = Ratio.create(new Decimal('3'));
+
+if (!ratio1Result.ok || !ratio2Result.ok) {
+  throw new Error('Failed to create ratios');
+}
+
+const ratio1 = ratio1Result.value;
+const ratio2 = ratio2Result.value;
 
 const product = ratio1.multiply(ratio2);
 // ✅ Ok (6)
@@ -398,7 +400,12 @@ const quotient = ratio1.divide(ratio2);
 const inverted = ratio1.invert();
 // ✅ Ok (0.5)
 
-const zeroRatio = Ratio.create(new Decimal('0')).value;
+const zeroRatioResult = Ratio.create(new Decimal('0'));
+if (!zeroRatioResult.ok) {
+  throw new Error('Failed to create zero ratio');
+}
+
+const zeroRatio = zeroRatioResult.value;
 const invertZero = zeroRatio.invert();
 // ❌ Err (DivisionByZeroError)
 ```
@@ -466,11 +473,11 @@ class MarginRatio extends Ratio {
   }
 
   isHealthy(): boolean {
-    return this.value.greaterThanOrEqualTo(MarginRatio.MIN_MARGIN_RATIO);
+    return this.getValue().greaterThanOrEqualTo(MarginRatio.MIN_MARGIN_RATIO);
   }
 
   isLiquidatable(): boolean {
-    return this.value.lessThanOrEqualTo(MarginRatio.LIQUIDATION_RATIO);
+    return this.getValue().lessThanOrEqualTo(MarginRatio.LIQUIDATION_RATIO);
   }
 
   getHealthLevel(): 'healthy' | 'warning' | 'critical' {
@@ -531,7 +538,12 @@ Ratio.fromFraction(new Decimal('10'), new Decimal('0'));
 // ❌ Err (DivisionByZeroError)
 
 // Инверсия нулевого ratio
-const zero = Ratio.create(new Decimal('0')).value;
+const zeroResult = Ratio.create(new Decimal('0'));
+if (!zeroResult.ok) {
+  throw new Error('Failed to create zero ratio');
+}
+
+const zero = zeroResult.value;
 zero.invert();
 // ❌ Err (DivisionByZeroError)
 ```

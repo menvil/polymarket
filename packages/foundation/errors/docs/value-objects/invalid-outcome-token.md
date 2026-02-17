@@ -248,7 +248,10 @@ const outOfRange = OutcomeToken.createMulti(conditionRef, 10, 5);
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidOutcomeTokenError } from '@polymarket/errors';
+import { InvalidOutcomeTokenError, InvalidConditionRefError } from '@polymarket/errors';
+
+// Предполагаем наличие ConditionRef value object
+// import { ConditionRef } from './ConditionRef';
 
 interface TokenMintedEvent {
   conditionId: string;

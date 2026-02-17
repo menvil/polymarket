@@ -48,7 +48,6 @@ class Quantity {
       throw new InvalidQuantityError(
         (ctx) => `Invalid quantity ${ctx.value}: must be positive`,
         {
-          code: InvalidQuantityError.code,
           context: { value, min: 0 }
         }
       );
@@ -82,7 +81,6 @@ class Quantity {
         new InvalidQuantityError(
           (ctx) => `Invalid quantity: ${ctx.reason}`,
           {
-            code: InvalidQuantityError.code,
             context: { value, reason: 'not a finite number' }
           }
         )
@@ -94,7 +92,6 @@ class Quantity {
         new InvalidQuantityError(
           (ctx) => `Quantity ${ctx.value} must be positive (min: ${ctx.min})`,
           {
-            code: InvalidQuantityError.code,
             context: { value, min: 0 }
           }
         )
@@ -131,7 +128,6 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
       new InvalidQuantityError(
         'Quantity must be a valid number',
         {
-          code: InvalidQuantityError.code,
           context: { value, reason: 'NaN' }
         }
       )
@@ -143,7 +139,6 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
       new InvalidQuantityError(
         'Quantity cannot be infinite',
         {
-          code: InvalidQuantityError.code,
           context: { value, reason: 'Infinity' }
         }
       )
@@ -155,7 +150,6 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
       new InvalidQuantityError(
         'Quantity cannot be negative',
         {
-          code: InvalidQuantityError.code,
           context: { value, min: 0, reason: 'negative' }
         }
       )
@@ -167,7 +161,6 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
       new InvalidQuantityError(
         (ctx) => `Quantity must be at least ${ctx.min}`,
         {
-          code: InvalidQuantityError.code,
           context: { value: 0, min }
         }
       )
@@ -179,7 +172,6 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
       new InvalidQuantityError(
         (ctx) => `Quantity ${ctx.value} is below minimum ${ctx.min}`,
         {
-          code: InvalidQuantityError.code,
           context: { value, min }
         }
       )
@@ -253,7 +245,6 @@ class Quantity {
         new InvalidQuantityError(
           (ctx) => `Invalid quantity: ${ctx.reason}`,
           {
-            code: InvalidQuantityError.code,
             context: { value: value.toString(), reason: 'not finite' }
           }
         )
@@ -265,7 +256,6 @@ class Quantity {
         new InvalidQuantityError(
           (ctx) => `Quantity ${ctx.value} must be positive`,
           {
-            code: InvalidQuantityError.code,
             context: { value: value.toNumber(), min: 0 }
           }
         )
@@ -283,7 +273,6 @@ class Quantity {
         new InvalidQuantityError(
           (ctx) => `Invalid quantity format: ${ctx.value}`,
           {
-            code: InvalidQuantityError.code,
             context: { value, error: String(error) }
           }
         )
@@ -299,7 +288,6 @@ class Quantity {
         new InvalidQuantityError(
           (ctx) => `Invalid quantity format: "${ctx.value}"`,
           {
-            code: InvalidQuantityError.code,
             context: { value, error: String(error) }
           }
         )
@@ -379,10 +367,15 @@ const qty1 = Quantity.fromNumber(0.1 + 0.2); // 0.30000000000000004
 // Использование decimal.js решает эту проблему
 const qty2Result = Quantity.fromString('0.1');
 const qty3Result = Quantity.fromString('0.2');
-if (qty2Result.ok && qty3Result.ok) {
-  const sum = qty2Result.value.toDecimal().plus(qty3Result.value.toDecimal());
-  Quantity.fromDecimal(sum); // ✅ Точно 0.3
+
+if (!qty2Result.ok || !qty3Result.ok) {
+  throw new Error('Failed to create quantities');
 }
+
+const qty2 = qty2Result.value;
+const qty3 = qty3Result.value;
+const sum = qty2.toDecimal().plus(qty3.toDecimal());
+Quantity.fromDecimal(sum); // ✅ Точно 0.3
 ```
 
 ### Валидация с минимальным значением
@@ -401,7 +394,6 @@ class Quantity {
         new InvalidQuantityError(
           (ctx) => `Quantity ${ctx.value} must be >= ${ctx.min}`,
           {
-            code: InvalidQuantityError.code,
             context: { value, min }
           }
         )

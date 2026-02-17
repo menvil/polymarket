@@ -512,18 +512,28 @@ Money.fromAmount(100, undefined as any); // ❌ Err(InvalidMoneyError)
 
 ```typescript
 // Проблемы с float
-const m1 = Money.fromNumber(0.1, 'USDC');
-const m2 = Money.fromNumber(0.2, 'USDC');
-if (m1.ok && m2.ok) {
-  const sum1 = m1.value.add(m2.value); // 0.30000000000000004 (float precision)
+const m1Result = Money.fromNumber(0.1, 'USDC');
+const m2Result = Money.fromNumber(0.2, 'USDC');
+
+if (!m1Result.ok || !m2Result.ok) {
+  throw new Error('Failed to create money from number');
 }
 
+const m1 = m1Result.value;
+const m2 = m2Result.value;
+const sum1 = m1.add(m2); // 0.30000000000000004 (float precision)
+
 // Решение с decimal.js
-const m3 = Money.fromString('0.1', 'USDC');
-const m4 = Money.fromString('0.2', 'USDC');
-if (m3.ok && m4.ok) {
-  const sum2 = m3.value.add(m4.value); // Точно 0.3 ✅
+const m3Result = Money.fromString('0.1', 'USDC');
+const m4Result = Money.fromString('0.2', 'USDC');
+
+if (!m3Result.ok || !m4Result.ok) {
+  throw new Error('Failed to create money from string');
 }
+
+const m3 = m3Result.value;
+const m4 = m4Result.value;
+const sum2 = m3.add(m4); // Точно 0.3 ✅
 ```
 
 ### Операции приводящие к ошибкам
