@@ -397,6 +397,10 @@ npm run test:coverage
 │   │   ├── InvalidDivisorError.ts    # Ошибка деления на NaN/Infinity
 │   │   ├── InvalidTickSizeError.ts   # Ошибка невалидного tick size
 │   │   └── index.ts
+│   ├── ids/
+│   │   ├── AccountIdDepthError.ts    # Превышение лимита вложенности субаккаунта
+│   │   ├── AccountIdValidationError.ts # Невалидный userId или имя субаккаунта
+│   │   └── index.ts
 │   ├── value-objects/
 │   │   ├── InvalidPriceError.ts      # Ошибки валидации value objects
 │   │   ├── InvalidQuantityError.ts
@@ -409,6 +413,7 @@ npm run test:coverage
 │   ├── error-handling.md             # Best practices обработки
 │   ├── error-utilities.md            # Документация по error utilities
 │   ├── math/                         # Документация math ошибок
+│   ├── ids/                          # Документация ID ошибок
 │   └── value-objects/                # Документация value objects ошибок
 ├── __tests__/
 │   ├── helpers/
@@ -507,6 +512,7 @@ npm run typecheck
 - [Error Handling Utilities](./error-utilities.md) - Документация по утилитам обработки ошибок
 - [Value Objects Errors](./value-objects/README.md) - Документация по ошибкам value objects
 - [Math Errors](./math/README.md) - Документация по математическим ошибкам
+- [ID Errors](./ids/README.md) - Документация по ошибкам идентификаторов
 
 ## 📄 License
 

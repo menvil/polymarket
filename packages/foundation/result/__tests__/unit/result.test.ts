@@ -13,10 +13,10 @@ import {
   flatMap,
   mapErr,
   combine,
-  unwrap,
   unwrapOr,
   formatValue,
 } from '../../src/result';
+import { unwrap } from '../../src/unsafe';
 
 describe('Result<T, E>', () => {
   describe('Ok constructor', () => {
@@ -521,6 +521,82 @@ describe('Result<T, E>', () => {
 
       const result = formatValue(circular);
       expect(result).toBe('{"a":1,"self":"[Circular]"}');
+    });
+
+    it('должен форматировать Map с количеством entries', () => {
+      const map = new Map([
+        ['key1', 'value1'],
+        ['key2', 'value2'],
+      ]);
+
+      expect(formatValue(map)).toBe('Map(2 entries)');
+
+      const emptyMap = new Map();
+      expect(formatValue(emptyMap)).toBe('Map(0 entries)');
+    });
+
+    it('должен форматировать Set с количеством items', () => {
+      const set = new Set([1, 2, 3, 4]);
+
+      expect(formatValue(set)).toBe('Set(4 items)');
+
+      const emptySet = new Set();
+      expect(formatValue(emptySet)).toBe('Set(0 items)');
+    });
+
+    it('должен форматировать RegExp с pattern и flags', () => {
+      const regex1 = /test/gi;
+      expect(formatValue(regex1)).toBe('/test/gi');
+
+      const regex2 = /^hello$/;
+      expect(formatValue(regex2)).toBe('/^hello$/');
+
+      const regex3 = new RegExp('pattern', 'im');
+      expect(formatValue(regex3)).toBe('/pattern/im');
+    });
+
+    it('должен форматировать объекты с Symbol.toStringTag', () => {
+      class CustomType {
+        get [Symbol.toStringTag]() {
+          return 'CustomType';
+        }
+      }
+
+      const instance = new CustomType();
+      expect(formatValue(instance)).toBe('[CustomType]');
+    });
+
+    it('должен использовать String() fallback для unstringifiable объектов', () => {
+      const unstringifiable = {
+        toJSON() {
+          throw new Error('Cannot stringify');
+        },
+      };
+
+      const result = formatValue(unstringifiable);
+      expect(result).toBe('[object Object]');
+    });
+
+    it('должен форматировать функцию без имени как [Function]', () => {
+      // Создаём функцию и удаляем её имя, установив в пустую строку
+      const func = function () {};
+      Object.defineProperty(func, 'name', { value: '' });
+
+      const result = formatValue(func);
+      expect(result).toBe('[Function]');
+    });
+
+    it('должен использовать String() fallback когда toJSON возвращает undefined', () => {
+      // Реальный edge case: JSON.stringify возвращает undefined когда toJSON возвращает undefined
+      const objWithUndefinedToJSON = {
+        value: 42,
+        toJSON() {
+          return undefined;
+        },
+      };
+
+      const result = formatValue(objWithUndefinedToJSON);
+      expect(result).toBe('[object Object]');
     });
   });
 });

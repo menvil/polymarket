@@ -9,6 +9,18 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./chain": {
+      "types": "./dist/chain.d.ts",
+      "import": "./dist/chain.js"
+    },
+    "./async": {
+      "types": "./dist/async.d.ts",
+      "import": "./dist/async.js"
+    },
+    "./unsafe": {
+      "types": "./dist/unsafe.d.ts",
+      "import": "./dist/unsafe.js"
     }
   },
   "files": [
@@ -16,9 +28,9 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "tsc -p tsconfig.build.json && node scripts/fix-esm-imports.mjs",
     "build:watch": "tsc -p tsconfig.build.json --watch",
-    "test": "jest",
+    "test": "npm run typecheck:tests && jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "lint": "eslint src --ext .ts",
@@ -30,7 +42,10 @@
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
-    "clean": "rm -rf dist"
+    "ci": "npm run typecheck:all && npm test",
+    "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"README.md\"",
+    "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"README.md\"",
+    "clean": "rm -rf dist *.tsbuildinfo"
   },
   "keywords": [
     "types",
