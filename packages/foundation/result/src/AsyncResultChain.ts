@@ -224,18 +224,19 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   mapErrAsync<F>(fn: (error: E) => Promise<F>): AsyncResultChain<T, F> {
+    const normalizer = this.onError as unknown as (error: unknown) => F;
     const newPromise = this.promise.then(async (result) => {
       if (!result.ok) {
         try {
           const newError = await fn(result.error);
           return Err(newError) as Result<T, F>;
         } catch (error) {
-          return Err(error as F) as Result<T, F>;
+          return Err(normalizer(error)) as Result<T, F>;
         }
       }
       return result as Result<T, F>;
     });
-    return new AsyncResultChain<T, F>(newPromise);
+    return new AsyncResultChain<T, F>(newPromise, normalizer);
   }
 
   /**
@@ -255,17 +256,18 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   mapErr<F>(fn: (error: E) => F): AsyncResultChain<T, F> {
+    const normalizer = this.onError as unknown as (error: unknown) => F;
     const newPromise = this.promise.then((result) => {
       if (!result.ok) {
         try {
           return Err(fn(result.error)) as Result<T, F>;
         } catch (error) {
-          return Err(error as F) as Result<T, F>;
+          return Err(normalizer(error)) as Result<T, F>;
         }
       }
       return result as Result<T, F>;
     });
-    return new AsyncResultChain<T, F>(newPromise);
+    return new AsyncResultChain<T, F>(newPromise, normalizer);
   }
 
   /**

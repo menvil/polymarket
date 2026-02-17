@@ -91,12 +91,18 @@ for (const filePath of jsFiles) {
 
       const resolved = resolve(fileDir, importPath);
 
+      // Приоритет: сначала проверяем наличие foo.js (файл),
+      // только если его нет — проверяем foo/ (директория → index.js)
+      if (existsSync(resolved + '.js')) {
+        return `from '${importPath}.js'`;
+      }
+
       let isDirectory = false;
       try {
         const s = statSync(resolved);
         isDirectory = s.isDirectory();
       } catch {
-        // Файл не найден без расширения — значит это файл, добавляем .js
+        // Не нашли ни файл, ни директорию — добавляем .js
         isDirectory = false;
       }
 

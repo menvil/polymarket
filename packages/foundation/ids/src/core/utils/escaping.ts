@@ -25,10 +25,10 @@
  *
  * @example
  * ```typescript
- * escape('A:B');      // → 'A\\:B'
- * escape('A\\B');     // → 'A\\\\B'
- * escape('A\\:B');    // → 'A\\\\\\:B'
- * escape('normal');   // → 'normal'
+ * escapeId('A:B');      // → 'A\\:B'
+ * escapeId('A\\B');     // → 'A\\\\B'
+ * escapeId('A\\:B');    // → 'A\\\\\\:B'
+ * escapeId('normal');   // → 'normal'
  * ```
  */
 export function escapeId(str: string): string {
@@ -49,10 +49,10 @@ export function escapeId(str: string): string {
  *
  * @example
  * ```typescript
- * unescape('A\\:B');        // → 'A:B'
- * unescape('A\\\\B');       // → 'A\B'
- * unescape('A\\\\\\:B');    // → 'A\:B'
- * unescape('normal');       // → 'normal'
+ * unescapeId('A\\:B');        // → 'A:B'
+ * unescapeId('A\\\\B');       // → 'A\B'
+ * unescapeId('A\\\\\\:B');    // → 'A\:B'
+ * unescapeId('normal');       // → 'normal'
  * ```
  */
 export function unescapeId(str: string): string {

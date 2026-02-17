@@ -27,36 +27,7 @@
 
 import { Result, formatValue } from './result.js';
 
-/**
- * Извлекает значение из Ok — бросает исключение если Result содержит ошибку
- *
- * @param result - Result для извлечения значения
- * @returns Значение если ok = true
- * @throws {Error} С описанием ошибки если ok = false
- *
- * @remarks
- * ⚠️ НЕБЕЗОПАСНО — бросает `Error` если result содержит ошибку.
- * Используйте только когда логически невозможно получить Err в данном месте.
- *
- * **Безопасные альтернативы:** `unwrapOr`, `unwrapOrElse`, `match`, if/else.
- *
- * @example
- * ```typescript
- * // В тестах:
- * const result = Ok(42);
- * const value = unwrap(result); // 42
- *
- * // В продакшен коде предпочитайте:
- * const value = unwrapOr(result, 0);
- * ```
- */
-export const unwrap = <T, E>(result: Result<T, E>): T => {
-  if (!result.ok) {
-    const errorInfo = formatValue(result.error);
-    throw new Error(`Called unwrap on Err result: ${errorInfo}`);
-  }
-  return result.value;
-};
+export { unwrap } from './result.js';
 
 /**
  * Извлекает значение из Ok с кастомным сообщением ошибки

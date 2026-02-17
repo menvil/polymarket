@@ -70,7 +70,7 @@ if (isSupportedCurrency(input)) {
 
 // On-chain example (Polymarket)
 // parseConditionId validates the 32-byte hex format and returns a branded ConditionId
-const conditionId = parseConditionId('0x4869df2f6745f3c59c91af1c9d6dc75a5282a3d');
+const conditionId = parseConditionId('0x4869df2f6745f3c59c91af1c9d6dc75a5282a3d6a15b7c8e9f2d1a3b4c5e6f7a');
 const onChainRef: ConditionRef = {
   kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',

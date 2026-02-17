@@ -311,10 +311,13 @@ if (kalshiQuote.ask < polymarketQuote.bid) {
 import {
   type AssetId,
   type ConditionRef,
+  type OnChainConditionRef,
+  type ConditionId,
   AssetIdHelpers,
   isCurrencyAsset,
   isOutcomeTokenAsset,
   BinaryOutcome,
+  KnownChainIds,
   assetIdToString,
 } from '@polymarket/ids';
 
