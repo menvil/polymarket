@@ -5,6 +5,8 @@ import {
   InvalidRoundingModeError,
   InvalidTickSizeError,
   ArithmeticOverflowError,
+  InvalidDivisorError,
+  DivisionByZeroError,
 } from '@polymarket/errors';
 
 /**
@@ -31,6 +33,29 @@ export const MAX_ROUNDING_MODE = 8;
 export interface MathOperationContext {
   operation: string;
   [key: string]: unknown;
+}
+
+/**
+ * Минимальный контракт Decimal-подобного объекта
+ *
+ * @remarks
+ * Используется для duck-typing при проверке операндов.
+ * Позволяет работать с разными копиями decimal.js (кросс-контекстная совместимость).
+ */
+export interface DecimalLike {
+  isFinite(): boolean;
+  toString(): string;
+  toNumber(): number;
+}
+
+/**
+ * Контракт делителя — расширяет DecimalLike методом isZero
+ *
+ * @remarks
+ * Необходим для assertNonZeroDivisor, чтобы безопасно проверить b === 0.
+ */
+export interface DivisorLike extends DecimalLike {
+  isZero(): boolean;
 }
 
 /**
@@ -87,7 +112,7 @@ export type ErrorConstructor<TError> = new (
  * Проверяет, является ли значение Decimal-подобным объектом
  *
  * @param value - Значение для проверки
- * @returns true если объект имеет необходимые методы Decimal
+ * @returns true если объект соответствует контракту DecimalLike
  *
  * @remarks
  * Использует комбинированный подход:
@@ -103,13 +128,11 @@ export type ErrorConstructor<TError> = new (
  * ```typescript
  * // Работает с любой копией Decimal
  * const d1 = new Decimal('1.5');  // копия A
- * const d2 = new OtherDecimal('2.5');  // копия B (другой контекст)
  * isDecimalLike(d1); // true (fast path - instanceof)
- * isDecimalLike(d2); // true (duck-typing fallback)
  * isDecimalLike(null); // false
  * ```
  */
-function isDecimalLike(value: unknown): value is Decimal {
+function isDecimalLike(value: unknown): value is DecimalLike {
   // Fast path: instanceof для стандартного случая
   if (value instanceof Decimal) {
     return true;
@@ -131,31 +154,35 @@ function isDecimalLike(value: unknown): value is Decimal {
 /**
  * Проверяет, что значение является конечным числом (generic версия)
  *
- * @param value - Decimal значение для проверки
+ * @param value - Значение для проверки (принимает unknown для runtime валидации)
  * @param paramName - Имя параметра для сообщения об ошибке
  * @param context - Контекст операции
  * @param ErrorCtor - Конструктор ошибки для создания исключения
- * @throws {TError} Если значение не конечно
+ * @throws {TError} Если значение не является Decimal-like или не конечно
  *
  * @remarks
  * Generic функция позволяет использовать разные типы ошибок для одной и той же валидации.
- * Например, для обычных операндов - InvalidOperandError, для делителя - InvalidDivisorError.
+ * Принимает unknown и суживает тип до DecimalLike через type assertion.
+ *
+ * Порядок проверок:
+ * 1. isDecimalLike — проверяет duck-typing (isFinite, toString, toNumber)
+ * 2. isFinite() — проверяет конечность значения
  *
  * @example
  * ```typescript
  * // Валидация обычного операнда
  * assertFiniteOperandWith(a, 'a', context, InvalidOperandError);
  *
- * // Валидация делителя
+ * // Валидация делителя с другим типом ошибки
  * assertFiniteOperandWith(b, 'b', context, InvalidDivisorError);
  * ```
  */
 export function assertFiniteOperandWith<TError>(
-  value: Decimal,
+  value: unknown,
   paramName: string,
   context: MathOperationContext,
   ErrorCtor: ErrorConstructor<TError>
-): void {
+): asserts value is DecimalLike {
   // Проверка на undefined/null и Decimal-подобный объект (duck-typing)
   if (!isDecimalLike(value)) {
     throw new ErrorCtor(
@@ -187,14 +214,13 @@ export function assertFiniteOperandWith<TError>(
 /**
  * Проверяет, что значение является конечным числом
  *
- * @param value - Decimal значение для проверки
+ * @param value - Значение для проверки
  * @param paramName - Имя параметра для сообщения об ошибке
  * @param context - Контекст операции
- * @throws {InvalidOperandError} Если значение не конечно
+ * @throws {InvalidOperandError} Если значение не является Decimal-like или не конечно
  *
  * @remarks
- * Используется для валидации всех входных операндов математических операций.
- * Обёртка над assertFiniteOperandWith с InvalidOperandError.
+ * Обёртка над assertFiniteOperandWith с фиксированным типом ошибки InvalidOperandError.
  *
  * @example
  * ```typescript
@@ -202,10 +228,10 @@ export function assertFiniteOperandWith<TError>(
  * ```
  */
 export function assertFiniteOperand(
-  value: Decimal,
+  value: unknown,
   paramName: string,
   context: MathOperationContext
-): void {
+): asserts value is DecimalLike {
   assertFiniteOperandWith(value, paramName, context, InvalidOperandError);
 }
 
@@ -215,20 +241,22 @@ export function assertFiniteOperand(
  * @param a - Первый операнд
  * @param b - Второй операнд
  * @param context - Контекст операции
- * @throws {InvalidOperandError} Если любой из операндов не конечен
+ * @throws {InvalidOperandError} Если любой из операндов не является Decimal-like или не конечен
  *
  * @remarks
  * Удобная функция для бинарных операций (add, subtract, multiply, divide, etc).
- * Формирует a/b из реальных параметров, не доверяя внешнему context.
+ * Формирует fullContext с a/b из реальных значений, не доверяя внешнему context.
+ * Переиспользует assertFiniteOperandWith для обоих операндов — нет дублирования логики.
  *
  * @example
  * ```typescript
- * assertFiniteOperands(a, b, { operation: 'add' });
+ * const context = { operation: 'add', a: toStringSafe(a), b: toStringSafe(b) };
+ * assertFiniteOperands(a, b, context);
  * ```
  */
 export function assertFiniteOperands(
-  a: Decimal,
-  b: Decimal,
+  a: unknown,
+  b: unknown,
   context: MathOperationContext
 ): void {
   // Формируем a/b из реальных параметров, не доверяя context
@@ -238,34 +266,80 @@ export function assertFiniteOperands(
     b: toStringSafe(b),
   };
 
-  // Проверка на undefined/null перед вызовом методов
-  if (!a || typeof a.isFinite !== 'function') {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'a' must be a valid Decimal, got ${ctx.a}`,
-      { context: fullContext }
+  assertFiniteOperandWith(a, 'a', fullContext, InvalidOperandError);
+  assertFiniteOperandWith(b, 'b', fullContext, InvalidOperandError);
+}
+
+/**
+ * Проверяет, что делитель является конечным ненулевым числом
+ *
+ * @param divisor - Делитель для проверки (принимает unknown для runtime валидации)
+ * @param context - Контекст операции
+ * @throws {InvalidDivisorError} Если делитель не является Decimal-like, не конечен или не имеет isZero
+ * @throws {DivisionByZeroError} Если делитель равен нулю
+ *
+ * @remarks
+ * Централизует все проверки делителя, исключая их дублирование в операциях деления.
+ *
+ * Порядок проверок:
+ * 1. assertFiniteOperandWith — проверяет duck-typing и конечность (с InvalidDivisorError)
+ * 2. Проверка наличия метода isZero (duck-typing для DivisorLike контракта)
+ * 3. isZero() === true → DivisionByZeroError
+ *
+ * @example
+ * ```typescript
+ * const context = { operation: 'divide', a: toStringSafe(a), b: toStringSafe(b) };
+ * assertNonZeroDivisor(b, context);
+ * // После вызова b гарантированно является DivisorLike (конечный, ненулевой)
+ * ```
+ */
+export function assertNonZeroDivisor(
+  divisor: unknown,
+  context: MathOperationContext
+): asserts divisor is DivisorLike {
+  // 1. Проверяем что делитель — конечный Decimal-like объект
+  assertFiniteOperandWith(divisor, 'b', context, InvalidDivisorError);
+
+  // 2. Проверяем наличие isZero — специфично для делителя
+  const obj = divisor as unknown as Record<string, unknown>;
+  if (typeof obj.isZero !== 'function') {
+    throw new InvalidDivisorError(
+      (ctx) => `Operand 'b' (divisor) must have isZero method, got ${ctx.b}`,
+      { context }
     );
   }
 
-  if (!b || typeof b.isFinite !== 'function') {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'b' must be a valid Decimal, got ${ctx.b}`,
-      { context: fullContext }
+  // 3. Проверяем что делитель не равен нулю
+  if ((divisor as DivisorLike).isZero()) {
+    throw new DivisionByZeroError(
+      (ctx) => `Cannot divide by zero (operand 'b' is ${ctx.b})`,
+      { context }
     );
   }
+}
 
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'a' must be finite, got ${ctx.a}`,
-      { context: fullContext }
-    );
-  }
-
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'b' must be finite, got ${ctx.b}`,
-      { context: fullContext }
-    );
-  }
+/**
+ * Создаёт контекст операции с добавленным результатом
+ *
+ * @param context - Базовый контекст операции
+ * @param result - Результат операции (любой тип, сериализуется через toStringSafe)
+ * @returns Новый контекст с полем result
+ *
+ * @remarks
+ * Удобный helper для единообразного добавления result к контексту перед assertFiniteResult.
+ * Исключает ручное { ...context, result: result.toString() } во всех операциях.
+ *
+ * @example
+ * ```typescript
+ * const result = a.plus(b);
+ * assertFiniteResult(result, withResult(context, result));
+ * ```
+ */
+export function withResult(
+  context: MathOperationContext,
+  result: unknown
+): MathOperationContext {
+  return { ...context, result: toStringSafe(result) };
 }
 
 /**
@@ -380,6 +454,7 @@ export function assertValidRoundingMode(
  *
  * @remarks
  * Проверяет:
+ * - Наличие методов Decimal-like (duck-typing)
  * - Конечность (isFinite)
  * - Строго положительное значение (> 0, не включая 0)
  *
@@ -432,21 +507,17 @@ export function assertValidTickSize(
  * Проверяет, что результат операции конечен
  *
  * @param result - Результат операции
- * @param context - Контекст операции
+ * @param context - Контекст операции (должен содержать result для сообщения об ошибке)
  * @throws {ArithmeticOverflowError} Если результат не конечен
  *
  * @remarks
  * Используется для проверки результатов всех арифметических операций.
+ * Контекст формируется через withResult() для единообразия.
  *
  * @example
  * ```typescript
  * const result = a.plus(b);
- * assertFiniteResult(result, {
- *   operation: 'add',
- *   a: a.toString(),
- *   b: b.toString(),
- *   result: result.toString()
- * });
+ * assertFiniteResult(result, withResult(context, result));
  * ```
  */
 export function assertFiniteResult(

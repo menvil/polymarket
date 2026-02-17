@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { assertFiniteOperands, assertFiniteResult, toStringSafe } from '../shared/index.js';
+import { assertFiniteOperands, assertFiniteResult, withResult, toStringSafe } from '../shared/index.js';
 
 /**
  * Умножает два Decimal значения
@@ -33,24 +33,17 @@ import { assertFiniteOperands, assertFiniteResult, toStringSafe } from '../share
  * ```
  */
 export function multiplyDecimal(a: Decimal, b: Decimal): Decimal {
-  // Создаём context (assertFiniteOperands добавит a/b автоматически)
   const context = {
-    operation: 'multiply',
-  };
-
-  // Валидация операндов (формирует a/b внутри)
-  assertFiniteOperands(a, b, context);
-
-  // Выполняем умножение
-  const result = a.times(b);
-
-  // Проверка результата
-  assertFiniteResult(result, {
     operation: 'multiply',
     a: toStringSafe(a),
     b: toStringSafe(b),
-    result: toStringSafe(result),
-  });
+  };
+
+  assertFiniteOperands(a, b, context);
+
+  const result = a.times(b);
+
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }

@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { assertFiniteOperands, assertFiniteResult, toStringSafe } from '../shared/index.js';
+import { assertFiniteOperands, assertFiniteResult, withResult, toStringSafe } from '../shared/index.js';
 import { MATH_CONSTANTS } from '../constants.js';
 
 /**
@@ -47,25 +47,18 @@ import { MATH_CONSTANTS } from '../constants.js';
  * ```
  */
 export function averageDecimal(a: Decimal, b: Decimal): Decimal {
-  // Создаём context (assertFiniteOperands добавит a/b автоматически)
   const context = {
-    operation: 'average',
-  };
-
-  // Валидация операндов (формирует a/b внутри)
-  assertFiniteOperands(a, b, context);
-
-  // Выполняем операцию
-  const sum = a.plus(b);
-  const result = sum.dividedBy(MATH_CONSTANTS.TWO);
-
-  // Проверка результата
-  assertFiniteResult(result, {
     operation: 'average',
     a: toStringSafe(a),
     b: toStringSafe(b),
-    result: toStringSafe(result),
-  });
+  };
+
+  assertFiniteOperands(a, b, context);
+
+  const sum = a.plus(b);
+  const result = sum.dividedBy(MATH_CONSTANTS.TWO);
+
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }

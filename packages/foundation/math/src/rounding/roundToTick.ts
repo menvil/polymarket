@@ -4,6 +4,7 @@ import {
   assertValidTickSize,
   assertValidRoundingMode,
   assertFiniteResult,
+  withResult,
   toStringSafe,
 } from '../shared/index.js';
 
@@ -86,7 +87,7 @@ export function roundToTick(
   const result = rounded.times(tickSize);
 
   // Проверка результата
-  assertFiniteResult(result, { ...context, result: result.toString() });
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }

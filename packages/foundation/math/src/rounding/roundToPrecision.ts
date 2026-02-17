@@ -4,6 +4,7 @@ import {
   assertValidDecimalPlaces,
   assertValidRoundingMode,
   assertFiniteResult,
+  withResult,
   toStringSafe,
 } from '../shared/index.js';
 
@@ -93,7 +94,7 @@ export function roundToPrecision(
   const result = value.toDecimalPlaces(decimalPlaces, roundingMode);
 
   // Проверка результата (единообразие с остальными операциями)
-  assertFiniteResult(result, { ...context, result: result.toString() });
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }

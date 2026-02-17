@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { assertFiniteOperands, assertFiniteResult, toStringSafe } from '../shared/index.js';
+import { assertFiniteOperands, assertFiniteResult, withResult, toStringSafe } from '../shared/index.js';
 
 /**
  * Вычитает одно Decimal значение из другого
@@ -30,24 +30,17 @@ import { assertFiniteOperands, assertFiniteResult, toStringSafe } from '../share
  * ```
  */
 export function subtractDecimal(a: Decimal, b: Decimal): Decimal {
-  // Создаём context (assertFiniteOperands добавит a/b автоматически)
   const context = {
-    operation: 'subtract',
-  };
-
-  // Валидация операндов (формирует a/b внутри)
-  assertFiniteOperands(a, b, context);
-
-  // Выполняем вычитание
-  const result = a.minus(b);
-
-  // Проверка результата
-  assertFiniteResult(result, {
     operation: 'subtract',
     a: toStringSafe(a),
     b: toStringSafe(b),
-    result: toStringSafe(result),
-  });
+  };
+
+  assertFiniteOperands(a, b, context);
+
+  const result = a.minus(b);
+
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }

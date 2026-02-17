@@ -1,10 +1,12 @@
 import Decimal from 'decimal.js';
+import { InvalidOperandError } from '@polymarket/errors';
 import {
-  DivisionByZeroError,
-  InvalidDivisorError,
-  InvalidOperandError,
-} from '@polymarket/errors';
-import { assertFiniteResult, assertFiniteOperandWith, toStringSafe } from '../shared/index.js';
+  assertFiniteResult,
+  assertFiniteOperandWith,
+  assertNonZeroDivisor,
+  withResult,
+  toStringSafe,
+} from '../shared/index.js';
 
 /**
  * Делит одно Decimal значение на другое
@@ -13,7 +15,7 @@ import { assertFiniteResult, assertFiniteOperandWith, toStringSafe } from '../sh
  * @param b - Делитель (divisor)
  * @returns Частное a / b
  * @throws {InvalidOperandError} Если делимое не конечное число (NaN/Infinity)
- * @throws {InvalidDivisorError} Если делитель не конечное число (NaN/Infinity)
+ * @throws {InvalidDivisorError} Если делитель не конечное число (NaN/Infinity) или не имеет isZero
  * @throws {DivisionByZeroError} Если делитель равен нулю
  * @throws {ArithmeticOverflowError} Если результат не конечное число
  *
@@ -49,7 +51,6 @@ import { assertFiniteResult, assertFiniteOperandWith, toStringSafe } from '../sh
  * divideDecimal(new Decimal(10), new Decimal(0)); // throws DivisionByZeroError
  *
  * // Throw на overflow (при превышении Decimal.maxE)
- * // Примечание: Decimal.maxE = 9e15, поэтому 1e308 / 1e-308 = 1e616 это finite
  * const huge = new Decimal('1e9000000000000000');
  * const tiny = new Decimal('1e-100');
  * divideDecimal(huge, tiny); // throws ArithmeticOverflowError
@@ -66,31 +67,14 @@ export function divideDecimal(a: Decimal, b: Decimal): Decimal {
   // Проверка делимого через unified assertion (InvalidOperandError)
   assertFiniteOperandWith(a, 'a', context, InvalidOperandError);
 
-  // Проверка делителя через unified assertion (InvalidDivisorError)
-  assertFiniteOperandWith(b, 'b', context, InvalidDivisorError);
-
-  // Проверка на ноль (специфично для деления)
-  // Defensive: проверяем наличие метода isZero перед вызовом
-  const divisor = b as unknown as Record<string, unknown>;
-  if (typeof divisor.isZero !== 'function') {
-    throw new InvalidDivisorError(
-      (ctx) => `Operand 'b' (divisor) must have isZero method, got ${ctx.b}`,
-      { context }
-    );
-  }
-
-  if (b.isZero()) {
-    throw new DivisionByZeroError(
-      (ctx) => `Cannot divide by zero (operand 'b' is ${ctx.b})`,
-      { context }
-    );
-  }
+  // Проверка делителя: конечность + наличие isZero + не ноль
+  assertNonZeroDivisor(b, context);
 
   // Выполняем деление
   const result = a.div(b);
 
   // Проверка результата
-  assertFiniteResult(result, { ...context, result: result.toString() });
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }
