@@ -932,7 +932,14 @@ export const AsyncResult = {
     const guardedNormalizer: ((error: unknown) => E) | undefined = onReject
       ? (error: unknown): E => {
           if (normalizerBroken) return error as E;
-          return onReject(error);
+          try {
+            return onReject(error);
+          } catch {
+            // onReject бросил при вызове из chain normalizer — помечаем как сломанный,
+            // чтобы последующие вызовы коротко замкнулись, не логируя повторно через normalize().
+            normalizerBroken = true;
+            return error as E;
+          }
         }
       : undefined;
 
@@ -1005,7 +1012,14 @@ export const AsyncResult = {
     const guardedNormalizer: ((error: unknown) => E) | undefined = onError
       ? (error: unknown): E => {
           if (normalizerBroken) return error as E;
-          return onError(error);
+          try {
+            return onError(error);
+          } catch {
+            // onError бросил при вызове из chain normalizer — помечаем как сломанный,
+            // чтобы последующие вызовы коротко замкнулись, не логируя повторно через normalize().
+            normalizerBroken = true;
+            return error as E;
+          }
         }
       : undefined;
     const mapError = guardedNormalizer ?? ((error) => error as E);
