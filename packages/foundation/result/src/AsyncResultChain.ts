@@ -137,7 +137,7 @@ export class AsyncResultChain<T, E> {
       }
       return result as Result<U, E>;
     });
-    return new AsyncResultChain(newPromise, this.onError);
+    return this.chain(newPromise);
   }
 
   /**
@@ -169,7 +169,7 @@ export class AsyncResultChain<T, E> {
       }
       return result as Result<U, E>;
     });
-    return new AsyncResultChain(newPromise, this.onError);
+    return this.chain(newPromise);
   }
 
   /**
@@ -199,7 +199,7 @@ export class AsyncResultChain<T, E> {
       }
       return result as Result<U, E>;
     });
-    return new AsyncResultChain(newPromise, this.onError);
+    return this.chain(newPromise);
   }
 
   /**
@@ -556,7 +556,7 @@ export class AsyncResultChain<T, E> {
    * ```
    */
   and<U, F>(other: Result<U, F>): AsyncResultChain<U, E | F> {
-    const normalizer = this.onError as unknown as (error: unknown) => E | F;
+    const normalizer = (e: unknown): E | F => this.normalize(e);
     const newPromise = this.promise.then((result) => {
       if (result.ok) {
         return other as Result<U, E | F>;

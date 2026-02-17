@@ -43,7 +43,7 @@ Type-safe обработка ошибок: явные типы вместо exce
 > исключения из callback превращаются в `Err`. Promise цепочки остаётся resolved.
 >
 > **`mapUnsafe`** сохраняет старое поведение `map` (rejected Promise при throw).
-> Используйте когда rejected Promise является желаемым поведением.
+> Используйте, когда rejected Promise является желаемым поведением.
 >
 > **Правило для side-effect методов** (tap, tapErr, match):
 > исключения из callback → rejected Promise. Это намеренно: баг в side-effect не должен маскироваться.

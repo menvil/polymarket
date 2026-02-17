@@ -507,15 +507,7 @@ if (tokenResult.ok) {
 Источник маркет-данных - **ОТКУДА мы ЧИТАЕМ данные**.
 
 ```typescript
-type MarketDataSourceId =
-  | 'POLYMARKET_WS'
-  | 'POLYMARKET_REST'
-  | 'POLYMARKET_REPLAY'
-  | 'KALSHI_WS'
-  | 'KALSHI_REST'
-  | 'KALSHI_REPLAY'
-  | 'POLYGON_RPC'
-  | (string & { readonly __brand: 'MarketDataSourceId' });
+type MarketDataSourceId = string & { readonly __brand: 'MarketDataSourceId' };
 ```
 
 **Константы**:
@@ -602,11 +594,8 @@ const quote = {
 Площадка для исполнения - **КУДА мы ОТПРАВЛЯЕМ ордера**.
 
 ```typescript
-type ExecutionVenueId =
-  | 'POLYMARKET'
-  | 'KALSHI'
-  | 'SIMULATOR'
-  | (string & { readonly __brand: 'ExecutionVenueId' });
+type ExecutionVenueId = VenueId | SimulatorExecutionVenueId;
+// SimulatorExecutionVenueId = 'SIMULATOR' & { readonly __brand: 'SimulatorExecutionVenueId' }
 ```
 
 **Константы**:
@@ -658,7 +647,7 @@ const paperOrder = {
 
 ### OrderId
 
-Идентификатор ордера (Phase 2).
+Идентификатор ордера.
 
 ```typescript
 type OrderId = string & { readonly __brand: 'OrderId' };
@@ -676,7 +665,7 @@ const orderId = asOrderId('order-123');  // → OrderId | undefined
 
 ### FillId
 
-Идентификатор fill (Phase 2).
+Идентификатор fill.
 
 ```typescript
 type FillId = string & { readonly __brand: 'FillId' };
@@ -708,8 +697,8 @@ const fillId = asFillId('fill-456');  // → FillId | undefined
 | MarketDataSourceId  | Market Data   | Откуда ЧИТАЕМ данные              | 'POLYMARKET_WS'                            |
 | InstrumentId        | Market Data   | ID инструмента на source          | 'BTC-USD-2025'                             |
 | ExecutionVenueId    | Execution     | Куда ОТПРАВЛЯЕМ ордера            | 'POLYMARKET'                               |
-| OrderId             | Execution     | ID ордера (future)                | 'order-123'                                |
-| FillId              | Execution     | ID fill (future)                  | 'fill-456'                                 |
+| OrderId             | Execution     | ID ордера                         | 'order-123'                                |
+| FillId              | Execution     | ID fill                           | 'fill-456'                                 |
 
 ---
 

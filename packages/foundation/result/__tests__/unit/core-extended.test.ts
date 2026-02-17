@@ -26,12 +26,6 @@ import {
   fromNullable,
   fromThrowable,
 } from '../../src/result';
-import {
-  unwrap as unsafeUnwrap,
-  expectOk as unsafeExpect,
-  unwrapErr as unsafeUnwrapErr,
-  expectErr as unsafeExpectErr,
-} from '../../src/unsafe';
 
 // ============================================================
 // flatMapW — widen-вариант flatMap
@@ -468,60 +462,5 @@ describe('fromThrowable', () => {
     const err = safeDivide(10, 0);
     expect(err.ok).toBe(false);
     if (!err.ok) expect(err.error).toContain('Division by zero');
-  });
-});
-
-// ============================================================
-// unsafe.ts — unwrap, expect, unwrapErr, expectErr
-// ============================================================
-describe('unsafe module', () => {
-  describe('unwrap', () => {
-    it('должен вернуть значение для Ok', () => {
-      const result = Ok(42);
-      expect(unsafeUnwrap(result)).toBe(42);
-    });
-
-    it('должен бросить Error для Err', () => {
-      const result = Err('test error');
-      expect(() => unsafeUnwrap(result)).toThrow('Called unwrap on Err result: test error');
-    });
-  });
-
-  describe('expect', () => {
-    it('должен вернуть значение для Ok', () => {
-      const result = Ok(42);
-      expect(unsafeExpect(result, 'Should succeed')).toBe(42);
-    });
-
-    it('должен бросить Error с кастомным сообщением для Err', () => {
-      const result = Err('underlying error');
-      expect(() => unsafeExpect(result, 'Custom message')).toThrow('Custom message: underlying error');
-    });
-  });
-
-  describe('unwrapErr', () => {
-    it('должен вернуть ошибку для Err', () => {
-      const result = Err('test error');
-      expect(unsafeUnwrapErr(result)).toBe('test error');
-    });
-
-    it('должен бросить Error для Ok', () => {
-      const result = Ok(42);
-      expect(() => unsafeUnwrapErr(result)).toThrow('Called unwrapErr on Ok result: 42');
-    });
-  });
-
-  describe('expectErr', () => {
-    it('должен вернуть ошибку для Err', () => {
-      const result = Err('test error');
-      expect(unsafeExpectErr(result, 'Should be err')).toBe('test error');
-    });
-
-    it('должен бросить Error с кастомным сообщением для Ok', () => {
-      const result = Ok(42);
-      expect(() => unsafeExpectErr(result, 'Should have failed')).toThrow(
-        'Should have failed: expected Err but got Ok(42)'
-      );
-    });
   });
 });

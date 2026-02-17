@@ -607,6 +607,7 @@ const good: ConditionRef = {
 ```typescript
 import {
   type OutcomeKey,
+  AssetIdHelpers,
   BinaryOutcome,
   oppositeOutcomeKey,
   parseOutcomeKey,
@@ -630,7 +631,8 @@ const hedgePosition = hedge(position);  // → 'DOWN'
 console.log(`Buying ${up} token`);  // → "Buying UP token"
 
 // 4. From string (парсинг user input)
-const userInput = 'up';  // case-insensitive
+// parseOutcomeKey требует UPPERCASE — конвертируй перед вызовом
+const userInput = 'up';
 const outcome = parseOutcomeKey(userInput.toUpperCase());
 
 if (outcome !== undefined) {
@@ -646,6 +648,7 @@ const rawIndex = 0;  // получили из контракта
 const outcomeFromChain = indexToOutcomeKey(rawIndex);  // → 'DOWN'
 
 // 7. Итерация по всем outcomes
+// conditionRef, accountId, venueId, getBalance — из контекста приложения
 const outcomes: OutcomeKey[] = [
   BinaryOutcome.DOWN,
   BinaryOutcome.UP,
