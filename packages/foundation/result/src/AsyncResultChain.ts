@@ -934,13 +934,14 @@ export const AsyncResult = {
         } catch (onRejectError) {
           // onReject выбросил исключение — это баг в onReject.
           // Логируем диагностику: без этого ошибка onReject полностью теряется.
+          // Возвращаем оригинальную rejection (не ошибку из onReject), как в normalize().
           console.error(
             `[AsyncResult.from] onReject threw while handling rejection. ` +
               `Original error: ${formatValue(error)}. ` +
               `onReject error: ${formatValue(onRejectError)}. ` +
-              `Falling back to onReject error (unsafe cast to E).`
+              `Falling back to original error (unsafe cast to E).`
           );
-          return Err(onRejectError as E);
+          return Err(error as E);
         }
       }
       return Err(error) as Result<T, E>;
@@ -994,8 +995,9 @@ export const AsyncResult = {
         // оборачиваем брошенное значение в Err чтобы Promise оставался resolved.
         try {
           return Err(mapError(error));
-        } catch (mapErrorError) {
-          return Err(mapErrorError as E);
+        } catch {
+          // mapError выбросил исключение — возвращаем оригинальную rejection (как в normalize()).
+          return Err(error as E);
         }
       }),
       mapError

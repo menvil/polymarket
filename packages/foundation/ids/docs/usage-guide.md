@@ -5,16 +5,11 @@
 ```typescript
 import {
   type ConditionRef,
-  type OutcomeKey,
   type AccountId,
-  type VenueId,
-  type AssetId,
-  KnownCurrencies,
   KnownChainIds,
   KnownVenues,
   KnownOnChainProtocols,
   BinaryOutcome,
-  isSupportedCurrency,
   accountIdFromWallet,
   parseWalletAddress,
   parseConditionId,
@@ -127,8 +122,6 @@ import {
   type OnChainConditionRef,
   type AccountId,
   type VenueId,
-  type WalletAddress,
-  type ConditionId,
   parseWalletAddress,
   parseConditionId,
   accountIdFromWallet,
@@ -333,7 +326,6 @@ import {
   type AccountId,
   type VenueId,
   type ConditionRef,
-  type ConditionId,
   KnownVenues,
   KnownChainIds,
   KnownOnChainProtocols,
@@ -352,6 +344,7 @@ import {
   type ExecutionVenueId,
   KnownExecutionVenues,
 } from '@polymarket/ids/execution';
+// external: import { getBalance, sendOrder } from your money/market modules
 
 // 1. Настройка для нескольких venues
 
@@ -526,7 +519,6 @@ function calculatePortfolioValue(balances: Balance[]): Money {
 import {
   type AccountId,
   type WalletAddress,
-  type VenueId,
   accountIdFromWallet,
   accountIdFromVenue,
   accountIdForSubaccount,
@@ -537,6 +529,7 @@ import {
 } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
 import { unwrap } from '@polymarket/result/unsafe';
+// external: import { getBalance } from your money/market modules
 
 // 1. Wallet account (Polymarket)
 const wallet: WalletAddress = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
@@ -613,9 +606,10 @@ if (conditionRefEquals(condition1, condition2)) {
 
 // 3. Сериализация (с kind discriminator)
 const str = conditionRefToString(condition1);
-// → "ONCHAIN:POLYMARKET_CTF:137:0xabc123..."
+// → "ONCHAIN:POLYMARKET_CTF:137:0xaaa...aaa" (conditionId из примера: '0x' + 'a'.repeat(64))
 
 // Сохраняем в БД, отправляем по сети, логируем
+// external: import { db } from your database module
 await db.saveCondition(str);
 
 // 4. Десериализация
@@ -720,15 +714,15 @@ for (const outcome of outcomes) {
 ```typescript
 import {
   type ConditionRef,
-  type ConditionId,
-  type InstrumentId,
   KnownChainIds,
   KnownOnChainProtocols,
   parseConditionId,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
+  type InstrumentId,
   KnownMarketDataSources,
+  asInstrumentId,
 } from '@polymarket/ids/market-data';
 
 // Quote value object теперь содержит sourceId
@@ -746,7 +740,7 @@ class Quote {
 // Создание Quote
 const quote = new Quote(
   KnownMarketDataSources.POLYMARKET_WS,
-  'BTC-USD-2025' as InstrumentId,
+  asInstrumentId('BTC-USD-2025'),
   {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
@@ -767,7 +761,6 @@ import {
   type VenueId,
   type AssetId,
   KnownVenues,
-  KnownChainIds,
   AssetIdHelpers,
   parseWalletAddress,
   accountIdFromWallet,
@@ -953,12 +946,14 @@ const str: string = accountId;  // Error: тип-объединение объе
 Для сериализации используй `accountIdToString()`:
 
 ```typescript
+import { accountIdToString } from '@polymarket/ids';
 const str: string = accountIdToString(accountId);  // ✅ корректная сериализация
 ```
 
 **`WalletAddress` — branded string, assignable к `string`**:
 
 ```typescript
+import { type WalletAddress, parseWalletAddress } from '@polymarket/ids';
 const wallet: WalletAddress = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
 const str: string = wallet;  // ✅ OK — WalletAddress является подтипом string
 ```

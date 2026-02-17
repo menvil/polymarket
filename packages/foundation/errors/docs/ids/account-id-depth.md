@@ -47,6 +47,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 ### 1. Базовое использование (Result pattern)
 
 ```typescript
+// internal implementation
 import { Result, Ok, Err } from '@polymarket/result';
 import { AccountIdDepthError, AccountIdValidationError } from '@polymarket/errors';
 
@@ -73,8 +74,10 @@ function accountIdForSubaccount(
 
   return Ok({ kind: 'SUBACCOUNT', base, name });
 }
+```
 
-// Использование
+```typescript
+// usage
 import {
   accountIdFromWallet,
   parseWalletAddress,
@@ -247,8 +250,8 @@ const sub4 = ['level1', 'level2', 'level3', 'level4'].reduce(
   wallet as Parameters<typeof accountIdForSubaccount>[0]
 ); // depth=4
 
-const valid = accountIdForSubaccount(sub4, 'level5'); // depth станет 5
-console.log(valid.ok); // → true (5 <= 5 допустимо)
+const valid = accountIdForSubaccount(sub4, 'level5'); // результирующая depth станет 5
+console.log(valid.ok); // → true (base depth 4 < max 5, проверка: 4 >= 5 → false → допустимо)
 
 const invalid = accountIdForSubaccount(unwrap(valid), 'level6'); // depth стал бы 6
 console.log(invalid.ok); // → false (6 > 5)

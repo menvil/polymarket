@@ -32,6 +32,8 @@ Type-safe обработка ошибок: явные типы вместо exce
 | `unwrapOr`, `unwrapOrElse`  | Никогда             | Нет — propagate              | Ядро              |
 | `unwrap`                    | **Да** при Err      | —                            | `/unsafe` только  |
 | `expectOk` (unsafe)         | **Да** при Err      | —                            | `/unsafe`         |
+| `unwrapErr` (unsafe)        | **Да** при Ok       | —                            | `/unsafe`         |
+| `expectErr` (unsafe)        | **Да** при Ok       | —                            | `/unsafe`         |
 | `AsyncResultChain.mapAsync` | Никогда             | **Да** → `Err`               | AsyncResultChain  |
 | `AsyncResultChain.flatMapAsync` | Никогда         | **Да** → `Err`               | AsyncResultChain  |
 | `AsyncResultChain.map`      | Никогда             | **Да** → `Err`               | AsyncResultChain  |
@@ -39,10 +41,12 @@ Type-safe обработка ошибок: явные типы вместо exce
 | `AsyncResultChain.tap`      | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 | `AsyncResultChain.tapErr`   | Никогда             | Нет → rejected Promise       | AsyncResultChain  |
 
-> **Правило для E-preserving методов** (map, mapAsync, flatMapAsync, flatMap):
+> **Правило для E-preserving методов AsyncResultChain** (AsyncResultChain.map, mapAsync, flatMapAsync):
 > исключения из callback → `Err(onError(e))` через chain normalizer. Promise остаётся resolved.
+> (Для core `map`/`flatMap` из `result.ts` исключения propagate напрямую — там normalizer не задействован.)
+>
 > Если chain normalizer бросает → `Err(оригинальная ошибка callback as E)` (last-resort fallback).
-> Если onReject/onError в `AsyncResult.from`/`ok` бросает → `Err(исключение из normalizer as E)`.
+> Если onReject/onError в `AsyncResult.from`/`ok` бросает → `Err(оригинальная rejection as E)` (аналогичный fallback).
 >
 > ```typescript
 > // callback бросает → Err через normalizer (Promise остаётся resolved)
@@ -204,7 +208,7 @@ import { OkChain, ErrChain, toChain, R } from '@polymarket/result/chain';
 import { AsyncResult, AsyncResultChain } from '@polymarket/result/async';
 
 // ⚠️ Unsafe: функции которые могут бросить исключения
-import { unwrap, expectOk, unwrapErr } from '@polymarket/result/unsafe';
+import { unwrap, expectOk, unwrapErr, expectErr } from '@polymarket/result/unsafe';
 ```
 
 ### Использование с @polymarket/errors
@@ -735,63 +739,8 @@ const recovered = ErrChain('error')
 
 ### Helper функции
 
-#### fromPromise(promise, onError)
-
-Конвертирует Promise в Result, ловя rejections.
-
-```typescript
-import { fromPromise } from '@polymarket/result';
-
-const result = await fromPromise(
-  fetch('/api/user'),
-  (err) => `Network error: ${err}`
-);
-
-if (result.ok) {
-  console.log(result.value);
-} else {
-  console.error(result.error); // "Network error: ..."
-}
-```
-
-#### fromNullable(value, error)
-
-Конвертирует nullable значение в Result.
-
-```typescript
-import { fromNullable } from '@polymarket/result';
-
-const result = fromNullable(maybeUser, 'User not found');
-
-if (result.ok) {
-  console.log(result.value); // User exists
-} else {
-  console.error(result.error); // "User not found"
-}
-```
-
-#### fromThrowable(fn, onError)
-
-Оборачивает функцию с exceptions в Result-возвращающую функцию.
-
-```typescript
-import { fromThrowable } from '@polymarket/result';
-
-const safeParseJSON = fromThrowable(
-  JSON.parse,
-  (err) => `Invalid JSON: ${err}`
-);
-
-const result = safeParseJSON('{"valid": true}');
-if (result.ok) {
-  console.log(result.value); // { valid: true }
-}
-
-const invalid = safeParseJSON('not json');
-if (!invalid.ok) {
-  console.error(invalid.error); // "Invalid JSON: ..."
-}
-```
+`fromPromise`, `fromNullable` и `fromThrowable` — это функции Core API, доступные из `@polymarket/result`.
+Документация: [fromPromise](#frompromisepromise-onerror), [fromNullable](#fromnullablevalue-error), [fromThrowable](#fromthrowablefn-onerror).
 
 ## 🔗 AsyncResultChain API (Async Operations)
 
@@ -859,13 +808,27 @@ const error = await AsyncResult.err('error')
 
 ### .mapAsync(fn) / .map(fn)
 
-Трансформирует значение (async или sync).
+Трансформирует значение (async или sync). Исключения из `fn` перехватываются и оборачиваются в `Err` через chain normalizer — Promise остаётся resolved.
+
+> **Отличие от core `map`/`flatMap`**: методы `AsyncResultChain` перехватывают исключения через normalizer; core-функции из `result.ts` исключения propagate напрямую.
 
 ```typescript
 const result = await AsyncResult.ok(Promise.resolve(5))
   .mapAsync(async x => x * 2)  // async transform
   .map(x => x + 1)               // sync transform
   .unwrap(); // 11
+```
+
+### .mapUnsafe(fn)
+
+Трансформирует значение без перехвата исключений. Если `fn` бросает — Promise цепочки становится rejected.
+
+Используйте только когда rejected Promise является желаемым поведением (например, интеграция с промис-оркестраторами).
+
+```typescript
+const result = AsyncResult.ok(Promise.resolve(5))
+  .mapUnsafe(x => x * 2); // rejected если fn бросает
+// vs .map(x => x * 2)    // → Err(normalizer(e)) если fn бросает
 ```
 
 ### .flatMapAsync(fn) / .flatMap(fn)

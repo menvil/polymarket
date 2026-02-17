@@ -1277,7 +1277,7 @@ describe('AsyncResultChain', () => {
   // Тесты на ветки когда normalizer/onError сам бросает
   // ============================================================
   describe('AsyncResult.from — onReject сам бросает', () => {
-    it('должен завершиться Err без rejected Promise когда onReject бросает', async () => {
+    it('должен завершиться Err с оригинальной rejection без rejected Promise когда onReject бросает', async () => {
       const throwingOnReject = (_err: unknown): Error => {
         throw new Error('onReject failed');
       };
@@ -1287,17 +1287,16 @@ describe('AsyncResultChain', () => {
         throwingOnReject
       ).toPromise();
 
-      // Promise должен остаться resolved — ошибка из onReject идёт как Err
+      // Promise должен остаться resolved — возвращается оригинальная rejection (как в normalize())
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(Error);
-        expect((result.error as Error).message).toBe('onReject failed');
+        expect(result.error).toBe('original');
       }
     });
   });
 
   describe('AsyncResult.ok — onError сам бросает', () => {
-    it('должен завершиться Err без rejected Promise когда onError бросает', async () => {
+    it('должен завершиться Err с оригинальной rejection без rejected Promise когда onError бросает', async () => {
       const throwingOnError = (_err: unknown): Error => {
         throw new Error('onError failed');
       };
@@ -1307,11 +1306,10 @@ describe('AsyncResultChain', () => {
         throwingOnError
       ).toPromise();
 
-      // Promise должен остаться resolved — ошибка из onError идёт как Err
+      // Promise должен остаться resolved — возвращается оригинальная rejection (как в normalize())
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error).toBeInstanceOf(Error);
-        expect((result.error as Error).message).toBe('onError failed');
+        expect(result.error).toBe('original');
       }
     });
   });
