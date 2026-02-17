@@ -130,6 +130,7 @@ import {
   type WalletAddress,
   type ConditionId,
   parseWalletAddress,
+  parseConditionId,
   accountIdFromWallet,
   BinaryOutcome,
   AssetIdHelpers,
@@ -202,6 +203,7 @@ import {
   type ConditionId,
   KnownChainIds,
   KnownOnChainProtocols,
+  parseConditionId,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
@@ -339,6 +341,7 @@ import {
   BinaryOutcome,
   accountIdFromWallet,
   parseWalletAddress,
+  parseConditionId,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
@@ -721,6 +724,7 @@ import {
   type InstrumentId,
   KnownChainIds,
   KnownOnChainProtocols,
+  parseConditionId,
 } from '@polymarket/ids';
 import {
   type MarketDataSourceId,
