@@ -1,5 +1,74 @@
 # Руководство по использованию @polymarket/ids
 
+## Быстрый старт
+
+```typescript
+import {
+  type ConditionRef,
+  type OutcomeKey,
+  type AccountId,
+  type VenueId,
+  type AssetId,
+  KnownCurrencies,
+  KnownChainIds,
+  KnownVenues,
+  BinaryOutcome,
+  isSupportedCurrency,
+  accountIdFromWallet,
+  parseWalletAddress,
+  parseConditionId,
+  AssetIdHelpers,
+} from '@polymarket/ids';
+
+// Wallet account
+const walletAccount: AccountId = accountIdFromWallet(parseWalletAddress('0x1234...')!);
+
+// ConditionRef — on-chain (Polymarket)
+const conditionId = parseConditionId('0x4869df2f6745f3c59c91af1c9d6dc75a5282a3d6a15b7c8e9f2d1a3b4c5e6f7a');
+const onChainRef: ConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: 'POLYMARKET_CTF',
+  chainId: KnownChainIds.POLYGON,
+  conditionId: conditionId!,
+};
+
+// ConditionRef — off-chain (Kalshi)
+const offChainRef: ConditionRef = {
+  kind: 'OFFCHAIN',
+  venueId: 'KALSHI',
+  marketId: 'KXBTCUSDM-24APR',
+};
+
+// AssetId
+const usdcAsset = AssetIdHelpers.USDC;
+const yesToken = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+```
+
+```typescript
+// Market Data IDs
+import {
+  type MarketDataSourceId,
+  KnownMarketDataSources,
+  sourceToVenue,
+} from '@polymarket/ids/market-data';
+
+const liveSource: MarketDataSourceId = KnownMarketDataSources.POLYMARKET_WS;
+const venue = sourceToVenue(liveSource); // → 'POLYMARKET'
+```
+
+```typescript
+// Execution IDs
+import {
+  type ExecutionVenueId,
+  KnownExecutionVenues,
+} from '@polymarket/ids/execution';
+
+const liveVenue: ExecutionVenueId = KnownExecutionVenues.POLYMARKET;
+const simulator: ExecutionVenueId = KnownExecutionVenues.SIMULATOR;
+```
+
+---
+
 ## Установка и импорт
 
 ### Установка
@@ -816,6 +885,5 @@ const str: string = wallet;  // ✅ OK — WalletAddress является под
 
 ## Дополнительные ресурсы
 
-- [Архитектура](./architecture.md) - архитектурные решения
+- [Архитектура](./architecture.md) - архитектурные решения и дизайн-решения
 - [Справочник типов](./types-reference.md) - полный список типов и функций
-- [README](../README.md) - краткое описание пакета

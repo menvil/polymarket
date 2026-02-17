@@ -176,7 +176,72 @@ function processAsset(asset: AssetId) {
 }
 ```
 
-### 5. VenueId для matching балансов
+### 5. AccountId: Безопасная сериализация
+
+`AccountId` — рекурсивная структура (SUBACCOUNT содержит base AccountId). Это требует двух защитных механизмов.
+
+#### Escaping в строковом формате
+
+Формат: `sub:<base>:<name>`, где `<base>` и `<name>` могут содержать `:` и `\`.
+Без escaping `parseAccountId` не может отличить разделитель от данных.
+
+**Алгоритм escape** (порядок критичен):
+
+```
+1. '\' → '\\'   (сначала backslash, иначе следующий шаг сломает результат)
+2. ':' → '\:'   (затем colon)
+```
+
+**Алгоритм unescape** (посимвольный автомат):
+
+```
+- '\\'  → '\'
+- '\:'  → ':'
+- Любой другой символ после '\' — оставить как есть
+- Голый ':' — разделитель (не данные)
+```
+
+Это гарантирует корректный round-trip для любых строк:
+
+```typescript
+escapeId('user\\:123')    // → 'user\\\\\\:123'
+unescapeId('user\\\\\\:123') // → 'user\\:123' ✅
+```
+
+#### Depth limit protection
+
+Рекурсивный обход SUBACCOUNT без ограничения глубины → DoS через глубоко вложенные структуры.
+
+Константа `MAX_SUBACCOUNT_DEPTH = 5`. Поведение при превышении:
+
+| Функция | Поведение при depth > 5 |
+|---|---|
+| `accountIdForSubaccount` | `Err(AccountIdDepthError)` — явный Result |
+| `accountIdToString` | Возвращает строку всегда (total function); при глубине > MAX+10 — dev assert + `'[INVALID:DEPTH_EXCEEDED]'` |
+| `parseAccountId` | `undefined` (graceful rejection) |
+| `accountIdEquals` | `false` (безопасный fallback) |
+
+`getSubaccountDepth` — итеративная (не рекурсивная) функция:
+
+```typescript
+function getSubaccountDepth(id: AccountId): number {
+  let depth = 0;
+  let current = id;
+  while (current.kind === 'SUBACCOUNT') {
+    depth++;
+    current = current.base;
+  }
+  return depth;
+}
+```
+
+#### Защита от длинных строк
+
+`parseAccountId` проверяет `str.length > maxLen` (default: `MAX_ACCOUNT_ID_STRING_LENGTH = 512`) до начала обработки. Кастомный лимит через `ParseAccountIdOptions.maxLen`.
+
+---
+
+### 6. VenueId для matching балансов
 
 **Проблема**: В мультивенью системе нужно понимать, где находятся активы.
 
