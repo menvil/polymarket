@@ -33,6 +33,12 @@
  * ```
  */
 export function validateBrandedId(raw: string, maxLength: number): string | undefined {
+  // Guard against invalid maxLength (NaN, Infinity, negative) — NaN comparisons are always false,
+  // which would silently bypass the length check below.
+  if (!Number.isFinite(maxLength) || maxLength < 0) {
+    return undefined;
+  }
+
   // Trim whitespace
   const trimmed = raw.trim();
 
