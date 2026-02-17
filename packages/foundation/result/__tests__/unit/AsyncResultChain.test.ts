@@ -2,7 +2,7 @@
  * Тесты для AsyncResultChain (async wrapper для Promise<Result<T, E>>)
  */
 
-import { describe, it, expect } from '@jest/globals';
+import { describe, it, expect, jest } from '@jest/globals';
 import { AsyncResult } from '../../src/AsyncResultChain';
 import { Ok, Err, Result } from '../../src/result';
 
@@ -664,6 +664,14 @@ describe('AsyncResultChain', () => {
       expect(called).toBe(false);
       expect(result).toBe('error');
     });
+
+    it('должен пробрасывать исключение из callback как rejected Promise', async () => {
+      const chain = AsyncResult.ok(Promise.resolve(42)).tap(() => {
+        throw new Error('tap threw');
+      });
+
+      await expect(chain.toPromise()).rejects.toThrow('tap threw');
+    });
   });
 
   describe('Метод tapErr()', () => {
@@ -691,6 +699,14 @@ describe('AsyncResultChain', () => {
 
       expect(called).toBe(false);
       expect(result).toBe(42);
+    });
+
+    it('должен пробрасывать исключение из callback как rejected Promise', async () => {
+      const chain = AsyncResult.err('oops').tapErr(() => {
+        throw new Error('tapErr threw');
+      });
+
+      await expect(chain.toPromise()).rejects.toThrow('tapErr threw');
     });
   });
 
