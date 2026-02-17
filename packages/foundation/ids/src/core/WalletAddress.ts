@@ -26,24 +26,23 @@ export type WalletAddress = string & { readonly __brand: 'WalletAddress' };
  * Проверка что строка является валидным Ethereum address
  *
  * @param address - Строка для проверки
- * @returns true если address имеет валидный формат (0x + 40 hex chars)
+ * @returns true если address имеет валидный lowercase canonical формат (0x + 40 lowercase hex chars)
  *
  * @remarks
  * Проверяет только формат, НЕ проверяет EIP-55 checksum.
- * Для валидации и нормализации используй parseWalletAddress().
- *
- * Type guard позволяет TypeScript сузить тип до WalletAddress,
- * но помни что WalletAddress должен быть lowercase canonical format.
+ * Принимает ТОЛЬКО lowercase hex — это соответствует инварианту WalletAddress.
+ * Для нормализации mixed-case (например EIP-55 checksum) используй parseWalletAddress().
  *
  * @example
  * ```typescript
  * isValidWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed'); // → true
+ * isValidWalletAddress('0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed'); // → false (mixed-case)
  * isValidWalletAddress('0xINVALID'); // → false
  * isValidWalletAddress('5aaeb6053f3e94c9b9a09f33669435e7ef1beaed'); // → false (no 0x)
  * ```
  */
 export function isValidWalletAddress(address: string): address is WalletAddress {
-  return /^0x[0-9a-fA-F]{40}$/.test(address);
+  return /^0x[0-9a-f]{40}$/.test(address);
 }
 
 /**

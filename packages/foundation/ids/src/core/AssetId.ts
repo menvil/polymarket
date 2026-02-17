@@ -294,6 +294,10 @@ export const AssetId = {
  * @param b - Второй AssetId
  * @returns true если AssetId идентичны
  *
+ * @remarks
+ * Делегирует к `AssetId.equals` во избежание дублирования логики.
+ * При добавлении новых вариантов AssetId достаточно обновить только `AssetId.equals`.
+ *
  * @example
  * ```typescript
  * const usdc1 = AssetIdHelpers.USDC;
@@ -302,26 +306,7 @@ export const AssetId = {
  * ```
  */
 export function assetIdEquals(a: AssetId, b: AssetId): boolean {
-  if (a.type !== b.type) {
-    return false;
-  }
-
-  if (a.type === 'CURRENCY' && b.type === 'CURRENCY') {
-    return a.currency === b.currency;
-  }
-
-  if (a.type === 'OUTCOME_TOKEN' && b.type === 'OUTCOME_TOKEN') {
-    // Both are OnChainConditionRef, так что можно сравнивать напрямую
-    return (
-      a.conditionRef.kind === b.conditionRef.kind &&
-      a.conditionRef.protocolId === b.conditionRef.protocolId &&
-      a.conditionRef.chainId === b.conditionRef.chainId &&
-      a.conditionRef.conditionId === b.conditionRef.conditionId &&
-      a.outcomeKey === b.outcomeKey
-    );
-  }
-
-  return false;
+  return AssetId.equals(a, b);
 }
 
 /**
@@ -361,6 +346,9 @@ export function assetIdToString(asset: AssetId): string {
  * Обратная функция для assetIdToString(). Гарантирует round-trip:
  * parseAssetId(assetIdToString(id)) === id
  *
+ * Возвращает глубоко замороженный (immutable) AssetId — как и все фабричные методы.
+ * Это сохраняет контракт иммутабельности value object для всех путей получения AssetId.
+ *
  * Поддерживаемые форматы:
  * - 'CURRENCY:USDC'
  * - 'OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123:UP'
@@ -396,10 +384,10 @@ export function parseAssetId(str: string): AssetId | undefined {
       return undefined;
     }
 
-    return {
+    return deepFreezeAssetId({
       type: 'CURRENCY',
       currency,
-    };
+    });
   }
 
   if (type === 'OUTCOME_TOKEN') {
@@ -438,7 +426,7 @@ export function parseAssetId(str: string): AssetId | undefined {
       return undefined;
     }
 
-    return {
+    return deepFreezeAssetId({
       type: 'OUTCOME_TOKEN',
       conditionRef: {
         kind: 'ONCHAIN',
@@ -447,7 +435,7 @@ export function parseAssetId(str: string): AssetId | undefined {
         conditionId,
       },
       outcomeKey: validatedOutcomeKey,
-    };
+    });
   }
 
   return undefined;

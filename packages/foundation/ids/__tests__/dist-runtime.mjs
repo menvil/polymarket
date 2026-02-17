@@ -16,7 +16,7 @@
  */
 
 import assert from 'node:assert';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -27,7 +27,7 @@ console.log('🧪 Testing runtime import from dist/...');
 
 // Test core exports
 console.log('  ✓ Importing core exports...');
-const coreModule = await import(`${distPath}/core/index.js`);
+const coreModule = await import(pathToFileURL(`${distPath}/core/index.js`).href);
 
 // Check essential types and functions exist
 assert(typeof coreModule.parseWalletAddress === 'function', 'parseWalletAddress should be exported');
@@ -38,7 +38,7 @@ assert(typeof coreModule.asVenueId === 'function', 'asVenueId should be exported
 
 // Test execution exports
 console.log('  ✓ Importing execution exports...');
-const executionModule = await import(`${distPath}/execution/index.js`);
+const executionModule = await import(pathToFileURL(`${distPath}/execution/index.js`).href);
 
 assert(typeof executionModule.asExecutionVenueId === 'function', 'asExecutionVenueId should be exported');
 assert(typeof executionModule.asOrderId === 'function', 'asOrderId should be exported');
@@ -47,7 +47,7 @@ assert(executionModule.SIMULATOR === 'SIMULATOR', 'SIMULATOR constant should be 
 
 // Test market-data exports
 console.log('  ✓ Importing market-data exports...');
-const marketDataModule = await import(`${distPath}/market-data/index.js`);
+const marketDataModule = await import(pathToFileURL(`${distPath}/market-data/index.js`).href);
 
 assert(typeof marketDataModule.asMarketDataSourceId === 'function', 'asMarketDataSourceId should be exported');
 assert(typeof marketDataModule.asInstrumentId === 'function', 'asInstrumentId should be exported');
@@ -55,7 +55,7 @@ assert(typeof marketDataModule.sourceToVenue === 'function', 'sourceToVenue shou
 
 // Test main barrel export (flat exports, not namespaces)
 console.log('  ✓ Importing main barrel export...');
-const mainModule = await import(`${distPath}/index.js`);
+const mainModule = await import(pathToFileURL(`${distPath}/index.js`).href);
 
 // Barrel export использует export * (flat), не namespace объекты
 // Проверяем что ключевые exports доступны

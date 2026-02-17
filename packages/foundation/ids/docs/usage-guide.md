@@ -76,6 +76,7 @@ const accountId: AccountId = '0x123...' as AccountId;
 
 // 2. Создание ConditionRef
 const conditionRef: ConditionRef = {
+  kind: 'ONCHAIN',
   protocolId: 'POLYMARKET_CTF',
   chainId: KnownChainIds.POLYGON,
   conditionId: '0xabc123...' as ConditionId,
