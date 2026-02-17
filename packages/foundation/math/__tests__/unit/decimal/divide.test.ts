@@ -73,18 +73,20 @@ describe('divideDecimal', () => {
 
       try {
         divideDecimal(new Decimal(10), new Decimal(0));
+        fail('Expected DivisionByZeroError to be thrown');
       } catch (error) {
+        expect(error).toBeInstanceOf(DivisionByZeroError);
         if (error instanceof DivisionByZeroError) {
           expect(error.context).toBeDefined();
-          expect(error.context?.dividend).toBe('10');
-          expect(error.context?.divisor).toBe('0');
+          expect(error.context?.a).toBe('10');
+          expect(error.context?.b).toBe('0');
         }
       }
     });
 
-    it('должен проверять валидность dividend перед проверкой на ноль (порядок проверок)', () => {
+    it('должен проверять валидность a перед проверкой на ноль (порядок проверок)', () => {
       // Контракт: InvalidOperandError имеет приоритет над DivisionByZeroError
-      // Даже если divisor = 0, сначала проверяется валидность dividend
+      // Даже если b = 0, сначала проверяется валидность a
       expect(() =>
         divideDecimal(new Decimal(NaN), new Decimal(0))
       ).toThrow(InvalidOperandError);
@@ -123,51 +125,98 @@ describe('divideDecimal', () => {
         InvalidDivisorError
       );
 
+      expect.assertions(4);
       try {
         divideDecimal(new Decimal(10), new Decimal(NaN));
       } catch (error) {
         if (error instanceof InvalidDivisorError) {
           expect(error.context).toBeDefined();
-          expect(error.context?.dividend).toBe('10');
-          expect(error.context?.divisor).toBe('NaN');
+          expect(error.context?.a).toBe('10');
+          expect(error.context?.b).toBe('NaN');
+        } else {
+          throw error;
         }
       }
     });
+
+    it('должен throw InvalidDivisorError на не-Decimal делитель', () => {
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), null)).toThrow(
+        InvalidDivisorError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), undefined)).toThrow(
+        InvalidDivisorError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), 5)).toThrow(
+        InvalidDivisorError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), '5')).toThrow(
+        InvalidDivisorError
+      );
+    });
+
+    it('должен throw InvalidDivisorError на fake Decimal объект (имеет isFinite, но не instanceof)', () => {
+      // Создаём объект-импостер с isFinite методом
+      const fakeDecimal = {
+        isFinite: () => true,
+        toString: () => 'fake',
+      };
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), fakeDecimal)).toThrow(
+        InvalidDivisorError
+      );
+
+      // Должна быть доменная ошибка, а не TypeError
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => divideDecimal(new Decimal(10), fakeDecimal)).not.toThrow(
+        TypeError
+      );
+    });
   });
 
-  describe('ошибки invalid operand (dividend)', () => {
-    it('должен throw InvalidOperandError на Infinity dividend', () => {
+  describe('ошибки invalid operand (a)', () => {
+    it('должен throw InvalidOperandError на Infinity a', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(2);
       expect(() => divideDecimal(inf, value)).toThrow(InvalidOperandError);
     });
 
-    it('должен throw InvalidOperandError на -Infinity dividend', () => {
+    it('должен throw InvalidOperandError на -Infinity a', () => {
       const negInf = new Decimal(-Infinity);
       const value = new Decimal(2);
       expect(() => divideDecimal(negInf, value)).toThrow(InvalidOperandError);
     });
 
-    it('должен throw InvalidOperandError на NaN dividend', () => {
+    it('должен throw InvalidOperandError на NaN a', () => {
       const nan = new Decimal(NaN);
       const value = new Decimal(2);
       expect(() => divideDecimal(nan, value)).toThrow(InvalidOperandError);
     });
 
-    it('должен содержать контекст в ошибке invalid dividend', () => {
+    it('должен содержать контекст в ошибке invalid a', () => {
       const inf = new Decimal(Infinity);
       const value = new Decimal(2);
 
       expect(() => divideDecimal(inf, value)).toThrow(InvalidOperandError);
 
+      expect.assertions(5);
       try {
         divideDecimal(inf, value);
       } catch (error) {
         if (error instanceof InvalidOperandError) {
           expect(error.context).toBeDefined();
-          expect(error.context?.dividend).toBe('Infinity');
-          expect(error.context?.divisor).toBe('2');
+          expect(error.context?.a).toBe('Infinity');
+          expect(error.context?.b).toBe('2');
           expect(error.context?.operation).toBe('divide');
+        } else {
+          throw error;
         }
       }
     });
@@ -184,6 +233,23 @@ describe('divideDecimal', () => {
       // Проверяем что результат правильный (периодическая дробь 3.333...)
       expect(result.toFixed(15)).toBe('3.333333333333333');
       expect(result.times(3).toFixed(10)).toBe('10.0000000000');
+    });
+  });
+
+  describe('defensive checks', () => {
+    it('должен throw InvalidDivisorError если divisor не имеет метода isZero', () => {
+      // Создаём объект который проходит isDecimalLike но не имеет isZero
+      const fakeDecimal = {
+        isFinite: () => true,
+        toString: () => '5',
+        toNumber: () => 5,
+        // Намеренно НЕ добавляем isZero метод
+      };
+
+      // @ts-expect-error - intentionally testing runtime validation
+      expect(() => divideDecimal(new Decimal(10), fakeDecimal)).toThrow(
+        InvalidDivisorError
+      );
     });
   });
 });

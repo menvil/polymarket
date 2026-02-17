@@ -55,6 +55,7 @@ roundDecimal(new Decimal('10.0')); // 10
 ### Отличие от Banker's Rounding
 
 **ROUND_HALF_UP (roundDecimal):**
+
 ```typescript
 roundDecimal(new Decimal('2.5')); // 3 (всегда вверх)
 roundDecimal(new Decimal('3.5')); // 4 (всегда вверх)
@@ -62,6 +63,7 @@ roundDecimal(new Decimal('4.5')); // 5 (всегда вверх)
 ```
 
 **ROUND_HALF_EVEN (banker's rounding):**
+
 ```typescript
 // Для banker's rounding используйте напрямую Decimal.js:
 new Decimal('2.5').toDecimalPlaces(0, Decimal.ROUND_HALF_EVEN); // 2 (к чётному)
@@ -92,8 +94,8 @@ try {
 ```
 
 **Выбрасывает ошибки:**
+
 - `InvalidOperandError` - если value не конечное число (NaN/Infinity)
-- `ArithmeticOverflowError` - если результат не конечен
 
 ---
 
@@ -136,12 +138,14 @@ roundTowardZeroDecimal(new Decimal('-10')); // -10
 ### Отличие от Math.floor()
 
 **roundTowardZeroDecimal (округление к нулю):**
+
 ```typescript
 roundTowardZeroDecimal(new Decimal('2.9'));  // 2
 roundTowardZeroDecimal(new Decimal('-2.9')); // -2 (к нулю!)
 ```
 
 **Math.floor() (округление к -Infinity):**
+
 ```typescript
 Math.floor(2.9);  // 2
 Math.floor(-2.9); // -3 (к -Infinity!)
@@ -194,12 +198,14 @@ roundAwayFromZeroDecimal(new Decimal('-10')); // -10
 ### Отличие от Math.ceil()
 
 **roundAwayFromZeroDecimal (округление от нуля):**
+
 ```typescript
 roundAwayFromZeroDecimal(new Decimal('2.1'));  // 3
 roundAwayFromZeroDecimal(new Decimal('-2.1')); // -3 (от нуля!)
 ```
 
 **Math.ceil() (округление к +Infinity):**
+
 ```typescript
 Math.ceil(2.1);  // 3
 Math.ceil(-2.1); // -2 (к +Infinity!)
@@ -299,6 +305,7 @@ truncDecimal(value); // 2  (отбросить дробь)
 ```
 
 Для отрицательных:
+
 ```typescript
 const negative = new Decimal('-2.5');
 

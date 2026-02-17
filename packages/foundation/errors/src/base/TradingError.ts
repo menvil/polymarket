@@ -341,7 +341,9 @@ export class TradingError extends Error implements ITradingError {
     if (typeof ErrorConstructor.captureStackTrace === 'function') {
       ErrorConstructor.captureStackTrace(this, this.constructor);
     } else {
-      this.stack = new Error().stack;
+      // Создаём Error с сообщением для получения привязанного stack trace
+      // В non-V8 окружениях (Safari, Firefox) stack будет содержать this.message
+      this.stack = new Error(this.message).stack;
     }
   }
 
@@ -352,6 +354,7 @@ export class TradingError extends Error implements ITradingError {
    *
    * @remarks
    * Дефолтная реализация - можно переопределить в дочернем классе.
+   * Безопасно обрабатывает циклические ссылки в context.
    */
   public toJSON(): Record<string, unknown> {
     return {
@@ -360,7 +363,7 @@ export class TradingError extends Error implements ITradingError {
       message: this.message,
       severity: this.severity,
       timestamp: this.timestamp.toISOString(),
-      ...(this.context !== undefined && { context: this.context }),
+      ...(this.context !== undefined && { context: this.safeSerializeContext(this.context) }),
       ...(this.innerError && {
         innerError: {
           name: this.innerError.name,
@@ -369,6 +372,82 @@ export class TradingError extends Error implements ITradingError {
         },
       }),
     };
+  }
+
+  /**
+   * Безопасно сериализует context с защитой от циклических ссылок
+   *
+   * @param obj - Объект для сериализации
+   * @param seen - WeakSet для отслеживания текущего пути рекурсии
+   * @returns Сериализованный объект с маркерами "[Circular]" вместо циклических ссылок
+   *
+   * @remarks
+   * Использует WeakSet для детектирования циклов в текущем пути рекурсии.
+   * Объекты добавляются в seen перед обработкой детей и удаляются после,
+   * чтобы различать настоящие циклы от shared references (один объект в разных местах).
+   *
+   * @example
+   * ```typescript
+   * const shared = { value: 1 };
+   * const context = {
+   *   a: shared,
+   *   b: shared  // НЕ цикл - просто shared reference
+   * };
+   * // Результат: { a: { value: 1 }, b: { value: 1 } }
+   *
+   * const circular: any = { name: 'root' };
+   * circular.self = circular;  // Настоящий цикл
+   * // Результат: { name: 'root', self: '[Circular]' }
+   * ```
+   */
+  private safeSerializeContext(
+    obj: Record<string, unknown>,
+    seen: WeakSet<object> = new WeakSet()
+  ): Record<string, unknown> {
+    // Проверяем примитивы и null
+    if (obj === null || typeof obj !== 'object') {
+      return obj as Record<string, unknown>;
+    }
+
+    // Обнаружен цикл (объект уже в текущем пути рекурсии)
+    if (seen.has(obj)) {
+      return '[Circular]' as unknown as Record<string, unknown>;
+    }
+
+    // Добавляем объект в текущий путь
+    seen.add(obj);
+
+    // Обрабатываем массивы
+    if (Array.isArray(obj)) {
+      const result = obj.map((item) => {
+        if (item !== null && typeof item === 'object') {
+          return this.safeSerializeContext(item as Record<string, unknown>, seen);
+        }
+        return item;
+      }) as unknown as Record<string, unknown>;
+
+      // Удаляем из пути после обработки детей
+      seen.delete(obj);
+      return result;
+    }
+
+    // Обрабатываем обычные объекты
+    const result: Record<string, unknown> = {};
+    for (const key in obj) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
+        const value = obj[key];
+        if (value !== null && typeof value === 'object') {
+          result[key] = this.safeSerializeContext(value as Record<string, unknown>, seen);
+        } else {
+          result[key] = value;
+        }
+      }
+    }
+
+    // Удаляем из пути после обработки всех детей
+    seen.delete(obj);
+
+    return result;
   }
 
   /**

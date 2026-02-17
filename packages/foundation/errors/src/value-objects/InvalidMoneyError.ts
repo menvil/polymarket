@@ -50,7 +50,7 @@
  * ```
  */
 
-import { TradingError, ErrorSeverity } from '../base';
+import { TradingError, ErrorSeverity } from '../base/index.js';
 
 /**
  * InvalidMoneyError - ошибка валидации денежной суммы

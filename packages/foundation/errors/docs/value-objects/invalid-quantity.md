@@ -30,7 +30,7 @@
 import { InvalidQuantityError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E>:
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 ```
 
 ---
@@ -48,7 +48,6 @@ class Quantity {
       throw new InvalidQuantityError(
         (ctx) => `Invalid quantity ${ctx.value}: must be positive`,
         {
-          code: InvalidQuantityError.code,
           context: { value, min: 0 }
         }
       );
@@ -70,7 +69,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 
 class Quantity {
@@ -78,11 +77,10 @@ class Quantity {
 
   static fromNumber(value: number): Result<Quantity, InvalidQuantityError> {
     if (!isFinite(value) || isNaN(value)) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Invalid quantity: ${ctx.reason}`,
           {
-            code: InvalidQuantityError.code,
             context: { value, reason: 'not a finite number' }
           }
         )
@@ -90,18 +88,17 @@ class Quantity {
     }
 
     if (value <= 0) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Quantity ${ctx.value} must be positive (min: ${ctx.min})`,
           {
-            code: InvalidQuantityError.code,
             context: { value, min: 0 }
           }
         )
       );
     }
 
-    return Result.ok(new Quantity(value));
+    return Ok(new Quantity(value));
   }
 
   getValue(): number {
@@ -112,24 +109,25 @@ class Quantity {
 // Использование
 const result = Quantity.fromNumber(userInput);
 
-result.match({
-  ok: (qty) => console.log('Valid quantity:', qty.getValue()),
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log('Valid quantity:', result.value.getValue());
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ### 3. С кастомным сообщением для разных случаев
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 
 function validateQuantity(value: number, min: number = 0): Result<Quantity, InvalidQuantityError> {
   if (isNaN(value)) {
-    return Result.err(
+    return Err(
       new InvalidQuantityError(
         'Quantity must be a valid number',
         {
-          code: InvalidQuantityError.code,
           context: { value, reason: 'NaN' }
         }
       )
@@ -137,11 +135,10 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
   }
 
   if (!isFinite(value)) {
-    return Result.err(
+    return Err(
       new InvalidQuantityError(
         'Quantity cannot be infinite',
         {
-          code: InvalidQuantityError.code,
           context: { value, reason: 'Infinity' }
         }
       )
@@ -149,11 +146,10 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
   }
 
   if (value < 0) {
-    return Result.err(
+    return Err(
       new InvalidQuantityError(
         'Quantity cannot be negative',
         {
-          code: InvalidQuantityError.code,
           context: { value, min: 0, reason: 'negative' }
         }
       )
@@ -161,11 +157,10 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
   }
 
   if (value === 0 && min > 0) {
-    return Result.err(
+    return Err(
       new InvalidQuantityError(
         (ctx) => `Quantity must be at least ${ctx.min}`,
         {
-          code: InvalidQuantityError.code,
           context: { value: 0, min }
         }
       )
@@ -173,11 +168,10 @@ function validateQuantity(value: number, min: number = 0): Result<Quantity, Inva
   }
 
   if (value < min) {
-    return Result.err(
+    return Err(
       new InvalidQuantityError(
         (ctx) => `Quantity ${ctx.value} is below minimum ${ctx.min}`,
         {
-          code: InvalidQuantityError.code,
           context: { value, min }
         }
       )
@@ -205,34 +199,31 @@ function handleQuantityInput(input: string): void {
 
   const result = Quantity.fromNumber(value);
 
-  result.match({
-    ok: (qty) => {
-      // Обновляем UI
-      setQuantity(qty);
-      clearError('quantity');
+  if (result.ok) {
+    // Обновляем UI
+    setQuantity(result.value);
+    clearError('quantity');
 
-      // Рассчитываем стоимость
-      const totalCost = price.getValue() * qty.getValue();
-      setTotalCost(totalCost);
-    },
-    err: (error) => {
-      // Показываем ошибку пользователю
-      if (InvalidQuantityError.is(error)) {
-        const reason = error.context?.reason as string;
+    // Рассчитываем стоимость
+    const totalCost = price.getValue() * result.value.getValue();
+    setTotalCost(totalCost);
+  } else {
+    // Показываем ошибку пользователю
+    if (InvalidQuantityError.is(result.error)) {
+      const reason = result.error.context?.reason as string;
 
-        let userMessage = 'Quantity must be a positive number';
-        if (reason === 'NaN') {
-          userMessage = 'Please enter a valid number';
-        } else if (reason === 'negative') {
-          userMessage = 'Quantity cannot be negative';
-        } else if (reason === 'Infinity') {
-          userMessage = 'Quantity value is too large';
-        }
-
-        showFieldError('quantity', userMessage);
+      let userMessage = 'Quantity must be a positive number';
+      if (reason === 'NaN') {
+        userMessage = 'Please enter a valid number';
+      } else if (reason === 'negative') {
+        userMessage = 'Quantity cannot be negative';
+      } else if (reason === 'Infinity') {
+        userMessage = 'Quantity value is too large';
       }
+
+      showFieldError('quantity', userMessage);
     }
-  });
+  }
 }
 ```
 
@@ -240,7 +231,7 @@ function handleQuantityInput(input: string): void {
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 
 class Quantity {
@@ -250,11 +241,10 @@ class Quantity {
 
   static fromDecimal(value: Decimal): Result<Quantity, InvalidQuantityError> {
     if (!value.isFinite()) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Invalid quantity: ${ctx.reason}`,
           {
-            code: InvalidQuantityError.code,
             context: { value: value.toString(), reason: 'not finite' }
           }
         )
@@ -262,29 +252,27 @@ class Quantity {
     }
 
     if (value.lessThanOrEqualTo(Quantity.MIN)) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Quantity ${ctx.value} must be positive`,
           {
-            code: InvalidQuantityError.code,
             context: { value: value.toNumber(), min: 0 }
           }
         )
       );
     }
 
-    return Result.ok(new Quantity(value));
+    return Ok(new Quantity(value));
   }
 
   static fromNumber(value: number): Result<Quantity, InvalidQuantityError> {
     try {
       return Quantity.fromDecimal(new Decimal(value));
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Invalid quantity format: ${ctx.value}`,
           {
-            code: InvalidQuantityError.code,
             context: { value, error: String(error) }
           }
         )
@@ -296,11 +284,10 @@ class Quantity {
     try {
       return Quantity.fromDecimal(new Decimal(value));
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Invalid quantity format: "${ctx.value}"`,
           {
-            code: InvalidQuantityError.code,
             context: { value, error: String(error) }
           }
         )
@@ -326,41 +313,41 @@ class Quantity {
 
 ```typescript
 // Минимальное положительное
-Quantity.fromNumber(0.0001); // ✅ Result.ok(Quantity)
-Quantity.fromNumber(Number.MIN_VALUE); // ✅ Result.ok(Quantity) - 5e-324
+Quantity.fromNumber(0.0001); // ✅ Ok(Quantity)
+Quantity.fromNumber(Number.MIN_VALUE); // ✅ Ok(Quantity) - 5e-324
 
 // Ноль
-Quantity.fromNumber(0); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromNumber(0); // ❌ Err(InvalidQuantityError)
 
 // Отрицательные
-Quantity.fromNumber(-1); // ❌ Result.err(InvalidQuantityError)
-Quantity.fromNumber(-0.0001); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromNumber(-1); // ❌ Err(InvalidQuantityError)
+Quantity.fromNumber(-0.0001); // ❌ Err(InvalidQuantityError)
 
 // Большие числа
-Quantity.fromNumber(1e10); // ✅ Result.ok(Quantity)
-Quantity.fromNumber(Number.MAX_SAFE_INTEGER); // ✅ Result.ok(Quantity)
+Quantity.fromNumber(1e10); // ✅ Ok(Quantity)
+Quantity.fromNumber(Number.MAX_SAFE_INTEGER); // ✅ Ok(Quantity)
 ```
 
 ### Специальные значения
 
 ```typescript
 // NaN
-Quantity.fromNumber(NaN); // ❌ Result.err(InvalidQuantityError)
-Quantity.fromNumber(0 / 0); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromNumber(NaN); // ❌ Err(InvalidQuantityError)
+Quantity.fromNumber(0 / 0); // ❌ Err(InvalidQuantityError)
 
 // Infinity
-Quantity.fromNumber(Infinity); // ❌ Result.err(InvalidQuantityError)
-Quantity.fromNumber(-Infinity); // ❌ Result.err(InvalidQuantityError)
-Quantity.fromNumber(1 / 0); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromNumber(Infinity); // ❌ Err(InvalidQuantityError)
+Quantity.fromNumber(-Infinity); // ❌ Err(InvalidQuantityError)
+Quantity.fromNumber(1 / 0); // ❌ Err(InvalidQuantityError)
 
 // Отрицательный ноль
-Quantity.fromNumber(-0); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromNumber(-0); // ❌ Err(InvalidQuantityError)
                         // Технически -0 === 0, но не положительное
 
 // Строковые значения
-Quantity.fromString('100'); // ✅ Result.ok(Quantity)
-Quantity.fromString('abc'); // ❌ Result.err(InvalidQuantityError)
-Quantity.fromString(''); // ❌ Result.err(InvalidQuantityError)
+Quantity.fromString('100'); // ✅ Ok(Quantity)
+Quantity.fromString('abc'); // ❌ Err(InvalidQuantityError)
+Quantity.fromString(''); // ❌ Err(InvalidQuantityError)
 ```
 
 ### Округление и точность
@@ -371,33 +358,42 @@ Quantity.fromNumber(0.5); // ✅ Допустимо (если протокол �
 Quantity.fromNumber(1.23456789); // ✅ Допустимо
 
 // Очень малые числа
-Quantity.fromNumber(1e-18); // ✅ Result.ok(Quantity)
+Quantity.fromNumber(1e-18); // ✅ Ok(Quantity)
 
 // Проблемы с точностью float
 const qty1 = Quantity.fromNumber(0.1 + 0.2); // 0.30000000000000004
-// ✅ Result.ok(Quantity) - но значение может быть неточным
+// ✅ Ok(Quantity) - но значение может быть неточным
 
 // Использование decimal.js решает эту проблему
-const qty2 = Quantity.fromString('0.1');
-const qty3 = Quantity.fromString('0.2');
-const sum = qty2.unwrap().toDecimal().plus(qty3.unwrap().toDecimal());
+const qty2Result = Quantity.fromString('0.1');
+const qty3Result = Quantity.fromString('0.2');
+
+if (!qty2Result.ok || !qty3Result.ok) {
+  throw new Error('Failed to create quantities');
+}
+
+const qty2 = qty2Result.value;
+const qty3 = qty3Result.value;
+const sum = qty2.toDecimal().plus(qty3.toDecimal());
 Quantity.fromDecimal(sum); // ✅ Точно 0.3
 ```
 
 ### Валидация с минимальным значением
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
+import { InvalidQuantityError } from '@polymarket/errors';
+
 class Quantity {
   static fromNumberWithMin(
     value: number,
     min: number = 0
   ): Result<Quantity, InvalidQuantityError> {
     if (value < min) {
-      return Result.err(
+      return Err(
         new InvalidQuantityError(
           (ctx) => `Quantity ${ctx.value} must be >= ${ctx.min}`,
           {
-            code: InvalidQuantityError.code,
             context: { value, min }
           }
         )
@@ -409,8 +405,8 @@ class Quantity {
 
 // Использование
 Quantity.fromNumberWithMin(0, 1); // ❌ min = 1, значит 0 недопустим
-Quantity.fromNumberWithMin(1, 1); // ✅ Result.ok(Quantity)
-Quantity.fromNumberWithMin(100, 10); // ✅ Result.ok(Quantity)
+Quantity.fromNumberWithMin(1, 1); // ✅ Ok(Quantity)
+Quantity.fromNumberWithMin(100, 10); // ✅ Ok(Quantity)
 ```
 
 ---
@@ -452,23 +448,23 @@ import { InvalidQuantityError, TradingError } from '@polymarket/errors';
 
 const result = Quantity.fromNumber(userInput);
 
-result.match({
-  ok: (quantity) => submitOrder(quantity),
-  err: (error) => {
-    if (error.code === InvalidQuantityError.code) {
-      // Обработка InvalidQuantityError
-      showError('Invalid quantity', error.context);
-    } else {
-      // Другие ошибки
-      showError('Unexpected error', error);
-    }
+if (result.ok) {
+  submitOrder(result.value);
+} else {
+  if (result.error.code === InvalidQuantityError.code) {
+    // Обработка InvalidQuantityError
+    showError('Invalid quantity', result.error.context);
+  } else {
+    // Другие ошибки
+    showError('Unexpected error', result.error);
   }
-});
+}
 ```
 
 ### С логированием
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidQuantityError } from '@polymarket/errors';
 
 function validateAndLogQuantity(
@@ -477,21 +473,18 @@ function validateAndLogQuantity(
 ): Result<Quantity, InvalidQuantityError> {
   const result = Quantity.fromNumber(value);
 
-  result.match({
-    ok: (quantity) => {
-      logger.info('Quantity validated', {
-        orderId,
-        quantity: quantity.getValue()
-      });
-    },
-    err: (error) => {
-      logger.error('Quantity validation failed', {
-        orderId,
-        error: error.toJSON(),
-        userInput: value
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Quantity validated', {
+      orderId,
+      quantity: result.value.getValue()
+    });
+  } else {
+    logger.error('Quantity validation failed', {
+      orderId,
+      error: result.error.toJSON(),
+      userInput: value
+    });
+  }
 
   return result;
 }
@@ -500,36 +493,34 @@ function validateAndLogQuantity(
 ### Обработка в цепочке валидаций
 
 ```typescript
-import { ResultChain } from '@polymarket/types';
+import { toChain } from '@polymarket/result';
 import { InvalidPriceError, InvalidQuantityError } from '@polymarket/errors';
 
 function createOrder(
   priceInput: number,
   qtyInput: number
 ): Result<Order, InvalidPriceError | InvalidQuantityError> {
-  return ResultChain
-    .from(Price.fromNumber(priceInput))
+  return toChain(Price.fromNumber(priceInput))
     .flatMap(price =>
       Quantity.fromNumber(qtyInput).map(qty => ({ price, qty }))
     )
     .map(({ price, qty }) => new Order(price, qty))
-    .run();
+    .toResult();
 }
 
 // Использование
 const orderResult = createOrder(0.5, 100);
 
-orderResult.match({
-  ok: (order) => console.log('Order created:', order),
-  err: (error) => {
-    // Обработка обоих типов ошибок
-    if (error.code === InvalidPriceError.code) {
-      showError('Invalid price');
-    } else if (error.code === InvalidQuantityError.code) {
-      showError('Invalid quantity');
-    }
+if (orderResult.ok) {
+  console.log('Order created:', orderResult.value);
+} else {
+  // Обработка обоих типов ошибок
+  if (orderResult.error.code === InvalidPriceError.code) {
+    showError('Invalid price');
+  } else if (orderResult.error.code === InvalidQuantityError.code) {
+    showError('Invalid quantity');
   }
-});
+}
 ```
 
 ---

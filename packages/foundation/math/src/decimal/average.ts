@@ -1,8 +1,5 @@
 import Decimal from 'decimal.js';
-import {
-  ArithmeticOverflowError,
-  InvalidOperandError,
-} from '@polymarket/errors';
+import { assertFiniteOperands, assertFiniteResult, withResult, toStringSafe } from '../shared/index.js';
 import { MATH_CONSTANTS } from '../constants.js';
 
 /**
@@ -43,58 +40,25 @@ import { MATH_CONSTANTS } from '../constants.js';
  * averageDecimal(new Decimal(NaN), new Decimal(5)); // throws InvalidOperandError
  * averageDecimal(new Decimal(Infinity), new Decimal(5)); // throws InvalidOperandError
  *
- * // Throw на overflow
- * const huge = new Decimal('1e308');
- * averageDecimal(huge, huge); // throws ArithmeticOverflowError
+ * // Overflow при превышении Decimal.maxE = 9e15
+ * // Операнды валидны (finite), но результат сложения превышает maxE
+ * const huge = new Decimal('5e' + Decimal.maxE);
+ * averageDecimal(huge, huge); // throws ArithmeticOverflowError (a + b = Infinity)
  * ```
  */
 export function averageDecimal(a: Decimal, b: Decimal): Decimal {
-  // Проверка 1: Оба операнда должны быть конечными числами
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'a' must be finite, got ${ctx.a}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'average',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'average',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
 
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'b' must be finite, got ${ctx.b}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'average',
-        },
-      }
-    );
-  }
+  assertFiniteOperands(a, b, context);
 
-  // Выполняем операцию
   const sum = a.plus(b);
   const result = sum.dividedBy(MATH_CONSTANTS.TWO);
 
-  // Проверка 2: Результат должен быть конечным
-  if (!result.isFinite()) {
-    throw new ArithmeticOverflowError(
-      (ctx) =>
-        `Average operation resulted in non-finite value: ${ctx.result}`,
-      {
-        context: {
-          operation: 'average',
-          operand1: a.toString(),
-          operand2: b.toString(),
-          result: result.toString(),
-        },
-      }
-    );
-  }
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }

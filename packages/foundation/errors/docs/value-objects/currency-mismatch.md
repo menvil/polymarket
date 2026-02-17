@@ -32,7 +32,7 @@ import { CurrencyMismatchError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E> также понадобятся:
 import { InvalidMoneyError } from '@polymarket/errors';
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 ```
 
 ---
@@ -93,8 +93,8 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/types';
-import { CurrencyMismatchError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
+import { CurrencyMismatchError, InvalidMoneyError } from '@polymarket/errors';
 
 class Money {
   private constructor(
@@ -104,12 +104,12 @@ class Money {
 
   static fromAmount(amount: number, currency: string): Result<Money, InvalidMoneyError> {
     // ... валидация
-    return Result.ok(new Money(amount, currency));
+    return Ok(new Money(amount, currency));
   }
 
   add(other: Money): Result<Money, CurrencyMismatchError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot add ${ctx.actual} to ${ctx.expected}. Convert currencies first.`,
           {
@@ -126,12 +126,12 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(this.amount + other.amount, this.currency));
+    return Ok(new Money(this.amount + other.amount, this.currency));
   }
 
   subtract(other: Money): Result<Money, CurrencyMismatchError | InvalidMoneyError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot subtract ${ctx.actual} from ${ctx.expected}`,
           {
@@ -149,7 +149,7 @@ class Money {
     const newAmount = this.amount - other.amount;
 
     if (newAmount < 0) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Insufficient funds: ${ctx.available} - ${ctx.required} = ${ctx.result}`,
           {
@@ -165,7 +165,7 @@ class Money {
       );
     }
 
-    return Result.ok(new Money(newAmount, this.currency));
+    return Ok(new Money(newAmount, this.currency));
   }
 
   getAmount(): number {
@@ -178,20 +178,24 @@ class Money {
 }
 
 // Использование
-const usdc = Money.fromAmount(100, 'USDC').unwrap();
-const eur = Money.fromAmount(50, 'EUR').unwrap();
-const result = usdc.add(eur);
+const usdcResult = Money.fromAmount(100, 'USDC');
+const eurResult = Money.fromAmount(50, 'EUR');
 
-result.match({
-  ok: (total) => console.log(`Total: ${total.getAmount()} ${total.getCurrency()}`),
-  err: (error) => console.error('Error:', error.message)
-});
+if (usdcResult.ok && eurResult.ok) {
+  const result = usdcResult.value.add(eurResult.value);
+
+  if (result.ok) {
+    console.log(`Total: ${result.value.getAmount()} ${result.value.getCurrency()}`);
+  } else {
+    console.error('Error:', result.error.message);
+  }
+}
 ```
 
 ### 3. Сравнение денежных сумм
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { CurrencyMismatchError } from '@polymarket/errors';
 
 class Money {
@@ -206,7 +210,7 @@ class Money {
    */
   compareTo(other: Money): Result<number, CurrencyMismatchError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot compare ${ctx.expected} with ${ctx.actual}`,
           {
@@ -221,9 +225,9 @@ class Money {
       );
     }
 
-    if (this.amount < other.amount) return Result.ok(-1);
-    if (this.amount > other.amount) return Result.ok(1);
-    return Result.ok(0);
+    if (this.amount < other.amount) return Ok(-1);
+    if (this.amount > other.amount) return Ok(1);
+    return Ok(0);
   }
 
   /**
@@ -249,27 +253,33 @@ class Money {
 }
 
 // Использование
-const usdc1 = Money.fromAmount(100, 'USDC').unwrap();
-const usdc2 = Money.fromAmount(50, 'USDC').unwrap();
-const btc = Money.fromAmount(0.5, 'BTC').unwrap();
+const usdc1Result = Money.fromAmount(100, 'USDC');
+const usdc2Result = Money.fromAmount(50, 'USDC');
+const btcResult = Money.fromAmount(0.5, 'BTC');
 
-// Сравнение одинаковых валют
-usdc1.isGreaterThan(usdc2).match({
-  ok: (result) => console.log('100 USDC > 50 USDC:', result), // true
-  err: (error) => console.error('Error:', error.message)
-});
+if (usdc1Result.ok && usdc2Result.ok && btcResult.ok) {
+  // Сравнение одинаковых валют
+  const comparisonResult = usdc1Result.value.isGreaterThan(usdc2Result.value);
+  if (comparisonResult.ok) {
+    console.log('100 USDC > 50 USDC:', comparisonResult.value); // true
+  } else {
+    console.error('Error:', comparisonResult.error.message);
+  }
 
-// Сравнение разных валют
-usdc1.isGreaterThan(btc).match({
-  ok: (result) => console.log('Result:', result),
-  err: (error) => console.error('Cannot compare USDC with BTC') // ❌
-});
+  // Сравнение разных валют
+  const btcComparisonResult = usdc1Result.value.isGreaterThan(btcResult.value);
+  if (btcComparisonResult.ok) {
+    console.log('Result:', btcComparisonResult.value);
+  } else {
+    console.error('Cannot compare USDC with BTC'); // ❌
+  }
+}
 ```
 
 ### 4. Конвертация валют
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { CurrencyMismatchError } from '@polymarket/errors';
 
 interface ExchangeRate {
@@ -286,20 +296,20 @@ class CurrencyConverter {
    */
   getRate(from: string, to: string): Result<number, Error> {
     if (from === to) {
-      return Result.ok(1);
+      return Ok(1);
     }
 
     const fromRates = this.rates.get(from);
     if (!fromRates) {
-      return Result.err(new Error(`No rates available for ${from}`));
+      return Err(new Error(`No rates available for ${from}`));
     }
 
     const rate = fromRates.get(to);
     if (rate === undefined) {
-      return Result.err(new Error(`No rate available for ${from} -> ${to}`));
+      return Err(new Error(`No rate available for ${from} -> ${to}`));
     }
 
-    return Result.ok(rate);
+    return Ok(rate);
   }
 
   /**
@@ -344,24 +354,27 @@ const rates = new Map([
 
 const converter = new CurrencyConverter(rates);
 
-const usdc = Money.fromAmount(100, 'USDC').unwrap();
-const eur = Money.fromAmount(50, 'EUR').unwrap();
+const usdcResult = Money.fromAmount(100, 'USDC');
+const eurResult = Money.fromAmount(50, 'EUR');
 
-const totalResult = usdc.addWithConversion(eur, converter);
+if (usdcResult.ok && eurResult.ok) {
+  const totalResult = usdcResult.value.addWithConversion(eurResult.value, converter);
 
-totalResult.match({
-  ok: (total) => console.log(`Total: ${total.getAmount()} ${total.getCurrency()}`),
-  // Total: 154.5 USDC (100 USDC + 50 EUR * 1.09)
-  err: (error) => console.error('Conversion error:', error.message)
-});
+  if (totalResult.ok) {
+    console.log(`Total: ${totalResult.value.getAmount()} ${totalResult.value.getCurrency()}`);
+    // Total: 154.5 USDC (100 USDC + 50 EUR * 1.09)
+  } else {
+    console.error('Conversion error:', totalResult.error.message);
+  }
+}
 ```
 
 ### 5. Интеграция с decimal.js
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/types';
-import { CurrencyMismatchError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
+import { CurrencyMismatchError, InvalidMoneyError } from '@polymarket/errors';
 
 class DecimalMoney {
   private constructor(
@@ -371,12 +384,12 @@ class DecimalMoney {
 
   static fromDecimal(amount: Decimal, currency: string): Result<DecimalMoney, InvalidMoneyError> {
     // ... валидация
-    return Result.ok(new DecimalMoney(amount, currency));
+    return Ok(new DecimalMoney(amount, currency));
   }
 
   add(other: DecimalMoney): Result<DecimalMoney, CurrencyMismatchError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot add ${ctx.actual} to ${ctx.expected}`,
           {
@@ -394,12 +407,12 @@ class DecimalMoney {
     }
 
     const sum = this.amount.plus(other.amount);
-    return Result.ok(new DecimalMoney(sum, this.currency));
+    return Ok(new DecimalMoney(sum, this.currency));
   }
 
   subtract(other: DecimalMoney): Result<DecimalMoney, CurrencyMismatchError | InvalidMoneyError> {
     if (this.currency !== other.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot subtract ${ctx.actual} from ${ctx.expected}`,
           {
@@ -417,7 +430,7 @@ class DecimalMoney {
     const difference = this.amount.minus(other.amount);
 
     if (difference.isNegative()) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Insufficient funds',
           {
@@ -433,7 +446,7 @@ class DecimalMoney {
       );
     }
 
-    return Result.ok(new DecimalMoney(difference, this.currency));
+    return Ok(new DecimalMoney(difference, this.currency));
   }
 
   toDecimal(): Decimal {
@@ -453,18 +466,20 @@ class DecimalMoney {
 ### Одинаковые валюты (регистр)
 
 ```typescript
-const usdc1 = Money.fromAmount(100, 'USDC').unwrap();
-const usdc2 = Money.fromAmount(50, 'usdc').unwrap(); // lowercase
+const usdc1Result = Money.fromAmount(100, 'USDC');
+const usdc2Result = Money.fromAmount(50, 'usdc'); // lowercase
 
-const result = usdc1.add(usdc2);
-// ❌ Result.err(CurrencyMismatchError) - 'USDC' !== 'usdc'
+if (usdc1Result.ok && usdc2Result.ok) {
+  const result = usdc1Result.value.add(usdc2Result.value);
+  // ❌ Err(CurrencyMismatchError) - 'USDC' !== 'usdc'
+}
 
 // Решение: нормализация валюты при создании
 class Money {
   static fromAmount(amount: number, currency: string): Result<Money, InvalidMoneyError> {
     const normalizedCurrency = currency.toUpperCase();
     // ... валидация
-    return Result.ok(new Money(amount, normalizedCurrency));
+    return Ok(new Money(amount, normalizedCurrency));
   }
 }
 ```
@@ -472,17 +487,19 @@ class Money {
 ### Пустые или некорректные валюты
 
 ```typescript
-const money1 = Money.fromAmount(100, 'USDC').unwrap();
-const money2 = Money.fromAmount(50, '').unwrap(); // Пустая валюта
+const money1Result = Money.fromAmount(100, 'USDC');
+const money2Result = Money.fromAmount(50, ''); // Пустая валюта
 
-const result = money1.add(money2);
-// ❌ Result.err(CurrencyMismatchError) - 'USDC' !== ''
+if (money1Result.ok && money2Result.ok) {
+  const result = money1Result.value.add(money2Result.value);
+  // ❌ Err(CurrencyMismatchError) - 'USDC' !== ''
+}
 
 // Лучше: валидировать при создании
 class Money {
   static fromAmount(amount: number, currency: string): Result<Money, InvalidMoneyError> {
     if (!currency || currency.trim().length === 0) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           'Currency must be a non-empty string',
           {
@@ -501,49 +518,58 @@ class Money {
 
 ```typescript
 // Попытка сложить три разные валюты
-const usdc = Money.fromAmount(100, 'USDC').unwrap();
-const eur = Money.fromAmount(50, 'EUR').unwrap();
-const btc = Money.fromAmount(0.5, 'BTC').unwrap();
+const usdcResult = Money.fromAmount(100, 'USDC');
+const eurResult = Money.fromAmount(50, 'EUR');
+const btcResult = Money.fromAmount(0.5, 'BTC');
 
-const result = ResultChain
-  .from(usdc.add(eur))
+// Предполагаем что все Result успешны для примера
+if (!usdcResult.ok || !eurResult.ok || !btcResult.ok) {
+  throw new Error('Invalid amounts');
+}
+
+const usdc = usdcResult.value;
+const eur = eurResult.value;
+const btc = btcResult.value;
+
+const result = toChain(usdc.add(eur))
   .flatMap(total => total.add(btc))
-  .run();
+  .toResult();
 
-// ❌ Result.err(CurrencyMismatchError) на первой же операции (USDC + EUR)
+// ❌ Err(CurrencyMismatchError) на первой же операции (USDC + EUR)
 
 // Решение: конвертация перед операциями
-const result2 = ResultChain
-  .from(converter.convert(eur, 'USDC'))
+const result2 = toChain(converter.convert(eur, 'USDC'))
   .flatMap(eurInUsdc => usdc.add(eurInUsdc))
   .flatMap(total => converter.convert(btc, 'USDC'))
   .flatMap(btcInUsdc => total.add(btcInUsdc))
-  .run(); // ✅ Все в USDC
+  .toResult(); // ✅ Все в USDC
 ```
 
 ### Операции с нулевыми суммами
 
 ```typescript
-const usdc = Money.fromAmount(100, 'USDC').unwrap();
-const zeroEur = Money.fromAmount(0, 'EUR').unwrap();
+const usdcResult = Money.fromAmount(100, 'USDC');
+const zeroEurResult = Money.fromAmount(0, 'EUR');
 
-const result = usdc.add(zeroEur);
-// ❌ Result.err(CurrencyMismatchError)
-// Даже если сумма 0, валюты разные
+if (usdcResult.ok && zeroEurResult.ok) {
+  const result = usdcResult.value.add(zeroEurResult.value);
+  // ❌ Err(CurrencyMismatchError)
+  // Даже если сумма 0, валюты разные
+}
 
 // Если нужна специальная логика для нуля:
 class Money {
   add(other: Money): Result<Money, CurrencyMismatchError> {
     // Специальный случай: добавление нуля любой валюты
     if (other.amount === 0) {
-      return Result.ok(this); // Возвращаем текущую сумму без изменений
+      return Ok(this); // Возвращаем текущую сумму без изменений
     }
 
     if (this.currency !== other.currency) {
-      return Result.err(/* ... */);
+      return Err(/* ... */);
     }
 
-    return Result.ok(new Money(this.amount + other.amount, this.currency));
+    return Ok(new Money(this.amount + other.amount, this.currency));
   }
 }
 ```
@@ -588,24 +614,24 @@ import { CurrencyMismatchError, InvalidMoneyError } from '@polymarket/errors';
 
 const result = money1.subtract(money2);
 
-result.match({
-  ok: (difference) => processMoney(difference),
-  err: (error) => {
-    if (error.code === CurrencyMismatchError.code) {
-      const expected = error.context?.expected as string;
-      const actual = error.context?.actual as string;
+if (result.ok) {
+  processMoney(result.value);
+} else {
+  const error = result.error;
+  if (error.code === CurrencyMismatchError.code) {
+    const expected = error.context?.expected as string;
+    const actual = error.context?.actual as string;
 
-      showError(`Currency mismatch: ${expected} vs ${actual}`, error.context);
+    showError(`Currency mismatch: ${expected} vs ${actual}`, error.context);
 
-      // Предложить конвертацию
-      return offerConversion(money2, expected);
-    } else if (error.code === InvalidMoneyError.code) {
-      showError('Insufficient funds', error.context);
-    } else {
-      showError('Unexpected error', error);
-    }
+    // Предложить конвертацию
+    offerConversion(money2, expected);
+  } else if (error.code === InvalidMoneyError.code) {
+    showError('Insufficient funds', error.context);
+  } else {
+    showError('Unexpected error', error);
   }
-});
+}
 ```
 
 ### С автоматической конвертацией
@@ -618,19 +644,20 @@ function addWithAutoConvert(
   money2: Money,
   converter: CurrencyConverter
 ): Result<Money, Error> {
-  return money1.add(money2).match({
-    ok: (sum) => Result.ok(sum),
-    err: (error) => {
-      if (CurrencyMismatchError.is(error)) {
-        logger.info('Currency mismatch, attempting conversion', error.toJSON());
+  const result = money1.add(money2);
 
-        // Автоматическая конвертация
-        return money1.addWithConversion(money2, converter);
-      }
+  if (result.ok) {
+    return Ok(result.value);
+  } else {
+    if (CurrencyMismatchError.is(result.error)) {
+      logger.info('Currency mismatch, attempting conversion', result.error.toJSON());
 
-      return Result.err(error);
+      // Автоматическая конвертация
+      return money1.addWithConversion(money2, converter);
     }
-  });
+
+    return Err(result.error);
+  }
 }
 ```
 
@@ -646,23 +673,20 @@ function operateWithLogging(
 ): Result<Money, CurrencyMismatchError | InvalidMoneyError> {
   const result = operation === 'add' ? money1.add(money2) : money1.subtract(money2);
 
-  result.match({
-    ok: (resultMoney) => {
-      logger.info('Operation successful', {
+  if (result.ok) {
+    logger.info('Operation successful', {
+      operation,
+      currency: result.value.getCurrency(),
+      result: result.value.getAmount()
+    });
+  } else {
+    if (CurrencyMismatchError.is(result.error)) {
+      logger.error('Currency mismatch', {
         operation,
-        currency: resultMoney.getCurrency(),
-        result: resultMoney.getAmount()
+        error: result.error.toJSON()
       });
-    },
-    err: (error) => {
-      if (CurrencyMismatchError.is(error)) {
-        logger.error('Currency mismatch', {
-          operation,
-          error: error.toJSON()
-        });
-      }
     }
-  });
+  }
 
   return result;
 }

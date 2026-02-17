@@ -1,25 +1,44 @@
 import Decimal from 'decimal.js';
-import { InvalidDecimalPlacesError, InvalidOperandError } from '@polymarket/errors';
+import {
+  assertFiniteOperand,
+  assertValidDecimalPlaces,
+  assertValidRoundingMode,
+  assertFiniteResult,
+  withResult,
+  toStringSafe,
+} from '../shared/index.js';
 
 /**
  * Округляет значение до указанного количества десятичных знаков
  *
  * @param value - Значение для округления
- * @param decimalPlaces - Количество десятичных знаков (0 для целых чисел)
- * @param roundingMode - Режим округления Decimal
+ * @param decimalPlaces - Количество десятичных знаков (0 для целых чисел, максимум 1e9)
+ * @param roundingMode - Режим округления Decimal (0-8)
  * @returns Округлённое значение
  * @throws {InvalidOperandError} При невалидном value (NaN, ±Infinity)
- * @throws {InvalidDecimalPlacesError} При невалидном количестве знаков (отрицательное, NaN, Infinity, не integer)
+ * @throws {InvalidDecimalPlacesError} При невалидном количестве знаков (не finite, не integer, отрицательное, больше 1e9)
+ * @throws {InvalidRoundingModeError} При невалидном roundingMode (не integer, вне диапазона 0-8)
+ * @throws {ArithmeticOverflowError} Если результат не конечное число
  *
  * @remarks
  * Обёртка над Decimal.toDecimalPlaces() с валидацией для единообразного API.
  *
+ * Ограничения:
+ * - decimalPlaces должно быть в диапазоне [0, 1e9]
+ * - roundingMode должен быть в диапазоне [0, 8]
+ * - Превышение максимума decimalPlaces вызывает InvalidDecimalPlacesError (через assertValidDecimalPlaces)
+ * - Невалидный roundingMode вызывает InvalidRoundingModeError (через assertValidRoundingMode)
+ *
  * Режимы округления:
- * - Decimal.ROUND_HALF_UP - округление к ближайшему, .5 вверх
- * - Decimal.ROUND_DOWN - округление к нулю
- * - Decimal.ROUND_UP - округление от нуля
- * - Decimal.ROUND_FLOOR - округление к -Infinity
- * - Decimal.ROUND_CEIL - округление к +Infinity
+ * - 0 (Decimal.ROUND_UP) - округление от нуля
+ * - 1 (Decimal.ROUND_DOWN) - округление к нулю
+ * - 2 (Decimal.ROUND_CEIL) - округление к +Infinity
+ * - 3 (Decimal.ROUND_FLOOR) - округление к -Infinity
+ * - 4 (Decimal.ROUND_HALF_UP) - округление к ближайшему, .5 вверх
+ * - 5 (Decimal.ROUND_HALF_DOWN) - округление к ближайшему, .5 вниз
+ * - 6 (Decimal.ROUND_HALF_EVEN) - округление к ближайшему, .5 к чётному
+ * - 7 (Decimal.ROUND_HALF_CEIL) - округление к ближайшему, .5 к +Infinity
+ * - 8 (Decimal.ROUND_HALF_FLOOR) - округление к ближайшему, .5 к -Infinity
  *
  * @example
  * ```typescript
@@ -50,6 +69,7 @@ import { InvalidDecimalPlacesError, InvalidOperandError } from '@polymarket/erro
  * roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP); // throws
  * roundToPrecision(new Decimal('10.567'), NaN, Decimal.ROUND_HALF_UP); // throws
  * roundToPrecision(new Decimal('10.567'), 1.5, Decimal.ROUND_HALF_UP); // throws
+ * roundToPrecision(new Decimal('10.567'), 1e9 + 1, Decimal.ROUND_HALF_UP); // throws (превышен максимум)
  * ```
  */
 export function roundToPrecision(
@@ -57,35 +77,24 @@ export function roundToPrecision(
   decimalPlaces: number,
   roundingMode: Decimal.Rounding
 ): Decimal {
-  // Валидация value
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Value must be finite, got ${ctx.value}`,
-      {
-        context: {
-          value: value.toString(),
-          decimalPlaces: String(decimalPlaces),
-          operation: 'roundToPrecision'
-        }
-      }
-    );
-  }
+  // Создаём context используя toStringSafe для единообразия
+  const context = {
+    operation: 'roundToPrecision',
+    value: toStringSafe(value),
+    decimalPlaces: String(decimalPlaces),
+    roundingMode: String(roundingMode),
+  };
 
-  // Валидация decimalPlaces через Decimal
-  const decimalPlacesDecimal = new Decimal(decimalPlaces);
+  // Валидация через shared assertions
+  assertFiniteOperand(value, 'value', context);
+  assertValidDecimalPlaces(decimalPlaces, context);
+  assertValidRoundingMode(roundingMode, context);
 
-  if (!decimalPlacesDecimal.isFinite() || decimalPlacesDecimal.isNegative() || !decimalPlacesDecimal.isInteger()) {
-    throw new InvalidDecimalPlacesError(
-      (ctx) => `Decimal places must be a non-negative integer, got ${ctx.decimalPlaces}`,
-      {
-        context: {
-          decimalPlaces: decimalPlacesDecimal.toString(),
-          value: value.toString(),
-          operation: 'roundToPrecision'
-        }
-      }
-    );
-  }
+  // Выполняем округление
+  const result = value.toDecimalPlaces(decimalPlaces, roundingMode);
 
-  return value.toDecimalPlaces(decimalPlaces, roundingMode);
+  // Проверка результата (единообразие с остальными операциями)
+  assertFiniteResult(result, withResult(context, result));
+
+  return result;
 }

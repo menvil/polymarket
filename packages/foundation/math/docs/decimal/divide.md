@@ -21,15 +21,15 @@
 ## Сигнатура
 
 ```typescript
-function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal
+function divideDecimal(a: Decimal, b: Decimal): Decimal
 ```
 
 ### Параметры
 
 |Параметр|Тип|Описание|
 |----------|----------|----------|
-|`dividend`|`Decimal`|Делимое|
-|`divisor`|`Decimal`|Делитель|
+|`a`|`Decimal`|Делимое (dividend)|
+|`b`|`Decimal`|Делитель (divisor)|
 
 ### Возвращаемое значение
 
@@ -37,9 +37,29 @@ function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal
 
 ### Выбрасываемые ошибки
 
-- **InvalidDivisorError** - Если делитель не является конечным числом (NaN, Infinity, -Infinity)
-- **DivisionByZeroError** - Если делитель равен нулю
-- **ArithmeticOverflowError** - Если результат не является конечным числом (Infinity, -Infinity)
+- **InvalidOperandError** — делимое `a` не является конечным числом (NaN, ±Infinity) или не Decimal-like
+- **InvalidDivisorError** — делитель `b` не конечен, не Decimal-like или не имеет метода `isZero`
+- **DivisionByZeroError** — делитель равен нулю
+- **ArithmeticOverflowError** — результат не конечен (overflow при делении очень большого на очень малое)
+
+### Порядок проверок
+
+```
+1. assertFiniteOperandWith(a, 'a', ..., InvalidOperandError)
+   → a не Decimal-like или не finite: InvalidOperandError
+
+2. assertNonZeroDivisor(b, ...)
+   → b не Decimal-like или не finite: InvalidDivisorError
+   → b не имеет isZero():             InvalidDivisorError
+   → b.isZero() === true:             DivisionByZeroError
+
+3. result = a.div(b)
+
+4. assertFiniteResult(result, withResult(context, result))
+   → result не finite: ArithmeticOverflowError
+```
+
+Это гарантирует детерминированный порядок: `InvalidOperandError` всегда выбрасывается **до** `DivisionByZeroError`, даже если оба условия выполнены одновременно.
 
 ## Математические свойства
 
@@ -151,7 +171,7 @@ try {
   if (DivisionByZeroError.is(error)) {
     console.error('Cannot divide by zero');
     console.error('Context:', error.context);
-    // Context: { dividend: '10', divisor: '0' }
+    // Context: { operation: 'divide', a: '10', b: '0' }
   }
 }
 ```
@@ -169,7 +189,7 @@ try {
   if (InvalidDivisorError.is(error)) {
     console.error('Invalid divisor:', error.message);
     console.error('Context:', error.context);
-    // Context: { dividend: '10', divisor: 'NaN' }
+    // Context: { operation: 'divide', a: '10', b: 'NaN' }
   }
 }
 
@@ -190,15 +210,43 @@ import { divideDecimal } from '@polymarket/math';
 import { ArithmeticOverflowError } from '@polymarket/errors';
 
 try {
-  const inf = new Decimal(Infinity);
-  const value = new Decimal(2);
+  // Overflow возникает при делении огромного числа на крошечное
+  // Decimal.js имеет maxE = 9e15, используем значения близкие к этой границе
+  const huge = new Decimal('5e' + (Decimal.maxE - 1000));
+  const tiny = new Decimal('1e-1500');
 
-  const result = divideDecimal(inf, value);
+  const result = divideDecimal(huge, tiny);
 } catch (error) {
   if (ArithmeticOverflowError.is(error)) {
     console.error('Division overflow:', error.message);
     console.error('Context:', error.context);
-    // Context: { dividend: 'Infinity', divisor: '2', result: 'Infinity' }
+    // Context: { operation: 'divide', a: '5e8999999999999000', b: '1e-1500', result: 'Infinity' }
+  }
+}
+```
+
+### Обработка невалидного делимого
+
+```typescript
+import Decimal from 'decimal.js';
+import { divideDecimal } from '@polymarket/math';
+import { InvalidOperandError } from '@polymarket/errors';
+
+try {
+  const result = divideDecimal(new Decimal(NaN), new Decimal(10));
+} catch (error) {
+  if (InvalidOperandError.is(error)) {
+    console.error('Invalid dividend:', error.message);
+    console.error('Context:', error.context);
+    // Context: { operation: 'divide', a: 'NaN', b: '10', paramName: 'a', value: 'NaN' }
+  }
+}
+
+try {
+  const result = divideDecimal(new Decimal(Infinity), new Decimal(10));
+} catch (error) {
+  if (InvalidOperandError.is(error)) {
+    console.error('Dividend must be finite');
   }
 }
 ```
@@ -395,6 +443,7 @@ import { divideDecimal } from '@polymarket/math';
 import {
   DivisionByZeroError,
   InvalidDivisorError,
+  InvalidOperandError,
   ArithmeticOverflowError,
 } from '@polymarket/errors';
 
@@ -412,6 +461,11 @@ function safeDivide(a: Decimal, b: Decimal): Decimal | null {
       return null;
     }
 
+    if (InvalidOperandError.is(error)) {
+      console.error('Invalid operand (NaN or Infinity)');
+      return null;
+    }
+
     if (ArithmeticOverflowError.is(error)) {
       console.error('Division resulted in overflow');
       return null;
@@ -426,6 +480,7 @@ function safeDivide(a: Decimal, b: Decimal): Decimal | null {
 const result1 = safeDivide(new Decimal(10), new Decimal(2)); // 5
 const result2 = safeDivide(new Decimal(10), new Decimal(0)); // null (division by zero)
 const result3 = safeDivide(new Decimal(10), new Decimal(NaN)); // null (invalid divisor)
+const result4 = safeDivide(new Decimal(NaN), new Decimal(10)); // null (invalid operand)
 ```
 
 ## Сравнение с умножением
@@ -448,12 +503,44 @@ console.log(divideDecimal(product, b).equals(a)); // true
 console.log(multiplyDecimal(quotient, b).equals(a)); // true
 ```
 
+## Внутренняя архитектура
+
+`divideDecimal` использует centralized assertion helpers из `shared/assertions`:
+
+```typescript
+export function divideDecimal(a: Decimal, b: Decimal): Decimal {
+  const context = {
+    operation: 'divide',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
+
+  // Проверка делимого (InvalidOperandError при ошибке)
+  assertFiniteOperandWith(a, 'a', context, InvalidOperandError);
+
+  // Проверка делителя: конечность + isZero + ненулевое
+  // (InvalidDivisorError или DivisionByZeroError при ошибке)
+  assertNonZeroDivisor(b, context);
+
+  const result = a.div(b);
+
+  // Проверка переполнения результата
+  assertFiniteResult(result, withResult(context, result));
+
+  return result;
+}
+```
+
+`assertNonZeroDivisor` централизует все проверки делителя — они не дублируются между `divideDecimal` и другими возможными операциями деления. Подробнее: [Shared Assertions](../shared/assertions.md).
+
 ## См. также
 
-- [addDecimal](./add.md) - Сложение Decimal чисел
-- [subtractDecimal](./subtract.md) - Вычитание Decimal чисел
-- [multiplyDecimal](./multiply.md) - Умножение Decimal чисел
-- [averageDecimal](./average.md) - Среднее значение двух чисел *(в разработке)*
-- [DivisionByZeroError](../../../errors/docs/value-objects/division-by-zero.md) - Ошибка деления на ноль
-- [InvalidDivisorError](../../../errors/docs/math/invalid-divisor.md) - Ошибка невалидного делителя
-- [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) - Ошибка overflow
+- [addDecimal](./add.md) — Сложение Decimal чисел
+- [subtractDecimal](./subtract.md) — Вычитание Decimal чисел
+- [multiplyDecimal](./multiply.md) — Умножение Decimal чисел
+- [averageDecimal](./average.md) — Среднее значение двух чисел
+- [Shared Assertions](../shared/assertions.md) — assertNonZeroDivisor, withResult и другие helpers
+- [DivisionByZeroError](../../../errors/docs/value-objects/division-by-zero.md) — Ошибка деления на ноль
+- [InvalidOperandError](../../../errors/docs/math/invalid-operand.md) — Ошибка невалидного операнда
+- [InvalidDivisorError](../../../errors/docs/math/invalid-divisor.md) — Ошибка невалидного делителя
+- [ArithmeticOverflowError](../../../errors/docs/value-objects/arithmetic-overflow.md) — Ошибка overflow

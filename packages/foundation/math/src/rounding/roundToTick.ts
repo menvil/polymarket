@@ -1,17 +1,21 @@
 import Decimal from 'decimal.js';
 import {
-  InvalidTickSizeError,
-  InvalidOperandError,
-  ArithmeticOverflowError,
-} from '@polymarket/errors';
+  assertFiniteOperand,
+  assertValidTickSize,
+  assertValidRoundingMode,
+  assertFiniteResult,
+  withResult,
+  toStringSafe,
+} from '../shared/index.js';
 
 /**
  * Округляет значение до размера тика
  *
  * @param value - Значение для округления
  * @param tickSize - Размер тика (например, 0.01 для центов)
- * @param roundingMode - Режим округления Decimal
+ * @param roundingMode - Режим округления Decimal (0-8)
  * @returns Округлённое значение
+ * @throws {InvalidRoundingModeError} Если roundingMode невалидный (не integer, вне диапазона 0-8, undefined, null)
  * @throws {InvalidOperandError} Если value не finite (NaN или Infinity)
  * @throws {InvalidTickSizeError} Если tickSize невалидный (<= 0 или не finite)
  * @throws {ArithmeticOverflowError} Если результат округления не finite
@@ -57,52 +61,33 @@ export function roundToTick(
   tickSize: Decimal,
   roundingMode: Decimal.Rounding
 ): Decimal {
-  // Валидация value
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Value must be finite, got ${ctx.value}`,
-      {
-        context: {
-          value: value.toString(),
-          operation: 'roundToTick',
-        },
-      }
-    );
-  }
+  // Ранняя валидация roundingMode БЕЗ использования методов
+  // (защита от TypeError при undefined/null)
+  const baseContext = {
+    operation: 'roundToTick',
+    roundingMode: String(roundingMode), // String() безопасен для undefined/null
+  };
+  assertValidRoundingMode(roundingMode, baseContext);
 
-  // Валидация tickSize
-  if (!tickSize.isFinite() || tickSize.lessThanOrEqualTo(0)) {
-    throw new InvalidTickSizeError(
-      (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
-      {
-        context: {
-          tickSize: tickSize.toString(),
-          value: value.toString(),
-        },
-      }
-    );
-  }
+  // После валидации roundingMode безопасно формируем полный context
+  const context = {
+    operation: 'roundToTick',
+    value: toStringSafe(value),
+    tickSize: toStringSafe(tickSize),
+    roundingMode: String(roundingMode),
+  };
+
+  // Валидация операндов
+  assertFiniteOperand(value, 'value', context);
+  assertValidTickSize(tickSize, context);
 
   // Алгоритм округления до тика (полностью на Decimal)
   const divided = value.dividedBy(tickSize);
   const rounded = divided.toDecimalPlaces(0, roundingMode);
   const result = rounded.times(tickSize);
 
-  // Проверка результата на конечность
-  if (!result.isFinite()) {
-    throw new ArithmeticOverflowError(
-      (ctx) =>
-        `Round to tick overflow: ${ctx.value} rounded to ${ctx.tickSize} = ${ctx.result}`,
-      {
-        context: {
-          value: value.toString(),
-          tickSize: tickSize.toString(),
-          roundingMode: roundingMode.toString(),
-          result: result.toString(),
-        },
-      }
-    );
-  }
+  // Проверка результата
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }

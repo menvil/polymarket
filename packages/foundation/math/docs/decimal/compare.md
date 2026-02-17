@@ -64,6 +64,7 @@ prices.sort((a, b) => compareDecimal(b, a));
 ### Особенности
 
 **Строгое сравнение:**
+
 ```typescript
 const a = new Decimal('0.1');
 const b = new Decimal('0.10');
@@ -74,6 +75,7 @@ compareDecimal(a, c); // 0 (одинаковое математическое з
 ```
 
 **Валидация невалидных операндов:**
+
 ```typescript
 import Decimal from 'decimal.js';
 import { compareDecimal } from '@polymarket/math';
@@ -125,6 +127,7 @@ equalsDecimal(a, d); // false (разные значения)
 ### Строгое vs приблизительное
 
 **Строгое равенство (equalsDecimal):**
+
 ```typescript
 import Decimal from 'decimal.js';
 import { equalsDecimal } from '@polymarket/math';
@@ -136,6 +139,7 @@ equalsDecimal(a, b); // false (строго неравны)
 ```
 
 **Приблизительное равенство (ручная реализация):**
+
 ```typescript
 import Decimal from 'decimal.js';
 
@@ -158,11 +162,13 @@ approximatelyEquals(a, b, epsilon); // true (близко в пределах ep
 ### Связь с compareDecimal
 
 **Гарантия согласованности:**
+
 ```typescript
 equalsDecimal(a, b) === true <=> compareDecimal(a, b) === 0
 ```
 
 Пример:
+
 ```typescript
 import Decimal from 'decimal.js';
 import { equalsDecimal, compareDecimal } from '@polymarket/math';
@@ -363,6 +369,7 @@ greaterThanOrEqualDecimal(a, b) === (compareDecimal(a, b) >= 0)
 ### Когда нужно приблизительное сравнение
 
 1. **Проверка результатов вычислений:**
+
    ```typescript
    const a = new Decimal(10);
    const b = new Decimal(3);
@@ -376,6 +383,7 @@ greaterThanOrEqualDecimal(a, b) === (compareDecimal(a, b) >= 0)
    ```
 
 2. **Бизнес-логика с допуском:**
+
    ```typescript
    function priceMatchesWithTolerance(
      price1: Decimal,

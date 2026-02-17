@@ -6,9 +6,9 @@
  * наследующие TradingError, и запускает для них базовые тесты.
  *
  * ✨ При создании нового класса ошибки:
- * 1. Создайте файл в src/base/ или src/domain/ (например, MyError.ts)
+ * 1. Создайте файл в src/base/, src/value-objects/, или src/math/ (например, MyError.ts)
  * 2. Экспортируйте класс: export class MyError extends TradingError { ... }
- * 3. Добавьте в src/base/index.ts: export * from './MyError.js';
+ * 3. Добавьте в соответствующий index.ts: export * from './MyError.js';
  * 4. Запустите npm test - базовые тесты запустятся автоматически!
  *
  * Ничего больше не нужно! Никаких registry, никакой ручной регистрации!
@@ -82,7 +82,7 @@ function findTsFiles(dir: string, files: string[] = []): string[] {
 
         if (stat.isDirectory()) {
           // Игнорируем node_modules, dist, __tests__
-          if (!['node_modules', 'dist', '__tests__', 'coverage'].includes(entry)) {
+          if (!['node_modules', 'dist', '__tests__', 'coverage', 'utils'].includes(entry)) {
             findTsFiles(fullPath, files);
           }
         } else if (stat.isFile() && extname(entry) === '.ts' && !entry.endsWith('.d.ts')) {
@@ -232,10 +232,6 @@ const discoveredClasses = discoverErrorClasses();
 describe('Auto-discovery: All TradingError classes', () => {
   it(`должен найти хотя бы один класс ошибки (найдено: ${discoveredClasses.length})`, () => {
     expect(discoveredClasses.length).toBeGreaterThan(0);
-    console.log(
-      `\n✨ Автоматически обнаружено ${discoveredClasses.length} класс(ов) ошибок:\n` +
-        discoveredClasses.map((c) => `   - ${c.name} (severity: ${c.severity})`).join('\n')
-    );
   });
 
   // Динамически создаём describe блоки для каждого класса

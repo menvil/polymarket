@@ -1,19 +1,21 @@
 import Decimal from 'decimal.js';
+import { InvalidOperandError } from '@polymarket/errors';
 import {
-  DivisionByZeroError,
-  ArithmeticOverflowError,
-  InvalidDivisorError,
-  InvalidOperandError,
-} from '@polymarket/errors';
+  assertFiniteResult,
+  assertFiniteOperandWith,
+  assertNonZeroDivisor,
+  withResult,
+  toStringSafe,
+} from '../shared/index.js';
 
 /**
  * Делит одно Decimal значение на другое
  *
- * @param dividend - Делимое
- * @param divisor - Делитель
- * @returns Частное dividend / divisor
+ * @param a - Делимое (dividend)
+ * @param b - Делитель (divisor)
+ * @returns Частное a / b
  * @throws {InvalidOperandError} Если делимое не конечное число (NaN/Infinity)
- * @throws {InvalidDivisorError} Если делитель не конечное число (NaN/Infinity)
+ * @throws {InvalidDivisorError} Если делитель не конечное число (NaN/Infinity) или не имеет isZero
  * @throws {DivisionByZeroError} Если делитель равен нулю
  * @throws {ArithmeticOverflowError} Если результат не конечное число
  *
@@ -21,9 +23,9 @@ import {
  * Чистая математическая операция.
  *
  * Проверяет только математическую корректность:
- * - dividend должен быть finite (не NaN, не Infinity)
- * - divisor должен быть finite (не NaN, не Infinity)
- * - divisor не должен быть нулём
+ * - a (делимое) должен быть finite (не NaN, не Infinity)
+ * - b (делитель) должен быть finite (не NaN, не Infinity)
+ * - b (делитель) не должен быть нулём
  * - result должен быть finite
  *
  * НЕ проверяет:
@@ -48,67 +50,31 @@ import {
  * // Throw на деление на ноль
  * divideDecimal(new Decimal(10), new Decimal(0)); // throws DivisionByZeroError
  *
- * // Throw на overflow
- * const huge = new Decimal('1e308');
- * const tiny = new Decimal('1e-308');
+ * // Throw на overflow (при превышении Decimal.maxE)
+ * const huge = new Decimal('1e9000000000000000');
+ * const tiny = new Decimal('1e-100');
  * divideDecimal(huge, tiny); // throws ArithmeticOverflowError
  * ```
  */
-export function divideDecimal(dividend: Decimal, divisor: Decimal): Decimal {
-  // Проверка 1: Делимое должно быть конечным числом
-  if (!dividend.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Dividend must be finite, got ${ctx.dividend}`,
-      {
-        context: {
-          dividend: dividend.toString(),
-          divisor: divisor.toString(),
-          operation: 'divide',
-        },
-      }
-    );
-  }
+export function divideDecimal(a: Decimal, b: Decimal): Decimal {
+  // Создаём context используя toStringSafe для единообразия
+  const context = {
+    operation: 'divide',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
 
-  // Проверка 2: Делитель должен быть конечным числом
-  if (!divisor.isFinite()) {
-    throw new InvalidDivisorError(
-      (ctx) => `Divisor must be finite, got ${ctx.divisor}`,
-      {
-        context: {
-          divisor: divisor.toString(),
-          dividend: dividend.toString(),
-        },
-      }
-    );
-  }
+  // Проверка делимого через unified assertion (InvalidOperandError)
+  assertFiniteOperandWith(a, 'a', context, InvalidOperandError);
 
-  // Проверка 3: Делитель не должен быть нулём
-  if (divisor.isZero()) {
-    throw new DivisionByZeroError(() => 'Cannot divide by zero', {
-      context: {
-        dividend: dividend.toString(),
-        divisor: divisor.toString(),
-      },
-    });
-  }
+  // Проверка делителя: конечность + наличие isZero + не ноль
+  assertNonZeroDivisor(b, context);
 
   // Выполняем деление
-  const result = dividend.div(divisor);
+  const result = a.div(b);
 
-  // Проверка 4: Результат должен быть конечным
-  if (!result.isFinite()) {
-    throw new ArithmeticOverflowError(
-      (ctx) =>
-        `Division overflow: ${ctx.dividend} / ${ctx.divisor} = ${ctx.result}`,
-      {
-        context: {
-          dividend: dividend.toString(),
-          divisor: divisor.toString(),
-          result: result.toString(),
-        },
-      }
-    );
-  }
+  // Проверка результата
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }

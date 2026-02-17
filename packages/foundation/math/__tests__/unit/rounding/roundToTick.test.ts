@@ -6,7 +6,12 @@ import {
   mathFloorToTick,
   mathCeilToTick,
 } from '../../../src/rounding/roundToTick.js';
-import { InvalidTickSizeError, InvalidOperandError } from '@polymarket/errors';
+import {
+  InvalidTickSizeError,
+  InvalidOperandError,
+  InvalidRoundingModeError,
+  ArithmeticOverflowError,
+} from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('roundToTick', () => {
@@ -233,6 +238,99 @@ describe('roundToTick', () => {
         }
       }
     });
+
+    it('должен throw InvalidTickSizeError на не-Decimal tickSize', () => {
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => roundToTick(new Decimal(10), null, Decimal.ROUND_HALF_UP)).toThrow(
+        InvalidTickSizeError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => roundToTick(new Decimal(10), undefined, Decimal.ROUND_HALF_UP)).toThrow(
+        InvalidTickSizeError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => roundToTick(new Decimal(10), 0.01, Decimal.ROUND_HALF_UP)).toThrow(
+        InvalidTickSizeError
+      );
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => roundToTick(new Decimal(10), '0.01', Decimal.ROUND_HALF_UP)).toThrow(
+        InvalidTickSizeError
+      );
+    });
+
+    it('должен throw InvalidTickSizeError на fake Decimal объект (имеет isFinite, но не instanceof)', () => {
+      // Создаём объект-импостер с isFinite методом
+      const fakeDecimal = {
+        isFinite: () => true,
+        toString: () => 'fake',
+      };
+
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => roundToTick(new Decimal(10), fakeDecimal, Decimal.ROUND_HALF_UP)).toThrow(
+        InvalidTickSizeError
+      );
+
+      // Должна быть доменная ошибка, а не TypeError
+      // @ts-expect-error - тестируем runtime проверку типа
+      expect(() => roundToTick(new Decimal(10), fakeDecimal, Decimal.ROUND_HALF_UP)).not.toThrow(
+        TypeError
+      );
+    });
+  });
+
+  describe('ошибки валидации roundingMode', () => {
+    it('должен throw InvalidRoundingModeError на roundingMode = -1', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), -1 as Decimal.Rounding)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен throw InvalidRoundingModeError на roundingMode = 9', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), 9 as Decimal.Rounding)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен throw InvalidRoundingModeError на roundingMode = 1.5 (не integer)', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), 1.5 as Decimal.Rounding)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен throw InvalidRoundingModeError на roundingMode = NaN', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), NaN as Decimal.Rounding)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен throw InvalidRoundingModeError (не TypeError) на roundingMode = undefined', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), undefined as any)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен throw InvalidRoundingModeError (не TypeError) на roundingMode = null', () => {
+      expect(() =>
+        roundToTick(new Decimal(10), new Decimal('0.01'), null as any)
+      ).toThrow(InvalidRoundingModeError);
+    });
+
+    it('должен содержать контекст в ошибке roundingMode', () => {
+      expect.assertions(4);
+      try {
+        roundToTick(new Decimal(10), new Decimal('0.01'), 9 as Decimal.Rounding);
+      } catch (error) {
+        expect(error).toBeInstanceOf(InvalidRoundingModeError);
+        if (error instanceof InvalidRoundingModeError) {
+          expect(error.context).toBeDefined();
+          expect(error.context?.operation).toBe('roundToTick');
+          expect(error.context?.roundingMode).toBe('9');
+        }
+      }
+    });
   });
 
   describe('точность и граничные случаи', () => {
@@ -379,6 +477,75 @@ describe('roundToTick', () => {
         // ROUND_UP: abs(result) >= abs(value) (от нуля)
         expect(result.abs().greaterThanOrEqualTo(valueDecimal.abs())).toBe(true);
       });
+    });
+  });
+
+  describe('overflow errors', () => {
+    /**
+     * Тест проверяет, что roundToTick бросает ArithmeticOverflowError
+     * когда результат округления выходит за пределы конечных чисел.
+     *
+     * @remarks
+     * Overflow возможен при округлении огромного числа с крошечным tickSize,
+     * когда промежуточные вычисления (value / tickSize * tickSize) дают Infinity.
+     * Decimal.js maxE = 9e15, используем значения близкие к этой границе.
+     */
+    it('должен throw ArithmeticOverflowError при overflow', () => {
+      // Создаём кейс, где промежуточный/финальный результат превысит maxE
+      // value близкое к maxE, делённое на крошечный tick даст overflow
+      const nearMaxE = new Decimal('5e' + (Decimal.maxE - 1000));
+      const tinyTick = new Decimal('1e-2000');
+
+      expect(() => roundToTick(nearMaxE, tinyTick, Decimal.ROUND_HALF_UP)).toThrow(
+        ArithmeticOverflowError
+      );
+    });
+
+    /**
+     * Тест проверяет, что ошибка overflow содержит полный контекст операции.
+     */
+    it('должен содержать контекст в ошибке overflow', () => {
+      const nearMaxE = new Decimal('5e' + (Decimal.maxE - 1000));
+      const tinyTick = new Decimal('1e-2000');
+
+      expect.assertions(4);
+      try {
+        roundToTick(nearMaxE, tinyTick, Decimal.ROUND_HALF_UP);
+      } catch (error) {
+        if (error instanceof ArithmeticOverflowError) {
+          expect(error.context).toBeDefined();
+          expect(error.context?.value).toBeDefined();
+          expect(error.context?.tickSize).toBeDefined();
+          expect(error.context?.result).toBe('Infinity');
+        } else {
+          throw error;
+        }
+      }
+    });
+  });
+
+  describe('дополнительные граничные случаи', () => {
+    it('должен корректно обрабатывать отрицательный tickSize', () => {
+      expect(() =>
+        roundToTick(new Decimal('10.567'), new Decimal('-0.01'), Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidTickSizeError);
+    });
+  });
+
+  describe('defensive checks', () => {
+    it('должен throw InvalidTickSizeError если tickSize не имеет метода lte', () => {
+      // Создаём объект который проходит isDecimalLike но не имеет lte
+      const fakeDecimal = {
+        isFinite: () => true,
+        toString: () => '0.01',
+        toNumber: () => 0.01,
+        // Намеренно НЕ добавляем lte метод
+      };
+
+      // Используем type assertion для тестирования runtime validation
+      expect(() =>
+        roundToTick(new Decimal('10.567'), fakeDecimal as any as Decimal, Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidTickSizeError);
     });
   });
 });

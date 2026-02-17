@@ -1,8 +1,5 @@
 import Decimal from 'decimal.js';
-import {
-  ArithmeticOverflowError,
-  InvalidOperandError,
-} from '@polymarket/errors';
+import { assertFiniteOperands, assertFiniteResult, withResult, toStringSafe } from '../shared/index.js';
 
 /**
  * Умножает два Decimal значения
@@ -29,55 +26,24 @@ import {
  * multiplyDecimal(new Decimal(NaN), new Decimal(5)); // throws InvalidOperandError
  * multiplyDecimal(new Decimal(Infinity), new Decimal(5)); // throws InvalidOperandError
  *
- * // Throw на overflow
- * const huge = new Decimal('1e308');
- * multiplyDecimal(huge, huge); // throws ArithmeticOverflowError
+ * // Throw на overflow (при превышении Decimal.maxE = 9e15)
+ * // Операнды валидны (finite), но результат превышает maxE
+ * const huge = new Decimal('1e' + (Math.floor(Decimal.maxE / 2) + 1));
+ * multiplyDecimal(huge, huge); // throws ArithmeticOverflowError (результат = Infinity)
  * ```
  */
 export function multiplyDecimal(a: Decimal, b: Decimal): Decimal {
-  // Проверка 1: Оба операнда должны быть конечными числами
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'a' must be finite, got ${ctx.a}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'multiply',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'multiply',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
 
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'b' must be finite, got ${ctx.b}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'multiply',
-        },
-      }
-    );
-  }
+  assertFiniteOperands(a, b, context);
 
-  // Выполняем умножение
   const result = a.times(b);
 
-  // Проверка 2: Результат должен быть конечным
-  if (!result.isFinite()) {
-    throw new ArithmeticOverflowError(
-      (ctx) => `Multiplication overflow: ${ctx.a} * ${ctx.b} = ${ctx.result}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          result: result.toString(),
-        },
-      }
-    );
-  }
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }

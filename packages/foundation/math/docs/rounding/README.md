@@ -26,6 +26,7 @@ function roundToTick(
 ```
 
 **Алгоритм:**
+
 1. Делим `value / tickSize` → получаем количество тиков
 2. Округляем до целого количества тиков используя `roundingMode`
 3. Умножаем обратно на `tickSize`
@@ -85,6 +86,7 @@ mathCeilToTick(new Decimal(-10.567), new Decimal(0.01)); // -10.56 (к +Infinity
 ### Разница между floor/ceil вариантами
 
 Для **положительных** чисел:
+
 - `floorToTick` = `mathFloorToTick` (оба вниз)
 - `ceilToTick` = `mathCeilToTick` (оба вверх)
 
@@ -103,15 +105,39 @@ mathCeilToTick(value, tick);   // -10.56 (к +Infinity)
 
 ### Валидация
 
+Throws `InvalidOperandError` если:
+
+- `value` не конечное число (NaN, Infinity)
+
 Throws `InvalidTickSizeError` если:
+
 - `tickSize <= 0`
 - `tickSize` не конечное число (NaN, Infinity)
 
+Throws `InvalidRoundingModeError` если:
+
+- `roundingMode` не integer
+- `roundingMode` вне диапазона [0, 8]
+
+Throws `ArithmeticOverflowError` если:
+
+- Результат операции не конечное число (overflow при делении или умножении)
+
 ```typescript
-roundToTick(new Decimal(10), new Decimal(0));        // throws InvalidTickSizeError
-roundToTick(new Decimal(10), new Decimal(-0.01));    // throws InvalidTickSizeError
-roundToTick(new Decimal(10), new Decimal(NaN));      // throws InvalidTickSizeError
-roundToTick(new Decimal(10), new Decimal(Infinity)); // throws InvalidTickSizeError
+// InvalidOperandError
+roundToTick(new Decimal(NaN), new Decimal(0.01), Decimal.ROUND_HALF_UP);      // throws
+roundToTick(new Decimal(Infinity), new Decimal(0.01), Decimal.ROUND_HALF_UP); // throws
+
+// InvalidTickSizeError
+roundToTick(new Decimal(10), new Decimal(0), Decimal.ROUND_HALF_UP);        // throws
+roundToTick(new Decimal(10), new Decimal(-0.01), Decimal.ROUND_HALF_UP);    // throws
+roundToTick(new Decimal(10), new Decimal(NaN), Decimal.ROUND_HALF_UP);      // throws
+roundToTick(new Decimal(10), new Decimal(Infinity), Decimal.ROUND_HALF_UP); // throws
+
+// InvalidRoundingModeError
+roundToTick(new Decimal(10), new Decimal(0.01), -1 as Decimal.Rounding);    // throws
+roundToTick(new Decimal(10), new Decimal(0.01), 9 as Decimal.Rounding);     // throws
+roundToTick(new Decimal(10), new Decimal(0.01), 1.5 as Decimal.Rounding);   // throws
 ```
 
 ---
@@ -131,6 +157,46 @@ function roundToPrecision(
 **Обёртка над** `value.toDecimalPlaces()` для единообразного API.
 
 **roundingMode обязателен** - explicit лучше implicit.
+
+### Ограничения
+
+- `decimalPlaces` должно быть в диапазоне `[0, 1e9]`
+- Превышение максимума вызывает `InvalidDecimalPlacesError`
+- Это ограничение библиотеки Decimal.js
+
+### Валидация
+
+Throws `InvalidOperandError` если:
+
+- `value` не конечное число (NaN, Infinity)
+
+Throws `InvalidDecimalPlacesError` если:
+
+- `decimalPlaces < 0`
+- `decimalPlaces` не integer
+- `decimalPlaces` не конечное число (NaN, Infinity)
+- `decimalPlaces > 1e9` (превышен максимум)
+
+Throws `InvalidRoundingModeError` если:
+
+- `roundingMode` не integer
+- `roundingMode` вне диапазона [0, 8]
+
+```typescript
+// InvalidOperandError
+roundToPrecision(new Decimal(NaN), 2, Decimal.ROUND_HALF_UP);     // throws
+
+// InvalidDecimalPlacesError
+roundToPrecision(new Decimal('10.567'), -1, Decimal.ROUND_HALF_UP);  // throws
+roundToPrecision(new Decimal('10.567'), NaN, Decimal.ROUND_HALF_UP); // throws
+roundToPrecision(new Decimal('10.567'), 1.5, Decimal.ROUND_HALF_UP); // throws
+roundToPrecision(new Decimal('10.567'), 1e10, Decimal.ROUND_HALF_UP); // throws (превышен максимум)
+
+// InvalidRoundingModeError
+roundToPrecision(new Decimal('10.567'), 2, -1 as Decimal.Rounding);   // throws
+roundToPrecision(new Decimal('10.567'), 2, 9 as Decimal.Rounding);    // throws
+roundToPrecision(new Decimal('10.567'), 2, 1.5 as Decimal.Rounding);  // throws
+```
 
 ### Примеры
 
@@ -152,6 +218,9 @@ roundToPrecision(new Decimal('10.561'), 2, Decimal.ROUND_UP);   // 10.57
 
 // Работает с большими числами
 roundToPrecision(new Decimal('999999999999.567'), 2, Decimal.ROUND_HALF_UP); // 999999999999.57
+
+// Работает с максимально допустимой точностью
+roundToPrecision(new Decimal('10.567'), 1e9, Decimal.ROUND_HALF_UP); // 10.567
 ```
 
 ---
@@ -313,7 +382,7 @@ const rounded = roundToTick(value, userInputTick, Decimal.ROUND_HALF_UP);
 
 ```typescript
 // ❌ Плохо: roundToPrecision не учитывает tick size
-const price = roundToPrecision(new Decimal('10.567'), 2); // 10.57
+const price = roundToPrecision(new Decimal('10.567'), 2, Decimal.ROUND_HALF_UP); // 10.57
 
 // ✅ Хорошо: roundToTick гарантирует кратность тику
 const price = roundToTick(new Decimal('10.567'), marketTickSize, Decimal.ROUND_HALF_UP);

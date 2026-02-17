@@ -8,14 +8,21 @@
     "packages/domain/*"
   ],
   "scripts": {
+    "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist packages/*/*/*.tsbuildinfo",
+    "clean:dist": "rm -rf packages/*/*/dist",
+    "clean:build": "rm -rf packages/*/*/*.tsbuildinfo",
+    "prebuild": "npm run clean:dist && npm run clean:build",
     "build": "npm run build --workspaces",
     "test": "npm run test --workspaces",
     "lint": "npm run lint --workspaces",
-    "typecheck": "npm run typecheck --workspaces",
-    "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist"
+    "lint:md": "npm run lint:md --workspaces --if-present",
+    "lint:md:fix": "npm run lint:md:fix --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces"
   },
-  "dependencies": {},
-  "devDependencies": {},
+  "devDependencies": {
+    "markdownlint-cli2": "^0.20.0",
+    "markdownlint-cli2-formatter-pretty": "^0.0.9"
+  },
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
@@ -31,5 +38,8 @@
     "typescript"
   ],
   "author": "Ivan Moroz",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@polymarket/time": "^0.1.0"
+  }
 }

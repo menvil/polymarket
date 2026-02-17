@@ -4,8 +4,8 @@
 
 ## ✨ Ключевые особенности
 
-- ✅ **Zero dependencies** - никаких зависимостей в production
-- ✅ **100% покрытие тестами** - все классы автоматически тестируются
+- ✅ **Минимальные зависимости** - только `decimal.js` и `@polymarket/result`
+- ✅ **Высокое покрытие тестами** - 90%+ lines, 85%+ branches, автоматическое тестирование классов
 - ✅ **Автоматические фичи** - `name`, `toJSON()`, `is()` работают автоматически
 - ✅ **Динамические сообщения** - поддержка шаблонов с контекстом
 - ✅ **Graceful error handling** - ошибки в template функциях не роняют программу
@@ -67,6 +67,7 @@ export class InsufficientFundsError extends TradingError {
 ```
 
 **Что работает автоматически:**
+
 - ✨ `constructor()` - наследуется
 - ✨ `this.name` - устанавливается из имени класса
 - ✨ `toJSON()` - наследуется
@@ -116,6 +117,7 @@ class TradingError extends Error {
 ```
 
 **Свойства:**
+
 - `severity` - уровень серьёзности ошибки (обязательно)
 - `timestamp` - время возникновения ошибки
 - `code` - опциональный код для детальной классификации
@@ -135,6 +137,7 @@ constructor(
 ```
 
 **Параметры:**
+
 - `message` - статическая строка или функция-шаблон для динамических сообщений
 - `options.code` - опциональный код для детальной классификации
 - `options.context` - опциональный контекст с дополнительными данными
@@ -304,6 +307,7 @@ const json = error.toJSON();
 ```
 
 **Преимущества:**
+
 - ✅ Программа не падает при ошибках в template
 - ✅ Оригинальная ошибка сохраняется для отладки
 - ✅ Context остаётся доступным
@@ -324,6 +328,7 @@ npm test
 ```
 
 **Как это работает?**
+
 - Тест `auto-discovery.test.ts` рекурсивно сканирует директорию `src/` и находит все `.ts` файлы с классами, наследующими `TradingError`
 - Автоматически импортирует их и генерирует тесты
 - **Никаких registry или ручной регистрации не требуется!**
@@ -369,6 +374,7 @@ npm run test:coverage
 ```
 
 Целевые показатели:
+
 - **Statements:** 90%+
 - **Branches:** 85%+
 - **Functions:** 90%+
@@ -379,31 +385,41 @@ npm run test:coverage
 ```text
 @polymarket/errors/
 ├── src/
+│   ├── ErrorSource.ts                # Enum для классификации источника ошибки
 │   ├── base/
 │   │   ├── ITradingError.ts          # Интерфейс
 │   │   ├── TradingError.ts           # Базовый класс
 │   │   ├── ValidationError.ts        # Пример: ошибка валидации
 │   │   └── index.ts
+│   ├── math/
+│   │   ├── InvalidOperandError.ts    # Ошибка невалидного операнда (NaN/Infinity)
+│   │   ├── InvalidDecimalPlacesError.ts # Ошибка невалидного количества знаков
+│   │   ├── InvalidDivisorError.ts    # Ошибка деления на NaN/Infinity
+│   │   ├── InvalidTickSizeError.ts   # Ошибка невалидного tick size
+│   │   └── index.ts
 │   ├── value-objects/
 │   │   ├── InvalidPriceError.ts      # Ошибки валидации value objects
 │   │   ├── InvalidQuantityError.ts
-│   │   └── ... (8 классов)
+│   │   └── ... (14 классов)
+│   ├── utils/
+│   │   └── errorUtils.ts             # Утилиты для обработки ошибок
 │   └── index.ts
 ├── docs/
-│   ├── README.md                     # Этот файл
+│   ├── README.md                     # Обзорная документация
 │   ├── error-handling.md             # Best practices обработки
-│   └── value-objects/                # Документация по категориям
-│       ├── README.md
-│       ├── invalid-price.md
-│       └── ...
+│   ├── error-utilities.md            # Документация по error utilities
+│   ├── math/                         # Документация math ошибок
+│   └── value-objects/                # Документация value objects ошибок
 ├── __tests__/
 │   ├── helpers/
 │   │   └── sharedErrorTests.ts       # Helper для тестов
+│   ├── smoke/
+│   │   └── runtime.test.ts           # Smoke tests экспортов и рантайма
 │   └── unit/
 │       ├── auto-discovery.test.ts    # Автоматическое обнаружение и тестирование
+│       ├── errorUtils.test.ts        # Тесты error utilities
 │       └── base/
-│           ├── TradingError.test.ts
-│           └── ValidationError.test.ts
+│           └── TradingError.test.ts
 └── package.json
 ```
 
@@ -488,7 +504,9 @@ npm run typecheck
 ## 📚 Дополнительная документация
 
 - [Обработка ошибок](./error-handling.md) - Best practices и паттерны
+- [Error Handling Utilities](./error-utilities.md) - Документация по утилитам обработки ошибок
 - [Value Objects Errors](./value-objects/README.md) - Документация по ошибкам value objects
+- [Math Errors](./math/README.md) - Документация по математическим ошибкам
 
 ## 📄 License
 

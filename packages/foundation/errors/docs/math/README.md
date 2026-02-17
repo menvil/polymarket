@@ -5,6 +5,7 @@
 ## Обзор
 
 Math Errors представляют математические невозможности и проблемы валидации в низкоуровневых операциях:
+
 - **Деление** - операции с невалидными делителями
 - **Округление** - операции с tick size
 - **Арифметика** - базовые математические функции с `Decimal.js`
@@ -12,6 +13,7 @@ Math Errors представляют математические невозмо
 Это математические невозможности, а не бизнес-правила. Эти ошибки возникают на уровне чистых математических функций (core layer) до применения бизнес-логики.
 
 Все math errors имеют:
+
 - **Severity:** `low` (проблемы валидации данных не критичны)
 - **Статический код:** `ErrorClass.code` (для удобства)
 - **Предназначение:** throw (математические невозможности)
@@ -27,6 +29,7 @@ Math Errors представляют математические невозмо
 |`INVALID_OPERAND`|InvalidOperandError|Операнд NaN/Infinity|[→](./invalid-operand.md)|
 |`INVALID_DECIMAL_PLACES`|InvalidDecimalPlacesError|Decimal places < 0, не целое, не конечно|[→](./invalid-decimal-places.md)|
 |`INVALID_DIVISOR`|InvalidDivisorError|Деление на NaN/Infinity|[→](./invalid-divisor.md)|
+|`INVALID_ROUNDING_MODE`|InvalidRoundingModeError|Режим округления вне диапазона 0-8|[→](./invalid-rounding-mode.md)|
 |`INVALID_TICK_SIZE`|InvalidTickSizeError|Tick size <= 0 или не конечен|[→](./invalid-tick-size.md)|
 
 ---
@@ -138,6 +141,7 @@ const rounded = roundToTickSize(
 ### Math vs Value Objects Errors
 
 **Math Errors (низкий уровень - Core Layer):**
+
 - Чистые математические операции
 - Не знают о бизнес-правилах
 - Только проверка математической валидности (finite, positive, non-zero)
@@ -145,6 +149,7 @@ const rounded = roundToTickSize(
 - **Всегда throw** (математические невозможности)
 
 **Value Objects Errors (средний уровень - Domain Layer):**
+
 - Бизнес-валидация (диапазоны, форматы)
 - Создание и валидация domain objects (Price, Quantity, Money)
 - Используются в `@polymarket/value-objects` пакете
@@ -185,12 +190,14 @@ priceResult.match({
 ### 1. Когда использовать Math Errors
 
 ✅ **Используйте Math Errors:**
+
 - В чистых математических функциях (`add`, `subtract`, `divide`, `round`)
 - При валидации математических параметров (делитель, tick size)
 - Когда проверяете математическую корректность (`isFinite()`, `isPositive()`)
 - В `@polymarket/math` пакете
 
 ❌ **НЕ используйте Math Errors:**
+
 - Для бизнес-валидации (используйте Value Objects Errors)
 - Для проверки бизнес-диапазонов (min/max цены, quantity limits)
 - В domain/application layers (только в core layer)
@@ -198,6 +205,7 @@ priceResult.match({
 ### 2. Severity Guidelines
 
 Все Math Errors имеют **severity: low** потому что:
+
 - Это проблемы валидации на уровне ввода
 - Не критичны для системы (система не упадёт)
 - Обычно возникают из-за некорректного пользовательского ввода
@@ -206,6 +214,7 @@ priceResult.match({
 ### 3. Context Guidelines
 
 Всегда включайте в context:
+
 - **Параметры операции:** `divisor`, `dividend`, `tickSize`, `value`
 - **Результат (если есть):** `result`, `normalized`
 - **Дополнительный контекст:** `operation`, `reason`
@@ -289,7 +298,7 @@ Value objects используют math operations и обрабатывают �
 // packages/domain/value-objects/src/Price.ts
 import { divideDecimal, roundToTickSize } from '@polymarket/math';
 import { InvalidDivisorError, InvalidTickSizeError } from '@polymarket/errors';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 
 export class Price {
   // ...
@@ -300,7 +309,7 @@ export class Price {
       return Price.fromDecimal(result);
     } catch (error) {
       if (InvalidDivisorError.is(error)) {
-        return Result.err(error);
+        return Err(error);
       }
       throw error;
     }
@@ -312,7 +321,7 @@ export class Price {
       return Price.fromDecimal(rounded);
     } catch (error) {
       if (InvalidTickSizeError.is(error)) {
-        return Result.err(error);
+        return Err(error);
       }
       throw error;
     }
@@ -327,6 +336,7 @@ export class Price {
 Из других категорий:
 
 ### Value Objects Errors
+
 - [DivisionByZeroError](../value-objects/division-by-zero.md) - деление на ноль (конкретный случай InvalidDivisorError)
 - [ArithmeticOverflowError](../value-objects/arithmetic-overflow.md) - результат операции вышел за пределы
 - [InvalidPriceError](../value-objects/invalid-price.md) - бизнес-валидация цен

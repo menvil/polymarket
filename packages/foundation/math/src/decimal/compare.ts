@@ -1,37 +1,5 @@
 import Decimal from 'decimal.js';
-import { InvalidOperandError } from '@polymarket/errors';
-
-/**
- * Приватный helper для валидации двух операндов
- * @internal
- */
-function assertFinite2(a: Decimal, b: Decimal, operation: string): void {
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `First operand must be finite, got ${ctx.a}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation,
-        },
-      }
-    );
-  }
-
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Second operand must be finite, got ${ctx.b}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation,
-        },
-      }
-    );
-  }
-}
+import { assertFiniteOperands, toStringSafe } from '../shared/index.js';
 
 /**
  * Строгое сравнение двух Decimal на равенство
@@ -77,7 +45,14 @@ function assertFinite2(a: Decimal, b: Decimal, operation: string): void {
  * ```
  */
 export function equalsDecimal(a: Decimal, b: Decimal): boolean {
-  assertFinite2(a, b, 'equals');
+  // Создаём context безопасным способом
+  const context = {
+    operation: 'equals',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
+
+  assertFiniteOperands(a, b, context);
   return a.equals(b);
 }
 
@@ -99,7 +74,14 @@ export function equalsDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function lessThanDecimal(a: Decimal, b: Decimal): boolean {
-  assertFinite2(a, b, 'lessThan');
+  // Создаём context безопасным способом
+  const context = {
+    operation: 'lessThan',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
+
+  assertFiniteOperands(a, b, context);
   return a.lessThan(b);
 }
 
@@ -122,7 +104,14 @@ export function lessThanDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function lessThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
-  assertFinite2(a, b, 'lessThanOrEqual');
+  // Создаём context безопасным способом
+  const context = {
+    operation: 'lessThanOrEqual',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
+
+  assertFiniteOperands(a, b, context);
   return a.lessThanOrEqualTo(b);
 }
 
@@ -144,7 +133,14 @@ export function lessThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function greaterThanDecimal(a: Decimal, b: Decimal): boolean {
-  assertFinite2(a, b, 'greaterThan');
+  // Создаём context безопасным способом
+  const context = {
+    operation: 'greaterThan',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
+
+  assertFiniteOperands(a, b, context);
   return a.greaterThan(b);
 }
 
@@ -167,7 +163,14 @@ export function greaterThanDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function greaterThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
-  assertFinite2(a, b, 'greaterThanOrEqual');
+  // Создаём context безопасным способом
+  const context = {
+    operation: 'greaterThanOrEqual',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
+
+  assertFiniteOperands(a, b, context);
   return a.greaterThanOrEqualTo(b);
 }
 
@@ -203,7 +206,14 @@ export function greaterThanOrEqualDecimal(a: Decimal, b: Decimal): boolean {
  * ```
  */
 export function compareDecimal(a: Decimal, b: Decimal): -1 | 0 | 1 {
-  assertFinite2(a, b, 'compare');
+  // Создаём context безопасным способом
+  const context = {
+    operation: 'compare',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
+
+  assertFiniteOperands(a, b, context);
   const c = a.comparedTo(b);
   if (c < 0) return -1;
   if (c > 0) return 1;

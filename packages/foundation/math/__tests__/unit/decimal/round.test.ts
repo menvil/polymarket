@@ -165,19 +165,18 @@ describe('round', () => {
       expect(mathCeilDecimal(new Decimal(-10.9)).toString()).toBe('-10'); // К +Infinity
     });
 
-    it('floor и trunc одинаковы для положительных', () => {
-      const value = new Decimal(10.7);
-      expect(roundTowardZeroDecimal(value).toString()).toBe(
-        truncDecimal(value).toString()
-      );
-    });
-
-    it('floor и trunc одинаковы для отрицательных (оба к нулю)', () => {
-      const value = new Decimal(-10.7);
-      expect(roundTowardZeroDecimal(value).toString()).toBe(
-        truncDecimal(value).toString()
-      );
-    });
+    it.each([
+      { value: '10.9', desc: 'положительное' },
+      { value: '-10.9', desc: 'отрицательное' },
+    ])(
+      'roundTowardZeroDecimal должен быть эквивалентен truncDecimal для $desc',
+      ({ value }) => {
+        const decimal = new Decimal(value);
+        expect(roundTowardZeroDecimal(decimal).toString()).toBe(
+          truncDecimal(decimal).toString()
+        );
+      }
+    );
 
     it('truncDecimal отличается от mathFloorDecimal для отрицательных', () => {
       expect(truncDecimal(new Decimal(-10.9)).toString()).toBe('-10'); // К нулю
@@ -186,6 +185,21 @@ describe('round', () => {
   });
 
   describe('валидация операндов', () => {
+    // Общие тесты для null/undefined - должны бросать доменную ошибку, а не TypeError
+    it('roundDecimal должен throw InvalidOperandError на null (не TypeError)', () => {
+      // @ts-expect-error - intentionally testing runtime validation
+      expect(() => roundDecimal(null)).toThrow(InvalidOperandError);
+      // @ts-expect-error - intentionally testing runtime validation
+      expect(() => roundDecimal(null)).not.toThrow(TypeError);
+    });
+
+    it('roundDecimal должен throw InvalidOperandError на undefined (не TypeError)', () => {
+      // @ts-expect-error - intentionally testing runtime validation
+      expect(() => roundDecimal(undefined)).toThrow(InvalidOperandError);
+      // @ts-expect-error - intentionally testing runtime validation
+      expect(() => roundDecimal(undefined)).not.toThrow(TypeError);
+    });
+
     describe('roundDecimal', () => {
       it('должен throw InvalidOperandError на NaN', () => {
         expect(() => roundDecimal(new Decimal(NaN))).toThrow(InvalidOperandError);

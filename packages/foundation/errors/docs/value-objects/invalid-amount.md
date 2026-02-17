@@ -31,7 +31,7 @@
 import { InvalidAmountError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E>:
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 ```
 
 ---
@@ -88,7 +88,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidAmountError } from '@polymarket/errors';
 
 class Amount {
@@ -105,7 +105,7 @@ class Amount {
   ): Result<Amount, InvalidAmountError> {
     // Валидация NaN
     if (isNaN(value)) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} must be a valid number`,
           {
@@ -118,7 +118,7 @@ class Amount {
 
     // Валидация Infinity
     if (!isFinite(value)) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} must be finite`,
           {
@@ -131,7 +131,7 @@ class Amount {
 
     // Валидация минимума
     if (min !== undefined && value < min) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} ${ctx.value} is below minimum of ${ctx.min}`,
           {
@@ -144,7 +144,7 @@ class Amount {
 
     // Валидация максимума
     if (max !== undefined && value > max) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} ${ctx.value} exceeds maximum of ${ctx.max}`,
           {
@@ -155,7 +155,7 @@ class Amount {
       );
     }
 
-    return Result.ok(new Amount(value, field));
+    return Ok(new Amount(value, field));
   }
 
   getValue(): number {
@@ -170,16 +170,17 @@ class Amount {
 // Использование
 const result = Amount.fromNumber(50, 'leverage', 1, 100);
 
-result.match({
-  ok: (amount) => console.log(`Valid ${amount.getField()}: ${amount.getValue()}`),
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log(`Valid ${result.value.getField()}: ${result.value.getValue()}`);
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ### 3. Валидация с кастомными правилами
 
 ```typescript
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidAmountError } from '@polymarket/errors';
 
 class Multiplier {
@@ -188,7 +189,7 @@ class Multiplier {
   static fromNumber(value: number): Result<Multiplier, InvalidAmountError> {
     // Multiplier должен быть положительным
     if (value <= 0) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           'Multiplier must be positive',
           {
@@ -201,7 +202,7 @@ class Multiplier {
 
     // Multiplier не может быть дробным (для некоторых случаев)
     if (!Number.isInteger(value)) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           'Multiplier must be a whole number',
           {
@@ -214,7 +215,7 @@ class Multiplier {
 
     // Multiplier не может быть слишком большим
     if (value > 1000) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `Multiplier ${ctx.value} is too large (max: ${ctx.max})`,
           {
@@ -225,7 +226,7 @@ class Multiplier {
       );
     }
 
-    return Result.ok(new Multiplier(value));
+    return Ok(new Multiplier(value));
   }
 
   getValue(): number {
@@ -238,7 +239,7 @@ class Multiplier {
 
 ```typescript
 import { InvalidAmountError } from '@polymarket/errors';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 
 // Используем класс Amount из Примера 2
 
@@ -255,20 +256,20 @@ function validateTradingSettings(
 
   // Валидация leverage
   const leverageResult = Amount.fromNumber(settings.leverage, 'leverage', 1, 100);
-  if (leverageResult.isErr()) {
-    errors.push(leverageResult.unwrapErr());
+  if (!leverageResult.ok) {
+    errors.push(leverageResult.error);
   }
 
   // Валидация maxOrderSize
   const maxResult = Amount.fromNumber(settings.maxOrderSize, 'maxOrderSize', 0, 1000000);
-  if (maxResult.isErr()) {
-    errors.push(maxResult.unwrapErr());
+  if (!maxResult.ok) {
+    errors.push(maxResult.error);
   }
 
   // Валидация minOrderSize
   const minResult = Amount.fromNumber(settings.minOrderSize, 'minOrderSize', 0, settings.maxOrderSize);
-  if (minResult.isErr()) {
-    errors.push(minResult.unwrapErr());
+  if (!minResult.ok) {
+    errors.push(minResult.error);
   }
 
   // Проверка что min <= max
@@ -285,10 +286,10 @@ function validateTradingSettings(
   }
 
   if (errors.length > 0) {
-    return Result.err(errors);
+    return Err(errors);
   }
 
-  return Result.ok(settings);
+  return Ok(settings);
 }
 
 // Использование
@@ -298,25 +299,22 @@ const settingsResult = validateTradingSettings({
   minOrderSize: 100
 });
 
-settingsResult.match({
-  ok: (settings) => {
-    saveSettings(settings);
-    showSuccess('Settings saved');
-  },
-  err: (errors) => {
-    errors.forEach((error) => {
-      const field = error.context?.field as string;
-      showFieldError(field, error.message);
-    });
-  }
-});
+if (settingsResult.ok) {
+  saveSettings(settingsResult.value);
+  showSuccess('Settings saved');
+} else {
+  settingsResult.error.forEach((error) => {
+    const field = error.context?.field as string;
+    showFieldError(field, error.message);
+  });
+}
 ```
 
 ### 5. Интеграция с decimal.js
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidAmountError } from '@polymarket/errors';
 
 class DecimalAmount {
@@ -333,7 +331,7 @@ class DecimalAmount {
   ): Result<DecimalAmount, InvalidAmountError> {
     // Валидация finite
     if (!value.isFinite()) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} must be finite`,
           {
@@ -346,7 +344,7 @@ class DecimalAmount {
 
     // Валидация минимума
     if (min !== undefined && value.lessThan(min)) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} ${ctx.value} is below minimum of ${ctx.min}`,
           {
@@ -359,7 +357,7 @@ class DecimalAmount {
 
     // Валидация максимума
     if (max !== undefined && value.greaterThan(max)) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `${ctx.field} ${ctx.value} exceeds maximum of ${ctx.max}`,
           {
@@ -370,7 +368,7 @@ class DecimalAmount {
       );
     }
 
-    return Result.ok(new DecimalAmount(value, field));
+    return Ok(new DecimalAmount(value, field));
   }
 
   static fromNumber(
@@ -386,7 +384,7 @@ class DecimalAmount {
 
       return DecimalAmount.fromDecimal(decimal, field, minDecimal, maxDecimal);
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `Invalid ${ctx.field} format: ${ctx.value}`,
           {
@@ -418,43 +416,43 @@ class DecimalAmount {
 // Использует класс Amount из Примера 2
 
 // С минимумом и максимумом
-Amount.fromNumber(50, 'leverage', 1, 100); // ✅ Result.ok(Amount)
-Amount.fromNumber(1, 'leverage', 1, 100); // ✅ Result.ok(Amount) - граница
-Amount.fromNumber(100, 'leverage', 1, 100); // ✅ Result.ok(Amount) - граница
+Amount.fromNumber(50, 'leverage', 1, 100); // ✅ Ok(Amount)
+Amount.fromNumber(1, 'leverage', 1, 100); // ✅ Ok(Amount) - граница
+Amount.fromNumber(100, 'leverage', 1, 100); // ✅ Ok(Amount) - граница
 
-Amount.fromNumber(0, 'leverage', 1, 100); // ❌ Result.err(InvalidAmountError)
-Amount.fromNumber(101, 'leverage', 1, 100); // ❌ Result.err(InvalidAmountError)
+Amount.fromNumber(0, 'leverage', 1, 100); // ❌ Err(InvalidAmountError)
+Amount.fromNumber(101, 'leverage', 1, 100); // ❌ Err(InvalidAmountError)
 
 // Без минимума
-Amount.fromNumber(-100, 'value'); // ✅ Result.ok(Amount) - нет ограничений
-Amount.fromNumber(0, 'value'); // ✅ Result.ok(Amount)
+Amount.fromNumber(-100, 'value'); // ✅ Ok(Amount) - нет ограничений
+Amount.fromNumber(0, 'value'); // ✅ Ok(Amount)
 
 // Только минимум
-Amount.fromNumber(50, 'positive', 0); // ✅ Result.ok(Amount)
-Amount.fromNumber(-1, 'positive', 0); // ❌ Result.err(InvalidAmountError)
+Amount.fromNumber(50, 'positive', 0); // ✅ Ok(Amount)
+Amount.fromNumber(-1, 'positive', 0); // ❌ Err(InvalidAmountError)
 
 // Только максимум
-Amount.fromNumber(50, 'limited', undefined, 100); // ✅ Result.ok(Amount)
-Amount.fromNumber(150, 'limited', undefined, 100); // ❌ Result.err(InvalidAmountError)
+Amount.fromNumber(50, 'limited', undefined, 100); // ✅ Ok(Amount)
+Amount.fromNumber(150, 'limited', undefined, 100); // ❌ Err(InvalidAmountError)
 ```
 
 ### Специальные значения
 
 ```typescript
 // NaN
-Amount.fromNumber(NaN, 'value'); // ❌ Result.err(InvalidAmountError)
+Amount.fromNumber(NaN, 'value'); // ❌ Err(InvalidAmountError)
 
 // Infinity
-Amount.fromNumber(Infinity, 'value'); // ❌ Result.err(InvalidAmountError)
-Amount.fromNumber(-Infinity, 'value'); // ❌ Result.err(InvalidAmountError)
+Amount.fromNumber(Infinity, 'value'); // ❌ Err(InvalidAmountError)
+Amount.fromNumber(-Infinity, 'value'); // ❌ Err(InvalidAmountError)
 
 // Очень большие числа
-Amount.fromNumber(Number.MAX_VALUE, 'value'); // ✅ Result.ok(Amount)
-Amount.fromNumber(Number.MAX_SAFE_INTEGER, 'value'); // ✅ Result.ok(Amount)
+Amount.fromNumber(Number.MAX_VALUE, 'value'); // ✅ Ok(Amount)
+Amount.fromNumber(Number.MAX_SAFE_INTEGER, 'value'); // ✅ Ok(Amount)
 
 // Очень малые числа
-Amount.fromNumber(Number.MIN_VALUE, 'value'); // ✅ Result.ok(Amount)
-Amount.fromNumber(Number.EPSILON, 'value'); // ✅ Result.ok(Amount)
+Amount.fromNumber(Number.MIN_VALUE, 'value'); // ✅ Ok(Amount)
+Amount.fromNumber(Number.EPSILON, 'value'); // ✅ Ok(Amount)
 ```
 
 ### Различные типы полей
@@ -494,19 +492,19 @@ class OrderLimit {
   ): Result<OrderLimit, InvalidAmountError> {
     // Валидация минимума
     const minResult = Amount.fromNumber(min, 'minOrderSize', 0);
-    if (minResult.isErr()) {
-      return Result.err(minResult.unwrapErr());
+    if (!minResult.ok) {
+      return Err(minResult.error);
     }
 
     // Валидация максимума
     const maxResult = Amount.fromNumber(max, 'maxOrderSize', 0);
-    if (maxResult.isErr()) {
-      return Result.err(maxResult.unwrapErr());
+    if (!maxResult.ok) {
+      return Err(maxResult.error);
     }
 
     // Проверка что min <= max
     if (min > max) {
-      return Result.err(
+      return Err(
         new InvalidAmountError(
           (ctx) => `Min ${ctx.min} cannot exceed max ${ctx.max}`,
           {
@@ -517,7 +515,7 @@ class OrderLimit {
       );
     }
 
-    return Result.ok(new OrderLimit(min, max));
+    return Ok(new OrderLimit(min, max));
   }
 
   getMin(): number {
@@ -536,13 +534,12 @@ class OrderLimit {
 // Использование
 const limitResult = OrderLimit.fromNumbers(100, 10000);
 
-limitResult.match({
-  ok: (limit) => {
-    console.log(`Order limits: ${limit.getMin()} - ${limit.getMax()}`);
-    console.log(limit.isWithinLimit(500)); // true
-  },
-  err: (error) => console.error('Invalid limits:', error.message)
-});
+if (limitResult.ok) {
+  console.log(`Order limits: ${limitResult.value.getMin()} - ${limitResult.value.getMax()}`);
+  console.log(limitResult.value.isWithinLimit(500)); // true
+} else {
+  console.error('Invalid limits:', limitResult.error.message);
+}
 ```
 
 ---
@@ -585,17 +582,16 @@ import { InvalidAmountError } from '@polymarket/errors';
 
 const result = Amount.fromNumber(value, field, min, max);
 
-result.match({
-  ok: (amount) => processAmount(amount),
-  err: (error) => {
-    if (error.code === InvalidAmountError.code) {
-      const field = error.context?.field as string;
-      showFieldError(field, error.message);
-    } else {
-      showError('Unexpected error', error);
-    }
+if (result.ok) {
+  processAmount(result.value);
+} else {
+  if (result.error.code === InvalidAmountError.code) {
+    const field = result.error.context?.field as string;
+    showFieldError(field, result.error.message);
+  } else {
+    showError('Unexpected error', result.error);
   }
-});
+}
 ```
 
 ### С логированием
@@ -612,23 +608,20 @@ function validateAndLogAmount(
 ): Result<Amount, InvalidAmountError> {
   const result = Amount.fromNumber(value, field, min, max);
 
-  result.match({
-    ok: (amount) => {
-      logger.info('Amount validated', {
-        userId,
-        field: amount.getField(),
-        value: amount.getValue()
-      });
-    },
-    err: (error) => {
-      logger.error('Amount validation failed', {
-        userId,
-        field,
-        error: error.toJSON(),
-        userInput: { value, min, max }
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Amount validated', {
+      userId,
+      field: result.value.getField(),
+      value: result.value.getValue()
+    });
+  } else {
+    logger.error('Amount validation failed', {
+      userId,
+      field,
+      error: result.error.toJSON(),
+      userInput: { value, min, max }
+    });
+  }
 
   return result;
 }
@@ -638,7 +631,7 @@ function validateAndLogAmount(
 
 ```typescript
 import { InvalidAmountError } from '@polymarket/errors';
-import { ResultChain } from '@polymarket/result';
+import { toChain } from '@polymarket/result';
 
 interface Config {
   leverage: Amount;
@@ -651,8 +644,7 @@ function validateConfig(
   maxInput: number,
   minInput: number
 ): Result<Config, InvalidAmountError> {
-  return ResultChain
-    .from(Amount.fromNumber(leverageInput, 'leverage', 1, 100))
+  return toChain(Amount.fromNumber(leverageInput, 'leverage', 1, 100))
     .flatMap(leverage =>
       Amount.fromNumber(maxInput, 'maxOrderSize', 0).map(max => ({ leverage, max }))
     )
@@ -664,22 +656,20 @@ function validateConfig(
       maxOrderSize: max,
       minOrderSize: min
     }))
-    .run();
+    .toResult();
 }
 
 // Использование
 const configResult = validateConfig(50, 10000, 100);
 
-configResult.match({
-  ok: (config) => {
-    console.log('Config validated:', config);
-    saveConfig(config);
-  },
-  err: (error) => {
-    const field = error.context?.field as string;
-    showFieldError(field, error.message);
-  }
-});
+if (configResult.ok) {
+  const config = configResult.value;
+  console.log('Config validated:', config);
+  saveConfig(config);
+} else {
+  const field = configResult.error.context?.field as string;
+  showFieldError(field, configResult.error.message);
+}
 ```
 
 ---

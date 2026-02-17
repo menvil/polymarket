@@ -7,6 +7,7 @@
 Выбрасывается когда `tickSize <= 0` или не является конечным числом (`NaN`, `Infinity`).
 
 **Tick size** - это минимальный шаг изменения цены на рынке. Например:
+
 - Tick size `0.01` означает что цена может быть `10.50`, `10.51`, но не `10.505`
 - Tick size `0.0001` означает что цена может быть `0.6543`, но не `0.65435`
 
@@ -54,7 +55,7 @@ function roundToTickSize(value: Decimal, tickSize: Decimal): Decimal {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be finite, got ${ctx.tickSize}`,
       {
-        code: InvalidTickSizeError.code,
+        
         context: { tickSize: tickSize.toString(), value: value.toString() }
       }
     );
@@ -64,7 +65,7 @@ function roundToTickSize(value: Decimal, tickSize: Decimal): Decimal {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
       {
-        code: InvalidTickSizeError.code,
+        
         context: { tickSize: tickSize.toString(), value: value.toString() }
       }
     );
@@ -104,7 +105,7 @@ function roundToTickSizeWithMode(
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
       {
-        code: InvalidTickSizeError.code,
+        
         context: { tickSize: tickSize.toString(), value: value.toString() }
       }
     );
@@ -143,7 +144,7 @@ roundToTickSizeWithMode(value, tickSize, 'ceil');  // ✅ 10.57
 ```typescript
 import Decimal from 'decimal.js';
 import { InvalidTickSizeError, InvalidPriceError } from '@polymarket/errors';
-import { Result } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 
 class Price {
   private constructor(
@@ -157,11 +158,11 @@ class Price {
   ): Result<Price, InvalidTickSizeError | InvalidPriceError> {
     // Валидация tick size
     if (!tickSize.isFinite() || tickSize.isNegative() || tickSize.isZero()) {
-      return Result.err(
+      return Err(
         new InvalidTickSizeError(
           (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
           {
-            code: InvalidTickSizeError.code,
+            
             context: { tickSize: tickSize.toString() }
           }
         )
@@ -171,11 +172,11 @@ class Price {
     // Валидация что value кратен tick size
     const divided = value.dividedBy(tickSize);
     if (!divided.equals(divided.round())) {
-      return Result.err(
+      return Err(
         new InvalidPriceError(
           (ctx) => `Price ${ctx.value} is not a multiple of tick size ${ctx.tickSize}`,
           {
-            code: InvalidPriceError.code,
+            
             context: {
               value: value.toString(),
               tickSize: tickSize.toString()
@@ -185,7 +186,7 @@ class Price {
       );
     }
 
-    return Result.ok(new Price(value, tickSize));
+    return Ok(new Price(value, tickSize));
   }
 
   getValue(): Decimal {
@@ -203,10 +204,11 @@ const result = Price.create(
   new Decimal('0.01')
 );
 
-result.match({
-  ok: (price) => console.log('Valid price:', price.getValue().toString()),
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log('Valid price:', result.value.getValue().toString());
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ### 4. Price grid для order book
@@ -225,7 +227,7 @@ function generatePriceGrid(
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
       {
-        code: InvalidTickSizeError.code,
+        
         context: {
           tickSize: tickSize.toString(),
           startPrice: startPrice.toString(),
@@ -272,7 +274,7 @@ function normalizeUserPrice(
       new InvalidTickSizeError(
         (ctx) => `Tick size must be finite and positive, got ${ctx.tickSize}`,
         {
-          code: InvalidTickSizeError.code,
+          
           context: { tickSize: tickSize.toString(), input: userInput }
         }
       )
@@ -291,7 +293,7 @@ function normalizeUserPrice(
       new InvalidPriceError(
         (ctx) => `Invalid price input: ${ctx.input}`,
         {
-          code: InvalidPriceError.code,
+          
           context: { input: userInput, error: String(error) }
         }
       )
@@ -302,10 +304,11 @@ function normalizeUserPrice(
 // Использование
 const result = normalizeUserPrice('10.567', new Decimal('0.01'));
 
-result.match({
-  ok: (normalized) => console.log('Normalized:', normalized.toString()), // "10.57"
-  err: (error) => console.error('Error:', error.message)
-});
+if (result.ok) {
+  console.log('Normalized:', result.value.toString()); // "10.57"
+} else {
+  console.error('Error:', result.error.message);
+}
 ```
 
 ---
@@ -493,7 +496,7 @@ function validateMarketConfig(
       new InvalidTickSizeError(
         (ctx) => `Market tick size must be finite and positive, got ${ctx.tickSize}`,
         {
-          code: InvalidTickSizeError.code,
+          
           context: {
             tickSize: config.tickSize.toString(),
             minPrice: config.minPrice.toString(),
@@ -510,13 +513,12 @@ function validateMarketConfig(
 // Использование при инициализации рынка
 const configResult = validateMarketConfig(marketConfig);
 
-configResult.match({
-  ok: (config) => initializeMarket(config),
-  err: (error) => {
-    logger.error('Invalid market configuration', { error: error.toJSON() });
-    throw error;
-  }
-});
+if (configResult.ok) {
+  initializeMarket(configResult.value);
+} else {
+  logger.error('Invalid market configuration', { error: configResult.error.toJSON() });
+  throw configResult.error;
+}
 ```
 
 ---

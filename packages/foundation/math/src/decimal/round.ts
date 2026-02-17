@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { InvalidOperandError } from '@polymarket/errors';
+import { assertFiniteOperand, toStringSafe } from '../shared/index.js';
 
 /**
  * Округляет Decimal к ближайшему целому (standard half-up rounding)
@@ -29,17 +29,12 @@ import { InvalidOperandError } from '@polymarket/errors';
  * ```
  */
 export function roundDecimal(value: Decimal): Decimal {
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Value must be finite, got ${ctx.value}`,
-      {
-        context: {
-          value: value.toString(),
-          operation: 'round',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'round',
+    value: toStringSafe(value),
+  };
+
+  assertFiniteOperand(value, 'value', context);
 
   return value.toDecimalPlaces(0, Decimal.ROUND_HALF_UP);
 }
@@ -73,17 +68,12 @@ export function roundDecimal(value: Decimal): Decimal {
  * ```
  */
 export function roundTowardZeroDecimal(value: Decimal): Decimal {
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Value must be finite, got ${ctx.value}`,
-      {
-        context: {
-          value: value.toString(),
-          operation: 'roundTowardZero',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'roundTowardZero',
+    value: toStringSafe(value),
+  };
+
+  assertFiniteOperand(value, 'value', context);
 
   return value.toDecimalPlaces(0, Decimal.ROUND_DOWN);
 }
@@ -117,17 +107,12 @@ export function roundTowardZeroDecimal(value: Decimal): Decimal {
  * ```
  */
 export function roundAwayFromZeroDecimal(value: Decimal): Decimal {
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Value must be finite, got ${ctx.value}`,
-      {
-        context: {
-          value: value.toString(),
-          operation: 'roundAwayFromZero',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'roundAwayFromZero',
+    value: toStringSafe(value),
+  };
+
+  assertFiniteOperand(value, 'value', context);
 
   return value.toDecimalPlaces(0, Decimal.ROUND_UP);
 }
@@ -156,17 +141,12 @@ export function roundAwayFromZeroDecimal(value: Decimal): Decimal {
  * ```
  */
 export function truncDecimal(value: Decimal): Decimal {
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Value must be finite, got ${ctx.value}`,
-      {
-        context: {
-          value: value.toString(),
-          operation: 'trunc',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'trunc',
+    value: toStringSafe(value),
+  };
+
+  assertFiniteOperand(value, 'value', context);
 
   return value.trunc();
 }
@@ -199,17 +179,12 @@ export function truncDecimal(value: Decimal): Decimal {
  * ```
  */
 export function mathFloorDecimal(value: Decimal): Decimal {
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Value must be finite, got ${ctx.value}`,
-      {
-        context: {
-          value: value.toString(),
-          operation: 'mathFloor',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'mathFloor',
+    value: toStringSafe(value),
+  };
+
+  assertFiniteOperand(value, 'value', context);
 
   return value.toDecimalPlaces(0, Decimal.ROUND_FLOOR);
 }
@@ -242,17 +217,12 @@ export function mathFloorDecimal(value: Decimal): Decimal {
  * ```
  */
 export function mathCeilDecimal(value: Decimal): Decimal {
-  if (!value.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Value must be finite, got ${ctx.value}`,
-      {
-        context: {
-          value: value.toString(),
-          operation: 'mathCeil',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'mathCeil',
+    value: toStringSafe(value),
+  };
+
+  assertFiniteOperand(value, 'value', context);
 
   return value.toDecimalPlaces(0, Decimal.ROUND_CEIL);
 }

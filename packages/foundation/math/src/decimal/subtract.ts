@@ -1,8 +1,5 @@
 import Decimal from 'decimal.js';
-import {
-  ArithmeticOverflowError,
-  InvalidOperandError,
-} from '@polymarket/errors';
+import { assertFiniteOperands, assertFiniteResult, withResult, toStringSafe } from '../shared/index.js';
 
 /**
  * Вычитает одно Decimal значение из другого
@@ -33,49 +30,17 @@ import {
  * ```
  */
 export function subtractDecimal(a: Decimal, b: Decimal): Decimal {
-  // Проверка 1: Оба операнда должны быть конечными числами
-  if (!a.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'a' must be finite, got ${ctx.a}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'subtract',
-        },
-      }
-    );
-  }
+  const context = {
+    operation: 'subtract',
+    a: toStringSafe(a),
+    b: toStringSafe(b),
+  };
 
-  if (!b.isFinite()) {
-    throw new InvalidOperandError(
-      (ctx) => `Operand 'b' must be finite, got ${ctx.b}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          operation: 'subtract',
-        },
-      }
-    );
-  }
+  assertFiniteOperands(a, b, context);
 
-  // Выполняем вычитание
   const result = a.minus(b);
 
-  // Проверка 2: Результат должен быть конечным
-  if (!result.isFinite()) {
-    throw new ArithmeticOverflowError(
-      (ctx) => `Subtraction overflow: ${ctx.a} - ${ctx.b} = ${ctx.result}`,
-      {
-        context: {
-          a: a.toString(),
-          b: b.toString(),
-          result: result.toString(),
-        },
-      }
-    );
-  }
+  assertFiniteResult(result, withResult(context, result));
 
   return result;
 }
