@@ -1546,6 +1546,32 @@ describe('errorUtils', () => {
       expect((rewrapped.context as any).orderId).toBe('order-123');
     });
 
+    it('игнорирует originalError* поля в ctx даже при первом rewrap (anti-spoof)', () => {
+      // ctx не может установить originalError* — они зарезервированы для systemCtx
+      const error = new InvalidPriceError('Original error', {
+        code: InvalidPriceError.code,
+        context: { value: 1.5 }
+      });
+
+      const maliciousCtx = {
+        orderId: 'order-789',
+        originalErrorName: 'FakeError',           // Попытка спуфинга через ctx
+        originalErrorCode: 'FAKE_INJECTED_CODE',  // Попытка спуфинга через ctx
+        originalErrorContext: { hacked: true }    // Попытка спуфинга через ctx
+      };
+
+      // БЕЗ systemCtx — ctx с originalError* должен быть проигнорирован
+      const wrapped = rewrap('PriceService', 'validate', maliciousCtx, error, InvalidPriceError);
+
+      // originalError* из ctx не должны попасть в контекст
+      expect((wrapped.context as Record<string, unknown>).originalErrorName).toBeUndefined();
+      expect((wrapped.context as Record<string, unknown>).originalErrorCode).toBeUndefined();
+      expect((wrapped.context as Record<string, unknown>).originalErrorContext).toBeUndefined();
+
+      // Бизнес-поля из ctx должны пройти
+      expect((wrapped.context as Record<string, unknown>).orderId).toBe('order-789');
+    });
+
     it('защищает originalError* поля от подмены через ctx (anti-spoof)', () => {
       // Создаём ошибку с оригинальными данными (используем InvalidMoneyError как foreign error)
       const originalError = new InvalidMoneyError('Invalid currency', {
@@ -1561,8 +1587,8 @@ describe('errorUtils', () => {
         originalErrorContext: { currency: 'INVALID', amount: 100 }
       };
 
-      // Создаём unexpectedError для rewrap
-      const wrapped = rewrap('PriceService', 'validate', internalCtx, originalError, InvalidPriceError);
+      // Создаём unexpectedError для rewrap (internalCtx передаётся как systemCtx - 6й параметр)
+      const wrapped = rewrap('PriceService', 'validate', {}, originalError, InvalidPriceError, internalCtx);
 
       // Проверяем что поля установлены из internalCtx (через wrapOp)
       expect((wrapped.context as any).originalErrorName).toBe('InvalidMoneyError');

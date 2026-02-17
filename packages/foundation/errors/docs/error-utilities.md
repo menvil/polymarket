@@ -233,7 +233,7 @@ function wrapOp<T, TError extends DomainError>(
 - **Same-type TradingError** (instanceof ErrorConstructor) → rewrap с сохранением типа
 - **Foreign TradingError** (другой тип TradingError):
   - Если это expected math error (ArithmeticOverflowError, InvalidOperandError и т.д.) → expectedMathError + rewrap (классификация: math_operation)
-  - Иначе → unexpectedError + rewrap, с сохранением оригинальных данных в полях `originalErrorName`, `originalErrorCode`, `originalErrorContext`
+  - Иначе → unexpectedError + rewrap, с сохранением оригинальных данных в `originalErrorName`, `originalErrorCode`, `originalErrorContext` через `systemCtx` (не через `ctx` — защита от спуфинга)
 - **Expected math errors (non-TradingError)** → expectedMathError + rewrap
 - **Core invariant violations** → coreInvariantError + rewrap
 - **TypeError** → developerMisuseError + rewrap
@@ -266,7 +266,8 @@ function rewrap<TError extends DomainError>(
   op: string,
   ctx: Record<string, unknown>,
   err: TError,
-  ErrorConstructor: ErrorConstructor<TError>
+  ErrorConstructor: ErrorConstructor<TError>,
+  systemCtx?: Record<string, unknown>
 ): TError
 ```
 
@@ -276,6 +277,18 @@ function rewrap<TError extends DomainError>(
 2. **ctx** - операционные поля (amount, factor, divisor) - перетирают inner
 3. **op + opChain** - строит цепочку операций, НЕ теряя внутренний op
 4. **preserve root-полей**: cause, reason, raw (первопричина не перетирается)
+5. **systemCtx** - `originalError*` только отсюда (write-once: inner имеет приоритет)
+
+**Защита от спуфинга (anti-spoof)**:
+
+Следующие поля **зарезервированы** и не могут быть установлены через `ctx`:
+
+- `originalErrorName`, `originalErrorCode`, `originalErrorContext` — только через `systemCtx`
+- `cause`, `reason`, `raw`, `source` — берутся из inner (первопричина)
+- `service`, `op`, `opChain` — управляются rewrap автоматически
+- `firstTradingErrorTimestamp`, `firstTradingErrorStack`, `originalName`, `originalCode` — trace-поля
+
+`systemCtx` — **только для внутреннего использования** в `wrapOp`. Пользовательский код должен использовать только `ctx` для операционных полей (amount, factor, orderId и т.д.).
 
 **Пример**:
 

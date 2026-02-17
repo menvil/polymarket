@@ -528,9 +528,13 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
  * Оборачивает ошибку с добавлением op и контекста
  *
  * @param op - Название операции (станет верхним в opChain)
- * @param ctx - Дополнительный контекст для добавления (операционные поля: amount, factor, divisor, etc)
+ * @param ctx - Дополнительный контекст для добавления (операционные поля: amount, factor, divisor, etc).
+ *   Root-поля, trace-поля и originalError* будут вырезаны — их нельзя передавать через ctx.
  * @param err - Исходная ошибка
  * @param ErrorConstructor - Конструктор ошибки
+ * @param systemCtx - Системный контекст (только для внутреннего использования в wrapOp).
+ *   Единственный способ установить originalError* поля — передать их здесь.
+ *   Пользовательский ctx не может устанавливать originalError* (защита от спуфинга).
  * @returns Новая ошибка с объединённым контекстом
  *
  * @remarks
@@ -541,17 +545,20 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
  * 2. ctx - операционные поля (amount, factor, divisor) - перетирают inner
  * 3. op + opChain - строит цепочку операций, НЕ теряя внутренний op
  * 4. preserve root-полей: cause, reason, raw (первопричина не перетирается)
+ * 5. systemCtx - originalError* только отсюда (write-once: inner имеет приоритет)
  *
  * **Root-cause semantics:**
  * - cause, reason, raw, source сохраняются из inner (это первопричина)
  * - firstTradingErrorTimestamp, firstTradingErrorStack, originalName, originalCode сохраняют данные самой первой ошибки
  * - opChain накапливает историю операций: [innerOp, ..., op]
+ * - originalError* устанавливаются только через systemCtx (анти-спуфинг)
  *
  * Это гарантирует:
  * - Операционный контекст (amount, factor) всегда актуален для текущего op
  * - Первопричина (cause, reason, raw) не теряется
  * - История операций сохраняется в opChain
  * - Origin-данные (timestamp, stack, name, code первой ошибки) сохраняются для отладки
+ * - originalError* не могут быть подделаны пользовательским ctx
  *
  * @example
  * ```typescript
@@ -575,12 +582,13 @@ export function rewrap<TError extends DomainError>(
   op: string,
   ctx: Record<string, unknown>,
   err: TError,
-  ErrorConstructor: ErrorConstructor<TError>
+  ErrorConstructor: ErrorConstructor<TError>,
+  systemCtx?: Record<string, unknown>
 ): TError {
   const inner = (err.context ?? {}) as Record<string, unknown>;
 
-  // Запрещаем ctx приносить root-поля и trace-поля (защита от случайного перетирания и спуфинга)
-  // originalError* поля НЕ вырезаем - они нужны wrapOp, но используем write-once логику ниже
+  // Запрещаем ctx приносить root-поля, trace-поля и originalError* (анти-спуфинг)
+  // Системные поля могут передаваться только через отдельный параметр systemCtx
   const {
     cause: _c,
     reason: _r,
@@ -593,6 +601,9 @@ export function rewrap<TError extends DomainError>(
     firstTradingErrorStack: _ftes,
     originalName: _on,
     originalCode: _oc,
+    originalErrorName: _oen,
+    originalErrorCode: _oec,
+    originalErrorContext: _oectx,
     ...safeCtx
   } = ctx;
 
@@ -659,17 +670,20 @@ export function rewrap<TError extends DomainError>(
     merged.originalCode = err.code;
   }
 
-  // 4b) originalError* поля write-once (приоритет у inner для защиты от спуфинга)
-  // wrapOp передает их через ctx при foreign TradingError, но повторный rewrap НЕ должен их перезаписывать
-  if (inner.originalErrorName !== undefined) {
-    merged.originalErrorName = inner.originalErrorName;
+  // 6) originalError* только из systemCtx (write-once: inner имеет приоритет)
+  // Пользовательский ctx не может устанавливать эти поля — они зарезервированы
+  if (systemCtx !== undefined) {
+    if (inner.originalErrorName === undefined && systemCtx.originalErrorName !== undefined) {
+      merged.originalErrorName = systemCtx.originalErrorName;
+    }
+    if (inner.originalErrorCode === undefined && systemCtx.originalErrorCode !== undefined) {
+      merged.originalErrorCode = systemCtx.originalErrorCode;
+    }
+    if (inner.originalErrorContext === undefined && systemCtx.originalErrorContext !== undefined) {
+      merged.originalErrorContext = systemCtx.originalErrorContext;
+    }
   }
-  if (inner.originalErrorCode !== undefined) {
-    merged.originalErrorCode = inner.originalErrorCode;
-  }
-  if (inner.originalErrorContext !== undefined) {
-    merged.originalErrorContext = inner.originalErrorContext;
-  }
+  // Если systemCtx не передан — originalError* берутся из inner через spread выше
 
   // 5) Создаем новую ошибку с сохранением code и innerError
   const rewrappedError = new ErrorConstructor(err.message, {
@@ -778,7 +792,7 @@ export function wrapOp<T, TError extends DomainError>(
           originalErrorContext: tradingError.context,
         };
         const factoryError = unexpectedError(tradingError, ErrorConstructor);
-        return Err(rewrap(serviceName, op, { ...ctx, ...originalContext }, factoryError, ErrorConstructor));
+        return Err(rewrap(serviceName, op, ctx, factoryError, ErrorConstructor, originalContext));
       }
     }
     // Ожидаемые math ошибки (NON-TradingError, например native Error('Division by zero'))
