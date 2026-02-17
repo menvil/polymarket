@@ -2434,6 +2434,47 @@ describe('Core IDs', () => {
       });
     });
 
+    describe('ParseAccountIdOptions corruption guard', () => {
+      const validWalletStr = `wallet:${testWallet}`;
+
+      it('should return undefined (not throw) when validateWalletAddress is null as any', () => {
+        // validate is not a function — дефолтная валидация должна использоваться
+        const result = parseAccountId(validWalletStr, { validateWalletAddress: null as any });
+        expect(result).toBeDefined(); // null → fallback to parseWalletAddress → Ok
+      });
+
+      it('should return undefined (not throw) when validateWalletAddress is number as any', () => {
+        const result = parseAccountId(validWalletStr, { validateWalletAddress: 42 as any });
+        expect(result).toBeDefined(); // 42 → fallback to parseWalletAddress → Ok
+      });
+
+      it('should return undefined (not throw) when validateWalletAddress is object as any', () => {
+        const result = parseAccountId(validWalletStr, { validateWalletAddress: {} as any });
+        expect(result).toBeDefined(); // {} → fallback to parseWalletAddress → Ok
+      });
+
+      it('should fall back to default maxLen when maxLen is NaN', () => {
+        // NaN maxLen → дефолт MAX_ACCOUNT_ID_STRING_LENGTH
+        const result = parseAccountId(validWalletStr, { maxLen: NaN });
+        expect(result).toBeDefined(); // дефолтный лимит, строка валидной длины
+      });
+
+      it('should fall back to default maxLen when maxLen is string as any', () => {
+        const result = parseAccountId(validWalletStr, { maxLen: 'bad' as any });
+        expect(result).toBeDefined(); // строковый maxLen → дефолт
+      });
+
+      it('should fall back to default maxDepth when maxDepth is NaN', () => {
+        const result = parseAccountId(validWalletStr, { maxDepth: NaN });
+        expect(result).toBeDefined(); // дефолтный лимит глубины
+      });
+
+      it('should fall back to default maxDepth when maxDepth is string as any', () => {
+        const result = parseAccountId(validWalletStr, { maxDepth: 'bad' as any });
+        expect(result).toBeDefined(); // строковый maxDepth → дефолт
+      });
+    });
+
     describe('WalletAddress validation', () => {
       it('should validate wallet address with custom validator', () => {
         // Валидатор, который принимает только адреса с '0xabc' в начале

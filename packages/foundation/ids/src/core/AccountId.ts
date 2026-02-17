@@ -589,8 +589,16 @@ export function parseAccountId(
     return undefined;
   }
 
-  const maxLen = options?.maxLen ?? MAX_ACCOUNT_ID_STRING_LENGTH;
-  const maxDepth = options?.maxDepth ?? MAX_SUBACCOUNT_DEPTH;
+  // Guard против as any: maxLen/maxDepth должны быть конечными положительными числами
+  const rawMaxLen = options?.maxLen;
+  const maxLen = (typeof rawMaxLen === 'number' && Number.isFinite(rawMaxLen) && rawMaxLen >= 0)
+    ? rawMaxLen
+    : MAX_ACCOUNT_ID_STRING_LENGTH;
+
+  const rawMaxDepth = options?.maxDepth;
+  const maxDepth = (typeof rawMaxDepth === 'number' && Number.isFinite(rawMaxDepth) && rawMaxDepth >= 0)
+    ? rawMaxDepth
+    : MAX_SUBACCOUNT_DEPTH;
 
   // Проверка длины строки
   if (str.length > maxLen) {
@@ -642,8 +650,10 @@ function parseAccountIdImpl(
 
     const rawAddress = parts[1];
 
-    // Используем дефолтную валидацию или кастомную из options
-    const validate = options?.validateWalletAddress ?? parseWalletAddress;
+    // Используем кастомную валидацию если передана и является функцией, иначе дефолтную
+    // Guard против as any: options.validateWalletAddress может быть не функцией
+    const customValidator = options?.validateWalletAddress;
+    const validate = typeof customValidator === 'function' ? customValidator : parseWalletAddress;
     const validatedAddress = validate(rawAddress);
 
     if (!validatedAddress) {
