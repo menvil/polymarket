@@ -185,6 +185,21 @@ describe('round', () => {
   });
 
   describe('валидация операндов', () => {
+    // Общие тесты для null/undefined - должны бросать доменную ошибку, а не TypeError
+    it('roundDecimal должен throw InvalidOperandError на null (не TypeError)', () => {
+      // @ts-expect-error - intentionally testing runtime validation
+      expect(() => roundDecimal(null)).toThrow(InvalidOperandError);
+      // @ts-expect-error - intentionally testing runtime validation
+      expect(() => roundDecimal(null)).not.toThrow(TypeError);
+    });
+
+    it('roundDecimal должен throw InvalidOperandError на undefined (не TypeError)', () => {
+      // @ts-expect-error - intentionally testing runtime validation
+      expect(() => roundDecimal(undefined)).toThrow(InvalidOperandError);
+      // @ts-expect-error - intentionally testing runtime validation
+      expect(() => roundDecimal(undefined)).not.toThrow(TypeError);
+    });
+
     describe('roundDecimal', () => {
       it('должен throw InvalidOperandError на NaN', () => {
         expect(() => roundDecimal(new Decimal(NaN))).toThrow(InvalidOperandError);

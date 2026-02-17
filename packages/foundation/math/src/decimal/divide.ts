@@ -71,7 +71,8 @@ export function divideDecimal(a: Decimal, b: Decimal): Decimal {
 
   // Проверка на ноль (специфично для деления)
   // Defensive: проверяем наличие метода isZero перед вызовом
-  if (typeof (b as any).isZero !== 'function') {
+  const divisor = b as unknown as Record<string, unknown>;
+  if (typeof divisor.isZero !== 'function') {
     throw new InvalidDivisorError(
       (ctx) => `Operand 'b' (divisor) must have isZero method, got ${ctx.b}`,
       { context }

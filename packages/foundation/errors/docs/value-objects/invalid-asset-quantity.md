@@ -215,7 +215,7 @@ AssetQuantity.create(usdcId, new Decimal('0'), true);  // ✅ Ok
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidAssetQuantityError } from '@polymarket/errors';
+import { InvalidAssetQuantityError, InvalidAssetIdError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 // AssetId может быть невалидным сам по себе
@@ -370,15 +370,25 @@ AssetQuantity.create(usdcId, new Decimal('1e-18')); // ✅ Ok
 ### Разные активы
 
 ```typescript
-const usdc = AssetQuantity.create(usdcId, new Decimal('100')).value;
-const eth = AssetQuantity.create(ethId, new Decimal('1')).value;
+const usdcResult = AssetQuantity.create(usdcId, new Decimal('100'));
+const ethResult = AssetQuantity.create(ethId, new Decimal('1'));
+
+if (!usdcResult.ok || !ethResult.ok) {
+  throw new Error('Failed to create asset quantities');
+}
+
+const usdc = usdcResult.value;
+const eth = ethResult.value;
 
 // Нельзя складывать разные активы
 usdc.add(eth); // ❌ Err (different assets)
 
 // Но можно работать с одним и тем же активом
-const moreUsdc = AssetQuantity.create(usdcId, new Decimal('50')).value;
-usdc.add(moreUsdc); // ✅ Ok (150 USDC)
+const moreUsdcResult = AssetQuantity.create(usdcId, new Decimal('50'));
+if (!moreUsdcResult.ok) {
+  throw new Error('Failed to create more USDC');
+}
+usdc.add(moreUsdcResult.value); // ✅ Ok (150 USDC)
 ```
 
 ---

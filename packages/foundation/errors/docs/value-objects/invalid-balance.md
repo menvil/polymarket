@@ -384,11 +384,17 @@ class Balance {
 }
 
 // Использование
-const balance = Balance.create(
+const balanceResult = Balance.create(
   accountId,
   new Decimal('1000'),
   new Decimal('0')
-).value;
+);
+
+if (!balanceResult.ok) {
+  throw new Error('Failed to create balance');
+}
+
+const balance = balanceResult.value;
 
 // Резервируем средства под ордер
 const afterReserve = balance.reserve(new Decimal('300'));
@@ -545,8 +551,27 @@ function handleBalanceUpdate(
   }
 
   // Создаём новый баланс из обновления
-  const available = new Decimal(update.available);
-  const reserved = new Decimal(update.reserved);
+  let available: Decimal;
+  let reserved: Decimal;
+
+  try {
+    available = new Decimal(update.available);
+    reserved = new Decimal(update.reserved);
+  } catch (error) {
+    return Err(
+      new InvalidBalanceError(
+        (ctx) => `Invalid balance values in update: ${ctx.error}`,
+        {
+          context: {
+            operation: 'update',
+            available: update.available,
+            reserved: update.reserved,
+            error: String(error)
+          }
+        }
+      )
+    );
+  }
 
   return Balance.create(
     currentBalance.getAccountId(),

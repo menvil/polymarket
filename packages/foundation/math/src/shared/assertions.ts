@@ -53,8 +53,10 @@ export interface MathOperationContext {
  * ```
  */
 export function toStringSafe(value: unknown): string {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   if (value && typeof (value as any).toString === 'function') {
     try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       return (value as any).toString();
     } catch {
       // Fallback if toString() throws
@@ -62,36 +64,6 @@ export function toStringSafe(value: unknown): string {
     }
   }
   return String(value);
-}
-
-/**
- * Создаёт контекст для бинарных математических операций
- *
- * @param operation - Название операции (add, subtract, multiply, divide, compare, etc)
- * @param a - Первый операнд
- * @param b - Второй операнд
- * @returns Объект контекста с operation, a, b
- *
- * @remarks
- * Helper для устранения дублирования при создании context в бинарных операциях.
- * Используется для унификации формирования контекста в compare.ts и других файлах.
- *
- * @example
- * ```typescript
- * const context = createBinaryContext('equals', a, b);
- * // { operation: 'equals', a: '10', b: '20' }
- * ```
- */
-export function createBinaryContext(
-  operation: string,
-  a: Decimal,
-  b: Decimal
-): MathOperationContext {
-  return {
-    operation,
-    a: toStringSafe(a),
-    b: toStringSafe(b),
-  };
 }
 
 /**
@@ -106,16 +78,17 @@ export type ErrorConstructor<TError> = new (
 ) => TError;
 
 /**
- * Проверяет, является ли значение Decimal-подобным объектом (duck-typing)
+ * Проверяет, является ли значение Decimal-подобным объектом
  *
  * @param value - Значение для проверки
  * @returns true если объект имеет необходимые методы Decimal
  *
  * @remarks
- * Использует duck-typing вместо instanceof для совместимости с разными
- * копиями decimal.js библиотеки (например, в monorepo или при bundling).
+ * Использует комбинированный подход:
+ * 1. Fast path: instanceof Decimal (для стандартного случая одной копии библиотеки)
+ * 2. Fallback: duck-typing для совместимости с разными копиями decimal.js
  *
- * Проверяет наличие ключевых методов Decimal.js:
+ * Duck-typing проверяет наличие ключевых методов Decimal.js:
  * - isFinite() - проверка конечности
  * - toString() - сериализация
  * - toNumber() - конвертация в number
@@ -124,21 +97,28 @@ export type ErrorConstructor<TError> = new (
  * ```typescript
  * // Работает с любой копией Decimal
  * const d1 = new Decimal('1.5');  // копия A
- * const d2 = new OtherDecimal('2.5');  // копия B
- * isDecimalLike(d1); // true
- * isDecimalLike(d2); // true (если это тоже Decimal.js)
+ * const d2 = new OtherDecimal('2.5');  // копия B (другой контекст)
+ * isDecimalLike(d1); // true (fast path - instanceof)
+ * isDecimalLike(d2); // true (duck-typing fallback)
  * isDecimalLike(null); // false
- * isDecimalLike({ isFinite: () => true }); // true (duck-typing)
  * ```
  */
 function isDecimalLike(value: unknown): value is Decimal {
+  // Fast path: instanceof для стандартного случая
+  if (value instanceof Decimal) {
+    return true;
+  }
+
+  // Fallback: duck-typing для кросс-контекстных Decimal объектов
+  if (value === null || value === undefined || typeof value !== 'object') {
+    return false;
+  }
+
+  const obj = value as Record<string, unknown>;
   return (
-    value !== null &&
-    value !== undefined &&
-    typeof value === 'object' &&
-    typeof (value as any).isFinite === 'function' &&
-    typeof (value as any).toString === 'function' &&
-    typeof (value as any).toNumber === 'function'
+    typeof obj.isFinite === 'function' &&
+    typeof obj.toString === 'function' &&
+    typeof obj.toNumber === 'function'
   );
 }
 
@@ -426,7 +406,8 @@ export function assertValidTickSize(
   }
 
   // Defensive: проверяем наличие метода lte перед вызовом
-  if (typeof (tickSize as any).lte !== 'function') {
+  const obj = tickSize as unknown as Record<string, unknown>;
+  if (typeof obj.lte !== 'function') {
     throw new InvalidTickSizeError(
       (ctx) => `Tick size must have lte method, got ${ctx.tickSize}`,
       { context }

@@ -7,7 +7,6 @@ export {
   assertValidTickSize,
   assertFiniteResult,
   toStringSafe,
-  createBinaryContext,
   MAX_DECIMAL_PLACES,
   MIN_ROUNDING_MODE,
   MAX_ROUNDING_MODE,

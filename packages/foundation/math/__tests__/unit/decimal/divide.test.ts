@@ -236,7 +236,20 @@ describe('divideDecimal', () => {
     });
   });
 
-  // Note: Defensive проверки для impostor объектов присутствуют в коде
-  // (typeof isZero !== 'function'), но создать правильный тест сложно
-  // из-за prototype chain в Decimal.js
+  describe('defensive checks', () => {
+    it('должен throw InvalidDivisorError если divisor не имеет метода isZero', () => {
+      // Создаём объект который проходит isDecimalLike но не имеет isZero
+      const fakeDecimal = {
+        isFinite: () => true,
+        toString: () => '5',
+        toNumber: () => 5,
+        // Намеренно НЕ добавляем isZero метод
+      };
+
+      // @ts-expect-error - intentionally testing runtime validation
+      expect(() => divideDecimal(new Decimal(10), fakeDecimal)).toThrow(
+        InvalidDivisorError
+      );
+    });
+  });
 });

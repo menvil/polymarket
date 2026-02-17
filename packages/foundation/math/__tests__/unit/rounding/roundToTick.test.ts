@@ -532,7 +532,20 @@ describe('roundToTick', () => {
     });
   });
 
-  // Note: Defensive проверки для impostor объектов присутствуют в коде
-  // (typeof lte !== 'function' в assertValidTickSize), но создать правильный
-  // тест сложно из-за prototype chain в Decimal.js
+  describe('defensive checks', () => {
+    it('должен throw InvalidTickSizeError если tickSize не имеет метода lte', () => {
+      // Создаём объект который проходит isDecimalLike но не имеет lte
+      const fakeDecimal = {
+        isFinite: () => true,
+        toString: () => '0.01',
+        toNumber: () => 0.01,
+        // Намеренно НЕ добавляем lte метод
+      };
+
+      // Используем type assertion для тестирования runtime validation
+      expect(() =>
+        roundToTick(new Decimal('10.567'), fakeDecimal as any as Decimal, Decimal.ROUND_HALF_UP)
+      ).toThrow(InvalidTickSizeError);
+    });
+  });
 });

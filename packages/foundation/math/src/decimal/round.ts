@@ -1,5 +1,5 @@
 import Decimal from 'decimal.js';
-import { assertFiniteOperand } from '../shared/index.js';
+import { assertFiniteOperand, toStringSafe } from '../shared/index.js';
 
 /**
  * Округляет Decimal к ближайшему целому (standard half-up rounding)
@@ -31,7 +31,7 @@ import { assertFiniteOperand } from '../shared/index.js';
 export function roundDecimal(value: Decimal): Decimal {
   const context = {
     operation: 'round',
-    value: value.toString(),
+    value: toStringSafe(value),
   };
 
   assertFiniteOperand(value, 'value', context);
@@ -70,7 +70,7 @@ export function roundDecimal(value: Decimal): Decimal {
 export function roundTowardZeroDecimal(value: Decimal): Decimal {
   const context = {
     operation: 'roundTowardZero',
-    value: value.toString(),
+    value: toStringSafe(value),
   };
 
   assertFiniteOperand(value, 'value', context);
@@ -109,7 +109,7 @@ export function roundTowardZeroDecimal(value: Decimal): Decimal {
 export function roundAwayFromZeroDecimal(value: Decimal): Decimal {
   const context = {
     operation: 'roundAwayFromZero',
-    value: value.toString(),
+    value: toStringSafe(value),
   };
 
   assertFiniteOperand(value, 'value', context);
@@ -143,7 +143,7 @@ export function roundAwayFromZeroDecimal(value: Decimal): Decimal {
 export function truncDecimal(value: Decimal): Decimal {
   const context = {
     operation: 'trunc',
-    value: value.toString(),
+    value: toStringSafe(value),
   };
 
   assertFiniteOperand(value, 'value', context);
@@ -181,7 +181,7 @@ export function truncDecimal(value: Decimal): Decimal {
 export function mathFloorDecimal(value: Decimal): Decimal {
   const context = {
     operation: 'mathFloor',
-    value: value.toString(),
+    value: toStringSafe(value),
   };
 
   assertFiniteOperand(value, 'value', context);
@@ -219,7 +219,7 @@ export function mathFloorDecimal(value: Decimal): Decimal {
 export function mathCeilDecimal(value: Decimal): Decimal {
   const context = {
     operation: 'mathCeil',
-    value: value.toString(),
+    value: toStringSafe(value),
   };
 
   assertFiniteOperand(value, 'value', context);
