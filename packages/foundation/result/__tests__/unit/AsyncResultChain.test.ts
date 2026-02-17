@@ -1319,15 +1319,23 @@ describe('AsyncResultChain', () => {
         throw new Error('onReject failed');
       };
 
-      const result = await AsyncResult.from(
-        Promise.reject('original') as Promise<Result<number, Error>>,
-        throwingOnReject
-      ).toPromise();
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const result = await AsyncResult.from(
+          Promise.reject('original') as Promise<Result<number, Error>>,
+          throwingOnReject
+        ).toPromise();
 
-      // Promise должен остаться resolved — возвращается оригинальная rejection (как в normalize())
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBe('original');
+        // Promise должен остаться resolved — возвращается оригинальная rejection (как в normalize())
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBe('original');
+        }
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining('[AsyncResult.from] onReject threw')
+        );
+      } finally {
+        consoleSpy.mockRestore();
       }
     });
   });
@@ -1338,15 +1346,23 @@ describe('AsyncResultChain', () => {
         throw new Error('onError failed');
       };
 
-      const result = await AsyncResult.ok(
-        Promise.reject('original'),
-        throwingOnError
-      ).toPromise();
+      const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        const result = await AsyncResult.ok(
+          Promise.reject('original'),
+          throwingOnError
+        ).toPromise();
 
-      // Promise должен остаться resolved — возвращается оригинальная rejection (как в normalize())
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error).toBe('original');
+        // Promise должен остаться resolved — возвращается оригинальная rejection (как в normalize())
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBe('original');
+        }
+        expect(consoleSpy).toHaveBeenCalledWith(
+          expect.stringContaining('[AsyncResult.ok] onError threw')
+        );
+      } finally {
+        consoleSpy.mockRestore();
       }
     });
   });

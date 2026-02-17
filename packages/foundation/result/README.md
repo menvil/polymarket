@@ -64,7 +64,7 @@ Type-safe обработка ошибок: явные типы вместо exce
 >   .unwrapOr(null); // null
 > ```
 >
-> **Правило для E→F методов** (mapErr, mapErrAsync, or, orAsync, orAsyncLazy, orElse, orElseAsync):
+> **Правило для E→F методов** (mapErr, mapErrAsync, orAsync, orAsyncLazy, orElse, orElseAsync):
 > исключения из callback → `Err(e as F)`. Normalizer для F недоступен; E-normalizer не вызывается.
 >
 > **Правило для методов с rejected Promise** (mapUnsafe, tap, tapErr, match):
@@ -91,9 +91,6 @@ Type-safe обработка ошибок: явные типы вместо exce
 >
 > **`mapUnsafe`** сохраняет старое поведение `map` (rejected Promise при throw).
 > Используйте, когда rejected Promise является желаемым поведением.
->
-> **Правило для side-effect методов** (tap, tapErr, match):
-> исключения из callback → rejected Promise. Это намеренно: баг в side-effect не должен маскироваться.
 
 ## 📦 Установка
 
@@ -458,6 +455,37 @@ const result = flatMapW(
   validateUser            // Result<ValidUser, ValidationError>
 );
 // result: Result<ValidUser, FetchError | ValidationError>
+```
+
+### mapErrW(result, fn) — Widen-вариант
+
+Преобразует тип ошибки из `E` в `F`. Используйте, когда нужно сменить тип ошибки на несвязанный с `E`.
+
+```typescript
+type HttpError = { status: number };
+type AppError = { code: string; source: string };
+
+const r: Result<User, HttpError> = Err({ status: 404 });
+const mapped: Result<User, AppError> = mapErrW(r, err => ({
+  code: `HTTP_${err.status}`,
+  source: 'api',
+}));
+// mapped: Err({ code: 'HTTP_404', source: 'api' })
+```
+
+### orElseW(result, fn) — Widen-вариант
+
+Recovery при ошибке с заменой типа ошибки на `F`. Используйте, когда `fn` возвращает `Result` с другим типом ошибки.
+
+```typescript
+type TempError = { retryable: boolean };
+type FinalError = string;
+
+const r: Result<Data, TempError> = Err({ retryable: false });
+const recovered: Result<Data, FinalError> = orElseW(r, err =>
+  err.retryable ? Err('retry exhausted') : Err('permanent failure')
+);
+// recovered: Err('permanent failure')
 ```
 
 ### tryCatch(fn, onError)

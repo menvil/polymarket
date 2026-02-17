@@ -49,6 +49,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 ```typescript
 // internal implementation
 import { Result, Ok, Err } from '@polymarket/result';
+import { type AccountId, getSubaccountDepth } from '@polymarket/ids';
 import { AccountIdDepthError, AccountIdValidationError } from '@polymarket/errors';
 
 const MAX_SUBACCOUNT_DEPTH = 5;
@@ -255,6 +256,7 @@ if (!result.ok) {
 
 ```typescript
 import {
+  type AccountId,
   accountIdFromWallet,
   parseWalletAddress,
   accountIdForSubaccount,
@@ -269,7 +271,7 @@ const wallet = accountIdFromWallet(parseWalletAddress('0x...')!);
 // Строим цепочку из 4 подаккаунтов через reduce (аналог buildSubaccountChain)
 const sub4 = ['level1', 'level2', 'level3', 'level4'].reduce(
   (acc, name) => unwrap(accountIdForSubaccount(acc, name)),
-  wallet as Parameters<typeof accountIdForSubaccount>[0]
+  wallet as AccountId
 ); // depth=4
 
 const valid = accountIdForSubaccount(sub4, 'level5'); // результирующая depth станет 5

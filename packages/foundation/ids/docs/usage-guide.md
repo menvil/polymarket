@@ -691,15 +691,15 @@ const outcomes: OutcomeKey[] = [
   BinaryOutcome.UP,
 ];
 
-for (const outcome of outcomes) {
+for (const outcomeKey of outcomes) {
   // fromOutcomeToken — safe: возвращает Result, не бросает исключений
-  const tokenResult = AssetIdHelpers.fromOutcomeToken(conditionRef, outcome);
+  const tokenResult = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
   if (!tokenResult.ok) {
     console.error(`Invalid outcome token: ${tokenResult.error.message}`);
     continue;
   }
   const balance = getBalance(accountId, venueId, tokenResult.value);
-  console.log(`${outcome}: ${balance.amount}`);
+  console.log(`${outcomeKey}: ${balance.amount}`);
 }
 ```
 

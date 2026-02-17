@@ -1026,27 +1026,28 @@ export const AsyncResult = {
           }
         }
       : undefined;
-    const mapError = guardedNormalizer ?? ((error) => error as E);
-
     return new AsyncResultChain(
       promise.then((value) => Ok(value)).catch((error) => {
-        // Защищаем от исключений в mapError: если mapError бросает,
-        // оборачиваем брошенное значение в Err чтобы Promise оставался resolved.
-        try {
-          return Err(mapError(error));
-        } catch (mapErrorError) {
-          // mapError выбросил исключение — это баг в onError.
-          // Логируем диагностику: без этого ошибка mapError полностью теряется.
-          // Возвращаем оригинальную rejection (как в normalize() и AsyncResult.from).
-          normalizerBroken = true;
-          console.error(
-            `[AsyncResult.ok] onError threw while handling rejection. ` +
-              `Original error: ${formatValue(error)}. ` +
-              `onError error: ${formatValue(mapErrorError)}. ` +
-              `Falling back to original error (unsafe cast to E).`
-          );
-          return Err(error as E);
+        if (onError) {
+          // Защищаем от исключений в onError: если onError бросает,
+          // оборачиваем брошенное значение в Err чтобы Promise оставался resolved.
+          try {
+            return Err(onError(error));
+          } catch (onErrorError) {
+            // onError выбросил исключение — это баг в onError.
+            // Логируем диагностику: без этого ошибка onError полностью теряется.
+            // Возвращаем оригинальную rejection (как в normalize() и AsyncResult.from).
+            normalizerBroken = true;
+            console.error(
+              `[AsyncResult.ok] onError threw while handling rejection. ` +
+                `Original error: ${formatValue(error)}. ` +
+                `onError error: ${formatValue(onErrorError)}. ` +
+                `Falling back to original error (unsafe cast to E).`
+            );
+            return Err(error as E);
+          }
         }
+        return Err(error as E);
       }),
       guardedNormalizer
     );
