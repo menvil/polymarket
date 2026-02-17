@@ -862,26 +862,29 @@ export const AsyncResult = {
    *
    * @remarks
    * Автоматически перехватывает Promise rejections и преобразует их в Err.
-   * Если Promise реджектится, rejection будет обёрнут в Err<E>.
-   * Параметр `onReject` позволяет безопасно трансформировать unknown error в E.
-   * Без `onReject`: если E = unknown — корректно; если E — конкретный тип,
-   * нужно указать normalizer для type safety.
+   *
+   * **Без `onReject`**: тип ошибки фиксирован как `unknown` — честное отражение того,
+   * что тип rejection неизвестен без normalizer. Нельзя получить конкретный E без `onReject`.
+   *
+   * **С `onReject`**: E определяется возвращаемым типом функции-normalizer.
+   * Если `onReject` сам бросает исключение, rejection оборачивается через `error as E`
+   * (last-resort fallback без типовой гарантии).
    *
    * @param promise - Promise<Result<T, E>> для оборачивания
-   * @param onReject - Опциональная функция для трансформации rejection в E
-   * @returns AsyncResultChain<T, E>
+   * @param onReject - Функция для трансформации rejection в конкретный тип E
+   * @returns AsyncResultChain<T, unknown> без normalizer; AsyncResultChain<T, E> с normalizer
    *
    * @example
    * ```typescript
-   * // Базовое использование (E = string)
+   * // Без normalizer — E = unknown
    * const result1 = await AsyncResult.from(fetchUser('123')).unwrap();
    *
-   * // С normalizer для type safety:
+   * // С normalizer для конкретного E:
    * const result2 = await AsyncResult.from(
-   *   Promise.reject('Network error'),
-   *   (error) => new Error(String(error))
+   *   fetchUser('123'),
+   *   (error) => new NetworkError(String(error))
    * ).unwrapErr();
-   * // result2: Error('Network error')
+   * // result2: NetworkError
    * ```
    */
   from: (<T, E>(
@@ -898,17 +901,16 @@ export const AsyncResult = {
           return Err(onRejectError as E) as Result<T, E>;
         }
       }
-      return Err(error as E) as Result<T, E>;
+      return Err(error) as Result<T, E>;
     });
     return new AsyncResultChain(safePromise, onReject);
   }) as {
     /**
-     * Без normalizer — тип ошибки из Promise<Result<T,E>>.
-     * ⚠️ Promise rejections обёртываются через `error as E` (небезопасный каст).
-     * Если E = unknown — корректно. Если E — конкретный тип, rejections не будут
-     * честно нормализованы; используйте перегрузку с onReject для type safety.
+     * Без normalizer — тип ошибки фиксирован как `unknown`.
+     * Promise rejections оборачиваются в `Err<unknown>`.
+     * Для конкретного типа ошибки используйте перегрузку с `onReject`.
      */
-    <T, E>(promise: Promise<Result<T, E>>): AsyncResultChain<T, E>;
+    <T>(promise: Promise<Result<T, unknown>>): AsyncResultChain<T, unknown>;
     /**
      * С normalizer — E определяется возвращаемым типом onReject.
      * Гарантирует type-safe обработку Promise rejections.

@@ -145,7 +145,10 @@ describe('[Parity] mapErr - FP vs Chain vs Async', () => {
   });
 
   it('[Async] mapErr - transforms error', async () => {
-    const result = await AsyncResult.from(Promise.resolve(Err({ status: 404 } as HttpError)))
+    const result = await AsyncResult.from(
+      Promise.resolve(Err({ status: 404 } as HttpError)),
+      (e) => e as HttpError  // normalizer для получения конкретного E = HttpError
+    )
       .mapErr(transform)
       .toPromise();
     expect(result.ok).toBe(false);
@@ -166,7 +169,7 @@ describe('[Parity] mapErr - FP vs Chain vs Async', () => {
 
   it('[Async] mapErr - preserves Ok unchanged', async () => {
     const result = await AsyncResult.from(Promise.resolve(Ok(42)))
-      .mapErr(transform)
+      .mapErr(e => transform(e as HttpError))
       .toPromise();
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value).toBe(42);
@@ -179,7 +182,7 @@ describe('[Parity] mapErr - FP vs Chain vs Async', () => {
 describe('[Parity] match - FP vs Chain vs Async', () => {
   const handlers = {
     ok: (v: number) => `value=${v}`,
-    err: (e: string) => `error=${e}`,
+    err: (e: unknown) => `error=${e}`,
   };
 
   it('[FP] match Ok', () => {
@@ -322,8 +325,8 @@ describe('AsyncResultChain — normalizer (onError)', () => {
 
   it('AsyncResult.from без onReject — rejection попадает в Err как есть', async () => {
     const rejection = new Error('raw rejection');
-    const chain = AsyncResult.from<string, unknown>(
-      Promise.reject(rejection) as Promise<never>
+    const chain = AsyncResult.from(
+      Promise.reject(rejection) as Promise<Result<never, unknown>>
     );
 
     const result = await chain.toPromise();
@@ -412,7 +415,7 @@ describe('[Parity] tap/tapErr — side effects не изменяют Result', ()
   it('[Async] tapErr не изменяет Err', async () => {
     const sideEffects: string[] = [];
     const result = await AsyncResult.from(Promise.resolve(Err('original error')))
-      .tapErr(e => { sideEffects.push(e); })
+      .tapErr(e => { sideEffects.push(e as string); })
       .toPromise();
 
     expect(result.ok).toBe(false);

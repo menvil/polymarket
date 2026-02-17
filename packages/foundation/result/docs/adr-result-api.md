@@ -78,15 +78,15 @@ unsafe.ts = явный модуль для операций, бросающих 
 
 **Вместо этого:**
 - Методы `AsyncResultChain` принимают опциональный `onError: (e: unknown) => E`
-- Без `onError` по умолчанию применяется `(error) => error as E` — это безопасно только
-  когда `E = unknown` (тип известен из контекста); в этом случае `E` честно отражает `unknown`
 - Явный `onError` даёт полный контроль над нормализацией — рекомендуемый подход
+- Без `onError` тип ошибки фиксирован как `unknown` — это честное отражение того,
+  что rejection reason типизировать без normalizer нельзя
 
 **Overload-контракт `AsyncResult.from` / `AsyncResult.ok`:**
 
 ```typescript
-// from — без normalizer: E берётся из Promise<Result<T, E>>
-AsyncResult.from(promise: Promise<Result<T, E>>): AsyncResultChain<T, E>
+// from — без normalizer: E = unknown (strict overload, тип не берётся из Promise)
+AsyncResult.from(promise: Promise<Result<T, unknown>>): AsyncResultChain<T, unknown>
 
 // from — с normalizer: E определяется возвращаемым типом onReject
 AsyncResult.from(promise, onReject: (e: unknown) => E): AsyncResultChain<T, E>
@@ -99,7 +99,11 @@ AsyncResult.ok(promise, onError: (e: unknown) => E): AsyncResultChain<T, E>
 ```
 
 Без normalizer нельзя получить `AsyncResultChain<*, SpecificError>` "из воздуха"
-через `AsyncResult.ok` — тип ошибки честно отражает `unknown`.
+через `AsyncResult.from` или `AsyncResult.ok` — тип ошибки честно фиксирован как `unknown`.
+
+**normalize() fallback:** Если сам E-normalizer (`onReject`/`onError`) бросает исключение,
+используется `error as E` — last-resort cast без типовой гарантии. Promise при этом
+остаётся resolved. Это крайний случай: некорректный normalizer не должен ломать цепочку.
 
 **Widen-варианты (W-суффикс):**
 - `flatMapW<U, F>(fn: (T) => Result<U, F>): Result<U, E | F>` — fn может вернуть

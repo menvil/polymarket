@@ -41,9 +41,13 @@ Type-safe обработка ошибок: явные типы вместо exce
 
 > **Правило для E-preserving методов** (map, mapAsync, flatMapAsync, flatMap):
 > исключения из callback → `Err(onError(e))` через chain normalizer. Promise остаётся resolved.
+> Если сам normalizer бросает → `Err(error as E)` (last-resort fallback, без типовой гарантии).
 >
 > **Правило для E→F методов** (mapErr, mapErrAsync, or, orAsync, orAsyncLazy, orElse, orElseAsync):
 > исключения из callback → `Err(e as F)`. Normalizer для F недоступен; E-normalizer не вызывается.
+>
+> **`AsyncResult.from` без normalizer** → `AsyncResultChain<T, unknown>`.
+> Для конкретного E нужен `onReject`. `AsyncResult.ok` без normalizer тоже возвращает `unknown`.
 >
 > **`mapUnsafe`** сохраняет старое поведение `map` (rejected Promise при throw).
 > Используйте, когда rejected Promise является желаемым поведением.

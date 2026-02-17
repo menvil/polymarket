@@ -32,26 +32,45 @@ describe('AsyncResultChain', () => {
       expect(result.message).toBe('Network error');
     });
 
-    it('должен ловить Promise.reject без onReject (type assertion)', async () => {
+    it('должен ловить Promise.reject без onReject — E = unknown', async () => {
       const rejectedPromise = Promise.reject('Failed');
 
-      const result = await AsyncResult.from<number, string>(
-        rejectedPromise as Promise<Result<number, string>>
+      // Без onReject — тип ошибки unknown, каст нужен для проверки runtime-значения
+      const result = await AsyncResult.from(
+        rejectedPromise as Promise<Result<number, unknown>>
       ).unwrapErr();
 
       expect(result).toBe('Failed');
     });
 
-    it('должен ловить Promise.reject с Error объектом', async () => {
+    it('должен ловить Promise.reject с Error объектом — E = unknown без onReject', async () => {
       const error = new Error('Something went wrong');
       const rejectedPromise = Promise.reject(error);
 
-      const result = await AsyncResult.from<number, Error>(
-        rejectedPromise as Promise<Result<number, Error>>
+      // Без onReject — E = unknown; runtime-значение — Error
+      const result = await AsyncResult.from(
+        rejectedPromise as Promise<Result<number, unknown>>
       ).unwrapErr();
 
       expect(result).toBeInstanceOf(Error);
-      expect(result.message).toBe('Something went wrong');
+      expect((result as Error).message).toBe('Something went wrong');
+    });
+
+    it('type-контракт: from без onReject — E строго unknown, не конкретный тип', async () => {
+      type MyError = { code: number };
+      const promise: Promise<Result<number, MyError>> = Promise.resolve(Ok(1));
+
+      // Без onReject — результат AsyncResultChain<number, unknown>.
+      // Следующая строка НЕ компилируется, потому что from<number, MyError> без onReject
+      // недоступен через строгий overload:
+      // @ts-expect-error — explicit type args без onReject не проходят strict overload
+      AsyncResult.from<number, MyError>(promise);
+
+      // Корректное использование: без явных type args — выводит unknown
+      const chain = AsyncResult.from(promise);
+      const err = await chain.map((_v) => { throw new Error('x'); }).toPromise();
+      // err.error имеет тип unknown — нет ложного MyError
+      expect(err.ok).toBe(false);
     });
   });
 
@@ -544,14 +563,14 @@ describe('AsyncResultChain', () => {
     it('должен вычислять fallback для Err', async () => {
       const errorResult: Result<number, string> = Err('error');
       const value = await AsyncResult.from(Promise.resolve(errorResult)).unwrapOrElse((err) => {
-        return err.length;
+        return (err as string).length;
       });
 
       expect(value).toBe(5); // "error".length === 5
     });
 
     it('должен ловить exceptions из fallback функции и reject с wrapped message', async () => {
-      const throwingFallback = (_err: string): number => {
+      const throwingFallback = (_err: unknown): number => {
         throw new Error('Fallback computation failed');
       };
 
@@ -945,7 +964,7 @@ describe('AsyncResultChain', () => {
 
   describe('Метод orElseAsync()', () => {
     it('должен восстанавливать значение асинхронно', async () => {
-      const recover = async (_err: string): Promise<Result<number, string>> => {
+      const recover = async (_err: unknown): Promise<Result<number, string>> => {
         return Ok(0);
       };
 
@@ -972,7 +991,7 @@ describe('AsyncResultChain', () => {
     });
 
     it('должен ловить exceptions из async recovery и преобразовывать в Err', async () => {
-      const throwingRecovery = async (_err: Error): Promise<Result<number, Error>> => {
+      const throwingRecovery = async (_err: unknown): Promise<Result<number, Error>> => {
         throw new Error('Recovery failed');
       };
 
@@ -986,7 +1005,7 @@ describe('AsyncResultChain', () => {
     });
 
     it('должен ловить Promise rejection из async recovery и преобразовывать в Err', async () => {
-      const rejectingRecovery = async (_err: Error): Promise<Result<number, Error>> => {
+      const rejectingRecovery = async (_err: unknown): Promise<Result<number, Error>> => {
         return Promise.reject(new Error('Async recovery failed'));
       };
 
@@ -1025,7 +1044,7 @@ describe('AsyncResultChain', () => {
     });
 
     it('должен ловить exceptions из sync recovery и преобразовывать в Err', async () => {
-      const throwingRecovery = (_err: Error): Result<number, Error> => {
+      const throwingRecovery = (_err: unknown): Result<number, Error> => {
         throw new Error('Sync recovery failed');
       };
 
