@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { isErr } from '@polymarket/result';
-import { Decimal } from 'decimal.js';
+import Decimal from 'decimal.js';
 import { RatioService } from '../../../../src/ratio/facade/RatioService';
 import { RatioSerializer } from '../../../../src/ratio/adapters/RatioSerializer';
 import { RatioErrorReason } from '../../../../src/ratio/errors/RatioErrorReason';
