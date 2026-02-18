@@ -178,7 +178,7 @@ OutcomeToken построен на архитектуре **Throws+Facade** с 4
                              ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                     ERRORS LAYER                            │
-│  InvalidOutcomeTokenError, OutcomeTokenErrorReason          │
+│  InvalidOutcomeTokenError (context.kind string literals)    │
 │  (Типизированные ошибки)                                    │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -244,17 +244,14 @@ OutcomeToken построен на архитектуре **Throws+Facade** с 4
 
 Типизированные ошибки:
 
-- `InvalidOutcomeTokenError` — доменная ошибка с контекстом
-- `OutcomeTokenErrorReason` — enum для дифференциации ошибок
+- `InvalidOutcomeTokenError` — доменная ошибка с типизированным контекстом
 
-**Возможные причины:**
+**Причина ошибки — `context.kind` (string literal):**
 
-- `NOT_ONCHAIN_CONDITION` — conditionRef не является OnChainConditionRef
-- `INVALID_FORMAT` — невалидный формат JSON
-- `INVALID_CONDITION_REF` — невалидный condition reference (format/type)
-- `INVALID_OUTCOME_KEY` — невалидный outcome key
-- `INVALID_ASSET_ID_TYPE` — AssetId имеет неправильный type
-- `UNEXPECTED` — неожиданная ошибка (внутренний баг)
+- `'not_onchain_condition'` — conditionRef не является OnChainConditionRef
+- `'invalid_json'` — невалидная структура JSON
+- `'invalid_condition_ref'` — невалидный condition reference (format/type)
+- `'invalid_outcome_key'` — невалидный outcome key
 
 ---
 
