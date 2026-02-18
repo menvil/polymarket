@@ -9,6 +9,7 @@ describe('RatioSerializer', () => {
   describe('toJSON()', () => {
     it('сериализует в JSON с ratio полем', () => {
       const ratioResult = RatioService.fromPercent(2);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const json = RatioSerializer.toJSON(ratioResult.value);
         expect(json).toHaveProperty('ratio');
@@ -19,6 +20,7 @@ describe('RatioSerializer', () => {
 
     it('сохраняет точность как string', () => {
       const ratioResult = RatioService.fromDecimal(0.123456789);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const json = RatioSerializer.toJSON(ratioResult.value);
         expect(json.ratio).toBe('0.123456789');
@@ -27,6 +29,7 @@ describe('RatioSerializer', () => {
 
     it('сериализует отрицательное значение', () => {
       const ratioResult = RatioService.fromDecimal(-0.1);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const json = RatioSerializer.toJSON(ratioResult.value);
         expect(json.ratio).toBe('-0.1');
@@ -35,6 +38,7 @@ describe('RatioSerializer', () => {
 
     it('сериализует ноль', () => {
       const ratioResult = RatioService.fromDecimal(0);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const json = RatioSerializer.toJSON(ratioResult.value);
         expect(json.ratio).toBe('0');
@@ -149,9 +153,11 @@ describe('RatioSerializer', () => {
   describe('round-trip сериализация', () => {
     it('serialize -> deserialize -> equals для 2%', () => {
       const original = RatioService.fromPercent(2);
+      expect(original.ok).toBe(true);
       if (original.ok) {
         const json = RatioSerializer.toJSON(original.value);
         const deserialized = RatioSerializer.fromJSON(json);
+        expect(deserialized.ok).toBe(true);
         if (deserialized.ok) {
           expect(original.value.equals(deserialized.value)).toBe(true);
         }
@@ -160,9 +166,11 @@ describe('RatioSerializer', () => {
 
     it('serialize -> deserialize -> equals для отрицательного', () => {
       const original = RatioService.fromDecimal(-0.15);
+      expect(original.ok).toBe(true);
       if (original.ok) {
         const json = RatioSerializer.toJSON(original.value);
         const deserialized = RatioSerializer.fromJSON(json);
+        expect(deserialized.ok).toBe(true);
         if (deserialized.ok) {
           expect(original.value.equals(deserialized.value)).toBe(true);
         }
@@ -171,9 +179,11 @@ describe('RatioSerializer', () => {
 
     it('serialize -> deserialize -> equals для нуля', () => {
       const original = RatioService.fromDecimal(0);
+      expect(original.ok).toBe(true);
       if (original.ok) {
         const json = RatioSerializer.toJSON(original.value);
         const deserialized = RatioSerializer.fromJSON(json);
+        expect(deserialized.ok).toBe(true);
         if (deserialized.ok) {
           expect(original.value.equals(deserialized.value)).toBe(true);
         }
@@ -182,9 +192,11 @@ describe('RatioSerializer', () => {
 
     it('serialize -> deserialize -> equals для больших значений', () => {
       const original = RatioService.fromDecimal(1.5);
+      expect(original.ok).toBe(true);
       if (original.ok) {
         const json = RatioSerializer.toJSON(original.value);
         const deserialized = RatioSerializer.fromJSON(json);
+        expect(deserialized.ok).toBe(true);
         if (deserialized.ok) {
           expect(original.value.equals(deserialized.value)).toBe(true);
         }
@@ -195,9 +207,11 @@ describe('RatioSerializer', () => {
       // Используем строку для создания Decimal с высокой точностью
       // Избегаем number literal с потерей точности (@typescript-eslint/no-loss-of-precision)
       const original = RatioService.fromDecimal(new Decimal('0.123456789123456789'));
+      expect(original.ok).toBe(true);
       if (original.ok) {
         const json = RatioSerializer.toJSON(original.value);
         const deserialized = RatioSerializer.fromJSON(json);
+        expect(deserialized.ok).toBe(true);
         if (deserialized.ok) {
           expect(original.value.toDecimal().equals(deserialized.value.toDecimal())).toBe(true);
         }
@@ -208,6 +222,7 @@ describe('RatioSerializer', () => {
   describe('JSON.stringify/JSON.parse совместимость', () => {
     it('работает с JSON.stringify', () => {
       const ratioResult = RatioService.fromPercent(2);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const json = RatioSerializer.toJSON(ratioResult.value);
         const jsonString = JSON.stringify(json);
@@ -227,11 +242,13 @@ describe('RatioSerializer', () => {
 
     it('полный round-trip через JSON.stringify/parse', () => {
       const original = RatioService.fromPercent(5.5);
+      expect(original.ok).toBe(true);
       if (original.ok) {
         const json = RatioSerializer.toJSON(original.value);
         const jsonString = JSON.stringify(json);
         const parsed = JSON.parse(jsonString);
         const deserialized = RatioSerializer.fromJSON(parsed);
+        expect(deserialized.ok).toBe(true);
         if (deserialized.ok) {
           expect(original.value.equals(deserialized.value)).toBe(true);
         }

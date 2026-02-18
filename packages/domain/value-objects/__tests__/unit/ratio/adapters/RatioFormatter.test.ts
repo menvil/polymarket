@@ -8,6 +8,7 @@ describe('RatioFormatter', () => {
   describe('toDecimal()', () => {
     it('форматирует с 4 знаками по умолчанию', () => {
       const ratioResult = RatioService.fromPercent(2);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toDecimal(ratioResult.value);
         expect(formatted.ok).toBe(true);
@@ -19,6 +20,7 @@ describe('RatioFormatter', () => {
 
     it('форматирует с заданным количеством знаков', () => {
       const ratioResult = RatioService.fromPercent(2.5);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toDecimal(ratioResult.value, 2);
         expect(formatted.ok).toBe(true);
@@ -30,6 +32,7 @@ describe('RatioFormatter', () => {
 
     it('форматирует с 0 знаков', () => {
       const ratioResult = RatioService.fromDecimal(0.4);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toDecimal(ratioResult.value, 0);
         expect(formatted.ok).toBe(true);
@@ -41,6 +44,7 @@ describe('RatioFormatter', () => {
 
     it('отклоняет отрицательное decimals', () => {
       const ratioResult = RatioService.fromPercent(2);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toDecimal(ratioResult.value, -1);
         expect(isErr(formatted)).toBe(true);
@@ -52,6 +56,7 @@ describe('RatioFormatter', () => {
 
     it('отклоняет дробное decimals', () => {
       const ratioResult = RatioService.fromPercent(2);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toDecimal(ratioResult.value, 2.5);
         expect(isErr(formatted)).toBe(true);
@@ -65,6 +70,7 @@ describe('RatioFormatter', () => {
   describe('toPercent()', () => {
     it('форматирует как процент с 2 знаками по умолчанию', () => {
       const ratioResult = RatioService.fromDecimal(0.025);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toPercent(ratioResult.value);
         expect(formatted.ok).toBe(true);
@@ -76,6 +82,7 @@ describe('RatioFormatter', () => {
 
     it('форматирует с заданным количеством знаков', () => {
       const ratioResult = RatioService.fromDecimal(0.025);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toPercent(ratioResult.value, 1);
         expect(formatted.ok).toBe(true);
@@ -87,6 +94,7 @@ describe('RatioFormatter', () => {
 
     it('форматирует отрицательный процент', () => {
       const ratioResult = RatioService.fromDecimal(-0.1);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toPercent(ratioResult.value, 2);
         expect(formatted.ok).toBe(true);
@@ -98,6 +106,7 @@ describe('RatioFormatter', () => {
 
     it('форматирует 100%', () => {
       const ratioResult = RatioService.fromDecimal(1);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toPercent(ratioResult.value, 0);
         expect(formatted.ok).toBe(true);
@@ -109,6 +118,7 @@ describe('RatioFormatter', () => {
 
     it('отклоняет отрицательное decimals', () => {
       const ratioResult = RatioService.fromPercent(2);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toPercent(ratioResult.value, -1);
         expect(isErr(formatted)).toBe(true);
@@ -122,6 +132,7 @@ describe('RatioFormatter', () => {
   describe('toBps()', () => {
     it('форматирует как bps с 0 знаков по умолчанию', () => {
       const ratioResult = RatioService.fromDecimal(0.025);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toBps(ratioResult.value);
         expect(formatted.ok).toBe(true);
@@ -133,6 +144,7 @@ describe('RatioFormatter', () => {
 
     it('форматирует с заданным количеством знаков', () => {
       const ratioResult = RatioService.fromDecimal(0.0255);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toBps(ratioResult.value, 1);
         expect(formatted.ok).toBe(true);
@@ -144,6 +156,7 @@ describe('RatioFormatter', () => {
 
     it('форматирует отрицательные bps', () => {
       const ratioResult = RatioService.fromDecimal(-0.02);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toBps(ratioResult.value, 0);
         expect(formatted.ok).toBe(true);
@@ -155,6 +168,7 @@ describe('RatioFormatter', () => {
 
     it('форматирует 100 bps (1%)', () => {
       const ratioResult = RatioService.fromDecimal(0.01);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toBps(ratioResult.value, 0);
         expect(formatted.ok).toBe(true);
@@ -166,6 +180,7 @@ describe('RatioFormatter', () => {
 
     it('отклоняет отрицательное decimals', () => {
       const ratioResult = RatioService.fromPercent(2);
+      expect(ratioResult.ok).toBe(true);
       if (ratioResult.ok) {
         const formatted = RatioFormatter.toBps(ratioResult.value, -1);
         expect(isErr(formatted)).toBe(true);
@@ -446,10 +461,13 @@ describe('RatioFormatter', () => {
   describe('round-trip formatting', () => {
     it('decimal -> format -> parse -> equals', () => {
       const original = RatioService.fromDecimal(0.025);
+      expect(original.ok).toBe(true);
       if (original.ok) {
         const formatted = RatioFormatter.toDecimal(original.value, 6);
+        expect(formatted.ok).toBe(true);
         if (formatted.ok) {
           const parsed = RatioFormatter.parse(formatted.value);
+          expect(parsed.ok).toBe(true);
           if (parsed.ok) {
             expect(original.value.equals(parsed.value)).toBe(true);
           }
@@ -459,10 +477,13 @@ describe('RatioFormatter', () => {
 
     it('percent -> format -> parse -> equals', () => {
       const original = RatioService.fromPercent(2.5);
+      expect(original.ok).toBe(true);
       if (original.ok) {
         const formatted = RatioFormatter.toPercent(original.value, 1);
+        expect(formatted.ok).toBe(true);
         if (formatted.ok) {
           const parsed = RatioFormatter.parse(formatted.value);
+          expect(parsed.ok).toBe(true);
           if (parsed.ok) {
             expect(original.value.equals(parsed.value)).toBe(true);
           }
@@ -472,10 +493,13 @@ describe('RatioFormatter', () => {
 
     it('bps -> format -> parse -> equals', () => {
       const original = RatioService.fromBps(250);
+      expect(original.ok).toBe(true);
       if (original.ok) {
         const formatted = RatioFormatter.toBps(original.value, 0);
+        expect(formatted.ok).toBe(true);
         if (formatted.ok) {
           const parsed = RatioFormatter.parse(formatted.value);
+          expect(parsed.ok).toBe(true);
           if (parsed.ok) {
             expect(original.value.equals(parsed.value)).toBe(true);
           }
