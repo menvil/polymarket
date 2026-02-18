@@ -160,7 +160,7 @@ export class QuantityService {
    * Обработка ошибок:
    * 1. Вычитание через subtractDecimal() (может бросить InvalidOperandError, ArithmeticOverflowError)
    * 2. Валидация через ValidateResultNonNegative
-   * 3. Создание Quantity через create()
+   * 3. Создание Quantity через createFromDecimal()
    *
    * Все исключения ловятся и мапятся в Result.Err.
    * Метод никогда не бросает исключения.
@@ -345,7 +345,7 @@ export class QuantityService {
    * 1. Парсинг stepSize через toDecimal()
    * 2. Валидация через ValidateStepSizeForQuantity
    * 3. Округление через roundToTick() (может бросить InvalidOperandError, ArithmeticOverflowError)
-   * 4. Создание Quantity через create()
+   * 4. Создание Quantity через createFromDecimal()
    *
    * Все исключения ловятся и мапятся в Result.Err.
    * Метод никогда не бросает исключения.

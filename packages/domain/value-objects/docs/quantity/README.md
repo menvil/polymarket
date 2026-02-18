@@ -217,7 +217,7 @@ increaseBy(quantity: Quantity, delta: Ratio, stepSize: number | string | Decimal
 - `context.delta` — изменение для `increaseBy`
 - `context.roundingMode` — режим округления для `increaseBy`
 - `context.raw` — сырой ввод для toDecimal (для ошибок парсинга)
-- `context.reason` — причина из Core/Rules (`'NEGATIVE'`, `'NON_FINITE'`, `'NAN'`)
+- `context.reason` — причина из Core/Rules (`'NEGATIVE'`, `'NON_FINITE'`, `'NAN'`, `'DIVISION_BY_ZERO'`, `'INVALID_FORMAT'`, `'INVALID_STEP_SIZE'`)
 - `context.cause` — для math-исключений и unexpected errors: `{ name, message, stack? }`
 
 Подробнее: [facade.md](./facade.md)

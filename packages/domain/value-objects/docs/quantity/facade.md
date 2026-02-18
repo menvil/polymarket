@@ -34,6 +34,7 @@ interface InvalidQuantityErrorContext {
   rate?: string;           // Для portion()
   delta?: string;          // Для increaseBy()
   roundingMode?: string;   // Для increaseBy()
+  result?: string;         // Для rule failures (ValidateResultNonNegative)
 
   // Сырой ввод (для ошибок парсинга)
   raw?: {
@@ -222,11 +223,13 @@ if (decimalResult.ok) {
   console.log(decimalResult.value.value().toNumber());  // 5
 }
 
-// Ошибка: division by zero
+// Ошибка: division by zero (перехватывается валидатором до вызова divideDecimal)
 const zero = QuantityService.divide(qty, 0);
 if (!zero.ok) {
-  console.log(zero.error.context?.op);     // 'divide'
-  console.log(zero.error.context?.cause);  // { name: 'DivisionByZeroError', message: '...' }
+  console.log(zero.error.context?.op);      // 'divide'
+  console.log(zero.error.context?.divisor); // '0'
+  console.log(zero.error.context?.source);  // 'RULE_VALIDATION'
+  console.log(zero.error.context?.cause);   // undefined (валидационная ошибка, не арифметическое исключение)
 }
 
 // Ошибка: negative divisor
