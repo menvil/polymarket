@@ -776,7 +776,7 @@ for (const value of values) {
 // ✅ Быстрее (batch валидация)
 const validPrices = values
   .map(v => PriceService.create(v))
-  .filter((r): r is Ok<Price> => r.ok)
+  .filter((r): r is { ok: true; value: Price } => r.ok)
   .map(r => r.value);
 ```
 
