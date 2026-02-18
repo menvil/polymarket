@@ -514,14 +514,17 @@ function toCanonicalInstrument(
 > **⚠️ Известное расхождение** — не блокирует текущий функционал, запланировано к устранению.
 
 `ConditionRef` имеет два формата:
+
 - `ONCHAIN` — on-chain протоколы: `{ kind, protocolId, chainId, conditionId }`
 - `OFFCHAIN` — off-chain площадки: `{ kind, venueId, marketId }`
 
 Строковый формат `conditionRefToString`:
+
 - ONCHAIN: `ONCHAIN:POLYMARKET_CTF:137:0xabc...`
 - OFFCHAIN: `OFFCHAIN:KALSHI:MARKET_ID`
 
 При этом в системе существуют параллельные именования площадок:
+
 - **AccountId-префиксы** (`wallet:`, `venue:`, `sub:` в строковом формате AccountId — не имеют отношения к VenueId)
 - **VenueId** (`POLYMARKET`, `KALSHI`, ... — используется в AccountId kind=VENUE и балансах)
 - **MarketDataSourceId** (`POLYMARKET_WS`, `POLYMARKET_REPLAY`, ...)

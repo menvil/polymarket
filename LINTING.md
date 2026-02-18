@@ -22,12 +22,14 @@ polymarket/
 ## 🔧 Базовые правила (применяются ко всем пакетам)
 
 ### EditorConfig (`.editorconfig`)
+
 - ✅ `insert_final_newline = true` - обязательный перевод строки в конце файла
 - ✅ `end_of_line = lf` - Unix-style переводы строк
 - ✅ `charset = utf-8` - кодировка UTF-8
 - ✅ `trim_trailing_whitespace = true` - удаление пробелов в конце строк
 
 ### ESLint (`.eslintrc.base.json`)
+
 - ✅ `eol-last: ["error", "always"]` - обязательная новая строка в конце файла
 - ✅ `no-trailing-spaces: "error"` - запрет пробелов в конце строк
 - ✅ `no-multiple-empty-lines: ["error", { "max": 1, "maxEOF": 0 }]` - не более 1 пустой строки
@@ -79,12 +81,14 @@ indent_size = 4  # Пример переопределения
 ## 🚀 Использование
 
 ### Проверка кода
+
 ```bash
 npm run lint          # Проверить src
 npm run lint:all      # Проверить src + tests
 ```
 
 ### Автоматическое исправление
+
 ```bash
 npm run lint:fix      # Исправить src
 npm run lint:all:fix  # Исправить всё
@@ -107,6 +111,7 @@ npm run lint:all:fix  # Исправить всё
 ```
 
 Скрипт автоматически:
+
 - Находит все пакеты в монорепо
 - Запускает линтинг для каждого пакета
 - Показывает сводку результатов

@@ -173,7 +173,6 @@ quantity.isGreaterThanOrEqual(other: Quantity): boolean
 
 **Принцип:** Одно правило = одна проверка
 
-
 ---
 
 ### 3. Facade Layer
@@ -248,7 +247,6 @@ if (formattedResult.ok) {
 }
 console.log(QuantityFormatter.toDisplayString(qty));  // "1.50K" для 1500
 ```
-
 
 ---
 
@@ -453,7 +451,6 @@ if (!result.ok) {
 }
 const qty = result.value;
 ```
-
 
 ---
 

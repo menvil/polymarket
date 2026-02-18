@@ -793,6 +793,7 @@ const recovered = ErrChain('error')
 Создает AsyncResultChain из Promise<Result<T, E>>.
 
 **Строгий overload-контракт:**
+
 - **Без `onReject`** → `AsyncResultChain<T, unknown>`. Тип ошибки честно фиксирован как `unknown`;
   rejection попадает в `Err` как есть, без какого-либо cast.
 - **С `onReject`** → `AsyncResultChain<T, E>`, где `E` — возвращаемый тип `onReject`.
