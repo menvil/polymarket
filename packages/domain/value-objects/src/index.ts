@@ -20,9 +20,9 @@
 //   ValidateFactorForMoneyMultiplication
 // } from './money/index.js';
 //
-// // Price модуль (только публичный API)
-// export { Price, PriceService, PriceSerializer, PriceFormatter } from './price/index.js';
-//
+// Price модуль (только публичный API)
+export { Price, PriceService, PriceSerializer, PriceFormatter } from './price/index.js';
+
 // Quantity модуль (только публичный API)
 export { Quantity, QuantityService, QuantityFormatter, QuantitySerializer, QuantityErrorReason } from './quantity/index.js';
 //
@@ -52,16 +52,16 @@ export {
   RatioFormatter,
   RatioErrorReason
 } from './ratio/index.js';
-//
-// // OutcomeToken модуль (только публичный API)
-// export {
-//   OutcomeToken,
-//   OutcomeTokenService,
-//   OutcomeTokenSerializer,
-//   OutcomeTokenFormatter,
-//   type OutcomeTokenJSON
-// } from './outcome-token/index.js';
-//
+
+// OutcomeToken модуль (только публичный API)
+export {
+  OutcomeToken,
+  OutcomeTokenService,
+  OutcomeTokenSerializer,
+  OutcomeTokenFormatter,
+  type OutcomeTokenJSON
+} from './outcome-token/index.js';
+
 // // TokenBalance модуль (только публичный API)
 // export {
 //   TokenBalance,
