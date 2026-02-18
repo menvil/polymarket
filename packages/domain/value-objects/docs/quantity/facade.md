@@ -42,6 +42,9 @@ interface InvalidQuantityErrorContext {
     value: string;  // Сырое значение перед парсингом
   };
 
+  // Источник ошибки (из внутреннего rule/core контекста)
+  source?: string;  // 'RULE_VALIDATION' | 'PARSING' | 'MATH' | 'CORE_INVARIANT' | 'UNKNOWN'
+
   // Причина из Core/Rules (типизированный enum)
   reason?: QuantityErrorReason;
 
