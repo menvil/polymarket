@@ -420,7 +420,7 @@ export class OutcomeTokenSerializer {
     };
 
     // Делегируем создание OutcomeTokenService (не core!)
-    return OutcomeTokenService.create(onChainRef, outcomeKey, source);
+    return OutcomeTokenService.create(onChainRef, outcomeKey);
   }
 
   public static toJSON(token: OutcomeToken): OutcomeTokenJSON {
