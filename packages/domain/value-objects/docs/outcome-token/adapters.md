@@ -189,7 +189,7 @@ if (!('conditionRef' in obj) || !('outcomeKey' in obj)) {
 
 ### Уровень 2: Типы
 
-Проверка что поля имеют правильные типы:
+Проверка, что поля имеют правильные типы:
 
 ```typescript
 // conditionRef это объект?
@@ -228,9 +228,16 @@ const validatedProtocolId = asOnChainProtocolId(refObj.protocolId);
 if (!validatedProtocolId) {
   return Err(
     new InvalidOutcomeTokenError(
-      `Invalid protocolId format: '${refObj.protocolId}'. Must be UPPERCASE_WITH_UNDERSCORES`,
-      { reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF, ... },
-      source
+      (ctx) => `Invalid protocolId format: '${ctx.protocolId}'. Must be UPPERCASE_WITH_UNDERSCORES`,
+      {
+        context: {
+          source,
+          service: SERVICE_NAME,
+          op: 'fromJSON',
+          kind: 'invalid_condition_ref',
+          protocolId: refObj.protocolId,
+        },
+      }
     )
   );
 }
@@ -240,9 +247,16 @@ const validatedChainId = parseChainId(String(refObj.chainId));
 if (!validatedChainId) {
   return Err(
     new InvalidOutcomeTokenError(
-      `Invalid chainId: ${refObj.chainId}. Must be positive integer`,
-      { reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF, ... },
-      source
+      (ctx) => `Invalid chainId: ${ctx.chainId}. Must be positive integer`,
+      {
+        context: {
+          source,
+          service: SERVICE_NAME,
+          op: 'fromJSON',
+          kind: 'invalid_condition_ref',
+          chainId: refObj.chainId,
+        },
+      }
     )
   );
 }
@@ -252,9 +266,16 @@ const validatedConditionId = parseConditionId(refObj.conditionId);
 if (!validatedConditionId) {
   return Err(
     new InvalidOutcomeTokenError(
-      `Invalid conditionId format: '${refObj.conditionId}'. Must be 32-byte hex (0x...)`,
-      { reason: OutcomeTokenErrorReason.INVALID_CONDITION_REF, ... },
-      source
+      (ctx) => `Invalid conditionId format: '${ctx.conditionId}'. Must be 32-byte hex (0x...)`,
+      {
+        context: {
+          source,
+          service: SERVICE_NAME,
+          op: 'fromJSON',
+          kind: 'invalid_condition_ref',
+          conditionId: refObj.conditionId,
+        },
+      }
     )
   );
 }
@@ -264,9 +285,16 @@ const outcomeKey = parseOutcomeKey(outcomeKeyValue);
 if (!outcomeKey) {
   return Err(
     new InvalidOutcomeTokenError(
-      `Invalid outcomeKey format: '${outcomeKeyValue}'`,
-      { reason: OutcomeTokenErrorReason.INVALID_OUTCOME_KEY, ... },
-      source
+      (ctx) => `Invalid outcomeKey format: '${ctx.outcomeKey}'`,
+      {
+        context: {
+          source,
+          service: SERVICE_NAME,
+          op: 'fromJSON',
+          kind: 'invalid_outcome_key',
+          outcomeKey: outcomeKeyValue,
+        },
+      }
     )
   );
 }

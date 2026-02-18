@@ -52,10 +52,10 @@ OutcomeToken построен на архитектуре **Throws+Facade** с �
                              ↓
 ┌─────────────────────────────────────────────────────────────┐
 │                     ERRORS LAYER                            │
-│  ┌──────────────────────┐  ┌──────────────────────┐        │
-│  │ InvalidOutcomeToken  │  │ OutcomeTokenError    │        │
-│  │ Error                │  │ Reason (enum)        │        │
-│  └──────────────────────┘  └──────────────────────┘        │
+│  ┌────────────────────────────────────────────────┐        │
+│  │ InvalidOutcomeTokenError                       │        │
+│  │ context.kind: string literal (no enum)         │        │
+│  └────────────────────────────────────────────────┘        │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -140,16 +140,18 @@ public static of(
   outcomeKey: OutcomeKey
 ): OutcomeToken {
   // Никаких проверок kind — доверяем TypeScript типу
-  const assetId = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
-  return OutcomeToken.fromAssetId(assetId);
+  const assetIdResult = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
+  if (!assetIdResult.ok) {
+    throw new OutcomeTokenInvariantViolation('Failed to create AssetId', { cause: assetIdResult.error });
+  }
+  return OutcomeToken.fromCanonicalAssetId(assetIdResult.value as OutcomeTokenAssetId);
 }
 ```
 
 **Преимущества**:
 
 - Нет дублирования кода
-- Граница ответственности чёткая: facade валидирует, core доверяет
-- TypeScript гарантирует корректность после narrowing
+- Граница ответственности чёткая: facade валидирует, core доверяет, TypeScript гарантирует корректность
 
 ### 3. Extract<> для узкого типа вместо runtime проверок
 
@@ -336,7 +338,7 @@ export class OutcomeTokenService {
       // Type narrowing
       if (conditionRef.kind !== 'ONCHAIN') {
         throw new InvalidOutcomeTokenError(
-          (ctx) => `OutcomeToken requires on-chain condition, got: ${ctx.kind}`,
+          (ctx) => `OutcomeToken requires on-chain condition, got: ${ctx.conditionRefKind}`,
           { context: { kind: 'not_onchain_condition', conditionRefKind: conditionRef.kind, outcomeKey: String(outcomeKey) } }
         );
       }
@@ -493,7 +495,7 @@ class OutcomeToken {
 **Проблемы**:
 
 - Память: 3 поля вместо 1
-- Синхронизация: _assetId и_conditionRef могут рассинхрониться (если кто-то мутирует)
+- Синхронизация: _assetId и _conditionRef могут рассинхрониться (если кто-то мутирует)
 - Сложность: Нужно поддерживать согласованность
 
 ### Решение: AssetId как единственный источник
@@ -715,13 +717,13 @@ if (result.ok) {
 if (!result.ok) {
   const error = result.error;  // InvalidOutcomeTokenError
   console.error(error.message);
-  console.error(error.context?.reason);  // Типизированная причина
+  console.error(error.context?.kind);  // Причина: 'not_onchain_condition' и др.
 }
 ```
 
 ### Типизированные причины ошибок
 
-Вместо строковых констант — enum:
+Вместо проверки по message — строковые дискриминаторы в `context.kind`:
 
 ```typescript
 // ❌ Хрупкая проверка по message
@@ -806,7 +808,7 @@ if (typeof refObj.protocolId !== 'string') {
 
 ### Уровень 3: Value validation
 
-Проверка что значения имеют правильный формат:
+Проверка, что значения имеют правильный формат:
 
 ```typescript
 // Валидация protocolId (формат: UPPERCASE_WITH_UNDERSCORES)

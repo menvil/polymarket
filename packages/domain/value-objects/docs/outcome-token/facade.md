@@ -66,7 +66,7 @@ public static create(
   - Facade делает type narrowing и проверяет `kind === 'ONCHAIN'`
 
 - **outcomeKey** — `OutcomeKey`
-  - Ключ outcome (UP, DOWN, etc)
+  - Ключ outcome (UP, DOWN, etc.)
 
 ### Возвращает
 

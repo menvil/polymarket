@@ -32,7 +32,7 @@ interface InvalidPriceErrorContext {
   mode?: 'nearest' | 'floor' | 'ceil';
 
   // Причина ошибки
-  reason?: string;  // 'not_aligned', 'is_nan', 'is_zero', 'not_positive', etc.
+  reason?: string;  // 'not_aligned', 'is_nan', 'is_zero', 'not_positive', 'INVALID_FORMAT', etc.
 
   // Для math exceptions
   cause?: {
@@ -640,6 +640,11 @@ function calculateMidPrice(
 ### Early return pattern
 
 ```typescript
+import { Ok, type Result } from '@polymarket/result';
+import Decimal from 'decimal.js';
+import { PriceService, type Price } from '@polymarket/value-objects/price';
+import type { InvalidPriceError } from '@polymarket/errors';
+
 function processPrices(
   yesPrice: string,
   tickSize: Decimal

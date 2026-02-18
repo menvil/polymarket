@@ -189,8 +189,8 @@ const token = OutcomeToken.of(onChainRef, BinaryOutcome.UP);  // ✅
 
 **Может бросить:**
 
-- `Error` из AssetIdHelpers.fromOutcomeToken() если outcomeKey невалидный
-- `OutcomeTokenInvariantViolation` из fromAssetId() если AssetId создан некорректно
+- `OutcomeTokenInvariantViolation` — если `AssetIdHelpers.fromOutcomeToken()` возвращает `Err` (невалидные входные данные)
+- `OutcomeTokenInvariantViolation` — если `fromCanonicalAssetId()` не может завершить создание
 
 ---
 
@@ -462,8 +462,9 @@ describe('OutcomeToken Core', () => {
   };
 
   it('should create OutcomeToken from AssetId', () => {
-    const assetId = AssetIdHelpers.fromOutcomeToken(testConditionRef, BinaryOutcome.UP);
-    const token = OutcomeToken.fromAssetId(assetId);
+    const assetIdResult = AssetIdHelpers.fromOutcomeToken(testConditionRef, BinaryOutcome.UP);
+    expect(assetIdResult.ok).toBe(true);
+    const token = OutcomeToken.fromAssetId(assetIdResult.value!);
 
     expect(token.outcomeKey()).toBe('UP');
     expect(token.conditionRef().chainId).toBe(137);
