@@ -45,8 +45,7 @@ export class QuantityService {
   private static readonly SERVICE_NAME = 'QuantityService';
 
   /**
-   * Извлекает структурированный cause из любой ошибки
-   *
+   * Создаёт Quantity из значения
    *
    * @remarks
    * ПУБЛИЧНЫЙ способ создания Quantity.
