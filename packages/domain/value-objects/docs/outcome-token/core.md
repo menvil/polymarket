@@ -45,6 +45,9 @@ export class OutcomeToken {
   public static fromAssetId(assetId: AssetId): OutcomeToken { /* ... */ }
   public static of(conditionRef: OnChainConditionRef, outcomeKey: OutcomeKey): OutcomeToken { /* ... */ }
 
+  // Внутренний помощник (private static)
+  private static fromCanonicalAssetId(canonical: OutcomeTokenAssetId): OutcomeToken { /* ... */ }
+
   // Accessor'ы (чистые, без проверок)
   public assetId(): OutcomeTokenAssetId { /* ... */ }
   public conditionRef(): OnChainConditionRef { /* ... */ }

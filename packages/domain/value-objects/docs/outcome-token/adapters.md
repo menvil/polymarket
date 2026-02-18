@@ -194,6 +194,10 @@ if (!('conditionRef' in obj) || !('outcomeKey' in obj)) {
 Проверка, что поля имеют правильные типы:
 
 ```typescript
+const conditionRef = obj.conditionRef;
+const refObj = conditionRef as Record<string, unknown>;
+const outcomeKeyValue = obj.outcomeKey;
+
 // conditionRef это объект?
 if (typeof conditionRef !== 'object' || conditionRef === null) {
   return Err(...INVALID_CONDITION_REF);

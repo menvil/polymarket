@@ -682,7 +682,7 @@ function deepFreezeAssetId(asset: AssetId): AssetId {
 
 ```typescript
 export const AssetIdHelpers = {
-  fromOutcomeToken(conditionRef: OnChainConditionRef, outcomeKey: OutcomeKey): AssetId {
+  fromOutcomeToken(conditionRef: OnChainConditionRef, outcomeKey: OutcomeKey): Result<AssetId, AssetIdValidationError> {
     // Создаём FROZEN COPY вместо использования входного conditionRef
     const frozenConditionRef: OnChainConditionRef = Object.freeze({
       kind: 'ONCHAIN' as const,
@@ -691,11 +691,11 @@ export const AssetIdHelpers = {
       conditionId: conditionRef.conditionId,
     });
 
-    return deepFreezeAssetId({
+    return Ok(deepFreezeAssetId({
       type: 'OUTCOME_TOKEN',
       conditionRef: frozenConditionRef,  // Frozen copy
-      outcomeKey: validated,
-    });
+      outcomeKey: outcomeKey,
+    }));
   }
 };
 ```

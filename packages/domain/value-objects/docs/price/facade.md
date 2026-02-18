@@ -140,7 +140,7 @@ multiply(
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Price } from '@polymarket/value-objects/price';
+import { Price, PriceService } from '@polymarket/value-objects/price';
 
 // Создаём цену (в реальном коде используйте PriceService.create)
 const price = Price.of(new Decimal(0.3));
@@ -310,7 +310,7 @@ if (midResult.ok) {
 // Граничные случаи
 const extremeResult = PriceService.average(Price.MIN, Price.MAX);
 if (extremeResult.ok) {
-  console.log(extremeResult.value.toNumber());  // ~0.5
+  console.log(extremeResult.value.toNumber());  // 0.5
 }
 
 // Одинаковые цены
@@ -404,8 +404,8 @@ if (tick3.ok) {
   console.log(tick3.value.toNumber());  // 0.1
 }
 
-// Ошибка: tickSize не кратен базовому тику
-const invalidTickResult = PriceService.roundToMarketTick(p, 0.003);
+// Ошибка: tickSize не кратен базовому тику (0.00015 / 0.0001 = 1.5 — не целое)
+const invalidTickResult = PriceService.roundToMarketTick(p, 0.00015);
 if (!invalidTickResult.ok) {
   console.log(invalidTickResult.error.context?.field);   // 'tickSize'
   console.log(invalidTickResult.error.context?.reason);  // 'not_multiple_of_base_tick'
