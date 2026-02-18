@@ -48,6 +48,7 @@ describe('ValidateResultNonNegative', () => {
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidQuantityError);
         expect(result.error.message).toContain('must be finite');
+        expect((result.error as any).context?.result).toBe('NaN');
       }
     });
 
@@ -57,6 +58,17 @@ describe('ValidateResultNonNegative', () => {
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidQuantityError);
         expect(result.error.message).toContain('must be finite');
+        expect((result.error as any).context?.result).toBe('Infinity');
+      }
+    });
+
+    it('должен вернуть Err для -Infinity результата', () => {
+      const result = ValidateResultNonNegative.check(new Decimal(-Infinity));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        expect(result.error.message).toContain('must be finite');
+        expect((result.error as any).context?.result).toBe('-Infinity');
       }
     });
   });

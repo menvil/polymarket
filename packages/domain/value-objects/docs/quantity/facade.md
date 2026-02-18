@@ -354,7 +354,6 @@ if (base.ok && rate150.ok) {
 ```
 
 **Ошибки:**
-- `INVALID_FORMAT` — некорректный rate
 - `NON_FINITE` — overflow/underflow в вычислениях
 - `NEGATIVE` — результат отрицательный (если rate < 0)
 
@@ -438,7 +437,7 @@ if (baseSize.ok && increment.ok) {
 - delta < -1 (< -100%) → результат отрицательный → InvalidQuantityError
 
 **Ошибки:**
-- `INVALID_FORMAT` — некорректный delta или stepSize
+- `INVALID_FORMAT` — некорректный формат stepSize (delta — это Ratio, уже провалидирован)
 - `INVALID_STEP_SIZE` — stepSize ≤ 0
 - `NON_FINITE` — overflow/underflow в вычислениях
 - `NEGATIVE` — результат отрицательный (delta < -1)
@@ -533,7 +532,7 @@ function calculatePosition(initial: string, buys: string[], sells: string[]) {
     position = subtractResult.value;
   }
 
-  return Result.ok(position);
+  return Ok(position);
 }
 ```
 
@@ -712,7 +711,8 @@ for (const value of values) {
 const results = values.map(v => QuantityService.create(v));
 const errors = results.filter(r => !r.ok);
 if (errors.length > 0) {
-  return Result.err(new BatchValidationError(errors));
+  const batchError = new BatchValidationError(errors);
+  return Err(batchError);
 }
 ```
 

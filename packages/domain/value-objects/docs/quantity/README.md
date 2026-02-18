@@ -277,7 +277,7 @@ type QuantityValue = number | string | Decimal;
 type QuantityResult = Result<Quantity, InvalidQuantityError>;
 
 interface InvalidQuantityErrorContext {
-  op?: string;
+  op: string;
   value?: string;
   quantity?: string;
   quantity1?: string;
@@ -287,7 +287,8 @@ interface InvalidQuantityErrorContext {
   stepSize?: string;
   minSize?: string;
   reason?: 'NEGATIVE' | 'NON_FINITE' | 'NAN';
-  cause?: { name: string; message: string };
+  raw?: { field: string; value: string };
+  cause?: { name: string; message: string; stack?: string };
 }
 ```
 

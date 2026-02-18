@@ -197,6 +197,7 @@ export class QuantitySerializer {
     const value = (json as { value: unknown }).value;
 
     // Проверка типа value (только string, не number!)
+    // Явная проверка null отдельно, так как typeof null === 'object'
     if (typeof value !== 'string') {
       return Err(
         new InvalidQuantityError(
@@ -207,7 +208,7 @@ export class QuantitySerializer {
               service: QuantitySerializer.SERVICE_NAME,
               op: 'fromJSON',
               kind: 'invalid_json',
-              type: typeof value,
+              type: value === null ? 'null' : typeof value,
               json: safeStringify(json)
             }
           }

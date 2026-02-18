@@ -550,7 +550,7 @@ describe('Facade Error Contract - Comprehensive', () => {
 
 ---
 
-### 9. Убран instanceof Decimal (надёжность)
+### 8. Убран instanceof Decimal (надёжность)
 
 **Решение:** Использовать `Decimal.isDecimal()` или всегда парсить.
 

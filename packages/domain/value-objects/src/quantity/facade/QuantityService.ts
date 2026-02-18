@@ -458,13 +458,14 @@ export class QuantityService {
     quantity: Quantity,
     rate: Ratio
   ): Result<Quantity, InvalidQuantityError> {
+    const rateDec = rate.toDecimal();
     const ctx = {
       quantity: quantity.value().toString(),
-      rate: rate.toDecimal().toString()
+      rate: rateDec.toString()
     };
 
     return wrapOp(QuantityService.SERVICE_NAME, 'portion', ctx, () => {
-      const result = multiplyDecimal(quantity.value(), rate.toDecimal());
+      const result = multiplyDecimal(quantity.value(), rateDec);
       return this.createFromDecimal(result);
     }, InvalidQuantityError);
   }

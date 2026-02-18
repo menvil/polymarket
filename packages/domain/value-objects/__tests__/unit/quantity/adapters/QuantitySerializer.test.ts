@@ -173,7 +173,7 @@ describe('QuantitySerializer', () => {
           expect(result.error).toBeInstanceOf(Error);
           expect(result.error.message).toContain("Field 'value' must be string");
           expect(result.error.context?.kind).toBe('invalid_json');
-          expect(result.error.context?.type).toBe('object');
+          expect(result.error.context?.type).toBe('null');
         }
       });
 

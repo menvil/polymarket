@@ -176,8 +176,10 @@ describe('QuantityService', () => {
       }
     });
 
-    it('должен вернуть Err если результат сложения non-finite', () => {
-      // Mock addDecimal to return Infinity
+    // Примечание: Decimal.js не производит Infinity при арифметических операциях,
+    // так как работает с arbitrary precision. Следующий тест проверяет контракт
+    // через mock, но реальный сценарий с валидными Quantity невозможен.
+    it('должен вернуть Err если результат сложения non-finite (контракт через mock)', () => {
       jest.spyOn(math, 'addDecimal').mockReturnValue(new Decimal(Infinity));
 
       const qty1 = Quantity.of(new Decimal(10));
@@ -188,23 +190,7 @@ describe('QuantityService', () => {
       if (!result.ok) {
         expect(result.error.context?.op).toBe('add');
         expect(result.error.context?.reason).toBe('NON_FINITE');
-      }
-    });
-
-    // Примечание: Decimal.js не производит Infinity при арифметических операциях,
-    // так как работает с arbitrary precision. Следующий тест проверяет контракт
-    // через mock, но реальный сценарий с валидными Quantity невозможен.
-    it('должен вернуть Err если math операция вернет non-finite результат (контракт через mock)', () => {
-      jest.spyOn(math, 'addDecimal').mockReturnValue(new Decimal(Infinity));
-
-      const qty1 = Quantity.of(new Decimal(10));
-      const qty2 = Quantity.of(new Decimal(5));
-      const result = QuantityService.add(qty1, qty2);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
         expect(result.error.message).toContain('must be finite');
-        expect(result.error.context?.reason).toBe('NON_FINITE');
       }
     });
 
@@ -636,7 +622,7 @@ describe('QuantityService', () => {
 
     it('должен вернуть Err если результат деления non-finite', () => {
       // Mock divideDecimal to return NaN (which is non-finite)
-      const mockFn = jest.spyOn(math, 'divideDecimal').mockReturnValue(new Decimal(NaN));
+      jest.spyOn(math, 'divideDecimal').mockReturnValue(new Decimal(NaN));
 
       const qty = Quantity.of(new Decimal(10));
       const result = QuantityService.divide(qty, 2);
@@ -647,8 +633,6 @@ describe('QuantityService', () => {
         // NaN is now explicitly checked with NAN reason
         expect(result.error.context?.reason).toBe('NAN');
       }
-
-      mockFn.mockRestore();
     });
 
     describe('Math exception handling', () => {

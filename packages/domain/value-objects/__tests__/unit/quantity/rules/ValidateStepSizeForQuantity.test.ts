@@ -32,6 +32,7 @@ describe('ValidateStepSizeForQuantity', () => {
       const result = ValidateStepSizeForQuantity.check(new Decimal(Infinity));
       expect(result.ok).toBe(false);
       if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
         expect(result.error.message).toContain('must be finite');
       }
     });
@@ -40,6 +41,7 @@ describe('ValidateStepSizeForQuantity', () => {
       const result = ValidateStepSizeForQuantity.check(new Decimal(-Infinity));
       expect(result.ok).toBe(false);
       if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
         expect(result.error.message).toContain('must be finite');
       }
     });
@@ -48,6 +50,7 @@ describe('ValidateStepSizeForQuantity', () => {
       const result = ValidateStepSizeForQuantity.check(new Decimal(NaN));
       expect(result.ok).toBe(false);
       if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
         expect(result.error.message).toContain('must be finite');
       }
     });
