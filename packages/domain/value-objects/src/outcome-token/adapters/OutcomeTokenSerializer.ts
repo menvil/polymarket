@@ -224,7 +224,7 @@ export class OutcomeTokenSerializer {
 
     // Валидация conditionRef
     const conditionRef = obj.conditionRef;
-    if (typeof conditionRef !== 'object' || conditionRef === null) {
+    if (typeof conditionRef !== 'object' || conditionRef === null || Array.isArray(conditionRef)) {
       return Err(
         new InvalidOutcomeTokenError(
           (ctx) => `Field 'conditionRef' must be object, got ${ctx.type}`,

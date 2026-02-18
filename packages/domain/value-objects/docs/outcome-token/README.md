@@ -94,7 +94,6 @@ Facade принимает `ConditionRef` (union type) и проверяет чт
 
 ```typescript
 import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
-import { OutcomeTokenErrorReason } from '@polymarket/value-objects/outcome-token';
 import type { ConditionRef } from '@polymarket/ids';
 
 // Может быть on-chain или off-chain
@@ -102,7 +101,7 @@ const ref: ConditionRef = getConditionRefFromApi();
 
 const result = OutcomeTokenService.create(ref, BinaryOutcome.UP);
 if (!result.ok) {
-  if (result.error.context?.reason === OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION) {
+  if (result.error.context?.kind === 'not_onchain_condition') {
     console.error('OutcomeToken requires on-chain condition');
   }
 }
@@ -268,8 +267,7 @@ class OutcomeTokenService {
   // Создать OutcomeToken с type narrowing
   static create(
     conditionRef: ConditionRef,
-    outcomeKey: OutcomeKey,
-    source?: ErrorSource
+    outcomeKey: OutcomeKey
   ): Result<OutcomeToken, InvalidOutcomeTokenError>
 
   // Сравнить два OutcomeToken
@@ -349,21 +347,21 @@ console.log(`Created token for outcome: ${token.outcomeKey()}`);
 ### Пример 2: Type Narrowing
 
 ```typescript
-import { OutcomeTokenService, OutcomeTokenErrorReason } from '@polymarket/value-objects/outcome-token';
+import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
 import type { ConditionRef } from '@polymarket/ids';
 
 function createTokenSafely(ref: ConditionRef, outcomeKey: string) {
   const result = OutcomeTokenService.create(ref, outcomeKey as any);
 
   if (!result.ok) {
-    const reason = result.error.context?.reason;
+    const kind = result.error.context?.kind;
 
-    if (reason === OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION) {
+    if (kind === 'not_onchain_condition') {
       console.error('OutcomeToken requires on-chain condition');
-    } else if (reason === OutcomeTokenErrorReason.INVALID_OUTCOME_KEY) {
+    } else if (kind === 'invalid_outcome_key') {
       console.error('Invalid outcome key format');
     } else {
-      console.error('Unexpected error:', result.error.message);
+      console.error('Error:', result.error.message);
     }
 
     return null;
@@ -376,26 +374,26 @@ function createTokenSafely(ref: ConditionRef, outcomeKey: string) {
 ### Пример 3: Десериализация с обработкой ошибок
 
 ```typescript
-import { OutcomeTokenSerializer, OutcomeTokenErrorReason } from '@polymarket/value-objects/outcome-token';
+import { OutcomeTokenSerializer } from '@polymarket/value-objects/outcome-token';
 
 function parseTokenFromApi(data: unknown) {
   const result = OutcomeTokenSerializer.fromJSON(data);
 
   if (!result.ok) {
-    const reason = result.error.context?.reason;
+    const kind = result.error.context?.kind;
 
-    switch (reason) {
-      case OutcomeTokenErrorReason.INVALID_FORMAT:
+    switch (kind) {
+      case 'invalid_json':
         console.error('Invalid JSON format');
         break;
-      case OutcomeTokenErrorReason.INVALID_CONDITION_REF:
+      case 'invalid_condition_ref':
         console.error('Invalid conditionRef format');
         break;
-      case OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION:
+      case 'not_onchain_condition':
         console.error('Only on-chain conditions supported');
         break;
       default:
-        console.error('Unexpected error:', result.error.message);
+        console.error('Error:', result.error.message);
     }
 
     return null;
@@ -439,7 +437,7 @@ console.log(`Tokens equal: ${areEqual}`);  // → true
 
 ### ⚠️ Только on-chain markets
 
-OutcomeToken работает ТОЛЬКО с on-chain markets (POLYMARKET_CTF, UMAAMI_PREDICTION_CTF). Off-chain venues (KALSHI, PREDICTIT) не поддерживаются — они не имеют tokenized positions.
+OutcomeToken работает ТОЛЬКО с on-chain markets (POLYMARKET_CTF, UMA_CTF). Off-chain venues (KALSHI, PREDICTIT) не поддерживаются — они не имеют tokenized positions.
 
 ```typescript
 // ✅ OK

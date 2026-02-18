@@ -112,7 +112,7 @@ export class PriceFormatter {
   public static toFixed(price: Price, decimals: number = 4): Result<string, InvalidPriceError> {
     if (decimals < 0 || !Number.isInteger(decimals)) {
       return Err(
-        new InvalidPriceError('toFixed() decimals argument must be a non-negative integer', {
+        new InvalidPriceError('decimals argument must be a non-negative integer', {
           context: {
             source: ErrorSource.RULE_VALIDATION,
             service: 'PriceFormatter',

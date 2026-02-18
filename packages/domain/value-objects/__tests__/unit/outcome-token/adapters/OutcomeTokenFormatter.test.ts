@@ -2,14 +2,14 @@ import { describe, it, expect } from '@jest/globals';
 import { OutcomeTokenFormatter } from '../../../../src/outcome-token/adapters/OutcomeTokenFormatter.js';
 import { OutcomeTokenService } from '../../../../src/outcome-token/facade/OutcomeTokenService.js';
 import type { OnChainConditionRef } from '@polymarket/ids';
-import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols, parseChainId, parseConditionId } from '@polymarket/ids';
 
 describe('OutcomeTokenFormatter', () => {
   const testConditionRef: OnChainConditionRef = {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as any,
-    conditionId: '0xabc1234567890000000000000000000000000000000000000000000000000000' as any,
+    chainId: parseChainId('137')!,
+    conditionId: parseConditionId('0xabc1234567890000000000000000000000000000000000000000000000000000')!,
   };
 
   describe('toString()', () => {

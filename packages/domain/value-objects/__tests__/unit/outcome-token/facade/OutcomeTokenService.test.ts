@@ -41,9 +41,8 @@ describe('OutcomeTokenService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Unexpected error');
-        const cause = result.error.context?.cause as { message: string } | undefined;
-        expect(cause?.message).toContain('on-chain condition');
+        expect(result.error.message).toContain('on-chain condition');
+        expect(result.error.context?.kind).toBe('not_onchain_condition');
       }
     });
 

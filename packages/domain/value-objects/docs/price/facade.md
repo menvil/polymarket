@@ -158,13 +158,11 @@ if (result2.ok) {
   console.log(result2.value.toNumber());  // 0.3
 }
 
-// Ошибка: невалидный factor (NaN)
+// Ошибка: невалидный factor (NaN) — перехватывается при парсинге toDecimal()
 const nanResult = PriceService.multiply(price, NaN);
 if (!nanResult.ok) {
-  console.log(nanResult.error.context?.op);         // 'multiply'
-  console.log(nanResult.error.context?.raw?.field); // 'factor'
-  console.log(nanResult.error.context?.raw?.value); // 'NaN'
-  console.log(nanResult.error.context?.reason);     // PriceErrorReason.NAN
+  console.log(nanResult.error.context?.op);     // 'multiply'
+  console.log(nanResult.error.context?.reason); // 'INVALID_FORMAT'
 }
 
 // Ошибка: результат выходит за диапазон

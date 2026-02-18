@@ -98,13 +98,20 @@ public static fromAssetId(assetId: AssetId): OutcomeToken {
   }
 
   // Defensive copy + freeze: пересоздаём AssetId через AssetIdHelpers
-  // Это гарантирует иммутабельность даже если входной assetId был mutable
-  const frozenAssetId = AssetIdHelpers.fromOutcomeToken(
+  // AssetIdHelpers.fromOutcomeToken() возвращает Result — проверяем его
+  const canonicalResult = AssetIdHelpers.fromOutcomeToken(
     assetId.conditionRef,
     assetId.outcomeKey
   );
 
-  return new OutcomeToken(frozenAssetId as OutcomeTokenAssetId);
+  if (!canonicalResult.ok) {
+    throw new OutcomeTokenInvariantViolation(
+      'OutcomeToken: failed to canonicalize AssetId',
+      { assetId, cause: canonicalResult.error }
+    );
+  }
+
+  return new OutcomeToken(canonicalResult.value as OutcomeTokenAssetId);
 }
 ```
 
@@ -114,8 +121,11 @@ public static fromAssetId(assetId: AssetId): OutcomeToken {
 import { AssetIdHelpers } from '@polymarket/ids';
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
 
-const assetId = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
-const token = OutcomeToken.fromAssetId(assetId);  // ✅
+// fromOutcomeToken возвращает Result — обрабатываем его
+const assetIdResult = AssetIdHelpers.fromOutcomeToken(onChainRef, BinaryOutcome.UP);
+if (assetIdResult.ok) {
+  const token = OutcomeToken.fromAssetId(assetIdResult.value);  // ✅
+}
 
 const currencyAssetId = AssetIdHelpers.fromCurrency('USDC');
 const token2 = OutcomeToken.fromAssetId(currencyAssetId);  // ❌ Throws
@@ -265,7 +275,7 @@ if (key === BinaryOutcome.UP) {
 
 ```typescript
 public equals(other: OutcomeToken): boolean {
-  return assetIdEquals(this._assetId, other._assetId);
+  return AssetIdHelpers.equals(this._assetId, other._assetId);
 }
 ```
 
@@ -286,7 +296,7 @@ token1.equals(token3);  // → false (different outcomeKey)
 
 **Детали:**
 
-- Использует `assetIdEquals()` из `@polymarket/ids`
+- Использует `AssetIdHelpers.equals()` из `@polymarket/ids`
 - Deep comparison conditionRef (protocolId, chainId, conditionId)
 - String comparison outcomeKey
 

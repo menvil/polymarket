@@ -11,6 +11,7 @@ import Decimal from 'decimal.js';
  * Проверяет:
  * - factor не NaN (иначе результат станет NaN, нарушит инвариант)
  * - factor isFinite (иначе результат может стать infinite, нарушит инвариант)
+ * - factor не отрицательный (умножение на отрицательный множитель нарушит смысл цены)
  *
  * Возвращает InvalidOperandError для семантической точности.
  *
@@ -27,25 +28,7 @@ import Decimal from 'decimal.js';
  */
 export class ValidateFactorForPriceMultiplication {
   public static check(factor: Decimal): Result<void, InvalidOperandError> {
-    // Проверка 1: factor не должен быть отрицательным
-    if (factor.isNegative()) {
-      return Err(
-        new InvalidOperandError(
-          () => `Factor cannot be negative`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              operation: 'multiply',
-              operand: 'factor',
-              value: factor.toString(),
-              reason: 'is_negative'
-            }
-          }
-        )
-      );
-    }
-
-    // Проверка 2: factor не должен быть NaN
+    // Проверка 1: factor не должен быть NaN
     if (factor.isNaN()) {
       return Err(
         new InvalidOperandError(
@@ -63,7 +46,8 @@ export class ValidateFactorForPriceMultiplication {
       );
     }
 
-    // Проверка 3: factor должен быть finite (исключает Infinity, -Infinity)
+    // Проверка 2: factor должен быть finite (исключает Infinity, -Infinity)
+    // Важно: до проверки isNegative, т.к. -Infinity должен давать not_finite, а не is_negative
     if (!factor.isFinite()) {
       return Err(
         new InvalidOperandError(
@@ -75,6 +59,24 @@ export class ValidateFactorForPriceMultiplication {
               operand: 'factor',
               value: factor.toString(),
               reason: 'not_finite'
+            }
+          }
+        )
+      );
+    }
+
+    // Проверка 3: factor не должен быть отрицательным
+    if (factor.isNegative()) {
+      return Err(
+        new InvalidOperandError(
+          () => `Factor cannot be negative`,
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              operation: 'multiply',
+              operand: 'factor',
+              value: factor.toString(),
+              reason: 'is_negative'
             }
           }
         )

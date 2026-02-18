@@ -105,8 +105,6 @@ describe('PriceService', () => {
           expect(cause.name).toBeDefined();
           expect(cause.message).toBeDefined();
         }
-
-        jest.restoreAllMocks();
       });
 
       it('unexpected error: должен содержать cause даже для non-Error', () => {
@@ -123,8 +121,6 @@ describe('PriceService', () => {
           expect(cause.name).toBe('UnknownError');
           expect(cause.message).toBe('string error');
         }
-
-        jest.restoreAllMocks();
       });
     });
 

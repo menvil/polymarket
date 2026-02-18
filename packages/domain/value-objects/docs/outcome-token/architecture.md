@@ -305,7 +305,7 @@ export class OutcomeToken {
 
   // Сравнение
   public equals(other: OutcomeToken): boolean {
-    return assetIdEquals(this._assetId, other._assetId);
+    return AssetIdHelpers.equals(this._assetId, other._assetId);
   }
 }
 ```
@@ -330,47 +330,21 @@ export class OutcomeToken {
 export class OutcomeTokenService {
   public static create(
     conditionRef: ConditionRef,  // Union type!
-    outcomeKey: OutcomeKey,
-    source: ErrorSource = ErrorSource.SERVICE_CALL
+    outcomeKey: OutcomeKey
   ): Result<OutcomeToken, InvalidOutcomeTokenError> {
-    // Type narrowing
-    if (conditionRef.kind !== 'ONCHAIN') {
-      return Err(
-        new InvalidOutcomeTokenError(
-          `OutcomeToken requires on-chain condition, got: ${conditionRef.kind}`,
-          { reason: OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION, ... },
-          source
-        )
-      );
-    }
-
-    // После проверки TypeScript знает: conditionRef это OnChainConditionRef
-    try {
-      const token = OutcomeToken.of(conditionRef, outcomeKey);
-      return Ok(token);
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-
-      // Точный маппинг по instanceof
-      if (error instanceof OutcomeTokenInvariantViolation) {
-        return Err(
-          new InvalidOutcomeTokenError(
-            `Failed to create OutcomeToken: ${errorMessage}`,
-            { reason: OutcomeTokenErrorReason.INVALID_ASSET_ID_TYPE, ... },
-            source
-          )
+    return wrapOp(SERVICE_NAME, 'create', { conditionRef, outcomeKey }, () => {
+      // Type narrowing
+      if (conditionRef.kind !== 'ONCHAIN') {
+        throw new InvalidOutcomeTokenError(
+          (ctx) => `OutcomeToken requires on-chain condition, got: ${ctx.kind}`,
+          { context: { kind: 'not_onchain_condition', conditionRefKind: conditionRef.kind, outcomeKey: String(outcomeKey) } }
         );
       }
 
-      // Честное признание незнания причины
-      return Err(
-        new InvalidOutcomeTokenError(
-          `Failed to create OutcomeToken: ${errorMessage}`,
-          { reason: OutcomeTokenErrorReason.UNEXPECTED, ... },
-          source
-        )
-      );
-    }
+      // После проверки TypeScript знает: conditionRef это OnChainConditionRef
+      const token = OutcomeToken.of(conditionRef, outcomeKey);
+      return Ok(token);
+    }, InvalidOutcomeTokenError);
   }
 
   public static equals(a: OutcomeToken, b: OutcomeToken): boolean {
@@ -472,23 +446,16 @@ export class OutcomeTokenSerializer {
 - Enum для причин ошибок (не строки!)
 
 ```typescript
-export enum OutcomeTokenErrorReason {
-  NOT_ONCHAIN_CONDITION = 'NOT_ONCHAIN_CONDITION',      // Type narrowing failure
-  INVALID_FORMAT = 'INVALID_FORMAT',                    // JSON структура
-  INVALID_CONDITION_REF = 'INVALID_CONDITION_REF',      // conditionRef значения
-  INVALID_OUTCOME_KEY = 'INVALID_OUTCOME_KEY',          // outcomeKey формат
-  INVALID_ASSET_ID_TYPE = 'INVALID_ASSET_ID_TYPE',      // AssetId type !== OUTCOME_TOKEN
-  UNEXPECTED = 'UNEXPECTED',                             // Неизвестная причина
-}
+// InvalidOutcomeTokenError с типизированным контекстом (kind вместо reason enum)
+// Возможные значения context.kind:
+//   'not_onchain_condition'  — conditionRef не является OnChainConditionRef
+//   'invalid_json'           — невалидная структура JSON
+//   'invalid_condition_ref'  — невалидный condition reference (format/type)
+//   'invalid_outcome_key'    — невалидный outcome key
 
-export class InvalidOutcomeTokenError extends DomainError {
-  constructor(
-    message: string,
-    context: { reason: OutcomeTokenErrorReason; details: Record<string, unknown> },
-    source: ErrorSource
-  ) {
-    super('InvalidOutcomeTokenError', message, { ...context, source });
-  }
+export class InvalidOutcomeTokenError extends BaseError {
+  // Расширяет BaseError из @polymarket/errors
+  // context.kind содержит причину ошибки вместо отдельного enum
 }
 ```
 
@@ -757,14 +724,14 @@ if (!result.ok) {
 Вместо строковых констант — enum:
 
 ```typescript
-// ❌ Старый способ
+// ❌ Хрупкая проверка по message
 if (result.error.message.includes('not on-chain')) {
-  // Хрупкая проверка по message
+  // ...
 }
 
-// ✅ Новый способ
-if (result.error.context?.reason === OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION) {
-  // Type-safe проверка по enum
+// ✅ Надёжная проверка по context.kind
+if (result.error.context?.kind === 'not_onchain_condition') {
+  // Точная проверка по строковому дискриминатору
 }
 ```
 

@@ -2,15 +2,15 @@ import { describe, it, expect } from '@jest/globals';
 import { OutcomeTokenSerializer } from '../../../../src/outcome-token/adapters/OutcomeTokenSerializer.js';
 import { OutcomeTokenService } from '../../../../src/outcome-token/facade/OutcomeTokenService.js';
 import type { OnChainConditionRef } from '@polymarket/ids';
-import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols, parseChainId, parseConditionId } from '@polymarket/ids';
 
 describe('OutcomeTokenSerializer', () => {
   // Валидные тестовые данные (32-byte hex conditionId)
   const testConditionRef: OnChainConditionRef = {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as any,
-    conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' as any,
+    chainId: parseChainId('137')!,
+    conditionId: parseConditionId('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')!,
   };
 
   describe('toJSON()', () => {
@@ -70,6 +70,81 @@ describe('OutcomeTokenSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.kind).toBe('invalid_json');
+      }
+    });
+
+    it('should reject missing outcomeKey', () => {
+      const json = {
+        conditionRef: {
+          kind: 'ONCHAIN' as const,
+          protocolId: 'POLYMARKET_CTF',
+          chainId: 137,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+      };
+
+      const result = OutcomeTokenSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_json');
+      }
+    });
+
+    it('should reject invalid outcomeKey format', () => {
+      const json = {
+        conditionRef: {
+          kind: 'ONCHAIN' as const,
+          protocolId: 'POLYMARKET_CTF',
+          chainId: 137,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+        outcomeKey: 'INVALID:KEY',
+      };
+
+      const result = OutcomeTokenSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_outcome_key');
+      }
+    });
+
+    it('should reject invalid conditionId format', () => {
+      const json = {
+        conditionRef: {
+          kind: 'ONCHAIN' as const,
+          protocolId: 'POLYMARKET_CTF',
+          chainId: 137,
+          conditionId: 'not-a-hex-condition-id',
+        },
+        outcomeKey: 'UP',
+      };
+
+      const result = OutcomeTokenSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_condition_ref');
+      }
+    });
+
+    it('should reject invalid chainId (zero)', () => {
+      const json = {
+        conditionRef: {
+          kind: 'ONCHAIN' as const,
+          protocolId: 'POLYMARKET_CTF',
+          chainId: 0,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+        outcomeKey: 'UP',
+      };
+
+      const result = OutcomeTokenSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_condition_ref');
       }
     });
 

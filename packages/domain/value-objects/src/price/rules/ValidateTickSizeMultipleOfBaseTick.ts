@@ -19,7 +19,7 @@ import type Decimal from 'decimal.js';
  * ```typescript
  * import { ValidateTickSizeMultipleOfBaseTick } from '@polymarket/value-objects/price';
  *
- * const result = ValidateTickSizeMultipleOfBaseTick.check(0.0002);
+ * const result = ValidateTickSizeMultipleOfBaseTick.check(new Decimal('0.0002'));
  * if (result.ok) {
  *   console.log('TickSize кратен базовому тику');
  * } else {

@@ -421,7 +421,7 @@ testInputs.forEach(input => {
 // ✗ 1.5 -> [range] Максимальная цена: 0.9999 (99.99%). Вы ввели: 150.0000%
 // ✗ 0.00001 -> [range] Минимальная цена: 0.0001 (0.01%). Вы ввели: 0.0010%
 // ✗ abc -> [parse] Невалидный формат числа
-// ✗ NaN -> [parse] Невалидный формат числа
+// ✗ NaN -> [range] Цена должна быть конечным числом
 ```
 
 ---
@@ -618,7 +618,7 @@ import { PriceService, Price } from '@polymarket/value-objects/price';
 function validatePrices(rawPrices: string[]): Price[] {
   return rawPrices
     .map(raw => PriceService.create(raw))
-    .filter(result => {
+    .filter((result): result is { ok: true; value: Price } => {
       if (!result.ok) {
         console.warn(`Invalid price skipped: ${result.error.message}`);
         return false;

@@ -48,6 +48,15 @@ describe('ValidateTickSize', () => {
         expect(result.error.context?.reason).toBe('not_finite');
       }
     });
+
+    it('должен вернуть Err для -Infinity', () => {
+      const result = ValidateTickSize.check(new Decimal(-Infinity));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.field).toBe('tickSize');
+        expect(result.error.context?.reason).toBe('not_finite');
+      }
+    });
   });
 
   describe('not_positive', () => {

@@ -137,6 +137,9 @@ describe('PriceSerializer', () => {
       it('должен вернуть Err для отрицательного значения', () => {
         const result = PriceSerializer.fromJSON({ value: -0.5 });
         expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe('OUT_OF_RANGE_LOW');
+        }
       });
     });
   });

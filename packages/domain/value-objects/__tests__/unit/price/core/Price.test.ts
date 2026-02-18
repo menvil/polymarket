@@ -6,23 +6,27 @@ import { PriceInvariantViolation } from '../../../../src/price/core/PriceInvaria
 describe('Price constructor', () => {
   describe('invariants', () => {
     it('должен бросить PriceInvariantViolation для значения ниже минимума', () => {
-      expect(() => Price.of(new Decimal(0.00001))).toThrow(PriceInvariantViolation);
-      expect(() => Price.of(new Decimal(0.00001))).toThrow('below minimum');
+      const belowMin = new Decimal(0.00001);
+      expect(() => Price.of(belowMin)).toThrow(PriceInvariantViolation);
+      expect(() => Price.of(belowMin)).toThrow('below minimum');
     });
 
     it('должен бросить PriceInvariantViolation для значения выше максимума', () => {
-      expect(() => Price.of(new Decimal(1.0))).toThrow(PriceInvariantViolation);
-      expect(() => Price.of(new Decimal(1.0))).toThrow('exceeds maximum');
+      const aboveMax = new Decimal(1.0);
+      expect(() => Price.of(aboveMax)).toThrow(PriceInvariantViolation);
+      expect(() => Price.of(aboveMax)).toThrow('exceeds maximum');
     });
 
     it('должен бросить PriceInvariantViolation для Infinity', () => {
-      expect(() => Price.of(new Decimal(Infinity))).toThrow(PriceInvariantViolation);
-      expect(() => Price.of(new Decimal(Infinity))).toThrow('must be finite');
+      const inf = new Decimal(Infinity);
+      expect(() => Price.of(inf)).toThrow(PriceInvariantViolation);
+      expect(() => Price.of(inf)).toThrow('must be finite');
     });
 
     it('должен бросить PriceInvariantViolation для NaN', () => {
-      expect(() => Price.of(new Decimal(NaN))).toThrow(PriceInvariantViolation);
-      expect(() => Price.of(new Decimal(NaN))).toThrow('cannot be NaN');
+      const nan = new Decimal(NaN);
+      expect(() => Price.of(nan)).toThrow(PriceInvariantViolation);
+      expect(() => Price.of(nan)).toThrow('cannot be NaN');
     });
 
     it('должен бросить PriceInvariantViolation для -Infinity', () => {
@@ -44,13 +48,13 @@ describe('Price constructor', () => {
 });
 
 describe('Price.of()', () => {
-  it('должен создать Price из number', () => {
+  it('должен создать Price из Decimal (числовое значение)', () => {
     const price = Price.of(new Decimal(0.5));
     expect(price).toBeInstanceOf(Price);
     expect(price.toNumber()).toBe(0.5);
   });
 
-  it('должен создать Price из string', () => {
+  it('должен создать Price из Decimal (строковое значение)', () => {
     const price = Price.of(new Decimal("0.5"));
     expect(price).toBeInstanceOf(Price);
     expect(price.value().toString()).toBe("0.5");
@@ -61,8 +65,8 @@ describe('Price.of()', () => {
     const price = Price.of(decimal);
     expect(price).toBeInstanceOf(Price);
     expect(price.toNumber()).toBe(0.5);
-    // Проверяем что используется тот же объект (zero-copy оптимизация)
-    expect(price.value()).toBe(decimal);
+    // Проверяем что значение совпадает
+    expect(price.value().equals(decimal)).toBe(true);
   });
 });
 

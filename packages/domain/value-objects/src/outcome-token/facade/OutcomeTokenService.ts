@@ -96,8 +96,15 @@ export class OutcomeTokenService {
       () => {
         // Type narrowing: OutcomeToken только для on-chain conditions
         if (conditionRef.kind !== 'ONCHAIN') {
-          throw new Error(
-            `OutcomeToken requires on-chain condition, got: ${conditionRef.kind}`
+          throw new InvalidOutcomeTokenError(
+            (ctx) => `OutcomeToken requires on-chain condition, got: ${ctx.kind}`,
+            {
+              context: {
+                kind: 'not_onchain_condition',
+                conditionRefKind: conditionRef.kind,
+                outcomeKey: String(outcomeKey)
+              }
+            }
           );
         }
 

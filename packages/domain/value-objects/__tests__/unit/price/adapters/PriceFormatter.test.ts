@@ -13,11 +13,7 @@ describe('PriceFormatter', () => {
   describe('toPercentage()', () => {
     it('должен форматировать как процент с 2 знаками по умолчанию', () => {
       const price = Price.of(new Decimal(0.5));
-      const result = PriceFormatter.toPercentage(price);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value).toBe('50.00%');
-      }
+      expect(unwrap(PriceFormatter.toPercentage(price))).toBe('50.00%');
     });
 
     it('должен форматировать с указанным количеством знаков', () => {
@@ -66,11 +62,7 @@ describe('PriceFormatter', () => {
   describe('toFixed()', () => {
     it('должен форматировать с 4 знаками по умолчанию', () => {
       const price = Price.of(new Decimal(0.5));
-      const result = PriceFormatter.toFixed(price);
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value).toBe('0.5000');
-      }
+      expect(unwrap(PriceFormatter.toFixed(price))).toBe('0.5000');
     });
 
     it('должен форматировать с указанным количеством знаков', () => {

@@ -97,7 +97,7 @@ export class OutcomeTokenFormatter {
    * ```
    */
   public static toShortString(token: OutcomeToken): string {
-    return token.outcomeKey() as string;
+    return token.outcomeKey();
   }
 
   /**

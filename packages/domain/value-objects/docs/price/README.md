@@ -247,11 +247,12 @@ applyRelativeChange(
 const json = PriceSerializer.toJSON(price);  // { value: "0.5" }
 const result = PriceSerializer.fromJSON(json);
 
-// Форматирование
-const formatted = PriceFormatter.toFixed(price, 4);
-console.log(formatted);  // "0.5000"
+// Форматирование (возвращают Result<string, InvalidPriceError>)
+const fixedResult = PriceFormatter.toFixed(price, 4);
+if (fixedResult.ok) console.log(fixedResult.value);  // "0.5000"
 
-console.log(PriceFormatter.toPercentage(price));  // "50.00%"
+const percentResult = PriceFormatter.toPercentage(price);
+if (percentResult.ok) console.log(percentResult.value);  // "50.00%"
 ```
 
 ---
@@ -533,8 +534,9 @@ Price НЕ может быть 0 или 1:
 
 ```typescript
 import { Price } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
 
-const price = new Price(0.5);  // Может бросить исключение
+const price = Price.of(new Decimal(0.5));  // Может бросить исключение
 ```
 
 **Стало:**

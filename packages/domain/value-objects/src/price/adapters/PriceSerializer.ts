@@ -153,8 +153,8 @@ export class PriceSerializer {
       );
     }
 
-    // Проверка наличия поля value
-    if (!('value' in json)) {
+    // Проверка наличия поля value (own-property check — исключает prototype chain)
+    if (!Object.hasOwn(json, 'value')) {
       return Err(
         new InvalidPriceError(
           () => `Missing required field 'value'`,

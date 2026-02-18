@@ -86,7 +86,7 @@ describe('ValidateTickSizeMultipleOfBaseTick', () => {
 
     it('должен вернуть Err от ValidateTickSize для exceeds_range', () => {
       const maxAllowed = Price.MAX.value().minus(Price.MIN.value());
-      const tooLarge = maxAllowed.plus(0.0001);
+      const tooLarge = maxAllowed.plus(Price.MIN.value());
       const result = ValidateTickSizeMultipleOfBaseTick.check(tooLarge);
       expect(result.ok).toBe(false);
       if (!result.ok) {

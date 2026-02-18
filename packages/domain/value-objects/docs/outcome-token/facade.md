@@ -36,8 +36,7 @@ export class OutcomeTokenService {
    */
   public static create(
     conditionRef: ConditionRef,
-    outcomeKey: OutcomeKey,
-    source?: ErrorSource
+    outcomeKey: OutcomeKey
   ): Result<OutcomeToken, InvalidOutcomeTokenError>
 
   /**
@@ -56,8 +55,7 @@ export class OutcomeTokenService {
 ```typescript
 public static create(
   conditionRef: ConditionRef,  // Union: OnChainConditionRef | OffChainConditionRef
-  outcomeKey: OutcomeKey,
-  source: ErrorSource = ErrorSource.SERVICE_CALL
+  outcomeKey: OutcomeKey
 ): Result<OutcomeToken, InvalidOutcomeTokenError>
 ```
 
@@ -70,10 +68,6 @@ public static create(
 - **outcomeKey** — `OutcomeKey`
   - Ключ outcome (UP, DOWN, etc)
 
-- **source** — `ErrorSource` (опционально)
-  - Источник ошибки для диагностики
-  - По умолчанию: `ErrorSource.SERVICE_CALL`
-
 ### Возвращает
 
 `Result<OutcomeToken, InvalidOutcomeTokenError>`:
@@ -83,11 +77,10 @@ public static create(
 
 ### Возможные ошибки
 
-| Причина | Когда возникает |
+| `context.kind` | Когда возникает |
 | --------- | ----------------- |
-| `NOT_ONCHAIN_CONDITION` | conditionRef.kind !== 'ONCHAIN' |
-| `INVALID_ASSET_ID_TYPE` | AssetId создан с неправильным type (внутренний баг) |
-| `UNEXPECTED` | Неожиданная ошибка (неизвестная причина) |
+| `'not_onchain_condition'` | conditionRef.kind !== 'ONCHAIN' |
+| *(внутренние ошибки)* | AssetId невалидный или неожиданное исключение |
 
 ### Пример использования
 
@@ -115,8 +108,8 @@ if (!result.ok) {
   const error = result.error;
   console.error(error.message);
 
-  // Используйте typed reason вместо string matching
-  if (error.context?.reason === OutcomeTokenErrorReason.INVALID_CONDITION_REF) {
+  // Используйте context.kind для диагностики причины
+  if (error.context?.kind === 'not_onchain_condition') {
     console.error('OutcomeToken requires valid on-chain condition');
   }
 }
@@ -129,31 +122,21 @@ Facade принимает `ConditionRef` (union type) и делает type narro
 ```typescript
 public static create(
   conditionRef: ConditionRef,  // Union type!
-  outcomeKey: OutcomeKey,
-  source: ErrorSource = ErrorSource.SERVICE_CALL
+  outcomeKey: OutcomeKey
 ): Result<OutcomeToken, InvalidOutcomeTokenError> {
-  // Type narrowing: проверяем что это OnChainConditionRef
-  if (conditionRef.kind !== 'ONCHAIN') {
-    return Err(
-      new InvalidOutcomeTokenError(
-        `OutcomeToken requires on-chain condition, got: ${conditionRef.kind}`,
-        {
-          reason: OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION,
-          details: { conditionRef, outcomeKey },
-        },
-        source
-      )
-    );
-  }
+  return wrapOp(SERVICE_NAME, 'create', { conditionRef, outcomeKey }, () => {
+    // Type narrowing: проверяем что это OnChainConditionRef
+    if (conditionRef.kind !== 'ONCHAIN') {
+      throw new InvalidOutcomeTokenError(
+        (ctx) => `OutcomeToken requires on-chain condition, got: ${ctx.kind}`,
+        { context: { kind: 'not_onchain_condition', conditionRefKind: conditionRef.kind } }
+      );
+    }
 
-  // После проверки TypeScript знает: conditionRef это OnChainConditionRef
-  try {
+    // После проверки TypeScript знает: conditionRef это OnChainConditionRef
     const token = OutcomeToken.of(conditionRef, outcomeKey);
     return Ok(token);
-  } catch (error) {
-    // Error mapping
-    // ...
-  }
+  }, InvalidOutcomeTokenError);
 }
 ```
 
