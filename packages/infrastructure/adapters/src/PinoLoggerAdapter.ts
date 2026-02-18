@@ -78,8 +78,13 @@ export class PinoLoggerAdapter implements ILogger {
     private readonly clock: IClock,
     destination?: pino.DestinationStream
   ) {
-    // Type guard: проверяем есть ли метод child (признак pino.Logger)
-    if ('child' in optionsOrPino && typeof optionsOrPino.child === 'function') {
+    // Type guard: проверяем pino-специфичные члены чтобы избежать false-positive
+    // на любом объекте с методом child (например LoggerOptions с кастомным полем).
+    // bindings() и child() присутствуют только у pino.Logger, не у LoggerOptions.
+    if (
+      'child' in optionsOrPino && typeof optionsOrPino.child === 'function' &&
+      'bindings' in optionsOrPino && typeof optionsOrPino.bindings === 'function'
+    ) {
       // Это готовый pino.Logger (для child loggers)
       this.pino = optionsOrPino;
     } else {

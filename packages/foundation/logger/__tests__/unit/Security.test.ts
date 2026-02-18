@@ -484,6 +484,34 @@ describe('Logger Security Tests', () => {
 
       expect(consoleSpy.log).toHaveBeenCalledTimes(1);
     });
+
+    it('должен обрабатывать ColorConsoleLogger.error с throwing getter', () => {
+      const dangerousContext = {
+        get boom() {
+          throw new Error('Boom in error!');
+        },
+      };
+
+      expect(() => {
+        colorLogger.error('Test', new Error('err'), dangerousContext);
+      }).not.toThrow();
+
+      expect(consoleSpy.error).toHaveBeenCalledTimes(1);
+    });
+
+    it('должен обрабатывать ColorConsoleLogger.fatal с throwing getter', () => {
+      const dangerousContext = {
+        get boom() {
+          throw new Error('Boom in fatal!');
+        },
+      };
+
+      expect(() => {
+        colorLogger.fatal('Test', new Error('err'), dangerousContext);
+      }).not.toThrow();
+
+      expect(consoleSpy.error).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('Защита от __proto__ payload', () => {

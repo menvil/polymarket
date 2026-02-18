@@ -315,18 +315,10 @@ export class ColorConsoleLogger implements ILogger {
     context?: Record<string, unknown>
   ): void {
     if (shouldLog(LogLevel.ERROR, this.level)) {
-      const errorContext = error
-        ? {
-            error: {
-              message: error.message,
-              name: error.name,
-              stack: error.stack,
-            },
-          }
-        : undefined;
-      // Не санитизируем context здесь — log() сделает это единожды
-      const mergedContext = errorContext ? { ...(context ?? {}), ...errorContext } : context;
-      this.log(LogLevel.ERROR, message, mergedContext);
+      // Передаём context сырым — log() санитизирует его безопасно через sanitizeContext;
+      // errorContext (наши данные) передаётся отдельным аргументом чтобы не спредить
+      // context до санитизации (спред вызвал бы throwing getters)
+      this.log(LogLevel.ERROR, message, context, this.buildErrorContext(error));
     }
   }
 
@@ -355,19 +347,33 @@ export class ColorConsoleLogger implements ILogger {
     context?: Record<string, unknown>
   ): void {
     if (shouldLog(LogLevel.FATAL, this.level)) {
-      const errorContext = error
-        ? {
-            error: {
-              message: error.message,
-              name: error.name,
-              stack: error.stack,
-            },
-          }
-        : undefined;
-      // Не санитизируем context здесь — log() сделает это единожды
-      const mergedContext = errorContext ? { ...(context ?? {}), ...errorContext } : context;
-      this.log(LogLevel.FATAL, message, mergedContext);
+      this.log(LogLevel.FATAL, message, context, this.buildErrorContext(error));
     }
+  }
+
+  /**
+   * Формирует объект контекста для ошибки
+   *
+   * @param error - Объект ошибки (опционально)
+   * @returns Объект `{ error: { message, name, stack } }` или `undefined`
+   *
+   * @remarks
+   * Выделен в helper чтобы избежать дублирования в error() и fatal().
+   * Метод безопасен — работает только с нашими данными (Error instance).
+   *
+   * @internal
+   */
+  private buildErrorContext(
+    error?: Error
+  ): Record<string, unknown> | undefined {
+    if (!error) return undefined;
+    return {
+      error: {
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+      },
+    };
   }
 
   /**
@@ -424,11 +430,17 @@ export class ColorConsoleLogger implements ILogger {
   private log(
     level: LogLevel,
     message: string,
-    context?: Record<string, unknown>
+    context?: Record<string, unknown>,
+    systemContext?: Record<string, unknown>
   ): void {
     // Используем закешированные sanitized bindings (вычислены один раз в конструкторе)
     const sanitizedBindings = this.cachedSanitizedBindings;
-    const sanitizedContext = context ? sanitizeContext(context) : undefined;
+    // Сначала безопасно санитизируем пользовательский context (защита от throwing getters),
+    // затем мержим с systemContext (наши данные — всегда безопасны)
+    const sanitizedUserContext = context ? sanitizeContext(context) : undefined;
+    const sanitizedContext = systemContext
+      ? { ...(sanitizedUserContext ?? {}), ...systemContext }
+      : sanitizedUserContext;
 
     // Форматируем сообщение
     const parts: string[] = [];

@@ -157,21 +157,22 @@ describe('NoOpLogger', () => {
         log: jest.spyOn(console, 'log'),
       };
 
-      logger.trace('test');
-      logger.debug('test');
-      logger.info('test');
-      logger.warn('test');
-      logger.error('test', new Error('test'));
-      logger.fatal('test', new Error('test'));
+      try {
+        logger.trace('test');
+        logger.debug('test');
+        logger.info('test');
+        logger.warn('test');
+        logger.error('test', new Error('test'));
+        logger.fatal('test', new Error('test'));
 
-      expect(consoleSpies.debug).not.toHaveBeenCalled();
-      expect(consoleSpies.info).not.toHaveBeenCalled();
-      expect(consoleSpies.warn).not.toHaveBeenCalled();
-      expect(consoleSpies.error).not.toHaveBeenCalled();
-      expect(consoleSpies.log).not.toHaveBeenCalled();
-
-      // Cleanup
-      Object.values(consoleSpies).forEach((spy) => spy.mockRestore());
+        expect(consoleSpies.debug).not.toHaveBeenCalled();
+        expect(consoleSpies.info).not.toHaveBeenCalled();
+        expect(consoleSpies.warn).not.toHaveBeenCalled();
+        expect(consoleSpies.error).not.toHaveBeenCalled();
+        expect(consoleSpies.log).not.toHaveBeenCalled();
+      } finally {
+        Object.values(consoleSpies).forEach((spy) => spy.mockRestore());
+      }
     });
 
     it('должен игнорировать любые аргументы', () => {

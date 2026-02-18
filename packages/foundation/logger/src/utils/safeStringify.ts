@@ -73,10 +73,12 @@ export function safeStringify(obj: unknown, indent?: number): string {
       },
       indent
     );
-    return result ?? String(obj);
+    // String(undefined) === "undefined" — невалидный JSON-токен; используем "\"undefined\""
+    return result ?? '"undefined"';
   } catch (error) {
-    // Circular reference - попытка сохранить хотя бы примитивные поля
-    if (error instanceof TypeError && error.message.includes('circular')) {
+    // TypeError означает circular reference (V8: "circular structure", SpiderMonkey: "cyclic object value")
+    // Проверяем только instanceof TypeError — не привязываемся к тексту ошибки
+    if (error instanceof TypeError) {
       try {
         // Пытаемся извлечь примитивные значения из объекта
         const safe = extractPrimitiveFields(obj);
