@@ -47,10 +47,10 @@ if (!negResult.ok) {
   console.log(negResult.error.message); // "Quantity value cannot be negative"
 }
 
-// ❌ Ошибка: non-finite
+// ❌ Ошибка: NaN
 const nanResult = QuantityService.create(NaN);
 if (!nanResult.ok) {
-  console.log(nanResult.error.context?.reason === QuantityErrorReason.NON_FINITE); // true
+  console.log(nanResult.error.context?.reason === QuantityErrorReason.NAN); // true
 }
 ```
 
@@ -886,7 +886,8 @@ function handleQuantityError(error: InvalidQuantityError): string {
       if (ctx.reason === QuantityErrorReason.NEGATIVE) {
         return 'Quantity cannot be negative';
       }
-      if (ctx.reason === QuantityErrorReason.NON_FINITE) {
+      if (ctx.reason === QuantityErrorReason.NAN ||
+          ctx.reason === QuantityErrorReason.NON_FINITE) {
         return 'Quantity must be a valid number';
       }
       if (error.message.includes('minimum size')) {
@@ -932,9 +933,11 @@ if (!result.ok) {
 ### Retry с fallback
 
 ```typescript
-import { QuantityService, Quantity } from '@polymarket/value-objects/quantity';
+import { QuantityService, Quantity, QuantityErrorReason } from '@polymarket/value-objects/quantity';
 import { InvalidQuantityError } from '@polymarket/errors';
 import Decimal from 'decimal.js';
+
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
 async function createOrderWithRetry(
   quantity: string,
@@ -953,6 +956,7 @@ async function createOrderWithRetry(
 
     // Если ошибка валидации - не ретраим
     if (result.error.context?.reason === QuantityErrorReason.NEGATIVE ||
+        result.error.context?.reason === QuantityErrorReason.NAN ||
         result.error.context?.reason === QuantityErrorReason.NON_FINITE) {
       throw result.error;
     }

@@ -80,5 +80,11 @@ describe('ValidateMinSize', () => {
       const result = ValidateMinSize.check(new Decimal(Infinity), new Decimal(1));
       expect(result.ok).toBe(true);
     });
+
+    it('должен вернуть Ok для NaN quantity (валидация quantity - ответственность Core)', () => {
+      // ValidateMinSize не проверяет NaN quantity - это делает Core
+      const result = ValidateMinSize.check(new Decimal(NaN), new Decimal(1));
+      expect(result.ok).toBe(true);
+    });
   });
 });

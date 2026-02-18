@@ -30,10 +30,11 @@ import Decimal from 'decimal.js';
  */
 export class ValidateDivisorForQuantityDivision {
   public static check(divisor: Decimal): Result<void, InvalidQuantityError> {
-    if (divisor.lessThanOrEqualTo(0)) {
+    // Проверка 1: делитель должен быть finite (исключает NaN, Infinity, -Infinity)
+    if (!divisor.isFinite()) {
       return Err(
         new InvalidQuantityError(
-          (ctx) => `Divisor for Quantity division must be positive, got ${ctx.divisor}`,
+          (ctx) => `Divisor for Quantity division must be finite, got ${ctx.divisor}`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
@@ -44,10 +45,11 @@ export class ValidateDivisorForQuantityDivision {
       );
     }
 
-    if (!divisor.isFinite()) {
+    // Проверка 2: делитель должен быть положительным (> 0)
+    if (divisor.lessThanOrEqualTo(0)) {
       return Err(
         new InvalidQuantityError(
-          (ctx) => `Divisor for Quantity division must be finite, got ${ctx.divisor}`,
+          (ctx) => `Divisor for Quantity division must be positive, got ${ctx.divisor}`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,

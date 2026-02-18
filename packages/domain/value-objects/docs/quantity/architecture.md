@@ -577,7 +577,7 @@ private static toDecimal(input: number | string | Decimal): Result<Decimal, Inva
     return Ok(decimal);
   } catch (error) {
     return Err(new InvalidQuantityError(..., {
-      context: { raw: String(input), cause: this.toCause(error) }
+      context: { raw: { field: 'factor', value: String(input) }, cause: this.toCause(error) }
     }));
   }
 }

@@ -22,6 +22,9 @@ describe('ValidateStepSizeForQuantity', () => {
     it('должен вернуть Err для negative', () => {
       const result = ValidateStepSizeForQuantity.check(new Decimal(-0.01));
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be positive');
+      }
     });
 
     it('должен вернуть Err для Infinity', () => {
@@ -43,6 +46,9 @@ describe('ValidateStepSizeForQuantity', () => {
     it('должен вернуть Err для NaN', () => {
       const result = ValidateStepSizeForQuantity.check(new Decimal(NaN));
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be finite');
+      }
     });
 
     it('должен иметь правильный context format', () => {

@@ -35,6 +35,9 @@ describe('ValidateFactorForQuantityMultiplication', () => {
     it('должен вернуть Err для NaN', () => {
       const result = ValidateFactorForQuantityMultiplication.check(new Decimal(NaN));
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be finite');
+      }
     });
 
     it('должен иметь правильный context format', () => {

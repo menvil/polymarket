@@ -98,7 +98,13 @@ export class QuantityFormatter {
       return `${(value / QuantityFormatter.MILLION).toFixed(2)}M`;
     }
     if (value >= QuantityFormatter.THOUSAND) {
-      return `${(value / QuantityFormatter.THOUSAND).toFixed(2)}K`;
+      // Защита от граничного случая: если после округления получается 1000.00K,
+      // переходим к следующей единице измерения (M)
+      const kFormatted = (value / QuantityFormatter.THOUSAND).toFixed(2);
+      if (parseFloat(kFormatted) >= 1000) {
+        return `${(value / QuantityFormatter.MILLION).toFixed(2)}M`;
+      }
+      return `${kFormatted}K`;
     }
     return value.toFixed(2);
   }

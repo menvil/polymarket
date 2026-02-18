@@ -168,7 +168,7 @@ export class QuantityService {
       const validateResult = ValidateResultNonNegative.check(diff);
       if (isErr(validateResult)) {
         // wrapOp автоматически сделает rewrap для любого Err результата
-        return Err(validateResult.error);
+        return validateResult;
       }
 
       return this.create(diff);
@@ -215,7 +215,7 @@ export class QuantityService {
 
     const factorDecimal = factorResult.value;
 
-    // Валидация через rule (проверяет isNaN, isFinite)
+    // Валидация: множитель должен быть неотрицательным
     const validateResult = ValidateFactorForQuantityMultiplication.check(factorDecimal);
     if (isErr(validateResult)) {
       return Err(
@@ -292,7 +292,7 @@ export class QuantityService {
 
     const divisorDecimal = divisorResult.value;
 
-    // Валидация через rule
+    // Валидация: делитель должен быть положительным
     const validateResult = ValidateDivisorForQuantityDivision.check(divisorDecimal);
     if (isErr(validateResult)) {
       return Err(
@@ -378,7 +378,8 @@ export class QuantityService {
     // Округление через math layer
     const ctx = {
       quantity: quantity.value().toString(),
-      stepSize: stepSizeDecimal.toString()
+      stepSize: stepSizeDecimal.toString(),
+      roundingMode: String(roundingMode)
     };
 
     return wrapOp(QuantityService.SERVICE_NAME, 'roundToStep', ctx, () => {

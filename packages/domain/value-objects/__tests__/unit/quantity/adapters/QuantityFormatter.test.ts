@@ -93,10 +93,9 @@ describe('QuantityFormatter', () => {
       expect(QuantityFormatter.toDisplayString(Quantity.of(new Decimal(999)))).toBe("999.00");
       expect(QuantityFormatter.toDisplayString(Quantity.of(new Decimal(1000)))).toBe("1.00K");
 
-      // Важно: 999999 → "1000.00K" это ожидаемое поведение!
-      // Причина: 999999 / 1000 = 999.999, toFixed(2) округляет до 1000.00
-      // Поэтому formatter выдает "1000.00K" а не "999.99K"
-      expect(QuantityFormatter.toDisplayString(Quantity.of(new Decimal(999999)))).toBe("1000.00K");
+      // 999999 / 1000 = 999.999, toFixed(2) округляет до 1000.00K,
+      // что >= 1000 → переходим к M: 999999 / 1000000 = 1.00M
+      expect(QuantityFormatter.toDisplayString(Quantity.of(new Decimal(999999)))).toBe("1.00M");
 
       expect(QuantityFormatter.toDisplayString(Quantity.of(new Decimal(1000000)))).toBe("1.00M");
     });

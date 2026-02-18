@@ -39,6 +39,15 @@ describe('QuantitySerializer', () => {
         }
       });
 
+      it('должен десериализовать нулевое значение', () => {
+        const result = QuantitySerializer.fromJSON({ value: "0" });
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value().toString()).toBe("0");
+        }
+      });
+
       it('должен десериализовать decimal значения', () => {
         const result = QuantitySerializer.fromJSON({ value: "10.123456789" });
 
@@ -204,12 +213,12 @@ describe('QuantitySerializer', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(Error);
-          expect(result.error.message).toBeTruthy();
-          // Проверяем что ошибка содержит информацию о проблеме
+          // Сообщение должно содержать "invalid" или "number" (case-insensitive)
           expect(
             result.error.message.toLowerCase().includes('invalid') ||
             result.error.message.toLowerCase().includes('number')
           ).toBe(true);
+          expect(result.error.context?.op).toBe('create');
         }
       });
 
@@ -219,6 +228,7 @@ describe('QuantitySerializer', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(Error);
+          expect(result.error.context?.reason).toBe('NEGATIVE');
         }
       });
     });

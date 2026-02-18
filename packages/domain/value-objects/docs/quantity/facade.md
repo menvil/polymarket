@@ -89,10 +89,10 @@ if (!negResult.ok) {
   console.log(negResult.error.context?.reason); // 'NEGATIVE'
 }
 
-// Ошибка: non-finite
+// Ошибка: NaN
 const nanResult = QuantityService.create(NaN);
 if (!nanResult.ok) {
-  console.log(nanResult.error.context?.reason); // 'NON_FINITE'
+  console.log(nanResult.error.context?.reason); // 'NAN'
 }
 ```
 

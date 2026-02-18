@@ -24,7 +24,7 @@
 // export { Price, PriceService, PriceSerializer, PriceFormatter } from './price/index.js';
 //
 // Quantity модуль (только публичный API)
-export { Quantity, QuantityService } from './quantity/index.js';
+export { Quantity, QuantityService, QuantityFormatter, QuantitySerializer, QuantityErrorReason } from './quantity/index.js';
 //
 // // Balance модуль (только публичный API)
 // export {

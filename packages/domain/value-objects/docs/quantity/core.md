@@ -25,7 +25,8 @@ Core Layer содержит базовую реализацию `Quantity` — �
 
 При нарушении инварианта кидается `QuantityInvariantViolation` с `reason`:
 
-- `'NON_FINITE'` — для NaN/Infinity
+- `'NAN'` — для NaN
+- `'NON_FINITE'` — для Infinity/-Infinity
 - `'NEGATIVE'` — для отрицательных значений
 
 ### Создание
@@ -48,9 +49,9 @@ try {
 }
 
 try {
-  const invalid = Quantity.of(new Decimal(NaN));  // reason: 'NON_FINITE'
+  const invalid = Quantity.of(new Decimal(NaN));  // reason: 'NAN'
 } catch (e) {
-  console.log(e.reason);  // 'NON_FINITE'
+  console.log(e.reason);  // 'NAN'
 }
 ```
 
@@ -193,15 +194,15 @@ qty1.isGreaterThanOrEqual(qty1);  // true (равны)
 
 ```typescript
 class QuantityInvariantViolation extends Error {
-  readonly reason: 'NEGATIVE' | 'NON_FINITE';
-  constructor(message: string, reason: 'NEGATIVE' | 'NON_FINITE');
+  readonly reason: 'NEGATIVE' | 'NON_FINITE' | 'NAN';
+  constructor(message: string, reason: 'NEGATIVE' | 'NON_FINITE' | 'NAN');
 }
 ```
 
 ### Пример обработки
 
 ```typescript
-const value = -1; // Пример невалидного значения
+const value = new Decimal(-1); // Пример невалидного значения
 
 try {
   const qty = Quantity.of(value);
@@ -212,7 +213,10 @@ try {
         console.error('Value cannot be negative');
         break;
       case 'NON_FINITE':
-        console.error('Value must be finite');
+        console.error('Value must be finite (Infinity)');
+        break;
+      case 'NAN':
+        console.error('Value cannot be NaN');
         break;
     }
   }

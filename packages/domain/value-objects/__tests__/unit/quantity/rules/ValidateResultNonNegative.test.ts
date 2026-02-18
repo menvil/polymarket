@@ -40,5 +40,23 @@ describe('ValidateResultNonNegative', () => {
         expect(result.error.context).not.toHaveProperty('op');
       }
     });
+
+    it('должен вернуть Err для NaN результата', () => {
+      const result = ValidateResultNonNegative.check(new Decimal(NaN));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        expect(result.error.message).toContain('must be finite');
+      }
+    });
+
+    it('должен вернуть Err для Infinity результата', () => {
+      const result = ValidateResultNonNegative.check(new Decimal(Infinity));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        expect(result.error.message).toContain('must be finite');
+      }
+    });
   });
 });

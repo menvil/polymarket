@@ -189,8 +189,6 @@ describe('QuantityService', () => {
         expect(result.error.context?.op).toBe('add');
         expect(result.error.context?.reason).toBe('NON_FINITE');
       }
-
-      jest.restoreAllMocks();
     });
 
     // Примечание: Decimal.js не производит Infinity при арифметических операциях,
@@ -208,8 +206,6 @@ describe('QuantityService', () => {
         expect(result.error.message).toContain('must be finite');
         expect(result.error.context?.reason).toBe('NON_FINITE');
       }
-
-      jest.restoreAllMocks();
     });
 
     describe('Math exception handling', () => {
@@ -231,8 +227,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('InvalidOperandError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
@@ -253,8 +247,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('ArithmeticOverflowError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен обернуть неожиданные ошибки в Result', () => {
@@ -271,8 +263,6 @@ describe('QuantityService', () => {
           expect(result.error.message).toContain('Unexpected error');
           expect(result.error.context?.cause).toBeDefined();
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен обработать non-Error выброс из math', () => {
@@ -290,8 +280,6 @@ describe('QuantityService', () => {
           expect(cause.name).toBe('UnknownError');
           expect(cause.message).toBe('string error');
         }
-
-        jest.restoreAllMocks();
       });
     });
   });
@@ -386,8 +374,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('InvalidOperandError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
@@ -408,8 +394,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('ArithmeticOverflowError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен обернуть неожиданные ошибки в Result', () => {
@@ -425,8 +409,6 @@ describe('QuantityService', () => {
         if (!result.ok) {
           expect(result.error.message).toContain('Unexpected error');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен вернуть Err если результат вычитания non-finite', () => {
@@ -443,8 +425,6 @@ describe('QuantityService', () => {
           // Verify create failed after math operation
           expect(result.error).toBeInstanceOf(InvalidQuantityError);
         }
-
-        jest.restoreAllMocks();
       });
     });
   });
@@ -513,8 +493,6 @@ describe('QuantityService', () => {
         expect(result.error.context?.op).toBe('multiply');
         expect(result.error.context?.reason).toBe('NON_FINITE');
       }
-
-      jest.restoreAllMocks();
     });
 
     describe('Facade Error Contract', () => {
@@ -567,8 +545,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('InvalidOperandError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
@@ -588,8 +564,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('ArithmeticOverflowError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен обернуть неожиданные ошибки в Result', () => {
@@ -604,8 +578,6 @@ describe('QuantityService', () => {
         if (!result.ok) {
           expect(result.error.message).toContain('Unexpected error');
         }
-
-        jest.restoreAllMocks();
       });
     });
   });
@@ -699,9 +671,6 @@ describe('QuantityService', () => {
           expect(cause.name).toBe('DivisionByZeroError');
           expect(cause.message).toBe('division by zero');
         }
-
-        // Restore
-        jest.restoreAllMocks();
       });
 
       it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
@@ -721,8 +690,6 @@ describe('QuantityService', () => {
           expect(cause.name).toBe('ArithmeticOverflowError');
           expect(cause.message).toBe('overflow');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен обернуть неожиданные ошибки в Result', () => {
@@ -743,8 +710,6 @@ describe('QuantityService', () => {
           expect(result.error.context?.cause).toHaveProperty('message', 'unexpected error');
           expect(result.error.context?.cause).toHaveProperty('stack');
         }
-
-        jest.restoreAllMocks();
       });
     });
 
@@ -771,6 +736,7 @@ describe('QuantityService', () => {
       });
 
       it('error для math exception должен содержать context.cause', () => {
+        expect.assertions(3);
         jest.spyOn(math, 'divideDecimal').mockImplementation(() => {
           throw new DivisionByZeroError(() => 'test', {
             context: {}
@@ -785,8 +751,6 @@ describe('QuantityService', () => {
           expect(result.error.context?.cause).toHaveProperty('name');
           expect(result.error.context?.cause).toHaveProperty('message');
         }
-
-        jest.restoreAllMocks();
       });
     });
   });
@@ -848,8 +812,6 @@ describe('QuantityService', () => {
         expect(result.error.context?.op).toBe('roundToStep');
         expect(result.error.context?.reason).toBe('NON_FINITE');
       }
-
-      jest.restoreAllMocks();
     });
 
     describe('Facade Error Contract', () => {
@@ -893,8 +855,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('InvalidOperandError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
@@ -914,8 +874,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('ArithmeticOverflowError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен обернуть неожиданные ошибки в Result', () => {
@@ -930,8 +888,6 @@ describe('QuantityService', () => {
         if (!result.ok) {
           expect(result.error.message).toContain('Unexpected error');
         }
-
-        jest.restoreAllMocks();
       });
     });
   });
@@ -1062,8 +1018,6 @@ describe('QuantityService', () => {
           expect(cause.name).toBeDefined();
           expect(cause.message).toBeDefined();
         }
-
-        jest.restoreAllMocks();
       });
 
       it('divide: math exception должен содержать cause.name и cause.message', () => {
@@ -1082,8 +1036,6 @@ describe('QuantityService', () => {
           expect(cause.name).toBe('DivisionByZeroError');
           expect(cause.message).toBe('division by zero');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('unexpected error: должен содержать cause даже для non-Error', () => {
@@ -1102,8 +1054,6 @@ describe('QuantityService', () => {
           expect(cause.name).toBe('UnknownError');
           expect(cause.message).toBe('string error');
         }
-
-        jest.restoreAllMocks();
       });
     });
 
@@ -1238,8 +1188,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('InvalidOperandError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен ловить ArithmeticOverflowError из @polymarket/math', () => {
@@ -1263,8 +1211,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('ArithmeticOverflowError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен обернуть неожиданные ошибки в Result', () => {
@@ -1282,8 +1228,6 @@ describe('QuantityService', () => {
           expect(result.error.context?.op).toBe('portion');
           expect(result.error.context?.cause).toBeDefined();
         }
-
-        jest.restoreAllMocks();
       });
     });
   });
@@ -1506,8 +1450,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('InvalidOperandError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен ловить ArithmeticOverflowError из multiplyDecimal', () => {
@@ -1529,8 +1471,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('ArithmeticOverflowError');
         }
-
-        jest.restoreAllMocks();
       });
     });
 
@@ -1557,8 +1497,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('InvalidOperandError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен ловить ArithmeticOverflowError из roundToTick', () => {
@@ -1580,8 +1518,6 @@ describe('QuantityService', () => {
           const cause = result.error.context?.cause as { name: string; message: string; stack?: string };
           expect(cause.name).toBe('ArithmeticOverflowError');
         }
-
-        jest.restoreAllMocks();
       });
 
       it('должен обернуть неожиданные ошибки в Result', () => {
@@ -1599,8 +1535,6 @@ describe('QuantityService', () => {
           expect(result.error.context?.op).toBe('increaseBy');
           expect(result.error.context?.cause).toBeDefined();
         }
-
-        jest.restoreAllMocks();
       });
     });
   });

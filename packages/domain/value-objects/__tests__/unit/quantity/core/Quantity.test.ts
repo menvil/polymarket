@@ -6,6 +6,7 @@ import { QuantityInvariantViolation } from '../../../../src/quantity/core/Quanti
 describe('Quantity constructor', () => {
   describe('invariants', () => {
     it('должен бросить QuantityInvariantViolation для negative значения', () => {
+      expect.assertions(3);
       // Используем of() для доступа к конструктору
       expect(() => Quantity.of(new Decimal(-1))).toThrow(QuantityInvariantViolation);
       expect(() => Quantity.of(new Decimal(-1))).toThrow('cannot be negative');
@@ -13,31 +14,30 @@ describe('Quantity constructor', () => {
       try {
         Quantity.of(new Decimal(-1));
       } catch (e) {
-        expect(e).toBeInstanceOf(QuantityInvariantViolation);
         expect((e as QuantityInvariantViolation).reason).toBe('NEGATIVE');
       }
     });
 
     it('должен бросить QuantityInvariantViolation для Infinity', () => {
+      expect.assertions(3);
       expect(() => Quantity.of(new Decimal(Infinity))).toThrow(QuantityInvariantViolation);
       expect(() => Quantity.of(new Decimal(Infinity))).toThrow('must be finite');
 
       try {
         Quantity.of(new Decimal(Infinity));
       } catch (e) {
-        expect(e).toBeInstanceOf(QuantityInvariantViolation);
         expect((e as QuantityInvariantViolation).reason).toBe('NON_FINITE');
       }
     });
 
     it('должен бросить QuantityInvariantViolation для NaN', () => {
+      expect.assertions(3);
       expect(() => Quantity.of(new Decimal(NaN))).toThrow(QuantityInvariantViolation);
       expect(() => Quantity.of(new Decimal(NaN))).toThrow('cannot be NaN');
 
       try {
         Quantity.of(new Decimal(NaN));
       } catch (e) {
-        expect(e).toBeInstanceOf(QuantityInvariantViolation);
         expect((e as QuantityInvariantViolation).reason).toBe('NAN');
       }
     });
