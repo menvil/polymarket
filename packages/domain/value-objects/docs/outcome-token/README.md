@@ -78,7 +78,7 @@ const onChainRef: OnChainConditionRef = {
 const result = OutcomeTokenService.create(onChainRef, BinaryOutcome.UP);
 if (!result.ok) {
   console.error(result.error.message);
-  console.error(result.error.context?.reason);  // Типизированная причина
+  console.error(result.error.context?.kind);  // Причина: 'not_onchain_condition' и др.
   return;
 }
 
@@ -188,7 +188,7 @@ OutcomeToken построен на архитектуре **Throws+Facade** с 4
 1. **Core доверяет типам** — никаких дублирований проверок в core
 2. **Facade валидирует входные данные** — type narrowing для union types
 3. **Adapters валидируют значения** — не только типы, но и форматы
-4. **Errors типизированы** — `OutcomeTokenErrorReason` enum вместо строк
+4. **Errors типизированы** — `context.kind` string literals вместо enum (`'not_onchain_condition'`, `'invalid_json'`, ...)
 5. **Single Source of Truth** — AssetId как единственный источник данных
 
 ---
@@ -336,7 +336,7 @@ const onChainRef: OnChainConditionRef = {
 const result = OutcomeTokenService.create(onChainRef, BinaryOutcome.UP);
 if (!result.ok) {
   console.error(`Failed to create OutcomeToken: ${result.error.message}`);
-  console.error(`Reason: ${result.error.context?.reason}`);
+  console.error(`Kind: ${result.error.context?.kind}`);
   return;
 }
 
@@ -456,7 +456,7 @@ const offChainRef: OffChainConditionRef = {
 };
 
 const result = OutcomeTokenService.create(offChainRef, BinaryOutcome.UP);
-// → Err(NOT_ONCHAIN_CONDITION)
+// → Err with context.kind === 'not_onchain_condition'
 ```
 
 ### ⚠️ Не содержит количества

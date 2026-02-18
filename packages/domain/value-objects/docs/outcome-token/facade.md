@@ -128,7 +128,7 @@ public static create(
     // Type narrowing: проверяем что это OnChainConditionRef
     if (conditionRef.kind !== 'ONCHAIN') {
       throw new InvalidOutcomeTokenError(
-        (ctx) => `OutcomeToken requires on-chain condition, got: ${ctx.kind}`,
+        (ctx) => `OutcomeToken requires on-chain condition, got: ${ctx.conditionRefKind}`,
         { context: { kind: 'not_onchain_condition', conditionRefKind: conditionRef.kind } }
       );
     }
@@ -213,44 +213,23 @@ if (!result.ok) {
 Facade делает точный маппинг по instanceof:
 
 ```typescript
-try {
-  const token = OutcomeToken.of(conditionRef, outcomeKey);
-  return Ok(token);
-} catch (error) {
-  const errorMessage = error instanceof Error ? error.message : String(error);
+return wrapOp(
+  SERVICE_NAME,
+  'create',
+  { conditionRef, outcomeKey },
+  () => {
+    if (conditionRef.kind !== 'ONCHAIN') {
+      throw new InvalidOutcomeTokenError(
+        (ctx) => `OutcomeToken requires on-chain condition, got: ${ctx.conditionRefKind}`,
+        { context: { kind: 'not_onchain_condition', conditionRefKind: conditionRef.kind } }
+      );
+    }
 
-  // Точный маппинг по instanceof
-  if (error instanceof OutcomeTokenInvariantViolation) {
-    return Err(
-      new InvalidOutcomeTokenError(
-        `Failed to create OutcomeToken: ${errorMessage}`,
-        {
-          reason: OutcomeTokenErrorReason.INVALID_ASSET_ID_TYPE,
-          details: { conditionRef, outcomeKey, errorName: error.name, errorMessage },
-        },
-        source
-      )
-    );
-  }
-
-  // Честное признание незнания причины
-  return Err(
-    new InvalidOutcomeTokenError(
-      `Failed to create OutcomeToken: ${errorMessage}`,
-      {
-        reason: OutcomeTokenErrorReason.UNEXPECTED,
-        details: {
-          conditionRef,
-          outcomeKey,
-          errorName: error instanceof Error ? error.name : 'Unknown',
-          errorMessage,
-          errorStack: error instanceof Error ? error.stack : undefined,
-        },
-      },
-      source
-    )
-  );
-}
+    const token = OutcomeToken.of(conditionRef, outcomeKey);
+    return Ok(token);
+  },
+  InvalidOutcomeTokenError
+);
 ```
 
 **Преимущества**:
@@ -270,7 +249,7 @@ if (result.error.message.includes('not on-chain')) {
 }
 
 // ✅ Type-safe проверка
-if (result.error.context?.reason === OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION) {
+if (result.error.context?.kind === 'not_onchain_condition') {
   // ...
 }
 ```

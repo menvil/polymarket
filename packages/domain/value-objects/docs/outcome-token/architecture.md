@@ -787,7 +787,7 @@ OutcomeTokenService.create(ref, BinaryOutcome.UP);  // ✅ Type-safe
 
 ### Уровень 2: Runtime type checking
 
-Проверка что JSON имеет правильную структуру:
+Проверка того, что JSON имеет правильную структуру:
 
 ```typescript
 // fromJSON()

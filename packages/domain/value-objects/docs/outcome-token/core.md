@@ -151,11 +151,18 @@ public static of(
   conditionRef: OnChainConditionRef,
   outcomeKey: OutcomeKey
 ): OutcomeToken {
-  // Создаём AssetId из conditionRef + outcomeKey
-  const assetId = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
+  // Создаём канонический AssetId (возвращает Result)
+  const assetIdResult = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
 
-  // Делегируем валидацию в fromAssetId()
-  return OutcomeToken.fromAssetId(assetId);
+  if (!assetIdResult.ok) {
+    throw new OutcomeTokenInvariantViolation(
+      'OutcomeToken: failed to create AssetId via AssetIdHelpers.fromOutcomeToken',
+      { conditionRef, outcomeKey, cause: assetIdResult.error }
+    );
+  }
+
+  // fromOutcomeToken ГАРАНТИРОВАННО возвращает OUTCOME_TOKEN
+  return OutcomeToken.fromCanonicalAssetId(assetIdResult.value as OutcomeTokenAssetId);
 }
 ```
 
@@ -163,13 +170,13 @@ public static of(
 
 ```typescript
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
-import { BinaryOutcome, type OnChainConditionRef } from '@polymarket/ids';
+import { BinaryOutcome, type OnChainConditionRef, parseChainId, parseConditionId, KnownOnChainProtocols } from '@polymarket/ids';
 
 const onChainRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF' as any,
-  chainId: 137 as any,
-  conditionId: '0x...' as any
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+  chainId: parseChainId('137')!,
+  conditionId: parseConditionId('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')!
 };
 
 const token = OutcomeToken.of(onChainRef, BinaryOutcome.UP);  // ✅
@@ -318,7 +325,21 @@ public static fromAssetId(assetId: AssetId): OutcomeToken {
       { assetId }
     );
   }
-  return new OutcomeToken(assetId);
+
+  // Defensive copy: пересоздаём AssetId через AssetIdHelpers
+  const canonicalResult = AssetIdHelpers.fromOutcomeToken(
+    assetId.conditionRef,
+    assetId.outcomeKey
+  );
+
+  if (!canonicalResult.ok) {
+    throw new OutcomeTokenInvariantViolation(
+      'OutcomeToken: failed to canonicalize AssetId via AssetIdHelpers.fromOutcomeToken',
+      { assetId, cause: canonicalResult.error }
+    );
+  }
+
+  return OutcomeToken.fromCanonicalAssetId(canonicalResult.value as OutcomeTokenAssetId);
 }
 ```
 
