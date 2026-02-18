@@ -1,1 +1,2 @@
-export { Quantity, QuantityInvariantViolation } from './Quantity.js';
+export { Quantity } from './Quantity.js';
+export { QuantityInvariantViolation } from './QuantityInvariantViolation.js';

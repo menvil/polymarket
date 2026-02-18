@@ -1,5 +1,5 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidTickSizeError } from '@polymarket/errors';
+import { InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import { ValidateTickSize } from './ValidateTickSize.js';
 import type { TickSizeMultipleReason } from './types.js';
@@ -66,7 +66,7 @@ export class ValidateTickSizeMultipleOfBaseTick {
     const tickDecimal = tickResult.value;
 
     // Шаг 2: Проверка кратности
-    const BASE_TICK = Price.minValue();
+    const BASE_TICK = Price.MIN.value();
     const quotient = tickDecimal.div(BASE_TICK);
 
     if (!quotient.isInteger()) {
@@ -76,6 +76,7 @@ export class ValidateTickSizeMultipleOfBaseTick {
             `Tick size ${ctx.tickSize} must be multiple of base tick ${ctx.baseTick}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
               reason: 'not_multiple_of_base_tick' as TickSizeMultipleReason,
               tickSize: tickDecimal.toString(),

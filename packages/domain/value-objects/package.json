@@ -10,14 +10,49 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./asset-quantity": {
+      "types": "./dist/asset-quantity/index.d.ts",
+      "import": "./dist/asset-quantity/index.js"
+    },
+    "./balance": {
+      "types": "./dist/balance/index.d.ts",
+      "import": "./dist/balance/index.js"
+    },
+    "./money": {
+      "types": "./dist/money/index.d.ts",
+      "import": "./dist/money/index.js"
+    },
+    "./outcome-token": {
+      "types": "./dist/outcome-token/index.d.ts",
+      "import": "./dist/outcome-token/index.js"
+    },
+    "./price": {
+      "types": "./dist/price/index.d.ts",
+      "import": "./dist/price/index.js"
+    },
     "./quantity": {
       "types": "./dist/quantity/index.d.ts",
       "import": "./dist/quantity/index.js"
+    },
+    "./quote": {
+      "types": "./dist/quote/index.d.ts",
+      "import": "./dist/quote/index.js"
+    },
+    "./ratio": {
+      "types": "./dist/ratio/index.d.ts",
+      "import": "./dist/ratio/index.js"
+    },
+    "./spread": {
+      "types": "./dist/spread/index.d.ts",
+      "import": "./dist/spread/index.js"
+    },
+    "./token-balance": {
+      "types": "./dist/token-balance/index.d.ts",
+      "import": "./dist/token-balance/index.js"
     }
   },
   "files": [
-    "dist",
-    "README.md"
+    "dist"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
@@ -25,6 +60,8 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "test:coverage:money": "jest --coverage --testPathPattern=money --collectCoverageFrom='src/money/**/*.ts' --collectCoverageFrom='!src/money/**/index.ts'",
+    "test:smoke": "node __tests__/smoke/money-package-import.mjs",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "lint:tests": "eslint __tests__ --ext .ts",
@@ -34,9 +71,11 @@
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
-    "clean": "rm -rf dist",
-    "lint:md": "markdownlint-cli2 \"**/*.md\"",
-    "lint:md:fix": "markdownlint-cli2 --fix \"**/*.md\""
+    "ci": "npm run typecheck && npm run lint && npm run build && npm test && npm run test:smoke",
+    "ci:full": "npm run typecheck:all && npm run lint:all && npm run build && npm run test:coverage && npm run test:smoke",
+    "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"docs/**/*.md\" \"README.md\"",
+    "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"docs/**/*.md\" \"README.md\"",
+    "clean": "rm -rf dist *.tsbuildinfo"
   },
   "keywords": [
     "value-objects",
@@ -50,8 +89,10 @@
   "license": "MIT",
   "dependencies": {
     "@polymarket/errors": "^0.1.0",
+    "@polymarket/ids": "^0.1.0",
     "@polymarket/math": "^0.1.0",
     "@polymarket/result": "^0.1.0",
+    "@polymarket/time": "^0.1.0",
     "decimal.js": "^10.6.0"
   },
   "devDependencies": {
@@ -62,8 +103,6 @@
     "@typescript-eslint/parser": "^6.0.0",
     "eslint": "^8.0.0",
     "jest": "^29.7.0",
-    "markdownlint-cli2": "^0.20.0",
-    "markdownlint-cli2-formatter-pretty": "^0.0.9",
     "ts-jest": "^29.1.0",
     "ts-node": "^10.9.0",
     "typescript": "^5.3.0"

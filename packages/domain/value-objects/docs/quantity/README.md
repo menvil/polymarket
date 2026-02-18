@@ -78,7 +78,7 @@ if (qty1Result.ok && qty2Result.ok) {
 
 Quantity модуль построен на **4-слойной архитектуре** с паттерном **Throws+Facade**:
 
-```
+```text
 ┌─────────────────────────────────────────────────┐
 │           Adapters Layer                        │
 │  (Serializers, Formatters)                      │
@@ -137,8 +137,7 @@ Quantity модуль построен на **4-слойной архитект�
 
 ```typescript
 // Создание
-Quantity.of(value: Decimal.Value): Quantity
-Quantity.fromDecimal(decimal: Decimal): Quantity  // zero-copy
+Quantity.of(value: Decimal): Quantity
 
 // Константы
 Quantity.ZERO: Quantity
@@ -174,7 +173,6 @@ quantity.isGreaterThanOrEqual(other: Quantity): boolean
 
 **Принцип:** Одно правило = одна проверка
 
-Подробнее: [rules.md](./rules.md)
 
 ---
 
@@ -196,6 +194,10 @@ divide(quantity: Quantity, divisor: number | string | Decimal): Result<Quantity,
 
 // Округление
 roundToStep(quantity: Quantity, stepSize: number | string | Decimal, roundingMode?: Decimal.Rounding): Result<Quantity, InvalidQuantityError>
+
+// Процентные операции
+portion(quantity: Quantity, rate: Ratio): Result<Quantity, InvalidQuantityError>
+increaseBy(quantity: Quantity, delta: Ratio, stepSize: number | string | Decimal, options?: { roundingMode?: Decimal.Rounding }): Result<Quantity, InvalidQuantityError>
 ```
 
 **Контракт "Never Throw":**
@@ -206,9 +208,15 @@ roundToStep(quantity: Quantity, stepSize: number | string | Decimal, roundingMod
 
 Все ошибки содержат:
 
-- `context.op` — название операции (`'create'`, `'add'`, `'divide'`, etc.) — **ВСЕГДА присутствует**
+- `context.op` — название операции (`'create'`, `'add'`, `'divide'`, `'portion'`, `'increaseBy'`, etc.) — **ВСЕГДА присутствует**
 - `context.quantity` — входное количество (если применимо)
-- `context.divisor|factor|stepSize` — параметры операции (операционные поля)
+- `context.quantity1`, `context.quantity2` — для бинарных операций (`add`, `subtract`)
+- `context.divisor` — делитель для `divide`
+- `context.factor` — множитель для `multiply`
+- `context.stepSize` — размер шага для `roundToStep`, `increaseBy`
+- `context.rate` — коэффициент для `portion`
+- `context.delta` — изменение для `increaseBy`
+- `context.roundingMode` — режим округления для `increaseBy`
 - `context.raw` — сырой ввод для toDecimal (для ошибок парсинга)
 - `context.reason` — причина из Core/Rules (`'NEGATIVE'`, `'NON_FINITE'`)
 - `context.cause` — для math-исключений и unexpected errors: `{ name, message, stack? }`
@@ -224,7 +232,6 @@ roundToStep(quantity: Quantity, stepSize: number | string | Decimal, roundingMod
 **Компоненты:**
 
 - `QuantitySerializer` — точная сериализация через `string`
-- `QuantityLossySerializer` — lossy сериализация через `number`
 - `QuantityFormatter` — форматирование в строки
 
 **Пример:**
@@ -234,12 +241,6 @@ roundToStep(quantity: Quantity, stepSize: number | string | Decimal, roundingMod
 const json = QuantitySerializer.toJSON(qty);  // { value: "12345678901234567890.123" }
 const result = QuantitySerializer.fromJSON(json);
 
-// Lossy сериализация (для UI)
-const lossyResult = QuantityLossySerializer.toJSON(qty);
-if (lossyResult.ok) {
-  console.log(lossyResult.value);  // { value: 123.45 }
-}
-
 // Форматирование
 const formattedResult = QuantityFormatter.toString(qty, 2);
 if (formattedResult.ok) {
@@ -248,7 +249,6 @@ if (formattedResult.ok) {
 console.log(QuantityFormatter.toDisplayString(qty));  // "1.50K" для 1500
 ```
 
-Подробнее: [adapters.md](./adapters.md)
 
 ---
 
@@ -453,7 +453,6 @@ if (!result.ok) {
 const qty = result.value;
 ```
 
-Подробное руководство: [migration.md](./migration.md)
 
 ---
 
@@ -461,11 +460,8 @@ const qty = result.value;
 
 - [Архитектура и паттерны](./architecture.md)
 - [Core Layer API](./core.md)
-- [Rules Layer](./rules.md)
 - [Facade Layer API](./facade.md)
-- [Adapters Layer](./adapters.md)
 - [Примеры использования](./examples.md)
-- [Миграция со старого Quantity](./migration.md)
 
 ---
 

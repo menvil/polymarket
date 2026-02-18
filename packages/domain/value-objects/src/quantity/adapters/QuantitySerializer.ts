@@ -1,5 +1,5 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuantityError, InvalidOperandError } from '@polymarket/errors';
+import { Result, Err } from '@polymarket/result';
+import { InvalidQuantityError, ErrorSource } from '@polymarket/errors';
 import { Quantity } from '../core/Quantity.js';
 import { QuantityService } from '../facade/QuantityService.js';
 
@@ -31,6 +31,25 @@ function safeStringify(value: unknown): string {
 }
 
 /**
+ * JSON контракт для Quantity сериализации
+ *
+ * @remarks
+ * Используется как:
+ * - Контракт API (документация структуры)
+ * - Return type для toJSON()
+ * - Type hint при создании JSON
+ *
+ * При парсинге (fromJSON) НЕ полагайся на этот тип -
+ * делай полную runtime валидацию с unknown!
+ */
+export interface QuantityJSON {
+  /**
+   * Quantity value as string для сохранения точности
+   */
+  value: string;
+}
+
+/**
  * JSON сериализатор для Quantity
  *
  * @remarks
@@ -42,7 +61,10 @@ function safeStringify(value: unknown): string {
  * - Читаемую диагностику через safeStringify
  * - Использует string для сохранения точности Decimal
  *
- * Для lossy сериализации (number) используй QuantityLossySerializer.
+ * Контракт:
+ * - fromJSON НИКОГДА не доверяет типам, делает полную проверку
+ * - toJSON ВСЕГДА возвращает валидный QuantityJSON
+ * - Все ошибки возвращаются через Result.Err
  *
  * @example
  * ```typescript
@@ -61,14 +83,17 @@ function safeStringify(value: unknown): string {
  * ```
  */
 export class QuantitySerializer {
+  private static readonly SERVICE_NAME = 'QuantitySerializer';
   /**
-   * Сериализует Quantity в JSON (string для точности)
+   * Сериализует Quantity в JSON объект
+   *
+   * @param quantity - Quantity для сериализации
+   * @returns QuantityJSON объект с value (string)
    *
    * @remarks
-   * Использует string для сохранения точности Decimal.
-   *
-   * @param quantity - Количество для сериализации
-   * @returns JSON объект { value: string }
+   * Возвращает строго типизированный QuantityJSON.
+   * Используем string для value чтобы сохранить точность.
+   * Гарантирует что все поля присутствуют и имеют правильные типы.
    *
    * @example
    * ```typescript
@@ -77,7 +102,7 @@ export class QuantitySerializer {
    * console.log(json); // { value: "10.5" }
    * ```
    */
-  public static toJSON(quantity: Quantity): { value: string } {
+  public static toJSON(quantity: Quantity): QuantityJSON {
     return { value: quantity.value().toString() };
   }
 
@@ -119,6 +144,9 @@ export class QuantitySerializer {
           (ctx) => `Expected object, got ${ctx.type}`,
           {
             context: {
+              source: ErrorSource.PARSING,
+              service: QuantitySerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: typeof json,
               json: safeStringify(json)
@@ -135,6 +163,9 @@ export class QuantitySerializer {
           () => `Expected object, got array`,
           {
             context: {
+              source: ErrorSource.PARSING,
+              service: QuantitySerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: 'array',
               json: safeStringify(json)
@@ -151,6 +182,9 @@ export class QuantitySerializer {
           () => `Missing required field 'value'`,
           {
             context: {
+              source: ErrorSource.PARSING,
+              service: QuantitySerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: 'missing_field',
               json: safeStringify(json)
@@ -169,6 +203,9 @@ export class QuantitySerializer {
           (ctx) => `Field 'value' must be string, got ${ctx.type}`,
           {
             context: {
+              source: ErrorSource.PARSING,
+              service: QuantitySerializer.SERVICE_NAME,
+              op: 'fromJSON',
               kind: 'invalid_json',
               type: typeof value,
               json: safeStringify(json)
@@ -180,65 +217,5 @@ export class QuantitySerializer {
 
     // Делегируем создание QuantityService
     return QuantityService.create(value);
-  }
-}
-
-/**
- * Lossy serializer для случаев когда точность не критична
- *
- * @remarks
- * ⚠️ ВНИМАНИЕ: Использует number, что может привести к потере точности.
- * Используйте только для отображения или когда точность не критична.
- * Для точной сериализации используйте QuantitySerializer.
- */
-export class QuantityLossySerializer {
-  /**
-   * Сериализует Quantity в JSON (number, lossy)
-   *
-   * @remarks
-   * ⚠️ ВНИМАНИЕ: Может потерять точность для больших чисел.
-   *
-   * @param quantity - Количество для сериализации
-   * @returns Result с JSON объектом { value: number } или ошибкой
-   *
-   * @example
-   * ```typescript
-   * const result = QuantityLossySerializer.toJSON(qty);
-   * if (result.ok) {
-   *   console.log(result.value); // { value: 10.123456789 }
-   * }
-   * ```
-   */
-  public static toJSON(quantity: Quantity): Result<{ value: number }, InvalidOperandError> {
-    const decimalValue = quantity.value();
-    if (!decimalValue.isFinite()) {
-      return Err(
-        new InvalidOperandError(
-          (ctx) => `Cannot serialize non-finite Quantity to JSON, got ${ctx.value}`,
-          {
-            context: {
-              value: decimalValue.toString(),
-              operation: 'toJSON'
-            }
-          }
-        )
-      );
-    }
-    return Ok({ value: quantity.toNumber() });
-  }
-
-  /**
-   * Десериализует Quantity из JSON (number, lossy)
-   *
-   * @param json - JSON объект { value: number }
-   * @returns Result<Quantity, InvalidQuantityError>
-   *
-   * @example
-   * ```typescript
-   * const result = QuantityLossySerializer.fromJSON({ value: 10 });
-   * ```
-   */
-  public static fromJSON(json: { value: number }): Result<Quantity, InvalidQuantityError> {
-    return QuantityService.create(json.value);
   }
 }

@@ -1,5 +1,5 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuantityError } from '@polymarket/errors';
+import { InvalidQuantityError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 /**
@@ -33,7 +33,10 @@ export class ValidateStepSizeForQuantity {
         new InvalidQuantityError(
           (ctx) => `Step size must be finite, got ${ctx.stepSize}`,
           {
-            context: { stepSize: stepSize.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              stepSize: stepSize.toString()
+            }
           }
         )
       );
@@ -45,7 +48,10 @@ export class ValidateStepSizeForQuantity {
         new InvalidQuantityError(
           (ctx) => `Step size must be positive, got ${ctx.stepSize}`,
           {
-            context: { stepSize: stepSize.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              stepSize: stepSize.toString()
+            }
           }
         )
       );

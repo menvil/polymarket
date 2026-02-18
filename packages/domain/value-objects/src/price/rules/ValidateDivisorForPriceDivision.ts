@@ -1,5 +1,5 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidDivisorError } from '@polymarket/errors';
+import { InvalidDivisorError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 /**
@@ -46,6 +46,7 @@ export class ValidateDivisorForPriceDivision {
           () => `Divisor cannot be NaN`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               divisor: divisor.toString(),
               reason: 'is_nan'
             }
@@ -61,6 +62,7 @@ export class ValidateDivisorForPriceDivision {
           () => `Divisor must be finite`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               divisor: divisor.toString(),
               reason: 'not_finite'
             }
@@ -76,6 +78,7 @@ export class ValidateDivisorForPriceDivision {
           () => `Divisor cannot be negative`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               divisor: divisor.toString(),
               reason: 'is_negative'
             }
@@ -91,6 +94,7 @@ export class ValidateDivisorForPriceDivision {
           () => `Divisor cannot be zero`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               divisor: divisor.toString(),
               reason: 'is_zero'
             }

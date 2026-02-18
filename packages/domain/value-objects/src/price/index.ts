@@ -5,11 +5,22 @@ export { Price, PriceInvariantViolation } from './core/index.js';
 export { PriceService } from './facade/index.js';
 
 // Adapters (публичный API)
-export { PriceSerializer, PriceFormatter } from './adapters/index.js';
+export { PriceSerializer, PriceFormatter, type PriceJSON } from './adapters/index.js';
 
 // Errors (публичный API)
-export { PriceErrorReason } from './errors/PriceErrorReason.js';
+export { PriceErrorReason } from './errors/index.js';
 
-// Rules (только типы для потребителей)
-// ErrorContext и внутренние типы Rules НЕ экспортируются из верхнего index
-// Для type-safe error handling используй PriceErrorReason (экспортирован выше)
+// Rules (публичный API для внешней валидации)
+export {
+  ValidateTickSize,
+  ValidateTickSizeMultipleOfBaseTick,
+  ValidateAligned,
+  ValidateFactorForPriceMultiplication,
+  ValidateDivisorForPriceDivision,
+  type TickSizeField,
+  type AlignedField,
+  type ErrorContext,
+  type TickSizeErrorReason,
+  type TickSizeMultipleReason,
+  type AlignedErrorReason
+} from './rules/index.js';

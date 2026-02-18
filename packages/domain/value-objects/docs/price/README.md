@@ -26,7 +26,7 @@
 ✅ **Высокоточный** — использует `Decimal.js` для произвольной точности
 ✅ **Polymarket-aligned** — диапазон [0.0001, 0.9999], базовый тик 0.0001
 ✅ **Layered Architecture** — чёткое разделение ответственности
-✅ **100% Test Coverage** — все слои покрыты тестами (323 теста)
+✅ **Comprehensive Test Coverage** — все слои покрыты тестами (182 unit теста)
 
 ### Когда использовать Price
 
@@ -153,11 +153,10 @@ Price модуль построен на **4-слойной архитектур
 
 ```typescript
 // Создание
-Price.of(value: Decimal.Value): Price
-Price.fromDecimal(decimal: Decimal): Price  // zero-copy
-Price.min(): Price  // 0.0001
-Price.max(): Price  // 0.9999
-Price.half(): Price // 0.5
+Price.of(value: Decimal): Price  // ТОЛЬКО для Core/Facade - принимает Decimal
+Price.MIN: Price  // 0.0001
+Price.MAX: Price  // 0.9999
+Price.HALF: Price // 0.5
 
 // Методы
 price.value(): Decimal
@@ -180,12 +179,10 @@ price.isMax(): boolean
 - `ValidateTickSize` — проверка tick size (positive, finite, <= MAX_PRICE)
 - `ValidateTickSizeMultipleOfBaseTick` — проверка кратности базовому тику (0.0001)
 - `ValidateAligned` — проверка выравнивания цены по tick size
-- `ValidateDivisorForPriceDivision` — валидация делителя (isNaN, isFinite, isZero)
-- `ValidateFactorForPriceMultiplication` — валидация множителя (isNaN, isFinite)
+- `ValidateDivisorForPriceDivision` — валидация делителя (isNaN, isFinite, isZero, isNegative)
+- `ValidateFactorForPriceMultiplication` — валидация множителя (isNaN, isFinite, isNegative)
 
 **Принцип:** Одно правило = одна проверка
-
-Подробнее: [rules.md](./rules.md)
 
 ---
 
@@ -210,6 +207,14 @@ average(price1: Price, price2: Price): Result<Price, InvalidPriceError>
 // Округление и выравнивание
 roundToMarketTick(price: Price, tickSize: number | string | Decimal, mode?: 'nearest' | 'floor' | 'ceil'): Result<Price, InvalidPriceError>
 ensureAlignedToMarketTick(price: Price, tickSize: number | string | Decimal): Result<void, InvalidPriceError>
+
+// Применение относительного изменения (markup/markdown)
+applyRelativeChange(
+  price: Price,
+  ratio: Ratio,
+  tickSize: number | string | Decimal,
+  options?: { roundingMode?: 'nearest' | 'floor' | 'ceil' }
+): Result<Price, InvalidPriceError>
 ```
 
 **Facade Error Contract:**
@@ -248,8 +253,6 @@ console.log(formatted);  // "0.5000"
 
 console.log(PriceFormatter.toPercentage(price));  // "50.00%"
 ```
-
-Подробнее: [adapters.md](./adapters.md)
 
 ---
 
@@ -324,10 +327,12 @@ console.log(`Price: ${price.toNumber()}`);  // 0.65
 ### Вычисление дополнения (1 - price)
 
 ```typescript
-import { PriceService, Price } from '@polymarket/value-objects/price';
+import { PriceService } from '@polymarket/value-objects/price';
 
-// YES цена
-const yesPrice = Price.of(0.65);
+// YES цена (используем PriceService для создания)
+const yesPriceResult = PriceService.create(0.65);
+if (!yesPriceResult.ok) return;
+const yesPrice = yesPriceResult.value;
 
 // Вычисляем NO цену (complement)
 const noResult = PriceService.complement(yesPrice);
@@ -345,11 +350,16 @@ console.log(`NO: ${noPrice.toNumber()}`);     // 0.35
 ### Усреднение bid/ask
 
 ```typescript
-import { PriceService, Price } from '@polymarket/value-objects/price';
+import { PriceService } from '@polymarket/value-objects/price';
+import Decimal from 'decimal.js';
 
-// Bid и Ask цены
-const bidPrice = Price.of(0.64);
-const askPrice = Price.of(0.66);
+// Bid и Ask цены (используем PriceService)
+const bidResult = PriceService.create(0.64);
+const askResult = PriceService.create(0.66);
+if (!bidResult.ok || !askResult.ok) return;
+
+const bidPrice = bidResult.value;
+const askPrice = askResult.value;
 
 // Вычисляем mid price
 const midResult = PriceService.average(bidPrice, askPrice);
@@ -362,10 +372,12 @@ if (midResult.ok) {
 ### Округление к market tick
 
 ```typescript
-import { PriceService, Price } from '@polymarket/value-objects/price';
+import { PriceService } from '@polymarket/value-objects/price';
 
-// Результат вычисления
-const calculated = Price.of(0.65432);
+// Результат вычисления (используем PriceService)
+const calcResult = PriceService.create(0.65432);
+if (!calcResult.ok) return;
+const calculated = calcResult.value;
 
 // Tick size рынка (должен быть кратен 0.0001)
 const tickSize = 0.01;
@@ -404,9 +416,11 @@ if (midResult.ok) {
 ### Валидация выравнивания
 
 ```typescript
-import { PriceService, Price } from '@polymarket/value-objects/price';
+import { PriceService } from '@polymarket/value-objects/price';
 
-const price = Price.of(0.65);
+const priceResult = PriceService.create(0.65);
+if (!priceResult.ok) return;
+const price = priceResult.value;
 const tickSize = 0.01;
 
 // Проверяем что цена aligned к tick size
@@ -536,19 +550,14 @@ if (!result.ok) {
 const price = result.value;
 ```
 
-Подробное руководство: [migration.md](./migration.md)
-
 ---
 
 ## Дополнительные ресурсы
 
 - [Архитектура и паттерны](./architecture.md)
 - [Core Layer API](./core.md)
-- [Rules Layer](./rules.md)
 - [Facade Layer API](./facade.md)
-- [Adapters Layer](./adapters.md)
 - [Примеры использования](./examples.md)
-- [Миграция со старого Price](./migration.md)
 
 ---
 

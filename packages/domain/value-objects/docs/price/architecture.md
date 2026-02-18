@@ -72,7 +72,7 @@ const result = PriceService.create(1.5);
 
 // 1. Facade: PriceService.create()
 try {
-  const price = Price.of(1.5);  // -> идёт в Core
+  const price = Price.of(new Decimal(1.5));  // -> идёт в Core
   return Ok(price);
 } catch (error) {
   // 2. Core: Price.of() бросил PriceInvariantViolation
@@ -108,7 +108,7 @@ try {
 │  - Единая точка входа                              │
 │  - Result<T, E> обёртка                            │
 │  - Error Contract                                   │
-│  - withOperationContext helper                      │
+│  - wrapOp/rewrap helpers                            │
 │                                                     │
 │  Зависит от: Core, Rules, Math                     │
 └─────────────────────────────────────────────────────┘
@@ -158,7 +158,7 @@ try {
 
 ```typescript
 // ✅ Делает
-const price = Price.of(0.5);
+const price = Price.of(new Decimal(0.5));
 price.isMin();    // false
 price.isMax();    // false
 price.equals(other);
@@ -204,7 +204,7 @@ ValidateTickSizeMultipleOfBaseTick.check(0.01);
 
 **Иерархия правил:**
 
-```
+```text
 ValidateTickSize (базовое)
     ↓ наследуется
 ValidateTickSizeMultipleOfBaseTick (Polymarket-специфичное)
@@ -219,7 +219,7 @@ ValidateTickSizeMultipleOfBaseTick (Polymarket-специфичное)
 - Единая точка входа для всех операций
 - Оркестрация Core + Math + Rules
 - Обёртка исключений в Result<T, E>
-- Facade Error Contract (withOperationContext)
+- Facade Error Contract (wrapOp/rewrap)
 - Semantic операции (complement, average)
 
 **НЕ делает:**
@@ -259,7 +259,7 @@ roundToMarketTick(price, tickSize, mode)
 **Ответственность:**
 
 - Сериализация (toJSON/fromJSON)
-- Форматирование (toString, toPercentageString)
+- Форматирование (toFixed, toPercentage)
 - Адаптация к внешним системам
 
 **НЕ делает:**
@@ -273,7 +273,7 @@ roundToMarketTick(price, tickSize, mode)
 
 ### Поток создания Price
 
-```
+```text
 User Input (number/string/Decimal)
     ↓
 PriceService.create()
@@ -297,7 +297,7 @@ catch (PriceInvariantViolation) {
 
 ### Поток арифметической операции (complement)
 
-```
+```text
 price
     ↓
 PriceService.complement()
@@ -313,7 +313,7 @@ Result<Price, InvalidPriceError>
 
 ### Поток округления к тику
 
-```
+```text
 price, tickSize, mode
     ↓
 PriceService.roundToMarketTick()
@@ -341,7 +341,7 @@ Result<Price, InvalidPriceError>
 
 ### Поток деления с валидацией
 
-```
+```text
 price, divisor
     ↓
 PriceService.divide()
@@ -545,7 +545,7 @@ complement(price) → 1 - price
 average(p1, p2) → (p1 + p2) / 2
 
 // ❌ Generic
-subtract(Price.of(1), price)
+subtract(Price.of(new Decimal(1)), price)
 divide(add(p1, p2), 2)
 ```
 
@@ -622,10 +622,10 @@ public static validateSpread(
   );
 
   if (!result.ok) {
-    return Err(withOperationContext(result.error, 'validateSpread', {
+    return Err(rewrap('PriceService', 'validateSpread', {
       bid: bidPrice.value().toString(),
       ask: askPrice.value().toString()
-    }));
+    }, result.error, InvalidPriceError));
   }
 
   return Ok(undefined);
@@ -643,8 +643,13 @@ public static validateSpread(
 ❌ **Плохо:**
 
 ```typescript
+import Decimal from 'decimal.js';
+import { Price } from '@polymarket/value-objects/price';
+
 try {
-  const price = Price.of(userInput);
+  // userInput может быть string/number
+  const decimal = new Decimal(userInput); // может бросить
+  const price = Price.of(decimal); // может бросить
 } catch (e) {
   // Легко забыть обработать
 }
@@ -706,7 +711,7 @@ const compResult = PriceService.complement(price);
 2. **Type-safe обработку ошибок** через Result<T, E>
 3. **Polymarket-aligned семантику** (базовый тик, диапазон)
 4. **Расширяемость** без изменения существующего кода
-5. **Тестируемость** каждого слоя независимо (323 теста)
+5. **Тестируемость** каждого слоя независимо (полное покрытие unit тестами)
 6. **Читаемость** для разработчиков всех уровней
 
 Следование этим принципам гарантирует maintainable и scalable кодовую базу для рынков предсказаний Polymarket.

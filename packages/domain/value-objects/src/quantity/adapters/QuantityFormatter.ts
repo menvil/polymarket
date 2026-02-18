@@ -1,5 +1,5 @@
 import { Quantity } from '../core/Quantity.js';
-import { InvalidDecimalPlacesError } from '@polymarket/errors';
+import { InvalidDecimalPlacesError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
 /**
@@ -30,9 +30,11 @@ export class QuantityFormatter {
           (ctx) => `Decimal places must be an integer between 0 and 100, got ${ctx.decimalPlaces}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
+              service: 'QuantityFormatter',
+              op: 'toString',
               decimalPlaces: String(decimals),
-              quantity: quantity.value().toString(),
-              operation: 'toString'
+              quantity: quantity.value().toString()
             }
           }
         )

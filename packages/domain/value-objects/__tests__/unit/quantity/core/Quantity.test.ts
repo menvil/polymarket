@@ -1,28 +1,29 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
-import { Quantity, QuantityInvariantViolation } from '../../../../src/quantity/core/Quantity.js';
+import { Quantity } from '../../../../src/quantity/core/Quantity.js';
+import { QuantityInvariantViolation } from '../../../../src/quantity/core/QuantityInvariantViolation.js';
 
 describe('Quantity constructor', () => {
   describe('invariants', () => {
     it('должен бросить QuantityInvariantViolation для negative значения', () => {
       // Используем of() для доступа к конструктору
-      expect(() => Quantity.of(-1)).toThrow(QuantityInvariantViolation);
-      expect(() => Quantity.of(-1)).toThrow('cannot be negative');
+      expect(() => Quantity.of(new Decimal(-1))).toThrow(QuantityInvariantViolation);
+      expect(() => Quantity.of(new Decimal(-1))).toThrow('cannot be negative');
 
       try {
-        Quantity.of(-1);
+        Quantity.of(new Decimal(-1));
       } catch (e) {
         expect(e).toBeInstanceOf(QuantityInvariantViolation);
-        expect((e as QuantityInvariantViolation).reason).toBe('NEGATIVE_QUANTITY');
+        expect((e as QuantityInvariantViolation).reason).toBe('NEGATIVE');
       }
     });
 
     it('должен бросить QuantityInvariantViolation для Infinity', () => {
-      expect(() => Quantity.of(Infinity)).toThrow(QuantityInvariantViolation);
-      expect(() => Quantity.of(Infinity)).toThrow('must be finite');
+      expect(() => Quantity.of(new Decimal(Infinity))).toThrow(QuantityInvariantViolation);
+      expect(() => Quantity.of(new Decimal(Infinity))).toThrow('must be finite');
 
       try {
-        Quantity.of(Infinity);
+        Quantity.of(new Decimal(Infinity));
       } catch (e) {
         expect(e).toBeInstanceOf(QuantityInvariantViolation);
         expect((e as QuantityInvariantViolation).reason).toBe('NON_FINITE');
@@ -30,41 +31,41 @@ describe('Quantity constructor', () => {
     });
 
     it('должен бросить QuantityInvariantViolation для NaN', () => {
-      expect(() => Quantity.of(NaN)).toThrow(QuantityInvariantViolation);
-      expect(() => Quantity.of(NaN)).toThrow('must be finite');
+      expect(() => Quantity.of(new Decimal(NaN))).toThrow(QuantityInvariantViolation);
+      expect(() => Quantity.of(new Decimal(NaN))).toThrow('cannot be NaN');
 
       try {
-        Quantity.of(NaN);
+        Quantity.of(new Decimal(NaN));
       } catch (e) {
         expect(e).toBeInstanceOf(QuantityInvariantViolation);
-        expect((e as QuantityInvariantViolation).reason).toBe('NON_FINITE');
+        expect((e as QuantityInvariantViolation).reason).toBe('NAN');
       }
     });
 
     it('должен бросить QuantityInvariantViolation для -Infinity', () => {
-      expect(() => Quantity.of(-Infinity)).toThrow(QuantityInvariantViolation);
+      expect(() => Quantity.of(new Decimal(-Infinity))).toThrow(QuantityInvariantViolation);
     });
 
     it('должен принять 0', () => {
-      expect(() => Quantity.of(0)).not.toThrow();
+      expect(() => Quantity.of(new Decimal(0))).not.toThrow();
     });
 
     it('должен принять положительное число', () => {
-      expect(() => Quantity.of(10)).not.toThrow();
-      expect(() => Quantity.of(10.5)).not.toThrow();
+      expect(() => Quantity.of(new Decimal(10))).not.toThrow();
+      expect(() => Quantity.of(new Decimal(10.5))).not.toThrow();
     });
   });
 });
 
 describe('Quantity.of()', () => {
   it('должен создать Quantity из number', () => {
-    const qty = Quantity.of(10);
+    const qty = Quantity.of(new Decimal(10));
     expect(qty).toBeInstanceOf(Quantity);
     expect(qty.value().toNumber()).toBe(10);
   });
 
   it('должен создать Quantity из string', () => {
-    const qty = Quantity.of("15.5");
+    const qty = Quantity.of(new Decimal("15.5"));
     expect(qty).toBeInstanceOf(Quantity);
     expect(qty.value().toString()).toBe("15.5");
   });
@@ -79,46 +80,37 @@ describe('Quantity.of()', () => {
   });
 
   it('должен создать Quantity из большого числа в строке', () => {
-    const qty = Quantity.of("12345678901234567890.123456789");
+    const qty = Quantity.of(new Decimal("12345678901234567890.123456789"));
     expect(qty).toBeInstanceOf(Quantity);
     expect(qty.value().toString()).toBe("12345678901234567890.123456789");
   });
 
   it('должен бросить для invalid string', () => {
-    expect(() => Quantity.of("not a number")).toThrow();
-  });
-});
-
-describe('Quantity.fromDecimal()', () => {
-  it('должен создать Quantity из Decimal', () => {
-    const decimal = new Decimal(10);
-    const qty = Quantity.fromDecimal(decimal);
-    expect(qty).toBeInstanceOf(Quantity);
-    expect(qty.value().toNumber()).toBe(10);
+    expect(() => Quantity.of(new Decimal("not a number"))).toThrow();
   });
 
-  it('не должен клонировать Decimal (использует как есть)', () => {
+  it('не должен клонировать Decimal (zero-copy оптимизация)', () => {
     const decimal = new Decimal(10);
-    const qty = Quantity.fromDecimal(decimal);
+    const qty = Quantity.of(decimal);
     // Проверяем что это тот же объект (ссылка)
     expect(qty.value()).toBe(decimal);
   });
 
   it('должен бросить для negative Decimal', () => {
     const decimal = new Decimal(-1);
-    expect(() => Quantity.fromDecimal(decimal)).toThrow(QuantityInvariantViolation);
+    expect(() => Quantity.of(decimal)).toThrow(QuantityInvariantViolation);
   });
 
   it('должен бросить для non-finite Decimal', () => {
     const decimal = new Decimal(Infinity);
-    expect(() => Quantity.fromDecimal(decimal)).toThrow(QuantityInvariantViolation);
+    expect(() => Quantity.of(decimal)).toThrow(QuantityInvariantViolation);
   });
 
   it('должен работать с результатом math операций', () => {
     const d1 = new Decimal(10);
     const d2 = new Decimal(5);
     const sum = d1.plus(d2); // Decimal math
-    const qty = Quantity.fromDecimal(sum);
+    const qty = Quantity.of(sum);
     expect(qty.value().toNumber()).toBe(15);
   });
 });
@@ -151,7 +143,7 @@ describe('Quantity constants', () => {
 
 describe('Quantity.value()', () => {
   it('должен вернуть Decimal', () => {
-    const qty = Quantity.of(10);
+    const qty = Quantity.of(new Decimal(10));
     const decimal = qty.value();
     expect(decimal).toBeInstanceOf(Decimal);
     expect(decimal.toNumber()).toBe(10);
@@ -159,27 +151,27 @@ describe('Quantity.value()', () => {
 
   it('должен вернуть тот же Decimal объект', () => {
     const decimal = new Decimal(10);
-    const qty = Quantity.fromDecimal(decimal);
+    const qty = Quantity.of(decimal);
     expect(qty.value()).toBe(decimal);
   });
 });
 
 describe('Quantity.toNumber()', () => {
   it('должен вернуть number', () => {
-    const qty = Quantity.of(10);
+    const qty = Quantity.of(new Decimal(10));
     const num = qty.toNumber();
     expect(typeof num).toBe('number');
     expect(num).toBe(10);
   });
 
   it('должен вернуть number для decimal значения', () => {
-    const qty = Quantity.of(10.5);
+    const qty = Quantity.of(new Decimal(10.5));
     expect(qty.toNumber()).toBe(10.5);
   });
 
   it('может потерять точность для больших чисел', () => {
     const bigNum = "12345678901234567890.123456789";
-    const qty = Quantity.of(bigNum);
+    const qty = Quantity.of(new Decimal(bigNum));
     const num = qty.toNumber();
     const decimal = qty.value();
 
@@ -194,26 +186,26 @@ describe('Quantity.toNumber()', () => {
 
 describe('Quantity.equals()', () => {
   it('должен вернуть true для равных значений', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(10);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(10));
     expect(qty1.equals(qty2)).toBe(true);
   });
 
   it('должен вернуть false для разных значений', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(11);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(11));
     expect(qty1.equals(qty2)).toBe(false);
   });
 
   it('должен использовать точное сравнение (без epsilon)', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(10.0000001);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(10.0000001));
     expect(qty1.equals(qty2)).toBe(false);
   });
 
   it('должен работать с константами', () => {
     const zero = Quantity.ZERO;
-    const anotherZero = Quantity.of(0);
+    const anotherZero = Quantity.of(new Decimal(0));
     expect(zero.equals(anotherZero)).toBe(true);
   });
 });
@@ -221,44 +213,44 @@ describe('Quantity.equals()', () => {
 describe('Quantity.isZero()', () => {
   it('должен вернуть true для нуля', () => {
     expect(Quantity.ZERO.isZero()).toBe(true);
-    expect(Quantity.of(0).isZero()).toBe(true);
+    expect(Quantity.of(new Decimal(0)).isZero()).toBe(true);
   });
 
   it('должен вернуть false для ненулевых значений', () => {
-    expect(Quantity.of(1).isZero()).toBe(false);
-    expect(Quantity.of(0.0001).isZero()).toBe(false);
+    expect(Quantity.of(new Decimal(1)).isZero()).toBe(false);
+    expect(Quantity.of(new Decimal(0.0001)).isZero()).toBe(false);
   });
 });
 
 describe('Quantity.isPositive()', () => {
   it('должен вернуть true для положительных чисел', () => {
-    expect(Quantity.of(10).isPositive()).toBe(true);
-    expect(Quantity.of(0.0001).isPositive()).toBe(true);
+    expect(Quantity.of(new Decimal(10)).isPositive()).toBe(true);
+    expect(Quantity.of(new Decimal(0.0001)).isPositive()).toBe(true);
     expect(Quantity.ONE.isPositive()).toBe(true);
   });
 
   it('должен вернуть false для нуля', () => {
-    expect(Quantity.of(0).isPositive()).toBe(false);
+    expect(Quantity.of(new Decimal(0)).isPositive()).toBe(false);
     expect(Quantity.ZERO.isPositive()).toBe(false);
   });
 });
 
 describe('Quantity.isLessThan()', () => {
   it('должен вернуть true если this < other', () => {
-    const qty1 = Quantity.of(5);
-    const qty2 = Quantity.of(10);
+    const qty1 = Quantity.of(new Decimal(5));
+    const qty2 = Quantity.of(new Decimal(10));
     expect(qty1.isLessThan(qty2)).toBe(true);
   });
 
   it('должен вернуть false если this > other', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(5);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(5));
     expect(qty1.isLessThan(qty2)).toBe(false);
   });
 
   it('должен вернуть false для равных значений', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(10);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(10));
     expect(qty1.isLessThan(qty2)).toBe(false);
   });
 
@@ -268,28 +260,28 @@ describe('Quantity.isLessThan()', () => {
   });
 
   it('должен работать с decimal значениями', () => {
-    const qty1 = Quantity.of("10.5");
-    const qty2 = Quantity.of("10.6");
+    const qty1 = Quantity.of(new Decimal("10.5"));
+    const qty2 = Quantity.of(new Decimal("10.6"));
     expect(qty1.isLessThan(qty2)).toBe(true);
   });
 });
 
 describe('Quantity.isLessThanOrEqual()', () => {
   it('должен вернуть true если this < other', () => {
-    const qty1 = Quantity.of(5);
-    const qty2 = Quantity.of(10);
+    const qty1 = Quantity.of(new Decimal(5));
+    const qty2 = Quantity.of(new Decimal(10));
     expect(qty1.isLessThanOrEqual(qty2)).toBe(true);
   });
 
   it('должен вернуть false если this > other', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(5);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(5));
     expect(qty1.isLessThanOrEqual(qty2)).toBe(false);
   });
 
   it('должен вернуть true для равных значений', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(10);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(10));
     expect(qty1.isLessThanOrEqual(qty2)).toBe(true);
   });
 
@@ -302,20 +294,20 @@ describe('Quantity.isLessThanOrEqual()', () => {
 
 describe('Quantity.isGreaterThan()', () => {
   it('должен вернуть true если this > other', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(5);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(5));
     expect(qty1.isGreaterThan(qty2)).toBe(true);
   });
 
   it('должен вернуть false если this < other', () => {
-    const qty1 = Quantity.of(5);
-    const qty2 = Quantity.of(10);
+    const qty1 = Quantity.of(new Decimal(5));
+    const qty2 = Quantity.of(new Decimal(10));
     expect(qty1.isGreaterThan(qty2)).toBe(false);
   });
 
   it('должен вернуть false для равных значений', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(10);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(10));
     expect(qty1.isGreaterThan(qty2)).toBe(false);
   });
 
@@ -325,28 +317,28 @@ describe('Quantity.isGreaterThan()', () => {
   });
 
   it('должен работать с decimal значениями', () => {
-    const qty1 = Quantity.of("10.6");
-    const qty2 = Quantity.of("10.5");
+    const qty1 = Quantity.of(new Decimal("10.6"));
+    const qty2 = Quantity.of(new Decimal("10.5"));
     expect(qty1.isGreaterThan(qty2)).toBe(true);
   });
 });
 
 describe('Quantity.isGreaterThanOrEqual()', () => {
   it('должен вернуть true если this > other', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(5);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(5));
     expect(qty1.isGreaterThanOrEqual(qty2)).toBe(true);
   });
 
   it('должен вернуть false если this < other', () => {
-    const qty1 = Quantity.of(5);
-    const qty2 = Quantity.of(10);
+    const qty1 = Quantity.of(new Decimal(5));
+    const qty2 = Quantity.of(new Decimal(10));
     expect(qty1.isGreaterThanOrEqual(qty2)).toBe(false);
   });
 
   it('должен вернуть true для равных значений', () => {
-    const qty1 = Quantity.of(10);
-    const qty2 = Quantity.of(10);
+    const qty1 = Quantity.of(new Decimal(10));
+    const qty2 = Quantity.of(new Decimal(10));
     expect(qty1.isGreaterThanOrEqual(qty2)).toBe(true);
   });
 

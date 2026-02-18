@@ -1,5 +1,5 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuantityError } from '@polymarket/errors';
+import { InvalidQuantityError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 /**
@@ -45,6 +45,7 @@ export class ValidateMinSize {
           (ctx) => `minSize must be finite, got ${ctx.minSize}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               minSize: minSize.toString(),
               quantity: quantity.toString()
             }
@@ -59,6 +60,7 @@ export class ValidateMinSize {
           (ctx) => `minSize must be positive, got ${ctx.minSize}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               minSize: minSize.toString(),
               quantity: quantity.toString()
             }
@@ -74,6 +76,7 @@ export class ValidateMinSize {
           (ctx) => `Quantity ${ctx.quantity} is less than minimum size ${ctx.minSize}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               quantity: quantity.toString(),
               minSize: minSize.toString()
             }

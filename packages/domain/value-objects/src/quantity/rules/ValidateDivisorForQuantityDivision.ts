@@ -1,5 +1,5 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidQuantityError } from '@polymarket/errors';
+import { InvalidQuantityError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 /**
@@ -35,7 +35,10 @@ export class ValidateDivisorForQuantityDivision {
         new InvalidQuantityError(
           (ctx) => `Divisor for Quantity division must be positive, got ${ctx.divisor}`,
           {
-            context: { divisor: divisor.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              divisor: divisor.toString()
+            }
           }
         )
       );
@@ -46,7 +49,10 @@ export class ValidateDivisorForQuantityDivision {
         new InvalidQuantityError(
           (ctx) => `Divisor for Quantity division must be finite, got ${ctx.divisor}`,
           {
-            context: { divisor: divisor.toString() }
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              divisor: divisor.toString()
+            }
           }
         )
       );

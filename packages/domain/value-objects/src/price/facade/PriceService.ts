@@ -1,8 +1,7 @@
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidPriceError } from '@polymarket/errors';
-import { Price, PriceInvariantViolation } from '../core/Price.js';
+import { Result, Ok, Err, isErr } from '@polymarket/result';
+import { InvalidPriceError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
+import { Price } from '../core/Price.js';
 import { PriceErrorReason } from '../errors/PriceErrorReason.js';
-import { toDecimal, rewrap, wrapOp, unexpectedError } from '../../shared/facade/errorUtils.js';
 import { ValidateTickSizeMultipleOfBaseTick } from '../rules/ValidateTickSizeMultipleOfBaseTick.js';
 import { ValidateAligned } from '../rules/ValidateAligned.js';
 import { ValidateFactorForPriceMultiplication } from '../rules/ValidateFactorForPriceMultiplication.js';
@@ -17,6 +16,7 @@ import {
   ceilToTick
 } from '@polymarket/math';
 import Decimal from 'decimal.js';
+import { Ratio } from '../../ratio/core/Ratio.js';
 
 /**
  * Фасад для работы с Price - публичный API
@@ -56,6 +56,8 @@ import Decimal from 'decimal.js';
  * ```
  */
 export class PriceService {
+  private static readonly SERVICE_NAME = 'PriceService';
+
   /**
    * Константа для арифметических операций - избегаем создания new Decimal(1) каждый раз
    */
@@ -83,7 +85,7 @@ export class PriceService {
    * @example
    * ```typescript
    * const result = PriceService.create(0.5);
-   * if (!result.ok) {
+   * if (isErr(result)) {
    *   console.error(result.error.context.value); // '0.5'
    *   return;
    * }
@@ -95,33 +97,22 @@ export class PriceService {
   ): Result<Price, InvalidPriceError> {
     // Безопасный парсинг value через toDecimal
     const decimalResult = toDecimal('value', value, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
-    if (!decimalResult.ok) {
+    if (isErr(decimalResult)) {
       // raw уже внутри err.context.raw от toDecimal
-      return Err(rewrap('create', {}, decimalResult.error, InvalidPriceError));
+      return Err(rewrap(PriceService.SERVICE_NAME, 'create', {}, decimalResult.error, InvalidPriceError));
     }
 
-    try {
-      // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
-      const price = Price.fromDecimal(decimalResult.value);
-      return Ok(price);
-    } catch (error) {
-      // PriceInvariantViolation - доменные ограничения Core
-      if (error instanceof PriceInvariantViolation) {
-        return Err(
-          rewrap('create', {}, new InvalidPriceError(error.message, {
-            context: {
-              raw: { field: 'value', value: String(value) },
-              reason: error.reason
-            }
-          }), InvalidPriceError)
-        );
-      }
-
-      // Неожиданная ошибка - unexpectedError создаёт базовую ошибку с cause, rewrap добавляет op
-      return Err(
-        rewrap('create', { value: String(value) }, unexpectedError('create', {}, error, 'price', InvalidPriceError), InvalidPriceError)
-      );
-    }
+    return wrapOp(
+      PriceService.SERVICE_NAME,
+      'create',
+      { raw: { field: 'value', value: String(value) } },
+      () => {
+        // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
+        const price = Price.of(decimalResult.value);
+        return Ok(price);
+      },
+      InvalidPriceError
+    );
   }
 
   /**
@@ -148,10 +139,10 @@ export class PriceService {
   public static complement(price: Price): Result<Price, InvalidPriceError> {
     const ctx = { price: price.value().toString() };
 
-    return wrapOp('complement', ctx, () => {
+    return wrapOp(PriceService.SERVICE_NAME, 'complement', ctx, () => {
       const result = subtractDecimal(this.ONE, price.value());
       return this.create(result); // wrapOp сам сделает rewrap если Err
-    }, 'price', InvalidPriceError);
+    }, InvalidPriceError);
   }
 
   /**
@@ -181,11 +172,11 @@ export class PriceService {
   ): Result<Price, InvalidPriceError> {
     const ctx = { price1: price1.value().toString(), price2: price2.value().toString() };
 
-    return wrapOp('average', ctx, () => {
+    return wrapOp(PriceService.SERVICE_NAME, 'average', ctx, () => {
       const sum = addDecimal(price1.value(), price2.value());
       const avgValue = divideDecimal(sum, this.TWO);
       return this.create(avgValue); // wrapOp сам сделает rewrap если Err
-    }, 'price', InvalidPriceError);
+    }, InvalidPriceError);
   }
 
   /**
@@ -217,9 +208,9 @@ export class PriceService {
   ): Result<Price, InvalidPriceError> {
     // Безопасный парсинг factor через toDecimal
     const factorResult = toDecimal('factor', factor, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
-    if (!factorResult.ok) {
+    if (isErr(factorResult)) {
       return Err(
-        rewrap('multiply', {
+        rewrap(PriceService.SERVICE_NAME, 'multiply', {
           price: price.value().toString(),
           factor: String(factor)
         }, factorResult.error, InvalidPriceError)
@@ -230,9 +221,9 @@ export class PriceService {
 
     // Валидация через rule (проверяет isNaN, isFinite)
     const validateResult = ValidateFactorForPriceMultiplication.check(factorDecimal);
-    if (!validateResult.ok) {
+    if (isErr(validateResult)) {
       return Err(
-        rewrap('multiply', {
+        rewrap(PriceService.SERVICE_NAME, 'multiply', {
           price: price.value().toString(),
           factor: factorDecimal.toString()
         }, validateResult.error, InvalidPriceError)
@@ -245,10 +236,10 @@ export class PriceService {
       factor: factorDecimal.toString()
     };
 
-    return wrapOp('multiply', ctx, () => {
+    return wrapOp(PriceService.SERVICE_NAME, 'multiply', ctx, () => {
       const result = multiplyDecimal(price.value(), factorDecimal);
       return this.create(result); // wrapOp сам сделает rewrap если Err
-    }, 'price', InvalidPriceError);
+    }, InvalidPriceError);
   }
 
   /**
@@ -265,7 +256,7 @@ export class PriceService {
    *
    * Алгоритм:
    * 1. Парсинг divisor через toDecimal
-   * 2. Валидация divisor через ValidateDivisorForPriceDivision (isNaN, isFinite, isZero)
+   * 2. Валидация divisor через ValidateDivisorForPriceDivision (isNaN, isFinite, isZero, isNegative)
    * 3. Деление через divideDecimal() из @polymarket/math
    * 4. Создание Price из результата
    *
@@ -287,9 +278,9 @@ export class PriceService {
   ): Result<Price, InvalidPriceError> {
     // Безопасный парсинг divisor через toDecimal
     const divisorResult = toDecimal('divisor', divisor, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
-    if (!divisorResult.ok) {
+    if (isErr(divisorResult)) {
       return Err(
-        rewrap('divide', {
+        rewrap(PriceService.SERVICE_NAME, 'divide', {
           price: price.value().toString(),
           divisor: String(divisor)
         }, divisorResult.error, InvalidPriceError)
@@ -300,9 +291,9 @@ export class PriceService {
 
     // Валидация через rule
     const validateResult = ValidateDivisorForPriceDivision.check(divisorDecimal);
-    if (!validateResult.ok) {
+    if (isErr(validateResult)) {
       return Err(
-        rewrap('divide', {
+        rewrap(PriceService.SERVICE_NAME, 'divide', {
           price: price.value().toString(),
           divisor: divisorDecimal.toString()
         }, validateResult.error, InvalidPriceError)
@@ -315,10 +306,10 @@ export class PriceService {
       divisor: divisorDecimal.toString()
     };
 
-    return wrapOp('divide', ctx, () => {
+    return wrapOp(PriceService.SERVICE_NAME, 'divide', ctx, () => {
       const result = divideDecimal(price.value(), divisorDecimal);
       return this.create(result); // wrapOp сам сделает rewrap если Err
-    }, 'price', InvalidPriceError);
+    }, InvalidPriceError);
   }
 
   /**
@@ -367,9 +358,9 @@ export class PriceService {
   ): Result<Price, InvalidPriceError> {
     // Безопасный парсинг tickSize через toDecimal
     const tickDecimalResult = toDecimal('tickSize', tickSize, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
-    if (!tickDecimalResult.ok) {
+    if (isErr(tickDecimalResult)) {
       return Err(
-        rewrap('roundToMarketTick', {
+        rewrap(PriceService.SERVICE_NAME, 'roundToMarketTick', {
           price: price.value().toString(),
           tickSize: String(tickSize),
           mode
@@ -379,9 +370,9 @@ export class PriceService {
 
     // Валидация через rule (уже принимает Decimal)
     const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickDecimalResult.value);
-    if (!tickRes.ok) {
+    if (isErr(tickRes)) {
       return Err(
-        rewrap('roundToMarketTick', {
+        rewrap(PriceService.SERVICE_NAME, 'roundToMarketTick', {
           price: price.value().toString(),
           tickSize: tickDecimalResult.value.toString(),
           mode
@@ -396,7 +387,7 @@ export class PriceService {
       mode
     };
 
-    return wrapOp('roundToMarketTick', ctx, () => {
+    return wrapOp(PriceService.SERVICE_NAME, 'roundToMarketTick', ctx, () => {
       let out: Decimal;
 
       switch (mode) {
@@ -415,7 +406,7 @@ export class PriceService {
       }
 
       return this.create(out); // wrapOp сам сделает rewrap если Err
-    }, 'price', InvalidPriceError);
+    }, InvalidPriceError);
   }
 
   /**
@@ -451,9 +442,9 @@ export class PriceService {
   ): Result<void, InvalidPriceError> {
     // Безопасный парсинг tickSize через toDecimal
     const tickDecimalResult = toDecimal('tickSize', tickSize, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
-    if (!tickDecimalResult.ok) {
+    if (isErr(tickDecimalResult)) {
       return Err(
-        rewrap('ensureAlignedToMarketTick', {
+        rewrap(PriceService.SERVICE_NAME, 'ensureAlignedToMarketTick', {
           price: price.value().toString(),
           tickSize: String(tickSize)
         }, tickDecimalResult.error, InvalidPriceError)
@@ -462,9 +453,9 @@ export class PriceService {
 
     // Валидация tickSize через ValidateTickSizeMultipleOfBaseTick (как в roundToMarketTick)
     const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickDecimalResult.value);
-    if (!tickRes.ok) {
+    if (isErr(tickRes)) {
       return Err(
-        rewrap('ensureAlignedToMarketTick', {
+        rewrap(PriceService.SERVICE_NAME, 'ensureAlignedToMarketTick', {
           price: price.value().toString(),
           tickSize: tickDecimalResult.value.toString()
         }, tickRes.error, InvalidPriceError)
@@ -475,14 +466,143 @@ export class PriceService {
 
     // Проверка alignment
     const result = ValidateAligned.check(price, tick);
-    if (!result.ok) {
+    if (isErr(result)) {
       return Err(
-        rewrap('ensureAlignedToMarketTick', {
+        rewrap(PriceService.SERVICE_NAME, 'ensureAlignedToMarketTick', {
           price: price.value().toString(),
           tickSize: tick.toString()
         }, result.error, InvalidPriceError)
       );
     }
     return result;
+  }
+
+  /**
+   * Применяет относительное изменение (markup/markdown) к цене
+   *
+   * @remarks
+   * Вычисляет новую цену как: `price * (1 + ratio)`
+   *
+   * **Примеры:**
+   * - Markup +2%: `price * 1.02`
+   * - Markdown -5%: `price * 0.95`
+   *
+   * **Округление к тику:**
+   * Результат округляется с учётом режима:
+   * - `nearest` (по умолчанию): к ближайшему тику
+   * - `floor`: вниз — используй для агрессивных bid quotes
+   * - `ceil`: вверх — используй для агрессивных ask quotes
+   *
+   * **Валидация:**
+   * - Ratio может быть отрицательным (для markdown)
+   * - Результат должен оставаться в диапазоне [MIN_PRICE, MAX_PRICE]
+   * - Результат должен быть кратен tickSize после округления
+   *
+   * **Контракт "Never Throw":**
+   * Все ошибки (парсинг, валидация, math, выход за границы) оборачиваются в InvalidPriceError.
+   *
+   * @param price - Исходная цена
+   * @param ratio - Относительное изменение (например, 0.02 для +2%, -0.05 для -5%)
+   * @param tickSize - Размер тика рынка
+   * @param options - Опции округления
+   * @returns Result с новой ценой или InvalidPriceError
+   *
+   * @example
+   * ```typescript
+   * import { PriceService, RatioService } from '@polymarket/value-objects';
+   *
+   * // Markup +2%
+   * const price = expectOk(PriceService.create(0.50));
+   * const markup = expectOk(RatioService.fromPercent(2));
+   * const result = PriceService.applyRelativeChange(price, markup, 0.01);
+   * if (result.ok) {
+   *   console.log(result.value.toNumber()); // 0.51 (0.50 * 1.02 = 0.51)
+   * }
+   *
+   * // Markdown -5%
+   * const markdown = expectOk(RatioService.fromPercent(-5));
+   * const result2 = PriceService.applyRelativeChange(price, markdown, 0.01);
+   * if (result2.ok) {
+   *   console.log(result2.value.toNumber()); // 0.48 (0.50 * 0.95 = 0.475 → round to 0.48)
+   * }
+   *
+   * // С округлением вниз (для bid)
+   * const result3 = PriceService.applyRelativeChange(
+   *   price, markup, 0.01, { roundingMode: 'floor' }
+   * );
+   *
+   * // С округлением вверх (для ask)
+   * const result4 = PriceService.applyRelativeChange(
+   *   price, markup, 0.01, { roundingMode: 'ceil' }
+   * );
+   * ```
+   */
+  public static applyRelativeChange(
+    price: Price,
+    ratio: Ratio,
+    tickSize: number | string | Decimal,
+    options?: { roundingMode?: 'nearest' | 'floor' | 'ceil' }
+  ): Result<Price, InvalidPriceError> {
+    const roundingMode = options?.roundingMode ?? 'nearest';
+
+    // Безопасный парсинг tickSize через toDecimal
+    const tickDecimalResult = toDecimal('tickSize', tickSize, PriceErrorReason.INVALID_FORMAT, InvalidPriceError);
+    if (isErr(tickDecimalResult)) {
+      return Err(
+        rewrap(PriceService.SERVICE_NAME, 'applyRelativeChange', {
+          price: price.value().toString(),
+          ratio: ratio.toDecimal().toString(),
+          tickSize: String(tickSize),
+          roundingMode
+        }, tickDecimalResult.error, InvalidPriceError)
+      );
+    }
+
+    // Валидация tickSize через ValidateTickSizeMultipleOfBaseTick
+    const tickRes = ValidateTickSizeMultipleOfBaseTick.check(tickDecimalResult.value);
+    if (isErr(tickRes)) {
+      return Err(
+        rewrap(PriceService.SERVICE_NAME, 'applyRelativeChange', {
+          price: price.value().toString(),
+          ratio: ratio.toDecimal().toString(),
+          tickSize: tickDecimalResult.value.toString(),
+          roundingMode
+        }, tickRes.error, InvalidPriceError)
+      );
+    }
+    const tick = tickRes.value;
+
+    const ctx = {
+      price: price.value().toString(),
+      ratio: ratio.toDecimal().toString(),
+      tickSize: tick.toString(),
+      roundingMode
+    };
+
+    return wrapOp(PriceService.SERVICE_NAME, 'applyRelativeChange', ctx, () => {
+      // Вычисляем новое значение: price * (1 + ratio)
+      const multiplier = ratio.onePlus();
+      const newValue = multiplyDecimal(price.value(), multiplier);
+
+      // Округляем к тику с учётом режима
+      let rounded: Decimal;
+      switch (roundingMode) {
+        case 'floor':
+          rounded = floorToTick(newValue, tick);
+          break;
+
+        case 'ceil':
+          rounded = ceilToTick(newValue, tick);
+          break;
+
+        case 'nearest':
+        default:
+          rounded = roundToTick(newValue, tick, Decimal.ROUND_HALF_UP);
+          break;
+      }
+
+      // Создаём Price (автоматически проверит границы [MIN_PRICE, MAX_PRICE])
+      return this.create(rounded);
+    }, InvalidPriceError);
   }
 }

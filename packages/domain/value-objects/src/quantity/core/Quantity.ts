@@ -1,30 +1,6 @@
 import Decimal from 'decimal.js';
-import { QuantityErrorReason } from '../errors/QuantityErrorReason';
-
-/**
- * QuantityInvariantViolation - нарушение инварианта Quantity
- *
- * @remarks
- * Содержит reason из enum QuantityErrorReason для типизированной обработки ошибок.
- *
- * Возможные причины:
- * - QuantityErrorReason.NEGATIVE_QUANTITY: входное значение < 0
- * - QuantityErrorReason.NON_FINITE: значение не finite (Infinity, NaN)
- *
- * @example
- * ```typescript
- * throw new QuantityInvariantViolation('Quantity value cannot be negative', QuantityErrorReason.NEGATIVE_QUANTITY);
- * ```
- */
-export class QuantityInvariantViolation extends Error {
-  public readonly reason: QuantityErrorReason.NEGATIVE_QUANTITY | QuantityErrorReason.NON_FINITE;
-
-  constructor(message: string, reason: QuantityErrorReason.NEGATIVE_QUANTITY | QuantityErrorReason.NON_FINITE) {
-    super(`Quantity invariant violation: ${message}`);
-    this.name = 'QuantityInvariantViolation';
-    this.reason = reason;
-  }
-}
+import { QuantityErrorReason } from '../errors/QuantityErrorReason.js';
+import { QuantityInvariantViolation } from './QuantityInvariantViolation.js';
 
 /**
  * Core Quantity Value Object
@@ -47,13 +23,14 @@ export class QuantityInvariantViolation extends Error {
  *
  * @example
  * ```typescript
- * // Создание
- * const qty1 = Quantity.of(10);         // from number
- * const qty2 = Quantity.of("15.5");     // from string
+ * // Создание (только в Core/Facade)
+ * const qty = Quantity.of(new Decimal(10));
  *
- * // Создание из готового Decimal (без парсинга)
- * const decimal = new Decimal(20);
- * const qty3 = Quantity.fromDecimal(decimal);
+ * // В публичном коде используй QuantityService
+ * const result = QuantityService.create(10);
+ * if (result.ok) {
+ *   const qty = result.value;
+ * }
  *
  * // Константы
  * const zero = Quantity.ZERO;
@@ -80,72 +57,56 @@ export class Quantity {
   /**
    * Константы для часто используемых значений
    */
-  public static readonly ZERO = Quantity.of(0);
-  public static readonly ONE = Quantity.of(1);
+  public static readonly ZERO = Quantity.of(new Decimal(0));
+  public static readonly ONE = Quantity.of(new Decimal(1));
 
-  private constructor(private readonly v: Decimal) {
-    // Инвариант 1: Must be finite (покрывает Infinity и NaN)
-    if (!v.isFinite()) {
-      throw new QuantityInvariantViolation('Quantity value must be finite', QuantityErrorReason.NON_FINITE);
+  private constructor(private readonly _value: Decimal) {
+    // Инвариант 1: Not NaN (explicit check for consistency)
+    if (_value.isNaN()) {
+      throw new QuantityInvariantViolation('Quantity cannot be NaN', QuantityErrorReason.NAN);
     }
 
-    // Инвариант 2: Cannot be negative
-    if (v.isNegative()) {
-      throw new QuantityInvariantViolation('Quantity value cannot be negative', QuantityErrorReason.NEGATIVE_QUANTITY);
+    // Инвариант 2: Must be finite
+    if (!_value.isFinite()) {
+      throw new QuantityInvariantViolation('Quantity must be finite', QuantityErrorReason.NON_FINITE);
+    }
+
+    // Инвариант 3: Cannot be negative
+    if (_value.isNegative()) {
+      throw new QuantityInvariantViolation('Quantity cannot be negative', QuantityErrorReason.NEGATIVE);
     }
   }
 
   /**
-   * Создаёт Quantity из number/string/Decimal
+   * Создаёт Quantity из Decimal
+   *
+   * @internal ТОЛЬКО для внутреннего использования в Core и Facade
    *
    * @remarks
-   * Парсит значение в Decimal через `new Decimal(value)`.
-   * Оптимизация: если value уже Decimal, используется напрямую без повторной конверсии.
-   * Без проверки minSize - это бизнес-правило.
-   * Для проверки minSize используй QuantityService.createForOrder()
+   * НЕ парсит - принимает готовый Decimal.
+   * Все проверки инвариантов выполняются в конструкторе.
+   * Для публичного API используйте QuantityService.create().
    *
-   * @param value - Значение для парсинга (number, string, или Decimal)
+   * Конвертация number/string → Decimal делается в QuantityService (Facade layer).
+   *
+   * @param value - Значение (Decimal)
    * @returns Новый Quantity
    * @throws {QuantityInvariantViolation} Если значение не соответствует инвариантам
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(10);                // from number
-   * const qty2 = Quantity.of("15.5");            // from string
-   * const qty3 = Quantity.of(new Decimal(20));   // from Decimal (без повторного парсинга)
+   * // ✅ В Core и Facade
+   * const qty = Quantity.of(new Decimal(10));
+   *
+   * // ❌ В публичном коде - используй QuantityService.create()
+   * const result = QuantityService.create(10);
+   * if (!result.ok) {
+   *   console.error(result.error);
+   * }
    * ```
    */
-  public static of(value: number | string | Decimal): Quantity {
-    return value instanceof Decimal
-      ? Quantity.fromDecimal(value)
-      : new Quantity(new Decimal(value));
-  }
-
-  /**
-   * Создаёт Quantity из готового Decimal (без повторного парсинга)
-   *
-   * @remarks
-   * Используй когда у тебя уже есть Decimal объект (результат math операций, конфиги).
-   * Избегает повторного парсинга и гарантирует единый режим Decimal.
-   *
-   * ВАЖНО: Не клонирует Decimal, принимает как есть.
-   *
-   * @param decimal - Готовый Decimal объект
-   * @returns Новый Quantity
-   * @throws {QuantityInvariantViolation} Если значение не соответствует инвариантам
-   *
-   * @example
-   * ```typescript
-   * const decimal = new Decimal(10);
-   * const qty = Quantity.fromDecimal(decimal); // НЕ of(decimal)!
-   *
-   * // После math операций
-   * const sum = addDecimal(qty1.value(), qty2.value());
-   * const result = Quantity.fromDecimal(sum);
-   * ```
-   */
-  public static fromDecimal(decimal: Decimal): Quantity {
-    return new Quantity(decimal);
+  public static of(value: Decimal): Quantity {
+    return new Quantity(value);
   }
 
   /**
@@ -155,12 +116,12 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty = Quantity.of(10);
+   * const qty = Quantity.of(new Decimal(10));
    * const decimal = qty.value(); // Decimal
    * ```
    */
   public value(): Decimal {
-    return this.v;
+    return this._value;
   }
 
   /**
@@ -175,13 +136,13 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty = Quantity.of("12345678901234567890.123456789");
+   * const qty = Quantity.of(new Decimal("12345678901234567890.123456789"));
    * const num = qty.toNumber(); // Может потерять точность!
    * const decimal = qty.value(); // Сохраняет точность
    * ```
    */
   public toNumber(): number {
-    return this.v.toNumber();
+    return this._value.toNumber();
   }
 
   /**
@@ -196,16 +157,16 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(10);
-   * const qty2 = Quantity.of(10);
-   * const qty3 = Quantity.of(10.0000001);
+   * const qty1 = Quantity.of(new Decimal(10));
+   * const qty2 = Quantity.of(new Decimal(10));
+   * const qty3 = Quantity.of(new Decimal(10.0000001));
    *
    * qty1.equals(qty2); // true
    * qty1.equals(qty3); // false (точное сравнение)
    * ```
    */
   public equals(other: Quantity): boolean {
-    return this.v.eq(other.v);
+    return this._value.eq(other._value);
   }
 
   /**
@@ -219,12 +180,12 @@ export class Quantity {
    * @example
    * ```typescript
    * Quantity.ZERO.isZero();     // true
-   * Quantity.of(0).isZero();    // true
-   * Quantity.of(0.0001).isZero(); // false (точное сравнение)
+   * Quantity.of(new Decimal(0)).isZero();    // true
+   * Quantity.of(new Decimal(0.0001)).isZero(); // false (точное сравнение)
    * ```
    */
   public isZero(): boolean {
-    return this.v.isZero();
+    return this._value.isZero();
   }
 
   /**
@@ -234,13 +195,13 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * Quantity.of(10).isPositive();  // true
-   * Quantity.of(0).isPositive();   // false
+   * Quantity.of(new Decimal(10)).isPositive();  // true
+   * Quantity.of(new Decimal(0)).isPositive();   // false
    * Quantity.ZERO.isPositive();    // false
    * ```
    */
   public isPositive(): boolean {
-    return this.v.greaterThan(0);
+    return this._value.greaterThan(0);
   }
 
   /**
@@ -254,8 +215,8 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(5);
-   * const qty2 = Quantity.of(10);
+   * const qty1 = Quantity.of(new Decimal(5));
+   * const qty2 = Quantity.of(new Decimal(10));
    *
    * qty1.isLessThan(qty2);  // true
    * qty2.isLessThan(qty1);  // false
@@ -263,7 +224,7 @@ export class Quantity {
    * ```
    */
   public isLessThan(other: Quantity): boolean {
-    return this.v.lessThan(other.v);
+    return this._value.lessThan(other._value);
   }
 
   /**
@@ -277,8 +238,8 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(5);
-   * const qty2 = Quantity.of(10);
+   * const qty1 = Quantity.of(new Decimal(5));
+   * const qty2 = Quantity.of(new Decimal(10));
    *
    * qty1.isLessThanOrEqual(qty2);  // true
    * qty2.isLessThanOrEqual(qty1);  // false
@@ -286,7 +247,7 @@ export class Quantity {
    * ```
    */
   public isLessThanOrEqual(other: Quantity): boolean {
-    return this.v.lessThanOrEqualTo(other.v);
+    return this._value.lessThanOrEqualTo(other._value);
   }
 
   /**
@@ -300,8 +261,8 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(10);
-   * const qty2 = Quantity.of(5);
+   * const qty1 = Quantity.of(new Decimal(10));
+   * const qty2 = Quantity.of(new Decimal(5));
    *
    * qty1.isGreaterThan(qty2);  // true
    * qty2.isGreaterThan(qty1);  // false
@@ -309,7 +270,7 @@ export class Quantity {
    * ```
    */
   public isGreaterThan(other: Quantity): boolean {
-    return this.v.greaterThan(other.v);
+    return this._value.greaterThan(other._value);
   }
 
   /**
@@ -323,8 +284,8 @@ export class Quantity {
    *
    * @example
    * ```typescript
-   * const qty1 = Quantity.of(10);
-   * const qty2 = Quantity.of(5);
+   * const qty1 = Quantity.of(new Decimal(10));
+   * const qty2 = Quantity.of(new Decimal(5));
    *
    * qty1.isGreaterThanOrEqual(qty2);  // true
    * qty2.isGreaterThanOrEqual(qty1);  // false
@@ -332,6 +293,6 @@ export class Quantity {
    * ```
    */
   public isGreaterThanOrEqual(other: Quantity): boolean {
-    return this.v.greaterThanOrEqualTo(other.v);
+    return this._value.greaterThanOrEqualTo(other._value);
   }
 }

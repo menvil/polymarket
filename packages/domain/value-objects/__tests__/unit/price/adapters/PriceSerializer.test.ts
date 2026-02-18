@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { PriceSerializer } from '../../../../src/price/adapters/PriceSerializer.js';
 import { Price } from '../../../../src/price/core/Price.js';
@@ -85,12 +86,41 @@ describe('PriceSerializer', () => {
         }
       });
 
-      it('должен использовать safeStringify для циклических ссылок', () => {
-        const circular: any = { value: 0.5 };
+      it('должен использовать safeStringify для циклических ссылок в ошибках', () => {
+        // Создаём объект с циклической ссылкой И невалидным value (чтобы вызвать ошибку)
+        const circular: any = { value: [1, 2, 3] }; // array вместо number/string
         circular.self = circular;
+
         const result = PriceSerializer.fromJSON(circular);
-        // Должен успешно сериализовать с [Circular]
-        expect(result.ok).toBe(true);
+
+        // Должен вернуть Err из-за невалидного типа value
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          // safeStringify должен заменить циклическую ссылку на '[Circular]'
+          expect(result.error.context?.json).toContain('[Circular]');
+          expect(result.error.context?.kind).toBe('invalid_json');
+        }
+      });
+
+      it('должен использовать [Unstringifiable] fallback в safeStringify при непредвиденной ошибке', () => {
+        // Создаём объект который вызовет ошибку при stringify через getter
+        const unstringifiable: any = { value: {} }; // object вместо number/string - вызовет ошибку
+
+        // Добавляем getter который бросает исключение при попытке stringify
+        Object.defineProperty(unstringifiable, 'badProperty', {
+          enumerable: true,
+          get() {
+            throw new Error('Getter throws');
+          }
+        });
+
+        const result = PriceSerializer.fromJSON(unstringifiable);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          // safeStringify должен обработать ошибку и вернуть '[Unstringifiable]'
+          expect(result.error.context?.json).toBe('[Unstringifiable]');
+        }
       });
     });
 
@@ -112,26 +142,26 @@ describe('PriceSerializer', () => {
 
   describe('toJSON()', () => {
     it('должен сериализовать Price в JSON', () => {
-      const price = Price.of(0.5);
+      const price = Price.of(new Decimal(0.5));
       const json = PriceSerializer.toJSON(price);
       expect(json).toEqual({ value: '0.5' });
     });
 
     it('должен использовать string для сохранения точности', () => {
-      const price = Price.of(0.1234);
+      const price = Price.of(new Decimal(0.1234));
       const json = PriceSerializer.toJSON(price);
       expect(typeof json.value).toBe('string');
       expect(json.value).toBe('0.1234');
     });
 
     it('должен работать с минимальным значением', () => {
-      const price = Price.min();
+      const price = Price.MIN;
       const json = PriceSerializer.toJSON(price);
       expect(json.value).toBe('0.0001');
     });
 
     it('должен работать с максимальным значением', () => {
-      const price = Price.max();
+      const price = Price.MAX;
       const json = PriceSerializer.toJSON(price);
       expect(json.value).toBe('0.9999');
     });
@@ -139,7 +169,7 @@ describe('PriceSerializer', () => {
 
   describe('round-trip', () => {
     it('должен корректно десериализовать сериализованный Price', () => {
-      const original = Price.of(0.5);
+      const original = Price.of(new Decimal(0.5));
       const json = PriceSerializer.toJSON(original);
       const result = PriceSerializer.fromJSON(json);
       expect(result.ok).toBe(true);

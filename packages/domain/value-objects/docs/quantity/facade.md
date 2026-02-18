@@ -20,7 +20,7 @@
 import { QuantityErrorReason } from '@polymarket/value-objects/quantity';
 
 interface InvalidQuantityErrorContext {
-  op: string;  // Название операции: 'create', 'add', 'divide', etc. (ВСЕГДА присутствует)
+  op: string;  // Название операции: 'create', 'add', 'divide', 'portion', 'increaseBy', etc. (ВСЕГДА присутствует)
   opChain?: string[];  // Цепочка вложенных операций для трассировки
 
   // Входные данные (операционные поля)
@@ -31,10 +31,13 @@ interface InvalidQuantityErrorContext {
   divisor?: string;
   factor?: string;
   stepSize?: string;
+  rate?: string;           // Для portion()
+  delta?: string;          // Для increaseBy()
+  roundingMode?: string;   // Для increaseBy()
 
   // Сырой ввод (для ошибок парсинга)
   raw?: {
-    field: string;  // Имя поля: 'value', 'factor', 'divisor', 'stepSize'
+    field: string;  // Имя поля: 'value', 'factor', 'divisor', 'stepSize', 'rate', 'delta'
     value: string;  // Сырое значение перед парсингом
   };
 
@@ -83,7 +86,7 @@ if (result.ok) {
 const negResult = QuantityService.create(-1);
 if (!negResult.ok) {
   console.log(negResult.error.context?.op);     // 'create'
-  console.log(negResult.error.context?.reason); // 'NEGATIVE_QUANTITY'
+  console.log(negResult.error.context?.reason); // 'NEGATIVE'
 }
 
 // Ошибка: non-finite
@@ -93,7 +96,7 @@ if (!nanResult.ok) {
 }
 ```
 
-**Оптимизация:** Если `value` уже `Decimal`, используется `fromDecimal()` без повторного парсинга.
+**Оптимизация:** Если `value` уже `Decimal`, используется `of()` без повторного парсинга.
 
 ---
 
@@ -104,8 +107,8 @@ if (!nanResult.ok) {
 Складывает два Quantity.
 
 ```typescript
-const qty1 = Quantity.of(10);
-const qty2 = Quantity.of(5);
+const qty1 = Quantity.of(new Decimal(10));
+const qty2 = Quantity.of(new Decimal(5));
 
 const result = QuantityService.add(qty1, qty2);
 if (result.ok) {
@@ -113,7 +116,7 @@ if (result.ok) {
 }
 
 // Overflow detection
-const huge = Quantity.fromDecimal(new Decimal('1e308'));
+const huge = Quantity.of(new Decimal('1e308'));
 const overflowResult = QuantityService.add(huge, huge);
 if (!overflowResult.ok) {
   console.log(overflowResult.error.context?.reason);  // 'NON_FINITE'
@@ -125,8 +128,8 @@ if (!overflowResult.ok) {
 Вычитает qty2 из qty1 с проверкой неотрицательности результата.
 
 ```typescript
-const qty1 = Quantity.of(10);
-const qty2 = Quantity.of(5);
+const qty1 = Quantity.of(new Decimal(10));
+const qty2 = Quantity.of(new Decimal(5));
 
 // Успех
 const result = QuantityService.subtract(qty1, qty2);
@@ -153,7 +156,7 @@ if (zeroResult.ok) {
 Умножает Quantity на коэффициент.
 
 ```typescript
-const qty = Quantity.of(10);
+const qty = Quantity.of(new Decimal(10));
 
 // Успех (number)
 const result = QuantityService.multiply(qty, 2);
@@ -199,7 +202,7 @@ if (!invalid.ok) {
 Делит Quantity на делитель.
 
 ```typescript
-const qty = Quantity.of(10);
+const qty = Quantity.of(new Decimal(10));
 
 // Успех (number)
 const result = QuantityService.divide(qty, 2);
@@ -259,7 +262,7 @@ if (!invalid.ok) {
 Округляет Quantity к размеру шага (step).
 
 ```typescript
-const qty = Quantity.of("10.567");
+const qty = Quantity.of(new Decimal("10.567"));
 
 // С number
 const result1 = QuantityService.roundToStep(qty, 0.01);
@@ -304,6 +307,141 @@ if (!invalidStr.ok) {
   console.log(invalidStr.error.context?.stepSize); // 'abc'
 }
 ```
+
+#### `portion(quantity: Quantity, rate: Ratio)`
+
+Вычисляет часть (долю) от количества по заданному коэффициенту.
+
+**Формула:** `quantity × rate`
+
+**Use cases:**
+- Вычисление комиссий (например, 0.5% от суммы)
+- Расчет частичного заполнения ордера (заполнено 75%)
+- Алгоритмы ребалансировки портфеля
+
+```typescript
+import { QuantityService, RatioService } from '@polymarket/value-objects';
+
+// Вычисление комиссии 0.5% от 1000
+const position = QuantityService.create(new Decimal(1000));
+const feeRate = RatioService.fromPercent(0.5);
+if (position.ok && feeRate.ok) {
+  const fee = QuantityService.portion(position.value, feeRate.value);
+  if (fee.ok) {
+    console.log(fee.value.value().toString()); // "5" (0.5% от 1000)
+  }
+}
+
+// Частичное заполнение ордера (75%)
+const orderSize = QuantityService.create(new Decimal(100));
+const fillRate = RatioService.fromPercent(75);
+if (orderSize.ok && fillRate.ok) {
+  const filled = QuantityService.portion(orderSize.value, fillRate.value);
+  if (filled.ok) {
+    console.log(filled.value.value().toString()); // "75"
+  }
+}
+
+// Увеличение на 150%
+const base = QuantityService.create(new Decimal(1000));
+const rate150 = RatioService.fromPercent(150);
+if (base.ok && rate150.ok) {
+  const result = QuantityService.portion(base.value, rate150.value);
+  if (result.ok) {
+    console.log(result.value.value().toString()); // "1500" (150% от 1000)
+  }
+}
+```
+
+**Ошибки:**
+- `INVALID_FORMAT` — некорректный rate
+- `NON_FINITE` — overflow/underflow в вычислениях
+- `NEGATIVE` — результат отрицательный (если rate < 0)
+
+#### `increaseBy(quantity: Quantity, delta: Ratio, stepSize, options?)`
+
+Увеличивает/уменьшает количество на заданный процент с округлением к stepSize.
+
+**Формула:** `quantity × (1 + delta)` → округление к stepSize
+
+**Параметры:**
+- `quantity` — исходное количество
+- `delta` — относительное изменение (Ratio), может быть отрицательным
+- `stepSize` — размер шага для округления результата
+- `options.roundingMode` — режим округления (по умолчанию ROUND_HALF_UP)
+
+**Use cases:**
+- Увеличение ордера на X%
+- DCA (dollar-cost averaging) стратегии
+- Position sizing с учётом минимального лота
+
+**Delta может быть отрицательным:**
+- Положительный: увеличение (+10% → delta = 0.10)
+- Отрицательный: уменьшение (-5% → delta = -0.05)
+- Ограничение: delta ≥ -1 (иначе результат отрицательный)
+
+```typescript
+import { QuantityService, RatioService } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
+
+// Увеличить на 10% с округлением к шагу 1
+const qty = QuantityService.create(new Decimal(95));
+const delta = RatioService.fromPercent(10);
+if (qty.ok && delta.ok) {
+  const result = QuantityService.increaseBy(qty.value, delta.value, 1);
+  if (result.ok) {
+    console.log(result.value.value().toString()); // "105" (95 × 1.10 = 104.5 → round to 105)
+  }
+}
+
+// Уменьшить на 5% (отрицательный delta)
+const decrease = RatioService.fromPercent(-5);
+if (qty.ok && decrease.ok) {
+  const result = QuantityService.increaseBy(qty.value, decrease.value, 1);
+  if (result.ok) {
+    console.log(result.value.value().toString()); // "90" (95 × 0.95 = 90.25 → round to 90)
+  }
+}
+
+// С округлением вниз (conservative для покупок)
+if (qty.ok && delta.ok) {
+  const result = QuantityService.increaseBy(
+    qty.value,
+    delta.value,
+    1,
+    { roundingMode: Decimal.ROUND_DOWN }
+  );
+  if (result.ok) {
+    console.log(result.value.value().toString()); // "104" (95 × 1.10 = 104.5 → floor to 104)
+  }
+}
+
+// DCA стратегия: увеличивать на 10% каждый раз
+const baseSize = QuantityService.create(new Decimal(100));
+const increment = RatioService.fromPercent(10);
+if (baseSize.ok && increment.ok) {
+  const order1 = baseSize.value; // 100
+  const order2Result = QuantityService.increaseBy(order1, increment.value, 1);
+  if (order2Result.ok) {
+    const order2 = order2Result.value; // 110
+    const order3Result = QuantityService.increaseBy(order2, increment.value, 1);
+    if (order3Result.ok) {
+      console.log(order3Result.value.value().toString()); // "121"
+    }
+  }
+}
+```
+
+**Edge cases:**
+- delta = 0 → количество остаётся неизменным (после округления к step)
+- delta = -1 (-100%) → результат = 0 (граничный случай)
+- delta < -1 (< -100%) → результат отрицательный → InvalidQuantityError
+
+**Ошибки:**
+- `INVALID_FORMAT` — некорректный delta или stepSize
+- `INVALID_STEP_SIZE` — stepSize ≤ 0
+- `NON_FINITE` — overflow/underflow в вычислениях
+- `NEGATIVE` — результат отрицательный (delta < -1)
 
 ---
 
@@ -509,7 +647,7 @@ if (!result.ok) {
 - Может содержать `context.result` для rule failures
 
 ```typescript
-const result = QuantityService.subtract(Quantity.of(5), Quantity.of(10));
+const result = QuantityService.subtract(Quantity.of(new Decimal(5)), Quantity.of(new Decimal(10)));
 if (!result.ok) {
   expect(result.error.context?.op).toBe('subtract');
   expect(result.error.context?.quantity1).toBeDefined();
@@ -600,15 +738,15 @@ describe('QuantityService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.op).toBe('create');
-        expect(result.error.context?.reason).toBe('NEGATIVE_QUANTITY');
+        expect(result.error.context?.reason).toBe('NEGATIVE');
       }
     });
   });
 
   describe('add', () => {
     it('should add two quantities', () => {
-      const qty1 = Quantity.of(10);
-      const qty2 = Quantity.of(5);
+      const qty1 = Quantity.of(new Decimal(10));
+      const qty2 = Quantity.of(new Decimal(5));
       const result = QuantityService.add(qty1, qty2);
 
       expect(result.ok).toBe(true);

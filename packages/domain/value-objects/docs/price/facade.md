@@ -74,7 +74,7 @@ create(value: number | string | Decimal): Result<Price, InvalidPriceError>
 - finite (не NaN, не Infinity)
 - диапазон [0.0001, 0.9999]
 
-**Оптимизация:** Если `value` уже `Decimal`, используется `fromDecimal()` без повторного парсинга.
+**Оптимизация:** Если `value` уже `Decimal`, Price.of() использует его напрямую без повторного парсинга (zero-copy).
 
 **Примеры:**
 
@@ -126,7 +126,7 @@ multiply(
 **Алгоритм:**
 
 1. Парсинг factor в Decimal (try/catch для parse errors)
-2. Валидация factor через `ValidateFactorForPriceMultiplication` (isNaN, isFinite)
+2. Валидация factor через `ValidateFactorForPriceMultiplication` (isNaN, isFinite, isNegative)
 3. Умножение через `multiplyDecimal()` из @polymarket/math
 4. Создание Price из результата
 
@@ -139,7 +139,11 @@ multiply(
 **Примеры:**
 
 ```typescript
-const price = Price.of(0.3);
+import Decimal from 'decimal.js';
+import { Price } from '../core/Price.js';
+
+// Создаём цену (в реальном коде используйте PriceService.create)
+const price = Price.of(new Decimal(0.3));
 
 // Успех
 const result = PriceService.multiply(price, 2);
@@ -148,7 +152,8 @@ if (result.ok) {
 }
 
 // Успех: дробный множитель
-const result2 = PriceService.multiply(Price.of(0.6), 0.5);
+const price2 = Price.of(new Decimal(0.6));
+const result2 = PriceService.multiply(price2, 0.5);
 if (result2.ok) {
   console.log(result2.value.toNumber());  // 0.3
 }
@@ -163,7 +168,8 @@ if (!nanResult.ok) {
 }
 
 // Ошибка: результат выходит за диапазон
-const overflowResult = PriceService.multiply(Price.of(0.5), 2);
+const price3 = Price.of(new Decimal(0.5));
+const overflowResult = PriceService.multiply(price3, 2);
 if (!overflowResult.ok) {
   // 0.5 * 2 = 1.0 > MAX_PRICE (0.9999)
   console.log(overflowResult.error.context?.op);  // 'multiply'
@@ -188,7 +194,7 @@ divide(
 **Алгоритм:**
 
 1. Парсинг divisor в Decimal (try/catch для parse errors)
-2. Валидация divisor через `ValidateDivisorForPriceDivision` (isNaN, isFinite, isZero)
+2. Валидация divisor через `ValidateDivisorForPriceDivision` (isNaN, isFinite, isZero, isNegative)
 3. Деление через `divideDecimal()` из @polymarket/math
 4. Создание Price из результата
 
@@ -203,7 +209,7 @@ divide(
 **Примеры:**
 
 ```typescript
-const price = Price.of(0.6);
+const price = Price.of(new Decimal(0.6));
 
 // Успех
 const result = PriceService.divide(price, 2);
@@ -226,7 +232,7 @@ if (!nanResult.ok) {
 }
 
 // Ошибка: результат выходит за диапазон
-const underflowResult = PriceService.divide(Price.min(), 2);
+const underflowResult = PriceService.divide(Price.MIN, 2);
 if (!underflowResult.ok) {
   // 0.0001 / 2 = 0.00005 < MIN_PRICE
   console.log(underflowResult.error.context?.op);  // 'divide'
@@ -252,7 +258,7 @@ complement(price: Price): Result<Price, InvalidPriceError>
 **Примеры:**
 
 ```typescript
-const yesPrice = Price.of(0.65);
+const yesPrice = Price.of(new Decimal(0.65));
 
 const noResult = PriceService.complement(yesPrice);
 if (noResult.ok) {
@@ -260,19 +266,19 @@ if (noResult.ok) {
 }
 
 // Симметричность
-const halfPrice = Price.half();
+const halfPrice = Price.HALF;
 const compResult = PriceService.complement(halfPrice);
 if (compResult.ok) {
   console.log(compResult.value.equals(halfPrice));  // true (0.5 = 1 - 0.5)
 }
 
 // Граничные случаи
-const minCompResult = PriceService.complement(Price.min());
+const minCompResult = PriceService.complement(Price.MIN);
 if (minCompResult.ok) {
   console.log(minCompResult.value.toNumber());  // 0.9999 (= MAX_PRICE)
 }
 
-const maxCompResult = PriceService.complement(Price.max());
+const maxCompResult = PriceService.complement(Price.MAX);
 if (maxCompResult.ok) {
   console.log(maxCompResult.value.toNumber());  // 0.0001 (= MIN_PRICE)
 }
@@ -295,8 +301,8 @@ average(price1: Price, price2: Price): Result<Price, InvalidPriceError>
 **Примеры:**
 
 ```typescript
-const bidPrice = Price.of(0.64);
-const askPrice = Price.of(0.66);
+const bidPrice = Price.of(new Decimal(0.64));
+const askPrice = Price.of(new Decimal(0.66));
 
 const midResult = PriceService.average(bidPrice, askPrice);
 if (midResult.ok) {
@@ -304,15 +310,15 @@ if (midResult.ok) {
 }
 
 // Граничные случаи
-const extremeResult = PriceService.average(Price.min(), Price.max());
+const extremeResult = PriceService.average(Price.MIN, Price.MAX);
 if (extremeResult.ok) {
   console.log(extremeResult.value.toNumber());  // ~0.5
 }
 
 // Одинаковые цены
-const sameResult = PriceService.average(Price.half(), Price.half());
+const sameResult = PriceService.average(Price.HALF, Price.HALF);
 if (sameResult.ok) {
-  console.log(sameResult.value.equals(Price.half()));  // true
+  console.log(sameResult.value.equals(Price.HALF));  // true
 }
 ```
 
@@ -362,7 +368,7 @@ roundToMarketTick(
 **Примеры:**
 
 ```typescript
-const calculated = Price.of(0.6543);
+const calculated = Price.of(new Decimal(0.6543));
 
 // Округление к ближайшему (по умолчанию)
 const nearestResult = PriceService.roundToMarketTick(calculated, 0.01);
@@ -383,7 +389,7 @@ if (ceilResult.ok) {
 }
 
 // Разные tick sizes (все кратны 0.0001)
-const p = Price.of(0.12345);
+const p = Price.of(new Decimal(0.12345));
 
 const tick1 = PriceService.roundToMarketTick(p, 0.001);
 if (tick1.ok) {
@@ -441,7 +447,7 @@ ensureAlignedToMarketTick(
 **Примеры:**
 
 ```typescript
-const price = Price.of(0.5);
+const price = Price.of(new Decimal(0.5));
 
 // Успех: aligned
 const result1 = PriceService.ensureAlignedToMarketTick(price, 0.01);
@@ -464,7 +470,7 @@ if (!misalignedResult.ok) {
 }
 
 // Валидация после округления
-const calculated = Price.of(0.6543);
+const calculated = Price.of(new Decimal(0.6543));
 const roundedResult = PriceService.roundToMarketTick(calculated, 0.01);
 
 if (roundedResult.ok) {
@@ -473,6 +479,94 @@ if (roundedResult.ok) {
   // Проверяем контракт: результат должен быть aligned
   const alignResult = PriceService.ensureAlignedToMarketTick(rounded, 0.01);
   console.log(alignResult.ok);  // true (гарантировано контрактом)
+}
+```
+
+---
+
+### Применение относительного изменения (markup/markdown)
+
+#### `applyRelativeChange(price, ratio, tickSize, options?)`
+
+Применяет относительное изменение (markup/markdown) к цене.
+
+**Сигнатура:**
+
+```typescript
+applyRelativeChange(
+  price: Price,
+  ratio: Ratio,
+  tickSize: number | string | Decimal,
+  options?: { roundingMode?: 'nearest' | 'floor' | 'ceil' }
+): Result<Price, InvalidPriceError>
+```
+
+**Семантика:**
+
+Вычисляет новую цену как: `price * (1 + ratio)`
+
+- **Markup +2%**: `price * 1.02`
+- **Markdown -5%**: `price * 0.95`
+
+**Округление к тику:**
+
+Результат округляется с учётом режима:
+
+- `nearest` (по умолчанию): к ближайшему тику
+- `floor`: вниз — используй для агрессивных bid quotes
+- `ceil`: вверх — используй для агрессивных ask quotes
+
+**Валидация:**
+
+- Ratio может быть отрицательным (для markdown)
+- Результат должен оставаться в диапазоне [MIN_PRICE, MAX_PRICE]
+- Результат должен быть кратен tickSize после округления
+
+**Примеры:**
+
+```typescript
+import { PriceService, RatioService, Price } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
+
+// Markup +2%
+const price = Price.of(new Decimal(0.50));
+const markupResult = RatioService.fromPercent(2);
+if (!markupResult.ok) return;
+
+const result = PriceService.applyRelativeChange(price, markupResult.value, 0.01);
+if (result.ok) {
+  console.log(result.value.toNumber());  // 0.51 (0.50 * 1.02 = 0.51)
+}
+
+// Markdown -5%
+const markdownResult = RatioService.fromPercent(-5);
+if (!markdownResult.ok) return;
+
+const result2 = PriceService.applyRelativeChange(price, markdownResult.value, 0.01);
+if (result2.ok) {
+  console.log(result2.value.toNumber());  // 0.48 (0.50 * 0.95 = 0.475 → round to 0.48)
+}
+
+// С округлением вниз (для bid)
+const result3 = PriceService.applyRelativeChange(
+  price, markupResult.value, 0.01, { roundingMode: 'floor' }
+);
+
+// С округлением вверх (для ask)
+const result4 = PriceService.applyRelativeChange(
+  price, markupResult.value, 0.01, { roundingMode: 'ceil' }
+);
+
+// Ошибка: результат выходит за диапазон
+const extremeMarkup = RatioService.fromPercent(200); // +200%
+if (!extremeMarkup.ok) return;
+
+const errorResult = PriceService.applyRelativeChange(
+  Price.of(new Decimal(0.5)), extremeMarkup.value, 0.01
+);
+if (!errorResult.ok) {
+  // 0.5 * 3 = 1.5 > MAX_PRICE (0.9999)
+  console.log(errorResult.error.context?.op);  // 'applyRelativeChange'
 }
 ```
 
@@ -611,8 +705,11 @@ const midPrice = PriceService.average(bid, ask);
 ### ❌ DON'T: Не используйте generic арифметику для domain операций
 
 ```typescript
+import Decimal from 'decimal.js';
+import { PriceService, Price } from '@polymarket/value-objects/price';
+
 // ❌ Плохо (неясное намерение - вместо complement используется умножение)
-const yesPrice = Price.of(0.6);
+const yesPrice = Price.of(new Decimal(0.6));
 const factor = 1 / yesPrice.toNumber() - 1;  // Сложный расчёт вместо complement
 const noPrice = PriceService.multiply(yesPrice, factor);
 ```
@@ -665,7 +762,7 @@ if (roundedResult.ok) {
 ```typescript
 // ✅ Быстро (если у вас уже есть Decimal)
 const decimal = calculateSomething();  // returns Decimal
-const result = PriceService.create(decimal);  // Использует fromDecimal() внутри
+const result = PriceService.create(decimal);  // Zero-copy: использует Decimal напрямую
 ```
 
 ### 2. Избегайте повторных проверок
@@ -689,9 +786,9 @@ const validPrices = values
 
 ```typescript
 // ✅ Хорошо (переиспользуем)
-const half = Price.half();
-const min = Price.min();
-const max = Price.max();
+const half = Price.HALF;
+const min = Price.MIN;
+const max = Price.MAX;
 
 for (const price of prices) {
   if (price.equals(half)) {
@@ -701,7 +798,7 @@ for (const price of prices) {
 
 // ❌ Плохо (создаём каждый раз)
 for (const price of prices) {
-  if (price.equals(Price.half())) {  // Price.half() вызывается в цикле!
+  if (price.equals(Price.HALF)) {  // Price.HALF вызывается в цикле!
     // ...
   }
 }

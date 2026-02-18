@@ -4,7 +4,7 @@ import { Price } from '../../../../src/price/core/Price.js';
 import Decimal from 'decimal.js';
 
 describe('ValidateTickSizeMultipleOfBaseTick', () => {
-  const BASE_TICK = Price.minValue(); // 0.0001
+  const BASE_TICK = Price.MIN.value(); // 0.0001
 
   describe('валидные значения (кратны базовому тику)', () => {
     it('должен принять базовый тик 0.0001', () => {
@@ -85,7 +85,7 @@ describe('ValidateTickSizeMultipleOfBaseTick', () => {
     });
 
     it('должен вернуть Err от ValidateTickSize для exceeds_range', () => {
-      const maxAllowed = Price.maxValue().minus(Price.minValue());
+      const maxAllowed = Price.MAX.value().minus(Price.MIN.value());
       const tooLarge = maxAllowed.plus(0.0001);
       const result = ValidateTickSizeMultipleOfBaseTick.check(tooLarge);
       expect(result.ok).toBe(false);

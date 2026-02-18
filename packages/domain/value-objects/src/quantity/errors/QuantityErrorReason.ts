@@ -9,7 +9,7 @@
  * ```typescript
  * import { QuantityErrorReason } from '@polymarket/value-objects/quantity';
  *
- * if (result.error.context?.reason === QuantityErrorReason.NEGATIVE_QUANTITY) {
+ * if (result.error.context?.reason === QuantityErrorReason.NEGATIVE) {
  *   console.error('Quantity cannot be negative');
  * }
  * ```
@@ -20,12 +20,6 @@ export enum QuantityErrorReason {
 
   /** Значение не finite (Infinity, -Infinity) */
   NON_FINITE = 'NON_FINITE',
-
-  /** Количество превышает максимальное значение */
-  EXCEEDS_MAX_QUANTITY = 'EXCEEDS_MAX_QUANTITY',
-
-  /** Количество отрицательное */
-  NEGATIVE_QUANTITY = 'NEGATIVE_QUANTITY',
 
   /** Деление на ноль */
   DIVISION_BY_ZERO = 'DIVISION_BY_ZERO',

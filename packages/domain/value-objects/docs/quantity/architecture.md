@@ -70,7 +70,7 @@ const result = QuantityService.create(-1);
 
 // 1. Facade: QuantityService.create()
 try {
-  const quantity = Quantity.of(-1);  // -> идёт в Core
+  const quantity = Quantity.of(new Decimal(-1));  // -> идёт в Core
   return Ok(quantity);
 } catch (error) {
   // 2. Core: Quantity.of() бросил QuantityInvariantViolation
@@ -95,7 +95,6 @@ try {
 ┌─────────────────────────────────────────────────────┐
 │  Layer 4: Adapters                                  │
 │  - QuantitySerializer (точная)                      │
-│  - QuantityLossySerializer (lossy)                  │
 │  - QuantityFormatter (форматирование)               │
 │                                                     │
 │  Зависит от: Core, Facade                          │
@@ -154,7 +153,7 @@ try {
 
 ```typescript
 // ✅ Делает
-const qty = Quantity.of(10);
+const qty = Quantity.of(new Decimal(10));
 qty.isZero();  // false
 qty.equals(other);
 
@@ -287,7 +286,7 @@ if (!result.ok) {
 
 ### Поток создания Quantity
 
-```
+```text
 User Input (number/string/Decimal)
     ↓
 QuantityService.create()
@@ -305,7 +304,7 @@ catch (QuantityInvariantViolation) {
 
 ### Поток арифметической операции (add)
 
-```
+```text
 qty1, qty2
     ↓
 QuantityService.add()
@@ -321,14 +320,14 @@ Result<Quantity, Error>
 
 ### Поток валидации через Facade
 
-```
+```text
 User Input
     ↓
 QuantityService.create(value)
     ↓
 decimal = parse(value)
     ↓
-Quantity.fromDecimal(decimal)  ← Core (проверяет инварианты)
+Quantity.of(decimal)  ← Core (проверяет инварианты)
     ↓
   если non-negative && finite → Ok
   иначе → QuantityInvariantViolation
@@ -407,15 +406,15 @@ Result<Quantity, InvalidQuantityError>
 
 ---
 
-### 5. Почему zero-copy в fromDecimal()?
+### 5. Почему zero-copy в of()?
 
-**Решение:** `fromDecimal()` не парсит Decimal повторно.
+**Решение:** `of()` не парсит Decimal повторно.
 
 ```typescript
 // Оптимизация: если value уже Decimal
 const quantity = value instanceof Decimal
-  ? Quantity.fromDecimal(value)  // zero-copy
-  : Quantity.of(value);           // parse
+  ? Quantity.of(value)              // zero-copy
+  : Quantity.of(new Decimal(value));  // parse с сохранением точности
 ```
 
 **Альтернативы:**
@@ -429,23 +428,7 @@ const quantity = value instanceof Decimal
 
 ---
 
-### 6. Почему QuantitySerializer и QuantityLossySerializer раздельно?
-
-**Решение:** Два отдельных класса вместо флага `lossy`.
-
-**Альтернативы:**
-
-- ❌ `QuantitySerializer.toJSON(qty, { lossy: true })`
-
-**Почему выбрали:**
-
-- ✅ Explicit intent (явное намерение)
-- ✅ Разные типы возврата (`{ value: string }` vs `{ value: number }`)
-- ✅ Компилятор видит разницу
-
----
-
-### 7. Централизованная обработка ошибок (DRY)
+### 6. Централизованная обработка ошибок (DRY)
 
 **Решение:** 5 helper methods для всех catch blocks вместо дублирования кода.
 

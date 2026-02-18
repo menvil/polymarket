@@ -1,5 +1,5 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidTickSizeError } from '@polymarket/errors';
+import { InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import Decimal from 'decimal.js';
 
@@ -61,6 +61,7 @@ export class ValidateTickSize {
           () => `Tick size must not be NaN`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
               reason: 'is_nan',
               tickSize: tickSize.toString()
@@ -77,6 +78,7 @@ export class ValidateTickSize {
           (ctx) => `Tick size must be finite, got ${ctx.tickSize}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
               reason: 'not_finite',
               tickSize: tickSize.toString()
@@ -93,6 +95,7 @@ export class ValidateTickSize {
           (ctx) => `Tick size must be positive, got ${ctx.tickSize}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
               reason: 'not_positive',
               tickSize: tickSize.toString()
@@ -103,19 +106,20 @@ export class ValidateTickSize {
     }
 
     // Проверка максимального размера (арифметическая, не доменная)
-    const maxAllowed = Price.maxValue().minus(Price.minValue());
+    const maxAllowed = Price.MAX.value().minus(Price.MIN.value());
     if (tickSize.greaterThan(maxAllowed)) {
       return Err(
         new InvalidTickSizeError(
           (ctx) => `Tick size ${ctx.tickSize} exceeds price range`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'tickSize',
               reason: 'exceeds_range',
               tickSize: tickSize.toString(),
               maxAllowed: maxAllowed.toString(),
-              minPrice: Price.minValue().toString(),
-              maxPrice: Price.maxValue().toString()
+              minPrice: Price.MIN.value().toString(),
+              maxPrice: Price.MAX.value().toString()
             }
           }
         )

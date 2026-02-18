@@ -34,69 +34,57 @@ Core Layer содержит базовую реализацию `Price` — им
 
 #### `Price.of(value)`
 
-Создаёт Price из number/string/Decimal.
+Создаёт Price из Decimal.
 
-**Оптимизация:** Если `value` уже `Decimal`, используется без повторного парсинга (zero-copy).
+**ВНИМАНИЕ:** Это метод для внутреннего использования в Core/Facade. В публичном коде используйте `PriceService.create()`.
 
 ```typescript
-const price1 = Price.of(0.5);
-const price2 = Price.of("0.65");
-const price3 = Price.of(new Decimal(0.5)); // Без повторного парсинга!
+import Decimal from 'decimal.js';
+
+const price1 = Price.of(new Decimal(0.5));
+const price2 = Price.of(new Decimal('0.65'));
 
 // Throws PriceInvariantViolation
 try {
-  const invalid1 = Price.of(1.5);  // Выше MAX_PRICE
+  const invalid1 = Price.of(new Decimal(1.5));  // Выше MAX_PRICE
 } catch (e) {
   console.log(e.message);  // "Price 1.5 exceeds maximum 0.9999"
 }
 
 try {
-  const invalid2 = Price.of(0.00001);  // Ниже MIN_PRICE
+  const invalid2 = Price.of(new Decimal(0.00001));  // Ниже MIN_PRICE
 } catch (e) {
   console.log(e.message);  // "Price 0.00001 is below minimum 0.0001"
 }
 
 try {
-  const invalid3 = Price.of(NaN);  // Not a number
+  const invalid3 = Price.of(new Decimal(NaN));  // Not a number
 } catch (e) {
   console.log(e.message);  // "Price cannot be NaN"
 }
 ```
-
-#### `Price.fromDecimal(decimal)`
-
-Создаёт Price из Decimal без повторного парсинга (zero-copy оптимизация).
-
-```typescript
-const decimal = new Decimal(0.5);
-const price = Price.fromDecimal(decimal);
-
-// price.value() === decimal (тот же объект!)
-```
-
-**Использование:** Когда у вас уже есть Decimal и не нужно повторно парсить.
 
 ### Константы
 
 #### Статические константы
 
 ```typescript
-Price.min()   // Price со значением 0.0001 (MIN_PRICE)
-Price.max()   // Price со значением 0.9999 (MAX_PRICE)
-Price.half()  // Price со значением 0.5 (HALF_PRICE)
+Price.MIN   // Price со значением 0.0001 (MIN_PRICE)
+Price.MAX   // Price со значением 0.9999 (MAX_PRICE)
+Price.HALF  // Price со значением 0.5 (HALF_PRICE)
 ```
 
 **Пример:**
 
 ```typescript
-const midPrice = Price.half();
+const midPrice = Price.HALF;
 console.log(midPrice.toNumber());  // 0.5
 
-if (price.equals(Price.min())) {
+if (price.equals(Price.MIN)) {
   console.log('Minimum price');
 }
 
-if (price.equals(Price.max())) {
+if (price.equals(Price.MAX)) {
   console.log('Maximum price');
 }
 ```
@@ -104,8 +92,8 @@ if (price.equals(Price.max())) {
 #### Internal константы (для Rules/Facade)
 
 ```typescript
-Price.minValue()  // Decimal константа 0.0001
-Price.maxValue()  // Decimal константа 0.9999
+Price.MIN.value()  // Decimal константа 0.0001
+Price.MAX.value()  // Decimal константа 0.9999
 ```
 
 **⚠️ Внимание:** Эти методы возвращают shared Decimal константы. **Decimal неизменяемый (immutable)** — все операции (plus, minus и т.д.) возвращают новые экземпляры, оригинал не меняется. Price также неизменяемый.
@@ -114,12 +102,12 @@ Price.maxValue()  // Decimal константа 0.9999
 
 ```typescript
 // ✅ Правильно (в Rules) - сравнение
-if (tickSize.greaterThan(Price.maxValue())) {
+if (tickSize.greaterThan(Price.MAX.value())) {
   return Err(...);
 }
 
 // ✅ Тоже правильно - операции создают новый Decimal
-const result = Price.minValue().plus(1);  // Безопасно, возвращает новый экземпляр
+const result = Price.MIN.value().plus(1);  // Безопасно, возвращает новый экземпляр
 ```
 
 ---
@@ -131,7 +119,7 @@ const result = Price.minValue().plus(1);  // Безопасно, возвращ�
 Возвращает внутреннее Decimal значение.
 
 ```typescript
-const price = Price.of(0.65);
+const price = Price.of(new Decimal(0.65));
 const decimal: Decimal = price.value();
 console.log(decimal.toString());  // "0.65"
 ```
@@ -141,11 +129,11 @@ console.log(decimal.toString());  // "0.65"
 Конвертирует в number (может потерять точность).
 
 ```typescript
-const price = Price.of("0.6543");
+const price = Price.of(new Decimal("0.6543"));
 const num: number = price.toNumber();  // 0.6543
 
 // ⚠️ Lossy для очень точных чисел
-const precise = Price.of("0.123456789012345");
+const precise = Price.of(new Decimal("0.123456789012345"));
 console.log(precise.toNumber());  // Может потерять точность!
 ```
 
@@ -156,9 +144,9 @@ console.log(precise.toNumber());  // Может потерять точност�
 Сравнивает два Price на строгое равенство.
 
 ```typescript
-const price1 = Price.of(0.5);
-const price2 = Price.of("0.5");
-const price3 = Price.of(0.6);
+const price1 = Price.of(new Decimal(0.5));
+const price2 = Price.of(new Decimal("0.5"));
+const price3 = Price.of(new Decimal(0.6));
 
 price1.equals(price2);  // true
 price1.equals(price3);  // false
@@ -166,14 +154,26 @@ price1.equals(price3);  // false
 
 **Примечание:** Это **строгое** равенство по `Decimal.equals()`. Для approximate equality можно реализовать вспомогательную функцию сравнения с допустимой погрешностью при необходимости.
 
+### `isZero(): boolean`
+
+Проверяет что цена равна нулю. Всегда возвращает `false`, т.к. минимальная цена 0.0001.
+
+**Добавлено для единообразия API** с Quantity и Money.
+
+```typescript
+Price.of(new Decimal(0.5)).isZero();     // false (всегда)
+Price.MIN.isZero();         // false (всегда)
+Price.MAX.isZero();         // false (всегда)
+```
+
 ### `isMin(): boolean`
 
 Проверяет что цена равна минимальной (0.0001).
 
 ```typescript
-Price.min().isMin();         // true
-Price.of(0.0001).isMin();    // true
-Price.of(0.5).isMin();       // false
+Price.MIN.isMin();         // true
+Price.of(new Decimal(0.0001)).isMin();    // true
+Price.of(new Decimal(0.5)).isMin();       // false
 ```
 
 ### `isMax(): boolean`
@@ -181,9 +181,9 @@ Price.of(0.5).isMin();       // false
 Проверяет что цена равна максимальной (0.9999).
 
 ```typescript
-Price.max().isMax();         // true
-Price.of(0.9999).isMax();    // true
-Price.of(0.5).isMax();       // false
+Price.MAX.isMax();         // true
+Price.of(new Decimal(0.9999)).isMax();    // true
+Price.of(new Decimal(0.5)).isMax();       // false
 ```
 
 ---
@@ -203,7 +203,7 @@ Price.of(0.5).isMax();       // false
 **Примеры:**
 
 ```typescript
-const minPrice = Price.min();
+const minPrice = Price.MIN;
 console.log(minPrice.toNumber());  // 0.0001
 
 // Валидные tick sizes (кратны MIN_PRICE)
@@ -230,11 +230,11 @@ console.log(minPrice.toNumber());  // 0.0001
 **Примеры:**
 
 ```typescript
-const maxPrice = Price.max();
+const maxPrice = Price.MAX;
 console.log(maxPrice.toNumber());  // 0.9999
 
 // Complement минимальной цены
-const minComplement = new Decimal(1).minus(Price.minValue());
+const minComplement = new Decimal(1).minus(Price.MIN.value());
 console.log(minComplement.toString());  // "0.9999" (= MAX_PRICE)
 ```
 
@@ -250,7 +250,7 @@ console.log(minComplement.toString());  // "0.9999" (= MAX_PRICE)
 **Примеры:**
 
 ```typescript
-const halfPrice = Price.half();
+const halfPrice = Price.HALF;
 console.log(halfPrice.toNumber());  // 0.5
 
 // Complement половинной цены
@@ -266,7 +266,7 @@ console.log(halfComplement.toString());  // "0.5" (симметрично!)
 
 ```typescript
 try {
-  Price.of(NaN);
+  Price.of(new Decimal(NaN));
 } catch (e) {
   console.log(e instanceof PriceInvariantViolation);  // true
   console.log(e.message);  // "Price invariant violation: Price cannot be NaN"
@@ -281,13 +281,13 @@ try {
 
 ```typescript
 try {
-  Price.of(Infinity);
+  Price.of(new Decimal(Infinity));
 } catch (e) {
   console.log(e.message);  // "Price invariant violation: Price must be finite"
 }
 
 try {
-  Price.of(-Infinity);
+  Price.of(new Decimal(-Infinity));
 } catch (e) {
   console.log(e.message);  // "Price invariant violation: Price must be finite"
 }
@@ -301,19 +301,19 @@ try {
 
 ```typescript
 try {
-  Price.of(0);  // Ноль ниже MIN_PRICE
+  Price.of(new Decimal(0));  // Ноль ниже MIN_PRICE
 } catch (e) {
   console.log(e.message);  // "Price invariant violation: Price 0 is below minimum 0.0001"
 }
 
 try {
-  Price.of(0.00009);  // Ниже MIN_PRICE
+  Price.of(new Decimal(0.00009));  // Ниже MIN_PRICE
 } catch (e) {
   console.log(e.message);  // "Price invariant violation: Price 0.00009 is below minimum 0.0001"
 }
 
 try {
-  Price.of(-0.5);  // Отрицательное значение
+  Price.of(new Decimal(-0.5));  // Отрицательное значение
 } catch (e) {
   console.log(e.message);  // "Price invariant violation: Price -0.5 is below minimum 0.0001"
 }
@@ -331,13 +331,13 @@ try {
 
 ```typescript
 try {
-  Price.of(1);  // Единица выше MAX_PRICE
+  Price.of(new Decimal(1));  // Единица выше MAX_PRICE
 } catch (e) {
   console.log(e.message);  // "Price invariant violation: Price 1 exceeds maximum 0.9999"
 }
 
 try {
-  Price.of(1.5);  // Выше MAX_PRICE
+  Price.of(new Decimal(1.5));  // Выше MAX_PRICE
 } catch (e) {
   console.log(e.message);  // "Price invariant violation: Price 1.5 exceeds maximum 0.9999"
 }
@@ -376,29 +376,6 @@ try {
 
 ## Оптимизации
 
-### Zero-copy в fromDecimal()
-
-```typescript
-// ❌ С парсингом (медленно)
-const decimal = new Decimal(0.5);
-const price1 = Price.of(decimal);  // парсит decimal → new Decimal()
-
-// ✅ Без парсинга (быстро)
-const decimal = new Decimal(0.5);
-const price2 = Price.fromDecimal(decimal);  // использует decimal напрямую
-
-// Проверка
-price2.value() === decimal;  // true (тот же объект!)
-```
-
-**Когда использовать:**
-
-- В Facade, когда уже получили Decimal из Math layer
-- В Rules, если результат валидации Decimal
-- Для производительности в hot paths
-
----
-
 ## Примеры использования
 
 ### Создание с валидацией
@@ -406,7 +383,7 @@ price2.value() === decimal;  // true (тот же объект!)
 ```typescript
 function createPriceFromUser(input: string): Price {
   try {
-    return Price.of(input);
+    return Price.of(new Decimal(input));
   } catch (e) {
     if (e instanceof PriceInvariantViolation) {
       throw new Error(`Invalid price: ${e.message}`);
@@ -429,8 +406,8 @@ const price2 = createPriceFromUser("1.5");  // "Invalid price: ..."
 ### Сравнение цен
 
 ```typescript
-const bidPrice = Price.of(0.64);
-const askPrice = Price.of(0.66);
+const bidPrice = Price.of(new Decimal(0.64));
+const askPrice = Price.of(new Decimal(0.66));
 
 if (bidPrice.equals(askPrice)) {
   console.log('Spread is zero');
@@ -454,21 +431,21 @@ if (askPrice.isMax()) {
 
 ```typescript
 // Инициализация с нейтральной ценой
-let currentPrice = Price.half();  // 0.5
+let currentPrice = Price.HALF;  // 0.5
 
 // Проверка экстремальных значений
-if (currentPrice.equals(Price.min())) {
+if (currentPrice.equals(Price.MIN)) {
   console.log('Price at floor');
-} else if (currentPrice.equals(Price.max())) {
+} else if (currentPrice.equals(Price.MAX)) {
   console.log('Price at ceiling');
 }
 
 // Использование в вычислениях (через Facade!)
 import { PriceService } from './facade/PriceService.js';
 
-const complementResult = PriceService.complement(Price.min());
+const complementResult = PriceService.complement(Price.MIN);
 if (complementResult.ok) {
-  console.log(complementResult.value.equals(Price.max()));  // true
+  console.log(complementResult.value.equals(Price.MAX));  // true
 }
 ```
 
@@ -480,27 +457,28 @@ if (complementResult.ok) {
 
 ```typescript
 import { describe, it, expect } from '@jest/globals';
+import Decimal from 'decimal.js';
 import { Price, PriceInvariantViolation } from './Price.js';
 
 describe('Price invariants', () => {
   it('должен принять валидное значение', () => {
-    expect(() => Price.of(0.5)).not.toThrow();
+    expect(() => Price.of(new Decimal(0.5))).not.toThrow();
   });
 
   it('должен отклонить NaN', () => {
-    expect(() => Price.of(NaN)).toThrow(PriceInvariantViolation);
+    expect(() => Price.of(new Decimal(NaN))).toThrow(PriceInvariantViolation);
   });
 
   it('должен отклонить Infinity', () => {
-    expect(() => Price.of(Infinity)).toThrow(PriceInvariantViolation);
+    expect(() => Price.of(new Decimal(Infinity))).toThrow(PriceInvariantViolation);
   });
 
   it('должен отклонить значение ниже MIN', () => {
-    expect(() => Price.of(0.00001)).toThrow(PriceInvariantViolation);
+    expect(() => Price.of(new Decimal(0.00001))).toThrow(PriceInvariantViolation);
   });
 
   it('должен отклонить значение выше MAX', () => {
-    expect(() => Price.of(1.5)).toThrow(PriceInvariantViolation);
+    expect(() => Price.of(new Decimal(1.5))).toThrow(PriceInvariantViolation);
   });
 });
 ```
@@ -524,26 +502,12 @@ if (!result.ok) {
 ### ❌ DON'T: Не используйте Price.of() в production
 
 ```typescript
-// ❌ Плохо (может бросить исключение)
-const price = Price.of(userInput);
-```
+import Decimal from 'decimal.js';
+import { Price } from '@polymarket/value-objects/price';
 
----
-
-### ✅ DO: Используйте fromDecimal() для оптимизации
-
-```typescript
-// ✅ Хорошо (zero-copy)
-const decimal = calculateSomething();  // returns Decimal
-const price = Price.fromDecimal(decimal);
-```
-
-### ❌ DON'T: Не парсите повторно
-
-```typescript
-// ❌ Плохо (двойной парсинг)
-const decimal = new Decimal(0.5);
-const price = Price.of(decimal);  // парсит снова!
+// ❌ Плохо (может бросить исключение если значение невалидно)
+const userDecimal = new Decimal(userInput); // может бросить при парсинге
+const price = Price.of(userDecimal); // может бросить при валидации инвариантов
 ```
 
 ---

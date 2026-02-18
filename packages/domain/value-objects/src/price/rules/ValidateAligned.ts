@@ -1,5 +1,5 @@
 import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidPriceError, InvalidTickSizeError } from '@polymarket/errors';
+import { InvalidPriceError, InvalidTickSizeError, ErrorSource } from '@polymarket/errors';
 import { Price } from '../core/Price.js';
 import { ValidateTickSizeMultipleOfBaseTick } from './ValidateTickSizeMultipleOfBaseTick.js';
 import type { AlignedErrorReason } from './types.js';
@@ -50,7 +50,7 @@ export class ValidateAligned {
    *
    * @example
    * ```typescript
-   * const price = Price.of(0.5);
+   * const price = Price.of(new Decimal(0.5));
    *
    * // ✅ Валидные комбинации
    * ValidateAligned.check(price, new Decimal(0.0001)); // Ok (0.5 % 0.0001 === 0)
@@ -82,6 +82,7 @@ export class ValidateAligned {
           (ctx) => `Price ${ctx.price} is not aligned to tick size ${ctx.tickSize}`,
           {
             context: {
+              source: ErrorSource.RULE_VALIDATION,
               field: 'price',
               reason: 'not_aligned' as AlignedErrorReason,
               price: price.value().toString(),

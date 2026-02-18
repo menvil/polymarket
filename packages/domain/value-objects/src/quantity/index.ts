@@ -1,17 +1,20 @@
-export { Quantity } from './core/index.js';
+// Core (публичный API)
+export { Quantity, QuantityInvariantViolation } from './core/index.js';
 
 // Facade (единственная точка входа для операций)
 export { QuantityService } from './facade/index.js';
 
 // Adapters (сериализация и форматирование)
-export {
-  QuantitySerializer,
-  QuantityLossySerializer,
-  QuantityFormatter
-} from './adapters/index.js';
+export { QuantitySerializer, QuantityFormatter, type QuantityJSON } from './adapters/index.js';
 
 // Errors (публичный API)
-export { QuantityErrorReason } from './errors/QuantityErrorReason.js';
+export { QuantityErrorReason } from './errors/index.js';
 
-// Rules и QuantityInvariantViolation НЕ экспортируются —
-// это internal implementation details. Всё должно идти через QuantityService.
+// Rules (публичный API для внешней валидации)
+export {
+  ValidateMinSize,
+  ValidateResultNonNegative,
+  ValidateDivisorForQuantityDivision,
+  ValidateFactorForQuantityMultiplication,
+  ValidateStepSizeForQuantity
+} from './rules/index.js';
