@@ -76,9 +76,13 @@ export function safeStringify(obj: unknown, indent?: number): string {
     // String(undefined) === "undefined" — невалидный JSON-токен; используем "\"undefined\""
     return result ?? '"undefined"';
   } catch (error) {
-    // TypeError означает circular reference (V8: "circular structure", SpiderMonkey: "cyclic object value")
-    // Проверяем только instanceof TypeError — не привязываемся к тексту ошибки
-    if (error instanceof TypeError) {
+    // Детектируем circular reference по ключевым словам из всех основных движков:
+    //   V8 (Node.js):      "Converting circular structure to JSON" → "circular"
+    //   SpiderMonkey:      "cyclic object value"                  → "cyclic"
+    //   JavaScriptCore:    "JSON.stringify cannot serialize cyclic structures" → "cyclic"
+    // Проверяем instanceof TypeError чтобы не матчить RangeError/ReferenceError,
+    // и добавляем regex чтобы не ловить несвязанные TypeError (например toJSON() бросает TypeError)
+    if (error instanceof TypeError && /circular|cyclic/i.test(error.message)) {
       try {
         // Пытаемся извлечь примитивные значения из объекта
         const safe = extractPrimitiveFields(obj);
