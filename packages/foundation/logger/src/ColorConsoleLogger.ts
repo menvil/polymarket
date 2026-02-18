@@ -400,9 +400,10 @@ export class ColorConsoleLogger implements ILogger {
     return new ColorConsoleLogger(
       this.clock,
       this.level,
-      // Используем cachedSanitizedBindings вместо this.bindings: спред raw bindings
-      // может вызвать throwing getters; кешированная копия уже безопасна
-      { ...this.cachedSanitizedBindings, ...bindings },
+      // Санитизируем оба источника перед спредом — как кешированные bindings родителя,
+      // так и новые bindings из аргумента: спред { ...raw } вызовет все геттеры до
+      // того как конструктор нового логгера успеет их безопасно обработать
+      { ...this.cachedSanitizedBindings, ...sanitizeContext(bindings) },
       {
         useColors: this.useColors,
         showTimestamp: this.showTimestamp,
