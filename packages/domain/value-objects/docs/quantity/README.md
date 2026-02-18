@@ -284,7 +284,7 @@ interface InvalidQuantityErrorContext {
   factor?: string;
   stepSize?: string;
   minSize?: string;
-  reason?: 'NEGATIVE' | 'NON_FINITE' | 'NAN';
+  reason?: 'NEGATIVE' | 'NON_FINITE' | 'NAN' | 'DIVISION_BY_ZERO' | 'INVALID_FORMAT' | 'INVALID_STEP_SIZE';
   raw?: { field: string; value: string };
   cause?: { name: string; message: string; stack?: string };
 }

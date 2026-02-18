@@ -48,7 +48,7 @@ describe('ValidateResultNonNegative', () => {
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidQuantityError);
         expect(result.error.message).toContain('must be finite');
-        expect((result.error as any).context?.result).toBe('NaN');
+        expect(result.error.context?.result).toBe('NaN');
       }
     });
 
@@ -58,7 +58,7 @@ describe('ValidateResultNonNegative', () => {
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidQuantityError);
         expect(result.error.message).toContain('must be finite');
-        expect((result.error as any).context?.result).toBe('Infinity');
+        expect(result.error.context?.result).toBe('Infinity');
       }
     });
 
@@ -68,7 +68,7 @@ describe('ValidateResultNonNegative', () => {
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidQuantityError);
         expect(result.error.message).toContain('must be finite');
-        expect((result.error as any).context?.result).toBe('-Infinity');
+        expect(result.error.context?.result).toBe('-Infinity');
       }
     });
   });

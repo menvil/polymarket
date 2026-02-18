@@ -547,6 +547,7 @@ export class QuantityService {
     options?: { roundingMode?: Decimal.Rounding }
   ): Result<Quantity, InvalidQuantityError> {
     const roundingMode = options?.roundingMode ?? Decimal.ROUND_HALF_UP;
+    const deltaDec = delta.toDecimal();
 
     // Безопасный парсинг stepSize через toDecimal
     const stepSizeResult = toDecimal('stepSize', stepSize, QuantityErrorReason.INVALID_FORMAT, InvalidQuantityError, {
@@ -557,7 +558,7 @@ export class QuantityService {
       return Err(
         rewrap(QuantityService.SERVICE_NAME, 'increaseBy', {
           quantity: quantity.value().toString(),
-          delta: delta.toDecimal().toString(),
+          delta: deltaDec.toString(),
           stepSize: String(stepSize)
         }, stepSizeResult.error, InvalidQuantityError)
       );
@@ -571,7 +572,7 @@ export class QuantityService {
       return Err(
         rewrap(QuantityService.SERVICE_NAME, 'increaseBy', {
           quantity: quantity.value().toString(),
-          delta: delta.toDecimal().toString(),
+          delta: deltaDec.toString(),
           stepSize: stepSizeDecimal.toString()
         }, validateResult.error, InvalidQuantityError)
       );
@@ -579,7 +580,7 @@ export class QuantityService {
 
     const ctx = {
       quantity: quantity.value().toString(),
-      delta: delta.toDecimal().toString(),
+      delta: deltaDec.toString(),
       stepSize: stepSizeDecimal.toString(),
       roundingMode: String(roundingMode)
     };
