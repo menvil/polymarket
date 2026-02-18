@@ -118,7 +118,7 @@
  */
 
 export type { ILogger } from './ILogger.js';
-export { LogLevel, shouldLog } from './LogLevel.js';
+export { LogLevel, shouldLog, LOG_LEVEL_WEIGHTS } from './LogLevel.js';
 export { ConsoleLogger } from './ConsoleLogger.js';
 export {
   ColorConsoleLogger,

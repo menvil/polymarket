@@ -112,10 +112,21 @@ export class PinoLoggerAdapter implements ILogger {
     if (!context) return {};
 
     const sanitized: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(context)) {
-      if (!PinoLoggerAdapter.RESERVED_FIELDS.has(key)) {
-        sanitized[key] = value;
+    try {
+      const keys = Object.keys(context);
+      for (const key of keys) {
+        if (!PinoLoggerAdapter.RESERVED_FIELDS.has(key)) {
+          try {
+            // Читаем значение в отдельном try/catch — геттер может бросить исключение
+            sanitized[key] = context[key];
+          } catch {
+            // Геттер бросил исключение — пропускаем поле чтобы не прерывать логирование
+          }
+        }
       }
+    } catch {
+      // Object.keys может упасть на Proxy или экзотичном объекте — возвращаем пустой объект
+      return {};
     }
     return sanitized;
   }
