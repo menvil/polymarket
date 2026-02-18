@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach } from '@jest/globals';
 import { Writable } from 'stream';
+import pino from 'pino';
 import { PinoLoggerAdapter } from '../src/PinoLoggerAdapter.js';
 import { PaperClock } from '@polymarket/time';
 
@@ -36,6 +37,30 @@ describe('PinoLoggerAdapter', () => {
   describe('constructor', () => {
     it('должен создавать экземпляр PinoLoggerAdapter', () => {
       expect(logger).toBeInstanceOf(PinoLoggerAdapter);
+    });
+
+    it('должен принимать готовый pino.Logger и timestamp из IClock остаётся рабочим', () => {
+      // Создаём pino.Logger с clock-based timestamp — как у родительского адаптера
+      // (имитирует путь через child() или предварительно сконфигурированный логгер)
+      const pinoWithClock = pino(
+        {
+          level: 'info',
+          timestamp: () => `,"time":${clock.now().getTime()}`
+        },
+        dest
+      );
+
+      // Передаём готовый pino.Logger в конструктор (ветка 'child' in optionsOrPino)
+      const adapterFromExisting = new PinoLoggerAdapter(pinoWithClock, clock);
+
+      adapterFromExisting.info('From existing pino', { tag: 'existing' });
+
+      expect(output.length).toBe(1);
+      const log = JSON.parse(output[0]);
+      expect(log.msg).toBe('From existing pino');
+      expect(log.tag).toBe('existing');
+      // timestamp должен быть из IClock — pinoWithClock сконфигурирован с clock.now()
+      expect(log.time).toBe(clock.now().getTime());
     });
   });
 
@@ -392,6 +417,23 @@ describe('PinoLoggerAdapter', () => {
       const log = JSON.parse(output[0]);
       expect(log.msg).toBe('Warn with empty context');
       expect(log.level).toBe(40); // WARN
+    });
+
+    it('должен возвращать пустой context если Object.keys бросает (Proxy)', () => {
+      // Proxy, где ownKeys-ловушка бросает исключение → Object.keys падает
+      const throwingProxy = new Proxy({} as Record<string, unknown>, {
+        ownKeys() {
+          throw new Error('ownKeys trap threw');
+        }
+      });
+
+      // Логгер должен продолжить работу с пустым context, не бросая исключений
+      expect(() => logger.info('Message with exotic context', throwingProxy)).not.toThrow();
+
+      expect(output.length).toBe(1);
+      const log = JSON.parse(output[0]);
+      expect(log.msg).toBe('Message with exotic context');
+      // Нет полей из context — Object.keys упал, sanitizeContext вернул {}
     });
   });
 });
