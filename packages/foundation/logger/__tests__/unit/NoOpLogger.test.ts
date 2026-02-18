@@ -26,6 +26,7 @@ describe('NoOpLogger', () => {
       expect(iLogger.warn).toBeDefined();
       expect(iLogger.error).toBeDefined();
       expect(iLogger.fatal).toBeDefined();
+      expect(iLogger.child).toBeDefined();
     });
   });
 

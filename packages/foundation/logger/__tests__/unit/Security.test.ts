@@ -664,10 +664,6 @@ describe('Logger Security Tests', () => {
     });
 
     it('должен логировать в console.error и возвращать fallback при неизвестной ошибке', () => {
-      const errorSpy = jest
-        .spyOn(console, 'error')
-        .mockImplementation(() => {});
-
       // Провоцируем не-circular ошибку сериализации
       const weird = {
         toJSON() {
@@ -677,8 +673,8 @@ describe('Logger Security Tests', () => {
 
       consoleLogger.info('Test', { data: weird });
 
-      // Должно быть залогировано в console.error
-      expect(errorSpy).toHaveBeenCalledWith(
+      // Должно быть залогировано в console.error (используем consoleSpy.error из beforeEach)
+      expect(consoleSpy.error).toHaveBeenCalledWith(
         '[Logger] Serialization error:',
         expect.any(RangeError)
       );
@@ -687,8 +683,6 @@ describe('Logger Security Tests', () => {
       expect(consoleSpy.info).toHaveBeenCalledTimes(1);
       const logged = JSON.parse(consoleSpy.info.mock.calls[0][0] as string);
       expect(logged.__error).toBe('Serialization failed');
-
-      errorSpy.mockRestore();
     });
   });
 

@@ -82,6 +82,22 @@ const COLORS = {
 } as const;
 
 /**
+ * Типобезопасная карта уровень → цвет
+ *
+ * @remarks
+ * Заменяет unsafe cast `level.toLowerCase() as keyof typeof COLORS`,
+ * гарантируя что каждый LogLevel имеет явно назначенный цвет.
+ */
+const LEVEL_COLORS: Readonly<Record<LogLevel, string>> = {
+  [LogLevel.TRACE]: COLORS.trace,
+  [LogLevel.DEBUG]: COLORS.debug,
+  [LogLevel.INFO]: COLORS.info,
+  [LogLevel.WARN]: COLORS.warn,
+  [LogLevel.ERROR]: COLORS.error,
+  [LogLevel.FATAL]: COLORS.fatal,
+};
+
+/**
  * Опции форматирования для ColorConsoleLogger
  *
  * @remarks
@@ -172,11 +188,14 @@ export class ColorConsoleLogger implements ILogger {
     this.useColors = options.useColors ?? true;
     this.showTimestamp = options.showTimestamp ?? true;
     this.showMetadata = options.showMetadata ?? true;
+    // Кешируем один раз — bindings неизменны после конструктора
+    this.cachedSanitizedBindings = sanitizeContext(this.bindings);
   }
 
   private readonly useColors: boolean;
   private readonly showTimestamp: boolean;
   private readonly showMetadata: boolean;
+  private readonly cachedSanitizedBindings: Record<string, unknown>;
 
   /**
    * Логирует трассировочное сообщение (уровень TRACE)
@@ -304,10 +323,10 @@ export class ColorConsoleLogger implements ILogger {
               stack: error.stack,
             },
           }
-        : {};
-
-      const safeContext = context ? sanitizeContext(context) : {};
-      this.log(LogLevel.ERROR, message, { ...safeContext, ...errorContext });
+        : undefined;
+      // Не санитизируем context здесь — log() сделает это единожды
+      const mergedContext = errorContext ? { ...(context ?? {}), ...errorContext } : context;
+      this.log(LogLevel.ERROR, message, mergedContext);
     }
   }
 
@@ -344,10 +363,10 @@ export class ColorConsoleLogger implements ILogger {
               stack: error.stack,
             },
           }
-        : {};
-
-      const safeContext = context ? sanitizeContext(context) : {};
-      this.log(LogLevel.FATAL, message, { ...safeContext, ...errorContext });
+        : undefined;
+      // Не санитизируем context здесь — log() сделает это единожды
+      const mergedContext = errorContext ? { ...(context ?? {}), ...errorContext } : context;
+      this.log(LogLevel.FATAL, message, mergedContext);
     }
   }
 
@@ -407,8 +426,8 @@ export class ColorConsoleLogger implements ILogger {
     message: string,
     context?: Record<string, unknown>
   ): void {
-    // Sanitize bindings and context to prevent overriding reserved fields
-    const sanitizedBindings = sanitizeContext(this.bindings);
+    // Используем закешированные sanitized bindings (вычислены один раз в конструкторе)
+    const sanitizedBindings = this.cachedSanitizedBindings;
     const sanitizedContext = context ? sanitizeContext(context) : undefined;
 
     // Форматируем сообщение
@@ -427,7 +446,7 @@ export class ColorConsoleLogger implements ILogger {
     // Level
     const levelStr = level.toUpperCase();
     if (this.useColors) {
-      const color = COLORS[level.toLowerCase() as keyof typeof COLORS];
+      const color = LEVEL_COLORS[level];
       parts.push(`${color}[${levelStr}]${COLORS.reset}`);
     } else {
       parts.push(`[${levelStr}]`);
@@ -438,7 +457,7 @@ export class ColorConsoleLogger implements ILogger {
       const bindingsStr = Object.entries(sanitizedBindings)
         .map(([key, value]) =>
           typeof value === 'object' && value !== null
-            ? `${key}=${safeStringify(value as Record<string, unknown>)}`
+            ? `${key}=${safeStringify(value)}`
             : `${key}=${value}`
         )
         .join(' ');

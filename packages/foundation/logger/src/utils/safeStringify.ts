@@ -49,7 +49,9 @@
 export function safeStringify(obj: unknown, indent?: number): string {
   // Первая попытка - стандартная сериализация
   try {
-    return JSON.stringify(
+    // JSON.stringify может вернуть undefined (например, при obj === undefined) —
+    // явно fallback на String(obj) чтобы гарантировать строковый результат
+    const result = JSON.stringify(
       obj,
       (_key, value) => {
         // Handle BigInt - convert to string representation
@@ -71,6 +73,7 @@ export function safeStringify(obj: unknown, indent?: number): string {
       },
       indent
     );
+    return result ?? String(obj);
   } catch (error) {
     // Circular reference - попытка сохранить хотя бы примитивные поля
     if (error instanceof TypeError && error.message.includes('circular')) {

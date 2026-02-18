@@ -119,8 +119,9 @@ export class PinoLoggerAdapter implements ILogger {
           try {
             // Читаем значение в отдельном try/catch — геттер может бросить исключение
             sanitized[key] = context[key];
-          } catch {
-            // Геттер бросил исключение — пропускаем поле чтобы не прерывать логирование
+          } catch (err) {
+            // Геттер бросил исключение — сохраняем placeholder (аналогично foundation sanitizeContext)
+            sanitized[key] = `[Error reading property: ${err instanceof Error ? err.message : String(err)}]`;
           }
         }
       }
@@ -300,6 +301,9 @@ export class PinoLoggerAdapter implements ILogger {
    * ```
    */
   child(bindings: Record<string, unknown>): ILogger {
+    // pino.child() наследует timestamp-функцию из замыкания родительского конструктора,
+    // поэтому поле this.clock в дочернем PinoLoggerAdapter не влияет на генерацию timestamps —
+    // оно передаётся для соответствия ILogger API и ясности намерений.
     return new PinoLoggerAdapter(
       this.pino.child(this.sanitizeContext(bindings)),
       this.clock
