@@ -518,17 +518,17 @@ export class QuantityService {
    * // Увеличить на 10% с округлением к шагу 1
    * const qty = expectOk(QuantityService.create(95));
    * const delta = expectOk(RatioService.fromPercent(10));
-   * const result = QuantityService.increaseBy(qty, delta.value, 1);
+   * const result = QuantityService.increaseBy(qty, delta, 1);
    * // 95 * 1.10 = 104.5 → round to 105
    *
    * // Уменьшить на 5% (отрицательный delta)
    * const decrease = expectOk(RatioService.fromPercent(-5));
-   * const result2 = QuantityService.increaseBy(qty, decrease.value, 1);
+   * const result2 = QuantityService.increaseBy(qty, decrease, 1);
    * // 95 * 0.95 = 90.25 → round to 90
    *
    * // С округлением вниз (conservative)
    * const result3 = QuantityService.increaseBy(
-   *   qty, delta.value, 1, { roundingMode: Decimal.ROUND_DOWN }
+   *   qty, delta, 1, { roundingMode: Decimal.ROUND_DOWN }
    * );
    * // 95 * 1.10 = 104.5 → floor to 104
    *
@@ -536,8 +536,8 @@ export class QuantityService {
    * const baseSize = expectOk(QuantityService.create(100));
    * const increment = expectOk(RatioService.fromPercent(10));
    * const order1 = baseSize; // 100
-   * const order2 = expectOk(QuantityService.increaseBy(order1, increment.value, 1)); // 110
-   * const order3 = expectOk(QuantityService.increaseBy(order2, increment.value, 1)); // 121
+   * const order2 = expectOk(QuantityService.increaseBy(order1, increment, 1)); // 110
+   * const order3 = expectOk(QuantityService.increaseBy(order2, increment, 1)); // 121
    * ```
    */
   public static increaseBy(

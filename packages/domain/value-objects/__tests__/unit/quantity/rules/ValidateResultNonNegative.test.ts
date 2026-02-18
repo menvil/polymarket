@@ -1,6 +1,6 @@
 import { describe, it, expect } from '@jest/globals';
 import { ValidateResultNonNegative } from '../../../../src/quantity/rules/ValidateResultNonNegative.js';
-import { InvalidQuantityError } from '@polymarket/errors';
+import { InvalidQuantityError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 
 describe('ValidateResultNonNegative', () => {
@@ -25,12 +25,13 @@ describe('ValidateResultNonNegative', () => {
     });
 
     it('должен иметь правильный context format', () => {
-      expect.assertions(2);
+      expect.assertions(3);
       const result = ValidateResultNonNegative.check(new Decimal(-5.5));
       if (!result.ok) {
         const context = result.error.context;
         expect(context).toHaveProperty('result');
         expect(context?.result).toBe('-5.5');
+        expect(context?.source).toBe(ErrorSource.RULE_VALIDATION);
       }
     });
 

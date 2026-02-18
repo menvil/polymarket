@@ -276,6 +276,7 @@ type QuantityResult = Result<Quantity, InvalidQuantityError>;
 
 interface InvalidQuantityErrorContext {
   op: string;
+  opChain?: string[];
   value?: string;
   quantity?: string;
   quantity1?: string;
@@ -283,7 +284,11 @@ interface InvalidQuantityErrorContext {
   divisor?: string;
   factor?: string;
   stepSize?: string;
-  minSize?: string;
+  rate?: string;
+  delta?: string;
+  roundingMode?: string;
+  result?: string;
+  source?: string;
   reason?: 'NEGATIVE' | 'NON_FINITE' | 'NAN' | 'DIVISION_BY_ZERO' | 'INVALID_FORMAT' | 'INVALID_STEP_SIZE';
   raw?: { field: string; value: string };
   cause?: { name: string; message: string; stack?: string };

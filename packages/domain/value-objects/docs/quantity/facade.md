@@ -60,11 +60,13 @@ interface InvalidQuantityErrorContext {
 **Пример использования:**
 
 ```typescript
+// Validation error: divisor=0 перехватывается ValidateDivisorForQuantityDivision до divideDecimal
 const result = QuantityService.divide(qty, 0);
 if (!result.ok) {
   console.log(result.error.context?.op);      // 'divide'
   console.log(result.error.context?.divisor); // '0'
-  console.log(result.error.context?.cause);   // { name: '...', message: '...' }
+  console.log(result.error.context?.source);  // 'rule_validation'
+  console.log(result.error.context?.cause);   // undefined (не арифметическое исключение)
 }
 ```
 
@@ -676,11 +678,26 @@ if (!result.ok) {
 - Может содержать `context.cause.stack` для отладки
 
 ```typescript
-const result = QuantityService.divide(qty, 0);
-if (!result.ok) {
-  expect(result.error.context?.op).toBe('divide');
-  expect(result.error.context?.cause?.name).toBe('DivisionByZeroError');
-  expect(result.error.context?.cause?.message).toBeDefined();
+// Math exceptions возникают внутри wrapOp, если math-функция бросает исключение.
+// divide(qty, 0) перехватывается ValidateDivisorForQuantityDivision ДО вызова divideDecimal —
+// поэтому context.cause будет undefined. Чтобы увидеть math exception в context.cause,
+// нужно замокировать внутреннюю функцию (divideDecimal из @polymarket/math):
+
+// jest.spyOn(mathModule, 'divideDecimal').mockImplementationOnce(() => {
+//   throw new DivisionByZeroError('Mocked overflow');
+// });
+// const result = QuantityService.divide(qty, 1); // divisor=1 проходит валидацию, бросит мок
+// expect(result.error.context?.cause?.name).toBe('DivisionByZeroError');
+
+// В реальном коде context.cause возникает при неожиданных арифметических исключениях:
+const subtractResult = QuantityService.subtract(
+  Quantity.of(new Decimal(5)),
+  Quantity.of(new Decimal(10))
+);
+if (!subtractResult.ok) {
+  // Validation error (result negative) — context.cause тут будет undefined
+  expect(subtractResult.error.context?.op).toBe('subtract');
+  expect(subtractResult.error.context?.result).toBeDefined();
 }
 ```
 
