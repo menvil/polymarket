@@ -7,6 +7,7 @@ import { RatioFormatter } from '../../../src/ratio/adapters/RatioFormatter';
 import { RatioSerializer } from '../../../src/ratio/adapters/RatioSerializer';
 import { Ratio } from '../../../src/ratio/core/Ratio';
 import { RatioErrorReason } from '../../../src/ratio/errors/RatioErrorReason';
+import * as ratioBarrel from '../../../src/ratio/index';
 
 describe('Ratio Integration Workflow', () => {
   describe('создание через разные форматы приводит к одинаковым значениям', () => {
@@ -30,6 +31,10 @@ describe('Ratio Integration Workflow', () => {
       const fromPercent = RatioService.fromPercent(100);
       const fromDecimal = RatioService.fromDecimal(1);
       const fromBps = RatioService.fromBps(10000);
+
+      expect(fromPercent.ok).toBe(true);
+      expect(fromDecimal.ok).toBe(true);
+      expect(fromBps.ok).toBe(true);
 
       if (fromPercent.ok && fromDecimal.ok && fromBps.ok) {
         expect(fromPercent.value.equals(fromDecimal.value)).toBe(true);
@@ -65,7 +70,9 @@ describe('Ratio Integration Workflow', () => {
       if (original.ok) {
         const formatted = RatioFormatter.toPercent(original.value, 1);
         expect(formatted.ok).toBe(true);
-        expect(formatted.ok && formatted.value).toBe('2.5%');
+        if (formatted.ok) {
+          expect(formatted.value).toBe('2.5%');
+        }
 
         if (formatted.ok) {
           const parsed = RatioFormatter.parse(formatted.value);
@@ -85,7 +92,9 @@ describe('Ratio Integration Workflow', () => {
       if (original.ok) {
         const formatted = RatioFormatter.toBps(original.value, 0);
         expect(formatted.ok).toBe(true);
-        expect(formatted.ok && formatted.value).toBe('250 bps');
+        if (formatted.ok) {
+          expect(formatted.value).toBe('250 bps');
+        }
 
         if (formatted.ok) {
           const parsed = RatioFormatter.parse(formatted.value);
@@ -139,6 +148,7 @@ describe('Ratio Integration Workflow', () => {
     it('amount * (1 + ratio) для markup с onePlus()', () => {
       const amount = new Decimal(100);
       const markupResult = RatioService.fromPercent(10); // 10% markup
+      expect(markupResult.ok).toBe(true);
 
       if (markupResult.ok) {
         const markup = markupResult.value;
@@ -152,6 +162,7 @@ describe('Ratio Integration Workflow', () => {
     it('amount * (1 + ratio) для discount с onePlus()', () => {
       const amount = new Decimal(100);
       const discountResult = RatioService.fromPercent(-20); // -20% discount
+      expect(discountResult.ok).toBe(true);
 
       if (discountResult.ok) {
         const discount = discountResult.value;
@@ -165,6 +176,7 @@ describe('Ratio Integration Workflow', () => {
     it('amount * (1 - ratio) для вычитания fee с oneMinus()', () => {
       const amount = new Decimal(100);
       const feeResult = RatioService.fromPercent(2); // 2% fee
+      expect(feeResult.ok).toBe(true);
 
       if (feeResult.ok) {
         const fee = feeResult.value;
@@ -176,6 +188,7 @@ describe('Ratio Integration Workflow', () => {
     it('amount * (1 - ratio) для discount с oneMinus()', () => {
       const price = new Decimal(200);
       const discountResult = RatioService.fromPercent(15); // 15% discount
+      expect(discountResult.ok).toBe(true);
 
       if (discountResult.ok) {
         const discount = discountResult.value;
@@ -187,6 +200,7 @@ describe('Ratio Integration Workflow', () => {
     it('amount * ratio для fee calculation (берем только fee)', () => {
       const amount = new Decimal(1000);
       const feeResult = RatioService.fromPercent(2); // 2% fee
+      expect(feeResult.ok).toBe(true);
 
       if (feeResult.ok) {
         const fee = feeResult.value;
@@ -201,19 +215,22 @@ describe('Ratio Integration Workflow', () => {
 
       // Применить 10% markup
       const markupResult = RatioService.fromPercent(10);
-      if (!markupResult.ok) throw new Error('Markup creation failed');
+      expect(markupResult.ok).toBe(true);
+      if (!markupResult.ok) return;
       const afterMarkup = baseAmount.mul(markupResult.value.onePlus());
       expect(afterMarkup.toString()).toBe('1100');
 
       // Вычесть 5% discount
       const discountResult = RatioService.fromPercent(-5);
-      if (!discountResult.ok) throw new Error('Discount creation failed');
+      expect(discountResult.ok).toBe(true);
+      if (!discountResult.ok) return;
       const afterDiscount = afterMarkup.mul(discountResult.value.onePlus());
       expect(afterDiscount.toString()).toBe('1045');
 
       // Добавить 2% fee
       const feeResult = RatioService.fromPercent(2);
-      if (!feeResult.ok) throw new Error('Fee creation failed');
+      expect(feeResult.ok).toBe(true);
+      if (!feeResult.ok) return;
       const fee = afterDiscount.mul(feeResult.value.toDecimal());
       const finalAmount = afterDiscount.plus(fee);
       expect(finalAmount.toString()).toBe('1065.9');
@@ -292,48 +309,47 @@ describe('Ratio Integration Workflow', () => {
 
         // Adapters - Format
         const formatted = RatioFormatter.toPercent(ratio, 1);
-        expect(formatted.ok && formatted.value).toBe('2.5%');
+        expect(formatted.ok).toBe(true);
+        if (formatted.ok) {
+          expect(formatted.value).toBe('2.5%');
+        }
 
         // Adapters - Serialize
         const json = RatioSerializer.toJSON(ratio);
         expect(json.ratio).toBe('0.025');
 
         const deserialized = RatioSerializer.fromJSON(json);
-        expect(deserialized.ok && deserialized.value.equals(ratio)).toBe(true);
+        expect(deserialized.ok).toBe(true);
+        if (deserialized.ok) {
+          expect(deserialized.value.equals(ratio)).toBe(true);
+        }
       }
     });
   });
 
   describe('barrel-export contract: публичный API', () => {
     it('все основные классы доступны через main index.ts', () => {
-      // Проверяем что можем импортировать через barrel export
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const ratioModule = require('../../../src/ratio/index.js');
-
       // Core
-      expect(ratioModule.Ratio).toBeDefined();
-      expect(ratioModule.RatioInvariantViolation).toBeDefined();
+      expect(ratioBarrel.Ratio).toBeDefined();
+      expect(ratioBarrel.RatioInvariantViolation).toBeDefined();
 
       // Facade
-      expect(ratioModule.RatioService).toBeDefined();
+      expect(ratioBarrel.RatioService).toBeDefined();
 
       // Adapters
-      expect(ratioModule.RatioFormatter).toBeDefined();
-      expect(ratioModule.RatioSerializer).toBeDefined();
+      expect(ratioBarrel.RatioFormatter).toBeDefined();
+      expect(ratioBarrel.RatioSerializer).toBeDefined();
 
       // Errors
-      expect(ratioModule.RatioErrorReason).toBeDefined();
+      expect(ratioBarrel.RatioErrorReason).toBeDefined();
 
-      // Rules (Problem 13: ValidateRatioLteOne должен быть доступен)
-      expect(ratioModule.ValidateRatioGteMinusOne).toBeDefined();
-      expect(ratioModule.ValidateRatioLteOne).toBeDefined();
+      // Rules
+      expect(ratioBarrel.ValidateRatioGteMinusOne).toBeDefined();
+      expect(ratioBarrel.ValidateRatioLteOne).toBeDefined();
     });
 
     it('ValidateRatioLteOne работает через barrel export', () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { ValidateRatioLteOne } = require('../../../src/ratio/index.js');
-
-      const invalidResult = ValidateRatioLteOne.check(new Decimal(1.5), 'test');
+      const invalidResult = ratioBarrel.ValidateRatioLteOne.check(new Decimal(1.5), 'test');
       expect(isErr(invalidResult)).toBe(true);
       if (isErr(invalidResult)) {
         const error = invalidResult.error as InvalidRatioError;
@@ -341,15 +357,12 @@ describe('Ratio Integration Workflow', () => {
         expect(error.context?.source).toBe(ErrorSource.RULE_VALIDATION);
       }
 
-      const validResult = ValidateRatioLteOne.check(new Decimal(0.5), 'test');
+      const validResult = ratioBarrel.ValidateRatioLteOne.check(new Decimal(0.5), 'test');
       expect(validResult.ok).toBe(true);
     });
 
     it('ValidateRatioGteMinusOne работает через barrel export', () => {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { ValidateRatioGteMinusOne } = require('../../../src/ratio/index.js');
-
-      const invalidResult = ValidateRatioGteMinusOne.check(new Decimal(-1.5), 'test');
+      const invalidResult = ratioBarrel.ValidateRatioGteMinusOne.check(new Decimal(-1.5), 'test');
       expect(isErr(invalidResult)).toBe(true);
       if (isErr(invalidResult)) {
         const error = invalidResult.error as InvalidRatioError;
@@ -357,7 +370,7 @@ describe('Ratio Integration Workflow', () => {
         expect(error.context?.source).toBe(ErrorSource.RULE_VALIDATION);
       }
 
-      const validResult = ValidateRatioGteMinusOne.check(new Decimal(-0.5), 'test');
+      const validResult = ratioBarrel.ValidateRatioGteMinusOne.check(new Decimal(-0.5), 'test');
       expect(validResult.ok).toBe(true);
     });
   });

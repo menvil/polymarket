@@ -1,8 +1,9 @@
+import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { isErr } from '@polymarket/result';
 import { ErrorSource } from '@polymarket/errors';
-import { ValidateRatioLteOne } from '../../../../src/ratio/rules/ValidateRatioLteOne.js';
-import { RatioErrorReason } from '../../../../src/ratio/errors/RatioErrorReason.js';
+import { ValidateRatioLteOne } from '../../../../src/ratio/rules/ValidateRatioLteOne';
+import { RatioErrorReason } from '../../../../src/ratio/errors/RatioErrorReason';
 
 describe('ValidateRatioLteOne', () => {
   describe('check()', () => {

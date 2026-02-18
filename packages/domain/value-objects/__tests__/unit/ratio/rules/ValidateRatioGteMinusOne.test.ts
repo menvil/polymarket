@@ -79,6 +79,7 @@ describe('ValidateRatioGteMinusOne', () => {
   describe('сообщения об ошибках', () => {
     it('содержит правильное сообщение', () => {
       const result = ValidateRatioGteMinusOne.check(new Decimal(-1.5), 'addRate');
+      expect(isErr(result)).toBe(true);
       if (isErr(result)) {
         expect(result.error.message).toContain('Ratio must be >= -1');
         expect(result.error.message).toContain('addRate');
@@ -88,6 +89,7 @@ describe('ValidateRatioGteMinusOne', () => {
 
     it('содержит operation в контексте', () => {
       const result = ValidateRatioGteMinusOne.check(new Decimal(-2), 'customOp');
+      expect(isErr(result)).toBe(true);
       if (isErr(result)) {
         expect(result.error.context?.op).toBe('customOp');
       }

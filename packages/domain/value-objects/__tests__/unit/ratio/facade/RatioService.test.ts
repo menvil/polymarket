@@ -429,6 +429,8 @@ describe('RatioService', () => {
     it('возвращает boolean напрямую', () => {
       const r1Result = RatioService.fromDecimal(0.02);
       const r2Result = RatioService.fromDecimal(0.02);
+      expect(r1Result.ok).toBe(true);
+      expect(r2Result.ok).toBe(true);
 
       if (r1Result.ok && r2Result.ok) {
         const isEqual = RatioService.equals(r1Result.value, r2Result.value);
@@ -440,6 +442,8 @@ describe('RatioService', () => {
     it('возвращает true для равных Ratio', () => {
       const r1Result = RatioService.fromDecimal(0.02);
       const r2Result = RatioService.fromDecimal(0.02);
+      expect(r1Result.ok).toBe(true);
+      expect(r2Result.ok).toBe(true);
 
       if (r1Result.ok && r2Result.ok) {
         expect(RatioService.equals(r1Result.value, r2Result.value)).toBe(true);
@@ -449,6 +453,8 @@ describe('RatioService', () => {
     it('возвращает false для неравных Ratio', () => {
       const r1Result = RatioService.fromDecimal(0.02);
       const r2Result = RatioService.fromDecimal(0.03);
+      expect(r1Result.ok).toBe(true);
+      expect(r2Result.ok).toBe(true);
 
       if (r1Result.ok && r2Result.ok) {
         expect(RatioService.equals(r1Result.value, r2Result.value)).toBe(false);
@@ -457,6 +463,7 @@ describe('RatioService', () => {
 
     it('возвращает false для null (Never Throw contract)', () => {
       const r1Result = RatioService.fromDecimal(0.02);
+      expect(r1Result.ok).toBe(true);
       if (r1Result.ok) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect(RatioService.equals(r1Result.value, null as any)).toBe(false);
@@ -467,6 +474,7 @@ describe('RatioService', () => {
 
     it('возвращает false для undefined (Never Throw contract)', () => {
       const r1Result = RatioService.fromDecimal(0.02);
+      expect(r1Result.ok).toBe(true);
       if (r1Result.ok) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         expect(RatioService.equals(r1Result.value, undefined as any)).toBe(false);

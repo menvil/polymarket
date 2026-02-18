@@ -120,7 +120,6 @@ graph TB
 - **[Facade API](./facade.md)** - RatioService reference (основной API)
 - **[Adapters](./adapters.md)** - RatioFormatter и RatioSerializer
 - **[Examples](./examples.md)** - примеры использования в реальных сценариях
-- **[Comparison with Percentage](./comparison-with-percentage.md)** - почему Percentage был удален
 
 ## 🔑 API Overview
 
@@ -256,7 +255,7 @@ Ratio заменяет удаленный Percentage value object. Ключев�
 - "Процент это доля ОТ ЧИСЛА" - нужен контекст
 - Ratio решает эту проблему минимальной абстракцией
 
-Подробнее: [Comparison with Percentage](./comparison-with-percentage.md)
+Подробнее: см. раздел «Ratio vs Percentage» выше
 
 ## 🚫 Важно: Ratio НЕ содержит арифметических операций
 

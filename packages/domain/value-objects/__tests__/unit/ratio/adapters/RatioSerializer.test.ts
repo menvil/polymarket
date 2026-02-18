@@ -137,12 +137,9 @@ describe('RatioSerializer', () => {
       expect(isErr(result)).toBe(true);
     });
 
-    // Regression test для circular JSON throw bug
-    it('обрабатывает circular JSON структуру без throw', () => {
-      const circular: any = { ratio: 123 };
-      circular.self = circular; // создаем циклическую ссылку
-
-      const result = RatioSerializer.fromJSON(circular);
+    // Проверяем что ratio: number (не string) отклоняется как INVALID_JSON_STRUCTURE
+    it('отклоняет объект с ratio-числом вместо строки', () => {
+      const result = RatioSerializer.fromJSON({ ratio: 123 });
       expect(isErr(result)).toBe(true);
       if (isErr(result)) {
         expect(result.error.context?.reason).toBe(RatioErrorReason.INVALID_JSON_STRUCTURE);

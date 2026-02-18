@@ -164,6 +164,47 @@ describe('Ratio core', () => {
     });
   });
 
+  describe('negate()', () => {
+    it('возвращает отрицание положительного ratio', () => {
+      const result = RatioService.fromDecimal(0.02);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const negated = result.value.negate();
+        expect(negated).toBeInstanceOf(Ratio);
+        expect(negated.toDecimal().toString()).toBe('-0.02');
+      }
+    });
+
+    it('возвращает отрицание отрицательного ratio', () => {
+      const result = RatioService.fromDecimal(-0.15);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const negated = result.value.negate();
+        expect(negated).toBeInstanceOf(Ratio);
+        expect(negated.toDecimal().toString()).toBe('0.15');
+      }
+    });
+
+    it('возвращает нуль при отрицании нулевого ratio', () => {
+      const result = RatioService.fromDecimal(0);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const negated = result.value.negate();
+        expect(negated).toBeInstanceOf(Ratio);
+        expect(negated.toDecimal().toString()).toBe('0');
+      }
+    });
+
+    it('возвращает отрицание процентного значения', () => {
+      const result = RatioService.fromPercent(10); // 10% => 0.1
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const negated = result.value.negate();
+        expect(negated.toDecimal().toString()).toBe('-0.1');
+      }
+    });
+  });
+
   describe('сравнение', () => {
     it('equals() корректно сравнивает равные Ratio', () => {
       const r1Result = RatioService.fromDecimal(0.02);
