@@ -5,7 +5,8 @@
   "description": "Polymarket trading system monorepo",
   "workspaces": [
     "packages/foundation/*",
-    "packages/domain/*"
+    "packages/domain/*",
+    "packages/infrastructure/*"
   ],
   "scripts": {
     "clean": "rm -rf node_modules packages/*/*/node_modules packages/*/*/dist packages/*/*/*.tsbuildinfo",
