@@ -150,6 +150,7 @@ describe('NoOpLogger', () => {
   describe('нулевой overhead', () => {
     it('не должен вызывать console методы', () => {
       const consoleSpies = {
+        trace: jest.spyOn(console, 'trace'),
         debug: jest.spyOn(console, 'debug'),
         info: jest.spyOn(console, 'info'),
         warn: jest.spyOn(console, 'warn'),
@@ -165,6 +166,7 @@ describe('NoOpLogger', () => {
         logger.error('test', new Error('test'));
         logger.fatal('test', new Error('test'));
 
+        expect(consoleSpies.trace).not.toHaveBeenCalled();
         expect(consoleSpies.debug).not.toHaveBeenCalled();
         expect(consoleSpies.info).not.toHaveBeenCalled();
         expect(consoleSpies.warn).not.toHaveBeenCalled();

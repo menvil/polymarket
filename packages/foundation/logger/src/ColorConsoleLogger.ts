@@ -400,7 +400,9 @@ export class ColorConsoleLogger implements ILogger {
     return new ColorConsoleLogger(
       this.clock,
       this.level,
-      { ...this.bindings, ...bindings },
+      // Используем cachedSanitizedBindings вместо this.bindings: спред raw bindings
+      // может вызвать throwing getters; кешированная копия уже безопасна
+      { ...this.cachedSanitizedBindings, ...bindings },
       {
         useColors: this.useColors,
         showTimestamp: this.showTimestamp,
@@ -544,8 +546,12 @@ export class ColorConsoleLogger implements ILogger {
 
       if (Object.keys(otherContext).length > 0) {
         // Use safeStringify to prevent exceptions on circular refs
-        const otherStr = safeStringify(otherContext);
-        return `{ ${errorStr}, ${otherStr.slice(1, -1)} }`;
+        const otherSlice = safeStringify(otherContext).slice(1, -1).trim();
+        // Слайс может оказаться пустым если все значения в otherContext — undefined
+        // (JSON.stringify пропускает undefined-значения → '{}'→ slice → '')
+        if (otherSlice.length > 0) {
+          return `{ ${errorStr}, ${otherSlice} }`;
+        }
       }
       return `{ ${errorStr} }`;
     }

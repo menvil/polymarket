@@ -42,7 +42,8 @@ export class PinoLoggerAdapter implements ILogger {
     'level',   // Log level (устанавливается методом trace/debug/info/etc)
     'pid',     // Process ID (автоматически добавляется Pino)
     'hostname',// Hostname (автоматически добавляется Pino)
-    'err'      // Error object (управляется через параметр error)
+    'err',     // Error object (управляется через параметр error)
+    'v'        // Pino version (автоматически добавляется Pino в каждую запись)
   ]);
 
   /**
@@ -120,6 +121,10 @@ export class PinoLoggerAdapter implements ILogger {
     try {
       const keys = Object.keys(context);
       for (const key of keys) {
+        // Пропускаем ключи вызывающие prototype pollution
+        if (key === '__proto__' || key === 'constructor' || key === 'prototype') {
+          continue;
+        }
         if (!PinoLoggerAdapter.RESERVED_FIELDS.has(key)) {
           try {
             // Читаем значение в отдельном try/catch — геттер может бросить исключение

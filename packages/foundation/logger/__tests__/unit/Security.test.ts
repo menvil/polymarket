@@ -688,7 +688,16 @@ describe('Logger Security Tests', () => {
         colorLogger.info('Test', { data: problematic });
       }).not.toThrow();
 
-      expect(consoleSpy.log).toHaveBeenCalled();
+      // TypeError без "circular"/"cyclic" в сообщении попадает в generic-обработчик
+      // и возвращает {"__error":"Serialization failed"}, а не "Circular reference detected"
+      expect(consoleSpy.log).toHaveBeenCalledTimes(1);
+      expect(consoleSpy.log.mock.calls[0][0] as string).toContain(
+        '"__error":"Serialization failed"'
+      );
+      expect(consoleSpy.error).toHaveBeenCalledWith(
+        '[Logger] Serialization error:',
+        expect.any(TypeError)
+      );
     });
 
     it('должен логировать в console.error и возвращать fallback при неизвестной ошибке', () => {
