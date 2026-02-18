@@ -300,17 +300,21 @@ Facade делает narrowing ОДИН РАЗ, core доверяет типу:
 // Facade
 public static create(
   conditionRef: ConditionRef,  // Union type
-  // ...
+  outcomeKey: OutcomeKey
 ): Result<OutcomeToken, InvalidOutcomeTokenError> {
-  // Type narrowing
-  if (conditionRef.kind !== 'ONCHAIN') {
-    return Err(...NOT_ONCHAIN_CONDITION);
-  }
+  return wrapOp(SERVICE_NAME, 'create', { conditionRef, outcomeKey }, () => {
+    // Type narrowing: выбрасываем ошибку если не OnChainConditionRef
+    if (conditionRef.kind !== 'ONCHAIN') {
+      throw new InvalidOutcomeTokenError(
+        (ctx) => `OutcomeToken requires on-chain condition, got: ${ctx.conditionRefKind}`,
+        { context: { kind: 'not_onchain_condition', conditionRefKind: conditionRef.kind } }
+      );
+    }
 
-  // После проверки: conditionRef это OnChainConditionRef
-  const token = OutcomeToken.of(conditionRef, outcomeKey);
-  //                            ^ TypeScript: OnChainConditionRef ✅
-  return Ok(token);
+    // После проверки TypeScript знает: conditionRef это OnChainConditionRef ✅
+    const token = OutcomeToken.of(conditionRef, outcomeKey);
+    return Ok(token);
+  }, InvalidOutcomeTokenError);
 }
 
 // Core

@@ -545,29 +545,29 @@ import Decimal from 'decimal.js';
   if (result2.ok) {
     console.log(result2.value.toNumber());  // 0.48 (0.50 * 0.95 = 0.475 → round to 0.48)
   }
+
+  // С округлением вниз (для bid)
+  const result3 = PriceService.applyRelativeChange(
+    price, markupResult.value, 0.01, { roundingMode: 'floor' }
+  );
+
+  // С округлением вверх (для ask)
+  const result4 = PriceService.applyRelativeChange(
+    price, markupResult.value, 0.01, { roundingMode: 'ceil' }
+  );
+
+  // Ошибка: результат выходит за диапазон
+  const extremeMarkup = RatioService.fromPercent(200); // +200%
+  if (!extremeMarkup.ok) return;
+
+  const errorResult = PriceService.applyRelativeChange(
+    Price.of(new Decimal(0.5)), extremeMarkup.value, 0.01
+  );
+  if (!errorResult.ok) {
+    // 0.5 * 3 = 1.5 > MAX_PRICE (0.9999)
+    console.log(errorResult.error.context?.op);  // 'applyRelativeChange'
+  }
 })();
-
-// С округлением вниз (для bid)
-const result3 = PriceService.applyRelativeChange(
-  price, markupResult.value, 0.01, { roundingMode: 'floor' }
-);
-
-// С округлением вверх (для ask)
-const result4 = PriceService.applyRelativeChange(
-  price, markupResult.value, 0.01, { roundingMode: 'ceil' }
-);
-
-// Ошибка: результат выходит за диапазон
-const extremeMarkup = RatioService.fromPercent(200); // +200%
-if (!extremeMarkup.ok) return;
-
-const errorResult = PriceService.applyRelativeChange(
-  Price.of(new Decimal(0.5)), extremeMarkup.value, 0.01
-);
-if (!errorResult.ok) {
-  // 0.5 * 3 = 1.5 > MAX_PRICE (0.9999)
-  console.log(errorResult.error.context?.op);  // 'applyRelativeChange'
-}
 ```
 
 ---

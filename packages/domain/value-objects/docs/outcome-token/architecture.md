@@ -227,7 +227,10 @@ function deepFreezeAssetId(asset: AssetId): AssetId {
 }
 
 export const AssetIdHelpers = {
-  fromOutcomeToken(conditionRef: OnChainConditionRef, outcomeKey: OutcomeKey): AssetId {
+  fromOutcomeToken(
+    conditionRef: OnChainConditionRef,
+    outcomeKey: OutcomeKey
+  ): Result<AssetId, AssetIdValidationError> {
     // Создаём frozen copy conditionRef
     const frozenConditionRef: OnChainConditionRef = Object.freeze({
       kind: 'ONCHAIN' as const,
@@ -236,11 +239,11 @@ export const AssetIdHelpers = {
       conditionId: conditionRef.conditionId,
     });
 
-    return deepFreezeAssetId({
+    return Ok(deepFreezeAssetId({
       type: 'OUTCOME_TOKEN',
       conditionRef: frozenConditionRef,
-      outcomeKey: validated,
-    });
+      outcomeKey,
+    }));
   }
 };
 ```
@@ -601,8 +604,11 @@ public static of(
   outcomeKey: OutcomeKey
 ): OutcomeToken {
   // Никаких проверок kind — доверяем TypeScript типу
-  const assetId = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
-  return OutcomeToken.fromAssetId(assetId);
+  const assetIdResult = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
+  if (!assetIdResult.ok) {
+    throw new OutcomeTokenInvariantViolation('Failed to create AssetId', { cause: assetIdResult.error });
+  }
+  return OutcomeToken.fromCanonicalAssetId(assetIdResult.value as OutcomeTokenAssetId);
 }
 ```
 

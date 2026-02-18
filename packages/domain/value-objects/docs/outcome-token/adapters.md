@@ -181,6 +181,8 @@ if (Array.isArray(json)) {
   return Err(...INVALID_FORMAT);
 }
 
+const obj = json as Record<string, unknown>;
+
 // Есть обязательные поля?
 if (!('conditionRef' in obj) || !('outcomeKey' in obj)) {
   return Err(...INVALID_FORMAT);

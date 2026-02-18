@@ -111,7 +111,7 @@ public static fromAssetId(assetId: AssetId): OutcomeToken {
     );
   }
 
-  return new OutcomeToken(canonicalResult.value as OutcomeTokenAssetId);
+  return OutcomeToken.fromCanonicalAssetId(canonicalResult.value as OutcomeTokenAssetId);
 }
 ```
 
@@ -359,8 +359,7 @@ type OutcomeTokenAssetId = Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
 **Как работает:**
 
 - `Extract<>` извлекает только AssetId с type === 'OUTCOME_TOKEN'
-- TypeScript знает что этот тип имеет поле `conditionRef`
-- `conditionRef()` accessor может вернуть поле без проверок
+- TypeScript знает, что этот тип имеет поле `conditionRef`, и `conditionRef()` accessor может вернуть поле без проверок
 
 ### Инвариант 3: outcomeKey всегда существует
 
@@ -373,8 +372,7 @@ type OutcomeTokenAssetId = Extract<AssetId, { type: 'OUTCOME_TOKEN' }>;
 **Как работает:**
 
 - Аналогично Инварианту 2
-- TypeScript знает что этот тип имеет поле `outcomeKey`
-- `outcomeKey()` accessor может вернуть поле без проверок
+- TypeScript знает, что этот тип имеет поле `outcomeKey`, и `outcomeKey()` accessor может вернуть поле без проверок
 
 ---
 
@@ -584,13 +582,16 @@ export class OutcomeTokenInvariantViolation extends Error {
     public readonly context?: Record<string, unknown>
   ) {
     super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
   }
 }
 ```
 
 **Когда бросается:**
 
-- `fromAssetId()` если assetId.type !== 'OUTCOME_TOKEN'
+- `fromAssetId()` — если `assetId.type !== 'OUTCOME_TOKEN'`
+- `fromAssetId()` — если `AssetIdHelpers.fromOutcomeToken()` возвращает `Err` при defensive copy
+- `of()` — если `AssetIdHelpers.fromOutcomeToken()` возвращает `Err` (невалидные входные данные)
 
 **Пример:**
 
