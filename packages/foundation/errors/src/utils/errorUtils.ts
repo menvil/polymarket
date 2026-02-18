@@ -163,6 +163,9 @@ export function toCause(e: unknown): { name: string; message: string; stack?: st
  * @param input - Входное значение
  * @param reasonEnum - Enum значение для INVALID_FORMAT (напр. MoneyErrorReason.INVALID_FORMAT)
  * @param ErrorConstructor - Конструктор ошибки (InvalidMoneyError / InvalidPriceError / InvalidQuantityError)
+ * @param options - Опциональные причины для NaN и Infinity (если не указаны — используется reasonEnum)
+ * @param options.nanReason - Reason для NaN значений (напр. RatioErrorReason.NAN)
+ * @param options.nonFiniteReason - Reason для Infinity/-Infinity значений (напр. RatioErrorReason.NON_FINITE)
  * @returns Result<Decimal, TError>
  *
  * @remarks
@@ -171,8 +174,9 @@ export function toCause(e: unknown): { name: string; message: string; stack?: st
  * - Объекты (Decimal из другой копии) → toString() → парсим
  *
  * **Валидация**:
- * - Отвергает NaN и Infinity по умолчанию
- * - Используйте decimal.js проверки для обеспечения finite значений
+ * - NaN отвергается с reason = options.nanReason ?? reasonEnum
+ * - Infinity/-Infinity отвергается с reason = options.nonFiniteReason ?? reasonEnum
+ * - Невалидный формат строки отвергается с reason = reasonEnum
  *
  * При ошибке парсинга → TError с raw: { field, value } и cause.
  *
@@ -180,17 +184,22 @@ export function toCause(e: unknown): { name: string; message: string; stack?: st
  *
  * @example
  * ```typescript
+ * // Базовое использование (все ошибки → INVALID_FORMAT)
  * const result = toDecimal('value', '123.45', MoneyErrorReason.INVALID_FORMAT, InvalidMoneyError);
- * if (result.ok) {
- *   console.log(result.value); // Decimal(123.45)
- * }
+ *
+ * // С разделением причин (NaN → NAN, Infinity → NON_FINITE)
+ * const result = toDecimal('decimal', value, RatioErrorReason.INVALID_FORMAT, InvalidRatioError, {
+ *   nanReason: RatioErrorReason.NAN,
+ *   nonFiniteReason: RatioErrorReason.NON_FINITE,
+ * });
  * ```
  */
 export function toDecimal<TError extends DomainError>(
   field: string,
   input: number | string | Decimal,
   reasonEnum: string,
-  ErrorConstructor: ErrorConstructor<TError>
+  ErrorConstructor: ErrorConstructor<TError>,
+  options?: { nanReason?: string; nonFiniteReason?: string }
 ): Result<Decimal, TError> {
   try {
     // Не пытаемся "распознать" Decimal из другой копии.
@@ -244,14 +253,27 @@ export function toDecimal<TError extends DomainError>(
     // normalized точно number | string после проверки выше
     const decimal = new Decimal(normalized);
 
-    // Проверяем что результат finite (не NaN и не Infinity)
-    if (!decimal.isFinite()) {
+    // Проверяем NaN отдельно от Infinity — позволяет caller'у вернуть разные reasons
+    if (decimal.isNaN()) {
       return Err(
-        new ErrorConstructor('Value must be finite (not NaN or Infinity)', {
+        new ErrorConstructor('Value must be finite (not NaN)', {
           context: {
             source: ErrorSource.PARSING,
             raw: { field, value: String(normalized) },
-            reason: reasonEnum
+            reason: options?.nanReason ?? reasonEnum
+          }
+        })
+      );
+    }
+
+    // Проверяем Infinity/-Infinity
+    if (!decimal.isFinite()) {
+      return Err(
+        new ErrorConstructor('Value must be finite (not Infinity or -Infinity)', {
+          context: {
+            source: ErrorSource.PARSING,
+            raw: { field, value: String(normalized) },
+            reason: options?.nonFiniteReason ?? reasonEnum
           }
         })
       );
