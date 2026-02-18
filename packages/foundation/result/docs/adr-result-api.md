@@ -79,6 +79,7 @@ unsafe.ts = явный модуль для операций, бросающих 
 **Правило:** В safe-методах тип `E` **не расширяется** неявно через `error as E` в прикладном коде.
 
 **Вместо этого:**
+
 - Методы `AsyncResultChain` принимают опциональный `onError: (e: unknown) => E`
 - Явный `onError` даёт полный контроль над нормализацией — рекомендуемый подход
 - Без `onError` тип ошибки фиксирован как `unknown` — это честное отражение того,
@@ -116,6 +117,7 @@ AsyncResult.ok(promise, onError: (e: unknown) => E): AsyncResultChain<T, E>
 В обоих случаях Promise остаётся resolved. Это крайний случай: normalizer должен быть надёжным.
 
 **Widen-варианты (W-суффикс):**
+
 - `flatMapW<U, F>(fn: (T) => Result<U, F>): Result<U, E | F>` — fn может вернуть
   другой тип ошибки, результирующий тип расширяется до `E | F`
 - `mapErrW<T, E, F>(result, fn: (E) => F): Result<T, F>` — заменяет тип ошибки E на F
@@ -149,28 +151,32 @@ AsyncResult.ok(promise, onError: (e: unknown) => E): AsyncResultChain<T, E>
 `mapUnsafe` — явно unsafe вариант: исключение → rejected Promise.
 Используйте только когда rejected Promise является желаемым поведением.
 
-`tap`/`tapErr`/`match` — *side-effect методы*, их поведение при исключении
+`tap`/`tapErr`/`match` — _side-effect методы_, их поведение при исключении
 намеренно отличается: они не являются transform-методами и не должны
 маскировать ошибки пользователя.
 
 ### 5. Структура экспортов и unsafe граница
 
 **Основной путь (рекомендован для новых пользователей):**
+
 ```typescript
 import { Ok, Err, map, flatMap, combine, fromPromise } from '@polymarket/result';
 ```
 
 **OOP-адаптер:**
+
 ```typescript
 import { OkChain, ErrChain, toChain, R } from '@polymarket/result/chain';
 ```
 
 **Async-адаптер:**
+
 ```typescript
 import { AsyncResult, AsyncResultChain } from '@polymarket/result/async';
 ```
 
 **Unsafe-операции** (`unwrap` удалён из root-экспорта; доступен только через `/unsafe`):
+
 ```typescript
 // ✅ Правильно:
 import { unwrap, expectOk } from '@polymarket/result/unsafe';
@@ -213,12 +219,14 @@ Root-экспорт содержит только safe операции. Это 
 ## Последствия
 
 **Позитивные:**
+
 - Единый источник истины для контракта
 - Пользователь видит чёткое разделение safe/unsafe
 - `AsyncResultChain` стал предсказуемым: поведение задокументировано и протестировано
 - Widen-варианты позволяют правильно работать с union-типами ошибок
 
 **Негативные:**
+
 - Небольшой breaking change: `fromPromise`/`fromNullable`/`fromThrowable`
   переехали из ResultChain в ядро (но re-exported для совместимости)
 - `AsyncResultChain` требует указывать `onError` в местах, где тип ошибки строгий
