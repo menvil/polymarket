@@ -675,6 +675,11 @@ describe('Logger Security Tests', () => {
       }).not.toThrow();
 
       expect(consoleSpy.info).toHaveBeenCalled();
+      // Generic-обработчик должен вызвать console.error с меткой '[Logger] Serialization error:'
+      expect(consoleSpy.error).toHaveBeenCalledWith(
+        '[Logger] Serialization error:',
+        expect.any(Error)
+      );
     });
 
     it('должен обрабатывать ошибки сериализации в ColorConsoleLogger', () => {

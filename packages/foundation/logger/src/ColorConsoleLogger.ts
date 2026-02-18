@@ -181,15 +181,16 @@ export class ColorConsoleLogger implements ILogger {
   constructor(
     private readonly clock: IClock,
     private readonly level: LogLevel = LogLevel.INFO,
-    private readonly bindings: Record<string, unknown> = {},
+    bindings: Record<string, unknown> = {},
     options: ColorConsoleLoggerOptions = {}
   ) {
     // Извлекаем options с default значениями
     this.useColors = options.useColors ?? true;
     this.showTimestamp = options.showTimestamp ?? true;
     this.showMetadata = options.showMetadata ?? true;
-    // Кешируем один раз — bindings неизменны после конструктора
-    this.cachedSanitizedBindings = sanitizeContext(this.bindings);
+    // Санитизируем и кешируем сразу — bindings не нужно хранить как поле,
+    // после вычисления cachedSanitizedBindings сырой объект не используется
+    this.cachedSanitizedBindings = sanitizeContext(bindings);
   }
 
   private readonly useColors: boolean;

@@ -150,12 +150,12 @@ describe('NoOpLogger', () => {
   describe('нулевой overhead', () => {
     it('не должен вызывать console методы', () => {
       const consoleSpies = {
-        trace: jest.spyOn(console, 'trace'),
-        debug: jest.spyOn(console, 'debug'),
-        info: jest.spyOn(console, 'info'),
-        warn: jest.spyOn(console, 'warn'),
-        error: jest.spyOn(console, 'error'),
-        log: jest.spyOn(console, 'log'),
+        trace: jest.spyOn(console, 'trace').mockImplementation(() => {}),
+        debug: jest.spyOn(console, 'debug').mockImplementation(() => {}),
+        info: jest.spyOn(console, 'info').mockImplementation(() => {}),
+        warn: jest.spyOn(console, 'warn').mockImplementation(() => {}),
+        error: jest.spyOn(console, 'error').mockImplementation(() => {}),
+        log: jest.spyOn(console, 'log').mockImplementation(() => {}),
       };
 
       try {
@@ -165,6 +165,36 @@ describe('NoOpLogger', () => {
         logger.warn('test');
         logger.error('test', new Error('test'));
         logger.fatal('test', new Error('test'));
+
+        expect(consoleSpies.trace).not.toHaveBeenCalled();
+        expect(consoleSpies.debug).not.toHaveBeenCalled();
+        expect(consoleSpies.info).not.toHaveBeenCalled();
+        expect(consoleSpies.warn).not.toHaveBeenCalled();
+        expect(consoleSpies.error).not.toHaveBeenCalled();
+        expect(consoleSpies.log).not.toHaveBeenCalled();
+      } finally {
+        Object.values(consoleSpies).forEach((spy) => spy.mockRestore());
+      }
+    });
+
+    it('child logger не должен вызывать console методы', () => {
+      const child = logger.child({ service: 'Test' });
+      const consoleSpies = {
+        trace: jest.spyOn(console, 'trace').mockImplementation(() => {}),
+        debug: jest.spyOn(console, 'debug').mockImplementation(() => {}),
+        info: jest.spyOn(console, 'info').mockImplementation(() => {}),
+        warn: jest.spyOn(console, 'warn').mockImplementation(() => {}),
+        error: jest.spyOn(console, 'error').mockImplementation(() => {}),
+        log: jest.spyOn(console, 'log').mockImplementation(() => {}),
+      };
+
+      try {
+        child.trace('test');
+        child.debug('test');
+        child.info('test');
+        child.warn('test');
+        child.error('test', new Error('test'));
+        child.fatal('test', new Error('test'));
 
         expect(consoleSpies.trace).not.toHaveBeenCalled();
         expect(consoleSpies.debug).not.toHaveBeenCalled();
@@ -226,8 +256,9 @@ describe('NoOpLogger', () => {
       const config1: Config = { logger: new NoOpLogger() };
       const config2: Config = { logger: new NoOpLogger() };
 
-      expect(config1.logger).toBeInstanceOf(NoOpLogger);
-      expect(config2.logger).toBeInstanceOf(NoOpLogger);
+      // Проверяем поведение через интерфейс — типовая корректность гарантируется компилятором
+      expect(() => config1.logger.info('test')).not.toThrow();
+      expect(() => config2.logger.warn('test', { key: 'value' })).not.toThrow();
     });
   });
 
