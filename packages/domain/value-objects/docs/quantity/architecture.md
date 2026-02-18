@@ -412,7 +412,7 @@ Result<Quantity, InvalidQuantityError>
 
 ```typescript
 // Оптимизация: если value уже Decimal
-const quantity = value instanceof Decimal
+const quantity = Decimal.isDecimal(value)
   ? Quantity.of(value)              // zero-copy
   : Quantity.of(new Decimal(value));  // parse с сохранением точности
 ```
@@ -496,7 +496,7 @@ try {
 
 ---
 
-### 8. Контракт "Never Throw"
+### 7. Контракт "Never Throw"
 
 **Решение:** ВСЕ методы QuantityService ГАРАНТИРОВАННО возвращают Result, никогда не бросают.
 

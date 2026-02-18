@@ -77,7 +77,7 @@ describe('QuantitySerializer', () => {
           expect(result.error).toBeInstanceOf(Error);
           expect(result.error.message).toContain('Expected object');
           expect(result.error.context?.kind).toBe('invalid_json');
-          expect(result.error.context?.type).toBe('object');
+          expect(result.error.context?.type).toBe('null');
         }
       });
 
@@ -219,6 +219,7 @@ describe('QuantitySerializer', () => {
             result.error.message.toLowerCase().includes('number')
           ).toBe(true);
           expect(result.error.context?.op).toBe('create');
+          expect(result.error.context?.reason).toBe('INVALID_FORMAT');
         }
       });
 

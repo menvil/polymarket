@@ -20,6 +20,7 @@ describe('ValidateResultNonNegative', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidQuantityError);
+        expect(result.error.message).toContain('cannot be negative');
       }
     });
 

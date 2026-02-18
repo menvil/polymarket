@@ -148,7 +148,7 @@ export class QuantitySerializer {
               service: QuantitySerializer.SERVICE_NAME,
               op: 'fromJSON',
               kind: 'invalid_json',
-              type: typeof json,
+              type: json === null ? 'null' : typeof json,
               json: safeStringify(json)
             }
           }

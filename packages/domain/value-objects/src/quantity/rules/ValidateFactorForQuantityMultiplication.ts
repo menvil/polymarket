@@ -42,8 +42,8 @@ export class ValidateFactorForQuantityMultiplication {
       );
     }
 
-    // Проверка 2: factor не должен быть отрицательным
-    if (factor.isNegative()) {
+    // Проверка 2: factor не должен быть отрицательным (lessThan исключает -0)
+    if (factor.lessThan(new Decimal(0))) {
       return Err(
         new InvalidQuantityError(
           (ctx) => `Factor for Quantity multiplication cannot be negative, got ${ctx.factor}`,

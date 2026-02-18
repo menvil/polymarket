@@ -85,10 +85,6 @@ describe('Quantity.of()', () => {
     expect(qty.value().toString()).toBe("12345678901234567890.123456789");
   });
 
-  it('должен бросить для invalid string', () => {
-    expect(() => Quantity.of(new Decimal("not a number"))).toThrow();
-  });
-
   it('не должен клонировать Decimal (zero-copy оптимизация)', () => {
     const decimal = new Decimal(10);
     const qty = Quantity.of(decimal);

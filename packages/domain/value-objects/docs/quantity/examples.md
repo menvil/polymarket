@@ -1121,7 +1121,7 @@ const result = new QuantityCalculator(Quantity.of(new Decimal(100)))
   .build();
 
 if (result.ok) {
-  console.log(`Result: ${result.value.value()}`); // "20.00"
+  console.log(`Result: ${result.value.value()}`); // "40.00"
 }
 ```
 

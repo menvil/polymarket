@@ -271,9 +271,9 @@ const qty = Quantity.of(new Decimal(10));
 const value = 10;
 const decimal = new Decimal(value);
 
-// ✅ Оба метода используют zero-copy
-const qty1 = Quantity.of(decimal);          // Проверяет instanceof и использует тот же объект
-const qty2 = Quantity.of(decimal); // Напрямую использует тот же объект
+// ✅ Оба вызова используют zero-copy
+const qty1 = Quantity.of(decimal);  // Напрямую использует тот же объект
+const qty2 = Quantity.of(decimal);  // Напрямую использует тот же объект
 
 // Проверяем что это тот же Decimal
 console.log(qty1.value() === decimal); // true
@@ -321,11 +321,15 @@ console.log(total);  // 0.30000000000000004 😱
 
 ```typescript
 let total = Quantity.ZERO;
-const result1 = QuantityService.add(total, Quantity.of(new Decimal("0.1")));
+const qty01 = QuantityService.create("0.1");
+if (!qty01.ok) { throw qty01.error; }
+const result1 = QuantityService.add(total, qty01.value);
 if (!result1.ok) {
   throw result1.error;
 }
-const result2 = QuantityService.add(result1.value, Quantity.of(new Decimal("0.2")));
+const qty02 = QuantityService.create("0.2");
+if (!qty02.ok) { throw qty02.error; }
+const result2 = QuantityService.add(result1.value, qty02.value);
 if (!result2.ok) {
   throw result2.error;
 }

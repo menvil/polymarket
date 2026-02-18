@@ -474,10 +474,10 @@ function calculateRemaining(current: Quantity, trade: Quantity) {
 
   if (!result.ok) {
     // Невозможная операция: trade > current
-    return Result.err(new TradeTooLargeError());
+    return Err(new TradeTooLargeError());
   }
 
-  return Result.ok(result.value);
+  return Ok(result.value);
 }
 ```
 
@@ -491,13 +491,13 @@ function processTradeChain(position: Quantity, trades: Quantity[]) {
     const result = QuantityService.subtract(current, trade);
 
     if (!result.ok) {
-      return Result.err(`Trade failed at ${trade}: ${result.error.message}`);
+      return Err(new Error(`Trade failed at ${trade}: ${result.error.message}`));
     }
 
     current = result.value;
   }
 
-  return Result.ok(current);
+  return Ok(current);
 }
 ```
 

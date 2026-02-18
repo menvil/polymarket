@@ -23,6 +23,7 @@ describe('ValidateStepSizeForQuantity', () => {
       const result = ValidateStepSizeForQuantity.check(new Decimal(-0.01));
       expect(result.ok).toBe(false);
       if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidQuantityError);
         expect(result.error.message).toContain('must be positive');
       }
     });

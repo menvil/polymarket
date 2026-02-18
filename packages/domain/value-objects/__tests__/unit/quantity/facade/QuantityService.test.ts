@@ -64,11 +64,11 @@ describe('QuantityService', () => {
         }
       });
 
-      it('error должен содержать context.value', () => {
+      it('error для невалидной строки должен содержать context.raw', () => {
         expect.assertions(1);
-        const result = QuantityService.create(-1);
+        const result = QuantityService.create('invalid');
         if (!result.ok) {
-          expect(result.error.context?.value).toBe('-1');
+          expect(result.error.context?.raw).toBeDefined();
         }
       });
 

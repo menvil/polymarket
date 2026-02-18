@@ -85,8 +85,7 @@ export class QuantityService {
       QuantityService.SERVICE_NAME,
       'create',
       {
-        raw: { field: 'value', value: String(value) },
-        value: decimalResult.value.toString()
+        raw: { field: 'value', value: String(value) }
       },
       () => {
         // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
@@ -98,15 +97,36 @@ export class QuantityService {
   }
 
   /**
+   * Создаёт Quantity из уже валидированного Decimal без повторного парсинга
+   *
+   * @remarks
+   * Внутренний хелпер для операций, результат которых уже представлен как Decimal.
+   * Обходит toDecimal(), т.к. входное значение уже прошло парсинг.
+   * Всё ещё проверяет Core инварианты через Quantity.of().
+   *
+   * @param decimal - Уже готовый Decimal (не парсится повторно)
+   * @returns Result<Quantity, InvalidQuantityError>
+   */
+  private static createFromDecimal(decimal: Decimal): Result<Quantity, InvalidQuantityError> {
+    return wrapOp(
+      QuantityService.SERVICE_NAME,
+      'create',
+      { value: decimal.toString() },
+      () => Ok(Quantity.of(decimal)),
+      InvalidQuantityError
+    );
+  }
+
+  /**
    * Складывает два количества
    *
    * @remarks
    * Возвращает Result потому что результат может быть non-finite (overflow → Infinity).
-   * Оркестрирует: сложение через math → создание Quantity через create() (проверит инварианты)
+   * Оркестрирует: сложение через math → создание Quantity через createFromDecimal() (проверит инварианты)
    *
    * Обработка ошибок:
    * 1. Сложение через addDecimal() (может бросить InvalidOperandError, ArithmeticOverflowError)
-   * 2. Создание Quantity через create()
+   * 2. Создание Quantity через createFromDecimal()
    *
    * Все исключения ловятся и мапятся в Result.Err.
    * Метод никогда не бросает исключения.
@@ -127,7 +147,7 @@ export class QuantityService {
     const ctx = { quantity1: qty1.value().toString(), quantity2: qty2.value().toString() };
     return wrapOp(QuantityService.SERVICE_NAME, 'add', ctx, () => {
       const sum = addDecimal(qty1.value(), qty2.value());
-      return this.create(sum);
+      return this.createFromDecimal(sum);
     }, InvalidQuantityError);
   }
 
@@ -171,7 +191,7 @@ export class QuantityService {
         return validateResult;
       }
 
-      return this.create(diff);
+      return this.createFromDecimal(diff);
     }, InvalidQuantityError);
   }
 
@@ -234,7 +254,7 @@ export class QuantityService {
 
     return wrapOp(QuantityService.SERVICE_NAME, 'multiply', ctx, () => {
       const result = multiplyDecimal(quantity.value(), factorDecimal);
-      return this.create(result);
+      return this.createFromDecimal(result);
     }, InvalidQuantityError);
   }
 
@@ -256,7 +276,7 @@ export class QuantityService {
    *
    * Алгоритм:
    * 1. Парсинг divisor в Decimal через toDecimal()
-   * 2. Валидация через ValidateDivisorForQuantityDivision (isNaN, isFinite, isZero)
+   * 2. Валидация через ValidateDivisorForQuantityDivision (isFinite, isPositive — не ноль и не отрицательное)
    * 3. Деление через divideDecimal() из @polymarket/math
    * 4. Создание Quantity из результата
    *
@@ -311,7 +331,7 @@ export class QuantityService {
 
     return wrapOp(QuantityService.SERVICE_NAME, 'divide', ctx, () => {
       const result = divideDecimal(quantity.value(), divisorDecimal);
-      return this.create(result);
+      return this.createFromDecimal(result);
     }, InvalidQuantityError);
   }
 
@@ -384,7 +404,7 @@ export class QuantityService {
 
     return wrapOp(QuantityService.SERVICE_NAME, 'roundToStep', ctx, () => {
       const rounded = roundToTick(quantity.value(), stepSizeDecimal, roundingMode);
-      return this.create(rounded);
+      return this.createFromDecimal(rounded);
     }, InvalidQuantityError);
   }
 
@@ -445,7 +465,7 @@ export class QuantityService {
 
     return wrapOp(QuantityService.SERVICE_NAME, 'portion', ctx, () => {
       const result = multiplyDecimal(quantity.value(), rate.toDecimal());
-      return this.create(result);
+      return this.createFromDecimal(result);
     }, InvalidQuantityError);
   }
 
@@ -572,7 +592,7 @@ export class QuantityService {
       const rounded = roundToTick(newValue, stepSizeDecimal, roundingMode);
 
       // Создаём Quantity (автоматически проверит non-negative)
-      return this.create(rounded);
+      return this.createFromDecimal(rounded);
     }, InvalidQuantityError);
   }
 }
