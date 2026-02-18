@@ -776,7 +776,7 @@ for (const value of values) {
 // ✅ Быстрее (batch валидация)
 const validPrices = values
   .map(v => PriceService.create(v))
-  .filter(r => r.ok)
+  .filter((r): r is Ok<Price> => r.ok)
   .map(r => r.value);
 ```
 
@@ -794,9 +794,10 @@ for (const price of prices) {
   }
 }
 
-// ❌ Плохо (создаём каждый раз)
+// ❌ Плохо (создаём новые объекты в цикле вместо переиспользования результата)
 for (const price of prices) {
-  if (price.equals(Price.HALF)) {  // Price.HALF вызывается в цикле!
+  const threshold = Price.of(new Decimal('0.5'));  // Повторное создание!
+  if (price.equals(threshold)) {
     // ...
   }
 }

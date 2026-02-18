@@ -470,10 +470,16 @@ if (!priceResult.ok) return;
 const price = priceResult.value;
 
 // Для детального отображения (4 знака)
-console.log(PriceFormatter.toFixed(price, 4));  // "0.6500"
+const fixedResult = PriceFormatter.toFixed(price, 4);
+if (fixedResult.ok) {
+  console.log(fixedResult.value);  // "0.6500"
+}
 
 // Как процент
-console.log(PriceFormatter.toPercentage(price));  // "65.00%"
+const percentResult = PriceFormatter.toPercentage(price);
+if (percentResult.ok) {
+  console.log(percentResult.value);  // "65.00%"
+}
 
 // Для отладки
 console.log(`Price(${price.toNumber()})`);  // "Price(0.65)"

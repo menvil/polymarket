@@ -272,7 +272,7 @@ export class OutcomeTokenSerializer {
     if (refObj.kind !== 'ONCHAIN') {
       return Err(
         new InvalidOutcomeTokenError(
-          (ctx) => `ConditionRef.kind must be 'ONCHAIN', got ${ctx.kind}`,
+          (ctx) => `ConditionRef.kind must be 'ONCHAIN', got ${ctx.conditionRefKind}`,
           {
             context: {
               source,

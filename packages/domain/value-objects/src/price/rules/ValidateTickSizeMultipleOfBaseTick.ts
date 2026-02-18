@@ -44,14 +44,14 @@ export class ValidateTickSizeMultipleOfBaseTick {
    * @example
    * ```typescript
    * // ✅ Валидные tickSize (кратны 0.0001)
-   * const tick1 = new Decimal(0.0001);
+   * const tick1 = new Decimal('0.0001');
    * ValidateTickSizeMultipleOfBaseTick.check(tick1); // Ok
    *
-   * const tick2 = new Decimal(0.0002);
+   * const tick2 = new Decimal('0.0002');
    * ValidateTickSizeMultipleOfBaseTick.check(tick2); // Ok
    *
    * // ❌ Невалидные (не кратны 0.0001)
-   * const tick3 = new Decimal(0.00015);
+   * const tick3 = new Decimal('0.00015');
    * ValidateTickSizeMultipleOfBaseTick.check(tick3); // Err: not_multiple_of_base_tick
    * ```
    */

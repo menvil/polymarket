@@ -93,21 +93,22 @@ console.log(`Outcome: ${outcomeKey}`);
 ### Пример 3: Обработка union type
 
 ```typescript
-import { OutcomeTokenService, OutcomeTokenErrorReason } from '@polymarket/value-objects/outcome-token';
-import type { ConditionRef } from '@polymarket/ids';
+import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
+import type { ConditionRef, OnChainConditionRef, OffChainConditionRef } from '@polymarket/ids';
+import { parseChainId, parseConditionId, KnownOnChainProtocols } from '@polymarket/ids';
 
 function createTokenSafely(ref: ConditionRef, outcomeKey: string) {
   // ref может быть on-chain или off-chain
   const result = OutcomeTokenService.create(ref, outcomeKey as any);
 
   if (!result.ok) {
-    const reason = result.error.context?.reason;
+    const kind = result.error.context?.kind;
 
-    // Type-safe проверка причины
-    if (reason === OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION) {
+    // Проверка причины по context.kind
+    if (kind === 'not_onchain_condition') {
       console.error('OutcomeToken requires on-chain condition');
-      console.error(`Got: ${ref.kind}`);
-    } else if (reason === OutcomeTokenErrorReason.INVALID_OUTCOME_KEY) {
+      console.error(`Got: ${result.error.context?.conditionRefKind}`);
+    } else if (kind === 'invalid_outcome_key') {
       console.error('Invalid outcome key format');
       console.error(`Got: ${outcomeKey}`);
     } else {
@@ -123,13 +124,13 @@ function createTokenSafely(ref: ConditionRef, outcomeKey: string) {
 // ✅ On-chain condition — создаётся успешно
 const onChainRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
-  protocolId: 'POLYMARKET_CTF' as any,
-  chainId: 137 as any,
-  conditionId: '0xaaaa...' as any
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+  chainId: parseChainId('137')!,
+  conditionId: parseConditionId('0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')!
 };
 const token1 = createTokenSafely(onChainRef, 'UP');
 
-// ❌ Off-chain condition — возвращает NOT_ONCHAIN_CONDITION
+// ❌ Off-chain condition — возвращает not_onchain_condition
 const offChainRef: OffChainConditionRef = {
   kind: 'OFFCHAIN',
   venueId: 'KALSHI' as any,
@@ -268,57 +269,38 @@ if (token) {
 ### Пример 7: Детальная обработка ошибок
 
 ```typescript
-import {
-  OutcomeTokenService,
-  OutcomeTokenErrorReason
-} from '@polymarket/value-objects/outcome-token';
+import { OutcomeTokenService } from '@polymarket/value-objects/outcome-token';
 import type { ConditionRef } from '@polymarket/ids';
-import { ErrorSource } from '@polymarket/errors';
 
 function createTokenWithErrorHandling(
   conditionRef: ConditionRef,
-  outcomeKey: string,
-  source: ErrorSource = ErrorSource.USER_INPUT
+  outcomeKey: string
 ) {
-  const result = OutcomeTokenService.create(conditionRef, outcomeKey as any, source);
+  const result = OutcomeTokenService.create(conditionRef, outcomeKey as any);
 
   if (!result.ok) {
     const error = result.error;
-    const reason = error.context?.reason;
-    const details = error.context?.details;
+    const kind = error.context?.kind;
 
     console.error('=== OutcomeToken Creation Failed ===');
     console.error(`Message: ${error.message}`);
-    console.error(`Reason: ${reason}`);
-    console.error(`Source: ${error.context?.source}`);
-    console.error(`Details:`, details);
+    console.error(`Kind: ${kind}`);
 
     // Специфичная обработка по причине
-    switch (reason) {
-      case OutcomeTokenErrorReason.NOT_ONCHAIN_CONDITION:
+    switch (kind) {
+      case 'not_onchain_condition':
         console.error('→ OutcomeToken requires on-chain condition');
-        console.error('→ Use TokenBalance or other value objects for off-chain');
+        console.error(`→ Got: ${error.context?.conditionRefKind}`);
         break;
 
-      case OutcomeTokenErrorReason.INVALID_OUTCOME_KEY:
+      case 'invalid_outcome_key':
         console.error('→ Invalid outcome key format');
         console.error('→ Expected: UP, DOWN, or other valid OutcomeKey');
         break;
 
-      case OutcomeTokenErrorReason.INVALID_ASSET_ID_TYPE:
-        console.error('→ AssetId type mismatch (internal bug)');
-        break;
-
-      case OutcomeTokenErrorReason.UNEXPECTED:
-        console.error('→ Unexpected error occurred');
-        console.error('→ This may be an internal bug, please report');
-        if (details && 'errorStack' in details) {
-          console.error('Stack trace:', details.errorStack);
-        }
-        break;
-
       default:
-        console.error('→ Unknown error reason');
+        console.error('→ Unexpected error occurred');
+        console.error('→ Message:', error.message);
     }
 
     return null;

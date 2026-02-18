@@ -121,7 +121,7 @@ try {
 │  - ValidateDivisorForPriceDivision                  │
 │  - ValidateFactorForPriceMultiplication             │
 │                                                     │
-│  Зависит от: Ничего (только Decimal, Result)       │
+│  Зависит от: Core (Price — для диапазона min/max)  │
 └─────────────────────────────────────────────────────┘
                         ↓
 ┌─────────────────────────────────────────────────────┐
@@ -472,7 +472,7 @@ roundToMarketTick() → ValidateTickSizeMultipleOfBaseTick
 const validateResult = ValidateDivisorForPriceDivision.check(divisor);
 if (!validateResult.ok) {
   return Err(
-    rewrap('divide', {
+    rewrap('PriceService', 'divide', {
       dividend: price.value().toString()
     }, validateResult.error, InvalidPriceError)
   );
@@ -690,8 +690,9 @@ ValidateTickSizeMultipleOfBaseTick.check(tickSize)
 
 ```typescript
 // Неясное намерение
-const oneResult = PriceService.create(1);
-const compResult = PriceService.subtract(oneResult.value, price);
+const one = new Decimal('1');
+const compValue = one.minus(price.value());
+const compResult = PriceService.create(compValue.toNumber());
 ```
 
 ✅ **Хорошо:**

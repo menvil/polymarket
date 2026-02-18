@@ -82,7 +82,7 @@ describe('ValidateTickSize', () => {
   describe('exceeds_range', () => {
     it('должен вернуть Err для значения больше maxAllowed', () => {
       const maxAllowed = Price.MAX.value().minus(Price.MIN.value());
-      const tooLarge = maxAllowed.plus(0.0001);
+      const tooLarge = maxAllowed.plus(Price.MIN.value());
       const result = ValidateTickSize.check(tooLarge);
       expect(result.ok).toBe(false);
       if (!result.ok) {

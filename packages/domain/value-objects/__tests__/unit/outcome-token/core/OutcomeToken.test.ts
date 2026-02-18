@@ -1,14 +1,14 @@
 import { describe, it, expect } from '@jest/globals';
 import { OutcomeToken } from '../../../../src/outcome-token/core/index.js';
 import type { OnChainConditionRef } from '@polymarket/ids';
-import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols, parseChainId, parseConditionId } from '@polymarket/ids';
 
 describe('OutcomeToken (Core)', () => {
   const testConditionRef: OnChainConditionRef = {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as any,
-    conditionId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as any,
+    chainId: parseChainId('137')!,
+    conditionId: parseConditionId('0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef')!,
   };
 
   describe('of()', () => {
@@ -83,7 +83,7 @@ describe('OutcomeToken (Core)', () => {
       const ref1 = testConditionRef;
       const ref2: OnChainConditionRef = {
         ...testConditionRef,
-        conditionId: '0x1234567890abcdef000000000000000000000000000000000000000000000000' as any,
+        conditionId: parseConditionId('0x1234567890abcdef000000000000000000000000000000000000000000000000')!,
       };
 
       const token1 = OutcomeToken.of(ref1, BinaryOutcome.UP);

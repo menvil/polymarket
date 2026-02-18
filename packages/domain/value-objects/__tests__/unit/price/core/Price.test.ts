@@ -257,6 +257,18 @@ describe('Price comparison methods', () => {
       const p2 = Price.of(new Decimal(0.5));
       expect(p1.isLessThanOrEqual(p2)).toBe(true);
     });
+
+    it('должен вернуть true если this < other (строгое)', () => {
+      const p1 = Price.of(new Decimal(0.4));
+      const p2 = Price.of(new Decimal(0.5));
+      expect(p1.isLessThanOrEqual(p2)).toBe(true);
+    });
+
+    it('должен вернуть false если this > other', () => {
+      const p1 = Price.of(new Decimal(0.6));
+      const p2 = Price.of(new Decimal(0.5));
+      expect(p1.isLessThanOrEqual(p2)).toBe(false);
+    });
   });
 
   describe('isGreaterThan()', () => {
@@ -273,6 +285,18 @@ describe('Price comparison methods', () => {
       const p1 = Price.of(new Decimal(0.5));
       const p2 = Price.of(new Decimal(0.5));
       expect(p1.isGreaterThanOrEqual(p2)).toBe(true);
+    });
+
+    it('должен вернуть true если this > other (строгое)', () => {
+      const p1 = Price.of(new Decimal(0.6));
+      const p2 = Price.of(new Decimal(0.5));
+      expect(p1.isGreaterThanOrEqual(p2)).toBe(true);
+    });
+
+    it('должен вернуть false если this < other', () => {
+      const p1 = Price.of(new Decimal(0.4));
+      const p2 = Price.of(new Decimal(0.5));
+      expect(p1.isGreaterThanOrEqual(p2)).toBe(false);
     });
   });
 });
