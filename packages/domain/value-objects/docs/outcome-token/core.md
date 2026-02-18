@@ -423,7 +423,16 @@ AssetIdHelpers создаёт **frozen copy** входного conditionRef:
 
 ```typescript
 export const AssetIdHelpers = {
-  fromOutcomeToken(conditionRef: OnChainConditionRef, outcomeKey: OutcomeKey): AssetId {
+  fromOutcomeToken(
+    conditionRef: OnChainConditionRef,
+    outcomeKey: OutcomeKey
+  ): Result<AssetId, AssetIdValidationError> {
+    // Валидируем outcomeKey перед созданием
+    const validatedKey = validateOutcomeKey(outcomeKey);
+    if (!validatedKey.ok) {
+      return Err(validatedKey.error);
+    }
+
     // Создаём FROZEN COPY вместо использования входного conditionRef
     const frozenConditionRef: OnChainConditionRef = Object.freeze({
       kind: 'ONCHAIN' as const,
@@ -432,11 +441,11 @@ export const AssetIdHelpers = {
       conditionId: conditionRef.conditionId,
     });
 
-    return deepFreezeAssetId({
+    return Ok(deepFreezeAssetId({
       type: 'OUTCOME_TOKEN',
       conditionRef: frozenConditionRef,
-      outcomeKey: validated,
-    });
+      outcomeKey: validatedKey.value,
+    }));
   }
 };
 ```

@@ -73,12 +73,12 @@ if (result.ok) {
 
 **Возможные ошибки:**
 
-| Причина | Когда возникает |
+| `context.kind` | Когда возникает |
 | --------- | ----------------- |
-| `INVALID_FORMAT` | Невалидная структура JSON |
-| `NOT_ONCHAIN_CONDITION` | conditionRef.kind !== 'ONCHAIN' |
-| `INVALID_CONDITION_REF` | Невалидный формат conditionRef полей |
-| `INVALID_OUTCOME_KEY` | Невалидный формат outcomeKey |
+| `'invalid_json'` | Невалидная структура JSON |
+| `'not_onchain_condition'` | conditionRef.kind !== 'ONCHAIN' |
+| `'invalid_condition_ref'` | Невалидный формат conditionRef полей |
+| `'invalid_outcome_key'` | Невалидный формат outcomeKey |
 
 ### toJSON() — сериализация
 
@@ -195,6 +195,11 @@ if (!('conditionRef' in obj) || !('outcomeKey' in obj)) {
 // conditionRef это объект?
 if (typeof conditionRef !== 'object' || conditionRef === null) {
   return Err(...INVALID_CONDITION_REF);
+}
+
+// kind === 'ONCHAIN'?
+if (refObj.kind !== 'ONCHAIN') {
+  return Err(...NOT_ONCHAIN_CONDITION);  // context.kind = 'not_onchain_condition'
 }
 
 // protocolId это строка?

@@ -140,7 +140,7 @@ multiply(
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Price } from '../core/Price.js';
+import { Price } from '@polymarket/value-objects/price';
 
 // Создаём цену (в реальном коде используйте PriceService.create)
 const price = Price.of(new Decimal(0.3));
@@ -526,24 +526,26 @@ applyRelativeChange(
 import { PriceService, RatioService, Price } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
-// Markup +2%
-const price = Price.of(new Decimal(0.50));
-const markupResult = RatioService.fromPercent(2);
-if (!markupResult.ok) return;
+(async () => {
+  // Markup +2%
+  const price = Price.of(new Decimal(0.50));
+  const markupResult = RatioService.fromPercent(2);
+  if (!markupResult.ok) return;
 
-const result = PriceService.applyRelativeChange(price, markupResult.value, 0.01);
-if (result.ok) {
-  console.log(result.value.toNumber());  // 0.51 (0.50 * 1.02 = 0.51)
-}
+  const result = PriceService.applyRelativeChange(price, markupResult.value, 0.01);
+  if (result.ok) {
+    console.log(result.value.toNumber());  // 0.51 (0.50 * 1.02 = 0.51)
+  }
 
-// Markdown -5%
-const markdownResult = RatioService.fromPercent(-5);
-if (!markdownResult.ok) return;
+  // Markdown -5%
+  const markdownResult = RatioService.fromPercent(-5);
+  if (!markdownResult.ok) return;
 
-const result2 = PriceService.applyRelativeChange(price, markdownResult.value, 0.01);
-if (result2.ok) {
-  console.log(result2.value.toNumber());  // 0.48 (0.50 * 0.95 = 0.475 → round to 0.48)
-}
+  const result2 = PriceService.applyRelativeChange(price, markdownResult.value, 0.01);
+  if (result2.ok) {
+    console.log(result2.value.toNumber());  // 0.48 (0.50 * 0.95 = 0.475 → round to 0.48)
+  }
+})();
 
 // С округлением вниз (для bid)
 const result3 = PriceService.applyRelativeChange(

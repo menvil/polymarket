@@ -296,8 +296,11 @@ export class OutcomeToken {
     conditionRef: OnChainConditionRef,
     outcomeKey: OutcomeKey
   ): OutcomeToken {
-    const assetId = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
-    return OutcomeToken.fromAssetId(assetId);
+    const assetIdResult = AssetIdHelpers.fromOutcomeToken(conditionRef, outcomeKey);
+    if (!assetIdResult.ok) {
+      throw new OutcomeTokenInvariantViolation('Failed to create AssetId', { cause: assetIdResult.error });
+    }
+    return OutcomeToken.fromCanonicalAssetId(assetIdResult.value as OutcomeTokenAssetId);
   }
 
   // Чистые accessor'ы (без проверок)
@@ -445,7 +448,7 @@ export class OutcomeTokenSerializer {
 **Ответственность**:
 
 - Domain errors с типизированным контекстом
-- Enum для причин ошибок (не строки!)
+- String literal discriminators в `context.kind` (не enum!)
 
 ```typescript
 // InvalidOutcomeTokenError с типизированным контекстом (kind вместо reason enum)
