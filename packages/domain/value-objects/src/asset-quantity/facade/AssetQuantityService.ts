@@ -350,7 +350,7 @@ export class AssetQuantityService {
       if (isErr(quantityResult)) {
         // Переупаковываем ошибку QuantityService в InvalidAssetQuantityError
         throw new InvalidAssetQuantityError(
-          (ctx) => `Invalid result amount for portion: ${ctx.quantityError}`,
+          (errCtx) => `Invalid result amount for portion: ${errCtx.quantityError}`,
           {
             context: {
               source: ErrorSource.SERVICE_CALL,

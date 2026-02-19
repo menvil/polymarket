@@ -746,6 +746,8 @@ describe('Spread operations', () => {
 **Когда это важно:**
 
 ```typescript
+import { SpreadService, SpreadSerializer } from '@polymarket/value-objects';
+
 // Проверка после сериализации/десериализации
 const original = SpreadService.fromValues(0.48, 0.52).value;
 const json = SpreadSerializer.toJSON(original);

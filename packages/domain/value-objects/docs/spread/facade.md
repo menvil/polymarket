@@ -197,6 +197,7 @@ fromMidAndWidthRatio(
 
 ```typescript
 // Из объектов Price и Ratio
+import Decimal from 'decimal.js';
 import { PriceService, SpreadService } from '@polymarket/value-objects';
 import { Ratio } from '@polymarket/value-objects/ratio';
 
@@ -220,7 +221,6 @@ const result2 = SpreadService.fromMidAndWidthRatio(0.50, 0.08);
 const result3 = SpreadService.fromMidAndWidthRatio('0.50', '0.08');
 
 // Из Decimal
-import Decimal from 'decimal.js';
 const result4 = SpreadService.fromMidAndWidthRatio(
   new Decimal(0.50),
   new Decimal(0.08)
@@ -628,6 +628,132 @@ if (ratioResult.ok) {
 **Ошибки:**
 
 - `SpreadErrorReason.MID_UNAVAILABLE` — если midpoint = 0
+
+---
+
+### `getMidPrice(spread)`
+
+Возвращает midpoint спреда как Price объект.
+
+```typescript
+getMidPrice(spread: Spread): Result<Price, InvalidSpreadError>
+```
+
+**Параметры:**
+
+- `spread: Spread` — спред для вычисления mid price
+
+**Возвращает:**
+
+- `Ok(Price)` — midpoint как валидный Price в [MIN_PRICE, MAX_PRICE]
+- `Err(InvalidSpreadError)` — если midpoint выходит за пределы Price (не должно происходить при валидном spread)
+
+**Пример:**
+
+```typescript
+const spread = SpreadService.fromValues(0.48, 0.52).value;
+const midResult = SpreadService.getMidPrice(spread);
+
+if (midResult.ok) {
+  console.log(midResult.value.value().toString());  // "0.5"
+}
+```
+
+**Ошибки:**
+
+- `SpreadErrorReason.INVALID_AMOUNT` — если midpoint вне диапазона Price (крайне редко)
+
+---
+
+### `merge(s1, s2)`
+
+Объединяет два спреда в один охватывающий оба.
+
+```typescript
+merge(s1: Spread, s2: Spread): Result<Spread, InvalidSpreadError>
+```
+
+**Параметры:**
+
+- `s1: Spread` — первый спред
+- `s2: Spread` — второй спред
+
+**Возвращает:**
+
+- `Ok(Spread)` — спред с `bid = min(s1.bid, s2.bid)` и `ask = max(s1.ask, s2.ask)`
+- `Err(InvalidSpreadError)` — если результат не валиден (практически невозможно при валидных входах)
+
+**Алгоритм:**
+
+- `result.bid = min(s1.bid, s2.bid)`
+- `result.ask = max(s1.ask, s2.ask)`
+- Результирующий спред всегда содержит оба входных спреда
+
+**Use case:** объединение ордербуков с разных бирж.
+
+**Пример:**
+
+```typescript
+const s1 = SpreadService.fromValues(0.48, 0.52).value;
+const s2 = SpreadService.fromValues(0.50, 0.54).value;
+
+const merged = SpreadService.merge(s1, s2);
+if (merged.ok) {
+  console.log(merged.value.bid().value().toString());  // "0.48" (min)
+  console.log(merged.value.ask().value().toString());  // "0.54" (max)
+  console.log(merged.value.width().toString());         // "0.06"
+}
+```
+
+---
+
+### `intersect(s1, s2)`
+
+Вычисляет пересечение двух спредов.
+
+```typescript
+intersect(s1: Spread, s2: Spread): Result<Spread, InvalidSpreadError>
+```
+
+**Параметры:**
+
+- `s1: Spread` — первый спред
+- `s2: Spread` — второй спред
+
+**Возвращает:**
+
+- `Ok(Spread)` — спред с `bid = max(s1.bid, s2.bid)` и `ask = min(s1.ask, s2.ask)`
+- `Err(InvalidSpreadError)` — если спреды не пересекаются (`max bid > min ask`)
+
+**Алгоритм:**
+
+- `result.bid = max(s1.bid, s2.bid)`
+- `result.ask = min(s1.ask, s2.ask)`
+- Если `result.bid > result.ask` — спреды не пересекаются, возвращается `Err`
+
+**Use case:** нахождение общего диапазона цен на разных площадках.
+
+**Пример:**
+
+```typescript
+const s1 = SpreadService.fromValues(0.40, 0.60).value;
+const s2 = SpreadService.fromValues(0.50, 0.70).value;
+
+const intersection = SpreadService.intersect(s1, s2);
+if (intersection.ok) {
+  console.log(intersection.value.bid().value().toString());  // "0.50" (max)
+  console.log(intersection.value.ask().value().toString());  // "0.60" (min)
+}
+
+// Нет пересечения
+const s3 = SpreadService.fromValues(0.70, 0.80).value;
+const noIntersect = SpreadService.intersect(s1, s3);
+console.log(noIntersect.ok);  // false
+```
+
+**Ошибки:**
+
+- `SpreadErrorReason.BID_GREATER_THAN_ASK` — если спреды не пересекаются
 
 ---
 
