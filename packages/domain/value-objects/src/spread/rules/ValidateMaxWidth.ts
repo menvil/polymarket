@@ -23,6 +23,8 @@ import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
  * ```
  */
 export class ValidateMaxWidth {
+  private constructor() {}
+
   /**
    * Проверить что ширина <= максимума
    *

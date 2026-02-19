@@ -243,13 +243,13 @@ if (spreadResult.ok) {
     bid: spread.bid().toNumber(),
     ask: spread.ask().toNumber(),
     width: spread.width().toNumber(),
-    widthBps: (spread.widthPercentage() * 100).toFixed(0)
+    widthBps: spread.widthInBasisPoints().toFixed(0)
   });
   // {
-  //   bid: 0.4885,
-  //   ask: 0.5145,
-  //   width: 0.026,
-  //   widthBps: '520'
+  //   bid: 0.49718,
+  //   ask: 0.50318,
+  //   width: 0.006,
+  //   widthBps: '120'
   // }
 }
 ```
@@ -264,27 +264,30 @@ function* tightenSpreadGradually(
   targetWidthBps: number,
   steps: number
 ) {
-  const initialWidthBps = initialSpread.widthPercentage() * 100;
-  const stepSize = (initialWidthBps - targetWidthBps) / steps / 100;
-  
+  const initialWidthBps = initialSpread.widthInBasisPoints().toNumber();
+  const stepSizeBps = (initialWidthBps - targetWidthBps) / steps;
+
   let currentSpread = initialSpread;
-  
+
   for (let i = 0; i < steps; i++) {
-    const tightenAmount = (currentSpread.width().toNumber() * stepSize) / 2;
-    
+    // Convert bps step to absolute per-side amount:
+    // totalWidthDecrease = stepSizeBps / 10000 * mid; tighten takes per-side amount
+    const absoluteStep = (stepSizeBps / 10000) * currentSpread.mid().toNumber();
+    const tightenAmount = absoluteStep / 2;
+
     const result = SpreadService.tighten(currentSpread, tightenAmount);
-    
+
     if (!result.ok) {
       console.error(`Step ${i}: Failed to tighten - ${result.error.message}`);
       break;
     }
-    
+
     currentSpread = result.value;
-    
+
     yield {
       step: i + 1,
       spread: currentSpread,
-      widthBps: (currentSpread.widthPercentage() * 100).toFixed(0)
+      widthBps: currentSpread.widthInBasisPoints().toFixed(0)
     };
   }
 }
@@ -619,7 +622,9 @@ console.log(displayMarketData({}));
 ### Кэширование вычислений
 
 ```typescript
-import { Spread, SpreadService } from '@polymarket/value-objects';
+import { Spread, SpreadService, type InvalidSpreadError } from '@polymarket/value-objects';
+import type { Result } from '@polymarket/result';
+import { Ok } from '@polymarket/result';
 
 class SpreadCache {
   private cache = new Map<string, Spread>();

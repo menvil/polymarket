@@ -631,7 +631,8 @@ tightenByRatio(
 **Логика:**
 
 - `deltaWidthAbs = midpoint * deltaWidthRatio`
-- Делегирует в `tighten(spread, deltaWidthAbs)`
+- `amountAbs = deltaWidthAbs / 2` (делится на 2, так как `tighten` применяет amount к каждой стороне)
+- Делегирует в `tighten(spread, amountAbs)`
 
 **Параметры:**
 

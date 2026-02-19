@@ -464,12 +464,14 @@ Spread не форсирует alignment к базовому тику (0.0001):
 
 ### 3. Width в процентах
 
-`widthPercentage(): Decimal` возвращает относительную ширину в процентах от midpoint:
+`widthPercentage(): Ratio` возвращает относительную ширину как дробь от midpoint:
 
 ```typescript
 const spread = SpreadService.fromValues(0.48, 0.52).value;
-spread.widthPercentage();  // Decimal(8)
-spread.widthPercentage().toNumber();  // 8 (8% = 0.04 / 0.50 = 0.08 = 8%)
+spread.widthPercentage();              // Ratio(0.08)
+spread.widthPercentage().toNumber();   // 0.08 (fraction: 0.04 / 0.50)
+spread.widthPercentage().toDecimal().times(100).toNumber();  // 8 (percent)
+spread.widthInBasisPoints().toNumber(); // 800 (bps)
 ```
 
 **Обоснование:**

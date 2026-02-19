@@ -50,6 +50,19 @@ describe('ValidateMinWidth', () => {
       }
     });
 
+    it('should return Err when minWidth is NaN', () => {
+      const width = new Decimal(0.01);
+      const minWidth = new Decimal(NaN);
+
+      const result = ValidateMinWidth.check(width, minWidth);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
+        expect(result.error.message).toContain('minWidth must be finite');
+      }
+    });
+
     it('should return Err when minWidth is zero', () => {
       const width = new Decimal(0.01);
       const minWidth = new Decimal(0);

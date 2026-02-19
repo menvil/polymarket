@@ -289,9 +289,9 @@ export class AssetQuantityService {
    * **Asset сохраняется:** результат имеет тот же asset (currency/token) что и исходный
    *
    * **Use cases:**
-   * - Fee calculation: `portion(orderQty, Ratio.fromPercent(2))` → 2% trading fee
-   * - Allocation: `portion(totalQty, Ratio.fromDecimal(0.3))` → 30% allocation
-   * - Partial fill: `portion(orderQty, Ratio.fromDecimal(0.5))` → 50% filled
+   * - Fee calculation: `portion(orderQty, Ratio.of(new Decimal(0.02)))` → 2% trading fee
+   * - Allocation: `portion(totalQty, Ratio.of(new Decimal(0.3)))` → 30% allocation
+   * - Partial fill: `portion(orderQty, Ratio.of(new Decimal(0.5)))` → 50% filled
    *
    * **Процесс:**
    * 1. Multiply: assetQty.amount() * rate.toDecimal()

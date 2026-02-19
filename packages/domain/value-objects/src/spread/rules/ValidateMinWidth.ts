@@ -23,6 +23,8 @@ import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
  * ```
  */
 export class ValidateMinWidth {
+  private constructor() {}
+
   /**
    * Проверить что ширина >= минимума
    *
