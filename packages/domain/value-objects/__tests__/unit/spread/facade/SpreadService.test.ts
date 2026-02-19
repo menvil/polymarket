@@ -1,4 +1,6 @@
+import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
+import { InvalidSpreadError } from '@polymarket/errors';
 import { SpreadService } from '../../../../src/spread/facade/SpreadService.js';
 import { PriceService } from '../../../../src/price/index.js';
 import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
@@ -12,7 +14,8 @@ describe('SpreadService', () => {
     it('should create spread when bid < ask', () => {
       const bidResult = PriceService.create(0.48);
       const askResult = PriceService.create(0.52);
-      expect(bidResult.ok && askResult.ok).toBe(true);
+      expect(bidResult.ok).toBe(true);
+      expect(askResult.ok).toBe(true);
 
       if (bidResult.ok && askResult.ok) {
         const result = SpreadService.create(bidResult.value, askResult.value);
@@ -42,7 +45,8 @@ describe('SpreadService', () => {
     it('should return Err when bid > ask', () => {
       const bidResult = PriceService.create(0.60);
       const askResult = PriceService.create(0.50);
-      expect(bidResult.ok && askResult.ok).toBe(true);
+      expect(bidResult.ok).toBe(true);
+      expect(askResult.ok).toBe(true);
 
       if (bidResult.ok && askResult.ok) {
         const result = SpreadService.create(bidResult.value, askResult.value);
@@ -95,7 +99,7 @@ describe('SpreadService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.opChain).toContain('SpreadService.fromValues');
-        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_FORMAT);
         expect(result.error.context?.bidValue).toBe('abc');
       }
     });
@@ -106,7 +110,7 @@ describe('SpreadService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.opChain).toContain('SpreadService.fromValues');
-        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_FORMAT);
       }
     });
 
@@ -116,7 +120,7 @@ describe('SpreadService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.opChain).toContain('SpreadService.fromValues');
-        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_FORMAT);
         expect(result.error.context?.askValue).toBe('xyz');
       }
     });
@@ -152,7 +156,7 @@ describe('SpreadService', () => {
         });
 
         // Должна быть ошибка InvalidSpreadError (не InvalidPriceError)
-        expect(result.error.constructor.name).toBe('InvalidSpreadError');
+        expect(result.error).toBeInstanceOf(InvalidSpreadError);
       }
     });
 
@@ -181,7 +185,7 @@ describe('SpreadService', () => {
         });
 
         // Должна быть ошибка InvalidSpreadError (не InvalidPriceError)
-        expect(result.error.constructor.name).toBe('InvalidSpreadError');
+        expect(result.error).toBeInstanceOf(InvalidSpreadError);
       }
     });
 
@@ -486,6 +490,7 @@ describe('SpreadService', () => {
 
     it('should include operational context (spread, amount) for operations', () => {
       const spreadResult = SpreadService.fromValues(0.48, 0.52);
+      expect(spreadResult.ok).toBe(true);
       if (spreadResult.ok) {
         const result = SpreadService.tighten(spreadResult.value, -0.01);
         expect(result.ok).toBe(false);

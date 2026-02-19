@@ -44,7 +44,7 @@ describe('ValidateMinWidth', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_AMOUNT);
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
         expect(result.error.message).toContain('minWidth must be finite');
       }
     });
@@ -57,7 +57,7 @@ describe('ValidateMinWidth', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_AMOUNT);
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
         expect(result.error.message).toContain('minWidth must be positive');
       }
     });
@@ -70,7 +70,7 @@ describe('ValidateMinWidth', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_AMOUNT);
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
         expect(result.error.message).toContain('minWidth must be positive');
       }
     });

@@ -246,11 +246,12 @@ export class AssetQuantity {
   }
 
   /**
-   * Type guard: проверяет что asset это Currency
+   * Проверяет что asset это Currency (runtime-проверка)
    *
    * @remarks
-   * Используй для type narrowing в runtime.
-   * После этой проверки TypeScript знает что asset.type === 'CURRENCY'.
+   * Используй для проверки типа в runtime.
+   * Метод не является TypeScript type predicate и не выполняет compile-time narrowing.
+   * Для type narrowing используй `asset().type === 'CURRENCY'` напрямую.
    *
    * @returns true если asset это Currency (USDC и т.д.)
    *
@@ -258,7 +259,8 @@ export class AssetQuantity {
    * ```typescript
    * const assetQty = AssetQuantity.usdc(qty);
    * if (assetQty.isCurrency()) {
-   *   console.log(assetQty.asset().currency); // ✅ TypeScript knows this is safe
+   *   const asset = assetQty.asset();
+   *   if (asset.type === 'CURRENCY') console.log(asset.currency); // TS-safe narrowing
    * }
    * ```
    */
@@ -267,11 +269,12 @@ export class AssetQuantity {
   }
 
   /**
-   * Type guard: проверяет что asset это OutcomeToken
+   * Проверяет что asset это OutcomeToken (runtime-проверка)
    *
    * @remarks
-   * Используй для type narrowing в runtime.
-   * После этой проверки TypeScript знает что asset.type === 'OUTCOME_TOKEN'.
+   * Используй для проверки типа в runtime.
+   * Метод не является TypeScript type predicate и не выполняет compile-time narrowing.
+   * Для type narrowing используй `asset().type === 'OUTCOME_TOKEN'` напрямую.
    *
    * @returns true если asset это OutcomeToken
    *
@@ -279,7 +282,8 @@ export class AssetQuantity {
    * ```typescript
    * const assetQty = AssetQuantity.outcomeToken(conditionRef, BinaryOutcome.UP, qty);
    * if (assetQty.isOutcomeToken()) {
-   *   console.log(assetQty.asset().outcomeKey); // ✅ TypeScript knows this is safe
+   *   const asset = assetQty.asset();
+   *   if (asset.type === 'OUTCOME_TOKEN') console.log(asset.outcomeKey); // TS-safe narrowing
    * }
    * ```
    */

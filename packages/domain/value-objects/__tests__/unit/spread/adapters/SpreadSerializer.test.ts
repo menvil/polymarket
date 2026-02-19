@@ -127,6 +127,9 @@ describe('SpreadSerializer', () => {
       const result = SpreadSerializer.fromJSON(json);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe('OUT_OF_RANGE_HIGH');
+      }
     });
   });
 

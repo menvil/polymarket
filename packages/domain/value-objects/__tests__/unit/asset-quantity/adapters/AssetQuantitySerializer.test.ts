@@ -155,6 +155,15 @@ describe('AssetQuantitySerializer', () => {
       }
     });
 
+    it('фэйлится если json undefined', () => {
+      const result = AssetQuantitySerializer.fromJSON(undefined);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(AssetQuantityErrorReason.INVALID_FORMAT);
+      }
+    });
+
     it('фэйлится если отсутствует asset', () => {
       const json = {
         amount: '100.5',

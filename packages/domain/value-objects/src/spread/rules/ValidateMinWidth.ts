@@ -44,7 +44,7 @@ export class ValidateMinWidth {
               source: ErrorSource.RULE_VALIDATION,
               minWidth: minWidth.toString(),
               width: width.toString(),
-              reason: SpreadErrorReason.INVALID_AMOUNT
+              reason: SpreadErrorReason.INVALID_WIDTH
             }
           }
         )
@@ -60,7 +60,7 @@ export class ValidateMinWidth {
               source: ErrorSource.RULE_VALIDATION,
               minWidth: minWidth.toString(),
               width: width.toString(),
-              reason: SpreadErrorReason.INVALID_AMOUNT
+              reason: SpreadErrorReason.INVALID_WIDTH
             }
           }
         )

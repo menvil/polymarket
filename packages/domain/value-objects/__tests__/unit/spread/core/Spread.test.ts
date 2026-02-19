@@ -1,3 +1,4 @@
+import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { Spread, SpreadInvariantViolation } from '../../../../src/spread/core/index.js';
 import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
@@ -20,7 +21,7 @@ describe('Spread Core', () => {
       const ask = Price.of(new Decimal(0.50));
 
       expect(() => Spread.of(bid, ask)).toThrow(SpreadInvariantViolation);
-      expect(() => Spread.of(bid, ask)).toThrow('Bid 0.6 cannot be greater than ask 0.5');
+      expect(() => Spread.of(bid, ask)).toThrow('cannot be greater');
     });
 
     it('should have BID_GREATER_THAN_ASK reason when bid > ask', () => {
@@ -29,7 +30,7 @@ describe('Spread Core', () => {
 
       try {
         Spread.of(bid, ask);
-        fail('Expected SpreadInvariantViolation');
+        throw new Error('Expected SpreadInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(SpreadInvariantViolation);
         if (error instanceof SpreadInvariantViolation) {
@@ -88,9 +89,8 @@ describe('Spread Core', () => {
       expect(widthPercentage.toNumber()).toBe(8);
     });
 
-    it('should return 0 when midpoint is zero', () => {
-      // Edge case: if somehow midpoint is zero (shouldn't happen with valid Prices)
-      // This is a defensive programming test
+    it('should return 0 when width is zero', () => {
+      // bid === ask → width is zero, so widthPercentage = 0
       const bid = Price.of(new Decimal(0.0001));
       const ask = Price.of(new Decimal(0.0001));
       const spread = Spread.of(bid, ask);

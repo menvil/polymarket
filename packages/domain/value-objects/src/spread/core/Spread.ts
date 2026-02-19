@@ -204,14 +204,8 @@ export class Spread {
    */
   public widthPercentage(): Decimal {
     //@todo должен использовать ratio для единообразия и возвращать его
-    const mid = this.mid();
-
-    // Защита от деления на ноль
-    if (mid.equals(0)) {
-      return new Decimal(0);
-    }
-
-    return this.width().dividedBy(mid).times(100);
+    // Price >= 0.0001, поэтому mid всегда > 0 — деление на ноль невозможно
+    return this.width().dividedBy(this.mid()).times(100);
   }
 
   /**

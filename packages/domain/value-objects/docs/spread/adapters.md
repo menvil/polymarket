@@ -221,13 +221,13 @@ import { SpreadFormatter } from '@polymarket/value-objects';
 Форматирует спред с настраиваемыми опциями.
 
 ```typescript
-format(spread: Spread, options?: FormatOptions): string
+format(spread: Spread, options?: SpreadFormatOptions): string
 ```
 
 **Опции:**
 
 ```typescript
-interface FormatOptions {
+interface SpreadFormatOptions {
   decimals?: number;       // Количество десятичных знаков (default: 4)
   showWidth?: boolean;     // Показывать ширину спреда (default: true)
   showMidpoint?: boolean;  // Показывать midpoint (default: false)

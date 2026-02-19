@@ -133,8 +133,7 @@ export class AssetQuantityFormatter {
       return `${amount} ${asset.currency}`;
     } else {
       // OUTCOME_TOKEN
-      const outcomeKey = asset.outcomeKey as string;
-      return `${amount} ${outcomeKey}`;
+      return `${amount} ${asset.outcomeKey}`;
     }
   }
 
@@ -200,15 +199,17 @@ export class AssetQuantityFormatter {
    * ```
    */
   public static toFixedString(assetQty: AssetQuantity, decimalPlaces: number = 2): string {
-    const amount = assetQty.amount().value().toFixed(decimalPlaces);
+    const safeDecimalPlaces = Number.isFinite(decimalPlaces) && Number.isInteger(decimalPlaces) && decimalPlaces >= 0 && decimalPlaces <= 100
+      ? decimalPlaces
+      : 2;
+    const amount = assetQty.amount().value().toFixed(safeDecimalPlaces);
     const asset = assetQty.asset();
 
     if (asset.type === 'CURRENCY') {
       return `${amount} ${asset.currency}`;
     } else {
       // OUTCOME_TOKEN
-      const outcomeKey = asset.outcomeKey as string;
-      return `${amount} ${outcomeKey}`;
+      return `${amount} ${asset.outcomeKey}`;
     }
   }
 }

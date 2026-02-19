@@ -268,9 +268,10 @@ describe('AssetQuantity Core', () => {
     it('созданный AssetQuantity иммутабелен', () => {
       const assetQty = AssetQuantity.usdc(qty100);
 
-      // Оригинал не изменился
       expect(assetQty.amount()).toBe(qty100);
       expect(assetQty.asset()).toBe(usdcAsset);
+      // Внутренний asset заморожен
+      expect(Object.isFrozen(assetQty.asset())).toBe(true);
     });
   });
 });

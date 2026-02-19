@@ -49,6 +49,19 @@ describe('ValidateMaxWidth', () => {
       }
     });
 
+    it('should return Err when maxWidth is NaN', () => {
+      const width = new Decimal(0.05);
+      const maxWidth = new Decimal(NaN);
+
+      const result = ValidateMaxWidth.check(width, maxWidth);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_AMOUNT);
+        expect(result.error.message).toContain('maxWidth must be finite');
+      }
+    });
+
     it('should return Err when maxWidth is zero', () => {
       const width = new Decimal(0.05);
       const maxWidth = new Decimal(0);

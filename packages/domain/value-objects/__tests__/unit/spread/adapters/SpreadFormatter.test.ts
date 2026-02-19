@@ -131,10 +131,10 @@ describe('SpreadFormatter', () => {
       if (spreadResult.ok) {
         const obj = SpreadFormatter.toObject(spreadResult.value);
 
-        expect(obj.bid).toEqual(new Decimal(0.48));
-        expect(obj.ask).toEqual(new Decimal(0.52));
-        expect(obj.width).toEqual(new Decimal(0.04));
-        expect(obj.midpoint).toEqual(new Decimal(0.50));
+        expect(obj.bid.equals(new Decimal(0.48))).toBe(true);
+        expect(obj.ask.equals(new Decimal(0.52))).toBe(true);
+        expect(obj.width.equals(new Decimal(0.04))).toBe(true);
+        expect(obj.midpoint.equals(new Decimal(0.50))).toBe(true);
       }
     });
 
@@ -145,10 +145,10 @@ describe('SpreadFormatter', () => {
       if (spreadResult.ok) {
         const obj = SpreadFormatter.toObject(spreadResult.value);
 
-        expect(obj.bid).toEqual(new Decimal(0.50));
-        expect(obj.ask).toEqual(new Decimal(0.50));
-        expect(obj.width).toEqual(new Decimal(0));
-        expect(obj.midpoint).toEqual(new Decimal(0.50));
+        expect(obj.bid.equals(new Decimal(0.50))).toBe(true);
+        expect(obj.ask.equals(new Decimal(0.50))).toBe(true);
+        expect(obj.width.equals(new Decimal(0))).toBe(true);
+        expect(obj.midpoint.equals(new Decimal(0.50))).toBe(true);
       }
     });
   });

@@ -45,7 +45,7 @@ function parseOrderBook(data: OrderBookData) {
     spread,
     display: SpreadFormatter.format(spread, { decimals: 4 }),
     midPrice: spread.midpoint().toNumber(),
-    spreadBps: (spread.widthPercentage() * 100).toFixed(0)
+    spreadBps: spread.widthInBasisPoints().toFixed(0)
   };
 }
 
@@ -495,8 +495,8 @@ function formatSpreadForTable(bid: number, ask: number) {
     bidDisplay: obj.bid.toFixed(4),
     askDisplay: obj.ask.toFixed(4),
     midDisplay: obj.midpoint.toFixed(4),
-    widthDisplay: `${(obj.width * 100).toFixed(2)}%`,
-    widthBps: (spread.widthPercentage() * 100).toFixed(0),
+    widthDisplay: `${obj.width.times(100).toFixed(2)}%`,
+    widthBps: spread.widthInBasisPoints().toFixed(0),
     error: null
   };
 }
@@ -553,7 +553,7 @@ console.log(validateUserSpread('0.48', '0.52'));
 // { valid: true, spread: Spread { ... } }
 
 console.log(validateUserSpread('1.5', '0.52'));
-// { valid: false, field: 'bid', message: 'Bid цена должна быть...' }
+// { valid: false, field: 'both', message: 'Невалидные значения спреда' }
 
 console.log(validateUserSpread('0.60', '0.50'));
 // { valid: false, field: 'both', message: 'Bid (0.6) не может быть больше Ask (0.5)' }
