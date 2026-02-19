@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { OutcomeToken } from '../../../../src/outcome-token/core/index.js';
-import type { OnChainConditionRef } from '@polymarket/ids';
+import { OutcomeTokenInvariantViolation } from '../../../../src/outcome-token/core/OutcomeTokenInvariantViolation.js';
+import type { OnChainConditionRef, AssetId } from '@polymarket/ids';
 import { BinaryOutcome, KnownOnChainProtocols, parseChainId, parseConditionId } from '@polymarket/ids';
 
 describe('OutcomeToken (Core)', () => {
@@ -99,6 +100,31 @@ describe('OutcomeToken (Core)', () => {
       const token = OutcomeToken.of(testConditionRef, customKey);
 
       expect(token.outcomeKey()).toBe('TEAM_A');
+    });
+  });
+
+  describe('fromAssetId() — нарушение инвариантов', () => {
+    it('бросает OutcomeTokenInvariantViolation если assetId.type !== OUTCOME_TOKEN', () => {
+      const currencyAssetId: AssetId = { type: 'CURRENCY', currency: 'USDC' };
+
+      expect(() => OutcomeToken.fromAssetId(currencyAssetId)).toThrow(OutcomeTokenInvariantViolation);
+      expect(() => OutcomeToken.fromAssetId(currencyAssetId)).toThrow('requires AssetId of type OUTCOME_TOKEN');
+    });
+
+    it('проверяет name и context в OutcomeTokenInvariantViolation', () => {
+      const currencyAssetId: AssetId = { type: 'CURRENCY', currency: 'USDC' };
+
+      try {
+        OutcomeToken.fromAssetId(currencyAssetId);
+        fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(OutcomeTokenInvariantViolation);
+        if (e instanceof OutcomeTokenInvariantViolation) {
+          expect(e.name).toBe('OutcomeTokenInvariantViolation');
+          expect(e.context).toBeDefined();
+          expect((e.context as any).assetId).toEqual(currencyAssetId);
+        }
+      }
     });
   });
 

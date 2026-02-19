@@ -1,6 +1,7 @@
 import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { Ratio } from '../../../../src/ratio/core/Ratio';
+import { RatioInvariantViolation } from '../../../../src/ratio/core/RatioInvariantViolation';
 import { RatioErrorReason } from '../../../../src/ratio/errors/RatioErrorReason';
 import { RatioService } from '../../../../src/ratio/facade/RatioService';
 import { isErr } from '@polymarket/result';
@@ -291,6 +292,54 @@ describe('Ratio core', () => {
       if (positiveResult.ok) {
         expect(positiveResult.value.isNegative()).toBe(false);
       }
+    });
+  });
+
+  describe('Ratio.of() — прямое создание через Core API', () => {
+    it('бросает RatioInvariantViolation для NaN', () => {
+      expect(() => Ratio.of(new Decimal(NaN))).toThrow(RatioInvariantViolation);
+      expect(() => Ratio.of(new Decimal(NaN))).toThrow('Ratio value cannot be NaN');
+    });
+
+    it('бросает RatioInvariantViolation для Infinity', () => {
+      expect(() => Ratio.of(new Decimal(Infinity))).toThrow(RatioInvariantViolation);
+      expect(() => Ratio.of(new Decimal(Infinity))).toThrow('Ratio value must be finite');
+    });
+
+    it('бросает RatioInvariantViolation для -Infinity', () => {
+      expect(() => Ratio.of(new Decimal(-Infinity))).toThrow(RatioInvariantViolation);
+    });
+
+    it('проверяет reason в RatioInvariantViolation для NaN', () => {
+      try {
+        Ratio.of(new Decimal(NaN));
+        fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(RatioInvariantViolation);
+        if (e instanceof RatioInvariantViolation) {
+          expect(e.reason).toBe(RatioErrorReason.NAN);
+          expect(e.name).toBe('RatioInvariantViolation');
+        }
+      }
+    });
+
+    it('проверяет reason в RatioInvariantViolation для NON_FINITE', () => {
+      try {
+        Ratio.of(new Decimal(Infinity));
+        fail('Should have thrown');
+      } catch (e) {
+        expect(e).toBeInstanceOf(RatioInvariantViolation);
+        if (e instanceof RatioInvariantViolation) {
+          expect(e.reason).toBe(RatioErrorReason.NON_FINITE);
+          expect(e.name).toBe('RatioInvariantViolation');
+        }
+      }
+    });
+
+    it('создаёт Ratio.of() для валидного значения', () => {
+      const ratio = Ratio.of(new Decimal(0.5));
+      expect(ratio).toBeInstanceOf(Ratio);
+      expect(ratio.toDecimal().toString()).toBe('0.5');
     });
   });
 
