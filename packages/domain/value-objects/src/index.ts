@@ -11,7 +11,7 @@
 //   Money,
 //   MoneyService,
 //   MoneySerializer,
-//   MoneyFormatter,§§
+//   MoneyFormatter,
 //   MoneyErrorReason,
 //   SupportedCurrency,
 //   // Rules Layer (публичный API для внешней валидации)
@@ -19,7 +19,7 @@
 //   ValidateDivisorForMoneyDivision,
 //   ValidateFactorForMoneyMultiplication
 // } from './money/index.js';
-//
+
 // Price модуль (только публичный API)
 export { Price, PriceService, PriceSerializer, PriceFormatter, PriceErrorReason } from './price/index.js';
 
@@ -34,15 +34,15 @@ export { Quantity, QuantityService, QuantityFormatter, QuantitySerializer, Quant
 //   BalanceFormatter,
 //   BalanceErrorReason
 // } from './balance/index.js';
-//
-// // Spread модуль (только публичный API)
-// export {
-//   Spread,
-//   SpreadService,
-//   SpreadSerializer,
-//   SpreadFormatter,
-//   SpreadErrorReason
-// } from './spread/index.js';
+
+// Spread модуль (только публичный API)
+export {
+  Spread,
+  SpreadService,
+  SpreadSerializer,
+  SpreadFormatter,
+  SpreadErrorReason
+} from './spread/index.js';
 
 // Ratio модуль (только публичный API)
 export {
@@ -61,7 +61,7 @@ export {
   OutcomeTokenFormatter,
   type OutcomeTokenJSON
 } from './outcome-token/index.js';
-
+//
 // // TokenBalance модуль (только публичный API)
 // export {
 //   TokenBalance,
@@ -71,16 +71,29 @@ export {
 //   TokenBalanceErrorReason,
 //   type TokenBalanceJSON
 // } from './token-balance/index.js';
-//
-// // AssetQuantity модуль (только публичный API)
-// export {
-//   AssetQuantity,
-//   AssetQuantityService,
-//   AssetQuantitySerializer,
-//   AssetQuantityFormatter,
-//   AssetQuantityErrorReason,
-//   type AssetQuantityJSON
-// } from './asset-quantity/index.js';
 
-// TODO: Implement these value objects
-// export { Quote } from './Quote.js';
+// AssetQuantity модуль (только публичный API)
+export {
+  AssetQuantity,
+  AssetQuantityService,
+  AssetQuantitySerializer,
+  AssetQuantityFormatter,
+  AssetQuantityErrorReason,
+  type AssetQuantityJSON
+} from './asset-quantity/index.js';
+//
+// // Quote модуль (только публичный API)
+// export {
+//   Quote,
+//   QuoteInvariantViolation,
+//   QuoteService,
+//   QuoteSerializer,
+//   QuoteFormatter,
+//   QuoteErrorReason,
+//   ValidateQuoteSizes,
+//   ValidateMinSpread,
+//   ValidateMaxSpread,
+//   ValidateMarketCrossing,
+//   type QuoteJSON,
+//   type QuoteFormatOptions
+// } from './quote/index.js';
