@@ -335,14 +335,18 @@ export class AssetQuantityService {
     assetQty: AssetQuantity,
     rate: Ratio
   ): Result<AssetQuantity, InvalidAssetQuantityError> {
+    // Cache repeated value extractions
+    const amountDecimal = assetQty.amount().value();
+    const rateDecimal = rate.toDecimal();
+
     const ctx = {
-      amount: assetQty.amount().value().toString(),
+      amount: amountDecimal.toString(),
       asset: JSON.stringify(assetQty.asset()),
-      rate: rate.toDecimal().toString()
+      rate: rateDecimal.toString()
     };
     return wrapOp(AssetQuantityService.SERVICE_NAME, 'portion', ctx, () => {
       // Multiply: amount * rate
-      const resultAmount = assetQty.amount().value().times(rate.toDecimal());
+      const resultAmount = amountDecimal.times(rateDecimal);
 
       // Create Quantity через QuantityService
       const quantityResult = QuantityService.create(resultAmount);

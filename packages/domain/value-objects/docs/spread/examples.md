@@ -695,26 +695,30 @@ if (spread1.ok && spread2.ok) {
 ```typescript
 import { SpreadService } from '@polymarket/value-objects';
 
-const originalResult = SpreadService.fromValues(0.48, 0.52);
-if (!originalResult.ok) return;
-const original = originalResult.value;
+function validateOperationResults() {
+  const originalResult = SpreadService.fromValues(0.48, 0.52);
+  if (!originalResult.ok) throw new Error('Failed to create original spread');
+  const original = originalResult.value;
 
-// Операция tighten
-const tightenedResult = SpreadService.tighten(original, 0.01);
-if (!tightenedResult.ok) return;
-const tightened = tightenedResult.value;
+  // Операция tighten
+  const tightenedResult = SpreadService.tighten(original, 0.01);
+  if (!tightenedResult.ok) throw new Error('Failed to tighten spread');
+  const tightened = tightenedResult.value;
 
-// Проверка результата — строгое сравнение
-const expectedResult = SpreadService.fromValues(0.49, 0.51);
-if (!expectedResult.ok) return;
-const expected = expectedResult.value;
-console.log(tightened.equals(expected));  // true — точное совпадение
+  // Проверка результата — строгое сравнение
+  const expectedResult = SpreadService.fromValues(0.49, 0.51);
+  if (!expectedResult.ok) throw new Error('Failed to create expected spread');
+  const expected = expectedResult.value;
+  console.log(tightened.equals(expected));  // true — точное совпадение
 
-// Неточное совпадение НЕ считается равным
-const almostSameResult = SpreadService.fromValues(0.49000001, 0.51);
-if (!almostSameResult.ok) return;
-const almostSame = almostSameResult.value;
-console.log(tightened.equals(almostSame));  // false
+  // Неточное совпадение НЕ считается равным
+  const almostSameResult = SpreadService.fromValues(0.49000001, 0.51);
+  if (!almostSameResult.ok) throw new Error('Failed to create almost-same spread');
+  const almostSame = almostSameResult.value;
+  console.log(tightened.equals(almostSame));  // false
+}
+
+validateOperationResults();
 ```
 
 ### Тестирование со строгими сравнениями
@@ -724,7 +728,11 @@ import { SpreadService } from '@polymarket/value-objects';
 
 describe('Spread operations', () => {
   it('should tighten spread correctly', () => {
-    const spread = SpreadService.fromValues(0.48, 0.52).value;
+    const spreadResult = SpreadService.fromValues(0.48, 0.52);
+    expect(spreadResult.ok).toBe(true);
+    if (!spreadResult.ok) return;
+
+    const spread = spreadResult.value;
     const result = SpreadService.tighten(spread, 0.01);
 
     expect(result.ok).toBe(true);
@@ -757,9 +765,15 @@ describe('Spread operations', () => {
 import { SpreadService, SpreadSerializer } from '@polymarket/value-objects';
 
 // Проверка после сериализации/десериализации
-const original = SpreadService.fromValues(0.48, 0.52).value;
+const originalResult = SpreadService.fromValues(0.48, 0.52);
+if (!originalResult.ok) throw new Error('Failed to create spread');
+const original = originalResult.value;
+
 const json = SpreadSerializer.toJSON(original);
-const restored = SpreadSerializer.fromJSON(json).value;
+
+const restoredResult = SpreadSerializer.fromJSON(json);
+if (!restoredResult.ok) throw new Error('Failed to deserialize spread');
+const restored = restoredResult.value;
 
 // Roundtrip должен быть идентичным
 console.log(original.equals(restored));  // true — точное восстановление

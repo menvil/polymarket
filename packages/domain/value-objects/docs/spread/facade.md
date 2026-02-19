@@ -788,6 +788,7 @@ shiftByRatio(
 **Пример:**
 
 ```typescript
+import Decimal from 'decimal.js';
 import { Ratio } from '@polymarket/value-objects';
 
 const spread = SpreadService.fromValues(0.48, 0.52).value;
@@ -842,6 +843,8 @@ widenByRatio(
 **Пример:**
 
 ```typescript
+import Decimal from 'decimal.js';
+
 const spread = SpreadService.fromValues(0.48, 0.52).value;
 // midpoint = 0.50, width = 0.04
 
@@ -894,6 +897,8 @@ tightenByRatio(
 **Пример:**
 
 ```typescript
+import Decimal from 'decimal.js';
+
 const spread = SpreadService.fromValues(0.48, 0.52).value;
 // midpoint = 0.50, width = 0.04
 
@@ -951,6 +956,8 @@ skewByRatio(
 **Пример:**
 
 ```typescript
+import Decimal from 'decimal.js';
+
 const spread = SpreadService.fromValues(0.48, 0.52).value;
 // midpoint = 0.50
 
