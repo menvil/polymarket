@@ -140,7 +140,7 @@ if (bidResult.ok && askResult.ok) {
 
 - Хранение bid/ask как Price объектов
 - Инвариант: `bid ≤ ask`
-- Чистые вычисления (width, midpoint, widthPercentage)
+- Чистые вычисления (width, midpoint, widthRatio)
 - Throwing typed exceptions
 
 **Пример:**
@@ -462,15 +462,15 @@ Spread не форсирует alignment к базовому тику (0.0001):
 - Spread не знает про тики, это знает Price
 - Flexibility для разных контекстов
 
-### 3. Width в процентах
+### 3. Width как дробь
 
-`widthPercentage(): Ratio` возвращает относительную ширину как дробь от midpoint:
+`widthRatio(): Ratio` возвращает относительную ширину как дробь от midpoint:
 
 ```typescript
 const spread = SpreadService.fromValues(0.48, 0.52).value;
-spread.widthPercentage();              // Ratio(0.08)
-spread.widthPercentage().toNumber();   // 0.08 (fraction: 0.04 / 0.50)
-spread.widthPercentage().toDecimal().times(100).toNumber();  // 8 (percent)
+spread.widthRatio();              // Ratio(0.08)
+spread.widthRatio().toNumber();   // 0.08 (fraction: 0.04 / 0.50)
+spread.widthRatio().toDecimal().times(100).toNumber();  // 8 (percent)
 spread.widthInBasisPoints().toNumber(); // 800 (bps)
 ```
 

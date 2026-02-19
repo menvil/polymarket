@@ -77,13 +77,13 @@ describe('Spread Core', () => {
     });
   });
 
-  describe('widthPercentage()', () => {
+  describe('widthRatio()', () => {
     it('should return Ratio = width / mid (fraction, not percent)', () => {
       const bid = Price.of(new Decimal(0.48));
       const ask = Price.of(new Decimal(0.52));
       const spread = Spread.of(bid, ask);
 
-      const ratio = spread.widthPercentage();
+      const ratio = spread.widthRatio();
 
       // 0.04 / 0.50 = 0.08 (fraction)
       expect(ratio.toNumber()).toBe(0.08);
@@ -97,7 +97,7 @@ describe('Spread Core', () => {
       const ask = Price.of(new Decimal(0.0001));
       const spread = Spread.of(bid, ask);
 
-      expect(spread.widthPercentage().toNumber()).toBe(0);
+      expect(spread.widthRatio().toNumber()).toBe(0);
     });
   });
 

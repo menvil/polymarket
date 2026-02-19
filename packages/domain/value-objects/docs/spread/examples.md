@@ -111,7 +111,7 @@ function displayOrderBookTop(orderBook: OrderBook) {
     },
     spread: {
       width: spread.width().toNumber(),
-      widthBps: (spread.widthPercentage() * 100).toFixed(0),
+      widthBps: spread.widthInBasisPoints().toFixed(0),
       midPrice: spread.midpoint().toNumber(),
       display: SpreadFormatter.toBidAskString(spread, 4)
     }
@@ -321,8 +321,8 @@ interface LiquidityMetrics {
 }
 
 function analyzeLiquidity(spread: Spread, depth: number): LiquidityMetrics {
-  const widthBps = spread.widthPercentage() * 100;
-  
+  const widthBps = spread.widthInBasisPoints().toNumber();
+
   // Определяем score на основе ширины спреда
   let liquidityScore: LiquidityMetrics['liquidityScore'];
   if (widthBps < 50) {
@@ -387,7 +387,7 @@ function compareMarketLiquidity(markets: Market[]) {
       return {
         marketId: market.id,
         marketName: market.name,
-        widthBps: spread.widthPercentage() * 100,
+        widthBps: spread.widthInBasisPoints().toNumber(),
         midPrice: spread.midpoint().toNumber(),
         spread
       };
@@ -443,8 +443,8 @@ export const SpreadDisplay: React.FC<SpreadDisplayProps> = ({ bid, ask }) => {
   }
   
   const spread = spreadResult.value;
-  const widthBps = spread.widthPercentage() * 100;
-  
+  const widthBps = spread.widthInBasisPoints().toNumber();
+
   // Цветовая индикация ликвидности
   const liquidityColor = 
     widthBps < 50 ? 'green' :

@@ -570,7 +570,7 @@ const display = `${spread.bid()}-${spread.ask()}`;  // Нет контроля �
 const formatCache = new Map<string, string>();
 
 function getCachedFormat(spread: Spread, decimals: number = 4): string {
-  const key = `${spread.bid().toNumber()}_${spread.ask().toNumber()}_${decimals}`;
+  const key = `${spread.bid().value().toString()}_${spread.ask().value().toString()}_${decimals}`;
   const existing = formatCache.get(key);
   if (existing) return existing;
 

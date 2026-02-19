@@ -202,14 +202,14 @@ export class Spread {
    *   Price.of(new Decimal(0.48)),
    *   Price.of(new Decimal(0.52))
    * );
-   * const ratio = spread.widthPercentage();
+   * const ratio = spread.widthRatio();
    * // Расчёт: 0.04 / 0.50 = 0.08
    * ratio.toNumber();              // 0.08  (8% as fraction)
    * ratio.toDecimal().times(100);  // 8     (percent)
    * ratio.toDecimal().times(10000); // 800  (basis points)
    * ```
    */
-  public widthPercentage(): Ratio {
+  public widthRatio(): Ratio {
     return Ratio.of(this.width().dividedBy(this.mid()));
   }
 
