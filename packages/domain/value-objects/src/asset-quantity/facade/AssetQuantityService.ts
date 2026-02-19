@@ -88,7 +88,7 @@ export class AssetQuantityService {
     return wrapOp(
       AssetQuantityService.SERVICE_NAME,
       'create',
-      { asset: JSON.stringify(asset), amount: amount.toString() },
+      { asset: JSON.stringify(asset), amount: amount.value().toString() },
       () => {
         // Конструктор делает defensive copy для гарантии иммутабельности
         const assetQty = new AssetQuantity(asset, amount);
@@ -123,7 +123,7 @@ export class AssetQuantityService {
     return wrapOp(
       AssetQuantityService.SERVICE_NAME,
       'createUsdc',
-      { amountValue },
+      { amountValue: String(amountValue) },
       () => {
         // Используем QuantityService для парсинга и валидации (DRY, централизация)
         const quantityResult = QuantityService.create(amountValue);
@@ -185,7 +185,7 @@ export class AssetQuantityService {
     return wrapOp(
       AssetQuantityService.SERVICE_NAME,
       'createOutcomeToken',
-      { conditionRef, outcomeKey, amountValue },
+      { conditionRef: JSON.stringify(conditionRef), outcomeKey: String(outcomeKey), amountValue: String(amountValue) },
       () => {
         // Используем QuantityService для парсинга и валидации (DRY, централизация)
         const quantityResult = QuantityService.create(amountValue);

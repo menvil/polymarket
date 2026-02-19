@@ -63,6 +63,8 @@ User Code
 ### Пример потока
 
 ```typescript
+// Упрощённый псевдокод (не реальная реализация SpreadService):
+
 // User Code
 const result = SpreadService.fromValues(0.60, 0.50);
 // result.ok === false

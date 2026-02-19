@@ -249,7 +249,7 @@ if (spreadResult.ok) {
   //   bid: 0.49718,
   //   ask: 0.50318,
   //   width: 0.006,
-  //   widthBps: '120'
+  //   widthBps: '60'
   // }
 }
 ```
@@ -409,9 +409,9 @@ console.log(ranked.map(m => ({
   widthBps: m.widthBps.toFixed(0)
 })));
 // [
-//   { name: 'Market B', widthBps: '400' },  // Самый ликвидный
-//   { name: 'Market A', widthBps: '800' },
-//   { name: 'Market C', widthBps: '2000' }
+//   { name: 'Market B', widthBps: '200' },  // Самый ликвидный
+//   { name: 'Market A', widthBps: '400' },
+//   { name: 'Market C', widthBps: '1000' }
 // ]
 ```
 

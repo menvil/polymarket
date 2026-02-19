@@ -93,10 +93,10 @@ describe('Spread Integration Workflow', () => {
       expect(shiftResult.ok).toBe(true);
 
       if (shiftResult.ok) {
-        expect(shiftResult.value.bid().toNumber()).toBeCloseTo(0.53, 5);
-        expect(shiftResult.value.ask().toNumber()).toBeCloseTo(0.57, 5);
+        expect(shiftResult.value.bid().toNumber()).toBe(0.53);
+        expect(shiftResult.value.ask().toNumber()).toBe(0.57);
         // Width должна остаться прежней
-        expect(shiftResult.value.width().toNumber()).toBeCloseTo(0.04, 5);
+        expect(shiftResult.value.width().toNumber()).toBe(0.04);
       }
     });
   });
@@ -222,9 +222,9 @@ describe('Spread Integration Workflow', () => {
       if (spreadResult.ok) {
         const spread = spreadResult.value;
         expect(spread.mid().toNumber()).toBe(0.5);
-        expect(spread.width().toNumber()).toBeCloseTo(0.04, 5);
-        expect(spread.bid().toNumber()).toBeCloseTo(0.48, 5);
-        expect(spread.ask().toNumber()).toBeCloseTo(0.52, 5);
+        expect(spread.width().toNumber()).toBe(0.04);
+        expect(spread.bid().toNumber()).toBe(0.48);
+        expect(spread.ask().toNumber()).toBe(0.52);
       }
     });
 

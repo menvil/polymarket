@@ -318,19 +318,22 @@ SpreadService.shift(
 #### Геттеры
 
 ```typescript
-spread.bid(): Price              // Цена покупки
-spread.ask(): Price              // Цена продажи
-spread.width(): Decimal          // Ширина спреда (ask - bid)
-spread.midpoint(): Decimal       // Середина (bid + ask) / 2
-spread.widthRatio(): Ratio         // Ширина как доля от mid price (0.08 для 8%)
+spread.bid(): Price                       // Цена покупки
+spread.ask(): Price                       // Цена продажи
+spread.width(): Decimal                   // Ширина спреда (ask - bid)
+spread.mid(): Decimal                     // Середина (bid + ask) / 2
+spread.widthRatio(): Ratio                // Ширина как доля от mid price (0.08 для 8%)
+spread.widthInBasisPoints(): Decimal      // Ширина в базисных пунктах (width × 10000)
 ```
 
 #### Утилиты
 
 ```typescript
-spread.equals(other: Spread): boolean     // Сравнение
-spread.isZeroWidth(): boolean             // Проверка на нулевую ширину
-spread.contains(price: Price): boolean    // Проверка вхождения цены
+spread.equals(other: Spread): boolean              // Сравнение
+spread.isZeroWidth(): boolean                      // Проверка на нулевую ширину
+spread.contains(price: Price): boolean             // Проверка вхождения цены
+spread.overlaps(other: Spread): boolean            // Проверка пересечения двух спредов
+spread.containsSpread(other: Spread): boolean      // Проверка вхождения одного спреда в другой
 ```
 
 ### SpreadSerializer

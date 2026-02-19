@@ -257,6 +257,124 @@ if (spreadResult.ok) {
 
 ---
 
+### `fromMidAndWidth(mid, width)`
+
+Создаёт спред из midpoint и абсолютной ширины.
+
+```typescript
+fromMidAndWidth(
+  mid: Decimal | number | string,
+  width: Decimal | number | string
+): Result<Spread, InvalidSpreadError>
+```
+
+**Параметры:**
+
+- `mid: Decimal | number | string` — midpoint (середина между bid и ask)
+- `width: Decimal | number | string` — абсолютная ширина спреда (≥ 0)
+
+**Возвращает:**
+
+- `Ok(Spread)` — если оба значения валидны и результат в пределах [MIN_PRICE, MAX_PRICE]
+- `Err(InvalidSpreadError)` — при любых ошибках
+
+**Алгоритм:**
+
+1. Parse mid to Decimal
+2. Parse width to Decimal
+3. Validate width ≥ 0
+4. `halfWidth = width / 2`
+5. `bid = mid - halfWidth`
+6. `ask = mid + halfWidth`
+7. Create spread через `create(bid, ask)`
+
+**Пример:**
+
+```typescript
+const result = SpreadService.fromMidAndWidth(0.50, 0.04);
+if (result.ok) {
+  const spread = result.value;
+  console.log(spread.bid().toNumber());   // 0.48
+  console.log(spread.ask().toNumber());   // 0.52
+  console.log(spread.width().toNumber()); // 0.04
+  console.log(spread.mid().toNumber());   // 0.50
+}
+
+// Из строк
+const result2 = SpreadService.fromMidAndWidth('0.50', '0.04');
+
+// Из Decimal
+import Decimal from 'decimal.js';
+const result3 = SpreadService.fromMidAndWidth(
+  new Decimal(0.50),
+  new Decimal(0.04)
+);
+```
+
+**Ошибки:**
+
+- `SpreadErrorReason.INVALID_FORMAT` — невалидный mid или width (NaN, Infinity)
+- `SpreadErrorReason.INVALID_WIDTH` — width < 0
+- `SpreadErrorReason.BID_GREATER_THAN_ASK` — результирующий bid > ask (не должно возникать при width ≥ 0)
+- Ошибки валидации Price, если bid или ask выходят за пределы [0.0001, 0.9999]
+
+---
+
+### `fromMidAndWidthPercentage(mid, widthPercentage, options?)`
+
+Создаёт спред из midpoint и ширины в процентах от mid.
+
+```typescript
+fromMidAndWidthPercentage(
+  mid: Decimal | number | string,
+  widthPercentage: Decimal | number | string,
+  options?: { ensureLteOne?: boolean }
+): Result<Spread, InvalidSpreadError>
+```
+
+**Параметры:**
+
+- `mid: Decimal | number | string` — midpoint (середина между bid и ask)
+- `widthPercentage: Decimal | number | string` — ширина в процентах от mid (например, 8 = 8%)
+- `options.ensureLteOne` — если true, ширина не может превышать 100% (ratio ≤ 1)
+
+**Возвращает:**
+
+- `Ok(Spread)` — если оба значения валидны и результат в пределах [MIN_PRICE, MAX_PRICE]
+- `Err(InvalidSpreadError)` — при любых ошибках
+
+**Алгоритм:**
+
+1. Parse mid to Decimal
+2. Parse widthPercentage as Ratio (через RatioService.fromPercent)
+3. `width = mid × (widthPercentage / 100)`
+4. Delegate to `fromMidAndWidth(mid, width)`
+
+**Пример:**
+
+```typescript
+// 8% от 0.50 = ширина 0.04
+const result = SpreadService.fromMidAndWidthPercentage(0.50, 8);
+if (result.ok) {
+  const spread = result.value;
+  console.log(spread.bid().toNumber());   // 0.48
+  console.log(spread.ask().toNumber());   // 0.52
+  console.log(spread.width().toNumber()); // 0.04
+}
+
+// С ограничением: ширина не более 100%
+const result2 = SpreadService.fromMidAndWidthPercentage(0.50, 150, { ensureLteOne: true });
+// isErr(result2) === true (widthPercentage > 100%)
+```
+
+**Ошибки:**
+
+- `SpreadErrorReason.INVALID_FORMAT` — невалидный mid (NaN, Infinity)
+- Ошибки RatioService — невалидный widthPercentage
+- Ошибки валидации Price, если bid или ask выходят за пределы [0.0001, 0.9999]
+
+---
+
 ## Операции со спредами
 
 ### `tighten(spread, amount)`

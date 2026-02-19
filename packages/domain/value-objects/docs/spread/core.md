@@ -244,6 +244,29 @@ const spread = Spread.of(
 console.log(spread.midpoint().toNumber());  // 0.50
 ```
 
+#### `mid()`
+
+```typescript
+mid(): Decimal
+```
+
+Возвращает середину спреда (mid price).
+
+**Формула:** `(bid.value() + ask.value()) / 2`
+
+**Псевдоним:** `midpoint()` — устаревший алиас, `mid()` предпочтительный метод.
+
+**Пример:**
+
+```typescript
+const spread = Spread.of(
+  Price.of(new Decimal(0.48)),
+  Price.of(new Decimal(0.52))
+);
+
+console.log(spread.mid().toNumber());  // 0.50
+```
+
 #### `widthRatio()`
 
 ```typescript
@@ -265,6 +288,31 @@ const spread = Spread.of(
 console.log(spread.widthRatio().toNumber());                       // 0.08 (дробь)
 console.log(spread.widthRatio().toDecimal().times(100).toNumber()); // 8   (процент)
 // 0.04 / 0.50 = 0.08 (8% как дробь); widthInBasisPoints() → 400 bps (0.04 × 10000)
+```
+
+#### `widthInBasisPoints()`
+
+```typescript
+widthInBasisPoints(): Decimal
+```
+
+Возвращает ширину спреда в базисных пунктах (basis points).
+
+**Формула:** `width × 10000` (абсолютная ширина, не относительная)
+
+**Примечание:** 1 basis point = 0.0001 в ценовых единицах.
+
+**Пример:**
+
+```typescript
+const spread = Spread.of(
+  Price.of(new Decimal(0.48)),
+  Price.of(new Decimal(0.52))
+);
+
+// Ширина = 0.04; 0.04 × 10000 = 400 bps
+console.log(spread.widthInBasisPoints().toNumber());  // 400
+console.log(spread.widthInBasisPoints().toFixed(0));  // '400'
 ```
 
 ---
@@ -350,6 +398,62 @@ console.log(spread.contains(Price.of(new Decimal(0.50))));  // true
 console.log(spread.contains(Price.of(new Decimal(0.48))));  // true (граница)
 console.log(spread.contains(Price.of(new Decimal(0.45))));  // false
 console.log(spread.contains(Price.of(new Decimal(0.55))));  // false
+```
+
+#### `overlaps(other)`
+
+```typescript
+overlaps(other: Spread): boolean
+```
+
+Проверяет, пересекаются ли два спреда (имеют ли общий диапазон цен).
+
+**Условие:** `this.bid ≤ other.ask && other.bid ≤ this.ask`
+
+**Пример:**
+
+```typescript
+const spread1 = Spread.of(
+  Price.of(new Decimal(0.48)),
+  Price.of(new Decimal(0.55))
+);
+const spread2 = Spread.of(
+  Price.of(new Decimal(0.52)),
+  Price.of(new Decimal(0.60))
+);
+const spread3 = Spread.of(
+  Price.of(new Decimal(0.60)),
+  Price.of(new Decimal(0.70))
+);
+
+console.log(spread1.overlaps(spread2));  // true (пересекаются в 0.52-0.55)
+console.log(spread1.overlaps(spread3));  // false (не пересекаются)
+```
+
+#### `containsSpread(other)`
+
+```typescript
+containsSpread(other: Spread): boolean
+```
+
+Проверяет, входит ли один спред полностью в другой (other внутри this).
+
+**Условие:** `this.bid ≤ other.bid && other.ask ≤ this.ask`
+
+**Пример:**
+
+```typescript
+const outer = Spread.of(
+  Price.of(new Decimal(0.46)),
+  Price.of(new Decimal(0.54))
+);
+const inner = Spread.of(
+  Price.of(new Decimal(0.48)),
+  Price.of(new Decimal(0.52))
+);
+
+console.log(outer.containsSpread(inner));  // true (inner внутри outer)
+console.log(inner.containsSpread(outer));  // false (outer не входит в inner)
 ```
 
 ---
