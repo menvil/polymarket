@@ -17,7 +17,7 @@ import { Ratio } from '../../ratio/core/Ratio.js';
  *
  * **Контракт "Never Throw":**
  * Методы создания/модификации ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
- * Утилитарные методы (equals, isZero, isPositive) возвращают простые типы (boolean).
+ * Утилитарные методы (isZero, isPositive) возвращают простые типы (boolean).
  *
  * **Facade Error Contract:**
  * Любой Err из Facade содержит:
@@ -356,8 +356,8 @@ export class AssetQuantityService {
               source: ErrorSource.SERVICE_CALL,
               reason: AssetQuantityErrorReason.INVALID_AMOUNT,
               asset: ctx.asset,
-              amount: assetQty.amount().value().toString(),
-              rate: rate.toDecimal().toString(),
+              amount: ctx.amount,
+              rate: ctx.rate,
               quantityError: quantityResult.error.message,
             },
           }

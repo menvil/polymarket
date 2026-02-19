@@ -695,17 +695,25 @@ if (spread1.ok && spread2.ok) {
 ```typescript
 import { SpreadService } from '@polymarket/value-objects';
 
-const original = SpreadService.fromValues(0.48, 0.52).value;
+const originalResult = SpreadService.fromValues(0.48, 0.52);
+if (!originalResult.ok) return;
+const original = originalResult.value;
 
 // Операция tighten
-const tightened = SpreadService.tighten(original, 0.01).value;
+const tightenedResult = SpreadService.tighten(original, 0.01);
+if (!tightenedResult.ok) return;
+const tightened = tightenedResult.value;
 
 // Проверка результата — строгое сравнение
-const expected = SpreadService.fromValues(0.49, 0.51).value;
+const expectedResult = SpreadService.fromValues(0.49, 0.51);
+if (!expectedResult.ok) return;
+const expected = expectedResult.value;
 console.log(tightened.equals(expected));  // true — точное совпадение
 
 // Неточное совпадение НЕ считается равным
-const almostSame = SpreadService.fromValues(0.49000001, 0.51).value;
+const almostSameResult = SpreadService.fromValues(0.49000001, 0.51);
+if (!almostSameResult.ok) return;
+const almostSame = almostSameResult.value;
 console.log(tightened.equals(almostSame));  // false
 ```
 

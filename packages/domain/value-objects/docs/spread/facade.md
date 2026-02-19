@@ -293,6 +293,8 @@ fromMidAndWidth(
 **Пример:**
 
 ```typescript
+import Decimal from 'decimal.js';
+
 const result = SpreadService.fromMidAndWidth(0.50, 0.04);
 if (result.ok) {
   const spread = result.value;
@@ -306,7 +308,6 @@ if (result.ok) {
 const result2 = SpreadService.fromMidAndWidth('0.50', '0.04');
 
 // Из Decimal
-import Decimal from 'decimal.js';
 const result3 = SpreadService.fromMidAndWidth(
   new Decimal(0.50),
   new Decimal(0.04)
