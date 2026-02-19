@@ -18,6 +18,9 @@ const config: Config = {
     ...baseConfig.moduleNameMapper,
     // Переопределяем базовые правила нашими (важен порядок! наши идут после)
     '^@polymarket/result$': '<rootDir>/../../foundation/result/src/index.ts',
+    '^@polymarket/result/unsafe$': '<rootDir>/../../foundation/result/src/unsafe.ts',
+    '^@polymarket/result/async$': '<rootDir>/../../foundation/result/src/async.ts',
+    '^@polymarket/result/chain$': '<rootDir>/../../foundation/result/src/chain.ts',
     '^@polymarket/errors$': '<rootDir>/../../foundation/errors/src/index.ts',
     '^@polymarket/math$': '<rootDir>/../../foundation/math/src/index.ts',
     '^@polymarket/time$': '<rootDir>/../../foundation/time/src/index.ts',
