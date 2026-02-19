@@ -44,7 +44,7 @@ function parseOrderBook(data: OrderBookData) {
     error: null,
     spread,
     display: SpreadFormatter.format(spread, { decimals: 4 }),
-    midPrice: spread.midpoint().toNumber(),
+    midPrice: spread.mid().toNumber(),
     spreadBps: spread.widthInBasisPoints().toFixed(0)
   };
 }
@@ -112,7 +112,7 @@ function displayOrderBookTop(orderBook: OrderBook) {
     spread: {
       width: spread.width().toNumber(),
       widthBps: spread.widthInBasisPoints().toFixed(0),
-      midPrice: spread.midpoint().toNumber(),
+      midPrice: spread.mid().toNumber(),
       display: SpreadFormatter.toBidAskString(spread, 4)
     }
   };
@@ -390,7 +390,7 @@ function compareMarketLiquidity(markets: Market[]) {
         marketId: market.id,
         marketName: market.name,
         widthBps: spread.widthInBasisPoints().toNumber(),
-        midPrice: spread.midpoint().toNumber(),
+        midPrice: spread.mid().toNumber(),
         spread
       };
     })
@@ -462,7 +462,7 @@ export const SpreadDisplay: React.FC<SpreadDisplayProps> = ({ bid, ask }) => {
       
       <div className="metrics">
         <div className="mid-price">
-          Mid: {spread.midpoint().toNumber().toFixed(4)}
+          Mid: {spread.mid().toNumber().toFixed(4)}
         </div>
         <div className={`spread-width ${liquidityColor}`}>
           Spread: {widthBps.toFixed(0)} bps
@@ -584,7 +584,7 @@ function displayMarketData(data: APIResponse) {
       return {
         type: 'spread',
         display: SpreadFormatter.format(spreadResult.value, { decimals: 4 }),
-        midPrice: spreadResult.value.midpoint().toNumber()
+        midPrice: spreadResult.value.mid().toNumber()
       };
     }
   }

@@ -64,7 +64,7 @@ export class AssetQuantityService {
    * @remarks
    * Никогда не бросает исключения - всегда возвращает Result.
    *
-   * **Defensive copy**: Использует fromAssetId() который пересоздаёт AssetId
+   * **Defensive copy**: Конструктор AssetQuantity выполняет defensive copy AssetId
    * для гарантии иммутабельности (asset может быть из parseAssetId).
    *
    * Возможные ошибки:
@@ -355,6 +355,7 @@ export class AssetQuantityService {
             context: {
               source: ErrorSource.SERVICE_CALL,
               reason: AssetQuantityErrorReason.INVALID_AMOUNT,
+              asset: ctx.asset,
               amount: assetQty.amount().value().toString(),
               rate: rate.toDecimal().toString(),
               quantityError: quantityResult.error.message,

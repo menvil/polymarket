@@ -14,12 +14,14 @@
 
 ## Обзор
 
-**SpreadService** — это единственный публичный API для работы со спредами. Все методы:
+**SpreadService** — это единственный публичный API для работы со спредами. Большинство методов:
 
 - ✅ Возвращают `Result<T, InvalidSpreadError>` (где T может быть Spread, Price, Decimal или Ratio)
 - ✅ Никогда не бросают исключений (Never Throw Contract)
 - ✅ Перехватывают ошибки из Core и Rules слоёв
 - ✅ Предоставляют rich error context
+
+**Исключение:** `SpreadService.zero(price)` возвращает `Spread` напрямую (не `Result`), т.к. инвариант `bid === ask` выполнен автоматически и ошибка невозможна.
 
 ### Импорт
 
@@ -113,7 +115,7 @@ const result3 = SpreadService.fromValues(
 );
 
 if (result1.ok) {
-  console.log(result1.value.midpoint().toNumber());  // 0.50
+  console.log(result1.value.mid().toNumber());  // 0.50
 }
 ```
 
@@ -151,7 +153,7 @@ if (priceResult.ok) {
   
   console.log(spread.isZeroWidth());  // true
   console.log(spread.width().toNumber());  // 0
-  console.log(spread.midpoint().toNumber());  // 0.50
+  console.log(spread.mid().toNumber());  // 0.50
 }
 ```
 
@@ -208,7 +210,7 @@ if (result.ok) {
   console.log(spread.bid().toNumber());      // 0.48 (0.50 - 0.02)
   console.log(spread.ask().toNumber());      // 0.52 (0.50 + 0.02)
   console.log(spread.width().toNumber());    // 0.04 (0.50 * 0.08)
-  console.log(spread.midpoint().toNumber()); // 0.50
+  console.log(spread.mid().toNumber()); // 0.50
 }
 
 // Из чисел
@@ -419,7 +421,7 @@ if (spreadResult.ok) {
     console.log(tighter.bid().toNumber());  // 0.49
     console.log(tighter.ask().toNumber());  // 0.51
     console.log(tighter.width().toNumber());  // 0.02
-    console.log(tighter.midpoint().toNumber());  // 0.50 (сохранён!)
+    console.log(tighter.mid().toNumber());  // 0.50 (сохранён!)
   }
 }
 ```
@@ -478,7 +480,7 @@ if (spreadResult.ok) {
     console.log(wider.bid().toNumber());  // 0.46
     console.log(wider.ask().toNumber());  // 0.54
     console.log(wider.width().toNumber());  // 0.08
-    console.log(wider.midpoint().toNumber());  // 0.50 (сохранён!)
+    console.log(wider.mid().toNumber());  // 0.50 (сохранён!)
   }
 }
 ```
@@ -724,7 +726,7 @@ if (result.ok) {
   console.log(result.value.bid().toNumber());  // 0.455 (0.48 - 0.025)
   console.log(result.value.ask().toNumber());  // 0.545 (0.52 + 0.025)
   console.log(result.value.width().toNumber());  // 0.09 (0.04 + 0.05)
-  console.log(result.value.midpoint().toNumber());  // 0.50 (сохранен!)
+  console.log(result.value.mid().toNumber());  // 0.50 (сохранен!)
 }
 ```
 
@@ -776,7 +778,7 @@ if (result.ok) {
   console.log(result.value.bid().toNumber());  // 0.49 (0.48 + 0.01)
   console.log(result.value.ask().toNumber());  // 0.51 (0.52 - 0.01)
   console.log(result.value.width().toNumber());  // 0.02 (0.04 - 0.02)
-  console.log(result.value.midpoint().toNumber());  // 0.50 (сохранен!)
+  console.log(result.value.mid().toNumber());  // 0.50 (сохранен!)
 }
 ```
 
@@ -835,7 +837,7 @@ if (result.ok) {
   console.log(result.value.bid().toNumber());  // 0.50 (0.48 + 0.02)
   console.log(result.value.ask().toNumber());  // 0.51 (0.52 - 0.01)
   console.log(result.value.width().toNumber());  // 0.01 (сузился)
-  console.log(result.value.midpoint().toNumber());  // 0.505 (сдвинулся!)
+  console.log(result.value.mid().toNumber());  // 0.505 (сдвинулся!)
 }
 ```
 
