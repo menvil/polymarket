@@ -50,7 +50,7 @@
 Spread ≠ просто две цены:
 
 - **Семантика** — bid и ask имеют чёткую связь (bid ≤ ask)
-- **Операции** — специфические методы (tighten, widen, shift, midpoint)
+- **Операции** — специфические методы (tighten, widen, shift, mid)
 - **Инварианты** — гарантии на уровне типов
 - **Polymarket-специфика** — работа с вероятностными ценами
 
@@ -84,7 +84,7 @@ console.log(spread.ask().toNumber());  // 0.52
 
 // Вычисление характеристик спреда
 console.log(spread.width().toNumber());     // 0.04
-console.log(spread.midpoint().toNumber());  // 0.50
+console.log(spread.mid().toNumber());  // 0.50
 console.log(spread.widthRatio().toNumber());  // 0.08 (8% as fraction)
 
 // Сужение спреда (tighten)
@@ -186,7 +186,7 @@ if (!result.ok) {
 
 - Хранение bid/ask цен как Price объектов
 - Инварианты (bid ≤ ask)
-- Чистые вычисления (width, midpoint, widthRatio)
+- Чистые вычисления (width, mid, widthRatio)
 - Бросает `SpreadInvariantViolation` при нарушении инвариантов
 
 **Пример:**
@@ -380,7 +380,7 @@ function displayOrderBook(bidPrice: number, askPrice: number) {
     
     bid: spread.bid().toNumber(),
     ask: spread.ask().toNumber(),
-    midPrice: spread.midpoint().toNumber(),
+    midPrice: spread.mid().toNumber(),
     spreadBps: spread.widthInBasisPoints().toFixed(0) + ' bps'
   };
 }
@@ -391,7 +391,7 @@ console.log(displayOrderBook(0.48, 0.52));
 //   bid: 0.48,
 //   ask: 0.52,
 //   midPrice: 0.50,
-//   spreadBps: "800 bps"
+//   spreadBps: "400 bps"
 // }
 ```
 
@@ -405,7 +405,7 @@ function applyMarketMakingStrategy(
   targetWidthBps: number
 ) {
   const currentWidthBps = currentSpread.widthInBasisPoints().toNumber();
-  const mid = currentSpread.midpoint();
+  const mid = currentSpread.mid();
   
   // Рассчитываем новую ширину в абсолютных величинах
   const targetWidth = mid.mul(targetWidthBps / 10000);

@@ -993,7 +993,7 @@ if (result.ok) {
 ### Использование с PriceService
 
 ```typescript
-import { PriceService, SpreadService } from '@polymarket/value-objects';
+import { PriceService, SpreadService, SpreadFormatter } from '@polymarket/value-objects';
 
 // Создание цен с округлением к market tick
 const bidResult = PriceService.create(0.4823);
@@ -1022,7 +1022,8 @@ if (bidResult.ok && askResult.ok) {
 ### Цепочка операций
 
 ```typescript
-import { SpreadService } from '@polymarket/value-objects';
+import { SpreadService, Spread, InvalidSpreadError } from '@polymarket/value-objects';
+import type { Result } from '@polymarket/result';
 
 function adjustSpreadForVolatility(
   initialBid: number,

@@ -190,7 +190,8 @@ console.log(validateOrderBook(0.55, 0.45));  // { valid: false, error: 'CROSSED_
 ### Динамическое управление спредом
 
 ```typescript
-import { SpreadService, Spread } from '@polymarket/value-objects';
+import { SpreadService, Spread, InvalidSpreadError } from '@polymarket/value-objects';
+import type { Result } from '@polymarket/result';
 
 interface MarketConditions {
   volatility: number;      // 0-1
@@ -271,8 +272,9 @@ function* tightenSpreadGradually(
 
   for (let i = 0; i < steps; i++) {
     // Convert bps step to absolute per-side amount:
-    // totalWidthDecrease = stepSizeBps / 10000 * mid; tighten takes per-side amount
-    const absoluteStep = (stepSizeBps / 10000) * currentSpread.mid().toNumber();
+    // widthInBasisPoints = width × 10000, so width = stepSizeBps / 10000
+    // tighten() takes per-side amount, so divide by 2
+    const absoluteStep = stepSizeBps / 10000;
     const tightenAmount = absoluteStep / 2;
 
     const result = SpreadService.tighten(currentSpread, tightenAmount);
@@ -292,7 +294,7 @@ function* tightenSpreadGradually(
   }
 }
 
-// Пример: сужаем спред от 200 bps до 50 bps за 5 шагов
+// Пример: сужаем спред от 1000 bps до 50 bps за 5 шагов
 const initialSpreadResult = SpreadService.fromValues(0.45, 0.55);
 
 if (initialSpreadResult.ok) {

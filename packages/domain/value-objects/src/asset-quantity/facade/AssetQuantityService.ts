@@ -136,7 +136,7 @@ export class AssetQuantityService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-                amountValue,
+                amountValue: String(amountValue),
                 quantityError: quantityResult.error.message,
               },
             }
@@ -198,9 +198,9 @@ export class AssetQuantityService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-                conditionRef,
-                outcomeKey,
-                amountValue,
+                conditionRef: JSON.stringify(conditionRef),
+                outcomeKey: String(outcomeKey),
+                amountValue: String(amountValue),
                 quantityError: quantityResult.error.message,
               },
             }
@@ -219,14 +219,18 @@ export class AssetQuantityService {
           // AssetIdHelpers.fromOutcomeToken() бросил ошибку валидации
           // Переупаковываем её в InvalidAssetQuantityError с правильным reason
           const errorMessage = error instanceof Error ? error.message : String(error);
+          const cause = error instanceof Error
+            ? { name: error.name, message: error.message, stack: error.stack }
+            : { name: 'UnknownError', message: String(error) };
           throw new InvalidAssetQuantityError(
             () => errorMessage,
             {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_ASSET,
-                conditionRef,
-                outcomeKey,
+                conditionRef: JSON.stringify(conditionRef),
+                outcomeKey: String(outcomeKey),
+                cause,
               },
             }
           );

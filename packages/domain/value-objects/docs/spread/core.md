@@ -21,7 +21,7 @@ Core слой содержит чистую доменную логику без
 
 - `Spread.ts` — основной Value Object
 - `SpreadInvariantViolation.ts` — typed exception
-- `SpreadErrorReason.ts` — enum причин ошибок
+- `SpreadErrorReason.ts` — enum причин ошибок (расположен в `src/spread/errors/`, не в Core)
 
 **Принципы:**
 
