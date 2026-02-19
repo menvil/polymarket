@@ -5,20 +5,20 @@
  * Экспортирует все value objects для удобного импорта.
  * Value objects являются иммутабельными и представляют концепции без идентичности.
  */
-//
-// // Money модуль (только публичный API)
-// export {
-//   Money,
-//   MoneyService,
-//   MoneySerializer,
-//   MoneyFormatter,
-//   MoneyErrorReason,
-//   SupportedCurrency,
-//   // Rules Layer (публичный API для внешней валидации)
-//   ValidateDeltaForIncreaseBy,
-//   ValidateDivisorForMoneyDivision,
-//   ValidateFactorForMoneyMultiplication
-// } from './money/index.js';
+
+// Money модуль (только публичный API)
+export {
+  Money,
+  MoneyService,
+  MoneySerializer,
+  MoneyFormatter,
+  MoneyErrorReason,
+  SupportedCurrency,
+  // Rules Layer (публичный API для внешней валидации)
+  ValidateDeltaForIncreaseBy,
+  ValidateDivisorForMoneyDivision,
+  ValidateFactorForMoneyMultiplication
+} from './money/index.js';
 
 // Price модуль (только публичный API)
 export { Price, PriceService, PriceSerializer, PriceFormatter, PriceErrorReason } from './price/index.js';
@@ -26,14 +26,14 @@ export { Price, PriceService, PriceSerializer, PriceFormatter, PriceErrorReason 
 // Quantity модуль (только публичный API)
 export { Quantity, QuantityService, QuantityFormatter, QuantitySerializer, QuantityErrorReason } from './quantity/index.js';
 //
-// // Balance модуль (только публичный API)
-// export {
-//   Balance,
-//   BalanceService,
-//   BalanceSerializer,
-//   BalanceFormatter,
-//   BalanceErrorReason
-// } from './balance/index.js';
+// Balance модуль (только публичный API)
+export {
+  Balance,
+  BalanceService,
+  BalanceSerializer,
+  BalanceFormatter,
+  BalanceErrorReason
+} from './balance/index.js';
 
 // Spread модуль (только публичный API)
 export {
