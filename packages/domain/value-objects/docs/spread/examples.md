@@ -59,7 +59,7 @@ console.log(result);
 //   spread: Spread { ... },
 //   display: "0.4823-0.5177 (0.0354)",
 //   midPrice: 0.5,
-//   spreadBps: "708"
+//   spreadBps: "354"
 // }
 ```
 
@@ -136,7 +136,7 @@ console.log(displayOrderBookTop(orderBook));
 //   ask: { price: 0.5150, size: 800, probability: '51.50%' },
 //   spread: {
 //     width: 0.03,
-//     widthBps: '600',
+//     widthBps: '300',
 //     midPrice: 0.50,
 //     display: '0.4850-0.5150'
 //   }
@@ -353,10 +353,10 @@ if (spreadResult.ok) {
   const metrics = analyzeLiquidity(spreadResult.value, 10000);
   console.log(metrics);
   // {
-  //   spreadBps: 400,
+  //   spreadBps: 200,
   //   liquidityScore: 'LOW',
   //   recommendedOrderSize: 1000,
-  //   slippageEstimate1k: 0.40
+  //   slippageEstimate1k: 0.20
   // }
 }
 ```

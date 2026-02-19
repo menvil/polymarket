@@ -471,7 +471,7 @@ const spread = SpreadService.fromValues(0.48, 0.52).value;
 spread.widthRatio();              // Ratio(0.08)
 spread.widthRatio().toNumber();   // 0.08 (fraction: 0.04 / 0.50)
 spread.widthRatio().toDecimal().times(100).toNumber();  // 8 (percent)
-spread.widthInBasisPoints().toNumber(); // 800 (bps)
+spread.widthInBasisPoints().toNumber(); // 400 (bps: 0.04 × 10000)
 ```
 
 **Обоснование:**

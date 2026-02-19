@@ -20,7 +20,7 @@
 
 ### Ключевые особенности
 
-✅ **Type-safe** — все операции возвращают `Result<T, E>`, нет runtime `undefined`
+✅ **Type-safe** — большинство операций возвращают `Result<T, E>` (кроме `SpreadService.zero()`, который возвращает `Spread` напрямую), нет runtime `undefined`
 ✅ **Иммутабельный** — все операции создают новые экземпляры
 ✅ **Высокоточный** — использует `Decimal.js` для произвольной точности
 ✅ **Строгие сравнения** — только точные сравнения через `equals()`, без epsilon
@@ -180,7 +180,7 @@ if (!result.ok) {
 
 - `src/spread/core/Spread.ts` — основной Value Object
 - `src/spread/core/SpreadInvariantViolation.ts` — typed exception
-- `src/spread/core/SpreadErrorReason.ts` — enum причин ошибок
+- `src/spread/errors/SpreadErrorReason.ts` — enum причин ошибок
 
 **Ответственность:**
 

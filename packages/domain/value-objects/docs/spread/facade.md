@@ -664,7 +664,7 @@ if (result.ok) {
 
 **Ограничения:**
 
-- Автоматически ограничивается до zero-width spread если deltaWidthAbs > width / 2
+- Автоматически ограничивается до zero-width spread если deltaWidthAbs ≥ width (так как amountAbs = deltaWidthAbs / 2, а tighten обрезает при amountAbs ≥ halfWidth = width / 2)
 
 **Ошибки:**
 

@@ -264,7 +264,7 @@ const spread = Spread.of(
 
 console.log(spread.widthRatio().toNumber());                       // 0.08 (дробь)
 console.log(spread.widthRatio().toDecimal().times(100).toNumber()); // 8   (процент)
-// 0.04 / 0.50 = 0.08 (8% как дробь); widthInBasisPoints() → 800 bps
+// 0.04 / 0.50 = 0.08 (8% как дробь); widthInBasisPoints() → 400 bps (0.04 × 10000)
 ```
 
 ---
@@ -437,7 +437,7 @@ export enum SpreadErrorReason {
 | `BID_GREATER_THAN_ASK` | Core | bid > ask |
 | `INVALID_FORMAT` | Facade | Невалидный формат входных данных |
 | `INVALID_AMOUNT` | Facade | Невалидный amount в операциях |
-| `INVALID_WIDTH` | Facade | Невалидная ширина спреда |
+| `INVALID_WIDTH` | Facade / Rules | Невалидная ширина спреда (config validation в ValidateMinWidth/ValidateMaxWidth) |
 | `WIDTH_TOO_SMALL` | Rules | Ширина спреда меньше минимальной |
 | `WIDTH_TOO_LARGE` | Rules | Ширина спреда больше максимальной |
 | `OPERATION_OUT_OF_BOUNDS` | Facade | Операция выходит за допустимые пределы |

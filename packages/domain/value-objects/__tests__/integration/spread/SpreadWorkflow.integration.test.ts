@@ -111,6 +111,7 @@ describe('Spread Integration Workflow', () => {
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);
+      expect(spreadResult.ok).toBe(true);
       if (!spreadResult.ok) return;
 
       const original = spreadResult.value;

@@ -50,6 +50,8 @@ import { Ratio } from '../../ratio/core/Ratio.js';
  * ```
  */
 export class AssetQuantityService {
+  private constructor() {}
+
   private static readonly SERVICE_NAME = 'AssetQuantityService';
 
   /**
@@ -329,13 +331,12 @@ export class AssetQuantityService {
     assetQty: AssetQuantity,
     rate: Ratio
   ): Result<AssetQuantity, InvalidAssetQuantityError> {
-    const ctx: Record<string, unknown> = {};
+    const ctx = {
+      amount: assetQty.amount().value().toString(),
+      asset: JSON.stringify(assetQty.asset()),
+      rate: rate.toDecimal().toString()
+    };
     return wrapOp(AssetQuantityService.SERVICE_NAME, 'portion', ctx, () => {
-      Object.assign(ctx, {
-        amount: assetQty.amount().value().toString(),
-        asset: JSON.stringify(assetQty.asset()),
-        rate: rate.toDecimal().toString()
-      });
       // Multiply: amount * rate
       const resultAmount = assetQty.amount().value().times(rate.toDecimal());
 
