@@ -199,8 +199,8 @@ export class AssetQuantityFormatter {
    * ```
    */
   public static toFixedString(assetQty: AssetQuantity, decimalPlaces: number = 2): string {
-    const safeDecimalPlaces = Number.isFinite(decimalPlaces) && Number.isInteger(decimalPlaces) && decimalPlaces >= 0 && decimalPlaces <= 100
-      ? decimalPlaces
+    const safeDecimalPlaces = Number.isFinite(decimalPlaces)
+      ? Math.min(100, Math.max(0, Math.trunc(decimalPlaces)))
       : 2;
     const amount = assetQty.amount().value().toFixed(safeDecimalPlaces);
     const asset = assetQty.asset();

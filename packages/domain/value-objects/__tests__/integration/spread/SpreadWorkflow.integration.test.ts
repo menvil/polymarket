@@ -106,6 +106,8 @@ describe('Spread Integration Workflow', () => {
       const bidResult = PriceService.create(0.48);
       const askResult = PriceService.create(0.52);
 
+      expect(bidResult.ok).toBe(true);
+      expect(askResult.ok).toBe(true);
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);

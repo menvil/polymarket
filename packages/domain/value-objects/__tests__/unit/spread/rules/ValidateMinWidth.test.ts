@@ -1,3 +1,4 @@
+import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { ValidateMinWidth } from '../../../../src/spread/rules/ValidateMinWidth.js';
 import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';

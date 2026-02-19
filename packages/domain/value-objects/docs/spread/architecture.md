@@ -135,7 +135,6 @@ if (bidResult.ok && askResult.ok) {
 
 - `Spread.ts` (~240 строк)
 - `SpreadInvariantViolation.ts`
-- `SpreadErrorReason.ts`
 
 **Ответственность:**
 
@@ -559,7 +558,7 @@ export class ValidateMinimumLiquidity {
     spread: Spread,
     minWidthBps: number
   ): Result<void, InvalidSpreadError> {
-    const widthBps = spread.widthPercentage().toNumber() * 100;
+    const widthBps = spread.widthInBasisPoints().toNumber();
     
     if (widthBps < minWidthBps) {
       return Err(

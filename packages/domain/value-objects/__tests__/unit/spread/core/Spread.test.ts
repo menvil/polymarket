@@ -78,26 +78,26 @@ describe('Spread Core', () => {
   });
 
   describe('widthPercentage()', () => {
-    it('should calculate width percentage correctly', () => {
+    it('should return Ratio = width / mid (fraction, not percent)', () => {
       const bid = Price.of(new Decimal(0.48));
       const ask = Price.of(new Decimal(0.52));
       const spread = Spread.of(bid, ask);
 
-      const widthPercentage = spread.widthPercentage();
+      const ratio = spread.widthPercentage();
 
-      // (0.04 / 0.50) * 100 = 8%
-      expect(widthPercentage.toNumber()).toBe(8);
+      // 0.04 / 0.50 = 0.08 (fraction)
+      expect(ratio.toNumber()).toBe(0.08);
+      // Percent: ratio * 100 = 8%
+      expect(ratio.toDecimal().times(100).toNumber()).toBe(8);
     });
 
-    it('should return 0 when width is zero', () => {
-      // bid === ask → width is zero, so widthPercentage = 0
+    it('should return Ratio(0) when width is zero', () => {
+      // bid === ask → width is zero → ratio = 0 / mid = 0
       const bid = Price.of(new Decimal(0.0001));
       const ask = Price.of(new Decimal(0.0001));
       const spread = Spread.of(bid, ask);
 
-      const widthPercentage = spread.widthPercentage();
-
-      expect(widthPercentage.toNumber()).toBe(0);
+      expect(spread.widthPercentage().toNumber()).toBe(0);
     });
   });
 

@@ -702,7 +702,7 @@ const almostSame = SpreadService.fromValues(0.49000001, 0.51).value;
 console.log(tightened.equals(almostSame));  // false
 ```
 
-### Тестирование с строгими сравнениями
+### Тестирование со строгими сравнениями
 
 ```typescript
 import { SpreadService } from '@polymarket/value-objects';

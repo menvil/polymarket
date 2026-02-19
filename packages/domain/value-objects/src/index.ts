@@ -40,6 +40,7 @@ export {
   Spread,
   SpreadService,
   SpreadSerializer,
+  type SpreadJSON,
   SpreadFormatter,
   SpreadErrorReason
 } from './spread/index.js';

@@ -86,7 +86,7 @@ export class AssetQuantityService {
     return wrapOp(
       AssetQuantityService.SERVICE_NAME,
       'create',
-      { asset, amount },
+      { asset: JSON.stringify(asset), amount: amount.toString() },
       () => {
         // Конструктор делает defensive copy для гарантии иммутабельности
         const assetQty = new AssetQuantity(asset, amount);

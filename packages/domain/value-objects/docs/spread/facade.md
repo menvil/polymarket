@@ -238,7 +238,7 @@ const spreadResult = SpreadService.fromMidAndWidthRatio(
 );
 
 if (spreadResult.ok) {
-  // Спред: 0.49-0.51 (ширина 2% от 0.50)
+  // Спред: 0.49-0.51 (ширина 4% от 0.50)
   console.log(`Quote: ${spreadResult.value.bid().toNumber()}-${spreadResult.value.ask().toNumber()}`);
 }
 ```
@@ -919,7 +919,7 @@ function adjustSpreadForVolatility(
   if (!widenedResult.ok) return widenedResult;
   
   // 3. Дополнительно расширить пропорционально волатильности
-  const volatilityAmount = widenedResult.value.width().mul(volatilityFactor).toNumber();
+  const volatilityAmount = widenedResult.value.width().times(volatilityFactor).toNumber();
   return SpreadService.widen(widenedResult.value, volatilityAmount);
 }
 

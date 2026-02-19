@@ -50,9 +50,9 @@ if (tokenResult.ok) {
 **Формула:** `result.amount = assetQty.amount * rate`
 
 **Use cases:**
-- **Fee calculation**: `portion(orderQty, Ratio.fromPercent(2))` → 2% trading fee
-- **Allocation**: `portion(totalQty, Ratio.fromDecimal(0.3))` → 30% allocation
-- **Partial fill**: `portion(orderQty, Ratio.fromDecimal(0.5))` → 50% filled
+- **Fee calculation**: `portion(orderQty, Ratio.of(new Decimal(0.02)))` → 2% trading fee
+- **Allocation**: `portion(totalQty, Ratio.of(new Decimal(0.3)))` → 30% allocation
+- **Partial fill**: `portion(orderQty, Ratio.of(new Decimal(0.5)))` → 50% filled
 
 ```typescript
 import { AssetQuantityService } from '@polymarket/value-objects/asset-quantity';
@@ -240,15 +240,15 @@ if (!total.ok) return;
 
 // Allocation 1: 30%
 const alloc1 = AssetQuantityService.portion(total.value, Ratio.of(new Decimal(0.3)));
-console.log(alloc1.ok && alloc1.value.amount().toNumber()); // 3000
+if (alloc1.ok) console.log(alloc1.value.amount().toNumber()); // 3000
 
 // Allocation 2: 50%
 const alloc2 = AssetQuantityService.portion(total.value, Ratio.of(new Decimal(0.5)));
-console.log(alloc2.ok && alloc2.value.amount().toNumber()); // 5000
+if (alloc2.ok) console.log(alloc2.value.amount().toNumber()); // 5000
 
 // Allocation 3: 20%
 const alloc3 = AssetQuantityService.portion(total.value, Ratio.of(new Decimal(0.2)));
-console.log(alloc3.ok && alloc3.value.amount().toNumber()); // 2000
+if (alloc3.ok) console.log(alloc3.value.amount().toNumber()); // 2000
 
 // Sum = 100% = 10000 ✓
 ```

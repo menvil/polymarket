@@ -1,5 +1,6 @@
 import Decimal from 'decimal.js';
 import { Price } from '../../price/index.js';
+import { Ratio } from '../../ratio/core/Ratio.js';
 import { SpreadInvariantViolation } from './SpreadInvariantViolation.js';
 import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 
@@ -184,13 +185,16 @@ export class Spread {
   }
 
   /**
-   * Вычислить ширину спреда в процентах
+   * Вычислить относительную ширину спреда как Ratio (width / mid)
    *
-   * @returns Width percentage как Decimal
+   * @returns Ratio = width / midpoint (дробь, не процент)
    *
    * @remarks
-   * Percentage = (width / midpoint) * 100
-   * Нормализует спред для сравнения на разных уровнях цен.
+   * Ratio = width / midpoint. Нормализует спред для сравнения на разных уровнях цен.
+   * Чтобы получить процент — умножь на 100: `ratio.toDecimal().times(100)`.
+   * Чтобы получить basis points — умножь на 10000.
+   *
+   * Price >= 0.0001, поэтому mid всегда > 0 — деление на ноль невозможно.
    *
    * @example
    * ```typescript
@@ -198,14 +202,15 @@ export class Spread {
    *   Price.of(new Decimal(0.48)),
    *   Price.of(new Decimal(0.52))
    * );
-   * spread.widthPercentage(); // Decimal(8)
-   * // Расчёт: (0.04 / 0.50) * 100 = 8%
+   * const ratio = spread.widthPercentage();
+   * // Расчёт: 0.04 / 0.50 = 0.08
+   * ratio.toNumber();              // 0.08  (8% as fraction)
+   * ratio.toDecimal().times(100);  // 8     (percent)
+   * ratio.toDecimal().times(10000); // 800  (basis points)
    * ```
    */
-  public widthPercentage(): Decimal {
-    //@todo должен использовать ratio для единообразия и возвращать его
-    // Price >= 0.0001, поэтому mid всегда > 0 — деление на ноль невозможно
-    return this.width().dividedBy(this.mid()).times(100);
+  public widthPercentage(): Ratio {
+    return Ratio.of(this.width().dividedBy(this.mid()));
   }
 
   /**

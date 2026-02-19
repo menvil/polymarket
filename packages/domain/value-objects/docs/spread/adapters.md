@@ -567,15 +567,16 @@ const display = `${spread.bid()}-${spread.ask()}`;  // Нет контроля �
 ### Кэширование форматированных строк
 
 ```typescript
-const formatCache = new Map<Spread, string>();
+const formatCache = new Map<string, string>();
 
 function getCachedFormat(spread: Spread, decimals: number = 4): string {
-  const existing = formatCache.get(spread);
+  const key = `${spread.bid().toNumber()}_${spread.ask().toNumber()}_${decimals}`;
+  const existing = formatCache.get(key);
   if (existing) return existing;
-  
+
   const formatted = SpreadFormatter.format(spread, { decimals });
-  formatCache.set(spread, formatted);
-  
+  formatCache.set(key, formatted);
+
   return formatted;
 }
 ```
@@ -588,7 +589,7 @@ function serializeBatch(spreads: Spread[]): string {
   return JSON.stringify(jsons);
 }
 
-function deserializeBatch(jsonString: string): Result<Spread[], InvalidSpreadError>[] {
+function deserializeBatch(jsonString: string): Result<Spread, InvalidSpreadError>[] {
   try {
     const jsons = JSON.parse(jsonString);
     return jsons.map((json: unknown) => SpreadSerializer.fromJSON(json));
