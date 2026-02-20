@@ -863,7 +863,7 @@ describe('BalanceService', () => {
         // Создаем мок Money с другой валютой для тестирования ветки currency mismatch
         const amount = Money.of(new Decimal(5000));
         const mockAmount = {
-          ...amount,
+          value: () => amount.value(),
           currency: () => 'EUR' as SupportedCurrency
         } as Money;
 
@@ -895,7 +895,10 @@ describe('BalanceService', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.message).toContain('Failed to compare available with amount');
+          // После rewrap() сообщение сохраняется из оригинальной ошибки
+          expect(result.error.message).toContain('Mock comparison error');
+          // Проверяем что op добавлен в opChain
+          expect(result.error.context?.opChain).toContain('BalanceService.canAfford');
         }
 
         compareSpy.mockRestore();
@@ -1328,7 +1331,10 @@ describe('BalanceService', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.message).toContain('Failed to compare available amounts');
+          // После rewrap() сообщение сохраняется из оригинальной ошибки
+          expect(result.error.message).toContain('Mock equals error');
+          // Проверяем что op добавлен в opChain
+          expect(result.error.context?.opChain).toContain('BalanceService.equals');
         }
 
         equalsSpy.mockRestore();
@@ -1360,7 +1366,10 @@ describe('BalanceService', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.message).toContain('Failed to compare reserved amounts');
+          // После rewrap() сообщение сохраняется из оригинальной ошибки
+          expect(result.error.message).toContain('Mock equals error');
+          // Проверяем что op добавлен в opChain
+          expect(result.error.context?.opChain).toContain('BalanceService.equals');
         }
 
         equalsSpy.mockRestore();

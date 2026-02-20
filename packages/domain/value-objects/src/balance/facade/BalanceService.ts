@@ -6,8 +6,7 @@ import {
   ErrorSource,
   rewrap,
   currencyMismatchError,
-  wrapOp,
-  toCause
+  wrapOp
 } from '@polymarket/errors';
 import { Balance } from '../core/Balance';
 import { BalanceInvariantViolation } from '../core/BalanceInvariantViolation';
@@ -572,65 +571,78 @@ export class BalanceService {
     balance1: Balance,
     balance2: Balance
   ): Result<boolean, InvalidBalanceError> {
-    // Проверка совпадения валют
-    if (!balance1.hasSameCurrency(balance2)) {
-      return Err(
-        currencyMismatchError(
-          balance1.currency(),
-          balance2.currency(),
-          BalanceErrorReason.CURRENCY_MISMATCH,
-          InvalidBalanceError
-        )
-      );
-    }
+    const op = 'equals';
+    const ctx = {
+      available1: balance1.available().value().toString(),
+      reserved1: balance1.reserved().value().toString(),
+      available2: balance2.available().value().toString(),
+      reserved2: balance2.reserved().value().toString(),
+      currency: balance1.currency()
+    };
 
-    // Сравниваем available через MoneyService
-    const availableEqual = MoneyService.equals(balance1.available(), balance2.available());
-    if (isErr(availableEqual)) {
-      return Err(
-        new InvalidBalanceError('Failed to compare available amounts', {
-          context: {
-            reason: BalanceErrorReason.INVALID_FORMAT,
-            cause: toCause(availableEqual.error)
-          }
-        })
-      );
-    }
+    return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
+      // Проверка совпадения валют
+      if (!balance1.hasSameCurrency(balance2)) {
+        return Err(
+          currencyMismatchError(
+            balance1.currency(),
+            balance2.currency(),
+            BalanceErrorReason.CURRENCY_MISMATCH,
+            InvalidBalanceError
+          )
+        );
+      }
 
-    // Если available не равны - сразу false
-    if (!availableEqual.value) {
-      return Ok(false);
-    }
+      // Сравниваем available через MoneyService
+      const availableEqual = MoneyService.equals(balance1.available(), balance2.available());
+      if (isErr(availableEqual)) {
+        return Err(
+          rewrap(
+            BalanceService.SERVICE_NAME,
+            op,
+            ctx,
+            availableEqual.error,
+            InvalidBalanceError
+          )
+        );
+      }
 
-    // Сравниваем reserved через MoneyService
-    const reservedEqual = MoneyService.equals(balance1.reserved(), balance2.reserved());
-    if (isErr(reservedEqual)) {
-      return Err(
-        new InvalidBalanceError('Failed to compare reserved amounts', {
-          context: {
-            reason: BalanceErrorReason.INVALID_FORMAT,
-            cause: toCause(reservedEqual.error)
-          }
-        })
-      );
-    }
+      // Если available не равны - сразу false
+      if (!availableEqual.value) {
+        return Ok(false);
+      }
 
-    // Если reserved не равны - сразу false
-    if (!reservedEqual.value) {
-      return Ok(false);
-    }
+      // Сравниваем reserved через MoneyService
+      const reservedEqual = MoneyService.equals(balance1.reserved(), balance2.reserved());
+      if (isErr(reservedEqual)) {
+        return Err(
+          rewrap(
+            BalanceService.SERVICE_NAME,
+            op,
+            ctx,
+            reservedEqual.error,
+            InvalidBalanceError
+          )
+        );
+      }
 
-    // Сравниваем accountId через accountIdEquals
-    if (!accountIdEquals(balance1.accountId(), balance2.accountId())) {
-      return Ok(false);
-    }
+      // Если reserved не равны - сразу false
+      if (!reservedEqual.value) {
+        return Ok(false);
+      }
 
-    // Сравниваем venueId (прямое сравнение строк)
-    if (balance1.venueId() !== balance2.venueId()) {
-      return Ok(false);
-    }
+      // Сравниваем accountId через accountIdEquals
+      if (!accountIdEquals(balance1.accountId(), balance2.accountId())) {
+        return Ok(false);
+      }
 
-    return Ok(true);
+      // Сравниваем venueId (прямое сравнение строк)
+      if (balance1.venueId() !== balance2.venueId()) {
+        return Ok(false);
+      }
+
+      return Ok(true);
+    }, InvalidBalanceError);
   }
 
   /**
@@ -678,38 +690,48 @@ export class BalanceService {
     balance: Balance,
     amount: Money
   ): Result<boolean, InvalidBalanceError> {
-    // Проверка совпадения валют
-    if (balance.currency() !== amount.currency()) {
-      return Err(
-        new InvalidBalanceError(
-          `currency mismatch: expected ${balance.currency()}, got ${amount.currency()}`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              reason: BalanceErrorReason.CURRENCY_MISMATCH,
-              expected: balance.currency(),
-              actual: amount.currency()
+    const op = 'canAfford';
+    const ctx = {
+      available: balance.available().value().toString(),
+      amount: amount.value().toString(),
+      currency: balance.currency()
+    };
+
+    return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
+      // Проверка совпадения валют
+      if (balance.currency() !== amount.currency()) {
+        return Err(
+          new InvalidBalanceError(
+            `currency mismatch: expected ${balance.currency()}, got ${amount.currency()}`,
+            {
+              context: {
+                source: ErrorSource.RULE_VALIDATION,
+                reason: BalanceErrorReason.CURRENCY_MISMATCH,
+                expected: balance.currency(),
+                actual: amount.currency()
+              }
             }
-          }
-        )
-      );
-    }
+          )
+        );
+      }
 
-    // Сравниваем available с amount через MoneyService
-    // available >= amount эквивалентно isGreaterThanOrEqual(available, amount)
-    const comparison = MoneyService.isGreaterThanOrEqual(balance.available(), amount);
-    if (isErr(comparison)) {
-      return Err(
-        new InvalidBalanceError('Failed to compare available with amount', {
-          context: {
-            reason: BalanceErrorReason.INVALID_FORMAT,
-            cause: toCause(comparison.error)
-          }
-        })
-      );
-    }
+      // Сравниваем available с amount через MoneyService
+      // available >= amount эквивалентно isGreaterThanOrEqual(available, amount)
+      const comparison = MoneyService.isGreaterThanOrEqual(balance.available(), amount);
+      if (isErr(comparison)) {
+        return Err(
+          rewrap(
+            BalanceService.SERVICE_NAME,
+            op,
+            ctx,
+            comparison.error,
+            InvalidBalanceError
+          )
+        );
+      }
 
-    return Ok(comparison.value);
+      return Ok(comparison.value);
+    }, InvalidBalanceError);
   }
 
   /**
