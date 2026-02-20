@@ -56,6 +56,10 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * ```
  */
 export class ValidateReserveAmount {
+  private constructor() {
+    // Static-only class — нельзя создавать экземпляры
+  }
+
   public static check(
     reserveAmount: Money,
     available: Money
@@ -99,13 +103,13 @@ export class ValidateReserveAmount {
       return Err(
         new InvalidBalanceError(
           (ctx) =>
-            `Cannot reserve ${ctx.requested}: only ${ctx.available} available`,
+            `Cannot reserve ${ctx.reserveAmount}: only ${ctx.available} available`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INSUFFICIENT_FUNDS,
-              requested: amount.toNumber(),
-              available: availableAmount.toNumber()
+              reserveAmount: amount.toString(),
+              available: availableAmount.toString()
             }
           }
         )

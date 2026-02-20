@@ -275,7 +275,7 @@ export class BalanceSerializer {
     const availableResult = MoneySerializer.fromJSON(obj.available);
     if (!availableResult.ok) {
       // Пробрасываем reason из ошибки Money, если он есть
-      const errorContext = availableResult.error as unknown as { context?: { reason?: string } };
+      const errorContext = availableResult.error as { context?: { reason?: string } };
       const moneyReason = errorContext.context?.reason;
       const balanceReason = moneyReason === 'UNSUPPORTED_CURRENCY'
         ? BalanceErrorReason.UNSUPPORTED_CURRENCY
@@ -303,7 +303,7 @@ export class BalanceSerializer {
     const reservedResult = MoneySerializer.fromJSON(obj.reserved);
     if (!reservedResult.ok) {
       // Пробрасываем reason из ошибки Money, если он есть
-      const errorContext = reservedResult.error as unknown as { context?: { reason?: string } };
+      const errorContext = reservedResult.error as { context?: { reason?: string } };
       const moneyReason = errorContext.context?.reason;
       const balanceReason = moneyReason === 'UNSUPPORTED_CURRENCY'
         ? BalanceErrorReason.UNSUPPORTED_CURRENCY

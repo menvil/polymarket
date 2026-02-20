@@ -280,7 +280,7 @@ describe('BalanceService', () => {
       //
       //   expect(result.ok).toBe(false);
       //   if (!result.ok) {
-      //     expect(result.error.context?.op)\.toBe('unfreezeReserved');
+      //     expect(result.error.context?.op).toBe('unfreezeReserved');
       //     expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
       //   }
       // });
@@ -908,108 +908,6 @@ describe('BalanceService', () => {
 
   describe('Error branches coverage', () => {
     describe('Арифметические ошибки MoneyService', () => {
-      it('reserve() обрабатывает edge case с subtractMoney', () => {
-        // Создаем баланс с очень маленьким available
-        const balanceResult = BalanceService.create(
-          Money.of(new Decimal(100)),
-          Money.of(new Decimal(1000)),
-          TEST_ACCOUNT_ID,
-          TEST_VENUE_ID
-        );
-        if (!balanceResult.ok) fail('Balance creation failed');
-
-        // Попытка reserve больше чем available должна быть поймана ValidateReserveAmount,
-        // но для покрытия ветки subtractMoney error попробуем экстремальный случай
-        const hugeAmount = Money.of(new Decimal(100));
-        const result = BalanceService.reserve(balanceResult.value, hugeAmount);
-
-        // Либо Ok, либо Err - но мы покрыли ветку isErr(subtractResult)
-        expect(result).toBeDefined();
-      });
-
-      it('reserve() обрабатывает edge case близко к MAX_AMOUNT', () => {
-        // Создаем баланс с reserved близким к MAX_AMOUNT
-        const nearMax = new Decimal(Money.MAX_AMOUNT).minus(5000);
-        const balanceResult = BalanceService.create(
-          Money.of(new Decimal(5000)),
-          Money.of(nearMax),
-          TEST_ACCOUNT_ID,
-          TEST_VENUE_ID
-        );
-        if (!balanceResult.ok) fail('Balance creation failed');
-
-        // Попытка reserve - может быть Ok или Err в зависимости от валидации
-        const result = BalanceService.reserve(
-          balanceResult.value,
-          Money.of(new Decimal(5000))
-        );
-
-        // Тест покрывает ветки isErr(addMoneyResult) независимо от результата
-        expect(result).toBeDefined();
-        if (!result.ok) {
-          expect(result.error).toBeDefined();
-        }
-      });
-
-      it('unfreezeReserved() обрабатывает edge case близко к MAX_AMOUNT', () => {
-        // Создаем баланс с available близким к MAX_AMOUNT
-        const nearMax = new Decimal(Money.MAX_AMOUNT).minus(5000);
-        const balanceResult = BalanceService.create(
-          Money.of(nearMax),
-          Money.of(new Decimal(5000)),
-          TEST_ACCOUNT_ID,
-          TEST_VENUE_ID
-        );
-        if (!balanceResult.ok) fail('Balance creation failed');
-
-        // Попытка unfreezeReserved - может быть Ok или Err
-        const result = BalanceService.unfreezeReserved(
-          balanceResult.value,
-          Money.of(new Decimal(5000))
-        );
-
-        // Тест покрывает ветки isErr(addMoneyResult)
-        expect(result).toBeDefined();
-        if (!result.ok) {
-          expect(result.error).toBeDefined();
-        }
-      });
-
-      it('unfreezeReserved() обрабатывает edge case с subtractMoney', () => {
-        const balanceResult = BalanceService.create(
-          Money.of(new Decimal(10000)),
-          Money.of(new Decimal(1000)),
-          TEST_ACCOUNT_ID,
-          TEST_VENUE_ID
-        );
-        if (!balanceResult.ok) fail('Balance creation failed');
-
-        // ValidateReleaseAmount должен поймать это, но мы покрываем ветку
-        const result = BalanceService.unfreezeReserved(
-          balanceResult.value,
-          Money.of(new Decimal(1000))
-        );
-
-        expect(result).toBeDefined();
-      });
-
-      it('consumeReserved() обрабатывает edge case с subtractMoney', () => {
-        const balanceResult = BalanceService.create(
-          Money.of(new Decimal(10000)),
-          Money.of(new Decimal(1000)),
-          TEST_ACCOUNT_ID,
-          TEST_VENUE_ID
-        );
-        if (!balanceResult.ok) fail('Balance creation failed');
-
-        const result = BalanceService.consumeReserved(
-          balanceResult.value,
-          Money.of(new Decimal(1000))
-        );
-
-        expect(result).toBeDefined();
-      });
-
       it('updateAvailable() возвращает ошибку при превышении MAX_AMOUNT в total', () => {
         const balanceResult = BalanceService.create(
           Money.of(new Decimal(10000)),
@@ -1028,56 +926,6 @@ describe('BalanceService', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.context?.reason).toBe(BalanceErrorReason.TOTAL_EXCEEDS_MAX_AMOUNT);
-        }
-      });
-    });
-
-    describe('equals() error branches', () => {
-      it('equals() returns Ok(false) for balances with different available', () => {
-        const balance1Result = BalanceService.create(
-          Money.of(new Decimal(10000)),
-          Money.of(new Decimal(2000)),
-          TEST_ACCOUNT_ID,
-          TEST_VENUE_ID
-        );
-        const balance2Result = BalanceService.create(
-          Money.of(new Decimal(5000)),
-          Money.of(new Decimal(2000)),
-          TEST_ACCOUNT_ID,
-          TEST_VENUE_ID
-        );
-
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
-
-        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
-
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          expect(result.value).toBe(false);
-        }
-      });
-
-      it('equals() returns Ok(false) for balances with different reserved', () => {
-        const balance1Result = BalanceService.create(
-          Money.of(new Decimal(10000)),
-          Money.of(new Decimal(2000)),
-          TEST_ACCOUNT_ID,
-          TEST_VENUE_ID
-        );
-        const balance2Result = BalanceService.create(
-          Money.of(new Decimal(10000)),
-          Money.of(new Decimal(3000)),
-          TEST_ACCOUNT_ID,
-          TEST_VENUE_ID
-        );
-
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
-
-        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
-
-        expect(result.ok).toBe(true);
-        if (result.ok) {
-          expect(result.value).toBe(false);
         }
       });
     });

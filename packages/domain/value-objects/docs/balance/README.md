@@ -26,8 +26,8 @@ const venueId: VenueId = 'POLYMARKET' as VenueId;
 
 // Создание баланса
 const result = BalanceService.create(
-  Money.of(10000), // available: $100.00
-  Money.of(2000),  // reserved: $20.00
+  Money.of(new Decimal(10000)), // available: $100.00 (10000 units = $100.00)
+  Money.of(new Decimal(2000)),  // reserved: $20.00 (2000 units = $20.00)
   accountId,       // ID аккаунта владельца
   venueId          // ID площадки (venue)
 );
@@ -44,24 +44,24 @@ console.log(balance.total().value());           // 12000 ($120.00)
 console.log(balance.reservedPercentage());       // 16.67%
 
 // Резервирование средств (для открытия ордера)
-const reserveResult = BalanceService.reserve(balance, Money.of(3000));
+const reserveResult = BalanceService.reserve(balance, Money.of(new Decimal(3000)));
 if (!reserveResult.ok) {
   console.error('Failed to reserve');
   return;
 }
 
-const newBalance = reserveResult.value;
-console.log(newBalance.available().value()); // 7000 ($70.00)
-console.log(newBalance.reserved().value());  // 5000 ($50.00)
+const balanceWithReserved = reserveResult.value;
+console.log(balanceWithReserved.available().value()); // 7000 ($70.00)
+console.log(balanceWithReserved.reserved().value());  // 5000 ($50.00)
 
-// Отмена ордера (размораживание средств)
-const unfreezeResult = BalanceService.unfreezeReserved(newBalance, Money.of(3000));
+// Вариант 1: Отмена ордера (размораживание средств)
+const unfreezeResult = BalanceService.unfreezeReserved(balanceWithReserved, Money.of(new Decimal(3000)));
 if (unfreezeResult.ok) {
   console.log(unfreezeResult.value.available().value()); // 10000
 }
 
-// Исполнение ордера (списание средств)
-const consumeResult = BalanceService.consumeReserved(newBalance, Money.of(3000));
+// Вариант 2: Исполнение ордера (списание средств)
+const consumeResult = BalanceService.consumeReserved(balanceWithReserved, Money.of(new Decimal(3000)));
 if (consumeResult.ok) {
   console.log(consumeResult.value.available().value()); // 7000 (не изменился)
   console.log(consumeResult.value.total().value());     // 9000 (уменьшился)

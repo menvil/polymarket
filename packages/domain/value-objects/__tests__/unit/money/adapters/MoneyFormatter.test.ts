@@ -60,7 +60,7 @@ describe('MoneyFormatter', () => {
       expect(unwrap(MoneyFormatter.toCurrency(money))).toBe('$100.50 USDC');
     });
 
-    it('форматирует без символа валюты', () => {
+    it('форматирует без кода валюты (USDC)', () => {
       const money = Money.of(new Decimal(100.50));
       expect(unwrap(MoneyFormatter.toCurrency(money, false))).toBe('$100.50');
     });
@@ -83,6 +83,11 @@ describe('MoneyFormatter', () => {
     it('форматирует отрицательные числа', () => {
       const money = Money.of(new Decimal(-100.50));
       expect(unwrap(MoneyFormatter.toCurrency(money))).toBe('-$100.50 USDC');
+    });
+
+    it('форматирует отрицательные числа без кода валюты', () => {
+      const money = Money.of(new Decimal(-100.50));
+      expect(unwrap(MoneyFormatter.toCurrency(money, false))).toBe('-$100.50');
     });
 
     it('форматирует ноль', () => {

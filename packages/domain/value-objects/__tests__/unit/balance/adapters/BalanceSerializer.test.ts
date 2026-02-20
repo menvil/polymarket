@@ -533,10 +533,10 @@ describe('BalanceSerializer', () => {
 
         expect(deserializedResult.ok).toBe(true);
         if (deserializedResult.ok) {
-          expect(deserializedResult.value.available().value().toNumber())
-            .toBe(originalResult.value.available().value().toNumber());
-          expect(deserializedResult.value.reserved().value().toNumber())
-            .toBe(originalResult.value.reserved().value().toNumber());
+          expect(deserializedResult.value.available().value().toString())
+            .toBe(originalResult.value.available().value().toString());
+          expect(deserializedResult.value.reserved().value().toString())
+            .toBe(originalResult.value.reserved().value().toString());
         }
       });
     });

@@ -287,7 +287,8 @@ export enum BalanceErrorReason {
   NAN = 'NAN',                                     // amount является NaN
   NON_FINITE = 'NON_FINITE',                       // amount не является finite
   INVALID_FORMAT = 'INVALID_FORMAT',               // ошибка парсинга
-  UNSUPPORTED_CURRENCY = 'UNSUPPORTED_CURRENCY'    // неподдерживаемая валюта
+  UNSUPPORTED_CURRENCY = 'UNSUPPORTED_CURRENCY',   // неподдерживаемая валюта
+  TOTAL_EXCEEDS_MAX_AMOUNT = 'TOTAL_EXCEEDS_MAX_AMOUNT' // total превышает максимальную сумму
 }
 ```
 
@@ -307,7 +308,7 @@ public total(): Money {
   // - Валюты гарантированно совпадают (инвариант Balance)
   // - Оба значения >= 0 (инварианты Balance)
   // - Оба значения finite и not NaN (инварианты Balance)
-  return Money.fromDecimal(totalAmount, this.avail.currency());
+  return Money.of(totalAmount, this.avail.currency());
 }
 ```
 

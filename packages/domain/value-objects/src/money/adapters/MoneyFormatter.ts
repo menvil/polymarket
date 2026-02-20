@@ -3,6 +3,36 @@ import { InvalidMoneyError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
 /**
+ * Валидирует параметр decimals
+ *
+ * @param decimals - Количество десятичных знаков для проверки
+ * @param money - Money объект для контекста ошибки
+ * @param op - Название операции для контекста ошибки
+ * @returns Result с void или InvalidMoneyError
+ */
+function validateDecimals(
+  decimals: number,
+  money: Money,
+  op: string
+): Result<void, InvalidMoneyError> {
+  if (decimals < 0 || !Number.isInteger(decimals)) {
+    return Err(
+      new InvalidMoneyError('decimals argument must be a non-negative integer', {
+        context: {
+          source: ErrorSource.RULE_VALIDATION,
+          service: 'MoneyFormatter',
+          op,
+          decimals: String(decimals),
+          moneyValue: money.value().toString(),
+          currency: money.currency()
+        }
+      })
+    );
+  }
+  return Ok(undefined);
+}
+
+/**
  * Форматтер для Money
  *
  * @remarks
@@ -15,8 +45,9 @@ import { Result, Ok, Err } from '@polymarket/result';
  * ```typescript
  * import { Money, MoneyFormatter } from '@polymarket/value-objects/money';
  * import { expectOk } from '@polymarket/result';
+ * import Decimal from 'decimal.js';
  *
- * const money = Money.of(100.50);
+ * const money = Money.of(new Decimal(100.50));
  *
  * console.log(expectOk(MoneyFormatter.toFixed(money, 2)));           // "100.50"
  * console.log(expectOk(MoneyFormatter.toCurrency(money)));           // "$100.50 USDC"
@@ -38,7 +69,9 @@ export class MoneyFormatter {
    *
    * @example
    * ```typescript
-   * const money = Money.of(100.5);
+   * import Decimal from 'decimal.js';
+   *
+   * const money = Money.of(new Decimal(100.5));
    *
    * const result1 = MoneyFormatter.toFixed(money);
    * if (result1.ok) {
@@ -58,19 +91,9 @@ export class MoneyFormatter {
    * ```
    */
   public static toFixed(money: Money, decimals: number = 2): Result<string, InvalidMoneyError> {
-    if (decimals < 0 || !Number.isInteger(decimals)) {
-      return Err(
-        new InvalidMoneyError('decimals argument must be a non-negative integer', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            service: 'MoneyFormatter',
-            op: 'toFixed',
-            decimals: String(decimals),
-            moneyValue: money.value().toString(),
-            currency: money.currency()
-          }
-        })
-      );
+    const validationResult = validateDecimals(decimals, money, 'toFixed');
+    if (!validationResult.ok) {
+      return validationResult;
     }
     return Ok(money.value().toFixed(decimals));
   }
@@ -90,7 +113,9 @@ export class MoneyFormatter {
    *
    * @example
    * ```typescript
-   * const money = Money.of(100.50);
+   * import Decimal from 'decimal.js';
+   *
+   * const money = Money.of(new Decimal(100.50));
    *
    * const result1 = MoneyFormatter.toCurrency(money);
    * if (result1.ok) {
@@ -114,19 +139,9 @@ export class MoneyFormatter {
     showCurrency: boolean = true,
     decimals: number = 2
   ): Result<string, InvalidMoneyError> {
-    if (decimals < 0 || !Number.isInteger(decimals)) {
-      return Err(
-        new InvalidMoneyError('decimals argument must be a non-negative integer', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            service: 'MoneyFormatter',
-            op: 'toCurrency',
-            decimals: String(decimals),
-            moneyValue: money.value().toString(),
-            currency: money.currency()
-          }
-        })
-      );
+    const validationResult = validateDecimals(decimals, money, 'toCurrency');
+    if (!validationResult.ok) {
+      return validationResult;
     }
 
     const amount = money.value();
@@ -150,13 +165,15 @@ export class MoneyFormatter {
    *
    * @example
    * ```typescript
-   * const m1 = Money.of(1500);
+   * import Decimal from 'decimal.js';
+   *
+   * const m1 = Money.of(new Decimal(1500));
    * const result1 = MoneyFormatter.toCompact(m1);
    * if (result1.ok) {
    *   console.log(result1.value);  // "$1.5K"
    * }
    *
-   * const m2 = Money.of(2300000);
+   * const m2 = Money.of(new Decimal(2300000));
    * const result2 = MoneyFormatter.toCompact(m2);
    * if (result2.ok) {
    *   console.log(result2.value);  // "$2.3M"
@@ -170,19 +187,9 @@ export class MoneyFormatter {
    * ```
    */
   public static toCompact(money: Money, decimals: number = 1): Result<string, InvalidMoneyError> {
-    if (decimals < 0 || !Number.isInteger(decimals)) {
-      return Err(
-        new InvalidMoneyError('decimals argument must be a non-negative integer', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            service: 'MoneyFormatter',
-            op: 'toCompact',
-            decimals: String(decimals),
-            moneyValue: money.value().toString(),
-            currency: money.currency()
-          }
-        })
-      );
+    const validationResult = validateDecimals(decimals, money, 'toCompact');
+    if (!validationResult.ok) {
+      return validationResult;
     }
 
     const amount = money.value();

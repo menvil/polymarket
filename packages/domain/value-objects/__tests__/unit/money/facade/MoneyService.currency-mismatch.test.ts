@@ -19,6 +19,7 @@ describe('MoneyService currency mismatch', () => {
     const decimal = new Decimal(amount);
     // Создаём mock объект который выглядит как Money
     return {
+      _currency: currency as any,
       value: () => decimal,
       currency: () => currency as any,
       toNumber: () => decimal.toNumber(),

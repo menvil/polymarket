@@ -5,11 +5,9 @@ import { MoneyInvariantViolation } from '../../../../src/money/core/MoneyInvaria
 describe('Money core', () => {
   describe('инварианты', () => {
     it('UNSUPPORTED_CURRENCY', () => {
-      // Runtime: 'EUR' будет отклонено Money.create() как UNSUPPORTED_CURRENCY
-      expect(() => Money.of(new Decimal(100), 'EUR' as any)).toThrow(MoneyInvariantViolation);
-
+      expect.assertions(2);
       try {
-        // Runtime: бросит MoneyInvariantViolation
+        // Runtime: 'EUR' будет отклонено Money.create() как UNSUPPORTED_CURRENCY
         Money.of(new Decimal(100), 'EUR' as any);
       } catch (e) {
         expect(e).toBeInstanceOf(MoneyInvariantViolation);
@@ -18,41 +16,53 @@ describe('Money core', () => {
     });
 
     it('NAN', () => {
-      expect(() => Money.of(new Decimal(NaN))).toThrow(MoneyInvariantViolation);
-
+      expect.assertions(2);
       try {
         Money.of(new Decimal(NaN));
       } catch (e) {
+        expect(e).toBeInstanceOf(MoneyInvariantViolation);
         expect((e as MoneyInvariantViolation).reason).toBe('NAN');
       }
     });
 
     it('NON_FINITE - Infinity', () => {
-      expect(() => Money.of(new Decimal(Infinity))).toThrow(MoneyInvariantViolation);
-
+      expect.assertions(2);
       try {
         Money.of(new Decimal(Infinity));
       } catch (e) {
+        expect(e).toBeInstanceOf(MoneyInvariantViolation);
         expect((e as MoneyInvariantViolation).reason).toBe('NON_FINITE');
       }
     });
 
     it('NON_FINITE - -Infinity', () => {
-      expect(() => Money.of(new Decimal(-Infinity))).toThrow(MoneyInvariantViolation);
+      expect.assertions(2);
+      try {
+        Money.of(new Decimal(-Infinity));
+      } catch (e) {
+        expect(e).toBeInstanceOf(MoneyInvariantViolation);
+        expect((e as MoneyInvariantViolation).reason).toBe('NON_FINITE');
+      }
     });
 
     it('EXCEEDS_MAX_AMOUNT - positive', () => {
-      expect(() => Money.of(new Decimal('1e16'))).toThrow(MoneyInvariantViolation);
-
+      expect.assertions(2);
       try {
         Money.of(new Decimal('1e16'));
       } catch (e) {
+        expect(e).toBeInstanceOf(MoneyInvariantViolation);
         expect((e as MoneyInvariantViolation).reason).toBe('EXCEEDS_MAX_AMOUNT');
       }
     });
 
     it('EXCEEDS_MAX_AMOUNT - negative', () => {
-      expect(() => Money.of(new Decimal('-1e16'))).toThrow(MoneyInvariantViolation);
+      expect.assertions(2);
+      try {
+        Money.of(new Decimal('-1e16'));
+      } catch (e) {
+        expect(e).toBeInstanceOf(MoneyInvariantViolation);
+        expect((e as MoneyInvariantViolation).reason).toBe('EXCEEDS_MAX_AMOUNT');
+      }
     });
 
     it('граница MAX_AMOUNT допустима', () => {

@@ -207,10 +207,10 @@ describe('MoneyService.divide()', () => {
     });
 
     it('делит на дробное', () => {
-      const result = MoneyService.divide(Money.of(new Decimal(100)), 4);
+      const result = MoneyService.divide(Money.of(new Decimal(100)), 2.5);
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.value().equals(new Decimal('25'))).toBe(true);
+        expect(result.value.value().equals(new Decimal('40'))).toBe(true);
       }
     });
 
@@ -258,6 +258,17 @@ describe('MoneyService.divide()', () => {
       }
     });
   });
+
+  describe('overflow', () => {
+    it('EXCEEDS_MAX_AMOUNT', () => {
+      const result = MoneyService.divide(Money.of(new Decimal('1e15')), '0.0001');
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        expect(result.error.context!.reason).toBe('EXCEEDS_MAX_AMOUNT');
+      }
+    });
+  });
 });
 
 describe('MoneyService - unexpected error handling', () => {
@@ -279,17 +290,19 @@ describe('MoneyService - unexpected error handling', () => {
       return originalMoneyOf.call(Money, value, currency);
     });
 
-    // Пытаемся выполнить операцию, которая использует createFromDecimal
-    const result = MoneyService.add(m1, m2);
+    try {
+      // Пытаемся выполнить операцию, которая использует createFromDecimal
+      const result = MoneyService.add(m1, m2);
 
-    // Должен вернуть Err с InvalidMoneyError (не бросить исключение)
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeInstanceOf(InvalidMoneyError);
-      expect(result.error.message).toContain('Unexpected error');
+      // Должен вернуть Err с InvalidMoneyError (не бросить исключение)
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        expect(result.error.message).toContain('Unexpected error');
+      }
+    } finally {
+      // Восстанавливаем оригинальную реализацию
+      spyMoneyOf.mockRestore();
     }
-
-    // Восстанавливаем оригинальную реализацию
-    spyMoneyOf.mockRestore();
   });
 });

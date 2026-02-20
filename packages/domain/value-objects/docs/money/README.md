@@ -210,7 +210,18 @@ decreaseBy(m: Money, delta: Ratio): Result<Money, InvalidMoneyError>
 - `context.value | amount` — входные значения
 - `context.currency` — валюта (если применимо)
 - `context.divisor | factor` — параметры операции
-- `context.reason` — причина из Core (`'UNSUPPORTED_CURRENCY'`, `'NAN'`, `'NON_FINITE'`, `'EXCEEDS_MAX_AMOUNT'`, `'INVALID_FORMAT'`)
+- `context.reason` — причина ошибки:
+  - `INVALID_FORMAT` — ошибка парсинга
+  - `NAN` — значение NaN
+  - `NON_FINITE` — значение не finite (Infinity)
+  - `EXCEEDS_MAX_AMOUNT` — превышение максимальной суммы
+  - `UNSUPPORTED_CURRENCY` — неподдерживаемая валюта
+  - `CURRENCY_MISMATCH` — несовпадение валют
+  - `DIVISION_BY_ZERO` — деление на ноль
+  - `NEGATIVE_RESULT` — отрицательный результат
+  - `INVALID_RATIO` — невалидный Ratio
+  - `RATIO_OUT_OF_RANGE` — Ratio вне диапазона
+  - `DELTA_LESS_THAN_MINUS_ONE` — delta < -1
 
 **Специфика MoneyService:**
 

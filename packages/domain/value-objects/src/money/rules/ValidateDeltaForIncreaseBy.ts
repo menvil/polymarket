@@ -2,7 +2,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidMoneyError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
-import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
 
 /**
  * Правило: Delta для increaseBy должен быть >= -1
@@ -35,14 +35,17 @@ import { MoneyErrorReason } from '../errors/MoneyErrorReason';
  */
 export class ValidateDeltaForIncreaseBy {
   public static check(delta: Ratio): Result<void, InvalidMoneyError> {
+    // Кэшируем результат toDecimal() - используется дважды
+    const deltaValue = delta.toDecimal();
+
     // Проверка: delta >= -1
     const minusOne = new Decimal(-1);
-    if (delta.toDecimal().lessThan(minusOne)) {
+    if (deltaValue.lessThan(minusOne)) {
       return Err(
         new InvalidMoneyError('Delta must be >= -1 (factor = 1 + delta must be non-negative)', {
           context: {
             source: ErrorSource.RULE_VALIDATION,
-            delta: delta.toDecimal().toString(),
+            delta: deltaValue.toString(),
             reason: MoneyErrorReason.DELTA_LESS_THAN_MINUS_ONE
           }
         })

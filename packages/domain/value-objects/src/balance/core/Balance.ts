@@ -5,6 +5,16 @@ import { BalanceInvariantViolation } from './BalanceInvariantViolation';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason';
 
 /**
+ * Константа: нулевой адрес кошелька для системных балансов
+ */
+const ZERO_WALLET_ADDRESS = '0x0000000000000000000000000000000000000000' as WalletAddress;
+
+/**
+ * Константа: системный VenueId для placeholder балансов
+ */
+const SYSTEM_VENUE_ID = 'SYSTEM' as VenueId;
+
+/**
  * Balance - баланс денежных средств с разделением на available/reserved
  *
  * @remarks
@@ -60,6 +70,11 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * ```
  */
 export class Balance {
+  /**
+   * Кэшированное значение total() - вычисляется один раз в конструкторе
+   */
+  private readonly _total: Money;
+
   /**
    * Private constructor для защиты инвариантов
    *
@@ -147,6 +162,9 @@ export class Balance {
         }
       );
     }
+
+    // Кэшируем total() - вычисляется один раз в конструкторе
+    this._total = Money.of(totalAmount, this._available.currency());
   }
 
   /**
@@ -251,8 +269,8 @@ export class Balance {
         new Balance(
           money,
           money,
-          { kind: 'WALLET', address: '0x0000000000000000000000000000000000000000' as WalletAddress } as AccountId,
-          'SYSTEM' as VenueId
+          { kind: 'WALLET', address: ZERO_WALLET_ADDRESS } as AccountId,
+          SYSTEM_VENUE_ID
         )
       ])
     ) as Record<SupportedCurrency, Balance>;
@@ -288,12 +306,12 @@ export class Balance {
   }
 
   /**
-   * Вычисляет общую сумму (available + reserved)
+   * Возвращает общую сумму (available + reserved)
    *
    * @returns Money с total суммой
    *
    * @remarks
-   * Derived value - вычисляется каждый раз при вызове.
+   * Derived value - кэшируется в конструкторе для производительности.
    *
    * Безопасно потому что:
    * - Валюты гарантированно совпадают (инвариант #3)
@@ -313,12 +331,7 @@ export class Balance {
    * ```
    */
   public total(): Money {
-    // Прямое вычисление через Decimal (не нужен MoneyService)
-    const totalAmount = this._available.value().plus(this._reserved.value());
-
-    // Создаём Money из результата
-    // Безопасно благодаря инвариантам Balance
-    return Money.of(totalAmount, this._available.currency());
+    return this._total;
   }
 
   /**

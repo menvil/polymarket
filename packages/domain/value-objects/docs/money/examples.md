@@ -89,6 +89,7 @@ if (canAfford(userBalance, orderCost)) {
 
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
 
 interface TradeResult {
   newBalance: Money;
@@ -279,6 +280,7 @@ if ('error' in totalWithFee) {
 
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
 
 function calculateProfit(
   sellPrice: Money,
@@ -328,14 +330,8 @@ function calculateROI(
   }
 
   // ROI = (Profit / Investment) * 100
-  const result = MoneyService.divide(profit, initialInvestment.value());
-
-  if (!result.ok) {
-    return { error: `Failed to calculate ROI: ${result.error.message}` };
-  }
-
-  // Умножаем на 100 для процентов
-  const roi = result.value.value().times(100);
+  // Используем Decimal математику напрямую для вычисления процентов
+  const roi = profit.value().div(initialInvestment.value()).times(100);
   return roi;
 }
 
@@ -406,6 +402,7 @@ async function getBalance(userId: string): Promise<Money | { error: string }> {
 
 ```typescript
 import { Money, MoneyFormatter } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
 
 function formatBalance(balance: Money): string | null {
   // Для детального отображения (2 знака)
@@ -443,7 +440,7 @@ console.log(formatCompact(large));             // "$1.5M"
 ### Обработка всех типов ошибок
 
 ```typescript
-import { MoneyService } from '@polymarket/value-objects/money';
+import { MoneyService, Money } from '@polymarket/value-objects/money';
 import { InvalidMoneyError } from '@polymarket/errors';
 
 function safeAdd(a: Money, b: Money): Money | null {
