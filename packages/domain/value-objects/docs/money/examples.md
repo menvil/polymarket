@@ -131,20 +131,19 @@ function executeTrade(
 const balanceResult = MoneyService.create(new Decimal(1000));
 const tradeResult2 = MoneyService.create(new Decimal(150.50));
 
-if (!balanceResult.ok || !tradeResult2.ok) {
-  console.error('Failed to create Money');
-  return;
-}
+if (balanceResult.ok && tradeResult2.ok) {
+  const balance = balanceResult.value;
+  const trade = tradeResult2.value;
 
-const balance = balanceResult.value;
-const trade = tradeResult2.value;
-
-const tradeResult = executeTrade(balance, trade);
-if ('error' in tradeResult) {
-  console.error(tradeResult.error);
+  const tradeResult = executeTrade(balance, trade);
+  if ('error' in tradeResult) {
+    console.error(tradeResult.error);
+  } else {
+    console.log(`New balance: $${tradeResult.newBalance.value()}`);
+    console.log(`Spent: $${tradeResult.spent.value()}`);
+  }
 } else {
-  console.log(`New balance: $${tradeResult.newBalance.value()}`);
-  console.log(`Spent: $${tradeResult.spent.value()}`);
+  console.error('Failed to create Money');
 }
 ```
 
@@ -347,8 +346,16 @@ function calculateROI(
 }
 
 // Использование
-const invested = Money.of(new Decimal(1000), 'USDC');
-const currentValue = Money.of(new Decimal(1150), 'USDC');
+const investedResult = MoneyService.create(new Decimal(1000), 'USDC');
+const currentValueResult = MoneyService.create(new Decimal(1150), 'USDC');
+
+if (!investedResult.ok || !currentValueResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const invested = investedResult.value;
+const currentValue = currentValueResult.value;
 
 const profitResult = MoneyService.subtract(currentValue, invested);
 if (profitResult.ok) {

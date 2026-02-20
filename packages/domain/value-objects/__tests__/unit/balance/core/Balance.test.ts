@@ -64,24 +64,34 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(-100), 'USDC');
       const reserved = Money.of(new Decimal(0));
 
-      expect(() => {
+      let error: unknown;
+      try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      }).toThrow(BalanceInvariantViolation);
-      expect(() => {
-        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      }).toThrow('Available amount cannot be negative');
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).toBeInstanceOf(BalanceInvariantViolation);
+      if (error instanceof BalanceInvariantViolation) {
+        expect(error.message).toContain('Available amount cannot be negative');
+      }
     });
 
     it('бросает BalanceInvariantViolation если reserved отрицательный', () => {
       const available = Money.of(new Decimal(10000));
       const reserved = Money.of(new Decimal(-100), 'USDC');
 
-      expect(() => {
+      let error: unknown;
+      try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      }).toThrow(BalanceInvariantViolation);
-      expect(() => {
-        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      }).toThrow('Reserved amount cannot be negative');
+      } catch (e) {
+        error = e;
+      }
+
+      expect(error).toBeInstanceOf(BalanceInvariantViolation);
+      if (error instanceof BalanceInvariantViolation) {
+        expect(error.message).toContain('Reserved amount cannot be negative');
+      }
     });
 
     it.todo('бросает BalanceInvariantViolation если валюты не совпадают (невозможно: Money поддерживает только USDC)');

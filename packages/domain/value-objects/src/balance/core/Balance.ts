@@ -120,7 +120,7 @@ export class Balance {
         'Available amount cannot be negative',
         {
           reason: BalanceErrorReason.NEGATIVE_AVAILABLE,
-          available: _available.value().toNumber()
+          available: _available.value().toString()
         }
       );
     }
@@ -131,7 +131,7 @@ export class Balance {
         'Reserved amount cannot be negative',
         {
           reason: BalanceErrorReason.NEGATIVE_RESERVED,
-          reserved: _reserved.value().toNumber()
+          reserved: _reserved.value().toString()
         }
       );
     }

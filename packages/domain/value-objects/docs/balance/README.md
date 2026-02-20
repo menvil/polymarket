@@ -121,7 +121,12 @@ import { BalanceSerializer } from '@polymarket/value-objects/balance';
 
 // JSON сериализация
 const json = BalanceSerializer.toJSON(balance);
-// { available: { amount: "10000", currency: "USDC" }, reserved: { amount: "2000", currency: "USDC" } }
+// {
+//   available: { amount: "10000", currency: "USDC" },
+//   reserved: { amount: "2000", currency: "USDC" },
+//   accountId: "wallet:0x1234567890123456789012345678901234567890",
+//   venueId: "POLYMARKET"
+// }
 
 // Десериализация с валидацией
 const result = BalanceSerializer.fromJSON(json);

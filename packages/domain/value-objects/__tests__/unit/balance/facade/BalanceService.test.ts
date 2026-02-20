@@ -896,17 +896,19 @@ describe('BalanceService', () => {
           Err(new InvalidMoneyError('Mock comparison error'))
         );
 
-        const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(5000)));
+        try {
+          const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(5000)));
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          // После rewrap() сообщение сохраняется из оригинальной ошибки
-          expect(result.error.message).toContain('Mock comparison error');
-          // Проверяем что op добавлен в opChain
-          expect(result.error.context?.opChain).toContain('BalanceService.canAfford');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            // После rewrap() сообщение сохраняется из оригинальной ошибки
+            expect(result.error.message).toContain('Mock comparison error');
+            // Проверяем что op добавлен в opChain
+            expect(result.error.context?.opChain).toContain('BalanceService.canAfford');
+          }
+        } finally {
+          compareSpy.mockRestore();
         }
-
-        compareSpy.mockRestore();
       });
     });
   });

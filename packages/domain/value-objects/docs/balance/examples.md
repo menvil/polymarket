@@ -173,7 +173,9 @@ const json = BalanceSerializer.toJSON(balance);
 console.log(json);
 // {
 //   available: { amount: "10000", currency: "USDC" },
-//   reserved: { amount: "2000", currency: "USDC" }
+//   reserved: { amount: "2000", currency: "USDC" },
+//   accountId: "wallet:0x1234567890123456789012345678901234567890",
+//   venueId: "POLYMARKET"
 // }
 
 // Десериализация

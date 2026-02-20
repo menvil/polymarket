@@ -3,6 +3,7 @@ import { describe, it, expect, jest } from '@jest/globals';
 import { Money } from '../../../../src/money/core/Money.js';
 import { MoneyService } from '../../../../src/money/facade/MoneyService.js';
 import { InvalidMoneyError } from '@polymarket/errors';
+import type { SupportedCurrency } from '@polymarket/ids';
 
 describe('MoneyService.add()', () => {
   describe('success', () => {
@@ -118,7 +119,7 @@ describe('MoneyService.subtract()', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        expect(result.error.context!.reason).toBe('EXCEEDS_MAX_AMOUNT');
+        expect(result.error.context?.reason).toBe('EXCEEDS_MAX_AMOUNT');
       }
     });
   });
@@ -165,7 +166,7 @@ describe('MoneyService.multiply()', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        expect(result.error.context!.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
       }
     });
 
@@ -173,7 +174,7 @@ describe('MoneyService.multiply()', () => {
       const result = MoneyService.multiply(Money.of(new Decimal(100)), NaN);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context!.reason).toBe('NAN');
+        expect(result.error.context?.reason).toBe('NAN');
       }
     });
 
@@ -181,7 +182,7 @@ describe('MoneyService.multiply()', () => {
       const result = MoneyService.multiply(Money.of(new Decimal(100)), Infinity);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context!.reason).toBe('NON_FINITE');
+        expect(result.error.context?.reason).toBe('NON_FINITE');
       }
     });
   });
@@ -192,7 +193,7 @@ describe('MoneyService.multiply()', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        expect(result.error.context!.reason).toBe('EXCEEDS_MAX_AMOUNT');
+        expect(result.error.context?.reason).toBe('EXCEEDS_MAX_AMOUNT');
       }
     });
   });
@@ -231,7 +232,7 @@ describe('MoneyService.divide()', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        expect(result.error.context!.reason).toBe('DIVISION_BY_ZERO');
+        expect(result.error.context?.reason).toBe('DIVISION_BY_ZERO');
       }
     });
 
@@ -240,7 +241,7 @@ describe('MoneyService.divide()', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        expect(result.error.context!.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
       }
     });
 
@@ -248,7 +249,7 @@ describe('MoneyService.divide()', () => {
       const result = MoneyService.divide(Money.of(new Decimal(100)), NaN);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context!.reason).toBe('NAN');
+        expect(result.error.context?.reason).toBe('NAN');
       }
     });
 
@@ -256,7 +257,7 @@ describe('MoneyService.divide()', () => {
       const result = MoneyService.divide(Money.of(new Decimal(100)), Infinity);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context!.reason).toBe('NON_FINITE');
+        expect(result.error.context?.reason).toBe('NON_FINITE');
       }
     });
   });
@@ -267,7 +268,19 @@ describe('MoneyService.divide()', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        expect(result.error.context!.reason).toBe('EXCEEDS_MAX_AMOUNT');
+        expect(result.error.context?.reason).toBe('EXCEEDS_MAX_AMOUNT');
+      }
+    });
+  });
+
+  describe('precision', () => {
+    it('обрабатывает non-terminating decimals (деление на 3)', () => {
+      const result = MoneyService.divide(Money.of(new Decimal(100)), 3);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // 100 / 3 = 33.333... (бесконечная десятичная дробь)
+        // Decimal должен корректно округлить результат
+        expect(result.value.value().toFixed(2)).toBe('33.33');
       }
     });
   });
@@ -279,10 +292,10 @@ describe('MoneyService - unexpected error handling', () => {
     const m2 = Money.of(new Decimal(50));
 
     // Мокаем Money.of() чтобы бросить generic Error (не MoneyInvariantViolation)
-    // Используем mockImplementationOnce чтобы сработал только на следующем вызове
+    // Используем mockImplementation с callCount чтобы контролировать поведение вызовов
     const originalMoneyOf = Money.of;
     let callCount = 0;
-    const spyMoneyOf = jest.spyOn(Money, 'of').mockImplementation((value: Decimal, currency?: any) => {
+    const spyMoneyOf = jest.spyOn(Money, 'of').mockImplementation((value: Decimal, currency?: SupportedCurrency) => {
       callCount++;
       // Первый вызов (внутри add) бросает unexpected error
       if (callCount === 1) {

@@ -70,6 +70,21 @@ private constructor(
       reservedCurrency: res.currency()
     });
   }
+
+  // Инвариант 4: available + reserved <= Money.MAX_AMOUNT
+  const totalAmount = avail.value().plus(res.value());
+  if (totalAmount.greaterThan(Money.MAX_AMOUNT)) {
+    throw new BalanceInvariantViolation(
+      `Total balance (available + reserved) exceeds maximum: ${Money.MAX_AMOUNT}`,
+      {
+        reason: BalanceErrorReason.TOTAL_EXCEEDS_MAX_AMOUNT,
+        available: avail.value().toString(),
+        reserved: res.value().toString(),
+        total: totalAmount.toString(),
+        maxAmount: Money.MAX_AMOUNT.toString()
+      }
+    );
+  }
 }
 ```
 

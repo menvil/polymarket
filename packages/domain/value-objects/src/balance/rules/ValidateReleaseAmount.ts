@@ -56,6 +56,10 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * ```
  */
 export class ValidateReleaseAmount {
+  private constructor() {
+    // Static-only class — нельзя создавать экземпляры
+  }
+
   public static check(
     releaseAmount: Money,
     reserved: Money

@@ -12,7 +12,6 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * Проверяет:
  * - reserveAmount <= available (достаточно средств для резервирования)
  * - reserveAmount > 0 (нельзя резервировать нулевую или отрицательную сумму)
- * - reserveAmount isFinite (защита от Infinity/NaN)
  *
  * Возвращает InvalidBalanceError — стандарт домена Polymarket для валидации Balance.
  *

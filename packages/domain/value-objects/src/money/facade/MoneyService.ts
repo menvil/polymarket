@@ -699,18 +699,23 @@ export class MoneyService {
   public static decreaseBy(m: Money, delta: Ratio): Result<Money, InvalidMoneyError> {
     // Валидация: delta не должен быть отрицательным (семантически некорректно "уменьшить на отрицательное значение")
     if (delta.isNegative()) {
+      const baseError = new InvalidMoneyError('Delta for decreaseBy must be non-negative', {
+        context: {
+          reason: MoneyErrorReason.INVALID_RATIO
+        }
+      });
       return Err(
-        new InvalidMoneyError('Delta for decreaseBy must be non-negative', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            service: MoneyService.SERVICE_NAME,
-            op: 'decreaseBy',
+        rewrap(
+          MoneyService.SERVICE_NAME,
+          'decreaseBy',
+          {
             delta: delta.toDecimal().toString(),
             amount: m.value().toString(),
-            currency: m.currency(),
-            reason: MoneyErrorReason.INVALID_RATIO
-          }
-        })
+            currency: m.currency()
+          },
+          baseError,
+          InvalidMoneyError
+        )
       );
     }
 
