@@ -203,12 +203,12 @@ export class BalanceService {
       }
 
       // Вычисляем новые значения
-      const newAvailableResult = this.subtractMoney(balance.available(), amount);
+      const newAvailableResult = MoneyService.subtract(balance.available(), amount);
       if (isErr(newAvailableResult)) {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newAvailableResult.error, InvalidBalanceError));
       }
 
-      const newReservedResult = this.addMoney(balance.reserved(), amount);
+      const newReservedResult = MoneyService.add(balance.reserved(), amount);
       if (isErr(newReservedResult)) {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
@@ -299,12 +299,12 @@ export class BalanceService {
       }
 
       // Вычисляем новые значения
-      const newAvailableResult = this.addMoney(balance.available(), amount);
+      const newAvailableResult = MoneyService.add(balance.available(), amount);
       if (isErr(newAvailableResult)) {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newAvailableResult.error, InvalidBalanceError));
       }
 
-      const newReservedResult = this.subtractMoney(balance.reserved(), amount);
+      const newReservedResult = MoneyService.subtract(balance.reserved(), amount);
       if (isErr(newReservedResult)) {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
@@ -410,7 +410,7 @@ export class BalanceService {
       }
 
       // Вычисляем новый reserved (available не меняется!)
-      const newReservedResult = this.subtractMoney(balance.reserved(), amount);
+      const newReservedResult = MoneyService.subtract(balance.reserved(), amount);
       if (isErr(newReservedResult)) {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
@@ -698,21 +698,10 @@ export class BalanceService {
     };
 
     return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
-      // Проверка совпадения валют
-      if (balance.currency() !== amount.currency()) {
-        return Err(
-          new InvalidBalanceError(
-            `currency mismatch: expected ${balance.currency()}, got ${amount.currency()}`,
-            {
-              context: {
-                source: ErrorSource.RULE_VALIDATION,
-                reason: BalanceErrorReason.CURRENCY_MISMATCH,
-                expected: balance.currency(),
-                actual: amount.currency()
-              }
-            }
-          )
-        );
+      // Проверка совпадения валют через Rules слой
+      const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
+      if (isErr(currencyCheck)) {
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, currencyCheck.error, InvalidBalanceError));
       }
 
       // Сравниваем available с amount через MoneyService
@@ -734,57 +723,4 @@ export class BalanceService {
     }, InvalidBalanceError);
   }
 
-  /**
-   * Helper: складывает два Money через MoneyService
-   *
-   * @remarks
-   * Внутренний метод для арифметических операций.
-   * Использует MoneyService.add() и мапит ошибки в InvalidBalanceError.
-   *
-   * @param a - Первое слагаемое
-   * @param b - Второе слагаемое
-   * @returns Result<Money, InvalidBalanceError>
-   */
-  private static addMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
-    const result = MoneyService.add(a, b);
-    if (isErr(result)) {
-      // Преобразуем InvalidMoneyError в InvalidBalanceError
-      return Err(
-        new InvalidBalanceError(result.error.message, {
-          context: {
-            ...result.error.context,
-            reason: BalanceErrorReason.INVALID_FORMAT
-          }
-        })
-      );
-    }
-    return Ok(result.value);
-  }
-
-  /**
-   * Helper: вычитает Money через MoneyService
-   *
-   * @remarks
-   * Внутренний метод для арифметических операций.
-   * Использует MoneyService.subtract() и мапит ошибки в InvalidBalanceError.
-   *
-   * @param a - Уменьшаемое
-   * @param b - Вычитаемое
-   * @returns Result<Money, InvalidBalanceError>
-   */
-  private static subtractMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
-    const result = MoneyService.subtract(a, b);
-    if (isErr(result)) {
-      // Преобразуем InvalidMoneyError в InvalidBalanceError
-      return Err(
-        new InvalidBalanceError(result.error.message, {
-          context: {
-            ...result.error.context,
-            reason: BalanceErrorReason.INVALID_FORMAT
-          }
-        })
-      );
-    }
-    return Ok(result.value);
-  }
 }

@@ -699,7 +699,7 @@ export class MoneyService {
       return Err(rewrap(
         MoneyService.SERVICE_NAME,
         'decreaseBy',
-        { m: m.value().toString(), delta: negatedDelta.toDecimal().toString(), currency: m.currency() },
+        { amount: m.value().toString(), delta: delta.toDecimal().toString(), currency: m.currency() },
         result.error,
         InvalidMoneyError
       ));

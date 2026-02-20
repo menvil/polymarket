@@ -872,7 +872,7 @@ describe('BalanceService', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
-          expect(result.error.message).toContain('currency mismatch');
+          expect(result.error.message).toContain('Currency mismatch');
         }
       });
 

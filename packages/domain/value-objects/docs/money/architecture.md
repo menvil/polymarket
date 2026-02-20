@@ -189,12 +189,14 @@ Money имеет **4 слоя** по аналогии с Price и Quantity.
 
 - Валидация операндов для арифметических операций
 - Проверка factor и divisor (NaN, finite, zero)
+- Проверка delta для increaseBy/decreaseBy (delta >= -1)
 - Возвращает InvalidMoneyError с соответствующим reason
 
 **Файлы:**
 
 - `src/money/rules/ValidateFactorForMoneyMultiplication.ts`
 - `src/money/rules/ValidateDivisorForMoneyDivision.ts`
+- `src/money/rules/ValidateDeltaForIncreaseBy.ts`
 
 **НЕ делает:**
 
@@ -257,7 +259,7 @@ private static mapInvariantToOverflow(
 ```
 
 Ожидаемые reason: `EXCEEDS_MAX_AMOUNT`, `NON_FINITE`, `NAN`.
-Неожиданные reason (`UNSUPPORTED_CURRENCY`, `INVALID_FORMAT`) → throw (bug in code).
+Неожиданные reason (`UNSUPPORTED_CURRENCY`, `INVALID_FORMAT`) → возвращают Result.Err с unexpectedError (Never Throw contract).
 
 ---
 

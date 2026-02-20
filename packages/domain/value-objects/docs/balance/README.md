@@ -45,11 +45,14 @@ console.log(balance.reservedPercentage());       // 16.67%
 
 // Резервирование средств (для открытия ордера)
 const reserveResult = BalanceService.reserve(balance, Money.of(3000));
-if (reserveResult.ok) {
-  const newBalance = reserveResult.value;
-  console.log(newBalance.available().value()); // 7000 ($70.00)
-  console.log(newBalance.reserved().value());  // 5000 ($50.00)
+if (!reserveResult.ok) {
+  console.error('Failed to reserve');
+  return;
 }
+
+const newBalance = reserveResult.value;
+console.log(newBalance.available().value()); // 7000 ($70.00)
+console.log(newBalance.reserved().value());  // 5000 ($50.00)
 
 // Отмена ордера (размораживание средств)
 const unfreezeResult = BalanceService.unfreezeReserved(newBalance, Money.of(3000));

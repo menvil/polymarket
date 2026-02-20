@@ -25,7 +25,7 @@ export { Price, PriceService, PriceSerializer, PriceFormatter, PriceErrorReason 
 
 // Quantity модуль (только публичный API)
 export { Quantity, QuantityService, QuantityFormatter, QuantitySerializer, QuantityErrorReason } from './quantity/index.js';
-//
+
 // Balance модуль (только публичный API)
 export {
   Balance,
@@ -62,7 +62,7 @@ export {
   OutcomeTokenFormatter,
   type OutcomeTokenJSON
 } from './outcome-token/index.js';
-//
+
 // // TokenBalance модуль (только публичный API)
 // export {
 //   TokenBalance,
@@ -82,7 +82,7 @@ export {
   AssetQuantityErrorReason,
   type AssetQuantityJSON
 } from './asset-quantity/index.js';
-//
+
 // // Quote модуль (только публичный API)
 // export {
 //   Quote,

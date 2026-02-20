@@ -54,7 +54,7 @@ if (deposit.success) {
 ### Проверка достаточности средств
 
 ```typescript
-import { Money } from '@polymarket/value-objects/money';
+import { MoneyService, Money } from '@polymarket/value-objects/money';
 import Decimal from 'decimal.js';
 
 function canAfford(balance: Money, price: Money): boolean {
@@ -67,8 +67,16 @@ function canAfford(balance: Money, price: Money): boolean {
   return balance.value().greaterThanOrEqualTo(price.value());
 }
 
-const userBalance = Money.of(new Decimal(1000), 'USDC');
-const orderCost = Money.of(new Decimal(150), 'USDC');
+const userBalanceResult = MoneyService.create(new Decimal(1000));
+const orderCostResult = MoneyService.create(new Decimal(150));
+
+if (!userBalanceResult.ok || !orderCostResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const userBalance = userBalanceResult.value;
+const orderCost = orderCostResult.value;
 
 if (canAfford(userBalance, orderCost)) {
   console.log('Sufficient funds');
@@ -115,8 +123,16 @@ function executeTrade(
 }
 
 // Использование
-const balance = Money.of(new Decimal(1000), 'USDC');
-const trade = Money.of(new Decimal(150.50), 'USDC');
+const balanceResult = MoneyService.create(new Decimal(1000));
+const tradeResult2 = MoneyService.create(new Decimal(150.50));
+
+if (!balanceResult.ok || !tradeResult2.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const balance = balanceResult.value;
+const trade = tradeResult2.value;
 
 const tradeResult = executeTrade(balance, trade);
 if ('error' in tradeResult) {
@@ -131,6 +147,7 @@ if ('error' in tradeResult) {
 
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
 
 function calculateTotalSpent(transactions: Money[]): Money | { error: string } {
   if (transactions.length === 0) {
@@ -158,11 +175,16 @@ function calculateTotalSpent(transactions: Money[]): Money | { error: string } {
 }
 
 // Использование
-const transactions = [
-  Money.of(new Decimal(100), 'USDC'),
-  Money.of(new Decimal(50.50), 'USDC'),
-  Money.of(new Decimal(25.75), 'USDC')
-];
+const t1Result = MoneyService.create(new Decimal(100));
+const t2Result = MoneyService.create(new Decimal(50.50));
+const t3Result = MoneyService.create(new Decimal(25.75));
+
+if (!t1Result.ok || !t2Result.ok || !t3Result.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const transactions = [t1Result.value, t2Result.value, t3Result.value];
 
 const total = calculateTotalSpent(transactions);
 if ('error' in total) {
@@ -180,6 +202,7 @@ if ('error' in total) {
 
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
 
 function calculateFee(amount: Money, feePercent: number): Money | { error: string } {
   // Процент в десятичную дробь (0.5% = 0.005)
@@ -195,7 +218,13 @@ function calculateFee(amount: Money, feePercent: number): Money | { error: strin
 }
 
 // Использование
-const orderAmount = Money.of(new Decimal(1000), 'USDC');
+const orderAmountResult = MoneyService.create(new Decimal(1000));
+if (!orderAmountResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const orderAmount = orderAmountResult.value;
 const fee = calculateFee(orderAmount, 0.2);  // 0.2% fee
 
 if ('error' in fee) {
@@ -226,7 +255,13 @@ function calculateTotalWithFee(
 }
 
 // Использование
-const orderCost = Money.of(new Decimal(1000), 'USDC');
+const orderCostResult = MoneyService.create(new Decimal(1000));
+if (!orderCostResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const orderCost = orderCostResult.value;
 const totalWithFee = calculateTotalWithFee(orderCost, 0.2);
 
 if ('error' in totalWithFee) {

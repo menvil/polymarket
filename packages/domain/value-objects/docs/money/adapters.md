@@ -44,7 +44,16 @@ public static toJSON(money: Money): { amount: string; currency: string }
 **Пример:**
 
 ```typescript
-const money = Money.of(new Decimal(123.456), 'USDC');
+import { MoneyService, MoneySerializer } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
+
+const result = MoneyService.create(new Decimal(123.456));
+if (!result.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const money = result.value;
 const json = MoneySerializer.toJSON(money);
 // { amount: "123.456", currency: "USDC" }
 ```
@@ -123,7 +132,16 @@ public static toFixed(
 **Примеры:**
 
 ```typescript
-const money = Money.of(new Decimal(100.5), 'USDC');
+import { MoneyService, MoneyFormatter } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
+
+const moneyResult = MoneyService.create(new Decimal(100.5));
+if (!moneyResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const money = moneyResult.value;
 
 const result1 = MoneyFormatter.toFixed(money);
 if (result1.ok) console.log(result1.value); // "100.50"
@@ -161,7 +179,16 @@ public static toCurrency(
 **Примеры:**
 
 ```typescript
-const money = Money.of(new Decimal(100.5), 'USDC');
+import { MoneyService, MoneyFormatter } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
+
+const moneyResult = MoneyService.create(new Decimal(100.5));
+if (!moneyResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const money = moneyResult.value;
 
 const result1 = MoneyFormatter.toCurrency(money);
 if (result1.ok) console.log(result1.value); // "$100.50 USDC"
@@ -204,20 +231,34 @@ public static toCompact(
 **Примеры:**
 
 ```typescript
-const r1 = MoneyFormatter.toCompact(Money.of(new Decimal(999)));
+import { MoneyService, MoneyFormatter } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
+
+const m1 = MoneyService.create(new Decimal(999));
+const m2 = MoneyService.create(new Decimal(1500));
+const m3 = MoneyService.create(new Decimal(2300000));
+const m4 = MoneyService.create(new Decimal(1e9));
+const m5 = MoneyService.create(new Decimal(1234));
+
+if (!m1.ok || !m2.ok || !m3.ok || !m4.ok || !m5.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const r1 = MoneyFormatter.toCompact(m1.value);
 if (r1.ok) console.log(r1.value); // "$999.0"
 
-const r2 = MoneyFormatter.toCompact(Money.of(new Decimal(1500)));
+const r2 = MoneyFormatter.toCompact(m2.value);
 if (r2.ok) console.log(r2.value); // "$1.5K"
 
-const r3 = MoneyFormatter.toCompact(Money.of(new Decimal(2300000)));
+const r3 = MoneyFormatter.toCompact(m3.value);
 if (r3.ok) console.log(r3.value); // "$2.3M"
 
-const r4 = MoneyFormatter.toCompact(Money.of(new Decimal(1e9)));
+const r4 = MoneyFormatter.toCompact(m4.value);
 if (r4.ok) console.log(r4.value); // "$1.0B"
 
 // С разными decimals
-const r5 = MoneyFormatter.toCompact(Money.of(new Decimal(1234)), 2);
+const r5 = MoneyFormatter.toCompact(m5.value, 2);
 if (r5.ok) console.log(r5.value); // "$1.23K"
 ```
 
@@ -228,10 +269,17 @@ if (r5.ok) console.log(r5.value); // "$1.23K"
 ### Сериализация для API
 
 ```typescript
-import { Money, MoneySerializer } from '@polymarket/value-objects/money';
+import { MoneyService, MoneySerializer } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
 
 // Отправка на сервер
-const balance = Money.of(new Decimal(1234.56), 'USDC');
+const balanceResult = MoneyService.create(new Decimal(1234.56));
+if (!balanceResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const balance = balanceResult.value;
 const payload = {
   userId: "123",
   balance: MoneySerializer.toJSON(balance)
@@ -262,10 +310,16 @@ if (result.ok) {
 ### Форматирование для UI
 
 ```typescript
-import { Money, MoneyFormatter } from '@polymarket/value-objects/money';
+import { MoneyService, MoneyFormatter } from '@polymarket/value-objects/money';
 import Decimal from 'decimal.js';
 
-const balance = Money.of(new Decimal(1234567.89), 'USDC');
+const balanceResult = MoneyService.create(new Decimal(1234567.89));
+if (!balanceResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const balance = balanceResult.value;
 
 // Детальное отображение (для таблиц)
 const fixed = MoneyFormatter.toFixed(balance, 2);
@@ -286,9 +340,18 @@ if (compact.ok) {
 }
 
 // Различные варианты
-const small = Money.of(new Decimal(99.99), 'USDC');
-const medium = Money.of(new Decimal(1500), 'USDC');
-const large = Money.of(new Decimal(2500000), 'USDC');
+const smallResult = MoneyService.create(new Decimal(99.99));
+const mediumResult = MoneyService.create(new Decimal(1500));
+const largeResult = MoneyService.create(new Decimal(2500000));
+
+if (!smallResult.ok || !mediumResult.ok || !largeResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+
+const small = smallResult.value;
+const medium = mediumResult.value;
+const large = largeResult.value;
 
 const r1 = MoneyFormatter.toCompact(small);
 if (r1.ok) console.log(r1.value);   // "$100.0"

@@ -488,6 +488,10 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
 - `CURRENCY_MISMATCH` — несовпадение валют в add/subtract
 - `DIVISION_BY_ZERO` — деление на ноль
 - `UNSUPPORTED_CURRENCY` — неподдерживаемая валюта
+- `NEGATIVE_RESULT` — результат операции меньше нуля
+- `INVALID_RATIO` — невалидный Ratio (NaN, Infinity)
+- `RATIO_OUT_OF_RANGE` — Ratio вне допустимого диапазона
+- `DELTA_LESS_THAN_MINUS_ONE` — delta < -1 в increaseBy/decreaseBy
 
 ---
 
