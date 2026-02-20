@@ -92,9 +92,12 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(-100), 'USDC');
       const reserved = Money.of(new Decimal(0));
 
+      expect(() => {
+        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
+      }).toThrow(BalanceInvariantViolation);
+
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
         if (error instanceof BalanceInvariantViolation) {
@@ -107,9 +110,12 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(10000));
       const reserved = Money.of(new Decimal(-100), 'USDC');
 
+      expect(() => {
+        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
+      }).toThrow(BalanceInvariantViolation);
+
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
         if (error instanceof BalanceInvariantViolation) {
@@ -137,17 +143,27 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal('6e14'));
       const reserved = Money.of(new Decimal('5e14'));
 
+      expect(() => {
+        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
+      }).toThrow(BalanceInvariantViolation);
+
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
         if (error instanceof BalanceInvariantViolation) {
           expect(error.reason).toBe('TOTAL_EXCEEDS_MAX_AMOUNT');
-          expect((error as any).total).toBeDefined();
-          expect((error as any).maxAmount).toBeDefined();
-          expect((error as any).available).toBeDefined();
-          expect((error as any).reserved).toBeDefined();
+          // Проверяем дополнительные поля через context (если есть) или через прямой доступ
+          const err = error as BalanceInvariantViolation & {
+            total?: string;
+            maxAmount?: string;
+            available?: string;
+            reserved?: string;
+          };
+          expect(err.total).toBeDefined();
+          expect(err.maxAmount).toBeDefined();
+          expect(err.available).toBeDefined();
+          expect(err.reserved).toBeDefined();
         }
       }
     });

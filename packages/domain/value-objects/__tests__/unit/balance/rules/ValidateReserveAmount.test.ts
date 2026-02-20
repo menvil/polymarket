@@ -68,7 +68,7 @@ describe('ValidateReserveAmount', () => {
     // до того, как ValidateReserveAmount сможет его проверить
     // it('возвращает ошибку если reserveAmount не finite', () => {
     //   const available = Money.of(new Decimal(10000));
-    //   const reserveAmount = Money.of(Infinity, 'USDC');
+    //   const reserveAmount = Money.of(new Decimal(Infinity), 'USDC');
     //
     //   const result = ValidateReserveAmount.check(reserveAmount, available);
     //

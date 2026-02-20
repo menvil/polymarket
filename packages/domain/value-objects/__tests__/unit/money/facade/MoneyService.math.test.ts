@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
-import { Money } from '../../../../src/money/core/Money';
-import { MoneyService } from '../../../../src/money/facade/MoneyService';
+import { describe, it, expect, jest } from '@jest/globals';
+import { Money } from '../../../../src/money/core/Money.js';
+import { MoneyService } from '../../../../src/money/facade/MoneyService.js';
 import { InvalidMoneyError } from '@polymarket/errors';
 
 describe('MoneyService.add()', () => {

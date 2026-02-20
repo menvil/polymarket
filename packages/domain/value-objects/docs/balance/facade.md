@@ -18,8 +18,8 @@ const accountId: AccountId = {
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
 const result = BalanceService.create(
-  Money.of(new Decimal(10000)), // $100.00 available
-  Money.of(new Decimal(2000)),  // $20.00 reserved
+  Money.of(new Decimal(10000)), // 10000 units available
+  Money.of(new Decimal(2000)),  // 2000 units reserved
   accountId,       // ID аккаунта владельца
   venueId          // ID площадки (venue)
 );
@@ -364,17 +364,15 @@ BalanceService использует MoneyService для арифметическ
 
 ```typescript
 // Внутри BalanceService.reserve()
-const newAvailableResult = this.subtractMoney(balance.available(), amount);
-const newReservedResult = this.addMoney(balance.reserved(), amount);
-
-// subtractMoney делегирует MoneyService
-private static subtractMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
-  const result = MoneyService.subtract(a, b);
-  if (isErr(result)) {
-    return Err(new InvalidBalanceError(result.error.message, {
-      context: { reason: BalanceErrorReason.INVALID_FORMAT, ... }
-    }));
-  }
-  return Ok(result.value);
+const newAvailableResult = MoneyService.subtract(balance.available(), amount);
+if (isErr(newAvailableResult)) {
+  return rewrap(newAvailableResult, 'reserve', InvalidBalanceError);
 }
+const newAvailable = newAvailableResult.value;
+
+const newReservedResult = MoneyService.add(balance.reserved(), amount);
+if (isErr(newReservedResult)) {
+  return rewrap(newReservedResult, 'reserve', InvalidBalanceError);
+}
+const newReserved = newReservedResult.value;
 ```

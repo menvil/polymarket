@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
-import { Money } from '../../../../src/money/core/Money';
-import { MoneyInvariantViolation } from '../../../../src/money/core/MoneyInvariantViolation';
+import { describe, it, expect } from '@jest/globals';
+import { Money } from '../../../../src/money/core/Money.js';
+import { MoneyInvariantViolation } from '../../../../src/money/core/MoneyInvariantViolation.js';
 
 describe('Money core', () => {
   describe('инварианты', () => {
@@ -129,6 +130,14 @@ describe('Money core', () => {
       const m2 = Money.of(new Decimal(999), 'USDC');
       expect(m1.hasSameCurrency(m2)).toBe(true);
     });
+
+    // ПРИМЕЧАНИЕ: Тест для разных валют невозможен, так как Money поддерживает только USDC.
+    // Если добавятся другие валюты, раскомментировать:
+    // it('false для разных валют', () => {
+    //   const m1 = Money.of(new Decimal(100), 'USDC');
+    //   const m2 = Money.of(new Decimal(100), 'EUR' as any);
+    //   expect(m1.hasSameCurrency(m2)).toBe(false);
+    // });
   });
 
   describe('isZero()', () => {

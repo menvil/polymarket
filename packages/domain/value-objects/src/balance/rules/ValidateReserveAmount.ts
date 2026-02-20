@@ -67,21 +67,8 @@ export class ValidateReserveAmount {
     const amount = reserveAmount.value();
     const availableAmount = available.value();
 
-    // Проверка 1: reserveAmount должен быть finite
-    if (!amount.isFinite()) {
-      return Err(
-        new InvalidBalanceError('Reserve amount must be finite', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            reason: BalanceErrorReason.INVALID_FORMAT,
-            reserveAmount: amount.toString(),
-            available: availableAmount.toString()
-          }
-        })
-      );
-    }
-
-    // Проверка 2: reserveAmount должен быть > 0
+    // Проверка 1: reserveAmount должен быть > 0
+    // Примечание: проверка isFinite не нужна - Money.of() гарантирует finite значения через инварианты
     if (amount.lessThanOrEqualTo(0)) {
       return Err(
         new InvalidBalanceError(
@@ -98,7 +85,7 @@ export class ValidateReserveAmount {
       );
     }
 
-    // Проверка 3: reserveAmount <= available (основная проверка)
+    // Проверка 2: reserveAmount <= available (основная проверка)
     if (amount.greaterThan(availableAmount)) {
       return Err(
         new InvalidBalanceError(

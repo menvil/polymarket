@@ -54,13 +54,15 @@
  * ```typescript
  * import { BalanceService, BalanceErrorReason } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
+ * import Decimal from 'decimal.js';
+ * import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
  *
  * // Создание баланса
  * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
  * const venueId: VenueId = 'POLYMARKET' as VenueId;
  * const balanceResult = BalanceService.create(
- *   Money.fromUSDC(10000),
- *   Money.fromUSDC(2000),
+ *   Money.of(new Decimal(10000), 'USDC'),
+ *   Money.of(new Decimal(2000), 'USDC'),
  *   accountId,
  *   venueId
  * );
@@ -81,7 +83,7 @@
  * // Резервирование средств
  * const reserveResult = BalanceService.reserve(
  *   balance,
- *   Money.fromUSDC(3000)
+ *   Money.of(new Decimal(3000), 'USDC')
  * );
  *
  * if (reserveResult.ok) {
@@ -98,7 +100,7 @@
  * // Размораживание средств (reserved → available)
  * const unfreezeResult = BalanceService.unfreezeReserved(
  *   balance,
- *   Money.fromUSDC(1000)
+ *   Money.of(new Decimal(1000), 'USDC')
  * );
  *
  * if (unfreezeResult.ok) {
@@ -109,7 +111,7 @@
  * // Списание зарезервированных средств (уменьшает total)
  * const consumeResult = BalanceService.consumeReserved(
  *   balance,
- *   Money.fromUSDC(1000)
+ *   Money.of(new Decimal(1000), 'USDC')
  * );
  *
  * if (consumeResult.ok) {
@@ -120,12 +122,16 @@
  *
  * // Helpers
  * const emptyBalance = Balance.ZERO.USDC;
- * const balanceWithZeroReserved = Balance.withZeroReserved(Money.of(10000, 'USDC'));
+ * const balanceWithZeroReserved = Balance.withZeroReserved(
+ *   Money.of(new Decimal(10000), 'USDC'),
+ *   accountId,
+ *   venueId
+ * );
  *
  * // Внешняя валидация через Rules (для проверок до операции)
  * import { ValidateReserveAmount } from '@polymarket/value-objects/balance';
  *
- * const amountToReserve = Money.fromUSDC(5000);
+ * const amountToReserve = Money.of(new Decimal(5000), 'USDC');
  * const canReserve = ValidateReserveAmount.check(amountToReserve, balance.available());
  * if (canReserve.ok) {
  *   // Можно резервировать

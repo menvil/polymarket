@@ -1,6 +1,7 @@
 import Decimal from 'decimal.js';
-import { Money } from '../../../../src/money/core/Money';
-import { MoneyFormatter } from '../../../../src/money/adapters/MoneyFormatter';
+import { describe, it, expect } from '@jest/globals';
+import { Money } from '../../../../src/money/core/Money.js';
+import { MoneyFormatter } from '../../../../src/money/adapters/MoneyFormatter.js';
 import { unwrap } from '@polymarket/result/unsafe';
 
 describe('MoneyFormatter', () => {

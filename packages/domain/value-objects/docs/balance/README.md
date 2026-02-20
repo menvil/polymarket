@@ -14,7 +14,7 @@ Balance инкапсулирует логику управления средс�
 
 ```typescript
 import { Balance, BalanceService } from '@polymarket/value-objects/balance';
-import { Money } from '@polymarket/value-objects/money';
+import { Money, MoneyService } from '@polymarket/value-objects/money';
 import { isErr } from '@polymarket/result';
 import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
 import Decimal from 'decimal.js';
@@ -26,12 +26,21 @@ const accountId: AccountId = {
 };
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
+// Безопасное создание Money через MoneyService
+const availableResult = MoneyService.create(new Decimal(10000)); // 10000 units
+const reservedResult = MoneyService.create(new Decimal(2000));   // 2000 units
+
+if (isErr(availableResult) || isErr(reservedResult)) {
+  console.error('Failed to create Money');
+  return;
+}
+
 // Создание баланса
 const result = BalanceService.create(
-  Money.of(new Decimal(10000)), // available: $100.00 (10000 units = $100.00)
-  Money.of(new Decimal(2000)),  // reserved: $20.00 (2000 units = $20.00)
-  accountId,       // ID аккаунта владельца
-  venueId          // ID площадки (venue)
+  availableResult.value, // available
+  reservedResult.value,  // reserved
+  accountId,             // ID аккаунта владельца
+  venueId                // ID площадки (venue)
 );
 
 if (isErr(result)) {

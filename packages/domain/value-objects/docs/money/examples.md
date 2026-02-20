@@ -357,7 +357,7 @@ if (profitResult.ok) {
 ### API Request/Response
 
 ```typescript
-import { MoneyService, MoneySerializer } from '@polymarket/value-objects/money';
+import { Money, MoneyService, MoneySerializer } from '@polymarket/value-objects/money';
 
 // Отправка на сервер
 function createOrder(amount: Money) {

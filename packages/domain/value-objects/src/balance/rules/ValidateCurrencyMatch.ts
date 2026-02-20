@@ -33,23 +33,18 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * ```typescript
  * import { ValidateCurrencyMatch } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
+ * import Decimal from 'decimal.js';
  *
  * const balanceCurrency = 'USDC';
- * const amount = Money.fromUSDC(1000);
+ * const amount = Money.of(new Decimal(1000), 'USDC');
  *
  * // ✅ Валюты совпадают
  * const result1 = ValidateCurrencyMatch.check(amount, balanceCurrency);
  * // result1.ok === true
  *
- * // ❌ Валюты не совпадают
- * const amountBTC = Money.of(1, 'BTC');
- * const result2 = ValidateCurrencyMatch.check(amountBTC, balanceCurrency);
- * if (!result2.ok) {
- *   console.error(result2.error.context?.reason);
- *   // BalanceErrorReason.CURRENCY_MISMATCH
- *   console.error(result2.error.context?.expected); // 'USDC'
- *   console.error(result2.error.context?.actual);   // 'BTC'
- * }
+ * // ❌ Валюты не совпадают (пример с другой поддерживаемой валютой, если добавлена)
+ * // Если USDC - единственная валюта, этот кейс невозможен в runtime
+ * // Но правило все равно проверяет совпадение для будущих валют
  * ```
  */
 export class ValidateCurrencyMatch {

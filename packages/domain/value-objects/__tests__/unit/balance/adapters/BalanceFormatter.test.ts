@@ -401,14 +401,16 @@ describe('BalanceFormatter', () => {
           Err(new InvalidMoneyError('Mock format error'))
         );
 
-        const result = BalanceFormatter.toSummary(balance);
+        try {
+          const result = BalanceFormatter.toSummary(balance);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Failed to format available amount');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Failed to format available amount');
+          }
+        } finally {
+          formatSpy.mockRestore();
         }
-
-        formatSpy.mockRestore();
       });
 
       it('обрабатывает ошибку MoneyFormatter.toCurrency для reserved', () => {
@@ -420,14 +422,16 @@ describe('BalanceFormatter', () => {
           .mockReturnValueOnce(Ok('$10000.00'))
           .mockReturnValueOnce(Err(new InvalidMoneyError('Mock format error')));
 
-        const result = BalanceFormatter.toSummary(balance);
+        try {
+          const result = BalanceFormatter.toSummary(balance);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Failed to format reserved amount');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Failed to format reserved amount');
+          }
+        } finally {
+          formatSpy.mockRestore();
         }
-
-        formatSpy.mockRestore();
       });
 
       it('обрабатывает ошибку MoneyFormatter.toCurrency для total', () => {
@@ -440,14 +444,16 @@ describe('BalanceFormatter', () => {
           .mockReturnValueOnce(Ok('$2000.00'))
           .mockReturnValueOnce(Err(new InvalidMoneyError('Mock format error')));
 
-        const result = BalanceFormatter.toSummary(balance);
+        try {
+          const result = BalanceFormatter.toSummary(balance);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Failed to format total amount');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Failed to format total amount');
+          }
+        } finally {
+          formatSpy.mockRestore();
         }
-
-        formatSpy.mockRestore();
       });
     });
 
@@ -460,14 +466,16 @@ describe('BalanceFormatter', () => {
           Err(new InvalidMoneyError('Mock format error'))
         );
 
-        const result = BalanceFormatter.toCompact(balance);
+        try {
+          const result = BalanceFormatter.toCompact(balance);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Failed to format available amount');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Failed to format available amount');
+          }
+        } finally {
+          formatSpy.mockRestore();
         }
-
-        formatSpy.mockRestore();
       });
 
       it('обрабатывает ошибку MoneyFormatter.toCompact для reserved', () => {
@@ -479,14 +487,16 @@ describe('BalanceFormatter', () => {
           .mockReturnValueOnce(Ok('$10.0K'))
           .mockReturnValueOnce(Err(new InvalidMoneyError('Mock format error')));
 
-        const result = BalanceFormatter.toCompact(balance);
+        try {
+          const result = BalanceFormatter.toCompact(balance);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Failed to format reserved amount');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Failed to format reserved amount');
+          }
+        } finally {
+          formatSpy.mockRestore();
         }
-
-        formatSpy.mockRestore();
       });
 
       it('обрабатывает ошибку MoneyFormatter.toCompact для total', () => {
@@ -499,14 +509,16 @@ describe('BalanceFormatter', () => {
           .mockReturnValueOnce(Ok('$2.0K'))
           .mockReturnValueOnce(Err(new InvalidMoneyError('Mock format error')));
 
-        const result = BalanceFormatter.toCompact(balance);
+        try {
+          const result = BalanceFormatter.toCompact(balance);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Failed to format total amount');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Failed to format total amount');
+          }
+        } finally {
+          formatSpy.mockRestore();
         }
-
-        formatSpy.mockRestore();
       });
     });
 
@@ -519,14 +531,16 @@ describe('BalanceFormatter', () => {
           Err(new InvalidMoneyError('Mock format error'))
         );
 
-        const result = BalanceFormatter.toAvailableString(balance);
+        try {
+          const result = BalanceFormatter.toAvailableString(balance);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Failed to format available amount');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Failed to format available amount');
+          }
+        } finally {
+          formatSpy.mockRestore();
         }
-
-        formatSpy.mockRestore();
       });
     });
 
@@ -539,14 +553,16 @@ describe('BalanceFormatter', () => {
           Err(new InvalidMoneyError('Mock format error'))
         );
 
-        const result = BalanceFormatter.toReservedString(balance);
+        try {
+          const result = BalanceFormatter.toReservedString(balance);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Failed to format reserved amount');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Failed to format reserved amount');
+          }
+        } finally {
+          formatSpy.mockRestore();
         }
-
-        formatSpy.mockRestore();
       });
     });
 
@@ -559,14 +575,16 @@ describe('BalanceFormatter', () => {
           Err(new InvalidMoneyError('Mock format error'))
         );
 
-        const result = BalanceFormatter.toTotalString(balance);
+        try {
+          const result = BalanceFormatter.toTotalString(balance);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Failed to format total amount');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Failed to format total amount');
+          }
+        } finally {
+          formatSpy.mockRestore();
         }
-
-        formatSpy.mockRestore();
       });
     });
   });

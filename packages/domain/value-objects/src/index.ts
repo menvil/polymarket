@@ -32,7 +32,11 @@ export {
   BalanceService,
   BalanceSerializer,
   BalanceFormatter,
-  BalanceErrorReason
+  BalanceErrorReason,
+  // Rules Layer (публичный API для внешней валидации)
+  ValidateReserveAmount,
+  ValidateReleaseAmount,
+  ValidateCurrencyMatch
 } from './balance/index.js';
 
 // Spread модуль (только публичный API)

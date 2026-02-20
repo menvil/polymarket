@@ -15,7 +15,7 @@ describe('BalanceSerializer', () => {
         TEST_ACCOUNT_ID,
         TEST_VENUE_ID
       );
-      if (!balanceResult.ok) fail('Balance creation failed');
+      if (!balanceResult.ok) throw new Error('Balance creation failed');
 
       const json = BalanceSerializer.toJSON(balanceResult.value);
 
@@ -34,7 +34,7 @@ describe('BalanceSerializer', () => {
         TEST_ACCOUNT_ID,
         TEST_VENUE_ID
       );
-      if (!balanceResult.ok) fail('Balance creation failed');
+      if (!balanceResult.ok) throw new Error('Balance creation failed');
 
       const json = BalanceSerializer.toJSON(balanceResult.value);
 
@@ -51,7 +51,7 @@ describe('BalanceSerializer', () => {
         TEST_ACCOUNT_ID,
         TEST_VENUE_ID
       );
-      if (!balanceResult.ok) fail('Balance creation failed');
+      if (!balanceResult.ok) throw new Error('Balance creation failed');
 
       const json = BalanceSerializer.toJSON(balanceResult.value);
 

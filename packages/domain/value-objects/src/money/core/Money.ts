@@ -142,7 +142,9 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const money = Money.of(100.5);
+   * import Decimal from 'decimal.js';
+   *
+   * const money = Money.of(new Decimal(100.5), 'USDC');
    * const decimal = money.value(); // Decimal
    * ```
    */
@@ -169,7 +171,9 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const money = Money.of(100.5);
+   * import Decimal from 'decimal.js';
+   *
+   * const money = Money.of(new Decimal(100.5), 'USDC');
    * const num = money.toNumber(); // 100.5
    * ```
    */
@@ -188,8 +192,10 @@ export class Money {
    *
    * @example
    * ```typescript
-   * const m1 = Money.of(100, 'USDC');
-   * const m2 = Money.of(200, 'USDC');
+   * import Decimal from 'decimal.js';
+   *
+   * const m1 = Money.of(new Decimal(100), 'USDC');
+   * const m2 = Money.of(new Decimal(200), 'USDC');
    * console.log(m1.hasSameCurrency(m2)); // true
    * ```
    */
@@ -207,9 +213,11 @@ export class Money {
    *
    * @example
    * ```typescript
+   * import Decimal from 'decimal.js';
+   *
    * Money.ZERO.USDC.isZero(); // true
-   * Money.of(0).isZero();     // true
-   * Money.of(new Decimal(100)).isZero();   // false
+   * Money.of(new Decimal(0), 'USDC').isZero(); // true
+   * Money.of(new Decimal(100), 'USDC').isZero(); // false
    * ```
    */
   public isZero(): boolean {
@@ -223,9 +231,11 @@ export class Money {
    *
    * @example
    * ```typescript
-   * Money.of(new Decimal(100)).isPositive();   // true
+   * import Decimal from 'decimal.js';
+   *
+   * Money.of(new Decimal(100), 'USDC').isPositive(); // true
    * Money.ZERO.USDC.isPositive(); // false
-   * Money.of(-100).isPositive();  // false
+   * Money.of(new Decimal(-100), 'USDC').isPositive(); // false
    * ```
    */
   public isPositive(): boolean {
@@ -239,8 +249,10 @@ export class Money {
    *
    * @example
    * ```typescript
-   * Money.of(-100).isNegative(); // true
-   * Money.of(new Decimal(100)).isNegative();  // false
+   * import Decimal from 'decimal.js';
+   *
+   * Money.of(new Decimal(-100), 'USDC').isNegative(); // true
+   * Money.of(new Decimal(100), 'USDC').isNegative(); // false
    * Money.ZERO.USDC.isNegative(); // false
    * ```
    */

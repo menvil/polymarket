@@ -1,4 +1,5 @@
 import { Balance } from '../core/Balance';
+import { Money } from '../../money/core/Money';
 import { MoneyFormatter } from '../../money/adapters/MoneyFormatter';
 import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
@@ -313,6 +314,62 @@ export class BalanceFormatter {
   }
 
   /**
+   * Внутренний helper для форматирования поля баланса (available/reserved/total)
+   *
+   * @param money - Money для форматирования
+   * @param fieldName - Название поля для контекста ошибки ('available', 'reserved', 'total')
+   * @param op - Название операции для контекста ошибки
+   * @param showCurrency - Показывать ли код валюты
+   * @param decimals - Количество десятичных знаков
+   * @returns Result с отформатированной строкой или ошибкой
+   *
+   * @remarks
+   * DRY helper для toAvailableString/toReservedString/toTotalString.
+   * Инкапсулирует:
+   * - Валидацию decimals
+   * - Форматирование через MoneyFormatter
+   * - Стандартную обработку ошибок с правильным context
+   */
+  private static formatBalanceField(
+    money: Money,
+    fieldName: string,
+    op: string,
+    showCurrency: boolean,
+    decimals: number
+  ): Result<string, InvalidBalanceError> {
+    // Валидация decimals
+    if (decimals < 0 || !Number.isInteger(decimals)) {
+      return Err(
+        new InvalidBalanceError('decimals argument must be a non-negative integer', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: 'BalanceFormatter',
+            op,
+            decimals: String(decimals)
+          }
+        })
+      );
+    }
+
+    // Форматирование через MoneyFormatter
+    const result = MoneyFormatter.toCurrency(money, showCurrency, decimals);
+    if (!result.ok) {
+      return Err(
+        new InvalidBalanceError(`Failed to format ${fieldName} amount`, {
+          context: {
+            source: ErrorSource.SERVICE_CALL,
+            service: 'BalanceFormatter',
+            op,
+            cause: result.error
+          }
+        })
+      );
+    }
+
+    return result;
+  }
+
+  /**
    * Форматирует только available с валютой
    *
    * @remarks
@@ -326,9 +383,13 @@ export class BalanceFormatter {
    *
    * @example
    * ```typescript
+   * import Decimal from 'decimal.js';
+   *
    * const balance = Balance.of(
-   *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.of(new Decimal(10000), 'USDC'),
+   *   Money.of(new Decimal(2000), 'USDC'),
+   *   accountId,
+   *   venueId
    * );
    *
    * const result = BalanceFormatter.toAvailableString(balance);
@@ -342,34 +403,13 @@ export class BalanceFormatter {
     showCurrency: boolean = true,
     decimals: number = 2
   ): Result<string, InvalidBalanceError> {
-    if (decimals < 0 || !Number.isInteger(decimals)) {
-      return Err(
-        new InvalidBalanceError('decimals argument must be a non-negative integer', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            service: 'BalanceFormatter',
-            op: 'toAvailableString',
-            decimals: String(decimals)
-          }
-        })
-      );
-    }
-
-    const result = MoneyFormatter.toCurrency(balance.available(), showCurrency, decimals);
-    if (!result.ok) {
-      return Err(
-        new InvalidBalanceError('Failed to format available amount', {
-          context: {
-            source: ErrorSource.SERVICE_CALL,
-            service: 'BalanceFormatter',
-            op: 'toAvailableString',
-            cause: result.error
-          }
-        })
-      );
-    }
-
-    return result;
+    return this.formatBalanceField(
+      balance.available(),
+      'available',
+      'toAvailableString',
+      showCurrency,
+      decimals
+    );
   }
 
   /**
@@ -386,9 +426,13 @@ export class BalanceFormatter {
    *
    * @example
    * ```typescript
+   * import Decimal from 'decimal.js';
+   *
    * const balance = Balance.of(
-   *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.of(new Decimal(10000), 'USDC'),
+   *   Money.of(new Decimal(2000), 'USDC'),
+   *   accountId,
+   *   venueId
    * );
    *
    * const result = BalanceFormatter.toReservedString(balance);
@@ -402,34 +446,13 @@ export class BalanceFormatter {
     showCurrency: boolean = true,
     decimals: number = 2
   ): Result<string, InvalidBalanceError> {
-    if (decimals < 0 || !Number.isInteger(decimals)) {
-      return Err(
-        new InvalidBalanceError('decimals argument must be a non-negative integer', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            service: 'BalanceFormatter',
-            op: 'toReservedString',
-            decimals: String(decimals)
-          }
-        })
-      );
-    }
-
-    const result = MoneyFormatter.toCurrency(balance.reserved(), showCurrency, decimals);
-    if (!result.ok) {
-      return Err(
-        new InvalidBalanceError('Failed to format reserved amount', {
-          context: {
-            source: ErrorSource.SERVICE_CALL,
-            service: 'BalanceFormatter',
-            op: 'toReservedString',
-            cause: result.error
-          }
-        })
-      );
-    }
-
-    return result;
+    return this.formatBalanceField(
+      balance.reserved(),
+      'reserved',
+      'toReservedString',
+      showCurrency,
+      decimals
+    );
   }
 
   /**
@@ -446,9 +469,13 @@ export class BalanceFormatter {
    *
    * @example
    * ```typescript
+   * import Decimal from 'decimal.js';
+   *
    * const balance = Balance.of(
-   *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000)
+   *   Money.of(new Decimal(10000), 'USDC'),
+   *   Money.of(new Decimal(2000), 'USDC'),
+   *   accountId,
+   *   venueId
    * );
    *
    * const result = BalanceFormatter.toTotalString(balance);
@@ -462,34 +489,13 @@ export class BalanceFormatter {
     showCurrency: boolean = true,
     decimals: number = 2
   ): Result<string, InvalidBalanceError> {
-    if (decimals < 0 || !Number.isInteger(decimals)) {
-      return Err(
-        new InvalidBalanceError('decimals argument must be a non-negative integer', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            service: 'BalanceFormatter',
-            op: 'toTotalString',
-            decimals: String(decimals)
-          }
-        })
-      );
-    }
-
-    const result = MoneyFormatter.toCurrency(balance.total(), showCurrency, decimals);
-    if (!result.ok) {
-      return Err(
-        new InvalidBalanceError('Failed to format total amount', {
-          context: {
-            source: ErrorSource.SERVICE_CALL,
-            service: 'BalanceFormatter',
-            op: 'toTotalString',
-            cause: result.error
-          }
-        })
-      );
-    }
-
-    return result;
+    return this.formatBalanceField(
+      balance.total(),
+      'total',
+      'toTotalString',
+      showCurrency,
+      decimals
+    );
   }
 
   /**

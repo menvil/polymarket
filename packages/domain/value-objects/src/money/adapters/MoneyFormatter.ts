@@ -3,6 +3,19 @@ import { InvalidMoneyError, ErrorSource } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 
 /**
+ * Максимально допустимое количество десятичных знаков для форматирования
+ *
+ * @remarks
+ * Защита от чрезмерно большого количества decimals, которое может:
+ * - Вызвать проблемы с производительностью
+ * - Создать нечитаемый вывод
+ * - Быть признаком ошибки в коде
+ *
+ * 20 десятичных знаков более чем достаточно для любых практических применений.
+ */
+const MAX_DECIMALS = 20;
+
+/**
  * Валидирует параметр decimals
  *
  * @param decimals - Количество десятичных знаков для проверки
@@ -29,6 +42,23 @@ function validateDecimals(
       })
     );
   }
+
+  if (decimals > MAX_DECIMALS) {
+    return Err(
+      new InvalidMoneyError(`decimals argument must not exceed ${MAX_DECIMALS}`, {
+        context: {
+          source: ErrorSource.RULE_VALIDATION,
+          service: 'MoneyFormatter',
+          op,
+          decimals: String(decimals),
+          maxDecimals: String(MAX_DECIMALS),
+          moneyValue: money.value().toString(),
+          currency: money.currency()
+        }
+      })
+    );
+  }
+
   return Ok(undefined);
 }
 
@@ -155,12 +185,12 @@ export class MoneyFormatter {
    * Форматирует Money компактно (сокращает большие числа)
    *
    * @remarks
-   * Использует суффиксы K, M, B для тысяч, миллионов, миллиардов.
+   * Использует суффиксы K, M, B, T для тысяч, миллионов, миллиардов, триллионов.
    * Полезно для отображения больших сумм в ограниченном пространстве.
    *
    * @param money - Money для форматирования
    * @param decimals - Количество десятичных знаков после сокращения (по умолчанию 1)
-   * @returns Result с отформатированной строкой вида "$1.5K", "$2.3M", "$1.0B" или ошибкой валидации
+   * @returns Result с отформатированной строкой вида "$1.5K", "$2.3M", "$1.0B", "$5.2T" или ошибкой валидации
    * @throws Никогда не бросает исключения, возвращает Result
    *
    * @example
@@ -179,10 +209,16 @@ export class MoneyFormatter {
    *   console.log(result2.value);  // "$2.3M"
    * }
    *
+   * const m3 = Money.of(new Decimal(5200000000000));
+   * const result3 = MoneyFormatter.toCompact(m3);
+   * if (result3.ok) {
+   *   console.log(result3.value);  // "$5.2T"
+   * }
+   *
    * // Ошибка валидации
-   * const result3 = MoneyFormatter.toCompact(m1, -1);
-   * if (!result3.ok) {
-   *   console.log(result3.error.message); // ошибка валидации decimals
+   * const result4 = MoneyFormatter.toCompact(m1, -1);
+   * if (!result4.ok) {
+   *   console.log(result4.error.message); // ошибка валидации decimals
    * }
    * ```
    */
@@ -195,6 +231,11 @@ export class MoneyFormatter {
     const amount = money.value();
     const absAmount = amount.abs();
     const sign = amount.isNegative() ? '-' : '';
+
+    if (absAmount.greaterThanOrEqualTo(1_000_000_000_000)) {
+      const trillions = absAmount.dividedBy(1_000_000_000_000);
+      return Ok(`${sign}$${trillions.toFixed(decimals)}T`);
+    }
 
     if (absAmount.greaterThanOrEqualTo(1_000_000_000)) {
       const billions = absAmount.dividedBy(1_000_000_000);

@@ -5,7 +5,7 @@
 ### Создание баланса
 
 ```typescript
-import { BalanceService } from '@polymarket/value-objects/balance';
+import { BalanceService, BalanceErrorReason } from '@polymarket/value-objects/balance';
 import { Money, MoneyService } from '@polymarket/value-objects/money';
 import { isErr, expectOk } from '@polymarket/result';
 import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';

@@ -503,11 +503,13 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
 const result = MoneyService.create(userInput);
 
 if (!result.ok) {
-  const { reason, value } = result.error.context || {};
+  const ctx = result.error.context;
+  const reason = ctx?.reason;
+  const rawValue = ctx?.raw?.value;
 
   switch (reason) {
     case 'INVALID_FORMAT':
-      showError(`Invalid number format: ${value}`);
+      showError(`Invalid number format: ${rawValue}`);
       break;
     case 'EXCEEDS_MAX_AMOUNT':
       showError(`Amount too large (max: 1e15)`);

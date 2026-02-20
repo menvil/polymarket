@@ -252,6 +252,10 @@ export class Balance {
    *
    * Для создания balance с конкретным accountId/venueId используй Balance.of() или BalanceService.create().
    *
+   * **Каждое поле (available, reserved) получает distinct Money instance,**
+   * хотя они имеют одинаковое значение (0). Это предотвращает потенциальные проблемы
+   * с shared state при использовании в составных операциях.
+   *
    * @example
    * ```typescript
    * const balance = Balance.ZERO.USDC;
@@ -268,7 +272,7 @@ export class Balance {
         currency,
         new Balance(
           money,
-          money,
+          Money.of(new Decimal(0), currency as SupportedCurrency), // Создаём distinct instance для reserved
           { kind: 'WALLET', address: ZERO_WALLET_ADDRESS } as AccountId,
           SYSTEM_VENUE_ID
         )
