@@ -423,7 +423,7 @@ async function getBalance(userId: string): Promise<Money | { error: string }> {
 ### Отображение для пользователя
 
 ```typescript
-import { Money, MoneyFormatter } from '@polymarket/value-objects/money';
+import { Money, MoneyService, MoneyFormatter } from '@polymarket/value-objects/money';
 import Decimal from 'decimal.js';
 
 function formatBalance(balance: Money): string | null {
