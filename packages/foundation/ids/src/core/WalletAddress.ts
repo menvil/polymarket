@@ -107,7 +107,7 @@ export function parseWalletAddress(address: string): WalletAddress | undefined {
  * ```
  */
 export function walletAddressEquals(a: WalletAddress, b: WalletAddress): boolean {
-  return a === b;
+  return a.toLowerCase() === b.toLowerCase();
 }
 
 /**
