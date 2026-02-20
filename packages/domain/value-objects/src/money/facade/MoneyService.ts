@@ -127,8 +127,7 @@ export class MoneyService {
    * Только проверяет инварианты через Money.of().
    *
    * Ловит MoneyInvariantViolation и мапит через mapInvariantToOverflow:
-   * - EXCEEDS_MAX_AMOUNT, NON_FINITE, NAN → ArithmeticOverflowError
-   * - Остальные → InvalidMoneyError (unexpected)
+   * - Все типы нарушений (EXCEEDS_MAX_AMOUNT, NON_FINITE, NAN, NEGATIVE) → InvalidMoneyError с сохранением reason
    *
    * Используется в:
    * - add/subtract/multiply/divide для создания результата
@@ -442,7 +441,7 @@ export class MoneyService {
    *
    * @remarks
    * DRY helper для всех методов сравнения (isLessThan, equals, etc).
-   * Унифицирует создание ошибки несовпадения валют с правильным context.
+   * Использует rewrap() для построения opChain и соответствия контракту facade.
    */
   private static checkCurrencyMatch(
     a: Money,
@@ -450,19 +449,21 @@ export class MoneyService {
     op: string
   ): Result<void, InvalidMoneyError> {
     if (!a.hasSameCurrency(b)) {
+      const baseError = new InvalidMoneyError('Cannot compare Money with different currencies', {
+        context: {
+          reason: MoneyErrorReason.CURRENCY_MISMATCH,
+          expected: a.currency(),
+          actual: b.currency()
+        }
+      });
       return Err(
-        new InvalidMoneyError('Cannot compare Money with different currencies', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            service: MoneyService.SERVICE_NAME,
-            op,
-            reason: MoneyErrorReason.CURRENCY_MISMATCH,
-            expected: a.currency(),
-            actual: b.currency(),
-            a: a.value().toString(),
-            b: b.value().toString()
-          }
-        })
+        rewrap(
+          MoneyService.SERVICE_NAME,
+          op,
+          { a: a.value().toString(), b: b.value().toString(), currency: a.currency() },
+          baseError,
+          InvalidMoneyError
+        )
       );
     }
     return Ok(undefined);
@@ -696,6 +697,23 @@ export class MoneyService {
    * ```
    */
   public static decreaseBy(m: Money, delta: Ratio): Result<Money, InvalidMoneyError> {
+    // Валидация: delta не должен быть отрицательным (семантически некорректно "уменьшить на отрицательное значение")
+    if (delta.isNegative()) {
+      return Err(
+        new InvalidMoneyError('Delta for decreaseBy must be non-negative', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            service: MoneyService.SERVICE_NAME,
+            op: 'decreaseBy',
+            delta: delta.toDecimal().toString(),
+            amount: m.value().toString(),
+            currency: m.currency(),
+            reason: MoneyErrorReason.INVALID_RATIO
+          }
+        })
+      );
+    }
+
     // Convenience: decreaseBy(m, delta) = increaseBy(m, -delta)
     const negatedDelta = delta.negate();
     const result = this.increaseBy(m, negatedDelta);

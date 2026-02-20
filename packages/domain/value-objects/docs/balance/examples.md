@@ -302,6 +302,10 @@ console.log(BalanceFormatter.toDebugString(balance));
 ### Exhaustive error handling
 
 ```typescript
+import { Result, isErr } from '@polymarket/result';
+import { Balance, BalanceService, BalanceErrorReason, InvalidBalanceError } from '@polymarket/value-objects/balance';
+import { Money } from '@polymarket/value-objects/money';
+
 function handleBalanceOperation(
   balance: Balance,
   operation: 'reserve' | 'unfreezeReserved' | 'consumeReserved',

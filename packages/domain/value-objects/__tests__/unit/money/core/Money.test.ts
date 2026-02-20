@@ -66,8 +66,12 @@ describe('Money core', () => {
       }
     });
 
-    it('граница MAX_AMOUNT допустима', () => {
+    it('граница MAX_AMOUNT допустима (положительная)', () => {
       expect(() => Money.of(new Decimal('1e15'))).not.toThrow();
+    });
+
+    it('граница MAX_AMOUNT допустима (отрицательная)', () => {
+      expect(() => Money.of(new Decimal('-1e15'))).not.toThrow();
     });
   });
 

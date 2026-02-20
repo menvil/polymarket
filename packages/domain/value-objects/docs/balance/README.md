@@ -51,31 +51,46 @@ if (isErr(result)) {
 const balance = result.value;
 
 // Query методы
-console.log(balance.total().value());           // 12000 ($120.00)
-console.log(balance.reservedPercentage());       // 16.67%
+console.log(balance.total().value());           // Decimal(12000)
+console.log(balance.reservedPercentage());       // 16.666666666666664
 
 // Резервирование средств (для открытия ордера)
-const reserveResult = BalanceService.reserve(balance, Money.of(new Decimal(3000)));
+const orderAmountResult = MoneyService.create(new Decimal(3000));
+if (!orderAmountResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+const reserveResult = BalanceService.reserve(balance, orderAmountResult.value);
 if (!reserveResult.ok) {
   console.error('Failed to reserve');
   return;
 }
 
 const balanceWithReserved = reserveResult.value;
-console.log(balanceWithReserved.available().value()); // 7000 ($70.00)
-console.log(balanceWithReserved.reserved().value());  // 5000 ($50.00)
+console.log(balanceWithReserved.available().value()); // Decimal(7000)
+console.log(balanceWithReserved.reserved().value());  // Decimal(5000)
 
 // Вариант 1: Отмена ордера (размораживание средств)
-const unfreezeResult = BalanceService.unfreezeReserved(balanceWithReserved, Money.of(new Decimal(3000)));
+const unfreezeAmountResult = MoneyService.create(new Decimal(3000));
+if (!unfreezeAmountResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+const unfreezeResult = BalanceService.unfreezeReserved(balanceWithReserved, unfreezeAmountResult.value);
 if (unfreezeResult.ok) {
-  console.log(unfreezeResult.value.available().value()); // 10000
+  console.log(unfreezeResult.value.available().value()); // Decimal(10000)
 }
 
 // Вариант 2: Исполнение ордера (списание средств)
-const consumeResult = BalanceService.consumeReserved(balanceWithReserved, Money.of(new Decimal(3000)));
+const consumeAmountResult = MoneyService.create(new Decimal(3000));
+if (!consumeAmountResult.ok) {
+  console.error('Failed to create Money');
+  return;
+}
+const consumeResult = BalanceService.consumeReserved(balanceWithReserved, consumeAmountResult.value);
 if (consumeResult.ok) {
-  console.log(consumeResult.value.available().value()); // 7000 (не изменился)
-  console.log(consumeResult.value.total().value());     // 9000 (уменьшился)
+  console.log(consumeResult.value.available().value()); // Decimal(7000) (не изменился)
+  console.log(consumeResult.value.total().value());     // Decimal(9000) (уменьшился)
 }
 ```
 

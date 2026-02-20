@@ -1031,14 +1031,16 @@ describe('BalanceService', () => {
           Err(new InvalidMoneyError('Mock subtract error'))
         );
 
-        const result = BalanceService.reserve(balanceResult.value, Money.of(new Decimal(1000)));
+        try {
+          const result = BalanceService.reserve(balanceResult.value, Money.of(new Decimal(1000)));
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Mock subtract error');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Mock subtract error');
+          }
+        } finally {
+          subtractSpy.mockRestore();
         }
-
-        subtractSpy.mockRestore();
       });
 
       it('обрабатывает ошибку MoneyService.add для reserved', () => {
@@ -1055,14 +1057,16 @@ describe('BalanceService', () => {
           Err(new InvalidMoneyError('Mock add error'))
         );
 
-        const result = BalanceService.reserve(balanceResult.value, Money.of(new Decimal(1000)));
+        try {
+          const result = BalanceService.reserve(balanceResult.value, Money.of(new Decimal(1000)));
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Mock add error');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Mock add error');
+          }
+        } finally {
+          addSpy.mockRestore();
         }
-
-        addSpy.mockRestore();
       });
     });
 
@@ -1081,14 +1085,16 @@ describe('BalanceService', () => {
           Err(new InvalidMoneyError('Mock add error'))
         );
 
-        const result = BalanceService.unfreezeReserved(balanceResult.value, Money.of(new Decimal(1000)));
+        try {
+          const result = BalanceService.unfreezeReserved(balanceResult.value, Money.of(new Decimal(1000)));
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Mock add error');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Mock add error');
+          }
+        } finally {
+          addSpy.mockRestore();
         }
-
-        addSpy.mockRestore();
       });
 
       it('обрабатывает ошибку MoneyService.subtract для reserved', () => {
@@ -1105,14 +1111,16 @@ describe('BalanceService', () => {
           Err(new InvalidMoneyError('Mock subtract error'))
         );
 
-        const result = BalanceService.unfreezeReserved(balanceResult.value, Money.of(new Decimal(1000)));
+        try {
+          const result = BalanceService.unfreezeReserved(balanceResult.value, Money.of(new Decimal(1000)));
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Mock subtract error');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Mock subtract error');
+          }
+        } finally {
+          subtractSpy.mockRestore();
         }
-
-        subtractSpy.mockRestore();
       });
     });
 
@@ -1131,14 +1139,16 @@ describe('BalanceService', () => {
           Err(new InvalidMoneyError('Mock subtract error'))
         );
 
-        const result = BalanceService.consumeReserved(balanceResult.value, Money.of(new Decimal(1000)));
+        try {
+          const result = BalanceService.consumeReserved(balanceResult.value, Money.of(new Decimal(1000)));
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.message).toContain('Mock subtract error');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            expect(result.error.message).toContain('Mock subtract error');
+          }
+        } finally {
+          subtractSpy.mockRestore();
         }
-
-        subtractSpy.mockRestore();
       });
     });
 

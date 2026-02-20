@@ -195,12 +195,12 @@ export class BalanceSerializer {
    * 1. Проверка что json это объект (не null, array, primitive)
    * 2. Проверка наличия обязательных полей 'available' и 'reserved'
    * 3. Проверка типов полей available/reserved (должны быть объектами)
-   * 4. Десериализация available через MoneySerializer
-   * 5. Десериализация reserved через MoneySerializer
-   * 6. Проверка наличия обязательных полей 'accountId' и 'venueId'
-   * 7. Проверка типов полей accountId/venueId (должны быть строками)
+   * 4. Проверка наличия обязательных полей 'accountId' и 'venueId'
+   * 5. Проверка типов полей accountId/venueId (должны быть строками)
+   * 6. Десериализация available через MoneySerializer
+   * 7. Десериализация reserved через MoneySerializer
    * 8. Парсинг accountId через parseAccountId()
-   * 9. Создание VenueId (branded string)
+   * 9. Валидация venueId через asVenueId()
    * 10. Делегирование BalanceService.create для бизнес-валидации
    *
    * @param json - JSON данные (unknown)
@@ -319,19 +319,7 @@ export class BalanceSerializer {
       );
     }
 
-    // 6. Десериализация available через helper (используем DRY helper вместо дублирования кода)
-    const availableResult = deserializeMoneyField(obj.available, 'available');
-    if (!availableResult.ok) {
-      return availableResult;
-    }
-
-    // 7. Десериализация reserved через helper (используем DRY helper вместо дублирования кода)
-    const reservedResult = deserializeMoneyField(obj.reserved, 'reserved');
-    if (!reservedResult.ok) {
-      return reservedResult;
-    }
-
-    // 8. Проверка наличия поля accountId
+    // 6. Проверка наличия поля accountId
     if (!('accountId' in obj)) {
       return Err(
         new InvalidBalanceError(`Missing required field 'accountId'`, {
@@ -346,7 +334,7 @@ export class BalanceSerializer {
       );
     }
 
-    // 9. Проверка наличия поля venueId
+    // 7. Проверка наличия поля venueId
     if (!('venueId' in obj)) {
       return Err(
         new InvalidBalanceError(`Missing required field 'venueId'`, {
@@ -361,7 +349,7 @@ export class BalanceSerializer {
       );
     }
 
-    // 10. Проверка типа accountId (должен быть строкой)
+    // 9. Проверка типа accountId (должен быть строкой)
     if (typeof obj.accountId !== 'string') {
       return Err(
         new InvalidBalanceError(`Field 'accountId' must be a string`, {
@@ -391,7 +379,19 @@ export class BalanceSerializer {
       );
     }
 
-    // 12. Парсинг accountId через parseAccountId()
+    // 12. Десериализация available через helper (используем DRY helper вместо дублирования кода)
+    const availableResult = deserializeMoneyField(obj.available, 'available');
+    if (!availableResult.ok) {
+      return availableResult;
+    }
+
+    // 13. Десериализация reserved через helper (используем DRY helper вместо дублирования кода)
+    const reservedResult = deserializeMoneyField(obj.reserved, 'reserved');
+    if (!reservedResult.ok) {
+      return reservedResult;
+    }
+
+    // 15. Парсинг accountId через parseAccountId()
     const accountId = parseAccountId(obj.accountId);
     if (!accountId) {
       return Err(
@@ -407,7 +407,7 @@ export class BalanceSerializer {
       );
     }
 
-    // 13. Валидация venueId через asVenueId()
+    // 17. Валидация venueId через asVenueId()
     const venueId = asVenueId(obj.venueId);
     if (!venueId) {
       return Err(
@@ -426,7 +426,7 @@ export class BalanceSerializer {
       );
     }
 
-    // 14. Делегирование бизнес-валидации BalanceService
+    // 18. Делегирование бизнес-валидации BalanceService
     return BalanceService.create(
       availableResult.value,
       reservedResult.value,

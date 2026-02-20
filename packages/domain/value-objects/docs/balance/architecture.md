@@ -321,14 +321,26 @@ public total(): Money {
 const newAvailableResult = MoneyService.subtract(balance.available(), amount);
 if (isErr(newAvailableResult)) {
   // Перебрасываем ошибку с контекстом баланса
-  return rewrap(newAvailableResult, 'reserve', InvalidBalanceError);
+  return Err(rewrap(
+    BalanceService.SERVICE_NAME,
+    'reserve',
+    { available: balance.available().value().toString(), amount: amount.value().toString() },
+    newAvailableResult.error,
+    InvalidBalanceError
+  ));
 }
 const newAvailable = newAvailableResult.value;
 
 // Пример: reserve() выполняет newReserved = reserved + amount
 const newReservedResult = MoneyService.add(balance.reserved(), amount);
 if (isErr(newReservedResult)) {
-  return rewrap(newReservedResult, 'reserve', InvalidBalanceError);
+  return Err(rewrap(
+    BalanceService.SERVICE_NAME,
+    'reserve',
+    { reserved: balance.reserved().value().toString(), amount: amount.value().toString() },
+    newReservedResult.error,
+    InvalidBalanceError
+  ));
 }
 const newReserved = newReservedResult.value;
 ```

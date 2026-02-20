@@ -26,9 +26,10 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * ```typescript
  * import { ValidateReserveAmount } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
+ * import Decimal from 'decimal.js';
  *
- * const available = Money.fromUSDC(10000);
- * const reserveAmount = Money.fromUSDC(5000);
+ * const available = Money.of(new Decimal(10000), 'USDC');
+ * const reserveAmount = Money.of(new Decimal(5000), 'USDC');
  *
  * // ✅ Достаточно средств
  * const result1 = ValidateReserveAmount.check(reserveAmount, available);
@@ -36,7 +37,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  *
  * // ❌ Недостаточно средств
  * const result2 = ValidateReserveAmount.check(
- *   Money.fromUSDC(15000),
+ *   Money.of(new Decimal(15000), 'USDC'),
  *   available
  * );
  * if (!result2.ok) {
@@ -46,7 +47,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  *
  * // ❌ Попытка резервировать 0 или отрицательную сумму
  * const result3 = ValidateReserveAmount.check(
- *   Money.fromUSDC(0),
+ *   Money.of(new Decimal(0), 'USDC'),
  *   available
  * );
  * if (!result3.ok) {
@@ -72,13 +73,13 @@ export class ValidateReserveAmount {
     if (amount.lessThanOrEqualTo(0)) {
       return Err(
         new InvalidBalanceError(
-          (ctx) => `Reserve amount must be positive, got ${ctx.reserveAmount}`,
+          (ctx) => `Reserve amount must be positive, got ${ctx.requested}`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INVALID_FORMAT,
-              reserveAmount: amount.toString(),
-              available: availableAmount.toString()
+              requested: amount.toNumber(),
+              available: availableAmount.toNumber()
             }
           }
         )

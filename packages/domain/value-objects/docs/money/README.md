@@ -579,8 +579,9 @@ if (allocResult.ok) {
 
 ```typescript
 import { Money } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
 
-const money = new Money(100);  // Может бросить исключение
+const money = Money.of(new Decimal(100), 'USDC');  // Может бросить исключение
 ```
 
 **Стало:**

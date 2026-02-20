@@ -67,22 +67,26 @@ function canAfford(balance: Money, price: Money): boolean {
   return balance.value().greaterThanOrEqualTo(price.value());
 }
 
-const userBalanceResult = MoneyService.create(new Decimal(1000));
-const orderCostResult = MoneyService.create(new Decimal(150));
+function checkBalance() {
+  const userBalanceResult = MoneyService.create(new Decimal(1000));
+  const orderCostResult = MoneyService.create(new Decimal(150));
 
-if (!userBalanceResult.ok || !orderCostResult.ok) {
-  console.error('Failed to create Money');
-  return;
+  if (!userBalanceResult.ok || !orderCostResult.ok) {
+    console.error('Failed to create Money');
+    return;
+  }
+
+  const userBalance = userBalanceResult.value;
+  const orderCost = orderCostResult.value;
+
+  if (canAfford(userBalance, orderCost)) {
+    console.log('Sufficient funds');
+  } else {
+    console.log('Insufficient funds');
+  }
 }
 
-const userBalance = userBalanceResult.value;
-const orderCost = orderCostResult.value;
-
-if (canAfford(userBalance, orderCost)) {
-  console.log('Sufficient funds');
-} else {
-  console.log('Insufficient funds');
-}
+checkBalance();
 ```
 
 ### Обновление баланса после сделки
@@ -297,20 +301,27 @@ function calculateProfit(
 }
 
 // Использование
-const bought = Money.of(new Decimal(950), 'USDC');
-const sold = Money.of(new Decimal(1100), 'USDC');
+const boughtResult = MoneyService.create(new Decimal(950));
+const soldResult = MoneyService.create(new Decimal(1100));
 
-const profit = calculateProfit(sold, bought);
-if ('error' in profit) {
-  console.error(profit.error);
+if (!boughtResult.ok || !soldResult.ok) {
+  console.error('Failed to create Money');
 } else {
-  const amount = profit.value().toNumber();
-  if (amount > 0) {
-    console.log(`Profit: +$${amount}`);  // +$150
-  } else if (amount < 0) {
-    console.log(`Loss: -$${Math.abs(amount)}`);
+  const bought = boughtResult.value;
+  const sold = soldResult.value;
+
+  const profit = calculateProfit(sold, bought);
+  if ('error' in profit) {
+    console.error(profit.error);
   } else {
-    console.log('Break even');
+    const amount = profit.value().toNumber();
+    if (amount > 0) {
+      console.log(`Profit: +$${amount}`);  // +$150
+    } else if (amount < 0) {
+      console.log(`Loss: -$${Math.abs(amount)}`);
+    } else {
+      console.log('Break even');
+    }
   }
 }
 ```

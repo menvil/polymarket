@@ -52,13 +52,14 @@ describe('MoneyService.add()', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidMoneyError);
-        expect(result.error.context!.reason).toBe('EXCEEDS_MAX_AMOUNT');
+        expect(result.error.context?.reason).toBe('EXCEEDS_MAX_AMOUNT');
 
-        // ✅ ИСПРАВЛЕНО: НЕ проверяем точную строку экспоненты
         // Проверяем что поле есть и парсится обратно
-        expect(result.error.context!.a).toBeDefined();
-        expect(result.error.context!.b).toBeDefined();
-        expect(new Decimal(result.error.context!.a as string).equals(new Decimal('9e14'))).toBe(true);
+        expect(result.error.context?.a).toBeDefined();
+        expect(result.error.context?.b).toBeDefined();
+        if (result.error.context?.a) {
+          expect(new Decimal(result.error.context.a as string).equals(new Decimal('9e14'))).toBe(true);
+        }
       }
     });
 

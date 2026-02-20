@@ -98,6 +98,7 @@ describe('Balance Core', () => {
 
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
+        throw new Error('Expected BalanceInvariantViolation to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
         if (error instanceof BalanceInvariantViolation) {
@@ -116,6 +117,7 @@ describe('Balance Core', () => {
 
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
+        throw new Error('Expected BalanceInvariantViolation to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
         if (error instanceof BalanceInvariantViolation) {
@@ -149,21 +151,16 @@ describe('Balance Core', () => {
 
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
+        throw new Error('Expected BalanceInvariantViolation to be thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
         if (error instanceof BalanceInvariantViolation) {
           expect(error.reason).toBe('TOTAL_EXCEEDS_MAX_AMOUNT');
-          // Проверяем дополнительные поля через context (если есть) или через прямой доступ
-          const err = error as BalanceInvariantViolation & {
-            total?: string;
-            maxAmount?: string;
-            available?: string;
-            reserved?: string;
-          };
-          expect(err.total).toBeDefined();
-          expect(err.maxAmount).toBeDefined();
-          expect(err.available).toBeDefined();
-          expect(err.reserved).toBeDefined();
+          // Проверяем дополнительные типизированные поля
+          expect(error.total).toBeDefined();
+          expect(error.maxAmount).toBeDefined();
+          expect(error.available).toBeDefined();
+          expect(error.reserved).toBeDefined();
         }
       }
     });

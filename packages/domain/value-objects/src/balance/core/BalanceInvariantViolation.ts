@@ -54,8 +54,18 @@ export class BalanceInvariantViolation extends Error {
    * - NEGATIVE_AVAILABLE - available amount < 0
    * - NEGATIVE_RESERVED - reserved amount < 0
    * - CURRENCY_MISMATCH - available.currency !== reserved.currency
+   * - TOTAL_EXCEEDS_MAX_AMOUNT - available + reserved > Money.MAX_AMOUNT
    */
   public readonly reason: string;
+
+  /**
+   * Дополнительные типизированные поля для различных сценариев ошибок
+   */
+  public readonly available?: string;
+  public readonly reserved?: string;
+  public readonly total?: string;
+  public readonly maxAmount?: string;
+  public readonly currency?: string;
 
   /**
    * Создаёт новое исключение нарушения инварианта

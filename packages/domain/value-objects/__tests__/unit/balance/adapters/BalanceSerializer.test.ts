@@ -526,7 +526,7 @@ describe('BalanceSerializer', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!originalResult.ok) fail('Balance creation failed');
+        if (!originalResult.ok) throw new Error('Balance creation failed');
 
         const json = BalanceSerializer.toJSON(originalResult.value);
         const deserializedResult = BalanceSerializer.fromJSON(json);

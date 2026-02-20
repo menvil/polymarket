@@ -319,7 +319,9 @@ console.log(balance2.available().value()); // 7000
 const result = BalanceService.reserve(balance, amount);
 
 if (isErr(result)) {
-  switch (result.error.context?.reason) {
+  const reason = result.error.context?.reason;
+
+  switch (reason) {
     case BalanceErrorReason.INSUFFICIENT_FUNDS:
       // Обработка недостаточных средств
       break;
@@ -329,7 +331,9 @@ if (isErr(result)) {
     case BalanceErrorReason.INVALID_FORMAT:
       // Обработка невалидного формата
       break;
-    // TypeScript проверит, что все cases покрыты
+    default:
+      // Обработка других ошибок
+      console.error(`Unexpected error: ${result.error.message}`);
   }
 }
 ```
