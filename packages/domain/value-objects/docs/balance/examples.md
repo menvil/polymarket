@@ -19,8 +19,8 @@ const accountId: AccountId = {
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
 const result = BalanceService.create(
-  Money.of(new Decimal(10000)), // $100.00 available
-  Money.of(new Decimal(2000)),  // $20.00 reserved
+  Money.of(new Decimal(10000)), // 10000 units available
+  Money.of(new Decimal(2000)),  // 2000 units reserved
   accountId,       // ID аккаунта владельца
   venueId          // ID площадки (venue)
 );
@@ -190,6 +190,8 @@ if (deserializedResult.ok) {
 ### API ответ
 
 ```typescript
+import { Balance } from '@polymarket/value-objects/balance';
+
 // Получение баланса с API
 async function fetchUserBalance(userId: string): Promise<Balance | null> {
   const response = await fetch(`/api/users/${userId}/balance`);

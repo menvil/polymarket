@@ -1,18 +1,49 @@
 import Decimal from 'decimal.js';
 import { Money } from '../../money/core/Money';
-import type { SupportedCurrency, AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+import type { SupportedCurrency, AccountId, VenueId } from '@polymarket/ids';
+import { parseWalletAddress, asVenueId } from '@polymarket/ids';
 import { BalanceInvariantViolation } from './BalanceInvariantViolation';
 import { BalanceErrorReason } from '../errors/BalanceErrorReason';
 
 /**
+ * Helper для безопасного создания ZERO_WALLET_ADDRESS константы
+ *
+ * @remarks
+ * Используем parseWalletAddress для runtime валидации вместо "as" cast.
+ * Если валидация не пройдёт - будет выброшено исключение при инициализации модуля.
+ */
+function initZeroWalletAddress() {
+  const addr = parseWalletAddress('0x0000000000000000000000000000000000000000');
+  if (!addr) {
+    throw new Error('Failed to parse ZERO_WALLET_ADDRESS constant');
+  }
+  return addr;
+}
+
+/**
+ * Helper для безопасного создания SYSTEM_VENUE_ID константы
+ *
+ * @remarks
+ * Используем asVenueId для runtime валидации вместо "as" cast.
+ * Если валидация не пройдёт - будет выброшено исключение при инициализации модуля.
+ */
+function initSystemVenueId() {
+  const venueId = asVenueId('SYSTEM');
+  if (!venueId) {
+    throw new Error('Failed to validate SYSTEM_VENUE_ID constant');
+  }
+  return venueId;
+}
+
+/**
  * Константа: нулевой адрес кошелька для системных балансов
  */
-const ZERO_WALLET_ADDRESS = '0x0000000000000000000000000000000000000000' as WalletAddress;
+const ZERO_WALLET_ADDRESS = initZeroWalletAddress();
 
 /**
  * Константа: системный VenueId для placeholder балансов
  */
-const SYSTEM_VENUE_ID = 'SYSTEM' as VenueId;
+const SYSTEM_VENUE_ID = initSystemVenueId();
 
 /**
  * Balance - баланс денежных средств с разделением на available/reserved
@@ -52,10 +83,10 @@ const SYSTEM_VENUE_ID = 'SYSTEM' as VenueId;
  *
  * // Создание баланса (может throw при нарушении инвариантов)
  * const balance = Balance.of(
- *   Money.fromUSDC(10000),  // available
- *   Money.fromUSDC(2000),   // reserved
- *   accountId,              // ID аккаунта владельца
- *   venueId                 // ID площадки
+ *   Money.of(new Decimal(10000), 'USDC'),  // available
+ *   Money.of(new Decimal(2000), 'USDC'),   // reserved
+ *   accountId,                             // ID аккаунта владельца
+ *   venueId                                // ID площадки
  * );
  *
  * // Query методы (чистые, не могут fail)
@@ -66,7 +97,7 @@ const SYSTEM_VENUE_ID = 'SYSTEM' as VenueId;
  *
  * // Helpers
  * const empty = Balance.ZERO.USDC;
- * const withZero = Balance.withZeroReserved(Money.of(10000), accountId, venueId);
+ * const withZero = Balance.withZeroReserved(Money.of(new Decimal(10000), 'USDC'), accountId, venueId);
  * ```
  */
 export class Balance {
@@ -187,16 +218,16 @@ export class Balance {
    * ```typescript
    * // Прямое создание (может throw)
    * const balance = Balance.of(
-   *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000),
+   *   Money.of(new Decimal(10000), 'USDC'),
+   *   Money.of(new Decimal(2000), 'USDC'),
    *   accountId,
    *   venueId
    * );
    *
    * // Или через BalanceService (Result-based)
    * const result = BalanceService.create(
-   *   Money.fromUSDC(10000),
-   *   Money.fromUSDC(2000),
+   *   Money.of(new Decimal(10000), 'USDC'),
+   *   Money.of(new Decimal(2000), 'USDC'),
    *   accountId,
    *   venueId
    * );
@@ -225,7 +256,7 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const balance = Balance.withZeroReserved(Money.of(10000), accountId, venueId);
+   * const balance = Balance.withZeroReserved(Money.of(new Decimal(10000), 'USDC'), accountId, venueId);
    * // available: 10000, reserved: 0
    * ```
    */

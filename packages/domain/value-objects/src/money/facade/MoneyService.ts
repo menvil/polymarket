@@ -701,6 +701,7 @@ export class MoneyService {
     if (delta.isNegative()) {
       const baseError = new InvalidMoneyError('Delta for decreaseBy must be non-negative', {
         context: {
+          source: ErrorSource.RULE_VALIDATION,
           reason: MoneyErrorReason.INVALID_RATIO
         }
       });
@@ -757,15 +758,18 @@ export class MoneyService {
    *
    * **Знак rate:**
    * - Положительный rate (>= 0): стандартный случай (fees, allocations)
-   * - Отрицательный rate (< 0): допустимо технически, результат будет отрицательным
-   *   (но семантически лучше использовать decreaseBy() для уменьшения)
+   * - Отрицательный rate (< 0): ЗАПРЕЩЁН - семантически некорректно "взять отрицательную долю"
+   *   (для уменьшения используй decreaseBy())
    *
    * **Процесс:**
-   * 1. Multiply: m.value() * rate.toDecimal()
-   * 2. Create Money через createFromDecimal() (проверит инварианты)
+   * 1. Валидация: rate >= 0
+   * 2. Multiply: m.value() * rate.toDecimal()
+   * 3. Create Money через createFromDecimal() (проверит инварианты)
    *
    * **Возможные ошибки:**
+   * - INVALID_RATIO: rate < 0 (отрицательная доля)
    * - EXCEEDS_MAX_AMOUNT: результат превышает максимум
+   * - NEGATIVE_RESULT: результат меньше нуля (при отрицательном amount и положительном rate)
    *
    * @example
    * ```typescript
@@ -786,6 +790,13 @@ export class MoneyService {
    * if (allocResult.ok) {
    *   console.log(allocResult.value.value().toString()); // 1500 USDC
    * }
+   *
+   * // Ошибка: отрицательный rate
+   * const negativeRate = Ratio.of(new Decimal(-0.1)); // -10%
+   * const invalid = MoneyService.portion(orderAmount, negativeRate);
+   * if (!invalid.ok) {
+   *   console.error(invalid.error.context.reason); // INVALID_RATIO
+   * }
    * ```
    */
   public static portion(m: Money, rate: Ratio): Result<Money, InvalidMoneyError> {
@@ -796,6 +807,17 @@ export class MoneyService {
     };
 
     return wrapOp(MoneyService.SERVICE_NAME, 'portion', ctx, () => {
+      // Валидация: rate не должен быть отрицательным (семантически некорректно "взять отрицательную долю")
+      if (rate.isNegative()) {
+        const baseError = new InvalidMoneyError('Rate for portion must be non-negative', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            reason: MoneyErrorReason.INVALID_RATIO
+          }
+        });
+        return Err(baseError);
+      }
+
       // Multiply: m * rate
       const product = multiplyDecimal(m.value(), rate.toDecimal());
 

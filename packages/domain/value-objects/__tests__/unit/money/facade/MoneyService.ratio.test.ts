@@ -74,15 +74,15 @@ describe('MoneyService Ratio Operations', () => {
       }
     });
 
-    it('допускает отрицательный rate (negative result)', () => {
+    it('отклоняет отрицательный rate (INVALID_RATIO)', () => {
       const rate = Ratio.of(new Decimal(-0.1)); // -10%
       const result = MoneyService.portion(money100, rate);
 
-      // Money допускает отрицательные значения
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.value().toString()).toBe('-10');
-        expect(result.value.currency()).toBe('USDC');
+      // Отрицательный rate семантически некорректен для portion() - используй decreaseBy()
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(MoneyErrorReason.INVALID_RATIO);
+        expect(result.error.message).toContain('non-negative');
       }
     });
 

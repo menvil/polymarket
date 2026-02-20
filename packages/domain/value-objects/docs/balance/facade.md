@@ -313,7 +313,7 @@ console.log(balance2.available().value()); // 7000
 
 ## Обработка ошибок
 
-### Exhaustive checking через switch
+### Проверка ошибок через switch
 
 ```typescript
 const result = BalanceService.reserve(balance, amount);

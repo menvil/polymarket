@@ -179,23 +179,27 @@ function calculateTotalSpent(transactions: Money[]): Money | { error: string } {
 }
 
 // Использование
-const t1Result = MoneyService.create(new Decimal(100));
-const t2Result = MoneyService.create(new Decimal(50.50));
-const t3Result = MoneyService.create(new Decimal(25.75));
+function example() {
+  const t1Result = MoneyService.create(new Decimal(100));
+  const t2Result = MoneyService.create(new Decimal(50.50));
+  const t3Result = MoneyService.create(new Decimal(25.75));
 
-if (!t1Result.ok || !t2Result.ok || !t3Result.ok) {
-  console.error('Failed to create Money');
-  return;
+  if (!t1Result.ok || !t2Result.ok || !t3Result.ok) {
+    console.error('Failed to create Money');
+    return;
+  }
+
+  const transactions = [t1Result.value, t2Result.value, t3Result.value];
+
+  const total = calculateTotalSpent(transactions);
+  if ('error' in total) {
+    console.error(total.error);
+  } else {
+    console.log(`Total spent: $${total.value()}`);  // $176.25
+  }
 }
 
-const transactions = [t1Result.value, t2Result.value, t3Result.value];
-
-const total = calculateTotalSpent(transactions);
-if ('error' in total) {
-  console.error(total.error);
-} else {
-  console.log(`Total spent: $${total.value()}`);  // $176.25
-}
+example();
 ```
 
 ---
@@ -441,14 +445,29 @@ function formatCompact(amount: Money): string | null {
 }
 
 // Использование
-const balance = Money.of(new Decimal(1234.567), 'USDC');
+function example() {
+  const balanceResult = MoneyService.create(new Decimal(1234.567), 'USDC');
+  if (!balanceResult.ok) {
+    console.error('Failed to create Money');
+    return;
+  }
 
-console.log(formatBalance(balance));           // "1234.57"
-console.log(formatCurrency(balance));          // "$1234.57 USDC"
-console.log(formatCurrency(balance, false));   // "$1234.57"
+  const balance = balanceResult.value;
+  console.log(formatBalance(balance));           // "1234.57"
+  console.log(formatCurrency(balance));          // "$1234.57 USDC"
+  console.log(formatCurrency(balance, false));   // "$1234.57"
 
-const large = Money.of(new Decimal(1500000), 'USDC');
-console.log(formatCompact(large));             // "$1.5M"
+  const largeResult = MoneyService.create(new Decimal(1500000), 'USDC');
+  if (!largeResult.ok) {
+    console.error('Failed to create Money');
+    return;
+  }
+
+  const large = largeResult.value;
+  console.log(formatCompact(large));             // "$1.5M"
+}
+
+example();
 ```
 
 ---

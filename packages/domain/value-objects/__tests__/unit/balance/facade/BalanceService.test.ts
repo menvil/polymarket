@@ -877,7 +877,6 @@ describe('BalanceService', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
-          expect(result.error.message).toContain('Currency mismatch');
         }
       });
 
@@ -1176,17 +1175,19 @@ describe('BalanceService', () => {
           Err(new InvalidMoneyError('Mock equals error'))
         );
 
-        const result = BalanceService.equals(balance1Result.value, balance2Result.value);
+        try {
+          const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          // После rewrap() сообщение сохраняется из оригинальной ошибки
-          expect(result.error.message).toContain('Mock equals error');
-          // Проверяем что op добавлен в opChain
-          expect(result.error.context?.opChain).toContain('BalanceService.equals');
+          expect(result.ok).toBe(false);
+          if (!result.ok) {
+            // После rewrap() сообщение сохраняется из оригинальной ошибки
+            expect(result.error.message).toContain('Mock equals error');
+            // Проверяем что op добавлен в opChain
+            expect(result.error.context?.opChain).toContain('BalanceService.equals');
+          }
+        } finally {
+          equalsSpy.mockRestore();
         }
-
-        equalsSpy.mockRestore();
       });
 
       it('обрабатывает ошибку MoneyService.equals для reserved', () => {

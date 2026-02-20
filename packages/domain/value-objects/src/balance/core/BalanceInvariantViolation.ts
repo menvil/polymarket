@@ -1,3 +1,5 @@
+import type { BalanceErrorReason } from '../errors/BalanceErrorReason';
+
 /**
  * Нарушение инвариантов Balance
  *
@@ -58,7 +60,7 @@ export class BalanceInvariantViolation extends Error {
    * - NAN - amount является NaN
    * - NON_FINITE - amount не является finite (Infinity или -Infinity)
    */
-  public readonly reason: import('../errors/BalanceErrorReason').BalanceErrorReason;
+  public readonly reason: BalanceErrorReason;
 
   /**
    * Дополнительные типизированные поля для различных сценариев ошибок
@@ -68,6 +70,8 @@ export class BalanceInvariantViolation extends Error {
   public readonly total?: string;
   public readonly maxAmount?: string;
   public readonly currency?: string;
+  public readonly availableCurrency?: string;
+  public readonly reservedCurrency?: string;
 
   /**
    * Создаёт новое исключение нарушения инварианта
@@ -84,7 +88,7 @@ export class BalanceInvariantViolation extends Error {
   constructor(
     message: string,
     context: {
-      reason: import('../errors/BalanceErrorReason').BalanceErrorReason;
+      reason: BalanceErrorReason;
       [key: string]: unknown;
     }
   ) {
@@ -93,7 +97,7 @@ export class BalanceInvariantViolation extends Error {
     this.reason = context.reason;
 
     // Безопасно копируем дополнительные поля, исключая reason и защищённые свойства Error
-    const safeFields: Array<keyof this> = ['available', 'reserved', 'total', 'maxAmount', 'currency'];
+    const safeFields: Array<keyof this> = ['available', 'reserved', 'total', 'maxAmount', 'currency', 'availableCurrency', 'reservedCurrency'];
     for (const key of Object.keys(context)) {
       if (key !== 'reason' && safeFields.includes(key as keyof this)) {
         this[key as keyof this] = context[key] as this[keyof this];

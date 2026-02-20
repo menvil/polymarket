@@ -142,10 +142,12 @@ import { BalanceFormatter } from '@polymarket/value-objects/balance';
 import { expectOk } from '@polymarket/result';
 
 // Полная сводка (возвращает Result)
+// ВАЖНО: MoneyFormatter отображает raw units без деления на 100
+// 10000 units → "$10000.00", а НЕ "$100.00"
 const summaryResult = BalanceFormatter.toSummary(balance);
 if (summaryResult.ok) {
   console.log(summaryResult.value);
-  // "Available: $100.00, Reserved: $20.00, Total: $120.00 (16.67% reserved)"
+  // "Available: $10000.00, Reserved: $2000.00, Total: $12000.00 (16.67% reserved)"
 }
 // или с expectOk (бросает исключение если Err)
 console.log(expectOk(BalanceFormatter.toSummary(balance)));
@@ -154,7 +156,7 @@ console.log(expectOk(BalanceFormatter.toSummary(balance)));
 const compactResult = BalanceFormatter.toCompact(balance);
 if (compactResult.ok) {
   console.log(compactResult.value);
-  // "Avail: $100.00 | Res: $20.00 | Total: $120.00"
+  // "Avail: $10.0K | Res: $2.0K | Total: $12.0K"
 }
 
 // Debug-строка (не возвращает Result, всегда string)
