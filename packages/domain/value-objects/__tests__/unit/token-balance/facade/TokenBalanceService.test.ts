@@ -612,11 +612,11 @@ describe('TokenBalanceService', () => {
         expect(canReserve).toBe(false);
       });
 
-      it('возвращает true для нулевого количества', () => {
+      it('возвращает false для нулевого количества (reserved must be positive)', () => {
         const balance = createBalance();
         const canReserve = TokenBalanceService.canReserve(balance, Quantity.ZERO);
 
-        expect(canReserve).toBe(true);
+        expect(canReserve).toBe(false);
       });
 
       it('возвращает false для пустого баланса с ненулевым количеством', () => {

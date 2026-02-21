@@ -75,6 +75,9 @@ describe('ValidateReleaseAmount', () => {
   });
 
   describe('ошибка INVALID_FORMAT', () => {
+    // ПРИМЕЧАНИЕ: Тесты для отрицательных и non-finite значений невозможны,
+    // так как Quantity.of() бросает исключение до того, как ValidateReleaseAmount
+    // сможет их проверить. Валидация происходит на уровне Quantity, не TokenBalance.
     it('возвращает ошибку если releaseQty <= 0', () => {
       const reserved = Quantity.of(new Decimal(5000));
       const releaseQty = Quantity.of(new Decimal(0));
@@ -89,10 +92,6 @@ describe('ValidateReleaseAmount', () => {
         expect(result.error.context?.reserved).toBe('5000');
       }
     });
-
-    // ПРИМЕЧАНИЕ: Тесты для отрицательных и non-finite значений невозможны,
-    // так как Quantity.of() бросает исключение до того, как ValidateReleaseAmount
-    // сможет их проверить. Валидация происходит на уровне Quantity, не TokenBalance.
   });
 
   describe('граничные случаи', () => {

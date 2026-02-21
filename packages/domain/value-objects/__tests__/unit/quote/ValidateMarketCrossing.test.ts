@@ -30,7 +30,7 @@ describe('ValidateMarketCrossing', () => {
       expect(result.ok).toBe(true);
     });
 
-    it('returns Err когда bid >= orderbook ask (пересекает)', () => {
+    it('returns Err когда bid >= ask (пересекает)', () => {
       const quote = Quote.of(
         Price.of(new Decimal(0.51)), // наш bid
         Price.of(new Decimal(0.52)),

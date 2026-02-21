@@ -234,7 +234,9 @@ describe('QuoteSerializer', () => {
         bid: 0.48,
         ask: 0.52,
         bidSize: 100,
-        askSize: 150
+        askSize: 150,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'
       };
 
       const result = QuoteSerializer.fromJSON(json);

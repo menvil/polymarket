@@ -111,6 +111,7 @@ console.log(newBalance.toString()); // "1200 USDC"
 
 ```typescript
 import { Price } from '@polymarket/value-objects';
+import { Percentage } from '@polymarket/value-objects';
 
 const price = Price.fromValue(0.55); // 55% вероятность
 price.match({
@@ -210,7 +211,8 @@ const result = QuoteService.create(
 
 if (!result.ok) {
   console.error(result.error.message);
-  return;
+  // Handle error properly - do not use return in module scope
+  throw new Error(result.error.message);
 }
 
 const quote = result.value;

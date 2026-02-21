@@ -67,15 +67,15 @@ export {
   type OutcomeTokenJSON
 } from './outcome-token/index.js';
 
-// // TokenBalance модуль (только публичный API)
-// export {
-//   TokenBalance,
-//   TokenBalanceService,
-//   TokenBalanceSerializer,
-//   TokenBalanceFormatter,
-//   TokenBalanceErrorReason,
-//   type TokenBalanceJSON
-// } from './token-balance/index.js';
+// TokenBalance модуль (только публичный API)
+export {
+  TokenBalance,
+  TokenBalanceService,
+  TokenBalanceSerializer,
+  TokenBalanceFormatter,
+  TokenBalanceErrorReason,
+  type TokenBalanceJSON
+} from './token-balance/index.js';
 
 // AssetQuantity модуль (только публичный API)
 export {
@@ -87,18 +87,18 @@ export {
   type AssetQuantityJSON
 } from './asset-quantity/index.js';
 
-// // Quote модуль (только публичный API)
-// export {
-//   Quote,
-//   QuoteInvariantViolation,
-//   QuoteService,
-//   QuoteSerializer,
-//   QuoteFormatter,
-//   QuoteErrorReason,
-//   ValidateQuoteSizes,
-//   ValidateMinSpread,
-//   ValidateMaxSpread,
-//   ValidateMarketCrossing,
-//   type QuoteJSON,
-//   type QuoteFormatOptions
-// } from './quote/index.js';
+// Quote модуль (только публичный API)
+export {
+  Quote,
+  QuoteInvariantViolation,
+  QuoteService,
+  QuoteSerializer,
+  QuoteFormatter,
+  QuoteErrorReason,
+  ValidateQuoteSizes,
+  ValidateMinSpread,
+  ValidateMaxSpread,
+  ValidateMarketCrossing,
+  type QuoteJSON,
+  type QuoteFormatOptions
+} from './quote/index.js';

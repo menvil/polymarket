@@ -572,6 +572,8 @@ export class TokenBalanceService {
       if (!balance || !qty) return false;
       if (!(balance instanceof TokenBalance)) return false;
       if (!(qty instanceof Quantity)) return false;
+      // Reserve quantity must be positive (matching ValidateReserveAmount logic)
+      if (qty.value().lessThanOrEqualTo(0)) return false;
       return balance.available().value().greaterThanOrEqualTo(qty.value());
     } catch {
       return false;
