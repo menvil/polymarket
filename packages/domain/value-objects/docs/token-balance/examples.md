@@ -137,27 +137,38 @@ if (consumeResult.ok) {
 **Разница между unfreezeReserved и consumeReserved:**
 
 ```typescript
-const balance = expectOk(TokenBalanceService.create(
+import { expectOk } from '@polymarket/result';
+
+const balanceResult = TokenBalanceService.create(
   token,
   Quantity.of(new Decimal(100)),
   Quantity.of(new Decimal(50)),
   accountId,
   venueId
-));
+);
+if (!balanceResult.ok) return;
+
+const balance = balanceResult.value;
 // total: 150
 
 // Вариант 1: Размораживание (отмена)
-const unfrozen = expectOk(TokenBalanceService.unfreezeReserved(
+const unfrozenResult = TokenBalanceService.unfreezeReserved(
   balance,
   Quantity.of(new Decimal(30))
-));
+);
+if (!unfrozenResult.ok) return;
+
+const unfrozen = unfrozenResult.value;
 // available: 130 (+30), reserved: 20 (-30), total: 150 (без изменений)
 
 // Вариант 2: Списание (исполнение)
-const consumed = expectOk(TokenBalanceService.consumeReserved(
+const consumedResult = TokenBalanceService.consumeReserved(
   balance,
   Quantity.of(new Decimal(30))
-));
+);
+if (!consumedResult.ok) return;
+
+const consumed = consumedResult.value;
 // available: 100 (без изменений), reserved: 20 (-30), total: 120 (-30)
 ```
 
@@ -165,7 +176,16 @@ const consumed = expectOk(TokenBalanceService.consumeReserved(
 
 ```typescript
 // Предположим у нас есть баланс (созданный ранее)
-const currentBalance = balance; // баланс из предыдущих примеров
+const currentBalanceResult = TokenBalanceService.create(
+  token,
+  Quantity.of(new Decimal(100)),
+  Quantity.of(new Decimal(20)),
+  accountId,
+  venueId
+);
+if (!currentBalanceResult.ok) return;
+
+const currentBalance = currentBalanceResult.value;
 
 // Получили обновление баланса из blockchain: 150 токенов
 const newAvailable = Quantity.of(new Decimal(150));
@@ -191,14 +211,19 @@ console.log(updatedBalance.reserved().value().toNumber());  // 20 (без изм
 
 ```typescript
 import { TokenBalanceSerializer } from '@polymarket/value-objects/token-balance';
+import { expectOk } from '@polymarket/result';
+import { isErr } from '@polymarket/result';
 
-const balance = expectOk(TokenBalanceService.create(
+const balanceResult = TokenBalanceService.create(
   token,
   Quantity.of(new Decimal(100)),
   Quantity.of(new Decimal(20)),
   accountId,
   venueId
-));
+);
+if (!balanceResult.ok) return;
+
+const balance = balanceResult.value;
 
 // Сериализация
 const json = TokenBalanceSerializer.toJSON(balance);

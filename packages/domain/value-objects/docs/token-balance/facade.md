@@ -496,18 +496,4 @@ if (isErr(result)) {
 
 ## Интеграция с QuantityService
 
-TokenBalanceService использует QuantityService для арифметических операций:
-
-```typescript
-// Пример использования QuantityService в TokenBalanceService
-// TokenBalanceService делегирует математические операции QuantityService
-// Это обеспечивает консистентность работы с Quantity во всей системе
-
-import { QuantityService } from '@polymarket/value-objects/quantity';
-
-// Внутри методов TokenBalanceService используются вызовы вида:
-const subtractResult = QuantityService.subtract(balance.available(), qty);
-const addResult = QuantityService.add(balance.reserved(), qty);
-
-// Все ошибки от QuantityService оборачиваются через wrapOp
-```
+TokenBalanceService использует QuantityService для арифметических операций, обеспечивая консистентность работы с Quantity во всей системе. Все ошибки от QuantityService автоматически оборачиваются через errorUtils.

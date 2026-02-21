@@ -141,6 +141,29 @@ describe('ValidateMarketCrossing', () => {
 
       expect(result.ok).toBe(true);
     });
+
+    it('returns Err когда обе стороны пересекают рынок', () => {
+      // Создаём ситуацию где bid пересекает orderbook ask
+      const crossingQuote = Quote.of(
+        Price.of(new Decimal(0.52)), // наш bid >= orderbook ask (0.51)
+        Price.of(new Decimal(0.53)), // валидный ask > bid
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now())
+      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+
+      const orderbookBid = Price.of(new Decimal(0.50));
+      const orderbookAsk = Price.of(new Decimal(0.51));
+
+      const result = ValidateMarketCrossing.checkQuote(crossingQuote, orderbookBid, orderbookAsk);
+
+      // Должна вернуться ошибка (bid пересекает)
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.MARKET_CROSSING);
+        expect(result.error.context?.side).toBe('bid');
+      }
+    });
   });
 
   describe('crossesMarket()', () => {

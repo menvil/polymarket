@@ -3,20 +3,20 @@ import { ValidateTokenMatch } from '../../../../src/token-balance/rules/Validate
 import { OutcomeToken } from '../../../../src/outcome-token/core/OutcomeToken.js';
 import { TokenBalanceErrorReason } from '../../../../src/token-balance/errors/TokenBalanceErrorReason.js';
 import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
-import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
+import type { OnChainConditionRef, ConditionId, ChainId } from '@polymarket/ids';
 
 describe('ValidateTokenMatch', () => {
   const conditionRef1: OnChainConditionRef = {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as any,
+    chainId: 137 as ChainId,
     conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
   };
 
   const conditionRef2: OnChainConditionRef = {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as any,
+    chainId: 137 as ChainId,
     conditionId: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd' as ConditionId,
   };
 
@@ -91,7 +91,7 @@ describe('ValidateTokenMatch', () => {
       const conditionRefEthereum: OnChainConditionRef = {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-        chainId: 1 as any,  // Ethereum mainnet
+        chainId: 1 as ChainId,  // Ethereum mainnet
         conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
       };
 

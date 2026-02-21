@@ -491,10 +491,16 @@ if (parseResult.ok) {
 
 ```typescript
 // Создание → Сериализация → Десериализация
-const original = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET', 1234567890000).value;
+const originalResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET', 1234567890000);
+if (!originalResult.ok) return;
+
+const original = originalResult.value;
 
 const jsonString = QuoteSerializer.toJSONString(original);
-const restored = QuoteSerializer.fromJSONString(jsonString).value;
+const restoredResult = QuoteSerializer.fromJSONString(jsonString);
+if (!restoredResult.ok) return;
+
+const restored = restoredResult.value;
 
 // equals() сравнивает рыночные данные
 console.log(original.equals(restored));  // true
@@ -671,7 +677,8 @@ await mm.updateQuote(
 ### Quote Aggregator
 
 ```typescript
-import { QuoteService, QuoteFormatter } from '@polymarket/value-objects/quote';
+import { QuoteService, QuoteFormatter, type Quote } from '@polymarket/value-objects/quote';
+import { Price } from '@polymarket/value-objects/price';
 import Decimal from 'decimal.js';
 
 class QuoteAggregator {

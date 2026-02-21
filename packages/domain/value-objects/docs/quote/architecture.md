@@ -42,6 +42,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 │  │  ValidateMinSpread - spread >= minSpread                  │ │
 │  │  ValidateMaxSpread - spread <= maxSpread                  │ │
 │  │  ValidateMarketCrossing - проверка crossing               │ │
+│  │  ValidateAge - проверка свежести котировки (с IClock)     │ │
 │  └───────────────────────────────────────────────────────────┘ │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
@@ -375,11 +376,25 @@ class ValidateXxx {
 
 ```typescript
 if (bid !== null && !bidSize.isPositive()) {
-  return Err(QuoteErrorReason.BID_SIZE_MUST_BE_POSITIVE);
+  return Err(
+    new InvalidQuoteError('Bid size must be positive when bid price is defined', {
+      context: {
+        reason: QuoteErrorReason.BID_SIZE_MUST_BE_POSITIVE,
+        bidSize: bidSize.value().toNumber()
+      }
+    })
+  );
 }
 
 if (ask !== null && !askSize.isPositive()) {
-  return Err(QuoteErrorReason.ASK_SIZE_MUST_BE_POSITIVE);
+  return Err(
+    new InvalidQuoteError('Ask size must be positive when ask price is defined', {
+      context: {
+        reason: QuoteErrorReason.ASK_SIZE_MUST_BE_POSITIVE,
+        askSize: askSize.value().toNumber()
+      }
+    })
+  );
 }
 ```
 
@@ -391,7 +406,15 @@ if (ask !== null && !askSize.isPositive()) {
 
 ```typescript
 if (spread.lessThan(minSpread)) {
-  return Err(QuoteErrorReason.SPREAD_TOO_NARROW);
+  return Err(
+    new InvalidQuoteError('Spread is too narrow', {
+      context: {
+        reason: QuoteErrorReason.SPREAD_TOO_NARROW,
+        spread: spread.toNumber(),
+        minSpread: minSpread.toNumber()
+      }
+    })
+  );
 }
 ```
 
@@ -403,7 +426,15 @@ if (spread.lessThan(minSpread)) {
 
 ```typescript
 if (spread.greaterThan(maxSpread)) {
-  return Err(QuoteErrorReason.SPREAD_TOO_WIDE);
+  return Err(
+    new InvalidQuoteError('Spread is too wide', {
+      context: {
+        reason: QuoteErrorReason.SPREAD_TOO_WIDE,
+        spread: spread.toNumber(),
+        maxSpread: maxSpread.toNumber()
+      }
+    })
+  );
 }
 ```
 
@@ -417,20 +448,32 @@ if (spread.greaterThan(maxSpread)) {
 // Проверка bid стороны
 if (quoteBid !== null && orderbookAsk !== null) {
   if (quoteBid >= orderbookAsk) {
-    return Err({
-      reason: QuoteErrorReason.MARKET_CROSSING,
-      side: 'bid'
-    });
+    return Err(
+      new InvalidQuoteError('Quote bid crosses orderbook ask', {
+        context: {
+          reason: QuoteErrorReason.MARKET_CROSSING,
+          side: 'bid',
+          quoteBid: quoteBid.value().toNumber(),
+          orderbookAsk: orderbookAsk.value().toNumber()
+        }
+      })
+    );
   }
 }
 
 // Проверка ask стороны
 if (quoteAsk !== null && orderbookBid !== null) {
   if (quoteAsk <= orderbookBid) {
-    return Err({
-      reason: QuoteErrorReason.MARKET_CROSSING,
-      side: 'ask'
-    });
+    return Err(
+      new InvalidQuoteError('Quote ask crosses orderbook bid', {
+        context: {
+          reason: QuoteErrorReason.MARKET_CROSSING,
+          side: 'ask',
+          quoteAsk: quoteAsk.value().toNumber(),
+          orderbookBid: orderbookBid.value().toNumber()
+        }
+      })
+    );
   }
 }
 ```

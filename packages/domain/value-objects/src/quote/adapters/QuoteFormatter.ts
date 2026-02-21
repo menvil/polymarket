@@ -75,6 +75,29 @@ export interface QuoteFormatOptions {
  */
 export class QuoteFormatter {
   /**
+   * Приводит количество десятичных знаков к валидному значению
+   *
+   * @param decimals - Количество десятичных знаков (может быть невалидным)
+   * @param defaultValue - Значение по умолчанию если невалидно
+   * @returns Валидное количество десятичных знаков
+   *
+   * @remarks
+   * Проверяет что decimals:
+   * - Finite (не NaN, не Infinity)
+   * - Integer (целое число)
+   * - >= 0 (неотрицательное)
+   *
+   * Если невалидно, возвращает defaultValue.
+   *
+   * @internal
+   */
+  private static sanitizeDecimals(decimals: number, defaultValue: number): number {
+    if (!Number.isFinite(decimals) || !Number.isInteger(decimals) || decimals < 0) {
+      return defaultValue;
+    }
+    return decimals;
+  }
+  /**
    * Форматирует Quote в читаемый вид "bid @ size / ask @ size"
    *
    * @param quote - Quote для форматирования
@@ -98,8 +121,8 @@ export class QuoteFormatter {
    * ```
    */
   public static toDisplay(quote: Quote, options: QuoteFormatOptions = {}): string {
-    const priceDecimals = options.priceDecimals ?? 4;
-    const sizeDecimals = options.sizeDecimals ?? 2;
+    const priceDecimals = QuoteFormatter.sanitizeDecimals(options.priceDecimals ?? 4, 4);
+    const sizeDecimals = QuoteFormatter.sanitizeDecimals(options.sizeDecimals ?? 2, 2);
 
     const bidStr = quote.hasBid()
       ? `${quote.bid()!.value().toFixed(priceDecimals)} @ ${quote.bidSize().value().toFixed(sizeDecimals)}`
@@ -288,23 +311,22 @@ export class QuoteFormatter {
       lines.push(`Mid    ${midDecimal.toFixed(priceDecimals)}`);
     }
 
-    if (options.includeTimestamp) {
+    // Добавляем separator только если есть хотя бы одно из дополнительных полей
+    const hasAdditionalFields = options.includeTimestamp || options.includeSource || options.includeInstrument;
+    if (hasAdditionalFields) {
       lines.push(separator);
+    }
+
+    if (options.includeTimestamp) {
       const timestamp = new Date(quote.timestampMs().toNumber()).toISOString();
       lines.push(`Time:  ${timestamp}`);
     }
 
     if (options.includeSource) {
-      if (!options.includeTimestamp) {
-        lines.push(separator);
-      }
       lines.push(`Source: ${quote.sourceId()}`);
     }
 
     if (options.includeInstrument) {
-      if (!options.includeTimestamp && !options.includeSource) {
-        lines.push(separator);
-      }
       lines.push(`Instrument: ${quote.instrumentId()}`);
     }
 

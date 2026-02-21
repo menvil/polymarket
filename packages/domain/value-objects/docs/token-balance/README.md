@@ -17,8 +17,8 @@ TokenBalance инкапсулирует логику управления ток
 import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
 import { Quantity } from '@polymarket/value-objects/quantity';
-import { BinaryOutcome, KnownOnChainProtocols, KnownVenues } from '@polymarket/ids';
-import type { OnChainConditionRef, AccountId, VenueId } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols, KnownVenues, KnownChainIds } from '@polymarket/ids';
+import type { OnChainConditionRef, AccountId, VenueId, ConditionId } from '@polymarket/ids';
 import { parseWalletAddress, accountIdFromWallet } from '@polymarket/ids';
 import { isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
@@ -27,8 +27,8 @@ import Decimal from 'decimal.js';
 const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-  chainId: 137 as any,
-  conditionId: '0x...' as any
+  chainId: KnownChainIds.POLYGON,
+  conditionId: '0xabc...' as ConditionId
 };
 
 const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);

@@ -83,7 +83,7 @@ describe('QuoteService Ratio Operations', () => {
       if (result.ok) {
         expect(result.value.sourceId()).toBe(quote.sourceId());
         expect(result.value.instrumentId()).toBe(quote.instrumentId());
-        expect(result.value.timestampMs()).toBe(quote.timestampMs());
+        expect(result.value.timestampMs().equals(quote.timestampMs())).toBe(true);
       }
     });
 

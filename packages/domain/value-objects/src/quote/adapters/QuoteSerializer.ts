@@ -461,6 +461,24 @@ export class QuoteSerializer {
       );
     }
 
+    // Шаг 14a: Проверка что sourceId не пустой и не состоит только из пробелов
+    if (sourceId.trim().length === 0) {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid value for field 'sourceId': must not be empty or whitespace`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'sourceId', value: sourceId },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
     // Шаг 15: Проверка типа instrumentId
     if (typeof instrumentId !== 'string') {
       return Err(
@@ -472,6 +490,24 @@ export class QuoteSerializer {
               service: QuoteSerializer.SERVICE_NAME,
               op,
               raw: { field: 'instrumentId', value: String(instrumentId), type: typeof instrumentId },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
+    // Шаг 15a: Проверка что instrumentId не пустой и не состоит только из пробелов
+    if (instrumentId.trim().length === 0) {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid value for field 'instrumentId': must not be empty or whitespace`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'instrumentId', value: instrumentId },
               reason: QuoteErrorReason.INVALID_FORMAT
             }
           }

@@ -14,8 +14,6 @@
  * НЕ использует Jest — это чистый Node.js ESM скрипт
  */
 
-import Decimal from 'decimal.js';
-
 const PASS = '  ✓';
 const FAIL = '  ✗';
 
@@ -242,21 +240,48 @@ await testSubpath('token-balance', async () => {
     'ValidateReserveAmount', 'ValidateReleaseAmount', 'ValidateTokenMatch',
   ], 'token-balance');
 
-  // Note: Runtime validation (create→serialize→deserialize roundtrip) is skipped in smoke test
-  // due to complex dependencies on OutcomeToken and AssetIdHelpers.
-  // Full integration tests for TokenBalance are covered in the main test suite.
-  console.log(`${PASS} All exports available`);
+  // Runtime roundtrip: create→serialize→deserialize
+  const outcomeTokenMod = await import('@polymarket/value-objects/outcome-token');
+  const assetQtyMod = await import('@polymarket/value-objects/asset-quantity');
+
+  const { BinaryOutcome, KnownOnChainProtocols } = await import('@polymarket/ids');
+  const conditionRef = {
+    kind: 'ONCHAIN',
+    protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+    chainId: 137,
+    conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
+  };
+  const token = outcomeTokenMod.OutcomeToken.of(conditionRef, BinaryOutcome.UP);
+  const availableResult = assetQtyMod.AssetQuantityService.createOutcomeToken(token, 100);
+  const reservedResult = assetQtyMod.AssetQuantityService.createOutcomeToken(token, 50);
+
+  if (!availableResult.ok) throw new Error(`AssetQuantityService.createOutcomeToken(available) failed: ${availableResult.error.message}`);
+  if (!reservedResult.ok) throw new Error(`AssetQuantityService.createOutcomeToken(reserved) failed: ${reservedResult.error.message}`);
+
+  const createResult = m.TokenBalanceService.create(availableResult.value, reservedResult.value);
+  if (!createResult.ok) throw new Error(`TokenBalanceService.create() failed: ${createResult.error.message}`);
+  console.log(`${PASS} TokenBalanceService.create() works`);
+
+  const json = m.TokenBalanceSerializer.toJSON(createResult.value);
+  const fromJson = m.TokenBalanceSerializer.fromJSON(json);
+  if (!fromJson.ok) throw new Error(`TokenBalanceSerializer roundtrip failed: ${fromJson.error.message}`);
+  console.log(`${PASS} TokenBalanceSerializer roundtrip works`);
 });
 
 // ─── main export (.) ─────────────────────────────────────────────────────────
 await testSubpath('main (.)', async () => {
   const m = await import('@polymarket/value-objects');
   await checkExports(m, [
-    'Money', 'MoneyService', 'Price', 'PriceService',
-    'Quantity', 'QuantityService', 'Ratio', 'RatioService',
-    'Spread', 'SpreadService', 'Balance', 'BalanceService',
-    'Quote', 'QuoteService', 'AssetQuantity', 'AssetQuantityService',
-    'OutcomeToken', 'TokenBalance', 'TokenBalanceService',
+    'Money', 'MoneyService', 'MoneySerializer', 'MoneyFormatter',
+    'Price', 'PriceService', 'PriceSerializer', 'PriceFormatter',
+    'Quantity', 'QuantityService', 'QuantitySerializer', 'QuantityFormatter',
+    'Ratio', 'RatioService', 'RatioSerializer', 'RatioFormatter',
+    'Spread', 'SpreadService', 'SpreadSerializer', 'SpreadFormatter',
+    'Balance', 'BalanceService', 'BalanceSerializer', 'BalanceFormatter',
+    'Quote', 'QuoteService', 'QuoteSerializer', 'QuoteFormatter',
+    'AssetQuantity', 'AssetQuantityService', 'AssetQuantitySerializer', 'AssetQuantityFormatter',
+    'OutcomeToken', 'OutcomeTokenService', 'OutcomeTokenSerializer', 'OutcomeTokenFormatter',
+    'TokenBalance', 'TokenBalanceService', 'TokenBalanceSerializer', 'TokenBalanceFormatter',
   ], '.');
 });
 

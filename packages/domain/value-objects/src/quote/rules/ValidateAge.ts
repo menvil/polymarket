@@ -87,6 +87,22 @@ export class ValidateAge {
     maxAgeMs: number,
     clock: IClock
   ): Result<void, InvalidQuoteError> {
+    // Validate maxAgeMs parameter
+    if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid maxAgeMs: must be finite and non-negative, got ${maxAgeMs}`,
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              reason: QuoteErrorReason.INVALID_FORMAT,
+              maxAgeMs
+            }
+          }
+        )
+      );
+    }
+
     const currentTimeMs = clock.now().getTime();
     const quoteTimeMs = quote.timestampMs().toNumber();
     const ageMs = currentTimeMs - quoteTimeMs;

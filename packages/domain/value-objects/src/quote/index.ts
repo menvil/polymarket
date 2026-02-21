@@ -143,6 +143,9 @@ export type { QuoteFormatOptions } from './adapters/index.js';
  * Enum со всеми возможными причинами ошибок при работе с котировками:
  * - BOTH_SIDES_NULL - отсутствуют bid и ask
  * - BID_GREATER_THAN_ASK - bid >= ask
+ * - INVALID_TIMESTAMP - невалидный timestamp (не finite, не integer, отрицательный, или превышает максимум)
+ * - INCONSISTENT_BID_SIZE - bid=null но bidSize>0 (структурная несогласованность)
+ * - INCONSISTENT_ASK_SIZE - ask=null но askSize>0 (структурная несогласованность)
  * - INVALID_FORMAT - ошибка парсинга
  * - INVALID_BID - невалидная цена bid
  * - INVALID_ASK - невалидная цена ask
@@ -153,6 +156,7 @@ export type { QuoteFormatOptions } from './adapters/index.js';
  * - SPREAD_TOO_NARROW - spread меньше минимального
  * - SPREAD_TOO_WIDE - spread больше максимального
  * - MARKET_CROSSING - котировка пересекает рынок
+ * - QUOTE_TOO_OLD - котировка устарела (превышен максимальный возраст)
  */
 export { QuoteErrorReason } from './errors/index.js';
 

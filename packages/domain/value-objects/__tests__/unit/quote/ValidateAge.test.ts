@@ -188,6 +188,23 @@ describe('ValidateAge', () => {
         expect(result.error.context?.source).toBe(ErrorSource.RULE_VALIDATION);
       }
     });
+
+    it('должен вернуть ошибку для будущего timestamp (ageMs < 0)', () => {
+      // Создаём котировку с timestamp в будущем
+      const futureTime = clock.now().getTime() + 10000;
+      const quote = createQuote(futureTime);
+
+      // Проверяем с maxAge = 5000ms
+      const result = ValidateAge.check(quote, 5000, clock);
+
+      // Возраст отрицательный (котировка из будущего), должна вернуться ошибка
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_TIMESTAMP);
+        expect(result.error.context?.ageMs).toBeLessThan(0);
+        expect(result.error.message).toContain('future');
+      }
+    });
   });
 
   describe('Integration with IClock', () => {

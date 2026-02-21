@@ -196,20 +196,28 @@ if (orderQty.ok) {
 Котировка с ценой покупки (bid) и продажи (ask).
 
 ```typescript
-import { Quote } from '@polymarket/value-objects';
-import { unwrap } from '@polymarket/result';
+import { QuoteService, QuoteFormatter } from '@polymarket/value-objects/quote';
+import { KnownMarketDataSources, asInstrumentId } from '@polymarket/ids';
 
-const bid = unwrap(Price.fromValue(0.54));
-const ask = unwrap(Price.fromValue(0.56));
+const result = QuoteService.create(
+  0.54,  // bid price
+  0.56,  // ask price
+  100,   // bid size
+  150,   // ask size
+  KnownMarketDataSources.POLYMARKET_WS,
+  asInstrumentId('ETH-USD')!
+);
 
-const quote = Quote.create(bid, ask);
-quote.match({
-  ok: (q) => {
-    console.log(q.getSpread().getValue()); // 0.02 (2%)
-    console.log(q.getMidPrice().getValue()); // 0.55
-  },
-  err: (error) => console.error(error)
-});
+if (!result.ok) {
+  console.error(result.error.message);
+  return;
+}
+
+const quote = result.value;
+console.log(quote.spreadWidthOrZero().toNumber());      // 0.02
+console.log(quote.midOrNull()?.toNumber());             // 0.55
+console.log(QuoteFormatter.toDisplay(quote));
+// "0.5400 @ 100.00 / 0.5600 @ 150.00"
 ```
 
 ---
@@ -467,23 +475,33 @@ npm run clean
 ```text
 packages/domain/value-objects/
 ├── src/
-│   ├── Money.ts           # Money value object
-│   ├── Balance.ts         # Balance value object
-│   ├── Percentage.ts      # Percentage value object
-│   ├── Price.ts           # Price value object
-│   ├── Quantity.ts        # Quantity value object
-│   ├── Quote.ts           # Quote value object
-│   ├── Spread.ts          # Spread value object
+│   ├── price/             # Price value object
+│   ├── quantity/          # Quantity value object
+│   ├── quote/             # Quote value object
+│   ├── spread/            # Spread value object
+│   ├── ratio/             # Ratio value object
+│   ├── outcome-token/     # OutcomeToken value object
+│   ├── token-balance/     # TokenBalance value object
 │   └── index.ts           # Barrel exports
 ├── __tests__/
 │   └── unit/
-│       ├── Money.test.ts       # 77 тестов
-│       ├── Percentage.test.ts  # 95 тестов
-│       └── Balance.test.ts     # 29 тестов
+│       ├── price/
+│       ├── quantity/
+│       ├── quote/
+│       ├── spread/
+│       ├── ratio/
+│       ├── outcome-token/
+│       └── token-balance/
 ├── docs/
-│   ├── money.md           # Money документация
-│   └── percentage.md      # Percentage документация
-└── README.md              # Этот файл
+│   ├── price/             # Price документация
+│   ├── quantity/          # Quantity документация
+│   ├── quote/             # Quote документация
+│   ├── spread/            # Spread документация
+│   ├── ratio/             # Ratio документация
+│   ├── outcome-token/     # OutcomeToken документация
+│   ├── token-balance/     # TokenBalance документация
+│   └── README.md          # Этот файл
+└── README.md              # Пакетный README
 ```
 
 ### Тесты
@@ -504,9 +522,9 @@ npm run test:watch
 
 **Статистика тестов:**
 
-- Money: 77 тестов ✅
-- Percentage: 95 тестов ✅
-- Всего: 172 теста ✅
+- Все тесты passing ✅
+- Высокое покрытие кода
+- Comprehensive test suites для всех value objects
 
 ## Примеры использования
 
@@ -646,5 +664,5 @@ MIT
 ## Поддержка
 
 - **Документация:** [docs/](./docs/)
-- **Issues:** [GitHub Issues](https://github.com/polymarket/polymarket/issues)
-- **Tests:** 201/201 passing ✅ (Money: 77, Percentage: 95, Balance: 29)
+- **Issues:** [GitHub Issues](https://github.com/menvil/polymarket/issues)
+- **Tests:** All passing ✅

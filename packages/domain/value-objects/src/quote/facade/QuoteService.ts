@@ -819,57 +819,19 @@ export class QuoteService {
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
-      // Конвертируем в Quantity если нужно
-      let bidSize: Quantity;
-      if (newBidSize instanceof Quantity) {
-        bidSize = newBidSize;
-      } else {
-        const bidSizeResult = QuantityService.create(newBidSize);
-        if (isErr(bidSizeResult)) {
-          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
-          return Err(
-            rewrap(
-              QuoteService.SERVICE_NAME,
-              op,
-              {
-                component: 'bidSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
-                reason: QuoteErrorReason.INVALID_BID_SIZE, // Override reason
-                cause: toCause(bidSizeResult.error) // Add cause
-              },
-              bidSizeResult.error, // Передаём оригинальную ошибку
-              InvalidQuoteError
-            )
-          );
-        }
-        bidSize = bidSizeResult.value;
+      // Конвертируем в Quantity через helper
+      const bidSizeResult = QuoteService.parseSizeValue(newBidSize, 'bidSize', op);
+      if (isErr(bidSizeResult)) {
+        return bidSizeResult;
       }
 
-      let askSize: Quantity;
-      if (newAskSize instanceof Quantity) {
-        askSize = newAskSize;
-      } else {
-        const askSizeResult = QuantityService.create(newAskSize);
-        if (isErr(askSizeResult)) {
-          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
-          return Err(
-            rewrap(
-              QuoteService.SERVICE_NAME,
-              op,
-              {
-                component: 'askSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
-                reason: QuoteErrorReason.INVALID_ASK_SIZE, // Override reason
-                cause: toCause(askSizeResult.error) // Add cause
-              },
-              askSizeResult.error, // Передаём оригинальную ошибку
-              InvalidQuoteError
-            )
-          );
-        }
-        askSize = askSizeResult.value;
+      const askSizeResult = QuoteService.parseSizeValue(newAskSize, 'askSize', op);
+      if (isErr(askSizeResult)) {
+        return askSizeResult;
       }
 
       // Делегируем в updateSizesInternal с оригинальным timestamp
-      return QuoteService.updateSizesInternal(quote, bidSize, askSize, quote.timestampMs());
+      return QuoteService.updateSizesInternal(quote, bidSizeResult.value, askSizeResult.value, quote.timestampMs());
     }, InvalidQuoteError);
   }
 
@@ -919,57 +881,19 @@ export class QuoteService {
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
-      // Конвертируем в Quantity если нужно
-      let bidSize: Quantity;
-      if (newBidSize instanceof Quantity) {
-        bidSize = newBidSize;
-      } else {
-        const bidSizeResult = QuantityService.create(newBidSize);
-        if (isErr(bidSizeResult)) {
-          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
-          return Err(
-            rewrap(
-              QuoteService.SERVICE_NAME,
-              op,
-              {
-                component: 'bidSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
-                reason: QuoteErrorReason.INVALID_BID_SIZE, // Override reason
-                cause: toCause(bidSizeResult.error) // Add cause
-              },
-              bidSizeResult.error, // Передаём оригинальную ошибку
-              InvalidQuoteError
-            )
-          );
-        }
-        bidSize = bidSizeResult.value;
+      // Конвертируем в Quantity через helper
+      const bidSizeResult = QuoteService.parseSizeValue(newBidSize, 'bidSize', op);
+      if (isErr(bidSizeResult)) {
+        return bidSizeResult;
       }
 
-      let askSize: Quantity;
-      if (newAskSize instanceof Quantity) {
-        askSize = newAskSize;
-      } else {
-        const askSizeResult = QuantityService.create(newAskSize);
-        if (isErr(askSizeResult)) {
-          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
-          return Err(
-            rewrap(
-              QuoteService.SERVICE_NAME,
-              op,
-              {
-                component: 'askSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
-                reason: QuoteErrorReason.INVALID_ASK_SIZE, // Override reason
-                cause: toCause(askSizeResult.error) // Add cause
-              },
-              askSizeResult.error, // Передаём оригинальную ошибку
-              InvalidQuoteError
-            )
-          );
-        }
-        askSize = askSizeResult.value;
+      const askSizeResult = QuoteService.parseSizeValue(newAskSize, 'askSize', op);
+      if (isErr(askSizeResult)) {
+        return askSizeResult;
       }
 
       // Делегируем в updateSizesInternal с новым timestamp от clock
-      return QuoteService.updateSizesInternal(quote, bidSize, askSize, new Decimal(clock.now().getTime()));
+      return QuoteService.updateSizesInternal(quote, bidSizeResult.value, askSizeResult.value, new Decimal(clock.now().getTime()));
     }, InvalidQuoteError);
   }
 
@@ -1374,7 +1298,7 @@ export class QuoteService {
       () => {
         // 1. Validate two-sided quote (required for accessing spread)
         if (!quote.spread()) {
-          throw new InvalidQuoteError(
+          return Err(new InvalidQuoteError(
             () => 'Cannot scale sizes for one-sided quote',
             {
               context: {
@@ -1384,12 +1308,12 @@ export class QuoteService {
                 ask: quote.ask()?.value()?.toString() ?? 'null',
               },
             }
-          );
+          ));
         }
 
         // 2. Validate sizeFactor > 0
         if (sizeFactor.toDecimal().lessThanOrEqualTo(0)) {
-          throw new InvalidQuoteError(
+          return Err(new InvalidQuoteError(
             () => 'Size factor must be positive',
             {
               context: {
@@ -1398,7 +1322,7 @@ export class QuoteService {
                 sizeFactor: sizeFactor.toDecimal().toString(),
               },
             }
-          );
+          ));
         }
 
         // 3. Scale bid size
@@ -1408,7 +1332,7 @@ export class QuoteService {
         );
 
         if (isErr(newBidSizeResult)) {
-          throw new InvalidQuoteError(
+          return Err(new InvalidQuoteError(
             (ctx) => `Cannot scale bid size: ${ctx.quantityError}`,
             {
               context: {
@@ -1419,7 +1343,7 @@ export class QuoteService {
                 quantityError: newBidSizeResult.error.message,
               },
             }
-          );
+          ));
         }
 
         // 4. Scale ask size
@@ -1429,7 +1353,7 @@ export class QuoteService {
         );
 
         if (isErr(newAskSizeResult)) {
-          throw new InvalidQuoteError(
+          return Err(new InvalidQuoteError(
             (ctx) => `Cannot scale ask size: ${ctx.quantityError}`,
             {
               context: {
@@ -1440,7 +1364,7 @@ export class QuoteService {
                 quantityError: newAskSizeResult.error.message,
               },
             }
-          );
+          ));
         }
 
         // 5. Create new Quote with same spread, new sizes
@@ -1463,6 +1387,53 @@ export class QuoteService {
   // ============================================================================
   // Private Helpers
   // ============================================================================
+
+  /**
+   * Helper: парсит размеры из гибкого типа (Decimal | number | string | Quantity)
+   *
+   * @internal
+   * @param value - Значение для парсинга
+   * @param field - Название поля ('bidSize' или 'askSize')
+   * @param op - Название операции для error context
+   * @returns Result с Quantity или InvalidQuoteError
+   *
+   * @remarks
+   * Централизует логику парсинга размеров для updateSizes и updateSizesWithRefresh.
+   * Если value уже Quantity, возвращает его напрямую.
+   * Иначе создаёт через QuantityService.create().
+   */
+  private static parseSizeValue(
+    value: Decimal | number | string | Quantity,
+    field: 'bidSize' | 'askSize',
+    op: string
+  ): Result<Quantity, InvalidQuoteError> {
+    if (value instanceof Quantity) {
+      return Ok(value);
+    }
+
+    const result = QuantityService.create(value);
+    if (isErr(result)) {
+      const reason = field === 'bidSize'
+        ? QuoteErrorReason.INVALID_BID_SIZE
+        : QuoteErrorReason.INVALID_ASK_SIZE;
+
+      return Err(
+        rewrap(
+          QuoteService.SERVICE_NAME,
+          op,
+          {
+            component: field,
+            reason,
+            cause: toCause(result.error)
+          },
+          result.error,
+          InvalidQuoteError
+        )
+      );
+    }
+
+    return Ok(result.value);
+  }
 
   /**
    * Helper: создаёт Price из Decimal (с обработкой null)

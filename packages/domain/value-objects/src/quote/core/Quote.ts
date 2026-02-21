@@ -35,13 +35,18 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  *
  * @example
  * ```typescript
+ * import { KnownMarketDataSources } from '@polymarket/ids';
+ * import Decimal from 'decimal.js';
+ *
  * // ✅ В Core и Facade (throws)
  * const quote = Quote.of(
  *   Price.of(0.48),
  *   Price.of(0.52),
  *   Quantity.of(100),
  *   Quantity.of(150),
- *   Date.now()
+ *   new Decimal(Date.now()),
+ *   KnownMarketDataSources.POLYMARKET_WS,
+ *   'TEST_MARKET' as InstrumentId
  * );
  *
  * // One-sided quote
@@ -50,7 +55,9 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  *   null,
  *   Quantity.of(100),
  *   Quantity.ZERO,
- *   Date.now()
+ *   new Decimal(Date.now()),
+ *   KnownMarketDataSources.POLYMARKET_WS,
+ *   'TEST_MARKET' as InstrumentId
  * );
  *
  * // Query methods (чистая математика)
@@ -59,7 +66,11 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  * const mid = quote.midOrNull(); // Decimal | null
  *
  * // ❌ В публичном коде - используй QuoteService:
- * const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
+ * const result = QuoteService.create(
+ *   0.48, 0.52, 100, 150,
+ *   KnownMarketDataSources.POLYMARKET_WS,
+ *   'TEST_MARKET' as InstrumentId
+ * );
  * if (!result.ok) {
  *   console.error(result.error);
  * }
