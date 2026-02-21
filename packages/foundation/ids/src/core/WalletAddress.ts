@@ -94,20 +94,31 @@ export function parseWalletAddress(address: string): WalletAddress | undefined {
  * @returns true если addresses идентичны
  *
  * @remarks
- * WalletAddress гарантированно хранится в canonical lowercase формате
- * (parseWalletAddress всегда нормализует через toLowerCase).
- * Поэтому достаточно строгого равенства без дополнительной нормализации.
+ * Выполняет defensive normalization через toLowerCase() для обоих входов,
+ * чтобы толерантно обрабатывать значения, которые могли обойти parseWalletAddress
+ * (например, через неправильный каст `as WalletAddress`).
+ *
+ * Хотя parseWalletAddress всегда возвращает canonical lowercase формат,
+ * walletAddressEquals намеренно добавляет защиту от некорректного использования
+ * типа WalletAddress без валидации.
  *
  * @example
  * ```typescript
  * const addr1 = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
  * const addr2 = parseWalletAddress('0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed')!;
  *
- * walletAddressEquals(addr1, addr2); // → true (both normalized to lowercase by parseWalletAddress)
+ * walletAddressEquals(addr1, addr2); // → true (тот же адрес, разный регистр)
+ *
+ * const addr3 = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+ * walletAddressEquals(addr1, addr3); // → false (разные адреса)
+ *
+ * // Защита от некорректных кастов (anti-pattern, но walletAddressEquals все равно работает):
+ * const badCast = '0x5AAEB6053F3E94C9B9A09F33669435E7EF1BEAED' as WalletAddress;
+ * walletAddressEquals(addr1, badCast); // → true (благодаря toLowerCase)
  * ```
  */
 export function walletAddressEquals(a: WalletAddress, b: WalletAddress): boolean {
-  return a === b;
+  return a.toLowerCase() === b.toLowerCase();
 }
 
 /**
@@ -122,6 +133,10 @@ export function walletAddressEquals(a: WalletAddress, b: WalletAddress): boolean
  * - Comparison и hashing
  * - Logging
  *
+ * Применяет defensive normalization через toLowerCase(), аналогично walletAddressEquals(),
+ * чтобы гарантировать canonical format даже если WalletAddress был создан без валидации
+ * (например, через некорректный cast `as WalletAddress`).
+ *
  * Для display в UI используй checksum format: viem getAddress() или ethers getAddress().
  *
  * @example
@@ -132,5 +147,6 @@ export function walletAddressEquals(a: WalletAddress, b: WalletAddress): boolean
  * ```
  */
 export function walletAddressToString(address: WalletAddress): string {
-  return address;
+  // Defensive canonicalization - зеркалирует поведение walletAddressEquals
+  return address.toLowerCase();
 }
