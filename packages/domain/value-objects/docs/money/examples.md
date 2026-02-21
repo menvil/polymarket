@@ -151,11 +151,12 @@ if (balanceResult.ok && tradeResult2.ok) {
 
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
+import type { SupportedCurrency } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 function calculateTotalSpent(
   transactions: Money[],
-  currency?: 'USDC' | 'USDT'
+  currency?: SupportedCurrency
 ): Money | { error: string } {
   if (transactions.length === 0) {
     if (!currency) {
