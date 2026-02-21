@@ -42,7 +42,7 @@ function processDeposit(userInput: string) {
 
 // Использование
 const deposit = processDeposit("100.50");
-if (deposit.success) {
+if ("success" in deposit) {
   console.log(`Deposit: $${deposit.amount.value()}`);
 }
 ```
@@ -341,11 +341,11 @@ if (!boughtResult.ok || !soldResult.ok) {
   if ('error' in profit) {
     console.error(profit.error);
   } else {
-    const amount = profit.value().toNumber();
-    if (amount > 0) {
-      console.log(`Profit: +$${amount}`);  // +$150
-    } else if (amount < 0) {
-      console.log(`Loss: -$${Math.abs(amount)}`);
+    const profitValue = profit.value();
+    if (profitValue.isPositive()) {
+      console.log(`Profit: +$${profitValue.toString()}`);  // +$150
+    } else if (profitValue.isNegative()) {
+      console.log(`Loss: -$${profitValue.abs().toString()}`);
     } else {
       console.log('Break even');
     }
@@ -506,7 +506,6 @@ example();
 
 ```typescript
 import { MoneyService, Money, MoneyErrorReason } from '@polymarket/value-objects/money';
-import { InvalidMoneyError } from '@polymarket/errors';
 
 function safeAdd(a: Money, b: Money): Money | null {
   const result = MoneyService.add(a, b);
