@@ -1042,17 +1042,33 @@ export class QuoteService {
 
         // Create new quote with transformed spread
         const newSpread = newSpreadResult.value;
-        const newQuote = Quote.of(
-          newSpread.bid()!,
-          newSpread.ask()!,
-          quote.bidSize(),
-          quote.askSize(),
-          quote.timestampMs(),
-          quote.sourceId(),
-          quote.instrumentId()
-        );
 
-        return Ok(newQuote);
+        try {
+          const newQuote = Quote.of(
+            newSpread.bid()!,
+            newSpread.ask()!,
+            quote.bidSize(),
+            quote.askSize(),
+            quote.timestampMs(),
+            quote.sourceId(),
+            quote.instrumentId()
+          );
+          return Ok(newQuote);
+        } catch (error) {
+          if (error instanceof QuoteInvariantViolation) {
+            return Err(
+              new InvalidQuoteError(error.message, {
+                context: {
+                  source: ErrorSource.CORE_INVARIANT,
+                  service: QuoteService.SERVICE_NAME,
+                  op: opName,
+                  reason: error.reason
+                }
+              })
+            );
+          }
+          throw error;
+        }
       },
       InvalidQuoteError
     );

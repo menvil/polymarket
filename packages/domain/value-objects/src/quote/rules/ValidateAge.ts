@@ -99,7 +99,7 @@ export class ValidateAge {
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
-              reason: QuoteErrorReason.QUOTE_TOO_OLD,
+              reason: QuoteErrorReason.INVALID_TIMESTAMP,
               ageMs,
               quoteTimestamp: quoteTimeMs,
               currentTimestamp: currentTimeMs

@@ -365,23 +365,6 @@ describe('Quote Core', () => {
       expect(age.toNumber()).toBeLessThan(6000);
     });
 
-    it('принимает Decimal для Unix ms', () => {
-      const timestamp = new Decimal(Date.now() - 5000);
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        timestamp
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
-
-      const now = new Decimal(Date.now());
-      const age = quote.age(now);
-
-      expect(age.toNumber()).toBeGreaterThanOrEqual(5000);
-      expect(age.toNumber()).toBeLessThan(6000);
-    });
-
     it('принимает Decimal', () => {
       const timestamp = new Decimal(Date.now() - 5000);
       const quote = Quote.of(

@@ -62,7 +62,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 │                                                                 │
 │  Errors (src/quote/errors/)                                     │
 │  ┌───────────────────────────────────────────────────────────┐ │
-│  │  QuoteErrorReason - typed enum (16 values)                │ │
+│  │  QuoteErrorReason - typed enum (22 values)                │ │
 │  │  - BOTH_SIDES_NULL, BID_GREATER_THAN_ASK                  │ │
 │  │  - INVALID_FORMAT, INVALID_BID, INVALID_ASK               │ │
 │  │  - INVALID_BID_SIZE, INVALID_ASK_SIZE                     │ │
