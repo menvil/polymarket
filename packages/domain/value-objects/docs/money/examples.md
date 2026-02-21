@@ -19,7 +19,7 @@
 ### Создание Money из пользовательского ввода
 
 ```typescript
-import { MoneyService, Money } from '@polymarket/value-objects/money';
+import { MoneyService, Money, MoneyErrorReason } from '@polymarket/value-objects/money';
 
 function processDeposit(userInput: string) {
   // Пользователь вводит сумму депозита
@@ -27,10 +27,10 @@ function processDeposit(userInput: string) {
 
   if (!result.ok) {
     // Показываем понятную ошибку
-    if (result.error.context?.reason === 'INVALID_FORMAT') {
+    if (result.error.context?.reason === MoneyErrorReason.INVALID_FORMAT) {
       return { error: 'Please enter a valid number' };
     }
-    if (result.error.context?.reason === 'EXCEEDS_MAX_AMOUNT') {
+    if (result.error.context?.reason === MoneyErrorReason.EXCEEDS_MAX_AMOUNT) {
       return { error: 'Amount is too large' };
     }
     return { error: 'Invalid amount' };
@@ -214,9 +214,9 @@ import Decimal from 'decimal.js';
 
 function calculateFee(amount: Money, feePercent: number): Money | { error: string } {
   // Процент в десятичную дробь (0.5% = 0.005)
-  const feeRate = (feePercent / 100).toString();
+  const feeRate = new Decimal(feePercent).div(100);
 
-  const result = MoneyService.multiply(amount, feeRate);
+  const result = MoneyService.multiply(amount, feeRate.toString());
 
   if (!result.ok) {
     return { error: `Fee calculation failed: ${result.error.message}` };
@@ -226,25 +226,45 @@ function calculateFee(amount: Money, feePercent: number): Money | { error: strin
 }
 
 // Использование
-const orderAmountResult = MoneyService.create(new Decimal(1000));
-if (!orderAmountResult.ok) {
-  console.error('Failed to create Money');
-  return;
+function example() {
+  const orderAmountResult = MoneyService.create(new Decimal(1000));
+  if (!orderAmountResult.ok) {
+    console.error('Failed to create Money');
+    return;
+  }
+
+  const orderAmount = orderAmountResult.value;
+  const fee = calculateFee(orderAmount, 0.2);  // 0.2% fee
+
+  if ('error' in fee) {
+    console.error(fee.error);
+  } else {
+    console.log(`Fee: $${fee.value()}`);  // $2.00
+  }
 }
 
-const orderAmount = orderAmountResult.value;
-const fee = calculateFee(orderAmount, 0.2);  // 0.2% fee
-
-if ('error' in fee) {
-  console.error(fee.error);
-} else {
-  console.log(`Fee: $${fee.value()}`);  // $2.00
-}
+example();
 ```
 
 ### Сумма с комиссией
 
 ```typescript
+import { MoneyService, Money } from '@polymarket/value-objects/money';
+import Decimal from 'decimal.js';
+
+function calculateFee(amount: Money, feePercent: number): Money | { error: string } {
+  // Процент в десятичную дробь (0.5% = 0.005)
+  const feeRate = new Decimal(feePercent).div(100);
+
+  const result = MoneyService.multiply(amount, feeRate.toString());
+
+  if (!result.ok) {
+    return { error: `Fee calculation failed: ${result.error.message}` };
+  }
+
+  return result.value;
+}
+
 function calculateTotalWithFee(
   baseAmount: Money,
   feePercent: number
@@ -263,20 +283,24 @@ function calculateTotalWithFee(
 }
 
 // Использование
-const orderCostResult = MoneyService.create(new Decimal(1000));
-if (!orderCostResult.ok) {
-  console.error('Failed to create Money');
-  return;
+function example() {
+  const orderCostResult = MoneyService.create(new Decimal(1000));
+  if (!orderCostResult.ok) {
+    console.error('Failed to create Money');
+    return;
+  }
+
+  const orderCost = orderCostResult.value;
+  const totalWithFee = calculateTotalWithFee(orderCost, 0.2);
+
+  if ('error' in totalWithFee) {
+    console.error(totalWithFee.error);
+  } else {
+    console.log(`Total (with fee): $${totalWithFee.value()}`);  // $1002.00
+  }
 }
 
-const orderCost = orderCostResult.value;
-const totalWithFee = calculateTotalWithFee(orderCost, 0.2);
-
-if ('error' in totalWithFee) {
-  console.error(totalWithFee.error);
-} else {
-  console.log(`Total (with fee): $${totalWithFee.value()}`);  // $1002.00
-}
+example();
 ```
 
 ---
@@ -350,26 +374,30 @@ function calculateROI(
 }
 
 // Использование
-const investedResult = MoneyService.create(new Decimal(1000), 'USDC');
-const currentValueResult = MoneyService.create(new Decimal(1150), 'USDC');
+function example() {
+  const investedResult = MoneyService.create(new Decimal(1000), 'USDC');
+  const currentValueResult = MoneyService.create(new Decimal(1150), 'USDC');
 
-if (!investedResult.ok || !currentValueResult.ok) {
-  console.error('Failed to create Money');
-  return;
-}
+  if (!investedResult.ok || !currentValueResult.ok) {
+    console.error('Failed to create Money');
+    return;
+  }
 
-const invested = investedResult.value;
-const currentValue = currentValueResult.value;
+  const invested = investedResult.value;
+  const currentValue = currentValueResult.value;
 
-const profitResult = MoneyService.subtract(currentValue, invested);
-if (profitResult.ok) {
-  const roi = calculateROI(profitResult.value, invested);
-  if ('error' in roi) {
-    console.error(roi.error);
-  } else {
-    console.log(`ROI: ${roi.toFixed(2)}%`);  // ROI: 15.00%
+  const profitResult = MoneyService.subtract(currentValue, invested);
+  if (profitResult.ok) {
+    const roi = calculateROI(profitResult.value, invested);
+    if ('error' in roi) {
+      console.error(roi.error);
+    } else {
+      console.log(`ROI: ${roi.toFixed(2)}%`);  // ROI: 15.00%
+    }
   }
 }
+
+example();
 ```
 
 ---
@@ -477,7 +505,7 @@ example();
 ### Обработка всех типов ошибок
 
 ```typescript
-import { MoneyService, Money } from '@polymarket/value-objects/money';
+import { MoneyService, Money, MoneyErrorReason } from '@polymarket/value-objects/money';
 import { InvalidMoneyError } from '@polymarket/errors';
 
 function safeAdd(a: Money, b: Money): Money | null {
@@ -486,9 +514,9 @@ function safeAdd(a: Money, b: Money): Money | null {
   if (!result.ok) {
     const { reason, expected, actual } = result.error.context || {};
 
-    if (reason === 'CURRENCY_MISMATCH') {
+    if (reason === MoneyErrorReason.CURRENCY_MISMATCH) {
       console.error(`Currency mismatch: ${expected} vs ${actual}`);
-    } else if (reason === 'EXCEEDS_MAX_AMOUNT') {
+    } else if (reason === MoneyErrorReason.EXCEEDS_MAX_AMOUNT) {
       console.error(`Arithmetic overflow: ${reason}`);
     } else {
       console.error(`Error: ${result.error.message}`);
@@ -506,16 +534,16 @@ function safeCreate(value: string): Money | null {
     const reason = result.error.context?.reason;
 
     switch (reason) {
-      case 'INVALID_FORMAT':
+      case MoneyErrorReason.INVALID_FORMAT:
         console.error('Invalid number format');
         break;
-      case 'EXCEEDS_MAX_AMOUNT':
+      case MoneyErrorReason.EXCEEDS_MAX_AMOUNT:
         console.error('Amount exceeds maximum (1e15)');
         break;
-      case 'NON_FINITE':
+      case MoneyErrorReason.NON_FINITE:
         console.error('Amount must be finite');
         break;
-      case 'NAN':
+      case MoneyErrorReason.NAN:
         console.error('Amount is NaN');
         break;
       default:
