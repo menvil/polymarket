@@ -4,13 +4,14 @@ import Decimal from 'decimal.js';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+import { Quote } from '../../../src/quote/core/Quote.js';
+import { ValidateAge } from '../../../src/quote/rules/ValidateAge.js';
+import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
+import { ErrorSource } from '@polymarket/errors';
 
 // Тестовые константы для sourceId и instrumentId
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
 const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
-import { Quote } from '../../../src/quote/core/Quote.js';
-import { ValidateAge } from '../../../src/quote/rules/ValidateAge.js';
-import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
 
 describe('ValidateAge', () => {
   const baseTime = new Date('2024-01-01T12:00:00Z');
@@ -184,7 +185,7 @@ describe('ValidateAge', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.source).toBe('rule_validation');
+        expect(result.error.context?.source).toBe(ErrorSource.RULE_VALIDATION);
       }
     });
   });

@@ -204,7 +204,7 @@ export class TokenBalanceSerializer {
 
     const obj = json as Record<string, unknown>;
 
-    // Проверка наличия token
+    // Проверка наличия всех обязательных полей
     if (!('token' in obj)) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
@@ -218,7 +218,6 @@ export class TokenBalanceSerializer {
       );
     }
 
-    // Проверка наличия available
     if (!('available' in obj)) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
@@ -232,7 +231,6 @@ export class TokenBalanceSerializer {
       );
     }
 
-    // Проверка наличия reserved
     if (!('reserved' in obj)) {
       return Err(
         InvalidTokenBalanceError.fromLegacy(
@@ -240,6 +238,119 @@ export class TokenBalanceSerializer {
           {
             reason: TokenBalanceErrorReason.INVALID_FORMAT,
             details: { json: safeStringify(json) },
+          },
+          source
+        )
+      );
+    }
+
+    if (!('accountId' in obj)) {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          "Missing required field 'accountId'",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { json: safeStringify(json) },
+          },
+          source
+        )
+      );
+    }
+
+    if (!('venueId' in obj)) {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          "Missing required field 'venueId'",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { json: safeStringify(json) },
+          },
+          source
+        )
+      );
+    }
+
+    // Проверка типов строковых полей перед парсингом
+    const availableValue = obj.available;
+    if (typeof availableValue !== 'string') {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          "Field 'available' must be string",
+          {
+            reason: TokenBalanceErrorReason.INVALID_AMOUNT,
+            details: { type: typeof availableValue },
+          },
+          source
+        )
+      );
+    }
+
+    const reservedValue = obj.reserved;
+    if (typeof reservedValue !== 'string') {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          "Field 'reserved' must be string",
+          {
+            reason: TokenBalanceErrorReason.INVALID_AMOUNT,
+            details: { type: typeof reservedValue },
+          },
+          source
+        )
+      );
+    }
+
+    const accountIdValue = obj.accountId;
+    if (typeof accountIdValue !== 'string') {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          "Field 'accountId' must be string",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { type: typeof accountIdValue },
+          },
+          source
+        )
+      );
+    }
+
+    const venueIdValue = obj.venueId;
+    if (typeof venueIdValue !== 'string') {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          "Field 'venueId' must be string",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { type: typeof venueIdValue },
+          },
+          source
+        )
+      );
+    }
+
+    // Валидация accountId
+    const accountIdParsed = parseAccountId(accountIdValue);
+    if (!accountIdParsed) {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          `Failed to parse accountId: invalid format`,
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { accountId: accountIdValue },
+          },
+          source
+        )
+      );
+    }
+
+    // Валидация venueId
+    const venueId = asVenueId(venueIdValue);
+    if (!venueId) {
+      return Err(
+        InvalidTokenBalanceError.fromLegacy(
+          "Field 'venueId' has invalid format. Must be uppercase letters, digits, underscores, 1-32 chars, not starting with digit",
+          {
+            reason: TokenBalanceErrorReason.INVALID_FORMAT,
+            details: { venueId: venueIdValue },
           },
           source
         )
@@ -255,36 +366,6 @@ export class TokenBalanceSerializer {
           {
             reason: TokenBalanceErrorReason.INVALID_TOKEN,
             details: { json: safeStringify(json), tokenError: tokenResult.error },
-          },
-          source
-        )
-      );
-    }
-
-    // Проверка что available это строка
-    const availableValue = obj.available;
-    if (typeof availableValue !== 'string') {
-      return Err(
-        InvalidTokenBalanceError.fromLegacy(
-          "Field 'available' must be string",
-          {
-            reason: TokenBalanceErrorReason.INVALID_AMOUNT,
-            details: { type: typeof availableValue },
-          },
-          source
-        )
-      );
-    }
-
-    // Проверка что reserved это строка
-    const reservedValue = obj.reserved;
-    if (typeof reservedValue !== 'string') {
-      return Err(
-        InvalidTokenBalanceError.fromLegacy(
-          "Field 'reserved' must be string",
-          {
-            reason: TokenBalanceErrorReason.INVALID_AMOUNT,
-            details: { type: typeof reservedValue },
           },
           source
         )
@@ -353,94 +434,6 @@ export class TokenBalanceSerializer {
           {
             reason: TokenBalanceErrorReason.INVALID_AMOUNT,
             details: { reserved: reservedValue, error: String(error) },
-          },
-          source
-        )
-      );
-    }
-
-    // Проверка наличия accountId
-    if (!('accountId' in obj)) {
-      return Err(
-        InvalidTokenBalanceError.fromLegacy(
-          "Missing required field 'accountId'",
-          {
-            reason: TokenBalanceErrorReason.INVALID_FORMAT,
-            details: { json: safeStringify(json) },
-          },
-          source
-        )
-      );
-    }
-
-    // Проверка что accountId это строка
-    const accountIdValue = obj.accountId;
-    if (typeof accountIdValue !== 'string') {
-      return Err(
-        InvalidTokenBalanceError.fromLegacy(
-          "Field 'accountId' must be string",
-          {
-            reason: TokenBalanceErrorReason.INVALID_FORMAT,
-            details: { type: typeof accountIdValue },
-          },
-          source
-        )
-      );
-    }
-
-    // Парсим accountId
-    const accountIdParsed = parseAccountId(accountIdValue);
-    if (!accountIdParsed) {
-      return Err(
-        InvalidTokenBalanceError.fromLegacy(
-          `Failed to parse accountId: invalid format`,
-          {
-            reason: TokenBalanceErrorReason.INVALID_FORMAT,
-            details: { accountId: accountIdValue },
-          },
-          source
-        )
-      );
-    }
-
-    // Проверка наличия venueId
-    if (!('venueId' in obj)) {
-      return Err(
-        InvalidTokenBalanceError.fromLegacy(
-          "Missing required field 'venueId'",
-          {
-            reason: TokenBalanceErrorReason.INVALID_FORMAT,
-            details: { json: safeStringify(json) },
-          },
-          source
-        )
-      );
-    }
-
-    // Проверка что venueId это строка
-    const venueIdValue = obj.venueId;
-    if (typeof venueIdValue !== 'string') {
-      return Err(
-        InvalidTokenBalanceError.fromLegacy(
-          "Field 'venueId' must be string",
-          {
-            reason: TokenBalanceErrorReason.INVALID_FORMAT,
-            details: { type: typeof venueIdValue },
-          },
-          source
-        )
-      );
-    }
-
-    // Валидация VenueId через asVenueId
-    const venueId = asVenueId(venueIdValue);
-    if (!venueId) {
-      return Err(
-        InvalidTokenBalanceError.fromLegacy(
-          "Field 'venueId' has invalid format. Must be uppercase letters, digits, underscores, 1-32 chars, not starting with digit",
-          {
-            reason: TokenBalanceErrorReason.INVALID_FORMAT,
-            details: { venueId: venueIdValue },
           },
           source
         )

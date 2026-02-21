@@ -46,6 +46,8 @@ describe('ValidateMaxSpread', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.SPREAD_TOO_WIDE);
+        expect(result.error.context?.spread).toBe(0.50);
+        expect(result.error.context?.maxSpread).toBe(0.10);
       }
     });
   });

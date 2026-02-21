@@ -88,13 +88,6 @@ describe('ValidateTokenMatch', () => {
     });
 
     it('возвращает ошибку для разных chainId', () => {
-      const conditionRefPolygon: OnChainConditionRef = {
-        kind: 'ONCHAIN',
-        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-        chainId: 137 as any,
-        conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
-      };
-
       const conditionRefEthereum: OnChainConditionRef = {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
@@ -102,7 +95,7 @@ describe('ValidateTokenMatch', () => {
         conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
       };
 
-      const token1 = OutcomeToken.of(conditionRefPolygon, BinaryOutcome.UP);
+      const token1 = OutcomeToken.of(conditionRef1, BinaryOutcome.UP);
       const token2 = OutcomeToken.of(conditionRefEthereum, BinaryOutcome.UP);
 
       const result = ValidateTokenMatch.check(token1, token2);

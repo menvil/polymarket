@@ -83,11 +83,29 @@ describe('ValidateReleaseAmount', () => {
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
         expect(result.error.message).toContain('must be positive');
+        expect(result.error.context?.releaseQty).toBe('0');
+        expect(result.error.context?.reserved).toBe('5000');
       }
     });
 
     // ПРИМЕЧАНИЕ: Тесты для отрицательных и non-finite значений невозможны,
     // так как Quantity.of() бросает исключение до того, как ValidateReleaseAmount
     // сможет их проверить. Валидация происходит на уровне Quantity, не TokenBalance.
+  });
+
+  describe('граничные случаи', () => {
+    it('возвращает ошибку если reserved = 0 но releaseQty > 0', () => {
+      const reserved = Quantity.ZERO;
+      const releaseQty = Quantity.of(new Decimal(100));
+
+      const result = ValidateReleaseAmount.check(releaseQty, reserved);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INSUFFICIENT_RESERVED);
+        expect(result.error.context?.requested).toBe(100);
+        expect(result.error.context?.reserved).toBe(0);
+      }
+    });
   });
 });

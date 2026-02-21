@@ -5,16 +5,16 @@ import { OutcomeTokenService } from '../../../../src/outcome-token/facade/Outcom
 import { Quantity } from '../../../../src/quantity/core/Quantity.js';
 import { TokenBalanceErrorReason } from '../../../../src/token-balance/errors/TokenBalanceErrorReason.js';
 import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
-import type { OnChainConditionRef } from '@polymarket/ids';
-import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
+import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols, KnownChainIds } from '@polymarket/ids';
 
 describe('TokenBalanceService', () => {
   // Фикстуры
   const testConditionRef: OnChainConditionRef = {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as any,
-    conditionId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as any,
+    chainId: KnownChainIds.POLYGON,
+    conditionId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as ConditionId,
   };
 
   const createTestToken = () => {

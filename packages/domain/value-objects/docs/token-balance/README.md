@@ -94,7 +94,7 @@ TokenBalance гарантирует соблюдение бизнес-прави
 
 ### Операции (Facade Layer)
 
-Все операции возвращают `Result<TokenBalance, InvalidTokenBalanceError>`:
+**Операции, возвращающие `Result<TokenBalance, InvalidTokenBalanceError>`:**
 
 - `TokenBalanceService.create()` — создание баланса
 - `TokenBalanceService.createWithZeroReserved()` — создание баланса без резерва
@@ -102,7 +102,13 @@ TokenBalance гарантирует соблюдение бизнес-прави
 - `TokenBalanceService.unfreezeReserved()` — размораживание токенов (reserved → available)
 - `TokenBalanceService.consumeReserved()` — списание зарезервированных токенов (уменьшает total)
 - `TokenBalanceService.updateAvailable()` — обновление доступных токенов
+
+**Проверки (возвращают boolean):**
+
 - `TokenBalanceService.canReserve()` — проверка возможности резервирования
+- `TokenBalanceService.equals()` — сравнение балансов
+- `TokenBalanceService.isZero()` — проверка на нулевой баланс
+- `TokenBalanceService.isPositive()` — проверка на положительный баланс
 
 ### Сериализация (Adapters Layer)
 

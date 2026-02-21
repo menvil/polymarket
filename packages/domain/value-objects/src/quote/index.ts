@@ -193,3 +193,11 @@ export { ValidateMaxSpread } from './rules/ValidateMaxSpread.js';
  * - quote ask > orderbook bid
  */
 export { ValidateMarketCrossing } from './rules/ValidateMarketCrossing.js';
+
+/**
+ * ValidateAge - проверка свежести котировки
+ *
+ * @remarks
+ * Правило: timestamp котировки не старше maxAge миллисекунд
+ */
+export { ValidateAge } from './rules/ValidateAge.js';

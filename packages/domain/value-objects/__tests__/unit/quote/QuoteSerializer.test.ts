@@ -5,11 +5,11 @@ import { QuoteSerializer } from '../../../src/quote/adapters/QuoteSerializer.js'
 import { Quote } from '../../../src/quote/core/index.js';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
 
 // Тестовые константы для sourceId и instrumentId
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
 const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
-import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
 
 describe('QuoteSerializer', () => {
   describe('toJSON()', () => {
@@ -635,6 +635,8 @@ describe('QuoteSerializer', () => {
       if (result.ok) {
         const restored = result.value;
         expect(original.equals(restored)).toBe(true);
+        expect(restored.sourceId()).toBe(original.sourceId());
+        expect(restored.instrumentId()).toBe(original.instrumentId());
       }
     });
   });

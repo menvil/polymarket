@@ -62,7 +62,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
 │                                                                 │
 │  Errors (src/quote/errors/)                                     │
 │  ┌───────────────────────────────────────────────────────────┐ │
-│  │  QuoteErrorReason - typed enum (22 values)                │ │
+│  │  QuoteErrorReason - typed enum (16 values)                │ │
 │  │  - BOTH_SIDES_NULL, BID_GREATER_THAN_ASK                  │ │
 │  │  - INVALID_FORMAT, INVALID_BID, INVALID_ASK               │ │
 │  │  - INVALID_BID_SIZE, INVALID_ASK_SIZE                     │ │
@@ -181,7 +181,12 @@ class QuoteInvariantViolation extends Error {
 
 - `_bid`, `_ask`: `Price | null`
 - `_bidSize`, `_askSize`: `Quantity`
-- `_timestampMs`: `Decimal` (для единообразия и валидации, возвращается как `number`)
+- `_timestampMs`: `Decimal` (внутреннее поле)
+
+**Public API:**
+
+- `timestampMs()`: возвращает `Decimal`
+- Для отображения: `timestampMs().toNumber()`
 
 ### Почему throws в Core?
 
@@ -474,13 +479,16 @@ if (quoteAsk !== null && orderbookBid !== null) {
 
 **Файл:** `src/quote/errors/QuoteErrorReason.ts`
 
-**12 типизированных причин:**
+**16 типизированных причин:**
 
 ```typescript
 enum QuoteErrorReason {
   // Invariant violations
   BOTH_SIDES_NULL = 'BOTH_SIDES_NULL',
   BID_GREATER_THAN_ASK = 'BID_GREATER_THAN_ASK',
+  INVALID_TIMESTAMP = 'INVALID_TIMESTAMP',
+  INCONSISTENT_BID_SIZE = 'INCONSISTENT_BID_SIZE',
+  INCONSISTENT_ASK_SIZE = 'INCONSISTENT_ASK_SIZE',
 
   // Parsing errors
   INVALID_FORMAT = 'INVALID_FORMAT',
@@ -496,7 +504,8 @@ enum QuoteErrorReason {
   ASK_SIZE_MUST_BE_POSITIVE = 'ASK_SIZE_MUST_BE_POSITIVE',
   SPREAD_TOO_NARROW = 'SPREAD_TOO_NARROW',
   SPREAD_TOO_WIDE = 'SPREAD_TOO_WIDE',
-  MARKET_CROSSING = 'MARKET_CROSSING'
+  MARKET_CROSSING = 'MARKET_CROSSING',
+  QUOTE_TOO_OLD = 'QUOTE_TOO_OLD'
 }
 ```
 

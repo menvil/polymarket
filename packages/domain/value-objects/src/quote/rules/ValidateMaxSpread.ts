@@ -40,8 +40,7 @@ export class ValidateMaxSpread {
    *
    * const result = ValidateMaxSpread.check(spread, new Decimal(0.10));
    * if (!result.ok) {
-   *     console.error('Spread too wide - possible error or manipulation');
-   *   }
+   *   console.error('Spread too wide - possible error or manipulation');
    * }
    * ```
    */

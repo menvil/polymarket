@@ -129,6 +129,36 @@ export class QuoteSerializer {
   private static readonly SERVICE_NAME = 'QuoteSerializer';
 
   /**
+   * Проверяет наличие обязательного поля в JSON объекте
+   *
+   * @param json - JSON объект для проверки
+   * @param fieldName - Название обязательного поля
+   * @param op - Название операции для контекста ошибки
+   * @returns Result с ошибкой если поле отсутствует, null если поле присутствует
+   *
+   * @remarks
+   * Используется для устранения дублирования кода проверки полей в fromJSON.
+   */
+  private static requireField(
+    json: object,
+    fieldName: string,
+    op: string
+  ): null | InvalidQuoteError {
+    if (!(fieldName in json)) {
+      return new InvalidQuoteError(`Missing required field: ${fieldName}`, {
+        context: {
+          source: ErrorSource.PARSING,
+          service: this.SERVICE_NAME,
+          op,
+          json: safeStringify(json),
+          reason: QuoteErrorReason.INVALID_FORMAT
+        }
+      });
+    }
+    return null;
+  }
+
+  /**
    * Сериализует Quote в JSON объект
    *
    * @param quote - Quote для сериализации
@@ -213,109 +243,13 @@ export class QuoteSerializer {
       );
     }
 
-    // Шаг 2: Проверка наличия поля bid
-    if (!('bid' in json)) {
-      return Err(
-        new InvalidQuoteError('Missing required field: bid', {
-          context: {
-            source: ErrorSource.PARSING,
-            service: QuoteSerializer.SERVICE_NAME,
-            op,
-            json: safeStringify(json),
-            reason: QuoteErrorReason.INVALID_FORMAT
-          }
-        })
-      );
-    }
-
-    // Шаг 3: Проверка наличия поля ask
-    if (!('ask' in json)) {
-      return Err(
-        new InvalidQuoteError('Missing required field: ask', {
-          context: {
-            source: ErrorSource.PARSING,
-            service: QuoteSerializer.SERVICE_NAME,
-            op,
-            json: safeStringify(json),
-            reason: QuoteErrorReason.INVALID_FORMAT
-          }
-        })
-      );
-    }
-
-    // Шаг 4: Проверка наличия поля bidSize
-    if (!('bidSize' in json)) {
-      return Err(
-        new InvalidQuoteError('Missing required field: bidSize', {
-          context: {
-            source: ErrorSource.PARSING,
-            service: QuoteSerializer.SERVICE_NAME,
-            op,
-            json: safeStringify(json),
-            reason: QuoteErrorReason.INVALID_FORMAT
-          }
-        })
-      );
-    }
-
-    // Шаг 5: Проверка наличия поля askSize
-    if (!('askSize' in json)) {
-      return Err(
-        new InvalidQuoteError('Missing required field: askSize', {
-          context: {
-            source: ErrorSource.PARSING,
-            service: QuoteSerializer.SERVICE_NAME,
-            op,
-            json: safeStringify(json),
-            reason: QuoteErrorReason.INVALID_FORMAT
-          }
-        })
-      );
-    }
-
-    // Шаг 6: Проверка наличия поля timestamp
-    if (!('timestamp' in json)) {
-      return Err(
-        new InvalidQuoteError('Missing required field: timestamp', {
-          context: {
-            source: ErrorSource.PARSING,
-            service: QuoteSerializer.SERVICE_NAME,
-            op,
-            json: safeStringify(json),
-            reason: QuoteErrorReason.INVALID_FORMAT
-          }
-        })
-      );
-    }
-
-    // Шаг 7: Проверка наличия поля sourceId
-    if (!('sourceId' in json)) {
-      return Err(
-        new InvalidQuoteError('Missing required field: sourceId', {
-          context: {
-            source: ErrorSource.PARSING,
-            service: QuoteSerializer.SERVICE_NAME,
-            op,
-            json: safeStringify(json),
-            reason: QuoteErrorReason.INVALID_FORMAT
-          }
-        })
-      );
-    }
-
-    // Шаг 8: Проверка наличия поля instrumentId
-    if (!('instrumentId' in json)) {
-      return Err(
-        new InvalidQuoteError('Missing required field: instrumentId', {
-          context: {
-            source: ErrorSource.PARSING,
-            service: QuoteSerializer.SERVICE_NAME,
-            op,
-            json: safeStringify(json),
-            reason: QuoteErrorReason.INVALID_FORMAT
-          }
-        })
-      );
+    // Шаг 2-8: Проверка наличия обязательных полей
+    const requiredFields = ['bid', 'ask', 'bidSize', 'askSize', 'timestamp', 'sourceId', 'instrumentId'];
+    for (const fieldName of requiredFields) {
+      const error = this.requireField(json, fieldName, op);
+      if (error) {
+        return Err(error);
+      }
     }
 
     // Теперь безопасно извлекаем поля
@@ -347,6 +281,24 @@ export class QuoteSerializer {
       );
     }
 
+    // Шаг 9a: Проверка что bid является finite числом (не NaN/Infinity)
+    if (typeof bid === 'number' && !Number.isFinite(bid)) {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid value for field 'bid': must be finite number, got ${bid}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'bid', value: bid },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
     // Шаг 10: Проверка типа ask (number | null)
     if (typeof ask !== 'number' && ask !== null) {
       return Err(
@@ -358,6 +310,24 @@ export class QuoteSerializer {
               service: QuoteSerializer.SERVICE_NAME,
               op,
               raw: { field: 'ask', value: String(ask), type: typeof ask },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
+    // Шаг 10a: Проверка что ask является finite числом (не NaN/Infinity)
+    if (typeof ask === 'number' && !Number.isFinite(ask)) {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid value for field 'ask': must be finite number, got ${ask}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'ask', value: ask },
               reason: QuoteErrorReason.INVALID_FORMAT
             }
           }
@@ -383,6 +353,24 @@ export class QuoteSerializer {
       );
     }
 
+    // Шаг 11a: Проверка что bidSize является finite числом (не NaN/Infinity)
+    if (!Number.isFinite(bidSize)) {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid value for field 'bidSize': must be finite number, got ${bidSize}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'bidSize', value: bidSize },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
     // Шаг 12: Проверка типа askSize
     if (typeof askSize !== 'number') {
       return Err(
@@ -401,6 +389,24 @@ export class QuoteSerializer {
       );
     }
 
+    // Шаг 12a: Проверка что askSize является finite числом (не NaN/Infinity)
+    if (!Number.isFinite(askSize)) {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid value for field 'askSize': must be finite number, got ${askSize}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'askSize', value: askSize },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
     // Шаг 13: Проверка типа timestamp
     if (typeof timestamp !== 'number') {
       return Err(
@@ -412,6 +418,24 @@ export class QuoteSerializer {
               service: QuoteSerializer.SERVICE_NAME,
               op,
               raw: { field: 'timestamp', value: String(timestamp), type: typeof timestamp },
+              reason: QuoteErrorReason.INVALID_FORMAT
+            }
+          }
+        )
+      );
+    }
+
+    // Шаг 13a: Проверка что timestamp является finite числом (не NaN/Infinity)
+    if (!Number.isFinite(timestamp)) {
+      return Err(
+        new InvalidQuoteError(
+          `Invalid value for field 'timestamp': must be finite number, got ${timestamp}`,
+          {
+            context: {
+              source: ErrorSource.PARSING,
+              service: QuoteSerializer.SERVICE_NAME,
+              op,
+              raw: { field: 'timestamp', value: timestamp },
               reason: QuoteErrorReason.INVALID_FORMAT
             }
           }
@@ -511,6 +535,11 @@ export class QuoteSerializer {
       const parsed = JSON.parse(jsonString) as unknown;
       return this.fromJSON(parsed);
     } catch (error) {
+      // Обрезаем длинные строки для читаемости логов
+      const truncatedString = jsonString.length > 500
+        ? jsonString.substring(0, 500) + '...'
+        : jsonString;
+
       return Err(
         new InvalidQuoteError(
           `Invalid JSON string: ${error instanceof Error ? error.message : String(error)}`,
@@ -519,7 +548,7 @@ export class QuoteSerializer {
               source: ErrorSource.PARSING,
               service: QuoteSerializer.SERVICE_NAME,
               op: 'fromJSONString',
-              jsonString,
+              jsonString: truncatedString,
               error: error instanceof Error ? error.message : String(error),
               reason: QuoteErrorReason.INVALID_FORMAT
             }

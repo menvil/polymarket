@@ -155,7 +155,7 @@ if (shiftedUp.ok) {
   const q = shiftedUp.value;
   console.log(q.bid()?.value().toNumber());  // 0.49
   console.log(q.ask()?.value().toNumber());  // 0.53
-  console.log(q.spreadWidthOrZero()?.toNumber());  // 0.04 (сохранился!)
+  console.log(q.spreadWidthOrZero().toNumber());  // 0.04 (сохранился!)
 }
 
 // Сдвиг вниз на 0.01
@@ -186,7 +186,7 @@ if (wider.ok) {
   const q = wider.value;
   console.log(q.bid()?.value().toNumber());  // 0.47
   console.log(q.ask()?.value().toNumber());  // 0.53
-  console.log(q.spreadWidthOrZero()?.toNumber());  // 0.06 (увеличился!)
+  console.log(q.spreadWidthOrZero().toNumber());  // 0.06 (увеличился!)
 }
 
 // Bid вверх, ask вниз (сужение spread)
@@ -198,7 +198,7 @@ const narrower = QuoteService.skew(
 
 if (narrower.ok) {
   const q = narrower.value;
-  console.log(q.spreadWidthOrZero()?.toNumber());  // 0.02 (уменьшился!)
+  console.log(q.spreadWidthOrZero().toNumber());  // 0.02 (уменьшился!)
 }
 ```
 
@@ -268,7 +268,7 @@ const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', '
 if (!quoteResult.ok) return;
 
 const quote = quoteResult.value;
-const spread = quote.spreadWidthOrZero()!;
+const spread = quote.spreadWidthOrZero();
 
 // Минимальный spread: 1%
 const minResult = ValidateMinSpread.check(spread, new Decimal(0.01));
@@ -628,7 +628,7 @@ class MarketMaker {
 
     // Валидация spread
     const spreadCheck = ValidateMaxSpread.check(
-      quote.spreadWidthOrZero()!,
+      quote.spreadWidthOrZero(),
       this.maxSpread
     );
 
@@ -755,7 +755,7 @@ class QuoteMonitor {
 
     // 1. Проверка spread
     if (quote.isTwoSided()) {
-      const spread = quote.spreadWidthOrZero()!;
+      const spread = quote.spreadWidthOrZero();
       const spreadPct = quote.spreadPercentage();
 
       const spreadCheck = ValidateMaxSpread.check(spread, this.maxAllowedSpread);

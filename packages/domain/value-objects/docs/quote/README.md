@@ -12,9 +12,9 @@
 - ✅ **"Never Throw" Contract** — QuoteService гарантированно не бросает исключения
 - ✅ **Централизованная обработка ошибок** — через errorUtils (toDecimal, wrapOp, rewrap)
 - ✅ **Automatic operation tracing** — opChain для отслеживания цепочек операций
-- ✅ **Typed error reasons** — QuoteErrorReason enum (22 значения)
+- ✅ **Typed error reasons** — QuoteErrorReason enum с типизированными причинами ошибок
 - ✅ **Rich domain logic** — методы вычисления spread, mid price, проверки crossing
-- ✅ **Comprehensive tests** — 293 теста с высоким покрытием
+- ✅ **Comprehensive tests** — полный набор тестов с высоким покрытием
 
 ## Быстрый старт
 
@@ -851,7 +851,7 @@ const quote = quoteResult.value;
 
 // Spread
 const spreadWidth = quote.spreadWidthOrZero();
-console.log(spreadWidth?.toNumber());  // 0.04
+console.log(spreadWidth.toNumber());  // 0.04
 
 // Spread в процентах от mid price: width / mid (как дробь)
 const spreadPct = quote.spreadPercentage();
@@ -953,13 +953,13 @@ if (!sizesResult.ok) {
 
 // Проверка минимального spread
 const minSpreadResult = ValidateMinSpread.check(
-  quote.spreadWidthOrZero()!,
+  quote.spreadWidthOrZero(),
   new Decimal(0.01)  // минимум 1%
 );
 
 // Проверка максимального spread
 const maxSpreadResult = ValidateMaxSpread.check(
-  quote.spreadWidthOrZero()!,
+  quote.spreadWidthOrZero(),
   new Decimal(0.10)  // максимум 10%
 );
 
@@ -1042,7 +1042,7 @@ console.log(`${quote.bid()?.value()}/${quote.ask()?.value()}`);  // ❌
 - ✅ Начальная реализация Quote value object
 - ✅ Throws+Facade архитектура
 - ✅ Интеграция с errorUtils (toDecimal, wrapOp, rewrap)
-- ✅ QuoteErrorReason enum (22 значения)
-- ✅ 4 валидационных правила
+- ✅ QuoteErrorReason enum с типизированными причинами ошибок
+- ✅ Validation rules (ValidateQuoteSizes, ValidateMinSpread, ValidateMaxSpread, ValidateMarketCrossing, ValidateAge)
 - ✅ QuoteSerializer и QuoteFormatter
-- ✅ 293 теста с высоким покрытием
+- ✅ Comprehensive test suite с высоким покрытием

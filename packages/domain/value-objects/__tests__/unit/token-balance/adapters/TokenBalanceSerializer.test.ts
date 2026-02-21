@@ -184,7 +184,7 @@ describe('TokenBalanceSerializer', () => {
       }
     });
 
-    it('фэйлится если отсутствует amount', () => {
+    it('фэйлится если отсутствует available', () => {
       const json = {
         token: {
           conditionRef: {
@@ -213,6 +213,8 @@ describe('TokenBalanceSerializer', () => {
         },
         available: '100.5',
         reserved: '0',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -223,7 +225,7 @@ describe('TokenBalanceSerializer', () => {
       }
     });
 
-    it('фэйлится если amount не строка', () => {
+    it('фэйлится если available не строка', () => {
       const json = {
         token: {
           conditionRef: {
@@ -236,6 +238,8 @@ describe('TokenBalanceSerializer', () => {
         },
         available: 100.5, // number вместо string
         reserved: '0',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -247,7 +251,7 @@ describe('TokenBalanceSerializer', () => {
       }
     });
 
-    it('фэйлится если amount не парсится как Decimal', () => {
+    it('фэйлится если available не парсится как Decimal', () => {
       const json = {
         token: {
           conditionRef: {
@@ -260,6 +264,8 @@ describe('TokenBalanceSerializer', () => {
         },
         available: 'invalid',
         reserved: '0',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);
@@ -271,7 +277,7 @@ describe('TokenBalanceSerializer', () => {
       }
     });
 
-    it('фэйлится если amount отрицательное', () => {
+    it('фэйлится если available отрицательное', () => {
       const json = {
         token: {
           conditionRef: {
@@ -284,6 +290,8 @@ describe('TokenBalanceSerializer', () => {
         },
         available: '-100.5',
         reserved: '0',
+        accountId: 'wallet:0x1234567890123456789012345678901234567890',
+        venueId: 'POLYMARKET',
       };
 
       const result = TokenBalanceSerializer.fromJSON(json);

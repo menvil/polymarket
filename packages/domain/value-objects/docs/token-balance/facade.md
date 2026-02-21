@@ -499,18 +499,15 @@ if (isErr(result)) {
 TokenBalanceService использует QuantityService для арифметических операций:
 
 ```typescript
-// Внутри TokenBalanceService.reserve()
-const newAvailableResult = this.subtractQuantity(balance.available(), qty);
-const newReservedResult = this.addQuantity(balance.reserved(), qty);
+// Пример использования QuantityService в TokenBalanceService
+// TokenBalanceService делегирует математические операции QuantityService
+// Это обеспечивает консистентность работы с Quantity во всей системе
 
-// subtractQuantity делегирует QuantityService
-// Вызывается внутри wrapOp, поэтому просто передаёт ошибку
-private static subtractQuantity(a: Quantity, b: Quantity): Result<Quantity, InvalidTokenBalanceError> {
-  const result = QuantityService.subtract(a, b);
-  if (isErr(result)) {
-    // wrapOp уже добавит context
-    return Err(new InvalidTokenBalanceError(result.error.message));
-  }
-  return result;
-}
+import { QuantityService } from '@polymarket/value-objects/quantity';
+
+// Внутри методов TokenBalanceService используются вызовы вида:
+const subtractResult = QuantityService.subtract(balance.available(), qty);
+const addResult = QuantityService.add(balance.reserved(), qty);
+
+// Все ошибки от QuantityService оборачиваются через wrapOp
 ```

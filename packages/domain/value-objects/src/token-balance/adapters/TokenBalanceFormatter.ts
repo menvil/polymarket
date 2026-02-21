@@ -3,6 +3,45 @@ import { TokenBalance } from '../core/TokenBalance.js';
 import { accountIdToString } from '@polymarket/ids';
 
 /**
+ * Валидирует и нормализует параметр decimals
+ *
+ * @param decimals - Количество десятичных знаков
+ * @returns Валидное число десятичных знаков (0-100)
+ *
+ * @remarks
+ * Приводит decimals к безопасному диапазону [0, 100].
+ * Если передано отрицательное число или NaN, возвращает 0.
+ * Если передано значение > 100, возвращает 100.
+ */
+function sanitizeDecimals(decimals: number): number {
+  if (!Number.isFinite(decimals) || decimals < 0) {
+    return 0;
+  }
+  if (decimals > 100) {
+    return 100;
+  }
+  return Math.floor(decimals);
+}
+
+/**
+ * Форматирует available, reserved и total из TokenBalance
+ *
+ * @param balance - TokenBalance для форматирования
+ * @returns Объект с отформатированными значениями available, reserved, total как строками
+ *
+ * @remarks
+ * Использует полную точность Decimal.toString() без округления.
+ * Применяется в toString, toVerboseString и других методах для консистентности.
+ */
+function formatAmounts(balance: TokenBalance): { available: string; reserved: string; total: string } {
+  return {
+    available: balance.available().value().toString(),
+    reserved: balance.reserved().value().toString(),
+    total: balance.total().value().toString(),
+  };
+}
+
+/**
  * Форматтер для TokenBalance
  *
  * @remarks
@@ -74,10 +113,11 @@ export class TokenBalanceFormatter {
     includeAccount: boolean = false,
     includeVenue: boolean = false
   ): string {
-    const avail = balance.available().value().toFixed(decimals);
-    const res = balance.reserved().value().toFixed(decimals);
-    const total = balance.total().value().toFixed(decimals);
-    const pct = balance.reservedPercentage().toFixed(2);
+    const safeDecimals = sanitizeDecimals(decimals);
+    const avail = balance.available().value().toFixed(safeDecimals);
+    const res = balance.reserved().value().toFixed(safeDecimals);
+    const total = balance.total().value().toFixed(safeDecimals);
+    const pct = balance.reservedPercentage().toFixed(safeDecimals);
     const token = balance.outcomeKey();
 
     let result = `Available: ${avail}, Reserved: ${res}, Total: ${total} (${pct}% reserved) [${token}]`;
@@ -132,9 +172,10 @@ export class TokenBalanceFormatter {
     decimals: number = 1,
     includeVenue: boolean = false
   ): string {
-    const avail = balance.available().value().toFixed(decimals);
-    const res = balance.reserved().value().toFixed(decimals);
-    const total = balance.total().value().toFixed(decimals);
+    const safeDecimals = sanitizeDecimals(decimals);
+    const avail = balance.available().value().toFixed(safeDecimals);
+    const res = balance.reserved().value().toFixed(safeDecimals);
+    const total = balance.total().value().toFixed(safeDecimals);
 
     let result = `Avail: ${avail} | Res: ${res} | Total: ${total}`;
 
@@ -172,9 +213,7 @@ export class TokenBalanceFormatter {
    * ```
    */
   public static toDebugString(balance: TokenBalance): string {
-    const available = balance.available().value().toString();
-    const reserved = balance.reserved().value().toString();
-    const total = balance.total().value().toString();
+    const { available, reserved, total } = formatAmounts(balance);
     const token = balance.outcomeKey();
     const account = accountIdToString(balance.accountId());
     const venue = balance.venueId();
@@ -207,7 +246,7 @@ export class TokenBalanceFormatter {
    * ```
    */
   public static toAvailableString(balance: TokenBalance, decimals: number = 2): string {
-    return balance.available().value().toFixed(decimals);
+    return balance.available().value().toFixed(sanitizeDecimals(decimals));
   }
 
   /**
@@ -235,7 +274,7 @@ export class TokenBalanceFormatter {
    * ```
    */
   public static toReservedString(balance: TokenBalance, decimals: number = 2): string {
-    return balance.reserved().value().toFixed(decimals);
+    return balance.reserved().value().toFixed(sanitizeDecimals(decimals));
   }
 
   /**
@@ -263,7 +302,7 @@ export class TokenBalanceFormatter {
    * ```
    */
   public static toTotalString(balance: TokenBalance, decimals: number = 2): string {
-    return balance.total().value().toFixed(decimals);
+    return balance.total().value().toFixed(sanitizeDecimals(decimals));
   }
 
   /**
@@ -291,7 +330,7 @@ export class TokenBalanceFormatter {
    * ```
    */
   public static toPercentageString(balance: TokenBalance, decimals: number = 2): string {
-    return `${balance.reservedPercentage().toFixed(decimals)}%`;
+    return `${balance.reservedPercentage().toFixed(sanitizeDecimals(decimals))}%`;
   }
 
   /**
@@ -319,9 +358,7 @@ export class TokenBalanceFormatter {
    * ```
    */
   public static toString(balance: TokenBalance): string {
-    const available = balance.available().value().toString();
-    const reserved = balance.reserved().value().toString();
-    const total = balance.total().value().toString();
+    const { available, reserved, total } = formatAmounts(balance);
     const tokenStr = OutcomeTokenFormatter.toString(balance.token());
 
     return `TokenBalance[available=${available}, reserved=${reserved}, total=${total}, token=${tokenStr}]`;
@@ -414,9 +451,7 @@ export class TokenBalanceFormatter {
    * ```
    */
   public static toVerboseString(balance: TokenBalance): string {
-    const available = balance.available().value().toString();
-    const reserved = balance.reserved().value().toString();
-    const total = balance.total().value().toString();
+    const { available, reserved, total } = formatAmounts(balance);
     const tokenVerbose = OutcomeTokenFormatter.toVerboseString(balance.token());
 
     return `TokenBalance[available=${available}, reserved=${reserved}, total=${total}, token=${tokenVerbose}]`;
@@ -451,7 +486,7 @@ export class TokenBalanceFormatter {
    * ```
    */
   public static toFixedString(balance: TokenBalance, decimalPlaces: number = 2): string {
-    const total = balance.total().value().toFixed(decimalPlaces);
+    const total = balance.total().value().toFixed(sanitizeDecimals(decimalPlaces));
     const outcomeKey = balance.outcomeKey() as string;
 
     return `${total} ${outcomeKey}`;

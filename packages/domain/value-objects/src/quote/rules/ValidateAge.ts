@@ -59,9 +59,7 @@ export class ValidateAge {
    * @param quote - Котировка для проверки
    * @param maxAgeMs - Максимально допустимый возраст в миллисекундах
    * @param clock - IClock для получения текущего времени (dependency injection)
-   * @returns Result с void или InvalidQuoteError
-   *
-   * @throws {InvalidQuoteError} При превышении максимального возраста
+   * @returns Result<void, InvalidQuoteError> — Ok если котировка свежая, Err если устарела
    *
    * @example
    * ```typescript
@@ -92,6 +90,24 @@ export class ValidateAge {
     const currentTimeMs = clock.now().getTime();
     const quoteTimeMs = quote.timestampMs().toNumber();
     const ageMs = currentTimeMs - quoteTimeMs;
+
+    // Reject future-dated quotes
+    if (ageMs < 0) {
+      return Err(
+        new InvalidQuoteError(
+          `Quote timestamp ${quoteTimeMs} is in the future (current: ${currentTimeMs})`,
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              reason: QuoteErrorReason.QUOTE_TOO_OLD,
+              ageMs,
+              quoteTimestamp: quoteTimeMs,
+              currentTimestamp: currentTimeMs
+            }
+          }
+        )
+      );
+    }
 
     if (ageMs > maxAgeMs) {
       return Err(

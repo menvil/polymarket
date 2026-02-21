@@ -2,7 +2,7 @@
 
 > Неизменяемые value objects для доменной модели торговой системы Polymarket
 
-![Tests](https://img.shields.io/badge/tests-350%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-passing-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -230,7 +230,7 @@ if (result.ok) {
   console.log(spread.ask().toNumber());       // 0.52
   console.log(spread.width().toNumber());     // 0.04
   console.log(spread.midpoint().toNumber());  // 0.50
-  console.log(spread.widthPercentage());      // 8%
+  console.log(spread.widthRatio().toDecimal().times(100).toNumber()); // 8
 
   // Форматирование
   console.log(SpreadFormatter.format(spread));
@@ -646,5 +646,5 @@ MIT
 ## Поддержка
 
 - **Документация:** [docs/](./docs/)
-- **Issues:** [GitHub Issues](https://github.com/polymarket/issues)
+- **Issues:** [GitHub Issues](https://github.com/polymarket/polymarket/issues)
 - **Tests:** 201/201 passing ✅ (Money: 77, Percentage: 95, Balance: 29)

@@ -299,7 +299,7 @@ describe('QuoteService Ratio Operations', () => {
       return result.value;
     };
 
-    it('getMidPrice возвращает Err для bid-only quote (без TypeErrror)', () => {
+    it('getMidPrice возвращает Err для bid-only quote (без TypeError)', () => {
       const bidOnly = createBidOnly(0.50, 100);
       const result = QuoteService.getMidPrice(bidOnly);
 
@@ -315,7 +315,7 @@ describe('QuoteService Ratio Operations', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.MID_UNAVAILABLE);
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
       }
     });
 
@@ -406,7 +406,7 @@ describe('QuoteService Ratio Operations', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.MID_UNAVAILABLE);
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
       }
     });
 

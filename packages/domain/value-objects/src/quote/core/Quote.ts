@@ -70,6 +70,32 @@ export class Quote {
   private static readonly MAX_TIMESTAMP = new Decimal(9999999999999);
 
   /**
+   * Helper: бросает ошибку timestamp в зависимости от контекста
+   *
+   * @internal
+   * @param context - Контекст ошибки ('timestamp' или 'now')
+   * @param timestampMsg - Сообщение для QuoteInvariantViolation
+   * @param nowMsg - Сообщение для Error
+   * @throws {QuoteInvariantViolation} Если context === 'timestamp'
+   * @throws {Error} Если context === 'now'
+   *
+   * @remarks
+   * Централизует логику бросания ошибок для validateTimestamp().
+   * Убирает дублирование if (context === 'timestamp') ... else ... в каждой проверке.
+   */
+  private static throwTimestampError(
+    context: 'timestamp' | 'now',
+    timestampMsg: string,
+    nowMsg: string
+  ): never {
+    if (context === 'timestamp') {
+      throw new QuoteInvariantViolation(timestampMsg, 'INVALID_TIMESTAMP');
+    } else {
+      throw new Error(nowMsg);
+    }
+  }
+
+  /**
    * Валидирует timestamp (Unix ms)
    *
    * @param timestamp - Timestamp для валидации (Decimal)
@@ -94,64 +120,47 @@ export class Quote {
   ): void {
     // Инвариант: Not NaN
     if (timestamp.isNaN()) {
-      if (context === 'timestamp') {
-        throw new QuoteInvariantViolation(
-          `Timestamp must be finite, got ${timestamp.toString()}`,
-          'INVALID_TIMESTAMP'
-        );
-      } else {
-        throw new Error('Timestamp cannot be NaN');
-      }
+      Quote.throwTimestampError(
+        context,
+        `Timestamp must be finite, got ${timestamp.toString()}`,
+        'Timestamp cannot be NaN'
+      );
     }
 
     // Инвариант: Finite
     if (!timestamp.isFinite()) {
-      if (context === 'timestamp') {
-        throw new QuoteInvariantViolation(
-          `Timestamp must be finite, got ${timestamp.toString()}`,
-          'INVALID_TIMESTAMP'
-        );
-      } else {
-        throw new Error('Timestamp must be finite');
-      }
+      Quote.throwTimestampError(
+        context,
+        `Timestamp must be finite, got ${timestamp.toString()}`,
+        'Timestamp must be finite'
+      );
     }
 
     // Инвариант: Integer (Unix ms - целое число)
     if (!timestamp.isInteger()) {
-      if (context === 'timestamp') {
-        throw new QuoteInvariantViolation(
-          `Timestamp must be integer milliseconds, got ${timestamp.toString()}`,
-          'INVALID_TIMESTAMP'
-        );
-      } else {
-        throw new Error('Timestamp must be integer (Unix ms)');
-      }
+      Quote.throwTimestampError(
+        context,
+        `Timestamp must be integer milliseconds, got ${timestamp.toString()}`,
+        'Timestamp must be integer (Unix ms)'
+      );
     }
 
     // Инвариант: >= 0 (Unix epoch)
     if (timestamp.isNegative()) {
-      if (context === 'timestamp') {
-        throw new QuoteInvariantViolation(
-          `Timestamp must be non-negative, got ${timestamp.toString()}`,
-          'INVALID_TIMESTAMP'
-        );
-      } else {
-        throw new Error('Timestamp cannot be negative');
-      }
+      Quote.throwTimestampError(
+        context,
+        `Timestamp must be non-negative, got ${timestamp.toString()}`,
+        'Timestamp cannot be negative'
+      );
     }
 
     // Инвариант: <= MAX_TIMESTAMP (разумный верхний предел)
     if (timestamp.greaterThan(Quote.MAX_TIMESTAMP)) {
-      if (context === 'timestamp') {
-        throw new QuoteInvariantViolation(
-          `Timestamp ${timestamp.toString()} exceeds maximum ${Quote.MAX_TIMESTAMP.toString()}`,
-          'INVALID_TIMESTAMP'
-        );
-      } else {
-        throw new Error(
-          `Timestamp ${timestamp.toString()} exceeds maximum ${Quote.MAX_TIMESTAMP.toString()}`
-        );
-      }
+      Quote.throwTimestampError(
+        context,
+        `Timestamp ${timestamp.toString()} exceeds maximum ${Quote.MAX_TIMESTAMP.toString()}`,
+        `Timestamp ${timestamp.toString()} exceeds maximum ${Quote.MAX_TIMESTAMP.toString()}`
+      );
     }
   }
 
@@ -568,26 +577,29 @@ export class Quote {
   }
 
   /**
-   * Строгое сравнение включая timestamp
+   * Строгое сравнение включая timestamp и metadata
    *
    * @remarks
-   * Сравнивает bid, ask, sizes И timestamp.
-   * Используйте когда нужно проверить что это именно тот же самый снимок данных.
+   * Сравнивает bid, ask, sizes, timestamp, sourceId И instrumentId.
+   * Используйте когда нужно проверить что это именно тот же самый снимок данных
+   * из того же источника для того же инструмента.
    *
-   * Для большинства случаев используйте equals() без timestamp.
+   * Для большинства случаев используйте equals() без timestamp/metadata.
    *
    * @param other - Другая котировка
-   * @returns true если котировки полностью идентичны включая timestamp
+   * @returns true если котировки полностью идентичны включая timestamp и metadata
    *
    * @example
    * ```typescript
    * const ts = Date.now();
-   * const quote1 = Quote.of(bid, ask, bidSize, askSize, ts);
-   * const quote2 = Quote.of(bid, ask, bidSize, askSize, ts);
-   * const quote3 = Quote.of(bid, ask, bidSize, askSize, ts + 1000);
+   * const quote1 = Quote.of(bid, ask, bidSize, askSize, ts, 'SOURCE_A', 'BTC-USD');
+   * const quote2 = Quote.of(bid, ask, bidSize, askSize, ts, 'SOURCE_A', 'BTC-USD');
+   * const quote3 = Quote.of(bid, ask, bidSize, askSize, ts + 1000, 'SOURCE_A', 'BTC-USD');
+   * const quote4 = Quote.of(bid, ask, bidSize, askSize, ts, 'SOURCE_B', 'BTC-USD');
    *
-   * console.log(quote1.equalsWithTimestamp(quote2)); // true
+   * console.log(quote1.equalsWithTimestamp(quote2)); // true - полностью идентичны
    * console.log(quote1.equalsWithTimestamp(quote3)); // false - разное время
+   * console.log(quote1.equalsWithTimestamp(quote4)); // false - разный источник
    * console.log(quote1.equals(quote3)); // true - одинаковые рыночные данные
    * ```
    */
@@ -598,7 +610,20 @@ export class Quote {
     }
 
     // Затем проверяем timestamp (Decimal.equals для точного сравнения)
-    return this._timestampMs.equals(other._timestampMs);
+    if (!this._timestampMs.equals(other._timestampMs)) {
+      return false;
+    }
+
+    // Затем проверяем metadata (sourceId и instrumentId)
+    if (this._sourceId !== other._sourceId) {
+      return false;
+    }
+
+    if (this._instrumentId !== other._instrumentId) {
+      return false;
+    }
+
+    return true;
   }
 
   /**
@@ -636,6 +661,9 @@ export class Quote {
    * Mid price - это метрика, не рыночная сущность.
    * Возвращает Decimal, а не Price, чтобы избежать ложной типизации.
    *
+   * Делегирует вычисление в Spread.mid() для устранения дублирования.
+   * Если котировка не two-sided, возвращает null.
+   *
    * Если нужен Price объект, вызывающий должен явно создать его:
    * ```typescript
    * const mid = quote.midOrNull();
@@ -644,7 +672,7 @@ export class Quote {
    * }
    * ```
    *
-   * Формула: (bid + ask) / 2
+   * Формула: (bid + ask) / 2 (делегируется в Spread.mid())
    *
    * @example
    * ```typescript
@@ -659,13 +687,8 @@ export class Quote {
    * ```
    */
   public midOrNull(): Decimal | null {
-    if (!this.isTwoSided()) {
-      return null;
-    }
-
-    const bidVal = this._bid!.value();
-    const askVal = this._ask!.value();
-    return bidVal.plus(askVal).dividedBy(2);
+    const spread = this.spread();
+    return spread ? spread.mid() : null;
   }
 
   /**
@@ -725,6 +748,7 @@ export class Quote {
    * - Для отображения: умножьте на 100 (например, `ratio.toDecimal().times(100)`)
    *
    * Формула: spread.width / mid (БЕЗ умножения на 100)
+   * Делегирует к Spread.widthRatio() для вычисления.
    *
    * Пример для bid 0.48, ask 0.52:
    * - mid = 0.50
@@ -750,20 +774,6 @@ export class Quote {
    * ```
    */
   public spreadPercentage(): Ratio | null {
-    if (!this.isTwoSided()) return null;
-
-    const mid = this.midOrNull();
-    if (!mid) return null;
-
-    const spread = this.spread();
-    if (!spread) return null;
-
-    const width = spread.width();
-
-    // Ratio хранит ДРОБЬ (fraction), не процент!
-    // 0.08 означает 8%, не число 8
-    const fraction = width.dividedBy(mid);
-
-    return Ratio.of(fraction);
+    return this.spread()?.widthRatio() ?? null;
   }
 }

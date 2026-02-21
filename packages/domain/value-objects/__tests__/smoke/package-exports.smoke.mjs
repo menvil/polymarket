@@ -187,7 +187,7 @@ await testSubpath('quote', async () => {
   await checkExports(m, [
     'Quote', 'QuoteService', 'QuoteSerializer', 'QuoteFormatter',
     'QuoteInvariantViolation', 'QuoteErrorReason',
-    'ValidateQuoteSizes', 'ValidateMinSpread', 'ValidateMaxSpread', 'ValidateMarketCrossing',
+    'ValidateQuoteSizes', 'ValidateMinSpread', 'ValidateMaxSpread', 'ValidateMarketCrossing', 'ValidateAge',
   ], 'quote');
 
   // QuoteService.create(bidValue, askValue, bidSizeValue, askSizeValue, sourceId, instrumentId)
@@ -241,6 +241,10 @@ await testSubpath('token-balance', async () => {
     'TokenBalanceInvariantViolation', 'TokenBalanceErrorReason', 'InvalidTokenBalanceError',
     'ValidateReserveAmount', 'ValidateReleaseAmount', 'ValidateTokenMatch',
   ], 'token-balance');
+
+  // Note: Runtime validation (create→serialize→deserialize roundtrip) is skipped in smoke test
+  // due to complex dependencies on OutcomeToken and AssetIdHelpers.
+  // Full integration tests for TokenBalance are covered in the main test suite.
   console.log(`${PASS} All exports available`);
 });
 

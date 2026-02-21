@@ -74,12 +74,9 @@ describe('Quote Core', () => {
       const askSize = Quantity.ZERO;
       const timestamp = new Decimal(Date.now());
 
-      expect(() => {
-        Quote.of(null, null, bidSize, askSize, new Decimal(timestamp), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
-      }).toThrow(QuoteInvariantViolation);
-
       try {
         Quote.of(null, null, bidSize, askSize, new Decimal(timestamp), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        throw new Error('Should have thrown QuoteInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(QuoteInvariantViolation);
         expect((error as QuoteInvariantViolation).reason).toBe('BOTH_SIDES_NULL');
@@ -93,12 +90,9 @@ describe('Quote Core', () => {
       const askSize = Quantity.of(new Decimal(150));
       const timestamp = new Decimal(Date.now());
 
-      expect(() => {
-        Quote.of(bid, ask, bidSize, askSize, new Decimal(timestamp), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
-      }).toThrow(QuoteInvariantViolation);
-
       try {
         Quote.of(bid, ask, bidSize, askSize, new Decimal(timestamp), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        throw new Error('Should have thrown QuoteInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(QuoteInvariantViolation);
         expect((error as QuoteInvariantViolation).reason).toBe('BID_GREATER_THAN_ASK');
@@ -125,12 +119,9 @@ describe('Quote Core', () => {
     const askSize = Quantity.of(new Decimal(150));
 
     it('бросает INVALID_TIMESTAMP для NaN', () => {
-      expect(() => {
-        Quote.of(bid, ask, bidSize, askSize, new Decimal(NaN), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
-      }).toThrow(QuoteInvariantViolation);
-
       try {
         Quote.of(bid, ask, bidSize, askSize, new Decimal(NaN), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        throw new Error('Should have thrown QuoteInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(QuoteInvariantViolation);
         expect((error as QuoteInvariantViolation).reason).toBe('INVALID_TIMESTAMP');
@@ -138,12 +129,9 @@ describe('Quote Core', () => {
     });
 
     it('бросает INVALID_TIMESTAMP для Infinity', () => {
-      expect(() => {
-        Quote.of(bid, ask, bidSize, askSize, new Decimal(Infinity), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
-      }).toThrow(QuoteInvariantViolation);
-
       try {
         Quote.of(bid, ask, bidSize, askSize, new Decimal(Infinity), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        throw new Error('Should have thrown QuoteInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(QuoteInvariantViolation);
         expect((error as QuoteInvariantViolation).reason).toBe('INVALID_TIMESTAMP');
@@ -151,12 +139,9 @@ describe('Quote Core', () => {
     });
 
     it('бросает INVALID_TIMESTAMP для отрицательного значения', () => {
-      expect(() => {
-        Quote.of(bid, ask, bidSize, askSize, new Decimal(-1000), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
-      }).toThrow(QuoteInvariantViolation);
-
       try {
         Quote.of(bid, ask, bidSize, askSize, new Decimal(-1000), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        throw new Error('Should have thrown QuoteInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(QuoteInvariantViolation);
         expect((error as QuoteInvariantViolation).reason).toBe('INVALID_TIMESTAMP');
@@ -164,12 +149,9 @@ describe('Quote Core', () => {
     });
 
     it('бросает INVALID_TIMESTAMP для дробного числа', () => {
-      expect(() => {
-        Quote.of(bid, ask, bidSize, askSize, new Decimal(1234.567), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
-      }).toThrow(QuoteInvariantViolation);
-
       try {
         Quote.of(bid, ask, bidSize, askSize, new Decimal(1234.567), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        throw new Error('Should have thrown QuoteInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(QuoteInvariantViolation);
         expect((error as QuoteInvariantViolation).reason).toBe('INVALID_TIMESTAMP');
@@ -179,12 +161,9 @@ describe('Quote Core', () => {
     it('бросает INVALID_TIMESTAMP для слишком большого значения', () => {
       const tooLarge = 10000000000000; // > 9999999999999
 
-      expect(() => {
-        Quote.of(bid, ask, bidSize, askSize, new Decimal(tooLarge), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
-      }).toThrow(QuoteInvariantViolation);
-
       try {
         Quote.of(bid, ask, bidSize, askSize, new Decimal(tooLarge), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        throw new Error('Should have thrown QuoteInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(QuoteInvariantViolation);
         expect((error as QuoteInvariantViolation).reason).toBe('INVALID_TIMESTAMP');
@@ -211,7 +190,7 @@ describe('Quote Core', () => {
 
   describe('size consistency invariant', () => {
     it('бросает INCONSISTENT_BID_SIZE когда bid=null но bidSize>0', () => {
-      expect(() => {
+      try {
         Quote.of(
           null,  // bid отсутствует
           Price.of(new Decimal(0.52)),
@@ -219,16 +198,7 @@ describe('Quote Core', () => {
           Quantity.of(new Decimal(150)),
           new Decimal(Date.now())
         , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
-      }).toThrow(QuoteInvariantViolation);
-
-      try {
-        Quote.of(
-          null,
-          Price.of(new Decimal(0.52)),
-          Quantity.of(new Decimal(100)),
-          Quantity.of(new Decimal(150)),
-          new Decimal(Date.now())
-        , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        throw new Error('Should have thrown QuoteInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(QuoteInvariantViolation);
         expect((error as QuoteInvariantViolation).reason).toBe('INCONSISTENT_BID_SIZE');
@@ -236,7 +206,7 @@ describe('Quote Core', () => {
     });
 
     it('бросает INCONSISTENT_ASK_SIZE когда ask=null но askSize>0', () => {
-      expect(() => {
+      try {
         Quote.of(
           Price.of(new Decimal(0.48)),
           null,  // ask отсутствует
@@ -244,16 +214,7 @@ describe('Quote Core', () => {
           Quantity.of(new Decimal(150)),  // но askSize = 150 - АБСУРД!
           new Decimal(Date.now())
         , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
-      }).toThrow(QuoteInvariantViolation);
-
-      try {
-        Quote.of(
-          Price.of(new Decimal(0.48)),
-          null,
-          Quantity.of(new Decimal(100)),
-          Quantity.of(new Decimal(150)),
-          new Decimal(Date.now())
-        , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        throw new Error('Should have thrown QuoteInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(QuoteInvariantViolation);
         expect((error as QuoteInvariantViolation).reason).toBe('INCONSISTENT_ASK_SIZE');
@@ -404,7 +365,7 @@ describe('Quote Core', () => {
       expect(age.toNumber()).toBeLessThan(6000);
     });
 
-    it('принимает строку с Unix ms', () => {
+    it('принимает Decimal для Unix ms', () => {
       const timestamp = new Decimal(Date.now() - 5000);
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
@@ -880,6 +841,62 @@ describe('Quote Core', () => {
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
+      expect(quote1.equalsWithTimestamp(quote2)).toBe(false);
+    });
+
+    it('различает котировки с разными sourceId', () => {
+      const timestamp = new Decimal(Date.now());
+      const quote1 = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        timestamp,
+        'SOURCE_A' as MarketDataSourceId,
+        TEST_INSTRUMENT_ID
+      );
+      const quote2 = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        timestamp,
+        'SOURCE_B' as MarketDataSourceId, // другой источник
+        TEST_INSTRUMENT_ID
+      );
+
+      // equals() возвращает true (только рыночные данные)
+      expect(quote1.equals(quote2)).toBe(true);
+
+      // equalsWithTimestamp() возвращает false (sourceId отличается)
+      expect(quote1.equalsWithTimestamp(quote2)).toBe(false);
+    });
+
+    it('различает котировки с разными instrumentId', () => {
+      const timestamp = new Decimal(Date.now());
+      const quote1 = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        timestamp,
+        TEST_SOURCE_ID,
+        'BTC-USD' as InstrumentId
+      );
+      const quote2 = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)),
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        timestamp,
+        TEST_SOURCE_ID,
+        'ETH-USD' as InstrumentId // другой инструмент
+      );
+
+      // equals() возвращает true (только рыночные данные)
+      expect(quote1.equals(quote2)).toBe(true);
+
+      // equalsWithTimestamp() возвращает false (instrumentId отличается)
       expect(quote1.equalsWithTimestamp(quote2)).toBe(false);
     });
   });
