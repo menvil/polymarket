@@ -129,7 +129,7 @@ function executeTrade(
 
 // Использование
 const balanceResult = MoneyService.create(new Decimal(1000));
-const tradeResult2 = MoneyService.create(new Decimal(150.50));
+const tradeResult2 = MoneyService.create(new Decimal("150.50"));
 
 if (balanceResult.ok && tradeResult2.ok) {
   const balance = balanceResult.value;
@@ -151,7 +151,7 @@ if (balanceResult.ok && tradeResult2.ok) {
 
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
-import type { SupportedCurrency } from '@polymarket/ids';
+import type { SupportedCurrency } from '@polymarket/value-objects/money';
 import Decimal from 'decimal.js';
 
 function calculateTotalSpent(
@@ -188,8 +188,8 @@ function calculateTotalSpent(
 // Использование
 function example() {
   const t1Result = MoneyService.create(new Decimal(100));
-  const t2Result = MoneyService.create(new Decimal(50.50));
-  const t3Result = MoneyService.create(new Decimal(25.75));
+  const t2Result = MoneyService.create(new Decimal("50.50"));
+  const t3Result = MoneyService.create(new Decimal("25.75"));
 
   if (!t1Result.ok || !t2Result.ok || !t3Result.ok) {
     console.error('Failed to create Money');
@@ -259,29 +259,20 @@ example();
 import { MoneyService, Money } from '@polymarket/value-objects/money';
 import Decimal from 'decimal.js';
 
-function calculateFee(amount: Money, feePercent: number): Money | { error: string } {
-  // Процент в десятичную дробь (0.5% = 0.005)
-  const feeRate = new Decimal(feePercent).div(100);
-
-  const result = MoneyService.multiply(amount, feeRate.toString());
-
-  if (!result.ok) {
-    return { error: `Fee calculation failed: ${result.error.message}` };
-  }
-
-  return result.value;
-}
-
+// Используем calculateFee из предыдущего примера для расчета комиссии
 function calculateTotalWithFee(
   baseAmount: Money,
   feePercent: number
 ): Money | { error: string } {
-  const fee = calculateFee(baseAmount, feePercent);
-  if ('error' in fee) {
-    return fee;
+  // Вычисляем комиссию
+  const feeRate = new Decimal(feePercent).div(100);
+  const feeResult = MoneyService.multiply(baseAmount, feeRate.toString());
+
+  if (!feeResult.ok) {
+    return { error: `Fee calculation failed: ${feeResult.error.message}` };
   }
 
-  const result = MoneyService.add(baseAmount, fee);
+  const result = MoneyService.add(baseAmount, feeResult.value);
   if (!result.ok) {
     return { error: `Failed to calculate total: ${result.error.message}` };
   }
@@ -441,6 +432,11 @@ function createOrder(amount: Money) {
 // Получение с сервера
 async function getBalance(userId: string): Promise<Money | { error: string }> {
   const response = await fetch(`/api/balance/${userId}`);
+
+  if (!response.ok) {
+    return { error: `Failed to fetch balance: ${response.statusText}` };
+  }
+
   const data = await response.json();
 
   // data.balance = { amount: "1234.56", currency: "USDC" }
@@ -484,7 +480,7 @@ function formatCompact(amount: Money): string | null {
 
 // Использование
 function example() {
-  const balanceResult = MoneyService.create(new Decimal(1234.567), 'USDC');
+  const balanceResult = MoneyService.create(new Decimal("1234.567"), 'USDC');
   if (!balanceResult.ok) {
     console.error('Failed to create Money');
     return;
