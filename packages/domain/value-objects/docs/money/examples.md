@@ -153,19 +153,25 @@ if (balanceResult.ok && tradeResult2.ok) {
 import { MoneyService, Money } from '@polymarket/value-objects/money';
 import Decimal from 'decimal.js';
 
-function calculateTotalSpent(transactions: Money[]): Money | { error: string } {
+function calculateTotalSpent(
+  transactions: Money[],
+  currency?: 'USDC' | 'USDT'
+): Money | { error: string } {
   if (transactions.length === 0) {
-    return Money.ZERO.USDC;
+    if (!currency) {
+      return { error: 'Currency must be specified for empty transaction list' };
+    }
+    return Money.ZERO[currency];
   }
 
   // Проверяем что все транзакции в одной валюте
-  const currency = transactions[0].currency();
-  if (!transactions.every(t => t.currency() === currency)) {
+  const derivedCurrency = transactions[0].currency();
+  if (!transactions.every(t => t.currency() === derivedCurrency)) {
     return { error: 'All transactions must be in the same currency' };
   }
 
   // Накапливаем сумму
-  let total = Money.ZERO[currency];
+  let total = Money.ZERO[derivedCurrency];
 
   for (const transaction of transactions) {
     const result = MoneyService.add(total, transaction);
@@ -387,13 +393,16 @@ function example() {
   const currentValue = currentValueResult.value;
 
   const profitResult = MoneyService.subtract(currentValue, invested);
-  if (profitResult.ok) {
-    const roi = calculateROI(profitResult.value, invested);
-    if ('error' in roi) {
-      console.error(roi.error);
-    } else {
-      console.log(`ROI: ${roi.toFixed(2)}%`);  // ROI: 15.00%
-    }
+  if (!profitResult.ok) {
+    console.error(`Failed to calculate profit: ${profitResult.error.message}`);
+    return;
+  }
+
+  const roi = calculateROI(profitResult.value, invested);
+  if ('error' in roi) {
+    console.error(roi.error);
+  } else {
+    console.log(`ROI: ${roi.toFixed(2)}%`);  // ROI: 15.00%
   }
 }
 
