@@ -669,6 +669,12 @@ describe('TokenBalanceService', () => {
         const canReserve = TokenBalanceService.canReserve(balance, null as any);
         expect(canReserve).toBe(false);
       });
+
+      it('возвращает false для undefined qty', () => {
+        const balance = createBalance();
+        const canReserve = TokenBalanceService.canReserve(balance, undefined as any);
+        expect(canReserve).toBe(false);
+      });
     });
   });
 
@@ -786,6 +792,59 @@ describe('TokenBalanceService', () => {
           Quantity.ZERO,
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
+        );
+
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
+
+        const isEqual = TokenBalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(isEqual).toBe(false);
+      });
+
+      it('возвращает false для балансов с разным accountId', () => {
+        const token = createTestToken();
+        const differentAccountId = {
+          kind: 'WALLET' as const,
+          address: '0x9999999999999999999999999999999999999999' as any
+        };
+        const balance1Result = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(10000)),
+          Quantity.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        const balance2Result = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(10000)),
+          Quantity.of(new Decimal(2000)),
+          differentAccountId,
+          TEST_VENUE_ID
+        );
+
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
+
+        const isEqual = TokenBalanceService.equals(balance1Result.value, balance2Result.value);
+
+        expect(isEqual).toBe(false);
+      });
+
+      it('возвращает false для балансов с разным venueId', () => {
+        const token = createTestToken();
+        const differentVenueId = 'DIFFERENT_VENUE' as any;
+        const balance1Result = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(10000)),
+          Quantity.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        const balance2Result = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(10000)),
+          Quantity.of(new Decimal(2000)),
+          TEST_ACCOUNT_ID,
+          differentVenueId
         );
 
         if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
@@ -1279,7 +1338,7 @@ describe('TokenBalanceService', () => {
         }
       });
 
-      it('не бросает исключение при null balance и null qty', () => {
+      it('не бросает исключение при null balance и null newAvailable', () => {
         expect(() => TokenBalanceService.updateAvailable(null as any, null as any)).not.toThrow();
       });
 
@@ -1287,7 +1346,7 @@ describe('TokenBalanceService', () => {
         expect(() => TokenBalanceService.updateAvailable(undefined as any, qty)).not.toThrow();
       });
 
-      it('не бросает исключение при undefined qty', () => {
+      it('не бросает исключение при undefined newAvailable', () => {
         expect(() => TokenBalanceService.updateAvailable(balance, undefined as any)).not.toThrow();
       });
     });

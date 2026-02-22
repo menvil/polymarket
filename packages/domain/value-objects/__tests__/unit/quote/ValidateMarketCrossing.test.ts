@@ -183,11 +183,13 @@ describe('ValidateMarketCrossing', () => {
 
     it('returns Err с side="bid" когда обе стороны пересекают одновременно (quoteBid >= orderbookAsk AND quoteAsk <= orderbookBid)', () => {
       // Создаём ситуацию где ОБЕ стороны пересекают рынок
-      // Используем широкий спред orderbook: bid=0.40, ask=0.60
-      // Наша котировка: bid=0.61 (пересекает ask), ask=0.39 (пересекает bid)
+      // Orderbook: bid=0.65, ask=0.35 (инвертированный spread, что технически невалидно для orderbook, но проверяет логику)
+      // Наша котировка: bid=0.39, ask=0.61 (валидный спред для котировки)
+      // quote.bid (0.39) >= orderbookAsk (0.35) - bid пересекает
+      // quote.ask (0.61) <= orderbookBid (0.65) - ask пересекает
       const doubleCrossingQuote = Quote.of(
-        Price.of(new Decimal(0.39)), // наш bid < наш ask (валидная котировка), но >= orderbook ask (0.35)
-        Price.of(new Decimal(0.61)), // наш ask > наш bid (валидная котировка), но <= orderbook bid (0.65)
+        Price.of(new Decimal(0.39)), // наш bid >= orderbook ask (0.35)
+        Price.of(new Decimal(0.61)), // наш ask <= orderbook bid (0.65)
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now()),
@@ -195,8 +197,8 @@ describe('ValidateMarketCrossing', () => {
         TEST_INSTRUMENT_ID
       );
 
-      const orderbookBid = Price.of(new Decimal(0.65)); // высокий bid (наш ask пересекает)
-      const orderbookAsk = Price.of(new Decimal(0.35)); // низкий ask (наш bid пересекает)
+      const orderbookBid = Price.of(new Decimal(0.65)); // высокий bid (quote.ask пересекает его)
+      const orderbookAsk = Price.of(new Decimal(0.35)); // низкий ask (quote.bid пересекает его)
 
       const result = ValidateMarketCrossing.checkQuote(doubleCrossingQuote, orderbookBid, orderbookAsk);
 
@@ -211,7 +213,7 @@ describe('ValidateMarketCrossing', () => {
   });
 
   describe('crossesMarket()', () => {
-    it('returns true когда пересекает', () => {
+    it('returns true когда пересекает (bid side)', () => {
       const quote = Quote.of(
         Price.of(new Decimal(0.51)), // наш bid
         Price.of(new Decimal(0.52)),
@@ -224,6 +226,25 @@ describe('ValidateMarketCrossing', () => {
 
       const orderbookBid = Price.of(new Decimal(0.50));
       const orderbookAsk = Price.of(new Decimal(0.51)); // наш bid >= orderbook ask
+
+      const crosses = ValidateMarketCrossing.crossesMarket(quote, orderbookBid, orderbookAsk);
+
+      expect(crosses).toBe(true);
+    });
+
+    it('returns true когда quoteAsk <= orderbookBid (ask side пересекает)', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.50)), // наш ask <= orderbook bid
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+
+      const orderbookBid = Price.of(new Decimal(0.50)); // наш ask <= orderbook bid
+      const orderbookAsk = Price.of(new Decimal(0.51));
 
       const crosses = ValidateMarketCrossing.crossesMarket(quote, orderbookBid, orderbookAsk);
 
@@ -248,14 +269,58 @@ describe('ValidateMarketCrossing', () => {
 
       expect(crosses).toBe(false);
     });
+
+    it('returns false когда ask не пересекает (non-crossing ask case)', () => {
+      const quote = Quote.of(
+        Price.of(new Decimal(0.48)),
+        Price.of(new Decimal(0.52)), // наш ask > orderbook bid (0.50)
+        Quantity.of(new Decimal(100)),
+        Quantity.of(new Decimal(150)),
+        new Decimal(Date.now()),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
+
+      const orderbookBid = Price.of(new Decimal(0.50));
+      const orderbookAsk = Price.of(new Decimal(0.51));
+
+      const crosses = ValidateMarketCrossing.crossesMarket(quote, orderbookBid, orderbookAsk);
+
+      expect(crosses).toBe(false);
+    });
   });
 
   describe('check() - low-level API', () => {
-    it('works с отдельными bid/ask вместо Quote', () => {
+    it('works с отдельными bid/ask вместо Quote (bid пересекает)', () => {
       const quoteBid = Price.of(new Decimal(0.51));
       const quoteAsk = Price.of(new Decimal(0.52));
       const orderbookBid = Price.of(new Decimal(0.50));
       const orderbookAsk = Price.of(new Decimal(0.51)); // quoteBid >= orderbookAsk
+
+      const result = ValidateMarketCrossing.check(quoteBid, quoteAsk, orderbookBid, orderbookAsk);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.MARKET_CROSSING);
+      }
+    });
+
+    it('returns Ok когда ни одна сторона не пересекает (successful path)', () => {
+      const quoteBid = Price.of(new Decimal(0.48));
+      const quoteAsk = Price.of(new Decimal(0.52));
+      const orderbookBid = Price.of(new Decimal(0.50));
+      const orderbookAsk = Price.of(new Decimal(0.51));
+
+      const result = ValidateMarketCrossing.check(quoteBid, quoteAsk, orderbookBid, orderbookAsk);
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('returns Err когда ask-side пересекает (quoteAsk <= orderbookBid)', () => {
+      const quoteBid = Price.of(new Decimal(0.48));
+      const quoteAsk = Price.of(new Decimal(0.50)); // <= orderbookBid
+      const orderbookBid = Price.of(new Decimal(0.50));
+      const orderbookAsk = Price.of(new Decimal(0.51));
 
       const result = ValidateMarketCrossing.check(quoteBid, quoteAsk, orderbookBid, orderbookAsk);
 

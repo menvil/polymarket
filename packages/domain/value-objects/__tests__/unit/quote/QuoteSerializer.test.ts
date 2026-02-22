@@ -559,6 +559,8 @@ describe('QuoteSerializer', () => {
       expect(parsed.bidSize).toBe(100);
       expect(parsed.askSize).toBe(150);
       expect(parsed.timestamp).toBe(1234567890000);
+      expect(parsed.sourceId).toBe(TEST_SOURCE_ID);
+      expect(parsed.instrumentId).toBe(TEST_INSTRUMENT_ID);
     });
 
     it('правильно форматирует JSON', () => {

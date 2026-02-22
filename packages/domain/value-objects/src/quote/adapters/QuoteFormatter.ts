@@ -23,12 +23,12 @@ export interface QuoteFormatOptions {
   includeTimestamp?: boolean;
 
   /**
-   * Показывать spread (по умолчанию: false)
+   * Показывать spread (по умолчанию: true)
    */
   includeSpread?: boolean;
 
   /**
-   * Показывать mid price (по умолчанию: false)
+   * Показывать mid price (по умолчанию: true)
    */
   includeMid?: boolean;
 
@@ -68,7 +68,7 @@ export interface QuoteFormatOptions {
  * console.log(QuoteFormatter.toShort(quote));
  * // "0.4800/0.5200"
  *
- * // Подробный формат
+ * // Подробный формат (по умолчанию включает spread и mid)
  * console.log(QuoteFormatter.toDetailed(quote));
  * // "Bid: 0.4800 @ 100.00, Ask: 0.5200 @ 150.00, Spread: 0.0400 (8.00%), Mid: 0.5000"
  * ```
@@ -202,10 +202,11 @@ export class QuoteFormatter {
    * @example
    * ```typescript
    * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
+   * // По умолчанию включает spread и mid (includeSpread: true, includeMid: true)
    * console.log(QuoteFormatter.toDetailed(quote));
    * // "Bid: 0.4800 @ 100.00, Ask: 0.5200 @ 150.00, Spread: 0.0400 (8.00%), Mid: 0.5000"
    *
-   * // С опциями
+   * // С опциями: выключить spread, оставить mid
    * console.log(QuoteFormatter.toDetailed(quote, { includeSpread: false, includeMid: true }));
    * // "Bid: 0.4800 @ 100.00, Ask: 0.5200 @ 150.00, Mid: 0.5000"
    * ```

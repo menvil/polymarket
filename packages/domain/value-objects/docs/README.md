@@ -342,7 +342,7 @@ const p1 = unwrap(Percentage.fromDecimal(0.1));
 const p2 = unwrap(Percentage.fromDecimal(0.2));
 const sum = unwrap(p1.add(p2));
 
-console.log(sum.toDecimal().toString()); // "30" - точно!
+console.log(sum.toDecimal().toString()); // "0.3" - точно!
 ```
 
 ### PnL (Profit & Loss) расчёты
@@ -586,7 +586,7 @@ console.log(`Общая стоимость портфеля: ${totalValue.toStri
 positions.forEach(pos => {
   const totalDecimal = totalValue.toDecimal();
   const posDecimal = pos.value.toDecimal();
-  const shareDecimal = posDecimal.dividedBy(totalDecimal).times(100);
+  const shareDecimal = posDecimal.dividedBy(totalDecimal);
 
   const share = unwrap(Percentage.fromDecimal(shareDecimal));
   console.log(`${pos.symbol}: ${share.toString()}`);
