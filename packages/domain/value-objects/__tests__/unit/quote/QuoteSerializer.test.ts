@@ -122,6 +122,8 @@ describe('QuoteSerializer', () => {
       if (result.ok) {
         expect(result.value.hasBid()).toBe(true);
         expect(result.value.hasAsk()).toBe(false);
+        expect(result.value.sourceId()).toBe('TEST_SOURCE');
+        expect(result.value.instrumentId()).toBe('TEST_INSTRUMENT');
       }
     });
 
@@ -142,6 +144,8 @@ describe('QuoteSerializer', () => {
       if (result.ok) {
         expect(result.value.hasBid()).toBe(false);
         expect(result.value.hasAsk()).toBe(true);
+        expect(result.value.sourceId()).toBe('TEST_SOURCE');
+        expect(result.value.instrumentId()).toBe('TEST_INSTRUMENT');
       }
     });
 
@@ -612,6 +616,8 @@ describe('QuoteSerializer', () => {
       if (result.ok) {
         expect(result.value.hasBid()).toBe(true);
         expect(result.value.hasAsk()).toBe(false);
+        expect(result.value.sourceId()).toBe('TEST_SOURCE');
+        expect(result.value.instrumentId()).toBe('TEST_INSTRUMENT');
       }
     });
 

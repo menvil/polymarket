@@ -24,6 +24,33 @@ describe('TokenBalanceService', () => {
     return result.value;
   };
 
+  // Shared balance fixtures (used across multiple test suites)
+  const createBalanceAvailable10000Reserved2000 = () => {
+    const token = createTestToken();
+    const result = TokenBalanceService.create(
+      token,
+      Quantity.of(new Decimal(10000)),
+      Quantity.of(new Decimal(2000)),
+      TEST_ACCOUNT_ID,
+      TEST_VENUE_ID
+    );
+    if (!result.ok) throw new Error('Failed to create balance');
+    return result.value;
+  };
+
+  const createBalanceAvailable7000Reserved5000 = () => {
+    const token = createTestToken();
+    const result = TokenBalanceService.create(
+      token,
+      Quantity.of(new Decimal(7000)),
+      Quantity.of(new Decimal(5000)),
+      TEST_ACCOUNT_ID,
+      TEST_VENUE_ID
+    );
+    if (!result.ok) throw new Error('Failed to create balance');
+    return result.value;
+  };
+
   describe('create()', () => {
     describe('успешное создание', () => {
       it('создаёт баланс из token, available и reserved', () => {
@@ -172,6 +199,195 @@ describe('TokenBalanceService', () => {
           expect(result.error.message).toContain('venueId is required');
         }
       });
+
+      it('возвращает Err для undefined token', () => {
+        const result = TokenBalanceService.create(
+          undefined as any,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_TOKEN);
+        }
+      });
+
+      it('возвращает Err для undefined available', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.create(
+          token,
+          undefined as any,
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
+        }
+      });
+
+      it('возвращает Err для undefined reserved', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          undefined as any,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
+        }
+      });
+
+      it('возвращает Err для undefined accountId', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          undefined as any,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+        }
+      });
+
+      it('возвращает Err для undefined venueId', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          undefined as any
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+        }
+      });
+    });
+
+    describe('безопасность (never throws)', () => {
+      it('не бросает исключение при null token', () => {
+        expect(() => TokenBalanceService.create(
+          null as any,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при undefined token', () => {
+        expect(() => TokenBalanceService.create(
+          undefined as any,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при null available', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.create(
+          token,
+          null as any,
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при undefined available', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.create(
+          token,
+          undefined as any,
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при null reserved', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          null as any,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при undefined reserved', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          undefined as any,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при null accountId', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          null as any,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при undefined accountId', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          undefined as any,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при null venueId', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          null as any
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при undefined venueId', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          undefined as any
+        )).not.toThrow();
+      });
     });
   });
 
@@ -260,26 +476,152 @@ describe('TokenBalanceService', () => {
           expect(result.error.message).toContain('venueId is required');
         }
       });
+
+      it('возвращает Err для undefined token', () => {
+        const result = TokenBalanceService.createWithZeroReserved(
+          undefined as any,
+          Quantity.of(new Decimal(100)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_TOKEN);
+        }
+      });
+
+      it('возвращает Err для undefined available', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.createWithZeroReserved(
+          token,
+          undefined as any,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_AMOUNT);
+        }
+      });
+
+      it('возвращает Err для undefined accountId', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.createWithZeroReserved(
+          token,
+          Quantity.of(new Decimal(100)),
+          undefined as any,
+          TEST_VENUE_ID
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+        }
+      });
+
+      it('возвращает Err для undefined venueId', () => {
+        const token = createTestToken();
+        const result = TokenBalanceService.createWithZeroReserved(
+          token,
+          Quantity.of(new Decimal(100)),
+          TEST_ACCOUNT_ID,
+          undefined as any
+        );
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
+        }
+      });
+    });
+
+    describe('безопасность (never throws)', () => {
+      it('не бросает исключение при null token', () => {
+        expect(() => TokenBalanceService.createWithZeroReserved(
+          null as any,
+          Quantity.of(new Decimal(100)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при undefined token', () => {
+        expect(() => TokenBalanceService.createWithZeroReserved(
+          undefined as any,
+          Quantity.of(new Decimal(100)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при null available', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.createWithZeroReserved(
+          token,
+          null as any,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при undefined available', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.createWithZeroReserved(
+          token,
+          undefined as any,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при null accountId', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.createWithZeroReserved(
+          token,
+          Quantity.of(new Decimal(100)),
+          null as any,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при undefined accountId', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.createWithZeroReserved(
+          token,
+          Quantity.of(new Decimal(100)),
+          undefined as any,
+          TEST_VENUE_ID
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при null venueId', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.createWithZeroReserved(
+          token,
+          Quantity.of(new Decimal(100)),
+          TEST_ACCOUNT_ID,
+          null as any
+        )).not.toThrow();
+      });
+
+      it('не бросает исключение при undefined venueId', () => {
+        const token = createTestToken();
+        expect(() => TokenBalanceService.createWithZeroReserved(
+          token,
+          Quantity.of(new Decimal(100)),
+          TEST_ACCOUNT_ID,
+          undefined as any
+        )).not.toThrow();
+      });
     });
   });
 
   describe('reserve()', () => {
-    const createBalance = () => {
-      const token = createTestToken();
-      const result = TokenBalanceService.create(
-        token,
-        Quantity.of(new Decimal(10000)),
-        Quantity.of(new Decimal(2000)),
-        TEST_ACCOUNT_ID,
-        TEST_VENUE_ID
-      );
-      if (!result.ok) throw new Error('Failed to create balance');
-      return result.value;
-    };
-
     describe('успешное резервирование', () => {
       it('резервирует токены из available', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const result = TokenBalanceService.reserve(balance, Quantity.of(new Decimal(3000)));
 
         expect(result.ok).toBe(true);
@@ -291,7 +633,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('резервирует все available', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const result = TokenBalanceService.reserve(balance, Quantity.of(new Decimal(10000)));
 
         expect(result.ok).toBe(true);
@@ -302,7 +644,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('возвращает новый экземпляр (immutability)', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const result = TokenBalanceService.reserve(balance, Quantity.of(new Decimal(1000)));
 
         expect(result.ok).toBe(true);
@@ -316,7 +658,7 @@ describe('TokenBalanceService', () => {
 
     describe('ошибки резервирования', () => {
       it('возвращает ошибку INSUFFICIENT_AVAILABLE', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const result = TokenBalanceService.reserve(balance, Quantity.of(new Decimal(15000)));
 
         expect(result.ok).toBe(false);
@@ -327,7 +669,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('возвращает ошибку для нулевого количества', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const result = TokenBalanceService.reserve(balance, Quantity.ZERO);
 
         expect(result.ok).toBe(false);
@@ -342,22 +684,9 @@ describe('TokenBalanceService', () => {
   });
 
   describe('unfreezeReserved()', () => {
-    const createBalance = () => {
-      const token = createTestToken();
-      const result = TokenBalanceService.create(
-        token,
-        Quantity.of(new Decimal(7000)),
-        Quantity.of(new Decimal(5000)),
-        TEST_ACCOUNT_ID,
-        TEST_VENUE_ID
-      );
-      if (!result.ok) throw new Error('Failed to create balance');
-      return result.value;
-    };
-
     describe('успешное освобождение', () => {
       it('освобождает зарезервированные токены', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable7000Reserved5000();
         const result = TokenBalanceService.unfreezeReserved(balance, Quantity.of(new Decimal(2000)));
 
         expect(result.ok).toBe(true);
@@ -369,7 +698,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('освобождает все reserved', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable7000Reserved5000();
         const result = TokenBalanceService.unfreezeReserved(balance, Quantity.of(new Decimal(5000)));
 
         expect(result.ok).toBe(true);
@@ -380,7 +709,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('возвращает новый экземпляр (immutability)', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable7000Reserved5000();
         const result = TokenBalanceService.unfreezeReserved(balance, Quantity.of(new Decimal(1000)));
 
         expect(result.ok).toBe(true);
@@ -394,7 +723,7 @@ describe('TokenBalanceService', () => {
 
     describe('ошибки освобождения', () => {
       it('возвращает ошибку INSUFFICIENT_RESERVED', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable7000Reserved5000();
         const result = TokenBalanceService.unfreezeReserved(balance, Quantity.of(new Decimal(10000)));
 
         expect(result.ok).toBe(false);
@@ -405,7 +734,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('возвращает ошибку для нулевого количества', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable7000Reserved5000();
         const result = TokenBalanceService.unfreezeReserved(balance, Quantity.ZERO);
 
         expect(result.ok).toBe(false);
@@ -420,22 +749,9 @@ describe('TokenBalanceService', () => {
   });
 
   describe('consumeReserved()', () => {
-    const createBalance = () => {
-      const token = createTestToken();
-      const result = TokenBalanceService.create(
-        token,
-        Quantity.of(new Decimal(7000)),
-        Quantity.of(new Decimal(5000)),
-        TEST_ACCOUNT_ID,
-        TEST_VENUE_ID
-      );
-      if (!result.ok) throw new Error('Failed to create balance');
-      return result.value;
-    };
-
     describe('успешное списание', () => {
       it('списывает часть зарезервированных токенов', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable7000Reserved5000();
         const result = TokenBalanceService.consumeReserved(balance, Quantity.of(new Decimal(2000)));
 
         expect(result.ok).toBe(true);
@@ -447,7 +763,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('списывает все reserved', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable7000Reserved5000();
         const result = TokenBalanceService.consumeReserved(balance, Quantity.of(new Decimal(5000)));
 
         expect(result.ok).toBe(true);
@@ -459,7 +775,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('возвращает новый экземпляр (immutability)', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable7000Reserved5000();
         const result = TokenBalanceService.consumeReserved(balance, Quantity.of(new Decimal(1000)));
 
         expect(result.ok).toBe(true);
@@ -471,7 +787,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('available остаётся неизменным при списании', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable7000Reserved5000();
         const initialAvailable = balance.available().value().toNumber();
         const result = TokenBalanceService.consumeReserved(balance, Quantity.of(new Decimal(3000)));
 
@@ -483,19 +799,23 @@ describe('TokenBalanceService', () => {
     });
 
     describe('ошибки списания', () => {
-      it('возвращает ошибку INSUFFICIENT_RESERVED', () => {
-        const balance = createBalance();
+      it('возвращает ошибку INSUFFICIENT_RESERVED с контекстом фасада', () => {
+        const balance = createBalanceAvailable7000Reserved5000();
         const result = TokenBalanceService.consumeReserved(balance, Quantity.of(new Decimal(10000)));
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error.context?.op).toBe('consumeReserved');
           expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INSUFFICIENT_RESERVED);
+          expect(result.error.context).toHaveProperty('token');
+          expect(result.error.context).toHaveProperty('available');
+          expect(result.error.context).toHaveProperty('reserved');
+          expect(result.error.context).toHaveProperty('qty');
         }
       });
 
       it('возвращает ошибку для нулевого количества', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable7000Reserved5000();
         const result = TokenBalanceService.consumeReserved(balance, Quantity.ZERO);
 
         expect(result.ok).toBe(false);
@@ -503,40 +823,13 @@ describe('TokenBalanceService', () => {
           expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
         }
       });
-
-      it('проверяет контракт фасада: op и context', () => {
-        const balance = createBalance();
-        const result = TokenBalanceService.consumeReserved(balance, Quantity.of(new Decimal(10000)));
-
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.context?.op).toBe('consumeReserved');
-          expect(result.error.context).toHaveProperty('token');
-          expect(result.error.context).toHaveProperty('available');
-          expect(result.error.context).toHaveProperty('reserved');
-          expect(result.error.context).toHaveProperty('qty');
-        }
-      });
     });
   });
 
   describe('updateAvailable()', () => {
-    const createBalance = () => {
-      const token = createTestToken();
-      const result = TokenBalanceService.create(
-        token,
-        Quantity.of(new Decimal(10000)),
-        Quantity.of(new Decimal(2000)),
-        TEST_ACCOUNT_ID,
-        TEST_VENUE_ID
-      );
-      if (!result.ok) throw new Error('Failed to create balance');
-      return result.value;
-    };
-
     describe('успешное обновление', () => {
       it('обновляет available, сохраняя reserved', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const result = TokenBalanceService.updateAvailable(balance, Quantity.of(new Decimal(15000)));
 
         expect(result.ok).toBe(true);
@@ -548,7 +841,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('обновляет available на 0', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const result = TokenBalanceService.updateAvailable(balance, Quantity.ZERO);
 
         expect(result.ok).toBe(true);
@@ -559,7 +852,7 @@ describe('TokenBalanceService', () => {
       });
 
       it('возвращает новый экземпляр (immutability)', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const result = TokenBalanceService.updateAvailable(balance, Quantity.of(new Decimal(20000)));
 
         expect(result.ok).toBe(true);
@@ -578,43 +871,30 @@ describe('TokenBalanceService', () => {
   });
 
   describe('canReserve()', () => {
-    const createBalance = () => {
-      const token = createTestToken();
-      const result = TokenBalanceService.create(
-        token,
-        Quantity.of(new Decimal(10000)),
-        Quantity.of(new Decimal(2000)),
-        TEST_ACCOUNT_ID,
-        TEST_VENUE_ID
-      );
-      if (!result.ok) throw new Error('Failed to create balance');
-      return result.value;
-    };
-
     describe('успешная проверка', () => {
       it('возвращает true если available >= qty', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const canReserve = TokenBalanceService.canReserve(balance, Quantity.of(new Decimal(5000)));
 
         expect(canReserve).toBe(true);
       });
 
       it('возвращает true если available === qty (граница)', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const canReserve = TokenBalanceService.canReserve(balance, Quantity.of(new Decimal(10000)));
 
         expect(canReserve).toBe(true);
       });
 
       it('возвращает false если available < qty', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const canReserve = TokenBalanceService.canReserve(balance, Quantity.of(new Decimal(15000)));
 
         expect(canReserve).toBe(false);
       });
 
       it('возвращает false для нулевого количества (reserved must be positive)', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const canReserve = TokenBalanceService.canReserve(balance, Quantity.ZERO);
 
         expect(canReserve).toBe(false);
@@ -665,13 +945,13 @@ describe('TokenBalanceService', () => {
       });
 
       it('возвращает false для null qty', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const canReserve = TokenBalanceService.canReserve(balance, null as any);
         expect(canReserve).toBe(false);
       });
 
       it('возвращает false для undefined qty', () => {
-        const balance = createBalance();
+        const balance = createBalanceAvailable10000Reserved2000();
         const canReserve = TokenBalanceService.canReserve(balance, undefined as any);
         expect(canReserve).toBe(false);
       });
@@ -856,7 +1136,7 @@ describe('TokenBalanceService', () => {
     });
 
     describe('безопасность (never throws)', () => {
-      it('возвращает false для null balance', () => {
+      it('возвращает false для null balance (первый аргумент)', () => {
         const token = createTestToken();
         const balanceResult = TokenBalanceService.create(
           token,
@@ -871,7 +1151,37 @@ describe('TokenBalanceService', () => {
         expect(isEqual).toBe(false);
       });
 
-      it('возвращает false для undefined balance', () => {
+      it('возвращает false для null balance (второй аргумент)', () => {
+        const token = createTestToken();
+        const balanceResult = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
+
+        const isEqual = TokenBalanceService.equals(balanceResult.value, null as any);
+        expect(isEqual).toBe(false);
+      });
+
+      it('возвращает false для undefined balance (первый аргумент)', () => {
+        const token = createTestToken();
+        const balanceResult = TokenBalanceService.create(
+          token,
+          Quantity.of(new Decimal(100)),
+          Quantity.ZERO,
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
+
+        const isEqual = TokenBalanceService.equals(undefined as any, balanceResult.value);
+        expect(isEqual).toBe(false);
+      });
+
+      it('возвращает false для undefined balance (второй аргумент)', () => {
         const token = createTestToken();
         const balanceResult = TokenBalanceService.create(
           token,

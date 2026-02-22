@@ -178,6 +178,8 @@ describe('ValidateMarketCrossing', () => {
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.MARKET_CROSSING);
         expect(result.error.context?.side).toBe('bid');
+        expect(result.error.context?.quoteBid).toBe(0.52);
+        expect(result.error.context?.orderbookAsk).toBe(0.51);
       }
     });
 
@@ -208,6 +210,9 @@ describe('ValidateMarketCrossing', () => {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.MARKET_CROSSING);
         // Проверяем что возвращается первая обнаруженная сторона (bid проверяется первым)
         expect(result.error.context?.side).toBe('bid');
+        // При bid-side crossing присутствуют только quoteBid и orderbookAsk
+        expect(result.error.context?.quoteBid).toBe(0.39);
+        expect(result.error.context?.orderbookAsk).toBe(0.35);
       }
     });
   });
@@ -273,7 +278,7 @@ describe('ValidateMarketCrossing', () => {
     it('returns false когда ask не пересекает (non-crossing ask case)', () => {
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)), // наш ask > orderbook bid (0.50)
+        Price.of(new Decimal(0.53)), // наш ask > orderbook bid (0.50) - distinct value
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now()),

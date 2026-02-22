@@ -144,11 +144,11 @@ export class QuoteFormatter {
     }
 
     if (options.includeSource) {
-      result += ` [${quote.sourceId()}]`;
+      result += ` [Source: ${quote.sourceId()}]`;
     }
 
     if (options.includeInstrument) {
-      result += ` [${quote.instrumentId()}]`;
+      result += ` [Instrument: ${quote.instrumentId()}]`;
     }
 
     return result;
@@ -294,21 +294,25 @@ export class QuoteFormatter {
     const lines: string[] = [];
     const separator = '─'.repeat(40);
 
+    // Calculate dynamic column width for price
+    const bidPrice = quote.hasBid() ? quote.bid()!.value().toFixed(priceDecimals) : '--';
+    const askPrice = quote.hasAsk() ? quote.ask()!.value().toFixed(priceDecimals) : '--';
+    const priceHeaderWidth = 'Price'.length;
+    const maxPriceWidth = Math.max(priceHeaderWidth, bidPrice.length, askPrice.length);
+
     lines.push('Side   Price    Size');
     lines.push(separator);
 
     if (quote.hasBid()) {
-      const price = quote.bid()!.value().toFixed(priceDecimals);
       const size = quote.bidSize().value().toFixed(sizeDecimals);
-      lines.push(`Bid    ${price.padEnd(8)} ${size}`);
+      lines.push(`Bid    ${bidPrice.padEnd(maxPriceWidth)}   ${size}`);
     } else {
       lines.push('Bid    --       --');
     }
 
     if (quote.hasAsk()) {
-      const price = quote.ask()!.value().toFixed(priceDecimals);
       const size = quote.askSize().value().toFixed(sizeDecimals);
-      lines.push(`Ask    ${price.padEnd(8)} ${size}`);
+      lines.push(`Ask    ${askPrice.padEnd(maxPriceWidth)}   ${size}`);
     } else {
       lines.push('Ask    --       --');
     }

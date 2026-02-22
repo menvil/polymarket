@@ -351,16 +351,16 @@ console.log(sum.toDecimal().toString()); // "0.3" - точно!
 import { Money } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
-const cost = unwrap(Money.fromValue(100));
-const revenue = unwrap(Money.fromValue(85));
+const cost = unwrap(MoneyService.create(100));
+const revenue = unwrap(MoneyService.create(85));
 
-const pnl = unwrap(revenue.subtract(cost));
+const pnl = unwrap(MoneyService.subtract(revenue, cost));
 
 if (pnl.isNegative()) {
-  console.log(`Убыток: ${pnl.abs().toString()}`);
-  // "Убыток: $15.00 USDC"
+  console.log(`Убыток: ${pnl.value().abs().toString()}`);
+  // "Убыток: 15"
 } else {
-  console.log(`Прибыль: ${pnl.toString()}`);
+  console.log(`Прибыль: ${pnl.value().toString()}`);
 }
 ```
 
@@ -412,10 +412,10 @@ invalid.match({
 Все ошибки типизированы и содержат контекст:
 
 ```typescript
-const m1 = unwrap(Money.fromValue(100, 'USDC'));
-const m2 = unwrap(Money.fromValue(1, 'BTC')); // Если BTC добавлен
+const m1 = unwrap(MoneyService.create(100, 'USDC'));
+const m2 = unwrap(MoneyService.create(1, 'BTC')); // Если BTC добавлен
 
-const result = m1.add(m2);
+const result = MoneyService.add(m1, m2);
 
 result.match({
   ok: (money) => console.log(money),
