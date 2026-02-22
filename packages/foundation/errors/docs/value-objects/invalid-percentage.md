@@ -5,6 +5,7 @@
 ## Описание
 
 Процентное значение может быть представлено в двух форматах:
+
 - **[0, 100]** - обычный формат (50 = 50%)
 - **[0, 1]** - дробный формат (0.5 = 50%)
 
@@ -35,7 +36,7 @@
 import { InvalidPercentageError } from '@polymarket/errors';
 
 // Для примеров с Result<T,E>:
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 ```
 
 ---
@@ -98,7 +99,7 @@ try {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPercentageError } from '@polymarket/errors';
 
 class Percentage {
@@ -115,7 +116,7 @@ class Percentage {
     const max = 100;
 
     if (!isFinite(value) || isNaN(value)) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           'Percentage must be a finite number',
           {
@@ -127,7 +128,7 @@ class Percentage {
     }
 
     if (value < min || value > max) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Invalid percentage ${ctx.value}%: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -138,7 +139,7 @@ class Percentage {
       );
     }
 
-    return Result.ok(new Percentage(value, 'whole'));
+    return Ok(new Percentage(value, 'whole'));
   }
 
   /**
@@ -149,7 +150,7 @@ class Percentage {
     const max = 1;
 
     if (!isFinite(value) || isNaN(value)) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           'Percentage must be a finite number',
           {
@@ -161,7 +162,7 @@ class Percentage {
     }
 
     if (value < min || value > max) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Invalid percentage ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -172,7 +173,7 @@ class Percentage {
       );
     }
 
-    return Result.ok(new Percentage(value, 'decimal'));
+    return Ok(new Percentage(value, 'decimal'));
   }
 
   getValue(): number {
@@ -207,6 +208,7 @@ result1.match({
 ### 3. Slippage Tolerance с кастомными сообщениями
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPercentageError } from '@polymarket/errors';
 
 class SlippageTolerance {
@@ -220,7 +222,7 @@ class SlippageTolerance {
     maxAllowed: number = SlippageTolerance.DEFAULT_MAX
   ): Result<SlippageTolerance, InvalidPercentageError> {
     if (value < 0) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           'Slippage cannot be negative',
           {
@@ -232,7 +234,7 @@ class SlippageTolerance {
     }
 
     if (value > SlippageTolerance.ABSOLUTE_MAX) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Slippage ${ctx.value}% is too high (max: ${ctx.max}%)`,
           {
@@ -244,7 +246,7 @@ class SlippageTolerance {
     }
 
     if (value > maxAllowed) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Warning: High slippage ${ctx.value}% (recommended max: ${ctx.recommended}%)`,
           {
@@ -281,34 +283,31 @@ function handleSlippageInput(input: string): void {
 
   const result = SlippageTolerance.fromPercentage(value);
 
-  result.match({
-    ok: (slippage) => {
-      // Обновляем настройки
-      setSlippage(slippage);
-      clearError('slippage');
+  if (result.ok) {
+    // Обновляем настройки
+    setSlippage(result.value);
+    clearError('slippage');
 
-      // Показываем предупреждение для высоких значений
-      if (slippage.getPercentage().toWhole() > 1) {
-        showWarning('High slippage tolerance may result in unfavorable trades');
-      }
-    },
-    err: (error) => {
-      if (InvalidPercentageError.is(error)) {
-        const value = error.context?.value as number;
-        const max = error.context?.max as number;
-
-        let userMessage = `Slippage must be between 0% and ${max}%`;
-
-        if (value < 0) {
-          userMessage = 'Slippage cannot be negative';
-        } else if (value > 50) {
-          userMessage = 'Slippage is too high (maximum: 50%)';
-        }
-
-        showFieldError('slippage', userMessage);
-      }
+    // Показываем предупреждение для высоких значений
+    if (result.value.getPercentage().toWhole() > 1) {
+      showWarning('High slippage tolerance may result in unfavorable trades');
     }
-  });
+  } else {
+    if (InvalidPercentageError.is(result.error)) {
+      const value = result.error.context?.value as number;
+      const max = result.error.context?.max as number;
+
+      let userMessage = `Slippage must be between 0% and ${max}%`;
+
+      if (value < 0) {
+        userMessage = 'Slippage cannot be negative';
+      } else if (value > 50) {
+        userMessage = 'Slippage is too high (maximum: 50%)';
+      }
+
+      showFieldError('slippage', userMessage);
+    }
+  }
 }
 ```
 
@@ -316,7 +315,7 @@ function handleSlippageInput(input: string): void {
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPercentageError } from '@polymarket/errors';
 
 class Percentage {
@@ -332,7 +331,7 @@ class Percentage {
 
   static fromDecimalValue(value: Decimal): Result<Percentage, InvalidPercentageError> {
     if (!value.isFinite()) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           'Percentage must be finite',
           {
@@ -344,7 +343,7 @@ class Percentage {
     }
 
     if (value.lessThan(Percentage.MIN_DECIMAL) || value.greaterThan(Percentage.MAX_DECIMAL)) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Invalid percentage ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -355,12 +354,12 @@ class Percentage {
       );
     }
 
-    return Result.ok(new Percentage(value, 'decimal'));
+    return Ok(new Percentage(value, 'decimal'));
   }
 
   static fromWholeValue(value: Decimal): Result<Percentage, InvalidPercentageError> {
     if (!value.isFinite()) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           'Percentage must be finite',
           {
@@ -372,7 +371,7 @@ class Percentage {
     }
 
     if (value.lessThan(Percentage.MIN_WHOLE) || value.greaterThan(Percentage.MAX_WHOLE)) {
-      return Result.err(
+      return Err(
         new InvalidPercentageError(
           (ctx) => `Invalid percentage ${ctx.value}%: must be in [${ctx.min}, ${ctx.max}]`,
           {
@@ -383,7 +382,7 @@ class Percentage {
       );
     }
 
-    return Result.ok(new Percentage(value, 'whole'));
+    return Ok(new Percentage(value, 'whole'));
   }
 
   toDecimal(): Decimal {
@@ -403,9 +402,11 @@ class Percentage {
 }
 
 // Пример: расчет комиссии
-const feePercent = Percentage.fromWholeValue(new Decimal('0.5')).unwrap(); // 0.5%
-const orderAmount = new Decimal('1000');
-const fee = feePercent.applyTo(orderAmount); // 5 USDC
+const feePercentResult = Percentage.fromWholeValue(new Decimal('0.5')); // 0.5%
+if (feePercentResult.ok) {
+  const orderAmount = new Decimal('1000');
+  const fee = feePercentResult.value.applyTo(orderAmount); // 5 USDC
+}
 ```
 
 ---
@@ -416,74 +417,86 @@ const fee = feePercent.applyTo(orderAmount); // 5 USDC
 
 ```typescript
 // Формат [0, 100]
-Percentage.fromWhole(0); // ✅ Result.ok(Percentage) - 0%
-Percentage.fromWhole(100); // ✅ Result.ok(Percentage) - 100%
-Percentage.fromWhole(50.5); // ✅ Result.ok(Percentage) - 50.5%
+Percentage.fromWhole(0); // ✅ Ok(Percentage) - 0%
+Percentage.fromWhole(100); // ✅ Ok(Percentage) - 100%
+Percentage.fromWhole(50.5); // ✅ Ok(Percentage) - 50.5%
 
-Percentage.fromWhole(-1); // ❌ Result.err(InvalidPercentageError)
-Percentage.fromWhole(101); // ❌ Result.err(InvalidPercentageError)
+Percentage.fromWhole(-1); // ❌ Err(InvalidPercentageError)
+Percentage.fromWhole(101); // ❌ Err(InvalidPercentageError)
 
 // Формат [0, 1]
-Percentage.fromDecimal(0); // ✅ Result.ok(Percentage) - 0%
-Percentage.fromDecimal(1); // ✅ Result.ok(Percentage) - 100%
-Percentage.fromDecimal(0.505); // ✅ Result.ok(Percentage) - 50.5%
+Percentage.fromDecimal(0); // ✅ Ok(Percentage) - 0%
+Percentage.fromDecimal(1); // ✅ Ok(Percentage) - 100%
+Percentage.fromDecimal(0.505); // ✅ Ok(Percentage) - 50.5%
 
-Percentage.fromDecimal(-0.01); // ❌ Result.err(InvalidPercentageError)
-Percentage.fromDecimal(1.01); // ❌ Result.err(InvalidPercentageError)
+Percentage.fromDecimal(-0.01); // ❌ Err(InvalidPercentageError)
+Percentage.fromDecimal(1.01); // ❌ Err(InvalidPercentageError)
 ```
 
 ### Специальные значения
 
 ```typescript
 // NaN
-Percentage.fromWhole(NaN); // ❌ Result.err(InvalidPercentageError)
-Percentage.fromDecimal(NaN); // ❌ Result.err(InvalidPercentageError)
+Percentage.fromWhole(NaN); // ❌ Err(InvalidPercentageError)
+Percentage.fromDecimal(NaN); // ❌ Err(InvalidPercentageError)
 
 // Infinity
-Percentage.fromWhole(Infinity); // ❌ Result.err(InvalidPercentageError)
-Percentage.fromWhole(-Infinity); // ❌ Result.err(InvalidPercentageError)
-Percentage.fromDecimal(Infinity); // ❌ Result.err(InvalidPercentageError)
+Percentage.fromWhole(Infinity); // ❌ Err(InvalidPercentageError)
+Percentage.fromWhole(-Infinity); // ❌ Err(InvalidPercentageError)
+Percentage.fromDecimal(Infinity); // ❌ Err(InvalidPercentageError)
 
 // Очень малые значения
-Percentage.fromWhole(0.0001); // ✅ Result.ok(Percentage) - 0.0001%
-Percentage.fromDecimal(0.000001); // ✅ Result.ok(Percentage) - 0.0001%
+Percentage.fromWhole(0.0001); // ✅ Ok(Percentage) - 0.0001%
+Percentage.fromDecimal(0.000001); // ✅ Ok(Percentage) - 0.0001%
 ```
 
 ### Конвертация между форматами
 
 ```typescript
 // Из обычного в дробный
-const pct1 = Percentage.fromWhole(50).unwrap();
-console.log(pct1.toDecimal()); // 0.5
-console.log(pct1.toWhole()); // 50
+const pct1Result = Percentage.fromWhole(50);
+if (pct1Result.ok) {
+  console.log(pct1Result.value.toDecimal()); // 0.5
+  console.log(pct1Result.value.toWhole()); // 50
+}
 
 // Из дробного в обычный
-const pct2 = Percentage.fromDecimal(0.5).unwrap();
-console.log(pct2.toDecimal()); // 0.5
-console.log(pct2.toWhole()); // 50
+const pct2Result = Percentage.fromDecimal(0.5);
+if (pct2Result.ok) {
+  console.log(pct2Result.value.toDecimal()); // 0.5
+  console.log(pct2Result.value.toWhole()); // 50
+}
 
 // Точность при конвертации
-const pct3 = Percentage.fromWhole(33.33).unwrap();
-console.log(pct3.toDecimal()); // 0.3333 (возможна потеря точности с float)
+const pct3Result = Percentage.fromWhole(33.33);
+if (pct3Result.ok) {
+  console.log(pct3Result.value.toDecimal()); // 0.3333 (возможна потеря точности с float)
+}
 
 // Использование decimal.js для точности
-const pct4 = Percentage.fromWholeValue(new Decimal('33.33')).unwrap();
-console.log(pct4.toDecimal().toString()); // "0.3333" (точно)
+const pct4Result = Percentage.fromWholeValue(new Decimal('33.33'));
+if (pct4Result.ok) {
+  console.log(pct4Result.value.toDecimal().toString()); // "0.3333" (точно)
+}
 ```
 
 ### Применение процентов к суммам
 
 ```typescript
 // Расчет комиссии
-const tradingFee = Percentage.fromWhole(0.1).unwrap(); // 0.1%
-const tradeAmount = 10000;
-const fee = tradeAmount * tradingFee.toDecimal(); // 10
+const tradingFeeResult = Percentage.fromWhole(0.1); // 0.1%
+if (tradingFeeResult.ok) {
+  const tradeAmount = 10000;
+  const fee = tradeAmount * tradingFeeResult.value.toDecimal(); // 10
+}
 
 // Расчет со slippage
 const price = 100;
-const slippage = Percentage.fromWhole(1).unwrap(); // 1%
-const maxPrice = price * (1 + slippage.toDecimal()); // 101
-const minPrice = price * (1 - slippage.toDecimal()); // 99
+const slippageResult = Percentage.fromWhole(1); // 1%
+if (slippageResult.ok) {
+  const maxPrice = price * (1 + slippageResult.value.toDecimal()); // 101
+  const minPrice = price * (1 - slippageResult.value.toDecimal()); // 99
+}
 
 // Расчет прибыли
 const costBasis = 1000;
@@ -491,7 +504,7 @@ const currentValue = 1200;
 const profitAmount = currentValue - costBasis; // 200
 const profitPercent = (profitAmount / costBasis) * 100; // 20%
 
-Percentage.fromWhole(profitPercent); // ✅ Result.ok(Percentage)
+Percentage.fromWhole(profitPercent); // ✅ Ok(Percentage)
 ```
 
 ---
@@ -532,16 +545,15 @@ import { InvalidPercentageError } from '@polymarket/errors';
 
 const result = Percentage.fromWhole(userInput);
 
-result.match({
-  ok: (percentage) => applyPercentage(percentage),
-  err: (error) => {
-    if (error.code === InvalidPercentageError.code) {
-      showError('Invalid percentage', error.context);
-    } else {
-      showError('Unexpected error', error);
-    }
+if (result.ok) {
+  applyPercentage(result.value);
+} else {
+  if (result.error.code === InvalidPercentageError.code) {
+    showError('Invalid percentage', result.error.context);
+  } else {
+    showError('Unexpected error', result.error);
   }
-});
+}
 ```
 
 ### С логированием
@@ -555,21 +567,18 @@ function validateAndLogPercentage(
 ): Result<Percentage, InvalidPercentageError> {
   const result = Percentage.fromWhole(value);
 
-  result.match({
-    ok: (pct) => {
-      logger.info('Percentage validated', {
-        field,
-        value: pct.toWhole() + '%'
-      });
-    },
-    err: (error) => {
-      logger.error('Percentage validation failed', {
-        field,
-        error: error.toJSON(),
-        userInput: value
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Percentage validated', {
+      field,
+      value: result.value.toWhole() + '%'
+    });
+  } else {
+    logger.error('Percentage validation failed', {
+      field,
+      error: result.error.toJSON(),
+      userInput: value
+    });
+  }
 
   return result;
 }

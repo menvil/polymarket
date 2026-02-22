@@ -52,5 +52,12 @@ export * from './base/index.js';
 // Value objects errors
 export * from './value-objects/index.js';
 
-// Entity errors
-export * from './entities/index.js';
+// Math errors
+export * from './math/index.js';
+
+// ID errors
+export * from './ids/index.js';
+
+// Error handling utilities
+export { ErrorSource } from './ErrorSource.js';
+export * from './utils/errorUtils.js';

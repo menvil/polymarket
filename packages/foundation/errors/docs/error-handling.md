@@ -15,14 +15,16 @@
 
 ## Философия
 
-### Два подхода к ошибкам:
+### Два подхода к ошибкам
 
 **1. Exceptions (throw/catch)**
+
 - Для исключительных ситуаций
 - Когда нужно прервать выполнение
 - В старом коде
 
 **2. Result<T,E> (Railway-Oriented Programming)**
+
 - Для ожидаемых ошибок
 - Явная обработка в типах
 - В новом коде (рекомендуется)
@@ -63,6 +65,7 @@ try {
 ```
 
 **Проблемы:**
+
 - ❌ Неявная обработка (компилятор не заставляет обработать ошибку)
 - ❌ Сложно понять что функция может выбросить
 - ❌ Performance overhead
@@ -70,13 +73,13 @@ try {
 ### ✅ Новый подход: Result<T,E>
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 class Price {
   static fromNumber(value: number): Result<Price, InvalidPriceError> {
     if (value < 0.0001 || value > 0.9999) {
-      return Result.err(
+      return Err(
         new InvalidPriceError(
           (ctx) => `Invalid price ${ctx.value}`,
           {
@@ -86,20 +89,22 @@ class Price {
         )
       );
     }
-    return Result.ok(new Price(value));
+    return Ok(new Price(value));
   }
 }
 
 // Использование
 const result = Price.fromNumber(userInput);
 
-result.match({
-  ok: (price) => console.log('Valid price:', price),
-  err: (error) => console.error('Invalid price:', error.context?.value)
-});
+if (result.ok) {
+  console.log('Valid price:', result.value);
+} else {
+  console.error('Invalid price:', result.error.context?.value);
+}
 ```
 
 **Преимущества:**
+
 - ✅ Явная обработка (компилятор требует обработать Result)
 - ✅ Типобезопасность
 - ✅ Композиция через map/flatMap
@@ -112,6 +117,7 @@ result.match({
 ### Концепция
 
 Представьте железную дорогу с двумя путями:
+
 - **Success track** (ok) - всё идёт по плану
 - **Failure track** (err) - произошла ошибка
 
@@ -120,7 +126,7 @@ result.match({
 ### Базовый пример
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result, toChain } from '@polymarket/result';
 import { InvalidPriceError, InvalidQuantityError } from '@polymarket/errors';
 
 // Каждая функция возвращает Result
@@ -132,24 +138,26 @@ function validateQuantity(value: number): Result<Quantity, InvalidQuantityError>
   // ...
 }
 
-// Композиция через map/flatMap
-const orderResult = validatePrice(priceInput)
+// Композиция через ResultChain
+const orderResult = toChain(validatePrice(priceInput))
   .flatMap(price =>
     validateQuantity(qtyInput).map(qty => ({ price, qty }))
   )
-  .map(({ price, qty }) => new Order(price, qty));
+  .map(({ price, qty }) => new Order(price, qty))
+  .toResult();
 
-// Обработка результата
-orderResult.match({
-  ok: (order) => console.log('Order created:', order),
-  err: (error) => console.error('Validation failed:', error.message)
-});
+// Обработка результата через pattern matching
+if (orderResult.ok) {
+  console.log('Order created:', orderResult.value);
+} else {
+  console.error('Validation failed:', orderResult.error.message);
+}
 ```
 
 ### Цепочка операций (ResultChain)
 
 ```typescript
-import { ResultChain } from '@polymarket/types';
+import { toChain, Ok, Err } from '@polymarket/result';
 import {
   InvalidPriceError,
   InvalidQuantityError,
@@ -157,8 +165,7 @@ import {
 } from '@polymarket/errors';
 
 // Создание ордера через цепочку валидаций
-const orderResult = ResultChain
-  .from(validatePrice(priceInput))
+const orderResult = toChain(validatePrice(priceInput))
   .flatMap(price =>
     validateQuantity(qtyInput).map(qty => ({ price, qty }))
   )
@@ -169,7 +176,7 @@ const orderResult = ResultChain
     // Проверка достаточности средств
     const cost = price.value * qty.value;
     if (balance.amount < cost) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Insufficient balance: required ${ctx.required}, available ${ctx.available}`,
           {
@@ -179,23 +186,22 @@ const orderResult = ResultChain
         )
       );
     }
-    return Result.ok(new Order(price, qty));
+    return Ok(new Order(price, qty));
   })
-  .run();
+  .toResult();
 
 // Обработка
-orderResult.match({
-  ok: (order) => placeOrder(order),
-  err: (error) => {
-    if (InvalidPriceError.is(error)) {
-      showError('Invalid price', error.context);
-    } else if (InvalidQuantityError.is(error)) {
-      showError('Invalid quantity', error.context);
-    } else if (InvalidMoneyError.is(error)) {
-      showError('Insufficient funds', error.context);
-    }
+if (orderResult.ok) {
+  placeOrder(orderResult.value);
+} else {
+  if (InvalidPriceError.is(orderResult.error)) {
+    showError('Invalid price', orderResult.error.context);
+  } else if (InvalidQuantityError.is(orderResult.error)) {
+    showError('Invalid quantity', orderResult.error.context);
+  } else if (InvalidMoneyError.is(orderResult.error)) {
+    showError('Insufficient funds', orderResult.error.context);
   }
-});
+}
 ```
 
 ---
@@ -291,57 +297,59 @@ import { InvalidPriceError, InvalidQuantityError } from '@polymarket/errors';
 
 const result = validateOrder(orderData);
 
-result.match({
-  ok: (order) => submitOrder(order),
-  err: (error) => {
-    // Обработка по коду
-    switch (error.code) {
-      case InvalidPriceError.code: // 'INVALID_PRICE'
-        showFieldError('price', 'Price must be between 0.0001 and 0.9999');
-        break;
+if (result.ok) {
+  submitOrder(result.value);
+} else {
+  const error = result.error;
+  // Обработка по коду
+  switch (error.code) {
+    case InvalidPriceError.code: // 'INVALID_PRICE'
+      showFieldError('price', 'Price must be between 0.0001 and 0.9999');
+      break;
 
-      case InvalidQuantityError.code: // 'INVALID_QUANTITY'
-        showFieldError('quantity', 'Quantity must be positive');
-        break;
+    case InvalidQuantityError.code: // 'INVALID_QUANTITY'
+      showFieldError('quantity', 'Quantity must be positive');
+      break;
 
-      default:
-        showGeneralError('Validation failed. Please check your input.');
-    }
-
-    // Логирование для всех ошибок
-    logger.error('Order validation failed', {
-      code: error.code,
-      context: error.context,
-      timestamp: error.timestamp
-    });
+    default:
+      showGeneralError('Validation failed. Please check your input.');
   }
-});
+
+  // Логирование для всех ошибок
+  logger.error('Order validation failed', {
+    code: error.code,
+    context: error.context,
+    timestamp: error.timestamp
+  });
+}
 ```
 
 ### 4. Обработка с fallback
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 function getPriceOrDefault(input: number, defaultPrice: Price): Price {
-  return Price.fromNumber(input).match({
-    ok: (price) => price,
-    err: (error) => {
-      console.warn('Using default price due to error:', error.message);
-      return defaultPrice;
-    }
-  });
+  const result = Price.fromNumber(input);
+  if (result.ok) {
+    return result.value;
+  } else {
+    console.warn('Using default price due to error:', result.error.message);
+    return defaultPrice;
+  }
 }
 
 // Использование
-const price = getPriceOrDefault(userInput, Price.fromNumber(0.5).unwrap());
+const defaultPriceResult = Price.fromNumber(0.5);
+if (!defaultPriceResult.ok) throw new Error('Invalid default price');
+const price = getPriceOrDefault(userInput, defaultPriceResult.value);
 ```
 
 ### 5. Aggregate errors (множественные ошибки)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 
 type ValidationErrors = TradingError[];
@@ -350,43 +358,44 @@ function validateOrderFields(data: OrderData): Result<ValidatedOrder, Validation
   const errors: TradingError[] = [];
 
   const priceResult = validatePrice(data.price);
-  if (priceResult.isErr()) {
-    errors.push(priceResult.unwrapErr());
+  if (!priceResult.ok) {
+    errors.push(priceResult.error);
   }
 
   const qtyResult = validateQuantity(data.quantity);
-  if (qtyResult.isErr()) {
-    errors.push(qtyResult.unwrapErr());
+  if (!qtyResult.ok) {
+    errors.push(qtyResult.error);
   }
 
   const balanceResult = validateBalance(data.balance);
-  if (balanceResult.isErr()) {
-    errors.push(balanceResult.unwrapErr());
+  if (!balanceResult.ok) {
+    errors.push(balanceResult.error);
   }
 
   if (errors.length > 0) {
-    return Result.err(errors);
+    return Err(errors);
   }
 
-  return Result.ok({
-    price: priceResult.unwrap(),
-    quantity: qtyResult.unwrap(),
-    balance: balanceResult.unwrap()
+  // TypeScript narrowing: явно проверяем .ok перед доступом к .value
+  // После проверки errors.length === 0 мы знаем что все результаты успешны
+  return Ok({
+    price: priceResult.ok ? priceResult.value : ('' as never),
+    quantity: qtyResult.ok ? qtyResult.value : ('' as never),
+    balance: balanceResult.ok ? balanceResult.value : ('' as never)
   });
 }
 
 // Использование
 const result = validateOrderFields(formData);
 
-result.match({
-  ok: (validated) => submitOrder(validated),
-  err: (errors) => {
-    // Показываем все ошибки пользователю
-    errors.forEach(error => {
-      showFieldError(error.context?.field as string, error.message);
-    });
-  }
-});
+if (result.ok) {
+  submitOrder(result.value);
+} else {
+  // Показываем все ошибки пользователю
+  result.error.forEach(error => {
+    showFieldError(error.context?.field as string, error.message);
+  });
+}
 ```
 
 ---
@@ -431,26 +440,24 @@ try {
 ### Логирование с контекстом
 
 ```typescript
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 function validateAndLogPrice(value: number, orderId: string): Result<Price, InvalidPriceError> {
   const result = Price.fromNumber(value);
 
-  result.match({
-    ok: (price) => {
-      logger.info('Price validated', {
-        orderId,
-        price: price.value
-      });
-    },
-    err: (error) => {
-      logger.error('Price validation failed', {
-        orderId,
-        error: error.toJSON(),
-        userInput: value
-      });
-    }
-  });
+  if (result.ok) {
+    logger.info('Price validated', {
+      orderId,
+      price: result.value.value
+    });
+  } else {
+    logger.error('Price validation failed', {
+      orderId,
+      error: result.error.toJSON(),
+      userInput: value
+    });
+  }
 
   return result;
 }
@@ -539,27 +546,32 @@ class AlertManager {
 ### ✅ DO
 
 1. **Используйте Result<T,E> для ожидаемых ошибок**
+
    ```typescript
    function validatePrice(value: number): Result<Price, InvalidPriceError>
    ```
 
 2. **Используйте специфичные типы ошибок**
+
    ```typescript
    throw new InvalidPriceError(...) // ✅
    throw new Error('Invalid price') // ❌
    ```
 
 3. **Включайте context для отладки**
+
    ```typescript
    { context: { value, min, max, field: 'price' } }
    ```
 
 4. **Используйте коды ошибок**
+
    ```typescript
    { code: InvalidPriceError.code }
    ```
 
 5. **Логируйте все ошибки**
+
    ```typescript
    logger.error('Operation failed', error.toJSON());
    ```
@@ -567,21 +579,25 @@ class AlertManager {
 ### ❌ DON'T
 
 1. **Не глушите ошибки**
+
    ```typescript
    try { ... } catch (e) { /* nothing */ } // ❌
    ```
 
 2. **Не используйте общие ошибки**
+
    ```typescript
    throw new Error('Something went wrong') // ❌
    ```
 
 3. **Не включайте секреты в context**
+
    ```typescript
    { context: { password: '...' } } // ❌
    ```
 
 4. **Не игнорируйте severity**
+
    ```typescript
    if (error.severity === 'critical') {
      console.log('oops'); // ❌ Нужны экстренные меры!
@@ -589,6 +605,7 @@ class AlertManager {
    ```
 
 5. **Не создавайте дубликаты кодов**
+
    ```typescript
    // Два разных класса с одним кодом - ❌
    InvalidPriceError.code === InvalidQuantityError.code
@@ -598,6 +615,6 @@ class AlertManager {
 
 ## См. также
 
-- [Документация Result<T,E>](../../types/docs/result.md)
+- [Документация Result<T,E>](../../result/README.md)
 - [Value Objects Errors](./value-objects/README.md)
 - [Главная документация](./README.md)

@@ -5,6 +5,7 @@
 ## Обзор
 
 Value Objects представляют неизменяемые бизнес-концепции в domain model:
+
 - **Price** - цена на рынке [0.0001, 0.9999]
 - **Quantity** - количество акций
 - **Money** - денежная сумма с валютой
@@ -12,6 +13,7 @@ Value Objects представляют неизменяемые бизнес-к�
 - И другие числовые величины
 
 Все ошибки валидации value objects имеют:
+
 - **Severity:** `low` (проблемы валидации данных не критичны)
 - **Статический код:** `ErrorClass.code` (для удобства)
 - **Поддержка Result<T,E>:** интеграция с Railway-Oriented Programming
@@ -35,6 +37,15 @@ Value Objects представляют неизменяемые бизнес-к�
 |-----|-------|-------------------|--------------|
 | `INVALID_MONEY` | InvalidMoneyError | Некорректная денежная сумма (NaN, отрицательная) | [→](./invalid-money.md) |
 | `CURRENCY_MISMATCH` | CurrencyMismatchError | Операции с разными валютами | [→](./currency-mismatch.md) |
+
+### Валидация value objects для domain layer
+
+| Код | Класс | Когда использовать | Документация |
+|-----|-------|-------------------|--------------|
+| `INVALID_ASSET_QUANTITY` | InvalidAssetQuantityError | Некорректное количество актива (AssetId + amount) | [→](./invalid-asset-quantity.md) |
+| `INVALID_BALANCE` | InvalidBalanceError | Некорректный баланс (available/reserved отрицательные или невалидные) | [→](./invalid-balance.md) |
+| `INVALID_OUTCOME_TOKEN` | InvalidOutcomeTokenError | Некорректный токен исхода (ConditionRef + outcomeKey) | [→](./invalid-outcome-token.md) |
+| `INVALID_RATIO` | InvalidRatioError | Некорректное соотношение (NaN, Infinity, нарушение доменных правил) | [→](./invalid-ratio.md) |
 
 ### Математические ошибки
 
@@ -65,7 +76,6 @@ class Price {
       throw new InvalidPriceError(
         (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
         {
-          code: InvalidPriceError.code,
           context: { value, min: 0.0001, max: 0.9999 }
         }
       );
@@ -77,7 +87,7 @@ class Price {
 ### 2. С Result<T,E> (рекомендуется)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidPriceError } from '@polymarket/errors';
 
 class Price {
@@ -85,27 +95,28 @@ class Price {
 
   static fromNumber(value: number): Result<Price, InvalidPriceError> {
     if (value < 0.0001 || value > 0.9999) {
-      return Result.err(
+      return Err(
         new InvalidPriceError(
           (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`,
           {
-            code: InvalidPriceError.code,
+            
             context: { value, min: 0.0001, max: 0.9999 }
           }
         )
       );
     }
-    return Result.ok(new Price(value));
+    return Ok(new Price(value));
   }
 }
 
 // Использование
 const priceResult = Price.fromNumber(userInput);
 
-priceResult.match({
-  ok: (price) => console.log('Valid price:', price),
-  err: (error) => console.error('Invalid price:', error.message)
-});
+if (priceResult.ok) {
+  console.log('Valid price:', priceResult.value);
+} else {
+  console.error('Invalid price:', priceResult.error.message);
+}
 ```
 
 ### 3. Обработка ошибок
@@ -119,31 +130,31 @@ import {
 
 const result = createOrder(priceInput, qtyInput, balanceInput);
 
-result.match({
-  ok: (order) => submitOrder(order),
-  err: (error) => {
-    // Обработка по типу
-    if (InvalidPriceError.is(error)) {
-      showFieldError('price', `Price must be between ${error.context?.min} and ${error.context?.max}`);
-    } else if (InvalidQuantityError.is(error)) {
-      showFieldError('quantity', 'Quantity must be positive');
-    } else if (InvalidMoneyError.is(error)) {
-      showFieldError('balance', 'Invalid balance amount');
-    }
-
-    // Логирование
-    logger.error('Order creation failed', {
-      code: error.code,
-      context: error.context
-    });
+if (result.ok) {
+  submitOrder(result.value);
+} else {
+  const error = result.error;
+  // Обработка по типу
+  if (InvalidPriceError.is(error)) {
+    showFieldError('price', `Price must be between ${error.context?.min} and ${error.context?.max}`);
+  } else if (InvalidQuantityError.is(error)) {
+    showFieldError('quantity', 'Quantity must be positive');
+  } else if (InvalidMoneyError.is(error)) {
+    showFieldError('balance', 'Invalid balance amount');
   }
-});
+
+  // Логирование
+  logger.error('Order creation failed', {
+    code: error.code,
+    context: error.context
+  });
+}
 ```
 
-### 4. Композиция с ResultChain
+### 4. Композиция с toChain
 
 ```typescript
-import { ResultChain } from '@polymarket/types';
+import { toChain } from '@polymarket/result';
 import {
   InvalidPriceError,
   InvalidQuantityError,
@@ -156,8 +167,7 @@ function createOrder(
   money1: Money,
   money2: Money
 ): Result<Order, InvalidPriceError | InvalidQuantityError | CurrencyMismatchError> {
-  return ResultChain
-    .from(Price.fromNumber(priceInput))
+  return toChain(Price.fromNumber(priceInput))
     .flatMap(price =>
       Quantity.fromNumber(qtyInput).map(qty => ({ price, qty }))
     )
@@ -165,31 +175,30 @@ function createOrder(
       money1.add(money2).map(total => ({ price, qty, total }))
     )
     .map(({ price, qty, total }) => new Order(price, qty, total))
-    .run();
+    .toResult();
 }
 
 // Использование
 const orderResult = createOrder(0.5, 100, money1, money2);
 
-orderResult.match({
-  ok: (order) => console.log('Order created:', order),
-  err: (error) => {
-    // Все типы ошибок обрабатываются в одном месте
-    if (error.code === InvalidPriceError.code) {
-      showError('Invalid price');
-    } else if (error.code === InvalidQuantityError.code) {
-      showError('Invalid quantity');
-    } else if (error.code === CurrencyMismatchError.code) {
-      showError('Currency mismatch');
-    }
+if (orderResult.ok) {
+  console.log('Order created:', orderResult.value);
+} else {
+  // Все типы ошибок обрабатываются в одном месте
+  if (orderResult.error.code === InvalidPriceError.code) {
+    showError('Invalid price');
+  } else if (orderResult.error.code === InvalidQuantityError.code) {
+    showError('Invalid quantity');
+  } else if (orderResult.error.code === CurrencyMismatchError.code) {
+    showError('Currency mismatch');
   }
-});
+}
 ```
 
 ### 5. Множественная валидация (aggregate errors)
 
 ```typescript
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import { TradingError } from '@polymarket/errors';
 
 type ValidationErrors = TradingError[];
@@ -217,31 +226,30 @@ function validateOrderForm(
   }
 
   if (errors.length > 0) {
-    return Result.err(errors);
+    return Err(errors);
   }
 
-  return Result.ok({
-    price: priceResult.unwrap(),
-    quantity: qtyResult.unwrap(),
-    balance: balanceResult.unwrap()
+  return Ok({
+    price: priceResult.value,
+    quantity: qtyResult.value,
+    balance: balanceResult.value
   });
 }
 
 // Использование
 const validationResult = validateOrderForm(priceInput, qtyInput, balanceInput);
 
-validationResult.match({
-  ok: (validated) => submitOrder(validated),
-  err: (errors) => {
-    // Показываем все ошибки сразу
-    errors.forEach(error => {
-      showFieldError(
-        error.context?.field as string,
-        error.message
-      );
-    });
-  }
-});
+if (validationResult.ok) {
+  submitOrder(validationResult.value);
+} else {
+  // Показываем все ошибки сразу
+  validationResult.error.forEach(error => {
+    showFieldError(
+      error.context?.field as string,
+      error.message
+    );
+  });
+}
 ```
 
 ---
@@ -252,7 +260,7 @@ validationResult.match({
 
 ```typescript
 import Decimal from 'decimal.js';
-import { Result } from '@polymarket/types';
+import { Result, Ok, Err } from '@polymarket/result';
 import {
   InvalidMoneyError,
   ArithmeticOverflowError,
@@ -274,7 +282,7 @@ class Money {
       const decimal = new Decimal(amount);
 
       if (!decimal.isFinite()) {
-        return Result.err(
+        return Err(
           new ArithmeticOverflowError(
             (ctx) => `Amount overflow: ${ctx.amount}`,
             {
@@ -286,24 +294,24 @@ class Money {
       }
 
       if (decimal.isNegative()) {
-        return Result.err(
+        return Err(
           new InvalidMoneyError(
             (ctx) => `Amount cannot be negative: ${ctx.amount}`,
             {
-              code: InvalidMoneyError.code,
+              
               context: { amount: decimal.toNumber(), currency }
             }
           )
         );
       }
 
-      return Result.ok(new Money(decimal, currency));
+      return Ok(new Money(decimal, currency));
     } catch (error) {
-      return Result.err(
+      return Err(
         new InvalidMoneyError(
           (ctx) => `Invalid amount: ${ctx.amount}`,
           {
-            code: InvalidMoneyError.code,
+            
             context: { amount, currency }
           }
         )
@@ -313,7 +321,7 @@ class Money {
 
   divide(divisor: Money): Result<Money, DivisionByZeroError | CurrencyMismatchError> {
     if (this.currency !== divisor.currency) {
-      return Result.err(
+      return Err(
         new CurrencyMismatchError(
           (ctx) => `Cannot divide ${ctx.expected} by ${ctx.actual}`,
           {
@@ -329,7 +337,7 @@ class Money {
     }
 
     if (divisor.amount.isZero()) {
-      return Result.err(
+      return Err(
         new DivisionByZeroError(
           (ctx) => `Cannot divide ${ctx.dividend} by zero`,
           {
@@ -345,7 +353,7 @@ class Money {
     }
 
     const result = this.amount.div(divisor.amount);
-    return Result.ok(new Money(result, this.currency));
+    return Ok(new Money(result, this.currency));
   }
 }
 ```
@@ -357,26 +365,31 @@ class Money {
 ### ✅ DO
 
 1. **Используйте Result<T,E> вместо throw**
+
    ```typescript
    static fromNumber(value: number): Result<Price, InvalidPriceError>
    ```
 
 2. **Используйте статические коды**
+
    ```typescript
    code: InvalidPriceError.code // ✅ 'INVALID_PRICE'
    ```
 
 3. **Включайте полезный context**
+
    ```typescript
    context: { value, min, max, field: 'price' }
    ```
 
 4. **Используйте template функции для динамических сообщений**
+
    ```typescript
    (ctx) => `Invalid price ${ctx.value}: must be in [${ctx.min}, ${ctx.max}]`
    ```
 
 5. **Обрабатывайте ошибки по типу или коду**
+
    ```typescript
    if (InvalidPriceError.is(error)) { ... }
    // или
@@ -386,24 +399,28 @@ class Money {
 ### ❌ DON'T
 
 1. **Не используйте общие ошибки**
+
    ```typescript
    throw new Error('Invalid price') // ❌
    throw new InvalidPriceError(...) // ✅
    ```
 
 2. **Не опускайте код ошибки**
+
    ```typescript
    new InvalidPriceError('message', {}) // ❌ нет code
    new InvalidPriceError('message', { code: InvalidPriceError.code }) // ✅
    ```
 
 3. **Не игнорируйте валидацию**
+
    ```typescript
    new Price(userInput) // ❌ без проверки
    Price.fromNumber(userInput) // ✅ с Result<T,E>
    ```
 
 4. **Не используйте native number для денег**
+
    ```typescript
    const total = price * quantity // ❌ точность теряется
    const total = price.mul(quantity) // ✅ decimal.js
@@ -415,17 +432,31 @@ class Money {
 
 - [Обработка ошибок](../error-handling.md) - Best practices
 - [Главная документация](../README.md)
-- [Result<T,E> документация](../../../types/docs/result.md)
+- [Result<T,E> документация](../../../result/README.md)
 
 ---
 
 ## Полный список ошибок
+
+### Базовые value objects
 
 - [InvalidPriceError](./invalid-price.md)
 - [InvalidQuantityError](./invalid-quantity.md)
 - [InvalidMoneyError](./invalid-money.md)
 - [InvalidPercentageError](./invalid-percentage.md)
 - [InvalidAmountError](./invalid-amount.md)
+
+### Domain value objects
+
+- [InvalidAssetQuantityError](./invalid-asset-quantity.md)
+- [InvalidBalanceError](./invalid-balance.md)
+- [InvalidOutcomeTokenError](./invalid-outcome-token.md)
+- [InvalidRatioError](./invalid-ratio.md)
+
+### Математические и валютные ошибки
+
 - [DivisionByZeroError](./division-by-zero.md)
 - [ArithmeticOverflowError](./arithmetic-overflow.md)
 - [CurrencyMismatchError](./currency-mismatch.md)
+
+Примечание: InvalidRoundingModeError теперь находится в [Math Errors](../math/invalid-rounding-mode.md)

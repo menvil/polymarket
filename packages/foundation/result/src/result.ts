@@ -325,34 +325,6 @@ export function formatValue(value: unknown): string {
 }
 
 /**
- * Unwrap успешного Result (небезопасно)
- *
- * @param result - Result для unwrap
- * @returns Значение если ok = true
- * @throws {Error} Если ok = false
- *
- * @remarks
- * ⚠️ НЕБЕЗОПАСНО - используйте только когда уверены что Result успешный.
- * Предпочитайте pattern matching через if (result.ok).
- *
- * @example
- * ```typescript
- * const result = Ok(42);
- * const value = unwrap(result); // 42
- *
- * const error = Err('упс');
- * const value = unwrap(error); // выбрасывает Error с информацией об ошибке
- * ```
- */
-export const unwrap = <T, E>(result: Result<T, E>): T => {
-  if (!result.ok) {
-    const errorInfo = formatValue(result.error);
-    throw new Error(`Called unwrap on Err result: ${errorInfo}`);
-  }
-  return result.value;
-};
-
-/**
  * Unwrap с fallback значением
  *
  * @param result - Result для unwrap
@@ -374,3 +346,339 @@ export const unwrap = <T, E>(result: Result<T, E>): T => {
 export const unwrapOr = <T, E>(result: Result<T, E>, defaultValue: T): T => {
   return result.ok ? result.value : defaultValue;
 };
+
+/**
+ * Извлекает значение или вычисляет fallback через функцию
+ *
+ * @param result - Result для извлечения значения
+ * @param fn - Функция вычисляющая fallback из ошибки
+ * @returns Значение result или результат fn(error)
+ *
+ * @remarks
+ * Безопасная альтернатива unwrap — не бросает исключений.
+ * Если callback fn бросает исключение, оно propagate напрямую.
+ *
+ * @example
+ * ```typescript
+ * const result = Err('network error');
+ * const value = unwrapOrElse(result, err => {
+ *   console.log('Error:', err);
+ *   return 0;
+ * });
+ * // value: 0
+ *
+ * const success = Ok(42);
+ * const value2 = unwrapOrElse(success, () => 0); // 42
+ * ```
+ */
+export const unwrapOrElse = <T, E>(result: Result<T, E>, fn: (error: E) => T): T => {
+  return result.ok ? result.value : fn(result.error);
+};
+
+/**
+ * Цепочка Result-операций с расширением типа ошибки (widen-вариант)
+ *
+ * @param result - Исходный Result<T, E>
+ * @param fn - Функция возвращающая Result<U, F> (F может отличаться от E)
+ * @returns Result<U, E | F> — тип ошибки расширяется до объединения
+ *
+ * @remarks
+ * В отличие от flatMap (который требует fn: T → Result<U, E>),
+ * flatMapW позволяет fn возвращать Result с другим типом ошибки F.
+ * Это необходимо при работе с union-типами ошибок в длинных цепочках.
+ *
+ * Суффикс W = "Widened" (расширение типа).
+ *
+ * @example
+ * ```typescript
+ * type NetworkError = { type: 'network' };
+ * type ValidationError = { type: 'validation' };
+ *
+ * const r1: Result<User, NetworkError> = Ok({ id: '1', name: 'Ivan' });
+ * const r2: Result<ValidUser, NetworkError | ValidationError> =
+ *   flatMapW(r1, user => validate(user)); // validate вернёт Result<ValidUser, ValidationError>
+ * ```
+ */
+export const flatMapW = <T, U, E, F>(
+  result: Result<T, E>,
+  fn: (value: T) => Result<U, F>
+): Result<U, E | F> => {
+  return result.ok ? fn(result.value) : result;
+};
+
+/**
+ * Трансформирует ошибку с расширением типа ошибки (widen-вариант)
+ *
+ * @param result - Исходный Result<T, E>
+ * @param fn - Функция трансформирующая E в F
+ * @returns Result<T, F> с новым типом ошибки
+ *
+ * @remarks
+ * Эквивалентен mapErr, но явно подчёркивает что тип ошибки меняется.
+ * Используйте когда хотите явно показать расширение типа в цепочке.
+ *
+ * Суффикс W = "Widened" (расширение типа).
+ *
+ * @example
+ * ```typescript
+ * type HttpError = { status: number };
+ * type AppError = { code: string; source: string };
+ *
+ * const r: Result<User, HttpError> = Err({ status: 404 });
+ * const mapped: Result<User, AppError> = mapErrW(r, err => ({
+ *   code: `HTTP_${err.status}`,
+ *   source: 'api',
+ * }));
+ * ```
+ */
+export const mapErrW = <T, E, F>(
+  result: Result<T, E>,
+  fn: (error: E) => F
+): Result<T, F> => {
+  return result.ok ? (result as Result<T, F>) : Err(fn(result.error));
+};
+
+/**
+ * Recovery при ошибке с расширением типа ошибки (widen-вариант)
+ *
+ * @param result - Исходный Result<T, E>
+ * @param fn - Функция восстановления, принимающая E и возвращающая Result<T, F>
+ * @returns Result<T, F> — старый тип ошибки E заменяется на F
+ *
+ * @remarks
+ * Если result — Ok, возвращает его как есть.
+ * Если result — Err, вызывает fn с ошибкой и возвращает результат fn.
+ * Тип ошибки меняется с E на F (в отличие от простого orElse).
+ *
+ * Если callback fn бросает исключение, оно propagate напрямую.
+ *
+ * Суффикс W = "Widened" (расширение типа).
+ *
+ * @example
+ * ```typescript
+ * type TempError = { retryable: boolean };
+ * type FinalError = string;
+ *
+ * const r: Result<Data, TempError> = Err({ retryable: false });
+ * const recovered: Result<Data, FinalError> = orElseW(r, err =>
+ *   err.retryable ? Err('retry exhausted') : Err('permanent failure')
+ * );
+ * ```
+ */
+export const orElseW = <T, E, F>(
+  result: Result<T, E>,
+  fn: (error: E) => Result<T, F>
+): Result<T, F> => {
+  return result.ok ? (result as Result<T, F>) : fn(result.error);
+};
+
+/**
+ * Pattern matching для Result — выполняет один из двух обработчиков
+ *
+ * @param result - Исходный Result
+ * @param handlers - Объект с обработчиками ok и err
+ * @returns Результат выполнения соответствующего обработчика
+ *
+ * @remarks
+ * Удобная альтернатива if/else для exhaustive pattern matching.
+ * TypeScript гарантирует что оба случая обработаны.
+ *
+ * Если callback бросает исключение, оно propagate напрямую.
+ *
+ * @example
+ * ```typescript
+ * const result: Result<number, string> = Ok(42);
+ * const message = match(result, {
+ *   ok: value => `Success: ${value}`,
+ *   err: error => `Error: ${error}`,
+ * });
+ * // message: 'Success: 42'
+ *
+ * // Для render UI:
+ * const jsx = match(userResult, {
+ *   ok: user => renderProfile(user),
+ *   err: err => renderError(err),
+ * });
+ * ```
+ */
+export const match = <T, E, U>(
+  result: Result<T, E>,
+  handlers: { ok: (value: T) => U; err: (error: E) => U }
+): U => {
+  return result.ok ? handlers.ok(result.value) : handlers.err(result.error);
+};
+
+/**
+ * Безопасно выполняет синхронную функцию, оборачивая исключения в Err
+ *
+ * @param fn - Thunk (функция без аргументов) которая может бросить исключение
+ * @param onError - Функция для трансформации исключения в тип ошибки E
+ * @returns Ok(результат) или Err(onError(исключение))
+ *
+ * @remarks
+ * Используйте для оборачивания сторонних функций которые могут бросать.
+ * Для функций с аргументами используйте fromThrowable.
+ *
+ * @example
+ * ```typescript
+ * const result = tryCatch(
+ *   () => JSON.parse('invalid json'),
+ *   (err) => `Parse error: ${err}`
+ * );
+ * // result: Err('Parse error: ...')
+ *
+ * const valid = tryCatch(
+ *   () => JSON.parse('{"name":"Ivan"}'),
+ *   (err) => `Parse error: ${err}`
+ * );
+ * // valid: Ok({ name: 'Ivan' })
+ * ```
+ */
+export const tryCatch = <T, E>(fn: () => T, onError: (error: unknown) => E): Result<T, E> => {
+  try {
+    return Ok(fn());
+  } catch (error) {
+    return Err(onError(error));
+  }
+};
+
+/**
+ * Безопасно выполняет асинхронную функцию, оборачивая исключения/rejections в Err
+ *
+ * @param fn - Async thunk (функция без аргументов) которая может бросить/reject
+ * @param onError - Функция для трансформации исключения в тип ошибки E
+ * @returns Promise<Ok(результат)> или Promise<Err(onError(исключение))>
+ *
+ * @remarks
+ * Перехватывает как синхронные исключения (если fn бросает до первого await),
+ * так и async rejections.
+ * Для функций с аргументами используйте fromPromise.
+ *
+ * @example
+ * ```typescript
+ * const result = await tryAsync(
+ *   () => fetch('/api/user').then(r => r.json()),
+ *   (err) => ({ type: 'network', message: String(err) })
+ * );
+ * // result: Ok(user) или Err({ type: 'network', ... })
+ * ```
+ */
+export const tryAsync = async <T, E>(
+  fn: () => Promise<T>,
+  onError: (error: unknown) => E
+): Promise<Result<T, E>> => {
+  try {
+    const value = await fn();
+    return Ok(value);
+  } catch (error) {
+    return Err(onError(error));
+  }
+};
+
+/**
+ * Конвертирует Promise в Result, оборачивая rejections в Err
+ *
+ * @param promise - Promise для конвертации
+ * @param onError - Функция для трансформации rejection в тип ошибки E
+ * @returns Promise<Result<T, E>>
+ *
+ * @remarks
+ * Основной способ для интеграции Promise-based API в Railway-Oriented код.
+ * Все rejections будут преобразованы в Err, никогда не выбросит сам.
+ *
+ * @example
+ * ```typescript
+ * const result = await fromPromise(
+ *   fetch('/api/user').then(r => r.json()),
+ *   (error) => ({ type: 'network', message: String(error) })
+ * );
+ *
+ * if (result.ok) {
+ *   console.log('User:', result.value);
+ * } else {
+ *   console.error('Network error:', result.error.message);
+ * }
+ * ```
+ */
+export async function fromPromise<T, E>(
+  promise: Promise<T>,
+  onError: (error: unknown) => E
+): Promise<Result<T, E>> {
+  try {
+    const value = await promise;
+    return Ok(value);
+  } catch (error) {
+    return Err(onError(error));
+  }
+}
+
+/**
+ * Конвертирует nullable значение в Result
+ *
+ * @param value - Значение которое может быть null или undefined
+ * @param error - Ошибка если значение отсутствует (null/undefined)
+ * @returns Ok(value) если значение есть, Err(error) если null/undefined
+ *
+ * @remarks
+ * Удобный способ интегрировать nullable API в Railway-Oriented цепочки.
+ * Проверяет `value == null` (то есть null и undefined оба дают Err).
+ *
+ * @example
+ * ```typescript
+ * const maybeUser: User | null = findUser('123');
+ * const result = fromNullable(maybeUser, 'User not found');
+ *
+ * if (result.ok) {
+ *   console.log('User:', result.value.name);
+ * }
+ *
+ * // Удобно в цепочках:
+ * const name = fromNullable(getUser(), 'not found')
+ * // result: Ok(user) или Err('not found')
+ * ```
+ */
+export function fromNullable<T, E>(
+  value: T | null | undefined,
+  error: E
+): Result<T, E> {
+  return value == null ? Err(error) : Ok(value);
+}
+
+/**
+ * Оборачивает функцию которая может бросить исключение в Result-returning функцию
+ *
+ * @param fn - Функция которая может бросить исключение (любое число аргументов)
+ * @param onError - Функция для трансформации исключения в тип ошибки E
+ * @returns Обёрнутая функция с теми же аргументами, возвращающая Result<T, E>
+ *
+ * @remarks
+ * Используется для создания "safe" обёрток над потенциально бросающими функциями.
+ * Обёрнутая функция никогда не бросает — все исключения превращаются в Err.
+ *
+ * @example
+ * ```typescript
+ * const safeParseJSON = fromThrowable(
+ *   (text: string) => JSON.parse(text) as unknown,
+ *   (error) => `Parse error: ${error}`
+ * );
+ *
+ * const result = safeParseJSON('{"name": "Ivan"}');
+ * // result: Ok({ name: 'Ivan' })
+ *
+ * const failed = safeParseJSON('invalid');
+ * // failed: Err('Parse error: SyntaxError: ...')
+ * ```
+ */
+export function fromThrowable<Args extends readonly unknown[], T, E>(
+  fn: (...args: Args) => T,
+  onError: (error: unknown) => E
+): (...args: Args) => Result<T, E> {
+  return function (this: unknown, ...args: Args): Result<T, E> {
+    try {
+      const value = fn.call(this, ...args);
+      return Ok(value);
+    } catch (error) {
+      return Err(onError(error));
+    }
+  };
+}

@@ -4,6 +4,7 @@ node_modules/
 # Build output
 dist/
 dist-test/
+*.tsbuildinfo
 
 # Environment files
 .env
@@ -43,9 +44,7 @@ snapshots/
 *.zip
 
 #ignore claude plans
-/VALUE_OBJECTS_ANALYSIS.md
-/STORAGE_AND_STATE_MANAGEMENT.md
-/ERRORS_FOR_VALUE_OBJECTS.md
-/ARCHITECTURE_INTEGRATION_PLAN.md
-/ARCHITECTURE_CONCEPTS_EXPLAINED.md
-*.tsbuildinfo
+/docs/refactoring/
+
+# Domain entities (will be added later)
+packages/domain/entities

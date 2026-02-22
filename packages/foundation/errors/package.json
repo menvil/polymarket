@@ -29,6 +29,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
+    "smoke:check": "node --input-type=module -e \"import('@polymarket/errors')\" && node --input-type=module -e \"import('@polymarket/errors/base')\" && node --input-type=module -e \"import('@polymarket/errors/value-objects')\"",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "lint:tests": "eslint __tests__ --ext .ts",
@@ -38,7 +39,9 @@
     "typecheck": "tsc --noEmit",
     "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
     "typecheck:all": "npm run typecheck && npm run typecheck:tests",
-    "clean": "rm -rf dist"
+    "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"docs/**/*.md\" \"README.md\"",
+    "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"docs/**/*.md\" \"README.md\"",
+    "clean": "rm -rf dist *.tsbuildinfo"
   },
   "keywords": [
     "errors",
@@ -59,9 +62,13 @@
     "@jest/globals": "^29.7.0",
     "eslint": "^8.0.0",
     "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0"
+    "@typescript-eslint/parser": "^6.0.0",
+    "markdownlint-cli2": "^0.20.0"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@polymarket/result": "^0.1.0",
+    "decimal.js": "^10.6.0"
+  },
   "publishConfig": {
     "access": "restricted"
   }

@@ -6,7 +6,9 @@
   },
   "references": [
     { "path": "../../foundation/result" },
-    { "path": "../../foundation/errors" }
+    { "path": "../../foundation/errors" },
+    { "path": "../../foundation/ids" }
   ],
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "exclude": ["src/**/*.spec.ts", "src/**/__tests__/**"]
 }

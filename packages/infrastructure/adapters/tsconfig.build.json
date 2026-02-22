@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+    "types": []
+  },
+  "include": ["src/**/*"],
+  "references": [
+    { "path": "../../foundation/logger/tsconfig.build.json" },
+    { "path": "../../foundation/time/tsconfig.build.json" }
+  ]
+}

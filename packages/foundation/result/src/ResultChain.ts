@@ -29,12 +29,18 @@ import {
   Err,
   map as mapFn,
   mapErr as mapErrFn,
-  unwrap as unwrapFn,
+  match as matchFn,
   unwrapOr as unwrapOrFn,
+  unwrapOrElse as unwrapOrElseFn,
   isOk,
   isErr,
-  formatValue,
-} from './result';
+} from './result.js';
+import {
+  unwrap as unwrapFn,
+  expectOk as expectOkFn,
+  unwrapErr as unwrapErrFn,
+  expectErr as expectErrFn,
+} from './unsafe.js';
 
 /**
  * Класс для method chaining с Result
@@ -185,6 +191,25 @@ export class ResultChain<T, E> {
   }
 
   /**
+   * Извлекает значение или вычисляет fallback через функцию
+   *
+   * @param fn - Функция вычисляющая fallback из ошибки
+   * @returns Значение или результат fn(error)
+   *
+   * @example
+   * ```typescript
+   * const value = ErrChain('error').unwrapOrElse(err => {
+   *   console.log('Failed:', err);
+   *   return 0;
+   * });
+   * // value: 0
+   * ```
+   */
+  unwrapOrElse(fn: (error: E) => T): T {
+    return unwrapOrElseFn(this.data, fn);
+  }
+
+  /**
    * Извлекает ошибку из Err
    *
    * @returns Ошибка если ok = false
@@ -197,11 +222,7 @@ export class ResultChain<T, E> {
    * ```
    */
   unwrapErr(): E {
-    if (this.data.ok) {
-      const valueInfo = formatValue(this.data.value);
-      throw new Error(`Called unwrapErr on Ok result: ${valueInfo}`);
-    }
-    return this.data.error;
+    return unwrapErrFn(this.data);
   }
 
   /**
@@ -334,7 +355,7 @@ export class ResultChain<T, E> {
    * ```
    */
   match<U>(handlers: { ok: (value: T) => U; err: (error: E) => U }): U {
-    return this.data.ok ? handlers.ok(this.data.value) : handlers.err(this.data.error);
+    return matchFn(this.data, handlers);
   }
 
   /**
@@ -407,11 +428,7 @@ export class ResultChain<T, E> {
    * ```
    */
   expect(message: string): T {
-    if (!this.data.ok) {
-      const errorInfo = formatValue(this.data.error);
-      throw new Error(`${message}: ${errorInfo}`);
-    }
-    return this.data.value;
+    return expectOkFn(this.data, message);
   }
 
   /**
@@ -428,11 +445,7 @@ export class ResultChain<T, E> {
    * ```
    */
   expectErr(message: string): E {
-    if (this.data.ok) {
-      const valueInfo = formatValue(this.data.value);
-      throw new Error(`${message}: expected Err but got Ok(${valueInfo})`);
-    }
-    return this.data.error;
+    return expectErrFn(this.data, message);
   }
 
   /**
@@ -547,94 +560,6 @@ export const R = {
   from: toChain,
 } as const;
 
-/**
- * Конвертирует Promise в Result (обрабатывает exceptions)
- *
- * @param promise - Promise для конвертации
- * @param onError - Функция для обработки ошибки
- * @returns Promise<Result<T, E>>
- *
- * @example
- * ```typescript
- * const result = await fromPromise(
- *   fetch('/api/user'),
- *   (error) => `Network error: ${error}`
- * );
- *
- * if (result.ok) {
- *   console.log('Response:', result.value);
- * }
- * ```
- */
-export async function fromPromise<T, E>(
-  promise: Promise<T>,
-  onError: (error: unknown) => E
-): Promise<Result<T, E>> {
-  try {
-    const value = await promise;
-    return Ok(value);
-  } catch (error) {
-    return Err(onError(error));
-  }
-}
-
-/**
- * Конвертирует nullable значение в Result
- *
- * @param value - Значение которое может быть null/undefined
- * @param error - Ошибка если значение null/undefined
- * @returns Result<T, E>
- *
- * @example
- * ```typescript
- * const maybeUser: User | null = findUser('123');
- * const result = fromNullable(maybeUser, 'User not found');
- *
- * if (result.ok) {
- *   console.log('User:', result.value);
- * }
- * ```
- */
-export function fromNullable<T, E>(
-  value: T | null | undefined,
-  error: E
-): Result<T, E> {
-  if (value == null) {
-    return Err(error);
-  }
-  return Ok(value);
-}
-
-/**
- * Оборачивает функцию которая может выбросить exception в Result-returning функцию
- *
- * @param fn - Функция которая может выбросить exception
- * @param onError - Функция для обработки exception
- * @returns Обёрнутая функция возвращающая Result
- *
- * @example
- * ```typescript
- * const safeParseJSON = fromThrowable(
- *   (text: string) => JSON.parse(text),
- *   (error) => `Parse error: ${error}`
- * );
- *
- * const result = safeParseJSON('{"name": "John"}');
- * if (result.ok) {
- *   console.log('Parsed:', result.value);
- * }
- * ```
- */
-export function fromThrowable<Args extends readonly unknown[], T, E>(
-  fn: (...args: Args) => T,
-  onError: (error: unknown) => E
-): (...args: Args) => Result<T, E> {
-  return function (this: unknown, ...args: Args): Result<T, E> {
-    try {
-      const value = fn.call(this, ...args);
-      return Ok(value);
-    } catch (error) {
-      return Err(onError(error));
-    }
-  };
-}
+// Re-export утилиты из ядра для обратной совместимости
+// Оригинальные реализации живут в result.ts (единственный источник истины)
+export { fromPromise, fromNullable, fromThrowable } from './result.js';
