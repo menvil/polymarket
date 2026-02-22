@@ -539,7 +539,7 @@ QuoteFormatter.toDisplay(quote, {
 QuoteFormatter.toShort(quote);
 // "0.4800/0.5200"
 
-QuoteFormatter.toShort(quote, 2);
+QuoteFormatter.toShort(quote, { priceDecimals: 2 });
 // "0.48/0.52"
 ```
 

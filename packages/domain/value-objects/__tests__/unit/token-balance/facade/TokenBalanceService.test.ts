@@ -863,11 +863,9 @@ describe('TokenBalanceService', () => {
       });
     });
 
-    describe('ошибки обновления', () => {
-      // ПРИМЕЧАНИЕ: Тесты на отрицательный available невозможны,
-      // так как Quantity.of() бросает исключение для отрицательных значений.
-      // Валидация происходит на уровне Quantity, не TokenBalance.
-    });
+    // ПРИМЕЧАНИЕ: Тесты на отрицательный available невозможны,
+    // так как Quantity.of() бросает исключение для отрицательных значений.
+    // Валидация происходит на уровне Quantity, не TokenBalance.
   });
 
   describe('canReserve()', () => {
@@ -917,6 +915,11 @@ describe('TokenBalanceService', () => {
 
       it('не учитывает reserved при проверке (только available)', () => {
         const token = createTestToken();
+        // ПРИМЕЧАНИЕ: Создаём баланс с reserved > available (available=1000, reserved=9000).
+        // Это нетипичное состояние моделирует ситуацию внешней синхронизации,
+        // когда available был обновлён из blockchain, но reserved ещё не синхронизирован.
+        // Fixture используется для тестирования canReserve: ожидаем false для qty=5000,
+        // так как available=1000 недостаточно, несмотря на total=10000.
         const balanceResult = TokenBalanceService.create(
           token,
           Quantity.of(new Decimal(1000)),

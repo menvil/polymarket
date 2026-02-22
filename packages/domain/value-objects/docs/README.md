@@ -111,12 +111,13 @@ console.log(newBalance.toString()); // "1200 USDC"
 
 ```typescript
 import { PriceService, PriceFormatter } from '@polymarket/value-objects';
+import { unwrap } from '@polymarket/result';
 
 const result = PriceService.create(0.55); // 55% вероятность
 result.match({
   ok: (price) => {
-    console.log(price.value());                    // 0.55
-    console.log(PriceFormatter.toPercentage(price)); // "55.00%"
+    console.log(price.value());                                 // 0.55
+    console.log(unwrap(PriceFormatter.toPercentage(price)));   // "55.00%"
   },
   err: (error) => console.error(error)
 });
@@ -131,11 +132,11 @@ result.match({
 Количество акций на рынке.
 
 ```typescript
-import { Quantity } from '@polymarket/value-objects';
+import { QuantityService } from '@polymarket/value-objects';
 
-const qty = Quantity.fromValue(100);
+const qty = QuantityService.create(100);
 qty.match({
-  ok: (q) => console.log(q.value()), // 100
+  ok: (q) => console.log(q.value().toNumber()), // 100
   err: (error) => console.error(error)
 });
 ```
@@ -149,7 +150,7 @@ qty.match({
 ```typescript
 import { AssetQuantityService } from '@polymarket/value-objects/asset-quantity';
 import { Ratio } from '@polymarket/value-objects/ratio';
-import { BinaryOutcome } from '@polymarket/ids';
+import { BinaryOutcome, asOnChainConditionRef } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 // Создание USDC quantity
@@ -160,6 +161,8 @@ if (usdcResult.ok) {
 }
 
 // Создание outcome token quantity
+// conditionRef - это OnChainConditionRef из реального condition
+const conditionRef = asOnChainConditionRef('0x1234...')!; // пример
 const tokenResult = AssetQuantityService.createOutcomeToken(
   conditionRef,
   BinaryOutcome.UP,
@@ -450,6 +453,8 @@ result.match({
 Точные финансовые вычисления без проблем floating point:
 
 ```typescript
+import { MoneyService } from '@polymarket/value-objects';
+import { unwrap } from '@polymarket/result';
 import Decimal from 'decimal.js';
 
 const price = unwrap(MoneyService.create('0.123456789012345', 'USDC'));
@@ -552,12 +557,12 @@ npm run test:watch
 ### Торговые операции
 
 ```typescript
-import { MoneyService, Percentage, Price, Quantity } from '@polymarket/value-objects';
+import { MoneyService, Percentage, PriceService, QuantityService } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
 // Параметры ордера
-const price = unwrap(Price.fromValue(0.55));
-const quantity = unwrap(Quantity.fromValue(100));
+const price = unwrap(PriceService.create(0.55));
+const quantity = unwrap(QuantityService.create(100));
 const feeRate = unwrap(Percentage.fromValue(0.25)); // 0.25%
 
 // Расчёт стоимости

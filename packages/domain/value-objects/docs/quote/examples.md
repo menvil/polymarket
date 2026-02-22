@@ -369,7 +369,7 @@ console.log(QuoteFormatter.toDisplay(quote, {
 console.log(QuoteFormatter.toShort(quote));
 // "0.4800/0.5200"
 
-console.log(QuoteFormatter.toShort(quote, 2));
+console.log(QuoteFormatter.toShort(quote, { priceDecimals: 2 }));
 // "0.48/0.52"
 ```
 

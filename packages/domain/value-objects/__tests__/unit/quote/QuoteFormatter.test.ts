@@ -152,7 +152,7 @@ describe('QuoteFormatter', () => {
         new Decimal(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const short = QuoteFormatter.toShort(quote, 2);
+      const short = QuoteFormatter.toShort(quote, { priceDecimals: 2 });
 
       expect(short).toBe('0.48/0.52');
     });

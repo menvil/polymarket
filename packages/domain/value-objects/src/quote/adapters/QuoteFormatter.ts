@@ -158,7 +158,7 @@ export class QuoteFormatter {
    * Форматирует Quote в краткий вид "bid/ask"
    *
    * @param quote - Quote для форматирования
-   * @param priceDecimals - Количество десятичных знаков (по умолчанию: 4)
+   * @param options - Опции форматирования
    * @returns Форматированная строка
    *
    * @remarks
@@ -171,12 +171,12 @@ export class QuoteFormatter {
    * console.log(QuoteFormatter.toShort(quote));
    * // "0.4800/0.5200"
    *
-   * console.log(QuoteFormatter.toShort(quote, 2));
+   * console.log(QuoteFormatter.toShort(quote, { priceDecimals: 2 }));
    * // "0.48/0.52"
    * ```
    */
-  public static toShort(quote: Quote, priceDecimals: number = 4): string {
-    const safeDecimals = QuoteFormatter.sanitizeDecimals(priceDecimals, 4);
+  public static toShort(quote: Quote, options: QuoteFormatOptions = {}): string {
+    const safeDecimals = QuoteFormatter.sanitizeDecimals(options.priceDecimals ?? 4, 4);
     const bidStr = quote.hasBid()
       ? quote.bid()!.value().toFixed(safeDecimals)
       : '--';
@@ -322,7 +322,22 @@ export class QuoteFormatter {
 
     // Calculate table width: "Side" (4) + "   " (3) + maxPriceWidth + "   " (3) + "Size" (4) = 14 + maxPriceWidth
     const tableWidth = 14 + maxPriceWidth;
-    const separator = '─'.repeat(Math.max(1, tableWidth));
+
+    // Calculate metadata lines max width
+    let metadataMaxWidth = 0;
+    if (options.includeTimestamp) {
+      const timestamp = new Date(quote.timestampMs().toNumber()).toISOString();
+      metadataMaxWidth = Math.max(metadataMaxWidth, `Time:  ${timestamp}`.length);
+    }
+    if (options.includeSource) {
+      metadataMaxWidth = Math.max(metadataMaxWidth, `Source: ${quote.sourceId()}`.length);
+    }
+    if (options.includeInstrument) {
+      metadataMaxWidth = Math.max(metadataMaxWidth, `Instrument: ${quote.instrumentId()}`.length);
+    }
+
+    // Separator should be at least as wide as the widest line (table or metadata)
+    const separator = '─'.repeat(Math.max(1, Math.max(tableWidth, metadataMaxWidth)));
 
     lines.push(`Side   ${'Price'.padEnd(maxPriceWidth)}   Size`);
     lines.push(separator);
