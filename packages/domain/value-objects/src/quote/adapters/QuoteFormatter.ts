@@ -143,6 +143,14 @@ export class QuoteFormatter {
       result += ` [${timestamp}]`;
     }
 
+    if (options.includeSource) {
+      result += ` [${quote.sourceId()}]`;
+    }
+
+    if (options.includeInstrument) {
+      result += ` [${quote.instrumentId()}]`;
+    }
+
     return result;
   }
 
@@ -305,15 +313,22 @@ export class QuoteFormatter {
     }
 
     const spread = quote.spread();
-    if (spread !== null) {
+    const includeSpread = options.includeSpread ?? true;
+    const includeMid = options.includeMid ?? true;
+
+    if (spread !== null && (includeSpread || includeMid)) {
       lines.push(separator);
 
-      const spreadWidth = spread.width();
-      const spreadPct = spread.widthRatio().toDecimal().times(100);
-      lines.push(`Spread ${spreadWidth.toFixed(priceDecimals).padEnd(8)} (${spreadPct.toFixed(2)}%)`);
+      if (includeSpread) {
+        const spreadWidth = spread.width();
+        const spreadPct = spread.widthRatio().toDecimal().times(100);
+        lines.push(`Spread ${spreadWidth.toFixed(priceDecimals).padEnd(8)} (${spreadPct.toFixed(2)}%)`);
+      }
 
-      const midDecimal = spread.mid();
-      lines.push(`Mid    ${midDecimal.toFixed(priceDecimals)}`);
+      if (includeMid) {
+        const midDecimal = spread.mid();
+        lines.push(`Mid    ${midDecimal.toFixed(priceDecimals)}`);
+      }
     }
 
     // Добавляем separator только если есть хотя бы одно из дополнительных полей
@@ -343,6 +358,7 @@ export class QuoteFormatter {
    *
    * @param quote - Quote для форматирования
    * @param includePercentage - Включить процентное значение (по умолчанию: true)
+   * @param decimals - Количество десятичных знаков (по умолчанию: 4)
    * @returns Форматированная строка spread или null для one-sided котировок
    *
    * @remarks
@@ -357,16 +373,20 @@ export class QuoteFormatter {
    *
    * console.log(QuoteFormatter.formatSpread(quote, false));
    * // "0.0400"
+   *
+   * console.log(QuoteFormatter.formatSpread(quote, true, 2));
+   * // "0.04 (8.00%)"
    * ```
    */
-  public static formatSpread(quote: Quote, includePercentage: boolean = true): string | null {
+  public static formatSpread(quote: Quote, includePercentage: boolean = true, decimals: number = 4): string | null {
     const spread = quote.spread();
     if (spread === null) {
       return null;
     }
 
+    const safeDecimals = QuoteFormatter.sanitizeDecimals(decimals, 4);
     const spreadWidth = spread.width();
-    let result = spreadWidth.toFixed(4);
+    let result = spreadWidth.toFixed(safeDecimals);
 
     if (includePercentage) {
       const spreadPct = spread.widthRatio().toDecimal().times(100);
@@ -527,11 +547,11 @@ export class QuoteFormatter {
 
     // Spread в basis points (1 bp = 0.01% = 0.0001)
     const spreadWidth = spread.width();
-    const spreadBps = spreadWidth.times(10000).toNumber();
+    const spreadBps = spreadWidth.times(10000);
 
     // Mid price
-    const mid = quote.midOrNull();
-    const midStr = mid !== null ? mid.toFixed(safeDecimals) : '--';
+    const midDecimal = spread.mid();
+    const midStr = midDecimal.toFixed(safeDecimals);
 
     return `${bidPrice}-${askPrice} (${spreadBps.toFixed(0)}bp, mid=${midStr})`;
   }

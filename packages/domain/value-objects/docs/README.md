@@ -564,7 +564,7 @@ console.log(`Итого: ${total.toString()}`);                  // "$55.14 USDC
 ### Анализ портфеля
 
 ```typescript
-import { Money } from '@polymarket/value-objects';
+import { Money, Percentage } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
 const positions = [

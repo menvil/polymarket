@@ -19,8 +19,10 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1234567890000)
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        new Decimal(1234567890000),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
 
       const json = QuoteSerializer.toJSON(quote);
 
@@ -39,8 +41,10 @@ describe('QuoteSerializer', () => {
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
-        new Decimal(1234567890000)
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        new Decimal(1234567890000),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
 
       const json = QuoteSerializer.toJSON(quote);
 
@@ -48,6 +52,8 @@ describe('QuoteSerializer', () => {
       expect(json.ask).toBeNull();
       expect(json.bidSize).toBe(100);
       expect(json.askSize).toBe(0);
+      expect(json.sourceId).toBe(TEST_SOURCE_ID);
+      expect(json.instrumentId).toBe(TEST_INSTRUMENT_ID);
     });
 
     it('сериализует ask-only котировку', () => {
@@ -56,8 +62,10 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.51)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
-        new Decimal(1234567890000)
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        new Decimal(1234567890000),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
 
       const json = QuoteSerializer.toJSON(quote);
 
@@ -65,6 +73,8 @@ describe('QuoteSerializer', () => {
       expect(json.ask).toBe(0.51);
       expect(json.bidSize).toBe(0);
       expect(json.askSize).toBe(200);
+      expect(json.sourceId).toBe(TEST_SOURCE_ID);
+      expect(json.instrumentId).toBe(TEST_INSTRUMENT_ID);
     });
   });
 
@@ -90,6 +100,8 @@ describe('QuoteSerializer', () => {
         expect(quote.bidSize().value().toNumber()).toBe(100);
         expect(quote.askSize().value().toNumber()).toBe(150);
         expect(quote.timestampMs().toNumber()).toBe(1234567890000);
+        expect(quote.sourceId()).toBe('TEST_SOURCE');
+        expect(quote.instrumentId()).toBe('TEST_INSTRUMENT');
       }
     });
 
@@ -479,21 +491,37 @@ describe('QuoteSerializer', () => {
 
     // Тесты для safeStringify (circular references, unstringifiable)
     it('обрабатывает circular references через safeStringify', () => {
-      const circular: any = { bid: 0.48 };
-      circular.self = circular;
+      const circular: any = {
+        bid: 0.60, // > ask, чтобы вызвать ошибку валидации
+        ask: 0.40,
+        bidSize: 100,
+        askSize: 150,
+        timestamp: 1234567890000,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT'
+      };
+      circular.self = circular; // Добавляем circular reference
 
       const result = QuoteSerializer.fromJSON(circular);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
         // safeStringify обрабатывает circular reference (проверяем что код не крешится)
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.BID_GREATER_THAN_ASK);
+        // Проверяем что ошибка не крешится при попытке сериализовать circular reference
+        expect(result.error.message).toBeTruthy();
       }
     });
 
     it('обрабатывает unstringifiable values через catch-ветку safeStringify', () => {
       const unstringifiable = {
-        bid: 0.48,
+        bid: 0.60, // > ask, чтобы вызвать ошибку валидации
+        ask: 0.40,
+        bidSize: 100,
+        askSize: 150,
+        timestamp: 1234567890000,
+        sourceId: 'TEST_SOURCE',
+        instrumentId: 'TEST_INSTRUMENT',
         get badProperty() {
           throw new Error('Cannot serialize this property');
         }
@@ -504,7 +532,9 @@ describe('QuoteSerializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         // safeStringify catch-ветка обрабатывает unstringifiable (проверяем что код не крешится)
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_FORMAT);
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.BID_GREATER_THAN_ASK);
+        // Проверяем что ошибка не крешится при попытке сериализовать unstringifiable
+        expect(result.error.message).toBeTruthy();
       }
     });
   });
@@ -516,8 +546,10 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1234567890000)
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        new Decimal(1234567890000),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
 
       const jsonString = QuoteSerializer.toJSONString(quote);
       const parsed = JSON.parse(jsonString);
@@ -535,8 +567,10 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1234567890000)
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        new Decimal(1234567890000),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
 
       const jsonString = QuoteSerializer.toJSONString(quote);
 
@@ -562,6 +596,8 @@ describe('QuoteSerializer', () => {
         expect(quote.bid()?.value().toNumber()).toBe(0.48);
         expect(quote.ask()?.value().toNumber()).toBe(0.52);
         expect(quote.timestampMs().toNumber()).toBe(1234567890000);
+        expect(quote.sourceId()).toBe('TEST_SOURCE');
+        expect(quote.instrumentId()).toBe('TEST_INSTRUMENT');
       }
     });
 
@@ -606,8 +642,10 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1234567890000)
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        new Decimal(1234567890000),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
 
       const jsonString = QuoteSerializer.toJSONString(original);
       const result = QuoteSerializer.fromJSONString(jsonString);
@@ -629,8 +667,10 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1234567890000)
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        new Decimal(1234567890000),
+        TEST_SOURCE_ID,
+        TEST_INSTRUMENT_ID
+      );
 
       const json = QuoteSerializer.toJSON(original);
       const result = QuoteSerializer.fromJSON(json);
