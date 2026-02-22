@@ -234,8 +234,7 @@ import { SpreadService, SpreadFormatter } from '@polymarket/value-objects';
 // Создание из чисел
 const result = SpreadService.fromValues(0.48, 0.52);
 if (!result.ok) {
-  console.error(result.error.message);
-  return;
+  throw new Error(result.error.message);
 }
 
 const spread = result.value;
