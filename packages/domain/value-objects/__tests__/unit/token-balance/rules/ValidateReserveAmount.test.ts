@@ -53,8 +53,10 @@ describe('ValidateReserveAmount', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INSUFFICIENT_AVAILABLE);
-        expect(result.error.context?.requested).toBe(15000);
-        expect(result.error.context?.available).toBe(10000);
+        expect(typeof result.error.context?.amount).toBe('string');
+        expect(result.error.context?.amount).toBe('15000');
+        expect(typeof result.error.context?.available).toBe('string');
+        expect(result.error.context?.available).toBe('10000');
       }
     });
 

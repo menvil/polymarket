@@ -212,8 +212,8 @@ describe('Balance Integration Tests', () => {
       expect(reserveResult.ok).toBe(false);
       if (!reserveResult.ok) {
         expect(reserveResult.error.context?.reason).toBe(BalanceErrorReason.INSUFFICIENT_FUNDS);
-        expect(reserveResult.error.context?.requested).toBe(2000);
-        expect(reserveResult.error.context?.available).toBe(1000);
+        expect(reserveResult.error.context?.amount).toBe('2000');
+        expect(reserveResult.error.context?.available).toBe('1000');
       }
     });
 
@@ -226,8 +226,8 @@ describe('Balance Integration Tests', () => {
       expect(releaseResult.ok).toBe(false);
       if (!releaseResult.ok) {
         expect(releaseResult.error.context?.reason).toBe(BalanceErrorReason.INSUFFICIENT_RESERVED);
-        expect(releaseResult.error.context?.requested).toBe(2000);
-        expect(releaseResult.error.context?.reserved).toBe(1000);
+        expect(releaseResult.error.context?.amount).toBe('2000');
+        expect(releaseResult.error.context?.reserved).toBe('1000');
       }
     });
 
@@ -275,8 +275,8 @@ describe('Balance Integration Tests', () => {
       expect(consumeResult.ok).toBe(false);
       if (!consumeResult.ok) {
         expect(consumeResult.error.context?.reason).toBe(BalanceErrorReason.INSUFFICIENT_RESERVED);
-        expect(consumeResult.error.context?.requested).toBe(2000);
-        expect(consumeResult.error.context?.reserved).toBe(1000);
+        expect(consumeResult.error.context?.amount).toBe('2000');
+        expect(consumeResult.error.context?.reserved).toBe('1000');
       }
     });
 

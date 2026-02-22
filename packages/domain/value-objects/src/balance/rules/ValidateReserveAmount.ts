@@ -72,13 +72,13 @@ export class ValidateReserveAmount {
     if (amount.lessThanOrEqualTo(0)) {
       return Err(
         new InvalidBalanceError(
-          (ctx) => `Reserve amount must be positive, got ${ctx.requested}`,
+          (ctx) => `Reserve amount must be positive, got ${ctx.amount}`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INVALID_FORMAT,
-              requested: amount.toNumber(),
-              available: availableAmount.toNumber()
+              amount: amount.toString(),
+              available: availableAmount.toString()
             }
           }
         )
@@ -90,13 +90,13 @@ export class ValidateReserveAmount {
       return Err(
         new InvalidBalanceError(
           (ctx) =>
-            `Cannot reserve ${ctx.requested}: only ${ctx.available} available`,
+            `Cannot reserve ${ctx.amount}: only ${ctx.available} available`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INSUFFICIENT_FUNDS,
-              requested: amount.toNumber(),
-              available: availableAmount.toNumber()
+              amount: amount.toString(),
+              available: availableAmount.toString()
             }
           }
         )

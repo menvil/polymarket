@@ -53,10 +53,10 @@ describe('ValidateReleaseAmount', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INSUFFICIENT_RESERVED);
-        expect(typeof result.error.context?.requested).toBe('number');
-        expect(result.error.context?.requested).toBe(10000);
-        expect(typeof result.error.context?.reserved).toBe('number');
-        expect(result.error.context?.reserved).toBe(5000);
+        expect(typeof result.error.context?.amount).toBe('string');
+        expect(result.error.context?.amount).toBe('10000');
+        expect(typeof result.error.context?.reserved).toBe('string');
+        expect(result.error.context?.reserved).toBe('5000');
       }
     });
 
@@ -104,10 +104,10 @@ describe('ValidateReleaseAmount', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INSUFFICIENT_RESERVED);
-        expect(typeof result.error.context?.requested).toBe('number');
-        expect(result.error.context?.requested).toBe(100);
-        expect(typeof result.error.context?.reserved).toBe('number');
-        expect(result.error.context?.reserved).toBe(0);
+        expect(typeof result.error.context?.amount).toBe('string');
+        expect(result.error.context?.amount).toBe('100');
+        expect(typeof result.error.context?.reserved).toBe('string');
+        expect(result.error.context?.reserved).toBe('0');
       }
     });
   });

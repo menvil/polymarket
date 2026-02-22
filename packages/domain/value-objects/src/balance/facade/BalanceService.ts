@@ -183,9 +183,9 @@ export class BalanceService {
   ): Result<Balance, InvalidBalanceError> {
     const op = 'reserve';
     const ctx = {
-      available: balance.available().value().toNumber(),
-      reserved: balance.reserved().value().toNumber(),
-      requested: amount.value().toNumber(),
+      available: balance.available().value().toString(),
+      reserved: balance.reserved().value().toString(),
+      amount: amount.value().toString(),
       currency: balance.currency()
     };
 
@@ -279,9 +279,9 @@ export class BalanceService {
   ): Result<Balance, InvalidBalanceError> {
     const op = 'unfreezeReserved';
     const ctx = {
-      available: balance.available().value().toNumber(),
-      reserved: balance.reserved().value().toNumber(),
-      requested: amount.value().toNumber(),
+      available: balance.available().value().toString(),
+      reserved: balance.reserved().value().toString(),
+      amount: amount.value().toString(),
       currency: balance.currency()
     };
 
@@ -390,9 +390,9 @@ export class BalanceService {
   ): Result<Balance, InvalidBalanceError> {
     const op = 'consumeReserved';
     const ctx = {
-      available: balance.available().value().toNumber(),
-      reserved: balance.reserved().value().toNumber(),
-      requested: amount.value().toNumber(),
+      available: balance.available().value().toString(),
+      reserved: balance.reserved().value().toString(),
+      amount: amount.value().toString(),
       currency: balance.currency()
     };
 

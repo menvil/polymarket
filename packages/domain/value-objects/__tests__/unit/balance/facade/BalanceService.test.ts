@@ -409,7 +409,7 @@ describe('BalanceService', () => {
           expect(result.error.context?.op).toBe('consumeReserved');
           expect(result.error.context).toHaveProperty('available');
           expect(result.error.context).toHaveProperty('reserved');
-          expect(result.error.context).toHaveProperty('requested');
+          expect(result.error.context).toHaveProperty('amount');
         }
       });
     });
@@ -512,7 +512,7 @@ describe('BalanceService', () => {
         expect(result.error.context?.op).toBe('reserve');
         expect(result.error.context?.available).toBeDefined();
         expect(result.error.context?.reserved).toBeDefined();
-        expect(result.error.context?.requested).toBeDefined();
+        expect(result.error.context?.amount).toBeDefined();
         expect(result.error.context?.currency).toBeDefined();
       }
     });
@@ -528,7 +528,7 @@ describe('BalanceService', () => {
         expect(result.error.context?.op).toBe('unfreezeReserved');
         expect(result.error.context?.available).toBeDefined();
         expect(result.error.context?.reserved).toBeDefined();
-        expect(result.error.context?.requested).toBeDefined();
+        expect(result.error.context?.amount).toBeDefined();
       }
     });
 
