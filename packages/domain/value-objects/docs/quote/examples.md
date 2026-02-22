@@ -739,8 +739,7 @@ const result2 = QuoteService.create(0.49, 0.51, 200, 100, 'POLYMARKET_WS', 'TEST
 const result3 = QuoteService.create(0.47, 0.53, 150, 200, 'POLYMARKET_WS', 'TEST_MARKET');
 
 if (!result1.ok || !result2.ok || !result3.ok) {
-  console.error('Failed to create quotes');
-  return;
+  throw new Error('Failed to create quotes');
 }
 
 const aggregated = aggregator.aggregateQuotes([result1.value, result2.value, result3.value]);
@@ -820,8 +819,7 @@ const result2 = QuoteService.create(0.48, 0.52, 5, 150, 'POLYMARKET_WS', 'TEST_M
 const result3 = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET', Date.now() - 10000);  // Stale
 
 if (!result1.ok || !result2.ok || !result3.ok) {
-  console.error('Failed to create quotes');
-  return;
+  throw new Error('Failed to create quotes');
 }
 
 monitor.checkQuote(result1.value);  // Alert: spread too wide
