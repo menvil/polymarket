@@ -313,13 +313,16 @@ export class QuoteFormatter {
     const sizeDecimals = QuoteFormatter.sanitizeDecimals(options.sizeDecimals ?? 2, 2);
 
     const lines: string[] = [];
-    const separator = '─'.repeat(40);
 
     // Calculate dynamic column width for price
     const bidPrice = quote.hasBid() ? quote.bid()!.value().toFixed(priceDecimals) : '--';
     const askPrice = quote.hasAsk() ? quote.ask()!.value().toFixed(priceDecimals) : '--';
     const priceHeaderWidth = 'Price'.length;
     const maxPriceWidth = Math.max(priceHeaderWidth, bidPrice.length, askPrice.length);
+
+    // Calculate table width: "Side" (4) + "   " (3) + maxPriceWidth + "   " (3) + "Size" (4) = 14 + maxPriceWidth
+    const tableWidth = 14 + maxPriceWidth;
+    const separator = '─'.repeat(Math.max(1, tableWidth));
 
     lines.push(`Side   ${'Price'.padEnd(maxPriceWidth)}   Size`);
     lines.push(separator);

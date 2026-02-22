@@ -55,7 +55,7 @@ import { unwrap } from '@polymarket/result';
 
 const fee = unwrap(Percentage.fromValue(2.5));     // 2.5%
 const gain = unwrap(Percentage.fromDecimal(0.15)); // 15%
-const total = unwrap(fee.add(gain));                // 17.5% (Result)
+const total = unwrap(fee.add(gain));                // 17.5% (Percentage value)
 
 const orderValue = 1000;
 const feeAmount = fee.of(orderValue); // Decimal(25)
@@ -110,14 +110,13 @@ console.log(newBalance.toString()); // "1200 USDC"
 Цена на рынке предсказаний Polymarket.
 
 ```typescript
-import { Price } from '@polymarket/value-objects';
-import { Percentage } from '@polymarket/value-objects';
+import { PriceService, PriceFormatter } from '@polymarket/value-objects';
 
-const price = Price.fromValue(0.55); // 55% вероятность
-price.match({
-  ok: (p) => {
-    console.log(p.value);             // 0.55
-    console.log(p.toPercentage());    // "55.00%"
+const result = PriceService.create(0.55); // 55% вероятность
+result.match({
+  ok: (price) => {
+    console.log(price.value());                    // 0.55
+    console.log(PriceFormatter.toPercentage(price)); // "55.00%"
   },
   err: (error) => console.error(error)
 });
@@ -136,7 +135,7 @@ import { Quantity } from '@polymarket/value-objects';
 
 const qty = Quantity.fromValue(100);
 qty.match({
-  ok: (q) => console.log(q.getValue()), // 100
+  ok: (q) => console.log(q.value()), // 100
   err: (error) => console.error(error)
 });
 ```
@@ -234,7 +233,8 @@ import { SpreadService, SpreadFormatter } from '@polymarket/value-objects';
 // Создание из чисел
 const result = SpreadService.fromValues(0.48, 0.52);
 if (!result.ok) {
-  throw new Error(result.error.message);
+  // don't use return at module scope
+  throw new Error('Failed to create spread from values');
 }
 
 const spread = result.value;
@@ -313,22 +313,26 @@ result.match({
   }
 });
 
-// Цепочка операций
-const m1Result = MoneyService.create(100, 'USDC');
-if (!m1Result.ok) return;
-const m1 = m1Result.value;
+// Цепочка операций (в функции)
+function calculateTotal() {
+  const m1Result = MoneyService.create(100, 'USDC');
+  if (!m1Result.ok) return;
+  const m1 = m1Result.value;
 
-const m2Result = MoneyService.multiply(m1, 2);
-if (!m2Result.ok) return;
-const m2 = m2Result.value;
+  const m2Result = MoneyService.multiply(m1, 2);
+  if (!m2Result.ok) return;
+  const m2 = m2Result.value;
 
-const m3 = unwrap(MoneyService.create(50, 'USDC'));
-const finalResult = MoneyService.add(m2, m3);
+  const m3 = unwrap(MoneyService.create(50, 'USDC'));
+  const finalResult = MoneyService.add(m2, m3);
 
-finalResult.match({
-  ok: (money) => console.log(money.value().toNumber()), // 250
-  err: (error) => console.error(error)
-});
+  finalResult.match({
+    ok: (money) => console.log(money.value().toNumber()), // 250
+    err: (error) => console.error(error)
+  });
+}
+
+calculateTotal();
 ```
 
 ### Решение проблемы floating point
@@ -446,6 +450,8 @@ result.match({
 Точные финансовые вычисления без проблем floating point:
 
 ```typescript
+import Decimal from 'decimal.js';
+
 const price = unwrap(MoneyService.create('0.123456789012345', 'USDC'));
 const quantity = new Decimal('1000000');
 
