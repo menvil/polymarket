@@ -28,6 +28,7 @@ describe('ValidateFactorForPriceMultiplication', () => {
 
     it('содержит reason is_nan', () => {
       const result = ValidateFactorForPriceMultiplication.check(new Decimal(NaN));
+      expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe('is_nan');
       }
@@ -35,6 +36,7 @@ describe('ValidateFactorForPriceMultiplication', () => {
 
     it('сообщение ошибки содержит NaN', () => {
       const result = ValidateFactorForPriceMultiplication.check(new Decimal(NaN));
+      expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('NaN');
       }
@@ -57,6 +59,7 @@ describe('ValidateFactorForPriceMultiplication', () => {
 
     it('содержит reason not_finite для Infinity', () => {
       const result = ValidateFactorForPriceMultiplication.check(new Decimal(Infinity));
+      expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe('not_finite');
       }
@@ -64,6 +67,7 @@ describe('ValidateFactorForPriceMultiplication', () => {
 
     it('сообщение ошибки содержит finite', () => {
       const result = ValidateFactorForPriceMultiplication.check(new Decimal(Infinity));
+      expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('finite');
       }

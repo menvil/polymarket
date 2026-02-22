@@ -10,16 +10,44 @@ import { Quantity } from '../../../src/quantity/core/Quantity.js';
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
 const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 
+/**
+ * Создает тестовую котировку с заданными параметрами.
+ *
+ * @param bid - Цена бида (по умолчанию 0.48)
+ * @param ask - Цена аска (по умолчанию 0.52)
+ * @param bidSize - Размер бида (по умолчанию 100)
+ * @param askSize - Размер аска (по умолчанию 150)
+ * @param timestamp - Временная метка (по умолчанию Date.now())
+ * @returns Объект котировки Quote
+ *
+ * @example
+ * ```typescript
+ * const quote = makeQuote(0.48, 0.52);
+ * const bidOnlyQuote = makeQuote(0.50, null);
+ * ```
+ */
+function makeQuote(
+  bid: number | null = 0.48,
+  ask: number | null = 0.52,
+  bidSize: number = 100,
+  askSize: number = 150,
+  timestamp: number = Date.now()
+): Quote {
+  return Quote.of(
+    bid !== null ? Price.of(new Decimal(bid)) : null,
+    ask !== null ? Price.of(new Decimal(ask)) : null,
+    Quantity.of(new Decimal(bidSize)),
+    Quantity.of(new Decimal(askSize)),
+    new Decimal(timestamp),
+    TEST_SOURCE_ID,
+    TEST_INSTRUMENT_ID
+  );
+}
+
 describe('QuoteFormatter', () => {
   describe('toDisplay()', () => {
     it('форматирует двустороннюю котировку', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const display = QuoteFormatter.toDisplay(quote);
 
@@ -27,13 +55,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует bid-only котировку', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
-        null,
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.50, null, 100, 0);
 
       const display = QuoteFormatter.toDisplay(quote);
 
@@ -41,13 +63,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует ask-only котировку', () => {
-      const quote = Quote.of(
-        null,
-        Price.of(new Decimal(0.51)),
-        Quantity.of(new Decimal(0)),
-        Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(null, 0.51, 0, 200);
 
       const display = QuoteFormatter.toDisplay(quote);
 
@@ -55,13 +71,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('использует custom priceDecimals', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const display = QuoteFormatter.toDisplay(quote, { priceDecimals: 2 });
 
@@ -69,13 +79,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('использует custom sizeDecimals', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100.5)),
-        Quantity.of(new Decimal(150.75)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.48, 0.52, 100.5, 150.75);
 
       const display = QuoteFormatter.toDisplay(quote, { sizeDecimals: 0 });
 
@@ -85,13 +89,7 @@ describe('QuoteFormatter', () => {
 
     it('включает timestamp когда includeTimestamp: true', () => {
       const timestamp = new Date('2024-01-15T12:30:00.000Z').getTime();
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(timestamp)
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.48, 0.52, 100, 150, timestamp);
 
       const display = QuoteFormatter.toDisplay(quote, { includeTimestamp: true });
 
@@ -102,13 +100,7 @@ describe('QuoteFormatter', () => {
 
   describe('toShort()', () => {
     it('форматирует двустороннюю котировку в краткий вид', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const short = QuoteFormatter.toShort(quote);
 
@@ -116,13 +108,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует bid-only котировку', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
-        null,
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.50, null, 100, 0);
 
       const short = QuoteFormatter.toShort(quote);
 
@@ -130,13 +116,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует ask-only котировку', () => {
-      const quote = Quote.of(
-        null,
-        Price.of(new Decimal(0.51)),
-        Quantity.of(new Decimal(0)),
-        Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(null, 0.51, 0, 200);
 
       const short = QuoteFormatter.toShort(quote);
 
@@ -144,13 +124,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('использует custom decimals', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const short = QuoteFormatter.toShort(quote, { priceDecimals: 2 });
 
@@ -160,13 +134,7 @@ describe('QuoteFormatter', () => {
 
   describe('toDetailed()', () => {
     it('форматирует двустороннюю котировку с spread и mid', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const detailed = QuoteFormatter.toDetailed(quote);
 
@@ -177,13 +145,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует bid-only котировку без spread и mid', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
-        null,
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.50, null, 100, 0);
 
       const detailed = QuoteFormatter.toDetailed(quote);
 
@@ -193,13 +155,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует ask-only котировку без spread и mid', () => {
-      const quote = Quote.of(
-        null,
-        Price.of(new Decimal(0.51)),
-        Quantity.of(new Decimal(0)),
-        Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(null, 0.51, 0, 200);
 
       const detailed = QuoteFormatter.toDetailed(quote);
 
@@ -209,13 +165,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('скрывает spread когда includeSpread: false', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeSpread: false });
 
@@ -226,13 +176,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('скрывает mid когда includeMid: false', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeMid: false });
 
@@ -244,13 +188,7 @@ describe('QuoteFormatter', () => {
 
     it('включает timestamp когда includeTimestamp: true', () => {
       const timestamp = new Date('2024-01-15T12:30:00.000Z').getTime();
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(timestamp)
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.48, 0.52, 100, 150, timestamp);
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeTimestamp: true });
 
@@ -264,8 +202,8 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now()),
-        'BINANCE_WS' as any,
-        'BTC-USDT' as any
+        'BINANCE_WS' as MarketDataSourceId,
+        'BTC-USDT' as InstrumentId
       );
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeSource: true });
@@ -280,8 +218,8 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now()),
-        'BINANCE_WS' as any,
-        'BTC-USDT' as any
+        'BINANCE_WS' as MarketDataSourceId,
+        'BTC-USDT' as InstrumentId
       );
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeInstrument: true });
@@ -292,13 +230,7 @@ describe('QuoteFormatter', () => {
 
   describe('toTable()', () => {
     it('форматирует двустороннюю котировку в таблицу', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const table = QuoteFormatter.toTable(quote);
 
@@ -311,13 +243,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует bid-only котировку в таблицу', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
-        null,
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.50, null, 100, 0);
 
       const table = QuoteFormatter.toTable(quote);
 
@@ -328,13 +254,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует ask-only котировку в таблицу', () => {
-      const quote = Quote.of(
-        null,
-        Price.of(new Decimal(0.51)),
-        Quantity.of(new Decimal(0)),
-        Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(null, 0.51, 0, 200);
 
       const table = QuoteFormatter.toTable(quote);
 
@@ -346,13 +266,7 @@ describe('QuoteFormatter', () => {
 
     it('включает timestamp когда includeTimestamp: true', () => {
       const timestamp = new Date('2024-01-15T12:30:00.000Z').getTime();
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(timestamp)
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.48, 0.52, 100, 150, timestamp);
 
       const table = QuoteFormatter.toTable(quote, { includeTimestamp: true });
 
@@ -366,8 +280,8 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now()),
-        'BINANCE_WS' as any,
-        'BTC-USDT' as any
+        'BINANCE_WS' as MarketDataSourceId,
+        'BTC-USDT' as InstrumentId
       );
 
       const table = QuoteFormatter.toTable(quote, { includeSource: true });
@@ -382,8 +296,8 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(Date.now()),
-        'BINANCE_WS' as any,
-        'BTC-USDT' as any
+        'BINANCE_WS' as MarketDataSourceId,
+        'BTC-USDT' as InstrumentId
       );
 
       const table = QuoteFormatter.toTable(quote, { includeInstrument: true });
@@ -399,8 +313,8 @@ describe('QuoteFormatter', () => {
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
         new Decimal(timestamp),
-        'BINANCE_WS' as any,
-        'BTC-USDT' as any
+        'BINANCE_WS' as MarketDataSourceId,
+        'BTC-USDT' as InstrumentId
       );
 
       const table = QuoteFormatter.toTable(quote, {
@@ -417,13 +331,7 @@ describe('QuoteFormatter', () => {
 
   describe('formatSpread()', () => {
     it('форматирует spread с процентами', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const spread = QuoteFormatter.formatSpread(quote);
 
@@ -431,13 +339,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует spread без процентов', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const spread = QuoteFormatter.formatSpread(quote, false);
 
@@ -445,13 +347,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('возвращает null для bid-only котировки', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
-        null,
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.50, null, 100, 0);
 
       const spread = QuoteFormatter.formatSpread(quote);
 
@@ -459,13 +355,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('возвращает null для ask-only котировки', () => {
-      const quote = Quote.of(
-        null,
-        Price.of(new Decimal(0.51)),
-        Quantity.of(new Decimal(0)),
-        Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(null, 0.51, 0, 200);
 
       const spread = QuoteFormatter.formatSpread(quote);
 
@@ -475,13 +365,7 @@ describe('QuoteFormatter', () => {
 
   describe('formatMid()', () => {
     it('форматирует mid price', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const mid = QuoteFormatter.formatMid(quote);
 
@@ -489,13 +373,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('использует custom decimals', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const mid = QuoteFormatter.formatMid(quote, 2);
 
@@ -503,13 +381,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('возвращает null для bid-only котировки', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
-        null,
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.50, null, 100, 0);
 
       const mid = QuoteFormatter.formatMid(quote);
 
@@ -517,13 +389,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('возвращает null для ask-only котировки', () => {
-      const quote = Quote.of(
-        null,
-        Price.of(new Decimal(0.51)),
-        Quantity.of(new Decimal(0)),
-        Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(null, 0.51, 0, 200);
 
       const mid = QuoteFormatter.formatMid(quote);
 
@@ -533,13 +399,7 @@ describe('QuoteFormatter', () => {
 
   describe('formatCompact()', () => {
     it('форматирует двустороннюю котировку в компактный вид', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const compact = QuoteFormatter.formatCompact(quote);
 
@@ -547,13 +407,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует bid-only котировку', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
-        null,
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.50, null, 100, 0);
 
       const compact = QuoteFormatter.formatCompact(quote);
 
@@ -561,13 +415,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует ask-only котировку', () => {
-      const quote = Quote.of(
-        null,
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(0)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(null, 0.52, 0, 150);
 
       const compact = QuoteFormatter.formatCompact(quote);
 
@@ -575,13 +423,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('использует custom priceDecimals', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const compact = QuoteFormatter.formatCompact(quote, 4);
 
@@ -589,13 +431,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('использует custom sizeDecimals', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100.5)),
-        Quantity.of(new Decimal(150.75)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.48, 0.52, 100.5, 150.75);
 
       const compact = QuoteFormatter.formatCompact(quote, 2, 2);
 
@@ -603,13 +439,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('использует целые числа для размеров по умолчанию', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100.999)),
-        Quantity.of(new Decimal(150.111)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.48, 0.52, 100.999, 150.111);
 
       const compact = QuoteFormatter.formatCompact(quote);
 
@@ -620,13 +450,7 @@ describe('QuoteFormatter', () => {
 
   describe('formatWithSpread()', () => {
     it('форматирует двустороннюю котировку с spread информацией', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const formatted = QuoteFormatter.formatWithSpread(quote);
 
@@ -635,13 +459,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует bid-only котировку', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.50)),
-        null,
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.50, null, 100, 0);
 
       const formatted = QuoteFormatter.formatWithSpread(quote);
 
@@ -649,13 +467,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('форматирует ask-only котировку', () => {
-      const quote = Quote.of(
-        null,
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(0)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(null, 0.52, 0, 150);
 
       const formatted = QuoteFormatter.formatWithSpread(quote);
 
@@ -663,13 +475,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('использует custom priceDecimals', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.48)),
-        Price.of(new Decimal(0.52)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote();
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 4);
 
@@ -677,13 +483,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('правильно вычисляет basis points для узкого spread', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.499)),
-        Price.of(new Decimal(0.501)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.499, 0.501);
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 3);
 
@@ -692,13 +492,7 @@ describe('QuoteFormatter', () => {
     });
 
     it('правильно вычисляет basis points для широкого spread', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.40)),
-        Price.of(new Decimal(0.60)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.40, 0.60);
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 2);
 
@@ -707,18 +501,12 @@ describe('QuoteFormatter', () => {
     });
 
     it('округляет basis points до целого числа', () => {
-      const quote = Quote.of(
-        Price.of(new Decimal(0.4999)),
-        Price.of(new Decimal(0.5001)),
-        Quantity.of(new Decimal(100)),
-        Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
-      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+      const quote = makeQuote(0.499925, 0.500075);
 
-      const formatted = QuoteFormatter.formatWithSpread(quote, 4);
+      const formatted = QuoteFormatter.formatWithSpread(quote, 6);
 
-      // spread = 0.0002, в basis points = 2bp, mid = 0.5000
-      expect(formatted).toBe('0.4999-0.5001 (2bp, mid=0.5000)');
+      // spread = 0.00015, в basis points = 1.5bp → округляется до 2bp, mid = 0.500000
+      expect(formatted).toBe('0.499925-0.500075 (2bp, mid=0.500000)');
     });
   });
 });

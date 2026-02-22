@@ -116,7 +116,7 @@ import { unwrap } from '@polymarket/result';
 const result = PriceService.create(0.55); // 55% вероятность
 result.match({
   ok: (price) => {
-    console.log(price.value());                                 // 0.55
+    console.log(price.value().toNumber());                      // 0.55
     console.log(unwrap(PriceFormatter.toPercentage(price)));   // "55.00%"
   },
   err: (error) => console.error(error)

@@ -979,7 +979,7 @@ if (!crossingResult.ok) {
 
 ## Testing
 
-Quote имеет 293 теста с высоким покрытием:
+Quote имеет высокое покрытие тестами:
 
 ```bash
 npm test -- quote
