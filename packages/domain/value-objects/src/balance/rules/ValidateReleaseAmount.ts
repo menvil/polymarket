@@ -72,13 +72,13 @@ export class ValidateReleaseAmount {
     if (amount.lessThanOrEqualTo(0)) {
       return Err(
         new InvalidBalanceError(
-          (ctx) => `Amount to unfreeze/consume must be positive, got ${ctx.requested}`,
+          (ctx) => `Amount to unfreeze/consume must be positive, got ${ctx.amount}`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INVALID_FORMAT,
-              requested: amount.toNumber(),
-              reserved: reservedAmount.toNumber()
+              amount: amount.toString(),
+              reserved: reservedAmount.toString()
             }
           }
         )
@@ -90,13 +90,13 @@ export class ValidateReleaseAmount {
       return Err(
         new InvalidBalanceError(
           (ctx) =>
-            `Cannot unfreeze/consume ${ctx.requested}: only ${ctx.reserved} reserved`,
+            `Cannot unfreeze/consume ${ctx.amount}: only ${ctx.reserved} reserved`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INSUFFICIENT_RESERVED,
-              requested: amount.toNumber(),
-              reserved: reservedAmount.toNumber()
+              amount: amount.toString(),
+              reserved: reservedAmount.toString()
             }
           }
         )

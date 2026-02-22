@@ -44,8 +44,8 @@ describe('ValidateReserveAmount', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(BalanceErrorReason.INSUFFICIENT_FUNDS);
-        expect(result.error.context?.requested).toBe(15000);
-        expect(result.error.context?.available).toBe(10000);
+        expect(result.error.context?.amount).toBe('15000');
+        expect(result.error.context?.available).toBe('10000');
       }
     });
 
@@ -88,6 +88,8 @@ describe('ValidateReserveAmount', () => {
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
         expect(result.error.message).toContain('must be positive');
+        expect(result.error.context?.amount).toBe(reserveAmount.value().toString());
+        expect(result.error.context?.available).toBe(available.value().toString());
       }
     });
 

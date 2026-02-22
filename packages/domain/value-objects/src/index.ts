@@ -67,15 +67,20 @@ export {
   type OutcomeTokenJSON
 } from './outcome-token/index.js';
 
-// // TokenBalance модуль (только публичный API)
-// export {
-//   TokenBalance,
-//   TokenBalanceService,
-//   TokenBalanceSerializer,
-//   TokenBalanceFormatter,
-//   TokenBalanceErrorReason,
-//   type TokenBalanceJSON
-// } from './token-balance/index.js';
+// TokenBalance модуль (только публичный API)
+export {
+  TokenBalance,
+  TokenBalanceService,
+  TokenBalanceSerializer,
+  TokenBalanceFormatter,
+  TokenBalanceErrorReason,
+  type TokenBalanceJSON,
+  // Rules Layer (публичный API для внешней валидации)
+  // Переименованы чтобы избежать конфликтов с Balance module
+  ValidateReserveAmount as TokenBalanceValidateReserveAmount,
+  ValidateReleaseAmount as TokenBalanceValidateReleaseAmount,
+  ValidateTokenMatch as TokenBalanceValidateTokenMatch
+} from './token-balance/index.js';
 
 // AssetQuantity модуль (только публичный API)
 export {
@@ -87,18 +92,20 @@ export {
   type AssetQuantityJSON
 } from './asset-quantity/index.js';
 
-// // Quote модуль (только публичный API)
-// export {
-//   Quote,
-//   QuoteInvariantViolation,
-//   QuoteService,
-//   QuoteSerializer,
-//   QuoteFormatter,
-//   QuoteErrorReason,
-//   ValidateQuoteSizes,
-//   ValidateMinSpread,
-//   ValidateMaxSpread,
-//   ValidateMarketCrossing,
-//   type QuoteJSON,
-//   type QuoteFormatOptions
-// } from './quote/index.js';
+// Quote модуль (только публичный API)
+export {
+  Quote,
+  QuoteInvariantViolation,
+  QuoteService,
+  QuoteSerializer,
+  QuoteFormatter,
+  QuoteErrorReason,
+  // Rules Layer (публичный API для внешней валидации)
+  ValidateQuoteSizes,
+  ValidateMinSpread,
+  ValidateMaxSpread,
+  ValidateMarketCrossing,
+  ValidateAge,
+  type QuoteJSON,
+  type QuoteFormatOptions
+} from './quote/index.js';
