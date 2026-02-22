@@ -348,7 +348,7 @@ console.log(sum.toDecimal().toString()); // "0.3" - точно!
 ### PnL (Profit & Loss) расчёты
 
 ```typescript
-import { Money } from '@polymarket/value-objects';
+import { MoneyService } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
 const cost = unwrap(MoneyService.create(100));
@@ -412,6 +412,9 @@ invalid.match({
 Все ошибки типизированы и содержат контекст:
 
 ```typescript
+import { MoneyService, CurrencyMismatchError } from '@polymarket/value-objects';
+import { unwrap } from '@polymarket/result';
+
 const m1 = unwrap(MoneyService.create(100, 'USDC'));
 const m2 = unwrap(MoneyService.create(1, 'BTC')); // Если BTC добавлен
 
