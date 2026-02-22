@@ -6,7 +6,7 @@ import { OutcomeTokenService } from '../../../../src/outcome-token/facade/Outcom
 import { Quantity } from '../../../../src/quantity/core/Quantity.js';
 import { TokenBalanceErrorReason } from '../../../../src/token-balance/errors/TokenBalanceErrorReason.js';
 import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
-import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
+import type { OnChainConditionRef, ConditionId, WalletAddress, VenueId } from '@polymarket/ids';
 import { BinaryOutcome, KnownOnChainProtocols, KnownChainIds } from '@polymarket/ids';
 
 describe('TokenBalanceService', () => {
@@ -1085,7 +1085,7 @@ describe('TokenBalanceService', () => {
         const token = createTestToken();
         const differentAccountId = {
           kind: 'WALLET' as const,
-          address: '0x9999999999999999999999999999999999999999' as any
+          address: '0x9999999999999999999999999999999999999999' as WalletAddress
         };
         const balance1Result = TokenBalanceService.create(
           token,
@@ -1111,7 +1111,7 @@ describe('TokenBalanceService', () => {
 
       it('возвращает false для балансов с разным venueId', () => {
         const token = createTestToken();
-        const differentVenueId = 'DIFFERENT_VENUE' as any;
+        const differentVenueId = 'DIFFERENT_VENUE' as VenueId;
         const balance1Result = TokenBalanceService.create(
           token,
           Quantity.of(new Decimal(10000)),
@@ -1479,12 +1479,11 @@ describe('TokenBalanceService', () => {
   });
 
   describe('Never Throw контракт для null/undefined входов', () => {
-    let token: ReturnType<typeof createTestToken>;
     let balance: TokenBalance;
     let qty: Quantity;
 
     beforeAll(() => {
-      token = createTestToken();
+      const token = createTestToken();
       const testBalance = TokenBalanceService.create(
         token,
         Quantity.of(new Decimal(100)),
@@ -1518,6 +1517,15 @@ describe('TokenBalanceService', () => {
 
       it('возвращает Result.Err при null qty', () => {
         const result = TokenBalanceService.reserve(balance, null as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('возвращает Result.Err при undefined qty', () => {
+        const result = TokenBalanceService.reserve(balance, undefined as any);
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
@@ -1566,6 +1574,15 @@ describe('TokenBalanceService', () => {
         }
       });
 
+      it('возвращает Result.Err при undefined qty', () => {
+        const result = TokenBalanceService.unfreezeReserved(balance, undefined as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
       it('не бросает исключение при null balance и null qty', () => {
         expect(() => TokenBalanceService.unfreezeReserved(null as any, null as any)).not.toThrow();
       });
@@ -1607,6 +1624,15 @@ describe('TokenBalanceService', () => {
         }
       });
 
+      it('возвращает Result.Err при undefined qty', () => {
+        const result = TokenBalanceService.consumeReserved(balance, undefined as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
       it('не бросает исключение при null balance и null qty', () => {
         expect(() => TokenBalanceService.consumeReserved(null as any, null as any)).not.toThrow();
       });
@@ -1641,6 +1667,15 @@ describe('TokenBalanceService', () => {
 
       it('возвращает Result.Err при null newAvailable', () => {
         const result = TokenBalanceService.updateAvailable(balance, null as any);
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error).toBeDefined();
+        }
+      });
+
+      it('возвращает Result.Err при undefined newAvailable', () => {
+        const result = TokenBalanceService.updateAvailable(balance, undefined as any);
 
         expect(result.ok).toBe(false);
         if (!result.ok) {

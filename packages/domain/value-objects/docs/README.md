@@ -25,12 +25,12 @@
 Денежные суммы с высокой точностью вычислений.
 
 ```typescript
-import { Money } from '@polymarket/value-objects';
+import { MoneyService } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
-const money = unwrap(Money.fromValue(100)); // 100 USDC
-const doubled = unwrap(money.multiply(2));  // 200 USDC
-console.log(doubled.toString());             // "$200.00 USDC"
+const money = unwrap(MoneyService.create(100, 'USDC')); // 100 USDC
+const doubled = unwrap(MoneyService.multiply(money, 2));  // 200 USDC
+console.log(doubled.value().toString());             // "200"
 ```
 
 **Особенности:**
@@ -233,24 +233,27 @@ import { SpreadService, SpreadFormatter } from '@polymarket/value-objects';
 
 // Создание из чисел
 const result = SpreadService.fromValues(0.48, 0.52);
-if (result.ok) {
-  const spread = result.value;
-
-  console.log(spread.bid().toNumber());       // 0.48
-  console.log(spread.ask().toNumber());       // 0.52
-  console.log(spread.width().toNumber());     // 0.04
-  console.log(spread.midpoint().toNumber());  // 0.50
-  console.log(spread.widthRatio().toDecimal().times(100).toNumber()); // 8
-
-  // Форматирование
-  console.log(SpreadFormatter.format(spread));
-  // "0.4800-0.5200 (0.0400)"
+if (!result.ok) {
+  console.error(result.error.message);
+  return;
 }
 
+const spread = result.value;
+
+console.log(spread.bid().toNumber());       // 0.48
+console.log(spread.ask().toNumber());       // 0.52
+console.log(spread.width().toNumber());     // 0.04
+console.log(spread.mid().toNumber());  // 0.50
+console.log(spread.widthRatio().toDecimal().times(100).toNumber()); // 8
+
+// Форматирование
+console.log(SpreadFormatter.format(spread));
+// "0.4800-0.5200 (0.0400)"
+
 // Операции: сужение, расширение, сдвиг
-const tighter = SpreadService.tighten(spread, 0.01);
-const wider = SpreadService.widen(spread, 0.02);
-const shifted = SpreadService.shift(spread, 0.10);
+const tighterResult = SpreadService.tighten(spread, 0.01);
+const widerResult = SpreadService.widen(spread, 0.02);
+const shiftedResult = SpreadService.shift(spread, 0.10);
 ```
 
 **Особенности:**
@@ -274,36 +277,37 @@ npm install @polymarket/value-objects
 ### Базовое использование
 
 ```typescript
-import { Money, Percentage } from '@polymarket/value-objects';
+import { MoneyService, Percentage } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
 // Создание Money
-const balance = unwrap(Money.fromValue(1000)); // 1000 USDC
+const balance = unwrap(MoneyService.create(1000, 'USDC')); // 1000 USDC
 
 // Расчёт комиссии
 const feeRate = unwrap(Percentage.fromValue(0.25)); // 0.25%
-const feeAmount = feeRate.of(balance.getAmount());
+const feeAmount = feeRate.of(balance.value());
 
 console.log(`Комиссия: ${feeAmount.toNumber()} USDC`); // "Комиссия: 2.5 USDC"
 
 // Вычитание комиссии
-const fee = unwrap(Money.fromValue(feeAmount));
-const netBalance = unwrap(balance.subtract(fee));
+const fee = unwrap(MoneyService.create(feeAmount, 'USDC'));
+const netBalance = unwrap(MoneyService.subtract(balance, fee));
 
-console.log(netBalance.toString()); // "$997.50 USDC"
+console.log(netBalance.value().toString()); // "997.5"
 ```
 
 ### Railway-Oriented Programming
 
 ```typescript
-import { Money } from '@polymarket/value-objects';
+import { MoneyService } from '@polymarket/value-objects';
+import { unwrap } from '@polymarket/result';
 
 // Обработка через match
-const result = Money.fromValue(100);
+const result = MoneyService.create(100, 'USDC');
 
 result.match({
   ok: (money) => {
-    console.log(`Success: ${money.toString()}`);
+    console.log(`Success: ${money.value().toString()}`);
   },
   err: (error) => {
     console.error(`Error: ${error.message}`);
@@ -311,12 +315,19 @@ result.match({
 });
 
 // Цепочка операций
-const finalResult = Money.fromValue(100)
-  .flatMap(m => m.multiply(2))
-  .flatMap(m => m.add(unwrap(Money.fromValue(50))));
+const m1Result = MoneyService.create(100, 'USDC');
+if (!m1Result.ok) return;
+const m1 = m1Result.value;
+
+const m2Result = MoneyService.multiply(m1, 2);
+if (!m2Result.ok) return;
+const m2 = m2Result.value;
+
+const m3 = unwrap(MoneyService.create(50, 'USDC'));
+const finalResult = MoneyService.add(m2, m3);
 
 finalResult.match({
-  ok: (money) => console.log(money.getAmount()), // 250
+  ok: (money) => console.log(money.value().toNumber()), // 250
   err: (error) => console.error(error)
 });
 ```
@@ -324,18 +335,18 @@ finalResult.match({
 ### Решение проблемы floating point
 
 ```typescript
-import { Money, Percentage } from '@polymarket/value-objects';
+import { MoneyService, Percentage } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
 // ❌ Проблема с обычным number
 const wrong = 0.1 + 0.2; // 0.30000000000000004
 
 // ✅ Решение с Money
-const m1 = unwrap(Money.fromValue('0.1'));
-const m2 = unwrap(Money.fromValue('0.2'));
-const correct = unwrap(m1.add(m2));
+const m1 = unwrap(MoneyService.create('0.1', 'USDC'));
+const m2 = unwrap(MoneyService.create('0.2', 'USDC'));
+const correct = unwrap(MoneyService.add(m1, m2));
 
-console.log(correct.toDecimal().toString()); // "0.3" - точно!
+console.log(correct.value().toString()); // "0.3" - точно!
 
 // ✅ Решение с Percentage
 const p1 = unwrap(Percentage.fromDecimal(0.1));
@@ -351,8 +362,8 @@ console.log(sum.toDecimal().toString()); // "0.3" - точно!
 import { MoneyService } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
-const cost = unwrap(MoneyService.create(100));
-const revenue = unwrap(MoneyService.create(85));
+const cost = unwrap(MoneyService.create(100, 'USDC'));
+const revenue = unwrap(MoneyService.create(85, 'USDC'));
 
 const pnl = unwrap(MoneyService.subtract(revenue, cost));
 
@@ -384,11 +395,11 @@ if (pnl.isNegative()) {
 Все value objects неизменяемы — операции возвращают новые экземпляры:
 
 ```typescript
-const m1 = unwrap(Money.fromValue(100));
-const m2 = unwrap(m1.multiply(2));
+const m1 = unwrap(MoneyService.create(100, 'USDC'));
+const m2 = unwrap(MoneyService.multiply(m1, 2));
 
-console.log(m1.getAmount()); // 100 (оригинал не изменён)
-console.log(m2.getAmount()); // 200 (новый объект)
+console.log(m1.value().toNumber()); // 100 (оригинал не изменён)
+console.log(m2.value().toNumber()); // 200 (новый объект)
 ```
 
 ### Валидация при создании
@@ -396,7 +407,7 @@ console.log(m2.getAmount()); // 200 (новый объект)
 Невозможно создать невалидный value object:
 
 ```typescript
-const invalid = Money.fromValue(NaN);
+const invalid = MoneyService.create(NaN, 'USDC');
 
 invalid.match({
   ok: (money) => console.log(money),
@@ -436,11 +447,11 @@ result.match({
 Точные финансовые вычисления без проблем floating point:
 
 ```typescript
-const price = unwrap(Money.fromValue('0.123456789012345'));
+const price = unwrap(MoneyService.create('0.123456789012345', 'USDC'));
 const quantity = new Decimal('1000000');
 
-const total = unwrap(price.multiply(quantity));
-console.log(total.toDecimal().toString());
+const total = unwrap(MoneyService.multiply(price, quantity));
+console.log(total.value().toString());
 // "123456.789012345" - вся точность сохранена
 ```
 
@@ -536,7 +547,7 @@ npm run test:watch
 ### Торговые операции
 
 ```typescript
-import { Money, Percentage, Price, Quantity } from '@polymarket/value-objects';
+import { MoneyService, Percentage, Price, Quantity } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
 // Параметры ордера
@@ -545,50 +556,50 @@ const quantity = unwrap(Quantity.fromValue(100));
 const feeRate = unwrap(Percentage.fromValue(0.25)); // 0.25%
 
 // Расчёт стоимости
-const priceDecimal = price.getValue();
-const qtyDecimal = quantity.getValue();
-const orderValue = priceDecimal * qtyDecimal; // 55
+const priceDecimal = price.value();
+const qtyDecimal = quantity.value();
+const orderValue = priceDecimal.times(qtyDecimal); // 55
 
 // Создание Money для расчётов
-const orderAmount = unwrap(Money.fromValue(orderValue));
+const orderAmount = unwrap(MoneyService.create(orderValue, 'USDC'));
 
 // Расчёт комиссии
-const feeAmount = feeRate.of(orderAmount.getAmount());
-const fee = unwrap(Money.fromValue(feeAmount));
+const feeAmount = feeRate.of(orderAmount.value());
+const fee = unwrap(MoneyService.create(feeAmount, 'USDC'));
 
 // Итоговая сумма
-const total = unwrap(orderAmount.add(fee));
+const total = unwrap(MoneyService.add(orderAmount, fee));
 
-console.log(`Стоимость ордера: ${orderAmount.toString()}`); // "$55.00 USDC"
-console.log(`Комиссия: ${fee.toString()}`);                // "$0.14 USDC"
-console.log(`Итого: ${total.toString()}`);                  // "$55.14 USDC"
+console.log(`Стоимость ордера: ${orderAmount.value().toString()}`); // "55"
+console.log(`Комиссия: ${fee.value().toString()}`);                // "0.1375"
+console.log(`Итого: ${total.value().toString()}`);                  // "55.1375"
 ```
 
 ### Анализ портфеля
 
 ```typescript
-import { Money, Percentage } from '@polymarket/value-objects';
+import { MoneyService, Percentage } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
 const positions = [
-  { symbol: 'YES-TRUMP', value: unwrap(Money.fromValue(1000)) },
-  { symbol: 'NO-TRUMP', value: unwrap(Money.fromValue(500)) },
-  { symbol: 'YES-BIDEN', value: unwrap(Money.fromValue(750)) },
+  { symbol: 'YES-TRUMP', value: unwrap(MoneyService.create(1000, 'USDC')) },
+  { symbol: 'NO-TRUMP', value: unwrap(MoneyService.create(500, 'USDC')) },
+  { symbol: 'YES-BIDEN', value: unwrap(MoneyService.create(750, 'USDC')) },
 ];
 
 // Расчёт общего портфеля
 const totalValue = positions.reduce(
-  (acc, pos) => unwrap(acc.add(pos.value)),
-  Money.zero()
+  (acc, pos) => unwrap(MoneyService.add(acc, pos.value)),
+  unwrap(MoneyService.create(0, 'USDC'))
 );
 
-console.log(`Общая стоимость портфеля: ${totalValue.toString()}`);
-// "Общая стоимость портфеля: $2,250.00 USDC"
+console.log(`Общая стоимость портфеля: ${totalValue.value().toString()}`);
+// "Общая стоимость портфеля: 2250"
 
 // Расчёт доли каждой позиции
 positions.forEach(pos => {
-  const totalDecimal = totalValue.toDecimal();
-  const posDecimal = pos.value.toDecimal();
+  const totalDecimal = totalValue.value();
+  const posDecimal = pos.value.value();
   const shareDecimal = posDecimal.dividedBy(totalDecimal);
 
   const share = unwrap(Percentage.fromDecimal(shareDecimal));
@@ -604,7 +615,7 @@ positions.forEach(pos => {
 ### ✅ DO: Используйте Result для обработки ошибок
 
 ```typescript
-const result = Money.fromValue(value);
+const result = MoneyService.create(value, 'USDC');
 
 result.match({
   ok: (money) => processMoney(money),
@@ -617,27 +628,27 @@ result.match({
 ```typescript
 import { unwrap } from '@polymarket/result';
 
-const money = unwrap(Money.fromValue(100)); // OK для константных значений
+const money = unwrap(MoneyService.create(100, 'USDC')); // OK для константных значений
 ```
 
 ### ✅ DO: Используйте строки для высокой точности
 
 ```typescript
 // ✅ ХОРОШО
-const precise = unwrap(Money.fromValue('100.123456789012345'));
+const precise = unwrap(MoneyService.create('100.123456789012345', 'USDC'));
 
 // ❌ ПЛОХО
-const imprecise = unwrap(Money.fromValue(100.123456789012345));
+const imprecise = unwrap(MoneyService.create(100.123456789012345, 'USDC'));
 ```
 
 ### ❌ DON'T: Не игнорируйте ошибки
 
 ```typescript
 // ❌ ПЛОХО
-const money = Money.fromValue(value); // Result игнорируется
+const money = MoneyService.create(value, 'USDC'); // Result игнорируется
 
 // ✅ ХОРОШО
-const result = Money.fromValue(value);
+const result = MoneyService.create(value, 'USDC');
 if (!result.ok) {
   throw result.error;
 }

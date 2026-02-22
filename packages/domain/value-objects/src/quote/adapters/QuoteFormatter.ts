@@ -274,6 +274,17 @@ export class QuoteFormatter {
    * Метод "Never Throw" - гарантированно не бросает исключения.
    * Создаёт многострочный вывод в виде таблицы.
    *
+   * Алгоритм выравнивания колонок:
+   * 1. Вычисляет максимальную ширину колонки Price (maxPriceWidth) как максимум из:
+   *    - Длины заголовка "Price" (5 символов)
+   *    - Длины форматированной bid цены
+   *    - Длины форматированной ask цены
+   * 2. Применяет padEnd(maxPriceWidth) ко всем элементам колонки Price:
+   *    - Заголовок "Price"
+   *    - Значения bid/ask цен (или "--" для отсутствующих)
+   *    - Значение spread (если есть)
+   * 3. Это гарантирует корректное выравнивание при любых значениях priceDecimals
+   *
    * @example
    * ```typescript
    * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
@@ -285,6 +296,16 @@ export class QuoteFormatter {
    * // ─────────────────────
    * // Spread 0.0400   (8.00%)
    * // Mid    0.5000
+   *
+   * // С большим количеством десятичных знаков (priceDecimals=10)
+   * console.log(QuoteFormatter.toTable(quote, { priceDecimals: 10 }));
+   * // Side   Price          Size
+   * // ────────────────────────────────────────
+   * // Bid    0.4800000000   100.00
+   * // Ask    0.5200000000   150.00
+   * // ────────────────────────────────────────
+   * // Spread 0.0400000000 (8.00%)
+   * // Mid    0.5000000000
    * ```
    */
   public static toTable(quote: Quote, options: QuoteFormatOptions = {}): string {
@@ -300,21 +321,21 @@ export class QuoteFormatter {
     const priceHeaderWidth = 'Price'.length;
     const maxPriceWidth = Math.max(priceHeaderWidth, bidPrice.length, askPrice.length);
 
-    lines.push('Side   Price    Size');
+    lines.push(`Side   ${'Price'.padEnd(maxPriceWidth)}   Size`);
     lines.push(separator);
 
     if (quote.hasBid()) {
       const size = quote.bidSize().value().toFixed(sizeDecimals);
       lines.push(`Bid    ${bidPrice.padEnd(maxPriceWidth)}   ${size}`);
     } else {
-      lines.push('Bid    --       --');
+      lines.push(`Bid    ${'--'.padEnd(maxPriceWidth)}   --`);
     }
 
     if (quote.hasAsk()) {
       const size = quote.askSize().value().toFixed(sizeDecimals);
       lines.push(`Ask    ${askPrice.padEnd(maxPriceWidth)}   ${size}`);
     } else {
-      lines.push('Ask    --       --');
+      lines.push(`Ask    ${'--'.padEnd(maxPriceWidth)}   --`);
     }
 
     const spread = quote.spread();
@@ -327,7 +348,7 @@ export class QuoteFormatter {
       if (includeSpread) {
         const spreadWidth = spread.width();
         const spreadPct = spread.widthRatio().toDecimal().times(100);
-        lines.push(`Spread ${spreadWidth.toFixed(priceDecimals).padEnd(8)} (${spreadPct.toFixed(2)}%)`);
+        lines.push(`Spread ${spreadWidth.toFixed(priceDecimals).padEnd(maxPriceWidth)} (${spreadPct.toFixed(2)}%)`);
       }
 
       if (includeMid) {
