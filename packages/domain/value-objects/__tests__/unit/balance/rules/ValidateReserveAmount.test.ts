@@ -88,6 +88,8 @@ describe('ValidateReserveAmount', () => {
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
         expect(result.error.message).toContain('must be positive');
+        expect(result.error.context?.amount).toBe(reserveAmount.value().toString());
+        expect(result.error.context?.available).toBe(available.value().toString());
       }
     });
 

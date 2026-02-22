@@ -85,6 +85,8 @@ describe('ValidateReserveAmount', () => {
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(TokenBalanceErrorReason.INVALID_FORMAT);
         expect(result.error.message).toContain('must be positive');
+        expect(result.error.context?.reserveQty).toBe(reserveQty.value().toString());
+        expect(result.error.context?.available).toBe(available.value().toString());
       }
     });
 
