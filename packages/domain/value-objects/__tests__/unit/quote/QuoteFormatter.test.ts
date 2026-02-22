@@ -18,12 +18,15 @@ const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
  * @param bidSize - Размер бида (по умолчанию 100)
  * @param askSize - Размер аска (по умолчанию 150)
  * @param timestamp - Временная метка (по умолчанию Date.now())
+ * @param sourceId - ID источника данных (по умолчанию TEST_SOURCE_ID)
+ * @param instrumentId - ID инструмента (по умолчанию TEST_INSTRUMENT_ID)
  * @returns Объект котировки Quote
  *
  * @example
  * ```typescript
  * const quote = makeQuote(0.48, 0.52);
  * const bidOnlyQuote = makeQuote(0.50, null);
+ * const customQuote = makeQuote(0.48, 0.52, 100, 150, Date.now(), 'BINANCE_WS' as MarketDataSourceId, 'BTC-USDT' as InstrumentId);
  * ```
  */
 function makeQuote(
@@ -31,7 +34,9 @@ function makeQuote(
   ask: number | null = 0.52,
   bidSize: number = 100,
   askSize: number = 150,
-  timestamp: number = Date.now()
+  timestamp: number = Date.now(),
+  sourceId: MarketDataSourceId = TEST_SOURCE_ID,
+  instrumentId: InstrumentId = TEST_INSTRUMENT_ID
 ): Quote {
   return Quote.of(
     bid !== null ? Price.of(new Decimal(bid)) : null,
@@ -39,8 +44,8 @@ function makeQuote(
     Quantity.of(new Decimal(bidSize)),
     Quantity.of(new Decimal(askSize)),
     new Decimal(timestamp),
-    TEST_SOURCE_ID,
-    TEST_INSTRUMENT_ID
+    sourceId,
+    instrumentId
   );
 }
 

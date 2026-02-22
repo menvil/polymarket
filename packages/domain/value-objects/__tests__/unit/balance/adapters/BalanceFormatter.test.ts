@@ -17,7 +17,7 @@ describe('BalanceFormatter', () => {
       TEST_ACCOUNT_ID,
       TEST_VENUE_ID
     );
-    if (!result.ok) throw new Error('Failed to create balance');
+    if (!result.ok) throw new Error(`Failed to create balance: ${result.error.message}`);
     return result.value;
   };
 

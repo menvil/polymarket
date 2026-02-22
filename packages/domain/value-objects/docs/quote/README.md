@@ -41,7 +41,8 @@ const result = QuoteService.create(
 
 if (!result.ok) {
   console.error(result.error.message);
-  return;
+  // В модульном коде вместо return используйте throw
+  throw new Error(result.error.message);
 }
 
 const quote = result.value;
@@ -711,7 +712,11 @@ if (!result.ok) {
 import { PaperClock } from '@polymarket/time';
 
 const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
-const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
+const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
+if (!quoteResult.ok) {
+  throw new Error(quoteResult.error.message);
+}
+const quote = quoteResult.value;
 
 // Перематываем время на 10 секунд вперёд
 clock.tick(10000);
@@ -954,13 +959,13 @@ if (!sizesResult.ok) {
 // Проверка минимального spread
 const minSpreadResult = ValidateMinSpread.check(
   quote.spreadWidthOrZero(),
-  new Decimal(0.01)  // минимум 1%
+  new Decimal(0.01)  // абсолютная ширина спреда = 0.01
 );
 
 // Проверка максимального spread
 const maxSpreadResult = ValidateMaxSpread.check(
   quote.spreadWidthOrZero(),
-  new Decimal(0.10)  // максимум 10%
+  new Decimal(0.10)  // абсолютная ширина спреда = 0.10
 );
 
 // Проверка crossing

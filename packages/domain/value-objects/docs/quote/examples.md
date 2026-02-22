@@ -32,7 +32,7 @@ const result = QuoteService.create(
 
 if (!result.ok) {
   console.error('Failed to create quote:', result.error.message);
-  return;
+  throw new Error('Failed to create quote');
 }
 
 const quote = result.value;
@@ -451,6 +451,8 @@ console.log(json);
 //   ask: 0.52,
 //   bidSize: 100,
 //   askSize: 150,
+//   sourceId: 'POLYMARKET_WS',
+//   instrumentId: 'TEST_MARKET',
 //   timestamp: 1234567890000
 // }
 
@@ -701,7 +703,7 @@ class QuoteAggregator {
           bestBidPrice = bidPrice;
           bestBidSize = quote.bidSize().value();
         } else if (bidPrice.equals(bestBidPrice)) {
-          bestBidSize = bestBidSize.add(quote.bidSize().value());
+          bestBidSize = bestBidSize.plus(quote.bidSize().value());
         }
       }
 
@@ -712,7 +714,7 @@ class QuoteAggregator {
           bestAskPrice = askPrice;
           bestAskSize = quote.askSize().value();
         } else if (askPrice.equals(bestAskPrice)) {
-          bestAskSize = bestAskSize.add(quote.askSize().value());
+          bestAskSize = bestAskSize.plus(quote.askSize().value());
         }
       }
     }
@@ -881,7 +883,7 @@ const storage = new QuoteStorage();
 const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
 if (!result.ok) {
   console.error('Failed to create quote');
-  return;
+  throw new Error('Failed to create quote');
 }
 
 storage.saveQuote('market-123', result.value);
