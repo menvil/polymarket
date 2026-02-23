@@ -39,12 +39,11 @@
  * console.log(`Notional: ${notional}`); // 65.00 (100 * 0.65)
  * ```
  */
-import { Price } from '@polymarket/value-objects';
-import { Quantity } from '@polymarket/value-objects';
+import { Price, Quantity, type Side } from '@polymarket/value-objects';
 import { OrderValidationError } from '@polymarket/errors';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
-import { TradeSide, Trade } from './Trade.js';
+import { Trade } from './Trade.js';
 import type { OrderChange } from './types/OrderChange.js';
 import Decimal from 'decimal.js';
 
@@ -63,7 +62,7 @@ export interface OrderParams {
   id: string;
   marketId: string;
   tokenId: string;
-  side: TradeSide;
+  side: Side;
   price: Price;
   size: Quantity;
   status: OrderStatus;
@@ -86,7 +85,7 @@ export class Order {
   public readonly id: string;
   public readonly marketId: string;
   public readonly tokenId: string;
-  public readonly side: TradeSide;
+  public readonly side: Side;
   public readonly price: Price;
   public readonly size: Quantity;
   public readonly status: OrderStatus;
@@ -530,7 +529,7 @@ export class Order {
       id: json.id as string,
       marketId: json.marketId as string,
       tokenId: json.tokenId as string,
-      side: json.side as TradeSide,
+      side: json.side as Side,
       price: priceResult.value,
       size: sizeResult.value,
       status: json.status as OrderStatus,

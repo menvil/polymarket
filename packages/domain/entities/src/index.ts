@@ -12,7 +12,8 @@ export { OutcomeToken } from './OutcomeToken.js';
 export type { OutcomeIndex, OutcomeTokenProps } from './OutcomeToken.js';
 
 export { Trade } from './Trade.js';
-export type { TradeSide, TradeParams } from './Trade.js';
+export type { TradeParams } from './Trade.js';
+// Side (BUY/SELL) теперь импортируется из @polymarket/value-objects
 
 export { Order } from './Order.js';
 export type { OrderStatus, OrderParams } from './Order.js';

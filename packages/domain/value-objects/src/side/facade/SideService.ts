@@ -27,8 +27,8 @@
  * ```
  */
 
-import { Result, Ok, Err } from '@polymarket/result';
-import { ValidationError } from '@polymarket/errors';
+import { Result, Ok } from '@polymarket/result';
+import { ValidationError, wrapOp } from '@polymarket/errors';
 import type { Side } from '../core/index.js';
 import { isValidSide, opposite, canMatch, equals } from '../core/index.js';
 import { SideErrorReason } from '../errors/index.js';
@@ -40,6 +40,11 @@ import { SideErrorReason } from '../errors/index.js';
  * Static-only class. Не создавайте экземпляры.
  */
 export class SideService {
+  /**
+   * Название сервиса для error tracking
+   */
+  private static readonly SERVICE_NAME = 'SideService';
+
   /**
    * Приватный конструктор - запрещает создание экземпляров
    */
@@ -71,19 +76,28 @@ export class SideService {
    * ```
    */
   public static fromString(value: string): Result<Side, ValidationError> {
-    if (isValidSide(value)) {
-      return Ok(value);
-    }
+    return wrapOp(
+      SideService.SERVICE_NAME,
+      'fromString',
+      { value },
+      () => {
+        if (isValidSide(value)) {
+          return Ok(value);
+        }
 
-    return Err(
-      new ValidationError(`Invalid side value: ${value}. Expected 'BUY' or 'SELL'`, {
-        context: {
-          field: 'side',
-          value,
-          expectedValues: ['BUY', 'SELL'],
-          reason: SideErrorReason.INVALID_VALUE,
-        },
-      })
+        throw new ValidationError(
+          (ctx) => `Invalid side value: ${ctx.value}. Expected 'BUY' or 'SELL'`,
+          {
+            context: {
+              kind: 'invalid_side_value',
+              value,
+              expectedValues: ['BUY', 'SELL'],
+              reason: SideErrorReason.INVALID_VALUE,
+            },
+          }
+        );
+      },
+      ValidationError
     );
   }
 
@@ -113,20 +127,34 @@ export class SideService {
    * ```
    */
   public static fromUnknown(value: unknown): Result<Side, ValidationError> {
-    if (typeof value !== 'string') {
-      return Err(
-        new ValidationError('Invalid side: must be string', {
-          context: {
-            field: 'side',
-            value,
-            type: typeof value,
-            reason: SideErrorReason.INVALID_TYPE,
-          },
-        })
-      );
-    }
+    return wrapOp(
+      SideService.SERVICE_NAME,
+      'fromUnknown',
+      { value },
+      () => {
+        if (typeof value !== 'string') {
+          throw new ValidationError(
+            (ctx) => `Invalid side: must be string, got ${ctx.type}`,
+            {
+              context: {
+                kind: 'invalid_side_type',
+                value,
+                type: typeof value,
+                reason: SideErrorReason.INVALID_TYPE,
+              },
+            }
+          );
+        }
 
-    return this.fromString(value);
+        // Delegate to fromString (который тоже использует wrapOp)
+        const result = this.fromString(value);
+        if (!result.ok) {
+          throw result.error;
+        }
+        return result;
+      },
+      ValidationError
+    );
   }
 
   /**
