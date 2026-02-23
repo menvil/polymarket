@@ -109,3 +109,12 @@ export {
   type QuoteJSON,
   type QuoteFormatOptions
 } from './quote/index.js';
+
+// Side модуль (направление торговой операции)
+export {
+  type Side,
+  SideService,
+  SideSerializer,
+  SideFormatter,
+  SideErrorReason
+} from './side/index.js';

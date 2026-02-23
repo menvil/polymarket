@@ -41,19 +41,10 @@
  * }
  * ```
  */
-import { Price, Quantity, Money } from '@polymarket/value-objects';
+import { Price, Quantity, Money, type Side } from '@polymarket/value-objects';
 import { TradeValidationError } from '@polymarket/errors';
 import { Result, Ok, Err } from '@polymarket/result';
 import Decimal from 'decimal.js';
-
-/**
- * Сторона сделки
- *
- * @remarks
- * - BUY: покупка (taker купил, aggressive buyer)
- * - SELL: продажа (taker продал, aggressive seller)
- */
-export type TradeSide = 'BUY' | 'SELL';
 
 /**
  * Параметры для создания Trade
@@ -77,7 +68,7 @@ export interface TradeParams {
   /** Размер сделки (количество токенов) */
   readonly size: Quantity;
   /** Сторона сделки (BUY или SELL) */
-  readonly side: TradeSide;
+  readonly side: Side;
   /** Timestamp исполнения */
   readonly timestamp: Date;
   /** Хеш транзакции в блокчейне */
@@ -125,7 +116,7 @@ export class Trade {
   public readonly size: Quantity;
 
   /** Сторона сделки (BUY или SELL) */
-  public readonly side: TradeSide;
+  public readonly side: Side;
 
   /** Timestamp исполнения */
   public readonly timestamp: Date;
@@ -403,7 +394,7 @@ export class Trade {
       tokenId: data.asset_id as string,
       price: priceResult.value,
       size: sizeResult.value,
-      side: (data.side as string).toUpperCase() as TradeSide,
+      side: (data.side as string).toUpperCase() as Side,
       timestamp,
       transactionHash: data.transaction_hash as string
     });
@@ -794,7 +785,7 @@ export class Trade {
       tokenId: obj.tokenId as string,
       price: priceResult.value,
       size: sizeResult.value,
-      side: obj.side as TradeSide,
+      side: obj.side as Side,
       timestamp,
       transactionHash: obj.transactionHash as string,
       orderId: obj.orderId as string | undefined,
