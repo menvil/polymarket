@@ -248,8 +248,10 @@ describe('SideService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        const opChain = result.error.context?.opChain as string;
-        expect(opChain).toContain('SideService');
+        const opChain = result.error.context?.opChain;
+        // opChain это массив операций
+        expect(Array.isArray(opChain)).toBe(true);
+        expect(opChain).toContain('SideService.fromUnknown');
       }
     });
   });
