@@ -42,6 +42,3 @@ src_bundle.md
 snapshots/
 .env.smoke
 *.zip
-
-#ignore claude plans
-/docs/refactoring/
