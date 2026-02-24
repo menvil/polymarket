@@ -91,33 +91,27 @@ export function parseWalletAddress(address: string): WalletAddress | undefined {
  *
  * @param a - Первый WalletAddress
  * @param b - Второй WalletAddress
- * @returns true если addresses идентичны (case-insensitive)
+ * @returns true если addresses идентичны
  *
  * @remarks
  * WalletAddress гарантированно хранится в canonical lowercase формате
  * (parseWalletAddress всегда нормализует через toLowerCase).
+ * Поэтому достаточно строгого равенства без дополнительной нормализации.
  *
- * Однако функция делает defensive case-insensitive сравнение для защиты
- * от некорректно созданных WalletAddress (через type assertion).
- *
- * Ethereum addresses семантически case-insensitive (за исключением EIP-55 checksum),
- * поэтому lowercase comparison корректен.
+ * ВАЖНО: Всегда создавайте WalletAddress через parseWalletAddress(),
+ * а не через type assertion. Type assertion обходит нормализацию и может
+ * привести к некорректному сравнению.
  *
  * @example
  * ```typescript
  * const addr1 = parseWalletAddress('0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed')!;
  * const addr2 = parseWalletAddress('0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed')!;
  *
- * walletAddressEquals(addr1, addr2); // → true (both normalized to lowercase)
- *
- * // Defensive: работает даже с некорректно созданными addresses
- * const addr3 = '0X1234567890123456789012345678901234567890' as WalletAddress;
- * const addr4 = '0x1234567890123456789012345678901234567890' as WalletAddress;
- * walletAddressEquals(addr3, addr4); // → true (case-insensitive comparison)
+ * walletAddressEquals(addr1, addr2); // → true (both normalized to lowercase by parseWalletAddress)
  * ```
  */
 export function walletAddressEquals(a: WalletAddress, b: WalletAddress): boolean {
-  return a.toLowerCase() === b.toLowerCase();
+  return a === b;
 }
 
 /**

@@ -6,6 +6,7 @@ import { MoneyService } from '../../../../src/money/facade/MoneyService.js';
 import { BalanceErrorReason } from '../../../../src/balance/errors/BalanceErrorReason.js';
 import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
 import type { AccountId, VenueId, WalletAddress, SupportedCurrency } from '@polymarket/ids';
+import { parseWalletAddress } from '@polymarket/ids';
 import { Err } from '@polymarket/result';
 import { InvalidMoneyError } from '@polymarket/errors';
 
@@ -695,11 +696,11 @@ describe('BalanceService', () => {
       it('возвращает true для wallet address case-insensitive (accountIdEquals)', () => {
         const accountId1: AccountId = {
           kind: 'WALLET',
-          address: '0x1234567890123456789012345678901234567890' as WalletAddress
+          address: parseWalletAddress('0x1234567890123456789012345678901234567890')!
         };
         const accountId2: AccountId = {
           kind: 'WALLET',
-          address: '0X1234567890123456789012345678901234567890' as WalletAddress // uppercase 0X
+          address: parseWalletAddress('0X1234567890123456789012345678901234567890')! // uppercase 0X, normalized by parseWalletAddress
         };
 
         const balance1Result = BalanceService.create(
