@@ -19,3 +19,6 @@ export { asOrderId } from './OrderId.js';
 
 export type { FillId } from './FillId.js';
 export { asFillId } from './FillId.js';
+
+export type { PositionId } from './PositionId.js';
+export { asPositionId } from './PositionId.js';

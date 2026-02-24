@@ -8,6 +8,7 @@ import {
   isLiveVenue,
   asOrderId,
   asFillId,
+  asPositionId,
 } from '../src/index.js';
 
 describe('Execution IDs', () => {
@@ -224,6 +225,57 @@ describe('Execution IDs', () => {
       expect(asFillId(undefined as any)).toBeUndefined();
       expect(asFillId(0 as any)).toBeUndefined();
       expect(asFillId({} as any)).toBeUndefined();
+    });
+  });
+
+  describe('PositionId', () => {
+    it('should parse valid position IDs', () => {
+      expect(asPositionId('pos-123')).toBe('pos-123');
+      expect(asPositionId('POSITION_456')).toBe('POSITION_456');
+      expect(asPositionId('position-uuid-1234')).toBe('position-uuid-1234');
+      expect(asPositionId('67890')).toBe('67890');
+    });
+
+    it('should trim whitespace', () => {
+      expect(asPositionId('  pos-123  ')).toBe('pos-123');
+      expect(asPositionId('\tpos-456\n')).toBe('pos-456');
+    });
+
+    it('should reject empty strings', () => {
+      expect(asPositionId('')).toBeUndefined();
+      expect(asPositionId('  ')).toBeUndefined();
+      expect(asPositionId('\t\n')).toBeUndefined();
+    });
+
+    it('should reject strings exceeding max length', () => {
+      const maxLength = 'x'.repeat(256);
+      const tooLong = 'x'.repeat(257);
+
+      expect(asPositionId(maxLength)).toBe(maxLength);
+      expect(asPositionId(tooLong)).toBeUndefined();
+    });
+
+    it('should reject control characters', () => {
+      expect(asPositionId('pos\x00id')).toBeUndefined(); // null
+      expect(asPositionId('pos\x01id')).toBeUndefined(); // start of heading
+      expect(asPositionId('pos\x1Fid')).toBeUndefined(); // unit separator
+      expect(asPositionId('pos\x7Fid')).toBeUndefined(); // delete
+      expect(asPositionId('pos\x9Fid')).toBeUndefined(); // application program command
+    });
+
+    it('should accept special characters except control chars', () => {
+      expect(asPositionId('pos-123')).toBe('pos-123');
+      expect(asPositionId('pos_456')).toBe('pos_456');
+      expect(asPositionId('pos.789')).toBe('pos.789');
+      expect(asPositionId('pos@account')).toBe('pos@account');
+    });
+
+    it('should return undefined for non-string input (not throw)', () => {
+      // Защита от as any через validateBrandedId — не должен вызывать null.trim()
+      expect(asPositionId(null as any)).toBeUndefined();
+      expect(asPositionId(undefined as any)).toBeUndefined();
+      expect(asPositionId(0 as any)).toBeUndefined();
+      expect(asPositionId({} as any)).toBeUndefined();
     });
   });
 });
