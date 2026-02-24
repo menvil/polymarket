@@ -45,6 +45,3 @@ snapshots/
 
 #ignore claude plans
 /docs/refactoring/
-
-# Domain entities (will be added later)
-packages/domain/entities
