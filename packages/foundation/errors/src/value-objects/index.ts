@@ -19,6 +19,9 @@
  * - InvalidSignedQuantityError - некорректное знаковое количество (может быть отрицательным)
  * - InvalidPercentageError - процент вне допустимого диапазона
  * - InvalidAmountError - универсальная ошибка валидации числовых значений
+ * - InvalidTimestampError - некорректная временная метка (epoch milliseconds)
+ * - InvalidSideError - некорректная сторона сделки (не BUY/SELL)
+ * - InvalidFeeError - некорректная комиссия
  *
  * **Валидация денежных значений:**
  * - InvalidMoneyError - некорректная денежная сумма (отрицательная, NaN, etc.)
@@ -101,6 +104,9 @@ export * from './InvalidSignedQuantityError.js';
 export * from './InvalidPercentageError.js';
 export * from './InvalidRatioError.js';
 export * from './InvalidAmountError.js';
+export * from './InvalidTimestampError.js';
+export * from './InvalidSideError.js';
+export * from './InvalidFeeError.js';
 
 // Валидация денежных значений
 export * from './InvalidMoneyError.js';
