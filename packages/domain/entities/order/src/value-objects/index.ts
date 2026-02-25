@@ -12,11 +12,11 @@
  * Side (BUY/SELL) импортируется из @polymarket/value-objects
  */
 
-// OrderStatus with discriminated union
+// OrderStatus (simple string union type)
 export {
   type OrderStatus,
   type OrderStatusType,
-  OrderStatus as OrderStatusConstructors,
+  OrderStatusConstructors,
   ORDER_STATUS_TYPES,
   TERMINAL_STATUS_TYPES,
   ACTIVE_STATUS_TYPES,

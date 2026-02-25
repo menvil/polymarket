@@ -66,11 +66,12 @@ export { Order } from './Order';
 export { OrderFill } from './value-objects/OrderFill';
 export type { OrderStatus } from './value-objects/OrderStatus';
 export {
+  OrderStatusConstructors,
   canTransition,
   isTerminal,
   isActive,
-  isFailed,
-  isSuccessful,
+  canCancel,
+  statusToString,
 } from './value-objects/OrderStatus';
 
 // Side теперь экспортируется из @polymarket/value-objects

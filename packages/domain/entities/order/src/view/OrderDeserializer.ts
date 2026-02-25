@@ -31,7 +31,8 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { Price, Quantity, type Side } from '@polymarket/value-objects';
-import { OrderValidationError } from '@polymarket/errors';
+import { ValidationError } from '@polymarket/errors';
+import Decimal from 'decimal.js';
 import type { Order } from '../Order';
 import { Order as OrderClass } from '../Order';
 import type { OrderStatus } from '../value-objects/OrderStatus';
@@ -76,7 +77,7 @@ export class OrderDeserializer {
    * Десериализует JSON в Order объект
    *
    * @param json - Plain object из API/БД
-   * @returns Result<Order, OrderValidationError>
+   * @returns Result<Order, ValidationError>
    *
    * @remarks
    * Создает все value objects из примитивов.
@@ -107,117 +108,75 @@ export class OrderDeserializer {
    * }
    * ```
    */
-  public static fromJSON(json: OrderJSON): Result<Order, OrderValidationError> {
-    // Валидация обязательных полей
-    if (!json || typeof json !== 'object') {
-      return Err(
-        new OrderValidationError('Invalid JSON: must be an object', {
-          context: { json },
-        })
-      );
-    }
+  public static fromJSON(json: OrderJSON): Result<Order, ValidationError> {
+    try {
+      if (!json || typeof json !== 'object') {
+        return Err(new ValidationError('Invalid JSON: must be an object', { context: { json } }));
+      }
 
-    // Создание Price value object
-    const priceResult = Price.fromValue(json.price);
-    if (!priceResult.ok) {
-      return Err(
-        new OrderValidationError(`Invalid price: ${priceResult.error.message}`, {
-          context: { field: 'price', orderId: json.id, value: json.price },
-        })
-      );
-    }
+      // Создание Price и Quantity value objects (бросают исключение при невалидных данных)
+      const price = Price.of(new Decimal(json.price));
+      const size = Quantity.of(new Decimal(json.size));
 
-    // Создание Quantity value object
-    const sizeResult = Quantity.fromValue(json.size);
-    if (!sizeResult.ok) {
-      return Err(
-        new OrderValidationError(`Invalid size: ${sizeResult.error.message}`, {
-          context: { field: 'size', orderId: json.id, value: json.size },
-        })
-      );
-    }
-
-    // Парсинг timestamp
-    const timestamp = new Date(json.timestamp);
-    if (isNaN(timestamp.getTime())) {
-      return Err(
-        new OrderValidationError('Invalid timestamp format', {
+      // Парсинг timestamp
+      const timestamp = new Date(json.timestamp);
+      if (isNaN(timestamp.getTime())) {
+        return Err(new ValidationError('Invalid timestamp format', {
           context: { field: 'timestamp', orderId: json.id, value: json.timestamp },
-        })
-      );
-    }
+        }));
+      }
 
-    // Создание OrderFill (если есть)
-    let fill: OrderFill | undefined;
-    if (json.fill) {
-      const filledSizeResult = Quantity.fromValue(json.fill.filledSize);
-      if (!filledSizeResult.ok) {
-        return Err(
-          new OrderValidationError(`Invalid fill.filledSize: ${filledSizeResult.error.message}`, {
-            context: { field: 'fill.filledSize', orderId: json.id, value: json.fill.filledSize },
-          })
+      // Создание OrderFill (если есть)
+      let fill: OrderFill | undefined;
+      if (json.fill) {
+        const filledSize = Quantity.of(new Decimal(json.fill.filledSize));
+        const averageFillPrice = json.fill.averageFillPrice !== undefined
+          ? Price.of(new Decimal(json.fill.averageFillPrice))
+          : undefined;
+
+        const fillResult = OrderFill.create(
+          filledSize,
+          averageFillPrice,
+          [...json.fill.tradeIds],
+          size
         );
-      }
 
-      let averageFillPrice: Price | undefined;
-      if (json.fill.averageFillPrice !== undefined) {
-        const avgPriceResult = Price.fromValue(json.fill.averageFillPrice);
-        if (!avgPriceResult.ok) {
-          return Err(
-            new OrderValidationError(
-              `Invalid fill.averageFillPrice: ${avgPriceResult.error.message}`,
-              {
-                context: {
-                  field: 'fill.averageFillPrice',
-                  orderId: json.id,
-                  value: json.fill.averageFillPrice,
-                },
-              }
-            )
-          );
-        }
-        averageFillPrice = avgPriceResult.value;
-      }
-
-      const fillResult = OrderFill.create(
-        filledSizeResult.value,
-        averageFillPrice,
-        json.fill.tradeIds,
-        sizeResult.value
-      );
-
-      if (!fillResult.ok) {
-        return Err(
-          new OrderValidationError(`Invalid fill: ${fillResult.error.message}`, {
+        if (!fillResult.ok) {
+          return Err(new ValidationError(`Invalid fill: ${fillResult.error.message}`, {
             context: { field: 'fill', orderId: json.id },
-          })
-        );
+          }));
+        }
+
+        fill = fillResult.value;
       }
 
-      fill = fillResult.value;
+      // Создание Order через factory method
+      return OrderClass.create({
+        id: json.id,
+        marketId: json.marketId,
+        tokenId: json.tokenId,
+        side: json.side,
+        price,
+        size,
+        status: json.status,
+        timestamp,
+        strategyId: json.strategyId,
+        fill,
+        reason: json.reason,
+      });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return Err(new ValidationError(`Deserialization failed: ${msg}`, {
+        context: { orderId: json?.id },
+      }));
     }
-
-    // Создание Order через factory method
-    return OrderClass.create({
-      id: json.id,
-      marketId: json.marketId,
-      tokenId: json.tokenId,
-      side: json.side,
-      price: priceResult.value,
-      size: sizeResult.value,
-      status: json.status,
-      timestamp,
-      strategyId: json.strategyId,
-      fill,
-      reason: json.reason,
-    });
   }
 
   /**
    * Десериализует массив JSON объектов
    *
    * @param jsonArray - Массив plain objects
-   * @returns Result<Order[], OrderValidationError>
+   * @returns Result<Order[], ValidationError>
    *
    * @remarks
    * Останавливается на первой ошибке.
@@ -236,10 +195,10 @@ export class OrderDeserializer {
    * }
    * ```
    */
-  public static fromJSONArray(jsonArray: readonly OrderJSON[]): Result<Order[], OrderValidationError> {
+  public static fromJSONArray(jsonArray: readonly OrderJSON[]): Result<Order[], ValidationError> {
     if (!Array.isArray(jsonArray)) {
       return Err(
-        new OrderValidationError('Invalid JSON array: must be an array', {
+        new ValidationError('Invalid JSON array: must be an array', {
           context: { jsonArray },
         })
       );
@@ -251,7 +210,7 @@ export class OrderDeserializer {
       const result = this.fromJSON(jsonArray[i]);
       if (!result.ok) {
         return Err(
-          new OrderValidationError(`Failed to deserialize order at index ${i}: ${result.error.message}`, {
+          new ValidationError(`Failed to deserialize order at index ${i}: ${result.error.message}`, {
             context: { index: i, json: jsonArray[i] },
           })
         );

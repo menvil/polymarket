@@ -37,7 +37,7 @@
  */
 
 import { Result, Err } from '@polymarket/result';
-import type { OrderChange } from '../../types/OrderChange';
+import type { OrderChange } from '../types/OrderChange';
 import type { OrderData } from './handlers';
 import {
   handleAccepted,

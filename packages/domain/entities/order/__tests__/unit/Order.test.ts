@@ -3,9 +3,20 @@
  */
 
 import { Price, Quantity } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
 import { Order } from '../../src/Order';
 import { OrderFill } from '../../src/value-objects/OrderFill';
-import type { FillForOrder } from '../../types/OrderChange';
+import type { FillForOrder } from '../../src/types/OrderChange';
+
+// Вспомогательная функция для извлечения значения из Result в тестах
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
+  if (!result.ok) {
+    const err = (result as { ok: false; error: unknown }).error;
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}: ${msg}`);
+  }
+  return (result as { ok: true; value: T }).value;
+}
 
 // Helper для создания валидного Order
 function createValidOrder(overrides?: Partial<Parameters<typeof Order.create>[0]>) {
@@ -14,8 +25,8 @@ function createValidOrder(overrides?: Partial<Parameters<typeof Order.create>[0]
     marketId: 'market-1',
     tokenId: 'token-yes',
     side: 'BUY' as const,
-    price: Price.fromValue(0.65).value!,
-    size: Quantity.fromValue(100).value!,
+    price: Price.of(new Decimal('0.65')),
+    size: Quantity.of(new Decimal('100')),
     status: 'PENDING' as const,
     timestamp: new Date('2024-01-01T00:00:00Z'),
   };
@@ -31,8 +42,8 @@ function createFill(overrides?: Partial<FillForOrder>): FillForOrder {
     marketId: 'market-1',
     tokenId: 'token-yes',
     side: 'BUY' as const,
-    size: Quantity.fromValue(30).value!,
-    price: Price.fromValue(0.65).value!,
+    size: Quantity.of(new Decimal('30')),
+    price: Price.of(new Decimal('0.65')),
   };
 
   return { ...defaults, ...overrides };
@@ -50,8 +61,8 @@ describe('Order', () => {
         expect(order.marketId).toBe('market-1');
         expect(order.tokenId).toBe('token-yes');
         expect(order.side).toBe('BUY');
-        expect(order.price.value).toBe(0.65);
-        expect(order.size.value).toBe(100);
+        expect(order.price.value().toNumber()).toBe(0.65);
+        expect(order.size.value().toNumber()).toBe(100);
         expect(order.status).toBe('PENDING');
         expect(order.fill.isEmpty()).toBe(true);
       }
@@ -84,12 +95,9 @@ describe('Order', () => {
       }
     });
 
-    it('should fail with negative size', () => {
-      const result = createValidOrder({
-        size: Quantity.fromValue(-10).value,
-      });
-
-      expect(result.ok).toBe(false);
+    it('should throw for negative size (Quantity invariant)', () => {
+      // Quantity.of() throws QuantityInvariantViolation for negative values
+      expect(() => Quantity.of(new Decimal('-10'))).toThrow();
     });
 
     it('should fail with invalid timestamp', () => {
@@ -113,58 +121,58 @@ describe('Order', () => {
     });
 
     it('should create order with fill', () => {
-      const fill = OrderFill.create(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.65).value!,
+      const fill = unwrap(OrderFill.create(
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.65')),
         ['trade-1'],
-        Quantity.fromValue(100).value!
-      ).value!;
+        Quantity.of(new Decimal('100'))
+      ), 'OrderFill.create');
 
       const result = createValidOrder({ fill, status: 'PARTIALLY_FILLED' });
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.fill.getFilledSize().value).toBe(30);
+        expect(result.value.fill.getFilledSize().value().toNumber()).toBe(30);
       }
     });
   });
 
   describe('status predicates', () => {
     it('isPending() should return true for PENDING status', () => {
-      const order = createValidOrder({ status: 'PENDING' }).value!;
+      const order = unwrap(createValidOrder({ status: 'PENDING' }), 'createValidOrder PENDING');
       expect(order.isPending()).toBe(true);
       expect(order.isOpen()).toBe(false);
       expect(order.isFilled()).toBe(false);
     });
 
     it('isOpen() should return true for OPEN status', () => {
-      const order = createValidOrder({ status: 'OPEN' }).value!;
+      const order = unwrap(createValidOrder({ status: 'OPEN' }), 'createValidOrder OPEN');
       expect(order.isOpen()).toBe(true);
       expect(order.isPending()).toBe(false);
     });
 
     it('isFilled() should return true for FILLED status', () => {
-      const order = createValidOrder({ status: 'FILLED' }).value!;
+      const order = unwrap(createValidOrder({ status: 'FILLED' }), 'createValidOrder FILLED');
       expect(order.isFilled()).toBe(true);
       expect(order.isOpen()).toBe(false);
     });
 
     it('isPartiallyFilled() should detect partial fill', () => {
-      const fill = OrderFill.create(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.65).value!,
+      const fill = unwrap(OrderFill.create(
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.65')),
         ['trade-1'],
-        Quantity.fromValue(100).value!
-      ).value!;
+        Quantity.of(new Decimal('100'))
+      ), 'OrderFill.create');
 
-      const order = createValidOrder({ fill, status: 'PARTIALLY_FILLED' }).value!;
+      const order = unwrap(createValidOrder({ fill, status: 'PARTIALLY_FILLED' }), 'createValidOrder PARTIALLY_FILLED');
       expect(order.isPartiallyFilled()).toBe(true);
     });
 
     it('canCancel() should return true for OPEN and PARTIALLY_FILLED', () => {
-      const openOrder = createValidOrder({ status: 'OPEN' }).value!;
-      const partialOrder = createValidOrder({ status: 'PARTIALLY_FILLED' }).value!;
-      const filledOrder = createValidOrder({ status: 'FILLED' }).value!;
+      const openOrder = unwrap(createValidOrder({ status: 'OPEN' }));
+      const partialOrder = unwrap(createValidOrder({ status: 'PARTIALLY_FILLED' }));
+      const filledOrder = unwrap(createValidOrder({ status: 'FILLED' }));
 
       expect(openOrder.canCancel()).toBe(true);
       expect(partialOrder.canCancel()).toBe(true);
@@ -172,9 +180,9 @@ describe('Order', () => {
     });
 
     it('canModify() should return true for non-terminal statuses', () => {
-      const openOrder = createValidOrder({ status: 'OPEN' }).value!;
-      const filledOrder = createValidOrder({ status: 'FILLED' }).value!;
-      const canceledOrder = createValidOrder({ status: 'CANCELED' }).value!;
+      const openOrder = unwrap(createValidOrder({ status: 'OPEN' }));
+      const filledOrder = unwrap(createValidOrder({ status: 'FILLED' }));
+      const canceledOrder = unwrap(createValidOrder({ status: 'CANCELED' }));
 
       expect(openOrder.canModify()).toBe(true);
       expect(filledOrder.canModify()).toBe(false);
@@ -184,64 +192,64 @@ describe('Order', () => {
 
   describe('calculations', () => {
     it('getNotional() should calculate price * size', () => {
-      const order = createValidOrder({
-        price: Price.fromValue(0.65).value!,
-        size: Quantity.fromValue(100).value!,
-      }).value!;
+      const order = unwrap(createValidOrder({
+        price: Price.of(new Decimal('0.65')),
+        size: Quantity.of(new Decimal('100')),
+      }));
 
       const notional = order.getNotional();
       expect(notional.toNumber()).toBe(65);
     });
 
     it('getRemainingSize() should return unfilled amount', () => {
-      const fill = OrderFill.create(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.65).value!,
+      const fill = unwrap(OrderFill.create(
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.65')),
         ['trade-1'],
-        Quantity.fromValue(100).value!
-      ).value!;
+        Quantity.of(new Decimal('100'))
+      ), 'OrderFill.create');
 
-      const order = createValidOrder({ fill, status: 'PARTIALLY_FILLED' }).value!;
+      const order = unwrap(createValidOrder({ fill, status: 'PARTIALLY_FILLED' }));
 
       const remaining = order.getRemainingSize();
-      expect(remaining.value).toBe(70);
+      expect(remaining.value().toNumber()).toBe(70);
     });
 
     it('getFillPercentage() should calculate percentage', () => {
-      const fill = OrderFill.create(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.65).value!,
+      const fill = unwrap(OrderFill.create(
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.65')),
         ['trade-1'],
-        Quantity.fromValue(100).value!
-      ).value!;
+        Quantity.of(new Decimal('100'))
+      ), 'OrderFill.create');
 
-      const order = createValidOrder({ fill, status: 'PARTIALLY_FILLED' }).value!;
+      const order = unwrap(createValidOrder({ fill, status: 'PARTIALLY_FILLED' }));
 
       const percentage = order.getFillPercentage();
       expect(percentage.toNumber()).toBe(30);
     });
 
     it('getTradeCount() should return number of fills', () => {
-      const fill = OrderFill.create(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.65).value!,
+      const fill = unwrap(OrderFill.create(
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.65')),
         ['fill-1', 'fill-2'],
-        Quantity.fromValue(100).value!
-      ).value!;
+        Quantity.of(new Decimal('100'))
+      ), 'OrderFill.create');
 
-      const order = createValidOrder({ fill }).value!;
+      const order = unwrap(createValidOrder({ fill }));
       expect(order.getTradeCount()).toBe(2);
     });
 
     it('hasFill() should check for fill existence', () => {
-      const fill = OrderFill.create(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.65).value!,
+      const fill = unwrap(OrderFill.create(
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.65')),
         ['fill-1'],
-        Quantity.fromValue(100).value!
-      ).value!;
+        Quantity.of(new Decimal('100'))
+      ), 'OrderFill.create');
 
-      const order = createValidOrder({ fill }).value!;
+      const order = unwrap(createValidOrder({ fill }));
       expect(order.hasFill('fill-1')).toBe(true);
       expect(order.hasFill('fill-2')).toBe(false);
     });
@@ -250,7 +258,7 @@ describe('Order', () => {
   describe('FSM transitions', () => {
     describe('accept()', () => {
       it('should transition PENDING → OPEN', () => {
-        const order = createValidOrder({ status: 'PENDING' }).value!;
+        const order = unwrap(createValidOrder({ status: 'PENDING' }));
         const result = order.accept();
 
         expect(result.ok).toBe(true);
@@ -261,7 +269,7 @@ describe('Order', () => {
       });
 
       it('should fail for non-PENDING status', () => {
-        const order = createValidOrder({ status: 'OPEN' }).value!;
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
         const result = order.accept();
 
         expect(result.ok).toBe(false);
@@ -270,7 +278,7 @@ describe('Order', () => {
 
     describe('reject()', () => {
       it('should transition PENDING → REJECTED with reason', () => {
-        const order = createValidOrder({ status: 'PENDING' }).value!;
+        const order = unwrap(createValidOrder({ status: 'PENDING' }));
         const result = order.reject('Insufficient funds');
 
         expect(result.ok).toBe(true);
@@ -281,7 +289,7 @@ describe('Order', () => {
       });
 
       it('should fail without reason', () => {
-        const order = createValidOrder({ status: 'PENDING' }).value!;
+        const order = unwrap(createValidOrder({ status: 'PENDING' }));
         const result = order.reject('');
 
         expect(result.ok).toBe(false);
@@ -291,7 +299,7 @@ describe('Order', () => {
       });
 
       it('should fail for non-PENDING status', () => {
-        const order = createValidOrder({ status: 'OPEN' }).value!;
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
         const result = order.reject('Some reason');
 
         expect(result.ok).toBe(false);
@@ -300,7 +308,7 @@ describe('Order', () => {
 
     describe('cancel()', () => {
       it('should transition OPEN → CANCELED', () => {
-        const order = createValidOrder({ status: 'OPEN' }).value!;
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
         const result = order.cancel('User request');
 
         expect(result.ok).toBe(true);
@@ -311,7 +319,7 @@ describe('Order', () => {
       });
 
       it('should use default reason if not provided', () => {
-        const order = createValidOrder({ status: 'OPEN' }).value!;
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
         const result = order.cancel();
 
         expect(result.ok).toBe(true);
@@ -321,7 +329,7 @@ describe('Order', () => {
       });
 
       it('should fail for terminal status', () => {
-        const order = createValidOrder({ status: 'FILLED' }).value!;
+        const order = unwrap(createValidOrder({ status: 'FILLED' }));
         const result = order.cancel();
 
         expect(result.ok).toBe(false);
@@ -330,7 +338,7 @@ describe('Order', () => {
 
     describe('expire()', () => {
       it('should transition OPEN → EXPIRED', () => {
-        const order = createValidOrder({ status: 'OPEN' }).value!;
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
         const result = order.expire();
 
         expect(result.ok).toBe(true);
@@ -340,7 +348,7 @@ describe('Order', () => {
       });
 
       it('should fail for terminal status', () => {
-        const order = createValidOrder({ status: 'FILLED' }).value!;
+        const order = unwrap(createValidOrder({ status: 'FILLED' }));
         const result = order.expire();
 
         expect(result.ok).toBe(false);
@@ -349,85 +357,85 @@ describe('Order', () => {
 
     describe('applyFill()', () => {
       it('should transition OPEN → PARTIALLY_FILLED for partial fill', () => {
-        const order = createValidOrder({ status: 'OPEN' }).value!;
-        const fill = createFill({ size: Quantity.fromValue(30).value! });
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
+        const fill = createFill({ size: Quantity.of(new Decimal('30')) });
 
         const result = order.applyFill(fill);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value.status).toBe('PARTIALLY_FILLED');
-          expect(result.value.fill.getFilledSize().value).toBe(30);
-          expect(result.value.getRemainingSize().value).toBe(70);
+          expect(result.value.fill.getFilledSize().value().toNumber()).toBe(30);
+          expect(result.value.getRemainingSize().value().toNumber()).toBe(70);
         }
       });
 
       it('should transition OPEN → FILLED for complete fill', () => {
-        const order = createValidOrder({ status: 'OPEN' }).value!;
-        const fill = createFill({ size: Quantity.fromValue(100).value! });
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
+        const fill = createFill({ size: Quantity.of(new Decimal('100')) });
 
         const result = order.applyFill(fill);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.value.status).toBe('FILLED');
-          expect(result.value.fill.getFilledSize().value).toBe(100);
-          expect(result.value.getRemainingSize().value).toBe(0);
+          expect(result.value.fill.getFilledSize().value().toNumber()).toBe(100);
+          expect(result.value.getRemainingSize().value().toNumber()).toBe(0);
         }
       });
 
       it('should accumulate multiple fills', () => {
-        let order = createValidOrder({ status: 'OPEN' }).value!;
+        let order = unwrap(createValidOrder({ status: 'OPEN' }));
 
         // Fill 1: 30 units
-        const fill1 = createFill({ id: 'fill-1', size: Quantity.fromValue(30).value! });
+        const fill1 = createFill({ id: 'fill-1', size: Quantity.of(new Decimal('30')) });
         const result1 = order.applyFill(fill1);
         expect(result1.ok).toBe(true);
-        order = result1.value!;
+        order = unwrap(result1);
         expect(order.status).toBe('PARTIALLY_FILLED');
-        expect(order.fill.getFilledSize().value).toBe(30);
+        expect(order.fill.getFilledSize().value().toNumber()).toBe(30);
 
         // Fill 2: 20 units
-        const fill2 = createFill({ id: 'fill-2', size: Quantity.fromValue(20).value! });
+        const fill2 = createFill({ id: 'fill-2', size: Quantity.of(new Decimal('20')) });
         const result2 = order.applyFill(fill2);
         expect(result2.ok).toBe(true);
-        order = result2.value!;
+        order = unwrap(result2);
         expect(order.status).toBe('PARTIALLY_FILLED');
-        expect(order.fill.getFilledSize().value).toBe(50);
+        expect(order.fill.getFilledSize().value().toNumber()).toBe(50);
 
         // Fill 3: 50 units (completes)
-        const fill3 = createFill({ id: 'fill-3', size: Quantity.fromValue(50).value! });
+        const fill3 = createFill({ id: 'fill-3', size: Quantity.of(new Decimal('50')) });
         const result3 = order.applyFill(fill3);
         expect(result3.ok).toBe(true);
-        order = result3.value!;
+        order = unwrap(result3);
         expect(order.status).toBe('FILLED');
-        expect(order.fill.getFilledSize().value).toBe(100);
+        expect(order.fill.getFilledSize().value().toNumber()).toBe(100);
       });
 
       it('should fail for duplicate fill ID', () => {
-        let order = createValidOrder({ status: 'OPEN' }).value!;
+        let order = unwrap(createValidOrder({ status: 'OPEN' }));
 
-        const fill1 = createFill({ id: 'fill-1', size: Quantity.fromValue(30).value! });
+        const fill1 = createFill({ id: 'fill-1', size: Quantity.of(new Decimal('30')) });
         const result1 = order.applyFill(fill1);
         expect(result1.ok).toBe(true);
-        order = result1.value!;
+        order = unwrap(result1);
 
         // Try same fill ID again
-        const fill2 = createFill({ id: 'fill-1', size: Quantity.fromValue(20).value! });
+        const fill2 = createFill({ id: 'fill-1', size: Quantity.of(new Decimal('20')) });
         const result2 = order.applyFill(fill2);
         expect(result2.ok).toBe(false);
       });
 
       it('should fail if fill exceeds remaining size', () => {
-        const order = createValidOrder({ status: 'OPEN' }).value!;
-        const fill = createFill({ size: Quantity.fromValue(150).value! }); // Exceeds order size 100
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
+        const fill = createFill({ size: Quantity.of(new Decimal('150')) }); // Exceeds order size 100
 
         const result = order.applyFill(fill);
         expect(result.ok).toBe(false);
       });
 
       it('should fail for terminal status', () => {
-        const order = createValidOrder({ status: 'FILLED' }).value!;
+        const order = unwrap(createValidOrder({ status: 'FILLED' }));
         const fill = createFill();
 
         const result = order.applyFill(fill);
@@ -437,23 +445,23 @@ describe('Order', () => {
 
     describe('canAcceptFill()', () => {
       it('should validate fill without applying it', () => {
-        const order = createValidOrder({ status: 'OPEN' }).value!;
-        const validFill = createFill({ size: Quantity.fromValue(30).value! });
-        const invalidFill = createFill({ size: Quantity.fromValue(150).value! });
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
+        const validFill = createFill({ size: Quantity.of(new Decimal('30')) });
+        const invalidFill = createFill({ size: Quantity.of(new Decimal('150')) });
 
         expect(order.canAcceptFill(validFill)).toBe(true);
         expect(order.canAcceptFill(invalidFill)).toBe(false);
       });
 
       it('should reject fill with mismatched orderId', () => {
-        const order = createValidOrder({ status: 'OPEN' }).value!;
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
         const fill = createFill({ orderId: 'wrong-order' });
 
         expect(order.canAcceptFill(fill)).toBe(false);
       });
 
       it('should reject fill with mismatched side', () => {
-        const order = createValidOrder({ status: 'OPEN', side: 'BUY' }).value!;
+        const order = unwrap(createValidOrder({ status: 'OPEN', side: 'BUY' }));
         const fill = createFill({ side: 'SELL' });
 
         expect(order.canAcceptFill(fill)).toBe(false);
@@ -463,11 +471,11 @@ describe('Order', () => {
 
   describe('immutability', () => {
     it('should return new instance on state changes', () => {
-      const original = createValidOrder({ status: 'PENDING' }).value!;
+      const original = unwrap(createValidOrder({ status: 'PENDING' }));
       const result = original.accept();
 
       expect(result.ok).toBe(true);
-      const accepted = result.value!;
+      const accepted = unwrap(result);
 
       // Original should be unchanged
       expect(original.status).toBe('PENDING');
@@ -482,10 +490,10 @@ describe('Order', () => {
 
   describe('serialization', () => {
     it('toJSON() should serialize order', () => {
-      const order = createValidOrder({
+      const order = unwrap(createValidOrder({
         id: 'order-123',
         status: 'OPEN',
-      }).value!;
+      }));
 
       const json = order.toJSON();
 
@@ -499,13 +507,13 @@ describe('Order', () => {
     });
 
     it('toString() should provide readable representation', () => {
-      const order = createValidOrder({
+      const order = unwrap(createValidOrder({
         id: 'order-123',
         side: 'BUY',
-        size: Quantity.fromValue(100).value!,
-        price: Price.fromValue(0.65).value!,
+        size: Quantity.of(new Decimal('100')),
+        price: Price.of(new Decimal('0.65')),
         status: 'OPEN',
-      }).value!;
+      }));
 
       const str = order.toString();
 

@@ -29,6 +29,7 @@
  * ```typescript
  * import { Order } from './Order';
  * import { Price, Quantity } from '@polymarket/value-objects';
+ * import Decimal from 'decimal.js';
  *
  * // Создание новой заявки
  * const result = Order.create({
@@ -36,29 +37,26 @@
  *   marketId: 'market-abc',
  *   tokenId: 'token-yes',
  *   side: 'BUY',
- *   price: Price.fromValue(0.65).value()!,
- *   size: Quantity.fromValue(100).value()!,
+ *   price: Price.of(new Decimal('0.65')),
+ *   size: Quantity.of(new Decimal('100')),
  *   status: 'PENDING',
  *   timestamp: new Date()
  * });
  *
  * if (result.ok) {
- *   const order = result.value();
- *
- *   // Принять заявку
+ *   const order = result.value;
  *   const accepted = order.accept();
  *   if (accepted.ok) {
- *     console.log(accepted.value().status); // 'OPEN'
+ *     console.log(accepted.value.status); // 'OPEN'
  *   }
  * }
  * ```
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
+import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import { ValidationError } from '@polymarket/errors';
-import type { OrderId, AccountId, VenueId, InstrumentId, AssetId } from '@polymarket/ids';
-import type { OrderChange, FillForOrder } from '../types/OrderChange';
+import type { OrderChange, FillForOrder } from './types/OrderChange';
 import type { OrderStatus } from './value-objects/OrderStatus';
 import { OrderFill } from './value-objects/OrderFill';
 import { OrderFSM } from './transitions/OrderFSM';
@@ -78,37 +76,19 @@ import { canCancel } from './transitions/guards';
  *
  * @remarks
  * Используется в Order.create() factory method.
- *
- * ### Обязательные поля:
- * - **id** - уникальный идентификатор заявки (OrderId)
- * - **accountId** - идентификатор аккаунта владельца
- * - **venueId** - идентификатор venue/биржи
- * - **instrumentId** - идентификатор инструмента (рынок + токен)
- * - **asset** - идентификатор актива для расчетов
- * - **side** - направление (BUY/SELL)
- * - **price** - цена заявки
- * - **size** - размер заявки
- * - **status** - статус заявки
- * - **timestamp** - время создания/обновления
- * - **fill** - информация о заполнении (всегда присутствует, OrderFill.empty() для новых)
- *
- * ### Опциональные поля:
- * - **strategyId** - идентификатор стратегии (для multi-strategy изоляции)
- * - **reason** - причина отклонения/отмены/истечения (deprecated, использовать status.reason)
+ * strategyId опциональный для multi-strategy изоляции.
  */
 export interface OrderParams {
-  readonly id: OrderId;
-  readonly accountId: AccountId;
-  readonly venueId: VenueId;
-  readonly instrumentId: InstrumentId;
-  readonly asset: AssetId;
+  readonly id: string;
+  readonly marketId: string;
+  readonly tokenId: string;
   readonly side: Side;
   readonly price: Price;
   readonly size: Quantity;
   readonly status: OrderStatus;
-  readonly timestamp: Timestamp;
-  readonly fill: OrderFill;
+  readonly timestamp: Date;
   readonly strategyId?: string;
+  readonly fill?: OrderFill;
   readonly reason?: string;
 }
 
@@ -118,41 +98,18 @@ export interface OrderParams {
  * @remarks
  * Все свойства readonly для обеспечения неизменяемости.
  * Методы изменения состояния возвращают НОВЫЙ экземпляр.
- *
- * ### Идентификаторы:
- * - **id** - уникальный ID заявки
- * - **accountId** - владелец заявки
- * - **venueId** - биржа на которой размещена
- * - **instrumentId** - инструмент (рынок + outcome token)
- * - **asset** - актив для расчетов (обычно USDC)
- *
- * ### Параметры заявки:
- * - **side** - направление (BUY/SELL)
- * - **price** - цена
- * - **size** - размер
- *
- * ### Состояние:
- * - **status** - текущий статус (discriminated union с typed reasons)
- * - **fill** - информация о заполнении (всегда присутствует)
- * - **timestamp** - время последнего обновления
- *
- * ### Опциональные:
- * - **strategyId** - ID стратегии (если заявка создана ботом)
- * - **reason** - deprecated, использовать status.reason
  */
 export class Order {
-  public readonly id: OrderId;
-  public readonly accountId: AccountId;
-  public readonly venueId: VenueId;
-  public readonly instrumentId: InstrumentId;
-  public readonly asset: AssetId;
+  public readonly id: string;
+  public readonly marketId: string;
+  public readonly tokenId: string;
   public readonly side: Side;
   public readonly price: Price;
   public readonly size: Quantity;
   public readonly status: OrderStatus;
-  public readonly timestamp: Timestamp;
-  public readonly fill: OrderFill;
+  public readonly timestamp: Date;
   public readonly strategyId?: string;
+  public readonly fill: OrderFill;
   public readonly reason?: string;
 
   /**
@@ -160,17 +117,15 @@ export class Order {
    */
   private constructor(params: OrderParams) {
     this.id = params.id;
-    this.accountId = params.accountId;
-    this.venueId = params.venueId;
-    this.instrumentId = params.instrumentId;
-    this.asset = params.asset;
+    this.marketId = params.marketId;
+    this.tokenId = params.tokenId;
     this.side = params.side;
     this.price = params.price;
     this.size = params.size;
     this.status = params.status;
     this.timestamp = params.timestamp;
-    this.fill = params.fill;
     this.strategyId = params.strategyId;
+    this.fill = params.fill || OrderFill.empty();
     this.reason = params.reason;
   }
 
@@ -184,78 +139,46 @@ export class Order {
    * Factory method с Result pattern.
    * Валидирует все обязательные поля и бизнес-правила.
    *
-   * ### Валидации:
-   * 1. Все ID поля должны быть валидными branded types
-   * 2. Price и Size должны быть валидными value objects
-   * 3. Size должен быть > 0
-   * 4. Fill должен быть валидным и не превышать size
-   * 5. Timestamp должен быть валидным
-   *
    * @example
    * ```typescript
-   * import { Order, OrderStatus } from './Order';
-   * import { Price, Quantity, Timestamp, Side } from '@polymarket/value-objects';
-   * import { asOrderId, asAccountId, asVenueId, asInstrumentId, asAssetId } from '@polymarket/ids';
-   * import { OrderFill } from './value-objects/OrderFill';
+   * import Decimal from 'decimal.js';
    *
    * const result = Order.create({
-   *   id: asOrderId('order-123')!,
-   *   accountId: asAccountId('account-456')!,
-   *   venueId: asVenueId('polymarket')!,
-   *   instrumentId: asInstrumentId('market-abc-token-yes')!,
-   *   asset: asAssetId('USDC')!,
-   *   side: Side.BUY,
-   *   price: Price.of(new Decimal(0.65)),
-   *   size: Quantity.of(new Decimal(100)),
-   *   status: OrderStatus.pending(),
-   *   timestamp: Timestamp.now(),
-   *   fill: OrderFill.empty()
+   *   id: 'order-123',
+   *   marketId: 'market-abc',
+   *   tokenId: 'token-yes',
+   *   side: 'BUY',
+   *   price: Price.of(new Decimal('0.65')),
+   *   size: Quantity.of(new Decimal('100')),
+   *   status: 'PENDING',
+   *   timestamp: new Date()
    * });
-   *
-   * if (result.ok) {
-   *   const order = result.value();
-   *   console.log(order.id); // 'order-123'
-   * }
    * ```
    */
   public static create(params: OrderParams): Result<Order, ValidationError> {
-    // Валидация ID (branded types уже валидированы, проверяем только наличие)
-    if (!params.id) {
+    // Валидация ID
+    if (!params.id || typeof params.id !== 'string' || params.id.trim() === '') {
       return Err(
-        new ValidationError('Order ID is required', {
+        new ValidationError('Order ID must be a non-empty string', {
           context: { field: 'id', value: params.id },
         })
       );
     }
 
-    if (!params.accountId) {
+    // Валидация marketId
+    if (!params.marketId || typeof params.marketId !== 'string' || params.marketId.trim() === '') {
       return Err(
-        new ValidationError('Account ID is required', {
-          context: { field: 'accountId', orderId: params.id },
+        new ValidationError('Market ID must be a non-empty string', {
+          context: { field: 'marketId', orderId: params.id, value: params.marketId },
         })
       );
     }
 
-    if (!params.venueId) {
+    // Валидация tokenId
+    if (!params.tokenId || typeof params.tokenId !== 'string' || params.tokenId.trim() === '') {
       return Err(
-        new ValidationError('Venue ID is required', {
-          context: { field: 'venueId', orderId: params.id },
-        })
-      );
-    }
-
-    if (!params.instrumentId) {
-      return Err(
-        new ValidationError('Instrument ID is required', {
-          context: { field: 'instrumentId', orderId: params.id },
-        })
-      );
-    }
-
-    if (!params.asset) {
-      return Err(
-        new ValidationError('Asset ID is required', {
-          context: { field: 'asset', orderId: params.id },
+        new ValidationError('Token ID must be a non-empty string', {
+          context: { field: 'tokenId', orderId: params.id, value: params.tokenId },
         })
       );
     }
@@ -286,43 +209,28 @@ export class Order {
       );
     }
 
-    // Валидация fill (теперь обязательное поле)
-    if (!params.fill) {
-      return Err(
-        new ValidationError('Fill is required (use OrderFill.empty() for new orders)', {
-          context: { field: 'fill', orderId: params.id },
-        })
+    // Валидация fill (если есть)
+    if (params.fill) {
+      const fillValidation = OrderFill.create(
+        params.fill.getFilledSize(),
+        params.fill.getAverageFillPrice(),
+        Array.from(params.fill.getFillIds()),
+        params.size
       );
-    }
-
-    const fillValidation = OrderFill.create(
-      params.fill.getFilledSize(),
-      params.fill.getAverageFillPrice(),
-      Array.from(params.fill.getFillIds()),
-      params.size
-    );
-    if (!fillValidation.ok) {
-      return Err(
-        new ValidationError(`Invalid fill: ${fillValidation.error.message}`, {
-          context: { field: 'fill', orderId: params.id },
-        })
-      );
+      if (!fillValidation.ok) {
+        return Err(
+          new ValidationError(`Invalid fill: ${fillValidation.error.message}`, {
+            context: { field: 'fill', orderId: params.id },
+          })
+        );
+      }
     }
 
     // Валидация timestamp
-    if (!params.timestamp) {
+    if (!(params.timestamp instanceof Date) || isNaN(params.timestamp.getTime())) {
       return Err(
-        new ValidationError('Timestamp is required', {
-          context: { field: 'timestamp', orderId: params.id },
-        })
-      );
-    }
-
-    // Валидация status
-    if (!params.status) {
-      return Err(
-        new ValidationError('Status is required', {
-          context: { field: 'status', orderId: params.id },
+        new ValidationError('Invalid timestamp', {
+          context: { field: 'timestamp', orderId: params.id, value: params.timestamp },
         })
       );
     }
@@ -410,7 +318,7 @@ export class Order {
   }
 
   /**
-   * Возвращает количество trades заполнивших заявку
+   * Возвращает количество fills заявки
    */
   public getTradeCount(): number {
     return this.fill.getTradeCount();
@@ -461,7 +369,7 @@ export class Order {
    * ```typescript
    * const result = order.accept();
    * if (result.ok) {
-   *   console.log(result.value().status); // 'OPEN'
+   *   console.log(result.value.status); // 'OPEN'
    * }
    * ```
    */
@@ -556,10 +464,8 @@ export class Order {
     // Конвертируем текущий Order в OrderData
     const orderData: OrderData = {
       id: this.id,
-      accountId: this.accountId,
-      venueId: this.venueId,
-      instrumentId: this.instrumentId,
-      asset: this.asset,
+      marketId: this.marketId,
+      tokenId: this.tokenId,
       side: this.side,
       price: this.price,
       size: this.size,
@@ -584,19 +490,17 @@ export class Order {
 
     // Создаем новый Order из обновленных данных
     return Order.create({
-      id: result.value().id,
-      accountId: result.value().accountId,
-      venueId: result.value().venueId,
-      instrumentId: result.value().instrumentId,
-      asset: result.value().asset,
-      side: result.value().side,
-      price: result.value().price,
-      size: result.value().size,
-      status: result.value().status,
-      timestamp: result.value().timestamp,
-      fill: result.value().fill,
-      strategyId: result.value().strategyId,
-      reason: result.value().reason,
+      id: result.value.id,
+      marketId: result.value.marketId,
+      tokenId: result.value.tokenId,
+      side: result.value.side as Side,
+      price: result.value.price,
+      size: result.value.size,
+      status: result.value.status,
+      timestamp: result.value.timestamp,
+      strategyId: result.value.strategyId,
+      fill: result.value.fill,
+      reason: result.value.reason,
     });
   }
 
@@ -609,22 +513,16 @@ export class Order {
    */
   public toJSON(): Record<string, unknown> {
     return {
-      // Идентификаторы
       id: this.id,
-      accountId: this.accountId,
-      venueId: this.venueId,
-      instrumentId: this.instrumentId,
-      asset: this.asset,
-      // Параметры заявки
+      marketId: this.marketId,
+      tokenId: this.tokenId,
       side: this.side,
       price: this.price.value().toNumber(),
       size: this.size.value().toNumber(),
-      // Состояние
       status: this.status,
-      timestamp: this.timestamp.toEpochMs(),
-      fill: this.fill.toJSON(),
-      // Опциональные
+      timestamp: this.timestamp.toISOString(),
       strategyId: this.strategyId,
+      fill: this.fill.toJSON(),
       reason: this.reason,
       // Вычисляемые поля
       notional: this.getNotional().toNumber(),
@@ -638,7 +536,7 @@ export class Order {
    */
   public toString(): string {
     return `Order[${this.id}]: ${this.side} ${this.size.value().toNumber()} @ ${this.price.value().toNumber()} (${
-      this.status.type
+      this.status
     })`;
   }
 }

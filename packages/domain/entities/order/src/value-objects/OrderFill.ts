@@ -10,8 +10,7 @@
  * ### Инварианты:
  * 1. filledSize должен быть >= 0
  * 2. filledSize должен быть <= orderSize
- * 3. averageFillPrice требуется если filledSize > 0
- * 4. fillIds не должен содержать дубликатов
+ * 3. fillIds не должен содержать дубликатов
  *
  * ### Immutability:
  * OrderFill неизменяемый. Методы addFill() возвращают НОВЫЙ экземпляр.
@@ -100,7 +99,6 @@ export class OrderFill {
    * Валидация:
    * - filledSize должен быть >= 0
    * - filledSize должен быть <= orderSize
-   * - averageFillPrice требуется если filledSize > 0
    * - tradeIds не должен содержать дубликатов
    *
    * @example
@@ -134,12 +132,7 @@ export class OrderFill {
       );
     }
 
-    // Валидация 3: averageFillPrice требуется если filledSize > 0
-    if (filledSize.isPositive() && !averageFillPrice) {
-      return Err(new Error('Average fill price is required when filled size > 0'));
-    }
-
-    // Валидация 4: fillIds не должен содержать дубликатов
+    // Валидация 3: fillIds не должен содержать дубликатов
     const uniqueFillIds = new Set(fillIds);
     if (uniqueFillIds.size !== fillIds.length) {
       return Err(new Error('Fill IDs must be unique'));

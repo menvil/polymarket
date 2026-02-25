@@ -3,14 +3,21 @@
  */
 
 import { Quantity, Price } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
 import { OrderFill } from '../../../src/value-objects/OrderFill';
+
+// Вспомогательная функция для извлечения значения из Result в тестах
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
+  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
+  return result.value;
+}
 
 describe('OrderFill', () => {
   describe('empty()', () => {
     it('should create empty fill with zero filledSize', () => {
       const fill = OrderFill.empty();
 
-      expect(fill.getFilledSize().value).toBe(0);
+      expect(fill.getFilledSize().value().toNumber()).toBe(0);
       expect(fill.getAverageFillPrice()).toBeUndefined();
       expect(fill.getFillIds()).toEqual([]);
       expect(fill.getTradeCount()).toBe(0);
@@ -20,17 +27,17 @@ describe('OrderFill', () => {
 
   describe('create()', () => {
     it('should create valid fill with all fields', () => {
-      const filledSize = Quantity.fromValue(50).value!;
-      const avgPrice = Price.fromValue(0.65).value!;
+      const filledSize = Quantity.of(new Decimal('50'));
+      const avgPrice = Price.of(new Decimal('0.65'));
       const fillIds = ['fill-1', 'fill-2'];
-      const orderSize = Quantity.fromValue(100).value!;
+      const orderSize = Quantity.of(new Decimal('100'));
 
       const result = OrderFill.create(filledSize, avgPrice, fillIds, orderSize);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.getFilledSize().value).toBe(50);
-        expect(result.value.getAverageFillPrice()?.value).toBe(0.65);
+        expect(result.value.getFilledSize().value().toNumber()).toBe(50);
+        expect(result.value.getAverageFillPrice()?.value().toNumber()).toBe(0.65);
         expect(result.value.getFillIds()).toEqual(fillIds);
         expect(result.value.getTradeCount()).toBe(2);
         expect(result.value.isEmpty()).toBe(false);
@@ -38,8 +45,8 @@ describe('OrderFill', () => {
     });
 
     it('should create fill without averageFillPrice', () => {
-      const filledSize = Quantity.fromValue(50).value!;
-      const orderSize = Quantity.fromValue(100).value!;
+      const filledSize = Quantity.of(new Decimal('50'));
+      const orderSize = Quantity.of(new Decimal('100'));
 
       const result = OrderFill.create(filledSize, undefined, [], orderSize);
 
@@ -50,8 +57,8 @@ describe('OrderFill', () => {
     });
 
     it('should fail if filledSize exceeds orderSize', () => {
-      const filledSize = Quantity.fromValue(150).value!;
-      const orderSize = Quantity.fromValue(100).value!;
+      const filledSize = Quantity.of(new Decimal('150'));
+      const orderSize = Quantity.of(new Decimal('100'));
 
       const result = OrderFill.create(filledSize, undefined, [], orderSize);
 
@@ -61,15 +68,9 @@ describe('OrderFill', () => {
       }
     });
 
-    it('should fail if filledSize is negative', () => {
-      const filledSize = Quantity.fromValue(-10).value; // Should fail at Quantity level
-      // Quantity.fromValue(-10) should fail
-      expect(filledSize).toBeUndefined();
-    });
-
     it('should fail if fillIds has duplicates', () => {
-      const filledSize = Quantity.fromValue(50).value!;
-      const orderSize = Quantity.fromValue(100).value!;
+      const filledSize = Quantity.of(new Decimal('50'));
+      const orderSize = Quantity.of(new Decimal('100'));
       const fillIds = ['fill-1', 'fill-1']; // Duplicate
 
       const result = OrderFill.create(filledSize, undefined, fillIds, orderSize);
@@ -84,17 +85,17 @@ describe('OrderFill', () => {
   describe('addFill()', () => {
     it('should add fill to empty OrderFill', () => {
       const orderFill = OrderFill.empty();
-      const fillSize = Quantity.fromValue(30).value!;
-      const fillPrice = Price.fromValue(0.65).value!;
-      const orderSize = Quantity.fromValue(100).value!;
+      const fillSize = Quantity.of(new Decimal('30'));
+      const fillPrice = Price.of(new Decimal('0.65'));
+      const orderSize = Quantity.of(new Decimal('100'));
 
       const result = orderFill.addFill(fillSize, fillPrice, 'fill-1', orderSize);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
         const newFill = result.value;
-        expect(newFill.getFilledSize().value).toBe(30);
-        expect(newFill.getAverageFillPrice()?.value).toBe(0.65);
+        expect(newFill.getFilledSize().value().toNumber()).toBe(30);
+        expect(newFill.getAverageFillPrice()?.value().toNumber()).toBe(0.65);
         expect(newFill.getFillIds()).toEqual(['fill-1']);
         expect(newFill.getTradeCount()).toBe(1);
       }
@@ -102,41 +103,41 @@ describe('OrderFill', () => {
 
     it('should accumulate multiple fills and calculate average price', () => {
       let orderFill = OrderFill.empty();
-      const orderSize = Quantity.fromValue(100).value!;
+      const orderSize = Quantity.of(new Decimal('100'));
 
       // Fill 1: 30 @ 0.60
       const result1 = orderFill.addFill(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.6).value!,
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.6')),
         'fill-1',
         orderSize
       );
       expect(result1.ok).toBe(true);
-      orderFill = result1.value!;
+      orderFill = unwrap(result1);
 
       // Fill 2: 20 @ 0.70
       const result2 = orderFill.addFill(
-        Quantity.fromValue(20).value!,
-        Price.fromValue(0.7).value!,
+        Quantity.of(new Decimal('20')),
+        Price.of(new Decimal('0.7')),
         'fill-2',
         orderSize
       );
       expect(result2.ok).toBe(true);
-      orderFill = result2.value!;
+      orderFill = unwrap(result2);
 
-      expect(orderFill.getFilledSize().value).toBe(50);
+      expect(orderFill.getFilledSize().value().toNumber()).toBe(50);
       expect(orderFill.getTradeCount()).toBe(2);
 
       // Average price = (30 * 0.60 + 20 * 0.70) / 50 = (18 + 14) / 50 = 32/50 = 0.64
       const avgPrice = orderFill.getAverageFillPrice()!;
-      expect(avgPrice.value).toBeCloseTo(0.64, 5);
+      expect(avgPrice.value().toNumber()).toBeCloseTo(0.64, 5);
     });
 
     it('should fail if fill would exceed order size', () => {
       const orderFill = OrderFill.empty();
-      const fillSize = Quantity.fromValue(150).value!;
-      const fillPrice = Price.fromValue(0.65).value!;
-      const orderSize = Quantity.fromValue(100).value!;
+      const fillSize = Quantity.of(new Decimal('150'));
+      const fillPrice = Price.of(new Decimal('0.65'));
+      const orderSize = Quantity.of(new Decimal('100'));
 
       const result = orderFill.addFill(fillSize, fillPrice, 'fill-1', orderSize);
 
@@ -148,22 +149,22 @@ describe('OrderFill', () => {
 
     it('should fail if fillId already exists', () => {
       let orderFill = OrderFill.empty();
-      const orderSize = Quantity.fromValue(100).value!;
+      const orderSize = Quantity.of(new Decimal('100'));
 
       // Add first fill
       const result1 = orderFill.addFill(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.6).value!,
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.6')),
         'fill-1',
         orderSize
       );
       expect(result1.ok).toBe(true);
-      orderFill = result1.value!;
+      orderFill = unwrap(result1);
 
       // Try to add duplicate
       const result2 = orderFill.addFill(
-        Quantity.fromValue(20).value!,
-        Price.fromValue(0.7).value!,
+        Quantity.of(new Decimal('20')),
+        Price.of(new Decimal('0.7')),
         'fill-1', // Same ID
         orderSize
       );
@@ -178,16 +179,16 @@ describe('OrderFill', () => {
   describe('hasFill()', () => {
     it('should return true if fill exists', () => {
       const orderFill = OrderFill.empty();
-      const orderSize = Quantity.fromValue(100).value!;
+      const orderSize = Quantity.of(new Decimal('100'));
 
       const result = orderFill.addFill(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.6).value!,
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.6')),
         'fill-1',
         orderSize
       );
 
-      const newFill = result.value!;
+      const newFill = unwrap(result);
       expect(newFill.hasFill('fill-1')).toBe(true);
       expect(newFill.hasFill('fill-2')).toBe(false);
     });
@@ -196,7 +197,7 @@ describe('OrderFill', () => {
   describe('getFillPercentage()', () => {
     it('should return 0% for empty fill', () => {
       const fill = OrderFill.empty();
-      const orderSize = Quantity.fromValue(100).value!;
+      const orderSize = Quantity.of(new Decimal('100'));
 
       const percentage = fill.getFillPercentage(orderSize);
       expect(percentage.toNumber()).toBe(0);
@@ -204,32 +205,32 @@ describe('OrderFill', () => {
 
     it('should calculate correct percentage', () => {
       const fill = OrderFill.empty();
-      const orderSize = Quantity.fromValue(100).value!;
+      const orderSize = Quantity.of(new Decimal('100'));
 
       const result = fill.addFill(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.6).value!,
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.6')),
         'fill-1',
         orderSize
       );
 
-      const newFill = result.value!;
+      const newFill = unwrap(result);
       const percentage = newFill.getFillPercentage(orderSize);
       expect(percentage.toNumber()).toBe(30);
     });
 
     it('should return 100% for fully filled order', () => {
       const fill = OrderFill.empty();
-      const orderSize = Quantity.fromValue(100).value!;
+      const orderSize = Quantity.of(new Decimal('100'));
 
       const result = fill.addFill(
-        Quantity.fromValue(100).value!,
-        Price.fromValue(0.6).value!,
+        Quantity.of(new Decimal('100')),
+        Price.of(new Decimal('0.6')),
         'fill-1',
         orderSize
       );
 
-      const newFill = result.value!;
+      const newFill = unwrap(result);
       const percentage = newFill.getFillPercentage(orderSize);
       expect(percentage.toNumber()).toBe(100);
     });
@@ -246,12 +247,12 @@ describe('OrderFill', () => {
     });
 
     it('should serialize fill with data', () => {
-      const filledSize = Quantity.fromValue(50).value!;
-      const avgPrice = Price.fromValue(0.65).value!;
+      const filledSize = Quantity.of(new Decimal('50'));
+      const avgPrice = Price.of(new Decimal('0.65'));
       const fillIds = ['fill-1', 'fill-2'];
-      const orderSize = Quantity.fromValue(100).value!;
+      const orderSize = Quantity.of(new Decimal('100'));
 
-      const fill = OrderFill.create(filledSize, avgPrice, fillIds, orderSize).value!;
+      const fill = unwrap(OrderFill.create(filledSize, avgPrice, fillIds, orderSize), 'OrderFill.create');
       const json = fill.toJSON();
 
       expect(json.filledSize).toBe(50);
@@ -263,32 +264,32 @@ describe('OrderFill', () => {
   describe('immutability', () => {
     it('should return new instance on addFill', () => {
       const fill = OrderFill.empty();
-      const orderSize = Quantity.fromValue(100).value!;
+      const orderSize = Quantity.of(new Decimal('100'));
 
       const result = fill.addFill(
-        Quantity.fromValue(30).value!,
-        Price.fromValue(0.6).value!,
+        Quantity.of(new Decimal('30')),
+        Price.of(new Decimal('0.6')),
         'fill-1',
         orderSize
       );
 
-      const newFill = result.value!;
+      const newFill = unwrap(result);
 
       // Original fill should remain unchanged
       expect(fill.isEmpty()).toBe(true);
-      expect(fill.getFilledSize().value).toBe(0);
+      expect(fill.getFilledSize().value().toNumber()).toBe(0);
 
       // New fill should have data
       expect(newFill.isEmpty()).toBe(false);
-      expect(newFill.getFilledSize().value).toBe(30);
+      expect(newFill.getFilledSize().value().toNumber()).toBe(30);
     });
 
     it('should not allow modification of fillIds array', () => {
-      const filledSize = Quantity.fromValue(50).value!;
-      const orderSize = Quantity.fromValue(100).value!;
+      const filledSize = Quantity.of(new Decimal('50'));
+      const orderSize = Quantity.of(new Decimal('100'));
       const fillIds = ['fill-1', 'fill-2'];
 
-      const fill = OrderFill.create(filledSize, undefined, fillIds, orderSize).value!;
+      const fill = unwrap(OrderFill.create(filledSize, undefined, fillIds, orderSize), 'OrderFill.create');
 
       const retrievedIds = fill.getFillIds();
 

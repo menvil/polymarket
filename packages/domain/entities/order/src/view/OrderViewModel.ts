@@ -68,21 +68,21 @@ export class OrderViewModel {
       marketId: order.marketId,
       tokenId: order.tokenId,
       side: order.side,
-      price: order.price.value,
-      size: order.size.value,
+      price: order.price.value().toNumber(),
+      size: order.size.value().toNumber(),
       status: order.status,
       timestamp: order.timestamp.toISOString(),
       strategyId: order.strategyId,
       fill: {
-        filledSize: order.fill.getFilledSize().value,
-        averageFillPrice: order.fill.getAverageFillPrice()?.value,
+        filledSize: order.fill.getFilledSize().value().toNumber(),
+        averageFillPrice: order.fill.getAverageFillPrice()?.value().toNumber(),
         fillIds: Array.from(order.fill.getFillIds()),
         fillCount: order.fill.getTradeCount(),
       },
       reason: order.reason,
       // Вычисляемые поля
       notional: order.getNotional().toNumber(),
-      remainingSize: order.getRemainingSize().value,
+      remainingSize: order.getRemainingSize().value().toNumber(),
       fillPercentage: order.getFillPercentage().toNumber(),
     };
   }
@@ -107,7 +107,7 @@ export class OrderViewModel {
       ? 'unfilled'
       : `${order.getFillPercentage().toFixed(1)}% filled`;
 
-    return `Order[${order.id}]: ${order.side} ${order.size.value} @ ${order.price.toString()} (${
+    return `Order[${order.id}]: ${order.side} ${order.size.value().toNumber()} @ ${order.price.value().toNumber()} (${
       order.status
     }) - ${fillInfo}`;
   }
@@ -133,10 +133,10 @@ export class OrderViewModel {
       id: order.id,
       status: order.status,
       side: order.side,
-      price: order.price.value,
-      size: order.size.value,
-      filled: order.fill.getFilledSize().value,
-      remaining: order.getRemainingSize().value,
+      price: order.price.value().toNumber(),
+      size: order.size.value().toNumber(),
+      filled: order.fill.getFilledSize().value().toNumber(),
+      remaining: order.getRemainingSize().value().toNumber(),
       fillPercentage: order.getFillPercentage().toNumber(),
     };
   }

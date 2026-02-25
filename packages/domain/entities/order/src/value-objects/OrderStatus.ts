@@ -3,7 +3,7 @@
  *
  * @remarks
  * Представляет состояние заявки в её жизненном цикле.
- * Использует discriminated union для type-safe связи статуса с причинами.
+ * Используется как простой строковый union type.
  *
  * ### Жизненный цикл:
  * ```
@@ -12,271 +12,128 @@
  * REJECTED  CANCELED    EXPIRED
  * ```
  *
- * ### Терминальные статусы (конечные):
- * - FILLED - заявка полностью исполнена (успех)
- * - CANCELED - отменена (с типизированной причиной)
- * - REJECTED - отклонена venue (с типизированной причиной)
- * - EXPIRED - истекла (с опциональной типизированной причиной)
+ * ### Терминальные статусы:
+ * - FILLED, CANCELED, REJECTED, EXPIRED — заявка завершена
  *
- * ### Активные статусы (могут измениться):
- * - PENDING - ожидает принятия venue
- * - OPEN - размещена в orderbook
- * - PARTIALLY_FILLED - частично исполнена
- *
- * ### Type Safety:
- * Discriminated union гарантирует что:
- * - CANCELED всегда имеет CancelReason
- * - REJECTED всегда имеет RejectReason
- * - EXPIRED может иметь ExpireReason (optional)
- * - FILLED/OPEN/PENDING/PARTIALLY_FILLED НЕ имеют reason
+ * ### Активные статусы:
+ * - PENDING, OPEN, PARTIALLY_FILLED — заявка может измениться
  *
  * @example
  * ```typescript
- * import { OrderStatus, CancelReason, isCanceled } from './value-objects';
+ * import type { OrderStatus } from './value-objects/OrderStatus';
  *
- * // Type-safe constructors
- * const status1 = OrderStatus.open();
- * const status2 = OrderStatus.canceled(CancelReason.USER_REQUESTED);
+ * const status: OrderStatus = 'PENDING';
  *
- * // Type guards с pattern matching
- * if (isCanceled(status2)) {
- *   console.log(status2.reason); // CancelReason (type-safe)
+ * if (isPending(status)) {
+ *   console.log('Order is pending');
  * }
- *
- * // ❌ Compile error - невозможно создать невалидное состояние
- * const invalid = OrderStatus.open();
- * invalid.reason; // ERROR: Property 'reason' does not exist
  * ```
  */
 
-import { CancelReason } from './CancelReason.js';
-import { RejectReason } from './RejectReason.js';
-import { ExpireReason } from './ExpireReason.js';
-
 /**
- * OrderStatus - discriminated union для type-safe статусов
- *
- * @remarks
- * Каждый вариант статуса имеет поле `type` (discriminator) и опциональное поле `reason`.
- * TypeScript автоматически narrowing types при проверке `status.type`.
+ * OrderStatus — строковый union type для статусов заявки
  */
 export type OrderStatus =
-  | { readonly type: 'PENDING' }
-  | { readonly type: 'OPEN' }
-  | { readonly type: 'PARTIALLY_FILLED' }
-  | { readonly type: 'FILLED' }
-  | { readonly type: 'CANCELED'; readonly reason: CancelReason }
-  | { readonly type: 'REJECTED'; readonly reason: RejectReason }
-  | { readonly type: 'EXPIRED'; readonly reason?: ExpireReason };
+  | 'PENDING'
+  | 'OPEN'
+  | 'PARTIALLY_FILLED'
+  | 'FILLED'
+  | 'CANCELED'
+  | 'REJECTED'
+  | 'EXPIRED';
 
 /**
- * Тип статуса (строковые литералы для backward compatibility)
+ * Тип статуса — псевдоним для OrderStatus
  */
-export type OrderStatusType = OrderStatus['type'];
+export type OrderStatusType = OrderStatus;
 
 /**
- * Helper constructors для создания OrderStatus
- *
- * @remarks
- * Предоставляет удобные фабрики для создания статусов.
- * Все конструкторы type-safe и гарантируют корректность.
- *
- * @example
- * ```typescript
- * const pending = OrderStatus.pending();
- * const open = OrderStatus.open();
- * const canceled = OrderStatus.canceled(CancelReason.USER_REQUESTED);
- * const rejected = OrderStatus.rejected(RejectReason.INVALID_PRICE);
- * const expired = OrderStatus.expired(); // без причины
- * const expired2 = OrderStatus.expired(ExpireReason.TIME_IN_FORCE); // с причиной
- * ```
+ * Список всех возможных статусов
  */
-export const OrderStatus = {
-  /**
-   * Создать PENDING статус
-   */
-  pending: (): OrderStatus => ({ type: 'PENDING' }),
+export const ORDER_STATUS_TYPES: readonly OrderStatus[] = [
+  'PENDING',
+  'OPEN',
+  'PARTIALLY_FILLED',
+  'FILLED',
+  'CANCELED',
+  'REJECTED',
+  'EXPIRED',
+] as const;
 
-  /**
-   * Создать OPEN статус
-   */
-  open: (): OrderStatus => ({ type: 'OPEN' }),
+/**
+ * Терминальные статусы (заявка завершена)
+ */
+export const TERMINAL_STATUS_TYPES: readonly OrderStatus[] = [
+  'FILLED',
+  'CANCELED',
+  'REJECTED',
+  'EXPIRED',
+] as const;
 
-  /**
-   * Создать PARTIALLY_FILLED статус
-   */
-  partiallyFilled: (): OrderStatus => ({ type: 'PARTIALLY_FILLED' }),
-
-  /**
-   * Создать FILLED статус
-   */
-  filled: (): OrderStatus => ({ type: 'FILLED' }),
-
-  /**
-   * Создать CANCELED статус с причиной
-   *
-   * @param reason - Типизированная причина отмены
-   */
-  canceled: (reason: CancelReason): OrderStatus => ({ type: 'CANCELED', reason }),
-
-  /**
-   * Создать REJECTED статус с причиной
-   *
-   * @param reason - Типизированная причина отклонения
-   */
-  rejected: (reason: RejectReason): OrderStatus => ({ type: 'REJECTED', reason }),
-
-  /**
-   * Создать EXPIRED статус с опциональной причиной
-   *
-   * @param reason - Опциональная типизированная причина истечения
-   */
-  expired: (reason?: ExpireReason): OrderStatus => ({ type: 'EXPIRED', reason }),
-};
+/**
+ * Активные статусы (заявка может измениться)
+ */
+export const ACTIVE_STATUS_TYPES: readonly OrderStatus[] = [
+  'PENDING',
+  'OPEN',
+  'PARTIALLY_FILLED',
+] as const;
 
 // ==================== Type Guards ====================
 
-/**
- * Type guard для PENDING статуса
- */
-export function isPending(status: OrderStatus): status is { type: 'PENDING' } {
-  return status.type === 'PENDING';
+/** Проверяет PENDING статус */
+export function isPending(status: OrderStatus): boolean {
+  return status === 'PENDING';
 }
 
-/**
- * Type guard для OPEN статуса
- */
-export function isOpen(status: OrderStatus): status is { type: 'OPEN' } {
-  return status.type === 'OPEN';
+/** Проверяет OPEN статус */
+export function isOpen(status: OrderStatus): boolean {
+  return status === 'OPEN';
 }
 
-/**
- * Type guard для PARTIALLY_FILLED статуса
- */
-export function isPartiallyFilled(status: OrderStatus): status is { type: 'PARTIALLY_FILLED' } {
-  return status.type === 'PARTIALLY_FILLED';
+/** Проверяет PARTIALLY_FILLED статус */
+export function isPartiallyFilled(status: OrderStatus): boolean {
+  return status === 'PARTIALLY_FILLED';
 }
 
-/**
- * Type guard для FILLED статуса
- */
-export function isFilled(status: OrderStatus): status is { type: 'FILLED' } {
-  return status.type === 'FILLED';
+/** Проверяет FILLED статус */
+export function isFilled(status: OrderStatus): boolean {
+  return status === 'FILLED';
 }
 
-/**
- * Type guard для CANCELED статуса
- *
- * @remarks
- * После проверки TypeScript знает что status имеет поле reason: CancelReason
- */
-export function isCanceled(status: OrderStatus): status is { type: 'CANCELED'; reason: CancelReason } {
-  return status.type === 'CANCELED';
+/** Проверяет CANCELED статус */
+export function isCanceled(status: OrderStatus): boolean {
+  return status === 'CANCELED';
 }
 
-/**
- * Type guard для REJECTED статуса
- *
- * @remarks
- * После проверки TypeScript знает что status имеет поле reason: RejectReason
- */
-export function isRejected(status: OrderStatus): status is { type: 'REJECTED'; reason: RejectReason } {
-  return status.type === 'REJECTED';
+/** Проверяет REJECTED статус */
+export function isRejected(status: OrderStatus): boolean {
+  return status === 'REJECTED';
 }
 
-/**
- * Type guard для EXPIRED статуса
- *
- * @remarks
- * После проверки TypeScript знает что status имеет поле reason?: ExpireReason
- */
-export function isExpired(status: OrderStatus): status is { type: 'EXPIRED'; reason?: ExpireReason } {
-  return status.type === 'EXPIRED';
+/** Проверяет EXPIRED статус */
+export function isExpired(status: OrderStatus): boolean {
+  return status === 'EXPIRED';
 }
-
-// ==================== Status Categories ====================
-
-/**
- * Список всех возможных типов статусов (строковые литералы)
- */
-export const ORDER_STATUS_TYPES: readonly OrderStatusType[] = [
-  'PENDING',
-  'OPEN',
-  'PARTIALLY_FILLED',
-  'FILLED',
-  'CANCELED',
-  'REJECTED',
-  'EXPIRED',
-] as const;
-
-/**
- * Терминальные типы статусов (заявка завершена, не может измениться)
- */
-export const TERMINAL_STATUS_TYPES: readonly OrderStatusType[] = [
-  'FILLED',
-  'CANCELED',
-  'REJECTED',
-  'EXPIRED',
-] as const;
-
-/**
- * Активные типы статусов (заявка может измениться)
- */
-export const ACTIVE_STATUS_TYPES: readonly OrderStatusType[] = [
-  'PENDING',
-  'OPEN',
-  'PARTIALLY_FILLED',
-] as const;
 
 /**
  * Проверяет, является ли статус терминальным
  *
  * @param status - Статус для проверки
- * @returns True если статус терминальный (заявка завершена)
- *
- * @remarks
- * Терминальные статусы означают что заявка больше не может измениться.
- * Используется для:
- * - Валидации переходов в FSM
- * - Фильтрации активных заявок
- * - UI (скрыть кнопки Cancel/Modify)
- *
- * @example
- * ```typescript
- * const filled = OrderStatus.filled();
- * console.log(isTerminal(filled));    // true
- *
- * const open = OrderStatus.open();
- * console.log(isTerminal(open));      // false
- * ```
+ * @returns True если статус терминальный
  */
 export function isTerminal(status: OrderStatus): boolean {
-  return TERMINAL_STATUS_TYPES.includes(status.type);
+  return TERMINAL_STATUS_TYPES.includes(status);
 }
 
 /**
  * Проверяет, является ли статус активным
  *
  * @param status - Статус для проверки
- * @returns True если статус активный (заявка может измениться)
- *
- * @remarks
- * Активные заявки могут изменить состояние:
- * - PENDING → OPEN/REJECTED
- * - OPEN → PARTIALLY_FILLED/FILLED/CANCELED/EXPIRED
- * - PARTIALLY_FILLED → FILLED/CANCELED/EXPIRED
- *
- * @example
- * ```typescript
- * const open = OrderStatus.open();
- * console.log(isActive(open));        // true
- *
- * const filled = OrderStatus.filled();
- * console.log(isActive(filled));      // false
- * ```
+ * @returns True если статус активный
  */
 export function isActive(status: OrderStatus): boolean {
-  return ACTIVE_STATUS_TYPES.includes(status.type);
+  return ACTIVE_STATUS_TYPES.includes(status);
 }
 
 /**
@@ -284,31 +141,9 @@ export function isActive(status: OrderStatus): boolean {
  *
  * @param status - Текущий статус заявки
  * @returns True если заявку можно отменить
- *
- * @remarks
- * Заявку можно отменить только если она:
- * - OPEN - размещена в orderbook
- * - PARTIALLY_FILLED - частично исполнена
- *
- * PENDING заявки не могут быть отменены напрямую - они должны быть
- * либо приняты (→ OPEN) либо отклонены (→ REJECTED) venue.
- *
- * Терминальные статусы не могут быть отменены.
- *
- * @example
- * ```typescript
- * const open = OrderStatus.open();
- * console.log(canCancel(open));              // true
- *
- * const partial = OrderStatus.partiallyFilled();
- * console.log(canCancel(partial));           // true
- *
- * const pending = OrderStatus.pending();
- * console.log(canCancel(pending));           // false
- * ```
  */
 export function canCancel(status: OrderStatus): boolean {
-  return status.type === 'OPEN' || status.type === 'PARTIALLY_FILLED';
+  return status === 'OPEN' || status === 'PARTIALLY_FILLED';
 }
 
 /**
@@ -317,38 +152,12 @@ export function canCancel(status: OrderStatus): boolean {
  * @param from - Текущий статус
  * @param to - Целевой тип статуса
  * @returns True если переход допустим
- *
- * @remarks
- * Таблица допустимых переходов:
- *
- * | From              | To                          |
- * |-------------------|-----------------------------|
- * | PENDING           | OPEN, REJECTED              |
- * | OPEN              | PARTIALLY_FILLED, FILLED, CANCELED, EXPIRED |
- * | PARTIALLY_FILLED  | FILLED, CANCELED, EXPIRED   |
- * | FILLED            | (none - terminal)           |
- * | CANCELED          | (none - terminal)           |
- * | REJECTED          | (none - terminal)           |
- * | EXPIRED           | (none - terminal)           |
- *
- * Используется в FSM для валидации переходов.
- *
- * @example
- * ```typescript
- * const pending = OrderStatus.pending();
- * console.log(canTransition(pending, 'OPEN'));        // true
- *
- * const filled = OrderStatus.filled();
- * console.log(canTransition(filled, 'CANCELED'));     // false
- * ```
  */
 export function canTransition(from: OrderStatus, to: OrderStatusType): boolean {
-  // Терминальные статусы не могут переходить в другие
   if (isTerminal(from)) {
     return false;
   }
 
-  // Таблица допустимых переходов
   const transitions: Record<OrderStatusType, OrderStatusType[]> = {
     PENDING: ['OPEN', 'REJECTED'],
     OPEN: ['PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'EXPIRED'],
@@ -359,35 +168,14 @@ export function canTransition(from: OrderStatus, to: OrderStatusType): boolean {
     EXPIRED: [],
   };
 
-  return transitions[from.type].includes(to);
+  return transitions[from].includes(to);
 }
 
 /**
- * Возвращает список возможных следующих типов статусов
+ * Возвращает список возможных следующих статусов
  *
  * @param status - Текущий статус
  * @returns Массив возможных типов статусов для перехода
- *
- * @remarks
- * Используется для:
- * - UI (показать доступные действия)
- * - Валидации в FSM
- * - Документации и диаграмм
- *
- * @example
- * ```typescript
- * const pending = OrderStatus.pending();
- * console.log(getNextStatusTypes(pending));
- * // ['OPEN', 'REJECTED']
- *
- * const open = OrderStatus.open();
- * console.log(getNextStatusTypes(open));
- * // ['PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'EXPIRED']
- *
- * const filled = OrderStatus.filled();
- * console.log(getNextStatusTypes(filled));
- * // []
- * ```
  */
 export function getNextStatusTypes(status: OrderStatus): OrderStatusType[] {
   if (isTerminal(status)) {
@@ -404,59 +192,49 @@ export function getNextStatusTypes(status: OrderStatus): OrderStatusType[] {
     EXPIRED: [],
   };
 
-  return transitions[status.type];
+  return transitions[status];
 }
 
 /**
  * Проверяет валидность типа статуса (runtime валидация)
  *
  * @param value - Значение для проверки
- * @returns True если value является валидным OrderStatusType
- *
- * @remarks
- * Используется для:
- * - Валидации JSON данных (fromJSON)
- * - Runtime проверок при десериализации
- * - Type guards
- *
- * @example
- * ```typescript
- * console.log(isValidStatusType('OPEN'));       // true
- * console.log(isValidStatusType('INVALID'));    // false
- * console.log(isValidStatusType(null));         // false
- * ```
+ * @returns True если value является валидным OrderStatus
  */
-export function isValidStatusType(value: unknown): value is OrderStatusType {
-  return typeof value === 'string' && ORDER_STATUS_TYPES.includes(value as OrderStatusType);
+export function isValidStatusType(value: unknown): value is OrderStatus {
+  return typeof value === 'string' && ORDER_STATUS_TYPES.includes(value as OrderStatus);
 }
 
 /**
- * Получить строковое представление статуса для display
+ * Возвращает строковое представление статуса
  *
  * @param status - Статус ордера
- * @returns Человекочитаемая строка
+ * @returns Строка статуса
+ */
+export function statusToString(status: OrderStatus): string {
+  return status;
+}
+
+// ==================== Constructors (для обратной совместимости) ====================
+
+/**
+ * Фабрики для создания OrderStatus значений
  *
  * @remarks
- * Включает тип статуса и причину (если есть).
+ * Предоставляет удобные конструкторы для создания статусов.
  *
  * @example
  * ```typescript
- * const open = OrderStatus.open();
- * console.log(statusToString(open)); // "OPEN"
- *
- * const canceled = OrderStatus.canceled(CancelReason.USER_REQUESTED);
- * console.log(statusToString(canceled)); // "CANCELED (USER_REQUESTED)"
+ * const status = OrderStatusConstructors.pending(); // 'PENDING'
+ * const canceled = OrderStatusConstructors.canceled(); // 'CANCELED'
  * ```
  */
-export function statusToString(status: OrderStatus): string {
-  if (isCanceled(status)) {
-    return `CANCELED (${status.reason})`;
-  }
-  if (isRejected(status)) {
-    return `REJECTED (${status.reason})`;
-  }
-  if (isExpired(status)) {
-    return status.reason ? `EXPIRED (${status.reason})` : 'EXPIRED';
-  }
-  return status.type;
-}
+export const OrderStatusConstructors = {
+  pending: (): OrderStatus => 'PENDING',
+  open: (): OrderStatus => 'OPEN',
+  partiallyFilled: (): OrderStatus => 'PARTIALLY_FILLED',
+  filled: (): OrderStatus => 'FILLED',
+  canceled: (_reason?: unknown): OrderStatus => 'CANCELED',
+  rejected: (_reason?: unknown): OrderStatus => 'REJECTED',
+  expired: (_reason?: unknown): OrderStatus => 'EXPIRED',
+};
