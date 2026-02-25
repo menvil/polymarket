@@ -42,6 +42,10 @@
       "types": "./dist/ratio/index.d.ts",
       "import": "./dist/ratio/index.js"
     },
+    "./signed-quantity": {
+      "types": "./dist/signed-quantity/index.d.ts",
+      "import": "./dist/signed-quantity/index.js"
+    },
     "./spread": {
       "types": "./dist/spread/index.d.ts",
       "import": "./dist/spread/index.js"

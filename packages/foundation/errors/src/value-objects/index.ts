@@ -16,6 +16,7 @@
  * **Валидация диапазонов:**
  * - InvalidPriceError - цена вне диапазона [0.0001, 0.9999]
  * - InvalidQuantityError - некорректное количество акций
+ * - InvalidSignedQuantityError - некорректное знаковое количество (может быть отрицательным)
  * - InvalidPercentageError - процент вне допустимого диапазона
  * - InvalidAmountError - универсальная ошибка валидации числовых значений
  *
@@ -96,6 +97,7 @@
 // Валидация диапазонов
 export * from './InvalidPriceError.js';
 export * from './InvalidQuantityError.js';
+export * from './InvalidSignedQuantityError.js';
 export * from './InvalidPercentageError.js';
 export * from './InvalidRatioError.js';
 export * from './InvalidAmountError.js';
