@@ -6,6 +6,11 @@
  */
 export enum TimestampErrorReason {
   /**
+   * Ошибка парсинга значения
+   */
+  INVALID_FORMAT = 'INVALID_FORMAT',
+
+  /**
    * Значение не является конечным числом (NaN, Infinity)
    */
   NOT_FINITE = 'NOT_FINITE',

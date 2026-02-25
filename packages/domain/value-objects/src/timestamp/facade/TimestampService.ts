@@ -32,8 +32,8 @@
  */
 
 import Decimal from 'decimal.js';
-import { Result, Ok } from '@polymarket/result';
-import { ValidationError, wrapOp } from '@polymarket/errors';
+import { Result, Ok, Err, isErr } from '@polymarket/result';
+import { ValidationError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
 import { Timestamp } from '../core/Timestamp.js';
 import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
 import type { IClock } from '@polymarket/time';
@@ -72,45 +72,24 @@ export class TimestampService {
    * ```
    */
   public static create(value: number | string | Decimal): Result<Timestamp, ValidationError> {
+    // Безопасный парсинг value через toDecimal
+    const decimalResult = toDecimal('value', value, TimestampErrorReason.INVALID_FORMAT, ValidationError);
+    if (isErr(decimalResult)) {
+      // raw уже внутри err.context.raw от toDecimal
+      return Err(rewrap(TimestampService.SERVICE_NAME, 'create', {}, decimalResult.error, ValidationError));
+    }
+
+    // Truncate до integer
+    const decimal = decimalResult.value.trunc();
+
     return wrapOp(
       TimestampService.SERVICE_NAME,
       'create',
-      { value: String(value) },
+      { raw: { field: 'value', value: String(value) } },
       () => {
-        let decimal: Decimal;
-
-        if (value instanceof Decimal) {
-          // Truncate Decimal to integer
-          decimal = value.trunc();
-        } else if (typeof value === 'string') {
-          try {
-            const parsed = new Decimal(value);
-            // Truncate parsed string to integer
-            decimal = parsed.trunc();
-          } catch (error) {
-            throw new ValidationError(`Invalid timestamp string: ${value}`, {
-              context: {
-                field: 'value',
-                value,
-                reason: TimestampErrorReason.INVALID_ISO,
-              },
-            });
-          }
-        } else if (typeof value === 'number') {
-          // Truncate number to integer через Decimal (не используем Math)
-          decimal = new Decimal(value).trunc();
-        } else {
-          throw new ValidationError(`Invalid timestamp type: ${typeof value}`, {
-            context: {
-              field: 'value',
-              value,
-              reason: TimestampErrorReason.NOT_FINITE,
-            },
-          });
-        }
-
-        // Timestamp.of() проверит что decimal.isInteger() === true
-        return Ok(Timestamp.of(decimal));
+        // ВАЖНО: Core получает уже Decimal -> только проверка инвариантов, не парсинг
+        const timestamp = Timestamp.of(decimal);
+        return Ok(timestamp);
       },
       ValidationError
     );
@@ -138,15 +117,25 @@ export class TimestampService {
    * ```
    */
   public static fromEpochMs(ms: number): Result<Timestamp, ValidationError> {
+    // Безопасный парсинг ms через toDecimal
+    const decimalResult = toDecimal('ms', ms, TimestampErrorReason.INVALID_FORMAT, ValidationError);
+    if (isErr(decimalResult)) {
+      return Err(rewrap(TimestampService.SERVICE_NAME, 'fromEpochMs', {}, decimalResult.error, ValidationError));
+    }
+
+    // Truncate до integer
+    const decimal = decimalResult.value.trunc();
+
+    const ctx = { raw: { field: 'ms', value: String(ms) } };
+
     return wrapOp(
       TimestampService.SERVICE_NAME,
       'fromEpochMs',
-      { value: ms },
+      ctx,
       () => {
-        // Truncate через Decimal (не используем Math)
         // Core проверит finite, positive, integer
-        const decimal = new Decimal(ms).trunc();
-        return Ok(Timestamp.of(decimal));
+        const timestamp = Timestamp.of(decimal);
+        return Ok(timestamp);
       },
       ValidationError
     );
@@ -191,10 +180,12 @@ export class TimestampService {
    * ```
    */
   public static fromISO(iso: string): Result<Timestamp, ValidationError> {
+    const ctx = { raw: { field: 'iso', value: iso } };
+
     return wrapOp(
       TimestampService.SERVICE_NAME,
       'fromISO',
-      { value: iso },
+      ctx,
       () => {
         const ms = Date.parse(iso);
 
@@ -267,16 +258,30 @@ export class TimestampService {
     timestamp: Timestamp,
     delta: number | Decimal
   ): Result<Timestamp, ValidationError> {
+    // Безопасный парсинг delta через toDecimal
+    const deltaResult = toDecimal('delta', delta, TimestampErrorReason.INVALID_FORMAT, ValidationError);
+    if (isErr(deltaResult)) {
+      return Err(
+        rewrap(TimestampService.SERVICE_NAME, 'addMs', {
+          timestamp: timestamp.value().toString(),
+          delta: String(delta)
+        }, deltaResult.error, ValidationError)
+      );
+    }
+
+    // Truncate до integer
+    const deltaDecimal = deltaResult.value.trunc();
+
+    const ctx = {
+      timestamp: timestamp.value().toString(),
+      delta: deltaDecimal.toString()
+    };
+
     return wrapOp(
       TimestampService.SERVICE_NAME,
       'addMs',
-      { timestamp: timestamp.toNumber(), delta: typeof delta === 'number' ? delta : delta.toNumber() },
+      ctx,
       () => {
-        // Конвертируем number в Decimal с truncate
-        const deltaDecimal = delta instanceof Decimal
-          ? delta.trunc()
-          : new Decimal(delta).trunc();
-
         // timestamp.addMs() → Timestamp.of() проверит инварианты результата
         return Ok(timestamp.addMs(deltaDecimal));
       },
