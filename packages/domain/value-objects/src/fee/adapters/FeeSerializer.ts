@@ -21,7 +21,7 @@
  */
 
 import { Result, Ok } from '@polymarket/result';
-import { ValidationError, wrapOp } from '@polymarket/errors';
+import { InvalidFeeError, wrapOp } from '@polymarket/errors';
 import type { AssetId } from '@polymarket/ids';
 import { Fee } from '../core/Fee.js';
 import { AssetQuantity } from '../../asset-quantity/core/AssetQuantity.js';
@@ -62,7 +62,7 @@ export class FeeSerializer {
    * Десериализовать Fee из JSON
    *
    * @param json - FeeJSON объект
-   * @returns Result<Fee, ValidationError>
+   * @returns Result<Fee, InvalidFeeError>
    *
    * @example
    * ```typescript
@@ -73,7 +73,7 @@ export class FeeSerializer {
    * }
    * ```
    */
-  public static fromJSON(json: FeeJSON): Result<Fee, ValidationError> {
+  public static fromJSON(json: FeeJSON): Result<Fee, InvalidFeeError> {
     return wrapOp(
       'FeeSerializer',
       'fromJSON',
@@ -88,7 +88,7 @@ export class FeeSerializer {
         // Создаём Fee
         return Ok(Fee.of(assetQuantity));
       },
-      ValidationError
+      InvalidFeeError
     );
   }
 
@@ -96,7 +96,7 @@ export class FeeSerializer {
    * Десериализовать Fee из unknown (с проверкой типов)
    *
    * @param json - Значение unknown
-   * @returns Result<Fee, ValidationError>
+   * @returns Result<Fee, InvalidFeeError>
    *
    * @remarks
    * Проверяет структуру объекта перед десериализацией.
@@ -110,7 +110,7 @@ export class FeeSerializer {
    * }
    * ```
    */
-  public static fromUnknown(json: unknown): Result<Fee, ValidationError> {
+  public static fromUnknown(json: unknown): Result<Fee, InvalidFeeError> {
     return wrapOp(
       'FeeSerializer',
       'fromUnknown',
@@ -118,7 +118,7 @@ export class FeeSerializer {
       () => {
         // Проверяем что json это объект
         if (typeof json !== 'object' || json === null) {
-          throw new ValidationError('Fee must be object', {
+          throw new InvalidFeeError('Fee must be object', {
             context: {
               field: 'fee',
               value: json,
@@ -132,7 +132,7 @@ export class FeeSerializer {
 
         // Проверяем наличие полей
         if (!('asset' in obj) || !('amount' in obj)) {
-          throw new ValidationError('Fee must have asset and amount fields', {
+          throw new InvalidFeeError('Fee must have asset and amount fields', {
             context: {
               field: 'fee',
               value: json,
@@ -143,7 +143,7 @@ export class FeeSerializer {
 
         // Проверяем тип amount
         if (typeof obj.amount !== 'number') {
-          throw new ValidationError('Fee amount must be number', {
+          throw new InvalidFeeError('Fee amount must be number', {
             context: {
               field: 'amount',
               value: obj.amount,
@@ -165,7 +165,7 @@ export class FeeSerializer {
 
         return result;
       },
-      ValidationError
+      InvalidFeeError
     );
   }
 }

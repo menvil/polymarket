@@ -23,7 +23,7 @@
  */
 
 import { Result } from '@polymarket/result';
-import { ValidationError } from '@polymarket/errors';
+import { InvalidSideError } from '@polymarket/errors';
 import type { Side } from '../core/index.js';
 import { SideService } from '../facade/index.js';
 
@@ -65,7 +65,7 @@ export class SideSerializer {
    * Десериализовать Side из JSON
    *
    * @param json - JSON string ('BUY' или 'SELL')
-   * @returns Result<Side, ValidationError>
+   * @returns Result<Side, InvalidSideError>
    *
    * @remarks
    * Валидирует что json это валидный Side.
@@ -84,7 +84,7 @@ export class SideSerializer {
    * }
    * ```
    */
-  public static fromJSON(json: string): Result<Side, ValidationError> {
+  public static fromJSON(json: string): Result<Side, InvalidSideError> {
     return SideService.fromString(json);
   }
 
@@ -92,7 +92,7 @@ export class SideSerializer {
    * Десериализовать Side из unknown значения
    *
    * @param json - Любое значение из JSON.parse()
-   * @returns Result<Side, ValidationError>
+   * @returns Result<Side, InvalidSideError>
    *
    * @remarks
    * Универсальный метод для парсинга JSON объектов.
@@ -109,7 +109,7 @@ export class SideSerializer {
    * }
    * ```
    */
-  public static fromUnknown(json: unknown): Result<Side, ValidationError> {
+  public static fromUnknown(json: unknown): Result<Side, InvalidSideError> {
     return SideService.fromUnknown(json);
   }
 }

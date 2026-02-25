@@ -33,7 +33,7 @@
 
 import Decimal from 'decimal.js';
 import { Result, Ok, Err, isErr } from '@polymarket/result';
-import { ValidationError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
+import { InvalidTimestampError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
 import { Timestamp } from '../core/Timestamp.js';
 import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
 import type { IClock } from '@polymarket/time';
@@ -45,7 +45,7 @@ export class TimestampService {
    * Универсальная фабрика для создания Timestamp
    *
    * @param value - Epoch milliseconds (number, string, или Decimal)
-   * @returns Result<Timestamp, ValidationError>
+   * @returns Result<Timestamp, InvalidTimestampError>
    *
    * @remarks
    * Принимает number, string, или Decimal и конвертирует в Timestamp.
@@ -71,12 +71,12 @@ export class TimestampService {
    * }
    * ```
    */
-  public static create(value: number | string | Decimal): Result<Timestamp, ValidationError> {
+  public static create(value: number | string | Decimal): Result<Timestamp, InvalidTimestampError> {
     // Безопасный парсинг value через toDecimal
-    const decimalResult = toDecimal('value', value, TimestampErrorReason.INVALID_FORMAT, ValidationError);
+    const decimalResult = toDecimal('value', value, TimestampErrorReason.INVALID_FORMAT, InvalidTimestampError);
     if (isErr(decimalResult)) {
       // raw уже внутри err.context.raw от toDecimal
-      return Err(rewrap(TimestampService.SERVICE_NAME, 'create', {}, decimalResult.error, ValidationError));
+      return Err(rewrap(TimestampService.SERVICE_NAME, 'create', {}, decimalResult.error, InvalidTimestampError));
     }
 
     // Truncate до integer
@@ -91,7 +91,7 @@ export class TimestampService {
         const timestamp = Timestamp.of(decimal);
         return Ok(timestamp);
       },
-      ValidationError
+      InvalidTimestampError
     );
   }
 
@@ -99,7 +99,7 @@ export class TimestampService {
    * Создать Timestamp из epoch milliseconds
    *
    * @param ms - Миллисекунды с Unix epoch (1970-01-01)
-   * @returns Result<Timestamp, ValidationError>
+   * @returns Result<Timestamp, InvalidTimestampError>
    *
    * @remarks
    * Дробные значения обрезаются до integer.
@@ -116,11 +116,11 @@ export class TimestampService {
    * const result2 = TimestampService.fromEpochMs(1609459200000.789); // → 1609459200000
    * ```
    */
-  public static fromEpochMs(ms: number): Result<Timestamp, ValidationError> {
+  public static fromEpochMs(ms: number): Result<Timestamp, InvalidTimestampError> {
     // Безопасный парсинг ms через toDecimal
-    const decimalResult = toDecimal('ms', ms, TimestampErrorReason.INVALID_FORMAT, ValidationError);
+    const decimalResult = toDecimal('ms', ms, TimestampErrorReason.INVALID_FORMAT, InvalidTimestampError);
     if (isErr(decimalResult)) {
-      return Err(rewrap(TimestampService.SERVICE_NAME, 'fromEpochMs', {}, decimalResult.error, ValidationError));
+      return Err(rewrap(TimestampService.SERVICE_NAME, 'fromEpochMs', {}, decimalResult.error, InvalidTimestampError));
     }
 
     // Truncate до integer
@@ -137,7 +137,7 @@ export class TimestampService {
         const timestamp = Timestamp.of(decimal);
         return Ok(timestamp);
       },
-      ValidationError
+      InvalidTimestampError
     );
   }
 
@@ -145,7 +145,7 @@ export class TimestampService {
    * Создать Timestamp из Date объекта
    *
    * @param date - JavaScript Date
-   * @returns Result<Timestamp, ValidationError>
+   * @returns Result<Timestamp, InvalidTimestampError>
    *
    * @remarks
    * Извлекает epoch ms через date.getTime() и делегирует в fromEpochMs.
@@ -159,7 +159,7 @@ export class TimestampService {
    * }
    * ```
    */
-  public static fromDate(date: Date): Result<Timestamp, ValidationError> {
+  public static fromDate(date: Date): Result<Timestamp, InvalidTimestampError> {
     const ms = date.getTime();
     // Делегируем в fromEpochMs - он проверит finite, positive и сделает truncate
     return this.fromEpochMs(ms);
@@ -169,7 +169,7 @@ export class TimestampService {
    * Создать Timestamp из ISO 8601 строки
    *
    * @param iso - ISO строка (например "2024-01-15T10:30:00.000Z")
-   * @returns Result<Timestamp, ValidationError>
+   * @returns Result<Timestamp, InvalidTimestampError>
    *
    * @example
    * ```typescript
@@ -179,7 +179,7 @@ export class TimestampService {
    * }
    * ```
    */
-  public static fromISO(iso: string): Result<Timestamp, ValidationError> {
+  public static fromISO(iso: string): Result<Timestamp, InvalidTimestampError> {
     const ctx = { raw: { field: 'iso', value: iso } };
 
     return wrapOp(
@@ -190,7 +190,7 @@ export class TimestampService {
         const ms = Date.parse(iso);
 
         if (Number.isNaN(ms)) {
-          throw new ValidationError(`Invalid ISO timestamp: ${iso}`, {
+          throw new InvalidTimestampError(`Invalid ISO timestamp: ${iso}`, {
             context: {
               field: 'iso',
               value: iso,
@@ -202,7 +202,7 @@ export class TimestampService {
         // Используем fromEpochMs для валидации и truncate
         return this.fromEpochMs(ms);
       },
-      ValidationError
+      InvalidTimestampError
     );
   }
 
@@ -240,7 +240,7 @@ export class TimestampService {
    *
    * @param timestamp - Исходный Timestamp
    * @param delta - Количество миллисекунд для добавления (может быть отрицательным)
-   * @returns Result<Timestamp, ValidationError>
+   * @returns Result<Timestamp, InvalidTimestampError>
    *
    * @remarks
    * Принимает number или Decimal. Number конвертируется в Decimal с truncate.
@@ -257,15 +257,15 @@ export class TimestampService {
   public static addMs(
     timestamp: Timestamp,
     delta: number | Decimal
-  ): Result<Timestamp, ValidationError> {
+  ): Result<Timestamp, InvalidTimestampError> {
     // Безопасный парсинг delta через toDecimal
-    const deltaResult = toDecimal('delta', delta, TimestampErrorReason.INVALID_FORMAT, ValidationError);
+    const deltaResult = toDecimal('delta', delta, TimestampErrorReason.INVALID_FORMAT, InvalidTimestampError);
     if (isErr(deltaResult)) {
       return Err(
         rewrap(TimestampService.SERVICE_NAME, 'addMs', {
           timestamp: timestamp.value().toString(),
           delta: String(delta)
-        }, deltaResult.error, ValidationError)
+        }, deltaResult.error, InvalidTimestampError)
       );
     }
 
@@ -285,7 +285,7 @@ export class TimestampService {
         // timestamp.addMs() → Timestamp.of() проверит инварианты результата
         return Ok(timestamp.addMs(deltaDecimal));
       },
-      ValidationError
+      InvalidTimestampError
     );
   }
 

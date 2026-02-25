@@ -48,6 +48,7 @@
 
 import type { AssetId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
+import { InvalidFeeError } from '@polymarket/errors';
 import { AssetQuantity } from '../../asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 
@@ -177,7 +178,7 @@ export class Fee {
    *
    * @param other - Другая комиссия
    * @returns Новая Fee с суммированным amount
-   * @throws {Error} Если assets не совпадают
+   * @throws {InvalidFeeError} Если assets не совпадают
    *
    * @remarks
    * Комиссии можно складывать только если их assets совпадают.
@@ -196,14 +197,21 @@ export class Fee {
    * // ❌ Нельзя складывать fees с разными assets
    * const usdcFee = Fee.zero(AssetIdHelpers.USDC);
    * const tokenFee = Fee.zero(someTokenAsset);
-   * // usdcFee.add(tokenFee); // Throws Error
+   * // usdcFee.add(tokenFee); // Throws InvalidFeeError
    * ```
    */
   public add(other: Fee): Fee {
     // Проверяем что assets совпадают
     if (!AssetIdHelpers.equals(this.asset, other.asset)) {
-      throw new Error(
-        `Cannot add fees with different assets: ${JSON.stringify(this.asset)} vs ${JSON.stringify(other.asset)}`
+      throw new InvalidFeeError(
+        `Cannot add fees with different assets: ${JSON.stringify(this.asset)} vs ${JSON.stringify(other.asset)}`,
+        {
+          context: {
+            asset1: this.asset,
+            asset2: other.asset,
+            reason: 'ASSET_MISMATCH',
+          },
+        }
       );
     }
 

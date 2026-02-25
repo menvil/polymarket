@@ -19,7 +19,7 @@
  */
 
 import { Result, Ok } from '@polymarket/result';
-import { ValidationError, wrapOp } from '@polymarket/errors';
+import { InvalidTimestampError, wrapOp } from '@polymarket/errors';
 import { Timestamp } from '../core/Timestamp.js';
 import { TimestampService } from '../facade/TimestampService.js';
 import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
@@ -46,7 +46,7 @@ export class TimestampSerializer {
    * Десериализовать Timestamp из JSON (epoch milliseconds)
    *
    * @param json - Epoch milliseconds как number
-   * @returns Result<Timestamp, ValidationError>
+   * @returns Result<Timestamp, InvalidTimestampError>
    *
    * @example
    * ```typescript
@@ -56,7 +56,7 @@ export class TimestampSerializer {
    * }
    * ```
    */
-  public static fromJSON(json: number): Result<Timestamp, ValidationError> {
+  public static fromJSON(json: number): Result<Timestamp, InvalidTimestampError> {
     // Делегируем в TimestampService для валидации и создания
     return TimestampService.fromEpochMs(json);
   }
@@ -65,7 +65,7 @@ export class TimestampSerializer {
    * Десериализовать Timestamp из unknown (с проверкой типа)
    *
    * @param json - Значение unknown (должно быть number)
-   * @returns Result<Timestamp, ValidationError>
+   * @returns Result<Timestamp, InvalidTimestampError>
    *
    * @remarks
    * Проверяет что json является number перед десериализацией.
@@ -80,14 +80,14 @@ export class TimestampSerializer {
    * }
    * ```
    */
-  public static fromUnknown(json: unknown): Result<Timestamp, ValidationError> {
+  public static fromUnknown(json: unknown): Result<Timestamp, InvalidTimestampError> {
     return wrapOp(
       'TimestampSerializer',
       'fromUnknown',
       { value: json, type: typeof json },
       () => {
         if (typeof json !== 'number') {
-          throw new ValidationError('Timestamp must be number', {
+          throw new InvalidTimestampError('Timestamp must be number', {
             context: {
               field: 'timestamp',
               value: json,
@@ -104,7 +104,7 @@ export class TimestampSerializer {
         }
         return Ok(result.value);
       },
-      ValidationError
+      InvalidTimestampError
     );
   }
 }

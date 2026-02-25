@@ -28,7 +28,7 @@
  */
 
 import { Result, Ok } from '@polymarket/result';
-import { ValidationError, wrapOp } from '@polymarket/errors';
+import { InvalidSideError, wrapOp } from '@polymarket/errors';
 import type { Side } from '../core/index.js';
 import { isValidSide, opposite, canMatch, equals } from '../core/index.js';
 import { SideErrorReason } from '../errors/index.js';
@@ -56,7 +56,7 @@ export class SideService {
    * Создать Side из строки с валидацией
    *
    * @param value - Строковое значение ('BUY' или 'SELL')
-   * @returns Result<Side, ValidationError>
+   * @returns Result<Side, InvalidSideError>
    *
    * @remarks
    * Никогда не бросает исключения - всегда возвращает Result.
@@ -75,7 +75,7 @@ export class SideService {
    * }
    * ```
    */
-  public static fromString(value: string): Result<Side, ValidationError> {
+  public static fromString(value: string): Result<Side, InvalidSideError> {
     return wrapOp(
       SideService.SERVICE_NAME,
       'fromString',
@@ -85,7 +85,7 @@ export class SideService {
           return Ok(value);
         }
 
-        throw new ValidationError(
+        throw new InvalidSideError(
           (ctx) => `Invalid side value: ${ctx.value}. Expected 'BUY' or 'SELL'`,
           {
             context: {
@@ -97,7 +97,7 @@ export class SideService {
           }
         );
       },
-      ValidationError
+      InvalidSideError
     );
   }
 
@@ -105,7 +105,7 @@ export class SideService {
    * Создать Side из unknown значения с валидацией
    *
    * @param value - Любое значение для проверки
-   * @returns Result<Side, ValidationError>
+   * @returns Result<Side, InvalidSideError>
    *
    * @remarks
    * Универсальный метод для парсинга из любого источника (API, DB, user input).
@@ -126,14 +126,14 @@ export class SideService {
    * }
    * ```
    */
-  public static fromUnknown(value: unknown): Result<Side, ValidationError> {
+  public static fromUnknown(value: unknown): Result<Side, InvalidSideError> {
     return wrapOp(
       SideService.SERVICE_NAME,
       'fromUnknown',
       { value },
       () => {
         if (typeof value !== 'string') {
-          throw new ValidationError(
+          throw new InvalidSideError(
             (ctx) => `Invalid side: must be string, got ${ctx.type}`,
             {
               context: {
@@ -153,7 +153,7 @@ export class SideService {
         }
         return result;
       },
-      ValidationError
+      InvalidSideError
     );
   }
 
