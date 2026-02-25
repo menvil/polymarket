@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Timestamp, TimestampErrorReason } from '../../../src/timestamp/index.js';
+import { Timestamp, TimestampService, TimestampFormatter } from '../../../src/timestamp/index.js';
 import { unwrap } from '@polymarket/result/unsafe';
 
 describe('Timestamp', () => {
@@ -13,8 +13,8 @@ describe('Timestamp', () => {
       const ts = Timestamp.now();
       const after = Date.now();
 
-      expect(ts.value).toBeGreaterThanOrEqual(before);
-      expect(ts.value).toBeLessThanOrEqual(after);
+      expect(ts.value().toNumber()).toBeGreaterThanOrEqual(before);
+      expect(ts.value().toNumber()).toBeLessThanOrEqual(after);
     });
 
     it('should create different timestamps on sequential calls', () => {
@@ -22,79 +22,77 @@ describe('Timestamp', () => {
       const ts2 = Timestamp.now();
 
       // Timestamps могут быть равны если вызваны очень быстро
-      expect(ts2.value).toBeGreaterThanOrEqual(ts1.value);
+      expect(ts2.value().toNumber()).toBeGreaterThanOrEqual(ts1.value().toNumber());
     });
   });
 
   describe('fromEpochMs()', () => {
     it('should create Timestamp from valid epoch ms', () => {
-      const result = Timestamp.fromEpochMs(1609459200000);
+      const result = TimestampService.fromEpochMs(1609459200000);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.value).toBe(1609459200000);
+        expect(result.value.value().toNumber()).toBe(1609459200000);
       }
     });
 
     it('should truncate fractional milliseconds to integer', () => {
-      const result = Timestamp.fromEpochMs(1609459200000.999);
+      const result = TimestampService.fromEpochMs(1609459200000.999);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.value).toBe(1609459200000);
+        expect(result.value.value().toNumber()).toBe(1609459200000);
       }
     });
 
     it('should fail for NaN', () => {
-      const result = Timestamp.fromEpochMs(NaN);
+      const result = TimestampService.fromEpochMs(NaN);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('not finite');
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.NOT_FINITE);
+        expect(result.error.message).toContain('finite');
       }
     });
 
     it('should fail for Infinity', () => {
-      const result = Timestamp.fromEpochMs(Infinity);
+      const result = TimestampService.fromEpochMs(Infinity);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.NOT_FINITE);
+        expect(result.error.message).toContain('finite');
       }
     });
 
     it('should fail for negative Infinity', () => {
-      const result = Timestamp.fromEpochMs(-Infinity);
+      const result = TimestampService.fromEpochMs(-Infinity);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.NOT_FINITE);
+        expect(result.error.message).toContain('finite');
       }
     });
 
     it('should fail for zero', () => {
-      const result = Timestamp.fromEpochMs(0);
+      const result = TimestampService.fromEpochMs(0);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('must be positive');
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.NOT_POSITIVE);
+        expect(result.error.message).toContain('positive');
       }
     });
 
     it('should fail for negative value', () => {
-      const result = Timestamp.fromEpochMs(-1000);
+      const result = TimestampService.fromEpochMs(-1000);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.NOT_POSITIVE);
+        expect(result.error.message).toContain('positive');
       }
     });
 
     it('should accept large epoch ms (year 2050)', () => {
       const year2050 = new Date('2050-01-01').getTime();
-      const result = Timestamp.fromEpochMs(year2050);
+      const result = TimestampService.fromEpochMs(year2050);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -106,7 +104,7 @@ describe('Timestamp', () => {
   describe('fromDate()', () => {
     it('should create Timestamp from valid Date', () => {
       const date = new Date('2024-01-15T10:30:00.000Z');
-      const result = Timestamp.fromDate(date);
+      const result = TimestampService.fromDate(date);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -116,17 +114,17 @@ describe('Timestamp', () => {
 
     it('should fail for invalid Date', () => {
       const invalidDate = new Date('invalid');
-      const result = Timestamp.fromDate(invalidDate);
+      const result = TimestampService.fromDate(invalidDate);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Invalid Date');
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.INVALID_DATE);
+        // Invalid Date.getTime() returns NaN, handled by toDecimal
+        expect(result.error.message).toContain('finite');
       }
     });
 
     it('should work with Date.now()', () => {
-      const result = Timestamp.fromDate(new Date());
+      const result = TimestampService.fromDate(new Date());
 
       expect(result.ok).toBe(true);
     });
@@ -134,7 +132,7 @@ describe('Timestamp', () => {
 
   describe('fromISO()', () => {
     it('should create Timestamp from valid ISO string', () => {
-      const result = Timestamp.fromISO('2024-01-15T10:30:00.000Z');
+      const result = TimestampService.fromISO('2024-01-15T10:30:00.000Z');
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -143,7 +141,7 @@ describe('Timestamp', () => {
     });
 
     it('should handle ISO string without milliseconds', () => {
-      const result = Timestamp.fromISO('2024-01-15T10:30:00Z');
+      const result = TimestampService.fromISO('2024-01-15T10:30:00Z');
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -152,7 +150,7 @@ describe('Timestamp', () => {
     });
 
     it('should handle ISO string with timezone offset', () => {
-      const result = Timestamp.fromISO('2024-01-15T10:30:00+03:00');
+      const result = TimestampService.fromISO('2024-01-15T10:30:00+03:00');
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -162,36 +160,35 @@ describe('Timestamp', () => {
     });
 
     it('should fail for invalid ISO string', () => {
-      const result = Timestamp.fromISO('invalid');
+      const result = TimestampService.fromISO('invalid');
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('Invalid ISO timestamp');
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.INVALID_ISO);
       }
     });
 
     it('should fail for empty string', () => {
-      const result = Timestamp.fromISO('');
+      const result = TimestampService.fromISO('');
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.INVALID_ISO);
+        expect(result.error.message).toContain('ISO');
       }
     });
   });
 
   describe('value getter', () => {
     it('should return epoch milliseconds', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1609459200000));
+      const ts = unwrap(TimestampService.fromEpochMs(1609459200000));
 
-      expect(ts.value).toBe(1609459200000);
+      expect(ts.value().toNumber()).toBe(1609459200000);
     });
   });
 
   describe('toDate()', () => {
     it('should convert to JavaScript Date', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1609459200000));
+      const ts = unwrap(TimestampService.fromEpochMs(1609459200000));
       const date = ts.toDate();
 
       expect(date).toBeInstanceOf(Date);
@@ -201,7 +198,7 @@ describe('Timestamp', () => {
 
   describe('toISO()', () => {
     it('should convert to ISO 8601 string', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1609459200000));
+      const ts = unwrap(TimestampService.fromEpochMs(1609459200000));
 
       expect(ts.toISO()).toBe('2021-01-01T00:00:00.000Z');
     });
@@ -209,15 +206,15 @@ describe('Timestamp', () => {
 
   describe('equals()', () => {
     it('should return true for same epoch ms', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
 
       expect(ts1.equals(ts2)).toBe(true);
     });
 
     it('should return false for different epoch ms', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(2000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(2000));
 
       expect(ts1.equals(ts2)).toBe(false);
     });
@@ -229,8 +226,8 @@ describe('Timestamp', () => {
     });
 
     it('should be symmetric', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
 
       expect(ts1.equals(ts2)).toBe(ts2.equals(ts1));
     });
@@ -238,22 +235,22 @@ describe('Timestamp', () => {
 
   describe('isBefore()', () => {
     it('should return true when earlier', () => {
-      const earlier = unwrap(Timestamp.fromEpochMs(1000));
-      const later = unwrap(Timestamp.fromEpochMs(2000));
+      const earlier = unwrap(TimestampService.fromEpochMs(1000));
+      const later = unwrap(TimestampService.fromEpochMs(2000));
 
       expect(earlier.isBefore(later)).toBe(true);
     });
 
     it('should return false when later', () => {
-      const earlier = unwrap(Timestamp.fromEpochMs(1000));
-      const later = unwrap(Timestamp.fromEpochMs(2000));
+      const earlier = unwrap(TimestampService.fromEpochMs(1000));
+      const later = unwrap(TimestampService.fromEpochMs(2000));
 
       expect(later.isBefore(earlier)).toBe(false);
     });
 
     it('should return false when equal', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
 
       expect(ts1.isBefore(ts2)).toBe(false);
     });
@@ -261,22 +258,22 @@ describe('Timestamp', () => {
 
   describe('isAfter()', () => {
     it('should return true when later', () => {
-      const earlier = unwrap(Timestamp.fromEpochMs(1000));
-      const later = unwrap(Timestamp.fromEpochMs(2000));
+      const earlier = unwrap(TimestampService.fromEpochMs(1000));
+      const later = unwrap(TimestampService.fromEpochMs(2000));
 
       expect(later.isAfter(earlier)).toBe(true);
     });
 
     it('should return false when earlier', () => {
-      const earlier = unwrap(Timestamp.fromEpochMs(1000));
-      const later = unwrap(Timestamp.fromEpochMs(2000));
+      const earlier = unwrap(TimestampService.fromEpochMs(1000));
+      const later = unwrap(TimestampService.fromEpochMs(2000));
 
       expect(earlier.isAfter(later)).toBe(false);
     });
 
     it('should return false when equal', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
 
       expect(ts1.isAfter(ts2)).toBe(false);
     });
@@ -284,22 +281,22 @@ describe('Timestamp', () => {
 
   describe('isBeforeOrEqual()', () => {
     it('should return true when earlier', () => {
-      const earlier = unwrap(Timestamp.fromEpochMs(1000));
-      const later = unwrap(Timestamp.fromEpochMs(2000));
+      const earlier = unwrap(TimestampService.fromEpochMs(1000));
+      const later = unwrap(TimestampService.fromEpochMs(2000));
 
       expect(earlier.isBeforeOrEqual(later)).toBe(true);
     });
 
     it('should return true when equal', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
 
       expect(ts1.isBeforeOrEqual(ts2)).toBe(true);
     });
 
     it('should return false when later', () => {
-      const earlier = unwrap(Timestamp.fromEpochMs(1000));
-      const later = unwrap(Timestamp.fromEpochMs(2000));
+      const earlier = unwrap(TimestampService.fromEpochMs(1000));
+      const later = unwrap(TimestampService.fromEpochMs(2000));
 
       expect(later.isBeforeOrEqual(earlier)).toBe(false);
     });
@@ -307,22 +304,22 @@ describe('Timestamp', () => {
 
   describe('isAfterOrEqual()', () => {
     it('should return true when later', () => {
-      const earlier = unwrap(Timestamp.fromEpochMs(1000));
-      const later = unwrap(Timestamp.fromEpochMs(2000));
+      const earlier = unwrap(TimestampService.fromEpochMs(1000));
+      const later = unwrap(TimestampService.fromEpochMs(2000));
 
       expect(later.isAfterOrEqual(earlier)).toBe(true);
     });
 
     it('should return true when equal', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
 
       expect(ts1.isAfterOrEqual(ts2)).toBe(true);
     });
 
     it('should return false when earlier', () => {
-      const earlier = unwrap(Timestamp.fromEpochMs(1000));
-      const later = unwrap(Timestamp.fromEpochMs(2000));
+      const earlier = unwrap(TimestampService.fromEpochMs(1000));
+      const later = unwrap(TimestampService.fromEpochMs(2000));
 
       expect(earlier.isAfterOrEqual(later)).toBe(false);
     });
@@ -330,117 +327,113 @@ describe('Timestamp', () => {
 
   describe('addMs()', () => {
     it('should add positive milliseconds', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1000));
-      const result = ts.addMs(500);
+      const ts = unwrap(TimestampService.fromEpochMs(1000));
+      const result = TimestampService.addMs(ts, 500);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.value).toBe(1500);
+        expect(result.value.value().toNumber()).toBe(1500);
       }
     });
 
     it('should subtract (add negative) milliseconds', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(2000));
-      const result = ts.addMs(-500);
+      const ts = unwrap(TimestampService.fromEpochMs(2000));
+      const result = TimestampService.addMs(ts, -500);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.value).toBe(1500);
+        expect(result.value.value().toNumber()).toBe(1500);
       }
     });
 
     it('should add 1 minute (60000 ms)', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1000));
-      const result = ts.addMs(60000);
+      const ts = unwrap(TimestampService.fromEpochMs(1000));
+      const result = TimestampService.addMs(ts, 60000);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.value).toBe(61000);
+        expect(result.value.value().toNumber()).toBe(61000);
       }
     });
 
     it('should fail if delta is NaN', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1000));
-      const result = ts.addMs(NaN);
+      const ts = unwrap(TimestampService.fromEpochMs(1000));
+      const result = TimestampService.addMs(ts, NaN);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Invalid delta');
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.INVALID_DELTA);
+        expect(result.error.message).toContain('finite');
       }
     });
 
     it('should fail if delta is Infinity', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1000));
-      const result = ts.addMs(Infinity);
+      const ts = unwrap(TimestampService.fromEpochMs(1000));
+      const result = TimestampService.addMs(ts, Infinity);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.INVALID_DELTA);
-      }
     });
 
     it('should fail if result would be non-positive', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1000));
-      const result = ts.addMs(-1001);
+      const ts = unwrap(TimestampService.fromEpochMs(1000));
+      const result = TimestampService.addMs(ts, -1001);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(TimestampErrorReason.NOT_POSITIVE);
+        expect(result.error.message).toContain('positive');
       }
     });
   });
 
   describe('diffMs()', () => {
     it('should return positive diff when this is later', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(2000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(2000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
 
-      expect(ts1.diffMs(ts2)).toBe(1000);
+      expect(ts1.diffMs(ts2).toNumber()).toBe(1000);
     });
 
     it('should return negative diff when this is earlier', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(2000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(2000));
 
-      expect(ts1.diffMs(ts2)).toBe(-1000);
+      expect(ts1.diffMs(ts2).toNumber()).toBe(-1000);
     });
 
     it('should return zero for equal timestamps', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
 
-      expect(ts1.diffMs(ts2)).toBe(0);
+      expect(ts1.diffMs(ts2).toNumber()).toBe(0);
     });
   });
 
   describe('diffSeconds()', () => {
     it('should return diff in seconds', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(3000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(3000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
 
-      expect(ts1.diffSeconds(ts2)).toBe(2);
+      expect(ts1.diffSeconds(ts2).toNumber()).toBe(2);
     });
 
     it('should return fractional seconds', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1500));
-      const ts2 = unwrap(Timestamp.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1500));
+      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
 
-      expect(ts1.diffSeconds(ts2)).toBe(0.5);
+      expect(ts1.diffSeconds(ts2).toNumber()).toBe(0.5);
     });
 
     it('should return negative for earlier timestamp', () => {
-      const ts1 = unwrap(Timestamp.fromEpochMs(1000));
-      const ts2 = unwrap(Timestamp.fromEpochMs(3000));
+      const ts1 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts2 = unwrap(TimestampService.fromEpochMs(3000));
 
-      expect(ts1.diffSeconds(ts2)).toBe(-2);
+      expect(ts1.diffSeconds(ts2).toNumber()).toBe(-2);
     });
   });
 
   describe('toString()', () => {
     it('should return debug string with epoch ms and ISO', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1609459200000));
-      const str = ts.toString();
+      const ts = unwrap(TimestampService.fromEpochMs(1609459200000));
+      const str = TimestampFormatter.toString(ts);
 
       expect(str).toContain('1609459200000');
       expect(str).toContain('2021-01-01T00:00:00.000Z');
@@ -450,9 +443,9 @@ describe('Timestamp', () => {
 
   describe('round-trip conversions', () => {
     it('should preserve value through Date round-trip', () => {
-      const original = unwrap(Timestamp.fromEpochMs(1609459200000));
+      const original = unwrap(TimestampService.fromEpochMs(1609459200000));
       const date = original.toDate();
-      const result = Timestamp.fromDate(date);
+      const result = TimestampService.fromDate(date);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -461,9 +454,9 @@ describe('Timestamp', () => {
     });
 
     it('should preserve value through ISO round-trip', () => {
-      const original = unwrap(Timestamp.fromEpochMs(1609459200000));
+      const original = unwrap(TimestampService.fromEpochMs(1609459200000));
       const iso = original.toISO();
-      const result = Timestamp.fromISO(iso);
+      const result = TimestampService.fromISO(iso);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
