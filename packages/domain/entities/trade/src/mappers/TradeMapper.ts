@@ -43,7 +43,7 @@
  * ```
  */
 
-import { Result, Ok, Err } from '@polymarket/result';
+import { Result, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import { asVenueTradeId, asVenueId, parseAssetId, asTxHash } from '@polymarket/ids';
 import { Price, Quantity, Timestamp } from '@polymarket/value-objects';

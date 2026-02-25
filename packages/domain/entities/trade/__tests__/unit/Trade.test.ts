@@ -18,16 +18,11 @@ function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown 
 
 /**
  * Создаёт валидный AssetId для тестов
+ * Формат: OUTCOME_TOKEN:ONCHAIN:protocolId:chainId:conditionId:outcomeKey
  */
 function makeTokenId() {
-  return parseAssetId(JSON.stringify({
-    type: 'OUTCOME_TOKEN',
-    conditionRef: {
-      type: 'OFF_CHAIN',
-      conditionId: 'condition-test-123',
-    },
-    outcomeKey: 'YES',
-  }));
+  const conditionId = '0x' + 'a'.repeat(64);
+  return parseAssetId(`OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:${conditionId}:YES`);
 }
 
 /**
@@ -132,23 +127,19 @@ describe('Trade', () => {
       expect(result.ok).toBe(false);
     });
 
-    it('возвращает Err если price нулевая', () => {
-      const params = makeValidParams({ price: Price.of(new Decimal('0')) });
-      const result = Trade.create(params);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('price must be positive');
-      }
+    it('возвращает ошибку если price нулевая (Price.of бросает исключение)', () => {
+      // Price.of() сам бросает PriceInvariantViolation для значений < MIN_PRICE (0.0001)
+      // Это означает, что Trade.create() вообще не вызывается с нулевой ценой
+      expect(() => {
+        Trade.create(makeValidParams({ price: Price.of(new Decimal('0')) }));
+      }).toThrow();
     });
 
-    it('возвращает Err если price отрицательная', () => {
-      // Price.of с отрицательным может выбросить или вернуть невалидный Price
-      // Тест инварианта Trade
-      const params = makeValidParams({ price: Price.of(new Decimal('-0.1')) });
-      const result = Trade.create(params);
-
-      expect(result.ok).toBe(false);
+    it('возвращает ошибку если price отрицательная (Price.of бросает исключение)', () => {
+      // Price.of() бросает PriceInvariantViolation для отрицательных значений
+      expect(() => {
+        Trade.create(makeValidParams({ price: Price.of(new Decimal('-0.1')) }));
+      }).toThrow();
     });
 
     it('возвращает Err если size нулевой', () => {

@@ -26,11 +26,8 @@ function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown 
 // ==================== Helpers ====================
 
 function makeTokenId() {
-  return parseAssetId(JSON.stringify({
-    type: 'OUTCOME_TOKEN',
-    conditionRef: { type: 'OFF_CHAIN', conditionId: 'condition-test-123' },
-    outcomeKey: 'YES',
-  }));
+  const conditionId = '0x' + 'a'.repeat(64);
+  return parseAssetId(`OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:${conditionId}:YES`);
 }
 
 function makeAccountId() {
@@ -165,15 +162,11 @@ describe('Fill', () => {
       }
     });
 
-    it('возвращает Err если price нулевая', () => {
-      const result = Fill.create(
-        makeValidParams({ price: Price.of(new Decimal('0')) })
-      );
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('price must be positive');
-      }
+    it('возвращает ошибку если price нулевая (Price.of бросает исключение)', () => {
+      // Price.of() сам бросает PriceInvariantViolation для значений < MIN_PRICE (0.0001)
+      expect(() => {
+        Fill.create(makeValidParams({ price: Price.of(new Decimal('0')) }));
+      }).toThrow();
     });
 
     it('возвращает Err если fee отсутствует', () => {

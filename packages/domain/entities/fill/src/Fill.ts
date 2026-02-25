@@ -71,7 +71,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import type { FillId, OrderId, AccountId, VenueId, AssetId, VenueTradeId } from '@polymarket/ids';
-import { accountIdToString } from '@polymarket/ids';
+import { accountIdToString, assetIdToString } from '@polymarket/ids';
 import type { Price, Quantity, Side, Timestamp, Fee } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import type { Liquidity } from './value-objects/Liquidity.js';
@@ -397,13 +397,13 @@ export class Fill {
       accountId: accountIdToString(this.accountId),
       venueId: this.venueId,
       marketId: this.marketId,
-      tokenId: JSON.stringify(this.tokenId),
+      tokenId: assetIdToString(this.tokenId),
       price: this.price.value().toNumber(),
       size: this.size.value().toNumber(),
       side: this.side,
       timestampMs: this.timestamp.value,
       feeAmount: this.fee.quantity.amount().value().toNumber(),
-      feeAsset: JSON.stringify(this.fee.asset),
+      feeAsset: assetIdToString(this.fee.asset),
       liquidity: this.liquidity,
       venueTradeId: this.venueTradeId,
     };

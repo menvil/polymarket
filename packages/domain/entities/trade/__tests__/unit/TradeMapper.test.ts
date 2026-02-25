@@ -12,14 +12,16 @@ function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown 
 
 // ==================== Helpers ====================
 
+/**
+ * Валидный AssetId в строковом формате для тестов
+ * Формат: OUTCOME_TOKEN:ONCHAIN:protocolId:chainId:conditionId:outcomeKey
+ */
+const TEST_TOKEN_ID = `OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0x${'a'.repeat(64)}:YES`;
+
 function makeValidEvent(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
     market: '0xmarket123abc',
-    asset_id: JSON.stringify({
-      type: 'OUTCOME_TOKEN',
-      conditionRef: { type: 'OFF_CHAIN', conditionId: 'condition-test-123' },
-      outcomeKey: 'YES',
-    }),
+    asset_id: TEST_TOKEN_ID,
     price: '0.65',
     size: '100',
     side: 'BUY',
@@ -232,7 +234,7 @@ describe('TradeMapper', () => {
         id: '',
         venueId: 'POLYMARKET',
         marketId: 'market-1',
-        tokenId: '{}',
+        tokenId: TEST_TOKEN_ID,
         price: 0.65,
         size: 100,
         timestampMs: 1700000000000,
@@ -249,7 +251,7 @@ describe('TradeMapper', () => {
         id: 'valid-trade-id',
         venueId: '',
         marketId: 'market-1',
-        tokenId: '{}',
+        tokenId: TEST_TOKEN_ID,
         price: 0.65,
         size: 100,
         timestampMs: 1700000000000,

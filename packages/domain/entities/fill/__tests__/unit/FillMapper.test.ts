@@ -3,9 +3,6 @@
  */
 
 import { FillMapper } from '../../src/mappers/FillMapper';
-import { parseAssetId } from '@polymarket/ids';
-import type { Fill } from '../../src/Fill';
-import type { FillSnapshot } from '../../src/FillSnapshot';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -15,17 +12,19 @@ function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown 
 
 // ==================== Helpers ====================
 
+/**
+ * Валидный AssetId в строковом формате для тестов
+ * Формат: OUTCOME_TOKEN:ONCHAIN:protocolId:chainId:conditionId:outcomeKey
+ */
+const TEST_TOKEN_ID = `OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0x${'a'.repeat(64)}:YES`;
+
 function makeValidEvent(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
     fill_id: 'fill-123',
     order_id: 'order-456',
     account_id: 'wallet:0x1234567890abcdef1234567890abcdef12345678',
     market: '0xmarket123abc',
-    asset_id: JSON.stringify({
-      type: 'OUTCOME_TOKEN',
-      conditionRef: { type: 'OFF_CHAIN', conditionId: 'condition-test-123' },
-      outcomeKey: 'YES',
-    }),
+    asset_id: TEST_TOKEN_ID,
     price: '0.65',
     size: '50',
     side: 'BUY',
@@ -192,25 +191,19 @@ describe('FillMapper', () => {
     });
 
     it('fromSnapshot() возвращает Err для невалидного fill ID', () => {
-      const tokenId = parseAssetId(JSON.stringify({
-        type: 'OUTCOME_TOKEN',
-        conditionRef: { type: 'OFF_CHAIN', conditionId: 'condition-test-123' },
-        outcomeKey: 'YES',
-      }))!;
-
       const result = FillMapper.fromSnapshot({
         id: '',
         orderId: 'order-456',
         accountId: 'wallet:0x1234567890abcdef1234567890abcdef12345678',
         venueId: 'POLYMARKET',
         marketId: 'market-1',
-        tokenId: JSON.stringify(tokenId),
+        tokenId: TEST_TOKEN_ID,
         price: 0.65,
         size: 50,
         side: 'BUY',
         timestampMs: 1700000000000,
         feeAmount: 0,
-        feeAsset: JSON.stringify(tokenId),
+        feeAsset: TEST_TOKEN_ID,
       });
 
       expect(result.ok).toBe(false);
@@ -220,25 +213,19 @@ describe('FillMapper', () => {
     });
 
     it('fromSnapshot() возвращает Err для невалидного order ID', () => {
-      const tokenId = parseAssetId(JSON.stringify({
-        type: 'OUTCOME_TOKEN',
-        conditionRef: { type: 'OFF_CHAIN', conditionId: 'condition-test-123' },
-        outcomeKey: 'YES',
-      }))!;
-
       const result = FillMapper.fromSnapshot({
         id: 'valid-fill-id',
         orderId: '',
         accountId: 'wallet:0x1234567890abcdef1234567890abcdef12345678',
         venueId: 'POLYMARKET',
         marketId: 'market-1',
-        tokenId: JSON.stringify(tokenId),
+        tokenId: TEST_TOKEN_ID,
         price: 0.65,
         size: 50,
         side: 'BUY',
         timestampMs: 1700000000000,
         feeAmount: 0,
-        feeAsset: JSON.stringify(tokenId),
+        feeAsset: TEST_TOKEN_ID,
       });
 
       expect(result.ok).toBe(false);

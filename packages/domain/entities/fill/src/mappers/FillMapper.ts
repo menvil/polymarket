@@ -40,7 +40,7 @@
  * ```
  */
 
-import { Result, Ok, Err } from '@polymarket/result';
+import { Result, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import {
   asFillId,

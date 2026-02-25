@@ -53,6 +53,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import type { VenueTradeId, VenueId, AssetId, TxHash } from '@polymarket/ids';
+import { assetIdToString } from '@polymarket/ids';
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import type { TradeSnapshot } from './TradeSnapshot.js';
@@ -336,7 +337,7 @@ export class Trade {
       id: this.id,
       venueId: this.venueId,
       marketId: this.marketId,
-      tokenId: JSON.stringify(this.tokenId),
+      tokenId: assetIdToString(this.tokenId),
       price: this.price.value().toNumber(),
       size: this.size.value().toNumber(),
       aggressorSide: this.aggressorSide,
