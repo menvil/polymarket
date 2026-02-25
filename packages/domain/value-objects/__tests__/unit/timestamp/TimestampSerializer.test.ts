@@ -3,13 +3,13 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Timestamp, TimestampSerializer } from '../../../src/timestamp/index.js';
+import { Timestamp, TimestampService, TimestampSerializer } from '../../../src/timestamp/index.js';
 import { unwrap } from '@polymarket/result/unsafe';
 
 describe('TimestampSerializer', () => {
   describe('toJSON()', () => {
     it('should serialize Timestamp to epoch ms number', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1609459200000));
+      const ts = unwrap(TimestampService.fromEpochMs(1609459200000));
       const json = TimestampSerializer.toJSON(ts);
 
       expect(json).toBe(1609459200000);
@@ -31,7 +31,7 @@ describe('TimestampSerializer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.value).toBe(1609459200000);
+        expect(result.value.value().toNumber()).toBe(1609459200000);
       }
     });
 
@@ -61,7 +61,7 @@ describe('TimestampSerializer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.value).toBe(1609459200000);
+        expect(result.value.value().toNumber()).toBe(1609459200000);
       }
     });
 
@@ -99,7 +99,7 @@ describe('TimestampSerializer', () => {
 
   describe('round-trip', () => {
     it('should preserve value through serialization round-trip', () => {
-      const original = unwrap(Timestamp.fromEpochMs(1609459200000));
+      const original = unwrap(TimestampService.fromEpochMs(1609459200000));
       const json = TimestampSerializer.toJSON(original);
       const result = TimestampSerializer.fromJSON(json);
 

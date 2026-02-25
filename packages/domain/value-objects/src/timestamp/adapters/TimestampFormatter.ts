@@ -105,7 +105,7 @@ export class TimestampFormatter {
    * ```
    */
   public static toEpochMs(timestamp: Timestamp): string {
-    return String(timestamp.value);
+    return timestamp.value().toString();
   }
 
   /**

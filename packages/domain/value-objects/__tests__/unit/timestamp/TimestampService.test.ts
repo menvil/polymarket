@@ -13,7 +13,7 @@ describe('TimestampService', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.value).toBe(1609459200000);
+        expect(result.value.value().toNumber()).toBe(1609459200000);
       }
     });
 
@@ -45,7 +45,8 @@ describe('TimestampService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.op).toBe('fromDate');
+        // fromDate delegates to fromEpochMs
+        expect(result.error.context?.op).toBe('fromEpochMs');
       }
     });
   });
@@ -76,8 +77,8 @@ describe('TimestampService', () => {
       const ts = TimestampService.now();
       const after = Date.now();
 
-      expect(ts.value).toBeGreaterThanOrEqual(before);
-      expect(ts.value).toBeLessThanOrEqual(after);
+      expect(ts.value().toNumber()).toBeGreaterThanOrEqual(before);
+      expect(ts.value().toNumber()).toBeLessThanOrEqual(after);
     });
   });
 
@@ -88,7 +89,7 @@ describe('TimestampService', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.value).toBe(ts.value + 60000);
+        expect(result.value.value().toNumber()).toBe(ts.value().toNumber() + 60000);
       }
     });
 
@@ -110,7 +111,7 @@ describe('TimestampService', () => {
 
       const diff = TimestampService.diffMs(ts1, ts2);
 
-      expect(diff).toBe(1000);
+      expect(diff.toNumber()).toBe(1000);
     });
   });
 
@@ -121,7 +122,7 @@ describe('TimestampService', () => {
 
       const diff = TimestampService.diffSeconds(ts1, ts2);
 
-      expect(diff).toBe(2);
+      expect(diff.toNumber()).toBe(2);
     });
   });
 });
