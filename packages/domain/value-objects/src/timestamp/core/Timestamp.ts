@@ -40,7 +40,7 @@
 import Decimal from 'decimal.js';
 import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
 import { TimestampInvariantViolation } from './TimestampInvariantViolation.js';
-import { addDecimal, subtractDecimal, divideDecimal } from '@polymarket/math/decimal';
+import { addDecimal, subtractDecimal, divideDecimal } from '@polymarket/math';
 import type { IClock } from '@polymarket/time';
 
 /**
