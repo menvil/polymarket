@@ -214,7 +214,7 @@ export class PositionLot {
    * ```
    */
   public getNotional(): number {
-    return this.quantity.value * this.entryPrice.value;
+    return this.quantity.value().toNumber() * this.entryPrice.value().toNumber();
   }
 
   /**
@@ -229,9 +229,9 @@ export class PositionLot {
    * ```
    */
   public toString(): string {
-    const qtyStr = this.quantity.value.toFixed(2);
-    const priceStr = this.entryPrice.value.toFixed(4);
-    const timeStr = new Date(this.timestamp.toEpochMs()).toISOString();
+    const qtyStr = this.quantity.value().toFixed(2);
+    const priceStr = this.entryPrice.value().toFixed(4);
+    const timeStr = new Date(this.timestamp.value).toISOString();
     return `${qtyStr} @ ${priceStr} (${timeStr})`;
   }
 
@@ -254,10 +254,10 @@ export class PositionLot {
     fee?: number;
   } {
     return {
-      quantity: this.quantity.value,
-      entryPrice: this.entryPrice.value,
-      timestamp: this.timestamp.toEpochMs(),
-      fee: this.fee?.value,
+      quantity: this.quantity.value().toNumber(),
+      entryPrice: this.entryPrice.value().toNumber(),
+      timestamp: this.timestamp.value,
+      fee: this.fee?.quantity.amount().value().toNumber(),
     };
   }
 }

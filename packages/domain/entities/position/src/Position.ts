@@ -124,7 +124,7 @@ export class Position {
     this.timestamp = params.timestamp;
     this.lots = params.lots;
     this.realizedPnL = params.realizedPnL || Quantity.ZERO;
-    this.fees = params.fees || Fee.zero();
+    this.fees = params.fees || Fee.zero(params.asset);
   }
 
   /**
@@ -281,10 +281,10 @@ export class Position {
       side: this.side,
       quantity: this.quantity.value().toNumber(),
       averageEntryPrice: this.averageEntryPrice.value().toNumber(),
-      timestamp: this.timestamp.toEpochMs(),
+      timestamp: this.timestamp.value,
       status: this.getStatus(),
       realizedPnL: this.realizedPnL.value().toNumber(),
-      fees: this.fees.toJSON(),
+      fees: this.fees.quantity.amount().value().toNumber(),
       lotsCount: this.lots.length,
     };
   }

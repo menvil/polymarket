@@ -112,7 +112,7 @@ export function closeFIFO(
 
   // Сортируем лоты по timestamp (старые первые)
   const sortedLots = [...position.lots].sort((a, b) =>
-    a.timestamp.toEpochMs() - b.timestamp.toEpochMs()
+    a.timestamp.value - b.timestamp.value
   );
 
   // Закрываем лоты по алгоритму FIFO
@@ -172,7 +172,7 @@ export function closeLIFO(
 
   // Сортируем лоты по timestamp (новые первые)
   const sortedLots = [...position.lots].sort((a, b) =>
-    b.timestamp.toEpochMs() - a.timestamp.toEpochMs()
+    b.timestamp.value - a.timestamp.value
   );
 
   // Закрываем лоты по алгоритму LIFO
