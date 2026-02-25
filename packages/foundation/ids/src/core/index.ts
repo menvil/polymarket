@@ -89,3 +89,7 @@ export {
   isCurrencyAsset,
   isOutcomeTokenAsset,
 } from './AssetId.js';
+
+// Blockchain
+export type { TxHash } from './TxHash.js';
+export { asTxHash, unsafeTxHash } from './TxHash.js';
