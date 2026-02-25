@@ -46,10 +46,8 @@ import {
   asFillId,
   asOrderId,
   parseAccountId,
-  accountIdToString,
   asVenueId,
   parseAssetId,
-  assetIdToString,
   asVenueTradeId,
   asTxHash,
 } from '@polymarket/ids';
@@ -165,16 +163,14 @@ export class FillMapper {
       );
     }
 
-    const accountIdResult = parseAccountId(accountIdRaw.trim());
-    if (!accountIdResult.ok) {
+    const accountId = parseAccountId(accountIdRaw.trim());
+    if (!accountId) {
       return Err(
-        new ValidationError(`Invalid orderExecutionEvent: invalid account_id: ${accountIdResult.error.message}`, {
+        new ValidationError('Invalid orderExecutionEvent: invalid account_id format', {
           context: { field: 'account_id', value: accountIdRaw },
         })
       );
     }
-
-    const accountId = accountIdResult.value;
 
     // Извлечь marketId
     const marketId = raw['market'];
@@ -433,10 +429,10 @@ export class FillMapper {
       );
     }
 
-    const accountIdResult = parseAccountId(snapshot.accountId);
-    if (!accountIdResult.ok) {
+    const accountIdParsed = parseAccountId(snapshot.accountId);
+    if (!accountIdParsed) {
       return Err(
-        new ValidationError(`Invalid snapshot: invalid account ID: ${accountIdResult.error.message}`, {
+        new ValidationError('Invalid snapshot: invalid account ID format', {
           context: { field: 'accountId', value: snapshot.accountId },
         })
       );
@@ -536,7 +532,7 @@ export class FillMapper {
     return Fill.create({
       id: fillId,
       orderId,
-      accountId: accountIdResult.value,
+      accountId: accountIdParsed,
       venueId,
       marketId: snapshot.marketId,
       tokenId,
@@ -551,5 +547,3 @@ export class FillMapper {
   }
 }
 
-// Экспорт вспомогательных функций для использования в тестах
-export { accountIdToString, assetIdToString };
