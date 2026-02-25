@@ -8,16 +8,20 @@ import { Ratio } from '../../../../src/ratio/core/Ratio.js';
 import { QuoteErrorReason } from '../../../../src/quote/errors/QuoteErrorReason.js';
 import { InvalidQuoteError } from '@polymarket/errors';
 import { KnownMarketDataSources, asInstrumentId } from '@polymarket/ids';
+import { TimestampService } from '../../../../src/timestamp/index.js';
 
 describe('QuoteService Ratio Operations', () => {
   // Helper: создать Quote из чисел
   const createQuote = (bidPrice: number, askPrice: number, bidSize = 100, askSize = 100): Quote => {
+    const timestampResult = TimestampService.fromEpochMs(Date.now());
+    if (!timestampResult.ok) throw new Error('Failed to create timestamp');
+
     return Quote.of(
       Price.of(new Decimal(bidPrice)),
       Price.of(new Decimal(askPrice)),
       Quantity.of(new Decimal(bidSize)),
       Quantity.of(new Decimal(askSize)),
-      new Decimal(Date.now()),
+      timestampResult.value,
       KnownMarketDataSources.POLYMARKET_WS,
       asInstrumentId('TEST_INSTRUMENT')!
     );
