@@ -29,10 +29,10 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import type { Quantity, Price } from '@polymarket/value-objects';
+import { Quantity, Price } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
-import type { Position } from '../Position.js';
-import type { PositionLot } from '../Position.js';
+import { Position } from '../Position.js';
+import { PositionLot } from '../core/PositionLot.js';
 
 /**
  * Результат закрытия позиции
@@ -107,7 +107,7 @@ export function closeFIFO(
   // Валидация входных параметров
   const validation = validateCloseParams(position, closeQuantity);
   if (!validation.ok) {
-    return validation;
+    return Err(validation.error);
   }
 
   // Сортируем лоты по timestamp (старые первые)
@@ -167,7 +167,7 @@ export function closeLIFO(
   // Валидация входных параметров
   const validation = validateCloseParams(position, closeQuantity);
   if (!validation.ok) {
-    return validation;
+    return Err(validation.error);
   }
 
   // Сортируем лоты по timestamp (новые первые)
@@ -293,10 +293,7 @@ function closeLots(
 
       // Создаем новый лот с оставшимся количеством
       const remainingLotQuantity = lotSize.minus(remaining);
-      newLots.push({
-        ...lot,
-        quantity: Quantity.of(remainingLotQuantity),
-      });
+      newLots.push(lot.withQuantity(Quantity.of(remainingLotQuantity)));
 
       remaining = new Decimal(0);
     }
@@ -321,15 +318,11 @@ function closeLots(
   });
 
   if (!newPositionResult.ok) {
-    return Err(
-      new ValidationError(`Failed to create new position: ${newPositionResult.error.message}`, {
-        context: { positionId: position.id },
-      })
-    );
+    return newPositionResult;
   }
 
   return Ok({
-    newPosition: newPositionResult.value(),
+    newPosition: newPositionResult.value,
     realizedPnL: Quantity.of(totalRealizedPnL),
     closedLots,
   });

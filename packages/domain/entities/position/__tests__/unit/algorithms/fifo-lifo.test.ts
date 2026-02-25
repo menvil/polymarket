@@ -10,7 +10,8 @@ import {
   validateLotsConsistency,
 } from '../../../src/algorithms/fifo-lifo.js';
 import { Position } from '../../../src/Position.js';
-import type { PositionParams, PositionLot } from '../../../src/Position.js';
+import type { PositionParams } from '../../../src/Position.js';
+import { PositionLot } from '../../../src/core/PositionLot.js';
 import { Quantity, Price, Timestamp, Fee } from '@polymarket/value-objects';
 import { asPositionId, asAccountId, asInstrumentId, asAssetId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
@@ -21,7 +22,7 @@ describe('FIFO/LIFO Algorithms', () => {
     quantity: number,
     price: number,
     timestampMs: number
-  ): PositionLot => ({
+  ): PositionLot => PositionLot.create({
     quantity: Quantity.of(new Decimal(quantity)),
     entryPrice: Price.of(new Decimal(price)),
     timestamp: Timestamp.fromEpochMs(timestampMs),

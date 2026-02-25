@@ -48,9 +48,11 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import type { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
 import { ValidationError } from '@polymarket/errors';
 import type { PositionId, AccountId, InstrumentId, AssetId } from '@polymarket/ids';
+import { PositionLot } from './core/PositionLot.js';
+import Decimal from 'decimal.js';
 
 /**
  * Сторона позиции
@@ -70,20 +72,6 @@ export type PositionSide = 'LONG' | 'SHORT';
  * - CLOSED - полностью закрыта
  */
 export type PositionStatus = 'OPEN' | 'PARTIALLY_CLOSED' | 'CLOSED';
-
-/**
- * Лот позиции (для FIFO/LIFO)
- *
- * @remarks
- * Представляет отдельный вход в позицию.
- * Используется для расчета P&L при частичном закрытии.
- */
-export interface PositionLot {
-  readonly quantity: Quantity;
-  readonly entryPrice: Price;
-  readonly timestamp: Timestamp;
-  readonly fee?: Fee;
-}
 
 /**
  * Параметры создания Position
