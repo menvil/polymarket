@@ -5,7 +5,7 @@
 import { Price, Quantity } from '@polymarket/value-objects';
 import { Order } from '../../src/Order';
 import { OrderFill } from '../../src/value-objects/OrderFill';
-import type { Trade } from '../../Trade';
+import type { FillForOrder } from '../../types/OrderChange';
 
 // Helper для создания валидного Order
 function createValidOrder(overrides?: Partial<Parameters<typeof Order.create>[0]>) {
@@ -23,17 +23,16 @@ function createValidOrder(overrides?: Partial<Parameters<typeof Order.create>[0]
   return Order.create({ ...defaults, ...overrides });
 }
 
-// Helper для создания Trade object
-function createTrade(overrides?: Partial<Trade>): Trade {
-  const defaults: Trade = {
-    id: 'trade-1',
+// Helper для создания FillForOrder object
+function createFill(overrides?: Partial<FillForOrder>): FillForOrder {
+  const defaults: FillForOrder = {
+    id: 'fill-1',
+    orderId: 'order-123',
     marketId: 'market-1',
     tokenId: 'token-yes',
     side: 'BUY' as const,
-    orderId: 'order-123',
     size: Quantity.fromValue(30).value!,
     price: Price.fromValue(0.65).value!,
-    timestamp: new Date(),
   };
 
   return { ...defaults, ...overrides };
@@ -222,11 +221,11 @@ describe('Order', () => {
       expect(percentage.toNumber()).toBe(30);
     });
 
-    it('getTradeCount() should return number of trades', () => {
+    it('getTradeCount() should return number of fills', () => {
       const fill = OrderFill.create(
         Quantity.fromValue(30).value!,
         Price.fromValue(0.65).value!,
-        ['trade-1', 'trade-2'],
+        ['fill-1', 'fill-2'],
         Quantity.fromValue(100).value!
       ).value!;
 
@@ -234,17 +233,17 @@ describe('Order', () => {
       expect(order.getTradeCount()).toBe(2);
     });
 
-    it('hasTrade() should check for trade existence', () => {
+    it('hasFill() should check for fill existence', () => {
       const fill = OrderFill.create(
         Quantity.fromValue(30).value!,
         Price.fromValue(0.65).value!,
-        ['trade-1'],
+        ['fill-1'],
         Quantity.fromValue(100).value!
       ).value!;
 
       const order = createValidOrder({ fill }).value!;
-      expect(order.hasTrade('trade-1')).toBe(true);
-      expect(order.hasTrade('trade-2')).toBe(false);
+      expect(order.hasFill('fill-1')).toBe(true);
+      expect(order.hasFill('fill-2')).toBe(false);
     });
   });
 
@@ -348,12 +347,12 @@ describe('Order', () => {
       });
     });
 
-    describe('applyTrade()', () => {
+    describe('applyFill()', () => {
       it('should transition OPEN → PARTIALLY_FILLED for partial fill', () => {
         const order = createValidOrder({ status: 'OPEN' }).value!;
-        const trade = createTrade({ size: Quantity.fromValue(30).value! });
+        const fill = createFill({ size: Quantity.fromValue(30).value! });
 
-        const result = order.applyTrade(trade);
+        const result = order.applyFill(fill);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -365,9 +364,9 @@ describe('Order', () => {
 
       it('should transition OPEN → FILLED for complete fill', () => {
         const order = createValidOrder({ status: 'OPEN' }).value!;
-        const trade = createTrade({ size: Quantity.fromValue(100).value! });
+        const fill = createFill({ size: Quantity.fromValue(100).value! });
 
-        const result = order.applyTrade(trade);
+        const result = order.applyFill(fill);
 
         expect(result.ok).toBe(true);
         if (result.ok) {
@@ -377,87 +376,87 @@ describe('Order', () => {
         }
       });
 
-      it('should accumulate multiple trades', () => {
+      it('should accumulate multiple fills', () => {
         let order = createValidOrder({ status: 'OPEN' }).value!;
 
-        // Trade 1: 30 units
-        const trade1 = createTrade({ id: 'trade-1', size: Quantity.fromValue(30).value! });
-        const result1 = order.applyTrade(trade1);
+        // Fill 1: 30 units
+        const fill1 = createFill({ id: 'fill-1', size: Quantity.fromValue(30).value! });
+        const result1 = order.applyFill(fill1);
         expect(result1.ok).toBe(true);
         order = result1.value!;
         expect(order.status).toBe('PARTIALLY_FILLED');
         expect(order.fill.getFilledSize().value).toBe(30);
 
-        // Trade 2: 20 units
-        const trade2 = createTrade({ id: 'trade-2', size: Quantity.fromValue(20).value! });
-        const result2 = order.applyTrade(trade2);
+        // Fill 2: 20 units
+        const fill2 = createFill({ id: 'fill-2', size: Quantity.fromValue(20).value! });
+        const result2 = order.applyFill(fill2);
         expect(result2.ok).toBe(true);
         order = result2.value!;
         expect(order.status).toBe('PARTIALLY_FILLED');
         expect(order.fill.getFilledSize().value).toBe(50);
 
-        // Trade 3: 50 units (completes)
-        const trade3 = createTrade({ id: 'trade-3', size: Quantity.fromValue(50).value! });
-        const result3 = order.applyTrade(trade3);
+        // Fill 3: 50 units (completes)
+        const fill3 = createFill({ id: 'fill-3', size: Quantity.fromValue(50).value! });
+        const result3 = order.applyFill(fill3);
         expect(result3.ok).toBe(true);
         order = result3.value!;
         expect(order.status).toBe('FILLED');
         expect(order.fill.getFilledSize().value).toBe(100);
       });
 
-      it('should fail for duplicate trade ID', () => {
+      it('should fail for duplicate fill ID', () => {
         let order = createValidOrder({ status: 'OPEN' }).value!;
 
-        const trade1 = createTrade({ id: 'trade-1', size: Quantity.fromValue(30).value! });
-        const result1 = order.applyTrade(trade1);
+        const fill1 = createFill({ id: 'fill-1', size: Quantity.fromValue(30).value! });
+        const result1 = order.applyFill(fill1);
         expect(result1.ok).toBe(true);
         order = result1.value!;
 
-        // Try same trade ID again
-        const trade2 = createTrade({ id: 'trade-1', size: Quantity.fromValue(20).value! });
-        const result2 = order.applyTrade(trade2);
+        // Try same fill ID again
+        const fill2 = createFill({ id: 'fill-1', size: Quantity.fromValue(20).value! });
+        const result2 = order.applyFill(fill2);
         expect(result2.ok).toBe(false);
       });
 
-      it('should fail if trade exceeds remaining size', () => {
+      it('should fail if fill exceeds remaining size', () => {
         const order = createValidOrder({ status: 'OPEN' }).value!;
-        const trade = createTrade({ size: Quantity.fromValue(150).value! }); // Exceeds order size 100
+        const fill = createFill({ size: Quantity.fromValue(150).value! }); // Exceeds order size 100
 
-        const result = order.applyTrade(trade);
+        const result = order.applyFill(fill);
         expect(result.ok).toBe(false);
       });
 
       it('should fail for terminal status', () => {
         const order = createValidOrder({ status: 'FILLED' }).value!;
-        const trade = createTrade();
+        const fill = createFill();
 
-        const result = order.applyTrade(trade);
+        const result = order.applyFill(fill);
         expect(result.ok).toBe(false);
       });
     });
 
-    describe('canAcceptTrade()', () => {
-      it('should validate trade without applying it', () => {
+    describe('canAcceptFill()', () => {
+      it('should validate fill without applying it', () => {
         const order = createValidOrder({ status: 'OPEN' }).value!;
-        const validTrade = createTrade({ size: Quantity.fromValue(30).value! });
-        const invalidTrade = createTrade({ size: Quantity.fromValue(150).value! });
+        const validFill = createFill({ size: Quantity.fromValue(30).value! });
+        const invalidFill = createFill({ size: Quantity.fromValue(150).value! });
 
-        expect(order.canAcceptTrade(validTrade)).toBe(true);
-        expect(order.canAcceptTrade(invalidTrade)).toBe(false);
+        expect(order.canAcceptFill(validFill)).toBe(true);
+        expect(order.canAcceptFill(invalidFill)).toBe(false);
       });
 
-      it('should reject trade with mismatched marketId', () => {
+      it('should reject fill with mismatched orderId', () => {
         const order = createValidOrder({ status: 'OPEN' }).value!;
-        const trade = createTrade({ marketId: 'wrong-market' });
+        const fill = createFill({ orderId: 'wrong-order' });
 
-        expect(order.canAcceptTrade(trade)).toBe(false);
+        expect(order.canAcceptFill(fill)).toBe(false);
       });
 
-      it('should reject trade with mismatched side', () => {
+      it('should reject fill with mismatched side', () => {
         const order = createValidOrder({ status: 'OPEN', side: 'BUY' }).value!;
-        const trade = createTrade({ side: 'SELL' });
+        const fill = createFill({ side: 'SELL' });
 
-        expect(order.canAcceptTrade(trade)).toBe(false);
+        expect(order.canAcceptFill(fill)).toBe(false);
       });
     });
   });

@@ -25,10 +25,10 @@ export {
   canReject,
   canCancel,
   canExpire,
-  canApplyTrade,
-  canAcceptTradeDetailed,
+  canApplyFill,
+  canAcceptFillDetailed,
   requiresReason,
-  type TradeValidationParams,
+  type FillValidationParams,
 } from './guards';
 
 export {
@@ -36,7 +36,7 @@ export {
   handleRejected,
   handleCancelled,
   handleExpired,
-  handleTradeApplied,
+  handleFillApplied,
   type OrderData,
-  type TradeParams,
+  type FillData,
 } from './handlers';

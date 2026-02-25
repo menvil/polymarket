@@ -43,7 +43,7 @@ import { CancelReason, RejectReason, ExpireReason } from '../value-objects';
 import { OrderFill } from '../value-objects/OrderFill';
 import type { Quantity, Price, Timestamp } from '@polymarket/value-objects';
 import type { OrderId, AccountId, VenueId, InstrumentId, AssetId } from '@polymarket/ids';
-import { canAccept, canReject, canCancel, canExpire, canApplyTrade } from './guards';
+import { canAccept, canReject, canCancel, canExpire, canApplyFill } from './guards';
 
 /**
  * Данные Order для handlers
@@ -245,23 +245,27 @@ export function handleExpired(order: OrderData, reason?: ExpireReason): Result<O
 }
 
 /**
- * Параметры trade для применения к заявке
+ * Данные Fill для применения к заявке
+ *
+ * @remarks
+ * orderId всегда обязателен — Fill без orderId не существует.
+ * Это отличает Fill от старой концепции Trade (где orderId был опциональным).
  */
-export interface TradeParams {
+export interface FillData {
   readonly id: string;
+  readonly orderId: string;
   readonly marketId: string;
   readonly tokenId: string;
   readonly side: string;
-  readonly orderId: string | undefined;
   readonly size: Quantity;
   readonly price: Price;
 }
 
 /**
- * Обрабатывает применение trade к заявке
+ * Обрабатывает применение fill исполнения к заявке
  *
  * @param order - Текущие данные заявки
- * @param trade - Параметры trade
+ * @param fill - Данные исполнения
  * @returns Result<OrderData, Error> с обновленным fill и статусом
  *
  * @remarks
@@ -269,90 +273,90 @@ export interface TradeParams {
  * - OPEN → PARTIALLY_FILLED (если остаток > 0)
  * - OPEN или PARTIALLY_FILLED → FILLED (если остаток = 0)
  *
- * Это единственный способ fill заявки. Fill всегда происходит из-за trade.
+ * Это единственный способ fill заявки.
  *
  * Валидация:
  * 1. Статус OPEN или PARTIALLY_FILLED
- * 2. trade.marketId === order.marketId
- * 3. trade.tokenId === order.tokenId
- * 4. trade.side === order.side
- * 5. trade.orderId === order.id (или undefined для FIFO)
- * 6. trade.size <= remainingSize
- * 7. Нет дубликата trade.id
+ * 2. fill.marketId === order.marketId
+ * 3. fill.tokenId === order.tokenId
+ * 4. fill.side === order.side
+ * 5. fill.orderId === order.id (orderId всегда обязателен в Fill)
+ * 6. fill.size <= remainingSize
+ * 7. Нет дубликата fill.id
  *
  * Обновление:
- * - fill обновляется через OrderFill.addTrade()
+ * - fill обновляется через OrderFill.addFill()
  * - status → PARTIALLY_FILLED или FILLED
  *
  * @example
  * ```typescript
- * const tradeParams = {
- *   id: 'trade-1',
+ * const fillData = {
+ *   id: 'fill-1',
+ *   orderId: 'order-123',
  *   marketId: 'market-1',
  *   tokenId: 'token-yes',
  *   side: 'BUY',
- *   orderId: 'order-123',
  *   size: Quantity(30),
  *   price: Price(0.65)
  * };
  *
- * const result = handleTradeApplied(orderData, tradeParams);
+ * const result = handleFillApplied(orderData, fillData);
  * if (result.ok) {
  *   console.log(result.value.status); // 'PARTIALLY_FILLED' или 'FILLED'
  *   console.log(result.value.fill.getFilledSize().value); // 30
  * }
  * ```
  */
-export function handleTradeApplied(
+export function handleFillApplied(
   order: OrderData,
-  trade: TradeParams
+  fill: FillData
 ): Result<OrderData, Error> {
   // Валидация 1: Статус должен быть OPEN или PARTIALLY_FILLED
-  if (!canApplyTrade(order.status)) {
+  if (!canApplyFill(order.status)) {
     return Err(
       new Error(
-        `Cannot apply trade to order with status ${order.status.type}. Only OPEN or PARTIALLY_FILLED orders can accept trades.`
+        `Cannot apply fill to order with status ${order.status.type}. Only OPEN or PARTIALLY_FILLED orders can accept fills.`
       )
     );
   }
 
   // Валидация 2: marketId должен совпадать
-  if (trade.marketId !== order.marketId) {
+  if (fill.marketId !== order.marketId) {
     return Err(
       new Error(
-        `Trade marketId (${trade.marketId}) does not match order marketId (${order.marketId})`
+        `Fill marketId (${fill.marketId}) does not match order marketId (${order.marketId})`
       )
     );
   }
 
   // Валидация 3: tokenId должен совпадать
-  if (trade.tokenId !== order.tokenId) {
+  if (fill.tokenId !== order.tokenId) {
     return Err(
       new Error(
-        `Trade tokenId (${trade.tokenId}) does not match order tokenId (${order.tokenId})`
+        `Fill tokenId (${fill.tokenId}) does not match order tokenId (${order.tokenId})`
       )
     );
   }
 
   // Валидация 4: side должна совпадать
-  if (trade.side !== order.side) {
+  if (fill.side !== order.side) {
     return Err(
-      new Error(`Trade side (${trade.side}) does not match order side (${order.side})`)
+      new Error(`Fill side (${fill.side}) does not match order side (${order.side})`)
     );
   }
 
-  // Валидация 5: orderId должен совпадать (или быть undefined для FIFO)
-  if (trade.orderId !== undefined && trade.orderId !== order.id) {
+  // Валидация 5: orderId должен совпадать (Fill.orderId всегда обязателен)
+  if (fill.orderId !== order.id) {
     return Err(
-      new Error(`Trade orderId (${trade.orderId}) does not match this order id (${order.id})`)
+      new Error(`Fill orderId (${fill.orderId}) does not match this order id (${order.id})`)
     );
   }
 
-  // Применить trade к fill
-  const newFillResult = order.fill.addTrade(trade.size, trade.price, trade.id, order.size);
+  // Применить fill к OrderFill
+  const newFillResult = order.fill.addFill(fill.size, fill.price, fill.id, order.size);
 
   if (!newFillResult.ok) {
-    return Err(new Error(`Failed to apply trade: ${newFillResult.error.message}`));
+    return Err(new Error(`Failed to apply fill: ${newFillResult.error.message}`));
   }
 
   const newFill = newFillResult.value;

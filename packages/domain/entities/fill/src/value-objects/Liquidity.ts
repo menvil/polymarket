@@ -48,7 +48,7 @@ export type Liquidity = 'MAKER' | 'TAKER';
  * }
  * ```
  */
-export const ALL_LIQUIDITY: readonly Liquidity[] = ['MAKER', 'TAKER'] as const;
+export const ALL_LIQUIDITY: readonly Liquidity[] = Object.freeze(['MAKER', 'TAKER'] as const);
 
 /**
  * Type guard для Liquidity

@@ -76,8 +76,8 @@ export class OrderViewModel {
       fill: {
         filledSize: order.fill.getFilledSize().value,
         averageFillPrice: order.fill.getAverageFillPrice()?.value,
-        tradeIds: Array.from(order.fill.getTradeIds()),
-        tradeCount: order.fill.getTradeCount(),
+        fillIds: Array.from(order.fill.getFillIds()),
+        fillCount: order.fill.getTradeCount(),
       },
       reason: order.reason,
       // Вычисляемые поля

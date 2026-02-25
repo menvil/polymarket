@@ -58,8 +58,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import { ValidationError } from '@polymarket/errors';
 import type { OrderId, AccountId, VenueId, InstrumentId, AssetId } from '@polymarket/ids';
-import type { Trade } from '../Trade';
-import type { OrderChange } from '../types/OrderChange';
+import type { OrderChange, FillForOrder } from '../types/OrderChange';
 import type { OrderStatus } from './value-objects/OrderStatus';
 import { OrderFill } from './value-objects/OrderFill';
 import { OrderFSM } from './transitions/OrderFSM';
@@ -299,7 +298,7 @@ export class Order {
     const fillValidation = OrderFill.create(
       params.fill.getFilledSize(),
       params.fill.getAverageFillPrice(),
-      Array.from(params.fill.getTradeIds()),
+      Array.from(params.fill.getFillIds()),
       params.size
     );
     if (!fillValidation.ok) {
@@ -418,32 +417,33 @@ export class Order {
   }
 
   /**
-   * Проверяет, был ли применен конкретный trade
+   * Проверяет, был ли применен конкретный fill
+   *
+   * @param fillId - ID fill для проверки
+   * @returns True если fill был применен
    */
-  public hasTrade(tradeId: string): boolean {
-    return this.fill.hasTrade(tradeId);
+  public hasFill(fillId: string): boolean {
+    return this.fill.hasFill(fillId);
   }
 
   /**
-   * Проверяет, может ли заявка принять данный trade (pre-validation)
+   * Проверяет, может ли заявка принять данный fill (pre-validation)
    *
-   * @param trade - Trade для проверки
-   * @returns True если trade может быть применен
+   * @param fill - Fill для проверки
+   * @returns True если fill может быть применен
    *
    * @remarks
    * Быстрая проверка без создания нового Order.
-   * Полезно для фильтрации trades до вызова applyTrade().
+   * Полезно для фильтрации fills до вызова applyFill().
+   * Fill.orderId всегда обязателен — явная проверка совпадения с order.id.
    */
-  public canAcceptTrade(trade: Trade): boolean {
-    // Проверяем через guards
+  public canAcceptFill(fill: FillForOrder): boolean {
     return (
-      canCancel(this.status) && // можно апплаить trade если можно и cancel
-      trade.marketId === this.marketId &&
-      trade.tokenId === this.tokenId &&
-      trade.side === this.side &&
-      (trade.orderId === undefined || trade.orderId === this.id) &&
-      trade.size.value() <= this.getRemainingSize().value() &&
-      !this.hasTrade(trade.id)
+      canCancel(this.status) &&
+      fill.orderId === this.id &&
+      fill.side === this.side &&
+      fill.size.value().lte(this.getRemainingSize().value()) &&
+      !this.hasFill(fill.id)
     );
   }
 
@@ -523,18 +523,20 @@ export class Order {
   }
 
   /**
-   * Применить trade к заявке
+   * Применить fill исполнения к заявке
    *
-   * @param trade - Trade объект
+   * @param fill - Fill данные исполнения
    * @returns Result<Order, ValidationError>
    *
    * @remarks
    * Переходы:
    * - OPEN → PARTIALLY_FILLED (если остаток > 0)
    * - OPEN или PARTIALLY_FILLED → FILLED (если остаток = 0)
+   *
+   * Fill.orderId всегда обязателен — связь с ордером явная.
    */
-  public applyTrade(trade: Trade): Result<Order, ValidationError> {
-    const change: OrderChange = { type: 'TRADE_APPLIED', trade };
+  public applyFill(fill: FillForOrder): Result<Order, ValidationError> {
+    const change: OrderChange = { type: 'FILL_APPLIED', fill };
     return this._transition(change);
   }
 

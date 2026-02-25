@@ -17,7 +17,7 @@
  *
  * @example
  * ```typescript
- * import { canAccept, canCancel, canAcceptTrade } from './guards';
+ * import { canAccept, canCancel, canApplyFill } from './guards';
  *
  * if (canAccept(order.status)) {
  *   const result = order.accept();
@@ -133,10 +133,10 @@ export function canExpire(status: OrderStatus): boolean {
 }
 
 /**
- * Проверяет, может ли заявка принять trade (быть исполненной)
+ * Проверяет, может ли заявка принять fill исполнения
  *
  * @param status - Текущий статус заявки
- * @returns True если заявка может принять trade
+ * @returns True если заявка может принять fill
  *
  * @remarks
  * Переходы:
@@ -149,20 +149,20 @@ export function canExpire(status: OrderStatus): boolean {
  *
  * @example
  * ```typescript
- * console.log(canApplyTrade('OPEN'));              // true
- * console.log(canApplyTrade('PARTIALLY_FILLED'));  // true
- * console.log(canApplyTrade('PENDING'));           // false
- * console.log(canApplyTrade('FILLED'));            // false
+ * console.log(canApplyFill('OPEN'));              // true
+ * console.log(canApplyFill('PARTIALLY_FILLED'));  // true
+ * console.log(canApplyFill('PENDING'));           // false
+ * console.log(canApplyFill('FILLED'));            // false
  * ```
  */
-export function canApplyTrade(status: OrderStatus): boolean {
+export function canApplyFill(status: OrderStatus): boolean {
   return status === 'OPEN' || status === 'PARTIALLY_FILLED';
 }
 
 /**
- * Параметры для детальной проверки trade
+ * Параметры для детальной проверки fill
  */
-export interface TradeValidationParams {
+export interface FillValidationParams {
   /** Текущий статус заявки */
   orderStatus: OrderStatus;
   /** Market ID заявки */
@@ -175,94 +175,94 @@ export interface TradeValidationParams {
   orderId: string;
   /** Оставшийся размер для заполнения */
   remainingSize: Quantity;
-  /** IDs уже примененных trades */
-  existingTradeIds: readonly string[];
-  /** Market ID trade */
-  tradeMarketId: string;
-  /** Token ID trade */
-  tradeTokenId: string;
-  /** Сторона trade */
-  tradeSide: string;
-  /** Order ID в trade (может быть undefined) */
-  tradeOrderId: string | undefined;
-  /** Размер trade */
-  tradeSize: Quantity;
-  /** ID trade */
-  tradeId: string;
+  /** IDs уже примененных fills */
+  existingFillIds: readonly string[];
+  /** Market ID fill */
+  fillMarketId: string;
+  /** Token ID fill */
+  fillTokenId: string;
+  /** Сторона fill */
+  fillSide: string;
+  /** Order ID в fill — ОБЯЗАТЕЛЕН (Fill.orderId всегда присутствует) */
+  fillOrderId: string;
+  /** Размер fill */
+  fillSize: Quantity;
+  /** ID fill */
+  fillId: string;
 }
 
 /**
- * Детальная проверка возможности применения конкретного trade
+ * Детальная проверка возможности применения конкретного fill
  *
  * @param params - Параметры для валидации
- * @returns True если trade может быть применен
+ * @returns True если fill может быть применен
  *
  * @remarks
- * Проверяет все условия для применения trade:
+ * Проверяет все условия для применения fill:
  * 1. Статус OPEN или PARTIALLY_FILLED
- * 2. trade.marketId === order.marketId
- * 3. trade.tokenId === order.tokenId
- * 4. trade.side === order.side
- * 5. trade.orderId === order.id (или undefined)
- * 6. trade.size <= remainingSize
- * 7. Нет дубликата trade.id
+ * 2. fill.marketId === order.marketId
+ * 3. fill.tokenId === order.tokenId
+ * 4. fill.side === order.side
+ * 5. fill.orderId === order.id (orderId в Fill всегда обязателен)
+ * 6. fill.size <= remainingSize
+ * 7. Нет дубликата fill.id
  *
- * Используется для предварительной фильтрации trades
- * перед вызовом applyTrade().
+ * Используется для предварительной фильтрации fills
+ * перед вызовом applyFill().
  *
  * @example
  * ```typescript
- * const canAccept = canAcceptTradeDetailed({
+ * const canAccept = canAcceptFillDetailed({
  *   orderStatus: 'OPEN',
  *   orderMarketId: 'market-1',
  *   orderTokenId: 'token-yes',
  *   orderSide: 'BUY',
  *   orderId: 'order-123',
  *   remainingSize: Quantity(70),
- *   existingTradeIds: ['trade-1'],
- *   tradeMarketId: 'market-1',
- *   tradeTokenId: 'token-yes',
- *   tradeSide: 'BUY',
- *   tradeOrderId: 'order-123',
- *   tradeSize: Quantity(30),
- *   tradeId: 'trade-2'
+ *   existingFillIds: ['fill-1'],
+ *   fillMarketId: 'market-1',
+ *   fillTokenId: 'token-yes',
+ *   fillSide: 'BUY',
+ *   fillOrderId: 'order-123',
+ *   fillSize: Quantity(30),
+ *   fillId: 'fill-2'
  * });
  * console.log(canAccept); // true
  * ```
  */
-export function canAcceptTradeDetailed(params: TradeValidationParams): boolean {
+export function canAcceptFillDetailed(params: FillValidationParams): boolean {
   // 1. Статус должен быть OPEN или PARTIALLY_FILLED
-  if (!canApplyTrade(params.orderStatus)) {
+  if (!canApplyFill(params.orderStatus)) {
     return false;
   }
 
   // 2. marketId должен совпадать
-  if (params.tradeMarketId !== params.orderMarketId) {
+  if (params.fillMarketId !== params.orderMarketId) {
     return false;
   }
 
   // 3. tokenId должен совпадать
-  if (params.tradeTokenId !== params.orderTokenId) {
+  if (params.fillTokenId !== params.orderTokenId) {
     return false;
   }
 
   // 4. side должна совпадать
-  if (params.tradeSide !== params.orderSide) {
+  if (params.fillSide !== params.orderSide) {
     return false;
   }
 
-  // 5. orderId должен совпадать (или быть undefined для FIFO)
-  if (params.tradeOrderId !== undefined && params.tradeOrderId !== params.orderId) {
+  // 5. orderId должен совпадать (Fill.orderId всегда обязателен)
+  if (params.fillOrderId !== params.orderId) {
     return false;
   }
 
   // 6. size не должен превышать remainingSize
-  if (params.tradeSize.isGreaterThan(params.remainingSize)) {
+  if (params.fillSize.isGreaterThan(params.remainingSize)) {
     return false;
   }
 
-  // 7. Нет дубликата trade.id
-  if (params.existingTradeIds.includes(params.tradeId)) {
+  // 7. Нет дубликата fill.id
+  if (params.existingFillIds.includes(params.fillId)) {
     return false;
   }
 

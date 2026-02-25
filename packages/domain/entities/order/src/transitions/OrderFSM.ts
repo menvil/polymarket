@@ -44,8 +44,8 @@ import {
   handleRejected,
   handleCancelled,
   handleExpired,
-  handleTradeApplied,
-  type TradeParams,
+  handleFillApplied,
+  type FillData,
 } from './handlers';
 
 /**
@@ -106,18 +106,18 @@ export class OrderFSM {
       case 'EXPIRED':
         return handleExpired(order);
 
-      case 'TRADE_APPLIED': {
-        // Конвертируем Trade в TradeParams
-        const tradeParams: TradeParams = {
-          id: change.trade.id,
-          marketId: change.trade.marketId,
-          tokenId: change.trade.tokenId,
-          side: change.trade.side,
-          orderId: change.trade.orderId,
-          size: change.trade.size,
-          price: change.trade.price,
+      case 'FILL_APPLIED': {
+        // Конвертируем FillForOrder в FillData для handler
+        const fillData: FillData = {
+          id: change.fill.id,
+          orderId: change.fill.orderId,
+          marketId: change.fill.marketId,
+          tokenId: change.fill.tokenId,
+          side: change.fill.side,
+          size: change.fill.size,
+          price: change.fill.price,
         };
-        return handleTradeApplied(order, tradeParams);
+        return handleFillApplied(order, fillData);
       }
 
       default: {

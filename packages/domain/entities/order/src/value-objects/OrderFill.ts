@@ -5,16 +5,16 @@
  * Инкапсулирует состояние исполнения заявки:
  * - filledSize: Сколько исполнено
  * - averageFillPrice: По какой средней цене
- * - tradeIds: Какие trades заполнили заявку
+ * - fillIds: Какие fills заполнили заявку
  *
  * ### Инварианты:
  * 1. filledSize должен быть >= 0
  * 2. filledSize должен быть <= orderSize
  * 3. averageFillPrice требуется если filledSize > 0
- * 4. tradeIds не должен содержать дубликатов
+ * 4. fillIds не должен содержать дубликатов
  *
  * ### Immutability:
- * OrderFill неизменяемый. Методы addTrade() возвращают НОВЫЙ экземпляр.
+ * OrderFill неизменяемый. Методы addFill() возвращают НОВЫЙ экземпляр.
  *
  * @example
  * ```typescript
@@ -25,11 +25,11 @@
  * const empty = OrderFill.empty();
  * console.log(empty.isEmpty());  // true
  *
- * // Добавить trade
- * const result = empty.addTrade(
+ * // Добавить fill
+ * const result = empty.addFill(
  *   Quantity.fromValue(30).value!,
  *   Price.fromValue(0.65).value!,
- *   'trade-1',
+ *   'fill-1',
  *   Quantity.fromValue(100).value! // orderSize
  * );
  * if (result.ok) {
@@ -57,7 +57,7 @@ import Decimal from 'decimal.js';
 export class OrderFill {
   private readonly _filledSize: Quantity;
   private readonly _averageFillPrice: Price | undefined;
-  private readonly _tradeIds: readonly string[];
+  private readonly _fillIds: readonly string[];
 
   /**
    * Приватный конструктор (используйте OrderFill.empty() или OrderFill.create())
@@ -65,11 +65,11 @@ export class OrderFill {
   private constructor(
     filledSize: Quantity,
     averageFillPrice: Price | undefined,
-    tradeIds: readonly string[]
+    fillIds: readonly string[]
   ) {
     this._filledSize = filledSize;
     this._averageFillPrice = averageFillPrice;
-    this._tradeIds = tradeIds;
+    this._fillIds = fillIds;
   }
 
   /**
@@ -84,7 +84,7 @@ export class OrderFill {
    * ```
    */
   public static empty(): OrderFill {
-    return new OrderFill(Quantity.ZERO, undefined, []);
+    return new OrderFill(Quantity.ZERO, undefined, [] as string[]);
   }
 
   /**
@@ -120,7 +120,7 @@ export class OrderFill {
   public static create(
     filledSize: Quantity,
     averageFillPrice: Price | undefined,
-    tradeIds: string[],
+    fillIds: string[],
     orderSize: Quantity
   ): Result<OrderFill, Error> {
     // Валидация 1: filledSize должен быть >= 0 (гарантируется инвариантом Quantity)
@@ -139,13 +139,13 @@ export class OrderFill {
       return Err(new Error('Average fill price is required when filled size > 0'));
     }
 
-    // Валидация 4: tradeIds не должен содержать дубликатов
-    const uniqueTradeIds = new Set(tradeIds);
-    if (uniqueTradeIds.size !== tradeIds.length) {
-      return Err(new Error('Trade IDs must be unique'));
+    // Валидация 4: fillIds не должен содержать дубликатов
+    const uniqueFillIds = new Set(fillIds);
+    if (uniqueFillIds.size !== fillIds.length) {
+      return Err(new Error('Fill IDs must be unique'));
     }
 
-    return Ok(new OrderFill(filledSize, averageFillPrice, tradeIds));
+    return Ok(new OrderFill(filledSize, averageFillPrice, fillIds));
   }
 
   /**
@@ -218,18 +218,18 @@ export class OrderFill {
   }
 
   /**
-   * Возвращает IDs trades
+   * Возвращает IDs fills
    *
-   * @returns Массив trade IDs (readonly)
+   * @returns Массив fill IDs (readonly)
    */
-  public getTradeIds(): readonly string[] {
-    return this._tradeIds;
+  public getFillIds(): readonly string[] {
+    return this._fillIds;
   }
 
   /**
-   * Возвращает количество trades
+   * Возвращает количество fills
    *
-   * @returns Число trades заполнивших заявку
+   * @returns Число fills заполнивших заявку
    *
    * @example
    * ```typescript
@@ -237,23 +237,23 @@ export class OrderFill {
    * ```
    */
   public getTradeCount(): number {
-    return this._tradeIds.length;
+    return this._fillIds.length;
   }
 
   /**
-   * Проверяет, был ли применен конкретный trade
+   * Проверяет, был ли применен конкретный fill
    *
-   * @param tradeId - ID trade для проверки
-   * @returns True если trade был применен
+   * @param fillId - ID fill для проверки
+   * @returns True если fill был применен
    *
    * @example
    * ```typescript
-   * console.log(fill.hasTrade('trade-1')); // true
-   * console.log(fill.hasTrade('trade-99')); // false
+   * console.log(fill.hasFill('fill-1')); // true
+   * console.log(fill.hasFill('fill-99')); // false
    * ```
    */
-  public hasTrade(tradeId: string): boolean {
-    return this._tradeIds.includes(tradeId);
+  public hasFill(fillId: string): boolean {
+    return this._fillIds.includes(fillId);
   }
 
   /**
@@ -302,82 +302,82 @@ export class OrderFill {
   }
 
   /**
-   * Добавляет trade к fill (возвращает НОВЫЙ экземпляр)
+   * Добавляет fill к OrderFill (возвращает НОВЫЙ экземпляр)
    *
-   * @param tradeSize - Размер trade
-   * @param tradePrice - Цена trade
-   * @param tradeId - ID trade
+   * @param fillSize - Размер fill
+   * @param fillPrice - Цена fill
+   * @param fillId - ID fill
    * @param orderSize - Размер заявки (для валидации)
    * @returns Result<OrderFill, Error> - Новый экземпляр или ошибка
    *
    * @remarks
    * Валидация:
-   * - tradeSize должен быть > 0
-   * - tradeSize должен быть <= remainingSize
-   * - tradeId не должен быть дубликатом
+   * - fillSize должен быть > 0
+   * - fillSize должен быть <= remainingSize
+   * - fillId не должен быть дубликатом
    *
    * Обновление:
-   * - newFilledSize = currentFilledSize + tradeSize
+   * - newFilledSize = currentFilledSize + fillSize
    * - newAverageFillPrice = weighted average
-   * - newTradeIds = [...currentTradeIds, tradeId]
+   * - newFillIds = [...currentFillIds, fillId]
    *
    * @example
    * ```typescript
-   * const fill1 = OrderFill.empty();
-   * const result = fill1.addTrade(
-   *   Quantity(30), Price(0.65), 'trade-1', Quantity(100)
+   * const orderFill = OrderFill.empty();
+   * const result = orderFill.addFill(
+   *   Quantity(30), Price(0.65), 'fill-1', Quantity(100)
    * );
    * if (result.ok) {
-   *   const fill2 = result.value;
-   *   console.log(fill2.getFilledSize().value); // 30
-   *   // fill1 остался пустым (immutability)
-   *   console.log(fill1.isEmpty()); // true
+   *   const updated = result.value;
+   *   console.log(updated.getFilledSize().value); // 30
+   *   // orderFill остался пустым (immutability)
+   *   console.log(orderFill.isEmpty()); // true
    * }
    * ```
    */
-  public addTrade(
-    tradeSize: Quantity,
-    tradePrice: Price,
-    tradeId: string,
+  public addFill(
+    fillSize: Quantity,
+    fillPrice: Price,
+    fillId: string,
     orderSize: Quantity
   ): Result<OrderFill, Error> {
-    // Валидация 1: tradeSize должен быть > 0
-    if (tradeSize.isZero()) {
-      return Err(new Error('Trade size must be positive'));
+    // Валидация 1: fillSize должен быть > 0
+    if (fillSize.isZero()) {
+      return Err(new Error('Fill size must be positive'));
     }
 
-    // Валидация 2: tradeId не должен быть дубликатом
-    if (this.hasTrade(tradeId)) {
-      return Err(new Error(`Trade ${tradeId} has already been applied`));
+    // Валидация 2: fillId не должен быть дубликатом
+    if (this.hasFill(fillId)) {
+      return Err(new Error(`Fill ${fillId} has already been applied`));
     }
 
-    // Валидация 3: tradeSize не должен превышать remainingSize
+    // Валидация 3: fillSize не должен превышать remainingSize
     const remainingSize = this.getRemainingSize(orderSize);
-    if (tradeSize.isGreaterThan(remainingSize)) {
+    if (fillSize.isGreaterThan(remainingSize)) {
       return Err(
         new Error(
-          `Trade size (${tradeSize.value()}) exceeds remaining order size (${remainingSize.value()})`
+          `Fill size (${fillSize.value()}) exceeds remaining order size (${remainingSize.value()})`
         )
       );
     }
 
     // Вычисление нового filledSize через Decimal arithmetic
-    const newFilledSizeDecimal = this._filledSize.value().plus(tradeSize.value());
+    const newFilledSizeDecimal = this._filledSize.value().plus(fillSize.value());
     const newFilledSize = Quantity.of(newFilledSizeDecimal);
 
     // Вычисление нового averageFillPrice (weighted average)
     const newAverageFillPrice = this._calculateWeightedAveragePrice(
       this._filledSize,
       this._averageFillPrice,
-      tradeSize,
-      tradePrice
+      fillSize,
+      fillPrice
     );
 
-    // Обновление tradeIds
-    const newTradeIds = [...this._tradeIds, tradeId];
+    // Обновление fillIds
+    const newFillIds = [...this._fillIds, fillId];
 
     // Создать новый OrderFill
-    return Ok(new OrderFill(newFilledSize, newAverageFillPrice, newTradeIds));
+    return Ok(new OrderFill(newFilledSize, newAverageFillPrice, newFillIds));
   }
 
   /**
@@ -433,7 +433,7 @@ export class OrderFill {
     return {
       filledSize: this._filledSize.value().toNumber(),
       averageFillPrice: this._averageFillPrice?.value().toNumber(),
-      tradeIds: this._tradeIds,
+      fillIds: this._fillIds,
     };
   }
 

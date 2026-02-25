@@ -14,7 +14,7 @@
  * - **REJECTED** — биржа отклонила заявку (PENDING → REJECTED)
  * - **CANCELLED** — пользователь отменил заявку (OPEN/PARTIALLY_FILLED → CANCELED)
  * - **EXPIRED** — заявка истекла по времени (OPEN/PARTIALLY_FILLED → EXPIRED)
- * - **TRADE_APPLIED** — применен trade (OPEN → PARTIALLY_FILLED/FILLED)
+ * - **FILL_APPLIED** — применен fill исполнения нашего ордера (OPEN → PARTIALLY_FILLED/FILLED)
  *
  * @example
  * ```typescript
@@ -29,10 +29,10 @@
  *   reason: 'Insufficient funds'
  * };
  *
- * // Trade applied
- * const tradeApplied: OrderChange = {
- *   type: 'TRADE_APPLIED',
- *   trade: tradeObject
+ * // Fill applied
+ * const fillApplied: OrderChange = {
+ *   type: 'FILL_APPLIED',
+ *   fill: fillObject
  * };
  *
  * // Pattern matching
@@ -49,7 +49,31 @@
  * ```
  */
 
-import type { Trade } from '../Trade';
+import type { Quantity, Price } from '@polymarket/value-objects';
+
+/**
+ * Минимальные данные Fill, необходимые для FSM Order
+ *
+ * @remarks
+ * Содержит только поля нужные для применения исполнения к заявке.
+ * orderId всегда обязателен (в отличие от старого Trade.orderId?).
+ */
+export interface FillForOrder {
+  /** ID исполнения (для dedup проверки) */
+  readonly id: string;
+  /** ID ордера — ОБЯЗАТЕЛЕН */
+  readonly orderId: string;
+  /** ID рынка */
+  readonly marketId: string;
+  /** ID токена */
+  readonly tokenId: string;
+  /** Сторона (BUY/SELL) */
+  readonly side: string;
+  /** Размер исполнения */
+  readonly size: Quantity;
+  /** Цена исполнения */
+  readonly price: Price;
+}
 
 /**
  * ACCEPTED - биржа приняла заявку
@@ -100,18 +124,19 @@ export interface OrderChangeExpired {
 }
 
 /**
- * TRADE_APPLIED - применен trade к заявке
+ * FILL_APPLIED - применен fill исполнения к заявке
  *
  * @remarks
  * Переходы:
  * - OPEN → PARTIALLY_FILLED (если остаток > 0)
  * - OPEN/PARTIALLY_FILLED → FILLED (если остаток = 0)
  *
- * Содержит Trade объект с деталями исполнения.
+ * Содержит FillForOrder объект с деталями исполнения.
+ * orderId в Fill всегда обязателен — это гарантирует явную привязку к ордеру.
  */
-export interface OrderChangeTradeApplied {
-  readonly type: 'TRADE_APPLIED';
-  readonly trade: Trade;
+export interface OrderChangeFillApplied {
+  readonly type: 'FILL_APPLIED';
+  readonly fill: FillForOrder;
 }
 
 /**
@@ -137,9 +162,9 @@ export interface OrderChangeTradeApplied {
  *       break;
  *     case 'EXPIRED':
  *       break;
- *     case 'TRADE_APPLIED':
- *       // change.trade доступен
- *       console.log(change.trade.id);
+ *     case 'FILL_APPLIED':
+ *       // change.fill доступен
+ *       console.log(change.fill.id);
  *       break;
  *     default:
  *       const _exhaustive: never = change; // Ошибка если case забыт
@@ -153,4 +178,4 @@ export type OrderChange =
   | OrderChangeRejected
   | OrderChangeCancelled
   | OrderChangeExpired
-  | OrderChangeTradeApplied;
+  | OrderChangeFillApplied;
