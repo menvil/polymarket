@@ -17,6 +17,12 @@ import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import Decimal from 'decimal.js';
 
+// Вспомогательная функция для извлечения значения из Result в тестах
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
+  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
+  return result.value;
+}
+
 // ==================== Helpers ====================
 
 function makeTokenId() {
@@ -51,7 +57,7 @@ function makeValidParams(overrides?: Partial<FillParams>): FillParams {
     price: Price.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('50')),
     side: 'BUY',
-    timestamp: Timestamp.fromEpochMs(1700000000000).value!,
+    timestamp: unwrap(Timestamp.fromEpochMs(1700000000000), 'Timestamp'),
     fee: makeZeroFee(),
     liquidity: 'MAKER',
     ...overrides,
@@ -184,12 +190,12 @@ describe('Fill', () => {
 
   describe('getNotional()', () => {
     it('вычисляет notional как price × size', () => {
-      const fill = Fill.create(
+      const fill = unwrap(Fill.create(
         makeValidParams({
           price: Price.of(new Decimal('0.65')),
           size: Quantity.of(new Decimal('50')),
         })
-      ).value!;
+      ));
 
       expect(fill.getNotional().toNumber()).toBeCloseTo(32.5, 5);
     });
@@ -197,13 +203,13 @@ describe('Fill', () => {
 
   describe('isBuy() / isSell()', () => {
     it('isBuy() возвращает true для BUY', () => {
-      const fill = Fill.create(makeValidParams({ side: 'BUY' })).value!;
+      const fill = unwrap(Fill.create(makeValidParams({ side: 'BUY' })));
       expect(fill.isBuy()).toBe(true);
       expect(fill.isSell()).toBe(false);
     });
 
     it('isSell() возвращает true для SELL', () => {
-      const fill = Fill.create(makeValidParams({ side: 'SELL' })).value!;
+      const fill = unwrap(Fill.create(makeValidParams({ side: 'SELL' })));
       expect(fill.isSell()).toBe(true);
       expect(fill.isBuy()).toBe(false);
     });
@@ -211,19 +217,19 @@ describe('Fill', () => {
 
   describe('isMaker() / isTaker()', () => {
     it('isMaker() возвращает true для MAKER', () => {
-      const fill = Fill.create(makeValidParams({ liquidity: 'MAKER' })).value!;
+      const fill = unwrap(Fill.create(makeValidParams({ liquidity: 'MAKER' })));
       expect(fill.isMaker()).toBe(true);
       expect(fill.isTaker()).toBe(false);
     });
 
     it('isTaker() возвращает true для TAKER', () => {
-      const fill = Fill.create(makeValidParams({ liquidity: 'TAKER' })).value!;
+      const fill = unwrap(Fill.create(makeValidParams({ liquidity: 'TAKER' })));
       expect(fill.isTaker()).toBe(true);
       expect(fill.isMaker()).toBe(false);
     });
 
     it('оба false если liquidity undefined', () => {
-      const fill = Fill.create(makeValidParams({ liquidity: undefined })).value!;
+      const fill = unwrap(Fill.create(makeValidParams({ liquidity: undefined })));
       expect(fill.isMaker()).toBe(false);
       expect(fill.isTaker()).toBe(false);
     });
@@ -231,7 +237,7 @@ describe('Fill', () => {
 
   describe('hasFee()', () => {
     it('возвращает false для нулевой комиссии', () => {
-      const fill = Fill.create(makeValidParams({ fee: makeZeroFee() })).value!;
+      const fill = unwrap(Fill.create(makeValidParams({ fee: makeZeroFee() })));
       expect(fill.hasFee()).toBe(false);
     });
 
@@ -240,14 +246,14 @@ describe('Fill', () => {
       const feeAssetQty = new AssetQuantity(AssetIdHelpers.USDC, feeQty);
       const fee = Fee.of(feeAssetQty);
 
-      const fill = Fill.create(makeValidParams({ fee })).value!;
+      const fill = unwrap(Fill.create(makeValidParams({ fee })));
       expect(fill.hasFee()).toBe(true);
     });
   });
 
   describe('toSnapshot()', () => {
     it('сериализует Fill в плоский снапшот', () => {
-      const fill = Fill.create(makeValidParams()).value!;
+      const fill = unwrap(Fill.create(makeValidParams()));
       const snapshot = fill.toSnapshot();
 
       expect(snapshot.id).toBe('fill-123');
@@ -265,7 +271,7 @@ describe('Fill', () => {
 
   describe('toString()', () => {
     it('возвращает читаемую строку', () => {
-      const fill = Fill.create(makeValidParams()).value!;
+      const fill = unwrap(Fill.create(makeValidParams()));
       const str = fill.toString();
 
       expect(str).toContain('Fill[');

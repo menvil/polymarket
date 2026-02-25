@@ -4,6 +4,12 @@
 
 import { TradeMapper } from '../../src/mappers/TradeMapper';
 
+// Вспомогательная функция для извлечения значения из Result в тестах
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
+  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
+  return result.value;
+}
+
 // ==================== Helpers ====================
 
 function makeValidEvent(overrides?: Record<string, unknown>): Record<string, unknown> {
@@ -197,7 +203,7 @@ describe('TradeMapper', () => {
   describe('toSnapshot() / fromSnapshot()', () => {
     it('round-trip: Trade → snapshot → Trade сохраняет все поля', () => {
       const event = makeValidEvent();
-      const original = TradeMapper.fromPolymarketLastTradeEvent(event).value!;
+      const original = unwrap(TradeMapper.fromPolymarketLastTradeEvent(event));
 
       const snapshot = TradeMapper.toSnapshot(original);
       const restoredResult = TradeMapper.fromSnapshot(snapshot);

@@ -8,6 +8,12 @@ import { asVenueTradeId, asVenueId, parseAssetId } from '@polymarket/ids';
 import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
+// Вспомогательная функция для извлечения значения из Result в тестах
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
+  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
+  return result.value;
+}
+
 // ==================== Helpers ====================
 
 /**
@@ -39,7 +45,7 @@ function makeValidParams(overrides?: Partial<TradeParams>): TradeParams {
     price: Price.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
     aggressorSide: 'BUY',
-    timestamp: Timestamp.fromEpochMs(1700000000000).value!,
+    timestamp: unwrap(Timestamp.fromEpochMs(1700000000000), 'Timestamp'),
     ...overrides,
   };
 }
@@ -187,19 +193,19 @@ describe('Trade', () => {
 
   describe('isBuy() / isSell()', () => {
     it('isBuy() возвращает true если aggressorSide === BUY', () => {
-      const trade = Trade.create(makeValidParams({ aggressorSide: 'BUY' })).value!;
+      const trade = unwrap(Trade.create(makeValidParams({ aggressorSide: 'BUY' })));
       expect(trade.isBuy()).toBe(true);
       expect(trade.isSell()).toBe(false);
     });
 
     it('isSell() возвращает true если aggressorSide === SELL', () => {
-      const trade = Trade.create(makeValidParams({ aggressorSide: 'SELL' })).value!;
+      const trade = unwrap(Trade.create(makeValidParams({ aggressorSide: 'SELL' })));
       expect(trade.isSell()).toBe(true);
       expect(trade.isBuy()).toBe(false);
     });
 
     it('оба возвращают false если aggressorSide undefined', () => {
-      const trade = Trade.create(makeValidParams({ aggressorSide: undefined })).value!;
+      const trade = unwrap(Trade.create(makeValidParams({ aggressorSide: undefined })));
       expect(trade.isBuy()).toBe(false);
       expect(trade.isSell()).toBe(false);
     });
@@ -207,45 +213,45 @@ describe('Trade', () => {
 
   describe('compareByTime()', () => {
     it('возвращает отрицательное значение если this раньше', () => {
-      const earlier = Trade.create(
-        makeValidParams({ timestamp: Timestamp.fromEpochMs(1000000000000).value! })
-      ).value!;
-      const later = Trade.create(
-        makeValidParams({ timestamp: Timestamp.fromEpochMs(2000000000000).value! })
-      ).value!;
+      const earlier = unwrap(Trade.create(
+        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(1000000000000)) })
+      ));
+      const later = unwrap(Trade.create(
+        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(2000000000000)) })
+      ));
 
       expect(earlier.compareByTime(later)).toBeLessThan(0);
     });
 
     it('возвращает положительное значение если this позже', () => {
-      const earlier = Trade.create(
-        makeValidParams({ timestamp: Timestamp.fromEpochMs(1000000000000).value! })
-      ).value!;
-      const later = Trade.create(
-        makeValidParams({ timestamp: Timestamp.fromEpochMs(2000000000000).value! })
-      ).value!;
+      const earlier = unwrap(Trade.create(
+        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(1000000000000)) })
+      ));
+      const later = unwrap(Trade.create(
+        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(2000000000000)) })
+      ));
 
       expect(later.compareByTime(earlier)).toBeGreaterThan(0);
     });
 
     it('возвращает 0 если trades одновременные', () => {
-      const ts = Timestamp.fromEpochMs(1700000000000).value!;
-      const trade1 = Trade.create(makeValidParams({ timestamp: ts })).value!;
-      const trade2 = Trade.create(makeValidParams({ timestamp: ts })).value!;
+      const ts = unwrap(Timestamp.fromEpochMs(1700000000000));
+      const trade1 = unwrap(Trade.create(makeValidParams({ timestamp: ts })));
+      const trade2 = unwrap(Trade.create(makeValidParams({ timestamp: ts })));
 
       expect(trade1.compareByTime(trade2)).toBe(0);
     });
 
     it('сортировка массива trades по времени', () => {
-      const t1 = Trade.create(
-        makeValidParams({ timestamp: Timestamp.fromEpochMs(1000000000000).value! })
-      ).value!;
-      const t2 = Trade.create(
-        makeValidParams({ timestamp: Timestamp.fromEpochMs(2000000000000).value! })
-      ).value!;
-      const t3 = Trade.create(
-        makeValidParams({ timestamp: Timestamp.fromEpochMs(3000000000000).value! })
-      ).value!;
+      const t1 = unwrap(Trade.create(
+        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(1000000000000)) })
+      ));
+      const t2 = unwrap(Trade.create(
+        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(2000000000000)) })
+      ));
+      const t3 = unwrap(Trade.create(
+        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(3000000000000)) })
+      ));
 
       const sorted = [t3, t1, t2].sort((a, b) => a.compareByTime(b));
       expect(sorted[0]).toBe(t1);
@@ -257,7 +263,7 @@ describe('Trade', () => {
   describe('toSnapshot()', () => {
     it('сериализует Trade в плоский снапшот', () => {
       const params = makeValidParams();
-      const trade = Trade.create(params).value!;
+      const trade = unwrap(Trade.create(params));
       const snapshot = trade.toSnapshot();
 
       expect(snapshot.id).toBe('0xabc_1700000000000');
@@ -271,7 +277,7 @@ describe('Trade', () => {
 
     it('сериализует Trade без aggressorSide', () => {
       const params = makeValidParams({ aggressorSide: undefined });
-      const trade = Trade.create(params).value!;
+      const trade = unwrap(Trade.create(params));
       const snapshot = trade.toSnapshot();
 
       expect(snapshot.aggressorSide).toBeUndefined();
@@ -280,7 +286,7 @@ describe('Trade', () => {
 
   describe('toString()', () => {
     it('возвращает читаемую строку', () => {
-      const trade = Trade.create(makeValidParams()).value!;
+      const trade = unwrap(Trade.create(makeValidParams()));
       const str = trade.toString();
 
       expect(str).toContain('Trade[');
@@ -291,7 +297,7 @@ describe('Trade', () => {
     });
 
     it('возвращает UNKNOWN для неизвестной стороны', () => {
-      const trade = Trade.create(makeValidParams({ aggressorSide: undefined })).value!;
+      const trade = unwrap(Trade.create(makeValidParams({ aggressorSide: undefined })));
       expect(trade.toString()).toContain('UNKNOWN');
     });
   });

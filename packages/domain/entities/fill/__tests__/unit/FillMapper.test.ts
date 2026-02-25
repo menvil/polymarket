@@ -4,6 +4,14 @@
 
 import { FillMapper } from '../../src/mappers/FillMapper';
 import { parseAssetId } from '@polymarket/ids';
+import type { Fill } from '../../src/Fill';
+import type { FillSnapshot } from '../../src/FillSnapshot';
+
+// Вспомогательная функция для извлечения значения из Result в тестах
+function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
+  if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
+  return result.value;
+}
 
 // ==================== Helpers ====================
 
@@ -157,7 +165,7 @@ describe('FillMapper', () => {
   describe('toSnapshot() / fromSnapshot()', () => {
     it('round-trip: Fill → snapshot → Fill сохраняет основные поля', () => {
       const event = makeValidEvent();
-      const original = FillMapper.fromPolymarketOrderExecutionEvent(event).value!;
+      const original = unwrap(FillMapper.fromPolymarketOrderExecutionEvent(event));
 
       const snapshot = FillMapper.toSnapshot(original);
       const restoredResult = FillMapper.fromSnapshot(snapshot);
