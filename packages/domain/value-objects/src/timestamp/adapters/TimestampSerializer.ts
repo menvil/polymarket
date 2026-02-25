@@ -18,7 +18,7 @@
  * ```
  */
 
-import { Result } from '@polymarket/result';
+import { Result, Ok } from '@polymarket/result';
 import { ValidationError, wrapOp } from '@polymarket/errors';
 import { Timestamp } from '../core/Timestamp.js';
 import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
@@ -38,7 +38,7 @@ export class TimestampSerializer {
    * ```
    */
   public static toJSON(timestamp: Timestamp): number {
-    return timestamp.value;
+    return timestamp.toNumber();
   }
 
   /**
@@ -60,7 +60,13 @@ export class TimestampSerializer {
       'TimestampSerializer',
       'fromJSON',
       { value: json },
-      () => Timestamp.fromEpochMs(json),
+      () => {
+        const result = Timestamp.fromEpochMs(json);
+        if (!result.ok) {
+          throw result.error;
+        }
+        return Ok(result.value);
+      },
       ValidationError
     );
   }
@@ -105,7 +111,7 @@ export class TimestampSerializer {
         if (!result.ok) {
           throw result.error;
         }
-        return result;
+        return Ok(result.value);
       },
       ValidationError
     );

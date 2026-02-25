@@ -134,7 +134,8 @@ export class TimestampFormatter {
    * ```
    */
   public static toRelative(timestamp: Timestamp, now: Timestamp = Timestamp.now()): string {
-    const diffMs = now.diffMs(timestamp);
+    const diffMsDecimal = now.diffMs(timestamp);
+    const diffMs = diffMsDecimal.toNumber();
     const isPast = diffMs > 0;
     const absDiffMs = Math.abs(diffMs);
 
