@@ -97,3 +97,31 @@ export {
   type QuoteJSON,
   type QuoteFormatOptions
 } from './quote/index.js';
+
+// Side модуль (направление торговой операции)
+export {
+  type Side,
+  SideService,
+  SideSerializer,
+  SideFormatter,
+  SideErrorReason
+} from './side/index.js';
+
+// Timestamp модуль (временные метки)
+export {
+  Timestamp,
+  TimestampService,
+  TimestampSerializer,
+  TimestampFormatter,
+  TimestampErrorReason
+} from './timestamp/index.js';
+
+// Fee модуль (комиссии)
+export {
+  Fee,
+  FeeService,
+  FeeSerializer,
+  FeeFormatter,
+  FeeErrorReason,
+  type FeeJSON
+} from './fee/index.js';
