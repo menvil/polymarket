@@ -99,9 +99,10 @@ export class Timestamp {
    * Все проверки инвариантов выполняются в конструкторе.
    * Для публичного API используйте TimestampService.create().
    *
-   * Значение обрезается до integer (trunc).
+   * ВАЖНО: Timestamp должен быть integer миллисекундами.
+   * Дробные значения не допускаются (бросит TimestampInvariantViolation).
    *
-   * @param value - Epoch milliseconds (Decimal)
+   * @param value - Epoch milliseconds (Decimal integer)
    * @returns Новый Timestamp
    * @throws {TimestampInvariantViolation} Если значение не соответствует инвариантам
    *
@@ -109,6 +110,9 @@ export class Timestamp {
    * ```typescript
    * // ✅ В Core и Facade
    * const ts = Timestamp.of(new Decimal(1609459200000));
+   *
+   * // ❌ Дробные миллисекунды - ошибка
+   * const ts = Timestamp.of(new Decimal(1609459200000.123)); // throws
    *
    * // ❌ В публичном коде - используй TimestampService.create()
    * const result = TimestampService.create(1609459200000);
@@ -118,9 +122,14 @@ export class Timestamp {
    * ```
    */
   public static of(value: Decimal): Timestamp {
-    // Обрезаем до integer для timestamp
-    const truncated = value.trunc();
-    return new Timestamp(truncated);
+    // Инвариант: timestamp должен быть integer (целое число миллисекунд)
+    if (!value.isInteger()) {
+      throw new TimestampInvariantViolation(
+        `Timestamp must be integer milliseconds, got: ${value.toString()}`,
+        TimestampErrorReason.NOT_FINITE
+      );
+    }
+    return new Timestamp(value);
   }
 
   /**
@@ -149,7 +158,7 @@ export class Timestamp {
    *
    * @remarks
    * Валидирует что ms конечное положительное число.
-   * Обрезает до integer.
+   * Обрезает до integer через Math.trunc() перед созданием.
    *
    * @example
    * ```typescript
@@ -157,6 +166,9 @@ export class Timestamp {
    * if (result.ok) {
    *   console.log(result.value.toISO()); // "2021-01-01T00:00:00.000Z"
    * }
+   *
+   * // Дробные миллисекунды обрезаются
+   * const result2 = Timestamp.fromEpochMs(1609459200000.789); // OK, станет 1609459200000
    *
    * // Невалидные значения
    * Timestamp.fromEpochMs(NaN);      // Err
@@ -190,7 +202,9 @@ export class Timestamp {
       );
     }
 
-    return Ok(Timestamp.of(new Decimal(ms)));
+    // Обрезаем до integer перед конвертацией в Decimal
+    const truncated = Math.trunc(ms);
+    return Ok(Timestamp.of(new Decimal(truncated)));
   }
 
   /**

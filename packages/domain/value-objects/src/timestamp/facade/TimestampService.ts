@@ -48,7 +48,8 @@ export class TimestampService {
    *
    * @remarks
    * Принимает number, string, или Decimal и конвертирует в Timestamp.
-   * Валидирует инварианты (finite, positive).
+   * Валидирует инварианты (finite, positive, integer).
+   * Дробные значения обрезаются до integer.
    *
    * @example
    * ```typescript
@@ -60,6 +61,9 @@ export class TimestampService {
    *
    * // Из Decimal
    * const ts3 = TimestampService.create(new Decimal(1609459200000));
+   *
+   * // Дробные значения обрезаются
+   * const ts4 = TimestampService.create(1609459200000.789); // OK, станет 1609459200000
    *
    * if (ts1.ok) {
    *   console.log(ts1.value.toISO());
@@ -75,10 +79,13 @@ export class TimestampService {
         let decimal: Decimal;
 
         if (value instanceof Decimal) {
-          decimal = value;
+          // Truncate Decimal to integer
+          decimal = value.trunc();
         } else if (typeof value === 'string') {
           try {
-            decimal = new Decimal(value);
+            const parsed = new Decimal(value);
+            // Truncate parsed string to integer
+            decimal = parsed.trunc();
           } catch (error) {
             throw new ValidationError(`Invalid timestamp string: ${value}`, {
               context: {
@@ -98,7 +105,9 @@ export class TimestampService {
               },
             });
           }
-          decimal = new Decimal(value);
+          // Truncate number to integer before converting to Decimal
+          const truncated = Math.trunc(value);
+          decimal = new Decimal(truncated);
         } else {
           throw new ValidationError(`Invalid timestamp type: ${typeof value}`, {
             context: {
@@ -109,7 +118,7 @@ export class TimestampService {
           });
         }
 
-        // Timestamp.of() бросит TimestampInvariantViolation если невалидно
+        // Timestamp.of() проверит что decimal.isInteger() === true
         return Ok(Timestamp.of(decimal));
       },
       ValidationError
