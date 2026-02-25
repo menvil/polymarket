@@ -21,6 +21,7 @@
 import { Result, Ok } from '@polymarket/result';
 import { ValidationError, wrapOp } from '@polymarket/errors';
 import { Timestamp } from '../core/Timestamp.js';
+import { TimestampService } from '../facade/TimestampService.js';
 import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
 
 export class TimestampSerializer {
@@ -56,19 +57,8 @@ export class TimestampSerializer {
    * ```
    */
   public static fromJSON(json: number): Result<Timestamp, ValidationError> {
-    return wrapOp(
-      'TimestampSerializer',
-      'fromJSON',
-      { value: json },
-      () => {
-        const result = Timestamp.fromEpochMs(json);
-        if (!result.ok) {
-          throw result.error;
-        }
-        return Ok(result.value);
-      },
-      ValidationError
-    );
+    // Делегируем в TimestampService для валидации и создания
+    return TimestampService.fromEpochMs(json);
   }
 
   /**
@@ -107,7 +97,8 @@ export class TimestampSerializer {
           });
         }
 
-        const result = Timestamp.fromEpochMs(json);
+        // Используем TimestampService для валидации
+        const result = TimestampService.fromEpochMs(json);
         if (!result.ok) {
           throw result.error;
         }

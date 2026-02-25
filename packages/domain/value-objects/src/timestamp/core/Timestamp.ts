@@ -7,7 +7,7 @@
  * Инварианты:
  * - Должно быть конечное число (finite)
  * - Должно быть положительное (> 0)
- * - Хранится как integer миллисекунды
+ * - Должно быть integer миллисекунды
  *
  * Используется для:
  * - Timestamp событий (trades, orders, positions)
@@ -34,18 +34,14 @@
  * if (ts.isBefore(now)) {
  *   console.log('ts раньше now');
  * }
- *
- * // Арифметика (через TimestampService)
- * const later = TimestampService.addMs(ts, 60000); // +1 минута
  * ```
  */
 
 import Decimal from 'decimal.js';
-import { Result, Ok, Err } from '@polymarket/result';
-import { ValidationError } from '@polymarket/errors';
 import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
 import { TimestampInvariantViolation } from './TimestampInvariantViolation.js';
-import { addDecimal, subtractDecimal } from '@polymarket/math/decimal';
+import { addDecimal, subtractDecimal, divideDecimal } from '@polymarket/math/decimal';
+import type { IClock } from '@polymarket/time';
 
 /**
  * Timestamp - момент времени в epoch milliseconds
@@ -56,6 +52,13 @@ import { addDecimal, subtractDecimal } from '@polymarket/math/decimal';
  *
  * Внутреннее представление: Decimal (для consistency с другими VOs).
  * Наружу: value() возвращает Decimal, toNumber() возвращает number (lossy).
+ *
+ * Core содержит ТОЛЬКО:
+ * - of(Decimal) — создание из валидированного Decimal
+ * - now() — convenience для текущего времени
+ * - Instance методы (value, comparisons, arithmetic)
+ *
+ * Для создания из number/string используйте TimestampService.
  */
 export class Timestamp {
   /**
@@ -85,6 +88,14 @@ export class Timestamp {
       throw new TimestampInvariantViolation(
         'Timestamp must be positive',
         TimestampErrorReason.NOT_POSITIVE
+      );
+    }
+
+    // Инвариант 4: Must be integer
+    if (!_ms.isInteger()) {
+      throw new TimestampInvariantViolation(
+        `Timestamp must be integer milliseconds, got: ${_ms.toString()}`,
+        TimestampErrorReason.NOT_FINITE
       );
     }
   }
@@ -122,165 +133,40 @@ export class Timestamp {
    * ```
    */
   public static of(value: Decimal): Timestamp {
-    // Инвариант: timestamp должен быть integer (целое число миллисекунд)
-    if (!value.isInteger()) {
-      throw new TimestampInvariantViolation(
-        `Timestamp must be integer milliseconds, got: ${value.toString()}`,
-        TimestampErrorReason.NOT_FINITE
-      );
-    }
     return new Timestamp(value);
   }
 
   /**
    * Создать Timestamp для текущего момента
    *
+   * @param clock - Опциональный источник времени (IClock). Если не указан, использует Date.now()
    * @returns Timestamp текущего времени
    *
    * @remarks
-   * Использует Date.now() для получения текущего epoch ms.
+   * Поддерживает dependency injection через IClock для детерминированного времени.
+   * Если clock не указан, использует Date.now() (реальное системное время).
+   * Не возвращает Result т.к. время из clock всегда валидно.
    *
    * @example
    * ```typescript
+   * // Реальное системное время (default)
    * const now = Timestamp.now();
    * console.log(now.toISO()); // "2024-01-15T10:30:00.000Z"
+   *
+   * // С IClock для детерминизма
+   * const liveClock = new LiveClock();
+   * const now2 = Timestamp.now(liveClock);
+   *
+   * // С PaperClock для тестирования
+   * const paperClock = new PaperClock(new Date('2024-01-01'));
+   * const now3 = Timestamp.now(paperClock); // Фиксированное время
    * ```
    */
-  public static now(): Timestamp {
-    return Timestamp.of(new Decimal(Date.now()));
-  }
-
-  /**
-   * Создать Timestamp из epoch milliseconds
-   *
-   * @param ms - Миллисекунды с Unix epoch (1970-01-01)
-   * @returns Result<Timestamp, ValidationError>
-   *
-   * @remarks
-   * Валидирует что ms конечное положительное число.
-   * Обрезает до integer через Math.trunc() перед созданием.
-   *
-   * @example
-   * ```typescript
-   * const result = Timestamp.fromEpochMs(1609459200000);
-   * if (result.ok) {
-   *   console.log(result.value.toISO()); // "2021-01-01T00:00:00.000Z"
-   * }
-   *
-   * // Дробные миллисекунды обрезаются
-   * const result2 = Timestamp.fromEpochMs(1609459200000.789); // OK, станет 1609459200000
-   *
-   * // Невалидные значения
-   * Timestamp.fromEpochMs(NaN);      // Err
-   * Timestamp.fromEpochMs(Infinity); // Err
-   * Timestamp.fromEpochMs(-100);     // Err
-   * ```
-   */
-  public static fromEpochMs(ms: number): Result<Timestamp, ValidationError> {
-    if (!Number.isFinite(ms)) {
-      return Err(
-        new ValidationError('Invalid timestamp: not finite', {
-          context: {
-            field: 'timestamp',
-            value: ms,
-            type: typeof ms,
-            reason: TimestampErrorReason.NOT_FINITE,
-          },
-        })
-      );
-    }
-
-    if (ms <= 0) {
-      return Err(
-        new ValidationError('Invalid timestamp: must be positive', {
-          context: {
-            field: 'timestamp',
-            value: ms,
-            reason: TimestampErrorReason.NOT_POSITIVE,
-          },
-        })
-      );
-    }
-
-    // Обрезаем до integer перед конвертацией в Decimal
-    const truncated = Math.trunc(ms);
-    return Ok(Timestamp.of(new Decimal(truncated)));
-  }
-
-  /**
-   * Создать Timestamp из Date объекта
-   *
-   * @param date - JavaScript Date
-   * @returns Result<Timestamp, ValidationError>
-   *
-   * @remarks
-   * Извлекает epoch ms через date.getTime() и валидирует.
-   *
-   * @example
-   * ```typescript
-   * const result = Timestamp.fromDate(new Date());
-   * if (result.ok) {
-   *   console.log(result.value.value()); // epoch ms as Decimal
-   * }
-   *
-   * // Невалидный Date
-   * Timestamp.fromDate(new Date('invalid')); // Err
-   * ```
-   */
-  public static fromDate(date: Date): Result<Timestamp, ValidationError> {
-    const ms = date.getTime();
-
-    if (!Number.isFinite(ms)) {
-      return Err(
-        new ValidationError('Invalid Date: not finite', {
-          context: {
-            field: 'date',
-            value: date,
-            reason: TimestampErrorReason.INVALID_DATE,
-          },
-        })
-      );
-    }
-
-    return this.fromEpochMs(ms);
-  }
-
-  /**
-   * Создать Timestamp из ISO 8601 строки
-   *
-   * @param iso - ISO строка (например "2024-01-15T10:30:00.000Z")
-   * @returns Result<Timestamp, ValidationError>
-   *
-   * @remarks
-   * Парсит через Date.parse() и валидирует результат.
-   *
-   * @example
-   * ```typescript
-   * const result = Timestamp.fromISO('2024-01-15T10:30:00.000Z');
-   * if (result.ok) {
-   *   console.log(result.value.value()); // epoch ms as Decimal
-   * }
-   *
-   * // Невалидная строка
-   * Timestamp.fromISO('invalid'); // Err
-   * ```
-   */
-  public static fromISO(iso: string): Result<Timestamp, ValidationError> {
-    const ms = Date.parse(iso);
-
-    if (Number.isNaN(ms)) {
-      return Err(
-        new ValidationError(`Invalid ISO timestamp: ${iso}`, {
-          context: {
-            field: 'iso',
-            value: iso,
-            reason: TimestampErrorReason.INVALID_ISO,
-          },
-        })
-      );
-    }
-
-    return this.fromEpochMs(ms);
+  public static now(clock?: IClock): Timestamp {
+    const nowMs = clock
+      ? new Decimal(clock.now().getTime())
+      : new Decimal(Date.now());
+    return Timestamp.of(nowMs);
   }
 
   /**
@@ -360,8 +246,8 @@ export class Timestamp {
    *
    * @example
    * ```typescript
-   * const ts1 = Timestamp.fromEpochMs(1000).value;
-   * const ts2 = Timestamp.fromEpochMs(1000).value;
+   * const ts1 = Timestamp.of(new Decimal(1000));
+   * const ts2 = Timestamp.of(new Decimal(1000));
    * console.log(ts1.equals(ts2)); // true
    * ```
    */
@@ -377,8 +263,8 @@ export class Timestamp {
    *
    * @example
    * ```typescript
-   * const earlier = Timestamp.fromEpochMs(1000).value;
-   * const later = Timestamp.fromEpochMs(2000).value;
+   * const earlier = Timestamp.of(new Decimal(1000));
+   * const later = Timestamp.of(new Decimal(2000));
    * console.log(earlier.isBefore(later)); // true
    * ```
    */
@@ -394,8 +280,8 @@ export class Timestamp {
    *
    * @example
    * ```typescript
-   * const earlier = Timestamp.fromEpochMs(1000).value;
-   * const later = Timestamp.fromEpochMs(2000).value;
+   * const earlier = Timestamp.of(new Decimal(1000));
+   * const later = Timestamp.of(new Decimal(2000));
    * console.log(later.isAfter(earlier)); // true
    * ```
    */
@@ -411,8 +297,8 @@ export class Timestamp {
    *
    * @example
    * ```typescript
-   * const ts1 = Timestamp.fromEpochMs(1000).value;
-   * const ts2 = Timestamp.fromEpochMs(2000).value;
+   * const ts1 = Timestamp.of(new Decimal(1000));
+   * const ts2 = Timestamp.of(new Decimal(2000));
    * console.log(ts1.isBeforeOrEqual(ts2)); // true
    * console.log(ts1.isBeforeOrEqual(ts1)); // true
    * ```
@@ -429,8 +315,8 @@ export class Timestamp {
    *
    * @example
    * ```typescript
-   * const ts1 = Timestamp.fromEpochMs(2000).value;
-   * const ts2 = Timestamp.fromEpochMs(1000).value;
+   * const ts1 = Timestamp.of(new Decimal(2000));
+   * const ts2 = Timestamp.of(new Decimal(1000));
    * console.log(ts1.isAfterOrEqual(ts2)); // true
    * console.log(ts1.isAfterOrEqual(ts1)); // true
    * ```
@@ -442,62 +328,32 @@ export class Timestamp {
   /**
    * Добавить миллисекунды к timestamp
    *
-   * @param delta - Количество миллисекунд для добавления (может быть отрицательным)
-   * @returns Result<Timestamp, ValidationError>
+   * @param delta - Количество миллисекунд для добавления (Decimal, может быть отрицательным)
+   * @returns Новый Timestamp
+   * @throws {TimestampInvariantViolation} Если результат невалиден (не positive или не integer)
    *
    * @remarks
-   * Валидирует что delta конечное и результат положительный.
    * Использует Decimal арифметику из @polymarket/math для точности.
+   * Бросает исключение если результат не соответствует инвариантам.
+   * Для публичного API используйте TimestampService.addMs() который возвращает Result.
    *
    * @example
    * ```typescript
-   * const ts = Timestamp.fromEpochMs(1000).value;
-   * const result = ts.addMs(500);
-   * if (result.ok) {
-   *   console.log(result.value.value().toNumber()); // 1500
-   * }
-   *
-   * // Добавить 1 минуту
-   * const later = ts.addMs(60000);
+   * const ts = Timestamp.of(new Decimal(1000));
+   * const later = ts.addMs(new Decimal(500));
+   * console.log(later.value().toNumber()); // 1500
    *
    * // Вычесть время
-   * const earlier = ts.addMs(-500);
+   * const earlier = ts.addMs(new Decimal(-500));
+   * console.log(earlier.value().toNumber()); // 500
    * ```
    */
-  public addMs(delta: number | Decimal): Result<Timestamp, ValidationError> {
-    const deltaDecimal = delta instanceof Decimal ? delta : new Decimal(delta);
-
-    if (deltaDecimal.isNaN() || !deltaDecimal.isFinite()) {
-      return Err(
-        new ValidationError('Invalid delta: not finite', {
-          context: {
-            field: 'delta',
-            value: delta,
-            reason: TimestampErrorReason.INVALID_DELTA,
-          },
-        })
-      );
-    }
-
+  public addMs(delta: Decimal): Timestamp {
     // Используем функцию addDecimal из @polymarket/math для точной арифметики
-    const newMs = addDecimal(this._ms, deltaDecimal);
+    const newMs = addDecimal(this._ms, delta);
 
-    // Проверяем что результат положительный
-    if (newMs.lessThanOrEqualTo(0)) {
-      return Err(
-        new ValidationError('Resulting timestamp must be positive', {
-          context: {
-            field: 'result',
-            current: this.toNumber(),
-            delta: deltaDecimal.toNumber(),
-            result: newMs.toNumber(),
-            reason: TimestampErrorReason.NOT_POSITIVE,
-          },
-        })
-      );
-    }
-
-    return Ok(Timestamp.of(newMs));
+    // Timestamp.of() проверит инварианты (positive, integer)
+    return Timestamp.of(newMs);
   }
 
   /**
@@ -512,8 +368,8 @@ export class Timestamp {
    *
    * @example
    * ```typescript
-   * const ts1 = Timestamp.fromEpochMs(2000).value;
-   * const ts2 = Timestamp.fromEpochMs(1000).value;
+   * const ts1 = Timestamp.of(new Decimal(2000));
+   * const ts2 = Timestamp.of(new Decimal(1000));
    * const diff = ts1.diffMs(ts2);
    * console.log(diff.toNumber()); // 1000 (ts1 на 1000ms позже)
    * console.log(ts2.diffMs(ts1).toNumber()); // -1000
@@ -531,30 +387,15 @@ export class Timestamp {
    *
    * @example
    * ```typescript
-   * const ts1 = Timestamp.fromEpochMs(2000).value;
-   * const ts2 = Timestamp.fromEpochMs(1000).value;
+   * const ts1 = Timestamp.of(new Decimal(2000));
+   * const ts2 = Timestamp.of(new Decimal(1000));
    * const diff = ts1.diffSeconds(ts2);
    * console.log(diff.toNumber()); // 1
    * ```
    */
   public diffSeconds(other: Timestamp): Decimal {
     const diffMs = this.diffMs(other);
-    return diffMs.dividedBy(1000);
+    return divideDecimal(diffMs, new Decimal(1000));
   }
 
-  /**
-   * Преобразовать в строку для отладки
-   *
-   * @returns Строка с epoch ms и ISO представлением
-   *
-   * @example
-   * ```typescript
-   * const ts = Timestamp.now();
-   * console.log(ts.toString());
-   * // "Timestamp(1705318200000, 2024-01-15T10:30:00.000Z)"
-   * ```
-   */
-  public toString(): string {
-    return `Timestamp(${this._ms.toString()}, ${this.toISO()})`;
-  }
 }

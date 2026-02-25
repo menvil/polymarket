@@ -174,6 +174,23 @@ export class TimestampFormatter {
    * ```
    */
   public static toLogString(timestamp: Timestamp): string {
-    return `${timestamp.toISO()} (${timestamp.value})`;
+    return `${timestamp.toISO()} (${timestamp.value()})`;
+  }
+
+  /**
+   * Преобразовать в строку для отладки
+   *
+   * @param timestamp - Timestamp для форматирования
+   * @returns Строка с epoch ms и ISO представлением
+   *
+   * @example
+   * ```typescript
+   * const ts = Timestamp.now();
+   * console.log(TimestampFormatter.toString(ts));
+   * // "Timestamp(1705318200000, 2024-01-15T10:30:00.000Z)"
+   * ```
+   */
+  public static toString(timestamp: Timestamp): string {
+    return `Timestamp(${timestamp.value().toString()}, ${timestamp.toISO()})`;
   }
 }

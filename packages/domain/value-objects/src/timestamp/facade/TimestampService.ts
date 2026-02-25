@@ -36,6 +36,7 @@ import { Result, Ok } from '@polymarket/result';
 import { ValidationError, wrapOp } from '@polymarket/errors';
 import { Timestamp } from '../core/Timestamp.js';
 import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
+import type { IClock } from '@polymarket/time';
 
 export class TimestampService {
   private static readonly SERVICE_NAME = 'TimestampService';
@@ -96,18 +97,8 @@ export class TimestampService {
             });
           }
         } else if (typeof value === 'number') {
-          if (!Number.isFinite(value)) {
-            throw new ValidationError('Invalid timestamp: not finite', {
-              context: {
-                field: 'value',
-                value,
-                reason: TimestampErrorReason.NOT_FINITE,
-              },
-            });
-          }
-          // Truncate number to integer before converting to Decimal
-          const truncated = Math.trunc(value);
-          decimal = new Decimal(truncated);
+          // Truncate number to integer через Decimal (не используем Math)
+          decimal = new Decimal(value).trunc();
         } else {
           throw new ValidationError(`Invalid timestamp type: ${typeof value}`, {
             context: {
@@ -132,8 +123,8 @@ export class TimestampService {
    * @returns Result<Timestamp, ValidationError>
    *
    * @remarks
-   * Валидирует что ms конечное положительное число.
-   * Добавляет wrapOp для error context.
+   * Дробные значения обрезаются до integer.
+   * Core проверит что значение конечное, положительное, и integer.
    *
    * @example
    * ```typescript
@@ -141,6 +132,9 @@ export class TimestampService {
    * if (result.ok) {
    *   console.log(result.value.value().toNumber()); // 1609459200000
    * }
+   *
+   * // Дробные значения обрезаются
+   * const result2 = TimestampService.fromEpochMs(1609459200000.789); // → 1609459200000
    * ```
    */
   public static fromEpochMs(ms: number): Result<Timestamp, ValidationError> {
@@ -149,11 +143,10 @@ export class TimestampService {
       'fromEpochMs',
       { value: ms },
       () => {
-        const result = Timestamp.fromEpochMs(ms);
-        if (!result.ok) {
-          throw result.error;
-        }
-        return Ok(result.value);
+        // Truncate через Decimal (не используем Math)
+        // Core проверит finite, positive, integer
+        const decimal = new Decimal(ms).trunc();
+        return Ok(Timestamp.of(decimal));
       },
       ValidationError
     );
@@ -165,6 +158,10 @@ export class TimestampService {
    * @param date - JavaScript Date
    * @returns Result<Timestamp, ValidationError>
    *
+   * @remarks
+   * Извлекает epoch ms через date.getTime() и делегирует в fromEpochMs.
+   * Лишняя валидация убрана - fromEpochMs уже проверяет finite и positive.
+   *
    * @example
    * ```typescript
    * const result = TimestampService.fromDate(new Date());
@@ -174,19 +171,9 @@ export class TimestampService {
    * ```
    */
   public static fromDate(date: Date): Result<Timestamp, ValidationError> {
-    return wrapOp(
-      TimestampService.SERVICE_NAME,
-      'fromDate',
-      { date: String(date) },
-      () => {
-        const result = Timestamp.fromDate(date);
-        if (!result.ok) {
-          throw result.error;
-        }
-        return Ok(result.value);
-      },
-      ValidationError
-    );
+    const ms = date.getTime();
+    // Делегируем в fromEpochMs - он проверит finite, positive и сделает truncate
+    return this.fromEpochMs(ms);
   }
 
   /**
@@ -209,11 +196,20 @@ export class TimestampService {
       'fromISO',
       { value: iso },
       () => {
-        const result = Timestamp.fromISO(iso);
-        if (!result.ok) {
-          throw result.error;
+        const ms = Date.parse(iso);
+
+        if (Number.isNaN(ms)) {
+          throw new ValidationError(`Invalid ISO timestamp: ${iso}`, {
+            context: {
+              field: 'iso',
+              value: iso,
+              reason: TimestampErrorReason.INVALID_ISO,
+            },
+          });
         }
-        return Ok(result.value);
+
+        // Используем fromEpochMs для валидации и truncate
+        return this.fromEpochMs(ms);
       },
       ValidationError
     );
@@ -222,19 +218,30 @@ export class TimestampService {
   /**
    * Создать Timestamp для текущего момента
    *
+   * @param clock - Опциональный источник времени (IClock). Если не указан, использует Date.now()
    * @returns Timestamp текущего времени
    *
    * @remarks
-   * Не возвращает Result, т.к. Date.now() всегда валиден.
+   * Поддерживает dependency injection через IClock для детерминированного времени.
+   * Не возвращает Result, т.к. время из clock всегда валидно.
    *
    * @example
    * ```typescript
+   * // Реальное системное время (default)
    * const now = TimestampService.now();
    * console.log(now.toISO());
+   *
+   * // С LiveClock (явно)
+   * const liveClock = new LiveClock();
+   * const now2 = TimestampService.now(liveClock);
+   *
+   * // С PaperClock для тестирования
+   * const paperClock = new PaperClock(new Date('2024-01-01'));
+   * const now3 = TimestampService.now(paperClock); // Фиксированное время
    * ```
    */
-  public static now(): Timestamp {
-    return Timestamp.now();
+  public static now(clock?: IClock): Timestamp {
+    return Timestamp.now(clock);
   }
 
   /**
@@ -243,6 +250,9 @@ export class TimestampService {
    * @param timestamp - Исходный Timestamp
    * @param delta - Количество миллисекунд для добавления (может быть отрицательным)
    * @returns Result<Timestamp, ValidationError>
+   *
+   * @remarks
+   * Принимает number или Decimal. Number конвертируется в Decimal с truncate.
    *
    * @example
    * ```typescript
@@ -261,7 +271,15 @@ export class TimestampService {
       TimestampService.SERVICE_NAME,
       'addMs',
       { timestamp: timestamp.toNumber(), delta: typeof delta === 'number' ? delta : delta.toNumber() },
-      () => timestamp.addMs(delta),
+      () => {
+        // Конвертируем number в Decimal с truncate
+        const deltaDecimal = delta instanceof Decimal
+          ? delta.trunc()
+          : new Decimal(delta).trunc();
+
+        // timestamp.addMs() → Timestamp.of() проверит инварианты результата
+        return Ok(timestamp.addMs(deltaDecimal));
+      },
       ValidationError
     );
   }
