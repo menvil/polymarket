@@ -5,11 +5,19 @@ import { QuoteSerializer } from '../../../src/quote/adapters/QuoteSerializer.js'
 import { Quote } from '../../../src/quote/core/index.js';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+import { TimestampService } from '../../../src/timestamp/index.js';
 
 // Тестовые константы для sourceId и instrumentId
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
 const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
+
+// Helper: создать Timestamp из epoch ms (для тестов)
+function createTestTimestamp(ms: number) {
+  const result = TimestampService.fromEpochMs(ms);
+  if (!result.ok) throw new Error('Failed to create test timestamp');
+  return result.value;
+}
 
 describe('QuoteSerializer', () => {
   describe('toJSON()', () => {
@@ -19,7 +27,7 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1234567890000)
+        createTestTimestamp(1234567890000)
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const json = QuoteSerializer.toJSON(quote);
@@ -39,7 +47,7 @@ describe('QuoteSerializer', () => {
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
-        new Decimal(1234567890000)
+        createTestTimestamp(1234567890000)
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const json = QuoteSerializer.toJSON(quote);
@@ -56,7 +64,7 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.51)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
-        new Decimal(1234567890000)
+        createTestTimestamp(1234567890000)
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const json = QuoteSerializer.toJSON(quote);
@@ -514,7 +522,7 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1234567890000)
+        createTestTimestamp(1234567890000)
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const jsonString = QuoteSerializer.toJSONString(quote);
@@ -533,7 +541,7 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1234567890000)
+        createTestTimestamp(1234567890000)
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const jsonString = QuoteSerializer.toJSONString(quote);
@@ -604,7 +612,7 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1234567890000)
+        createTestTimestamp(1234567890000)
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const jsonString = QuoteSerializer.toJSONString(original);
@@ -625,7 +633,7 @@ describe('QuoteSerializer', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1234567890000)
+        createTestTimestamp(1234567890000)
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const json = QuoteSerializer.toJSON(original);

@@ -19,6 +19,7 @@ import { PriceService } from '../../price/facade/PriceService.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
 import { SpreadService } from '../../spread/facade/SpreadService.js';
+import { TimestampService } from '../../timestamp/facade/TimestampService.js';
 
 /**
  * Фасад для работы с Quote - публичный API
@@ -262,6 +263,22 @@ export class QuoteService {
       const askSizeQuantityResult = this.createQuantity(askSizeDecimalResult.value, 'askSize', op);
       if (isErr(askSizeQuantityResult)) return askSizeQuantityResult;
 
+      // Создаём Timestamp через TimestampService
+      const timestampResult = TimestampService.fromEpochMs(timestampDecimal.toNumber());
+      if (isErr(timestampResult)) {
+        return Err(
+          new InvalidQuoteError(timestampResult.error.message, {
+            context: {
+              source: ErrorSource.SERVICE_CALL,
+              service: QuoteService.SERVICE_NAME,
+              op,
+              reason: QuoteErrorReason.INVALID_FORMAT,
+              raw: { field: 'timestamp', value: timestampDecimal.toNumber() }
+            }
+          })
+        );
+      }
+
       // Создаём Quote через Core (может бросить QuoteInvariantViolation)
       try {
         const quote = Quote.of(
@@ -269,7 +286,7 @@ export class QuoteService {
           ask,
           bidSizeQuantityResult.value,
           askSizeQuantityResult.value,
-          timestampDecimal,
+          timestampResult.value,
           sourceId,
           instrumentId
         );
@@ -808,7 +825,7 @@ export class QuoteService {
           quote.ask(),
           bidSize,
           askSize,
-          quote.timestampMs(),
+          quote.timestamp(),
           quote.sourceId(), // Сохраняем sourceId
           quote.instrumentId() // Сохраняем instrumentId
         );
@@ -931,13 +948,28 @@ export class QuoteService {
       }
 
       // Создаём новую котировку через Core (refreshing timestamp)
+      const newTimestampResult = TimestampService.fromEpochMs(clock.now().getTime());
+      if (isErr(newTimestampResult)) {
+        return Err(
+          new InvalidQuoteError(newTimestampResult.error.message, {
+            context: {
+              source: ErrorSource.SERVICE_CALL,
+              service: QuoteService.SERVICE_NAME,
+              op,
+              reason: QuoteErrorReason.INVALID_FORMAT,
+              raw: { field: 'timestamp', value: clock.now().getTime() }
+            }
+          })
+        );
+      }
+
       try {
         const newQuote = Quote.of(
           quote.bid(),
           quote.ask(),
           bidSize,
           askSize,
-          new Decimal(clock.now().getTime()),
+          newTimestampResult.value,
           quote.sourceId(), // Сохраняем sourceId
           quote.instrumentId() // Сохраняем instrumentId
         );
@@ -1197,7 +1229,7 @@ export class QuoteService {
           newSpread.ask()!,
           quote.bidSize(),
           quote.askSize(),
-          quote.timestampMs(),
+          quote.timestamp(),
           quote.sourceId(),
           quote.instrumentId()
         );
@@ -1263,7 +1295,7 @@ export class QuoteService {
           newSpread.ask()!,
           quote.bidSize(),
           quote.askSize(),
-          quote.timestampMs(),
+          quote.timestamp(),
           quote.sourceId(),
           quote.instrumentId()
         );
@@ -1329,7 +1361,7 @@ export class QuoteService {
           newSpread.ask()!,
           quote.bidSize(),
           quote.askSize(),
-          quote.timestampMs(),
+          quote.timestamp(),
           quote.sourceId(),
           quote.instrumentId()
         );
@@ -1398,7 +1430,7 @@ export class QuoteService {
           newSpread.ask()!,
           quote.bidSize(),
           quote.askSize(),
-          quote.timestampMs(),
+          quote.timestamp(),
           quote.sourceId(),
           quote.instrumentId()
         );
@@ -1540,7 +1572,7 @@ export class QuoteService {
           quote.spread()!.ask()!,
           newBidSizeResult.value,
           newAskSizeResult.value,
-          quote.timestampMs(),
+          quote.timestamp(),
           quote.sourceId(),
           quote.instrumentId()
         );

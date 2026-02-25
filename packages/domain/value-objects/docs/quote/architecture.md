@@ -86,7 +86,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
    - Хотя бы одна сторона определена
    - Порядок цен: bid <= ask
    - Структурная согласованность price/size
-   - Валидация timestamp
+   - Валидация timestamp (делегируется Timestamp VO)
 
 2. **Чистая математика** (query методы без side effects):
    - Делегирование в Spread для устранения дублирования логики
@@ -113,7 +113,7 @@ class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestampMs: Decimal  // изменено с number на Decimal для валидации
+    timestamp: Timestamp  // Timestamp VO вместо Decimal
   )
 
   // Factory method - может бросать QuoteInvariantViolation
@@ -122,7 +122,7 @@ class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestampMs: Decimal,
+    timestamp: Timestamp,  // Timestamp VO
     sourceId: MarketDataSourceId,
     instrumentId: InstrumentId
   ): Quote
@@ -132,8 +132,9 @@ class Quote {
   public ask(): Price | null
   public bidSize(): Quantity
   public askSize(): Quantity
-  public timestampMs(): Decimal  // возвращает Decimal для единообразия
-  public getTimestamp(): Date
+  public timestamp(): Timestamp     // Возвращает Timestamp VO
+  public timestampMs(): Decimal     // Возвращает Unix ms как Decimal
+  public getTimestamp(): Date       // Возвращает Date объект
 
   // Проверки
   public isTwoSided(): boolean
@@ -146,7 +147,7 @@ class Quote {
   // Сравнение
   public equals(other: Quote): boolean  // БЕЗ timestamp
   public equalsWithTimestamp(other: Quote): boolean  // С timestamp
-  public age(now: number): Decimal  // возраст котировки (использует Decimal математику)
+  public age(now?: Timestamp): Decimal  // Возраст котировки (Timestamp.now() по умолчанию)
 }
 ```
 
@@ -159,10 +160,9 @@ class Quote {
    - Если `bid === null` → `bidSize === 0` (нельзя иметь размер без цены)
    - Если `ask === null` → `askSize === 0` (нельзя иметь размер без цены)
 5. **Валидный timestamp:**
-   - `isFinite` - не NaN и не Infinity
-   - `isInteger` - целое число миллисекунд
-   - `>= 0` - неотрицательный Unix timestamp
-   - `<= 9999999999999` - разумный верхний предел (~год 2286)
+   - Валидация делегируется Timestamp VO
+   - Timestamp гарантирует: isFinite, isInteger, >= 0, разумные границы
+   - Quote просто принимает валидный Timestamp без дополнительных проверок
 
 **Исключения:**
 
@@ -181,7 +181,7 @@ class QuoteInvariantViolation extends Error {
 
 - `_bid`, `_ask`: `Price | null`
 - `_bidSize`, `_askSize`: `Quantity`
-- `_timestampMs`: `Decimal` (для единообразия и валидации, возвращается как `number`)
+- `_timestamp`: `Timestamp` (Timestamp VO для строгой типизации и валидации)
 
 ### Почему throws в Core?
 
@@ -576,6 +576,8 @@ Quote
 │   └── PriceService (facade)
 ├── Quantity (value object)
 │   └── QuantityService (facade)
+├── Timestamp (value object)
+│   └── TimestampService (facade)
 ├── Decimal.js (math library)
 ├── @polymarket/result (Result<T, E>)
 └── @polymarket/errors (InvalidQuoteError)

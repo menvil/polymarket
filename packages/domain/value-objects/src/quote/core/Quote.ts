@@ -4,6 +4,7 @@ import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { Spread } from '../../spread/core/Spread.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
+import { Timestamp } from '../../timestamp/core/Timestamp.js';
 import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
 
 /**
@@ -18,7 +19,7 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  *    - bid <= ask (если оба определены)
  *    - Sizes >= 0 (гарантирует Quantity)
  *    - Структурная согласованность: bid=null → bidSize=0, ask=null → askSize=0
- *    - Валидный timestamp (finite, integer, >= 0, <= MAX)
+ *    - Валидный timestamp (гарантирует Timestamp VO)
  *
  * 2. **Чистую математику** (query методы, вычисления):
  *    - spreadWidthOrZero() - вычисление ширины спреда
@@ -31,17 +32,20 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  * - Валидацию spread границ (используй Rules)
  * - Market crossing detection бизнес-логику (используй Rules)
  *
- * Внутреннее представление: композиция Price + Quantity + timestamp (Decimal).
+ * Внутреннее представление: композиция Price + Quantity + Timestamp.
  *
  * @example
  * ```typescript
  * // ✅ В Core и Facade (throws)
+ * const ts = Timestamp.now();
  * const quote = Quote.of(
  *   Price.of(0.48),
  *   Price.of(0.52),
  *   Quantity.of(100),
  *   Quantity.of(150),
- *   Date.now()
+ *   ts,
+ *   'POLYMARKET_WS' as MarketDataSourceId,
+ *   'TEST_MARKET' as InstrumentId
  * );
  *
  * // One-sided quote
@@ -50,7 +54,9 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  *   null,
  *   Quantity.of(100),
  *   Quantity.ZERO,
- *   Date.now()
+ *   ts,
+ *   'POLYMARKET_WS' as MarketDataSourceId,
+ *   'TEST_MARKET' as InstrumentId
  * );
  *
  * // Query methods (чистая математика)
@@ -66,101 +72,12 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  * ```
  */
 export class Quote {
-  /** Максимальный timestamp (год 2286) */
-  private static readonly MAX_TIMESTAMP = new Decimal(9999999999999);
-
-  /**
-   * Валидирует timestamp (Unix ms)
-   *
-   * @param timestamp - Timestamp для валидации (Decimal)
-   * @param context - Контекст для сообщения об ошибке ('timestamp' или 'now')
-   * @throws {QuoteInvariantViolation} Если timestamp невалидный
-   * @throws {Error} Если timestamp для age() невалидный
-   *
-   * @remarks
-   * Общая валидация для конструктора (timestamp котировки) и age() (now timestamp).
-   * Разные типы ошибок для разных контекстов.
-   *
-   * Инварианты timestamp (Unix ms):
-   * - Not NaN
-   * - Finite
-   * - Integer (целое число миллисекунд)
-   * - >= 0 (Unix epoch начинается с 0)
-   * - <= MAX_TIMESTAMP (год 2286)
-   */
-  private static validateTimestamp(
-    timestamp: Decimal,
-    context: 'timestamp' | 'now'
-  ): void {
-    // Инвариант: Not NaN
-    if (timestamp.isNaN()) {
-      if (context === 'timestamp') {
-        throw new QuoteInvariantViolation(
-          `Timestamp must be finite, got ${timestamp.toString()}`,
-          'INVALID_TIMESTAMP'
-        );
-      } else {
-        throw new Error('Timestamp cannot be NaN');
-      }
-    }
-
-    // Инвариант: Finite
-    if (!timestamp.isFinite()) {
-      if (context === 'timestamp') {
-        throw new QuoteInvariantViolation(
-          `Timestamp must be finite, got ${timestamp.toString()}`,
-          'INVALID_TIMESTAMP'
-        );
-      } else {
-        throw new Error('Timestamp must be finite');
-      }
-    }
-
-    // Инвариант: Integer (Unix ms - целое число)
-    if (!timestamp.isInteger()) {
-      if (context === 'timestamp') {
-        throw new QuoteInvariantViolation(
-          `Timestamp must be integer milliseconds, got ${timestamp.toString()}`,
-          'INVALID_TIMESTAMP'
-        );
-      } else {
-        throw new Error('Timestamp must be integer (Unix ms)');
-      }
-    }
-
-    // Инвариант: >= 0 (Unix epoch)
-    if (timestamp.isNegative()) {
-      if (context === 'timestamp') {
-        throw new QuoteInvariantViolation(
-          `Timestamp must be non-negative, got ${timestamp.toString()}`,
-          'INVALID_TIMESTAMP'
-        );
-      } else {
-        throw new Error('Timestamp cannot be negative');
-      }
-    }
-
-    // Инвариант: <= MAX_TIMESTAMP (разумный верхний предел)
-    if (timestamp.greaterThan(Quote.MAX_TIMESTAMP)) {
-      if (context === 'timestamp') {
-        throw new QuoteInvariantViolation(
-          `Timestamp ${timestamp.toString()} exceeds maximum ${Quote.MAX_TIMESTAMP.toString()}`,
-          'INVALID_TIMESTAMP'
-        );
-      } else {
-        throw new Error(
-          `Timestamp ${timestamp.toString()} exceeds maximum ${Quote.MAX_TIMESTAMP.toString()}`
-        );
-      }
-    }
-  }
-
   private constructor(
     private readonly _bid: Price | null,
     private readonly _ask: Price | null,
     private readonly _bidSize: Quantity,
     private readonly _askSize: Quantity,
-    private readonly _timestampMs: Decimal,
+    private readonly _timestamp: Timestamp,
     private readonly _sourceId: MarketDataSourceId,
     private readonly _instrumentId: InstrumentId
   ) {
@@ -204,8 +121,8 @@ export class Quote {
       );
     }
 
-    // Инвариант 5: timestamp должен быть валидным Unix ms
-    Quote.validateTimestamp(_timestampMs, 'timestamp');
+    // Инвариант 5: timestamp валидность гарантируется Timestamp VO
+    // (уже проверено при создании Timestamp)
   }
 
   /**
@@ -217,14 +134,14 @@ export class Quote {
    * Бросает QuoteInvariantViolation при нарушении инвариантов.
    * Для публичного API используйте QuoteService.create().
    *
-   * ВАЖНО: timestamp должен быть Decimal (Unix ms).
-   * Конвертация Date/number/string → Decimal делается в QuoteService.
+   * ВАЖНО: timestamp должен быть Timestamp VO.
+   * Конвертация Date/number/string → Timestamp делается в QuoteService.
    *
    * @param bid - Цена покупки (может быть null)
    * @param ask - Цена продажи (может быть null)
    * @param bidSize - Объём на покупку
    * @param askSize - Объём на продажу
-   * @param timestampMs - Временная метка в Unix ms (Decimal)
+   * @param timestamp - Временная метка (Timestamp VO)
    * @param sourceId - Источник маркет-данных
    * @param instrumentId - ID инструмента
    * @returns Новый Quote объект
@@ -233,7 +150,8 @@ export class Quote {
    * @example
    * ```typescript
    * // ✅ В Core и Facade
-   * Quote.of(bid, ask, bidSize, askSize, new Decimal(Date.now()), sourceId, instrumentId);
+   * const ts = TimestampService.fromEpochMs(Date.now()).value!;
+   * Quote.of(bid, ask, bidSize, askSize, ts, sourceId, instrumentId);
    *
    * // ❌ В публичном коде - используй QuoteService
    * const result = QuoteService.create(0.48, 0.52, 100, 150, sourceId, instrumentId);
@@ -244,11 +162,11 @@ export class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestampMs: Decimal,
+    timestamp: Timestamp,
     sourceId: MarketDataSourceId,
     instrumentId: InstrumentId
   ): Quote {
-    return new Quote(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);
+    return new Quote(bid, ask, bidSize, askSize, timestamp, sourceId, instrumentId);
   }
 
   /**
@@ -318,6 +236,26 @@ export class Quote {
   }
 
   /**
+   * Возвращает Timestamp VO
+   *
+   * @returns Timestamp объект
+   *
+   * @remarks
+   * Возвращает внутренний Timestamp для использования в операциях с котировками.
+   * Для получения только миллисекунд используйте `timestampMs()`.
+   *
+   * @example
+   * ```typescript
+   * const quote = Quote.of(...);
+   * const ts = quote.timestamp();
+   * console.log(ts.toISO());
+   * ```
+   */
+  public timestamp(): Timestamp {
+    return this._timestamp;
+  }
+
+  /**
    * Возвращает timestamp в Unix ms
    *
    * @returns Decimal (Unix ms)
@@ -335,7 +273,7 @@ export class Quote {
    * ```
    */
   public timestampMs(): Decimal {
-    return this._timestampMs;
+    return this._timestamp.value();
   }
 
   /**
@@ -395,22 +333,21 @@ export class Quote {
    * ```
    */
   public getTimestamp(): Date {
-    return new Date(this._timestampMs.toNumber());
+    return this._timestamp.toDate();
   }
 
   /**
    * Вычисляет возраст котировки в миллисекундах
    *
-   * @param nowMs - Текущее время в Unix ms (Decimal)
+   * @param now - Текущее время (Timestamp VO, по умолчанию Timestamp.now())
    * @returns Возраст котировки в миллисекундах как Decimal
-   * @throws {Error} Если nowMs нарушает инварианты timestamp
    *
    * @remarks
-   * Чистая математика: now - timestamp с использованием Decimal.
+   * Чистая математика: now - timestamp с использованием Timestamp.diffMs().
    * Полезно для проверок устаревания котировок.
    * Если now < timestamp, возвращает отрицательное значение (котировка из будущего).
    *
-   * Инварианты timestamp (проверяются в Core):
+   * Timestamp VO гарантирует все инварианты:
    * - Not NaN
    * - Finite
    * - Integer (Unix ms - целое число)
@@ -420,8 +357,12 @@ export class Quote {
    * ```typescript
    * const quote = Quote.of(...);
    *
-   * // Использование
-   * const age = quote.age(new Decimal(Date.now()));
+   * // Использование с текущим временем (по умолчанию)
+   * const age = quote.age();
+   *
+   * // Использование с конкретным временем
+   * const now = Timestamp.now();
+   * const age2 = quote.age(now);
    *
    * // Проверка устаревания
    * if (age.greaterThan(5000)) {
@@ -429,11 +370,8 @@ export class Quote {
    * }
    * ```
    */
-  public age(nowMs: Decimal): Decimal {
-    // Валидация nowMs через общий метод
-    Quote.validateTimestamp(nowMs, 'now');
-
-    return nowMs.minus(this._timestampMs);
+  public age(now: Timestamp = Timestamp.now()): Decimal {
+    return now.diffMs(this._timestamp);
   }
 
   /**
@@ -443,7 +381,7 @@ export class Quote {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
+   * const quote = Quote.of(bid, ask, bidSize, askSize, Timestamp.now(), sourceId, instrumentId);
    * if (quote.isTwoSided()) {
    *   console.log('Both sides available');
    * }
@@ -498,7 +436,7 @@ export class Quote {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
+   * const quote = Quote.of(bid, ask, bidSize, askSize, Timestamp.now(), sourceId, instrumentId);
    * const spread = quote.spread();
    * if (spread !== null) {
    *   console.log(`Width: ${spread.width().toString()}`);
@@ -534,8 +472,10 @@ export class Quote {
    *
    * @example
    * ```typescript
-   * const quote1 = Quote.of(bid, ask, bidSize, askSize, Date.now());
-   * const quote2 = Quote.of(bid, ask, bidSize, askSize, Date.now() + 100);
+   * const ts1 = Timestamp.now();
+   * const ts2 = TimestampService.addMs(ts1, 100).value!;
+   * const quote1 = Quote.of(bid, ask, bidSize, askSize, ts1, sourceId, instrumentId);
+   * const quote2 = Quote.of(bid, ask, bidSize, askSize, ts2, sourceId, instrumentId);
    *
    * // true - одинаковые рыночные условия, разное время
    * console.log(quote1.equals(quote2));
@@ -581,10 +521,10 @@ export class Quote {
    *
    * @example
    * ```typescript
-   * const ts = Date.now();
+   * const ts = Timestamp.now();
    * const quote1 = Quote.of(bid, ask, bidSize, askSize, ts);
    * const quote2 = Quote.of(bid, ask, bidSize, askSize, ts);
-   * const quote3 = Quote.of(bid, ask, bidSize, askSize, ts + 1000);
+   * const quote3 = Quote.of(bid, ask, bidSize, askSize, TimestampService.addMs(ts, 1000).value!);
    *
    * console.log(quote1.equalsWithTimestamp(quote2)); // true
    * console.log(quote1.equalsWithTimestamp(quote3)); // false - разное время
@@ -597,8 +537,8 @@ export class Quote {
       return false;
     }
 
-    // Затем проверяем timestamp (Decimal.equals для точного сравнения)
-    return this._timestampMs.equals(other._timestampMs);
+    // Затем проверяем timestamp (Timestamp.equals для точного сравнения)
+    return this._timestamp.equals(other._timestamp);
   }
 
   /**
@@ -615,11 +555,12 @@ export class Quote {
    * @example
    * ```typescript
    * // Two-sided quote
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * const ts = Timestamp.now();
+   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), ts, sourceId, instrumentId);
    * console.log(quote.spreadWidthOrZero().toNumber()); // 0.04
    *
    * // Bid-only quote
-   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, Date.now());
+   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, ts, sourceId, instrumentId);
    * console.log(bidOnly.spreadWidthOrZero().toNumber()); // 0
    * ```
    */
@@ -649,12 +590,13 @@ export class Quote {
    * @example
    * ```typescript
    * // Two-sided quote
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * const ts = Timestamp.now();
+   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), ts, sourceId, instrumentId);
    * const mid = quote.midOrNull();
    * console.log(mid?.toNumber()); // 0.50
    *
    * // Bid-only quote
-   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, Date.now());
+   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, ts, sourceId, instrumentId);
    * console.log(bidOnly.midOrNull()); // null
    * ```
    */
@@ -688,16 +630,17 @@ export class Quote {
    *
    * @example
    * ```typescript
+   * const ts = Timestamp.now();
    * // Сбалансированная котировка
-   * const balanced = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(100), Date.now());
+   * const balanced = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(100), ts, sourceId, instrumentId);
    * console.log(balanced.imbalance().toNumber()); // 0
    *
    * // Больше bid ликвидности
-   * const bidHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(150), Quantity.of(50), Date.now());
+   * const bidHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(150), Quantity.of(50), ts, sourceId, instrumentId);
    * console.log(bidHeavy.imbalance().toNumber()); // 0.5 (50% дисбаланс в сторону bid)
    *
    * // Больше ask ликвидности
-   * const askHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(50), Quantity.of(150), Date.now());
+   * const askHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(50), Quantity.of(150), ts, sourceId, instrumentId);
    * console.log(askHeavy.imbalance().toNumber()); // -0.5 (50% дисбаланс в сторону ask)
    * ```
    */
@@ -738,7 +681,7 @@ export class Quote {
    *   Price.of(new Decimal(0.52)),
    *   Quantity.of(new Decimal(100)),
    *   Quantity.of(new Decimal(150)),
-   *   new Decimal(Date.now()),
+   *   Timestamp.now(),
    *   'POLYMARKET_WS' as MarketDataSourceId,
    *   'TEST_MARKET' as InstrumentId
    * );

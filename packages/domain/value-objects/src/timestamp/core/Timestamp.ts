@@ -5,9 +5,10 @@
  * Представляет момент времени в миллисекундах с Unix epoch (1970-01-01T00:00:00Z).
  *
  * Инварианты:
- * - Должно быть конечное число (finite)
- * - Должно быть положительное (> 0)
- * - Должно быть integer миллисекунды
+ * - `isFinite` - не NaN и не Infinity
+ * - `isInteger` - целое число миллисекунд (дробные значения не допускаются)
+ * - `>= 0` - неотрицательный Unix timestamp (0 = 1970-01-01T00:00:00Z)
+ * - `<= 9999999999999` - разумный верхний предел (~год 2286)
  *
  * Используется для:
  * - Timestamp событий (trades, orders, positions)
@@ -83,19 +84,28 @@ export class Timestamp {
       );
     }
 
-    // Инвариант 3: Must be positive
-    if (_ms.lessThanOrEqualTo(0)) {
+    // Инвариант 3: Must be non-negative (>= 0)
+    if (_ms.lessThan(0)) {
       throw new TimestampInvariantViolation(
-        'Timestamp must be positive',
+        `Timestamp must be non-negative, got: ${_ms.toString()}`,
         TimestampErrorReason.NOT_POSITIVE
       );
     }
 
-    // Инвариант 4: Must be integer
+    // Инвариант 4: Must be within reasonable bounds (<= 9999999999999, ~year 2286)
+    const MAX_TIMESTAMP = new Decimal(9999999999999);
+    if (_ms.greaterThan(MAX_TIMESTAMP)) {
+      throw new TimestampInvariantViolation(
+        `Timestamp too large (must be <= ${MAX_TIMESTAMP.toString()}), got: ${_ms.toString()}`,
+        TimestampErrorReason.OUT_OF_RANGE
+      );
+    }
+
+    // Инвариант 5: Must be integer
     if (!_ms.isInteger()) {
       throw new TimestampInvariantViolation(
         `Timestamp must be integer milliseconds, got: ${_ms.toString()}`,
-        TimestampErrorReason.NOT_FINITE
+        TimestampErrorReason.NOT_INTEGER
       );
     }
   }

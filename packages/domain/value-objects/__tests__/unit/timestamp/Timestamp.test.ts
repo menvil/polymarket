@@ -72,21 +72,31 @@ describe('Timestamp', () => {
       }
     });
 
-    it('should fail for zero', () => {
+    it('should accept zero (Unix epoch)', () => {
       const result = TimestampService.fromEpochMs(0);
 
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('positive');
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(0);
+        expect(result.value.toISO()).toBe('1970-01-01T00:00:00.000Z');
       }
     });
 
     it('should fail for negative value', () => {
+      const result = TimestampService.fromEpochMs(-1);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('negative');
+      }
+    });
+
+    it('should fail for large negative value', () => {
       const result = TimestampService.fromEpochMs(-1000);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('positive');
+        expect(result.error.message).toContain('negative');
       }
     });
 
@@ -97,6 +107,38 @@ describe('Timestamp', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         expect(result.value.toISO()).toContain('2050-01-01');
+      }
+    });
+
+    it('should accept maximum valid timestamp (9999999999999 ~year 2286)', () => {
+      const maxTimestamp = 9999999999999;
+      const result = TimestampService.fromEpochMs(maxTimestamp);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toNumber()).toBe(maxTimestamp);
+        // 9999999999999 ms = Saturday, 20 November 2286 17:46:39.999 GMT
+        expect(result.value.toISO()).toContain('2286');
+      }
+    });
+
+    it('should fail for timestamp exceeding maximum (too large)', () => {
+      const tooLarge = 10000000000000; // Больше чем 9999999999999
+      const result = TimestampService.fromEpochMs(tooLarge);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('too large');
+      }
+    });
+
+    it('should fail for extremely large timestamp', () => {
+      const veryLarge = 99999999999999; // 10x максимума
+      const result = TimestampService.fromEpochMs(veryLarge);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('too large');
       }
     });
   });
@@ -373,13 +415,13 @@ describe('Timestamp', () => {
       expect(result.ok).toBe(false);
     });
 
-    it('should fail if result would be non-positive', () => {
+    it('should fail if result would be negative', () => {
       const ts = unwrap(TimestampService.fromEpochMs(1000));
       const result = TimestampService.addMs(ts, -1001);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('positive');
+        expect(result.error.message).toContain('negative');
       }
     });
   });

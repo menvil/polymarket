@@ -5,11 +5,19 @@ import { ValidateMarketCrossing } from '../../../src/quote/rules/ValidateMarketC
 import { Quote } from '../../../src/quote/core/Quote.js';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+import { TimestampService } from '../../../src/timestamp/index.js';
 
 // Тестовые константы для sourceId и instrumentId
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
 const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
+
+// Helper: создать Timestamp из epoch ms (для тестов)
+function createTestTimestamp(ms: number) {
+  const result = TimestampService.fromEpochMs(ms);
+  if (!result.ok) throw new Error('Failed to create test timestamp');
+  return result.value;
+}
 
 describe('ValidateMarketCrossing', () => {
   describe('checkQuote()', () => {
@@ -19,7 +27,7 @@ describe('ValidateMarketCrossing', () => {
         Price.of(new Decimal(0.52)), // ask
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
@@ -36,7 +44,7 @@ describe('ValidateMarketCrossing', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
@@ -59,7 +67,7 @@ describe('ValidateMarketCrossing', () => {
         Price.of(new Decimal(0.50)), // наш ask
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50)); // наш ask <= orderbook bid
@@ -82,7 +90,7 @@ describe('ValidateMarketCrossing', () => {
         Price.of(new Decimal(0.52)),
         Quantity.ZERO,
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
@@ -99,7 +107,7 @@ describe('ValidateMarketCrossing', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
@@ -115,7 +123,7 @@ describe('ValidateMarketCrossing', () => {
         null, // ask null
         Quantity.of(new Decimal(100)),
         Quantity.ZERO,
-        new Decimal(Date.now())
+        createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
@@ -132,7 +140,7 @@ describe('ValidateMarketCrossing', () => {
         Price.of(new Decimal(0.50)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookAsk = Price.of(new Decimal(0.51));
@@ -150,7 +158,7 @@ describe('ValidateMarketCrossing', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));
@@ -167,7 +175,7 @@ describe('ValidateMarketCrossing', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp(Date.now())
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const orderbookBid = Price.of(new Decimal(0.50));

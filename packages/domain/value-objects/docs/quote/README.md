@@ -421,13 +421,24 @@ const quote = Quote.of(
   ask: Price | null,
   bidSize: Quantity,
   askSize: Quantity,
-  timestampMs: Decimal,
+  timestamp: Timestamp,              // Timestamp VO (не Decimal!)
   sourceId: MarketDataSourceId,
   instrumentId: InstrumentId
 );
 ```
 
 **Рекомендуется использовать `QuoteService.create()` вместо прямого создания!**
+
+**Важно:** Quote.of() теперь требует Timestamp VO. Для создания Timestamp используйте TimestampService:
+
+```typescript
+import { TimestampService } from '@polymarket/value-objects/timestamp';
+
+const tsResult = TimestampService.fromEpochMs(Date.now());
+if (tsResult.ok) {
+  const quote = Quote.of(bid, ask, bidSize, askSize, tsResult.value, sourceId, instrumentId);
+}
+```
 
 #### Геттеры
 
@@ -436,8 +447,9 @@ quote.bid(): Price | null
 quote.ask(): Price | null
 quote.bidSize(): Quantity
 quote.askSize(): Quantity
-quote.timestampMs(): Decimal
-quote.getTimestamp(): Date
+quote.timestamp(): Timestamp          // Timestamp VO
+quote.timestampMs(): Decimal          // Unix ms как Decimal
+quote.getTimestamp(): Date            // Date объект
 ```
 
 #### Проверки
@@ -459,6 +471,28 @@ quote.spreadPercentage(): Ratio | null  // null для one-sided
 
 // Средняя цена
 quote.midOrNull(): Decimal | null  // null для one-sided
+
+// Возраст котировки (в миллисекундах)
+quote.age(now?: Timestamp): Decimal  // Использует Timestamp.now() по умолчанию
+```
+
+**Пример использования age():**
+
+```typescript
+import { Timestamp } from '@polymarket/value-objects/timestamp';
+
+const quote = quoteResult.value;
+
+// Использование с текущим временем (по умолчанию)
+const ageMs = quote.age();
+console.log(ageMs.toNumber());  // Возраст в миллисекундах
+
+// Использование с конкретным временем
+const now = Timestamp.now();
+const age = quote.age(now);
+if (age.greaterThan(5000)) {
+  console.log('Котировка старше 5 секунд');
+}
 ```
 
 #### Сравнение
@@ -1036,6 +1070,23 @@ console.log(`${quote.bid()?.value()}/${quote.ask()?.value()}`);  // ❌
 - [Facade Pattern](./facade.md) — детали Facade Layer и обработка ошибок
 
 ## Changelog
+
+### v0.2.0 (2025-02-25)
+
+**BREAKING CHANGES:**
+- ✅ Миграция на Timestamp VO вместо Decimal для временных меток
+- ✅ `Quote.of()` теперь принимает `timestamp: Timestamp` вместо `timestampMs: Decimal`
+- ✅ Добавлен метод `quote.timestamp(): Timestamp` для получения Timestamp VO
+- ✅ Метод `quote.age()` теперь принимает `Timestamp` (с Timestamp.now() по умолчанию)
+- ✅ `QuoteService` автоматически конвертирует Decimal/number → Timestamp через TimestampService
+- ✅ Обновлены все тесты для работы с Timestamp VO
+
+**Причина изменений:**
+Timestamp VO обеспечивает:
+- Строгую валидацию временных меток на уровне типов
+- Единообразный API для работы со временем
+- Методы сравнения и вычисления разницы
+- Форматирование и сериализацию
 
 ### v0.1.0 (2024-01-15)
 

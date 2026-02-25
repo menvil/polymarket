@@ -4,6 +4,8 @@ import Decimal from 'decimal.js';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+import { TimestampService } from '../../../src/timestamp/index.js';
+import type { Timestamp } from '../../../src/timestamp/index.js';
 
 // Тестовые константы для sourceId и instrumentId
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
@@ -11,6 +13,15 @@ const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 import { Quote } from '../../../src/quote/core/Quote.js';
 import { ValidateAge } from '../../../src/quote/rules/ValidateAge.js';
 import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
+
+// Вспомогательная функция для создания тестового Timestamp
+function createTestTimestamp(ms: number): Timestamp {
+  const result = TimestampService.fromEpochMs(ms);
+  if (!result.ok) {
+    throw new Error(`Failed to create test timestamp: ${result.error.message}`);
+  }
+  return result.value;
+}
 
 describe('ValidateAge', () => {
   const baseTime = new Date('2024-01-01T12:00:00Z');
@@ -25,7 +36,7 @@ describe('ValidateAge', () => {
     const ask = Price.of(new Decimal('0.52'));
     const bidSize = Quantity.of(new Decimal(100));
     const askSize = Quantity.of(new Decimal(150));
-    return Quote.of(bid, ask, bidSize, askSize, new Decimal(timestampMs), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+    return Quote.of(bid, ask, bidSize, askSize, createTestTimestamp(timestampMs), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
   };
 
   describe('check()', () => {

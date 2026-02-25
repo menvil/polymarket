@@ -5,10 +5,21 @@ import { QuoteFormatter } from '../../../src/quote/adapters/QuoteFormatter.js';
 import { Quote } from '../../../src/quote/core/index.js';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
+import { TimestampService } from '../../../src/timestamp/index.js';
+import type { Timestamp } from '../../../src/timestamp/index.js';
 
 // Тестовые константы для sourceId и instrumentId
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
 const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
+
+// Вспомогательная функция для создания тестового Timestamp
+function createTestTimestamp(ms?: number): Timestamp {
+  const result = TimestampService.fromEpochMs(ms ?? Date.now());
+  if (!result.ok) {
+    throw new Error(`Failed to create test timestamp: ${result.error.message}`);
+  }
+  return result.value;
+}
 
 describe('QuoteFormatter', () => {
   describe('toDisplay()', () => {
@@ -18,7 +29,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote);
@@ -32,7 +43,7 @@ describe('QuoteFormatter', () => {
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote);
@@ -46,7 +57,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.51)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote);
@@ -60,7 +71,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote, { priceDecimals: 2 });
@@ -74,7 +85,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100.5)),
         Quantity.of(new Decimal(150.75)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote, { sizeDecimals: 0 });
@@ -90,7 +101,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(timestamp)
+        createTestTimestamp(timestamp)
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const display = QuoteFormatter.toDisplay(quote, { includeTimestamp: true });
@@ -107,7 +118,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const short = QuoteFormatter.toShort(quote);
@@ -121,7 +132,7 @@ describe('QuoteFormatter', () => {
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const short = QuoteFormatter.toShort(quote);
@@ -135,7 +146,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.51)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const short = QuoteFormatter.toShort(quote);
@@ -149,7 +160,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const short = QuoteFormatter.toShort(quote, 2);
@@ -165,7 +176,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote);
@@ -182,7 +193,7 @@ describe('QuoteFormatter', () => {
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote);
@@ -198,7 +209,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.51)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote);
@@ -214,7 +225,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeSpread: false });
@@ -231,7 +242,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeMid: false });
@@ -249,7 +260,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(timestamp)
+        createTestTimestamp(timestamp)
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const detailed = QuoteFormatter.toDetailed(quote, { includeTimestamp: true });
@@ -263,7 +274,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now()),
+        createTestTimestamp(),
         'BINANCE_WS' as any,
         'BTC-USDT' as any
       );
@@ -279,7 +290,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now()),
+        createTestTimestamp(),
         'BINANCE_WS' as any,
         'BTC-USDT' as any
       );
@@ -297,7 +308,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const table = QuoteFormatter.toTable(quote);
@@ -316,7 +327,7 @@ describe('QuoteFormatter', () => {
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const table = QuoteFormatter.toTable(quote);
@@ -333,7 +344,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.51)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const table = QuoteFormatter.toTable(quote);
@@ -351,7 +362,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(timestamp)
+        createTestTimestamp(timestamp)
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const table = QuoteFormatter.toTable(quote, { includeTimestamp: true });
@@ -365,7 +376,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now()),
+        createTestTimestamp(),
         'BINANCE_WS' as any,
         'BTC-USDT' as any
       );
@@ -381,7 +392,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now()),
+        createTestTimestamp(),
         'BINANCE_WS' as any,
         'BTC-USDT' as any
       );
@@ -398,7 +409,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(timestamp),
+        createTestTimestamp(timestamp),
         'BINANCE_WS' as any,
         'BTC-USDT' as any
       );
@@ -422,7 +433,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const spread = QuoteFormatter.formatSpread(quote);
@@ -436,7 +447,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const spread = QuoteFormatter.formatSpread(quote, false);
@@ -450,7 +461,7 @@ describe('QuoteFormatter', () => {
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const spread = QuoteFormatter.formatSpread(quote);
@@ -464,7 +475,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.51)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const spread = QuoteFormatter.formatSpread(quote);
@@ -480,7 +491,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const mid = QuoteFormatter.formatMid(quote);
@@ -494,7 +505,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const mid = QuoteFormatter.formatMid(quote, 2);
@@ -508,7 +519,7 @@ describe('QuoteFormatter', () => {
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const mid = QuoteFormatter.formatMid(quote);
@@ -522,7 +533,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.51)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(200)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const mid = QuoteFormatter.formatMid(quote);
@@ -538,7 +549,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote);
@@ -552,7 +563,7 @@ describe('QuoteFormatter', () => {
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote);
@@ -566,7 +577,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote);
@@ -580,7 +591,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote, 4);
@@ -594,7 +605,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100.5)),
         Quantity.of(new Decimal(150.75)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote, 2, 2);
@@ -608,7 +619,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100.999)),
         Quantity.of(new Decimal(150.111)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const compact = QuoteFormatter.formatCompact(quote);
@@ -625,7 +636,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote);
@@ -640,7 +651,7 @@ describe('QuoteFormatter', () => {
         null,
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(0)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote);
@@ -654,7 +665,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(0)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote);
@@ -668,7 +679,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 4);
@@ -682,7 +693,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.501)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 3);
@@ -697,7 +708,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.60)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 2);
@@ -712,7 +723,7 @@ describe('QuoteFormatter', () => {
         Price.of(new Decimal(0.5001)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(Date.now())
+        createTestTimestamp()
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const formatted = QuoteFormatter.formatWithSpread(quote, 4);
