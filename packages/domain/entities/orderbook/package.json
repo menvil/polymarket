@@ -1,0 +1,62 @@
+{
+  "name": "@polymarket/orderbook",
+  "version": "0.1.0",
+  "description": "Orderbook entity for Polymarket trading system",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "lint:tests": "eslint __tests__ --ext .ts",
+    "lint:tests:fix": "eslint __tests__ --ext .ts --fix",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "keywords": [
+    "orderbook",
+    "trading",
+    "market-data",
+    "domain-driven-design",
+    "ddd",
+    "polymarket"
+  ],
+  "author": "Ivan Moroz",
+  "license": "MIT",
+  "dependencies": {
+    "@polymarket/errors": "^0.1.0",
+    "@polymarket/ids": "^0.1.0",
+    "@polymarket/result": "^0.1.0",
+    "@polymarket/value-objects": "^0.1.0"
+  },
+  "devDependencies": {
+    "@jest/globals": "^29.7.0",
+    "@types/jest": "^29.5.0",
+    "@types/node": "^20.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "eslint": "^8.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.3.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}
