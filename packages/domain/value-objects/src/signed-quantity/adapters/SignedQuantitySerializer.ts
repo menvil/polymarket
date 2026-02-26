@@ -4,19 +4,20 @@ import { SignedQuantity } from '../core/SignedQuantity.js';
 import { SignedQuantityService } from '../facade/SignedQuantityService.js';
 
 /**
- * Безопасная сериализация в JSON с обработкой циклических ссылок
+ * Безопасная сериализация в JSON с обработкой циклических ссылок и undefined
  *
  * @param value - Значение для сериализации
  * @returns JSON строка
  *
  * @remarks
  * Заменяет циклические ссылки на "[Circular]" вместо выброса исключения.
+ * Обрабатывает undefined → "[Undefined]" (т.к. JSON.stringify(undefined) возвращает undefined).
  * Используется для читаемой диагностики ошибок.
  */
 function safeStringify(value: unknown): string {
   try {
     const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
+    const result = JSON.stringify(value, (_key, val) => {
       if (typeof val === 'object' && val !== null) {
         if (seen.has(val)) {
           return '[Circular]';
@@ -25,6 +26,8 @@ function safeStringify(value: unknown): string {
       }
       return val;
     });
+    // JSON.stringify(undefined) возвращает undefined, а не строку
+    return result ?? '[Undefined]';
   } catch {
     return '[Unstringifiable]';
   }
