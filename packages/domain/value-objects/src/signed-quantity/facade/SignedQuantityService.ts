@@ -1,9 +1,12 @@
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { SignedQuantity } from '../core/SignedQuantity.js';
 import { InvalidSignedQuantityError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
-import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
+import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTick } from '@polymarket/math';
 import Decimal from 'decimal.js';
 import { SignedQuantityErrorReason } from '../errors/SignedQuantityErrorReason.js';
+import { Ratio } from '../../ratio/core/Ratio.js';
+import { ValidateStepSizeForQuantity } from '../../quantity/rules/ValidateStepSizeForQuantity.js';
+import { ValidateFactorForSignedQuantityScale, ValidateDeltaForAdjustByNoCrossZero } from '../rules/index.js';
 
 /**
  * Фасад для работы с SignedQuantity
@@ -404,6 +407,334 @@ export class SignedQuantityService {
     return wrapOp(SignedQuantityService.SERVICE_NAME, 'negate', ctx, () => {
       const negated = quantity.neg();
       return Ok(negated);
+    }, InvalidSignedQuantityError);
+  }
+
+  /**
+   * Масштабирует знаковое количество на rate (безопасная операция)
+   *
+   * @remarks
+   * Масштабирует количество на неотрицательный rate.
+   * Требует rate >= 0 для предотвращения инверсии знака.
+   *
+   * Алгоритм:
+   * 1. Извлечь rate как Decimal через Ratio.toDecimal()
+   * 2. Валидация rate >= 0 и isFinite через ValidateFactorForSignedQuantityScale
+   * 3. Умножение через multiplyDecimal()
+   * 4. Создание SignedQuantity через createFromDecimal()
+   *
+   * @param quantity - Знаковое количество для масштабирования
+   * @param rate - Коэффициент масштабирования (должен быть >= 0)
+   * @returns Result<SignedQuantity, InvalidSignedQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const qty = SignedQuantityService.create(100).value;
+   * const rate = RatioService.fromDecimal(2).value;
+   *
+   * // Масштабирование на 2x
+   * const result = SignedQuantityService.scale(qty, rate);
+   * // result.value = SignedQuantity(200)
+   *
+   * // Ошибка для negative rate
+   * const negRate = RatioService.fromDecimal(-1).value;
+   * const errorResult = SignedQuantityService.scale(qty, negRate);
+   * // errorResult.error.context.reason = NEGATIVE_SCALE_FACTOR
+   * ```
+   */
+  public static scale(
+    quantity: SignedQuantity,
+    rate: Ratio
+  ): Result<SignedQuantity, InvalidSignedQuantityError> {
+    const rateDec = rate.toDecimal();
+
+    // Валидация: rate должен быть >= 0 и finite
+    const validateResult = ValidateFactorForSignedQuantityScale.check(rateDec);
+    if (isErr(validateResult)) {
+      return Err(
+        rewrap(SignedQuantityService.SERVICE_NAME, 'scale', {
+          quantity: quantity.value().toString(),
+          rate: rateDec.toString()
+        }, validateResult.error, InvalidSignedQuantityError)
+      );
+    }
+
+    const ctx = {
+      quantity: quantity.value().toString(),
+      rate: rateDec.toString()
+    };
+
+    return wrapOp(SignedQuantityService.SERVICE_NAME, 'scale', ctx, () => {
+      const result = multiplyDecimal(quantity.value(), rateDec);
+      return this.createFromDecimal(result);
+    }, InvalidSignedQuantityError);
+  }
+
+  /**
+   * Вычисляет часть знакового количества (гибкая операция)
+   *
+   * @remarks
+   * Вычисляет часть количества как quantity * rate.
+   * В отличие от scale(), принимает любой rate (включая отрицательный),
+   * что позволяет инвертировать знак результата.
+   *
+   * Алгоритм:
+   * 1. Извлечь rate как Decimal через Ratio.toDecimal()
+   * 2. Умножение через multiplyDecimal() (БЕЗ валидации знака rate)
+   * 3. Создание SignedQuantity через createFromDecimal()
+   *
+   * @param quantity - Знаковое количество
+   * @param rate - Коэффициент (может быть любым finite)
+   * @returns Result<SignedQuantity, InvalidSignedQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const qty = SignedQuantityService.create(100).value;
+   * const rate = RatioService.fromDecimal(0.25).value;
+   *
+   * // Взять 25%
+   * const result = SignedQuantityService.portion(qty, rate);
+   * // result.value = SignedQuantity(25)
+   *
+   * // Negative rate инвертирует знак
+   * const negRate = RatioService.fromDecimal(-0.5).value;
+   * const inverted = SignedQuantityService.portion(qty, negRate);
+   * // inverted.value = SignedQuantity(-50)
+   * ```
+   */
+  public static portion(
+    quantity: SignedQuantity,
+    rate: Ratio
+  ): Result<SignedQuantity, InvalidSignedQuantityError> {
+    const rateDec = rate.toDecimal();
+
+    const ctx = {
+      quantity: quantity.value().toString(),
+      rate: rateDec.toString()
+    };
+
+    return wrapOp(SignedQuantityService.SERVICE_NAME, 'portion', ctx, () => {
+      const result = multiplyDecimal(quantity.value(), rateDec);
+      return this.createFromDecimal(result);
+    }, InvalidSignedQuantityError);
+  }
+
+  /**
+   * Округляет знаковое количество до шага
+   *
+   * @remarks
+   * Округляет количество до ближайшего кратного stepSize с указанным режимом округления.
+   * Корректно обрабатывает отрицательные значения согласно режиму округления.
+   *
+   * Режимы округления (Decimal.Rounding):
+   * - ROUND_HALF_UP (default) - к ближайшему, .5 вверх
+   * - ROUND_DOWN - к нулю (floor для positive, ceil для negative)
+   * - ROUND_UP - от нуля (ceil для positive, floor для negative)
+   * - ROUND_FLOOR - всегда к -Infinity
+   * - ROUND_CEIL - всегда к +Infinity
+   *
+   * Алгоритм:
+   * 1. Парсинг stepSize в Decimal через toDecimal()
+   * 2. Валидация stepSize > 0 и isFinite через ValidateStepSizeForQuantity
+   * 3. Округление через roundToTick()
+   * 4. Создание SignedQuantity через createFromDecimal()
+   *
+   * @param quantity - Знаковое количество для округления
+   * @param stepSize - Размер шага (должен быть > 0)
+   * @param roundingMode - Режим округления (default: ROUND_HALF_UP)
+   * @returns Result<SignedQuantity, InvalidSignedQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const qty = SignedQuantityService.create(10.567).value;
+   *
+   * // Округление до 0.01 (центы) - ROUND_HALF_UP
+   * const result = SignedQuantityService.roundToStep(qty, 0.01);
+   * // result.value = SignedQuantity(10.57)
+   *
+   * // Округление negative - ROUND_DOWN (к нулю)
+   * const negQty = SignedQuantityService.create(-10.567).value;
+   * const negResult = SignedQuantityService.roundToStep(negQty, 0.01, Decimal.ROUND_DOWN);
+   * // negResult.value = SignedQuantity(-10.56) - к нулю
+   *
+   * // ROUND_FLOOR - к -Infinity
+   * const floorResult = SignedQuantityService.roundToStep(negQty, 0.01, Decimal.ROUND_FLOOR);
+   * // floorResult.value = SignedQuantity(-10.57) - к -Infinity
+   * ```
+   */
+  public static roundToStep(
+    quantity: SignedQuantity,
+    stepSize: number | string | Decimal,
+    roundingMode: Decimal.Rounding = Decimal.ROUND_HALF_UP
+  ): Result<SignedQuantity, InvalidSignedQuantityError> {
+    // Парсинг stepSize
+    const stepSizeResult = toDecimal('stepSize', stepSize, SignedQuantityErrorReason.INVALID_FORMAT, InvalidSignedQuantityError, {
+      nanReason: SignedQuantityErrorReason.NAN,
+      nonFiniteReason: SignedQuantityErrorReason.NON_FINITE,
+    });
+    if (isErr(stepSizeResult)) {
+      return Err(
+        rewrap(SignedQuantityService.SERVICE_NAME, 'roundToStep', {
+          quantity: quantity.value().toString(),
+          stepSize: String(stepSize)
+        }, stepSizeResult.error, InvalidSignedQuantityError)
+      );
+    }
+
+    const stepSizeDec = stepSizeResult.value;
+
+    // Валидация stepSize через правило из Quantity (stepSize > 0 и finite)
+    const validateResult = ValidateStepSizeForQuantity.check(stepSizeDec);
+    if (isErr(validateResult)) {
+      // ValidateStepSizeForQuantity возвращает InvalidQuantityError, нужно rewrap в InvalidSignedQuantityError
+      return Err(
+        rewrap(SignedQuantityService.SERVICE_NAME, 'roundToStep', {
+          quantity: quantity.value().toString(),
+          stepSize: stepSizeDec.toString(),
+          roundingMode: String(roundingMode)
+        }, validateResult.error, InvalidSignedQuantityError)
+      );
+    }
+
+    const ctx = {
+      quantity: quantity.value().toString(),
+      stepSize: stepSizeDec.toString(),
+      roundingMode: String(roundingMode)
+    };
+
+    return wrapOp(SignedQuantityService.SERVICE_NAME, 'roundToStep', ctx, () => {
+      const rounded = roundToTick(quantity.value(), stepSizeDec, roundingMode);
+      return this.createFromDecimal(rounded);
+    }, InvalidSignedQuantityError);
+  }
+
+  /**
+   * Изменяет знаковое количество на процент с округлением
+   *
+   * @remarks
+   * Применяет процентное изменение к количеству: quantity * (1 + delta), затем округляет до stepSize.
+   *
+   * Опция allowCrossZero контролирует поведение при пересечении нуля:
+   * - allowCrossZero = true (default): разрешает смену знака (long → short или наоборот)
+   * - allowCrossZero = false: запрещает пересечение нуля (защита от случайного флипа позиции)
+   *
+   * При allowCrossZero = false:
+   * - Если original === 0 → ошибка CANNOT_ADJUST_ZERO
+   * - Если sign(original) !== sign(result) && result !== 0 → ошибка RESULT_CROSSES_ZERO
+   * - Если result === 0 → OK (граничный случай)
+   *
+   * Алгоритм:
+   * 1. Парсинг stepSize в Decimal через toDecimal()
+   * 2. Валидация stepSize > 0 и isFinite через ValidateStepSizeForQuantity
+   * 3. Вычисление multiplier = delta.onePlus() (1 + delta)
+   * 4. Умножение quantity * multiplier через multiplyDecimal()
+   * 5. Округление до stepSize через roundToTick()
+   * 6. Если allowCrossZero = false: валидация через ValidateDeltaForAdjustByNoCrossZero
+   * 7. Создание SignedQuantity через createFromDecimal()
+   *
+   * @param quantity - Знаковое количество для изменения
+   * @param delta - Процентное изменение (Ratio: 0.1 для +10%, -0.2 для -20%)
+   * @param stepSize - Размер шага для округления (должен быть > 0)
+   * @param options - Опции: roundingMode (default: ROUND_HALF_UP), allowCrossZero (default: true)
+   * @returns Result<SignedQuantity, InvalidSignedQuantityError>
+   *
+   * @example
+   * ```typescript
+   * const qty = SignedQuantityService.create(100).value;
+   * const delta = RatioService.fromPercent(10).value; // +10%
+   *
+   * // Увеличение на 10% с округлением до 0.01
+   * const result = SignedQuantityService.adjustBy(qty, delta, 0.01);
+   * // result.value = SignedQuantity(110)
+   *
+   * // Уменьшение на 20%
+   * const decrease = RatioService.fromPercent(-20).value;
+   * const decreased = SignedQuantityService.adjustBy(qty, decrease, 0.01);
+   * // decreased.value = SignedQuantity(80)
+   *
+   * // allowCrossZero = false (защита от флипа)
+   * const large = RatioService.fromPercent(-150).value; // -150%
+   * const errorResult = SignedQuantityService.adjustBy(qty, large, 0.01, { allowCrossZero: false });
+   * // errorResult.error.context.reason = RESULT_CROSSES_ZERO
+   *
+   * // Граничный случай: result === 0 допустим
+   * const exact = RatioService.fromPercent(-100).value;
+   * const zeroResult = SignedQuantityService.adjustBy(qty, exact, 0.01, { allowCrossZero: false });
+   * // zeroResult.value = SignedQuantity(0) - OK
+   * ```
+   */
+  public static adjustBy(
+    quantity: SignedQuantity,
+    delta: Ratio,
+    stepSize: number | string | Decimal,
+    options?: {
+      roundingMode?: Decimal.Rounding;
+      allowCrossZero?: boolean;
+    }
+  ): Result<SignedQuantity, InvalidSignedQuantityError> {
+    // Извлекаем опции с defaults
+    const roundingMode = options?.roundingMode ?? Decimal.ROUND_HALF_UP;
+    const allowCrossZero = options?.allowCrossZero ?? true;
+
+    // Парсинг stepSize
+    const stepSizeResult = toDecimal('stepSize', stepSize, SignedQuantityErrorReason.INVALID_FORMAT, InvalidSignedQuantityError, {
+      nanReason: SignedQuantityErrorReason.NAN,
+      nonFiniteReason: SignedQuantityErrorReason.NON_FINITE,
+    });
+    if (isErr(stepSizeResult)) {
+      return Err(
+        rewrap(SignedQuantityService.SERVICE_NAME, 'adjustBy', {
+          quantity: quantity.value().toString(),
+          delta: delta.toDecimal().toString(),
+          stepSize: String(stepSize)
+        }, stepSizeResult.error, InvalidSignedQuantityError)
+      );
+    }
+
+    const stepSizeDec = stepSizeResult.value;
+
+    // Валидация stepSize через правило из Quantity
+    const validateStepResult = ValidateStepSizeForQuantity.check(stepSizeDec);
+    if (isErr(validateStepResult)) {
+      return Err(
+        rewrap(SignedQuantityService.SERVICE_NAME, 'adjustBy', {
+          quantity: quantity.value().toString(),
+          delta: delta.toDecimal().toString(),
+          stepSize: stepSizeDec.toString(),
+          roundingMode: String(roundingMode),
+          allowCrossZero: String(allowCrossZero)
+        }, validateStepResult.error, InvalidSignedQuantityError)
+      );
+    }
+
+    const ctx = {
+      quantity: quantity.value().toString(),
+      delta: delta.toDecimal().toString(),
+      stepSize: stepSizeDec.toString(),
+      roundingMode: String(roundingMode),
+      allowCrossZero: String(allowCrossZero)
+    };
+
+    return wrapOp(SignedQuantityService.SERVICE_NAME, 'adjustBy', ctx, () => {
+      // Вычисляем multiplier = (1 + delta)
+      const multiplier = delta.onePlus();
+
+      // Умножаем quantity * multiplier
+      const newValue = multiplyDecimal(quantity.value(), multiplier);
+
+      // Округляем до stepSize
+      const rounded = roundToTick(newValue, stepSizeDec, roundingMode);
+
+      // Если allowCrossZero = false, проверяем пересечение нуля
+      if (!allowCrossZero) {
+        const validateCrossResult = ValidateDeltaForAdjustByNoCrossZero.check(quantity.value(), rounded);
+        if (isErr(validateCrossResult)) {
+          return Err(validateCrossResult.error);
+        }
+      }
+
+      // Создаём результат
+      return this.createFromDecimal(rounded);
     }, InvalidSignedQuantityError);
   }
 }

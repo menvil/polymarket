@@ -1,5 +1,6 @@
 import { SignedQuantityService } from '../../../src/signed-quantity/facade/SignedQuantityService.js';
 import { SignedQuantityErrorReason } from '../../../src/signed-quantity/errors/SignedQuantityErrorReason.js';
+import { RatioService } from '../../../src/ratio/facade/RatioService.js';
 import { isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
 
@@ -502,6 +503,409 @@ describe('SignedQuantityService', () => {
           if (remaining.ok) {
             expect(remaining.value.toNumber()).toBe(50);
           }
+        }
+      }
+    });
+  });
+
+  describe('scale', () => {
+    it('should scale positive quantity by positive rate', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const rateResult = RatioService.fromDecimal(2);
+
+      expect(qtyResult.ok && rateResult.ok).toBe(true);
+      if (qtyResult.ok && rateResult.ok) {
+        const result = SignedQuantityService.scale(qtyResult.value, rateResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(200);
+        }
+      }
+    });
+
+    it('should scale negative quantity by positive rate', () => {
+      const qtyResult = SignedQuantityService.create(-100);
+      const rateResult = RatioService.fromDecimal(2);
+
+      expect(qtyResult.ok && rateResult.ok).toBe(true);
+      if (qtyResult.ok && rateResult.ok) {
+        const result = SignedQuantityService.scale(qtyResult.value, rateResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(-200);
+        }
+      }
+    });
+
+    it('should scale by zero', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const rateResult = RatioService.fromDecimal(0);
+
+      expect(qtyResult.ok && rateResult.ok).toBe(true);
+      if (qtyResult.ok && rateResult.ok) {
+        const result = SignedQuantityService.scale(qtyResult.value, rateResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.isZero()).toBe(true);
+        }
+      }
+    });
+
+    it('should fail on negative rate', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const rateResult = RatioService.fromDecimal(-1);
+
+      expect(qtyResult.ok && rateResult.ok).toBe(true);
+      if (qtyResult.ok && rateResult.ok) {
+        const result = SignedQuantityService.scale(qtyResult.value, rateResult.value);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NEGATIVE_SCALE_FACTOR);
+        }
+      }
+    });
+
+    it('should have correct context on error', () => {
+      expect.assertions(4);
+      const qtyResult = SignedQuantityService.create(100);
+      const rateResult = RatioService.fromDecimal(-1);
+
+      if (qtyResult.ok && rateResult.ok) {
+        const result = SignedQuantityService.scale(qtyResult.value, rateResult.value);
+        if (isErr(result)) {
+          const context = result.error.context;
+          expect(context).toHaveProperty('op');
+          expect(context).toHaveProperty('quantity');
+          expect(context).toHaveProperty('rate');
+          expect(context?.op).toContain('scale');
+        }
+      }
+    });
+  });
+
+  describe('portion', () => {
+    it('should calculate portion with positive rate', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const rateResult = RatioService.fromDecimal(0.25);
+
+      expect(qtyResult.ok && rateResult.ok).toBe(true);
+      if (qtyResult.ok && rateResult.ok) {
+        const result = SignedQuantityService.portion(qtyResult.value, rateResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(25);
+        }
+      }
+    });
+
+    it('should calculate portion with negative rate (sign inversion)', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const rateResult = RatioService.fromDecimal(-0.5);
+
+      expect(qtyResult.ok && rateResult.ok).toBe(true);
+      if (qtyResult.ok && rateResult.ok) {
+        const result = SignedQuantityService.portion(qtyResult.value, rateResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(-50);
+        }
+      }
+    });
+
+    it('should calculate portion of negative quantity', () => {
+      const qtyResult = SignedQuantityService.create(-100);
+      const rateResult = RatioService.fromDecimal(0.5);
+
+      expect(qtyResult.ok && rateResult.ok).toBe(true);
+      if (qtyResult.ok && rateResult.ok) {
+        const result = SignedQuantityService.portion(qtyResult.value, rateResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(-50);
+        }
+      }
+    });
+
+    it('should return zero for zero rate', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const rateResult = RatioService.fromDecimal(0);
+
+      expect(qtyResult.ok && rateResult.ok).toBe(true);
+      if (qtyResult.ok && rateResult.ok) {
+        const result = SignedQuantityService.portion(qtyResult.value, rateResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.isZero()).toBe(true);
+        }
+      }
+    });
+  });
+
+  describe('roundToStep', () => {
+    it('should round positive quantity with ROUND_HALF_UP (default)', () => {
+      const qtyResult = SignedQuantityService.create(10.567);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.roundToStep(qtyResult.value, 0.01);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(10.57);
+        }
+      }
+    });
+
+    it('should round negative quantity with ROUND_HALF_UP', () => {
+      const qtyResult = SignedQuantityService.create(-10.567);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.roundToStep(qtyResult.value, 0.01);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(-10.57);
+        }
+      }
+    });
+
+    it('should round with ROUND_DOWN (to zero)', () => {
+      const qtyResult = SignedQuantityService.create(10.567);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.roundToStep(qtyResult.value, 0.01, Decimal.ROUND_DOWN);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(10.56);
+        }
+      }
+    });
+
+    it('should round negative with ROUND_DOWN (to zero)', () => {
+      const qtyResult = SignedQuantityService.create(-10.567);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.roundToStep(qtyResult.value, 0.01, Decimal.ROUND_DOWN);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(-10.56);
+        }
+      }
+    });
+
+    it('should round with ROUND_FLOOR (to -Infinity)', () => {
+      const qtyResult = SignedQuantityService.create(-10.561);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.roundToStep(qtyResult.value, 0.01, Decimal.ROUND_FLOOR);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(-10.57);
+        }
+      }
+    });
+
+    it('should fail on invalid stepSize (zero)', () => {
+      const qtyResult = SignedQuantityService.create(10.567);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.roundToStep(qtyResult.value, 0);
+        expect(isErr(result)).toBe(true);
+      }
+    });
+
+    it('should fail on negative stepSize', () => {
+      const qtyResult = SignedQuantityService.create(10.567);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.roundToStep(qtyResult.value, -0.01);
+        expect(isErr(result)).toBe(true);
+      }
+    });
+
+    it('should accept string stepSize', () => {
+      const qtyResult = SignedQuantityService.create(10.567);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.roundToStep(qtyResult.value, '0.01');
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(10.57);
+        }
+      }
+    });
+  });
+
+  describe('adjustBy', () => {
+    it('should increase positive quantity by positive delta', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(10); // +10%
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(110);
+        }
+      }
+    });
+
+    it('should decrease positive quantity by negative delta', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(-20); // -20%
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(80);
+        }
+      }
+    });
+
+    it('should adjust negative quantity', () => {
+      const qtyResult = SignedQuantityService.create(-100);
+      const deltaResult = RatioService.fromPercent(10); // +10%
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(-110); // negative увеличивается в абсолютном значении
+        }
+      }
+    });
+
+    it('should round result to stepSize', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(5.555); // +5.555%
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          // 100 * 1.05555 = 105.555 → округляется до 105.56
+          expect(result.value.toNumber()).toBe(105.56);
+        }
+      }
+    });
+
+    it('should allow crossing zero by default (allowCrossZero = true)', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(-150); // -150%
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.toNumber()).toBe(-50); // 100 * (1 - 1.5) = -50
+        }
+      }
+    });
+
+    it('should allow result exactly zero with allowCrossZero = false', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(-100); // -100%
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01, {
+          allowCrossZero: false
+        });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.isZero()).toBe(true);
+        }
+      }
+    });
+
+    it('should fail on crossing zero with allowCrossZero = false', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(-150); // -150%
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01, {
+          allowCrossZero: false
+        });
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.RESULT_CROSSES_ZERO);
+        }
+      }
+    });
+
+    it('should fail on adjusting zero with allowCrossZero = false', () => {
+      const qtyResult = SignedQuantityService.create(0);
+      const deltaResult = RatioService.fromPercent(10); // +10%
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01, {
+          allowCrossZero: false
+        });
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.CANNOT_ADJUST_ZERO);
+        }
+      }
+    });
+
+    it('should use custom rounding mode', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(5.555); // +5.555%
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01, {
+          roundingMode: Decimal.ROUND_DOWN
+        });
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          // 100 * 1.05555 = 105.555 → ROUND_DOWN → 105.55
+          expect(result.value.toNumber()).toBe(105.55);
+        }
+      }
+    });
+
+    it('should fail on invalid stepSize', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(10);
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0);
+        expect(isErr(result)).toBe(true);
+      }
+    });
+
+    it('should have correct context on error', () => {
+      expect.assertions(6);
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(-150);
+
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01, {
+          allowCrossZero: false
+        });
+        if (isErr(result)) {
+          const context = result.error.context;
+          expect(context).toHaveProperty('op');
+          expect(context).toHaveProperty('quantity');
+          expect(context).toHaveProperty('delta');
+          expect(context).toHaveProperty('stepSize');
+          expect(context).toHaveProperty('allowCrossZero');
+          expect(context?.op).toContain('adjustBy');
         }
       }
     });

@@ -37,5 +37,32 @@ export enum SignedQuantityErrorReason {
   /**
    * Деление на ноль
    */
-  DIVISION_BY_ZERO = 'DIVISION_BY_ZERO'
+  DIVISION_BY_ZERO = 'DIVISION_BY_ZERO',
+
+  /**
+   * Отрицательный множитель для операции scale
+   *
+   * @remarks
+   * Scale операция требует неотрицательный rate (>= 0),
+   * чтобы предотвратить инверсию знака SignedQuantity.
+   */
+  NEGATIVE_SCALE_FACTOR = 'NEGATIVE_SCALE_FACTOR',
+
+  /**
+   * Результат операции пересекает ноль при запрете пересечения
+   *
+   * @remarks
+   * Возникает при adjustBy() с allowCrossZero = false,
+   * когда операция меняет знак SignedQuantity (long → short или наоборот).
+   */
+  RESULT_CROSSES_ZERO = 'RESULT_CROSSES_ZERO',
+
+  /**
+   * Попытка скорректировать нулевое значение
+   *
+   * @remarks
+   * При adjustBy() с allowCrossZero = false невозможно скорректировать
+   * SignedQuantity равный нулю, так как любое изменение пересекает ноль.
+   */
+  CANNOT_ADJUST_ZERO = 'CANNOT_ADJUST_ZERO'
 }

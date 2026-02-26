@@ -367,6 +367,7 @@ npm test -- signed-quantity
 - [Architecture.md](./architecture.md) — архитектурные решения
 - [Examples.md](./examples.md) — расширенные примеры
 - [Facade.md](./facade.md) — детали SignedQuantityService
+- [Operations.md](./operations.md) — операции scale/portion/roundToStep/adjustBy
 
 ## Лицензия
 
