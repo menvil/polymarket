@@ -407,7 +407,7 @@ if (netPosition.isNegative()) {
 
 ## Testing
 
-Все операции покрыты тестами (140 тестов):
+Все операции покрыты тестами (~209 тестов, включая Core, Facade, Rules, Adapters):
 
 ```bash
 npm test -- signed-quantity

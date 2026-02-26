@@ -858,7 +858,7 @@ export class SignedQuantityService {
 
 ### Test Coverage
 
-**39 тестов для SignedQuantityService:**
+**72 теста для SignedQuantityService:**
 
 - `create()`: 10 тестов
   - Успешное создание (positive, negative, zero, from string, from Decimal)
@@ -887,6 +887,30 @@ export class SignedQuantityService {
 
 - `negate()`: 4 теста
   - Инверсия знака, double negate
+
+- `scale()`: 6 тестов
+  - Масштабирование positive/negative на positive rate
+  - Scale by zero, масштабирование нуля
+  - Ошибка на negative rate
+  - Error context validation
+
+- `portion()`: 5 тестов
+  - Вычисление порции с positive/negative rate
+  - Инверсия знака через negative rate
+
+- `roundToStep()`: 11 тестов
+  - Округление positive/negative с разными режимами
+  - Валидация invalid stepSize (zero, negative, NaN, 'abc')
+  - String stepSize support
+  - Error context validation
+
+- `adjustBy()`: 11 тестов
+  - Увеличение/уменьшение на процент
+  - allowCrossZero политика (true/false)
+  - Граничные случаи (zero crossing, idempotent)
+  - Валидация invalid stepSize (zero, NaN, 'abc')
+  - Custom rounding modes
+  - Error context validation
 
 - Integration scenarios: 3 теста
   - P&L calculation

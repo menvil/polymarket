@@ -377,17 +377,25 @@ export class SignedQuantity {
   - Операции со знаком (sign(), abs(), neg())
   - Immutability
 
-- **Facade Layer**: 39 тестов
+- **Facade Layer**: 72 теста
   - create() — парсинг, валидация
   - Арифметика (add, subtract, multiply, divide)
   - Операции со знаком (abs, negate)
+  - Масштабирование и порции (scale, portion)
+  - Округление (roundToStep)
+  - Корректировка с политикой (adjustBy)
   - Integration scenarios (P&L, position reversal)
 
-- **Adapters Layer**: 51 тест
-  - Formatter (27 тестов) — все форматы, опции
-  - Serializer (24 теста) — сериализация, структурные ошибки, round-trip
+- **Validation Rules**: 28 тестов
+  - ValidateFactorForSignedQuantityScale
+  - ValidateDeltaForAdjustByNoCrossZero
+  - ValidateStepSizeForSignedQuantity
 
-**Итого: 140 тестов**
+- **Adapters Layer**: 59 тестов
+  - Formatter (33 теста) — все форматы, опции, edge cases
+  - Serializer (26 тестов) — сериализация, структурные ошибки, round-trip, circular/BigInt
+
+**Итого: ~209 тестов** (все SignedQuantity модули)
 
 ### Test Patterns
 
