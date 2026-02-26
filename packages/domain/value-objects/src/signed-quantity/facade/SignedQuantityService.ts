@@ -5,8 +5,7 @@ import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTic
 import Decimal from 'decimal.js';
 import { SignedQuantityErrorReason } from '../errors/SignedQuantityErrorReason.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
-import { ValidateStepSizeForQuantity } from '../../quantity/rules/ValidateStepSizeForQuantity.js';
-import { ValidateFactorForSignedQuantityScale, ValidateDeltaForAdjustByNoCrossZero } from '../rules/index.js';
+import { ValidateFactorForSignedQuantityScale, ValidateDeltaForAdjustByNoCrossZero, ValidateStepSizeForSignedQuantity } from '../rules/index.js';
 
 /**
  * Фасад для работы с SignedQuantity
@@ -546,7 +545,7 @@ export class SignedQuantityService {
    *
    * Алгоритм:
    * 1. Парсинг stepSize в Decimal через toDecimal()
-   * 2. Валидация stepSize > 0 и isFinite через ValidateStepSizeForQuantity
+   * 2. Валидация stepSize > 0 и isFinite через ValidateStepSizeForSignedQuantity
    * 3. Округление через roundToTick()
    * 4. Создание SignedQuantity через createFromDecimal()
    *
@@ -594,24 +593,19 @@ export class SignedQuantityService {
 
     const stepSizeDec = stepSizeResult.value;
 
-    // Валидация stepSize через правило из Quantity (stepSize > 0 и finite)
-    const validateResult = ValidateStepSizeForQuantity.check(stepSizeDec);
-    if (isErr(validateResult)) {
-      // ValidateStepSizeForQuantity возвращает InvalidQuantityError, нужно rewrap в InvalidSignedQuantityError
-      return Err(
-        rewrap(SignedQuantityService.SERVICE_NAME, 'roundToStep', {
-          quantity: quantity.value().toString(),
-          stepSize: stepSizeDec.toString(),
-          roundingMode: String(roundingMode)
-        }, validateResult.error, InvalidSignedQuantityError)
-      );
-    }
-
     const ctx = {
       quantity: quantity.value().toString(),
       stepSize: stepSizeDec.toString(),
       roundingMode: String(roundingMode)
     };
+
+    // Валидация stepSize через правило SignedQuantity (stepSize > 0 и finite)
+    const validateResult = ValidateStepSizeForSignedQuantity.check(stepSizeDec);
+    if (isErr(validateResult)) {
+      return Err(
+        rewrap(SignedQuantityService.SERVICE_NAME, 'roundToStep', ctx, validateResult.error, InvalidSignedQuantityError)
+      );
+    }
 
     return wrapOp(SignedQuantityService.SERVICE_NAME, 'roundToStep', ctx, () => {
       const rounded = roundToTick(quantity.value(), stepSizeDec, roundingMode);
@@ -636,7 +630,7 @@ export class SignedQuantityService {
    *
    * Алгоритм:
    * 1. Парсинг stepSize в Decimal через toDecimal()
-   * 2. Валидация stepSize > 0 и isFinite через ValidateStepSizeForQuantity
+   * 2. Валидация stepSize > 0 и isFinite через ValidateStepSizeForSignedQuantity
    * 3. Вычисление multiplier = delta.onePlus() (1 + delta)
    * 4. Умножение quantity * multiplier через multiplyDecimal()
    * 5. Округление до stepSize через roundToTick()
@@ -704,20 +698,6 @@ export class SignedQuantityService {
 
     const stepSizeDec = stepSizeResult.value;
 
-    // Валидация stepSize через правило из Quantity
-    const validateStepResult = ValidateStepSizeForQuantity.check(stepSizeDec);
-    if (isErr(validateStepResult)) {
-      return Err(
-        rewrap(SignedQuantityService.SERVICE_NAME, 'adjustBy', {
-          quantity: quantity.value().toString(),
-          delta: delta.toDecimal().toString(),
-          stepSize: stepSizeDec.toString(),
-          roundingMode: String(roundingMode),
-          allowCrossZero: String(allowCrossZero)
-        }, validateStepResult.error, InvalidSignedQuantityError)
-      );
-    }
-
     const ctx = {
       quantity: quantity.value().toString(),
       delta: delta.toDecimal().toString(),
@@ -725,6 +705,14 @@ export class SignedQuantityService {
       roundingMode: String(roundingMode),
       allowCrossZero: String(allowCrossZero)
     };
+
+    // Валидация stepSize через правило SignedQuantity
+    const validateStepResult = ValidateStepSizeForSignedQuantity.check(stepSizeDec);
+    if (isErr(validateStepResult)) {
+      return Err(
+        rewrap(SignedQuantityService.SERVICE_NAME, 'adjustBy', ctx, validateStepResult.error, InvalidSignedQuantityError)
+      );
+    }
 
     return wrapOp(SignedQuantityService.SERVICE_NAME, 'adjustBy', ctx, () => {
       // Вычисляем multiplier = (1 + delta)
