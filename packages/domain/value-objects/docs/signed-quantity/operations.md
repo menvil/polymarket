@@ -317,10 +317,18 @@ public static adjustBy(
 Разрешает смену знака (long → short или наоборот):
 
 ```typescript
-const qty = SignedQuantityService.create(100).value;
-const delta = RatioService.fromPercent(-150).value; // -150%
-const result = SignedQuantityService.adjustBy(qty, delta, 0.01);
-// result.value = SignedQuantity(-50) ✅ OK - пересечение разрешено
+const qtyResult = SignedQuantityService.create(100);
+const deltaResult = RatioService.fromPercent(-150); // -150%
+
+if (qtyResult.ok && deltaResult.ok) {
+  const qty = qtyResult.value;
+  const delta = deltaResult.value;
+
+  const result = SignedQuantityService.adjustBy(qty, delta, 0.01);
+  if (result.ok) {
+    console.log(result.value.toNumber()); // -50 ✅ OK - пересечение разрешено
+  }
+}
 ```
 
 #### allowCrossZero = false
@@ -328,10 +336,18 @@ const result = SignedQuantityService.adjustBy(qty, delta, 0.01);
 Запрещает смену знака (защита от случайного флипа позиции):
 
 ```typescript
-const qty = SignedQuantityService.create(100).value;
-const delta = RatioService.fromPercent(-150).value; // -150%
-const result = SignedQuantityService.adjustBy(qty, delta, 0.01, { allowCrossZero: false });
-// result.error.context.reason = RESULT_CROSSES_ZERO ❌
+const qtyResult = SignedQuantityService.create(100);
+const deltaResult = RatioService.fromPercent(-150); // -150%
+
+if (qtyResult.ok && deltaResult.ok) {
+  const qty = qtyResult.value;
+  const delta = deltaResult.value;
+
+  const result = SignedQuantityService.adjustBy(qty, delta, 0.01, { allowCrossZero: false });
+  if (!result.ok) {
+    console.log(result.error.context?.reason); // RESULT_CROSSES_ZERO ❌
+  }
+}
 ```
 
 **Проверка при allowCrossZero = false:**
@@ -355,52 +371,83 @@ const result = SignedQuantityService.adjustBy(qty, delta, 0.01, { allowCrossZero
 ```typescript
 import Decimal from 'decimal.js';
 
-// ✅ Увеличение на 10%
-const position = SignedQuantityService.create(100).value;
-const delta10 = RatioService.fromPercent(10).value;
-const increased = SignedQuantityService.adjustBy(position, delta10, 0.01);
-// increased.value = SignedQuantity(110)
+const positionResult = SignedQuantityService.create(100);
+const delta10Result = RatioService.fromPercent(10);
+const delta20Result = RatioService.fromPercent(-20);
+const delta5555Result = RatioService.fromPercent(5.555);
+const delta150Result = RatioService.fromPercent(-150);
+const delta100Result = RatioService.fromPercent(-100);
 
-// ✅ Уменьшение на 20%
-const delta20 = RatioService.fromPercent(-20).value;
-const decreased = SignedQuantityService.adjustBy(position, delta20, 0.01);
-// decreased.value = SignedQuantity(80)
+if (positionResult.ok && delta10Result.ok && delta20Result.ok &&
+    delta5555Result.ok && delta150Result.ok && delta100Result.ok) {
 
-// ✅ Округление до stepSize
-const delta5555 = RatioService.fromPercent(5.555).value;
-const roundedResult = SignedQuantityService.adjustBy(position, delta5555, 0.01);
-// 100 * 1.05555 = 105.555 → 105.56 (ROUND_HALF_UP)
+  const position = positionResult.value;
+  const delta10 = delta10Result.value;
+  const delta20 = delta20Result.value;
+  const delta5555 = delta5555Result.value;
+  const delta150 = delta150Result.value;
+  const delta100 = delta100Result.value;
 
-// ✅ allowCrossZero = true (default) - разрешено пересечение
-const delta150 = RatioService.fromPercent(-150).value;
-const crossedZero = SignedQuantityService.adjustBy(position, delta150, 0.01);
-// crossedZero.value = SignedQuantity(-50) ✅
+  // ✅ Увеличение на 10%
+  const increased = SignedQuantityService.adjustBy(position, delta10, 0.01);
+  if (increased.ok) {
+    console.log(increased.value.toNumber()); // 110
+  }
 
-// ✅ Граничный случай: result === 0 допустим
-const delta100 = RatioService.fromPercent(-100).value;
-const exactZero = SignedQuantityService.adjustBy(position, delta100, 0.01, {
-  allowCrossZero: false
-});
-// exactZero.value = SignedQuantity(0) ✅
+  // ✅ Уменьшение на 20%
+  const decreased = SignedQuantityService.adjustBy(position, delta20, 0.01);
+  if (decreased.ok) {
+    console.log(decreased.value.toNumber()); // 80
+  }
 
-// ❌ allowCrossZero = false - запрещено пересечение
-const errorResult = SignedQuantityService.adjustBy(position, delta150, 0.01, {
-  allowCrossZero: false
-});
-// errorResult.error.context.reason = RESULT_CROSSES_ZERO
+  // ✅ Округление до stepSize
+  const roundedResult = SignedQuantityService.adjustBy(position, delta5555, 0.01);
+  if (roundedResult.ok) {
+    console.log(roundedResult.value.toNumber()); // 105.56 (ROUND_HALF_UP)
+  }
 
-// ❌ Корректировка нуля запрещена при allowCrossZero = false
-const zero = SignedQuantityService.create(0).value;
-const errorZero = SignedQuantityService.adjustBy(zero, delta10, 0.01, {
-  allowCrossZero: false
-});
-// errorZero.error.context.reason = CANNOT_ADJUST_ZERO
+  // ✅ allowCrossZero = true (default) - разрешено пересечение
+  const crossedZero = SignedQuantityService.adjustBy(position, delta150, 0.01);
+  if (crossedZero.ok) {
+    console.log(crossedZero.value.toNumber()); // -50 ✅
+  }
 
-// ✅ Custom rounding mode
-const roundedDown = SignedQuantityService.adjustBy(position, delta5555, 0.01, {
-  roundingMode: Decimal.ROUND_DOWN
-});
-// 100 * 1.05555 = 105.555 → 105.55 (ROUND_DOWN)
+  // ✅ Граничный случай: result === 0 допустим
+  const exactZero = SignedQuantityService.adjustBy(position, delta100, 0.01, {
+    allowCrossZero: false
+  });
+  if (exactZero.ok) {
+    console.log(exactZero.value.toNumber()); // 0 ✅
+  }
+
+  // ❌ allowCrossZero = false - запрещено пересечение
+  const errorResult = SignedQuantityService.adjustBy(position, delta150, 0.01, {
+    allowCrossZero: false
+  });
+  if (!errorResult.ok) {
+    console.log(errorResult.error.context?.reason); // RESULT_CROSSES_ZERO
+  }
+
+  // ❌ Корректировка нуля запрещена при allowCrossZero = false
+  const zeroResult = SignedQuantityService.create(0);
+  if (zeroResult.ok) {
+    const zero = zeroResult.value;
+    const errorZero = SignedQuantityService.adjustBy(zero, delta10, 0.01, {
+      allowCrossZero: false
+    });
+    if (!errorZero.ok) {
+      console.log(errorZero.error.context?.reason); // CANNOT_ADJUST_ZERO
+    }
+  }
+
+  // ✅ Custom rounding mode
+  const roundedDown = SignedQuantityService.adjustBy(position, delta5555, 0.01, {
+    roundingMode: Decimal.ROUND_DOWN
+  });
+  if (roundedDown.ok) {
+    console.log(roundedDown.value.toNumber()); // 105.55 (ROUND_DOWN)
+  }
+}
 ```
 
 ### Когда использовать

@@ -211,25 +211,31 @@ function calculatePnL(
 }
 
 // Использование
-const longPosition: Position = {
-  quantity: SignedQuantityService.create(100).value,
-  entryPrice: 50
-};
+const longQtyResult = SignedQuantityService.create(100);
+if (longQtyResult.ok) {
+  const longPosition: Position = {
+    quantity: longQtyResult.value,
+    entryPrice: 50
+  };
 
-const pnl = calculatePnL(longPosition, 55);
-if (pnl) {
-  console.log(`P&L: $${pnl.toNumber()}`); // 500
+  const pnl = calculatePnL(longPosition, 55);
+  if (pnl) {
+    console.log(`P&L: $${pnl.toNumber()}`); // 500
+  }
 }
 
 // Short position P&L
-const shortPosition: Position = {
-  quantity: SignedQuantityService.create(-100).value,
-  entryPrice: 50
-};
+const shortQtyResult = SignedQuantityService.create(-100);
+if (shortQtyResult.ok) {
+  const shortPosition: Position = {
+    quantity: shortQtyResult.value,
+    entryPrice: 50
+  };
 
-const pnl2 = calculatePnL(shortPosition, 55);
-if (pnl2) {
-  console.log(`P&L: $${pnl2.toNumber()}`); // -500 (убыток на шорте)
+  const pnl2 = calculatePnL(shortPosition, 55);
+  if (pnl2) {
+    console.log(`P&L: $${pnl2.toNumber()}`); // -500 (убыток на шорте)
+  }
 }
 ```
 
@@ -337,9 +343,12 @@ function calculateMarginRequirement(
 }
 
 // Использование
-const position = SignedQuantityService.create(-100).value; // Short 100
-const margin = calculateMarginRequirement(position, 50, 0.25);
-console.log(`Margin required: $${margin}`); // 1250
+const positionResult = SignedQuantityService.create(-100); // Short 100
+if (positionResult.ok) {
+  const position = positionResult.value;
+  const margin = calculateMarginRequirement(position, 50, 0.25);
+  console.log(`Margin required: $${margin}`); // 1250
+}
 ```
 
 ## Форматирование для UI
@@ -349,8 +358,12 @@ console.log(`Margin required: $${margin}`); // 1250
 ```typescript
 import { SignedQuantityFormatter } from '@polymarket/value-objects/signed-quantity';
 
-const profit = SignedQuantityService.create(1250.5).value;
-const loss = SignedQuantityService.create(-750.25).value;
+const profitResult = SignedQuantityService.create(1250.5);
+const lossResult = SignedQuantityService.create(-750.25);
+
+if (profitResult.ok && lossResult.ok) {
+  const profit = profitResult.value;
+  const loss = lossResult.value;
 
 // Стандартный формат
 const std1 = SignedQuantityFormatter.toString(profit, 2);
@@ -376,23 +389,30 @@ if (fin1.ok && fin2.ok) {
   console.log(fin2.value); // "(750.25)"
 }
 
-// Debug формат
-console.log(SignedQuantityFormatter.toDebugString(profit)); // "SignedQuantity(+1250.5)"
+  // Debug формат
+  console.log(SignedQuantityFormatter.toDebugString(profit)); // "SignedQuantity(+1250.5)"
+}
 ```
 
 ### Дисплейный формат с K/M
 
 ```typescript
-const small = SignedQuantityService.create(500).value;
-const medium = SignedQuantityService.create(15000).value;
-const large = SignedQuantityService.create(2500000).value;
+const smallResult = SignedQuantityService.create(500);
+const mediumResult = SignedQuantityService.create(15000);
+const largeResult = SignedQuantityService.create(2500000);
 
-console.log(SignedQuantityFormatter.toDisplayString(small));   // "+500.00"
-console.log(SignedQuantityFormatter.toDisplayString(medium));  // "+15.00K"
-console.log(SignedQuantityFormatter.toDisplayString(large));   // "+2.50M"
+if (smallResult.ok && mediumResult.ok && largeResult.ok) {
+  const small = smallResult.value;
+  const medium = mediumResult.value;
+  const large = largeResult.value;
 
-// Без знака плюс
-console.log(SignedQuantityFormatter.toDisplayString(medium, { showPlusSign: false })); // "15.00K"
+  console.log(SignedQuantityFormatter.toDisplayString(small));   // "+500.00"
+  console.log(SignedQuantityFormatter.toDisplayString(medium));  // "+15.00K"
+  console.log(SignedQuantityFormatter.toDisplayString(large));   // "+2.50M"
+
+  // Без знака плюс
+  console.log(SignedQuantityFormatter.toDisplayString(medium, { showPlusSign: false })); // "15.00K"
+}
 ```
 
 ### P&L для UI
@@ -419,13 +439,18 @@ function renderPnL(pnl: SignedQuantity): string {
 }
 
 // Использование
-const profit = SignedQuantityService.create(1250).value;
-const loss = SignedQuantityService.create(-750).value;
-const breakEven = SignedQuantity.ZERO;
+const profitResult = SignedQuantityService.create(1250);
+const lossResult = SignedQuantityService.create(-750);
 
-console.log(renderPnL(profit));     // "🟢 +1250.00"
-console.log(renderPnL(loss));       // "🔴 -750.00"
-console.log(renderPnL(breakEven));  // "⚪ 0.00"
+if (profitResult.ok && lossResult.ok) {
+  const profit = profitResult.value;
+  const loss = lossResult.value;
+  const breakEven = SignedQuantity.ZERO;
+
+  console.log(renderPnL(profit));     // "🟢 +1250.00"
+  console.log(renderPnL(loss));       // "🔴 -750.00"
+  console.log(renderPnL(breakEven));  // "⚪ 0.00"
+}
 ```
 
 ## Сериализация
@@ -436,21 +461,24 @@ console.log(renderPnL(breakEven));  // "⚪ 0.00"
 import { SignedQuantitySerializer } from '@polymarket/value-objects/signed-quantity';
 
 // Сериализация
-const qty = SignedQuantityService.create(-123.456).value;
-const json = SignedQuantitySerializer.toJSON(qty);
+const qtyResult = SignedQuantityService.create(-123.456);
+if (qtyResult.ok) {
+  const qty = qtyResult.value;
+  const json = SignedQuantitySerializer.toJSON(qty);
 
-console.log(json); // { value: "-123.456" }
+  console.log(json); // { value: "-123.456" }
 
-// Сохранение в API/DB
-const jsonString = JSON.stringify(json);
+  // Сохранение в API/DB
+  const jsonString = JSON.stringify(json);
 
-// Десериализация
-const parsed = JSON.parse(jsonString);
-const result = SignedQuantitySerializer.fromJSON(parsed);
+  // Десериализация
+  const parsed = JSON.parse(jsonString);
+  const result = SignedQuantitySerializer.fromJSON(parsed);
 
-if (result.ok) {
-  console.log(result.value.toNumber()); // -123.456
-  console.log(result.value.equals(qty)); // true
+  if (result.ok) {
+    console.log(result.value.toNumber()); // -123.456
+    console.log(result.value.equals(qty)); // true
+  }
 }
 ```
 

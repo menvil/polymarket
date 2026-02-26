@@ -317,13 +317,16 @@ if (result.ok) {
 ### Immutable Operations Pattern
 
 ```typescript
-const qty = SignedQuantityService.create(10).value;
+const qtyResult = SignedQuantityService.create(10);
+if (qtyResult.ok) {
+  const qty = qtyResult.value;
 
-// Все операции возвращают НОВЫЙ экземпляр
-const negated = qty.neg();
+  // Все операции возвращают НОВЫЙ экземпляр
+  const negated = qty.neg();
 
-console.log(qty.toNumber());     // 10 (оригинал не изменён)
-console.log(negated.toNumber()); // -10 (новый экземпляр)
+  console.log(qty.toNumber());     // 10 (оригинал не изменён)
+  console.log(negated.toNumber()); // -10 (новый экземпляр)
+}
 ```
 
 ### Константы для часто используемых значений

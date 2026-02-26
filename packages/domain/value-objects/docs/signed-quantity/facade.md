@@ -265,13 +265,24 @@ public static subtract(
 **Примеры:**
 
 ```typescript
-const a = SignedQuantityService.create(100).value;
-const b = SignedQuantityService.create(30).value;
+const aResult = SignedQuantityService.create(100);
+const bResult = SignedQuantityService.create(30);
 
-SignedQuantityService.subtract(a, b); // Ok(SignedQuantity(70))
+if (aResult.ok && bResult.ok) {
+  const a = aResult.value;
+  const b = bResult.value;
 
-// ✅ Результат может быть отрицательным
-SignedQuantityService.subtract(b, a); // Ok(SignedQuantity(-70))
+  const diff1 = SignedQuantityService.subtract(a, b);
+  if (diff1.ok) {
+    console.log(diff1.value.toNumber()); // 70
+  }
+
+  // ✅ Результат может быть отрицательным
+  const diff2 = SignedQuantityService.subtract(b, a);
+  if (diff2.ok) {
+    console.log(diff2.value.toNumber()); // -70
+  }
+}
 ```
 
 **Error Context:**
@@ -304,19 +315,26 @@ public static multiply(
 **Примеры:**
 
 ```typescript
-const qty = SignedQuantityService.create(100).value;
+const qtyResult = SignedQuantityService.create(100);
+if (qtyResult.ok) {
+  const qty = qtyResult.value;
 
-// Умножение на положительный
-SignedQuantityService.multiply(qty, 2);    // Ok(SignedQuantity(200))
+  // Умножение на положительный
+  const result1 = SignedQuantityService.multiply(qty, 2);
+  if (result1.ok) console.log(result1.value.toNumber()); // 200
 
-// ✅ Умножение на отрицательный (инверсия знака)
-SignedQuantityService.multiply(qty, -1);   // Ok(SignedQuantity(-100))
+  // ✅ Умножение на отрицательный (инверсия знака)
+  const result2 = SignedQuantityService.multiply(qty, -1);
+  if (result2.ok) console.log(result2.value.toNumber()); // -100
 
-// Умножение на дробь
-SignedQuantityService.multiply(qty, 0.5);  // Ok(SignedQuantity(50))
+  // Умножение на дробь
+  const result3 = SignedQuantityService.multiply(qty, 0.5);
+  if (result3.ok) console.log(result3.value.toNumber()); // 50
 
-// Умножение на ноль
-SignedQuantityService.multiply(qty, 0);    // Ok(SignedQuantity(0))
+  // Умножение на ноль
+  const result4 = SignedQuantityService.multiply(qty, 0);
+  if (result4.ok) console.log(result4.value.toNumber()); // 0
+}
 ```
 
 **Error Context:**
@@ -351,16 +369,24 @@ public static divide(
 **Примеры:**
 
 ```typescript
-const qty = SignedQuantityService.create(100).value;
+const qtyResult = SignedQuantityService.create(100);
+if (qtyResult.ok) {
+  const qty = qtyResult.value;
 
-// Деление на положительный
-SignedQuantityService.divide(qty, 2);    // Ok(SignedQuantity(50))
+  // Деление на положительный
+  const result1 = SignedQuantityService.divide(qty, 2);
+  if (result1.ok) console.log(result1.value.toNumber()); // 50
 
-// ✅ Деление на отрицательный (инверсия знака)
-SignedQuantityService.divide(qty, -2);   // Ok(SignedQuantity(-50))
+  // ✅ Деление на отрицательный (инверсия знака)
+  const result2 = SignedQuantityService.divide(qty, -2);
+  if (result2.ok) console.log(result2.value.toNumber()); // -50
 
-// ❌ Деление на ноль
-SignedQuantityService.divide(qty, 0);    // Err(reason: DIVISION_BY_ZERO)
+  // ❌ Деление на ноль
+  const result3 = SignedQuantityService.divide(qty, 0);
+  if (!result3.ok) {
+    console.log(result3.error.context?.reason); // DIVISION_BY_ZERO
+  }
+}
 ```
 
 **Error Context:**
@@ -391,14 +417,23 @@ public static abs(
 **Примеры:**
 
 ```typescript
-const negative = SignedQuantityService.create(-100).value;
-SignedQuantityService.abs(negative); // Ok(SignedQuantity(100))
+const negativeResult = SignedQuantityService.create(-100);
+if (negativeResult.ok) {
+  const negative = negativeResult.value;
+  const abs1 = SignedQuantityService.abs(negative);
+  if (abs1.ok) console.log(abs1.value.toNumber()); // 100
+}
 
-const positive = SignedQuantityService.create(100).value;
-SignedQuantityService.abs(positive); // Ok(SignedQuantity(100))
+const positiveResult = SignedQuantityService.create(100);
+if (positiveResult.ok) {
+  const positive = positiveResult.value;
+  const abs2 = SignedQuantityService.abs(positive);
+  if (abs2.ok) console.log(abs2.value.toNumber()); // 100
+}
 
 const zero = SignedQuantity.ZERO;
-SignedQuantityService.abs(zero); // Ok(SignedQuantity(0))
+const abs3 = SignedQuantityService.abs(zero);
+if (abs3.ok) console.log(abs3.value.toNumber()); // 0
 ```
 
 **Error Context:**
@@ -426,14 +461,23 @@ public static negate(
 **Примеры:**
 
 ```typescript
-const positive = SignedQuantityService.create(100).value;
-SignedQuantityService.negate(positive); // Ok(SignedQuantity(-100))
+const positiveResult = SignedQuantityService.create(100);
+if (positiveResult.ok) {
+  const positive = positiveResult.value;
+  const neg1 = SignedQuantityService.negate(positive);
+  if (neg1.ok) console.log(neg1.value.toNumber()); // -100
+}
 
-const negative = SignedQuantityService.create(-100).value;
-SignedQuantityService.negate(negative); // Ok(SignedQuantity(100))
+const negativeResult = SignedQuantityService.create(-100);
+if (negativeResult.ok) {
+  const negative = negativeResult.value;
+  const neg2 = SignedQuantityService.negate(negative);
+  if (neg2.ok) console.log(neg2.value.toNumber()); // 100
+}
 
 const zero = SignedQuantity.ZERO;
-SignedQuantityService.negate(zero); // Ok(SignedQuantity(0))
+const neg3 = SignedQuantityService.negate(zero);
+if (neg3.ok) console.log(neg3.value.toNumber()); // 0
 ```
 
 **Error Context:**
@@ -466,19 +510,37 @@ public static scale(
 **Примеры:**
 
 ```typescript
-const qty = SignedQuantityService.create(100).value;
-const rate2x = RatioService.fromDecimal(2).value;
+const qtyResult = SignedQuantityService.create(100);
+const rate2xResult = RatioService.fromDecimal(2);
 
-// Масштабирование long позиции
-SignedQuantityService.scale(qty, rate2x); // Ok(SignedQuantity(200))
+if (qtyResult.ok && rate2xResult.ok) {
+  const qty = qtyResult.value;
+  const rate2x = rate2xResult.value;
+
+  // Масштабирование long позиции
+  const scaled1 = SignedQuantityService.scale(qty, rate2x);
+  if (scaled1.ok) console.log(scaled1.value.toNumber()); // 200
+}
 
 // Масштабирование short позиции
-const short = SignedQuantityService.create(-50).value;
-SignedQuantityService.scale(short, rate2x); // Ok(SignedQuantity(-100))
+const shortResult = SignedQuantityService.create(-50);
+if (shortResult.ok && rate2xResult.ok) {
+  const short = shortResult.value;
+  const rate2x = rate2xResult.value;
+  const scaled2 = SignedQuantityService.scale(short, rate2x);
+  if (scaled2.ok) console.log(scaled2.value.toNumber()); // -100
+}
 
 // Ошибка: negative rate
-const negRate = RatioService.fromDecimal(-1).value;
-SignedQuantityService.scale(qty, negRate); // Err(reason: NEGATIVE_SCALE_FACTOR)
+const negRateResult = RatioService.fromDecimal(-1);
+if (qtyResult.ok && negRateResult.ok) {
+  const qty = qtyResult.value;
+  const negRate = negRateResult.value;
+  const error = SignedQuantityService.scale(qty, negRate);
+  if (!error.ok) {
+    console.log(error.error.context?.reason); // NEGATIVE_SCALE_FACTOR
+  }
+}
 ```
 
 **Error Context:**
@@ -512,15 +574,26 @@ public static portion(
 **Примеры:**
 
 ```typescript
-const qty = SignedQuantityService.create(100).value;
-const rate25pct = RatioService.fromDecimal(0.25).value;
+const qtyResult = SignedQuantityService.create(100);
+const rate25pctResult = RatioService.fromDecimal(0.25);
 
-// Взять 25%
-SignedQuantityService.portion(qty, rate25pct); // Ok(SignedQuantity(25))
+if (qtyResult.ok && rate25pctResult.ok) {
+  const qty = qtyResult.value;
+  const rate25pct = rate25pctResult.value;
+
+  // Взять 25%
+  const portion1 = SignedQuantityService.portion(qty, rate25pct);
+  if (portion1.ok) console.log(portion1.value.toNumber()); // 25
+}
 
 // Negative rate — инверсия знака
-const negRate = RatioService.fromDecimal(-0.5).value;
-SignedQuantityService.portion(qty, negRate); // Ok(SignedQuantity(-50))
+const negRateResult = RatioService.fromDecimal(-0.5);
+if (qtyResult.ok && negRateResult.ok) {
+  const qty = qtyResult.value;
+  const negRate = negRateResult.value;
+  const portion2 = SignedQuantityService.portion(qty, negRate);
+  if (portion2.ok) console.log(portion2.value.toNumber()); // -50
+}
 ```
 
 **Error Context:**
@@ -560,19 +633,29 @@ public static roundToStep(
 **Примеры:**
 
 ```typescript
-const qty = SignedQuantityService.create(10.567).value;
+import Decimal from 'decimal.js';
 
-// Округление до центов (0.01)
-SignedQuantityService.roundToStep(qty, 0.01); // Ok(SignedQuantity(10.57))
+const qtyResult = SignedQuantityService.create(10.567);
+if (qtyResult.ok) {
+  const qty = qtyResult.value;
+
+  // Округление до центов (0.01)
+  const rounded1 = SignedQuantityService.roundToStep(qty, 0.01);
+  if (rounded1.ok) console.log(rounded1.value.toNumber()); // 10.57
+}
 
 // Negative с ROUND_DOWN (к нулю)
-const negQty = SignedQuantityService.create(-10.567).value;
-SignedQuantityService.roundToStep(negQty, 0.01, Decimal.ROUND_DOWN);
-// Ok(SignedQuantity(-10.56))
+const negQtyResult = SignedQuantityService.create(-10.567);
+if (negQtyResult.ok) {
+  const negQty = negQtyResult.value;
 
-// ROUND_FLOOR (к -Infinity)
-SignedQuantityService.roundToStep(negQty, 0.01, Decimal.ROUND_FLOOR);
-// Ok(SignedQuantity(-10.57))
+  const rounded2 = SignedQuantityService.roundToStep(negQty, 0.01, Decimal.ROUND_DOWN);
+  if (rounded2.ok) console.log(rounded2.value.toNumber()); // -10.56
+
+  // ROUND_FLOOR (к -Infinity)
+  const rounded3 = SignedQuantityService.roundToStep(negQty, 0.01, Decimal.ROUND_FLOOR);
+  if (rounded3.ok) console.log(rounded3.value.toNumber()); // -10.57
+}
 ```
 
 **Error Context:**
@@ -623,27 +706,39 @@ public static adjustBy(
 **Примеры:**
 
 ```typescript
-const qty = SignedQuantityService.create(100).value;
-const delta10pct = RatioService.fromPercent(10).value; // +10%
+const qtyResult = SignedQuantityService.create(100);
+const delta10pctResult = RatioService.fromPercent(10); // +10%
+const deltaMinus20Result = RatioService.fromPercent(-20);
+const deltaMinus150Result = RatioService.fromPercent(-150);
+const deltaMinus100Result = RatioService.fromPercent(-100);
 
-// Увеличение на 10%
-SignedQuantityService.adjustBy(qty, delta10pct, 0.01);
-// Ok(SignedQuantity(110))
+if (qtyResult.ok && delta10pctResult.ok && deltaMinus20Result.ok &&
+    deltaMinus150Result.ok && deltaMinus100Result.ok) {
 
-// Уменьшение на 20%
-const deltaMinus20 = RatioService.fromPercent(-20).value;
-SignedQuantityService.adjustBy(qty, deltaMinus20, 0.01);
-// Ok(SignedQuantity(80))
+  const qty = qtyResult.value;
+  const delta10pct = delta10pctResult.value;
+  const deltaMinus20 = deltaMinus20Result.value;
+  const deltaMinus150 = deltaMinus150Result.value;
+  const deltaMinus100 = deltaMinus100Result.value;
 
-// Защита от crossing zero
-const deltaMinus150 = RatioService.fromPercent(-150).value;
-SignedQuantityService.adjustBy(qty, deltaMinus150, 0.01, { allowCrossZero: false });
-// Err(reason: RESULT_CROSSES_ZERO)
+  // Увеличение на 10%
+  const result1 = SignedQuantityService.adjustBy(qty, delta10pct, 0.01);
+  if (result1.ok) console.log(result1.value.toNumber()); // 110
 
-// Граничный случай: result = 0 разрешён
-const deltaMinus100 = RatioService.fromPercent(-100).value;
-SignedQuantityService.adjustBy(qty, deltaMinus100, 0.01, { allowCrossZero: false });
-// Ok(SignedQuantity(0))
+  // Уменьшение на 20%
+  const result2 = SignedQuantityService.adjustBy(qty, deltaMinus20, 0.01);
+  if (result2.ok) console.log(result2.value.toNumber()); // 80
+
+  // Защита от crossing zero
+  const result3 = SignedQuantityService.adjustBy(qty, deltaMinus150, 0.01, { allowCrossZero: false });
+  if (!result3.ok) {
+    console.log(result3.error.context?.reason); // RESULT_CROSSES_ZERO
+  }
+
+  // Граничный случай: result = 0 разрешён
+  const result4 = SignedQuantityService.adjustBy(qty, deltaMinus100, 0.01, { allowCrossZero: false });
+  if (result4.ok) console.log(result4.value.toNumber()); // 0
+}
 ```
 
 **Error Context:**
