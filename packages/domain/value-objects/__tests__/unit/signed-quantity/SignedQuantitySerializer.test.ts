@@ -140,6 +140,30 @@ describe('SignedQuantitySerializer', () => {
           expect(result.error.message).toContain("Field 'value' must be string");
         }
       });
+
+      it('should handle circular object without value field', () => {
+        const circular: any = {};
+        circular.self = circular;
+
+        const result = SignedQuantitySerializer.fromJSON(circular);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.message).toContain("Missing required field 'value'");
+          expect(result.error.context?.json).toContain('[Circular]');
+        }
+      });
+
+      it('should handle unstringifiable value (BigInt)', () => {
+        const bigIntObj = { value: BigInt(123) };
+
+        const result = SignedQuantitySerializer.fromJSON(bigIntObj);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.message).toContain("Field 'value' must be string");
+          // BigInt вызывает ошибку при JSON.stringify, поэтому получим [Unstringifiable]
+          expect(result.error.context?.json).toBe('[Unstringifiable]');
+        }
+      });
     });
 
     describe('бизнес-ошибки валидации', () => {

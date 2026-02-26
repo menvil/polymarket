@@ -190,6 +190,46 @@ describe('SignedQuantityFormatter', () => {
         }
       }
     });
+
+    it('should fail on invalid decimals (negative)', () => {
+      const qtyResult = SignedQuantityService.create(10.5);
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityFormatter.toFinancialString(qtyResult.value, -1);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.op).toBe('toFinancialString');
+          expect(result.error.context).toHaveProperty('decimalPlaces');
+          expect(result.error.message).toContain('must be');
+        }
+      }
+    });
+
+    it('should fail on invalid decimals (too large)', () => {
+      const qtyResult = SignedQuantityService.create(10.5);
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityFormatter.toFinancialString(qtyResult.value, 101);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.op).toBe('toFinancialString');
+          expect(result.error.context).toHaveProperty('decimalPlaces');
+        }
+      }
+    });
+
+    it('should fail on invalid decimals (fractional)', () => {
+      const qtyResult = SignedQuantityService.create(10.5);
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityFormatter.toFinancialString(qtyResult.value, 1.5);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.op).toBe('toFinancialString');
+          expect(result.error.context).toHaveProperty('decimalPlaces');
+        }
+      }
+    });
   });
 
   describe('toDisplayString', () => {
@@ -274,6 +314,25 @@ describe('SignedQuantityFormatter', () => {
         expect(formatted).toBe('+999.50K');
       }
     });
+
+    it('should rollover from K to M when rounded value >= 1000', () => {
+      // 999999.995 / 1000 = 999.999995 → toFixed(2) = "1000.00" → rollover to M
+      const qtyResult = SignedQuantityService.create(999999.995);
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const formatted = SignedQuantityFormatter.toDisplayString(qtyResult.value);
+        expect(formatted).toBe('+1.00M');
+      }
+    });
+
+    it('should rollover from K to M for negative values', () => {
+      const qtyResult = SignedQuantityService.create(-999999.995);
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const formatted = SignedQuantityFormatter.toDisplayString(qtyResult.value);
+        expect(formatted).toBe('-1.00M');
+      }
+    });
   });
 
   describe('toPnLString', () => {
@@ -312,6 +371,19 @@ describe('SignedQuantityFormatter', () => {
         if (result.ok) {
           expect(result.value.value).toBe('0.00');
           expect(result.value.indicator).toBe('neutral');
+        }
+      }
+    });
+
+    it('should propagate error from toString for invalid decimals', () => {
+      const qtyResult = SignedQuantityService.create(10.5);
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityFormatter.toPnLString(qtyResult.value, -1);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.op).toContain('toString');
+          expect(result.error.message).toContain('must be');
         }
       }
     });

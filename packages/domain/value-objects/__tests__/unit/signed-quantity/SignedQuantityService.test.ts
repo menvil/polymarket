@@ -765,6 +765,35 @@ describe('SignedQuantityService', () => {
         }
       }
     });
+
+    it('should fail on invalid stepSize format (non-numeric string)', () => {
+      const qtyResult = SignedQuantityService.create(10.567);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.roundToStep(qtyResult.value, 'abc');
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.op).toContain('roundToStep');
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.INVALID_FORMAT);
+          expect(result.error.context).toHaveProperty('stepSize');
+        }
+      }
+    });
+
+    it('should fail on NaN stepSize', () => {
+      const qtyResult = SignedQuantityService.create(10.567);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.roundToStep(qtyResult.value, NaN);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.op).toContain('roundToStep');
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NAN);
+        }
+      }
+    });
   });
 
   describe('adjustBy', () => {
@@ -940,6 +969,37 @@ describe('SignedQuantityService', () => {
           expect(context).toHaveProperty('stepSize');
           expect(context).toHaveProperty('allowCrossZero');
           expect(context?.op).toContain('adjustBy');
+        }
+      }
+    });
+
+    it('should fail on invalid stepSize format (non-numeric string)', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(10);
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 'abc');
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.op).toContain('adjustBy');
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.INVALID_FORMAT);
+          expect(result.error.context).toHaveProperty('stepSize');
+        }
+      }
+    });
+
+    it('should fail on NaN stepSize', () => {
+      const qtyResult = SignedQuantityService.create(100);
+      const deltaResult = RatioService.fromPercent(10);
+
+      expect(qtyResult.ok && deltaResult.ok).toBe(true);
+      if (qtyResult.ok && deltaResult.ok) {
+        const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, NaN);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.op).toContain('adjustBy');
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NAN);
         }
       }
     });
