@@ -43,17 +43,7 @@ export enum TimestampErrorReason {
   OUT_OF_RANGE = 'OUT_OF_RANGE',
 
   /**
-   * Невалидный Date объект
-   */
-  INVALID_DATE = 'INVALID_DATE',
-
-  /**
    * Невалидная ISO 8601 строка
    */
   INVALID_ISO = 'INVALID_ISO',
-
-  /**
-   * Delta не является конечным числом
-   */
-  INVALID_DELTA = 'INVALID_DELTA',
 }

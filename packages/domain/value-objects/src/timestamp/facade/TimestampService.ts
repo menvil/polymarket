@@ -168,7 +168,8 @@ export class TimestampService {
    *
    * @remarks
    * Поддерживает dependency injection через IClock для детерминированного времени.
-   * Не возвращает Result, т.к. время из clock всегда валидно.
+   * В случае ошибки создания Timestamp (например, невалидный clock) использует fallback на Date.now().
+   * Это гарантирует соблюдение "Never Throw" контракта.
    *
    * @example
    * ```typescript
@@ -186,7 +187,13 @@ export class TimestampService {
    * ```
    */
   public static now(clock?: IClock): Timestamp {
-    return Timestamp.now(clock);
+    try {
+      return Timestamp.now(clock);
+    } catch {
+      // Fallback: если clock вернул невалидное значение, используем Date.now()
+      // Это edge case (неправильная реализация IClock), но мы гарантируем Never Throw
+      return Timestamp.of(new Decimal(Date.now()));
+    }
   }
 
   /**

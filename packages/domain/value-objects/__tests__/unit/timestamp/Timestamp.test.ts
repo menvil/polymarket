@@ -5,8 +5,74 @@
 import { describe, it, expect } from '@jest/globals';
 import { Timestamp, TimestampService, TimestampFormatter } from '../../../src/timestamp/index.js';
 import { unwrap } from '@polymarket/result/unsafe';
+import Decimal from 'decimal.js';
+import { TimestampInvariantViolation } from '../../../src/timestamp/core/TimestampInvariantViolation.js';
 
 describe('Timestamp', () => {
+  describe('of() - Core invariants', () => {
+    it('should create Timestamp from valid Decimal', () => {
+      const ts = Timestamp.of(new Decimal(1609459200000));
+      expect(ts.value().toNumber()).toBe(1609459200000);
+    });
+
+    it('should throw TimestampInvariantViolation for NaN', () => {
+      expect(() => Timestamp.of(new Decimal(NaN))).toThrow(TimestampInvariantViolation);
+      expect(() => Timestamp.of(new Decimal(NaN))).toThrow('Timestamp cannot be NaN');
+    });
+
+    it('should throw TimestampInvariantViolation for Infinity', () => {
+      expect(() => Timestamp.of(new Decimal(Infinity))).toThrow(TimestampInvariantViolation);
+      expect(() => Timestamp.of(new Decimal(Infinity))).toThrow('Timestamp must be finite');
+    });
+
+    it('should throw TimestampInvariantViolation for non-integer', () => {
+      expect(() => Timestamp.of(new Decimal(1234.567))).toThrow(TimestampInvariantViolation);
+      expect(() => Timestamp.of(new Decimal(1234.567))).toThrow('Timestamp must be integer');
+    });
+
+    it('should throw TimestampInvariantViolation for negative value', () => {
+      expect(() => Timestamp.of(new Decimal(-1000))).toThrow(TimestampInvariantViolation);
+      expect(() => Timestamp.of(new Decimal(-1000))).toThrow('must be non-negative');
+    });
+
+    it('should throw TimestampInvariantViolation for too large value', () => {
+      const tooLarge = new Decimal('10000000000000');
+      expect(() => Timestamp.of(tooLarge)).toThrow(TimestampInvariantViolation);
+      expect(() => Timestamp.of(tooLarge)).toThrow('too large');
+    });
+
+    it('should accept zero (Unix epoch)', () => {
+      const ts = Timestamp.of(new Decimal(0));
+      expect(ts.value().toNumber()).toBe(0);
+    });
+
+    it('should accept maximum valid value', () => {
+      const max = new Decimal('9999999999999');
+      const ts = Timestamp.of(max);
+      expect(ts.value().toString()).toBe('9999999999999');
+    });
+  });
+
+  describe('addMs() - Core invariants', () => {
+    it('should throw TimestampInvariantViolation for fractional delta', () => {
+      const ts = Timestamp.of(new Decimal(1000));
+      expect(() => ts.addMs(new Decimal(123.456))).toThrow(TimestampInvariantViolation);
+      expect(() => ts.addMs(new Decimal(123.456))).toThrow('Delta must be integer');
+    });
+
+    it('should accept integer delta', () => {
+      const ts = Timestamp.of(new Decimal(1000));
+      const result = ts.addMs(new Decimal(500));
+      expect(result.value().toNumber()).toBe(1500);
+    });
+
+    it('should accept negative integer delta', () => {
+      const ts = Timestamp.of(new Decimal(2000));
+      const result = ts.addMs(new Decimal(-500));
+      expect(result.value().toNumber()).toBe(1500);
+    });
+  });
+
   describe('now()', () => {
     it('should create Timestamp for current time', () => {
       const before = Date.now();
@@ -23,6 +89,14 @@ describe('Timestamp', () => {
 
       // Timestamps могут быть равны если вызваны очень быстро
       expect(ts2.value().toNumber()).toBeGreaterThanOrEqual(ts1.value().toNumber());
+    });
+
+    it('should accept IClock parameter', () => {
+      const mockClock = {
+        now: () => new Date('2024-01-01T00:00:00.000Z')
+      };
+      const ts = Timestamp.now(mockClock);
+      expect(ts.toISO()).toBe('2024-01-01T00:00:00.000Z');
     });
   });
 
