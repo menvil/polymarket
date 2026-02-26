@@ -170,12 +170,13 @@ class TimestampService {
     return TimestampService.create(ms);
   }
 
-  static now(): Timestamp {
-    const result = TimestampService.create(Date.now());
-    if (!result.ok) {
-      throw new Error('Failed to create current timestamp');
+  static now(clock?: IClock): Timestamp {
+    // Never throws - использует fallback на Date.now() при ошибках
+    try {
+      return Timestamp.now(clock);
+    } catch {
+      return Timestamp.of(new Decimal(Date.now()));
     }
-    return result.value;
   }
 }
 
@@ -285,11 +286,11 @@ TimestampService.create(10000000000000); // ❌ Err(OUT_OF_RANGE)
 
 ```typescript
 // NaN
-TimestampService.create(NaN); // ❌ Err(NOT_FINITE)
+TimestampService.create(NaN); // ❌ Err(INVALID_FORMAT)
 
 // Infinity
-TimestampService.create(Infinity); // ❌ Err(NOT_FINITE)
-TimestampService.create(-Infinity); // ❌ Err(NOT_FINITE)
+TimestampService.create(Infinity); // ❌ Err(INVALID_FORMAT)
+TimestampService.create(-Infinity); // ❌ Err(INVALID_FORMAT)
 
 // Отрицательное
 TimestampService.create(-1); // ❌ Err(NOT_POSITIVE)
@@ -315,7 +316,7 @@ class TimestampService {
           (ctx) => `Invalid ISO string: "${ctx.value}"`,
           {
             code: InvalidTimestampError.code,
-            context: { value: iso, reason: 'INVALID_FORMAT' }
+            context: { value: iso, reason: 'INVALID_ISO' }
           }
         )
       );
@@ -327,7 +328,7 @@ class TimestampService {
 
 // Использование
 TimestampService.fromISO('2024-01-01T00:00:00.000Z'); // ✅ Ok
-TimestampService.fromISO('invalid-date'); // ❌ Err(INVALID_FORMAT)
+TimestampService.fromISO('invalid-date'); // ❌ Err(INVALID_ISO)
 ```
 
 ---

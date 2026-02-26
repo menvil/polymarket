@@ -1053,7 +1053,7 @@ console.log(QuoteFormatter.toDisplay(result.value));
 
 ```typescript
 // Не создавайте Quote напрямую без try-catch
-const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);  // Может бросить!
+const quote = Quote.of(bid, ask, bidSize, askSize, timestamp, sourceId, instrumentId);  // Может бросить!
 
 // Не игнорируйте Result
 const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');

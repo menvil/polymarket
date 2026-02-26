@@ -306,7 +306,7 @@ QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')
           ↓ (если ошибка)
           rewrap('create', { component: 'bid' }, error, ...)
         ↓
-        Quote.of(Price, Price, Quantity, Quantity, timestampMs, sourceId, instrumentId)
+        Quote.of(Price, Price, Quantity, Quantity, timestamp, sourceId, instrumentId)
           ↓ (если QuoteInvariantViolation)
           unexpectedError(...)
       })
