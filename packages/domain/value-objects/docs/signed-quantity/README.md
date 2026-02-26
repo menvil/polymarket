@@ -425,7 +425,7 @@ if (longPositionResult.ok && shortTradeResult.ok) {
 
 ## Testing
 
-Все операции покрыты тестами (~209 тестов, включая Core, Facade, Rules, Adapters):
+Все операции покрыты тестами (212 тестов, включая Core, Facade, Rules, Adapters):
 
 ```bash
 npm test -- signed-quantity

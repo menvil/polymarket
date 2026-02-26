@@ -386,16 +386,16 @@ export class SignedQuantity {
   - Корректировка с политикой (adjustBy)
   - Integration scenarios (P&L, position reversal)
 
-- **Validation Rules**: 28 тестов
-  - ValidateFactorForSignedQuantityScale
-  - ValidateDeltaForAdjustByNoCrossZero
-  - ValidateStepSizeForSignedQuantity
+- **Validation Rules**: 25 тестов
+  - ValidateFactorForSignedQuantityScale (6 тестов)
+  - ValidateDeltaForAdjustByNoCrossZero (10 тестов)
+  - ValidateStepSizeForSignedQuantity (9 тестов)
 
-- **Adapters Layer**: 59 тестов
-  - Formatter (33 теста) — все форматы, опции, edge cases
+- **Adapters Layer**: 65 тестов
+  - Formatter (39 тестов) — все форматы, опции, edge cases, default parameters
   - Serializer (26 тестов) — сериализация, структурные ошибки, round-trip, circular/BigInt
 
-**Итого: ~209 тестов** (все SignedQuantity модули)
+**Итого: 212 тестов** (все SignedQuantity модули)
 
 ### Test Patterns
 
