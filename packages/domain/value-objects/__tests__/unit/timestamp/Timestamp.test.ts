@@ -250,9 +250,14 @@ describe('Timestamp', () => {
     });
 
     it('should work with Date.now()', () => {
-      const result = TimestampService.fromDate(new Date());
+      const now = new Date();
+      const result = TimestampService.fromDate(now);
 
       expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.toNumber()).toBe(now.getTime());
+        expect(result.value.toISO()).toBe(now.toISOString());
+      }
     });
   });
 

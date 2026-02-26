@@ -71,9 +71,9 @@ describe('TimestampService', () => {
       const after = Date.now();
 
       // Should not throw, should return valid Timestamp using fallback
-      expect(ts).toBeDefined();
       expect(ts.value().toNumber()).toBeGreaterThanOrEqual(before);
       expect(ts.value().toNumber()).toBeLessThanOrEqual(after);
+      expect(ts.toISO()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     });
 
     it('should fallback when clock throws error', () => {
@@ -89,9 +89,9 @@ describe('TimestampService', () => {
       const after = Date.now();
 
       // Should not throw, should return valid Timestamp using fallback
-      expect(ts).toBeDefined();
       expect(ts.value().toNumber()).toBeGreaterThanOrEqual(before);
       expect(ts.value().toNumber()).toBeLessThanOrEqual(after);
+      expect(ts.toISO()).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
     });
   });
 

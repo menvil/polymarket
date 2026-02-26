@@ -7,15 +7,14 @@ import { TimestampService, TimestampFormatter } from '../../../src/timestamp/ind
 import { unwrap } from '@polymarket/result/unsafe';
 
 describe('TimestampFormatter', () => {
-  const testTimestamp = unwrap(TimestampService.create(1705318200000)); // 2024-01-15T10:30:00.000Z
+  const testTimestamp = unwrap(TimestampService.create(1705315800000)); // 2024-01-15T10:50:00.000Z
 
   describe('toISO()', () => {
     it('should format as ISO 8601 string', () => {
       const result = TimestampFormatter.toISO(testTimestamp);
 
-      // Используем toContain вместо точного сравнения, т.к. timezone может отличаться
-      expect(result).toContain('2024-01-15');
-      expect(result).toContain('Z');
+      // toISO() всегда возвращает UTC (с 'Z')
+      expect(result).toBe('2024-01-15T10:50:00.000Z');
     });
   });
 
@@ -44,8 +43,8 @@ describe('TimestampFormatter', () => {
     it('should format only time part', () => {
       const result = TimestampFormatter.toTime(testTimestamp);
 
-      // Проверяем формат времени без точного сравнения из-за timezone
-      expect(result).toMatch(/^\d{2}:\d{2}:\d{2}$/);
+      // toTime() извлекает из ISO (UTC), поэтому всегда одинаковый результат
+      expect(result).toBe('10:50:00');
     });
   });
 
@@ -53,7 +52,7 @@ describe('TimestampFormatter', () => {
     it('should format as epoch ms string', () => {
       const result = TimestampFormatter.toEpochMs(testTimestamp);
 
-      expect(result).toBe('1705318200000');
+      expect(result).toBe('1705315800000');
       expect(typeof result).toBe('string');
     });
   });
@@ -215,9 +214,8 @@ describe('TimestampFormatter', () => {
     it('should format with both ISO and epoch ms', () => {
       const result = TimestampFormatter.toLogString(testTimestamp);
 
-      expect(result).toContain('2024-01-15');
-      expect(result).toContain('1705318200000');
-      expect(result).toContain('Z');
+      // Точный формат: "ISO (epochMs)"
+      expect(result).toBe('2024-01-15T10:50:00.000Z (1705315800000)');
     });
   });
 });

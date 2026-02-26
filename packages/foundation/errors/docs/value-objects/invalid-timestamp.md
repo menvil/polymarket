@@ -94,7 +94,7 @@ processTimestamp(-1000);      // NOT_POSITIVE
 processTimestamp(1e14);       // OUT_OF_RANGE (too large)
 ```
 
-### 2. Создание из Date
+### 3. Создание из Date
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
@@ -124,7 +124,7 @@ const futureResult = TimestampService.fromDate(new Date('2030-01-01'));
 // Ok(Timestamp)
 ```
 
-### 3. Quote с временной меткой
+### 4. Quote с временной меткой
 
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
@@ -159,39 +159,31 @@ const quoteResult = createQuote(0.45, 0.55, Date.now());
 // Ok({ bid, ask, timestamp })
 ```
 
-### 4. Проверка устаревания (staleness)
+### 5. Проверка устаревания (staleness)
 
 ```typescript
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidTimestampError } from '@polymarket/errors';
+import { TimestampService } from '@polymarket/value-objects/timestamp';
+import Decimal from 'decimal.js';
 
-class TimestampService {
-  static isStale(
-    timestamp: Timestamp,
-    maxAgeMs: number,
-    now?: Timestamp
-  ): boolean {
-    const currentTime = now ?? TimestampService.now();
-    const ageMs = currentTime.diffMs(timestamp);
-    return ageMs > maxAgeMs;
+// Создание timestamp 5 секунд назад
+const quoteResult = TimestampService.create(Date.now() - 5000);
+
+if (quoteResult.ok) {
+  const quoteTimestamp = quoteResult.value;
+  const now = TimestampService.now();
+
+  // diffMs возвращает Decimal
+  const ageMs = TimestampService.diffMs(now, quoteTimestamp);
+  const maxAge = new Decimal(3000); // 3 секунды
+
+  if (ageMs.greaterThan(maxAge)) {
+    console.log('Quote is stale');
+    console.log(`Age: ${ageMs.toNumber()}ms`);
   }
 
-  static age(
-    timestamp: Timestamp,
-    now?: Timestamp
-  ): number {
-    const currentTime = now ?? TimestampService.now();
-    return currentTime.diffMs(timestamp);
-  }
-}
-
-// Использование
-const quoteTimestamp = TimestampService.create(Date.now() - 5000);
-// 5 секунд назад
-
-if (quoteTimestamp.ok) {
-  const isStale = TimestampService.isStale(quoteTimestamp.value, 3000);
-  // true (старше 3 секунд)
+  // Или через метод Timestamp
+  const ageMsAlt = now.diffMs(quoteTimestamp);
+  console.log(`Alternative age: ${ageMsAlt.toNumber()}ms`);
 }
 ```
 
