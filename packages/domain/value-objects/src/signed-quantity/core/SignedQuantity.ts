@@ -258,8 +258,6 @@ export class SignedQuantity {
     return this._value.lessThan(0);
   }
 
-  // === Сравнения ===
-
   /**
    * Проверяет, меньше ли это значение другого
    *
