@@ -63,6 +63,31 @@ export class SignedQuantityService {
   private static readonly SERVICE_NAME = 'SignedQuantityService';
 
   /**
+   * Приватный helper для парсинга значений в Decimal с единообразным error handling
+   *
+   * @param field - Имя поля для error context
+   * @param value - Значение для парсинга
+   * @param op - Название операции для rewrap
+   * @param extraContext - Дополнительный контекст для ошибки
+   * @returns Result<Decimal, InvalidSignedQuantityError>
+   */
+  private static parseDecimal(
+    field: string,
+    value: number | string | Decimal,
+    op: string,
+    extraContext: Record<string, unknown> = {}
+  ): Result<Decimal, InvalidSignedQuantityError> {
+    const decimalResult = toDecimal(field, value, SignedQuantityErrorReason.INVALID_FORMAT, InvalidSignedQuantityError, {
+      nanReason: SignedQuantityErrorReason.NAN,
+      nonFiniteReason: SignedQuantityErrorReason.NON_FINITE,
+    });
+    if (isErr(decimalResult)) {
+      return Err(rewrap(this.SERVICE_NAME, op, extraContext, decimalResult.error, InvalidSignedQuantityError));
+    }
+    return decimalResult;
+  }
+
+  /**
    * Создаёт SignedQuantity из значения
    *
    * @remarks
@@ -95,14 +120,10 @@ export class SignedQuantityService {
    * ```
    */
   public static create(value: number | string | Decimal): Result<SignedQuantity, InvalidSignedQuantityError> {
-    // Безопасный парсинг value через toDecimal
-    const decimalResult = toDecimal('value', value, SignedQuantityErrorReason.INVALID_FORMAT, InvalidSignedQuantityError, {
-      nanReason: SignedQuantityErrorReason.NAN,
-      nonFiniteReason: SignedQuantityErrorReason.NON_FINITE,
-    });
+    // Безопасный парсинг value через parseDecimal
+    const decimalResult = this.parseDecimal('value', value, 'create');
     if (isErr(decimalResult)) {
-      // raw уже внутри err.context.raw от toDecimal
-      return Err(rewrap(SignedQuantityService.SERVICE_NAME, 'create', {}, decimalResult.error, InvalidSignedQuantityError));
+      return decimalResult;
     }
 
     return wrapOp(
@@ -243,18 +264,13 @@ export class SignedQuantityService {
     quantity: SignedQuantity,
     factor: number | string | Decimal
   ): Result<SignedQuantity, InvalidSignedQuantityError> {
-    // Безопасный парсинг factor через toDecimal
-    const factorResult = toDecimal('factor', factor, SignedQuantityErrorReason.INVALID_FORMAT, InvalidSignedQuantityError, {
-      nanReason: SignedQuantityErrorReason.NAN,
-      nonFiniteReason: SignedQuantityErrorReason.NON_FINITE,
+    // Безопасный парсинг factor через parseDecimal
+    const factorResult = this.parseDecimal('factor', factor, 'multiply', {
+      quantity: quantity.value().toString(),
+      factor: String(factor)
     });
     if (isErr(factorResult)) {
-      return Err(
-        rewrap(SignedQuantityService.SERVICE_NAME, 'multiply', {
-          quantity: quantity.value().toString(),
-          factor: String(factor)
-        }, factorResult.error, InvalidSignedQuantityError)
-      );
+      return factorResult;
     }
 
     const factorDecimal = factorResult.value;
@@ -309,18 +325,13 @@ export class SignedQuantityService {
     quantity: SignedQuantity,
     divisor: number | string | Decimal
   ): Result<SignedQuantity, InvalidSignedQuantityError> {
-    // Безопасный парсинг divisor через toDecimal
-    const divisorResult = toDecimal('divisor', divisor, SignedQuantityErrorReason.INVALID_FORMAT, InvalidSignedQuantityError, {
-      nanReason: SignedQuantityErrorReason.NAN,
-      nonFiniteReason: SignedQuantityErrorReason.NON_FINITE,
+    // Безопасный парсинг divisor через parseDecimal
+    const divisorResult = this.parseDecimal('divisor', divisor, 'divide', {
+      quantity: quantity.value().toString(),
+      divisor: String(divisor)
     });
     if (isErr(divisorResult)) {
-      return Err(
-        rewrap(SignedQuantityService.SERVICE_NAME, 'divide', {
-          quantity: quantity.value().toString(),
-          divisor: String(divisor)
-        }, divisorResult.error, InvalidSignedQuantityError)
-      );
+      return divisorResult;
     }
 
     const divisorDecimal = divisorResult.value;
