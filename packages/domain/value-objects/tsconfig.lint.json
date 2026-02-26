@@ -1,7 +1,18 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "noEmit": true
+    "noEmit": true,
+    "paths": {
+      "@polymarket/result": ["../../foundation/result/src/index.ts"],
+      "@polymarket/result/unsafe": ["../../foundation/result/src/unsafe.ts"],
+      "@polymarket/result/chain": ["../../foundation/result/src/chain.ts"],
+      "@polymarket/result/async": ["../../foundation/result/src/async.ts"],
+      "@polymarket/errors": ["../../foundation/errors/src/index.ts"],
+      "@polymarket/ids": ["../../foundation/ids/src/index.ts"],
+      "@polymarket/ids/*": ["../../foundation/ids/src/*/index.ts"],
+      "@polymarket/time": ["../../foundation/time/src/index.ts"],
+      "@polymarket/math": ["../../foundation/math/src/index.ts"]
+    }
   },
   "include": ["src/**/*", "__tests__/**/*"]
 }

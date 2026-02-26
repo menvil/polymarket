@@ -53,6 +53,18 @@
     "./token-balance": {
       "types": "./dist/token-balance/index.d.ts",
       "import": "./dist/token-balance/index.js"
+    },
+    "./timestamp": {
+      "types": "./dist/timestamp/index.d.ts",
+      "import": "./dist/timestamp/index.js"
+    },
+    "./side": {
+      "types": "./dist/side/index.d.ts",
+      "import": "./dist/side/index.js"
+    },
+    "./fee": {
+      "types": "./dist/fee/index.d.ts",
+      "import": "./dist/fee/index.js"
     }
   },
   "files": [

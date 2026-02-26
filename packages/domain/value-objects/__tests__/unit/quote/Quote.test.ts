@@ -178,7 +178,7 @@ describe('Quote Core', () => {
       const timestampResult = TimestampService.create(tooLarge);
       expect(timestampResult.ok).toBe(false);
       if (!timestampResult.ok) {
-        expect(timestampResult.error.message).toContain('maximum');
+        expect(timestampResult.error.message).toContain('too large');
       }
     });
 
@@ -315,7 +315,8 @@ describe('Quote Core', () => {
 
   describe('age()', () => {
     it('вычисляет возраст котировки в миллисекундах', () => {
-      const timestamp = new Decimal(Date.now() - 5000); // 5 секунд назад
+      const timestampMs = Date.now() - 5000; // 5 секунд назад
+      const timestamp = createTestTimestamp(timestampMs);
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
@@ -324,7 +325,8 @@ describe('Quote Core', () => {
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const now = new Decimal(Date.now());
+      const nowMs = Date.now();
+      const now = createTestTimestamp(nowMs);
       const age = quote.age(now);
 
       expect(age.toNumber()).toBeGreaterThanOrEqual(5000);
@@ -332,7 +334,8 @@ describe('Quote Core', () => {
     });
 
     it('возвращает 0 для текущего момента', () => {
-      const now = new Decimal(Date.now());
+      const nowMs = Date.now();
+      const now = createTestTimestamp(nowMs);
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
@@ -346,7 +349,8 @@ describe('Quote Core', () => {
     });
 
     it('возвращает отрицательное значение для будущего timestamp', () => {
-      const futureTimestamp = new Decimal(Date.now() + 10000); // 10 секунд в будущем
+      const futureTimestampMs = Date.now() + 10000; // 10 секунд в будущем
+      const futureTimestamp = createTestTimestamp(futureTimestampMs);
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
@@ -355,7 +359,8 @@ describe('Quote Core', () => {
         futureTimestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const now = new Decimal(Date.now());
+      const nowMs = Date.now();
+      const now = createTestTimestamp(nowMs);
       const age = quote.age(now);
 
       expect(age.toNumber()).toBeLessThan(0);
@@ -363,7 +368,8 @@ describe('Quote Core', () => {
     });
 
     it('полезен для проверок устаревания', () => {
-      const oldTimestamp = new Decimal(Date.now() - 15000); // 15 секунд назад
+      const oldTimestampMs = Date.now() - 15000;
+      const oldTimestamp = createTestTimestamp(oldTimestampMs); // 15 секунд назад
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
@@ -373,13 +379,14 @@ describe('Quote Core', () => {
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const MAX_AGE_MS = 10000; // 10 секунд
-      const isStale = quote.age(new Decimal(Date.now())).greaterThan(MAX_AGE_MS);
+      const isStale = quote.age(createTestTimestamp(Date.now())).greaterThan(MAX_AGE_MS);
 
       expect(isStale).toBe(true);
     });
 
     it('принимает Date объект', () => {
-      const timestamp = new Decimal(Date.now() - 5000);
+      const timestampMs = Date.now() - 5000;
+      const timestamp = createTestTimestamp(timestampMs);
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
@@ -389,14 +396,16 @@ describe('Quote Core', () => {
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       const now = new Date();
-      const age = quote.age(new Decimal(now.getTime()));
+      const nowTimestamp = createTestTimestamp(now.getTime());
+      const age = quote.age(nowTimestamp);
 
       expect(age.toNumber()).toBeGreaterThanOrEqual(5000);
       expect(age.toNumber()).toBeLessThan(6000);
     });
 
     it('принимает строку с Unix ms', () => {
-      const timestamp = new Decimal(Date.now() - 5000);
+      const timestampMs = Date.now() - 5000;
+      const timestamp = createTestTimestamp(timestampMs);
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
@@ -405,7 +414,7 @@ describe('Quote Core', () => {
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const now = new Decimal(Date.now());
+      const now = createTestTimestamp(Date.now());
       const age = quote.age(now);
 
       expect(age.toNumber()).toBeGreaterThanOrEqual(5000);
@@ -413,7 +422,8 @@ describe('Quote Core', () => {
     });
 
     it('принимает Decimal', () => {
-      const timestamp = new Decimal(Date.now() - 5000);
+      const timestampMs = Date.now() - 5000;
+      const timestamp = createTestTimestamp(timestampMs);
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
@@ -422,7 +432,7 @@ describe('Quote Core', () => {
         timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
-      const now = new Decimal(Date.now());
+      const now = createTestTimestamp(Date.now());
       const age = quote.age(now);
 
       expect(age.toNumber()).toBeGreaterThanOrEqual(5000);
@@ -430,6 +440,8 @@ describe('Quote Core', () => {
     });
 
     // Негативные тесты для error-веток validateTimestamp(context='now')
+    // NOTE: Закомментировано, т.к. Timestamp валидирует при создании
+    /*
     it('бросает Error для NaN nowMs', () => {
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
@@ -443,7 +455,11 @@ describe('Quote Core', () => {
 
       expect(() => quote.age(new Decimal(NaN))).toThrow('Timestamp cannot be NaN');
     });
+    */
 
+    // NOTE: Следующие тесты закомментированы, т.к. Timestamp теперь валидирует при создании
+    // Невозможно создать invalid Timestamp, поэтому эти кейсы тестируются в Timestamp.test.ts
+    /*
     it('бросает Error для Infinity nowMs', () => {
       const quote = Quote.of(
         Price.of(new Decimal(0.48)),
@@ -501,6 +517,7 @@ describe('Quote Core', () => {
       const tooLarge = MAX_TIMESTAMP.plus(1);
       expect(() => quote.age(tooLarge)).toThrow('exceeds maximum');
     });
+    */
   });
 
   describe('isTwoSided()', () => {
@@ -737,13 +754,13 @@ describe('Quote Core', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1000)      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        createTestTimestamp(1000)      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(2000) // другой timestamp
+        createTestTimestamp(2000) // другой timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       // equals() сравнивает только рыночные данные, timestamp игнорируется
@@ -798,13 +815,13 @@ describe('Quote Core', () => {
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(1000)      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+        createTestTimestamp(1000)      , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
       const quote2 = Quote.of(
         Price.of(new Decimal(0.48)),
         Price.of(new Decimal(0.52)),
         Quantity.of(new Decimal(100)),
         Quantity.of(new Decimal(150)),
-        new Decimal(2000) // другой timestamp
+        createTestTimestamp(2000) // другой timestamp
       , TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
 
       // equals() возвращает true (только рыночные данные)

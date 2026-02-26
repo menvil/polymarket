@@ -542,7 +542,9 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
     e.name === 'TokenBalanceInvariantViolation' ||
     e.name === 'SpreadInvariantViolation' ||
     e.name === 'QuoteInvariantViolation' ||
-    e.name === 'RatioInvariantViolation'
+    e.name === 'RatioInvariantViolation' ||
+    e.name === 'SignedQuantityInvariantViolation' ||
+    e.name === 'TimestampInvariantViolation'
   );
 }
 
