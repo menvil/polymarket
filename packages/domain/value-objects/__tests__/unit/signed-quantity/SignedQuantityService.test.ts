@@ -551,6 +551,20 @@ describe('SignedQuantityService', () => {
       }
     });
 
+    it('should scale zero quantity by positive rate', () => {
+      const qtyResult = SignedQuantityService.create(0);
+      const rateResult = RatioService.fromDecimal(2);
+
+      expect(qtyResult.ok && rateResult.ok).toBe(true);
+      if (qtyResult.ok && rateResult.ok) {
+        const result = SignedQuantityService.scale(qtyResult.value, rateResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.isZero()).toBe(true);
+        }
+      }
+    });
+
     it('should fail on negative rate', () => {
       const qtyResult = SignedQuantityService.create(100);
       const rateResult = RatioService.fromDecimal(-1);
