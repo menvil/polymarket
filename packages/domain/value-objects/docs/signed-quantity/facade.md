@@ -205,17 +205,35 @@ public static add(
 **Примеры:**
 
 ```typescript
-const a = SignedQuantityService.create(100).value;
-const b = SignedQuantityService.create(-30).value;
+const aResult = SignedQuantityService.create(100);
+const bResult = SignedQuantityService.create(-30);
 
-SignedQuantityService.add(a, b); // Ok(SignedQuantity(70))
+if (aResult.ok && bResult.ok) {
+  const a = aResult.value;
+  const b = bResult.value;
 
-// Результат может быть отрицательным
-SignedQuantityService.add(b, a); // Ok(SignedQuantity(70))
+  const sum = SignedQuantityService.add(a, b);
+  if (sum.ok) {
+    console.log(sum.value.toNumber()); // 70
+  }
+
+  // Результат может быть отрицательным
+  const sum2 = SignedQuantityService.add(b, a);
+  if (sum2.ok) {
+    console.log(sum2.value.toNumber()); // 70
+  }
+}
 
 // Сумма до нуля
-const c = SignedQuantityService.create(-100).value;
-SignedQuantityService.add(a, c); // Ok(SignedQuantity(0))
+const cResult = SignedQuantityService.create(-100);
+if (aResult.ok && cResult.ok) {
+  const a = aResult.value;
+  const c = cResult.value;
+  const sum = SignedQuantityService.add(a, c);
+  if (sum.ok) {
+    console.log(sum.value.toNumber()); // 0
+  }
+}
 ```
 
 **Error Context:**

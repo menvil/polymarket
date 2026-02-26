@@ -253,12 +253,15 @@ function partialClosePosition(
 }
 
 // Использование
-const position = SignedQuantityService.create(1000).value;
+const positionResult = SignedQuantityService.create(1000);
+if (positionResult.ok) {
+  const position = positionResult.value;
 
-// Закрываем 50% позиции
-const remaining = partialClosePosition(position, 50);
-if (remaining) {
-  console.log(`Remaining: ${remaining.toNumber()}`); // 500
+  // Закрываем 50% позиции
+  const remaining = partialClosePosition(position, 50);
+  if (remaining) {
+    console.log(`Remaining: ${remaining.toNumber()}`); // 500
+  }
 }
 ```
 

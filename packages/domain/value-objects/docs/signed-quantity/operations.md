@@ -223,31 +223,49 @@ public static roundToStep(
 import Decimal from 'decimal.js';
 
 // ✅ Округление positive - ROUND_HALF_UP (default)
-const qty = SignedQuantityService.create(10.567).value;
-const rounded = SignedQuantityService.roundToStep(qty, 0.01);
-// rounded.value = SignedQuantity(10.57)
+const qtyResult = SignedQuantityService.create(10.567);
+if (qtyResult.ok) {
+  const qty = qtyResult.value;
+  const rounded = SignedQuantityService.roundToStep(qty, 0.01);
+  if (rounded.ok) {
+    console.log(rounded.value.toNumber()); // 10.57
+  }
+}
 
 // ✅ Округление negative - ROUND_HALF_UP
-const negQty = SignedQuantityService.create(-10.567).value;
-const roundedNeg = SignedQuantityService.roundToStep(negQty, 0.01);
-// roundedNeg.value = SignedQuantity(-10.57)
+const negQtyResult = SignedQuantityService.create(-10.567);
+if (negQtyResult.ok) {
+  const negQty = negQtyResult.value;
+  const roundedNeg = SignedQuantityService.roundToStep(negQty, 0.01);
+  if (roundedNeg.ok) {
+    console.log(roundedNeg.value.toNumber()); // -10.57
+  }
 
-// ✅ ROUND_DOWN (к нулю) для negative
-const roundedDown = SignedQuantityService.roundToStep(negQty, 0.01, Decimal.ROUND_DOWN);
-// roundedDown.value = SignedQuantity(-10.56) - к нулю
+  // ✅ ROUND_DOWN (к нулю) для negative
+  const roundedDown = SignedQuantityService.roundToStep(negQty, 0.01, Decimal.ROUND_DOWN);
+  if (roundedDown.ok) {
+    console.log(roundedDown.value.toNumber()); // -10.56 (к нулю)
+  }
+}
 
 // ✅ ROUND_FLOOR (к -Infinity) для negative
-const roundedFloor = SignedQuantityService.roundToStep(
-  SignedQuantityService.create(-10.561).value,
-  0.01,
-  Decimal.ROUND_FLOOR
-);
-// roundedFloor.value = SignedQuantity(-10.57) - к -Infinity
+const floorQtyResult = SignedQuantityService.create(-10.561);
+if (floorQtyResult.ok) {
+  const roundedFloor = SignedQuantityService.roundToStep(floorQtyResult.value, 0.01, Decimal.ROUND_FLOOR);
+  if (roundedFloor.ok) {
+    console.log(roundedFloor.value.toNumber()); // -10.57 (к -Infinity)
+  }
+}
 
 // ✅ Округление до больших шагов (lot size)
-const shares = SignedQuantityService.create(127).value;
-const roundedToLots = SignedQuantityService.roundToStep(shares, 100);
-// roundedToLots.value = SignedQuantity(100) - ближайшее кратное 100
+const sharesResult = SignedQuantityService.create(127);
+if (sharesResult.ok) {
+  const shares = sharesResult.value;
+  const roundedToLots = SignedQuantityService.roundToStep(shares, 100);
+  if (roundedToLots.ok) {
+    console.log(roundedToLots.value.toNumber()); // 100 (ближайшее кратное 100)
+  }
+}
 ```
 
 ### Когда использовать

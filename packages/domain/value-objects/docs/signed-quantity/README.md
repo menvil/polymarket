@@ -333,11 +333,18 @@ if (result.ok) {
 
 ```typescript
 // Купил 100 акций, продал 50
-const buy = SignedQuantityService.create(100).value;
-const sell = SignedQuantityService.create(-50).value;
+const buyResult = SignedQuantityService.create(100);
+const sellResult = SignedQuantityService.create(-50);
 
-const netPosition = SignedQuantityService.add(buy, sell);
-// netPosition.value.toNumber() === 50
+if (buyResult.ok && sellResult.ok) {
+  const buy = buyResult.value;
+  const sell = sellResult.value;
+
+  const netPosition = SignedQuantityService.add(buy, sell);
+  if (netPosition.ok) {
+    console.log(netPosition.value.toNumber()); // 50
+  }
+}
 ```
 
 ### P&L Calculation (прибыль/убыток)
@@ -397,14 +404,22 @@ if (depositResult.ok && withdrawalResult.ok) {
 
 ```typescript
 // Был long 100 акций, открыл short 200
-const longPosition = SignedQuantityService.create(100).value;
-const shortTrade = SignedQuantityService.create(-200).value;
+const longPositionResult = SignedQuantityService.create(100);
+const shortTradeResult = SignedQuantityService.create(-200);
 
-const netPosition = SignedQuantityService.add(longPosition, shortTrade).value;
-// netPosition.toNumber() === -100 (теперь short 100)
+if (longPositionResult.ok && shortTradeResult.ok) {
+  const longPosition = longPositionResult.value;
+  const shortTrade = shortTradeResult.value;
 
-if (netPosition.isNegative()) {
-  console.log('Position reversed to short');
+  const netPositionResult = SignedQuantityService.add(longPosition, shortTrade);
+  if (netPositionResult.ok) {
+    const netPosition = netPositionResult.value;
+    console.log(netPosition.toNumber()); // -100 (теперь short 100)
+
+    if (netPosition.isNegative()) {
+      console.log('Position reversed to short');
+    }
+  }
 }
 ```
 
