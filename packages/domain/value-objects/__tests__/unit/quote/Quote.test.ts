@@ -13,7 +13,7 @@ const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 
 // Вспомогательная функция для создания тестового Timestamp
 function createTestTimestamp(ms?: number): Timestamp {
-  const result = TimestampService.fromEpochMs(ms ?? Date.now());
+  const result = TimestampService.create(ms ?? Date.now());
   if (!result.ok) {
     throw new Error(`Failed to create test timestamp: ${result.error.message}`);
   }
@@ -136,8 +136,8 @@ describe('Quote Core', () => {
     const askSize = Quantity.of(new Decimal(150));
 
     it('бросает INVALID_TIMESTAMP для NaN', () => {
-      // TimestampService.fromEpochMs() отклоняет NaN и возвращает Err
-      const timestampResult = TimestampService.fromEpochMs(NaN);
+      // TimestampService.create() отклоняет NaN и возвращает Err
+      const timestampResult = TimestampService.create(NaN);
       expect(timestampResult.ok).toBe(false);
       if (!timestampResult.ok) {
         expect(timestampResult.error.message).toContain('NaN');
@@ -145,8 +145,8 @@ describe('Quote Core', () => {
     });
 
     it('бросает INVALID_TIMESTAMP для Infinity', () => {
-      // TimestampService.fromEpochMs() отклоняет Infinity и возвращает Err
-      const timestampResult = TimestampService.fromEpochMs(Infinity);
+      // TimestampService.create() отклоняет Infinity и возвращает Err
+      const timestampResult = TimestampService.create(Infinity);
       expect(timestampResult.ok).toBe(false);
       if (!timestampResult.ok) {
         expect(timestampResult.error.message).toContain('finite');
@@ -154,8 +154,8 @@ describe('Quote Core', () => {
     });
 
     it('бросает INVALID_TIMESTAMP для отрицательного значения', () => {
-      // TimestampService.fromEpochMs() отклоняет отрицательные значения и возвращает Err
-      const timestampResult = TimestampService.fromEpochMs(-1000);
+      // TimestampService.create() отклоняет отрицательные значения и возвращает Err
+      const timestampResult = TimestampService.create(-1000);
       expect(timestampResult.ok).toBe(false);
       if (!timestampResult.ok) {
         expect(timestampResult.error.message).toContain('negative');
@@ -163,8 +163,8 @@ describe('Quote Core', () => {
     });
 
     it('принимает дробное число (truncate to integer)', () => {
-      // TimestampService.fromEpochMs() принимает дробные значения и обрезает их до целого
-      const timestampResult = TimestampService.fromEpochMs(1234.567);
+      // TimestampService.create() принимает дробные значения и обрезает их до целого
+      const timestampResult = TimestampService.create(1234.567);
       expect(timestampResult.ok).toBe(true);
       if (timestampResult.ok) {
         expect(timestampResult.value.toNumber()).toBe(1234);
@@ -174,8 +174,8 @@ describe('Quote Core', () => {
     it('бросает INVALID_TIMESTAMP для слишком большого значения', () => {
       const tooLarge = 10000000000000; // > 9999999999999
 
-      // TimestampService.fromEpochMs() отклоняет слишком большие значения и возвращает Err
-      const timestampResult = TimestampService.fromEpochMs(tooLarge);
+      // TimestampService.create() отклоняет слишком большие значения и возвращает Err
+      const timestampResult = TimestampService.create(tooLarge);
       expect(timestampResult.ok).toBe(false);
       if (!timestampResult.ok) {
         expect(timestampResult.error.message).toContain('maximum');

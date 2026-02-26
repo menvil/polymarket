@@ -338,13 +338,16 @@ export class Timestamp {
   /**
    * Добавить миллисекунды к timestamp
    *
-   * @param delta - Количество миллисекунд для добавления (Decimal, может быть отрицательным)
+   * @param delta - Количество миллисекунд для добавления (Decimal integer, может быть отрицательным)
    * @returns Новый Timestamp
-   * @throws {TimestampInvariantViolation} Если результат невалиден (не positive или не integer)
+   * @throws {TimestampInvariantViolation} Если delta не integer или результат невалиден
    *
    * @remarks
    * Использует Decimal арифметику из @polymarket/math для точности.
-   * Бросает исключение если результат не соответствует инвариантам.
+   * Бросает исключение если:
+   * - delta не является integer (дробные миллисекунды не допускаются)
+   * - результат не соответствует инвариантам (не positive или не integer)
+   *
    * Для публичного API используйте TimestampService.addMs() который возвращает Result.
    *
    * @example
@@ -356,9 +359,20 @@ export class Timestamp {
    * // Вычесть время
    * const earlier = ts.addMs(new Decimal(-500));
    * console.log(earlier.value().toNumber()); // 500
+   *
+   * // ❌ Дробные миллисекунды - ошибка
+   * const invalid = ts.addMs(new Decimal(0.5)); // throws TimestampInvariantViolation
    * ```
    */
   public addMs(delta: Decimal): Timestamp {
+    // Проверка: delta должен быть integer (дробные миллисекунды не допускаются)
+    if (!delta.isInteger()) {
+      throw new TimestampInvariantViolation(
+        `Delta must be integer milliseconds, got: ${delta.toString()}`,
+        TimestampErrorReason.NOT_INTEGER
+      );
+    }
+
     // Используем функцию addDecimal из @polymarket/math для точной арифметики
     const newMs = addDecimal(this._ms, delta);
 

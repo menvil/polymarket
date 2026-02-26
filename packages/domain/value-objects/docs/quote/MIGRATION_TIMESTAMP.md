@@ -103,7 +103,7 @@ const quote = Quote.of(
 ```typescript
 import { TimestampService } from '@polymarket/value-objects/timestamp';
 
-const tsResult = TimestampService.fromEpochMs(Date.now());
+const tsResult = TimestampService.create(Date.now());
 if (!tsResult.ok) {
   // Обработка ошибки
   return;
@@ -189,7 +189,7 @@ import { TimestampService } from '../../../src/timestamp/index.js';
 import type { Timestamp } from '../../../src/timestamp/index.js';
 
 function createTestTimestamp(ms?: number): Timestamp {
-  const result = TimestampService.fromEpochMs(ms ?? Date.now());
+  const result = TimestampService.create(ms ?? Date.now());
   if (!result.ok) {
     throw new Error(`Failed to create test timestamp: ${result.error.message}`);
   }
@@ -242,7 +242,7 @@ const age2 = quote.age(now);
 const timestamp = new Decimal(999999999999999); // Валидный Decimal, невалидный timestamp
 
 // ✅ Стало: Timestamp гарантирует валидность
-const result = TimestampService.fromEpochMs(999999999999999);
+const result = TimestampService.create(999999999999999);
 // result.ok === false (слишком большое значение)
 ```
 
@@ -273,7 +273,7 @@ const diffSec = ts.diffSeconds(other); // Разница в секундах
 // Создание через Service
 const priceResult = PriceService.create(0.48);
 const qtyResult = QuantityService.create(100);
-const tsResult = TimestampService.fromEpochMs(Date.now());
+const tsResult = TimestampService.create(Date.now());
 
 // Core объект с методами
 const price: Price = priceResult.value;
@@ -296,7 +296,7 @@ const ts: Timestamp = tsResult.value;
 **A:** Конвертируйте через TimestampService:
 ```typescript
 const decimal: Decimal = new Decimal(Date.now());
-const result = TimestampService.fromEpochMs(decimal.toNumber());
+const result = TimestampService.create(decimal.toNumber());
 ```
 
 ### Q: Изменилась ли JSON сериализация?

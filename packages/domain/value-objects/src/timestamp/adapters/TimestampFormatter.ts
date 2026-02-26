@@ -39,22 +39,26 @@ export class TimestampFormatter {
   }
 
   /**
-   * Форматировать для отображения (без миллисекунд, пробел вместо T)
+   * Форматировать для отображения (без миллисекунд, с явным указанием UTC)
    *
    * @param timestamp - Timestamp для форматирования
-   * @returns Строка вида "YYYY-MM-DD HH:mm:ss"
+   * @returns Строка вида "YYYY-MM-DD HH:mm:ss UTC"
+   *
+   * @remarks
+   * Явно указывает timezone (UTC), чтобы не вводить в заблуждение.
+   * Timestamp всегда хранится в UTC, поэтому важно это отображать.
    *
    * @example
    * ```typescript
    * const ts = Timestamp.now();
    * console.log(TimestampFormatter.toDisplay(ts));
-   * // "2024-01-15 10:30:00"
+   * // "2024-01-15 10:30:00 UTC"
    * ```
    */
   public static toDisplay(timestamp: Timestamp): string {
     const iso = timestamp.toISO();
-    // Убираем миллисекунды и Z, заменяем T на пробел
-    return iso.slice(0, 19).replace('T', ' ');
+    // Убираем миллисекунды и Z, заменяем T на пробел, добавляем UTC
+    return iso.slice(0, 19).replace('T', ' ') + ' UTC';
   }
 
   /**
@@ -124,11 +128,11 @@ export class TimestampFormatter {
    *
    * @example
    * ```typescript
-   * const past = Timestamp.fromEpochMs(Date.now() - 120000).value!;
+   * const past = unwrap(TimestampService.create(Date.now() - 120000));
    * console.log(TimestampFormatter.toRelative(past));
    * // "2 minutes ago"
    *
-   * const future = Timestamp.fromEpochMs(Date.now() + 30000).value!;
+   * const future = unwrap(TimestampService.create(Date.now() + 30000));
    * console.log(TimestampFormatter.toRelative(future));
    * // "in 30 seconds"
    * ```

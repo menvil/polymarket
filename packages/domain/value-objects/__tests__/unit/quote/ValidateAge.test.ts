@@ -16,7 +16,7 @@ import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js'
 
 // Вспомогательная функция для создания тестового Timestamp
 function createTestTimestamp(ms: number): Timestamp {
-  const result = TimestampService.fromEpochMs(ms);
+  const result = TimestampService.create(ms);
   if (!result.ok) {
     throw new Error(`Failed to create test timestamp: ${result.error.message}`);
   }

@@ -96,60 +96,14 @@ export class TimestampService {
   }
 
   /**
-   * Создать Timestamp из epoch milliseconds
-   *
-   * @param ms - Миллисекунды с Unix epoch (1970-01-01)
-   * @returns Result<Timestamp, InvalidTimestampError>
-   *
-   * @remarks
-   * Дробные значения обрезаются до integer.
-   * Core проверит что значение конечное, положительное, и integer.
-   *
-   * @example
-   * ```typescript
-   * const result = TimestampService.fromEpochMs(1609459200000);
-   * if (result.ok) {
-   *   console.log(result.value.value().toNumber()); // 1609459200000
-   * }
-   *
-   * // Дробные значения обрезаются
-   * const result2 = TimestampService.fromEpochMs(1609459200000.789); // → 1609459200000
-   * ```
-   */
-  public static fromEpochMs(ms: number): Result<Timestamp, InvalidTimestampError> {
-    // Безопасный парсинг ms через toDecimal
-    const decimalResult = toDecimal('ms', ms, TimestampErrorReason.INVALID_FORMAT, InvalidTimestampError);
-    if (isErr(decimalResult)) {
-      return Err(rewrap(TimestampService.SERVICE_NAME, 'fromEpochMs', {}, decimalResult.error, InvalidTimestampError));
-    }
-
-    // Truncate до integer
-    const decimal = decimalResult.value.trunc();
-
-    const ctx = { raw: { field: 'ms', value: String(ms) } };
-
-    return wrapOp(
-      TimestampService.SERVICE_NAME,
-      'fromEpochMs',
-      ctx,
-      () => {
-        // Core проверит finite, positive, integer
-        const timestamp = Timestamp.of(decimal);
-        return Ok(timestamp);
-      },
-      InvalidTimestampError
-    );
-  }
-
-  /**
    * Создать Timestamp из Date объекта
    *
    * @param date - JavaScript Date
    * @returns Result<Timestamp, InvalidTimestampError>
    *
    * @remarks
-   * Извлекает epoch ms через date.getTime() и делегирует в fromEpochMs.
-   * Лишняя валидация убрана - fromEpochMs уже проверяет finite и positive.
+   * Извлекает epoch ms через date.getTime() и делегирует в create().
+   * create() уже проверяет finite, positive и делает truncate.
    *
    * @example
    * ```typescript
@@ -161,8 +115,8 @@ export class TimestampService {
    */
   public static fromDate(date: Date): Result<Timestamp, InvalidTimestampError> {
     const ms = date.getTime();
-    // Делегируем в fromEpochMs - он проверит finite, positive и сделает truncate
-    return this.fromEpochMs(ms);
+    // Делегируем в create() - он проверит finite, positive и сделает truncate
+    return this.create(ms);
   }
 
   /**
@@ -199,8 +153,8 @@ export class TimestampService {
           });
         }
 
-        // Используем fromEpochMs для валидации и truncate
-        return this.fromEpochMs(ms);
+        // Используем create() для валидации и truncate
+        return this.create(ms);
       },
       InvalidTimestampError
     );

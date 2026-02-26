@@ -9,11 +9,11 @@ import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
  *
  * Содержит reason из enum TimestampErrorReason для типизированной обработки ошибок.
  *
- * Возможные причины:
- * - TimestampErrorReason.NOT_FINITE: значение NaN или Infinity
- * - TimestampErrorReason.NOT_POSITIVE: значение < 0
- * - TimestampErrorReason.NOT_INTEGER: дробное значение (не integer)
- * - TimestampErrorReason.OUT_OF_RANGE: значение > 9999999999999 (~год 2286)
+ * Возможные причины (из TimestampErrorReason):
+ * - NOT_FINITE: значение NaN или Infinity
+ * - NOT_POSITIVE: значение < 0
+ * - NOT_INTEGER: дробное значение (не integer)
+ * - OUT_OF_RANGE: значение > 9999999999999 (~год 2286)
  *
  * @example
  * ```typescript
@@ -21,20 +21,9 @@ import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
  * ```
  */
 export class TimestampInvariantViolation extends Error {
-  public readonly reason:
-    | TimestampErrorReason.NOT_FINITE
-    | TimestampErrorReason.NOT_POSITIVE
-    | TimestampErrorReason.NOT_INTEGER
-    | TimestampErrorReason.OUT_OF_RANGE;
+  public readonly reason: TimestampErrorReason;
 
-  constructor(
-    message: string,
-    reason:
-      | TimestampErrorReason.NOT_FINITE
-      | TimestampErrorReason.NOT_POSITIVE
-      | TimestampErrorReason.NOT_INTEGER
-      | TimestampErrorReason.OUT_OF_RANGE
-  ) {
+  constructor(message: string, reason: TimestampErrorReason) {
     super(`Timestamp invariant violation: ${message}`);
     Object.setPrototypeOf(this, TimestampInvariantViolation.prototype);
     this.name = 'TimestampInvariantViolation';

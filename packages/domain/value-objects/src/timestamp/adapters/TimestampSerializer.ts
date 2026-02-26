@@ -18,7 +18,7 @@
  * ```
  */
 
-import { Result, Ok } from '@polymarket/result';
+import { Result } from '@polymarket/result';
 import { InvalidTimestampError, wrapOp } from '@polymarket/errors';
 import { Timestamp } from '../core/Timestamp.js';
 import { TimestampService } from '../facade/TimestampService.js';
@@ -58,7 +58,7 @@ export class TimestampSerializer {
    */
   public static fromJSON(json: number): Result<Timestamp, InvalidTimestampError> {
     // Делегируем в TimestampService для валидации и создания
-    return TimestampService.fromEpochMs(json);
+    return TimestampService.create(json);
   }
 
   /**
@@ -81,30 +81,27 @@ export class TimestampSerializer {
    * ```
    */
   public static fromUnknown(json: unknown): Result<Timestamp, InvalidTimestampError> {
-    return wrapOp(
-      'TimestampSerializer',
-      'fromUnknown',
-      { value: json, type: typeof json },
-      () => {
-        if (typeof json !== 'number') {
+    // Проверка типа
+    if (typeof json !== 'number') {
+      return wrapOp(
+        'TimestampSerializer',
+        'fromUnknown',
+        { value: json, type: typeof json },
+        () => {
           throw new InvalidTimestampError('Timestamp must be number', {
             context: {
               field: 'timestamp',
               value: json,
               type: typeof json,
-              reason: TimestampErrorReason.NOT_FINITE,
+              reason: TimestampErrorReason.INVALID_FORMAT,
             },
           });
-        }
+        },
+        InvalidTimestampError
+      );
+    }
 
-        // Используем TimestampService для валидации
-        const result = TimestampService.fromEpochMs(json);
-        if (!result.ok) {
-          throw result.error;
-        }
-        return Ok(result.value);
-      },
-      InvalidTimestampError
-    );
+    // Используем TimestampService для валидации и создания
+    return TimestampService.create(json);
   }
 }

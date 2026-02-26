@@ -264,7 +264,7 @@ export class QuoteService {
       if (isErr(askSizeQuantityResult)) return askSizeQuantityResult;
 
       // Создаём Timestamp через TimestampService
-      const timestampResult = TimestampService.fromEpochMs(timestampDecimal.toNumber());
+      const timestampResult = TimestampService.create(timestampDecimal.toNumber());
       if (isErr(timestampResult)) {
         return Err(
           new InvalidQuoteError(timestampResult.error.message, {
@@ -948,7 +948,7 @@ export class QuoteService {
       }
 
       // Создаём новую котировку через Core (refreshing timestamp)
-      const newTimestampResult = TimestampService.fromEpochMs(clock.now().getTime());
+      const newTimestampResult = TimestampService.create(clock.now().getTime());
       if (isErr(newTimestampResult)) {
         return Err(
           new InvalidQuoteError(newTimestampResult.error.message, {

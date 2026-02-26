@@ -14,7 +14,7 @@ const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
 
 // Вспомогательная функция для создания тестового Timestamp
 function createTestTimestamp(ms?: number): Timestamp {
-  const result = TimestampService.fromEpochMs(ms ?? Date.now());
+  const result = TimestampService.create(ms ?? Date.now());
   if (!result.ok) {
     throw new Error(`Failed to create test timestamp: ${result.error.message}`);
   }

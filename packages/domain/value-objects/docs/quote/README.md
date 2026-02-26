@@ -434,7 +434,7 @@ const quote = Quote.of(
 ```typescript
 import { TimestampService } from '@polymarket/value-objects/timestamp';
 
-const tsResult = TimestampService.fromEpochMs(Date.now());
+const tsResult = TimestampService.create(Date.now());
 if (tsResult.ok) {
   const quote = Quote.of(bid, ask, bidSize, askSize, tsResult.value, sourceId, instrumentId);
 }

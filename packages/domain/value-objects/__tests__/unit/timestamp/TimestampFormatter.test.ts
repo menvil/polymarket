@@ -7,7 +7,7 @@ import { TimestampService, TimestampFormatter } from '../../../src/timestamp/ind
 import { unwrap } from '@polymarket/result/unsafe';
 
 describe('TimestampFormatter', () => {
-  const testTimestamp = unwrap(TimestampService.fromEpochMs(1705318200000)); // 2024-01-15T10:30:00.000Z
+  const testTimestamp = unwrap(TimestampService.create(1705318200000)); // 2024-01-15T10:30:00.000Z
 
   describe('toISO()', () => {
     it('should format as ISO 8601 string', () => {
@@ -20,12 +20,15 @@ describe('TimestampFormatter', () => {
   });
 
   describe('toDisplay()', () => {
-    it('should format without milliseconds and with space', () => {
+    it('should format without milliseconds and with UTC timezone', () => {
       const result = TimestampFormatter.toDisplay(testTimestamp);
 
       expect(result).toContain('2024-01-15');
-      expect(result).not.toContain('T');
       expect(result).not.toContain('.000');
+      expect(result).toContain(' UTC');
+      expect(result).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} UTC$/);
+      // Проверяем, что нет ISO-формата с T между датой и временем
+      expect(result).not.toMatch(/T\d{2}:/);
     });
   });
 
@@ -57,8 +60,8 @@ describe('TimestampFormatter', () => {
 
   describe('toRelative()', () => {
     it('should format seconds ago', () => {
-      const now = unwrap(TimestampService.fromEpochMs(Date.now()));
-      const past = unwrap(TimestampService.fromEpochMs(Date.now() - 30000)); // 30 seconds ago
+      const now = unwrap(TimestampService.create(Date.now()));
+      const past = unwrap(TimestampService.create(Date.now() - 30000)); // 30 seconds ago
 
       const result = TimestampFormatter.toRelative(past, now);
 
@@ -68,8 +71,8 @@ describe('TimestampFormatter', () => {
     });
 
     it('should format minutes ago', () => {
-      const now = unwrap(TimestampService.fromEpochMs(Date.now()));
-      const past = unwrap(TimestampService.fromEpochMs(Date.now() - 120000)); // 2 minutes ago
+      const now = unwrap(TimestampService.create(Date.now()));
+      const past = unwrap(TimestampService.create(Date.now() - 120000)); // 2 minutes ago
 
       const result = TimestampFormatter.toRelative(past, now);
 
@@ -80,8 +83,8 @@ describe('TimestampFormatter', () => {
 
     it('should format hours ago', () => {
       const nowMs = Date.now();
-      const now = unwrap(TimestampService.fromEpochMs(nowMs));
-      const past = unwrap(TimestampService.fromEpochMs(nowMs - 7200000)); // 2 hours ago
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 7200000)); // 2 hours ago
 
       const result = TimestampFormatter.toRelative(past, now);
 
@@ -92,8 +95,8 @@ describe('TimestampFormatter', () => {
 
     it('should format days ago', () => {
       const nowMs = Date.now();
-      const now = unwrap(TimestampService.fromEpochMs(nowMs));
-      const past = unwrap(TimestampService.fromEpochMs(nowMs - 172800000)); // 2 days ago
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 172800000)); // 2 days ago
 
       const result = TimestampFormatter.toRelative(past, now);
 
@@ -103,8 +106,8 @@ describe('TimestampFormatter', () => {
     });
 
     it('should format future timestamp with "in"', () => {
-      const now = unwrap(TimestampService.fromEpochMs(Date.now()));
-      const future = unwrap(TimestampService.fromEpochMs(Date.now() + 30000)); // in 30 seconds
+      const now = unwrap(TimestampService.create(Date.now()));
+      const future = unwrap(TimestampService.create(Date.now() + 30000)); // in 30 seconds
 
       const result = TimestampFormatter.toRelative(future, now);
 
@@ -114,8 +117,8 @@ describe('TimestampFormatter', () => {
     });
 
     it('should use singular form for 1 second', () => {
-      const now = unwrap(TimestampService.fromEpochMs(Date.now()));
-      const past = unwrap(TimestampService.fromEpochMs(Date.now() - 1000)); // 1 second ago
+      const now = unwrap(TimestampService.create(Date.now()));
+      const past = unwrap(TimestampService.create(Date.now() - 1000)); // 1 second ago
 
       const result = TimestampFormatter.toRelative(past, now);
 
@@ -123,8 +126,8 @@ describe('TimestampFormatter', () => {
     });
 
     it('should use plural form for multiple seconds', () => {
-      const now = unwrap(TimestampService.fromEpochMs(Date.now()));
-      const past = unwrap(TimestampService.fromEpochMs(Date.now() - 5000)); // 5 seconds ago
+      const now = unwrap(TimestampService.create(Date.now()));
+      const past = unwrap(TimestampService.create(Date.now() - 5000)); // 5 seconds ago
 
       const result = TimestampFormatter.toRelative(past, now);
 
@@ -132,7 +135,7 @@ describe('TimestampFormatter', () => {
     });
 
     it('should use Timestamp.now() as default reference', () => {
-      const past = unwrap(TimestampService.fromEpochMs(Date.now() - 5000)); // 5 seconds ago
+      const past = unwrap(TimestampService.create(Date.now() - 5000)); // 5 seconds ago
 
       const result = TimestampFormatter.toRelative(past);
 

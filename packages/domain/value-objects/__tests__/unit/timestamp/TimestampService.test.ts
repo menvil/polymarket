@@ -7,27 +7,6 @@ import { TimestampService } from '../../../src/timestamp/index.js';
 import { unwrap } from '@polymarket/result/unsafe';
 
 describe('TimestampService', () => {
-  describe('fromEpochMs()', () => {
-    it('should create Timestamp from epoch ms', () => {
-      const result = TimestampService.fromEpochMs(1609459200000);
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value.value().toNumber()).toBe(1609459200000);
-      }
-    });
-
-    it('should include service name in error context', () => {
-      const result = TimestampService.fromEpochMs(NaN);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.op).toBe('fromEpochMs');
-        expect(result.error.context?.opChain).toContain('TimestampService.fromEpochMs');
-      }
-    });
-  });
-
   describe('fromDate()', () => {
     it('should create Timestamp from Date', () => {
       const date = new Date('2024-01-15T10:30:00.000Z');
@@ -45,8 +24,8 @@ describe('TimestampService', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // fromDate delegates to fromEpochMs
-        expect(result.error.context?.op).toBe('fromEpochMs');
+        // fromDate delegates to create
+        expect(result.error.context?.op).toBe('create');
       }
     });
   });
@@ -106,8 +85,8 @@ describe('TimestampService', () => {
 
   describe('diffMs()', () => {
     it('should calculate difference in milliseconds', () => {
-      const ts1 = unwrap(TimestampService.fromEpochMs(2000));
-      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.create(2000));
+      const ts2 = unwrap(TimestampService.create(1000));
 
       const diff = TimestampService.diffMs(ts1, ts2);
 
@@ -117,8 +96,8 @@ describe('TimestampService', () => {
 
   describe('diffSeconds()', () => {
     it('should calculate difference in seconds', () => {
-      const ts1 = unwrap(TimestampService.fromEpochMs(3000));
-      const ts2 = unwrap(TimestampService.fromEpochMs(1000));
+      const ts1 = unwrap(TimestampService.create(3000));
+      const ts2 = unwrap(TimestampService.create(1000));
 
       const diff = TimestampService.diffSeconds(ts1, ts2);
 

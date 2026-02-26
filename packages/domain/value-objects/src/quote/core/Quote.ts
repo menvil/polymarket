@@ -150,7 +150,7 @@ export class Quote {
    * @example
    * ```typescript
    * // ✅ В Core и Facade
-   * const ts = TimestampService.fromEpochMs(Date.now()).value!;
+   * const ts = TimestampService.create(Date.now()).value!;
    * Quote.of(bid, ask, bidSize, askSize, ts, sourceId, instrumentId);
    *
    * // ❌ В публичном коде - используй QuoteService

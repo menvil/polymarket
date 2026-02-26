@@ -13,7 +13,7 @@ import { TimestampService } from '../../../../src/timestamp/index.js';
 describe('QuoteService Ratio Operations', () => {
   // Helper: создать Quote из чисел
   const createQuote = (bidPrice: number, askPrice: number, bidSize = 100, askSize = 100): Quote => {
-    const timestampResult = TimestampService.fromEpochMs(Date.now());
+    const timestampResult = TimestampService.create(Date.now());
     if (!timestampResult.ok) throw new Error('Failed to create timestamp');
 
     return Quote.of(
