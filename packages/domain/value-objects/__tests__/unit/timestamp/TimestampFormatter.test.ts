@@ -137,6 +137,69 @@ describe('TimestampFormatter', () => {
       expect(result).toContain('5 seconds ago');
     });
 
+    it('should use singular form for 1 minute', () => {
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 60000)); // 1 minute ago
+
+      const result = TimestampFormatter.toRelative(past, now);
+
+      expect(result).toBe('1 minute ago');
+    });
+
+    it('should use singular form for 1 hour', () => {
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 3600000)); // 1 hour ago
+
+      const result = TimestampFormatter.toRelative(past, now);
+
+      expect(result).toBe('1 hour ago');
+    });
+
+    it('should use singular form for 1 day', () => {
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 86400000)); // 1 day ago
+
+      const result = TimestampFormatter.toRelative(past, now);
+
+      expect(result).toBe('1 day ago');
+    });
+
+    it('should handle boundary: exactly 60 seconds', () => {
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 60000)); // exactly 60s
+
+      const result = TimestampFormatter.toRelative(past, now);
+
+      // 60 seconds = 1 minute
+      expect(result).toBe('1 minute ago');
+    });
+
+    it('should handle boundary: exactly 3600 seconds', () => {
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 3600000)); // exactly 3600s
+
+      const result = TimestampFormatter.toRelative(past, now);
+
+      // 3600 seconds = 1 hour
+      expect(result).toBe('1 hour ago');
+    });
+
+    it('should handle boundary: exactly 86400 seconds', () => {
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 86400000)); // exactly 86400s
+
+      const result = TimestampFormatter.toRelative(past, now);
+
+      // 86400 seconds = 1 day
+      expect(result).toBe('1 day ago');
+    });
+
     it('should use Timestamp.now() as default reference', () => {
       const past = unwrap(TimestampService.create(Date.now() - 5000)); // 5 seconds ago
 

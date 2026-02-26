@@ -11,7 +11,7 @@
  * const ts = Timestamp.now();
  *
  * TimestampFormatter.toISO(ts);        // "2024-01-15T10:30:00.000Z"
- * TimestampFormatter.toDisplay(ts);    // "2024-01-15 10:30:00"
+ * TimestampFormatter.toDisplay(ts);    // "2024-01-15 10:30:00 UTC"
  * TimestampFormatter.toDate(ts);       // "2024-01-15"
  * TimestampFormatter.toTime(ts);       // "10:30:00"
  * TimestampFormatter.toRelative(ts);   // "2 minutes ago"

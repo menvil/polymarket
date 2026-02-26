@@ -35,22 +35,37 @@ describe('TimestampSerializer', () => {
       }
     });
 
-    it('should fail for NaN', () => {
+    it('should fail for NaN with proper error context', () => {
       const result = TimestampSerializer.fromJSON(NaN);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.op).toBe('create');
+        expect(result.error.context?.source).toBeDefined();
+      }
     });
 
-    it('should fail for Infinity', () => {
+    it('should fail for Infinity with proper error context', () => {
       const result = TimestampSerializer.fromJSON(Infinity);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.op).toBe('create');
+        expect(result.error.context?.source).toBeDefined();
+      }
     });
 
-    it('should fail for negative value', () => {
+    it('should fail for negative value with proper error context', () => {
       const result = TimestampSerializer.fromJSON(-1000);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe('NOT_POSITIVE');
+        expect(result.error.context?.op).toBe('create');
+        expect(result.error.context?.source).toBeDefined();
+      }
     });
   });
 
@@ -65,35 +80,49 @@ describe('TimestampSerializer', () => {
       }
     });
 
-    it('should fail for string', () => {
+    it('should fail for string with proper error context', () => {
       const value: unknown = '1609459200000';
       const result = TimestampSerializer.fromUnknown(value);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('must be number');
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.op).toBe('fromUnknown');
       }
     });
 
-    it('should fail for object', () => {
+    it('should fail for object with proper error context', () => {
       const value: unknown = { timestamp: 1609459200000 };
       const result = TimestampSerializer.fromUnknown(value);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.op).toBe('fromUnknown');
+      }
     });
 
-    it('should fail for null', () => {
+    it('should fail for null with proper error context', () => {
       const value: unknown = null;
       const result = TimestampSerializer.fromUnknown(value);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.op).toBe('fromUnknown');
+      }
     });
 
-    it('should fail for undefined', () => {
+    it('should fail for undefined with proper error context', () => {
       const value: unknown = undefined;
       const result = TimestampSerializer.fromUnknown(value);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.op).toBe('fromUnknown');
+      }
     });
   });
 
