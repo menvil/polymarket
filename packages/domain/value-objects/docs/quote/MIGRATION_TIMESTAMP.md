@@ -318,6 +318,6 @@ const result = TimestampService.create(decimal.toNumber());
 
 ## См. также
 
-- [Timestamp VO Documentation](../timestamp/README.md)
+- Timestamp VO Documentation: `@polymarket/value-objects/timestamp` (см. TSDoc в src/timestamp/)
 - [Quote Architecture](./architecture.md)
 - [Quote API Reference](./README.md)

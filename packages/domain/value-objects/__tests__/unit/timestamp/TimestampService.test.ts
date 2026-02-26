@@ -59,6 +59,40 @@ describe('TimestampService', () => {
       expect(ts.value().toNumber()).toBeGreaterThanOrEqual(before);
       expect(ts.value().toNumber()).toBeLessThanOrEqual(after);
     });
+
+    it('should fallback to Date.now() when clock returns invalid value', () => {
+      // Mock clock that returns invalid Date
+      const badClock = {
+        now: () => new Date('invalid')
+      };
+
+      const before = Date.now();
+      const ts = TimestampService.now(badClock);
+      const after = Date.now();
+
+      // Should not throw, should return valid Timestamp using fallback
+      expect(ts).toBeDefined();
+      expect(ts.value().toNumber()).toBeGreaterThanOrEqual(before);
+      expect(ts.value().toNumber()).toBeLessThanOrEqual(after);
+    });
+
+    it('should fallback when clock throws error', () => {
+      // Mock clock that throws
+      const throwingClock = {
+        now: () => {
+          throw new Error('Clock error');
+        }
+      };
+
+      const before = Date.now();
+      const ts = TimestampService.now(throwingClock);
+      const after = Date.now();
+
+      // Should not throw, should return valid Timestamp using fallback
+      expect(ts).toBeDefined();
+      expect(ts.value().toNumber()).toBeGreaterThanOrEqual(before);
+      expect(ts.value().toNumber()).toBeLessThanOrEqual(after);
+    });
   });
 
   describe('addMs()', () => {

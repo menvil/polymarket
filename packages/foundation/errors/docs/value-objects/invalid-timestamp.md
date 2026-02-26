@@ -40,36 +40,75 @@ import { Result, Ok, Err } from '@polymarket/result';
 ### 1. Базовое использование
 
 ```typescript
-import { Result, Ok, Err } from '@polymarket/result';
-import { InvalidTimestampError } from '@polymarket/errors';
-import Decimal from 'decimal.js';
+import { TimestampService } from '@polymarket/value-objects/timestamp';
 
-class Timestamp {
-  private constructor(private readonly ms: Decimal) {}
+// TimestampService.create() автоматически truncate дробные значения
+const result = TimestampService.create(1609459200000.789);
 
-  static fromEpochMs(value: number): Result<Timestamp, InvalidTimestampError> {
-    if (!Number.isFinite(value) || Number.isNaN(value)) {
-      return Err(
-        new InvalidTimestampError(
-          'Timestamp must be a finite number',
-          {
-            code: InvalidTimestampError.code,
-            context: { value, reason: 'NOT_FINITE' }
-          }
-        )
-      );
+if (!result.ok) {
+  console.error(result.error.message);
+  // Обработка InvalidTimestampError
+  return;
+}
+
+const timestamp = result.value;
+console.log(timestamp.toISO()); // "2021-01-01T00:00:00.000Z"
+```
+
+### 2. Обработка невалидных значений
+
+```typescript
+import { TimestampService } from '@polymarket/value-objects/timestamp';
+
+function processTimestamp(value: number) {
+  const result = TimestampService.create(value);
+
+  if (!result.ok) {
+    // InvalidTimestampError содержит context с reason
+    const { reason, op } = result.error.context || {};
+
+    switch (reason) {
+      case 'INVALID_FORMAT':
+        console.error('Value is not finite (NaN or Infinity)');
+        break;
+      case 'NOT_POSITIVE':
+        console.error('Timestamp cannot be negative');
+        break;
+      case 'OUT_OF_RANGE':
+        console.error('Timestamp exceeds maximum (9999999999999)');
+        break;
+      default:
+        console.error('Invalid timestamp:', result.error.message);
     }
 
-    if (!Number.isInteger(value)) {
-      return Err(
-        new InvalidTimestampError(
-          (ctx) => `Timestamp must be an integer, got ${ctx.value}`,
-          {
-            code: InvalidTimestampError.code,
-            context: { value, reason: 'NOT_INTEGER' }
-          }
-        )
-      );
+    return null;
+  }
+
+  return result.value;
+}
+
+// Примеры ошибок
+processTimestamp(NaN);        // INVALID_FORMAT
+processTimestamp(Infinity);   // INVALID_FORMAT
+processTimestamp(-1000);      // NOT_POSITIVE
+processTimestamp(1e14);       // OUT_OF_RANGE (too large)
+```
+
+### 3. Пример с устаревшим API (НЕ ИСПОЛЬЗУЙТЕ)
+
+```typescript
+// ❌ НЕПРАВИЛЬНО - этот API не существует
+// static fromEpochMs(value: number): Result<Timestamp, InvalidTimestampError> {
+//   if (!Number.isFinite(value) || Number.isNaN(value)) {
+//     return Err(
+//       new InvalidTimestampError(
+//         'Timestamp must be finite',
+//         {
+//           code: InvalidTimestampError.code,
+//           context: { value, reason: 'INVALID_FORMAT' }
+//         }
+//       )
+//     );
     }
 
     if (value < 0) {
@@ -110,7 +149,7 @@ class Timestamp {
 }
 
 // Использование
-const result = Timestamp.fromEpochMs(Date.now());
+const result = TimestampService.create(Date.now());
 
 if (result.ok) {
   console.log('Valid timestamp:', result.value.toISO());
@@ -128,11 +167,11 @@ import { InvalidTimestampError } from '@polymarket/errors';
 class TimestampService {
   static fromDate(date: Date): Result<Timestamp, InvalidTimestampError> {
     const ms = date.getTime();
-    return Timestamp.fromEpochMs(ms);
+    return TimestampService.create(ms);
   }
 
   static now(): Timestamp {
-    const result = Timestamp.fromEpochMs(Date.now());
+    const result = TimestampService.create(Date.now());
     if (!result.ok) {
       throw new Error('Failed to create current timestamp');
     }
@@ -165,7 +204,7 @@ function createQuote(
   ask: number,
   timestampMs: number
 ): Result<Quote, InvalidTimestampError> {
-  const timestampResult = Timestamp.fromEpochMs(timestampMs);
+  const timestampResult = TimestampService.create(timestampMs);
 
   if (!timestampResult.ok) {
     return timestampResult;
@@ -210,7 +249,7 @@ class TimestampService {
 }
 
 // Использование
-const quoteTimestamp = Timestamp.fromEpochMs(Date.now() - 5000);
+const quoteTimestamp = TimestampService.create(Date.now() - 5000);
 // 5 секунд назад
 
 if (quoteTimestamp.ok) {
@@ -227,36 +266,37 @@ if (quoteTimestamp.ok) {
 
 ```typescript
 // Минимальное значение (Unix epoch)
-Timestamp.fromEpochMs(0); // ✅ Ok(Timestamp) - 1970-01-01T00:00:00.000Z
+TimestampService.create(0); // ✅ Ok(Timestamp) - 1970-01-01T00:00:00.000Z
 
 // Текущее время
-Timestamp.fromEpochMs(Date.now()); // ✅ Ok(Timestamp)
+TimestampService.create(Date.now()); // ✅ Ok(Timestamp)
 
 // Будущее время
-Timestamp.fromEpochMs(2000000000000); // ✅ Ok(Timestamp)
+TimestampService.create(2000000000000); // ✅ Ok(Timestamp)
 
 // Максимальное значение
-Timestamp.fromEpochMs(9999999999999); // ✅ Ok(Timestamp)
+TimestampService.create(9999999999999); // ✅ Ok(Timestamp)
 
 // Превышение максимума
-Timestamp.fromEpochMs(10000000000000); // ❌ Err(OUT_OF_RANGE)
+TimestampService.create(10000000000000); // ❌ Err(OUT_OF_RANGE)
 ```
 
 ### Специальные значения
 
 ```typescript
 // NaN
-Timestamp.fromEpochMs(NaN); // ❌ Err(NOT_FINITE)
+TimestampService.create(NaN); // ❌ Err(NOT_FINITE)
 
 // Infinity
-Timestamp.fromEpochMs(Infinity); // ❌ Err(NOT_FINITE)
-Timestamp.fromEpochMs(-Infinity); // ❌ Err(NOT_FINITE)
+TimestampService.create(Infinity); // ❌ Err(NOT_FINITE)
+TimestampService.create(-Infinity); // ❌ Err(NOT_FINITE)
 
 // Отрицательное
-Timestamp.fromEpochMs(-1); // ❌ Err(NOT_POSITIVE)
+TimestampService.create(-1); // ❌ Err(NOT_POSITIVE)
 
-// Дробное (не целое)
-Timestamp.fromEpochMs(123.456); // ❌ Err(NOT_INTEGER)
+// Дробное (автоматически truncate до integer)
+TimestampService.create(123.456); // ✅ Ok(Timestamp) - становится 123
+TimestampService.create(1609459200000.999); // ✅ Ok - truncate до 1609459200000
 ```
 
 ### Валидация ISO строк
@@ -281,13 +321,13 @@ class TimestampService {
       );
     }
 
-    return Timestamp.fromEpochMs(date.getTime());
+    return TimestampService.create(date.getTime());
   }
 }
 
 // Использование
-Timestamp.fromISO('2024-01-01T00:00:00.000Z'); // ✅ Ok
-Timestamp.fromISO('invalid-date'); // ❌ Err(INVALID_FORMAT)
+TimestampService.fromISO('2024-01-01T00:00:00.000Z'); // ✅ Ok
+TimestampService.fromISO('invalid-date'); // ❌ Err(INVALID_FORMAT)
 ```
 
 ---
@@ -299,7 +339,7 @@ Timestamp.fromISO('invalid-date'); // ❌ Err(INVALID_FORMAT)
 ```typescript
 import { InvalidTimestampError } from '@polymarket/errors';
 
-const result = Timestamp.fromEpochMs(userInput);
+const result = TimestampService.create(userInput);
 
 if (result.ok) {
   processTimestamp(result.value);
@@ -307,13 +347,11 @@ if (result.ok) {
   if (InvalidTimestampError.is(result.error)) {
     const reason = result.error.context?.reason as string;
 
-    if (reason === 'NOT_INTEGER') {
-      showUserMessage('Timestamp must be a whole number');
-    } else if (reason === 'NOT_POSITIVE') {
+    if (reason === 'NOT_POSITIVE') {
       showUserMessage('Timestamp cannot be negative');
     } else if (reason === 'OUT_OF_RANGE') {
       showUserMessage('Timestamp value is out of range');
-    } else if (reason === 'NOT_FINITE') {
+    } else if (reason === 'INVALID_FORMAT') {
       showUserMessage('Timestamp must be a valid number');
     }
   }
@@ -330,7 +368,7 @@ function validateAndLogTimestamp(
   value: number,
   source: string
 ): Result<Timestamp, InvalidTimestampError> {
-  const result = Timestamp.fromEpochMs(value);
+  const result = TimestampService.create(value);
 
   if (result.ok) {
     logger.info('Timestamp validated', {
