@@ -26,15 +26,30 @@ SignedQuantityService — это **Facade Layer** для SignedQuantity Value Ob
 ### Архитектура
 
 ```
-┌───────────────────────────────────────┐
-│   SignedQuantityService (Facade)      │
-│                                       │
-│   + create(value)                     │  ← Парсинг + валидация
-│   + add(qty1, qty2)                   │  ← Оркестрация math
-│   + multiply(qty, factor)             │  ← Оркестрация math
-│   + abs(qty)                          │  ← Делегирование Core
-│   + negate(qty)                       │  ← Делегирование Core
-└───────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│   SignedQuantityService (Facade)            │
+│                                             │
+│   Создание и парсинг:                       │
+│   + create(value)                           │  ← Парсинг + валидация
+│                                             │
+│   Арифметика:                               │
+│   + add(qty1, qty2)                         │  ← Оркестрация math
+│   + subtract(qty1, qty2)                    │  ← Оркестрация math
+│   + multiply(qty, factor)                   │  ← Оркестрация math
+│   + divide(qty, divisor)                    │  ← Оркестрация math
+│                                             │
+│   Операции со знаком:                       │
+│   + abs(qty)                                │  ← Делегирование Core
+│   + negate(qty)                             │  ← Делегирование Core
+│                                             │
+│   Масштабирование и порции:                 │
+│   + scale(qty, rate)                        │  ← Validation + math
+│   + portion(qty, rate)                      │  ← Math only
+│                                             │
+│   Округление и корректировка:               │
+│   + roundToStep(qty, step, mode)            │  ← Validation + rounding
+│   + adjustBy(qty, delta, step, options)     │  ← Complex orchestration
+└─────────────────────────────────────────────┘
           ↓                  ↓
    ┌────────────┐     ┌──────────────┐
    │    Core    │     │  Math Layer  │
@@ -408,6 +423,221 @@ SignedQuantityService.negate(zero); // Ok(SignedQuantity(0))
 {
   op: 'negate',
   quantity: '100'
+}
+```
+
+### scale
+
+```typescript
+public static scale(
+  quantity: SignedQuantity,
+  rate: Ratio
+): Result<SignedQuantity, InvalidSignedQuantityError>
+```
+
+**Назначение:** масштабирует количество на rate с валидацией rate ≥ 0.
+
+**Алгоритм:**
+1. Конвертация rate → Decimal через `rate.toDecimal()`
+2. Валидация: rate ≥ 0 и isFinite (через ValidateFactorForSignedQuantityScale)
+3. Умножение: `quantity.value() * rate`
+4. Создание результата через `createFromDecimal()`
+
+**Отличие от portion:** scale требует rate ≥ 0 (защита от инверсии знака).
+
+**Примеры:**
+
+```typescript
+const qty = SignedQuantityService.create(100).value;
+const rate2x = RatioService.fromDecimal(2).value;
+
+// Масштабирование long позиции
+SignedQuantityService.scale(qty, rate2x); // Ok(SignedQuantity(200))
+
+// Масштабирование short позиции
+const short = SignedQuantityService.create(-50).value;
+SignedQuantityService.scale(short, rate2x); // Ok(SignedQuantity(-100))
+
+// Ошибка: negative rate
+const negRate = RatioService.fromDecimal(-1).value;
+SignedQuantityService.scale(qty, negRate); // Err(reason: NEGATIVE_SCALE_FACTOR)
+```
+
+**Error Context:**
+```typescript
+{
+  op: 'scale',
+  quantity: '100',
+  rate: '2',
+  reason: SignedQuantityErrorReason.NEGATIVE_SCALE_FACTOR | NON_FINITE
+}
+```
+
+### portion
+
+```typescript
+public static portion(
+  quantity: SignedQuantity,
+  rate: Ratio
+): Result<SignedQuantity, InvalidSignedQuantityError>
+```
+
+**Назначение:** вычисляет часть количества, rate может быть любым (включая отрицательный).
+
+**Алгоритм:**
+1. Конвертация rate → Decimal
+2. Умножение: `quantity.value() * rate` (БЕЗ валидации rate)
+3. Создание результата через `createFromDecimal()`
+
+**Отличие от scale:** portion НЕ требует rate ≥ 0, может инвертировать знак.
+
+**Примеры:**
+
+```typescript
+const qty = SignedQuantityService.create(100).value;
+const rate25pct = RatioService.fromDecimal(0.25).value;
+
+// Взять 25%
+SignedQuantityService.portion(qty, rate25pct); // Ok(SignedQuantity(25))
+
+// Negative rate — инверсия знака
+const negRate = RatioService.fromDecimal(-0.5).value;
+SignedQuantityService.portion(qty, negRate); // Ok(SignedQuantity(-50))
+```
+
+**Error Context:**
+```typescript
+{
+  op: 'portion',
+  quantity: '100',
+  rate: '0.25'
+}
+```
+
+### roundToStep
+
+```typescript
+public static roundToStep(
+  quantity: SignedQuantity,
+  stepSize: number | string | Decimal,
+  roundingMode: Decimal.Rounding = Decimal.ROUND_HALF_UP
+): Result<SignedQuantity, InvalidSignedQuantityError>
+```
+
+**Назначение:** округляет до ближайшего кратного stepSize.
+
+**Алгоритм:**
+1. Парсинг stepSize → Decimal через `toDecimal()`
+2. Валидация: stepSize > 0 и isFinite (через ValidateStepSizeForSignedQuantity)
+3. Округление через `roundToTick(quantity.value(), stepSize, roundingMode)`
+4. Создание результата через `createFromDecimal()`
+
+**Режимы округления:**
+- `ROUND_HALF_UP` (default): к ближайшему, .5 вверх
+- `ROUND_DOWN`: к нулю
+- `ROUND_UP`: от нуля
+- `ROUND_FLOOR`: к -Infinity
+- `ROUND_CEIL`: к +Infinity
+
+**Примеры:**
+
+```typescript
+const qty = SignedQuantityService.create(10.567).value;
+
+// Округление до центов (0.01)
+SignedQuantityService.roundToStep(qty, 0.01); // Ok(SignedQuantity(10.57))
+
+// Negative с ROUND_DOWN (к нулю)
+const negQty = SignedQuantityService.create(-10.567).value;
+SignedQuantityService.roundToStep(negQty, 0.01, Decimal.ROUND_DOWN);
+// Ok(SignedQuantity(-10.56))
+
+// ROUND_FLOOR (к -Infinity)
+SignedQuantityService.roundToStep(negQty, 0.01, Decimal.ROUND_FLOOR);
+// Ok(SignedQuantity(-10.57))
+```
+
+**Error Context:**
+```typescript
+{
+  op: 'roundToStep',
+  quantity: '10.567',
+  stepSize: '0.01',
+  roundingMode: '4',
+  reason: SignedQuantityErrorReason.INVALID_FORMAT | NON_FINITE
+}
+```
+
+### adjustBy
+
+```typescript
+public static adjustBy(
+  quantity: SignedQuantity,
+  delta: Ratio,
+  stepSize: number | string | Decimal,
+  options?: {
+    roundingMode?: Decimal.Rounding;
+    allowCrossZero?: boolean;
+  }
+): Result<SignedQuantity, InvalidSignedQuantityError>
+```
+
+**Назначение:** изменяет количество на процент delta с округлением и опциональной защитой от crossing zero.
+
+**Алгоритм:**
+1. Парсинг stepSize → Decimal
+2. Валидация stepSize > 0 и isFinite
+3. Вычисление multiplier = `delta.onePlus()` (1 + delta)
+4. Умножение: `quantity.value() * multiplier`
+5. Округление до stepSize
+6. Если `allowCrossZero = false`: валидация через ValidateDeltaForAdjustByNoCrossZero
+7. Создание результата
+
+**Опции:**
+- `roundingMode`: режим округления (default: ROUND_HALF_UP)
+- `allowCrossZero`: разрешить смену знака (default: true)
+
+**Политика allowCrossZero = false:**
+- Запрещает positive → negative или negative → positive
+- Разрешает схлопывание до zero (result === 0)
+- Запрещает adjustBy на zero quantity (кроме delta = 0)
+
+**Примеры:**
+
+```typescript
+const qty = SignedQuantityService.create(100).value;
+const delta10pct = RatioService.fromPercent(10).value; // +10%
+
+// Увеличение на 10%
+SignedQuantityService.adjustBy(qty, delta10pct, 0.01);
+// Ok(SignedQuantity(110))
+
+// Уменьшение на 20%
+const deltaMinus20 = RatioService.fromPercent(-20).value;
+SignedQuantityService.adjustBy(qty, deltaMinus20, 0.01);
+// Ok(SignedQuantity(80))
+
+// Защита от crossing zero
+const deltaMinus150 = RatioService.fromPercent(-150).value;
+SignedQuantityService.adjustBy(qty, deltaMinus150, 0.01, { allowCrossZero: false });
+// Err(reason: RESULT_CROSSES_ZERO)
+
+// Граничный случай: result = 0 разрешён
+const deltaMinus100 = RatioService.fromPercent(-100).value;
+SignedQuantityService.adjustBy(qty, deltaMinus100, 0.01, { allowCrossZero: false });
+// Ok(SignedQuantity(0))
+```
+
+**Error Context:**
+```typescript
+{
+  op: 'adjustBy',
+  quantity: '100',
+  delta: '0.1',
+  stepSize: '0.01',
+  roundingMode: '4',
+  allowCrossZero: 'false',
+  reason: SignedQuantityErrorReason.RESULT_CROSSES_ZERO | CANNOT_ADJUST_ZERO | INVALID_FORMAT
 }
 ```
 
