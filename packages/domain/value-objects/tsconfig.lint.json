@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
+    "composite": false,
     "paths": {
       "@polymarket/result": ["../../foundation/result/src/index.ts"],
       "@polymarket/result/unsafe": ["../../foundation/result/src/unsafe.ts"],
