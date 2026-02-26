@@ -134,8 +134,8 @@ export class SignedQuantityService {
   private static createFromDecimal(decimal: Decimal): Result<SignedQuantity, InvalidSignedQuantityError> {
     return wrapOp(
       SignedQuantityService.SERVICE_NAME,
-      'create',
-      { value: decimal.toString() },
+      'createFromDecimal',
+      { value: decimal.toString(), kind: 'from_decimal' },
       () => Ok(SignedQuantity.of(decimal)),
       InvalidSignedQuantityError
     );

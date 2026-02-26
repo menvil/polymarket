@@ -3,6 +3,8 @@ import { InvalidSignedQuantityError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
 import { SignedQuantityErrorReason } from '../errors/SignedQuantityErrorReason.js';
 
+const ZERO = new Decimal(0);
+
 /**
  * Правило: Factor для операции scale SignedQuantity должен быть неотрицательным и finite
  *
@@ -45,7 +47,7 @@ export class ValidateFactorForSignedQuantityScale {
     }
 
     // Проверка 2: factor не должен быть отрицательным (lessThan исключает -0)
-    if (factor.lessThan(new Decimal(0))) {
+    if (factor.lessThan(ZERO)) {
       return Err(
         new InvalidSignedQuantityError(
           (ctx) => `Factor for SignedQuantity scale cannot be negative, got ${ctx.factor}`,

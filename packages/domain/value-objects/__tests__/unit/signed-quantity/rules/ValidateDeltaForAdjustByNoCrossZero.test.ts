@@ -66,12 +66,9 @@ describe('ValidateDeltaForAdjustByNoCrossZero', () => {
       }
     });
 
-    it('должен вернуть Err с CANNOT_ADJUST_ZERO для zero → zero', () => {
+    it('должен вернуть Ok для zero → zero (идемпотентная операция, delta=0)', () => {
       const result = ValidateDeltaForAdjustByNoCrossZero.check(new Decimal(0), new Decimal(0));
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.CANNOT_ADJUST_ZERO);
-      }
+      expect(result.ok).toBe(true);
     });
 
     it('должен иметь правильный context format', () => {

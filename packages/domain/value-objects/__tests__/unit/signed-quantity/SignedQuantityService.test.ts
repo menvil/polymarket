@@ -845,18 +845,19 @@ describe('SignedQuantityService', () => {
       }
     });
 
-    it('should fail on adjusting zero with allowCrossZero = false', () => {
+    it('should allow adjusting zero with delta=0% when allowCrossZero = false (idempotent)', () => {
       const qtyResult = SignedQuantityService.create(0);
-      const deltaResult = RatioService.fromPercent(10); // +10%
+      const deltaResult = RatioService.fromPercent(0); // 0% change (multiplier = 1.0)
 
       expect(qtyResult.ok && deltaResult.ok).toBe(true);
       if (qtyResult.ok && deltaResult.ok) {
         const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0.01, {
           allowCrossZero: false
         });
-        expect(isErr(result)).toBe(true);
-        if (isErr(result)) {
-          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.CANNOT_ADJUST_ZERO);
+        // Идемпотентная операция: 0 * 1.0 = 0, никакого пересечения нуля нет
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value().toNumber()).toBe(0);
         }
       }
     });

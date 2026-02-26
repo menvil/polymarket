@@ -10,7 +10,8 @@ import { SignedQuantityErrorReason } from '../errors/SignedQuantityErrorReason.j
  * Policy для безопасного изменения SignedQuantity на процент без смены знака.
  *
  * Проверяет:
- * - original === 0 → ошибка CANNOT_ADJUST_ZERO (любое изменение пересечет ноль)
+ * - original === 0 && result !== 0 → ошибка CANNOT_ADJUST_ZERO (нельзя сдвигать 0 в неноль при запрете cross-zero)
+ * - original === 0 && result === 0 → OK (идемпотентная операция, delta=0)
  * - sign(original) !== sign(result) && result !== 0 → ошибка RESULT_CROSSES_ZERO
  * - result === 0 → OK (граничный случай, допустимо)
  *
@@ -30,11 +31,15 @@ import { SignedQuantityErrorReason } from '../errors/SignedQuantityErrorReason.j
  */
 export class ValidateDeltaForAdjustByNoCrossZero {
   public static check(original: Decimal, result: Decimal): Result<void, InvalidSignedQuantityError> {
-    // Проверка 1: Нельзя корректировать ноль при allowCrossZero = false
+    // Проверка 1: Нельзя сдвигать ноль в неноль при allowCrossZero = false
+    // Но идемпотентная операция (0 → 0) разрешена
     if (original.isZero()) {
+      if (result.isZero()) {
+        return Ok(undefined); // delta=0 на ноле - OK (идемпотентно)
+      }
       return Err(
         new InvalidSignedQuantityError(
-          () => `Cannot adjust zero SignedQuantity when allowCrossZero is false`,
+          () => `Cannot adjust zero SignedQuantity to non-zero when allowCrossZero is false`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
