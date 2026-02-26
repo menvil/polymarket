@@ -12,7 +12,6 @@ import { TimestampErrorReason } from '../errors/TimestampErrorReason.js';
  * Возможные причины (из TimestampErrorReason):
  * - NOT_FINITE: значение NaN или Infinity
  * - NOT_POSITIVE: значение < 0
- * - NOT_INTEGER: дробное значение (не integer)
  * - OUT_OF_RANGE: значение > 9999999999999 (~год 2286)
  *
  * @example
