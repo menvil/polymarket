@@ -385,11 +385,8 @@ export class SignedQuantityService {
    * ```
    */
   public static abs(quantity: SignedQuantity): Result<SignedQuantity, InvalidSignedQuantityError> {
-    const ctx = { quantity: quantity.value().toString() };
-    return wrapOp(SignedQuantityService.SERVICE_NAME, 'abs', ctx, () => {
-      const absDecimal = quantity.abs();
-      return this.createFromDecimal(absDecimal);
-    }, InvalidSignedQuantityError);
+    // Core abs() already returns SignedQuantity, just wrap in Result
+    return Ok(quantity.abs());
   }
 
   /**

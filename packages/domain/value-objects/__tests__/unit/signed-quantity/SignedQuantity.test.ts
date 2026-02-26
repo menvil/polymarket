@@ -280,10 +280,11 @@ describe('SignedQuantity Core', () => {
       expect(abs.toNumber()).toBe(0);
     });
 
-    it('should return Decimal not SignedQuantity', () => {
+    it('should return SignedQuantity', () => {
       const qty = SignedQuantity.of(new Decimal(-10));
       const abs = qty.abs();
-      expect(abs).toBeInstanceOf(Decimal);
+      expect(abs).toBeInstanceOf(SignedQuantity);
+      expect(abs.toNumber()).toBe(10);
     });
   });
 

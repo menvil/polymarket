@@ -170,7 +170,7 @@ export class SignedQuantityFormatter {
       );
     }
 
-    const absValue = quantity.abs().toFixed(decimals);
+    const absValue = quantity.abs().value().toFixed(decimals);
 
     if (quantity.isNegative()) {
       return Ok(`(${absValue})`);

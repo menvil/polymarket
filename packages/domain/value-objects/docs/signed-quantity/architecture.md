@@ -71,18 +71,19 @@ export class SignedQuantity {
 2. Must be finite (`!_value.isFinite()` → throw)
 3. -0 normalization (в `of()`)
 
-**Критическое решение: abs() возвращает Decimal, не SignedQuantity**
+**Критическое решение: abs() возвращает SignedQuantity**
 
 ```typescript
-public abs(): Decimal {
-  return this._value.abs();
+public abs(): SignedQuantity {
+  return SignedQuantity.of(this._value.abs());
 }
 ```
 
 **Обоснование:**
-- Абсолютное значение всегда >= 0 → семантически это Quantity, а не SignedQuantity
-- Возврат Decimal даёт гибкость: можно создать Quantity через QuantityService
-- Консистентность с математикой: |x| теряет информацию о знаке
+- Возвращает новый SignedQuantity с инвариантом value >= 0
+- Консистентен с neg() который также возвращает SignedQuantity
+- Для конвертации в Quantity используйте: `QuantityService.create(signedQty.abs().value())`
+- Упрощает Service layer — не требуется createFromDecimal()
 
 ### 2. Facade Layer
 
@@ -204,29 +205,22 @@ public sign(): -1 | 0 | 1 {
 - Компилятор может проверить exhaustiveness в switch
 - Явно документирует все возможные значения
 
-### 3. abs() возвращает Decimal, не SignedQuantity
+### 3. abs() возвращает SignedQuantity
 
 ```typescript
-public abs(): Decimal {
-  return this._value.abs();
-}
-```
-
-**Альтернатива (отклонена):**
-```typescript
-// ❌ НЕ используем
 public abs(): SignedQuantity {
   return SignedQuantity.of(this._value.abs());
 }
 ```
 
 **Обоснование:**
-- |x| всегда >= 0 → семантически это Quantity
-- Возврат Decimal позволяет конвертацию в Quantity:
+- Консистентен с neg() который также возвращает SignedQuantity
+- Упрощает Service layer — abs() просто вызывает core и оборачивает в Ok()
+- Для конвертации в Quantity используйте:
   ```typescript
-  const absQty = QuantityService.create(signedQty.abs());
+  const absQty = QuantityService.create(signedQty.abs().value());
   ```
-- Избегаем семантической путаницы (SignedQuantity с гарантией >= 0)
+- SignedQuantity с инвариантом >= 0 валиден (значение может быть 0 или положительным)
 
 ### 4. neg() для инверсии знака
 

@@ -38,7 +38,7 @@
  * const sign = qty.sign(); // -1 | 0 | 1
  *
  * // Абсолютное значение
- * const abs = qty.abs(); // Decimal
+ * const abs = qty.abs(); // SignedQuantity
  *
  * // Инверсия знака
  * const negated = qty.neg(); // SignedQuantity
@@ -356,28 +356,30 @@ export class SignedQuantity {
   /**
    * Возвращает абсолютное значение
    *
-   * @returns Decimal абсолютного значения
+   * @returns SignedQuantity с абсолютным значением (всегда >= 0)
    *
    * @remarks
-   * Возвращает Decimal, а не SignedQuantity, так как abs всегда >= 0
-   * и семантически это Quantity, а не SignedQuantity.
+   * Возвращает новый SignedQuantity с положительным значением.
+   * Инвариант: result.value() >= 0
    *
    * Для конвертации в Quantity используйте:
    * ```typescript
-   * const absQty = QuantityService.create(signedQty.abs());
+   * const absQty = QuantityService.create(signedQty.abs().value());
    * ```
    *
    * @example
    * ```typescript
    * const negative = SignedQuantity.of(new Decimal(-10.5));
-   * const abs = negative.abs(); // Decimal(10.5)
+   * const abs = negative.abs(); // SignedQuantity(10.5)
+   * console.log(abs.toNumber()); // 10.5
    *
    * const positive = SignedQuantity.of(new Decimal(10.5));
-   * const abs2 = positive.abs(); // Decimal(10.5)
+   * const abs2 = positive.abs(); // SignedQuantity(10.5)
+   * console.log(abs2.toNumber()); // 10.5
    * ```
    */
-  public abs(): Decimal {
-    return this._value.abs();
+  public abs(): SignedQuantity {
+    return SignedQuantity.of(this._value.abs());
   }
 
   /**
