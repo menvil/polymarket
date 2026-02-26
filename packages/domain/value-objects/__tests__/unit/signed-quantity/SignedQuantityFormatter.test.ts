@@ -62,6 +62,18 @@ describe('SignedQuantityFormatter', () => {
         expect(isErr(result)).toBe(true);
       }
     });
+
+    it('should use default decimals=2 when not provided', () => {
+      const qtyResult = SignedQuantityService.create(10.567);
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityFormatter.toString(qtyResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe('+10.57');
+        }
+      }
+    });
   });
 
   describe('toCompactString', () => {
@@ -230,6 +242,18 @@ describe('SignedQuantityFormatter', () => {
         }
       }
     });
+
+    it('should use default decimals=2 when not provided', () => {
+      const qtyResult = SignedQuantityService.create(10.567);
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityFormatter.toFinancialString(qtyResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).toBe('10.57');
+        }
+      }
+    });
   });
 
   describe('toDisplayString', () => {
@@ -384,6 +408,19 @@ describe('SignedQuantityFormatter', () => {
         if (isErr(result)) {
           expect(result.error.context?.op).toContain('toString');
           expect(result.error.message).toContain('must be');
+        }
+      }
+    });
+
+    it('should use default decimals=2 when not provided', () => {
+      const profitResult = SignedQuantityService.create(10.567);
+      expect(profitResult.ok).toBe(true);
+      if (profitResult.ok) {
+        const result = SignedQuantityFormatter.toPnLString(profitResult.value);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.value).toBe('+10.57');
+          expect(result.value.indicator).toBe('profit');
         }
       }
     });
