@@ -493,7 +493,7 @@ if (isErr(result)) {
 
 ## Testing Strategy
 
-### Coverage (184 tests)
+### Coverage (~209 tests)
 
 - ✅ Unit tests для validation rules (ValidateFactorForSignedQuantityScale, ValidateDeltaForAdjustByNoCrossZero)
 - ✅ Unit tests для каждого метода (happy path, error cases, edge cases)
