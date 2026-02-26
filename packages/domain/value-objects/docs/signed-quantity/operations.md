@@ -128,21 +128,40 @@ public static portion(
 
 ```typescript
 // ✅ Взять 25% от позиции
-const position = SignedQuantityService.create(100).value;
-const rate25 = RatioService.fromDecimal(0.25).value;
-const portion = SignedQuantityService.portion(position, rate25);
-// portion.value = SignedQuantity(25)
+const positionResult = SignedQuantityService.create(100);
+const rate25Result = RatioService.fromDecimal(0.25);
+
+if (positionResult.ok && rate25Result.ok) {
+  const position = positionResult.value;
+  const rate25 = rate25Result.value;
+  const portion = SignedQuantityService.portion(position, rate25);
+  if (portion.ok) {
+    console.log(portion.value.toNumber()); // 25
+  }
+}
 
 // ✅ Negative rate - инверсия знака
-const negRate = RatioService.fromDecimal(-0.5).value;
-const inverted = SignedQuantityService.portion(position, negRate);
-// inverted.value = SignedQuantity(-50)
+const negRateResult = RatioService.fromDecimal(-0.5);
+if (positionResult.ok && negRateResult.ok) {
+  const position = positionResult.value;
+  const negRate = negRateResult.value;
+  const inverted = SignedQuantityService.portion(position, negRate);
+  if (inverted.ok) {
+    console.log(inverted.value.toNumber()); // -50
+  }
+}
 
 // ✅ Вычисление P&L (может быть negative)
-const cost = SignedQuantityService.create(100).value;
-const returnRate = RatioService.fromDecimal(-0.2).value; // -20% loss
-const pnl = SignedQuantityService.portion(cost, returnRate);
-// pnl.value = SignedQuantity(-20)
+const costResult = SignedQuantityService.create(100);
+const returnRateResult = RatioService.fromDecimal(-0.2); // -20% loss
+if (costResult.ok && returnRateResult.ok) {
+  const cost = costResult.value;
+  const returnRate = returnRateResult.value;
+  const pnl = SignedQuantityService.portion(cost, returnRate);
+  if (pnl.ok) {
+    console.log(pnl.value.toNumber()); // -20
+  }
+}
 ```
 
 ### Когда использовать

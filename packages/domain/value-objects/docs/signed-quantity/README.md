@@ -178,9 +178,12 @@ if (profitResult.ok && lossResult.ok) {
 import { SignedQuantitySerializer } from '@polymarket/value-objects/signed-quantity';
 
 // Сериализация в JSON
-const qty = SignedQuantityService.create(-123.456).value;
-const json = SignedQuantitySerializer.toJSON(qty);
-// { value: "-123.456" }
+const qtyResult = SignedQuantityService.create(-123.456);
+if (qtyResult.ok) {
+  const qty = qtyResult.value;
+  const json = SignedQuantitySerializer.toJSON(qty);
+  // { value: "-123.456" }
+}
 
 // Десериализация из JSON
 const result = SignedQuantitySerializer.fromJSON({ value: "-123.456" });

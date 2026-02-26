@@ -172,13 +172,18 @@ function detectPositionReversal(
 }
 
 // Использование
-const longPosition = SignedQuantityService.create(100).value;
-const shortTrade = SignedQuantityService.create(-200).value;
+const longPositionResult = SignedQuantityService.create(100);
+const shortTradeResult = SignedQuantityService.create(-200);
 
-const result = detectPositionReversal(longPosition, shortTrade);
-if (result) {
-  console.log(`Reversed: ${result.reversed}`); // true
-  console.log(`New position: ${result.newPosition.toNumber()}`); // -100
+if (longPositionResult.ok && shortTradeResult.ok) {
+  const longPosition = longPositionResult.value;
+  const shortTrade = shortTradeResult.value;
+
+  const result = detectPositionReversal(longPosition, shortTrade);
+  if (result) {
+    console.log(`Reversed: ${result.reversed}`); // true
+    console.log(`New position: ${result.newPosition.toNumber()}`); // -100
+  }
 }
 ```
 
