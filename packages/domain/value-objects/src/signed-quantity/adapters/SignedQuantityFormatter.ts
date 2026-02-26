@@ -72,14 +72,30 @@ export class SignedQuantityFormatter {
   /**
    * Форматирует в компактную строку (без trailing zeros)
    *
+   * @remarks
+   * Использует Decimal.toString(), который может возвращать scientific notation
+   * для очень больших или очень маленьких чисел (зависит от Decimal.js конфигурации).
+   *
+   * Примеры:
+   * - `new Decimal('10.5')` → `"10.5"` (нормальная нотация)
+   * - `new Decimal('0.000001')` → `"0.000001"` (нормальная нотация)
+   * - `new Decimal('1e-8')` → `"1e-8"` (научная нотация)
+   * - `new Decimal('1e21')` → `"1e+21"` (научная нотация)
+   *
+   * Для финансовых приложений с фиксированными decimal places используйте toString() с decimals.
+   *
    * @param quantity - Количество для форматирования
    * @param options - Опции форматирования
-   * @returns Компактная строка
+   * @returns Компактная строка (может быть в научной нотации для экстремальных значений)
    *
    * @example
    * ```typescript
    * SignedQuantityFormatter.toCompactString(qty); // "+10.5" или "-10.5"
    * SignedQuantityFormatter.toCompactString(qty, { showPlusSign: false }); // "10.5" или "-10.5"
+   *
+   * // Экстремально большие числа (научная нотация)
+   * const huge = SignedQuantity.of(new Decimal('1e21'));
+   * SignedQuantityFormatter.toCompactString(huge); // "+1e+21"
    * ```
    */
   public static toCompactString(

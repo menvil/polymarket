@@ -1,6 +1,8 @@
 import { SignedQuantityFormatter } from '../../../src/signed-quantity/adapters/SignedQuantityFormatter.js';
 import { SignedQuantityService } from '../../../src/signed-quantity/facade/SignedQuantityService.js';
+import { SignedQuantity } from '../../../src/signed-quantity/core/SignedQuantity.js';
 import { isErr } from '@polymarket/result';
+import Decimal from 'decimal.js';
 
 describe('SignedQuantityFormatter', () => {
   describe('toString', () => {
@@ -97,6 +99,29 @@ describe('SignedQuantityFormatter', () => {
         const formatted = SignedQuantityFormatter.toCompactString(qtyResult.value, { showPlusSign: false });
         expect(formatted).toBe('10.5');
       }
+    });
+
+    it('should use scientific notation for very large numbers', () => {
+      // Decimal.toString() использует exponential notation для exponent > 20
+      const largeQty = SignedQuantity.of(new Decimal('1e21'));
+      const formatted = SignedQuantityFormatter.toCompactString(largeQty);
+      expect(formatted).toBe('+1e+21');
+    });
+
+    it('should use scientific notation for very small numbers', () => {
+      // Decimal.toString() использует exponential notation для exponent < -7
+      const smallQty = SignedQuantity.of(new Decimal('1e-8'));
+      const formatted = SignedQuantityFormatter.toCompactString(smallQty);
+      expect(formatted).toBe('+1e-8');
+    });
+
+    it('should use normal notation within Decimal.js range', () => {
+      // Типичные размеры для финансовых приложений остаются в нормальной нотации
+      const typicalSmall = SignedQuantity.of(new Decimal('0.000001'));
+      expect(SignedQuantityFormatter.toCompactString(typicalSmall)).toBe('+0.000001');
+
+      const typicalLarge = SignedQuantity.of(new Decimal('1000000'));
+      expect(SignedQuantityFormatter.toCompactString(typicalLarge)).toBe('+1000000');
     });
   });
 
