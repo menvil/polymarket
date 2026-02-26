@@ -177,7 +177,7 @@ public static roundToStep(
 
 ### Политика
 
-- **Требует:** `stepSize > 0` и `isFinite` (проверяется через `ValidateStepSizeForQuantity`)
+- **Требует:** `stepSize > 0` и `isFinite` (проверяется через `ValidateStepSizeForSignedQuantity`)
 - **Поддерживает:** Все режимы округления `Decimal.Rounding` (0-8)
 - **Корректно обрабатывает:** Отрицательные значения согласно режиму округления
 
@@ -194,7 +194,7 @@ public static roundToStep(
 ### Алгоритм
 
 1. Парсинг `stepSize` в `Decimal` через `toDecimal()`
-2. Валидация `stepSize > 0` и `isFinite` через `ValidateStepSizeForQuantity`
+2. Валидация `stepSize > 0` и `isFinite` через `ValidateStepSizeForSignedQuantity`
 3. Округление через `roundToTick(quantity.value(), stepSizeDec, roundingMode)`
 4. Создание `SignedQuantity` через `createFromDecimal()`
 
@@ -306,7 +306,7 @@ const result = SignedQuantityService.adjustBy(qty, delta, 0.01, { allowCrossZero
 ### Алгоритм
 
 1. Парсинг `stepSize` в `Decimal` через `toDecimal()`
-2. Валидация `stepSize > 0` и `isFinite` через `ValidateStepSizeForQuantity`
+2. Валидация `stepSize > 0` и `isFinite` через `ValidateStepSizeForSignedQuantity`
 3. Вычисление `multiplier = delta.onePlus()` (1 + delta)
 4. Умножение `quantity * multiplier` через `multiplyDecimal()`
 5. Округление до `stepSize` через `roundToTick()`
@@ -432,13 +432,14 @@ if (isErr(result)) {
 
 Разные use cases требуют разной политики безопасности.
 
-### 2. Переиспользование ValidateStepSizeForQuantity
+### 2. Domain-Specific Validation (ValidateStepSizeForSignedQuantity)
 
-**Почему импортируем из Quantity, а не дублируем?**
+**Почему создали отдельное правило, а не переиспользовали ValidateStepSizeForQuantity?**
 
-- Правило валидации `stepSize > 0` универсально для Quantity и SignedQuantity
-- Избегаем дублирования логики (DRY principle)
-- Используем cross-package import `../../quantity/rules/`
+- **Domain Boundary**: SignedQuantity и Quantity — разные домены с разными error types
+- **Error Context**: Ошибки должны быть `InvalidSignedQuantityError`, а не `InvalidQuantityError`
+- **No Cross-Domain Dependencies**: Избегаем импортов validation rules между доменами
+- Логика идентична (`stepSize > 0` и `isFinite`), но контракт ошибок специфичен для SignedQuantity
 
 ### 3. Политика allowCrossZero
 
