@@ -60,8 +60,9 @@ describe('TimestampFormatter', () => {
 
   describe('toRelative()', () => {
     it('should format seconds ago', () => {
-      const now = unwrap(TimestampService.create(Date.now()));
-      const past = unwrap(TimestampService.create(Date.now() - 30000)); // 30 seconds ago
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 30000)); // 30 seconds ago
 
       const result = TimestampFormatter.toRelative(past, now);
 
@@ -71,8 +72,9 @@ describe('TimestampFormatter', () => {
     });
 
     it('should format minutes ago', () => {
-      const now = unwrap(TimestampService.create(Date.now()));
-      const past = unwrap(TimestampService.create(Date.now() - 120000)); // 2 minutes ago
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 120000)); // 2 minutes ago
 
       const result = TimestampFormatter.toRelative(past, now);
 
@@ -106,8 +108,9 @@ describe('TimestampFormatter', () => {
     });
 
     it('should format future timestamp with "in"', () => {
-      const now = unwrap(TimestampService.create(Date.now()));
-      const future = unwrap(TimestampService.create(Date.now() + 30000)); // in 30 seconds
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const future = unwrap(TimestampService.create(nowMs + 30000)); // in 30 seconds
 
       const result = TimestampFormatter.toRelative(future, now);
 

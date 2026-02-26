@@ -125,6 +125,8 @@ describe('Timestamp', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('finite');
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.op).toBe('create');
       }
     });
 
@@ -134,6 +136,8 @@ describe('Timestamp', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('finite');
+        expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+        expect(result.error.context?.op).toBe('create');
       }
     });
 
@@ -162,6 +166,8 @@ describe('Timestamp', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('negative');
+        expect(result.error.context?.reason).toBe('NOT_POSITIVE');
+        expect(result.error.context?.op).toBe('create');
       }
     });
 
@@ -171,6 +177,8 @@ describe('Timestamp', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('negative');
+        expect(result.error.context?.reason).toBe('NOT_POSITIVE');
+        expect(result.error.context?.op).toBe('create');
       }
     });
 
@@ -203,6 +211,8 @@ describe('Timestamp', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('too large');
+        expect(result.error.context?.reason).toBe('OUT_OF_RANGE');
+        expect(result.error.context?.op).toBe('create');
       }
     });
 
