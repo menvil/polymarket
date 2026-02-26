@@ -7,7 +7,8 @@
  * Делегирует в Core с добавлением wrapOp для error context.
  *
  * **Контракт "Never Throw":**
- * ВСЕ методы TimestampService ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+ * Фабричные методы (create, fromDate, fromISO, addMs) возвращают Result и НИКОГДА не бросают исключения.
+ * Утилитные методы (now, diffMs, diffSeconds) возвращают значения напрямую.
  *
  * @example
  * ```typescript

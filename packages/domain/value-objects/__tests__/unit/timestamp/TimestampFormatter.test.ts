@@ -120,8 +120,9 @@ describe('TimestampFormatter', () => {
     });
 
     it('should use singular form for 1 second', () => {
-      const now = unwrap(TimestampService.create(Date.now()));
-      const past = unwrap(TimestampService.create(Date.now() - 1000)); // 1 second ago
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 1000)); // 1 second ago
 
       const result = TimestampFormatter.toRelative(past, now);
 
@@ -129,8 +130,9 @@ describe('TimestampFormatter', () => {
     });
 
     it('should use plural form for multiple seconds', () => {
-      const now = unwrap(TimestampService.create(Date.now()));
-      const past = unwrap(TimestampService.create(Date.now() - 5000)); // 5 seconds ago
+      const nowMs = Date.now();
+      const now = unwrap(TimestampService.create(nowMs));
+      const past = unwrap(TimestampService.create(nowMs - 5000)); // 5 seconds ago
 
       const result = TimestampFormatter.toRelative(past, now);
 
