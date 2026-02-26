@@ -728,6 +728,12 @@ describe('SignedQuantityService', () => {
       if (qtyResult.ok) {
         const result = SignedQuantityService.roundToStep(qtyResult.value, 0);
         expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.INVALID_FORMAT);
+          expect(result.error.context?.op).toContain('roundToStep');
+          expect(result.error.context).toHaveProperty('quantity');
+          expect(result.error.context).toHaveProperty('stepSize');
+        }
       }
     });
 
@@ -738,6 +744,12 @@ describe('SignedQuantityService', () => {
       if (qtyResult.ok) {
         const result = SignedQuantityService.roundToStep(qtyResult.value, -0.01);
         expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.INVALID_FORMAT);
+          expect(result.error.context?.op).toContain('roundToStep');
+          expect(result.error.context).toHaveProperty('quantity');
+          expect(result.error.context).toHaveProperty('stepSize');
+        }
       }
     });
 
@@ -901,6 +913,13 @@ describe('SignedQuantityService', () => {
       if (qtyResult.ok && deltaResult.ok) {
         const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0);
         expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.INVALID_FORMAT);
+          expect(result.error.context?.op).toContain('adjustBy');
+          expect(result.error.context).toHaveProperty('quantity');
+          expect(result.error.context).toHaveProperty('stepSize');
+          expect(result.error.context).toHaveProperty('delta');
+        }
       }
     });
 

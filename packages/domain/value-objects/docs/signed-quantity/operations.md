@@ -44,21 +44,44 @@ import { SignedQuantityService } from '@polymarket/value-objects';
 import { RatioService } from '@polymarket/value-objects';
 
 // ✅ Масштабирование long позиции
-const longPosition = SignedQuantityService.create(100).value;
-const rate2x = RatioService.fromDecimal(2).value;
-const scaled = SignedQuantityService.scale(longPosition, rate2x);
-// scaled.value = SignedQuantity(200)
+const longPositionResult = SignedQuantityService.create(100);
+const rate2xResult = RatioService.fromDecimal(2);
+
+if (longPositionResult.ok && rate2xResult.ok) {
+  const longPosition = longPositionResult.value;
+  const rate2x = rate2xResult.value;
+
+  const scaled = SignedQuantityService.scale(longPosition, rate2x);
+  if (scaled.ok) {
+    console.log(scaled.value.toNumber()); // 200
+  }
+}
 
 // ✅ Масштабирование short позиции
-const shortPosition = SignedQuantityService.create(-50).value;
-const rate15x = RatioService.fromDecimal(1.5).value;
-const scaledShort = SignedQuantityService.scale(shortPosition, rate15x);
-// scaledShort.value = SignedQuantity(-75)
+const shortPositionResult = SignedQuantityService.create(-50);
+const rate15xResult = RatioService.fromDecimal(1.5);
+
+if (shortPositionResult.ok && rate15xResult.ok) {
+  const shortPosition = shortPositionResult.value;
+  const rate15x = rate15xResult.value;
+
+  const scaledShort = SignedQuantityService.scale(shortPosition, rate15x);
+  if (scaledShort.ok) {
+    console.log(scaledShort.value.toNumber()); // -75
+  }
+}
 
 // ❌ Negative rate - ошибка
-const negRate = RatioService.fromDecimal(-1).value;
-const error = SignedQuantityService.scale(longPosition, negRate);
-// error.error.context.reason = NEGATIVE_SCALE_FACTOR
+const negRateResult = RatioService.fromDecimal(-1);
+if (longPositionResult.ok && negRateResult.ok) {
+  const longPosition = longPositionResult.value;
+  const negRate = negRateResult.value;
+
+  const error = SignedQuantityService.scale(longPosition, negRate);
+  if (!error.ok) {
+    console.log(error.error.context?.reason); // NEGATIVE_SCALE_FACTOR
+  }
+}
 ```
 
 ### Когда использовать

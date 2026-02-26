@@ -38,55 +38,63 @@ if (isErr(nan)) {
 ### Арифметика
 
 ```typescript
-const a = SignedQuantityService.create(100).value;
-const b = SignedQuantityService.create(-30).value;
+const aResult = SignedQuantityService.create(100);
+const bResult = SignedQuantityService.create(-30);
 
-// Сложение
-const sum = SignedQuantityService.add(a, b);
-if (sum.ok) {
-  console.log(sum.value.toNumber()); // 70
-}
+if (aResult.ok && bResult.ok) {
+  const a = aResult.value;
+  const b = bResult.value;
 
-// Вычитание (может быть отрицательным!)
-const diff = SignedQuantityService.subtract(a, b);
-if (diff.ok) {
-  console.log(diff.value.toNumber()); // 130
-}
+  // Сложение
+  const sum = SignedQuantityService.add(a, b);
+  if (sum.ok) {
+    console.log(sum.value.toNumber()); // 70
+  }
 
-// Умножение на отрицательный фактор
-const scaled = SignedQuantityService.multiply(a, -0.5);
-if (scaled.ok) {
-  console.log(scaled.value.toNumber()); // -50
-}
+  // Вычитание (может быть отрицательным!)
+  const diff = SignedQuantityService.subtract(a, b);
+  if (diff.ok) {
+    console.log(diff.value.toNumber()); // 130
+  }
 
-// Деление
-const divided = SignedQuantityService.divide(a, 2);
-if (divided.ok) {
-  console.log(divided.value.toNumber()); // 50
+  // Умножение на отрицательный фактор
+  const scaled = SignedQuantityService.multiply(a, -0.5);
+  if (scaled.ok) {
+    console.log(scaled.value.toNumber()); // -50
+  }
+
+  // Деление
+  const divided = SignedQuantityService.divide(a, 2);
+  if (divided.ok) {
+    console.log(divided.value.toNumber()); // 50
+  }
 }
 ```
 
 ### Операции со знаком
 
 ```typescript
-const qty = SignedQuantityService.create(-75).value;
+const qtyResult = SignedQuantityService.create(-75);
+if (qtyResult.ok) {
+  const qty = qtyResult.value;
 
-// Проверки знака
-console.log(qty.isPositive()); // false
-console.log(qty.isNegative()); // true
-console.log(qty.isZero());     // false
-console.log(qty.sign());       // -1
+  // Проверки знака
+  console.log(qty.isPositive()); // false
+  console.log(qty.isNegative()); // true
+  console.log(qty.isZero());     // false
+  console.log(qty.sign());       // -1
 
-// Абсолютное значение
-const abs = SignedQuantityService.abs(qty);
-if (abs.ok) {
-  console.log(abs.value.toNumber()); // 75
-}
+  // Абсолютное значение
+  const abs = SignedQuantityService.abs(qty);
+  if (abs.ok) {
+    console.log(abs.value.toNumber()); // 75
+  }
 
-// Инверсия знака
-const negated = SignedQuantityService.negate(qty);
-if (negated.ok) {
-  console.log(negated.value.toNumber()); // 75
+  // Инверсия знака
+  const negated = SignedQuantityService.negate(qty);
+  if (negated.ok) {
+    console.log(negated.value.toNumber()); // 75
+  }
 }
 ```
 

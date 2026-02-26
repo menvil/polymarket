@@ -71,44 +71,64 @@ if (positive.ok) {
 ### Арифметические операции
 
 ```typescript
-const qty1 = SignedQuantityService.create(100).value;
-const qty2 = SignedQuantityService.create(-50).value;
+const qty1Result = SignedQuantityService.create(100);
+const qty2Result = SignedQuantityService.create(-50);
 
-// Сложение
-const sum = SignedQuantityService.add(qty1, qty2);
-// sum.value.toNumber() === 50
+if (qty1Result.ok && qty2Result.ok) {
+  const qty1 = qty1Result.value;
+  const qty2 = qty2Result.value;
 
-// Вычитание (результат может быть отрицательным)
-const diff = SignedQuantityService.subtract(qty1, qty2);
-// diff.value.toNumber() === 150
+  // Сложение
+  const sum = SignedQuantityService.add(qty1, qty2);
+  if (sum.ok) {
+    console.log(sum.value.toNumber()); // 50
+  }
 
-// Умножение (factor может быть отрицательным)
-const scaled = SignedQuantityService.multiply(qty1, -0.5);
-// scaled.value.toNumber() === -50
+  // Вычитание (результат может быть отрицательным)
+  const diff = SignedQuantityService.subtract(qty1, qty2);
+  if (diff.ok) {
+    console.log(diff.value.toNumber()); // 150
+  }
 
-// Деление
-const divided = SignedQuantityService.divide(qty1, 2);
-// divided.value.toNumber() === 50
+  // Умножение (factor может быть отрицательным)
+  const scaled = SignedQuantityService.multiply(qty1, -0.5);
+  if (scaled.ok) {
+    console.log(scaled.value.toNumber()); // -50
+  }
+
+  // Деление
+  const divided = SignedQuantityService.divide(qty1, 2);
+  if (divided.ok) {
+    console.log(divided.value.toNumber()); // 50
+  }
+}
 ```
 
 ### Операции со знаком
 
 ```typescript
-const qty = SignedQuantityService.create(-100).value;
+const qtyResult = SignedQuantityService.create(-100);
+if (qtyResult.ok) {
+  const qty = qtyResult.value;
 
-// Абсолютное значение
-const abs = SignedQuantityService.abs(qty);
-// abs.value.toNumber() === 100
+  // Абсолютное значение
+  const abs = SignedQuantityService.abs(qty);
+  if (abs.ok) {
+    console.log(abs.value.toNumber()); // 100
+  }
 
-// Инверсия знака
-const negated = SignedQuantityService.negate(qty);
-// negated.value.toNumber() === 100
+  // Инверсия знака
+  const negated = SignedQuantityService.negate(qty);
+  if (negated.ok) {
+    console.log(negated.value.toNumber()); // 100
+  }
 
-// Проверки знака
-qty.isPositive(); // false
-qty.isNegative(); // true
-qty.isZero();     // false
-qty.sign();       // -1 | 0 | 1
+  // Проверки знака
+  console.log(qty.isPositive()); // false
+  console.log(qty.isNegative()); // true
+  console.log(qty.isZero());     // false
+  console.log(qty.sign());       // -1 | 0 | 1
+}
 ```
 
 ### Форматирование
@@ -116,28 +136,40 @@ qty.sign();       // -1 | 0 | 1
 ```typescript
 import { SignedQuantityFormatter } from '@polymarket/value-objects/signed-quantity';
 
-const profit = SignedQuantityService.create(1500).value;
-const loss = SignedQuantityService.create(-1500).value;
+const profitResult = SignedQuantityService.create(1500);
+const lossResult = SignedQuantityService.create(-1500);
 
-// Стандартный формат с знаком
-SignedQuantityFormatter.toString(profit, 2);
-// "+1500.00"
+if (profitResult.ok && lossResult.ok) {
+  const profit = profitResult.value;
+  const loss = lossResult.value;
 
-// Компактный формат
-SignedQuantityFormatter.toCompactString(loss);
-// "-1500"
+  // Стандартный формат с знаком
+  const formatted = SignedQuantityFormatter.toString(profit, 2);
+  if (formatted.ok) {
+    console.log(formatted.value); // "+1500.00"
+  }
 
-// Финансовый формат (negative in parentheses)
-SignedQuantityFormatter.toFinancialString(loss, 2);
-// "(1500.00)"
+  // Компактный формат
+  console.log(SignedQuantityFormatter.toCompactString(loss)); // "-1500"
 
-// Дисплейный формат с K/M суффиксами
-SignedQuantityFormatter.toDisplayString(profit);
-// "+1.50K"
+  // Финансовый формат (negative in parentheses)
+  const financial = SignedQuantityFormatter.toFinancialString(loss, 2);
+  if (financial.ok) {
+    console.log(financial.value); // "(1500.00)"
+  }
 
-// P&L формат для UI
-const pnl = SignedQuantityFormatter.toPnLString(profit, 2);
-// { value: "+1500.00", indicator: "profit" }
+  // Дисплейный формат с K/M суффиксами
+  const display = SignedQuantityFormatter.toDisplayString(profit);
+  if (display.ok) {
+    console.log(display.value); // "+1.50K"
+  }
+
+  // P&L формат для UI
+  const pnl = SignedQuantityFormatter.toPnLString(profit, 2);
+  if (pnl.ok) {
+    console.log(pnl.value); // { value: "+1500.00", indicator: "profit" }
+  }
+}
 ```
 
 ### Сериализация
@@ -308,35 +340,54 @@ const netPosition = SignedQuantityService.add(buy, sell);
 ### P&L Calculation (прибыль/убыток)
 
 ```typescript
-const pnl = SignedQuantityService.create(-250).value;
+const pnlResult = SignedQuantityService.create(-250);
+if (pnlResult.ok) {
+  const pnl = pnlResult.value;
 
-// Форматирование для UI
-const formatted = SignedQuantityFormatter.toPnLString(pnl, 2);
-if (formatted.ok) {
-  const { value, indicator } = formatted.value;
-  console.log(value);      // "-250.00"
-  console.log(indicator);  // "loss"
+  // Форматирование для UI
+  const formatted = SignedQuantityFormatter.toPnLString(pnl, 2);
+  if (formatted.ok) {
+    const { value, indicator } = formatted.value;
+    console.log(value);      // "-250.00"
+    console.log(indicator);  // "loss"
 
-  // В React:
-  // <span className={indicator}>{value}</span>
+    // В React:
+    // <span className={indicator}>{value}</span>
+  }
 }
 ```
 
 ### Account Balance Changes
 
 ```typescript
-const deposit = SignedQuantityService.create(1000).value;
-const withdrawal = SignedQuantityService.create(-500).value;
-const fee = SignedQuantityService.create(-10).value;
+const depositResult = SignedQuantityService.create(1000);
+const withdrawalResult = SignedQuantityService.create(-500);
 
-// Итоговое изменение
-let change = SignedQuantityService.add(deposit, withdrawal).value;
-change = SignedQuantityService.add(change, fee).value;
-// change.toNumber() === 490
+if (depositResult.ok && withdrawalResult.ok) {
+  const deposit = depositResult.value;
+  const withdrawal = withdrawalResult.value;
 
-// Форматирование для финансового отчёта
-const formatted = SignedQuantityFormatter.toFinancialString(change, 2);
-// "490.00"
+  const feeResult = SignedQuantityService.create(-10);
+  if (feeResult.ok) {
+    const fee = feeResult.value;
+
+    // Итоговое изменение
+    const step1 = SignedQuantityService.add(deposit, withdrawal);
+    if (step1.ok) {
+      const step2 = SignedQuantityService.add(step1.value, fee);
+      if (step2.ok) {
+        const change = step2.value;
+        console.log(change.toNumber()); // 490
+
+        // Форматирование для финансового отчёта
+        const formatted = SignedQuantityFormatter.toFinancialString(change, 2);
+        if (formatted.ok) {
+          console.log(formatted.value); // "490.00"
+        }
+      }
+    }
+  }
+}
 ```
 
 ### Position Reversal (разворот позиции)
