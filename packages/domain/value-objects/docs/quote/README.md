@@ -1074,6 +1074,7 @@ console.log(`${quote.bid()?.value()}/${quote.ask()?.value()}`);  // ❌
 ### v0.2.0 (2025-02-25)
 
 **BREAKING CHANGES:**
+
 - ✅ Миграция на Timestamp VO вместо Decimal для временных меток
 - ✅ `Quote.of()` теперь принимает `timestamp: Timestamp` вместо `timestampMs: Decimal`
 - ✅ Добавлен метод `quote.timestamp(): Timestamp` для получения Timestamp VO
@@ -1082,7 +1083,9 @@ console.log(`${quote.bid()?.value()}/${quote.ask()?.value()}`);  // ❌
 - ✅ Обновлены все тесты для работы с Timestamp VO
 
 **Причина изменений:**
+
 Timestamp VO обеспечивает:
+
 - Строгую валидацию временных меток на уровне типов
 - Единообразный API для работы со временем
 - Методы сравнения и вычисления разницы
