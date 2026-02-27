@@ -165,10 +165,24 @@ export class FeeService {
               })
             );
           }
+          // Validate currency is non-empty string
+          if (currencyField.length === 0) {
+            return Err(
+              new InvalidFeeError('Invalid CURRENCY asset: currency must be non-empty string', {
+                context: {
+                  service: FeeService.SERVICE_NAME,
+                  op: 'create',
+                  reason: FeeErrorReason.INVALID_ASSET,
+                  currency: currencyField,
+                },
+              })
+            );
+          }
         }
 
         // 4c. Validate OUTCOME_TOKEN specific fields
         if (assetObj.type === 'OUTCOME_TOKEN') {
+          // Check fields exist
           if (!('conditionRef' in assetObj) || !('outcomeKey' in assetObj)) {
             return Err(
               new InvalidFeeError('Invalid OUTCOME_TOKEN asset: missing conditionRef or outcomeKey', {
@@ -184,9 +198,89 @@ export class FeeService {
               })
             );
           }
+
+          const tokenObj = assetObj as Record<string, unknown>;
+          const conditionRef = tokenObj.conditionRef;
+          const outcomeKey = tokenObj.outcomeKey;
+
+          // Validate conditionRef is object (not null, not primitive)
+          if (typeof conditionRef !== 'object' || conditionRef === null) {
+            return Err(
+              new InvalidFeeError('Invalid OUTCOME_TOKEN asset: conditionRef must be object', {
+                context: {
+                  service: FeeService.SERVICE_NAME,
+                  op: 'create',
+                  reason: FeeErrorReason.INVALID_ASSET,
+                  conditionRef,
+                  conditionRefType: typeof conditionRef,
+                },
+              })
+            );
+          }
+
+          // Validate conditionRef has 'kind' field
+          if (!('kind' in conditionRef)) {
+            return Err(
+              new InvalidFeeError('Invalid OUTCOME_TOKEN asset: conditionRef must have kind field', {
+                context: {
+                  service: FeeService.SERVICE_NAME,
+                  op: 'create',
+                  reason: FeeErrorReason.INVALID_ASSET,
+                  conditionRef,
+                },
+              })
+            );
+          }
+
+          // Validate kind is string
+          const kind = (conditionRef as Record<string, unknown>).kind;
+          if (typeof kind !== 'string') {
+            return Err(
+              new InvalidFeeError('Invalid OUTCOME_TOKEN asset: conditionRef.kind must be string', {
+                context: {
+                  service: FeeService.SERVICE_NAME,
+                  op: 'create',
+                  reason: FeeErrorReason.INVALID_ASSET,
+                  kind,
+                  kindType: typeof kind,
+                },
+              })
+            );
+          }
+
+          // Validate outcomeKey is string
+          if (typeof outcomeKey !== 'string') {
+            return Err(
+              new InvalidFeeError('Invalid OUTCOME_TOKEN asset: outcomeKey must be string', {
+                context: {
+                  service: FeeService.SERVICE_NAME,
+                  op: 'create',
+                  reason: FeeErrorReason.INVALID_ASSET,
+                  outcomeKey,
+                  outcomeKeyType: typeof outcomeKey,
+                },
+              })
+            );
+          }
+
+          // Validate outcomeKey is non-empty
+          if (outcomeKey.length === 0) {
+            return Err(
+              new InvalidFeeError('Invalid OUTCOME_TOKEN asset: outcomeKey must be non-empty string', {
+                context: {
+                  service: FeeService.SERVICE_NAME,
+                  op: 'create',
+                  reason: FeeErrorReason.INVALID_ASSET,
+                  outcomeKey,
+                },
+              })
+            );
+          }
         }
 
         // 5. Create AssetQuantity and Fee
+        // ВАЖНО: Валидация выше (шаги 1-4c) должна предотвратить все AssetQuantity/Fee ошибки.
+        // Если здесь происходит исключение, это UNEXPECTED_ERROR (нарушение инварианта валидации).
         const quantity = Quantity.of(decimal);
         const assetQuantity = new AssetQuantity(asset, quantity);
         const fee = Fee.of(assetQuantity);

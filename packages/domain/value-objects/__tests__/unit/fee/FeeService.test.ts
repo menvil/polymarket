@@ -156,6 +156,134 @@ describe('FeeService', () => {
       }
     });
 
+    // Edge cases: CURRENCY validation
+    it('should fail for CURRENCY asset with empty string currency', () => {
+      const result = FeeService.create({ type: 'CURRENCY', currency: '' } as any, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('non-empty string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for CURRENCY asset with null currency', () => {
+      const result = FeeService.create({ type: 'CURRENCY', currency: null } as any, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('invalid currency field');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for frozen CURRENCY asset with empty currency', () => {
+      const frozenAsset = Object.freeze({ type: 'CURRENCY', currency: '' } as any);
+      const result = FeeService.create(frozenAsset, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('non-empty string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    // Edge cases: OUTCOME_TOKEN validation
+    it('should fail for OUTCOME_TOKEN asset with null conditionRef', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: null, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('conditionRef must be object');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN asset with conditionRef without kind', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: {}, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must have kind field');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN asset with non-string conditionRef.kind', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 123 }, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('kind must be string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN asset with number outcomeKey', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN' }, outcomeKey: 123 } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('outcomeKey must be string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN asset with empty string outcomeKey', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN' }, outcomeKey: '' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('non-empty string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for frozen OUTCOME_TOKEN asset with null conditionRef', () => {
+      const frozenAsset = Object.freeze({
+        type: 'OUTCOME_TOKEN',
+        conditionRef: null,
+        outcomeKey: 'UP',
+      } as any);
+      const result = FeeService.create(frozenAsset, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('conditionRef must be object');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for frozen OUTCOME_TOKEN asset with number outcomeKey', () => {
+      const frozenAsset = Object.freeze({
+        type: 'OUTCOME_TOKEN',
+        conditionRef: { kind: 'ONCHAIN' },
+        outcomeKey: 123,
+      } as any);
+      const result = FeeService.create(frozenAsset, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('outcomeKey must be string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
     it('should preserve precision for large decimals', () => {
       const precise = '123456789.123456789012345';
       const result = FeeService.create(AssetIdHelpers.USDC, precise);
@@ -302,6 +430,28 @@ describe('FeeService', () => {
         expect(result.error).toBeInstanceOf(FeeOperationError);
         expect(result.error.context?.reason).toBe(FeeOperationErrorReason.UNEXPECTED_ERROR);
         expect(result.error.message).toContain('Unexpected runtime error');
+      }
+
+      addSpy.mockRestore();
+    });
+
+    it('should wrap non-Error throws in FeeOperationError with UNEXPECTED_ERROR', () => {
+      const fee1 = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
+      const fee2 = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.05'))));
+
+      // Mock fee1.add to throw non-Error (string)
+      const addSpy = jest.spyOn(fee1, 'add').mockImplementation(() => {
+        throw 'Non-Error thrown value';
+      });
+
+      const result = FeeService.add(fee1, fee2);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(FeeOperationError);
+        expect(result.error.context?.reason).toBe(FeeOperationErrorReason.UNEXPECTED_ERROR);
+        expect(result.error.message).toContain('Non-Error thrown value');
+        expect(result.error.context?.originalError).toBe('string');
       }
 
       addSpy.mockRestore();
