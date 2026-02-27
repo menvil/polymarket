@@ -58,7 +58,7 @@ describe('FeeOperationError', () => {
       expect(error.context.asset2).toEqual({ type: 'CURRENCY', currency: 'USDT' });
     });
 
-    it('should be instance of TradingError', () => {
+    it('should be instance of Error and have correct name', () => {
       const error = new FeeOperationError('Test error', {
         context: {
           operation: 'add',

@@ -3,7 +3,9 @@
  *
  * @remarks
  * Преобразует Fee в/из JSON.
- * JSON формат: { asset: AssetId, amount: number }
+ * JSON формат: { asset: AssetId, amount: string }
+ *
+ * Amount хранится как string для сохранения точности при сериализации.
  *
  * @example
  * ```typescript
@@ -11,7 +13,7 @@
  *
  * const fee = Fee.zero(AssetIdHelpers.USDC);
  * const json = FeeSerializer.toJSON(fee);
- * // { asset: { type: 'CURRENCY', currency: 'USDC' }, amount: 0 }
+ * // { asset: { type: 'CURRENCY', currency: 'USDC' }, amount: "0" }
  *
  * const result = FeeSerializer.fromJSON(json);
  * if (result.ok) {

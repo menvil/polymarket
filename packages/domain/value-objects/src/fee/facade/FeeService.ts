@@ -107,21 +107,7 @@ export class FeeService {
 
         const decimal = amountDecimal.value;
 
-        // 2. Validate finite
-        if (!decimal.isFinite()) {
-          return Err(
-            new InvalidFeeError('Fee amount must be finite', {
-              context: {
-                service: FeeService.SERVICE_NAME,
-                op: 'create',
-                reason: FeeErrorReason.INVALID_QUANTITY,
-                amount: String(amount),
-              },
-            })
-          );
-        }
-
-        // 3. Validate non-negative
+        // 2. Validate non-negative (finite check already done by toDecimal)
         if (decimal.lessThan(0)) {
           return Err(
             new InvalidFeeError('Fee amount must be non-negative', {
@@ -135,10 +121,10 @@ export class FeeService {
           );
         }
 
-        // 4. Basic asset validation (проверяем что это объект с type)
+        // 4. Validate AssetId structure
         if (!asset || typeof asset !== 'object' || !('type' in asset)) {
           return Err(
-            new InvalidFeeError('Invalid asset', {
+            new InvalidFeeError('Invalid asset: must be object with type field', {
               context: {
                 service: FeeService.SERVICE_NAME,
                 op: 'create',
@@ -147,6 +133,57 @@ export class FeeService {
               },
             })
           );
+        }
+
+        // 4a. Validate asset type
+        const assetObj = asset as { type: unknown };
+        if (assetObj.type !== 'CURRENCY' && assetObj.type !== 'OUTCOME_TOKEN') {
+          return Err(
+            new InvalidFeeError('Invalid asset type: must be CURRENCY or OUTCOME_TOKEN', {
+              context: {
+                service: FeeService.SERVICE_NAME,
+                op: 'create',
+                reason: FeeErrorReason.INVALID_ASSET,
+                assetType: assetObj.type,
+              },
+            })
+          );
+        }
+
+        // 4b. Validate CURRENCY specific fields
+        if (assetObj.type === 'CURRENCY') {
+          const currencyField = 'currency' in assetObj ? (assetObj as Record<string, unknown>).currency : undefined;
+          if (typeof currencyField !== 'string') {
+            return Err(
+              new InvalidFeeError('Invalid CURRENCY asset: missing or invalid currency field', {
+                context: {
+                  service: FeeService.SERVICE_NAME,
+                  op: 'create',
+                  reason: FeeErrorReason.INVALID_ASSET,
+                  currency: currencyField,
+                },
+              })
+            );
+          }
+        }
+
+        // 4c. Validate OUTCOME_TOKEN specific fields
+        if (assetObj.type === 'OUTCOME_TOKEN') {
+          if (!('conditionRef' in assetObj) || !('outcomeKey' in assetObj)) {
+            return Err(
+              new InvalidFeeError('Invalid OUTCOME_TOKEN asset: missing conditionRef or outcomeKey', {
+                context: {
+                  service: FeeService.SERVICE_NAME,
+                  op: 'create',
+                  reason: FeeErrorReason.INVALID_ASSET,
+                  missingFields: [
+                    !('conditionRef' in assetObj) ? 'conditionRef' : null,
+                    !('outcomeKey' in assetObj) ? 'outcomeKey' : null,
+                  ].filter(Boolean),
+                },
+              })
+            );
+          }
         }
 
         // 5. Create AssetQuantity and Fee

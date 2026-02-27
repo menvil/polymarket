@@ -104,6 +104,58 @@ describe('FeeService', () => {
       }
     });
 
+    it('should fail for invalid asset type', () => {
+      const result = FeeService.create({ type: 'INVALID_TYPE' } as any, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be CURRENCY or OUTCOME_TOKEN');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for CURRENCY asset without currency field', () => {
+      const result = FeeService.create({ type: 'CURRENCY' } as any, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('missing or invalid currency field');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for CURRENCY asset with non-string currency', () => {
+      const result = FeeService.create({ type: 'CURRENCY', currency: 123 } as any, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('missing or invalid currency field');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN asset without conditionRef', () => {
+      const result = FeeService.create({ type: 'OUTCOME_TOKEN', outcomeKey: 'UP' } as any, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('missing conditionRef or outcomeKey');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+        expect(result.error.context?.missingFields).toContain('conditionRef');
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN asset without outcomeKey', () => {
+      const result = FeeService.create({ type: 'OUTCOME_TOKEN', conditionRef: {} } as any, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('missing conditionRef or outcomeKey');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+        expect(result.error.context?.missingFields).toContain('outcomeKey');
+      }
+    });
+
     it('should preserve precision for large decimals', () => {
       const precise = '123456789.123456789012345';
       const result = FeeService.create(AssetIdHelpers.USDC, precise);
@@ -225,6 +277,7 @@ describe('FeeService', () => {
         conditionId: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' as ConditionId,
       };
       const tokenAssetResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      expect(tokenAssetResult.ok).toBe(true);
       if (!tokenAssetResult.ok) return;
       const tokenFee = FeeService.of(new AssetQuantity(tokenAssetResult.value, Quantity.of(new Decimal('0.05'))));
 
