@@ -25,7 +25,7 @@
 import { Result, Ok } from '@polymarket/result';
 import { InvalidFeeError, wrapOp } from '@polymarket/errors';
 import type { AssetId } from '@polymarket/ids';
-import { isSupportedCurrency } from '@polymarket/ids';
+import { validateFeeAsset } from '../facade/validateFeeAsset.js';
 import { Fee } from '../core/Fee.js';
 import { AssetQuantity } from '../../asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
@@ -171,91 +171,11 @@ export class FeeSerializer {
           });
         }
 
-        // 4. Валидируем AssetId
+        // 4. Валидируем AssetId (структура, типы, формат полей, поддерживаемые значения)
         const asset = obj.asset;
-
-        // Basic validation: должен быть объект с полем type
-        if (!asset || typeof asset !== 'object' || !('type' in asset)) {
-          throw new InvalidFeeError('Invalid asset: must be object with type field', {
-            context: {
-              field: 'asset',
-              value: asset,
-              type: typeof asset,
-              reason: FeeErrorReason.INVALID_ASSET,
-            },
-          });
-        }
-
-        // Проверяем тип asset
-        const assetObj = asset as { type: unknown };
-        if (assetObj.type !== 'CURRENCY' && assetObj.type !== 'OUTCOME_TOKEN') {
-          throw new InvalidFeeError('Invalid asset type: must be CURRENCY or OUTCOME_TOKEN', {
-            context: {
-              field: 'asset.type',
-              value: assetObj.type,
-              reason: FeeErrorReason.INVALID_ASSET,
-            },
-          });
-        }
-
-        // Проверяем специфичные поля для каждого типа
-        if (assetObj.type === 'CURRENCY') {
-          const currencyField = 'currency' in assetObj ? (assetObj as Record<string, unknown>).currency : undefined;
-          if (typeof currencyField !== 'string') {
-            throw new InvalidFeeError('Invalid CURRENCY asset: missing or invalid currency field', {
-              context: {
-                field: 'asset.currency',
-                value: currencyField,
-                reason: FeeErrorReason.INVALID_ASSET,
-              },
-            });
-          }
-          if (currencyField.length === 0) {
-            throw new InvalidFeeError('Invalid CURRENCY asset: currency must be non-empty string', {
-              context: {
-                field: 'asset.currency',
-                value: currencyField,
-                reason: FeeErrorReason.INVALID_ASSET,
-              },
-            });
-          }
-          if (!isSupportedCurrency(currencyField)) {
-            throw new InvalidFeeError(`Invalid CURRENCY asset: unsupported currency '${currencyField}'`, {
-              context: {
-                field: 'asset.currency',
-                value: currencyField,
-                reason: FeeErrorReason.INVALID_ASSET,
-              },
-            });
-          }
-        } else if (assetObj.type === 'OUTCOME_TOKEN') {
-          if (!('conditionRef' in assetObj) || !('outcomeKey' in assetObj)) {
-            throw new InvalidFeeError('Invalid OUTCOME_TOKEN asset: missing conditionRef or outcomeKey', {
-              context: {
-                field: 'asset',
-                reason: FeeErrorReason.INVALID_ASSET,
-                missingFields: [
-                  !('conditionRef' in assetObj) ? 'conditionRef' : null,
-                  !('outcomeKey' in assetObj) ? 'outcomeKey' : null,
-                ].filter(Boolean),
-              },
-            });
-          }
-          // Validate conditionRef.kind is supported
-          const conditionRef = (assetObj as Record<string, unknown>).conditionRef;
-          if (typeof conditionRef === 'object' && conditionRef !== null && 'kind' in conditionRef) {
-            const kind = (conditionRef as Record<string, unknown>).kind;
-            if (typeof kind === 'string' && kind !== 'ONCHAIN') {
-              throw new InvalidFeeError(`Invalid OUTCOME_TOKEN asset: unsupported conditionRef kind '${kind}'`, {
-                context: {
-                  field: 'asset.conditionRef.kind',
-                  value: kind,
-                  reason: FeeErrorReason.INVALID_ASSET,
-                  supportedKinds: ['ONCHAIN'],
-                },
-              });
-            }
-          }
+        const assetValidation = validateFeeAsset(asset, { service: 'FeeSerializer', op: 'fromUnknown' });
+        if (!assetValidation.ok) {
+          throw assetValidation.error;
         }
 
         // 5. Десериализуем через fromJSON (приводим amount к string)
