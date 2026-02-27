@@ -78,6 +78,11 @@ export class FeeSerializer {
    * amount принимается как string для сохранения точности.
    * Decimal constructor принимает string, number, или Decimal.
    *
+   * Несмотря на то что FeeJSON типизирован с `asset: AssetId`,
+   * TypeScript типы стираются в рантайме. Метод выполняет полную
+   * валидацию asset через validateFeeAsset() чтобы гарантировать
+   * INVALID_ASSET reason при невалидных данных (в т.ч. при вызове с `as any`).
+   *
    * @example
    * ```typescript
    * const json = { asset: AssetIdHelpers.USDC, amount: "0.10" };
@@ -93,6 +98,13 @@ export class FeeSerializer {
       'fromJSON',
       { asset: json.asset, amount: json.amount },
       () => {
+        // Валидируем asset — TypeScript типы стираются в рантайме,
+        // поэтому необходима явная проверка для предсказуемого reason=INVALID_ASSET
+        const assetValidation = validateFeeAsset(json.asset, { service: 'FeeSerializer', op: 'fromJSON' });
+        if (!assetValidation.ok) {
+          throw assetValidation.error;
+        }
+
         // Создаём Quantity из amount (Decimal принимает string)
         const quantity = Quantity.of(new Decimal(json.amount));
 

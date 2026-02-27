@@ -82,6 +82,58 @@ describe('FeeSerializer', () => {
         expect(result.value.quantity.amount().value().toString()).toBe(preciseAmount);
       }
     });
+
+    // Валидация asset в fromJSON — TypeScript типы стираются в рантайме
+    it('should fail for unsupported currency (FAKE) with INVALID_ASSET', () => {
+      const json = { asset: { type: 'CURRENCY', currency: 'FAKE' }, amount: '1' } as any;
+      const result = FeeSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+        expect(result.error.message).toContain("unsupported currency 'FAKE'");
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with invalid protocolId format with INVALID_ASSET', () => {
+      const json = {
+        asset: {
+          type: 'OUTCOME_TOKEN',
+          conditionRef: { kind: 'ONCHAIN', protocolId: 'bad-format', chainId: 137, conditionId: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' },
+          outcomeKey: 'UP',
+        },
+        amount: '1',
+      } as any;
+      const result = FeeSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+        expect(result.error.message).toContain('protocolId');
+        expect(result.error.message).toContain('invalid format');
+      }
+    });
+
+    it('should fail for null asset with INVALID_ASSET', () => {
+      const json = { asset: null, amount: '1' } as any;
+      const result = FeeSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for invalid asset type with INVALID_ASSET', () => {
+      const json = { asset: { type: 'UNKNOWN' }, amount: '1' } as any;
+      const result = FeeSerializer.fromJSON(json);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+        expect(result.error.message).toContain('must be CURRENCY or OUTCOME_TOKEN');
+      }
+    });
   });
 
   describe('fromUnknown()', () => {
