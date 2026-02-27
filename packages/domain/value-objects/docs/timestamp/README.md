@@ -7,6 +7,7 @@
 Timestamp хранит момент времени как целое число миллисекунд с Unix epoch (1970-01-01T00:00:00Z).
 
 **Используется для:**
+
 - Временных меток событий (trades, orders, fills)
 - Хронологических сравнений (isBefore/isAfter)
 - Временной арифметики (addMs, diffMs)
@@ -23,6 +24,7 @@ Timestamp гарантирует 5 инвариантов:
 5. **Integer** — целое число (дробные миллисекунды не допускаются)
 
 **Важно**: `TimestampService.create()` автоматически truncate-ит дробные значения до integer:
+
 ```typescript
 TimestampService.create(1609459200000.789); // OK → Timestamp(1609459200000)
 ```

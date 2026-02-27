@@ -7,6 +7,7 @@ Fee представляет комиссию в любом активе: Curren
 Fee является wrapper над `AssetQuantity` с дополнительными инвариантами и семантикой комиссии. Используется для представления trading fees, settlement fees, gas fees и withdrawal fees.
 
 **Ключевые характеристики:**
+
 - Immutable value object
 - Всегда non-negative (>= 0)
 - Точная арифметика через Decimal.js

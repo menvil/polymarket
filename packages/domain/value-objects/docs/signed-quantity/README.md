@@ -263,18 +263,21 @@ if (result.ok) {
 - `toNumber(): number` — конвертирует в number (lossy!)
 
 **Проверки равенства:**
+
 - `equals(other): boolean` — строгое равенство
 - `isZero(): boolean` — проверка на ноль
 - `isPositive(): boolean` — проверка на положительное (> 0)
 - `isNegative(): boolean` — проверка на отрицательное (< 0)
 
 **Сравнения:**
+
 - `isLessThan(other): boolean`
 - `isLessThanOrEqual(other): boolean`
 - `isGreaterThan(other): boolean`
 - `isGreaterThanOrEqual(other): boolean`
 
 **Операции со знаком:**
+
 - `sign(): -1 | 0 | 1` — возвращает знак
 - `abs(): SignedQuantity` — абсолютное значение (возвращает SignedQuantity)
 - `neg(): SignedQuantity` — инверсия знака

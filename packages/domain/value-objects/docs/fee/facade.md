@@ -33,16 +33,22 @@ console.log(zero.isZero()); // true
 ### Сложение (Result-based, Never Throws)
 
 ```typescript
-const addResult = FeeService.add(fee1, fee2);
-if (!addResult.ok) {
-  // addResult.error.context?.reason === FeeOperationErrorReason.ASSET_MISMATCH
-  console.error('Cannot add fees:', addResult.error.message);
+const fee1 = FeeService.zero(AssetIdHelpers.USDC);
+const fee2Result = FeeService.create(AssetIdHelpers.USDC, '0.05');
+if (fee2Result.ok) {
+  const addResult = FeeService.add(fee1, fee2Result.value);
+  if (!addResult.ok) {
+    // addResult.error.context?.reason === FeeOperationErrorReason.ASSET_MISMATCH
+    console.error('Cannot add fees:', addResult.error.message);
+  }
 }
 ```
 
 ### Равенство
 
 ```typescript
+const fee1 = FeeService.zero(AssetIdHelpers.USDC);
+const fee2 = FeeService.zero(AssetIdHelpers.USDC);
 const equal = FeeService.equals(fee1, fee2); // boolean
 ```
 

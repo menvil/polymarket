@@ -76,6 +76,7 @@ try {
 ```
 
 **Гарантия:**
+
 - Любые exceptions из Core, Math, или других слоёв ловятся и конвертируются в `Result.Err`
 - Публичный API ВСЕГДА возвращает `Result<T, E>`
 - TypeScript compiler заставляет обрабатывать ошибки
@@ -148,11 +149,13 @@ public static create(
 **Назначение:** создаёт SignedQuantity из различных типов входных данных.
 
 **Этапы:**
+
 1. Парсинг value → Decimal через `toDecimal()`
 2. Создание через Core: `SignedQuantity.of(decimal)`
 3. Оборачивание exceptions → Result
 
 **Валидация:**
+
 - Проверка finite (не NaN, не ±Infinity)
 - Нормализация -0 → 0
 
@@ -179,11 +182,12 @@ SignedQuantityService.create('invalid'); // Err(reason: INVALID_FORMAT)
 ```
 
 **Error Context:**
+
 ```typescript
 {
   op: 'create',
   raw: { field: 'value', value: '...' },
-  reason: SignedQuantityErrorReason.NAN | NON_FINITE | INVALID_FORMAT
+  reason: SignedQuantityErrorReason.NAN | SignedQuantityErrorReason.NON_FINITE | SignedQuantityErrorReason.INVALID_FORMAT
 }
 ```
 
@@ -199,6 +203,7 @@ public static add(
 **Назначение:** складывает два знаковых количества.
 
 **Алгоритм:**
+
 1. Сложение через `addDecimal(qty1.value(), qty2.value())`
 2. Создание результата через `createFromDecimal()`
 
@@ -237,6 +242,7 @@ if (aResult.ok && cResult.ok) {
 ```
 
 **Error Context:**
+
 ```typescript
 {
   op: 'add',
@@ -259,6 +265,7 @@ public static subtract(
 **Отличие от Quantity:** результат может быть отрицательным (нет проверки non-negative).
 
 **Алгоритм:**
+
 1. Вычитание через `subtractDecimal(qty1.value(), qty2.value())`
 2. Создание результата через `createFromDecimal()`
 
@@ -286,6 +293,7 @@ if (aResult.ok && bResult.ok) {
 ```
 
 **Error Context:**
+
 ```typescript
 {
   op: 'subtract',
@@ -308,6 +316,7 @@ public static multiply(
 **Отличие от Quantity:** factor может быть отрицательным.
 
 **Алгоритм:**
+
 1. Парсинг factor → Decimal
 2. Умножение через `multiplyDecimal(quantity.value(), factorDecimal)`
 3. Создание результата через `createFromDecimal()`
@@ -338,6 +347,7 @@ if (qtyResult.ok) {
 ```
 
 **Error Context:**
+
 ```typescript
 {
   op: 'multiply',
@@ -358,9 +368,11 @@ public static divide(
 **Назначение:** делит знаковое количество на делитель.
 
 **Валидация:**
+
 - Проверка деления на ноль (divisor.isZero() → Err)
 
 **Алгоритм:**
+
 1. Парсинг divisor → Decimal
 2. Проверка на ноль
 3. Деление через `divideDecimal(quantity.value(), divisorDecimal)`
@@ -390,6 +402,7 @@ if (qtyResult.ok) {
 ```
 
 **Error Context:**
+
 ```typescript
 // Деление на ноль
 {
@@ -411,8 +424,9 @@ public static abs(
 **Назначение:** возвращает абсолютное значение.
 
 **Алгоритм:**
-1. Получение abs через `quantity.abs()` (возвращает Decimal)
-2. Создание SignedQuantity через `createFromDecimal()`
+
+1. Вызов `quantity.abs()` (возвращает SignedQuantity с неотрицательным значением)
+2. Оборачивание результата в `Ok(...)`
 
 **Примеры:**
 
@@ -437,6 +451,7 @@ if (abs3.ok) console.log(abs3.value.toNumber()); // 0
 ```
 
 **Error Context:**
+
 ```typescript
 {
   op: 'abs',
@@ -455,6 +470,7 @@ public static negate(
 **Назначение:** инвертирует знак (положительное ↔ отрицательное).
 
 **Алгоритм:**
+
 1. Инверсия через `quantity.neg()` (возвращает SignedQuantity)
 2. Оборачивание в Result
 
@@ -481,6 +497,7 @@ if (neg3.ok) console.log(neg3.value.toNumber()); // 0
 ```
 
 **Error Context:**
+
 ```typescript
 {
   op: 'negate',
@@ -500,6 +517,7 @@ public static scale(
 **Назначение:** масштабирует количество на rate с валидацией rate ≥ 0.
 
 **Алгоритм:**
+
 1. Конвертация rate → Decimal через `rate.toDecimal()`
 2. Валидация: rate ≥ 0 и isFinite (через ValidateFactorForSignedQuantityScale)
 3. Умножение: `quantity.value() * rate`
@@ -544,12 +562,13 @@ if (qtyResult.ok && negRateResult.ok) {
 ```
 
 **Error Context:**
+
 ```typescript
 {
   op: 'scale',
   quantity: '100',
   rate: '2',
-  reason: SignedQuantityErrorReason.NEGATIVE_SCALE_FACTOR | NON_FINITE
+  reason: SignedQuantityErrorReason.NEGATIVE_SCALE_FACTOR | SignedQuantityErrorReason.NON_FINITE
 }
 ```
 
@@ -565,6 +584,7 @@ public static portion(
 **Назначение:** вычисляет часть количества, rate может быть любым (включая отрицательный).
 
 **Алгоритм:**
+
 1. Конвертация rate → Decimal
 2. Умножение: `quantity.value() * rate` (БЕЗ валидации rate)
 3. Создание результата через `createFromDecimal()`
@@ -597,6 +617,7 @@ if (qtyResult.ok && negRateResult.ok) {
 ```
 
 **Error Context:**
+
 ```typescript
 {
   op: 'portion',
@@ -618,12 +639,14 @@ public static roundToStep(
 **Назначение:** округляет до ближайшего кратного stepSize.
 
 **Алгоритм:**
+
 1. Парсинг stepSize → Decimal через `toDecimal()`
 2. Валидация: stepSize > 0 и isFinite (через ValidateStepSizeForSignedQuantity)
 3. Округление через `roundToTick(quantity.value(), stepSize, roundingMode)`
 4. Создание результата через `createFromDecimal()`
 
 **Режимы округления:**
+
 - `ROUND_HALF_UP` (default): к ближайшему, .5 вверх
 - `ROUND_DOWN`: к нулю
 - `ROUND_UP`: от нуля
@@ -659,13 +682,14 @@ if (negQtyResult.ok) {
 ```
 
 **Error Context:**
+
 ```typescript
 {
   op: 'roundToStep',
   quantity: '10.567',
   stepSize: '0.01',
   roundingMode: '4',
-  reason: SignedQuantityErrorReason.INVALID_FORMAT | NON_FINITE
+  reason: SignedQuantityErrorReason.INVALID_FORMAT | SignedQuantityErrorReason.NON_FINITE
 }
 ```
 
@@ -686,6 +710,7 @@ public static adjustBy(
 **Назначение:** изменяет количество на процент delta с округлением и опциональной защитой от crossing zero.
 
 **Алгоритм:**
+
 1. Парсинг stepSize → Decimal
 2. Валидация stepSize > 0 и isFinite
 3. Вычисление multiplier = `delta.onePlus()` (1 + delta)
@@ -695,10 +720,12 @@ public static adjustBy(
 7. Создание результата
 
 **Опции:**
+
 - `roundingMode`: режим округления (default: ROUND_HALF_UP)
 - `allowCrossZero`: разрешить смену знака (default: true)
 
 **Политика allowCrossZero = false:**
+
 - Запрещает positive → negative или negative → positive (`RESULT_CROSSES_ZERO`)
 - Разрешает схлопывание до zero (`result === 0` → OK)
 - Запрещает `original === 0` → ненулевой результат (`CANNOT_ADJUST_ZERO`)
@@ -743,6 +770,7 @@ if (qtyResult.ok && delta10pctResult.ok && deltaMinus20Result.ok &&
 ```
 
 **Error Context:**
+
 ```typescript
 {
   op: 'adjustBy',
@@ -751,7 +779,7 @@ if (qtyResult.ok && delta10pctResult.ok && deltaMinus20Result.ok &&
   stepSize: '0.01',
   roundingMode: '4',
   allowCrossZero: 'false',
-  reason: SignedQuantityErrorReason.RESULT_CROSSES_ZERO | CANNOT_ADJUST_ZERO | INVALID_FORMAT
+  reason: SignedQuantityErrorReason.RESULT_CROSSES_ZERO | SignedQuantityErrorReason.CANNOT_ADJUST_ZERO | SignedQuantityErrorReason.INVALID_FORMAT
 }
 ```
 
@@ -776,6 +804,7 @@ return wrapOp(
 ```
 
 **wrapOp гарантирует:**
+
 - Любой exception конвертируется в Result.Err
 - Context сохраняется в error.context
 - Error class используется для создания ошибки
@@ -800,6 +829,7 @@ if (isErr(decimalResult)) {
 ```
 
 **rewrap сохраняет:**
+
 - Оригинальный reason из внутренней ошибки
 - Оригинальный cause из math exceptions
 - Добавляет op и opChain для трассировки
@@ -837,10 +867,12 @@ private static createFromDecimal(
 **Назначение:** внутренний хелпер для создания SignedQuantity из уже валидированного Decimal.
 
 **Использование:**
+
 - В арифметических операциях (результат уже Decimal)
-- В операциях со знаком (abs возвращает Decimal)
+- В операциях со знаком (abs/neg возвращают SignedQuantity — оборачиваем в Ok)
 
 **Обоснование:**
+
 - Избегает повторного парсинга
 - Core получает готовый Decimal → только проверка инвариантов
 
@@ -870,6 +902,7 @@ const decimalResult = toDecimal(
 ```
 
 **Возвращает:**
+
 - `Ok(Decimal)` — успешный парсинг
 - `Err(InvalidSignedQuantityError)` — ошибка с типизированным reason
 

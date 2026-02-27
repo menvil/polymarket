@@ -60,6 +60,7 @@ export enum SignedQuantityErrorReason {
 ```
 
 **Почему нет NEGATIVE?**
+
 - SignedQuantity допускает отрицательные значения
 - NEGATIVE нужен только для Quantity
 
@@ -240,16 +241,12 @@ export class SignedQuantity {
   }
 
   /**
-   * Возвращает абсолютное значение как Decimal
+   * Возвращает абсолютное значение как SignedQuantity
    *
-   * @remarks
-   * Возвращает Decimal, а не SignedQuantity, так как abs всегда >= 0
-   * и семантически это Quantity, а не SignedQuantity.
-   *
-   * @returns Decimal абсолютного значения
+   * @returns SignedQuantity с неотрицательным значением
    */
-  public abs(): Decimal {
-    return this._value.abs();
+  public abs(): SignedQuantity {
+    return SignedQuantity.of(this._value.abs());
   }
 
   /**
@@ -270,8 +267,9 @@ export class SignedQuantity {
 ```
 
 **Ключевые решения:**
+
 1. ✅ Нормализация -0 в of(), не в конструкторе (для наглядности)
-2. ✅ abs() возвращает Decimal, не SignedQuantity (семантически это Quantity)
+2. ✅ abs() возвращает SignedQuantity (консистентно с остальными операциями Core)
 3. ✅ Константы: ZERO, ONE, MINUS_ONE
 4. ✅ sign() возвращает строго типизированный union: -1 | 0 | 1
 
@@ -422,10 +420,10 @@ export class SignedQuantityService {
   }
 
   /**
-   * Абсолютное значение (возвращает Decimal)
+   * Абсолютное значение (возвращает SignedQuantity)
    */
-  public static abs(qty: SignedQuantity): Decimal {
-    return qty.abs();
+  public static abs(qty: SignedQuantity): Result<SignedQuantity, InvalidSignedQuantityError> {
+    return Ok(qty.abs());
   }
 
   /**
@@ -565,6 +563,7 @@ __tests__/unit/signed-quantity/
 ### 4.2 Ключевые тест-кейсы
 
 **Core тесты:**
+
 - ✅ Создание положительного значения
 - ✅ Создание отрицательного значения
 - ✅ Создание нуля
@@ -573,12 +572,13 @@ __tests__/unit/signed-quantity/
 - ✅ Отклонение Infinity
 - ✅ sign() для положительных, отрицательных, нуля
 - ✅ isPositive(), isNegative(), isZero()
-- ✅ abs() возвращает Decimal
+- ✅ abs() возвращает SignedQuantity
 - ✅ neg() меняет знак
 - ✅ equals() сравнение
 - ✅ Сравнения (lessThan, greaterThan и т.д.)
 
 **Service тесты:**
+
 - ✅ create() из number/string/Decimal
 - ✅ add() положительных и отрицательных
 - ✅ subtract() с переходом через ноль
@@ -587,11 +587,13 @@ __tests__/unit/signed-quantity/
 - ✅ Обработка ошибок (NaN, Infinity)
 
 **Formatter тесты:**
+
 - ✅ toFixed() с разными decimals
 - ✅ toFixed() с showSign=true
 - ✅ withDirection() для положительных/отрицательных/нуля
 
 **Serializer тесты:**
+
 - ✅ toJSON() → number
 - ✅ fromJSON() round-trip
 - ✅ fromUnknown() type guard
@@ -640,6 +642,7 @@ export { SignedQuantitySerializer } from './adapters/SignedQuantitySerializer.js
 ### 6.2 Обновление package exports
 
 В `package.json`:
+
 ```json
 {
   "exports": {
@@ -667,53 +670,61 @@ export class InvalidSignedQuantityError extends ValidationError {
 ## Порядок реализации (шаг за шагом)
 
 ### День 1: Core + Errors
+
 1. ✅ Создать SignedQuantityErrorReason.ts
 2. ✅ Создать SignedQuantityInvariantViolation.ts
 3. ✅ Создать SignedQuantity.ts (Core)
 4. ✅ Написать Core тесты
 
 ### День 2: Facade
-5. ✅ Создать InvalidSignedQuantityError в @polymarket/errors
-6. ✅ Создать SignedQuantityService.ts
-7. ✅ Написать Service тесты
+
+1. ✅ Создать InvalidSignedQuantityError в @polymarket/errors
+2. ✅ Создать SignedQuantityService.ts
+3. ✅ Написать Service тесты
 
 ### День 3: Adapters
-8. ✅ Создать SignedQuantityFormatter.ts
-9. ✅ Создать SignedQuantitySerializer.ts
-10. ✅ Написать Formatter и Serializer тесты
+
+1. ✅ Создать SignedQuantityFormatter.ts
+2. ✅ Создать SignedQuantitySerializer.ts
+3. ✅ Написать Formatter и Serializer тесты
 
 ### День 4: Documentation
-11. ✅ Написать README.md
-12. ✅ Написать architecture.md
-13. ✅ Написать examples.md
-14. ✅ Написать facade.md
+
+1. ✅ Написать README.md
+2. ✅ Написать architecture.md
+3. ✅ Написать examples.md
+4. ✅ Написать facade.md
 
 ### День 5: Integration & Review
-15. ✅ Настроить exports
-16. ✅ Прогнать все тесты
-17. ✅ Проверить TypeScript компиляцию
-18. ✅ Code review и финальные правки
+
+1. ✅ Настроить exports
+2. ✅ Прогнать все тесты
+3. ✅ Проверить TypeScript компиляцию
+4. ✅ Code review и финальные правки
 
 ## Критические решения
 
-### 1. abs() возвращает Decimal, не SignedQuantity
+### 1. abs() возвращает SignedQuantity
 
-**Почему:**
-- Абсолютное значение всегда >= 0
-- Семантически это Quantity, а не SignedQuantity
-- Избегаем путаницы между типами
+**Итоговое решение:** `abs()` возвращает `SignedQuantity` (не `Decimal`).
+Core `quantity.abs()` возвращает `SignedQuantity`, Facade оборачивает в `Ok(...)`.
 
-**Альтернатива:**
-Можно вернуть Quantity, но это создает circular dependency
+**Почему SignedQuantity, а не Decimal:**
+
+- Консистентность с остальными операциями Facade (все возвращают `Result<SignedQuantity, ...>`)
+- Возврат Quantity создавал бы circular dependency
+- Абсолютное значение >= 0 гарантируется инвариантом SignedQuantity через нормализацию
 
 ### 2. Нормализация -0
 
 **Реализация:**
+
 ```typescript
 const normalized = value.isZero() ? new Decimal(0) : value;
 ```
 
 **Почему важно:**
+
 - Decimal.js различает +0 и -0
 - Для equals() нужна консистентность
 - Избегаем edge cases
@@ -721,22 +732,26 @@ const normalized = value.isZero() ? new Decimal(0) : value;
 ### 3. Константы
 
 **Добавлены:**
+
 - `SignedQuantity.ZERO`
 - `SignedQuantity.ONE`
 - `SignedQuantity.MINUS_ONE`
 
 **Почему MINUS_ONE:**
+
 - Часто используется для инверсии
 - Избегаем повторного создания
 
 ### 4. sign() типизация
 
 **Строго типизированный union:**
+
 ```typescript
 sign(): -1 | 0 | 1
 ```
 
 **Альтернатива:**
+
 ```typescript
 sign(): number  // Слабее
 ```
@@ -810,28 +825,33 @@ const net = SignedQuantityService.add(long, short);
 ## Checklist
 
 ### Core
+
 - [ ] SignedQuantityErrorReason.ts
 - [ ] SignedQuantityInvariantViolation.ts
 - [ ] SignedQuantity.ts
 - [ ] Core тесты (52+ tests)
 
 ### Facade
+
 - [ ] InvalidSignedQuantityError в @polymarket/errors
 - [ ] SignedQuantityService.ts
 - [ ] Service тесты (30+ tests)
 
 ### Adapters
+
 - [ ] SignedQuantityFormatter.ts
 - [ ] SignedQuantitySerializer.ts
 - [ ] Adapter тесты (20+ tests)
 
 ### Documentation
+
 - [ ] README.md
 - [ ] architecture.md
 - [ ] examples.md
 - [ ] facade.md
 
 ### Integration
+
 - [ ] index.ts exports
 - [ ] package.json exports
 - [ ] TypeScript компиляция

@@ -61,12 +61,14 @@ export class SignedQuantity {
 ```
 
 **Характеристики Core:**
+
 - ✅ Бросает исключения при нарушении инвариантов
 - ✅ Не парсит — принимает готовый Decimal
 - ✅ Не знает о Result<T, E>
 - ✅ Содержит ТОЛЬКО бизнес-логику
 
 **Инварианты (проверяются в constructor):**
+
 1. Not NaN (`_value.isNaN()` → throw)
 2. Must be finite (`!_value.isFinite()` → throw)
 3. -0 normalization (в `of()`)
@@ -80,6 +82,7 @@ public abs(): SignedQuantity {
 ```
 
 **Обоснование:**
+
 - Возвращает новый SignedQuantity с инвариантом value >= 0
 - Консистентен с neg() который также возвращает SignedQuantity
 - Для конвертации в Quantity используйте: `QuantityService.create(signedQty.abs().value())`
@@ -115,6 +118,7 @@ export class SignedQuantityService {
 ```
 
 **Характеристики Facade:**
+
 - ✅ НИКОГДА не бросает исключения
 - ✅ Все методы возвращают `Result<T, E>`
 - ✅ Парсит входные данные (через `toDecimal()`)
@@ -124,6 +128,7 @@ export class SignedQuantityService {
 **Error Context Contract:**
 
 Каждая ошибка содержит:
+
 - `context.op` — название операции ('create', 'add', 'divide', ...)
 - `context.opChain` — цепочка операций (внутренние op не теряются)
 - `context.quantity`, `context.factor`, `context.divisor` — входные данные
@@ -136,6 +141,7 @@ export class SignedQuantityService {
 **Ответственность:** форматирование, сериализация, I/O.
 
 **SignedQuantityFormatter:**
+
 ```typescript
 export class SignedQuantityFormatter {
   // Стандартные форматы
@@ -155,9 +161,11 @@ export class SignedQuantityFormatter {
 ```
 
 **Опции форматирования:**
+
 - `showPlusSign?: boolean` — показывать ли знак "+" для положительных (default: true)
 
 **SignedQuantitySerializer:**
+
 ```typescript
 export class SignedQuantitySerializer {
   // JSON контракт: { value: string }
@@ -167,6 +175,7 @@ export class SignedQuantitySerializer {
 ```
 
 **Характеристики Adapters:**
+
 - ✅ Граница системы (работа с unknown, string, JSON)
 - ✅ Полная валидация на входе
 - ✅ Использует Facade для создания VO
@@ -178,6 +187,7 @@ export class SignedQuantitySerializer {
 **Проблема:** Decimal.js различает +0 и -0, что может вызвать неожиданное поведение.
 
 **Решение:**
+
 ```typescript
 public static of(value: Decimal): SignedQuantity {
   // Нормализация -0 → 0
@@ -187,6 +197,7 @@ public static of(value: Decimal): SignedQuantity {
 ```
 
 **Обоснование:**
+
 - Математически -0 и +0 эквивалентны для бизнес-логики
 - Избегаем edge cases при сравнениях
 - Консистентность: `SignedQuantity.ZERO.equals(SignedQuantity.of(new Decimal(-0)))` → true
@@ -201,6 +212,7 @@ public sign(): -1 | 0 | 1 {
 ```
 
 **Обоснование:**
+
 - Тип `-1 | 0 | 1` вместо `number` → type safety
 - Компилятор может проверить exhaustiveness в switch
 - Явно документирует все возможные значения
@@ -214,12 +226,10 @@ public abs(): SignedQuantity {
 ```
 
 **Обоснование:**
+
 - Консистентен с neg() который также возвращает SignedQuantity
 - Упрощает Service layer — abs() просто вызывает core и оборачивает в Ok()
-- Для конвертации в Quantity используйте:
-  ```typescript
-  const absQty = QuantityService.create(signedQty.abs().value());
-  ```
+- Для конвертации в Quantity используйте `QuantityService.create(signedQty.abs().value())`
 - SignedQuantity с инвариантом >= 0 валиден (значение может быть 0 или положительным)
 
 ### 4. neg() для инверсии знака
@@ -231,11 +241,13 @@ public neg(): SignedQuantity {
 ```
 
 **Альтернативы (отклонены):**
+
 - `negate()` — слишком длинный
 - `inverse()` — может быть неоднозначно (1/x?)
 - `opposite()` — менее математический
 
 **Обоснование:**
+
 - `neg()` — короткий, математически корректный (negation)
 - Консистентен с Decimal.js: `decimal.negated()`
 - Явно показывает операцию над знаком
@@ -253,6 +265,7 @@ SignedQuantityService.multiply(qty, -1); // ✅ Ok: инверсия знака
 ```
 
 **Обоснование:**
+
 - SignedQuantity предназначен для работы со знаковыми величинами
 - Умножение на отрицательный factor = change direction
 - Деление на отрицательный divisor также валидно
@@ -268,6 +281,7 @@ public static divide(...): Result<SignedQuantity, InvalidSignedQuantityError>
 ```
 
 **Обоснование:**
+
 - Явная обработка ошибок на уровне типов
 - Компилятор заставляет обрабатывать ошибки
 - Нет неожиданных exceptions в runtime
@@ -304,6 +318,7 @@ if (result.ok) {
 ```
 
 **Преимущества:**
+
 - Core остаётся простым (throws)
 - Facade обрабатывает все exceptions → Result
 - Публичный API гарантированно безопасен
@@ -334,6 +349,7 @@ export class SignedQuantity {
 ```
 
 **Преимущества:**
+
 - Избегаем создания одних и тех же объектов
 - Читаемость: `SignedQuantity.ZERO` вместо `SignedQuantityService.create(0)`
 - Производительность: shared instances
@@ -352,11 +368,13 @@ export class SignedQuantity {
 ### Когда использовать что?
 
 **Используй Quantity:**
+
 - Абсолютные количества акций, объёмы
 - Размеры ордеров, лимиты
 - Всё, что не может быть отрицательным
 
 **Используй SignedQuantity:**
+
 - Position deltas (+100 купил, -50 продал)
 - Profit & Loss (прибыль/убыток)
 - Net positions после операций
@@ -431,6 +449,7 @@ expect(() => SignedQuantity.of(new Decimal(NaN))).toThrow(SignedQuantityInvarian
 ### Compatibility
 
 При добавлении новых методов:
+
 - ✅ Всё через Facade (Result<T, E>)
 - ✅ Core остаётся minimal (только инварианты)
 - ✅ Backward compatibility (не ломать существующий API)

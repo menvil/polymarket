@@ -14,6 +14,7 @@
 ### 1. Quote.of() signature
 
 **Было:**
+
 ```typescript
 Quote.of(
   bid: Price | null,
@@ -27,6 +28,7 @@ Quote.of(
 ```
 
 **Стало:**
+
 ```typescript
 Quote.of(
   bid: Price | null,
@@ -42,11 +44,13 @@ Quote.of(
 ### 2. Новый метод timestamp()
 
 **Добавлен:**
+
 ```typescript
 quote.timestamp(): Timestamp  // Возвращает Timestamp VO
 ```
 
 **Существующие методы сохранены:**
+
 ```typescript
 quote.timestampMs(): Decimal  // Возвращает Unix ms как Decimal
 quote.getTimestamp(): Date    // Возвращает Date объект
@@ -55,11 +59,13 @@ quote.getTimestamp(): Date    // Возвращает Date объект
 ### 3. Метод age() signature
 
 **Было:**
+
 ```typescript
 quote.age(nowMs: Decimal): Decimal
 ```
 
 **Стало:**
+
 ```typescript
 quote.age(now?: Timestamp): Decimal  // Timestamp.now() по умолчанию
 ```
@@ -85,6 +91,7 @@ const result = QuoteService.create(
 **ТРЕБУЕТСЯ ИЗМЕНЕНИЕ** - конвертируйте Decimal в Timestamp:
 
 **Было:**
+
 ```typescript
 import Decimal from 'decimal.js';
 
@@ -100,6 +107,7 @@ const quote = Quote.of(
 ```
 
 **Стало:**
+
 ```typescript
 import { TimestampService } from '@polymarket/value-objects/timestamp';
 
@@ -123,11 +131,13 @@ const quote = Quote.of(
 ### Если вы используете age()
 
 **Было:**
+
 ```typescript
 const ageMs = quote.age(new Decimal(Date.now()));
 ```
 
 **Стало:**
+
 ```typescript
 // Вариант 1: Использовать Timestamp.now() по умолчанию
 const ageMs = quote.age();
@@ -141,12 +151,14 @@ const ageMs = quote.age(now);
 ### Если вы работаете с timestamp напрямую
 
 **Было:**
+
 ```typescript
 const tsMs: Decimal = quote.timestampMs();
 const date = new Date(tsMs.toNumber());
 ```
 
 **Стало (рекомендуется):**
+
 ```typescript
 // Получить Timestamp VO
 const ts: Timestamp = quote.timestamp();
@@ -158,6 +170,7 @@ const formatted = TimestampFormatter.toDisplay(ts);
 ```
 
 **Стало (альтернативно):**
+
 ```typescript
 // Старый способ тоже работает
 const tsMs: Decimal = quote.timestampMs();
@@ -169,6 +182,7 @@ const date = new Date(tsMs.toNumber());
 ### Тестовый код
 
 **Было:**
+
 ```typescript
 import Decimal from 'decimal.js';
 
@@ -184,6 +198,7 @@ const quote = Quote.of(
 ```
 
 **Стало:**
+
 ```typescript
 import { TimestampService } from '../../../src/timestamp/index.js';
 import type { Timestamp } from '../../../src/timestamp/index.js';
@@ -210,6 +225,7 @@ const quote = Quote.of(
 ### Проверка устаревания котировки
 
 **Было:**
+
 ```typescript
 const now = new Decimal(Date.now());
 const age = quote.age(now);
@@ -220,6 +236,7 @@ if (age.greaterThan(5000)) {
 ```
 
 **Стало:**
+
 ```typescript
 // Используем встроенный Timestamp.now()
 const age = quote.age();
@@ -294,6 +311,7 @@ const ts: Timestamp = tsResult.value;
 ### Q: Что делать, если у меня уже есть Decimal timestamp?
 
 **A:** Конвертируйте через TimestampService:
+
 ```typescript
 const decimal: Decimal = new Decimal(Date.now());
 const result = TimestampService.create(decimal.toNumber());
@@ -302,6 +320,7 @@ const result = TimestampService.create(decimal.toNumber());
 ### Q: Изменилась ли JSON сериализация?
 
 **A:** Нет, формат JSON остался прежним:
+
 ```json
 {
   "bid": 0.48,

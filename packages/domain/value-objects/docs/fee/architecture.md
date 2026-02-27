@@ -151,12 +151,14 @@ const tokenAsset = {
 | **Use cases** | Позиции, балансы, любые количества | Trading fees, gas fees, settlement fees |
 
 **Когда использовать Fee:**
+
 - ✅ Trading fees (maker/taker)
 - ✅ Settlement fees
 - ✅ Gas fees
 - ✅ Withdrawal fees
 
 **Когда использовать AssetQuantity:**
+
 - ✅ Позиции (holdings)
 - ✅ Балансы
 - ✅ Объёмы сделок

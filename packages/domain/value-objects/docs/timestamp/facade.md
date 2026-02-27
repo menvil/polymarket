@@ -14,6 +14,7 @@
 **Единая точка входа** для создания и операций. Все фабричные методы возвращают `Result`.
 
 **Контракт "Never Throw":**
+
 - Фабричные методы (`create`, `fromDate`, `fromISO`, `addMs`) → `Result<Timestamp, InvalidTimestampError>`
 - Утилитные методы (`now`, `diffMs`, `diffSeconds`) → возвращают значения напрямую (Never Throw)
 

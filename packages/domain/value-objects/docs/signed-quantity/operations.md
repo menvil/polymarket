@@ -277,6 +277,7 @@ if (sharesResult.ok) {
 ### Важно: Negative округление
 
 ⚠️ **ROUND_DOWN** для negative означает движение к нулю (уменьшает абсолютное значение):
+
 - `ROUND_DOWN: -10.567 → -10.56` (к нулю)
 - `ROUND_FLOOR: -10.567 → -10.57` (к -Infinity)
 

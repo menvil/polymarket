@@ -5,6 +5,7 @@
 ## Описание
 
 AssetQuantity комбинирует:
+
 - **AssetId** — идентификатор актива (currency или outcome token)
 - **Quantity** — количество актива (non-negative, finite)
 
@@ -50,6 +51,7 @@ if (tokenResult.ok) {
 **Формула:** `result.amount = assetQty.amount * rate`
 
 **Use cases:**
+
 - **Fee calculation**: `portion(orderQty, Ratio.fromPercent(2))` → 2% trading fee
 - **Allocation**: `portion(totalQty, Ratio.fromDecimal(0.3))` → 30% allocation
 - **Partial fill**: `portion(orderQty, Ratio.fromDecimal(0.5))` → 50% filled
@@ -104,6 +106,7 @@ if (filledResult.ok) {
 ```
 
 **Возможные ошибки:**
+
 - `INVALID_AMOUNT` — результат отрицательный (если rate < 0) или превышает максимум
 
 ## Основные методы
@@ -256,6 +259,7 @@ console.log(alloc3.ok && alloc3.value.amount().toNumber()); // 2000
 ## Тесты
 
 **96 тестов**, включая:
+
 - 17 тестов для `portion()` операций
 - Тесты для USDC и OutcomeToken
 - Edge cases (zero, large, small amounts)
