@@ -191,6 +191,48 @@ if (orderQty.ok) {
 
 ---
 
+### 💳 [Fee](./fee/README.md)
+
+Комиссия (fee) в любом активе: Currency (USDC) или OutcomeToken.
+
+```typescript
+import { FeeService, FeeOperationErrorReason } from '@polymarket/value-objects';
+import { AssetIdHelpers } from '@polymarket/ids';
+import Decimal from 'decimal.js';
+
+// Создание Fee (Result-based)
+const result = FeeService.create(AssetIdHelpers.USDC, 0.10);
+if (result.ok) {
+  console.log(result.value.quantity.amount().toNumber()); // 0.1
+}
+
+// Сложение fees (Result-based, Never Throws)
+const fee1Result = FeeService.create(AssetIdHelpers.USDC, '0.10');
+const fee2Result = FeeService.create(AssetIdHelpers.USDC, '0.05');
+
+if (fee1Result.ok && fee2Result.ok) {
+  const addResult = FeeService.add(fee1Result.value, fee2Result.value);
+
+  if (addResult.ok) {
+    console.log(addResult.value.quantity.amount().toNumber()); // 0.15
+  } else if (addResult.error.context?.reason === FeeOperationErrorReason.ASSET_MISMATCH) {
+    console.error('Cannot add fees with different assets');
+  }
+}
+```
+
+**Особенности:**
+
+- Wrapper над AssetQuantity со специализацией для комиссий
+- Result-based API для create() и add() (Never Throws)
+- Разделение ошибок: InvalidFeeError (validation) vs FeeOperationError (domain rules)
+- Использует @polymarket/math для unified arithmetic semantics
+- Инвариант: amount >= 0 (non-negative)
+
+**[→ Подробная документация](./fee/README.md)**
+
+---
+
 ### 📈 Quote
 
 Котировка с ценой покупки (bid) и продажи (ask).
@@ -362,6 +404,7 @@ if (pnl.isNegative()) {
 - 📊 **[Percentage](./percentage.md)** — процентные значения для комиссий и расчётов
 - 💵 **[Balance](./balance.md)** — балансы счетов пользователей
 - 📦 **[AssetQuantity](./asset-quantity/README.md)** — количество актива с операциями Ratio
+- 💳 **[Fee](./fee/README.md)** — комиссии в любом активе (Result-based API)
 
 ### Архитектурные документы
 

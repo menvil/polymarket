@@ -25,6 +25,7 @@ import { AssetQuantity } from '../../asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { FeeErrorReason } from '../errors/FeeErrorReason.js';
 import { FeeOperationError } from '../errors/FeeOperationError.js';
+import { FeeOperationErrorReason } from '../errors/FeeOperationErrorReason.js';
 import type Decimal from 'decimal.js';
 
 export class FeeService {
@@ -126,7 +127,7 @@ export class FeeService {
               context: {
                 service: FeeService.SERVICE_NAME,
                 op: 'create',
-                reason: FeeErrorReason.INVALID_QUANTITY,
+                reason: FeeErrorReason.INVALID_ASSET,
                 asset,
               },
             })
@@ -217,8 +218,21 @@ export class FeeService {
       if (e instanceof FeeOperationError) {
         return Err(e);
       }
-      // Неожиданная ошибка - пробрасываем
-      throw e;
+      // Wrap unexpected errors to maintain Never Throws contract
+      return Err(
+        new FeeOperationError(
+          `Unexpected error during fee addition: ${e instanceof Error ? e.message : String(e)}`,
+          {
+            context: {
+              operation: 'add',
+              reason: FeeOperationErrorReason.UNEXPECTED_ERROR,
+              originalError: e instanceof Error ? e.name : typeof e,
+              fee1Amount: fee1.quantity.amount().toString(),
+              fee2Amount: fee2.quantity.amount().toString(),
+            },
+          }
+        )
+      );
     }
   }
 

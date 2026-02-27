@@ -90,6 +90,7 @@ describe('FeeService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('Invalid asset');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
       }
     });
 
@@ -99,6 +100,7 @@ describe('FeeService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('Invalid asset');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
       }
     });
 
@@ -197,6 +199,38 @@ describe('FeeService', () => {
         const expected = '1111111111.1111111101';
         expect(result.value.quantity.amount().value().toString()).toBe(expected);
       }
+    });
+
+    it('should never throw (Never Throws contract)', () => {
+      const fee1 = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
+      const fee2 = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.05'))));
+
+      // Should not throw regardless of inputs
+      expect(() => FeeService.add(fee1, fee2)).not.toThrow();
+    });
+
+    it('should return Result for all error cases (Never Throws contract)', () => {
+      const fee1 = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
+      const fee2 = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.05'))));
+
+      // Normal case
+      const result = FeeService.add(fee1, fee2);
+      expect(result).toHaveProperty('ok');
+
+      // Error case
+      const conditionRef: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: 137 as any,
+        conditionId: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' as ConditionId,
+      };
+      const tokenAssetResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      if (!tokenAssetResult.ok) return;
+      const tokenFee = FeeService.of(new AssetQuantity(tokenAssetResult.value, Quantity.of(new Decimal('0.05'))));
+
+      const errorResult = FeeService.add(fee1, tokenFee);
+      expect(errorResult).toHaveProperty('ok');
+      expect(errorResult.ok).toBe(false);
     });
   });
 

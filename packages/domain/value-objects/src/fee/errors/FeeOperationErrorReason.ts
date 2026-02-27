@@ -10,4 +10,13 @@ export enum FeeOperationErrorReason {
    * Попытка сложить fees с разными assets
    */
   ASSET_MISMATCH = 'ASSET_MISMATCH',
+
+  /**
+   * Неожиданная ошибка при выполнении операции
+   *
+   * @remarks
+   * Используется для wrap неожиданных ошибок (не FeeOperationError)
+   * которые возникают при выполнении операций.
+   */
+  UNEXPECTED_ERROR = 'UNEXPECTED_ERROR',
 }

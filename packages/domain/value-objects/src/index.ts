@@ -123,5 +123,7 @@ export {
   FeeSerializer,
   FeeFormatter,
   FeeErrorReason,
+  FeeOperationError,
+  FeeOperationErrorReason,
   type FeeJSON
 } from './fee/index.js';

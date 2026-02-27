@@ -52,7 +52,7 @@ console.log(total.quantity.amount().toNumber()); // 0.15
 // ❌ Нельзя складывать fees с разными assets
 const usdcFee = Fee.zero(AssetIdHelpers.USDC);
 const tokenFee = Fee.zero(someTokenAsset);
-// usdcFee.add(tokenFee); // Throws InvalidFeeError
+// usdcFee.add(tokenFee); // Throws FeeOperationError
 
 // Проверка равенства
 if (fee1.equals(fee2)) {
@@ -81,16 +81,15 @@ console.log(fee.toString()); // "Fee(CURRENCY:USDC, 0.1)"
 
 ## Error Handling
 
-Fee.add() может бросить `InvalidFeeError` если assets не совпадают:
+Fee.add() может бросить `FeeOperationError` если assets не совпадают:
 
 ```typescript
-import { InvalidFeeError } from '@polymarket/errors';
-import { FeeErrorReason } from '@polymarket/value-objects';
+import { FeeOperationError, FeeOperationErrorReason } from '@polymarket/value-objects';
 
 try {
   const total = usdcFee.add(tokenFee);
 } catch (e) {
-  if (e instanceof InvalidFeeError && e.context?.reason === FeeErrorReason.ASSET_MISMATCH) {
+  if (e instanceof FeeOperationError && e.context?.reason === FeeOperationErrorReason.ASSET_MISMATCH) {
     console.error('Cannot add fees with different assets');
     console.error('Asset 1:', e.context.asset1);
     console.error('Asset 2:', e.context.asset2);
@@ -186,14 +185,28 @@ FeeService предоставляет thin wrapper над Fee core:
 ```typescript
 import { FeeService } from '@polymarket/value-objects';
 
-// Все методы делегируют в Fee core
-const fee = FeeService.of(assetQty);
+// Создание Fee (Result-based)
+const createResult = FeeService.create(AssetIdHelpers.USDC, 0.10);
+if (!createResult.ok) {
+  console.error('Failed to create fee:', createResult.error.message);
+}
+
+// Другие методы
+const fee = FeeService.of(assetQty); // для internal use
 const zero = FeeService.zero(AssetIdHelpers.USDC);
-const total = FeeService.add(fee1, fee2); // может бросить InvalidFeeError
 const equal = FeeService.equals(fee1, fee2);
+
+// Сложение (Result-based, Never Throws)
+const addResult = FeeService.add(fee1, fee2);
+if (!addResult.ok) {
+  console.error('Failed to add fees:', addResult.error.context?.reason);
+}
 ```
 
-**Важно:** FeeService НЕ использует Result pattern. Методы могут бросить исключения (InvalidFeeError). Для безопасной работы с ошибками используйте try/catch.
+**Важно:**
+- `FeeService.create()` и `FeeService.add()` используют Result pattern (Never Throws)
+- `FeeService.of()` marked @internal - для публичного API используйте `create()`
+- Fee.add() может бросить FeeOperationError при asset mismatch
 
 ## Использование
 
@@ -239,7 +252,7 @@ console.log(FeeFormatter.toDisplay(totalGas)); // "12.5 USDC"
 |--------|---------------|-----|
 | **Семантика** | Общее количество актива | Комиссия (специализированное значение) |
 | **Операции** | add, subtract, multiplyBy, divideBy | add (только для fees) |
-| **Валидация add** | Проверяет asset match | Проверяет asset match + бросает InvalidFeeError |
+| **Валидация add** | Проверяет asset match | Проверяет asset match + бросает FeeOperationError |
 | **Use cases** | Позиции, балансы, любые количества | Trading fees, gas fees, settlement fees |
 
 **Когда использовать Fee:**
@@ -261,8 +274,8 @@ Fee следует 3-слойной архитектуре:
 
 ```
 ┌─────────────────────────────────┐
-│         Facade Layer            │  FeeService (thin wrapper)
-│     Never throws / No Result    │  Delegates to core
+│         Facade Layer            │  FeeService (public API)
+│  Result-based для create/add    │  Validates and delegates to core
 ├─────────────────────────────────┤
 │          Core Layer             │  Fee (business logic)
 │      Throws on violation        │  Immutable, pure functions
@@ -278,9 +291,10 @@ Fee следует 3-слойной архитектуре:
 - Immutable операции
 
 **Facade Layer (FeeService):**
-- Thin wrapper (не Result-based в случае Fee)
+- Публичный API с валидацией
+- Result-based для create() и add() (Never Throws)
 - Делегирует в core
-- Может бросить InvalidFeeError
+- Fee.of() marked @internal
 
 **Adapters Layer:**
 - FeeFormatter: форматирование для UI/logs

@@ -16,6 +16,8 @@ export class FeeOperationError extends TradingError {
   public readonly context: {
     operation: string;
     reason: FeeOperationErrorReason;
+    source: ErrorSource;
+    kind: string;
     [key: string]: unknown;
   };
 
@@ -38,6 +40,11 @@ export class FeeOperationError extends TradingError {
       },
     });
     this.name = 'FeeOperationError';
-    this.context = options.context;
+    // Preserve source and kind from super context
+    this.context = {
+      ...options.context,
+      source: ErrorSource.RULE_VALIDATION,
+      kind: 'FeeOperationError',
+    };
   }
 }

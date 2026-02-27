@@ -223,6 +223,26 @@ await testSubpath('asset-quantity', async () => {
   console.log(`${PASS} AssetQuantitySerializer roundtrip works`);
 });
 
+// ─── fee ─────────────────────────────────────────────────────────────────────
+await testSubpath('fee', async () => {
+  const m = await import('@polymarket/value-objects/fee');
+  await checkExports(m, [
+    'Fee', 'FeeService', 'FeeSerializer', 'FeeFormatter',
+    'FeeErrorReason', 'FeeOperationError', 'FeeOperationErrorReason',
+  ], 'fee');
+
+  // FeeService.create принимает (AssetId, amount)
+  const assetId = { type: 'CURRENCY', currency: 'USDC' };
+  const result = m.FeeService.create(assetId, 0.10);
+  if (!result.ok) throw new Error(`FeeService.create() failed: ${result.error.message}`);
+  console.log(`${PASS} FeeService.create() works`);
+
+  const json = m.FeeSerializer.toJSON(result.value);
+  const fromJson = m.FeeSerializer.fromJSON(json);
+  if (!fromJson.ok) throw new Error(`FeeSerializer roundtrip failed: ${fromJson.error.message}`);
+  console.log(`${PASS} FeeSerializer roundtrip works`);
+});
+
 // ─── outcome-token ───────────────────────────────────────────────────────────
 await testSubpath('outcome-token', async () => {
   const m = await import('@polymarket/value-objects/outcome-token');
@@ -252,6 +272,7 @@ await testSubpath('main (.)', async () => {
     'Quantity', 'QuantityService', 'Ratio', 'RatioService',
     'Spread', 'SpreadService', 'Balance', 'BalanceService',
     'Quote', 'QuoteService', 'AssetQuantity', 'AssetQuantityService',
+    'Fee', 'FeeService', 'FeeOperationError', 'FeeOperationErrorReason',
     'OutcomeToken', 'TokenBalance', 'TokenBalanceService',
   ], '.');
 });
