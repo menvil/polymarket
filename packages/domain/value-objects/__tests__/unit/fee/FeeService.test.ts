@@ -188,6 +188,27 @@ describe('FeeService', () => {
       }
     });
 
+    it('should fail for CURRENCY with unsupported currency (FAKE)', () => {
+      const result = FeeService.create({ type: 'CURRENCY', currency: 'FAKE' } as any, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain("unsupported currency 'FAKE'");
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for frozen CURRENCY with unsupported currency', () => {
+      const frozenAsset = Object.freeze({ type: 'CURRENCY', currency: 'USDT' } as any);
+      const result = FeeService.create(frozenAsset, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain("unsupported currency 'USDT'");
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
     // Edge cases: OUTCOME_TOKEN validation
     it('should fail for OUTCOME_TOKEN asset with null conditionRef', () => {
       const result = FeeService.create(
@@ -288,6 +309,34 @@ describe('FeeService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('outcomeKey must be string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with unsupported conditionRef kind (OFFCHAIN)', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'OFFCHAIN' }, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain("unsupported conditionRef kind 'OFFCHAIN'");
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for frozen OUTCOME_TOKEN with unsupported conditionRef kind', () => {
+      const frozenAsset = Object.freeze({
+        type: 'OUTCOME_TOKEN',
+        conditionRef: { kind: 'OFFCHAIN' },
+        outcomeKey: 'UP',
+      } as any);
+      const result = FeeService.create(frozenAsset, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain("unsupported conditionRef kind 'OFFCHAIN'");
         expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
       }
     });

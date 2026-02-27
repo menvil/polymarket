@@ -25,6 +25,7 @@
 import { Result, Ok } from '@polymarket/result';
 import { InvalidFeeError, wrapOp } from '@polymarket/errors';
 import type { AssetId } from '@polymarket/ids';
+import { isSupportedCurrency } from '@polymarket/ids';
 import { Fee } from '../core/Fee.js';
 import { AssetQuantity } from '../../asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
@@ -209,6 +210,24 @@ export class FeeSerializer {
               },
             });
           }
+          if (currencyField.length === 0) {
+            throw new InvalidFeeError('Invalid CURRENCY asset: currency must be non-empty string', {
+              context: {
+                field: 'asset.currency',
+                value: currencyField,
+                reason: FeeErrorReason.INVALID_ASSET,
+              },
+            });
+          }
+          if (!isSupportedCurrency(currencyField)) {
+            throw new InvalidFeeError(`Invalid CURRENCY asset: unsupported currency '${currencyField}'`, {
+              context: {
+                field: 'asset.currency',
+                value: currencyField,
+                reason: FeeErrorReason.INVALID_ASSET,
+              },
+            });
+          }
         } else if (assetObj.type === 'OUTCOME_TOKEN') {
           if (!('conditionRef' in assetObj) || !('outcomeKey' in assetObj)) {
             throw new InvalidFeeError('Invalid OUTCOME_TOKEN asset: missing conditionRef or outcomeKey', {
@@ -221,6 +240,21 @@ export class FeeSerializer {
                 ].filter(Boolean),
               },
             });
+          }
+          // Validate conditionRef.kind is supported
+          const conditionRef = (assetObj as Record<string, unknown>).conditionRef;
+          if (typeof conditionRef === 'object' && conditionRef !== null && 'kind' in conditionRef) {
+            const kind = (conditionRef as Record<string, unknown>).kind;
+            if (typeof kind === 'string' && kind !== 'ONCHAIN') {
+              throw new InvalidFeeError(`Invalid OUTCOME_TOKEN asset: unsupported conditionRef kind '${kind}'`, {
+                context: {
+                  field: 'asset.conditionRef.kind',
+                  value: kind,
+                  reason: FeeErrorReason.INVALID_ASSET,
+                  supportedKinds: ['ONCHAIN'],
+                },
+              });
+            }
           }
         }
 

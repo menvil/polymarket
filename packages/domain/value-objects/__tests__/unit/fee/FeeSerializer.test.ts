@@ -319,6 +319,42 @@ describe('FeeSerializer', () => {
         expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
       }
     });
+
+    it('should fail for CURRENCY with empty string currency', () => {
+      const value: unknown = { asset: { type: 'CURRENCY', currency: '' }, amount: '10' };
+      const result = FeeSerializer.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('non-empty string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for CURRENCY with unsupported currency (FAKE)', () => {
+      const value: unknown = { asset: { type: 'CURRENCY', currency: 'FAKE' }, amount: '10' };
+      const result = FeeSerializer.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain("unsupported currency 'FAKE'");
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with unsupported conditionRef kind (OFFCHAIN)', () => {
+      const value: unknown = {
+        asset: { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'OFFCHAIN' }, outcomeKey: 'UP' },
+        amount: '10',
+      };
+      const result = FeeSerializer.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain("unsupported conditionRef kind 'OFFCHAIN'");
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
   });
 
   describe('round-trip', () => {
