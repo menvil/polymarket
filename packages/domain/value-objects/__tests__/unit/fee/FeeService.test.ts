@@ -230,7 +230,11 @@ describe('FeeService', () => {
 
     it('should fail for OUTCOME_TOKEN asset with number outcomeKey', () => {
       const result = FeeService.create(
-        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN' }, outcomeKey: 123 } as any,
+        {
+          type: 'OUTCOME_TOKEN',
+          conditionRef: { kind: 'ONCHAIN', protocolId: 'polymarket-ctf', chainId: 137, conditionId: '0xabc' },
+          outcomeKey: 123,
+        } as any,
         10
       );
 
@@ -243,7 +247,11 @@ describe('FeeService', () => {
 
     it('should fail for OUTCOME_TOKEN asset with empty string outcomeKey', () => {
       const result = FeeService.create(
-        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN' }, outcomeKey: '' } as any,
+        {
+          type: 'OUTCOME_TOKEN',
+          conditionRef: { kind: 'ONCHAIN', protocolId: 'polymarket-ctf', chainId: 137, conditionId: '0xabc' },
+          outcomeKey: '',
+        } as any,
         10
       );
 
@@ -272,7 +280,7 @@ describe('FeeService', () => {
     it('should fail for frozen OUTCOME_TOKEN asset with number outcomeKey', () => {
       const frozenAsset = Object.freeze({
         type: 'OUTCOME_TOKEN',
-        conditionRef: { kind: 'ONCHAIN' },
+        conditionRef: { kind: 'ONCHAIN', protocolId: 'polymarket-ctf', chainId: 137, conditionId: '0xabc' },
         outcomeKey: 123,
       } as any);
       const result = FeeService.create(frozenAsset, 10);
@@ -280,6 +288,129 @@ describe('FeeService', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('outcomeKey must be string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    // Edge cases: ONCHAIN conditionRef incomplete fields (главный кейс из баг-репорта)
+    it('should fail for frozen OUTCOME_TOKEN with ONCHAIN kind but missing protocolId/chainId/conditionId', () => {
+      const frozenAsset = Object.freeze({
+        type: 'OUTCOME_TOKEN',
+        conditionRef: { kind: 'ONCHAIN' },
+        outcomeKey: 'UP',
+      } as any);
+      const result = FeeService.create(frozenAsset, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('missing required fields');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with ONCHAIN conditionRef missing protocolId', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', chainId: 137, conditionId: '0xabc' }, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('missing required fields');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+        expect((result.error.context as any)?.missingFields).toContain('protocolId');
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with ONCHAIN conditionRef missing chainId', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 'polymarket-ctf', conditionId: '0xabc' }, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('missing required fields');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+        expect((result.error.context as any)?.missingFields).toContain('chainId');
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with ONCHAIN conditionRef missing conditionId', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 'polymarket-ctf', chainId: 137 }, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('missing required fields');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+        expect((result.error.context as any)?.missingFields).toContain('conditionId');
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with non-string protocolId', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 123, chainId: 137, conditionId: '0xabc' }, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('protocolId must be string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with non-number chainId', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 'polymarket-ctf', chainId: '137', conditionId: '0xabc' }, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('chainId must be number');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with non-string conditionId', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 'polymarket-ctf', chainId: 137, conditionId: 999 }, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('conditionId must be string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with empty protocolId', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: '', chainId: 137, conditionId: '0xabc' }, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('protocolId must be non-empty string');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with empty conditionId', () => {
+      const result = FeeService.create(
+        { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 'polymarket-ctf', chainId: 137, conditionId: '' }, outcomeKey: 'UP' } as any,
+        10
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('conditionId must be non-empty string');
         expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
       }
     });

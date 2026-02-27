@@ -245,6 +245,106 @@ export class FeeService {
             );
           }
 
+          // Validate ONCHAIN-specific fields
+          if (kind === 'ONCHAIN') {
+            const conditionRefObj = conditionRef as Record<string, unknown>;
+
+            // Check required fields exist
+            if (!('protocolId' in conditionRefObj) || !('chainId' in conditionRefObj) || !('conditionId' in conditionRefObj)) {
+              return Err(
+                new InvalidFeeError('Invalid OUTCOME_TOKEN asset: ONCHAIN conditionRef missing required fields', {
+                  context: {
+                    service: FeeService.SERVICE_NAME,
+                    op: 'create',
+                    reason: FeeErrorReason.INVALID_ASSET,
+                    kind: 'ONCHAIN',
+                    missingFields: [
+                      'protocolId' in conditionRefObj ? null : 'protocolId',
+                      'chainId' in conditionRefObj ? null : 'chainId',
+                      'conditionId' in conditionRefObj ? null : 'conditionId',
+                    ].filter(Boolean),
+                  },
+                })
+              );
+            }
+
+            // Validate protocolId is string
+            const protocolId = conditionRefObj.protocolId;
+            if (typeof protocolId !== 'string') {
+              return Err(
+                new InvalidFeeError('Invalid OUTCOME_TOKEN asset: protocolId must be string', {
+                  context: {
+                    service: FeeService.SERVICE_NAME,
+                    op: 'create',
+                    reason: FeeErrorReason.INVALID_ASSET,
+                    protocolId,
+                    protocolIdType: typeof protocolId,
+                  },
+                })
+              );
+            }
+
+            // Validate protocolId is non-empty
+            if (protocolId.length === 0) {
+              return Err(
+                new InvalidFeeError('Invalid OUTCOME_TOKEN asset: protocolId must be non-empty string', {
+                  context: {
+                    service: FeeService.SERVICE_NAME,
+                    op: 'create',
+                    reason: FeeErrorReason.INVALID_ASSET,
+                    protocolId,
+                  },
+                })
+              );
+            }
+
+            // Validate chainId is number
+            const chainId = conditionRefObj.chainId;
+            if (typeof chainId !== 'number') {
+              return Err(
+                new InvalidFeeError('Invalid OUTCOME_TOKEN asset: chainId must be number', {
+                  context: {
+                    service: FeeService.SERVICE_NAME,
+                    op: 'create',
+                    reason: FeeErrorReason.INVALID_ASSET,
+                    chainId,
+                    chainIdType: typeof chainId,
+                  },
+                })
+              );
+            }
+
+            // Validate conditionId is string
+            const conditionId = conditionRefObj.conditionId;
+            if (typeof conditionId !== 'string') {
+              return Err(
+                new InvalidFeeError('Invalid OUTCOME_TOKEN asset: conditionId must be string', {
+                  context: {
+                    service: FeeService.SERVICE_NAME,
+                    op: 'create',
+                    reason: FeeErrorReason.INVALID_ASSET,
+                    conditionId,
+                    conditionIdType: typeof conditionId,
+                  },
+                })
+              );
+            }
+
+            // Validate conditionId is non-empty
+            if (conditionId.length === 0) {
+              return Err(
+                new InvalidFeeError('Invalid OUTCOME_TOKEN asset: conditionId must be non-empty string', {
+                  context: {
+                    service: FeeService.SERVICE_NAME,
+                    op: 'create',
+                    reason: FeeErrorReason.INVALID_ASSET,
+                    conditionId,
+                  },
+                })
+              );
+            }
+          }
+
           // Validate outcomeKey is string
           if (typeof outcomeKey !== 'string') {
             return Err(
@@ -276,8 +376,10 @@ export class FeeService {
         }
 
         // 5. Create AssetQuantity and Fee
-        // ВАЖНО: Валидация выше (шаги 1-4c) должна предотвратить все AssetQuantity/Fee ошибки.
-        // Если здесь происходит исключение, это UNEXPECTED_ERROR (нарушение инварианта валидации).
+        // ВАЖНО: Валидация выше (шаги 1-4c) должна предотвратить большинство AssetQuantity/Fee ошибок.
+        // Проверяется структура asset (type, обязательные поля, типы), но не все edge cases
+        // (например, сложная вложенная структура conditionRef для non-ONCHAIN типов).
+        // Любые исключения на этом этапе будут обработаны как UNEXPECTED_ERROR через wrapOp.
         const quantity = Quantity.of(decimal);
         const assetQuantity = new AssetQuantity(asset, quantity);
         const fee = Fee.of(assetQuantity);
