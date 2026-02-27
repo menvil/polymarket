@@ -2,8 +2,8 @@
  * Тесты для FeeService
  */
 
-import { describe, it, expect } from '@jest/globals';
-import { FeeService, FeeOperationErrorReason } from '../../../src/fee/index.js';
+import { describe, it, expect, jest } from '@jest/globals';
+import { FeeService, FeeOperationError, FeeOperationErrorReason } from '../../../src/fee/index.js';
 import { AssetQuantity } from '../../../src/asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
 import {
@@ -231,6 +231,27 @@ describe('FeeService', () => {
       const errorResult = FeeService.add(fee1, tokenFee);
       expect(errorResult).toHaveProperty('ok');
       expect(errorResult.ok).toBe(false);
+    });
+
+    it('should wrap unexpected errors in FeeOperationError with UNEXPECTED_ERROR', () => {
+      const fee1 = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
+      const fee2 = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.05'))));
+
+      // Mock fee1.add to throw unexpected error
+      const addSpy = jest.spyOn(fee1, 'add').mockImplementation(() => {
+        throw new Error('Unexpected runtime error');
+      });
+
+      const result = FeeService.add(fee1, fee2);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(FeeOperationError);
+        expect(result.error.context?.reason).toBe(FeeOperationErrorReason.UNEXPECTED_ERROR);
+        expect(result.error.message).toContain('Unexpected runtime error');
+      }
+
+      addSpy.mockRestore();
     });
   });
 

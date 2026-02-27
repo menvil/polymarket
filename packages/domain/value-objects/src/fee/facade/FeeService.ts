@@ -2,18 +2,33 @@
  * Фасад для работы с Fee - публичный API
  *
  * @remarks
- * Thin wrapper над Fee core layer для удобства использования.
- * Методы делегируют вызовы в Fee и могут бросить исключения (InvalidFeeError).
+ * Публичный API для работы с Fee со строгой валидацией.
  *
- * Для безопасной работы с ошибками оборачивайте вызовы в try/catch.
+ * **Result-based методы (Never Throws):**
+ * - `create()` - создание Fee с валидацией (Result<Fee, InvalidFeeError>)
+ * - `add()` - сложение fees (Result<Fee, FeeOperationError>)
+ *
+ * **Простые методы:**
+ * - `of()` - marked @internal, создание без валидации
+ * - `zero()` - создание нулевой комиссии
+ * - `equals()` - проверка равенства
  *
  * @example
  * ```typescript
  * import { FeeService } from '@polymarket/value-objects';
+ * import { AssetIdHelpers } from '@polymarket/ids';
  *
- * const assetQty = AssetQuantity.usdc(Quantity.of(new Decimal('0.10')));
- * const fee = FeeService.of(assetQty);
- * console.log(fee.quantity.amount().toNumber()); // 0.1
+ * // Result-based create
+ * const result = FeeService.create(AssetIdHelpers.USDC, 0.10);
+ * if (result.ok) {
+ *   console.log(result.value.quantity.amount().toNumber()); // 0.1
+ * }
+ *
+ * // Result-based add
+ * const addResult = FeeService.add(fee1, fee2);
+ * if (addResult.ok) {
+ *   console.log(addResult.value.quantity.amount().toNumber());
+ * }
  * ```
  */
 

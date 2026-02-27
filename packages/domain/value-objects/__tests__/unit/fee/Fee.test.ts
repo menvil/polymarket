@@ -281,6 +281,27 @@ describe('Fee', () => {
       expect(str).toContain('Fee');
       expect(str).toContain('0');
     });
+
+    it('should return debug string for outcome token fee', () => {
+      const conditionRef: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: 137 as any,
+        conditionId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as ConditionId,
+      };
+      const tokenAssetResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      expect(tokenAssetResult.ok).toBe(true);
+      if (!tokenAssetResult.ok) return;
+
+      const tokenFee = Fee.of(new AssetQuantity(tokenAssetResult.value, Quantity.of(new Decimal('0.05'))));
+      const str = tokenFee.toString();
+
+      expect(str).toContain('Fee');
+      expect(str).toContain('OUTCOME_TOKEN');
+      expect(str).toContain('0x1234567890abcdef');
+      expect(str).toContain('UP');
+      expect(str).toContain('0.05');
+    });
   });
 
   describe('immutability', () => {

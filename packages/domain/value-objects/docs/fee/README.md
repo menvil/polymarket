@@ -99,11 +99,23 @@ try {
 
 ### Error Reasons
 
+**FeeErrorReason** (validation errors):
+
 ```typescript
 enum FeeErrorReason {
+  NEGATIVE_FEE = 'NEGATIVE_FEE',            // Отрицательная комиссия (не допускается)
+  INVALID_QUANTITY = 'INVALID_QUANTITY',    // Невалидный amount
+  INVALID_STRUCTURE = 'INVALID_STRUCTURE',  // Невалидная структура объекта
+  INVALID_ASSET = 'INVALID_ASSET'           // Невалидный AssetId
+}
+```
+
+**FeeOperationErrorReason** (domain rule violations):
+
+```typescript
+enum FeeOperationErrorReason {
   ASSET_MISMATCH = 'ASSET_MISMATCH',      // Попытка сложить fees с разными assets
-  NEGATIVE_FEE = 'NEGATIVE_FEE',          // Отрицательная комиссия (не допускается)
-  INVALID_QUANTITY = 'INVALID_QUANTITY'   // Невалидный AssetQuantity
+  UNEXPECTED_ERROR = 'UNEXPECTED_ERROR'   // Неожиданная ошибка в операции
 }
 ```
 
