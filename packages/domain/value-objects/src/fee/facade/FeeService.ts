@@ -35,13 +35,10 @@
 import type { AssetId } from '@polymarket/ids';
 import { Result, Ok, Err, isErr } from '@polymarket/result';
 import { InvalidFeeError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
-import { Fee } from '../core/Fee.js';
-import { AssetQuantity } from '../../asset-quantity/core/AssetQuantity.js';
-import { Quantity } from '../../quantity/core/Quantity.js';
-import { FeeErrorReason } from '../errors/FeeErrorReason.js';
-import { FeeOperationError } from '../errors/FeeOperationError.js';
-import { FeeOperationErrorReason } from '../errors/FeeOperationErrorReason.js';
 import type Decimal from 'decimal.js';
+import { AssetQuantity } from '../../asset-quantity/index.js';
+import { Quantity } from '../../quantity/index.js';
+import { Fee, FeeErrorReason, FeeOperationError, FeeOperationErrorReason } from '../index.js';
 
 export class FeeService {
   private static readonly SERVICE_NAME = 'FeeService';
@@ -191,8 +188,8 @@ export class FeeService {
                   op: 'create',
                   reason: FeeErrorReason.INVALID_ASSET,
                   missingFields: [
-                    !('conditionRef' in assetObj) ? 'conditionRef' : null,
-                    !('outcomeKey' in assetObj) ? 'outcomeKey' : null,
+                    'conditionRef' in assetObj ? null : 'conditionRef',
+                    'outcomeKey' in assetObj ? null : 'outcomeKey',
                   ].filter(Boolean),
                 },
               })
@@ -373,8 +370,8 @@ export class FeeService {
               operation: 'add',
               reason: FeeOperationErrorReason.UNEXPECTED_ERROR,
               originalError: e instanceof Error ? e.name : typeof e,
-              fee1Amount: fee1.quantity.amount().toString(),
-              fee2Amount: fee2.quantity.amount().toString(),
+              fee1Amount: fee1.quantity.amount().value().toString(),
+              fee2Amount: fee2.quantity.amount().value().toString(),
             },
           }
         )
