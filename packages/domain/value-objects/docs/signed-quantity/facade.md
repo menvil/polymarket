@@ -699,9 +699,10 @@ public static adjustBy(
 - `allowCrossZero`: разрешить смену знака (default: true)
 
 **Политика allowCrossZero = false:**
-- Запрещает positive → negative или negative → positive
-- Разрешает схлопывание до zero (result === 0)
-- Запрещает adjustBy на zero quantity (кроме delta = 0)
+- Запрещает positive → negative или negative → positive (`RESULT_CROSSES_ZERO`)
+- Разрешает схлопывание до zero (`result === 0` → OK)
+- Запрещает `original === 0` → ненулевой результат (`CANNOT_ADJUST_ZERO`)
+- Разрешает `original === 0` → `result === 0` (delta = 0, идемпотентная операция → OK)
 
 **Примеры:**
 

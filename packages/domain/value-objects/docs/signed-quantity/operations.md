@@ -352,9 +352,10 @@ if (qtyResult.ok && deltaResult.ok) {
 
 **Проверка при allowCrossZero = false:**
 
-- Если `original === 0` → ошибка `CANNOT_ADJUST_ZERO`
+- Если `original === 0` && `result !== 0` → ошибка `CANNOT_ADJUST_ZERO`
+- Если `original === 0` && `result === 0` → ✅ OK (delta = 0, идемпотентная операция)
 - Если `sign(original) !== sign(result)` && `result !== 0` → ошибка `RESULT_CROSSES_ZERO`
-- Если `result === 0` → ✅ OK (граничный случай)
+- Если `result === 0` → ✅ OK (граничный случай: схлопывание до нуля разрешено)
 
 ### Алгоритм
 
@@ -428,15 +429,30 @@ if (positionResult.ok && delta10Result.ok && delta20Result.ok &&
     console.log(errorResult.error.context?.reason); // RESULT_CROSSES_ZERO
   }
 
-  // ❌ Корректировка нуля запрещена при allowCrossZero = false
+  // ✅ adjustBy(0, любой delta, ...) всегда возвращает 0 — даже при allowCrossZero = false
+  // Причина: 0 * multiplier = 0 математически, результат всегда 0, check(0, 0) → OK
   const zeroResult = SignedQuantityService.create(0);
   if (zeroResult.ok) {
     const zero = zeroResult.value;
-    const errorZero = SignedQuantityService.adjustBy(zero, delta10, 0.01, {
+    const alwaysOk = SignedQuantityService.adjustBy(zero, delta10, 0.01, {
       allowCrossZero: false
     });
-    if (!errorZero.ok) {
-      console.log(errorZero.error.context?.reason); // CANNOT_ADJUST_ZERO
+    if (alwaysOk.ok) {
+      console.log(alwaysOk.value.toNumber()); // 0 ✅ (не CANNOT_ADJUST_ZERO!)
+    }
+  }
+  // Примечание: CANNOT_ADJUST_ZERO — это защитная проверка в ValidateDeltaForAdjustByNoCrossZero
+  // для сценария (original=0 && result≠0), который недостижим через adjustBy,
+  // так как 0 * любой_множитель = 0 всегда.
+
+  // ✅ 0 → 0 разрешено (delta = 0, идемпотентно)
+  const deltaZeroResult = RatioService.fromPercent(0);
+  if (zeroResult.ok && deltaZeroResult.ok) {
+    const ok = SignedQuantityService.adjustBy(zeroResult.value, deltaZeroResult.value, 0.01, {
+      allowCrossZero: false
+    });
+    if (ok.ok) {
+      console.log(ok.value.toNumber()); // 0 ✅
     }
   }
 

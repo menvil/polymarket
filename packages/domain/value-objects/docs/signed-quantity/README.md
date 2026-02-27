@@ -158,11 +158,9 @@ if (profitResult.ok && lossResult.ok) {
     console.log(financial.value); // "(1500.00)"
   }
 
-  // Дисплейный формат с K/M суффиксами
+  // Дисплейный формат с K/M суффиксами (возвращает string напрямую, не Result)
   const display = SignedQuantityFormatter.toDisplayString(profit);
-  if (display.ok) {
-    console.log(display.value); // "+1.50K"
-  }
+  console.log(display); // "+1.50K"
 
   // P&L формат для UI
   const pnl = SignedQuantityFormatter.toPnLString(profit, 2);
@@ -221,10 +219,39 @@ if (result.ok) {
 #### Операции со знаком
 
 - `abs(qty): Result<SignedQuantity, InvalidSignedQuantityError>`
-  - Возвращает абсолютное значение
+  - Возвращает абсолютное значение (всегда `Ok`)
 
 - `negate(qty): Result<SignedQuantity, InvalidSignedQuantityError>`
   - Инверсия знака (положительное ↔ отрицательное)
+
+#### Масштабирование и часть (Ratio-based)
+
+- `scale(qty, rate: Ratio): Result<SignedQuantity, InvalidSignedQuantityError>`
+  - Масштабирует количество на rate
+  - **Требует:** `rate >= 0` — предотвращает инверсию знака
+  - Ошибка: `NEGATIVE_SCALE_FACTOR` если rate < 0
+
+- `portion(qty, rate: Ratio): Result<SignedQuantity, InvalidSignedQuantityError>`
+  - Вычисляет `qty * rate`
+  - Принимает любой rate (включая отрицательный)
+  - Инверсия знака разрешена
+
+#### Округление
+
+- `roundToStep(qty, stepSize, roundingMode?): Result<SignedQuantity, InvalidSignedQuantityError>`
+  - Округляет до ближайшего кратного `stepSize`
+  - `stepSize`: `number | string | Decimal`, должен быть `> 0`
+  - `roundingMode`: default `Decimal.ROUND_HALF_UP`
+  - Корректно обрабатывает отрицательные значения
+
+#### Процентное изменение
+
+- `adjustBy(qty, delta: Ratio, stepSize, options?): Result<SignedQuantity, InvalidSignedQuantityError>`
+  - Применяет `qty * (1 + delta)`, затем округляет до `stepSize`
+  - `options.allowCrossZero` (default: `true`): запретить смену знака позиции
+  - Ошибка: `RESULT_CROSSES_ZERO` при `allowCrossZero = false` и смене знака (positive→negative или наоборот)
+  - Ошибка: `CANNOT_ADJUST_ZERO` при `allowCrossZero = false`, `qty = 0` и ненулевом результате
+  - OK: `qty = 0` и `delta = 0` (result = 0 → идемпотентная операция)
 
 ### SignedQuantity (Core)
 
@@ -249,7 +276,7 @@ if (result.ok) {
 
 **Операции со знаком:**
 - `sign(): -1 | 0 | 1` — возвращает знак
-- `abs(): Decimal` — абсолютное значение (возвращает Decimal!)
+- `abs(): SignedQuantity` — абсолютное значение (возвращает SignedQuantity)
 - `neg(): SignedQuantity` — инверсия знака
 
 #### Константы
@@ -303,6 +330,11 @@ signed-quantity/
 │   └── SignedQuantityInvariantViolation.ts
 ├── errors/             # Типизированные причины ошибок
 │   └── SignedQuantityErrorReason.ts
+├── rules/              # Validation Rules - переиспользуемые проверки
+│   ├── ValidateFactorForSignedQuantityScale.ts   # rate >= 0 для scale()
+│   ├── ValidateDeltaForAdjustByNoCrossZero.ts    # no sign flip для adjustBy()
+│   ├── ValidateStepSizeForSignedQuantity.ts      # stepSize > 0 для roundToStep/adjustBy
+│   └── index.ts
 ├── facade/             # Facade Layer - публичный API, Result<T,E>
 │   └── SignedQuantityService.ts
 └── adapters/           # Adapters Layer - форматирование, сериализация

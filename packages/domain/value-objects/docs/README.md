@@ -406,6 +406,8 @@ if (pnl.isNegative()) {
 - 📦 **[AssetQuantity](./asset-quantity/README.md)** — количество актива с операциями Ratio
 - 💳 **[Fee](./fee/README.md)** — комиссии в любом активе (Result-based API)
 - ↕️ **[Side](./side/README.md)** — направление торговой операции (BUY/SELL)
+- ⏱️ **[Timestamp](./timestamp/README.md)** — момент времени в epoch milliseconds
+- ±️ **[SignedQuantity](./signed-quantity/README.md)** — знаковые количества для P&L и позиций
 
 ### Архитектурные документы
 
