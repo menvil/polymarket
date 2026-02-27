@@ -405,6 +405,7 @@ if (pnl.isNegative()) {
 - 💵 **[Balance](./balance.md)** — балансы счетов пользователей
 - 📦 **[AssetQuantity](./asset-quantity/README.md)** — количество актива с операциями Ratio
 - 💳 **[Fee](./fee/README.md)** — комиссии в любом активе (Result-based API)
+- ↕️ **[Side](./side/README.md)** — направление торговой операции (BUY/SELL)
 
 ### Архитектурные документы
 

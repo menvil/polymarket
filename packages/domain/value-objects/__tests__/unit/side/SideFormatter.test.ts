@@ -67,16 +67,12 @@ describe('SideFormatter', () => {
   });
 
   describe('toLogString()', () => {
-    it('should format BUY with emoji for logging', () => {
-      const result = SideFormatter.toLogString('BUY');
-      expect(result).toContain('🟢');
-      expect(result).toContain('BUY');
+    it('should format BUY as exact "🟢 BUY"', () => {
+      expect(SideFormatter.toLogString('BUY')).toBe('🟢 BUY');
     });
 
-    it('should format SELL with emoji for logging', () => {
-      const result = SideFormatter.toLogString('SELL');
-      expect(result).toContain('🔴');
-      expect(result).toContain('SELL');
+    it('should format SELL as exact "🔴 SELL"', () => {
+      expect(SideFormatter.toLogString('SELL')).toBe('🔴 SELL');
     });
   });
 

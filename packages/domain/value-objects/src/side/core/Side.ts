@@ -43,21 +43,25 @@
 export type Side = 'BUY' | 'SELL';
 
 /**
- * Все валидные значения Side
+ * Все валидные значения Side (замороженный массив)
  *
  * @remarks
+ * Единственный источник правды для всех Side значений.
+ * Object.freeze гарантирует runtime-иммутабельность:
+ * попытка push() или delete через `as any` бросит TypeError в strict mode.
  * Используется для:
  * - Iteration через все стороны
- * - Runtime validation
+ * - Runtime validation через SIDE_SET
  * - UI select options
  */
-export const ALL_SIDES: readonly Side[] = ['BUY', 'SELL'] as const;
+export const ALL_SIDES: readonly Side[] = Object.freeze(['BUY', 'SELL']) as readonly Side[];
 
 /**
  * Набор валидных Side значений для O(1) lookup
  *
  * @remarks
  * Производный от ALL_SIDES — единственный источник правды.
+ * Строится один раз при загрузке модуля.
  * Внутренний модуль, не экспортируется.
  */
 const SIDE_SET = new Set<string>(ALL_SIDES);

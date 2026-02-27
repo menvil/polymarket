@@ -6,7 +6,9 @@
  * Предоставляет Result-based API для создания и валидации.
  *
  * **Контракт "Never Throw":**
- * Все **public static** методы гарантированно возвращают Result и никогда не бросают исключения.
+ * Все **public static** методы никогда не бросают исключений.
+ * - Методы парсинга/создания (`fromString`, `fromUnknown`) возвращают `Result<Side, InvalidSideError>`.
+ * - Утилиты (`opposite`, `canMatch`, `equals`, `isValid`, `getAllValues`) возвращают значения напрямую.
  *
  * @example
  * ```typescript

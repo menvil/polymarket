@@ -50,10 +50,35 @@ describe('SideSerializer', () => {
       }
     });
 
-    it('should fail for empty string', () => {
+    it('should fail for empty string with INVALID_VALUE reason', () => {
       const result = SideSerializer.fromJSON('');
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_VALUE);
+        expect(result.error.context?.value).toBe('');
+      }
+    });
+
+    // Boundary: dirty runtime inputs через as any
+    it('should fail for number input (123) via as any with INVALID_VALUE', () => {
+      const result = SideSerializer.fromJSON(123 as any);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // fromJSON принимает string, но runtime передаём number —
+        // isValidSide вернёт false, reason=INVALID_VALUE
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_VALUE);
+      }
+    });
+
+    it('should fail for null input via as any with INVALID_VALUE', () => {
+      const result = SideSerializer.fromJSON(null as any);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_VALUE);
+      }
     });
   });
 
@@ -88,11 +113,15 @@ describe('SideSerializer', () => {
       }
     });
 
-    it('should fail for null', () => {
+    it('should fail for null with INVALID_TYPE and actualTag [object Null]', () => {
       const value: unknown = null;
       const result = SideSerializer.fromUnknown(value);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Null]');
+      }
     });
   });
 

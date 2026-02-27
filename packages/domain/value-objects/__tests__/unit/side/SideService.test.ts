@@ -47,10 +47,15 @@ describe('SideService', () => {
       }
     });
 
-    it('should fail for empty string', () => {
+    it('should fail for empty string with INVALID_VALUE reason', () => {
       const result = SideService.fromString('');
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_VALUE);
+        expect(result.error.context?.op).toBe('fromString');
+        expect(result.error.context?.value).toBe('');
+      }
     });
   });
 
@@ -110,11 +115,16 @@ describe('SideService', () => {
       }
     });
 
-    it('should fail for object', () => {
+    it('should fail for object with actualTag [object Object]', () => {
       const value: unknown = { side: 'BUY' };
       const result = SideService.fromUnknown(value);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Object]');
+        expect(result.error.context?.op).toBe('fromUnknown');
+      }
     });
 
     it('should fail for array with distinct actualTag [object Array]', () => {
@@ -231,19 +241,31 @@ describe('SideService', () => {
       expect(all).toEqual(['BUY', 'SELL']);
     });
 
-    it('should return readonly array with correct length', () => {
+    it('should return frozen array (runtime immutable)', () => {
       const all = SideService.getAllValues();
 
-      expect(Array.isArray(all)).toBe(true);
-      expect(all.length).toBe(2);
+      expect(Object.isFrozen(all)).toBe(true);
     });
 
-    it('should return the same ALL_SIDES reference (no copy)', () => {
-      // Проверяем что getAllValues() возвращает ALL_SIDES, а не копию
-      const a = SideService.getAllValues();
-      const b = SideService.getAllValues();
+    it('should not be corrupted by attempted mutation via as any', () => {
+      const all = SideService.getAllValues() as any;
 
-      expect(a).toBe(b);
+      // Попытка мутации в strict mode бросает TypeError — ловим молча
+      try { all.push('HACK'); } catch { /* ожидаемо */ }
+
+      expect(SideService.getAllValues()).toEqual(['BUY', 'SELL']);
+      expect(SideService.isValid('HACK')).toBe(false);
+    });
+
+    it('should return consistent expectedValues in error after mutation attempt', () => {
+      const all = SideService.getAllValues() as any;
+      try { all.push('HACK'); } catch { /* ожидаемо */ }
+
+      const result = SideService.fromString('HACK');
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.expectedValues).toEqual(['BUY', 'SELL']);
+      }
     });
   });
 
