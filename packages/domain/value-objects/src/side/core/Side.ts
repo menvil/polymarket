@@ -54,6 +54,15 @@ export type Side = 'BUY' | 'SELL';
 export const ALL_SIDES: readonly Side[] = ['BUY', 'SELL'] as const;
 
 /**
+ * Набор валидных Side значений для O(1) lookup
+ *
+ * @remarks
+ * Производный от ALL_SIDES — единственный источник правды.
+ * Внутренний модуль, не экспортируется.
+ */
+const SIDE_SET = new Set<string>(ALL_SIDES);
+
+/**
  * Проверяет, является ли значение валидным Side
  *
  * @param value - Значение для проверки
@@ -62,6 +71,8 @@ export const ALL_SIDES: readonly Side[] = ['BUY', 'SELL'] as const;
  * @remarks
  * Type guard для runtime проверки.
  * Never throws - безопасная проверка.
+ * Использует SIDE_SET (производный от ALL_SIDES) для O(1) lookup —
+ * добавление нового Side значения в ALL_SIDES автоматически обновляет эту проверку.
  *
  * @example
  * ```typescript
@@ -73,7 +84,7 @@ export const ALL_SIDES: readonly Side[] = ['BUY', 'SELL'] as const;
  * ```
  */
 export function isValidSide(value: unknown): value is Side {
-  return typeof value === 'string' && (value === 'BUY' || value === 'SELL');
+  return typeof value === 'string' && SIDE_SET.has(value);
 }
 
 /**

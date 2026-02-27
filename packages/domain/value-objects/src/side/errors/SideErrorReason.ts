@@ -19,12 +19,16 @@
  */
 export enum SideErrorReason {
   /**
-   * Значение не является валидным Side ('BUY' или 'SELL')
+   * Значение является строкой, но не валидным Side
    *
    * @remarks
-   * Возникает когда:
-   * - Передан неверный string ('buy', 'INVALID', etc)
-   * - Передан не-string тип (number, null, object, etc)
+   * Возникает когда передан string, который не является валидным Side:
+   * - 'buy' (lowercase)
+   * - 'INVALID'
+   * - пустая строка
+   * - любой другой string кроме тех что в ALL_SIDES
+   *
+   * Для не-string типов см. INVALID_TYPE.
    */
   INVALID_VALUE = 'INVALID_VALUE',
 
@@ -32,7 +36,10 @@ export enum SideErrorReason {
    * Значение имеет неверный тип (не string)
    *
    * @remarks
-   * Возникает при fromUnknown() когда значение не является string.
+   * Возникает при fromUnknown() когда значение не является string:
+   * - number, boolean, symbol
+   * - null, undefined
+   * - object, array
    */
   INVALID_TYPE = 'INVALID_TYPE',
 }

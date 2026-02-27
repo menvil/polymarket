@@ -27,7 +27,7 @@
  * ```
  */
 
-import { Result, Ok } from '@polymarket/result';
+import { Ok, type Result } from '@polymarket/result';
 import { InvalidSideError, wrapOp } from '@polymarket/errors';
 import { type Side, isValidSide, ALL_SIDES, opposite, canMatch, equals } from '../core/index.js';
 import { SideErrorReason } from '../errors/index.js';
@@ -118,6 +118,9 @@ export class SideService {
    * Проверяет что value это string И что это валидный Side.
    * Использует единый wrapOp без вложенных обёрток.
    *
+   * Context включает `actualTag` (Object.prototype.toString) для различия
+   * null / Array / Object — typeof возвращает 'object' для всех трёх.
+   *
    * @example
    * ```typescript
    * const userInput: unknown = 'BUY';
@@ -126,10 +129,10 @@ export class SideService {
    *   const side: Side = result.value; // Type-safe
    * }
    *
-   * const invalidInput: unknown = 123;
+   * const invalidInput: unknown = null;
    * const result2 = SideService.fromUnknown(invalidInput);
    * if (!result2.ok) {
-   *   console.error(result2.error.message); // Invalid side: must be string
+   *   console.error(result2.error.message); // Invalid side: must be string, got [object Null]
    * }
    * ```
    */
@@ -140,13 +143,15 @@ export class SideService {
       { value },
       () => {
         if (typeof value !== 'string') {
+          const actualTag = Object.prototype.toString.call(value);
           throw new InvalidSideError(
-            (ctx) => `Invalid side: must be string, got ${ctx.type}`,
+            (ctx) => `Invalid side: must be string, got ${ctx.actualTag}`,
             {
               context: {
                 kind: 'invalid_side_type',
                 value,
                 type: typeof value,
+                actualTag,
                 reason: SideErrorReason.INVALID_TYPE,
               },
             }

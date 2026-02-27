@@ -89,7 +89,7 @@ export class SideFormatter {
    * Преобразовать в lowercase
    *
    * @param side - Side для преобразования
-   * @returns Lowercase строка
+   * @returns Lowercase<Side> — строго типизированный lowercase вариант
    *
    * @remarks
    * Полезно для некоторых UI сценариев или логирования.
@@ -100,8 +100,8 @@ export class SideFormatter {
    * SideFormatter.toLowerCase('SELL'); // 'sell'
    * ```
    */
-  public static toLowerCase(side: Side): string {
-    return side.toLowerCase() as 'buy' | 'sell';
+  public static toLowerCase(side: Side): Lowercase<Side> {
+    return side.toLowerCase() as Lowercase<Side>;
   }
 
   /**

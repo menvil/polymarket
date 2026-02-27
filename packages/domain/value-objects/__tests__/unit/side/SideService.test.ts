@@ -37,12 +37,13 @@ describe('SideService', () => {
       }
     });
 
-    it('should fail for lowercase buy', () => {
+    it('should fail for lowercase buy with INVALID_VALUE and expectedValues', () => {
       const result = SideService.fromString('buy');
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_VALUE);
+        expect(result.error.context?.expectedValues).toEqual(['BUY', 'SELL']);
       }
     });
 
@@ -86,7 +87,7 @@ describe('SideService', () => {
       }
     });
 
-    it('should fail for null', () => {
+    it('should fail for null with INVALID_TYPE and distinct actualTag', () => {
       const value: unknown = null;
       const result = SideService.fromUnknown(value);
 
@@ -94,6 +95,8 @@ describe('SideService', () => {
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
         expect(result.error.context?.type).toBe('object');
+        expect(result.error.context?.actualTag).toBe('[object Null]');
+        expect(result.error.message).toContain('[object Null]');
       }
     });
 
@@ -114,11 +117,15 @@ describe('SideService', () => {
       expect(result.ok).toBe(false);
     });
 
-    it('should fail for array', () => {
+    it('should fail for array with distinct actualTag [object Array]', () => {
       const value: unknown = ['BUY'];
       const result = SideService.fromUnknown(value);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.actualTag).toBe('[object Array]');
+        expect(result.error.message).toContain('[object Array]');
+      }
     });
   });
 
@@ -224,11 +231,33 @@ describe('SideService', () => {
       expect(all).toEqual(['BUY', 'SELL']);
     });
 
-    it('should return readonly array', () => {
+    it('should return readonly array with correct length', () => {
       const all = SideService.getAllValues();
 
       expect(Array.isArray(all)).toBe(true);
       expect(all.length).toBe(2);
+    });
+
+    it('should return the same ALL_SIDES reference (no copy)', () => {
+      // Проверяем что getAllValues() возвращает ALL_SIDES, а не копию
+      const a = SideService.getAllValues();
+      const b = SideService.getAllValues();
+
+      expect(a).toBe(b);
+    });
+  });
+
+  describe('isValidSide / ALL_SIDES consistency', () => {
+    it('should accept every value from getAllValues()', () => {
+      for (const side of SideService.getAllValues()) {
+        expect(SideService.isValid(side)).toBe(true);
+      }
+    });
+
+    it('should reject values not in getAllValues()', () => {
+      expect(SideService.isValid('BUY_EXTRA')).toBe(false);
+      expect(SideService.isValid('buy')).toBe(false);
+      expect(SideService.isValid('')).toBe(false);
     });
   });
 
