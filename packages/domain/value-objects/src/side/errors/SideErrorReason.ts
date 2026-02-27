@@ -19,27 +19,31 @@
  */
 export enum SideErrorReason {
   /**
-   * Значение является строкой, но не валидным Side
+   * Значение является строкой, но не является валидным Side
    *
    * @remarks
-   * Возникает когда передан string, который не является валидным Side:
+   * Возникает ТОЛЬКО когда runtime-значение является string, но не входит в ALL_SIDES:
    * - 'buy' (lowercase)
    * - 'INVALID'
    * - пустая строка
    * - любой другой string кроме тех что в ALL_SIDES
    *
-   * Для не-string типов см. INVALID_TYPE.
+   * Для не-string типов (включая runtime `as any` в fromString/fromJSON)
+   * всегда возвращается INVALID_TYPE.
    */
   INVALID_VALUE = 'INVALID_VALUE',
 
   /**
-   * Значение имеет неверный тип (не string)
+   * Значение не является строкой (не string)
    *
    * @remarks
-   * Возникает при fromUnknown() когда значение не является string:
-   * - number, boolean, symbol
-   * - null, undefined
-   * - object, array
+   * Возникает при ЛЮБОМ методе парсинга когда runtime-значение не является string:
+   * - fromUnknown(123) — явно не string
+   * - fromString(123 as any) — TypeScript type erasure через as any
+   * - fromJSON(null as any) — аналогично
+   *
+   * Типы: number, boolean, symbol, function, null, undefined, object, array.
+   * context.actualTag содержит `Object.prototype.toString` для точной диагностики.
    */
   INVALID_TYPE = 'INVALID_TYPE',
 }

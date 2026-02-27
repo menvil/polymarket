@@ -86,6 +86,10 @@ export class SideService {
    * Никогда не бросает исключения - всегда возвращает Result.
    * Case-sensitive: только 'BUY' и 'SELL' валидны.
    *
+   * Содержит runtime type guard: TypeScript предотвращает передачу не-string
+   * в compile time, но вызов через `as any` обходит это. В таком случае
+   * возвращается `reason: INVALID_TYPE` — консистентно с `fromUnknown`.
+   *
    * @example
    * ```typescript
    * const result1 = SideService.fromString('BUY');
@@ -104,7 +108,26 @@ export class SideService {
       SideService.SERVICE_NAME,
       'fromString',
       { value },
-      () => Ok(SideService.parseSideOrThrow(value)),
+      () => {
+        // Runtime type guard: консистентно с fromUnknown, чтобы INVALID_TYPE
+        // всегда означало «не строка», независимо от точки входа.
+        if (typeof value !== 'string') {
+          const actualTag = Object.prototype.toString.call(value);
+          throw new InvalidSideError(
+            (ctx) => `Invalid side: must be string, got ${ctx.actualTag}`,
+            {
+              context: {
+                kind: 'invalid_side_type',
+                value,
+                type: typeof value,
+                actualTag,
+                reason: SideErrorReason.INVALID_TYPE,
+              },
+            }
+          );
+        }
+        return Ok(SideService.parseSideOrThrow(value));
+      },
       InvalidSideError
     );
   }

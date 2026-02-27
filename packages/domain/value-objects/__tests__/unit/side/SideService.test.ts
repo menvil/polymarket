@@ -306,4 +306,68 @@ describe('SideService', () => {
       }
     });
   });
+
+  describe('dirty runtime inputs (as any) — INVALID_TYPE contract', () => {
+    it('fromString(123 as any) → INVALID_TYPE (not INVALID_VALUE)', () => {
+      const result = SideService.fromString(123 as any);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Number]');
+      }
+    });
+
+    it('fromString(null as any) → INVALID_TYPE with actualTag [object Null]', () => {
+      const result = SideService.fromString(null as any);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Null]');
+      }
+    });
+  });
+
+  describe('expectedValues isolation', () => {
+    it('mutating error.context.expectedValues does not affect subsequent calls', () => {
+      const result = SideService.fromString('INVALID');
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // Мутируем expectedValues из одного error context
+        (result.error.context?.expectedValues as any)?.push('HACK');
+
+        // Следующий вызов должен вернуть чистый ['BUY', 'SELL']
+        const result2 = SideService.fromString('INVALID');
+        expect(result2.ok).toBe(false);
+        if (!result2.ok) {
+          expect(result2.error.context?.expectedValues).toEqual(['BUY', 'SELL']);
+        }
+      }
+    });
+  });
+
+  describe('fromUnknown() actualTag coverage — symbol and function', () => {
+    it('should fail for symbol with actualTag [object Symbol]', () => {
+      const value: unknown = Symbol('test');
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Symbol]');
+      }
+    });
+
+    it('should fail for function with actualTag [object Function]', () => {
+      const value: unknown = () => {};
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Function]');
+      }
+    });
+  });
 });

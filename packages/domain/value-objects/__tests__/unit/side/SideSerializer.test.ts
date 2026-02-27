@@ -60,24 +60,25 @@ describe('SideSerializer', () => {
       }
     });
 
-    // Boundary: dirty runtime inputs через as any
-    it('should fail for number input (123) via as any with INVALID_VALUE', () => {
+    // Boundary: dirty runtime inputs через as any → INVALID_TYPE (не INVALID_VALUE)
+    it('should fail for number input (123) via as any with INVALID_TYPE', () => {
       const result = SideSerializer.fromJSON(123 as any);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // fromJSON принимает string, но runtime передаём number —
-        // isValidSide вернёт false, reason=INVALID_VALUE
-        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_VALUE);
+        // fromJSON делегирует fromString, который имеет runtime type guard
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Number]');
       }
     });
 
-    it('should fail for null input via as any with INVALID_VALUE', () => {
+    it('should fail for null input via as any with INVALID_TYPE', () => {
       const result = SideSerializer.fromJSON(null as any);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_VALUE);
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Null]');
       }
     });
   });
