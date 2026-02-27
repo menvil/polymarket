@@ -10,15 +10,15 @@
  * 2. conditionRef — object (не null)
  * 3. conditionRef.kind — строка и === 'ONCHAIN'
  * 4. protocolId — string, non-empty, валидный формат (нет '-', ':', '\'...)
- * 5. chainId — number
+ * 5. chainId — положительное безопасное целое число (Number.isSafeInteger && > 0)
  * 6. conditionId — string, non-empty, hex-формат (0x + 64 hex-символа)
- * 7. outcomeKey — string, non-empty
+ * 7. outcomeKey — string, non-empty, без управляющих символов
  */
 
 import { Err, Ok } from '@polymarket/result';
 import type { Result } from '@polymarket/result';
 import { InvalidFeeError } from '@polymarket/errors';
-import { isSupportedCurrency, asOnChainProtocolId, isValidConditionId } from '@polymarket/ids';
+import { isSupportedCurrency, asOnChainProtocolId, isValidConditionId, isValidChainId, parseOutcomeKey } from '@polymarket/ids';
 import { FeeErrorReason } from '../errors/FeeErrorReason.js';
 
 /**
@@ -238,18 +238,21 @@ export function validateFeeAsset(
     );
   }
 
-  // 4g. chainId: number
-  if (typeof chainId !== 'number') {
+  // 4g. chainId: положительное безопасное целое число (не float, не NaN, не Infinity, не 0, не отрицательное)
+  if (typeof chainId !== 'number' || !isValidChainId(chainId)) {
     return Err(
-      new InvalidFeeError('Invalid OUTCOME_TOKEN asset: chainId must be number', {
-        context: {
-          service: ctx.service,
-          op: ctx.op,
-          reason: FeeErrorReason.INVALID_ASSET,
-          chainId,
-          chainIdType: typeof chainId,
-        },
-      })
+      new InvalidFeeError(
+        `Invalid OUTCOME_TOKEN asset: chainId must be a positive safe integer, got ${String(chainId)}`,
+        {
+          context: {
+            service: ctx.service,
+            op: ctx.op,
+            reason: FeeErrorReason.INVALID_ASSET,
+            chainId,
+            chainIdType: typeof chainId,
+          },
+        }
+      )
     );
   }
 
@@ -283,7 +286,7 @@ export function validateFeeAsset(
     );
   }
 
-  // 4i. outcomeKey: string, non-empty
+  // 4i. outcomeKey: string, non-empty, без управляющих символов (U+0000..U+001F, U+007F..U+009F), ':', '\\', max 32 chars
   if (typeof outcomeKey !== 'string') {
     return Err(
       new InvalidFeeError('Invalid OUTCOME_TOKEN asset: outcomeKey must be string', {
@@ -307,6 +310,22 @@ export function validateFeeAsset(
           outcomeKey,
         },
       })
+    );
+  }
+  // parseOutcomeKey проверяет: длину (<=32), отсутствие ':', '\\' и управляющих символов (U+0000..U+001F, U+007F..U+009F)
+  if (parseOutcomeKey(outcomeKey) === undefined) {
+    return Err(
+      new InvalidFeeError(
+        `Invalid OUTCOME_TOKEN asset: outcomeKey '${outcomeKey}' has invalid format (control chars, ':', or '\\\\' not allowed, max 32 chars)`,
+        {
+          context: {
+            service: ctx.service,
+            op: ctx.op,
+            reason: FeeErrorReason.INVALID_ASSET,
+            outcomeKey,
+          },
+        }
+      )
     );
   }
 

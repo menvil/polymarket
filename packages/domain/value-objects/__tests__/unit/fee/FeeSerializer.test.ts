@@ -355,6 +355,80 @@ describe('FeeSerializer', () => {
         expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
       }
     });
+
+    // chainId: только положительные безопасные целые числа
+    it('should fail for OUTCOME_TOKEN with float chainId (137.5)', () => {
+      const value: unknown = {
+        asset: { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 'POLYMARKET_CTF', chainId: 137.5, conditionId: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' }, outcomeKey: 'UP' },
+        amount: '10',
+      };
+      const result = FeeSerializer.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('chainId must be a positive safe integer');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with negative chainId (-1)', () => {
+      const value: unknown = {
+        asset: { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 'POLYMARKET_CTF', chainId: -1, conditionId: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' }, outcomeKey: 'UP' },
+        amount: '10',
+      };
+      const result = FeeSerializer.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('chainId must be a positive safe integer');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with zero chainId', () => {
+      const value: unknown = {
+        asset: { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 'POLYMARKET_CTF', chainId: 0, conditionId: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' }, outcomeKey: 'UP' },
+        amount: '10',
+      };
+      const result = FeeSerializer.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('chainId must be a positive safe integer');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    // outcomeKey: недопустимые управляющие символы
+    it('should fail for OUTCOME_TOKEN with outcomeKey containing null character (\\x00)', () => {
+      const value: unknown = {
+        asset: { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 'POLYMARKET_CTF', chainId: 137, conditionId: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' }, outcomeKey: 'UP\x00' },
+        amount: '10',
+      };
+      const result = FeeSerializer.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('outcomeKey');
+        expect(result.error.message).toContain('invalid format');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
+
+    it('should fail for OUTCOME_TOKEN with outcomeKey containing DEL character (\\x7F)', () => {
+      const value: unknown = {
+        asset: { type: 'OUTCOME_TOKEN', conditionRef: { kind: 'ONCHAIN', protocolId: 'POLYMARKET_CTF', chainId: 137, conditionId: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890' }, outcomeKey: 'UP\x7F' },
+        amount: '10',
+      };
+      const result = FeeSerializer.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('outcomeKey');
+        expect(result.error.message).toContain('invalid format');
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_ASSET);
+      }
+    });
   });
 
   describe('round-trip', () => {
