@@ -54,7 +54,7 @@ const equal = FeeService.equals(fee1, fee2); // boolean
 | `zero(asset)` | `AssetId` | `Fee` | Never Throws |
 | `add(fee1, fee2)` | `Fee, Fee` | `Result<Fee, FeeOperationError>` | Never Throws |
 | `equals(fee1, fee2)` | `Fee, Fee` | `boolean` | Never Throws |
-| `of(assetQty)` | `AssetQuantity` | `Fee` | @internal — может бросить |
+| `of(assetQty)` | `AssetQuantity` | `Fee` | @internal — делегирует в Fee.of() |
 
 **Важно:** `FeeService.of()` помечен как `@internal`. Для публичного API используйте `create()`.
 
@@ -77,7 +77,7 @@ const asset = fee.asset; // AssetId (currency или outcome token)
 const amount = fee.quantity.amount(); // Quantity (Decimal)
 
 // Debug
-console.log(fee.toString()); // "Fee(CURRENCY:USDC, 0.1)"
+console.log(fee.toString()); // "Fee(CURRENCY:USDC, 0)"
 ```
 
 ### Операции Core (бросают FeeOperationError)
