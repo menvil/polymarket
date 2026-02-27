@@ -52,7 +52,7 @@ const equal = FeeService.equals(fee1, fee2); // boolean
 |-------|-----------|------------|----------|
 | `create(asset, amount)` | `AssetId, number\|string\|Decimal` | `Result<Fee, InvalidFeeError>` | Never Throws |
 | `zero(asset)` | `AssetId` | `Fee` | Never Throws |
-| `add(fee1, fee2)` | `Fee, Fee` | `Result<Fee, InvalidFeeError>` | Never Throws |
+| `add(fee1, fee2)` | `Fee, Fee` | `Result<Fee, FeeOperationError>` | Never Throws |
 | `equals(fee1, fee2)` | `Fee, Fee` | `boolean` | Never Throws |
 | `of(assetQty)` | `AssetQuantity` | `Fee` | @internal — может бросить |
 

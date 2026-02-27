@@ -130,7 +130,7 @@ describe('Order expiry', () => {
     const createdAt = TimestampService.now(clock);
 
     // "Прошло" 2 часа
-    clock.advance(2 * 3600 * 1000); // PaperClock поддерживает advance
+    clock.tick(2 * 3600 * 1000); // продвинуть время вперёд на 2 часа
 
     const now = TimestampService.now(clock);
     const diffMs = TimestampService.diffMs(now, createdAt);

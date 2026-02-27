@@ -96,22 +96,22 @@ console.log(FeeFormatter.toDisplay(totalGas)); // "12.5 USDC"
 ### Через FeeService.add (безопаснее в публичном коде)
 
 ```typescript
-let totalGasResult: Result<Fee, InvalidFeeError> | null = null;
+// FeeService.create → Result<Fee, InvalidFeeError>
+// FeeService.add    → Result<Fee, FeeOperationError>
+// Храним накопленное Fee отдельно, чтобы не смешивать типы ошибок.
+let accumulated: Fee = FeeService.zero(AssetIdHelpers.USDC);
 
 for (const tx of transactions) {
   const txGasResult = FeeService.create(AssetIdHelpers.USDC, tx.gasUsed);
   if (!txGasResult.ok) continue;
 
-  if (totalGasResult === null) {
-    totalGasResult = txGasResult;
-  } else if (totalGasResult.ok) {
-    totalGasResult = FeeService.add(totalGasResult.value, txGasResult.value);
+  const addResult = FeeService.add(accumulated, txGasResult.value);
+  if (addResult.ok) {
+    accumulated = addResult.value;
   }
 }
 
-if (totalGasResult?.ok) {
-  console.log(FeeFormatter.toDisplay(totalGasResult.value));
-}
+console.log(FeeFormatter.toDisplay(accumulated));
 ```
 
 ## Обработка ошибок

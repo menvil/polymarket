@@ -38,8 +38,7 @@ Fee следует **3-слойной архитектуре** Value Objects в 
 ```
 fee/
 ├── core/
-│   ├── Fee.ts                    # Value object, инварианты, операции
-│   └── FeeInvariantViolation.ts  # Внутреннее исключение нарушения инварианта
+│   └── Fee.ts                    # Value object, инварианты, операции
 ├── errors/
 │   ├── FeeErrorReason.ts         # Типизированные причины ошибок (создание)
 │   └── FeeOperationErrorReason.ts # Причины ошибок операций (add)
