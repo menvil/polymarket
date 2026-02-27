@@ -22,8 +22,8 @@
  * ```
  */
 
-import { Result } from '@polymarket/result';
-import { InvalidSideError } from '@polymarket/errors';
+import type { Result } from '@polymarket/result';
+import type { InvalidSideError } from '@polymarket/errors';
 import type { Side } from '../core/index.js';
 import { SideService } from '../facade/index.js';
 
@@ -37,9 +37,7 @@ export class SideSerializer {
   /**
    * Приватный конструктор - запрещает создание экземпляров
    */
-  private constructor() {
-    throw new Error('SideSerializer is a static class');
-  }
+  private constructor() {}
 
   /**
    * Сериализовать Side в JSON

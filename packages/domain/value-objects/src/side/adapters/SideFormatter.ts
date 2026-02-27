@@ -11,6 +11,12 @@
  * - Emoji (🟢, 🔴)
  * - Color ('green', 'red')
  *
+ * @remarks
+ * **Архитектурная заметка:**
+ * Методы toEmoji, toColor, toHexColor являются UI-представлением и находятся
+ * в domain/value-objects по историческим причинам. В будущем их следует
+ * вынести в отдельный ui/formatters или presentation-layer пакет.
+ *
  * @example
  * ```typescript
  * import { SideFormatter } from '@polymarket/value-objects';
@@ -33,9 +39,7 @@ export class SideFormatter {
   /**
    * Приватный конструктор - запрещает создание экземпляров
    */
-  private constructor() {
-    throw new Error('SideFormatter is a static class');
-  }
+  private constructor() {}
 
   /**
    * Форматировать Side для UI display

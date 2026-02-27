@@ -6,7 +6,7 @@
  * Предоставляет Result-based API для создания и валидации.
  *
  * **Контракт "Never Throw":**
- * Все методы ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
+ * Все **public static** методы гарантированно возвращают Result и никогда не бросают исключения.
  *
  * @example
  * ```typescript
@@ -29,8 +29,7 @@
 
 import { Result, Ok } from '@polymarket/result';
 import { InvalidSideError, wrapOp } from '@polymarket/errors';
-import type { Side } from '../core/index.js';
-import { isValidSide, opposite, canMatch, equals } from '../core/index.js';
+import { type Side, isValidSide, ALL_SIDES, opposite, canMatch, equals } from '../core/index.js';
 import { SideErrorReason } from '../errors/index.js';
 
 /**
@@ -48,8 +47,31 @@ export class SideService {
   /**
    * Приватный конструктор - запрещает создание экземпляров
    */
-  private constructor() {
-    throw new Error('SideService is a static class');
+  private constructor() {}
+
+  /**
+   * Внутренний хелпер: парсит строку в Side или бросает InvalidSideError.
+   *
+   * @remarks
+   * Без wrapOp — используется внутри fromString и fromUnknown,
+   * каждый из которых имеет собственный wrapOp.
+   * Это исключает двойную обёртку контекста при вызове изнутри fromUnknown.
+   */
+  private static parseSideOrThrow(value: string): Side {
+    if (isValidSide(value)) {
+      return value;
+    }
+    throw new InvalidSideError(
+      (ctx) => `Invalid side value: ${ctx.value}. Expected ${ALL_SIDES.join(' or ')}`,
+      {
+        context: {
+          kind: 'invalid_side_value',
+          value,
+          expectedValues: [...ALL_SIDES],
+          reason: SideErrorReason.INVALID_VALUE,
+        },
+      }
+    );
   }
 
   /**
@@ -80,23 +102,7 @@ export class SideService {
       SideService.SERVICE_NAME,
       'fromString',
       { value },
-      () => {
-        if (isValidSide(value)) {
-          return Ok(value);
-        }
-
-        throw new InvalidSideError(
-          (ctx) => `Invalid side value: ${ctx.value}. Expected 'BUY' or 'SELL'`,
-          {
-            context: {
-              kind: 'invalid_side_value',
-              value,
-              expectedValues: ['BUY', 'SELL'],
-              reason: SideErrorReason.INVALID_VALUE,
-            },
-          }
-        );
-      },
+      () => Ok(SideService.parseSideOrThrow(value)),
       InvalidSideError
     );
   }
@@ -110,6 +116,7 @@ export class SideService {
    * @remarks
    * Универсальный метод для парсинга из любого источника (API, DB, user input).
    * Проверяет что value это string И что это валидный Side.
+   * Использует единый wrapOp без вложенных обёрток.
    *
    * @example
    * ```typescript
@@ -146,12 +153,7 @@ export class SideService {
           );
         }
 
-        // Delegate to fromString (который тоже использует wrapOp)
-        const result = this.fromString(value);
-        if (!result.ok) {
-          throw result.error;
-        }
-        return result;
+        return Ok(SideService.parseSideOrThrow(value));
       },
       InvalidSideError
     );
@@ -257,6 +259,7 @@ export class SideService {
    * @returns Readonly массив всех Side значений
    *
    * @remarks
+   * Единственный источник правды — возвращает ALL_SIDES из core.
    * Используется для UI select options, validation, iteration.
    *
    * @example
@@ -271,6 +274,6 @@ export class SideService {
    * ```
    */
   public static getAllValues(): readonly Side[] {
-    return ['BUY', 'SELL'] as const;
+    return ALL_SIDES;
   }
 }
