@@ -3,13 +3,116 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { FeeService } from '../../../src/fee/index.js';
+import { FeeService, FeeOperationErrorReason } from '../../../src/fee/index.js';
 import { AssetQuantity } from '../../../src/asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
-import { AssetIdHelpers } from '@polymarket/ids';
+import {
+  AssetIdHelpers,
+  type OnChainConditionRef,
+  type ConditionId,
+  BinaryOutcome,
+  KnownOnChainProtocols,
+} from '@polymarket/ids';
+import { FeeErrorReason } from '../../../src/fee/errors/FeeErrorReason.js';
 import Decimal from 'decimal.js';
 
 describe('FeeService', () => {
+  describe('create()', () => {
+    it('should create Fee from number', () => {
+      const result = FeeService.create(AssetIdHelpers.USDC, 0.10);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.quantity.amount().toNumber()).toBe(0.10);
+        expect(result.value.asset.type).toBe('CURRENCY');
+      }
+    });
+
+    it('should create Fee from string', () => {
+      const result = FeeService.create(AssetIdHelpers.USDC, '0.123456789012345');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.quantity.amount().value().toString()).toBe('0.123456789012345');
+      }
+    });
+
+    it('should create Fee from Decimal', () => {
+      const result = FeeService.create(AssetIdHelpers.USDC, new Decimal('5.5'));
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.quantity.amount().toNumber()).toBe(5.5);
+      }
+    });
+
+    it('should create zero Fee', () => {
+      const result = FeeService.create(AssetIdHelpers.USDC, 0);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.isZero()).toBe(true);
+      }
+    });
+
+    it('should fail for negative amount', () => {
+      const result = FeeService.create(AssetIdHelpers.USDC, -10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(FeeErrorReason.NEGATIVE_FEE);
+        expect(result.error.message).toContain('non-negative');
+      }
+    });
+
+    it('should fail for NaN amount', () => {
+      const result = FeeService.create(AssetIdHelpers.USDC, NaN);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_QUANTITY);
+      }
+    });
+
+    it('should fail for Infinity amount', () => {
+      const result = FeeService.create(AssetIdHelpers.USDC, Infinity);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(FeeErrorReason.INVALID_QUANTITY);
+        expect(result.error.message).toContain('finite');
+      }
+    });
+
+    it('should fail for invalid asset (null)', () => {
+      const result = FeeService.create(null as any, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Invalid asset');
+      }
+    });
+
+    it('should fail for invalid asset (not object)', () => {
+      const result = FeeService.create('USDC' as any, 10);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Invalid asset');
+      }
+    });
+
+    it('should preserve precision for large decimals', () => {
+      const precise = '123456789.123456789012345';
+      const result = FeeService.create(AssetIdHelpers.USDC, precise);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.quantity.amount().value().toString()).toBe(precise);
+      }
+    });
+  });
+
   describe('of()', () => {
     it('should create Fee from AssetQuantity', () => {
       const qty = Quantity.of(new Decimal('0.10'));
@@ -29,13 +132,71 @@ describe('FeeService', () => {
   });
 
   describe('add()', () => {
-    it('should add two fees', () => {
+    it('should add two fees with same asset', () => {
       const fee1 = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
       const fee2 = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.05'))));
 
-      const total = FeeService.add(fee1, fee2);
+      const result = FeeService.add(fee1, fee2);
 
-      expect(total.quantity.amount().toNumber()).toBe(0.15);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.quantity.amount().toNumber()).toBe(0.15);
+      }
+    });
+
+    it('should add zero fee', () => {
+      const fee = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
+      const zeroFee = FeeService.zero(AssetIdHelpers.USDC);
+
+      const result = FeeService.add(fee, zeroFee);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.quantity.amount().toNumber()).toBe(0.10);
+      }
+    });
+
+    it('should fail when adding fees with different assets', () => {
+      const usdcFee = FeeService.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
+
+      // Создаём outcome token fee
+      const conditionRef: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: 137 as any,
+        conditionId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as ConditionId,
+      };
+      const tokenAssetResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      expect(tokenAssetResult.ok).toBe(true);
+      if (!tokenAssetResult.ok) return;
+
+      const tokenFee = FeeService.of(new AssetQuantity(tokenAssetResult.value, Quantity.of(new Decimal('0.05'))));
+
+      const result = FeeService.add(usdcFee, tokenFee);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(FeeOperationErrorReason.ASSET_MISMATCH);
+        expect(result.error.context?.operation).toBe('add');
+      }
+    });
+
+    it('should preserve precision when adding large decimals', () => {
+      const fee1Result = FeeService.create(AssetIdHelpers.USDC, '123456789.123456789012345');
+      const fee2Result = FeeService.create(AssetIdHelpers.USDC, '987654321.987654321098765');
+
+      expect(fee1Result.ok).toBe(true);
+      expect(fee2Result.ok).toBe(true);
+      if (!fee1Result.ok || !fee2Result.ok) return;
+
+      const result = FeeService.add(fee1Result.value, fee2Result.value);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Decimal.js результат (с учетом precision)
+        const expected = '1111111111.1111111101';
+        expect(result.value.quantity.amount().value().toString()).toBe(expected);
+      }
     });
   });
 

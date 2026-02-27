@@ -15,4 +15,4 @@ export { FeeService } from './facade/index.js';
 export { FeeSerializer, FeeFormatter, type FeeJSON } from './adapters/index.js';
 
 // Errors
-export { FeeErrorReason } from './errors/index.js';
+export { FeeErrorReason, FeeOperationError, FeeOperationErrorReason } from './errors/index.js';

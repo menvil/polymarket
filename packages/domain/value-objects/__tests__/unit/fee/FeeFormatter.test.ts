@@ -6,7 +6,13 @@ import { describe, it, expect } from '@jest/globals';
 import { Fee, FeeFormatter } from '../../../src/fee/index.js';
 import { AssetQuantity } from '../../../src/asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
-import { AssetIdHelpers } from '@polymarket/ids';
+import {
+  AssetIdHelpers,
+  type OnChainConditionRef,
+  type ConditionId,
+  BinaryOutcome,
+  KnownOnChainProtocols,
+} from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 describe('FeeFormatter', () => {
@@ -27,6 +33,31 @@ describe('FeeFormatter', () => {
       expect(result).toContain('0');
       expect(result).toContain('USDC');
     });
+
+    it('should format outcome token fee', () => {
+      const conditionRef: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: 137 as any,
+        conditionId: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd' as ConditionId,
+      };
+      const tokenAssetResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.DOWN);
+      expect(tokenAssetResult.ok).toBe(true);
+      if (!tokenAssetResult.ok) return;
+
+      const tokenFee = Fee.of(new AssetQuantity(tokenAssetResult.value, Quantity.of(new Decimal('1.5'))));
+      const result = FeeFormatter.toDisplay(tokenFee);
+
+      expect(result).toContain('1.5');
+      expect(result).toContain('DOWN:');
+    });
+
+    it('should preserve precision for large decimals', () => {
+      const preciseFee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('123456789.123456789012345'))));
+      const result = FeeFormatter.toDisplay(preciseFee);
+
+      expect(result).toBe('123456789.123456789012345 USDC');
+    });
   });
 
   describe('toAmount()', () => {
@@ -40,6 +71,13 @@ describe('FeeFormatter', () => {
       const result = FeeFormatter.toAmount(zeroFee);
 
       expect(result).toBe('0');
+    });
+
+    it('should preserve precision for large decimals', () => {
+      const preciseFee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('123456789.123456789012345'))));
+      const result = FeeFormatter.toAmount(preciseFee);
+
+      expect(result).toBe('123456789.123456789012345');
     });
   });
 
@@ -55,51 +93,44 @@ describe('FeeFormatter', () => {
 
       expect(result).toBe('USDC');
     });
+
+    it('should format outcome token symbol with short condition ID', () => {
+      const conditionRef: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: 137 as any,
+        conditionId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as ConditionId,
+      };
+      const tokenAssetResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      expect(tokenAssetResult.ok).toBe(true);
+      if (!tokenAssetResult.ok) return;
+
+      const tokenFee = Fee.of(new AssetQuantity(tokenAssetResult.value, Quantity.of(new Decimal('0.10'))));
+      const result = FeeFormatter.toAssetSymbol(tokenFee);
+
+      // Should be "UP:0x1234...cdef" (first 6 chars + ... + last 4 chars)
+      expect(result).toContain('UP:');
+      expect(result).toContain('0x1234');
+      expect(result).toContain('cdef');
+      expect(result).toContain('...');
+    });
   });
 
-  describe('toLogString()', () => {
-    it('should format for logging', () => {
-      const result = FeeFormatter.toLogString(testFee);
+  describe('toDebugString()', () => {
+    it('should format for debugging', () => {
+      const result = FeeFormatter.toDebugString(testFee);
 
       expect(result).toContain('Fee');
       expect(result).toContain('USDC');
       expect(result).toContain('0.1');
     });
-  });
 
-  describe('toPercent()', () => {
-    it('should format as percentage with default precision', () => {
-      const feeRate = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.001'))));
-      const result = FeeFormatter.toPercent(feeRate);
+    it('should format zero fee for debugging', () => {
+      const result = FeeFormatter.toDebugString(zeroFee);
 
-      expect(result).toBe('0.10%');
-    });
-
-    it('should format as percentage with custom precision', () => {
-      const feeRate = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.0015'))));
-      const result = FeeFormatter.toPercent(feeRate, 3);
-
-      expect(result).toBe('0.150%');
-    });
-
-    it('should format zero as percentage', () => {
-      const result = FeeFormatter.toPercent(zeroFee);
-
-      expect(result).toBe('0.00%');
-    });
-
-    it('should format 1% correctly', () => {
-      const onePercent = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.01'))));
-      const result = FeeFormatter.toPercent(onePercent);
-
-      expect(result).toBe('1.00%');
-    });
-
-    it('should format 10% correctly', () => {
-      const tenPercent = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
-      const result = FeeFormatter.toPercent(tenPercent);
-
-      expect(result).toBe('10.00%');
+      expect(result).toContain('Fee');
+      expect(result).toContain('USDC');
+      expect(result).toContain('0');
     });
   });
 });

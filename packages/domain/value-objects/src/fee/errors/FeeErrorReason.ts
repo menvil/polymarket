@@ -16,7 +16,17 @@ export enum FeeErrorReason {
   NEGATIVE_FEE = 'NEGATIVE_FEE',
 
   /**
-   * Невалидный AssetQuantity
+   * Невалидный AssetQuantity или amount
    */
   INVALID_QUANTITY = 'INVALID_QUANTITY',
+
+  /**
+   * Невалидная структура объекта (не объект, missing fields)
+   */
+  INVALID_STRUCTURE = 'INVALID_STRUCTURE',
+
+  /**
+   * Невалидный AssetId
+   */
+  INVALID_ASSET = 'INVALID_ASSET',
 }

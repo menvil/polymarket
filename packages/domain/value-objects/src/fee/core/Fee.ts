@@ -37,7 +37,7 @@
  *
  * // Сложение fees
  * const totalFee = fee.add(zeroFee);
- * console.log(totalFee.quantity.amount().toNumber()); // 0.10
+ * console.log(totalFee.quantity.amount().toNumber()); // 0.1
  *
  * // Проверка равенства
  * if (fee.equals(totalFee)) {
@@ -48,9 +48,11 @@
 
 import type { AssetId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
-import { InvalidFeeError } from '@polymarket/errors';
+import { addDecimal } from '@polymarket/math';
 import { AssetQuantity } from '../../asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
+import { FeeOperationError } from '../errors/FeeOperationError.js';
+import { FeeOperationErrorReason } from '../errors/FeeOperationErrorReason.js';
 
 /**
  * Fee - комиссия в любом активе
@@ -74,19 +76,28 @@ export class Fee {
   /**
    * Создать Fee из AssetQuantity
    *
+   * @internal ТОЛЬКО для внутреннего использования в Core и Facade
+   *
    * @param quantity - Количество актива (должно быть >= 0)
    * @returns Fee
    *
    * @remarks
+   * НЕБЕЗОПАСНЫЙ метод - не проверяет инварианты, полагается на AssetQuantity.
+   * Для публичного API используйте FeeService.create().
+   *
    * AssetQuantity уже гарантирует amount >= 0 через Quantity инвариант,
-   * поэтому дополнительная валидация не требуется.
+   * но этот метод не проверяет это явно.
    *
    * @example
    * ```typescript
-   * const qty = Quantity.of(new Decimal('0.10'));
-   * const assetQty = AssetQuantity.usdc(qty);
+   * // ✅ В Core и Facade
    * const fee = Fee.of(assetQty);
-   * console.log(fee.quantity.amount().toNumber()); // 0.10
+   *
+   * // ❌ В публичном коде - используй FeeService.create()
+   * const result = FeeService.create(AssetIdHelpers.USDC, '0.10');
+   * if (result.ok) {
+   *   const fee = result.value;
+   * }
    * ```
    */
   public static of(quantity: AssetQuantity): Fee {
@@ -178,7 +189,7 @@ export class Fee {
    *
    * @param other - Другая комиссия
    * @returns Новая Fee с суммированным amount
-   * @throws {InvalidFeeError} Если assets не совпадают
+   * @throws {FeeOperationError} Если assets не совпадают
    *
    * @remarks
    * Комиссии можно складывать только если их assets совпадают.
@@ -197,26 +208,30 @@ export class Fee {
    * // ❌ Нельзя складывать fees с разными assets
    * const usdcFee = Fee.zero(AssetIdHelpers.USDC);
    * const tokenFee = Fee.zero(someTokenAsset);
-   * // usdcFee.add(tokenFee); // Throws InvalidFeeError
+   * // usdcFee.add(tokenFee); // Throws FeeOperationError
    * ```
    */
   public add(other: Fee): Fee {
     // Проверяем что assets совпадают
     if (!AssetIdHelpers.equals(this.asset, other.asset)) {
-      throw new InvalidFeeError(
+      throw new FeeOperationError(
         `Cannot add fees with different assets: ${JSON.stringify(this.asset)} vs ${JSON.stringify(other.asset)}`,
         {
           context: {
+            operation: 'add',
+            reason: FeeOperationErrorReason.ASSET_MISMATCH,
             asset1: this.asset,
             asset2: other.asset,
-            reason: 'ASSET_MISMATCH',
           },
         }
       );
     }
 
-    // Складываем amounts через Decimal arithmetic
-    const sumDecimal = this._quantity.amount().value().add(other._quantity.amount().value());
+    // Складываем amounts через @polymarket/math helper (единая семантика и проверки)
+    const sumDecimal = addDecimal(
+      this._quantity.amount().value(),
+      other._quantity.amount().value()
+    );
 
     // Создаём новый Quantity из суммы
     const sumAmount = Quantity.of(sumDecimal);
@@ -260,7 +275,7 @@ export class Fee {
    * ```typescript
    * const fee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
    * console.log(fee.toString());
-   * // "Fee(CURRENCY:USDC, 0.10)"
+   * // "Fee(CURRENCY:USDC, 0.1)"
    * ```
    */
   public toString(): string {

@@ -3,10 +3,16 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Fee } from '../../../src/fee/index.js';
+import { Fee, FeeOperationError, FeeOperationErrorReason } from '../../../src/fee/index.js';
 import { AssetQuantity } from '../../../src/asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
-import { AssetIdHelpers } from '@polymarket/ids';
+import {
+  AssetIdHelpers,
+  type OnChainConditionRef,
+  type ConditionId,
+  BinaryOutcome,
+  KnownOnChainProtocols,
+} from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 describe('Fee', () => {
@@ -49,7 +55,7 @@ describe('Fee', () => {
       }
     });
 
-    it('should create zero Fee for different assets', () => {
+    it('should create zero Fee for same currency from different constructors', () => {
       const fee1 = Fee.zero(AssetIdHelpers.USDC);
       const fee2 = Fee.zero(AssetIdHelpers.fromCurrency('USDC'));
 
@@ -161,9 +167,9 @@ describe('Fee', () => {
       expect(total.quantity.amount().toNumber()).toBe(1500000);
     });
 
-    it('should throw error for different assets', () => {
+    it('should add fees with same currency from different constructors', () => {
       const usdcFee = Fee.zero(AssetIdHelpers.USDC);
-      const otherAsset = AssetIdHelpers.fromCurrency('USDC'); // Same currency but different reference
+      const otherAsset = AssetIdHelpers.fromCurrency('USDC');
       const otherFee = Fee.zero(otherAsset);
 
       // Should work because same currency
@@ -178,6 +184,37 @@ describe('Fee', () => {
 
       // Should be exactly 0.3, not 0.30000000000000004 (float issue)
       expect(total.quantity.amount().toNumber()).toBe(0.3);
+    });
+
+    it('should throw FeeOperationError when adding fees with different assets', () => {
+      const usdcFee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
+
+      // Создаём outcome token fee
+      const conditionRef: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: 137 as any,
+        conditionId: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as ConditionId,
+      };
+      const tokenAssetResult = AssetIdHelpers.fromOutcomeToken(conditionRef, BinaryOutcome.UP);
+      expect(tokenAssetResult.ok).toBe(true);
+      if (!tokenAssetResult.ok) return;
+
+      const tokenFee = Fee.of(new AssetQuantity(tokenAssetResult.value, Quantity.of(new Decimal('0.05'))));
+
+      // Should throw FeeOperationError with ASSET_MISMATCH reason
+      expect(() => usdcFee.add(tokenFee)).toThrow(FeeOperationError);
+
+      try {
+        usdcFee.add(tokenFee);
+      } catch (e) {
+        if (e instanceof FeeOperationError && e.context) {
+          expect(e.context.reason).toBe(FeeOperationErrorReason.ASSET_MISMATCH);
+          expect(e.context.operation).toBe('add');
+          expect(e.context.asset1).toBeDefined();
+          expect(e.context.asset2).toBeDefined();
+        }
+      }
     });
   });
 

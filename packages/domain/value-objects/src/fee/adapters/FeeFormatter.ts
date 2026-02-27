@@ -23,17 +23,26 @@ export class FeeFormatter {
    * Форматировать Fee для отображения (amount + asset symbol)
    *
    * @param fee - Fee для форматирования
-   * @returns Строка вида "0.10 USDC" или "0.10 TOKEN:..."
+   * @returns Строка вида "0.1 USDC" или "0.1 TOKEN:..." (полная precision сохраняется)
+   *
+   * @remarks
+   * Использует Decimal.toString() для сохранения полной точности.
+   * Не использует toNumber() чтобы избежать потери precision для больших чисел.
    *
    * @example
    * ```typescript
    * const fee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
    * console.log(FeeFormatter.toDisplay(fee));
-   * // "0.10 USDC"
+   * // "0.1 USDC"
+   *
+   * // Precision сохраняется для больших чисел
+   * const bigFee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('123456789.123456789012345'))));
+   * console.log(FeeFormatter.toDisplay(bigFee));
+   * // "123456789.123456789012345 USDC"
    * ```
    */
   public static toDisplay(fee: Fee): string {
-    const amount = fee.quantity.amount().toNumber();
+    const amount = fee.quantity.amount().value().toString();
     const symbol = this.toAssetSymbol(fee);
     return `${amount} ${symbol}`;
   }
@@ -42,17 +51,26 @@ export class FeeFormatter {
    * Форматировать только amount
    *
    * @param fee - Fee для форматирования
-   * @returns Строка с числовым значением
+   * @returns Строка с числовым значением (полная precision сохраняется)
+   *
+   * @remarks
+   * Использует Decimal.toString() для сохранения полной точности.
+   * Не использует toNumber() чтобы избежать потери precision для больших чисел.
    *
    * @example
    * ```typescript
    * const fee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
    * console.log(FeeFormatter.toAmount(fee));
-   * // "0.10"
+   * // "0.1"
+   *
+   * // Precision сохраняется для больших чисел
+   * const bigFee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('123456789.123456789012345'))));
+   * console.log(FeeFormatter.toAmount(bigFee));
+   * // "123456789.123456789012345"
    * ```
    */
   public static toAmount(fee: Fee): string {
-    return String(fee.quantity.amount().toNumber());
+    return fee.quantity.amount().value().toString();
   }
 
   /**
@@ -82,42 +100,23 @@ export class FeeFormatter {
   }
 
   /**
-   * Форматировать Fee для логирования
+   * Форматировать Fee для отладки
    *
    * @param fee - Fee для форматирования
-   * @returns Подробная строка для логов
+   * @returns Подробная строка для debugging (включает тип актива и amount)
+   *
+   * @remarks
+   * Использует Fee.toString() который возвращает полную debug representation.
+   * Полезно для логирования и отладки.
    *
    * @example
    * ```typescript
    * const fee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
-   * console.log(FeeFormatter.toLogString(fee));
-   * // "Fee(CURRENCY:USDC, 0.10)"
+   * console.log(FeeFormatter.toDebugString(fee));
+   * // "Fee(CURRENCY:USDC, 0.1)"
    * ```
    */
-  public static toLogString(fee: Fee): string {
+  public static toDebugString(fee: Fee): string {
     return fee.toString();
-  }
-
-  /**
-   * Форматировать как процент (для отображения fee rate)
-   *
-   * @param fee - Fee (обычно в диапазоне 0-1)
-   * @param precision - Количество знаков после запятой (по умолчанию 2)
-   * @returns Строка вида "0.10%"
-   *
-   * @remarks
-   * Предполагает что fee.quantity.amount() уже представляет процент
-   * (например 0.001 = 0.1%).
-   *
-   * @example
-   * ```typescript
-   * const feeRate = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.001'))));
-   * console.log(FeeFormatter.toPercent(feeRate));
-   * // "0.10%"
-   * ```
-   */
-  public static toPercent(fee: Fee, precision: number = 2): string {
-    const percent = fee.quantity.amount().toNumber() * 100;
-    return `${percent.toFixed(precision)}%`;
   }
 }

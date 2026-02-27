@@ -3,3 +3,5 @@
  */
 
 export { FeeErrorReason } from './FeeErrorReason.js';
+export { FeeOperationError } from './FeeOperationError.js';
+export { FeeOperationErrorReason } from './FeeOperationErrorReason.js';

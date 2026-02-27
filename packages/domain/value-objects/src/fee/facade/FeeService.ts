@@ -2,7 +2,10 @@
  * Фасад для работы с Fee - публичный API
  *
  * @remarks
- * Единая точка входа для создания Fee с Result pattern.
+ * Thin wrapper над Fee core layer для удобства использования.
+ * Методы делегируют вызовы в Fee и могут бросить исключения (InvalidFeeError).
+ *
+ * Для безопасной работы с ошибками оборачивайте вызовы в try/catch.
  *
  * @example
  * ```typescript
@@ -10,15 +13,137 @@
  *
  * const assetQty = AssetQuantity.usdc(Quantity.of(new Decimal('0.10')));
  * const fee = FeeService.of(assetQty);
- * console.log(fee.quantity.amount().toNumber()); // 0.10
+ * console.log(fee.quantity.amount().toNumber()); // 0.1
  * ```
  */
 
 import type { AssetId } from '@polymarket/ids';
+import { Result, Ok, Err, isErr } from '@polymarket/result';
+import { InvalidFeeError, toDecimal, rewrap, wrapOp } from '@polymarket/errors';
 import { Fee } from '../core/Fee.js';
 import { AssetQuantity } from '../../asset-quantity/core/AssetQuantity.js';
+import { Quantity } from '../../quantity/core/Quantity.js';
+import { FeeErrorReason } from '../errors/FeeErrorReason.js';
+import { FeeOperationError } from '../errors/FeeOperationError.js';
+import type Decimal from 'decimal.js';
 
 export class FeeService {
+  private static readonly SERVICE_NAME = 'FeeService';
+
+  /**
+   * Создать Fee с валидацией
+   *
+   * @param asset - AssetId (currency или outcome token)
+   * @param amount - Сумма комиссии (number, string, или Decimal)
+   * @returns Result<Fee, InvalidFeeError>
+   *
+   * @remarks
+   * Проверяет инварианты:
+   * - amount должен быть finite (не NaN, не Infinity)
+   * - amount должен быть >= 0 (non-negative)
+   * - asset должен быть валидный AssetId
+   *
+   * Это основной метод для создания Fee. Never throws - все ошибки через Result.
+   *
+   * @example
+   * ```typescript
+   * import { FeeService } from '@polymarket/value-objects';
+   * import { AssetIdHelpers } from '@polymarket/ids';
+   *
+   * // Создание из number
+   * const result = FeeService.create(AssetIdHelpers.USDC, 0.10);
+   * if (result.ok) {
+   *   console.log(result.value.quantity.amount().toNumber()); // 0.1
+   * } else {
+   *   console.error(result.error.message);
+   * }
+   *
+   * // Создание из string (для точности)
+   * const preciseResult = FeeService.create(AssetIdHelpers.USDC, '0.123456789012345');
+   * if (preciseResult.ok) {
+   *   console.log(preciseResult.value.quantity.amount().value().toString());
+   * }
+   *
+   * // Ошибки валидации
+   * const negativeResult = FeeService.create(AssetIdHelpers.USDC, -10);
+   * expect(negativeResult.ok).toBe(false);
+   * if (!negativeResult.ok) {
+   *   console.log(negativeResult.error.context.reason); // FeeErrorReason.NEGATIVE_FEE
+   * }
+   * ```
+   */
+  public static create(
+    asset: AssetId,
+    amount: number | string | Decimal
+  ): Result<Fee, InvalidFeeError> {
+    const ctx = { asset, amount };
+
+    return wrapOp(
+      FeeService.SERVICE_NAME,
+      'create',
+      ctx,
+      () => {
+        // 1. Parse amount → Decimal
+        const amountDecimal = toDecimal('amount', amount, FeeErrorReason.INVALID_QUANTITY, InvalidFeeError);
+        if (isErr(amountDecimal)) {
+          return Err(rewrap(FeeService.SERVICE_NAME, 'create', ctx, amountDecimal.error, InvalidFeeError));
+        }
+
+        const decimal = amountDecimal.value;
+
+        // 2. Validate finite
+        if (!decimal.isFinite()) {
+          return Err(
+            new InvalidFeeError('Fee amount must be finite', {
+              context: {
+                service: FeeService.SERVICE_NAME,
+                op: 'create',
+                reason: FeeErrorReason.INVALID_QUANTITY,
+                amount: String(amount),
+              },
+            })
+          );
+        }
+
+        // 3. Validate non-negative
+        if (decimal.lessThan(0)) {
+          return Err(
+            new InvalidFeeError('Fee amount must be non-negative', {
+              context: {
+                service: FeeService.SERVICE_NAME,
+                op: 'create',
+                reason: FeeErrorReason.NEGATIVE_FEE,
+                amount: decimal.toString(),
+              },
+            })
+          );
+        }
+
+        // 4. Basic asset validation (проверяем что это объект с type)
+        if (!asset || typeof asset !== 'object' || !('type' in asset)) {
+          return Err(
+            new InvalidFeeError('Invalid asset', {
+              context: {
+                service: FeeService.SERVICE_NAME,
+                op: 'create',
+                reason: FeeErrorReason.INVALID_QUANTITY,
+                asset,
+              },
+            })
+          );
+        }
+
+        // 5. Create AssetQuantity and Fee
+        const quantity = Quantity.of(decimal);
+        const assetQuantity = new AssetQuantity(asset, quantity);
+        const fee = Fee.of(assetQuantity);
+
+        return Ok(fee);
+      },
+      InvalidFeeError
+    );
+  }
+
   /**
    * Создать Fee из AssetQuantity
    *
@@ -64,17 +189,37 @@ export class FeeService {
    *
    * @param fee1 - Первая комиссия
    * @param fee2 - Вторая комиссия
-   * @returns Новая Fee с суммированным amount
-   * @throws {Error} Если assets не совпадают
+   * @returns Result<Fee, FeeOperationError>
+   *
+   * @remarks
+   * Never throws - все ошибки через Result.
+   * Проверяет что assets совпадают перед сложением.
    *
    * @example
    * ```typescript
-   * const total = FeeService.add(fee1, fee2);
-   * console.log(total.quantity.amount().toNumber());
+   * import { FeeService, FeeOperationErrorReason } from '@polymarket/value-objects';
+   *
+   * const result = FeeService.add(fee1, fee2);
+   * if (result.ok) {
+   *   console.log(result.value.quantity.amount().toNumber());
+   * } else {
+   *   if (result.error.context?.reason === FeeOperationErrorReason.ASSET_MISMATCH) {
+   *     console.error('Cannot add fees with different assets');
+   *   }
+   * }
    * ```
    */
-  public static add(fee1: Fee, fee2: Fee): Fee {
-    return fee1.add(fee2);
+  public static add(fee1: Fee, fee2: Fee): Result<Fee, FeeOperationError> {
+    try {
+      const result = fee1.add(fee2);
+      return Ok(result);
+    } catch (e) {
+      if (e instanceof FeeOperationError) {
+        return Err(e);
+      }
+      // Неожиданная ошибка - пробрасываем
+      throw e;
+    }
   }
 
   /**
