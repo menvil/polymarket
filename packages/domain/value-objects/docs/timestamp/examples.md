@@ -60,6 +60,7 @@ console.log(events.map(e => e.id)); // ['b', 'c', 'a']
 
 ```typescript
 import { TimestampService } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/value-objects';
 
 function isExpired(createdAt: Timestamp, ttlMs: number): boolean {
   const now = TimestampService.now();

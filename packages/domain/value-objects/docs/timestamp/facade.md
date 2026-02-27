@@ -235,6 +235,7 @@ if (result.ok) {
 }
 
 // Десериализация из unknown
+const rawJson = '{"timestamp": 1609459200000}';
 const parsed: unknown = JSON.parse(rawJson);
 const safeResult = TimestampSerializer.fromUnknown((parsed as any).timestamp);
 if (safeResult.ok) {

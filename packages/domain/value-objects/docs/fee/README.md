@@ -37,9 +37,13 @@ const zeroFee = FeeService.zero(AssetIdHelpers.USDC);
 console.log(zeroFee.isZero()); // true
 
 // Сложение (Result-based, Never Throws)
-const addResult = FeeService.add(fee1, fee2);
-if (addResult.ok) {
-  console.log(FeeFormatter.toDisplay(addResult.value)); // "0.15 USDC"
+const fee1Result = FeeService.create(AssetIdHelpers.USDC, '0.10');
+const fee2Result = FeeService.create(AssetIdHelpers.USDC, '0.05');
+if (fee1Result.ok && fee2Result.ok) {
+  const addResult = FeeService.add(fee1Result.value, fee2Result.value);
+  if (addResult.ok) {
+    console.log(FeeFormatter.toDisplay(addResult.value)); // "0.15 USDC"
+  }
 }
 
 // OUTCOME_TOKEN fee
