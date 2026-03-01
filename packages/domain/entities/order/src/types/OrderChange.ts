@@ -49,7 +49,8 @@
  * ```
  */
 
-import type { Quantity, Price } from '@polymarket/value-objects';
+import type { Quantity, Price, Side } from '@polymarket/value-objects';
+import type { AssetId, OrderId, FillId } from '@polymarket/ids';
 
 /**
  * Минимальные данные Fill, необходимые для FSM Order
@@ -57,18 +58,17 @@ import type { Quantity, Price } from '@polymarket/value-objects';
  * @remarks
  * Содержит только поля нужные для применения исполнения к заявке.
  * orderId всегда обязателен (в отличие от старого Trade.orderId?).
+ * asset заменяет отдельные marketId + tokenId — содержит оба в структуре AssetId.
  */
 export interface FillForOrder {
   /** ID исполнения (для dedup проверки) */
-  readonly id: string;
+  readonly id: FillId;
   /** ID ордера — ОБЯЗАТЕЛЕН */
-  readonly orderId: string;
-  /** ID рынка */
-  readonly marketId: string;
-  /** ID токена */
-  readonly tokenId: string;
+  readonly orderId: OrderId;
+  /** Актив исполнения (содержит рынок + токен) */
+  readonly asset: AssetId;
   /** Сторона (BUY/SELL) */
-  readonly side: string;
+  readonly side: Side;
   /** Размер исполнения */
   readonly size: Quantity;
   /** Цена исполнения */

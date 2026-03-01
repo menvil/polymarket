@@ -3,9 +3,13 @@
  */
 
 import { Quantity, Price } from '@polymarket/value-objects';
+import { asFillId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { OrderFill } from '../../../src/value-objects/OrderFill';
 
+// Вспомогательные branded ID для тестов
+const FILL_1 = asFillId('fill-1')!;
+const FILL_2 = asFillId('fill-2')!;
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
   if (!result.ok) throw new Error(`Expected Ok result in test setup${ctx ? `: ${ctx}` : ''}`);
@@ -29,7 +33,7 @@ describe('OrderFill', () => {
     it('should create valid fill with all fields', () => {
       const filledSize = Quantity.of(new Decimal('50'));
       const avgPrice = Price.of(new Decimal('0.65'));
-      const fillIds = ['fill-1', 'fill-2'];
+      const fillIds = [FILL_1, FILL_2];
       const orderSize = Quantity.of(new Decimal('100'));
 
       const result = OrderFill.create(filledSize, avgPrice, fillIds, orderSize);
@@ -44,8 +48,8 @@ describe('OrderFill', () => {
       }
     });
 
-    it('should create fill without averageFillPrice', () => {
-      const filledSize = Quantity.of(new Decimal('50'));
+    it('should allow empty fill without averageFillPrice (filledSize = 0)', () => {
+      const filledSize = Quantity.of(new Decimal('0'));
       const orderSize = Quantity.of(new Decimal('100'));
 
       const result = OrderFill.create(filledSize, undefined, [], orderSize);
@@ -56,11 +60,24 @@ describe('OrderFill', () => {
       }
     });
 
-    it('should fail if filledSize exceeds orderSize', () => {
-      const filledSize = Quantity.of(new Decimal('150'));
+    it('should fail if filledSize > 0 and averageFillPrice is undefined (invariant)', () => {
+      const filledSize = Quantity.of(new Decimal('50'));
       const orderSize = Quantity.of(new Decimal('100'));
 
       const result = OrderFill.create(filledSize, undefined, [], orderSize);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Average fill price is required');
+      }
+    });
+
+    it('should fail if filledSize exceeds orderSize', () => {
+      const filledSize = Quantity.of(new Decimal('150'));
+      const avgPrice = Price.of(new Decimal('0.65'));
+      const orderSize = Quantity.of(new Decimal('100'));
+
+      const result = OrderFill.create(filledSize, avgPrice, [], orderSize);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -70,10 +87,11 @@ describe('OrderFill', () => {
 
     it('should fail if fillIds has duplicates', () => {
       const filledSize = Quantity.of(new Decimal('50'));
+      const avgPrice = Price.of(new Decimal('0.65'));
       const orderSize = Quantity.of(new Decimal('100'));
-      const fillIds = ['fill-1', 'fill-1']; // Duplicate
+      const fillIds = [FILL_1, FILL_1]; // Duplicate
 
-      const result = OrderFill.create(filledSize, undefined, fillIds, orderSize);
+      const result = OrderFill.create(filledSize, avgPrice, fillIds, orderSize);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -89,14 +107,14 @@ describe('OrderFill', () => {
       const fillPrice = Price.of(new Decimal('0.65'));
       const orderSize = Quantity.of(new Decimal('100'));
 
-      const result = orderFill.addFill(fillSize, fillPrice, 'fill-1', orderSize);
+      const result = orderFill.addFill(fillSize, fillPrice, FILL_1, orderSize);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
         const newFill = result.value;
         expect(newFill.getFilledSize().value().toNumber()).toBe(30);
         expect(newFill.getAverageFillPrice()?.value().toNumber()).toBe(0.65);
-        expect(newFill.getFillIds()).toEqual(['fill-1']);
+        expect(newFill.getFillIds()).toEqual([FILL_1]);
         expect(newFill.getTradeCount()).toBe(1);
       }
     });
@@ -109,7 +127,7 @@ describe('OrderFill', () => {
       const result1 = orderFill.addFill(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.6')),
-        'fill-1',
+        FILL_1,
         orderSize
       );
       expect(result1.ok).toBe(true);
@@ -119,7 +137,7 @@ describe('OrderFill', () => {
       const result2 = orderFill.addFill(
         Quantity.of(new Decimal('20')),
         Price.of(new Decimal('0.7')),
-        'fill-2',
+        FILL_2,
         orderSize
       );
       expect(result2.ok).toBe(true);
@@ -139,7 +157,7 @@ describe('OrderFill', () => {
       const fillPrice = Price.of(new Decimal('0.65'));
       const orderSize = Quantity.of(new Decimal('100'));
 
-      const result = orderFill.addFill(fillSize, fillPrice, 'fill-1', orderSize);
+      const result = orderFill.addFill(fillSize, fillPrice, FILL_1, orderSize);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -155,7 +173,7 @@ describe('OrderFill', () => {
       const result1 = orderFill.addFill(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.6')),
-        'fill-1',
+        FILL_1,
         orderSize
       );
       expect(result1.ok).toBe(true);
@@ -165,7 +183,7 @@ describe('OrderFill', () => {
       const result2 = orderFill.addFill(
         Quantity.of(new Decimal('20')),
         Price.of(new Decimal('0.7')),
-        'fill-1', // Same ID
+        FILL_1, // Same ID
         orderSize
       );
 
@@ -184,13 +202,13 @@ describe('OrderFill', () => {
       const result = orderFill.addFill(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.6')),
-        'fill-1',
+        FILL_1,
         orderSize
       );
 
       const newFill = unwrap(result);
-      expect(newFill.hasFill('fill-1')).toBe(true);
-      expect(newFill.hasFill('fill-2')).toBe(false);
+      expect(newFill.hasFill(FILL_1)).toBe(true);
+      expect(newFill.hasFill(FILL_2)).toBe(false);
     });
   });
 
@@ -210,7 +228,7 @@ describe('OrderFill', () => {
       const result = fill.addFill(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.6')),
-        'fill-1',
+        FILL_1,
         orderSize
       );
 
@@ -226,7 +244,7 @@ describe('OrderFill', () => {
       const result = fill.addFill(
         Quantity.of(new Decimal('100')),
         Price.of(new Decimal('0.6')),
-        'fill-1',
+        FILL_1,
         orderSize
       );
 
@@ -249,7 +267,7 @@ describe('OrderFill', () => {
     it('should serialize fill with data', () => {
       const filledSize = Quantity.of(new Decimal('50'));
       const avgPrice = Price.of(new Decimal('0.65'));
-      const fillIds = ['fill-1', 'fill-2'];
+      const fillIds = [FILL_1, FILL_2];
       const orderSize = Quantity.of(new Decimal('100'));
 
       const fill = unwrap(OrderFill.create(filledSize, avgPrice, fillIds, orderSize), 'OrderFill.create');
@@ -257,7 +275,7 @@ describe('OrderFill', () => {
 
       expect(json.filledSize).toBe(50);
       expect(json.averageFillPrice).toBe(0.65);
-      expect(json.fillIds).toEqual(['fill-1', 'fill-2']);
+      expect(json.fillIds).toEqual([FILL_1, FILL_2]);
     });
   });
 
@@ -269,7 +287,7 @@ describe('OrderFill', () => {
       const result = fill.addFill(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.6')),
-        'fill-1',
+        FILL_1,
         orderSize
       );
 
@@ -286,15 +304,16 @@ describe('OrderFill', () => {
 
     it('should not allow modification of fillIds array', () => {
       const filledSize = Quantity.of(new Decimal('50'));
+      const avgPrice = Price.of(new Decimal('0.65'));
       const orderSize = Quantity.of(new Decimal('100'));
-      const fillIds = ['fill-1', 'fill-2'];
+      const fillIds = [FILL_1, FILL_2];
 
-      const fill = unwrap(OrderFill.create(filledSize, undefined, fillIds, orderSize), 'OrderFill.create');
+      const fill = unwrap(OrderFill.create(filledSize, avgPrice, fillIds, orderSize), 'OrderFill.create');
 
       const retrievedIds = fill.getFillIds();
 
       // Should be readonly array (TypeScript enforces this)
-      expect(retrievedIds).toEqual(['fill-1', 'fill-2']);
+      expect(retrievedIds).toEqual([FILL_1, FILL_2]);
     });
   });
 });

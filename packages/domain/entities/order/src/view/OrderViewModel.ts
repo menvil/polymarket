@@ -65,8 +65,7 @@ export class OrderViewModel {
   public static toJSON(order: Order): Record<string, unknown> {
     return {
       id: order.id,
-      marketId: order.marketId,
-      tokenId: order.tokenId,
+      asset: order.asset,
       side: order.side,
       price: order.price.value().toNumber(),
       size: order.size.value().toNumber(),

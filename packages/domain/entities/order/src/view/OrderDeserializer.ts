@@ -32,6 +32,8 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { Price, Quantity, type Side } from '@polymarket/value-objects';
 import { ValidationError } from '@polymarket/errors';
+import type { FillId } from '@polymarket/ids';
+import { asOrderId, asFillId, parseAssetId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import type { Order } from '../Order';
 import { Order as OrderClass } from '../Order';
@@ -46,8 +48,7 @@ import { OrderFill } from '../value-objects/OrderFill';
  */
 export interface OrderJSON {
   readonly id: string;
-  readonly marketId: string;
-  readonly tokenId: string;
+  readonly asset: unknown; // AssetId — парсится через parseAssetId()
   readonly side: Side;
   readonly price: number;
   readonly size: number;
@@ -57,7 +58,7 @@ export interface OrderJSON {
   readonly fill?: {
     readonly filledSize: number;
     readonly averageFillPrice?: number;
-    readonly tradeIds: readonly string[];
+    readonly fillIds: readonly string[];
   };
   readonly reason?: string;
 }
@@ -114,6 +115,22 @@ export class OrderDeserializer {
         return Err(new ValidationError('Invalid JSON: must be an object', { context: { json } }));
       }
 
+      // Валидация и парсинг OrderId
+      const orderId = asOrderId(json.id);
+      if (!orderId) {
+        return Err(new ValidationError('Invalid order ID format', {
+          context: { field: 'id', value: json.id },
+        }));
+      }
+
+      // Парсинг AssetId
+      const asset = parseAssetId(JSON.stringify(json.asset));
+      if (!asset) {
+        return Err(new ValidationError('Invalid asset format', {
+          context: { field: 'asset', orderId: json.id, value: json.asset },
+        }));
+      }
+
       // Создание Price и Quantity value objects (бросают исключение при невалидных данных)
       const price = Price.of(new Decimal(json.price));
       const size = Quantity.of(new Decimal(json.size));
@@ -134,12 +151,19 @@ export class OrderDeserializer {
           ? Price.of(new Decimal(json.fill.averageFillPrice))
           : undefined;
 
-        const fillResult = OrderFill.create(
-          filledSize,
-          averageFillPrice,
-          [...json.fill.tradeIds],
-          size
-        );
+        // Парсинг FillId[] из string[]
+        const fillIds: FillId[] = [];
+        for (const rawId of json.fill.fillIds) {
+          const fillId = asFillId(rawId);
+          if (!fillId) {
+            return Err(new ValidationError(`Invalid fill ID format: ${rawId}`, {
+              context: { field: 'fill.fillIds', orderId: json.id },
+            }));
+          }
+          fillIds.push(fillId);
+        }
+
+        const fillResult = OrderFill.create(filledSize, averageFillPrice, fillIds, size);
 
         if (!fillResult.ok) {
           return Err(new ValidationError(`Invalid fill: ${fillResult.error.message}`, {
@@ -152,9 +176,8 @@ export class OrderDeserializer {
 
       // Создание Order через factory method
       return OrderClass.create({
-        id: json.id,
-        marketId: json.marketId,
-        tokenId: json.tokenId,
+        id: orderId,
+        asset,
         side: json.side,
         price,
         size,

@@ -26,21 +26,27 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import type { OrderStatus } from '../value-objects/OrderStatus';
 import { OrderFill } from '../value-objects/OrderFill';
-import type { Quantity, Price } from '@polymarket/value-objects';
+import type { Quantity, Price, Side } from '@polymarket/value-objects';
+import type { AssetId, OrderId } from '@polymarket/ids';
+import { AssetIdHelpers } from '@polymarket/ids';
 import { canAccept, canReject, canCancel, canExpire, canApplyFill } from './guards';
+import type { FillForOrder } from '../types/OrderChange';
 
 /**
- * Данные Order для handlers
+ * Данные Order для FSM handlers
  *
  * @remarks
- * Plain object представление Order для handlers.
- * Handlers работают с этой структурой вместо Order instance.
+ * Plain object (DTO) представление Order для handlers.
+ * Handlers работают с этой структурой вместо Order instance,
+ * чтобы избежать циклических зависимостей и упростить spread-обновления.
+ *
+ * Handlers изменяют только `status`, `fill` и `reason` —
+ * остальные поля (id, asset, price, size, timestamp) остаются неизменными.
  */
 export interface OrderData {
-  readonly id: string;
-  readonly marketId: string;
-  readonly tokenId: string;
-  readonly side: string;
+  readonly id: OrderId;
+  readonly asset: AssetId;
+  readonly side: Side;
   readonly price: Price;
   readonly size: Quantity;
   readonly status: OrderStatus;
@@ -48,22 +54,6 @@ export interface OrderData {
   readonly fill: OrderFill;
   readonly strategyId?: string;
   readonly reason?: string;
-}
-
-/**
- * Данные Fill для применения к заявке
- *
- * @remarks
- * orderId всегда обязателен — Fill без orderId не существует.
- */
-export interface FillData {
-  readonly id: string;
-  readonly orderId: string;
-  readonly marketId: string;
-  readonly tokenId: string;
-  readonly side: string;
-  readonly size: Quantity;
-  readonly price: Price;
 }
 
 /**
@@ -189,7 +179,7 @@ export function handleExpired(order: OrderData): Result<OrderData, Error> {
  * Обрабатывает применение fill исполнения к заявке
  *
  * @param order - Текущие данные заявки
- * @param fill - Данные исполнения
+ * @param fill - Данные исполнения (FillForOrder)
  * @returns Result<OrderData, Error> с обновленным fill и статусом
  *
  * @remarks
@@ -199,7 +189,7 @@ export function handleExpired(order: OrderData): Result<OrderData, Error> {
  *
  * @example
  * ```typescript
- * const result = handleFillApplied(orderData, fillData);
+ * const result = handleFillApplied(orderData, fill);
  * if (result.ok) {
  *   console.log(result.value.status); // 'PARTIALLY_FILLED' или 'FILLED'
  * }
@@ -207,7 +197,7 @@ export function handleExpired(order: OrderData): Result<OrderData, Error> {
  */
 export function handleFillApplied(
   order: OrderData,
-  fill: FillData
+  fill: FillForOrder
 ): Result<OrderData, Error> {
   // Валидация 1: Статус должен быть OPEN или PARTIALLY_FILLED
   if (!canApplyFill(order.status)) {
@@ -218,32 +208,19 @@ export function handleFillApplied(
     );
   }
 
-  // Валидация 2: marketId должен совпадать
-  if (fill.marketId !== order.marketId) {
+  // Валидация 2: asset должен совпадать (заменяет отдельные marketId + tokenId проверки)
+  if (!AssetIdHelpers.equals(fill.asset, order.asset)) {
     return Err(
-      new Error(
-        `Fill marketId (${fill.marketId}) does not match order marketId (${order.marketId})`
-      )
+      new Error(`Fill asset does not match order asset`)
     );
   }
 
-  // Валидация 3: tokenId должен совпадать
-  if (fill.tokenId !== order.tokenId) {
-    return Err(
-      new Error(
-        `Fill tokenId (${fill.tokenId}) does not match order tokenId (${order.tokenId})`
-      )
-    );
-  }
-
-  // Валидация 4: side должна совпадать
+  // Валидация 3: side должна совпадать
   if (fill.side !== order.side) {
-    return Err(
-      new Error(`Fill side (${fill.side}) does not match order side (${order.side})`)
-    );
+    return Err(new Error(`Fill side (${fill.side}) does not match order side (${order.side})`));
   }
 
-  // Валидация 5: orderId должен совпадать
+  // Валидация 4: orderId должен совпадать
   if (fill.orderId !== order.id) {
     return Err(
       new Error(`Fill orderId (${fill.orderId}) does not match this order id (${order.id})`)

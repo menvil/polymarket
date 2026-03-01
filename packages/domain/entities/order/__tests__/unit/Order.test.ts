@@ -3,6 +3,15 @@
  */
 
 import { Price, Quantity } from '@polymarket/value-objects';
+import type { AssetId } from '@polymarket/ids';
+import {
+  asOrderId,
+  asFillId,
+  parseConditionId,
+  parseOutcomeKey,
+  KnownChainIds,
+  KnownOnChainProtocols,
+} from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { Order } from '../../src/Order';
 import { OrderFill } from '../../src/value-objects/OrderFill';
@@ -18,12 +27,30 @@ function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown 
   return (result as { ok: true; value: T }).value;
 }
 
+// Тестовый AssetId (OUTCOME_TOKEN для Polymarket Polygon)
+const TEST_ASSET: AssetId = {
+  type: 'OUTCOME_TOKEN',
+  conditionRef: {
+    kind: 'ONCHAIN',
+    protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+    chainId: KnownChainIds.POLYGON,
+    conditionId: parseConditionId('0x' + 'a'.repeat(64))!,
+  },
+  outcomeKey: parseOutcomeKey('YES')!,
+};
+
+// Branded IDs для тестов
+const ORDER_ID = asOrderId('order-123')!;
+const FILL_ID_1 = asFillId('fill-1')!;
+const FILL_ID_2 = asFillId('fill-2')!;
+const FILL_ID_3 = asFillId('fill-3')!;
+const TRADE_ID_1 = asFillId('trade-1')!;
+
 // Helper для создания валидного Order
 function createValidOrder(overrides?: Partial<Parameters<typeof Order.create>[0]>) {
   const defaults = {
-    id: 'order-123',
-    marketId: 'market-1',
-    tokenId: 'token-yes',
+    id: ORDER_ID,
+    asset: TEST_ASSET,
     side: 'BUY' as const,
     price: Price.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
@@ -37,10 +64,9 @@ function createValidOrder(overrides?: Partial<Parameters<typeof Order.create>[0]
 // Helper для создания FillForOrder object
 function createFill(overrides?: Partial<FillForOrder>): FillForOrder {
   const defaults: FillForOrder = {
-    id: 'fill-1',
-    orderId: 'order-123',
-    marketId: 'market-1',
-    tokenId: 'token-yes',
+    id: FILL_ID_1,
+    orderId: ORDER_ID,
+    asset: TEST_ASSET,
     side: 'BUY' as const,
     size: Quantity.of(new Decimal('30')),
     price: Price.of(new Decimal('0.65')),
@@ -57,9 +83,8 @@ describe('Order', () => {
       expect(result.ok).toBe(true);
       if (result.ok) {
         const order = result.value;
-        expect(order.id).toBe('order-123');
-        expect(order.marketId).toBe('market-1');
-        expect(order.tokenId).toBe('token-yes');
+        expect(order.id).toBe(ORDER_ID);
+        expect(order.asset).toEqual(TEST_ASSET);
         expect(order.side).toBe('BUY');
         expect(order.price.value().toNumber()).toBe(0.65);
         expect(order.size.value().toNumber()).toBe(100);
@@ -69,7 +94,7 @@ describe('Order', () => {
     });
 
     it('should fail with empty id', () => {
-      const result = createValidOrder({ id: '' });
+      const result = createValidOrder({ id: asOrderId('') });
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -77,21 +102,12 @@ describe('Order', () => {
       }
     });
 
-    it('should fail with empty marketId', () => {
-      const result = createValidOrder({ marketId: '' });
+    it('should fail with missing asset', () => {
+      const result = createValidOrder({ asset: undefined as unknown as AssetId });
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('Market ID must be a non-empty string');
-      }
-    });
-
-    it('should fail with empty tokenId', () => {
-      const result = createValidOrder({ tokenId: '' });
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Token ID must be a non-empty string');
+        expect(result.error.message).toContain('Asset is required');
       }
     });
 
@@ -124,7 +140,7 @@ describe('Order', () => {
       const fill = unwrap(OrderFill.create(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.65')),
-        ['trade-1'],
+        [TRADE_ID_1],
         Quantity.of(new Decimal('100'))
       ), 'OrderFill.create');
 
@@ -161,7 +177,7 @@ describe('Order', () => {
       const fill = unwrap(OrderFill.create(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.65')),
-        ['trade-1'],
+        [TRADE_ID_1],
         Quantity.of(new Decimal('100'))
       ), 'OrderFill.create');
 
@@ -205,7 +221,7 @@ describe('Order', () => {
       const fill = unwrap(OrderFill.create(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.65')),
-        ['trade-1'],
+        [TRADE_ID_1],
         Quantity.of(new Decimal('100'))
       ), 'OrderFill.create');
 
@@ -219,7 +235,7 @@ describe('Order', () => {
       const fill = unwrap(OrderFill.create(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.65')),
-        ['trade-1'],
+        [TRADE_ID_1],
         Quantity.of(new Decimal('100'))
       ), 'OrderFill.create');
 
@@ -233,7 +249,7 @@ describe('Order', () => {
       const fill = unwrap(OrderFill.create(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.65')),
-        ['fill-1', 'fill-2'],
+        [FILL_ID_1, FILL_ID_2],
         Quantity.of(new Decimal('100'))
       ), 'OrderFill.create');
 
@@ -245,13 +261,13 @@ describe('Order', () => {
       const fill = unwrap(OrderFill.create(
         Quantity.of(new Decimal('30')),
         Price.of(new Decimal('0.65')),
-        ['fill-1'],
+        [FILL_ID_1],
         Quantity.of(new Decimal('100'))
       ), 'OrderFill.create');
 
       const order = unwrap(createValidOrder({ fill }));
-      expect(order.hasFill('fill-1')).toBe(true);
-      expect(order.hasFill('fill-2')).toBe(false);
+      expect(order.hasFill(FILL_ID_1)).toBe(true);
+      expect(order.hasFill(FILL_ID_2)).toBe(false);
     });
   });
 
@@ -388,7 +404,7 @@ describe('Order', () => {
         let order = unwrap(createValidOrder({ status: 'OPEN' }));
 
         // Fill 1: 30 units
-        const fill1 = createFill({ id: 'fill-1', size: Quantity.of(new Decimal('30')) });
+        const fill1 = createFill({ id: FILL_ID_1, size: Quantity.of(new Decimal('30')) });
         const result1 = order.applyFill(fill1);
         expect(result1.ok).toBe(true);
         order = unwrap(result1);
@@ -396,7 +412,7 @@ describe('Order', () => {
         expect(order.fill.getFilledSize().value().toNumber()).toBe(30);
 
         // Fill 2: 20 units
-        const fill2 = createFill({ id: 'fill-2', size: Quantity.of(new Decimal('20')) });
+        const fill2 = createFill({ id: FILL_ID_2, size: Quantity.of(new Decimal('20')) });
         const result2 = order.applyFill(fill2);
         expect(result2.ok).toBe(true);
         order = unwrap(result2);
@@ -404,7 +420,7 @@ describe('Order', () => {
         expect(order.fill.getFilledSize().value().toNumber()).toBe(50);
 
         // Fill 3: 50 units (completes)
-        const fill3 = createFill({ id: 'fill-3', size: Quantity.of(new Decimal('50')) });
+        const fill3 = createFill({ id: FILL_ID_3, size: Quantity.of(new Decimal('50')) });
         const result3 = order.applyFill(fill3);
         expect(result3.ok).toBe(true);
         order = unwrap(result3);
@@ -415,13 +431,13 @@ describe('Order', () => {
       it('should fail for duplicate fill ID', () => {
         let order = unwrap(createValidOrder({ status: 'OPEN' }));
 
-        const fill1 = createFill({ id: 'fill-1', size: Quantity.of(new Decimal('30')) });
+        const fill1 = createFill({ id: FILL_ID_1, size: Quantity.of(new Decimal('30')) });
         const result1 = order.applyFill(fill1);
         expect(result1.ok).toBe(true);
         order = unwrap(result1);
 
         // Try same fill ID again
-        const fill2 = createFill({ id: 'fill-1', size: Quantity.of(new Decimal('20')) });
+        const fill2 = createFill({ id: FILL_ID_1, size: Quantity.of(new Decimal('20')) });
         const result2 = order.applyFill(fill2);
         expect(result2.ok).toBe(false);
       });
@@ -455,7 +471,7 @@ describe('Order', () => {
 
       it('should reject fill with mismatched orderId', () => {
         const order = unwrap(createValidOrder({ status: 'OPEN' }));
-        const fill = createFill({ orderId: 'wrong-order' });
+        const fill = createFill({ orderId: asOrderId('wrong-order')! });
 
         expect(order.canAcceptFill(fill)).toBe(false);
       });
@@ -491,13 +507,13 @@ describe('Order', () => {
   describe('serialization', () => {
     it('toJSON() should serialize order', () => {
       const order = unwrap(createValidOrder({
-        id: 'order-123',
+        id: ORDER_ID,
         status: 'OPEN',
       }));
 
       const json = order.toJSON();
 
-      expect(json.id).toBe('order-123');
+      expect(json.id).toBe(ORDER_ID);
       expect(json.status).toBe('OPEN');
       expect(json.price).toBe(0.65);
       expect(json.size).toBe(100);
@@ -508,7 +524,7 @@ describe('Order', () => {
 
     it('toString() should provide readable representation', () => {
       const order = unwrap(createValidOrder({
-        id: 'order-123',
+        id: ORDER_ID,
         side: 'BUY',
         size: Quantity.of(new Decimal('100')),
         price: Price.of(new Decimal('0.65')),

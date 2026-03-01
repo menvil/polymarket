@@ -56,6 +56,8 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
 import { ValidationError } from '@polymarket/errors';
+import type { AssetId, OrderId, FillId } from '@polymarket/ids';
+import { asOrderId } from '@polymarket/ids';
 import type { OrderChange, FillForOrder } from './types/OrderChange';
 import type { OrderStatus } from './value-objects/OrderStatus';
 import { OrderFill } from './value-objects/OrderFill';
@@ -69,7 +71,7 @@ import {
   isPartiallyFilled,
   canModify,
 } from './utils/predicates';
-import { canCancel } from './transitions/guards';
+import { canCancel, canApplyFill } from './transitions/guards';
 
 /**
  * Параметры создания Order
@@ -79,9 +81,8 @@ import { canCancel } from './transitions/guards';
  * strategyId опциональный для multi-strategy изоляции.
  */
 export interface OrderParams {
-  readonly id: string;
-  readonly marketId: string;
-  readonly tokenId: string;
+  readonly id: OrderId;
+  readonly asset: AssetId;
   readonly side: Side;
   readonly price: Price;
   readonly size: Quantity;
@@ -100,9 +101,8 @@ export interface OrderParams {
  * Методы изменения состояния возвращают НОВЫЙ экземпляр.
  */
 export class Order {
-  public readonly id: string;
-  public readonly marketId: string;
-  public readonly tokenId: string;
+  public readonly id: OrderId;
+  public readonly asset: AssetId;
   public readonly side: Side;
   public readonly price: Price;
   public readonly size: Quantity;
@@ -117,8 +117,7 @@ export class Order {
    */
   private constructor(params: OrderParams) {
     this.id = params.id;
-    this.marketId = params.marketId;
-    this.tokenId = params.tokenId;
+    this.asset = params.asset;
     this.side = params.side;
     this.price = params.price;
     this.size = params.size;
@@ -156,29 +155,20 @@ export class Order {
    * ```
    */
   public static create(params: OrderParams): Result<Order, ValidationError> {
-    // Валидация ID
-    if (!params.id || typeof params.id !== 'string' || params.id.trim() === '') {
+    // Валидация ID через branded type
+    if (!asOrderId(params.id)) {
       return Err(
-        new ValidationError('Order ID must be a non-empty string', {
+        new ValidationError('Order ID must be a non-empty string (max 256 chars)', {
           context: { field: 'id', value: params.id },
         })
       );
     }
 
-    // Валидация marketId
-    if (!params.marketId || typeof params.marketId !== 'string' || params.marketId.trim() === '') {
+    // Валидация asset
+    if (!params.asset) {
       return Err(
-        new ValidationError('Market ID must be a non-empty string', {
-          context: { field: 'marketId', orderId: params.id, value: params.marketId },
-        })
-      );
-    }
-
-    // Валидация tokenId
-    if (!params.tokenId || typeof params.tokenId !== 'string' || params.tokenId.trim() === '') {
-      return Err(
-        new ValidationError('Token ID must be a non-empty string', {
-          context: { field: 'tokenId', orderId: params.id, value: params.tokenId },
+        new ValidationError('Asset is required', {
+          context: { field: 'asset', orderId: params.id },
         })
       );
     }
@@ -330,7 +320,7 @@ export class Order {
    * @param fillId - ID fill для проверки
    * @returns True если fill был применен
    */
-  public hasFill(fillId: string): boolean {
+  public hasFill(fillId: FillId): boolean {
     return this.fill.hasFill(fillId);
   }
 
@@ -347,7 +337,7 @@ export class Order {
    */
   public canAcceptFill(fill: FillForOrder): boolean {
     return (
-      canCancel(this.status) &&
+      canApplyFill(this.status) &&
       fill.orderId === this.id &&
       fill.side === this.side &&
       fill.size.value().lte(this.getRemainingSize().value()) &&
@@ -451,6 +441,22 @@ export class Order {
   // ==================== Private FSM ====================
 
   /**
+   * Восстанавливает Order из OrderData без повторной валидации
+   *
+   * @param data - Данные заявки из FSM handler
+   * @returns Новый Order instance
+   *
+   * @remarks
+   * Используется ТОЛЬКО внутри `_transition()` после успешного FSM перехода.
+   * Данные уже валидированы при создании исходного Order — повторная
+   * валидация излишня и создаёт ложные точки отказа.
+   * FSM handlers изменяют только `status`, `fill` и `reason` — инварианты id/asset/price/size/timestamp не нарушаются.
+   */
+  private static _reconstitute(data: OrderData): Order {
+    return new Order(data);
+  }
+
+  /**
    * Применяет OrderChange через OrderFSM
    *
    * @param change - OrderChange объект
@@ -458,14 +464,13 @@ export class Order {
    *
    * @remarks
    * Централизованный метод для всех переходов состояния.
-   * Делегирует обработку в OrderFSM.
+   * Делегирует обработку в OrderFSM, затем восстанавливает Order
+   * через `_reconstitute()` без повторной валидации неизменных полей.
    */
   private _transition(change: OrderChange): Result<Order, ValidationError> {
-    // Конвертируем текущий Order в OrderData
     const orderData: OrderData = {
       id: this.id,
-      marketId: this.marketId,
-      tokenId: this.tokenId,
+      asset: this.asset,
       side: this.side,
       price: this.price,
       size: this.size,
@@ -476,11 +481,9 @@ export class Order {
       reason: this.reason,
     };
 
-    // Применяем change через FSM
     const result = OrderFSM.apply(orderData, change);
 
     if (!result.ok) {
-      // Конвертируем Error в ValidationError
       return Err(
         new ValidationError(result.error.message, {
           context: { orderId: this.id, change: change.type },
@@ -488,20 +491,7 @@ export class Order {
       );
     }
 
-    // Создаем новый Order из обновленных данных
-    return Order.create({
-      id: result.value.id,
-      marketId: result.value.marketId,
-      tokenId: result.value.tokenId,
-      side: result.value.side as Side,
-      price: result.value.price,
-      size: result.value.size,
-      status: result.value.status,
-      timestamp: result.value.timestamp,
-      strategyId: result.value.strategyId,
-      fill: result.value.fill,
-      reason: result.value.reason,
-    });
+    return Ok(Order._reconstitute(result.value));
   }
 
   // ==================== Serialization ====================
@@ -514,8 +504,7 @@ export class Order {
   public toJSON(): Record<string, unknown> {
     return {
       id: this.id,
-      marketId: this.marketId,
-      tokenId: this.tokenId,
+      asset: this.asset,
       side: this.side,
       price: this.price.value().toNumber(),
       size: this.size.value().toNumber(),

@@ -45,7 +45,6 @@ import {
   handleCancelled,
   handleExpired,
   handleFillApplied,
-  type FillData,
 } from './handlers';
 
 /**
@@ -106,19 +105,8 @@ export class OrderFSM {
       case 'EXPIRED':
         return handleExpired(order);
 
-      case 'FILL_APPLIED': {
-        // Конвертируем FillForOrder в FillData для handler
-        const fillData: FillData = {
-          id: change.fill.id,
-          orderId: change.fill.orderId,
-          marketId: change.fill.marketId,
-          tokenId: change.fill.tokenId,
-          side: change.fill.side,
-          size: change.fill.size,
-          price: change.fill.price,
-        };
-        return handleFillApplied(order, fillData);
-      }
+      case 'FILL_APPLIED':
+        return handleFillApplied(order, change.fill);
 
       default: {
         // TypeScript exhaustiveness check

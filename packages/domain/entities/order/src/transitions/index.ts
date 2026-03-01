@@ -38,5 +38,4 @@ export {
   handleExpired,
   handleFillApplied,
   type OrderData,
-  type FillData,
 } from './handlers';

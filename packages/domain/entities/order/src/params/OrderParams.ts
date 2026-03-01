@@ -7,6 +7,7 @@
  */
 
 import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { AssetId, OrderId } from '@polymarket/ids';
 import type { OrderStatus } from '../value-objects/OrderStatus';
 import type { OrderFill } from '../value-objects/OrderFill';
 
@@ -16,11 +17,11 @@ import type { OrderFill } from '../value-objects/OrderFill';
  * @remarks
  * Используется в Order.create().
  * Все поля валидируются перед созданием Order.
+ * asset заменяет отдельные marketId + tokenId.
  */
 export interface OrderParams {
-  readonly id: string;
-  readonly marketId: string;
-  readonly tokenId: string;
+  readonly id: OrderId;
+  readonly asset: AssetId;
   readonly side: Side;
   readonly price: Price;
   readonly size: Quantity;
@@ -37,11 +38,11 @@ export interface OrderParams {
  * @remarks
  * Упрощенная версия для создания новой заявки.
  * Статус автоматически PENDING, fill пустой.
+ * asset заменяет отдельные marketId + tokenId.
  */
 export interface CreateOrderParams {
-  readonly id: string;
-  readonly marketId: string;
-  readonly tokenId: string;
+  readonly id: OrderId;
+  readonly asset: AssetId;
   readonly side: Side;
   readonly price: Price;
   readonly size: Quantity;

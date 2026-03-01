@@ -42,6 +42,7 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { Quantity, Price } from '@polymarket/value-objects';
+import type { FillId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 /**
@@ -56,7 +57,7 @@ import Decimal from 'decimal.js';
 export class OrderFill {
   private readonly _filledSize: Quantity;
   private readonly _averageFillPrice: Price | undefined;
-  private readonly _fillIds: readonly string[];
+  private readonly _fillIds: readonly FillId[];
 
   /**
    * Приватный конструктор (используйте OrderFill.empty() или OrderFill.create())
@@ -64,7 +65,7 @@ export class OrderFill {
   private constructor(
     filledSize: Quantity,
     averageFillPrice: Price | undefined,
-    fillIds: readonly string[]
+    fillIds: readonly FillId[]
   ) {
     this._filledSize = filledSize;
     this._averageFillPrice = averageFillPrice;
@@ -83,7 +84,7 @@ export class OrderFill {
    * ```
    */
   public static empty(): OrderFill {
-    return new OrderFill(Quantity.ZERO, undefined, [] as string[]);
+    return new OrderFill(Quantity.ZERO, undefined, [] as FillId[]);
   }
 
   /**
@@ -118,12 +119,17 @@ export class OrderFill {
   public static create(
     filledSize: Quantity,
     averageFillPrice: Price | undefined,
-    fillIds: string[],
+    fillIds: FillId[],
     orderSize: Quantity
   ): Result<OrderFill, Error> {
     // Валидация 1: filledSize должен быть >= 0 (гарантируется инвариантом Quantity)
 
-    // Валидация 2: filledSize должен быть <= orderSize
+    // Валидация 2: если filledSize > 0, averageFillPrice обязателен
+    if (filledSize.isPositive() && !averageFillPrice) {
+      return Err(new Error('Average fill price is required when filledSize > 0'));
+    }
+
+    // Валидация 3: filledSize должен быть <= orderSize
     if (filledSize.isGreaterThan(orderSize)) {
       return Err(
         new Error(
@@ -132,7 +138,7 @@ export class OrderFill {
       );
     }
 
-    // Валидация 3: fillIds не должен содержать дубликатов
+    // Валидация 4: fillIds не должен содержать дубликатов
     const uniqueFillIds = new Set(fillIds);
     if (uniqueFillIds.size !== fillIds.length) {
       return Err(new Error('Fill IDs must be unique'));
@@ -215,7 +221,7 @@ export class OrderFill {
    *
    * @returns Массив fill IDs (readonly)
    */
-  public getFillIds(): readonly string[] {
+  public getFillIds(): readonly FillId[] {
     return this._fillIds;
   }
 
@@ -245,7 +251,7 @@ export class OrderFill {
    * console.log(fill.hasFill('fill-99')); // false
    * ```
    */
-  public hasFill(fillId: string): boolean {
+  public hasFill(fillId: FillId): boolean {
     return this._fillIds.includes(fillId);
   }
 
@@ -331,7 +337,7 @@ export class OrderFill {
   public addFill(
     fillSize: Quantity,
     fillPrice: Price,
-    fillId: string,
+    fillId: FillId,
     orderSize: Quantity
   ): Result<OrderFill, Error> {
     // Валидация 1: fillSize должен быть > 0

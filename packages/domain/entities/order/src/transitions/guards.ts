@@ -30,7 +30,9 @@
  */
 
 import type { OrderStatus } from '../value-objects/OrderStatus';
-import type { Quantity } from '@polymarket/value-objects';
+import type { Quantity, Side } from '@polymarket/value-objects';
+import type { AssetId } from '@polymarket/ids';
+import { AssetIdHelpers } from '@polymarket/ids';
 
 /**
  * Проверяет, может ли заявка быть принята (accepted)
@@ -165,24 +167,20 @@ export function canApplyFill(status: OrderStatus): boolean {
 export interface FillValidationParams {
   /** Текущий статус заявки */
   orderStatus: OrderStatus;
-  /** Market ID заявки */
-  orderMarketId: string;
-  /** Token ID заявки */
-  orderTokenId: string;
+  /** Актив заявки (заменяет отдельные orderMarketId + orderTokenId) */
+  orderAsset: AssetId;
   /** Сторона заявки (BUY/SELL) */
-  orderSide: string;
+  orderSide: Side;
   /** ID заявки */
   orderId: string;
   /** Оставшийся размер для заполнения */
   remainingSize: Quantity;
   /** IDs уже примененных fills */
   existingFillIds: readonly string[];
-  /** Market ID fill */
-  fillMarketId: string;
-  /** Token ID fill */
-  fillTokenId: string;
+  /** Актив fill (заменяет отдельные fillMarketId + fillTokenId) */
+  fillAsset: AssetId;
   /** Сторона fill */
-  fillSide: string;
+  fillSide: Side;
   /** Order ID в fill — ОБЯЗАТЕЛЕН (Fill.orderId всегда присутствует) */
   fillOrderId: string;
   /** Размер fill */
@@ -236,32 +234,27 @@ export function canAcceptFillDetailed(params: FillValidationParams): boolean {
     return false;
   }
 
-  // 2. marketId должен совпадать
-  if (params.fillMarketId !== params.orderMarketId) {
+  // 2. asset должен совпадать (заменяет отдельные marketId + tokenId проверки)
+  if (!AssetIdHelpers.equals(params.fillAsset, params.orderAsset)) {
     return false;
   }
 
-  // 3. tokenId должен совпадать
-  if (params.fillTokenId !== params.orderTokenId) {
-    return false;
-  }
-
-  // 4. side должна совпадать
+  // 3. side должна совпадать
   if (params.fillSide !== params.orderSide) {
     return false;
   }
 
-  // 5. orderId должен совпадать (Fill.orderId всегда обязателен)
+  // 4. orderId должен совпадать (Fill.orderId всегда обязателен)
   if (params.fillOrderId !== params.orderId) {
     return false;
   }
 
-  // 6. size не должен превышать remainingSize
+  // 5. size не должен превышать remainingSize
   if (params.fillSize.isGreaterThan(params.remainingSize)) {
     return false;
   }
 
-  // 7. Нет дубликата fill.id
+  // 6. Нет дубликата fill.id
   if (params.existingFillIds.includes(params.fillId)) {
     return false;
   }
