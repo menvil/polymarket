@@ -6,7 +6,7 @@
  * Включает как обязательные, так и опциональные параметры.
  */
 
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import type { AssetId, OrderId } from '@polymarket/ids';
 import type { OrderStatus } from '../value-objects/OrderStatus';
 import type { OrderFill } from '../value-objects/OrderFill';
@@ -26,7 +26,7 @@ export interface OrderParams {
   readonly price: Price;
   readonly size: Quantity;
   readonly status: OrderStatus;
-  readonly timestamp: Date;
+  readonly timestamp: Timestamp;
   readonly strategyId?: string;
   readonly fill?: OrderFill;
   readonly reason?: string;

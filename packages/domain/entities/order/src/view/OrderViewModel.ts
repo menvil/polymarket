@@ -70,7 +70,7 @@ export class OrderViewModel {
       price: order.price.value().toNumber(),
       size: order.size.value().toNumber(),
       status: order.status,
-      timestamp: order.timestamp.toISOString(),
+      timestamp: order.timestamp.toISO(),
       strategyId: order.strategyId,
       fill: {
         filledSize: order.fill.getFilledSize().value().toNumber(),

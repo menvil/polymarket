@@ -54,7 +54,7 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import type { Price, Quantity, Side } from '@polymarket/value-objects';
+import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import { ValidationError } from '@polymarket/errors';
 import type { AssetId, OrderId, FillId } from '@polymarket/ids';
 import { asOrderId } from '@polymarket/ids';
@@ -87,7 +87,7 @@ export interface OrderParams {
   readonly price: Price;
   readonly size: Quantity;
   readonly status: OrderStatus;
-  readonly timestamp: Date;
+  readonly timestamp: Timestamp;
   readonly strategyId?: string;
   readonly fill?: OrderFill;
   readonly reason?: string;
@@ -107,7 +107,7 @@ export class Order {
   public readonly price: Price;
   public readonly size: Quantity;
   public readonly status: OrderStatus;
-  public readonly timestamp: Date;
+  public readonly timestamp: Timestamp;
   public readonly strategyId?: string;
   public readonly fill: OrderFill;
   public readonly reason?: string;
@@ -214,15 +214,6 @@ export class Order {
           })
         );
       }
-    }
-
-    // Валидация timestamp
-    if (!(params.timestamp instanceof Date) || isNaN(params.timestamp.getTime())) {
-      return Err(
-        new ValidationError('Invalid timestamp', {
-          context: { field: 'timestamp', orderId: params.id, value: params.timestamp },
-        })
-      );
     }
 
     return Ok(new Order(params));
@@ -509,7 +500,7 @@ export class Order {
       price: this.price.value().toNumber(),
       size: this.size.value().toNumber(),
       status: this.status,
-      timestamp: this.timestamp.toISOString(),
+      timestamp: this.timestamp.toISO(),
       strategyId: this.strategyId,
       fill: this.fill.toJSON(),
       reason: this.reason,

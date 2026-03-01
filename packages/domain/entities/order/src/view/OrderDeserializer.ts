@@ -30,7 +30,7 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import { Price, Quantity, type Side } from '@polymarket/value-objects';
+import { Price, Quantity, TimestampService, type Side } from '@polymarket/value-objects';
 import { ValidationError } from '@polymarket/errors';
 import type { FillId } from '@polymarket/ids';
 import { asOrderId, asFillId, parseAssetId } from '@polymarket/ids';
@@ -136,12 +136,13 @@ export class OrderDeserializer {
       const size = Quantity.of(new Decimal(json.size));
 
       // Парсинг timestamp
-      const timestamp = new Date(json.timestamp);
-      if (isNaN(timestamp.getTime())) {
-        return Err(new ValidationError('Invalid timestamp format', {
+      const timestampResult = TimestampService.fromISO(json.timestamp);
+      if (!timestampResult.ok) {
+        return Err(new ValidationError(`Invalid timestamp: ${timestampResult.error.message}`, {
           context: { field: 'timestamp', orderId: json.id, value: json.timestamp },
         }));
       }
+      const timestamp = timestampResult.value;
 
       // Создание OrderFill (если есть)
       let fill: OrderFill | undefined;

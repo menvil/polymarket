@@ -26,7 +26,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import type { OrderStatus } from '../value-objects/OrderStatus';
 import { OrderFill } from '../value-objects/OrderFill';
-import type { Quantity, Price, Side } from '@polymarket/value-objects';
+import type { Quantity, Price, Side, Timestamp } from '@polymarket/value-objects';
 import type { AssetId, OrderId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { canAccept, canReject, canCancel, canExpire, canApplyFill } from './guards';
@@ -50,7 +50,7 @@ export interface OrderData {
   readonly price: Price;
   readonly size: Quantity;
   readonly status: OrderStatus;
-  readonly timestamp: Date;
+  readonly timestamp: Timestamp;
   readonly fill: OrderFill;
   readonly strategyId?: string;
   readonly reason?: string;

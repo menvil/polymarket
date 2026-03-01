@@ -2,7 +2,7 @@
  * Тесты для Order entity
  */
 
-import { Price, Quantity } from '@polymarket/value-objects';
+import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import type { AssetId } from '@polymarket/ids';
 import {
   asOrderId,
@@ -55,7 +55,7 @@ function createValidOrder(overrides?: Partial<Parameters<typeof Order.create>[0]
     price: Price.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
     status: 'PENDING' as const,
-    timestamp: new Date('2024-01-01T00:00:00Z'),
+    timestamp: Timestamp.now(),
   };
 
   return Order.create({ ...defaults, ...overrides });
@@ -116,16 +116,6 @@ describe('Order', () => {
       expect(() => Quantity.of(new Decimal('-10'))).toThrow();
     });
 
-    it('should fail with invalid timestamp', () => {
-      const result = createValidOrder({
-        timestamp: new Date('invalid'),
-      });
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Invalid timestamp');
-      }
-    });
 
     it('should create order with optional strategyId', () => {
       const result = createValidOrder({ strategyId: 'strategy-1' });
