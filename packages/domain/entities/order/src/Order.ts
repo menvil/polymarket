@@ -57,21 +57,22 @@ import { Result, Ok, Err } from '@polymarket/result';
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import { ValidationError } from '@polymarket/errors';
 import type { AssetId, OrderId, FillId } from '@polymarket/ids';
-import { asOrderId } from '@polymarket/ids';
-import type { OrderChange, FillForOrder } from './types/OrderChange';
-import type { OrderStatus } from './value-objects/OrderStatus';
-import { OrderFill } from './value-objects/OrderFill';
-import { OrderFSM } from './transitions/OrderFSM';
-import type { OrderData } from './transitions/handlers';
-import { getNotional, getRemainingSize, getFillPercentage } from './utils/calculations';
+import { asOrderId, AssetIdHelpers, assetIdToString } from '@polymarket/ids';
+import type { OrderChange, FillForOrder } from './types/OrderChange.js';
+import type { OrderStatus } from './value-objects/OrderStatus.js';
+import { ORDER_STATUS_TYPES } from './value-objects/OrderStatus.js';
+import { OrderFill } from './value-objects/OrderFill.js';
+import { OrderFSM } from './transitions/OrderFSM.js';
+import type { OrderData } from './transitions/handlers.js';
+import { getNotional, getRemainingSize, getFillPercentage } from './utils/calculations.js';
 import {
   isFilled,
   isOpen,
   isPending,
   isPartiallyFilled,
   canModify,
-} from './utils/predicates';
-import { canCancel, canApplyFill } from './transitions/guards';
+} from './utils/predicates.js';
+import { canCancel, canApplyFill } from './transitions/guards.js';
 
 /**
  * Параметры создания Order
@@ -195,6 +196,25 @@ export class Order {
       return Err(
         new ValidationError('Order size must be positive', {
           context: { field: 'size', orderId: params.id, value: params.size.value().toNumber() },
+        })
+      );
+    }
+
+    // Валидация side
+    const VALID_SIDES = ['BUY', 'SELL'] as const;
+    if (!VALID_SIDES.includes(params.side as 'BUY' | 'SELL')) {
+      return Err(
+        new ValidationError(`Invalid side: ${params.side}. Must be BUY or SELL`, {
+          context: { field: 'side', orderId: params.id, value: params.side },
+        })
+      );
+    }
+
+    // Валидация status
+    if (!ORDER_STATUS_TYPES.includes(params.status)) {
+      return Err(
+        new ValidationError(`Invalid status: ${params.status}`, {
+          context: { field: 'status', orderId: params.id, value: params.status },
         })
       );
     }
@@ -329,8 +349,10 @@ export class Order {
   public canAcceptFill(fill: FillForOrder): boolean {
     return (
       canApplyFill(this.status) &&
+      AssetIdHelpers.equals(fill.asset, this.asset) &&
       fill.orderId === this.id &&
       fill.side === this.side &&
+      fill.size.isPositive() &&
       fill.size.value().lte(this.getRemainingSize().value()) &&
       !this.hasFill(fill.id)
     );
@@ -495,7 +517,7 @@ export class Order {
   public toJSON(): Record<string, unknown> {
     return {
       id: this.id,
-      asset: this.asset,
+      asset: assetIdToString(this.asset),
       side: this.side,
       price: this.price.value().toNumber(),
       size: this.size.value().toNumber(),

@@ -302,7 +302,7 @@ describe('OrderFill', () => {
       expect(newFill.getFilledSize().value().toNumber()).toBe(30);
     });
 
-    it('should not allow modification of fillIds array', () => {
+    it('должен копировать входной массив fillIds чтобы внешняя мутация не повлияла на состояние', () => {
       const filledSize = Quantity.of(new Decimal('50'));
       const avgPrice = Price.of(new Decimal('0.65'));
       const orderSize = Quantity.of(new Decimal('100'));
@@ -310,10 +310,28 @@ describe('OrderFill', () => {
 
       const fill = unwrap(OrderFill.create(filledSize, avgPrice, fillIds, orderSize), 'OrderFill.create');
 
-      const retrievedIds = fill.getFillIds();
+      // Мутируем оригинальный массив
+      (fillIds as string[]).push('injected-id' as typeof FILL_1);
 
-      // Should be readonly array (TypeScript enforces this)
-      expect(retrievedIds).toEqual([FILL_1, FILL_2]);
+      // Внутреннее состояние fill не должно измениться
+      expect(fill.getFillIds()).toEqual([FILL_1, FILL_2]);
+      expect(fill.getTradeCount()).toBe(2);
+    });
+
+    it('должен возвращать копию массива из getFillIds чтобы внешняя мутация не повлияла на состояние', () => {
+      const filledSize = Quantity.of(new Decimal('50'));
+      const avgPrice = Price.of(new Decimal('0.65'));
+      const orderSize = Quantity.of(new Decimal('100'));
+
+      const fill = unwrap(OrderFill.create(filledSize, avgPrice, [FILL_1, FILL_2], orderSize), 'OrderFill.create');
+
+      // Мутируем возвращённый массив
+      const returned = fill.getFillIds() as unknown as string[];
+      returned.push('injected-id');
+
+      // Повторный вызов должен вернуть оригинальный массив без мутации
+      expect(fill.getFillIds()).toEqual([FILL_1, FILL_2]);
+      expect(fill.getTradeCount()).toBe(2);
     });
   });
 });

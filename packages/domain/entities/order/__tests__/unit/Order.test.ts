@@ -116,6 +116,32 @@ describe('Order', () => {
       expect(() => Quantity.of(new Decimal('-10'))).toThrow();
     });
 
+    it('should fail with zero size', () => {
+      const result = createValidOrder({ size: Quantity.of(new Decimal('0')) });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Order size must be positive');
+      }
+    });
+
+    it('should fail with invalid side', () => {
+      const result = createValidOrder({ side: 'INVALID' as 'BUY' });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Invalid side');
+      }
+    });
+
+    it('should fail with invalid status', () => {
+      const result = createValidOrder({ status: 'UNKNOWN' as 'PENDING' });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Invalid status');
+      }
+    });
 
     it('should create order with optional strategyId', () => {
       const result = createValidOrder({ strategyId: 'strategy-1' });
@@ -471,6 +497,55 @@ describe('Order', () => {
         const fill = createFill({ side: 'SELL' });
 
         expect(order.canAcceptFill(fill)).toBe(false);
+      });
+
+      it('should reject fill with mismatched asset', () => {
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
+        const otherAsset: AssetId = {
+          ...TEST_ASSET,
+          outcomeKey: parseOutcomeKey('NO')!,
+        };
+        const fill = createFill({ asset: otherAsset });
+
+        expect(order.canAcceptFill(fill)).toBe(false);
+      });
+
+      it('should reject fill with zero size', () => {
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
+        const fill = createFill({ size: Quantity.of(new Decimal('0')) });
+
+        expect(order.canAcceptFill(fill)).toBe(false);
+      });
+
+      it('should reject fill for PENDING status', () => {
+        const order = unwrap(createValidOrder({ status: 'PENDING' }));
+        const fill = createFill();
+
+        expect(order.canAcceptFill(fill)).toBe(false);
+      });
+
+      it('should reject already-applied fill ID', () => {
+        let order = unwrap(createValidOrder({ status: 'OPEN' }));
+
+        // Apply fill first
+        const fill = createFill({ id: FILL_ID_1, size: Quantity.of(new Decimal('30')) });
+        order = unwrap(order.applyFill(fill));
+
+        // canAcceptFill must now reject the same fill ID
+        expect(order.canAcceptFill(fill)).toBe(false);
+      });
+
+      it('canAcceptFill rejects exactly what applyFill rejects', () => {
+        // Проверяем паритет: всё что canAcceptFill отклоняет — applyFill тоже отклоняет
+        const order = unwrap(createValidOrder({ status: 'OPEN' }));
+
+        const sizeTooLarge = createFill({ size: Quantity.of(new Decimal('150')) });
+        expect(order.canAcceptFill(sizeTooLarge)).toBe(false);
+        expect(order.applyFill(sizeTooLarge).ok).toBe(false);
+
+        const wrongOrder = createFill({ orderId: asOrderId('other-order')! });
+        expect(order.canAcceptFill(wrongOrder)).toBe(false);
+        expect(order.applyFill(wrongOrder).ok).toBe(false);
       });
     });
   });

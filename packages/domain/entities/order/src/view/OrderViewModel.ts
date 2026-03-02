@@ -19,7 +19,8 @@
  * ```
  */
 
-import type { Order } from '../Order';
+import { assetIdToString } from '@polymarket/ids';
+import type { Order } from '../Order.js';
 
 /**
  * Summary представление Order для UI списков
@@ -65,7 +66,7 @@ export class OrderViewModel {
   public static toJSON(order: Order): Record<string, unknown> {
     return {
       id: order.id,
-      asset: order.asset,
+      asset: assetIdToString(order.asset),
       side: order.side,
       price: order.price.value().toNumber(),
       size: order.size.value().toNumber(),

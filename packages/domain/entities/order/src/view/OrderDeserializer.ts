@@ -35,10 +35,10 @@ import { ValidationError } from '@polymarket/errors';
 import type { FillId } from '@polymarket/ids';
 import { asOrderId, asFillId, parseAssetId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
-import type { Order } from '../Order';
-import { Order as OrderClass } from '../Order';
-import type { OrderStatus } from '../value-objects/OrderStatus';
-import { OrderFill } from '../value-objects/OrderFill';
+import type { Order } from '../Order.js';
+import { Order as OrderClass } from '../Order.js';
+import type { OrderStatus } from '../value-objects/OrderStatus.js';
+import { OrderFill } from '../value-objects/OrderFill.js';
 
 /**
  * JSON представление Order (из API/БД)
@@ -124,10 +124,19 @@ export class OrderDeserializer {
       }
 
       // Парсинг AssetId
-      const asset = parseAssetId(JSON.stringify(json.asset));
+      // asset сериализован как строка (assetIdToString), поэтому парсим напрямую
+      const assetStr = typeof json.asset === 'string' ? json.asset : '';
+      const asset = parseAssetId(assetStr);
       if (!asset) {
         return Err(new ValidationError('Invalid asset format', {
           context: { field: 'asset', orderId: json.id, value: json.asset },
+        }));
+      }
+
+      // Валидация side
+      if (json.side !== 'BUY' && json.side !== 'SELL') {
+        return Err(new ValidationError(`Invalid side: ${json.side}. Must be BUY or SELL`, {
+          context: { field: 'side', orderId: json.id, value: json.side },
         }));
       }
 
