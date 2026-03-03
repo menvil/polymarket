@@ -60,11 +60,11 @@
  */
 
 // ==================== Entity ====================
-export { Order } from './Order';
+export { Order } from './Order.js';
 
 // ==================== Value Objects ====================
-export { OrderFill } from './value-objects/OrderFill';
-export type { OrderStatus } from './value-objects/OrderStatus';
+export { OrderFill } from './value-objects/OrderFill.js';
+export type { OrderStatus } from './value-objects/OrderStatus.js';
 export {
   OrderStatusConstructors,
   canTransition,
@@ -72,23 +72,23 @@ export {
   isActive,
   canCancel,
   statusToString,
-} from './value-objects/OrderStatus';
+} from './value-objects/OrderStatus.js';
 
 // Side теперь экспортируется из @polymarket/value-objects
 // import { Side } from '@polymarket/value-objects';
 
 // ==================== Параметры ====================
-export type { OrderParams, CreateOrderParams } from './params';
+export type { OrderParams, CreateOrderParams } from './params/index.js';
 
 // ==================== View Layer ====================
 export {
   OrderViewModel,
   OrderDeserializer,
-} from './view';
+} from './view/index.js';
 export type {
   OrderSummary,
   OrderJSON,
-} from './view';
+} from './view/index.js';
 
 // ==================== Utilities ====================
 export {
@@ -103,4 +103,4 @@ export {
   isExpired,
   isPartiallyFilled,
   canModify,
-} from './utils';
+} from './utils/index.js';

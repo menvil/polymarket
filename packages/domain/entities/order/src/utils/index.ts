@@ -21,7 +21,7 @@ export {
   getNotional,
   getRemainingSize,
   getFillPercentage,
-} from './calculations';
+} from './calculations.js';
 
 export {
   isFilled,
@@ -36,4 +36,4 @@ export {
   canModify,
   isFailed,
   isSuccessful,
-} from './predicates';
+} from './predicates.js';

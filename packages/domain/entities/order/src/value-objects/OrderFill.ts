@@ -144,7 +144,7 @@ export class OrderFill {
       return Err(new Error('Fill IDs must be unique'));
     }
 
-    return Ok(new OrderFill(filledSize, averageFillPrice, fillIds));
+    return Ok(new OrderFill(filledSize, averageFillPrice, [...fillIds]));
   }
 
   /**
@@ -222,7 +222,7 @@ export class OrderFill {
    * @returns Массив fill IDs (readonly)
    */
   public getFillIds(): readonly FillId[] {
-    return this._fillIds;
+    return [...this._fillIds];
   }
 
   /**
@@ -432,7 +432,7 @@ export class OrderFill {
     return {
       filledSize: this._filledSize.value().toNumber(),
       averageFillPrice: this._averageFillPrice?.value().toNumber(),
-      fillIds: this._fillIds,
+      fillIds: [...this._fillIds],
     };
   }
 

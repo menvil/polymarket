@@ -8,8 +8,8 @@
 
 import type { Price, Quantity, Side, Timestamp } from '@polymarket/value-objects';
 import type { AssetId, OrderId } from '@polymarket/ids';
-import type { OrderStatus } from '../value-objects/OrderStatus';
-import type { OrderFill } from '../value-objects/OrderFill';
+import type { OrderStatus } from '../value-objects/OrderStatus.js';
+import type { OrderFill } from '../value-objects/OrderFill.js';
 
 /**
  * Полные параметры для создания Order

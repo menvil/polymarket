@@ -24,13 +24,13 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import type { OrderStatus } from '../value-objects/OrderStatus';
-import { OrderFill } from '../value-objects/OrderFill';
+import type { OrderStatus } from '../value-objects/OrderStatus.js';
+import { OrderFill } from '../value-objects/OrderFill.js';
 import type { Quantity, Price, Side, Timestamp } from '@polymarket/value-objects';
 import type { AssetId, OrderId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
-import { canAccept, canReject, canCancel, canExpire, canApplyFill } from './guards';
-import type { FillForOrder } from '../types/OrderChange';
+import { canAccept, canReject, canCancel, canExpire, canApplyFill } from './guards.js';
+import type { FillForOrder } from '../types/OrderChange.js';
 
 /**
  * Данные Order для FSM handlers

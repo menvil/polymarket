@@ -29,7 +29,7 @@
  * ```
  */
 
-import type { OrderStatus } from '../value-objects/OrderStatus';
+import type { OrderStatus } from '../value-objects/OrderStatus.js';
 import type { Quantity, Side } from '@polymarket/value-objects';
 import type { AssetId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';

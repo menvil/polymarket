@@ -37,15 +37,15 @@
  */
 
 import { Result, Err } from '@polymarket/result';
-import type { OrderChange } from '../types/OrderChange';
-import type { OrderData } from './handlers';
+import type { OrderChange } from '../types/OrderChange.js';
+import type { OrderData } from './handlers.js';
 import {
   handleAccepted,
   handleRejected,
   handleCancelled,
   handleExpired,
   handleFillApplied,
-} from './handlers';
+} from './handlers.js';
 
 /**
  * Класс OrderFSM - диспетчер переходов состояния

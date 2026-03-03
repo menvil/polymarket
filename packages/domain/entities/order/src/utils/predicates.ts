@@ -25,9 +25,9 @@
  * ```
  */
 
-import type { OrderStatus } from '../value-objects/OrderStatus';
-import { isTerminal as isTerminalStatus, isActive as isActiveStatus } from '../value-objects/OrderStatus';
-import type { OrderFill } from '../value-objects/OrderFill';
+import type { OrderStatus } from '../value-objects/OrderStatus.js';
+import { isTerminal as isTerminalStatus, isActive as isActiveStatus } from '../value-objects/OrderStatus.js';
+import type { OrderFill } from '../value-objects/OrderFill.js';
 import type { Quantity } from '@polymarket/value-objects';
 
 /**

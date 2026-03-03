@@ -18,7 +18,7 @@
  * ```
  */
 
-export { OrderFSM } from './OrderFSM';
+export { OrderFSM } from './OrderFSM.js';
 
 export {
   canAccept,
@@ -29,7 +29,7 @@ export {
   canAcceptFillDetailed,
   requiresReason,
   type FillValidationParams,
-} from './guards';
+} from './guards.js';
 
 export {
   handleAccepted,
@@ -38,4 +38,4 @@ export {
   handleExpired,
   handleFillApplied,
   type OrderData,
-} from './handlers';
+} from './handlers.js';

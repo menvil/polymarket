@@ -2,4 +2,4 @@
  * Параметры для Order
  */
 
-export type { OrderParams, CreateOrderParams } from './OrderParams';
+export type { OrderParams, CreateOrderParams } from './OrderParams.js';

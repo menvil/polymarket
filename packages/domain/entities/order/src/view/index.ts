@@ -5,7 +5,7 @@
  * Сериализация и десериализация Order.
  */
 
-export { OrderViewModel } from './OrderViewModel';
-export type { OrderSummary } from './OrderViewModel';
-export { OrderDeserializer } from './OrderDeserializer';
-export type { OrderJSON } from './OrderDeserializer';
+export { OrderViewModel } from './OrderViewModel.js';
+export type { OrderSummary } from './OrderViewModel.js';
+export { OrderDeserializer } from './OrderDeserializer.js';
+export type { OrderJSON } from './OrderDeserializer.js';
