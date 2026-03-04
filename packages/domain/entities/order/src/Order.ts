@@ -63,7 +63,6 @@ import type { OrderStatus } from './value-objects/OrderStatus.js';
 import { ORDER_STATUS_TYPES } from './value-objects/OrderStatus.js';
 import { OrderFill } from './value-objects/OrderFill.js';
 import { OrderFSM } from './transitions/OrderFSM.js';
-import type { OrderData } from './transitions/handlers.js';
 import { getNotional, getRemainingSize, getFillPercentage } from './utils/calculations.js';
 import {
   isFilled,
@@ -454,34 +453,66 @@ export class Order {
   // ==================== Private FSM ====================
 
   /**
-   * Восстанавливает Order из OrderData без повторной валидации
-   *
-   * @param data - Данные заявки из FSM handler
-   * @returns Новый Order instance
-   *
-   * @remarks
-   * Используется ТОЛЬКО внутри `_transition()` после успешного FSM перехода.
-   * Данные уже валидированы при создании исходного Order — повторная
-   * валидация излишня и создаёт ложные точки отказа.
-   * FSM handlers изменяют только `status`, `fill` и `reason` — инварианты id/asset/price/size/timestamp не нарушаются.
-   */
-  private static _reconstitute(data: OrderData): Order {
-    return new Order(data);
-  }
-
-  /**
    * Применяет OrderChange через OrderFSM
    *
    * @param change - OrderChange объект
    * @returns Result<Order, ValidationError>
    *
    * @remarks
-   * Централизованный метод для всех переходов состояния.
-   * Делегирует обработку в OrderFSM, затем восстанавливает Order
-   * через `_reconstitute()` без повторной валидации неизменных полей.
+   * Алгоритм:
+   * 1. OrderFSM.transition() проверяет guard (можно ли из текущего статуса выполнить change)
+   * 2. При Ok — Order применяет change самостоятельно (switch по change.type)
+   * 3. FILL_APPLIED делегируется в _applyFill() для дополнительной валидации
+   *
+   * OrderData/DTO не используется — Order работает с собственными полями напрямую.
+   * Инварианты id/asset/price/size/timestamp не меняются ни в одном переходе.
    */
   private _transition(change: OrderChange): Result<Order, ValidationError> {
-    const orderData: OrderData = {
+    const guardResult = OrderFSM.transition(this.status, change);
+    if (!guardResult.ok) {
+      return Err(
+        new ValidationError(guardResult.error.message, {
+          context: { orderId: this.id, change: change.type },
+        })
+      );
+    }
+
+    switch (change.type) {
+      case 'ACCEPTED':
+        return Ok(new Order({ ...this._params(), status: 'OPEN' }));
+
+      case 'REJECTED':
+        return Ok(new Order({ ...this._params(), status: 'REJECTED', reason: change.reason }));
+
+      case 'CANCELLED':
+        return Ok(new Order({ ...this._params(), status: 'CANCELED', reason: change.reason }));
+
+      case 'EXPIRED':
+        return Ok(new Order({ ...this._params(), status: 'EXPIRED' }));
+
+      case 'FILL_APPLIED':
+        return this._applyFill(change.fill);
+
+      default: {
+        const _exhaustive: never = change;
+        return Err(new ValidationError(`Unhandled OrderChange type`, {
+          context: { orderId: this.id, change: (_exhaustive as any).type },
+        }));
+      }
+    }
+  }
+
+  /**
+   * Возвращает текущие параметры Order для создания нового instance
+   *
+   * @returns OrderParams из текущих полей
+   *
+   * @remarks
+   * Используется в `_transition()` как base для spread-обновления.
+   * Все поля readonly — гарантируется неизменность оригинала.
+   */
+  private _params(): OrderParams {
+    return {
       id: this.id,
       asset: this.asset,
       side: this.side,
@@ -489,22 +520,55 @@ export class Order {
       size: this.size,
       status: this.status,
       timestamp: this.timestamp,
-      fill: this.fill,
       strategyId: this.strategyId,
+      fill: this.fill,
       reason: this.reason,
     };
+  }
 
-    const result = OrderFSM.apply(orderData, change);
-
-    if (!result.ok) {
-      return Err(
-        new ValidationError(result.error.message, {
-          context: { orderId: this.id, change: change.type },
-        })
-      );
+  /**
+   * Применяет fill исполнения к Order
+   *
+   * @param fill - Данные fill для применения
+   * @returns Result<Order, ValidationError>
+   *
+   * @remarks
+   * Валидирует соответствие fill текущему Order (asset, side, orderId),
+   * затем делегирует вычисление в OrderFill.addFill().
+   * Новый статус определяется автоматически: FILLED если filledSize === size,
+   * иначе PARTIALLY_FILLED.
+   */
+  private _applyFill(fill: FillForOrder): Result<Order, ValidationError> {
+    if (!AssetIdHelpers.equals(fill.asset, this.asset)) {
+      return Err(new ValidationError('Fill asset does not match order asset', {
+        context: { orderId: this.id, fillId: fill.id },
+      }));
     }
 
-    return Ok(Order._reconstitute(result.value));
+    if (fill.side !== this.side) {
+      return Err(new ValidationError(
+        `Fill side (${fill.side}) does not match order side (${this.side})`,
+        { context: { orderId: this.id, fillId: fill.id } }
+      ));
+    }
+
+    if (fill.orderId !== this.id) {
+      return Err(new ValidationError(
+        `Fill orderId (${fill.orderId}) does not match this order id (${this.id})`,
+        { context: { orderId: this.id, fillId: fill.id } }
+      ));
+    }
+
+    const newFillResult = this.fill.addFill(fill.size, fill.price, fill.id, this.size);
+    if (!newFillResult.ok) {
+      return Err(new ValidationError(`Failed to apply fill: ${newFillResult.error.message}`, {
+        context: { orderId: this.id, fillId: fill.id },
+      }));
+    }
+
+    const newFill = newFillResult.value;
+    const newStatus: OrderStatus = newFill.isFull(this.size) ? 'FILLED' : 'PARTIALLY_FILLED';
+    return Ok(new Order({ ...this._params(), status: newStatus, fill: newFill }));
   }
 
   // ==================== Serialization ====================

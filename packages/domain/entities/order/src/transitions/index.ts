@@ -3,17 +3,16 @@
  *
  * @remarks
  * Этот модуль экспортирует всё необходимое для работы с переходами состояния Order:
- * - OrderFSM - главный dispatcher
+ * - OrderFSM - чистый валидатор переходов (принимает status + change)
  * - guards - функции-проверки возможности переходов
- * - handlers - обработчики конкретных переходов
  *
  * @example
  * ```typescript
  * import { OrderFSM, canCancel } from '@polymarket/entities/order';
  *
+ * // Проверка guard напрямую
  * if (canCancel(order.status)) {
- *   const change = { type: 'CANCELLED', reason: 'User request' };
- *   const result = OrderFSM.apply(orderData, change);
+ *   const result = order.cancel('User request');
  * }
  * ```
  */
@@ -30,12 +29,3 @@ export {
   requiresReason,
   type FillValidationParams,
 } from './guards.js';
-
-export {
-  handleAccepted,
-  handleRejected,
-  handleCancelled,
-  handleExpired,
-  handleFillApplied,
-  type OrderData,
-} from './handlers.js';

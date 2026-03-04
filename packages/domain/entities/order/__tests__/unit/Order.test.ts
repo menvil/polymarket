@@ -547,6 +547,34 @@ describe('Order', () => {
         expect(order.canAcceptFill(wrongOrder)).toBe(false);
         expect(order.applyFill(wrongOrder).ok).toBe(false);
       });
+
+      describe('applyFill() валидация данных fill', () => {
+        it('возвращает Err если asset fill не совпадает с asset заявки', () => {
+          const order = unwrap(createValidOrder({ status: 'OPEN' }));
+          const fill = createFill({
+            asset: { ...TEST_ASSET, outcomeKey: parseOutcomeKey('NO')! },
+          });
+          const result = order.applyFill(fill);
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error.message).toContain('asset');
+        });
+
+        it('возвращает Err если side fill не совпадает с side заявки', () => {
+          const order = unwrap(createValidOrder({ status: 'OPEN', side: 'BUY' }));
+          const fill = createFill({ side: 'SELL' });
+          const result = order.applyFill(fill);
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error.message).toContain('side');
+        });
+
+        it('возвращает Err если orderId fill не совпадает с id заявки', () => {
+          const order = unwrap(createValidOrder({ status: 'OPEN' }));
+          const fill = createFill({ orderId: asOrderId('other-order')! });
+          const result = order.applyFill(fill);
+          expect(result.ok).toBe(false);
+          if (!result.ok) expect(result.error.message).toContain('orderId');
+        });
+      });
     });
   });
 
