@@ -3,9 +3,9 @@
  *
  * @remarks
  * Отвечает за сериализацию Order в различные представления:
- * - JSON для API responses
- * - Readable string для логирования
- * - Summary для UI списков
+ * - JSON для API responses (toJSON)
+ * - Читаемая строка для логирования (toReadable)
+ * - Summary для UI списков (toSummary)
  *
  * Не содержит бизнес-логики, только форматирование.
  *
@@ -19,7 +19,6 @@
  * ```
  */
 
-import { assetIdToString } from '@polymarket/ids';
 import type { Order } from '../Order.js';
 
 /**
@@ -37,11 +36,11 @@ export interface OrderSummary {
 }
 
 /**
- * Класс OrderViewModel - сериализация Order
+ * Класс OrderViewModel — сериализация Order в различные форматы
  */
 export class OrderViewModel {
   /**
-   * Приватный конструктор - static-only class
+   * Приватный конструктор — static-only class
    */
   private constructor() {
     throw new Error('OrderViewModel is a static class');
@@ -51,11 +50,11 @@ export class OrderViewModel {
    * Преобразует Order в JSON для API
    *
    * @param order - Order для сериализации
-   * @returns Plain object
+   * @returns Plain object совместимый с JSON.stringify()
    *
    * @remarks
-   * Включает все поля Order + вычисляемые поля.
-   * Подходит для JSON.stringify().
+   * Возвращает flat-формат совместимый с OrderSnapshot + вычисляемые поля.
+   * Подходит для передачи через API и для round-trip через Order.fromSnapshot().
    *
    * @example
    * ```typescript
@@ -64,26 +63,14 @@ export class OrderViewModel {
    * ```
    */
   public static toJSON(order: Order): Record<string, unknown> {
+    const snap = order.toSnapshot();
     return {
-      id: order.id,
-      asset: assetIdToString(order.asset),
-      side: order.side,
-      price: order.price.value().toNumber(),
-      size: order.size.value().toNumber(),
-      status: order.status,
-      timestamp: order.timestamp.toISO(),
-      strategyId: order.strategyId,
-      fill: {
-        filledSize: order.fill.getFilledSize().value().toNumber(),
-        averageFillPrice: order.fill.getAverageFillPrice()?.value().toNumber(),
-        fillIds: Array.from(order.fill.getFillIds()),
-        fillCount: order.fill.getTradeCount(),
-      },
-      reason: order.reason,
-      // Вычисляемые поля
-      notional: order.getNotional().toNumber(),
-      remainingSize: order.getRemainingSize().value().toNumber(),
-      fillPercentage: order.getFillPercentage().toNumber(),
+      ...snap,
+      // Вычисляемые поля для удобства API-потребителей
+      notional: order.notional.toNumber(),
+      remainingSize: order.remainingSize.value().toNumber(),
+      fillPercentage: order.fillPercentage.toNumber(),
+      tradeCount: order.tradeCount,
     };
   }
 
@@ -91,21 +78,18 @@ export class OrderViewModel {
    * Преобразует Order в читаемую строку
    *
    * @param order - Order для форматирования
-   * @returns Читаемая строка
-   *
-   * @remarks
-   * Используется для логирования и отладки.
+   * @returns Читаемая строка для логирования
    *
    * @example
    * ```typescript
    * console.log(OrderViewModel.toReadable(order));
-   * // "Order[order-123]: BUY 100 @ 0.65 (OPEN) - 30% filled"
+   * // "Order[order-123]: BUY 100 @ 0.65 (OPEN) - 30.0% filled"
    * ```
    */
   public static toReadable(order: Order): string {
-    const fillInfo = order.fill.isEmpty()
+    const fillInfo = order.filledSize.isZero()
       ? 'unfilled'
-      : `${order.getFillPercentage().toFixed(1)}% filled`;
+      : `${order.fillPercentage.toFixed(1)}% filled`;
 
     return `Order[${order.id}]: ${order.side} ${order.size.value().toNumber()} @ ${order.price.value().toNumber()} (${
       order.status
@@ -116,11 +100,10 @@ export class OrderViewModel {
    * Преобразует Order в summary для UI списков
    *
    * @param order - Order для summary
-   * @returns OrderSummary объект
+   * @returns OrderSummary с примитивными типами
    *
    * @remarks
    * Минимальный набор полей для отображения в таблицах/списках.
-   * Все числа в примитивных типах для простоты.
    *
    * @example
    * ```typescript
@@ -135,9 +118,9 @@ export class OrderViewModel {
       side: order.side,
       price: order.price.value().toNumber(),
       size: order.size.value().toNumber(),
-      filled: order.fill.getFilledSize().value().toNumber(),
-      remaining: order.getRemainingSize().value().toNumber(),
-      fillPercentage: order.getFillPercentage().toNumber(),
+      filled: order.filledSize.value().toNumber(),
+      remaining: order.remainingSize.value().toNumber(),
+      fillPercentage: order.fillPercentage.toNumber(),
     };
   }
 }

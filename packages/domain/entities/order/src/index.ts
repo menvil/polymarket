@@ -1,106 +1,86 @@
 /**
- * Пакет @polymarket/entities/order
+ * Пакет @polymarket/order
  *
  * @remarks
- * Доменная сущность Order с FSM управлением состоянием.
+ * Самодостаточный агрегат Order — вся бизнес-логика заявки в одном модуле.
  *
  * ## Основные экспорты:
  *
  * ### Entity
- * - **Order** — главная сущность заявки
+ * - **Order** — агрегат заявки (create, fromSnapshot, fromEvents)
  *
- * ### Value Objects
- * - **OrderFill** — инкапсуляция fill state
- * - **OrderStatus** — типы и утилиты для статусов
+ * ### Types
+ * - **OrderState** — внутреннее состояние (value objects)
+ * - **OrderSnapshot** — внешний формат (примитивы) для персистентности
+ * - **FillData** — данные одного исполнения
+ * - **CreateOrderParams** — параметры для Order.create()
+ * - **OrderStatus** — строковый union статусов
+ * - **TERMINAL_STATUSES** — множество терминальных статусов
+ * - **FILLABLE_STATUSES** — множество статусов принимающих fills
  *
- * ### Параметры
- * - **OrderParams** — параметры для Order.create()
- * - **CreateOrderParams** — упрощенные параметры для новой заявки
+ * ### Domain Events
+ * - **OrderEvent** — union всех событий (для fromEvents/replay)
+ *
+ * ### Errors
+ * - **OrderError** — доменная ошибка Order
  *
  * ### View Layer
  * - **OrderViewModel** — сериализация в JSON/readable/summary
- * - **OrderDeserializer** — десериализация из JSON
+ * - **OrderDeserializer** — десериализация из снэпшота
  * - **OrderSummary** — интерфейс summary для UI
- * - **OrderJSON** — интерфейс JSON представления
- *
- * ### Utilities
- * - **calculations** — getNotional, getRemainingSize, getFillPercentage
- * - **predicates** — isFilled, isOpen, isPending, isPartiallyFilled, etc.
- *
- * ### Types
- * - **OrderChange** — discriminated union для FSM transitions
  *
  * @example
  * ```typescript
- * import { Order, OrderViewModel } from '@polymarket/entities/order';
- * import { Price, Quantity } from '@polymarket/value-objects';
+ * import { Order, OrderError } from '@polymarket/order';
+ * import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+ * import { asOrderId } from '@polymarket/ids';
+ * import Decimal from 'decimal.js';
  *
  * // Создание заявки
  * const result = Order.create({
- *   id: 'order-123',
- *   marketId: 'market-1',
- *   tokenId: 'token-yes',
+ *   id: asOrderId('order-1')!,
+ *   asset: myAsset,
  *   side: 'BUY',
- *   price: Price.fromValue(0.65).value!,
- *   size: Quantity.fromValue(100).value!,
- *   status: 'PENDING',
- *   timestamp: new Date()
+ *   price: Price.of(new Decimal('0.65')),
+ *   size: Quantity.of(new Decimal('100')),
+ *   timestamp: Timestamp.now(),
  * });
  *
  * if (result.ok) {
  *   const order = result.value;
- *
- *   // Переход состояния
  *   const accepted = order.accept();
- *
- *   // Сериализация
- *   const json = OrderViewModel.toJSON(accepted.value!);
  * }
  * ```
  */
 
-// ==================== Entity ====================
+// ─── Entity ────────────────────────────────────────────────────────────────
 export { Order } from './Order.js';
 
-// ==================== Value Objects ====================
-export { OrderFill } from './value-objects/OrderFill.js';
-export type { OrderStatus } from './value-objects/OrderStatus.js';
-export {
-  OrderStatusConstructors,
-  canTransition,
-  isTerminal,
-  isActive,
-  canCancel,
-  statusToString,
-} from './value-objects/OrderStatus.js';
-
-// Side теперь экспортируется из @polymarket/value-objects
-// import { Side } from '@polymarket/value-objects';
-
-// ==================== Параметры ====================
-export type { OrderParams, CreateOrderParams } from './params/index.js';
-
-// ==================== View Layer ====================
-export {
-  OrderViewModel,
-  OrderDeserializer,
-} from './view/index.js';
+// ─── Types ────────────────────────────────────────────────────────────────
 export type {
-  OrderSummary,
-  OrderJSON,
-} from './view/index.js';
+  OrderStatus,
+  OrderState,
+  FillState,
+  FillData,
+  CreateOrderParams,
+  OrderSnapshot,
+} from './OrderState.js';
+export { TERMINAL_STATUSES, FILLABLE_STATUSES } from './OrderState.js';
 
-// ==================== Utilities ====================
-export {
-  getNotional,
-  getRemainingSize,
-  getFillPercentage,
-  isFilled,
-  isOpen,
-  isPending,
-  isCanceled,
-  isRejected,
-  isExpired,
-  isPartiallyFilled,
-  canModify,
-} from './utils/index.js';
+// ─── Domain Events ─────────────────────────────────────────────────────────
+export type {
+  OrderEvent,
+  OrderCreatedEvent,
+  OrderAcceptedEvent,
+  OrderRejectedEvent,
+  OrderCancelledEvent,
+  OrderExpiredEvent,
+  FillAppliedEvent,
+} from './OrderEvents.js';
+
+// ─── Errors ────────────────────────────────────────────────────────────────
+export { OrderError } from './OrderErrors.js';
+
+// ─── View Layer ────────────────────────────────────────────────────────────
+export { OrderViewModel, OrderDeserializer } from './view/index.js';
+export type { OrderSummary } from './view/index.js';
