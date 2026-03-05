@@ -41,7 +41,7 @@ import {
   MarketState,
   isValidMarketStatus,
 } from '../value-objects/index.js';
-import { MarketValidationError } from '../errors/MarketErrors.js';
+import { MarketValidationError } from '@polymarket/errors/market';
 
 /**
  * Базовый URL Polymarket для построения ссылок

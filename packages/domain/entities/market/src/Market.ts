@@ -61,9 +61,8 @@ import {
   isActive,
   isClosed,
   isResolved,
-  canTransition,
 } from './value-objects/index.js';
-import { MarketValidationError, MarketLifecycleError } from './errors/MarketErrors.js';
+import { MarketValidationError } from '@polymarket/errors/market';
 
 /**
  * Outcome — value object исхода рынка
@@ -542,20 +541,7 @@ export class Market {
    * ```
    */
   public close(): Market {
-    if (!canTransition(this.state, 'CLOSED')) {
-      throw new MarketLifecycleError(
-        `Cannot close market in ${this.state.status} state. ` +
-          (this.state.status === 'CLOSED'
-            ? 'Market is already closed.'
-            : 'Market has already been resolved.'),
-        {
-          code: MarketLifecycleError.code,
-          context: { marketId: this.id, currentStatus: this.state.status },
-        }
-      );
-    }
-
-    return this.copy(MarketState.closed());
+    return this.copy(MarketState.transitionToClosed(this.state, { marketId: this.id }));
   }
 
   /**
@@ -588,24 +574,9 @@ export class Market {
    * ```
    */
   public resolve(outcomeIndex: OutcomeIndex): Market {
-    if (!canTransition(this.state, 'RESOLVED')) {
-      throw new MarketLifecycleError(
-        `Cannot resolve market in ${this.state.status} state. ` +
-          (this.state.status === 'ACTIVE'
-            ? 'Call close() first.'
-            : 'Market has already been resolved.'),
-        {
-          code: MarketLifecycleError.code,
-          context: {
-            marketId: this.id,
-            currentStatus: this.state.status,
-            outcomeIndex,
-          },
-        }
-      );
-    }
-
-    return this.copy(MarketState.resolved(outcomeIndex));
+    return this.copy(
+      MarketState.transitionToResolved(this.state, outcomeIndex, { marketId: this.id })
+    );
   }
 
   // ==================== String Representation ====================

@@ -27,7 +27,13 @@ import {
   parseChainId,
   parseConditionId,
 } from '@polymarket/ids';
-import { MarketLifecycleError, MarketValidationError } from '../../src/errors/MarketErrors.js';
+import {
+  MarketLifecycleError,
+  MarketValidationError,
+  MarketAlreadyClosedError,
+  MarketAlreadyResolvedError,
+  MarketInvalidTransitionError,
+} from '@polymarket/errors/market';
 
 // ==================== Тестовые данные ====================
 
@@ -318,23 +324,25 @@ describe('Market.close() lifecycle', () => {
     }
   });
 
-  it('CLOSED → close(): бросает MarketLifecycleError', () => {
+  it('CLOSED → close(): бросает MarketAlreadyClosedError', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.close()).toThrow(MarketLifecycleError);
+      expect(() => result.value.close()).toThrow(MarketAlreadyClosedError);
+      expect(() => result.value.close()).toThrow(MarketLifecycleError); // подкласс
     }
   });
 
-  it('RESOLVED → close(): бросает MarketLifecycleError', () => {
+  it('RESOLVED → close(): бросает MarketAlreadyResolvedError', () => {
     const result = makeMarket({ state: MarketState.resolved(0) });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.close()).toThrow(MarketLifecycleError);
+      expect(() => result.value.close()).toThrow(MarketAlreadyResolvedError);
+      expect(() => result.value.close()).toThrow(MarketLifecycleError); // подкласс
     }
   });
 
-  it('MarketLifecycleError содержит context с marketId и currentStatus', () => {
+  it('MarketAlreadyClosedError содержит context с marketId и currentStatus', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -342,8 +350,8 @@ describe('Market.close() lifecycle', () => {
         result.value.close();
         expect(true).toBe(false);
       } catch (e) {
-        expect(e).toBeInstanceOf(MarketLifecycleError);
-        const err = e as MarketLifecycleError;
+        expect(e).toBeInstanceOf(MarketAlreadyClosedError);
+        const err = e as MarketAlreadyClosedError;
         expect(err.context?.marketId).toBe('market-abc');
         expect(err.context?.currentStatus).toBe('CLOSED');
       }
@@ -378,23 +386,25 @@ describe('Market.resolve() lifecycle', () => {
     }
   });
 
-  it('ACTIVE → resolve(): бросает MarketLifecycleError', () => {
+  it('ACTIVE → resolve(): бросает MarketInvalidTransitionError', () => {
     const result = makeMarket({ state: MarketState.active() });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.resolve(0)).toThrow(MarketLifecycleError);
+      expect(() => result.value.resolve(0)).toThrow(MarketInvalidTransitionError);
+      expect(() => result.value.resolve(0)).toThrow(MarketLifecycleError); // подкласс
     }
   });
 
-  it('RESOLVED → resolve(): бросает MarketLifecycleError', () => {
+  it('RESOLVED → resolve(): бросает MarketAlreadyResolvedError', () => {
     const result = makeMarket({ state: MarketState.resolved(0) });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(() => result.value.resolve(1)).toThrow(MarketLifecycleError);
+      expect(() => result.value.resolve(1)).toThrow(MarketAlreadyResolvedError);
+      expect(() => result.value.resolve(1)).toThrow(MarketLifecycleError); // подкласс
     }
   });
 
-  it('MarketLifecycleError для resolve() из ACTIVE содержит "Call close() first"', () => {
+  it('MarketInvalidTransitionError для resolve() из ACTIVE содержит "Call close() first"', () => {
     const result = makeMarket({ state: MarketState.active() });
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -402,7 +412,7 @@ describe('Market.resolve() lifecycle', () => {
         result.value.resolve(0);
         expect(true).toBe(false);
       } catch (e) {
-        expect(e).toBeInstanceOf(MarketLifecycleError);
+        expect(e).toBeInstanceOf(MarketInvalidTransitionError);
         expect((e as Error).message).toContain('Call close() first');
       }
     }

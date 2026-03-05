@@ -20,5 +20,4 @@ export {
   isActive,
   isClosed,
   isResolved,
-  canTransition,
 } from './MarketState.js';

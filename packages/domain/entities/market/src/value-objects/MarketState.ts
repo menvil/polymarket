@@ -1,12 +1,11 @@
 /**
- * MarketState — discriminated union состояния рынка
+ * MarketState — discriminated union состояния рынка с FSM-переходами
  *
  * @remarks
- * Решает проблему "невозможных состояний" (impossible states).
- * Компилятор TypeScript гарантирует:
- * - `resolvedOutcomeIndex` существует ТОЛЬКО в состоянии RESOLVED
- * - ACTIVE рынок не может иметь `resolvedOutcomeIndex`
- * - CLOSED рынок не может иметь `resolvedOutcomeIndex`
+ * Решает две задачи:
+ * 1. «Невозможные состояния» (impossible states) — компилятор TypeScript гарантирует
+ *    что `resolvedOutcomeIndex` существует ТОЛЬКО в состоянии RESOLVED
+ * 2. Инкапсуляция FSM — правила переходов живут здесь, а не в entity
  *
  * ### Допустимые переходы:
  * ```
@@ -22,6 +21,10 @@
  * const closed = MarketState.closed();
  * const resolved = MarketState.resolved(0); // YES победил
  *
+ * // FSM-переходы (бросают при нарушении)
+ * const next = MarketState.transitionToClosed(active);
+ * const final = MarketState.transitionToResolved(next, 1);
+ *
  * // Type guards
  * if (isActive(state)) {
  *   // TypeScript знает: state.status === 'ACTIVE'
@@ -32,6 +35,12 @@
  * }
  * ```
  */
+
+import {
+  MarketAlreadyClosedError,
+  MarketAlreadyResolvedError,
+  MarketInvalidTransitionError,
+} from '@polymarket/errors/market';
 
 /**
  * OutcomeIndex — индекс исхода рынка (YES = 0, NO = 1)
@@ -57,17 +66,21 @@ export type MarketState =
   | { readonly status: 'RESOLVED'; readonly resolvedOutcomeIndex: OutcomeIndex };
 
 /**
- * Неймспейс-объект для создания состояний рынка
+ * Неймспейс-объект для работы с состояниями рынка
  *
  * @remarks
- * Конструкторы состояний. Использует объект вместо класса
- * для лаконичности при работе с чистыми данными.
+ * Объединяет:
+ * - Конструкторы состояний (active, closed, resolved)
+ * - FSM-переходы (transitionToClosed, transitionToResolved)
+ *
+ * Переходы бросают конкретные ошибки при нарушении инварианта,
+ * освобождая entity от знания о правилах FSM.
  *
  * @example
  * ```typescript
- * const state = MarketState.active();
- * const closed = MarketState.closed();
- * const resolved = MarketState.resolved(1); // NO победил
+ * const active = MarketState.active();
+ * const closed = MarketState.transitionToClosed(active, { marketId: 'market-abc' });
+ * const resolved = MarketState.transitionToResolved(closed, 0, { marketId: 'market-abc' });
  * ```
  */
 // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -101,6 +114,89 @@ export const MarketState = {
       status: 'RESOLVED' as const,
       resolvedOutcomeIndex: index,
     });
+  },
+
+  /**
+   * Выполняет переход ACTIVE → CLOSED
+   *
+   * @param state - Текущее состояние
+   * @param context - Контекст для ошибки (например, marketId)
+   * @returns Новое состояние CLOSED
+   * @throws {MarketAlreadyClosedError} Если state.status === 'CLOSED'
+   * @throws {MarketAlreadyResolvedError} Если state.status === 'RESOLVED'
+   *
+   * @remarks
+   * Единственный разрешённый источник нового CLOSED состояния.
+   * Вся логика проверки переходов сконцентрирована здесь.
+   *
+   * @example
+   * ```typescript
+   * const closed = MarketState.transitionToClosed(
+   *   MarketState.active(),
+   *   { marketId: 'market-abc' }
+   * );
+   * ```
+   */
+  transitionToClosed(
+    state: MarketState,
+    context?: Record<string, unknown>
+  ): MarketState {
+    if (state.status === 'CLOSED') {
+      throw new MarketAlreadyClosedError('Market is already closed', {
+        context: { ...context, currentStatus: state.status },
+      });
+    }
+    if (state.status === 'RESOLVED') {
+      throw new MarketAlreadyResolvedError('Cannot close a resolved market', {
+        context: { ...context, currentStatus: state.status },
+      });
+    }
+    return MarketState.closed();
+  },
+
+  /**
+   * Выполняет переход CLOSED → RESOLVED
+   *
+   * @param state - Текущее состояние
+   * @param index - Индекс победившего исхода
+   * @param context - Контекст для ошибки (например, marketId)
+   * @returns Новое состояние RESOLVED
+   * @throws {MarketAlreadyResolvedError} Если state.status === 'RESOLVED'
+   * @throws {MarketInvalidTransitionError} Если state.status === 'ACTIVE' (нужно сначала close())
+   *
+   * @remarks
+   * Единственный разрешённый источник нового RESOLVED состояния.
+   *
+   * @example
+   * ```typescript
+   * const resolved = MarketState.transitionToResolved(
+   *   MarketState.closed(),
+   *   0,
+   *   { marketId: 'market-abc' }
+   * );
+   * ```
+   */
+  transitionToResolved(
+    state: MarketState,
+    index: OutcomeIndex,
+    context?: Record<string, unknown>
+  ): MarketState {
+    if (state.status === 'RESOLVED') {
+      throw new MarketAlreadyResolvedError('Market is already resolved', {
+        context: {
+          ...context,
+          currentStatus: state.status,
+          resolvedOutcomeIndex: (state as { resolvedOutcomeIndex: OutcomeIndex }).resolvedOutcomeIndex,
+        },
+      });
+    }
+    if (state.status === 'ACTIVE') {
+      throw new MarketInvalidTransitionError(
+        'Cannot resolve an active market. Call close() first.',
+        { context: { ...context, currentStatus: state.status } }
+      );
+    }
+    return MarketState.resolved(index);
   },
 } as const;
 
@@ -156,39 +252,4 @@ export function isResolved(
   state: MarketState
 ): state is { readonly status: 'RESOLVED'; readonly resolvedOutcomeIndex: OutcomeIndex } {
   return state.status === 'RESOLVED';
-}
-
-/**
- * Проверяет допустимость перехода между состояниями
- *
- * @param from - Исходное состояние
- * @param to - Целевой статус
- * @returns true если переход допустим
- *
- * @remarks
- * Допустимые переходы:
- * - ACTIVE → CLOSED
- * - CLOSED → RESOLVED
- *
- * Запрещённые переходы:
- * - ACTIVE → RESOLVED (нельзя пропустить CLOSED)
- * - CLOSED → CLOSED (нет смысла)
- * - RESOLVED → любое (терминальное состояние)
- *
- * @example
- * ```typescript
- * canTransition(MarketState.active(), 'CLOSED');   // → true
- * canTransition(MarketState.closed(), 'RESOLVED'); // → true
- * canTransition(MarketState.active(), 'RESOLVED'); // → false (пропуск CLOSED)
- * canTransition(MarketState.resolved(0), 'CLOSED'); // → false (терминальное)
- * ```
- */
-export function canTransition(from: MarketState, to: 'CLOSED' | 'RESOLVED'): boolean {
-  if (to === 'CLOSED') {
-    return from.status === 'ACTIVE';
-  }
-  if (to === 'RESOLVED') {
-    return from.status === 'CLOSED';
-  }
-  return false;
 }

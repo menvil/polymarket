@@ -25,7 +25,7 @@ import {
   parseConditionId,
 } from '@polymarket/ids';
 import { MarketViewModel } from '../../src/view/MarketViewModel.js';
-import { MarketValidationError } from '../../src/errors/MarketErrors.js';
+import { MarketValidationError } from '@polymarket/errors/market';
 
 // ==================== Тестовые данные ====================
 
