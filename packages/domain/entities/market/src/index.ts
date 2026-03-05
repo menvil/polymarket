@@ -9,7 +9,7 @@
  * - **Value Objects** — MarketId (@polymarket/ids), OutcomeToken (@polymarket/value-objects),
  *   MarketSlug, MarketStatus, MarketState
  * - **Errors** — переехали в `@polymarket/errors/market` (re-exported отсюда для удобства)
- * - **View** — MarketViewModel (URL, toJSON, fromJSON)
+ * - **View** — MarketViewModel (URL, toSnapshot), MarketParser (реконструкция из raw данных), MarketSnapshot (тип для сериализации)
  *
  * ### Импорт ошибок:
  * ```typescript
@@ -56,10 +56,14 @@ export { Market, type Outcome, type MarketProps } from './Market.js';
 
 // Domain Events
 export {
+  type MarketDomainEvent,
   type MarketEvent,
   type MarketClosedEvent,
   type MarketResolvedEvent,
 } from './MarketEvents.js';
+
+// Trading Policy
+export { MarketTradingPolicy } from './MarketTradingPolicy.js';
 
 // Value Objects
 export {
@@ -91,7 +95,6 @@ export {
 } from '@polymarket/errors/market';
 
 // View
-export {
-  MarketViewModel,
-  type MarketJSON,
-} from './view/MarketViewModel.js';
+export { MarketViewModel } from './view/MarketViewModel.js';
+export { type MarketSnapshot } from './view/MarketSnapshot.js';
+export { MarketParser } from './view/MarketParser.js';

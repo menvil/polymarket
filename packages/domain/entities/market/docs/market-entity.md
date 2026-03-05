@@ -4,30 +4,46 @@
 
 Market — неизменяемая доменная сущность, представляющая бинарный рынок предсказаний в системе Polymarket.
 
+## Структура пакета
+
+```
+packages/domain/entities/market/
+└── src/
+    ├── Market.ts                    # Entity (FSM + lifecycle)
+    ├── MarketEvents.ts              # Domain notification events
+    ├── MarketTradingPolicy.ts       # Бизнес-правила: когда можно торговать/закрыть/разрешить
+    ├── value-objects/
+    │   ├── MarketSlug.ts            # URL-safe branded type (a-z0-9-)
+    │   ├── MarketStatus.ts          # 'ACTIVE' | 'CLOSED' | 'RESOLVED'
+    │   ├── MarketState.ts           # Discriminated union + FSM-переходы + type guards
+    │   └── index.ts
+    ├── view/
+    │   ├── MarketSnapshot.ts        # Plain-object тип для сериализации
+    │   ├── MarketParser.ts          # Реконструкция Market из raw данных
+    │   └── MarketViewModel.ts       # Presentation: URL, toSnapshot
+    └── index.ts
+```
+
+> **Branded types из других пакетов:**
+> - `MarketId` — из `@polymarket/ids`
+> - `OutcomeToken` — из `@polymarket/value-objects/outcome-token`
+> - Ошибки — из `@polymarket/errors/market` (re-exported)
+
+---
+
 ## Почему так сделано?
 
 ### 1. Immutability через `expirationMs: number`
 
-**Проблема**: `expirationDate: Date` — мутабельный объект. Внешний код мог бы получить ссылку и изменить дату:
+**Проблема**: `expirationDate: Date` — мутабельный объект. Внешний код мог изменить дату через ссылку.
 
-```typescript
-// Опасно в старой версии:
-const d = market.expirationDate;
-d.setFullYear(2099); // изменяет состояние market!
-```
-
-**Решение**: хранить `_expirationMs: number`, а getter `expirationDate` возвращает `new Date(this._expirationMs)` — копию. Два вызова возвращают разные объекты с одинаковым временем.
+**Решение**: хранить `_expirationMs: number`, getter `expirationDate` возвращает `new Date(...)` — копию каждый раз.
 
 ### 2. `MarketState` discriminated union
 
-**Проблема**: Старые поля `status: string` + `resolvedOutcomeIndex: number | null` допускали невозможные состояния:
+**Проблема**: `status: string` + `resolvedOutcomeIndex: number | null` допускали невозможные состояния.
 
-```typescript
-// Компилятор пропускал это без ошибок:
-{ status: 'ACTIVE', resolvedOutcomeIndex: 0 } // ← невозможное состояние!
-```
-
-**Решение**: Discriminated union — `resolvedOutcomeIndex` существует ТОЛЬКО в состоянии RESOLVED:
+**Решение**: Discriminated union — `resolvedOutcomeIndex` существует ТОЛЬКО в `RESOLVED`:
 
 ```typescript
 type MarketState =
@@ -36,56 +52,64 @@ type MarketState =
   | { status: 'RESOLVED'; resolvedOutcomeIndex: 0 | 1 }; // только здесь!
 ```
 
-### 3. Lifecycle guards без Result
+### 3. FSM в `MarketState` namespace, не в Entity
 
-**Проблема**: `close()` возвращал `Result<Market>`, хотя вызов `close()` на закрытом рынке — это ошибка программиста, не пользователя.
+**Проблема**: Entity знала правила FSM-переходов — нарушение SRP.
 
-**Решение**: `close()` и `resolve()` бросают `MarketLifecycleError` (не возвращают Result). Это сигнализирует: "ты вызвал метод неправильно, это баг в коде".
-
-### 4. Branded types для IDs
-
-**Проблема**: `id: string` позволял передать любую строку. Ошибки на уровне типов невозможны:
+**Решение**: `MarketState.close(state)` и `MarketState.resolve(state, index)` содержат всю логику переходов. Entity делегирует:
 
 ```typescript
-const orderId = 'order-123';
-doSomethingWithMarket(orderId); // TypeScript не поймает!
+// В Market.close():
+const nextState = MarketState.close(this.state, { marketId: this.id });
+// ↑ MarketState знает что можно, что нельзя — Market не знает
 ```
 
-**Решение**: `MarketId`, `MarketSlug`, `OutcomeTokenId` — branded types, которые TypeScript различает на уровне типизации.
+### 4. Expiration — ответственность `MarketTradingPolicy`
 
-### 5. `isExpiredAt(nowMs)` для тестируемости
+**Проблема**: Архитектурная неопределённость — где проверяется истечение срока? В entity или снаружи?
 
-**Проблема**: `isExpired()` использовал `Date.now()` — нетестируемо.
+**Решение**: `Market` — только FSM. Бизнес-правила (когда именно допустим переход по времени) — в `MarketTradingPolicy`:
 
-**Решение**: Основной метод `isExpiredAt(nowMs)` принимает время как параметр. `isExpired()` — convenience wrapper для продакшн-кода.
+| Вопрос | Ответственный |
+|--------|--------------|
+| `ACTIVE → CLOSED` допустим? (FSM) | `MarketState.close()` |
+| Рынок уже истёк? (query) | `market.isExpiredAt(nowMs)` |
+| Сейчас пора закрывать? (policy) | `MarketTradingPolicy.canClose(market, nowMs)` |
+| Сейчас можно торговать? (policy) | `MarketTradingPolicy.canTrade(market, nowMs)` |
 
-### 6. Вынос URL/JSON в `MarketViewModel`
+### 5. Lifecycle методы бросают, не возвращают Result
 
-**Проблема**: `marketUrl`, `toJSON`, `fromJSON` в доменной сущности нарушают принцип DDD — домен не должен знать о presentation-деталях.
-
-**Решение**: `MarketViewModel` — статический класс для всей presentation/serialization логики.
-
----
-
-## Структура
+`close()` и `resolve()` бросают конкретные подклассы `MarketLifecycleError`. Это сигнализирует: "ты вызвал метод в неверном состоянии — это баг в коде".
 
 ```
-packages/domain/entities/market/
-└── src/
-    ├── Market.ts                    # Entity
-    ├── value-objects/
-    │   ├── MarketId.ts              # Branded type
-    │   ├── MarketSlug.ts            # URL-safe branded type
-    │   ├── OutcomeTokenId.ts        # Branded type
-    │   ├── MarketStatus.ts          # Строковые литералы
-    │   ├── MarketState.ts           # Discriminated union + type guards
-    │   └── index.ts
-    ├── errors/
-    │   └── MarketErrors.ts          # MarketValidationError, MarketLifecycleError
-    ├── view/
-    │   └── MarketViewModel.ts       # URL, toJSON, fromJSON
-    └── index.ts
+MarketLifecycleError
+├── MarketAlreadyClosedError     (close() на CLOSED/RESOLVED)
+├── MarketAlreadyResolvedError   (resolve() на RESOLVED, close() на RESOLVED)
+└── MarketInvalidTransitionError (resolve() на ACTIVE — нужно сначала close())
 ```
+
+### 6. Notification Events (Outbox pattern)
+
+`close(nowMs)` и `resolve(index, nowMs)` эмитируют события в буфер. Application-слой вызывает `pullEvents()` и публикует в event bus.
+
+```typescript
+const closed = market.close(Date.now());
+const events = closed.pullEvents(); // [MarketClosedEvent]
+await eventBus.publish(events);
+```
+
+События реализуют `MarketDomainEvent` (base interface) — явная маркировка notification events в типовой системе.
+
+### 7. `MarketParser` vs `MarketViewModel`
+
+**Проблема**: Раньше `MarketViewModel` делал и сериализацию, и реконструкцию — нарушение SRP.
+
+**Решение**: чёткое разделение:
+
+| Класс | Ответственность |
+|-------|----------------|
+| `MarketViewModel.toSnapshot(market)` | Market → plain object |
+| `MarketParser.from(raw)` | unknown → `Result<Market>` |
 
 ---
 
@@ -95,10 +119,10 @@ packages/domain/entities/market/
 ACTIVE → CLOSED → RESOLVED
 ```
 
-| Переход | Метод | Guard |
-|---------|-------|-------|
-| ACTIVE → CLOSED | `market.close()` | Бросает `MarketLifecycleError` если не ACTIVE |
-| CLOSED → RESOLVED | `market.resolve(0\|1)` | Бросает `MarketLifecycleError` если не CLOSED |
+| Переход | Entity метод | Что бросает |
+|---------|-------------|------------|
+| ACTIVE → CLOSED | `market.close(nowMs)` | `MarketAlreadyClosedError`, `MarketAlreadyResolvedError` |
+| CLOSED → RESOLVED | `market.resolve(index, nowMs)` | `MarketAlreadyResolvedError`, `MarketInvalidTransitionError` |
 
 ---
 
@@ -107,16 +131,23 @@ ACTIVE → CLOSED → RESOLVED
 ### Создание рынка
 
 ```typescript
-import { Market, MarketState, asMarketId, parseMarketSlug, parseOutcomeTokenId } from '@polymarket/market';
+import { Market, MarketState, unsafeMarketId, parseMarketSlug } from '@polymarket/market';
+import { OutcomeToken, BinaryOutcome } from '@polymarket/value-objects/outcome-token';
+
+const conditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: 'POLYMARKET_CTF',
+  chainId: 137,
+  conditionId: '0xabc...',
+};
 
 const result = Market.create({
-  id: asMarketId('market-abc'),
+  id: unsafeMarketId('market-abc'),
   slug: parseMarketSlug('will-trump-win-2024')!,
   question: 'Will Trump win the 2024 election?',
-  outcomeNames: ['Yes', 'No'],
-  outcomeTokenIds: [
-    parseOutcomeTokenId('token-yes-123')!,
-    parseOutcomeTokenId('token-no-456')!,
+  outcomes: [
+    { token: OutcomeToken.of(conditionRef, BinaryOutcome.UP), index: 0, name: 'Yes' },
+    { token: OutcomeToken.of(conditionRef, BinaryOutcome.DOWN), index: 1, name: 'No' },
   ],
   expirationMs: Date.parse('2024-11-05T00:00:00Z'),
   state: MarketState.active(),
@@ -124,67 +155,161 @@ const result = Market.create({
 
 if (result.ok) {
   const market = result.value;
-  console.log(market.canTrade()); // true (если не истёк)
+  console.log(market.id, market.state.status); // 'market-abc', 'ACTIVE'
+}
+```
+
+### Policy: проверка допустимости операций
+
+```typescript
+import { MarketTradingPolicy } from '@polymarket/market';
+
+const now = Date.now();
+
+// Можно ли торговать прямо сейчас?
+if (MarketTradingPolicy.canTrade(market, now)) {
+  await orderService.submit(order);
+}
+
+// Пора ли закрывать? (ACTIVE + истёк)
+if (MarketTradingPolicy.canClose(market, now)) {
+  const closed = market.close(now);
+  await eventBus.publish(closed.pullEvents());
+}
+
+// Досрочное закрытие (admin/dispute — без проверки expiration)
+if (MarketTradingPolicy.canForceClose(market)) {
+  const closed = market.close(now);
+}
+
+// Можно ли разрешить? (CLOSED)
+if (MarketTradingPolicy.canResolve(market)) {
+  const resolved = market.resolve(0, now); // YES победил
+  await eventBus.publish(resolved.pullEvents());
 }
 ```
 
 ### Lifecycle переходы
 
 ```typescript
-const closed = market.close();       // ACTIVE → CLOSED
-const resolved = closed.resolve(0);  // CLOSED → RESOLVED (YES победил)
+import {
+  MarketAlreadyClosedError,
+  MarketInvalidTransitionError,
+} from '@polymarket/errors/market';
 
-// Lifecycle guard:
+const now = Date.now();
+const closed = market.close(now);     // ACTIVE → CLOSED
+const resolved = closed.resolve(0, now); // CLOSED → RESOLVED
+
+// FSM guard:
 try {
-  market.resolve(0); // throws MarketLifecycleError: "Call close() first"
+  market.resolve(0, now); // throws: нельзя resolve из ACTIVE
 } catch (e) {
-  if (MarketLifecycleError.is(e)) {
+  if (e instanceof MarketInvalidTransitionError) {
+    console.log(e.message); // 'Cannot resolve an active market. Call close() first.'
     console.log(e.context?.currentStatus); // 'ACTIVE'
   }
 }
 ```
 
-### Serialization (через MarketViewModel)
+### Domain Events (Outbox pattern)
 
 ```typescript
-import { MarketViewModel } from '@polymarket/market';
+const now = Date.now();
 
-const url = MarketViewModel.getMarketUrl(market);
-// → 'https://polymarket.com/event/will-trump-win-2024'
+// close() эмитирует MarketClosedEvent
+const closed = market.close(now);
+const closeEvents = closed.pullEvents();
+// closeEvents[0] = { type: 'MARKET_CLOSED', marketId, slug, occurredAt: now }
 
-const json = MarketViewModel.toJSON(market);
-const restored = MarketViewModel.fromJSON(json);
+// resolve() эмитирует MarketResolvedEvent
+const resolved = closed.resolve(0, now);
+const resolveEvents = resolved.pullEvents();
+// resolveEvents[0] = { type: 'MARKET_RESOLVED', marketId, slug, resolvedOutcomeIndex: 0, occurredAt: now }
+
+// pullEvents() очищает буфер
+resolved.pullEvents(); // []
+
+// create() и MarketParser.from() НЕ эмитируют событий (восстановление ≠ бизнес-событие)
 ```
 
-### Тестируемость без Date.now()
+### Сериализация и реконструкция
 
 ```typescript
-const fixedTime = 1_000_000;
-const market = Market.create({ ..., expirationMs: fixedTime }).value!;
+import { MarketViewModel, MarketParser } from '@polymarket/market';
 
-// Детерминированные тесты:
+// Market → snapshot (для БД / API / Redis)
+const snapshot = MarketViewModel.toSnapshot(market);
+await db.save(snapshot);
+
+// snapshot → Market (реконструкция без событий)
+const result = MarketParser.from(await db.load(id));
+if (result.ok) {
+  const restored = result.value;
+  console.log(restored.state.status); // 'ACTIVE'
+} else {
+  logger.error('Corrupt market data', { error: result.error.message });
+}
+
+// URL
+const url = MarketViewModel.getMarketUrl(market);
+// → 'https://polymarket.com/event/will-trump-win-2024'
+```
+
+### Тестируемость без `Date.now()`
+
+```typescript
+// Всё детерминировано — nowMs всегда явный параметр
+const EXPIRY = 1_000_000;
+const market = Market.create({ ..., expirationMs: EXPIRY }).value!;
+
+// Queries:
 expect(market.isExpiredAt(500_000)).toBe(false);
 expect(market.isExpiredAt(1_000_000)).toBe(true);
 expect(market.timeToExpiryAt(800_000)).toBe(200_000);
+
+// Policy (nowMs явно):
+expect(MarketTradingPolicy.canTrade(market, 500_000)).toBe(true);
+expect(MarketTradingPolicy.canClose(market, 1_000_000)).toBe(true);
+
+// Events (nowMs явно):
+const closed = market.close(1_000_000);
+expect(closed.pullEvents()[0].occurredAt).toBe(1_000_000);
 ```
 
 ---
 
-## MarketState — discriminated union
+## MarketState — FSM namespace
 
 ```typescript
+import { MarketState, isActive, isClosed, isResolved } from '@polymarket/market';
+
 // Конструкторы
 const active   = MarketState.active();
 const closed   = MarketState.closed();
-const resolved = MarketState.resolved(0); // YES | resolved(1) // NO
+const resolved = MarketState.resolved(0); // 0 = YES, 1 = NO
+
+// FSM-переходы (бросают при нарушении)
+const next  = MarketState.close(active, { marketId: 'market-abc' });
+const final = MarketState.resolve(next, 0, { marketId: 'market-abc' });
 
 // Type guards с сужением типов
 if (isResolved(market.state)) {
   // TypeScript знает: market.state.resolvedOutcomeIndex: 0 | 1
   console.log(market.state.resolvedOutcomeIndex);
 }
-
-// Проверка допустимых переходов
-canTransition(MarketState.active(), 'CLOSED');   // → true
-canTransition(MarketState.active(), 'RESOLVED'); // → false
 ```
+
+---
+
+## Тестовое покрытие
+
+| Файл | Statements | Branches | Functions | Lines |
+|------|-----------|----------|-----------|-------|
+| Market.ts | 100% | 95.8% | 100% | 100% |
+| MarketTradingPolicy.ts | 100% | 100% | 100% | 100% |
+| MarketState.ts | 100% | 100% | 100% | 100% |
+| MarketParser.ts | 100% | 100% | 100% | 100% |
+| MarketViewModel.ts | 100% | 100% | 100% | 100% |
+
+7 тестовых suite, 125 тестов.

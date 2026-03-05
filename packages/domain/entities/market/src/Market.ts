@@ -496,27 +496,6 @@ export class Market {
     return isResolved(this.state);
   }
 
-  /**
-   * Проверяет, можно ли торговать на рынке
-   *
-   * @returns true если рынок ACTIVE и не истёк
-   *
-   * @remarks
-   * Торговля возможна только если рынок активен И не истёк по времени.
-   *
-   * @example
-   * ```typescript
-   * if (market.canTrade()) {
-   *   // Можно подавать ордера
-   * } else {
-   *   // Торговля недоступна
-   * }
-   * ```
-   */
-  public canTrade(): boolean {
-    return isActive(this.state) && !this.isExpired();
-  }
-
   // ==================== Identity ====================
 
   /**
@@ -587,7 +566,7 @@ export class Market {
    * expect(closedMarket.pullEvents()[0].occurredAt).toBe(1_700_000_000_000);
    * ```
    */
-  public close(nowMs: number = Date.now()): Market {
+  public close(nowMs: number): Market {
     const nextState = MarketState.close(this.state, { marketId: this.id });
     return this.copy(nextState, [
       { type: 'MARKET_CLOSED', marketId: this.id, slug: this.slug, occurredAt: nowMs },
@@ -617,7 +596,16 @@ export class Market {
    * }
    * ```
    */
-  public resolve(outcomeIndex: OutcomeIndex, nowMs: number = Date.now()): Market {
+  public resolve(outcomeIndex: OutcomeIndex, nowMs: number): Market {
+    if (outcomeIndex < 0 || outcomeIndex >= this.outcomes.length) {
+      throw new MarketValidationError('resolvedOutcomeIndex must be a valid outcome index', {
+        context: {
+          field: 'outcomeIndex',
+          value: outcomeIndex,
+          validRange: `0..${this.outcomes.length - 1}`,
+        },
+      });
+    }
     const nextState = MarketState.resolve(this.state, outcomeIndex, { marketId: this.id });
     return this.copy(nextState, [
       {
