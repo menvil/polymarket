@@ -2,16 +2,15 @@
  * Тесты для MarketTradingPolicy
  *
  * @remarks
- * Проверяет что Policy корректно отвечает на вопросы:
- * - canTrade(market, nowMs) — ACTIVE + не истёк
- * - canClose(market, nowMs) — ACTIVE + истёк
- * - canForceClose(market)   — ACTIVE (без проверки времени)
- * - canResolve(market)      — CLOSED
+ * Проверяет:
+ * - getTradingState(market, nowMs) — единственная точка торговых решений
+ * - canForceClose(market) — admin-действие без проверки времени
+ * - Полный lifecycle через policy + entity
  */
 
 import { describe, it, expect } from '@jest/globals';
 import { Market, type Outcome } from '../../src/Market.js';
-import { MarketTradingPolicy } from '../../src/MarketTradingPolicy.js';
+import { MarketTradingPolicy, type TradingState } from '../../src/MarketTradingPolicy.js';
 import {
   MarketState,
   unsafeMarketId,
@@ -59,58 +58,68 @@ function makeMarket(state: MarketState, expirationMs = EXPIRATION_MS) {
 }
 
 const BEFORE_EXPIRY = EXPIRATION_MS - 1; // рынок ещё не истёк
-const AFTER_EXPIRY = EXPIRATION_MS;      // рынок истёк (nowMs >= expirationMs)
+const AT_EXPIRY = EXPIRATION_MS;          // рынок истёк (nowMs >= expirationMs)
+const AFTER_EXPIRY = EXPIRATION_MS + 1;
 
 // ==================== Тесты ====================
 
-describe('MarketTradingPolicy.canTrade()', () => {
-  it('true — ACTIVE + не истёк', () => {
+describe('MarketTradingPolicy.getTradingState()', () => {
+  describe('ACTIVE + не истёк → TRADING', () => {
+    it('возвращает TRADING', () => {
+      const market = makeMarket(MarketState.active());
+      expect(MarketTradingPolicy.getTradingState(market, BEFORE_EXPIRY)).toBe('TRADING');
+    });
+
+    it('TRADING: в момент непосредственно до истечения', () => {
+      const market = makeMarket(MarketState.active());
+      expect(MarketTradingPolicy.getTradingState(market, EXPIRATION_MS - 1)).toBe('TRADING');
+    });
+  });
+
+  describe('ACTIVE + истёк → EXPIRED', () => {
+    it('возвращает EXPIRED в момент истечения', () => {
+      const market = makeMarket(MarketState.active());
+      expect(MarketTradingPolicy.getTradingState(market, AT_EXPIRY)).toBe('EXPIRED');
+    });
+
+    it('возвращает EXPIRED после истечения', () => {
+      const market = makeMarket(MarketState.active());
+      expect(MarketTradingPolicy.getTradingState(market, AFTER_EXPIRY)).toBe('EXPIRED');
+    });
+  });
+
+  describe('CLOSED → CLOSED', () => {
+    it('возвращает CLOSED (не зависит от времени)', () => {
+      const market = makeMarket(MarketState.closed());
+      expect(MarketTradingPolicy.getTradingState(market, BEFORE_EXPIRY)).toBe('CLOSED');
+      expect(MarketTradingPolicy.getTradingState(market, AFTER_EXPIRY)).toBe('CLOSED');
+    });
+  });
+
+  describe('RESOLVED → RESOLVED', () => {
+    it('возвращает RESOLVED (не зависит от времени)', () => {
+      const market = makeMarket(MarketState.resolved(0));
+      expect(MarketTradingPolicy.getTradingState(market, BEFORE_EXPIRY)).toBe('RESOLVED');
+      expect(MarketTradingPolicy.getTradingState(market, AFTER_EXPIRY)).toBe('RESOLVED');
+    });
+  });
+
+  it('переход TRADING → EXPIRED в момент истечения', () => {
     const market = makeMarket(MarketState.active());
-    expect(MarketTradingPolicy.canTrade(market, BEFORE_EXPIRY)).toBe(true);
-  });
-
-  it('false — ACTIVE + истёк', () => {
-    const market = makeMarket(MarketState.active());
-    expect(MarketTradingPolicy.canTrade(market, AFTER_EXPIRY)).toBe(false);
-  });
-
-  it('false — CLOSED (не важно время)', () => {
-    const market = makeMarket(MarketState.closed());
-    expect(MarketTradingPolicy.canTrade(market, BEFORE_EXPIRY)).toBe(false);
-  });
-
-  it('false — RESOLVED (не важно время)', () => {
-    const market = makeMarket(MarketState.resolved(0));
-    expect(MarketTradingPolicy.canTrade(market, BEFORE_EXPIRY)).toBe(false);
-  });
-});
-
-describe('MarketTradingPolicy.canClose()', () => {
-  it('true — ACTIVE + истёк (стандартный lifecycle)', () => {
-    const market = makeMarket(MarketState.active());
-    expect(MarketTradingPolicy.canClose(market, AFTER_EXPIRY)).toBe(true);
-  });
-
-  it('false — ACTIVE + не истёк (рано закрывать)', () => {
-    const market = makeMarket(MarketState.active());
-    expect(MarketTradingPolicy.canClose(market, BEFORE_EXPIRY)).toBe(false);
-  });
-
-  it('false — CLOSED (уже закрыт)', () => {
-    const market = makeMarket(MarketState.closed());
-    expect(MarketTradingPolicy.canClose(market, AFTER_EXPIRY)).toBe(false);
-  });
-
-  it('false — RESOLVED (уже разрешён)', () => {
-    const market = makeMarket(MarketState.resolved(1));
-    expect(MarketTradingPolicy.canClose(market, AFTER_EXPIRY)).toBe(false);
+    expect(MarketTradingPolicy.getTradingState(market, BEFORE_EXPIRY)).toBe('TRADING');
+    expect(MarketTradingPolicy.getTradingState(market, AT_EXPIRY)).toBe('EXPIRED');
   });
 });
 
 describe('MarketTradingPolicy.canForceClose()', () => {
-  it('true — ACTIVE (даже если не истёк)', () => {
+  it('true — ACTIVE (не истёк)', () => {
     const market = makeMarket(MarketState.active());
     expect(MarketTradingPolicy.canForceClose(market)).toBe(true);
+  });
+
+  it('true — ACTIVE (уже истёк, форс-клоз всё равно возможен)', () => {
+    const expired = makeMarket(MarketState.active(), AT_EXPIRY - 100);
+    expect(MarketTradingPolicy.canForceClose(expired)).toBe(true);
   });
 
   it('false — CLOSED', () => {
@@ -124,23 +133,6 @@ describe('MarketTradingPolicy.canForceClose()', () => {
   });
 });
 
-describe('MarketTradingPolicy.canResolve()', () => {
-  it('true — CLOSED', () => {
-    const market = makeMarket(MarketState.closed());
-    expect(MarketTradingPolicy.canResolve(market)).toBe(true);
-  });
-
-  it('false — ACTIVE', () => {
-    const market = makeMarket(MarketState.active());
-    expect(MarketTradingPolicy.canResolve(market)).toBe(false);
-  });
-
-  it('false — RESOLVED', () => {
-    const market = makeMarket(MarketState.resolved(0));
-    expect(MarketTradingPolicy.canResolve(market)).toBe(false);
-  });
-});
-
 describe('MarketTradingPolicy — нельзя создать экземпляр', () => {
   it('бросает Error при вызове конструктора', () => {
     // @ts-expect-error - testing private constructor
@@ -148,18 +140,27 @@ describe('MarketTradingPolicy — нельзя создать экземпляр
   });
 });
 
-describe('Policy + Entity интеграция', () => {
-  it('canClose → close() → canResolve → resolve() корректный цикл', () => {
+describe('Policy + Entity — полный lifecycle', () => {
+  it('TRADING → (expire) → EXPIRED → close → CLOSED → resolve → RESOLVED', () => {
     const market = makeMarket(MarketState.active());
-    const now = AFTER_EXPIRY;
 
-    expect(MarketTradingPolicy.canClose(market, now)).toBe(true);
-    const closed = market.close(now);
+    // До истечения: TRADING
+    expect(MarketTradingPolicy.getTradingState(market, BEFORE_EXPIRY)).toBe('TRADING');
 
-    expect(MarketTradingPolicy.canResolve(closed)).toBe(true);
-    const resolved = closed.resolve(0, now);
+    // После истечения: EXPIRED
+    expect(MarketTradingPolicy.getTradingState(market, AT_EXPIRY)).toBe('EXPIRED');
 
-    expect(resolved.isResolved()).toBe(true);
-    expect(MarketTradingPolicy.canTrade(resolved, now)).toBe(false);
+    // close() переводит в CLOSED
+    const closed = market.close(AT_EXPIRY);
+    expect(MarketTradingPolicy.getTradingState(closed, AT_EXPIRY)).toBe('CLOSED');
+
+    // resolve() переводит в RESOLVED
+    const resolved = closed.resolve(0, AT_EXPIRY);
+    expect(MarketTradingPolicy.getTradingState(resolved, AT_EXPIRY)).toBe('RESOLVED');
+  });
+
+  it('exhaustive switch покрывает все состояния', () => {
+    const states = ['TRADING', 'EXPIRED', 'CLOSED', 'RESOLVED'] satisfies TradingState[];
+    expect(states).toHaveLength(4);
   });
 });

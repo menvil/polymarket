@@ -63,7 +63,7 @@ import {
   isResolved,
 } from './value-objects/index.js';
 import { MarketValidationError } from '@polymarket/errors/market';
-import { type MarketEvent } from './MarketEvents.js';
+import { type MarketNotification } from './MarketNotifications.js';
 
 /**
  * Outcome — value object исхода рынка
@@ -155,18 +155,18 @@ export class Market {
   private readonly _expirationMs: number;
 
   /**
-   * Буфер доменных событий (Domain Event Outbox)
+   * Буфер уведомлений (Notification Outbox)
    *
    * @remarks
    * Контролируемая мутация: единственная изменяемая часть immutable entity.
-   * splice(0) в pullEvents() атомарно возвращает и очищает буфер.
+   * splice(0) в pullNotifications() атомарно возвращает и очищает буфер.
    */
-  private readonly _pendingEvents: MarketEvent[];
+  private readonly _pendingNotifications: MarketNotification[];
 
   /**
    * Приватный конструктор — используйте Market.create()
    */
-  private constructor(props: MarketProps, pendingEvents: MarketEvent[] = []) {
+  private constructor(props: MarketProps, pendingNotifications: MarketNotification[] = []) {
     this.id = props.id;
     this.slug = props.slug;
     this.question = props.question;
@@ -176,7 +176,7 @@ export class Market {
       Object.freeze({ ...props.outcomes[0] }),
       Object.freeze({ ...props.outcomes[1] }),
     ];
-    this._pendingEvents = pendingEvents;
+    this._pendingNotifications = pendingNotifications;
   }
 
   // ==================== Getters ====================
@@ -218,29 +218,29 @@ export class Market {
   // ==================== Domain Events ====================
 
   /**
-   * Возвращает и очищает буфер доменных событий (Outbox pattern)
+   * Возвращает и очищает буфер уведомлений (Outbox pattern)
    *
-   * @returns Список событий, накопленных с момента последнего вызова
+   * @returns Список уведомлений, накопленных с момента последнего вызова
    *
    * @remarks
-   * Application-слой должен вызывать pullEvents() после каждой успешной команды
-   * и публиковать результат в event bus.
+   * Application-слой вызывает pullNotifications() после каждой успешной команды
+   * и публикует результат в event bus.
    *
-   * Вызов pullEvents() опустошает буфер — следующий вызов вернёт [].
-   * Market.create() и MarketViewModel.fromJSON() не эмитируют событий
+   * Вызов опустошает буфер — следующий вызов вернёт [].
+   * Market.create() и MarketParser.from() не эмитируют уведомлений
    * (восстановление состояния ≠ новое бизнес-событие).
    *
    * @example
    * ```typescript
-   * const closed = market.close();
-   * const events = closed.pullEvents(); // [MarketClosedEvent]
-   * await eventBus.publish(events);
+   * const closed = market.close(Date.now());
+   * const notifications = closed.pullNotifications(); // [MarketClosedNotification]
+   * await eventBus.publish(notifications);
    *
-   * closed.pullEvents(); // [] — буфер очищен
+   * closed.pullNotifications(); // [] — буфер очищен
    * ```
    */
-  public pullEvents(): readonly MarketEvent[] {
-    return this._pendingEvents.splice(0);
+  public pullNotifications(): readonly MarketNotification[] {
+    return this._pendingNotifications.splice(0);
   }
 
   // ==================== Factory ====================
@@ -530,7 +530,7 @@ export class Market {
    * @remarks
    * Централизует копирование props — изменение структуры затрагивает одно место.
    */
-  private copy(state: MarketState, events: MarketEvent[]): Market {
+  private copy(state: MarketState, notifications: MarketNotification[]): Market {
     return new Market(
       {
         id: this.id,
@@ -540,7 +540,7 @@ export class Market {
         expirationMs: this._expirationMs,
         state,
       },
-      events
+      notifications
     );
   }
 
@@ -569,7 +569,7 @@ export class Market {
   public close(nowMs: number): Market {
     const nextState = MarketState.close(this.state, { marketId: this.id });
     return this.copy(nextState, [
-      { type: 'MARKET_CLOSED', marketId: this.id, slug: this.slug, occurredAt: nowMs },
+      { type: 'MARKET_CLOSED' as const, marketId: this.id, slug: this.slug, occurredAt: nowMs },
     ]);
   }
 
@@ -609,7 +609,7 @@ export class Market {
     const nextState = MarketState.resolve(this.state, outcomeIndex, { marketId: this.id });
     return this.copy(nextState, [
       {
-        type: 'MARKET_RESOLVED',
+        type: 'MARKET_RESOLVED' as const,
         marketId: this.id,
         slug: this.slug,
         resolvedOutcomeIndex: outcomeIndex,

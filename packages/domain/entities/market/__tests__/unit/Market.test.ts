@@ -13,7 +13,7 @@
 
 import { describe, it, expect } from '@jest/globals';
 import { Market, type Outcome } from '../../src/Market.js';
-import { type MarketClosedEvent, type MarketResolvedEvent } from '../../src/MarketEvents.js';
+import { type MarketClosedNotification, type MarketResolvedNotification } from '../../src/MarketNotifications.js';
 import {
   MarketState,
   type OutcomeIndex,
@@ -491,43 +491,43 @@ describe('Market.equals()', () => {
   });
 });
 
-describe('Market.pullEvents()', () => {
+describe('Market.pullNotifications()', () => {
   it('create() не эмитирует событий', () => {
     const result = makeMarket();
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.value.pullEvents()).toEqual([]);
+      expect(result.value.pullNotifications()).toEqual([]);
     }
   });
 
-  it('close() эмитирует MarketClosedEvent с корректными полями', () => {
+  it('close() эмитирует MarketClosedNotification с корректными полями', () => {
     const result = makeMarket({ state: MarketState.active() });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
     const CLOSE_NOW = 1_700_000_000_000;
     const closed = result.value.close(CLOSE_NOW);
-    const events = closed.pullEvents();
+    const events = closed.pullNotifications();
 
     expect(events).toHaveLength(1);
-    const event = events[0] as MarketClosedEvent;
+    const event = events[0] as MarketClosedNotification;
     expect(event.type).toBe('MARKET_CLOSED');
     expect(event.marketId).toBe('market-abc');
     expect(event.slug).toBe('will-trump-win');
     expect(event.occurredAt).toBe(CLOSE_NOW);
   });
 
-  it('resolve() эмитирует MarketResolvedEvent с корректными полями', () => {
+  it('resolve() эмитирует MarketResolvedNotification с корректными полями', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
     const RESOLVE_NOW = 1_700_000_001_000;
     const resolved = result.value.resolve(1, RESOLVE_NOW);
-    const events = resolved.pullEvents();
+    const events = resolved.pullNotifications();
 
     expect(events).toHaveLength(1);
-    const event = events[0] as MarketResolvedEvent;
+    const event = events[0] as MarketResolvedNotification;
     expect(event.type).toBe('MARKET_RESOLVED');
     expect(event.marketId).toBe('market-abc');
     expect(event.slug).toBe('will-trump-win');
@@ -535,14 +535,14 @@ describe('Market.pullEvents()', () => {
     expect(event.occurredAt).toBe(RESOLVE_NOW);
   });
 
-  it('pullEvents() очищает буфер — повторный вызов возвращает []', () => {
+  it('pullNotifications() очищает буфер — повторный вызов возвращает []', () => {
     const result = makeMarket({ state: MarketState.active() });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
     const closed = result.value.close(NOW);
-    expect(closed.pullEvents()).toHaveLength(1);
-    expect(closed.pullEvents()).toHaveLength(0); // буфер очищен
+    expect(closed.pullNotifications()).toHaveLength(1);
+    expect(closed.pullNotifications()).toHaveLength(0); // буфер очищен
   });
 
   it('исходный market не накапливает события после close()', () => {
@@ -552,7 +552,7 @@ describe('Market.pullEvents()', () => {
 
     const original = result.value;
     original.close(NOW); // возвращает новый экземпляр, original не меняется
-    expect(original.pullEvents()).toHaveLength(0);
+    expect(original.pullNotifications()).toHaveLength(0);
   });
 
   it('полный цикл: close + resolve — каждый шаг имеет своё событие', () => {
@@ -561,11 +561,11 @@ describe('Market.pullEvents()', () => {
     if (!result.ok) return;
 
     const closed = result.value.close(NOW);
-    const closeEvents = closed.pullEvents();
+    const closeEvents = closed.pullNotifications();
     expect(closeEvents[0].type).toBe('MARKET_CLOSED');
 
     const resolved = closed.resolve(0, NOW);
-    const resolveEvents = resolved.pullEvents();
+    const resolveEvents = resolved.pullNotifications();
     expect(resolveEvents[0].type).toBe('MARKET_RESOLVED');
   });
 });

@@ -54,16 +54,15 @@
 // Entity
 export { Market, type Outcome, type MarketProps } from './Market.js';
 
-// Domain Events
+// Domain Notifications (notification events — не event sourcing)
 export {
-  type MarketDomainEvent,
-  type MarketEvent,
-  type MarketClosedEvent,
-  type MarketResolvedEvent,
-} from './MarketEvents.js';
+  type MarketNotification,
+  type MarketClosedNotification,
+  type MarketResolvedNotification,
+} from './MarketNotifications.js';
 
 // Trading Policy
-export { MarketTradingPolicy } from './MarketTradingPolicy.js';
+export { MarketTradingPolicy, type TradingState } from './MarketTradingPolicy.js';
 
 // Value Objects
 export {

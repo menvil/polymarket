@@ -101,7 +101,7 @@ describe('MarketParser.from() — валидные данные', () => {
     const result = MarketParser.from(validActiveSnapshot());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.pullEvents()).toEqual([]);
+    expect(result.value.pullNotifications()).toEqual([]);
   });
 });
 

@@ -1,36 +1,31 @@
 /**
- * MarketTradingPolicy — политика допустимых операций над рынком
+ * MarketTradingPolicy — политика торговых операций над рынком
  *
  * @remarks
- * Отвечает на вопрос «можно ли выполнить операцию сейчас?»
+ * Отвечает на вопрос «в каком торговом состоянии находится рынок прямо сейчас?»
  *
  * ### Разделение ответственности:
- * - `Market` (entity) — знает FSM-правила: ACTIVE→CLOSED→RESOLVED
- * - `MarketTradingPolicy` — знает бизнес-правила с учётом времени:
- *   когда рынок можно закрыть, когда можно торговать
+ * - `Market` (entity) — FSM-правила: ACTIVE→CLOSED→RESOLVED
+ * - `MarketTradingPolicy` — бизнес-правила с учётом времени:
+ *   когда рынок торгуется, истёк, готов к закрытию, разрешению
  *
  * ### Почему expiration не в Market:
- * Market.close() и Market.resolve() выполняют FSM-переход.
- * КОГДА переход допустим по бизнес-правилам — ответственность Policy.
- * Это позволяет форс-клозить рынок (admin action) без изменения entity.
+ * Market.close() выполняет FSM-переход.
+ * КОГДА он допустим по бизнес-правилам — ответственность Policy.
+ * Это позволяет форс-клозить рынок (admin/dispute) независимо от expiration.
  *
- * ### Правила:
- * - `canTrade`: рынок ACTIVE + не истёк → можно торговать
- * - `canClose`: рынок ACTIVE + истёк → пора закрывать (стандартный lifecycle)
- * - `canForceClose`: рынок ACTIVE → можно закрыть (admin, dispute, emergency)
- * - `canResolve`: рынок CLOSED → можно разрешить
+ * ### TradingState vs boolean checks:
+ * `getTradingState()` возвращает одно состояние вместо 3–4 boolean-вызовов.
+ * Discriminated union позволяет exhaustive switch — компилятор поймает
+ * новые состояния. Четыре отдельных boolean'а этого не гарантируют.
  *
  * @example
  * ```typescript
- * const now = Date.now();
- *
- * if (MarketTradingPolicy.canTrade(market, now)) {
- *   await orderService.submit(order);
- * }
- *
- * if (MarketTradingPolicy.canClose(market, now)) {
- *   const closed = market.close(now);
- *   await eventBus.publish(closed.pullEvents());
+ * switch (MarketTradingPolicy.getTradingState(market, Date.now())) {
+ *   case 'TRADING':  return orderService.accept(order);
+ *   case 'EXPIRED':  return scheduler.scheduleClose(market);
+ *   case 'CLOSED':   return resolver.awaitOutcome(market);
+ *   case 'RESOLVED': return settlement.process(market);
  * }
  * ```
  */
@@ -38,11 +33,27 @@
 import { Market } from './Market.js';
 
 /**
- * MarketTradingPolicy — статический класс для проверки бизнес-правил операций
+ * TradingState — торговое состояние рынка с учётом времени
+ *
+ * @remarks
+ * Объединяет MarketState (FSM) + expiration в одно представление.
+ * Используется для принятия торговых решений.
+ *
+ * | TradingState | MarketState | isExpiredAt |
+ * |-------------|-------------|-------------|
+ * | TRADING     | ACTIVE      | false       |
+ * | EXPIRED     | ACTIVE      | true        |
+ * | CLOSED      | CLOSED      | —           |
+ * | RESOLVED    | RESOLVED    | —           |
+ */
+export type TradingState = 'TRADING' | 'EXPIRED' | 'CLOSED' | 'RESOLVED';
+
+/**
+ * MarketTradingPolicy — статический класс торговой политики
  *
  * @remarks
  * Намеренно реализован как static-only класс.
- * Все методы — чистые функции: принимают Market + nowMs, возвращают boolean.
+ * Все методы — чистые функции: без side effects, без мутаций.
  */
 export class MarketTradingPolicy {
   private constructor() {
@@ -50,57 +61,48 @@ export class MarketTradingPolicy {
   }
 
   /**
-   * Можно ли торговать на рынке прямо сейчас
+   * Возвращает торговое состояние рынка в заданный момент времени
    *
    * @param market - Market entity
    * @param nowMs - Текущее время в миллисекундах
-   * @returns true если рынок ACTIVE и ещё не истёк
-   *
-   * @example
-   * ```typescript
-   * if (MarketTradingPolicy.canTrade(market, Date.now())) {
-   *   await submitOrder(order);
-   * }
-   * ```
-   */
-  public static canTrade(market: Market, nowMs: number): boolean {
-    return market.isActive() && !market.isExpiredAt(nowMs);
-  }
-
-  /**
-   * Можно ли закрыть рынок (стандартный lifecycle — после истечения)
-   *
-   * @param market - Market entity
-   * @param nowMs - Текущее время в миллисекундах
-   * @returns true если рынок ACTIVE и уже истёк
+   * @returns TradingState — единственная точка входа для торговых решений
    *
    * @remarks
-   * Стандартный close — только когда рынок истёк.
-   * Для досрочного закрытия (admin/dispute) используйте `canForceClose`.
+   * Используйте exhaustive switch для обработки всех случаев.
+   * TypeScript гарантирует покрытие при добавлении новых состояний.
    *
    * @example
    * ```typescript
-   * if (MarketTradingPolicy.canClose(market, Date.now())) {
-   *   const closed = market.close(Date.now());
+   * const now = Date.now();
+   * switch (MarketTradingPolicy.getTradingState(market, now)) {
+   *   case 'TRADING':  return orderService.accept(order);
+   *   case 'EXPIRED':  return scheduler.scheduleClose(market);
+   *   case 'CLOSED':   return resolver.awaitOutcome(market);
+   *   case 'RESOLVED': return settlement.process(market);
    * }
    * ```
    */
-  public static canClose(market: Market, nowMs: number): boolean {
-    return market.isActive() && market.isExpiredAt(nowMs);
+  public static getTradingState(market: Market, nowMs: number): TradingState {
+    if (market.isResolved()) return 'RESOLVED';
+    if (market.isClosed()) return 'CLOSED';
+    // ACTIVE: делим на TRADING (не истёк) и EXPIRED (истёк)
+    return market.isExpiredAt(nowMs) ? 'EXPIRED' : 'TRADING';
   }
 
   /**
    * Можно ли закрыть рынок досрочно (admin/dispute action)
    *
    * @param market - Market entity
-   * @returns true если рынок ACTIVE (не истёк — не требуется)
+   * @returns true если рынок ACTIVE (не проверяет expiration)
    *
    * @remarks
-   * Используется для форс-клоза: инвалидация рынка, технические сбои.
-   * Не проверяет expiration — это исключительная ситуация.
+   * Единственный метод без `nowMs` — форс-клоз не зависит от времени.
+   * Это исключительная операция: инвалидация рынка, технические сбои.
+   * Для стандартного закрытия по expiration проверяйте `getTradingState === 'EXPIRED'`.
    *
    * @example
    * ```typescript
+   * // Admin override: закрыть до истечения
    * if (MarketTradingPolicy.canForceClose(market)) {
    *   const closed = market.close(Date.now());
    * }
@@ -108,26 +110,5 @@ export class MarketTradingPolicy {
    */
   public static canForceClose(market: Market): boolean {
     return market.isActive();
-  }
-
-  /**
-   * Можно ли разрешить рынок
-   *
-   * @param market - Market entity
-   * @returns true если рынок CLOSED
-   *
-   * @remarks
-   * Resolve возможен только после close.
-   * FSM-инвариант: CLOSED → RESOLVED.
-   *
-   * @example
-   * ```typescript
-   * if (MarketTradingPolicy.canResolve(market)) {
-   *   const resolved = market.resolve(winnerIndex, Date.now());
-   * }
-   * ```
-   */
-  public static canResolve(market: Market): boolean {
-    return market.isClosed();
   }
 }

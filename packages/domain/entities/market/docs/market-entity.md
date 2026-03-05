@@ -10,8 +10,8 @@ Market — неизменяемая доменная сущность, пред�
 packages/domain/entities/market/
 └── src/
     ├── Market.ts                    # Entity (FSM + lifecycle)
-    ├── MarketEvents.ts              # Domain notification events
-    ├── MarketTradingPolicy.ts       # Бизнес-правила: когда можно торговать/закрыть/разрешить
+    ├── MarketNotifications.ts       # Notification events (не event sourcing)
+    ├── MarketTradingPolicy.ts       # TradingState + бизнес-правила операций
     ├── value-objects/
     │   ├── MarketSlug.ts            # URL-safe branded type (a-z0-9-)
     │   ├── MarketStatus.ts          # 'ACTIVE' | 'CLOSED' | 'RESOLVED'
@@ -90,17 +90,28 @@ MarketLifecycleError
 
 ### 6. Notification Events (Outbox pattern)
 
-`close(nowMs)` и `resolve(index, nowMs)` эмитируют события в буфер. Application-слой вызывает `pullEvents()` и публикует в event bus.
+`close(nowMs)` и `resolve(index, nowMs)` эмитируют уведомления в буфер. Application-слой вызывает `pullNotifications()` и публикует в event bus.
 
 ```typescript
 const closed = market.close(Date.now());
-const events = closed.pullEvents(); // [MarketClosedEvent]
-await eventBus.publish(events);
+const notifications = closed.pullNotifications(); // [MarketClosedNotification]
+await eventBus.publish(notifications);
 ```
 
-События реализуют `MarketDomainEvent` (base interface) — явная маркировка notification events в типовой системе.
+Типы именуются с суффиксом `Notification` — явное разграничение с event-sourcing events.
+Общий тип: `MarketNotification` (discriminated union).
 
-### 7. `MarketParser` vs `MarketViewModel`
+### 7. TradingState — решения вместо boolean-проверок
+
+`MarketTradingPolicy.getTradingState(market, nowMs)` возвращает одно из четырёх состояний вместо 3–4 отдельных boolean-вызовов:
+
+```typescript
+type TradingState = 'TRADING' | 'EXPIRED' | 'CLOSED' | 'RESOLVED'
+```
+
+Exhaustive switch гарантирует покрытие всех состояний на уровне компилятора.
+
+### 8. `MarketParser` vs `MarketViewModel`
 
 **Проблема**: Раньше `MarketViewModel` делал и сериализацию, и реконструкцию — нарушение SRP.
 
@@ -159,33 +170,35 @@ if (result.ok) {
 }
 ```
 
-### Policy: проверка допустимости операций
+### Policy: торговые решения через TradingState
 
 ```typescript
 import { MarketTradingPolicy } from '@polymarket/market';
 
 const now = Date.now();
 
-// Можно ли торговать прямо сейчас?
-if (MarketTradingPolicy.canTrade(market, now)) {
-  await orderService.submit(order);
-}
-
-// Пора ли закрывать? (ACTIVE + истёк)
-if (MarketTradingPolicy.canClose(market, now)) {
-  const closed = market.close(now);
-  await eventBus.publish(closed.pullEvents());
+// Единственная точка входа для торговых решений:
+switch (MarketTradingPolicy.getTradingState(market, now)) {
+  case 'TRADING':
+    await orderService.accept(order);
+    break;
+  case 'EXPIRED':
+    // рынок активен, но истёк — пора закрывать
+    const closed = market.close(now);
+    await eventBus.publish(closed.pullNotifications());
+    break;
+  case 'CLOSED':
+    // ждём результата от оракула
+    break;
+  case 'RESOLVED':
+    await settlement.process(market);
+    break;
 }
 
 // Досрочное закрытие (admin/dispute — без проверки expiration)
 if (MarketTradingPolicy.canForceClose(market)) {
   const closed = market.close(now);
-}
-
-// Можно ли разрешить? (CLOSED)
-if (MarketTradingPolicy.canResolve(market)) {
-  const resolved = market.resolve(0, now); // YES победил
-  await eventBus.publish(resolved.pullEvents());
+  await eventBus.publish(closed.pullNotifications());
 }
 ```
 
@@ -212,25 +225,25 @@ try {
 }
 ```
 
-### Domain Events (Outbox pattern)
+### Notifications (Outbox pattern)
 
 ```typescript
 const now = Date.now();
 
-// close() эмитирует MarketClosedEvent
+// close() эмитирует MarketClosedNotification
 const closed = market.close(now);
-const closeEvents = closed.pullEvents();
-// closeEvents[0] = { type: 'MARKET_CLOSED', marketId, slug, occurredAt: now }
+const closeNotifications = closed.pullNotifications();
+// [{ type: 'MARKET_CLOSED', marketId, slug, occurredAt: now }]
 
-// resolve() эмитирует MarketResolvedEvent
+// resolve() эмитирует MarketResolvedNotification
 const resolved = closed.resolve(0, now);
-const resolveEvents = resolved.pullEvents();
-// resolveEvents[0] = { type: 'MARKET_RESOLVED', marketId, slug, resolvedOutcomeIndex: 0, occurredAt: now }
+const resolveNotifications = resolved.pullNotifications();
+// [{ type: 'MARKET_RESOLVED', marketId, slug, resolvedOutcomeIndex: 0, occurredAt: now }]
 
-// pullEvents() очищает буфер
-resolved.pullEvents(); // []
+// pullNotifications() очищает буфер
+resolved.pullNotifications(); // []
 
-// create() и MarketParser.from() НЕ эмитируют событий (восстановление ≠ бизнес-событие)
+// create() и MarketParser.from() НЕ эмитируют уведомлений (восстановление ≠ бизнес-событие)
 ```
 
 ### Сериализация и реконструкция
@@ -306,10 +319,11 @@ if (isResolved(market.state)) {
 
 | Файл | Statements | Branches | Functions | Lines |
 |------|-----------|----------|-----------|-------|
-| Market.ts | 100% | 95.8% | 100% | 100% |
+| Market.ts | 100% | ~96% | 100% | 100% |
 | MarketTradingPolicy.ts | 100% | 100% | 100% | 100% |
+| MarketNotifications.ts | — (types only) | — | — | — |
 | MarketState.ts | 100% | 100% | 100% | 100% |
 | MarketParser.ts | 100% | 100% | 100% | 100% |
 | MarketViewModel.ts | 100% | 100% | 100% | 100% |
 
-7 тестовых suite, 125 тестов.
+7 тестовых suite, 123 теста.
