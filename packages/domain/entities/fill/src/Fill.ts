@@ -1,38 +1,37 @@
 /**
- * Сущность Fill (исполнение ордера)
+ * Fill — доменная запись исполнения ордера (Execution Domain Record)
  *
  * @remarks
- * Представляет исполнение нашего конкретного ордера на торговой площадке.
- * Fill — это неизменяемая запись о том, что наш ордер был (частично) исполнен:
- * по какой цене, в каком объёме, с какой комиссией, с каким типом ликвидности.
+ * Fill — это **неизменяемая доменная запись** факта исполнения нашего ордера
+ * на торговой площадке. По архитектурной природе это Domain Record / Immutable
+ * Execution Fact, а не Entity в классическом DDD-смысле (нет lifecycle, нет
+ * мутаций состояния, нет истории).
  *
- * ### Что такое Fill (execution record):
- * Fill — это "наше исполнение": факт того, что конкретный наш ордер
- * был исполнен. Используется для:
+ * ### Что такое Fill:
+ * Fill — "наше исполнение": факт того, что конкретный ордер был (частично)
+ * исполнен. Используется как входная запись для:
+ * - Ledger layer (разворачивается в LedgerEntry[])
  * - Расчёта позиций (position tracking)
  * - Расчёта PnL
  * - Учёта комиссий
- * - Аллокации по стратегиям
  *
  * ### Чем Fill НЕ является:
  * Fill НЕ является рыночным принтом (market tape).
  * Для аналитики рынка используется Trade entity (packages/domain/entities/trade/).
  *
+ * ### Aggregate boundary:
+ * Fill — независимая запись. Он не принадлежит Order aggregate,
+ * потому что fills могут приходить вне порядка (out-of-order events),
+ * а lifecycle fill > lifecycle order.
+ *
  * ### Связь с Trade:
  * Fill.venueTradeId?: VenueTradeId — опциональная сшивка в application layer
  * через ExecutionLinker.
  *
- * ### Инварианты:
- * 1. id не пустой (FillId)
- * 2. orderId обязателен — нет orderId, нет Fill
- * 3. accountId не пустой
- * 4. venueId не пустой
- * 5. marketId не пустая строка
- * 6. tokenId присутствует
- * 7. size > 0
- * 8. price > 0
- * 9. timestamp валидный
- * 10. fee.amount >= 0 (гарантируется Fee VO инвариантом)
+ * ### Реальные инварианты (cross-field):
+ * 1. marketId не пустая строка (строковый тип, нет VO)
+ * 2. size > 0 (Quantity допускает 0, Fill — нет)
+ * Все остальные инварианты гарантируются типами и VO при создании.
  *
  * ### Immutability:
  * Все свойства readonly. Fill создаётся один раз и не изменяется.
@@ -42,7 +41,6 @@
  * import { Fill } from '@polymarket/fill';
  * import { asFillId, asOrderId, parseAccountId, asVenueId, parseAssetId } from '@polymarket/ids';
  * import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
- * import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
  * import Decimal from 'decimal.js';
  *
  * const result = Fill.create({
@@ -57,13 +55,12 @@
  *   side: 'BUY',
  *   timestamp: Timestamp.now(),
  *   fee: Fee.zero(usdcAsset),
- *   liquidity: 'MAKER',
  * });
  *
  * if (result.ok) {
  *   const fill = result.value;
- *   console.log(fill.getNotional().toNumber()); // 32.5
- *   console.log(fill.isMaker()); // true
+ *   console.log(fill.getCashFlow().toNumber());   // -32.5 (BUY = деньги ушли)
+ *   console.log(fill.getSignedQuantity().toNumber()); // +50 (позиция выросла)
  * }
  * ```
  */
@@ -71,18 +68,16 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import type { FillId, OrderId, AccountId, VenueId, AssetId, VenueTradeId } from '@polymarket/ids';
-import { accountIdToString, assetIdToString } from '@polymarket/ids';
 import type { Price, Quantity, Side, Timestamp, Fee } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import type { Liquidity } from './value-objects/Liquidity.js';
-import type { FillSnapshot } from './FillSnapshot.js';
 
 /**
  * Параметры создания Fill
  *
  * @remarks
- * orderId обязателен — нет orderId, нет Fill.
- * Все остальные ID-поля тоже обязательны.
+ * Все ID-поля типизированы — branded types гарантируют корректность.
+ * Все VO (Price, Quantity, Timestamp, Fee) валидируют себя при создании.
  * liquidity и venueTradeId опциональны.
  */
 export interface FillParams {
@@ -94,19 +89,19 @@ export interface FillParams {
   readonly accountId: AccountId;
   /** ID торговой площадки */
   readonly venueId: VenueId;
-  /** ID рынка */
+  /** ID рынка (строка, нет MarketId VO) */
   readonly marketId: string;
   /** ID токена (актива) */
   readonly tokenId: AssetId;
-  /** Цена исполнения */
+  /** Цена исполнения (Price VO гарантирует > 0) */
   readonly price: Price;
-  /** Размер исполнения */
+  /** Размер исполнения (должен быть > 0) */
   readonly size: Quantity;
   /** Сторона (BUY/SELL) */
   readonly side: Side;
   /** Время исполнения */
   readonly timestamp: Timestamp;
-  /** Комиссия за исполнение (>= 0) */
+  /** Комиссия за исполнение (>= 0, гарантируется Fee VO) */
   readonly fee: Fee;
   /** Тип ликвидности — опционально */
   readonly liquidity?: Liquidity;
@@ -115,11 +110,11 @@ export interface FillParams {
 }
 
 /**
- * Класс Fill - исполнение ордера
+ * Fill — неизменяемая доменная запись исполнения ордера
  *
  * @remarks
- * Неизменяемая доменная сущность.
  * Все свойства readonly. Factory method Fill.create() с Result pattern.
+ * Содержит методы для расчёта экономического эффекта исполнения.
  */
 export class Fill {
   public readonly id: FillId;
@@ -156,23 +151,21 @@ export class Fill {
   }
 
   /**
-   * Создаёт Fill с валидацией инвариантов
+   * Создаёт Fill с валидацией cross-field инвариантов
    *
    * @param params - Параметры создания исполнения
    * @returns Result<Fill, ValidationError>
    *
    * @remarks
-   * ### Валидации:
-   * 1. id не пустой (FillId)
-   * 2. orderId обязателен и не пустой
-   * 3. accountId не пустой
-   * 4. venueId не пустой
-   * 5. marketId не пустая строка
-   * 6. tokenId присутствует
-   * 7. size > 0
-   * 8. price > 0
-   * 9. timestamp присутствует
-   * 10. fee присутствует (fee.amount >= 0 гарантируется Fee VO)
+   * ### Что валидируется здесь (cross-field инварианты):
+   * 1. marketId не пустая строка — строковый тип, нет VO
+   * 2. size > 0 — Quantity VO допускает 0, Fill — нет
+   *
+   * ### Что НЕ валидируется здесь (гарантируется типами и VO):
+   * - id, orderId, accountId, venueId, tokenId — branded types
+   * - price > 0 — гарантируется Price VO при создании (бросает исключение)
+   * - fee.amount >= 0 — гарантируется Fee VO
+   * - timestamp корректный — гарантируется Timestamp VO
    *
    * @example
    * ```typescript
@@ -183,112 +176,25 @@ export class Fill {
    * });
    * if (result.ok) {
    *   const fill = result.value;
+   *   console.log(fill.getCashFlow().toNumber()); // -32.5 для BUY 50 @ 0.65
    * }
    * ```
    */
   public static create(params: FillParams): Result<Fill, ValidationError> {
-    // Инвариант 1: id не пустой
-    if (!params.id) {
-      return Err(
-        new ValidationError('Fill ID is required', {
-          context: { field: 'id', value: params.id },
-        })
-      );
-    }
-
-    // Инвариант 2: orderId обязателен
-    if (!params.orderId) {
-      return Err(
-        new ValidationError('Order ID is required for Fill', {
-          context: { field: 'orderId', fillId: params.id },
-        })
-      );
-    }
-
-    // Инвариант 3: accountId не пустой
-    if (!params.accountId) {
-      return Err(
-        new ValidationError('Account ID is required', {
-          context: { field: 'accountId', fillId: params.id },
-        })
-      );
-    }
-
-    // Инвариант 4: venueId не пустой
-    if (!params.venueId) {
-      return Err(
-        new ValidationError('Venue ID is required', {
-          context: { field: 'venueId', fillId: params.id },
-        })
-      );
-    }
-
-    // Инвариант 5: marketId не пустая строка
+    // Инвариант 1: marketId не пустая строка (нет MarketId VO)
     if (!params.marketId || params.marketId.trim().length === 0) {
       return Err(
         new ValidationError('Market ID is required and must be non-empty', {
-          context: { field: 'marketId', fillId: params.id, value: params.marketId },
+          context: { field: 'marketId', value: params.marketId },
         })
       );
     }
 
-    // Инвариант 6: tokenId присутствует
-    if (!params.tokenId) {
-      return Err(
-        new ValidationError('Token ID is required', {
-          context: { field: 'tokenId', fillId: params.id },
-        })
-      );
-    }
-
-    // Инвариант 7: size > 0
-    if (!params.size) {
-      return Err(
-        new ValidationError('Size is required', {
-          context: { field: 'size', fillId: params.id },
-        })
-      );
-    }
-
+    // Инвариант 2: size > 0 — Quantity VO допускает 0, Fill требует положительный размер
     if (!params.size.isPositive()) {
       return Err(
         new ValidationError('Fill size must be positive', {
-          context: { field: 'size', fillId: params.id, value: params.size.value().toNumber() },
-        })
-      );
-    }
-
-    // Инвариант 8: price > 0
-    if (!params.price) {
-      return Err(
-        new ValidationError('Price is required', {
-          context: { field: 'price', fillId: params.id },
-        })
-      );
-    }
-
-    if (!params.price.value().gt(new Decimal(0))) {
-      return Err(
-        new ValidationError('Fill price must be positive', {
-          context: { field: 'price', fillId: params.id, value: params.price.value().toNumber() },
-        })
-      );
-    }
-
-    // Инвариант 9: timestamp присутствует
-    if (!params.timestamp) {
-      return Err(
-        new ValidationError('Timestamp is required', {
-          context: { field: 'timestamp', fillId: params.id },
-        })
-      );
-    }
-
-    // Инвариант 10: fee присутствует
-    if (!params.fee) {
-      return Err(
-        new ValidationError('Fee is required', {
-          context: { field: 'fee', fillId: params.id },
+          context: { field: 'size', value: params.size.value().toNumber() },
         })
       );
     }
@@ -296,20 +202,108 @@ export class Fill {
     return Ok(new Fill(params));
   }
 
-  // ==================== Calculations ====================
+  // ==================== Экономические расчёты ====================
+
+  /**
+   * Возвращает знаковый объём исполнения (position delta)
+   *
+   * @returns +size для BUY, -size для SELL
+   *
+   * @remarks
+   * Используется для расчёта изменения позиции.
+   * BUY увеличивает позицию, SELL уменьшает.
+   *
+   * @example
+   * ```typescript
+   * // BUY 50 @ 0.65
+   * fill.getSignedQuantity().toNumber() // +50
+   *
+   * // SELL 50 @ 0.65
+   * fill.getSignedQuantity().toNumber() // -50
+   * ```
+   */
+  public getSignedQuantity(): Decimal {
+    return this.side === 'BUY' ? this.size.value() : this.size.value().negated();
+  }
+
+  /**
+   * Возвращает денежный поток от исполнения (без комиссии)
+   *
+   * @returns -(price × size) для BUY, +(price × size) для SELL
+   *
+   * @remarks
+   * BUY: деньги уходят (отрицательный cash flow)
+   * SELL: деньги приходят (положительный cash flow)
+   * Для получения чистого потока с учётом комиссии используйте getNetCashFlow().
+   *
+   * @example
+   * ```typescript
+   * // BUY 50 @ 0.65
+   * fill.getCashFlow().toNumber() // -32.5
+   *
+   * // SELL 50 @ 0.65
+   * fill.getCashFlow().toNumber() // +32.5
+   * ```
+   */
+  public getCashFlow(): Decimal {
+    const notional = this.price.value().times(this.size.value());
+    return this.side === 'BUY' ? notional.negated() : notional;
+  }
+
+  /**
+   * Возвращает денежный поток от комиссии
+   *
+   * @returns -fee.amount (всегда отрицательный или 0)
+   *
+   * @remarks
+   * Комиссия всегда является расходом. При нулевой комиссии возвращает 0.
+   *
+   * @example
+   * ```typescript
+   * // Fee 0.02 USDC
+   * fill.getFeeFlow().toNumber() // -0.02
+   *
+   * // Zero fee
+   * fill.getFeeFlow().toNumber() // 0
+   * ```
+   */
+  public getFeeFlow(): Decimal {
+    return this.fee.quantity.amount().value().negated();
+  }
+
+  /**
+   * Возвращает чистый денежный поток (с учётом комиссии)
+   *
+   * @returns getCashFlow() + getFeeFlow()
+   *
+   * @remarks
+   * Это итоговое изменение денежного баланса от исполнения.
+   *
+   * @example
+   * ```typescript
+   * // BUY 50 @ 0.65, fee 0.02 USDC
+   * fill.getNetCashFlow().toNumber() // -32.52
+   *
+   * // SELL 50 @ 0.65, fee 0.02 USDC
+   * fill.getNetCashFlow().toNumber() // +32.48
+   * ```
+   */
+  public getNetCashFlow(): Decimal {
+    return this.getCashFlow().plus(this.getFeeFlow());
+  }
 
   /**
    * Вычисляет номинальную стоимость исполнения (notional)
    *
-   * @returns Notional (price × size) как Decimal
+   * @returns price × size как Decimal (всегда положительный)
    *
    * @remarks
-   * Формула: notional = price.value() × size.value()
+   * Для знакового расчёта используйте getCashFlow().
    *
    * @example
    * ```typescript
-   * const fill = Fill.create({ price: Price.of(0.65), size: Quantity.of(50), ... });
-   * console.log(fill.getNotional().toNumber()); // 32.5
+   * // BUY или SELL 50 @ 0.65
+   * fill.getNotional().toNumber() // 32.5
    * ```
    */
   public getNotional(): Decimal {
@@ -359,9 +353,6 @@ export class Fill {
    *
    * @returns True если fee.amount > 0
    *
-   * @remarks
-   * Используется для условного применения fee logic.
-   *
    * @example
    * ```typescript
    * if (fill.hasFee()) {
@@ -373,41 +364,7 @@ export class Fill {
     return !this.fee.isZero();
   }
 
-  // ==================== Serialization ====================
-
-  /**
-   * Преобразует Fill в плоский снапшот (примитивы)
-   *
-   * @returns FillSnapshot — сериализованное представление
-   *
-   * @remarks
-   * Все value objects конвертируются в примитивы.
-   * AccountId сериализуется как строка через JSON.stringify.
-   *
-   * @example
-   * ```typescript
-   * const snapshot = fill.toSnapshot();
-   * await db.save(snapshot);
-   * ```
-   */
-  public toSnapshot(): FillSnapshot {
-    return {
-      id: this.id,
-      orderId: this.orderId,
-      accountId: accountIdToString(this.accountId),
-      venueId: this.venueId,
-      marketId: this.marketId,
-      tokenId: assetIdToString(this.tokenId),
-      price: this.price.value().toNumber(),
-      size: this.size.value().toNumber(),
-      side: this.side,
-      timestampMs: this.timestamp.value,
-      feeAmount: this.fee.quantity.amount().value().toNumber(),
-      feeAsset: assetIdToString(this.fee.asset),
-      liquidity: this.liquidity,
-      venueTradeId: this.venueTradeId,
-    };
-  }
+  // ==================== Debug ====================
 
   /**
    * Строковое представление для отладки
@@ -417,7 +374,7 @@ export class Fill {
    * @example
    * ```typescript
    * console.log(fill.toString());
-   * // "Fill[fill-123]: BUY 50 @ 0.65 (order-456)"
+   * // "Fill[fill-123]: BUY 50 @ 0.65 (order: order-456)"
    * ```
    */
   public toString(): string {

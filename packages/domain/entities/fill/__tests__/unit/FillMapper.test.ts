@@ -52,7 +52,7 @@ describe('FillMapper', () => {
         expect(fill.side).toBe('BUY');
         expect(fill.price.value().toNumber()).toBeCloseTo(0.65, 5);
         expect(fill.size.value().toNumber()).toBeCloseTo(50, 5);
-        expect(fill.timestamp.value).toBe(1700000000000);
+        expect(fill.timestamp.toNumber()).toBe(1700000000000);
         expect(fill.venueId).toBe('POLYMARKET');
         expect(fill.liquidity).toBe('MAKER');
       }

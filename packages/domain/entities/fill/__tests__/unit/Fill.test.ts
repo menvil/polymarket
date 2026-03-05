@@ -1,9 +1,10 @@
 /**
- * Тесты для Fill entity
+ * Тесты для Fill domain record
  */
 
 import { Fill } from '../../src/Fill';
 import type { FillParams } from '../../src/Fill';
+import { FillMapper } from '../../src/mappers/FillMapper';
 import {
   asFillId,
   asOrderId,
@@ -13,7 +14,7 @@ import {
   parseAssetId,
   AssetIdHelpers,
 } from '@polymarket/ids';
-import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+import { Price, Quantity, TimestampService, Fee } from '@polymarket/value-objects';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import Decimal from 'decimal.js';
 
@@ -40,6 +41,12 @@ function makeZeroFee() {
   return Fee.zero(AssetIdHelpers.USDC);
 }
 
+function makeNonZeroFee(amount: string) {
+  const feeQty = Quantity.of(new Decimal(amount));
+  const feeAssetQty = new AssetQuantity(AssetIdHelpers.USDC, feeQty);
+  return Fee.of(feeAssetQty);
+}
+
 function makeValidParams(overrides?: Partial<FillParams>): FillParams {
   const tokenId = makeTokenId();
   if (!tokenId) throw new Error('Test setup: invalid tokenId');
@@ -54,7 +61,7 @@ function makeValidParams(overrides?: Partial<FillParams>): FillParams {
     price: Price.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('50')),
     side: 'BUY',
-    timestamp: unwrap(Timestamp.fromEpochMs(1700000000000), 'Timestamp'),
+    timestamp: unwrap(TimestampService.create(1700000000000), 'Timestamp'),
     fee: makeZeroFee(),
     liquidity: 'MAKER',
     ...overrides,
@@ -80,7 +87,7 @@ describe('Fill', () => {
         expect(fill.price.value().toNumber()).toBe(0.65);
         expect(fill.size.value().toNumber()).toBe(50);
         expect(fill.liquidity).toBe('MAKER');
-        expect(fill.timestamp.value).toBe(1700000000000);
+        expect(fill.timestamp.toNumber()).toBe(1700000000000);
       }
     });
 
@@ -102,46 +109,6 @@ describe('Fill', () => {
       }
     });
 
-    it('возвращает Err если id пустой', () => {
-      const params = makeValidParams({ id: '' as ReturnType<typeof asFillId> });
-      const result = Fill.create(params);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Fill ID is required');
-      }
-    });
-
-    it('возвращает Err если orderId отсутствует', () => {
-      const params = makeValidParams({ orderId: '' as ReturnType<typeof asOrderId> });
-      const result = Fill.create(params);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Order ID is required');
-      }
-    });
-
-    it('возвращает Err если accountId отсутствует', () => {
-      const params = makeValidParams({ accountId: null as unknown as ReturnType<typeof makeAccountId> });
-      const result = Fill.create(params);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Account ID is required');
-      }
-    });
-
-    it('возвращает Err если venueId пустой', () => {
-      const params = makeValidParams({ venueId: '' as ReturnType<typeof asVenueId> });
-      const result = Fill.create(params);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Venue ID is required');
-      }
-    });
-
     it('возвращает Err если marketId пустой', () => {
       const result = Fill.create(makeValidParams({ marketId: '' }));
 
@@ -149,6 +116,12 @@ describe('Fill', () => {
       if (!result.ok) {
         expect(result.error.message).toContain('Market ID is required');
       }
+    });
+
+    it('возвращает Err если marketId только пробелы', () => {
+      const result = Fill.create(makeValidParams({ marketId: '   ' }));
+
+      expect(result.ok).toBe(false);
     });
 
     it('возвращает Err если size нулевой', () => {
@@ -162,37 +135,116 @@ describe('Fill', () => {
       }
     });
 
-    it('возвращает ошибку если price нулевая (Price.of бросает исключение)', () => {
-      // Price.of() сам бросает PriceInvariantViolation для значений < MIN_PRICE (0.0001)
+    it('Price.of бросает исключение для нулевой цены — до вызова Fill.create', () => {
+      // Price VO сам валидирует себя (PriceInvariantViolation)
       expect(() => {
         Fill.create(makeValidParams({ price: Price.of(new Decimal('0')) }));
       }).toThrow();
     });
+  });
 
-    it('возвращает Err если fee отсутствует', () => {
-      const result = Fill.create(
-        makeValidParams({ fee: null as unknown as ReturnType<typeof makeZeroFee> })
-      );
+  // ==================== Экономические расчёты ====================
 
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Fee is required');
-      }
+  describe('getSignedQuantity()', () => {
+    it('BUY: возвращает положительный объём', () => {
+      const fill = unwrap(Fill.create(makeValidParams({ side: 'BUY', size: Quantity.of(new Decimal('50')) })));
+      expect(fill.getSignedQuantity().toNumber()).toBe(50);
+    });
+
+    it('SELL: возвращает отрицательный объём', () => {
+      const fill = unwrap(Fill.create(makeValidParams({ side: 'SELL', size: Quantity.of(new Decimal('50')) })));
+      expect(fill.getSignedQuantity().toNumber()).toBe(-50);
+    });
+  });
+
+  describe('getCashFlow()', () => {
+    it('BUY: cash flow отрицательный (деньги ушли)', () => {
+      // BUY 50 @ 0.65 = -32.5
+      const fill = unwrap(Fill.create(makeValidParams({
+        side: 'BUY',
+        price: Price.of(new Decimal('0.65')),
+        size: Quantity.of(new Decimal('50')),
+      })));
+      expect(fill.getCashFlow().toNumber()).toBeCloseTo(-32.5, 5);
+    });
+
+    it('SELL: cash flow положительный (деньги пришли)', () => {
+      // SELL 50 @ 0.65 = +32.5
+      const fill = unwrap(Fill.create(makeValidParams({
+        side: 'SELL',
+        price: Price.of(new Decimal('0.65')),
+        size: Quantity.of(new Decimal('50')),
+      })));
+      expect(fill.getCashFlow().toNumber()).toBeCloseTo(32.5, 5);
+    });
+  });
+
+  describe('getFeeFlow()', () => {
+    it('ненулевая комиссия — всегда отрицательный поток', () => {
+      const fill = unwrap(Fill.create(makeValidParams({ fee: makeNonZeroFee('0.02') })));
+      expect(fill.getFeeFlow().toNumber()).toBeCloseTo(-0.02, 5);
+    });
+
+    it('нулевая комиссия — возвращает 0', () => {
+      const fill = unwrap(Fill.create(makeValidParams({ fee: makeZeroFee() })));
+      expect(fill.getFeeFlow().isZero()).toBe(true);
+    });
+  });
+
+  describe('getNetCashFlow()', () => {
+    it('BUY с комиссией: net = cashFlow + feeFlow', () => {
+      // BUY 50 @ 0.65 = -32.5, fee 0.02 → net = -32.52
+      const fill = unwrap(Fill.create(makeValidParams({
+        side: 'BUY',
+        price: Price.of(new Decimal('0.65')),
+        size: Quantity.of(new Decimal('50')),
+        fee: makeNonZeroFee('0.02'),
+      })));
+      expect(fill.getNetCashFlow().toNumber()).toBeCloseTo(-32.52, 5);
+    });
+
+    it('SELL с комиссией: net = cashFlow + feeFlow', () => {
+      // SELL 50 @ 0.65 = +32.5, fee 0.02 → net = +32.48
+      const fill = unwrap(Fill.create(makeValidParams({
+        side: 'SELL',
+        price: Price.of(new Decimal('0.65')),
+        size: Quantity.of(new Decimal('50')),
+        fee: makeNonZeroFee('0.02'),
+      })));
+      expect(fill.getNetCashFlow().toNumber()).toBeCloseTo(32.48, 5);
+    });
+
+    it('без комиссии: net равен cashFlow', () => {
+      const fill = unwrap(Fill.create(makeValidParams({
+        side: 'BUY',
+        price: Price.of(new Decimal('0.65')),
+        size: Quantity.of(new Decimal('50')),
+        fee: makeZeroFee(),
+      })));
+      expect(fill.getNetCashFlow().toNumber()).toBeCloseTo(-32.5, 5);
     });
   });
 
   describe('getNotional()', () => {
-    it('вычисляет notional как price × size', () => {
+    it('вычисляет notional как price × size (всегда положительный)', () => {
       const fill = unwrap(Fill.create(
         makeValidParams({
           price: Price.of(new Decimal('0.65')),
           size: Quantity.of(new Decimal('50')),
         })
       ));
+      expect(fill.getNotional().toNumber()).toBeCloseTo(32.5, 5);
+    });
 
+    it('для SELL notional тоже положительный', () => {
+      const fill = unwrap(Fill.create(
+        makeValidParams({ side: 'SELL', price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('50')) })
+      ));
       expect(fill.getNotional().toNumber()).toBeCloseTo(32.5, 5);
     });
   });
+
+  // ==================== Predicates ====================
 
   describe('isBuy() / isSell()', () => {
     it('isBuy() возвращает true для BUY', () => {
@@ -235,19 +287,17 @@ describe('Fill', () => {
     });
 
     it('возвращает true для ненулевой комиссии', () => {
-      const feeQty = Quantity.of(new Decimal('0.01'));
-      const feeAssetQty = new AssetQuantity(AssetIdHelpers.USDC, feeQty);
-      const fee = Fee.of(feeAssetQty);
-
-      const fill = unwrap(Fill.create(makeValidParams({ fee })));
+      const fill = unwrap(Fill.create(makeValidParams({ fee: makeNonZeroFee('0.01') })));
       expect(fill.hasFee()).toBe(true);
     });
   });
 
-  describe('toSnapshot()', () => {
+  // ==================== Сериализация (через FillMapper) ====================
+
+  describe('FillMapper.toSnapshot()', () => {
     it('сериализует Fill в плоский снапшот', () => {
       const fill = unwrap(Fill.create(makeValidParams()));
-      const snapshot = fill.toSnapshot();
+      const snapshot = FillMapper.toSnapshot(fill);
 
       expect(snapshot.id).toBe('fill-123');
       expect(snapshot.orderId).toBe('order-456');
@@ -259,6 +309,15 @@ describe('Fill', () => {
       expect(snapshot.timestampMs).toBe(1700000000000);
       expect(snapshot.feeAmount).toBe(0);
       expect(snapshot.liquidity).toBe('MAKER');
+    });
+
+    it('feeAsset в снапшоте совпадает с fee.asset (не tokenId)', () => {
+      const fill = unwrap(Fill.create(makeValidParams({ fee: makeNonZeroFee('0.02') })));
+      const snapshot = FillMapper.toSnapshot(fill);
+
+      // feeAsset должен быть USDC, а не tokenId YES-токена
+      expect(snapshot.feeAsset).toContain('USDC');
+      expect(snapshot.feeAmount).toBeCloseTo(0.02, 5);
     });
   });
 

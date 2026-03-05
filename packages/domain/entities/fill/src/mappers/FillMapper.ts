@@ -50,8 +50,11 @@ import {
   parseAssetId,
   asVenueTradeId,
   asTxHash,
+  AssetIdHelpers,
+  accountIdToString,
+  assetIdToString,
 } from '@polymarket/ids';
-import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+import { Price, Quantity, TimestampService, Fee } from '@polymarket/value-objects';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import Decimal from 'decimal.js';
 import { Fill } from '../Fill.js';
@@ -304,7 +307,7 @@ export class FillMapper {
       );
     }
 
-    const timestampResult = Timestamp.fromEpochMs(timestampSec * 1000);
+    const timestampResult = TimestampService.create(timestampSec * 1000);
     if (!timestampResult.ok) {
       return Err(
         new ValidationError(`Invalid orderExecutionEvent: ${timestampResult.error.message}`, {
@@ -327,9 +330,9 @@ export class FillMapper {
       }
     }
 
-    // Создать Fee — используем tokenId как fee asset (упрощение; в реальности USDC)
+    // Fee asset — всегда USDC для Polymarket (расчётная валюта)
     const feeQuantity = Quantity.of(feeAmount);
-    const feeAssetQuantity = new AssetQuantity(tokenId, feeQuantity);
+    const feeAssetQuantity = new AssetQuantity(AssetIdHelpers.USDC, feeQuantity);
     const fee = Fee.of(feeAssetQuantity);
 
     // Извлечь liquidity (опционально)
@@ -375,10 +378,15 @@ export class FillMapper {
   }
 
   /**
-   * Конвертирует Fill в FillSnapshot
+   * Конвертирует Fill в FillSnapshot (плоское DTO с примитивами)
    *
-   * @param fill - Fill entity
-   * @returns FillSnapshot — плоское DTO с примитивами
+   * @param fill - Запись исполнения
+   * @returns FillSnapshot — сериализованное представление для хранения
+   *
+   * @remarks
+   * Вся логика сериализации живёт здесь (SRP: Fill не знает о persistence).
+   * AccountId сериализуется через accountIdToString().
+   * AssetId сериализуется через assetIdToString().
    *
    * @example
    * ```typescript
@@ -387,7 +395,22 @@ export class FillMapper {
    * ```
    */
   public static toSnapshot(fill: Fill): FillSnapshot {
-    return fill.toSnapshot();
+    return {
+      id: fill.id,
+      orderId: fill.orderId,
+      accountId: accountIdToString(fill.accountId),
+      venueId: fill.venueId,
+      marketId: fill.marketId,
+      tokenId: assetIdToString(fill.tokenId),
+      price: fill.price.value().toNumber(),
+      size: fill.size.value().toNumber(),
+      side: fill.side,
+      timestampMs: fill.timestamp.toNumber(),
+      feeAmount: fill.fee.quantity.amount().value().toNumber(),
+      feeAsset: assetIdToString(fill.fee.asset),
+      liquidity: fill.liquidity,
+      venueTradeId: fill.venueTradeId,
+    };
   }
 
   /**
@@ -490,7 +513,7 @@ export class FillMapper {
 
     const size = Quantity.of(sizeDecimal);
 
-    const timestampResult = Timestamp.fromEpochMs(snapshot.timestampMs);
+    const timestampResult = TimestampService.create(snapshot.timestampMs);
     if (!timestampResult.ok) {
       return Err(
         new ValidationError(`Invalid snapshot: ${timestampResult.error.message}`, {
