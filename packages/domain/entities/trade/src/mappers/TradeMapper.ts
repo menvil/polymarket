@@ -46,7 +46,7 @@
 import { Result, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import { asVenueTradeId, asVenueId, parseAssetId, asTxHash } from '@polymarket/ids';
-import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import { Trade } from '../Trade.js';
 import type { TradeSnapshot } from '../TradeSnapshot.js';
@@ -222,7 +222,7 @@ export class TradeMapper {
       );
     }
 
-    const timestampResult = Timestamp.fromEpochMs(timestampSec * 1000);
+    const timestampResult = TimestampService.create(timestampSec * 1000);
     if (!timestampResult.ok) {
       return Err(
         new ValidationError(`Invalid lastTradeEvent: ${timestampResult.error.message}`, {
@@ -370,7 +370,16 @@ export class TradeMapper {
       );
     }
 
-    const price = Price.of(priceDecimal);
+    let price: Price;
+    try {
+      price = Price.of(priceDecimal);
+    } catch {
+      return Err(
+        new ValidationError('Invalid snapshot: price must be positive', {
+          context: { field: 'price', value: snapshot.price },
+        })
+      );
+    }
 
     let sizeDecimal: Decimal;
     try {
@@ -383,9 +392,18 @@ export class TradeMapper {
       );
     }
 
-    const size = Quantity.of(sizeDecimal);
+    let size: Quantity;
+    try {
+      size = Quantity.of(sizeDecimal);
+    } catch {
+      return Err(
+        new ValidationError('Invalid snapshot: size must be positive', {
+          context: { field: 'size', value: snapshot.size },
+        })
+      );
+    }
 
-    const timestampResult = Timestamp.fromEpochMs(snapshot.timestampMs);
+    const timestampResult = TimestampService.create(snapshot.timestampMs);
     if (!timestampResult.ok) {
       return Err(
         new ValidationError(`Invalid snapshot: ${timestampResult.error.message}`, {

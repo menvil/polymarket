@@ -311,7 +311,7 @@ export class Trade {
    * ```
    */
   public compareByTime(other: Trade): number {
-    return this.timestamp.diffMs(other.timestamp);
+    return this.timestamp.diffMs(other.timestamp).toNumber();
   }
 
   // ==================== Serialization ====================
@@ -341,7 +341,7 @@ export class Trade {
       price: this.price.value().toNumber(),
       size: this.size.value().toNumber(),
       aggressorSide: this.aggressorSide,
-      timestampMs: this.timestamp.value,
+      timestampMs: this.timestamp.toNumber(),
       txHash: this.txHash,
     };
   }

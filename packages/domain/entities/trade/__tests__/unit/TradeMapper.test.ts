@@ -45,7 +45,7 @@ describe('TradeMapper', () => {
         expect(trade.aggressorSide).toBe('BUY');
         expect(trade.price.value().toNumber()).toBeCloseTo(0.65, 5);
         expect(trade.size.value().toNumber()).toBeCloseTo(100, 5);
-        expect(trade.timestamp.value).toBe(1700000000000); // секунды → мс
+        expect(trade.timestamp.toNumber()).toBe(1700000000000); // секунды → мс
         expect(trade.venueId).toBe('POLYMARKET');
       }
     });
@@ -225,7 +225,7 @@ describe('TradeMapper', () => {
           5
         );
         expect(restored.aggressorSide).toBe(original.aggressorSide);
-        expect(restored.timestamp.value).toBe(original.timestamp.value);
+        expect(restored.timestamp.toNumber()).toBe(original.timestamp.toNumber());
       }
     });
 

@@ -5,7 +5,7 @@
 import { Trade } from '../../src/Trade';
 import type { TradeParams } from '../../src/Trade';
 import { asVenueTradeId, asVenueId, parseAssetId } from '@polymarket/ids';
-import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
@@ -40,7 +40,7 @@ function makeValidParams(overrides?: Partial<TradeParams>): TradeParams {
     price: Price.of(new Decimal('0.65')),
     size: Quantity.of(new Decimal('100')),
     aggressorSide: 'BUY',
-    timestamp: unwrap(Timestamp.fromEpochMs(1700000000000), 'Timestamp'),
+    timestamp: unwrap(TimestampService.create(1700000000000), 'Timestamp'),
     ...overrides,
   };
 }
@@ -62,7 +62,7 @@ describe('Trade', () => {
         expect(trade.aggressorSide).toBe('BUY');
         expect(trade.price.value().toNumber()).toBe(0.65);
         expect(trade.size.value().toNumber()).toBe(100);
-        expect(trade.timestamp.value).toBe(1700000000000);
+        expect(trade.timestamp.toNumber()).toBe(1700000000000);
       }
     });
 
@@ -205,10 +205,10 @@ describe('Trade', () => {
   describe('compareByTime()', () => {
     it('возвращает отрицательное значение если this раньше', () => {
       const earlier = unwrap(Trade.create(
-        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(1000000000000)) })
+        makeValidParams({ timestamp: unwrap(TimestampService.create(1000000000000)) })
       ));
       const later = unwrap(Trade.create(
-        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(2000000000000)) })
+        makeValidParams({ timestamp: unwrap(TimestampService.create(2000000000000)) })
       ));
 
       expect(earlier.compareByTime(later)).toBeLessThan(0);
@@ -216,17 +216,17 @@ describe('Trade', () => {
 
     it('возвращает положительное значение если this позже', () => {
       const earlier = unwrap(Trade.create(
-        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(1000000000000)) })
+        makeValidParams({ timestamp: unwrap(TimestampService.create(1000000000000)) })
       ));
       const later = unwrap(Trade.create(
-        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(2000000000000)) })
+        makeValidParams({ timestamp: unwrap(TimestampService.create(2000000000000)) })
       ));
 
       expect(later.compareByTime(earlier)).toBeGreaterThan(0);
     });
 
     it('возвращает 0 если trades одновременные', () => {
-      const ts = unwrap(Timestamp.fromEpochMs(1700000000000));
+      const ts = unwrap(TimestampService.create(1700000000000));
       const trade1 = unwrap(Trade.create(makeValidParams({ timestamp: ts })));
       const trade2 = unwrap(Trade.create(makeValidParams({ timestamp: ts })));
 
@@ -235,13 +235,13 @@ describe('Trade', () => {
 
     it('сортировка массива trades по времени', () => {
       const t1 = unwrap(Trade.create(
-        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(1000000000000)) })
+        makeValidParams({ timestamp: unwrap(TimestampService.create(1000000000000)) })
       ));
       const t2 = unwrap(Trade.create(
-        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(2000000000000)) })
+        makeValidParams({ timestamp: unwrap(TimestampService.create(2000000000000)) })
       ));
       const t3 = unwrap(Trade.create(
-        makeValidParams({ timestamp: unwrap(Timestamp.fromEpochMs(3000000000000)) })
+        makeValidParams({ timestamp: unwrap(TimestampService.create(3000000000000)) })
       ));
 
       const sorted = [t3, t1, t2].sort((a, b) => a.compareByTime(b));
