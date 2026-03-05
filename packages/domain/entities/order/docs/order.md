@@ -32,10 +32,14 @@ src/
      │ reject()            │ applyFill()      applyFill()     │
      ▼                     ▼                  (partial)       │
   REJECTED          PARTIALLY_FILLED ─────────────────────────┘
-                          │
-             cancel() / expire()
-              ▼            ▼
-          CANCELED       EXPIRED
+     │                     │
+     │            applyFill() (full) / cancel() / expire()
+     │                     │
+     │           ┌──────────┼──────────┐
+     │           ▼          ▼          ▼
+     │        FILLED     CANCELED   EXPIRED
+     │
+     └── (терминальный)
 
   Терминальные: FILLED, CANCELED, REJECTED, EXPIRED
   Fillable:     OPEN, PARTIALLY_FILLED
@@ -257,8 +261,8 @@ VWAP = (currentSize × currentAvg + newSize × newPrice) / (currentSize + newSiz
 
 | Файл                      | Тесты | Описание                          |
 |---------------------------|-------|-----------------------------------|
-| `unit/Order.test.ts`      | ~88   | create, rehydrate, fromEvents, FSM, computed, pullEvents |
-| `unit/view/OrderView.test.ts` | ~40 | ViewModel, Deserializer, round-trip |
-| `integration/OrderLifecycle.test.ts` | ~24 | End-to-end сценарии, VWAP, replay |
+| `unit/Order.test.ts`      | 89    | create, rehydrate, fromEvents, FSM, computed, pullEvents |
+| `unit/view/OrderView.test.ts` | 33 | ViewModel, Deserializer, round-trip |
+| `integration/OrderLifecycle.test.ts` | 30 | End-to-end сценарии, VWAP, replay (включая it.each) |
 
-**Итого: ~152 тестов**
+**Итого: 152 теста**
