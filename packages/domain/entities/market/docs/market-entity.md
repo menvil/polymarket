@@ -111,16 +111,27 @@ type TradingState = 'TRADING' | 'EXPIRED' | 'CLOSED' | 'RESOLVED'
 
 Exhaustive switch гарантирует покрытие всех состояний на уровне компилятора.
 
-### 8. `MarketParser` vs `MarketViewModel`
+### 8. Parser → Snapshot → Aggregate pipeline
 
-**Проблема**: Раньше `MarketViewModel` делал и сериализацию, и реконструкцию — нарушение SRP.
+**Проблема**: Если `MarketParser.from(raw)` сразу возвращает `Market`, он знает доменные инварианты (distinct tokens и т.д.) — нарушение SRP. Parser должен только валидировать форму данных.
 
-**Решение**: чёткое разделение:
+**Решение**: двухэтапный pipeline с чётким разделением ответственности:
 
-| Класс | Ответственность |
-|-------|----------------|
-| `MarketViewModel.toSnapshot(market)` | Market → plain object |
-| `MarketParser.from(raw)` | unknown → `Result<Market>` |
+| Шаг | Метод | Ответственность |
+|-----|-------|-----------------|
+| 1 | `MarketParser.from(raw)` | `unknown → Result<MarketSnapshot>` — только форма данных |
+| 2 | `Market.fromSnapshot(snapshot)` | `MarketSnapshot → Result<Market>` — доменные инварианты |
+| — | `MarketViewModel.toSnapshot(market)` | `Market → MarketSnapshot` — сериализация |
+
+```
+raw data
+  ↓ MarketParser.from()       ← валидация структуры и типов
+MarketSnapshot
+  ↓ Market.fromSnapshot()     ← применение доменных инвариантов
+Market
+  ↓ MarketViewModel.toSnapshot() ← сериализация обратно
+MarketSnapshot (для БД/API)
+```
 
 ---
 
@@ -196,9 +207,12 @@ switch (MarketTradingPolicy.getTradingState(market, now)) {
 }
 
 // Досрочное закрытие (admin/dispute — без проверки expiration)
-if (MarketTradingPolicy.canForceClose(market)) {
+const decision = MarketTradingPolicy.evaluateForceClose(market);
+if (decision.allowed) {
   const closed = market.close(now);
   await eventBus.publish(closed.pullNotifications());
+} else {
+  logger.warn('Force-close rejected', { reason: decision.reason });
 }
 ```
 
@@ -243,25 +257,32 @@ const resolveNotifications = resolved.pullNotifications();
 // pullNotifications() очищает буфер
 resolved.pullNotifications(); // []
 
-// create() и MarketParser.from() НЕ эмитируют уведомлений (восстановление ≠ бизнес-событие)
+// create() и Market.fromSnapshot() НЕ эмитируют уведомлений (восстановление ≠ бизнес-событие)
 ```
 
 ### Сериализация и реконструкция
 
 ```typescript
-import { MarketViewModel, MarketParser } from '@polymarket/market';
+import { Market, MarketViewModel, MarketParser } from '@polymarket/market';
 
 // Market → snapshot (для БД / API / Redis)
 const snapshot = MarketViewModel.toSnapshot(market);
 await db.save(snapshot);
 
-// snapshot → Market (реконструкция без событий)
-const result = MarketParser.from(await db.load(id));
-if (result.ok) {
-  const restored = result.value;
-  console.log(restored.state.status); // 'ACTIVE'
-} else {
-  logger.error('Corrupt market data', { error: result.error.message });
+// snapshot → Market (двухэтапный pipeline)
+const raw = await db.load(id);
+
+// Шаг 1: валидация структуры
+const snapshotResult = MarketParser.from(raw);
+if (!snapshotResult.ok) {
+  logger.error('Corrupt market data', { error: snapshotResult.error.message });
+  return;
+}
+
+// Шаг 2: реконструкция domain entity
+const marketResult = Market.fromSnapshot(snapshotResult.value);
+if (marketResult.ok) {
+  console.log(marketResult.value.state.status); // 'ACTIVE'
 }
 
 // URL
@@ -282,12 +303,12 @@ expect(market.isExpiredAt(1_000_000)).toBe(true);
 expect(market.timeToExpiryAt(800_000)).toBe(200_000);
 
 // Policy (nowMs явно):
-expect(MarketTradingPolicy.canTrade(market, 500_000)).toBe(true);
-expect(MarketTradingPolicy.canClose(market, 1_000_000)).toBe(true);
+expect(MarketTradingPolicy.getTradingState(market, 500_000)).toBe('TRADING');
+expect(MarketTradingPolicy.getTradingState(market, 1_000_000)).toBe('EXPIRED');
 
-// Events (nowMs явно):
+// Notifications (nowMs явно):
 const closed = market.close(1_000_000);
-expect(closed.pullEvents()[0].occurredAt).toBe(1_000_000);
+expect(closed.pullNotifications()[0].occurredAt).toBe(1_000_000);
 ```
 
 ---
@@ -319,11 +340,11 @@ if (isResolved(market.state)) {
 
 | Файл | Statements | Branches | Functions | Lines |
 |------|-----------|----------|-----------|-------|
-| Market.ts | 100% | ~96% | 100% | 100% |
+| Market.ts | 100% | ~97% | 100% | 100% |
 | MarketTradingPolicy.ts | 100% | 100% | 100% | 100% |
 | MarketNotifications.ts | — (types only) | — | — | — |
 | MarketState.ts | 100% | 100% | 100% | 100% |
 | MarketParser.ts | 100% | 100% | 100% | 100% |
 | MarketViewModel.ts | 100% | 100% | 100% | 100% |
 
-7 тестовых suite, 123 теста.
+7 тестовых suite, 131 тест.

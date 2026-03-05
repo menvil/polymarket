@@ -52,11 +52,13 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
+import { OutcomeToken, OutcomeTokenSerializer } from '@polymarket/value-objects/outcome-token';
 import {
   type MarketId,
   type MarketSlug,
   type OutcomeIndex,
+  asMarketId,
+  parseMarketSlug,
   MarketState,
   isActive,
   isClosed,
@@ -64,6 +66,7 @@ import {
 } from './value-objects/index.js';
 import { MarketValidationError } from '@polymarket/errors/market';
 import { type MarketNotification } from './MarketNotifications.js';
+import { type MarketSnapshot } from './view/MarketSnapshot.js';
 
 /**
  * Outcome — value object исхода рынка
@@ -362,6 +365,96 @@ export class Market {
     }
 
     return Ok(new Market(props));
+  }
+
+  /**
+   * Реконструирует Market из типизированного снапшота (второй шаг pipeline)
+   *
+   * @param snapshot - Валидированный MarketSnapshot (результат MarketParser.from())
+   * @returns Result<Market, MarketValidationError>
+   *
+   * @remarks
+   * Второй шаг pipeline: `MarketParser.from(raw) → Market.fromSnapshot(snapshot) → Market`.
+   * Применяет доменные инварианты (distinct tokens, distinct names) через Market.create().
+   * Не эмитирует уведомлений — восстановление состояния ≠ новое бизнес-событие.
+   *
+   * @example
+   * ```typescript
+   * const snapshotResult = MarketParser.from(await db.load(id));
+   * if (!snapshotResult.ok) return;
+   *
+   * const marketResult = Market.fromSnapshot(snapshotResult.value);
+   * if (marketResult.ok) {
+   *   console.log(marketResult.value.state.status); // 'ACTIVE'
+   * }
+   * ```
+   */
+  public static fromSnapshot(snapshot: MarketSnapshot): Result<Market, MarketValidationError> {
+    const id = asMarketId(snapshot.id);
+    if (!id) {
+      return Err(
+        new MarketValidationError('Market snapshot: id must be a non-empty string', {
+          context: { field: 'id', value: snapshot.id },
+        })
+      );
+    }
+
+    const slug = parseMarketSlug(snapshot.slug);
+    if (!slug) {
+      return Err(
+        new MarketValidationError('Market snapshot: slug is invalid', {
+          context: { field: 'slug', value: snapshot.slug },
+        })
+      );
+    }
+
+    const token0Result = OutcomeTokenSerializer.fromJSON(snapshot.outcomes[0].token);
+    if (!token0Result.ok) {
+      return Err(
+        new MarketValidationError('Market snapshot: outcomes[0].token is invalid', {
+          context: { field: 'outcomes[0].token', cause: token0Result.error.message },
+        })
+      );
+    }
+
+    const token1Result = OutcomeTokenSerializer.fromJSON(snapshot.outcomes[1].token);
+    if (!token1Result.ok) {
+      return Err(
+        new MarketValidationError('Market snapshot: outcomes[1].token is invalid', {
+          context: { field: 'outcomes[1].token', cause: token1Result.error.message },
+        })
+      );
+    }
+
+    const expirationMs = Date.parse(snapshot.expirationDate);
+    if (isNaN(expirationMs)) {
+      return Err(
+        new MarketValidationError('Market snapshot: expirationDate is not a valid ISO date string', {
+          context: { field: 'expirationDate', value: snapshot.expirationDate },
+        })
+      );
+    }
+
+    let state: MarketState;
+    if (snapshot.state.status === 'ACTIVE') {
+      state = MarketState.active();
+    } else if (snapshot.state.status === 'CLOSED') {
+      state = MarketState.closed();
+    } else {
+      state = MarketState.resolved(snapshot.state.resolvedOutcomeIndex);
+    }
+
+    return Market.create({
+      id,
+      slug,
+      question: snapshot.question,
+      outcomes: [
+        { token: token0Result.value, index: 0, name: snapshot.outcomes[0].name },
+        { token: token1Result.value, index: 1, name: snapshot.outcomes[1].name },
+      ],
+      expirationMs,
+      state,
+    });
   }
 
   // ==================== Time Methods ====================

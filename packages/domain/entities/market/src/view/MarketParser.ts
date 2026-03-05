@@ -1,11 +1,14 @@
 /**
- * MarketParser — реконструкция Market entity из внешних данных
+ * MarketParser — валидация и нормализация raw данных в MarketSnapshot
  *
  * @remarks
- * Единственная точка входа для создания Market из:
- * - Сохранённого MarketSnapshot (БД, кэш)
- * - Внешнего API (Polymarket REST, веб-сокет)
- * - JSON.parse() из любого источника
+ * Первый шаг двухэтапного pipeline реконструкции:
+ * `raw → MarketParser.from() → MarketSnapshot → Market.fromSnapshot() → Market`
+ *
+ * MarketParser отвечает только за форму данных:
+ * - Проверяет что поля существуют и имеют корректный тип
+ * - Проверяет парсируемость токенов и дат
+ * - НЕ знает доменных инвариантов (distinct tokens, valid names — это Market.create())
  *
  * ### Алгоритм валидации в from():
  * 1. Проверяем что raw — объект (не null, не массив)
@@ -13,34 +16,35 @@
  * 3. Валидируем slug (URL-safe формат)
  * 4. Валидируем question (непустая строка)
  * 5. Валидируем outcomes (массив из 2 элементов, каждый с валидным токеном)
- * 6. Парсим expirationDate из ISO строки → ms
+ * 6. Проверяем expirationDate (ISO строка, парсируемая в Date)
  * 7. Парсим state (discriminated union)
- * 8. Создаём Market через Market.create()
+ * 8. Возвращаем Ok(MarketSnapshot) — без доменной логики
  *
  * @example
  * ```typescript
- * import { MarketParser } from '@polymarket/market';
+ * import { MarketParser, Market } from '@polymarket/market';
  *
- * const result = MarketParser.from(await db.findMarket(id));
- * if (result.ok) {
- *   console.log(result.value.state.status);
- * } else {
- *   logger.error('Corrupt market data', { error: result.error.message });
+ * // Двухэтапный pipeline:
+ * const snapshotResult = MarketParser.from(await db.findMarket(id));
+ * if (!snapshotResult.ok) {
+ *   logger.error('Corrupt market data', { error: snapshotResult.error.message });
+ *   return;
+ * }
+ * const marketResult = Market.fromSnapshot(snapshotResult.value);
+ * if (marketResult.ok) {
+ *   console.log(marketResult.value.state.status);
  * }
  * ```
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import { OutcomeTokenSerializer } from '@polymarket/value-objects/outcome-token';
-import { Market } from '../Market.js';
 import {
-  type OutcomeIndex,
-  asMarketId,
-  parseMarketSlug,
-  MarketState,
-  isValidMarketStatus,
-} from '../value-objects/index.js';
+  OutcomeTokenSerializer,
+  type OutcomeTokenJSON,
+} from '@polymarket/value-objects/outcome-token';
+import { isValidMarketStatus, parseMarketSlug } from '../value-objects/index.js';
 import { MarketValidationError } from '@polymarket/errors/market';
+import { type MarketSnapshot } from './MarketSnapshot.js';
 
 /**
  * MarketParser — статический класс для реконструкции Market из raw данных
@@ -54,23 +58,26 @@ export class MarketParser {
   }
 
   /**
-   * Реконструирует Market из unknown данных (snapshot, API response, JSON.parse)
+   * Валидирует raw данные и возвращает нормализованный MarketSnapshot
    *
-   * @param raw - Неизвестный объект для парсинга
-   * @returns Result<Market, MarketValidationError>
+   * @param raw - Неизвестный объект для парсинга (из БД, API, JSON.parse)
+   * @returns Result<MarketSnapshot, MarketValidationError>
+   *
+   * @remarks
+   * Возвращает типизированный snapshot — первый шаг pipeline.
+   * Для получения Market вызовите `Market.fromSnapshot(result.value)` следующим шагом.
    *
    * @example
    * ```typescript
-   * const result = MarketParser.from(JSON.parse(storedJson));
-   * if (result.ok) {
-   *   const market = result.value;
-   *   console.log(market.id, market.state.status);
-   * } else {
-   *   console.error(result.error.message);
+   * const snapshotResult = MarketParser.from(JSON.parse(storedJson));
+   * if (!snapshotResult.ok) {
+   *   console.error(snapshotResult.error.message);
+   *   return;
    * }
+   * const market = Market.fromSnapshot(snapshotResult.value);
    * ```
    */
-  public static from(raw: unknown): Result<Market, MarketValidationError> {
+  public static from(raw: unknown): Result<MarketSnapshot, MarketValidationError> {
     if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
       return Err(
         new MarketValidationError('Market data must be a non-null object', {
@@ -89,8 +96,7 @@ export class MarketParser {
         })
       );
     }
-    const id = asMarketId(data.id);
-    if (!id) {
+    if (!data.id.trim()) {
       return Err(
         new MarketValidationError('Market data: id must be a non-empty string', {
           context: { field: 'id', value: data.id },
@@ -98,7 +104,7 @@ export class MarketParser {
       );
     }
 
-    // slug
+    // slug — делегируем parseMarketSlug для проверки формата
     if (typeof data.slug !== 'string') {
       return Err(
         new MarketValidationError('Market data: slug must be a string', {
@@ -106,8 +112,7 @@ export class MarketParser {
         })
       );
     }
-    const slug = parseMarketSlug(data.slug);
-    if (!slug) {
+    if (!parseMarketSlug(data.slug)) {
       return Err(
         new MarketValidationError(
           'Market data: slug must contain only lowercase letters, digits and hyphens',
@@ -193,8 +198,7 @@ export class MarketParser {
         })
       );
     }
-    const expirationMs = Date.parse(data.expirationDate);
-    if (isNaN(expirationMs)) {
+    if (isNaN(Date.parse(data.expirationDate))) {
       return Err(
         new MarketValidationError('Market data: expirationDate is not a valid ISO date string', {
           context: { field: 'expirationDate', value: data.expirationDate },
@@ -208,26 +212,28 @@ export class MarketParser {
       return stateResult as Result<never, MarketValidationError>;
     }
 
-    return Market.create({
-      id,
-      slug,
-      question: data.question,
+    return Ok({
+      id: data.id as string,
+      slug: data.slug as string,
+      question: data.question as string,
       outcomes: [
-        { token: token0Result.value, index: 0, name: o0.name as string },
-        { token: token1Result.value, index: 1, name: o1.name as string },
-      ],
-      expirationMs,
+        { token: o0.token as OutcomeTokenJSON, index: 0 as const, name: o0.name as string },
+        { token: o1.token as OutcomeTokenJSON, index: 1 as const, name: o1.name as string },
+      ] as const,
+      expirationDate: data.expirationDate as string,
       state: stateResult.value,
     });
   }
 
   /**
-   * Парсит MarketState из raw объекта
+   * Парсит state из raw объекта в типизированный снапшот состояния
    *
    * @param raw - Сырые данные для парсинга
-   * @returns Result<MarketState, MarketValidationError>
+   * @returns Result<MarketSnapshot['state'], MarketValidationError>
    */
-  private static _parseState(raw: unknown): Result<MarketState, MarketValidationError> {
+  private static _parseState(
+    raw: unknown
+  ): Result<MarketSnapshot['state'], MarketValidationError> {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       return Err(
         new MarketValidationError('Market data: state must be a non-null object', {
@@ -247,8 +253,8 @@ export class MarketParser {
       );
     }
 
-    if (s.status === 'ACTIVE') return Ok(MarketState.active());
-    if (s.status === 'CLOSED') return Ok(MarketState.closed());
+    if (s.status === 'ACTIVE') return Ok({ status: 'ACTIVE' as const });
+    if (s.status === 'CLOSED') return Ok({ status: 'CLOSED' as const });
 
     if (s.resolvedOutcomeIndex !== 0 && s.resolvedOutcomeIndex !== 1) {
       return Err(
@@ -259,6 +265,9 @@ export class MarketParser {
       );
     }
 
-    return Ok(MarketState.resolved(s.resolvedOutcomeIndex as OutcomeIndex));
+    return Ok({
+      status: 'RESOLVED' as const,
+      resolvedOutcomeIndex: s.resolvedOutcomeIndex as 0 | 1,
+    });
   }
 }

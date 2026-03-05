@@ -111,25 +111,31 @@ describe('MarketTradingPolicy.getTradingState()', () => {
   });
 });
 
-describe('MarketTradingPolicy.canForceClose()', () => {
-  it('true — ACTIVE (не истёк)', () => {
+describe('MarketTradingPolicy.evaluateForceClose()', () => {
+  it('allowed: true — ACTIVE (не истёк)', () => {
     const market = makeMarket(MarketState.active());
-    expect(MarketTradingPolicy.canForceClose(market)).toBe(true);
+    expect(MarketTradingPolicy.evaluateForceClose(market)).toEqual({ allowed: true });
   });
 
-  it('true — ACTIVE (уже истёк, форс-клоз всё равно возможен)', () => {
+  it('allowed: true — ACTIVE (уже истёк, форс-клоз всё равно возможен)', () => {
     const expired = makeMarket(MarketState.active(), AT_EXPIRY - 100);
-    expect(MarketTradingPolicy.canForceClose(expired)).toBe(true);
+    expect(MarketTradingPolicy.evaluateForceClose(expired)).toEqual({ allowed: true });
   });
 
-  it('false — CLOSED', () => {
+  it('allowed: false + MARKET_ALREADY_CLOSED — CLOSED', () => {
     const market = makeMarket(MarketState.closed());
-    expect(MarketTradingPolicy.canForceClose(market)).toBe(false);
+    expect(MarketTradingPolicy.evaluateForceClose(market)).toEqual({
+      allowed: false,
+      reason: 'MARKET_ALREADY_CLOSED',
+    });
   });
 
-  it('false — RESOLVED', () => {
+  it('allowed: false + MARKET_ALREADY_RESOLVED — RESOLVED', () => {
     const market = makeMarket(MarketState.resolved(0));
-    expect(MarketTradingPolicy.canForceClose(market)).toBe(false);
+    expect(MarketTradingPolicy.evaluateForceClose(market)).toEqual({
+      allowed: false,
+      reason: 'MARKET_ALREADY_RESOLVED',
+    });
   });
 });
 

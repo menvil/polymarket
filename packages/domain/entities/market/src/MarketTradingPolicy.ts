@@ -49,6 +49,27 @@ import { Market } from './Market.js';
 export type TradingState = 'TRADING' | 'EXPIRED' | 'CLOSED' | 'RESOLVED';
 
 /**
+ * ForceCloseDecision — решение о допустимости досрочного закрытия рынка
+ *
+ * @remarks
+ * Возвращается `evaluateForceClose()` вместо `boolean`.
+ * В случае отказа содержит конкретную причину — для логирования и UI.
+ *
+ * @example
+ * ```typescript
+ * const decision = MarketTradingPolicy.evaluateForceClose(market);
+ * if (decision.allowed) {
+ *   const closed = market.close(Date.now());
+ * } else {
+ *   logger.warn('Force-close rejected', { reason: decision.reason });
+ * }
+ * ```
+ */
+export type ForceCloseDecision =
+  | { readonly allowed: true }
+  | { readonly allowed: false; readonly reason: 'MARKET_ALREADY_CLOSED' | 'MARKET_ALREADY_RESOLVED' };
+
+/**
  * MarketTradingPolicy — статический класс торговой политики
  *
  * @remarks
@@ -90,10 +111,10 @@ export class MarketTradingPolicy {
   }
 
   /**
-   * Можно ли закрыть рынок досрочно (admin/dispute action)
+   * Оценивает допустимость досрочного закрытия рынка (admin/dispute action)
    *
    * @param market - Market entity
-   * @returns true если рынок ACTIVE (не проверяет expiration)
+   * @returns ForceCloseDecision — решение с причиной отказа если недопустимо
    *
    * @remarks
    * Единственный метод без `nowMs` — форс-клоз не зависит от времени.
@@ -102,13 +123,18 @@ export class MarketTradingPolicy {
    *
    * @example
    * ```typescript
-   * // Admin override: закрыть до истечения
-   * if (MarketTradingPolicy.canForceClose(market)) {
+   * const decision = MarketTradingPolicy.evaluateForceClose(market);
+   * if (decision.allowed) {
    *   const closed = market.close(Date.now());
+   *   await eventBus.publish(closed.pullNotifications());
+   * } else {
+   *   logger.warn('Force-close rejected', { reason: decision.reason });
    * }
    * ```
    */
-  public static canForceClose(market: Market): boolean {
-    return market.isActive();
+  public static evaluateForceClose(market: Market): ForceCloseDecision {
+    if (market.isResolved()) return { allowed: false, reason: 'MARKET_ALREADY_RESOLVED' };
+    if (market.isClosed()) return { allowed: false, reason: 'MARKET_ALREADY_CLOSED' };
+    return { allowed: true };
   }
 }

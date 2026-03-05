@@ -8,7 +8,12 @@
  * ### Применение:
  * - Хранение в БД / Redis / localStorage
  * - Передача по API
- * - Восстановление через MarketParser.from()
+ * - Промежуточный тип в pipeline реконструкции
+ *
+ * ### Pipeline реконструкции:
+ * ```
+ * raw → MarketParser.from() → MarketSnapshot → Market.fromSnapshot() → Market
+ * ```
  *
  * @example
  * ```typescript
@@ -16,8 +21,11 @@
  * const snapshot = MarketViewModel.toSnapshot(market);
  * await db.save(snapshot);
  *
- * // snapshot → Market (реконструкция)
- * const result = MarketParser.from(await db.load(id));
+ * // raw → MarketSnapshot → Market (реконструкция)
+ * const snapshotResult = MarketParser.from(await db.load(id));
+ * if (snapshotResult.ok) {
+ *   const market = Market.fromSnapshot(snapshotResult.value);
+ * }
  * ```
  */
 

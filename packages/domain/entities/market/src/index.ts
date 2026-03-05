@@ -62,7 +62,11 @@ export {
 } from './MarketNotifications.js';
 
 // Trading Policy
-export { MarketTradingPolicy, type TradingState } from './MarketTradingPolicy.js';
+export {
+  MarketTradingPolicy,
+  type TradingState,
+  type ForceCloseDecision,
+} from './MarketTradingPolicy.js';
 
 // Value Objects
 export {

@@ -109,22 +109,30 @@ describe('MarketViewModel.toSnapshot()', () => {
   });
 });
 
-describe('MarketViewModel.toSnapshot() — round-trip с MarketParser.from()', () => {
+describe('MarketViewModel.toSnapshot() — round-trip через MarketParser + Market.fromSnapshot()', () => {
   it('round-trip для ACTIVE рынка', () => {
     const result = makeActiveMarket();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
+    // Шаг 1: Market → snapshot
     const snapshot = MarketViewModel.toSnapshot(result.value);
-    const restored = MarketParser.from(snapshot);
-    expect(restored.ok).toBe(true);
-    if (!restored.ok) return;
 
-    expect(restored.value.id).toBe(result.value.id);
-    expect(restored.value.slug).toBe(result.value.slug);
-    expect(restored.value.question).toBe(result.value.question);
-    expect(restored.value.isActive()).toBe(true);
-    expect(restored.value.expirationDate.toISOString()).toBe(
+    // Шаг 2: raw → MarketSnapshot
+    const parsedResult = MarketParser.from(snapshot);
+    expect(parsedResult.ok).toBe(true);
+    if (!parsedResult.ok) return;
+
+    // Шаг 3: MarketSnapshot → Market
+    const restoredResult = Market.fromSnapshot(parsedResult.value);
+    expect(restoredResult.ok).toBe(true);
+    if (!restoredResult.ok) return;
+
+    expect(restoredResult.value.id).toBe(result.value.id);
+    expect(restoredResult.value.slug).toBe(result.value.slug);
+    expect(restoredResult.value.question).toBe(result.value.question);
+    expect(restoredResult.value.isActive()).toBe(true);
+    expect(restoredResult.value.expirationDate.toISOString()).toBe(
       result.value.expirationDate.toISOString()
     );
   });
@@ -136,12 +144,17 @@ describe('MarketViewModel.toSnapshot() — round-trip с MarketParser.from()', (
 
     const resolved = result.value.close(NOW).resolve(0, NOW);
     const snapshot = MarketViewModel.toSnapshot(resolved);
-    const restored = MarketParser.from(snapshot);
-    expect(restored.ok).toBe(true);
-    if (!restored.ok) return;
 
-    expect(restored.value.isResolved()).toBe(true);
-    const state = restored.value.state;
+    const parsedResult = MarketParser.from(snapshot);
+    expect(parsedResult.ok).toBe(true);
+    if (!parsedResult.ok) return;
+
+    const restoredResult = Market.fromSnapshot(parsedResult.value);
+    expect(restoredResult.ok).toBe(true);
+    if (!restoredResult.ok) return;
+
+    expect(restoredResult.value.isResolved()).toBe(true);
+    const state = restoredResult.value.state;
     if (state.status === 'RESOLVED') {
       expect(state.resolvedOutcomeIndex).toBe(0);
     }

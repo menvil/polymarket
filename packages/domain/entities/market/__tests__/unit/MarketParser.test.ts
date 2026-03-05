@@ -1,16 +1,19 @@
 /**
- * Тесты для MarketParser (реконструкция Market из raw данных)
+ * Тесты для MarketParser (валидация raw данных → MarketSnapshot)
  *
  * @remarks
  * Проверяет:
- * - from() успешно реконструирует Market из валидного snapshot
+ * - from() возвращает Ok(MarketSnapshot) для валидных данных
  * - from() возвращает Err для каждого класса невалидных данных
  * - from() корректно обрабатывает все три статуса (ACTIVE, CLOSED, RESOLVED)
- * - Не регрессирует с MarketParser — бросает ошибки без instantiation
+ * - MarketParser нельзя инстанциировать
+ *
+ * Тесты для Market.fromSnapshot() — в Market.test.ts (там же проверяется полный pipeline)
  */
 
 import { describe, it, expect } from '@jest/globals';
 import { MarketParser } from '../../src/view/MarketParser.js';
+import { Market } from '../../src/Market.js';
 import { MarketValidationError } from '@polymarket/errors/market';
 
 // ==================== Тестовые данные ====================
@@ -50,8 +53,8 @@ function validActiveSnapshot() {
 
 // ==================== Тесты ====================
 
-describe('MarketParser.from() — валидные данные', () => {
-  it('реконструирует ACTIVE рынок из snapshot', () => {
+describe('MarketParser.from() — валидные данные (возвращает MarketSnapshot)', () => {
+  it('возвращает Ok(MarketSnapshot) для ACTIVE рынка', () => {
     const result = MarketParser.from(validActiveSnapshot());
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -59,49 +62,100 @@ describe('MarketParser.from() — валидные данные', () => {
     expect(result.value.id).toBe('market-abc');
     expect(result.value.slug).toBe('will-trump-win');
     expect(result.value.question).toBe('Will Trump win?');
-    expect(result.value.isActive()).toBe(true);
-    expect(result.value.expirationDate.toISOString()).toBe(EXPIRATION_DATE);
+    expect(result.value.state).toEqual({ status: 'ACTIVE' });
+    expect(result.value.expirationDate).toBe(EXPIRATION_DATE);
+    expect(result.value.outcomes[0].token.outcomeKey).toBe('UP');
+    expect(result.value.outcomes[0].index).toBe(0);
+    expect(result.value.outcomes[0].name).toBe('Yes');
+    expect(result.value.outcomes[1].token.outcomeKey).toBe('DOWN');
   });
 
-  it('реконструирует CLOSED рынок из snapshot', () => {
+  it('возвращает Ok(MarketSnapshot) для CLOSED рынка', () => {
     const result = MarketParser.from({ ...validActiveSnapshot(), state: { status: 'CLOSED' } });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.isClosed()).toBe(true);
+    expect(result.value.state).toEqual({ status: 'CLOSED' });
   });
 
-  it('реконструирует RESOLVED рынок с resolvedOutcomeIndex=0', () => {
+  it('возвращает Ok(MarketSnapshot) для RESOLVED рынка с resolvedOutcomeIndex=0', () => {
     const result = MarketParser.from({
       ...validActiveSnapshot(),
       state: { status: 'RESOLVED', resolvedOutcomeIndex: 0 },
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.value.isResolved()).toBe(true);
-    const state = result.value.state;
-    if (state.status === 'RESOLVED') {
-      expect(state.resolvedOutcomeIndex).toBe(0);
-    }
+    expect(result.value.state).toEqual({ status: 'RESOLVED', resolvedOutcomeIndex: 0 });
   });
 
-  it('реконструирует RESOLVED рынок с resolvedOutcomeIndex=1', () => {
+  it('возвращает Ok(MarketSnapshot) для RESOLVED рынка с resolvedOutcomeIndex=1', () => {
     const result = MarketParser.from({
       ...validActiveSnapshot(),
       state: { status: 'RESOLVED', resolvedOutcomeIndex: 1 },
     });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const state = result.value.state;
+    expect(result.value.state).toEqual({ status: 'RESOLVED', resolvedOutcomeIndex: 1 });
+  });
+});
+
+describe('Market.fromSnapshot() — полный pipeline', () => {
+  it('реконструирует ACTIVE рынок из snapshot', () => {
+    const snapshotResult = MarketParser.from(validActiveSnapshot());
+    expect(snapshotResult.ok).toBe(true);
+    if (!snapshotResult.ok) return;
+
+    const marketResult = Market.fromSnapshot(snapshotResult.value);
+    expect(marketResult.ok).toBe(true);
+    if (!marketResult.ok) return;
+
+    expect(marketResult.value.id).toBe('market-abc');
+    expect(marketResult.value.slug).toBe('will-trump-win');
+    expect(marketResult.value.question).toBe('Will Trump win?');
+    expect(marketResult.value.isActive()).toBe(true);
+    expect(marketResult.value.expirationDate.toISOString()).toBe(EXPIRATION_DATE);
+  });
+
+  it('реконструирует CLOSED рынок из snapshot', () => {
+    const snapshotResult = MarketParser.from({
+      ...validActiveSnapshot(),
+      state: { status: 'CLOSED' },
+    });
+    expect(snapshotResult.ok).toBe(true);
+    if (!snapshotResult.ok) return;
+
+    const marketResult = Market.fromSnapshot(snapshotResult.value);
+    expect(marketResult.ok).toBe(true);
+    if (!marketResult.ok) return;
+    expect(marketResult.value.isClosed()).toBe(true);
+  });
+
+  it('реконструирует RESOLVED рынок с resolvedOutcomeIndex=0', () => {
+    const snapshotResult = MarketParser.from({
+      ...validActiveSnapshot(),
+      state: { status: 'RESOLVED', resolvedOutcomeIndex: 0 },
+    });
+    expect(snapshotResult.ok).toBe(true);
+    if (!snapshotResult.ok) return;
+
+    const marketResult = Market.fromSnapshot(snapshotResult.value);
+    expect(marketResult.ok).toBe(true);
+    if (!marketResult.ok) return;
+    expect(marketResult.value.isResolved()).toBe(true);
+    const state = marketResult.value.state;
     if (state.status === 'RESOLVED') {
-      expect(state.resolvedOutcomeIndex).toBe(1);
+      expect(state.resolvedOutcomeIndex).toBe(0);
     }
   });
 
-  it('реконструированный рынок не содержит событий (pullEvents = [])', () => {
-    const result = MarketParser.from(validActiveSnapshot());
-    expect(result.ok).toBe(true);
-    if (!result.ok) return;
-    expect(result.value.pullNotifications()).toEqual([]);
+  it('реконструированный рынок не содержит уведомлений', () => {
+    const snapshotResult = MarketParser.from(validActiveSnapshot());
+    expect(snapshotResult.ok).toBe(true);
+    if (!snapshotResult.ok) return;
+
+    const marketResult = Market.fromSnapshot(snapshotResult.value);
+    expect(marketResult.ok).toBe(true);
+    if (!marketResult.ok) return;
+    expect(marketResult.value.pullNotifications()).toEqual([]);
   });
 });
 
@@ -279,6 +333,68 @@ describe('MarketParser.from() — невалидные данные', () => {
     if (!result.ok) {
       expect(result.error.message.toLowerCase()).toContain('resolvedoutcomeindex');
     }
+  });
+});
+
+describe('Market.fromSnapshot() — невалидные данные (защитные проверки)', () => {
+  const EXPIRATION_DATE = new Date(1_700_000_000_000).toISOString();
+
+  function validSnapshot() {
+    return {
+      id: 'market-abc',
+      slug: 'will-trump-win',
+      question: 'Will Trump win?',
+      outcomes: [
+        { token: YES_TOKEN_JSON, index: 0 as const, name: 'Yes' },
+        { token: NO_TOKEN_JSON, index: 1 as const, name: 'No' },
+      ] as const,
+      expirationDate: EXPIRATION_DATE,
+      state: { status: 'ACTIVE' as const },
+    };
+  }
+
+  it('возвращает Err для пустого id', () => {
+    const result = Market.fromSnapshot({ ...validSnapshot(), id: '' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toContain('id');
+  });
+
+  it('возвращает Err для невалидного slug', () => {
+    const result = Market.fromSnapshot({ ...validSnapshot(), slug: 'INVALID SLUG' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message.toLowerCase()).toContain('slug');
+  });
+
+  it('возвращает Err для невалидного outcomes[0].token', () => {
+    const snapshot = validSnapshot();
+    const result = Market.fromSnapshot({
+      ...snapshot,
+      outcomes: [
+        { token: { invalid: true } as never, index: 0 as const, name: 'Yes' },
+        snapshot.outcomes[1],
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message.toLowerCase()).toContain('outcomes[0].token');
+  });
+
+  it('возвращает Err для невалидного outcomes[1].token', () => {
+    const snapshot = validSnapshot();
+    const result = Market.fromSnapshot({
+      ...snapshot,
+      outcomes: [
+        snapshot.outcomes[0],
+        { token: { invalid: true } as never, index: 1 as const, name: 'No' },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message.toLowerCase()).toContain('outcomes[1].token');
+  });
+
+  it('возвращает Err для невалидного expirationDate', () => {
+    const result = Market.fromSnapshot({ ...validSnapshot(), expirationDate: 'not-a-date' });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message.toLowerCase()).toContain('expirationdate');
   });
 });
 
