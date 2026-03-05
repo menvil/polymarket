@@ -50,8 +50,8 @@ describe('OrderbookNormalizer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.bids[0].price.value).toBe(0.52);
-        expect(result.value.bids[1].price.value).toBe(0.51);
+        expect(result.value.bids[0].price.value().toNumber()).toBe(0.52);
+        expect(result.value.bids[1].price.value().toNumber()).toBe(0.51);
       }
     });
 
@@ -70,8 +70,8 @@ describe('OrderbookNormalizer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.asks[0].price.value).toBe(0.53);
-        expect(result.value.asks[1].price.value).toBe(0.54);
+        expect(result.value.asks[0].price.value().toNumber()).toBe(0.53);
+        expect(result.value.asks[1].price.value().toNumber()).toBe(0.54);
       }
     });
 
@@ -151,8 +151,8 @@ describe('OrderbookNormalizer', () => {
       if (result.ok) {
         expect(result.value.bids.length).toBe(1);
         expect(result.value.asks.length).toBe(1);
-        expect(result.value.bids[0].price.value).toBe(0.51);
-        expect(result.value.asks[0].price.value).toBe(0.54);
+        expect(result.value.bids[0].price.value().toNumber()).toBe(0.51);
+        expect(result.value.asks[0].price.value().toNumber()).toBe(0.54);
       }
     });
 
@@ -196,9 +196,9 @@ describe('OrderbookNormalizer', () => {
       if (result.ok) {
         expect(result.value.bids.length).toBe(2);
         // Найти уровень с price 0.51
-        const level51 = result.value.bids.find(b => b.price.value === 0.51);
+        const level51 = result.value.bids.find(b => b.price.value().toNumber() === 0.51);
         expect(level51).toBeDefined();
-        expect(level51!.quantity.value).toBe(150); // 100 + 50
+        expect(level51!.quantity.value().toNumber()).toBe(150); // 100 + 50
       }
     });
 
@@ -247,8 +247,8 @@ describe('OrderbookNormalizer', () => {
         expect(result.value.bids.length).toBe(2);
         expect(result.value.asks.length).toBe(2);
         // Проверяем что оставлены лучшие уровни
-        expect(result.value.bids[0].price.value).toBe(0.52);
-        expect(result.value.asks[0].price.value).toBe(0.53);
+        expect(result.value.bids[0].price.value().toNumber()).toBe(0.52);
+        expect(result.value.asks[0].price.value().toNumber()).toBe(0.53);
       }
     });
   });

@@ -1,8 +1,8 @@
 /**
- * OrderbookInvalidError - ошибка для invalid/crossed orderbook
+ * OrderbookInvalidError - ошибка невалидного/crossed orderbook
  *
  * @remarks
- * Выбрасывается/возвращается когда orderbook не проходит валидацию:
+ * Возвращается когда orderbook не проходит валидацию:
  * - Crossed book (bid >= ask)
  * - Empty sides при allowCrossed=false
  * - Некорректные данные после нормализации
@@ -16,15 +16,14 @@
  *   return Err(new OrderbookInvalidError(
  *     'Crossed book detected',
  *     {
- *       code: 'CROSSED_BOOK',
- *       context: { bestBid, bestAsk, marketId }
+ *       context: { reason: OrderbookInvalidReason.CROSSED_BOOK, bestBid, bestAsk, marketId }
  *     }
  *   ));
  * }
  * ```
  */
 
-import { BaseError, type ErrorOptions } from '@polymarket/errors';
+import { TradingError } from '@polymarket/errors';
 
 /**
  * Код ошибки для OrderbookInvalidError
@@ -130,15 +129,16 @@ export interface OrderbookInvalidContext {
  * Ошибка невалидного orderbook
  *
  * @remarks
- * Extends BaseError from @polymarket/errors.
+ * Extends TradingError из @polymarket/errors.
+ * Severity 'high' — crossed book критично для trading.
  * Используется в Result<Orderbook, OrderbookInvalidError>.
  */
-export class OrderbookInvalidError extends BaseError<typeof ORDERBOOK_INVALID_ERROR_CODE> {
-  public static override readonly code = ORDERBOOK_INVALID_ERROR_CODE;
+export class OrderbookInvalidError extends TradingError {
+  public override readonly severity = 'high' as const;
 
   constructor(
-    message: string | ((context: OrderbookInvalidContext) => string),
-    options?: ErrorOptions<OrderbookInvalidContext>
+    message: string | ((context: Record<string, unknown>) => string),
+    options?: { code?: string; context?: Record<string, unknown> }
   ) {
     super(message, {
       ...options,

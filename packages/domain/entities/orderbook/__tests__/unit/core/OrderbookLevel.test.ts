@@ -30,7 +30,7 @@ describe('OrderbookLevel', () => {
 
     it('создаёт level с нулевым quantity', () => {
       const price = Price.of(new Decimal(0.52));
-      const quantity = Quantity.zero();
+      const quantity = Quantity.ZERO;
 
       const level = OrderbookLevel.create(price, quantity);
 
@@ -41,7 +41,7 @@ describe('OrderbookLevel', () => {
   describe('isEmpty()', () => {
     it('возвращает true для нулевого quantity', () => {
       const price = Price.of(new Decimal(0.52));
-      const quantity = Quantity.zero();
+      const quantity = Quantity.ZERO;
       const level = OrderbookLevel.create(price, quantity);
 
       expect(level.isEmpty()).toBe(true);

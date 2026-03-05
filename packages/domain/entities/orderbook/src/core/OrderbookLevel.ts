@@ -133,7 +133,7 @@ export class OrderbookLevel {
    * ```
    */
   public toString(): string {
-    return `${this.price.value.toFixed(4)} @ ${this.quantity.value.toFixed(2)}`;
+    return `${this.price.value().toFixed(4)} @ ${this.quantity.value().toFixed(2)}`;
   }
 
   /**
@@ -150,8 +150,8 @@ export class OrderbookLevel {
    */
   public toObject(): { price: number; quantity: number } {
     return {
-      price: this.price.value,
-      quantity: this.quantity.value,
+      price: this.price.value().toNumber(),
+      quantity: this.quantity.value().toNumber(),
     };
   }
 }

@@ -5,9 +5,9 @@
 import { describe, it, expect } from '@jest/globals';
 import { Orderbook } from '../../../src/core/Orderbook.js';
 import { OrderbookNormalizer } from '../../../src/normalizer/OrderbookNormalizer.js';
-import { OrderbookInvalidError, OrderbookInvalidReason } from '../../../src/errors/OrderbookInvalidError.js';
+import { OrderbookInvalidReason } from '../../../src/errors/OrderbookInvalidError.js';
 import type { RawOrderbook } from '../../../src/normalizer/types.js';
-import type { InstrumentId, AssetId } from '@polymarket/ids';
+import type { InstrumentId } from '@polymarket/ids';
 
 describe('Orderbook', () => {
   const createTestOrderbook = (rawData: Partial<RawOrderbook> = {}) => {
@@ -65,14 +65,14 @@ describe('Orderbook', () => {
       if (!normalized.ok) throw new Error('Failed to normalize');
       const orderbook = Orderbook.fromNormalized(normalized.value);
 
-      expect(orderbook.venueTimestamp).toBe(venueTimestamp);
-      expect(orderbook.receivedAt).toBe(receivedAt);
+      expect(orderbook.venueTimestamp?.toNumber()).toBe(venueTimestamp);
+      expect(orderbook.receivedAt.toNumber()).toBe(receivedAt);
     });
   });
 
   describe('empty()', () => {
     it('создаёт пустой orderbook', () => {
-      const orderbook = Orderbook.empty('market-123' as InstrumentId, 'token-yes' as AssetId);
+      const orderbook = Orderbook.empty('market-123' as InstrumentId, 'token-yes' as InstrumentId);
 
       expect(orderbook.isEmpty()).toBe(true);
       expect(orderbook.bids.length).toBe(0);
@@ -87,7 +87,7 @@ describe('Orderbook', () => {
       const bestBid = orderbook.getBestBid();
 
       expect(bestBid).not.toBeNull();
-      expect(bestBid!.value).toBe(0.52);
+      expect(bestBid!.value().toNumber()).toBe(0.52);
     });
 
     it('возвращает null если нет бидов', () => {
@@ -106,7 +106,7 @@ describe('Orderbook', () => {
       const bestAsk = orderbook.getBestAsk();
 
       expect(bestAsk).not.toBeNull();
-      expect(bestAsk!.value).toBe(0.53);
+      expect(bestAsk!.value().toNumber()).toBe(0.53);
     });
 
     it('возвращает null если нет асков', () => {
@@ -126,7 +126,7 @@ describe('Orderbook', () => {
 
       expect(spreadResult.ok).toBe(true);
       if (spreadResult.ok) {
-        expect(spreadResult.value.width()).toBe(0.01); // 0.53 - 0.52
+        expect(spreadResult.value.width().toNumber()).toBe(0.01); // 0.53 - 0.52
       }
     });
 
@@ -171,7 +171,7 @@ describe('Orderbook', () => {
       const midPrice = orderbook.getMidPrice();
 
       expect(midPrice).not.toBeNull();
-      expect(midPrice!.value).toBe(0.525); // (0.52 + 0.53) / 2
+      expect(midPrice!.value().toNumber()).toBe(0.525); // (0.52 + 0.53) / 2
     });
 
     it('возвращает null если нет spread', () => {
@@ -195,7 +195,7 @@ describe('Orderbook', () => {
       expect(microprice).not.toBeNull();
       // microprice = (0.52 * 100 + 0.50 * 200) / (100 + 200)
       //            = (52 + 100) / 300 = 0.5067
-      expect(microprice!.value).toBeCloseTo(0.5067, 4);
+      expect(microprice!.value().toNumber()).toBeCloseTo(0.5067, 4);
     });
 
     it('возвращает null если нет bid или ask', () => {
@@ -224,7 +224,7 @@ describe('Orderbook', () => {
 
       const totalVolume = orderbook.getTotalBidVolume();
 
-      expect(totalVolume.value).toBe(300); // 100 + 200
+      expect(totalVolume.value().toNumber()).toBe(300); // 100 + 200
     });
 
     it('вычисляет объём топ N уровней', () => {
@@ -232,7 +232,7 @@ describe('Orderbook', () => {
 
       const totalVolume = orderbook.getTotalBidVolume(1);
 
-      expect(totalVolume.value).toBe(100); // только первый уровень
+      expect(totalVolume.value().toNumber()).toBe(100); // только первый уровень
     });
 
     it('возвращает zero для пустого orderbook', () => {
@@ -250,7 +250,7 @@ describe('Orderbook', () => {
 
       const totalVolume = orderbook.getTotalAskVolume();
 
-      expect(totalVolume.value).toBe(400); // 150 + 250
+      expect(totalVolume.value().toNumber()).toBe(400); // 150 + 250
     });
 
     it('вычисляет объём топ N уровней', () => {
@@ -258,7 +258,7 @@ describe('Orderbook', () => {
 
       const totalVolume = orderbook.getTotalAskVolume(1);
 
-      expect(totalVolume.value).toBe(150); // только первый уровень
+      expect(totalVolume.value().toNumber()).toBe(150); // только первый уровень
     });
 
     it('возвращает zero для пустого orderbook', () => {

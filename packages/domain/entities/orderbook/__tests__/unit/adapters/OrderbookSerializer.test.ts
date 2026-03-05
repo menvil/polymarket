@@ -167,7 +167,7 @@ describe('OrderbookSerializer', () => {
       const orderbook = createTestOrderbook();
 
       const json = OrderbookSerializer.toJSON(orderbook);
-      const result = OrderbookSerializer.fromJSON(json);
+      const result = OrderbookSerializer.fromJSON(json as unknown as Record<string, unknown>);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -176,12 +176,12 @@ describe('OrderbookSerializer', () => {
         expect(restored.asset).toBe(orderbook.asset);
         expect(restored.bids.length).toBe(orderbook.bids.length);
         expect(restored.asks.length).toBe(orderbook.asks.length);
-        expect(restored.receivedAt).toBe(orderbook.receivedAt);
-        expect(restored.venueTimestamp).toBe(orderbook.venueTimestamp);
+        expect(restored.receivedAt.toNumber()).toBe(orderbook.receivedAt.toNumber());
+        expect(restored.venueTimestamp?.toNumber()).toBe(orderbook.venueTimestamp?.toNumber());
 
         // Проверка уровней
-        expect(restored.getBestBid()!.value).toBe(orderbook.getBestBid()!.value);
-        expect(restored.getBestAsk()!.value).toBe(orderbook.getBestAsk()!.value);
+        expect(restored.getBestBid()!.value().toNumber()).toBe(orderbook.getBestBid()!.value().toNumber());
+        expect(restored.getBestAsk()!.value().toNumber()).toBe(orderbook.getBestAsk()!.value().toNumber());
       }
     });
 

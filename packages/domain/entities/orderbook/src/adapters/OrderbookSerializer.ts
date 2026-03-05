@@ -28,7 +28,7 @@
  */
 
 import type { Result } from '@polymarket/result';
-import { OrderbookValidationError } from '@polymarket/errors';
+import { OrderbookValidationError } from '@polymarket/errors/orderbook';
 import { Orderbook } from '../core/Orderbook.js';
 import { OrderbookNormalizer } from '../normalizer/OrderbookNormalizer.js';
 import { OrderbookInvalidError } from '../errors/OrderbookInvalidError.js';
@@ -134,8 +134,8 @@ export class OrderbookSerializer {
     return {
       marketId: orderbook.instrumentId,
       tokenId: orderbook.asset,
-      venueTimestamp: orderbook.venueTimestamp,
-      receivedAt: orderbook.receivedAt,
+      venueTimestamp: orderbook.venueTimestamp?.toNumber(),
+      receivedAt: orderbook.receivedAt.toNumber(),
       bids: orderbook.bids.map(level => level.toObject()),
       asks: orderbook.asks.map(level => level.toObject()),
     };

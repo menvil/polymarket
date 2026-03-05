@@ -37,8 +37,8 @@
  * ```
  */
 
-import { Price, Quantity } from '@polymarket/value-objects';
-import { OrderbookValidationError } from '@polymarket/errors';
+import { PriceService, QuantityService } from '@polymarket/value-objects';
+import { OrderbookValidationError } from '@polymarket/errors/orderbook';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { OrderbookLevel } from '../core/OrderbookLevel.js';
@@ -116,8 +116,8 @@ export class OrderbookNormalizer {
 
     // Валидация crossed book (если !allowCrossed)
     if (!policy.allowCrossed && bids.length > 0 && asks.length > 0) {
-      const bestBid = bids[0].price.value;
-      const bestAsk = asks[0].price.value;
+      const bestBid = bids[0].price.value().toNumber();
+      const bestAsk = asks[0].price.value().toNumber();
 
       if (bestBid >= bestAsk) {
         return Err(
@@ -162,7 +162,7 @@ export class OrderbookNormalizer {
    * Устраняет дублирование кода из оригинального fromJSON.
    *
    * Алгоритм:
-   * 1. Парсинг number → Price/Quantity VO
+   * 1. Парсинг number → Price/Quantity VO через safe factory методы
    * 2. Фильтрация нулевых quantity (если policy.dropZeroQty)
    * 3. Агрегация дубликатов price (если policy.aggregateSamePrice)
    * 4. Сортировка (bids desc, asks asc)
@@ -184,7 +184,7 @@ export class OrderbookNormalizer {
 
     const levels: OrderbookLevel[] = [];
 
-    // Шаг 1: Парсинг number → VO
+    // Шаг 1: Парсинг number → VO через safe factory
     for (let i = 0; i < rawLevels.length; i++) {
       const rawLevel = rawLevels[i];
 
@@ -206,21 +206,21 @@ export class OrderbookNormalizer {
         );
       }
 
-      // Создание Price VO
-      const priceResult = Price.fromValue(rawLevel.price);
+      // Создание Price VO через PriceService.create (Result-based)
+      const priceResult = PriceService.create(rawLevel.price);
       if (!priceResult.ok) {
         return Err(
-          new OrderbookValidationError(`Failed to create Price from ${side}[${i}]: ${priceResult.error.message}`, {
+          new OrderbookValidationError(`Invalid price in ${side}[${i}]: ${priceResult.error.message}`, {
             context: { field: `${side}[${i}].price`, marketId, value: rawLevel.price },
           })
         );
       }
 
-      // Создание Quantity VO
-      const quantityResult = Quantity.fromValue(rawLevel.quantity);
+      // Создание Quantity VO через QuantityService.create (Result-based)
+      const quantityResult = QuantityService.create(rawLevel.quantity);
       if (!quantityResult.ok) {
         return Err(
-          new OrderbookValidationError(`Failed to create Quantity from ${side}[${i}]: ${quantityResult.error.message}`, {
+          new OrderbookValidationError(`Invalid quantity in ${side}[${i}]: ${quantityResult.error.message}`, {
             context: { field: `${side}[${i}].quantity`, marketId, value: rawLevel.quantity },
           })
         );
@@ -263,6 +263,7 @@ export class OrderbookNormalizer {
    *
    * @remarks
    * Суммирует quantity для уровней с одинаковым price.
+   * Использует Decimal-арифметику для точного суммирования.
    *
    * @example
    * ```typescript
@@ -274,18 +275,18 @@ export class OrderbookNormalizer {
     const priceMap = new Map<number, OrderbookLevel>();
 
     for (const level of levels) {
-      const price = level.price.value;
-      const existing = priceMap.get(price);
+      const priceKey = level.price.value().toNumber();
+      const existing = priceMap.get(priceKey);
 
       if (existing) {
-        // Суммируем quantity
-        const newQuantity = existing.quantity.value + level.quantity.value;
-        const quantityResult = Quantity.fromValue(newQuantity);
+        // Суммируем quantity через Decimal-арифметику
+        const newQuantityDecimal = existing.quantity.value().plus(level.quantity.value());
+        const quantityResult = QuantityService.create(newQuantityDecimal);
         if (quantityResult.ok) {
-          priceMap.set(price, existing.withQuantity(quantityResult.value));
+          priceMap.set(priceKey, existing.withQuantity(quantityResult.value));
         }
       } else {
-        priceMap.set(price, level);
+        priceMap.set(priceKey, level);
       }
     }
 
@@ -308,10 +309,10 @@ export class OrderbookNormalizer {
 
     if (side === 'bids') {
       // Bids: descending price (highest first)
-      sorted.sort((a, b) => b.price.value - a.price.value);
+      sorted.sort((a, b) => b.price.value().toNumber() - a.price.value().toNumber());
     } else {
       // Asks: ascending price (lowest first)
-      sorted.sort((a, b) => a.price.value - b.price.value);
+      sorted.sort((a, b) => a.price.value().toNumber() - b.price.value().toNumber());
     }
 
     return sorted;

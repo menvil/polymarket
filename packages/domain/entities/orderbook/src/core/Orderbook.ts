@@ -6,12 +6,13 @@
  * Предоставляет методы для анализа ликвидности, спреда и расчёта цен.
  *
  * ИСПРАВЛЕНИЯ от оригинала:
- * 1. Branded types: InstrumentId и AssetId вместо string
- * 2. Раздельные timestamps: venueTimestamp (от exchange) + receivedAt (локально)
+ * 1. Branded types: InstrumentId вместо string (и для marketId, и для tokenId)
+ * 2. Timestamp VO вместо number для venueTimestamp и receivedAt
  * 3. getSpread() возвращает Result вместо null (явный сигнал о crossed book)
- * 4. getTotalVolume убрал лишние проверки и throw
+ * 4. getTotalVolume убрал require() и использует Decimal-арифметику
  * 5. isStale() использует receivedAt вместо Date.now()
  * 6. Использует нормализованные данные из OrderbookNormalizer
+ * 7. Все импорты статические (ESM-совместимость)
  *
  * @example
  * ```typescript
@@ -26,7 +27,7 @@
  *   const spread = orderbook.getSpread();
  *
  *   if (spread.ok) {
- *     console.log(`Spread: ${spread.value.width()}`);
+ *     console.log(`Spread: ${spread.value.width().toFixed(4)}`);
  *   } else if (OrderbookInvalidError.isOrderbookInvalidError(spread.error)) {
  *     if (spread.error.isCrossedBook()) {
  *       console.error('CRITICAL: Crossed book detected!');
@@ -36,11 +37,12 @@
  * ```
  */
 
-import type { Price, Quantity, Spread } from '@polymarket/value-objects';
+import type { Price, Spread } from '@polymarket/value-objects';
+import { PriceService, Quantity, QuantityService, SpreadService, Timestamp } from '@polymarket/value-objects';
 import type { InstrumentId } from '@polymarket/ids';
-import type { AssetId } from '@polymarket/ids';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
+import Decimal from 'decimal.js';
 import { OrderbookLevel } from './OrderbookLevel.js';
 import { OrderbookInvalidError, OrderbookInvalidReason } from '../errors/OrderbookInvalidError.js';
 import type { NormalizedOrderbook } from '../normalizer/OrderbookNormalizer.js';
@@ -50,11 +52,11 @@ import type { NormalizedOrderbook } from '../normalizer/OrderbookNormalizer.js';
  */
 export interface OrderbookParams {
   readonly instrumentId: InstrumentId;
-  readonly asset: AssetId;
+  readonly asset: InstrumentId;
   readonly bids: readonly OrderbookLevel[];
   readonly asks: readonly OrderbookLevel[];
-  readonly venueTimestamp?: number; // unix timestamp ms (от exchange)
-  readonly receivedAt: number; // unix timestamp ms (локально)
+  readonly venueTimestamp?: Timestamp; // Timestamp VO (от exchange)
+  readonly receivedAt: Timestamp; // Timestamp VO (локально)
 }
 
 /**
@@ -80,7 +82,7 @@ export class Orderbook {
      * @remarks
      * Branded type вместо string для type safety.
      */
-    public readonly asset: AssetId,
+    public readonly asset: InstrumentId,
 
     /**
      * Массив bid уровней (отсортирован по убыванию цены)
@@ -108,7 +110,7 @@ export class Orderbook {
      * Timestamp от venue/exchange (если есть)
      *
      * @remarks
-     * Unix timestamp в миллисекундах.
+     * Timestamp VO (миллисекунды).
      * Когда exchange сгенерировал этот snapshot.
      * Может отсутствовать если venue не присылает timestamp.
      *
@@ -116,21 +118,21 @@ export class Orderbook {
      * - Анализа latency (receivedAt - venueTimestamp)
      * - Определения skew часов
      */
-    public readonly venueTimestamp: number | undefined,
+    public readonly venueTimestamp: Timestamp | undefined,
 
     /**
      * Timestamp получения данных (локально)
      *
      * @remarks
-     * Unix timestamp в миллисекундах.
+     * Timestamp VO (миллисекунды).
      * Когда мы получили/создали этот orderbook.
      *
      * Используется для:
-     * - Stale detection (Date.now() - receivedAt)
+     * - Stale detection (Date.now() - receivedAt.toNumber())
      * - Age calculation
      * - TTL проверок
      */
-    public readonly receivedAt: number
+    public readonly receivedAt: Timestamp
   ) {
     Object.freeze(this);
   }
@@ -144,6 +146,7 @@ export class Orderbook {
    * @remarks
    * Основной способ создания Orderbook.
    * Данные уже прошли валидацию и нормализацию в OrderbookNormalizer.
+   * Конвертирует числовые timestamps из NormalizedOrderbook в Timestamp VO.
    *
    * @example
    * ```typescript
@@ -154,13 +157,18 @@ export class Orderbook {
    * ```
    */
   public static fromNormalized(normalized: NormalizedOrderbook): Orderbook {
+    const venueTimestamp = normalized.venueTimestamp !== undefined
+      ? Timestamp.of(new Decimal(normalized.venueTimestamp))
+      : undefined;
+    const receivedAt = Timestamp.of(new Decimal(normalized.receivedAt));
+
     return new Orderbook(
       normalized.marketId as InstrumentId,
-      normalized.tokenId as AssetId,
+      normalized.tokenId as InstrumentId,
       normalized.bids,
       normalized.asks,
-      normalized.venueTimestamp,
-      normalized.receivedAt
+      venueTimestamp,
+      receivedAt
     );
   }
 
@@ -181,14 +189,14 @@ export class Orderbook {
    * console.log(empty.isEmpty()); // true
    * ```
    */
-  public static empty(instrumentId: InstrumentId, asset: AssetId): Orderbook {
+  public static empty(instrumentId: InstrumentId, asset: InstrumentId): Orderbook {
     return new Orderbook(
       instrumentId,
       asset,
       [],
       [],
       undefined,
-      Date.now()
+      Timestamp.now()
     );
   }
 
@@ -245,7 +253,7 @@ export class Orderbook {
    * ```typescript
    * const spreadResult = orderbook.getSpread();
    * if (spreadResult.ok) {
-   *   console.log(`Spread: ${spreadResult.value.width()}`);
+   *   console.log(`Spread: ${spreadResult.value.width().toFixed(4)}`);
    * } else {
    *   if (spreadResult.error.isCrossedBook()) {
    *     console.error('CRITICAL: Crossed book!');
@@ -280,16 +288,15 @@ export class Orderbook {
             reason: OrderbookInvalidReason.ONE_SIDED,
             marketId: this.instrumentId,
             tokenId: this.asset,
-            bestBid: bid?.value,
-            bestAsk: ask?.value,
+            bestBid: bid?.value().toNumber(),
+            bestAsk: ask?.value().toNumber(),
           },
         })
       );
     }
 
-    // Try to create Spread (может вернуть ошибку если crossed)
-    const { Spread: SpreadVO } = require('@polymarket/value-objects');
-    const spreadResult = SpreadVO.create(bid, ask);
+    // SpreadService.create() возвращает Result<Spread, InvalidSpreadError>
+    const spreadResult = SpreadService.create(bid, ask);
 
     if (!spreadResult.ok) {
       // Spread.create не ok означает crossed book
@@ -299,8 +306,8 @@ export class Orderbook {
             reason: OrderbookInvalidReason.CROSSED_BOOK,
             marketId: this.instrumentId,
             tokenId: this.asset,
-            bestBid: bid.value,
-            bestAsk: ask.value,
+            bestBid: bid.value().toNumber(),
+            bestAsk: ask.value().toNumber(),
           },
         })
       );
@@ -320,7 +327,10 @@ export class Orderbook {
    */
   public getMidPrice(): Price | null {
     const spreadResult = this.getSpread();
-    return spreadResult.ok ? spreadResult.value.midpoint() : null;
+    if (!spreadResult.ok) return null;
+    const midDecimal = spreadResult.value.midpoint();
+    const priceResult = PriceService.create(midDecimal);
+    return priceResult.ok ? priceResult.value : null;
   }
 
   /**
@@ -344,20 +354,20 @@ export class Orderbook {
     const bestBid = this.bids[0];
     const bestAsk = this.asks[0];
 
-    const bidQty = bestBid.quantity.value;
-    const askQty = bestAsk.quantity.value;
+    const bidQty = bestBid.quantity.value();
+    const askQty = bestAsk.quantity.value();
+    const totalQty = bidQty.plus(askQty);
 
-    if (bidQty + askQty === 0) {
+    if (totalQty.isZero()) {
       return null;
     }
 
     // microprice = (ask * bidQty + bid * askQty) / (bidQty + askQty)
-    const microprice =
-      (bestAsk.price.value * bidQty + bestBid.price.value * askQty) /
-      (bidQty + askQty);
+    const micropriceDecimal = bestAsk.price.value().times(bidQty)
+      .plus(bestBid.price.value().times(askQty))
+      .dividedBy(totalQty);
 
-    const { Price: PriceVO } = require('@polymarket/value-objects');
-    const priceResult = PriceVO.fromValue(microprice);
+    const priceResult = PriceService.create(micropriceDecimal);
     return priceResult.ok ? priceResult.value : null;
   }
 
@@ -370,25 +380,20 @@ export class Orderbook {
    * @returns Общий объём бидов
    *
    * @remarks
-   * ИСПРАВЛЕНИЕ: Убрал лишнюю проверку `if (total === 0)` и throw.
+   * ИСПРАВЛЕНИЕ: Использует Decimal-арифметику вместо number.
    *
-   * Quantity.fromValue(0) валиден, не нужна особая обработка.
-   * Если сумма не валидна - это баг в Quantity, не наша проблема здесь.
+   * Quantity.of(0) валиден, не нужна особая обработка.
    */
   public getTotalBidVolume(levels?: number): Quantity {
     const relevantBids = levels ? this.bids.slice(0, levels) : this.bids;
 
     const total = relevantBids.reduce(
-      (sum, level) => sum + level.quantity.value,
-      0
+      (sum, level) => sum.plus(level.quantity.value()),
+      new Decimal(0)
     );
 
-    const { Quantity: QuantityVO } = require('@polymarket/value-objects');
-    const quantityResult = QuantityVO.fromValue(total);
-
-    // Если Quantity.fromValue фейлится на валидной сумме - это баг в Quantity
-    // Возвращаем zero как fallback
-    return quantityResult.ok ? quantityResult.value : QuantityVO.zero();
+    const quantityResult = QuantityService.create(total);
+    return quantityResult.ok ? quantityResult.value : Quantity.ZERO;
   }
 
   /**
@@ -398,20 +403,18 @@ export class Orderbook {
    * @returns Общий объём асков
    *
    * @remarks
-   * ИСПРАВЛЕНИЕ: Убрал лишнюю проверку `if (total === 0)` и throw.
+   * ИСПРАВЛЕНИЕ: Использует Decimal-арифметику вместо number.
    */
   public getTotalAskVolume(levels?: number): Quantity {
     const relevantAsks = levels ? this.asks.slice(0, levels) : this.asks;
 
     const total = relevantAsks.reduce(
-      (sum, level) => sum + level.quantity.value,
-      0
+      (sum, level) => sum.plus(level.quantity.value()),
+      new Decimal(0)
     );
 
-    const { Quantity: QuantityVO } = require('@polymarket/value-objects');
-    const quantityResult = QuantityVO.fromValue(total);
-
-    return quantityResult.ok ? quantityResult.value : QuantityVO.zero();
+    const quantityResult = QuantityService.create(total);
+    return quantityResult.ok ? quantityResult.value : Quantity.ZERO;
   }
 
   /**
@@ -429,14 +432,15 @@ export class Orderbook {
    * - Imbalance ~0: баланс сторон
    */
   public getImbalance(levels: number = 5): number {
-    const bidVolume = this.getTotalBidVolume(levels).value;
-    const askVolume = this.getTotalAskVolume(levels).value;
+    const bidVolume = this.getTotalBidVolume(levels).value();
+    const askVolume = this.getTotalAskVolume(levels).value();
+    const totalVolume = bidVolume.plus(askVolume);
 
-    if (bidVolume + askVolume === 0) {
+    if (totalVolume.isZero()) {
       return 0;
     }
 
-    return (bidVolume - askVolume) / (bidVolume + askVolume);
+    return bidVolume.minus(askVolume).dividedBy(totalVolume).toNumber();
   }
 
   // ==================== STATUS ====================
@@ -485,7 +489,7 @@ export class Orderbook {
    * @returns Возраст в миллисекундах
    *
    * @remarks
-   * ИСПРАВЛЕНИЕ: Использует receivedAt вместо venue timestamp.
+   * ИСПРАВЛЕНИЕ: Использует receivedAt (Timestamp VO) вместо venue timestamp.
    *
    * Вычисляет разницу между текущим временем и receivedAt (локальный timestamp).
    * Используется для проверки актуальности данных.
@@ -495,7 +499,7 @@ export class Orderbook {
    * - Latency уже учтена в receivedAt
    */
   public getAgeMs(): number {
-    return Date.now() - this.receivedAt;
+    return Date.now() - this.receivedAt.toNumber();
   }
 
   /**
@@ -511,7 +515,7 @@ export class Orderbook {
    */
   public getLatencyMs(): number | null {
     return this.venueTimestamp !== undefined
-      ? this.receivedAt - this.venueTimestamp
+      ? this.receivedAt.toNumber() - this.venueTimestamp.toNumber()
       : null;
   }
 
@@ -522,7 +526,7 @@ export class Orderbook {
    * @returns True если стакан старше maxAgeMs
    *
    * @remarks
-   * ИСПРАВЛЕНИЕ: Использует receivedAt (локально) вместо venue timestamp.
+   * ИСПРАВЛЕНИЕ: Использует receivedAt (Timestamp VO) вместо venue timestamp.
    *
    * Stale detection по локальному времени получения данных,
    * а не по времени venue (которое может быть некорректным).
@@ -553,7 +557,7 @@ export class Orderbook {
    *
    * @remarks
    * Возвращает сводные метрики без полных данных уровней.
-   * Для полного представления используйте toJSON().
+   * Для полного представления используйте OrderbookSerializer.toJSON().
    */
   public toObject() {
     const bestBid = this.getBestBid();
@@ -565,18 +569,18 @@ export class Orderbook {
     return {
       instrumentId: this.instrumentId,
       asset: this.asset,
-      venueTimestamp: this.venueTimestamp,
-      receivedAt: this.receivedAt,
-      bestBid: bestBid?.value,
-      bestAsk: bestAsk?.value,
-      midPrice: midPrice?.value,
-      microprice: microprice?.value,
-      spreadWidth: spreadResult.ok ? spreadResult.value.width() : undefined,
+      venueTimestamp: this.venueTimestamp?.toNumber(),
+      receivedAt: this.receivedAt.toNumber(),
+      bestBid: bestBid?.value().toNumber(),
+      bestAsk: bestAsk?.value().toNumber(),
+      midPrice: midPrice?.value().toNumber(),
+      microprice: microprice?.value().toNumber(),
+      spreadWidth: spreadResult.ok ? spreadResult.value.width().toNumber() : undefined,
       spreadStatus: spreadResult.ok ? 'ok' : spreadResult.error.getReason(),
       bidDepth: this.bids.length,
       askDepth: this.asks.length,
-      totalBidVolume: this.getTotalBidVolume().value,
-      totalAskVolume: this.getTotalAskVolume().value,
+      totalBidVolume: this.getTotalBidVolume().value().toNumber(),
+      totalAskVolume: this.getTotalAskVolume().value().toNumber(),
       imbalance: this.getImbalance(),
       ageMs: this.getAgeMs(),
       latencyMs: this.getLatencyMs(),
