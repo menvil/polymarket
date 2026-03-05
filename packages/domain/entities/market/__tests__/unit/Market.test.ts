@@ -177,6 +177,41 @@ describe('Market.create()', () => {
     }
   });
 
+  it('возвращает Err (не TypeError) для пустого outcomes массива', () => {
+    const result = makeMarket({ outcomes: [] as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(MarketValidationError);
+      expect(result.error.context?.field).toBe('outcomes');
+    }
+  });
+
+  it('возвращает Err (не TypeError) для outcomes с одним элементом', () => {
+    const result = makeMarket({
+      outcomes: [{ token: YES_TOKEN, index: 0, name: 'Yes' }] as never,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(MarketValidationError);
+    }
+  });
+
+  it('возвращает Err (не TypeError) если outcomes не массив', () => {
+    const result = makeMarket({ outcomes: 'not an array' as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(MarketValidationError);
+    }
+  });
+
+  it('возвращает Err для state: null', () => {
+    const result = makeMarket({ state: null as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('state');
+    }
+  });
+
   it('создаёт outcomes с правильными индексами и token', () => {
     const result = makeMarket();
     expect(result.ok).toBe(true);
@@ -422,6 +457,42 @@ describe('Market.resolve() lifecycle', () => {
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(() => result.value.resolve(2 as OutcomeIndex, NOW)).toThrow(MarketValidationError);
+    }
+  });
+
+  it('resolve() бросает MarketValidationError при NaN outcomeIndex', () => {
+    const result = makeMarket({ state: MarketState.closed() });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(() => result.value.resolve(NaN as OutcomeIndex, NOW)).toThrow(MarketValidationError);
+    }
+  });
+
+  it('resolve() бросает MarketValidationError при дробном outcomeIndex (0.5)', () => {
+    const result = makeMarket({ state: MarketState.closed() });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(() => result.value.resolve(0.5 as OutcomeIndex, NOW)).toThrow(MarketValidationError);
+    }
+  });
+
+  it('resolve() бросает MarketValidationError при null outcomeIndex', () => {
+    const result = makeMarket({ state: MarketState.closed() });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(() => result.value.resolve(null as unknown as OutcomeIndex, NOW)).toThrow(
+        MarketValidationError
+      );
+    }
+  });
+
+  it('resolve() бросает MarketValidationError при строковом outcomeIndex', () => {
+    const result = makeMarket({ state: MarketState.closed() });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(() => result.value.resolve('0' as unknown as OutcomeIndex, NOW)).toThrow(
+        MarketValidationError
+      );
     }
   });
 

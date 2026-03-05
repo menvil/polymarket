@@ -74,8 +74,8 @@ const nextState = MarketState.close(this.state, { marketId: this.id });
 |--------|--------------|
 | `ACTIVE → CLOSED` допустим? (FSM) | `MarketState.close()` |
 | Рынок уже истёк? (query) | `market.isExpiredAt(nowMs)` |
-| Сейчас пора закрывать? (policy) | `MarketTradingPolicy.canClose(market, nowMs)` |
-| Сейчас можно торговать? (policy) | `MarketTradingPolicy.canTrade(market, nowMs)` |
+| В каком торговом состоянии рынок? (policy) | `MarketTradingPolicy.getTradingState(market, nowMs)` |
+| Можно ли досрочно закрыть? (policy) | `MarketTradingPolicy.evaluateForceClose(market)` |
 
 ### 5. Lifecycle методы бросают, не возвращают Result
 

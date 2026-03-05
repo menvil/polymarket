@@ -45,8 +45,8 @@
  *
  * if (result.ok) {
  *   const market = result.value;
- *   const closed = market.close();
- *   const resolved = closed.resolve(0); // YES победил
+ *   const closed = market.close(Date.now());
+ *   const resolved = closed.resolve(0, Date.now()); // YES победил
  * }
  * ```
  */
@@ -136,10 +136,10 @@ export interface MarketProps {
  * - close() — только из ACTIVE, иначе бросает MarketLifecycleError
  * - resolve() — только из CLOSED, иначе бросает MarketLifecycleError
  *
- * ### Domain Events (Outbox pattern):
- * - close() эмитирует MarketClosedEvent в буфер
- * - resolve() эмитирует MarketResolvedEvent в буфер
- * - pullEvents() возвращает и очищает буфер
+ * ### Уведомления (Outbox pattern):
+ * - close(nowMs) эмитирует MarketClosedNotification в буфер
+ * - resolve(index, nowMs) эмитирует MarketResolvedNotification в буфер
+ * - pullNotifications() возвращает и очищает буфер
  */
 export class Market {
   public readonly id: MarketId;
@@ -290,6 +290,24 @@ export class Market {
       return Err(
         new MarketValidationError('Market question must be a non-empty string', {
           context: { field: 'question', value: props.question },
+        })
+      );
+    }
+
+    // Runtime guard: outcomes должен быть массивом из 2 объектов
+    // (TypeScript гарантирует это статически, но защищаем от JS/as-кастов)
+    if (
+      !Array.isArray(props.outcomes) ||
+      props.outcomes.length < 2 ||
+      !props.outcomes[0] ||
+      !props.outcomes[1]
+    ) {
+      return Err(
+        new MarketValidationError('Market outcomes must have exactly 2 elements', {
+          context: {
+            field: 'outcomes',
+            length: Array.isArray(props.outcomes) ? props.outcomes.length : 'not array',
+          },
         })
       );
     }
@@ -603,7 +621,7 @@ export class Market {
    *
    * @example
    * ```typescript
-   * const closed = market.close();
+   * const closed = market.close(Date.now());
    * market.equals(closed); // true — тот же рынок, другое состояние
    * ```
    */
@@ -640,7 +658,7 @@ export class Market {
   /**
    * Закрывает рынок (ACTIVE → CLOSED)
    *
-   * @param nowMs - Текущее время в мс для метки события (по умолчанию Date.now())
+   * @param nowMs - Текущее время в мс для метки уведомления (Unix timestamp)
    * @returns Новый Market в состоянии CLOSED
    * @throws {MarketAlreadyClosedError} Если рынок уже в состоянии CLOSED
    * @throws {MarketAlreadyResolvedError} Если рынок уже в состоянии RESOLVED
@@ -652,11 +670,9 @@ export class Market {
    *
    * @example
    * ```typescript
-   * const closedMarket = activeMarket.close();
-   *
-   * // Детерминированный тест:
-   * const closedMarket = activeMarket.close(1_700_000_000_000);
-   * expect(closedMarket.pullEvents()[0].occurredAt).toBe(1_700_000_000_000);
+   * const closedMarket = activeMarket.close(Date.now());
+   * const [notification] = closedMarket.pullNotifications();
+   * // notification.occurredAt === nowMs
    * ```
    */
   public close(nowMs: number): Market {
@@ -669,9 +685,10 @@ export class Market {
   /**
    * Разрешает рынок с конкретным исходом (CLOSED → RESOLVED)
    *
-   * @param outcomeIndex - Индекс победившего исхода (0 = YES, 1 = NO)
-   * @param nowMs - Текущее время в мс для метки события (по умолчанию Date.now())
+   * @param outcomeIndex - Индекс победившего исхода (0 = YES, 1 = NO); должен быть целым числом
+   * @param nowMs - Текущее время в мс для метки уведомления (Unix timestamp)
    * @returns Новый Market в состоянии RESOLVED
+   * @throws {MarketValidationError} Если outcomeIndex не является целым числом в допустимом диапазоне
    * @throws {MarketAlreadyResolvedError} Если рынок уже в состоянии RESOLVED
    * @throws {MarketInvalidTransitionError} Если рынок в состоянии ACTIVE (нужно сначала close())
    *
@@ -682,7 +699,7 @@ export class Market {
    *
    * @example
    * ```typescript
-   * const resolvedMarket = closedMarket.resolve(0); // YES победил
+   * const resolvedMarket = closedMarket.resolve(0, Date.now()); // YES победил
    * const state = resolvedMarket.state;
    * if (state.status === 'RESOLVED') {
    *   console.log(state.resolvedOutcomeIndex); // 0
@@ -690,7 +707,12 @@ export class Market {
    * ```
    */
   public resolve(outcomeIndex: OutcomeIndex, nowMs: number): Market {
-    if (outcomeIndex < 0 || outcomeIndex >= this.outcomes.length) {
+    if (
+      typeof outcomeIndex !== 'number' ||
+      !Number.isInteger(outcomeIndex) ||
+      outcomeIndex < 0 ||
+      outcomeIndex >= this.outcomes.length
+    ) {
       throw new MarketValidationError('resolvedOutcomeIndex must be a valid outcome index', {
         context: {
           field: 'outcomeIndex',

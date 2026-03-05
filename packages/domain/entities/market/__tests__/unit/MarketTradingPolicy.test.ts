@@ -165,8 +165,22 @@ describe('Policy + Entity — полный lifecycle', () => {
     expect(MarketTradingPolicy.getTradingState(resolved, AT_EXPIRY)).toBe('RESOLVED');
   });
 
-  it('exhaustive switch покрывает все состояния', () => {
-    const states = ['TRADING', 'EXPIRED', 'CLOSED', 'RESOLVED'] satisfies TradingState[];
-    expect(states).toHaveLength(4);
+  it('каждое TradingState реально достижимо через getTradingState()', () => {
+    const activeMarket = makeMarket(MarketState.active());
+    const closedMarket = makeMarket(MarketState.closed());
+    const resolvedMarket = makeMarket(MarketState.resolved(0));
+
+    // TRADING — ACTIVE до истечения
+    expect(MarketTradingPolicy.getTradingState(activeMarket, BEFORE_EXPIRY)).toBe('TRADING');
+    // EXPIRED — ACTIVE после истечения
+    expect(MarketTradingPolicy.getTradingState(activeMarket, AT_EXPIRY)).toBe('EXPIRED');
+    // CLOSED
+    expect(MarketTradingPolicy.getTradingState(closedMarket, AT_EXPIRY)).toBe('CLOSED');
+    // RESOLVED
+    expect(MarketTradingPolicy.getTradingState(resolvedMarket, AT_EXPIRY)).toBe('RESOLVED');
+
+    // Все значения типа TradingState покрыты выше (compile-time guarantee через satisfies):
+    const _allStates = ['TRADING', 'EXPIRED', 'CLOSED', 'RESOLVED'] satisfies TradingState[];
+    void _allStates;
   });
 });
