@@ -568,30 +568,29 @@ export class Market {
   /**
    * Закрывает рынок (ACTIVE → CLOSED)
    *
+   * @param nowMs - Текущее время в мс для метки события (по умолчанию Date.now())
    * @returns Новый Market в состоянии CLOSED
-   * @throws {MarketLifecycleError} Если рынок не в состоянии ACTIVE
+   * @throws {MarketAlreadyClosedError} Если рынок уже в состоянии CLOSED
+   * @throws {MarketAlreadyResolvedError} Если рынок уже в состоянии RESOLVED
    *
    * @remarks
-   * Переход: ACTIVE → CLOSED
-   *
-   * Бросает MarketLifecycleError (не возвращает Result), т.к. вызов close()
-   * на CLOSED/RESOLVED рынке всегда является ошибкой программиста,
-   * а не ошибкой пользователя.
+   * Переход: ACTIVE → CLOSED.
+   * FSM-логика делегируется в MarketState.close() — entity не знает правил.
+   * Параметр nowMs обеспечивает детерминизм в тестах.
    *
    * @example
    * ```typescript
-   * const activeMarket = /* ... *\/;
    * const closedMarket = activeMarket.close();
-   * console.log(closedMarket.state.status); // 'CLOSED'
    *
-   * // Повторный вызов бросает ошибку:
-   * closedMarket.close(); // throws MarketLifecycleError
+   * // Детерминированный тест:
+   * const closedMarket = activeMarket.close(1_700_000_000_000);
+   * expect(closedMarket.pullEvents()[0].occurredAt).toBe(1_700_000_000_000);
    * ```
    */
-  public close(): Market {
-    const nextState = MarketState.transitionToClosed(this.state, { marketId: this.id });
+  public close(nowMs: number = Date.now()): Market {
+    const nextState = MarketState.close(this.state, { marketId: this.id });
     return this.copy(nextState, [
-      { type: 'MARKET_CLOSED', marketId: this.id, slug: this.slug, occurredAt: Date.now() },
+      { type: 'MARKET_CLOSED', marketId: this.id, slug: this.slug, occurredAt: nowMs },
     ]);
   }
 
@@ -599,40 +598,34 @@ export class Market {
    * Разрешает рынок с конкретным исходом (CLOSED → RESOLVED)
    *
    * @param outcomeIndex - Индекс победившего исхода (0 = YES, 1 = NO)
+   * @param nowMs - Текущее время в мс для метки события (по умолчанию Date.now())
    * @returns Новый Market в состоянии RESOLVED
-   * @throws {MarketLifecycleError} Если рынок не в состоянии CLOSED
+   * @throws {MarketAlreadyResolvedError} Если рынок уже в состоянии RESOLVED
+   * @throws {MarketInvalidTransitionError} Если рынок в состоянии ACTIVE (нужно сначала close())
    *
    * @remarks
-   * Переход: CLOSED → RESOLVED
-   *
-   * OutcomeIndex = 0 | 1 — компилятор TypeScript гарантирует валидность,
-   * поэтому дополнительная проверка не нужна.
-   *
-   * Бросает MarketLifecycleError, т.к. вызов resolve() на ACTIVE или RESOLVED
-   * рынке всегда является ошибкой программиста.
+   * Переход: CLOSED → RESOLVED.
+   * FSM-логика делегируется в MarketState.resolve() — entity не знает правил.
+   * Параметр nowMs обеспечивает детерминизм в тестах.
    *
    * @example
    * ```typescript
-   * const closedMarket = activeMarket.close();
    * const resolvedMarket = closedMarket.resolve(0); // YES победил
-   *
-   * if (resolvedMarket.isResolved()) {
-   *   const state = resolvedMarket.state;
-   *   if (state.status === 'RESOLVED') {
-   *     console.log(state.resolvedOutcomeIndex); // 0
-   *   }
+   * const state = resolvedMarket.state;
+   * if (state.status === 'RESOLVED') {
+   *   console.log(state.resolvedOutcomeIndex); // 0
    * }
    * ```
    */
-  public resolve(outcomeIndex: OutcomeIndex): Market {
-    const nextState = MarketState.transitionToResolved(this.state, outcomeIndex, { marketId: this.id });
+  public resolve(outcomeIndex: OutcomeIndex, nowMs: number = Date.now()): Market {
+    const nextState = MarketState.resolve(this.state, outcomeIndex, { marketId: this.id });
     return this.copy(nextState, [
       {
         type: 'MARKET_RESOLVED',
         marketId: this.id,
         slug: this.slug,
         resolvedOutcomeIndex: outcomeIndex,
-        occurredAt: Date.now(),
+        occurredAt: nowMs,
       },
     ]);
   }

@@ -22,8 +22,8 @@
  * const resolved = MarketState.resolved(0); // YES победил
  *
  * // FSM-переходы (бросают при нарушении)
- * const next = MarketState.transitionToClosed(active);
- * const final = MarketState.transitionToResolved(next, 1);
+ * const next = MarketState.close(active);
+ * const final = MarketState.resolve(next, 1);
  *
  * // Type guards
  * if (isActive(state)) {
@@ -71,7 +71,7 @@ export type MarketState =
  * @remarks
  * Объединяет:
  * - Конструкторы состояний (active, closed, resolved)
- * - FSM-переходы (transitionToClosed, transitionToResolved)
+ * - FSM-переходы (close, resolve)
  *
  * Переходы бросают конкретные ошибки при нарушении инварианта,
  * освобождая entity от знания о правилах FSM.
@@ -79,8 +79,8 @@ export type MarketState =
  * @example
  * ```typescript
  * const active = MarketState.active();
- * const closed = MarketState.transitionToClosed(active, { marketId: 'market-abc' });
- * const resolved = MarketState.transitionToResolved(closed, 0, { marketId: 'market-abc' });
+ * const closed = MarketState.close(active, { marketId: 'market-abc' });
+ * const resolved = MarketState.resolve(closed, 0, { marketId: 'market-abc' });
  * ```
  */
 // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -131,16 +131,10 @@ export const MarketState = {
    *
    * @example
    * ```typescript
-   * const closed = MarketState.transitionToClosed(
-   *   MarketState.active(),
-   *   { marketId: 'market-abc' }
-   * );
+   * const closed = MarketState.close(MarketState.active(), { marketId: 'market-abc' });
    * ```
    */
-  transitionToClosed(
-    state: MarketState,
-    context?: Record<string, unknown>
-  ): MarketState {
+  close(state: MarketState, context?: Record<string, unknown>): MarketState {
     if (state.status === 'CLOSED') {
       throw new MarketAlreadyClosedError('Market is already closed', {
         context: { ...context, currentStatus: state.status },
@@ -169,18 +163,10 @@ export const MarketState = {
    *
    * @example
    * ```typescript
-   * const resolved = MarketState.transitionToResolved(
-   *   MarketState.closed(),
-   *   0,
-   *   { marketId: 'market-abc' }
-   * );
+   * const resolved = MarketState.resolve(MarketState.closed(), 0, { marketId: 'market-abc' });
    * ```
    */
-  transitionToResolved(
-    state: MarketState,
-    index: OutcomeIndex,
-    context?: Record<string, unknown>
-  ): MarketState {
+  resolve(state: MarketState, index: OutcomeIndex, context?: Record<string, unknown>): MarketState {
     if (state.status === 'RESOLVED') {
       throw new MarketAlreadyResolvedError('Market is already resolved', {
         context: {

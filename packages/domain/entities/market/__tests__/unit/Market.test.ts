@@ -480,12 +480,13 @@ describe('Market.pullEvents()', () => {
     }
   });
 
-  it('close() эмитирует MarketClosedEvent', () => {
+  it('close() эмитирует MarketClosedEvent с корректными полями', () => {
     const result = makeMarket({ state: MarketState.active() });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const closed = result.value.close();
+    const NOW = 1_700_000_000_000;
+    const closed = result.value.close(NOW);
     const events = closed.pullEvents();
 
     expect(events).toHaveLength(1);
@@ -493,15 +494,16 @@ describe('Market.pullEvents()', () => {
     expect(event.type).toBe('MARKET_CLOSED');
     expect(event.marketId).toBe('market-abc');
     expect(event.slug).toBe('will-trump-win');
-    expect(typeof event.occurredAt).toBe('number');
+    expect(event.occurredAt).toBe(NOW);
   });
 
-  it('resolve() эмитирует MarketResolvedEvent с корректным resolvedOutcomeIndex', () => {
+  it('resolve() эмитирует MarketResolvedEvent с корректными полями', () => {
     const result = makeMarket({ state: MarketState.closed() });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const resolved = result.value.resolve(1);
+    const NOW = 1_700_000_001_000;
+    const resolved = result.value.resolve(1, NOW);
     const events = resolved.pullEvents();
 
     expect(events).toHaveLength(1);
@@ -510,7 +512,7 @@ describe('Market.pullEvents()', () => {
     expect(event.marketId).toBe('market-abc');
     expect(event.slug).toBe('will-trump-win');
     expect(event.resolvedOutcomeIndex).toBe(1);
-    expect(typeof event.occurredAt).toBe('number');
+    expect(event.occurredAt).toBe(NOW);
   });
 
   it('pullEvents() очищает буфер — повторный вызов возвращает []', () => {

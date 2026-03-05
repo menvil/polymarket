@@ -71,36 +71,36 @@ describe('MarketState type guards', () => {
   });
 });
 
-describe('MarketState.transitionToClosed()', () => {
+describe('MarketState.close()', () => {
   it('ACTIVE → CLOSED: возвращает новое состояние CLOSED', () => {
-    const next = MarketState.transitionToClosed(MarketState.active());
+    const next = MarketState.close(MarketState.active());
     expect(next.status).toBe('CLOSED');
   });
 
   it('CLOSED → close: бросает MarketAlreadyClosedError', () => {
-    expect(() => MarketState.transitionToClosed(MarketState.closed())).toThrow(
+    expect(() => MarketState.close(MarketState.closed())).toThrow(
       MarketAlreadyClosedError
     );
   });
 
   it('RESOLVED → close: бросает MarketAlreadyResolvedError', () => {
-    expect(() => MarketState.transitionToClosed(MarketState.resolved(0))).toThrow(
+    expect(() => MarketState.close(MarketState.resolved(0))).toThrow(
       MarketAlreadyResolvedError
     );
   });
 
   it('ошибки являются подклассом MarketLifecycleError', () => {
-    expect(() => MarketState.transitionToClosed(MarketState.closed())).toThrow(
+    expect(() => MarketState.close(MarketState.closed())).toThrow(
       MarketLifecycleError
     );
-    expect(() => MarketState.transitionToClosed(MarketState.resolved(0))).toThrow(
+    expect(() => MarketState.close(MarketState.resolved(0))).toThrow(
       MarketLifecycleError
     );
   });
 
   it('context передаётся в ошибку', () => {
     try {
-      MarketState.transitionToClosed(MarketState.closed(), { marketId: 'test-id' });
+      MarketState.close(MarketState.closed(), { marketId: 'test-id' });
       expect(true).toBe(false);
     } catch (e) {
       expect(e).toBeInstanceOf(MarketAlreadyClosedError);
@@ -110,9 +110,9 @@ describe('MarketState.transitionToClosed()', () => {
   });
 });
 
-describe('MarketState.transitionToResolved()', () => {
+describe('MarketState.resolve()', () => {
   it('CLOSED → RESOLVED(0): возвращает состояние RESOLVED с индексом 0', () => {
-    const next = MarketState.transitionToResolved(MarketState.closed(), 0);
+    const next = MarketState.resolve(MarketState.closed(), 0);
     expect(next.status).toBe('RESOLVED');
     if (next.status === 'RESOLVED') {
       expect(next.resolvedOutcomeIndex).toBe(0);
@@ -120,7 +120,7 @@ describe('MarketState.transitionToResolved()', () => {
   });
 
   it('CLOSED → RESOLVED(1): возвращает состояние RESOLVED с индексом 1', () => {
-    const next = MarketState.transitionToResolved(MarketState.closed(), 1);
+    const next = MarketState.resolve(MarketState.closed(), 1);
     expect(next.status).toBe('RESOLVED');
     if (next.status === 'RESOLVED') {
       expect(next.resolvedOutcomeIndex).toBe(1);
@@ -128,29 +128,29 @@ describe('MarketState.transitionToResolved()', () => {
   });
 
   it('ACTIVE → resolve: бросает MarketInvalidTransitionError', () => {
-    expect(() => MarketState.transitionToResolved(MarketState.active(), 0)).toThrow(
+    expect(() => MarketState.resolve(MarketState.active(), 0)).toThrow(
       MarketInvalidTransitionError
     );
   });
 
   it('RESOLVED → resolve: бросает MarketAlreadyResolvedError', () => {
-    expect(() => MarketState.transitionToResolved(MarketState.resolved(0), 1)).toThrow(
+    expect(() => MarketState.resolve(MarketState.resolved(0), 1)).toThrow(
       MarketAlreadyResolvedError
     );
   });
 
   it('ошибки являются подклассом MarketLifecycleError', () => {
-    expect(() => MarketState.transitionToResolved(MarketState.active(), 0)).toThrow(
+    expect(() => MarketState.resolve(MarketState.active(), 0)).toThrow(
       MarketLifecycleError
     );
-    expect(() => MarketState.transitionToResolved(MarketState.resolved(0), 1)).toThrow(
+    expect(() => MarketState.resolve(MarketState.resolved(0), 1)).toThrow(
       MarketLifecycleError
     );
   });
 
   it('MarketInvalidTransitionError содержит сообщение про Call close() first', () => {
     try {
-      MarketState.transitionToResolved(MarketState.active(), 0, { marketId: 'test-id' });
+      MarketState.resolve(MarketState.active(), 0, { marketId: 'test-id' });
       expect(true).toBe(false);
     } catch (e) {
       expect(e).toBeInstanceOf(MarketInvalidTransitionError);
