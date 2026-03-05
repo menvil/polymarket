@@ -72,16 +72,20 @@ if (result.ok) {
   const createdEvents = pending.pullEvents(); // [OrderCreatedEvent]
 
   // Биржа приняла — эмитирует OrderAcceptedEvent
-  const open = pending.accept();
-  const acceptedEvents = open.value!.pullEvents(); // [OrderAcceptedEvent]
+  const acceptResult = pending.accept();
+  if (!acceptResult.ok) throw new Error(acceptResult.error.message);
+  const open = acceptResult.value;
+  const acceptedEvents = open.pullEvents(); // [OrderAcceptedEvent]
 
   // Исполнение — эмитирует OrderFilledEvent или OrderPartiallyFilledEvent
-  const filled = open.value!.applyFill({
-    id: fillId, orderId: pending.id, asset, side: 'BUY',
+  const fillId = asFillId('fill-1')!;
+  const fillResult = open.applyFill({
+    id: fillId, orderId: pending.id, asset: myAsset, side: 'BUY',
     size: Quantity.of(new Decimal('100')),
     price: Price.of(new Decimal('0.65')),
   });
-  const fillEvents = filled.value!.pullEvents(); // [OrderFilledEvent]
+  if (!fillResult.ok) throw new Error(fillResult.error.message);
+  const fillEvents = fillResult.value.pullEvents(); // [OrderFilledEvent]
 }
 ```
 
@@ -180,9 +184,9 @@ Order.fromEvents(events[])     // replay из лога, без событий
 ```typescript
 order.accept()                    // PENDING → OPEN, эмитирует ORDER_ACCEPTED
 order.reject('reason')            // PENDING → REJECTED, эмитирует ORDER_REJECTED
-order.cancel('reason?')           // OPEN|PARTIAL → CANCELED, эмитирует ORDER_CANCELLED
-order.expire()                    // OPEN|PARTIAL → EXPIRED, эмитирует ORDER_EXPIRED
-order.applyFill(fill: FillData)   // OPEN|PARTIAL → PARTIAL|FILLED, эмитирует ORDER_PARTIALLY_FILLED или ORDER_FILLED
+order.cancel('reason?')           // OPEN|PARTIALLY_FILLED → CANCELED, эмитирует ORDER_CANCELLED
+order.expire()                    // OPEN|PARTIALLY_FILLED → EXPIRED, эмитирует ORDER_EXPIRED
+order.applyFill(fill: FillData)   // OPEN|PARTIALLY_FILLED → PARTIALLY_FILLED|FILLED, эмитирует ORDER_PARTIALLY_FILLED или ORDER_FILLED
 order.canAcceptFill(fill: FillData) // boolean (без применения)
 ```
 

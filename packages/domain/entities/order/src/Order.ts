@@ -3,7 +3,8 @@
  *
  * @remarks
  * Вся бизнес-логика сосредоточена в одном классе.
- * Внешние зависимости: только value objects и @polymarket/ids.
+ * Внешние зависимости: @polymarket/result, @polymarket/errors, @polymarket/value-objects,
+ * @polymarket/ids, decimal.js.
  *
  * ### Три фабрики:
  * - `create()`     — новая заявка (всегда PENDING), эмитирует OrderCreatedEvent
