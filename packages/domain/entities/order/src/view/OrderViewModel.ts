@@ -9,8 +9,7 @@
  *
  * Не содержит бизнес-логики, только форматирование.
  *
- * @todo
- * OrderViewModel находится в пакете domain entity для удобства.
+ * FUTURE: OrderViewModel находится в пакете domain entity для удобства.
  * Когда архитектура устоится, его можно перенести в application layer —
  * сериализация для API/UI не является частью доменной логики.
  *
@@ -43,13 +42,7 @@ export interface OrderSummary {
 /**
  * Класс OrderViewModel — сериализация Order в различные форматы
  */
-export class OrderViewModel {
-  /**
-   * Приватный конструктор — static-only class
-   */
-  private constructor() {
-    throw new Error('OrderViewModel is a static class');
-  }
+export abstract class OrderViewModel {
 
   /**
    * Преобразует Order в JSON для API

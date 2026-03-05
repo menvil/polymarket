@@ -21,9 +21,6 @@
  * ### Domain Events
  * - **OrderEvent** — union всех событий (для fromEvents/replay)
  *
- * ### Errors
- * - **OrderError** — доменная ошибка Order
- *
  * ### View Layer
  * - **OrderViewModel** — сериализация в JSON/readable/summary
  * - **OrderDeserializer** — десериализация из снэпшота
@@ -31,7 +28,7 @@
  *
  * @example
  * ```typescript
- * import { Order, OrderError } from '@polymarket/order';
+ * import { Order } from '@polymarket/order';
  * import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
  * import { asOrderId } from '@polymarket/ids';
  * import Decimal from 'decimal.js';
@@ -78,9 +75,6 @@ export type {
   OrderPartiallyFilledEvent,
   OrderFilledEvent,
 } from './OrderEvents.js';
-
-// ─── Errors ────────────────────────────────────────────────────────────────
-export { OrderError } from './OrderErrors.js';
 
 // ─── View Layer ────────────────────────────────────────────────────────────
 export { OrderViewModel, OrderDeserializer } from './view/index.js';

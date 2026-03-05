@@ -15,7 +15,6 @@ src/
 ├── Order.ts          — агрегат (все фабрики + команды + геттеры)
 ├── OrderState.ts     — типы (OrderStatus, FillState, FillData, OrderSnapshot, ...)
 ├── OrderEvents.ts    — domain events для режима replay и outbox
-├── OrderErrors.ts    — OrderError
 ├── _fill.ts          — арифметика fills (приватный модуль)
 ├── index.ts          — публичный API
 └── view/
@@ -176,7 +175,7 @@ Order.rehydrate(state)         // из OrderState, без событий, с к�
 Order.fromEvents(events[])     // replay из лога, без событий
 ```
 
-### Команды (возвращают Result<Order, OrderError>)
+### Команды (возвращают Result<Order, TradingError>)
 
 ```typescript
 order.accept()                    // PENDING → OPEN, эмитирует ORDER_ACCEPTED
@@ -224,7 +223,7 @@ VWAP = (currentSize × currentAvg + newSize × newPrice) / (currentSize + newSiz
 
 1. **Создание всегда PENDING** — `create()` не принимает статус
 2. **Неизменяемость** — все команды возвращают новый экземпляр
-3. **Never Throw** — команды возвращают `Result<Order, OrderError>`, не бросают
+3. **Never Throw** — команды возвращают `Result<Order, TradingError>`, не бросают
 4. **Fill dedup** — повторный fillId → ошибка
 5. **Fill overflow** — fillSize > remainingSize → ошибка
 6. **Terminal lock** — команды над терминальными статусами → ошибка

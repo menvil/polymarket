@@ -13,7 +13,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { Quantity, Price } from '@polymarket/value-objects';
 import type { FillState, FillData } from './OrderState.js';
-import { OrderError } from './OrderErrors.js';
+import { TradingError } from '@polymarket/errors';
 
 /**
  * Создаёт пустое fill-состояние для новой заявки
@@ -46,20 +46,20 @@ export function addFill(
   state: FillState,
   fill: FillData,
   orderSize: Quantity,
-): Result<FillState, OrderError> {
+): Result<FillState, TradingError> {
   if (fill.size.isZero()) {
-    return Err(new OrderError('Fill size must be positive', { fillId: fill.id }));
+    return Err(new TradingError('Fill size must be positive', { context: { fillId: fill.id } }));
   }
 
   if ((state.fillIds as unknown as string[]).includes(fill.id as string)) {
-    return Err(new OrderError(`Duplicate fill id: ${fill.id}`, { fillId: fill.id }));
+    return Err(new TradingError(`Duplicate fill id: ${fill.id}`, { context: { fillId: fill.id } }));
   }
 
   const remaining = orderSize.value().minus(state.filledSize.value());
   if (fill.size.value().gt(remaining)) {
-    return Err(new OrderError(
+    return Err(new TradingError(
       `Fill size (${fill.size.value()}) exceeds remaining size (${remaining})`,
-      { fillId: fill.id },
+      { context: { fillId: fill.id } },
     ));
   }
 

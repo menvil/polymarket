@@ -74,7 +74,7 @@ import type {
   OrderPartiallyFilledEvent,
   OrderFilledEvent,
 } from './OrderEvents.js';
-import { OrderError } from './OrderErrors.js';
+import { TradingError } from '@polymarket/errors';
 import { emptyFill, addFill, isFull } from './_fill.js';
 
 const VALID_SIDES = new Set<string>(['BUY', 'SELL']);
@@ -221,7 +221,7 @@ export class Order {
    * Создаёт новую заявку (всегда PENDING)
    *
    * @param params - Параметры новой заявки
-   * @returns Result<Order, OrderError>
+   * @returns Result<Order, TradingError>
    *
    * @remarks
    * Единственная точка создания заявки в рамках нормального бизнес-потока.
@@ -245,21 +245,21 @@ export class Order {
    * }
    * ```
    */
-  public static create(params: CreateOrderParams): Result<Order, OrderError> {
+  public static create(params: CreateOrderParams): Result<Order, TradingError> {
     if (!params.id) {
-      return Err(new OrderError('Order ID must be a non-empty string', { field: 'id' }));
+      return Err(new TradingError('Order ID must be a non-empty string', { context: { field: 'id' } }));
     }
     if (!params.asset) {
-      return Err(new OrderError('Asset is required', { field: 'asset', orderId: params.id }));
+      return Err(new TradingError('Asset is required', { context: { field: 'asset', orderId: params.id } }));
     }
     if (!VALID_SIDES.has(params.side)) {
-      return Err(new OrderError(`Invalid side: ${params.side}. Must be BUY or SELL`, {
-        field: 'side', orderId: params.id,
+      return Err(new TradingError(`Invalid side: ${params.side}. Must be BUY or SELL`, {
+        context: { field: 'side', orderId: params.id },
       }));
     }
     if (!params.size.isPositive()) {
-      return Err(new OrderError('Order size must be positive', {
-        field: 'size', orderId: params.id,
+      return Err(new TradingError('Order size must be positive', {
+        context: { field: 'size', orderId: params.id },
       }));
     }
 
@@ -295,7 +295,7 @@ export class Order {
    * Восстанавливает заявку из доверенного состояния (rehydration)
    *
    * @param state - Внутреннее состояние заявки с value objects
-   * @returns Result<Order, OrderError>
+   * @returns Result<Order, TradingError>
    *
    * @remarks
    * В отличие от create() не применяет бизнес-валидацию — состояние уже прошло
@@ -319,28 +319,28 @@ export class Order {
    * }
    * ```
    */
-  public static rehydrate(state: OrderState): Result<Order, OrderError> {
+  public static rehydrate(state: OrderState): Result<Order, TradingError> {
     const filledVal = state.fill.filledSize.value();
     const sizeVal = state.size.value();
 
     if (filledVal.gt(sizeVal)) {
-      return Err(new OrderError(
+      return Err(new TradingError(
         `filledSize (${filledVal}) exceeds size (${sizeVal})`,
-        { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() },
+        { context: { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() } },
       ));
     }
 
     if (state.status === 'PENDING' && !filledVal.isZero()) {
-      return Err(new OrderError(
+      return Err(new TradingError(
         `PENDING order cannot have fills (filledSize: ${filledVal})`,
-        { orderId: state.id, filledSize: filledVal.toString() },
+        { context: { orderId: state.id, filledSize: filledVal.toString() } },
       ));
     }
 
     if (state.status === 'FILLED' && !filledVal.eq(sizeVal)) {
-      return Err(new OrderError(
+      return Err(new TradingError(
         `FILLED order must have filledSize equal to size (filledSize: ${filledVal}, size: ${sizeVal})`,
-        { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() },
+        { context: { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() } },
       ));
     }
 
@@ -362,7 +362,7 @@ export class Order {
    *
    * Не эмитирует события — pullEvents() вернёт [].
    *
-   * @throws {OrderError} Если массив событий пуст или первое событие не ORDER_CREATED
+   * @throws {TradingError} Если массив событий пуст или первое событие не ORDER_CREATED
    *
    * @example
    * ```typescript
@@ -375,14 +375,14 @@ export class Order {
    */
   public static fromEvents(events: readonly OrderEvent[]): Order {
     if (events.length === 0) {
-      throw new OrderError('Cannot create Order from empty events list');
+      throw new TradingError('Cannot create Order from empty events list');
     }
 
     const first = events[0];
     if (first.type !== 'ORDER_CREATED') {
-      throw new OrderError(
+      throw new TradingError(
         `First event must be ORDER_CREATED, got ${first.type}`,
-        { eventType: first.type },
+        { context: { eventType: first.type } },
       );
     }
 
@@ -467,7 +467,7 @@ export class Order {
   /**
    * Принять заявку биржей
    *
-   * @returns Result<Order, OrderError>
+   * @returns Result<Order, TradingError>
    *
    * @remarks
    * Переход: PENDING → OPEN
@@ -480,11 +480,11 @@ export class Order {
    * if (result.ok) console.log(result.value.status); // 'OPEN'
    * ```
    */
-  public accept(): Result<Order, OrderError> {
+  public accept(): Result<Order, TradingError> {
     if (this._s.status !== 'PENDING') {
-      return Err(new OrderError(
+      return Err(new TradingError(
         `Cannot accept order with status ${this._s.status}. Only PENDING orders can be accepted.`,
-        { orderId: this._s.id },
+        { context: { orderId: this._s.id } },
       ));
     }
     const event: OrderAcceptedEvent = { type: 'ORDER_ACCEPTED', orderId: this._s.id };
@@ -495,7 +495,7 @@ export class Order {
    * Отклонить заявку биржей
    *
    * @param reason - Причина отклонения (обязательна)
-   * @returns Result<Order, OrderError>
+   * @returns Result<Order, TradingError>
    *
    * @remarks
    * Переход: PENDING → REJECTED
@@ -508,14 +508,14 @@ export class Order {
    * if (result.ok) console.log(result.value.reason); // 'Insufficient funds'
    * ```
    */
-  public reject(reason: string): Result<Order, OrderError> {
+  public reject(reason: string): Result<Order, TradingError> {
     if (!reason || reason.trim().length === 0) {
-      return Err(new OrderError('Reject reason must be a non-empty string', { orderId: this._s.id }));
+      return Err(new TradingError('Reject reason must be a non-empty string', { context: { orderId: this._s.id } }));
     }
     if (this._s.status !== 'PENDING') {
-      return Err(new OrderError(
+      return Err(new TradingError(
         `Cannot reject order with status ${this._s.status}. Only PENDING orders can be rejected.`,
-        { orderId: this._s.id },
+        { context: { orderId: this._s.id } },
       ));
     }
     const event: OrderRejectedEvent = { type: 'ORDER_REJECTED', orderId: this._s.id, reason };
@@ -526,7 +526,7 @@ export class Order {
    * Отменить заявку
    *
    * @param reason - Причина отмены (опционально, по умолчанию 'User cancelled')
-   * @returns Result<Order, OrderError>
+   * @returns Result<Order, TradingError>
    *
    * @remarks
    * Переход: OPEN или PARTIALLY_FILLED → CANCELED
@@ -539,11 +539,11 @@ export class Order {
    * if (result.ok) console.log(result.value.status); // 'CANCELED'
    * ```
    */
-  public cancel(reason?: string): Result<Order, OrderError> {
+  public cancel(reason?: string): Result<Order, TradingError> {
     if (!FILLABLE_STATUSES.has(this._s.status)) {
-      return Err(new OrderError(
+      return Err(new TradingError(
         `Cannot cancel order with status ${this._s.status}. Only OPEN or PARTIALLY_FILLED orders can be cancelled.`,
-        { orderId: this._s.id },
+        { context: { orderId: this._s.id } },
       ));
     }
     const cancelReason = reason ?? 'User cancelled';
@@ -554,7 +554,7 @@ export class Order {
   /**
    * Истечь заявке по времени
    *
-   * @returns Result<Order, OrderError>
+   * @returns Result<Order, TradingError>
    *
    * @remarks
    * Переход: OPEN или PARTIALLY_FILLED → EXPIRED
@@ -567,11 +567,11 @@ export class Order {
    * if (result.ok) console.log(result.value.status); // 'EXPIRED'
    * ```
    */
-  public expire(): Result<Order, OrderError> {
+  public expire(): Result<Order, TradingError> {
     if (!FILLABLE_STATUSES.has(this._s.status)) {
-      return Err(new OrderError(
+      return Err(new TradingError(
         `Cannot expire order with status ${this._s.status}. Only OPEN or PARTIALLY_FILLED orders can expire.`,
-        { orderId: this._s.id },
+        { context: { orderId: this._s.id } },
       ));
     }
     const event: OrderExpiredEvent = { type: 'ORDER_EXPIRED', orderId: this._s.id };
@@ -582,7 +582,7 @@ export class Order {
    * Применить fill исполнения к заявке
    *
    * @param fill - Данные исполнения
-   * @returns Result<Order, OrderError>
+   * @returns Result<Order, TradingError>
    *
    * @remarks
    * Переходы:
@@ -603,38 +603,38 @@ export class Order {
    * if (result.ok) console.log(result.value.filledSize.value().toNumber()); // 30
    * ```
    */
-  public applyFill(fill: FillData): Result<Order, OrderError> {
+  public applyFill(fill: FillData): Result<Order, TradingError> {
     if (!FILLABLE_STATUSES.has(this._s.status)) {
-      return Err(new OrderError(
+      return Err(new TradingError(
         `Cannot apply fill to order with status ${this._s.status}. Only OPEN or PARTIALLY_FILLED orders can accept fills.`,
-        { orderId: this._s.id, fillId: fill.id },
+        { context: { orderId: this._s.id, fillId: fill.id } },
       ));
     }
 
     if (!AssetIdHelpers.equals(fill.asset, this._s.asset)) {
-      return Err(new OrderError('Fill asset does not match order asset', {
-        orderId: this._s.id, fillId: fill.id,
+      return Err(new TradingError('Fill asset does not match order asset', {
+        context: { orderId: this._s.id, fillId: fill.id },
       }));
     }
 
     if (fill.side !== this._s.side) {
-      return Err(new OrderError(
+      return Err(new TradingError(
         `Fill side (${fill.side}) does not match order side (${this._s.side})`,
-        { orderId: this._s.id, fillId: fill.id },
+        { context: { orderId: this._s.id, fillId: fill.id } },
       ));
     }
 
     if (fill.orderId !== this._s.id) {
-      return Err(new OrderError(
+      return Err(new TradingError(
         `Fill orderId (${fill.orderId}) does not match this order id (${this._s.id})`,
-        { orderId: this._s.id, fillId: fill.id },
+        { context: { orderId: this._s.id, fillId: fill.id } },
       ));
     }
 
     const newFillResult = addFill(this._s.fill, fill, this._s.size);
     if (!newFillResult.ok) {
-      return Err(new OrderError(`Failed to apply fill: ${newFillResult.error.message}`, {
-        orderId: this._s.id, fillId: fill.id,
+      return Err(new TradingError(`Failed to apply fill: ${newFillResult.error.message}`, {
+        context: { orderId: this._s.id, fillId: fill.id },
       }));
     }
 

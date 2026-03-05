@@ -23,8 +23,7 @@
  * }
  * ```
  *
- * @todo
- * OrderDeserializer и OrderViewModel находятся в пакете domain entity для удобства.
+ * FUTURE: OrderDeserializer и OrderViewModel находятся в пакете domain entity для удобства.
  * Когда архитектура устоится, их можно перенести в application layer —
  * сериализация/десериализация не является частью доменной логики.
  */
@@ -47,13 +46,7 @@ const VALID_STATUSES = new Set<string>([
 /**
  * Класс OrderDeserializer — десериализация снэпшотов в Order
  */
-export class OrderDeserializer {
-  /**
-   * Приватный конструктор — static-only class
-   */
-  private constructor() {
-    throw new Error('OrderDeserializer is a static class');
-  }
+export abstract class OrderDeserializer {
 
   /**
    * Десериализует снэпшот в Order
@@ -66,7 +59,7 @@ export class OrderDeserializer {
    * 1. Парсит все примитивы в value objects (id, asset, side, status, timestamp, fillIds)
    * 2. Строит OrderState из value objects
    * 3. Вызывает Order.rehydrate(state) для кросс-валидации и создания агрегата
-   * 4. Конвертирует OrderError → ValidationError для совместимости с внешним API
+   * 4. Конвертирует TradingError → ValidationError для совместимости с внешним API
    *
    * @example
    * ```typescript
@@ -129,9 +122,9 @@ export class OrderDeserializer {
       }
 
       const filledSize = Quantity.of(new Decimal(snap.filledSize));
-      const averagePrice = snap.averagePrice !== undefined
-        ? Price.of(new Decimal(snap.averagePrice))
-        : undefined;
+      const averagePrice = snap.averagePrice === undefined
+        ? undefined
+        : Price.of(new Decimal(snap.averagePrice));
 
       const state: OrderState = {
         id,

@@ -9,5 +9,4 @@
 
 export * from './ITradingError.js';
 export * from './TradingError.js';
-export * from './DomainError.js';
 export * from './ValidationError.js';
