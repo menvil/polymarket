@@ -1,43 +1,34 @@
 /**
- * Тесты для MarketId branded type
+ * Тесты для MarketId из @polymarket/ids
+ *
+ * @remarks
+ * Проверяет:
+ * - asMarketId() возвращает MarketId для валидных строк
+ * - asMarketId() возвращает undefined для невалидных строк
+ * - unsafeMarketId() возвращает MarketId без проверки
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { parseMarketId, asMarketId } from '../../../src/value-objects/MarketId.js';
+import { asMarketId, unsafeMarketId } from '@polymarket/ids';
 
-describe('MarketId', () => {
-  describe('parseMarketId()', () => {
-    it('возвращает MarketId для непустой строки', () => {
-      const id = parseMarketId('market-abc');
-      expect(id).toBe('market-abc');
-    });
-
-    it('возвращает undefined для пустой строки', () => {
-      expect(parseMarketId('')).toBeUndefined();
-    });
-
-    it('возвращает undefined для строки из пробелов', () => {
-      expect(parseMarketId('   ')).toBeUndefined();
-    });
-
-    it('возвращает undefined для non-string', () => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      expect(parseMarketId(null as any)).toBeUndefined();
-    });
+describe('asMarketId()', () => {
+  it('возвращает MarketId для непустой строки', () => {
+    const id = asMarketId('market-abc');
+    expect(id).toBe('market-abc');
   });
 
-  describe('asMarketId()', () => {
-    it('возвращает MarketId для валидной строки', () => {
-      const id = asMarketId('market-xyz');
-      expect(id).toBe('market-xyz');
-    });
+  it('возвращает undefined для пустой строки', () => {
+    expect(asMarketId('')).toBeUndefined();
+  });
 
-    it('бросает Error для пустой строки', () => {
-      expect(() => asMarketId('')).toThrow(Error);
-    });
+  it('возвращает undefined для строки из пробелов', () => {
+    expect(asMarketId('   ')).toBeUndefined();
+  });
+});
 
-    it('бросает Error для строки из пробелов', () => {
-      expect(() => asMarketId('   ')).toThrow(Error);
-    });
+describe('unsafeMarketId()', () => {
+  it('возвращает MarketId без проверки', () => {
+    const id = unsafeMarketId('market-xyz');
+    expect(id).toBe('market-xyz');
   });
 });
