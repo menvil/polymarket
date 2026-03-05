@@ -12,9 +12,19 @@ import {
 import { Position } from '../../../src/Position.js';
 import type { PositionParams } from '../../../src/Position.js';
 import { PositionLot } from '../../../src/core/PositionLot.js';
-import { Quantity, Price, Timestamp, Fee } from '@polymarket/value-objects';
-import { asPositionId, asAccountId, asInstrumentId, asAssetId } from '@polymarket/ids';
+import { Quantity, Price, Timestamp } from '@polymarket/value-objects';
+import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
+import { asPositionId, asInstrumentId, parseAccountId, AssetIdHelpers } from '@polymarket/ids';
 import Decimal from 'decimal.js';
+
+const TEST_ACCOUNT_ID = parseAccountId('venue:POLYMARKET:account-456')!;
+const TEST_ASSET_ID = AssetIdHelpers.USDC;
+
+/** Разворачивает Result или бросает ошибку — для использования только в тестах */
+function unwrapOk<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, msg?: string): T {
+  if (!result.ok) throw new Error(msg ?? 'Expected ok result');
+  return result.value;
+}
 
 describe('FIFO/LIFO Algorithms', () => {
   // Helper для создания лота
@@ -25,7 +35,7 @@ describe('FIFO/LIFO Algorithms', () => {
   ): PositionLot => PositionLot.create({
     quantity: Quantity.of(new Decimal(quantity)),
     entryPrice: Price.of(new Decimal(price)),
-    timestamp: Timestamp.fromEpochMs(timestampMs),
+    timestamp: Timestamp.of(new Decimal(timestampMs)),
   });
 
   // Helper для создания позиции с лотами
@@ -42,9 +52,9 @@ describe('FIFO/LIFO Algorithms', () => {
 
     const params: PositionParams = {
       id: asPositionId('pos-123')!,
-      accountId: asAccountId('account-456')!,
+      accountId: TEST_ACCOUNT_ID,
       instrumentId: asInstrumentId('market-abc')!,
-      asset: asAssetId('USDC')!,
+      asset: TEST_ASSET_ID,
       side,
       quantity: Quantity.of(totalQuantity),
       averageEntryPrice: avgPrice,
@@ -52,7 +62,7 @@ describe('FIFO/LIFO Algorithms', () => {
       lots,
     };
 
-    return Position.create(params).value()!;
+    return unwrapOk(Position.create(params), 'createPositionWithLots: Position.create failed');
   };
 
   describe('closeFIFO', () => {
@@ -72,7 +82,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition, realizedPnL, closedLots } = result.value();
+        const { newPosition, realizedPnL, closedLots } = result.value;
 
         // Проверяем новую позицию
         expect(newPosition.quantity.value().toNumber()).toBe(40); // 100 - 60
@@ -105,7 +115,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition, realizedPnL } = result.value();
+        const { newPosition, realizedPnL } = result.value;
 
         // Позиция полностью закрыта
         expect(newPosition.quantity.isZero()).toBe(true);
@@ -131,7 +141,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { realizedPnL } = result.value();
+        const { realizedPnL } = result.value;
 
         // SHORT P&L: -(closePrice - entryPrice) * quantity
         // Lot 1: -(0.60 - 0.70) * 50 = 5.0
@@ -172,7 +182,18 @@ describe('FIFO/LIFO Algorithms', () => {
     });
 
     it('should reject position with no lots', () => {
-      const position = createPositionWithLots([]);
+      // Позиция с quantity > 0 но без лотов (несогласованное состояние)
+      const position = unwrapOk(Position.create({
+        id: asPositionId('pos-123')!,
+        accountId: TEST_ACCOUNT_ID,
+        instrumentId: asInstrumentId('market-abc')!,
+        asset: TEST_ASSET_ID,
+        side: 'LONG',
+        quantity: Quantity.of(new Decimal(10)),
+        averageEntryPrice: Price.of(new Decimal(0.65)),
+        timestamp: Timestamp.now(),
+        lots: [],
+      }));
 
       const closeQty = Quantity.of(new Decimal(10));
       const closePrice = Price.of(new Decimal(0.75));
@@ -190,10 +211,10 @@ describe('FIFO/LIFO Algorithms', () => {
       const position = createPositionWithLots([lot]);
 
       // Позиция уже имеет realized P&L
-      const positionWithPnL = Position.create({
+      const positionWithPnL = unwrapOk(Position.create({
         ...position,
-        realizedPnL: Quantity.of(new Decimal(10)),
-      }).value()!;
+        realizedPnL: SignedQuantity.of(new Decimal(10)),
+      }));
 
       const closeQty = Quantity.of(new Decimal(50));
       const closePrice = Price.of(new Decimal(0.75));
@@ -202,7 +223,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition } = result.value();
+        const { newPosition } = result.value;
 
         // Новый realized = старый (10) + новый (5) = 15
         expect(newPosition.realizedPnL.value().toNumber()).toBe(15);
@@ -220,7 +241,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition, closedLots } = result.value();
+        const { newPosition, closedLots } = result.value;
 
         // Остается 70
         expect(newPosition.quantity.value().toNumber()).toBe(70);
@@ -251,7 +272,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition, realizedPnL, closedLots } = result.value();
+        const { newPosition, realizedPnL, closedLots } = result.value;
 
         // Проверяем новую позицию
         expect(newPosition.quantity.value().toNumber()).toBe(40); // 100 - 60
@@ -286,7 +307,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition, realizedPnL } = result.value();
+        const { newPosition, realizedPnL } = result.value;
 
         // Позиция полностью закрыта
         expect(newPosition.quantity.isZero()).toBe(true);
@@ -311,7 +332,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { realizedPnL } = result.value();
+        const { realizedPnL } = result.value;
 
         // SHORT P&L: -(closePrice - entryPrice) * quantity
         // Lot 2: -(0.60 - 0.70) * 50 = 5.0
@@ -338,8 +359,8 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(fifoResult.ok && lifoResult.ok).toBe(true);
       if (fifoResult.ok && lifoResult.ok) {
-        const fifoPnL = fifoResult.value().realizedPnL.value().toNumber();
-        const lifoPnL = lifoResult.value().realizedPnL.value().toNumber();
+        const fifoPnL = fifoResult.value.realizedPnL.value().toNumber();
+        const lifoPnL = lifoResult.value.realizedPnL.value().toNumber();
 
         // FIFO: (0.75 - 0.60) * 50 = 7.5
         expect(fifoPnL).toBe(7.5);
@@ -374,9 +395,9 @@ describe('FIFO/LIFO Algorithms', () => {
       expect(avgPrice.value().toNumber()).toBe(0.65);
     });
 
-    it('should return zero for empty lots', () => {
+    it('should return minimum price for empty lots', () => {
       const avgPrice = calculateWeightedAveragePrice([]);
-      expect(avgPrice.value().isZero()).toBe(true);
+      expect(avgPrice).toBe(Price.MIN);
     });
 
     it('should return single lot price', () => {
@@ -393,8 +414,8 @@ describe('FIFO/LIFO Algorithms', () => {
 
       const avgPrice = calculateWeightedAveragePrice([lot1, lot2, lot3]);
 
-      // (0.60 * 50 + 0.65 * 30 + 0.70 * 20) / 100 = 0.6395
-      expect(avgPrice.value().toNumber()).toBeCloseTo(0.6395, 4);
+      // (0.60 * 50 + 0.65 * 30 + 0.70 * 20) / 100 = 0.635
+      expect(avgPrice.value().toNumber()).toBeCloseTo(0.635, 4);
     });
   });
 
@@ -415,9 +436,9 @@ describe('FIFO/LIFO Algorithms', () => {
       // Создаем позицию с неправильным quantity
       const params: PositionParams = {
         id: asPositionId('pos-123')!,
-        accountId: asAccountId('account-456')!,
+        accountId: TEST_ACCOUNT_ID,
         instrumentId: asInstrumentId('market-abc')!,
-        asset: asAssetId('USDC')!,
+        asset: TEST_ASSET_ID,
         side: 'LONG',
         quantity: Quantity.of(new Decimal(100)), // Неправильно! Должно быть 50
         averageEntryPrice: avgPrice,
@@ -425,7 +446,7 @@ describe('FIFO/LIFO Algorithms', () => {
         lots: [lot],
       };
 
-      const position = Position.create(params).value()!;
+      const position = unwrapOk(Position.create(params));
 
       expect(validateLotsConsistency(position)).toBe(false);
     });
@@ -436,9 +457,9 @@ describe('FIFO/LIFO Algorithms', () => {
       // Создаем позицию с неправильным average price
       const params: PositionParams = {
         id: asPositionId('pos-123')!,
-        accountId: asAccountId('account-456')!,
+        accountId: TEST_ACCOUNT_ID,
         instrumentId: asInstrumentId('market-abc')!,
-        asset: asAssetId('USDC')!,
+        asset: TEST_ASSET_ID,
         side: 'LONG',
         quantity: Quantity.of(new Decimal(100)),
         averageEntryPrice: Price.of(new Decimal(0.75)), // Неправильно! Должно быть 0.65
@@ -446,7 +467,7 @@ describe('FIFO/LIFO Algorithms', () => {
         lots: [lot],
       };
 
-      const position = Position.create(params).value()!;
+      const position = unwrapOk(Position.create(params));
 
       expect(validateLotsConsistency(position)).toBe(false);
     });
@@ -454,9 +475,9 @@ describe('FIFO/LIFO Algorithms', () => {
     it('should validate empty position', () => {
       const params: PositionParams = {
         id: asPositionId('pos-123')!,
-        accountId: asAccountId('account-456')!,
+        accountId: TEST_ACCOUNT_ID,
         instrumentId: asInstrumentId('market-abc')!,
-        asset: asAssetId('USDC')!,
+        asset: TEST_ASSET_ID,
         side: 'LONG',
         quantity: Quantity.ZERO,
         averageEntryPrice: Price.of(new Decimal(0.65)),
@@ -464,7 +485,7 @@ describe('FIFO/LIFO Algorithms', () => {
         lots: [],
       };
 
-      const position = Position.create(params).value()!;
+      const position = unwrapOk(Position.create(params));
 
       expect(validateLotsConsistency(position)).toBe(true);
     });
@@ -475,9 +496,9 @@ describe('FIFO/LIFO Algorithms', () => {
       // Позиция с quantity=0 но есть лоты
       const params: PositionParams = {
         id: asPositionId('pos-123')!,
-        accountId: asAccountId('account-456')!,
+        accountId: TEST_ACCOUNT_ID,
         instrumentId: asInstrumentId('market-abc')!,
-        asset: asAssetId('USDC')!,
+        asset: TEST_ASSET_ID,
         side: 'LONG',
         quantity: Quantity.ZERO,
         averageEntryPrice: Price.of(new Decimal(0.65)),
@@ -485,7 +506,7 @@ describe('FIFO/LIFO Algorithms', () => {
         lots: [lot],
       };
 
-      const position = Position.create(params).value()!;
+      const position = unwrapOk(Position.create(params));
 
       expect(validateLotsConsistency(position)).toBe(false);
     });
@@ -503,7 +524,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition } = result.value();
+        const { newPosition } = result.value;
         expect(newPosition.quantity.value().toNumber()).toBeCloseTo(0.0000005, 10);
       }
     });
@@ -520,7 +541,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { realizedPnL } = result.value();
+        const { realizedPnL } = result.value;
         // (0.65 - 0.75) * 50 = -5
         expect(realizedPnL.value().toNumber()).toBe(-5);
       }

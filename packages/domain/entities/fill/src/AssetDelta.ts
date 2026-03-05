@@ -13,40 +13,47 @@
  * - (+) положительный → зачисление (credit): актив прибыл
  * - (-) отрицательный → списание (debit): актив ушёл
  *
- * ### Почему Decimal, а не VO:
- * В отличие от Quantity (неотрицательный), AssetDelta предназначен
- * именно для знаковых изменений, поэтому использует Decimal напрямую.
+ * ### Почему SignedQuantity:
+ * SignedQuantity — специализированный VO для знаковых количеств:
+ * гарантирует конечность значения, нормализует -0 → 0, предоставляет
+ * семантические методы (isPositive, isNegative, isZero, neg, abs).
+ * Это согласуется с Position.realizedPnL и другими знаковыми полями домена.
  *
  * @example
  * ```typescript
  * // BUY YES 10 @ 0.62
  * const positionDelta: AssetDelta = fill.getSignedQuantity();
- * console.log(positionDelta.asset);         // YES token AssetId
- * console.log(positionDelta.amount.toNumber()); // +10
+ * console.log(positionDelta.asset);              // YES token AssetId
+ * console.log(positionDelta.amount.toNumber());  // +10
+ * console.log(positionDelta.amount.isPositive()); // true
  *
  * const cashDelta: AssetDelta = fill.getCashFlow();
- * console.log(cashDelta.asset);             // USDC AssetId
- * console.log(cashDelta.amount.toNumber()); // -6.20
+ * console.log(cashDelta.asset);              // USDC AssetId
+ * console.log(cashDelta.amount.toNumber());  // -6.20
+ * console.log(cashDelta.amount.isNegative()); // true
  * ```
  */
 
 import type { AssetId } from '@polymarket/ids';
-import type Decimal from 'decimal.js';
+import type { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 
 /**
  * Знаковое изменение баланса конкретного актива
  *
  * @remarks
  * Все поля readonly — неизменяемый plain object.
- * amount может быть отрицательным (списание) или положительным (зачисление).
+ * amount — SignedQuantity VO, может быть отрицательным (списание) или положительным (зачисление).
  */
 export interface AssetDelta {
   /** Актив, баланс которого изменился */
   readonly asset: AssetId;
   /**
-   * Знаковое изменение баланса
+   * Знаковое изменение баланса (SignedQuantity VO)
    * - (+) credit: актив зачислен
    * - (-) debit: актив списан
+   *
+   * Для получения числового значения: amount.toNumber()
+   * Для Decimal арифметики: amount.value()
    */
-  readonly amount: Decimal;
+  readonly amount: SignedQuantity;
 }

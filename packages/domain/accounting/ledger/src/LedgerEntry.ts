@@ -151,7 +151,7 @@ export class LedgerEntry {
     if (params.type === 'FEE_DEBIT' && !params.balanceDelta.amount.isNegative()) {
       return Err(
         new ValidationError('LedgerEntry of type FEE_DEBIT must have negative balanceDelta.amount', {
-          context: { type: params.type, amount: params.balanceDelta.amount.toNumber() },
+          context: { type: params.type, amount: params.balanceDelta.amount.value().toNumber() },
         })
       );
     }

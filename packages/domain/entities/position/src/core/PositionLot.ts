@@ -231,7 +231,7 @@ export class PositionLot {
   public toString(): string {
     const qtyStr = this.quantity.value().toFixed(2);
     const priceStr = this.entryPrice.value().toFixed(4);
-    const timeStr = new Date(this.timestamp.value).toISOString();
+    const timeStr = new Date(this.timestamp.toNumber()).toISOString();
     return `${qtyStr} @ ${priceStr} (${timeStr})`;
   }
 
@@ -256,7 +256,7 @@ export class PositionLot {
     return {
       quantity: this.quantity.value().toNumber(),
       entryPrice: this.entryPrice.value().toNumber(),
-      timestamp: this.timestamp.value,
+      timestamp: this.timestamp.toNumber(),
       fee: this.fee?.quantity.amount().value().toNumber(),
     };
   }

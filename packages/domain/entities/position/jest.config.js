@@ -8,10 +8,9 @@ export default {
     '^@polymarket/result$': '<rootDir>/../../../foundation/result/src/index.ts',
     '^@polymarket/ids$': '<rootDir>/../../../foundation/ids/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../value-objects/src/index.ts',
-    '^@polymarket/value-objects/asset-quantity$': '<rootDir>/../../value-objects/src/asset-quantity/index.ts',
     '^@polymarket/value-objects/signed-quantity$': '<rootDir>/../../value-objects/src/signed-quantity/index.ts',
+    '^@polymarket/value-objects/asset-quantity$': '<rootDir>/../../value-objects/src/asset-quantity/index.ts',
     '^@polymarket/math$': '<rootDir>/../../../foundation/math/src/index.ts',
-    '^@polymarket/fill$': '<rootDir>/../../entities/fill/src/index.ts',
   },
   transform: {
     '^.+\\.ts$': [

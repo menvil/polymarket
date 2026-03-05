@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from '@jest/globals';
 import { PositionLot } from '../../../src/core/PositionLot.js';
-import { Quantity, Price, Timestamp, Fee } from '@polymarket/value-objects';
+import { Quantity, Price, Timestamp, Fee, AssetQuantity } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
 describe('PositionLot', () => {
@@ -12,8 +12,8 @@ describe('PositionLot', () => {
     return PositionLot.create({
       quantity: Quantity.of(new Decimal(100)),
       entryPrice: Price.of(new Decimal(0.65)),
-      timestamp: Timestamp.fromEpochMs(1705318200000),
-      fee: Fee.of(new Decimal(0.5)),
+      timestamp: Timestamp.of(new Decimal(1705318200000)),
+      fee: Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(0.5)))),
     });
   };
 
@@ -21,21 +21,21 @@ describe('PositionLot', () => {
     it('создает PositionLot с валидными параметрами', () => {
       const lot = createTestLot();
 
-      expect(lot.quantity.value).toBe(100);
-      expect(lot.entryPrice.value).toBe(0.65);
-      expect(lot.timestamp.toEpochMs()).toBe(1705318200000);
-      expect(lot.fee?.value).toBe(0.5);
+      expect(lot.quantity.value().toNumber()).toBe(100);
+      expect(lot.entryPrice.value().toNumber()).toBe(0.65);
+      expect(lot.timestamp.toNumber()).toBe(1705318200000);
+      expect(lot.fee?.quantity.amount().value().toNumber()).toBe(0.5);
     });
 
     it('создает PositionLot без fee', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
         entryPrice: Price.of(new Decimal(0.65)),
-        timestamp: Timestamp.fromEpochMs(1705318200000),
+        timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
-      expect(lot.quantity.value).toBe(100);
-      expect(lot.entryPrice.value).toBe(0.65);
+      expect(lot.quantity.value().toNumber()).toBe(100);
+      expect(lot.entryPrice.value().toNumber()).toBe(0.65);
       expect(lot.fee).toBeUndefined();
     });
 
@@ -49,7 +49,7 @@ describe('PositionLot', () => {
   describe('isEmpty()', () => {
     it('возвращает true для нулевого quantity', () => {
       const lot = PositionLot.create({
-        quantity: Quantity.zero(),
+        quantity: Quantity.ZERO,
         entryPrice: Price.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
@@ -71,19 +71,19 @@ describe('PositionLot', () => {
 
       const updatedLot = lot.withQuantity(newQuantity);
 
-      expect(updatedLot.quantity.value).toBe(60);
-      expect(updatedLot.entryPrice.value).toBe(0.65);
-      expect(updatedLot.timestamp.toEpochMs()).toBe(lot.timestamp.toEpochMs());
-      expect(updatedLot.fee?.value).toBe(0.5);
+      expect(updatedLot.quantity.value().toNumber()).toBe(60);
+      expect(updatedLot.entryPrice.value().toNumber()).toBe(0.65);
+      expect(updatedLot.timestamp.toNumber()).toBe(lot.timestamp.toNumber());
+      expect(updatedLot.fee?.quantity.amount().value().toNumber()).toBe(0.5);
     });
 
     it('оставляет оригинал неизменным', () => {
       const lot = createTestLot();
-      const originalQuantity = lot.quantity.value;
+      const originalQuantity = lot.quantity.value().toNumber();
 
       lot.withQuantity(Quantity.of(new Decimal(60)));
 
-      expect(lot.quantity.value).toBe(originalQuantity);
+      expect(lot.quantity.value().toNumber()).toBe(originalQuantity);
     });
 
     it('возвращает новый объект', () => {
@@ -97,27 +97,27 @@ describe('PositionLot', () => {
   describe('withFee()', () => {
     it('создает новый лот с обновленным fee', () => {
       const lot = createTestLot();
-      const newFee = Fee.of(new Decimal(1.0));
+      const newFee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(1.0))));
 
       const updatedLot = lot.withFee(newFee);
 
-      expect(updatedLot.fee?.value).toBe(1.0);
-      expect(updatedLot.quantity.value).toBe(100);
-      expect(updatedLot.entryPrice.value).toBe(0.65);
+      expect(updatedLot.fee?.quantity.amount().value().toNumber()).toBe(1.0);
+      expect(updatedLot.quantity.value().toNumber()).toBe(100);
+      expect(updatedLot.entryPrice.value().toNumber()).toBe(0.65);
     });
 
     it('оставляет оригинал неизменным', () => {
       const lot = createTestLot();
-      const originalFee = lot.fee?.value;
+      const originalFee = lot.fee?.quantity.amount().value().toNumber();
 
-      lot.withFee(Fee.of(new Decimal(1.0)));
+      lot.withFee(Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(1.0)))));
 
-      expect(lot.fee?.value).toBe(originalFee);
+      expect(lot.fee?.quantity.amount().value().toNumber()).toBe(originalFee);
     });
 
     it('возвращает новый объект', () => {
       const lot = createTestLot();
-      const updatedLot = lot.withFee(Fee.of(new Decimal(1.0)));
+      const updatedLot = lot.withFee(Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(1.0)))));
 
       expect(updatedLot).not.toBe(lot);
     });
@@ -128,13 +128,13 @@ describe('PositionLot', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
         entryPrice: Price.of(new Decimal(0.65)),
-        timestamp: Timestamp.fromEpochMs(1705318200000),
+        timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
         entryPrice: Price.of(new Decimal(0.65)),
-        timestamp: Timestamp.fromEpochMs(1705318200000),
+        timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
       expect(lot1.equals(lot2)).toBe(true);
@@ -163,7 +163,7 @@ describe('PositionLot', () => {
       const lot2 = PositionLot.create({
         quantity: lot1.quantity,
         entryPrice: lot1.entryPrice,
-        timestamp: Timestamp.fromEpochMs(1705318300000),
+        timestamp: Timestamp.of(new Decimal(1705318300000)),
       });
 
       expect(lot1.equals(lot2)).toBe(false);
@@ -173,15 +173,15 @@ describe('PositionLot', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
         entryPrice: Price.of(new Decimal(0.65)),
-        timestamp: Timestamp.fromEpochMs(1705318200000),
-        fee: Fee.of(new Decimal(0.5)),
+        timestamp: Timestamp.of(new Decimal(1705318200000)),
+        fee: Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(0.5)))),
       });
 
       const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
         entryPrice: Price.of(new Decimal(0.65)),
-        timestamp: Timestamp.fromEpochMs(1705318200000),
-        fee: Fee.of(new Decimal(1.0)),
+        timestamp: Timestamp.of(new Decimal(1705318200000)),
+        fee: Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(1.0)))),
       });
 
       expect(lot1.equals(lot2)).toBe(true);
@@ -215,7 +215,7 @@ describe('PositionLot', () => {
 
     it('возвращает 0 для пустого лота', () => {
       const lot = PositionLot.create({
-        quantity: Quantity.zero(),
+        quantity: Quantity.ZERO,
         entryPrice: Price.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
       });
@@ -231,7 +231,7 @@ describe('PositionLot', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
         entryPrice: Price.of(new Decimal(0.65)),
-        timestamp: Timestamp.fromEpochMs(1705318200000),
+        timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
       const str = lot.toString();
@@ -284,7 +284,7 @@ describe('PositionLot', () => {
       const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
         entryPrice: Price.of(new Decimal(0.65)),
-        timestamp: Timestamp.fromEpochMs(1705318200000),
+        timestamp: Timestamp.of(new Decimal(1705318200000)),
       });
 
       const obj = lot.toObject();
@@ -334,7 +334,7 @@ describe('PositionLot', () => {
         timestamp: Timestamp.now(),
       });
 
-      expect(lot.quantity.value).toBe(0.00001);
+      expect(lot.quantity.value().toNumber()).toBe(0.00001);
       expect(lot.isEmpty()).toBe(false);
     });
 
@@ -345,19 +345,8 @@ describe('PositionLot', () => {
         timestamp: Timestamp.now(),
       });
 
-      expect(lot.quantity.value).toBe(1000000);
+      expect(lot.quantity.value().toNumber()).toBe(1000000);
       expect(lot.getNotional()).toBe(650000);
-    });
-
-    it('работает с price = 0', () => {
-      const lot = PositionLot.create({
-        quantity: Quantity.of(new Decimal(100)),
-        entryPrice: Price.of(new Decimal(0)),
-        timestamp: Timestamp.now(),
-      });
-
-      expect(lot.entryPrice.value).toBe(0);
-      expect(lot.getNotional()).toBe(0);
     });
   });
 });

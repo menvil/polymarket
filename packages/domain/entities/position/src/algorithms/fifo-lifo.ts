@@ -30,6 +30,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import { Quantity, Price } from '@polymarket/value-objects';
+import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import Decimal from 'decimal.js';
 import { Position } from '../Position.js';
 import { PositionLot } from '../core/PositionLot.js';
@@ -42,7 +43,7 @@ import { PositionLot } from '../core/PositionLot.js';
  */
 export interface CloseResult {
   readonly newPosition: Position;
-  readonly realizedPnL: Quantity;
+  readonly realizedPnL: SignedQuantity;
   readonly closedLots: readonly ClosedLotInfo[];
 }
 
@@ -56,7 +57,7 @@ export interface ClosedLotInfo {
   readonly lot: PositionLot;
   readonly closedQuantity: Quantity;
   readonly closePrice: Price;
-  readonly pnl: Quantity;
+  readonly pnl: SignedQuantity;
 }
 
 /**
@@ -112,7 +113,7 @@ export function closeFIFO(
 
   // Сортируем лоты по timestamp (старые первые)
   const sortedLots = [...position.lots].sort((a, b) =>
-    a.timestamp.value - b.timestamp.value
+    a.timestamp.toNumber() - b.timestamp.toNumber()
   );
 
   // Закрываем лоты по алгоритму FIFO
@@ -172,7 +173,7 @@ export function closeLIFO(
 
   // Сортируем лоты по timestamp (новые первые)
   const sortedLots = [...position.lots].sort((a, b) =>
-    b.timestamp.value - a.timestamp.value
+    b.timestamp.toNumber() - a.timestamp.toNumber()
   );
 
   // Закрываем лоты по алгоритму LIFO
@@ -276,7 +277,7 @@ function closeLots(
         lot,
         closedQuantity: lot.quantity,
         closePrice,
-        pnl: Quantity.of(pnl),
+        pnl: SignedQuantity.of(pnl),
       });
     } else {
       // Случай 2: Частичное закрытие лота
@@ -288,7 +289,7 @@ function closeLots(
         lot,
         closedQuantity: closedPart,
         closePrice,
-        pnl: Quantity.of(pnl),
+        pnl: SignedQuantity.of(pnl),
       });
 
       // Создаем новый лот с оставшимся количеством
@@ -313,7 +314,7 @@ function closeLots(
     averageEntryPrice: position.averageEntryPrice,
     timestamp: position.timestamp,
     lots: newLots,
-    realizedPnL: Quantity.of(newRealizedPnL),
+    realizedPnL: SignedQuantity.of(newRealizedPnL),
     fees: position.fees,
   });
 
@@ -323,7 +324,7 @@ function closeLots(
 
   return Ok({
     newPosition: newPositionResult.value,
-    realizedPnL: Quantity.of(totalRealizedPnL),
+    realizedPnL: SignedQuantity.of(totalRealizedPnL),
     closedLots,
   });
 }
@@ -379,7 +380,7 @@ function calculateLotPnL(
  */
 export function calculateWeightedAveragePrice(lots: readonly PositionLot[]): Price {
   if (lots.length === 0) {
-    return Price.of(new Decimal(0));
+    return Price.MIN;
   }
 
   let totalNotional = new Decimal(0);
@@ -392,7 +393,7 @@ export function calculateWeightedAveragePrice(lots: readonly PositionLot[]): Pri
   }
 
   if (totalQuantity.isZero()) {
-    return Price.of(new Decimal(0));
+    return Price.MIN;
   }
 
   const avgPrice = totalNotional.dividedBy(totalQuantity);

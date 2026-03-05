@@ -6,17 +6,21 @@ import { describe, it, expect } from '@jest/globals';
 import { Position } from '../../src/Position.js';
 import type { PositionParams } from '../../src/Position.js';
 import { PositionLot } from '../../src/core/PositionLot.js';
-import { Quantity, Price, Timestamp, Fee } from '@polymarket/value-objects';
-import { asPositionId, asAccountId, asInstrumentId, asAssetId } from '@polymarket/ids';
+import { Quantity, Price, Timestamp, Fee, AssetQuantity } from '@polymarket/value-objects';
+import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
+import { asPositionId, asInstrumentId, parseAccountId, AssetIdHelpers } from '@polymarket/ids';
 import Decimal from 'decimal.js';
+
+const TEST_ACCOUNT_ID = parseAccountId('venue:POLYMARKET:account-456')!;
+const TEST_ASSET_ID = AssetIdHelpers.USDC;
 
 describe('Position Entity', () => {
   // Helper для создания валидных параметров
   const createValidParams = (overrides?: Partial<PositionParams>): PositionParams => ({
     id: asPositionId('pos-123')!,
-    accountId: asAccountId('account-456')!,
+    accountId: TEST_ACCOUNT_ID,
     instrumentId: asInstrumentId('market-abc-token-yes')!,
-    asset: asAssetId('USDC')!,
+    asset: TEST_ASSET_ID,
     side: 'LONG',
     quantity: Quantity.of(new Decimal(100)),
     averageEntryPrice: Price.of(new Decimal(0.65)),
@@ -32,7 +36,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.id).toBe(params.id);
         expect(position.accountId).toBe(params.accountId);
         expect(position.instrumentId).toBe(params.instrumentId);
@@ -119,7 +123,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.realizedPnL.isZero()).toBe(true);
         expect(position.fees.isZero()).toBe(true);
       }
@@ -127,14 +131,14 @@ describe('Position Entity', () => {
 
     it('should accept provided optional fields', () => {
       const params = createValidParams({
-        realizedPnL: Quantity.of(new Decimal(50)),
-        fees: Fee.of(Quantity.of(new Decimal(2)), asAssetId('USDC')!),
+        realizedPnL: SignedQuantity.of(new Decimal(50)),
+        fees: Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(2)))),
       });
       const result = Position.create(params);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.realizedPnL.value().toNumber()).toBe(50);
         expect(position.fees.isZero()).toBe(false);
       }
@@ -148,7 +152,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.getStatus()).toBe('OPEN');
         expect(position.isOpen()).toBe(true);
         expect(position.isClosed()).toBe(false);
@@ -163,7 +167,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.getStatus()).toBe('CLOSED');
         expect(position.isOpen()).toBe(false);
         expect(position.isClosed()).toBe(true);
@@ -171,11 +175,11 @@ describe('Position Entity', () => {
     });
 
     it('should return OPEN for position with matching lots', () => {
-      const lot: PositionLot = {
+      const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(100)),
         entryPrice: Price.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
-      };
+      });
 
       const params = createValidParams({
         lots: [lot],
@@ -184,7 +188,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.getStatus()).toBe('OPEN');
       }
     });
@@ -201,7 +205,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         const currentPrice = Price.of(new Decimal(0.75)); // +0.10
         const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 
@@ -220,7 +224,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         const currentPrice = Price.of(new Decimal(0.55)); // -0.10
         const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 
@@ -239,7 +243,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         const currentPrice = Price.of(new Decimal(0.55)); // -0.10 (profit for SHORT)
         const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 
@@ -258,7 +262,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         const currentPrice = Price.of(new Decimal(0.75)); // +0.10 (loss for SHORT)
         const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 
@@ -275,7 +279,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         const currentPrice = Price.of(new Decimal(0.75));
         const unrealizedPnL = position.getUnrealizedPnL(currentPrice);
 
@@ -288,13 +292,13 @@ describe('Position Entity', () => {
         side: 'LONG',
         quantity: Quantity.of(new Decimal(100)),
         averageEntryPrice: Price.of(new Decimal(0.65)),
-        realizedPnL: Quantity.of(new Decimal(15)), // already realized 15
+        realizedPnL: SignedQuantity.of(new Decimal(15)), // already realized 15
       });
       const result = Position.create(params);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         const currentPrice = Price.of(new Decimal(0.75)); // unrealized = 10
         const totalPnL = position.getTotalPnL(currentPrice);
 
@@ -308,13 +312,13 @@ describe('Position Entity', () => {
         side: 'LONG',
         quantity: Quantity.of(new Decimal(100)),
         averageEntryPrice: Price.of(new Decimal(0.65)),
-        realizedPnL: Quantity.of(new Decimal(-5)), // already lost 5
+        realizedPnL: SignedQuantity.of(new Decimal(-5)), // already lost 5
       });
       const result = Position.create(params);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         const currentPrice = Price.of(new Decimal(0.75)); // unrealized = 10
         const totalPnL = position.getTotalPnL(currentPrice);
 
@@ -333,17 +337,17 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.lots.length).toBe(0);
       }
     });
 
     it('should handle single lot', () => {
-      const lot: PositionLot = {
+      const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
         entryPrice: Price.of(new Decimal(0.60)),
         timestamp: Timestamp.now(),
-      };
+      });
 
       const params = createValidParams({
         lots: [lot],
@@ -352,24 +356,24 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.lots.length).toBe(1);
         expect(position.lots[0].quantity.value().toNumber()).toBe(50);
       }
     });
 
     it('should handle multiple lots', () => {
-      const lot1: PositionLot = {
+      const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
         entryPrice: Price.of(new Decimal(0.60)),
         timestamp: Timestamp.now(),
-      };
+      });
 
-      const lot2: PositionLot = {
+      const lot2 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
         entryPrice: Price.of(new Decimal(0.70)),
         timestamp: Timestamp.now(),
-      };
+      });
 
       const params = createValidParams({
         lots: [lot1, lot2],
@@ -378,18 +382,18 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.lots.length).toBe(2);
       }
     });
 
     it('should handle lot with fee', () => {
-      const lot: PositionLot = {
+      const lot = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
         entryPrice: Price.of(new Decimal(0.60)),
         timestamp: Timestamp.now(),
-        fee: Fee.of(Quantity.of(new Decimal(1)), asAssetId('USDC')!),
-      };
+        fee: Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(1)))),
+      });
 
       const params = createValidParams({
         lots: [lot],
@@ -398,7 +402,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.lots[0].fee).toBeDefined();
       }
     });
@@ -410,17 +414,17 @@ describe('Position Entity', () => {
         side: 'LONG',
         quantity: Quantity.of(new Decimal(100)),
         averageEntryPrice: Price.of(new Decimal(0.65)),
-        realizedPnL: Quantity.of(new Decimal(10)),
+        realizedPnL: SignedQuantity.of(new Decimal(10)),
       });
       const result = Position.create(params);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         const json = position.toJSON();
 
         expect(json.id).toBe('pos-123');
-        expect(json.accountId).toBe('account-456');
+        expect(json.accountId).toBe(TEST_ACCOUNT_ID);
         expect(json.side).toBe('LONG');
         expect(json.quantity).toBe(100);
         expect(json.averageEntryPrice).toBe(0.65);
@@ -436,7 +440,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         const str = position.toString();
 
         expect(str).toContain('Position[pos-123]');
@@ -455,7 +459,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
 
         // TypeScript compile-time check - runtime check not needed
         // These should cause compile errors if uncommented:
@@ -478,7 +482,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.quantity.isZero()).toBe(true);
         expect(position.isClosed()).toBe(true);
       }
@@ -492,7 +496,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.quantity.value().toNumber()).toBe(0.000001);
       }
     });
@@ -505,7 +509,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.quantity.value().toNumber()).toBe(1000000);
       }
     });
@@ -518,7 +522,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.averageEntryPrice.value().toNumber()).toBe(0.01);
       }
     });
@@ -531,7 +535,7 @@ describe('Position Entity', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const position = result.value();
+        const position = result.value;
         expect(position.averageEntryPrice.value().toNumber()).toBe(0.99);
       }
     });

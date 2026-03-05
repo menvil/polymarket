@@ -20,6 +20,7 @@ import {
 } from '@polymarket/ids';
 import { Price, Quantity, TimestampService, Fee } from '@polymarket/value-objects';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
+import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import Decimal from 'decimal.js';
 
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -339,7 +340,7 @@ describe('Ledger', () => {
       const result = LedgerEntry.create({
         fillId: asFillId('fill-123')!,
         accountId: makeAccountId(),
-        balanceDelta: { asset: tokenId, amount: new Decimal(0) },
+        balanceDelta: { asset: tokenId, amount: SignedQuantity.of(new Decimal(0)) },
         type: 'POSITION_DELTA',
         timestamp: unwrap(TimestampService.create(1700000000000)),
       });
@@ -354,7 +355,7 @@ describe('Ledger', () => {
       const result = LedgerEntry.create({
         fillId: asFillId('fill-123')!,
         accountId: makeAccountId(),
-        balanceDelta: { asset: AssetIdHelpers.USDC, amount: new Decimal('0.02') },
+        balanceDelta: { asset: AssetIdHelpers.USDC, amount: SignedQuantity.of(new Decimal('0.02')) },
         type: 'FEE_DEBIT',
         timestamp: unwrap(TimestampService.create(1700000000000)),
       });
@@ -370,7 +371,7 @@ describe('Ledger', () => {
       const result = LedgerEntry.create({
         fillId: asFillId('fill-123')!,
         accountId: makeAccountId(),
-        balanceDelta: { asset: tokenId, amount: new Decimal('10') },
+        balanceDelta: { asset: tokenId, amount: SignedQuantity.of(new Decimal('10')) },
         type: 'POSITION_DELTA',
         timestamp: unwrap(TimestampService.create(1700000000000)),
       });
@@ -382,7 +383,7 @@ describe('Ledger', () => {
       const result = LedgerEntry.create({
         fillId: asFillId('fill-123')!,
         accountId: makeAccountId(),
-        balanceDelta: { asset: AssetIdHelpers.USDC, amount: new Decimal('-0.02') },
+        balanceDelta: { asset: AssetIdHelpers.USDC, amount: SignedQuantity.of(new Decimal('-0.02')) },
         type: 'FEE_DEBIT',
         timestamp: unwrap(TimestampService.create(1700000000000)),
       });

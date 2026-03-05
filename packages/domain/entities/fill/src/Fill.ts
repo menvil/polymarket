@@ -78,6 +78,7 @@ import { assetIdToString } from '@polymarket/ids';
 import type { Price, Side, Timestamp, Fee } from '@polymarket/value-objects';
 import { Quantity } from '@polymarket/value-objects';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
+import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import type { AssetDelta } from './AssetDelta.js';
 
 /**
@@ -246,8 +247,8 @@ export class Fill {
    * ```
    */
   public getSignedQuantity(): AssetDelta {
-    const amount = this.side === 'BUY' ? this.size.value() : this.size.value().negated();
-    return { asset: this.tokenId, amount };
+    const raw = this.side === 'BUY' ? this.size.value() : this.size.value().negated();
+    return { asset: this.tokenId, amount: SignedQuantity.of(raw) };
   }
 
   /**
@@ -273,8 +274,8 @@ export class Fill {
    */
   public getCashFlow(): AssetDelta {
     const notional = this.price.value().times(this.size.value());
-    const amount = this.side === 'BUY' ? notional.negated() : notional;
-    return { asset: this.settlementAssetId, amount };
+    const raw = this.side === 'BUY' ? notional.negated() : notional;
+    return { asset: this.settlementAssetId, amount: SignedQuantity.of(raw) };
   }
 
   /**
@@ -329,7 +330,7 @@ export class Fill {
     const feeFlow = this.getFeeFlow();
     return {
       asset: this.settlementAssetId,
-      amount: cashFlow.amount.plus(feeFlow.amount),
+      amount: SignedQuantity.of(cashFlow.amount.value().plus(feeFlow.amount.value())),
     };
   }
 

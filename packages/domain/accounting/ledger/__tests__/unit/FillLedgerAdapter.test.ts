@@ -175,7 +175,7 @@ describe('FillLedgerAdapter', () => {
         e => assetIdToString(e.balanceDelta.asset) === usdcStr
       );
       const totalUsdcDelta = usdcEntries.reduce(
-        (acc, e) => acc.plus(e.balanceDelta.amount),
+        (acc, e) => acc.plus(e.balanceDelta.amount.value()),
         new Decimal(0)
       );
 

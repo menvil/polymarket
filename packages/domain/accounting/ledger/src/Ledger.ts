@@ -160,7 +160,7 @@ export class Ledger {
    */
   public getBalance(accountId: AccountId, asset: AssetId): Decimal {
     return this.getEntries({ accountId, asset }).reduce(
-      (acc, e) => acc.plus(e.balanceDelta.amount),
+      (acc, e) => acc.plus(e.balanceDelta.amount.value()),
       new Decimal(0)
     );
   }
@@ -192,7 +192,7 @@ export class Ledger {
     for (const entry of entries) {
       const key = assetIdToString(entry.balanceDelta.asset);
       const current = balances.get(key) ?? new Decimal(0);
-      balances.set(key, current.plus(entry.balanceDelta.amount));
+      balances.set(key, current.plus(entry.balanceDelta.amount.value()));
     }
 
     return balances;

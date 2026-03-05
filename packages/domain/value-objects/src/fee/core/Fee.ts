@@ -49,9 +49,9 @@
 import type { AssetId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { addDecimal } from '@polymarket/math';
-import type Decimal from 'decimal.js';
 import { AssetQuantity } from '../../asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
+import { SignedQuantity } from '../../signed-quantity/core/SignedQuantity.js';
 import { FeeOperationError } from '../errors/FeeOperationError.js';
 import { FeeOperationErrorReason } from '../errors/FeeOperationErrorReason.js';
 
@@ -270,12 +270,12 @@ export class Fee {
   /**
    * Возвращает знаковое изменение баланса от списания комиссии
    *
-   * @returns Объект с asset и отрицательным amount (комиссия всегда расход)
+   * @returns Объект с asset и отрицательным amount в виде SignedQuantity
    *
    * @remarks
    * Инкапсулирует доступ к внутреннему представлению Fee.
    * Вместо того чтобы потребитель сам делал `fee.quantity.amount().value().negated()`,
-   * Fee предоставляет готовый знаковый delta.
+   * Fee предоставляет готовый знаковый delta как SignedQuantity VO.
    *
    * Возвращаемый тип структурно совместим с `AssetDelta` из `@polymarket/fill`.
    * Fee не импортирует `AssetDelta` напрямую (избегаем циклической зависимости),
@@ -289,18 +289,19 @@ export class Fee {
    * ```typescript
    * // Fee 0.02 USDC
    * const delta = fee.toDebitDelta();
-   * console.log(delta.amount.toNumber()); // -0.02
-   * console.log(delta.asset);             // USDC AssetId
+   * console.log(delta.amount.toNumber());   // -0.02
+   * console.log(delta.amount.isNegative()); // true
+   * console.log(delta.asset);               // USDC AssetId
    *
    * // Zero fee
    * const zeroDelta = Fee.zero(AssetIdHelpers.USDC).toDebitDelta();
    * console.log(zeroDelta.amount.isZero()); // true
    * ```
    */
-  public toDebitDelta(): { readonly asset: AssetId; readonly amount: Decimal } {
+  public toDebitDelta(): { readonly asset: AssetId; readonly amount: SignedQuantity } {
     return {
       asset: this.asset,
-      amount: this._quantity.amount().value().negated(),
+      amount: SignedQuantity.of(this._quantity.amount().value().negated()),
     };
   }
 

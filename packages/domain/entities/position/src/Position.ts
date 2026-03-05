@@ -49,6 +49,7 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { ValidationError } from '@polymarket/errors';
 import type { PositionId, AccountId, InstrumentId, AssetId } from '@polymarket/ids';
 import { PositionLot } from './core/PositionLot.js';
@@ -86,7 +87,7 @@ export interface PositionParams {
   readonly averageEntryPrice: Price;
   readonly timestamp: Timestamp;
   readonly lots: readonly PositionLot[];
-  readonly realizedPnL?: Quantity;
+  readonly realizedPnL?: SignedQuantity;
   readonly fees?: Fee;
 }
 
@@ -107,7 +108,7 @@ export class Position {
   public readonly averageEntryPrice: Price;
   public readonly timestamp: Timestamp;
   public readonly lots: readonly PositionLot[];
-  public readonly realizedPnL: Quantity;
+  public readonly realizedPnL: SignedQuantity;
   public readonly fees: Fee;
 
   /**
@@ -123,7 +124,7 @@ export class Position {
     this.averageEntryPrice = params.averageEntryPrice;
     this.timestamp = params.timestamp;
     this.lots = params.lots;
-    this.realizedPnL = params.realizedPnL || Quantity.ZERO;
+    this.realizedPnL = params.realizedPnL ?? SignedQuantity.ZERO;
     this.fees = params.fees || Fee.zero(params.asset);
   }
 
@@ -246,15 +247,15 @@ export class Position {
    * @param currentPrice - Текущая рыночная цена
    * @returns Unrealized P&L
    */
-  public getUnrealizedPnL(currentPrice: Price): Quantity {
+  public getUnrealizedPnL(currentPrice: Price): SignedQuantity {
     if (this.quantity.isZero()) {
-      return Quantity.ZERO;
+      return SignedQuantity.ZERO;
     }
 
     const priceDiff = currentPrice.value().minus(this.averageEntryPrice.value());
     const pnl = priceDiff.times(this.quantity.value());
 
-    return Quantity.of(this.side === 'LONG' ? pnl : pnl.negated());
+    return SignedQuantity.of(this.side === 'LONG' ? pnl : pnl.negated());
   }
 
   /**
@@ -263,10 +264,10 @@ export class Position {
    * @param currentPrice - Текущая рыночная цена
    * @returns Total P&L
    */
-  public getTotalPnL(currentPrice: Price): Quantity {
+  public getTotalPnL(currentPrice: Price): SignedQuantity {
     const unrealized = this.getUnrealizedPnL(currentPrice);
     const total = this.realizedPnL.value().plus(unrealized.value());
-    return Quantity.of(total);
+    return SignedQuantity.of(total);
   }
 
   /**
@@ -281,7 +282,7 @@ export class Position {
       side: this.side,
       quantity: this.quantity.value().toNumber(),
       averageEntryPrice: this.averageEntryPrice.value().toNumber(),
-      timestamp: this.timestamp.value,
+      timestamp: this.timestamp.toNumber(),
       status: this.getStatus(),
       realizedPnL: this.realizedPnL.value().toNumber(),
       fees: this.fees.quantity.amount().value().toNumber(),
