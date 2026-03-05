@@ -6,9 +6,13 @@
  * Внешние зависимости: только value objects и @polymarket/ids.
  *
  * ### Три фабрики:
- * - `create()`        — новая заявка (всегда PENDING)
- * - `fromSnapshot()`  — восстановление из снэпшота (reconciliation)
- * - `fromEvents()`    — воспроизведение из лога событий (replay)
+ * - `create()`     — новая заявка (всегда PENDING), эмитирует OrderCreatedEvent
+ * - `rehydrate()`  — восстановление из доверенного OrderState (без событий)
+ * - `fromEvents()` — воспроизведение из лога событий (без событий)
+ *
+ * ### Domain Event Outbox:
+ * Каждая успешная команда записывает событие в внутренний буфер.
+ * Application-слой вызывает `pullEvents()` для извлечения и публикации.
  *
  * ### Жизненный цикл:
  * ```
@@ -38,6 +42,7 @@
  *
  * if (result.ok) {
  *   const order = result.value;
+ *   const events = order.pullEvents(); // [OrderCreatedEvent]
  *   const accepted = order.accept();
  *   if (accepted.ok) console.log(accepted.value.status); // 'OPEN'
  * }
@@ -45,29 +50,34 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
-import type { Side, Timestamp } from '@polymarket/value-objects';
+import { Price, Quantity } from '@polymarket/value-objects';
+import type { Side } from '@polymarket/value-objects';
 import type { AssetId, FillId, OrderId } from '@polymarket/ids';
-import { asOrderId, asFillId, parseAssetId, assetIdToString, AssetIdHelpers } from '@polymarket/ids';
+import { AssetIdHelpers, assetIdToString } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import {
   TERMINAL_STATUSES,
   FILLABLE_STATUSES,
   type OrderStatus,
   type OrderState,
-  type FillState,
   type FillData,
   type CreateOrderParams,
   type OrderSnapshot,
 } from './OrderState.js';
-import type { OrderEvent } from './OrderEvents.js';
+import type {
+  OrderEvent,
+  OrderCreatedEvent,
+  OrderAcceptedEvent,
+  OrderRejectedEvent,
+  OrderCancelledEvent,
+  OrderExpiredEvent,
+  OrderPartiallyFilledEvent,
+  OrderFilledEvent,
+} from './OrderEvents.js';
 import { OrderError } from './OrderErrors.js';
 import { emptyFill, addFill, isFull } from './_fill.js';
 
 const VALID_SIDES = new Set<string>(['BUY', 'SELL']);
-const VALID_STATUSES = new Set<string>([
-  'PENDING', 'OPEN', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED',
-]);
 
 /**
  * Агрегат Order — неизменяемая доменная сущность
@@ -76,9 +86,15 @@ const VALID_STATUSES = new Set<string>([
  * Хранит состояние в приватном поле `_s: OrderState`.
  * Все публичные свойства — геттеры над `_s`.
  * Команды (accept, reject, cancel, expire, applyFill) возвращают новый экземпляр.
+ * Каждая успешная команда записывает событие в `_pendingEvents`.
+ * Вызов `pullEvents()` опустошает буфер.
  */
 export class Order {
-  private constructor(private readonly _s: OrderState) {}
+  private constructor(
+    private readonly _s: OrderState,
+    /** Буфер доменных событий (Domain Event Outbox) */
+    private _pendingEvents: OrderEvent[] = [],
+  ) {}
 
   // ─── Identity ──────────────────────────────────────────────────────────────
 
@@ -101,7 +117,7 @@ export class Order {
   get status(): OrderStatus { return this._s.status; }
 
   /** Время создания заявки */
-  get timestamp(): Timestamp { return this._s.timestamp; }
+  get timestamp() { return this._s.timestamp; }
 
   /** Причина отклонения/отмены */
   get reason(): string | undefined { return this._s.reason; }
@@ -112,7 +128,7 @@ export class Order {
   // ─── Fill state ────────────────────────────────────────────────────────────
 
   /** Внутреннее состояние fills (filledSize, averagePrice, fillIds) */
-  get fill(): FillState { return this._s.fill; }
+  get fill() { return this._s.fill; }
 
   /** Исполненный объём */
   get filledSize(): Quantity { return this._s.fill.filledSize; }
@@ -171,6 +187,34 @@ export class Order {
   canCancel(): boolean { return FILLABLE_STATUSES.has(this._s.status); }
   canModify(): boolean { return !TERMINAL_STATUSES.has(this._s.status); }
 
+  // ─── Domain Event Outbox ───────────────────────────────────────────────────
+
+  /**
+   * Извлекает накопленные доменные события и очищает буфер
+   *
+   * @returns Массив событий с момента последнего pullEvents()
+   *
+   * @remarks
+   * Pattern: Domain Event Outbox.
+   * Application-слой должен вызывать pullEvents() после каждой успешной команды
+   * для публикации событий во внешние подписчики (шина, лог, проекции).
+   *
+   * Вызов pullEvents() опустошает буфер — следующий вызов вернёт [].
+   * `rehydrate()` и `fromEvents()` не эмитируют событий.
+   *
+   * @example
+   * ```typescript
+   * const result = Order.create(params);
+   * if (result.ok) {
+   *   const events = result.value.pullEvents(); // [OrderCreatedEvent]
+   *   await eventBus.publish(events);
+   * }
+   * ```
+   */
+  public pullEvents(): readonly OrderEvent[] {
+    return this._pendingEvents.splice(0);
+  }
+
   // ─── Factory: create ───────────────────────────────────────────────────────
 
   /**
@@ -182,7 +226,9 @@ export class Order {
    * @remarks
    * Единственная точка создания заявки в рамках нормального бизнес-потока.
    * Статус всегда PENDING — биржа ещё не подтвердила.
-   * Для восстановления существующей заявки → fromSnapshot() или fromEvents().
+   * Эмитирует OrderCreatedEvent в буфер (pullEvents() вернёт его).
+   *
+   * Для восстановления существующей заявки → rehydrate() или fromEvents().
    *
    * @example
    * ```typescript
@@ -194,6 +240,9 @@ export class Order {
    *   size: Quantity.of(new Decimal('100')),
    *   timestamp: Timestamp.now(),
    * });
+   * if (result.ok) {
+   *   const events = result.value.pullEvents(); // [OrderCreatedEvent]
+   * }
    * ```
    */
   public static create(params: CreateOrderParams): Result<Order, OrderError> {
@@ -213,7 +262,8 @@ export class Order {
         field: 'size', orderId: params.id,
       }));
     }
-    return Ok(new Order({
+
+    const state: OrderState = {
       id: params.id,
       asset: params.asset,
       side: params.side,
@@ -223,91 +273,78 @@ export class Order {
       timestamp: params.timestamp,
       strategyId: params.strategyId,
       fill: emptyFill(),
-    }));
+    };
+
+    const event: OrderCreatedEvent = {
+      type: 'ORDER_CREATED',
+      orderId: params.id,
+      asset: params.asset,
+      side: params.side,
+      price: params.price,
+      size: params.size,
+      timestamp: params.timestamp,
+      strategyId: params.strategyId,
+    };
+
+    return Ok(new Order(state, [event]));
   }
 
-  // ─── Factory: fromSnapshot ─────────────────────────────────────────────────
+  // ─── Factory: rehydrate ────────────────────────────────────────────────────
 
   /**
-   * Восстанавливает заявку из снэпшота (reconciliation)
+   * Восстанавливает заявку из доверенного состояния (rehydration)
    *
-   * @param snap - Снэпшот с примитивными значениями
+   * @param state - Внутреннее состояние заявки с value objects
    * @returns Result<Order, OrderError>
    *
    * @remarks
-   * Используется для синхронизации с данными биржи или БД.
-   * Парсит все примитивы в value objects.
-   * Не применяет бизнес-валидацию — доверяет данным источника.
+   * В отличие от create() не применяет бизнес-валидацию — состояние уже прошло
+   * через доменную логику ранее.
+   *
+   * Используется OrderDeserializer после парсинга снэпшота из БД или API.
+   *
+   * Проверяет консистентность состояния (кросс-поля):
+   * - filledSize не может превышать size
+   * - PENDING заявка не может иметь fills
+   * - FILLED заявка должна быть полностью исполнена
+   *
+   * Не эмитирует события — pullEvents() вернёт [].
    *
    * @example
    * ```typescript
-   * const result = Order.fromSnapshot({
-   *   id: 'order-1', asset: '...', side: 'BUY',
-   *   price: 0.65, size: 100, status: 'OPEN',
-   *   timestamp: '2024-01-01T00:00:00.000Z',
-   *   filledSize: 0, fillIds: [],
-   * });
+   * const result = Order.rehydrate(state);
+   * if (result.ok) {
+   *   console.log(result.value.status);
+   *   result.value.pullEvents(); // всегда []
+   * }
    * ```
    */
-  public static fromSnapshot(snap: OrderSnapshot): Result<Order, OrderError> {
-    try {
-      const id = asOrderId(snap.id);
-      if (!id) {
-        return Err(new OrderError('Invalid order ID in snapshot', { field: 'id', value: snap.id }));
-      }
+  public static rehydrate(state: OrderState): Result<Order, OrderError> {
+    const filledVal = state.fill.filledSize.value();
+    const sizeVal = state.size.value();
 
-      const asset = parseAssetId(snap.asset);
-      if (!asset) {
-        return Err(new OrderError('Invalid asset in snapshot', { field: 'asset', orderId: snap.id }));
-      }
-
-      if (!VALID_SIDES.has(snap.side)) {
-        return Err(new OrderError(`Invalid side in snapshot: ${snap.side}`, { orderId: snap.id }));
-      }
-
-      if (!VALID_STATUSES.has(snap.status)) {
-        return Err(new OrderError(`Invalid status in snapshot: ${snap.status}`, { orderId: snap.id }));
-      }
-
-      const tsResult = TimestampService.fromISO(snap.timestamp);
-      if (!tsResult.ok) {
-        return Err(new OrderError(`Invalid timestamp in snapshot: ${tsResult.error.message}`, {
-          orderId: snap.id,
-        }));
-      }
-
-      const fillIds: FillId[] = [];
-      for (const rawId of snap.fillIds) {
-        const fillId = asFillId(rawId);
-        if (!fillId) {
-          return Err(new OrderError(`Invalid fill ID in snapshot: ${rawId}`, { orderId: snap.id }));
-        }
-        fillIds.push(fillId);
-      }
-
-      const filledSize = Quantity.of(new Decimal(snap.filledSize));
-      const averagePrice = snap.averagePrice !== undefined
-        ? Price.of(new Decimal(snap.averagePrice))
-        : undefined;
-
-      return Ok(new Order({
-        id,
-        asset,
-        side: snap.side as Side,
-        price: Price.of(new Decimal(snap.price)),
-        size: Quantity.of(new Decimal(snap.size)),
-        status: snap.status as OrderStatus,
-        timestamp: tsResult.value,
-        strategyId: snap.strategyId,
-        reason: snap.reason,
-        fill: { filledSize, averagePrice, fillIds },
-      }));
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      return Err(new OrderError(`Failed to restore order from snapshot: ${msg}`, {
-        orderId: snap?.id,
-      }));
+    if (filledVal.gt(sizeVal)) {
+      return Err(new OrderError(
+        `filledSize (${filledVal}) exceeds size (${sizeVal})`,
+        { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() },
+      ));
     }
+
+    if (state.status === 'PENDING' && !filledVal.isZero()) {
+      return Err(new OrderError(
+        `PENDING order cannot have fills (filledSize: ${filledVal})`,
+        { orderId: state.id, filledSize: filledVal.toString() },
+      ));
+    }
+
+    if (state.status === 'FILLED' && !filledVal.eq(sizeVal)) {
+      return Err(new OrderError(
+        `FILLED order must have filledSize equal to size (filledSize: ${filledVal}, size: ${sizeVal})`,
+        { orderId: state.id, filledSize: filledVal.toString(), size: sizeVal.toString() },
+      ));
+    }
+
+    return Ok(new Order(state));
   }
 
   // ─── Factory: fromEvents ───────────────────────────────────────────────────
@@ -323,6 +360,8 @@ export class Order {
    * Используется для воспроизведения истории в режиме paper trading или анализа.
    * Первое событие должно быть ORDER_CREATED.
    *
+   * Не эмитирует события — pullEvents() вернёт [].
+   *
    * @throws {OrderError} Если массив событий пуст или первое событие не ORDER_CREATED
    *
    * @example
@@ -330,7 +369,7 @@ export class Order {
    * const order = Order.fromEvents([
    *   { type: 'ORDER_CREATED', orderId, asset, side: 'BUY', price, size, timestamp },
    *   { type: 'ORDER_ACCEPTED', orderId },
-   *   { type: 'FILL_APPLIED', orderId, fill: fillData },
+   *   { type: 'ORDER_FILLED', orderId, fill: fillData, averagePrice },
    * ]);
    * ```
    */
@@ -406,11 +445,12 @@ export class Order {
       case 'ORDER_EXPIRED':
         return { ...state, status: 'EXPIRED' };
 
-      case 'FILL_APPLIED': {
+      case 'ORDER_PARTIALLY_FILLED':
+      case 'ORDER_FILLED': {
         const result = addFill(state.fill, event.fill, state.size);
         if (!result.ok) return state;
         const newFill = result.value;
-        const newStatus: OrderStatus = isFull(newFill, state.size) ? 'FILLED' : 'PARTIALLY_FILLED';
+        const newStatus: OrderStatus = event.type === 'ORDER_FILLED' ? 'FILLED' : 'PARTIALLY_FILLED';
         return { ...state, status: newStatus, fill: newFill };
       }
 
@@ -432,6 +472,7 @@ export class Order {
    * @remarks
    * Переход: PENDING → OPEN
    * Биржа подтвердила получение и выставила заявку на исполнение.
+   * Эмитирует OrderAcceptedEvent.
    *
    * @example
    * ```typescript
@@ -446,7 +487,8 @@ export class Order {
         { orderId: this._s.id },
       ));
     }
-    return Ok(new Order({ ...this._s, status: 'OPEN' }));
+    const event: OrderAcceptedEvent = { type: 'ORDER_ACCEPTED', orderId: this._s.id };
+    return Ok(new Order({ ...this._s, status: 'OPEN' }, [event]));
   }
 
   /**
@@ -458,6 +500,7 @@ export class Order {
    * @remarks
    * Переход: PENDING → REJECTED
    * Биржа отклонила заявку (недостаточно средств, невалидная цена и т.д.)
+   * Эмитирует OrderRejectedEvent.
    *
    * @example
    * ```typescript
@@ -475,7 +518,8 @@ export class Order {
         { orderId: this._s.id },
       ));
     }
-    return Ok(new Order({ ...this._s, status: 'REJECTED', reason }));
+    const event: OrderRejectedEvent = { type: 'ORDER_REJECTED', orderId: this._s.id, reason };
+    return Ok(new Order({ ...this._s, status: 'REJECTED', reason }, [event]));
   }
 
   /**
@@ -487,6 +531,7 @@ export class Order {
    * @remarks
    * Переход: OPEN или PARTIALLY_FILLED → CANCELED
    * Заявка снята с биржи по инициативе пользователя или риск-системы.
+   * Эмитирует OrderCancelledEvent.
    *
    * @example
    * ```typescript
@@ -501,7 +546,9 @@ export class Order {
         { orderId: this._s.id },
       ));
     }
-    return Ok(new Order({ ...this._s, status: 'CANCELED', reason: reason ?? 'User cancelled' }));
+    const cancelReason = reason ?? 'User cancelled';
+    const event: OrderCancelledEvent = { type: 'ORDER_CANCELLED', orderId: this._s.id, reason: cancelReason };
+    return Ok(new Order({ ...this._s, status: 'CANCELED', reason: cancelReason }, [event]));
   }
 
   /**
@@ -512,6 +559,7 @@ export class Order {
    * @remarks
    * Переход: OPEN или PARTIALLY_FILLED → EXPIRED
    * Автоматически вызывается при истечении TTL заявки.
+   * Эмитирует OrderExpiredEvent.
    *
    * @example
    * ```typescript
@@ -526,7 +574,8 @@ export class Order {
         { orderId: this._s.id },
       ));
     }
-    return Ok(new Order({ ...this._s, status: 'EXPIRED' }));
+    const event: OrderExpiredEvent = { type: 'ORDER_EXPIRED', orderId: this._s.id };
+    return Ok(new Order({ ...this._s, status: 'EXPIRED' }, [event]));
   }
 
   /**
@@ -537,8 +586,8 @@ export class Order {
    *
    * @remarks
    * Переходы:
-   * - OPEN → PARTIALLY_FILLED (если остаток > 0)
-   * - OPEN или PARTIALLY_FILLED → FILLED (если остаток = 0)
+   * - OPEN → PARTIALLY_FILLED (если остаток > 0) → эмитирует OrderPartiallyFilledEvent
+   * - OPEN или PARTIALLY_FILLED → FILLED (если остаток = 0) → эмитирует OrderFilledEvent
    *
    * Валидирует:
    * - Статус OPEN или PARTIALLY_FILLED
@@ -590,8 +639,29 @@ export class Order {
     }
 
     const newFill = newFillResult.value;
-    const newStatus: OrderStatus = isFull(newFill, this._s.size) ? 'FILLED' : 'PARTIALLY_FILLED';
-    return Ok(new Order({ ...this._s, status: newStatus, fill: newFill }));
+    const filled = isFull(newFill, this._s.size);
+    const newStatus: OrderStatus = filled ? 'FILLED' : 'PARTIALLY_FILLED';
+    const newState = { ...this._s, status: newStatus, fill: newFill };
+
+    let event: OrderPartiallyFilledEvent | OrderFilledEvent;
+    if (filled) {
+      event = {
+        type: 'ORDER_FILLED',
+        orderId: this._s.id,
+        fill,
+        averagePrice: newFill.averagePrice!,
+      };
+    } else {
+      event = {
+        type: 'ORDER_PARTIALLY_FILLED',
+        orderId: this._s.id,
+        fill,
+        filledSize: newFill.filledSize,
+        remainingSize: Quantity.of(this._s.size.value().minus(newFill.filledSize.value())),
+      };
+    }
+
+    return Ok(new Order(newState, [event]));
   }
 
   /**
@@ -632,12 +702,12 @@ export class Order {
    *
    * @remarks
    * Используется для персистентности (БД, кэш) и синхронизации с биржей.
-   * Round-trip: Order.fromSnapshot(order.toSnapshot()) воспроизводит тот же Order.
+   * Round-trip: Order.rehydrate(parsed(order.toSnapshot())) воспроизводит тот же Order.
    *
    * @example
    * ```typescript
    * const snap = order.toSnapshot();
-   * const restored = Order.fromSnapshot(snap);
+   * const restored = OrderDeserializer.fromSnapshot(snap);
    * ```
    */
   public toSnapshot(): OrderSnapshot {

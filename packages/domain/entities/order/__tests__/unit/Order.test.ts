@@ -14,7 +14,8 @@ import {
 } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 import { Order } from '../../src/Order';
-import type { FillData } from '../../src/OrderState';
+import { OrderDeserializer } from '../../src/view/OrderDeserializer';
+import type { FillData, OrderState } from '../../src/OrderState';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -150,11 +151,97 @@ describe('Order', () => {
     });
   });
 
-  describe('fromSnapshot()', () => {
+  describe('rehydrate()', () => {
+    function makeState(overrides?: Partial<OrderState>): OrderState {
+      return {
+        id: ORDER_ID,
+        asset: TEST_ASSET,
+        side: 'BUY',
+        price: Price.of(new Decimal('0.65')),
+        size: Quantity.of(new Decimal('100')),
+        status: 'OPEN',
+        timestamp: Timestamp.now(),
+        fill: { filledSize: Quantity.of(new Decimal('0')), averagePrice: undefined, fillIds: [] },
+        ...overrides,
+      };
+    }
+
+    it('должен создать Order из валидного состояния', () => {
+      const result = Order.rehydrate(makeState());
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.status).toBe('OPEN');
+      }
+    });
+
+    it('rehydrate() не должен эмитировать события', () => {
+      const result = Order.rehydrate(makeState());
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.pullEvents()).toHaveLength(0);
+      }
+    });
+
+    it('должен вернуть Err если filledSize > size', () => {
+      const state = makeState({
+        fill: {
+          filledSize: Quantity.of(new Decimal('150')),
+          averagePrice: Price.of(new Decimal('0.65')),
+          fillIds: [FILL_ID_1],
+        },
+      });
+      const result = Order.rehydrate(state);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('filledSize');
+    });
+
+    it('должен вернуть Err для PENDING с fills', () => {
+      const state = makeState({
+        status: 'PENDING',
+        fill: {
+          filledSize: Quantity.of(new Decimal('10')),
+          averagePrice: Price.of(new Decimal('0.65')),
+          fillIds: [FILL_ID_1],
+        },
+      });
+      const result = Order.rehydrate(state);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('PENDING');
+    });
+
+    it('должен вернуть Err для FILLED с неполным filledSize', () => {
+      const state = makeState({
+        status: 'FILLED',
+        fill: {
+          filledSize: Quantity.of(new Decimal('50')), // не равно size=100
+          averagePrice: Price.of(new Decimal('0.65')),
+          fillIds: [FILL_ID_1],
+        },
+      });
+      const result = Order.rehydrate(state);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('FILLED');
+    });
+
+    it('должен принять FILLED со 100% filledSize', () => {
+      const state = makeState({
+        status: 'FILLED',
+        fill: {
+          filledSize: Quantity.of(new Decimal('100')),
+          averagePrice: Price.of(new Decimal('0.65')),
+          fillIds: [FILL_ID_1],
+        },
+      });
+      const result = Order.rehydrate(state);
+      expect(result.ok).toBe(true);
+    });
+  });
+
+  describe('fromSnapshot() через OrderDeserializer', () => {
     it('должен восстановить заявку из снэпшота', () => {
       const order = unwrap(createValidOrder());
       const snap = order.toSnapshot();
-      const restored = unwrap(Order.fromSnapshot(snap));
+      const restored = unwrap(OrderDeserializer.fromSnapshot(snap));
 
       expect(restored.id).toBe(order.id);
       expect(restored.status).toBe(order.status);
@@ -165,7 +252,7 @@ describe('Order', () => {
     it('должен восстановить заявку в статусе OPEN', () => {
       const open = unwrap(unwrap(createValidOrder()).accept());
       const snap = open.toSnapshot();
-      const restored = unwrap(Order.fromSnapshot(snap));
+      const restored = unwrap(OrderDeserializer.fromSnapshot(snap));
 
       expect(restored.status).toBe('OPEN');
     });
@@ -174,7 +261,7 @@ describe('Order', () => {
       const open = unwrap(unwrap(createValidOrder()).accept());
       const partial = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('30')) })));
       const snap = partial.toSnapshot();
-      const restored = unwrap(Order.fromSnapshot(snap));
+      const restored = unwrap(OrderDeserializer.fromSnapshot(snap));
 
       expect(restored.status).toBe('PARTIALLY_FILLED');
       expect(restored.filledSize.value().toNumber()).toBe(30);
@@ -182,8 +269,8 @@ describe('Order', () => {
       expect(restored.fillIds).toContain(FILL_ID_1);
     });
 
-    it('должен вернуть Err для невалидного снэпшота', () => {
-      const result = Order.fromSnapshot({ id: '' } as Parameters<typeof Order.fromSnapshot>[0]);
+    it('должен вернуть Err для невалидного id', () => {
+      const result = OrderDeserializer.fromSnapshot({ id: '' } as import('../../src/OrderState').OrderSnapshot);
       expect(result.ok).toBe(false);
     });
   });
@@ -212,7 +299,7 @@ describe('Order', () => {
       expect(() => Order.fromEvents([])).toThrow();
     });
 
-    it('должен воспроизвести полный жизненный цикл', () => {
+    it('должен воспроизвести полный жизненный цикл с ORDER_FILLED', () => {
       const ts = Timestamp.now();
       const fill: FillData = {
         id: FILL_ID_1,
@@ -227,11 +314,130 @@ describe('Order', () => {
         { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
           price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
         { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
-        { type: 'FILL_APPLIED', orderId: ORDER_ID, fill },
+        { type: 'ORDER_FILLED', orderId: ORDER_ID, fill, averagePrice: fill.price },
       ]);
 
       expect(order.status).toBe('FILLED');
       expect(order.filledSize.value().toNumber()).toBe(100);
+    });
+
+    it('должен воспроизвести частичное исполнение с ORDER_PARTIALLY_FILLED', () => {
+      const ts = Timestamp.now();
+      const fill: FillData = {
+        id: FILL_ID_1,
+        orderId: ORDER_ID,
+        asset: TEST_ASSET,
+        side: 'BUY',
+        size: Quantity.of(new Decimal('30')),
+        price: Price.of(new Decimal('0.65')),
+      };
+      const remainingSize = Quantity.of(new Decimal('70'));
+
+      const order = Order.fromEvents([
+        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+        { type: 'ORDER_PARTIALLY_FILLED', orderId: ORDER_ID, fill, filledSize: fill.size, remainingSize },
+      ]);
+
+      expect(order.status).toBe('PARTIALLY_FILLED');
+      expect(order.filledSize.value().toNumber()).toBe(30);
+    });
+
+    it('fromEvents() не должен эмитировать события', () => {
+      const ts = Timestamp.now();
+      const order = Order.fromEvents([
+        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+      ]);
+
+      expect(order.pullEvents()).toHaveLength(0);
+    });
+  });
+
+  describe('pullEvents()', () => {
+    it('create() должен эмитировать ORDER_CREATED', () => {
+      const result = createValidOrder();
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const events = result.value.pullEvents();
+        expect(events).toHaveLength(1);
+        expect(events[0].type).toBe('ORDER_CREATED');
+      }
+    });
+
+    it('pullEvents() должен очистить буфер после вызова', () => {
+      const order = unwrap(createValidOrder());
+      expect(order.pullEvents()).toHaveLength(1); // ORDER_CREATED
+      expect(order.pullEvents()).toHaveLength(0); // буфер пуст
+    });
+
+    it('accept() должен эмитировать ORDER_ACCEPTED', () => {
+      const order = unwrap(createValidOrder());
+      order.pullEvents(); // очищаем ORDER_CREATED
+      const accepted = unwrap(order.accept());
+      const events = accepted.pullEvents();
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('ORDER_ACCEPTED');
+    });
+
+    it('reject() должен эмитировать ORDER_REJECTED', () => {
+      const order = unwrap(createValidOrder());
+      order.pullEvents();
+      const rejected = unwrap(order.reject('Bad price'));
+      const events = rejected.pullEvents();
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('ORDER_REJECTED');
+    });
+
+    it('cancel() должен эмитировать ORDER_CANCELLED', () => {
+      const open = unwrap(unwrap(createValidOrder()).accept());
+      open.pullEvents();
+      const canceled = unwrap(open.cancel('Risk limit'));
+      const events = canceled.pullEvents();
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('ORDER_CANCELLED');
+    });
+
+    it('expire() должен эмитировать ORDER_EXPIRED', () => {
+      const open = unwrap(unwrap(createValidOrder()).accept());
+      open.pullEvents();
+      const expired = unwrap(open.expire());
+      const events = expired.pullEvents();
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('ORDER_EXPIRED');
+    });
+
+    it('applyFill() частичный → ORDER_PARTIALLY_FILLED', () => {
+      const open = unwrap(unwrap(createValidOrder()).accept());
+      open.pullEvents();
+      const partial = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('30')) })));
+      const events = partial.pullEvents();
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('ORDER_PARTIALLY_FILLED');
+    });
+
+    it('applyFill() полный → ORDER_FILLED', () => {
+      const open = unwrap(unwrap(createValidOrder()).accept());
+      open.pullEvents();
+      const filled = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('100')) })));
+      const events = filled.pullEvents();
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe('ORDER_FILLED');
+    });
+
+    it('каждый Order инстанс имеет собственный буфер', () => {
+      const order = unwrap(createValidOrder());
+      const open = unwrap(order.accept()); // open._pendingEvents = [ORDER_ACCEPTED]
+
+      // Оригинальный order содержит ORDER_CREATED
+      const originalEvents = order.pullEvents();
+      expect(originalEvents[0]?.type).toBe('ORDER_CREATED');
+
+      // open содержит ORDER_ACCEPTED
+      const openEvents = open.pullEvents();
+      expect(openEvents[0]?.type).toBe('ORDER_ACCEPTED');
     });
   });
 
@@ -641,7 +847,7 @@ describe('Order', () => {
       const open = unwrap(unwrap(createValidOrder()).accept());
       const partial = unwrap(open.applyFill(createFill({ size: Quantity.of(new Decimal('30')) })));
 
-      const restored = unwrap(Order.fromSnapshot(partial.toSnapshot()));
+      const restored = unwrap(OrderDeserializer.fromSnapshot(partial.toSnapshot()));
 
       expect(restored.status).toBe('PARTIALLY_FILLED');
       expect(restored.filledSize.value().toNumber()).toBe(30);

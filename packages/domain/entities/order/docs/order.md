@@ -14,7 +14,7 @@
 src/
 ├── Order.ts          — агрегат (все фабрики + команды + геттеры)
 ├── OrderState.ts     — типы (OrderStatus, FillState, FillData, OrderSnapshot, ...)
-├── OrderEvents.ts    — domain events для режима replay
+├── OrderEvents.ts    — domain events для режима replay и outbox
 ├── OrderErrors.ts    — OrderError
 ├── _fill.ts          — арифметика fills (приватный модуль)
 ├── index.ts          — публичный API
@@ -55,10 +55,10 @@ src/
 
 ## Три режима использования
 
-### 1. Нормальный поток (create + commands)
+### 1. Нормальный поток (create + commands + pullEvents)
 
 ```typescript
-// Создание — всегда PENDING
+// Создание — всегда PENDING, эмитирует OrderCreatedEvent
 const result = Order.create({
   id: asOrderId('order-1')!,
   asset: myAsset,
@@ -70,16 +70,19 @@ const result = Order.create({
 
 if (result.ok) {
   const pending = result.value;
+  const createdEvents = pending.pullEvents(); // [OrderCreatedEvent]
 
-  // Биржа приняла
-  const open = pending.accept(); // Result<Order, OrderError>
+  // Биржа приняла — эмитирует OrderAcceptedEvent
+  const open = pending.accept();
+  const acceptedEvents = open.value!.pullEvents(); // [OrderAcceptedEvent]
 
-  // Исполнение
+  // Исполнение — эмитирует OrderFilledEvent или OrderPartiallyFilledEvent
   const filled = open.value!.applyFill({
     id: fillId, orderId: pending.id, asset, side: 'BUY',
     size: Quantity.of(new Decimal('100')),
     price: Price.of(new Decimal('0.65')),
   });
+  const fillEvents = filled.value!.pullEvents(); // [OrderFilledEvent]
 }
 ```
 
@@ -89,16 +92,17 @@ if (result.ok) {
 const order = Order.fromEvents([
   { type: 'ORDER_CREATED', orderId, asset, side: 'BUY', price, size, timestamp },
   { type: 'ORDER_ACCEPTED', orderId },
-  { type: 'FILL_APPLIED', orderId, fill: fillData },
+  { type: 'ORDER_FILLED', orderId, fill: fillData, averagePrice },
 ]);
 
 // order.status === 'FILLED'
+// order.pullEvents() === [] — fromEvents не эмитирует событий
 ```
 
 ### 3. Восстановление из снэпшота (reconciliation)
 
 ```typescript
-const result = Order.fromSnapshot({
+const result = OrderDeserializer.fromSnapshot({
   id: 'order-1',
   asset: 'POLYMARKET_CTF:POLYGON:0xabc...:YES',
   side: 'BUY',
@@ -110,6 +114,12 @@ const result = Order.fromSnapshot({
   averagePrice: 0.63,
   fillIds: ['fill-1', 'fill-2'],
 });
+
+// OrderDeserializer парсит примитивы → вызывает Order.rehydrate(state)
+// rehydrate() проверяет консистентность состояния:
+//   - filledSize не превышает size
+//   - PENDING не может иметь fills
+//   - FILLED должна иметь filledSize === size
 ```
 
 ## Публичный API
@@ -158,16 +168,33 @@ order.canCancel()        // OPEN || PARTIALLY_FILLED
 order.canModify()        // не терминальный
 ```
 
+### Фабрики
+
+```typescript
+Order.create(params)           // PENDING, эмитирует ORDER_CREATED
+Order.rehydrate(state)         // из OrderState, без событий, с кросс-валидацией
+Order.fromEvents(events[])     // replay из лога, без событий
+```
+
 ### Команды (возвращают Result<Order, OrderError>)
 
 ```typescript
-order.accept()                    // PENDING → OPEN
-order.reject('reason')            // PENDING → REJECTED
-order.cancel('reason?')           // OPEN|PARTIAL → CANCELED
-order.expire()                    // OPEN|PARTIAL → EXPIRED
-order.applyFill(fill: FillData)   // OPEN|PARTIAL → PARTIAL|FILLED
+order.accept()                    // PENDING → OPEN, эмитирует ORDER_ACCEPTED
+order.reject('reason')            // PENDING → REJECTED, эмитирует ORDER_REJECTED
+order.cancel('reason?')           // OPEN|PARTIAL → CANCELED, эмитирует ORDER_CANCELLED
+order.expire()                    // OPEN|PARTIAL → EXPIRED, эмитирует ORDER_EXPIRED
+order.applyFill(fill: FillData)   // OPEN|PARTIAL → PARTIAL|FILLED, эмитирует ORDER_PARTIALLY_FILLED или ORDER_FILLED
 order.canAcceptFill(fill: FillData) // boolean (без применения)
 ```
+
+### Domain Event Outbox
+
+```typescript
+order.pullEvents()  // readonly OrderEvent[] — опустошает буфер
+```
+
+Вызов `pullEvents()` опустошает буфер — следующий вызов вернёт `[]`.
+`rehydrate()` и `fromEvents()` не эмитируют событий.
 
 ### Сериализация
 
@@ -201,13 +228,34 @@ VWAP = (currentSize × currentAvg + newSize × newPrice) / (currentSize + newSiz
 4. **Fill dedup** — повторный fillId → ошибка
 5. **Fill overflow** — fillSize > remainingSize → ошибка
 6. **Terminal lock** — команды над терминальными статусами → ошибка
+7. **Rehydrate consistency** — filledSize > size, PENDING+fills, FILLED+partial → ошибка
+
+## Кросс-валидация в rehydrate()
+
+| Условие                        | Ошибка                                      |
+|--------------------------------|---------------------------------------------|
+| `filledSize > size`            | `filledSize (X) exceeds size (Y)`           |
+| `status=PENDING, filledSize>0` | `PENDING order cannot have fills`           |
+| `status=FILLED, filledSize≠size`| `FILLED order must have filledSize equal to size` |
+
+## Domain Events
+
+| Событие                    | Эмитирует       | Поля                                    |
+|----------------------------|-----------------|-----------------------------------------|
+| `ORDER_CREATED`            | `create()`      | orderId, asset, side, price, size, timestamp |
+| `ORDER_ACCEPTED`           | `accept()`      | orderId                                 |
+| `ORDER_REJECTED`           | `reject()`      | orderId, reason                         |
+| `ORDER_CANCELLED`          | `cancel()`      | orderId, reason                         |
+| `ORDER_EXPIRED`            | `expire()`      | orderId                                 |
+| `ORDER_PARTIALLY_FILLED`   | `applyFill()`   | orderId, fill, filledSize, remainingSize |
+| `ORDER_FILLED`             | `applyFill()`   | orderId, fill, averagePrice             |
 
 ## Тестовое покрытие
 
 | Файл                      | Тесты | Описание                          |
 |---------------------------|-------|-----------------------------------|
-| `unit/Order.test.ts`      | ~60   | create, fromSnapshot, fromEvents, FSM, computed |
+| `unit/Order.test.ts`      | ~75   | create, rehydrate, fromEvents, FSM, computed, pullEvents |
 | `unit/view/OrderView.test.ts` | ~35 | ViewModel, Deserializer, round-trip |
-| `integration/OrderLifecycle.test.ts` | ~22 | End-to-end сценарии, VWAP, replay |
+| `integration/OrderLifecycle.test.ts` | ~24 | End-to-end сценарии, VWAP, replay |
 
-**Итого: 117 тестов**
+**Итого: 134 тестов**

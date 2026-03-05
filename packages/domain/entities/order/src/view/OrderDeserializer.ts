@@ -2,10 +2,12 @@
  * Deserializer для Order
  *
  * @remarks
- * Тонкая обёртка вокруг Order.fromSnapshot() для работы с API/БД форматом.
- * Принимает плоский объект с примитивами и возвращает Order.
+ * Парсит плоский снэпшот (примитивы) в OrderState (value objects),
+ * затем вызывает Order.rehydrate(state) для создания агрегата.
  *
- * Преобразование примитивов в value objects происходит внутри Order.fromSnapshot().
+ * Разделение ответственности:
+ * - OrderDeserializer: парсинг примитивов + валидация формата
+ * - Order.rehydrate(): кросс-валидация состояния + создание агрегата
  *
  * @example
  * ```typescript
@@ -20,12 +22,27 @@
  *   console.log(order.status); // 'OPEN'
  * }
  * ```
+ *
+ * @todo
+ * OrderDeserializer и OrderViewModel находятся в пакете domain entity для удобства.
+ * Когда архитектура устоится, их можно перенести в application layer —
+ * сериализация/десериализация не является частью доменной логики.
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import type { OrderSnapshot } from '../OrderState.js';
+import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import type { Side } from '@polymarket/value-objects';
+import { asOrderId, asFillId, parseAssetId } from '@polymarket/ids';
+import type { FillId } from '@polymarket/ids';
+import Decimal from 'decimal.js';
+import type { OrderSnapshot, OrderState, OrderStatus } from '../OrderState.js';
 import { Order } from '../Order.js';
+
+const VALID_SIDES = new Set<string>(['BUY', 'SELL']);
+const VALID_STATUSES = new Set<string>([
+  'PENDING', 'OPEN', 'PARTIALLY_FILLED', 'FILLED', 'CANCELED', 'REJECTED', 'EXPIRED',
+]);
 
 /**
  * Класс OrderDeserializer — десериализация снэпшотов в Order
@@ -45,8 +62,11 @@ export class OrderDeserializer {
    * @returns Result<Order, ValidationError>
    *
    * @remarks
-   * Делегирует в Order.fromSnapshot().
-   * Конвертирует OrderError в ValidationError для совместимости с внешним API.
+   * Алгоритм:
+   * 1. Парсит все примитивы в value objects (id, asset, side, status, timestamp, fillIds)
+   * 2. Строит OrderState из value objects
+   * 3. Вызывает Order.rehydrate(state) для кросс-валидации и создания агрегата
+   * 4. Конвертирует OrderError → ValidationError для совместимости с внешним API
    *
    * @example
    * ```typescript
@@ -63,14 +83,83 @@ export class OrderDeserializer {
       return Err(new ValidationError('Invalid snapshot: must be an object', { context: { snap } }));
     }
 
-    const result = Order.fromSnapshot(snap);
-    if (!result.ok) {
-      return Err(new ValidationError(result.error.message, {
-        context: result.error.context,
+    try {
+      const id = asOrderId(snap.id);
+      if (!id) {
+        return Err(new ValidationError('Invalid order ID in snapshot', {
+          context: { field: 'id', value: snap.id },
+        }));
+      }
+
+      const asset = parseAssetId(snap.asset);
+      if (!asset) {
+        return Err(new ValidationError('Invalid asset in snapshot', {
+          context: { field: 'asset', orderId: snap.id },
+        }));
+      }
+
+      if (!VALID_SIDES.has(snap.side)) {
+        return Err(new ValidationError(`Invalid side in snapshot: ${snap.side}`, {
+          context: { field: 'side', orderId: snap.id },
+        }));
+      }
+
+      if (!VALID_STATUSES.has(snap.status)) {
+        return Err(new ValidationError(`Invalid status in snapshot: ${snap.status}`, {
+          context: { field: 'status', orderId: snap.id },
+        }));
+      }
+
+      const tsResult = TimestampService.fromISO(snap.timestamp);
+      if (!tsResult.ok) {
+        return Err(new ValidationError(`Invalid timestamp in snapshot: ${tsResult.error.message}`, {
+          context: { field: 'timestamp', orderId: snap.id },
+        }));
+      }
+
+      const fillIds: FillId[] = [];
+      for (const rawId of snap.fillIds) {
+        const fillId = asFillId(rawId);
+        if (!fillId) {
+          return Err(new ValidationError(`Invalid fill ID in snapshot: ${rawId}`, {
+            context: { field: 'fillIds', orderId: snap.id },
+          }));
+        }
+        fillIds.push(fillId);
+      }
+
+      const filledSize = Quantity.of(new Decimal(snap.filledSize));
+      const averagePrice = snap.averagePrice !== undefined
+        ? Price.of(new Decimal(snap.averagePrice))
+        : undefined;
+
+      const state: OrderState = {
+        id,
+        asset,
+        side: snap.side as Side,
+        price: Price.of(new Decimal(snap.price)),
+        size: Quantity.of(new Decimal(snap.size)),
+        status: snap.status as OrderStatus,
+        timestamp: tsResult.value,
+        strategyId: snap.strategyId,
+        reason: snap.reason,
+        fill: { filledSize, averagePrice, fillIds },
+      };
+
+      const rehydrateResult = Order.rehydrate(state);
+      if (!rehydrateResult.ok) {
+        return Err(new ValidationError(rehydrateResult.error.message, {
+          context: rehydrateResult.error.context,
+        }));
+      }
+
+      return Ok(rehydrateResult.value);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return Err(new ValidationError(`Failed to restore order from snapshot: ${msg}`, {
+        context: { orderId: snap?.id },
       }));
     }
-
-    return Ok(result.value);
   }
 
   /**

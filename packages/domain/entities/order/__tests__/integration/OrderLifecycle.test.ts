@@ -273,6 +273,8 @@ describe('Сценарий: round-trip сериализации через вс�
   ] as const;
 
   it.each(STATUSES_TO_TEST)('toSnapshot → fromSnapshot для статуса %s', (status) => {
+    const isFilled = status === 'FILLED';
+    const isPartial = status === 'PARTIALLY_FILLED';
     const snap = {
       id: ORDER_ID as string,
       asset: assetIdToString(ASSET),
@@ -281,13 +283,14 @@ describe('Сценарий: round-trip сериализации через вс�
       size: 100,
       status,
       timestamp: new Date().toISOString(),
-      filledSize: 0,
-      fillIds: [] as string[],
+      filledSize: isFilled ? 100 : (isPartial ? 50 : 0),
+      averagePrice: (isFilled || isPartial) ? 0.60 : undefined,
+      fillIds: (isFilled || isPartial) ? [FILL_IDS[0] as string] : [] as string[],
       reason: status === 'REJECTED' ? 'Invalid price' : undefined,
     };
 
-    const order = unwrap(Order.fromSnapshot(snap), `fromSnapshot(${status})`);
-    const restored = unwrap(Order.fromSnapshot(order.toSnapshot()), `roundtrip(${status})`);
+    const order = unwrap(OrderDeserializer.fromSnapshot(snap), `fromSnapshot(${status})`);
+    const restored = unwrap(OrderDeserializer.fromSnapshot(order.toSnapshot()), `roundtrip(${status})`);
 
     expect(restored.id).toBe(order.id);
     expect(restored.status).toBe(order.status);
@@ -406,7 +409,7 @@ describe('Сценарий: fromEvents replay', () => {
         timestamp: ts,
       },
       { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
-      { type: 'FILL_APPLIED', orderId: ORDER_ID, fill: fillData },
+      { type: 'ORDER_FILLED', orderId: ORDER_ID, fill: fillData, averagePrice: fillData.price },
     ]);
 
     expect(order.status).toBe('FILLED');

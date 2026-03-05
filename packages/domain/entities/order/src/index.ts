@@ -7,7 +7,7 @@
  * ## Основные экспорты:
  *
  * ### Entity
- * - **Order** — агрегат заявки (create, fromSnapshot, fromEvents)
+ * - **Order** — агрегат заявки (create, rehydrate, fromEvents)
  *
  * ### Types
  * - **OrderState** — внутреннее состояние (value objects)
@@ -75,7 +75,8 @@ export type {
   OrderRejectedEvent,
   OrderCancelledEvent,
   OrderExpiredEvent,
-  FillAppliedEvent,
+  OrderPartiallyFilledEvent,
+  OrderFilledEvent,
 } from './OrderEvents.js';
 
 // ─── Errors ────────────────────────────────────────────────────────────────

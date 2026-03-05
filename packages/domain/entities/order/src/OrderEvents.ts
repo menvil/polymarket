@@ -49,10 +49,33 @@ export interface OrderExpiredEvent {
   readonly orderId: OrderId;
 }
 
-export interface FillAppliedEvent {
-  readonly type: 'FILL_APPLIED';
+/**
+ * Событие частичного исполнения заявки
+ *
+ * @remarks
+ * Несёт данные fill + накопленное состояние для удобства подписчиков.
+ * Подписчику не нужно самостоятельно считать filledSize и remainingSize.
+ */
+export interface OrderPartiallyFilledEvent {
+  readonly type: 'ORDER_PARTIALLY_FILLED';
   readonly orderId: OrderId;
   readonly fill: FillData;
+  readonly filledSize: Quantity;    // накопленный объём после этого fill
+  readonly remainingSize: Quantity; // остаток после этого fill
+}
+
+/**
+ * Событие полного исполнения заявки
+ *
+ * @remarks
+ * Несёт финальный fill + итоговую VWAP цену.
+ * После этого события заявка переходит в терминальный статус FILLED.
+ */
+export interface OrderFilledEvent {
+  readonly type: 'ORDER_FILLED';
+  readonly orderId: OrderId;
+  readonly fill: FillData;        // последний fill
+  readonly averagePrice: Price;   // итоговая VWAP
 }
 
 export type OrderEvent =
@@ -61,4 +84,5 @@ export type OrderEvent =
   | OrderRejectedEvent
   | OrderCancelledEvent
   | OrderExpiredEvent
-  | FillAppliedEvent;
+  | OrderPartiallyFilledEvent
+  | OrderFilledEvent;

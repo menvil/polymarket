@@ -9,6 +9,11 @@
  *
  * Не содержит бизнес-логики, только форматирование.
  *
+ * @todo
+ * OrderViewModel находится в пакете domain entity для удобства.
+ * Когда архитектура устоится, его можно перенести в application layer —
+ * сериализация для API/UI не является частью доменной логики.
+ *
  * @example
  * ```typescript
  * import { OrderViewModel } from './OrderViewModel';
