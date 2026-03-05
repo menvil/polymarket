@@ -29,10 +29,14 @@
  * orderId, marketId, tokenId, settlementAssetId, price, size, side, fee, timestamp.
  * Инфраструктурные метаданные (liquidity, venueTradeId) живут в ExecutionMetadata.
  *
+ * ### Типизация ID:
+ * Все ID-поля используют branded types из @polymarket/ids:
+ * FillId, OrderId, AccountId, VenueId, MarketId, AssetId.
+ * Это гарантирует корректность на уровне компилятора.
+ *
  * ### Реальные инварианты (cross-field):
- * 1. marketId не пустая строка (строковый тип, нет VO)
- * 2. size > 0 (Quantity допускает 0, Fill — нет)
- * 3. Если fee ненулевая → fee.asset совпадает с settlementAssetId
+ * 1. size > 0 (Quantity допускает 0, Fill — нет)
+ * 2. Если fee ненулевая → fee.asset совпадает с settlementAssetId
  *    (гарантирует корректность getNetCashFlow)
  * Все остальные инварианты гарантируются типами и VO при создании.
  *
@@ -73,7 +77,7 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import type { FillId, OrderId, AccountId, VenueId, AssetId } from '@polymarket/ids';
+import type { FillId, OrderId, AccountId, VenueId, AssetId, MarketId } from '@polymarket/ids';
 import { assetIdToString } from '@polymarket/ids';
 import type { Price, Side, Timestamp, Fee } from '@polymarket/value-objects';
 import { Quantity } from '@polymarket/value-objects';
@@ -98,8 +102,8 @@ export interface FillParams {
   readonly accountId: AccountId;
   /** ID торговой площадки */
   readonly venueId: VenueId;
-  /** ID рынка (строка, нет MarketId VO) */
-  readonly marketId: string;
+  /** ID рынка */
+  readonly marketId: MarketId;
   /** ID токена (актива исполнения) */
   readonly tokenId: AssetId;
   /** Расчётный актив (USDC для Polymarket) */
@@ -128,7 +132,7 @@ export class Fill {
   public readonly orderId: OrderId;
   public readonly accountId: AccountId;
   public readonly venueId: VenueId;
-  public readonly marketId: string;
+  public readonly marketId: MarketId;
   public readonly tokenId: AssetId;
   public readonly settlementAssetId: AssetId;
   public readonly price: Price;
@@ -163,13 +167,12 @@ export class Fill {
    *
    * @remarks
    * ### Что валидируется здесь (cross-field инварианты):
-   * 1. marketId не пустая строка — строковый тип, нет VO
-   * 2. size > 0 — Quantity VO допускает 0, Fill — нет
-   * 3. Если fee ненулевая → fee.asset должен совпадать с settlementAssetId
+   * 1. size > 0 — Quantity VO допускает 0, Fill — нет
+   * 2. Если fee ненулевая → fee.asset должен совпадать с settlementAssetId
    *    (гарантирует корректность getNetCashFlow: сложение в одной валюте)
    *
    * ### Что НЕ валидируется здесь (гарантируется типами и VO):
-   * - id, orderId, accountId, venueId, tokenId — branded types
+   * - id, orderId, accountId, venueId, marketId, tokenId — branded types
    * - price > 0 — гарантируется Price VO при создании (бросает исключение)
    * - fee.amount >= 0 — гарантируется Fee VO
    * - timestamp корректный — гарантируется Timestamp VO
@@ -189,16 +192,8 @@ export class Fill {
    * ```
    */
   public static create(params: FillParams): Result<Fill, ValidationError> {
-    // Инвариант 1: marketId не пустая строка (нет MarketId VO)
-    if (!params.marketId || params.marketId.trim().length === 0) {
-      return Err(
-        new ValidationError('Market ID is required and must be non-empty', {
-          context: { field: 'marketId', value: params.marketId },
-        })
-      );
-    }
-
-    // Инвариант 2: size > 0 — Quantity VO допускает 0, Fill требует положительный размер
+    // Инвариант 1: size > 0 — Quantity VO допускает 0, Fill требует положительный размер
+    // (marketId валидируется на уровне типа — MarketId branded type гарантирует непустую строку)
     if (!params.size.isPositive()) {
       return Err(
         new ValidationError('Fill size must be positive', {

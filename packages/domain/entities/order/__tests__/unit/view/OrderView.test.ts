@@ -291,7 +291,7 @@ describe('OrderDeserializer', () => {
       // null вместо [] бросает TypeError в for...of — catch блок обработает
       const result = OrderDeserializer.fromSnapshot(makeOrderSnap({ fillIds: null as unknown as string[] }));
       expect(result.ok).toBe(false);
-      if (!result.ok) expect(result.error.message).toContain('Failed to restore');
+      if (!result.ok) expect(result.error.message).toContain('fillIds');
     });
 
     it('catch-блок обрабатывает non-Error исключения (ветка String(e))', () => {

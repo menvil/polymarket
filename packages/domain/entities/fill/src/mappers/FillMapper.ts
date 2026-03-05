@@ -63,6 +63,7 @@ import {
   asFillId,
   asOrderId,
   asVenueId,
+  asMarketId,
   parseAssetId,
   parseAccountId,
   asVenueTradeId,
@@ -191,12 +192,12 @@ export class FillMapper {
 
     const isMaker = traderSideRaw === 'MAKER';
 
-    // Извлечь marketId
-    const marketId = raw['market'];
-    if (typeof marketId !== 'string' || marketId.trim().length === 0) {
+    // Извлечь и распарсить marketId
+    const marketIdParsed = asMarketId(typeof raw['market'] === 'string' ? raw['market'] : '');
+    if (!marketIdParsed) {
       return Err(
         new ValidationError('Invalid trade event: missing or invalid market', {
-          context: { field: 'market', value: marketId },
+          context: { field: 'market', value: raw['market'] },
         })
       );
     }
@@ -389,7 +390,7 @@ export class FillMapper {
       orderId,
       accountId,
       venueId,
-      marketId: marketId.trim(),
+      marketId: marketIdParsed,
       tokenId,
       settlementAssetId: AssetIdHelpers.USDC,
       price,
@@ -523,10 +524,11 @@ export class FillMapper {
       );
     }
 
-    if (!snapshot.marketId || snapshot.marketId.trim().length === 0) {
+    const marketId = asMarketId(snapshot.marketId);
+    if (!marketId) {
       return Err(
-        new ValidationError('Invalid snapshot: missing marketId', {
-          context: { field: 'marketId' },
+        new ValidationError('Invalid snapshot: invalid marketId', {
+          context: { field: 'marketId', value: snapshot.marketId },
         })
       );
     }
@@ -614,7 +616,7 @@ export class FillMapper {
       orderId,
       accountId: accountIdParsed,
       venueId,
-      marketId: snapshot.marketId,
+      marketId,
       tokenId,
       settlementAssetId,
       price,

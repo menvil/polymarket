@@ -110,6 +110,12 @@ export abstract class OrderDeserializer {
         }));
       }
 
+      if (!Array.isArray(snap.fillIds)) {
+        return Err(new ValidationError('Invalid fillIds in snapshot: must be an array', {
+          context: { field: 'fillIds', orderId: snap.id },
+        }));
+      }
+
       const fillIds: FillId[] = [];
       for (const rawId of snap.fillIds) {
         const fillId = asFillId(rawId);

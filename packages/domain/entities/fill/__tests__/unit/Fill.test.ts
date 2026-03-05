@@ -8,6 +8,7 @@ import { FillMapper } from '../../src/mappers/FillMapper';
 import {
   asFillId,
   asOrderId,
+  asMarketId,
   accountIdFromWallet,
   parseWalletAddress,
   asVenueId,
@@ -57,7 +58,7 @@ function makeValidParams(overrides?: Partial<FillParams>): FillParams {
     orderId: asOrderId('order-456')!,
     accountId: makeAccountId(),
     venueId: asVenueId('POLYMARKET')!,
-    marketId: 'market-abc',
+    marketId: asMarketId('market-abc')!,
     tokenId,
     settlementAssetId: AssetIdHelpers.USDC,
     price: Price.of(new Decimal('0.65')),
@@ -92,20 +93,9 @@ describe('Fill', () => {
       }
     });
 
-    it('возвращает Err если marketId пустой', () => {
-      const result = Fill.create(makeValidParams({ marketId: '' }));
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.message).toContain('Market ID is required');
-      }
-    });
-
-    it('возвращает Err если marketId только пробелы', () => {
-      const result = Fill.create(makeValidParams({ marketId: '   ' }));
-
-      expect(result.ok).toBe(false);
-    });
+    // Невалидный marketId (пустая строка, пробелы) невозможен на уровне типа:
+    // asMarketId('') → undefined, asMarketId('   ') → undefined
+    // Fill.create() не принимает string — только MarketId branded type.
 
     it('возвращает Err если size нулевой', () => {
       const result = Fill.create(
