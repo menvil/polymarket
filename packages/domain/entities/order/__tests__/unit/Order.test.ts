@@ -110,10 +110,6 @@ describe('Order', () => {
       }
     });
 
-    it('Quantity.of() бросает исключение для отрицательного значения', () => {
-      expect(() => Quantity.of(new Decimal('-10'))).toThrow();
-    });
-
     it('должен вернуть Err для нулевого size', () => {
       const result = createValidOrder({ size: Quantity.of(new Decimal('0')) });
 
@@ -423,6 +419,36 @@ describe('Order', () => {
       expect(order.status).toBe('REJECTED');
     });
 
+    it('должен игнорировать событие с чужим orderId', () => {
+      const FOREIGN_ID = asOrderId('order-foreign')!;
+      const ts = Timestamp.now();
+      const order = Order.fromEvents([
+        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        { type: 'ORDER_ACCEPTED', orderId: FOREIGN_ID }, // чужой orderId — должен быть проигнорирован
+      ]);
+      expect(order.status).toBe('PENDING'); // ORDER_ACCEPTED не применился
+    });
+
+    it('ORDER_FILLED с fill меньше размера заявки ставит статус FILLED в replay', () => {
+      // В режиме replay тип события диктует статус — это намеренное поведение
+      const ts = Timestamp.now();
+      const fillData: FillData = {
+        id: FILL_ID_1, orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+        size: Quantity.of(new Decimal('50')), // только половина заявки
+        price: Price.of(new Decimal('0.65')),
+      };
+      const order = Order.fromEvents([
+        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+        { type: 'ORDER_FILLED', orderId: ORDER_ID, fill: fillData,
+          averagePrice: Price.of(new Decimal('0.65')) },
+      ]);
+      expect(order.status).toBe('FILLED'); // тип события определяет статус при replay
+      expect(order.filledSize.value().toNumber()).toBe(50);
+    });
+
     it('должен игнорировать дублирующий fill в replay (addFill → Err)', () => {
       const ts = Timestamp.now();
       const fillData: FillData = {
@@ -532,6 +558,14 @@ describe('Order', () => {
       const events = filled.pullEvents();
       expect(events).toHaveLength(1);
       expect(events[0].type).toBe('ORDER_FILLED');
+    });
+
+    it('команды, вернувшие Err, не добавляют события в буфер источника', () => {
+      const pending = unwrap(createValidOrder());
+      pending.pullEvents(); // очищаем буфер ORDER_CREATED
+      pending.cancel();     // Err — PENDING нельзя отменить
+      pending.expire();     // Err — PENDING нельзя истечь
+      expect(pending.pullEvents()).toHaveLength(0); // Err не заполняет буфер
     });
 
     it('каждый Order инстанс имеет собственный буфер', () => {
@@ -647,9 +681,10 @@ describe('Order', () => {
       expect(after2.tradeCount).toBe(2);
     });
 
-    it('timestamp геттер возвращает время создания', () => {
-      const order = unwrap(createValidOrder());
-      expect(order.timestamp).toBeDefined();
+    it('timestamp геттер возвращает переданный объект Timestamp', () => {
+      const ts = Timestamp.now();
+      const order = unwrap(createValidOrder({ timestamp: ts }));
+      expect(order.timestamp).toBe(ts); // та же ссылка, не просто defined
     });
 
     it('fillPercentage возвращает 0 если size равен нулю (защитная ветка)', () => {

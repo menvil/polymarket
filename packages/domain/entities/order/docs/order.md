@@ -241,7 +241,7 @@ VWAP = (currentSize × currentAvg + newSize × newPrice) / (currentSize + newSiz
 
 | Событие                    | Эмитирует       | Поля                                    |
 |----------------------------|-----------------|-----------------------------------------|
-| `ORDER_CREATED`            | `create()`      | orderId, asset, side, price, size, timestamp |
+| `ORDER_CREATED`            | `create()`      | orderId, asset, side, price, size, timestamp, strategyId? |
 | `ORDER_ACCEPTED`           | `accept()`      | orderId                                 |
 | `ORDER_REJECTED`           | `reject()`      | orderId, reason                         |
 | `ORDER_CANCELLED`          | `cancel()`      | orderId, reason                         |
@@ -253,8 +253,8 @@ VWAP = (currentSize × currentAvg + newSize × newPrice) / (currentSize + newSiz
 
 | Файл                      | Тесты | Описание                          |
 |---------------------------|-------|-----------------------------------|
-| `unit/Order.test.ts`      | ~75   | create, rehydrate, fromEvents, FSM, computed, pullEvents |
-| `unit/view/OrderView.test.ts` | ~35 | ViewModel, Deserializer, round-trip |
+| `unit/Order.test.ts`      | ~88   | create, rehydrate, fromEvents, FSM, computed, pullEvents |
+| `unit/view/OrderView.test.ts` | ~40 | ViewModel, Deserializer, round-trip |
 | `integration/OrderLifecycle.test.ts` | ~24 | End-to-end сценарии, VWAP, replay |
 
-**Итого: 134 тестов**
+**Итого: ~152 тестов**

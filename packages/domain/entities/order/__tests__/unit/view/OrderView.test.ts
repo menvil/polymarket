@@ -286,6 +286,28 @@ describe('OrderDeserializer', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.error.message).toContain('Failed to restore');
     });
+
+    it('должен вернуть Err если fillIds равен null', () => {
+      // null вместо [] бросает TypeError в for...of — catch блок обработает
+      const result = OrderDeserializer.fromSnapshot(makeOrderSnap({ fillIds: null as unknown as string[] }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('Failed to restore');
+    });
+
+    it('catch-блок обрабатывает non-Error исключения (ветка String(e))', () => {
+      // Геттер бросает строку — не Error-инстанс — покрывает ветку String(e)
+      const snap = makeOrderSnap();
+      Object.defineProperty(snap, 'fillIds', {
+        get() { throw 'raw string error'; },
+        configurable: true,
+      });
+      const result = OrderDeserializer.fromSnapshot(snap);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Failed to restore');
+        expect(result.error.message).toContain('raw string error');
+      }
+    });
   });
 
   describe('fromJSON() (deprecated alias)', () => {
@@ -424,9 +446,9 @@ describe('Round-trip: Order → toSnapshot → fromSnapshot', () => {
 
   it('должен восстановить Order через OrderViewModel.toJSON()', () => {
     const original = createOpenOrder({ strategyId: 'strategy-42' });
-    // OrderViewModel.toJSON включает дополнительные поля + все поля OrderSnapshot
-    // fromSnapshot игнорирует лишние поля
-    const snap = original.toSnapshot();
+    // OrderViewModel.toJSON включает дополнительные поля (notional, remainingSize, fillPercentage)
+    // fromSnapshot игнорирует лишние поля — round-trip через viewJson должен работать
+    const snap = OrderViewModel.toJSON(original) as unknown as OrderSnapshot;
     const result = OrderDeserializer.fromSnapshot(snap);
 
     expect(result.ok).toBe(true);

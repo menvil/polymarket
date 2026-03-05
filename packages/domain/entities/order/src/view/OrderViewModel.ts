@@ -52,7 +52,7 @@ export abstract class OrderViewModel {
    *
    * @remarks
    * Возвращает flat-формат совместимый с OrderSnapshot + вычисляемые поля.
-   * Подходит для передачи через API и для round-trip через Order.fromSnapshot().
+   * Подходит для передачи через API и для round-trip через OrderDeserializer.fromSnapshot().
    *
    * @example
    * ```typescript

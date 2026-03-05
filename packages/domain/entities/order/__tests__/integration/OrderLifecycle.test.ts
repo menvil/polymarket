@@ -28,7 +28,7 @@ import Decimal from 'decimal.js';
 import { Order } from '../../src/Order';
 import { OrderDeserializer } from '../../src/view/OrderDeserializer';
 import { OrderViewModel } from '../../src/view/OrderViewModel';
-import type { FillData } from '../../src/OrderState';
+import type { FillData, OrderSnapshot } from '../../src/OrderState';
 
 // ──────────────── Фикстуры ────────────────
 
@@ -312,13 +312,13 @@ describe('Сценарий: round-trip сериализации через вс�
     const openOrder = unwrap(open.accept());
     const partial = unwrap(openOrder.applyFill(makeFill(0, 60, 0.58)));
 
-    // Сериализуем через OrderViewModel
+    // Сериализуем через OrderViewModel (включает доп. поля: notional, remainingSize, fillPercentage)
     const viewJson = OrderViewModel.toJSON(partial);
 
-    // Десериализуем через OrderDeserializer (принимает OrderSnapshot)
+    // Десериализуем из viewJson — fromSnapshot игнорирует лишние поля
     const restored = unwrap(
-      OrderDeserializer.fromSnapshot(partial.toSnapshot()),
-      'fromSnapshot partial'
+      OrderDeserializer.fromSnapshot(viewJson as unknown as OrderSnapshot),
+      'fromSnapshot via viewJson'
     );
 
     expect(restored.status).toBe('PARTIALLY_FILLED');
@@ -326,10 +326,10 @@ describe('Сценарий: round-trip сериализации через вс�
     expect(restored.averagePrice?.value().toNumber()).toBe(0.58);
     expect(restored.fillIds).toEqual([FILL_IDS[0]]);
 
-    // Проверяем что viewJson содержит нужные поля
-    expect(viewJson.status).toBe('PARTIALLY_FILLED');
-    expect(viewJson.filledSize).toBe(60);
-    expect(viewJson.averagePrice).toBe(0.58);
+    // Дополнительные вычисляемые поля присутствуют в viewJson (не теряются при сериализации)
+    expect(viewJson.notional).toBe(60); // 0.60 * 100
+    expect(viewJson.remainingSize).toBe(40); // 100 - 60
+    expect(viewJson.fillPercentage).toBe(60); // 60 / 100 * 100
   });
 });
 

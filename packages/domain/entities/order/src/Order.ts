@@ -400,17 +400,25 @@ export class Order {
    *
    * @param state - Текущее состояние
    * @param event - Событие для применения
-   * @returns Новое состояние
+   * @returns Новое состояние (без изменений если событие не применимо)
    *
    * @remarks
    * Используется двояко:
    * 1. В командах (accept, reject, cancel, expire, applyFill) — state derived from event
    * 2. В fromEvents() — replay лога событий без валидации
    *
+   * Гарантии безопасности:
+   * - Если orderId события не совпадает с id текущего состояния — событие игнорируется
+   *   (silent corruption prevention при попадании чужого события в поток)
+   * - Статус-гарды предотвращают недопустимые переходы при replay
+   *
    * Это гарантирует, что переход состояния всегда проходит через один код,
    * а не дублируется в каждой команде.
    */
   private static _applyEventToState(state: OrderState, event: OrderEvent): OrderState {
+    // Защита от чужих событий: игнорируем если orderId не совпадает (кроме ORDER_CREATED)
+    if (event.type !== 'ORDER_CREATED' && event.orderId !== state.id) return state;
+
     switch (event.type) {
       case 'ORDER_CREATED':
         return {
