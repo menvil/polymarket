@@ -6,10 +6,12 @@ import { FillMapper } from '../../src/mappers/FillMapper';
 import {
   AssetIdHelpers,
   assetIdToString,
+  accountIdToString,
   accountIdFromWallet,
   parseWalletAddress,
 } from '@polymarket/ids';
 import type { AccountId } from '@polymarket/ids';
+import type { FillSnapshot } from '../../src/FillSnapshot';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -447,6 +449,314 @@ describe('FillMapper', () => {
       });
 
       expect(result.ok).toBe(false);
+    });
+  });
+
+  // ==================== fromSnapshot() — Fix #1: VO throws → Err ====================
+
+  describe('fromSnapshot() — VO throws → Err (Fix #1)', () => {
+    /**
+     * Создаёт валидный FillSnapshot с возможностью переопределения полей
+     */
+    function makeValidSnapshot(overrides?: Partial<FillSnapshot>): FillSnapshot {
+      return {
+        id: 'fill-123',
+        orderId: '0x' + 'a'.repeat(64),
+        accountId: accountIdToString(makeAccountId()),
+        venueId: 'POLYMARKET',
+        marketId: '0x' + 'b'.repeat(64),
+        tokenId: TEST_TOKEN_ID,
+        settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
+        price: 0.65,
+        size: 50,
+        side: 'BUY',
+        timestampMs: 1700000000000,
+        feeAmount: 0,
+        feeAsset: assetIdToString(AssetIdHelpers.USDC),
+        ...overrides,
+      };
+    }
+
+    it('price=0 → Err (не throw)', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: 0 }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('price');
+      }
+    });
+
+    it('price=-1 → Err (не throw)', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: -1 }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('price');
+      }
+    });
+
+    it('size=0 → Err (не throw)', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: 0 }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('size');
+      }
+    });
+
+    it('size=-0.001 → Err (не throw)', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: -0.001 }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('size');
+      }
+    });
+
+    it('feeAmount=-0.01 → Err (не throw)', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAmount: -0.01 }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('feeAmount');
+      }
+    });
+  });
+
+  // ==================== fromSnapshot() — Invalid ID branches ====================
+
+  describe('fromSnapshot() — invalid ID branches', () => {
+    function makeValidSnapshot(overrides?: Partial<FillSnapshot>): FillSnapshot {
+      return {
+        id: 'fill-123',
+        orderId: '0x' + 'a'.repeat(64),
+        accountId: accountIdToString(makeAccountId()),
+        venueId: 'POLYMARKET',
+        marketId: '0x' + 'b'.repeat(64),
+        tokenId: TEST_TOKEN_ID,
+        settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
+        price: 0.65,
+        size: 50,
+        side: 'BUY',
+        timestampMs: 1700000000000,
+        feeAmount: 0,
+        feeAsset: assetIdToString(AssetIdHelpers.USDC),
+        ...overrides,
+      };
+    }
+
+    it('accountId=invalid-format → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ accountId: 'invalid-format' }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('account');
+      }
+    });
+
+    it('venueId=empty → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ venueId: '' }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('venue');
+      }
+    });
+
+    it('marketId=empty → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ marketId: '' }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('market');
+      }
+    });
+
+    it('tokenId=invalid → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ tokenId: 'invalid' }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('tokenId');
+      }
+    });
+
+    it('settlementAssetId=invalid → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ settlementAssetId: 'invalid' }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('settlementAssetId');
+      }
+    });
+
+    it('feeAsset=invalid → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAsset: 'invalid' }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('feeAsset');
+      }
+    });
+  });
+
+  // ==================== fromSnapshot() — нечисловые значения ====================
+
+  describe('fromSnapshot() — нечисловые значения', () => {
+    function makeValidSnapshot(overrides?: Record<string, unknown>): FillSnapshot {
+      return {
+        id: 'fill-123',
+        orderId: '0x' + 'a'.repeat(64),
+        accountId: accountIdToString(makeAccountId()),
+        venueId: 'POLYMARKET',
+        marketId: '0x' + 'b'.repeat(64),
+        tokenId: TEST_TOKEN_ID,
+        settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
+        price: 0.65,
+        size: 50,
+        side: 'BUY',
+        timestampMs: 1700000000000,
+        feeAmount: 0,
+        feeAsset: assetIdToString(AssetIdHelpers.USDC),
+        ...overrides,
+      } as FillSnapshot;
+    }
+
+    it('price="abc" → Err (Decimal parsing fails)', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: 'abc' as unknown as number }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('price');
+      }
+    });
+
+    it('size=NaN → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ size: NaN }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('size');
+      }
+    });
+
+    it('feeAmount="abc" → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ feeAmount: 'abc' as unknown as number }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('fee');
+      }
+    });
+
+    it('price=Infinity → Err', () => {
+      const result = FillMapper.fromSnapshot(makeValidSnapshot({ price: Infinity }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('price');
+      }
+    });
+  });
+
+  // ==================== fromPolymarketTradeEvent() — null/primitive (Fix #2) ====================
+
+  describe('fromPolymarketTradeEvent() — null/primitive входные данные (Fix #2)', () => {
+    it('raw=null → Err (не throw)', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(null as unknown as Record<string, unknown>, accountId);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('non-null object');
+      }
+    });
+
+    it('raw=42 → Err (не throw)', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(42 as unknown as Record<string, unknown>, accountId);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('non-null object');
+      }
+    });
+
+    it('raw="string" → Err (не throw)', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent('string' as unknown as Record<string, unknown>, accountId);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('non-null object');
+      }
+    });
+  });
+
+  // ==================== MAKER — owner policies (Fix #3) ====================
+
+  describe('fromPolymarketTradeEvent() — MAKER owner policies (Fix #3)', () => {
+    it('MAKER без поля owner → Err с "missing owner"', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidMakerEvent({ owner: undefined }),
+        accountId
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('owner');
+      }
+    });
+
+    it('MAKER с owner не совпадающим ни с одним maker_orders → Err с "no maker_orders entry"', () => {
+      const accountId = makeAccountId();
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidMakerEvent({
+          owner: 'unknown-uuid-not-in-maker-orders',
+          maker_orders: [
+            { order_id: '0x' + 'c'.repeat(64), matched_amount: '10', price: '0.65', owner: MAKER_UUID },
+          ],
+        }),
+        accountId
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('no maker_orders entry');
+      }
+    });
+
+    it('MAKER с несколькими maker_orders — выбирает правильного по owner, не первого', () => {
+      const accountId = makeAccountId();
+      const correctOrderId = '0x' + 'e'.repeat(64);
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidMakerEvent({
+          owner: MAKER_UUID,
+          maker_orders: [
+            { order_id: '0x' + 'f'.repeat(64), matched_amount: '3', price: '0.60', owner: 'other-uuid-1' },
+            { order_id: '0x' + 'd'.repeat(64), matched_amount: '2', price: '0.62', owner: 'other-uuid-2' },
+            { order_id: correctOrderId, matched_amount: '7', price: '0.65', owner: MAKER_UUID },
+          ],
+        }),
+        accountId
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        // Должен выбрать third entry (по MAKER_UUID), не первый
+        expect(result.value.fill.orderId).toBe(correctOrderId);
+        expect(result.value.fill.size.value().toNumber()).toBe(7);
+      }
+    });
+  });
+
+  // ==================== fromPolymarketTradeEvent() — проверка текстов ошибок ====================
+
+  describe('fromPolymarketTradeEvent() — проверка текстов ошибок', () => {
+    it('id с control character → Err, сообщение содержит "id"', () => {
+      const accountId = makeAccountId();
+      // asFillId отклоняет строки с control characters (U+0000..U+001F)
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({ id: 'fill\u0000null-byte' }),
+        accountId
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message.toLowerCase()).toContain('id');
+      }
+    });
+
+    it('taker_order_id с control character → Err, сообщение содержит "taker_order_id"', () => {
+      const accountId = makeAccountId();
+      // asOrderId отклоняет строки с control characters
+      const result = FillMapper.fromPolymarketTradeEvent(
+        makeValidTakerEvent({ taker_order_id: '0xabc\u001fnull' }),
+        accountId
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('taker_order_id');
+      }
     });
   });
 });

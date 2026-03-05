@@ -76,7 +76,7 @@ interface FillParams {
 ## Методы — экономические расчёты
 
 ```typescript
-// Signed изменения баланса (AssetDelta = { asset: AssetId; amount: Decimal })
+// Signed изменения баланса (AssetDelta = { asset: AssetId; amount: SignedQuantity })
 getSignedQuantity(): AssetDelta   // { asset: tokenId, amount: ±size }   токен
 getCashFlow(): AssetDelta         // { asset: USDC, amount: ∓(price×size) }
 getFeeFlow(): AssetDelta          // { asset: USDC, amount: -feeAmount }
@@ -96,7 +96,7 @@ hasFee(): boolean                 // fee.amount > 0
 ```typescript
 interface AssetDelta {
   readonly asset: AssetId;
-  readonly amount: Decimal;  // знаковый: + кредит, − дебет
+  readonly amount: SignedQuantity;  // знаковый VO: + кредит, − дебет
 }
 ```
 
@@ -222,11 +222,11 @@ BUY с комиссией  → 3 записи: POSITION_DELTA (+token), CASH_DEL
 
 ## Связь с Order
 
-Fill применяется к Order через `Order.applyFill(fill: FillForOrder)`.
+Fill применяется к Order через `Order.applyFill(fill: FillData)`.
 
 ```
-Order.applyFill(fill) → FILL_APPLIED → обновить filledSize + averagePrice
-  → обновить OrderStatus (PARTIALLY_FILLED | FILLED)
+Order.applyFill(fill) → ORDER_PARTIALLY_FILLED | ORDER_FILLED event
+  → обновить filledSize + averagePrice + OrderStatus
 ```
 
 ## Связь с Trade

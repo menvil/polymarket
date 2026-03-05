@@ -22,8 +22,8 @@
  * console.log(isValidLiquidity(liq)); // true
  * console.log(isValidLiquidity('UNKNOWN')); // false
  *
- * // Проверка в Fill
- * if (fill.isMaker()) {
+ * // Проверка ликвидности через ExecutionMetadata
+ * if (metadata.liquidity === 'MAKER') {
  *   applyMakerFeeDiscount(fill);
  * }
  * ```

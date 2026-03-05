@@ -176,6 +176,15 @@ export class FillMapper {
     raw: Record<string, unknown>,
     accountId: AccountId
   ): Result<{ fill: Fill; metadata: ExecutionMetadata }, ValidationError> {
+    // Защита от null/примитивов на уровне runtime (TypeScript защищает только на уровне компилятора)
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+      return Err(
+        new ValidationError('Trade event must be a non-null object', {
+          context: { received: typeof raw },
+        })
+      );
+    }
+
     // Извлечь fill id (UUID трейда)
     const idRaw = raw['id'];
     if (typeof idRaw !== 'string' || idRaw.trim().length === 0) {
@@ -315,21 +324,30 @@ export class FillMapper {
       const makerOrdersRaw = raw['maker_orders'];
       const makerOrders = Array.isArray(makerOrdersRaw) ? makerOrdersRaw : [];
 
-      // Найти maker_order для этого пользователя по owner UUID
-      const makerOrder = typeof ownerRaw === 'string'
-        ? (makerOrders.find(
-            (o: unknown) =>
-              o !== null &&
-              typeof o === 'object' &&
-              (o as Record<string, unknown>)['owner'] === ownerRaw
-          ) ?? makerOrders[0])
-        : makerOrders[0];
-
-      if (!makerOrder || typeof makerOrder !== 'object') {
+      // owner UUID обязателен для MAKER: без него невозможно определить чей ордер
+      if (typeof ownerRaw !== 'string' || ownerRaw.trim().length === 0) {
         return Err(
-          new ValidationError('Invalid trade event: no maker_orders for MAKER trader_side', {
-            context: { field: 'maker_orders', value: makerOrdersRaw },
-          })
+          new ValidationError(
+            'Invalid trade event: missing owner field for MAKER trader_side',
+            { context: { field: 'owner', value: ownerRaw } }
+          )
+        );
+      }
+
+      // Найти maker_order строго по owner UUID — тихий fallback запрещён
+      const makerOrder = makerOrders.find(
+        (o: unknown) =>
+          o !== null &&
+          typeof o === 'object' &&
+          (o as Record<string, unknown>)['owner'] === ownerRaw
+      );
+
+      if (!makerOrder) {
+        return Err(
+          new ValidationError(
+            'Invalid trade event: no maker_orders entry matching owner UUID',
+            { context: { field: 'owner', value: ownerRaw, makerOrderCount: makerOrders.length } }
+          )
         );
       }
 
@@ -577,7 +595,16 @@ export class FillMapper {
       );
     }
 
-    const price = Price.of(priceDecimal);
+    let price: Price;
+    try {
+      price = Price.of(priceDecimal);
+    } catch {
+      return Err(
+        new ValidationError('Invalid snapshot: price must be positive', {
+          context: { field: 'price', value: snapshot.price },
+        })
+      );
+    }
 
     let sizeDecimal: Decimal;
     try {
@@ -590,7 +617,16 @@ export class FillMapper {
       );
     }
 
-    const size = Quantity.of(sizeDecimal);
+    let size: Quantity;
+    try {
+      size = Quantity.of(sizeDecimal);
+    } catch {
+      return Err(
+        new ValidationError('Invalid snapshot: size must be positive', {
+          context: { field: 'size', value: snapshot.size },
+        })
+      );
+    }
 
     const timestampResult = TimestampService.create(snapshot.timestampMs);
     if (!timestampResult.ok) {
@@ -622,7 +658,16 @@ export class FillMapper {
       );
     }
 
-    const feeQuantity = Quantity.of(feeAmountDecimal);
+    let feeQuantity: Quantity;
+    try {
+      feeQuantity = Quantity.of(feeAmountDecimal);
+    } catch {
+      return Err(
+        new ValidationError('Invalid snapshot: feeAmount must be non-negative', {
+          context: { field: 'feeAmount', value: snapshot.feeAmount },
+        })
+      );
+    }
     const feeAssetQuantity = new AssetQuantity(feeAssetId, feeQuantity);
     const fee = Fee.of(feeAssetQuantity);
 

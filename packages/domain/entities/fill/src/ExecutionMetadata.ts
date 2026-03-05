@@ -22,7 +22,7 @@
  *
  * @example
  * ```typescript
- * const result = FillMapper.fromPolymarketOrderExecutionEvent(rawEvent);
+ * const result = FillMapper.fromPolymarketTradeEvent(rawEvent, accountId);
  * if (result.ok) {
  *   const { fill, metadata } = result.value;
  *   console.log(fill.getCashFlow()); // экономика
