@@ -340,11 +340,11 @@ if (isResolved(market.state)) {
 
 | Файл | Statements | Branches | Functions | Lines |
 |------|-----------|----------|-----------|-------|
-| Market.ts | 100% | ~97% | 100% | 100% |
+| Market.ts | 100% | 100% | 100% | 100% |
 | MarketTradingPolicy.ts | 100% | 100% | 100% | 100% |
 | MarketNotifications.ts | — (types only) | — | — | — |
 | MarketState.ts | 100% | 100% | 100% | 100% |
 | MarketParser.ts | 100% | 100% | 100% | 100% |
 | MarketViewModel.ts | 100% | 100% | 100% | 100% |
 
-7 тестовых suite, 131 тест.
+7 тестовых suite, 139 тестов.

@@ -4,7 +4,7 @@
  * @remarks
  * Проверяет:
  * - getTradingState(market, nowMs) — единственная точка торговых решений
- * - canForceClose(market) — admin-действие без проверки времени
+ * - evaluateForceClose(market) — admin-действие без проверки времени
  * - Полный lifecycle через policy + entity
  */
 

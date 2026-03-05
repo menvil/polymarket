@@ -8,9 +8,9 @@
  * ### Архитектура:
  * - Все свойства readonly — мутации возвращают новый экземпляр
  * - MarketState (discriminated union) вместо разрозненных полей status + resolvedOutcomeIndex
- * - Typed IDs (MarketId, MarketSlug, OutcomeTokenId) вместо bare string
+ * - Typed IDs (MarketId, MarketSlug) вместо bare string
  * - expirationDate хранится как number (ms) для иммутабельности
- * - Lifecycle guards: переходы проверяются через canTransition()
+ * - FSM-переходы делегированы в MarketState namespace
  *
  * ### Жизненный цикл рынка:
  * ```
@@ -230,7 +230,7 @@ export class Market {
    * и публикует результат в event bus.
    *
    * Вызов опустошает буфер — следующий вызов вернёт [].
-   * Market.create() и MarketParser.from() не эмитируют уведомлений
+   * Market.create() и Market.fromSnapshot() не эмитируют уведомлений
    * (восстановление состояния ≠ новое бизнес-событие).
    *
    * @example

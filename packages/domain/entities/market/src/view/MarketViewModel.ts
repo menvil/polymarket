@@ -78,8 +78,9 @@ export class MarketViewModel {
    * @returns MarketSnapshot — JSON-совместимый plain object
    *
    * @remarks
-   * Выполняет round-trip с MarketParser.from():
-   * `MarketParser.from(MarketViewModel.toSnapshot(market))` возвращает эквивалентный Market.
+   * Первый шаг round-trip pipeline:
+   * `MarketParser.from(snapshot)` → `Market.fromSnapshot(snapshotResult.value)` возвращает
+   * эквивалентный Market.
    *
    * @example
    * ```typescript
