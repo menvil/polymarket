@@ -3,7 +3,7 @@
  *
  * @remarks
  * Отвечает за преобразование между:
- * - Внешним форматом Polymarket API (order execution event) → Fill + ExecutionMetadata
+ * - Внешним форматом Polymarket WebSocket user-channel trade события → Fill + ExecutionMetadata
  * - Fill + ExecutionMetadata → FillSnapshot (для хранения)
  * - FillSnapshot → Fill + ExecutionMetadata (для восстановления)
  *
@@ -13,33 +13,41 @@
  *
  * ### Разделение Fill и ExecutionMetadata:
  * Fill содержит доменную экономику (price, size, side, fee, settlementAssetId).
- * ExecutionMetadata содержит инфраструктурный контекст (liquidity, venueTradeId).
+ * ExecutionMetadata содержит инфраструктурный контекст (liquidity, venueTradeId, tradeStatus).
  *
- * ### Формат Polymarket orderExecutionEvent:
+ * ### Формат Polymarket user-channel trade события:
  * ```json
  * {
- *   "fill_id": "fill-123",
- *   "order_id": "order-456",
- *   "account_id": "wallet:0xabc...",
- *   "market": "0xmarket...",
- *   "asset_id": "0xasset...",
- *   "price": "0.65",
- *   "size": "50",
+ *   "event_type": "trade",
+ *   "type": "TRADE",
+ *   "id": "28c4d2eb-bbea-40e7-a9f0-b2fdb56b2c2e",
+ *   "taker_order_id": "0x06bc63...",
+ *   "market": "0xbd31dc8a...",
+ *   "asset_id": "52114319501245...",
  *   "side": "BUY",
- *   "timestamp": "1700000000",
- *   "fee_amount": "0.01",
- *   "liquidity": "MAKER",
- *   "transaction_hash": "0xabcdef..."
+ *   "size": "10",
+ *   "price": "0.57",
+ *   "fee_rate_bps": "0",
+ *   "status": "MATCHED",
+ *   "owner": "9180014b-33c8-9240-a14b-bdca11c0a465",
+ *   "timestamp": "1672290701",
+ *   "trader_side": "TAKER",
+ *   "transaction_hash": "0xabcdef...",
+ *   "maker_orders": [{ "order_id": "0xff...", "matched_amount": "10", "price": "0.57", "owner": "uuid" }]
  * }
  * ```
  *
+ * ### Логика TAKER vs MAKER:
+ * - `trader_side = "TAKER"`: orderId = `taker_order_id`, side/size/price из верхнего уровня
+ * - `trader_side = "MAKER"`: orderId из `maker_orders` (matched by owner UUID), side инвертирован
+ *
+ * ### Расчёт комиссии:
+ * fee_amount = price × size × fee_rate_bps / 10000
+ *
  * @example
  * ```typescript
- * const result = FillMapper.fromPolymarketOrderExecutionEvent({
- *   fill_id: 'fill-123',
- *   order_id: 'order-456',
- *   // ...
- * });
+ * const accountId = parseAccountId('wallet:0xabc...');
+ * const result = FillMapper.fromPolymarketTradeEvent(rawEvent, accountId);
  * if (result.ok) {
  *   const { fill, metadata } = result.value;
  *   console.log(fill.getCashFlow()); // экономика
@@ -50,14 +58,14 @@
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
+import type { AccountId } from '@polymarket/ids';
 import {
   asFillId,
   asOrderId,
-  parseAccountId,
   asVenueId,
   parseAssetId,
+  parseAccountId,
   asVenueTradeId,
-  asTxHash,
   AssetIdHelpers,
   accountIdToString,
   assetIdToString,
@@ -67,14 +75,25 @@ import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import Decimal from 'decimal.js';
 import { Fill } from '../Fill.js';
 import type { FillSnapshot } from '../FillSnapshot.js';
-import type { ExecutionMetadata } from '../ExecutionMetadata.js';
-import { isValidLiquidity } from '../value-objects/Liquidity.js';
+import type { ExecutionMetadata, TradeStatus } from '../ExecutionMetadata.js';
 
 /**
  * ID торговой площадки Polymarket по умолчанию
  * @internal
  */
 const POLYMARKET_VENUE_ID = 'POLYMARKET';
+
+/**
+ * Валидные статусы трейда из Polymarket user-channel
+ * @internal
+ */
+const VALID_TRADE_STATUSES: ReadonlySet<string> = new Set([
+  'MATCHED',
+  'MINED',
+  'CONFIRMED',
+  'RETRYING',
+  'FAILED',
+]);
 
 /**
  * FillMapper - статический класс-маппер для Fill
@@ -84,126 +103,109 @@ const POLYMARKET_VENUE_ID = 'POLYMARKET';
  */
 export class FillMapper {
   /**
-   * Создаёт Fill и ExecutionMetadata из события Polymarket orderExecutionEvent
+   * Создаёт Fill и ExecutionMetadata из события Polymarket user-channel trade
    *
    * @param raw - Сырые данные события (Record<string, unknown>)
+   * @param accountId - AccountId пользователя (из сессионного контекста, не из события)
    * @returns Result<{ fill: Fill; metadata: ExecutionMetadata }, ValidationError>
    *
    * @remarks
    * Алгоритм:
-   * 1. Извлечь и провалидировать обязательные поля для Fill
-   * 2. Преобразовать в typed value objects
-   * 3. Извлечь инфраструктурные метаданные (liquidity, venueTradeId)
-   * 4. Вызвать Fill.create() с settlementAssetId = AssetIdHelpers.USDC
-   * 5. Вернуть { fill, metadata }
+   * 1. Определить тип участника (`trader_side`: TAKER или MAKER)
+   * 2. TAKER: orderId = `taker_order_id`, side/size/price из верхнего уровня события
+   * 3. MAKER: orderId из `maker_orders[n].order_id` (n = индекс по owner UUID), side инвертирован
+   * 4. Вычислить fee: `price × size × fee_rate_bps / 10000`
+   * 5. Создать Fill с settlementAssetId = USDC
+   * 6. Собрать ExecutionMetadata: liquidity (из trader_side), tradeStatus (из status), venueTradeId (из transaction_hash)
    *
-   * ### Формат входных данных:
-   * - `fill_id` (string) — ID исполнения
-   * - `order_id` (string) — ID ордера
-   * - `account_id` (string) — строковый AccountId
-   * - `market` (string) — ID рынка
-   * - `asset_id` (string) — ID токена
-   * - `price` (string | number) — цена
-   * - `size` (string | number) — объём
-   * - `side` (string) — 'BUY' | 'SELL'
-   * - `timestamp` (string | number) — Unix timestamp в секундах
-   * - `fee_amount` (string | number, optional) — сумма комиссии
-   * - `liquidity` (string, optional) — 'MAKER' | 'TAKER' → ExecutionMetadata
-   * - `transaction_hash` (string, optional) — хэш транзакции → ExecutionMetadata.venueTradeId
+   * ### Формат входных данных (real Polymarket user-channel trade event):
+   * - `id` (string) — UUID трейда → FillId
+   * - `taker_order_id` (string) — OrderId тейкера (hex)
+   * - `market` (string) — ID рынка (hex)
+   * - `asset_id` (string) — ID токена (числовой ERC1155 ID или internal строка)
+   * - `side` (string) — 'BUY' | 'SELL' (сторона ТЕЙКЕРА)
+   * - `size` (string) — объём тейкера
+   * - `price` (string) — цена
+   * - `fee_rate_bps` (string) — ставка комиссии в базисных пунктах (0 = no fee)
+   * - `status` (string) — 'MATCHED' | 'MINED' | 'CONFIRMED' | 'RETRYING' | 'FAILED'
+   * - `owner` (string) — UUID пользователя (не используется напрямую)
+   * - `timestamp` (string) — Unix timestamp в секундах
+   * - `trader_side` (string) — 'TAKER' | 'MAKER'
+   * - `transaction_hash` (string, optional) — хэш транзакции → venueTradeId
+   * - `maker_orders` (array, optional) — записи мейкеров [{ order_id, matched_amount, price, owner }]
    *
    * @example
    * ```typescript
-   * const result = FillMapper.fromPolymarketOrderExecutionEvent({
-   *   fill_id: 'fill-123',
-   *   order_id: 'order-456',
-   *   account_id: 'wallet:0xabc...',
-   *   market: '0xmarket...',
-   *   asset_id: '...',
-   *   price: '0.65',
-   *   size: '50',
+   * const accountId = parseAccountId('wallet:0xabc...')!;
+   * const result = FillMapper.fromPolymarketTradeEvent({
+   *   id: '28c4d2eb-bbea-40e7-a9f0-b2fdb56b2c2e',
+   *   taker_order_id: '0x06bc63...',
+   *   market: '0xbd31dc8a...',
+   *   asset_id: 'OUTCOME_TOKEN:...',
+   *   price: '0.57',
+   *   size: '10',
    *   side: 'BUY',
-   *   timestamp: '1700000000',
-   * });
+   *   fee_rate_bps: '0',
+   *   status: 'MATCHED',
+   *   timestamp: '1672290701',
+   *   trader_side: 'TAKER',
+   *   transaction_hash: '0xabcdef...',
+   * }, accountId);
    * if (result.ok) {
    *   const { fill, metadata } = result.value;
    * }
    * ```
    */
-  public static fromPolymarketOrderExecutionEvent(
-    raw: Record<string, unknown>
+  public static fromPolymarketTradeEvent(
+    raw: Record<string, unknown>,
+    accountId: AccountId
   ): Result<{ fill: Fill; metadata: ExecutionMetadata }, ValidationError> {
-    // Извлечь fill_id
-    const fillIdRaw = raw['fill_id'];
-    if (typeof fillIdRaw !== 'string' || fillIdRaw.trim().length === 0) {
+    // Извлечь fill id (UUID трейда)
+    const idRaw = raw['id'];
+    if (typeof idRaw !== 'string' || idRaw.trim().length === 0) {
       return Err(
-        new ValidationError('Invalid orderExecutionEvent: missing or invalid fill_id', {
-          context: { field: 'fill_id', value: fillIdRaw },
+        new ValidationError('Invalid trade event: missing or invalid id', {
+          context: { field: 'id', value: idRaw },
         })
       );
     }
 
-    const fillId = asFillId(fillIdRaw.trim());
+    const fillId = asFillId(idRaw.trim());
     if (!fillId) {
       return Err(
-        new ValidationError('Invalid orderExecutionEvent: invalid fill_id format', {
-          context: { field: 'fill_id', value: fillIdRaw },
+        new ValidationError('Invalid trade event: invalid id format', {
+          context: { field: 'id', value: idRaw },
         })
       );
     }
 
-    // Извлечь order_id
-    const orderIdRaw = raw['order_id'];
-    if (typeof orderIdRaw !== 'string' || orderIdRaw.trim().length === 0) {
+    // Извлечь trader_side — определяет логику TAKER vs MAKER
+    const traderSideRaw = raw['trader_side'];
+    if (traderSideRaw !== 'TAKER' && traderSideRaw !== 'MAKER') {
       return Err(
-        new ValidationError('Invalid orderExecutionEvent: missing or invalid order_id', {
-          context: { field: 'order_id', value: orderIdRaw },
+        new ValidationError('Invalid trade event: trader_side must be TAKER or MAKER', {
+          context: { field: 'trader_side', value: traderSideRaw },
         })
       );
     }
 
-    const orderId = asOrderId(orderIdRaw.trim());
-    if (!orderId) {
-      return Err(
-        new ValidationError('Invalid orderExecutionEvent: invalid order_id format', {
-          context: { field: 'order_id', value: orderIdRaw },
-        })
-      );
-    }
-
-    // Извлечь account_id
-    const accountIdRaw = raw['account_id'];
-    if (typeof accountIdRaw !== 'string' || accountIdRaw.trim().length === 0) {
-      return Err(
-        new ValidationError('Invalid orderExecutionEvent: missing or invalid account_id', {
-          context: { field: 'account_id', value: accountIdRaw },
-        })
-      );
-    }
-
-    const accountId = parseAccountId(accountIdRaw.trim());
-    if (!accountId) {
-      return Err(
-        new ValidationError('Invalid orderExecutionEvent: invalid account_id format', {
-          context: { field: 'account_id', value: accountIdRaw },
-        })
-      );
-    }
+    const isMaker = traderSideRaw === 'MAKER';
 
     // Извлечь marketId
     const marketId = raw['market'];
     if (typeof marketId !== 'string' || marketId.trim().length === 0) {
       return Err(
-        new ValidationError('Invalid orderExecutionEvent: missing or invalid market', {
+        new ValidationError('Invalid trade event: missing or invalid market', {
           context: { field: 'market', value: marketId },
         })
       );
     }
 
-    // Извлечь asset_id
+    // Извлечь asset_id (tokenId)
     const assetIdRaw = raw['asset_id'];
     if (typeof assetIdRaw !== 'string' || assetIdRaw.trim().length === 0) {
       return Err(
-        new ValidationError('Invalid orderExecutionEvent: missing or invalid asset_id', {
+        new ValidationError('Invalid trade event: missing or invalid asset_id', {
           context: { field: 'asset_id', value: assetIdRaw },
         })
       );
@@ -212,110 +214,36 @@ export class FillMapper {
     const tokenId = parseAssetId(assetIdRaw.trim());
     if (!tokenId) {
       return Err(
-        new ValidationError('Invalid orderExecutionEvent: cannot parse asset_id', {
+        new ValidationError('Invalid trade event: cannot parse asset_id', {
           context: { field: 'asset_id', value: assetIdRaw },
         })
       );
     }
 
-    // Извлечь price
-    const priceRaw = raw['price'];
-    if (priceRaw === undefined || priceRaw === null) {
+    // Извлечь side тейкера (для мейкера будет инвертирован)
+    const takerSideRaw = raw['side'];
+    if (takerSideRaw !== 'BUY' && takerSideRaw !== 'SELL') {
       return Err(
-        new ValidationError('Invalid orderExecutionEvent: missing price', {
-          context: { field: 'price' },
+        new ValidationError('Invalid trade event: side must be BUY or SELL', {
+          context: { field: 'side', value: takerSideRaw },
         })
       );
     }
-
-    let priceDecimal: Decimal;
-    try {
-      priceDecimal = new Decimal(String(priceRaw));
-    } catch {
-      return Err(
-        new ValidationError('Invalid orderExecutionEvent: price is not a valid number', {
-          context: { field: 'price', value: priceRaw },
-        })
-      );
-    }
-
-    if (!priceDecimal.isFinite() || priceDecimal.lte(0)) {
-      return Err(
-        new ValidationError('Invalid orderExecutionEvent: price must be positive', {
-          context: { field: 'price', value: priceRaw },
-        })
-      );
-    }
-
-    const price = Price.of(priceDecimal);
-
-    // Извлечь size
-    const sizeRaw = raw['size'];
-    if (sizeRaw === undefined || sizeRaw === null) {
-      return Err(
-        new ValidationError('Invalid orderExecutionEvent: missing size', {
-          context: { field: 'size' },
-        })
-      );
-    }
-
-    let sizeDecimal: Decimal;
-    try {
-      sizeDecimal = new Decimal(String(sizeRaw));
-    } catch {
-      return Err(
-        new ValidationError('Invalid orderExecutionEvent: size is not a valid number', {
-          context: { field: 'size', value: sizeRaw },
-        })
-      );
-    }
-
-    if (!sizeDecimal.isFinite() || sizeDecimal.lte(0)) {
-      return Err(
-        new ValidationError('Invalid orderExecutionEvent: size must be positive', {
-          context: { field: 'size', value: sizeRaw },
-        })
-      );
-    }
-
-    const size = Quantity.of(sizeDecimal);
-
-    // Извлечь side
-    const sideRaw = raw['side'];
-    if (sideRaw !== 'BUY' && sideRaw !== 'SELL') {
-      return Err(
-        new ValidationError('Invalid orderExecutionEvent: side must be BUY or SELL', {
-          context: { field: 'side', value: sideRaw },
-        })
-      );
-    }
-
-    const side = sideRaw;
 
     // Извлечь timestamp
     const timestampRaw = raw['timestamp'];
     if (timestampRaw === undefined || timestampRaw === null) {
       return Err(
-        new ValidationError('Invalid orderExecutionEvent: missing timestamp', {
+        new ValidationError('Invalid trade event: missing timestamp', {
           context: { field: 'timestamp' },
         })
       );
     }
 
-    let timestampSec: number;
-    try {
-      timestampSec = Number(String(timestampRaw));
-    } catch {
-      return Err(
-        new ValidationError('Invalid orderExecutionEvent: timestamp is not a valid number', {
-          context: { field: 'timestamp', value: timestampRaw },
-        })
-      );
-    }
-
+    const timestampSec = Number(String(timestampRaw));
     if (!Number.isFinite(timestampSec) || timestampSec <= 0) {
       return Err(
-        new ValidationError('Invalid orderExecutionEvent: timestamp must be positive', {
+        new ValidationError('Invalid trade event: timestamp must be a positive number', {
           context: { field: 'timestamp', value: timestampRaw },
         })
       );
@@ -324,27 +252,123 @@ export class FillMapper {
     const timestampResult = TimestampService.create(timestampSec * 1000);
     if (!timestampResult.ok) {
       return Err(
-        new ValidationError(`Invalid orderExecutionEvent: ${timestampResult.error.message}`, {
+        new ValidationError(`Invalid trade event: ${timestampResult.error.message}`, {
           context: { field: 'timestamp', value: timestampRaw },
         })
       );
     }
 
-    // Извлечь fee_amount (опционально, по умолчанию 0)
-    const feeAmountRaw = raw['fee_amount'];
+    // Логика TAKER vs MAKER: определяем orderId, side, size, price
+    let orderId;
+    let side: 'BUY' | 'SELL';
+    let priceDecimal: Decimal;
+    let sizeDecimal: Decimal;
+
+    if (!isMaker) {
+      // TAKER: orderId из taker_order_id, side/size/price из верхнего уровня
+      const takerOrderIdRaw = raw['taker_order_id'];
+      if (typeof takerOrderIdRaw !== 'string' || takerOrderIdRaw.trim().length === 0) {
+        return Err(
+          new ValidationError('Invalid trade event: missing or invalid taker_order_id', {
+            context: { field: 'taker_order_id', value: takerOrderIdRaw },
+          })
+        );
+      }
+
+      orderId = asOrderId(takerOrderIdRaw.trim());
+      if (!orderId) {
+        return Err(
+          new ValidationError('Invalid trade event: invalid taker_order_id format', {
+            context: { field: 'taker_order_id', value: takerOrderIdRaw },
+          })
+        );
+      }
+
+      side = takerSideRaw;
+
+      const priceResult = parseDecimalPositive(raw['price'], 'price');
+      if (!priceResult.ok) return Err(priceResult.error);
+      priceDecimal = priceResult.value;
+
+      const sizeResult = parseDecimalPositive(raw['size'], 'size');
+      if (!sizeResult.ok) return Err(sizeResult.error);
+      sizeDecimal = sizeResult.value;
+    } else {
+      // MAKER: orderId из maker_orders (по owner UUID), side инвертирован
+      const ownerRaw = raw['owner'];
+      const makerOrdersRaw = raw['maker_orders'];
+      const makerOrders = Array.isArray(makerOrdersRaw) ? makerOrdersRaw : [];
+
+      // Найти maker_order для этого пользователя по owner UUID
+      const makerOrder = typeof ownerRaw === 'string'
+        ? (makerOrders.find(
+            (o: unknown) =>
+              o !== null &&
+              typeof o === 'object' &&
+              (o as Record<string, unknown>)['owner'] === ownerRaw
+          ) ?? makerOrders[0])
+        : makerOrders[0];
+
+      if (!makerOrder || typeof makerOrder !== 'object') {
+        return Err(
+          new ValidationError('Invalid trade event: no maker_orders for MAKER trader_side', {
+            context: { field: 'maker_orders', value: makerOrdersRaw },
+          })
+        );
+      }
+
+      const makerOrderRecord = makerOrder as Record<string, unknown>;
+      const makerOrderIdRaw = makerOrderRecord['order_id'];
+      if (typeof makerOrderIdRaw !== 'string' || makerOrderIdRaw.trim().length === 0) {
+        return Err(
+          new ValidationError('Invalid trade event: missing order_id in maker_orders entry', {
+            context: { field: 'maker_orders[].order_id', value: makerOrderIdRaw },
+          })
+        );
+      }
+
+      orderId = asOrderId(makerOrderIdRaw.trim());
+      if (!orderId) {
+        return Err(
+          new ValidationError('Invalid trade event: invalid order_id in maker_orders entry', {
+            context: { field: 'maker_orders[].order_id', value: makerOrderIdRaw },
+          })
+        );
+      }
+
+      // Мейкер стоит на противоположной стороне от тейкера
+      side = takerSideRaw === 'BUY' ? 'SELL' : 'BUY';
+
+      // Цена мейкера из maker_orders (может отличаться для limit ордеров)
+      const makerPriceRaw = makerOrderRecord['price'] ?? raw['price'];
+      const priceResult = parseDecimalPositive(makerPriceRaw, 'maker_orders[].price');
+      if (!priceResult.ok) return Err(priceResult.error);
+      priceDecimal = priceResult.value;
+
+      // Объём мейкера из matched_amount (только его часть трейда)
+      const matchedAmountRaw = makerOrderRecord['matched_amount'] ?? raw['size'];
+      const sizeResult = parseDecimalPositive(matchedAmountRaw, 'maker_orders[].matched_amount');
+      if (!sizeResult.ok) return Err(sizeResult.error);
+      sizeDecimal = sizeResult.value;
+    }
+
+    const price = Price.of(priceDecimal);
+    const size = Quantity.of(sizeDecimal);
+
+    // Вычислить fee из fee_rate_bps: fee_amount = price × size × fee_rate_bps / 10000
+    const feeRateBpsRaw = raw['fee_rate_bps'];
     let feeAmount = new Decimal(0);
-    if (feeAmountRaw !== undefined && feeAmountRaw !== null) {
+    if (feeRateBpsRaw !== undefined && feeRateBpsRaw !== null) {
       try {
-        feeAmount = new Decimal(String(feeAmountRaw));
-        if (!feeAmount.isFinite() || feeAmount.lt(0)) {
-          feeAmount = new Decimal(0);
+        const feeRateBps = new Decimal(String(feeRateBpsRaw));
+        if (feeRateBps.isFinite() && feeRateBps.gt(0)) {
+          feeAmount = priceDecimal.mul(sizeDecimal).mul(feeRateBps).div(10000);
         }
       } catch {
-        feeAmount = new Decimal(0);
+        // Невалидный fee_rate_bps → комиссия = 0
       }
     }
 
-    // Fee asset — всегда USDC для Polymarket (расчётная валюта)
     const feeQuantity = Quantity.of(feeAmount);
     const feeAssetQuantity = new AssetQuantity(AssetIdHelpers.USDC, feeQuantity);
     const fee = Fee.of(feeAssetQuantity);
@@ -379,21 +403,22 @@ export class FillMapper {
       return Err(fillResult.error);
     }
 
-    // Извлечь ExecutionMetadata: liquidity и venueTradeId
-    const liquidityRaw = raw['liquidity'];
-    const liquidity = isValidLiquidity(liquidityRaw) ? liquidityRaw : undefined;
+    // Собрать ExecutionMetadata
+    const liquidity = traderSideRaw === 'MAKER' ? 'MAKER' : 'TAKER';
+
+    const statusRaw = raw['status'];
+    const tradeStatus =
+      typeof statusRaw === 'string' && VALID_TRADE_STATUSES.has(statusRaw)
+        ? (statusRaw as TradeStatus)
+        : undefined;
 
     const txHashRaw = raw['transaction_hash'];
-    const timestampSecNum = timestampSec;
     let venueTradeId;
     if (typeof txHashRaw === 'string' && txHashRaw.trim().length > 0) {
-      const txHash = asTxHash(txHashRaw.trim());
-      if (txHash) {
-        venueTradeId = asVenueTradeId(`${txHash}_${timestampSecNum}`);
-      }
+      venueTradeId = asVenueTradeId(txHashRaw.trim()) ?? undefined;
     }
 
-    const metadata: ExecutionMetadata = { liquidity, venueTradeId };
+    const metadata: ExecutionMetadata = { liquidity, tradeStatus, venueTradeId };
 
     return Ok({ fill: fillResult.value, metadata });
   }
@@ -409,7 +434,7 @@ export class FillMapper {
    * Вся логика сериализации живёт здесь (SRP: Fill не знает о persistence).
    * AccountId сериализуется через accountIdToString().
    * AssetId сериализуется через assetIdToString().
-   * metadata.liquidity и metadata.venueTradeId включаются если metadata передан.
+   * metadata.liquidity, metadata.venueTradeId и metadata.tradeStatus включаются если metadata передан.
    *
    * @example
    * ```typescript
@@ -434,6 +459,7 @@ export class FillMapper {
       feeAsset: assetIdToString(fill.fee.asset),
       liquidity: metadata?.liquidity,
       venueTradeId: metadata?.venueTradeId,
+      tradeStatus: metadata?.tradeStatus,
     };
   }
 
@@ -608,11 +634,60 @@ export class FillMapper {
         ? asVenueTradeId(snapshot.venueTradeId)
         : undefined;
 
+    const tradeStatus =
+      snapshot.tradeStatus !== undefined && VALID_TRADE_STATUSES.has(snapshot.tradeStatus)
+        ? (snapshot.tradeStatus as TradeStatus)
+        : undefined;
+
     const metadata: ExecutionMetadata = {
       liquidity: snapshot.liquidity,
       venueTradeId: venueTradeId ?? undefined,
+      tradeStatus,
     };
 
     return Ok({ fill: fillResult.value, metadata });
   }
+}
+
+/**
+ * Парсит Decimal из произвольного значения, проверяет что положительное
+ *
+ * @param value - Входное значение (string | number | unknown)
+ * @param fieldName - Название поля для сообщения об ошибке
+ * @returns Result<Decimal, ValidationError>
+ *
+ * @internal
+ */
+function parseDecimalPositive(
+  value: unknown,
+  fieldName: string
+): Result<Decimal, ValidationError> {
+  if (value === undefined || value === null) {
+    return Err(
+      new ValidationError(`Invalid trade event: missing ${fieldName}`, {
+        context: { field: fieldName },
+      })
+    );
+  }
+
+  let d: Decimal;
+  try {
+    d = new Decimal(String(value));
+  } catch {
+    return Err(
+      new ValidationError(`Invalid trade event: ${fieldName} is not a valid number`, {
+        context: { field: fieldName, value },
+      })
+    );
+  }
+
+  if (!d.isFinite() || d.lte(0)) {
+    return Err(
+      new ValidationError(`Invalid trade event: ${fieldName} must be a positive number`, {
+        context: { field: fieldName, value },
+      })
+    );
+  }
+
+  return Ok(d);
 }

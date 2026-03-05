@@ -63,4 +63,6 @@ export interface FillSnapshot {
   readonly liquidity?: 'MAKER' | 'TAKER';
   /** ID трейда на venue — опциональная сшивка с Trade entity */
   readonly venueTradeId?: string;
+  /** On-chain статус трейда из Polymarket user-channel события */
+  readonly tradeStatus?: string;
 }

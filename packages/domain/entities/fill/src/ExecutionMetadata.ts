@@ -37,14 +37,29 @@ import type { VenueTradeId } from '@polymarket/ids';
 import type { Liquidity } from './value-objects/Liquidity.js';
 
 /**
+ * Статус трейда в Polymarket user-channel событии
+ *
+ * @remarks
+ * Отражает on-chain статус исполнения согласно документации Polymarket WebSocket API.
+ * - MATCHED — трейд сматчен в order book
+ * - MINED — транзакция включена в блок
+ * - CONFIRMED — транзакция подтверждена
+ * - RETRYING — транзакция ретраится (например, low gas)
+ * - FAILED — транзакция провалилась
+ */
+export type TradeStatus = 'MATCHED' | 'MINED' | 'CONFIRMED' | 'RETRYING' | 'FAILED';
+
+/**
  * Инфраструктурные метаданные события исполнения ордера
  *
  * @remarks
- * Оба поля опциональны: venue может не предоставлять эти данные.
+ * Все поля опциональны: venue может не предоставлять эти данные.
  */
 export interface ExecutionMetadata {
   /** ID трейда на venue — опциональная сшивка с Trade entity через ExecutionLinker */
   readonly venueTradeId?: VenueTradeId;
   /** Тип ликвидности исполнения (MAKER/TAKER) — для аналитики комиссий */
   readonly liquidity?: Liquidity;
+  /** On-chain статус трейда из Polymarket user-channel события */
+  readonly tradeStatus?: TradeStatus;
 }

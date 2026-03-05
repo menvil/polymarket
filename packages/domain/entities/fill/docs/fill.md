@@ -9,7 +9,7 @@
 - Расчёта позиций (position tracking)
 - Расчёта PnL
 - Учёта комиссий
-- Аллокации по стратегиям
+- Входной записи для Ledger layer
 
 ## Чем Fill НЕ является
 
@@ -27,71 +27,92 @@ packages/domain/entities/fill/
 
 ```
 src/
-  Fill.ts                      # Основная сущность
+  Fill.ts                      # Основная сущность (Domain Record)
   FillSnapshot.ts              # Плоское DTO для хранения
+  AssetDelta.ts                # Тип для знаковых изменений баланса
+  ExecutionMetadata.ts         # Инфраструктурные метаданные
   index.ts
   value-objects/
     Liquidity.ts               # 'MAKER' | 'TAKER'
   mappers/
-    FillMapper.ts              # fromPolymarketOrderExecutionEvent, toSnapshot, fromSnapshot
+    FillMapper.ts              # fromPolymarketTradeEvent, toSnapshot, fromSnapshot
 ```
 
 ## Интерфейс FillParams
 
 ```typescript
 interface FillParams {
-  readonly id: FillId;              // Уникальный ID исполнения
-  readonly orderId: OrderId;        // ID ордера — ОБЯЗАТЕЛЕН
-  readonly accountId: AccountId;    // ID аккаунта
-  readonly venueId: VenueId;        // Биржа (POLYMARKET)
-  readonly marketId: string;        // ID рынка
-  readonly tokenId: AssetId;        // ID outcome токена
-  readonly price: Price;            // Цена исполнения
-  readonly size: Quantity;          // Объём исполнения
-  readonly side: Side;              // BUY | SELL
-  readonly timestamp: Timestamp;    // Время исполнения
-  readonly fee: Fee;                // Комиссия (>= 0)
-  readonly liquidity?: Liquidity;   // MAKER | TAKER — опционально
-  readonly venueTradeId?: VenueTradeId;  // Связка с Trade — опционально
+  readonly id: FillId;                  // Уникальный ID исполнения (UUID из трейд-события)
+  readonly orderId: OrderId;            // ID ордера — ОБЯЗАТЕЛЕН
+  readonly accountId: AccountId;        // ID аккаунта
+  readonly venueId: VenueId;            // Биржа (POLYMARKET)
+  readonly marketId: string;            // ID рынка
+  readonly tokenId: AssetId;            // ID outcome токена
+  readonly settlementAssetId: AssetId;  // Расчётная валюта (USDC для Polymarket)
+  readonly price: Price;                // Цена исполнения
+  readonly size: Quantity;              // Объём исполнения
+  readonly side: Side;                  // BUY | SELL
+  readonly timestamp: Timestamp;        // Время исполнения
+  readonly fee: Fee;                    // Комиссия (>= 0)
 }
 ```
 
-### Ключевое свойство: orderId обязателен
+### Ключевые свойства
 
-`orderId` в Fill всегда обязателен. Нет orderId — нет Fill. Это фундаментальное отличие от старой модели (где Trade.orderId мог быть `undefined`).
+- `orderId` всегда обязателен. Нет orderId — нет Fill.
+- `settlementAssetId` определяет расчётную валюту (USDC для Polymarket).
+- `liquidity` и `venueTradeId` — инфраструктурные метаданные, вынесены в `ExecutionMetadata`.
 
 ## Инварианты
 
 `Fill.create()` проверяет:
 
-1. `id` не пустой
-2. `orderId` обязателен и не пустой
-3. `accountId` не пустой
-4. `venueId` не пустой
-5. `marketId` не пустая строка
-6. `tokenId` присутствует
-7. `size > 0`
-8. `price > 0`
-9. `timestamp` присутствует
-10. `fee` присутствует (`fee.amount >= 0` гарантируется инвариантом Fee VO)
+1. `marketId` не пустая строка
+2. `size > 0`
+3. Если fee ненулевая — `fee.asset === settlementAssetId` (fee в расчётной валюте)
 
-## Методы
+Остальные поля валидируются своими типами (branded types + Value Objects).
+
+## Методы — экономические расчёты
 
 ```typescript
-// Вычисления
-getNotional(): Decimal    // price × size
+// Signed изменения баланса (AssetDelta = { asset: AssetId; amount: Decimal })
+getSignedQuantity(): AssetDelta   // { asset: tokenId, amount: ±size }   токен
+getCashFlow(): AssetDelta         // { asset: USDC, amount: ∓(price×size) }
+getFeeFlow(): AssetDelta          // { asset: USDC, amount: -feeAmount }
+getNetCashFlow(): AssetDelta      // { asset: USDC, amount: cashFlow + feeFlow }
+
+// Неотрицательная стоимость (AssetQuantity)
+getNotional(): AssetQuantity      // { asset: USDC, amount: price×size }
 
 // Предикаты
-isBuy(): boolean          // side === 'BUY'
-isSell(): boolean         // side === 'SELL'
-isMaker(): boolean        // liquidity === 'MAKER'
-isTaker(): boolean        // liquidity === 'TAKER'
-hasFee(): boolean         // fee.amount > 0
-
-// Сериализация
-toSnapshot(): FillSnapshot
-toString(): string
+isBuy(): boolean                  // side === 'BUY'
+isSell(): boolean                 // side === 'SELL'
+hasFee(): boolean                 // fee.amount > 0
 ```
+
+## AssetDelta
+
+```typescript
+interface AssetDelta {
+  readonly asset: AssetId;
+  readonly amount: Decimal;  // знаковый: + кредит, − дебет
+}
+```
+
+Используется для расчётов в Ledger layer.
+
+## ExecutionMetadata
+
+```typescript
+interface ExecutionMetadata {
+  readonly venueTradeId?: VenueTradeId;  // хэш транзакции → сшивка с Trade
+  readonly liquidity?: Liquidity;        // MAKER | TAKER
+  readonly tradeStatus?: TradeStatus;    // MATCHED | MINED | CONFIRMED | RETRYING | FAILED
+}
+```
+
+Содержит инфраструктурные данные, не влияющие на доменную экономику Fill.
 
 ## Liquidity Value Object
 
@@ -101,62 +122,102 @@ export const ALL_LIQUIDITY: readonly Liquidity[] = ['MAKER', 'TAKER'];
 export function isValidLiquidity(v: unknown): v is Liquidity;
 ```
 
-Опциональное поле: не всегда известно из API (неизвестное значение → `undefined`).
-
 ## FillMapper
 
-### fromPolymarketOrderExecutionEvent
+### fromPolymarketTradeEvent
 
-Парсит событие исполнения ордера Polymarket:
+Парсит trade событие из Polymarket user-channel WebSocket:
 
 ```typescript
-// Входной формат:
+FillMapper.fromPolymarketTradeEvent(
+  raw: Record<string, unknown>,
+  accountId: AccountId          // из сессионного контекста, не из события
+): Result<{ fill: Fill; metadata: ExecutionMetadata }, ValidationError>
+```
+
+**Формат входного события** (Polymarket user-channel):
+```json
 {
-  fill_id: string,             // ID исполнения
-  order_id: string,            // ID ордера
-  account_id: string,          // wallet:0x...
-  market: string,              // market ID
-  asset_id: string,            // JSON-сериализованный AssetId
-  price: string,               // цена
-  size: string,                // объём
-  side: string,                // 'BUY' | 'SELL'
-  timestamp: string,           // unix timestamp в секундах
-  fee_amount: string,          // размер комиссии
-  liquidity?: string,          // 'MAKER' | 'TAKER' | другое
-  transaction_hash?: string    // хэш транзакции
+  "id": "28c4d2eb-bbea-40e7-a9f0-b2fdb56b2c2e",
+  "taker_order_id": "0x06bc63...",
+  "market": "0xbd31dc8a...",
+  "asset_id": "OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0x...:YES",
+  "side": "BUY",
+  "size": "10",
+  "price": "0.57",
+  "fee_rate_bps": "20",
+  "status": "MATCHED",
+  "owner": "9180014b-...",
+  "timestamp": "1672290701",
+  "trader_side": "TAKER",
+  "transaction_hash": "0xabcdef...",
+  "maker_orders": [{ "order_id": "0xff...", "matched_amount": "10", "price": "0.57", "owner": "uuid" }]
 }
 ```
+
+**Логика TAKER vs MAKER:**
+
+| Поле | TAKER | MAKER |
+|------|-------|-------|
+| `orderId` | `taker_order_id` | `maker_orders[n].order_id` (по owner UUID) |
+| `side` | `side` | инвертированный `side` |
+| `size` | `size` | `maker_orders[n].matched_amount` |
+| `price` | `price` | `maker_orders[n].price` |
+
+**Расчёт комиссии:**
+```
+fee_amount = price × size × fee_rate_bps / 10000
+```
+
+**Маппинг в ExecutionMetadata:**
+- `trader_side` → `liquidity` ('MAKER' | 'TAKER')
+- `status` → `tradeStatus` ('MATCHED' | 'MINED' | 'CONFIRMED' | 'RETRYING' | 'FAILED')
+- `transaction_hash` → `venueTradeId`
 
 ### toSnapshot / fromSnapshot
 
 Round-trip сериализация через `FillSnapshot` (плоские примитивы).
+`tradeStatus` сохраняется в снапшоте и восстанавливается.
 
 ## Пример использования
 
 ```typescript
 import { FillMapper } from '@polymarket/fill';
+import { parseAccountId } from '@polymarket/ids';
 
-const result = FillMapper.fromPolymarketOrderExecutionEvent({
-  fill_id: 'fill-123',
-  order_id: 'order-456',
-  account_id: 'wallet:0x1234...',
-  market: '0xmarket123',
-  asset_id: JSON.stringify({ type: 'OUTCOME_TOKEN', ... }),
+const accountId = parseAccountId('wallet:0x1234...')!;
+
+const result = FillMapper.fromPolymarketTradeEvent({
+  id: '28c4d2eb-bbea-40e7-a9f0-b2fdb56b2c2e',
+  taker_order_id: '0x06bc63...',
+  market: '0xbd31dc8a...',
+  asset_id: 'OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0x...:YES',
   price: '0.65',
   size: '50',
   side: 'BUY',
+  fee_rate_bps: '20',
+  status: 'MATCHED',
   timestamp: '1700000000',
-  fee_amount: '0.01',
-  liquidity: 'MAKER',
-  transaction_hash: '0xabc...'
-});
+  trader_side: 'TAKER',
+  transaction_hash: '0xabc...',
+}, accountId);
 
 if (result.ok) {
-  const fill = result.value;
-  console.log(fill.getNotional().toNumber()); // 32.5
-  console.log(fill.isMaker()); // true
-  console.log(fill.hasFee()); // true
+  const { fill, metadata } = result.value;
+  console.log(fill.getCashFlow().amount.toNumber()); // -32.5
+  console.log(fill.hasFee());                        // true (0.65*50*20/10000 = 0.065)
+  console.log(metadata.liquidity);                   // 'TAKER'
+  console.log(metadata.tradeStatus);                 // 'MATCHED'
 }
+```
+
+## Связь с Ledger
+
+Fill → `FillLedgerAdapter.toLedgerEntries(fill)` → `LedgerEntry[]` → `Ledger`
+
+```
+BUY без комиссии → 2 записи: POSITION_DELTA (+token), CASH_DELTA (-USDC)
+BUY с комиссией  → 3 записи: POSITION_DELTA (+token), CASH_DELTA (-USDC), FEE_DEBIT (-USDC)
 ```
 
 ## Связь с Order
@@ -164,17 +225,16 @@ if (result.ok) {
 Fill применяется к Order через `Order.applyFill(fill: FillForOrder)`.
 
 ```
-Order.applyFill(fill) → FILL_APPLIED → OrderFSM → handleFillApplied
-  → OrderFill.addFill() → обновить filledSize + averagePrice
+Order.applyFill(fill) → FILL_APPLIED → обновить filledSize + averagePrice
   → обновить OrderStatus (PARTIALLY_FILLED | FILLED)
 ```
 
 ## Связь с Trade
 
-Fill может опционально ссылаться на Trade через `venueTradeId`:
+Fill может опционально ссылаться на Trade через `ExecutionMetadata.venueTradeId`:
 
 ```
-Fill.venueTradeId?: VenueTradeId → Trade.id
+metadata.venueTradeId → Trade.id (рыночный принт)
 ```
 
 Связка устанавливается в application layer через `ExecutionLinker`. Fill является **источником истины** для расчётов позиций — Trade лишь предоставляет рыночный контекст.

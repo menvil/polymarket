@@ -19,7 +19,7 @@ export { Fill } from './Fill.js';
 export type { FillParams } from './Fill.js';
 export type { FillSnapshot } from './FillSnapshot.js';
 export type { AssetDelta } from './AssetDelta.js';
-export type { ExecutionMetadata } from './ExecutionMetadata.js';
+export type { ExecutionMetadata, TradeStatus } from './ExecutionMetadata.js';
 export { FillMapper } from './mappers/FillMapper.js';
 export type { Liquidity } from './value-objects/Liquidity.js';
 export { ALL_LIQUIDITY, isValidLiquidity } from './value-objects/Liquidity.js';
