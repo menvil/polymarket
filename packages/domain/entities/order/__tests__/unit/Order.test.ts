@@ -344,6 +344,35 @@ describe('Order', () => {
       expect(order.filledSize.value().toNumber()).toBe(30);
     });
 
+    it('должен игнорировать fill после отмены заявки (нелегальный переход)', () => {
+      const ts = Timestamp.now();
+      const fillData: FillData = {
+        id: asFillId('fill-1')!,
+        orderId: ORDER_ID,
+        asset: TEST_ASSET,
+        side: 'BUY',
+        size: Quantity.of(new Decimal('30')),
+        price: Price.of(new Decimal('0.65')),
+      };
+
+      const order = Order.fromEvents([
+        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+        { type: 'ORDER_PARTIALLY_FILLED', orderId: ORDER_ID, fill: fillData,
+          filledSize: Quantity.of(new Decimal('30')),
+          remainingSize: Quantity.of(new Decimal('70')) },
+        { type: 'ORDER_CANCELLED', orderId: ORDER_ID, reason: 'Risk limit' },
+        // fill после cancel — должен быть проигнорирован
+        { type: 'ORDER_PARTIALLY_FILLED', orderId: ORDER_ID, fill: fillData,
+          filledSize: Quantity.of(new Decimal('50')),
+          remainingSize: Quantity.of(new Decimal('50')) },
+      ]);
+
+      expect(order.status).toBe('CANCELED');
+      expect(order.filledSize.value().toNumber()).toBe(30); // fill после cancel не применился
+    });
+
     it('fromEvents() не должен эмитировать события', () => {
       const ts = Timestamp.now();
       const order = Order.fromEvents([

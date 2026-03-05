@@ -263,18 +263,6 @@ export class Order {
       }));
     }
 
-    const state: OrderState = {
-      id: params.id,
-      asset: params.asset,
-      side: params.side,
-      price: params.price,
-      size: params.size,
-      status: 'PENDING',
-      timestamp: params.timestamp,
-      strategyId: params.strategyId,
-      fill: emptyFill(),
-    };
-
     const event: OrderCreatedEvent = {
       type: 'ORDER_CREATED',
       orderId: params.id,
@@ -286,7 +274,7 @@ export class Order {
       strategyId: params.strategyId,
     };
 
-    return Ok(new Order(state, [event]));
+    return Ok(new Order(Order._applyEventToState({} as OrderState, event), [event]));
   }
 
   // ─── Factory: rehydrate ────────────────────────────────────────────────────
@@ -438,19 +426,24 @@ export class Order {
         };
 
       case 'ORDER_ACCEPTED':
+        if (state.status !== 'PENDING') return state;
         return { ...state, status: 'OPEN' };
 
       case 'ORDER_REJECTED':
+        if (state.status !== 'PENDING') return state;
         return { ...state, status: 'REJECTED', reason: event.reason };
 
       case 'ORDER_CANCELLED':
+        if (!FILLABLE_STATUSES.has(state.status)) return state;
         return { ...state, status: 'CANCELED', reason: event.reason };
 
       case 'ORDER_EXPIRED':
+        if (!FILLABLE_STATUSES.has(state.status)) return state;
         return { ...state, status: 'EXPIRED' };
 
       case 'ORDER_PARTIALLY_FILLED':
       case 'ORDER_FILLED': {
+        if (!FILLABLE_STATUSES.has(state.status)) return state;
         const result = addFill(state.fill, event.fill, state.size);
         if (!result.ok) return state;
         const newFill = result.value;
