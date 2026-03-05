@@ -63,6 +63,7 @@ import {
   isResolved,
 } from './value-objects/index.js';
 import { MarketValidationError } from '@polymarket/errors/market';
+import { type MarketEvent } from './MarketEvents.js';
 
 /**
  * Outcome — value object исхода рынка
@@ -131,6 +132,11 @@ export interface MarketProps {
  * ### Lifecycle:
  * - close() — только из ACTIVE, иначе бросает MarketLifecycleError
  * - resolve() — только из CLOSED, иначе бросает MarketLifecycleError
+ *
+ * ### Domain Events (Outbox pattern):
+ * - close() эмитирует MarketClosedEvent в буфер
+ * - resolve() эмитирует MarketResolvedEvent в буфер
+ * - pullEvents() возвращает и очищает буфер
  */
 export class Market {
   public readonly id: MarketId;
@@ -149,9 +155,18 @@ export class Market {
   private readonly _expirationMs: number;
 
   /**
+   * Буфер доменных событий (Domain Event Outbox)
+   *
+   * @remarks
+   * Контролируемая мутация: единственная изменяемая часть immutable entity.
+   * splice(0) в pullEvents() атомарно возвращает и очищает буфер.
+   */
+  private readonly _pendingEvents: MarketEvent[];
+
+  /**
    * Приватный конструктор — используйте Market.create()
    */
-  private constructor(props: MarketProps) {
+  private constructor(props: MarketProps, pendingEvents: MarketEvent[] = []) {
     this.id = props.id;
     this.slug = props.slug;
     this.question = props.question;
@@ -161,6 +176,7 @@ export class Market {
       Object.freeze({ ...props.outcomes[0] }),
       Object.freeze({ ...props.outcomes[1] }),
     ];
+    this._pendingEvents = pendingEvents;
   }
 
   // ==================== Getters ====================
@@ -197,6 +213,34 @@ export class Market {
    */
   public get status(): MarketState['status'] {
     return this.state.status;
+  }
+
+  // ==================== Domain Events ====================
+
+  /**
+   * Возвращает и очищает буфер доменных событий (Outbox pattern)
+   *
+   * @returns Список событий, накопленных с момента последнего вызова
+   *
+   * @remarks
+   * Application-слой должен вызывать pullEvents() после каждой успешной команды
+   * и публиковать результат в event bus.
+   *
+   * Вызов pullEvents() опустошает буфер — следующий вызов вернёт [].
+   * Market.create() и MarketViewModel.fromJSON() не эмитируют событий
+   * (восстановление состояния ≠ новое бизнес-событие).
+   *
+   * @example
+   * ```typescript
+   * const closed = market.close();
+   * const events = closed.pullEvents(); // [MarketClosedEvent]
+   * await eventBus.publish(events);
+   *
+   * closed.pullEvents(); // [] — буфер очищен
+   * ```
+   */
+  public pullEvents(): readonly MarketEvent[] {
+    return this._pendingEvents.splice(0);
   }
 
   // ==================== Factory ====================
@@ -498,23 +542,27 @@ export class Market {
   // ==================== Lifecycle Transitions ====================
 
   /**
-   * Создаёт копию рынка с новым состоянием
+   * Создаёт копию рынка с новым состоянием и событиями
    *
    * @param state - Новое состояние
-   * @returns Новый Market с тем же id/slug/question/outcomes/expiry, но другим state
+   * @param events - Доменные события этого перехода
+   * @returns Новый Market с тем же id/slug/question/outcomes/expiry, другим state и буфером событий
    *
    * @remarks
    * Централизует копирование props — изменение структуры затрагивает одно место.
    */
-  private copy(state: MarketState): Market {
-    return new Market({
-      id: this.id,
-      slug: this.slug,
-      question: this.question,
-      outcomes: this.outcomes,
-      expirationMs: this._expirationMs,
-      state,
-    });
+  private copy(state: MarketState, events: MarketEvent[]): Market {
+    return new Market(
+      {
+        id: this.id,
+        slug: this.slug,
+        question: this.question,
+        outcomes: this.outcomes,
+        expirationMs: this._expirationMs,
+        state,
+      },
+      events
+    );
   }
 
   /**
@@ -541,7 +589,10 @@ export class Market {
    * ```
    */
   public close(): Market {
-    return this.copy(MarketState.transitionToClosed(this.state, { marketId: this.id }));
+    const nextState = MarketState.transitionToClosed(this.state, { marketId: this.id });
+    return this.copy(nextState, [
+      { type: 'MARKET_CLOSED', marketId: this.id, slug: this.slug, occurredAt: Date.now() },
+    ]);
   }
 
   /**
@@ -574,9 +625,16 @@ export class Market {
    * ```
    */
   public resolve(outcomeIndex: OutcomeIndex): Market {
-    return this.copy(
-      MarketState.transitionToResolved(this.state, outcomeIndex, { marketId: this.id })
-    );
+    const nextState = MarketState.transitionToResolved(this.state, outcomeIndex, { marketId: this.id });
+    return this.copy(nextState, [
+      {
+        type: 'MARKET_RESOLVED',
+        marketId: this.id,
+        slug: this.slug,
+        resolvedOutcomeIndex: outcomeIndex,
+        occurredAt: Date.now(),
+      },
+    ]);
   }
 
   // ==================== String Representation ====================

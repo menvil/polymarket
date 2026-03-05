@@ -13,6 +13,7 @@
 
 import { describe, it, expect } from '@jest/globals';
 import { Market, type Outcome } from '../../src/Market.js';
+import { type MarketClosedEvent, type MarketResolvedEvent } from '../../src/MarketEvents.js';
 import {
   MarketState,
   asMarketId,
@@ -467,6 +468,83 @@ describe('Market.equals()', () => {
     if (r1.ok && r2.ok) {
       expect(r1.value.equals(r2.value)).toBe(false);
     }
+  });
+});
+
+describe('Market.pullEvents()', () => {
+  it('create() не эмитирует событий', () => {
+    const result = makeMarket();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.pullEvents()).toEqual([]);
+    }
+  });
+
+  it('close() эмитирует MarketClosedEvent', () => {
+    const result = makeMarket({ state: MarketState.active() });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const closed = result.value.close();
+    const events = closed.pullEvents();
+
+    expect(events).toHaveLength(1);
+    const event = events[0] as MarketClosedEvent;
+    expect(event.type).toBe('MARKET_CLOSED');
+    expect(event.marketId).toBe('market-abc');
+    expect(event.slug).toBe('will-trump-win');
+    expect(typeof event.occurredAt).toBe('number');
+  });
+
+  it('resolve() эмитирует MarketResolvedEvent с корректным resolvedOutcomeIndex', () => {
+    const result = makeMarket({ state: MarketState.closed() });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const resolved = result.value.resolve(1);
+    const events = resolved.pullEvents();
+
+    expect(events).toHaveLength(1);
+    const event = events[0] as MarketResolvedEvent;
+    expect(event.type).toBe('MARKET_RESOLVED');
+    expect(event.marketId).toBe('market-abc');
+    expect(event.slug).toBe('will-trump-win');
+    expect(event.resolvedOutcomeIndex).toBe(1);
+    expect(typeof event.occurredAt).toBe('number');
+  });
+
+  it('pullEvents() очищает буфер — повторный вызов возвращает []', () => {
+    const result = makeMarket({ state: MarketState.active() });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const closed = result.value.close();
+    expect(closed.pullEvents()).toHaveLength(1);
+    expect(closed.pullEvents()).toHaveLength(0); // буфер очищен
+  });
+
+  it('исходный market не накапливает события после close()', () => {
+    const result = makeMarket({ state: MarketState.active() });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const original = result.value;
+    original.close(); // возвращает новый экземпляр, original не меняется
+    expect(original.pullEvents()).toHaveLength(0);
+  });
+
+  it('полный цикл: close + resolve — каждый шаг имеет своё событие', () => {
+    const result = makeMarket({ state: MarketState.active() });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const closed = result.value.close();
+    const closeEvents = closed.pullEvents();
+    expect(closeEvents[0].type).toBe('MARKET_CLOSED');
+
+    const resolved = closed.resolve(0);
+    const resolveEvents = resolved.pullEvents();
+    expect(resolveEvents[0].type).toBe('MARKET_RESOLVED');
   });
 });
 

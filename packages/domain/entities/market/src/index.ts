@@ -54,6 +54,13 @@
 // Entity
 export { Market, type Outcome, type MarketProps } from './Market.js';
 
+// Domain Events
+export {
+  type MarketEvent,
+  type MarketClosedEvent,
+  type MarketResolvedEvent,
+} from './MarketEvents.js';
+
 // Value Objects
 export {
   type MarketId,
