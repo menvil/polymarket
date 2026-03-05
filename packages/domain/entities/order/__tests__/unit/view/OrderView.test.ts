@@ -257,6 +257,35 @@ describe('OrderDeserializer', () => {
         expect(result.error.message).toContain('asset');
       }
     });
+
+    it('должен вернуть Err для null снэпшота', () => {
+      const result = OrderDeserializer.fromSnapshot(null as unknown as OrderSnapshot);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('object');
+    });
+
+    it('должен вернуть Err для невалидного status', () => {
+      const result = OrderDeserializer.fromSnapshot(makeOrderSnap({ status: 'UNKNOWN' as 'OPEN' }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('status');
+    });
+
+    it('должен вернуть Err при несогласованном состоянии (FILLED + filledSize ≠ size)', () => {
+      // FILLED заявка с filledSize 0 — нарушение инварианта rehydrate()
+      const result = OrderDeserializer.fromSnapshot(makeOrderSnap({
+        status: 'FILLED',
+        filledSize: 0,
+      }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('filledSize');
+    });
+
+    it('должен вернуть Err если VO конструктор бросает (price = -1)', () => {
+      // Price.of(-1) бросает — catch блок преобразует в ValidationError
+      const result = OrderDeserializer.fromSnapshot(makeOrderSnap({ price: -1 }));
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('Failed to restore');
+    });
   });
 
   describe('fromJSON() (deprecated alias)', () => {

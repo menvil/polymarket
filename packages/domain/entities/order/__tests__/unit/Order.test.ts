@@ -15,7 +15,7 @@ import {
 import Decimal from 'decimal.js';
 import { Order } from '../../src/Order';
 import { OrderDeserializer } from '../../src/view/OrderDeserializer';
-import type { FillData, OrderState } from '../../src/OrderState';
+import type { FillData, FillState, OrderState } from '../../src/OrderState';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -299,6 +299,12 @@ describe('Order', () => {
       expect(() => Order.fromEvents([])).toThrow();
     });
 
+    it('должен бросить ошибку если первое событие не ORDER_CREATED', () => {
+      expect(() => Order.fromEvents([
+        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+      ])).toThrow('First event must be ORDER_CREATED');
+    });
+
     it('должен воспроизвести полный жизненный цикл с ORDER_FILLED', () => {
       const ts = Timestamp.now();
       const fill: FillData = {
@@ -371,6 +377,78 @@ describe('Order', () => {
 
       expect(order.status).toBe('CANCELED');
       expect(order.filledSize.value().toNumber()).toBe(30); // fill после cancel не применился
+    });
+
+    it('должен игнорировать ORDER_ACCEPTED если статус уже не PENDING', () => {
+      const ts = Timestamp.now();
+      const order = Order.fromEvents([
+        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID }, // дубль — должен быть проигнорирован
+      ]);
+      expect(order.status).toBe('OPEN');
+    });
+
+    it('должен игнорировать ORDER_REJECTED если статус уже не PENDING', () => {
+      const ts = Timestamp.now();
+      const order = Order.fromEvents([
+        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID }, // уже OPEN
+        { type: 'ORDER_REJECTED', orderId: ORDER_ID, reason: 'Too late' }, // должен быть проигнорирован
+      ]);
+      expect(order.status).toBe('OPEN');
+    });
+
+    it('должен игнорировать ORDER_CANCELLED если статус не OPEN/PARTIALLY_FILLED', () => {
+      const ts = Timestamp.now();
+      const order = Order.fromEvents([
+        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        // PENDING — не является fillable, ORDER_CANCELLED должен быть проигнорирован
+        { type: 'ORDER_CANCELLED', orderId: ORDER_ID, reason: 'Too early' },
+      ]);
+      expect(order.status).toBe('PENDING');
+    });
+
+    it('должен игнорировать ORDER_EXPIRED если статус терминальный', () => {
+      const ts = Timestamp.now();
+      const order = Order.fromEvents([
+        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        { type: 'ORDER_REJECTED', orderId: ORDER_ID, reason: 'Invalid' }, // REJECTED — терминальный
+        { type: 'ORDER_EXPIRED', orderId: ORDER_ID }, // должен быть проигнорирован
+      ]);
+      expect(order.status).toBe('REJECTED');
+    });
+
+    it('должен игнорировать дублирующий fill в replay (addFill → Err)', () => {
+      const ts = Timestamp.now();
+      const fillData: FillData = {
+        id: asFillId('fill-dup')!,
+        orderId: ORDER_ID,
+        asset: TEST_ASSET,
+        side: 'BUY',
+        size: Quantity.of(new Decimal('30')),
+        price: Price.of(new Decimal('0.65')),
+      };
+      const partialEvent = {
+        type: 'ORDER_PARTIALLY_FILLED' as const,
+        orderId: ORDER_ID,
+        fill: fillData,
+        filledSize: Quantity.of(new Decimal('30')),
+        remainingSize: Quantity.of(new Decimal('70')),
+      };
+      const order = Order.fromEvents([
+        { type: 'ORDER_CREATED', orderId: ORDER_ID, asset: TEST_ASSET, side: 'BUY',
+          price: Price.of(new Decimal('0.65')), size: Quantity.of(new Decimal('100')), timestamp: ts },
+        { type: 'ORDER_ACCEPTED', orderId: ORDER_ID },
+        partialEvent,
+        partialEvent, // дубликат того же fill — должен быть проигнорирован
+      ]);
+      expect(order.filledSize.value().toNumber()).toBe(30); // второй fill не применился
+      expect(order.status).toBe('PARTIALLY_FILLED');
     });
 
     it('fromEvents() не должен эмитировать события', () => {
@@ -567,6 +645,35 @@ describe('Order', () => {
       const after2 = unwrap(after1.applyFill(createFill({ id: FILL_ID_2, size: Quantity.of(new Decimal('20')) })));
 
       expect(after2.tradeCount).toBe(2);
+    });
+
+    it('timestamp геттер возвращает время создания', () => {
+      const order = unwrap(createValidOrder());
+      expect(order.timestamp).toBeDefined();
+    });
+
+    it('fillPercentage возвращает 0 если size равен нулю (защитная ветка)', () => {
+      const emptyFill: FillState = { filledSize: Quantity.ZERO, averagePrice: undefined, fillIds: [] };
+      const state: OrderState = {
+        id: ORDER_ID,
+        asset: TEST_ASSET,
+        side: 'BUY',
+        price: Price.of(new Decimal('0.65')),
+        size: Quantity.ZERO,
+        status: 'PENDING',
+        timestamp: Timestamp.now(),
+        fill: emptyFill,
+      };
+      const order = unwrap(Order.rehydrate(state));
+      expect(order.fillPercentage.toNumber()).toBe(0);
+    });
+
+    it('applyFill должен вернуть ошибку для fill с нулевым размером', () => {
+      const open = unwrap(unwrap(createValidOrder()).accept());
+      const zeroFill = createFill({ size: Quantity.of(new Decimal('0')) });
+      const result = open.applyFill(zeroFill);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.message).toContain('positive');
     });
 
     it('filledSize, averagePrice, fillIds доступны напрямую', () => {
