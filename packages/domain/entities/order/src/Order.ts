@@ -93,7 +93,7 @@ export class Order {
   private constructor(
     private readonly _s: OrderState,
     /** Буфер доменных событий (Domain Event Outbox) */
-    private _pendingEvents: OrderEvent[] = [],
+    private readonly _pendingEvents: OrderEvent[] = [],
   ) {}
 
   // ─── Identity ──────────────────────────────────────────────────────────────
@@ -408,15 +408,19 @@ export class Order {
   // ─── Private: event application ───────────────────────────────────────────
 
   /**
-   * Применяет событие к состоянию без валидации
+   * Применяет событие к состоянию — единственный источник истины для переходов
    *
    * @param state - Текущее состояние
    * @param event - Событие для применения
    * @returns Новое состояние
    *
    * @remarks
-   * Используется в fromEvents() для воспроизведения лога.
-   * При невалидных данных (например, дубль fill) — пропускает событие.
+   * Используется двояко:
+   * 1. В командах (accept, reject, cancel, expire, applyFill) — state derived from event
+   * 2. В fromEvents() — replay лога событий без валидации
+   *
+   * Это гарантирует, что переход состояния всегда проходит через один код,
+   * а не дублируется в каждой команде.
    */
   private static _applyEventToState(state: OrderState, event: OrderEvent): OrderState {
     switch (event.type) {
@@ -454,11 +458,6 @@ export class Order {
         return { ...state, status: newStatus, fill: newFill };
       }
 
-      default: {
-        // TypeScript exhaustiveness check
-        void (event as never);
-        return state;
-      }
     }
   }
 
@@ -488,7 +487,7 @@ export class Order {
       ));
     }
     const event: OrderAcceptedEvent = { type: 'ORDER_ACCEPTED', orderId: this._s.id };
-    return Ok(new Order({ ...this._s, status: 'OPEN' }, [event]));
+    return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
   }
 
   /**
@@ -519,7 +518,7 @@ export class Order {
       ));
     }
     const event: OrderRejectedEvent = { type: 'ORDER_REJECTED', orderId: this._s.id, reason };
-    return Ok(new Order({ ...this._s, status: 'REJECTED', reason }, [event]));
+    return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
   }
 
   /**
@@ -548,7 +547,7 @@ export class Order {
     }
     const cancelReason = reason ?? 'User cancelled';
     const event: OrderCancelledEvent = { type: 'ORDER_CANCELLED', orderId: this._s.id, reason: cancelReason };
-    return Ok(new Order({ ...this._s, status: 'CANCELED', reason: cancelReason }, [event]));
+    return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
   }
 
   /**
@@ -575,7 +574,7 @@ export class Order {
       ));
     }
     const event: OrderExpiredEvent = { type: 'ORDER_EXPIRED', orderId: this._s.id };
-    return Ok(new Order({ ...this._s, status: 'EXPIRED' }, [event]));
+    return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
   }
 
   /**
@@ -640,28 +639,23 @@ export class Order {
 
     const newFill = newFillResult.value;
     const filled = isFull(newFill, this._s.size);
-    const newStatus: OrderStatus = filled ? 'FILLED' : 'PARTIALLY_FILLED';
-    const newState = { ...this._s, status: newStatus, fill: newFill };
 
-    let event: OrderPartiallyFilledEvent | OrderFilledEvent;
-    if (filled) {
-      event = {
-        type: 'ORDER_FILLED',
-        orderId: this._s.id,
-        fill,
-        averagePrice: newFill.averagePrice!,
-      };
-    } else {
-      event = {
-        type: 'ORDER_PARTIALLY_FILLED',
-        orderId: this._s.id,
-        fill,
-        filledSize: newFill.filledSize,
-        remainingSize: Quantity.of(this._s.size.value().minus(newFill.filledSize.value())),
-      };
-    }
+    const event: OrderPartiallyFilledEvent | OrderFilledEvent = filled
+      ? {
+          type: 'ORDER_FILLED',
+          orderId: this._s.id,
+          fill,
+          averagePrice: newFill.averagePrice!,
+        }
+      : {
+          type: 'ORDER_PARTIALLY_FILLED',
+          orderId: this._s.id,
+          fill,
+          filledSize: newFill.filledSize,
+          remainingSize: Quantity.of(this._s.size.value().minus(newFill.filledSize.value())),
+        };
 
-    return Ok(new Order(newState, [event]));
+    return Ok(new Order(Order._applyEventToState(this._s, event), [event]));
   }
 
   /**
