@@ -14,16 +14,21 @@
  * FillSnapshot использует только примитивы (number, string).
  * Это гарантирует совместимость с JSON.stringify() без потери данных.
  *
+ * ### Инфраструктурные метаданные:
+ * liquidity и venueTradeId хранятся в снапшоте как опциональные поля
+ * (часть ExecutionMetadata). Они не влияют на доменную экономику Fill,
+ * но нужны для восстановления полного контекста исполнения.
+ *
  * @example
  * ```typescript
- * // Получение снапшота из Fill
- * const snapshot = fill.toSnapshot();
+ * // Сохранение Fill + metadata в снапшот
+ * const snapshot = FillMapper.toSnapshot(fill, metadata);
  * const json = JSON.stringify(snapshot);
  *
  * // Восстановление из снапшота
  * const result = FillMapper.fromSnapshot(snapshot);
  * if (result.ok) {
- *   const restored = result.value;
+ *   const { fill, metadata } = result.value;
  * }
  * ```
  */
@@ -40,6 +45,8 @@ export interface FillSnapshot {
   readonly marketId: string;
   /** ID токена (актива) — JSON сериализованный AssetId */
   readonly tokenId: string;
+  /** Расчётный актив — JSON сериализованный AssetId (USDC для Polymarket) */
+  readonly settlementAssetId: string;
   /** Цена исполнения */
   readonly price: number;
   /** Размер исполнения */
@@ -52,7 +59,7 @@ export interface FillSnapshot {
   readonly feeAmount: number;
   /** Fee asset (JSON сериализованный AssetId) */
   readonly feeAsset: string;
-  /** Тип ликвидности (MAKER/TAKER) — опционально */
+  /** Тип ликвидности (MAKER/TAKER) — опциональные метаданные */
   readonly liquidity?: 'MAKER' | 'TAKER';
   /** ID трейда на venue — опциональная сшивка с Trade entity */
   readonly venueTradeId?: string;

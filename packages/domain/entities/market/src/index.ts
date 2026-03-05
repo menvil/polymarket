@@ -6,7 +6,7 @@
  *
  * ### Архитектура:
  * - **Market** — основная entity с lifecycle management
- * - **Value Objects** — MarketId, MarketSlug, OutcomeTokenId, MarketStatus, MarketState
+ * - **Value Objects** — MarketId (@polymarket/ids), OutcomeToken (@polymarket/value-objects), MarketSlug, MarketStatus, MarketState
  * - **Errors** — MarketValidationError, MarketLifecycleError
  * - **View** — MarketViewModel (URL, toJSON, fromJSON)
  *
@@ -48,12 +48,13 @@ export { Market, type Outcome, type MarketProps } from './Market.js';
 // Value Objects
 export {
   type MarketId,
-  parseMarketId,
   asMarketId,
+  unsafeMarketId,
+  OutcomeToken,
+  OutcomeTokenSerializer,
+  type OutcomeTokenJSON,
   type MarketSlug,
   parseMarketSlug,
-  type OutcomeTokenId,
-  parseOutcomeTokenId,
   type MarketStatus,
   MARKET_STATUS_VALUES,
   isValidMarketStatus,

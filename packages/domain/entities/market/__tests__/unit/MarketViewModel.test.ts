@@ -10,30 +10,64 @@
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Market } from '../../src/Market.js';
+import { Market, type Outcome } from '../../src/Market.js';
 import {
   MarketState,
-  asMarketId,
   parseMarketSlug,
-  parseOutcomeTokenId,
+  unsafeMarketId,
+  OutcomeToken,
 } from '../../src/value-objects/index.js';
+import {
+  BinaryOutcome,
+  type OnChainConditionRef,
+  asOnChainProtocolId,
+  parseChainId,
+  parseConditionId,
+} from '@polymarket/ids';
 import { MarketViewModel } from '../../src/view/MarketViewModel.js';
 import { MarketValidationError } from '../../src/errors/MarketErrors.js';
 
-// ==================== Хелпер ====================
+// ==================== Тестовые данные ====================
 
-const EXPIRATION_MS = 1_700_000_000_000; // Фиксированное время для тестов
+const EXPIRATION_MS = 1_700_000_000_000;
+
+const TEST_CONDITION_REF: OnChainConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: asOnChainProtocolId('POLYMARKET_CTF')!,
+  chainId: parseChainId('137')!,
+  conditionId: parseConditionId('0x' + 'ab'.repeat(32))!,
+};
+
+const YES_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
+const NO_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
+
+const TEST_OUTCOMES: readonly [Outcome, Outcome] = [
+  { token: YES_TOKEN, index: 0, name: 'Yes' },
+  { token: NO_TOKEN, index: 1, name: 'No' },
+];
+
+/** Корректный OutcomeTokenJSON для использования в fromJSON тестах */
+const YES_TOKEN_JSON = {
+  conditionRef: {
+    kind: 'ONCHAIN' as const,
+    protocolId: 'POLYMARKET_CTF',
+    chainId: 137,
+    conditionId: '0x' + 'ab'.repeat(32),
+  },
+  outcomeKey: 'UP',
+};
+
+const NO_TOKEN_JSON = {
+  ...YES_TOKEN_JSON,
+  outcomeKey: 'DOWN',
+};
 
 function makeActiveMarket() {
   return Market.create({
-    id: asMarketId('market-abc'),
+    id: unsafeMarketId('market-abc'),
     slug: parseMarketSlug('will-trump-win')!,
     question: 'Will Trump win?',
-    outcomeNames: ['Yes', 'No'],
-    outcomeTokenIds: [
-      parseOutcomeTokenId('token-yes')!,
-      parseOutcomeTokenId('token-no')!,
-    ],
+    outcomes: TEST_OUTCOMES,
     expirationMs: EXPIRATION_MS,
     state: MarketState.active(),
   });
@@ -62,10 +96,10 @@ describe('MarketViewModel.toJSON()', () => {
     expect(json.id).toBe('market-abc');
     expect(json.slug).toBe('will-trump-win');
     expect(json.question).toBe('Will Trump win?');
-    expect(json.outcomes[0].tokenId).toBe('token-yes');
+    expect(json.outcomes[0].token.outcomeKey).toBe('UP');
     expect(json.outcomes[0].index).toBe(0);
     expect(json.outcomes[0].name).toBe('Yes');
-    expect(json.outcomes[1].tokenId).toBe('token-no');
+    expect(json.outcomes[1].token.outcomeKey).toBe('DOWN');
     expect(json.outcomes[1].index).toBe(1);
     expect(json.outcomes[1].name).toBe('No');
     expect(json.expirationDate).toBe(new Date(EXPIRATION_MS).toISOString());
@@ -108,7 +142,9 @@ describe('MarketViewModel.fromJSON() — round-trip', () => {
     expect(restored.value.slug).toBe(result.value.slug);
     expect(restored.value.question).toBe(result.value.question);
     expect(restored.value.isActive()).toBe(true);
-    expect(restored.value.expirationDate.toISOString()).toBe(result.value.expirationDate.toISOString());
+    expect(restored.value.expirationDate.toISOString()).toBe(
+      result.value.expirationDate.toISOString()
+    );
   });
 
   it('round-trip для RESOLVED рынка', () => {
@@ -158,8 +194,8 @@ describe('MarketViewModel.fromJSON() — невалидные данные', () 
       slug: 'INVALID SLUG',
       question: 'Will Trump win?',
       outcomes: [
-        { tokenId: 'token-yes', index: 0, name: 'Yes' },
-        { tokenId: 'token-no', index: 1, name: 'No' },
+        { token: YES_TOKEN_JSON, index: 0, name: 'Yes' },
+        { token: NO_TOKEN_JSON, index: 1, name: 'No' },
       ],
       expirationDate: new Date(EXPIRATION_MS).toISOString(),
       state: { status: 'ACTIVE' },
@@ -170,14 +206,32 @@ describe('MarketViewModel.fromJSON() — невалидные данные', () 
     }
   });
 
+  it('возвращает Err для невалидного outcomes[0].token', () => {
+    const result = MarketViewModel.fromJSON({
+      id: 'market-abc',
+      slug: 'will-trump-win',
+      question: 'Will Trump win?',
+      outcomes: [
+        { token: { invalid: true }, index: 0, name: 'Yes' },
+        { token: NO_TOKEN_JSON, index: 1, name: 'No' },
+      ],
+      expirationDate: new Date(EXPIRATION_MS).toISOString(),
+      state: { status: 'ACTIVE' },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message.toLowerCase()).toContain('outcomes[0].token');
+    }
+  });
+
   it('возвращает Err для невалидного expirationDate', () => {
     const result = MarketViewModel.fromJSON({
       id: 'market-abc',
       slug: 'will-trump-win',
       question: 'Will Trump win?',
       outcomes: [
-        { tokenId: 'token-yes', index: 0, name: 'Yes' },
-        { tokenId: 'token-no', index: 1, name: 'No' },
+        { token: YES_TOKEN_JSON, index: 0, name: 'Yes' },
+        { token: NO_TOKEN_JSON, index: 1, name: 'No' },
       ],
       expirationDate: 'not-a-date',
       state: { status: 'ACTIVE' },
@@ -194,8 +248,8 @@ describe('MarketViewModel.fromJSON() — невалидные данные', () 
       slug: 'will-trump-win',
       question: 'Will Trump win?',
       outcomes: [
-        { tokenId: 'token-yes', index: 0, name: 'Yes' },
-        { tokenId: 'token-no', index: 1, name: 'No' },
+        { token: YES_TOKEN_JSON, index: 0, name: 'Yes' },
+        { token: NO_TOKEN_JSON, index: 1, name: 'No' },
       ],
       expirationDate: new Date(EXPIRATION_MS).toISOString(),
       state: { status: 'PENDING' },
@@ -212,8 +266,8 @@ describe('MarketViewModel.fromJSON() — невалидные данные', () 
       slug: 'will-trump-win',
       question: 'Will Trump win?',
       outcomes: [
-        { tokenId: 'token-yes', index: 0, name: 'Yes' },
-        { tokenId: 'token-no', index: 1, name: 'No' },
+        { token: YES_TOKEN_JSON, index: 0, name: 'Yes' },
+        { token: NO_TOKEN_JSON, index: 1, name: 'No' },
       ],
       expirationDate: new Date(EXPIRATION_MS).toISOString(),
       state: { status: 'RESOLVED' },

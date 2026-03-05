@@ -32,12 +32,12 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
+import { OutcomeTokenSerializer, type OutcomeTokenJSON } from '@polymarket/value-objects/outcome-token';
 import { Market } from '../Market.js';
 import {
   type OutcomeIndex,
   asMarketId,
   parseMarketSlug,
-  parseOutcomeTokenId,
   MarketState,
   isValidMarketStatus,
 } from '../value-objects/index.js';
@@ -64,8 +64,8 @@ export interface MarketJSON {
   readonly question: string;
   /** Исходы рынка */
   readonly outcomes: readonly [
-    { readonly tokenId: string; readonly index: 0; readonly name: string },
-    { readonly tokenId: string; readonly index: 1; readonly name: string },
+    { readonly token: OutcomeTokenJSON; readonly index: 0; readonly name: string },
+    { readonly token: OutcomeTokenJSON; readonly index: 1; readonly name: string },
   ];
   /** Дата истечения в ISO 8601 формате */
   readonly expirationDate: string;
@@ -153,12 +153,12 @@ export class MarketViewModel {
       question: market.question,
       outcomes: [
         {
-          tokenId: market.outcomes[0].tokenId,
+          token: OutcomeTokenSerializer.toJSON(market.outcomes[0].token),
           index: 0,
           name: market.outcomes[0].name,
         },
         {
-          tokenId: market.outcomes[1].tokenId,
+          token: OutcomeTokenSerializer.toJSON(market.outcomes[1].token),
           index: 1,
           name: market.outcomes[1].name,
         },
@@ -218,6 +218,13 @@ export class MarketViewModel {
       );
     }
     const id = asMarketId(raw.id);
+    if (!id) {
+      return Err(
+        new MarketValidationError('Market JSON: id must be a non-empty string', {
+          context: { field: 'id', value: raw.id },
+        })
+      );
+    }
 
     // Валидация slug
     if (typeof raw.slug !== 'string') {
@@ -264,11 +271,11 @@ export class MarketViewModel {
         })
       );
     }
-    const tokenId0 = parseOutcomeTokenId(String(o0.tokenId ?? ''));
-    if (!tokenId0) {
+    const token0Result = OutcomeTokenSerializer.fromJSON(o0.token);
+    if (!token0Result.ok) {
       return Err(
-        new MarketValidationError('Market JSON: outcomes[0].tokenId must be a non-empty string', {
-          context: { field: 'outcomes[0].tokenId', value: o0.tokenId },
+        new MarketValidationError('Market JSON: outcomes[0].token is invalid', {
+          context: { field: 'outcomes[0].token', cause: token0Result.error.message },
         })
       );
     }
@@ -289,11 +296,11 @@ export class MarketViewModel {
         })
       );
     }
-    const tokenId1 = parseOutcomeTokenId(String(o1.tokenId ?? ''));
-    if (!tokenId1) {
+    const token1Result = OutcomeTokenSerializer.fromJSON(o1.token);
+    if (!token1Result.ok) {
       return Err(
-        new MarketValidationError('Market JSON: outcomes[1].tokenId must be a non-empty string', {
-          context: { field: 'outcomes[1].tokenId', value: o1.tokenId },
+        new MarketValidationError('Market JSON: outcomes[1].token is invalid', {
+          context: { field: 'outcomes[1].token', cause: token1Result.error.message },
         })
       );
     }
@@ -332,8 +339,10 @@ export class MarketViewModel {
       id,
       slug,
       question: raw.question,
-      outcomeNames: [o0.name as string, o1.name as string],
-      outcomeTokenIds: [tokenId0, tokenId1],
+      outcomes: [
+        { token: token0Result.value, index: 0, name: o0.name as string },
+        { token: token1Result.value, index: 1, name: o1.name as string },
+      ],
       expirationMs,
       state: stateResult.value,
     });

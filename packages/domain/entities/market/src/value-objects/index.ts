@@ -2,8 +2,12 @@
  * Value Objects для Market entity
  */
 
-export { type MarketId, parseMarketId, asMarketId } from './MarketId.js';
-export { type OutcomeTokenId, parseOutcomeTokenId } from './OutcomeTokenId.js';
+// MarketId — из foundation ids пакета
+export { type MarketId, asMarketId, unsafeMarketId } from '@polymarket/ids';
+
+// OutcomeToken — из domain value-objects пакета
+export { OutcomeToken, OutcomeTokenSerializer, type OutcomeTokenJSON } from '@polymarket/value-objects/outcome-token';
+
 export { type MarketSlug, parseMarketSlug } from './MarketSlug.js';
 export {
   type MarketStatus,

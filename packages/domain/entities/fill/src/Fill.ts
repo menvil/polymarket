@@ -24,13 +24,16 @@
  * потому что fills могут приходить вне порядка (out-of-order events),
  * а lifecycle fill > lifecycle order.
  *
- * ### Связь с Trade:
- * Fill.venueTradeId?: VenueTradeId — опциональная сшивка в application layer
- * через ExecutionLinker.
+ * ### Что хранит Fill:
+ * Fill содержит только доменные данные, необходимые для расчёта экономики:
+ * orderId, marketId, tokenId, settlementAssetId, price, size, side, fee, timestamp.
+ * Инфраструктурные метаданные (liquidity, venueTradeId) живут в ExecutionMetadata.
  *
  * ### Реальные инварианты (cross-field):
  * 1. marketId не пустая строка (строковый тип, нет VO)
  * 2. size > 0 (Quantity допускает 0, Fill — нет)
+ * 3. Если fee ненулевая → fee.asset совпадает с settlementAssetId
+ *    (гарантирует корректность getNetCashFlow)
  * Все остальные инварианты гарантируются типами и VO при создании.
  *
  * ### Immutability:
@@ -39,8 +42,8 @@
  * @example
  * ```typescript
  * import { Fill } from '@polymarket/fill';
- * import { asFillId, asOrderId, parseAccountId, asVenueId, parseAssetId } from '@polymarket/ids';
- * import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+ * import { asFillId, asOrderId, parseAccountId, asVenueId, parseAssetId, AssetIdHelpers } from '@polymarket/ids';
+ * import { Price, Quantity, TimestampService, Fee } from '@polymarket/value-objects';
  * import Decimal from 'decimal.js';
  *
  * const result = Fill.create({
@@ -50,27 +53,32 @@
  *   venueId: asVenueId('POLYMARKET')!,
  *   marketId: 'market-abc',
  *   tokenId: parseAssetId('...'),
+ *   settlementAssetId: AssetIdHelpers.USDC,
  *   price: Price.of(new Decimal('0.65')),
  *   size: Quantity.of(new Decimal('50')),
  *   side: 'BUY',
- *   timestamp: Timestamp.now(),
- *   fee: Fee.zero(usdcAsset),
+ *   timestamp: TimestampService.create(Date.now()).value,
+ *   fee: Fee.zero(AssetIdHelpers.USDC),
  * });
  *
  * if (result.ok) {
  *   const fill = result.value;
- *   console.log(fill.getCashFlow().toNumber());   // -32.5 (BUY = деньги ушли)
- *   console.log(fill.getSignedQuantity().toNumber()); // +50 (позиция выросла)
+ *   const cashDelta = fill.getCashFlow();
+ *   console.log(cashDelta.amount.toNumber()); // -32.5 (BUY = деньги ушли)
+ *   const positionDelta = fill.getSignedQuantity();
+ *   console.log(positionDelta.amount.toNumber()); // +50 (позиция выросла)
  * }
  * ```
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import type { FillId, OrderId, AccountId, VenueId, AssetId, VenueTradeId } from '@polymarket/ids';
-import type { Price, Quantity, Side, Timestamp, Fee } from '@polymarket/value-objects';
-import Decimal from 'decimal.js';
-import type { Liquidity } from './value-objects/Liquidity.js';
+import type { FillId, OrderId, AccountId, VenueId, AssetId } from '@polymarket/ids';
+import { assetIdToString } from '@polymarket/ids';
+import type { Price, Side, Timestamp, Fee } from '@polymarket/value-objects';
+import { Quantity } from '@polymarket/value-objects';
+import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
+import type { AssetDelta } from './AssetDelta.js';
 
 /**
  * Параметры создания Fill
@@ -78,7 +86,7 @@ import type { Liquidity } from './value-objects/Liquidity.js';
  * @remarks
  * Все ID-поля типизированы — branded types гарантируют корректность.
  * Все VO (Price, Quantity, Timestamp, Fee) валидируют себя при создании.
- * liquidity и venueTradeId опциональны.
+ * liquidity и venueTradeId вынесены в ExecutionMetadata (не доменные данные).
  */
 export interface FillParams {
   /** Уникальный ID исполнения */
@@ -91,8 +99,10 @@ export interface FillParams {
   readonly venueId: VenueId;
   /** ID рынка (строка, нет MarketId VO) */
   readonly marketId: string;
-  /** ID токена (актива) */
+  /** ID токена (актива исполнения) */
   readonly tokenId: AssetId;
+  /** Расчётный актив (USDC для Polymarket) */
+  readonly settlementAssetId: AssetId;
   /** Цена исполнения (Price VO гарантирует > 0) */
   readonly price: Price;
   /** Размер исполнения (должен быть > 0) */
@@ -103,10 +113,6 @@ export interface FillParams {
   readonly timestamp: Timestamp;
   /** Комиссия за исполнение (>= 0, гарантируется Fee VO) */
   readonly fee: Fee;
-  /** Тип ликвидности — опционально */
-  readonly liquidity?: Liquidity;
-  /** ID трейда на venue — опциональная сшивка с Trade entity */
-  readonly venueTradeId?: VenueTradeId;
 }
 
 /**
@@ -114,7 +120,7 @@ export interface FillParams {
  *
  * @remarks
  * Все свойства readonly. Factory method Fill.create() с Result pattern.
- * Содержит методы для расчёта экономического эффекта исполнения.
+ * Содержит методы для расчёта экономического эффекта исполнения в виде AssetDelta.
  */
 export class Fill {
   public readonly id: FillId;
@@ -123,13 +129,12 @@ export class Fill {
   public readonly venueId: VenueId;
   public readonly marketId: string;
   public readonly tokenId: AssetId;
+  public readonly settlementAssetId: AssetId;
   public readonly price: Price;
   public readonly size: Quantity;
   public readonly side: Side;
   public readonly timestamp: Timestamp;
   public readonly fee: Fee;
-  public readonly liquidity: Liquidity | undefined;
-  public readonly venueTradeId: VenueTradeId | undefined;
 
   /**
    * Приватный конструктор (используйте Fill.create())
@@ -141,13 +146,12 @@ export class Fill {
     this.venueId = params.venueId;
     this.marketId = params.marketId;
     this.tokenId = params.tokenId;
+    this.settlementAssetId = params.settlementAssetId;
     this.price = params.price;
     this.size = params.size;
     this.side = params.side;
     this.timestamp = params.timestamp;
     this.fee = params.fee;
-    this.liquidity = params.liquidity;
-    this.venueTradeId = params.venueTradeId;
   }
 
   /**
@@ -160,6 +164,8 @@ export class Fill {
    * ### Что валидируется здесь (cross-field инварианты):
    * 1. marketId не пустая строка — строковый тип, нет VO
    * 2. size > 0 — Quantity VO допускает 0, Fill — нет
+   * 3. Если fee ненулевая → fee.asset должен совпадать с settlementAssetId
+   *    (гарантирует корректность getNetCashFlow: сложение в одной валюте)
    *
    * ### Что НЕ валидируется здесь (гарантируется типами и VO):
    * - id, orderId, accountId, venueId, tokenId — branded types
@@ -172,11 +178,12 @@ export class Fill {
    * const result = Fill.create({
    *   id: asFillId('fill-123')!,
    *   orderId: asOrderId('order-456')!,
+   *   settlementAssetId: AssetIdHelpers.USDC,
    *   // ... остальные поля
    * });
    * if (result.ok) {
    *   const fill = result.value;
-   *   console.log(fill.getCashFlow().toNumber()); // -32.5 для BUY 50 @ 0.65
+   *   console.log(fill.getCashFlow().amount.toNumber()); // -32.5 для BUY 50 @ 0.65
    * }
    * ```
    */
@@ -199,6 +206,20 @@ export class Fill {
       );
     }
 
+    // Инвариант 3: если fee ненулевая, fee.asset должен совпадать с settlementAssetId
+    // Это гарантирует корректность getNetCashFlow (сложение в одной валюте)
+    if (!params.fee.isZero()) {
+      const feeAssetStr = assetIdToString(params.fee.asset);
+      const settlementAssetStr = assetIdToString(params.settlementAssetId);
+      if (feeAssetStr !== settlementAssetStr) {
+        return Err(
+          new ValidationError('Fill fee asset must match settlementAssetId when fee is non-zero', {
+            context: { feeAsset: feeAssetStr, settlementAssetId: settlementAssetStr },
+          })
+        );
+      }
+    }
+
     return Ok(new Fill(params));
   }
 
@@ -207,107 +228,130 @@ export class Fill {
   /**
    * Возвращает знаковый объём исполнения (position delta)
    *
-   * @returns +size для BUY, -size для SELL
+   * @returns AssetDelta с asset=tokenId и amount=+size для BUY, -size для SELL
    *
    * @remarks
    * Используется для расчёта изменения позиции.
-   * BUY увеличивает позицию, SELL уменьшает.
+   * BUY увеличивает позицию (положительный amount), SELL уменьшает (отрицательный).
    *
    * @example
    * ```typescript
    * // BUY 50 @ 0.65
-   * fill.getSignedQuantity().toNumber() // +50
+   * const delta = fill.getSignedQuantity();
+   * console.log(delta.amount.toNumber()); // +50
    *
    * // SELL 50 @ 0.65
-   * fill.getSignedQuantity().toNumber() // -50
+   * const delta = fill.getSignedQuantity();
+   * console.log(delta.amount.toNumber()); // -50
    * ```
    */
-  public getSignedQuantity(): Decimal {
-    return this.side === 'BUY' ? this.size.value() : this.size.value().negated();
+  public getSignedQuantity(): AssetDelta {
+    const amount = this.side === 'BUY' ? this.size.value() : this.size.value().negated();
+    return { asset: this.tokenId, amount };
   }
 
   /**
    * Возвращает денежный поток от исполнения (без комиссии)
    *
-   * @returns -(price × size) для BUY, +(price × size) для SELL
+   * @returns AssetDelta с asset=settlementAssetId и amount=-(price×size) для BUY, +(price×size) для SELL
    *
    * @remarks
-   * BUY: деньги уходят (отрицательный cash flow)
-   * SELL: деньги приходят (положительный cash flow)
+   * BUY: деньги уходят (отрицательный amount)
+   * SELL: деньги приходят (положительный amount)
    * Для получения чистого потока с учётом комиссии используйте getNetCashFlow().
    *
    * @example
    * ```typescript
-   * // BUY 50 @ 0.65
-   * fill.getCashFlow().toNumber() // -32.5
+   * // BUY 50 @ 0.65, settlementAssetId=USDC
+   * const delta = fill.getCashFlow();
+   * console.log(delta.asset);          // USDC AssetId
+   * console.log(delta.amount.toNumber()); // -32.5
    *
    * // SELL 50 @ 0.65
-   * fill.getCashFlow().toNumber() // +32.5
+   * console.log(delta.amount.toNumber()); // +32.5
    * ```
    */
-  public getCashFlow(): Decimal {
+  public getCashFlow(): AssetDelta {
     const notional = this.price.value().times(this.size.value());
-    return this.side === 'BUY' ? notional.negated() : notional;
+    const amount = this.side === 'BUY' ? notional.negated() : notional;
+    return { asset: this.settlementAssetId, amount };
   }
 
   /**
    * Возвращает денежный поток от комиссии
    *
-   * @returns -fee.amount (всегда отрицательный или 0)
+   * @returns AssetDelta с asset=fee.asset и amount=-feeAmount (всегда отрицательный или 0)
    *
    * @remarks
-   * Комиссия всегда является расходом. При нулевой комиссии возвращает 0.
+   * Комиссия всегда является расходом. При нулевой комиссии amount равен 0.
+   * Благодаря инварианту Fill.create(), при ненулевой комиссии fee.asset === settlementAssetId.
    *
    * @example
    * ```typescript
    * // Fee 0.02 USDC
-   * fill.getFeeFlow().toNumber() // -0.02
+   * const feeFlow = fill.getFeeFlow();
+   * console.log(feeFlow.asset);          // USDC AssetId
+   * console.log(feeFlow.amount.toNumber()); // -0.02
    *
    * // Zero fee
-   * fill.getFeeFlow().toNumber() // 0
+   * console.log(feeFlow.amount.isZero()); // true
    * ```
    */
-  public getFeeFlow(): Decimal {
-    return this.fee.quantity.amount().value().negated();
+  public getFeeFlow(): AssetDelta {
+    const amount = this.fee.quantity.amount().value().negated();
+    return { asset: this.fee.asset, amount };
   }
 
   /**
    * Возвращает чистый денежный поток (с учётом комиссии)
    *
-   * @returns getCashFlow() + getFeeFlow()
+   * @returns AssetDelta с asset=settlementAssetId и amount=cashFlow + feeFlow
    *
    * @remarks
-   * Это итоговое изменение денежного баланса от исполнения.
+   * Это итоговое изменение расчётного баланса от исполнения.
+   * Инвариант Fill.create() гарантирует, что при ненулевой комиссии
+   * fee.asset === settlementAssetId, поэтому сложение корректно.
    *
    * @example
    * ```typescript
    * // BUY 50 @ 0.65, fee 0.02 USDC
-   * fill.getNetCashFlow().toNumber() // -32.52
+   * const net = fill.getNetCashFlow();
+   * console.log(net.asset);           // USDC AssetId
+   * console.log(net.amount.toNumber()); // -32.52
    *
    * // SELL 50 @ 0.65, fee 0.02 USDC
-   * fill.getNetCashFlow().toNumber() // +32.48
+   * console.log(net.amount.toNumber()); // +32.48
    * ```
    */
-  public getNetCashFlow(): Decimal {
-    return this.getCashFlow().plus(this.getFeeFlow());
+  public getNetCashFlow(): AssetDelta {
+    const cashFlow = this.getCashFlow();
+    const feeFlow = this.getFeeFlow();
+    return {
+      asset: this.settlementAssetId,
+      amount: cashFlow.amount.plus(feeFlow.amount),
+    };
   }
 
   /**
    * Вычисляет номинальную стоимость исполнения (notional)
    *
-   * @returns price × size как Decimal (всегда положительный)
+   * @returns AssetQuantity с asset=settlementAssetId и amount=price×size (всегда положительный)
    *
    * @remarks
+   * Notional — это абсолютная стоимость исполнения без учёта стороны (BUY/SELL).
    * Для знакового расчёта используйте getCashFlow().
    *
    * @example
    * ```typescript
    * // BUY или SELL 50 @ 0.65
-   * fill.getNotional().toNumber() // 32.5
+   * const notional = fill.getNotional();
+   * console.log(notional.amount().value().toNumber()); // 32.5
+   * console.log(notional.asset());                     // USDC AssetId
    * ```
    */
-  public getNotional(): Decimal {
-    return this.price.value().times(this.size.value());
+  public getNotional(): AssetQuantity {
+    const notionalAmount = Quantity.of(this.price.value().times(this.size.value()));
+    return new AssetQuantity(this.settlementAssetId, notionalAmount);
   }
 
   // ==================== Predicates ====================
@@ -328,24 +372,6 @@ export class Fill {
    */
   public isSell(): boolean {
     return this.side === 'SELL';
-  }
-
-  /**
-   * Проверяет, является ли исполнение maker-ом
-   *
-   * @returns True если liquidity === 'MAKER'
-   */
-  public isMaker(): boolean {
-    return this.liquidity === 'MAKER';
-  }
-
-  /**
-   * Проверяет, является ли исполнение taker-ом
-   *
-   * @returns True если liquidity === 'TAKER'
-   */
-  public isTaker(): boolean {
-    return this.liquidity === 'TAKER';
   }
 
   /**

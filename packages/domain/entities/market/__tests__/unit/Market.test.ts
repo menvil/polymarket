@@ -8,34 +8,54 @@
  * - isExpiredAt(nowMs) детерминизм
  * - lifecycle: close(), resolve() с lifecycle guards
  * - predicates: isActive, isClosed, isResolved, canTrade
- * - toString()
+ * - equals(), toString()
  */
 
 import { describe, it, expect } from '@jest/globals';
-import { Market } from '../../src/Market.js';
+import { Market, type Outcome } from '../../src/Market.js';
 import {
   MarketState,
   asMarketId,
+  unsafeMarketId,
   parseMarketSlug,
-  parseOutcomeTokenId,
+  OutcomeToken,
 } from '../../src/value-objects/index.js';
+import {
+  BinaryOutcome,
+  type OnChainConditionRef,
+  asOnChainProtocolId,
+  parseChainId,
+  parseConditionId,
+} from '@polymarket/ids';
 import { MarketLifecycleError, MarketValidationError } from '../../src/errors/MarketErrors.js';
 
-// ==================== Хелперы ====================
+// ==================== Тестовые данные ====================
 
-const EXPIRATION_FUTURE = Date.now() + 86_400_000; // +1 day
-const EXPIRATION_PAST = Date.now() - 86_400_000; // -1 day
+const EXPIRATION_FUTURE = Date.now() + 86_400_000;
+const EXPIRATION_PAST = Date.now() - 86_400_000;
+
+/** OnChainConditionRef для тестов */
+const TEST_CONDITION_REF: OnChainConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: asOnChainProtocolId('POLYMARKET_CTF')!,
+  chainId: parseChainId('137')!,
+  conditionId: parseConditionId('0x' + 'ab'.repeat(32))!,
+};
+
+const YES_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.UP);
+const NO_TOKEN = OutcomeToken.of(TEST_CONDITION_REF, BinaryOutcome.DOWN);
+
+const TEST_OUTCOMES: readonly [Outcome, Outcome] = [
+  { token: YES_TOKEN, index: 0, name: 'Yes' },
+  { token: NO_TOKEN, index: 1, name: 'No' },
+];
 
 function makeMarket(overrides: Partial<Parameters<typeof Market.create>[0]> = {}) {
   return Market.create({
-    id: asMarketId('market-abc'),
+    id: unsafeMarketId('market-abc'),
     slug: parseMarketSlug('will-trump-win')!,
     question: 'Will Trump win?',
-    outcomeNames: ['Yes', 'No'],
-    outcomeTokenIds: [
-      parseOutcomeTokenId('token-yes')!,
-      parseOutcomeTokenId('token-no')!,
-    ],
+    outcomes: TEST_OUTCOMES,
     expirationMs: EXPIRATION_FUTURE,
     state: MarketState.active(),
     ...overrides,
@@ -55,27 +75,37 @@ describe('Market.create()', () => {
     }
   });
 
-  it('asMarketId бросает Error для пустой строки (защита на уровне branded type)', () => {
-    expect(() => asMarketId('')).toThrow(Error);
-    expect(() => asMarketId('  ')).toThrow(Error);
+  it('asMarketId возвращает undefined для невалидных строк', () => {
+    expect(asMarketId('')).toBeUndefined();
+    expect(asMarketId('  ')).toBeUndefined();
+    expect(asMarketId('valid-id')).toBeDefined();
   });
 
-  it('возвращает Err при невалидном slug', () => {
-    // parseMarketSlug возвращает undefined для 'UPPER', поэтому передаём вручную
-    const result = Market.create({
-      id: asMarketId('market-abc'),
-      // @ts-expect-error - intentionally passing invalid slug for testing
-      slug: 'UPPER_CASE',
-      question: 'Will Trump win?',
-      outcomeNames: ['Yes', 'No'],
-      outcomeTokenIds: [parseOutcomeTokenId('token-yes')!, parseOutcomeTokenId('token-no')!],
-      expirationMs: EXPIRATION_FUTURE,
-      state: MarketState.active(),
+  it('возвращает Err при одинаковых outcomeNames', () => {
+    const result = makeMarket({
+      outcomes: [
+        { token: YES_TOKEN, index: 0, name: 'Yes' },
+        { token: NO_TOKEN, index: 1, name: 'Yes' },
+      ],
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error).toBeInstanceOf(MarketValidationError);
-      expect(result.error.context?.field).toBe('slug');
+      expect(result.error.context?.field).toBe('outcomes');
+    }
+  });
+
+  it('возвращает Err при одинаковых outcomeTokens', () => {
+    const result = makeMarket({
+      outcomes: [
+        { token: YES_TOKEN, index: 0, name: 'Yes' },
+        { token: YES_TOKEN, index: 1, name: 'No' },
+      ],
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(MarketValidationError);
+      expect(result.error.context?.field).toBe('outcomes');
     }
   });
 
@@ -88,19 +118,29 @@ describe('Market.create()', () => {
     }
   });
 
-  it('возвращает Err при пустом outcomeNames[0]', () => {
-    const result = makeMarket({ outcomeNames: ['', 'No'] });
+  it('возвращает Err при пустом outcomes[0].name', () => {
+    const result = makeMarket({
+      outcomes: [
+        { token: YES_TOKEN, index: 0, name: '' },
+        { token: NO_TOKEN, index: 1, name: 'No' },
+      ],
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.context?.field).toBe('outcomeNames[0]');
+      expect(result.error.context?.field).toBe('outcomes[0].name');
     }
   });
 
-  it('возвращает Err при пустом outcomeNames[1]', () => {
-    const result = makeMarket({ outcomeNames: ['Yes', ''] });
+  it('возвращает Err при пустом outcomes[1].name', () => {
+    const result = makeMarket({
+      outcomes: [
+        { token: YES_TOKEN, index: 0, name: 'Yes' },
+        { token: NO_TOKEN, index: 1, name: '' },
+      ],
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.error.context?.field).toBe('outcomeNames[1]');
+      expect(result.error.context?.field).toBe('outcomes[1].name');
     }
   });
 
@@ -120,7 +160,7 @@ describe('Market.create()', () => {
     }
   });
 
-  it('создаёт outcomes с правильными индексами', () => {
+  it('создаёт outcomes с правильными индексами и token', () => {
     const result = makeMarket();
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -128,6 +168,8 @@ describe('Market.create()', () => {
       expect(result.value.outcomes[1].index).toBe(1);
       expect(result.value.outcomes[0].name).toBe('Yes');
       expect(result.value.outcomes[1].name).toBe('No');
+      expect(result.value.outcomes[0].token.outcomeKey()).toBe(BinaryOutcome.UP);
+      expect(result.value.outcomes[1].token.outcomeKey()).toBe(BinaryOutcome.DOWN);
     }
   });
 });
@@ -139,16 +181,15 @@ describe('Market.expirationDate (иммутабельность)', () => {
     if (result.ok) {
       const d1 = result.value.expirationDate;
       const d2 = result.value.expirationDate;
-      expect(d1).not.toBe(d2); // разные объекты
-      expect(d1.getTime()).toBe(d2.getTime()); // одинаковое время
+      expect(d1).not.toBe(d2);
+      expect(d1.getTime()).toBe(d2.getTime());
     }
   });
 });
 
 describe('Market.isExpiredAt(nowMs)', () => {
   it('возвращает false если nowMs < expirationMs', () => {
-    const expirationMs = 1_000_000;
-    const result = makeMarket({ expirationMs });
+    const result = makeMarket({ expirationMs: 1_000_000 });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.isExpiredAt(500_000)).toBe(false);
@@ -156,8 +197,7 @@ describe('Market.isExpiredAt(nowMs)', () => {
   });
 
   it('возвращает true если nowMs >= expirationMs', () => {
-    const expirationMs = 1_000_000;
-    const result = makeMarket({ expirationMs });
+    const result = makeMarket({ expirationMs: 1_000_000 });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.value.isExpiredAt(1_000_000)).toBe(true);
@@ -169,7 +209,6 @@ describe('Market.isExpiredAt(nowMs)', () => {
     const result = makeMarket({ expirationMs: EXPIRATION_PAST });
     expect(result.ok).toBe(true);
     if (result.ok) {
-      // Явно передаём "прошедшее" время — не зависит от системных часов
       expect(result.value.isExpiredAt(EXPIRATION_PAST + 1)).toBe(true);
       expect(result.value.isExpiredAt(0)).toBe(false);
     }
@@ -226,24 +265,18 @@ describe('Market predicates', () => {
   });
 
   it('canTrade() = true только если ACTIVE и не истёк', () => {
-    const activeNotExpired = makeMarket({
-      state: MarketState.active(),
-      expirationMs: EXPIRATION_FUTURE,
-    });
-    expect(activeNotExpired.ok).toBe(true);
-    if (activeNotExpired.ok) {
-      expect(activeNotExpired.value.canTrade()).toBe(true);
+    const result = makeMarket({ state: MarketState.active(), expirationMs: EXPIRATION_FUTURE });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.canTrade()).toBe(true);
     }
   });
 
   it('canTrade() = false если ACTIVE но истёк', () => {
-    const activeExpired = makeMarket({
-      state: MarketState.active(),
-      expirationMs: EXPIRATION_PAST,
-    });
-    expect(activeExpired.ok).toBe(true);
-    if (activeExpired.ok) {
-      expect(activeExpired.value.canTrade()).toBe(false);
+    const result = makeMarket({ state: MarketState.active(), expirationMs: EXPIRATION_PAST });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.canTrade()).toBe(false);
     }
   });
 
@@ -281,7 +314,7 @@ describe('Market.close() lifecycle', () => {
     if (result.ok) {
       const original = result.value;
       original.close();
-      expect(original.isActive()).toBe(true); // оригинал не изменился
+      expect(original.isActive()).toBe(true);
     }
   });
 
@@ -307,7 +340,7 @@ describe('Market.close() lifecycle', () => {
     if (result.ok) {
       try {
         result.value.close();
-        expect(true).toBe(false); // должно бросить
+        expect(true).toBe(false);
       } catch (e) {
         expect(e).toBeInstanceOf(MarketLifecycleError);
         const err = e as MarketLifecycleError;
@@ -393,6 +426,36 @@ describe('Market полный lifecycle ACTIVE → CLOSED → RESOLVED', () => {
     const state = resolved.state;
     if (state.status === 'RESOLVED') {
       expect(state.resolvedOutcomeIndex).toBe(0);
+    }
+  });
+});
+
+describe('Market.equals()', () => {
+  it('возвращает true для рынков с одинаковым id', () => {
+    const r1 = makeMarket();
+    const r2 = makeMarket();
+    expect(r1.ok && r2.ok).toBe(true);
+    if (r1.ok && r2.ok) {
+      expect(r1.value.equals(r2.value)).toBe(true);
+    }
+  });
+
+  it('возвращает true после перехода состояния (тот же рынок, другой объект)', () => {
+    const result = makeMarket();
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      const market = result.value;
+      const closed = market.close();
+      expect(market.equals(closed)).toBe(true);
+    }
+  });
+
+  it('возвращает false для рынков с разными id', () => {
+    const r1 = makeMarket({ id: unsafeMarketId('market-aaa') });
+    const r2 = makeMarket({ id: unsafeMarketId('market-bbb') });
+    expect(r1.ok && r2.ok).toBe(true);
+    if (r1.ok && r2.ok) {
+      expect(r1.value.equals(r2.value)).toBe(false);
     }
   });
 });

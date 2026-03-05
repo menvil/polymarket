@@ -40,7 +40,9 @@
   "license": "MIT",
   "dependencies": {
     "@polymarket/errors": "^0.1.0",
-    "@polymarket/result": "^0.1.0"
+    "@polymarket/ids": "^0.1.0",
+    "@polymarket/result": "^0.1.0",
+    "@polymarket/value-objects": "^0.1.0"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",

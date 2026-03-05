@@ -27,16 +27,17 @@
  * @example
  * ```typescript
  * import { Market } from './Market';
- * import { MarketState, asMarketId, parseMarketSlug, parseOutcomeTokenId } from './value-objects';
+ * import { MarketState, asMarketId, parseMarketSlug } from './value-objects';
+ * import { OutcomeToken, BinaryOutcome } from '@polymarket/value-objects/outcome-token';
  *
+ * const conditionRef = { kind: 'ONCHAIN', protocolId: 'POLYMARKET_CTF', chainId: 137, conditionId: '0x...' };
  * const result = Market.create({
- *   id: asMarketId('market-abc'),
+ *   id: asMarketId('market-abc')!,
  *   slug: parseMarketSlug('will-trump-win-2024')!,
  *   question: 'Will Trump win the 2024 election?',
- *   outcomeNames: ['Yes', 'No'],
- *   outcomeTokenIds: [
- *     parseOutcomeTokenId('token-yes-123')!,
- *     parseOutcomeTokenId('token-no-456')!,
+ *   outcomes: [
+ *     { token: OutcomeToken.of(conditionRef, BinaryOutcome.UP), index: 0, name: 'Yes' },
+ *     { token: OutcomeToken.of(conditionRef, BinaryOutcome.DOWN), index: 1, name: 'No' },
  *   ],
  *   expirationMs: Date.parse('2024-11-05T00:00:00Z'),
  *   state: MarketState.active(),
@@ -51,13 +52,10 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
+import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
 import {
   type MarketId,
-  parseMarketId,
   type MarketSlug,
-  parseMarketSlug,
-  type OutcomeTokenId,
-  parseOutcomeTokenId,
   type OutcomeIndex,
   MarketState,
   isActive,
@@ -68,16 +66,28 @@ import {
 import { MarketValidationError, MarketLifecycleError } from './errors/MarketErrors.js';
 
 /**
- * Outcome — inline value object для исхода рынка
+ * Outcome — value object исхода рынка
  *
  * @remarks
- * Не выносится в отдельный файл, т.к. используется только внутри Market.
- * Содержит всю необходимую информацию об одном исходе бинарного рынка.
+ * Инкапсулирует всю информацию об одном исходе бинарного рынка.
+ * Использует `OutcomeToken` из `@polymarket/value-objects` для представления
+ * on-chain токена с полной семантикой (conditionRef, outcomeKey, equals).
+ *
+ * @example
+ * ```typescript
+ * import { OutcomeToken, BinaryOutcome } from '@polymarket/value-objects/outcome-token';
+ *
+ * const outcome: Outcome = {
+ *   token: OutcomeToken.of(conditionRef, BinaryOutcome.UP),
+ *   index: 0,
+ *   name: 'Yes',
+ * };
+ * ```
  */
 export interface Outcome {
-  /** Токен-идентификатор исхода на блокчейне */
-  readonly tokenId: OutcomeTokenId;
-  /** Индекс исхода (0 = YES, 1 = NO) */
+  /** On-chain токен исхода с conditionRef и outcomeKey */
+  readonly token: OutcomeToken;
+  /** Позиция в массиве исходов (0 = YES/UP, 1 = NO/DOWN) */
   readonly index: OutcomeIndex;
   /** Человекочитаемое название исхода */
   readonly name: string;
@@ -89,13 +99,6 @@ export interface Outcome {
  * @remarks
  * Используется в Market.create() factory method.
  * Все поля immutable (readonly).
- *
- * ### Изменения относительно старой версии:
- * - `expirationMs: number` вместо `expirationDate: Date` (иммутабельность)
- * - `state: MarketState` вместо `status + resolvedOutcomeIndex` (type safety)
- * - `id: MarketId` вместо `id: string` (branded type)
- * - `slug: MarketSlug` вместо `slug: string` (branded type + валидация)
- * - `outcomeTokenIds: [OutcomeTokenId, OutcomeTokenId]` (branded types)
  */
 export interface MarketProps {
   /** Уникальный идентификатор рынка */
@@ -104,10 +107,8 @@ export interface MarketProps {
   readonly slug: MarketSlug;
   /** Вопрос рынка */
   readonly question: string;
-  /** Названия исходов: [YES, NO] */
-  readonly outcomeNames: readonly [string, string];
-  /** Токен-идентификаторы исходов: [YES token, NO token] */
-  readonly outcomeTokenIds: readonly [OutcomeTokenId, OutcomeTokenId];
+  /** Исходы рынка: пара [YES/UP, NO/DOWN] */
+  readonly outcomes: readonly [Outcome, Outcome];
   /** Время истечения рынка в миллисекундах (Unix timestamp) */
   readonly expirationMs: number;
   /** Текущее состояние рынка */
@@ -158,16 +159,8 @@ export class Market {
     this._expirationMs = props.expirationMs;
     this.state = props.state;
     this.outcomes = [
-      Object.freeze({
-        tokenId: props.outcomeTokenIds[0],
-        index: 0 as OutcomeIndex,
-        name: props.outcomeNames[0],
-      }),
-      Object.freeze({
-        tokenId: props.outcomeTokenIds[1],
-        index: 1 as OutcomeIndex,
-        name: props.outcomeNames[1],
-      }),
+      Object.freeze({ ...props.outcomes[0] }),
+      Object.freeze({ ...props.outcomes[1] }),
     ];
   }
 
@@ -220,22 +213,22 @@ export class Market {
    * Валидирует все обязательные поля и бизнес-инварианты.
    *
    * ### Алгоритм валидации:
-   * 1. Проверка id (непустой)
-   * 2. Проверка slug (URL-safe символы)
-   * 3. Проверка question (непустой)
-   * 4. Проверка outcomeNames (два непустых названия)
-   * 5. Проверка outcomeTokenIds (два непустых токен-идентификатора)
-   * 6. Проверка expirationMs (конечное число)
-   * 7. Проверка state (допустимый MarketState)
+   * 1. Проверка question (непустой) — id/slug/OutcomeToken уже валидированы на уровне VO
+   * 2. Проверка outcomes[i].name — два непустых и различных названия
+   * 3. Проверка outcomes[i].token — два различных токена (через OutcomeToken.equals)
+   * 4. Проверка expirationMs (конечное число)
+   * 5. Проверка state (допустимый MarketState, runtime-защита)
    *
    * @example
    * ```typescript
    * const result = Market.create({
-   *   id: asMarketId('market-abc'),
+   *   id: asMarketId('market-abc')!,
    *   slug: parseMarketSlug('will-trump-win')!,
    *   question: 'Will Trump win?',
-   *   outcomeNames: ['Yes', 'No'],
-   *   outcomeTokenIds: [parseOutcomeTokenId('token-yes')!, parseOutcomeTokenId('token-no')!],
+   *   outcomes: [
+   *     { token: OutcomeToken.of(conditionRef, BinaryOutcome.UP), index: 0, name: 'Yes' },
+   *     { token: OutcomeToken.of(conditionRef, BinaryOutcome.DOWN), index: 1, name: 'No' },
+   *   ],
    *   expirationMs: Date.now() + 86400000,
    *   state: MarketState.active(),
    * });
@@ -246,28 +239,7 @@ export class Market {
    * ```
    */
   public static create(props: MarketProps): Result<Market, MarketValidationError> {
-    // Валидация id
-    const idCheck = parseMarketId(props.id);
-    if (idCheck === undefined) {
-      return Err(
-        new MarketValidationError('Market ID must be a non-empty string', {
-          context: { field: 'id', value: props.id },
-        })
-      );
-    }
-
-    // Валидация slug
-    const slugCheck = parseMarketSlug(props.slug);
-    if (slugCheck === undefined) {
-      return Err(
-        new MarketValidationError(
-          'Market slug must contain only lowercase letters, digits and hyphens (a-z0-9-)',
-          { context: { field: 'slug', value: props.slug } }
-        )
-      );
-    }
-
-    // Валидация question
+    // Валидация question — не может быть гарантирована типом string
     if (typeof props.question !== 'string' || props.question.trim().length === 0) {
       return Err(
         new MarketValidationError('Market question must be a non-empty string', {
@@ -276,45 +248,52 @@ export class Market {
       );
     }
 
-    // Валидация outcomeNames[0]
-    if (typeof props.outcomeNames[0] !== 'string' || props.outcomeNames[0].trim().length === 0) {
+    // Валидация outcomes[0].name
+    if (
+      typeof props.outcomes[0].name !== 'string' ||
+      props.outcomes[0].name.trim().length === 0
+    ) {
       return Err(
         new MarketValidationError('Outcome name at index 0 must be a non-empty string', {
-          context: { field: 'outcomeNames[0]', value: props.outcomeNames[0] },
+          context: { field: 'outcomes[0].name', value: props.outcomes[0].name },
         })
       );
     }
 
-    // Валидация outcomeNames[1]
-    if (typeof props.outcomeNames[1] !== 'string' || props.outcomeNames[1].trim().length === 0) {
+    // Валидация outcomes[1].name
+    if (
+      typeof props.outcomes[1].name !== 'string' ||
+      props.outcomes[1].name.trim().length === 0
+    ) {
       return Err(
         new MarketValidationError('Outcome name at index 1 must be a non-empty string', {
-          context: { field: 'outcomeNames[1]', value: props.outcomeNames[1] },
+          context: { field: 'outcomes[1].name', value: props.outcomes[1].name },
         })
       );
     }
 
-    // Валидация outcomeTokenIds[0]
-    const tokenId0 = parseOutcomeTokenId(props.outcomeTokenIds[0]);
-    if (tokenId0 === undefined) {
+    // Инвариант: названия исходов должны отличаться
+    if (props.outcomes[0].name.trim() === props.outcomes[1].name.trim()) {
       return Err(
-        new MarketValidationError('Outcome token ID at index 0 must be a non-empty string', {
-          context: { field: 'outcomeTokenIds[0]', value: props.outcomeTokenIds[0] },
+        new MarketValidationError('Outcome names must be distinct', {
+          context: {
+            field: 'outcomes',
+            value: [props.outcomes[0].name, props.outcomes[1].name],
+          },
         })
       );
     }
 
-    // Валидация outcomeTokenIds[1]
-    const tokenId1 = parseOutcomeTokenId(props.outcomeTokenIds[1]);
-    if (tokenId1 === undefined) {
+    // Инвариант: токены исходов должны отличаться (OutcomeToken.equals сравнивает по AssetId)
+    if (props.outcomes[0].token.equals(props.outcomes[1].token)) {
       return Err(
-        new MarketValidationError('Outcome token ID at index 1 must be a non-empty string', {
-          context: { field: 'outcomeTokenIds[1]', value: props.outcomeTokenIds[1] },
+        new MarketValidationError('Outcome tokens must be distinct', {
+          context: { field: 'outcomes', value: 'tokens are equal' },
         })
       );
     }
 
-    // Валидация expirationMs
+    // Валидация expirationMs — number в JS может быть NaN или Infinity
     if (typeof props.expirationMs !== 'number' || !Number.isFinite(props.expirationMs)) {
       return Err(
         new MarketValidationError('Market expirationMs must be a finite number', {
@@ -323,7 +302,7 @@ export class Market {
       );
     }
 
-    // Валидация state
+    // Валидация state — runtime-защита от невалидных объектов (JS, JSON, as-касты)
     if (
       !props.state ||
       typeof props.state !== 'object' ||
@@ -495,7 +474,49 @@ export class Market {
     return isActive(this.state) && !this.isExpired();
   }
 
+  // ==================== Identity ====================
+
+  /**
+   * Сравнивает две сущности Market по идентичности
+   *
+   * @param other - Другой Market для сравнения
+   * @returns true если оба рынка имеют одинаковый id
+   *
+   * @remarks
+   * Entity определяется идентичностью (id), а не ссылкой.
+   * Два объекта с разным state но одинаковым id — это одна и та же сущность.
+   *
+   * @example
+   * ```typescript
+   * const closed = market.close();
+   * market.equals(closed); // true — тот же рынок, другое состояние
+   * ```
+   */
+  public equals(other: Market): boolean {
+    return this.id === other.id;
+  }
+
   // ==================== Lifecycle Transitions ====================
+
+  /**
+   * Создаёт копию рынка с новым состоянием
+   *
+   * @param state - Новое состояние
+   * @returns Новый Market с тем же id/slug/question/outcomes/expiry, но другим state
+   *
+   * @remarks
+   * Централизует копирование props — изменение структуры затрагивает одно место.
+   */
+  private copy(state: MarketState): Market {
+    return new Market({
+      id: this.id,
+      slug: this.slug,
+      question: this.question,
+      outcomes: this.outcomes,
+      expirationMs: this._expirationMs,
+      state,
+    });
+  }
 
   /**
    * Закрывает рынок (ACTIVE → CLOSED)
@@ -534,15 +555,7 @@ export class Market {
       );
     }
 
-    return new Market({
-      id: this.id,
-      slug: this.slug,
-      question: this.question,
-      outcomeNames: [this.outcomes[0].name, this.outcomes[1].name],
-      outcomeTokenIds: [this.outcomes[0].tokenId, this.outcomes[1].tokenId],
-      expirationMs: this._expirationMs,
-      state: MarketState.closed(),
-    });
+    return this.copy(MarketState.closed());
   }
 
   /**
@@ -592,15 +605,7 @@ export class Market {
       );
     }
 
-    return new Market({
-      id: this.id,
-      slug: this.slug,
-      question: this.question,
-      outcomeNames: [this.outcomes[0].name, this.outcomes[1].name],
-      outcomeTokenIds: [this.outcomes[0].tokenId, this.outcomes[1].tokenId],
-      expirationMs: this._expirationMs,
-      state: MarketState.resolved(outcomeIndex),
-    });
+    return this.copy(MarketState.resolved(outcomeIndex));
   }
 
   // ==================== String Representation ====================

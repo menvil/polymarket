@@ -3,6 +3,7 @@
  */
 
 import { FillMapper } from '../../src/mappers/FillMapper';
+import { AssetIdHelpers, assetIdToString } from '@polymarket/ids';
 
 // Вспомогательная функция для извлечения значения из Result в тестах
 function unwrap<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, ctx = ''): T {
@@ -40,12 +41,12 @@ function makeValidEvent(overrides?: Record<string, unknown>): Record<string, unk
 
 describe('FillMapper', () => {
   describe('fromPolymarketOrderExecutionEvent()', () => {
-    it('парсит валидное событие в Fill', () => {
+    it('парсит валидное событие в Fill + ExecutionMetadata', () => {
       const result = FillMapper.fromPolymarketOrderExecutionEvent(makeValidEvent());
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const fill = result.value;
+        const { fill, metadata } = result.value;
         expect(fill.id).toBe('fill-123');
         expect(fill.orderId).toBe('order-456');
         expect(fill.marketId).toBe('0xmarket123abc');
@@ -54,7 +55,9 @@ describe('FillMapper', () => {
         expect(fill.size.value().toNumber()).toBeCloseTo(50, 5);
         expect(fill.timestamp.toNumber()).toBe(1700000000000);
         expect(fill.venueId).toBe('POLYMARKET');
-        expect(fill.liquidity).toBe('MAKER');
+        expect(assetIdToString(fill.settlementAssetId)).toContain('USDC');
+        // metadata содержит liquidity и venueTradeId
+        expect(metadata.liquidity).toBe('MAKER');
       }
     });
 
@@ -65,7 +68,7 @@ describe('FillMapper', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.side).toBe('SELL');
+        expect(result.value.fill.side).toBe('SELL');
       }
     });
 
@@ -76,38 +79,38 @@ describe('FillMapper', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.hasFee()).toBe(false);
+        expect(result.value.fill.hasFee()).toBe(false);
       }
     });
 
-    it('создаёт Fill с liquidity undefined для неизвестного значения', () => {
+    it('metadata.liquidity undefined для неизвестного значения', () => {
       const result = FillMapper.fromPolymarketOrderExecutionEvent(
         makeValidEvent({ liquidity: 'UNKNOWN' })
       );
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.liquidity).toBeUndefined();
+        expect(result.value.metadata.liquidity).toBeUndefined();
       }
     });
 
-    it('создаёт venueTradeId из transaction_hash', () => {
+    it('metadata.venueTradeId создаётся из transaction_hash', () => {
       const result = FillMapper.fromPolymarketOrderExecutionEvent(makeValidEvent());
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.venueTradeId).toContain('0xabcdef1234567890');
+        expect(result.value.metadata.venueTradeId).toContain('0xabcdef1234567890');
       }
     });
 
-    it('venueTradeId undefined если нет transaction_hash', () => {
+    it('metadata.venueTradeId undefined если нет transaction_hash', () => {
       const result = FillMapper.fromPolymarketOrderExecutionEvent(
         makeValidEvent({ transaction_hash: undefined })
       );
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.venueTradeId).toBeUndefined();
+        expect(result.value.metadata.venueTradeId).toBeUndefined();
       }
     });
 
@@ -164,14 +167,16 @@ describe('FillMapper', () => {
   describe('toSnapshot() / fromSnapshot()', () => {
     it('round-trip: Fill → snapshot → Fill сохраняет основные поля', () => {
       const event = makeValidEvent();
-      const original = unwrap(FillMapper.fromPolymarketOrderExecutionEvent(event));
+      const { fill: original, metadata: originalMeta } = unwrap(
+        FillMapper.fromPolymarketOrderExecutionEvent(event)
+      );
 
-      const snapshot = FillMapper.toSnapshot(original);
+      const snapshot = FillMapper.toSnapshot(original, originalMeta);
       const restoredResult = FillMapper.fromSnapshot(snapshot);
 
       expect(restoredResult.ok).toBe(true);
       if (restoredResult.ok) {
-        const restored = restoredResult.value;
+        const { fill: restored, metadata: restoredMeta } = restoredResult.value;
         expect(restored.id).toBe(original.id);
         expect(restored.orderId).toBe(original.orderId);
         expect(restored.venueId).toBe(original.venueId);
@@ -186,8 +191,17 @@ describe('FillMapper', () => {
           5
         );
         expect(restored.timestamp.value).toBe(original.timestamp.value);
-        expect(restored.liquidity).toBe(original.liquidity);
+        expect(assetIdToString(restored.settlementAssetId)).toContain('USDC');
+        // metadata сохраняется в round-trip
+        expect(restoredMeta.liquidity).toBe(originalMeta.liquidity);
       }
+    });
+
+    it('snapshot содержит settlementAssetId', () => {
+      const { fill } = unwrap(FillMapper.fromPolymarketOrderExecutionEvent(makeValidEvent()));
+      const snapshot = FillMapper.toSnapshot(fill);
+
+      expect(snapshot.settlementAssetId).toContain('USDC');
     });
 
     it('fromSnapshot() возвращает Err для невалидного fill ID', () => {
@@ -198,6 +212,7 @@ describe('FillMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
+        settlementAssetId: AssetIdHelpers.USDC as unknown as string,
         price: 0.65,
         size: 50,
         side: 'BUY',
@@ -220,6 +235,7 @@ describe('FillMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
+        settlementAssetId: AssetIdHelpers.USDC as unknown as string,
         price: 0.65,
         size: 50,
         side: 'BUY',

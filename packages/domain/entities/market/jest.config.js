@@ -6,6 +6,11 @@ export default {
     '^(\\.{1,2}/.*)\\.js$': '$1',
     '^@polymarket/errors$': '<rootDir>/../../../foundation/errors/src/index.ts',
     '^@polymarket/result$': '<rootDir>/../../../foundation/result/src/index.ts',
+    '^@polymarket/ids$': '<rootDir>/../../../foundation/ids/src/index.ts',
+    '^@polymarket/math$': '<rootDir>/../../../foundation/math/src/index.ts',
+    '^@polymarket/time$': '<rootDir>/../../../foundation/time/src/index.ts',
+    '^@polymarket/value-objects/outcome-token$': '<rootDir>/../../value-objects/src/outcome-token/index.ts',
+    '^@polymarket/value-objects$': '<rootDir>/../../value-objects/src/index.ts',
   },
   transform: {
     '^.+\\.ts$': [

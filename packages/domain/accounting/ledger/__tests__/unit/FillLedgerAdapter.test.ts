@@ -13,6 +13,7 @@ import {
   asVenueId,
   parseAssetId,
   AssetIdHelpers,
+  assetIdToString,
 } from '@polymarket/ids';
 import { Price, Quantity, TimestampService, Fee } from '@polymarket/value-objects';
 import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
@@ -55,6 +56,7 @@ function makeFill(overrides?: Partial<FillParams>): Fill {
     venueId: asVenueId('POLYMARKET')!,
     marketId: 'market-abc',
     tokenId,
+    settlementAssetId: AssetIdHelpers.USDC,
     price: Price.of(new Decimal('0.62')),
     size: Quantity.of(new Decimal('10')),
     side: 'BUY',
@@ -72,22 +74,22 @@ describe('FillLedgerAdapter', () => {
   describe('toLedgerEntries() — BUY без комиссии', () => {
     it('возвращает 2 записи при нулевой комиссии', () => {
       const fill = makeFill({ side: 'BUY', fee: makeZeroFee() });
-      const entries = FillLedgerAdapter.toLedgerEntries(fill, AssetIdHelpers.USDC);
+      const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
       expect(entries).toHaveLength(2);
     });
 
-    it('POSITION_DELTA: asset=tokenId, delta=+qty (BUY)', () => {
+    it('POSITION_DELTA: balanceDelta.asset=tokenId, amount=+qty (BUY)', () => {
       const fill = makeFill({ side: 'BUY', size: Quantity.of(new Decimal('10')) });
-      const entries = FillLedgerAdapter.toLedgerEntries(fill, AssetIdHelpers.USDC);
+      const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
       const posEntry = entries.find(e => e.type === 'POSITION_DELTA');
       expect(posEntry).toBeDefined();
-      expect(posEntry!.asset).toBe(fill.tokenId);
-      expect(posEntry!.delta.toNumber()).toBe(10);
+      expect(posEntry!.balanceDelta.asset).toBe(fill.tokenId);
+      expect(posEntry!.balanceDelta.amount.toNumber()).toBe(10);
     });
 
-    it('CASH_DELTA: asset=USDC, delta=-(price×qty) для BUY', () => {
+    it('CASH_DELTA: balanceDelta.asset=USDC, amount=-(price×qty) для BUY', () => {
       // BUY 10 @ 0.62 = -6.20
       const fill = makeFill({
         side: 'BUY',
@@ -95,25 +97,25 @@ describe('FillLedgerAdapter', () => {
         size: Quantity.of(new Decimal('10')),
         fee: makeZeroFee(),
       });
-      const entries = FillLedgerAdapter.toLedgerEntries(fill, AssetIdHelpers.USDC);
+      const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
       const cashEntry = entries.find(e => e.type === 'CASH_DELTA');
       expect(cashEntry).toBeDefined();
-      expect(cashEntry!.asset).toBe(AssetIdHelpers.USDC);
-      expect(cashEntry!.delta.toNumber()).toBeCloseTo(-6.20, 5);
+      expect(assetIdToString(cashEntry!.balanceDelta.asset)).toContain('USDC');
+      expect(cashEntry!.balanceDelta.amount.toNumber()).toBeCloseTo(-6.20, 5);
     });
   });
 
   describe('toLedgerEntries() — SELL без комиссии', () => {
-    it('POSITION_DELTA: delta=-qty для SELL', () => {
+    it('POSITION_DELTA: balanceDelta.amount=-qty для SELL', () => {
       const fill = makeFill({ side: 'SELL', size: Quantity.of(new Decimal('10')) });
-      const entries = FillLedgerAdapter.toLedgerEntries(fill, AssetIdHelpers.USDC);
+      const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
       const posEntry = entries.find(e => e.type === 'POSITION_DELTA');
-      expect(posEntry!.delta.toNumber()).toBe(-10);
+      expect(posEntry!.balanceDelta.amount.toNumber()).toBe(-10);
     });
 
-    it('CASH_DELTA: delta=+(price×qty) для SELL', () => {
+    it('CASH_DELTA: balanceDelta.amount=+(price×qty) для SELL', () => {
       // SELL 10 @ 0.62 = +6.20
       const fill = makeFill({
         side: 'SELL',
@@ -121,35 +123,35 @@ describe('FillLedgerAdapter', () => {
         size: Quantity.of(new Decimal('10')),
         fee: makeZeroFee(),
       });
-      const entries = FillLedgerAdapter.toLedgerEntries(fill, AssetIdHelpers.USDC);
+      const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
       const cashEntry = entries.find(e => e.type === 'CASH_DELTA');
-      expect(cashEntry!.delta.toNumber()).toBeCloseTo(6.20, 5);
+      expect(cashEntry!.balanceDelta.amount.toNumber()).toBeCloseTo(6.20, 5);
     });
   });
 
   describe('toLedgerEntries() — с комиссией', () => {
     it('возвращает 3 записи при ненулевой комиссии', () => {
       const fill = makeFill({ fee: makeNonZeroFee('0.02') });
-      const entries = FillLedgerAdapter.toLedgerEntries(fill, AssetIdHelpers.USDC);
+      const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
       expect(entries).toHaveLength(3);
     });
 
-    it('FEE_DEBIT: asset=fee.asset, delta=-feeAmount', () => {
+    it('FEE_DEBIT: balanceDelta.amount=-feeAmount', () => {
       const fill = makeFill({ fee: makeNonZeroFee('0.02') });
-      const entries = FillLedgerAdapter.toLedgerEntries(fill, AssetIdHelpers.USDC);
+      const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
       const feeEntry = entries.find(e => e.type === 'FEE_DEBIT');
       expect(feeEntry).toBeDefined();
-      expect(feeEntry!.delta.toNumber()).toBeCloseTo(-0.02, 5);
+      expect(feeEntry!.balanceDelta.amount.toNumber()).toBeCloseTo(-0.02, 5);
     });
   });
 
   describe('toLedgerEntries() — метаданные записей', () => {
     it('все записи имеют одинаковый fillId и accountId', () => {
       const fill = makeFill({ fee: makeNonZeroFee('0.01') });
-      const entries = FillLedgerAdapter.toLedgerEntries(fill, AssetIdHelpers.USDC);
+      const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
       for (const entry of entries) {
         expect(entry.fillId).toBe(fill.id);
@@ -158,7 +160,7 @@ describe('FillLedgerAdapter', () => {
       }
     });
 
-    it('суммарный cash delta + fee delta = getNetCashFlow()', () => {
+    it('суммарный USDC delta = getNetCashFlow().amount', () => {
       // BUY 10 @ 0.62, fee 0.02 → net = -6.22
       const fill = makeFill({
         side: 'BUY',
@@ -166,15 +168,18 @@ describe('FillLedgerAdapter', () => {
         size: Quantity.of(new Decimal('10')),
         fee: makeNonZeroFee('0.02'),
       });
-      const entries = FillLedgerAdapter.toLedgerEntries(fill, AssetIdHelpers.USDC);
+      const entries = FillLedgerAdapter.toLedgerEntries(fill);
 
-      const usdcEntries = entries.filter(e => e.asset === AssetIdHelpers.USDC);
+      const usdcStr = assetIdToString(AssetIdHelpers.USDC);
+      const usdcEntries = entries.filter(
+        e => assetIdToString(e.balanceDelta.asset) === usdcStr
+      );
       const totalUsdcDelta = usdcEntries.reduce(
-        (acc, e) => acc.plus(e.delta),
+        (acc, e) => acc.plus(e.balanceDelta.amount),
         new Decimal(0)
       );
 
-      expect(totalUsdcDelta.toNumber()).toBeCloseTo(fill.getNetCashFlow().toNumber(), 5);
+      expect(totalUsdcDelta.toNumber()).toBeCloseTo(fill.getNetCashFlow().amount.toNumber(), 5);
     });
   });
 });

@@ -3,13 +3,17 @@
  *
  * @remarks
  * Отвечает за преобразование между:
- * - Внешним форматом Polymarket API (order execution event) → Fill entity
- * - Fill entity → FillSnapshot (для хранения)
- * - FillSnapshot → Fill entity (для восстановления)
+ * - Внешним форматом Polymarket API (order execution event) → Fill + ExecutionMetadata
+ * - Fill + ExecutionMetadata → FillSnapshot (для хранения)
+ * - FillSnapshot → Fill + ExecutionMetadata (для восстановления)
  *
  * ### Принцип единственной ответственности:
  * Fill entity не знает о внешних форматах API.
  * FillMapper инкапсулирует всю логику парсинга.
+ *
+ * ### Разделение Fill и ExecutionMetadata:
+ * Fill содержит доменную экономику (price, size, side, fee, settlementAssetId).
+ * ExecutionMetadata содержит инфраструктурный контекст (liquidity, venueTradeId).
  *
  * ### Формат Polymarket orderExecutionEvent:
  * ```json
@@ -24,7 +28,6 @@
  *   "side": "BUY",
  *   "timestamp": "1700000000",
  *   "fee_amount": "0.01",
- *   "fee_asset": "USDC",
  *   "liquidity": "MAKER",
  *   "transaction_hash": "0xabcdef..."
  * }
@@ -37,10 +40,15 @@
  *   order_id: 'order-456',
  *   // ...
  * });
+ * if (result.ok) {
+ *   const { fill, metadata } = result.value;
+ *   console.log(fill.getCashFlow()); // экономика
+ *   console.log(metadata.liquidity); // инфраструктурный контекст
+ * }
  * ```
  */
 
-import { Result, Err } from '@polymarket/result';
+import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import {
   asFillId,
@@ -59,6 +67,7 @@ import { AssetQuantity } from '@polymarket/value-objects/asset-quantity';
 import Decimal from 'decimal.js';
 import { Fill } from '../Fill.js';
 import type { FillSnapshot } from '../FillSnapshot.js';
+import type { ExecutionMetadata } from '../ExecutionMetadata.js';
 import { isValidLiquidity } from '../value-objects/Liquidity.js';
 
 /**
@@ -75,16 +84,18 @@ const POLYMARKET_VENUE_ID = 'POLYMARKET';
  */
 export class FillMapper {
   /**
-   * Создаёт Fill из события Polymarket orderExecutionEvent
+   * Создаёт Fill и ExecutionMetadata из события Polymarket orderExecutionEvent
    *
    * @param raw - Сырые данные события (Record<string, unknown>)
-   * @returns Result<Fill, ValidationError>
+   * @returns Result<{ fill: Fill; metadata: ExecutionMetadata }, ValidationError>
    *
    * @remarks
    * Алгоритм:
-   * 1. Извлечь и провалидировать обязательные поля
+   * 1. Извлечь и провалидировать обязательные поля для Fill
    * 2. Преобразовать в typed value objects
-   * 3. Вызвать Fill.create()
+   * 3. Извлечь инфраструктурные метаданные (liquidity, venueTradeId)
+   * 4. Вызвать Fill.create() с settlementAssetId = AssetIdHelpers.USDC
+   * 5. Вернуть { fill, metadata }
    *
    * ### Формат входных данных:
    * - `fill_id` (string) — ID исполнения
@@ -97,8 +108,8 @@ export class FillMapper {
    * - `side` (string) — 'BUY' | 'SELL'
    * - `timestamp` (string | number) — Unix timestamp в секундах
    * - `fee_amount` (string | number, optional) — сумма комиссии
-   * - `liquidity` (string, optional) — 'MAKER' | 'TAKER'
-   * - `transaction_hash` (string, optional) — хэш транзакции
+   * - `liquidity` (string, optional) — 'MAKER' | 'TAKER' → ExecutionMetadata
+   * - `transaction_hash` (string, optional) — хэш транзакции → ExecutionMetadata.venueTradeId
    *
    * @example
    * ```typescript
@@ -113,11 +124,14 @@ export class FillMapper {
    *   side: 'BUY',
    *   timestamp: '1700000000',
    * });
+   * if (result.ok) {
+   *   const { fill, metadata } = result.value;
+   * }
    * ```
    */
   public static fromPolymarketOrderExecutionEvent(
     raw: Record<string, unknown>
-  ): Result<Fill, ValidationError> {
+  ): Result<{ fill: Fill; metadata: ExecutionMetadata }, ValidationError> {
     // Извлечь fill_id
     const fillIdRaw = raw['fill_id'];
     if (typeof fillIdRaw !== 'string' || fillIdRaw.trim().length === 0) {
@@ -335,21 +349,6 @@ export class FillMapper {
     const feeAssetQuantity = new AssetQuantity(AssetIdHelpers.USDC, feeQuantity);
     const fee = Fee.of(feeAssetQuantity);
 
-    // Извлечь liquidity (опционально)
-    const liquidityRaw = raw['liquidity'];
-    const liquidity = isValidLiquidity(liquidityRaw) ? liquidityRaw : undefined;
-
-    // Извлечь venueTradeId из transaction_hash (опционально)
-    const txHashRaw = raw['transaction_hash'];
-    const timestampSecNum = timestampSec;
-    let venueTradeId;
-    if (typeof txHashRaw === 'string' && txHashRaw.trim().length > 0) {
-      const txHash = asTxHash(txHashRaw.trim());
-      if (txHash) {
-        venueTradeId = asVenueTradeId(`${txHash}_${timestampSecNum}`);
-      }
-    }
-
     // venueId — Polymarket
     const venueId = asVenueId(POLYMARKET_VENUE_ID);
     if (!venueId) {
@@ -360,41 +359,65 @@ export class FillMapper {
       );
     }
 
-    return Fill.create({
+    // Создать Fill с settlementAssetId = USDC
+    const fillResult = Fill.create({
       id: fillId,
       orderId,
       accountId,
       venueId,
       marketId: marketId.trim(),
       tokenId,
+      settlementAssetId: AssetIdHelpers.USDC,
       price,
       size,
       side,
       timestamp: timestampResult.value,
       fee,
-      liquidity,
-      venueTradeId,
     });
+
+    if (!fillResult.ok) {
+      return Err(fillResult.error);
+    }
+
+    // Извлечь ExecutionMetadata: liquidity и venueTradeId
+    const liquidityRaw = raw['liquidity'];
+    const liquidity = isValidLiquidity(liquidityRaw) ? liquidityRaw : undefined;
+
+    const txHashRaw = raw['transaction_hash'];
+    const timestampSecNum = timestampSec;
+    let venueTradeId;
+    if (typeof txHashRaw === 'string' && txHashRaw.trim().length > 0) {
+      const txHash = asTxHash(txHashRaw.trim());
+      if (txHash) {
+        venueTradeId = asVenueTradeId(`${txHash}_${timestampSecNum}`);
+      }
+    }
+
+    const metadata: ExecutionMetadata = { liquidity, venueTradeId };
+
+    return Ok({ fill: fillResult.value, metadata });
   }
 
   /**
    * Конвертирует Fill в FillSnapshot (плоское DTO с примитивами)
    *
    * @param fill - Запись исполнения
+   * @param metadata - Опциональные инфраструктурные метаданные
    * @returns FillSnapshot — сериализованное представление для хранения
    *
    * @remarks
    * Вся логика сериализации живёт здесь (SRP: Fill не знает о persistence).
    * AccountId сериализуется через accountIdToString().
    * AssetId сериализуется через assetIdToString().
+   * metadata.liquidity и metadata.venueTradeId включаются если metadata передан.
    *
    * @example
    * ```typescript
-   * const snapshot = FillMapper.toSnapshot(fill);
+   * const snapshot = FillMapper.toSnapshot(fill, metadata);
    * await db.save(snapshot);
    * ```
    */
-  public static toSnapshot(fill: Fill): FillSnapshot {
+  public static toSnapshot(fill: Fill, metadata?: ExecutionMetadata): FillSnapshot {
     return {
       id: fill.id,
       orderId: fill.orderId,
@@ -402,38 +425,42 @@ export class FillMapper {
       venueId: fill.venueId,
       marketId: fill.marketId,
       tokenId: assetIdToString(fill.tokenId),
+      settlementAssetId: assetIdToString(fill.settlementAssetId),
       price: fill.price.value().toNumber(),
       size: fill.size.value().toNumber(),
       side: fill.side,
       timestampMs: fill.timestamp.toNumber(),
       feeAmount: fill.fee.quantity.amount().value().toNumber(),
       feeAsset: assetIdToString(fill.fee.asset),
-      liquidity: fill.liquidity,
-      venueTradeId: fill.venueTradeId,
+      liquidity: metadata?.liquidity,
+      venueTradeId: metadata?.venueTradeId,
     };
   }
 
   /**
-   * Восстанавливает Fill из FillSnapshot
+   * Восстанавливает Fill и ExecutionMetadata из FillSnapshot
    *
    * @param snapshot - FillSnapshot с примитивами
-   * @returns Result<Fill, ValidationError>
+   * @returns Result<{ fill: Fill; metadata: ExecutionMetadata }, ValidationError>
    *
    * @remarks
    * Парсит примитивы обратно в типизированные value objects.
    * AccountId парсится через `parseAccountId()`.
    * AssetId парсится через `parseAssetId()`.
+   * settlementAssetId обязателен в снапшоте.
    *
    * @example
    * ```typescript
    * const snapshot = await db.load(id);
    * const result = FillMapper.fromSnapshot(snapshot);
    * if (result.ok) {
-   *   const fill = result.value;
+   *   const { fill, metadata } = result.value;
    * }
    * ```
    */
-  public static fromSnapshot(snapshot: FillSnapshot): Result<Fill, ValidationError> {
+  public static fromSnapshot(
+    snapshot: FillSnapshot
+  ): Result<{ fill: Fill; metadata: ExecutionMetadata }, ValidationError> {
     const fillId = asFillId(snapshot.id);
     if (!fillId) {
       return Err(
@@ -483,6 +510,15 @@ export class FillMapper {
       return Err(
         new ValidationError('Invalid snapshot: cannot parse tokenId', {
           context: { field: 'tokenId', value: snapshot.tokenId },
+        })
+      );
+    }
+
+    const settlementAssetId = parseAssetId(snapshot.settlementAssetId);
+    if (!settlementAssetId) {
+      return Err(
+        new ValidationError('Invalid snapshot: cannot parse settlementAssetId', {
+          context: { field: 'settlementAssetId', value: snapshot.settlementAssetId },
         })
       );
     }
@@ -547,26 +583,36 @@ export class FillMapper {
     const feeAssetQuantity = new AssetQuantity(feeAssetId, feeQuantity);
     const fee = Fee.of(feeAssetQuantity);
 
-    const venueTradeId =
-      snapshot.venueTradeId !== undefined
-        ? asVenueTradeId(snapshot.venueTradeId)
-        : undefined;
-
-    return Fill.create({
+    const fillResult = Fill.create({
       id: fillId,
       orderId,
       accountId: accountIdParsed,
       venueId,
       marketId: snapshot.marketId,
       tokenId,
+      settlementAssetId,
       price,
       size,
       side: snapshot.side,
       timestamp: timestampResult.value,
       fee,
-      liquidity: snapshot.liquidity,
-      venueTradeId,
     });
+
+    if (!fillResult.ok) {
+      return Err(fillResult.error);
+    }
+
+    // Восстановить ExecutionMetadata из снапшота
+    const venueTradeId =
+      snapshot.venueTradeId !== undefined
+        ? asVenueTradeId(snapshot.venueTradeId)
+        : undefined;
+
+    const metadata: ExecutionMetadata = {
+      liquidity: snapshot.liquidity,
+      venueTradeId: venueTradeId ?? undefined,
+    };
+
+    return Ok({ fill: fillResult.value, metadata });
   }
 }
-
