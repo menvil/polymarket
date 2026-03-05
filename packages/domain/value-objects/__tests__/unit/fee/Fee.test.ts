@@ -304,6 +304,43 @@ describe('Fee', () => {
     });
   });
 
+  describe('toDebitDelta()', () => {
+    it('возвращает отрицательный amount для ненулевой комиссии', () => {
+      const fee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.02'))));
+      const delta = fee.toDebitDelta();
+
+      expect(delta.amount.toNumber()).toBeCloseTo(-0.02, 10);
+    });
+
+    it('возвращает нулевой amount для нулевой комиссии', () => {
+      const fee = Fee.zero(AssetIdHelpers.USDC);
+      const delta = fee.toDebitDelta();
+
+      expect(delta.amount.isZero()).toBe(true);
+    });
+
+    it('asset совпадает с fee.asset', () => {
+      const fee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
+      const delta = fee.toDebitDelta();
+
+      expect(delta.asset).toEqual(fee.asset);
+    });
+
+    it('amount всегда <= 0', () => {
+      const fee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('100'))));
+      const delta = fee.toDebitDelta();
+
+      expect(delta.amount.lte(0)).toBe(true);
+    });
+
+    it('не мутирует исходный Fee', () => {
+      const fee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));
+      fee.toDebitDelta();
+
+      expect(fee.quantity.amount().toNumber()).toBe(0.10);
+    });
+  });
+
   describe('immutability', () => {
     it('should not modify original fee when adding', () => {
       const fee1 = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('0.10'))));

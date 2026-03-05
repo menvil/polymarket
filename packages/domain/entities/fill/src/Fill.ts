@@ -283,6 +283,8 @@ export class Fill {
    * @returns AssetDelta с asset=fee.asset и amount=-feeAmount (всегда отрицательный или 0)
    *
    * @remarks
+   * Делегирует в `fee.toDebitDelta()` — Fee сам знает как преобразовать себя
+   * в знаковый delta (инкапсуляция, нет прямого доступа к внутренней структуре).
    * Комиссия всегда является расходом. При нулевой комиссии amount равен 0.
    * Благодаря инварианту Fill.create(), при ненулевой комиссии fee.asset === settlementAssetId.
    *
@@ -298,8 +300,7 @@ export class Fill {
    * ```
    */
   public getFeeFlow(): AssetDelta {
-    const amount = this.fee.quantity.amount().value().negated();
-    return { asset: this.fee.asset, amount };
+    return this.fee.toDebitDelta();
   }
 
   /**

@@ -49,6 +49,7 @@
 import type { AssetId } from '@polymarket/ids';
 import { AssetIdHelpers } from '@polymarket/ids';
 import { addDecimal } from '@polymarket/math';
+import type Decimal from 'decimal.js';
 import { AssetQuantity } from '../../asset-quantity/core/AssetQuantity.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { FeeOperationError } from '../errors/FeeOperationError.js';
@@ -264,6 +265,43 @@ export class Fee {
    */
   public equals(other: Fee): boolean {
     return this._quantity.equals(other._quantity);
+  }
+
+  /**
+   * Возвращает знаковое изменение баланса от списания комиссии
+   *
+   * @returns Объект с asset и отрицательным amount (комиссия всегда расход)
+   *
+   * @remarks
+   * Инкапсулирует доступ к внутреннему представлению Fee.
+   * Вместо того чтобы потребитель сам делал `fee.quantity.amount().value().negated()`,
+   * Fee предоставляет готовый знаковый delta.
+   *
+   * Возвращаемый тип структурно совместим с `AssetDelta` из `@polymarket/fill`.
+   * Fee не импортирует `AssetDelta` напрямую (избегаем циклической зависимости),
+   * TypeScript проверяет совместимость структурно.
+   *
+   * ### Семантика:
+   * - amount всегда <= 0: нулевая комиссия → 0, ненулевая → отрицательный
+   * - asset совпадает с fee.asset (расчётный актив)
+   *
+   * @example
+   * ```typescript
+   * // Fee 0.02 USDC
+   * const delta = fee.toDebitDelta();
+   * console.log(delta.amount.toNumber()); // -0.02
+   * console.log(delta.asset);             // USDC AssetId
+   *
+   * // Zero fee
+   * const zeroDelta = Fee.zero(AssetIdHelpers.USDC).toDebitDelta();
+   * console.log(zeroDelta.amount.isZero()); // true
+   * ```
+   */
+  public toDebitDelta(): { readonly asset: AssetId; readonly amount: Decimal } {
+    return {
+      asset: this.asset,
+      amount: this._quantity.amount().value().negated(),
+    };
   }
 
   /**
