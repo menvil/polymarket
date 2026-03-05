@@ -7,6 +7,21 @@
  * - Fill + ExecutionMetadata → FillSnapshot (для хранения)
  * - FillSnapshot → Fill + ExecutionMetadata (для восстановления)
  *
+ * FUTURE: Этот класс совмещает две разные ответственности и подлежит разделению.
+ * Когда архитектура устоится, разбить на:
+ *
+ * 1. `PolymarketTradeEventParser` (infrastructure layer)
+ *    - Содержит: fromPolymarketTradeEvent()
+ *    - Знает о формате Polymarket WS user-channel API (специфика одного venue)
+ *    - При появлении второго venue — добавить BinanceTradeEventParser и т.д.
+ *    - Переехать в: packages/infrastructure/adapters/polymarket/
+ *
+ * 2. `FillSnapshotMapper` (domain layer, рядом с Fill)
+ *    - Содержит: toSnapshot() + fromSnapshot()
+ *    - Persistence concern: сериализация для DB/Redis/лога
+ *    - Всегда меняется вместе (snapshot schema — единый контракт)
+ *    - Остаётся в: packages/domain/entities/fill/
+ *
  * ### Принцип единственной ответственности:
  * Fill entity не знает о внешних форматах API.
  * FillMapper инкапсулирует всю логику парсинга.
