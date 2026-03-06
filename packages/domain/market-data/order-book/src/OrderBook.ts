@@ -8,13 +8,17 @@
  * ### Алгоритм:
  * - Bids: отсортированы по убыванию цены (best bid = первый)
  * - Asks: отсортированы по возрастанию цены (best ask = первый)
- * - applyDelta(): size===0 → удалить уровень; size<0 → игнорировать
+ * - applyDelta(): size.isZero() → удалить уровень; size.isNegative() → игнорировать
  * - getImbalance(): (bidSize - askSize) / (bidSize + askSize), 0 если пусто
  *
  * ### Почему mutable:
  * Order book может обновляться тысячи раз в секунду.
  * Иммутабельность привела бы к огромному давлению на GC.
  * Снапшот (toSnapshot()) всегда доступен для immutable копии.
+ *
+ * ### Внутреннее хранение:
+ * Map<string, PriceLevel> — ключ это price.value().toString() для
+ * точного Decimal-сравнения без float precision issues.
  */
 
 import Decimal from 'decimal.js';
@@ -25,15 +29,19 @@ import type { OrderBookDelta } from './OrderBookDelta.js';
 
 /**
  * Снапшот стакана ордеров для сериализации
+ *
+ * @remarks
+ * Использует Price/Quantity VO как и PriceLevel.
+ * Для JSON-сериализации используйте `.value().toString()` на каждом поле.
  */
 export interface OrderBookSnapshot {
   /** ID рынка */
   readonly marketId: string;
   /** ID токена */
   readonly tokenId: string;
-  /** Уровни покупки */
+  /** Уровни покупки (Price/Quantity VO) */
   readonly bids: PriceLevel[];
-  /** Уровни продажи */
+  /** Уровни продажи (Price/Quantity VO) */
   readonly asks: PriceLevel[];
   /** Время снапшота в миллисекундах (опционально) */
   readonly timestampMs?: number;
@@ -43,28 +51,43 @@ export interface OrderBookSnapshot {
  * Мутабельный стакан ордеров
  *
  * @remarks
- * Не знает о domain entities (@polymarket/trade, Fill и т.д.) — только числа.
- * Это позволяет использовать его в market-data слое без зависимости от домена.
+ * Использует Price и Quantity VO для type safety и точной арифметики.
+ * Внутренний Map использует string ключи (price.value().toString())
+ * для точного Decimal-сравнения без float precision issues.
  *
  * @example
  * ```typescript
+ * import { PriceService, QuantityService } from '@polymarket/value-objects';
+ *
  * const book = OrderBook.create('market-abc', 'token-yes');
+ * const bid = PriceService.create('0.65').value!;
+ * const bidSize = QuantityService.create('1000').value!;
+ * const ask = PriceService.create('0.66').value!;
+ * const askSize = QuantityService.create('800').value!;
+ *
  * book.applyFullState(
- *   [{ price: 0.65, size: 1000 }, { price: 0.64, size: 500 }],
- *   [{ price: 0.66, size: 800 }]
+ *   [{ price: bid, size: bidSize }],
+ *   [{ price: ask, size: askSize }]
  * );
- * console.log(book.getBestBid()); // { price: 0.65, size: 1000 }
- * console.log(book.getImbalance()); // (1500 - 800) / (1500 + 800) ≈ 0.304
+ * console.log(book.getBestBid()?.price.value().toString()); // '0.65'
+ * console.log(book.getImbalance().toNumber()); // ≈ 0.111
  * ```
  */
 export class OrderBook {
   public readonly marketId: MarketId;
   public readonly tokenId: string;
 
-  /** Map<price, size> для bids */
-  private _bids: Map<number, number>;
-  /** Map<price, size> для asks */
-  private _asks: Map<number, number>;
+  /**
+   * Map<priceStr, PriceLevel> для bids
+   * Ключ = price.value().toString() для точного Decimal-сравнения
+   */
+  private _bids: Map<string, PriceLevel>;
+
+  /**
+   * Map<priceStr, PriceLevel> для asks
+   * Ключ = price.value().toString() для точного Decimal-сравнения
+   */
+  private _asks: Map<string, PriceLevel>;
 
   /**
    * Приватный конструктор — используйте OrderBook.create()
@@ -80,8 +103,8 @@ export class OrderBook {
    * Создаёт новый пустой стакан ордеров
    *
    * @param marketId - ID рынка
-   * @param tokenId - ID токена (строка, не AssetId — order book не знает о domain entities)
-   * @returns Новый OrderBook
+   * @param tokenId - ID токена
+   * @returns Новый пустой OrderBook
    *
    * @example
    * ```typescript
@@ -106,8 +129,8 @@ export class OrderBook {
    * @example
    * ```typescript
    * book.applyDelta({
-   *   bids: [{ price: 0.65, size: 500 }],
-   *   asks: [{ price: 0.66, size: 0 }], // удалить ask 0.66
+   *   bids: [{ price: bidPrice, size: newSize }],
+   *   asks: [{ price: askPrice, size: zeroQty }], // удалить ask
    * });
    * ```
    */
@@ -129,12 +152,13 @@ export class OrderBook {
    * @remarks
    * Используется при получении полного снапшота стакана от биржи.
    * Полностью заменяет текущее состояние.
+   * Уровни с size <= 0 игнорируются.
    *
    * @example
    * ```typescript
    * book.applyFullState(
-   *   [{ price: 0.65, size: 1000 }],
-   *   [{ price: 0.66, size: 800 }]
+   *   [{ price: bid, size: bidSize }],
+   *   [{ price: ask, size: askSize }]
    * );
    * ```
    */
@@ -143,13 +167,13 @@ export class OrderBook {
     this._asks = new Map();
 
     for (const level of bids) {
-      if (level.size > 0) {
-        this._bids.set(level.price, level.size);
+      if (level.size.value().gt(0)) {
+        this._bids.set(level.price.value().toString(), level);
       }
     }
     for (const level of asks) {
-      if (level.size > 0) {
-        this._asks.set(level.price, level.size);
+      if (level.size.value().gt(0)) {
+        this._asks.set(level.price.value().toString(), level);
       }
     }
   }
@@ -162,7 +186,7 @@ export class OrderBook {
    * @example
    * ```typescript
    * const bestBid = book.getBestBid();
-   * if (bestBid) console.log(bestBid.price); // 0.65
+   * if (bestBid) console.log(bestBid.price.value().toString()); // '0.65'
    * ```
    */
   public getBestBid(): PriceLevel | undefined {
@@ -178,7 +202,7 @@ export class OrderBook {
    * @example
    * ```typescript
    * const bestAsk = book.getBestAsk();
-   * if (bestAsk) console.log(bestAsk.price); // 0.66
+   * if (bestAsk) console.log(bestAsk.price.value().toString()); // '0.66'
    * ```
    */
   public getBestAsk(): PriceLevel | undefined {
@@ -193,14 +217,14 @@ export class OrderBook {
    *
    * @example
    * ```typescript
-   * const mid = book.getMidPrice(); // 0.655
+   * const mid = book.getMidPrice(); // Decimal('0.655')
    * ```
    */
   public getMidPrice(): Decimal | undefined {
     const bid = this.getBestBid();
     const ask = this.getBestAsk();
     if (bid === undefined || ask === undefined) return undefined;
-    return averageDecimal(new Decimal(bid.price), new Decimal(ask.price));
+    return averageDecimal(bid.price.value(), ask.price.value());
   }
 
   /**
@@ -210,14 +234,14 @@ export class OrderBook {
    *
    * @example
    * ```typescript
-   * const spread = book.getSpread(); // 0.01
+   * const spread = book.getSpread(); // Decimal('0.01')
    * ```
    */
   public getSpread(): Decimal | undefined {
     const bid = this.getBestBid();
     const ask = this.getBestAsk();
     if (bid === undefined || ask === undefined) return undefined;
-    return subtractDecimal(new Decimal(ask.price), new Decimal(bid.price));
+    return subtractDecimal(ask.price.value(), bid.price.value());
   }
 
   /**
@@ -229,12 +253,12 @@ export class OrderBook {
    * @remarks
    * Положительное значение → больше объёма на bid стороне (бычий сигнал).
    * Отрицательное значение → больше объёма на ask стороне (медвежий сигнал).
-   * Возвращает 0 (не undefined) для удобства использования в стратегиях.
+   * Возвращает Decimal(0) (не undefined) для удобства использования в стратегиях.
    *
    * @example
    * ```typescript
    * const imbalance = book.getImbalance(5); // топ 5 уровней
-   * console.log(imbalance); // 0.304
+   * console.log(imbalance.toNumber()); // 0.304
    * ```
    */
   public getImbalance(topLevels?: number): Decimal {
@@ -244,8 +268,8 @@ export class OrderBook {
     const bidSlice = topLevels !== undefined ? bids.slice(0, topLevels) : bids;
     const askSlice = topLevels !== undefined ? asks.slice(0, topLevels) : asks;
 
-    const bidSize = bidSlice.reduce((sum, l) => addDecimal(sum, new Decimal(l.size)), new Decimal(0));
-    const askSize = askSlice.reduce((sum, l) => addDecimal(sum, new Decimal(l.size)), new Decimal(0));
+    const bidSize = bidSlice.reduce((sum, l) => addDecimal(sum, l.size.value()), new Decimal(0));
+    const askSize = askSlice.reduce((sum, l) => addDecimal(sum, l.size.value()), new Decimal(0));
 
     const total = addDecimal(bidSize, askSize);
     if (isZeroDecimal(total)) return new Decimal(0);
@@ -262,6 +286,7 @@ export class OrderBook {
    * @example
    * ```typescript
    * const top5Bids = book.getBids(5);
+   * top5Bids.forEach(l => console.log(l.price.value().toString()));
    * ```
    */
   public getBids(levels?: number): readonly PriceLevel[] {
@@ -278,6 +303,7 @@ export class OrderBook {
    * @example
    * ```typescript
    * const top5Asks = book.getAsks(5);
+   * top5Asks.forEach(l => console.log(l.price.value().toString()));
    * ```
    */
   public getAsks(levels?: number): readonly PriceLevel[] {
@@ -298,12 +324,21 @@ export class OrderBook {
    * Создаёт снапшот текущего состояния стакана
    *
    * @param timestampMs - Время снапшота (опционально)
-   * @returns Сериализуемый снапшот стакана
+   * @returns Снапшот стакана с Price/Quantity VO
+   *
+   * @remarks
+   * Для JSON-сериализации конвертируйте Price/Quantity через `.value().toString()`.
    *
    * @example
    * ```typescript
    * const snapshot = book.toSnapshot(Date.now());
-   * const json = JSON.stringify(snapshot);
+   * // Для JSON:
+   * const json = {
+   *   bids: snapshot.bids.map(l => ({
+   *     price: l.price.value().toString(),
+   *     size: l.size.value().toString(),
+   *   })),
+   * };
    * ```
    */
   public toSnapshot(timestampMs?: number): OrderBookSnapshot {
@@ -320,31 +355,35 @@ export class OrderBook {
 
   /**
    * Применяет один ценовой уровень к карте
+   *
+   * @remarks
+   * Ключ карты = price.value().toString() для точного Decimal-сравнения.
+   * size < 0 → игнорировать; size === 0 → удалить; иначе → обновить/добавить.
    */
-  private _applyLevel(map: Map<number, number>, level: PriceLevel): void {
-    if (level.size < 0) return; // игнорируем некорректные данные
-    if (level.size === 0) {
-      map.delete(level.price);
+  private _applyLevel(map: Map<string, PriceLevel>, level: PriceLevel): void {
+    const sizeDecimal = level.size.value();
+    if (sizeDecimal.isNegative()) return; // игнорируем некорректные данные
+    const key = level.price.value().toString();
+    if (sizeDecimal.isZero()) {
+      map.delete(key);
     } else {
-      map.set(level.price, level.size);
+      map.set(key, level);
     }
   }
 
   /**
-   * Возвращает bids отсортированные по убыванию цены
+   * Возвращает bids отсортированные по убыванию цены (лучший bid первый)
    */
   private _getSortedBids(): PriceLevel[] {
-    return Array.from(this._bids.entries())
-      .sort(([a], [b]) => b - a) // убывание: лучший bid первый
-      .map(([price, size]) => ({ price, size }));
+    return Array.from(this._bids.values())
+      .sort((a, b) => b.price.value().comparedTo(a.price.value()));
   }
 
   /**
-   * Возвращает asks отсортированные по возрастанию цены
+   * Возвращает asks отсортированные по возрастанию цены (лучший ask первый)
    */
   private _getSortedAsks(): PriceLevel[] {
-    return Array.from(this._asks.entries())
-      .sort(([a], [b]) => a - b) // возрастание: лучший ask первый
-      .map(([price, size]) => ({ price, size }));
+    return Array.from(this._asks.values())
+      .sort((a, b) => a.price.value().comparedTo(b.price.value()));
   }
 }

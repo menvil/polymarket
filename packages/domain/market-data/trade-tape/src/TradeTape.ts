@@ -113,28 +113,28 @@ export class TradeTape {
    *
    * @param trade - Трейд для добавления
    *
+   * @throws {Error} Если marketId или tokenId трейда не совпадают с лентой
+   *
    * @remarks
-   * Трейды с несовпадающим marketId или tokenId тихо игнорируются
-   * с выводом предупреждения в console (не бросает исключение).
+   * Несовпадение marketId или tokenId — это ошибка программиста:
+   * вызывающий код обязан передавать трейды только для нужного инструмента.
    *
    * @example
    * ```typescript
-   * tape.append(trade); // добавит если marketId+tokenId совпадают
+   * tape.append(trade); // бросит Error если marketId/tokenId не совпадают
    * ```
    */
   public append(trade: Trade): void {
     if (trade.marketId !== this.marketId) {
-      console.warn(
-        `TradeTape[${this.marketId}/${this._tokenIdStr}]: ignored trade with marketId=${trade.marketId}`
+      throw new Error(
+        `TradeTape[${this.marketId}/${this._tokenIdStr}]: trade marketId mismatch: expected=${this.marketId}, got=${trade.marketId}`
       );
-      return;
     }
 
     if (assetIdToString(trade.tokenId) !== this._tokenIdStr) {
-      console.warn(
-        `TradeTape[${this.marketId}/${this._tokenIdStr}]: ignored trade with tokenId=${assetIdToString(trade.tokenId)}`
+      throw new Error(
+        `TradeTape[${this.marketId}/${this._tokenIdStr}]: trade tokenId mismatch: expected=${this._tokenIdStr}, got=${assetIdToString(trade.tokenId)}`
       );
-      return;
     }
 
     this._trades.push(trade);

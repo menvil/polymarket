@@ -80,25 +80,21 @@ describe('TradeTape', () => {
       expect(tape.isEmpty()).toBe(false);
     });
 
-    it('игнорирует трейд с несовпадающим marketId', () => {
+    it('бросает Error при несовпадающем marketId', () => {
       const trade = makeTrade({ marketId: 'other-market' });
-      tape.append(trade);
-
+      expect(() => tape.append(trade)).toThrow(/marketId mismatch/);
       expect(tape.size()).toBe(0);
     });
 
-    it('игнорирует трейд с несовпадающим tokenId', () => {
-      // Создаём ленту с другим tokenId (используем тот же USDC, но для другого рынка)
-      // Тест проверяет, что трейд с marketId!=tape.marketId отклоняется
+    it('бросает Error при несовпадающем tokenId', () => {
       const otherTape = (() => {
         const r = TradeTape.create('other-market', TOKEN_ID);
         if (!r.ok) throw new Error();
         return r.value;
       })();
 
-      // Трейд из MARKET_ID не попадёт в other-market тейп
       const trade = makeTrade({ marketId: MARKET_ID });
-      otherTape.append(trade);
+      expect(() => otherTape.append(trade)).toThrow(/marketId mismatch/);
       expect(otherTape.size()).toBe(0);
     });
 
