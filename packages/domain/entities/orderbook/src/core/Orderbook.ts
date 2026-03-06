@@ -157,18 +157,14 @@ export class Orderbook {
    * ```
    */
   public static fromNormalized(normalized: NormalizedOrderbook): Orderbook {
-    const venueTimestamp = normalized.venueTimestamp !== undefined
-      ? Timestamp.of(new Decimal(normalized.venueTimestamp))
-      : undefined;
-    const receivedAt = Timestamp.of(new Decimal(normalized.receivedAt));
-
+    // NormalizedOrderbook уже содержит Timestamp VO — конвертация не нужна
     return new Orderbook(
       normalized.marketId as InstrumentId,
       normalized.tokenId as InstrumentId,
       normalized.bids,
       normalized.asks,
-      venueTimestamp,
-      receivedAt
+      normalized.venueTimestamp,
+      normalized.receivedAt
     );
   }
 

@@ -23,9 +23,9 @@
  * |-----------------|-------------------|----------------|
  * | `market`        | `marketId`        | переименование |
  * | `asset_id`      | `tokenId`         | переименование |
- * | `bids[].price`  | `bids[].price`    | `Number(string)` → number |
- * | `bids[].size`   | `bids[].quantity` | `Number(string)` → number + переименование |
- * | `timestamp`     | `venueTimestamp`  | `Number(string)` → number |
+ * | `bids[].price`  | `bids[].price`    | переименование (строка передаётся напрямую) |
+ * | `bids[].size`   | `bids[].quantity` | переименование (строка передаётся напрямую) |
+ * | `timestamp`     | `venueTimestamp`  | переименование (строка передаётся напрямую) |
  *
  * После конвертации в `RawOrderbook` — `OrderbookNormalizer` применяет:
  * - `PriceService.create()` — валидация через Price VO [0.0001, 0.9999]
@@ -141,11 +141,12 @@ export class PolymarketBookEventParser {
    *
    * @remarks
    * Алгоритм:
-   * 1. Маппинг полей события в RawOrderbook (поля + string → number)
-   * 2. Делегирование в OrderbookNormalizer (VO валидация, сортировка, crossed book)
+   * 1. Маппинг полей события в RawOrderbook (поля переименовываются, строки передаются as-is)
+   * 2. Делегирование в OrderbookNormalizer (VO валидация через PriceService/QuantityService, сортировка, crossed book)
    * 3. Создание Orderbook через Orderbook.fromNormalized()
    *
-   * Использует `Number()` для строк: `Number("0.43")` = `0.43`.
+   * Строки передаются напрямую в RawOrderbook — PriceService/QuantityService/TimestampService
+   * принимают string | number и корректно их парсят.
    * Все валидации (диапазон цены, quantity >= 0, crossed book) — в нормализаторе.
    *
    * @example
@@ -170,12 +171,13 @@ export class PolymarketBookEventParser {
     event: PolymarketBookEvent,
     policy: NormalizationPolicy = DEFAULT_NORMALIZATION_POLICY
   ): Result<Orderbook, OrderbookValidationError | OrderbookInvalidError> {
+    // Строки передаются напрямую — PriceService/QuantityService/TimestampService принимают string
     const raw: RawOrderbook = {
       marketId: event.market,
       tokenId: event.asset_id,
-      bids: event.bids.map(l => ({ price: Number(l.price), quantity: Number(l.size) })),
-      asks: event.asks.map(l => ({ price: Number(l.price), quantity: Number(l.size) })),
-      venueTimestamp: Number(event.timestamp), // "1767463213110" → 1767463213110
+      bids: event.bids.map(l => ({ price: l.price, quantity: l.size })),
+      asks: event.asks.map(l => ({ price: l.price, quantity: l.size })),
+      venueTimestamp: event.timestamp, // строка "1767463213110" — TimestampService.create() распарсит
     };
 
     const normalizedResult = OrderbookNormalizer.normalize(raw, policy);

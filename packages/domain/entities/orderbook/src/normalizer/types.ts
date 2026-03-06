@@ -13,15 +13,20 @@
  * Raw уровень стакана (как приходит от API)
  *
  * @remarks
- * Примитивные типы - number вместо Price/Quantity VO.
+ * Принимает строки и числа для совместимости с разными источниками данных:
+ * - Polymarket CLOB WebSocket присылает строки: `{ price: "0.43", size: "41" }`
+ * - Прямые числа из внутренних источников
+ *
  * Может содержать некорректные данные:
  * - price = 0 или отрицательное
  * - quantity = 0 или отрицательное
  * - дубликаты price
+ *
+ * Валидация происходит в OrderbookNormalizer через PriceService/QuantityService.
  */
 export interface RawLevel {
-  readonly price: number;
-  readonly quantity: number;
+  readonly price: string | number;
+  readonly quantity: string | number;
 }
 
 /**

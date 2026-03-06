@@ -37,7 +37,8 @@
  * ```
  */
 
-import { PriceService, QuantityService } from '@polymarket/value-objects';
+import { PriceService, QuantityService, TimestampService } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/value-objects';
 import { OrderbookValidationError } from '@polymarket/errors/orderbook';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
@@ -49,14 +50,17 @@ import { DEFAULT_NORMALIZATION_POLICY } from './NormalizationPolicy.js';
 
 /**
  * Результат нормализации
+ *
+ * @remarks
+ * Используются Timestamp VO вместо raw number для type safety.
  */
 export interface NormalizedOrderbook {
   readonly bids: readonly OrderbookLevel[];
   readonly asks: readonly OrderbookLevel[];
   readonly marketId: string;
   readonly tokenId: string;
-  readonly venueTimestamp?: number; // unix timestamp ms
-  readonly receivedAt: number; // unix timestamp ms
+  readonly venueTimestamp?: Timestamp;
+  readonly receivedAt: Timestamp;
 }
 
 /**
@@ -82,7 +86,7 @@ export class OrderbookNormalizer {
     policy: NormalizationPolicy = DEFAULT_NORMALIZATION_POLICY
   ): Result<NormalizedOrderbook, OrderbookValidationError | OrderbookInvalidError> {
     // Валидация marketId
-    if (!raw.marketId || typeof raw.marketId !== 'string' || raw.marketId.trim().length === 0) {
+    if (!raw.marketId || raw.marketId.trim().length === 0) {
       return Err(
         new OrderbookValidationError('Missing or invalid marketId', {
           context: { field: 'marketId', value: raw.marketId },
@@ -91,7 +95,7 @@ export class OrderbookNormalizer {
     }
 
     // Валидация tokenId
-    if (!raw.tokenId || typeof raw.tokenId !== 'string' || raw.tokenId.trim().length === 0) {
+    if (!raw.tokenId || raw.tokenId.trim().length === 0) {
       return Err(
         new OrderbookValidationError('Missing or invalid tokenId', {
           context: { field: 'tokenId', value: raw.tokenId, marketId: raw.marketId },
@@ -116,18 +120,19 @@ export class OrderbookNormalizer {
 
     // Валидация crossed book (если !allowCrossed)
     if (!policy.allowCrossed && bids.length > 0 && asks.length > 0) {
-      const bestBid = bids[0].price.value().toNumber();
-      const bestAsk = asks[0].price.value().toNumber();
+      const bestBidPrice = bids[0].price.value();
+      const bestAskPrice = asks[0].price.value();
 
-      if (bestBid >= bestAsk) {
+      // Используем Decimal-сравнение для точности (избегаем float precision issues)
+      if (bestBidPrice.gte(bestAskPrice)) {
         return Err(
           new OrderbookInvalidError('Crossed book detected', {
             context: {
               reason: OrderbookInvalidReason.CROSSED_BOOK,
               marketId: raw.marketId,
               tokenId: raw.tokenId,
-              bestBid,
-              bestAsk,
+              bestBid: bestBidPrice.toString(),
+              bestAsk: bestAskPrice.toString(),
             },
           })
         );
@@ -136,7 +141,13 @@ export class OrderbookNormalizer {
 
     // Нормализация timestamps
     const venueTimestamp = this.parseVenueTimestamp(raw.venueTimestamp);
-    const receivedAt = raw.receivedAt ?? Date.now();
+    let receivedAt: Timestamp;
+    if (raw.receivedAt === undefined) {
+      receivedAt = TimestampService.now();
+    } else {
+      const receivedResult = TimestampService.create(raw.receivedAt);
+      receivedAt = receivedResult.ok ? receivedResult.value : TimestampService.now();
+    }
 
     return Ok({
       bids,
@@ -162,7 +173,7 @@ export class OrderbookNormalizer {
    * Устраняет дублирование кода из оригинального fromJSON.
    *
    * Алгоритм:
-   * 1. Парсинг number → Price/Quantity VO через safe factory методы
+   * 1. Парсинг string|number → Price/Quantity VO через safe factory методы
    * 2. Фильтрация нулевых quantity (если policy.dropZeroQty)
    * 3. Агрегация дубликатов price (если policy.aggregateSamePrice)
    * 4. Сортировка (bids desc, asks asc)
@@ -184,29 +195,11 @@ export class OrderbookNormalizer {
 
     const levels: OrderbookLevel[] = [];
 
-    // Шаг 1: Парсинг number → VO через safe factory
+    // Шаг 1: Парсинг string|number → VO через safe factory
     for (let i = 0; i < rawLevels.length; i++) {
       const rawLevel = rawLevels[i];
 
-      // Валидация price
-      if (typeof rawLevel.price !== 'number') {
-        return Err(
-          new OrderbookValidationError(`Invalid price in ${side}[${i}]`, {
-            context: { field: `${side}[${i}].price`, marketId, value: rawLevel.price },
-          })
-        );
-      }
-
-      // Валидация quantity
-      if (typeof rawLevel.quantity !== 'number') {
-        return Err(
-          new OrderbookValidationError(`Invalid quantity in ${side}[${i}]`, {
-            context: { field: `${side}[${i}].quantity`, marketId, value: rawLevel.quantity },
-          })
-        );
-      }
-
-      // Создание Price VO через PriceService.create (Result-based)
+      // Создание Price VO через PriceService.create (принимает string | number | Decimal)
       const priceResult = PriceService.create(rawLevel.price);
       if (!priceResult.ok) {
         return Err(
@@ -216,7 +209,7 @@ export class OrderbookNormalizer {
         );
       }
 
-      // Создание Quantity VO через QuantityService.create (Result-based)
+      // Создание Quantity VO через QuantityService.create (принимает string | number | Decimal)
       const quantityResult = QuantityService.create(rawLevel.quantity);
       if (!quantityResult.ok) {
         return Err(
@@ -272,10 +265,11 @@ export class OrderbookNormalizer {
    * ```
    */
   private static aggregateLevels(levels: OrderbookLevel[]): OrderbookLevel[] {
-    const priceMap = new Map<number, OrderbookLevel>();
+    // Используем string key для точного Decimal-сравнения (избегаем float precision issues)
+    const priceMap = new Map<string, OrderbookLevel>();
 
     for (const level of levels) {
-      const priceKey = level.price.value().toNumber();
+      const priceKey = level.price.value().toString();
       const existing = priceMap.get(priceKey);
 
       if (existing) {
@@ -308,39 +302,49 @@ export class OrderbookNormalizer {
     const sorted = [...levels];
 
     if (side === 'bids') {
-      // Bids: descending price (highest first)
-      sorted.sort((a, b) => b.price.value().toNumber() - a.price.value().toNumber());
+      // Bids: descending price (highest first) — лучший bid первым
+      sorted.sort((a, b) => b.price.value().comparedTo(a.price.value()));
     } else {
-      // Asks: ascending price (lowest first)
-      sorted.sort((a, b) => a.price.value().toNumber() - b.price.value().toNumber());
+      // Asks: ascending price (lowest first) — лучший ask первым
+      sorted.sort((a, b) => a.price.value().comparedTo(b.price.value()));
     }
 
     return sorted;
   }
 
   /**
-   * Парсит venue timestamp
+   * Парсит venue timestamp в Timestamp VO
    *
-   * @param venueTs - Venue timestamp (string ISO, number unix ms, or undefined)
-   * @returns Unix timestamp в миллисекундах или undefined
+   * @param venueTs - Venue timestamp (ISO строка, unix ms number, или undefined)
+   * @returns Timestamp VO или undefined если нет/невалиден
    *
    * @remarks
-   * Нормализует разные форматы timestamp в единый: unix ms.
+   * Нормализует разные форматы:
+   * - number (unix ms): передаётся в TimestampService.create() напрямую
+   * - ISO string (например "2024-01-15T10:30:00.000Z"): парсится через Date
+   * - numeric string (например "1767463213110"): передаётся в TimestampService.create()
    */
-  private static parseVenueTimestamp(venueTs: string | number | undefined): number | undefined {
+  private static parseVenueTimestamp(venueTs: string | number | undefined): Timestamp | undefined {
     if (venueTs === undefined) {
       return undefined;
     }
 
     if (typeof venueTs === 'number') {
-      return venueTs;
+      const result = TimestampService.create(venueTs);
+      return result.ok ? result.value : undefined;
     }
 
-    if (typeof venueTs === 'string') {
-      const date = new Date(venueTs);
-      if (!isNaN(date.getTime())) {
-        return date.getTime();
-      }
+    // Строка: сначала пробуем как число (epoch ms), потом как ISO date
+    const asNumber = Number(venueTs);
+    if (!Number.isNaN(asNumber)) {
+      const result = TimestampService.create(asNumber);
+      return result.ok ? result.value : undefined;
+    }
+
+    const date = new Date(venueTs);
+    if (!Number.isNaN(date.getTime())) {
+      const result = TimestampService.create(date.getTime());
+      return result.ok ? result.value : undefined;
     }
 
     return undefined;

@@ -89,8 +89,9 @@ describe('OrderbookNormalizer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.receivedAt).toBeGreaterThanOrEqual(before);
-        expect(result.value.receivedAt).toBeLessThanOrEqual(after);
+        // receivedAt — Timestamp VO, используем .toNumber() для сравнения
+        expect(result.value.receivedAt.toNumber()).toBeGreaterThanOrEqual(before);
+        expect(result.value.receivedAt.toNumber()).toBeLessThanOrEqual(after);
       }
     });
 
@@ -107,11 +108,12 @@ describe('OrderbookNormalizer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.venueTimestamp).toBe(new Date('2024-01-15T10:30:00.000Z').getTime());
+        // venueTimestamp — Timestamp VO, используем .toNumber() для сравнения
+        expect(result.value.venueTimestamp?.toNumber()).toBe(new Date('2024-01-15T10:30:00.000Z').getTime());
       }
     });
 
-    it('парсит venueTimestamp из unix timestamp', () => {
+    it('парсит venueTimestamp из unix timestamp (number)', () => {
       const timestamp = 1705318200000;
       const raw: RawOrderbook = {
         marketId: 'market-123',
@@ -125,7 +127,66 @@ describe('OrderbookNormalizer', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        expect(result.value.venueTimestamp).toBe(timestamp);
+        expect(result.value.venueTimestamp?.toNumber()).toBe(timestamp);
+      }
+    });
+
+    it('парсит venueTimestamp из numeric string (epoch ms)', () => {
+      const raw: RawOrderbook = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        bids: [],
+        asks: [],
+        venueTimestamp: '1705318200000',
+      };
+
+      const result = OrderbookNormalizer.normalize(raw);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.venueTimestamp?.toNumber()).toBe(1705318200000);
+      }
+    });
+  });
+
+  describe('normalize() - string price/quantity (Polymarket формат)', () => {
+    it('принимает строковые price и quantity', () => {
+      const raw: RawOrderbook = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        bids: [
+          { price: '0.43', quantity: '41' },
+          { price: '0.42', quantity: '194.5' },
+        ],
+        asks: [
+          { price: '0.44', quantity: '253.92' },
+        ],
+      };
+
+      const result = OrderbookNormalizer.normalize(raw);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bids.length).toBe(2);
+        expect(result.value.bids[0].price.value().toNumber()).toBe(0.43);
+        expect(result.value.bids[0].quantity.value().toNumber()).toBe(41);
+        expect(result.value.bids[1].quantity.value().toNumber()).toBe(194.5);
+        expect(result.value.asks[0].price.value().toNumber()).toBe(0.44);
+      }
+    });
+
+    it('возвращает Err для невалидной строки price ("not-a-number")', () => {
+      const raw: RawOrderbook = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        bids: [{ price: 'not-a-number', quantity: '100' }],
+        asks: [],
+      };
+
+      const result = OrderbookNormalizer.normalize(raw);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('price');
       }
     });
   });
