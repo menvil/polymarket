@@ -410,5 +410,68 @@ describe('OrderbookNormalizer', () => {
         expect(result.error.message).toContain('quantity');
       }
     });
+
+    it('возвращает Err если asks — не массив (bids/asks not array path)', () => {
+      const raw = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        bids: [{ price: 0.51, quantity: 100 }],
+        asks: { price: 0.53, quantity: 150 }, // объект вместо массива
+      } as unknown as RawOrderbook;
+      const result = OrderbookNormalizer.normalize(raw);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('asks');
+      }
+    });
+
+    it('возвращает Err для невалидного price в asks', () => {
+      const raw: RawOrderbook = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        bids: [{ price: 0.51, quantity: 100 }],
+        asks: [{ price: -1, quantity: 150 }], // невалидная цена
+      };
+      const result = OrderbookNormalizer.normalize(raw);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('asks');
+      }
+    });
+
+    it('невалидный venueTimestamp возвращает undefined (не ломает нормализацию)', () => {
+      const raw: RawOrderbook = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        bids: [{ price: 0.51, quantity: 100 }],
+        asks: [{ price: 0.53, quantity: 150 }],
+        venueTimestamp: 'not-a-date',
+      };
+      const result = OrderbookNormalizer.normalize(raw);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.venueTimestamp).toBeUndefined();
+      }
+    });
+
+    it('maxLevelsPerSide=0 возвращает пустые bids и asks', () => {
+      const raw: RawOrderbook = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        bids: [{ price: 0.51, quantity: 100 }, { price: 0.50, quantity: 200 }],
+        asks: [{ price: 0.53, quantity: 150 }, { price: 0.54, quantity: 250 }],
+      };
+      const result = OrderbookNormalizer.normalize(raw, {
+        dropZeroQty: true,
+        aggregateSamePrice: true,
+        allowCrossed: false,
+        maxLevelsPerSide: 0,
+      });
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bids.length).toBe(0);
+        expect(result.value.asks.length).toBe(0);
+      }
+    });
   });
 });

@@ -13,11 +13,9 @@ orderbook/
 │   ├── OrderbookNormalizer.ts # Нормализация и валидация сырых данных
 │   ├── NormalizationPolicy.ts # Политики нормализации
 │   └── types.ts               # RawOrderbook, RawLevel
-├── adapters/
-│   ├── PolymarketBookEventParser.ts  # Парсер Polymarket WebSocket "book" событий
-│   └── OrderbookSerializer.ts        # JSON сериализация/десериализация
-└── errors/
-    └── OrderbookInvalidError.ts      # Typed ошибки стакана
+└── adapters/
+    ├── PolymarketBookEventParser.ts  # Парсер Polymarket WebSocket "book" событий
+    └── OrderbookSerializer.ts        # JSON сериализация/десериализация
 ```
 
 ## Поток данных
@@ -202,7 +200,7 @@ ob.getLatencyMs(): number | null  // receivedAt - venueTimestamp
 ob.isStale(maxAgeMs?: number): boolean  // default 5000ms
 
 // Представление
-ob.toObject(): { bestBid, bestAsk, midPrice, spread, imbalance, ... }
+ob.toObject(): { bestBid, bestAsk, midPrice, spreadWidth, spreadStatus, imbalance, ... }
 ob.toString(): string
 ```
 
@@ -225,7 +223,7 @@ level.toObject(): { price: number; quantity: number }
 // Статический класс
 PolymarketBookEventParser.parse(
   event: PolymarketBookEvent,
-  policy?: NormalizationPolicy    // default: DEFAULT_NORMALIZATION_POLICY
+  policy?: NormalizationPolicy    // default: PERMISSIVE_NORMALIZATION_POLICY
 ): Result<Orderbook, OrderbookValidationError | OrderbookInvalidError>
 ```
 
@@ -235,9 +233,9 @@ PolymarketBookEventParser.parse(
 |---|---|---|
 | `market` | `marketId` | переименование |
 | `asset_id` | `tokenId` | переименование |
-| `bids[].price` | `bids[].price` | `Number(string)` |
-| `bids[].size` | `bids[].quantity` | `Number(string)` + переименование |
-| `timestamp` | `venueTimestamp` | `Number(string)` |
+| `bids[].price` | `bids[].price` | строка передаётся as-is → `PriceService.create(string)` |
+| `bids[].size` | `bids[].quantity` | строка передаётся as-is + переименование → `QuantityService.create(string)` |
+| `timestamp` | `venueTimestamp` | строка передаётся as-is → `TimestampService.create(string)` |
 
 ### `OrderbookInvalidError`
 

@@ -22,7 +22,7 @@
  * } from '@polymarket/orderbook';
  *
  * // Из raw данных
- * const rawData: RawOrderbook = { / * ... * / };
+ * const rawData: RawOrderbook = { marketId: '...', tokenId: '...', bids: [], asks: [] };
  * const normalized = OrderbookNormalizer.normalize(rawData);
  * if (normalized.ok) {
  *   const orderbook = Orderbook.fromNormalized(normalized.value);

@@ -11,15 +11,15 @@
  *
  * @example
  * ```typescript
- * import { Price, Quantity } from '@polymarket/value-objects';
+ * import { PriceService, QuantityService } from '@polymarket/value-objects';
  * import { OrderbookLevel } from './OrderbookLevel';
  *
- * const priceResult = Price.fromValue(0.52);
- * const quantityResult = Quantity.fromValue(100);
+ * const priceResult = PriceService.create(0.52);
+ * const quantityResult = QuantityService.create(100);
  *
  * if (priceResult.ok && quantityResult.ok) {
  *   const level = OrderbookLevel.create(priceResult.value, quantityResult.value);
- *   console.log(`Level: ${level.price.value} @ ${level.quantity.value}`);
+ *   console.log(`Level: ${level.price.value().toFixed(4)} @ ${level.quantity.value().toFixed(2)}`);
  * }
  * ```
  */
@@ -53,9 +53,11 @@ export class OrderbookLevel {
    *
    * @example
    * ```typescript
-   * const price = Price.fromValue(0.52).value;
-   * const quantity = Quantity.fromValue(100).value;
-   * const level = OrderbookLevel.create(price, quantity);
+   * const priceResult = PriceService.create(0.52);
+   * const quantityResult = QuantityService.create(100);
+   * if (priceResult.ok && quantityResult.ok) {
+   *   const level = OrderbookLevel.create(priceResult.value, quantityResult.value);
+   * }
    * ```
    */
   public static create(price: Price, quantity: Quantity): OrderbookLevel {
@@ -93,9 +95,12 @@ export class OrderbookLevel {
    *
    * @example
    * ```typescript
-   * const updated = level.withQuantity(Quantity.fromValue(200).value);
-   * console.log(updated.quantity.value); // 200
-   * console.log(level.quantity.value); // 100 (оригинал не изменился)
+   * const newQtyResult = QuantityService.create(200);
+   * if (newQtyResult.ok) {
+   *   const updated = level.withQuantity(newQtyResult.value);
+   *   console.log(updated.quantity.value().toNumber()); // 200
+   *   console.log(level.quantity.value().toNumber()); // 100 (оригинал не изменился)
+   * }
    * ```
    */
   public withQuantity(newQuantity: Quantity): OrderbookLevel {

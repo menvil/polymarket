@@ -19,7 +19,7 @@
  * import { Orderbook } from './Orderbook';
  * import { OrderbookNormalizer } from '../normalizer/OrderbookNormalizer';
  *
- * const rawData: RawOrderbook = { / * ... * / };
+ * const rawData: RawOrderbook = { marketId: '...', tokenId: '...', bids: [], asks: [] };
  * const normalized = OrderbookNormalizer.normalize(rawData);
  *
  * if (normalized.ok) {
@@ -381,7 +381,7 @@ export class Orderbook {
    * Quantity.of(0) валиден, не нужна особая обработка.
    */
   public getTotalBidVolume(levels?: number): Quantity {
-    const relevantBids = levels ? this.bids.slice(0, levels) : this.bids;
+    const relevantBids = levels !== undefined ? this.bids.slice(0, levels) : this.bids;
 
     const total = relevantBids.reduce(
       (sum, level) => sum.plus(level.quantity.value()),
@@ -402,7 +402,7 @@ export class Orderbook {
    * ИСПРАВЛЕНИЕ: Использует Decimal-арифметику вместо number.
    */
   public getTotalAskVolume(levels?: number): Quantity {
-    const relevantAsks = levels ? this.asks.slice(0, levels) : this.asks;
+    const relevantAsks = levels !== undefined ? this.asks.slice(0, levels) : this.asks;
 
     const total = relevantAsks.reduce(
       (sum, level) => sum.plus(level.quantity.value()),

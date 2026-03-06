@@ -16,7 +16,7 @@
  * import { OrderbookSerializer } from './OrderbookSerializer';
  *
  * // Deserialization
- * const json = { / * ... * / };
+ * const json = { marketId: '...', tokenId: '...', bids: [], asks: [] };
  * const result = OrderbookSerializer.fromJSON(json);
  * if (result.ok) {
  *   const orderbook = result.value;

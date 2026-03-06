@@ -17,7 +17,8 @@
  *
  * @example
  * ```typescript
- * import { OrderbookNormalizer, DEFAULT_NORMALIZATION_POLICY } from './OrderbookNormalizer';
+ * import { OrderbookNormalizer } from './OrderbookNormalizer';
+ * import { DEFAULT_NORMALIZATION_POLICY } from './NormalizationPolicy';
  *
  * const rawData: RawOrderbook = {
  *   marketId: 'market-123',
@@ -241,7 +242,7 @@ export class OrderbookNormalizer {
     const sortedLevels = this.sortLevels(processedLevels, side);
 
     // Шаг 5: Ограничение уровней (если policy.maxLevelsPerSide)
-    const limitedLevels = policy.maxLevelsPerSide
+    const limitedLevels = policy.maxLevelsPerSide !== undefined
       ? sortedLevels.slice(0, policy.maxLevelsPerSide)
       : sortedLevels;
 

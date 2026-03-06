@@ -198,6 +198,9 @@ describe('PolymarketBookEventParser.parse() — невалидные данны�
       bids: [{ price: 'not-a-number', size: '100' }],
     });
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message.toLowerCase()).toMatch(/price|invalid/i);
+    }
   });
 
   it('возвращает Err для crossed book если allowCrossed=false', () => {
@@ -211,6 +214,9 @@ describe('PolymarketBookEventParser.parse() — невалидные данны�
       DEFAULT_NORMALIZATION_POLICY
     );
     expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message.toLowerCase()).toContain('crossed');
+    }
   });
 
   it('дефолтная политика (PERMISSIVE) принимает crossed book', () => {

@@ -5,6 +5,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { Orderbook } from '../../../src/core/Orderbook.js';
 import { OrderbookNormalizer } from '../../../src/normalizer/OrderbookNormalizer.js';
+import { PERMISSIVE_NORMALIZATION_POLICY } from '../../../src/normalizer/NormalizationPolicy.js';
 import { OrderbookInvalidReason } from '@polymarket/errors/orderbook';
 import type { RawOrderbook } from '../../../src/normalizer/types.js';
 import type { InstrumentId } from '@polymarket/ids';
@@ -242,6 +243,11 @@ describe('Orderbook', () => {
 
       expect(totalVolume.isZero()).toBe(true);
     });
+
+    it('getTotalBidVolume(0) возвращает 0 (не все уровни)', () => {
+      const ob = createTestOrderbook();
+      expect(ob.getTotalBidVolume(0).value().toNumber()).toBe(0);
+    });
   });
 
   describe('getTotalAskVolume()', () => {
@@ -267,6 +273,11 @@ describe('Orderbook', () => {
       const totalVolume = orderbook.getTotalAskVolume();
 
       expect(totalVolume.isZero()).toBe(true);
+    });
+
+    it('getTotalAskVolume(0) возвращает 0 (не все уровни)', () => {
+      const ob = createTestOrderbook();
+      expect(ob.getTotalAskVolume(0).value().toNumber()).toBe(0);
     });
   });
 
@@ -312,6 +323,11 @@ describe('Orderbook', () => {
 
       // imbalance = (100 - 200) / (100 + 200) = -100 / 300 = -0.333
       expect(imbalance).toBeCloseTo(-0.333, 3);
+    });
+
+    it('getImbalance(0) возвращает 0 (нет уровней для расчёта)', () => {
+      const ob = createTestOrderbook();
+      expect(ob.getImbalance(0)).toBe(0);
     });
   });
 
@@ -476,6 +492,26 @@ describe('Orderbook', () => {
       const obj = orderbook.toObject();
 
       expect(obj.spreadStatus).toBe(OrderbookInvalidReason.ONE_SIDED);
+    });
+  });
+
+  describe('getSpread() — crossed book через permissive normalizer', () => {
+    it('getSpread() возвращает CROSSED_BOOK error для crossed стакана (из permissive normalizer)', () => {
+      const raw: RawOrderbook = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        bids: [{ price: 0.60, quantity: 100 }],
+        asks: [{ price: 0.50, quantity: 100 }],
+      };
+      // PERMISSIVE позволяет crossed book пройти нормализацию
+      const normalized = OrderbookNormalizer.normalize(raw, PERMISSIVE_NORMALIZATION_POLICY);
+      expect(normalized.ok).toBe(true);
+      if (!normalized.ok) return;
+      const ob = Orderbook.fromNormalized(normalized.value);
+      const spreadResult = ob.getSpread();
+      expect(spreadResult.ok).toBe(false);
+      if (spreadResult.ok) return;
+      expect(spreadResult.error.isCrossedBook()).toBe(true);
     });
   });
 });

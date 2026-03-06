@@ -67,6 +67,39 @@ describe('OrderbookSerializer', () => {
       const result = OrderbookSerializer.fromJSON(json);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message.toLowerCase()).toContain('marketid');
+      }
+    });
+
+    it('fromJSON без поля bids использует пустой массив', () => {
+      const json = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        // bids отсутствует
+        asks: [{ price: 0.53, quantity: 150 }],
+      };
+      const result = OrderbookSerializer.fromJSON(json);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bids.length).toBe(0);
+        expect(result.value.asks.length).toBe(1);
+      }
+    });
+
+    it('fromJSON без поля asks использует пустой массив', () => {
+      const json = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        bids: [{ price: 0.51, quantity: 100 }],
+        // asks отсутствует
+      };
+      const result = OrderbookSerializer.fromJSON(json);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.bids.length).toBe(1);
+        expect(result.value.asks.length).toBe(0);
+      }
     });
 
     it('применяет normalization policy', () => {
@@ -159,6 +192,9 @@ describe('OrderbookSerializer', () => {
       const result = OrderbookSerializer.parse(jsonString);
 
       expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message.toLowerCase()).toContain('failed to parse json');
+      }
     });
   });
 

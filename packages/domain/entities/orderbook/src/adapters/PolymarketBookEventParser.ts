@@ -48,9 +48,10 @@
  *   }
  *
  *   const orderbook = result.value;
- *   console.log('Best bid:', orderbook.getBestBid()?.price.value().toNumber()); // 0.43
- *   console.log('Best ask:', orderbook.getBestAsk()?.price.value().toNumber()); // 0.44
- *   console.log('Spread:',   orderbook.getSpread()?.toNumber());                // 0.01
+ *   console.log('Best bid:', orderbook.getBestBid()?.value().toNumber()); // 0.43
+ *   console.log('Best ask:', orderbook.getBestAsk()?.value().toNumber()); // 0.44
+ *   const sr = orderbook.getSpread();
+ *   if (sr.ok) console.log('Spread:', sr.value.width().toNumber()); // 0.01
  * });
  * ```
  */
@@ -136,7 +137,7 @@ export class PolymarketBookEventParser {
    * Парсит Polymarket "book" событие в доменную Orderbook entity
    *
    * @param event - Polymarket WebSocket "book" событие
-   * @param policy - Политика нормализации (по умолчанию DEFAULT_NORMALIZATION_POLICY)
+   * @param policy - Политика нормализации (по умолчанию PERMISSIVE_NORMALIZATION_POLICY)
    * @returns Result<Orderbook, OrderbookValidationError | OrderbookInvalidError>
    *
    * @remarks
@@ -160,11 +161,12 @@ export class PolymarketBookEventParser {
    * }
    *
    * const ob = result.value;
-   * console.log(ob.getBestBid()?.price.value().toNumber()); // 0.43
-   * console.log(ob.getBestAsk()?.price.value().toNumber()); // 0.44
-   * console.log(ob.getSpread()?.toNumber());                // 0.01
-   * console.log(ob.getMidPrice()?.toNumber());              // 0.435
-   * console.log(ob.getImbalance().toNumber());              // имбаланс [-1, +1]
+   * console.log(ob.getBestBid()?.value().toNumber()); // 0.43
+   * console.log(ob.getBestAsk()?.value().toNumber()); // 0.44
+   * const sr = ob.getSpread();
+   * if (sr.ok) console.log(sr.value.width().toNumber()); // 0.01
+   * console.log(ob.getMidPrice()?.value().toNumber()); // 0.435
+   * console.log(ob.getImbalance()); // число [-1, +1]
    * ```
    */
   public static parse(
