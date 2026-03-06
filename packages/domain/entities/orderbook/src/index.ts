@@ -59,6 +59,11 @@ export {
   OrderbookSerializer,
   type OrderbookJSON,
 } from './adapters/OrderbookSerializer.js';
+export {
+  PolymarketBookEventParser,
+  type PolymarketBookEvent,
+  type PolymarketLevel,
+} from './adapters/PolymarketBookEventParser.js';
 
 // Errors
 export {
