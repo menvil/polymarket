@@ -52,7 +52,7 @@ export class ValidateStepSizeForSignedQuantity {
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
-              reason: SignedQuantityErrorReason.INVALID_FORMAT,
+              reason: SignedQuantityErrorReason.NON_POSITIVE_STEP_SIZE,
               stepSize: stepSize.toString()
             }
           }

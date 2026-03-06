@@ -64,5 +64,15 @@ export enum SignedQuantityErrorReason {
    * При adjustBy() с allowCrossZero = false невозможно скорректировать
    * SignedQuantity равный нулю, так как любое изменение пересекает ноль.
    */
-  CANNOT_ADJUST_ZERO = 'CANNOT_ADJUST_ZERO'
+  CANNOT_ADJUST_ZERO = 'CANNOT_ADJUST_ZERO',
+
+  /**
+   * Шаг округления неположительный (stepSize <= 0)
+   *
+   * @remarks
+   * Используется в операциях roundToStep и adjustBy.
+   * stepSize должен быть строго положительным числом (> 0).
+   * Отличается от INVALID_FORMAT (ошибка парсинга) и NON_FINITE (бесконечность/NaN).
+   */
+  NON_POSITIVE_STEP_SIZE = 'NON_POSITIVE_STEP_SIZE'
 }

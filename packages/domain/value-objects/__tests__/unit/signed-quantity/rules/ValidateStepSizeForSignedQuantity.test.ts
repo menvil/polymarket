@@ -21,23 +21,23 @@ describe('ValidateStepSizeForSignedQuantity', () => {
       expect(result.ok).toBe(true);
     });
 
-    it('должен вернуть Err с INVALID_FORMAT для нуля', () => {
+    it('должен вернуть Err с NON_POSITIVE_STEP_SIZE для нуля', () => {
       const result = ValidateStepSizeForSignedQuantity.check(new Decimal(0));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidSignedQuantityError);
         expect(result.error.message).toContain('must be positive');
-        expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.INVALID_FORMAT);
+        expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NON_POSITIVE_STEP_SIZE);
       }
     });
 
-    it('должен вернуть Err с INVALID_FORMAT для negative stepSize', () => {
+    it('должен вернуть Err с NON_POSITIVE_STEP_SIZE для negative stepSize', () => {
       const result = ValidateStepSizeForSignedQuantity.check(new Decimal(-0.01));
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error).toBeInstanceOf(InvalidSignedQuantityError);
         expect(result.error.message).toContain('must be positive');
-        expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.INVALID_FORMAT);
+        expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NON_POSITIVE_STEP_SIZE);
       }
     });
 

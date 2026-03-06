@@ -5,7 +5,32 @@ import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal, roundToTic
 import Decimal from 'decimal.js';
 import { SignedQuantityErrorReason } from '../errors/SignedQuantityErrorReason.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
-import { ValidateFactorForSignedQuantityScale, ValidateDeltaForAdjustByNoCrossZero, ValidateStepSizeForSignedQuantity } from '../rules/index.js';
+import {
+  ValidateFactorForSignedQuantityScale,
+  ValidateFactorForSignedQuantityMultiplication,
+  ValidateDivisorForSignedQuantityDivision,
+  ValidateDeltaForAdjustByNoCrossZero,
+  ValidateStepSizeForSignedQuantity,
+} from '../rules/index.js';
+
+/**
+ * Опции для метода adjustBy
+ *
+ * @remarks
+ * Позволяет настроить режим округления и политику пересечения нуля.
+ */
+export interface AdjustByOptions {
+  /** Режим округления (default: ROUND_HALF_UP) */
+  readonly roundingMode?: Decimal.Rounding;
+  /**
+   * Разрешить пересечение нуля (default: true)
+   *
+   * @remarks
+   * При false — запрещает смену знака (защита от случайного флипа позиции).
+   * Ошибка RESULT_CROSSES_ZERO если знак меняется, CANNOT_ADJUST_ZERO если original = 0.
+   */
+  readonly allowCrossZero?: boolean;
+}
 
 /**
  * Фасад для работы с SignedQuantity
@@ -274,11 +299,16 @@ export class SignedQuantityService {
 
     const factorDecimal = factorResult.value;
 
-    // Умножение с обработкой ожидаемых арифметических исключений
     const ctx = {
       quantity: quantity.value().toString(),
       factor: factorDecimal.toString()
     };
+
+    // Валидация factor: допускаем любое finite значение (включая отрицательные)
+    const validateResult = ValidateFactorForSignedQuantityMultiplication.check(factorDecimal);
+    if (isErr(validateResult)) {
+      return Err(rewrap(SignedQuantityService.SERVICE_NAME, 'multiply', ctx, validateResult.error, InvalidSignedQuantityError));
+    }
 
     return wrapOp(SignedQuantityService.SERVICE_NAME, 'multiply', ctx, () => {
       const result = multiplyDecimal(quantity.value(), factorDecimal);
@@ -335,27 +365,16 @@ export class SignedQuantityService {
 
     const divisorDecimal = divisorResult.value;
 
-    // Проверка на ноль
-    if (divisorDecimal.isZero()) {
-      return Err(new InvalidSignedQuantityError(
-        'Cannot divide by zero',
-        {
-          code: InvalidSignedQuantityError.code,
-          context: {
-            op: 'divide',
-            quantity: quantity.value().toString(),
-            divisor: divisorDecimal.toString(),
-            reason: SignedQuantityErrorReason.DIVISION_BY_ZERO
-          }
-        }
-      ));
-    }
-
-    // Делим с обработкой ожидаемых арифметических исключений
     const ctx = {
       quantity: quantity.value().toString(),
       divisor: divisorDecimal.toString()
     };
+
+    // Валидация: делитель должен быть finite и ненулевым (отрицательные допускаются)
+    const validateResult = ValidateDivisorForSignedQuantityDivision.check(divisorDecimal);
+    if (isErr(validateResult)) {
+      return Err(rewrap(SignedQuantityService.SERVICE_NAME, 'divide', ctx, validateResult.error, InvalidSignedQuantityError));
+    }
 
     return wrapOp(SignedQuantityService.SERVICE_NAME, 'divide', ctx, () => {
       const result = divideDecimal(quantity.value(), divisorDecimal);
@@ -669,10 +688,7 @@ export class SignedQuantityService {
     quantity: SignedQuantity,
     delta: Ratio,
     stepSize: number | string | Decimal,
-    options?: {
-      roundingMode?: Decimal.Rounding;
-      allowCrossZero?: boolean;
-    }
+    options?: AdjustByOptions
   ): Result<SignedQuantity, InvalidSignedQuantityError> {
     // Извлекаем опции с defaults
     const roundingMode = options?.roundingMode ?? Decimal.ROUND_HALF_UP;

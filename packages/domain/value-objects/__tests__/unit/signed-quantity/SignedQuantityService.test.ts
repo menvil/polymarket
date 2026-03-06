@@ -286,6 +286,20 @@ describe('SignedQuantityService', () => {
         }
       }
     });
+
+    it('должен вернуть Err с NON_FINITE для Infinity factor (через ValidateFactorForSignedQuantityMultiplication)', () => {
+      const qtyResult = SignedQuantityService.create(10);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.multiply(qtyResult.value, Infinity);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NON_FINITE);
+          expect(result.error.context?.op).toContain('multiply');
+        }
+      }
+    });
   });
 
   describe('divide', () => {
@@ -337,7 +351,7 @@ describe('SignedQuantityService', () => {
         expect(isErr(result)).toBe(true);
         if (isErr(result)) {
           expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.DIVISION_BY_ZERO);
-          expect(result.error.message).toContain('divide by zero');
+          expect(result.error.message).toContain('zero');
         }
       }
     });
@@ -351,6 +365,20 @@ describe('SignedQuantityService', () => {
         expect(isErr(result)).toBe(true);
         if (isErr(result)) {
           expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NAN);
+        }
+      }
+    });
+
+    it('должен вернуть Err с NON_FINITE для Infinity divisor (через ValidateDivisorForSignedQuantityDivision)', () => {
+      const qtyResult = SignedQuantityService.create(10);
+
+      expect(qtyResult.ok).toBe(true);
+      if (qtyResult.ok) {
+        const result = SignedQuantityService.divide(qtyResult.value, Infinity);
+        expect(isErr(result)).toBe(true);
+        if (isErr(result)) {
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NON_FINITE);
+          expect(result.error.context?.op).toContain('divide');
         }
       }
     });
@@ -729,7 +757,7 @@ describe('SignedQuantityService', () => {
         const result = SignedQuantityService.roundToStep(qtyResult.value, 0);
         expect(isErr(result)).toBe(true);
         if (isErr(result)) {
-          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.INVALID_FORMAT);
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NON_POSITIVE_STEP_SIZE);
           expect(result.error.context?.op).toContain('roundToStep');
           expect(result.error.context).toHaveProperty('quantity');
           expect(result.error.context).toHaveProperty('stepSize');
@@ -745,7 +773,7 @@ describe('SignedQuantityService', () => {
         const result = SignedQuantityService.roundToStep(qtyResult.value, -0.01);
         expect(isErr(result)).toBe(true);
         if (isErr(result)) {
-          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.INVALID_FORMAT);
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NON_POSITIVE_STEP_SIZE);
           expect(result.error.context?.op).toContain('roundToStep');
           expect(result.error.context).toHaveProperty('quantity');
           expect(result.error.context).toHaveProperty('stepSize');
@@ -943,7 +971,7 @@ describe('SignedQuantityService', () => {
         const result = SignedQuantityService.adjustBy(qtyResult.value, deltaResult.value, 0);
         expect(isErr(result)).toBe(true);
         if (isErr(result)) {
-          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.INVALID_FORMAT);
+          expect(result.error.context?.reason).toBe(SignedQuantityErrorReason.NON_POSITIVE_STEP_SIZE);
           expect(result.error.context?.op).toContain('adjustBy');
           expect(result.error.context).toHaveProperty('quantity');
           expect(result.error.context).toHaveProperty('stepSize');
