@@ -44,7 +44,7 @@ import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import Decimal from 'decimal.js';
 import { OrderbookLevel } from './OrderbookLevel.js';
-import { OrderbookInvalidError, OrderbookInvalidReason } from '../errors/OrderbookInvalidError.js';
+import { OrderbookInvalidError, OrderbookInvalidReason } from '@polymarket/errors/orderbook';
 import type { NormalizedOrderbook } from '../normalizer/OrderbookNormalizer.js';
 
 /**

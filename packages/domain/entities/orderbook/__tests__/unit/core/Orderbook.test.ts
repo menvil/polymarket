@@ -5,7 +5,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { Orderbook } from '../../../src/core/Orderbook.js';
 import { OrderbookNormalizer } from '../../../src/normalizer/OrderbookNormalizer.js';
-import { OrderbookInvalidReason } from '../../../src/errors/OrderbookInvalidError.js';
+import { OrderbookInvalidReason } from '@polymarket/errors/orderbook';
 import type { RawOrderbook } from '../../../src/normalizer/types.js';
 import type { InstrumentId } from '@polymarket/ids';
 

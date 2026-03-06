@@ -71,4 +71,4 @@ export {
   OrderbookInvalidReason,
   type OrderbookInvalidContext,
   ORDERBOOK_INVALID_ERROR_CODE,
-} from './errors/OrderbookInvalidError.js';
+} from '@polymarket/errors/orderbook';

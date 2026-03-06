@@ -43,7 +43,7 @@ import { OrderbookValidationError } from '@polymarket/errors/orderbook';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import { OrderbookLevel } from '../core/OrderbookLevel.js';
-import { OrderbookInvalidError, OrderbookInvalidReason } from '../errors/OrderbookInvalidError.js';
+import { OrderbookInvalidError, OrderbookInvalidReason } from '@polymarket/errors/orderbook';
 import type { RawOrderbook, RawLevel } from './types.js';
 import type { NormalizationPolicy } from './NormalizationPolicy.js';
 import { DEFAULT_NORMALIZATION_POLICY } from './NormalizationPolicy.js';

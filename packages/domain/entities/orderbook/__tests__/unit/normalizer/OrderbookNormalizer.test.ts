@@ -5,7 +5,7 @@
 import { describe, it, expect } from '@jest/globals';
 import { OrderbookNormalizer } from '../../../src/normalizer/OrderbookNormalizer.js';
 import { DEFAULT_NORMALIZATION_POLICY, PERMISSIVE_NORMALIZATION_POLICY } from '../../../src/normalizer/NormalizationPolicy.js';
-import { OrderbookInvalidError, OrderbookInvalidReason } from '../../../src/errors/OrderbookInvalidError.js';
+import { OrderbookInvalidError, OrderbookInvalidReason } from '@polymarket/errors/orderbook';
 import type { RawOrderbook } from '../../../src/normalizer/types.js';
 
 describe('OrderbookNormalizer', () => {

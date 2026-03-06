@@ -64,7 +64,7 @@ import { DEFAULT_NORMALIZATION_POLICY } from '../normalizer/NormalizationPolicy.
 import type { NormalizationPolicy } from '../normalizer/NormalizationPolicy.js';
 import type { RawOrderbook } from '../normalizer/types.js';
 import { OrderbookValidationError } from '@polymarket/errors/orderbook';
-import { OrderbookInvalidError } from '../errors/OrderbookInvalidError.js';
+import { OrderbookInvalidError } from '@polymarket/errors/orderbook';
 
 /**
  * Уровень стакана в формате Polymarket WebSocket
