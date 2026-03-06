@@ -113,7 +113,25 @@ VenueTradeId генерируется как:
 
 ### toSnapshot / fromSnapshot
 
-Round-trip сериализация через `TradeSnapshot` (плоские примитивы).
+Round-trip сериализация через `TradeSnapshot` (плоские примитивы):
+
+```typescript
+interface TradeSnapshot {
+  id: string;
+  venueId: string;
+  marketId: string;
+  tokenId: string;
+  price: number;        // Decimal.toNumber() — возможна потеря точности (IEEE 754)
+  size: number;         // Decimal.toNumber() — возможна потеря точности (IEEE 754)
+  aggressorSide?: 'BUY' | 'SELL';
+  timestampMs: number;
+  txHash?: string;
+}
+```
+
+> **Точность**: поля `price` и `size` сериализуются через `Decimal.toNumber()`.
+> Для значений в диапазоне Polymarket (price ∈ [0.0001, 0.9999], size — разумные объёмы) потери на практике нет,
+> но для экстремальных дробных значений возможна погрешность IEEE 754 double.
 
 ## Пример использования
 

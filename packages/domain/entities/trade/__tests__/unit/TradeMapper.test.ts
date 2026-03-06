@@ -522,7 +522,7 @@ describe('TradeMapper', () => {
       }
     });
 
-    it('fromSnapshot() возвращает Err для невалидного snaphot ID', () => {
+    it('fromSnapshot() возвращает Err для невалидного snapshot ID', () => {
       const result = TradeMapper.fromSnapshot({
         id: '',
         venueId: 'POLYMARKET',

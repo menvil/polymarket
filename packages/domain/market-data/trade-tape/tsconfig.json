@@ -1,0 +1,22 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "composite": true,
+    "types": ["jest", "@jest/globals", "node"],
+    "paths": {
+      "@polymarket/trade": ["../../entities/trade/src/index.ts"],
+      "@polymarket/trade/*": ["../../entities/trade/src/*"]
+    }
+  },
+  "references": [
+    { "path": "../../../foundation/result" },
+    { "path": "../../../foundation/errors" },
+    { "path": "../../../foundation/ids" },
+    { "path": "../../../foundation/math" },
+    { "path": "../../value-objects" },
+    { "path": "../../entities/trade" }
+  ],
+  "include": ["src/**/*", "__tests__/**/*"],
+  "exclude": ["node_modules", "dist"]
+}
