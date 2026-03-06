@@ -46,7 +46,7 @@ import { OrderbookLevel } from '../core/OrderbookLevel.js';
 import { OrderbookInvalidError, OrderbookInvalidReason } from '@polymarket/errors/orderbook';
 import type { RawOrderbook, RawLevel } from './types.js';
 import type { NormalizationPolicy } from './NormalizationPolicy.js';
-import { DEFAULT_NORMALIZATION_POLICY } from './NormalizationPolicy.js';
+import { PERMISSIVE_NORMALIZATION_POLICY } from './NormalizationPolicy.js';
 
 /**
  * Результат нормализации
@@ -83,7 +83,7 @@ export class OrderbookNormalizer {
    */
   public static normalize(
     raw: RawOrderbook,
-    policy: NormalizationPolicy = DEFAULT_NORMALIZATION_POLICY
+    policy: NormalizationPolicy = PERMISSIVE_NORMALIZATION_POLICY
   ): Result<NormalizedOrderbook, OrderbookValidationError | OrderbookInvalidError> {
     // Валидация marketId
     if (!raw.marketId || raw.marketId.trim().length === 0) {

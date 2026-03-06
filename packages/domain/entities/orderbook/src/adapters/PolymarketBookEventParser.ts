@@ -60,7 +60,7 @@ import { Orderbook } from '../core/Orderbook.js';
 import {
   OrderbookNormalizer,
 } from '../normalizer/OrderbookNormalizer.js';
-import { DEFAULT_NORMALIZATION_POLICY } from '../normalizer/NormalizationPolicy.js';
+import { PERMISSIVE_NORMALIZATION_POLICY } from '../normalizer/NormalizationPolicy.js';
 import type { NormalizationPolicy } from '../normalizer/NormalizationPolicy.js';
 import type { RawOrderbook } from '../normalizer/types.js';
 import { OrderbookValidationError } from '@polymarket/errors/orderbook';
@@ -169,7 +169,7 @@ export class PolymarketBookEventParser {
    */
   public static parse(
     event: PolymarketBookEvent,
-    policy: NormalizationPolicy = DEFAULT_NORMALIZATION_POLICY
+    policy: NormalizationPolicy = PERMISSIVE_NORMALIZATION_POLICY
   ): Result<Orderbook, OrderbookValidationError | OrderbookInvalidError> {
     // Строки передаются напрямую — PriceService/QuantityService/TimestampService принимают string
     const raw: RawOrderbook = {

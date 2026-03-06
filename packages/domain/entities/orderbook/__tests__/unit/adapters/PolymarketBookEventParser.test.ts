@@ -11,7 +11,7 @@ import {
   PolymarketBookEventParser,
   type PolymarketBookEvent,
 } from '../../../src/adapters/PolymarketBookEventParser.js';
-import { PERMISSIVE_NORMALIZATION_POLICY } from '../../../src/normalizer/NormalizationPolicy.js';
+import { DEFAULT_NORMALIZATION_POLICY } from '../../../src/normalizer/NormalizationPolicy.js';
 
 // ==================== Реальное событие с Polymarket ====================
 
@@ -200,25 +200,26 @@ describe('PolymarketBookEventParser.parse() — невалидные данны�
     expect(result.ok).toBe(false);
   });
 
-  it('возвращает Err для crossed book (bid >= ask)', () => {
-    // bid 0.60 >= ask 0.50 — crossed book
-    const result = PolymarketBookEventParser.parse({
-      ...REAL_BOOK_EVENT,
-      bids: [{ price: '0.60', size: '100' }],
-      asks: [{ price: '0.50', size: '100' }],
-    });
-    expect(result.ok).toBe(false);
-  });
-
-  it('PERMISSIVE политика принимает crossed book', () => {
+  it('возвращает Err для crossed book если allowCrossed=false', () => {
+    // bid 0.60 >= ask 0.50 — crossed book, явно передаём strict policy
     const result = PolymarketBookEventParser.parse(
       {
         ...REAL_BOOK_EVENT,
         bids: [{ price: '0.60', size: '100' }],
         asks: [{ price: '0.50', size: '100' }],
       },
-      PERMISSIVE_NORMALIZATION_POLICY
+      DEFAULT_NORMALIZATION_POLICY
     );
+    expect(result.ok).toBe(false);
+  });
+
+  it('дефолтная политика (PERMISSIVE) принимает crossed book', () => {
+    // По умолчанию crossed book разрешён — доверяем данным exchange
+    const result = PolymarketBookEventParser.parse({
+      ...REAL_BOOK_EVENT,
+      bids: [{ price: '0.60', size: '100' }],
+      asks: [{ price: '0.50', size: '100' }],
+    });
     expect(result.ok).toBe(true);
   });
 });
