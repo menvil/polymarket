@@ -100,10 +100,13 @@ export class AssetQuantity {
       let canonicalAsset: AssetId;
       if (asset.type === 'CURRENCY') {
         canonicalAsset = AssetIdHelpers.fromCurrency(asset.currency);
-      } else {
+      } else if (asset.type === 'OUTCOME_TOKEN') {
         const result = AssetIdHelpers.fromOutcomeToken(asset.conditionRef, asset.outcomeKey);
         if (!result.ok) throw result.error;
         canonicalAsset = result.value;
+      } else {
+        // POLYMARKET_CTF_TOKEN: уже иммутабелен после deepFreezeAssetId
+        canonicalAsset = asset;
       }
 
       this._asset = canonicalAsset;

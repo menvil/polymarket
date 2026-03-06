@@ -55,6 +55,15 @@ export type AssetId =
       readonly type: 'OUTCOME_TOKEN';
       readonly conditionRef: OnChainConditionRef;
       readonly outcomeKey: OutcomeKey;
+    }
+  | {
+      /**
+       * Сырой CTF-токен Polymarket (числовой идентификатор позиции в контракте CTF на Polygon).
+       * Используется когда API возвращает только числовой asset_id без дополнительного контекста
+       * (conditionId, outcomeKey). Гарантированно уникален на уровне Polymarket CTF contract.
+       */
+      readonly type: 'POLYMARKET_CTF_TOKEN';
+      readonly tokenId: string;
     };
 
 /**
@@ -81,6 +90,11 @@ export type AssetId =
 function deepFreezeAssetId(asset: AssetId): AssetId {
   if (asset.type === 'CURRENCY') {
     // Currency AssetId не имеет вложенных объектов
+    return Object.freeze(asset);
+  }
+
+  if (asset.type === 'POLYMARKET_CTF_TOKEN') {
+    // POLYMARKET_CTF_TOKEN не имеет вложенных объектов
     return Object.freeze(asset);
   }
 
@@ -298,6 +312,13 @@ export const AssetId = {
       return a.currency === b.currency;
     }
 
+    // POLYMARKET_CTF_TOKEN
+    if (a.type === 'POLYMARKET_CTF_TOKEN') {
+      /* c8 ignore next */
+      if (b.type !== 'POLYMARKET_CTF_TOKEN') return false;
+      return a.tokenId === b.tokenId;
+    }
+
     // OUTCOME_TOKEN: явная проверка b сужает его тип без type cast
     /* c8 ignore next */
     if (b.type !== 'OUTCOME_TOKEN') return false;
@@ -356,6 +377,10 @@ export function assetIdToString(asset: AssetId): string {
     return `CURRENCY:${asset.currency}`;
   }
 
+  if (asset.type === 'POLYMARKET_CTF_TOKEN') {
+    return `POLYMARKET_CTF_TOKEN:${asset.tokenId}`;
+  }
+
   // OUTCOME_TOKEN всегда имеет OnChainConditionRef
   const ref = asset.conditionRef;
   return `OUTCOME_TOKEN:${ref.kind}:${ref.protocolId}:${ref.chainId}:${ref.conditionId}:${asset.outcomeKey}`;
@@ -377,6 +402,8 @@ export function assetIdToString(asset: AssetId): string {
  * Поддерживаемые форматы:
  * - 'CURRENCY:USDC'
  * - 'OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123:UP'
+ * - 'POLYMARKET_CTF_TOKEN:<numericId>' (сериализованный формат)
+ * - '<numericId>' (сырой числовой id из Polymarket API, например asset_id в last_trade_price)
  *
  * @example
  * ```typescript
@@ -386,6 +413,10 @@ export function assetIdToString(asset: AssetId): string {
  * const token = parseAssetId('OUTCOME_TOKEN:ONCHAIN:POLYMARKET_CTF:137:0xabc123:UP');
  * // → { type: 'OUTCOME_TOKEN', conditionRef: {...}, outcomeKey: 'UP' }
  *
+ * // Сырой числовой asset_id из Polymarket last_trade_price события
+ * const ctf = parseAssetId('62305814799875783974460176688386847666394972778903073967664089920408777315323');
+ * // → { type: 'POLYMARKET_CTF_TOKEN', tokenId: '623...' }
+ *
  * const invalid = parseAssetId('INVALID:FORMAT');
  * // → undefined
  * ```
@@ -394,6 +425,11 @@ export function parseAssetId(str: string): AssetId | undefined {
   // Защита от non-string runtime-ввода через as any
   if (typeof str !== 'string') {
     return undefined;
+  }
+
+  // Сырой числовой id (asset_id из Polymarket API) — до split, чтобы не путать с другими форматами
+  if (/^\d+$/.test(str.trim())) {
+    return asPolymarketCtfToken(str.trim());
   }
 
   const parts = str.split(':');
@@ -468,7 +504,48 @@ export function parseAssetId(str: string): AssetId | undefined {
     });
   }
 
+  if (type === 'POLYMARKET_CTF_TOKEN') {
+    if (parts.length !== 2) {
+      return undefined;
+    }
+    return asPolymarketCtfToken(parts[1]);
+  }
+
   return undefined;
+}
+
+/**
+ * Создаёт AssetId для сырого числового CTF-токена Polymarket
+ *
+ * @param tokenId - Числовой идентификатор токена из Polymarket API (строка с цифрами)
+ * @returns Замороженный AssetId типа POLYMARKET_CTF_TOKEN, или undefined если tokenId невалидный
+ *
+ * @remarks
+ * Используется когда Polymarket API возвращает `asset_id` как большое целое число (строку),
+ * например в событиях `last_trade_price`:
+ * ```json
+ * { "asset_id": "62305814799875783974460176688386847666394972778903073967664089920408777315323" }
+ * ```
+ * Принимает только непустые строки из цифр (не 0).
+ *
+ * @example
+ * ```typescript
+ * const token = asPolymarketCtfToken('62305814799875783974460176688386847666394972778903073967664089920408777315323');
+ * // → { type: 'POLYMARKET_CTF_TOKEN', tokenId: '623...' }
+ *
+ * asPolymarketCtfToken('not-a-number'); // → undefined
+ * asPolymarketCtfToken('0');            // → undefined
+ * ```
+ */
+export function asPolymarketCtfToken(tokenId: string): AssetId | undefined {
+  if (typeof tokenId !== 'string') {
+    return undefined;
+  }
+  const normalized = tokenId.trim();
+  if (!/^\d+$/.test(normalized) || normalized === '0') {
+    return undefined;
+  }
+  return deepFreezeAssetId({ type: 'POLYMARKET_CTF_TOKEN', tokenId: normalized });
 }
 
 /**
@@ -482,4 +559,10 @@ export function isOutcomeTokenAsset(
   asset: AssetId
 ): asset is Extract<AssetId, { type: 'OUTCOME_TOKEN' }> {
   return asset.type === 'OUTCOME_TOKEN';
+}
+
+export function isPolymarketCtfToken(
+  asset: AssetId
+): asset is Extract<AssetId, { type: 'POLYMARKET_CTF_TOKEN' }> {
+  return asset.type === 'POLYMARKET_CTF_TOKEN';
 }

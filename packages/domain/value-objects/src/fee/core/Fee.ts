@@ -318,9 +318,14 @@ export class Fee {
    * ```
    */
   public toString(): string {
-    const assetStr = this.asset.type === 'CURRENCY'
-      ? `CURRENCY:${this.asset.currency}`
-      : `OUTCOME_TOKEN:${this.asset.conditionRef.conditionId}:${this.asset.outcomeKey}`;
+    let assetStr: string;
+    if (this.asset.type === 'CURRENCY') {
+      assetStr = `CURRENCY:${this.asset.currency}`;
+    } else if (this.asset.type === 'POLYMARKET_CTF_TOKEN') {
+      assetStr = `POLYMARKET_CTF_TOKEN:${this.asset.tokenId}`;
+    } else {
+      assetStr = `OUTCOME_TOKEN:${this.asset.conditionRef.conditionId}:${this.asset.outcomeKey}`;
+    }
 
     return `Fee(${assetStr}, ${this._quantity.amount().toNumber()})`;
   }

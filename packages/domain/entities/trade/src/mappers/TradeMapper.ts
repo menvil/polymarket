@@ -11,18 +11,26 @@
  * Trade entity не знает о внешних форматах API.
  * TradeMapper инкапсулирует всю логику парсинга.
  *
- * ### Формат Polymarket lastTradeEvent:
+ * ### Формат Polymarket lastTradeEvent (реальный пример):
  * ```json
  * {
- *   "market": "0xmarket...",
- *   "asset_id": "0xasset...",
- *   "price": "0.65",
- *   "size": "100",
+ *   "market": "0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3",
+ *   "asset_id": "62305814799875783974460176688386847666394972778903073967664089920408777315323",
+ *   "price": "0.44",
+ *   "size": "7.861135",
+ *   "fee_rate_bps": "0",
  *   "side": "BUY",
- *   "timestamp": "1700000000",
- *   "transaction_hash": "0xabcdef..."
+ *   "timestamp": "1767463212903",
+ *   "event_type": "last_trade_price",
+ *   "transaction_hash": "0x989369fbc370b9384be69c36876e25170f25d87a83ef1413cbf7ca6913533f21"
  * }
  * ```
+ *
+ * **Формат timestamp:** API может возвращать как секунды (10 цифр), так и миллисекунды (13 цифр).
+ * Маппер автоматически определяет формат по порогу 1e12.
+ *
+ * **Формат asset_id:** API возвращает числовой CTF token ID (большое целое число).
+ * Маппер создаёт AssetId типа POLYMARKET_CTF_TOKEN.
  *
  * @example
  * ```typescript
@@ -193,7 +201,7 @@ export class TradeMapper {
 
     const size = Quantity.of(sizeDecimal);
 
-    // Извлечь timestamp (в секундах от Polymarket, конвертируем в ms)
+    // Извлечь timestamp — Polymarket может возвращать секунды (10 цифр) или миллисекунды (13 цифр)
     const timestampRaw = raw['timestamp'];
     if (timestampRaw === undefined || timestampRaw === null) {
       return Err(
@@ -203,35 +211,31 @@ export class TradeMapper {
       );
     }
 
-    let timestampSec: number;
-    try {
-      timestampSec = Number(String(timestampRaw));
-    } catch {
+    // Создаём Timestamp VO для парсинга и валидации (TimestampService принимает string/number/Decimal)
+    const rawTimestampResult = TimestampService.create(String(timestampRaw));
+    if (!rawTimestampResult.ok) {
       return Err(
-        new ValidationError('Invalid lastTradeEvent: timestamp is not a valid number', {
+        new ValidationError(`Invalid lastTradeEvent: ${rawTimestampResult.error.message}`, {
           context: { field: 'timestamp', value: timestampRaw },
         })
       );
     }
 
-    if (!Number.isFinite(timestampSec) || timestampSec <= 0) {
-      return Err(
-        new ValidationError('Invalid lastTradeEvent: timestamp must be positive', {
-          context: { field: 'timestamp', value: timestampRaw },
-        })
-      );
+    // Автоопределение единиц через Timestamp VO:
+    // Polymarket возвращает секунды (epoch ~1.7e9, год 2024) или мс (epoch ~1.7e12, год 2024).
+    // Порог 1e12 надёжно отделяет: секунды Polymarket << 1e10 << 1e12 << мс Polymarket.
+    let timestamp = rawTimestampResult.value;
+    if (timestamp.toNumber() < 1e12) {
+      const msTimestampResult = TimestampService.create(timestamp.toNumber() * 1000);
+      if (!msTimestampResult.ok) {
+        return Err(
+          new ValidationError(`Invalid lastTradeEvent: ${msTimestampResult.error.message}`, {
+            context: { field: 'timestamp', value: timestampRaw },
+          })
+        );
+      }
+      timestamp = msTimestampResult.value;
     }
-
-    const timestampResult = TimestampService.create(timestampSec * 1000);
-    if (!timestampResult.ok) {
-      return Err(
-        new ValidationError(`Invalid lastTradeEvent: ${timestampResult.error.message}`, {
-          context: { field: 'timestamp', value: timestampRaw },
-        })
-      );
-    }
-
-    const timestamp = timestampResult.value;
 
     // Извлечь transaction_hash (опционально)
     const txHashRaw = raw['transaction_hash'];
@@ -240,11 +244,12 @@ export class TradeMapper {
         ? asTxHash(txHashRaw.trim())
         : undefined;
 
-    // Генерировать VenueTradeId из transaction_hash + '_' + timestamp
+    // Генерировать VenueTradeId из transaction_hash + '_' + timestamp (оригинальное значение из raw)
+    const tsStr = String(timestampRaw).trim();
     const tradeIdString =
       txHash !== undefined
-        ? `${txHash}_${timestampSec}`
-        : `${marketId.trim()}_${assetIdRaw.trim()}_${timestampSec}`;
+        ? `${txHash}_${tsStr}`
+        : `${marketId.trim()}_${assetIdRaw.trim()}_${tsStr}`;
 
     const tradeId = asVenueTradeId(tradeIdString);
     if (!tradeId) {

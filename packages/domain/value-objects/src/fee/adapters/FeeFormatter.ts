@@ -93,7 +93,12 @@ export class FeeFormatter {
       return asset.currency;
     }
 
-    // Для outcome token используем короткий формат
+    if (asset.type === 'POLYMARKET_CTF_TOKEN') {
+      const shortId = asset.tokenId.slice(0, 6) + '...' + asset.tokenId.slice(-4);
+      return `CTF:${shortId}`;
+    }
+
+    // OUTCOME_TOKEN — используем короткий формат
     const conditionId = asset.conditionRef.conditionId;
     const shortId = conditionId.slice(0, 6) + '...' + conditionId.slice(-4);
     return `${asset.outcomeKey}:${shortId}`;

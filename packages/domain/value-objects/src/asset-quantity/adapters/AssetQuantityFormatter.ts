@@ -86,19 +86,27 @@ export class AssetQuantityFormatter {
 
     if (asset.type === 'CURRENCY') {
       return `${amount} ${asset.currency}`;
-    } else {
-      // OUTCOME_TOKEN
-      const ref = asset.conditionRef;
-      const outcomeKey = asset.outcomeKey;
-
-      // Сокращаем conditionId для читаемости
-      const shortConditionId =
-        ref.conditionId.length > 10
-          ? `${ref.conditionId.slice(0, 6)}...${ref.conditionId.slice(-4)}`
-          : ref.conditionId;
-
-      return `${amount} ${outcomeKey} (${ref.protocolId}:${ref.chainId}:${shortConditionId})`;
     }
+
+    if (asset.type === 'POLYMARKET_CTF_TOKEN') {
+      const shortId =
+        asset.tokenId.length > 12
+          ? `${asset.tokenId.slice(0, 6)}...${asset.tokenId.slice(-4)}`
+          : asset.tokenId;
+      return `${amount} CTF[${shortId}]`;
+    }
+
+    // OUTCOME_TOKEN
+    const ref = asset.conditionRef;
+    const outcomeKey = asset.outcomeKey;
+
+    // Сокращаем conditionId для читаемости
+    const shortConditionId =
+      ref.conditionId.length > 10
+        ? `${ref.conditionId.slice(0, 6)}...${ref.conditionId.slice(-4)}`
+        : ref.conditionId;
+
+    return `${amount} ${outcomeKey} (${ref.protocolId}:${ref.chainId}:${shortConditionId})`;
   }
 
   /**
@@ -131,11 +139,14 @@ export class AssetQuantityFormatter {
 
     if (asset.type === 'CURRENCY') {
       return `${amount} ${asset.currency}`;
-    } else {
-      // OUTCOME_TOKEN
-      const outcomeKey = asset.outcomeKey as string;
-      return `${amount} ${outcomeKey}`;
     }
+
+    if (asset.type === 'POLYMARKET_CTF_TOKEN') {
+      return `${amount} CTF[${asset.tokenId}]`;
+    }
+
+    // OUTCOME_TOKEN
+    return `${amount} ${asset.outcomeKey as string}`;
   }
 
   /**
@@ -166,6 +177,8 @@ export class AssetQuantityFormatter {
     let assetVerbose: string;
     if (asset.type === 'CURRENCY') {
       assetVerbose = `Currency[${asset.currency}]`;
+    } else if (asset.type === 'POLYMARKET_CTF_TOKEN') {
+      assetVerbose = `PolymarketCtfToken[tokenId=${asset.tokenId}]`;
     } else {
       // OUTCOME_TOKEN
       const ref = asset.conditionRef;
@@ -205,10 +218,13 @@ export class AssetQuantityFormatter {
 
     if (asset.type === 'CURRENCY') {
       return `${amount} ${asset.currency}`;
-    } else {
-      // OUTCOME_TOKEN
-      const outcomeKey = asset.outcomeKey as string;
-      return `${amount} ${outcomeKey}`;
     }
+
+    if (asset.type === 'POLYMARKET_CTF_TOKEN') {
+      return `${amount} CTF[${asset.tokenId}]`;
+    }
+
+    // OUTCOME_TOKEN
+    return `${amount} ${asset.outcomeKey as string}`;
   }
 }

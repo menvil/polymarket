@@ -86,8 +86,10 @@ export {
   AssetIdValidationError,
   assetIdToString,
   parseAssetId,
+  asPolymarketCtfToken,
   isCurrencyAsset,
   isOutcomeTokenAsset,
+  isPolymarketCtfToken,
 } from './AssetId.js';
 
 // Blockchain
