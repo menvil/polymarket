@@ -45,7 +45,7 @@ function parseOrderBook(data: OrderBookData) {
     spread,
     display: SpreadFormatter.format(spread, { decimals: 4 }),
     midPrice: spread.midpoint().toNumber(),
-    spreadBps: (spread.widthPercentage() * 100).toFixed(0)
+    spreadBps: (spread.widthRatio().toDecimal().times(10000)).toFixed(0)
   };
 }
 
@@ -111,7 +111,7 @@ function displayOrderBookTop(orderBook: OrderBook) {
     },
     spread: {
       width: spread.width().toNumber(),
-      widthBps: (spread.widthPercentage() * 100).toFixed(0),
+      widthBps: (spread.widthRatio().toDecimal().times(10000)).toFixed(0),
       midPrice: spread.midpoint().toNumber(),
       display: SpreadFormatter.toBidAskString(spread, 4)
     }
@@ -243,7 +243,7 @@ if (spreadResult.ok) {
     bid: spread.bid().toNumber(),
     ask: spread.ask().toNumber(),
     width: spread.width().toNumber(),
-    widthBps: (spread.widthPercentage() * 100).toFixed(0)
+    widthBps: (spread.widthRatio().toDecimal().times(10000)).toFixed(0)
   });
   // {
   //   bid: 0.4885,
@@ -264,7 +264,7 @@ function* tightenSpreadGradually(
   targetWidthBps: number,
   steps: number
 ) {
-  const initialWidthBps = initialSpread.widthPercentage() * 100;
+  const initialWidthBps = initialSpread.widthRatio().toDecimal().times(10000);
   const stepSize = (initialWidthBps - targetWidthBps) / steps / 100;
   
   let currentSpread = initialSpread;
@@ -284,7 +284,7 @@ function* tightenSpreadGradually(
     yield {
       step: i + 1,
       spread: currentSpread,
-      widthBps: (currentSpread.widthPercentage() * 100).toFixed(0)
+      widthBps: (currentSpread.widthRatio().toDecimal().times(10000)).toFixed(0)
     };
   }
 }
@@ -318,7 +318,7 @@ interface LiquidityMetrics {
 }
 
 function analyzeLiquidity(spread: Spread, depth: number): LiquidityMetrics {
-  const widthBps = spread.widthPercentage() * 100;
+  const widthBps = spread.widthRatio().toDecimal().times(10000);
   
   // Определяем score на основе ширины спреда
   let liquidityScore: LiquidityMetrics['liquidityScore'];
@@ -384,7 +384,7 @@ function compareMarketLiquidity(markets: Market[]) {
       return {
         marketId: market.id,
         marketName: market.name,
-        widthBps: spread.widthPercentage() * 100,
+        widthBps: spread.widthRatio().toDecimal().times(10000),
         midPrice: spread.midpoint().toNumber(),
         spread
       };
@@ -440,7 +440,7 @@ export const SpreadDisplay: React.FC<SpreadDisplayProps> = ({ bid, ask }) => {
   }
   
   const spread = spreadResult.value;
-  const widthBps = spread.widthPercentage() * 100;
+  const widthBps = spread.widthRatio().toDecimal().times(10000);
   
   // Цветовая индикация ликвидности
   const liquidityColor = 
@@ -496,7 +496,7 @@ function formatSpreadForTable(bid: number, ask: number) {
     askDisplay: obj.ask.toFixed(4),
     midDisplay: obj.midpoint.toFixed(4),
     widthDisplay: `${(obj.width * 100).toFixed(2)}%`,
-    widthBps: (spread.widthPercentage() * 100).toFixed(0),
+    widthBps: (spread.widthRatio().toDecimal().times(10000)).toFixed(0),
     error: null
   };
 }

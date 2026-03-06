@@ -272,7 +272,7 @@ if (result.ok) {
   console.log(spread.ask().toNumber());       // 0.52
   console.log(spread.width().toNumber());     // 0.04
   console.log(spread.midpoint().toNumber());  // 0.50
-  console.log(spread.widthPercentage());      // 8%
+  console.log(spread.widthRatio().toNumber()); // 0.08 (8%)
 
   // Форматирование
   console.log(SpreadFormatter.format(spread));

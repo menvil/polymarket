@@ -445,7 +445,7 @@ function handleSpreadUpdate(message: SpreadUpdate) {
   // Отправляем в UI
   ui.updateMarket(message.marketId, {
     display: SpreadFormatter.format(spread, { decimals: 4 }),
-    widthBps: (spread.widthPercentage().toNumber() * 100).toFixed(0),
+    widthBps: spread.widthRatio().toDecimal().times(10000).toFixed(0),
     midPrice: spread.mid().toNumber()
   });
 }
@@ -510,7 +510,7 @@ export const SpreadBadge: React.FC<SpreadBadgeProps> = ({
     ? SpreadFormatter.toDetailedString(spread, 4)
     : SpreadFormatter.toBidAskString(spread, 4);
 
-  const widthBps = spread.widthPercentage().toNumber() * 100;
+  const widthBps = spread.widthRatio().toDecimal().times(10000).toNumber();
   const liquidityClass = 
     widthBps < 50 ? 'high-liquidity' :
     widthBps < 200 ? 'medium-liquidity' : 'low-liquidity';

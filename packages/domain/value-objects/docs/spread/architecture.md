@@ -141,7 +141,7 @@ if (bidResult.ok && askResult.ok) {
 
 - Хранение bid/ask как Price объектов
 - Инвариант: `bid ≤ ask`
-- Чистые вычисления (width, midpoint, widthPercentage)
+- Чистые вычисления (width, midpoint, widthRatio)
 - Throwing typed exceptions
 
 **Пример:**
@@ -463,21 +463,27 @@ Spread не форсирует alignment к базовому тику (0.0001):
 - Spread не знает про тики, это знает Price
 - Flexibility для разных контекстов
 
-### 3. Width в процентах
+### 3. Width как Ratio
 
-`widthPercentage(): Decimal` возвращает относительную ширину в процентах от midpoint:
+`widthRatio(): Ratio` возвращает относительную ширину как дробь от midpoint:
 
 ```typescript
 const spread = SpreadService.fromValues(0.48, 0.52).value;
-spread.widthPercentage();  // Decimal(8)
-spread.widthPercentage().toNumber();  // 8 (8% = 0.04 / 0.50 = 0.08 = 8%)
+spread.widthRatio().toNumber();  // 0.08 (= 0.04 / 0.50 = 8%)
+
+// Для отображения в процентах:
+spread.widthRatio().toDecimal().times(100).toFixed(2);  // "8.00"
+
+// Для basis points:
+spread.widthRatio().toDecimal().times(10000).toNumber();  // 800
 ```
 
 **Обоснование:**
 
+- Возвращает `Ratio` для единообразия с другими VO (Fee, Discount)
+- `Ratio` семантически точнее: дробь 0.08, а не "8 процентов"
+- Для отображения вызывающий код явно конвертирует: `times(100)`
 - Удобно для сравнения спредов на разных ценовых уровнях
-- Стандартная метрика ликвидности в трейдинге
-- Помогает в маркет-мейкинге
 
 ### 4. Нулевая ширина (zero-width spread)
 
@@ -559,7 +565,7 @@ export class ValidateMinimumLiquidity {
     spread: Spread,
     minWidthBps: number
   ): Result<void, InvalidSpreadError> {
-    const widthBps = spread.widthPercentage().toNumber() * 100;
+    const widthBps = spread.widthRatio().toDecimal().times(10000).toNumber();
     
     if (widthBps < minWidthBps) {
       return Err(
