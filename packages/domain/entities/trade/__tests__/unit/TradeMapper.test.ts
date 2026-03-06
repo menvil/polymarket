@@ -51,6 +51,33 @@ function makeValidEvent(overrides?: Record<string, unknown>): Record<string, unk
 
 describe('TradeMapper', () => {
   describe('fromPolymarketLastTradeEvent()', () => {
+    it('возвращает Err если raw === null', () => {
+      const result = TradeMapper.fromPolymarketLastTradeEvent(
+        null as unknown as Record<string, unknown>
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('expected non-null object');
+      }
+    });
+
+    it('возвращает Err если raw — массив', () => {
+      const result = TradeMapper.fromPolymarketLastTradeEvent(
+        [] as unknown as Record<string, unknown>
+      );
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('возвращает Err если raw — примитив', () => {
+      const result = TradeMapper.fromPolymarketLastTradeEvent(
+        42 as unknown as Record<string, unknown>
+      );
+
+      expect(result.ok).toBe(false);
+    });
+
     it('парсит валидное событие в Trade', () => {
       const result = TradeMapper.fromPolymarketLastTradeEvent(makeValidEvent());
 
@@ -325,6 +352,173 @@ describe('TradeMapper', () => {
         );
         expect(restored.aggressorSide).toBe(original.aggressorSide);
         expect(restored.timestamp.toNumber()).toBe(original.timestamp.toNumber());
+      }
+    });
+
+    it('fromSnapshot() возвращает Err если marketId состоит из пробелов', () => {
+      const result = TradeMapper.fromSnapshot({
+        id: 'valid-trade-id',
+        venueId: 'POLYMARKET',
+        marketId: '   ',
+        tokenId: TEST_TOKEN_ID,
+        price: 0.65,
+        size: 100,
+        timestampMs: 1700000000000,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('marketId');
+      }
+    });
+
+    it('fromSnapshot() возвращает Err если tokenId не парсится', () => {
+      const result = TradeMapper.fromSnapshot({
+        id: 'valid-trade-id',
+        venueId: 'POLYMARKET',
+        marketId: 'market-1',
+        tokenId: 'not-a-valid-token-id',
+        price: 0.65,
+        size: 100,
+        timestampMs: 1700000000000,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('tokenId');
+      }
+    });
+
+    it('fromSnapshot() возвращает Err если price нулевая', () => {
+      const result = TradeMapper.fromSnapshot({
+        id: 'valid-trade-id',
+        venueId: 'POLYMARKET',
+        marketId: 'market-1',
+        tokenId: TEST_TOKEN_ID,
+        price: 0,
+        size: 100,
+        timestampMs: 1700000000000,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('price');
+      }
+    });
+
+    it('fromSnapshot() возвращает Err если price отрицательная', () => {
+      const result = TradeMapper.fromSnapshot({
+        id: 'valid-trade-id',
+        venueId: 'POLYMARKET',
+        marketId: 'market-1',
+        tokenId: TEST_TOKEN_ID,
+        price: -0.5,
+        size: 100,
+        timestampMs: 1700000000000,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('price');
+      }
+    });
+
+    it('fromSnapshot() возвращает Err если price NaN', () => {
+      const result = TradeMapper.fromSnapshot({
+        id: 'valid-trade-id',
+        venueId: 'POLYMARKET',
+        marketId: 'market-1',
+        tokenId: TEST_TOKEN_ID,
+        price: NaN,
+        size: 100,
+        timestampMs: 1700000000000,
+      });
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('fromSnapshot() возвращает Err если size отрицательный', () => {
+      const result = TradeMapper.fromSnapshot({
+        id: 'valid-trade-id',
+        venueId: 'POLYMARKET',
+        marketId: 'market-1',
+        tokenId: TEST_TOKEN_ID,
+        price: 0.65,
+        size: -10,
+        timestampMs: 1700000000000,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('size');
+      }
+    });
+
+    it('fromSnapshot() возвращает Err если size нулевой', () => {
+      const result = TradeMapper.fromSnapshot({
+        id: 'valid-trade-id',
+        venueId: 'POLYMARKET',
+        marketId: 'market-1',
+        tokenId: TEST_TOKEN_ID,
+        price: 0.65,
+        size: 0,
+        timestampMs: 1700000000000,
+      });
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('fromSnapshot() возвращает Err если timestampMs NaN', () => {
+      const result = TradeMapper.fromSnapshot({
+        id: 'valid-trade-id',
+        venueId: 'POLYMARKET',
+        marketId: 'market-1',
+        tokenId: TEST_TOKEN_ID,
+        price: 0.65,
+        size: 100,
+        timestampMs: NaN,
+      });
+
+      expect(result.ok).toBe(false);
+    });
+
+    it('fromSnapshot() сохраняет txHash при round-trip', () => {
+      const snapshot = {
+        id: 'valid-trade-id',
+        venueId: 'POLYMARKET',
+        marketId: 'market-1',
+        tokenId: TEST_TOKEN_ID,
+        price: 0.65,
+        size: 100,
+        timestampMs: 1700000000000,
+        txHash: '0xabcdef1234567890',
+      };
+
+      const result = TradeMapper.fromSnapshot(snapshot);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.txHash).toBe(snapshot.txHash);
+      }
+    });
+
+    it('fromSnapshot() восстанавливает агрессора (aggressorSide)', () => {
+      const snapshot = {
+        id: 'valid-trade-id',
+        venueId: 'POLYMARKET',
+        marketId: 'market-1',
+        tokenId: TEST_TOKEN_ID,
+        price: 0.65,
+        size: 100,
+        timestampMs: 1700000000000,
+        aggressorSide: 'SELL' as const,
+      };
+
+      const result = TradeMapper.fromSnapshot(snapshot);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.aggressorSide).toBe('SELL');
       }
     });
 

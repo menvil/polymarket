@@ -110,6 +110,15 @@ export class TradeMapper {
   public static fromPolymarketLastTradeEvent(
     raw: Record<string, unknown>
   ): Result<Trade, ValidationError> {
+    // Защита от не-объектного raw (null, primitives, arrays)
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+      return Err(
+        new ValidationError('Invalid lastTradeEvent: expected non-null object', {
+          context: { value: raw },
+        })
+      );
+    }
+
     // Извлечь marketId
     const marketId = raw['market'];
     if (typeof marketId !== 'string' || marketId.trim().length === 0) {

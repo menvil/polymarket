@@ -176,7 +176,7 @@ export class Trade {
     }
 
     // Инвариант 3: marketId не пустая строка
-    if (!params.marketId || params.marketId.trim().length === 0) {
+    if (typeof params.marketId !== 'string' || params.marketId.trim().length === 0) {
       return Err(
         new ValidationError('Market ID is required and must be non-empty', {
           context: { field: 'marketId', tradeId: params.id, value: params.marketId },

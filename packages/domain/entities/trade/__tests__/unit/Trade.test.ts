@@ -127,19 +127,25 @@ describe('Trade', () => {
       expect(result.ok).toBe(false);
     });
 
-    it('возвращает ошибку если price нулевая (Price.of бросает исключение)', () => {
-      // Price.of() сам бросает PriceInvariantViolation для значений < MIN_PRICE (0.0001)
-      // Это означает, что Trade.create() вообще не вызывается с нулевой ценой
-      expect(() => {
-        Trade.create(makeValidParams({ price: Price.of(new Decimal('0')) }));
-      }).toThrow();
+    it('возвращает Err если price нулевая', () => {
+      // Обходим Price.of() через type cast — тестируем инвариант Trade.create() напрямую
+      const fakePrice = { value: () => new Decimal('0') } as unknown as Price;
+      const result = Trade.create(makeValidParams({ price: fakePrice }));
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Trade price must be positive');
+      }
     });
 
-    it('возвращает ошибку если price отрицательная (Price.of бросает исключение)', () => {
-      // Price.of() бросает PriceInvariantViolation для отрицательных значений
-      expect(() => {
-        Trade.create(makeValidParams({ price: Price.of(new Decimal('-0.1')) }));
-      }).toThrow();
+    it('возвращает Err если price отрицательная', () => {
+      const fakePrice = { value: () => new Decimal('-0.1') } as unknown as Price;
+      const result = Trade.create(makeValidParams({ price: fakePrice }));
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Trade price must be positive');
+      }
     });
 
     it('возвращает Err если size нулевой', () => {

@@ -85,17 +85,27 @@ toString(): string
 Парсит входящее событие Polymarket:
 
 ```typescript
-// Входной формат:
+// Реальный пример события last_trade_price из Polymarket API:
 {
-  market: string,           // market ID
-  asset_id: string,         // JSON-сериализованный AssetId
-  price: string,            // цена как строка
-  size: string,             // объём как строка
-  side: string,             // 'BUY' | 'SELL'
-  timestamp: string,        // unix timestamp в секундах
-  transaction_hash?: string // хэш транзакции
+  market: "0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3",
+  asset_id: "62305814799875783974460176688386847666394972778903073967664089920408777315323",
+  price: "0.44",
+  size: "7.861135",
+  fee_rate_bps: "0",
+  side: "BUY",
+  timestamp: "1767463212903",
+  event_type: "last_trade_price",
+  transaction_hash: "0x989369fbc370b9384be69c36876e25170f25d87a83ef1413cbf7ca6913533f21"
 }
 ```
+
+**asset_id**: числовой CTF token ID из Polymarket API (большое целое число в виде строки).
+Маппер создаёт `AssetId` типа `POLYMARKET_CTF_TOKEN`.
+
+**timestamp**: API Polymarket может возвращать как секунды (10 цифр), так и миллисекунды (13 цифр).
+Маппер автоматически определяет формат: если значение < 1e12 — считает секундами и умножает × 1000.
+
+**Защита от невалидного raw**: если `raw` не является объектом (null, массив, примитив) — возвращает `Err`.
 
 VenueTradeId генерируется как:
 - `{txHash}_{timestamp}` если есть transaction_hash
@@ -110,14 +120,16 @@ Round-trip сериализация через `TradeSnapshot` (плоские �
 ```typescript
 import { TradeMapper } from '@polymarket/trade';
 
+// asset_id — числовой CTF token ID из Polymarket API
+// timestamp — секунды (конвертируется в мс автоматически)
 const result = TradeMapper.fromPolymarketLastTradeEvent({
-  market: '0xmarket123',
-  asset_id: JSON.stringify({ type: 'OUTCOME_TOKEN', ... }),
-  price: '0.65',
-  size: '100',
+  market: '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3',
+  asset_id: '62305814799875783974460176688386847666394972778903073967664089920408777315323',
+  price: '0.44',
+  size: '7.861135',
   side: 'BUY',
-  timestamp: '1700000000',
-  transaction_hash: '0xabc...'
+  timestamp: '1767463212903',
+  transaction_hash: '0x989369fbc370b9384be69c36876e25170f25d87a83ef1413cbf7ca6913533f21'
 });
 
 if (result.ok) {
