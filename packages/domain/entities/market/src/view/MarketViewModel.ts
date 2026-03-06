@@ -31,7 +31,6 @@
  * ```
  */
 
-import { OutcomeTokenSerializer } from '@polymarket/value-objects/outcome-token';
 import { Market } from '../Market.js';
 import { type MarketSnapshot } from './MarketSnapshot.js';
 
@@ -72,13 +71,15 @@ export class MarketViewModel {
   }
 
   /**
-   * Сериализует Market в MarketSnapshot (plain object для хранения/передачи)
+   * Конвертирует Market в доменно-типизированный MarketSnapshot
    *
    * @param market - Market entity для сериализации
-   * @returns MarketSnapshot — JSON-совместимый plain object
+   * @returns MarketSnapshot с доменными типами (MarketId, OutcomeToken, MarketState и т.д.)
    *
    * @remarks
-   * Первый шаг round-trip pipeline:
+   * Тривиальное копирование полей — snapshot структурно идентичен MarketProps.
+   * Для in-memory round-trip: `Market.fromSnapshot(MarketViewModel.toSnapshot(market))`.
+   * Для персистентности (БД/API) необходима дополнительная сериализация доменных типов.
    * `MarketParser.from(snapshot)` → `Market.fromSnapshot(snapshotResult.value)` возвращает
    * эквивалентный Market.
    *
@@ -91,38 +92,16 @@ export class MarketViewModel {
    * ```
    */
   public static toSnapshot(market: Market): MarketSnapshot {
-    const state = market.state;
-    let serializedState: MarketSnapshot['state'];
-
-    if (state.status === 'ACTIVE') {
-      serializedState = { status: 'ACTIVE' };
-    } else if (state.status === 'CLOSED') {
-      serializedState = { status: 'CLOSED' };
-    } else {
-      serializedState = {
-        status: 'RESOLVED',
-        resolvedOutcomeIndex: state.resolvedOutcomeIndex,
-      };
-    }
-
     return {
       id: market.id,
       slug: market.slug,
       question: market.question,
       outcomes: [
-        {
-          token: OutcomeTokenSerializer.toJSON(market.outcomes[0].token),
-          index: 0,
-          name: market.outcomes[0].name,
-        },
-        {
-          token: OutcomeTokenSerializer.toJSON(market.outcomes[1].token),
-          index: 1,
-          name: market.outcomes[1].name,
-        },
+        { token: market.outcomes[0].token, index: 0 as const, name: market.outcomes[0].name },
+        { token: market.outcomes[1].token, index: 1 as const, name: market.outcomes[1].name },
       ],
-      expirationDate: market.expirationDate.toISOString(),
-      state: serializedState,
+      expirationMs: market.expirationMs,
+      state: market.state,
     };
   }
 

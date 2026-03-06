@@ -212,6 +212,24 @@ describe('Market.create()', () => {
     }
   });
 
+  it('возвращает Err для RESOLVED без resolvedOutcomeIndex (runtime защита от as-кастов)', () => {
+    // TypeScript не поймает это статически, но runtime проверка защитит
+    const result = makeMarket({ state: { status: 'RESOLVED' } as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(MarketValidationError);
+      expect(result.error.context?.field).toBe('state.resolvedOutcomeIndex');
+    }
+  });
+
+  it('возвращает Err для RESOLVED с resolvedOutcomeIndex=2 (runtime защита)', () => {
+    const result = makeMarket({ state: { status: 'RESOLVED', resolvedOutcomeIndex: 2 } as never });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.context?.field).toBe('state.resolvedOutcomeIndex');
+    }
+  });
+
   it('создаёт outcomes с правильными индексами и token', () => {
     const result = makeMarket();
     expect(result.ok).toBe(true);

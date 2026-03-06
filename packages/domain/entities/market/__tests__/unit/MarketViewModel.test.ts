@@ -4,8 +4,8 @@
  * @remarks
  * Проверяет:
  * - getMarketUrl() строит корректный URL
- * - toSnapshot() сериализует Market в корректный MarketSnapshot
- * - toSnapshot() выполняет round-trip с MarketParser.from()
+ * - toSnapshot() сериализует Market в доменно-типизированный MarketSnapshot
+ * - round-trip: Market → toSnapshot() → Market.fromSnapshot() → Market
  */
 
 import { describe, it, expect } from '@jest/globals';
@@ -24,7 +24,6 @@ import {
   parseConditionId,
 } from '@polymarket/ids';
 import { MarketViewModel } from '../../src/view/MarketViewModel.js';
-import { MarketParser } from '../../src/view/MarketParser.js';
 
 // ==================== Тестовые данные ====================
 
@@ -80,13 +79,15 @@ describe('MarketViewModel.toSnapshot()', () => {
     expect(snapshot.id).toBe('market-abc');
     expect(snapshot.slug).toBe('will-trump-win');
     expect(snapshot.question).toBe('Will Trump win?');
-    expect(snapshot.outcomes[0].token.outcomeKey).toBe('UP');
+    // token — OutcomeToken объект, outcomeKey() — метод
+    expect(snapshot.outcomes[0].token.outcomeKey()).toBe('UP');
     expect(snapshot.outcomes[0].index).toBe(0);
     expect(snapshot.outcomes[0].name).toBe('Yes');
-    expect(snapshot.outcomes[1].token.outcomeKey).toBe('DOWN');
+    expect(snapshot.outcomes[1].token.outcomeKey()).toBe('DOWN');
     expect(snapshot.outcomes[1].index).toBe(1);
     expect(snapshot.outcomes[1].name).toBe('No');
-    expect(snapshot.expirationDate).toBe(new Date(EXPIRATION_MS).toISOString());
+    // expirationMs — число
+    expect(snapshot.expirationMs).toBe(EXPIRATION_MS);
     expect(snapshot.state).toEqual({ status: 'ACTIVE' });
   });
 
@@ -109,22 +110,15 @@ describe('MarketViewModel.toSnapshot()', () => {
   });
 });
 
-describe('MarketViewModel.toSnapshot() — round-trip через MarketParser + Market.fromSnapshot()', () => {
+describe('MarketViewModel.toSnapshot() — round-trip через Market.fromSnapshot()', () => {
   it('round-trip для ACTIVE рынка', () => {
     const result = makeActiveMarket();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    // Шаг 1: Market → snapshot
+    // Market → snapshot → Market (без MarketParser — snapshot уже доменно-типизирован)
     const snapshot = MarketViewModel.toSnapshot(result.value);
-
-    // Шаг 2: raw → MarketSnapshot
-    const parsedResult = MarketParser.from(snapshot);
-    expect(parsedResult.ok).toBe(true);
-    if (!parsedResult.ok) return;
-
-    // Шаг 3: MarketSnapshot → Market
-    const restoredResult = Market.fromSnapshot(parsedResult.value);
+    const restoredResult = Market.fromSnapshot(snapshot);
     expect(restoredResult.ok).toBe(true);
     if (!restoredResult.ok) return;
 
@@ -132,9 +126,7 @@ describe('MarketViewModel.toSnapshot() — round-trip через MarketParser + 
     expect(restoredResult.value.slug).toBe(result.value.slug);
     expect(restoredResult.value.question).toBe(result.value.question);
     expect(restoredResult.value.isActive()).toBe(true);
-    expect(restoredResult.value.expirationDate.toISOString()).toBe(
-      result.value.expirationDate.toISOString()
-    );
+    expect(restoredResult.value.expirationMs).toBe(EXPIRATION_MS);
   });
 
   it('round-trip для RESOLVED рынка', () => {
@@ -144,12 +136,7 @@ describe('MarketViewModel.toSnapshot() — round-trip через MarketParser + 
 
     const resolved = result.value.close(NOW).resolve(0, NOW);
     const snapshot = MarketViewModel.toSnapshot(resolved);
-
-    const parsedResult = MarketParser.from(snapshot);
-    expect(parsedResult.ok).toBe(true);
-    if (!parsedResult.ok) return;
-
-    const restoredResult = Market.fromSnapshot(parsedResult.value);
+    const restoredResult = Market.fromSnapshot(snapshot);
     expect(restoredResult.ok).toBe(true);
     if (!restoredResult.ok) return;
 

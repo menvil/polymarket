@@ -1,24 +1,24 @@
 /**
- * MarketParser — валидация и нормализация raw данных в MarketSnapshot
+ * MarketParser — валидация raw данных и конвертация в доменно-типизированный MarketSnapshot
  *
  * @remarks
  * Первый шаг двухэтапного pipeline реконструкции:
- * `raw → MarketParser.from() → MarketSnapshot → Market.fromSnapshot() → Market`
+ * `raw JSON → MarketParser.from() → MarketSnapshot → Market.fromSnapshot() → Market`
  *
- * MarketParser отвечает только за форму данных:
- * - Проверяет что поля существуют и имеют корректный тип
- * - Проверяет парсируемость токенов и дат
+ * MarketParser отвечает за:
+ * - Проверку структуры и типов полей
+ * - Конвертацию примитивов в доменные типы (MarketId, MarketSlug, OutcomeToken, MarketState)
  * - НЕ знает доменных инвариантов (distinct tokens, valid names — это Market.create())
  *
  * ### Алгоритм валидации в from():
  * 1. Проверяем что raw — объект (не null, не массив)
- * 2. Валидируем id (строка, непустая)
- * 3. Валидируем slug (URL-safe формат)
+ * 2. Валидируем id (строка, непустая) → конвертируем в MarketId
+ * 3. Валидируем slug (URL-safe формат) → конвертируем в MarketSlug
  * 4. Валидируем question (непустая строка)
- * 5. Валидируем outcomes (массив из 2 элементов, каждый с валидным токеном)
- * 6. Проверяем expirationDate (ISO строка, парсируемая в Date)
- * 7. Парсим state (discriminated union)
- * 8. Возвращаем Ok(MarketSnapshot) — без доменной логики
+ * 5. Валидируем outcomes (массив из 2 элементов, каждый с валидным токеном) → OutcomeToken
+ * 6. Проверяем expirationDate (ISO строка, парсируемая в Date) → expirationMs: number
+ * 7. Парсим state (discriminated union) → MarketState
+ * 8. Возвращаем Ok(MarketSnapshot) с доменными типами
  *
  * @example
  * ```typescript
@@ -38,11 +38,8 @@
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import {
-  OutcomeTokenSerializer,
-  type OutcomeTokenJSON,
-} from '@polymarket/value-objects/outcome-token';
-import { isValidMarketStatus, parseMarketSlug } from '../value-objects/index.js';
+import { OutcomeTokenSerializer } from '@polymarket/value-objects/outcome-token';
+import { asMarketId, isValidMarketStatus, parseMarketSlug, MarketState } from '../value-objects/index.js';
 import { MarketValidationError } from '@polymarket/errors/market';
 import { type MarketSnapshot } from './MarketSnapshot.js';
 
@@ -58,13 +55,13 @@ export class MarketParser {
   }
 
   /**
-   * Валидирует raw данные и возвращает нормализованный MarketSnapshot
+   * Валидирует raw данные и возвращает доменно-типизированный MarketSnapshot
    *
    * @param raw - Неизвестный объект для парсинга (из БД, API, JSON.parse)
    * @returns Result<MarketSnapshot, MarketValidationError>
    *
    * @remarks
-   * Возвращает типизированный snapshot — первый шаг pipeline.
+   * Выполняет всю конвертацию: примитивы → доменные типы.
    * Для получения Market вызовите `Market.fromSnapshot(result.value)` следующим шагом.
    *
    * @example
@@ -96,7 +93,8 @@ export class MarketParser {
         })
       );
     }
-    if (!data.id.trim()) {
+    const marketId = asMarketId(data.id);
+    if (!marketId) {
       return Err(
         new MarketValidationError('Market data: id must be a non-empty string', {
           context: { field: 'id', value: data.id },
@@ -112,7 +110,8 @@ export class MarketParser {
         })
       );
     }
-    if (!parseMarketSlug(data.slug)) {
+    const marketSlug = parseMarketSlug(data.slug);
+    if (!marketSlug) {
       return Err(
         new MarketValidationError(
           'Market data: slug must contain only lowercase letters, digits and hyphens',
@@ -190,7 +189,7 @@ export class MarketParser {
       );
     }
 
-    // expirationDate
+    // expirationDate → expirationMs
     if (typeof data.expirationDate !== 'string') {
       return Err(
         new MarketValidationError('Market data: expirationDate must be an ISO date string', {
@@ -198,7 +197,8 @@ export class MarketParser {
         })
       );
     }
-    if (isNaN(Date.parse(data.expirationDate))) {
+    const expirationMs = Date.parse(data.expirationDate);
+    if (isNaN(expirationMs)) {
       return Err(
         new MarketValidationError('Market data: expirationDate is not a valid ISO date string', {
           context: { field: 'expirationDate', value: data.expirationDate },
@@ -213,27 +213,25 @@ export class MarketParser {
     }
 
     return Ok({
-      id: data.id as string,
-      slug: data.slug as string,
+      id: marketId,
+      slug: marketSlug,
       question: data.question as string,
       outcomes: [
-        { token: o0.token as OutcomeTokenJSON, index: 0 as const, name: o0.name as string },
-        { token: o1.token as OutcomeTokenJSON, index: 1 as const, name: o1.name as string },
+        { token: token0Result.value, index: 0 as const, name: o0.name as string },
+        { token: token1Result.value, index: 1 as const, name: o1.name as string },
       ] as const,
-      expirationDate: data.expirationDate as string,
+      expirationMs,
       state: stateResult.value,
     });
   }
 
   /**
-   * Парсит state из raw объекта в типизированный снапшот состояния
+   * Парсит state из raw объекта в MarketState
    *
    * @param raw - Сырые данные для парсинга
-   * @returns Result<MarketSnapshot['state'], MarketValidationError>
+   * @returns Result<MarketState, MarketValidationError>
    */
-  private static _parseState(
-    raw: unknown
-  ): Result<MarketSnapshot['state'], MarketValidationError> {
+  private static _parseState(raw: unknown): Result<MarketState, MarketValidationError> {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       return Err(
         new MarketValidationError('Market data: state must be a non-null object', {
@@ -253,8 +251,8 @@ export class MarketParser {
       );
     }
 
-    if (s.status === 'ACTIVE') return Ok({ status: 'ACTIVE' as const });
-    if (s.status === 'CLOSED') return Ok({ status: 'CLOSED' as const });
+    if (s.status === 'ACTIVE') return Ok(MarketState.active());
+    if (s.status === 'CLOSED') return Ok(MarketState.closed());
 
     if (s.resolvedOutcomeIndex !== 0 && s.resolvedOutcomeIndex !== 1) {
       return Err(
@@ -265,9 +263,6 @@ export class MarketParser {
       );
     }
 
-    return Ok({
-      status: 'RESOLVED' as const,
-      resolvedOutcomeIndex: s.resolvedOutcomeIndex as 0 | 1,
-    });
+    return Ok(MarketState.resolved(s.resolvedOutcomeIndex as 0 | 1));
   }
 }

@@ -115,22 +115,27 @@ Exhaustive switch гарантирует покрытие всех состоя�
 
 **Проблема**: Если `MarketParser.from(raw)` сразу возвращает `Market`, он знает доменные инварианты (distinct tokens и т.д.) — нарушение SRP. Parser должен только валидировать форму данных.
 
-**Решение**: двухэтапный pipeline с чётким разделением ответственности:
+**Решение**: `MarketSnapshot` — доменно-типизированный data carrier (`MarketId`, `OutcomeToken`, `MarketState`, `expirationMs: number`). Parser делает всю конвертацию, `fromSnapshot()` = `Market.create(snapshot)`.
 
 | Шаг | Метод | Ответственность |
 |-----|-------|-----------------|
-| 1 | `MarketParser.from(raw)` | `unknown → Result<MarketSnapshot>` — только форма данных |
-| 2 | `Market.fromSnapshot(snapshot)` | `MarketSnapshot → Result<Market>` — доменные инварианты |
-| — | `MarketViewModel.toSnapshot(market)` | `Market → MarketSnapshot` — сериализация |
+| 1 | `MarketParser.from(raw)` | `unknown → Result<MarketSnapshot>` — валидация + конвертация в доменные типы |
+| 2 | `Market.fromSnapshot(snapshot)` | `MarketSnapshot → Result<Market>` — доменные инварианты через create() |
+| — | `MarketViewModel.toSnapshot(market)` | `Market → MarketSnapshot` — тривиальное копирование полей |
 
 ```
-raw data
-  ↓ MarketParser.from()       ← валидация структуры и типов
-MarketSnapshot
-  ↓ Market.fromSnapshot()     ← применение доменных инвариантов
+raw JSON
+  ↓ MarketParser.from()          ← валидация структуры + конвертация в доменные типы
+MarketSnapshot (доменные типы)
+  ↓ Market.fromSnapshot()        ← применение доменных инвариантов (= create())
 Market
-  ↓ MarketViewModel.toSnapshot() ← сериализация обратно
-MarketSnapshot (для БД/API)
+
+// Round-trip (in-memory, без MarketParser):
+Market
+  ↓ MarketViewModel.toSnapshot() ← тривиальное копирование полей
+MarketSnapshot (доменные типы)
+  ↓ Market.fromSnapshot()        ← применение доменных инвариантов (= create())
+Market
 ```
 
 ---
@@ -347,4 +352,4 @@ if (isResolved(market.state)) {
 | MarketParser.ts | 100% | 100% | 100% | 100% |
 | MarketViewModel.ts | 100% | 100% | 100% | 100% |
 
-7 тестовых suite, 139 тестов.
+7 тестовых suite, 134 теста.
