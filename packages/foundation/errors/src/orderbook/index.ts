@@ -11,3 +11,9 @@
  */
 
 export { OrderbookValidationError } from './OrderbookValidationError.js';
+export {
+  OrderbookInvalidError,
+  OrderbookInvalidReason,
+  ORDERBOOK_INVALID_ERROR_CODE,
+} from './OrderbookInvalidError.js';
+export type { OrderbookInvalidContext } from './OrderbookInvalidError.js';
