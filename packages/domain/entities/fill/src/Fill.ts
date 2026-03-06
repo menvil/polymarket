@@ -75,6 +75,7 @@
  * ```
  */
 
+import Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
 import type { FillId, OrderId, AccountId, VenueId, AssetId, MarketId } from '@polymarket/ids';
@@ -268,7 +269,7 @@ export class Fill {
    * ```
    */
   public getCashFlow(): AssetDelta {
-    const notional = this.price.value().times(this.size.value());
+    const notional = this.notional();
     const raw = this.side === 'BUY' ? notional.negated() : notional;
     return { asset: this.settlementAssetId, amount: SignedQuantity.of(raw) };
   }
@@ -347,8 +348,23 @@ export class Fill {
    * ```
    */
   public getNotional(): AssetQuantity {
-    const notionalAmount = Quantity.of(this.price.value().times(this.size.value()));
+    const notionalAmount = Quantity.of(this.notional());
     return new AssetQuantity(this.settlementAssetId, notionalAmount);
+  }
+
+  // ==================== Private Helpers ====================
+
+  /**
+   * Вычисляет номинальную стоимость исполнения (price × size) как Decimal
+   *
+   * @returns Decimal — произведение цены и размера
+   *
+   * @remarks
+   * Приватный helper для устранения дублирования формулы.
+   * Используется в getCashFlow() и getNotional().
+   */
+  private notional(): Decimal {
+    return this.price.value().times(this.size.value());
   }
 
   // ==================== Predicates ====================

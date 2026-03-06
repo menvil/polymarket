@@ -134,7 +134,7 @@ export class Balance {
     }
 
     // Инвариант 4: available + reserved <= Money.MAX_AMOUNT
-    const totalAmount = _available.value().plus(_reserved.value());
+    const totalAmount = this.totalAmount();
     if (totalAmount.greaterThan(Money.MAX_AMOUNT)) {
       throw new BalanceInvariantViolation(
         `Total balance (available + reserved) exceeds maximum: ${Money.MAX_AMOUNT}`,
@@ -313,12 +313,22 @@ export class Balance {
    * ```
    */
   public total(): Money {
-    // Прямое вычисление через Decimal (не нужен MoneyService)
-    const totalAmount = this._available.value().plus(this._reserved.value());
-
-    // Создаём Money из результата
     // Безопасно благодаря инвариантам Balance
-    return Money.of(totalAmount, this._available.currency());
+    return Money.of(this.totalAmount(), this._available.currency());
+  }
+
+  /**
+   * Вычисляет raw сумму available + reserved как Decimal
+   *
+   * @returns Decimal — сумма available.value() + reserved.value()
+   *
+   * @remarks
+   * Приватный helper для устранения дублирования формулы.
+   * Используется в конструкторе (инвариант #4) и в методе total().
+   * Вызывается только после проверки NaN/finite инвариантов.
+   */
+  private totalAmount(): Decimal {
+    return this._available.value().plus(this._reserved.value());
   }
 
   /**

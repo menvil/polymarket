@@ -52,6 +52,13 @@ export interface IValuablePosition extends IPosition {
     /** Возвращает значение цены */
     value(): Decimal;
   };
+  /**
+   * Вычисляет unrealized P&L для заданной текущей цены
+   *
+   * @param currentPrice - Объект с методом value(): Decimal (совместим с Price VO)
+   * @returns Объект с методом value(): Decimal (совместим с SignedQuantity VO)
+   */
+  getUnrealizedPnL(currentPrice: { value(): Decimal }): { value(): Decimal };
 }
 
 /**
@@ -125,15 +132,18 @@ export class PortfolioValuationService {
    * 1. Для каждой позиции:
    *    - Запрашивает цену через getPrice(instrumentId).
    *    - Если цена не найдена — пропускает.
-   *    - Для LONG: pnl = (currentPrice - avgEntryPrice) * quantity
-   *    - Для SHORT: pnl = (avgEntryPrice - currentPrice) * quantity
+   *    - Делегирует расчёт P&L в position.getUnrealizedPnL(price).
    * 2. Суммирует P&L всех позиций.
+   *
+   * Логика расчёта P&L инкапсулирована в Position entity:
+   * - Для LONG: pnl = (currentPrice - avgEntryPrice) * quantity
+   * - Для SHORT: pnl = (avgEntryPrice - currentPrice) * quantity
    *
    * @example
    * ```typescript
    * const getPrice = (id: InstrumentId) => prices.get(id);
    * const pnl = PortfolioValuationService.getTotalUnrealizedPnL(portfolio, getPrice);
-   * // pnl = sum((currentPrice_i - avgEntry_i) * quantity_i) for LONG positions
+   * // pnl = sum(position.getUnrealizedPnL(price_i)) for each position i
    * ```
    */
   public static getTotalUnrealizedPnL(
@@ -147,10 +157,7 @@ export class PortfolioValuationService {
       const price = getPrice(position.instrumentId);
       if (!price) continue;
 
-      const priceDiff = price.value().minus(position.averageEntryPrice.value());
-      const rawPnL = priceDiff.times(position.quantity.value());
-      const signedPnL = position.side === 'LONG' ? rawPnL : rawPnL.negated();
-      totalPnL = totalPnL.plus(signedPnL);
+      totalPnL = totalPnL.plus(position.getUnrealizedPnL(price).value());
     }
 
     return totalPnL;
