@@ -100,7 +100,7 @@ describe('Quote Integration Tests', () => {
       expect(spread).not.toBeNull();
       expect(spread!.width().toNumber()).toBe(0.04);
       expect(spread!.mid().toNumber()).toBe(0.50);
-      expect(spread!.widthPercentage().toNumber()).toBe(8); // 0.04 / 0.50 * 100 = 8%
+      expect(spread!.widthRatio().toNumber()).toBe(0.08); // 0.04 / 0.50 = 0.08 (8%)
     });
 
     it('market crossing detection', () => {

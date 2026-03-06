@@ -76,28 +76,28 @@ describe('Spread Core', () => {
     });
   });
 
-  describe('widthPercentage()', () => {
-    it('should calculate width percentage correctly', () => {
+  describe('widthRatio()', () => {
+    it('should calculate width ratio correctly', () => {
       const bid = Price.of(new Decimal(0.48));
       const ask = Price.of(new Decimal(0.52));
       const spread = Spread.of(bid, ask);
 
-      const widthPercentage = spread.widthPercentage();
+      const widthRatio = spread.widthRatio();
 
-      // (0.04 / 0.50) * 100 = 8%
-      expect(widthPercentage.toNumber()).toBe(8);
+      // 0.04 / 0.50 = 0.08 (8%)
+      expect(widthRatio.toNumber()).toBe(0.08);
     });
 
-    it('should return 0 when midpoint is zero', () => {
+    it('should return Ratio.ZERO when midpoint is zero', () => {
       // Edge case: if somehow midpoint is zero (shouldn't happen with valid Prices)
       // This is a defensive programming test
       const bid = Price.of(new Decimal(0.0001));
       const ask = Price.of(new Decimal(0.0001));
       const spread = Spread.of(bid, ask);
 
-      const widthPercentage = spread.widthPercentage();
+      const widthRatio = spread.widthRatio();
 
-      expect(widthPercentage.toNumber()).toBe(0);
+      expect(widthRatio.toNumber()).toBe(0);
     });
   });
 

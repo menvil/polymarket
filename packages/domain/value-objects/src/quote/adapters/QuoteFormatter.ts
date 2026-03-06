@@ -199,7 +199,7 @@ export class QuoteFormatter {
     if (spread !== null) {
       if (includeSpread) {
         const spreadWidth = spread.width();
-        const spreadPct = spread.widthPercentage();
+        const spreadPct = spread.widthRatio().toDecimal().times(100);
         parts.push(
           `Spread: ${spreadWidth.toFixed(priceDecimals)} (${spreadPct.toFixed(2)}%)`
         );
@@ -284,7 +284,7 @@ export class QuoteFormatter {
       lines.push(separator);
 
       const spreadWidth = spread.width();
-      const spreadPct = spread.widthPercentage();
+      const spreadPct = spread.widthRatio().toDecimal().times(100);
       lines.push(`Spread ${spreadWidth.toFixed(priceDecimals).padEnd(8)} (${spreadPct.toFixed(2)}%)`);
 
       const midDecimal = spread.mid();
@@ -347,7 +347,7 @@ export class QuoteFormatter {
     let result = spreadWidth.toFixed(4);
 
     if (includePercentage) {
-      const spreadPct = spread.widthPercentage();
+      const spreadPct = spread.widthRatio().toDecimal().times(100);
       result += ` (${spreadPct.toFixed(2)}%)`;
     }
 

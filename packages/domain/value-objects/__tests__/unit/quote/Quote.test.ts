@@ -623,7 +623,7 @@ describe('Quote Core', () => {
       expect(spread).not.toBeNull();
       expect(spread!.width().toNumber()).toBe(0.04);
       expect(spread!.mid().toNumber()).toBe(0.50);
-      expect(spread!.widthPercentage().toNumber()).toBeCloseTo(8.0, 1);
+      expect(spread!.widthRatio().toNumber()).toBeCloseTo(0.08, 4);
     });
 
     it('возвращает null для bid-only котировки', () => {
