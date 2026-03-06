@@ -58,7 +58,7 @@ interface TradeParams {
 4. `tokenId` присутствует
 5. `price > 0`
 6. `size > 0`
-7. `timestamp` присутствует (epoch ms > 0)
+7. `timestamp` присутствует (числовая валидация делегирована `Timestamp` VO / `TimestampService`)
 
 `aggressorSide` и `txHash` опциональны — не всегда известны из API.
 
@@ -121,7 +121,7 @@ Round-trip сериализация через `TradeSnapshot` (плоские �
 import { TradeMapper } from '@polymarket/trade';
 
 // asset_id — числовой CTF token ID из Polymarket API
-// timestamp — секунды (конвертируется в мс автоматически)
+// timestamp — миллисекунды (маппер поддерживает и секунды, и мс: автоопределение по порогу 1e12)
 const result = TradeMapper.fromPolymarketLastTradeEvent({
   market: '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3',
   asset_id: '62305814799875783974460176688386847666394972778903073967664089920408777315323',
@@ -134,7 +134,7 @@ const result = TradeMapper.fromPolymarketLastTradeEvent({
 
 if (result.ok) {
   const trade = result.value;
-  console.log(trade.getNotional().toNumber()); // 65
+  console.log(trade.getNotional().toNumber()); // 3.46 (0.44 × 7.861135)
   console.log(trade.isBuy()); // true
 }
 ```

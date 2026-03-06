@@ -12,7 +12,9 @@
  * ### Отличие от Trade:
  * Trade использует value objects (Price, Quantity, Timestamp).
  * TradeSnapshot использует только примитивы (number, string).
- * Это гарантирует совместимость с JSON.stringify() без потери данных.
+ * Это гарантирует совместимость с JSON.stringify(). Числовые поля (price, size)
+ * сериализуются через Decimal.toNumber() — возможна потеря точности для очень
+ * больших или дробных значений, выходящих за пределы IEEE 754 double.
  *
  * @example
  * ```typescript

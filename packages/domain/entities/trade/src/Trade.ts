@@ -27,15 +27,15 @@
  * @example
  * ```typescript
  * import { Trade } from '@polymarket/trade';
- * import { asVenueTradeId, asVenueId } from '@polymarket/ids';
+ * import { asVenueTradeId, asVenueId, parseAssetId } from '@polymarket/ids';
  * import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
  * import Decimal from 'decimal.js';
  *
  * const result = Trade.create({
  *   id: asVenueTradeId('0xabc_1700000000000')!,
  *   venueId: asVenueId('POLYMARKET')!,
- *   marketId: 'market-abc',
- *   tokenId: 'token-yes',
+ *   marketId: '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3',
+ *   tokenId: parseAssetId('62305814799875783974460176688386847666394972778903073967664089920408777315323')!,
  *   price: Price.of(new Decimal('0.65')),
  *   size: Quantity.of(new Decimal('100')),
  *   aggressorSide: 'BUY',
@@ -44,7 +44,7 @@
  *
  * if (result.ok) {
  *   const trade = result.value;
- *   console.log(trade.getNotional().toNumber()); // 65
+ *   console.log(trade.getNotional().toNumber()); // 65 (0.65 × 100)
  *   console.log(trade.isBuy()); // true
  * }
  * ```
@@ -99,7 +99,7 @@ export interface TradeParams {
  * 4. tokenId не пустой (гарантируется AssetId)
  * 5. price > 0
  * 6. size > 0
- * 7. timestamp валидный (положительный epoch ms)
+ * 7. timestamp присутствует (числовая валидация делегирована Timestamp VO / TimestampService)
  */
 export class Trade {
   public readonly id: VenueTradeId;

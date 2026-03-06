@@ -36,13 +36,13 @@
  * ```typescript
  * // Парсинг события из Polymarket API
  * const result = TradeMapper.fromPolymarketLastTradeEvent({
- *   market: '0xmarket...',
- *   asset_id: '0xasset...',
- *   price: '0.65',
- *   size: '100',
+ *   market: '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3',
+ *   asset_id: '62305814799875783974460176688386847666394972778903073967664089920408777315323',
+ *   price: '0.44',
+ *   size: '7.861135',
  *   side: 'BUY',
- *   timestamp: '1700000000',
- *   transaction_hash: '0xabcdef...'
+ *   timestamp: '1767463212903',
+ *   transaction_hash: '0x989369fbc370b9384be69c36876e25170f25d87a83ef1413cbf7ca6913533f21'
  * });
  *
  * if (result.ok) {
@@ -91,19 +91,19 @@ export class TradeMapper {
    * - `price` (string | number) — цена как строка
    * - `size` (string | number) — объём как строка
    * - `side` (string) — 'BUY' | 'SELL' (агрессор)
-   * - `timestamp` (string | number) — Unix timestamp в секундах
+   * - `timestamp` (string | number) — Unix timestamp в секундах или миллисекундах (автоопределение: < 1e12 → секунды, >= 1e12 → миллисекунды)
    * - `transaction_hash` (string, optional) — хэш транзакции
    *
    * @example
    * ```typescript
    * const result = TradeMapper.fromPolymarketLastTradeEvent({
-   *   market: '0x1234...',
-   *   asset_id: '0xasset...',
-   *   price: '0.65',
-   *   size: '100',
+   *   market: '0xb9ed6ed97ce9146ef1a01278d5fc0f8bd04050a69f0a5568a66075b3c0c6b2c3',
+   *   asset_id: '62305814799875783974460176688386847666394972778903073967664089920408777315323',
+   *   price: '0.44',
+   *   size: '7.861135',
    *   side: 'BUY',
-   *   timestamp: '1700000000',
-   *   transaction_hash: '0xabcdef...'
+   *   timestamp: '1767463212903',
+   *   transaction_hash: '0x989369fbc370b9384be69c36876e25170f25d87a83ef1413cbf7ca6913533f21'
    * });
    * ```
    */
