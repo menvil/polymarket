@@ -329,7 +329,7 @@ export class Trade {
    * ```typescript
    * const snapshot = trade.toSnapshot();
    * const json = JSON.stringify(snapshot);
-   * // { "id": "...", "price": 0.65, "size": 100, "timestampMs": 1700000000000 }
+   * // { "id": "...", "price": "0.65", "size": "100", "timestampMs": 1700000000000 }
    * ```
    */
   public toSnapshot(): TradeSnapshot {
@@ -338,8 +338,8 @@ export class Trade {
       venueId: this.venueId,
       marketId: this.marketId,
       tokenId: assetIdToString(this.tokenId),
-      price: this.price.value().toNumber(),
-      size: this.size.value().toNumber(),
+      price: this.price.value().toString(),
+      size: this.size.value().toString(),
       aggressorSide: this.aggressorSide,
       timestampMs: this.timestamp.toNumber(),
       txHash: this.txHash,

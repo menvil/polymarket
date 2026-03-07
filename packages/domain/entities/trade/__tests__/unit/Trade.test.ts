@@ -266,8 +266,8 @@ describe('Trade', () => {
       expect(snapshot.id).toBe('0xabc_1700000000000');
       expect(snapshot.venueId).toBe('POLYMARKET');
       expect(snapshot.marketId).toBe('market-abc');
-      expect(snapshot.price).toBe(0.65);
-      expect(snapshot.size).toBe(100);
+      expect(snapshot.price).toBe('0.65');
+      expect(snapshot.size).toBe('100');
       expect(snapshot.aggressorSide).toBe('BUY');
       expect(snapshot.timestampMs).toBe(1700000000000);
     });

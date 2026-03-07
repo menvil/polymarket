@@ -342,14 +342,8 @@ describe('TradeMapper', () => {
         expect(restored.id).toBe(original.id);
         expect(restored.venueId).toBe(original.venueId);
         expect(restored.marketId).toBe(original.marketId);
-        expect(restored.price.value().toNumber()).toBeCloseTo(
-          original.price.value().toNumber(),
-          5
-        );
-        expect(restored.size.value().toNumber()).toBeCloseTo(
-          original.size.value().toNumber(),
-          5
-        );
+        expect(restored.price.value().toString()).toBe(original.price.value().toString());
+        expect(restored.size.value().toString()).toBe(original.size.value().toString());
         expect(restored.aggressorSide).toBe(original.aggressorSide);
         expect(restored.timestamp.toNumber()).toBe(original.timestamp.toNumber());
       }
@@ -361,8 +355,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: '   ',
         tokenId: TEST_TOKEN_ID,
-        price: 0.65,
-        size: 100,
+        price: '0.65',
+        size: '100',
         timestampMs: 1700000000000,
       });
 
@@ -378,8 +372,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: 'not-a-valid-token-id',
-        price: 0.65,
-        size: 100,
+        price: '0.65',
+        size: '100',
         timestampMs: 1700000000000,
       });
 
@@ -395,8 +389,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        price: 0,
-        size: 100,
+        price: '0',
+        size: '100',
         timestampMs: 1700000000000,
       });
 
@@ -412,8 +406,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        price: -0.5,
-        size: 100,
+        price: '-0.5',
+        size: '100',
         timestampMs: 1700000000000,
       });
 
@@ -429,8 +423,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        price: NaN,
-        size: 100,
+        price: 'NaN',
+        size: '100',
         timestampMs: 1700000000000,
       });
 
@@ -443,8 +437,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        price: 0.65,
-        size: -10,
+        price: '0.65',
+        size: '-10',
         timestampMs: 1700000000000,
       });
 
@@ -460,8 +454,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        price: 0.65,
-        size: 0,
+        price: '0.65',
+        size: '0',
         timestampMs: 1700000000000,
       });
 
@@ -474,8 +468,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        price: 0.65,
-        size: 100,
+        price: '0.65',
+        size: '100',
         timestampMs: NaN,
       });
 
@@ -488,8 +482,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        price: 0.65,
-        size: 100,
+        price: '0.65',
+        size: '100',
         timestampMs: 1700000000000,
         txHash: '0xabcdef1234567890',
       };
@@ -508,8 +502,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        price: 0.65,
-        size: 100,
+        price: '0.65',
+        size: '100',
         timestampMs: 1700000000000,
         aggressorSide: 'SELL' as const,
       };
@@ -528,8 +522,8 @@ describe('TradeMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        price: 0.65,
-        size: 100,
+        price: '0.65',
+        size: '100',
         timestampMs: 1700000000000,
       });
 
@@ -545,8 +539,8 @@ describe('TradeMapper', () => {
         venueId: '',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        price: 0.65,
-        size: 100,
+        price: '0.65',
+        size: '100',
         timestampMs: 1700000000000,
       });
 
