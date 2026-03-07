@@ -198,7 +198,8 @@ describe('PositionLot', () => {
 
       const notional = lot.getNotional();
 
-      expect(notional).toBe(65.0); // 100 * 0.65
+      // getNotional() возвращает Decimal для сохранения точности
+      expect(notional.toNumber()).toBe(65.0); // 100 * 0.65
     });
 
     it('вычисляет notional для дробных значений', () => {
@@ -210,7 +211,7 @@ describe('PositionLot', () => {
 
       const notional = lot.getNotional();
 
-      expect(notional).toBeCloseTo(36.24, 2); // 75.5 * 0.48
+      expect(notional.toNumber()).toBeCloseTo(36.24, 2); // 75.5 * 0.48
     });
 
     it('возвращает 0 для пустого лота', () => {
@@ -222,7 +223,7 @@ describe('PositionLot', () => {
 
       const notional = lot.getNotional();
 
-      expect(notional).toBe(0);
+      expect(notional.toNumber()).toBe(0);
     });
   });
 
@@ -267,16 +268,17 @@ describe('PositionLot', () => {
   });
 
   describe('toObject()', () => {
-    it('конвертирует в plain object', () => {
+    it('конвертирует в plain object со string для Decimal-полей', () => {
       const lot = createTestLot();
 
       const obj = lot.toObject();
 
+      // quantity/entryPrice/fee — string для сохранения Decimal-точности
       expect(obj).toEqual({
-        quantity: 100,
-        entryPrice: 0.65,
+        quantity: '100',
+        entryPrice: '0.65',
         timestamp: 1705318200000,
-        fee: 0.5,
+        fee: '0.5',
       });
     });
 
@@ -290,22 +292,22 @@ describe('PositionLot', () => {
       const obj = lot.toObject();
 
       expect(obj).toEqual({
-        quantity: 100,
-        entryPrice: 0.65,
+        quantity: '100',
+        entryPrice: '0.65',
         timestamp: 1705318200000,
         fee: undefined,
       });
     });
 
-    it('возвращает primitive типы', () => {
+    it('возвращает string для Decimal-полей, number для timestamp', () => {
       const lot = createTestLot();
 
       const obj = lot.toObject();
 
-      expect(typeof obj.quantity).toBe('number');
-      expect(typeof obj.entryPrice).toBe('number');
+      expect(typeof obj.quantity).toBe('string');
+      expect(typeof obj.entryPrice).toBe('string');
       expect(typeof obj.timestamp).toBe('number');
-      expect(typeof obj.fee).toBe('number');
+      expect(typeof obj.fee).toBe('string');
     });
   });
 
@@ -346,7 +348,7 @@ describe('PositionLot', () => {
       });
 
       expect(lot.quantity.value().toNumber()).toBe(1000000);
-      expect(lot.getNotional()).toBe(650000);
+      expect(lot.getNotional().toNumber()).toBe(650000);
     });
   });
 });

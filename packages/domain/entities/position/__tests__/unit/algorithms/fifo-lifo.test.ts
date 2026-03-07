@@ -1,5 +1,11 @@
 /**
  * Тесты для FIFO/LIFO алгоритмов
+ *
+ * @remarks
+ * После DDD-рефакторинга:
+ * - CloseResult.position вместо CloseResult.newPosition
+ * - PositionParams не содержит quantity/averageEntryPrice
+ * - validateLotsConsistency удалена (lots = единственный источник истины)
  */
 
 import { describe, it, expect } from '@jest/globals';
@@ -7,7 +13,6 @@ import {
   closeFIFO,
   closeLIFO,
   calculateWeightedAveragePrice,
-  validateLotsConsistency,
 } from '../../../src/algorithms/fifo-lifo.js';
 import { Position } from '../../../src/Position.js';
 import type { PositionParams } from '../../../src/Position.js';
@@ -20,7 +25,7 @@ import Decimal from 'decimal.js';
 const TEST_ACCOUNT_ID = parseAccountId('venue:POLYMARKET:account-456')!;
 const TEST_ASSET_ID = AssetIdHelpers.USDC;
 
-/** Разворачивает Result или бросает ошибку — для использования только в тестах */
+/** Разворачивает Result или бросает ошибку — только для тестов */
 function unwrapOk<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, msg?: string): T {
   if (!result.ok) throw new Error(msg ?? 'Expected ok result');
   return result.value;
@@ -43,21 +48,12 @@ describe('FIFO/LIFO Algorithms', () => {
     lots: PositionLot[],
     side: 'LONG' | 'SHORT' = 'LONG'
   ): Position => {
-    const totalQuantity = lots.reduce(
-      (sum, lot) => sum.plus(lot.quantity.value()),
-      new Decimal(0)
-    );
-
-    const avgPrice = calculateWeightedAveragePrice(lots);
-
     const params: PositionParams = {
       id: asPositionId('pos-123')!,
       accountId: TEST_ACCOUNT_ID,
       instrumentId: asInstrumentId('market-abc')!,
       asset: TEST_ASSET_ID,
       side,
-      quantity: Quantity.of(totalQuantity),
-      averageEntryPrice: avgPrice,
       timestamp: Timestamp.now(),
       lots,
     };
@@ -82,7 +78,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition, realizedPnL, closedLots } = result.value;
+        const { position: newPosition, realizedPnL, closedLots } = result.value;
 
         // Проверяем новую позицию
         expect(newPosition.quantity.value().toNumber()).toBe(40); // 100 - 60
@@ -115,7 +111,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition, realizedPnL } = result.value;
+        const { position: newPosition, realizedPnL } = result.value;
 
         // Позиция полностью закрыта
         expect(newPosition.quantity.isZero()).toBe(true);
@@ -182,15 +178,13 @@ describe('FIFO/LIFO Algorithms', () => {
     });
 
     it('should reject position with no lots', () => {
-      // Позиция с quantity > 0 но без лотов (несогласованное состояние)
+      // Позиция без лотов (закрытая)
       const position = unwrapOk(Position.create({
         id: asPositionId('pos-123')!,
         accountId: TEST_ACCOUNT_ID,
         instrumentId: asInstrumentId('market-abc')!,
         asset: TEST_ASSET_ID,
         side: 'LONG',
-        quantity: Quantity.of(new Decimal(10)),
-        averageEntryPrice: Price.of(new Decimal(0.65)),
         timestamp: Timestamp.now(),
         lots: [],
       }));
@@ -208,11 +202,18 @@ describe('FIFO/LIFO Algorithms', () => {
 
     it('should accumulate realized P&L', () => {
       const lot = createLot(100, 0.65, 100);
-      const position = createPositionWithLots([lot]);
+      const positionBase = createPositionWithLots([lot]);
 
       // Позиция уже имеет realized P&L
       const positionWithPnL = unwrapOk(Position.create({
-        ...position,
+        id: positionBase.id,
+        accountId: positionBase.accountId,
+        instrumentId: positionBase.instrumentId,
+        asset: positionBase.asset,
+        side: positionBase.side,
+        timestamp: positionBase.timestamp,
+        lots: positionBase.lots,
+        fees: positionBase.fees,
         realizedPnL: SignedQuantity.of(new Decimal(10)),
       }));
 
@@ -223,7 +224,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition } = result.value;
+        const { position: newPosition } = result.value;
 
         // Новый realized = старый (10) + новый (5) = 15
         expect(newPosition.realizedPnL.value().toNumber()).toBe(15);
@@ -241,7 +242,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition, closedLots } = result.value;
+        const { position: newPosition, closedLots } = result.value;
 
         // Остается 70
         expect(newPosition.quantity.value().toNumber()).toBe(70);
@@ -272,7 +273,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition, realizedPnL, closedLots } = result.value;
+        const { position: newPosition, realizedPnL, closedLots } = result.value;
 
         // Проверяем новую позицию
         expect(newPosition.quantity.value().toNumber()).toBe(40); // 100 - 60
@@ -307,7 +308,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition, realizedPnL } = result.value;
+        const { position: newPosition, realizedPnL } = result.value;
 
         // Позиция полностью закрыта
         expect(newPosition.quantity.isZero()).toBe(true);
@@ -419,99 +420,6 @@ describe('FIFO/LIFO Algorithms', () => {
     });
   });
 
-  describe('validateLotsConsistency', () => {
-    it('should validate consistent position', () => {
-      const lot1 = createLot(50, 0.60, 100);
-      const lot2 = createLot(50, 0.70, 200);
-
-      const position = createPositionWithLots([lot1, lot2]);
-
-      expect(validateLotsConsistency(position)).toBe(true);
-    });
-
-    it('should reject position with mismatched quantity', () => {
-      const lot = createLot(50, 0.65, 100);
-      const avgPrice = calculateWeightedAveragePrice([lot]);
-
-      // Создаем позицию с неправильным quantity
-      const params: PositionParams = {
-        id: asPositionId('pos-123')!,
-        accountId: TEST_ACCOUNT_ID,
-        instrumentId: asInstrumentId('market-abc')!,
-        asset: TEST_ASSET_ID,
-        side: 'LONG',
-        quantity: Quantity.of(new Decimal(100)), // Неправильно! Должно быть 50
-        averageEntryPrice: avgPrice,
-        timestamp: Timestamp.now(),
-        lots: [lot],
-      };
-
-      const position = unwrapOk(Position.create(params));
-
-      expect(validateLotsConsistency(position)).toBe(false);
-    });
-
-    it('should reject position with mismatched average price', () => {
-      const lot = createLot(100, 0.65, 100);
-
-      // Создаем позицию с неправильным average price
-      const params: PositionParams = {
-        id: asPositionId('pos-123')!,
-        accountId: TEST_ACCOUNT_ID,
-        instrumentId: asInstrumentId('market-abc')!,
-        asset: TEST_ASSET_ID,
-        side: 'LONG',
-        quantity: Quantity.of(new Decimal(100)),
-        averageEntryPrice: Price.of(new Decimal(0.75)), // Неправильно! Должно быть 0.65
-        timestamp: Timestamp.now(),
-        lots: [lot],
-      };
-
-      const position = unwrapOk(Position.create(params));
-
-      expect(validateLotsConsistency(position)).toBe(false);
-    });
-
-    it('should validate empty position', () => {
-      const params: PositionParams = {
-        id: asPositionId('pos-123')!,
-        accountId: TEST_ACCOUNT_ID,
-        instrumentId: asInstrumentId('market-abc')!,
-        asset: TEST_ASSET_ID,
-        side: 'LONG',
-        quantity: Quantity.ZERO,
-        averageEntryPrice: Price.of(new Decimal(0.65)),
-        timestamp: Timestamp.now(),
-        lots: [],
-      };
-
-      const position = unwrapOk(Position.create(params));
-
-      expect(validateLotsConsistency(position)).toBe(true);
-    });
-
-    it('should reject non-empty lots with zero quantity', () => {
-      const lot = createLot(100, 0.65, 100);
-
-      // Позиция с quantity=0 но есть лоты
-      const params: PositionParams = {
-        id: asPositionId('pos-123')!,
-        accountId: TEST_ACCOUNT_ID,
-        instrumentId: asInstrumentId('market-abc')!,
-        asset: TEST_ASSET_ID,
-        side: 'LONG',
-        quantity: Quantity.ZERO,
-        averageEntryPrice: Price.of(new Decimal(0.65)),
-        timestamp: Timestamp.now(),
-        lots: [lot],
-      };
-
-      const position = unwrapOk(Position.create(params));
-
-      expect(validateLotsConsistency(position)).toBe(false);
-    });
-  });
-
   describe('Edge Cases', () => {
     it('should handle very small quantities', () => {
       const lot = createLot(0.000001, 0.65, 100);
@@ -524,7 +432,7 @@ describe('FIFO/LIFO Algorithms', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        const { newPosition } = result.value;
+        const { position: newPosition } = result.value;
         expect(newPosition.quantity.value().toNumber()).toBeCloseTo(0.0000005, 10);
       }
     });
@@ -547,7 +455,7 @@ describe('FIFO/LIFO Algorithms', () => {
       }
     });
 
-    it('should maintain immutability', () => {
+    it('should maintain immutability of original position', () => {
       const lot = createLot(100, 0.65, 100);
       const originalPosition = createPositionWithLots([lot]);
       const originalQuantity = originalPosition.quantity.value().toNumber();

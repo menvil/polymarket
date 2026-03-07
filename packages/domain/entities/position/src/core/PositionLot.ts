@@ -35,6 +35,7 @@
  */
 
 import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+import Decimal from 'decimal.js';
 
 /**
  * Параметры для создания PositionLot
@@ -195,11 +196,12 @@ export class PositionLot {
   /**
    * Вычисляет notional value лота (quantity * entryPrice)
    *
-   * @returns Notional value
+   * @returns Notional value как Decimal (без потери точности)
    *
    * @remarks
    * Notional = количество * цена входа
    * Используется для расчета weighted average price.
+   * Возвращает Decimal для сохранения точности при агрегировании.
    *
    * @example
    * ```typescript
@@ -210,11 +212,11 @@ export class PositionLot {
    * });
    *
    * const notional = lot.getNotional();
-   * console.log(notional); // 65.0 (100 * 0.65)
+   * console.log(notional.toNumber()); // 65.0 (100 * 0.65)
    * ```
    */
-  public getNotional(): number {
-    return this.quantity.value().toNumber() * this.entryPrice.value().toNumber();
+  public getNotional(): Decimal {
+    return this.quantity.value().times(this.entryPrice.value());
   }
 
   /**
@@ -238,26 +240,30 @@ export class PositionLot {
   /**
    * Конвертирует в объект для serialization
    *
-   * @returns Объектное представление
+   * @returns Объектное представление с string для Decimal-полей
+   *
+   * @remarks
+   * quantity, entryPrice, fee хранятся как string для сохранения Decimal-точности.
+   * timestamp — epoch ms, хранится как number.
    *
    * @example
    * ```typescript
    * const obj = lot.toObject();
    * console.log(JSON.stringify(obj));
-   * // {"quantity": 100, "entryPrice": 0.65, "timestamp": 1705318200000, "fee": 0.5}
+   * // {"quantity": "100", "entryPrice": "0.65", "timestamp": 1705318200000, "fee": "0.5"}
    * ```
    */
   public toObject(): {
-    quantity: number;
-    entryPrice: number;
+    quantity: string;
+    entryPrice: string;
     timestamp: number;
-    fee?: number;
+    fee?: string;
   } {
     return {
-      quantity: this.quantity.value().toNumber(),
-      entryPrice: this.entryPrice.value().toNumber(),
+      quantity: this.quantity.value().toString(),
+      entryPrice: this.entryPrice.value().toString(),
       timestamp: this.timestamp.toNumber(),
-      fee: this.fee?.quantity.amount().value().toNumber(),
+      fee: this.fee?.quantity.amount().value().toString(),
     };
   }
 }
