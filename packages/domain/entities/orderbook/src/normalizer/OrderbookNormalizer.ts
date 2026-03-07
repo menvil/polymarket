@@ -17,17 +17,18 @@
  *
  * @example
  * ```typescript
- * import { OrderbookNormalizer } from './OrderbookNormalizer';
- * import { DEFAULT_NORMALIZATION_POLICY } from './NormalizationPolicy';
+ * import { OrderbookNormalizer } from './OrderbookNormalizer.js';
+ * import { DEFAULT_NORMALIZATION_POLICY } from './NormalizationPolicy.js';
  *
  * const rawData: RawOrderbook = {
  *   marketId: 'market-123',
+ *   tokenId: '62305814799875783974460176688386847666394972778903073967664089920408777315323',
  *   bids: [
- *     { price: 0.52, quantity: 0 },     // будет отфильтрован
- *     { price: 0.51, quantity: 100 },
- *     { price: 0.51, quantity: 50 },    // будет агрегирован
+ *     { price: '0.52', quantity: '0' },     // будет отфильтрован
+ *     { price: '0.51', quantity: '100' },
+ *     { price: '0.51', quantity: '50' },    // будет агрегирован
  *   ],
- *   asks: [{ price: 0.53, quantity: 150 }],
+ *   asks: [{ price: '0.53', quantity: '150' }],
  * };
  *
  * const result = OrderbookNormalizer.normalize(rawData, DEFAULT_NORMALIZATION_POLICY);

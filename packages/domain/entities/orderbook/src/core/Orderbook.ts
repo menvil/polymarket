@@ -16,8 +16,9 @@
  *
  * @example
  * ```typescript
- * import { Orderbook } from './Orderbook';
- * import { OrderbookNormalizer } from '../normalizer/OrderbookNormalizer';
+ * import { Orderbook } from './Orderbook.js';
+ * import { OrderbookNormalizer } from '../normalizer/OrderbookNormalizer.js';
+ * import type { RawOrderbook } from '../normalizer/types.js';
  *
  * const rawData: RawOrderbook = { marketId: '...', tokenId: '...', bids: [], asks: [] };
  * const normalized = OrderbookNormalizer.normalize(rawData);
@@ -28,10 +29,8 @@
  *
  *   if (spread.ok) {
  *     console.log(`Spread: ${spread.value.width().toFixed(4)}`);
- *   } else if (OrderbookInvalidError.isOrderbookInvalidError(spread.error)) {
- *     if (spread.error.isCrossedBook()) {
- *       console.error('CRITICAL: Crossed book detected!');
- *     }
+ *   } else if (spread.error.isCrossedBook()) {
+ *     console.error('CRITICAL: Crossed book detected!');
  *   }
  * }
  * ```
@@ -240,10 +239,15 @@ export class Orderbook {
    *
    * Возвращает ошибку если:
    * - Нет bid или ask (EMPTY_BOOK / ONE_SIDED)
-   * - Crossed book: bid >= ask (CROSSED_BOOK)
+   * - Crossed book: bid > ask (CROSSED_BOOK)
    *
    * Явный сигнал о проблемах вместо silent null.
    * Критично для trading систем.
+   *
+   * ### Асимметрия правил crossed book:
+   * `getSpread()` допускает `bid == ask` (нулевой спред) — это валидный нормальный случай.
+   * `OrderbookNormalizer` с `allowCrossed: false` строже: отвергает `bid >= ask`,
+   * т.е. нулевой спред уже отфильтрован на входе перед созданием `Orderbook`.
    *
    * @example
    * ```typescript

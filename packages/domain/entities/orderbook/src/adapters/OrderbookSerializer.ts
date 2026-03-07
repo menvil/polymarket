@@ -16,11 +16,10 @@
  * import { OrderbookSerializer } from './OrderbookSerializer';
  *
  * // Deserialization
- * const json = { marketId: '...', tokenId: '...', bids: [], asks: [] };
- * const result = OrderbookSerializer.fromJSON(json);
- * if (result.ok) {
- *   const orderbook = result.value;
- * }
+ * const rawJson = { marketId: '...', tokenId: '...', bids: [], asks: [] };
+ * const result = OrderbookSerializer.fromJSON(rawJson);
+ * if (!result.ok) throw result.error;
+ * const orderbook = result.value;
  *
  * // Serialization
  * const json = OrderbookSerializer.toJSON(orderbook);

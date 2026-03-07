@@ -123,7 +123,7 @@ export interface PolymarketBookEvent {
  *
  * @remarks
  * Намеренно реализован как static-only класс.
- * Тонкий адаптер: перекладывает поля + конвертирует строки в числа,
+ * Тонкий адаптер: перекладывает поля (строки передаются as-is в RawOrderbook),
  * затем делегирует всю валидацию в `OrderbookNormalizer`.
  */
 export class PolymarketBookEventParser {

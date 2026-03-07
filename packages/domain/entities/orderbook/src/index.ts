@@ -17,7 +17,6 @@
  *   Orderbook,
  *   OrderbookSerializer,
  *   OrderbookNormalizer,
- *   DEFAULT_NORMALIZATION_POLICY,
  *   type RawOrderbook,
  * } from '@polymarket/orderbook';
  *

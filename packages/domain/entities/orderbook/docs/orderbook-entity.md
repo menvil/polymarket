@@ -249,7 +249,7 @@ if (!spreadResult.ok) {
 }
 
 // Причины:
-OrderbookInvalidReason.CROSSED_BOOK  // bid >= ask
+OrderbookInvalidReason.CROSSED_BOOK  // bid > ask в getSpread(); bid >= ask в normalize()
 OrderbookInvalidReason.EMPTY_BOOK    // нет ни bid, ни ask
 OrderbookInvalidReason.ONE_SIDED     // только bid или только ask
 OrderbookInvalidReason.STALE_DATA    // данные устарели
@@ -265,7 +265,8 @@ const spreadResult = ob.getSpread();
 if (!spreadResult.ok) {
   switch (spreadResult.error.getReason()) {
     case OrderbookInvalidReason.CROSSED_BOOK:
-      // bid >= ask — критично, торговать опасно
+      // bid > ask (getSpread) — критично, торговать опасно
+      // Примечание: normalize() строже — отвергает bid >= ask до создания Orderbook
       break;
     case OrderbookInvalidReason.EMPTY_BOOK:
       // нет ликвидности
