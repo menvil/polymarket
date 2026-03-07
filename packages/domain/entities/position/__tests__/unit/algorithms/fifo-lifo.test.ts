@@ -6,6 +6,8 @@
  * - CloseResult.position вместо CloseResult.newPosition
  * - PositionParams не содержит quantity/averageEntryPrice
  * - validateLotsConsistency удалена (lots = единственный источник истины)
+ * - timestamp → openedAt; close() принимает closedAt: Timestamp
+ * - fees убраны из Position
  */
 
 import { describe, it, expect } from '@jest/globals';
@@ -24,6 +26,7 @@ import Decimal from 'decimal.js';
 
 const TEST_ACCOUNT_ID = parseAccountId('venue:POLYMARKET:account-456')!;
 const TEST_ASSET_ID = AssetIdHelpers.USDC;
+const CLOSE_AT = Timestamp.of(new Decimal(9999999));
 
 /** Разворачивает Result или бросает ошибку — только для тестов */
 function unwrapOk<T>(result: { ok: true; value: T } | { ok: false; error: unknown }, msg?: string): T {
@@ -54,7 +57,7 @@ describe('FIFO/LIFO Algorithms', () => {
       instrumentId: asInstrumentId('market-abc')!,
       asset: TEST_ASSET_ID,
       side,
-      timestamp: Timestamp.now(),
+      openedAt: Timestamp.now(),
       lots,
     };
 
@@ -74,7 +77,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(60));
       const closePrice = Price.of(new Decimal(0.75));
 
-      const result = closeFIFO(position, closeQty, closePrice);
+      const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -107,7 +110,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(100));
       const closePrice = Price.of(new Decimal(0.75));
 
-      const result = closeFIFO(position, closeQty, closePrice);
+      const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -133,7 +136,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(60));
       const closePrice = Price.of(new Decimal(0.60));
 
-      const result = closeFIFO(position, closeQty, closePrice);
+      const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -154,7 +157,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.ZERO;
       const closePrice = Price.of(new Decimal(0.75));
 
-      const result = closeFIFO(position, closeQty, closePrice);
+      const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -169,7 +172,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(150)); // > 100
       const closePrice = Price.of(new Decimal(0.75));
 
-      const result = closeFIFO(position, closeQty, closePrice);
+      const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -185,14 +188,14 @@ describe('FIFO/LIFO Algorithms', () => {
         instrumentId: asInstrumentId('market-abc')!,
         asset: TEST_ASSET_ID,
         side: 'LONG',
-        timestamp: Timestamp.now(),
+        openedAt: Timestamp.now(),
         lots: [],
       }));
 
       const closeQty = Quantity.of(new Decimal(10));
       const closePrice = Price.of(new Decimal(0.75));
 
-      const result = closeFIFO(position, closeQty, closePrice);
+      const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
@@ -211,16 +214,15 @@ describe('FIFO/LIFO Algorithms', () => {
         instrumentId: positionBase.instrumentId,
         asset: positionBase.asset,
         side: positionBase.side,
-        timestamp: positionBase.timestamp,
+        openedAt: positionBase.openedAt,
         lots: positionBase.lots,
-        fees: positionBase.fees,
         realizedPnL: SignedQuantity.of(new Decimal(10)),
       }));
 
       const closeQty = Quantity.of(new Decimal(50));
       const closePrice = Price.of(new Decimal(0.75));
 
-      const result = closeFIFO(positionWithPnL, closeQty, closePrice);
+      const result = closeFIFO(positionWithPnL, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -238,7 +240,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(30));
       const closePrice = Price.of(new Decimal(0.75));
 
-      const result = closeFIFO(position, closeQty, closePrice);
+      const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -252,6 +254,23 @@ describe('FIFO/LIFO Algorithms', () => {
         // Закрыто частично
         expect(closedLots.length).toBe(1);
         expect(closedLots[0].closedQuantity.value().toNumber()).toBe(30);
+      }
+    });
+
+    it('should set closedAt as updatedAt on new position', () => {
+      const closedAt = Timestamp.of(new Decimal(9000));
+      const position = createPositionWithLots([createLot(100, 0.65, 100)]);
+
+      const result = closeFIFO(
+        position,
+        Quantity.of(new Decimal(50)),
+        Price.of(new Decimal(0.75)),
+        closedAt,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.position.updatedAt.toNumber()).toBe(9000);
       }
     });
   });
@@ -269,7 +288,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(60));
       const closePrice = Price.of(new Decimal(0.75));
 
-      const result = closeLIFO(position, closeQty, closePrice);
+      const result = closeLIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -294,6 +313,31 @@ describe('FIFO/LIFO Algorithms', () => {
       }
     });
 
+    it('should return remaining lots sorted ASC after LIFO close', () => {
+      const lot1 = createLot(50, 0.60, 100);
+      const lot2 = createLot(30, 0.65, 200);
+      const lot3 = createLot(20, 0.70, 300);
+
+      const position = createPositionWithLots([lot1, lot2, lot3]);
+
+      // Закрываем только lot3 (20) и 5 из lot2 — остаётся lot2_partial(25) + lot1(50)
+      const result = closeLIFO(
+        position,
+        Quantity.of(new Decimal(25)),
+        Price.of(new Decimal(0.75)),
+        CLOSE_AT,
+      );
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const { position: newPosition } = result.value;
+        // Оставшиеся лоты должны быть в ASC-порядке по timestamp
+        expect(newPosition.lots.length).toBe(2);
+        expect(newPosition.lots[0].timestamp.toNumber()).toBe(100); // lot1 первый
+        expect(newPosition.lots[1].timestamp.toNumber()).toBe(200); // lot2_partial второй
+      }
+    });
+
     it('should close entire position', () => {
       const lot1 = createLot(50, 0.60, 100);
       const lot2 = createLot(50, 0.70, 200);
@@ -304,7 +348,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(100));
       const closePrice = Price.of(new Decimal(0.75));
 
-      const result = closeLIFO(position, closeQty, closePrice);
+      const result = closeLIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -329,7 +373,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(60));
       const closePrice = Price.of(new Decimal(0.60));
 
-      const result = closeLIFO(position, closeQty, closePrice);
+      const result = closeLIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -354,9 +398,9 @@ describe('FIFO/LIFO Algorithms', () => {
       const closePrice = Price.of(new Decimal(0.75));
 
       // FIFO закроет дешевый лот первым
-      const fifoResult = closeFIFO(position, closeQty, closePrice);
+      const fifoResult = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
       // LIFO закроет дорогой лот первым
-      const lifoResult = closeLIFO(position, closeQty, closePrice);
+      const lifoResult = closeLIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(fifoResult.ok && lifoResult.ok).toBe(true);
       if (fifoResult.ok && lifoResult.ok) {
@@ -428,7 +472,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(0.0000005));
       const closePrice = Price.of(new Decimal(0.75));
 
-      const result = closeFIFO(position, closeQty, closePrice);
+      const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -445,7 +489,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(50));
       const closePrice = Price.of(new Decimal(0.65));
 
-      const result = closeFIFO(position, closeQty, closePrice);
+      const result = closeFIFO(position, closeQty, closePrice, CLOSE_AT);
 
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -463,7 +507,7 @@ describe('FIFO/LIFO Algorithms', () => {
       const closeQty = Quantity.of(new Decimal(50));
       const closePrice = Price.of(new Decimal(0.75));
 
-      closeFIFO(originalPosition, closeQty, closePrice);
+      closeFIFO(originalPosition, closeQty, closePrice, CLOSE_AT);
 
       // Оригинальная позиция не изменилась
       expect(originalPosition.quantity.value().toNumber()).toBe(originalQuantity);

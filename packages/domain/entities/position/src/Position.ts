@@ -10,7 +10,10 @@
  * - **quantity** = sum(lot.quantity) — derived getter
  * - **averageEntryPrice** = weighted average по лотам — derived getter
  * - **openedQuantity** — хранимое поле, не меняется при close() (исходный размер)
+ * - **openedAt** — timestamp первого открытия, неизменён
+ * - **updatedAt** — обновляется при close() и addLots()
  * - **Мутация**: `close()` → `computeClose()` → `applyClose()` → новый экземпляр
+ * - **Рост позиции**: `addLots()` → merge + sort → новый экземпляр с увеличенным openedQuantity
  *
  * ### Dependency graph (без циклов):
  * ```
@@ -30,10 +33,23 @@
  * - `quantity < openedQuantity` → PARTIALLY_CLOSED (были закрытия)
  * - `quantity === openedQuantity` → OPEN (закрытий не было)
  *
+ * ### Оптимизация сортировки:
+ * Лоты сортируются только в create() и addLots() — O(n log n) один раз.
+ * applyClose() получает уже отсортированные remainingLots:
+ * - FIFO: remainingLots от computeClose уже в ASC-порядке
+ * - LIFO: remainingLots от computeClose в DESC → close() делает reverse() → ASC
+ * Конструктор не сортирует — он доверяет вызывающей стороне.
+ *
  * @remarks
  * Почему не realizedPnL для PARTIALLY_CLOSED?
  * При закрытии по цене входа (closePrice == entryPrice) realizedPnL = 0,
  * но позиция всё равно частично закрыта. openedQuantity — корректный индикатор.
+ *
+ * @remarks
+ * Почему fees убраны из Position?
+ * Комиссии принадлежат Fill (исполнению ордера), а не Position.
+ * Позиция отражает рыночный риск; комиссии — это операционные расходы
+ * на уровне Fill/Ledger, а не позиции.
  *
  * @example
  * ```typescript
@@ -43,29 +59,34 @@
  * const lot = PositionLot.create({
  *   quantity: Quantity.of(new Decimal(100)),
  *   entryPrice: Price.of(new Decimal(0.65)),
- *   timestamp: Timestamp.now(),
+ *   timestamp: Timestamp.of(new Decimal(1705318200000)),
  * });
  *
+ * const now = Timestamp.now();
  * const result = Position.create({
  *   id: asPositionId('pos-123')!,
  *   accountId: parseAccountId('venue:POLYMARKET:account-456')!,
  *   instrumentId: asInstrumentId('market-abc-token-yes')!,
  *   asset: AssetIdHelpers.USDC,
  *   side: 'LONG',
- *   timestamp: Timestamp.now(),
+ *   openedAt: now,
  *   lots: [lot],
  * });
  *
  * if (result.ok) {
  *   const position = result.value;
- *   console.log(position.quantity.value().toNumber()); // 100 (derived from lots)
- *   console.log(position.openedQuantity.value().toNumber()); // 100 (stored)
+ *   const closeResult = position.close(
+ *     Quantity.of(new Decimal(50)),
+ *     Price.of(new Decimal(0.75)),
+ *     'FIFO',
+ *     Timestamp.now(),
+ *   );
  * }
  * ```
  */
 
 import { Result, Ok, Err } from '@polymarket/result';
-import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+import { Price, Quantity, Timestamp } from '@polymarket/value-objects';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
 import { ValidationError } from '@polymarket/errors';
 import type { PositionId, AccountId, InstrumentId, AssetId } from '@polymarket/ids';
@@ -117,6 +138,9 @@ export interface CloseResult {
  * - `quantity` и `averageEntryPrice` исключены — вычисляются из `lots`
  * - `openedQuantity` — исходный размер позиции, сохраняется неизменным через все close()
  *   Если не передан — устанавливается равным текущему quantity при создании
+ * - `openedAt` — timestamp первого открытия (неизменён)
+ * - `updatedAt` — timestamp последней операции (defaults to openedAt)
+ * - `fees` убраны — комиссии принадлежат Fill, не Position
  */
 export interface PositionParams {
   readonly id: PositionId;
@@ -124,11 +148,11 @@ export interface PositionParams {
   readonly instrumentId: InstrumentId;
   readonly asset: AssetId;
   readonly side: PositionSide;
-  readonly timestamp: Timestamp;
+  readonly openedAt: Timestamp;
+  readonly updatedAt?: Timestamp;
   readonly lots: readonly PositionLot[];
   readonly openedQuantity?: Quantity;
   readonly realizedPnL?: SignedQuantity;
-  readonly fees?: Fee;
 }
 
 /**
@@ -138,13 +162,16 @@ export interface PositionParams {
  * - `lots[]` — единственный источник истины
  * - `quantity` и `averageEntryPrice` — вычисляемые getters
  * - `openedQuantity` — хранимое поле, не изменяется при close()
- * - Конструктор сортирует лоты по timestamp ASC
+ * - `openedAt` — неизменяемый timestamp открытия
+ * - `updatedAt` — обновляется при каждом close() и addLots()
+ * - Конструктор НЕ сортирует лоты — только create() и addLots() сортируют
  * - `close()` возвращает новый экземпляр через `applyClose()`
  *
  * ### Инварианты:
- * - Все лоты в `lots` имеют quantity > 0 (проверяется в create())
- * - `lots` всегда отсортированы по timestamp ASC (гарантирует конструктор)
+ * - Все лоты в `lots` имеют quantity > 0 (проверяется в create() и addLots())
+ * - `lots` всегда отсортированы по timestamp ASC (гарантируют create() и addLots())
  * - `openedQuantity >= quantity` (исходный размер >= текущий)
+ * - `updatedAt >= openedAt` (последнее обновление не раньше открытия)
  */
 export class Position {
   public readonly id: PositionId;
@@ -152,19 +179,22 @@ export class Position {
   public readonly instrumentId: InstrumentId;
   public readonly asset: AssetId;
   public readonly side: PositionSide;
-  public readonly timestamp: Timestamp;
+  /** Timestamp первого открытия позиции — неизменён */
+  public readonly openedAt: Timestamp;
+  /** Timestamp последней операции (close/addLots) — defaults to openedAt */
+  public readonly updatedAt: Timestamp;
   public readonly lots: readonly PositionLot[];
   /**
-   * Исходный суммарный объём позиции при первом открытии.
+   * Исходный суммарный объём позиции.
    *
    * @remarks
    * Сохраняется неизменным через все close()-вызовы для корректного
    * определения статуса PARTIALLY_CLOSED.
+   * Увеличивается при addLots() (рост позиции).
    * При создании позиции с нуля = текущему quantity.
    */
   public readonly openedQuantity: Quantity;
   public readonly realizedPnL: SignedQuantity;
-  public readonly fees: Fee;
 
   /**
    * Derived getter: суммарный объём позиции из лотов
@@ -216,13 +246,14 @@ export class Position {
    *
    * @remarks
    * ### Гарантии конструктора:
-   * - Лоты сортируются по timestamp ASC (детерминированный порядок для FIFO)
+   * - Доверяет caller'у что lots уже отсортированы (create() и addLots() гарантируют это)
    * - `openedQuantity` устанавливается равным текущему quantity если не передан
+   * - `updatedAt` defaults to `openedAt` если не передан
    *
-   * ### Почему сортировка в конструкторе, а не в computeClose?
-   * computeClose возвращает remainingLots в порядке обработки (FIFO или LIFO).
-   * Конструктор восстанавливает канонический ASC-порядок, чтобы следующий
-   * closeFIFO работал корректно без повторной сортировки.
+   * ### Почему нет сортировки в конструкторе?
+   * Оптимизация: sort O(n log n) нужен только при внешней мутации (create, addLots).
+   * applyClose() уже знает порядок remainingLots и передаёт их отсортированными.
+   * Конструктор вызывается при каждом close() — избегаем лишний O(n log n).
    */
   private constructor(params: PositionParams) {
     this.id = params.id;
@@ -230,11 +261,11 @@ export class Position {
     this.instrumentId = params.instrumentId;
     this.asset = params.asset;
     this.side = params.side;
-    this.timestamp = params.timestamp;
-    // Сортируем лоты по timestamp ASC — единственная точка сортировки
-    this.lots = [...params.lots].sort((a, b) => a.timestamp.toNumber() - b.timestamp.toNumber());
+    this.openedAt = params.openedAt;
+    this.updatedAt = params.updatedAt ?? params.openedAt;
+    // Caller гарантирует отсортированный порядок
+    this.lots = params.lots as readonly PositionLot[];
     this.realizedPnL = params.realizedPnL ?? SignedQuantity.ZERO;
-    this.fees = params.fees || Fee.zero(params.asset);
     // openedQuantity: если не передан — текущий quantity (первое открытие)
     // Примечание: this.lots уже присвоен выше, поэтому this.quantity работает корректно
     this.openedQuantity = params.openedQuantity ?? this.quantity;
@@ -248,8 +279,12 @@ export class Position {
    *
    * @remarks
    * ### Валидации:
-   * - Обязательные identity-поля: id, accountId, instrumentId, asset, timestamp
+   * - Обязательные identity-поля: id, accountId, instrumentId, asset, openedAt
    * - Инварианты лотов: все лоты должны иметь quantity > 0
+   *
+   * ### Сортировка:
+   * Лоты сортируются по timestamp ASC перед созданием — единственная точка сортировки
+   * при внешнем создании. applyClose() передаёт уже отсортированные лоты напрямую.
    *
    * quantity и averageEntryPrice не требуют валидации — они вычислены из lots.
    *
@@ -263,7 +298,7 @@ export class Position {
    *   instrumentId: asInstrumentId('token-yes')!,
    *   asset: AssetIdHelpers.USDC,
    *   side: 'LONG',
-   *   timestamp: Timestamp.now(),
+   *   openedAt: Timestamp.now(),
    *   lots: [lot],
    * });
    * ```
@@ -297,10 +332,10 @@ export class Position {
       );
     }
 
-    if (!params.timestamp) {
+    if (!params.openedAt) {
       return Err(
-        new ValidationError('Timestamp is required', {
-          context: { field: 'timestamp', positionId: params.id },
+        new ValidationError('openedAt is required', {
+          context: { field: 'openedAt', positionId: params.id },
         })
       );
     }
@@ -318,7 +353,12 @@ export class Position {
       );
     }
 
-    return Ok(new Position(params));
+    // Сортируем лоты один раз при создании — O(n log n) только здесь
+    const sortedLots = [...params.lots].sort(
+      (a, b) => a.timestamp.toNumber() - b.timestamp.toNumber()
+    );
+
+    return Ok(new Position({ ...params, lots: sortedLots }));
   }
 
   /**
@@ -327,6 +367,7 @@ export class Position {
    * @param closeQuantity - Количество для закрытия
    * @param closePrice - Цена закрытия
    * @param strategy - 'FIFO' (старые лоты первые) или 'LIFO' (новые первые)
+   * @param closedAt - Timestamp операции закрытия (записывается в updatedAt)
    * @returns Result<CloseResult, ValidationError>
    *
    * @remarks
@@ -334,12 +375,14 @@ export class Position {
    * 1. FIFO: `orderedLots = this.lots` (уже отсортированы ASC)
    * 2. LIFO: `orderedLots = [...this.lots].reverse()` (DESC)
    * 3. `computeClose(orderedLots, side, qty, price)` — pure computation без Position
-   * 4. `applyClose(computation)` — Entity создаёт новый экземпляр
+   * 4. Определяем порядок remainingLots:
+   *    - FIFO: remainingLots уже в ASC → передаём as-is
+   *    - LIFO: remainingLots в DESC → reverse() → ASC
+   * 5. `applyClose(computation, sortedRemaining, closedAt)` — Entity создаёт новый экземпляр
    *
-   * ### Сортировка после close():
-   * `computeClose` возвращает `remainingLots` в порядке обработки.
-   * Конструктор Position всегда пересортирует лоты по timestamp ASC,
-   * восстанавливая канонический порядок для следующих операций.
+   * ### Оптимизация сортировки:
+   * Конструктор не сортирует лоты. close() передаёт уже отсортированные remainingLots,
+   * что позволяет избежать O(n log n) при каждом закрытии.
    *
    * @throws Не бросает — возвращает Result
    *
@@ -348,18 +391,21 @@ export class Position {
    * const result = position.close(
    *   Quantity.of(new Decimal(50)),
    *   Price.of(new Decimal(0.75)),
-   *   'FIFO'
+   *   'FIFO',
+   *   Timestamp.now(),
    * );
    * if (result.ok) {
    *   const { position: newPosition, realizedPnL } = result.value;
    *   // newPosition.getStatus() === 'PARTIALLY_CLOSED' или 'CLOSED'
+   *   // newPosition.updatedAt === closedAt
    * }
    * ```
    */
   public close(
     closeQuantity: Quantity,
     closePrice: Price,
-    strategy: 'FIFO' | 'LIFO'
+    strategy: 'FIFO' | 'LIFO',
+    closedAt: Timestamp,
   ): Result<CloseResult, ValidationError> {
     const orderedLots =
       strategy === 'FIFO' ? this.lots : [...this.lots].reverse();
@@ -369,7 +415,14 @@ export class Position {
       return computationResult;
     }
 
-    const newPosition = this.applyClose(computationResult.value);
+    // FIFO: computeClose итерирует ASC → remainingLots в ASC-порядке
+    // LIFO: computeClose итерирует DESC → remainingLots в DESC-порядке → обращаем
+    const sortedRemaining =
+      strategy === 'FIFO'
+        ? computationResult.value.remainingLots
+        : [...computationResult.value.remainingLots].reverse();
+
+    const newPosition = this.applyClose(computationResult.value, sortedRemaining, closedAt);
     return Ok({
       position: newPosition,
       realizedPnL: SignedQuantity.of(computationResult.value.totalRealizedPnL),
@@ -378,19 +431,106 @@ export class Position {
   }
 
   /**
+   * Добавляет новые лоты к позиции (рост позиции)
+   *
+   * @param newLots - Новые лоты для добавления
+   * @param addedAt - Timestamp операции добавления (записывается в updatedAt)
+   * @returns Result<Position, ValidationError>
+   *
+   * @remarks
+   * ### Алгоритм:
+   * 1. Валидация: newLots не пустой, нет лотов с quantity = 0
+   * 2. Merge: [...this.lots, ...newLots].sort(ASC)
+   * 3. openedQuantity += sum(newLots.quantity) (рост исходного размера)
+   * 4. updatedAt = addedAt
+   *
+   * ### Инварианты:
+   * - openedQuantity всегда растёт при addLots()
+   * - После addLots() lots отсортированы по timestamp ASC
+   *
+   * @throws Не бросает — возвращает Result
+   *
+   * @example
+   * ```typescript
+   * const moreLots = [newLot1, newLot2];
+   * const result = position.addLots(moreLots, Timestamp.now());
+   * if (result.ok) {
+   *   const grown = result.value;
+   *   // grown.openedQuantity > position.openedQuantity
+   *   // grown.quantity > position.quantity
+   * }
+   * ```
+   */
+  public addLots(
+    newLots: readonly PositionLot[],
+    addedAt: Timestamp,
+  ): Result<Position, ValidationError> {
+    if (newLots.length === 0) {
+      return Err(
+        new ValidationError('New lots must not be empty', {
+          context: { field: 'newLots', positionId: this.id },
+        })
+      );
+    }
+
+    const emptyLot = newLots.find(lot => lot.quantity.isZero());
+    if (emptyLot) {
+      return Err(
+        new ValidationError('New lots must not contain empty lots (zero quantity)', {
+          context: { field: 'newLots', positionId: this.id },
+        })
+      );
+    }
+
+    // Объединяем и сортируем лоты — O(n log n), но только при явном росте позиции
+    const mergedLots = [...this.lots, ...newLots].sort(
+      (a, b) => a.timestamp.toNumber() - b.timestamp.toNumber()
+    );
+
+    // openedQuantity растёт на сумму новых лотов
+    const addedQty = newLots.reduce(
+      (sum, lot) => sum.plus(lot.quantity.value()),
+      new Decimal(0)
+    );
+    const newOpenedQuantity = Quantity.of(this.openedQuantity.value().plus(addedQty));
+
+    return Ok(
+      new Position({
+        id: this.id,
+        accountId: this.accountId,
+        instrumentId: this.instrumentId,
+        asset: this.asset,
+        side: this.side,
+        openedAt: this.openedAt,
+        updatedAt: addedAt,
+        lots: mergedLots,
+        openedQuantity: newOpenedQuantity,
+        realizedPnL: this.realizedPnL,
+      })
+    );
+  }
+
+  /**
    * Применяет результат вычисления закрытия — создаёт новый экземпляр Position
    *
    * @param computation - Результат computeClose()
+   * @param sortedRemaining - Остаточные лоты в ASC-порядке (подготовлены caller'ом)
+   * @param closedAt - Timestamp операции закрытия
    * @returns Новый Position с обновлёнными лотами и накопленным realizedPnL
    *
    * @remarks
    * - Накапливает realizedPnL: newPnL = this.realizedPnL + computation.totalRealizedPnL
    * - Сохраняет `openedQuantity` неизменным (исходный размер позиции)
-   * - Конструктор пересортирует remainingLots по timestamp ASC
+   * - Принимает уже отсортированные sortedRemaining — конструктор не сортирует
+   * - updatedAt = closedAt (аудит-след операции закрытия)
    *
    * @internal
    */
-  private applyClose(computation: LotCloseComputation): Position {
+  private applyClose(
+    computation: LotCloseComputation,
+    sortedRemaining: readonly PositionLot[],
+    closedAt: Timestamp,
+  ): Position {
     const newRealizedPnL = this.realizedPnL.value().plus(computation.totalRealizedPnL);
     return new Position({
       id: this.id,
@@ -398,11 +538,11 @@ export class Position {
       instrumentId: this.instrumentId,
       asset: this.asset,
       side: this.side,
-      timestamp: this.timestamp,
-      lots: computation.remainingLots,
+      openedAt: this.openedAt,
+      updatedAt: closedAt,
+      lots: sortedRemaining,
       openedQuantity: this.openedQuantity, // сохраняем исходный размер
       realizedPnL: SignedQuantity.of(newRealizedPnL),
-      fees: this.fees,
     });
   }
 
@@ -507,14 +647,15 @@ export class Position {
    * @returns Record с string для Decimal-полей (сохранение точности)
    *
    * @remarks
-   * Decimal-поля (quantity, openedQuantity, averageEntryPrice, realizedPnL, fees) → string.
-   * timestamp → number (epoch ms).
+   * Decimal-поля (quantity, openedQuantity, averageEntryPrice, realizedPnL) → string.
+   * openedAt/updatedAt → number (epoch ms).
    *
    * @example
    * ```typescript
    * const json = position.toJSON();
    * console.log(json.quantity);       // '100' (string)
    * console.log(json.openedQuantity); // '100' (string)
+   * console.log(json.openedAt);       // 1705318200000 (number)
    * ```
    */
   public toJSON(): Record<string, unknown> {
@@ -527,10 +668,10 @@ export class Position {
       quantity: this.quantity.value().toString(),
       openedQuantity: this.openedQuantity.value().toString(),
       averageEntryPrice: this.averageEntryPrice.value().toString(),
-      timestamp: this.timestamp.toNumber(),
+      openedAt: this.openedAt.toNumber(),
+      updatedAt: this.updatedAt.toNumber(),
       status: this.getStatus(),
       realizedPnL: this.realizedPnL.value().toString(),
-      fees: this.fees.quantity.amount().value().toString(),
       lotsCount: this.lots.length,
     };
   }

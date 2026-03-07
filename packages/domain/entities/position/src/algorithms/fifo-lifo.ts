@@ -18,7 +18,7 @@
  * ```typescript
  * import { closeFIFO, closeLIFO } from './algorithms/fifo-lifo';
  *
- * const result = closeFIFO(position, closeQuantity, closePrice);
+ * const result = closeFIFO(position, closeQuantity, closePrice, Timestamp.now());
  * if (result.ok) {
  *   const { position: newPosition, realizedPnL } = result.value;
  *   console.log('Realized P&L:', realizedPnL.value().toString());
@@ -28,7 +28,7 @@
 
 import { Result } from '@polymarket/result';
 import { ValidationError } from '@polymarket/errors';
-import { Quantity, Price } from '@polymarket/value-objects';
+import { Quantity, Price, Timestamp } from '@polymarket/value-objects';
 import { Position, type CloseResult } from '../Position.js';
 
 // Re-export вспомогательных типов из lot-closing.ts
@@ -44,10 +44,11 @@ export type { CloseResult };
  * @param position - Позиция для закрытия
  * @param closeQuantity - Количество для закрытия
  * @param closePrice - Цена закрытия
+ * @param closedAt - Timestamp операции (записывается в updatedAt нового Position)
  * @returns Result<CloseResult, ValidationError>
  *
  * @remarks
- * Тонкая обёртка над `position.close(qty, price, 'FIFO')`.
+ * Тонкая обёртка над `position.close(qty, price, 'FIFO', closedAt)`.
  * FIFO закрывает самые старые лоты первыми (лоты уже отсортированы ASC в Position).
  *
  * ### Валидации (в lot-closing.ts):
@@ -62,7 +63,12 @@ export type { CloseResult };
  * // Lot 2: 30 @ 0.65 (timestamp: 200)
  * // Lot 3: 20 @ 0.70 (timestamp: 300)
  *
- * const result = closeFIFO(position, Quantity.of(new Decimal(60)), Price.of(new Decimal(0.75)));
+ * const result = closeFIFO(
+ *   position,
+ *   Quantity.of(new Decimal(60)),
+ *   Price.of(new Decimal(0.75)),
+ *   Timestamp.now(),
+ * );
  * if (result.ok) {
  *   const { position: newPos, realizedPnL } = result.value;
  *   // Закроются: Lot 1 полностью (50) + 10 из Lot 2
@@ -73,9 +79,10 @@ export type { CloseResult };
 export function closeFIFO(
   position: Position,
   closeQuantity: Quantity,
-  closePrice: Price
+  closePrice: Price,
+  closedAt: Timestamp,
 ): Result<CloseResult, ValidationError> {
-  return position.close(closeQuantity, closePrice, 'FIFO');
+  return position.close(closeQuantity, closePrice, 'FIFO', closedAt);
 }
 
 /**
@@ -84,10 +91,11 @@ export function closeFIFO(
  * @param position - Позиция для закрытия
  * @param closeQuantity - Количество для закрытия
  * @param closePrice - Цена закрытия
+ * @param closedAt - Timestamp операции (записывается в updatedAt нового Position)
  * @returns Result<CloseResult, ValidationError>
  *
  * @remarks
- * Тонкая обёртка над `position.close(qty, price, 'LIFO')`.
+ * Тонкая обёртка над `position.close(qty, price, 'LIFO', closedAt)`.
  * LIFO закрывает самые новые лоты первыми (лоты переворачиваются внутри Position.close()).
  *
  * ### Валидации (в lot-closing.ts):
@@ -102,7 +110,12 @@ export function closeFIFO(
  * // Lot 2: 30 @ 0.65 (timestamp: 200)
  * // Lot 3: 20 @ 0.70 (timestamp: 300)
  *
- * const result = closeLIFO(position, Quantity.of(new Decimal(60)), Price.of(new Decimal(0.75)));
+ * const result = closeLIFO(
+ *   position,
+ *   Quantity.of(new Decimal(60)),
+ *   Price.of(new Decimal(0.75)),
+ *   Timestamp.now(),
+ * );
  * if (result.ok) {
  *   const { position: newPos, realizedPnL } = result.value;
  *   // Закроются: Lot 3 (20) + Lot 2 (30) + 10 из Lot 1
@@ -113,7 +126,8 @@ export function closeFIFO(
 export function closeLIFO(
   position: Position,
   closeQuantity: Quantity,
-  closePrice: Price
+  closePrice: Price,
+  closedAt: Timestamp,
 ): Result<CloseResult, ValidationError> {
-  return position.close(closeQuantity, closePrice, 'LIFO');
+  return position.close(closeQuantity, closePrice, 'LIFO', closedAt);
 }
