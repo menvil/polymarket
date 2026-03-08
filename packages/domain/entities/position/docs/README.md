@@ -216,6 +216,7 @@ const totalPnL = position.getTotalPnL(currentPrice);
 - `strategy: 'LIFO'` — новые лоты первые
 
 **Валидации:**
+- `strategy` должна быть строго `'FIFO'` или `'LIFO'` (runtime-проверка; невалидная стратегия → `Err`)
 - `closeQuantity > 0`
 - `lots.length > 0`
 - `closeQuantity <= position.quantity`
@@ -350,6 +351,6 @@ const newRealizedPnL = this.realizedPnL.value().plus(computation.totalRealizedPn
 
 ## См. также
 
-- [Order Entity](../../order/docs/README.md)
+- [Order Entity](../../order/docs/order.md)
 - [Value Objects](../../../value-objects/docs/README.md)
-- [IDs Package](../../../foundation/ids/docs/README.md)
+- [IDs Package](../../../foundation/ids/README.md)
