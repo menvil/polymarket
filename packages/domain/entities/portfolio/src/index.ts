@@ -8,7 +8,7 @@
  * - **Portfolio** — aggregate root: balance + positions
  * - **PortfolioId** — branded type для идентификатора
  * - **PortfolioErrors** — PortfolioValidationError, PortfolioOperationError
- * - **PortfolioValuationService** — аналитика стоимости (вынесена из aggregate)
+ * - **getTotalValue / getTotalUnrealizedPnL** — оценка стоимости (требуют внешних цен)
  *
  * @example
  * ```typescript
@@ -16,7 +16,7 @@
  *   Portfolio,
  *   asPortfolioId,
  *   PortfolioValidationError,
- *   PortfolioValuationService,
+ *   getTotalValue,
  * } from '@polymarket/portfolio';
  *
  * const result = Portfolio.create({
@@ -36,7 +36,7 @@
 
 // Aggregate
 export { Portfolio } from './Portfolio.js';
-export type { PortfolioParams } from './Portfolio.js';
+export type { PortfolioParams, IPosition } from './Portfolio.js';
 
 // Value Objects
 export { type PortfolioId, parsePortfolioId, asPortfolioId } from './value-objects/index.js';
@@ -48,6 +48,5 @@ export { PortfolioValidationError, PortfolioOperationError } from '@polymarket/e
 export {
   getTotalValue,
   getTotalUnrealizedPnL,
-  type IValuablePosition,
   type PriceProvider,
 } from './services/PortfolioValuationService.js';

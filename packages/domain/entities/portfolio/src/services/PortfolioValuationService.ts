@@ -14,8 +14,8 @@
  * Portfolio aggregate не должен зависеть от рыночного состояния.
  *
  * ### Отсутствие cast:
- * Функции принимают `Iterable<IValuablePosition>` — caller предоставляет
- * позиции нужного типа. Нет `as IValuablePosition`, нет runtime-сюрпризов.
+ * Функции принимают `Iterable<IPosition>` — тот же тип, что возвращает
+ * `portfolio.getPositions()`. Нет промежуточных интерфейсов, нет cast.
  *
  * @example
  * ```typescript
@@ -28,34 +28,11 @@
  * ```
  */
 
-import Decimal from 'decimal.js';
 import type { InstrumentId } from '@polymarket/ids';
 import { Money, type SupportedCurrency } from '@polymarket/value-objects/money';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
+import Decimal from 'decimal.js';
 import type { IPosition } from '../Portfolio.js';
-
-/**
- * Интерфейс позиции с данными для оценки стоимости и P&L
- *
- * @remarks
- * Расширяет IPosition. Caller гарантирует соответствие типу —
- * нет unsafe cast внутри сервиса.
- */
-export interface IValuablePosition extends IPosition {
-  /** Количество в позиции */
-  readonly quantity: { value(): Decimal };
-  /** Сторона позиции */
-  readonly side: 'LONG' | 'SHORT';
-  /** Средняя цена входа */
-  readonly averageEntryPrice: { value(): Decimal };
-  /**
-   * Вычисляет unrealized P&L для заданной текущей цены
-   *
-   * @param currentPrice - Объект с методом value(): Decimal
-   * @returns Объект с методом value(): Decimal
-   */
-  getUnrealizedPnL(currentPrice: { value(): Decimal }): { value(): Decimal };
-}
 
 /**
  * Функция-провайдер текущих цен
@@ -82,7 +59,7 @@ export type PriceProvider = (instrumentId: InstrumentId) => { value(): Decimal }
  * ```
  */
 export function getTotalValue(
-  positions: Iterable<IValuablePosition>,
+  positions: Iterable<IPosition>,
   getPrice: PriceProvider,
   currency: SupportedCurrency
 ): Money {
@@ -119,7 +96,7 @@ export function getTotalValue(
  * ```
  */
 export function getTotalUnrealizedPnL(
-  positions: Iterable<IValuablePosition>,
+  positions: Iterable<IPosition>,
   getPrice: PriceProvider
 ): SignedQuantity {
   let total = new Decimal(0);

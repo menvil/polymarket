@@ -20,9 +20,12 @@
  * - Если позиция открыта — добавляет/обновляет в карте.
  * - Если `position.isClosed()` — удаляет из карты (позиция закрыта, хранить не нужно).
  *
- * **4. Валюация вынесена в `PortfolioValuationService`:**
- * `getTotalValue` и `getTotalUnrealizedPnL` — presentation/analytics,
- * не относятся к domain aggregate.
+ * **4. Валюация вынесена в `getTotalValue` / `getTotalUnrealizedPnL`:**
+ * Оценка рыночной стоимости требует текущих котировок — внешних данных,
+ * которые не являются частью доменного состояния Portfolio.
+ * Это не "presentation/analytics": risk checks, margin и liquidation
+ * используют те же расчёты — но они зависят от внешних цен,
+ * поэтому не встраиваются в агрегат.
  *
  * **5. Immutability:**
  * Все мутирующие методы возвращают НОВЫЙ Portfolio. Исходный не изменяется.
@@ -75,6 +78,7 @@
  * ```
  */
 
+import Decimal from 'decimal.js';
 import { Result, Ok, Err } from '@polymarket/result';
 import type { InstrumentId, AccountId } from '@polymarket/ids';
 import { InvalidBalanceError } from '@polymarket/errors';
@@ -84,20 +88,38 @@ import type { PortfolioId } from './value-objects/index.js';
 import { PortfolioValidationError } from '@polymarket/errors/portfolio';
 
 /**
- * Минимальный интерфейс позиции, необходимый Portfolio
+ * Полный контракт позиции, используемый Portfolio
  *
  * @remarks
  * Portfolio использует структурную типизацию — не зависит от конкретного
  * класса Position. Любой объект, реализующий IPosition, совместим.
  *
- * Это разделяет Portfolio и Position packages: Portfolio не нужна
- * скомпилированная Position для сборки.
+ * Контракт включает все поля, необходимые как для управления позицией
+ * (instrumentId, isClosed), так и для оценки риска и стоимости
+ * (quantity, side, averageEntryPrice, getUnrealizedPnL).
+ *
+ * Единый интерфейс устраняет необходимость в IValuablePosition —
+ * getTotalValue / getTotalUnrealizedPnL принимают Iterable<IPosition>
+ * без каких-либо cast на стороне caller.
  */
 export interface IPosition {
   /** Идентификатор торгового инструмента */
   readonly instrumentId: InstrumentId;
+  /** Текущее количество в позиции */
+  readonly quantity: { value(): Decimal };
+  /** Сторона позиции */
+  readonly side: 'LONG' | 'SHORT';
+  /** Средневзвешенная цена входа */
+  readonly averageEntryPrice: { value(): Decimal };
   /** Проверяет, закрыта ли позиция (quantity = 0) */
   isClosed(): boolean;
+  /**
+   * Вычисляет unrealized P&L для заданной текущей цены
+   *
+   * @param currentPrice - Объект с методом value(): Decimal
+   * @returns Объект с методом value(): Decimal
+   */
+  getUnrealizedPnL(currentPrice: { value(): Decimal }): { value(): Decimal };
 }
 
 /**

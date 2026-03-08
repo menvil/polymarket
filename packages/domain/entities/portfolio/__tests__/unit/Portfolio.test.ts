@@ -55,12 +55,30 @@ function makeInstrumentId(raw: string): InstrumentId {
   return raw as InstrumentId;
 }
 
+const ZERO = { value: () => new Decimal(0) };
+const PRICE = { value: () => new Decimal(0.65) };
+const QTY   = { value: () => new Decimal(100) };
+
 function makeOpenPosition(instrumentId: InstrumentId) {
-  return { instrumentId, isClosed: () => false };
+  return {
+    instrumentId,
+    quantity: QTY,
+    side: 'LONG' as const,
+    averageEntryPrice: PRICE,
+    isClosed: () => false,
+    getUnrealizedPnL: () => ZERO,
+  };
 }
 
 function makeClosedPosition(instrumentId: InstrumentId) {
-  return { instrumentId, isClosed: () => true };
+  return {
+    instrumentId,
+    quantity: ZERO,
+    side: 'LONG' as const,
+    averageEntryPrice: PRICE,
+    isClosed: () => true,
+    getUnrealizedPnL: () => ZERO,
+  };
 }
 
 // ==================== Тесты ====================
