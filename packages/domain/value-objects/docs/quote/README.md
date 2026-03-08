@@ -491,7 +491,7 @@ console.log(ageMs.toNumber());  // Возраст в миллисекундах
 const now = Timestamp.now();
 const age = quote.age(now);
 if (age.greaterThan(5000)) {
-  console.log('Котировка старше 5 секунд');
+  console.log('Quote is older than 5 seconds');
 }
 ```
 

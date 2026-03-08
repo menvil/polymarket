@@ -13,6 +13,10 @@ import { InvalidAmountError } from '../value-objects/InvalidAmountError.js';
 import { InvalidBalanceError } from '../value-objects/InvalidBalanceError.js';
 import { CurrencyMismatchError } from '../value-objects/CurrencyMismatchError.js';
 import { InvalidSpreadError } from '../value-objects/InvalidSpreadError.js';
+import { InvalidFeeError } from '../value-objects/InvalidFeeError.js';
+import { InvalidSideError } from '../value-objects/InvalidSideError.js';
+import { InvalidSignedQuantityError } from '../value-objects/InvalidSignedQuantityError.js';
+import { InvalidTimestampError } from '../value-objects/InvalidTimestampError.js';
 import { ArithmeticOverflowError } from '../value-objects/ArithmeticOverflowError.js';
 import { DivisionByZeroError } from '../value-objects/DivisionByZeroError.js';
 import { InvalidOperandError } from '../math/InvalidOperandError.js';
@@ -56,7 +60,8 @@ import { ErrorSource } from '../ErrorSource.js';
  * Категории ошибок:
  * - Валидация диапазонов: Price, Quantity, Percentage, Ratio, Amount
  * - Денежные значения: Money, Balance, CurrencyMismatch
- * - Торговые объекты: AssetQuantity, Spread, Quote, OutcomeToken
+ * - Торговые объекты: AssetQuantity, Fee, Side, SignedQuantity, Spread, Quote, OutcomeToken
+ * - Временные значения: Timestamp
  * - Математические операции: DivisionByZero, ArithmeticOverflow
  */
 /**
@@ -76,9 +81,14 @@ export type AnyTradingError =
   | CurrencyMismatchError
   // Торговые объекты
   | InvalidAssetQuantityError
+  | InvalidFeeError
+  | InvalidSideError
+  | InvalidSignedQuantityError
   | InvalidSpreadError
   | InvalidQuoteError
   | InvalidOutcomeTokenError
+  // Временные значения
+  | InvalidTimestampError
   // Математические операции
   | DivisionByZeroError
   | ArithmeticOverflowError

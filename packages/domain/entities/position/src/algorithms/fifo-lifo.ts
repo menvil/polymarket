@@ -46,6 +46,7 @@ export type { CloseResult };
  * @param closePrice - Цена закрытия
  * @param closedAt - Timestamp операции (записывается в updatedAt нового Position)
  * @returns Result<CloseResult, ValidationError>
+ * @throws {never} Ошибки возвращаются через Result — исключения не бросаются.
  *
  * @remarks
  * Тонкая обёртка над `position.close(qty, price, 'FIFO', closedAt)`.
@@ -93,6 +94,7 @@ export function closeFIFO(
  * @param closePrice - Цена закрытия
  * @param closedAt - Timestamp операции (записывается в updatedAt нового Position)
  * @returns Result<CloseResult, ValidationError>
+ * @throws {never} Ошибки возвращаются через Result — исключения не бросаются.
  *
  * @remarks
  * Тонкая обёртка над `position.close(qty, price, 'LIFO', closedAt)`.

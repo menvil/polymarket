@@ -72,9 +72,10 @@ const SIDE_SET = new Set<string>(ALL_SIDES);
  * @param value - Значение для проверки
  * @returns true если value это Side
  *
+ * @throws {never} Функция не бросает исключений — безопасная type guard проверка.
+ *
  * @remarks
  * Type guard для runtime проверки.
- * Never throws - безопасная проверка.
  * Использует SIDE_SET (производный от ALL_SIDES) для O(1) lookup —
  * добавление нового Side значения в ALL_SIDES автоматически обновляет эту проверку.
  *
