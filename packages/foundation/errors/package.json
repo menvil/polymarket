@@ -17,6 +17,18 @@
     "./value-objects": {
       "types": "./dist/value-objects/index.d.ts",
       "import": "./dist/value-objects/index.js"
+    },
+    "./market": {
+      "types": "./dist/market/index.d.ts",
+      "import": "./dist/market/index.js"
+    },
+    "./orderbook": {
+      "types": "./dist/orderbook/index.d.ts",
+      "import": "./dist/orderbook/index.js"
+    },
+    "./portfolio": {
+      "types": "./dist/portfolio/index.d.ts",
+      "import": "./dist/portfolio/index.js"
     }
   },
   "files": [
@@ -29,7 +41,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
-    "smoke:check": "node --input-type=module -e \"import('@polymarket/errors')\" && node --input-type=module -e \"import('@polymarket/errors/base')\" && node --input-type=module -e \"import('@polymarket/errors/value-objects')\"",
+    "smoke:check": "node --input-type=module -e \"import('@polymarket/errors')\" && node --input-type=module -e \"import('@polymarket/errors/base')\" && node --input-type=module -e \"import('@polymarket/errors/value-objects')\" && node --input-type=module -e \"import('@polymarket/errors/market')\"",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "lint:tests": "eslint __tests__ --ext .ts",

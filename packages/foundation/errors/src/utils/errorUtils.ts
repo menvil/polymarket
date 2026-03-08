@@ -13,6 +13,10 @@ import { InvalidAmountError } from '../value-objects/InvalidAmountError.js';
 import { InvalidBalanceError } from '../value-objects/InvalidBalanceError.js';
 import { CurrencyMismatchError } from '../value-objects/CurrencyMismatchError.js';
 import { InvalidSpreadError } from '../value-objects/InvalidSpreadError.js';
+import { InvalidFeeError } from '../value-objects/InvalidFeeError.js';
+import { InvalidSideError } from '../value-objects/InvalidSideError.js';
+import { InvalidSignedQuantityError } from '../value-objects/InvalidSignedQuantityError.js';
+import { InvalidTimestampError } from '../value-objects/InvalidTimestampError.js';
 import { ArithmeticOverflowError } from '../value-objects/ArithmeticOverflowError.js';
 import { DivisionByZeroError } from '../value-objects/DivisionByZeroError.js';
 import { InvalidOperandError } from '../math/InvalidOperandError.js';
@@ -56,10 +60,15 @@ import { ErrorSource } from '../ErrorSource.js';
  * Категории ошибок:
  * - Валидация диапазонов: Price, Quantity, Percentage, Ratio, Amount
  * - Денежные значения: Money, Balance, CurrencyMismatch
- * - Торговые объекты: AssetQuantity, Spread, Quote, OutcomeToken
+ * - Торговые объекты: AssetQuantity, Fee, Side, SignedQuantity, Spread, Quote, OutcomeToken
+ * - Временные значения: Timestamp
  * - Математические операции: DivisionByZero, ArithmeticOverflow
  */
-export type DomainError =
+/**
+ * @deprecated Используйте DomainError класс для доменных ошибок агрегатов.
+ * AnyTradingError — union всех известных VO/math ошибок для type-safe утилит.
+ */
+export type AnyTradingError =
   // Валидация диапазонов
   | InvalidPriceError
   | InvalidQuantityError
@@ -72,9 +81,14 @@ export type DomainError =
   | CurrencyMismatchError
   // Торговые объекты
   | InvalidAssetQuantityError
+  | InvalidFeeError
+  | InvalidSideError
+  | InvalidSignedQuantityError
   | InvalidSpreadError
   | InvalidQuoteError
   | InvalidOutcomeTokenError
+  // Временные значения
+  | InvalidTimestampError
   // Математические операции
   | DivisionByZeroError
   | ArithmeticOverflowError
@@ -84,7 +98,7 @@ export type DomainError =
 /**
  * Конструктор Domain Error
  */
-export type ErrorConstructor<TError extends DomainError> = new (
+export type ErrorConstructor<TError extends AnyTradingError> = new (
   message: string | ((context: Record<string, unknown>) => string),
   options?: { code?: string; context?: Record<string, unknown> }
 ) => TError;
@@ -194,7 +208,7 @@ export function toCause(e: unknown): { name: string; message: string; stack?: st
  * });
  * ```
  */
-export function toDecimal<TError extends DomainError>(
+export function toDecimal<TError extends AnyTradingError>(
   field: string,
   input: number | string | Decimal,
   reasonEnum: string,
@@ -323,7 +337,7 @@ export function toDecimal<TError extends DomainError>(
  * Фабрика ТОЛЬКО добавляет семантику (source, cause).
  * Трассировка (service, op, opChain) добавляется через rewrap в wrapOp.
  */
-export function expectedMathError<TError extends DomainError>(
+export function expectedMathError<TError extends AnyTradingError>(
   e: Error,
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
@@ -369,7 +383,7 @@ export function expectedMathError<TError extends DomainError>(
  * Фабрика ТОЛЬКО добавляет семантику (source, cause).
  * Трассировка (service, op, opChain) добавляется через rewrap в wrapOp.
  */
-export function unexpectedError<TError extends DomainError>(
+export function unexpectedError<TError extends AnyTradingError>(
   e: unknown,
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
@@ -402,7 +416,7 @@ export function unexpectedError<TError extends DomainError>(
  * Фабрика ТОЛЬКО добавляет семантику (source, reason, cause).
  * Трассировка (service, op, opChain) добавляется через rewrap в wrapOp.
  */
-export function developerMisuseError<TError extends DomainError>(
+export function developerMisuseError<TError extends AnyTradingError>(
   e: Error,
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
@@ -430,7 +444,7 @@ export function developerMisuseError<TError extends DomainError>(
  * Фабрика ТОЛЬКО добавляет семантику (source, reason, cause).
  * Трассировка (service, op, opChain) добавляется через rewrap в wrapOp.
  */
-export function coreInvariantError<TError extends DomainError>(
+export function coreInvariantError<TError extends AnyTradingError>(
   e: Error & { reason: string },
   ErrorConstructor: ErrorConstructor<TError>
 ): TError {
@@ -542,7 +556,9 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
     e.name === 'TokenBalanceInvariantViolation' ||
     e.name === 'SpreadInvariantViolation' ||
     e.name === 'QuoteInvariantViolation' ||
-    e.name === 'RatioInvariantViolation'
+    e.name === 'RatioInvariantViolation' ||
+    e.name === 'SignedQuantityInvariantViolation' ||
+    e.name === 'TimestampInvariantViolation'
   );
 }
 
@@ -599,7 +615,7 @@ export function isCoreInvariantViolation(e: unknown): e is Error & { reason: str
  * // }
  * ```
  */
-export function rewrap<TError extends DomainError>(
+export function rewrap<TError extends AnyTradingError>(
   serviceName: string,
   op: string,
   ctx: Record<string, unknown>,
@@ -771,7 +787,7 @@ export function rewrap<TError extends DomainError>(
  * // Если ошибка, opChain будет: ["MoneyService.add"]
  * ```
  */
-export function wrapOp<T, TError extends DomainError>(
+export function wrapOp<T, TError extends AnyTradingError>(
   serviceName: string,
   op: string,
   ctx: Record<string, unknown>,
@@ -875,7 +891,7 @@ export function wrapOp<T, TError extends DomainError>(
  * }
  * ```
  */
-export function currencyMismatchError<TError extends DomainError>(
+export function currencyMismatchError<TError extends AnyTradingError>(
   expected: string,
   actual: string,
   reasonEnum: string,

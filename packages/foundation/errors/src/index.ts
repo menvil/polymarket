@@ -11,6 +11,12 @@
  * - Severity для классификации ('low', 'medium', 'high', 'critical')
  * - Опциональный code для детальной классификации
  *
+ * ### Sub-path экспорты:
+ * - `@polymarket/errors` — базовые классы + foundation ошибки (этот модуль)
+ * - `@polymarket/errors/base` — только TradingError, ValidationError, ITradingError
+ * - `@polymarket/errors/value-objects` — ошибки value objects (InvalidPriceError, etc.)
+ * - `@polymarket/errors/market` — ошибки жизненного цикла Market entity
+ *
  * Использование:
  * ```typescript
  * import { TradingError, ErrorSeverity, ValidationError } from '@polymarket/errors';

@@ -86,6 +86,12 @@ export {
   AssetIdValidationError,
   assetIdToString,
   parseAssetId,
+  asPolymarketCtfToken,
   isCurrencyAsset,
   isOutcomeTokenAsset,
+  isPolymarketCtfToken,
 } from './AssetId.js';
+
+// Blockchain
+export type { TxHash } from './TxHash.js';
+export { asTxHash, unsafeTxHash } from './TxHash.js';
