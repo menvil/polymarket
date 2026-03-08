@@ -64,7 +64,7 @@ export interface IPosition {
   readonly side: 'LONG' | 'SHORT';
   readonly averageEntryPrice: { value(): Decimal };
   isClosed(): boolean;
-  getUnrealizedPnL(currentPrice: { value(): Decimal }): { value(): Decimal };
+  getUnrealizedPnL(currentPrice: Price): { value(): Decimal };
 }
 ```
 Реальный `Position` структурно совместим с `IPosition`. `getTotalValue` / `getTotalUnrealizedPnL` принимают `Iterable<IPosition>` без дополнительных интерфейсов или cast.
@@ -207,7 +207,7 @@ export interface IPosition {
   readonly side: 'LONG' | 'SHORT';
   readonly averageEntryPrice: { value(): Decimal };
   isClosed(): boolean;
-  getUnrealizedPnL(currentPrice: { value(): Decimal }): { value(): Decimal };
+  getUnrealizedPnL(currentPrice: Price): { value(): Decimal };
 }
 ```
 
