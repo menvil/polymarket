@@ -38,7 +38,6 @@
  *     ? `SignedQuantity cannot be NaN`
  *     : `SignedQuantity must be finite, got: ${ctx.value}`,
  *   {
- *     code: InvalidSignedQuantityError.code,
  *     context: { value: Infinity, reason: 'NON_FINITE' }
  *   }
  * );
@@ -55,7 +54,7 @@ import { TradingError, ErrorSeverity } from '../base/index.js';
  * Рекомендуемый код ошибки: INVALID_SIGNED_QUANTITY
  */
 export class InvalidSignedQuantityError extends TradingError {
-  public readonly severity: ErrorSeverity = 'low';
+  public override readonly severity: ErrorSeverity = 'low';
 
   /**
    * Рекомендуемый код ошибки

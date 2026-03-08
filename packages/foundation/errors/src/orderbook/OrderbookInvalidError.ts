@@ -143,10 +143,7 @@ export class OrderbookInvalidError extends TradingError {
     message: string | ((context: Record<string, unknown>) => string),
     options?: { context?: Record<string, unknown> }
   ) {
-    super(message, {
-      ...options,
-      code: ORDERBOOK_INVALID_ERROR_CODE,
-    });
+    super(message, options);
   }
 
   /**

@@ -109,33 +109,14 @@ export function testTradingError(options: SharedErrorTestOptions): void {
       });
 
       it('должен сохранять code', () => {
-        // Некоторые классы имеют фиксированный статический код (например, OrderbookInvalidError),
-        // который принудительно применяется в конструкторе и не может быть переопределён.
-        // Определяем это поведенчески: если передать 'TEST_CODE' и код не изменился —
-        // класс имеет неизменяемый код.
-        const error = new ErrorClass(testMessage, { code: 'TEST_CODE' } as never);
-        const actualCode = error.code;
-        if (actualCode !== 'TEST_CODE') {
-          // Класс имеет неизменяемый код — проверяем, что это его статический код
-          const fixedCode = (ErrorClass as unknown as { code?: string }).code;
-          expect(actualCode).toBe(fixedCode);
-        } else {
-          expect(actualCode).toBe('TEST_CODE');
-        }
+        const error = new ErrorClass(testMessage, { code: 'TEST_CODE' });
+        expect(error.code).toBe('TEST_CODE');
       });
 
       it('должен работать с code и context вместе', () => {
         const context = { field: 'price', value: -10 };
-        // Некоторые классы имеют фиксированный статический код (например, OrderbookInvalidError),
-        // который принудительно применяется в конструкторе и не может быть переопределён.
-        const error = new ErrorClass(testMessage, { code: 'TEST_CODE', context } as never);
-        const actualCode = error.code;
-        if (actualCode !== 'TEST_CODE') {
-          const fixedCode = (ErrorClass as unknown as { code?: string }).code;
-          expect(actualCode).toBe(fixedCode);
-        } else {
-          expect(actualCode).toBe('TEST_CODE');
-        }
+        const error = new ErrorClass(testMessage, { code: 'TEST_CODE', context });
+        expect(error.code).toBe('TEST_CODE');
         expect(error.context).toEqual(context);
       });
 
@@ -230,20 +211,16 @@ export function testTradingError(options: SharedErrorTestOptions): void {
       });
 
       it('должен сериализовать с code', () => {
-        // Некоторые классы имеют фиксированный статический код (например, OrderbookInvalidError),
-        // который принудительно применяется в конструкторе и не может быть переопределён.
-        // Определяем фактический код поведенчески.
         const error = new ErrorClass(testMessage, {
           code: 'TEST_CODE',
           context: { field: 'price', value: -10 },
-        } as never);
-        const expectedCode = error.code ?? 'TEST_CODE';
+        });
 
         const json = error.toJSON();
 
         expect(json).toEqual({
           name: expectedName,
-          code: expectedCode,
+          code: 'TEST_CODE',
           message: testMessage,
           severity: expectedSeverity,
           timestamp: error.timestamp.toISOString(),
@@ -252,21 +229,17 @@ export function testTradingError(options: SharedErrorTestOptions): void {
       });
 
       it('должен работать с JSON.stringify()', () => {
-        // Некоторые классы имеют фиксированный статический код (например, OrderbookInvalidError),
-        // который принудительно применяется в конструкторе и не может быть переопределён.
-        // Определяем фактический код поведенчески.
         const error = new ErrorClass(testMessage, {
           code: 'TEST_CODE',
           context: { field: 'price' },
-        } as never);
-        const expectedCode = error.code ?? 'TEST_CODE';
+        });
 
         // Проверяем что JSON.stringify автоматически вызывает toJSON()
         const jsonString = JSON.stringify(error);
         const parsed = JSON.parse(jsonString);
 
         expect(parsed.name).toBe(expectedName);
-        expect(parsed.code).toBe(expectedCode);
+        expect(parsed.code).toBe('TEST_CODE');
         expect(parsed.severity).toBe(expectedSeverity);
       });
     });

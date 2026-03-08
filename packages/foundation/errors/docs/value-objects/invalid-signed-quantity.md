@@ -176,7 +176,6 @@ class SignedQuantityService {
         new InvalidSignedQuantityError(
           'Cannot divide by zero',
           {
-            code: InvalidSignedQuantityError.code,
             context: {
               quantity: qty.getValue().toString(),
               divisor: 0,

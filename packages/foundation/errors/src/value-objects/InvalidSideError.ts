@@ -18,9 +18,8 @@
  * // Статическое сообщение
  * throw new InvalidSideError('Side must be BUY or SELL');
  *
- * // С кодом и контекстом (рекомендуется)
+ * // С контекстом (рекомендуется)
  * throw new InvalidSideError('Invalid side value', {
- *   code: InvalidSideError.code,
  *   context: { value: 'UNKNOWN', reason: 'INVALID_VALUE' }
  * });
  *
@@ -28,7 +27,6 @@
  * throw new InvalidSideError(
  *   (ctx) => `Invalid side: "${ctx.value}". Expected BUY or SELL`,
  *   {
- *     code: InvalidSideError.code,
  *     context: { value: 'buy', reason: 'INVALID_VALUE' }
  *   }
  * );
@@ -40,7 +38,6 @@
  *     ? 'Side cannot be empty'
  *     : `Invalid side value: "${ctx.value}"`,
  *   {
- *     code: InvalidSideError.code,
  *     context: { value: '', reason: 'EMPTY' }
  *   }
  * );

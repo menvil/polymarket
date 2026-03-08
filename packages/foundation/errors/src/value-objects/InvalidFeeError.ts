@@ -19,9 +19,8 @@
  * // Статическое сообщение
  * throw new InvalidFeeError('Fee cannot be negative');
  *
- * // С кодом и контекстом (рекомендуется)
+ * // С контекстом (рекомендуется)
  * throw new InvalidFeeError('Invalid fee value', {
- *   code: InvalidFeeError.code,
  *   context: { value: -1, reason: 'NEGATIVE' }
  * });
  *
@@ -29,7 +28,6 @@
  * throw new InvalidFeeError(
  *   (ctx) => `Invalid fee: ${ctx.reason}`,
  *   {
- *     code: InvalidFeeError.code,
  *     context: { value: NaN, reason: 'NOT_FINITE' }
  *   }
  * );
@@ -41,7 +39,6 @@
  *     ? `Fee cannot be negative: ${ctx.value}`
  *     : `Invalid fee value: ${ctx.value}`,
  *   {
- *     code: InvalidFeeError.code,
  *     context: { value: -10, reason: 'NEGATIVE' }
  *   }
  * );

@@ -166,7 +166,6 @@ class FeeValidator {
         new InvalidFeeError(
           (ctx) => `Fee ${ctx.amount} exceeds maximum ${ctx.max}`,
           {
-            code: InvalidFeeError.code,
             context: {
               amount,
               max: maxFee,

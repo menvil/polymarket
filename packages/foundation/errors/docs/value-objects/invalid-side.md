@@ -89,7 +89,6 @@ class SideService {
         new InvalidSideError(
           (ctx) => `Invalid side: "${ctx.original}". Expected buy or sell`,
           {
-            code: InvalidSideError.code,
             context: {
               original: value,
               normalized,
