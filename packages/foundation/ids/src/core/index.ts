@@ -94,4 +94,4 @@ export {
 
 // Blockchain
 export type { TxHash } from './TxHash.js';
-export { asTxHash, unsafeTxHash } from './TxHash.js';
+export { asTxHash } from './TxHash.js';

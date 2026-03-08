@@ -52,7 +52,6 @@ class SideService {
         new InvalidSideError(
           (ctx) => `Invalid side: "${ctx.value}". Expected BUY or SELL`,
           {
-            code: InvalidSideError.code,
             context: { value, reason: 'INVALID_VALUE' }
           }
         )

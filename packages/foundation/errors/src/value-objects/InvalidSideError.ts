@@ -57,7 +57,7 @@ import { TradingError, ErrorSeverity } from '../base/index.js';
  * Рекомендуемый код ошибки: INVALID_SIDE
  */
 export class InvalidSideError extends TradingError {
-  public readonly severity: ErrorSeverity = 'low';
+  public override readonly severity: ErrorSeverity = 'low';
 
   /**
    * Рекомендуемый код ошибки

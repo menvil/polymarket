@@ -65,8 +65,9 @@ import { ErrorSource } from '../ErrorSource.js';
  * - Математические операции: DivisionByZero, ArithmeticOverflow
  */
 /**
- * @deprecated Используйте DomainError класс для доменных ошибок агрегатов.
- * AnyTradingError — union всех известных VO/math ошибок для type-safe утилит.
+ * @deprecated Используйте `TradingError` напрямую для доменных ошибок агрегатов.
+ * `AnyTradingError` остаётся частью публичного API для утилит (`toDecimal`, `wrapOp`, `rewrap`)
+ * и не будет удалён без мажорной версии. Устарел только для использования ВНЕ этих утилит.
  */
 export type AnyTradingError =
   // Валидация диапазонов

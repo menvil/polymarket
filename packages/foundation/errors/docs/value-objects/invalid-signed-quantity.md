@@ -53,7 +53,6 @@ class SignedQuantity {
         new InvalidSignedQuantityError(
           (ctx) => `Invalid signed quantity: ${ctx.reason}`,
           {
-            code: InvalidSignedQuantityError.code,
             context: { value, reason: isNaN(value) ? 'NAN' : 'NON_FINITE' }
           }
         )
@@ -243,7 +242,7 @@ const positiveZero = SignedQuantity.create(0);
 
 // Они равны
 if (negativeZero.ok && positiveZero.ok) {
-  negativeZero.value.equals(positiveZero.value); // true
+  negativeZero.value.getValue().equals(positiveZero.value.getValue()); // true
 }
 ```
 
@@ -350,7 +349,7 @@ SignedQuantity.create(0);   // ✅ Ok(SignedQuantity)
 
 ## Связанные ошибки
 
-- [InvalidQuantityError](./invalid-quantity.md) - валидация неотрицательных количеств
+- [InvalidQuantityError](./invalid-quantity.md) - валидация положительных количеств (ноль недопустим)
 - [InvalidAmountError](./invalid-amount.md) - универсальная валидация чисел
 - [DivisionByZeroError](./division-by-zero.md) - деление на ноль
 

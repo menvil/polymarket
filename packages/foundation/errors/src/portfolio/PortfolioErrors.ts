@@ -73,7 +73,7 @@ export class PortfolioValidationError extends ValidationError {
  * ```
  */
 export class PortfolioOperationError extends TradingError {
-  public readonly severity: ErrorSeverity = 'medium';
+  public override readonly severity: ErrorSeverity = 'medium';
 
   /** @internal */
   public static readonly code = 'PORTFOLIO_OPERATION_ERROR';

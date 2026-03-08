@@ -18,9 +18,8 @@
  * // Статическое сообщение
  * throw new InvalidSignedQuantityError('SignedQuantity cannot be NaN');
  *
- * // С кодом и контекстом (рекомендуется)
+ * // С контекстом (рекомендуется)
  * throw new InvalidSignedQuantityError('Invalid signed quantity', {
- *   code: InvalidSignedQuantityError.code,
  *   context: { value: NaN, reason: 'NAN' }
  * });
  *
@@ -28,7 +27,6 @@
  * throw new InvalidSignedQuantityError(
  *   (ctx) => `Invalid signed quantity: ${ctx.reason}`,
  *   {
- *     code: InvalidSignedQuantityError.code,
  *     context: { value: Infinity, reason: 'NON_FINITE' }
  *   }
  * );

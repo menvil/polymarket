@@ -40,7 +40,7 @@ import { Result, Ok, Err } from '@polymarket/result';
 ### 1. Базовое использование
 
 ```typescript
-import { TimestampService } from '@polymarket/value-objects/timestamp';
+import { TimestampService } from '@polymarket/value-objects';
 
 // TimestampService.create() автоматически truncate дробные значения
 const result = TimestampService.create(1609459200000.789);
@@ -58,7 +58,7 @@ console.log(timestamp.toISO()); // "2021-01-01T00:00:00.000Z"
 ### 2. Обработка невалидных значений
 
 ```typescript
-import { TimestampService } from '@polymarket/value-objects/timestamp';
+import { TimestampService } from '@polymarket/value-objects';
 
 function processTimestamp(value: number) {
   const result = TimestampService.create(value);
@@ -162,7 +162,7 @@ const quoteResult = createQuote(0.45, 0.55, Date.now());
 ### 5. Проверка устаревания (staleness)
 
 ```typescript
-import { TimestampService } from '@polymarket/value-objects/timestamp';
+import { TimestampService } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 
 // Создание timestamp 5 секунд назад
@@ -243,7 +243,6 @@ class TimestampService {
         new InvalidTimestampError(
           (ctx) => `Invalid ISO string: "${ctx.value}"`,
           {
-            code: InvalidTimestampError.code,
             context: { value: iso, reason: 'INVALID_ISO' }
           }
         )

@@ -59,7 +59,6 @@ class Fee {
         new InvalidFeeError(
           'Fee must be a finite number',
           {
-            code: InvalidFeeError.code,
             context: { amount, currency, reason: 'NOT_FINITE' }
           }
         )
@@ -71,7 +70,6 @@ class Fee {
         new InvalidFeeError(
           (ctx) => `Fee cannot be negative: ${ctx.amount}`,
           {
-            code: InvalidFeeError.code,
             context: { amount, currency, reason: 'NEGATIVE' }
           }
         )
@@ -114,7 +112,6 @@ class FeeCalculator {
   }
 
   static calculateWithdrawalFee(
-    amount: number,
     flatFee: number = 0.001
   ): Result<Fee, InvalidFeeError> {
     return Fee.create(flatFee, 'USDC');

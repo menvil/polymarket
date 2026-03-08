@@ -16,6 +16,8 @@
  * - `@polymarket/errors/base` — только TradingError, ValidationError, ITradingError
  * - `@polymarket/errors/value-objects` — ошибки value objects (InvalidPriceError, etc.)
  * - `@polymarket/errors/market` — ошибки жизненного цикла Market entity
+ * - `@polymarket/errors/orderbook` — ошибки orderbook (OrderbookInvalidError, OrderbookValidationError)
+ * - `@polymarket/errors/portfolio` — ошибки portfolio (PortfolioValidationError, PortfolioOperationError)
  *
  * Использование:
  * ```typescript

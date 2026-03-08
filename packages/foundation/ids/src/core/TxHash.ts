@@ -28,6 +28,7 @@ const MAX_TX_HASH_LENGTH = 132;
  *
  * @param raw - Строка для парсинга
  * @returns TxHash или undefined если формат невалидный
+ * @throws {never} Не бросает исключений — невалидный формат возвращает undefined.
  *
  * @remarks
  * Базовые ограничения:
@@ -49,10 +50,10 @@ export function asTxHash(raw: string): TxHash | undefined {
 }
 
 /**
- * Unsafe constructor - bypasses validation
+ * Небезопасный конструктор — обходит валидацию
  *
  * @internal
- * @param raw - Raw string (без валидации)
+ * @param raw - Сырая строка (без валидации)
  * @returns TxHash
  *
  * @remarks

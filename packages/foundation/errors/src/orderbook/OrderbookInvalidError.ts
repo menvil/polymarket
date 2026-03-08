@@ -141,11 +141,11 @@ export class OrderbookInvalidError extends TradingError {
 
   constructor(
     message: string | ((context: Record<string, unknown>) => string),
-    options?: { code?: string; context?: Record<string, unknown> }
+    options?: { context?: Record<string, unknown> }
   ) {
     super(message, {
-      code: ORDERBOOK_INVALID_ERROR_CODE,
       ...options,
+      code: ORDERBOOK_INVALID_ERROR_CODE,
     });
   }
 
@@ -154,6 +154,17 @@ export class OrderbookInvalidError extends TradingError {
    *
    * @param error - Любая ошибка
    * @returns true если ошибка является OrderbookInvalidError
+   * @throws {never} Не бросает исключений — безопасная проверка типа.
+   *
+   * @remarks
+   * Используется для разветвления обработки ошибок в Result-цепочках.
+   *
+   * @example
+   * ```typescript
+   * if (OrderbookInvalidError.isOrderbookInvalidError(err)) {
+   *   console.error('Invalid orderbook:', err.getReason());
+   * }
+   * ```
    */
   public static isOrderbookInvalidError(error: unknown): error is OrderbookInvalidError {
     return error instanceof OrderbookInvalidError;
@@ -162,7 +173,19 @@ export class OrderbookInvalidError extends TradingError {
   /**
    * Получить причину невалидности из context
    *
-   * @returns OrderbookInvalidReason или undefined
+   * @returns OrderbookInvalidReason или undefined если context отсутствует
+   * @throws {never} Не бросает исключений.
+   *
+   * @remarks
+   * Извлекает поле `reason` из context, установленного при создании ошибки.
+   *
+   * @example
+   * ```typescript
+   * const reason = err.getReason();
+   * if (reason === OrderbookInvalidReason.CROSSED_BOOK) {
+   *   // crossed book
+   * }
+   * ```
    */
   public getReason(): OrderbookInvalidReason | undefined {
     return (this.context as OrderbookInvalidContext | undefined)?.reason;
@@ -172,6 +195,17 @@ export class OrderbookInvalidError extends TradingError {
    * Проверить, является ли ошибка crossed book
    *
    * @returns true если reason === CROSSED_BOOK
+   * @throws {never} Не бросает исключений.
+   *
+   * @remarks
+   * Удобный предикат для частного случая CROSSED_BOOK.
+   *
+   * @example
+   * ```typescript
+   * if (err.isCrossedBook()) {
+   *   logger.error('Crossed book detected — halting trading');
+   * }
+   * ```
    */
   public isCrossedBook(): boolean {
     return this.getReason() === OrderbookInvalidReason.CROSSED_BOOK;
@@ -181,6 +215,17 @@ export class OrderbookInvalidError extends TradingError {
    * Проверить, является ли ошибка stale data
    *
    * @returns true если reason === STALE_DATA
+   * @throws {never} Не бросает исключений.
+   *
+   * @remarks
+   * Удобный предикат для частного случая STALE_DATA.
+   *
+   * @example
+   * ```typescript
+   * if (err.isStaleData()) {
+   *   logger.warn('Stale orderbook data — skipping update');
+   * }
+   * ```
    */
   public isStaleData(): boolean {
     return this.getReason() === OrderbookInvalidReason.STALE_DATA;

@@ -59,7 +59,7 @@ import { TradingError, ErrorSeverity } from '../base/index.js';
  * Рекомендуемый код ошибки: INVALID_TIMESTAMP
  */
 export class InvalidTimestampError extends TradingError {
-  public readonly severity: ErrorSeverity = 'low';
+  public override readonly severity: ErrorSeverity = 'low';
 
   /**
    * Рекомендуемый код ошибки
