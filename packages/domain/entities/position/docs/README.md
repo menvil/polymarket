@@ -9,7 +9,7 @@
 - [Использование](#использование)
 - [API Reference](#api-reference)
 - [FIFO/LIFO Алгоритмы](#fifolifo-алгоритмы)
-- [P&L Расчеты](#pnl-расчеты)
+- [PnL Расчеты](#pnl-расчеты)
 
 ## Обзор
 
@@ -216,6 +216,7 @@ const totalPnL = position.getTotalPnL(currentPrice);
 - `strategy: 'LIFO'` — новые лоты первые
 
 **Валидации:**
+
 - `strategy` должна быть строго `'FIFO'` или `'LIFO'` (runtime-проверка; невалидная стратегия → `Err`)
 - `closeQuantity > 0`
 - `lots.length > 0`
@@ -229,6 +230,7 @@ const totalPnL = position.getTotalPnL(currentPrice);
 - Лоты объединяются и сортируются по timestamp ASC
 
 **Валидации:**
+
 - `newLots.length > 0`
 - Нет лотов с `quantity = 0`
 
@@ -319,7 +321,7 @@ computeClose(orderedLots, side, closeQuantity, closePrice)
 LotCloseComputation { remainingLots, totalRealizedPnL, closedLots }
 ```
 
-## P&L Расчеты
+## PnL Расчеты
 
 ### Формулы
 
