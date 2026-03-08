@@ -15,6 +15,11 @@
  * - **Мутация**: `close()` → `computeClose()` → `applyClose()` → новый экземпляр
  * - **Рост позиции**: `addLots()` → merge + sort → новый экземпляр с увеличенным openedQuantity
  *
+ * ### Инвариант сортировки:
+ * `lots` всегда отсортированы по `timestamp` ASC — конструктор гарантирует это
+ * для **любого** пути создания: create(), applyClose(), addLots().
+ * Это критично для корректности FIFO: `closeFIFO` использует `this.lots` as-is.
+ *
  * ### Dependency graph (без циклов):
  * ```
  * PositionLot.ts  → value-objects
@@ -33,12 +38,6 @@
  * - `quantity < openedQuantity` → PARTIALLY_CLOSED (были закрытия)
  * - `quantity === openedQuantity` → OPEN (закрытий не было)
  *
- * ### Оптимизация сортировки:
- * Лоты сортируются только в create() и addLots() — O(n log n) один раз.
- * applyClose() получает уже отсортированные remainingLots:
- * - FIFO: remainingLots от computeClose уже в ASC-порядке
- * - LIFO: remainingLots от computeClose в DESC → close() делает reverse() → ASC
- * Конструктор не сортирует — он доверяет вызывающей стороне.
  *
  * @remarks
  * Почему не realizedPnL для PARTIALLY_CLOSED?
@@ -169,7 +168,7 @@ export interface PositionParams {
  *
  * ### Инварианты:
  * - Все лоты в `lots` имеют quantity > 0 (проверяется в create() и addLots())
- * - `lots` всегда отсортированы по timestamp ASC (гарантируют create() и addLots())
+ * - `lots` всегда отсортированы по timestamp ASC (гарантирует **конструктор**)
  * - `openedQuantity >= quantity` (исходный размер >= текущий)
  * - `updatedAt >= openedAt` (последнее обновление не раньше открытия)
  */
@@ -246,14 +245,17 @@ export class Position {
    *
    * @remarks
    * ### Гарантии конструктора:
-   * - Доверяет caller'у что lots уже отсортированы (create() и addLots() гарантируют это)
+   * - Сортирует лоты по timestamp ASC — инвариант выполняется для **любого** пути создания
+   *   (create, applyClose, addLots). Конструктор — единственная точка контроля инварианта.
    * - `openedQuantity` устанавливается равным текущему quantity если не передан
    * - `updatedAt` defaults to `openedAt` если не передан
    *
-   * ### Почему нет сортировки в конструкторе?
-   * Оптимизация: sort O(n log n) нужен только при внешней мутации (create, addLots).
-   * applyClose() уже знает порядок remainingLots и передаёт их отсортированными.
-   * Конструктор вызывается при каждом close() — избегаем лишний O(n log n).
+   * ### Почему sort в конструкторе, а не только в create()/addLots()?
+   * Инвариант "lots всегда ASC" критичен для корректности FIFO.
+   * TypeScript не запрещает `new Position(unsortedLots)` внутри пакета —
+   * любой новый метод (applyClose, addLots и т.д.) мог бы нарушить порядок.
+   * Центральный sort в конструкторе устраняет этот класс ошибок раз и навсегда.
+   * Для позиций с типичным числом лотов (10-50) O(n log n) незначимо.
    */
   private constructor(params: PositionParams) {
     this.id = params.id;
@@ -263,8 +265,8 @@ export class Position {
     this.side = params.side;
     this.openedAt = params.openedAt;
     this.updatedAt = params.updatedAt ?? params.openedAt;
-    // Caller гарантирует отсортированный порядок
-    this.lots = params.lots as readonly PositionLot[];
+    // Конструктор гарантирует ASC-порядок для всех путей создания
+    this.lots = [...params.lots].sort((a, b) => a.timestamp.toNumber() - b.timestamp.toNumber());
     this.realizedPnL = params.realizedPnL ?? SignedQuantity.ZERO;
     // openedQuantity: если не передан — текущий quantity (первое открытие)
     // Примечание: this.lots уже присвоен выше, поэтому this.quantity работает корректно
@@ -283,8 +285,8 @@ export class Position {
    * - Инварианты лотов: все лоты должны иметь quantity > 0
    *
    * ### Сортировка:
-   * Лоты сортируются по timestamp ASC перед созданием — единственная точка сортировки
-   * при внешнем создании. applyClose() передаёт уже отсортированные лоты напрямую.
+   * Конструктор сортирует лоты по timestamp ASC — инвариант гарантируется
+   * для всех путей создания, включая applyClose() и addLots().
    *
    * quantity и averageEntryPrice не требуют валидации — они вычислены из lots.
    *
@@ -353,12 +355,7 @@ export class Position {
       );
     }
 
-    // Сортируем лоты один раз при создании — O(n log n) только здесь
-    const sortedLots = [...params.lots].sort(
-      (a, b) => a.timestamp.toNumber() - b.timestamp.toNumber()
-    );
-
-    return Ok(new Position({ ...params, lots: sortedLots }));
+    return Ok(new Position(params));
   }
 
   /**
@@ -372,17 +369,11 @@ export class Position {
    *
    * @remarks
    * ### Алгоритм:
-   * 1. FIFO: `orderedLots = this.lots` (уже отсортированы ASC)
+   * 1. FIFO: `orderedLots = this.lots` (уже отсортированы ASC конструктором)
    * 2. LIFO: `orderedLots = [...this.lots].reverse()` (DESC)
    * 3. `computeClose(orderedLots, side, qty, price)` — pure computation без Position
-   * 4. Определяем порядок remainingLots:
-   *    - FIFO: remainingLots уже в ASC → передаём as-is
-   *    - LIFO: remainingLots в DESC → reverse() → ASC
-   * 5. `applyClose(computation, sortedRemaining, closedAt)` — Entity создаёт новый экземпляр
-   *
-   * ### Оптимизация сортировки:
-   * Конструктор не сортирует лоты. close() передаёт уже отсортированные remainingLots,
-   * что позволяет избежать O(n log n) при каждом закрытии.
+   * 4. `applyClose(computation, closedAt)` — Entity создаёт новый экземпляр
+   *    Конструктор нового Position пересортирует remainingLots → инвариант сохранён.
    *
    * @throws Не бросает — возвращает Result
    *
@@ -415,14 +406,7 @@ export class Position {
       return computationResult;
     }
 
-    // FIFO: computeClose итерирует ASC → remainingLots в ASC-порядке
-    // LIFO: computeClose итерирует DESC → remainingLots в DESC-порядке → обращаем
-    const sortedRemaining =
-      strategy === 'FIFO'
-        ? computationResult.value.remainingLots
-        : [...computationResult.value.remainingLots].reverse();
-
-    const newPosition = this.applyClose(computationResult.value, sortedRemaining, closedAt);
+    const newPosition = this.applyClose(computationResult.value, closedAt);
     return Ok({
       position: newPosition,
       realizedPnL: SignedQuantity.of(computationResult.value.totalRealizedPnL),
@@ -440,7 +424,7 @@ export class Position {
    * @remarks
    * ### Алгоритм:
    * 1. Валидация: newLots не пустой, нет лотов с quantity = 0
-   * 2. Merge: [...this.lots, ...newLots].sort(ASC)
+   * 2. Merge: [...this.lots, ...newLots] (конструктор отсортирует по timestamp ASC)
    * 3. openedQuantity += sum(newLots.quantity) (рост исходного размера)
    * 4. updatedAt = addedAt
    *
@@ -482,10 +466,8 @@ export class Position {
       );
     }
 
-    // Объединяем и сортируем лоты — O(n log n), но только при явном росте позиции
-    const mergedLots = [...this.lots, ...newLots].sort(
-      (a, b) => a.timestamp.toNumber() - b.timestamp.toNumber()
-    );
+    // Объединяем лоты — конструктор отсортирует
+    const mergedLots = [...this.lots, ...newLots];
 
     // openedQuantity растёт на сумму новых лотов
     const addedQty = newLots.reduce(
@@ -514,23 +496,18 @@ export class Position {
    * Применяет результат вычисления закрытия — создаёт новый экземпляр Position
    *
    * @param computation - Результат computeClose()
-   * @param sortedRemaining - Остаточные лоты в ASC-порядке (подготовлены caller'ом)
    * @param closedAt - Timestamp операции закрытия
    * @returns Новый Position с обновлёнными лотами и накопленным realizedPnL
    *
    * @remarks
    * - Накапливает realizedPnL: newPnL = this.realizedPnL + computation.totalRealizedPnL
    * - Сохраняет `openedQuantity` неизменным (исходный размер позиции)
-   * - Принимает уже отсортированные sortedRemaining — конструктор не сортирует
+   * - Конструктор нового Position гарантирует ASC-сортировку remainingLots
    * - updatedAt = closedAt (аудит-след операции закрытия)
    *
    * @internal
    */
-  private applyClose(
-    computation: LotCloseComputation,
-    sortedRemaining: readonly PositionLot[],
-    closedAt: Timestamp,
-  ): Position {
+  private applyClose(computation: LotCloseComputation, closedAt: Timestamp): Position {
     const newRealizedPnL = this.realizedPnL.value().plus(computation.totalRealizedPnL);
     return new Position({
       id: this.id,
@@ -540,7 +517,7 @@ export class Position {
       side: this.side,
       openedAt: this.openedAt,
       updatedAt: closedAt,
-      lots: sortedRemaining,
+      lots: computation.remainingLots,
       openedQuantity: this.openedQuantity, // сохраняем исходный размер
       realizedPnL: SignedQuantity.of(newRealizedPnL),
     });

@@ -143,7 +143,7 @@ describe('Position Entity', () => {
       }
     });
 
-    it('should sort lots by timestamp ASC in create()', () => {
+    it('should sort lots by timestamp ASC (guaranteed by constructor)', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
         entryPrice: Price.of(new Decimal(0.60)),
@@ -155,7 +155,7 @@ describe('Position Entity', () => {
         timestamp: Timestamp.of(new Decimal(100)), // старше, но передан вторым
       });
 
-      // Передаём в обратном порядке — create() должен отсортировать
+      // Передаём в обратном порядке — конструктор должен отсортировать
       const result = Position.create(createValidParams({ lots: [lot1, lot2] }));
 
       expect(result.ok).toBe(true);
