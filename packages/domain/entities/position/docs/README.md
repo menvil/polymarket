@@ -353,4 +353,4 @@ const newRealizedPnL = this.realizedPnL.value().plus(computation.totalRealizedPn
 
 - [Order Entity](../../order/docs/order.md)
 - [Value Objects](../../../value-objects/docs/README.md)
-- [IDs Package](../../../foundation/ids/README.md)
+- [IDs Package](../../../../foundation/ids/README.md)
