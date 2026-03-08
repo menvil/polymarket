@@ -330,7 +330,7 @@ describe('Fee', () => {
       const fee = Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal('100'))));
       const delta = fee.toDebitDelta();
 
-      expect(delta.amount.lte(0)).toBe(true);
+      expect(delta.amount.value().lte(0)).toBe(true);
     });
 
     it('не мутирует исходный Fee', () => {

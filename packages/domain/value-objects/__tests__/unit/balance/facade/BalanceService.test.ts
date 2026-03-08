@@ -492,6 +492,87 @@ describe('BalanceService', () => {
     });
   });
 
+  describe('credit()', () => {
+    const createBalance = () => {
+      const result = BalanceService.create(
+        Money.of(new Decimal(7000)),
+        Money.of(new Decimal(1000)),
+        TEST_ACCOUNT_ID,
+        TEST_VENUE_ID
+      );
+      if (!result.ok) throw new Error('Failed to create balance');
+      return result.value;
+    };
+
+    describe('успешное зачисление', () => {
+      it('увеличивает available, не меняет reserved', () => {
+        const balance = createBalance();
+        const result = BalanceService.credit(balance, Money.of(new Decimal(500)));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.available().value().toNumber()).toBe(7500);
+          expect(result.value.reserved().value().toNumber()).toBe(1000);
+          expect(result.value.total().value().toNumber()).toBe(8500);
+        }
+      });
+
+      it('зачисляет нулевую сумму (no-op)', () => {
+        const balance = createBalance();
+        const result = BalanceService.credit(balance, Money.of(new Decimal(0)));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.available().value().toNumber()).toBe(7000);
+        }
+      });
+
+      it('возвращает новый экземпляр (immutability)', () => {
+        const balance = createBalance();
+        const result = BalanceService.credit(balance, Money.of(new Decimal(500)));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value).not.toBe(balance);
+          expect(balance.available().value().toNumber()).toBe(7000); // оригинал не изменён
+        }
+      });
+
+      it('сохраняет accountId и venueId', () => {
+        const balance = createBalance();
+        const result = BalanceService.credit(balance, Money.of(new Decimal(100)));
+
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.value.accountId()).toEqual(TEST_ACCOUNT_ID);
+          expect(result.value.venueId()).toBe(TEST_VENUE_ID);
+        }
+      });
+    });
+
+    describe('ошибки зачисления', () => {
+      // ПРИМЕЧАНИЕ: Тест на CURRENCY_MISMATCH через Money.of невозможен напрямую,
+      // так как Money поддерживает только USDC и бросает при создании с другой валютой.
+      // Проверяем через мок ValidateCurrencyMatch.
+      it('возвращает Err при ошибке MoneyService.add', () => {
+        const balance = createBalance();
+
+        const addSpy = jest.spyOn(MoneyService, 'add').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock add error'))
+        );
+
+        const result = BalanceService.credit(balance, Money.of(new Decimal(500)));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Mock add error');
+        }
+
+        addSpy.mockRestore();
+      });
+    });
+  });
+
   describe('Facade Error Contract', () => {
     it('reserve: содержит op и операционные поля', () => {
       const balanceResult = BalanceService.create(Money.of(new Decimal(100)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
@@ -1300,6 +1381,33 @@ describe('BalanceService', () => {
         }
 
         subtractSpy.mockRestore();
+      });
+    });
+
+    describe('credit() MoneyService errors', () => {
+      // ПРИМЕЧАНИЕ: Тест на CURRENCY_MISMATCH невозможен напрямую — Money.of бросает при
+      // неизвестной валюте. Покрытие ветки MoneyService.add через мок:
+      it('обрабатывает ошибку MoneyService.add для available', () => {
+        const balanceResult = BalanceService.create(
+          Money.of(new Decimal(10000)),
+          Money.of(new Decimal(0)),
+          TEST_ACCOUNT_ID,
+          TEST_VENUE_ID
+        );
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
+
+        const addSpy = jest.spyOn(MoneyService, 'add').mockReturnValueOnce(
+          Err(new InvalidMoneyError('Mock add error'))
+        );
+
+        const result = BalanceService.credit(balanceResult.value, Money.of(new Decimal(500)));
+
+        expect(result.ok).toBe(false);
+        if (!result.ok) {
+          expect(result.error.message).toContain('Mock add error');
+        }
+
+        addSpy.mockRestore();
       });
     });
 
