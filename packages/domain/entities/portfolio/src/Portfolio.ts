@@ -299,11 +299,7 @@ export class Portfolio {
    * ```
    */
   public applyCredit(amount: Money): Result<Portfolio, InvalidBalanceError> {
-    const newAvailable = Money.of(
-      this.balance.available().value().plus(amount.value()),
-      this.balance.currency()
-    );
-    const balanceResult = BalanceService.updateAvailable(this.balance, newAvailable);
+    const balanceResult = BalanceService.credit(this.balance, amount);
     if (!balanceResult.ok) {
       return Err(balanceResult.error);
     }
@@ -391,18 +387,23 @@ export class Portfolio {
   }
 
   /**
-   * Возвращает все открытые позиции
+   * Возвращает итератор по всем открытым позициям
    *
-   * @returns Массив позиций (иммутабельный snapshot)
+   * @returns IterableIterator<IPosition> — без аллокации массива
+   *
+   * @remarks
+   * Предпочтительнее `Array.from()` в hot-path коде.
+   * Для конвертации в массив: `Array.from(portfolio.getPositions())`.
    *
    * @example
    * ```typescript
-   * const allPositions = portfolio.getAllPositions();
-   * allPositions.forEach(pos => console.log(pos.instrumentId));
+   * for (const position of portfolio.getPositions()) {
+   *   console.log(position.instrumentId);
+   * }
    * ```
    */
-  public getAllPositions(): readonly IPosition[] {
-    return Array.from(this.positions.values());
+  public getPositions(): IterableIterator<IPosition> {
+    return this.positions.values();
   }
 
   /**

@@ -44,5 +44,10 @@ export { type PortfolioId, parsePortfolioId, asPortfolioId } from './value-objec
 // Errors (re-export из @polymarket/errors/portfolio)
 export { PortfolioValidationError, PortfolioOperationError } from '@polymarket/errors/portfolio';
 
-// Services
-export { PortfolioValuationService } from './services/PortfolioValuationService.js';
+// Valuation
+export {
+  getTotalValue,
+  getTotalUnrealizedPnL,
+  type IValuablePosition,
+  type PriceProvider,
+} from './services/PortfolioValuationService.js';

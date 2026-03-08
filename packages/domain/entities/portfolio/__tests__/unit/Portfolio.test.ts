@@ -316,7 +316,7 @@ describe('Portfolio.getPosition() / hasPosition()', () => {
   });
 });
 
-describe('Portfolio.getAllPositions()', () => {
+describe('Portfolio.getPositions()', () => {
   it('возвращает все позиции', () => {
     const id1 = makeInstrumentId('instrument-1');
     const id2 = makeInstrumentId('instrument-2');
@@ -328,16 +328,16 @@ describe('Portfolio.getAllPositions()', () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    const all = result.value.getAllPositions();
+    const all = Array.from(result.value.getPositions());
     expect(all.length).toBe(2);
   });
 
-  it('возвращает пустой массив при отсутствии позиций', () => {
+  it('возвращает пустой итератор при отсутствии позиций', () => {
     const result = makePortfolio();
     expect(result.ok).toBe(true);
     if (!result.ok) return;
 
-    expect(result.value.getAllPositions()).toEqual([]);
+    expect(Array.from(result.value.getPositions())).toEqual([]);
   });
 });
 

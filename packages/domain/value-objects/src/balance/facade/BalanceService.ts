@@ -568,6 +568,65 @@ export class BalanceService {
    * console.log(result4.value); // false
    * ```
    */
+  /**
+   * Зачисляет средства в available (кредитование)
+   *
+   * @param balance - Текущий баланс
+   * @param amount - Сумма для зачисления
+   * @returns Result с новым Balance или InvalidBalanceError
+   * @throws Никогда — все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * Создаёт НОВЫЙ Balance с:
+   * - available = balance.available + amount
+   * - reserved = balance.reserved (не изменяется)
+   *
+   * **Use cases:**
+   * - Получение прибыли от закрытой позиции
+   * - Пополнение счёта
+   * - Возврат комиссии
+   *
+   * @example
+   * ```typescript
+   * const result = BalanceService.credit(balance, Money.of(new Decimal(500), 'USDC'));
+   * if (result.ok) {
+   *   console.log(result.value.available().value()); // available + 500
+   *   console.log(result.value.reserved().value());  // reserved (не изменился)
+   * }
+   * ```
+   */
+  public static credit(
+    balance: Balance,
+    amount: Money
+  ): Result<Balance, InvalidBalanceError> {
+    const op = 'credit';
+    const ctx = {
+      available: balance.available().value().toString(),
+      reserved: balance.reserved().value().toString(),
+      amount: amount.value().toString(),
+      currency: balance.currency(),
+    };
+
+    return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
+      const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
+      if (isErr(currencyCheck)) {
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, currencyCheck.error, InvalidBalanceError));
+      }
+
+      const newAvailableResult = this.addMoney(balance.available(), amount);
+      if (isErr(newAvailableResult)) {
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newAvailableResult.error, InvalidBalanceError));
+      }
+
+      return this.create(
+        newAvailableResult.value,
+        balance.reserved(),
+        balance.accountId(),
+        balance.venueId()
+      );
+    }, InvalidBalanceError);
+  }
+
   public static equals(
     balance1: Balance,
     balance2: Balance

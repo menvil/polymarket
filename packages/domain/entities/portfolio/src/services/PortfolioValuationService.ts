@@ -1,165 +1,135 @@
 /**
- * PortfolioValuationService — сервис оценки стоимости портфеля
+ * Функции оценки стоимости и P&L портфеля
  *
  * @remarks
- * Вынесен из Portfolio aggregate намеренно:
- * - Оценка портфеля — presentation/analytics логика, не доменная.
- * - Требует текущих цен инструментов (внешние данные, не часть домена).
- * - Portfolio aggregate не должен знать о рыночных котировках.
+ * Вынесены из Portfolio aggregate намеренно — требуют внешних рыночных цен,
+ * которые не являются частью доменного состояния.
  *
- * ### Архитектура
- * Статический класс-утилита. Не хранит состояния.
- * Принимает `Portfolio` + внешние котировки в виде callback или Map.
+ * ### Почему функции, не класс:
+ * Stateless-операции не нуждаются в классах. Функции проще тестировать,
+ * импортировать и использовать по отдельности.
  *
- * Использует `IValuablePosition` — структурный интерфейс для позиций с P&L.
- * Совместим с реальным Position entity из `@polymarket/position`.
+ * ### Почему не в Portfolio:
+ * Оценка требует текущих котировок — внешних данных.
+ * Portfolio aggregate не должен зависеть от рыночного состояния.
+ *
+ * ### Отсутствие cast:
+ * Функции принимают `Iterable<IValuablePosition>` — caller предоставляет
+ * позиции нужного типа. Нет `as IValuablePosition`, нет runtime-сюрпризов.
  *
  * @example
  * ```typescript
- * import { PortfolioValuationService, IValuablePosition } from './services/PortfolioValuationService';
+ * import { getTotalValue, getTotalUnrealizedPnL } from './services/PortfolioValuationService';
  *
  * const getPrice = (instrumentId: InstrumentId) => prices.get(instrumentId);
  *
- * const totalValue = PortfolioValuationService.getTotalValue(portfolio, getPrice);
- * console.log(totalValue.toNumber()); // сумма стоимостей всех позиций
- *
- * const pnl = PortfolioValuationService.getTotalUnrealizedPnL(portfolio, getPrice);
- * console.log(pnl.toNumber()); // суммарный unrealized P&L
+ * const totalValue = getTotalValue(portfolio.getPositions(), getPrice, 'USDC');
+ * const pnl = getTotalUnrealizedPnL(portfolio.getPositions(), getPrice);
  * ```
  */
 
 import Decimal from 'decimal.js';
 import type { InstrumentId } from '@polymarket/ids';
-import type { Portfolio, IPosition } from '../Portfolio.js';
+import { Money, type SupportedCurrency } from '@polymarket/value-objects/money';
+import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
+import type { IPosition } from '../Portfolio.js';
 
 /**
- * Интерфейс позиции с данными для оценки стоимости
+ * Интерфейс позиции с данными для оценки стоимости и P&L
  *
  * @remarks
- * Расширяет IPosition дополнительными полями для расчёта P&L и стоимости.
- * Совместим структурно с реальным Position entity.
+ * Расширяет IPosition. Caller гарантирует соответствие типу —
+ * нет unsafe cast внутри сервиса.
  */
 export interface IValuablePosition extends IPosition {
   /** Количество в позиции */
-  readonly quantity: {
-    /** Возвращает значение количества */
-    value(): Decimal;
-  };
+  readonly quantity: { value(): Decimal };
   /** Сторона позиции */
   readonly side: 'LONG' | 'SHORT';
   /** Средняя цена входа */
-  readonly averageEntryPrice: {
-    /** Возвращает значение цены */
-    value(): Decimal;
-  };
+  readonly averageEntryPrice: { value(): Decimal };
   /**
    * Вычисляет unrealized P&L для заданной текущей цены
    *
-   * @param currentPrice - Объект с методом value(): Decimal (совместим с Price VO)
-   * @returns Объект с методом value(): Decimal (совместим с SignedQuantity VO)
+   * @param currentPrice - Объект с методом value(): Decimal
+   * @returns Объект с методом value(): Decimal
    */
   getUnrealizedPnL(currentPrice: { value(): Decimal }): { value(): Decimal };
 }
 
 /**
- * Провайдер цен: функция, возвращающая цену по instrumentId
+ * Функция-провайдер текущих цен
  */
 export type PriceProvider = (instrumentId: InstrumentId) => { value(): Decimal } | undefined;
 
 /**
- * PortfolioValuationService — аналитика стоимости и P&L портфеля
+ * Считает суммарную стоимость позиций портфеля
+ *
+ * @param positions - Итерируемые позиции (из portfolio.getPositions())
+ * @param getPrice - Провайдер текущих цен
+ * @param currency - Валюта результата (обычно 'USDC')
+ * @returns Суммарная стоимость как Money
  *
  * @remarks
- * Статический класс. Не инстанциируется.
+ * Алгоритм: для каждой позиции вычисляет quantity × price.
+ * LONG — положительная стоимость, SHORT — отрицательная.
+ * Позиции без цены пропускаются.
+ *
+ * @example
+ * ```typescript
+ * const value = getTotalValue(portfolio.getPositions(), getPrice, 'USDC');
+ * console.log(value.value().toNumber()); // 12500
+ * ```
  */
-export class PortfolioValuationService {
-  /** @internal */
-  private constructor() {
-    throw new Error('PortfolioValuationService is a static class');
+export function getTotalValue(
+  positions: Iterable<IValuablePosition>,
+  getPrice: PriceProvider,
+  currency: SupportedCurrency
+): Money {
+  let total = new Decimal(0);
+
+  for (const position of positions) {
+    const price = getPrice(position.instrumentId);
+    if (!price) continue;
+
+    const positionValue = position.quantity.value().times(price.value());
+    total = position.side === 'LONG'
+      ? total.plus(positionValue)
+      : total.minus(positionValue);
   }
 
-  /**
-   * Считает суммарную стоимость всех позиций портфеля
-   *
-   * @param portfolio - Портфель с позициями типа IValuablePosition
-   * @param getPrice - Функция-провайдер цен по instrumentId
-   * @returns Суммарная стоимость (quantity * price) по всем позициям, Decimal
-   *
-   * @remarks
-   * Алгоритм:
-   * 1. Для каждой позиции из portfolio.getAllPositions():
-   *    - Запрашивает цену через getPrice(instrumentId).
-   *    - Если цена не найдена — пропускает позицию.
-   *    - Вычисляет стоимость: quantity * price.
-   * 2. Для LONG позиции — положительная стоимость.
-   * 3. Для SHORT позиции — отрицательная стоимость (short exposure).
-   *
-   * @example
-   * ```typescript
-   * const getPrice = (id: InstrumentId) => prices.get(id);
-   * const total = PortfolioValuationService.getTotalValue(portfolio, getPrice);
-   * // total = sum(quantity_i * price_i) for each position i
-   * ```
-   */
-  public static getTotalValue(
-    portfolio: Portfolio,
-    getPrice: PriceProvider
-  ): Decimal {
-    let total = new Decimal(0);
+  return Money.of(total, currency);
+}
 
-    for (const rawPosition of portfolio.getAllPositions()) {
-      const position = rawPosition as IValuablePosition;
-      const price = getPrice(position.instrumentId);
-      if (!price) continue;
+/**
+ * Считает суммарный unrealized P&L по всем позициям
+ *
+ * @param positions - Итерируемые позиции (из portfolio.getPositions())
+ * @param getPrice - Провайдер текущих цен
+ * @returns Суммарный unrealized P&L как SignedQuantity
+ *
+ * @remarks
+ * Делегирует расчёт каждой позиции через `position.getUnrealizedPnL(price)`.
+ * Позиции без цены пропускаются (PnL не считается).
+ *
+ * @example
+ * ```typescript
+ * const pnl = getTotalUnrealizedPnL(portfolio.getPositions(), getPrice);
+ * console.log(pnl.value().toNumber()); // -150.5
+ * ```
+ */
+export function getTotalUnrealizedPnL(
+  positions: Iterable<IValuablePosition>,
+  getPrice: PriceProvider
+): SignedQuantity {
+  let total = new Decimal(0);
 
-      const positionValue = position.quantity.value().times(price.value());
-      const signedValue = position.side === 'LONG' ? positionValue : positionValue.negated();
-      total = total.plus(signedValue);
-    }
+  for (const position of positions) {
+    const price = getPrice(position.instrumentId);
+    if (!price) continue;
 
-    return total;
+    total = total.plus(position.getUnrealizedPnL(price).value());
   }
 
-  /**
-   * Считает суммарный unrealized P&L по всем позициям портфеля
-   *
-   * @param portfolio - Портфель с позициями типа IValuablePosition
-   * @param getPrice - Функция-провайдер цен по instrumentId
-   * @returns Суммарный unrealized P&L, Decimal
-   *
-   * @remarks
-   * Алгоритм:
-   * 1. Для каждой позиции:
-   *    - Запрашивает цену через getPrice(instrumentId).
-   *    - Если цена не найдена — пропускает.
-   *    - Делегирует расчёт P&L в position.getUnrealizedPnL(price).
-   * 2. Суммирует P&L всех позиций.
-   *
-   * Логика расчёта P&L инкапсулирована в Position entity:
-   * - Для LONG: pnl = (currentPrice - avgEntryPrice) * quantity
-   * - Для SHORT: pnl = (avgEntryPrice - currentPrice) * quantity
-   *
-   * @example
-   * ```typescript
-   * const getPrice = (id: InstrumentId) => prices.get(id);
-   * const pnl = PortfolioValuationService.getTotalUnrealizedPnL(portfolio, getPrice);
-   * // pnl = sum(position.getUnrealizedPnL(price_i)) for each position i
-   * ```
-   */
-  public static getTotalUnrealizedPnL(
-    portfolio: Portfolio,
-    getPrice: PriceProvider
-  ): Decimal {
-    let totalPnL = new Decimal(0);
-
-    for (const rawPosition of portfolio.getAllPositions()) {
-      const position = rawPosition as IValuablePosition;
-      const price = getPrice(position.instrumentId);
-      if (!price) continue;
-
-      totalPnL = totalPnL.plus(position.getUnrealizedPnL(price).value());
-    }
-
-    return totalPnL;
-  }
+  return SignedQuantity.of(total);
 }
