@@ -204,6 +204,21 @@ describe('Market.create()', () => {
     }
   });
 
+  it('возвращает Err для outcomes с 3 элементами (только 2 допустимо)', () => {
+    const result = makeMarket({
+      outcomes: [
+        { token: YES_TOKEN, index: 0, name: 'Yes' },
+        { token: NO_TOKEN, index: 1, name: 'No' },
+        { token: YES_TOKEN, index: 2, name: 'Maybe' },
+      ] as never,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error).toBeInstanceOf(MarketValidationError);
+      expect(result.error.context?.field).toBe('outcomes');
+    }
+  });
+
   it('возвращает Err для state: null', () => {
     const result = makeMarket({ state: null as never });
     expect(result.ok).toBe(false);

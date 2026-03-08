@@ -10,6 +10,7 @@ import type { FillParams } from '@polymarket/fill';
 import {
   asFillId,
   asOrderId,
+  asMarketId,
   accountIdFromWallet,
   parseWalletAddress,
   asVenueId,
@@ -64,7 +65,7 @@ function makeFill(overrides?: Partial<FillParams>): Fill {
     orderId: asOrderId('order-456')!,
     accountId: makeAccountId(),
     venueId: asVenueId('POLYMARKET')!,
-    marketId: 'market-abc',
+    marketId: asMarketId('market-abc')!,
     tokenId,
     settlementAssetId: AssetIdHelpers.USDC,
     price: Price.of(new Decimal('0.62')),
@@ -150,6 +151,18 @@ describe('Ledger', () => {
       const entries = ledger.getEntries({ accountId: fill.accountId, asset: AssetIdHelpers.USDC });
       expect(entries.length).toBe(1); // только CASH_DELTA в USDC
       expect(entries[0].type).toBe('CASH_DELTA');
+    });
+
+    it('возвращает копию — мутация результата не влияет на внутренний массив', () => {
+      const ledger = new Ledger();
+      const fill = makeFill({ fee: makeZeroFee() });
+      ledger.append(FillLedgerAdapter.toLedgerEntries(fill));
+
+      const before = ledger.getEntries().length;
+      (ledger.getEntries() as LedgerEntry[]).push(
+        ...FillLedgerAdapter.toLedgerEntries(makeFill({ id: asFillId('extra')! }))
+      );
+      expect(ledger.getEntries().length).toBe(before); // внутренний массив не изменился
     });
   });
 
@@ -278,6 +291,37 @@ describe('Ledger', () => {
 
       const balances = ledger.getAllBalances(accountId);
       expect(balances.size).toBe(0);
+    });
+
+    it('не включает нулевые балансы (BUY + SELL того же токена)', () => {
+      const ledger = new Ledger();
+      const accountId = makeAccountId();
+      const tokenId = makeTokenId()!;
+
+      const buy = makeFill({
+        id: asFillId('fill-buy2')!,
+        accountId,
+        tokenId,
+        side: 'BUY',
+        size: Quantity.of(new Decimal('10')),
+        fee: makeZeroFee(),
+      });
+      const sell = makeFill({
+        id: asFillId('fill-sell2')!,
+        accountId,
+        tokenId,
+        side: 'SELL',
+        size: Quantity.of(new Decimal('10')),
+        fee: makeZeroFee(),
+      });
+
+      ledger.append(FillLedgerAdapter.toLedgerEntries(buy));
+      ledger.append(FillLedgerAdapter.toLedgerEntries(sell));
+
+      const balances = ledger.getAllBalances(accountId);
+      const tokenKey = assetIdToString(tokenId);
+      // Токен скомпенсирован — не должен присутствовать в Map
+      expect(balances.has(tokenKey)).toBe(false);
     });
   });
 

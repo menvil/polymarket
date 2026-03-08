@@ -203,7 +203,7 @@ export class Fill {
       );
     }
 
-    // Инвариант 3: если fee ненулевая, fee.asset должен совпадать с settlementAssetId
+    // Инвариант 2: если fee ненулевая, fee.asset должен совпадать с settlementAssetId
     // Это гарантирует корректность getNetCashFlow (сложение в одной валюте)
     if (!params.fee.isZero()) {
       const feeAssetStr = assetIdToString(params.fee.asset);

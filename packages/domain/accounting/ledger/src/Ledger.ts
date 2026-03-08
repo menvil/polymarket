@@ -117,7 +117,8 @@ export class Ledger {
    * ```
    */
   public getEntries(filter?: LedgerFilter): readonly LedgerEntry[] {
-    let result: readonly LedgerEntry[] = this._entries;
+    // Возвращаем копию чтобы внешний код не мог мутировать внутренний массив
+    let result: readonly LedgerEntry[] = [...this._entries];
 
     if (filter?.accountId !== undefined) {
       const accountStr = accountIdToString(filter.accountId);
@@ -193,6 +194,11 @@ export class Ledger {
       const key = assetIdToString(entry.balanceDelta.asset);
       const current = balances.get(key) ?? new Decimal(0);
       balances.set(key, current.plus(entry.balanceDelta.amount.value()));
+    }
+
+    // Фильтруем нулевые балансы — могут появиться при взаимной компенсации дебета/кредита
+    for (const [key, balance] of balances) {
+      if (balance.isZero()) balances.delete(key);
     }
 
     return balances;

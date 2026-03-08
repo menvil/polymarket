@@ -236,3 +236,23 @@ describe('PolymarketBookEventParser — нельзя создать экземп
     expect(() => new PolymarketBookEventParser()).toThrow(Error);
   });
 });
+
+describe('PolymarketBookEventParser.parse() — малформированные bids/asks', () => {
+  it('возвращает Err (не TypeError) если bids не массив', () => {
+    const event = { ...REAL_BOOK_EVENT, bids: null } as unknown as PolymarketBookEvent;
+    const result = PolymarketBookEventParser.parse(event);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message.toLowerCase()).toContain('array');
+    }
+  });
+
+  it('возвращает Err (не TypeError) если asks не массив', () => {
+    const event = { ...REAL_BOOK_EVENT, asks: undefined } as unknown as PolymarketBookEvent;
+    const result = PolymarketBookEventParser.parse(event);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message.toLowerCase()).toContain('array');
+    }
+  });
+});

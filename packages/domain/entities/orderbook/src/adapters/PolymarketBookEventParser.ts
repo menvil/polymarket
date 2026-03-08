@@ -57,6 +57,7 @@
  */
 
 import type { Result } from '@polymarket/result';
+import { Err } from '@polymarket/result';
 import { Orderbook } from '../core/Orderbook.js';
 import {
   OrderbookNormalizer,
@@ -173,6 +174,15 @@ export class PolymarketBookEventParser {
     event: PolymarketBookEvent,
     policy: NormalizationPolicy = PERMISSIVE_NORMALIZATION_POLICY
   ): Result<Orderbook, OrderbookValidationError | OrderbookInvalidError> {
+    // Runtime guard: при JS/as-кастах bids/asks могут оказаться не массивами
+    if (!Array.isArray(event.bids) || !Array.isArray(event.asks)) {
+      return Err(
+        new OrderbookValidationError('Book event bids and asks must be arrays', {
+          context: { bids: typeof event.bids, asks: typeof event.asks },
+        })
+      );
+    }
+
     // Строки передаются напрямую — PriceService/QuantityService/TimestampService принимают string
     const raw: RawOrderbook = {
       marketId: event.market,

@@ -310,7 +310,7 @@ export class Market {
     // (TypeScript гарантирует это статически, но защищаем от JS/as-кастов)
     if (
       !Array.isArray(props.outcomes) ||
-      props.outcomes.length < 2 ||
+      props.outcomes.length !== 2 ||
       !props.outcomes[0] ||
       !props.outcomes[1]
     ) {

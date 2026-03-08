@@ -8,6 +8,7 @@ import type { FillParams } from '@polymarket/fill';
 import {
   asFillId,
   asOrderId,
+  asMarketId,
   accountIdFromWallet,
   parseWalletAddress,
   asVenueId,
@@ -54,7 +55,7 @@ function makeFill(overrides?: Partial<FillParams>): Fill {
     orderId: asOrderId('order-456')!,
     accountId: makeAccountId(),
     venueId: asVenueId('POLYMARKET')!,
-    marketId: 'market-abc',
+    marketId: asMarketId('market-abc')!,
     tokenId,
     settlementAssetId: AssetIdHelpers.USDC,
     price: Price.of(new Decimal('0.62')),
