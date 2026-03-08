@@ -5,6 +5,7 @@ export default {
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
     '^@polymarket/errors$': '<rootDir>/../../../foundation/errors/src/index.ts',
+    '^@polymarket/errors/portfolio$': '<rootDir>/../../../foundation/errors/src/portfolio/index.ts',
     '^@polymarket/result$': '<rootDir>/../../../foundation/result/src/index.ts',
     '^@polymarket/ids$': '<rootDir>/../../../foundation/ids/src/index.ts',
     '^@polymarket/value-objects$': '<rootDir>/../../value-objects/src/index.ts',

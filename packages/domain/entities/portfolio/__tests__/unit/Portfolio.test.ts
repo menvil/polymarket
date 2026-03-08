@@ -14,7 +14,7 @@ import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { Portfolio } from '../../src/Portfolio.js';
 import { asPortfolioId } from '../../src/value-objects/index.js';
-import { PortfolioValidationError } from '../../src/errors/PortfolioErrors.js';
+import { PortfolioValidationError } from '@polymarket/errors/portfolio';
 import { Balance } from '@polymarket/value-objects/balance';
 import { Money } from '@polymarket/value-objects/money';
 import type { InstrumentId, AccountId, VenueId, WalletAddress } from '@polymarket/ids';

@@ -81,7 +81,7 @@ import { InvalidBalanceError } from '@polymarket/errors';
 import { Balance, BalanceService } from '@polymarket/value-objects/balance';
 import { Money } from '@polymarket/value-objects/money';
 import type { PortfolioId } from './value-objects/index.js';
-import { PortfolioValidationError } from './errors/PortfolioErrors.js';
+import { PortfolioValidationError } from '@polymarket/errors/portfolio';
 
 /**
  * Минимальный интерфейс позиции, необходимый Portfolio

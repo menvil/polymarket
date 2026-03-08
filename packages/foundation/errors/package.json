@@ -25,6 +25,10 @@
     "./orderbook": {
       "types": "./dist/orderbook/index.d.ts",
       "import": "./dist/orderbook/index.js"
+    },
+    "./portfolio": {
+      "types": "./dist/portfolio/index.d.ts",
+      "import": "./dist/portfolio/index.js"
     }
   },
   "files": [

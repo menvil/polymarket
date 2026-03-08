@@ -2,17 +2,19 @@
  * Ошибки Portfolio entity
  *
  * @remarks
- * - `PortfolioValidationError` — данные портфеля не прошли валидацию при создании.
- * - `PortfolioOperationError` — нарушение бизнес-правила при выполнении операции.
+ * Иерархия ошибок:
  *
- * **Архитектура:**
- * Оба класса расширяют `TradingError` из `@polymarket/errors`.
- * `PortfolioValidationError` имеет severity 'low' (пользовательская ошибка).
- * `PortfolioOperationError` имеет severity 'medium' (программная ошибка).
+ * ```
+ * TradingError
+ * ├── ValidationError
+ * │   └── PortfolioValidationError  — невалидные данные при Portfolio.create()
+ * └── TradingError
+ *     └── PortfolioOperationError   — нарушение бизнес-правила при операции
+ * ```
  *
  * @example
  * ```typescript
- * import { PortfolioValidationError, PortfolioOperationError } from './PortfolioErrors';
+ * import { PortfolioValidationError, PortfolioOperationError } from '@polymarket/errors/portfolio';
  *
  * // Ошибка валидации (например, пустой portfolioId)
  * throw new PortfolioValidationError('Portfolio ID is required', {
@@ -24,10 +26,12 @@
  *   context: { portfolioId: 'portfolio-abc', op: 'reserveForOrder' }
  * });
  * ```
+ *
+ * @packageDocumentation
  */
 
-import { TradingError, ValidationError } from '@polymarket/errors';
-import type { ErrorSeverity } from '@polymarket/errors';
+import { TradingError, ValidationError } from '../base/index.js';
+import type { ErrorSeverity } from '../base/index.js';
 
 /**
  * PortfolioValidationError — ошибка валидации данных портфеля
@@ -56,7 +60,6 @@ export class PortfolioValidationError extends ValidationError {
  * - reserveForOrder: недостаточно средств
  * - releaseReservation: недостаточно зарезервировано
  * - applyDebit: недостаточно средств
- * - и других операциях с балансом
  *
  * В отличие от PortfolioValidationError — это программная ошибка логики,
  * которую нужно обрабатывать на уровне приложения (например, отклонить ордер).

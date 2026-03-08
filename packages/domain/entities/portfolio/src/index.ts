@@ -41,8 +41,8 @@ export type { PortfolioParams } from './Portfolio.js';
 // Value Objects
 export { type PortfolioId, parsePortfolioId, asPortfolioId } from './value-objects/index.js';
 
-// Errors
-export { PortfolioValidationError, PortfolioOperationError } from './errors/PortfolioErrors.js';
+// Errors (re-export из @polymarket/errors/portfolio)
+export { PortfolioValidationError, PortfolioOperationError } from '@polymarket/errors/portfolio';
 
 // Services
 export { PortfolioValuationService } from './services/PortfolioValuationService.js';
