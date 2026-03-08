@@ -445,6 +445,18 @@ describe('FIFO/LIFO Algorithms', () => {
       expect(avgPrice).toBe(Price.MIN);
     });
 
+    it('should return minimum price when all lots have zero quantity (defensive guard)', () => {
+      // PositionLot.create не валидирует quantity > 0 (это делает Position.create).
+      // calculateWeightedAveragePrice имеет defensive guard для этого случая.
+      const zeroLot = PositionLot.create({
+        quantity: Quantity.ZERO,
+        entryPrice: Price.of(new Decimal(0.65)),
+        timestamp: Timestamp.of(new Decimal(100)),
+      });
+      const avgPrice = calculateWeightedAveragePrice([zeroLot]);
+      expect(avgPrice).toBe(Price.MIN);
+    });
+
     it('should return single lot price', () => {
       const lot = createLot(100, 0.65, 100);
       const avgPrice = calculateWeightedAveragePrice([lot]);

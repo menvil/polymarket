@@ -52,8 +52,10 @@
  *
  * @example
  * ```typescript
- * import { Position, PositionLot } from './Position';
+ * import { Position, PositionLot } from '@polymarket/position';
  * import { Quantity, Price, Timestamp } from '@polymarket/value-objects';
+ * import { asPositionId, asInstrumentId, parseAccountId, AssetIdHelpers } from '@polymarket/ids';
+ * import Decimal from 'decimal.js';
  *
  * const lot = PositionLot.create({
  *   quantity: Quantity.of(new Decimal(100)),
@@ -163,7 +165,7 @@ export interface PositionParams {
  * - `openedQuantity` — хранимое поле, не изменяется при close()
  * - `openedAt` — неизменяемый timestamp открытия
  * - `updatedAt` — обновляется при каждом close() и addLots()
- * - Конструктор НЕ сортирует лоты — только create() и addLots() сортируют
+ * - Конструктор сортирует лоты по timestamp ASC и freeze'ит объект
  * - `close()` возвращает новый экземпляр через `applyClose()`
  *
  * ### Инварианты:
@@ -247,6 +249,7 @@ export class Position {
    * ### Гарантии конструктора:
    * - Сортирует лоты по timestamp ASC — инвариант выполняется для **любого** пути создания
    *   (create, applyClose, addLots). Конструктор — единственная точка контроля инварианта.
+   * - Freeze'ит объект (`Object.freeze`) — runtime-защита неизменяемости
    * - `openedQuantity` устанавливается равным текущему quantity если не передан
    * - `updatedAt` defaults to `openedAt` если не передан
    *
@@ -271,6 +274,7 @@ export class Position {
     // openedQuantity: если не передан — текущий quantity (первое открытие)
     // Примечание: this.lots уже присвоен выше, поэтому this.quantity работает корректно
     this.openedQuantity = params.openedQuantity ?? this.quantity;
+    Object.freeze(this);
   }
 
   /**
@@ -284,9 +288,9 @@ export class Position {
    * - Обязательные identity-поля: id, accountId, instrumentId, asset, openedAt
    * - Инварианты лотов: все лоты должны иметь quantity > 0
    *
-   * ### Сортировка:
-   * Конструктор сортирует лоты по timestamp ASC — инвариант гарантируется
-   * для всех путей создания, включая applyClose() и addLots().
+   * ### Валидируемые инварианты:
+   * - `openedQuantity >= sum(lots)` — если `openedQuantity` передан явно
+   * - `updatedAt >= openedAt` — если `updatedAt` передан явно
    *
    * quantity и averageEntryPrice не требуют валидации — они вычислены из lots.
    *
@@ -355,6 +359,44 @@ export class Position {
       );
     }
 
+    // Инвариант: openedQuantity >= sum(lots)
+    // Если передан явно — проверяем, что он не меньше текущего quantity.
+    // (При rehydration из storage openedQuantity всегда >= quantity по природе операций.)
+    if (params.openedQuantity !== undefined) {
+      const currentQty = params.lots.reduce(
+        (sum, lot) => sum.plus(lot.quantity.value()),
+        new Decimal(0)
+      );
+      if (params.openedQuantity.value().lt(currentQty)) {
+        return Err(
+          new ValidationError('openedQuantity must be >= current quantity (sum of lots)', {
+            context: {
+              field: 'openedQuantity',
+              openedQuantity: params.openedQuantity.value().toString(),
+              currentQuantity: currentQty.toString(),
+              positionId: params.id,
+            },
+          })
+        );
+      }
+    }
+
+    // Инвариант: updatedAt >= openedAt
+    if (params.updatedAt !== undefined) {
+      if (params.updatedAt.toNumber() < params.openedAt.toNumber()) {
+        return Err(
+          new ValidationError('updatedAt must be >= openedAt', {
+            context: {
+              field: 'updatedAt',
+              updatedAt: params.updatedAt.toNumber(),
+              openedAt: params.openedAt.toNumber(),
+              positionId: params.id,
+            },
+          })
+        );
+      }
+    }
+
     return Ok(new Position(params));
   }
 
@@ -369,10 +411,11 @@ export class Position {
    *
    * @remarks
    * ### Алгоритм:
-   * 1. FIFO: `orderedLots = this.lots` (уже отсортированы ASC конструктором)
-   * 2. LIFO: `orderedLots = [...this.lots].reverse()` (DESC)
-   * 3. `computeClose(orderedLots, side, qty, price)` — pure computation без Position
-   * 4. `applyClose(computation, closedAt)` — Entity создаёт новый экземпляр
+   * 1. Валидация strategy — явная проверка, не implicit else (защита от runtime `as any`)
+   * 2. FIFO: `orderedLots = this.lots` (уже отсортированы ASC конструктором)
+   * 3. LIFO: `orderedLots = [...this.lots].reverse()` (DESC)
+   * 4. `computeClose(orderedLots, side, qty, price)` — pure computation без Position
+   * 5. `applyClose(computation, closedAt)` — Entity создаёт новый экземпляр
    *    Конструктор нового Position пересортирует remainingLots → инвариант сохранён.
    *
    * @throws Не бросает — возвращает Result
@@ -398,6 +441,15 @@ export class Position {
     strategy: 'FIFO' | 'LIFO',
     closedAt: Timestamp,
   ): Result<CloseResult, ValidationError> {
+    if (strategy !== 'FIFO' && strategy !== 'LIFO') {
+      return Err(
+        new ValidationError(
+          `Invalid close strategy: "${strategy as string}". Must be 'FIFO' or 'LIFO'`,
+          { context: { field: 'strategy', value: strategy, positionId: this.id } }
+        )
+      );
+    }
+
     const orderedLots =
       strategy === 'FIFO' ? this.lots : [...this.lots].reverse();
 

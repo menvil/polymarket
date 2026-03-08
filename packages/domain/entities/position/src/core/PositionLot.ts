@@ -18,18 +18,18 @@
  *
  * @example
  * ```typescript
- * import { PositionLot } from './PositionLot';
- * import { Price, Quantity, Timestamp, Fee } from '@polymarket/value-objects';
+ * import { PositionLot } from '@polymarket/position';
+ * import { Price, Quantity, Timestamp, Fee, AssetQuantity } from '@polymarket/value-objects';
  * import Decimal from 'decimal.js';
  *
  * const lot = PositionLot.create({
  *   quantity: Quantity.of(new Decimal(100)),
  *   entryPrice: Price.of(new Decimal(0.65)),
  *   timestamp: Timestamp.now(),
- *   fee: Fee.of(new Decimal(0.5)),
+ *   fee: Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(0.5)))),
  * });
  *
- * console.log(`Lot: ${lot.quantity.value} @ ${lot.entryPrice.value}`);
+ * console.log(`Lot: ${lot.quantity.value()} @ ${lot.entryPrice.value()}`);
  * console.log(`Is empty: ${lot.isEmpty()}`);
  * ```
  */
@@ -132,8 +132,8 @@ export class PositionLot {
    * // Частичное закрытие - осталось 60
    * const remainingLot = originalLot.withQuantity(Quantity.of(new Decimal(60)));
    *
-   * console.log(originalLot.quantity.value); // 100 (не изменился)
-   * console.log(remainingLot.quantity.value); // 60 (новый объект)
+   * console.log(originalLot.quantity.value()); // 100 (не изменился)
+   * console.log(remainingLot.quantity.value()); // 60 (новый объект)
    * ```
    */
   public withQuantity(newQuantity: Quantity): PositionLot {
@@ -156,7 +156,7 @@ export class PositionLot {
    *
    * @example
    * ```typescript
-   * const updatedLot = lot.withFee(Fee.of(new Decimal(1.0)));
+   * const updatedLot = lot.withFee(Fee.of(AssetQuantity.usdc(Quantity.of(new Decimal(1.0)))));
    * ```
    */
   public withFee(newFee: Fee): PositionLot {

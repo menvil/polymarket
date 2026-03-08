@@ -66,17 +66,13 @@ src/
 > но позиция всё равно частично закрыта.
 > `openedQuantity > quantity` — корректный и надёжный индикатор.
 
-### Оптимизация сортировки
+### Гарантии сортировки
 
-Лоты хранятся в ASC-порядке по `timestamp`. Сортировка происходит **только**:
-- `create()` — один раз при внешнем создании
-- `addLots()` — при слиянии с новыми лотами
+Лоты хранятся в ASC-порядке по `timestamp`. Конструктор Position сортирует лоты **при каждом создании** — включая `applyClose()` и `addLots()`. Это единственная точка контроля инварианта.
 
-`applyClose()` (вызывается при каждом `close()`) **не сортирует**:
-- FIFO: `computeClose` итерирует ASC → `remainingLots` уже в ASC-порядке
-- LIFO: `computeClose` итерирует DESC → `remainingLots` в DESC → `close()` делает `reverse()` → ASC
+Сложность: O(n log n) при каждом `close()`. Для типичного числа лотов (10-50) это незначимо.
 
-Результат: O(n log n) только при создании, O(1) при каждом `close()`.
+`closeFIFO` и `closeLIFO` работают корректно потому что `this.lots` всегда гарантированно в ASC-порядке.
 
 ## Использование
 
@@ -355,5 +351,5 @@ const newRealizedPnL = this.realizedPnL.value().plus(computation.totalRealizedPn
 ## См. также
 
 - [Order Entity](../../order/docs/README.md)
-- [Value Objects](../../../foundation/value-objects/README.md)
-- [IDs Package](../../../foundation/ids/README.md)
+- [Value Objects](../../../value-objects/docs/README.md)
+- [IDs Package](../../../foundation/ids/docs/README.md)

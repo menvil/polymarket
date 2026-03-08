@@ -130,6 +130,72 @@ describe('Position Entity', () => {
       }
     });
 
+    it('should reject openedQuantity < sum(lots)', () => {
+      const result = Position.create({
+        ...createValidParams(), // DEFAULT_LOT qty = 100
+        openedQuantity: Quantity.of(new Decimal(50)), // 50 < 100 — нарушение инварианта
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('openedQuantity must be >=');
+      }
+    });
+
+    it('should accept openedQuantity == sum(lots)', () => {
+      const result = Position.create({
+        ...createValidParams(), // DEFAULT_LOT qty = 100
+        openedQuantity: Quantity.of(new Decimal(100)), // ровно равно
+      });
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('should accept openedQuantity > sum(lots) (rehydration after partial close)', () => {
+      const result = Position.create({
+        ...createValidParams(), // DEFAULT_LOT qty = 100
+        openedQuantity: Quantity.of(new Decimal(200)), // больше текущего
+      });
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.getStatus()).toBe('PARTIALLY_CLOSED');
+      }
+    });
+
+    it('should reject updatedAt < openedAt', () => {
+      const result = Position.create({
+        ...createValidParams({
+          openedAt: Timestamp.of(new Decimal(5000)),
+        }),
+        updatedAt: Timestamp.of(new Decimal(1000)), // раньше openedAt — нарушение
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('updatedAt must be >=');
+      }
+    });
+
+    it('should accept updatedAt == openedAt', () => {
+      const ts = Timestamp.of(new Decimal(5000));
+      const result = Position.create({
+        ...createValidParams({ openedAt: ts }),
+        updatedAt: ts,
+      });
+
+      expect(result.ok).toBe(true);
+    });
+
+    it('should accept updatedAt > openedAt', () => {
+      const result = Position.create({
+        ...createValidParams({ openedAt: Timestamp.of(new Decimal(1000)) }),
+        updatedAt: Timestamp.of(new Decimal(5000)),
+      });
+
+      expect(result.ok).toBe(true);
+    });
+
     it('should accept provided realizedPnL', () => {
       const params = createValidParams({
         realizedPnL: SignedQuantity.of(new Decimal(50)),
@@ -421,7 +487,7 @@ describe('Position Entity', () => {
       }
     });
 
-    it('should accept lots with positive quantity', () => {
+    it('should accept lots with positive quantity and set correct state', () => {
       const validLot = PositionLot.create({
         quantity: Quantity.of(new Decimal(0.000001)),
         entryPrice: Price.of(new Decimal(0.65)),
@@ -431,6 +497,11 @@ describe('Position Entity', () => {
       const result = Position.create(createValidParams({ lots: [validLot] }));
 
       expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.lots.length).toBe(1);
+        expect(result.value.quantity.value().toNumber()).toBe(0.000001);
+        expect(result.value.getStatus()).toBe('OPEN');
+      }
     });
 
     it('should reject mix of valid and empty lots', () => {
@@ -992,6 +1063,25 @@ describe('Position Entity', () => {
       }
     });
 
+    it('should reject invalid strategy (not silently use LIFO)', () => {
+      const posResult = Position.create(createValidParams());
+      expect(posResult.ok).toBe(true);
+      if (!posResult.ok) return;
+
+      const result = posResult.value.close(
+        Quantity.of(new Decimal(50)),
+        Price.of(new Decimal(0.75)),
+        'RANDOM' as any,
+        CLOSE_AT,
+      );
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Invalid close strategy');
+        expect(result.error.message).toContain('RANDOM');
+      }
+    });
+
     it('should maintain sorted lots after LIFO close', () => {
       const lot1 = PositionLot.create({
         quantity: Quantity.of(new Decimal(50)),
@@ -1123,13 +1213,27 @@ describe('Position Entity', () => {
   });
 
   describe('Immutability', () => {
-    it('should have readonly lots array', () => {
+    it('should be frozen (Object.freeze)', () => {
       const result = Position.create(createValidParams());
 
       expect(result.ok).toBe(true);
       if (result.ok) {
         const position = result.value;
-        expect(Array.isArray(position.lots)).toBe(true);
+        expect(Object.isFrozen(position)).toBe(true);
+      }
+    });
+
+    it('should not allow property mutation at runtime', () => {
+      const result = Position.create(createValidParams());
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        const position = result.value;
+        // Попытка мутации должна быть проигнорирована (strict mode → TypeError,
+        // non-strict → silently ignored), но свойство не должно измениться
+        const originalSide = position.side;
+        try { (position as any).side = 'SHORT'; } catch (_) { /* frozen object */ }
+        expect(position.side).toBe(originalSide);
       }
     });
 
