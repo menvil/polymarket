@@ -111,7 +111,7 @@ export function parseWalletAddress(address: string): WalletAddress | undefined {
  * ```
  */
 export function walletAddressEquals(a: WalletAddress, b: WalletAddress): boolean {
-  return a.toLowerCase() === b.toLowerCase();
+  return a === b;
 }
 
 /**
@@ -136,5 +136,5 @@ export function walletAddressEquals(a: WalletAddress, b: WalletAddress): boolean
  * ```
  */
 export function walletAddressToString(address: WalletAddress): string {
-  return address.toLowerCase();
+  return address;
 }

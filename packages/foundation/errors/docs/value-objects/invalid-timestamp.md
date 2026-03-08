@@ -40,9 +40,28 @@ import { Result, Ok, Err } from '@polymarket/result';
 ### 1. Базовое использование
 
 ```typescript
-import { TimestampService } from '@polymarket/value-objects';
+import { InvalidTimestampError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
 
-// TimestampService.create() автоматически truncate дробные значения
+// Пример: как InvalidTimestampError используется внутри TimestampService
+class TimestampService {
+  static create(ms: number): Result<number, InvalidTimestampError> {
+    // автоматически truncate дробные значения
+    const trunc = Math.trunc(ms);
+    if (!isFinite(ms) || isNaN(ms)) {
+      return Err(new InvalidTimestampError('Invalid timestamp format', {
+        context: { value: ms, reason: 'INVALID_FORMAT' }
+      }));
+    }
+    if (ms < 0) {
+      return Err(new InvalidTimestampError('Timestamp cannot be negative', {
+        context: { value: ms, reason: 'NOT_POSITIVE' }
+      }));
+    }
+    return Ok(trunc);
+  }
+}
+
 const result = TimestampService.create(1609459200000.789);
 
 if (!result.ok) {
@@ -51,14 +70,36 @@ if (!result.ok) {
   return;
 }
 
-const timestamp = result.value;
-console.log(timestamp.toISO()); // "2021-01-01T00:00:00.000Z"
+const epochMs = result.value;
+console.log(new Date(epochMs).toISOString()); // "2021-01-01T00:00:00.000Z"
 ```
 
 ### 2. Обработка невалидных значений
 
 ```typescript
-import { TimestampService } from '@polymarket/value-objects';
+import { InvalidTimestampError } from '@polymarket/errors';
+import { Result, Ok, Err } from '@polymarket/result';
+
+class TimestampService {
+  static create(ms: number): Result<number, InvalidTimestampError> {
+    if (!isFinite(ms) || isNaN(ms)) {
+      return Err(new InvalidTimestampError('Invalid timestamp format', {
+        context: { value: ms, reason: 'INVALID_FORMAT' }
+      }));
+    }
+    if (ms < 0) {
+      return Err(new InvalidTimestampError('Timestamp cannot be negative', {
+        context: { value: ms, reason: 'NOT_POSITIVE' }
+      }));
+    }
+    if (ms > 9999999999999) {
+      return Err(new InvalidTimestampError('Timestamp out of range', {
+        context: { value: ms, reason: 'OUT_OF_RANGE' }
+      }));
+    }
+    return Ok(Math.trunc(ms));
+  }
+}
 
 function processTimestamp(value: number) {
   const result = TimestampService.create(value);
