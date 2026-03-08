@@ -5,4 +5,4 @@
  * Этот модуль содержит enum для типизированных причин ошибок Money операций.
  */
 
-export { MoneyErrorReason } from './MoneyErrorReason';
+export { MoneyErrorReason } from './MoneyErrorReason.js';

@@ -496,4 +496,21 @@ if (isErr(result)) {
 
 ## Интеграция с QuantityService
 
-TokenBalanceService использует QuantityService для арифметических операций, обеспечивая консистентность работы с Quantity во всей системе. Все ошибки от QuantityService автоматически оборачиваются через errorUtils.
+TokenBalanceService использует QuantityService для арифметических операций:
+
+```typescript
+// Внутри TokenBalanceService.reserve()
+const newAvailableResult = this.subtractQuantity(balance.available(), qty);
+const newReservedResult = this.addQuantity(balance.reserved(), qty);
+
+// subtractQuantity делегирует QuantityService
+// Вызывается внутри wrapOp, поэтому просто передаёт ошибку
+private static subtractQuantity(a: Quantity, b: Quantity): Result<Quantity, InvalidTokenBalanceError> {
+  const result = QuantityService.subtract(a, b);
+  if (isErr(result)) {
+    // wrapOp уже добавит context
+    return Err(new InvalidTokenBalanceError(result.error.message));
+  }
+  return result;
+}
+```

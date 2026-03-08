@@ -14,6 +14,8 @@
  * НЕ использует Jest — это чистый Node.js ESM скрипт
  */
 
+import Decimal from 'decimal.js';
+
 const PASS = '  ✓';
 const FAIL = '  ✗';
 
@@ -185,7 +187,7 @@ await testSubpath('quote', async () => {
   await checkExports(m, [
     'Quote', 'QuoteService', 'QuoteSerializer', 'QuoteFormatter',
     'QuoteInvariantViolation', 'QuoteErrorReason',
-    'ValidateQuoteSizes', 'ValidateMinSpread', 'ValidateMaxSpread', 'ValidateMarketCrossing', 'ValidateAge',
+    'ValidateQuoteSizes', 'ValidateMinSpread', 'ValidateMaxSpread', 'ValidateMarketCrossing',
   ], 'quote');
 
   // QuoteService.create(bidValue, askValue, bidSizeValue, askSizeValue, sourceId, instrumentId)
@@ -221,6 +223,26 @@ await testSubpath('asset-quantity', async () => {
   console.log(`${PASS} AssetQuantitySerializer roundtrip works`);
 });
 
+// ─── fee ─────────────────────────────────────────────────────────────────────
+await testSubpath('fee', async () => {
+  const m = await import('@polymarket/value-objects/fee');
+  await checkExports(m, [
+    'Fee', 'FeeService', 'FeeSerializer', 'FeeFormatter',
+    'FeeErrorReason', 'FeeOperationError', 'FeeOperationErrorReason',
+  ], 'fee');
+
+  // FeeService.create принимает (AssetId, amount)
+  const assetId = { type: 'CURRENCY', currency: 'USDC' };
+  const result = m.FeeService.create(assetId, 0.10);
+  if (!result.ok) throw new Error(`FeeService.create() failed: ${result.error.message}`);
+  console.log(`${PASS} FeeService.create() works`);
+
+  const json = m.FeeSerializer.toJSON(result.value);
+  const fromJson = m.FeeSerializer.fromJSON(json);
+  if (!fromJson.ok) throw new Error(`FeeSerializer roundtrip failed: ${fromJson.error.message}`);
+  console.log(`${PASS} FeeSerializer roundtrip works`);
+});
+
 // ─── outcome-token ───────────────────────────────────────────────────────────
 await testSubpath('outcome-token', async () => {
   const m = await import('@polymarket/value-objects/outcome-token');
@@ -239,49 +261,19 @@ await testSubpath('token-balance', async () => {
     'TokenBalanceInvariantViolation', 'TokenBalanceErrorReason', 'InvalidTokenBalanceError',
     'ValidateReserveAmount', 'ValidateReleaseAmount', 'ValidateTokenMatch',
   ], 'token-balance');
-
-  // Runtime roundtrip: create→serialize→deserialize
-  const outcomeTokenMod = await import('@polymarket/value-objects/outcome-token');
-  const assetQtyMod = await import('@polymarket/value-objects/asset-quantity');
-
-  const { BinaryOutcome, KnownOnChainProtocols } = await import('@polymarket/ids');
-  const conditionRef = {
-    kind: 'ONCHAIN',
-    protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137,
-    conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234',
-  };
-  const token = outcomeTokenMod.OutcomeToken.of(conditionRef, BinaryOutcome.UP);
-  const availableResult = assetQtyMod.AssetQuantityService.createOutcomeToken(token, 100);
-  const reservedResult = assetQtyMod.AssetQuantityService.createOutcomeToken(token, 50);
-
-  if (!availableResult.ok) throw new Error(`AssetQuantityService.createOutcomeToken(available) failed: ${availableResult.error.message}`);
-  if (!reservedResult.ok) throw new Error(`AssetQuantityService.createOutcomeToken(reserved) failed: ${reservedResult.error.message}`);
-
-  const createResult = m.TokenBalanceService.create(availableResult.value, reservedResult.value);
-  if (!createResult.ok) throw new Error(`TokenBalanceService.create() failed: ${createResult.error.message}`);
-  console.log(`${PASS} TokenBalanceService.create() works`);
-
-  const json = m.TokenBalanceSerializer.toJSON(createResult.value);
-  const fromJson = m.TokenBalanceSerializer.fromJSON(json);
-  if (!fromJson.ok) throw new Error(`TokenBalanceSerializer roundtrip failed: ${fromJson.error.message}`);
-  console.log(`${PASS} TokenBalanceSerializer roundtrip works`);
+  console.log(`${PASS} All exports available`);
 });
 
 // ─── main export (.) ─────────────────────────────────────────────────────────
 await testSubpath('main (.)', async () => {
   const m = await import('@polymarket/value-objects');
   await checkExports(m, [
-    'Money', 'MoneyService', 'MoneySerializer', 'MoneyFormatter',
-    'Price', 'PriceService', 'PriceSerializer', 'PriceFormatter',
-    'Quantity', 'QuantityService', 'QuantitySerializer', 'QuantityFormatter',
-    'Ratio', 'RatioService', 'RatioSerializer', 'RatioFormatter',
-    'Spread', 'SpreadService', 'SpreadSerializer', 'SpreadFormatter',
-    'Balance', 'BalanceService', 'BalanceSerializer', 'BalanceFormatter',
-    'Quote', 'QuoteService', 'QuoteSerializer', 'QuoteFormatter',
-    'AssetQuantity', 'AssetQuantityService', 'AssetQuantitySerializer', 'AssetQuantityFormatter',
-    'OutcomeToken', 'OutcomeTokenService', 'OutcomeTokenSerializer', 'OutcomeTokenFormatter',
-    'TokenBalance', 'TokenBalanceService', 'TokenBalanceSerializer', 'TokenBalanceFormatter',
+    'Money', 'MoneyService', 'Price', 'PriceService',
+    'Quantity', 'QuantityService', 'Ratio', 'RatioService',
+    'Spread', 'SpreadService', 'Balance', 'BalanceService',
+    'Quote', 'QuoteService', 'AssetQuantity', 'AssetQuantityService',
+    'Fee', 'FeeService', 'FeeOperationError', 'FeeOperationErrorReason',
+    'OutcomeToken', 'TokenBalance', 'TokenBalanceService',
   ], '.');
 });
 

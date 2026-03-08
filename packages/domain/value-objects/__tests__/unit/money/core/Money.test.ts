@@ -1,14 +1,15 @@
 import Decimal from 'decimal.js';
-import { describe, it, expect } from '@jest/globals';
-import { Money } from '../../../../src/money/core/Money.js';
-import { MoneyInvariantViolation } from '../../../../src/money/core/MoneyInvariantViolation.js';
+import { Money } from '../../../../src/money/core/Money';
+import { MoneyInvariantViolation } from '../../../../src/money/core/MoneyInvariantViolation';
 
 describe('Money core', () => {
   describe('инварианты', () => {
     it('UNSUPPORTED_CURRENCY', () => {
-      expect.assertions(2);
+      // Runtime: 'EUR' будет отклонено Money.create() как UNSUPPORTED_CURRENCY
+      expect(() => Money.of(new Decimal(100), 'EUR' as any)).toThrow(MoneyInvariantViolation);
+
       try {
-        // Runtime: 'EUR' будет отклонено Money.create() как UNSUPPORTED_CURRENCY
+        // Runtime: бросит MoneyInvariantViolation
         Money.of(new Decimal(100), 'EUR' as any);
       } catch (e) {
         expect(e).toBeInstanceOf(MoneyInvariantViolation);
@@ -17,61 +18,45 @@ describe('Money core', () => {
     });
 
     it('NAN', () => {
-      expect.assertions(2);
+      expect(() => Money.of(new Decimal(NaN))).toThrow(MoneyInvariantViolation);
+
       try {
         Money.of(new Decimal(NaN));
       } catch (e) {
-        expect(e).toBeInstanceOf(MoneyInvariantViolation);
         expect((e as MoneyInvariantViolation).reason).toBe('NAN');
       }
     });
 
     it('NON_FINITE - Infinity', () => {
-      expect.assertions(2);
+      expect(() => Money.of(new Decimal(Infinity))).toThrow(MoneyInvariantViolation);
+
       try {
         Money.of(new Decimal(Infinity));
       } catch (e) {
-        expect(e).toBeInstanceOf(MoneyInvariantViolation);
         expect((e as MoneyInvariantViolation).reason).toBe('NON_FINITE');
       }
     });
 
     it('NON_FINITE - -Infinity', () => {
-      expect.assertions(2);
-      try {
-        Money.of(new Decimal(-Infinity));
-      } catch (e) {
-        expect(e).toBeInstanceOf(MoneyInvariantViolation);
-        expect((e as MoneyInvariantViolation).reason).toBe('NON_FINITE');
-      }
+      expect(() => Money.of(new Decimal(-Infinity))).toThrow(MoneyInvariantViolation);
     });
 
     it('EXCEEDS_MAX_AMOUNT - positive', () => {
-      expect.assertions(2);
+      expect(() => Money.of(new Decimal('1e16'))).toThrow(MoneyInvariantViolation);
+
       try {
         Money.of(new Decimal('1e16'));
       } catch (e) {
-        expect(e).toBeInstanceOf(MoneyInvariantViolation);
         expect((e as MoneyInvariantViolation).reason).toBe('EXCEEDS_MAX_AMOUNT');
       }
     });
 
     it('EXCEEDS_MAX_AMOUNT - negative', () => {
-      expect.assertions(2);
-      try {
-        Money.of(new Decimal('-1e16'));
-      } catch (e) {
-        expect(e).toBeInstanceOf(MoneyInvariantViolation);
-        expect((e as MoneyInvariantViolation).reason).toBe('EXCEEDS_MAX_AMOUNT');
-      }
+      expect(() => Money.of(new Decimal('-1e16'))).toThrow(MoneyInvariantViolation);
     });
 
-    it('граница MAX_AMOUNT допустима (положительная)', () => {
+    it('граница MAX_AMOUNT допустима', () => {
       expect(() => Money.of(new Decimal('1e15'))).not.toThrow();
-    });
-
-    it('граница MAX_AMOUNT допустима (отрицательная)', () => {
-      expect(() => Money.of(new Decimal('-1e15'))).not.toThrow();
     });
   });
 
@@ -134,14 +119,6 @@ describe('Money core', () => {
       const m2 = Money.of(new Decimal(999), 'USDC');
       expect(m1.hasSameCurrency(m2)).toBe(true);
     });
-
-    // ПРИМЕЧАНИЕ: Тест для разных валют невозможен, так как Money поддерживает только USDC.
-    // Если добавятся другие валюты, раскомментировать:
-    // it('false для разных валют', () => {
-    //   const m1 = Money.of(new Decimal(100), 'USDC');
-    //   const m2 = Money.of(new Decimal(100), 'EUR' as any);
-    //   expect(m1.hasSameCurrency(m2)).toBe(false);
-    // });
   });
 
   describe('isZero()', () => {

@@ -12,7 +12,7 @@ Core Layer (Quote) использует throws для инвариантов:
 
 ```typescript
 // ⚠️ Может бросить QuoteInvariantViolation
-const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);
+const quote = Quote.of(bid, ask, bidSize, askSize, timestamp, sourceId, instrumentId);
 ```
 
 ### Решение
@@ -89,7 +89,7 @@ public static create(
 
    ```typescript
    try {
-     const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);
+     const quote = Quote.of(bid, ask, bidSize, askSize, timestamp, sourceId, instrumentId);
      return Ok(quote);
    } catch (error) {
      return Err(unexpectedError(error, 'quote', InvalidQuoteError));
@@ -842,7 +842,7 @@ unexpectedError<E extends DomainError>(
 
 ```typescript
 try {
-  const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);
+  const quote = Quote.of(bid, ask, bidSize, askSize, timestamp, sourceId, instrumentId);
   return Ok(quote);
 } catch (error) {
   if (error instanceof QuoteInvariantViolation) {
@@ -1035,7 +1035,7 @@ console.error(result.error.context?.opChain);  // ['create', 'create']
 
 ```typescript
 // Не создавайте Quote напрямую
-const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);  // Может бросить!
+const quote = Quote.of(bid, ask, bidSize, askSize, timestamp, sourceId, instrumentId);  // Может бросить!
 
 // Не игнорируйте Result
 const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');

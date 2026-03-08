@@ -12,9 +12,9 @@
 - ✅ **"Never Throw" Contract** — QuoteService гарантированно не бросает исключения
 - ✅ **Централизованная обработка ошибок** — через errorUtils (toDecimal, wrapOp, rewrap)
 - ✅ **Automatic operation tracing** — opChain для отслеживания цепочек операций
-- ✅ **Typed error reasons** — QuoteErrorReason enum с типизированными причинами ошибок
+- ✅ **Typed error reasons** — QuoteErrorReason enum (22 значения)
 - ✅ **Rich domain logic** — методы вычисления spread, mid price, проверки crossing
-- ✅ **Comprehensive tests** — полный набор тестов с высоким покрытием
+- ✅ **Comprehensive tests** — 293 теста с высоким покрытием
 
 ## Быстрый старт
 
@@ -41,8 +41,7 @@ const result = QuoteService.create(
 
 if (!result.ok) {
   console.error(result.error.message);
-  // В модульном коде вместо return используйте throw
-  throw new Error(result.error.message);
+  return;
 }
 
 const quote = result.value;
@@ -422,13 +421,24 @@ const quote = Quote.of(
   ask: Price | null,
   bidSize: Quantity,
   askSize: Quantity,
-  timestampMs: Decimal,
+  timestamp: Timestamp,              // Timestamp VO (не Decimal!)
   sourceId: MarketDataSourceId,
   instrumentId: InstrumentId
 );
 ```
 
 **Рекомендуется использовать `QuoteService.create()` вместо прямого создания!**
+
+**Важно:** Quote.of() теперь требует Timestamp VO. Для создания Timestamp используйте TimestampService:
+
+```typescript
+import { TimestampService } from '@polymarket/value-objects/timestamp';
+
+const tsResult = TimestampService.create(Date.now());
+if (tsResult.ok) {
+  const quote = Quote.of(bid, ask, bidSize, askSize, tsResult.value, sourceId, instrumentId);
+}
+```
 
 #### Геттеры
 
@@ -437,8 +447,9 @@ quote.bid(): Price | null
 quote.ask(): Price | null
 quote.bidSize(): Quantity
 quote.askSize(): Quantity
-quote.timestampMs(): Decimal
-quote.getTimestamp(): Date
+quote.timestamp(): Timestamp          // Timestamp VO
+quote.timestampMs(): Decimal          // Unix ms как Decimal
+quote.getTimestamp(): Date            // Date объект
 ```
 
 #### Проверки
@@ -460,6 +471,28 @@ quote.spreadPercentage(): Ratio | null  // null для one-sided
 
 // Средняя цена
 quote.midOrNull(): Decimal | null  // null для one-sided
+
+// Возраст котировки (в миллисекундах)
+quote.age(now?: Timestamp): Decimal  // Использует Timestamp.now() по умолчанию
+```
+
+**Пример использования age():**
+
+```typescript
+import { Timestamp } from '@polymarket/value-objects/timestamp';
+
+const quote = quoteResult.value;
+
+// Использование с текущим временем (по умолчанию)
+const ageMs = quote.age();
+console.log(ageMs.toNumber());  // Возраст в миллисекундах
+
+// Использование с конкретным временем
+const now = Timestamp.now();
+const age = quote.age(now);
+if (age.greaterThan(5000)) {
+  console.log('Quote is older than 5 seconds');
+}
 ```
 
 #### Сравнение
@@ -540,7 +573,7 @@ QuoteFormatter.toDisplay(quote, {
 QuoteFormatter.toShort(quote);
 // "0.4800/0.5200"
 
-QuoteFormatter.toShort(quote, { priceDecimals: 2 });
+QuoteFormatter.toShort(quote, 2);
 // "0.48/0.52"
 ```
 
@@ -712,11 +745,7 @@ if (!result.ok) {
 import { PaperClock } from '@polymarket/time';
 
 const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));
-const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
-if (!quoteResult.ok) {
-  throw new Error(quoteResult.error.message);
-}
-const quote = quoteResult.value;
+const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
 
 // Перематываем время на 10 секунд вперёд
 clock.tick(10000);
@@ -856,7 +885,7 @@ const quote = quoteResult.value;
 
 // Spread
 const spreadWidth = quote.spreadWidthOrZero();
-console.log(spreadWidth.toNumber());  // 0.04
+console.log(spreadWidth?.toNumber());  // 0.04
 
 // Spread в процентах от mid price: width / mid (как дробь)
 const spreadPct = quote.spreadPercentage();
@@ -958,14 +987,14 @@ if (!sizesResult.ok) {
 
 // Проверка минимального spread
 const minSpreadResult = ValidateMinSpread.check(
-  quote.spreadWidthOrZero(),
-  new Decimal(0.01)  // абсолютная ширина спреда = 0.01
+  quote.spreadWidthOrZero()!,
+  new Decimal(0.01)  // минимум 1%
 );
 
 // Проверка максимального spread
 const maxSpreadResult = ValidateMaxSpread.check(
-  quote.spreadWidthOrZero(),
-  new Decimal(0.10)  // абсолютная ширина спреда = 0.10
+  quote.spreadWidthOrZero()!,
+  new Decimal(0.10)  // максимум 10%
 );
 
 // Проверка crossing
@@ -984,7 +1013,7 @@ if (!crossingResult.ok) {
 
 ## Testing
 
-Quote имеет высокое покрытие тестами:
+Quote имеет 293 теста с высоким покрытием:
 
 ```bash
 npm test -- quote
@@ -1024,7 +1053,7 @@ console.log(QuoteFormatter.toDisplay(result.value));
 
 ```typescript
 // Не создавайте Quote напрямую без try-catch
-const quote = Quote.of(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);  // Может бросить!
+const quote = Quote.of(bid, ask, bidSize, askSize, timestamp, sourceId, instrumentId);  // Может бросить!
 
 // Не игнорируйте Result
 const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
@@ -1042,12 +1071,32 @@ console.log(`${quote.bid()?.value()}/${quote.ask()?.value()}`);  // ❌
 
 ## Changelog
 
+### v0.2.0 (2025-02-25)
+
+**BREAKING CHANGES:**
+
+- ✅ Миграция на Timestamp VO вместо Decimal для временных меток
+- ✅ `Quote.of()` теперь принимает `timestamp: Timestamp` вместо `timestampMs: Decimal`
+- ✅ Добавлен метод `quote.timestamp(): Timestamp` для получения Timestamp VO
+- ✅ Метод `quote.age()` теперь принимает `Timestamp` (с Timestamp.now() по умолчанию)
+- ✅ `QuoteService` автоматически конвертирует Decimal/number → Timestamp через TimestampService
+- ✅ Обновлены все тесты для работы с Timestamp VO
+
+**Причина изменений:**
+
+Timestamp VO обеспечивает:
+
+- Строгую валидацию временных меток на уровне типов
+- Единообразный API для работы со временем
+- Методы сравнения и вычисления разницы
+- Форматирование и сериализацию
+
 ### v0.1.0 (2024-01-15)
 
 - ✅ Начальная реализация Quote value object
 - ✅ Throws+Facade архитектура
 - ✅ Интеграция с errorUtils (toDecimal, wrapOp, rewrap)
-- ✅ QuoteErrorReason enum с типизированными причинами ошибок
-- ✅ Validation rules (ValidateQuoteSizes, ValidateMinSpread, ValidateMaxSpread, ValidateMarketCrossing, ValidateAge)
+- ✅ QuoteErrorReason enum (22 значения)
+- ✅ 4 валидационных правила
 - ✅ QuoteSerializer и QuoteFormatter
-- ✅ Comprehensive test suite с высоким покрытием
+- ✅ 293 теста с высоким покрытием

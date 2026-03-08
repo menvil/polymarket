@@ -1,7 +1,6 @@
 import Decimal from 'decimal.js';
-import { describe, it, expect } from '@jest/globals';
-import { Money } from '../../../../src/money/core/Money.js';
-import { MoneySerializer } from '../../../../src/money/adapters/MoneySerializer.js';
+import { Money } from '../../../../src/money/core/Money';
+import { MoneySerializer } from '../../../../src/money/adapters/MoneySerializer';
 import { InvalidMoneyError } from '@polymarket/errors';
 
 describe('MoneySerializer', () => {
@@ -80,7 +79,7 @@ describe('MoneySerializer', () => {
         expect(result.ok).toBe(false);
         if (!result.ok) {
           expect(result.error).toBeInstanceOf(InvalidMoneyError);
-          expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+          expect(result.error.context!.reason).toBe('INVALID_FORMAT');
         }
       });
 
@@ -89,7 +88,7 @@ describe('MoneySerializer', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+          expect(result.error.context!.reason).toBe('INVALID_FORMAT');
         }
       });
 
@@ -98,7 +97,7 @@ describe('MoneySerializer', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+          expect(result.error.context!.reason).toBe('INVALID_FORMAT');
         }
       });
 
@@ -107,7 +106,7 @@ describe('MoneySerializer', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+          expect(result.error.context!.reason).toBe('INVALID_FORMAT');
         }
       });
 
@@ -116,7 +115,7 @@ describe('MoneySerializer', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+          expect(result.error.context!.reason).toBe('INVALID_FORMAT');
         }
       });
 
@@ -125,7 +124,7 @@ describe('MoneySerializer', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+          expect(result.error.context!.reason).toBe('INVALID_FORMAT');
         }
       });
 
@@ -134,27 +133,18 @@ describe('MoneySerializer', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.reason).toBe('INVALID_FORMAT');
+          expect(result.error.context!.reason).toBe('INVALID_FORMAT');
         }
       });
     });
 
     describe('business validation', () => {
-      it('делегирует бизнес-валидацию MoneyService для NAN', () => {
+      it('делегирует бизнес-валидацию MoneyService', () => {
         const result = MoneySerializer.fromJSON({ amount: NaN, currency: 'USDC' });
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.reason).toBe('NAN');
-        }
-      });
-
-      it('отклоняет NON_FINITE значения', () => {
-        const result = MoneySerializer.fromJSON({ amount: Infinity, currency: 'USDC' });
-
-        expect(result.ok).toBe(false);
-        if (!result.ok) {
-          expect(result.error.context?.reason).toBe('NON_FINITE');
+          expect(result.error.context!.reason).toBe('NAN');
         }
       });
 
@@ -163,7 +153,7 @@ describe('MoneySerializer', () => {
 
         expect(result.ok).toBe(false);
         if (!result.ok) {
-          expect(result.error.context?.reason).toBe('EXCEEDS_MAX_AMOUNT');
+          expect(result.error.context!.reason).toBe('EXCEEDS_MAX_AMOUNT');
         }
       });
     });

@@ -14,14 +14,12 @@
 
 ## Обзор
 
-**SpreadService** — это единственный публичный API для работы со спредами. Большинство методов:
+**SpreadService** — это единственный публичный API для работы со спредами. Все методы:
 
 - ✅ Возвращают `Result<T, InvalidSpreadError>` (где T может быть Spread, Price, Decimal или Ratio)
 - ✅ Никогда не бросают исключений (Never Throw Contract)
 - ✅ Перехватывают ошибки из Core и Rules слоёв
 - ✅ Предоставляют rich error context
-
-**Исключение:** `SpreadService.zero(price)` возвращает `Spread` напрямую (не `Result`), т.к. инвариант `bid === ask` выполнен автоматически и ошибка невозможна.
 
 ### Импорт
 
@@ -115,7 +113,7 @@ const result3 = SpreadService.fromValues(
 );
 
 if (result1.ok) {
-  console.log(result1.value.mid().toNumber());  // 0.50
+  console.log(result1.value.midpoint().toNumber());  // 0.50
 }
 ```
 
@@ -153,7 +151,7 @@ if (priceResult.ok) {
   
   console.log(spread.isZeroWidth());  // true
   console.log(spread.width().toNumber());  // 0
-  console.log(spread.mid().toNumber());  // 0.50
+  console.log(spread.midpoint().toNumber());  // 0.50
 }
 ```
 
@@ -197,7 +195,6 @@ fromMidAndWidthRatio(
 
 ```typescript
 // Из объектов Price и Ratio
-import Decimal from 'decimal.js';
 import { PriceService, SpreadService } from '@polymarket/value-objects';
 import { Ratio } from '@polymarket/value-objects/ratio';
 
@@ -211,7 +208,7 @@ if (result.ok) {
   console.log(spread.bid().toNumber());      // 0.48 (0.50 - 0.02)
   console.log(spread.ask().toNumber());      // 0.52 (0.50 + 0.02)
   console.log(spread.width().toNumber());    // 0.04 (0.50 * 0.08)
-  console.log(spread.mid().toNumber()); // 0.50
+  console.log(spread.midpoint().toNumber()); // 0.50
 }
 
 // Из чисел
@@ -221,6 +218,7 @@ const result2 = SpreadService.fromMidAndWidthRatio(0.50, 0.08);
 const result3 = SpreadService.fromMidAndWidthRatio('0.50', '0.08');
 
 // Из Decimal
+import Decimal from 'decimal.js';
 const result4 = SpreadService.fromMidAndWidthRatio(
   new Decimal(0.50),
   new Decimal(0.08)
@@ -240,7 +238,7 @@ const spreadResult = SpreadService.fromMidAndWidthRatio(
 );
 
 if (spreadResult.ok) {
-  // Спред: 0.49-0.51 (ширина 4% от 0.50)
+  // Спред: 0.49-0.51 (ширина 2% от 0.50)
   console.log(`Quote: ${spreadResult.value.bid().toNumber()}-${spreadResult.value.ask().toNumber()}`);
 }
 ```
@@ -256,125 +254,6 @@ if (spreadResult.ok) {
 - `SpreadErrorReason.INVALID_RATIO` — невалидный widthRatio (NaN, Infinity)
 - `SpreadErrorReason.NEGATIVE_RATIO_NOT_ALLOWED` — widthRatio < 0
 - `SpreadErrorReason.RATIO_OUT_OF_BOUNDS` — результат выходит за пределы Price
-
----
-
-### `fromMidAndWidth(mid, width)`
-
-Создаёт спред из midpoint и абсолютной ширины.
-
-```typescript
-fromMidAndWidth(
-  mid: Decimal | number | string,
-  width: Decimal | number | string
-): Result<Spread, InvalidSpreadError>
-```
-
-**Параметры:**
-
-- `mid: Decimal | number | string` — midpoint (середина между bid и ask)
-- `width: Decimal | number | string` — абсолютная ширина спреда (≥ 0)
-
-**Возвращает:**
-
-- `Ok(Spread)` — если оба значения валидны и результат в пределах [MIN_PRICE, MAX_PRICE]
-- `Err(InvalidSpreadError)` — при любых ошибках
-
-**Алгоритм:**
-
-1. Parse mid to Decimal
-2. Parse width to Decimal
-3. Validate width ≥ 0
-4. `halfWidth = width / 2`
-5. `bid = mid - halfWidth`
-6. `ask = mid + halfWidth`
-7. Create spread через `create(bid, ask)`
-
-**Пример:**
-
-```typescript
-import Decimal from 'decimal.js';
-
-const result = SpreadService.fromMidAndWidth(0.50, 0.04);
-if (result.ok) {
-  const spread = result.value;
-  console.log(spread.bid().toNumber());   // 0.48
-  console.log(spread.ask().toNumber());   // 0.52
-  console.log(spread.width().toNumber()); // 0.04
-  console.log(spread.mid().toNumber());   // 0.50
-}
-
-// Из строк
-const result2 = SpreadService.fromMidAndWidth('0.50', '0.04');
-
-// Из Decimal
-const result3 = SpreadService.fromMidAndWidth(
-  new Decimal(0.50),
-  new Decimal(0.04)
-);
-```
-
-**Ошибки:**
-
-- `SpreadErrorReason.INVALID_FORMAT` — невалидный mid или width (NaN, Infinity)
-- `SpreadErrorReason.INVALID_WIDTH` — width < 0
-- `SpreadErrorReason.BID_GREATER_THAN_ASK` — результирующий bid > ask (не должно возникать при width ≥ 0)
-- Ошибки валидации Price, если bid или ask выходят за пределы [0.0001, 0.9999]
-
----
-
-### `fromMidAndWidthPercentage(mid, widthPercentage, options?)`
-
-Создаёт спред из midpoint и ширины в процентах от mid.
-
-```typescript
-fromMidAndWidthPercentage(
-  mid: Decimal | number | string,
-  widthPercentage: Decimal | number | string,
-  options?: { ensureLteOne?: boolean }
-): Result<Spread, InvalidSpreadError>
-```
-
-**Параметры:**
-
-- `mid: Decimal | number | string` — midpoint (середина между bid и ask)
-- `widthPercentage: Decimal | number | string` — ширина в процентах от mid (например, 8 = 8%)
-- `options.ensureLteOne` — если true, ширина не может превышать 100% (ratio ≤ 1)
-
-**Возвращает:**
-
-- `Ok(Spread)` — если оба значения валидны и результат в пределах [MIN_PRICE, MAX_PRICE]
-- `Err(InvalidSpreadError)` — при любых ошибках
-
-**Алгоритм:**
-
-1. Parse mid to Decimal
-2. Parse widthPercentage as Ratio (через RatioService.fromPercent)
-3. `width = mid × (widthPercentage / 100)`
-4. Delegate to `fromMidAndWidth(mid, width)`
-
-**Пример:**
-
-```typescript
-// 8% от 0.50 = ширина 0.04
-const result = SpreadService.fromMidAndWidthPercentage(0.50, 8);
-if (result.ok) {
-  const spread = result.value;
-  console.log(spread.bid().toNumber());   // 0.48
-  console.log(spread.ask().toNumber());   // 0.52
-  console.log(spread.width().toNumber()); // 0.04
-}
-
-// С ограничением: ширина не более 100%
-const result2 = SpreadService.fromMidAndWidthPercentage(0.50, 150, { ensureLteOne: true });
-// isErr(result2) === true (widthPercentage > 100%)
-```
-
-**Ошибки:**
-
-- `SpreadErrorReason.INVALID_FORMAT` — невалидный mid (NaN, Infinity)
-- Ошибки RatioService — невалидный widthPercentage
-- Ошибки валидации Price, если bid или ask выходят за пределы [0.0001, 0.9999]
 
 ---
 
@@ -422,7 +301,7 @@ if (spreadResult.ok) {
     console.log(tighter.bid().toNumber());  // 0.49
     console.log(tighter.ask().toNumber());  // 0.51
     console.log(tighter.width().toNumber());  // 0.02
-    console.log(tighter.mid().toNumber());  // 0.50 (сохранён!)
+    console.log(tighter.midpoint().toNumber());  // 0.50 (сохранён!)
   }
 }
 ```
@@ -481,7 +360,7 @@ if (spreadResult.ok) {
     console.log(wider.bid().toNumber());  // 0.46
     console.log(wider.ask().toNumber());  // 0.54
     console.log(wider.width().toNumber());  // 0.08
-    console.log(wider.mid().toNumber());  // 0.50 (сохранён!)
+    console.log(wider.midpoint().toNumber());  // 0.50 (сохранён!)
   }
 }
 ```
@@ -632,132 +511,6 @@ if (ratioResult.ok) {
 
 ---
 
-### `getMidPrice(spread)`
-
-Возвращает midpoint спреда как Price объект.
-
-```typescript
-getMidPrice(spread: Spread): Result<Price, InvalidSpreadError>
-```
-
-**Параметры:**
-
-- `spread: Spread` — спред для вычисления mid price
-
-**Возвращает:**
-
-- `Ok(Price)` — midpoint как валидный Price в [MIN_PRICE, MAX_PRICE]
-- `Err(InvalidSpreadError)` — если midpoint выходит за пределы Price (не должно происходить при валидном spread)
-
-**Пример:**
-
-```typescript
-const spread = SpreadService.fromValues(0.48, 0.52).value;
-const midResult = SpreadService.getMidPrice(spread);
-
-if (midResult.ok) {
-  console.log(midResult.value.value().toString());  // "0.5"
-}
-```
-
-**Ошибки:**
-
-- `SpreadErrorReason.INVALID_AMOUNT` — если midpoint вне диапазона Price (крайне редко)
-
----
-
-### `merge(s1, s2)`
-
-Объединяет два спреда в один охватывающий оба.
-
-```typescript
-merge(s1: Spread, s2: Spread): Result<Spread, InvalidSpreadError>
-```
-
-**Параметры:**
-
-- `s1: Spread` — первый спред
-- `s2: Spread` — второй спред
-
-**Возвращает:**
-
-- `Ok(Spread)` — спред с `bid = min(s1.bid, s2.bid)` и `ask = max(s1.ask, s2.ask)`
-- `Err(InvalidSpreadError)` — если результат не валиден (практически невозможно при валидных входах)
-
-**Алгоритм:**
-
-- `result.bid = min(s1.bid, s2.bid)`
-- `result.ask = max(s1.ask, s2.ask)`
-- Результирующий спред всегда содержит оба входных спреда
-
-**Use case:** объединение ордербуков с разных бирж.
-
-**Пример:**
-
-```typescript
-const s1 = SpreadService.fromValues(0.48, 0.52).value;
-const s2 = SpreadService.fromValues(0.50, 0.54).value;
-
-const merged = SpreadService.merge(s1, s2);
-if (merged.ok) {
-  console.log(merged.value.bid().value().toString());  // "0.48" (min)
-  console.log(merged.value.ask().value().toString());  // "0.54" (max)
-  console.log(merged.value.width().toString());         // "0.06"
-}
-```
-
----
-
-### `intersect(s1, s2)`
-
-Вычисляет пересечение двух спредов.
-
-```typescript
-intersect(s1: Spread, s2: Spread): Result<Spread, InvalidSpreadError>
-```
-
-**Параметры:**
-
-- `s1: Spread` — первый спред
-- `s2: Spread` — второй спред
-
-**Возвращает:**
-
-- `Ok(Spread)` — спред с `bid = max(s1.bid, s2.bid)` и `ask = min(s1.ask, s2.ask)`
-- `Err(InvalidSpreadError)` — если спреды не пересекаются (`max bid > min ask`)
-
-**Алгоритм:**
-
-- `result.bid = max(s1.bid, s2.bid)`
-- `result.ask = min(s1.ask, s2.ask)`
-- Если `result.bid > result.ask` — спреды не пересекаются, возвращается `Err`
-
-**Use case:** нахождение общего диапазона цен на разных площадках.
-
-**Пример:**
-
-```typescript
-const s1 = SpreadService.fromValues(0.40, 0.60).value;
-const s2 = SpreadService.fromValues(0.50, 0.70).value;
-
-const intersection = SpreadService.intersect(s1, s2);
-if (intersection.ok) {
-  console.log(intersection.value.bid().value().toString());  // "0.50" (max)
-  console.log(intersection.value.ask().value().toString());  // "0.60" (min)
-}
-
-// Нет пересечения
-const s3 = SpreadService.fromValues(0.70, 0.80).value;
-const noIntersect = SpreadService.intersect(s1, s3);
-console.log(noIntersect.ok);  // false
-```
-
-**Ошибки:**
-
-- `SpreadErrorReason.BID_GREATER_THAN_ASK` — если спреды не пересекаются
-
----
-
 ### `shiftByRatio(spread, shiftRatio)`
 
 Сдвигает spread на процент от midpoint.
@@ -788,7 +541,6 @@ shiftByRatio(
 **Пример:**
 
 ```typescript
-import Decimal from 'decimal.js';
 import { Ratio } from '@polymarket/value-objects';
 
 const spread = SpreadService.fromValues(0.48, 0.52).value;
@@ -843,8 +595,6 @@ widenByRatio(
 **Пример:**
 
 ```typescript
-import Decimal from 'decimal.js';
-
 const spread = SpreadService.fromValues(0.48, 0.52).value;
 // midpoint = 0.50, width = 0.04
 
@@ -856,7 +606,7 @@ if (result.ok) {
   console.log(result.value.bid().toNumber());  // 0.455 (0.48 - 0.025)
   console.log(result.value.ask().toNumber());  // 0.545 (0.52 + 0.025)
   console.log(result.value.width().toNumber());  // 0.09 (0.04 + 0.05)
-  console.log(result.value.mid().toNumber());  // 0.50 (сохранен!)
+  console.log(result.value.midpoint().toNumber());  // 0.50 (сохранен!)
 }
 ```
 
@@ -881,8 +631,7 @@ tightenByRatio(
 **Логика:**
 
 - `deltaWidthAbs = midpoint * deltaWidthRatio`
-- `amountAbs = deltaWidthAbs / 2` (делится на 2, так как `tighten` применяет amount к каждой стороне)
-- Делегирует в `tighten(spread, amountAbs)`
+- Делегирует в `tighten(spread, deltaWidthAbs)`
 
 **Параметры:**
 
@@ -897,8 +646,6 @@ tightenByRatio(
 **Пример:**
 
 ```typescript
-import Decimal from 'decimal.js';
-
 const spread = SpreadService.fromValues(0.48, 0.52).value;
 // midpoint = 0.50, width = 0.04
 
@@ -910,13 +657,13 @@ if (result.ok) {
   console.log(result.value.bid().toNumber());  // 0.49 (0.48 + 0.01)
   console.log(result.value.ask().toNumber());  // 0.51 (0.52 - 0.01)
   console.log(result.value.width().toNumber());  // 0.02 (0.04 - 0.02)
-  console.log(result.value.mid().toNumber());  // 0.50 (сохранен!)
+  console.log(result.value.midpoint().toNumber());  // 0.50 (сохранен!)
 }
 ```
 
 **Ограничения:**
 
-- Автоматически ограничивается до zero-width spread если deltaWidthAbs ≥ width (так как amountAbs = deltaWidthAbs / 2, а tighten обрезает при amountAbs ≥ halfWidth = width / 2)
+- Автоматически ограничивается до zero-width spread если deltaWidthAbs > width / 2
 
 **Ошибки:**
 
@@ -956,8 +703,6 @@ skewByRatio(
 **Пример:**
 
 ```typescript
-import Decimal from 'decimal.js';
-
 const spread = SpreadService.fromValues(0.48, 0.52).value;
 // midpoint = 0.50
 
@@ -971,7 +716,7 @@ if (result.ok) {
   console.log(result.value.bid().toNumber());  // 0.50 (0.48 + 0.02)
   console.log(result.value.ask().toNumber());  // 0.51 (0.52 - 0.01)
   console.log(result.value.width().toNumber());  // 0.01 (сузился)
-  console.log(result.value.mid().toNumber());  // 0.505 (сдвинулся!)
+  console.log(result.value.midpoint().toNumber());  // 0.505 (сдвинулся!)
 }
 ```
 
@@ -1129,7 +874,7 @@ if (result.ok) {
 ### Использование с PriceService
 
 ```typescript
-import { PriceService, SpreadService, SpreadFormatter } from '@polymarket/value-objects';
+import { PriceService, SpreadService } from '@polymarket/value-objects';
 
 // Создание цен с округлением к market tick
 const bidResult = PriceService.create(0.4823);
@@ -1158,8 +903,7 @@ if (bidResult.ok && askResult.ok) {
 ### Цепочка операций
 
 ```typescript
-import { SpreadService, Spread, InvalidSpreadError } from '@polymarket/value-objects';
-import type { Result } from '@polymarket/result';
+import { SpreadService } from '@polymarket/value-objects';
 
 function adjustSpreadForVolatility(
   initialBid: number,
@@ -1175,7 +919,7 @@ function adjustSpreadForVolatility(
   if (!widenedResult.ok) return widenedResult;
   
   // 3. Дополнительно расширить пропорционально волатильности
-  const volatilityAmount = widenedResult.value.width().times(volatilityFactor).toNumber();
+  const volatilityAmount = widenedResult.value.width().mul(volatilityFactor).toNumber();
   return SpreadService.widen(widenedResult.value, volatilityAmount);
 }
 

@@ -14,10 +14,8 @@ Balance инкапсулирует логику управления средс�
 
 ```typescript
 import { Balance, BalanceService } from '@polymarket/value-objects/balance';
-import { Money, MoneyService } from '@polymarket/value-objects/money';
-import { isErr } from '@polymarket/result';
+import { Money } from '@polymarket/value-objects/money';
 import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
-import Decimal from 'decimal.js';
 
 // Подготовка идентификаторов
 const accountId: AccountId = {
@@ -26,21 +24,12 @@ const accountId: AccountId = {
 };
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
-// Безопасное создание Money через MoneyService
-const availableResult = MoneyService.create(new Decimal(10000)); // 10000 units
-const reservedResult = MoneyService.create(new Decimal(2000));   // 2000 units
-
-if (isErr(availableResult) || isErr(reservedResult)) {
-  console.error('Failed to create Money');
-  return;
-}
-
 // Создание баланса
 const result = BalanceService.create(
-  availableResult.value, // available
-  reservedResult.value,  // reserved
-  accountId,             // ID аккаунта владельца
-  venueId                // ID площадки (venue)
+  Money.of(10000), // available: $100.00
+  Money.of(2000),  // reserved: $20.00
+  accountId,       // ID аккаунта владельца
+  venueId          // ID площадки (venue)
 );
 
 if (isErr(result)) {
@@ -51,46 +40,28 @@ if (isErr(result)) {
 const balance = result.value;
 
 // Query методы
-console.log(balance.total().value());           // Decimal(12000)
-console.log(balance.reservedPercentage());       // 16.666666666666664
+console.log(balance.total().value());           // 12000 ($120.00)
+console.log(balance.reservedPercentage());       // 16.67%
 
 // Резервирование средств (для открытия ордера)
-const orderAmountResult = MoneyService.create(new Decimal(3000));
-if (!orderAmountResult.ok) {
-  console.error('Failed to create Money');
-  return;
-}
-const reserveResult = BalanceService.reserve(balance, orderAmountResult.value);
-if (!reserveResult.ok) {
-  console.error('Failed to reserve');
-  return;
+const reserveResult = BalanceService.reserve(balance, Money.of(3000));
+if (reserveResult.ok) {
+  const newBalance = reserveResult.value;
+  console.log(newBalance.available().value()); // 7000 ($70.00)
+  console.log(newBalance.reserved().value());  // 5000 ($50.00)
 }
 
-const balanceWithReserved = reserveResult.value;
-console.log(balanceWithReserved.available().value()); // Decimal(7000)
-console.log(balanceWithReserved.reserved().value());  // Decimal(5000)
-
-// Вариант 1: Отмена ордера (размораживание средств)
-const unfreezeAmountResult = MoneyService.create(new Decimal(3000));
-if (!unfreezeAmountResult.ok) {
-  console.error('Failed to create Money');
-  return;
-}
-const unfreezeResult = BalanceService.unfreezeReserved(balanceWithReserved, unfreezeAmountResult.value);
+// Отмена ордера (размораживание средств)
+const unfreezeResult = BalanceService.unfreezeReserved(newBalance, Money.of(3000));
 if (unfreezeResult.ok) {
-  console.log(unfreezeResult.value.available().value()); // Decimal(10000)
+  console.log(unfreezeResult.value.available().value()); // 10000
 }
 
-// Вариант 2: Исполнение ордера (списание средств)
-const consumeAmountResult = MoneyService.create(new Decimal(3000));
-if (!consumeAmountResult.ok) {
-  console.error('Failed to create Money');
-  return;
-}
-const consumeResult = BalanceService.consumeReserved(balanceWithReserved, consumeAmountResult.value);
+// Исполнение ордера (списание средств)
+const consumeResult = BalanceService.consumeReserved(newBalance, Money.of(3000));
 if (consumeResult.ok) {
-  console.log(consumeResult.value.available().value()); // Decimal(7000) (не изменился)
-  console.log(consumeResult.value.total().value());     // Decimal(9000) (уменьшился)
+  console.log(consumeResult.value.available().value()); // 7000 (не изменился)
+  console.log(consumeResult.value.total().value());     // 9000 (уменьшился)
 }
 ```
 
@@ -121,12 +92,7 @@ import { BalanceSerializer } from '@polymarket/value-objects/balance';
 
 // JSON сериализация
 const json = BalanceSerializer.toJSON(balance);
-// {
-//   available: { amount: "10000", currency: "USDC" },
-//   reserved: { amount: "2000", currency: "USDC" },
-//   accountId: "wallet:0x1234567890123456789012345678901234567890",
-//   venueId: "POLYMARKET"
-// }
+// { available: { amount: "10000", currency: "USDC" }, reserved: { amount: "2000", currency: "USDC" } }
 
 // Десериализация с валидацией
 const result = BalanceSerializer.fromJSON(json);
@@ -142,12 +108,10 @@ import { BalanceFormatter } from '@polymarket/value-objects/balance';
 import { expectOk } from '@polymarket/result';
 
 // Полная сводка (возвращает Result)
-// ВАЖНО: MoneyFormatter отображает raw units без деления на 100
-// 10000 units → "$10000.00", а НЕ "$100.00"
 const summaryResult = BalanceFormatter.toSummary(balance);
 if (summaryResult.ok) {
   console.log(summaryResult.value);
-  // "Available: $10000.00, Reserved: $2000.00, Total: $12000.00 (16.67% reserved)"
+  // "Available: $100.00, Reserved: $20.00, Total: $120.00 (16.67% reserved)"
 }
 // или с expectOk (бросает исключение если Err)
 console.log(expectOk(BalanceFormatter.toSummary(balance)));
@@ -156,7 +120,7 @@ console.log(expectOk(BalanceFormatter.toSummary(balance)));
 const compactResult = BalanceFormatter.toCompact(balance);
 if (compactResult.ok) {
   console.log(compactResult.value);
-  // "Avail: $10.0K | Res: $2.0K | Total: $12.0K"
+  // "Avail: $100.00 | Res: $20.00 | Total: $120.00"
 }
 
 // Debug-строка (не возвращает Result, всегда string)

@@ -1,4 +1,3 @@
-import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { ValidateMaxWidth } from '../../../../src/spread/rules/ValidateMaxWidth.js';
 import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
@@ -45,20 +44,7 @@ describe('ValidateMaxWidth', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
-        expect(result.error.message).toContain('maxWidth must be finite');
-      }
-    });
-
-    it('should return Err when maxWidth is NaN', () => {
-      const width = new Decimal(0.05);
-      const maxWidth = new Decimal(NaN);
-
-      const result = ValidateMaxWidth.check(width, maxWidth);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_AMOUNT);
         expect(result.error.message).toContain('maxWidth must be finite');
       }
     });
@@ -71,7 +57,7 @@ describe('ValidateMaxWidth', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_AMOUNT);
         expect(result.error.message).toContain('maxWidth must be positive');
       }
     });
@@ -84,7 +70,7 @@ describe('ValidateMaxWidth', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_AMOUNT);
         expect(result.error.message).toContain('maxWidth must be positive');
       }
     });

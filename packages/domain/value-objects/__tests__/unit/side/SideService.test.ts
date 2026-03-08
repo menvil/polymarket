@@ -1,0 +1,373 @@
+/**
+ * Тесты для SideService
+ */
+
+import { describe, it, expect } from '@jest/globals';
+import { SideService, type Side, SideErrorReason } from '../../../src/side/index.js';
+
+describe('SideService', () => {
+  describe('fromString()', () => {
+    it('should create Side from valid BUY string', () => {
+      const result = SideService.fromString('BUY');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe('BUY');
+      }
+    });
+
+    it('should create Side from valid SELL string', () => {
+      const result = SideService.fromString('SELL');
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe('SELL');
+      }
+    });
+
+    it('should fail for invalid string', () => {
+      const result = SideService.fromString('INVALID');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('Invalid side value');
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_VALUE);
+        expect(result.error.context?.value).toBe('INVALID');
+        expect(result.error.context?.expectedValues).toEqual(['BUY', 'SELL']);
+      }
+    });
+
+    it('should fail for lowercase buy with INVALID_VALUE and expectedValues', () => {
+      const result = SideService.fromString('buy');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_VALUE);
+        expect(result.error.context?.expectedValues).toEqual(['BUY', 'SELL']);
+      }
+    });
+
+    it('should fail for empty string with INVALID_VALUE reason', () => {
+      const result = SideService.fromString('');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_VALUE);
+        expect(result.error.context?.op).toBe('fromString');
+        expect(result.error.context?.value).toBe('');
+      }
+    });
+  });
+
+  describe('fromUnknown()', () => {
+    it('should create Side from valid BUY', () => {
+      const value: unknown = 'BUY';
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe('BUY');
+      }
+    });
+
+    it('should create Side from valid SELL', () => {
+      const value: unknown = 'SELL';
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value).toBe('SELL');
+      }
+    });
+
+    it('should fail for non-string type (number)', () => {
+      const value: unknown = 123;
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.message).toContain('must be string');
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.type).toBe('number');
+      }
+    });
+
+    it('should fail for null with INVALID_TYPE and distinct actualTag', () => {
+      const value: unknown = null;
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.type).toBe('object');
+        expect(result.error.context?.actualTag).toBe('[object Null]');
+        expect(result.error.message).toContain('[object Null]');
+      }
+    });
+
+    it('should fail for undefined', () => {
+      const value: unknown = undefined;
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.type).toBe('undefined');
+      }
+    });
+
+    it('should fail for object with actualTag [object Object]', () => {
+      const value: unknown = { side: 'BUY' };
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Object]');
+        expect(result.error.context?.op).toBe('fromUnknown');
+      }
+    });
+
+    it('should fail for array with distinct actualTag [object Array]', () => {
+      const value: unknown = ['BUY'];
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.actualTag).toBe('[object Array]');
+        expect(result.error.message).toContain('[object Array]');
+      }
+    });
+  });
+
+  describe('isValid()', () => {
+    it('should return true for BUY', () => {
+      expect(SideService.isValid('BUY')).toBe(true);
+    });
+
+    it('should return true for SELL', () => {
+      expect(SideService.isValid('SELL')).toBe(true);
+    });
+
+    it('should return false for invalid string', () => {
+      expect(SideService.isValid('INVALID')).toBe(false);
+    });
+
+    it('should return false for lowercase', () => {
+      expect(SideService.isValid('buy')).toBe(false);
+      expect(SideService.isValid('sell')).toBe(false);
+    });
+
+    it('should return false for null', () => {
+      expect(SideService.isValid(null)).toBe(false);
+    });
+
+    it('should return false for undefined', () => {
+      expect(SideService.isValid(undefined)).toBe(false);
+    });
+
+    it('should return false for number', () => {
+      expect(SideService.isValid(123)).toBe(false);
+    });
+  });
+
+  describe('opposite()', () => {
+    it('should return SELL for BUY', () => {
+      expect(SideService.opposite('BUY')).toBe('SELL');
+    });
+
+    it('should return BUY for SELL', () => {
+      expect(SideService.opposite('SELL')).toBe('BUY');
+    });
+
+    it('should be reversible', () => {
+      const side: Side = 'BUY';
+      const opp = SideService.opposite(side);
+      const original = SideService.opposite(opp);
+      expect(original).toBe(side);
+    });
+  });
+
+  describe('canMatch()', () => {
+    it('should return true for BUY and SELL', () => {
+      expect(SideService.canMatch('BUY', 'SELL')).toBe(true);
+    });
+
+    it('should return true for SELL and BUY', () => {
+      expect(SideService.canMatch('SELL', 'BUY')).toBe(true);
+    });
+
+    it('should return false for BUY and BUY', () => {
+      expect(SideService.canMatch('BUY', 'BUY')).toBe(false);
+    });
+
+    it('should return false for SELL and SELL', () => {
+      expect(SideService.canMatch('SELL', 'SELL')).toBe(false);
+    });
+
+    it('should be symmetric', () => {
+      const side1: Side = 'BUY';
+      const side2: Side = 'SELL';
+      expect(SideService.canMatch(side1, side2)).toBe(SideService.canMatch(side2, side1));
+    });
+  });
+
+  describe('equals()', () => {
+    it('should return true for same side', () => {
+      expect(SideService.equals('BUY', 'BUY')).toBe(true);
+      expect(SideService.equals('SELL', 'SELL')).toBe(true);
+    });
+
+    it('should return false for different sides', () => {
+      expect(SideService.equals('BUY', 'SELL')).toBe(false);
+      expect(SideService.equals('SELL', 'BUY')).toBe(false);
+    });
+
+    it('should be reflexive', () => {
+      const side: Side = 'BUY';
+      expect(SideService.equals(side, side)).toBe(true);
+    });
+
+    it('should be symmetric', () => {
+      const side1: Side = 'BUY';
+      const side2: Side = 'SELL';
+      expect(SideService.equals(side1, side2)).toBe(SideService.equals(side2, side1));
+    });
+  });
+
+  describe('getAllValues()', () => {
+    it('should return all Side values', () => {
+      const all = SideService.getAllValues();
+
+      expect(all).toEqual(['BUY', 'SELL']);
+    });
+
+    it('should return frozen array (runtime immutable)', () => {
+      const all = SideService.getAllValues();
+
+      expect(Object.isFrozen(all)).toBe(true);
+    });
+
+    it('should not be corrupted by attempted mutation via as any', () => {
+      const all = SideService.getAllValues() as any;
+
+      // Попытка мутации в strict mode бросает TypeError — ловим молча
+      try { all.push('HACK'); } catch { /* ожидаемо */ }
+
+      expect(SideService.getAllValues()).toEqual(['BUY', 'SELL']);
+      expect(SideService.isValid('HACK')).toBe(false);
+    });
+
+    it('should return consistent expectedValues in error after mutation attempt', () => {
+      const all = SideService.getAllValues() as any;
+      try { all.push('HACK'); } catch { /* ожидаемо */ }
+
+      const result = SideService.fromString('HACK');
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.expectedValues).toEqual(['BUY', 'SELL']);
+      }
+    });
+  });
+
+  describe('isValidSide / ALL_SIDES consistency', () => {
+    it('should accept every value from getAllValues()', () => {
+      for (const side of SideService.getAllValues()) {
+        expect(SideService.isValid(side)).toBe(true);
+      }
+    });
+
+    it('should reject values not in getAllValues()', () => {
+      expect(SideService.isValid('BUY_EXTRA')).toBe(false);
+      expect(SideService.isValid('buy')).toBe(false);
+      expect(SideService.isValid('')).toBe(false);
+    });
+  });
+
+  describe('error context', () => {
+    it('should include op and opChain in error context', () => {
+      const result = SideService.fromString('INVALID');
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.op).toBe('fromString');
+        expect(result.error.context?.opChain).toBeDefined();
+      }
+    });
+
+    it('should include service name in opChain', () => {
+      const result = SideService.fromUnknown(123);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        const opChain = result.error.context?.opChain;
+        // opChain это массив операций
+        expect(Array.isArray(opChain)).toBe(true);
+        expect(opChain).toContain('SideService.fromUnknown');
+      }
+    });
+  });
+
+  describe('dirty runtime inputs (as any) — INVALID_TYPE contract', () => {
+    it('fromString(123 as any) → INVALID_TYPE (not INVALID_VALUE)', () => {
+      const result = SideService.fromString(123 as any);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Number]');
+      }
+    });
+
+    it('fromString(null as any) → INVALID_TYPE with actualTag [object Null]', () => {
+      const result = SideService.fromString(null as any);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Null]');
+      }
+    });
+  });
+
+  describe('expectedValues isolation', () => {
+    it('mutating error.context.expectedValues does not affect subsequent calls', () => {
+      const result = SideService.fromString('INVALID');
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // Мутируем expectedValues из одного error context
+        (result.error.context?.expectedValues as any)?.push('HACK');
+
+        // Следующий вызов должен вернуть чистый ['BUY', 'SELL']
+        const result2 = SideService.fromString('INVALID');
+        expect(result2.ok).toBe(false);
+        if (!result2.ok) {
+          expect(result2.error.context?.expectedValues).toEqual(['BUY', 'SELL']);
+        }
+      }
+    });
+  });
+
+  describe('fromUnknown() actualTag coverage — symbol and function', () => {
+    it('should fail for symbol with actualTag [object Symbol]', () => {
+      const value: unknown = Symbol('test');
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Symbol]');
+      }
+    });
+
+    it('should fail for function with actualTag [object Function]', () => {
+      const value: unknown = () => {};
+      const result = SideService.fromUnknown(value);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.reason).toBe(SideErrorReason.INVALID_TYPE);
+        expect(result.error.context?.actualTag).toBe('[object Function]');
+      }
+    });
+  });
+});

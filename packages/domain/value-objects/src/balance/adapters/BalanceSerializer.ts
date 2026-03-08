@@ -1,11 +1,10 @@
 import { Result, Err } from '@polymarket/result';
 import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
 import { accountIdToString, parseAccountId, asVenueId } from '@polymarket/ids';
-import { Balance } from '../core/Balance';
-import { BalanceService } from '../facade/BalanceService';
-import { Money } from '../../money/core/Money';
-import { MoneySerializer } from '../../money/adapters/MoneySerializer';
-import { BalanceErrorReason } from '../errors/BalanceErrorReason';
+import { Balance } from '../core/Balance.js';
+import { BalanceService } from '../facade/BalanceService.js';
+import { MoneySerializer } from '../../money/adapters/MoneySerializer.js';
+import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок
@@ -32,53 +31,6 @@ function safeStringify(value: unknown): string {
   } catch {
     return '[Unstringifiable]';
   }
-}
-
-/**
- * Helper для десериализации Money поля с стандартной обработкой ошибок
- *
- * @param fieldObj - Объект поля для десериализации
- * @param fieldName - Имя поля ('available' или 'reserved')
- * @returns Result<Money, InvalidBalanceError>
- *
- * @remarks
- * DRY helper для fromJSON - инкапсулирует:
- * - Вызов MoneySerializer.fromJSON
- * - Проброс reason из Money ошибки (UNSUPPORTED_CURRENCY)
- * - Стандартное оборачивание в InvalidBalanceError с правильным context
- */
-function deserializeMoneyField(
-  fieldObj: unknown,
-  fieldName: string
-): Result<Money, InvalidBalanceError> {
-  const moneyResult = MoneySerializer.fromJSON(fieldObj);
-  if (!moneyResult.ok) {
-    // Пробрасываем reason из ошибки Money, если он есть
-    const errorContext = moneyResult.error as { context?: { reason?: string } };
-    const moneyReason = errorContext.context?.reason;
-    const balanceReason = moneyReason === 'UNSUPPORTED_CURRENCY'
-      ? BalanceErrorReason.UNSUPPORTED_CURRENCY
-      : BalanceErrorReason.INVALID_FORMAT;
-
-    return Err(
-      new InvalidBalanceError(`Failed to deserialize '${fieldName}': ${moneyResult.error.message}`, {
-        context: {
-          source: ErrorSource.PARSING,
-          service: 'BalanceSerializer',
-          op: 'fromJSON',
-          field: fieldName,
-          [fieldName]: safeStringify(fieldObj),
-          reason: balanceReason,
-          cause: {
-            name: moneyResult.error.name,
-            message: moneyResult.error.message
-          }
-        }
-      })
-    );
-  }
-
-  return moneyResult;
 }
 
 /**
@@ -195,12 +147,12 @@ export class BalanceSerializer {
    * 1. Проверка что json это объект (не null, array, primitive)
    * 2. Проверка наличия обязательных полей 'available' и 'reserved'
    * 3. Проверка типов полей available/reserved (должны быть объектами)
-   * 4. Проверка наличия обязательных полей 'accountId' и 'venueId'
-   * 5. Проверка типов полей accountId/venueId (должны быть строками)
-   * 6. Десериализация available через MoneySerializer
-   * 7. Десериализация reserved через MoneySerializer
+   * 4. Десериализация available через MoneySerializer
+   * 5. Десериализация reserved через MoneySerializer
+   * 6. Проверка наличия обязательных полей 'accountId' и 'venueId'
+   * 7. Проверка типов полей accountId/venueId (должны быть строками)
    * 8. Парсинг accountId через parseAccountId()
-   * 9. Валидация venueId через asVenueId()
+   * 9. Создание VenueId (branded string)
    * 10. Делегирование BalanceService.create для бизнес-валидации
    *
    * @param json - JSON данные (unknown)
@@ -319,7 +271,63 @@ export class BalanceSerializer {
       );
     }
 
-    // 6. Проверка наличия поля accountId
+    // 6. Десериализация available через MoneySerializer
+    const availableResult = MoneySerializer.fromJSON(obj.available);
+    if (!availableResult.ok) {
+      // Пробрасываем reason из ошибки Money, если он есть
+      const errorContext = availableResult.error as unknown as { context?: { reason?: string } };
+      const moneyReason = errorContext.context?.reason;
+      const balanceReason = moneyReason === 'UNSUPPORTED_CURRENCY'
+        ? BalanceErrorReason.UNSUPPORTED_CURRENCY
+        : BalanceErrorReason.INVALID_FORMAT;
+
+      return Err(
+        new InvalidBalanceError(`Failed to deserialize 'available': ${availableResult.error.message}`, {
+          context: {
+            source: ErrorSource.PARSING,
+            service: BalanceSerializer.SERVICE_NAME,
+            op: 'fromJSON',
+            field: 'available',
+            available: safeStringify(obj.available),
+            reason: balanceReason,
+            cause: {
+              name: availableResult.error.name,
+              message: availableResult.error.message
+            }
+          }
+        })
+      );
+    }
+
+    // 7. Десериализация reserved через MoneySerializer
+    const reservedResult = MoneySerializer.fromJSON(obj.reserved);
+    if (!reservedResult.ok) {
+      // Пробрасываем reason из ошибки Money, если он есть
+      const errorContext = reservedResult.error as unknown as { context?: { reason?: string } };
+      const moneyReason = errorContext.context?.reason;
+      const balanceReason = moneyReason === 'UNSUPPORTED_CURRENCY'
+        ? BalanceErrorReason.UNSUPPORTED_CURRENCY
+        : BalanceErrorReason.INVALID_FORMAT;
+
+      return Err(
+        new InvalidBalanceError(`Failed to deserialize 'reserved': ${reservedResult.error.message}`, {
+          context: {
+            source: ErrorSource.PARSING,
+            service: BalanceSerializer.SERVICE_NAME,
+            op: 'fromJSON',
+            field: 'reserved',
+            reserved: safeStringify(obj.reserved),
+            reason: balanceReason,
+            cause: {
+              name: reservedResult.error.name,
+              message: reservedResult.error.message
+            }
+          }
+        })
+      );
+    }
+
+    // 8. Проверка наличия поля accountId
     if (!('accountId' in obj)) {
       return Err(
         new InvalidBalanceError(`Missing required field 'accountId'`, {
@@ -334,7 +342,7 @@ export class BalanceSerializer {
       );
     }
 
-    // 7. Проверка наличия поля venueId
+    // 9. Проверка наличия поля venueId
     if (!('venueId' in obj)) {
       return Err(
         new InvalidBalanceError(`Missing required field 'venueId'`, {
@@ -349,7 +357,7 @@ export class BalanceSerializer {
       );
     }
 
-    // 9. Проверка типа accountId (должен быть строкой)
+    // 10. Проверка типа accountId (должен быть строкой)
     if (typeof obj.accountId !== 'string') {
       return Err(
         new InvalidBalanceError(`Field 'accountId' must be a string`, {
@@ -379,19 +387,7 @@ export class BalanceSerializer {
       );
     }
 
-    // 12. Десериализация available через helper (используем DRY helper вместо дублирования кода)
-    const availableResult = deserializeMoneyField(obj.available, 'available');
-    if (!availableResult.ok) {
-      return availableResult;
-    }
-
-    // 13. Десериализация reserved через helper (используем DRY helper вместо дублирования кода)
-    const reservedResult = deserializeMoneyField(obj.reserved, 'reserved');
-    if (!reservedResult.ok) {
-      return reservedResult;
-    }
-
-    // 15. Парсинг accountId через parseAccountId()
+    // 12. Парсинг accountId через parseAccountId()
     const accountId = parseAccountId(obj.accountId);
     if (!accountId) {
       return Err(
@@ -407,7 +403,7 @@ export class BalanceSerializer {
       );
     }
 
-    // 17. Валидация venueId через asVenueId()
+    // 13. Валидация venueId через asVenueId()
     const venueId = asVenueId(obj.venueId);
     if (!venueId) {
       return Err(
@@ -426,7 +422,7 @@ export class BalanceSerializer {
       );
     }
 
-    // 18. Делегирование бизнес-валидации BalanceService
+    // 14. Делегирование бизнес-валидации BalanceService
     return BalanceService.create(
       availableResult.value,
       reservedResult.value,

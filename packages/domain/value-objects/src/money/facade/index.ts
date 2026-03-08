@@ -1,2 +1,2 @@
 // Money facade service
-export { MoneyService } from './MoneyService';
+export { MoneyService } from './MoneyService.js';

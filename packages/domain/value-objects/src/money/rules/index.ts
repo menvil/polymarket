@@ -1,3 +1,3 @@
-export { ValidateDivisorForMoneyDivision } from './ValidateDivisorForMoneyDivision';
-export { ValidateFactorForMoneyMultiplication } from './ValidateFactorForMoneyMultiplication';
-export { ValidateDeltaForIncreaseBy } from './ValidateDeltaForIncreaseBy';
+export { ValidateDivisorForMoneyDivision } from './ValidateDivisorForMoneyDivision.js';
+export { ValidateFactorForMoneyMultiplication } from './ValidateFactorForMoneyMultiplication.js';
+export { ValidateDeltaForIncreaseBy } from './ValidateDeltaForIncreaseBy.js';

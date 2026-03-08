@@ -34,20 +34,13 @@ export class ValidateMinSpread {
    *
    * @example
    * ```typescript
-   * import { KnownMarketDataSources } from '@polymarket/ids';
-   * import Decimal from 'decimal.js';
-   *
-   * const quote = Quote.of(
-   *   bid, ask, bidSize, askSize,
-   *   new Decimal(Date.now()),
-   *   KnownMarketDataSources.POLYMARKET_WS,
-   *   'TEST_MARKET' as InstrumentId
-   * );
+   * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
    * const spread = quote.spreadWidthOrZero();
    *
    * const result = ValidateMinSpread.check(spread, new Decimal(0.001));
    * if (!result.ok) {
-   *   console.error('Spread too narrow');
+   *     console.error('Spread too narrow');
+   *   }
    * }
    * ```
    */

@@ -221,13 +221,13 @@ import { SpreadFormatter } from '@polymarket/value-objects';
 Форматирует спред с настраиваемыми опциями.
 
 ```typescript
-format(spread: Spread, options?: SpreadFormatOptions): string
+format(spread: Spread, options?: FormatOptions): string
 ```
 
 **Опции:**
 
 ```typescript
-interface SpreadFormatOptions {
+interface FormatOptions {
   decimals?: number;       // Количество десятичных знаков (default: 4)
   showWidth?: boolean;     // Показывать ширину спреда (default: true)
   showMidpoint?: boolean;  // Показывать midpoint (default: false)
@@ -445,7 +445,7 @@ function handleSpreadUpdate(message: SpreadUpdate) {
   // Отправляем в UI
   ui.updateMarket(message.marketId, {
     display: SpreadFormatter.format(spread, { decimals: 4 }),
-    widthBps: spread.widthInBasisPoints().toFixed(0),
+    widthBps: spread.widthRatio().toDecimal().times(10000).toFixed(0),
     midPrice: spread.mid().toNumber()
   });
 }
@@ -510,7 +510,7 @@ export const SpreadBadge: React.FC<SpreadBadgeProps> = ({
     ? SpreadFormatter.toDetailedString(spread, 4)
     : SpreadFormatter.toBidAskString(spread, 4);
 
-  const widthBps = spread.widthInBasisPoints().toNumber();
+  const widthBps = spread.widthRatio().toDecimal().times(10000).toNumber();
   const liquidityClass = 
     widthBps < 50 ? 'high-liquidity' :
     widthBps < 200 ? 'medium-liquidity' : 'low-liquidity';
@@ -567,16 +567,15 @@ const display = `${spread.bid()}-${spread.ask()}`;  // Нет контроля �
 ### Кэширование форматированных строк
 
 ```typescript
-const formatCache = new Map<string, string>();
+const formatCache = new Map<Spread, string>();
 
 function getCachedFormat(spread: Spread, decimals: number = 4): string {
-  const key = `${spread.bid().value().toString()}_${spread.ask().value().toString()}_${decimals}`;
-  const existing = formatCache.get(key);
+  const existing = formatCache.get(spread);
   if (existing) return existing;
-
+  
   const formatted = SpreadFormatter.format(spread, { decimals });
-  formatCache.set(key, formatted);
-
+  formatCache.set(spread, formatted);
+  
   return formatted;
 }
 ```
@@ -589,7 +588,7 @@ function serializeBatch(spreads: Spread[]): string {
   return JSON.stringify(jsons);
 }
 
-function deserializeBatch(jsonString: string): Result<Spread, InvalidSpreadError>[] {
+function deserializeBatch(jsonString: string): Result<Spread[], InvalidSpreadError>[] {
   try {
     const jsons = JSON.parse(jsonString);
     return jsons.map((json: unknown) => SpreadSerializer.fromJSON(json));

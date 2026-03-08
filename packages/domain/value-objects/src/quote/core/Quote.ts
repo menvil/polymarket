@@ -4,6 +4,7 @@ import { Price } from '../../price/core/Price.js';
 import { Quantity } from '../../quantity/core/Quantity.js';
 import { Spread } from '../../spread/core/Spread.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
+import { Timestamp } from '../../timestamp/core/Timestamp.js';
 import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
 
 /**
@@ -18,7 +19,7 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  *    - bid <= ask (если оба определены)
  *    - Sizes >= 0 (гарантирует Quantity)
  *    - Структурная согласованность: bid=null → bidSize=0, ask=null → askSize=0
- *    - Валидный timestamp (finite, integer, >= 0, <= MAX)
+ *    - Валидный timestamp (гарантирует Timestamp VO)
  *
  * 2. **Чистую математику** (query методы, вычисления):
  *    - spreadWidthOrZero() - вычисление ширины спреда
@@ -31,21 +32,19 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  * - Валидацию spread границ (используй Rules)
  * - Market crossing detection бизнес-логику (используй Rules)
  *
- * Внутреннее представление: композиция Price + Quantity + timestamp (Decimal).
+ * Внутреннее представление: композиция Price + Quantity + Timestamp.
  *
  * @example
  * ```typescript
- * import { KnownMarketDataSources } from '@polymarket/ids';
- * import Decimal from 'decimal.js';
- *
  * // ✅ В Core и Facade (throws)
+ * const ts = Timestamp.now();
  * const quote = Quote.of(
  *   Price.of(0.48),
  *   Price.of(0.52),
  *   Quantity.of(100),
  *   Quantity.of(150),
- *   new Decimal(Date.now()),
- *   KnownMarketDataSources.POLYMARKET_WS,
+ *   ts,
+ *   'POLYMARKET_WS' as MarketDataSourceId,
  *   'TEST_MARKET' as InstrumentId
  * );
  *
@@ -55,8 +54,8 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  *   null,
  *   Quantity.of(100),
  *   Quantity.ZERO,
- *   new Decimal(Date.now()),
- *   KnownMarketDataSources.POLYMARKET_WS,
+ *   ts,
+ *   'POLYMARKET_WS' as MarketDataSourceId,
  *   'TEST_MARKET' as InstrumentId
  * );
  *
@@ -66,121 +65,19 @@ import { QuoteInvariantViolation } from './QuoteInvariantViolation.js';
  * const mid = quote.midOrNull(); // Decimal | null
  *
  * // ❌ В публичном коде - используй QuoteService:
- * const result = QuoteService.create(
- *   0.48, 0.52, 100, 150,
- *   KnownMarketDataSources.POLYMARKET_WS,
- *   'TEST_MARKET' as InstrumentId
- * );
+ * const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
  * if (!result.ok) {
  *   console.error(result.error);
  * }
  * ```
  */
 export class Quote {
-  /** Максимальный timestamp (год 2286) */
-  private static readonly MAX_TIMESTAMP = new Decimal(9999999999999);
-
-  /**
-   * Helper: бросает ошибку timestamp в зависимости от контекста
-   *
-   * @internal
-   * @param context - Контекст ошибки ('timestamp' или 'now')
-   * @param timestampMsg - Сообщение для QuoteInvariantViolation
-   * @param nowMsg - Сообщение для Error
-   * @throws {QuoteInvariantViolation} Если context === 'timestamp'
-   * @throws {Error} Если context === 'now'
-   *
-   * @remarks
-   * Централизует логику бросания ошибок для validateTimestamp().
-   * Убирает дублирование if (context === 'timestamp') ... else ... в каждой проверке.
-   */
-  private static throwTimestampError(
-    context: 'timestamp' | 'now',
-    timestampMsg: string,
-    nowMsg: string
-  ): never {
-    if (context === 'timestamp') {
-      throw new QuoteInvariantViolation(timestampMsg, 'INVALID_TIMESTAMP');
-    } else {
-      throw new Error(nowMsg);
-    }
-  }
-
-  /**
-   * Валидирует timestamp (Unix ms)
-   *
-   * @param timestamp - Timestamp для валидации (Decimal)
-   * @param context - Контекст для сообщения об ошибке ('timestamp' или 'now')
-   * @throws {QuoteInvariantViolation} Если timestamp невалидный
-   * @throws {Error} Если timestamp для age() невалидный
-   *
-   * @remarks
-   * Общая валидация для конструктора (timestamp котировки) и age() (now timestamp).
-   * Разные типы ошибок для разных контекстов.
-   *
-   * Инварианты timestamp (Unix ms):
-   * - Not NaN
-   * - Finite
-   * - Integer (целое число миллисекунд)
-   * - >= 0 (Unix epoch начинается с 0)
-   * - <= MAX_TIMESTAMP (год 2286)
-   */
-  private static validateTimestamp(
-    timestamp: Decimal,
-    context: 'timestamp' | 'now'
-  ): void {
-    // Инвариант: Not NaN
-    if (timestamp.isNaN()) {
-      Quote.throwTimestampError(
-        context,
-        `Timestamp must be finite, got ${timestamp.toString()}`,
-        'Timestamp cannot be NaN'
-      );
-    }
-
-    // Инвариант: Finite
-    if (!timestamp.isFinite()) {
-      Quote.throwTimestampError(
-        context,
-        `Timestamp must be finite, got ${timestamp.toString()}`,
-        'Timestamp must be finite'
-      );
-    }
-
-    // Инвариант: Integer (Unix ms - целое число)
-    if (!timestamp.isInteger()) {
-      Quote.throwTimestampError(
-        context,
-        `Timestamp must be integer milliseconds, got ${timestamp.toString()}`,
-        'Timestamp must be integer (Unix ms)'
-      );
-    }
-
-    // Инвариант: >= 0 (Unix epoch)
-    if (timestamp.isNegative()) {
-      Quote.throwTimestampError(
-        context,
-        `Timestamp must be non-negative, got ${timestamp.toString()}`,
-        'Timestamp cannot be negative'
-      );
-    }
-
-    // Инвариант: <= MAX_TIMESTAMP (разумный верхний предел)
-    if (timestamp.greaterThan(Quote.MAX_TIMESTAMP)) {
-      Quote.throwTimestampError(
-        context,
-        `Timestamp ${timestamp.toString()} exceeds maximum ${Quote.MAX_TIMESTAMP.toString()}`,
-        `Timestamp ${timestamp.toString()} exceeds maximum ${Quote.MAX_TIMESTAMP.toString()}`
-      );
-    }
-  }
-
   private constructor(
     private readonly _bid: Price | null,
     private readonly _ask: Price | null,
     private readonly _bidSize: Quantity,
     private readonly _askSize: Quantity,
-    private readonly _timestampMs: Decimal,
+    private readonly _timestamp: Timestamp,
     private readonly _sourceId: MarketDataSourceId,
     private readonly _instrumentId: InstrumentId
   ) {
@@ -224,8 +121,8 @@ export class Quote {
       );
     }
 
-    // Инвариант 5: timestamp должен быть валидным Unix ms
-    Quote.validateTimestamp(_timestampMs, 'timestamp');
+    // Инвариант 5: timestamp валидность гарантируется Timestamp VO
+    // (уже проверено при создании Timestamp)
   }
 
   /**
@@ -237,14 +134,14 @@ export class Quote {
    * Бросает QuoteInvariantViolation при нарушении инвариантов.
    * Для публичного API используйте QuoteService.create().
    *
-   * ВАЖНО: timestamp должен быть Decimal (Unix ms).
-   * Конвертация Date/number/string → Decimal делается в QuoteService.
+   * ВАЖНО: timestamp должен быть Timestamp VO.
+   * Конвертация Date/number/string → Timestamp делается в QuoteService.
    *
    * @param bid - Цена покупки (может быть null)
    * @param ask - Цена продажи (может быть null)
    * @param bidSize - Объём на покупку
    * @param askSize - Объём на продажу
-   * @param timestampMs - Временная метка в Unix ms (Decimal)
+   * @param timestamp - Временная метка (Timestamp VO)
    * @param sourceId - Источник маркет-данных
    * @param instrumentId - ID инструмента
    * @returns Новый Quote объект
@@ -253,7 +150,8 @@ export class Quote {
    * @example
    * ```typescript
    * // ✅ В Core и Facade
-   * Quote.of(bid, ask, bidSize, askSize, new Decimal(Date.now()), sourceId, instrumentId);
+   * const ts = TimestampService.create(Date.now()).value!;
+   * Quote.of(bid, ask, bidSize, askSize, ts, sourceId, instrumentId);
    *
    * // ❌ В публичном коде - используй QuoteService
    * const result = QuoteService.create(0.48, 0.52, 100, 150, sourceId, instrumentId);
@@ -264,11 +162,11 @@ export class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestampMs: Decimal,
+    timestamp: Timestamp,
     sourceId: MarketDataSourceId,
     instrumentId: InstrumentId
   ): Quote {
-    return new Quote(bid, ask, bidSize, askSize, timestampMs, sourceId, instrumentId);
+    return new Quote(bid, ask, bidSize, askSize, timestamp, sourceId, instrumentId);
   }
 
   /**
@@ -338,6 +236,26 @@ export class Quote {
   }
 
   /**
+   * Возвращает Timestamp VO
+   *
+   * @returns Timestamp объект
+   *
+   * @remarks
+   * Возвращает внутренний Timestamp для использования в операциях с котировками.
+   * Для получения только миллисекунд используйте `timestampMs()`.
+   *
+   * @example
+   * ```typescript
+   * const quote = Quote.of(...);
+   * const ts = quote.timestamp();
+   * console.log(ts.toISO());
+   * ```
+   */
+  public timestamp(): Timestamp {
+    return this._timestamp;
+  }
+
+  /**
    * Возвращает timestamp в Unix ms
    *
    * @returns Decimal (Unix ms)
@@ -355,7 +273,7 @@ export class Quote {
    * ```
    */
   public timestampMs(): Decimal {
-    return this._timestampMs;
+    return this._timestamp.value();
   }
 
   /**
@@ -415,22 +333,21 @@ export class Quote {
    * ```
    */
   public getTimestamp(): Date {
-    return new Date(this._timestampMs.toNumber());
+    return this._timestamp.toDate();
   }
 
   /**
    * Вычисляет возраст котировки в миллисекундах
    *
-   * @param nowMs - Текущее время в Unix ms (Decimal)
+   * @param now - Текущее время (Timestamp VO, по умолчанию Timestamp.now())
    * @returns Возраст котировки в миллисекундах как Decimal
-   * @throws {Error} Если nowMs нарушает инварианты timestamp
    *
    * @remarks
-   * Чистая математика: now - timestamp с использованием Decimal.
+   * Чистая математика: now - timestamp с использованием Timestamp.diffMs().
    * Полезно для проверок устаревания котировок.
    * Если now < timestamp, возвращает отрицательное значение (котировка из будущего).
    *
-   * Инварианты timestamp (проверяются в Core):
+   * Timestamp VO гарантирует все инварианты:
    * - Not NaN
    * - Finite
    * - Integer (Unix ms - целое число)
@@ -440,8 +357,12 @@ export class Quote {
    * ```typescript
    * const quote = Quote.of(...);
    *
-   * // Использование
-   * const age = quote.age(new Decimal(Date.now()));
+   * // Использование с текущим временем (по умолчанию)
+   * const age = quote.age();
+   *
+   * // Использование с конкретным временем
+   * const now = Timestamp.now();
+   * const age2 = quote.age(now);
    *
    * // Проверка устаревания
    * if (age.greaterThan(5000)) {
@@ -449,11 +370,8 @@ export class Quote {
    * }
    * ```
    */
-  public age(nowMs: Decimal): Decimal {
-    // Валидация nowMs через общий метод
-    Quote.validateTimestamp(nowMs, 'now');
-
-    return nowMs.minus(this._timestampMs);
+  public age(now: Timestamp = Timestamp.now()): Decimal {
+    return now.diffMs(this._timestamp);
   }
 
   /**
@@ -463,7 +381,7 @@ export class Quote {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
+   * const quote = Quote.of(bid, ask, bidSize, askSize, Timestamp.now(), sourceId, instrumentId);
    * if (quote.isTwoSided()) {
    *   console.log('Both sides available');
    * }
@@ -518,7 +436,7 @@ export class Quote {
    *
    * @example
    * ```typescript
-   * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
+   * const quote = Quote.of(bid, ask, bidSize, askSize, Timestamp.now(), sourceId, instrumentId);
    * const spread = quote.spread();
    * if (spread !== null) {
    *   console.log(`Width: ${spread.width().toString()}`);
@@ -554,8 +472,10 @@ export class Quote {
    *
    * @example
    * ```typescript
-   * const quote1 = Quote.of(bid, ask, bidSize, askSize, Date.now());
-   * const quote2 = Quote.of(bid, ask, bidSize, askSize, Date.now() + 100);
+   * const ts1 = Timestamp.now();
+   * const ts2 = TimestampService.addMs(ts1, 100).value!;
+   * const quote1 = Quote.of(bid, ask, bidSize, askSize, ts1, sourceId, instrumentId);
+   * const quote2 = Quote.of(bid, ask, bidSize, askSize, ts2, sourceId, instrumentId);
    *
    * // true - одинаковые рыночные условия, разное время
    * console.log(quote1.equals(quote2));
@@ -588,29 +508,26 @@ export class Quote {
   }
 
   /**
-   * Строгое сравнение включая timestamp и metadata
+   * Строгое сравнение включая timestamp
    *
    * @remarks
-   * Сравнивает bid, ask, sizes, timestamp, sourceId И instrumentId.
-   * Используйте когда нужно проверить что это именно тот же самый снимок данных
-   * из того же источника для того же инструмента.
+   * Сравнивает bid, ask, sizes И timestamp.
+   * Используйте когда нужно проверить что это именно тот же самый снимок данных.
    *
-   * Для большинства случаев используйте equals() без timestamp/metadata.
+   * Для большинства случаев используйте equals() без timestamp.
    *
    * @param other - Другая котировка
-   * @returns true если котировки полностью идентичны включая timestamp и metadata
+   * @returns true если котировки полностью идентичны включая timestamp
    *
    * @example
    * ```typescript
-   * const ts = Date.now();
-   * const quote1 = Quote.of(bid, ask, bidSize, askSize, ts, 'SOURCE_A', 'BTC-USD');
-   * const quote2 = Quote.of(bid, ask, bidSize, askSize, ts, 'SOURCE_A', 'BTC-USD');
-   * const quote3 = Quote.of(bid, ask, bidSize, askSize, ts + 1000, 'SOURCE_A', 'BTC-USD');
-   * const quote4 = Quote.of(bid, ask, bidSize, askSize, ts, 'SOURCE_B', 'BTC-USD');
+   * const ts = Timestamp.now();
+   * const quote1 = Quote.of(bid, ask, bidSize, askSize, ts);
+   * const quote2 = Quote.of(bid, ask, bidSize, askSize, ts);
+   * const quote3 = Quote.of(bid, ask, bidSize, askSize, TimestampService.addMs(ts, 1000).value!);
    *
-   * console.log(quote1.equalsWithTimestamp(quote2)); // true - полностью идентичны
+   * console.log(quote1.equalsWithTimestamp(quote2)); // true
    * console.log(quote1.equalsWithTimestamp(quote3)); // false - разное время
-   * console.log(quote1.equalsWithTimestamp(quote4)); // false - разный источник
    * console.log(quote1.equals(quote3)); // true - одинаковые рыночные данные
    * ```
    */
@@ -620,21 +537,8 @@ export class Quote {
       return false;
     }
 
-    // Затем проверяем timestamp (Decimal.equals для точного сравнения)
-    if (!this._timestampMs.equals(other._timestampMs)) {
-      return false;
-    }
-
-    // Затем проверяем metadata (sourceId и instrumentId)
-    if (this._sourceId !== other._sourceId) {
-      return false;
-    }
-
-    if (this._instrumentId !== other._instrumentId) {
-      return false;
-    }
-
-    return true;
+    // Затем проверяем timestamp (Timestamp.equals для точного сравнения)
+    return this._timestamp.equals(other._timestamp);
   }
 
   /**
@@ -651,11 +555,12 @@ export class Quote {
    * @example
    * ```typescript
    * // Two-sided quote
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * const ts = Timestamp.now();
+   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), ts, sourceId, instrumentId);
    * console.log(quote.spreadWidthOrZero().toNumber()); // 0.04
    *
    * // Bid-only quote
-   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, Date.now());
+   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, ts, sourceId, instrumentId);
    * console.log(bidOnly.spreadWidthOrZero().toNumber()); // 0
    * ```
    */
@@ -672,9 +577,6 @@ export class Quote {
    * Mid price - это метрика, не рыночная сущность.
    * Возвращает Decimal, а не Price, чтобы избежать ложной типизации.
    *
-   * Делегирует вычисление в Spread.mid() для устранения дублирования.
-   * Если котировка не two-sided, возвращает null.
-   *
    * Если нужен Price объект, вызывающий должен явно создать его:
    * ```typescript
    * const mid = quote.midOrNull();
@@ -683,23 +585,29 @@ export class Quote {
    * }
    * ```
    *
-   * Формула: (bid + ask) / 2 (делегируется в Spread.mid())
+   * Формула: (bid + ask) / 2
    *
    * @example
    * ```typescript
    * // Two-sided quote
-   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), Date.now());
+   * const ts = Timestamp.now();
+   * const quote = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(150), ts, sourceId, instrumentId);
    * const mid = quote.midOrNull();
    * console.log(mid?.toNumber()); // 0.50
    *
    * // Bid-only quote
-   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, Date.now());
+   * const bidOnly = Quote.of(Price.of(0.50), null, Quantity.of(100), Quantity.ZERO, ts, sourceId, instrumentId);
    * console.log(bidOnly.midOrNull()); // null
    * ```
    */
   public midOrNull(): Decimal | null {
-    const spread = this.spread();
-    return spread ? spread.mid() : null;
+    if (!this.isTwoSided()) {
+      return null;
+    }
+
+    const bidVal = this._bid!.value();
+    const askVal = this._ask!.value();
+    return bidVal.plus(askVal).dividedBy(2);
   }
 
   /**
@@ -722,16 +630,17 @@ export class Quote {
    *
    * @example
    * ```typescript
+   * const ts = Timestamp.now();
    * // Сбалансированная котировка
-   * const balanced = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(100), Date.now());
+   * const balanced = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(100), Quantity.of(100), ts, sourceId, instrumentId);
    * console.log(balanced.imbalance().toNumber()); // 0
    *
    * // Больше bid ликвидности
-   * const bidHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(150), Quantity.of(50), Date.now());
+   * const bidHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(150), Quantity.of(50), ts, sourceId, instrumentId);
    * console.log(bidHeavy.imbalance().toNumber()); // 0.5 (50% дисбаланс в сторону bid)
    *
    * // Больше ask ликвидности
-   * const askHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(50), Quantity.of(150), Date.now());
+   * const askHeavy = Quote.of(Price.of(0.48), Price.of(0.52), Quantity.of(50), Quantity.of(150), ts, sourceId, instrumentId);
    * console.log(askHeavy.imbalance().toNumber()); // -0.5 (50% дисбаланс в сторону ask)
    * ```
    */
@@ -759,7 +668,6 @@ export class Quote {
    * - Для отображения: умножьте на 100 (например, `ratio.toDecimal().times(100)`)
    *
    * Формула: spread.width / mid (БЕЗ умножения на 100)
-   * Делегирует к Spread.widthRatio() для вычисления.
    *
    * Пример для bid 0.48, ask 0.52:
    * - mid = 0.50
@@ -773,7 +681,7 @@ export class Quote {
    *   Price.of(new Decimal(0.52)),
    *   Quantity.of(new Decimal(100)),
    *   Quantity.of(new Decimal(150)),
-   *   new Decimal(Date.now()),
+   *   Timestamp.now(),
    *   'POLYMARKET_WS' as MarketDataSourceId,
    *   'TEST_MARKET' as InstrumentId
    * );
@@ -785,6 +693,20 @@ export class Quote {
    * ```
    */
   public spreadPercentage(): Ratio | null {
-    return this.spread()?.widthRatio() ?? null;
+    if (!this.isTwoSided()) return null;
+
+    const mid = this.midOrNull();
+    if (!mid) return null;
+
+    const spread = this.spread();
+    if (!spread) return null;
+
+    const width = spread.width();
+
+    // Ratio хранит ДРОБЬ (fraction), не процент!
+    // 0.08 означает 8%, не число 8
+    const fraction = width.dividedBy(mid);
+
+    return Ratio.of(fraction);
   }
 }

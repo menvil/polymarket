@@ -167,6 +167,146 @@ describe('OutcomeTokenSerializer', () => {
       }
     });
 
+    it('should reject array input', () => {
+      const result = OutcomeTokenSerializer.fromJSON([]);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_json');
+        expect(result.error.context?.type).toBe('array');
+      }
+    });
+
+    it('should reject conditionRef as null', () => {
+      const result = OutcomeTokenSerializer.fromJSON({ conditionRef: null, outcomeKey: 'UP' });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_condition_ref');
+      }
+    });
+
+    it('should reject conditionRef as string', () => {
+      const result = OutcomeTokenSerializer.fromJSON({ conditionRef: 'invalid', outcomeKey: 'UP' });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_condition_ref');
+      }
+    });
+
+    it('should reject conditionRef as array', () => {
+      const result = OutcomeTokenSerializer.fromJSON({ conditionRef: [], outcomeKey: 'UP' });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_condition_ref');
+      }
+    });
+
+    it('should reject conditionRef missing required fields', () => {
+      const result = OutcomeTokenSerializer.fromJSON({ conditionRef: {}, outcomeKey: 'UP' });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_condition_ref');
+      }
+    });
+
+    it('should reject protocolId as non-string', () => {
+      const result = OutcomeTokenSerializer.fromJSON({
+        conditionRef: { kind: 'ONCHAIN', protocolId: 123, chainId: 137, conditionId: '0xaa' },
+        outcomeKey: 'UP',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_condition_ref');
+      }
+    });
+
+    it('should reject chainId as non-number', () => {
+      const result = OutcomeTokenSerializer.fromJSON({
+        conditionRef: {
+          kind: 'ONCHAIN',
+          protocolId: 'POLYMARKET_CTF',
+          chainId: 'not-a-number',
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+        outcomeKey: 'UP',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_condition_ref');
+      }
+    });
+
+    it('should reject conditionId as non-string', () => {
+      const result = OutcomeTokenSerializer.fromJSON({
+        conditionRef: {
+          kind: 'ONCHAIN',
+          protocolId: 'POLYMARKET_CTF',
+          chainId: 137,
+          conditionId: 12345,
+        },
+        outcomeKey: 'UP',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_condition_ref');
+      }
+    });
+
+    it('should reject outcomeKey as non-string', () => {
+      const result = OutcomeTokenSerializer.fromJSON({
+        conditionRef: {
+          kind: 'ONCHAIN',
+          protocolId: 'POLYMARKET_CTF',
+          chainId: 137,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+        outcomeKey: 123,
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_outcome_key');
+      }
+    });
+
+    it('should reject invalid protocolId format', () => {
+      const result = OutcomeTokenSerializer.fromJSON({
+        conditionRef: {
+          kind: 'ONCHAIN',
+          protocolId: 'invalid-protocol-id!',
+          chainId: 137,
+          conditionId: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        },
+        outcomeKey: 'UP',
+      });
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error.context?.kind).toBe('invalid_condition_ref');
+      }
+    });
+
+    it('should trigger safeStringify circular reference path', () => {
+      // Создаём объект с циклической ссылкой
+      const circular: Record<string, unknown> = { outcomeKey: 'UP' };
+      circular['self'] = circular;
+      // conditionRef missing — вызывает ошибку с safeStringify(json)
+      const result = OutcomeTokenSerializer.fromJSON(circular);
+
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        // Сообщение должно содержать [Circular] из safeStringify
+        expect(result.error.context?.kind).toBe('invalid_json');
+      }
+    });
+
     it('should support round-trip serialization', () => {
       const tokenResult = OutcomeTokenService.create(testConditionRef, BinaryOutcome.DOWN);
       expect(tokenResult.ok).toBe(true);

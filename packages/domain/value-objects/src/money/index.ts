@@ -12,20 +12,20 @@
  */
 
 // Core (публичный API)
-export { Money, SupportedCurrency, MoneyInvariantViolation } from './core';
+export { Money, SupportedCurrency, MoneyInvariantViolation } from './core/index.js';
 
 // Facade (главный публичный API)
-export { MoneyService } from './facade';
+export { MoneyService } from './facade/index.js';
 
 // Adapters (публичный API)
-export { MoneySerializer, MoneyFormatter, type MoneyJSON } from './adapters';
+export { MoneySerializer, MoneyFormatter, type MoneyJSON } from './adapters/index.js';
 
 // Errors (публичный API)
-export { MoneyErrorReason } from './errors';
+export { MoneyErrorReason } from './errors/index.js';
 
 // Rules (публичный API для внешней валидации)
 export {
   ValidateDivisorForMoneyDivision,
   ValidateFactorForMoneyMultiplication,
   ValidateDeltaForIncreaseBy
-} from './rules';
+} from './rules/index.js';

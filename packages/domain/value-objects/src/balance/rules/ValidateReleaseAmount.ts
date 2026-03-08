@@ -1,7 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
-import { Money } from '../../money/core/Money';
-import { BalanceErrorReason } from '../errors/BalanceErrorReason';
+import { Money } from '../../money/core/Money.js';
+import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
 /**
  * Правило: Освобождаемая/списываемая сумма должна быть <= зарезервированным средствам
@@ -12,6 +12,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * Проверяет:
  * - releaseAmount <= reserved (достаточно зарезервированных средств для освобождения)
  * - releaseAmount > 0 (нельзя освобождать нулевую или отрицательную сумму)
+ * - releaseAmount isFinite (защита от Infinity/NaN)
  *
  * Возвращает InvalidBalanceError — стандарт домена Polymarket для валидации Balance.
  *
@@ -25,10 +26,9 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * ```typescript
  * import { ValidateReleaseAmount } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
- * import Decimal from 'decimal.js';
  *
- * const reserved = Money.of(new Decimal(5000), 'USDC');
- * const releaseAmount = Money.of(new Decimal(2000), 'USDC');
+ * const reserved = Money.fromUSDC(5000);
+ * const releaseAmount = Money.fromUSDC(2000);
  *
  * // ✅ Достаточно зарезервированных средств
  * const result1 = ValidateReleaseAmount.check(releaseAmount, reserved);
@@ -36,7 +36,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  *
  * // ❌ Недостаточно зарезервированных средств
  * const result2 = ValidateReleaseAmount.check(
- *   Money.of(new Decimal(10000), 'USDC'),
+ *   Money.fromUSDC(10000),
  *   reserved
  * );
  * if (!result2.ok) {
@@ -46,7 +46,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  *
  * // ❌ Попытка освободить 0 или отрицательную сумму
  * const result3 = ValidateReleaseAmount.check(
- *   Money.of(new Decimal(0), 'USDC'),
+ *   Money.fromUSDC(0),
  *   reserved
  * );
  * if (!result3.ok) {
@@ -56,10 +56,6 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * ```
  */
 export class ValidateReleaseAmount {
-  private constructor() {
-    // Static-only class — нельзя создавать экземпляры
-  }
-
   public static check(
     releaseAmount: Money,
     reserved: Money
@@ -67,17 +63,30 @@ export class ValidateReleaseAmount {
     const amount = releaseAmount.value();
     const reservedAmount = reserved.value();
 
-    // Проверка 1: releaseAmount должен быть > 0
-    // Примечание: проверка isFinite не нужна - Money.of() гарантирует finite значения через инварианты
+    // Проверка 1: releaseAmount должен быть finite
+    if (!amount.isFinite()) {
+      return Err(
+        new InvalidBalanceError('Amount to unfreeze/consume must be finite', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            reason: BalanceErrorReason.INVALID_FORMAT,
+            releaseAmount: amount.toString(),
+            reserved: reservedAmount.toString()
+          }
+        })
+      );
+    }
+
+    // Проверка 2: releaseAmount должен быть > 0
     if (amount.lessThanOrEqualTo(0)) {
       return Err(
         new InvalidBalanceError(
-          (ctx) => `Amount to unfreeze/consume must be positive, got ${ctx.amount}`,
+          (ctx) => `Amount to unfreeze/consume must be positive, got ${ctx.releaseAmount}`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INVALID_FORMAT,
-              amount: amount.toString(),
+              releaseAmount: amount.toString(),
               reserved: reservedAmount.toString()
             }
           }
@@ -85,18 +94,18 @@ export class ValidateReleaseAmount {
       );
     }
 
-    // Проверка 2: releaseAmount <= reserved (основная проверка)
+    // Проверка 3: releaseAmount <= reserved (основная проверка)
     if (amount.greaterThan(reservedAmount)) {
       return Err(
         new InvalidBalanceError(
           (ctx) =>
-            `Cannot unfreeze/consume ${ctx.amount}: only ${ctx.reserved} reserved`,
+            `Cannot unfreeze/consume ${ctx.requested}: only ${ctx.reserved} reserved`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INSUFFICIENT_RESERVED,
-              amount: amount.toString(),
-              reserved: reservedAmount.toString()
+              requested: amount.toNumber(),
+              reserved: reservedAmount.toNumber()
             }
           }
         )

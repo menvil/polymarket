@@ -2,7 +2,6 @@ import Decimal from 'decimal.js';
 import { describe, it, expect } from '@jest/globals';
 import { Balance } from '../../../../src/balance/core/Balance.js';
 import { BalanceInvariantViolation } from '../../../../src/balance/core/BalanceInvariantViolation.js';
-import { BalanceErrorReason } from '../../../../src/balance/errors/BalanceErrorReason.js';
 import { Money } from '../../../../src/money/core/Money.js';
 import { TEST_ACCOUNT_ID, TEST_VENUE_ID } from '../../../helpers/balanceTestHelpers.js';
 
@@ -65,18 +64,16 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(-100), 'USDC');
       const reserved = Money.of(new Decimal(0));
 
-      expect(() => {
-        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      }).toThrow(BalanceInvariantViolation);
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow(BalanceInvariantViolation);
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow('Available amount cannot be negative');
     });
 
     it('бросает BalanceInvariantViolation если reserved отрицательный', () => {
       const available = Money.of(new Decimal(10000));
       const reserved = Money.of(new Decimal(-100), 'USDC');
 
-      expect(() => {
-        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      }).toThrow(BalanceInvariantViolation);
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow(BalanceInvariantViolation);
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow('Reserved amount cannot be negative');
     });
 
     it.todo('бросает BalanceInvariantViolation если валюты не совпадают (невозможно: Money поддерживает только USDC)');
@@ -89,11 +86,11 @@ describe('Balance Core', () => {
 
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        throw new Error('Expected BalanceInvariantViolation to be thrown');
+        fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
         if (error instanceof BalanceInvariantViolation) {
-          expect(error.reason).toBe(BalanceErrorReason.NEGATIVE_AVAILABLE);
+          expect(error.reason).toBe('NEGATIVE_AVAILABLE');
         }
       }
     });
@@ -104,11 +101,11 @@ describe('Balance Core', () => {
 
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        throw new Error('Expected BalanceInvariantViolation to be thrown');
+        fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
         if (error instanceof BalanceInvariantViolation) {
-          expect(error.reason).toBe(BalanceErrorReason.NEGATIVE_RESERVED);
+          expect(error.reason).toBe('NEGATIVE_RESERVED');
         }
       }
     });
@@ -120,12 +117,8 @@ describe('Balance Core', () => {
       const reserved = Money.of(new Decimal('5e14'));  // 500 триллионов
       // total = 1.1e15 > 1e15 (MAX_AMOUNT)
 
-      expect(() => {
-        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      }).toThrow(BalanceInvariantViolation);
-      expect(() => {
-        Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      }).toThrow('exceeds maximum');
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow(BalanceInvariantViolation);
+      expect(() => Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID)).toThrow('exceeds maximum');
     });
 
     it('проверяет reason в BalanceInvariantViolation для TOTAL_EXCEEDS_MAX_AMOUNT', () => {
@@ -134,16 +127,15 @@ describe('Balance Core', () => {
 
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        throw new Error('Expected BalanceInvariantViolation to be thrown');
+        fail('Should have thrown');
       } catch (error) {
         expect(error).toBeInstanceOf(BalanceInvariantViolation);
         if (error instanceof BalanceInvariantViolation) {
-          expect(error.reason).toBe(BalanceErrorReason.TOTAL_EXCEEDS_MAX_AMOUNT);
-          // Проверяем дополнительные типизированные поля
-          expect(error.total).toBeDefined();
-          expect(error.maxAmount).toBeDefined();
-          expect(error.available).toBeDefined();
-          expect(error.reserved).toBeDefined();
+          expect(error.reason).toBe('TOTAL_EXCEEDS_MAX_AMOUNT');
+          expect((error as any).total).toBeDefined();
+          expect((error as any).maxAmount).toBeDefined();
+          expect((error as any).available).toBeDefined();
+          expect((error as any).reserved).toBeDefined();
         }
       }
     });
@@ -209,7 +201,7 @@ describe('Balance Core', () => {
       });
     });
 
-    describe('isZero()', () => {
+    describe('isEmpty()', () => {
       it('возвращает false для непустого баланса', () => {
         expect(balance.isZero()).toBe(false);
       });

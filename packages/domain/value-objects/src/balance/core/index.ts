@@ -50,5 +50,5 @@
  * @packageDocumentation
  */
 
-export * from './Balance';
-export * from './BalanceInvariantViolation';
+export * from './Balance.js';
+export * from './BalanceInvariantViolation.js';

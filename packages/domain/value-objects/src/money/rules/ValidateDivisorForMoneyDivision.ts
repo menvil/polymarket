@@ -1,7 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidMoneyError, ErrorSource } from '@polymarket/errors';
 import Decimal from 'decimal.js';
-import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
 
 /**
  * Правило: Делитель для операции деления Money должен быть валидным

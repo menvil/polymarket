@@ -35,17 +35,14 @@ import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
  */
 export class ValidateDeltaForIncreaseBy {
   public static check(delta: Ratio): Result<void, InvalidMoneyError> {
-    // Кэшируем результат toDecimal() - используется дважды
-    const deltaValue = delta.toDecimal();
-
     // Проверка: delta >= -1
     const minusOne = new Decimal(-1);
-    if (deltaValue.lessThan(minusOne)) {
+    if (delta.toDecimal().lessThan(minusOne)) {
       return Err(
         new InvalidMoneyError('Delta must be >= -1 (factor = 1 + delta must be non-negative)', {
           context: {
             source: ErrorSource.RULE_VALIDATION,
-            delta: deltaValue.toString(),
+            delta: delta.toDecimal().toString(),
             reason: MoneyErrorReason.DELTA_LESS_THAN_MINUS_ONE
           }
         })

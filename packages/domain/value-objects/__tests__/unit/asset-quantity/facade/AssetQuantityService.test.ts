@@ -37,8 +37,8 @@ describe('AssetQuantityService', () => {
 
       expect(result.ok).toBe(true);
       if (result.ok) {
-        // tokenAsset is already frozen, so AssetQuantity reuses it directly (no copy)
-        expect(result.value.asset()).toBe(tokenAsset);
+        // After defensive copy, asset() returns a new object with same values
+        expect(result.value.asset()).toStrictEqual(tokenAsset);
         expect(result.value.amount()).toBe(qty100);
         expect(result.value.isOutcomeToken()).toBe(true);
       }
@@ -254,8 +254,7 @@ describe('AssetQuantityService', () => {
       const qty1 = AssetQuantityService.createUsdc(100);
       const qty2 = AssetQuantityService.createUsdc(100);
 
-      expect(qty1.ok).toBe(true);
-      expect(qty2.ok).toBe(true);
+      expect(qty1.ok && qty2.ok).toBe(true);
       if (qty1.ok && qty2.ok) {
         const same = qty1.value.equals(qty2.value);
         expect(same).toBe(true);
@@ -266,8 +265,7 @@ describe('AssetQuantityService', () => {
       const qty1 = AssetQuantityService.createUsdc(100);
       const qty2 = AssetQuantityService.createUsdc(200);
 
-      expect(qty1.ok).toBe(true);
-      expect(qty2.ok).toBe(true);
+      expect(qty1.ok && qty2.ok).toBe(true);
       if (qty1.ok && qty2.ok) {
         const same = qty1.value.equals(qty2.value);
         expect(same).toBe(false);
@@ -278,8 +276,7 @@ describe('AssetQuantityService', () => {
       const usdcQty = AssetQuantityService.createUsdc(100);
       const tokenQty = AssetQuantityService.createOutcomeToken(conditionRef, BinaryOutcome.UP, 100);
 
-      expect(usdcQty.ok).toBe(true);
-      expect(tokenQty.ok).toBe(true);
+      expect(usdcQty.ok && tokenQty.ok).toBe(true);
       if (usdcQty.ok && tokenQty.ok) {
         const same = usdcQty.value.equals(tokenQty.value);
         expect(same).toBe(false);

@@ -5,11 +5,9 @@
 ### Создание баланса
 
 ```typescript
-import { BalanceService, BalanceErrorReason } from '@polymarket/value-objects/balance';
-import { Money, MoneyService } from '@polymarket/value-objects/money';
-import { isErr, expectOk } from '@polymarket/result';
+import { BalanceService } from '@polymarket/value-objects/balance';
+import { Money } from '@polymarket/value-objects/money';
 import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
-import Decimal from 'decimal.js';
 
 // Подготовка идентификаторов
 const accountId: AccountId = {
@@ -19,8 +17,8 @@ const accountId: AccountId = {
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
 const result = BalanceService.create(
-  Money.of(new Decimal(10000)), // 10000 units available
-  Money.of(new Decimal(2000)),  // 2000 units reserved
+  Money.of(10000), // $100.00 available
+  Money.of(2000),  // $20.00 reserved
   accountId,       // ID аккаунта владельца
   venueId          // ID площадки (venue)
 );
@@ -63,10 +61,10 @@ const accountId: AccountId = {
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
 // У пользователя $100 available, $20 reserved
-const balance = expectOk(BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), accountId, venueId));
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
 
 // Открываем ордер на покупку за $30
-const orderAmount = Money.of(new Decimal(3000));
+const orderAmount = Money.of(3000);
 
 // Резервируем средства
 const reserveResult = BalanceService.reserve(balance, orderAmount);
@@ -87,7 +85,7 @@ console.log(newBalance.reserved().value());  // 5000 ($50)
 
 ```typescript
 // Ордер отменён, возвращаем $30 в available
-const unfreezeResult = BalanceService.unfreezeReserved(newBalance, Money.of(new Decimal(3000)));
+const unfreezeResult = BalanceService.unfreezeReserved(newBalance, Money.of(3000));
 
 if (unfreezeResult.ok) {
   const finalBalance = unfreezeResult.value;
@@ -101,7 +99,7 @@ if (unfreezeResult.ok) {
 
 ```typescript
 // Ордер исполнился, списываем $30 из reserved
-const consumeResult = BalanceService.consumeReserved(newBalance, Money.of(new Decimal(3000)));
+const consumeResult = BalanceService.consumeReserved(newBalance, Money.of(3000));
 
 if (consumeResult.ok) {
   const finalBalance = consumeResult.value;
@@ -120,15 +118,15 @@ const accountId: AccountId = {
 };
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
-const balance = expectOk(BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(5000)), accountId, venueId));
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(5000), accountId, venueId));
 // total: 15000
 
 // Вариант 1: Размораживание (отмена)
-const unfrozen = expectOk(BalanceService.unfreezeReserved(balance, Money.of(new Decimal(3000))));
+const unfrozen = expectOk(BalanceService.unfreezeReserved(balance, Money.of(3000)));
 // available: 13000 (+3000), reserved: 2000 (-3000), total: 15000 (без изменений)
 
 // Вариант 2: Списание (исполнение)
-const consumed = expectOk(BalanceService.consumeReserved(balance, Money.of(new Decimal(3000))));
+const consumed = expectOk(BalanceService.consumeReserved(balance, Money.of(3000)));
 // available: 10000 (без изменений), reserved: 2000 (-3000), total: 12000 (-3000)
 ```
 
@@ -136,7 +134,7 @@ const consumed = expectOk(BalanceService.consumeReserved(balance, Money.of(new D
 
 ```typescript
 // Пользователь вносит депозит $50
-const depositAmount = Money.of(new Decimal(5000));
+const depositAmount = Money.of(5000);
 
 const newAvailable = expectOk(
   MoneyService.add(balance.available(), depositAmount)
@@ -166,16 +164,14 @@ const accountId: AccountId = {
 };
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
-const balance = expectOk(BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), accountId, venueId));
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
 
 // Сериализация
 const json = BalanceSerializer.toJSON(balance);
 console.log(json);
 // {
 //   available: { amount: "10000", currency: "USDC" },
-//   reserved: { amount: "2000", currency: "USDC" },
-//   accountId: "wallet:0x1234567890123456789012345678901234567890",
-//   venueId: "POLYMARKET"
+//   reserved: { amount: "2000", currency: "USDC" }
 // }
 
 // Десериализация
@@ -190,8 +186,6 @@ if (deserializedResult.ok) {
 ### API ответ
 
 ```typescript
-import { Balance } from '@polymarket/value-objects/balance';
-
 // Получение баланса с API
 async function fetchUserBalance(userId: string): Promise<Balance | null> {
   const response = await fetch(`/api/users/${userId}/balance`);
@@ -219,7 +213,7 @@ import { expectOk } from '@polymarket/result';
 
 const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
 const venueId: VenueId = 'POLYMARKET' as VenueId;
-const balance = expectOk(BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), accountId, venueId));
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
 
 // Полная сводка (возвращает Result<string, InvalidBalanceError>)
 const summaryResult = BalanceFormatter.toSummary(balance);
@@ -246,7 +240,7 @@ if (compactResult.ok) {
 }
 
 // Большие суммы
-const bigBalance = expectOk(BalanceService.create(Money.of(new Decimal(1500000)), Money.of(new Decimal(500000)), accountId, venueId));
+const bigBalance = expectOk(BalanceService.create(Money.of(1500000), Money.of(500000), accountId, venueId));
 const bigCompactResult = BalanceFormatter.toCompact(bigBalance);
 if (bigCompactResult.ok) {
   console.log(bigCompactResult.value);
@@ -285,11 +279,7 @@ const percentageResult = BalanceFormatter.toPercentageString(balance);
 if (percentageResult.ok) {
   console.log(percentageResult.value); // "16.67%"
 }
-
-const percentageResult0 = BalanceFormatter.toPercentageString(balance, 0);
-if (percentageResult0.ok) {
-  console.log(percentageResult0.value); // "17%"
-}
+console.log(BalanceFormatter.toPercentageString(balance, 0)); // "17%"
 ```
 
 ### Debug-вывод
@@ -306,10 +296,6 @@ console.log(BalanceFormatter.toDebugString(balance));
 ### Exhaustive error handling
 
 ```typescript
-import { Result, isErr } from '@polymarket/result';
-import { Balance, BalanceService, BalanceErrorReason, InvalidBalanceError } from '@polymarket/value-objects/balance';
-import { Money } from '@polymarket/value-objects/money';
-
 function handleBalanceOperation(
   balance: Balance,
   operation: 'reserve' | 'unfreezeReserved' | 'consumeReserved',
@@ -439,7 +425,7 @@ console.log(Balance.ZERO.USDC === Balance.ZERO.USDC); // true
 const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
-const balanceWithoutReserved = Balance.withZeroReserved(Money.of(new Decimal(10000)), accountId, venueId);
+const balanceWithoutReserved = Balance.withZeroReserved(Money.of(10000), accountId, venueId);
 console.log(balanceWithoutReserved.available().value()); // 10000
 console.log(balanceWithoutReserved.reserved().value());  // 0
 console.log(balanceWithoutReserved.hasReserved()); // false

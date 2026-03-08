@@ -59,7 +59,9 @@ export class ValidateAge {
    * @param quote - Котировка для проверки
    * @param maxAgeMs - Максимально допустимый возраст в миллисекундах
    * @param clock - IClock для получения текущего времени (dependency injection)
-   * @returns Result<void, InvalidQuoteError> — Ok если котировка свежая, Err если устарела
+   * @returns Result с void или InvalidQuoteError
+   *
+   * @throws {InvalidQuoteError} При превышении максимального возраста
    *
    * @example
    * ```typescript
@@ -87,43 +89,9 @@ export class ValidateAge {
     maxAgeMs: number,
     clock: IClock
   ): Result<void, InvalidQuoteError> {
-    // Validate maxAgeMs parameter
-    if (!Number.isFinite(maxAgeMs) || maxAgeMs < 0) {
-      return Err(
-        new InvalidQuoteError(
-          `Invalid maxAgeMs: must be finite and non-negative, got ${maxAgeMs}`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              reason: QuoteErrorReason.INVALID_FORMAT,
-              maxAgeMs
-            }
-          }
-        )
-      );
-    }
-
     const currentTimeMs = clock.now().getTime();
     const quoteTimeMs = quote.timestampMs().toNumber();
     const ageMs = currentTimeMs - quoteTimeMs;
-
-    // Reject future-dated quotes
-    if (ageMs < 0) {
-      return Err(
-        new InvalidQuoteError(
-          `Quote timestamp ${quoteTimeMs} is in the future (current: ${currentTimeMs})`,
-          {
-            context: {
-              source: ErrorSource.RULE_VALIDATION,
-              reason: QuoteErrorReason.INVALID_TIMESTAMP,
-              ageMs,
-              quoteTimestamp: quoteTimeMs,
-              currentTimestamp: currentTimeMs
-            }
-          }
-        )
-      );
-    }
 
     if (ageMs > maxAgeMs) {
       return Err(

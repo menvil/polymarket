@@ -97,4 +97,4 @@
  * @packageDocumentation
  */
 
-export * from './BalanceService';
+export * from './BalanceService.js';

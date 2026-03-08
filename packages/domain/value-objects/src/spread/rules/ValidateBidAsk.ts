@@ -27,7 +27,6 @@ import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
  * ```
  */
 export class ValidateBidAsk {
-  private constructor() {}
   /**
    * Проверить что bid <= ask
    *

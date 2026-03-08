@@ -76,5 +76,5 @@
  * @packageDocumentation
  */
 
-export * from './BalanceSerializer';
-export * from './BalanceFormatter';
+export * from './BalanceSerializer.js';
+export * from './BalanceFormatter.js';

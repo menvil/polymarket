@@ -189,14 +189,12 @@ Money имеет **4 слоя** по аналогии с Price и Quantity.
 
 - Валидация операндов для арифметических операций
 - Проверка factor и divisor (NaN, finite, zero)
-- Проверка delta для increaseBy/decreaseBy (delta >= -1)
 - Возвращает InvalidMoneyError с соответствующим reason
 
 **Файлы:**
 
 - `src/money/rules/ValidateFactorForMoneyMultiplication.ts`
 - `src/money/rules/ValidateDivisorForMoneyDivision.ts`
-- `src/money/rules/ValidateDeltaForIncreaseBy.ts`
 
 **НЕ делает:**
 
@@ -259,7 +257,7 @@ private static mapInvariantToOverflow(
 ```
 
 Ожидаемые reason: `EXCEEDS_MAX_AMOUNT`, `NON_FINITE`, `NAN`.
-Неожиданные reason (`UNSUPPORTED_CURRENCY`, `INVALID_FORMAT`) → возвращают Result.Err с unexpectedError (Never Throw contract).
+Неожиданные reason (`UNSUPPORTED_CURRENCY`, `INVALID_FORMAT`) → throw (bug in code).
 
 ---
 
@@ -452,30 +450,6 @@ try {
   }
 }
 ```
-
-### 3. Facade vs Core: Разделение ответственности
-
-**Проблема:** Почему Money.of() принимает ТОЛЬКО Decimal, а MoneyService.create() принимает number | string | Decimal?
-
-**Решение:** Чёткое разделение между Core (domain logic) и Facade (API boundaries).
-
-**Core Layer (Money):**
-- Работает ТОЛЬКО с валидированными данными (Decimal)
-- Бросает MoneyInvariantViolation при нарушении доменных правил
-- Не знает про форматы ввода (number/string)
-- Фокус: защита инвариантов
-
-**Facade Layer (MoneyService):**
-- Принимает любые форматы ввода (number | string | Decimal)
-- Парсит и валидирует входные данные
-- Преобразует исключения в Result<T, E>
-- Фокус: удобство использования и error handling
-
-**Преимущества:**
-1. Core остаётся чистым и не зависит от внешних форматов
-2. Facade контролирует маппинг ошибок (parse errors vs invariant violations)
-3. Типобезопасность в Core (Decimal всегда валиден)
-4. Удобство для пользователей (MoneyService принимает всё)
 
 ### 4. Почему MAX_AMOUNT = 1e15?
 

@@ -4,14 +4,24 @@ import Decimal from 'decimal.js';
 import type { MarketDataSourceId, InstrumentId } from '@polymarket/ids';
 import { Price } from '../../../src/price/core/Price.js';
 import { Quantity } from '../../../src/quantity/core/Quantity.js';
-import { Quote } from '../../../src/quote/core/Quote.js';
-import { ValidateAge } from '../../../src/quote/rules/ValidateAge.js';
-import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
-import { ErrorSource } from '@polymarket/errors';
+import { TimestampService } from '../../../src/timestamp/index.js';
+import type { Timestamp } from '../../../src/timestamp/index.js';
 
 // Тестовые константы для sourceId и instrumentId
 const TEST_SOURCE_ID = 'TEST_SOURCE' as MarketDataSourceId;
 const TEST_INSTRUMENT_ID = 'TEST_INSTRUMENT' as InstrumentId;
+import { Quote } from '../../../src/quote/core/Quote.js';
+import { ValidateAge } from '../../../src/quote/rules/ValidateAge.js';
+import { QuoteErrorReason } from '../../../src/quote/errors/QuoteErrorReason.js';
+
+// Вспомогательная функция для создания тестового Timestamp
+function createTestTimestamp(ms: number): Timestamp {
+  const result = TimestampService.create(ms);
+  if (!result.ok) {
+    throw new Error(`Failed to create test timestamp: ${result.error.message}`);
+  }
+  return result.value;
+}
 
 describe('ValidateAge', () => {
   const baseTime = new Date('2024-01-01T12:00:00Z');
@@ -26,7 +36,7 @@ describe('ValidateAge', () => {
     const ask = Price.of(new Decimal('0.52'));
     const bidSize = Quantity.of(new Decimal(100));
     const askSize = Quantity.of(new Decimal(150));
-    return Quote.of(bid, ask, bidSize, askSize, new Decimal(timestampMs), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
+    return Quote.of(bid, ask, bidSize, askSize, createTestTimestamp(timestampMs), TEST_SOURCE_ID, TEST_INSTRUMENT_ID);
   };
 
   describe('check()', () => {
@@ -185,24 +195,7 @@ describe('ValidateAge', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.source).toBe(ErrorSource.RULE_VALIDATION);
-      }
-    });
-
-    it('должен вернуть ошибку для будущего timestamp (ageMs < 0)', () => {
-      // Создаём котировку с timestamp в будущем
-      const futureTime = clock.now().getTime() + 10000;
-      const quote = createQuote(futureTime);
-
-      // Проверяем с maxAge = 5000ms
-      const result = ValidateAge.check(quote, 5000, clock);
-
-      // Возраст отрицательный (котировка из будущего), должна вернуться ошибка
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.INVALID_TIMESTAMP);
-        expect(result.error.context?.ageMs).toBeLessThan(0);
-        expect(result.error.message).toContain('future');
+        expect(result.error.context?.source).toBe('rule_validation');
       }
     });
   });

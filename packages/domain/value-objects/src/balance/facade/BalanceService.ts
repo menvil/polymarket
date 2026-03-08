@@ -6,16 +6,17 @@ import {
   ErrorSource,
   rewrap,
   currencyMismatchError,
-  wrapOp
+  wrapOp,
+  toCause
 } from '@polymarket/errors';
-import { Balance } from '../core/Balance';
-import { BalanceInvariantViolation } from '../core/BalanceInvariantViolation';
-import { Money } from '../../money/core/Money';
-import { MoneyService } from '../../money/facade/MoneyService';
-import { ValidateReserveAmount } from '../rules/ValidateReserveAmount';
-import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount';
-import { ValidateCurrencyMatch } from '../rules/ValidateCurrencyMatch';
-import { BalanceErrorReason } from '../errors/BalanceErrorReason';
+import { Balance } from '../core/Balance.js';
+import { BalanceInvariantViolation } from '../core/BalanceInvariantViolation.js';
+import { Money } from '../../money/core/Money.js';
+import { MoneyService } from '../../money/facade/MoneyService.js';
+import { ValidateReserveAmount } from '../rules/ValidateReserveAmount.js';
+import { ValidateReleaseAmount } from '../rules/ValidateReleaseAmount.js';
+import { ValidateCurrencyMatch } from '../rules/ValidateCurrencyMatch.js';
+import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
 /**
  * Фасад для работы с Balance - публичный API
@@ -203,12 +204,12 @@ export class BalanceService {
       }
 
       // Вычисляем новые значения
-      const newAvailableResult = MoneyService.subtract(balance.available(), amount);
+      const newAvailableResult = this.subtractMoney(balance.available(), amount);
       if (isErr(newAvailableResult)) {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newAvailableResult.error, InvalidBalanceError));
       }
 
-      const newReservedResult = MoneyService.add(balance.reserved(), amount);
+      const newReservedResult = this.addMoney(balance.reserved(), amount);
       if (isErr(newReservedResult)) {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
@@ -299,12 +300,12 @@ export class BalanceService {
       }
 
       // Вычисляем новые значения
-      const newAvailableResult = MoneyService.add(balance.available(), amount);
+      const newAvailableResult = this.addMoney(balance.available(), amount);
       if (isErr(newAvailableResult)) {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newAvailableResult.error, InvalidBalanceError));
       }
 
-      const newReservedResult = MoneyService.subtract(balance.reserved(), amount);
+      const newReservedResult = this.subtractMoney(balance.reserved(), amount);
       if (isErr(newReservedResult)) {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
@@ -410,7 +411,7 @@ export class BalanceService {
       }
 
       // Вычисляем новый reserved (available не меняется!)
-      const newReservedResult = MoneyService.subtract(balance.reserved(), amount);
+      const newReservedResult = this.subtractMoney(balance.reserved(), amount);
       if (isErr(newReservedResult)) {
         return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newReservedResult.error, InvalidBalanceError));
       }
@@ -567,82 +568,128 @@ export class BalanceService {
    * console.log(result4.value); // false
    * ```
    */
+  /**
+   * Зачисляет средства в available (кредитование)
+   *
+   * @param balance - Текущий баланс
+   * @param amount - Сумма для зачисления
+   * @returns Result с новым Balance или InvalidBalanceError
+   * @throws Никогда — все ошибки оборачиваются в Result
+   *
+   * @remarks
+   * Создаёт НОВЫЙ Balance с:
+   * - available = balance.available + amount
+   * - reserved = balance.reserved (не изменяется)
+   *
+   * **Use cases:**
+   * - Получение прибыли от закрытой позиции
+   * - Пополнение счёта
+   * - Возврат комиссии
+   *
+   * @example
+   * ```typescript
+   * const result = BalanceService.credit(balance, Money.of(new Decimal(500), 'USDC'));
+   * if (result.ok) {
+   *   console.log(result.value.available().value()); // available + 500
+   *   console.log(result.value.reserved().value());  // reserved (не изменился)
+   * }
+   * ```
+   */
+  public static credit(
+    balance: Balance,
+    amount: Money
+  ): Result<Balance, InvalidBalanceError> {
+    const op = 'credit';
+    const ctx = {
+      available: balance.available().value().toString(),
+      reserved: balance.reserved().value().toString(),
+      amount: amount.value().toString(),
+      currency: balance.currency(),
+    };
+
+    return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
+      const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
+      if (isErr(currencyCheck)) {
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, currencyCheck.error, InvalidBalanceError));
+      }
+
+      const newAvailableResult = this.addMoney(balance.available(), amount);
+      if (isErr(newAvailableResult)) {
+        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, newAvailableResult.error, InvalidBalanceError));
+      }
+
+      return this.create(
+        newAvailableResult.value,
+        balance.reserved(),
+        balance.accountId(),
+        balance.venueId()
+      );
+    }, InvalidBalanceError);
+  }
+
   public static equals(
     balance1: Balance,
     balance2: Balance
   ): Result<boolean, InvalidBalanceError> {
-    const op = 'equals';
-    const ctx = {
-      available1: balance1.available().value().toString(),
-      reserved1: balance1.reserved().value().toString(),
-      available2: balance2.available().value().toString(),
-      reserved2: balance2.reserved().value().toString(),
-      currency: balance1.currency()
-    };
+    // Проверка совпадения валют
+    if (!balance1.hasSameCurrency(balance2)) {
+      return Err(
+        currencyMismatchError(
+          balance1.currency(),
+          balance2.currency(),
+          BalanceErrorReason.CURRENCY_MISMATCH,
+          InvalidBalanceError
+        )
+      );
+    }
 
-    return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
-      // Проверка совпадения валют
-      if (!balance1.hasSameCurrency(balance2)) {
-        return Err(
-          currencyMismatchError(
-            balance1.currency(),
-            balance2.currency(),
-            BalanceErrorReason.CURRENCY_MISMATCH,
-            InvalidBalanceError
-          )
-        );
-      }
+    // Сравниваем available через MoneyService
+    const availableEqual = MoneyService.equals(balance1.available(), balance2.available());
+    if (isErr(availableEqual)) {
+      return Err(
+        new InvalidBalanceError('Failed to compare available amounts', {
+          context: {
+            reason: BalanceErrorReason.INVALID_FORMAT,
+            cause: toCause(availableEqual.error)
+          }
+        })
+      );
+    }
 
-      // Сравниваем available через MoneyService
-      const availableEqual = MoneyService.equals(balance1.available(), balance2.available());
-      if (isErr(availableEqual)) {
-        return Err(
-          rewrap(
-            BalanceService.SERVICE_NAME,
-            op,
-            ctx,
-            availableEqual.error,
-            InvalidBalanceError
-          )
-        );
-      }
+    // Если available не равны - сразу false
+    if (!availableEqual.value) {
+      return Ok(false);
+    }
 
-      // Если available не равны - сразу false
-      if (!availableEqual.value) {
-        return Ok(false);
-      }
+    // Сравниваем reserved через MoneyService
+    const reservedEqual = MoneyService.equals(balance1.reserved(), balance2.reserved());
+    if (isErr(reservedEqual)) {
+      return Err(
+        new InvalidBalanceError('Failed to compare reserved amounts', {
+          context: {
+            reason: BalanceErrorReason.INVALID_FORMAT,
+            cause: toCause(reservedEqual.error)
+          }
+        })
+      );
+    }
 
-      // Сравниваем reserved через MoneyService
-      const reservedEqual = MoneyService.equals(balance1.reserved(), balance2.reserved());
-      if (isErr(reservedEqual)) {
-        return Err(
-          rewrap(
-            BalanceService.SERVICE_NAME,
-            op,
-            ctx,
-            reservedEqual.error,
-            InvalidBalanceError
-          )
-        );
-      }
+    // Если reserved не равны - сразу false
+    if (!reservedEqual.value) {
+      return Ok(false);
+    }
 
-      // Если reserved не равны - сразу false
-      if (!reservedEqual.value) {
-        return Ok(false);
-      }
+    // Сравниваем accountId через accountIdEquals
+    if (!accountIdEquals(balance1.accountId(), balance2.accountId())) {
+      return Ok(false);
+    }
 
-      // Сравниваем accountId через accountIdEquals
-      if (!accountIdEquals(balance1.accountId(), balance2.accountId())) {
-        return Ok(false);
-      }
+    // Сравниваем venueId (прямое сравнение строк)
+    if (balance1.venueId() !== balance2.venueId()) {
+      return Ok(false);
+    }
 
-      // Сравниваем venueId (прямое сравнение строк)
-      if (balance1.venueId() !== balance2.venueId()) {
-        return Ok(false);
-      }
-
-      return Ok(true);
-    }, InvalidBalanceError);
+    return Ok(true);
   }
 
   /**
@@ -690,37 +737,91 @@ export class BalanceService {
     balance: Balance,
     amount: Money
   ): Result<boolean, InvalidBalanceError> {
-    const op = 'canAfford';
-    const ctx = {
-      available: balance.available().value().toString(),
-      amount: amount.value().toString(),
-      currency: balance.currency()
-    };
+    // Проверка совпадения валют
+    if (balance.currency() !== amount.currency()) {
+      return Err(
+        new InvalidBalanceError(
+          `currency mismatch: expected ${balance.currency()}, got ${amount.currency()}`,
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              reason: BalanceErrorReason.CURRENCY_MISMATCH,
+              expected: balance.currency(),
+              actual: amount.currency()
+            }
+          }
+        )
+      );
+    }
 
-    return wrapOp(BalanceService.SERVICE_NAME, op, ctx, () => {
-      // Проверка совпадения валют через Rules слой
-      const currencyCheck = ValidateCurrencyMatch.check(amount, balance.currency());
-      if (isErr(currencyCheck)) {
-        return Err(rewrap(BalanceService.SERVICE_NAME, op, ctx, currencyCheck.error, InvalidBalanceError));
-      }
+    // Сравниваем available с amount через MoneyService
+    // available >= amount эквивалентно isGreaterThanOrEqual(available, amount)
+    const comparison = MoneyService.isGreaterThanOrEqual(balance.available(), amount);
+    if (isErr(comparison)) {
+      return Err(
+        new InvalidBalanceError('Failed to compare available with amount', {
+          context: {
+            reason: BalanceErrorReason.INVALID_FORMAT,
+            cause: toCause(comparison.error)
+          }
+        })
+      );
+    }
 
-      // Сравниваем available с amount через MoneyService
-      // available >= amount эквивалентно isGreaterThanOrEqual(available, amount)
-      const comparison = MoneyService.isGreaterThanOrEqual(balance.available(), amount);
-      if (isErr(comparison)) {
-        return Err(
-          rewrap(
-            BalanceService.SERVICE_NAME,
-            op,
-            ctx,
-            comparison.error,
-            InvalidBalanceError
-          )
-        );
-      }
-
-      return Ok(comparison.value);
-    }, InvalidBalanceError);
+    return Ok(comparison.value);
   }
 
+  /**
+   * Helper: складывает два Money через MoneyService
+   *
+   * @remarks
+   * Внутренний метод для арифметических операций.
+   * Использует MoneyService.add() и мапит ошибки в InvalidBalanceError.
+   *
+   * @param a - Первое слагаемое
+   * @param b - Второе слагаемое
+   * @returns Result<Money, InvalidBalanceError>
+   */
+  private static addMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
+    const result = MoneyService.add(a, b);
+    if (isErr(result)) {
+      // Преобразуем InvalidMoneyError в InvalidBalanceError
+      return Err(
+        new InvalidBalanceError(result.error.message, {
+          context: {
+            ...result.error.context,
+            reason: BalanceErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+    return Ok(result.value);
+  }
+
+  /**
+   * Helper: вычитает Money через MoneyService
+   *
+   * @remarks
+   * Внутренний метод для арифметических операций.
+   * Использует MoneyService.subtract() и мапит ошибки в InvalidBalanceError.
+   *
+   * @param a - Уменьшаемое
+   * @param b - Вычитаемое
+   * @returns Result<Money, InvalidBalanceError>
+   */
+  private static subtractMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
+    const result = MoneyService.subtract(a, b);
+    if (isErr(result)) {
+      // Преобразуем InvalidMoneyError в InvalidBalanceError
+      return Err(
+        new InvalidBalanceError(result.error.message, {
+          context: {
+            ...result.error.context,
+            reason: BalanceErrorReason.INVALID_FORMAT
+          }
+        })
+      );
+    }
+    return Ok(result.value);
+  }
 }

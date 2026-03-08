@@ -74,15 +74,15 @@ describe('MoneyService Ratio Operations', () => {
       }
     });
 
-    it('отклоняет отрицательный rate (INVALID_RATIO)', () => {
+    it('допускает отрицательный rate (negative result)', () => {
       const rate = Ratio.of(new Decimal(-0.1)); // -10%
       const result = MoneyService.portion(money100, rate);
 
-      // Отрицательный rate семантически некорректен для portion() - используй decreaseBy()
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe(MoneyErrorReason.INVALID_RATIO);
-        expect(result.error.message).toContain('non-negative');
+      // Money допускает отрицательные значения
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.value().toString()).toBe('-10');
+        expect(result.value.currency()).toBe('USDC');
       }
     });
 
@@ -287,14 +287,14 @@ describe('MoneyService Ratio Operations', () => {
       }
     });
 
-    it('контекст ошибки содержит оригинальный delta для debugging', () => {
+    it('контекст ошибки содержит negatedDelta, а не оригинальный delta', () => {
       const delta = Ratio.of(new Decimal(1.5)); // 150%
       const result = MoneyService.decreaseBy(money100, delta);
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // Проверяем что в контексте оригинальный delta (1.5) для удобства debugging
-        expect(result.error.context?.delta).toBe('1.5');
+        // Проверяем что в контексте negatedDelta (-1.5), а не оригинальный (1.5)
+        expect(result.error.context?.delta).toBe('-1.5');
         // Проверяем правильный op, service и opChain
         expect(result.error.context?.op).toBe('decreaseBy');
         expect(result.error.context?.service).toBe('MoneyService');

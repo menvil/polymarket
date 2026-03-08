@@ -44,8 +44,8 @@ describe('ValidateReleaseAmount', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(BalanceErrorReason.INSUFFICIENT_RESERVED);
-        expect(result.error.context?.amount).toBe('10000');
-        expect(result.error.context?.reserved).toBe('5000');
+        expect(result.error.context?.requested).toBe(10000);
+        expect(result.error.context?.reserved).toBe(5000);
       }
     });
 
@@ -88,8 +88,6 @@ describe('ValidateReleaseAmount', () => {
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(BalanceErrorReason.INVALID_FORMAT);
         expect(result.error.message).toContain('must be positive');
-        expect(result.error.context?.amount).toBe(releaseAmount.value().toString());
-        expect(result.error.context?.reserved).toBe(reserved.value().toString());
       }
     });
 

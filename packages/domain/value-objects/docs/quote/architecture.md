@@ -42,7 +42,6 @@ Quote value object построен по паттерну **Throws+Facade** с �
 │  │  ValidateMinSpread - spread >= minSpread                  │ │
 │  │  ValidateMaxSpread - spread <= maxSpread                  │ │
 │  │  ValidateMarketCrossing - проверка crossing               │ │
-│  │  ValidateAge - проверка свежести котировки (с IClock)     │ │
 │  └───────────────────────────────────────────────────────────┘ │
 │                                                                 │
 ├─────────────────────────────────────────────────────────────────┤
@@ -87,7 +86,7 @@ Quote value object построен по паттерну **Throws+Facade** с �
    - Хотя бы одна сторона определена
    - Порядок цен: bid <= ask
    - Структурная согласованность price/size
-   - Валидация timestamp
+   - Валидация timestamp (делегируется Timestamp VO)
 
 2. **Чистая математика** (query методы без side effects):
    - Делегирование в Spread для устранения дублирования логики
@@ -114,7 +113,7 @@ class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestampMs: Decimal  // изменено с number на Decimal для валидации
+    timestamp: Timestamp  // Timestamp VO вместо Decimal
   )
 
   // Factory method - может бросать QuoteInvariantViolation
@@ -123,7 +122,7 @@ class Quote {
     ask: Price | null,
     bidSize: Quantity,
     askSize: Quantity,
-    timestampMs: Decimal,
+    timestamp: Timestamp,  // Timestamp VO
     sourceId: MarketDataSourceId,
     instrumentId: InstrumentId
   ): Quote
@@ -133,8 +132,9 @@ class Quote {
   public ask(): Price | null
   public bidSize(): Quantity
   public askSize(): Quantity
-  public timestampMs(): Decimal  // возвращает Decimal для единообразия
-  public getTimestamp(): Date
+  public timestamp(): Timestamp     // Возвращает Timestamp VO
+  public timestampMs(): Decimal     // Возвращает Unix ms как Decimal
+  public getTimestamp(): Date       // Возвращает Date объект
 
   // Проверки
   public isTwoSided(): boolean
@@ -147,7 +147,7 @@ class Quote {
   // Сравнение
   public equals(other: Quote): boolean  // БЕЗ timestamp
   public equalsWithTimestamp(other: Quote): boolean  // С timestamp
-  public age(now: number): Decimal  // возраст котировки (использует Decimal математику)
+  public age(now?: Timestamp): Decimal  // Возраст котировки (Timestamp.now() по умолчанию)
 }
 ```
 
@@ -160,10 +160,9 @@ class Quote {
    - Если `bid === null` → `bidSize === 0` (нельзя иметь размер без цены)
    - Если `ask === null` → `askSize === 0` (нельзя иметь размер без цены)
 5. **Валидный timestamp:**
-   - `isFinite` - не NaN и не Infinity
-   - `isInteger` - целое число миллисекунд
-   - `>= 0` - неотрицательный Unix timestamp
-   - `<= 9999999999999` - разумный верхний предел (~год 2286)
+   - Валидация делегируется Timestamp VO
+   - Timestamp гарантирует: isFinite, isInteger, >= 0, разумные границы
+   - Quote просто принимает валидный Timestamp без дополнительных проверок
 
 **Исключения:**
 
@@ -182,12 +181,7 @@ class QuoteInvariantViolation extends Error {
 
 - `_bid`, `_ask`: `Price | null`
 - `_bidSize`, `_askSize`: `Quantity`
-- `_timestampMs`: `Decimal` (внутреннее поле)
-
-**Public API:**
-
-- `timestampMs()`: возвращает `Decimal`
-- Для отображения: `timestampMs().toNumber()`
+- `_timestamp`: `Timestamp` (Timestamp VO для строгой типизации и валидации)
 
 ### Почему throws в Core?
 
@@ -312,7 +306,7 @@ QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')
           ↓ (если ошибка)
           rewrap('create', { component: 'bid' }, error, ...)
         ↓
-        Quote.of(Price, Price, Quantity, Quantity, timestampMs, sourceId, instrumentId)
+        Quote.of(Price, Price, Quantity, Quantity, timestamp, sourceId, instrumentId)
           ↓ (если QuoteInvariantViolation)
           unexpectedError(...)
       })
@@ -376,25 +370,11 @@ class ValidateXxx {
 
 ```typescript
 if (bid !== null && !bidSize.isPositive()) {
-  return Err(
-    new InvalidQuoteError('Bid size must be positive when bid price is defined', {
-      context: {
-        reason: QuoteErrorReason.BID_SIZE_MUST_BE_POSITIVE,
-        bidSize: bidSize.value().toNumber()
-      }
-    })
-  );
+  return Err(QuoteErrorReason.BID_SIZE_MUST_BE_POSITIVE);
 }
 
 if (ask !== null && !askSize.isPositive()) {
-  return Err(
-    new InvalidQuoteError('Ask size must be positive when ask price is defined', {
-      context: {
-        reason: QuoteErrorReason.ASK_SIZE_MUST_BE_POSITIVE,
-        askSize: askSize.value().toNumber()
-      }
-    })
-  );
+  return Err(QuoteErrorReason.ASK_SIZE_MUST_BE_POSITIVE);
 }
 ```
 
@@ -406,15 +386,7 @@ if (ask !== null && !askSize.isPositive()) {
 
 ```typescript
 if (spread.lessThan(minSpread)) {
-  return Err(
-    new InvalidQuoteError('Spread is too narrow', {
-      context: {
-        reason: QuoteErrorReason.SPREAD_TOO_NARROW,
-        spread: spread.toNumber(),
-        minSpread: minSpread.toNumber()
-      }
-    })
-  );
+  return Err(QuoteErrorReason.SPREAD_TOO_NARROW);
 }
 ```
 
@@ -426,15 +398,7 @@ if (spread.lessThan(minSpread)) {
 
 ```typescript
 if (spread.greaterThan(maxSpread)) {
-  return Err(
-    new InvalidQuoteError('Spread is too wide', {
-      context: {
-        reason: QuoteErrorReason.SPREAD_TOO_WIDE,
-        spread: spread.toNumber(),
-        maxSpread: maxSpread.toNumber()
-      }
-    })
-  );
+  return Err(QuoteErrorReason.SPREAD_TOO_WIDE);
 }
 ```
 
@@ -448,32 +412,20 @@ if (spread.greaterThan(maxSpread)) {
 // Проверка bid стороны
 if (quoteBid !== null && orderbookAsk !== null) {
   if (quoteBid >= orderbookAsk) {
-    return Err(
-      new InvalidQuoteError('Quote bid crosses orderbook ask', {
-        context: {
-          reason: QuoteErrorReason.MARKET_CROSSING,
-          side: 'bid',
-          quoteBid: quoteBid.value().toNumber(),
-          orderbookAsk: orderbookAsk.value().toNumber()
-        }
-      })
-    );
+    return Err({
+      reason: QuoteErrorReason.MARKET_CROSSING,
+      side: 'bid'
+    });
   }
 }
 
 // Проверка ask стороны
 if (quoteAsk !== null && orderbookBid !== null) {
   if (quoteAsk <= orderbookBid) {
-    return Err(
-      new InvalidQuoteError('Quote ask crosses orderbook bid', {
-        context: {
-          reason: QuoteErrorReason.MARKET_CROSSING,
-          side: 'ask',
-          quoteAsk: quoteAsk.value().toNumber(),
-          orderbookBid: orderbookBid.value().toNumber()
-        }
-      })
-    );
+    return Err({
+      reason: QuoteErrorReason.MARKET_CROSSING,
+      side: 'ask'
+    });
   }
 }
 ```
@@ -522,16 +474,13 @@ if (quoteAsk !== null && orderbookBid !== null) {
 
 **Файл:** `src/quote/errors/QuoteErrorReason.ts`
 
-**16 типизированных причин:**
+**12 типизированных причин:**
 
 ```typescript
 enum QuoteErrorReason {
   // Invariant violations
   BOTH_SIDES_NULL = 'BOTH_SIDES_NULL',
   BID_GREATER_THAN_ASK = 'BID_GREATER_THAN_ASK',
-  INVALID_TIMESTAMP = 'INVALID_TIMESTAMP',
-  INCONSISTENT_BID_SIZE = 'INCONSISTENT_BID_SIZE',
-  INCONSISTENT_ASK_SIZE = 'INCONSISTENT_ASK_SIZE',
 
   // Parsing errors
   INVALID_FORMAT = 'INVALID_FORMAT',
@@ -547,8 +496,7 @@ enum QuoteErrorReason {
   ASK_SIZE_MUST_BE_POSITIVE = 'ASK_SIZE_MUST_BE_POSITIVE',
   SPREAD_TOO_NARROW = 'SPREAD_TOO_NARROW',
   SPREAD_TOO_WIDE = 'SPREAD_TOO_WIDE',
-  MARKET_CROSSING = 'MARKET_CROSSING',
-  QUOTE_TOO_OLD = 'QUOTE_TOO_OLD'
+  MARKET_CROSSING = 'MARKET_CROSSING'
 }
 ```
 
@@ -628,6 +576,8 @@ Quote
 │   └── PriceService (facade)
 ├── Quantity (value object)
 │   └── QuantityService (facade)
+├── Timestamp (value object)
+│   └── TimestampService (facade)
 ├── Decimal.js (math library)
 ├── @polymarket/result (Result<T, E>)
 └── @polymarket/errors (InvalidQuoteError)

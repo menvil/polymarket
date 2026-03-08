@@ -63,8 +63,6 @@ User Code
 ### Пример потока
 
 ```typescript
-// Упрощённый псевдокод (не реальная реализация SpreadService):
-
 // User Code
 const result = SpreadService.fromValues(0.60, 0.50);
 // result.ok === false
@@ -137,6 +135,7 @@ if (bidResult.ok && askResult.ok) {
 
 - `Spread.ts` (~240 строк)
 - `SpreadInvariantViolation.ts`
+- `SpreadErrorReason.ts`
 
 **Ответственность:**
 
@@ -464,23 +463,27 @@ Spread не форсирует alignment к базовому тику (0.0001):
 - Spread не знает про тики, это знает Price
 - Flexibility для разных контекстов
 
-### 3. Width как дробь
+### 3. Width как Ratio
 
 `widthRatio(): Ratio` возвращает относительную ширину как дробь от midpoint:
 
 ```typescript
 const spread = SpreadService.fromValues(0.48, 0.52).value;
-spread.widthRatio();              // Ratio(0.08)
-spread.widthRatio().toNumber();   // 0.08 (fraction: 0.04 / 0.50)
-spread.widthRatio().toDecimal().times(100).toNumber();  // 8 (percent)
-spread.widthInBasisPoints().toNumber(); // 400 (bps: 0.04 × 10000)
+spread.widthRatio().toNumber();  // 0.08 (= 0.04 / 0.50 = 8%)
+
+// Для отображения в процентах:
+spread.widthRatio().toDecimal().times(100).toFixed(2);  // "8.00"
+
+// Для basis points:
+spread.widthRatio().toDecimal().times(10000).toNumber();  // 800
 ```
 
 **Обоснование:**
 
+- Возвращает `Ratio` для единообразия с другими VO (Fee, Discount)
+- `Ratio` семантически точнее: дробь 0.08, а не "8 процентов"
+- Для отображения вызывающий код явно конвертирует: `times(100)`
 - Удобно для сравнения спредов на разных ценовых уровнях
-- Стандартная метрика ликвидности в трейдинге
-- Помогает в маркет-мейкинге
 
 ### 4. Нулевая ширина (zero-width spread)
 
@@ -562,7 +565,7 @@ export class ValidateMinimumLiquidity {
     spread: Spread,
     minWidthBps: number
   ): Result<void, InvalidSpreadError> {
-    const widthBps = spread.widthInBasisPoints().toNumber();
+    const widthBps = spread.widthRatio().toDecimal().times(10000).toNumber();
     
     if (widthBps < minWidthBps) {
       return Err(

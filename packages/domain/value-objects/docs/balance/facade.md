@@ -18,8 +18,8 @@ const accountId: AccountId = {
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
 const result = BalanceService.create(
-  Money.of(new Decimal(10000)), // 10000 units available
-  Money.of(new Decimal(2000)),  // 2000 units reserved
+  Money.of(10000), // $100.00 available
+  Money.of(2000),  // $20.00 reserved
   accountId,       // ID аккаунта владельца
   venueId          // ID площадки (venue)
 );
@@ -45,7 +45,7 @@ const balance = result.value;
 Резервирует средства из available в reserved.
 
 ```typescript
-const result = BalanceService.reserve(balance, Money.of(new Decimal(3000)));
+const result = BalanceService.reserve(balance, Money.of(3000));
 
 if (isErr(result)) {
   if (result.error.context?.reason === BalanceErrorReason.INSUFFICIENT_FUNDS) {
@@ -81,7 +81,7 @@ const newBalance = result.value;
 **Использование:** Отмена резервирования, возврат средств в доступные.
 
 ```typescript
-const result = BalanceService.unfreezeReserved(balance, Money.of(new Decimal(2000)));
+const result = BalanceService.unfreezeReserved(balance, Money.of(2000));
 
 if (isErr(result)) {
   if (result.error.context?.reason === BalanceErrorReason.INSUFFICIENT_RESERVED) {
@@ -122,7 +122,7 @@ const newBalance = result.value;
 **Использование:** Исполнение сделки, расход зарезервированных средств.
 
 ```typescript
-const result = BalanceService.consumeReserved(balance, Money.of(new Decimal(3000)));
+const result = BalanceService.consumeReserved(balance, Money.of(3000));
 
 if (isErr(result)) {
   if (result.error.context?.reason === BalanceErrorReason.INSUFFICIENT_RESERVED) {
@@ -173,7 +173,7 @@ const newBalance = result.value;
 ```typescript
 const result = BalanceService.updateAvailable(
   balance,
-  Money.of(new Decimal(15000)) // новый available
+  Money.of(15000) // новый available
 );
 
 if (result.ok) {
@@ -207,15 +207,15 @@ const accountId: AccountId = {
 };
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
-const balance1 = expectOk(BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), accountId, venueId));
-const balance2 = expectOk(BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), accountId, venueId));
-const balance3 = expectOk(BalanceService.create(Money.of(new Decimal(10001)), Money.of(new Decimal(2000)), accountId, venueId));
+const balance1 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
+const balance2 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
+const balance3 = expectOk(BalanceService.create(Money.of(10001), Money.of(2000), accountId, venueId));
 
-const equals1Result = BalanceService.equals(balance1, balance2);
-console.log(equals1Result.ok && equals1Result.value); // true
+const equals1 = BalanceService.equals(balance1, balance2);
+console.log(equals1.ok && equals1.value); // true
 
-const equals2Result = BalanceService.equals(balance1, balance3);
-console.log(equals2Result.ok && equals2Result.value); // false
+const equals2 = BalanceService.equals(balance1, balance3);
+console.log(equals2.ok && equals2.value); // false
 ```
 
 **Алгоритм:**
@@ -250,17 +250,17 @@ const accountId: AccountId = {
 };
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
-const balance = expectOk(BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), accountId, venueId));
+const balance = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
 
 // Проверка доступности
-const canAfford1 = BalanceService.canAfford(balance, Money.of(new Decimal(5000)));
+const canAfford1 = BalanceService.canAfford(balance, Money.of(5000));
 console.log(canAfford1.ok && canAfford1.value); // true
 
-const canAfford2 = BalanceService.canAfford(balance, Money.of(new Decimal(15000)));
+const canAfford2 = BalanceService.canAfford(balance, Money.of(15000));
 console.log(canAfford2.ok && canAfford2.value); // false
 
 // Граничный случай (available === amount)
-const canAfford3 = BalanceService.canAfford(balance, Money.of(new Decimal(10000)));
+const canAfford3 = BalanceService.canAfford(balance, Money.of(10000));
 console.log(canAfford3.ok && canAfford3.value); // true
 ```
 
@@ -303,8 +303,8 @@ const accountId: AccountId = {
 };
 const venueId: VenueId = 'POLYMARKET' as VenueId;
 
-const balance1 = expectOk(BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), accountId, venueId));
-const balance2 = expectOk(BalanceService.reserve(balance1, Money.of(new Decimal(3000))));
+const balance1 = expectOk(BalanceService.create(Money.of(10000), Money.of(2000), accountId, venueId));
+const balance2 = expectOk(BalanceService.reserve(balance1, Money.of(3000)));
 
 // balance1 не изменился!
 console.log(balance1.available().value()); // 10000
@@ -313,15 +313,13 @@ console.log(balance2.available().value()); // 7000
 
 ## Обработка ошибок
 
-### Проверка ошибок через switch
+### Exhaustive checking через switch
 
 ```typescript
 const result = BalanceService.reserve(balance, amount);
 
 if (isErr(result)) {
-  const reason = result.error.context?.reason;
-
-  switch (reason) {
+  switch (result.error.context?.reason) {
     case BalanceErrorReason.INSUFFICIENT_FUNDS:
       // Обработка недостаточных средств
       break;
@@ -331,9 +329,7 @@ if (isErr(result)) {
     case BalanceErrorReason.INVALID_FORMAT:
       // Обработка невалидного формата
       break;
-    default:
-      // Обработка других ошибок
-      console.error(`Unexpected error: ${result.error.message}`);
+    // TypeScript проверит, что все cases покрыты
   }
 }
 ```
@@ -368,27 +364,17 @@ BalanceService использует MoneyService для арифметическ
 
 ```typescript
 // Внутри BalanceService.reserve()
-const newAvailableResult = MoneyService.subtract(balance.available(), amount);
-if (isErr(newAvailableResult)) {
-  return Err(rewrap(
-    BalanceService.SERVICE_NAME,
-    'reserve',
-    { available: balance.available().value().toString(), amount: amount.value().toString() },
-    newAvailableResult.error,
-    InvalidBalanceError
-  ));
-}
-const newAvailable = newAvailableResult.value;
+const newAvailableResult = this.subtractMoney(balance.available(), amount);
+const newReservedResult = this.addMoney(balance.reserved(), amount);
 
-const newReservedResult = MoneyService.add(balance.reserved(), amount);
-if (isErr(newReservedResult)) {
-  return Err(rewrap(
-    BalanceService.SERVICE_NAME,
-    'reserve',
-    { reserved: balance.reserved().value().toString(), amount: amount.value().toString() },
-    newReservedResult.error,
-    InvalidBalanceError
-  ));
+// subtractMoney делегирует MoneyService
+private static subtractMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
+  const result = MoneyService.subtract(a, b);
+  if (isErr(result)) {
+    return Err(new InvalidBalanceError(result.error.message, {
+      context: { reason: BalanceErrorReason.INVALID_FORMAT, ... }
+    }));
+  }
+  return Ok(result.value);
 }
-const newReserved = newReservedResult.value;
 ```

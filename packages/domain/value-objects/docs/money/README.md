@@ -25,7 +25,7 @@
 ✅ **Высокоточный** — использует `Decimal.js` для произвольной точности
 ✅ **Multi-currency ready** — поддержка нескольких валют (сейчас USDC)
 ✅ **Layered Architecture** — чёткое разделение ответственности
-✅ **100% Test Coverage** — все слои покрыты тестами
+✅ **100% Test Coverage** — все слои покрыты тестами (95 тестов)
 ✅ **Backward Compatible** — старый код продолжает работать
 
 ### Когда использовать Money
@@ -210,18 +210,7 @@ decreaseBy(m: Money, delta: Ratio): Result<Money, InvalidMoneyError>
 - `context.value | amount` — входные значения
 - `context.currency` — валюта (если применимо)
 - `context.divisor | factor` — параметры операции
-- `context.reason` — причина ошибки:
-  - `INVALID_FORMAT` — ошибка парсинга
-  - `NAN` — значение NaN
-  - `NON_FINITE` — значение не finite (Infinity)
-  - `EXCEEDS_MAX_AMOUNT` — превышение максимальной суммы
-  - `UNSUPPORTED_CURRENCY` — неподдерживаемая валюта
-  - `CURRENCY_MISMATCH` — несовпадение валют
-  - `DIVISION_BY_ZERO` — деление на ноль
-  - `NEGATIVE_RESULT` — отрицательный результат
-  - `INVALID_RATIO` — невалидный Ratio
-  - `RATIO_OUT_OF_RANGE` — Ratio вне диапазона
-  - `DELTA_LESS_THAN_MINUS_ONE` — delta < -1
+- `context.reason` — причина из Core (`'UNSUPPORTED_CURRENCY'`, `'NAN'`, `'NON_FINITE'`, `'EXCEEDS_MAX_AMOUNT'`, `'INVALID_FORMAT'`)
 
 **Специфика MoneyService:**
 
@@ -256,11 +245,8 @@ if (formatted.ok) console.log(formatted.value);  // "100.50"
 const withCurrency = MoneyFormatter.toCurrency(money);
 if (withCurrency.ok) console.log(withCurrency.value);  // "$100.50 USDC"
 
-const compactMoneyResult = MoneyService.create(new Decimal(1500));
-if (compactMoneyResult.ok) {
-  const compact = MoneyFormatter.toCompact(compactMoneyResult.value);
-  if (compact.ok) console.log(compact.value);  // "$1.5K"
-}
+const compact = MoneyFormatter.toCompact(Money.of(new Decimal(1500)));
+if (compact.ok) console.log(compact.value);  // "$1.5K"
 ```
 
 Подробнее: [adapters.md](./adapters.md)
@@ -406,31 +392,19 @@ console.log(`Fee: $${fee.value()}`);  // $2.00
 
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
-import Decimal from 'decimal.js';
 
-// Создаём две суммы в USDC
-const usdc1Result = MoneyService.create(new Decimal(100));
-const usdc2Result = MoneyService.create(new Decimal(50));
+const usd1 = Money.of(new Decimal(100), 'USDC');
+const usd2 = Money.of(new Decimal(50), 'USDC');
 
-if (!usdc1Result.ok || !usdc2Result.ok) {
-  console.error('Failed to create Money');
+// Попытка сложить разные валюты
+const sumResult = MoneyService.add(usd1, usd2);
+
+if (!sumResult.ok) {
+  // InvalidMoneyError (reason: CURRENCY_MISMATCH)
+  console.error(sumResult.error.context?.expected);  // "USDC"
+  console.error(sumResult.error.context?.actual);    // "EUR" (example)
   return;
 }
-
-// Одинаковые валюты — успешно
-const sumResult = MoneyService.add(usdc1Result.value, usdc2Result.value);
-if (sumResult.ok) {
-  console.log(`Sum: $${sumResult.value.value()}`);  // $150
-}
-
-// Пример с разными валютами (концептуально, если бы EUR была поддержана):
-// const eurResult = MoneyService.create(new Decimal(100), 'EUR');
-// const mismatchResult = MoneyService.add(usdc1Result.value, eurResult.value);
-// if (!mismatchResult.ok) {
-//   // InvalidMoneyError (reason: CURRENCY_MISMATCH)
-//   console.error(mismatchResult.error.context?.expected);  // "USDC"
-//   console.error(mismatchResult.error.context?.actual);    // "EUR"
-// }
 ```
 
 ### Сериализация для API
@@ -479,14 +453,10 @@ const withoutCurrency = MoneyFormatter.toCurrency(money, false);
 if (withoutCurrency.ok) console.log(withoutCurrency.value);  // "$1234.56"
 
 // Компактный формат для dashboard
-const compact1MoneyResult = MoneyService.create(new Decimal(1500));
-const compact2MoneyResult = MoneyService.create(new Decimal(2300000));
-if (compact1MoneyResult.ok && compact2MoneyResult.ok) {
-  const compact1 = MoneyFormatter.toCompact(compact1MoneyResult.value);
-  if (compact1.ok) console.log(compact1.value);  // "$1.5K"
-  const compact2 = MoneyFormatter.toCompact(compact2MoneyResult.value);
-  if (compact2.ok) console.log(compact2.value);  // "$2.3M"
-}
+const compact1 = MoneyFormatter.toCompact(Money.of(new Decimal(1500)));
+if (compact1.ok) console.log(compact1.value);  // "$1.5K"
+const compact2 = MoneyFormatter.toCompact(Money.of(new Decimal(2300000)));
+if (compact2.ok) console.log(compact2.value);  // "$2.3M"
 ```
 
 ### Операции с Ratio (проценты, доли)
@@ -494,16 +464,9 @@ if (compact1MoneyResult.ok && compact2MoneyResult.ok) {
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
 import { Ratio } from '@polymarket/value-objects/ratio';
-import Decimal from 'decimal.js';
 
 // 1. Вычисление доли (portion) - fees, allocations
-const orderAmountResult = MoneyService.create(new Decimal(1000));
-if (!orderAmountResult.ok) {
-  console.error('Failed to create Money');
-  return;
-}
-
-const orderAmount = orderAmountResult.value;
+const orderAmount = Money.of(new Decimal(1000), 'USDC');
 const feeRate = Ratio.of(new Decimal(0.02)); // 2%
 
 const feeResult = MoneyService.portion(orderAmount, feeRate);
@@ -512,13 +475,7 @@ if (feeResult.ok) {
 }
 
 // 2. Увеличение на процент (increaseBy) - markup, interest
-const baseCostResult = MoneyService.create(new Decimal(100));
-if (!baseCostResult.ok) {
-  console.error('Failed to create Money');
-  return;
-}
-
-const baseCost = baseCostResult.value;
+const baseCost = Money.of(new Decimal(100), 'USDC');
 const markup = Ratio.of(new Decimal(0.2)); // +20%
 
 const priceResult = MoneyService.increaseBy(baseCost, markup);
@@ -527,13 +484,7 @@ if (priceResult.ok) {
 }
 
 // 3. Уменьшение на процент (decreaseBy) - discount
-const originalPriceResult = MoneyService.create(new Decimal(100));
-if (!originalPriceResult.ok) {
-  console.error('Failed to create Money');
-  return;
-}
-
-const originalPrice = originalPriceResult.value;
+const originalPrice = Money.of(new Decimal(100), 'USDC');
 const discount = Ratio.of(new Decimal(0.15)); // 15% discount
 
 const finalPriceResult = MoneyService.decreaseBy(originalPrice, discount);
@@ -542,13 +493,7 @@ if (finalPriceResult.ok) {
 }
 
 // 4. Workflow: fee calculation + discount
-const totalResult = MoneyService.create(new Decimal(5000));
-if (!totalResult.ok) {
-  console.error('Failed to create Money');
-  return;
-}
-
-const total = totalResult.value;
+const total = Money.of(new Decimal(5000), 'USDC');
 
 // Вычисляем allocation 30%
 const allocRate = Ratio.of(new Decimal(0.3));
@@ -579,9 +524,8 @@ if (allocResult.ok) {
 
 ```typescript
 import { Money } from '@polymarket/value-objects';
-import Decimal from 'decimal.js';
 
-const money = Money.of(new Decimal(100), 'USDC');  // Может бросить исключение
+const money = new Money(100);  // Может бросить исключение
 ```
 
 **Стало:**

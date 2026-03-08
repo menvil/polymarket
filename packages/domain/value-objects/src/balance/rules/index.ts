@@ -61,6 +61,6 @@
  * @packageDocumentation
  */
 
-export * from './ValidateReserveAmount';
-export * from './ValidateReleaseAmount';
-export * from './ValidateCurrencyMatch';
+export * from './ValidateReserveAmount.js';
+export * from './ValidateReleaseAmount.js';
+export * from './ValidateCurrencyMatch.js';

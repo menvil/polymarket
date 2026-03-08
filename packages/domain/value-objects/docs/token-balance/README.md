@@ -17,8 +17,8 @@ TokenBalance инкапсулирует логику управления ток
 import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
 import { Quantity } from '@polymarket/value-objects/quantity';
-import { BinaryOutcome, KnownOnChainProtocols, KnownVenues, KnownChainIds } from '@polymarket/ids';
-import type { OnChainConditionRef, AccountId, VenueId, ConditionId } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols, KnownVenues } from '@polymarket/ids';
+import type { OnChainConditionRef, AccountId, VenueId } from '@polymarket/ids';
 import { parseWalletAddress, accountIdFromWallet } from '@polymarket/ids';
 import { isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
@@ -27,8 +27,8 @@ import Decimal from 'decimal.js';
 const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-  chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc...' as ConditionId
+  chainId: 137 as any,
+  conditionId: '0x...' as any
 };
 
 const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
@@ -94,7 +94,7 @@ TokenBalance гарантирует соблюдение бизнес-прави
 
 ### Операции (Facade Layer)
 
-**Операции, возвращающие `Result<TokenBalance, InvalidTokenBalanceError>`:**
+Все операции возвращают `Result<TokenBalance, InvalidTokenBalanceError>`:
 
 - `TokenBalanceService.create()` — создание баланса
 - `TokenBalanceService.createWithZeroReserved()` — создание баланса без резерва
@@ -102,13 +102,7 @@ TokenBalance гарантирует соблюдение бизнес-прави
 - `TokenBalanceService.unfreezeReserved()` — размораживание токенов (reserved → available)
 - `TokenBalanceService.consumeReserved()` — списание зарезервированных токенов (уменьшает total)
 - `TokenBalanceService.updateAvailable()` — обновление доступных токенов
-
-**Проверки (возвращают boolean):**
-
 - `TokenBalanceService.canReserve()` — проверка возможности резервирования
-- `TokenBalanceService.equals()` — сравнение балансов
-- `TokenBalanceService.isZero()` — проверка на нулевой баланс
-- `TokenBalanceService.isPositive()` — проверка на положительный баланс
 
 ### Сериализация (Adapters Layer)
 

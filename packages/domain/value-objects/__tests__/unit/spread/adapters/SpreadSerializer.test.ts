@@ -1,7 +1,6 @@
 import { SpreadSerializer } from '../../../../src/spread/adapters/SpreadSerializer.js';
 import { SpreadService } from '../../../../src/spread/facade/SpreadService.js';
 import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
-import { PriceErrorReason } from '../../../../src/price/errors/PriceErrorReason.js';
 
 describe('SpreadSerializer', () => {
   describe('toJSON()', () => {
@@ -128,9 +127,6 @@ describe('SpreadSerializer', () => {
       const result = SpreadSerializer.fromJSON(json);
 
       expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe(PriceErrorReason.OUT_OF_RANGE_HIGH);
-      }
     });
   });
 

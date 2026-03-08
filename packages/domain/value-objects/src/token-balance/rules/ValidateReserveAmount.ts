@@ -99,13 +99,13 @@ export class ValidateReserveAmount {
       return Err(
         new InvalidTokenBalanceError(
           (ctx: Record<string, unknown>) =>
-            `Cannot reserve ${ctx.amount}: only ${ctx.available} available`,
+            `Cannot reserve ${ctx.requested}: only ${ctx.available} available`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: TokenBalanceErrorReason.INSUFFICIENT_AVAILABLE,
-              amount: amount.toString(),
-              available: availableAmount.toString()
+              requested: amount.toNumber(),
+              available: availableAmount.toNumber()
             }
           }
         )

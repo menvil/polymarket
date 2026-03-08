@@ -213,16 +213,7 @@ export class SpreadService {
         // Создаём spread через create
         const createResult = SpreadService.create(bidResult.value, askResult.value);
         if (isErr(createResult)) {
-          throw rewrap(
-            SpreadService.SERVICE_NAME,
-            'fromValues',
-            {
-              bidValue: bidDecimalResult.value.toString(),
-              askValue: askDecimalResult.value.toString()
-            },
-            createResult.error,
-            InvalidSpreadError
-          );
+          throw createResult.error;
         }
 
         return Ok(createResult.value);
@@ -413,8 +404,9 @@ export class SpreadService {
           );
         }
 
-        // 9. Create spread (through create() to run all rule validations)
-        return SpreadService.create(bidResult.value, askResult.value);
+        // 9. Create spread
+        const spread = Spread.of(bidResult.value, askResult.value);
+        return Ok(spread);
       },
       InvalidSpreadError
     );
@@ -494,6 +486,24 @@ export class SpreadService {
     const amountDecimal = amountResult.value;
 
     // Валидация amount
+    if (!amountDecimal.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          'Tighten amount must be finite',
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              service: SpreadService.SERVICE_NAME,
+              op: 'tighten',
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
     if (amountDecimal.isNegative()) {
       return Err(
         new InvalidSpreadError(
@@ -679,6 +689,23 @@ export class SpreadService {
     const amountDecimal = amountResult.value;
 
     // Валидация amount
+    if (!amountDecimal.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          'Widen amount must be finite',
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              op: 'widen',
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
     if (amountDecimal.isNegative()) {
       return Err(
         new InvalidSpreadError(
@@ -686,7 +713,6 @@ export class SpreadService {
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
-              service: SpreadService.SERVICE_NAME,
               op: 'widen',
               amount: amountDecimal.toString(),
               spread: `${spread.bid().value()}-${spread.ask().value()}`,
@@ -861,6 +887,24 @@ export class SpreadService {
     }
 
     const amountDecimal = amountResult.value;
+
+    // Валидация amount
+    if (!amountDecimal.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          'Shift amount must be finite',
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              op: 'shift',
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
 
     try {
       // Сдвигаем обе цены через math functions + createPrice helper
@@ -1282,6 +1326,25 @@ export class SpreadService {
 
     const amountDecimal = amountResult.value;
 
+    // Валидация amount
+    if (!amountDecimal.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          'Adjust amount must be finite',
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              service: SpreadService.SERVICE_NAME,
+              op,
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
     try {
       // Новый bid через math + createPrice helper
       const newBidValue = addDecimal(spread.bid().value(), amountDecimal);
@@ -1356,6 +1419,25 @@ export class SpreadService {
 
     const amountDecimal = amountResult.value;
 
+    // Валидация amount
+    if (!amountDecimal.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          'Adjust amount must be finite',
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              service: SpreadService.SERVICE_NAME,
+              op,
+              amount: amountDecimal.toString(),
+              spread: `${spread.bid().value()}-${spread.ask().value()}`,
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
     try {
       // Новый ask через math + createPrice helper
       const newAskValue = addDecimal(spread.ask().value(), amountDecimal);
@@ -1409,55 +1491,14 @@ export class SpreadService {
     bidAmount: Decimal | number | string,
     askAmount: Decimal | number | string
   ): Result<Spread, InvalidSpreadError> {
-    const op = 'adjustBidAsk';
-    return wrapOp(
-      SpreadService.SERVICE_NAME,
-      op,
-      {
-        spread: `${spread.bid().value()}-${spread.ask().value()}`,
-        bidAmount: String(bidAmount),
-        askAmount: String(askAmount)
-      },
-      () => {
-        // Adjust bid
-        const bidAmountResult = toDecimal<InvalidSpreadError>(
-          'bidAmount',
-          bidAmount,
-          SpreadErrorReason.INVALID_FORMAT,
-          InvalidSpreadError,
-          { nonFiniteReason: SpreadErrorReason.INVALID_AMOUNT }
-        );
-        if (isErr(bidAmountResult)) {
-          throw rewrap(SpreadService.SERVICE_NAME, op, {}, bidAmountResult.error, InvalidSpreadError);
-        }
-        const newBidValue = addDecimal(spread.bid().value(), bidAmountResult.value);
-        const newBidResult = SpreadService.createPrice(op, 'bid', newBidValue, spread, 'adjust bid');
-        if (isErr(newBidResult)) {
-          throw newBidResult.error;
-        }
+    // Сначала корректируем bid
+    const bidAdjusted = SpreadService.adjustBid(spread, bidAmount);
+    if (isErr(bidAdjusted)) {
+      return bidAdjusted;
+    }
 
-        // Adjust ask
-        const askAmountResult = toDecimal<InvalidSpreadError>(
-          'askAmount',
-          askAmount,
-          SpreadErrorReason.INVALID_FORMAT,
-          InvalidSpreadError,
-          { nonFiniteReason: SpreadErrorReason.INVALID_AMOUNT }
-        );
-        if (isErr(askAmountResult)) {
-          throw rewrap(SpreadService.SERVICE_NAME, op, {}, askAmountResult.error, InvalidSpreadError);
-        }
-        const newAskValue = addDecimal(spread.ask().value(), askAmountResult.value);
-        const newAskResult = SpreadService.createPrice(op, 'ask', newAskValue, spread, 'adjust ask');
-        if (isErr(newAskResult)) {
-          throw newAskResult.error;
-        }
-
-        // Create new spread from independently adjusted values
-        return SpreadService.create(newBidResult.value, newAskResult.value);
-      },
-      InvalidSpreadError
-    );
+    // Затем корректируем ask
+    return SpreadService.adjustAsk(bidAdjusted.value, askAmount);
   }
 
   // ============================================================================

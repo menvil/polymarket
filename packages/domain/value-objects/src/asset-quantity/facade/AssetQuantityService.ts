@@ -17,7 +17,7 @@ import { Ratio } from '../../ratio/core/Ratio.js';
  *
  * **Контракт "Never Throw":**
  * Методы создания/модификации ГАРАНТИРОВАННО возвращают Result и НИКОГДА не бросают исключения.
- * Утилитарные методы (isZero, isPositive) возвращают простые типы (boolean).
+ * Утилитарные методы (equals, isZero, isPositive) возвращают простые типы (boolean).
  *
  * **Facade Error Contract:**
  * Любой Err из Facade содержит:
@@ -50,8 +50,6 @@ import { Ratio } from '../../ratio/core/Ratio.js';
  * ```
  */
 export class AssetQuantityService {
-  private constructor() {}
-
   private static readonly SERVICE_NAME = 'AssetQuantityService';
 
   /**
@@ -64,7 +62,7 @@ export class AssetQuantityService {
    * @remarks
    * Никогда не бросает исключения - всегда возвращает Result.
    *
-   * **Defensive copy**: Конструктор AssetQuantity выполняет defensive copy AssetId
+   * **Defensive copy**: Использует fromAssetId() который пересоздаёт AssetId
    * для гарантии иммутабельности (asset может быть из parseAssetId).
    *
    * Возможные ошибки:
@@ -88,7 +86,7 @@ export class AssetQuantityService {
     return wrapOp(
       AssetQuantityService.SERVICE_NAME,
       'create',
-      { asset: JSON.stringify(asset), amount: amount.value().toString() },
+      { asset, amount },
       () => {
         // Конструктор делает defensive copy для гарантии иммутабельности
         const assetQty = new AssetQuantity(asset, amount);
@@ -123,7 +121,7 @@ export class AssetQuantityService {
     return wrapOp(
       AssetQuantityService.SERVICE_NAME,
       'createUsdc',
-      { amountValue: String(amountValue) },
+      { amountValue },
       () => {
         // Используем QuantityService для парсинга и валидации (DRY, централизация)
         const quantityResult = QuantityService.create(amountValue);
@@ -136,7 +134,7 @@ export class AssetQuantityService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-                amountValue: String(amountValue),
+                amountValue,
                 quantityError: quantityResult.error.message,
               },
             }
@@ -185,7 +183,7 @@ export class AssetQuantityService {
     return wrapOp(
       AssetQuantityService.SERVICE_NAME,
       'createOutcomeToken',
-      { conditionRef: JSON.stringify(conditionRef), outcomeKey: String(outcomeKey), amountValue: String(amountValue) },
+      { conditionRef, outcomeKey, amountValue },
       () => {
         // Используем QuantityService для парсинга и валидации (DRY, централизация)
         const quantityResult = QuantityService.create(amountValue);
@@ -198,9 +196,9 @@ export class AssetQuantityService {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-                conditionRef: JSON.stringify(conditionRef),
-                outcomeKey: String(outcomeKey),
-                amountValue: String(amountValue),
+                conditionRef,
+                outcomeKey,
+                amountValue,
                 quantityError: quantityResult.error.message,
               },
             }
@@ -219,18 +217,14 @@ export class AssetQuantityService {
           // AssetIdHelpers.fromOutcomeToken() бросил ошибку валидации
           // Переупаковываем её в InvalidAssetQuantityError с правильным reason
           const errorMessage = error instanceof Error ? error.message : String(error);
-          const cause = error instanceof Error
-            ? { name: error.name, message: error.message, stack: error.stack }
-            : { name: 'UnknownError', message: String(error) };
           throw new InvalidAssetQuantityError(
             () => errorMessage,
             {
               context: {
                 source: ErrorSource.SERVICE_CALL,
                 reason: AssetQuantityErrorReason.INVALID_ASSET,
-                conditionRef: JSON.stringify(conditionRef),
-                outcomeKey: String(outcomeKey),
-                cause,
+                conditionRef,
+                outcomeKey,
               },
             }
           );
@@ -295,9 +289,9 @@ export class AssetQuantityService {
    * **Asset сохраняется:** результат имеет тот же asset (currency/token) что и исходный
    *
    * **Use cases:**
-   * - Fee calculation: `portion(orderQty, Ratio.of(new Decimal(0.02)))` → 2% trading fee
-   * - Allocation: `portion(totalQty, Ratio.of(new Decimal(0.3)))` → 30% allocation
-   * - Partial fill: `portion(orderQty, Ratio.of(new Decimal(0.5)))` → 50% filled
+   * - Fee calculation: `portion(orderQty, Ratio.fromPercent(2))` → 2% trading fee
+   * - Allocation: `portion(totalQty, Ratio.fromDecimal(0.3))` → 30% allocation
+   * - Partial fill: `portion(orderQty, Ratio.fromDecimal(0.5))` → 50% filled
    *
    * **Процесс:**
    * 1. Multiply: assetQty.amount() * rate.toDecimal()
@@ -335,18 +329,15 @@ export class AssetQuantityService {
     assetQty: AssetQuantity,
     rate: Ratio
   ): Result<AssetQuantity, InvalidAssetQuantityError> {
-    // Cache repeated value extractions
-    const amountDecimal = assetQty.amount().value();
-    const rateDecimal = rate.toDecimal();
-
     const ctx = {
-      amount: amountDecimal.toString(),
-      asset: JSON.stringify(assetQty.asset()),
-      rate: rateDecimal.toString()
+      amount: assetQty.amount().value().toString(),
+      asset: assetQty.asset(),
+      rate: rate.toDecimal().toString()
     };
+
     return wrapOp(AssetQuantityService.SERVICE_NAME, 'portion', ctx, () => {
       // Multiply: amount * rate
-      const resultAmount = amountDecimal.times(rateDecimal);
+      const resultAmount = assetQty.amount().value().times(rate.toDecimal());
 
       // Create Quantity через QuantityService
       const quantityResult = QuantityService.create(resultAmount);
@@ -354,14 +345,13 @@ export class AssetQuantityService {
       if (isErr(quantityResult)) {
         // Переупаковываем ошибку QuantityService в InvalidAssetQuantityError
         throw new InvalidAssetQuantityError(
-          (errCtx) => `Invalid result amount for portion: ${errCtx.quantityError}`,
+          (ctx) => `Invalid result amount for portion: ${ctx.quantityError}`,
           {
             context: {
               source: ErrorSource.SERVICE_CALL,
               reason: AssetQuantityErrorReason.INVALID_AMOUNT,
-              asset: ctx.asset,
-              amount: ctx.amount,
-              rate: ctx.rate,
+              amount: assetQty.amount().value().toString(),
+              rate: rate.toDecimal().toString(),
               quantityError: quantityResult.error.message,
             },
           }

@@ -1,49 +1,8 @@
 import Decimal from 'decimal.js';
-import { Money } from '../../money/core/Money';
-import type { SupportedCurrency, AccountId, VenueId } from '@polymarket/ids';
-import { parseWalletAddress, asVenueId } from '@polymarket/ids';
-import { BalanceInvariantViolation } from './BalanceInvariantViolation';
-import { BalanceErrorReason } from '../errors/BalanceErrorReason';
-
-/**
- * Helper для безопасного создания ZERO_WALLET_ADDRESS константы
- *
- * @remarks
- * Используем parseWalletAddress для runtime валидации вместо "as" cast.
- * Если валидация не пройдёт - будет выброшено исключение при инициализации модуля.
- */
-function initZeroWalletAddress() {
-  const addr = parseWalletAddress('0x0000000000000000000000000000000000000000');
-  if (!addr) {
-    throw new Error('Failed to parse ZERO_WALLET_ADDRESS constant');
-  }
-  return addr;
-}
-
-/**
- * Helper для безопасного создания SYSTEM_VENUE_ID константы
- *
- * @remarks
- * Используем asVenueId для runtime валидации вместо "as" cast.
- * Если валидация не пройдёт - будет выброшено исключение при инициализации модуля.
- */
-function initSystemVenueId() {
-  const venueId = asVenueId('SYSTEM');
-  if (!venueId) {
-    throw new Error('Failed to validate SYSTEM_VENUE_ID constant');
-  }
-  return venueId;
-}
-
-/**
- * Константа: нулевой адрес кошелька для системных балансов
- */
-const ZERO_WALLET_ADDRESS = initZeroWalletAddress();
-
-/**
- * Константа: системный VenueId для placeholder балансов
- */
-const SYSTEM_VENUE_ID = initSystemVenueId();
+import { Money } from '../../money/core/Money.js';
+import type { SupportedCurrency, AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+import { BalanceInvariantViolation } from './BalanceInvariantViolation.js';
+import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
 /**
  * Balance - баланс денежных средств с разделением на available/reserved
@@ -83,10 +42,10 @@ const SYSTEM_VENUE_ID = initSystemVenueId();
  *
  * // Создание баланса (может throw при нарушении инвариантов)
  * const balance = Balance.of(
- *   Money.of(new Decimal(10000), 'USDC'),  // available
- *   Money.of(new Decimal(2000), 'USDC'),   // reserved
- *   accountId,                             // ID аккаунта владельца
- *   venueId                                // ID площадки
+ *   Money.fromUSDC(10000),  // available
+ *   Money.fromUSDC(2000),   // reserved
+ *   accountId,              // ID аккаунта владельца
+ *   venueId                 // ID площадки
  * );
  *
  * // Query методы (чистые, не могут fail)
@@ -97,15 +56,10 @@ const SYSTEM_VENUE_ID = initSystemVenueId();
  *
  * // Helpers
  * const empty = Balance.ZERO.USDC;
- * const withZero = Balance.withZeroReserved(Money.of(new Decimal(10000), 'USDC'), accountId, venueId);
+ * const withZero = Balance.withZeroReserved(Money.of(10000), accountId, venueId);
  * ```
  */
 export class Balance {
-  /**
-   * Кэшированное значение total() - вычисляется один раз в конструкторе
-   */
-  private readonly _total: Money;
-
   /**
    * Private constructor для защиты инвариантов
    *
@@ -151,7 +105,7 @@ export class Balance {
         'Available amount cannot be negative',
         {
           reason: BalanceErrorReason.NEGATIVE_AVAILABLE,
-          available: _available.value().toString()
+          available: _available.value().toNumber()
         }
       );
     }
@@ -162,7 +116,7 @@ export class Balance {
         'Reserved amount cannot be negative',
         {
           reason: BalanceErrorReason.NEGATIVE_RESERVED,
-          reserved: _reserved.value().toString()
+          reserved: _reserved.value().toNumber()
         }
       );
     }
@@ -180,7 +134,7 @@ export class Balance {
     }
 
     // Инвариант 4: available + reserved <= Money.MAX_AMOUNT
-    const totalAmount = _available.value().plus(_reserved.value());
+    const totalAmount = this.totalAmount();
     if (totalAmount.greaterThan(Money.MAX_AMOUNT)) {
       throw new BalanceInvariantViolation(
         `Total balance (available + reserved) exceeds maximum: ${Money.MAX_AMOUNT}`,
@@ -193,9 +147,6 @@ export class Balance {
         }
       );
     }
-
-    // Кэшируем total() - вычисляется один раз в конструкторе
-    this._total = Money.of(totalAmount, this._available.currency());
   }
 
   /**
@@ -218,16 +169,16 @@ export class Balance {
    * ```typescript
    * // Прямое создание (может throw)
    * const balance = Balance.of(
-   *   Money.of(new Decimal(10000), 'USDC'),
-   *   Money.of(new Decimal(2000), 'USDC'),
+   *   Money.fromUSDC(10000),
+   *   Money.fromUSDC(2000),
    *   accountId,
    *   venueId
    * );
    *
    * // Или через BalanceService (Result-based)
    * const result = BalanceService.create(
-   *   Money.of(new Decimal(10000), 'USDC'),
-   *   Money.of(new Decimal(2000), 'USDC'),
+   *   Money.fromUSDC(10000),
+   *   Money.fromUSDC(2000),
    *   accountId,
    *   venueId
    * );
@@ -256,7 +207,7 @@ export class Balance {
    *
    * @example
    * ```typescript
-   * const balance = Balance.withZeroReserved(Money.of(new Decimal(10000), 'USDC'), accountId, venueId);
+   * const balance = Balance.withZeroReserved(Money.of(10000), accountId, venueId);
    * // available: 10000, reserved: 0
    * ```
    */
@@ -283,10 +234,6 @@ export class Balance {
    *
    * Для создания balance с конкретным accountId/venueId используй Balance.of() или BalanceService.create().
    *
-   * **Каждое поле (available, reserved) получает distinct Money instance,**
-   * хотя они имеют одинаковое значение (0). Это предотвращает потенциальные проблемы
-   * с shared state при использовании в составных операциях.
-   *
    * @example
    * ```typescript
    * const balance = Balance.ZERO.USDC;
@@ -303,9 +250,9 @@ export class Balance {
         currency,
         new Balance(
           money,
-          Money.of(new Decimal(0), currency as SupportedCurrency), // Создаём distinct instance для reserved
-          { kind: 'WALLET', address: ZERO_WALLET_ADDRESS } as AccountId,
-          SYSTEM_VENUE_ID
+          money,
+          { kind: 'WALLET', address: '0x0000000000000000000000000000000000000000' as WalletAddress } as AccountId,
+          'SYSTEM' as VenueId
         )
       ])
     ) as Record<SupportedCurrency, Balance>;
@@ -341,12 +288,12 @@ export class Balance {
   }
 
   /**
-   * Возвращает общую сумму (available + reserved)
+   * Вычисляет общую сумму (available + reserved)
    *
    * @returns Money с total суммой
    *
    * @remarks
-   * Derived value - кэшируется в конструкторе для производительности.
+   * Derived value - вычисляется каждый раз при вызове.
    *
    * Безопасно потому что:
    * - Валюты гарантированно совпадают (инвариант #3)
@@ -366,7 +313,22 @@ export class Balance {
    * ```
    */
   public total(): Money {
-    return this._total;
+    // Безопасно благодаря инвариантам Balance
+    return Money.of(this.totalAmount(), this._available.currency());
+  }
+
+  /**
+   * Вычисляет raw сумму available + reserved как Decimal
+   *
+   * @returns Decimal — сумма available.value() + reserved.value()
+   *
+   * @remarks
+   * Приватный helper для устранения дублирования формулы.
+   * Используется в конструкторе (инвариант #4) и в методе total().
+   * Вызывается только после проверки NaN/finite инвариантов.
+   */
+  private totalAmount(): Decimal {
+    return this._available.value().plus(this._reserved.value());
   }
 
   /**

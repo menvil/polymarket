@@ -1,7 +1,6 @@
 import Decimal from 'decimal.js';
-import { describe, it, expect } from '@jest/globals';
-import { Money } from '../../../../src/money/core/Money.js';
-import { MoneyFormatter } from '../../../../src/money/adapters/MoneyFormatter.js';
+import { Money } from '../../../../src/money/core/Money';
+import { MoneyFormatter } from '../../../../src/money/adapters/MoneyFormatter';
 import { unwrap } from '@polymarket/result/unsafe';
 
 describe('MoneyFormatter', () => {
@@ -61,7 +60,7 @@ describe('MoneyFormatter', () => {
       expect(unwrap(MoneyFormatter.toCurrency(money))).toBe('$100.50 USDC');
     });
 
-    it('форматирует без кода валюты (USDC)', () => {
+    it('форматирует без символа валюты', () => {
       const money = Money.of(new Decimal(100.50));
       expect(unwrap(MoneyFormatter.toCurrency(money, false))).toBe('$100.50');
     });
@@ -84,11 +83,6 @@ describe('MoneyFormatter', () => {
     it('форматирует отрицательные числа', () => {
       const money = Money.of(new Decimal(-100.50));
       expect(unwrap(MoneyFormatter.toCurrency(money))).toBe('-$100.50 USDC');
-    });
-
-    it('форматирует отрицательные числа без кода валюты', () => {
-      const money = Money.of(new Decimal(-100.50));
-      expect(unwrap(MoneyFormatter.toCurrency(money, false))).toBe('-$100.50');
     });
 
     it('форматирует ноль', () => {

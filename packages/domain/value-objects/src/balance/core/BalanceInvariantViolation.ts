@@ -1,5 +1,3 @@
-import type { BalanceErrorReason } from '../errors/BalanceErrorReason';
-
 /**
  * Нарушение инвариантов Balance
  *
@@ -22,8 +20,8 @@ import type { BalanceErrorReason } from '../errors/BalanceErrorReason';
  *   throw new BalanceInvariantViolation(
  *     'Available amount cannot be negative',
  *     {
- *       reason: BalanceErrorReason.NEGATIVE_AVAILABLE,
- *       available: available.value().toString()
+ *       reason: 'NEGATIVE_AVAILABLE',
+ *       available: available.value().toNumber()
  *     }
  *   );
  * }
@@ -56,22 +54,8 @@ export class BalanceInvariantViolation extends Error {
    * - NEGATIVE_AVAILABLE - available amount < 0
    * - NEGATIVE_RESERVED - reserved amount < 0
    * - CURRENCY_MISMATCH - available.currency !== reserved.currency
-   * - TOTAL_EXCEEDS_MAX_AMOUNT - available + reserved > Money.MAX_AMOUNT
-   * - NAN - amount является NaN
-   * - NON_FINITE - amount не является finite (Infinity или -Infinity)
    */
-  public readonly reason: BalanceErrorReason;
-
-  /**
-   * Дополнительные типизированные поля для различных сценариев ошибок
-   */
-  public readonly available?: string;
-  public readonly reserved?: string;
-  public readonly total?: string;
-  public readonly maxAmount?: string;
-  public readonly currency?: string;
-  public readonly availableCurrency?: string;
-  public readonly reservedCurrency?: string;
+  public readonly reason: string;
 
   /**
    * Создаёт новое исключение нарушения инварианта
@@ -82,26 +66,13 @@ export class BalanceInvariantViolation extends Error {
    * @remarks
    * Все поля из context копируются в this для удобного доступа.
    * Обязательное поле: reason.
-   *
-   * Безопасно копирует только известные поля, не перезаписывая свойства Error.
    */
-  constructor(
-    message: string,
-    context: {
-      reason: BalanceErrorReason;
-      [key: string]: unknown;
-    }
-  ) {
+  constructor(message: string, context: { reason: string; [key: string]: unknown }) {
     super(message);
     this.name = 'BalanceInvariantViolation';
     this.reason = context.reason;
 
-    // Безопасно копируем дополнительные поля, исключая reason и защищённые свойства Error
-    const safeFields: Array<keyof this> = ['available', 'reserved', 'total', 'maxAmount', 'currency', 'availableCurrency', 'reservedCurrency'];
-    for (const key of Object.keys(context)) {
-      if (key !== 'reason' && safeFields.includes(key as keyof this)) {
-        this[key as keyof this] = context[key] as this[keyof this];
-      }
-    }
+    // Копируем все дополнительные поля из context в this
+    Object.assign(this, context);
   }
 }

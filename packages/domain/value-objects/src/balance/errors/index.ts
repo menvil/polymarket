@@ -54,4 +54,4 @@
  * @packageDocumentation
  */
 
-export * from './BalanceErrorReason';
+export * from './BalanceErrorReason.js';

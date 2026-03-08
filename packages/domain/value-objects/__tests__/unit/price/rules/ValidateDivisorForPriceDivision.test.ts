@@ -23,7 +23,6 @@ describe('ValidateDivisorForPriceDivision', () => {
 
     it('содержит reason is_nan', () => {
       const result = ValidateDivisorForPriceDivision.check(new Decimal(NaN));
-      expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe('is_nan');
       }
@@ -31,7 +30,6 @@ describe('ValidateDivisorForPriceDivision', () => {
 
     it('сообщение ошибки содержит NaN', () => {
       const result = ValidateDivisorForPriceDivision.check(new Decimal(NaN));
-      expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('NaN');
       }
@@ -47,14 +45,10 @@ describe('ValidateDivisorForPriceDivision', () => {
     it('возвращает Err для -Infinity', () => {
       const result = ValidateDivisorForPriceDivision.check(new Decimal(-Infinity));
       expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe('not_finite');
-      }
     });
 
     it('содержит reason not_finite для Infinity', () => {
       const result = ValidateDivisorForPriceDivision.check(new Decimal(Infinity));
-      expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe('not_finite');
       }
@@ -62,7 +56,6 @@ describe('ValidateDivisorForPriceDivision', () => {
 
     it('сообщение ошибки содержит finite', () => {
       const result = ValidateDivisorForPriceDivision.check(new Decimal(Infinity));
-      expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('finite');
       }

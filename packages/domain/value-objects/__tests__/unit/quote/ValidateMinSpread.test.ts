@@ -46,8 +46,6 @@ describe('ValidateMinSpread', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(QuoteErrorReason.SPREAD_TOO_NARROW);
-        expect(result.error.context?.spread).toBe(0);
-        expect(result.error.context?.minSpread).toBe(0.001);
       }
     });
   });

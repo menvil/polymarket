@@ -32,11 +32,7 @@ export {
   BalanceService,
   BalanceSerializer,
   BalanceFormatter,
-  BalanceErrorReason,
-  // Rules Layer (публичный API для внешней валидации)
-  ValidateReserveAmount,
-  ValidateReleaseAmount,
-  ValidateCurrencyMatch
+  BalanceErrorReason
 } from './balance/index.js';
 
 // Spread модуль (только публичный API)
@@ -44,7 +40,6 @@ export {
   Spread,
   SpreadService,
   SpreadSerializer,
-  type SpreadJSON,
   SpreadFormatter,
   SpreadErrorReason
 } from './spread/index.js';
@@ -74,12 +69,7 @@ export {
   TokenBalanceSerializer,
   TokenBalanceFormatter,
   TokenBalanceErrorReason,
-  type TokenBalanceJSON,
-  // Rules Layer (публичный API для внешней валидации)
-  // Переименованы чтобы избежать конфликтов с Balance module
-  ValidateReserveAmount as TokenBalanceValidateReserveAmount,
-  ValidateReleaseAmount as TokenBalanceValidateReleaseAmount,
-  ValidateTokenMatch as TokenBalanceValidateTokenMatch
+  type TokenBalanceJSON
 } from './token-balance/index.js';
 
 // AssetQuantity модуль (только публичный API)
@@ -100,12 +90,40 @@ export {
   QuoteSerializer,
   QuoteFormatter,
   QuoteErrorReason,
-  // Rules Layer (публичный API для внешней валидации)
   ValidateQuoteSizes,
   ValidateMinSpread,
   ValidateMaxSpread,
   ValidateMarketCrossing,
-  ValidateAge,
   type QuoteJSON,
   type QuoteFormatOptions
 } from './quote/index.js';
+
+// Side модуль (направление торговой операции)
+export {
+  type Side,
+  SideService,
+  SideSerializer,
+  SideFormatter,
+  SideErrorReason
+} from './side/index.js';
+
+// Timestamp модуль (временные метки)
+export {
+  Timestamp,
+  TimestampService,
+  TimestampSerializer,
+  TimestampFormatter,
+  TimestampErrorReason
+} from './timestamp/index.js';
+
+// Fee модуль (комиссии)
+export {
+  Fee,
+  FeeService,
+  FeeSerializer,
+  FeeFormatter,
+  FeeErrorReason,
+  FeeOperationError,
+  FeeOperationErrorReason,
+  type FeeJSON
+} from './fee/index.js';

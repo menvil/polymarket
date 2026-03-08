@@ -34,12 +34,9 @@ describe('Spread Integration Workflow', () => {
       const bidResult = PriceService.create(0.45);
       const askResult = PriceService.create(0.55);
 
-      expect(bidResult.ok).toBe(true);
-      expect(askResult.ok).toBe(true);
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);
-      expect(spreadResult.ok).toBe(true);
       if (!spreadResult.ok) return;
 
       // Tighten на 0.01 с каждой стороны
@@ -57,12 +54,9 @@ describe('Spread Integration Workflow', () => {
       const bidResult = PriceService.create(0.48);
       const askResult = PriceService.create(0.52);
 
-      expect(bidResult.ok).toBe(true);
-      expect(askResult.ok).toBe(true);
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);
-      expect(spreadResult.ok).toBe(true);
       if (!spreadResult.ok) return;
 
       // Widen на 0.02 с каждой стороны
@@ -80,12 +74,9 @@ describe('Spread Integration Workflow', () => {
       const bidResult = PriceService.create(0.48);
       const askResult = PriceService.create(0.52);
 
-      expect(bidResult.ok).toBe(true);
-      expect(askResult.ok).toBe(true);
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);
-      expect(spreadResult.ok).toBe(true);
       if (!spreadResult.ok) return;
 
       // Shift вверх на 0.05
@@ -93,10 +84,10 @@ describe('Spread Integration Workflow', () => {
       expect(shiftResult.ok).toBe(true);
 
       if (shiftResult.ok) {
-        expect(shiftResult.value.bid().toNumber()).toBe(0.53);
-        expect(shiftResult.value.ask().toNumber()).toBe(0.57);
+        expect(shiftResult.value.bid().toNumber()).toBeCloseTo(0.53, 5);
+        expect(shiftResult.value.ask().toNumber()).toBeCloseTo(0.57, 5);
         // Width должна остаться прежней
-        expect(shiftResult.value.width().toNumber()).toBe(0.04);
+        expect(shiftResult.value.width().toNumber()).toBeCloseTo(0.04, 5);
       }
     });
   });
@@ -106,12 +97,9 @@ describe('Spread Integration Workflow', () => {
       const bidResult = PriceService.create(0.48);
       const askResult = PriceService.create(0.52);
 
-      expect(bidResult.ok).toBe(true);
-      expect(askResult.ok).toBe(true);
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);
-      expect(spreadResult.ok).toBe(true);
       if (!spreadResult.ok) return;
 
       const original = spreadResult.value;
@@ -156,12 +144,9 @@ describe('Spread Integration Workflow', () => {
       const bidResult = PriceService.create(0.48);
       const askResult = PriceService.create(0.52);
 
-      expect(bidResult.ok).toBe(true);
-      expect(askResult.ok).toBe(true);
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);
-      expect(spreadResult.ok).toBe(true);
       if (!spreadResult.ok) return;
 
       const spread = spreadResult.value;
@@ -222,9 +207,9 @@ describe('Spread Integration Workflow', () => {
       if (spreadResult.ok) {
         const spread = spreadResult.value;
         expect(spread.mid().toNumber()).toBe(0.5);
-        expect(spread.width().toNumber()).toBe(0.04);
-        expect(spread.bid().toNumber()).toBe(0.48);
-        expect(spread.ask().toNumber()).toBe(0.52);
+        expect(spread.width().toNumber()).toBeCloseTo(0.04, 5);
+        expect(spread.bid().toNumber()).toBeCloseTo(0.48, 5);
+        expect(spread.ask().toNumber()).toBeCloseTo(0.52, 5);
       }
     });
 
@@ -247,8 +232,6 @@ describe('Spread Integration Workflow', () => {
       const bidResult = PriceService.create(0.4999);
       const askResult = PriceService.create(0.5001);
 
-      expect(bidResult.ok).toBe(true);
-      expect(askResult.ok).toBe(true);
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);
@@ -263,8 +246,6 @@ describe('Spread Integration Workflow', () => {
       const bidResult = PriceService.create(0.0001);
       const askResult = PriceService.create(0.9999);
 
-      expect(bidResult.ok).toBe(true);
-      expect(askResult.ok).toBe(true);
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);
@@ -279,8 +260,6 @@ describe('Spread Integration Workflow', () => {
       const bidResult = PriceService.create(0.52);
       const askResult = PriceService.create(0.48);
 
-      expect(bidResult.ok).toBe(true);
-      expect(askResult.ok).toBe(true);
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);

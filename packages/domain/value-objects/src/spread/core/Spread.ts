@@ -185,16 +185,14 @@ export class Spread {
   }
 
   /**
-   * Вычислить относительную ширину спреда как Ratio (width / mid)
+   * Вычислить ширину спреда как дробь от mid-цены
    *
-   * @returns Ratio = width / midpoint (дробь, не процент)
+   * @returns Ratio (дробь, не процент): 0.08 для спреда шириной 8%
    *
    * @remarks
-   * Ratio = width / midpoint. Нормализует спред для сравнения на разных уровнях цен.
-   * Чтобы получить процент — умножь на 100: `ratio.toDecimal().times(100)`.
-   * Чтобы получить basis points — умножь на 10000.
-   *
-   * Price >= 0.0001, поэтому mid всегда > 0 — деление на ноль невозможно.
+   * Ratio = width / midpoint
+   * Нормализует спред для сравнения на разных уровнях цен.
+   * Для отображения в процентах: `ratio.toDecimal().times(100)`
    *
    * @example
    * ```typescript
@@ -202,15 +200,20 @@ export class Spread {
    *   Price.of(new Decimal(0.48)),
    *   Price.of(new Decimal(0.52))
    * );
-   * const ratio = spread.widthRatio();
-   * // Расчёт: 0.04 / 0.50 = 0.08
-   * ratio.toNumber();              // 0.08  (8% as fraction)
-   * ratio.toDecimal().times(100);  // 8     (percent)
-   * ratio.toDecimal().times(10000); // 800  (basis points)
+   * spread.widthRatio(); // Ratio(0.08)
+   * // Расчёт: 0.04 / 0.50 = 0.08 (8%)
+   * spread.widthRatio().toDecimal().times(100).toFixed(2); // "8.00"
    * ```
    */
   public widthRatio(): Ratio {
-    return Ratio.of(this.width().dividedBy(this.mid()));
+    const mid = this.mid();
+
+    // Защита от деления на ноль
+    if (mid.equals(0)) {
+      return Ratio.ZERO;
+    }
+
+    return Ratio.of(this.width().dividedBy(mid));
   }
 
   /**

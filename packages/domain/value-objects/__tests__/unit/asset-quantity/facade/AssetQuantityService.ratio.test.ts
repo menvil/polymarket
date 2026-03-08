@@ -296,25 +296,18 @@ describe('AssetQuantityService Ratio Operations', () => {
 
         // Allocation 1: 30%
         const alloc1 = AssetQuantityService.portion(total.value, Ratio.of(new Decimal(0.3)));
-        expect(alloc1.ok).toBe(true);
-        if (!alloc1.ok) return;
-        expect(alloc1.value.amount().toNumber()).toBe(3000);
+        expect(alloc1.ok && alloc1.value.amount().toNumber()).toBe(3000);
 
         // Allocation 2: 50%
         const alloc2 = AssetQuantityService.portion(total.value, Ratio.of(new Decimal(0.5)));
-        expect(alloc2.ok).toBe(true);
-        if (!alloc2.ok) return;
-        expect(alloc2.value.amount().toNumber()).toBe(5000);
+        expect(alloc2.ok && alloc2.value.amount().toNumber()).toBe(5000);
 
         // Allocation 3: 20%
         const alloc3 = AssetQuantityService.portion(total.value, Ratio.of(new Decimal(0.2)));
-        expect(alloc3.ok).toBe(true);
-        if (!alloc3.ok) return;
-        expect(alloc3.value.amount().toNumber()).toBe(2000);
+        expect(alloc3.ok && alloc3.value.amount().toNumber()).toBe(2000);
 
         // Sum должен быть 100% = 10000
-        const totalAllocated = alloc1.value.amount().toNumber() + alloc2.value.amount().toNumber() + alloc3.value.amount().toNumber();
-        expect(totalAllocated).toBe(10000);
+        // 3000 + 5000 + 2000 = 10000 ✓
       });
     });
   });

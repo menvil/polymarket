@@ -8,16 +8,20 @@ import { Ratio } from '../../../../src/ratio/core/Ratio.js';
 import { QuoteErrorReason } from '../../../../src/quote/errors/QuoteErrorReason.js';
 import { InvalidQuoteError } from '@polymarket/errors';
 import { KnownMarketDataSources, asInstrumentId } from '@polymarket/ids';
+import { TimestampService } from '../../../../src/timestamp/index.js';
 
 describe('QuoteService Ratio Operations', () => {
   // Helper: создать Quote из чисел
   const createQuote = (bidPrice: number, askPrice: number, bidSize = 100, askSize = 100): Quote => {
+    const timestampResult = TimestampService.create(Date.now());
+    if (!timestampResult.ok) throw new Error('Failed to create timestamp');
+
     return Quote.of(
       Price.of(new Decimal(bidPrice)),
       Price.of(new Decimal(askPrice)),
       Quantity.of(new Decimal(bidSize)),
       Quantity.of(new Decimal(askSize)),
-      new Decimal(Date.now()),
+      timestampResult.value,
       KnownMarketDataSources.POLYMARKET_WS,
       asInstrumentId('TEST_INSTRUMENT')!
     );
@@ -83,7 +87,7 @@ describe('QuoteService Ratio Operations', () => {
       if (result.ok) {
         expect(result.value.sourceId()).toBe(quote.sourceId());
         expect(result.value.instrumentId()).toBe(quote.instrumentId());
-        expect(result.value.timestampMs().equals(quote.timestampMs())).toBe(true);
+        expect(result.value.timestampMs()).toBe(quote.timestampMs());
       }
     });
 
@@ -299,7 +303,7 @@ describe('QuoteService Ratio Operations', () => {
       return result.value;
     };
 
-    it('getMidPrice возвращает Err для bid-only quote (без TypeError)', () => {
+    it('getMidPrice возвращает Err для bid-only quote (без TypeErrror)', () => {
       const bidOnly = createBidOnly(0.50, 100);
       const result = QuoteService.getMidPrice(bidOnly);
 
@@ -315,7 +319,7 @@ describe('QuoteService Ratio Operations', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.MID_UNAVAILABLE);
       }
     });
 
@@ -406,7 +410,7 @@ describe('QuoteService Ratio Operations', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.MID_UNAVAILABLE);
       }
     });
 

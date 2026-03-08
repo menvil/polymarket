@@ -488,10 +488,6 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
 - `CURRENCY_MISMATCH` — несовпадение валют в add/subtract
 - `DIVISION_BY_ZERO` — деление на ноль
 - `UNSUPPORTED_CURRENCY` — неподдерживаемая валюта
-- `NEGATIVE_RESULT` — результат операции меньше нуля
-- `INVALID_RATIO` — невалидный Ratio (NaN, Infinity)
-- `RATIO_OUT_OF_RANGE` — Ratio вне допустимого диапазона
-- `DELTA_LESS_THAN_MINUS_ONE` — delta < -1 в increaseBy/decreaseBy
 
 ---
 
@@ -503,13 +499,11 @@ public static add(a: Money, b: Money): Result<Money, InvalidMoneyError> {
 const result = MoneyService.create(userInput);
 
 if (!result.ok) {
-  const ctx = result.error.context;
-  const reason = ctx?.reason;
-  const rawValue = ctx?.raw?.value;
+  const { reason, value } = result.error.context || {};
 
   switch (reason) {
     case 'INVALID_FORMAT':
-      showError(`Invalid number format: ${rawValue}`);
+      showError(`Invalid number format: ${value}`);
       break;
     case 'EXCEEDS_MAX_AMOUNT':
       showError(`Amount too large (max: 1e15)`);

@@ -241,16 +241,14 @@ public static create(
   venueId: VenueId
 ): Result<TokenBalance, InvalidTokenBalanceError> {
   const op = 'create';
+  const ctx: Record<string, unknown> = {
+    available: available.value().toString(),
+    reserved: reserved.value().toString(),
+    accountId,
+    venueId
+  };
 
-  return wrapOp(SERVICE_NAME, op, () => {
-    // Строим контекст внутри callback, когда available и reserved уже проверены
-    const ctx: Record<string, unknown> = {
-      available: available.value().toString(),
-      reserved: reserved.value().toString(),
-      accountId,
-      venueId
-    };
-
+  return wrapOp(SERVICE_NAME, op, ctx, () => {
     // Может throw TokenBalanceInvariantViolation
     const balance = TokenBalance.of(token, available, reserved, accountId, venueId);
     return Ok(balance);

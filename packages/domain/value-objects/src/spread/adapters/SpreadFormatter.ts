@@ -53,22 +53,21 @@ export class SpreadFormatter {
    */
   public static format(spread: Spread, options: SpreadFormatOptions = {}): string {
     const { decimals = 4, showWidth = true, showMidpoint = false } = options;
-    const safeDecimals = Number.isFinite(decimals) ? Math.max(0, Math.floor(decimals)) : 4;
 
-    const bidStr = spread.bid().value().toFixed(safeDecimals);
-    const askStr = spread.ask().value().toFixed(safeDecimals);
+    const bidStr = spread.bid().value().toFixed(decimals);
+    const askStr = spread.ask().value().toFixed(decimals);
     let result = `${bidStr}-${askStr}`;
 
     if (showWidth || showMidpoint) {
       const parts: string[] = [];
 
       if (showWidth) {
-        const widthStr = spread.width().toFixed(safeDecimals);
+        const widthStr = spread.width().toFixed(decimals);
         parts.push(widthStr);
       }
 
       if (showMidpoint) {
-        const midStr = spread.mid().toFixed(safeDecimals);
+        const midStr = spread.mid().toFixed(decimals);
         parts.push(`mid: ${midStr}`);
       }
 
@@ -82,22 +81,22 @@ export class SpreadFormatter {
    * Форматировать как простую строку bid-ask
    *
    * @param spread - Spread для форматирования
-   * @param safeDecimals - Количество десятичных знаков
+   * @param decimals - Количество десятичных знаков
    * @returns Строка вида "0.4800-0.5200"
    */
-  public static toBidAskString(spread: Spread, safeDecimals: number = 4): string {
-    return SpreadFormatter.format(spread, { decimals: safeDecimals, showWidth: false });
+  public static toBidAskString(spread: Spread, decimals: number = 4): string {
+    return SpreadFormatter.format(spread, { decimals, showWidth: false });
   }
 
   /**
    * Форматировать с деталями (width + midpoint)
    *
    * @param spread - Spread для форматирования
-   * @param safeDecimals - Количество десятичных знаков
+   * @param decimals - Количество десятичных знаков
    * @returns Строка вида "0.4800-0.5200 (0.0400, mid: 0.5000)"
    */
-  public static toDetailedString(spread: Spread, safeDecimals: number = 4): string {
-    return SpreadFormatter.format(spread, { decimals: safeDecimals, showWidth: true, showMidpoint: true });
+  public static toDetailedString(spread: Spread, decimals: number = 4): string {
+    return SpreadFormatter.format(spread, { decimals, showWidth: true, showMidpoint: true });
   }
 
   /**

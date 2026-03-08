@@ -54,15 +54,13 @@
  * ```typescript
  * import { BalanceService, BalanceErrorReason } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
- * import Decimal from 'decimal.js';
- * import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
  *
  * // Создание баланса
  * const accountId: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
  * const venueId: VenueId = 'POLYMARKET' as VenueId;
  * const balanceResult = BalanceService.create(
- *   Money.of(new Decimal(10000), 'USDC'),
- *   Money.of(new Decimal(2000), 'USDC'),
+ *   Money.fromUSDC(10000),
+ *   Money.fromUSDC(2000),
  *   accountId,
  *   venueId
  * );
@@ -83,7 +81,7 @@
  * // Резервирование средств
  * const reserveResult = BalanceService.reserve(
  *   balance,
- *   Money.of(new Decimal(3000), 'USDC')
+ *   Money.fromUSDC(3000)
  * );
  *
  * if (reserveResult.ok) {
@@ -100,7 +98,7 @@
  * // Размораживание средств (reserved → available)
  * const unfreezeResult = BalanceService.unfreezeReserved(
  *   balance,
- *   Money.of(new Decimal(1000), 'USDC')
+ *   Money.fromUSDC(1000)
  * );
  *
  * if (unfreezeResult.ok) {
@@ -111,7 +109,7 @@
  * // Списание зарезервированных средств (уменьшает total)
  * const consumeResult = BalanceService.consumeReserved(
  *   balance,
- *   Money.of(new Decimal(1000), 'USDC')
+ *   Money.fromUSDC(1000)
  * );
  *
  * if (consumeResult.ok) {
@@ -122,16 +120,12 @@
  *
  * // Helpers
  * const emptyBalance = Balance.ZERO.USDC;
- * const balanceWithZeroReserved = Balance.withZeroReserved(
- *   Money.of(new Decimal(10000), 'USDC'),
- *   accountId,
- *   venueId
- * );
+ * const balanceWithZeroReserved = Balance.withZeroReserved(Money.of(10000, 'USDC'));
  *
  * // Внешняя валидация через Rules (для проверок до операции)
  * import { ValidateReserveAmount } from '@polymarket/value-objects/balance';
  *
- * const amountToReserve = Money.of(new Decimal(5000), 'USDC');
+ * const amountToReserve = Money.fromUSDC(5000);
  * const canReserve = ValidateReserveAmount.check(amountToReserve, balance.available());
  * if (canReserve.ok) {
  *   // Можно резервировать
@@ -143,16 +137,16 @@
  */
 
 // Core Layer (публичный API)
-export { Balance, BalanceInvariantViolation } from './core';
+export { Balance, BalanceInvariantViolation } from './core/index.js';
 
 // Facade Layer (главный публичный API)
-export { BalanceService } from './facade';
+export { BalanceService } from './facade/index.js';
 
 // Adapters Layer (публичный API)
-export { BalanceSerializer, BalanceFormatter, type BalanceJSON } from './adapters';
+export { BalanceSerializer, BalanceFormatter, type BalanceJSON } from './adapters/index.js';
 
 // Errors Layer (публичный API)
-export { BalanceErrorReason } from './errors';
+export { BalanceErrorReason } from './errors/index.js';
 
 // Rules Layer (публичный API для внешней валидации)
-export { ValidateReserveAmount, ValidateReleaseAmount, ValidateCurrencyMatch } from './rules';
+export { ValidateReserveAmount, ValidateReleaseAmount, ValidateCurrencyMatch } from './rules/index.js';

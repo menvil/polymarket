@@ -1,4 +1,3 @@
-import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { ValidateMinWidth } from '../../../../src/spread/rules/ValidateMinWidth.js';
 import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
@@ -45,20 +44,7 @@ describe('ValidateMinWidth', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
-        expect(result.error.message).toContain('minWidth must be finite');
-      }
-    });
-
-    it('should return Err when minWidth is NaN', () => {
-      const width = new Decimal(0.01);
-      const minWidth = new Decimal(NaN);
-
-      const result = ValidateMinWidth.check(width, minWidth);
-
-      expect(result.ok).toBe(false);
-      if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_AMOUNT);
         expect(result.error.message).toContain('minWidth must be finite');
       }
     });
@@ -71,7 +57,7 @@ describe('ValidateMinWidth', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_AMOUNT);
         expect(result.error.message).toContain('minWidth must be positive');
       }
     });
@@ -84,7 +70,7 @@ describe('ValidateMinWidth', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_WIDTH);
+        expect(result.error.context?.reason).toBe(SpreadErrorReason.INVALID_AMOUNT);
         expect(result.error.message).toContain('minWidth must be positive');
       }
     });

@@ -1,8 +1,8 @@
 import { Result, Err } from '@polymarket/result';
 import { InvalidMoneyError, ErrorSource } from '@polymarket/errors';
-import { Money, type SupportedCurrency } from '../core/Money';
-import { MoneyService } from '../facade/MoneyService';
-import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { Money, type SupportedCurrency } from '../core/Money.js';
+import { MoneyService } from '../facade/MoneyService.js';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
 
 /**
  * Безопасная сериализация в JSON с обработкой циклических ссылок
@@ -121,9 +121,8 @@ export class MoneySerializer {
   public static fromJSON(json: unknown): Result<Money, InvalidMoneyError> {
     // 1. Проверка что json - объект
     if (typeof json !== 'object' || json === null || Array.isArray(json)) {
-      const actualType = Array.isArray(json) ? 'array' : typeof json;
       return Err(
-        new InvalidMoneyError(`Expected object, got ${actualType}`, {
+        new InvalidMoneyError(`Expected object, got ${typeof json}`, {
           context: {
             source: ErrorSource.PARSING,
             service: MoneySerializer.SERVICE_NAME,
@@ -198,22 +197,7 @@ export class MoneySerializer {
       );
     }
 
-    // 6. Проверка что currency поддерживается (перед cast)
-    if (!Money.SUPPORTED_CURRENCIES.has(currency as SupportedCurrency)) {
-      return Err(
-        new InvalidMoneyError(`Unsupported currency: ${currency}`, {
-          context: {
-            source: ErrorSource.PARSING,
-            service: MoneySerializer.SERVICE_NAME,
-            op: 'fromJSON',
-            currency,
-            reason: MoneyErrorReason.UNSUPPORTED_CURRENCY,
-          },
-        })
-      );
-    }
-
-    // 7. Делегирование бизнес-валидации MoneyService
+    // 6. Делегирование бизнес-валидации MoneyService
     return MoneyService.create(amount, currency as SupportedCurrency);
   }
 

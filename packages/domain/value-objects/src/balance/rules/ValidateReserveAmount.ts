@@ -1,7 +1,7 @@
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidBalanceError, ErrorSource } from '@polymarket/errors';
-import { Money } from '../../money/core/Money';
-import { BalanceErrorReason } from '../errors/BalanceErrorReason';
+import { Money } from '../../money/core/Money.js';
+import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
 
 /**
  * Правило: Резервируемая сумма должна быть <= доступным средствам
@@ -12,6 +12,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * Проверяет:
  * - reserveAmount <= available (достаточно средств для резервирования)
  * - reserveAmount > 0 (нельзя резервировать нулевую или отрицательную сумму)
+ * - reserveAmount isFinite (защита от Infinity/NaN)
  *
  * Возвращает InvalidBalanceError — стандарт домена Polymarket для валидации Balance.
  *
@@ -25,10 +26,9 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * ```typescript
  * import { ValidateReserveAmount } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
- * import Decimal from 'decimal.js';
  *
- * const available = Money.of(new Decimal(10000), 'USDC');
- * const reserveAmount = Money.of(new Decimal(5000), 'USDC');
+ * const available = Money.fromUSDC(10000);
+ * const reserveAmount = Money.fromUSDC(5000);
  *
  * // ✅ Достаточно средств
  * const result1 = ValidateReserveAmount.check(reserveAmount, available);
@@ -36,7 +36,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  *
  * // ❌ Недостаточно средств
  * const result2 = ValidateReserveAmount.check(
- *   Money.of(new Decimal(15000), 'USDC'),
+ *   Money.fromUSDC(15000),
  *   available
  * );
  * if (!result2.ok) {
@@ -46,7 +46,7 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  *
  * // ❌ Попытка резервировать 0 или отрицательную сумму
  * const result3 = ValidateReserveAmount.check(
- *   Money.of(new Decimal(0), 'USDC'),
+ *   Money.fromUSDC(0),
  *   available
  * );
  * if (!result3.ok) {
@@ -56,10 +56,6 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason';
  * ```
  */
 export class ValidateReserveAmount {
-  private constructor() {
-    // Static-only class — нельзя создавать экземпляры
-  }
-
   public static check(
     reserveAmount: Money,
     available: Money
@@ -67,17 +63,30 @@ export class ValidateReserveAmount {
     const amount = reserveAmount.value();
     const availableAmount = available.value();
 
-    // Проверка 1: reserveAmount должен быть > 0
-    // Примечание: проверка isFinite не нужна - Money.of() гарантирует finite значения через инварианты
+    // Проверка 1: reserveAmount должен быть finite
+    if (!amount.isFinite()) {
+      return Err(
+        new InvalidBalanceError('Reserve amount must be finite', {
+          context: {
+            source: ErrorSource.RULE_VALIDATION,
+            reason: BalanceErrorReason.INVALID_FORMAT,
+            reserveAmount: amount.toString(),
+            available: availableAmount.toString()
+          }
+        })
+      );
+    }
+
+    // Проверка 2: reserveAmount должен быть > 0
     if (amount.lessThanOrEqualTo(0)) {
       return Err(
         new InvalidBalanceError(
-          (ctx) => `Reserve amount must be positive, got ${ctx.amount}`,
+          (ctx) => `Reserve amount must be positive, got ${ctx.reserveAmount}`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INVALID_FORMAT,
-              amount: amount.toString(),
+              reserveAmount: amount.toString(),
               available: availableAmount.toString()
             }
           }
@@ -85,18 +94,18 @@ export class ValidateReserveAmount {
       );
     }
 
-    // Проверка 2: reserveAmount <= available (основная проверка)
+    // Проверка 3: reserveAmount <= available (основная проверка)
     if (amount.greaterThan(availableAmount)) {
       return Err(
         new InvalidBalanceError(
           (ctx) =>
-            `Cannot reserve ${ctx.amount}: only ${ctx.available} available`,
+            `Cannot reserve ${ctx.requested}: only ${ctx.available} available`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: BalanceErrorReason.INSUFFICIENT_FUNDS,
-              amount: amount.toString(),
-              available: availableAmount.toString()
+              requested: amount.toNumber(),
+              available: availableAmount.toNumber()
             }
           }
         )

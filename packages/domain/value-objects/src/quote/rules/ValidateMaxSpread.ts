@@ -35,20 +35,13 @@ export class ValidateMaxSpread {
    *
    * @example
    * ```typescript
-   * import { KnownMarketDataSources } from '@polymarket/ids';
-   * import Decimal from 'decimal.js';
-   *
-   * const quote = Quote.of(
-   *   bid, ask, bidSize, askSize,
-   *   new Decimal(Date.now()),
-   *   KnownMarketDataSources.POLYMARKET_WS,
-   *   'TEST_MARKET' as InstrumentId
-   * );
+   * const quote = Quote.of(bid, ask, bidSize, askSize, Date.now());
    * const spread = quote.spreadWidthOrZero();
    *
    * const result = ValidateMaxSpread.check(spread, new Decimal(0.10));
    * if (!result.ok) {
-   *   console.error('Spread too wide - possible error or manipulation');
+   *     console.error('Spread too wide - possible error or manipulation');
+   *   }
    * }
    * ```
    */

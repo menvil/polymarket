@@ -1,4 +1,3 @@
-import { describe, it, expect } from '@jest/globals';
 import Decimal from 'decimal.js';
 import { Spread, SpreadInvariantViolation } from '../../../../src/spread/core/index.js';
 import { SpreadErrorReason } from '../../../../src/spread/errors/SpreadErrorReason.js';
@@ -21,7 +20,7 @@ describe('Spread Core', () => {
       const ask = Price.of(new Decimal(0.50));
 
       expect(() => Spread.of(bid, ask)).toThrow(SpreadInvariantViolation);
-      expect(() => Spread.of(bid, ask)).toThrow('cannot be greater');
+      expect(() => Spread.of(bid, ask)).toThrow('Bid 0.6 cannot be greater than ask 0.5');
     });
 
     it('should have BID_GREATER_THAN_ASK reason when bid > ask', () => {
@@ -30,7 +29,7 @@ describe('Spread Core', () => {
 
       try {
         Spread.of(bid, ask);
-        throw new Error('Expected SpreadInvariantViolation');
+        fail('Expected SpreadInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(SpreadInvariantViolation);
         if (error instanceof SpreadInvariantViolation) {
@@ -78,26 +77,27 @@ describe('Spread Core', () => {
   });
 
   describe('widthRatio()', () => {
-    it('should return Ratio = width / mid (fraction, not percent)', () => {
+    it('should calculate width ratio correctly', () => {
       const bid = Price.of(new Decimal(0.48));
       const ask = Price.of(new Decimal(0.52));
       const spread = Spread.of(bid, ask);
 
-      const ratio = spread.widthRatio();
+      const widthRatio = spread.widthRatio();
 
-      // 0.04 / 0.50 = 0.08 (fraction)
-      expect(ratio.toNumber()).toBe(0.08);
-      // Percent: ratio * 100 = 8%
-      expect(ratio.toDecimal().times(100).toNumber()).toBe(8);
+      // 0.04 / 0.50 = 0.08 (8%)
+      expect(widthRatio.toNumber()).toBe(0.08);
     });
 
-    it('should return Ratio(0) when width is zero', () => {
-      // bid === ask → width is zero → ratio = 0 / mid = 0
+    it('should return Ratio.ZERO when midpoint is zero', () => {
+      // Edge case: if somehow midpoint is zero (shouldn't happen with valid Prices)
+      // This is a defensive programming test
       const bid = Price.of(new Decimal(0.0001));
       const ask = Price.of(new Decimal(0.0001));
       const spread = Spread.of(bid, ask);
 
-      expect(spread.widthRatio().toNumber()).toBe(0);
+      const widthRatio = spread.widthRatio();
+
+      expect(widthRatio.toNumber()).toBe(0);
     });
   });
 

@@ -18,8 +18,8 @@ import { QuoteErrorReason } from '../errors/QuoteErrorReason.js';
 import { PriceService } from '../../price/facade/PriceService.js';
 import { QuantityService } from '../../quantity/facade/QuantityService.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
-import { Spread } from '../../spread/core/Spread.js';
 import { SpreadService } from '../../spread/facade/SpreadService.js';
+import { TimestampService } from '../../timestamp/facade/TimestampService.js';
 
 /**
  * Фасад для работы с Quote - публичный API
@@ -182,9 +182,7 @@ export class QuoteService {
       askValue: askValue !== null ? askValue.toString() : null,
       bidSizeValue: bidSizeValue.toString(),
       askSizeValue: askSizeValue.toString(),
-      timestamp: timestamp !== undefined
-        ? (timestamp instanceof Date ? timestamp.getTime().toString() : timestamp.toString())
-        : undefined
+      timestamp: timestamp !== undefined ? timestamp.toString() : undefined
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
@@ -265,6 +263,22 @@ export class QuoteService {
       const askSizeQuantityResult = this.createQuantity(askSizeDecimalResult.value, 'askSize', op);
       if (isErr(askSizeQuantityResult)) return askSizeQuantityResult;
 
+      // Создаём Timestamp через TimestampService
+      const timestampResult = TimestampService.create(timestampDecimal.toNumber());
+      if (isErr(timestampResult)) {
+        return Err(
+          new InvalidQuoteError(timestampResult.error.message, {
+            context: {
+              source: ErrorSource.SERVICE_CALL,
+              service: QuoteService.SERVICE_NAME,
+              op,
+              reason: QuoteErrorReason.INVALID_FORMAT,
+              raw: { field: 'timestamp', value: timestampDecimal.toNumber() }
+            }
+          })
+        );
+      }
+
       // Создаём Quote через Core (может бросить QuoteInvariantViolation)
       try {
         const quote = Quote.of(
@@ -272,7 +286,7 @@ export class QuoteService {
           ask,
           bidSizeQuantityResult.value,
           askSizeQuantityResult.value,
-          timestampDecimal,
+          timestampResult.value,
           sourceId,
           instrumentId
         );
@@ -390,138 +404,6 @@ export class QuoteService {
     );
   }
 
-  // ============================================================================
-  // Private Helpers for Transformations
-  // ============================================================================
-
-  /**
-   * Внутренний helper для shift операции
-   *
-   * @internal
-   * @param quote - Исходная котировка
-   * @param delta - Величина сдвига (Decimal)
-   * @param timestampMs - Timestamp для новой котировки (Decimal)
-   * @returns Result с новой Quote или InvalidQuoteError
-   *
-   * @remarks
-   * Централизует логику shift для устранения дублирования между shift() и shiftWithRefresh().
-   */
-  private static shiftInternal(
-    quote: Quote,
-    delta: Decimal,
-    timestampMs: Decimal
-  ): Result<Quote, InvalidQuoteError> {
-    let newBidDecimal: Decimal | null = null;
-    if (quote.bid() !== null) {
-      newBidDecimal = quote.bid()!.value().plus(delta);
-    }
-
-    let newAskDecimal: Decimal | null = null;
-    if (quote.ask() !== null) {
-      newAskDecimal = quote.ask()!.value().plus(delta);
-    }
-
-    return QuoteService.create(
-      newBidDecimal,
-      newAskDecimal,
-      quote.bidSize().value(),
-      quote.askSize().value(),
-      quote.sourceId(),
-      quote.instrumentId(),
-      timestampMs
-    );
-  }
-
-  /**
-   * Внутренний helper для skew операции
-   *
-   * @internal
-   * @param quote - Исходная котировка
-   * @param bidDelta - Adjustment для bid (Decimal)
-   * @param askDelta - Adjustment для ask (Decimal)
-   * @param timestampMs - Timestamp для новой котировки (Decimal)
-   * @returns Result с новой Quote или InvalidQuoteError
-   *
-   * @remarks
-   * Централизует логику skew для устранения дублирования между skew() и skewWithRefresh().
-   */
-  private static skewInternal(
-    quote: Quote,
-    bidDelta: Decimal,
-    askDelta: Decimal,
-    timestampMs: Decimal
-  ): Result<Quote, InvalidQuoteError> {
-    let newBidDecimal: Decimal | null = null;
-    if (quote.bid() !== null) {
-      newBidDecimal = quote.bid()!.value().plus(bidDelta);
-    }
-
-    let newAskDecimal: Decimal | null = null;
-    if (quote.ask() !== null) {
-      newAskDecimal = quote.ask()!.value().plus(askDelta);
-    }
-
-    return QuoteService.create(
-      newBidDecimal,
-      newAskDecimal,
-      quote.bidSize().value(),
-      quote.askSize().value(),
-      quote.sourceId(),
-      quote.instrumentId(),
-      timestampMs
-    );
-  }
-
-  /**
-   * Внутренний helper для updateSizes операции
-   *
-   * @internal
-   * @param quote - Исходная котировка
-   * @param bidSize - Новый bid size (Quantity)
-   * @param askSize - Новый ask size (Quantity)
-   * @param timestampMs - Timestamp для новой котировки (Decimal)
-   * @returns Result с новой Quote или InvalidQuoteError
-   *
-   * @remarks
-   * Централизует логику updateSizes для устранения дублирования между updateSizes() и updateSizesWithRefresh().
-   */
-  private static updateSizesInternal(
-    quote: Quote,
-    bidSize: Quantity,
-    askSize: Quantity,
-    timestampMs: Decimal
-  ): Result<Quote, InvalidQuoteError> {
-    try {
-      const newQuote = Quote.of(
-        quote.bid(),
-        quote.ask(),
-        bidSize,
-        askSize,
-        timestampMs,
-        quote.sourceId(),
-        quote.instrumentId()
-      );
-      return Ok(newQuote);
-    } catch (error) {
-      if (error instanceof QuoteInvariantViolation) {
-        return Err(
-          new InvalidQuoteError(error.message, {
-            context: {
-              source: ErrorSource.CORE_INVARIANT,
-              service: QuoteService.SERVICE_NAME,
-              op: 'updateSizesInternal',
-              reason: error.reason
-            }
-          })
-        );
-      }
-
-      return Err(
-        unexpectedError(error, InvalidQuoteError)
-      );
-    }
-  }
-
   /**
    * Сдвигает котировку на указанную величину (нейтральная трансформация)
    *
@@ -569,9 +451,28 @@ export class QuoteService {
       if (isErr(shiftDecimalResult)) {
         return shiftDecimalResult;
       }
+      const shiftDecimal = shiftDecimalResult.value;
 
-      // Делегируем в shiftInternal с оригинальным timestamp
-      return QuoteService.shiftInternal(quote, shiftDecimalResult.value, quote.timestampMs());
+      let newBidDecimal: Decimal | null = null;
+      if (quote.bid() !== null) {
+        newBidDecimal = quote.bid()!.value().plus(shiftDecimal);
+      }
+
+      let newAskDecimal: Decimal | null = null;
+      if (quote.ask() !== null) {
+        newAskDecimal = quote.ask()!.value().plus(shiftDecimal);
+      }
+
+      // ВАЖНО: Сохраняем timestamp исходной котировки (нейтральная трансформация)
+      return QuoteService.create(
+        newBidDecimal,
+        newAskDecimal,
+        quote.bidSize().value(),
+        quote.askSize().value(),
+        quote.sourceId(), // Сохраняем sourceId
+        quote.instrumentId(), // Сохраняем instrumentId
+        quote.timestampMs() // Сохраняем оригинальный timestamp
+      );
     }, InvalidQuoteError);
   }
 
@@ -621,9 +522,28 @@ export class QuoteService {
       if (isErr(shiftDecimalResult)) {
         return shiftDecimalResult;
       }
+      const shiftDecimal = shiftDecimalResult.value;
 
-      // Делегируем в shiftInternal с новым timestamp от clock
-      return QuoteService.shiftInternal(quote, shiftDecimalResult.value, new Decimal(clock.now().getTime()));
+      let newBidDecimal: Decimal | null = null;
+      if (quote.bid() !== null) {
+        newBidDecimal = quote.bid()!.value().plus(shiftDecimal);
+      }
+
+      let newAskDecimal: Decimal | null = null;
+      if (quote.ask() !== null) {
+        newAskDecimal = quote.ask()!.value().plus(shiftDecimal);
+      }
+
+      // Обновляем timestamp из clock (новая котировка)
+      return QuoteService.create(
+        newBidDecimal,
+        newAskDecimal,
+        quote.bidSize().value(),
+        quote.askSize().value(),
+        quote.sourceId(), // Сохраняем sourceId
+        quote.instrumentId(), // Сохраняем instrumentId
+        clock.now() // Новый timestamp от clock
+      );
     }, InvalidQuoteError);
   }
 
@@ -678,6 +598,7 @@ export class QuoteService {
       if (isErr(bidAdjustmentResult)) {
         return bidAdjustmentResult;
       }
+      const bidAdjustmentDecimal = bidAdjustmentResult.value;
 
       // Конвертируем askAdjustment в Decimal через parseDecimal
       const askAdjustmentResult = QuoteService.parseDecimal(
@@ -688,12 +609,26 @@ export class QuoteService {
       if (isErr(askAdjustmentResult)) {
         return askAdjustmentResult;
       }
+      const askAdjustmentDecimal = askAdjustmentResult.value;
 
-      // Делегируем в skewInternal с оригинальным timestamp
-      return QuoteService.skewInternal(
-        quote,
-        bidAdjustmentResult.value,
-        askAdjustmentResult.value,
+      let newBidDecimal: Decimal | null = null;
+      if (quote.bid() !== null) {
+        newBidDecimal = quote.bid()!.value().plus(bidAdjustmentDecimal);
+      }
+
+      let newAskDecimal: Decimal | null = null;
+      if (quote.ask() !== null) {
+        newAskDecimal = quote.ask()!.value().plus(askAdjustmentDecimal);
+      }
+
+      // ВАЖНО: Сохраняем timestamp исходной котировки (нейтральная трансформация)
+      return QuoteService.create(
+        newBidDecimal,
+        newAskDecimal,
+        quote.bidSize().value(),
+        quote.askSize().value(),
+        quote.sourceId(), // Сохраняем sourceId
+        quote.instrumentId(), // Сохраняем instrumentId
         quote.timestampMs()
       );
     }, InvalidQuoteError);
@@ -748,6 +683,7 @@ export class QuoteService {
       if (isErr(bidAdjustmentResult)) {
         return bidAdjustmentResult;
       }
+      const bidAdjustmentDecimal = bidAdjustmentResult.value;
 
       // Конвертируем askAdjustment в Decimal через parseDecimal
       const askAdjustmentResult = QuoteService.parseDecimal(
@@ -758,13 +694,27 @@ export class QuoteService {
       if (isErr(askAdjustmentResult)) {
         return askAdjustmentResult;
       }
+      const askAdjustmentDecimal = askAdjustmentResult.value;
 
-      // Делегируем в skewInternal с новым timestamp от clock
-      return QuoteService.skewInternal(
-        quote,
-        bidAdjustmentResult.value,
-        askAdjustmentResult.value,
-        new Decimal(clock.now().getTime())
+      let newBidDecimal: Decimal | null = null;
+      if (quote.bid() !== null) {
+        newBidDecimal = quote.bid()!.value().plus(bidAdjustmentDecimal);
+      }
+
+      let newAskDecimal: Decimal | null = null;
+      if (quote.ask() !== null) {
+        newAskDecimal = quote.ask()!.value().plus(askAdjustmentDecimal);
+      }
+
+      // Обновляем timestamp из clock (новая котировка)
+      return QuoteService.create(
+        newBidDecimal,
+        newAskDecimal,
+        quote.bidSize().value(),
+        quote.askSize().value(),
+        quote.sourceId(), // Сохраняем sourceId
+        quote.instrumentId(), // Сохраняем instrumentId
+        clock.now()
       );
     }, InvalidQuoteError);
   }
@@ -819,19 +769,85 @@ export class QuoteService {
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
-      // Конвертируем в Quantity через helper
-      const bidSizeResult = QuoteService.parseSizeValue(newBidSize, 'bidSize', op);
-      if (isErr(bidSizeResult)) {
-        return bidSizeResult;
+      // Конвертируем в Quantity если нужно
+      let bidSize: Quantity;
+      if (newBidSize instanceof Quantity) {
+        bidSize = newBidSize;
+      } else {
+        const bidSizeResult = QuantityService.create(newBidSize);
+        if (isErr(bidSizeResult)) {
+          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
+          return Err(
+            rewrap(
+              QuoteService.SERVICE_NAME,
+              op,
+              {
+                component: 'bidSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
+                reason: QuoteErrorReason.INVALID_BID_SIZE, // Override reason
+                cause: toCause(bidSizeResult.error) // Add cause
+              },
+              bidSizeResult.error, // Передаём оригинальную ошибку
+              InvalidQuoteError
+            )
+          );
+        }
+        bidSize = bidSizeResult.value;
       }
 
-      const askSizeResult = QuoteService.parseSizeValue(newAskSize, 'askSize', op);
-      if (isErr(askSizeResult)) {
-        return askSizeResult;
+      let askSize: Quantity;
+      if (newAskSize instanceof Quantity) {
+        askSize = newAskSize;
+      } else {
+        const askSizeResult = QuantityService.create(newAskSize);
+        if (isErr(askSizeResult)) {
+          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
+          return Err(
+            rewrap(
+              QuoteService.SERVICE_NAME,
+              op,
+              {
+                component: 'askSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
+                reason: QuoteErrorReason.INVALID_ASK_SIZE, // Override reason
+                cause: toCause(askSizeResult.error) // Add cause
+              },
+              askSizeResult.error, // Передаём оригинальную ошибку
+              InvalidQuoteError
+            )
+          );
+        }
+        askSize = askSizeResult.value;
       }
 
-      // Делегируем в updateSizesInternal с оригинальным timestamp
-      return QuoteService.updateSizesInternal(quote, bidSizeResult.value, askSizeResult.value, quote.timestampMs());
+      // Создаём новую котировку через Core (preserving timestamp)
+      try {
+        const newQuote = Quote.of(
+          quote.bid(),
+          quote.ask(),
+          bidSize,
+          askSize,
+          quote.timestamp(),
+          quote.sourceId(), // Сохраняем sourceId
+          quote.instrumentId() // Сохраняем instrumentId
+        );
+        return Ok(newQuote);
+      } catch (error) {
+        if (error instanceof QuoteInvariantViolation) {
+          return Err(
+            new InvalidQuoteError(error.message, {
+              context: {
+                source: ErrorSource.CORE_INVARIANT,
+                service: QuoteService.SERVICE_NAME, // Set root service field
+                op,
+                reason: error.reason
+              }
+            })
+          );
+        }
+
+        return Err(
+          unexpectedError(error, InvalidQuoteError)
+        );
+      }
     }, InvalidQuoteError);
   }
 
@@ -881,121 +897,101 @@ export class QuoteService {
     };
 
     return wrapOp(QuoteService.SERVICE_NAME, op, ctx, () => {
-      // Конвертируем в Quantity через helper
-      const bidSizeResult = QuoteService.parseSizeValue(newBidSize, 'bidSize', op);
-      if (isErr(bidSizeResult)) {
-        return bidSizeResult;
-      }
 
-      const askSizeResult = QuoteService.parseSizeValue(newAskSize, 'askSize', op);
-      if (isErr(askSizeResult)) {
-        return askSizeResult;
-      }
-
-      // Делегируем в updateSizesInternal с новым timestamp от clock
-      return QuoteService.updateSizesInternal(quote, bidSizeResult.value, askSizeResult.value, new Decimal(clock.now().getTime()));
-    }, InvalidQuoteError);
-  }
-
-  /**
-   * Внутренний helper для применения spread трансформации
-   *
-   * @internal
-   * @param quote - Исходная котировка
-   * @param spreadOp - Функция трансформации spread
-   * @param opName - Название операции для error context
-   * @param extraLogProps - Дополнительные свойства для логирования (опционально)
-   * @returns Result с новой Quote или InvalidQuoteError
-   *
-   * @remarks
-   * Централизует паттерн:
-   * 1. Проверка two-sided quote
-   * 2. Применение spread операции
-   * 3. Создание новой котировки с трансформированным spread
-   *
-   * Используется в shiftByRatio, widenByRatio, tightenByRatio, skewByRatio.
-   */
-  private static applySpreadTransformation(
-    quote: Quote,
-    spreadOp: (spread: Spread) => Result<Spread, Error>,
-    opName: string,
-    extraLogProps?: Record<string, string>
-  ): Result<Quote, InvalidQuoteError> {
-    return wrapOp(
-      QuoteService.SERVICE_NAME,
-      opName,
-      {
-        bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
-        ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
-        ...extraLogProps
-      },
-      () => {
-        // Validate two-sided quote (required for spread operations)
-        if (!quote.spread()) {
-          return Err(new InvalidQuoteError(
-            () => `Cannot ${opName} one-sided quote`,
-            {
-              context: {
-                source: ErrorSource.SERVICE_CALL,
-                reason: QuoteErrorReason.NOT_TWO_SIDED,
-                bid: quote.bid()?.value()?.toString() ?? 'null',
-                ask: quote.ask()?.value()?.toString() ?? 'null',
+      // Конвертируем в Quantity если нужно
+      let bidSize: Quantity;
+      if (newBidSize instanceof Quantity) {
+        bidSize = newBidSize;
+      } else {
+        const bidSizeResult = QuantityService.create(newBidSize);
+        if (isErr(bidSizeResult)) {
+          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
+          return Err(
+            rewrap(
+              QuoteService.SERVICE_NAME,
+              op,
+              {
+                component: 'bidSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
+                reason: QuoteErrorReason.INVALID_BID_SIZE, // Override reason
+                cause: toCause(bidSizeResult.error) // Add cause
               },
-            }
-          ));
-        }
-
-        // Apply spread operation
-        const newSpreadResult = spreadOp(quote.spread()!);
-
-        if (isErr(newSpreadResult)) {
-          return Err(new InvalidQuoteError(
-            (ctx) => `Cannot ${opName}: ${ctx.spreadError}`,
-            {
-              context: {
-                source: ErrorSource.SERVICE_CALL,
-                reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
-                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
-                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
-                spreadError: newSpreadResult.error.message,
-                ...extraLogProps
-              },
-            }
-          ));
-        }
-
-        // Create new quote with transformed spread
-        const newSpread = newSpreadResult.value;
-
-        try {
-          const newQuote = Quote.of(
-            newSpread.bid()!,
-            newSpread.ask()!,
-            quote.bidSize(),
-            quote.askSize(),
-            quote.timestampMs(),
-            quote.sourceId(),
-            quote.instrumentId()
+              bidSizeResult.error, // Передаём оригинальную ошибку
+              InvalidQuoteError
+            )
           );
-          return Ok(newQuote);
-        } catch (error) {
-          if (error instanceof QuoteInvariantViolation) {
-            return Err(
-              new InvalidQuoteError(error.message, {
-                context: {
-                  source: ErrorSource.CORE_INVARIANT,
-                  service: QuoteService.SERVICE_NAME,
-                  op: opName,
-                  reason: error.reason
-                }
-              })
-            );
-          }
-          throw error;
         }
-      },
-      InvalidQuoteError
-    );
+        bidSize = bidSizeResult.value;
+      }
+
+      let askSize: Quantity;
+      if (newAskSize instanceof Quantity) {
+        askSize = newAskSize;
+      } else {
+        const askSizeResult = QuantityService.create(newAskSize);
+        if (isErr(askSizeResult)) {
+          // Передаём оригинальную ошибку в rewrap, который сохранит все root fields
+          return Err(
+            rewrap(
+              QuoteService.SERVICE_NAME,
+              op,
+              {
+                component: 'askSize', // Добавляем component т.к. QuantityService.create возвращает field: 'value'
+                reason: QuoteErrorReason.INVALID_ASK_SIZE, // Override reason
+                cause: toCause(askSizeResult.error) // Add cause
+              },
+              askSizeResult.error, // Передаём оригинальную ошибку
+              InvalidQuoteError
+            )
+          );
+        }
+        askSize = askSizeResult.value;
+      }
+
+      // Создаём новую котировку через Core (refreshing timestamp)
+      const newTimestampResult = TimestampService.create(clock.now().getTime());
+      if (isErr(newTimestampResult)) {
+        return Err(
+          new InvalidQuoteError(newTimestampResult.error.message, {
+            context: {
+              source: ErrorSource.SERVICE_CALL,
+              service: QuoteService.SERVICE_NAME,
+              op,
+              reason: QuoteErrorReason.INVALID_FORMAT,
+              raw: { field: 'timestamp', value: clock.now().getTime() }
+            }
+          })
+        );
+      }
+
+      try {
+        const newQuote = Quote.of(
+          quote.bid(),
+          quote.ask(),
+          bidSize,
+          askSize,
+          newTimestampResult.value,
+          quote.sourceId(), // Сохраняем sourceId
+          quote.instrumentId() // Сохраняем instrumentId
+        );
+        return Ok(newQuote);
+      } catch (error) {
+        if (error instanceof QuoteInvariantViolation) {
+          return Err(
+            new InvalidQuoteError(error.message, {
+              context: {
+                source: ErrorSource.CORE_INVARIANT,
+                service: QuoteService.SERVICE_NAME,
+                op,
+                reason: error.reason
+              }
+            })
+          );
+        }
+        return Err(
+          unexpectedError(error, InvalidQuoteError)
+        );
+      }
+    }, InvalidQuoteError);
   }
 
   // ============================================================================
@@ -1037,7 +1033,7 @@ export class QuoteService {
       () => {
         // Validate two-sided quote (required for mid price)
         if (!quote.spread()) {
-          return Err(new InvalidQuoteError(
+          throw new InvalidQuoteError(
             () => 'Cannot get mid price for one-sided quote',
             {
               context: {
@@ -1047,7 +1043,7 @@ export class QuoteService {
                 ask: quote.ask()?.value()?.toString() ?? 'null',
               },
             }
-          ));
+          );
         }
 
         // Delegate to SpreadService
@@ -1055,7 +1051,7 @@ export class QuoteService {
 
         if (isErr(spreadMidResult)) {
           // Re-wrap SpreadError as QuoteError
-          return Err(new InvalidQuoteError(
+          throw new InvalidQuoteError(
             (ctx) => `Cannot get mid price: ${ctx.spreadError}`,
             {
               context: {
@@ -1066,7 +1062,7 @@ export class QuoteService {
                 spreadError: spreadMidResult.error.message,
               },
             }
-          ));
+          );
         }
 
         return Ok(spreadMidResult.value);
@@ -1110,17 +1106,17 @@ export class QuoteService {
       () => {
         // Validate two-sided quote (required for spread ratio)
         if (!quote.spread()) {
-          return Err(new InvalidQuoteError(
+          throw new InvalidQuoteError(
             () => 'Cannot get spread ratio for one-sided quote',
             {
               context: {
                 source: ErrorSource.SERVICE_CALL,
-                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                reason: QuoteErrorReason.MID_UNAVAILABLE,
                 bid: quote.bid()?.value()?.toString() ?? 'null',
                 ask: quote.ask()?.value()?.toString() ?? 'null',
               },
             }
-          ));
+          );
         }
 
         // Delegate to SpreadService
@@ -1128,7 +1124,7 @@ export class QuoteService {
 
         if (isErr(spreadRatioResult)) {
           // Re-wrap SpreadError as QuoteError
-          return Err(new InvalidQuoteError(
+          throw new InvalidQuoteError(
             (ctx) => `Cannot get spread ratio: ${ctx.spreadError}`,
             {
               context: {
@@ -1139,7 +1135,7 @@ export class QuoteService {
                 spreadError: spreadRatioResult.error.message,
               },
             }
-          ));
+          );
         }
 
         return Ok(spreadRatioResult.value);
@@ -1185,11 +1181,62 @@ export class QuoteService {
     quote: Quote,
     shiftRatio: Ratio
   ): Result<Quote, InvalidQuoteError> {
-    return QuoteService.applySpreadTransformation(
-      quote,
-      (spread) => SpreadService.shiftByRatio(spread, shiftRatio),
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
       'shiftByRatio',
-      { shiftRatio: shiftRatio.toDecimal().toString() }
+      {
+        bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+        ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
+        shiftRatio: shiftRatio.toDecimal().toString()
+      },
+      () => {
+        // Validate two-sided quote (required for shift operation)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot shift one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
+        const newSpreadResult = SpreadService.shiftByRatio(quote.spread()!, shiftRatio);
+
+        if (isErr(newSpreadResult)) {
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot shift quote by ratio: ${ctx.spreadError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
+                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
+                shiftRatio: shiftRatio.toDecimal().toString(),
+                spreadError: newSpreadResult.error.message,
+              },
+            }
+          );
+        }
+
+        const newSpread = newSpreadResult.value;
+        const newQuote = Quote.of(
+          newSpread.bid()!,
+          newSpread.ask()!,
+          quote.bidSize(),
+          quote.askSize(),
+          quote.timestamp(),
+          quote.sourceId(),
+          quote.instrumentId()
+        );
+
+        return Ok(newQuote);
+      },
+      InvalidQuoteError
     );
   }
 
@@ -1200,11 +1247,62 @@ export class QuoteService {
     quote: Quote,
     deltaWidthRatio: Ratio
   ): Result<Quote, InvalidQuoteError> {
-    return QuoteService.applySpreadTransformation(
-      quote,
-      (spread) => SpreadService.widenByRatio(spread, deltaWidthRatio),
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
       'widenByRatio',
-      { deltaWidthRatio: deltaWidthRatio.toDecimal().toString() }
+      {
+        bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+        ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
+        deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
+      },
+      () => {
+        // Validate two-sided quote (required for widen operation)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot widen one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
+        const newSpreadResult = SpreadService.widenByRatio(quote.spread()!, deltaWidthRatio);
+
+        if (isErr(newSpreadResult)) {
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot widen quote by ratio: ${ctx.spreadError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
+                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
+                deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
+                spreadError: newSpreadResult.error.message,
+              },
+            }
+          );
+        }
+
+        const newSpread = newSpreadResult.value;
+        const newQuote = Quote.of(
+          newSpread.bid()!,
+          newSpread.ask()!,
+          quote.bidSize(),
+          quote.askSize(),
+          quote.timestamp(),
+          quote.sourceId(),
+          quote.instrumentId()
+        );
+
+        return Ok(newQuote);
+      },
+      InvalidQuoteError
     );
   }
 
@@ -1215,11 +1313,62 @@ export class QuoteService {
     quote: Quote,
     deltaWidthRatio: Ratio
   ): Result<Quote, InvalidQuoteError> {
-    return QuoteService.applySpreadTransformation(
-      quote,
-      (spread) => SpreadService.tightenByRatio(spread, deltaWidthRatio),
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
       'tightenByRatio',
-      { deltaWidthRatio: deltaWidthRatio.toDecimal().toString() }
+      {
+        bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+        ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
+        deltaWidthRatio: deltaWidthRatio.toDecimal().toString()
+      },
+      () => {
+        // Validate two-sided quote (required for tighten operation)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot tighten one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
+        const newSpreadResult = SpreadService.tightenByRatio(quote.spread()!, deltaWidthRatio);
+
+        if (isErr(newSpreadResult)) {
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot tighten quote by ratio: ${ctx.spreadError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
+                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
+                deltaWidthRatio: deltaWidthRatio.toDecimal().toString(),
+                spreadError: newSpreadResult.error.message,
+              },
+            }
+          );
+        }
+
+        const newSpread = newSpreadResult.value;
+        const newQuote = Quote.of(
+          newSpread.bid()!,
+          newSpread.ask()!,
+          quote.bidSize(),
+          quote.askSize(),
+          quote.timestamp(),
+          quote.sourceId(),
+          quote.instrumentId()
+        );
+
+        return Ok(newQuote);
+      },
+      InvalidQuoteError
     );
   }
 
@@ -1231,14 +1380,64 @@ export class QuoteService {
     bidRatio: Ratio,
     askRatio: Ratio
   ): Result<Quote, InvalidQuoteError> {
-    return QuoteService.applySpreadTransformation(
-      quote,
-      (spread) => SpreadService.skewByRatio(spread, bidRatio, askRatio),
+    return wrapOp(
+      QuoteService.SERVICE_NAME,
       'skewByRatio',
       {
+        bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+        ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
         bidRatio: bidRatio.toDecimal().toString(),
         askRatio: askRatio.toDecimal().toString()
-      }
+      },
+      () => {
+        // Validate two-sided quote (required for skew operation)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot skew one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
+        }
+
+        const newSpreadResult = SpreadService.skewByRatio(quote.spread()!, bidRatio, askRatio);
+
+        if (isErr(newSpreadResult)) {
+          throw new InvalidQuoteError(
+            (ctx) => `Cannot skew quote by ratio: ${ctx.spreadError}`,
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.RATIO_OUT_OF_BOUNDS,
+                bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
+                ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
+                bidRatio: bidRatio.toDecimal().toString(),
+                askRatio: askRatio.toDecimal().toString(),
+                spreadError: newSpreadResult.error.message,
+              },
+            }
+          );
+        }
+
+        const newSpread = newSpreadResult.value;
+        const newQuote = Quote.of(
+          newSpread.bid()!,
+          newSpread.ask()!,
+          quote.bidSize(),
+          quote.askSize(),
+          quote.timestamp(),
+          quote.sourceId(),
+          quote.instrumentId()
+        );
+
+        return Ok(newQuote);
+      },
+      InvalidQuoteError
     );
   }
 
@@ -1296,24 +1495,9 @@ export class QuoteService {
         sizeFactor: sizeFactor.toDecimal().toString()
       },
       () => {
-        // 1. Validate two-sided quote (required for accessing spread)
-        if (!quote.spread()) {
-          return Err(new InvalidQuoteError(
-            () => 'Cannot scale sizes for one-sided quote',
-            {
-              context: {
-                source: ErrorSource.SERVICE_CALL,
-                reason: QuoteErrorReason.NOT_TWO_SIDED,
-                bid: quote.bid()?.value()?.toString() ?? 'null',
-                ask: quote.ask()?.value()?.toString() ?? 'null',
-              },
-            }
-          ));
-        }
-
-        // 2. Validate sizeFactor > 0
+        // 1. Validate sizeFactor > 0
         if (sizeFactor.toDecimal().lessThanOrEqualTo(0)) {
-          return Err(new InvalidQuoteError(
+          throw new InvalidQuoteError(
             () => 'Size factor must be positive',
             {
               context: {
@@ -1322,17 +1506,17 @@ export class QuoteService {
                 sizeFactor: sizeFactor.toDecimal().toString(),
               },
             }
-          ));
+          );
         }
 
-        // 3. Scale bid size
+        // 2. Scale bid size
         const newBidSizeResult = QuantityService.multiply(
           quote.bidSize(),
           sizeFactor.toDecimal()
         );
 
         if (isErr(newBidSizeResult)) {
-          return Err(new InvalidQuoteError(
+          throw new InvalidQuoteError(
             (ctx) => `Cannot scale bid size: ${ctx.quantityError}`,
             {
               context: {
@@ -1343,17 +1527,17 @@ export class QuoteService {
                 quantityError: newBidSizeResult.error.message,
               },
             }
-          ));
+          );
         }
 
-        // 4. Scale ask size
+        // 3. Scale ask size
         const newAskSizeResult = QuantityService.multiply(
           quote.askSize(),
           sizeFactor.toDecimal()
         );
 
         if (isErr(newAskSizeResult)) {
-          return Err(new InvalidQuoteError(
+          throw new InvalidQuoteError(
             (ctx) => `Cannot scale ask size: ${ctx.quantityError}`,
             {
               context: {
@@ -1364,7 +1548,22 @@ export class QuoteService {
                 quantityError: newAskSizeResult.error.message,
               },
             }
-          ));
+          );
+        }
+
+        // 4. Validate two-sided quote (required for accessing spread)
+        if (!quote.spread()) {
+          throw new InvalidQuoteError(
+            () => 'Cannot scale sizes for one-sided quote',
+            {
+              context: {
+                source: ErrorSource.SERVICE_CALL,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
+                bid: quote.bid()?.value()?.toString() ?? 'null',
+                ask: quote.ask()?.value()?.toString() ?? 'null',
+              },
+            }
+          );
         }
 
         // 5. Create new Quote with same spread, new sizes
@@ -1373,7 +1572,7 @@ export class QuoteService {
           quote.spread()!.ask()!,
           newBidSizeResult.value,
           newAskSizeResult.value,
-          quote.timestampMs(),
+          quote.timestamp(),
           quote.sourceId(),
           quote.instrumentId()
         );
@@ -1387,53 +1586,6 @@ export class QuoteService {
   // ============================================================================
   // Private Helpers
   // ============================================================================
-
-  /**
-   * Helper: парсит размеры из гибкого типа (Decimal | number | string | Quantity)
-   *
-   * @internal
-   * @param value - Значение для парсинга
-   * @param field - Название поля ('bidSize' или 'askSize')
-   * @param op - Название операции для error context
-   * @returns Result с Quantity или InvalidQuoteError
-   *
-   * @remarks
-   * Централизует логику парсинга размеров для updateSizes и updateSizesWithRefresh.
-   * Если value уже Quantity, возвращает его напрямую.
-   * Иначе создаёт через QuantityService.create().
-   */
-  private static parseSizeValue(
-    value: Decimal | number | string | Quantity,
-    field: 'bidSize' | 'askSize',
-    op: string
-  ): Result<Quantity, InvalidQuoteError> {
-    if (value instanceof Quantity) {
-      return Ok(value);
-    }
-
-    const result = QuantityService.create(value);
-    if (isErr(result)) {
-      const reason = field === 'bidSize'
-        ? QuoteErrorReason.INVALID_BID_SIZE
-        : QuoteErrorReason.INVALID_ASK_SIZE;
-
-      return Err(
-        rewrap(
-          QuoteService.SERVICE_NAME,
-          op,
-          {
-            component: field,
-            reason,
-            cause: toCause(result.error)
-          },
-          result.error,
-          InvalidQuoteError
-        )
-      );
-    }
-
-    return Ok(result.value);
-  }
 
   /**
    * Helper: создаёт Price из Decimal (с обработкой null)

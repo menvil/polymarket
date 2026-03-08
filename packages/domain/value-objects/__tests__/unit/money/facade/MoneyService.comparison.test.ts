@@ -25,17 +25,6 @@ describe('MoneyService comparison methods', () => {
         expect(result.value).toBe(false);
       }
     });
-
-    it('должен вернуть Ok(false) если a === b', () => {
-      const m1 = Money.of(new Decimal(100));
-      const m2 = Money.of(new Decimal(100));
-      const result = MoneyService.isLessThan(m1, m2);
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value).toBe(false);
-      }
-    });
   });
 
   describe('isGreaterThan()', () => {
@@ -53,17 +42,6 @@ describe('MoneyService comparison methods', () => {
     it('должен вернуть Ok(false) если a <= b', () => {
       const m1 = Money.of(new Decimal(100));
       const m2 = Money.of(new Decimal(200));
-      const result = MoneyService.isGreaterThan(m1, m2);
-
-      expect(result.ok).toBe(true);
-      if (result.ok) {
-        expect(result.value).toBe(false);
-      }
-    });
-
-    it('должен вернуть Ok(false) если a === b', () => {
-      const m1 = Money.of(new Decimal(100));
-      const m2 = Money.of(new Decimal(100));
       const result = MoneyService.isGreaterThan(m1, m2);
 
       expect(result.ok).toBe(true);

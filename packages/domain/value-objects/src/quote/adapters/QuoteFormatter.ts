@@ -1,4 +1,5 @@
 import { Quote } from '../core/Quote.js';
+import { Price } from '../../price/core/Price.js';
 
 /**
  * Опции форматирования для котировок
@@ -23,12 +24,12 @@ export interface QuoteFormatOptions {
   includeTimestamp?: boolean;
 
   /**
-   * Показывать spread (по умолчанию: true)
+   * Показывать spread (по умолчанию: false)
    */
   includeSpread?: boolean;
 
   /**
-   * Показывать mid price (по умолчанию: true)
+   * Показывать mid price (по умолчанию: false)
    */
   includeMid?: boolean;
 
@@ -68,39 +69,12 @@ export interface QuoteFormatOptions {
  * console.log(QuoteFormatter.toShort(quote));
  * // "0.4800/0.5200"
  *
- * // Подробный формат (по умолчанию включает spread и mid)
+ * // Подробный формат
  * console.log(QuoteFormatter.toDetailed(quote));
  * // "Bid: 0.4800 @ 100.00, Ask: 0.5200 @ 150.00, Spread: 0.0400 (8.00%), Mid: 0.5000"
  * ```
  */
 export class QuoteFormatter {
-  /**
-   * Приводит количество десятичных знаков к валидному значению
-   *
-   * @param decimals - Количество десятичных знаков (может быть невалидным)
-   * @param defaultValue - Значение по умолчанию если невалидно
-   * @returns Валидное количество десятичных знаков
-   *
-   * @remarks
-   * Проверяет что decimals:
-   * - Finite (не NaN, не Infinity)
-   * - Integer (целое число)
-   * - >= 0 (неотрицательное)
-   * - <= 100 (максимальный предел)
-   *
-   * Если невалидно, возвращает defaultValue.
-   *
-   * @internal
-   */
-  private static sanitizeDecimals(decimals: number, defaultValue: number): number {
-    if (!Number.isFinite(decimals) || !Number.isInteger(decimals) || decimals < 0) {
-      return defaultValue;
-    }
-    if (decimals > 100) {
-      return 100;
-    }
-    return decimals;
-  }
   /**
    * Форматирует Quote в читаемый вид "bid @ size / ask @ size"
    *
@@ -125,8 +99,8 @@ export class QuoteFormatter {
    * ```
    */
   public static toDisplay(quote: Quote, options: QuoteFormatOptions = {}): string {
-    const priceDecimals = QuoteFormatter.sanitizeDecimals(options.priceDecimals ?? 4, 4);
-    const sizeDecimals = QuoteFormatter.sanitizeDecimals(options.sizeDecimals ?? 2, 2);
+    const priceDecimals = options.priceDecimals ?? 4;
+    const sizeDecimals = options.sizeDecimals ?? 2;
 
     const bidStr = quote.hasBid()
       ? `${quote.bid()!.value().toFixed(priceDecimals)} @ ${quote.bidSize().value().toFixed(sizeDecimals)}`
@@ -143,14 +117,6 @@ export class QuoteFormatter {
       result += ` [${timestamp}]`;
     }
 
-    if (options.includeSource) {
-      result += ` [Source: ${quote.sourceId()}]`;
-    }
-
-    if (options.includeInstrument) {
-      result += ` [Instrument: ${quote.instrumentId()}]`;
-    }
-
     return result;
   }
 
@@ -158,7 +124,7 @@ export class QuoteFormatter {
    * Форматирует Quote в краткий вид "bid/ask"
    *
    * @param quote - Quote для форматирования
-   * @param options - Опции форматирования
+   * @param priceDecimals - Количество десятичных знаков (по умолчанию: 4)
    * @returns Форматированная строка
    *
    * @remarks
@@ -171,18 +137,17 @@ export class QuoteFormatter {
    * console.log(QuoteFormatter.toShort(quote));
    * // "0.4800/0.5200"
    *
-   * console.log(QuoteFormatter.toShort(quote, { priceDecimals: 2 }));
+   * console.log(QuoteFormatter.toShort(quote, 2));
    * // "0.48/0.52"
    * ```
    */
-  public static toShort(quote: Quote, options: QuoteFormatOptions = {}): string {
-    const safeDecimals = QuoteFormatter.sanitizeDecimals(options.priceDecimals ?? 4, 4);
+  public static toShort(quote: Quote, priceDecimals: number = 4): string {
     const bidStr = quote.hasBid()
-      ? quote.bid()!.value().toFixed(safeDecimals)
+      ? quote.bid()!.value().toFixed(priceDecimals)
       : '--';
 
     const askStr = quote.hasAsk()
-      ? quote.ask()!.value().toFixed(safeDecimals)
+      ? quote.ask()!.value().toFixed(priceDecimals)
       : '--';
 
     return `${bidStr}/${askStr}`;
@@ -202,18 +167,17 @@ export class QuoteFormatter {
    * @example
    * ```typescript
    * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
-   * // По умолчанию включает spread и mid (includeSpread: true, includeMid: true)
    * console.log(QuoteFormatter.toDetailed(quote));
    * // "Bid: 0.4800 @ 100.00, Ask: 0.5200 @ 150.00, Spread: 0.0400 (8.00%), Mid: 0.5000"
    *
-   * // С опциями: выключить spread, оставить mid
+   * // С опциями
    * console.log(QuoteFormatter.toDetailed(quote, { includeSpread: false, includeMid: true }));
    * // "Bid: 0.4800 @ 100.00, Ask: 0.5200 @ 150.00, Mid: 0.5000"
    * ```
    */
   public static toDetailed(quote: Quote, options: QuoteFormatOptions = {}): string {
-    const priceDecimals = QuoteFormatter.sanitizeDecimals(options.priceDecimals ?? 4, 4);
-    const sizeDecimals = QuoteFormatter.sanitizeDecimals(options.sizeDecimals ?? 2, 2);
+    const priceDecimals = options.priceDecimals ?? 4;
+    const sizeDecimals = options.sizeDecimals ?? 2;
     const includeSpread = options.includeSpread ?? true;
     const includeMid = options.includeMid ?? true;
 
@@ -243,7 +207,9 @@ export class QuoteFormatter {
 
       if (includeMid) {
         const midDecimal = spread.mid();
-        parts.push(`Mid: ${midDecimal.toFixed(priceDecimals)}`);
+        // SAFETY: mid математически в границах если bid/ask валидны
+        const mid = Price.of(midDecimal);
+        parts.push(`Mid: ${mid.value().toFixed(priceDecimals)}`);
       }
     }
 
@@ -274,17 +240,6 @@ export class QuoteFormatter {
    * Метод "Never Throw" - гарантированно не бросает исключения.
    * Создаёт многострочный вывод в виде таблицы.
    *
-   * Алгоритм выравнивания колонок:
-   * 1. Вычисляет максимальную ширину колонки Price (maxPriceWidth) как максимум из:
-   *    - Длины заголовка "Price" (5 символов)
-   *    - Длины форматированной bid цены
-   *    - Длины форматированной ask цены
-   * 2. Применяет padEnd(maxPriceWidth) ко всем элементам колонки Price:
-   *    - Заголовок "Price"
-   *    - Значения bid/ask цен (или "--" для отсутствующих)
-   *    - Значение spread (если есть)
-   * 3. Это гарантирует корректное выравнивание при любых значениях priceDecimals
-   *
    * @example
    * ```typescript
    * const quote = Quote.of(Price.of(0.48), Price.of(0.52), ...);
@@ -296,101 +251,65 @@ export class QuoteFormatter {
    * // ─────────────────────
    * // Spread 0.0400   (8.00%)
    * // Mid    0.5000
-   *
-   * // С большим количеством десятичных знаков (priceDecimals=10)
-   * console.log(QuoteFormatter.toTable(quote, { priceDecimals: 10 }));
-   * // Side   Price          Size
-   * // ────────────────────────────────────────
-   * // Bid    0.4800000000   100.00
-   * // Ask    0.5200000000   150.00
-   * // ────────────────────────────────────────
-   * // Spread 0.0400000000 (8.00%)
-   * // Mid    0.5000000000
    * ```
    */
   public static toTable(quote: Quote, options: QuoteFormatOptions = {}): string {
-    const priceDecimals = QuoteFormatter.sanitizeDecimals(options.priceDecimals ?? 4, 4);
-    const sizeDecimals = QuoteFormatter.sanitizeDecimals(options.sizeDecimals ?? 2, 2);
+    const priceDecimals = options.priceDecimals ?? 4;
+    const sizeDecimals = options.sizeDecimals ?? 2;
 
     const lines: string[] = [];
+    const separator = '─'.repeat(40);
 
-    // Calculate dynamic column width for price
-    const bidPrice = quote.hasBid() ? quote.bid()!.value().toFixed(priceDecimals) : '--';
-    const askPrice = quote.hasAsk() ? quote.ask()!.value().toFixed(priceDecimals) : '--';
-    const priceHeaderWidth = 'Price'.length;
-    const maxPriceWidth = Math.max(priceHeaderWidth, bidPrice.length, askPrice.length);
-
-    // Calculate table width: "Side" (4) + "   " (3) + maxPriceWidth + "   " (3) + "Size" (4) = 14 + maxPriceWidth
-    const tableWidth = 14 + maxPriceWidth;
-
-    // Calculate metadata lines max width
-    let metadataMaxWidth = 0;
-    if (options.includeTimestamp) {
-      const timestamp = new Date(quote.timestampMs().toNumber()).toISOString();
-      metadataMaxWidth = Math.max(metadataMaxWidth, `Time:  ${timestamp}`.length);
-    }
-    if (options.includeSource) {
-      metadataMaxWidth = Math.max(metadataMaxWidth, `Source: ${quote.sourceId()}`.length);
-    }
-    if (options.includeInstrument) {
-      metadataMaxWidth = Math.max(metadataMaxWidth, `Instrument: ${quote.instrumentId()}`.length);
-    }
-
-    // Separator should be at least as wide as the widest line (table or metadata)
-    const separator = '─'.repeat(Math.max(1, Math.max(tableWidth, metadataMaxWidth)));
-
-    lines.push(`Side   ${'Price'.padEnd(maxPriceWidth)}   Size`);
+    lines.push('Side   Price    Size');
     lines.push(separator);
 
     if (quote.hasBid()) {
+      const price = quote.bid()!.value().toFixed(priceDecimals);
       const size = quote.bidSize().value().toFixed(sizeDecimals);
-      lines.push(`Bid    ${bidPrice.padEnd(maxPriceWidth)}   ${size}`);
+      lines.push(`Bid    ${price.padEnd(8)} ${size}`);
     } else {
-      lines.push(`Bid    ${'--'.padEnd(maxPriceWidth)}   --`);
+      lines.push('Bid    --       --');
     }
 
     if (quote.hasAsk()) {
+      const price = quote.ask()!.value().toFixed(priceDecimals);
       const size = quote.askSize().value().toFixed(sizeDecimals);
-      lines.push(`Ask    ${askPrice.padEnd(maxPriceWidth)}   ${size}`);
+      lines.push(`Ask    ${price.padEnd(8)} ${size}`);
     } else {
-      lines.push(`Ask    ${'--'.padEnd(maxPriceWidth)}   --`);
+      lines.push('Ask    --       --');
     }
 
     const spread = quote.spread();
-    const includeSpread = options.includeSpread ?? true;
-    const includeMid = options.includeMid ?? true;
-
-    if (spread !== null && (includeSpread || includeMid)) {
+    if (spread !== null) {
       lines.push(separator);
 
-      if (includeSpread) {
-        const spreadWidth = spread.width();
-        const spreadPct = spread.widthRatio().toDecimal().times(100);
-        lines.push(`Spread ${spreadWidth.toFixed(priceDecimals).padEnd(maxPriceWidth)} (${spreadPct.toFixed(2)}%)`);
-      }
+      const spreadWidth = spread.width();
+      const spreadPct = spread.widthRatio().toDecimal().times(100);
+      lines.push(`Spread ${spreadWidth.toFixed(priceDecimals).padEnd(8)} (${spreadPct.toFixed(2)}%)`);
 
-      if (includeMid) {
-        const midDecimal = spread.mid();
-        lines.push(`Mid    ${midDecimal.toFixed(priceDecimals)}`);
-      }
-    }
-
-    // Добавляем separator только если есть хотя бы одно из дополнительных полей
-    const hasAdditionalFields = options.includeTimestamp || options.includeSource || options.includeInstrument;
-    if (hasAdditionalFields) {
-      lines.push(separator);
+      const midDecimal = spread.mid();
+      // SAFETY: mid математически в границах если bid/ask валидны
+      const mid = Price.of(midDecimal);
+      lines.push(`Mid    ${mid.value().toFixed(priceDecimals)}`);
     }
 
     if (options.includeTimestamp) {
+      lines.push(separator);
       const timestamp = new Date(quote.timestampMs().toNumber()).toISOString();
       lines.push(`Time:  ${timestamp}`);
     }
 
     if (options.includeSource) {
+      if (!options.includeTimestamp) {
+        lines.push(separator);
+      }
       lines.push(`Source: ${quote.sourceId()}`);
     }
 
     if (options.includeInstrument) {
+      if (!options.includeTimestamp && !options.includeSource) {
+        lines.push(separator);
+      }
       lines.push(`Instrument: ${quote.instrumentId()}`);
     }
 
@@ -402,7 +321,6 @@ export class QuoteFormatter {
    *
    * @param quote - Quote для форматирования
    * @param includePercentage - Включить процентное значение (по умолчанию: true)
-   * @param decimals - Количество десятичных знаков (по умолчанию: 4)
    * @returns Форматированная строка spread или null для one-sided котировок
    *
    * @remarks
@@ -417,20 +335,16 @@ export class QuoteFormatter {
    *
    * console.log(QuoteFormatter.formatSpread(quote, false));
    * // "0.0400"
-   *
-   * console.log(QuoteFormatter.formatSpread(quote, true, 2));
-   * // "0.04 (8.00%)"
    * ```
    */
-  public static formatSpread(quote: Quote, includePercentage: boolean = true, decimals: number = 4): string | null {
+  public static formatSpread(quote: Quote, includePercentage: boolean = true): string | null {
     const spread = quote.spread();
     if (spread === null) {
       return null;
     }
 
-    const safeDecimals = QuoteFormatter.sanitizeDecimals(decimals, 4);
     const spreadWidth = spread.width();
-    let result = spreadWidth.toFixed(safeDecimals);
+    let result = spreadWidth.toFixed(4);
 
     if (includePercentage) {
       const spreadPct = spread.widthRatio().toDecimal().times(100);
@@ -467,9 +381,8 @@ export class QuoteFormatter {
       return null;
     }
 
-    const safeDecimals = QuoteFormatter.sanitizeDecimals(decimals, 4);
     const midDecimal = spread.mid();
-    return midDecimal.toFixed(safeDecimals);
+    return midDecimal.toFixed(decimals);
   }
 
   /**
@@ -510,19 +423,16 @@ export class QuoteFormatter {
     priceDecimals: number = 2,
     sizeDecimals: number = 0
   ): string {
-    const safePriceDecimals = QuoteFormatter.sanitizeDecimals(priceDecimals, 2);
-    const safeSizeDecimals = QuoteFormatter.sanitizeDecimals(sizeDecimals, 0);
-
     const bidPrice = quote.hasBid()
-      ? quote.bid()!.value().toFixed(safePriceDecimals)
+      ? quote.bid()!.value().toFixed(priceDecimals)
       : '--';
 
     const askPrice = quote.hasAsk()
-      ? quote.ask()!.value().toFixed(safePriceDecimals)
+      ? quote.ask()!.value().toFixed(priceDecimals)
       : '--';
 
-    const bidSize = quote.bidSize().value().toFixed(safeSizeDecimals);
-    const askSize = quote.askSize().value().toFixed(safeSizeDecimals);
+    const bidSize = quote.bidSize().value().toFixed(sizeDecimals);
+    const askSize = quote.askSize().value().toFixed(sizeDecimals);
 
     return `${bidPrice}/${askPrice} @${bidSize}×${askSize}`;
   }
@@ -566,22 +476,20 @@ export class QuoteFormatter {
    * ```
    */
   public static formatWithSpread(quote: Quote, priceDecimals: number = 2): string {
-    const safeDecimals = QuoteFormatter.sanitizeDecimals(priceDecimals, 2);
-
     if (!quote.isTwoSided()) {
       // One-sided котировка
       if (quote.hasBid()) {
-        const bidPrice = quote.bid()!.value().toFixed(safeDecimals);
+        const bidPrice = quote.bid()!.value().toFixed(priceDecimals);
         return `${bidPrice} (bid only)`;
       } else {
-        const askPrice = quote.ask()!.value().toFixed(safeDecimals);
+        const askPrice = quote.ask()!.value().toFixed(priceDecimals);
         return `${askPrice} (ask only)`;
       }
     }
 
     // Two-sided котировка
-    const bidPrice = quote.bid()!.value().toFixed(safeDecimals);
-    const askPrice = quote.ask()!.value().toFixed(safeDecimals);
+    const bidPrice = quote.bid()!.value().toFixed(priceDecimals);
+    const askPrice = quote.ask()!.value().toFixed(priceDecimals);
 
     const spread = quote.spread();
     if (spread === null) {
@@ -591,11 +499,11 @@ export class QuoteFormatter {
 
     // Spread в basis points (1 bp = 0.01% = 0.0001)
     const spreadWidth = spread.width();
-    const spreadBps = spreadWidth.times(10000);
+    const spreadBps = spreadWidth.times(10000).toNumber();
 
     // Mid price
-    const midDecimal = spread.mid();
-    const midStr = midDecimal.toFixed(safeDecimals);
+    const mid = quote.midOrNull();
+    const midStr = mid !== null ? mid.toFixed(priceDecimals) : '--';
 
     return `${bidPrice}-${askPrice} (${spreadBps.toFixed(0)}bp, mid=${midStr})`;
   }

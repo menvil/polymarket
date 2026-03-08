@@ -42,6 +42,10 @@
       "types": "./dist/ratio/index.d.ts",
       "import": "./dist/ratio/index.js"
     },
+    "./signed-quantity": {
+      "types": "./dist/signed-quantity/index.d.ts",
+      "import": "./dist/signed-quantity/index.js"
+    },
     "./spread": {
       "types": "./dist/spread/index.d.ts",
       "import": "./dist/spread/index.js"
@@ -49,6 +53,18 @@
     "./token-balance": {
       "types": "./dist/token-balance/index.d.ts",
       "import": "./dist/token-balance/index.js"
+    },
+    "./timestamp": {
+      "types": "./dist/timestamp/index.d.ts",
+      "import": "./dist/timestamp/index.js"
+    },
+    "./side": {
+      "types": "./dist/side/index.d.ts",
+      "import": "./dist/side/index.js"
+    },
+    "./fee": {
+      "types": "./dist/fee/index.d.ts",
+      "import": "./dist/fee/index.js"
     }
   },
   "files": [
@@ -61,7 +77,7 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "test:coverage:money": "jest --coverage --testPathPattern=money --collectCoverageFrom='src/money/**/*.ts' --collectCoverageFrom='!src/money/**/index.ts'",
-    "test:smoke": "node __tests__/smoke/money-package-import.mjs",
+    "test:smoke": "node __tests__/smoke/package-exports.smoke.mjs",
     "lint": "eslint src --ext .ts",
     "lint:fix": "eslint src --ext .ts --fix",
     "lint:tests": "eslint __tests__ --ext .ts",

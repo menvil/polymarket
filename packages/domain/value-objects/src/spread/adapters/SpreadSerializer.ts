@@ -4,21 +4,6 @@ import { Spread } from '../core/Spread.js';
 import { SpreadService } from '../facade/SpreadService.js';
 import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
 
-function safeStringify(value: unknown): string {
-  try {
-    const seen = new WeakSet();
-    return JSON.stringify(value, (_key, val) => {
-      if (typeof val === 'object' && val !== null) {
-        if (seen.has(val)) return '[Circular]';
-        seen.add(val);
-      }
-      return val;
-    }) ?? 'undefined';
-  } catch {
-    return '[unserializable]';
-  }
-}
-
 /**
  * JSON контракт для Spread сериализации
  *
@@ -157,7 +142,7 @@ export class SpreadSerializer {
               source: ErrorSource.PARSING,
               service: SpreadSerializer.SERVICE_NAME,
               op,
-              raw: { json: safeStringify(json) },
+              raw: { json: JSON.stringify(json) },
               reason: SpreadErrorReason.INVALID_DTO
             }
           }
@@ -175,7 +160,7 @@ export class SpreadSerializer {
               source: ErrorSource.PARSING,
               service: SpreadSerializer.SERVICE_NAME,
               op,
-              raw: { json: safeStringify(json) },
+              raw: { json: JSON.stringify(json) },
               reason: SpreadErrorReason.INVALID_DTO
             }
           }
@@ -186,11 +171,11 @@ export class SpreadSerializer {
     // Теперь безопасно извлекаем поля
     const { bid, ask } = json as { bid: unknown; ask: unknown };
 
-    // Шаг 4: Проверка типа bid (включая NaN/Infinity)
-    if (typeof bid !== 'number' || !Number.isFinite(bid)) {
+    // Шаг 4: Проверка типа bid
+    if (typeof bid !== 'number') {
       return Err(
         new InvalidSpreadError(
-          `Invalid type for field 'bid': expected finite number, got ${typeof bid === 'number' ? bid : typeof bid}`,
+          `Invalid type for field 'bid': expected number, got ${typeof bid}`,
           {
             context: {
               source: ErrorSource.PARSING,
@@ -204,11 +189,11 @@ export class SpreadSerializer {
       );
     }
 
-    // Шаг 5: Проверка типа ask (включая NaN/Infinity)
-    if (typeof ask !== 'number' || !Number.isFinite(ask)) {
+    // Шаг 5: Проверка типа ask
+    if (typeof ask !== 'number') {
       return Err(
         new InvalidSpreadError(
-          `Invalid type for field 'ask': expected finite number, got ${typeof ask === 'number' ? ask : typeof ask}`,
+          `Invalid type for field 'ask': expected number, got ${typeof ask}`,
           {
             context: {
               source: ErrorSource.PARSING,
@@ -255,7 +240,7 @@ export class SpreadSerializer {
               source: ErrorSource.PARSING,
               service: SpreadSerializer.SERVICE_NAME,
               op: 'fromJSONString',
-              raw: { jsonLength: jsonString.length, jsonPreview: jsonString.slice(0, 100) },
+              raw: { jsonString },
               error: error instanceof Error ? error.message : String(error),
               reason: SpreadErrorReason.INVALID_JSON
             }

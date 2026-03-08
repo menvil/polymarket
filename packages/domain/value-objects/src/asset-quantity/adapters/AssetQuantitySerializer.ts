@@ -152,7 +152,7 @@ export class AssetQuantitySerializer {
               service: 'AssetQuantitySerializer',
               op: 'fromJSON',
               reason: AssetQuantityErrorReason.INVALID_FORMAT,
-              type: json === null ? 'null' : typeof json,
+              type: typeof json,
               json: safeStringify(json),
             },
           }

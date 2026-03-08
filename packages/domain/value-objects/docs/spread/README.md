@@ -20,13 +20,13 @@
 
 ### Ключевые особенности
 
-✅ **Type-safe** — большинство операций возвращают `Result<T, E>` (кроме `SpreadService.zero()`, который возвращает `Spread` напрямую), нет runtime `undefined`
+✅ **Type-safe** — все операции возвращают `Result<T, E>`, нет runtime `undefined`
 ✅ **Иммутабельный** — все операции создают новые экземпляры
 ✅ **Высокоточный** — использует `Decimal.js` для произвольной точности
 ✅ **Строгие сравнения** — только точные сравнения через `equals()`, без epsilon
 ✅ **Polymarket-aligned** — работает с Price объектами в диапазоне [0.0001, 0.9999]
 ✅ **Layered Architecture** — чёткое разделение ответственности
-✅ **100% Test Coverage** — все слои покрыты тестами
+✅ **100% Test Coverage** — все слои покрыты тестами (86 тестов)
 
 ### Что такое Spread?
 
@@ -50,7 +50,7 @@
 Spread ≠ просто две цены:
 
 - **Семантика** — bid и ask имеют чёткую связь (bid ≤ ask)
-- **Операции** — специфические методы (tighten, widen, shift, mid)
+- **Операции** — специфические методы (tighten, widen, shift, midpoint)
 - **Инварианты** — гарантии на уровне типов
 - **Polymarket-специфика** — работа с вероятностными ценами
 
@@ -84,8 +84,8 @@ console.log(spread.ask().toNumber());  // 0.52
 
 // Вычисление характеристик спреда
 console.log(spread.width().toNumber());     // 0.04
-console.log(spread.mid().toNumber());  // 0.50
-console.log(spread.widthRatio().toNumber());  // 0.08 (8% as fraction)
+console.log(spread.midpoint().toNumber());  // 0.50
+console.log(spread.widthRatio().toNumber());  // 0.08 (8%)
 
 // Сужение спреда (tighten)
 const tightenResult = SpreadService.tighten(spread, 0.01);
@@ -180,13 +180,13 @@ if (!result.ok) {
 
 - `src/spread/core/Spread.ts` — основной Value Object
 - `src/spread/core/SpreadInvariantViolation.ts` — typed exception
-- `src/spread/errors/SpreadErrorReason.ts` — enum причин ошибок
+- `src/spread/core/SpreadErrorReason.ts` — enum причин ошибок
 
 **Ответственность:**
 
 - Хранение bid/ask цен как Price объектов
 - Инварианты (bid ≤ ask)
-- Чистые вычисления (width, mid, widthRatio)
+- Чистые вычисления (width, midpoint, widthRatio)
 - Бросает `SpreadInvariantViolation` при нарушении инвариантов
 
 **Пример:**
@@ -318,22 +318,19 @@ SpreadService.shift(
 #### Геттеры
 
 ```typescript
-spread.bid(): Price                       // Цена покупки
-spread.ask(): Price                       // Цена продажи
-spread.width(): Decimal                   // Ширина спреда (ask - bid)
-spread.mid(): Decimal                     // Середина (bid + ask) / 2
-spread.widthRatio(): Ratio                // Ширина как доля от mid price (0.08 для 8%)
-spread.widthInBasisPoints(): Decimal      // Ширина в базисных пунктах (width × 10000)
+spread.bid(): Price              // Цена покупки
+spread.ask(): Price              // Цена продажи
+spread.width(): Decimal          // Ширина спреда (ask - bid)
+spread.midpoint(): Decimal       // Середина (bid + ask) / 2
+spread.widthRatio(): Ratio        // Ширина как дробь от mid price (0.08 = 8%)
 ```
 
 #### Утилиты
 
 ```typescript
-spread.equals(other: Spread): boolean              // Сравнение
-spread.isZeroWidth(): boolean                      // Проверка на нулевую ширину
-spread.contains(price: Price): boolean             // Проверка вхождения цены
-spread.overlaps(other: Spread): boolean            // Проверка пересечения двух спредов
-spread.containsSpread(other: Spread): boolean      // Проверка вхождения одного спреда в другой
+spread.equals(other: Spread): boolean     // Сравнение
+spread.isZeroWidth(): boolean             // Проверка на нулевую ширину
+spread.contains(price: Price): boolean    // Проверка вхождения цены
 ```
 
 ### SpreadSerializer
@@ -380,8 +377,8 @@ function displayOrderBook(bidPrice: number, askPrice: number) {
     
     bid: spread.bid().toNumber(),
     ask: spread.ask().toNumber(),
-    midPrice: spread.mid().toNumber(),
-    spreadBps: spread.widthInBasisPoints().toFixed(0) + ' bps'
+    midPrice: spread.midpoint().toNumber(),
+    spreadBps: spread.widthRatio().toDecimal().times(10000).toFixed(0) + ' bps'
   };
 }
 
@@ -391,7 +388,7 @@ console.log(displayOrderBook(0.48, 0.52));
 //   bid: 0.48,
 //   ask: 0.52,
 //   midPrice: 0.50,
-//   spreadBps: "400 bps"
+//   spreadBps: "800 bps"
 // }
 ```
 
@@ -404,8 +401,8 @@ function applyMarketMakingStrategy(
   currentSpread: Spread,
   targetWidthBps: number
 ) {
-  const currentWidthBps = currentSpread.widthInBasisPoints().toNumber();
-  const mid = currentSpread.mid();
+  const currentWidthBps = currentSpread.widthRatio().toDecimal().times(10000).toNumber();
+  const mid = currentSpread.midpoint();
   
   // Рассчитываем новую ширину в абсолютных величинах
   const targetWidth = mid.mul(targetWidthBps / 10000);

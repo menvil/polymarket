@@ -99,13 +99,13 @@ export class ValidateReleaseAmount {
       return Err(
         new InvalidTokenBalanceError(
           (ctx: Record<string, unknown>) =>
-            `Cannot release ${ctx.amount}: only ${ctx.reserved} reserved`,
+            `Cannot release ${ctx.requested}: only ${ctx.reserved} reserved`,
           {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: TokenBalanceErrorReason.INSUFFICIENT_RESERVED,
-              amount: amount.toString(),
-              reserved: reservedAmount.toString()
+              requested: amount.toNumber(),
+              reserved: reservedAmount.toNumber()
             }
           }
         )

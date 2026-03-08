@@ -23,8 +23,6 @@ import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
  * ```
  */
 export class ValidateMaxWidth {
-  private constructor() {}
-
   /**
    * Проверить что ширина <= максимума
    *
@@ -46,7 +44,7 @@ export class ValidateMaxWidth {
               source: ErrorSource.RULE_VALIDATION,
               maxWidth: maxWidth.toString(),
               width: width.toString(),
-              reason: SpreadErrorReason.INVALID_WIDTH
+              reason: SpreadErrorReason.INVALID_AMOUNT
             }
           }
         )
@@ -62,7 +60,7 @@ export class ValidateMaxWidth {
               source: ErrorSource.RULE_VALIDATION,
               maxWidth: maxWidth.toString(),
               width: width.toString(),
-              reason: SpreadErrorReason.INVALID_WIDTH
+              reason: SpreadErrorReason.INVALID_AMOUNT
             }
           }
         )

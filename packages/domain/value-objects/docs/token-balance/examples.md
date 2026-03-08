@@ -5,20 +5,21 @@
 ### Создание баланса токенов
 
 ```typescript
-import { TokenBalanceService, TokenBalanceErrorReason } from '@polymarket/value-objects/token-balance';
+import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
 import { Quantity } from '@polymarket/value-objects/quantity';
-import { BinaryOutcome, KnownOnChainProtocols, KnownVenues, KnownChainIds } from '@polymarket/ids';
-import type { OnChainConditionRef, AccountId, VenueId, ConditionId } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols, KnownVenues } from '@polymarket/ids';
+import type { OnChainConditionRef, AccountId, VenueId } from '@polymarket/ids';
 import { parseWalletAddress, accountIdFromWallet } from '@polymarket/ids';
+import { isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
 
 // Подготовка идентификаторов
 const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-  chainId: KnownChainIds.POLYGON,
-  conditionId: '0xabc...' as ConditionId
+  chainId: 137 as any,
+  conditionId: '0xabc...' as any
 };
 
 const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
@@ -34,7 +35,7 @@ const result = TokenBalanceService.create(
   venueId
 );
 
-if (!result.ok) {
+if (isErr(result)) {
   console.error('Ошибка создания:', result.error.message);
   return;
 }
@@ -67,20 +68,13 @@ console.log(balance.outcomeKey()); // "UP"
 
 ```typescript
 // У пользователя 100 токенов UP available, 20 reserved
-const createResult = TokenBalanceService.create(
+const balance = expectOk(TokenBalanceService.create(
   token,
   Quantity.of(new Decimal(100)),
   Quantity.of(new Decimal(20)),
   accountId,
   venueId
-);
-
-if (!createResult.ok) {
-  console.error('Ошибка создания баланса:', createResult.error.message);
-  return;
-}
-
-const balance = createResult.value;
+));
 
 // Открываем ордер на продажу 30 токенов UP
 const orderQty = Quantity.of(new Decimal(30));
@@ -137,67 +131,39 @@ if (consumeResult.ok) {
 **Разница между unfreezeReserved и consumeReserved:**
 
 ```typescript
-import { expectOk } from '@polymarket/result';
-
-const balanceResult = TokenBalanceService.create(
+const balance = expectOk(TokenBalanceService.create(
   token,
   Quantity.of(new Decimal(100)),
   Quantity.of(new Decimal(50)),
   accountId,
   venueId
-);
-if (!balanceResult.ok) return;
-
-const balance = balanceResult.value;
+));
 // total: 150
 
 // Вариант 1: Размораживание (отмена)
-const unfrozenResult = TokenBalanceService.unfreezeReserved(
+const unfrozen = expectOk(TokenBalanceService.unfreezeReserved(
   balance,
   Quantity.of(new Decimal(30))
-);
-if (!unfrozenResult.ok) return;
-
-const unfrozen = unfrozenResult.value;
+));
 // available: 130 (+30), reserved: 20 (-30), total: 150 (без изменений)
 
 // Вариант 2: Списание (исполнение)
-const consumedResult = TokenBalanceService.consumeReserved(
+const consumed = expectOk(TokenBalanceService.consumeReserved(
   balance,
   Quantity.of(new Decimal(30))
-);
-if (!consumedResult.ok) return;
-
-const consumed = consumedResult.value;
+));
 // available: 100 (без изменений), reserved: 20 (-30), total: 120 (-30)
 ```
 
 ### Синхронизация с blockchain
 
 ```typescript
-// Предположим у нас есть баланс (созданный ранее)
-const currentBalanceResult = TokenBalanceService.create(
-  token,
-  Quantity.of(new Decimal(100)),
-  Quantity.of(new Decimal(20)),
-  accountId,
-  venueId
-);
-if (!currentBalanceResult.ok) return;
-
-const currentBalance = currentBalanceResult.value;
-
 // Получили обновление баланса из blockchain: 150 токенов
 const newAvailable = Quantity.of(new Decimal(150));
 
-const updateResult = TokenBalanceService.updateAvailable(currentBalance, newAvailable);
-
-if (!updateResult.ok) {
-  console.error('Ошибка обновления баланса:', updateResult.error.message);
-  return;
-}
-
-const updatedBalance = updateResult.value;
+const updatedBalance = expectOk(
+  TokenBalanceService.updateAvailable(balance, newAvailable)
+);
 
 console.log(updatedBalance.available().value().toNumber()); // 150
 console.log(updatedBalance.reserved().value().toNumber());  // 20 (без изменений)
@@ -211,19 +177,14 @@ console.log(updatedBalance.reserved().value().toNumber());  // 20 (без изм
 
 ```typescript
 import { TokenBalanceSerializer } from '@polymarket/value-objects/token-balance';
-import { expectOk } from '@polymarket/result';
-import { isErr } from '@polymarket/result';
 
-const balanceResult = TokenBalanceService.create(
+const balance = expectOk(TokenBalanceService.create(
   token,
   Quantity.of(new Decimal(100)),
   Quantity.of(new Decimal(20)),
   accountId,
   venueId
-);
-if (!balanceResult.ok) return;
-
-const balance = balanceResult.value;
+));
 
 // Сериализация
 const json = TokenBalanceSerializer.toJSON(balance);
@@ -345,9 +306,6 @@ console.log(TokenBalanceFormatter.toDebugString(balance));
 ### Exhaustive error handling
 
 ```typescript
-import type { Result } from '@polymarket/result';
-import type { TokenBalance, InvalidTokenBalanceError } from '@polymarket/value-objects/token-balance';
-
 function handleTokenBalanceOperation(
   balance: TokenBalance,
   operation: 'reserve' | 'unfreezeReserved' | 'consumeReserved',
@@ -367,7 +325,7 @@ function handleTokenBalanceOperation(
       break;
   }
 
-  if (!result.ok) {
+  if (isErr(result)) {
     const { reason, op } = result.error.context || {};
 
     switch (reason) {
@@ -555,9 +513,7 @@ console.log('Финальный баланс:', currentBalance.total().value().t
 ### Компонент баланса токенов
 
 ```typescript
-import React from 'react';
-import type { TokenBalance } from '@polymarket/value-objects/token-balance';
-import { TokenBalanceFormatter } from '@polymarket/value-objects/token-balance';
+import { TokenBalance, TokenBalanceFormatter } from '@polymarket/value-objects/token-balance';
 
 interface TokenBalanceDisplayProps {
   balance: TokenBalance;

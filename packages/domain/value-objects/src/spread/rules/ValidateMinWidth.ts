@@ -23,8 +23,6 @@ import { SpreadErrorReason } from '../errors/SpreadErrorReason.js';
  * ```
  */
 export class ValidateMinWidth {
-  private constructor() {}
-
   /**
    * Проверить что ширина >= минимума
    *
@@ -46,7 +44,7 @@ export class ValidateMinWidth {
               source: ErrorSource.RULE_VALIDATION,
               minWidth: minWidth.toString(),
               width: width.toString(),
-              reason: SpreadErrorReason.INVALID_WIDTH
+              reason: SpreadErrorReason.INVALID_AMOUNT
             }
           }
         )
@@ -62,7 +60,7 @@ export class ValidateMinWidth {
               source: ErrorSource.RULE_VALIDATION,
               minWidth: minWidth.toString(),
               width: width.toString(),
-              reason: SpreadErrorReason.INVALID_WIDTH
+              reason: SpreadErrorReason.INVALID_AMOUNT
             }
           }
         )

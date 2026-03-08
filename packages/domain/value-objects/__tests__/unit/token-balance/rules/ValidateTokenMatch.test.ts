@@ -3,20 +3,20 @@ import { ValidateTokenMatch } from '../../../../src/token-balance/rules/Validate
 import { OutcomeToken } from '../../../../src/outcome-token/core/OutcomeToken.js';
 import { TokenBalanceErrorReason } from '../../../../src/token-balance/errors/TokenBalanceErrorReason.js';
 import { BinaryOutcome, KnownOnChainProtocols } from '@polymarket/ids';
-import type { OnChainConditionRef, ConditionId, ChainId } from '@polymarket/ids';
+import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
 
 describe('ValidateTokenMatch', () => {
   const conditionRef1: OnChainConditionRef = {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as ChainId,
+    chainId: 137 as any,
     conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
   };
 
   const conditionRef2: OnChainConditionRef = {
     kind: 'ONCHAIN',
     protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-    chainId: 137 as ChainId,
+    chainId: 137 as any,
     conditionId: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd' as ConditionId,
   };
 
@@ -88,14 +88,21 @@ describe('ValidateTokenMatch', () => {
     });
 
     it('возвращает ошибку для разных chainId', () => {
-      const conditionRefEthereum: OnChainConditionRef = {
+      const conditionRefPolygon: OnChainConditionRef = {
         kind: 'ONCHAIN',
         protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-        chainId: 1 as ChainId,  // Ethereum mainnet
+        chainId: 137 as any,
         conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
       };
 
-      const token1 = OutcomeToken.of(conditionRef1, BinaryOutcome.UP);
+      const conditionRefEthereum: OnChainConditionRef = {
+        kind: 'ONCHAIN',
+        protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+        chainId: 1 as any,  // Ethereum mainnet
+        conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
+      };
+
+      const token1 = OutcomeToken.of(conditionRefPolygon, BinaryOutcome.UP);
       const token2 = OutcomeToken.of(conditionRefEthereum, BinaryOutcome.UP);
 
       const result = ValidateTokenMatch.check(token1, token2);

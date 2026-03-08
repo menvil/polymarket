@@ -44,8 +44,8 @@ function parseOrderBook(data: OrderBookData) {
     error: null,
     spread,
     display: SpreadFormatter.format(spread, { decimals: 4 }),
-    midPrice: spread.mid().toNumber(),
-    spreadBps: spread.widthInBasisPoints().toFixed(0)
+    midPrice: spread.midpoint().toNumber(),
+    spreadBps: (spread.widthRatio().toDecimal().times(10000)).toFixed(0)
   };
 }
 
@@ -59,7 +59,7 @@ console.log(result);
 //   spread: Spread { ... },
 //   display: "0.4823-0.5177 (0.0354)",
 //   midPrice: 0.5,
-//   spreadBps: "354"
+//   spreadBps: "708"
 // }
 ```
 
@@ -111,8 +111,8 @@ function displayOrderBookTop(orderBook: OrderBook) {
     },
     spread: {
       width: spread.width().toNumber(),
-      widthBps: spread.widthInBasisPoints().toFixed(0),
-      midPrice: spread.mid().toNumber(),
+      widthBps: (spread.widthRatio().toDecimal().times(10000)).toFixed(0),
+      midPrice: spread.midpoint().toNumber(),
       display: SpreadFormatter.toBidAskString(spread, 4)
     }
   };
@@ -136,7 +136,7 @@ console.log(displayOrderBookTop(orderBook));
 //   ask: { price: 0.5150, size: 800, probability: '51.50%' },
 //   spread: {
 //     width: 0.03,
-//     widthBps: '300',
+//     widthBps: '600',
 //     midPrice: 0.50,
 //     display: '0.4850-0.5150'
 //   }
@@ -190,8 +190,7 @@ console.log(validateOrderBook(0.55, 0.45));  // { valid: false, error: 'CROSSED_
 ### Динамическое управление спредом
 
 ```typescript
-import { SpreadService, Spread, InvalidSpreadError } from '@polymarket/value-objects';
-import type { Result } from '@polymarket/result';
+import { SpreadService, Spread } from '@polymarket/value-objects';
 
 interface MarketConditions {
   volatility: number;      // 0-1
@@ -244,13 +243,13 @@ if (spreadResult.ok) {
     bid: spread.bid().toNumber(),
     ask: spread.ask().toNumber(),
     width: spread.width().toNumber(),
-    widthBps: spread.widthInBasisPoints().toFixed(0)
+    widthBps: (spread.widthRatio().toDecimal().times(10000)).toFixed(0)
   });
   // {
-  //   bid: 0.49718,
-  //   ask: 0.50318,
-  //   width: 0.006,
-  //   widthBps: '60'
+  //   bid: 0.4885,
+  //   ask: 0.5145,
+  //   width: 0.026,
+  //   widthBps: '520'
   // }
 }
 ```
@@ -265,36 +264,32 @@ function* tightenSpreadGradually(
   targetWidthBps: number,
   steps: number
 ) {
-  const initialWidthBps = initialSpread.widthInBasisPoints().toNumber();
-  const stepSizeBps = (initialWidthBps - targetWidthBps) / steps;
-
+  const initialWidthBps = initialSpread.widthRatio().toDecimal().times(10000);
+  const stepSize = (initialWidthBps - targetWidthBps) / steps / 100;
+  
   let currentSpread = initialSpread;
-
+  
   for (let i = 0; i < steps; i++) {
-    // Convert bps step to absolute per-side amount:
-    // widthInBasisPoints = width × 10000, so width = stepSizeBps / 10000
-    // tighten() takes per-side amount, so divide by 2
-    const absoluteStep = stepSizeBps / 10000;
-    const tightenAmount = absoluteStep / 2;
-
+    const tightenAmount = (currentSpread.width().toNumber() * stepSize) / 2;
+    
     const result = SpreadService.tighten(currentSpread, tightenAmount);
-
+    
     if (!result.ok) {
       console.error(`Step ${i}: Failed to tighten - ${result.error.message}`);
       break;
     }
-
+    
     currentSpread = result.value;
-
+    
     yield {
       step: i + 1,
       spread: currentSpread,
-      widthBps: currentSpread.widthInBasisPoints().toFixed(0)
+      widthBps: (currentSpread.widthRatio().toDecimal().times(10000)).toFixed(0)
     };
   }
 }
 
-// Пример: сужаем спред от 1000 bps до 50 bps за 5 шагов
+// Пример: сужаем спред от 200 bps до 50 bps за 5 шагов
 const initialSpreadResult = SpreadService.fromValues(0.45, 0.55);
 
 if (initialSpreadResult.ok) {
@@ -323,8 +318,8 @@ interface LiquidityMetrics {
 }
 
 function analyzeLiquidity(spread: Spread, depth: number): LiquidityMetrics {
-  const widthBps = spread.widthInBasisPoints().toNumber();
-
+  const widthBps = spread.widthRatio().toDecimal().times(10000);
+  
   // Определяем score на основе ширины спреда
   let liquidityScore: LiquidityMetrics['liquidityScore'];
   if (widthBps < 50) {
@@ -355,10 +350,10 @@ if (spreadResult.ok) {
   const metrics = analyzeLiquidity(spreadResult.value, 10000);
   console.log(metrics);
   // {
-  //   spreadBps: 200,
+  //   spreadBps: 400,
   //   liquidityScore: 'LOW',
   //   recommendedOrderSize: 1000,
-  //   slippageEstimate1k: 0.20
+  //   slippageEstimate1k: 0.40
   // }
 }
 ```
@@ -389,8 +384,8 @@ function compareMarketLiquidity(markets: Market[]) {
       return {
         marketId: market.id,
         marketName: market.name,
-        widthBps: spread.widthInBasisPoints().toNumber(),
-        midPrice: spread.mid().toNumber(),
+        widthBps: spread.widthRatio().toDecimal().times(10000),
+        midPrice: spread.midpoint().toNumber(),
         spread
       };
     })
@@ -411,9 +406,9 @@ console.log(ranked.map(m => ({
   widthBps: m.widthBps.toFixed(0)
 })));
 // [
-//   { name: 'Market B', widthBps: '200' },  // Самый ликвидный
-//   { name: 'Market A', widthBps: '400' },
-//   { name: 'Market C', widthBps: '1000' }
+//   { name: 'Market B', widthBps: '400' },  // Самый ликвидный
+//   { name: 'Market A', widthBps: '800' },
+//   { name: 'Market C', widthBps: '2000' }
 // ]
 ```
 
@@ -445,8 +440,8 @@ export const SpreadDisplay: React.FC<SpreadDisplayProps> = ({ bid, ask }) => {
   }
   
   const spread = spreadResult.value;
-  const widthBps = spread.widthInBasisPoints().toNumber();
-
+  const widthBps = spread.widthRatio().toDecimal().times(10000);
+  
   // Цветовая индикация ликвидности
   const liquidityColor = 
     widthBps < 50 ? 'green' :
@@ -462,7 +457,7 @@ export const SpreadDisplay: React.FC<SpreadDisplayProps> = ({ bid, ask }) => {
       
       <div className="metrics">
         <div className="mid-price">
-          Mid: {spread.mid().toNumber().toFixed(4)}
+          Mid: {spread.midpoint().toNumber().toFixed(4)}
         </div>
         <div className={`spread-width ${liquidityColor}`}>
           Spread: {widthBps.toFixed(0)} bps
@@ -500,8 +495,8 @@ function formatSpreadForTable(bid: number, ask: number) {
     bidDisplay: obj.bid.toFixed(4),
     askDisplay: obj.ask.toFixed(4),
     midDisplay: obj.midpoint.toFixed(4),
-    widthDisplay: `${obj.width.times(100).toFixed(2)}%`,
-    widthBps: spread.widthInBasisPoints().toFixed(0),
+    widthDisplay: `${(obj.width * 100).toFixed(2)}%`,
+    widthBps: (spread.widthRatio().toDecimal().times(10000)).toFixed(0),
     error: null
   };
 }
@@ -558,7 +553,7 @@ console.log(validateUserSpread('0.48', '0.52'));
 // { valid: true, spread: Spread { ... } }
 
 console.log(validateUserSpread('1.5', '0.52'));
-// { valid: false, field: 'both', message: 'Невалидные значения спреда' }
+// { valid: false, field: 'bid', message: 'Bid цена должна быть...' }
 
 console.log(validateUserSpread('0.60', '0.50'));
 // { valid: false, field: 'both', message: 'Bid (0.6) не может быть больше Ask (0.5)' }
@@ -584,7 +579,7 @@ function displayMarketData(data: APIResponse) {
       return {
         type: 'spread',
         display: SpreadFormatter.format(spreadResult.value, { decimals: 4 }),
-        midPrice: spreadResult.value.mid().toNumber()
+        midPrice: spreadResult.value.midpoint().toNumber()
       };
     }
   }
@@ -624,9 +619,7 @@ console.log(displayMarketData({}));
 ### Кэширование вычислений
 
 ```typescript
-import { Spread, SpreadService, type InvalidSpreadError } from '@polymarket/value-objects';
-import type { Result } from '@polymarket/result';
-import { Ok } from '@polymarket/result';
+import { Spread, SpreadService } from '@polymarket/value-objects';
 
 class SpreadCache {
   private cache = new Map<string, Spread>();
@@ -695,44 +688,28 @@ if (spread1.ok && spread2.ok) {
 ```typescript
 import { SpreadService } from '@polymarket/value-objects';
 
-function validateOperationResults() {
-  const originalResult = SpreadService.fromValues(0.48, 0.52);
-  if (!originalResult.ok) throw new Error('Failed to create original spread');
-  const original = originalResult.value;
+const original = SpreadService.fromValues(0.48, 0.52).value;
 
-  // Операция tighten
-  const tightenedResult = SpreadService.tighten(original, 0.01);
-  if (!tightenedResult.ok) throw new Error('Failed to tighten spread');
-  const tightened = tightenedResult.value;
+// Операция tighten
+const tightened = SpreadService.tighten(original, 0.01).value;
 
-  // Проверка результата — строгое сравнение
-  const expectedResult = SpreadService.fromValues(0.49, 0.51);
-  if (!expectedResult.ok) throw new Error('Failed to create expected spread');
-  const expected = expectedResult.value;
-  console.log(tightened.equals(expected));  // true — точное совпадение
+// Проверка результата — строгое сравнение
+const expected = SpreadService.fromValues(0.49, 0.51).value;
+console.log(tightened.equals(expected));  // true — точное совпадение
 
-  // Неточное совпадение НЕ считается равным
-  const almostSameResult = SpreadService.fromValues(0.49000001, 0.51);
-  if (!almostSameResult.ok) throw new Error('Failed to create almost-same spread');
-  const almostSame = almostSameResult.value;
-  console.log(tightened.equals(almostSame));  // false
-}
-
-validateOperationResults();
+// Неточное совпадение НЕ считается равным
+const almostSame = SpreadService.fromValues(0.49000001, 0.51).value;
+console.log(tightened.equals(almostSame));  // false
 ```
 
-### Тестирование со строгими сравнениями
+### Тестирование с строгими сравнениями
 
 ```typescript
 import { SpreadService } from '@polymarket/value-objects';
 
 describe('Spread operations', () => {
   it('should tighten spread correctly', () => {
-    const spreadResult = SpreadService.fromValues(0.48, 0.52);
-    expect(spreadResult.ok).toBe(true);
-    if (!spreadResult.ok) return;
-
-    const spread = spreadResult.value;
+    const spread = SpreadService.fromValues(0.48, 0.52).value;
     const result = SpreadService.tighten(spread, 0.01);
 
     expect(result.ok).toBe(true);
@@ -762,18 +739,10 @@ describe('Spread operations', () => {
 **Когда это важно:**
 
 ```typescript
-import { SpreadService, SpreadSerializer } from '@polymarket/value-objects';
-
 // Проверка после сериализации/десериализации
-const originalResult = SpreadService.fromValues(0.48, 0.52);
-if (!originalResult.ok) throw new Error('Failed to create spread');
-const original = originalResult.value;
-
+const original = SpreadService.fromValues(0.48, 0.52).value;
 const json = SpreadSerializer.toJSON(original);
-
-const restoredResult = SpreadSerializer.fromJSON(json);
-if (!restoredResult.ok) throw new Error('Failed to deserialize spread');
-const restored = restoredResult.value;
+const restored = SpreadSerializer.fromJSON(json).value;
 
 // Roundtrip должен быть идентичным
 console.log(original.equals(restored));  // true — точное восстановление

@@ -9,12 +9,12 @@ import {
   unexpectedError
 } from '@polymarket/errors';
 import { addDecimal, subtractDecimal, multiplyDecimal, divideDecimal } from '@polymarket/math';
-import { Money, type SupportedCurrency } from '../core/Money';
-import { MoneyInvariantViolation } from '../core/MoneyInvariantViolation';
-import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorForMoneyMultiplication';
-import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision';
-import { ValidateDeltaForIncreaseBy } from '../rules/ValidateDeltaForIncreaseBy';
-import { MoneyErrorReason } from '../errors/MoneyErrorReason';
+import { Money, type SupportedCurrency } from '../core/Money.js';
+import { MoneyInvariantViolation } from '../core/MoneyInvariantViolation.js';
+import { ValidateFactorForMoneyMultiplication } from '../rules/ValidateFactorForMoneyMultiplication.js';
+import { ValidateDivisorForMoneyDivision } from '../rules/ValidateDivisorForMoneyDivision.js';
+import { ValidateDeltaForIncreaseBy } from '../rules/ValidateDeltaForIncreaseBy.js';
+import { MoneyErrorReason } from '../errors/MoneyErrorReason.js';
 import { Ratio } from '../../ratio/core/Ratio.js';
 
 /**
@@ -127,7 +127,8 @@ export class MoneyService {
    * Только проверяет инварианты через Money.of().
    *
    * Ловит MoneyInvariantViolation и мапит через mapInvariantToOverflow:
-   * - Все типы нарушений (EXCEEDS_MAX_AMOUNT, NON_FINITE, NAN, NEGATIVE) → InvalidMoneyError с сохранением reason
+   * - EXCEEDS_MAX_AMOUNT, NON_FINITE, NAN → ArithmeticOverflowError
+   * - Остальные → InvalidMoneyError (unexpected)
    *
    * Используется в:
    * - add/subtract/multiply/divide для создания результата
@@ -432,44 +433,6 @@ export class MoneyService {
   }
 
   /**
-   * Helper для проверки совпадения валют в операциях сравнения
-   *
-   * @param a - Первая сумма
-   * @param b - Вторая сумма
-   * @param op - Название операции для контекста ошибки
-   * @returns Result<void, InvalidMoneyError> с ошибкой CURRENCY_MISMATCH если валюты не совпадают
-   *
-   * @remarks
-   * DRY helper для всех методов сравнения (isLessThan, equals, etc).
-   * Использует rewrap() для построения opChain и соответствия контракту facade.
-   */
-  private static checkCurrencyMatch(
-    a: Money,
-    b: Money,
-    op: string
-  ): Result<void, InvalidMoneyError> {
-    if (!a.hasSameCurrency(b)) {
-      const baseError = new InvalidMoneyError('Cannot compare Money with different currencies', {
-        context: {
-          reason: MoneyErrorReason.CURRENCY_MISMATCH,
-          expected: a.currency(),
-          actual: b.currency()
-        }
-      });
-      return Err(
-        rewrap(
-          MoneyService.SERVICE_NAME,
-          op,
-          { a: a.value().toString(), b: b.value().toString(), currency: a.currency() },
-          baseError,
-          InvalidMoneyError
-        )
-      );
-    }
-    return Ok(undefined);
-  }
-
-  /**
    * Сравнивает две суммы (a < b)
    *
    * @param a - Первая сумма
@@ -479,12 +442,7 @@ export class MoneyService {
    *
    * @example
    * ```typescript
-   * import Decimal from 'decimal.js';
-   *
-   * const result = MoneyService.isLessThan(
-   *   Money.of(new Decimal(100), 'USDC'),
-   *   Money.of(new Decimal(200), 'USDC')
-   * );
+   * const result = MoneyService.isLessThan(Money.of(new Decimal(100)), Money.of(new Decimal(200)));
    * if (isErr(result)) {
    *   console.error('Currency mismatch');
    * } else if (result.value) {
@@ -493,11 +451,19 @@ export class MoneyService {
    * ```
    */
   public static isLessThan(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
-    const currencyCheck = this.checkCurrencyMatch(a, b, 'isLessThan');
-    if (!currencyCheck.ok) {
-      return currencyCheck;
-    }
-    return Ok(a.value().lessThan(b.value()));
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
+    return wrapOp(MoneyService.SERVICE_NAME, 'isLessThan', ctx, () => {
+      if (!a.hasSameCurrency(b)) {
+        throw new InvalidMoneyError('Cannot compare Money with different currencies', {
+          context: {
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
+            expected: a.currency(),
+            actual: b.currency()
+          }
+        });
+      }
+      return Ok(a.value().lessThan(b.value()));
+    }, InvalidMoneyError);
   }
 
   /**
@@ -509,11 +475,19 @@ export class MoneyService {
    * @throws Никогда - все ошибки в Result
    */
   public static isLessThanOrEqual(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
-    const currencyCheck = this.checkCurrencyMatch(a, b, 'isLessThanOrEqual');
-    if (!currencyCheck.ok) {
-      return currencyCheck;
-    }
-    return Ok(a.value().lessThanOrEqualTo(b.value()));
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
+    return wrapOp(MoneyService.SERVICE_NAME, 'isLessThanOrEqual', ctx, () => {
+      if (!a.hasSameCurrency(b)) {
+        throw new InvalidMoneyError('Cannot compare Money with different currencies', {
+          context: {
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
+            expected: a.currency(),
+            actual: b.currency()
+          }
+        });
+      }
+      return Ok(a.value().lessThanOrEqualTo(b.value()));
+    }, InvalidMoneyError);
   }
 
   /**
@@ -525,11 +499,19 @@ export class MoneyService {
    * @throws Никогда - все ошибки в Result
    */
   public static isGreaterThan(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
-    const currencyCheck = this.checkCurrencyMatch(a, b, 'isGreaterThan');
-    if (!currencyCheck.ok) {
-      return currencyCheck;
-    }
-    return Ok(a.value().greaterThan(b.value()));
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
+    return wrapOp(MoneyService.SERVICE_NAME, 'isGreaterThan', ctx, () => {
+      if (!a.hasSameCurrency(b)) {
+        throw new InvalidMoneyError('Cannot compare Money with different currencies', {
+          context: {
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
+            expected: a.currency(),
+            actual: b.currency()
+          }
+        });
+      }
+      return Ok(a.value().greaterThan(b.value()));
+    }, InvalidMoneyError);
   }
 
   /**
@@ -541,11 +523,19 @@ export class MoneyService {
    * @throws Никогда - все ошибки в Result
    */
   public static isGreaterThanOrEqual(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
-    const currencyCheck = this.checkCurrencyMatch(a, b, 'isGreaterThanOrEqual');
-    if (!currencyCheck.ok) {
-      return currencyCheck;
-    }
-    return Ok(a.value().greaterThanOrEqualTo(b.value()));
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
+    return wrapOp(MoneyService.SERVICE_NAME, 'isGreaterThanOrEqual', ctx, () => {
+      if (!a.hasSameCurrency(b)) {
+        throw new InvalidMoneyError('Cannot compare Money with different currencies', {
+          context: {
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
+            expected: a.currency(),
+            actual: b.currency()
+          }
+        });
+      }
+      return Ok(a.value().greaterThanOrEqualTo(b.value()));
+    }, InvalidMoneyError);
   }
 
   /**
@@ -558,23 +548,26 @@ export class MoneyService {
    *
    * @example
    * ```typescript
-   * import Decimal from 'decimal.js';
-   *
-   * const result = MoneyService.equals(
-   *   Money.of(new Decimal(100), 'USDC'),
-   *   Money.of(new Decimal(100), 'USDC')
-   * );
+   * const result = MoneyService.equals(Money.of(new Decimal(100)), Money.of(new Decimal(100)));
    * if (result.ok && result.value) {
    *   console.log('Equal');
    * }
    * ```
    */
   public static equals(a: Money, b: Money): Result<boolean, InvalidMoneyError> {
-    const currencyCheck = this.checkCurrencyMatch(a, b, 'equals');
-    if (!currencyCheck.ok) {
-      return currencyCheck;
-    }
-    return Ok(a.value().equals(b.value()));
+    const ctx = { a: a.value().toString(), b: b.value().toString(), currency: a.currency() };
+    return wrapOp(MoneyService.SERVICE_NAME, 'equals', ctx, () => {
+      if (!a.hasSameCurrency(b)) {
+        throw new InvalidMoneyError('Cannot compare Money with different currencies', {
+          context: {
+            reason: MoneyErrorReason.CURRENCY_MISMATCH,
+            expected: a.currency(),
+            actual: b.currency()
+          }
+        });
+      }
+      return Ok(a.value().equals(b.value()));
+    }, InvalidMoneyError);
   }
 
   /**
@@ -697,29 +690,6 @@ export class MoneyService {
    * ```
    */
   public static decreaseBy(m: Money, delta: Ratio): Result<Money, InvalidMoneyError> {
-    // Валидация: delta не должен быть отрицательным (семантически некорректно "уменьшить на отрицательное значение")
-    if (delta.isNegative()) {
-      const baseError = new InvalidMoneyError('Delta for decreaseBy must be non-negative', {
-        context: {
-          source: ErrorSource.RULE_VALIDATION,
-          reason: MoneyErrorReason.INVALID_RATIO
-        }
-      });
-      return Err(
-        rewrap(
-          MoneyService.SERVICE_NAME,
-          'decreaseBy',
-          {
-            delta: delta.toDecimal().toString(),
-            amount: m.value().toString(),
-            currency: m.currency()
-          },
-          baseError,
-          InvalidMoneyError
-        )
-      );
-    }
-
     // Convenience: decreaseBy(m, delta) = increaseBy(m, -delta)
     const negatedDelta = delta.negate();
     const result = this.increaseBy(m, negatedDelta);
@@ -729,7 +699,7 @@ export class MoneyService {
       return Err(rewrap(
         MoneyService.SERVICE_NAME,
         'decreaseBy',
-        { amount: m.value().toString(), delta: delta.toDecimal().toString(), currency: m.currency() },
+        { m: m.value().toString(), delta: negatedDelta.toDecimal().toString(), currency: m.currency() },
         result.error,
         InvalidMoneyError
       ));
@@ -758,23 +728,17 @@ export class MoneyService {
    *
    * **Знак rate:**
    * - Положительный rate (>= 0): стандартный случай (fees, allocations)
-   * - Отрицательный rate (< 0): ЗАПРЕЩЁН - семантически некорректно "взять отрицательную долю"
-   *   (для уменьшения используй decreaseBy())
+   * - Отрицательный rate (< 0): допустимо, результат будет отрицательным
    *
    * **Процесс:**
-   * 1. Валидация: rate >= 0
-   * 2. Multiply: m.value() * rate.toDecimal()
-   * 3. Create Money через createFromDecimal() (проверит инварианты)
+   * 1. Multiply: m.value() * rate.toDecimal()
+   * 2. Create Money через createFromDecimal() (проверит инварианты)
    *
    * **Возможные ошибки:**
-   * - INVALID_RATIO: rate < 0 (отрицательная доля)
    * - EXCEEDS_MAX_AMOUNT: результат превышает максимум
-   * - NEGATIVE_RESULT: результат меньше нуля (при отрицательном amount и положительном rate)
    *
    * @example
    * ```typescript
-   * import Decimal from 'decimal.js';
-   *
    * // Fee calculation: 2% от $1000
    * const orderAmount = Money.of(new Decimal(1000), 'USDC');
    * const feeRate = Ratio.of(new Decimal(0.02)); // 2%
@@ -790,13 +754,6 @@ export class MoneyService {
    * if (allocResult.ok) {
    *   console.log(allocResult.value.value().toString()); // 1500 USDC
    * }
-   *
-   * // Ошибка: отрицательный rate
-   * const negativeRate = Ratio.of(new Decimal(-0.1)); // -10%
-   * const invalid = MoneyService.portion(orderAmount, negativeRate);
-   * if (!invalid.ok) {
-   *   console.error(invalid.error.context.reason); // INVALID_RATIO
-   * }
    * ```
    */
   public static portion(m: Money, rate: Ratio): Result<Money, InvalidMoneyError> {
@@ -807,21 +764,10 @@ export class MoneyService {
     };
 
     return wrapOp(MoneyService.SERVICE_NAME, 'portion', ctx, () => {
-      // Валидация: rate не должен быть отрицательным (семантически некорректно "взять отрицательную долю")
-      if (rate.isNegative()) {
-        const baseError = new InvalidMoneyError('Rate for portion must be non-negative', {
-          context: {
-            source: ErrorSource.RULE_VALIDATION,
-            reason: MoneyErrorReason.INVALID_RATIO
-          }
-        });
-        return Err(baseError);
-      }
-
       // Multiply: m * rate
       const product = multiplyDecimal(m.value(), rate.toDecimal());
 
-      // Create Money (проверит инварианты: finite, max)
+      // Create Money (проверит инварианты: non-negative, finite, max)
       return this.createFromDecimal(product, m.currency(), 'portion', ctx);
     }, InvalidMoneyError);
   }

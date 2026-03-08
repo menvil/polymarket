@@ -35,9 +35,9 @@ describe('ValidateCurrencyMatch', () => {
       // мы создаем мок-объект с другой валютой
       const amount = Money.of(new Decimal(1000));
       const mockAmount = {
-        value: amount.value.bind(amount),
-        currency: jest.fn(() => 'EUR' as SupportedCurrency)
-      } as unknown as Money;
+        ...amount,
+        currency: () => 'EUR' as SupportedCurrency
+      } as Money;
 
       const balanceCurrency: SupportedCurrency = 'USDC';
 
@@ -55,9 +55,9 @@ describe('ValidateCurrencyMatch', () => {
       // Мок-объект Money с другой валютой для тестирования
       const amount = Money.of(new Decimal(1000));
       const mockAmount = {
-        value: amount.value.bind(amount),
-        currency: jest.fn(() => 'BTC' as SupportedCurrency)
-      } as unknown as Money;
+        ...amount,
+        currency: () => 'BTC' as SupportedCurrency
+      } as Money;
 
       const balanceCurrency: SupportedCurrency = 'USDC';
 

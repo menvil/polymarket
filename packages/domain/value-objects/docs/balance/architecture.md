@@ -70,21 +70,6 @@ private constructor(
       reservedCurrency: res.currency()
     });
   }
-
-  // Инвариант 4: available + reserved <= Money.MAX_AMOUNT
-  const totalAmount = avail.value().plus(res.value());
-  if (totalAmount.greaterThan(Money.MAX_AMOUNT)) {
-    throw new BalanceInvariantViolation(
-      `Total balance (available + reserved) exceeds maximum: ${Money.MAX_AMOUNT}`,
-      {
-        reason: BalanceErrorReason.TOTAL_EXCEEDS_MAX_AMOUNT,
-        available: avail.value().toString(),
-        reserved: res.value().toString(),
-        total: totalAmount.toString(),
-        maxAmount: Money.MAX_AMOUNT.toString()
-      }
-    );
-  }
 }
 ```
 
@@ -302,8 +287,7 @@ export enum BalanceErrorReason {
   NAN = 'NAN',                                     // amount является NaN
   NON_FINITE = 'NON_FINITE',                       // amount не является finite
   INVALID_FORMAT = 'INVALID_FORMAT',               // ошибка парсинга
-  UNSUPPORTED_CURRENCY = 'UNSUPPORTED_CURRENCY',   // неподдерживаемая валюта
-  TOTAL_EXCEEDS_MAX_AMOUNT = 'TOTAL_EXCEEDS_MAX_AMOUNT' // total превышает максимальную сумму
+  UNSUPPORTED_CURRENCY = 'UNSUPPORTED_CURRENCY'    // неподдерживаемая валюта
 }
 ```
 
@@ -320,11 +304,10 @@ public total(): Money {
   const totalAmount = this.avail.value().plus(this.res.value());
 
   // Безопасно потому что:
-  // - Валюты гарантированно совпадают (инвариант 3)
-  // - Оба значения >= 0 (инварианты 1 и 2)
-  // - Оба значения finite и not NaN (инварианты 0a и 0b)
-  // - total <= Money.MAX_AMOUNT (инвариант 4)
-  return Money.of(totalAmount, this.avail.currency());
+  // - Валюты гарантированно совпадают (инвариант Balance)
+  // - Оба значения >= 0 (инварианты Balance)
+  // - Оба значения finite и not NaN (инварианты Balance)
+  return Money.fromDecimal(totalAmount, this.avail.currency());
 }
 ```
 
@@ -332,32 +315,18 @@ public total(): Money {
 
 ```typescript
 // Внутри BalanceService - делегируем MoneyService
-// Пример: reserve() выполняет newAvailable = available - amount
-const newAvailableResult = MoneyService.subtract(balance.available(), amount);
-if (isErr(newAvailableResult)) {
-  // Перебрасываем ошибку с контекстом баланса
-  return Err(rewrap(
-    BalanceService.SERVICE_NAME,
-    'reserve',
-    { available: balance.available().value().toString(), amount: amount.value().toString() },
-    newAvailableResult.error,
-    InvalidBalanceError
-  ));
+private static addMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
+  const result = MoneyService.add(a, b);
+  if (isErr(result)) {
+    return Err(new InvalidBalanceError(result.error.message, {
+      context: {
+        ...result.error.context,
+        reason: BalanceErrorReason.INVALID_FORMAT
+      }
+    }));
+  }
+  return Ok(result.value);
 }
-const newAvailable = newAvailableResult.value;
-
-// Пример: reserve() выполняет newReserved = reserved + amount
-const newReservedResult = MoneyService.add(balance.reserved(), amount);
-if (isErr(newReservedResult)) {
-  return Err(rewrap(
-    BalanceService.SERVICE_NAME,
-    'reserve',
-    { reserved: balance.reserved().value().toString(), amount: amount.value().toString() },
-    newReservedResult.error,
-    InvalidBalanceError
-  ));
-}
-const newReserved = newReservedResult.value;
 ```
 
 ## Диаграмма потока данных
