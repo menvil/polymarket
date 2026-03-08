@@ -38,38 +38,42 @@ public readonly balance: Balance;
 - Если `position.isClosed()` → удалить из карты
 - Иначе → добавить/обновить по `instrumentId`
 
-### 4. Валюация вынесена в `PortfolioValuationService`
+### 4. Валюация вынесена в отдельные функции
 
-**Проблема**: `getTotalValue()` и `getTotalUnrealizedPnL()` в aggregate нарушали SRP. Для работы им нужны текущие цены инструментов — внешние данные, которых не должно быть в домене.
+**Проблема**: Расчёт стоимости требует текущих котировок — внешних данных, которых нет в доменном состоянии Portfolio.
 
-**Решение**: `PortfolioValuationService` — статический сервис, принимающий `Portfolio` + провайдер цен:
+**Решение**: `getTotalValue` и `getTotalUnrealizedPnL` — standalone-функции, принимающие итерируемые позиции + провайдер цен:
 
 ```typescript
 // В Portfolio (НЕТ):
 getTotalValue(prices: Map<InstrumentId, Price>): Money
 
-// В PortfolioValuationService (ЕСТЬ):
-PortfolioValuationService.getTotalValue(portfolio, getPrice)
+// Функции из @polymarket/portfolio (ЕСТЬ):
+getTotalValue(portfolio.getPositions(), getPrice, 'USDC')
 ```
 
 ### 5. Структурная типизация для позиций (IPosition)
 
 **Проблема**: Прямая зависимость от `Position` entity из другого package требовала, чтобы тот package был скомпилирован. При build errors в position — portfolio тоже не собирался.
 
-**Решение**: Portfolio определяет интерфейс `IPosition`:
+**Решение**: Portfolio определяет единый интерфейс `IPosition` — контракт для управления и оценки стоимости:
 ```typescript
 export interface IPosition {
   readonly instrumentId: InstrumentId;
+  readonly quantity: { value(): Decimal };
+  readonly side: 'LONG' | 'SHORT';
+  readonly averageEntryPrice: { value(): Decimal };
   isClosed(): boolean;
+  getUnrealizedPnL(currentPrice: { value(): Decimal }): { value(): Decimal };
 }
 ```
-Реальный `Position` структурно совместим с `IPosition`. Portfolio не зависит от компиляции position package.
+Реальный `Position` структурно совместим с `IPosition`. `getTotalValue` / `getTotalUnrealizedPnL` принимают `Iterable<IPosition>` без дополнительных интерфейсов или cast.
 
 ### 6. `applyCredit()` вместо прямой манипуляции с балансом
 
 **Проблема**: Внешний код мог напрямую вычислять новый available и создавать Balance, обходя инварианты.
 
-**Решение**: `applyCredit(amount)` — единственный способ зачислить средства. Делегирует в `BalanceService.updateAvailable()`.
+**Решение**: `applyCredit(amount)` — единственный способ зачислить средства. Делегирует в `BalanceService.credit()`.
 
 ---
 
@@ -82,8 +86,6 @@ packages/domain/entities/portfolio/
     ├── value-objects/
     │   ├── PortfolioId.ts              # Branded type
     │   └── index.ts
-    ├── errors/
-    │   └── PortfolioErrors.ts          # PortfolioValidationError, PortfolioOperationError
     ├── services/
     │   └── PortfolioValuationService.ts # getTotalValue, getTotalUnrealizedPnL
     └── index.ts
@@ -174,43 +176,43 @@ if (position) {
   console.log(position.instrumentId);
 }
 
-// Все позиции
-const allPositions = portfolio.getAllPositions();
+// Все позиции (IterableIterator)
+for (const pos of portfolio.getPositions()) {
+  console.log(pos.instrumentId);
+}
 console.log(portfolio.getPositionCount()); // 3
 ```
 
-### Оценка стоимости (через сервис)
+### Оценка стоимости
 
 ```typescript
-import { PortfolioValuationService } from '@polymarket/portfolio';
+import { getTotalValue, getTotalUnrealizedPnL } from '@polymarket/portfolio';
 
 const getPrice = (instrumentId: InstrumentId) => prices.get(instrumentId);
 
-const totalValue = PortfolioValuationService.getTotalValue(portfolio, getPrice);
-const totalPnL = PortfolioValuationService.getTotalUnrealizedPnL(portfolio, getPrice);
+const totalValue = getTotalValue(portfolio.getPositions(), getPrice, 'USDC');
+const totalPnL   = getTotalUnrealizedPnL(portfolio.getPositions(), getPrice);
 ```
 
 ---
 
 ## IPosition — структурный интерфейс
 
-Portfolio работает с любым объектом, реализующим `IPosition`:
+Portfolio работает с любым объектом, реализующим единый `IPosition`:
 
 ```typescript
 export interface IPosition {
   readonly instrumentId: InstrumentId;
-  isClosed(): boolean;
-}
-```
-
-`PortfolioValuationService` дополнительно требует `IValuablePosition`:
-
-```typescript
-export interface IValuablePosition extends IPosition {
   readonly quantity: { value(): Decimal };
   readonly side: 'LONG' | 'SHORT';
   readonly averageEntryPrice: { value(): Decimal };
+  isClosed(): boolean;
+  getUnrealizedPnL(currentPrice: { value(): Decimal }): { value(): Decimal };
 }
 ```
 
-Реальный `Position` entity структурно совместим с обоими интерфейсами.
+Единый контракт покрывает как управление позицией (`isClosed`, `instrumentId`),
+так и оценку стоимости и риска (`quantity`, `side`, `getUnrealizedPnL`).
+`getTotalValue` / `getTotalUnrealizedPnL` принимают `Iterable<IPosition>` напрямую — без промежуточных интерфейсов.
+
+Реальный `Position` entity структурно совместим с `IPosition`.

@@ -6,7 +6,7 @@
  * - create() с валидными/невалидными данными
  * - reserveForOrder / releaseReservation / applyDebit / applyCredit
  * - upsertPosition (добавление, обновление, удаление закрытых позиций)
- * - getPosition / hasPosition / getAllPositions / getPositionCount / isEmpty
+ * - getPosition / hasPosition / getPositions / getPositionCount / isEmpty
  * - toString()
  */
 
@@ -15,6 +15,7 @@ import Decimal from 'decimal.js';
 import { Portfolio } from '../../src/Portfolio.js';
 import { asPortfolioId } from '../../src/value-objects/index.js';
 import { PortfolioValidationError } from '@polymarket/errors/portfolio';
+import { InvalidBalanceError } from '@polymarket/errors';
 import { Balance } from '@polymarket/value-objects/balance';
 import { Money } from '@polymarket/value-objects/money';
 import type { InstrumentId, AccountId, VenueId, WalletAddress } from '@polymarket/ids';
@@ -243,6 +244,26 @@ describe('Portfolio.applyCredit()', () => {
       expect(creditResult.value.balance.reserved().value().toNumber()).toBe(1000);
     }
   });
+
+  it('возвращает Err при currency mismatch (duck-typed Money)', () => {
+    const result = makePortfolio({ balance: makeBalance(7000, 0) }); // USDC
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    // Money.of() бросает при неизвестной валюте — используем duck typing
+    // для имитации Money с currency='USD' (≠ USDC), BalanceService.credit
+    // вернёт Err на проверке ValidateCurrencyMatch до вызова других методов
+    const wrongCurrency = {
+      value: () => new Decimal(500),
+      currency: () => 'USD',
+    } as unknown as Money;
+
+    const creditResult = result.value.applyCredit(wrongCurrency);
+    expect(creditResult.ok).toBe(false);
+    if (!creditResult.ok) {
+      expect(creditResult.error).toBeInstanceOf(InvalidBalanceError);
+    }
+  });
 });
 
 describe('Portfolio.upsertPosition()', () => {
@@ -335,12 +356,14 @@ describe('Portfolio.getPosition() / hasPosition()', () => {
 });
 
 describe('Portfolio.getPositions()', () => {
-  it('возвращает все позиции', () => {
+  it('возвращает все позиции с корректными instrumentId', () => {
     const id1 = makeInstrumentId('instrument-1');
     const id2 = makeInstrumentId('instrument-2');
+    const pos1 = makeOpenPosition(id1);
+    const pos2 = makeOpenPosition(id2);
     const positions = new Map([
-      [id1, makeOpenPosition(id1)],
-      [id2, makeOpenPosition(id2)],
+      [id1, pos1],
+      [id2, pos2],
     ]);
     const result = makePortfolio({ positions });
     expect(result.ok).toBe(true);
@@ -348,6 +371,9 @@ describe('Portfolio.getPositions()', () => {
 
     const all = Array.from(result.value.getPositions());
     expect(all.length).toBe(2);
+    const ids = all.map((p) => p.instrumentId);
+    expect(ids).toContain(id1);
+    expect(ids).toContain(id2);
   });
 
   it('возвращает пустой итератор при отсутствии позиций', () => {
@@ -356,6 +382,27 @@ describe('Portfolio.getPositions()', () => {
     if (!result.ok) return;
 
     expect(Array.from(result.value.getPositions())).toEqual([]);
+  });
+
+  it('изолирован от мутации исходного Map (immutability)', () => {
+    const instrumentId = makeInstrumentId('instrument-1');
+    const sourceMap = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions: sourceMap });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const portfolio = result.value;
+    expect(portfolio.getPositionCount()).toBe(1);
+
+    // Мутируем исходный Map после создания портфеля
+    const extraId = makeInstrumentId('instrument-extra');
+    sourceMap.set(extraId, makeOpenPosition(extraId));
+    sourceMap.delete(instrumentId);
+
+    // Портфель не должен измениться
+    expect(portfolio.getPositionCount()).toBe(1);
+    expect(portfolio.hasPosition(instrumentId)).toBe(true);
+    expect(portfolio.hasPosition(extraId)).toBe(false);
   });
 });
 
@@ -388,7 +435,7 @@ describe('Portfolio.isEmpty()', () => {
 });
 
 describe('Portfolio.toString()', () => {
-  it('содержит id, баланс и количество позиций', () => {
+  it('содержит id, баланс, валюту и количество позиций', () => {
     const result = makePortfolio({ balance: makeBalance(10000, 0) });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -397,7 +444,19 @@ describe('Portfolio.toString()', () => {
     expect(str).toContain('portfolio-abc');
     expect(str).toContain('10000');
     expect(str).toContain('USDC');
-    expect(str).toContain('0');
+    // Количество позиций — строго "positions=0", не просто символ '0'
+    expect(str).toContain('positions=0');
+  });
+
+  it('отражает актуальное количество позиций', () => {
+    const instrumentId = makeInstrumentId('instrument-1');
+    const positions = new Map([[instrumentId, makeOpenPosition(instrumentId)]]);
+    const result = makePortfolio({ positions });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const str = result.value.toString();
+    expect(str).toContain('positions=1');
   });
 });
 

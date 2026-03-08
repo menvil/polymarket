@@ -162,7 +162,9 @@ export class Portfolio {
     this.id = params.id;
     this.accountId = params.accountId;
     this.balance = params.balance;
-    this.positions = params.positions ?? new Map<InstrumentId, IPosition>();
+    this.positions = params.positions
+      ? new Map(params.positions)
+      : new Map<InstrumentId, IPosition>();
   }
 
   /**
