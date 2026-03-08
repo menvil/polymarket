@@ -31,13 +31,18 @@
 import type { InstrumentId } from '@polymarket/ids';
 import { Money, type SupportedCurrency } from '@polymarket/value-objects/money';
 import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
+import { Price } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
 import type { IPosition } from '../Portfolio.js';
 
 /**
  * Функция-провайдер текущих цен
+ *
+ * @remarks
+ * Возвращает типобезопасный Price VO, а не duck-typed `{ value(): Decimal }`.
+ * Caller обязан предоставить валидный Price (в диапазоне [0.0001, 0.9999]).
  */
-export type PriceProvider = (instrumentId: InstrumentId) => { value(): Decimal } | undefined;
+export type PriceProvider = (instrumentId: InstrumentId) => Price | undefined;
 
 /**
  * Считает суммарную стоимость позиций портфеля

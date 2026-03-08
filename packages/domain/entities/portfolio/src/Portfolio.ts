@@ -79,6 +79,7 @@
  */
 
 import Decimal from 'decimal.js';
+import type { Price } from '@polymarket/value-objects';
 import { Result, Ok, Err } from '@polymarket/result';
 import type { InstrumentId, AccountId } from '@polymarket/ids';
 import { InvalidBalanceError } from '@polymarket/errors';
@@ -116,10 +117,10 @@ export interface IPosition {
   /**
    * Вычисляет unrealized P&L для заданной текущей цены
    *
-   * @param currentPrice - Объект с методом value(): Decimal
-   * @returns Объект с методом value(): Decimal
+   * @param currentPrice - Текущая цена инструмента (Price VO)
+   * @returns Объект с методом value(): Decimal (совместим с SignedQuantity)
    */
-  getUnrealizedPnL(currentPrice: { value(): Decimal }): { value(): Decimal };
+  getUnrealizedPnL(currentPrice: Price): { value(): Decimal };
 }
 
 /**
