@@ -193,9 +193,11 @@ export function computeClose(
  *
  * @example
  * ```typescript
+ * import Decimal from 'decimal.js';
+ *
  * const lots = [
- *   PositionLot.create({ quantity: Quantity.of(50), entryPrice: Price.of(0.60), ... }),
- *   PositionLot.create({ quantity: Quantity.of(50), entryPrice: Price.of(0.70), ... }),
+ *   PositionLot.create({ quantity: Quantity.of(new Decimal(50)), entryPrice: Price.of(new Decimal(0.60)), timestamp }),
+ *   PositionLot.create({ quantity: Quantity.of(new Decimal(50)), entryPrice: Price.of(new Decimal(0.70)), timestamp }),
  * ];
  *
  * const avgPrice = calculateWeightedAveragePrice(lots);
