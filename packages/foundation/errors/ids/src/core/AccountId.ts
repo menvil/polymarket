@@ -666,14 +666,9 @@ function parseAccountIdImpl(
       return undefined;
     }
 
-    // Нормализуем в canonical lowercase формат независимо от результата validator'а:
-    // кастомный validator может вернуть non-lowercase строку (e.g. `raw as WalletAddress`),
-    // поэтому всегда приводим к lowercase чтобы walletAddressEquals (строгое равенство) работал корректно
-    const normalizedAddress = validatedAddress.toLowerCase() as WalletAddress;
-
     return Object.freeze({
       kind: 'WALLET',
-      address: normalizedAddress,
+      address: validatedAddress,
     });
   }
 

@@ -1,0 +1,87 @@
+{
+  "name": "@polymarket/errors",
+  "version": "0.1.0",
+  "description": "Foundation error handling package for Polymarket trading system",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./base": {
+      "types": "./dist/base/index.d.ts",
+      "import": "./dist/base/index.js"
+    },
+    "./value-objects": {
+      "types": "./dist/value-objects/index.d.ts",
+      "import": "./dist/value-objects/index.js"
+    },
+    "./market": {
+      "types": "./dist/market/index.d.ts",
+      "import": "./dist/market/index.js"
+    },
+    "./orderbook": {
+      "types": "./dist/orderbook/index.d.ts",
+      "import": "./dist/orderbook/index.js"
+    },
+    "./portfolio": {
+      "types": "./dist/portfolio/index.d.ts",
+      "import": "./dist/portfolio/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:watch": "tsc -p tsconfig.build.json --watch",
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "smoke:check": "node --input-type=module -e \"import('@polymarket/errors')\" && node --input-type=module -e \"import('@polymarket/errors/base')\" && node --input-type=module -e \"import('@polymarket/errors/value-objects')\" && node --input-type=module -e \"import('@polymarket/errors/market')\"",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "lint:tests": "eslint __tests__ --ext .ts",
+    "lint:tests:fix": "eslint __tests__ --ext .ts --fix",
+    "lint:all": "eslint src __tests__ --ext .ts",
+    "lint:all:fix": "eslint src __tests__ --ext .ts --fix",
+    "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.lint.json --noEmit",
+    "typecheck:all": "npm run typecheck && npm run typecheck:tests",
+    "lint:md": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc \"docs/**/*.md\" \"README.md\"",
+    "lint:md:fix": "markdownlint-cli2 --config ../../../.markdownlint-cli2.jsonc --fix \"docs/**/*.md\" \"README.md\"",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "keywords": [
+    "errors",
+    "error-handling",
+    "trading",
+    "polymarket",
+    "foundation"
+  ],
+  "author": "Ivan Moroz",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/jest": "^29.5.0",
+    "typescript": "^5.3.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.1.0",
+    "ts-node": "^10.9.0",
+    "@jest/globals": "^29.7.0",
+    "eslint": "^8.0.0",
+    "@typescript-eslint/eslint-plugin": "^6.0.0",
+    "@typescript-eslint/parser": "^6.0.0",
+    "markdownlint-cli2": "^0.20.0"
+  },
+  "dependencies": {
+    "@polymarket/result": "^0.1.0",
+    "decimal.js": "^10.6.0"
+  },
+  "publishConfig": {
+    "access": "restricted"
+  }
+}

@@ -40,28 +40,9 @@ import { Result, Ok, Err } from '@polymarket/result';
 ### 1. Базовое использование
 
 ```typescript
-import { InvalidTimestampError } from '@polymarket/errors';
-import { Result, Ok, Err } from '@polymarket/result';
+import { TimestampService } from '@polymarket/value-objects/timestamp';
 
-// Пример: как InvalidTimestampError используется внутри TimestampService
-class TimestampService {
-  static create(ms: number): Result<number, InvalidTimestampError> {
-    // автоматически truncate дробные значения
-    const trunc = Math.trunc(ms);
-    if (!isFinite(ms) || isNaN(ms)) {
-      return Err(new InvalidTimestampError('Invalid timestamp format', {
-        context: { value: ms, reason: 'INVALID_FORMAT' }
-      }));
-    }
-    if (ms < 0) {
-      return Err(new InvalidTimestampError('Timestamp cannot be negative', {
-        context: { value: ms, reason: 'NOT_POSITIVE' }
-      }));
-    }
-    return Ok(trunc);
-  }
-}
-
+// TimestampService.create() автоматически truncate дробные значения
 const result = TimestampService.create(1609459200000.789);
 
 if (!result.ok) {
@@ -70,36 +51,14 @@ if (!result.ok) {
   return;
 }
 
-const epochMs = result.value;
-console.log(new Date(epochMs).toISOString()); // "2021-01-01T00:00:00.000Z"
+const timestamp = result.value;
+console.log(timestamp.toISO()); // "2021-01-01T00:00:00.000Z"
 ```
 
 ### 2. Обработка невалидных значений
 
 ```typescript
-import { InvalidTimestampError } from '@polymarket/errors';
-import { Result, Ok, Err } from '@polymarket/result';
-
-class TimestampService {
-  static create(ms: number): Result<number, InvalidTimestampError> {
-    if (!isFinite(ms) || isNaN(ms)) {
-      return Err(new InvalidTimestampError('Invalid timestamp format', {
-        context: { value: ms, reason: 'INVALID_FORMAT' }
-      }));
-    }
-    if (ms < 0) {
-      return Err(new InvalidTimestampError('Timestamp cannot be negative', {
-        context: { value: ms, reason: 'NOT_POSITIVE' }
-      }));
-    }
-    if (ms > 9999999999999) {
-      return Err(new InvalidTimestampError('Timestamp out of range', {
-        context: { value: ms, reason: 'OUT_OF_RANGE' }
-      }));
-    }
-    return Ok(Math.trunc(ms));
-  }
-}
+import { TimestampService } from '@polymarket/value-objects/timestamp';
 
 function processTimestamp(value: number) {
   const result = TimestampService.create(value);
@@ -145,6 +104,15 @@ class TimestampService {
   static fromDate(date: Date): Result<Timestamp, InvalidTimestampError> {
     const ms = date.getTime();
     return TimestampService.create(ms);
+  }
+
+  static now(clock?: IClock): Timestamp {
+    // Never throws - использует fallback на Date.now() при ошибках
+    try {
+      return Timestamp.now(clock);
+    } catch {
+      return Timestamp.of(new Decimal(Date.now()));
+    }
   }
 }
 
@@ -194,20 +162,28 @@ const quoteResult = createQuote(0.45, 0.55, Date.now());
 ### 5. Проверка устаревания (staleness)
 
 ```typescript
+import { TimestampService } from '@polymarket/value-objects/timestamp';
+import Decimal from 'decimal.js';
+
 // Создание timestamp 5 секунд назад
 const quoteResult = TimestampService.create(Date.now() - 5000);
 
 if (quoteResult.ok) {
   const quoteTimestamp = quoteResult.value;
-  const now = Date.now();
+  const now = TimestampService.now();
 
-  const ageMs = now - quoteTimestamp;
-  const maxAge = 3000; // 3 секунды
+  // diffMs возвращает Decimal
+  const ageMs = TimestampService.diffMs(now, quoteTimestamp);
+  const maxAge = new Decimal(3000); // 3 секунды
 
-  if (ageMs > maxAge) {
+  if (ageMs.greaterThan(maxAge)) {
     console.log('Quote is stale');
-    console.log(`Age: ${ageMs}ms`);
+    console.log(`Age: ${ageMs.toNumber()}ms`);
   }
+
+  // Или через метод Timestamp
+  const ageMsAlt = now.diffMs(quoteTimestamp);
+  console.log(`Alternative age: ${ageMsAlt.toNumber()}ms`);
 }
 ```
 
@@ -267,6 +243,7 @@ class TimestampService {
         new InvalidTimestampError(
           (ctx) => `Invalid ISO string: "${ctx.value}"`,
           {
+            code: InvalidTimestampError.code,
             context: { value: iso, reason: 'INVALID_ISO' }
           }
         )

@@ -1,0 +1,346 @@
+# @polymarket/math - Документация
+
+Чистые математические операции с Decimal.js для торговой системы Polymarket.
+
+## Содержание
+
+- [Decimal Operations](./decimal/README.md) — Арифметические операции
+- [Rounding Operations](./rounding/README.md) — Операции округления к tick size
+- [Validation Utilities](./validation/README.md) — Валидация чисел
+- [Shared Assertion Helpers](./shared/assertions.md) — Внутренние утилиты валидации операндов
+
+## Быстрая навигация
+
+### Реализованные функции
+
+| Функция | Категория | Описание | Документация |
+|---------|-----------|----------|--------------|
+| `addDecimal(a, b)` | Decimal | Сложение двух чисел | [→](./decimal/add.md) |
+| `subtractDecimal(a, b)` | Decimal | Вычитание чисел | [→](./decimal/subtract.md) |
+| `multiplyDecimal(a, b)` | Decimal | Умножение чисел | [→](./decimal/multiply.md) |
+| `divideDecimal(a, b)` | Decimal | Деление чисел | [→](./decimal/divide.md) |
+| `averageDecimal(a, b)` | Decimal | Среднее значение | [→](./decimal/average.md) |
+| `compareDecimal(a, b)` | Decimal | Сравнение чисел | [→](./decimal/compare.md) |
+| `equalsDecimal(a, b)` | Decimal | Строгое равенство | [→](./decimal/compare.md#equalsdecimal) |
+| `lessThan/greaterThan...` | Decimal | Операторы сравнения | [→](./decimal/compare.md) |
+| `roundDecimal(value)` | Decimal | Округление half-up | [→](./decimal/round.md) |
+| `roundTowardZeroDecimal(value)` | Decimal | Округление к нулю | [→](./decimal/round.md#roundtowardzerodecimal) |
+| `roundAwayFromZeroDecimal(value)` | Decimal | Округление от нуля | [→](./decimal/round.md#roundawayfromzerodecimal) |
+| `truncDecimal(value)` | Decimal | Отбрасывание дробной части | [→](./decimal/round.md#truncdecimal) |
+| `mathFloorDecimal(value)` | Decimal | Math floor (к -Infinity) | [→](./decimal/round.md#mathfloordecimal) |
+| `mathCeilDecimal(value)` | Decimal | Math ceil (к +Infinity) | [→](./decimal/round.md#mathceildecimal) |
+| `roundToTick(value, tickSize, roundingMode)` | Rounding | Округление к tick size | [→](./rounding/README.md#roundtotick) |
+| `floorToTick(value, tickSize)` | Rounding | Floor к tick size | [→](./rounding/README.md#floortotick) |
+| `ceilToTick(value, tickSize)` | Rounding | Ceil к tick size | [→](./rounding/README.md#ceiltotick) |
+| `mathFloorToTick(value, tickSize)` | Rounding | Math floor к tick | [→](./rounding/README.md#mathfloortotick) |
+| `mathCeilToTick(value, tickSize)` | Rounding | Math ceil к tick | [→](./rounding/README.md#mathceiltotick) |
+| `roundToPrecision(value, places, roundingMode)` | Rounding | Округление до N знаков | [→](./rounding/README.md#roundtoprecision) |
+| `isFiniteDecimal(value)` | Validation | Проверка конечности | [→](./validation/README.md#isfinitedecimal) |
+| `isPositiveDecimal(value)` | Validation | Проверка > 0 | [→](./validation/README.md#ispositivedecimal) |
+| `isNonNegativeDecimal(value)` | Validation | Проверка >= 0 | [→](./validation/README.md#isnonnegativedecimal) |
+| `isZeroDecimal(value)` | Validation | Проверка === 0 | [→](./validation/README.md#iszerodecimal) |
+| `assertFiniteOperandWith(v, name, ctx, Ctor)` | Shared | Generic assertion операнда | [→](./shared/assertions.md#assertfiniteoperandwith) |
+| `assertFiniteOperands(a, b, ctx)` | Shared | Assertion обоих операндов | [→](./shared/assertions.md#assertfiniteoperands) |
+| `assertNonZeroDivisor(divisor, ctx)` | Shared | Assertion делителя (централизованно) | [→](./shared/assertions.md#assertnonzerodivisor) |
+| `withResult(ctx, result)` | Shared | Добавление result к контексту | [→](./shared/assertions.md#withresult) |
+
+## Философия пакета
+
+### Core Layer - Чистая математика
+
+`@polymarket/math` находится на **Core Layer** архитектуры и предоставляет чистые математические функции:
+
+```
+┌─────────────────────────────────────┐
+│  Application Layer                  │  ← Бизнес-логика приложения
+├─────────────────────────────────────┤
+│  Domain Layer (Value Objects)       │  ← Result pattern, бизнес-валидация
+├─────────────────────────────────────┤
+│  Core Layer (@polymarket/math)      │  ← Чистые функции, throw на невозможности
+└─────────────────────────────────────┘
+```
+
+**Что делает Core Layer:**
+
+- ✅ Чистые математические операции
+- ✅ Throw на математические невозможности (overflow, division by zero)
+- ✅ Высокая точность с Decimal.js
+- ✅ Без зависимости от бизнес-контекста
+
+**Что НЕ делает Core Layer:**
+
+- ❌ Не проверяет бизнес-правила (min/max значения)
+- ❌ Не использует Result pattern (это для Domain Layer)
+- ❌ Не зависит от других domain concepts
+
+### Пример разделения ответственности
+
+```typescript
+// ❌ Неправильно: математика проверяет бизнес-правила
+function addDecimal(a: Decimal, b: Decimal): Decimal {
+  if (a.isNegative()) {
+    throw new Error('Negative values not allowed'); // Бизнес-правило!
+  }
+  return a.plus(b);
+}
+
+// ✅ Правильно: математика = чистая функция
+function addDecimal(a: Decimal, b: Decimal): Decimal {
+  const result = a.plus(b);
+  if (!result.isFinite()) {
+    throw new ArithmeticOverflowError('Overflow'); // Математическая невозможность
+  }
+  return result;
+}
+
+// Бизнес-правила - в Value Objects (Domain Layer)
+class Price {
+  private constructor(private readonly value: Decimal) {}
+
+  static fromDecimal(value: Decimal): Result<Price, ValidationError> {
+    // Бизнес-валидация: цена должна быть в [0.0001, 0.9999]
+    if (value.lessThan(0.0001) || value.greaterThan(0.9999)) {
+      return Err(new InvalidPriceError('Price out of range'));
+    }
+    return Ok(new Price(value));
+  }
+
+  add(other: Price): Result<Price, ValidationError> {
+    // Используем чистую математику из Core Layer
+    const sum = addDecimal(this.value, other.value);
+
+    // Применяем бизнес-правила в Domain Layer
+    return Price.fromDecimal(sum);
+  }
+}
+```
+
+## Принципы дизайна
+
+### 1. Throw vs Result
+
+**В @polymarket/math используется throw:**
+
+```typescript
+// Математическая невозможность = throw
+// Все проверки делителя централизованы в assertNonZeroDivisor
+function divideDecimal(a: Decimal, b: Decimal): Decimal {
+  const context = { operation: 'divide', a: toStringSafe(a), b: toStringSafe(b) };
+  assertFiniteOperandWith(a, 'a', context, InvalidOperandError); // NaN/Infinity → throw
+  assertNonZeroDivisor(b, context); // NaN/Infinity/0 → throw
+  const result = a.div(b);
+  assertFiniteResult(result, withResult(context, result)); // overflow → throw
+  return result;
+}
+```
+
+**В Value Objects используется Result:**
+
+```typescript
+// Бизнес-правило = Result
+class Price {
+  divide(divisor: Price): Result<Price, ValidationError> {
+    try {
+      const result = divideDecimal(this.value, divisor.value);
+      return Price.fromDecimal(result); // Может вернуть Err
+    } catch (error) {
+      if (InvalidDivisorError.is(error)) {
+        return Err(new ValidationError('Division failed'));
+      }
+      throw error;
+    }
+  }
+}
+```
+
+### 2. Чистые функции
+
+Все функции в `@polymarket/math`:
+
+- Не имеют побочных эффектов
+- Детерминированные (одинаковый вход → одинаковый выход при одинаковой конфигурации Decimal.js)
+- Зависят от глобальной конфигурации Decimal.js (precision, rounding) - по умолчанию precision=20
+- Легко тестируются
+- Легко композируются
+
+```typescript
+// ✅ Чистая функция
+function addDecimal(a: Decimal, b: Decimal): Decimal {
+  return a.plus(b);
+}
+
+// ❌ НЕ чистая функция
+let counter = 0;
+function addDecimalWithLogging(a: Decimal, b: Decimal): Decimal {
+  counter++; // Побочный эффект
+  console.log('Adding:', a, b); // Побочный эффект
+  return a.plus(b);
+}
+```
+
+### 3. Математические свойства
+
+Функции сохраняют математические свойства (с оговорками):
+
+```typescript
+// Коммутативность - ВСЕГДА сохраняется
+addDecimal(a, b) === addDecimal(b, a)
+multiplyDecimal(a, b) === multiplyDecimal(b, a)
+
+// Ассоциативность - может нарушаться при ограниченной precision
+// При стандартной precision (20 цифр) сохраняется для большинства случаев
+addDecimal(addDecimal(a, b), c) ≈ addDecimal(a, addDecimal(b, c))
+
+// Нейтральный элемент - ВСЕГДА сохраняется
+addDecimal(a, MATH_CONSTANTS.ZERO) === a
+multiplyDecimal(a, MATH_CONSTANTS.ONE) === a
+```
+
+**Важно:** Ассоциативность и дистрибутивность могут нарушаться из-за округления при каждой операции согласно настроенной `precision`. Коммутативность и свойства нейтральных элементов гарантированы всегда.
+
+## Использование
+
+### Установка
+
+```bash
+npm install @polymarket/math
+```
+
+### Импорты
+
+```typescript
+// Отдельные функции
+import { addDecimal, divideDecimal } from '@polymarket/math';
+
+// Константы
+import { MATH_CONSTANTS } from '@polymarket/math';
+
+// Из подмодулей
+import { addDecimal } from '@polymarket/math/decimal';
+import { roundToTick } from '@polymarket/math/rounding';
+```
+
+### Базовый пример
+
+```typescript
+import Decimal from 'decimal.js';
+import { addDecimal, MATH_CONSTANTS } from '@polymarket/math';
+
+const price = new Decimal('0.65');
+const increment = MATH_CONSTANTS.ONE;
+
+const newPrice = addDecimal(price, increment);
+console.log(newPrice.toString()); // "1.65"
+```
+
+## Интеграция с другими пакетами
+
+### @polymarket/errors
+
+Математические функции используют ошибки из `@polymarket/errors`:
+
+```typescript
+import { addDecimal } from '@polymarket/math';
+import { InvalidOperandError, ArithmeticOverflowError } from '@polymarket/errors';
+
+try {
+  // Пример 1: Invalid operand (Infinity в операнде)
+  const result1 = addDecimal(new Decimal(Infinity), new Decimal(100));
+} catch (error) {
+  if (InvalidOperandError.is(error)) {
+    console.error('Invalid operand:', error.context);
+  }
+}
+
+try {
+  // Пример 2: Arithmetic overflow (результат операции превышает пределы)
+  const huge1 = new Decimal('9e9000000000000000');
+  const huge2 = new Decimal('9e9000000000000000');
+  const result2 = addDecimal(huge1, huge2); // Результат = Infinity
+} catch (error) {
+  if (ArithmeticOverflowError.is(error)) {
+    console.error('Arithmetic overflow:', error.context);
+  }
+}
+```
+
+**Используемые ошибки:**
+
+- `InvalidOperandError` - операнд не конечное число (NaN, Infinity в параметрах)
+- `ArithmeticOverflowError` - результат операции не конечен (overflow/underflow)
+- `InvalidDivisorError` - делитель NaN/Infinity (специальный случай InvalidOperandError)
+- `DivisionByZeroError` - деление на ноль
+- `InvalidTickSizeError` - tick size <= 0 или не конечен
+- `InvalidDecimalPlacesError` - decimalPlaces невалидно (отрицательное, не integer, превышает лимит)
+- `InvalidRoundingModeError` - roundingMode невалидный (не integer, вне диапазона [0, 8])
+
+### @polymarket/value-objects
+
+Value Objects используют math функции для вычислений:
+
+```typescript
+import { addDecimal } from '@polymarket/math';
+import { Price } from '@polymarket/value-objects';
+
+class Price {
+  add(other: Price): Result<Price, ValidationError> {
+    // 1. Чистая математика (Core Layer)
+    const sum = addDecimal(this.value, other.value);
+
+    // 2. Бизнес-валидация (Domain Layer)
+    return Price.fromDecimal(sum);
+  }
+}
+```
+
+## Best Practices
+
+### 1. Используйте константы
+
+```typescript
+// ✅ Хорошо
+import { MATH_CONSTANTS } from '@polymarket/math';
+const result = addDecimal(value, MATH_CONSTANTS.ONE);
+
+// ❌ Плохо
+const result = addDecimal(value, new Decimal(1));
+```
+
+### 2. Обрабатывайте ошибки
+
+```typescript
+// ✅ Хорошо
+try {
+  const result = divideDecimal(a, b);
+} catch (error) {
+  if (InvalidDivisorError.is(error)) {
+    // Специфичная обработка
+  }
+  throw error;
+}
+
+// ❌ Плохо
+const result = divideDecimal(a, b); // Может упасть
+```
+
+### 3. Минимизируйте преобразования
+
+```typescript
+// ✅ Хорошо: работаем с Decimal
+function sum(values: Decimal[]): Decimal {
+  return values.reduce(addDecimal, MATH_CONSTANTS.ZERO);
+}
+
+// ❌ Плохо: конвертируем туда-обратно
+function sum(values: number[]): number {
+  return values.reduce((a, b) =>
+    addDecimal(new Decimal(a), new Decimal(b)).toNumber(), 0
+  );
+}
+```
+
+## Дальнейшее изучение
+
+- [Decimal Operations](./decimal/README.md) - Полная документация арифметических операций
+- [addDecimal](./decimal/add.md) - Детальная документация по сложению
+- [Decimal.js Docs](https://mikemcl.github.io/decimal.js/) - Документация Decimal.js
