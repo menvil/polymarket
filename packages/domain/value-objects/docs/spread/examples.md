@@ -190,7 +190,8 @@ console.log(validateOrderBook(0.55, 0.45));  // { valid: false, error: 'CROSSED_
 ### Динамическое управление спредом
 
 ```typescript
-import { SpreadService, Spread } from '@polymarket/value-objects';
+import type { Result } from '@polymarket/result';
+import { SpreadService, Spread, InvalidSpreadError } from '@polymarket/value-objects';
 
 interface MarketConditions {
   volatility: number;      // 0-1
@@ -264,7 +265,7 @@ function* tightenSpreadGradually(
   targetWidthBps: number,
   steps: number
 ) {
-  const initialWidthBps = initialSpread.widthRatio().toDecimal().times(10000);
+  const initialWidthBps = initialSpread.widthRatio().toDecimal().times(10000).toNumber();
   const stepSize = (initialWidthBps - targetWidthBps) / steps / 100;
   
   let currentSpread = initialSpread;
@@ -390,7 +391,7 @@ function compareMarketLiquidity(markets: Market[]) {
       };
     })
     .filter((m): m is NonNullable<typeof m> => m !== null)
-    .sort((a, b) => a.widthBps - b.widthBps);  // Сортировка по ликвидности
+    .sort((a, b) => a.widthBps.toNumber() - b.widthBps.toNumber());  // Сортировка по ликвидности
 }
 
 // Пример
@@ -553,7 +554,7 @@ console.log(validateUserSpread('0.48', '0.52'));
 // { valid: true, spread: Spread { ... } }
 
 console.log(validateUserSpread('1.5', '0.52'));
-// { valid: false, field: 'bid', message: 'Bid цена должна быть...' }
+// { valid: false, field: 'both', message: 'Невалидные значения спреда' }
 
 console.log(validateUserSpread('0.60', '0.50'));
 // { valid: false, field: 'both', message: 'Bid (0.6) не может быть больше Ask (0.5)' }
@@ -619,7 +620,8 @@ console.log(displayMarketData({}));
 ### Кэширование вычислений
 
 ```typescript
-import { Spread, SpreadService } from '@polymarket/value-objects';
+import { Spread, SpreadService, InvalidSpreadError } from '@polymarket/value-objects';
+import { Result, Ok } from '@polymarket/result';
 
 class SpreadCache {
   private cache = new Map<string, Spread>();
@@ -688,17 +690,25 @@ if (spread1.ok && spread2.ok) {
 ```typescript
 import { SpreadService } from '@polymarket/value-objects';
 
-const original = SpreadService.fromValues(0.48, 0.52).value;
+const originalRes = SpreadService.fromValues(0.48, 0.52);
+if (!originalRes.ok) throw new Error('Invalid spread');
+const original = originalRes.value;
 
 // Операция tighten
-const tightened = SpreadService.tighten(original, 0.01).value;
+const tightenedRes = SpreadService.tighten(original, 0.01);
+if (!tightenedRes.ok) throw new Error('Tighten failed');
+const tightened = tightenedRes.value;
 
 // Проверка результата — строгое сравнение
-const expected = SpreadService.fromValues(0.49, 0.51).value;
+const expectedRes = SpreadService.fromValues(0.49, 0.51);
+if (!expectedRes.ok) throw new Error('Invalid expected spread');
+const expected = expectedRes.value;
 console.log(tightened.equals(expected));  // true — точное совпадение
 
 // Неточное совпадение НЕ считается равным
-const almostSame = SpreadService.fromValues(0.49000001, 0.51).value;
+const almostSameRes = SpreadService.fromValues(0.49000001, 0.51);
+if (!almostSameRes.ok) throw new Error('Invalid spread');
+const almostSame = almostSameRes.value;
 console.log(tightened.equals(almostSame));  // false
 ```
 
@@ -709,7 +719,10 @@ import { SpreadService } from '@polymarket/value-objects';
 
 describe('Spread operations', () => {
   it('should tighten spread correctly', () => {
-    const spread = SpreadService.fromValues(0.48, 0.52).value;
+    const spreadResult = SpreadService.fromValues(0.48, 0.52);
+    expect(spreadResult.ok).toBe(true);
+    if (!spreadResult.ok) return;
+    const spread = spreadResult.value;
     const result = SpreadService.tighten(spread, 0.01);
 
     expect(result.ok).toBe(true);
@@ -739,10 +752,15 @@ describe('Spread operations', () => {
 **Когда это важно:**
 
 ```typescript
+// import { SpreadSerializer } from '@polymarket/value-objects';
 // Проверка после сериализации/десериализации
-const original = SpreadService.fromValues(0.48, 0.52).value;
+const origResult = SpreadService.fromValues(0.48, 0.52);
+if (!origResult.ok) throw new Error('Invalid spread');
+const original = origResult.value;
 const json = SpreadSerializer.toJSON(original);
-const restored = SpreadSerializer.fromJSON(json).value;
+const restoredResult = SpreadSerializer.fromJSON(json);
+if (!restoredResult.ok) throw new Error('Failed to restore spread');
+const restored = restoredResult.value;
 
 // Roundtrip должен быть идентичным
 console.log(original.equals(restored));  // true — точное восстановление

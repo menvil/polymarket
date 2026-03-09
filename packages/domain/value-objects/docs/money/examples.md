@@ -144,7 +144,7 @@ function calculateTotalSpent(transactions: Money[]): Money | { error: string } {
   }
 
   // Накапливаем сумму
-  let total = Money.ZERO[currency];
+  let total = Money.of(new Decimal(0), currency);
 
   for (const transaction of transactions) {
     const result = MoneyService.add(total, transaction);

@@ -65,7 +65,7 @@ describe('AssetQuantityFormatter', () => {
       expect(display).toContain('50');
       expect(display).toContain('UP');
       expect(display).toContain(KnownOnChainProtocols.POLYMARKET_CTF);
-      expect(display).toContain('137');
+      expect(display).toContain(KnownChainIds.POLYGON.toString());
       expect(display).toContain('0x1234'); // сокращенный conditionId
     });
   });

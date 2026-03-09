@@ -203,6 +203,7 @@ describe('Fee', () => {
       const tokenFee = Fee.of(new AssetQuantity(tokenAssetResult.value, Quantity.of(new Decimal('0.05'))));
 
       // Should throw FeeOperationError with ASSET_MISMATCH reason
+      expect.assertions(6);
       expect(() => usdcFee.add(tokenFee)).toThrow(FeeOperationError);
 
       try {

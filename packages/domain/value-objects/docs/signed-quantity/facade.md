@@ -226,10 +226,10 @@ if (aResult.ok && bResult.ok) {
     console.log(sum.value.toNumber()); // 70
   }
 
-  // Результат может быть отрицательным
-  const sum2 = SignedQuantityService.add(b, a);
+  // Результат может быть отрицательным (два отрицательных числа)
+  const sum2 = SignedQuantityService.add(b, b);
   if (sum2.ok) {
-    console.log(sum2.value.toNumber()); // 70
+    console.log(sum2.value.toNumber()); // -60
   }
 }
 

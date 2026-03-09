@@ -129,7 +129,7 @@ import { TimestampErrorReason } from '@polymarket/value-objects';
 enum TimestampErrorReason {
   INVALID_FORMAT = 'INVALID_FORMAT',  // Не удалось распарсить значение
   NOT_FINITE     = 'NOT_FINITE',      // NaN или ±Infinity
-  NOT_POSITIVE   = 'NOT_POSITIVE',    // < 0 (Unix timestamp не может быть отрицательным)
+  NOT_POSITIVE   = 'NOT_POSITIVE',    // < 0 (Unix timestamp должен быть >= 0; 0 допустим)
   NOT_INTEGER    = 'NOT_INTEGER',     // Дробное число (не integer milliseconds)
   OUT_OF_RANGE   = 'OUT_OF_RANGE',   // > 9999999999999 (~год 2286)
   INVALID_ISO    = 'INVALID_ISO',     // Невалидная ISO 8601 строка

@@ -83,19 +83,9 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
       }
     });
 
-    it('помечает нарушения инвариантов Balance', () => {
-      // BalanceService.create требует Money объекты
-      const availableResult = MoneyService.create(-100, 'USDC');
-      if (availableResult.ok) {
-        // Если MoneyService принял -100 (что не должно быть), тест не применим
-        return;
-      }
-
-      // Проверяем, что ошибка от MoneyService имеет source=core_invariant
-      const ctx = availableResult.error.context as ErrorContext;
-      expect(ctx?.source).toBe(ErrorSource.CORE_INVARIANT);
-      expect(ctx?.reason).toBeDefined();
-    });
+    // MoneyService намеренно допускает отрицательные значения (balance может быть отрицательным).
+    // CORE_INVARIANT для BalanceService проверяется в отдельных тестах BalanceService.test.ts.
+    it.todo('помечает нарушения инвариантов Balance (BalanceService)');
   });
 
   describe('ErrorSource.RULE_VALIDATION', () => {
@@ -193,13 +183,13 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
       expect(qtyResult.ok).toBe(true);
       if (!qtyResult.ok) return;
 
-      // Divide by очень маленькое число может вызвать overflow
+      // Деление на ноль гарантированно возвращает Err (division by zero)
       const divResult = QuantityService.divide(
         qtyResult.value,
-        new Decimal('0.00000000001')
+        new Decimal(0)
       );
 
-      // Проверяем наличие opChain независимо от результата
+      expect(divResult.ok).toBe(false);
       if (!divResult.ok) {
         const ctx = divResult.error.context as ErrorContext;
         expect(ctx?.opChain).toBeDefined();

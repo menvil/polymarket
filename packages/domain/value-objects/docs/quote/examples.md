@@ -491,10 +491,14 @@ if (parseResult.ok) {
 
 ```typescript
 // Создание → Сериализация → Десериализация
-const original = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET', 1234567890000).value;
+const createResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET', 1234567890000);
+if (!createResult.ok) throw new Error(`Failed to create quote: ${createResult.error.message}`);
+const original = createResult.value;
 
 const jsonString = QuoteSerializer.toJSONString(original);
-const restored = QuoteSerializer.fromJSONString(jsonString).value;
+const restoreResult = QuoteSerializer.fromJSONString(jsonString);
+if (!restoreResult.ok) throw new Error(`Failed to parse quote: ${restoreResult.error.message}`);
+const restored = restoreResult.value;
 
 // equals() сравнивает рыночные данные
 console.log(original.equals(restored));  // true

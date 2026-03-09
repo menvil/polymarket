@@ -282,7 +282,8 @@ public static shiftWithRefresh(
 import { PaperClock } from '@polymarket/time';
 
 const clock = new PaperClock(new Date('2024-01-15T12:00:00Z'));
-const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
+// Обработка ошибок опущена для краткости; в production всегда проверяй result.ok
+const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value!;
 
 const shifted = QuoteService.shiftWithRefresh(quote, new Decimal(0.01), clock);
 // shifted: bid=0.49, ask=0.53, timestamp=clock.now()

@@ -281,7 +281,7 @@ describe('BalanceService', () => {
       //
       //   expect(result.ok).toBe(false);
       //   if (!result.ok) {
-      //     expect(result.error.context?.op)\.toBe('unfreezeReserved');
+      //     expect(result.error.context?.op).toBe('unfreezeReserved');
       //     expect(result.error.context?.reason).toBe(BalanceErrorReason.CURRENCY_MISMATCH);
       //   }
       // });

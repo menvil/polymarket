@@ -83,6 +83,12 @@ import Decimal from 'decimal.js';
 import { AssetQuantity, Quantity } from '@polymarket/value-objects';
 
 // Накопление gas fees через несколько транзакций
+const transactions = [
+  { gasUsed: 5.0 },
+  { gasUsed: 4.5 },
+  { gasUsed: 3.0 },
+];
+
 let totalGas = FeeService.zero(AssetIdHelpers.USDC);
 
 for (const tx of transactions) {
@@ -99,6 +105,12 @@ console.log(FeeFormatter.toDisplay(totalGas)); // "12.5 USDC"
 // FeeService.create → Result<Fee, InvalidFeeError>
 // FeeService.add    → Result<Fee, FeeOperationError>
 // Храним накопленное Fee отдельно, чтобы не смешивать типы ошибок.
+const transactions = [
+  { gasUsed: '5.0' },
+  { gasUsed: '4.5' },
+  { gasUsed: '3.0' },
+];
+
 let accumulated: Fee = FeeService.zero(AssetIdHelpers.USDC);
 
 for (const tx of transactions) {
@@ -199,6 +211,8 @@ if (restored.ok) {
 ```typescript
 import { FeeSerializer } from '@polymarket/value-objects';
 
+// fetchFeeFromAPI — placeholder: замените на реальный вызов вашего API
+// async function fetchFeeFromAPI(): Promise<unknown> { ... }
 const rawApiResponse: unknown = await fetchFeeFromAPI();
 const result = FeeSerializer.fromUnknown(rawApiResponse);
 
