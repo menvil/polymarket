@@ -40,6 +40,7 @@ export class QuoteInvariantViolation extends Error {
       | 'INCONSISTENT_ASK_SIZE'
   ) {
     super(`Quote invariant violation: ${message}`);
+    Object.setPrototypeOf(this, QuoteInvariantViolation.prototype);
     this.name = 'QuoteInvariantViolation';
     this.reason = reason;
   }

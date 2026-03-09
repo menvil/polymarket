@@ -1,5 +1,4 @@
 import { Quote } from '../core/Quote.js';
-import { Price } from '../../price/core/Price.js';
 
 /**
  * Опции форматирования для котировок
@@ -24,12 +23,12 @@ export interface QuoteFormatOptions {
   includeTimestamp?: boolean;
 
   /**
-   * Показывать spread (по умолчанию: false)
+   * Показывать spread (по умолчанию: true в toDetailed, false в других методах)
    */
   includeSpread?: boolean;
 
   /**
-   * Показывать mid price (по умолчанию: false)
+   * Показывать mid price (по умолчанию: true в toDetailed, false в других методах)
    */
   includeMid?: boolean;
 
@@ -207,9 +206,7 @@ export class QuoteFormatter {
 
       if (includeMid) {
         const midDecimal = spread.mid();
-        // SAFETY: mid математически в границах если bid/ask валидны
-        const mid = Price.of(midDecimal);
-        parts.push(`Mid: ${mid.value().toFixed(priceDecimals)}`);
+        parts.push(`Mid: ${midDecimal.toFixed(priceDecimals)}`);
       }
     }
 
@@ -288,9 +285,7 @@ export class QuoteFormatter {
       lines.push(`Spread ${spreadWidth.toFixed(priceDecimals).padEnd(8)} (${spreadPct.toFixed(2)}%)`);
 
       const midDecimal = spread.mid();
-      // SAFETY: mid математически в границах если bid/ask валидны
-      const mid = Price.of(midDecimal);
-      lines.push(`Mid    ${mid.value().toFixed(priceDecimals)}`);
+      lines.push(`Mid    ${midDecimal.toFixed(priceDecimals)}`);
     }
 
     if (options.includeTimestamp) {
@@ -481,9 +476,11 @@ export class QuoteFormatter {
       if (quote.hasBid()) {
         const bidPrice = quote.bid()!.value().toFixed(priceDecimals);
         return `${bidPrice} (bid only)`;
-      } else {
+      } else if (quote.hasAsk()) {
         const askPrice = quote.ask()!.value().toFixed(priceDecimals);
         return `${askPrice} (ask only)`;
+      } else {
+        return '--';
       }
     }
 

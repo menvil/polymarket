@@ -193,7 +193,12 @@ export class TimestampService {
     } catch {
       // Fallback: если clock вернул невалидное значение, используем Date.now()
       // Это edge case (неправильная реализация IClock), но мы гарантируем Never Throw
-      return Timestamp.of(new Decimal(Date.now()));
+      try {
+        return Timestamp.of(new Decimal(Date.now()));
+      } catch {
+        // Абсолютный fallback: epoch 1ms — всегда валидный Timestamp
+        return Timestamp.of(new Decimal(1));
+      }
     }
   }
 

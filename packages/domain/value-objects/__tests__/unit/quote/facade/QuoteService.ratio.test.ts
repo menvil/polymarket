@@ -319,7 +319,7 @@ describe('QuoteService Ratio Operations', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.MID_UNAVAILABLE);
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
       }
     });
 
@@ -410,7 +410,7 @@ describe('QuoteService Ratio Operations', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe(QuoteErrorReason.MID_UNAVAILABLE);
+        expect(result.error.context?.reason).toBe(QuoteErrorReason.NOT_TWO_SIDED);
       }
     });
 

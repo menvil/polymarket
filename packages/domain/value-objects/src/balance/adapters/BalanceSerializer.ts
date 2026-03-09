@@ -188,8 +188,9 @@ export class BalanceSerializer {
   public static fromJSON(json: unknown): Result<Balance, InvalidBalanceError> {
     // 1. Проверка что json - объект
     if (typeof json !== 'object' || json === null || Array.isArray(json)) {
+      const typeDesc = json === null ? 'null' : Array.isArray(json) ? 'array' : typeof json;
       return Err(
-        new InvalidBalanceError(`Expected object, got ${typeof json}`, {
+        new InvalidBalanceError(`Expected object, got ${typeDesc}`, {
           context: {
             source: ErrorSource.PARSING,
             service: BalanceSerializer.SERVICE_NAME,

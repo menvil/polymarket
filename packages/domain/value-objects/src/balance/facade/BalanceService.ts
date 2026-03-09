@@ -512,63 +512,6 @@ export class BalanceService {
   }
 
   /**
-   * Сравнивает два баланса на точное равенство
-   *
-   * @param balance1 - Первый баланс
-   * @param balance2 - Второй баланс
-   * @returns Result с true если балансы равны, false в противном случае
-   *
-   * @remarks
-   * **Strict equality (без epsilon):**
-   * - available1 === available2 (точное равенство)
-   * - reserved1 === reserved2 (точное равенство)
-   * - currency1 === currency2 (точное равенство)
-   * - accountId1 === accountId2 (через accountIdEquals, case-insensitive для wallet address)
-   * - venueId1 === venueId2 (точное равенство строк)
-   *
-   * **Проверки:**
-   * 1. Валюты должны совпадать (иначе CURRENCY_MISMATCH)
-   * 2. Сравнение available через MoneyService.equals()
-   * 3. Сравнение reserved через MoneyService.equals()
-   * 4. Сравнение accountId через accountIdEquals()
-   * 5. Сравнение venueId (прямое сравнение строк)
-   *
-   * **Архитектура:**
-   * Этот метод находится в Facade потому что:
-   * - Использует MoneyService для сравнения
-   * - Возвращает Result (может вернуть ошибку)
-   * - Работает с двумя Balance объектами (не intrinsic state)
-   *
-   * @example
-   * ```typescript
-   * const accountId1: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
-   * const accountId2: AccountId = { kind: 'WALLET', address: '0xABC...' as WalletAddress };
-   * const venueId1: VenueId = 'POLYMARKET' as VenueId;
-   * const venueId2: VenueId = 'KALSHI' as VenueId;
-   *
-   * // Одинаковые балансы - true
-   * const balance1 = Balance.of(Money.of(100, 'USDC'), Money.of(50, 'USDC'), accountId1, venueId1);
-   * const balance2 = Balance.of(Money.of(100, 'USDC'), Money.of(50, 'USDC'), accountId1, venueId1);
-   * const result1 = BalanceService.equals(balance1, balance2);
-   * console.log(result1.value); // true
-   *
-   * // Разный reserved - false
-   * const balance3 = Balance.of(Money.of(100, 'USDC'), Money.of(51, 'USDC'), accountId1, venueId1);
-   * const result2 = BalanceService.equals(balance1, balance3);
-   * console.log(result2.value); // false
-   *
-   * // Разный accountId - false
-   * const balance4 = Balance.of(Money.of(100, 'USDC'), Money.of(50, 'USDC'), accountId2, venueId1);
-   * const result3 = BalanceService.equals(balance1, balance4);
-   * console.log(result3.value); // false
-   *
-   * // Разный venueId - false
-   * const balance5 = Balance.of(Money.of(100, 'USDC'), Money.of(50, 'USDC'), accountId1, venueId2);
-   * const result4 = BalanceService.equals(balance1, balance5);
-   * console.log(result4.value); // false
-   * ```
-   */
-  /**
    * Зачисляет средства в available (кредитование)
    *
    * @param balance - Текущий баланс
@@ -627,6 +570,53 @@ export class BalanceService {
     }, InvalidBalanceError);
   }
 
+  /**
+   * Сравнивает два баланса на точное равенство
+   *
+   * @param balance1 - Первый баланс
+   * @param balance2 - Второй баланс
+   * @returns Result с true если балансы равны, false в противном случае
+   *
+   * @remarks
+   * **Strict equality (без epsilon):**
+   * - available1 === available2 (точное равенство)
+   * - reserved1 === reserved2 (точное равенство)
+   * - currency1 === currency2 (точное равенство)
+   * - accountId1 === accountId2 (через accountIdEquals, case-insensitive для wallet address)
+   * - venueId1 === venueId2 (точное равенство строк)
+   *
+   * **Проверки:**
+   * 1. Валюты должны совпадать (иначе CURRENCY_MISMATCH)
+   * 2. Сравнение available через MoneyService.equals()
+   * 3. Сравнение reserved через MoneyService.equals()
+   * 4. Сравнение accountId через accountIdEquals()
+   * 5. Сравнение venueId (прямое сравнение строк)
+   *
+   * **Архитектура:**
+   * Этот метод находится в Facade потому что:
+   * - Использует MoneyService для сравнения
+   * - Возвращает Result (может вернуть ошибку)
+   * - Работает с двумя Balance объектами (не intrinsic state)
+   *
+   * @example
+   * ```typescript
+   * const accountId1: AccountId = { kind: 'WALLET', address: '0x...' as WalletAddress };
+   * const accountId2: AccountId = { kind: 'WALLET', address: '0xABC...' as WalletAddress };
+   * const venueId1: VenueId = 'POLYMARKET' as VenueId;
+   * const venueId2: VenueId = 'KALSHI' as VenueId;
+   *
+   * // Одинаковые балансы - true
+   * const balance1 = expectOk(BalanceService.create(Money.of(new Decimal(100), 'USDC'), Money.of(new Decimal(50), 'USDC'), accountId1, venueId1));
+   * const balance2 = expectOk(BalanceService.create(Money.of(new Decimal(100), 'USDC'), Money.of(new Decimal(50), 'USDC'), accountId1, venueId1));
+   * const result1 = BalanceService.equals(balance1, balance2);
+   * console.log(result1.value); // true
+   *
+   * // Разный reserved - false
+   * const balance3 = expectOk(BalanceService.create(Money.of(new Decimal(100), 'USDC'), Money.of(new Decimal(51), 'USDC'), accountId1, venueId1));
+   * const result2 = BalanceService.equals(balance1, balance3);
+   * console.log(result2.value); // false
+   * ```
+   */
   public static equals(
     balance1: Balance,
     balance2: Balance

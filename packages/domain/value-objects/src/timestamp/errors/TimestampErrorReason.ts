@@ -16,13 +16,13 @@ export enum TimestampErrorReason {
   NOT_FINITE = 'NOT_FINITE',
 
   /**
-   * Значение не положительное (< 0)
+   * Значение отрицательное (< 0)
    *
    * @remarks
    * Unix epoch начинается с 0 (1970-01-01T00:00:00Z), поэтому 0 - валидное значение.
    * Проверяем что значение >= 0.
    */
-  NOT_POSITIVE = 'NOT_POSITIVE',
+  NEGATIVE = 'NEGATIVE',
 
   /**
    * Значение не является целым числом

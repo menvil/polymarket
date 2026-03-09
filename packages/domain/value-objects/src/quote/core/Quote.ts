@@ -697,6 +697,7 @@ export class Quote {
 
     const mid = this.midOrNull();
     if (!mid) return null;
+    if (mid.isZero()) return null;
 
     const spread = this.spread();
     if (!spread) return null;

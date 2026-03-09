@@ -741,7 +741,7 @@ export class SignedQuantityService {
       if (!allowCrossZero) {
         const validateCrossResult = ValidateDeltaForAdjustByNoCrossZero.check(quantity.value(), rounded);
         if (isErr(validateCrossResult)) {
-          return Err(validateCrossResult.error);
+          return Err(rewrap(SignedQuantityService.SERVICE_NAME, 'adjustBy', ctx, validateCrossResult.error, InvalidSignedQuantityError));
         }
       }
 

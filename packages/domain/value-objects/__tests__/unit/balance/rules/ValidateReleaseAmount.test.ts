@@ -44,8 +44,8 @@ describe('ValidateReleaseAmount', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe(BalanceErrorReason.INSUFFICIENT_RESERVED);
-        expect(result.error.context?.requested).toBe(10000);
-        expect(result.error.context?.reserved).toBe(5000);
+        expect(result.error.context?.releaseAmount).toBe('10000');
+        expect(result.error.context?.reserved).toBe('5000');
       }
     });
 

@@ -166,7 +166,7 @@ describe('Timestamp', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('negative');
-        expect(result.error.context?.reason).toBe('NOT_POSITIVE');
+        expect(result.error.context?.reason).toBe('NEGATIVE');
         expect(result.error.context?.op).toBe('create');
       }
     });
@@ -177,7 +177,7 @@ describe('Timestamp', () => {
       expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('negative');
-        expect(result.error.context?.reason).toBe('NOT_POSITIVE');
+        expect(result.error.context?.reason).toBe('NEGATIVE');
         expect(result.error.context?.op).toBe('create');
       }
     });

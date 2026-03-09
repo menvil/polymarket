@@ -330,10 +330,10 @@ export class QuoteSerializer {
     };
 
     // Шаг 9: Проверка типа bid (number | null)
-    if (typeof bid !== 'number' && bid !== null) {
+    if ((typeof bid !== 'number' || !Number.isFinite(bid)) && bid !== null) {
       return Err(
         new InvalidQuoteError(
-          `Invalid type for field 'bid': expected number or null, got ${typeof bid}`,
+          `Invalid type for field 'bid': expected finite number or null, got ${bid === null ? 'null' : typeof bid === 'number' ? String(bid) : typeof bid}`,
           {
             context: {
               source: ErrorSource.PARSING,
@@ -348,10 +348,10 @@ export class QuoteSerializer {
     }
 
     // Шаг 10: Проверка типа ask (number | null)
-    if (typeof ask !== 'number' && ask !== null) {
+    if ((typeof ask !== 'number' || !Number.isFinite(ask)) && ask !== null) {
       return Err(
         new InvalidQuoteError(
-          `Invalid type for field 'ask': expected number or null, got ${typeof ask}`,
+          `Invalid type for field 'ask': expected finite number or null, got ${ask === null ? 'null' : typeof ask === 'number' ? String(ask) : typeof ask}`,
           {
             context: {
               source: ErrorSource.PARSING,
@@ -366,10 +366,10 @@ export class QuoteSerializer {
     }
 
     // Шаг 11: Проверка типа bidSize
-    if (typeof bidSize !== 'number') {
+    if (typeof bidSize !== 'number' || !Number.isFinite(bidSize)) {
       return Err(
         new InvalidQuoteError(
-          `Invalid type for field 'bidSize': expected number, got ${typeof bidSize}`,
+          `Invalid type for field 'bidSize': expected finite number, got ${typeof bidSize === 'number' ? String(bidSize) : typeof bidSize}`,
           {
             context: {
               source: ErrorSource.PARSING,
@@ -384,10 +384,10 @@ export class QuoteSerializer {
     }
 
     // Шаг 12: Проверка типа askSize
-    if (typeof askSize !== 'number') {
+    if (typeof askSize !== 'number' || !Number.isFinite(askSize)) {
       return Err(
         new InvalidQuoteError(
-          `Invalid type for field 'askSize': expected number, got ${typeof askSize}`,
+          `Invalid type for field 'askSize': expected finite number, got ${typeof askSize === 'number' ? String(askSize) : typeof askSize}`,
           {
             context: {
               source: ErrorSource.PARSING,
@@ -402,10 +402,10 @@ export class QuoteSerializer {
     }
 
     // Шаг 13: Проверка типа timestamp
-    if (typeof timestamp !== 'number') {
+    if (typeof timestamp !== 'number' || !Number.isFinite(timestamp)) {
       return Err(
         new InvalidQuoteError(
-          `Invalid type for field 'timestamp': expected number, got ${typeof timestamp}`,
+          `Invalid type for field 'timestamp': expected finite number, got ${typeof timestamp === 'number' ? String(timestamp) : typeof timestamp}`,
           {
             context: {
               source: ErrorSource.PARSING,

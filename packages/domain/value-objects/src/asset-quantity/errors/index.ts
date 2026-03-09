@@ -2,8 +2,8 @@
  * AssetQuantity Errors
  *
  * @remarks
- * Публичные типы ошибок для использования в application code.
- * InvalidAssetQuantityError теперь в @polymarket/errors.
+ * Public error types for use in application code.
+ * Note: InvalidAssetQuantityError is now provided by @polymarket/errors.
  */
 
 export { AssetQuantityErrorReason } from './AssetQuantityErrorReason.js';

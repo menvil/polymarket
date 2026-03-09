@@ -104,8 +104,8 @@ export class ValidateReserveAmount {
             context: {
               source: ErrorSource.RULE_VALIDATION,
               reason: TokenBalanceErrorReason.INSUFFICIENT_AVAILABLE,
-              requested: amount.toNumber(),
-              available: availableAmount.toNumber()
+              requested: amount.toString(),
+              available: availableAmount.toString()
             }
           }
         )

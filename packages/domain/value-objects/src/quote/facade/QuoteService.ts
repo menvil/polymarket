@@ -948,7 +948,8 @@ export class QuoteService {
       }
 
       // Создаём новую котировку через Core (refreshing timestamp)
-      const newTimestampResult = TimestampService.create(clock.now().getTime());
+      const nowMs = clock.now().getTime();
+      const newTimestampResult = TimestampService.create(nowMs);
       if (isErr(newTimestampResult)) {
         return Err(
           new InvalidQuoteError(newTimestampResult.error.message, {
@@ -957,7 +958,7 @@ export class QuoteService {
               service: QuoteService.SERVICE_NAME,
               op,
               reason: QuoteErrorReason.INVALID_FORMAT,
-              raw: { field: 'timestamp', value: clock.now().getTime() }
+              raw: { field: 'timestamp', value: nowMs }
             }
           })
         );
@@ -1111,7 +1112,7 @@ export class QuoteService {
             {
               context: {
                 source: ErrorSource.SERVICE_CALL,
-                reason: QuoteErrorReason.MID_UNAVAILABLE,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
                 bid: quote.bid()?.value()?.toString() ?? 'null',
                 ask: quote.ask()?.value()?.toString() ?? 'null',
               },
@@ -1129,7 +1130,7 @@ export class QuoteService {
             {
               context: {
                 source: ErrorSource.SERVICE_CALL,
-                reason: QuoteErrorReason.MID_UNAVAILABLE,
+                reason: QuoteErrorReason.NOT_TWO_SIDED,
                 bid: quote.spread()?.bid()?.value()?.toString() ?? 'null',
                 ask: quote.spread()?.ask()?.value()?.toString() ?? 'null',
                 spreadError: spreadRatioResult.error.message,

@@ -69,6 +69,7 @@ export class BalanceInvariantViolation extends Error {
    */
   constructor(message: string, context: { reason: string; [key: string]: unknown }) {
     super(message);
+    Object.setPrototypeOf(this, BalanceInvariantViolation.prototype);
     this.name = 'BalanceInvariantViolation';
     this.reason = context.reason;
 

@@ -62,7 +62,7 @@ describe('TimestampSerializer', () => {
 
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.context?.reason).toBe('NOT_POSITIVE');
+        expect(result.error.context?.reason).toBe('NEGATIVE');
         expect(result.error.context?.op).toBe('create');
         expect(result.error.context?.source).toBeDefined();
       }

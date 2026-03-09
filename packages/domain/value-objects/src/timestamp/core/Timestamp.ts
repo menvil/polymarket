@@ -88,7 +88,7 @@ export class Timestamp {
     if (_ms.lessThan(0)) {
       throw new TimestampInvariantViolation(
         `Timestamp must be non-negative, got: ${_ms.toString()}`,
-        TimestampErrorReason.NOT_POSITIVE
+        TimestampErrorReason.NEGATIVE
       );
     }
 

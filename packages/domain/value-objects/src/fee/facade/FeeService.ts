@@ -138,6 +138,8 @@ export class FeeService {
   /**
    * Создать Fee из AssetQuantity
    *
+   * @internal ТОЛЬКО для внутреннего использования в Core и Facade
+   *
    * @param quantity - Количество актива (должно быть >= 0)
    * @returns Fee
    *

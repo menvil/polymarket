@@ -31,20 +31,13 @@ export class FeeOperationError extends TradingError {
       };
     }
   ) {
-    super(message, {
-      ...options,
-      context: {
-        ...options.context,
-        source: ErrorSource.RULE_VALIDATION,
-        kind: 'FeeOperationError',
-      },
-    });
-    this.name = 'FeeOperationError';
-    // Preserve source and kind from super context
-    this.context = {
+    const ctx = {
       ...options.context,
       source: ErrorSource.RULE_VALIDATION,
       kind: 'FeeOperationError',
     };
+    super(message, { ...options, context: ctx });
+    this.name = 'FeeOperationError';
+    this.context = ctx;
   }
 }

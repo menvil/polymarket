@@ -699,7 +699,7 @@ export class MoneyService {
       return Err(rewrap(
         MoneyService.SERVICE_NAME,
         'decreaseBy',
-        { m: m.value().toString(), delta: negatedDelta.toDecimal().toString(), currency: m.currency() },
+        { amount: m.value().toString(), delta: negatedDelta.toDecimal().toString(), currency: m.currency() },
         result.error,
         InvalidMoneyError
       ));
@@ -767,7 +767,7 @@ export class MoneyService {
       // Multiply: m * rate
       const product = multiplyDecimal(m.value(), rate.toDecimal());
 
-      // Create Money (проверит инварианты: non-negative, finite, max)
+      // Create Money (проверит инварианты: finite, currency, max)
       return this.createFromDecimal(product, m.currency(), 'portion', ctx);
     }, InvalidMoneyError);
   }

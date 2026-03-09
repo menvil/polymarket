@@ -61,8 +61,6 @@ export class ValidateAge {
    * @param clock - IClock для получения текущего времени (dependency injection)
    * @returns Result с void или InvalidQuoteError
    *
-   * @throws {InvalidQuoteError} При превышении максимального возраста
-   *
    * @example
    * ```typescript
    * import { LiveClock } from '@polymarket/time';

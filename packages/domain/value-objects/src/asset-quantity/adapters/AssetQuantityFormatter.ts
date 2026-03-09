@@ -1,3 +1,4 @@
+import Decimal from 'decimal.js';
 import { assetIdToString } from '@polymarket/ids';
 import { AssetQuantity } from '../core/AssetQuantity.js';
 
@@ -213,7 +214,8 @@ export class AssetQuantityFormatter {
    * ```
    */
   public static toFixedString(assetQty: AssetQuantity, decimalPlaces: number = 2): string {
-    const amount = assetQty.amount().value().toFixed(decimalPlaces);
+    const safeDecimals = Decimal.max(0, Decimal.min(100, new Decimal(decimalPlaces).floor())).toNumber();
+    const amount = assetQty.amount().value().toFixed(safeDecimals);
     const asset = assetQty.asset();
 
     if (asset.type === 'CURRENCY') {

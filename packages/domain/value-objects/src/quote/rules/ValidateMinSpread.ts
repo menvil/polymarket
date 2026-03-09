@@ -39,8 +39,7 @@ export class ValidateMinSpread {
    *
    * const result = ValidateMinSpread.check(spread, new Decimal(0.001));
    * if (!result.ok) {
-   *     console.error('Spread too narrow');
-   *   }
+   *   console.error('Spread too narrow');
    * }
    * ```
    */

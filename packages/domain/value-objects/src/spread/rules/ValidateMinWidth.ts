@@ -67,6 +67,39 @@ export class ValidateMinWidth {
       );
     }
 
+    // Валидация width (защита от невалидного входа)
+    if (!width.isFinite()) {
+      return Err(
+        new InvalidSpreadError(
+          (ctx) => `width must be finite, got ${ctx.width}`,
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              minWidth: minWidth.toString(),
+              width: width.toString(),
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
+    if (width.lessThanOrEqualTo(0)) {
+      return Err(
+        new InvalidSpreadError(
+          (ctx) => `width must be positive, got ${ctx.width}`,
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              minWidth: minWidth.toString(),
+              width: width.toString(),
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
     // Основная проверка: width >= minWidth
     if (width.lessThan(minWidth)) {
       return Err(
