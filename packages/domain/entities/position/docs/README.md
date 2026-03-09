@@ -262,7 +262,7 @@ class PositionLot {
   readonly quantity: Quantity;
   readonly entryPrice: Price;
   readonly timestamp: Timestamp;
-  readonly fee?: Fee;   // комиссия лота (опционально, для исторических данных)
+  readonly fee?: Fee;   // комиссия лота (опционально, только для исторических данных — см. ниже)
 
   getNotional(): Decimal;  // quantity * entryPrice — возвращает Decimal!
   toObject(): { quantity: string; entryPrice: string; timestamp: number; fee?: string };
@@ -340,7 +340,14 @@ LotCloseComputation { remainingLots, totalRealizedPnL, closedLots }
 const newRealizedPnL = this.realizedPnL.value().plus(computation.totalRealizedPnL);
 ```
 
-## Почему fees убраны из Position?
+## Почему fees убраны из Position? (и зачем PositionLot.fee?: Fee)
+
+**PositionLot.fee?: Fee** сохранён исключительно для совместимости с историческими данными
+(импорт позиций из внешних источников, где fee уже включён в лот).
+Для **новых позиций** поле не заполняется — комиссии учитываются в Fill/Ledger.
+При закрытии лота через `close()` / `addLots()` fee **не накапливается и не суммируется**.
+
+## Почему fees убраны из Position как бизнес-концепции?
 
 Комиссии (fees) принадлежат **Fill** (исполнению ордера), а не Position:
 

@@ -128,7 +128,7 @@ export abstract class OrderDeserializer {
       }
 
       const filledSize = Quantity.of(new Decimal(snap.filledSize));
-      const averagePrice = snap.averagePrice === undefined
+      const averagePrice = snap.averagePrice == null
         ? undefined
         : Price.of(new Decimal(snap.averagePrice));
 

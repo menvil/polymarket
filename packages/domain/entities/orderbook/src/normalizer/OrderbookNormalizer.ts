@@ -280,6 +280,15 @@ export class OrderbookNormalizer {
         const quantityResult = QuantityService.create(newQuantityDecimal);
         if (quantityResult.ok) {
           priceMap.set(priceKey, existing.withQuantity(quantityResult.value));
+        } else {
+          // Теоретически недостижимая ветка: сумма двух валидных Quantity всегда >= 0.
+          // При ошибке сохраняем существующий уровень без обновления (quantity нового уровня теряется).
+          // eslint-disable-next-line no-console
+          console.error('[OrderbookNormalizer] aggregateLevels: quantity sum failed', {
+            priceKey,
+            newQuantityDecimal: newQuantityDecimal.toString(),
+            error: quantityResult.error.message,
+          });
         }
       } else {
         priceMap.set(priceKey, level);

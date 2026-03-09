@@ -427,7 +427,9 @@ export class TradeMapper {
     }
 
     const txHash =
-      snapshot.txHash !== undefined ? asTxHash(snapshot.txHash) : undefined;
+      typeof snapshot.txHash === 'string' && snapshot.txHash.trim().length > 0
+        ? asTxHash(snapshot.txHash.trim())
+        : undefined;
 
     return Trade.create({
       id: tradeId,

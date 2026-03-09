@@ -685,7 +685,7 @@ export class Order {
       fill.side === this._s.side &&
       fill.size.isPositive() &&
       fill.size.value().lte(this.remainingSize.value()) &&
-      !(this._s.fill.fillIds as unknown as string[]).includes(fill.id as string)
+      !this._s.fill.fillIds.includes(fill.id)
     );
   }
 

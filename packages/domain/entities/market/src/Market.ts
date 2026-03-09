@@ -177,7 +177,7 @@ export class Market {
       Object.freeze({ ...props.outcomes[0] }),
       Object.freeze({ ...props.outcomes[1] }),
     ];
-    this._pendingNotifications = pendingNotifications;
+    this._pendingNotifications = [...pendingNotifications];
   }
 
   // ==================== Getters ====================

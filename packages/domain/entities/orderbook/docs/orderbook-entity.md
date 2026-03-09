@@ -137,7 +137,7 @@ import {
   TOP_OF_BOOK_POLICY,
 } from '@polymarket/orderbook';
 
-// Production trading — strict
+// Production trading — strict (рекомендуется для торговли, включает crossed book detection)
 PolymarketBookEventParser.parse(event, DEFAULT_NORMALIZATION_POLICY);
 
 // Анализ / бэктест — permissive
@@ -219,11 +219,15 @@ level.toObject(): { price: number; quantity: number }
 
 ### `PolymarketBookEventParser`
 
+> **⚠️ Production warning:** По умолчанию используется `PERMISSIVE_NORMALIZATION_POLICY`
+> (нулевые уровни не фильтруются, crossed book не проверяется).
+> В production-торговле **всегда** передавайте `DEFAULT_NORMALIZATION_POLICY` явно.
+
 ```typescript
 // Статический класс
 PolymarketBookEventParser.parse(
   event: PolymarketBookEvent,
-  policy?: NormalizationPolicy    // default: PERMISSIVE_NORMALIZATION_POLICY
+  policy?: NormalizationPolicy    // default: PERMISSIVE_NORMALIZATION_POLICY (в production используйте DEFAULT_NORMALIZATION_POLICY)
 ): Result<Orderbook, OrderbookValidationError | OrderbookInvalidError>
 ```
 

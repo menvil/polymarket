@@ -416,13 +416,13 @@ describe('FillMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        settlementAssetId: AssetIdHelpers.USDC as unknown as string,
+        settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
         price: 0.65,
         size: 50,
         side: 'BUY',
         timestampMs: 1700000000000,
         feeAmount: 0,
-        feeAsset: TEST_TOKEN_ID,
+        feeAsset: assetIdToString(AssetIdHelpers.USDC),
       });
 
       expect(result.ok).toBe(false);
@@ -439,13 +439,13 @@ describe('FillMapper', () => {
         venueId: 'POLYMARKET',
         marketId: 'market-1',
         tokenId: TEST_TOKEN_ID,
-        settlementAssetId: AssetIdHelpers.USDC as unknown as string,
+        settlementAssetId: assetIdToString(AssetIdHelpers.USDC),
         price: 0.65,
         size: 50,
         side: 'BUY',
         timestampMs: 1700000000000,
         feeAmount: 0,
-        feeAsset: TEST_TOKEN_ID,
+        feeAsset: assetIdToString(AssetIdHelpers.USDC),
       });
 
       expect(result.ok).toBe(false);
