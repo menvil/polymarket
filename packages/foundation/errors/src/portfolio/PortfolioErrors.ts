@@ -8,8 +8,7 @@
  * TradingError
  * ├── ValidationError
  * │   └── PortfolioValidationError  — невалидные данные при Portfolio.create()
- * └── TradingError
- *     └── PortfolioOperationError   — нарушение бизнес-правила при операции
+ * └── PortfolioOperationError       — нарушение бизнес-правила при операции
  * ```
  *
  * @example

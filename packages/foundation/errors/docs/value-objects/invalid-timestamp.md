@@ -99,6 +99,8 @@ processTimestamp(1e14);       // OUT_OF_RANGE (too large)
 ```typescript
 import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidTimestampError } from '@polymarket/errors';
+import type { IClock } from '@polymarket/value-objects/timestamp';
+// IClock: интерфейс часов для DI — { now(): number } (возвращает epoch ms)
 
 class TimestampService {
   static fromDate(date: Date): Result<Timestamp, InvalidTimestampError> {
