@@ -25,7 +25,7 @@
 | `create(value)` | `number \| string \| Decimal` | `Result<Timestamp, InvalidTimestampError>` | Парсит и валидирует; дробные значения truncate-ируются |
 | `fromDate(date)` | `Date` | `Result<Timestamp, InvalidTimestampError>` | Из JavaScript Date |
 | `fromISO(iso)` | `string` | `Result<Timestamp, InvalidTimestampError>` | Из ISO 8601 строки |
-| `now(clock?)` | `IClock?` | `Timestamp` | Текущее время; никогда не бросает |
+| `now(clock?)` | `IClock?` | `Timestamp` | Текущее время; никогда не бросает. При broken IClock: fallback → `Date.now()` → epoch 1ms. Сбои silent — мониторьте IClock отдельно |
 
 ```typescript
 import { TimestampService } from '@polymarket/value-objects';

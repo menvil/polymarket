@@ -279,15 +279,16 @@ export class BalanceFormatter {
 ```typescript
 // src/balance/errors/BalanceErrorReason.ts
 export enum BalanceErrorReason {
-  INSUFFICIENT_FUNDS = 'INSUFFICIENT_FUNDS',       // недостаточно available
-  INSUFFICIENT_RESERVED = 'INSUFFICIENT_RESERVED', // недостаточно reserved
-  CURRENCY_MISMATCH = 'CURRENCY_MISMATCH',         // несовпадение валют
-  NEGATIVE_AVAILABLE = 'NEGATIVE_AVAILABLE',       // available < 0
-  NEGATIVE_RESERVED = 'NEGATIVE_RESERVED',         // reserved < 0
-  NAN = 'NAN',                                     // amount является NaN
-  NON_FINITE = 'NON_FINITE',                       // amount не является finite
-  INVALID_FORMAT = 'INVALID_FORMAT',               // ошибка парсинга
-  UNSUPPORTED_CURRENCY = 'UNSUPPORTED_CURRENCY'    // неподдерживаемая валюта
+  INSUFFICIENT_FUNDS = 'INSUFFICIENT_FUNDS',           // недостаточно available
+  INSUFFICIENT_RESERVED = 'INSUFFICIENT_RESERVED',     // недостаточно reserved
+  CURRENCY_MISMATCH = 'CURRENCY_MISMATCH',             // несовпадение валют
+  NEGATIVE_AVAILABLE = 'NEGATIVE_AVAILABLE',           // available < 0
+  NEGATIVE_RESERVED = 'NEGATIVE_RESERVED',             // reserved < 0
+  NAN = 'NAN',                                         // amount является NaN
+  NON_FINITE = 'NON_FINITE',                           // amount не является finite
+  TOTAL_EXCEEDS_MAX_AMOUNT = 'TOTAL_EXCEEDS_MAX_AMOUNT', // available + reserved > Money.MAX_AMOUNT
+  INVALID_FORMAT = 'INVALID_FORMAT',                   // ошибка парсинга
+  UNSUPPORTED_CURRENCY = 'UNSUPPORTED_CURRENCY'        // неподдерживаемая валюта
 }
 ```
 
