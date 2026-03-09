@@ -220,6 +220,8 @@ public static create(
       return Err(new InvalidBalanceError(error.message, {
         context: {
           op: 'create',
+          // Assertion безопасна: error — instanceof BalanceInvariantViolation (проверено выше),
+          // а BalanceInvariantReason и BalanceErrorReason — идентичные строковые литералы.
           reason: error.reason as BalanceErrorReason,
           available: available.value().toNumber(),
           reserved: reserved.value().toNumber(),

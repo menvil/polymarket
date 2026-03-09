@@ -130,6 +130,9 @@ const newBalance = result.value;
 **Использование:** Отмена резервирования, возврат токенов в доступные.
 
 ```typescript
+import { TokenBalanceService, TokenBalanceErrorReason } from '@polymarket/value-objects/token-balance';
+import { isErr } from '@polymarket/result';
+
 const result = TokenBalanceService.unfreezeReserved(
   balance,
   Quantity.of(new Decimal(20))
@@ -356,6 +359,9 @@ console.log(TokenBalanceService.equals(balance1, balance3)); // false
 Проверяет, является ли баланс нулевым (total === 0).
 
 ```typescript
+import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
+import { expectOk } from '@polymarket/result';
+
 const emptyBalance = expectOk(TokenBalanceService.create(
   token,
   Quantity.ZERO,
@@ -450,6 +456,9 @@ console.log(TokenBalanceService.isPositive(emptyBalance)); // false
 **Все операции возвращают новый TokenBalance:**
 
 ```typescript
+import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
+import { expectOk } from '@polymarket/result';
+
 const balance1 = expectOk(TokenBalanceService.create(
   token,
   Quantity.of(new Decimal(100)),

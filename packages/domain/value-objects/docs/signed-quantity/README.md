@@ -248,7 +248,9 @@ if (result.ok) {
 
 - `adjustBy(qty, delta: Ratio, stepSize, options?): Result<SignedQuantity, InvalidSignedQuantityError>`
   - Применяет `qty * (1 + delta)`, затем округляет до `stepSize`
-  - `options.allowCrossZero` (default: `true`): запретить смену знака позиции
+  - `options.allowCrossZero` (default: `true`): при `true` — разрешает смену знака результата; при `false` — запрещает два случая:
+    - переход через ноль: `positive → negative` или наоборот → ошибка `RESULT_CROSSES_ZERO`
+    - движение от нуля: `qty = 0` и ненулевой результат → ошибка `CANNOT_ADJUST_ZERO` (нельзя определить направление позиции)
   - Ошибка: `RESULT_CROSSES_ZERO` при `allowCrossZero = false` и смене знака (positive→negative или наоборот)
   - Ошибка: `CANNOT_ADJUST_ZERO` при `allowCrossZero = false`, `qty = 0` и ненулевом результате
   - OK: `qty = 0` и `delta = 0` (result = 0 → идемпотентная операция)

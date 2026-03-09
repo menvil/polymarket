@@ -449,7 +449,7 @@ if (positiveResult.ok) {
   if (abs2.ok) console.log(abs2.value.toNumber()); // 100
 }
 
-const zero = SignedQuantity.ZERO;
+const zero = SignedQuantity.ZERO; // безопасная константа, не нарушает Never-throw контракт
 const abs3 = SignedQuantityService.abs(zero);
 if (abs3.ok) console.log(abs3.value.toNumber()); // 0
 ```
@@ -495,7 +495,7 @@ if (negativeResult.ok) {
   if (neg2.ok) console.log(neg2.value.toNumber()); // 100
 }
 
-const zero = SignedQuantity.ZERO;
+const zero = SignedQuantity.ZERO; // безопасная константа, не нарушает Never-throw контракт
 const neg3 = SignedQuantityService.negate(zero);
 if (neg3.ok) console.log(neg3.value.toNumber()); // 0
 ```
@@ -532,6 +532,9 @@ public static scale(
 **Примеры:**
 
 ```typescript
+import { SignedQuantityService } from '@polymarket/value-objects/signed-quantity';
+import { RatioService } from '@polymarket/value-objects/ratio';
+
 const qtyResult = SignedQuantityService.create(100);
 const rate2xResult = RatioService.fromDecimal(2);
 
@@ -598,6 +601,9 @@ public static portion(
 **Примеры:**
 
 ```typescript
+import { SignedQuantityService } from '@polymarket/value-objects/signed-quantity';
+import { RatioService } from '@polymarket/value-objects/ratio';
+
 const qtyResult = SignedQuantityService.create(100);
 const rate25pctResult = RatioService.fromDecimal(0.25);
 

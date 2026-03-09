@@ -368,7 +368,9 @@ import { isErr } from '@polymarket/result';
 private static addQuantity(a: Quantity, b: Quantity): Result<Quantity, InvalidTokenBalanceError> {
   const result = QuantityService.add(a, b);
   if (isErr(result)) {
-    // wrapOp уже обернёт это и добавит context
+    // Намеренно сохраняем только message: structured context (reason, op) из QuantityService
+    // теряется при конвертации в InvalidTokenBalanceError. Это компромисс: wrapOp
+    // добавит TokenBalance-специфичный context (op, reason) поверх этой ошибки.
     return Err(new InvalidTokenBalanceError(result.error.message));
   }
   return result;

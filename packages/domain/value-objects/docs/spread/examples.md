@@ -266,7 +266,8 @@ function* tightenSpreadGradually(
   steps: number
 ) {
   const initialWidthBps = initialSpread.widthRatio().toDecimal().times(10000).toNumber();
-  const stepSize = (initialWidthBps - targetWidthBps) / steps / 100;
+  // Переводим bps → долю от текущей ширины (bps / 10000 = коэффициент)
+  const stepSize = (initialWidthBps - targetWidthBps) / steps / 10000;
   
   let currentSpread = initialSpread;
   
@@ -324,23 +325,24 @@ function analyzeLiquidity(spread: Spread, depth: number): LiquidityMetrics {
   }
 
   const widthBps = spread.widthRatio().toDecimal().times(10000);
+  const widthBpsNum = widthBps.toNumber();
 
   // Определяем score на основе ширины спреда
   let liquidityScore: LiquidityMetrics['liquidityScore'];
-  if (widthBps < 50) {
+  if (widthBps.lessThan(50)) {
     liquidityScore = 'HIGH';
-  } else if (widthBps < 200) {
+  } else if (widthBps.lessThan(200)) {
     liquidityScore = 'MEDIUM';
   } else {
     liquidityScore = 'LOW';
   }
-  
+
   // Рекомендуемый размер ордера (консервативно)
   const recommendedOrderSize = depth * 0.1;  // 10% от глубины
-  
+
   // Оценка slippage для $1k ордера
-  const slippageEstimate1k = (1000 / depth) * widthBps * 0.01;
-  
+  const slippageEstimate1k = (1000 / depth) * widthBpsNum * 0.01;
+
   return {
     spreadBps: Number(widthBps.toFixed(0)),
     liquidityScore,
@@ -446,11 +448,11 @@ export const SpreadDisplay: React.FC<SpreadDisplayProps> = ({ bid, ask }) => {
   
   const spread = spreadResult.value;
   const widthBps = spread.widthRatio().toDecimal().times(10000);
-  
-  // Цветовая индикация ликвидности
-  const liquidityColor = 
-    widthBps < 50 ? 'green' :
-    widthBps < 200 ? 'yellow' : 'red';
+
+  // Цветовая индикация ликвидности (используем .lessThan() для корректного сравнения Decimal)
+  const liquidityColor =
+    widthBps.lessThan(50) ? 'green' :
+    widthBps.lessThan(200) ? 'yellow' : 'red';
   
   return (
     <div className="spread-display">
@@ -756,7 +758,8 @@ describe('Spread operations', () => {
 **Когда это важно:**
 
 ```typescript
-// import { SpreadSerializer } from '@polymarket/value-objects';
+import { SpreadService, SpreadSerializer } from '@polymarket/value-objects';
+
 // Проверка после сериализации/десериализации
 const origResult = SpreadService.fromValues(0.48, 0.52);
 if (!origResult.ok) throw new Error('Invalid spread');

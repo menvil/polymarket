@@ -639,7 +639,9 @@ if (!result.ok) {
       console.error(`Unknown side: "${ctx.value}". Valid: ${ctx.expectedValues?.join(', ')}`);
       break;
     default:
-      // TypeScript предупредит, если не все случаи покрыты
+      // Fallback для непредвиденных значений reason.
+      // Примечание: TypeScript не проверяет exhaustiveness автоматически при наличии default.
+      // Для exhaustive-проверки используйте паттерн: const _exhaustive: never = ctx?.reason;
       console.error(result.error.message);
   }
 }

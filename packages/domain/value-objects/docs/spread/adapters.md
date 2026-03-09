@@ -567,15 +567,22 @@ const display = `${spread.bid()}-${spread.ask()}`;  // Нет контроля �
 ### Кэширование форматированных строк
 
 ```typescript
-const formatCache = new Map<Spread, string>();
+// Используем строковый ключ вместо объектной ссылки — разные Spread-объекты
+// с одинаковыми значениями получат одинаковый ключ
+const formatCache = new Map<string, string>();
+
+function getSpreadCacheKey(spread: Spread): string {
+  return `${spread.bid().toFixed(8)}-${spread.ask().toFixed(8)}`;
+}
 
 function getCachedFormat(spread: Spread, decimals: number = 4): string {
-  const existing = formatCache.get(spread);
+  const key = getSpreadCacheKey(spread);
+  const existing = formatCache.get(key);
   if (existing) return existing;
-  
+
   const formatted = SpreadFormatter.format(spread, { decimals });
-  formatCache.set(spread, formatted);
-  
+  formatCache.set(key, formatted);
+
   return formatted;
 }
 ```
@@ -588,13 +595,21 @@ function serializeBatch(spreads: Spread[]): string {
   return JSON.stringify(jsons);
 }
 
-function deserializeBatch(jsonString: string): Result<Spread[], InvalidSpreadError>[] {
+function deserializeBatch(jsonString: string): Result<Spread[], InvalidSpreadError> {
+  let jsons: unknown[];
   try {
-    const jsons = JSON.parse(jsonString);
-    return jsons.map((json: unknown) => SpreadSerializer.fromJSON(json));
-  } catch (error) {
-    return [Err(new InvalidSpreadError('Invalid JSON array'))];
+    jsons = JSON.parse(jsonString);
+  } catch {
+    return Err(new InvalidSpreadError('Invalid JSON array'));
   }
+
+  const spreads: Spread[] = [];
+  for (const json of jsons) {
+    const result = SpreadSerializer.fromJSON(json);
+    if (!result.ok) return result; // первая ошибка прерывает пакет
+    spreads.push(result.value);
+  }
+  return Ok(spreads);
 }
 ```
 
