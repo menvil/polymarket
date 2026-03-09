@@ -640,8 +640,9 @@ if (!result.ok) {
       break;
     default:
       // Fallback для непредвиденных значений reason.
-      // Примечание: TypeScript не проверяет exhaustiveness автоматически при наличии default.
-      // Для exhaustive-проверки используйте паттерн: const _exhaustive: never = ctx?.reason;
+      // Примечание: TypeScript не проверяет exhaustiveness при наличии default и optional chaining.
+      // Для exhaustive-проверки сначала введите guard: if (!ctx) { ... } else { switch (ctx.reason) { ... } }
+      // Тогда можно добавить: const _exhaustive: never = ctx.reason; (без ?.reason).
       console.error(result.error.message);
   }
 }

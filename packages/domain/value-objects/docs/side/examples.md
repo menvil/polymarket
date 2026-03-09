@@ -145,16 +145,16 @@ function handleSideError(input: unknown): void {
 
   if (result.error.context?.reason === SideErrorReason.INVALID_TYPE) {
     // Системная ошибка — логируем с высоким приоритетом
-    // logger — placeholder: замените на ваш логгер (например, winston, pino, console)
-    // const logger = { error: (msg: string, ctx: Record<string, unknown>) => console.error(msg, ctx) };
+    // Замените на ваш логгер (например, winston, pino):
+    const logger = { error: (msg: string, ctx: Record<string, unknown>) => console.error(msg, ctx) };
     logger.error('Protocol violation: side field must be string', {
       actualTag: result.error.context.actualTag,
       op: result.error.context.op,
     });
   } else {
     // Пользовательская ошибка — показываем сообщение
-    // showValidationError — placeholder: замените на вашу UI-функцию отображения ошибок
-    // function showValidationError(msg: string): void { /* e.g. alert(msg) */ }
+    // Замените на вашу UI-функцию отображения ошибок:
+    function showValidationError(msg: string): void { console.warn(msg); }
     showValidationError(`Неверное значение стороны: "${result.error.context?.value}"`);
   }
 }

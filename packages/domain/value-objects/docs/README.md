@@ -456,7 +456,9 @@ invalid.match({
 
 ```typescript
 const m1 = unwrap(Money.fromValue(100, 'USDC'));
-const m2 = unwrap(Money.fromValue(1, 'BTC')); // Если BTC добавлен
+// Примечание: в текущей версии Money поддерживает только 'USDC'.
+// Пример ниже — иллюстрация CurrencyMismatchError для будущих валют.
+const m2 = unwrap(Money.fromValue(1, 'BTC' as SupportedCurrency)); // гипотетически
 
 const result = m1.add(m2);
 
@@ -537,12 +539,18 @@ packages/domain/value-objects/
 │   └── index.ts           # Barrel exports
 ├── docs/
 │   ├── README.md          # Этот файл
-│   ├── money/             # Money документация
+│   ├── asset-quantity/    # AssetQuantity документация
 │   ├── balance/           # Balance документация
+│   ├── fee/               # Fee документация
+│   ├── money/             # Money документация
 │   ├── quote/             # Quote документация
+│   ├── ratio/             # Ratio документация
+│   ├── side/              # Side документация
+│   ├── signed-quantity/   # SignedQuantity документация
 │   ├── spread/            # Spread документация
 │   ├── timestamp/         # Timestamp документация
-│   └── ...                # Документация для каждого VO
+│   ├── token-balance/     # TokenBalance документация
+│   └── ...                # Документация для остальных VO
 └── README.md              # Корневой README
 ```
 
@@ -707,5 +715,5 @@ MIT
 ## Поддержка
 
 - **Документация:** [docs/](.)
-- **Issues:** [GitHub Issues](https://github.com/polymarket/issues)
+- **Issues:** [GitHub Issues](https://github.com/polymarket/trading-system/issues)
 - **Tests:** 201/201 passing ✅ (Money: 77, Percentage: 95, Balance: 29)

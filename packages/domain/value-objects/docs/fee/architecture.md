@@ -55,7 +55,7 @@ fee/
 
 ```typescript
 enum FeeErrorReason {
-  NEGATIVE_FEE      = 'NEGATIVE_FEE',       // Отрицательная комиссия (не допускается)
+  NEGATIVE_FEE      = 'NEGATIVE_FEE',       // Отрицательная комиссия (не допускается; нулевые комиссии допустимы: amount >= 0)
   INVALID_QUANTITY  = 'INVALID_QUANTITY',   // Невалидный amount (NaN, Infinity)
   INVALID_STRUCTURE = 'INVALID_STRUCTURE',  // Невалидная структура объекта
   INVALID_ASSET     = 'INVALID_ASSET',      // Невалидный AssetId (см. правила ниже)

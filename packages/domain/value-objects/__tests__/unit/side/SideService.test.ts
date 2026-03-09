@@ -334,8 +334,13 @@ describe('SideService', () => {
       const result = SideService.fromString('INVALID');
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        // Мутируем expectedValues из одного error context
-        (result.error.context?.expectedValues as any)?.push('HACK');
+        // Мутируем expectedValues из одного error context.
+        // Оборачиваем в try-catch на случай, если массив заморожен (Object.freeze).
+        try {
+          (result.error.context?.expectedValues as any)?.push('HACK');
+        } catch {
+          // expectedValues заморожен — мутация заблокирована, изоляция гарантирована
+        }
 
         // Следующий вызов должен вернуть чистый ['BUY', 'SELL']
         const result2 = SideService.fromString('INVALID');
