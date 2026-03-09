@@ -1225,17 +1225,30 @@ export class QuoteService {
         }
 
         const newSpread = newSpreadResult.value;
-        const newQuote = Quote.of(
-          newSpread.bid()!,
-          newSpread.ask()!,
-          quote.bidSize(),
-          quote.askSize(),
-          quote.timestamp(),
-          quote.sourceId(),
-          quote.instrumentId()
-        );
-
-        return Ok(newQuote);
+        try {
+          const newQuote = Quote.of(
+            newSpread.bid()!,
+            newSpread.ask()!,
+            quote.bidSize(),
+            quote.askSize(),
+            quote.timestamp(),
+            quote.sourceId(),
+            quote.instrumentId()
+          );
+          return Ok(newQuote);
+        } catch (error) {
+          if (error instanceof QuoteInvariantViolation) {
+            throw new InvalidQuoteError(error.message, {
+              context: {
+                source: ErrorSource.CORE_INVARIANT,
+                service: QuoteService.SERVICE_NAME,
+                op: 'shiftByRatio',
+                reason: error.reason
+              }
+            });
+          }
+          throw error;
+        }
       },
       InvalidQuoteError
     );
@@ -1291,17 +1304,30 @@ export class QuoteService {
         }
 
         const newSpread = newSpreadResult.value;
-        const newQuote = Quote.of(
-          newSpread.bid()!,
-          newSpread.ask()!,
-          quote.bidSize(),
-          quote.askSize(),
-          quote.timestamp(),
-          quote.sourceId(),
-          quote.instrumentId()
-        );
-
-        return Ok(newQuote);
+        try {
+          const newQuote = Quote.of(
+            newSpread.bid()!,
+            newSpread.ask()!,
+            quote.bidSize(),
+            quote.askSize(),
+            quote.timestamp(),
+            quote.sourceId(),
+            quote.instrumentId()
+          );
+          return Ok(newQuote);
+        } catch (error) {
+          if (error instanceof QuoteInvariantViolation) {
+            throw new InvalidQuoteError(error.message, {
+              context: {
+                source: ErrorSource.CORE_INVARIANT,
+                service: QuoteService.SERVICE_NAME,
+                op: 'widenByRatio',
+                reason: error.reason
+              }
+            });
+          }
+          throw error;
+        }
       },
       InvalidQuoteError
     );
@@ -1357,17 +1383,30 @@ export class QuoteService {
         }
 
         const newSpread = newSpreadResult.value;
-        const newQuote = Quote.of(
-          newSpread.bid()!,
-          newSpread.ask()!,
-          quote.bidSize(),
-          quote.askSize(),
-          quote.timestamp(),
-          quote.sourceId(),
-          quote.instrumentId()
-        );
-
-        return Ok(newQuote);
+        try {
+          const newQuote = Quote.of(
+            newSpread.bid()!,
+            newSpread.ask()!,
+            quote.bidSize(),
+            quote.askSize(),
+            quote.timestamp(),
+            quote.sourceId(),
+            quote.instrumentId()
+          );
+          return Ok(newQuote);
+        } catch (error) {
+          if (error instanceof QuoteInvariantViolation) {
+            throw new InvalidQuoteError(error.message, {
+              context: {
+                source: ErrorSource.CORE_INVARIANT,
+                service: QuoteService.SERVICE_NAME,
+                op: 'tightenByRatio',
+                reason: error.reason
+              }
+            });
+          }
+          throw error;
+        }
       },
       InvalidQuoteError
     );
@@ -1426,17 +1465,30 @@ export class QuoteService {
         }
 
         const newSpread = newSpreadResult.value;
-        const newQuote = Quote.of(
-          newSpread.bid()!,
-          newSpread.ask()!,
-          quote.bidSize(),
-          quote.askSize(),
-          quote.timestamp(),
-          quote.sourceId(),
-          quote.instrumentId()
-        );
-
-        return Ok(newQuote);
+        try {
+          const newQuote = Quote.of(
+            newSpread.bid()!,
+            newSpread.ask()!,
+            quote.bidSize(),
+            quote.askSize(),
+            quote.timestamp(),
+            quote.sourceId(),
+            quote.instrumentId()
+          );
+          return Ok(newQuote);
+        } catch (error) {
+          if (error instanceof QuoteInvariantViolation) {
+            throw new InvalidQuoteError(error.message, {
+              context: {
+                source: ErrorSource.CORE_INVARIANT,
+                service: QuoteService.SERVICE_NAME,
+                op: 'skewByRatio',
+                reason: error.reason
+              }
+            });
+          }
+          throw error;
+        }
       },
       InvalidQuoteError
     );
@@ -1568,17 +1620,30 @@ export class QuoteService {
         }
 
         // 5. Create new Quote with same spread, new sizes
-        const newQuote = Quote.of(
-          quote.spread()!.bid()!,
-          quote.spread()!.ask()!,
-          newBidSizeResult.value,
-          newAskSizeResult.value,
-          quote.timestamp(),
-          quote.sourceId(),
-          quote.instrumentId()
-        );
-
-        return Ok(newQuote);
+        try {
+          const newQuote = Quote.of(
+            quote.spread()!.bid()!,
+            quote.spread()!.ask()!,
+            newBidSizeResult.value,
+            newAskSizeResult.value,
+            quote.timestamp(),
+            quote.sourceId(),
+            quote.instrumentId()
+          );
+          return Ok(newQuote);
+        } catch (error) {
+          if (error instanceof QuoteInvariantViolation) {
+            throw new InvalidQuoteError(error.message, {
+              context: {
+                source: ErrorSource.CORE_INVARIANT,
+                service: QuoteService.SERVICE_NAME,
+                op: 'scaleSizesByRatio',
+                reason: error.reason
+              }
+            });
+          }
+          throw error;
+        }
       },
       InvalidQuoteError
     );

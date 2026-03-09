@@ -67,5 +67,6 @@ export class SpreadInvariantViolation extends Error {
     super(`Spread invariant violation: ${message}`);
     this.name = 'SpreadInvariantViolation';
     this.reason = reason;
+    Object.setPrototypeOf(this, SpreadInvariantViolation.prototype);
   }
 }

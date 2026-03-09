@@ -495,6 +495,7 @@ export class TokenBalance {
    * ```
    */
   public hasSameToken(other: TokenBalance): boolean {
+    if (!other) return false;
     return this._token.equals(other._token);
   }
 
@@ -541,6 +542,7 @@ export class TokenBalance {
    * ```
    */
   public equals(other: TokenBalance): boolean {
+    if (!other || !(other instanceof TokenBalance)) return false;
     return (
       this._token.equals(other._token) &&
       this._available.equals(other._available) &&

@@ -228,6 +228,11 @@ export class SpreadService {
    * @param price - Цена для bid и ask
    * @returns Spread с нулевой шириной
    *
+   * @remarks
+   * **Исключение из контракта "Never Throw"**: этот метод возвращает Spread напрямую
+   * (не Result), поскольку нулевой spread из валидного Price гарантированно валиден.
+   * Все остальные методы SpreadService возвращают Result.
+   *
    * @example
    * ```typescript
    * const priceResult = PriceService.create(0.50);

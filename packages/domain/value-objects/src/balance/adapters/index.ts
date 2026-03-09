@@ -48,7 +48,7 @@
  * }
  * const balance = result.value;
  *
- * // Форматирование (все форматтеры возвращают Result)
+ * // Форматирование: toSummary/toCompact возвращают Result; toDebugString возвращает строку напрямую
  * const summaryResult = BalanceFormatter.toSummary(balance);
  * if (summaryResult.ok) {
  *   console.log(summaryResult.value);
@@ -61,6 +61,7 @@
  *   // "Avail: $10.0K | Res: $2.0K | Total: $12.0K"
  * }
  *
+ * // toDebugString возвращает строку напрямую (исключение из контракта Result)
  * console.log(BalanceFormatter.toDebugString(balance));
  * // "Balance(available: 10000 USDC, reserved: 2000 USDC, total: 12000 USDC)"
  *

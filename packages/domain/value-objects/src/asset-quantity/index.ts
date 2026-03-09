@@ -16,4 +16,4 @@ export { AssetQuantityFormatter } from './adapters/AssetQuantityFormatter.js';
 
 // Errors
 export { AssetQuantityErrorReason } from './errors/AssetQuantityErrorReason.js';
-// InvalidAssetQuantityError теперь в @polymarket/errors
+// InvalidAssetQuantityError is now in @polymarket/errors

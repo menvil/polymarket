@@ -223,7 +223,11 @@ export class AssetQuantityFormatter {
     }
 
     if (asset.type === 'POLYMARKET_CTF_TOKEN') {
-      return `${amount} CTF[${asset.tokenId}]`;
+      const shortId =
+        asset.tokenId.length > 12
+          ? `${asset.tokenId.slice(0, 6)}...${asset.tokenId.slice(-4)}`
+          : asset.tokenId;
+      return `${amount} CTF[${shortId}]`;
     }
 
     // OUTCOME_TOKEN
