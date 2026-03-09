@@ -412,6 +412,8 @@ class SpreadRepository {
   async load(id: string): Promise<Result<Spread, InvalidSpreadError>> {
     const row = await db.spreads.findOne({ id });
     if (!row) {
+      // Примечание: в реальном коде используйте отдельный тип ошибки (например, SpreadNotFoundError)
+      // вместо InvalidSpreadError, чтобы различать «запись не найдена» и «данные невалидны».
       return Err(new InvalidSpreadError('Spread not found'));
     }
     return SpreadSerializer.fromJSON(row);
@@ -568,7 +570,10 @@ const display = `${spread.bid()}-${spread.ask()}`;  // Нет контроля �
 
 ```typescript
 // Используем строковый ключ вместо объектной ссылки — разные Spread-объекты
-// с одинаковыми значениями получат одинаковый ключ
+// с одинаковыми значениями получат одинаковый ключ.
+// Внимание: этот Map неограничен по размеру и может привести к утечке памяти
+// при большом числе уникальных спредов. В production используйте LRU-кэш
+// с явным ограничением (например, max 1000 записей).
 const formatCache = new Map<string, string>();
 
 function getSpreadCacheKey(spread: Spread): string {

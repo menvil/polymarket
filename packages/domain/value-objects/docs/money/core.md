@@ -52,10 +52,16 @@ public static readonly SUPPORTED_CURRENCIES = new Set<SupportedCurrency>(['USDC'
 // Максимальная абсолютная сумма
 public static readonly MAX_AMOUNT = new Decimal('1e15');
 
-// Singleton zero для каждой валюты (инициализируется после class body)
+// Singleton zero для каждой валюты.
+// Инициализируется через статический блок (TypeScript 4.4+) или type assertion:
+//
+//   static {
+//     Money.ZERO = { USDC: Money.of(new Decimal(0), 'USDC') };
+//   }
+//
+// Либо через (Money as any).ZERO = ... в том же модульном файле,
+// если статические блоки недоступны.
 public static readonly ZERO: Record<SupportedCurrency, Money>;
-// Фактическое присвоение происходит ПОСЛЕ определения класса:
-// Money.ZERO = { USDC: Money.of(new Decimal(0), 'USDC') };
 ```
 
 ---
@@ -138,9 +144,15 @@ if (amount.isNaN()) {
 
 **Примеры нарушений:**
 
-- `new Decimal(NaN)`
-- Результат `0 / 0`
-- Результат `Infinity - Infinity`
+- `new Decimal(NaN)` — прямая передача JavaScript `NaN` в конструктор Decimal
+- `new Decimal(0 / 0)` — JavaScript-операция `0 / 0` возвращает `NaN` до передачи в Decimal
+- `new Decimal(Infinity - Infinity)` — JavaScript-операция `Infinity - Infinity` возвращает `NaN`
+
+> **Примечание:** `NaN` и `Infinity` возникают на уровне JavaScript-чисел (тип `number`) до
+> создания `Decimal`. Библиотека `decimal.js` сама по себе не производит `NaN` из обычных
+> арифметических операций над конечными числами, однако принимает его в конструктор.
+> Деление на ноль через `Decimal` (например, `new Decimal(1).div(0)`) по умолчанию
+> выбрасывает исключение, а не возвращает `NaN`.
 
 ---
 

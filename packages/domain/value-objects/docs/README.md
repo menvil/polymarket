@@ -149,7 +149,8 @@ qty.match({
 ```typescript
 import { AssetQuantityService } from '@polymarket/value-objects/asset-quantity';
 import { Ratio } from '@polymarket/value-objects/ratio';
-import { BinaryOutcome } from '@polymarket/ids';
+import { BinaryOutcome, KnownOnChainProtocols, KnownChainIds } from '@polymarket/ids';
+import type { OnChainConditionRef, ConditionId } from '@polymarket/ids';
 import Decimal from 'decimal.js';
 
 // Создание USDC quantity
@@ -160,6 +161,12 @@ if (usdcResult.ok) {
 }
 
 // Создание outcome token quantity
+const conditionRef: OnChainConditionRef = {
+  kind: 'ONCHAIN',
+  protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
+  chainId: KnownChainIds.POLYGON,
+  conditionId: '0x1234567890123456789012345678901234567890123456789012345678901234' as ConditionId,
+};
 const tokenResult = AssetQuantityService.createOutcomeToken(
   conditionRef,
   BinaryOutcome.UP,
@@ -238,10 +245,8 @@ if (fee1Result.ok && fee2Result.ok) {
 Котировка с ценой покупки (bid) и продажи (ask).
 
 ```typescript
-import { Quote } from '@polymarket/value-objects';
-import { unwrap } from '@polymarket/result';
-
 import { Quote, Price } from '@polymarket/value-objects';
+import { unwrap } from '@polymarket/result';
 
 const bid = unwrap(Price.fromValue(0.54));
 const ask = unwrap(Price.fromValue(0.56));
@@ -347,7 +352,7 @@ result.match({
 // Цепочка операций
 const finalResult = Money.fromValue(100)
   .flatMap(m => m.multiply(2))
-  .flatMap(m => m.add(unwrap(Money.fromValue(50))));
+  .flatMap(m => Money.fromValue(50).flatMap(fifty => m.add(fifty)));
 
 finalResult.match({
   ok: (money) => console.log(money.getAmount()), // 250

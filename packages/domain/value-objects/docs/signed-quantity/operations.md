@@ -353,7 +353,7 @@ if (qtyResult.ok && deltaResult.ok) {
 
 **Проверка при allowCrossZero = false:**
 
-- Если `original === 0` && `result !== 0` → ошибка `CANNOT_ADJUST_ZERO`
+- Если `original === 0` && `result !== 0` → ошибка `CANNOT_ADJUST_ZERO` *(защитная проверка; через `adjustBy()` недостижимо, т.к. `0 × multiplier = 0` всегда)*
 - Если `original === 0` && `result === 0` → ✅ OK (delta = 0, идемпотентная операция)
 - Если `sign(original) !== sign(result)` && `result !== 0` → ошибка `RESULT_CROSSES_ZERO`
 - Если `result === 0` → ✅ OK (граничный случай: схлопывание до нуля разрешено)
