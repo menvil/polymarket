@@ -112,7 +112,14 @@ const errorResult = TimestampService.create(microTs);
 if (!errorResult.ok) {
   console.error(errorResult.error.context?.reason); // "OUT_OF_RANGE"
   // Подсказка: возможно это microseconds — делим на 1000
-  const fixedResult = TimestampService.create(microTs / 1000);
+  // Сначала проверяем что значение кратно 1000 (признак microseconds)
+  if (microTs % 1000 === 0) {
+    const candidateMs = microTs / 1000;
+    const fixedResult = TimestampService.create(candidateMs);
+    if (fixedResult.ok) {
+      console.log('Converted microseconds to ms:', fixedResult.value.toISO());
+    }
+  }
 }
 ```
 
@@ -167,6 +174,7 @@ if (tsResult.ok) {
 
 ```typescript
 import { TimestampService, TimestampErrorReason } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/value-objects';
 
 function parseTimestamp(raw: unknown): Timestamp | null {
   if (typeof raw !== 'number') {
@@ -179,11 +187,13 @@ function parseTimestamp(raw: unknown): Timestamp | null {
     const reason = result.error.context?.reason;
     switch (reason) {
       case TimestampErrorReason.OUT_OF_RANGE:
-        // Возможно microseconds — попробуем разделить на 1000
-        const fixAttempt = TimestampService.create(raw / 1000);
-        if (fixAttempt.ok) {
-          console.warn('Timestamp appears to be in microseconds, converted to ms');
-          return fixAttempt.value;
+        // Возможно microseconds — проверяем кратность 1000 и делим
+        if (raw % 1000 === 0) {
+          const fixAttempt = TimestampService.create(raw / 1000);
+          if (fixAttempt.ok) {
+            console.warn('Timestamp appears to be in microseconds, converted to ms');
+            return fixAttempt.value;
+          }
         }
         break;
       case TimestampErrorReason.NOT_POSITIVE:

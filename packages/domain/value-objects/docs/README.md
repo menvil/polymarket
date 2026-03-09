@@ -513,23 +513,30 @@ npm run clean
 ```text
 packages/domain/value-objects/
 ├── src/
-│   ├── Money.ts           # Money value object
-│   ├── Balance.ts         # Balance value object
-│   ├── Percentage.ts      # Percentage value object
-│   ├── Price.ts           # Price value object
-│   ├── Quantity.ts        # Quantity value object
-│   ├── Quote.ts           # Quote value object
-│   ├── Spread.ts          # Spread value object
+│   ├── asset-quantity/    # AssetQuantity value object
+│   ├── balance/           # Balance value object
+│   ├── fee/               # Fee value object
+│   ├── money/             # Money value object
+│   ├── outcome-token/     # OutcomeToken value object
+│   ├── price/             # Price value object
+│   ├── quantity/          # Quantity value object
+│   ├── quote/             # Quote value object
+│   ├── ratio/             # Ratio value object
+│   ├── side/              # Side value object
+│   ├── signed-quantity/   # SignedQuantity value object
+│   ├── spread/            # Spread value object
+│   ├── timestamp/         # Timestamp value object
+│   ├── token-balance/     # TokenBalance value object
 │   └── index.ts           # Barrel exports
-├── __tests__/
-│   └── unit/
-│       ├── Money.test.ts       # 77 тестов
-│       ├── Percentage.test.ts  # 95 тестов
-│       └── Balance.test.ts     # 29 тестов
 ├── docs/
-│   ├── money.md           # Money документация
-│   └── percentage.md      # Percentage документация
-└── README.md              # Этот файл
+│   ├── README.md          # Этот файл
+│   ├── money/             # Money документация
+│   ├── balance/           # Balance документация
+│   ├── quote/             # Quote документация
+│   ├── spread/            # Spread документация
+│   ├── timestamp/         # Timestamp документация
+│   └── ...                # Документация для каждого VO
+└── README.md              # Корневой README
 ```
 
 ### Тесты
@@ -552,7 +559,7 @@ npm run test:watch
 
 - Money: 77 тестов ✅
 - Percentage: 95 тестов ✅
-- Всего: 172 теста ✅
+- Всего: 201 тестов ✅
 
 ## Примеры использования
 
@@ -567,10 +574,10 @@ const price = unwrap(Price.fromValue(0.55));
 const quantity = unwrap(Quantity.fromValue(100));
 const feeRate = unwrap(Percentage.fromValue(0.25)); // 0.25%
 
-// Расчёт стоимости
+// Расчёт стоимости (используем Decimal.js для точности)
 const priceDecimal = price.getValue();
 const qtyDecimal = quantity.getValue();
-const orderValue = priceDecimal * qtyDecimal; // 55
+const orderValue = priceDecimal.times(qtyDecimal); // 55
 
 // Создание Money для расчётов
 const orderAmount = unwrap(Money.fromValue(orderValue));

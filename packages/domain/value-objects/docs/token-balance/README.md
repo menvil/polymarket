@@ -27,12 +27,14 @@ import Decimal from 'decimal.js';
 const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-  chainId: 137 as any,
-  conditionId: '0x...' as any
+  chainId: 137 as ChainId,       // используй тип ChainId из @polymarket/ids
+  conditionId: '0x...' as ConditionId  // используй тип ConditionId из @polymarket/ids
 };
 
 const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
-const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+const parsedAddress = parseWalletAddress('0x1234567890123456789012345678901234567890');
+if (!parsedAddress) throw new Error('Invalid wallet address');
+const walletAddress = parsedAddress;
 const accountId: AccountId = accountIdFromWallet(walletAddress);
 const venueId: VenueId = KnownVenues.POLYMARKET;
 
@@ -58,7 +60,7 @@ console.log(balance.reservedPercentage().toNumber()); // 16.67%
 
 // Резервирование токенов (для открытия ордера)
 const reserveResult = TokenBalanceService.reserve(balance, Quantity.of(new Decimal(30)));
-if (!reserveResult.ok) {
+if (isErr(reserveResult)) {
   console.error(reserveResult.error);
   return;
 }
@@ -69,13 +71,13 @@ console.log(newBalance.reserved().value().toNumber());  // 50 токенов
 
 // Отмена ордера (размораживание токенов)
 const unfreezeResult = TokenBalanceService.unfreezeReserved(newBalance, Quantity.of(new Decimal(30)));
-if (unfreezeResult.ok) {
+if (!isErr(unfreezeResult)) {
   console.log(unfreezeResult.value.available().value().toNumber()); // 100
 }
 
 // Исполнение ордера (списание токенов)
 const consumeResult = TokenBalanceService.consumeReserved(newBalance, Quantity.of(new Decimal(30)));
-if (consumeResult.ok) {
+if (!isErr(consumeResult)) {
   console.log(consumeResult.value.available().value().toNumber()); // 70 (не изменился)
   console.log(consumeResult.value.total().value().toNumber());     // 90 (уменьшился)
 }

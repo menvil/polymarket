@@ -238,7 +238,7 @@ const spreadResult = SpreadService.fromMidAndWidthRatio(
 );
 
 if (spreadResult.ok) {
-  // Спред: 0.49-0.51 (ширина 2% от 0.50)
+  // Спред: 0.49-0.51 (widthRatio=0.04 → ширина = 0.50 * 0.04 = 0.02, т.е. 4% от mid 0.50)
   console.log(`Quote: ${spreadResult.value.bid().toNumber()}-${spreadResult.value.ask().toNumber()}`);
 }
 ```
@@ -631,7 +631,8 @@ tightenByRatio(
 **Логика:**
 
 - `deltaWidthAbs = midpoint * deltaWidthRatio`
-- Делегирует в `tighten(spread, deltaWidthAbs)`
+- `halfDelta = deltaWidthAbs / 2`
+- Делегирует в `tighten(spread, halfDelta)` — суживает каждую сторону на половину
 
 **Параметры:**
 

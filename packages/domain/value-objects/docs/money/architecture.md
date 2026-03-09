@@ -92,7 +92,12 @@ try {
       context: { op: 'create', value: decimal.toString(), reason: error.reason }
     }));
   }
-  throw error;  // unexpected
+  // Неожиданная ошибка — это баг в коде, не в данных.
+  // Не ре-бросаем — оборачиваем в Result.Err для соблюдения Never Throw Contract.
+  const message = error instanceof Error ? error.message : String(error);
+  return Err(new InvalidMoneyError(`Unexpected error creating Money: ${message}`, {
+    context: { op: 'create', value: decimal.toString(), reason: 'UNEXPECTED_ERROR' }
+  }));
 }
 ```
 
@@ -253,11 +258,13 @@ private static mapInvariantToOverflow(
   op: string,
   ctx: Record<string, unknown>,
   e: MoneyInvariantViolation
-): Result<never, InvalidMoneyError (reason: EXCEEDS_MAX_AMOUNT)>
+): Result<never, InvalidMoneyError>  // reason: EXCEEDS_MAX_AMOUNT | NON_FINITE | NAN
 ```
 
-Ожидаемые reason: `EXCEEDS_MAX_AMOUNT`, `NON_FINITE`, `NAN`.
-Неожиданные reason (`UNSUPPORTED_CURRENCY`, `INVALID_FORMAT`) → throw (bug in code).
+Ожидаемые reason: `EXCEEDS_MAX_AMOUNT`, `NON_FINITE`, `NAN` — оборачиваются в `Result.Err`.
+Неожиданные reason (`UNSUPPORTED_CURRENCY`, `INVALID_FORMAT`) указывают на баг в коде и
+также должны быть обёрнуты в `Result.Err` с `reason: 'UNEXPECTED_INVARIANT'` — не следует
+ре-бросать ошибку, чтобы не нарушать Never Throw Contract Facade слоя.
 
 ---
 

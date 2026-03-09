@@ -204,21 +204,29 @@ public static toCompact(
 **Примеры:**
 
 ```typescript
-const r1 = MoneyFormatter.toCompact(Money.of(new Decimal(999)));
-if (r1.ok) console.log(r1.value); // "$999.0"
+import { MoneyService, MoneyFormatter } from '@polymarket/value-objects/money';
 
-const r2 = MoneyFormatter.toCompact(Money.of(new Decimal(1500)));
-if (r2.ok) console.log(r2.value); // "$1.5K"
+function compactOrNull(amount: number, decimals?: number) {
+  const moneyResult = MoneyService.create(amount);
+  if (!moneyResult.ok) return null;
+  return MoneyFormatter.toCompact(moneyResult.value, decimals);
+}
 
-const r3 = MoneyFormatter.toCompact(Money.of(new Decimal(2300000)));
-if (r3.ok) console.log(r3.value); // "$2.3M"
+const r1 = compactOrNull(999);
+if (r1?.ok) console.log(r1.value); // "$999.0"
 
-const r4 = MoneyFormatter.toCompact(Money.of(new Decimal(1e9)));
-if (r4.ok) console.log(r4.value); // "$1.0B"
+const r2 = compactOrNull(1500);
+if (r2?.ok) console.log(r2.value); // "$1.5K"
+
+const r3 = compactOrNull(2300000);
+if (r3?.ok) console.log(r3.value); // "$2.3M"
+
+const r4 = compactOrNull(1e9);
+if (r4?.ok) console.log(r4.value); // "$1.0B"
 
 // С разными decimals
-const r5 = MoneyFormatter.toCompact(Money.of(new Decimal(1234)), 2);
-if (r5.ok) console.log(r5.value); // "$1.23K"
+const r5 = compactOrNull(1234, 2);
+if (r5?.ok) console.log(r5.value); // "$1.23K"
 ```
 
 ---

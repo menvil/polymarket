@@ -95,14 +95,18 @@ type Result<T, E> =
 
 ```typescript
 // Успех
-const result = SignedQuantityService.create(10);
-result.ok === true
-result.value === SignedQuantity(10)
+const successResult = SignedQuantityService.create(10);
+if (successResult.ok) {
+  console.log(successResult.ok);    // true
+  console.log(successResult.value.toNumber()); // 10
+}
 
 // Ошибка
-const result = SignedQuantityService.create(NaN);
-result.ok === false
-result.error === InvalidSignedQuantityError
+const errorResult = SignedQuantityService.create(NaN);
+if (!errorResult.ok) {
+  console.log(errorResult.ok);     // false
+  console.log(errorResult.error);  // InvalidSignedQuantityError instance
+}
 ```
 
 ### Error Context Contract

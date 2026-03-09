@@ -181,7 +181,7 @@ if (amount.abs().greaterThan(Money.MAX_AMOUNT)) {
 
 **Почему 1e15?**
 
-- Меньше чем `Number.MAX_SAFE_INTEGER` (9e15)
+- Меньше чем `Number.MAX_SAFE_INTEGER` (≈9.007e15)
 - Margin для вычислений
 - Практичность: 1 квадриллион USD > мировой GDP
 

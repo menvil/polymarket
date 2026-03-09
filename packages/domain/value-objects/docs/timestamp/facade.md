@@ -67,7 +67,7 @@ const fixedNow = TimestampService.now(fixedClock); // 2024-01-01T00:00:00.000Z
 
 | Метод | Параметры | Возвращает | Описание |
 |-------|-----------|------------|----------|
-| `addMs(ts, delta)` | `Timestamp, number \| Decimal` | `Result<Timestamp, InvalidTimestampError>` | Добавить ms (может быть отрицательным) |
+| `addMs(ts, delta)` | `Timestamp, number \| Decimal` | `Result<Timestamp, InvalidTimestampError>` | Добавить ms (должен быть целым; может быть отрицательным) |
 | `diffMs(ts1, ts2)` | `Timestamp, Timestamp` | `Decimal` | Разница ts1 - ts2 в ms |
 | `diffSeconds(ts1, ts2)` | `Timestamp, Timestamp` | `Decimal` | Разница ts1 - ts2 в секундах |
 

@@ -5,26 +5,27 @@
 ### Создание баланса токенов
 
 ```typescript
-import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
+import { TokenBalanceService, type TokenBalance, TokenBalanceErrorReason, type InvalidTokenBalanceError } from '@polymarket/value-objects/token-balance';
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
 import { Quantity } from '@polymarket/value-objects/quantity';
 import { BinaryOutcome, KnownOnChainProtocols, KnownVenues } from '@polymarket/ids';
-import type { OnChainConditionRef, AccountId, VenueId } from '@polymarket/ids';
+import type { OnChainConditionRef, AccountId, VenueId, ChainId, ConditionId } from '@polymarket/ids';
 import { parseWalletAddress, accountIdFromWallet } from '@polymarket/ids';
-import { isErr } from '@polymarket/result';
+import { isErr, expectOk, type Result } from '@polymarket/result';
 import Decimal from 'decimal.js';
 
 // Подготовка идентификаторов
 const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-  chainId: 137 as any,
-  conditionId: '0xabc...' as any
+  chainId: 137 as ChainId,           // используй тип ChainId из @polymarket/ids
+  conditionId: '0xabc...' as ConditionId  // используй тип ConditionId из @polymarket/ids
 };
 
 const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
-const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
-const accountId: AccountId = accountIdFromWallet(walletAddress);
+const parsedAddress = parseWalletAddress('0x1234567890123456789012345678901234567890');
+if (!parsedAddress) throw new Error('Invalid wallet address');
+const accountId: AccountId = accountIdFromWallet(parsedAddress);
 const venueId: VenueId = KnownVenues.POLYMARKET;
 
 const result = TokenBalanceService.create(

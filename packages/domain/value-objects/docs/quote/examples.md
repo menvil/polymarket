@@ -671,7 +671,7 @@ await mm.updateQuote(
 ### Quote Aggregator
 
 ```typescript
-import { QuoteService, QuoteFormatter } from '@polymarket/value-objects/quote';
+import { QuoteService, QuoteFormatter, type Quote } from '@polymarket/value-objects/quote';
 import Decimal from 'decimal.js';
 
 class QuoteAggregator {
@@ -727,9 +727,14 @@ class QuoteAggregator {
 // Использование
 const aggregator = new QuoteAggregator();
 
-const quote1 = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
-const quote2 = QuoteService.create(0.49, 0.51, 200, 100, 'POLYMARKET_WS', 'TEST_MARKET').value;
-const quote3 = QuoteService.create(0.47, 0.53, 150, 200, 'POLYMARKET_WS', 'TEST_MARKET').value;
+// Всегда проверяйте Result перед обращением к .value
+const aq1 = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
+const aq2 = QuoteService.create(0.49, 0.51, 200, 100, 'POLYMARKET_WS', 'TEST_MARKET');
+const aq3 = QuoteService.create(0.47, 0.53, 150, 200, 'POLYMARKET_WS', 'TEST_MARKET');
+if (!aq1.ok || !aq2.ok || !aq3.ok) throw new Error('Failed to create test quotes');
+const quote1 = aq1.value;
+const quote2 = aq2.value;
+const quote3 = aq3.value;
 
 const aggregated = aggregator.aggregateQuotes([quote1, quote2, quote3]);
 
@@ -743,7 +748,7 @@ if (aggregated) {
 ### Quote Monitoring
 
 ```typescript
-import { QuoteService, QuoteFormatter, ValidateMaxSpread } from '@polymarket/value-objects/quote';
+import { QuoteService, QuoteFormatter, ValidateMaxSpread, type Quote } from '@polymarket/value-objects/quote';
 import Decimal from 'decimal.js';
 
 class QuoteMonitor {
@@ -803,9 +808,15 @@ class QuoteMonitor {
 // Использование
 const monitor = new QuoteMonitor();
 
-const quote1 = QuoteService.create(0.45, 0.55, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;  // Wide spread
-const quote2 = QuoteService.create(0.48, 0.52, 5, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;    // Small bid size
-const quote3 = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET', Date.now() - 10000).value;  // Stale
+// Всегда проверяйте Result перед обращением к .value
+const q1Result = QuoteService.create(0.45, 0.55, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
+const q2Result = QuoteService.create(0.48, 0.52, 5, 150, 'POLYMARKET_WS', 'TEST_MARKET');
+const q3Result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET', Date.now() - 10000);
+
+if (!q1Result.ok || !q2Result.ok || !q3Result.ok) throw new Error('Failed to create test quotes');
+const quote1 = q1Result.value;  // Wide spread
+const quote2 = q2Result.value;  // Small bid size
+const quote3 = q3Result.value;  // Stale
 
 monitor.checkQuote(quote1);  // Alert: spread too wide
 monitor.checkQuote(quote2);  // Alert: bid size too small
@@ -818,6 +829,7 @@ monitor.checkQuote(quote3);  // Alert: quote is stale
 import {
   QuoteService,
   QuoteSerializer,
+  type Quote,
   type QuoteJSON
 } from '@polymarket/value-objects/quote';
 
@@ -862,7 +874,9 @@ class QuoteStorage {
 // Использование
 const storage = new QuoteStorage();
 
-const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
+const quoteResult = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
+if (!quoteResult.ok) throw new Error(`Failed to create quote: ${quoteResult.error.message}`);
+const quote = quoteResult.value;
 storage.saveQuote('market-123', quote);
 
 const loaded = storage.loadQuote('market-123');

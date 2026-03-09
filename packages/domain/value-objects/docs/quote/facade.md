@@ -1037,9 +1037,9 @@ console.error(result.error.context?.opChain);  // ['create', 'create']
 // Не создавайте Quote напрямую
 const quote = Quote.of(bid, ask, bidSize, askSize, timestamp, sourceId, instrumentId);  // Может бросить!
 
-// Не игнорируйте Result
+// Не игнорируйте Result — это небезопасно!
 const result = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET');
-const quote = result.value;  // TypeError если result.ok === false!
+const quote = result.value;  // ⚠️ TypeError если result.ok === false! Всегда проверяйте result.ok перед .value
 
 // Не пишите свой error handling
 try {

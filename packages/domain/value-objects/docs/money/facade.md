@@ -92,12 +92,16 @@ public static add(
 **Пример:**
 
 ```typescript
-const m1 = Money.of(new Decimal(100), 'USDC');
-const m2 = Money.of(new Decimal(50), 'USDC');
+import { MoneyService } from '@polymarket/value-objects/money';
 
-const result = MoneyService.add(m1, m2);
-if (result.ok) {
-  console.log(result.value.value());  // 150
+const m1Result = MoneyService.create(100);
+const m2Result = MoneyService.create(50);
+
+if (m1Result.ok && m2Result.ok) {
+  const result = MoneyService.add(m1Result.value, m2Result.value);
+  if (result.ok) {
+    console.log(result.value.value());  // 150
+  }
 }
 ```
 
@@ -121,12 +125,15 @@ public static subtract(
 **Пример:**
 
 ```typescript
-const m1 = Money.of(new Decimal(100), 'USDC');
-const m2 = Money.of(new Decimal(30), 'USDC');
+// ⚠️ Money.of() используется здесь для краткости — в публичном коде используй MoneyService.create()
+const m1Result = MoneyService.create(100);
+const m2Result = MoneyService.create(30);
 
-const result = MoneyService.subtract(m1, m2);
-if (result.ok) {
-  console.log(result.value.value());  // 70
+if (m1Result.ok && m2Result.ok) {
+  const result = MoneyService.subtract(m1Result.value, m2Result.value);
+  if (result.ok) {
+    console.log(result.value.value());  // 70
+  }
 }
 ```
 
@@ -155,11 +162,13 @@ public static multiply(
 **Пример:**
 
 ```typescript
-const money = Money.of(new Decimal(100), 'USDC');
-
-const result = MoneyService.multiply(money, 1.5);
-if (result.ok) {
-  console.log(result.value.value());  // 150
+// ⚠️ Money.of() используется здесь для краткости — в публичном коде используй MoneyService.create()
+const moneyResult = MoneyService.create(100);
+if (moneyResult.ok) {
+  const result = MoneyService.multiply(moneyResult.value, 1.5);
+  if (result.ok) {
+    console.log(result.value.value());  // 150
+  }
 }
 ```
 
@@ -189,18 +198,22 @@ public static divide(
 **Пример:**
 
 ```typescript
-const money = Money.of(new Decimal(100), 'USDC');
+// ⚠️ Money.of() используется здесь для краткости — в публичном коде используй MoneyService.create()
+const moneyResult = MoneyService.create(100);
+if (moneyResult.ok) {
+  const money = moneyResult.value;
 
-const result = MoneyService.divide(money, 2);
-if (result.ok) {
-  console.log(result.value.value());  // 50
+  const result = MoneyService.divide(money, 2);
+  if (result.ok) {
+    console.log(result.value.value());  // 50
+  }
+
+  // Деление на ноль
+  const zeroResult = MoneyService.divide(money, 0);
+  // zeroResult.ok === false
+  // zeroResult.error instanceof InvalidMoneyError
+  // zeroResult.error.context.reason === 'DIVISION_BY_ZERO'
 }
-
-// Деление на ноль
-const zeroResult = MoneyService.divide(money, 0);
-// zeroResult.ok === false
-// zeroResult.error instanceof InvalidMoneyError
-// zeroResult.error.context.reason === 'DIVISION_BY_ZERO'
 ```
 
 ---
@@ -226,27 +239,34 @@ public static portion(
 
 **Use cases:**
 
-- Fee: `portion(orderAmount, RatioService.fromPercent(2))` → 2% trading fee
-- Rebate: `portion(paidAmount, RatioService.fromBps(25))` → 0.25% cashback
-- Allocation: `portion(budget, Ratio.of(new Decimal(0.3)))` → 30% от бюджета
+- Fee: `portion(orderAmount, RatioService.fromPercent(2).value)` → 2% trading fee
+- Rebate: `portion(paidAmount, RatioService.fromBps(25).value)` → 0.25% cashback
+- Allocation: `portion(budget, RatioService.fromDecimal(0.3).value)` → 30% от бюджета
 
 **Пример:**
 
 ```typescript
+import { MoneyService } from '@polymarket/value-objects/money';
+import { RatioService } from '@polymarket/value-objects/ratio';
+
 // Fee calculation: 2% от $1000
-const orderAmount = Money.of(new Decimal(1000), 'USDC');
-const feeRate = Ratio.of(new Decimal(0.02)); // 2%
-const feeResult = MoneyService.portion(orderAmount, feeRate);
-if (feeResult.ok) {
-  console.log(feeResult.value.value().toString()); // "20"
+const orderAmountResult = MoneyService.create(1000);
+const feeRateResult = RatioService.fromDecimal(0.02); // 2%
+if (orderAmountResult.ok && feeRateResult.ok) {
+  const feeResult = MoneyService.portion(orderAmountResult.value, feeRateResult.value);
+  if (feeResult.ok) {
+    console.log(feeResult.value.value().toString()); // "20"
+  }
 }
 
 // Allocation: 30% от бюджета $5000
-const budget = Money.of(new Decimal(5000), 'USDC');
-const allocRate = Ratio.of(new Decimal(0.3)); // 30%
-const allocResult = MoneyService.portion(budget, allocRate);
-if (allocResult.ok) {
-  console.log(allocResult.value.value().toString()); // "1500"
+const budgetResult = MoneyService.create(5000);
+const allocRateResult = RatioService.fromDecimal(0.3); // 30%
+if (budgetResult.ok && allocRateResult.ok) {
+  const allocResult = MoneyService.portion(budgetResult.value, allocRateResult.value);
+  if (allocResult.ok) {
+    console.log(allocResult.value.value().toString()); // "1500"
+  }
 }
 ```
 
@@ -280,19 +300,26 @@ public static increaseBy(
 **Пример:**
 
 ```typescript
+import { MoneyService } from '@polymarket/value-objects/money';
+import { RatioService } from '@polymarket/value-objects/ratio';
+
 // Наценка 20%: $100 → $120
-const price = Money.of(new Decimal(100), 'USDC');
-const markup = Ratio.of(new Decimal(0.2)); // 20%
-const result = MoneyService.increaseBy(price, markup);
-if (result.ok) {
-  console.log(result.value.value().toString()); // "120"
+const priceResult = MoneyService.create(100);
+const markupResult = RatioService.fromDecimal(0.2); // 20%
+if (priceResult.ok && markupResult.ok) {
+  const result = MoneyService.increaseBy(priceResult.value, markupResult.value);
+  if (result.ok) {
+    console.log(result.value.value().toString()); // "120"
+  }
 }
 
 // Удвоить цену: +100%
-const double = Ratio.of(new Decimal(1)); // 100%
-const doubled = MoneyService.increaseBy(price, double);
-if (doubled.ok) {
-  console.log(doubled.value.value().toString()); // "200"
+const doubleResult = RatioService.fromDecimal(1); // 100%
+if (priceResult.ok && doubleResult.ok) {
+  const doubled = MoneyService.increaseBy(priceResult.value, doubleResult.value);
+  if (doubled.ok) {
+    console.log(doubled.value.value().toString()); // "200"
+  }
 }
 ```
 
@@ -325,19 +352,26 @@ public static decreaseBy(
 **Пример:**
 
 ```typescript
+import { MoneyService } from '@polymarket/value-objects/money';
+import { RatioService } from '@polymarket/value-objects/ratio';
+
 // Скидка 20%: $100 → $80
-const price = Money.of(new Decimal(100), 'USDC');
-const discount = Ratio.of(new Decimal(0.2)); // 20%
-const result = MoneyService.decreaseBy(price, discount);
-if (result.ok) {
-  console.log(result.value.value().toString()); // "80"
+const priceResult = MoneyService.create(100);
+const discountResult = RatioService.fromDecimal(0.2); // 20%
+if (priceResult.ok && discountResult.ok) {
+  const result = MoneyService.decreaseBy(priceResult.value, discountResult.value);
+  if (result.ok) {
+    console.log(result.value.value().toString()); // "80"
+  }
 }
 
 // Снижение цены на 100% (обнуление)
-const full = Ratio.of(new Decimal(1)); // 100%
-const zeroed = MoneyService.decreaseBy(price, full);
-if (zeroed.ok) {
-  console.log(zeroed.value.value().toString()); // "0"
+const fullResult = RatioService.fromDecimal(1); // 100%
+if (priceResult.ok && fullResult.ok) {
+  const zeroed = MoneyService.decreaseBy(priceResult.value, fullResult.value);
+  if (zeroed.ok) {
+    console.log(zeroed.value.value().toString()); // "0"
+  }
 }
 ```
 
@@ -544,9 +578,17 @@ function addBalances(balance1: Money, balance2: Money) {
 ### Вычисление комиссии
 
 ```typescript
-function calculateFee(amount: Money, feeRate: string): Money | null {
-  const result = MoneyService.multiply(amount, feeRate);
+import { MoneyService } from '@polymarket/value-objects/money';
+import { RatioService } from '@polymarket/value-objects/ratio';
 
+function calculateFee(amount: Money, feeRateStr: string): Money | null {
+  const rateResult = RatioService.fromDecimal(feeRateStr);
+  if (!rateResult.ok) {
+    console.error(`Invalid fee rate: ${rateResult.error.message}`);
+    return null;
+  }
+
+  const result = MoneyService.portion(amount, rateResult.value);
   if (!result.ok) {
     console.error(`Fee calculation failed: ${result.error.message}`);
     return null;
@@ -555,10 +597,12 @@ function calculateFee(amount: Money, feeRate: string): Money | null {
   return result.value;
 }
 
-const orderAmount = Money.of(new Decimal(1000), 'USDC');
-const fee = calculateFee(orderAmount, "0.002");  // 0.2% fee
-if (fee) {
-  console.log(`Fee: $${fee.value()}`);  // $2.00
+const orderAmountResult = MoneyService.create(1000);
+if (orderAmountResult.ok) {
+  const fee = calculateFee(orderAmountResult.value, "0.002");  // 0.2% fee
+  if (fee) {
+    console.log(`Fee: $${fee.value()}`);  // $2.00
+  }
 }
 ```
 

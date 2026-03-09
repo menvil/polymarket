@@ -85,12 +85,20 @@ public static now(clock?: IClock): Timestamp {
   try {
     return Timestamp.now(clock); // Core может бросить при невалидном clock
   } catch {
-    return Timestamp.of(new Decimal(Date.now())); // Fallback
+    // Fallback 1: если clock вернул невалидное значение, используем Date.now()
+    // NOTE: broken IClock implementations silently fall back here — monitor clock health externally
+    try {
+      return Timestamp.of(new Decimal(Date.now()));
+    } catch {
+      // Абсолютный fallback: epoch 1ms — всегда валидный Timestamp
+      return Timestamp.of(new Decimal(1));
+    }
   }
 }
 ```
 
 Это гарантирует Never Throw Contract даже при buggy реализации IClock.
+Два уровня fallback: сначала `Date.now()`, затем абсолютный fallback на epoch 1ms.
 
 ### Паттерн Throws+Facade
 

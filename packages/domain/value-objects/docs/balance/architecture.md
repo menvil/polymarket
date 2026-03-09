@@ -70,6 +70,21 @@ private constructor(
       reservedCurrency: res.currency()
     });
   }
+
+  // Инвариант 4: available + reserved <= Money.MAX_AMOUNT (защита от overflow в total())
+  const totalAmount = avail.value().plus(res.value());
+  if (totalAmount.greaterThan(Money.MAX_AMOUNT)) {
+    throw new BalanceInvariantViolation(
+      `Total balance (available + reserved) exceeds maximum: ${Money.MAX_AMOUNT}`,
+      {
+        reason: BalanceErrorReason.TOTAL_EXCEEDS_MAX_AMOUNT,
+        available: avail.value().toString(),
+        reserved: res.value().toString(),
+        total: totalAmount.toString(),
+        maxAmount: Money.MAX_AMOUNT.toString()
+      }
+    );
+  }
 }
 ```
 
@@ -305,9 +320,10 @@ public total(): Money {
   const totalAmount = this.avail.value().plus(this.res.value());
 
   // Безопасно потому что:
-  // - Валюты гарантированно совпадают (инвариант Balance)
-  // - Оба значения >= 0 (инварианты Balance)
-  // - Оба значения finite и not NaN (инварианты Balance)
+  // - Валюты гарантированно совпадают (инвариант #3)
+  // - Оба значения >= 0 (инварианты #1, #2)
+  // - Оба значения finite и not NaN (инварианты #0a, #0b)
+  // - Сумма не может превысить Money.MAX_AMOUNT (инвариант #4)
   return Money.fromDecimal(totalAmount, this.avail.currency());
 }
 ```

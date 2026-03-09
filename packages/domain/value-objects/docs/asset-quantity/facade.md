@@ -49,7 +49,7 @@ public static create(
 
 **Ошибки:**
 
-- Если AssetIdHelpers.fromOutcomeToken() бросит (для OUTCOME_TOKEN)
+- Если AssetIdHelpers.fromOutcomeToken() вернёт ошибку (для OUTCOME_TOKEN) — ошибка перехватывается и возвращается как Result.Err
 
 **Пример:**
 
@@ -123,7 +123,7 @@ public static createOutcomeToken(
 **Ошибки:**
 
 - `INVALID_AMOUNT` — если QuantityService.create() вернул ошибку
-- `INVALID_ASSET` — если AssetIdHelpers.fromOutcomeToken() бросил ошибку валидации
+- `INVALID_ASSET` — если AssetIdHelpers.fromOutcomeToken() вернул ошибку валидации (ошибка перехватывается и возвращается как Result.Err)
 
 **Пример:**
 

@@ -16,6 +16,7 @@ Balance инкапсулирует логику управления средс�
 import { Balance, BalanceService } from '@polymarket/value-objects/balance';
 import { Money } from '@polymarket/value-objects/money';
 import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+import { isErr } from '@polymarket/result';
 
 // Подготовка идентификаторов
 const accountId: AccountId = {

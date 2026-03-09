@@ -279,7 +279,8 @@ const percentageResult = BalanceFormatter.toPercentageString(balance);
 if (percentageResult.ok) {
   console.log(percentageResult.value); // "16.67%"
 }
-console.log(BalanceFormatter.toPercentageString(balance, 0)); // "17%"
+const pctResult = BalanceFormatter.toPercentageString(balance, 0);
+if (pctResult.ok) console.log(pctResult.value); // "17%"
 ```
 
 ### Debug-вывод

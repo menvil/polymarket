@@ -245,8 +245,9 @@ if (formatted.ok) console.log(formatted.value);  // "100.50"
 const withCurrency = MoneyFormatter.toCurrency(money);
 if (withCurrency.ok) console.log(withCurrency.value);  // "$100.50 USDC"
 
-const compact = MoneyFormatter.toCompact(Money.of(new Decimal(1500)));
-if (compact.ok) console.log(compact.value);  // "$1.5K"
+const compactResult = MoneyService.create(1500);
+const compact = compactResult.ok ? MoneyFormatter.toCompact(compactResult.value) : null;
+if (compact?.ok) console.log(compact.value);  // "$1.5K"
 ```
 
 Подробнее: [adapters.md](./adapters.md)
@@ -393,8 +394,11 @@ console.log(`Fee: $${fee.value()}`);  // $2.00
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
 
-const usd1 = Money.of(new Decimal(100), 'USDC');
-const usd2 = Money.of(new Decimal(50), 'USDC');
+const r1 = MoneyService.create(100);
+const r2 = MoneyService.create(50);
+if (!r1.ok || !r2.ok) return;
+const usd1 = r1.value;
+const usd2 = r2.value;
 
 // Попытка сложить разные валюты
 const sumResult = MoneyService.add(usd1, usd2);
@@ -453,59 +457,75 @@ const withoutCurrency = MoneyFormatter.toCurrency(money, false);
 if (withoutCurrency.ok) console.log(withoutCurrency.value);  // "$1234.56"
 
 // Компактный формат для dashboard
-const compact1 = MoneyFormatter.toCompact(Money.of(new Decimal(1500)));
-if (compact1.ok) console.log(compact1.value);  // "$1.5K"
-const compact2 = MoneyFormatter.toCompact(Money.of(new Decimal(2300000)));
-if (compact2.ok) console.log(compact2.value);  // "$2.3M"
+const c1Result = MoneyService.create(1500);
+const compact1 = c1Result.ok ? MoneyFormatter.toCompact(c1Result.value) : null;
+if (compact1?.ok) console.log(compact1.value);  // "$1.5K"
+
+const c2Result = MoneyService.create(2300000);
+const compact2 = c2Result.ok ? MoneyFormatter.toCompact(c2Result.value) : null;
+if (compact2?.ok) console.log(compact2.value);  // "$2.3M"
 ```
 
 ### Операции с Ratio (проценты, доли)
 
 ```typescript
-import { MoneyService, Money } from '@polymarket/value-objects/money';
-import { Ratio } from '@polymarket/value-objects/ratio';
+import { MoneyService } from '@polymarket/value-objects/money';
+import { RatioService } from '@polymarket/value-objects/ratio';
+import Decimal from 'decimal.js';
 
 // 1. Вычисление доли (portion) - fees, allocations
-const orderAmount = Money.of(new Decimal(1000), 'USDC');
-const feeRate = Ratio.of(new Decimal(0.02)); // 2%
+const orderAmountResult = MoneyService.create(1000);
+const feeRateResult = RatioService.fromDecimal(0.02); // 2%
 
-const feeResult = MoneyService.portion(orderAmount, feeRate);
-if (feeResult.ok) {
-  console.log(feeResult.value.value().toString()); // "20" USDC (2% от $1000)
+if (orderAmountResult.ok && feeRateResult.ok) {
+  const feeResult = MoneyService.portion(orderAmountResult.value, feeRateResult.value);
+  if (feeResult.ok) {
+    console.log(feeResult.value.value().toString()); // "20" USDC (2% от $1000)
+  }
 }
 
 // 2. Увеличение на процент (increaseBy) - markup, interest
-const baseCost = Money.of(new Decimal(100), 'USDC');
-const markup = Ratio.of(new Decimal(0.2)); // +20%
+const baseCostResult = MoneyService.create(100);
+const markupResult = RatioService.fromDecimal(0.2); // +20%
 
-const priceResult = MoneyService.increaseBy(baseCost, markup);
-if (priceResult.ok) {
-  console.log(priceResult.value.value().toString()); // "120" USDC (+20%)
+if (baseCostResult.ok && markupResult.ok) {
+  const priceResult = MoneyService.increaseBy(baseCostResult.value, markupResult.value);
+  if (priceResult.ok) {
+    console.log(priceResult.value.value().toString()); // "120" USDC (+20%)
+  }
 }
 
 // 3. Уменьшение на процент (decreaseBy) - discount
-const originalPrice = Money.of(new Decimal(100), 'USDC');
-const discount = Ratio.of(new Decimal(0.15)); // 15% discount
+const originalPriceResult = MoneyService.create(100);
+const discountResult = RatioService.fromDecimal(0.15); // 15% discount
 
-const finalPriceResult = MoneyService.decreaseBy(originalPrice, discount);
-if (finalPriceResult.ok) {
-  console.log(finalPriceResult.value.value().toString()); // "85" USDC (-15%)
+if (originalPriceResult.ok && discountResult.ok) {
+  const finalPriceResult = MoneyService.decreaseBy(originalPriceResult.value, discountResult.value);
+  if (finalPriceResult.ok) {
+    console.log(finalPriceResult.value.value().toString()); // "85" USDC (-15%)
+  }
 }
 
 // 4. Workflow: fee calculation + discount
-const total = Money.of(new Decimal(5000), 'USDC');
+const totalResult = MoneyService.create(5000);
 
-// Вычисляем allocation 30%
-const allocRate = Ratio.of(new Decimal(0.3));
-const allocResult = MoneyService.portion(total, allocRate);
-if (allocResult.ok) {
-  console.log(`Allocation: $${allocResult.value.value()}`); // $1500
+if (totalResult.ok) {
+  // Вычисляем allocation 30%
+  const allocRateResult = RatioService.fromDecimal(0.3);
+  if (allocRateResult.ok) {
+    const allocResult = MoneyService.portion(totalResult.value, allocRateResult.value);
+    if (allocResult.ok) {
+      console.log(`Allocation: $${allocResult.value.value()}`); // $1500
 
-  // Применяем discount 10% к allocation
-  const discountRate = Ratio.of(new Decimal(0.1));
-  const finalResult = MoneyService.decreaseBy(allocResult.value, discountRate);
-  if (finalResult.ok) {
-    console.log(`After discount: $${finalResult.value.value()}`); // $1350
+      // Применяем discount 10% к allocation
+      const discountRateResult = RatioService.fromDecimal(0.1);
+      if (discountRateResult.ok) {
+        const finalResult = MoneyService.decreaseBy(allocResult.value, discountRateResult.value);
+        if (finalResult.ok) {
+          console.log(`After discount: $${finalResult.value.value()}`); // $1350
+        }
+      }
+    }
   }
 }
 ```
