@@ -105,7 +105,7 @@ export class AssetQuantity {
         if (!result.ok) throw result.error;
         canonicalAsset = result.value;
       } else {
-        // POLYMARKET_CTF_TOKEN: замораживаем (мы уже в ветке !isFrozen)
+        // POLYMARKET_CTF_TOKEN: shallow freeze достаточен — все поля примитивы (type: string, tokenId: string)
         canonicalAsset = Object.freeze({ ...asset }) as AssetId;
       }
 

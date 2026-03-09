@@ -121,8 +121,9 @@ export class MoneySerializer {
   public static fromJSON(json: unknown): Result<Money, InvalidMoneyError> {
     // 1. Проверка что json - объект
     if (typeof json !== 'object' || json === null || Array.isArray(json)) {
+      const displayedType = json === null ? 'null' : Array.isArray(json) ? 'array' : typeof json;
       return Err(
-        new InvalidMoneyError(`Expected object, got ${typeof json}`, {
+        new InvalidMoneyError(`Expected object, got ${displayedType}`, {
           context: {
             source: ErrorSource.PARSING,
             service: MoneySerializer.SERVICE_NAME,

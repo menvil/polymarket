@@ -2,7 +2,7 @@
  * TokenBalance Errors
  *
  * @remarks
- * Публичные типы ошибок для использования в application code.
+ * Public error types for use in application code.
  */
 
 export { TokenBalanceErrorReason } from './TokenBalanceErrorReason.js';

@@ -49,11 +49,17 @@ import { BalanceErrorReason } from '../errors/BalanceErrorReason.js';
  * ```typescript
  * import { BalanceService } from '@polymarket/value-objects/balance';
  * import { Money } from '@polymarket/value-objects/money';
+ * import { parseAccountId, asVenueId } from '@polymarket/ids';
+ *
+ * const accountId = parseAccountId('venue:POLYMARKET:0xabc');
+ * const venueId = asVenueId('POLYMARKET');
  *
  * // Создание баланса
  * const result = BalanceService.create(
  *   Money.fromUSDC(10000),
- *   Money.fromUSDC(2000)
+ *   Money.fromUSDC(2000),
+ *   accountId,
+ *   venueId
  * );
  * if (isErr(result)) {
  *   console.error(result.error.context.reason); // BalanceErrorReason

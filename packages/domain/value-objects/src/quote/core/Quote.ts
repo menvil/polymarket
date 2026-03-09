@@ -538,7 +538,12 @@ export class Quote {
     }
 
     // Затем проверяем timestamp (Timestamp.equals для точного сравнения)
-    return this._timestamp.equals(other._timestamp);
+    if (!this._timestamp.equals(other._timestamp)) {
+      return false;
+    }
+
+    // Проверяем метаданные источника (sourceId + instrumentId)
+    return this._sourceId === other._sourceId && this._instrumentId === other._instrumentId;
   }
 
   /**
