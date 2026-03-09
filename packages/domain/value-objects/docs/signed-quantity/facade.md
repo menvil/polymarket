@@ -929,8 +929,11 @@ if (!result.ok) {
 }
 const qty = result.value;
 
-// ❌ Неправильно (TypeScript не скомпилируется)
-const qty = SignedQuantityService.create(value).value; // Error: Property 'value' does not exist on type 'Result'
+// ❌ Неправильно — Result является дискриминированным union-типом,
+// где свойство .value существует только на ветке { ok: true }.
+// TypeScript выдаст ошибку компиляции, т.к. .value недоступен без предварительного
+// сужения типа через проверку result.ok (или использования type guard / unwrap-хелпера).
+const qty = SignedQuantityService.create(value).value; // TS error: .value недоступен без проверки result.ok
 ```
 
 ### 2. Используй isErr / isOk helpers
@@ -953,9 +956,16 @@ const qty = result.value;
 ### 3. Propagate Result через функции
 
 ```typescript
+import { SignedQuantity, SignedQuantityService } from '@polymarket/value-objects/signed-quantity';
+import { Ok } from '@polymarket/result';
+import type { Result } from '@polymarket/result';
+import type { InvalidSignedQuantityError } from '@polymarket/value-objects/signed-quantity';
+
 function calculateTotal(
   quantities: SignedQuantity[]
 ): Result<SignedQuantity, InvalidSignedQuantityError> {
+  // SignedQuantity.ZERO — допустимое исключение: статическая константа Core,
+  // которая никогда не бросает и безопасна для использования напрямую.
   let total = SignedQuantity.ZERO;
 
   for (const qty of quantities) {
@@ -995,6 +1005,15 @@ const qty = SignedQuantity.of(new Decimal(10)); // может бросить!
 // ✅ Используй Facade
 import { SignedQuantityService } from '@polymarket/value-objects/signed-quantity';
 const result = SignedQuantityService.create(10); // Result<T, E>
+```
+
+**Разрешённые исключения:** Статические константы Core, которые не бросают исключений,
+допустимы в публичном коде:
+
+```typescript
+// ✅ SignedQuantity.ZERO — допустимое исключение (static readonly, никогда не бросает)
+import { SignedQuantity } from '@polymarket/value-objects/signed-quantity';
+const zero = SignedQuantity.ZERO;
 ```
 
 ### 6. Core только для внутренних операций

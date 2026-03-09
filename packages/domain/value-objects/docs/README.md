@@ -241,6 +241,8 @@ if (fee1Result.ok && fee2Result.ok) {
 import { Quote } from '@polymarket/value-objects';
 import { unwrap } from '@polymarket/result';
 
+import { Quote, Price } from '@polymarket/value-objects';
+
 const bid = unwrap(Price.fromValue(0.54));
 const ask = unwrap(Price.fromValue(0.56));
 
@@ -374,7 +376,7 @@ const p1 = unwrap(Percentage.fromDecimal(0.1));
 const p2 = unwrap(Percentage.fromDecimal(0.2));
 const sum = unwrap(p1.add(p2));
 
-console.log(sum.toDecimal().toString()); // "30" - точно!
+console.log(sum.toDecimal().toString()); // "0.3" - точно!
 ```
 
 ### PnL (Profit & Loss) расчёты
@@ -558,7 +560,7 @@ npm run test:watch
 **Статистика тестов (основные пакеты):**
 
 - Money: 77 тестов ✅
-- Balance: ✅
+- Balance: 29 тестов ✅
 - Percentage: 95 тестов ✅
 - Всего: 201+ тестов ✅
 

@@ -318,7 +318,8 @@ public static skewWithRefresh(
 
 ```typescript
 const clock = new PaperClock(new Date('2024-01-15T12:00:00Z'));
-const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
+// Обработка ошибок опущена для краткости; в production всегда проверяй result.ok
+const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value!;
 
 const skewed = QuoteService.skewWithRefresh(
   quote,
@@ -358,7 +359,8 @@ public static updateSizesWithRefresh(
 
 ```typescript
 const clock = new PaperClock(new Date('2024-01-15T12:00:00Z'));
-const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value;
+// Обработка ошибок опущена для краткости; в production всегда проверяй result.ok
+const quote = QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET').value!;
 
 const updated = QuoteService.updateSizesWithRefresh(quote, 200, 300, clock);
 // updated: bid=0.48@200, ask=0.52@300, timestamp=clock.now()
@@ -782,19 +784,33 @@ rewrap<E extends DomainError>(
 ): E
 ```
 
-**Использование при создании Price:**
+**Использование при создании Price (два паттерна):**
 
 ```typescript
+// Паттерн 1: rewrap существующей ошибки сервиса — передаём bidResult.error напрямую
 const bidResult = PriceService.create(bidDecimal);
 if (!bidResult.ok) {
   return Err(
     rewrap(
       'create',              // текущая операция
-      { component: 'bid' },              // доп. контекст
+      { component: 'bid' }, // доп. контекст
+      bidResult.error,       // оригинальная ошибка PriceService (сохраняет reason и cause)
+      InvalidQuoteError
+    )
+  );
+}
+
+// Паттерн 2: создание новой InvalidQuoteError с явным reason, затем rewrap для добавления opChain
+const bidResult2 = PriceService.create(bidDecimal);
+if (!bidResult2.ok) {
+  return Err(
+    rewrap(
+      'create',
+      { component: 'bid' },
       new InvalidQuoteError('Invalid bid price', {
         context: {
           reason: QuoteErrorReason.INVALID_BID,
-          cause: bidResult.error         // root cause
+          cause: bidResult2.error        // root cause из PriceService
         }
       }),
       InvalidQuoteError

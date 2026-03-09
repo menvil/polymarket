@@ -265,14 +265,15 @@ function* tightenSpreadGradually(
   targetWidthBps: number,
   steps: number
 ) {
-  const initialWidthBps = initialSpread.widthRatio().toDecimal().times(10000).toNumber();
-  // Переводим bps → долю от текущей ширины (bps / 10000 = коэффициент)
-  const stepSize = (initialWidthBps - targetWidthBps) / steps / 10000;
-  
+  // Вычисляем абсолютные ширины: bps / 10000 * midpoint = абсолютная ширина
+  const initialWidth = initialSpread.width().toNumber();
+  const targetWidth = targetWidthBps / 10000 * initialSpread.midpoint().toNumber();
+  // Константный шаг сужения на каждую сторону (tighten уменьшает bid и ask на одну и ту же величину)
+  const tightenAmount = (initialWidth - targetWidth) / steps / 2;
+
   let currentSpread = initialSpread;
-  
+
   for (let i = 0; i < steps; i++) {
-    const tightenAmount = (currentSpread.width().toNumber() * stepSize) / 2;
     
     const result = SpreadService.tighten(currentSpread, tightenAmount);
     

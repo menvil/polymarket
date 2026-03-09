@@ -7,6 +7,7 @@
 ```typescript
 import { BalanceService } from '@polymarket/value-objects/balance';
 import { Money } from '@polymarket/value-objects/money';
+import { isErr } from '@polymarket/result';
 import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
 
 // Подготовка идентификаторов
@@ -52,6 +53,9 @@ console.log(balance.hasReserved()); // true
 ### Открытие ордера (резервирование)
 
 ```typescript
+import { BalanceService, BalanceErrorReason } from '@polymarket/value-objects/balance';
+import { Money } from '@polymarket/value-objects/money';
+import { expectOk } from '@polymarket/result';
 import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
 
 const accountId: AccountId = {
@@ -112,6 +116,11 @@ if (consumeResult.ok) {
 **Разница между unfreezeReserved и consumeReserved:**
 
 ```typescript
+import { BalanceService } from '@polymarket/value-objects/balance';
+import { Money } from '@polymarket/value-objects/money';
+import { expectOk } from '@polymarket/result';
+import type { AccountId, VenueId, WalletAddress } from '@polymarket/ids';
+
 const accountId: AccountId = {
   kind: 'WALLET',
   address: '0x1234567890123456789012345678901234567890' as WalletAddress
@@ -133,6 +142,11 @@ const consumed = expectOk(BalanceService.consumeReserved(balance, Money.of(3000)
 ### Пополнение баланса
 
 ```typescript
+import { BalanceService } from '@polymarket/value-objects/balance';
+import { Money } from '@polymarket/value-objects/money';
+import { MoneyService } from '@polymarket/value-objects/money';
+import { expectOk } from '@polymarket/result';
+
 // Пользователь вносит депозит $50
 const depositAmount = Money.of(5000);
 
@@ -186,6 +200,10 @@ if (deserializedResult.ok) {
 ### API ответ
 
 ```typescript
+import { BalanceSerializer } from '@polymarket/value-objects/balance';
+import { isErr } from '@polymarket/result';
+import type { Balance } from '@polymarket/value-objects/balance';
+
 // Получение баланса с API
 async function fetchUserBalance(userId: string): Promise<Balance | null> {
   const response = await fetch(`/api/users/${userId}/balance`);
@@ -297,6 +315,12 @@ console.log(BalanceFormatter.toDebugString(balance));
 ### Exhaustive error handling
 
 ```typescript
+import { BalanceService, BalanceErrorReason } from '@polymarket/value-objects/balance';
+import { Money } from '@polymarket/value-objects/money';
+import { isErr } from '@polymarket/result';
+import type { Balance, InvalidBalanceError } from '@polymarket/value-objects/balance';
+import type { Result } from '@polymarket/result';
+
 function handleBalanceOperation(
   balance: Balance,
   operation: 'reserve' | 'unfreezeReserved' | 'consumeReserved',
