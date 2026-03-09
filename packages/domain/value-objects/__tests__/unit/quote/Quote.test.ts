@@ -403,7 +403,7 @@ describe('Quote Core', () => {
       expect(age.toNumber()).toBeLessThan(6000);
     });
 
-    it('принимает строку с Unix ms', () => {
+    it('вычисляет возраст при Timestamp объекте (вариант 2)', () => {
       const timestampMs = Date.now() - 5000;
       const timestamp = createTestTimestamp(timestampMs);
       const quote = Quote.of(
@@ -421,7 +421,7 @@ describe('Quote Core', () => {
       expect(age.toNumber()).toBeLessThan(6000);
     });
 
-    it('принимает Decimal', () => {
+    it('вычисляет возраст при Timestamp объекте (вариант 3)', () => {
       const timestampMs = Date.now() - 5000;
       const timestamp = createTestTimestamp(timestampMs);
       const quote = Quote.of(

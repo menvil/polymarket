@@ -96,9 +96,9 @@ export class PolymarketTradesRestClient {
   async getMarketTrades(tokenId: string, limit?: number): Promise<MarketTradeResponse[]> {
     this.logger.debug('Getting market trades', { tokenId, limit });
 
-    // API expects snake_case parameter names
+    // API ожидает параметры в формате snake_case
     const params: Record<string, string> = {
-      token_id: tokenId, // CRITICAL: API requires token_id not tokenId
+      token_id: tokenId, // КРИТИЧНО: API требует token_id, не tokenId
     };
 
     if (limit !== undefined) {
@@ -173,10 +173,10 @@ export class PolymarketTradesRestClient {
     const now = Date.now();
     const cutoff = now - windowMs;
 
-    // Get trades (may need to fetch more than limit to cover window)
+    // Получаем сделки (может потребоваться больше limit для покрытия окна)
     const trades = await this.getMarketTrades(tokenId, 1000);
 
-    // Filter trades within window and sum sizes
+    // Фильтруем сделки в окне и суммируем размеры
     const volume = trades
       .filter((trade) => trade.timestamp >= cutoff)
       .reduce((sum, trade) => sum + parseFloat(trade.size), 0);

@@ -112,7 +112,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
    * @throws {ApiError} If API call fails
    */
   async getPositions(tokenId?: string): Promise<PositionResponse[]> {
-    // v7.7.14: Removed duplicate logs (logged in PolymarketPositionsRestClient)
+    // Дублирующие логи удалены (логируются в PolymarketPositionsRestClient)
     const positions = await this.positionsProvider.getPositions(tokenId);
     return positions;
   }
@@ -162,7 +162,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
       size,
     });
 
-    // Step 1: Normalize size via MarketConstraintsPolicy
+    // Шаг 1: Нормализуем размер через MarketConstraintsPolicy
     const normalizedSize = await this.constraintsPolicy.normalizeSize(tokenId, size);
 
     this.logger.debug('Size normalized', {
@@ -170,10 +170,10 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
       normalized: normalizedSize,
     });
 
-    // Step 1.5: Normalize price via MarketConstraintsPolicy (CRITICAL FIX)
+    // Шаг 1.5: Нормализуем цену через MarketConstraintsPolicy
     const normalizedPrice = await this.constraintsPolicy.normalizePrice(tokenId, price);
 
-    // Get priceTick from constraints for API builder
+    // Получаем priceTick из ограничений для построителя API
     const constraints = await this.constraintsPolicy.getConstraints(tokenId);
 
     this.logger.debug('Price normalized', {
@@ -182,7 +182,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
       priceTick: constraints.priceTick,
     });
 
-    // Step 2: Validate size against constraints
+    // Шаг 2: Проверяем размер против ограничений
     const sizeValidation = await this.constraintsPolicy.validateSize(
       tokenId,
       normalizedSize,
@@ -203,13 +203,13 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
       return { ok: false, reason: sizeValidation.reason };
     }
 
-    // Step 3: Check balance via BalancePolicy
+    // Шаг 3: Проверяем баланс через BalancePolicy
     const balanceCheck = await this.balancePolicy.checkBalance({
       tokenId,
       side,
       price: normalizedPrice,
       size: normalizedSize,
-      minOrderSize: constraints.minOrderSize, // Pass market's minimum order size
+      minOrderSize: constraints.minOrderSize, // Передаём минимальный размер ордера для маркета
     });
 
     if (!balanceCheck.ok) {
@@ -225,10 +225,10 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
       return { ok: false, reason: balanceCheck.reason };
     }
 
-    // Use suggestedSize if balance check provided it (e.g., selling exact available balance)
+    // Используем suggestedSize если он предоставлен проверкой баланса (напр., продажа доступного остатка)
     const finalSize = balanceCheck.suggestedSize ?? normalizedSize;
 
-    // Get fee rate (learned from errors or default)
+    // Получаем ставку комиссии (изученную из ошибок или дефолтную)
     const feeRateBps = this.constraintsPolicy.getFeeRateBps(tokenId);
 
     this.logger.debug('Order can be placed', {
@@ -265,7 +265,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
   async approveUSDC(amount: number): Promise<void> {
     this.logger.warn('approveUSDC not yet implemented', { amount });
 
-    // TODO: Implement blockchain integration
+    // TODO: Реализовать интеграцию с блокчейном
     throw new Error('approveUSDC not yet implemented');
   }
 
@@ -281,7 +281,7 @@ export class PolymarketPortfolioAdapter implements IPortfolioAdapter {
   async getAllowance(): Promise<number> {
     this.logger.warn('getAllowance not yet implemented');
 
-    // TODO: Implement blockchain integration
+    // TODO: Реализовать интеграцию с блокчейном
     throw new Error('getAllowance not yet implemented');
   }
 }

@@ -22,31 +22,31 @@
  * ```
  */
 
-// Types
+// Типы
 export type { PolymarketRestConfig, ApiErrorResponse } from './types.js';
 export type { MarketDataClientConfig } from './clients/PolymarketMarketDataRestClient.js';
 
-// Main exports
+// Основные экспорты
 export { PolymarketRestClient, ApiError } from './PolymarketRestClient.js';
 export { PolymarketDataApiClient } from './PolymarketDataApiClient.js';
 export { PolymarketRestAdapterFactory } from './PolymarketRestAdapterFactory.js';
 export { PolymarketRestAdapter, ValidationError } from './adapters/PolymarketRestAdapter.js';
 
-// Adapters
+// Адаптеры
 export { PolymarketExecutionAdapter } from './adapters/PolymarketExecutionAdapter.js';
 export { PolymarketPortfolioAdapter } from './adapters/PolymarketPortfolioAdapter.js';
 
-// Policies
+// Политики
 export { PolymarketMarketConstraintsPolicy } from './policies/PolymarketMarketConstraintsPolicy.js';
 export { PolymarketBalancePolicy } from './policies/PolymarketBalancePolicy.js';
 export type { BalanceCheckParams, BalanceCheckResult } from './policies/PolymarketBalancePolicy.js';
 
-// Providers
+// Провайдеры
 export { PolymarketBalanceProvider } from './providers/PolymarketBalanceProvider.js';
 export { PolymarketPositionsProvider } from './providers/PolymarketPositionsProvider.js';
 export { PolymarketOrdersProvider } from './providers/PolymarketOrdersProvider.js';
 
-// Clients
+// Клиенты
 export { PolymarketOrderRestClient } from './clients/PolymarketOrderRestClient.js';
 export { PolymarketBalanceRestClient } from './clients/PolymarketBalanceRestClient.js';
 export { PolymarketPositionsRestClient } from './clients/PolymarketPositionsRestClient.js';
@@ -55,10 +55,10 @@ export { PolymarketTradesRestClient } from './clients/PolymarketTradesRestClient
 export { PolymarketUserTradesRestClient } from './clients/PolymarketUserTradesRestClient.js';
 export { PolymarketMarketDataRestClient } from './clients/PolymarketMarketDataRestClient.js';
 
-// Mappers
+// Маппинги
 export { PolymarketBalanceMapper } from './mappers/PolymarketBalanceMapper.js';
 export { PolymarketOrderMapper } from './mappers/PolymarketOrderMapper.js';
 export { PolymarketPositionMapper } from './mappers/PolymarketPositionMapper.js';
 
-// Auth
+// Аутентификация
 export { PolymarketSigner } from './auth/PolymarketSigner.js';

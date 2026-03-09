@@ -58,9 +58,9 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    * ```
    */
   async getAvailableBalance(): Promise<number> {
-    // In simulation mode, return virtual balance without API call
+    // В режиме симуляции возвращаем виртуальный баланс без вызова API
     if (this.simulationMode) {
-      const virtualBalance = 1000000; // 1M USDC virtual balance
+      const virtualBalance = 1000000; // 1M USDC виртуальный баланс
       this.logger.debug('Getting available balance (SIMULATION MODE)', {
         virtualBalance,
       });
@@ -93,9 +93,9 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    * ```
    */
   async getOutcomeBalance(tokenId: string): Promise<number> {
-    // In simulation mode, return virtual outcome balance
+    // В режиме симуляции возвращаем виртуальный баланс outcome-токенов
     if (this.simulationMode) {
-      const virtualOutcomeBalance = 0; // No outcome tokens initially
+      const virtualOutcomeBalance = 0; // Изначально нет outcome-токенов
       this.logger.debug('Getting outcome balance (SIMULATION MODE)', {
         tokenId,
         virtualOutcomeBalance,
@@ -128,9 +128,9 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    * ```
    */
   async getLockedBalance(): Promise<number> {
-    // In simulation mode, return virtual locked balance
+    // В режиме симуляции возвращаем виртуальный заблокированный баланс
     if (this.simulationMode) {
-      const virtualLockedBalance = 0; // No locked balance in simulation
+      const virtualLockedBalance = 0; // В симуляции нет заблокированного баланса
       this.logger.debug('Getting locked balance (SIMULATION MODE)', {
         virtualLockedBalance,
       });
@@ -162,9 +162,9 @@ export class PolymarketBalanceProvider implements IBalanceProvider {
    * ```
    */
   async getTotalBalance(): Promise<number> {
-    // In simulation mode, return virtual total balance
+    // В режиме симуляции возвращаем виртуальный общий баланс
     if (this.simulationMode) {
-      const virtualTotalBalance = 1000000; // 1M USDC total
+      const virtualTotalBalance = 1000000; // 1M USDC итого
       this.logger.debug('Getting total balance (SIMULATION MODE)', {
         virtualTotalBalance,
       });

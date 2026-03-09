@@ -152,7 +152,7 @@ const result = TradeMapper.fromPolymarketLastTradeEvent({
 
 if (result.ok) {
   const trade = result.value;
-  console.log(trade.getNotional().toNumber()); // 3.46 (0.44 × 7.861135)
+  console.log(trade.getNotional().toNumber()); // ≈3.4589 (0.44 × 7.861135)
   console.log(trade.isBuy()); // true
 }
 ```

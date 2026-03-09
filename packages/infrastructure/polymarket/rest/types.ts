@@ -9,13 +9,13 @@
  * Polymarket L2 API credentials
  */
 export interface PolymarketL2Credentials {
-  /** API key (UUID format) */
+  /** API ключ (формат UUID) */
   apiKey: string;
 
-  /** API secret (base64url encoded - may contain - and _ characters) */
+  /** API секрет (base64url — может содержать символы - и _) */
   secret: string;
 
-  /** API passphrase (hex string) */
+  /** API пароль (hex-строка) */
   passphrase: string;
 }
 
@@ -29,11 +29,11 @@ export interface PolymarketL2Credentials {
  * - POLY_GNOSIS_SAFE (2): Gnosis Safe multisig
  */
 export enum SignatureType {
-  /** Standard EOA (Externally Owned Account) */
+  /** Стандартный EOA (Externally Owned Account) */
   EOA = 0,
-  /** Polymarket proxy wallet (funder address) */
+  /** Proxy-кошелёк Polymarket (адрес фандера) */
   POLY_PROXY = 1,
-  /** Gnosis Safe multisig */
+  /** Gnosis Safe мультиподпись */
   POLY_GNOSIS_SAFE = 2,
 }
 
@@ -41,16 +41,16 @@ export enum SignatureType {
  * Polymarket REST Client configuration
  */
 export interface PolymarketRestConfig {
-  /** Base URL for CLOB API */
+  /** Базовый URL для CLOB API */
   baseUrl: string;
 
-  /** Private key for signing requests */
+  /** Приватный ключ для подписи запросов */
   privateKey: string;
 
-  /** Chain ID (137 for Polygon) */
+  /** ID сети (137 для Polygon) */
   chainId: number;
 
-  /** L2 API credentials (apiKey, secret, passphrase) */
+  /** L2 API учётные данные (apiKey, secret, passphrase) */
   l2Credentials?: PolymarketL2Credentials;
 
   /**
@@ -73,13 +73,13 @@ export interface PolymarketRestConfig {
    */
   funderAddress?: string;
 
-  /** Request timeout in milliseconds */
+  /** Таймаут запроса в миллисекундах */
   timeout?: number;
 
-  /** Max retry attempts */
+  /** Максимальное количество повторных попыток */
   maxRetries?: number;
 
-  /** Retry delay in milliseconds */
+  /** Задержка повтора в миллисекундах */
   retryDelay?: number;
 }
 
@@ -87,12 +87,12 @@ export interface PolymarketRestConfig {
  * API error response
  */
 export interface ApiErrorResponse {
-  /** Error message */
+  /** Сообщение об ошибке */
   error: string;
 
-  /** Error code */
+  /** Код ошибки */
   code?: string;
 
-  /** Additional details */
+  /** Дополнительные детали */
   details?: unknown;
 }

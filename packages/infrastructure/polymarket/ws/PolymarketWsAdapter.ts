@@ -227,7 +227,13 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
     this.client.on('connected', async () => {
       this._isConnected = true;
       this.logger.info('WebSocket connected');
-      await this.resubscribeAll();
+      try {
+        await this.resubscribeAll();
+      } catch (error) {
+        this.logger.error('Failed to resubscribe after connect', {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
     });
 
     this.client.on('disconnected', () => {
@@ -578,7 +584,7 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
     }
 
     // Публикуем в EventBus (оборачиваем в envelope)
-    // Note: DomainEvent uses eventName, but createProductionEnvelope expects type
+    // Примечание: DomainEvent использует eventName, но createProductionEnvelope ожидает type
     const envelope = createProductionEnvelope({ ...event, type: event.eventName } as any, {
       environment: 'LIVE',
       accountId: 'default',
@@ -631,7 +637,7 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
     }
 
     // Публикуем в EventBus (оборачиваем в envelope)
-    // Note: DomainEvent uses eventName, but createProductionEnvelope expects type
+    // Примечание: DomainEvent использует eventName, но createProductionEnvelope ожидает type
     const envelope = createProductionEnvelope({ ...event, type: event.eventName } as any, {
       environment: 'LIVE',
       accountId: 'default',
@@ -652,7 +658,7 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
    * 3. Отправить одно сообщение подписки со всеми токенами
    */
   private async sendAllSubscriptions(): Promise<void> {
-    // CRITICAL: Don't send subscriptions if adapter is destroyed
+    // КРИТИЧНО: Не отправляем подписки если адаптер уничтожен
     if (this._isDestroyed) {
       this.logger.debug('Adapter destroyed, skipping subscription');
       return;
@@ -695,7 +701,7 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
         tokenCount: tokens.length,
       });
     } catch (error) {
-      // CRITICAL: Don't log error if adapter is destroyed (это нормально)
+      // КРИТИЧНО: Не логируем ошибку если адаптер уничтожен (это нормально)
       if (this._isDestroyed) {
         this.logger.debug('Subscription failed after destroy (expected)', {
           error: error instanceof Error ? error.message : String(error),
@@ -722,7 +728,7 @@ export class PolymarketWsAdapter implements IMarketDataFeed {
    * Отправляет все текущие подписки в WebSocket.
    */
   private async resubscribeAll(): Promise<void> {
-    // CRITICAL: Don't resubscribe if adapter is destroyed
+    // КРИТИЧНО: Не переподписываемся если адаптер уничтожен
     if (this._isDestroyed) {
       this.logger.debug('Adapter destroyed, skipping resubscribe');
       return;

@@ -256,8 +256,8 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
   constructor(_config: OfficialSDKWsConfig, logger: ILogger) {
     this.logger = logger;
 
-    // TODO: Initialize official SDK WebSocket client here
-    // Example:
+    // TODO: Инициализировать официальный SDK WebSocket клиент здесь
+    // Пример:
     // this.clobClient = new ClobClient({
     //   host: config.url,
     //   chainId: config.chainId,
@@ -473,8 +473,8 @@ export class PolymarketOfficialWsAdapter implements IMarketDataFeed {
     this._isConnected = false;
     this.subscribedTokens.clear();
 
-    // TODO: Call SDK's cleanup methods
-    // Example:
+    // TODO: Вызвать методы очистки SDK
+    // Пример:
     // await this.clobClient.disconnect();
     // this.clobClient.removeAllListeners();
   }

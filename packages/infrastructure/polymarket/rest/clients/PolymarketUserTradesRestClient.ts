@@ -151,7 +151,7 @@ export class PolymarketUserTradesRestClient {
   async getUserFills(params?: UserFillsParams): Promise<UserFillResponse[]> {
     this.logger.debug('Getting user fills', params);
 
-    // Build query parameters (API expects snake_case)
+    // Формируем параметры запроса (API ожидает snake_case)
     const queryParams: Record<string, string> = {};
 
     if (params?.market) {
@@ -182,7 +182,7 @@ export class PolymarketUserTradesRestClient {
       queryParams.only_first_page = params.only_first_page.toString();
     }
 
-    // Call authenticated endpoint
+    // Вызываем аутентифицированный endpoint
     const fills = await this.restClient.get<UserFillResponse[]>(
       '/data/trades',
       queryParams

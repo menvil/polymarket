@@ -293,7 +293,7 @@ describe('Money Integration Workflow', () => {
       expect(amount.ok).toBe(true);
 
       if (amount.ok) {
-        const zeroUsdc = Money.of(new Decimal(0), 'USDC');
+        const zeroUsdc = Money.ZERO.USDC;
         const result = MoneyService.add(amount.value, zeroUsdc);
 
         expect(result.ok).toBe(true);

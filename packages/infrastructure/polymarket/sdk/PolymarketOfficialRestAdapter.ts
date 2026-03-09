@@ -205,8 +205,8 @@ export class PolymarketOfficialRestAdapter {
   constructor(_config: OfficialSDKConfig, logger: ILogger) {
     this.logger = logger;
 
-    // TODO: Initialize official SDK client here
-    // Example:
+    // TODO: Инициализировать официальный SDK клиент здесь
+    // Пример:
     // this.clobClient = new ClobClient({
     //   host: config.baseUrl,
     //   chainId: config.chainId,
@@ -344,7 +344,7 @@ export class PolymarketOfficialRestAdapter {
    */
   clearConstraintsCache(_tokenId?: string): void {
     this.logger.debug('[PolymarketOfficialRestAdapter] clearConstraintsCache() - no-op in official SDK');
-    // Official SDK may not cache constraints
-    // This is a no-op unless SDK provides cache clearing
+    // Официальный SDK может не кэшировать ограничения
+    // Это no-op если SDK не предоставляет очистку кэша
   }
 }

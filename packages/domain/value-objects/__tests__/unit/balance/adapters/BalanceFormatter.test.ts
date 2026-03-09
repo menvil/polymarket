@@ -337,7 +337,7 @@ describe('BalanceFormatter', () => {
       expect(compact).toMatch(/Res: \$\d+[KM]/);
     });
 
-    it('toCompact() работает с большим decimals', () => {
+    it('toCompact() работает с decimals = 1', () => {
       const balance = createBalance(150000, 50000);
       const compact = unwrap(BalanceFormatter.toCompact(balance, 1));
 

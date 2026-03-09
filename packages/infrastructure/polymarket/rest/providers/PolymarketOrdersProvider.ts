@@ -138,10 +138,10 @@ export class PolymarketOrdersProvider implements IOrdersProvider {
   ): Promise<OrderResponse[]> {
     this.logger.debug('Getting orders by status', { status, tokenId });
 
-    // Get open orders (includes 'open' and 'partially_filled')
+    // Получаем открытые ордера (включает 'open' и 'partially_filled')
     const openOrders = await this.getOpenOrders(tokenId);
 
-    // Filter by status
+    // Фильтруем по статусу
     const filtered = openOrders.filter((order) => order.status === status);
 
     this.logger.debug('Orders by status retrieved', {

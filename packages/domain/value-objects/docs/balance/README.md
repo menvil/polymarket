@@ -50,19 +50,19 @@ if (reserveResult.ok) {
   const newBalance = reserveResult.value;
   console.log(newBalance.available().value()); // 7000 ($70.00)
   console.log(newBalance.reserved().value());  // 5000 ($50.00)
-}
 
-// Отмена ордера (размораживание средств)
-const unfreezeResult = BalanceService.unfreezeReserved(newBalance, Money.of(3000));
-if (unfreezeResult.ok) {
-  console.log(unfreezeResult.value.available().value()); // 10000
-}
+  // Отмена ордера (размораживание средств)
+  const unfreezeResult = BalanceService.unfreezeReserved(newBalance, Money.of(3000));
+  if (unfreezeResult.ok) {
+    console.log(unfreezeResult.value.available().value()); // 10000
+  }
 
-// Исполнение ордера (списание средств)
-const consumeResult = BalanceService.consumeReserved(newBalance, Money.of(3000));
-if (consumeResult.ok) {
-  console.log(consumeResult.value.available().value()); // 7000 (не изменился)
-  console.log(consumeResult.value.total().value());     // 9000 (уменьшился)
+  // Исполнение ордера (списание средств)
+  const consumeResult = BalanceService.consumeReserved(newBalance, Money.of(3000));
+  if (consumeResult.ok) {
+    console.log(consumeResult.value.available().value()); // 7000 (не изменился)
+    console.log(consumeResult.value.total().value());     // 9000 (уменьшился)
+  }
 }
 ```
 
@@ -114,8 +114,13 @@ if (summaryResult.ok) {
   console.log(summaryResult.value);
   // "Available: $100.00, Reserved: $20.00, Total: $120.00 (16.67% reserved)"
 }
-// или с expectOk (бросает исключение если Err)
-console.log(expectOk(BalanceFormatter.toSummary(balance)));
+// или с явной проверкой Result
+const summaryResult = BalanceFormatter.toSummary(balance);
+if (summaryResult.ok) {
+  console.log(summaryResult.value);
+} else {
+  console.error(summaryResult.error.message);
+}
 
 // Компактный формат (возвращает Result)
 const compactResult = BalanceFormatter.toCompact(balance);

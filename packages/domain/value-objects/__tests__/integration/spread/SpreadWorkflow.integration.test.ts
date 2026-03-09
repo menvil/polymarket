@@ -34,9 +34,12 @@ describe('Spread Integration Workflow', () => {
       const bidResult = PriceService.create(0.45);
       const askResult = PriceService.create(0.55);
 
+      expect(bidResult.ok).toBe(true);
+      expect(askResult.ok).toBe(true);
       if (!bidResult.ok || !askResult.ok) return;
 
       const spreadResult = SpreadService.create(bidResult.value, askResult.value);
+      expect(spreadResult.ok).toBe(true);
       if (!spreadResult.ok) return;
 
       // Tighten на 0.01 с каждой стороны

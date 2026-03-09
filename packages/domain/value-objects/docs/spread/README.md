@@ -85,7 +85,7 @@ console.log(spread.ask().toNumber());  // 0.52
 // Вычисление характеристик спреда
 console.log(spread.width().toNumber());     // 0.04
 console.log(spread.midpoint().toNumber());  // 0.50
-console.log(spread.widthRatio().toNumber());  // 0.08 (8%)
+console.log(spread.widthRatio().toDecimal().toNumber());  // 0.08 (8%)
 
 // Сужение спреда (tighten)
 const tightenResult = SpreadService.tighten(spread, 0.01);
@@ -192,6 +192,7 @@ if (!result.ok) {
 **Пример:**
 
 ```typescript
+// ⚠️ Только для внутреннего использования — публичный код должен использовать SpreadService (Facade)
 import { Spread } from '@polymarket/value-objects';
 import { Price } from '@polymarket/value-objects';
 import Decimal from 'decimal.js';
@@ -199,9 +200,11 @@ import Decimal from 'decimal.js';
 const bid = Price.of(new Decimal(0.48));
 const ask = Price.of(new Decimal(0.52));
 
-const spread = Spread.of(bid, ask);  // может бросить исключение
+const spread = Spread.of(bid, ask);  // может бросить исключение — используйте Facade для безопасного создания
 console.log(spread.width().toNumber());  // 0.04
 ```
+
+> **Примечание:** Для создания Spread в пользовательском коде используйте `SpreadService.fromValues()` или `SpreadService.create()` из Facade Layer — они никогда не бросают исключений и возвращают `Result<Spread, InvalidSpreadError>`.
 
 Подробнее: [core.md](./core.md)
 
@@ -219,16 +222,7 @@ console.log(spread.width().toNumber());  // 0.04
 - Возвращают `Result<void, InvalidSpreadError>`
 - Расширяемые правила для custom валидаций
 
-**Пример:**
-
-```typescript
-import { ValidateBidAsk } from '@polymarket/value-objects/spread/rules';
-
-const result = ValidateBidAsk.check(bid, ask);
-if (!result.ok) {
-  console.error(result.error.context?.reason);
-}
-```
+> **Примечание:** Rules используются внутри SpreadService. Для валидации в пользовательском коде используйте `SpreadService.fromValues()` — оно применяет все бизнес-правила автоматически и возвращает типизированный Result.
 
 ### 3. Facade Layer — публичный API
 

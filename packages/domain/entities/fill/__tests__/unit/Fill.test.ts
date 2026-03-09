@@ -133,8 +133,10 @@ describe('Fill', () => {
     });
 
     it('инвариант 3: нулевая fee с другим asset — допустимо', () => {
-      // Нулевая комиссия с любым asset не нарушает инвариант
-      const result = Fill.create(makeValidParams({ fee: makeZeroFee() }));
+      // Нулевая комиссия с asset, отличным от settlementAssetId, не нарушает инвариант
+      const tokenId = makeTokenId();
+      if (!tokenId) throw new Error('Test setup: invalid tokenId');
+      const result = Fill.create(makeValidParams({ fee: Fee.zero(tokenId) }));
       expect(result.ok).toBe(true);
     });
   });

@@ -112,19 +112,19 @@ export class PolymarketRestClient {
   constructor(config: PolymarketRestConfig, logger: ILogger) {
     this.config = {
       ...config,
-      timeout: config.timeout ?? 30000, // 30s default
+      timeout: config.timeout ?? 30000, // 30 секунд по умолчанию
       maxRetries: config.maxRetries ?? 3,
       retryDelay: config.retryDelay ?? 1000,
-      signatureType: config.signatureType ?? SignatureType.EOA, // Default to EOA
+      signatureType: config.signatureType ?? SignatureType.EOA, // По умолчанию EOA
     };
 
     this.signer = new PolymarketSigner(config.privateKey, config.chainId);
     this.logger = logger.child?.('PolymarketRestClient') ?? logger;
 
-    // Create L2 authenticator if credentials provided
+    // Создаём L2 аутентификатор если переданы credentials
     if (config.l2Credentials) {
-      // CRITICAL: Always use signer address for L2 auth (API key owner)
-      // This is the address that generated the API credentials
+      // КРИТИЧНО: Всегда используем адрес подписанта для L2 auth (владелец API ключа)
+      // Это адрес, который сгенерировал API credentials
       this.l2Authenticator = new PolymarketL2Authenticator(
         config.l2Credentials,
         this.signer.getAddress()
@@ -227,7 +227,7 @@ export class PolymarketRestClient {
       } catch (error) {
         const isLastAttempt = attempt === this.config.maxRetries;
 
-        // Don't retry on client errors (4xx) - these are permanent failures
+        // Не повторяем при клиентских ошибках (4xx) — это постоянные сбои
         if (error instanceof ApiError && error.statusCode && error.statusCode >= 400 && error.statusCode < 500) {
           this.logger.error('Client error (4xx), not retrying', {
             method,
@@ -247,7 +247,7 @@ export class PolymarketRestClient {
           throw error;
         }
 
-        // Exponential backoff
+        // Экспоненциальная задержка повтора
         const delay = this.config.retryDelay * Math.pow(2, attempt);
         this.logger.warn(`Request failed, retrying in ${delay}ms (attempt ${attempt + 1})`, {
           method,
@@ -259,7 +259,7 @@ export class PolymarketRestClient {
       }
     }
 
-    // Should never reach here due to throw in loop
+    // Сюда никогда не должны попасть из-за throw в цикле
     throw new ApiError('Request failed after all retries');
   }
 
@@ -284,8 +284,8 @@ export class PolymarketRestClient {
 
     let body = options.body;
 
-    // CRITICAL ORDER: First add EIP-712 signature to body, THEN create L2 HMAC signature
-    // Old auth method (EIP-712) - adds signature/address fields to body
+    // КРИТИЧНЫЙ ПОРЯДОК: Сначала добавляем EIP-712 подпись к телу, ЗАТЕМ создаём L2 HMAC подпись
+    // Старый метод аутентификации (EIP-712) — добавляет поля signature/address к телу запроса
     if (options.requireSignature && body) {
       const signature = await this.signer.signData(body as Record<string, unknown>);
       body = {
@@ -295,26 +295,26 @@ export class PolymarketRestClient {
       };
     }
 
-    // Add L2 authentication headers if authenticator available
-    // IMPORTANT: This must happen AFTER EIP-712 signature is added to body!
+    // Добавляем заголовки L2 аутентификации если аутентификатор доступен
+    // ВАЖНО: Это должно произойти ПОСЛЕ добавления EIP-712 подписи к телу!
     if (this.l2Authenticator) {
-      // Extract request path from URL (IMPORTANT: without query parameters!)
-      // Official Polymarket client only signs the path, not query params
+      // Извлекаем путь запроса из URL (ВАЖНО: без query-параметров!)
+      // Официальный клиент Polymarket подписывает только путь, не query params
       const urlObj = new URL(url);
       const requestPath = urlObj.pathname;
 
-      // Create body string for signature (empty string for GET/DELETE)
-      // CRITICAL: Use the FINAL body (with EIP-712 signature if present)
+      // Создаём строку тела для подписи (пустая строка для GET/DELETE)
+      // КРИТИЧНО: Используем ФИНАЛЬНОЕ тело (с EIP-712 подписью если присутствует)
       const bodyString = body ? JSON.stringify(body) : '';
 
-      // Create L2 auth headers
+      // Создаём заголовки L2 аутентификации
       const l2Headers = this.l2Authenticator.createAuthHeaders(
         method,
         requestPath,
         bodyString
       );
 
-      // Merge L2 headers with existing headers
+      // Сливаем L2 заголовки с существующими
       Object.assign(headers, l2Headers);
 
       this.logger.debug('Added L2 authentication headers', {

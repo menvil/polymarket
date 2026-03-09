@@ -98,8 +98,8 @@ export class PolymarketBalanceRestClient {
     });
 
     const params: Record<string, string> = {
-      asset_type: 'COLLATERAL', // USDC balance
-      signature_type: this.restClient.getSignatureType().toString(), // CRITICAL: Required for proxy wallets
+      asset_type: 'COLLATERAL', // Баланс USDC
+      signature_type: this.restClient.getSignatureType().toString(), // КРИТИЧНО: Обязательно для proxy-кошельков
     };
 
     const response = await this.restClient.get<BalanceAllowanceResponse>(
@@ -112,12 +112,12 @@ export class PolymarketBalanceRestClient {
       allowance: response.allowance,
     });
 
-    // Convert balance-allowance response to our internal format
+    // Конвертируем ответ balance-allowance в наш внутренний формат
     const balanceResponse: BalanceResponse = {
       asset: 'USDC',
       total: response.balance,
-      available: response.balance, // All balance is available (not locked in orders here)
-      locked: '0', // This endpoint doesn't provide locked balance
+      available: response.balance, // Весь баланс доступен (не заблокирован в ордерах здесь)
+      locked: '0', // Этот endpoint не предоставляет заблокированный баланс
     };
 
     return [balanceResponse];
@@ -183,7 +183,7 @@ export class PolymarketBalanceRestClient {
     const params: Record<string, string> = {
       asset_type: 'CONDITIONAL',
       token_id: tokenId,
-      signature_type: this.restClient.getSignatureType().toString(), // CRITICAL: Required for proxy wallets
+      signature_type: this.restClient.getSignatureType().toString(), // КРИТИЧНО: Обязательно для proxy-кошельков
     };
 
     const response = await this.restClient.get<BalanceAllowanceResponse>(
@@ -191,8 +191,8 @@ export class PolymarketBalanceRestClient {
       params
     );
 
-    // CRITICAL: Convert from minimum units to actual token amount
-    // Outcome tokens also use 6 decimal places like USDC
+    // КРИТИЧНО: Конвертируем из минимальных единиц в реальное количество токенов
+    // Outcome-токены также используют 6 знаков после запятой, как USDC
     const OUTCOME_TOKEN_DECIMALS = 6;
     const rawBalance = parseFloat(response.balance);
     const actualBalance = rawBalance / Math.pow(10, OUTCOME_TOKEN_DECIMALS);

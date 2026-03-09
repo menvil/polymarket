@@ -352,4 +352,4 @@ if (isResolved(market.state)) {
 | MarketParser.ts | 100% | 100% | 100% | 100% |
 | MarketViewModel.ts | 100% | 100% | 100% | 100% |
 
-7 тестовых suite, 134 теста.
+7 тестовых наборов, 137 тестов.

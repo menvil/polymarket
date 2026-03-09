@@ -106,22 +106,22 @@ export class PolymarketPositionsRestClient {
     });
 
     const params: Record<string, string> = {
-      user: this.userAddress, // CRITICAL: Data API uses 'user', not 'address'
+      user: this.userAddress, // КРИТИЧНО: Data API использует 'user', не 'address'
     };
 
     if (conditionId) {
-      params.market = conditionId; // CRITICAL: Data API uses 'market' (conditionId), not 'tokenId'
+      params.market = conditionId; // КРИТИЧНО: Data API использует 'market' (conditionId), не 'tokenId'
     }
 
-    // Data API returns array directly, not wrapped in {positions: []}
+    // Data API возвращает массив напрямую, не обёрнутый в {positions: []}
     const positions = await this.dataApiClient.get<PositionResponse[]>('/positions', params);
 
     this.logger.debug('Positions retrieved from Data API', {
       count: positions.length,
     });
 
-    // ✅ v6.2: Detailed position logging for debugging inventory
-    this.logger.info('📦 GET /positions FULL RESPONSE', {
+    // Детальное логирование позиций для отладки инвентаря
+    this.logger.info('GET /positions FULL RESPONSE', {
       count: positions.length,
       user: this.userAddress.substring(0, 12) + '...',
       marketFilter: conditionId || 'ALL',
@@ -156,10 +156,10 @@ export class PolymarketPositionsRestClient {
   async getPositionForAsset(assetId: string): Promise<PositionResponse | undefined> {
     this.logger.debug('Getting position for asset', { asset: assetId });
 
-    // Get all positions (no market filter)
+    // Получаем все позиции (без фильтра по маркету)
     const positions = await this.getPositions();
 
-    // Filter by asset ID
+    // Фильтруем по ID актива
     const position = positions.find((p) => p.asset === assetId);
 
     if (position) {

@@ -5,6 +5,7 @@ import { MoneyInvariantViolation } from '../../../../src/money/core/MoneyInvaria
 describe('Money core', () => {
   describe('инварианты', () => {
     it('UNSUPPORTED_CURRENCY', () => {
+      expect.assertions(3);
       // Runtime: 'EUR' будет отклонено Money.create() как UNSUPPORTED_CURRENCY
       expect(() => Money.of(new Decimal(100), 'EUR' as any)).toThrow(MoneyInvariantViolation);
 
@@ -18,6 +19,7 @@ describe('Money core', () => {
     });
 
     it('NAN', () => {
+      expect.assertions(2);
       expect(() => Money.of(new Decimal(NaN))).toThrow(MoneyInvariantViolation);
 
       try {

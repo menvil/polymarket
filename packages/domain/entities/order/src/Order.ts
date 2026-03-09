@@ -253,6 +253,9 @@ export class Order {
     if (!params.asset) {
       return Err(new TradingError('Asset is required', { context: { field: 'asset', orderId: params.id } }));
     }
+    if (!params.price) {
+      return Err(new TradingError('Price is required', { context: { field: 'price', orderId: params.id } }));
+    }
     if (!VALID_SIDES.has(params.side)) {
       return Err(new TradingError(`Invalid side: ${params.side}. Must be BUY or SELL`, {
         context: { field: 'side', orderId: params.id },

@@ -127,7 +127,7 @@ export class PolymarketRestAdapter {
       size: params.size,
     });
 
-    // Step 1: Check if order can be placed (uses policies)
+    // Шаг 1: Проверяем возможность размещения ордера (используем политики)
     const canPlace = await this.portfolioAdapter.canPlaceOrder({
       tokenId: params.tokenId,
       side: params.side,
@@ -150,14 +150,14 @@ export class PolymarketRestAdapter {
       priceTick: canPlace.priceTick,
     });
 
-    // Step 2: Place order via ExecutionAdapter (ONLY API call)
+    // Шаг 2: Размещаем ордер через ExecutionAdapter (ТОЛЬКО API вызов)
     try {
       const order = await this.executionAdapter.postOrder({
         ...params,
-        size: canPlace.normalizedSize!, // Use normalized size
-        price: canPlace.normalizedPrice!, // Use normalized price (CRITICAL FIX)
-        priceTick: canPlace.priceTick, // Pass priceTick to API builder
-        feeRateBps: canPlace.feeRateBps, // Pass learned or default fee rate
+        size: canPlace.normalizedSize!, // Используем нормализованный размер
+        price: canPlace.normalizedPrice!, // Используем нормализованную цену
+        priceTick: canPlace.priceTick, // Передаём шаг цены в построитель API
+        feeRateBps: canPlace.feeRateBps, // Передаём изученную или дефолтную ставку комиссии
       });
 
       this.logger.info('Order placed successfully', {
@@ -167,7 +167,7 @@ export class PolymarketRestAdapter {
 
       return order;
     } catch (error) {
-      // Step 3: Learn from error (if API error contains constraints info)
+      // Шаг 3: Обучаемся на ошибке (если API-ошибка содержит информацию об ограничениях)
       if (error instanceof ApiError) {
         this.constraintsPolicy.learnFromError(params.tokenId, error.message);
 
@@ -322,7 +322,7 @@ export class PolymarketRestAdapter {
    * ```
    */
   async getPositions(tokenId?: string): Promise<PositionResponse[]> {
-    // v7.7.14: Removed duplicate logs (logged in lower layers)
+    // Дублирующие логи удалены (логируются в нижних слоях)
     const positions = await this.portfolioAdapter.getPositions(tokenId);
     return positions;
   }

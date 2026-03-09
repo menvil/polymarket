@@ -69,17 +69,17 @@ export class PolymarketOrderMapper {
     priceTick?: number;
     feeRateBps?: number;
   }): CreateOrderRequest {
-    // Normalize side to lowercase for comparison (defensive against uppercase input)
+    // Нормализуем сторону в нижний регистр для сравнения (защита от uppercase на входе)
     const normalizedSide = params.side.toLowerCase();
 
     return {
       tokenId: params.tokenId,
       side: normalizedSide === 'buy' ? 'BUY' : 'SELL',
-      price: params.price, // Number (0-1)
-      size: params.size, // Number (shares)
-      feeRateBps: params.feeRateBps ?? 1000, // Use provided or default 10% maker fee
+      price: params.price, // Число (0-1)
+      size: params.size, // Число (акции)
+      feeRateBps: params.feeRateBps ?? 1000, // Используем переданное или дефолт 10% maker fee
       nonce: Date.now(),
-      priceTick: params.priceTick, // Pass priceTick to API builder (CRITICAL FIX)
+      priceTick: params.priceTick, // Передаём шаг цены в построитель API
     };
   }
 
@@ -112,7 +112,7 @@ export class PolymarketOrderMapper {
     const sizeRemaining = size - filledSize;
 
     return {
-      orderId: response.orderID, // API returns "orderID" with capital D
+      orderId: response.orderID, // API возвращает "orderID" с заглавной D
       tokenId: response.tokenId || '',
       side: response.side === 'BUY' ? 'buy' : 'sell',
       price: this.parseNumber(response.price || '0'),
@@ -137,7 +137,7 @@ export class PolymarketOrderMapper {
     filledSize: number,
     totalSize: number
   ): 'open' | 'partially_filled' | 'filled' | 'cancelled' {
-    // API returns lowercase statuses
+    // API возвращает статусы в нижнем регистре
     const normalizedStatus = apiStatus.toLowerCase();
 
     switch (normalizedStatus) {
@@ -152,7 +152,7 @@ export class PolymarketOrderMapper {
         }
 
       case 'filled':
-      case 'matched': // Order fully matched/filled
+      case 'matched': // Ордер полностью сопоставлен/исполнен
         return 'filled';
 
       case 'cancelled':

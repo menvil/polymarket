@@ -170,41 +170,41 @@ export class ErrorClassifier {
    * ```
    */
   classify(error: OrderError): OrderError {
-    // 1. Compute cache key
+    // 1. Вычисляем ключ кэша
     const cacheKey = this.makeCacheKey(error);
 
-    // 2. Check cache
+    // 2. Проверяем кэш
     const cached = this.cache.get(cacheKey);
     if (cached) {
-      // CRITICAL: Delete BEFORE re-adding to move to end (strict LRU)
+      // КРИТИЧНО: Удаляем ПЕРЕД повторным добавлением для перемещения в конец (строгий LRU)
       this.cache.delete(cacheKey);
       this.cache.set(cacheKey, cached);
 
       this.logger.trace('[ErrorClassifier] Cache hit (moved to end)', { cacheKey });
-      return cached; // Same reference!
+      return cached; // Та же ссылка!
     }
 
-    // 3. Classify
+    // 3. Классифицируем
     const message = this.extractMessage(error);
     const structured = this.errorAdapter.parse(message);
     const classified = this.classifyStructured(structured);
 
-    // 4. Choose best classification
+    // 4. Выбираем лучшую классификацию
     let result: OrderError;
     if (classified.type !== 'UNKNOWN') {
-      // New classification is better
+      // Новая классификация лучше
       result = classified;
     } else if (error.type !== 'UNKNOWN') {
-      // Keep original if already classified
+      // Сохраняем оригинал если уже классифицирован
       result = error;
     } else {
-      // Both unknown - use new
+      // Оба неизвестны — используем новый
       result = { type: 'UNKNOWN', message, recoverable: false };
     }
 
-    // 5. LRU eviction BEFORE adding (GUARANTEED first = oldest)
+    // 5. LRU вытеснение ПЕРЕД добавлением (ГАРАНТИЯ: первый = старейший)
     if (this.cache.size >= this.maxCacheSize) {
-      // GUARANTEED: First entry is oldest (Map preserves insertion order)
+      // ГАРАНТИЯ: Первая запись — старейшая (Map сохраняет порядок вставки)
       const firstKey = this.cache.keys().next().value as string;
       this.cache.delete(firstKey);
 
@@ -214,7 +214,7 @@ export class ErrorClassifier {
       });
     }
 
-    // 6. Cache result
+    // 6. Кэшируем результат
     this.cache.set(cacheKey, result);
 
     this.logger.trace('[ErrorClassifier] Cached classification', {
@@ -243,7 +243,7 @@ export class ErrorClassifier {
    * - Otherwise → UNKNOWN
    */
   private classifyStructured(structured: StructuredError): OrderError {
-    // Check for constraint violation
+    // Проверяем нарушение ограничения
     if (structured.violation) {
       return {
         type: 'CONSTRAINT_VIOLATION',
@@ -253,7 +253,7 @@ export class ErrorClassifier {
       };
     }
 
-    // Check error code
+    // Проверяем код ошибки
     const code = (structured.code || '').toLowerCase();
 
     if (code.includes('balance') || structured.message.toLowerCase().includes('insufficient')) {
@@ -312,7 +312,7 @@ export class ErrorClassifier {
       };
     }
 
-    // Unknown
+    // Неизвестная ошибка
     return {
       type: 'UNKNOWN',
       message: structured.message,
@@ -348,7 +348,7 @@ export class ErrorClassifier {
    */
   private makeCacheKey(error: OrderError): string {
     const message = this.extractMessage(error);
-    // Simple hash: type + first 100 chars of message
+    // Простой хэш: тип + первые 100 символов сообщения
     return `${error.type}:${message.substring(0, 100)}`;
   }
 

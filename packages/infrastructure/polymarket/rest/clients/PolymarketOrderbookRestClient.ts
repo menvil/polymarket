@@ -91,9 +91,9 @@ export class PolymarketOrderbookRestClient {
   async getOrderbook(tokenId: string, depth?: number): Promise<OrderbookResponse> {
     this.logger.debug('Getting orderbook', { tokenId, depth });
 
-    // API expects snake_case parameter names
+    // API ожидает параметры в формате snake_case
     const params: Record<string, string> = {
-      token_id: tokenId, // CRITICAL: API requires token_id not tokenId
+      token_id: tokenId, // КРИТИЧНО: API требует token_id, не tokenId
     };
 
     if (depth !== undefined) {

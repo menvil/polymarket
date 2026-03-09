@@ -7,9 +7,9 @@
  *
  * Authentication flow (matching official Polymarket client):
  * 1. Create signature string: timestamp + method + requestPath + body
- * 2. Preprocess secret: base64url → base64 (replace - with +, _ with /)
- * 3. Sign with HMAC-SHA256 using base64-decoded secret
- * 4. Encode signature to base64url (replace + with -, / with _)
+ * 2. Decode secret from base64url using Buffer.from(secret, 'base64url')
+ * 3. Sign with HMAC-SHA256 using decoded secret key
+ * 4. Return signature as base64url (digest('base64url'))
  * 5. Add headers: POLY_ADDRESS, POLY_SIGNATURE, POLY_TIMESTAMP, POLY_API_KEY, POLY_PASSPHRASE
  *
  * @example
@@ -84,14 +84,14 @@ export class PolymarketL2Authenticator {
     requestPath: string,
     body: string
   ): Record<string, string> {
-    // IMPORTANT: Timestamp must be in SECONDS, not milliseconds!
-    // Official client uses: Math.floor(Date.now() / 1000)
+    // ВАЖНО: Timestamp должен быть в СЕКУНДАХ, не миллисекундах!
+    // Официальный клиент использует: Math.floor(Date.now() / 1000)
     const timestamp = Math.floor(Date.now() / 1000).toString();
 
-    // Create signature message: timestamp + method + requestPath + body
+    // Создаём строку сообщения для подписи: timestamp + method + requestPath + body
     const message = timestamp + method + requestPath + body;
 
-    // Sign with HMAC-SHA256
+    // Подписываем с HMAC-SHA256
     const signature = this.sign(message);
 
     return {
@@ -111,11 +111,9 @@ export class PolymarketL2Authenticator {
    *
    * @remarks
    * HMAC-SHA256 signature (matching official Polymarket client):
-   * 1. Preprocess secret: base64url → base64 (replace - with +, _ with /)
-   * 2. Decode secret from base64
-   * 3. Create HMAC with secret
-   * 4. Update with message
-   * 5. Digest and encode to base64url (replace + with -, / with _)
+   * 1. Decode secret from base64url (Node.js Buffer handles url-safe alphabet natively)
+   * 2. Create HMAC with decoded secret key
+   * 3. Digest and return as base64url
    *
    * @example
    * ```typescript
@@ -125,25 +123,13 @@ export class PolymarketL2Authenticator {
    * ```
    */
   private sign(message: string): string {
-    // Preprocess secret: base64url → base64
-    // Replace - with + and _ with / (base64url to standard base64)
-    let secret = this.credentials.secret;
-    secret = secret.replace(/-/g, '+').replace(/_/g, '/');
+    // Декодируем секрет из base64url — Buffer нативно поддерживает url-safe алфавит
+    const secretBuffer = Buffer.from(this.credentials.secret, 'base64url');
 
-    // Decode secret from base64
-    const secretBuffer = Buffer.from(secret, 'base64');
-
-    // Create HMAC-SHA256
+    // Создаём HMAC-SHA256 и возвращаем как base64url
     const hmac = createHmac('sha256', secretBuffer);
     hmac.update(message);
-
-    // Digest to base64
-    let signature = hmac.digest('base64');
-
-    // Convert to base64url: replace + with -, / with _
-    signature = signature.replace(/\+/g, '-').replace(/\//g, '_');
-
-    return signature;
+    return hmac.digest('base64url');
   }
 
   /**

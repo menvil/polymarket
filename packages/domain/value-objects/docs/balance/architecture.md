@@ -115,14 +115,14 @@ public static check(
   // Проверка 1: finite
   if (!reserveAmount.value().isFinite()) {
     return Err(new InvalidBalanceError('Reserve amount must be finite', {
-      context: { reason: BalanceErrorReason.INVALID_FORMAT, ... }
+      context: { reason: BalanceErrorReason.NON_FINITE, ... }
     }));
   }
 
   // Проверка 2: положительная сумма
   if (reserveAmount.value().lte(0)) {
     return Err(new InvalidBalanceError('Reserve amount must be positive', {
-      context: { reason: BalanceErrorReason.INVALID_FORMAT, ... }
+      context: { reason: BalanceErrorReason.NEGATIVE_AVAILABLE, ... }
     }));
   }
 
@@ -205,6 +205,20 @@ export class BalanceService {
 **Алгоритм обработки ошибок:**
 
 ```typescript
+// Вспомогательная функция для безопасного отображения BalanceInvariantReason → BalanceErrorReason
+function mapInvariantReason(reason: BalanceInvariantReason): BalanceErrorReason {
+  switch (reason) {
+    case 'NEGATIVE_AVAILABLE':        return BalanceErrorReason.NEGATIVE_AVAILABLE;
+    case 'NEGATIVE_RESERVED':         return BalanceErrorReason.NEGATIVE_RESERVED;
+    case 'CURRENCY_MISMATCH':         return BalanceErrorReason.CURRENCY_MISMATCH;
+    case 'NAN':                       return BalanceErrorReason.NAN;
+    case 'NON_FINITE':                return BalanceErrorReason.NON_FINITE;
+    case 'TOTAL_EXCEEDS_MAX_AMOUNT':  return BalanceErrorReason.TOTAL_EXCEEDS_MAX_AMOUNT;
+    default:
+      throw new Error(`Unknown BalanceInvariantReason: ${reason}`);
+  }
+}
+
 public static create(
   available: Money,
   reserved: Money,
@@ -216,13 +230,11 @@ public static create(
     return Ok(balance);
   } catch (error) {
     if (error instanceof BalanceInvariantViolation) {
-      // Мапим Core исключение → InvalidBalanceError
+      // Явное отображение Core-исключения → InvalidBalanceError через mapInvariantReason
       return Err(new InvalidBalanceError(error.message, {
         context: {
           op: 'create',
-          // Assertion безопасна: error — instanceof BalanceInvariantViolation (проверено выше),
-          // а BalanceInvariantReason и BalanceErrorReason — идентичные строковые литералы.
-          reason: error.reason as BalanceErrorReason,
+          reason: mapInvariantReason(error.reason),
           available: available.value().toNumber(),
           reserved: reserved.value().toNumber(),
           currency: available.currency()
@@ -337,10 +349,13 @@ public total(): Money {
 private static addMoney(a: Money, b: Money): Result<Money, InvalidBalanceError> {
   const result = MoneyService.add(a, b);
   if (isErr(result)) {
+    // Propagate the original MoneyService reason where possible instead of
+    // collapsing all failures to INVALID_FORMAT.
+    const reason = mapMoneyReason(result.error.context?.reason) ?? BalanceErrorReason.INVALID_FORMAT;
     return Err(new InvalidBalanceError(result.error.message, {
       context: {
         ...result.error.context,
-        reason: BalanceErrorReason.INVALID_FORMAT
+        reason
       }
     }));
   }

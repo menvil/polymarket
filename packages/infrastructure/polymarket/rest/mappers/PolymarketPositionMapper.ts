@@ -65,23 +65,23 @@ export class PolymarketPositionMapper {
    * ```
    */
   toDomainPosition(response: ApiPositionResponse): PositionResponse {
-    // Data API returns numbers directly, no need to parse
+    // Data API возвращает числа напрямую, парсинг не нужен
     const size = response.size;
     const averagePrice = response.avgPrice;
     const realizedPnl = response.cashPnl;
 
-    // Data API doesn't return unrealizedPnl separately, calculate from currentValue
-    // currentValue = size * currentPrice, so unrealized = (currentValue - size * avgPrice)
+    // Data API не возвращает unrealizedPnl отдельно — вычисляем из currentValue
+    // currentValue = size * currentPrice, поэтому unrealized = (currentValue - size * avgPrice)
     const unrealizedPnl = response.currentValue - size * averagePrice;
 
     return {
       tokenId: response.asset,
-      conditionId: response.conditionId, // ✅ Pass through for strategy matching
+      conditionId: response.conditionId, // Передаём для сопоставления со стратегией
       size,
       averagePrice,
       realizedPnl,
       unrealizedPnl,
-      updatedAt: Date.now(), // Data API doesn't return timestamp
+      updatedAt: Date.now(), // Data API не возвращает временну́ю метку
     };
   }
 

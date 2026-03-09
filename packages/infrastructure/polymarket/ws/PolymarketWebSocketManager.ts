@@ -78,11 +78,11 @@ export interface PolymarketWebSocketConfig extends BaseWebSocketConfig {
  */
 export class PolymarketWebSocketManager extends BaseWebSocketTransport {
   /**
-   * v5.4: Callbacks for trade subscriptions per tokenId
+   * Коллбэки для подписок на сделки по tokenId
    *
    * @remarks
-   * Used for trade-based fill detection in PAPER mode.
-   * Each tokenId can have one callback.
+   * Используется для обнаружения fills на основе сделок в PAPER режиме.
+   * Каждый tokenId может иметь один коллбэк.
    */
   private tradeCallbacks = new Map<
     string,
@@ -90,7 +90,7 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
   >();
 
   /**
-   * v5.4: Flag to track if trade listener is already set up
+   * Флаг для отслеживания инициализации слушателя сделок
    */
   private tradeListenerInitialized = false;
 
@@ -123,11 +123,11 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
    * ```
    */
   constructor(config: PolymarketWebSocketConfig, logger: ILogger) {
-    // Create Polymarket-specific formatter and parser
+    // Создаём специфичные для Polymarket formatter и parser
     const formatter = new PolymarketMessageFormatter(logger);
     const parser = new PolymarketMessageParser(logger);
 
-    // Inject into BaseWebSocketTransport
+    // Внедряем в BaseWebSocketTransport
     super(config, formatter, parser, logger);
   }
 
@@ -218,14 +218,14 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
     tokenId: string,
     callback: (trade: { price: number; quantity: number; side: 'BUY' | 'SELL' | null }) => void
   ): void {
-    // Store callback for this tokenId
+    // Сохраняем коллбэк для этого tokenId
     this.tradeCallbacks.set(tokenId, callback);
 
-    // Initialize trade listener if not already done
+    // Инициализируем слушатель сделок если ещё не был инициализирован
     if (!this.tradeListenerInitialized) {
       this.tradeListenerInitialized = true;
 
-      // Listen to all trade events and route to appropriate callbacks
+      // Слушаем все события сделок и маршрутизируем к соответствующим коллбэкам
       this.on('trade', (message: any) => {
         const assetId = message.asset_id;
         if (!assetId) return;
@@ -233,8 +233,8 @@ export class PolymarketWebSocketManager extends BaseWebSocketTransport {
         const cb = this.tradeCallbacks.get(assetId);
         if (!cb) return;
 
-        // Parse and normalize trade data
-        // PolymarketTradeMessage has: price (string), size (string), side ('BUY'|'SELL'|undefined)
+        // Парсим и нормализуем данные сделки
+        // PolymarketTradeMessage содержит: price (string), size (string), side ('BUY'|'SELL'|undefined)
         const tradeData = {
           price: parseFloat(message.price) || 0,
           quantity: parseFloat(message.size) || 0,

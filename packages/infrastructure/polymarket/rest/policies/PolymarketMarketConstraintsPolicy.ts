@@ -63,11 +63,11 @@ interface MarketConstraints {
 export class PolymarketMarketConstraintsPolicy {
   private readonly cache: Map<string, MarketConstraints> = new Map();
   private readonly defaultConstraints: MarketConstraints = {
-    minOrderValue: 0, // NO minimum value
-    minOrderSize: 1, // Minimum 1 share (safe default)
+    minOrderValue: 0, // Нет минимального значения
+    minOrderSize: 1, // Минимум 1 акция (безопасный дефолт)
     maxOrderSize: 10000,
     sizeTick: 0.01,
-    priceTick: 0.01, // CRITICAL FIX: Use 0.01 as safest default (most common on Polymarket)
+    priceTick: 0.01, // КРИТИЧНО: Используем 0.01 как наиболее безопасный дефолт (наиболее распространён на Polymarket)
   };
 
   constructor(
@@ -92,25 +92,25 @@ export class PolymarketMarketConstraintsPolicy {
    * ```
    */
   async getConstraints(tokenId: string): Promise<MarketConstraints> {
-    // Check cache first
+    // Сначала проверяем кэш
     if (this.cache.has(tokenId)) {
       return this.cache.get(tokenId)!;
     }
 
-    // Fetch from API
+    // Запрашиваем из API
     try {
       const apiConstraints = await this.marketDataClient.getMarketConstraints(tokenId);
 
-      // ✅ v7.7.15: CRITICAL - API sometimes returns priceTick < 0.01, but REJECTS orders with that tick!
-      // Example: API returns minimum_price_tick=0.0001, but rejects order with:
+      // КРИТИЧНО: API иногда возвращает priceTick < 0.01, но ОТКЛОНЯЕТ ордера с таким шагом!
+      // Пример: API возвращает minimum_price_tick=0.0001, но отклоняет ордер с ошибкой:
       // "Price (0.518990099009901) breaks minimum tick size rule: 0.01"
       //
-      // Root cause: API calculates price as makerAmount/takerAmount and validates against 0.01 tick.
-      // Solution: Use max(0.01, minimum_price_tick) as safe minimum.
+      // Причина: API вычисляет цену как makerAmount/takerAmount и проверяет против шага 0.01.
+      // Решение: Используем max(0.01, minimum_price_tick) как безопасный минимум.
       const apiPriceTick = apiConstraints.minimum_price_tick;
       const priceTick = Math.max(0.01, apiPriceTick);
 
-      // ✅ v7.7.15: DEBUG - Log ALL constraints from API
+      // Логируем все ограничения из API
       console.log('[PolymarketMarketConstraintsPolicy] API constraints:', {
         tokenId: tokenId.substring(0, 16) + '...',
         apiPriceTick: apiPriceTick,
@@ -148,7 +148,7 @@ export class PolymarketMarketConstraintsPolicy {
         error,
       });
 
-      // Use default constraints
+      // Используем ограничения по умолчанию
       this.cache.set(tokenId, this.defaultConstraints);
       return this.defaultConstraints;
     }
@@ -170,10 +170,10 @@ export class PolymarketMarketConstraintsPolicy {
   async normalizeSize(tokenId: string, size: number): Promise<number> {
     const constraints = await this.getConstraints(tokenId);
 
-    // Round to nearest sizeTick
+    // Округляем до ближайшего sizeTick
     const normalized = Math.round(size / constraints.sizeTick) * constraints.sizeTick;
 
-    // Ensure at least 2 decimal places
+    // Гарантируем минимум 2 знака после запятой
     const rounded = Math.round(normalized * 100) / 100;
 
     this.logger.debug('Normalized size', {
@@ -201,10 +201,10 @@ export class PolymarketMarketConstraintsPolicy {
   async normalizePrice(tokenId: string, price: number): Promise<number> {
     const constraints = await this.getConstraints(tokenId);
 
-    // Round to nearest priceTick
+    // Округляем до ближайшего priceTick
     const normalized = Math.round(price / constraints.priceTick) * constraints.priceTick;
 
-    // Ensure at least 4 decimal places (0.0001)
+    // Гарантируем минимум 4 знака после запятой (0.0001)
     const rounded = Math.round(normalized * 10000) / 10000;
 
     this.logger.debug('Normalized price', {
@@ -253,9 +253,9 @@ export class PolymarketMarketConstraintsPolicy {
   ): Promise<{ ok: boolean; reason?: string; minShares?: number }> {
     const constraints = await this.getConstraints(tokenId);
 
-    // BUY: check minimum order SIZE and VALUE
+    // BUY: проверяем минимальный SIZE и VALUE ордера
     if (side === 'buy') {
-      // First check minimum order SIZE (shares)
+      // Сначала проверяем минимальный SIZE (акции)
       if (size < constraints.minOrderSize) {
         return {
           ok: false,
@@ -264,7 +264,7 @@ export class PolymarketMarketConstraintsPolicy {
         };
       }
 
-      // Then check minimum order VALUE (if > 0)
+      // Затем проверяем минимальный VALUE ордера (если > 0)
       if (constraints.minOrderValue > 0) {
         const orderValue = size * price;
         const minSharesForValue = Math.ceil(constraints.minOrderValue / price);
@@ -288,7 +288,7 @@ export class PolymarketMarketConstraintsPolicy {
       return { ok: true };
     }
 
-    // SELL: check minimum SIZE and maximum
+    // SELL: проверяем минимальный SIZE и максимум
     if (size < constraints.minOrderSize) {
       return {
         ok: false,
@@ -335,7 +335,7 @@ export class PolymarketMarketConstraintsPolicy {
 
     let updated = false;
 
-    // Parse "min size: $X" or "minimum is $X"
+    // Парсим "min size: $X" или "minimum is $X"
     const minValueMatch = errorMsg.match(/min(?:imum)?\s+(?:size|is):\s*\$(\d+(?:\.\d+)?)/i);
     if (minValueMatch) {
       const newMin = parseFloat(minValueMatch[1]);
@@ -350,7 +350,7 @@ export class PolymarketMarketConstraintsPolicy {
       }
     }
 
-    // Parse "maximum is X"
+    // Парсим "maximum is X"
     const maxSizeMatch = errorMsg.match(/maximum\s+(?:is\s+)?(\d+(?:\.\d+)?)/i);
     if (maxSizeMatch) {
       const newMax = parseFloat(maxSizeMatch[1]);
@@ -365,7 +365,7 @@ export class PolymarketMarketConstraintsPolicy {
       }
     }
 
-    // Parse "minimum tick size is X"
+    // Парсим "minimum tick size is X"
     const tickSizeMatch = errorMsg.match(/tick\s+size\s+(?:is\s+)?(\d+(?:\.\d+)?)/i);
     if (tickSizeMatch) {
       const newTick = parseFloat(tickSizeMatch[1]);
@@ -380,11 +380,11 @@ export class PolymarketMarketConstraintsPolicy {
       }
     }
 
-    // ✅ NEW: Parse "invalid fee rate (X), current market's maker fee: Y"
+    // Парсим "invalid fee rate (X), current market's maker fee: Y"
     const feeRateMatch = errorMsg.match(/invalid fee rate \((\d+)\), current market's maker fee:\s*(\d+)/i);
     if (feeRateMatch) {
       const correctFeeRate = parseInt(feeRateMatch[2], 10);
-      // Store feeRateBps in constraints (add new field)
+      // Сохраняем feeRateBps в ограничениях (добавляем новое поле)
       if ((constraints as any).feeRateBps !== correctFeeRate) {
         (constraints as any).feeRateBps = correctFeeRate;
         updated = true;
@@ -428,7 +428,7 @@ export class PolymarketMarketConstraintsPolicy {
    */
   getFeeRateBps(tokenId: string): number {
     const constraints = this.cache.get(tokenId);
-    const feeRate = constraints?.feeRateBps ?? 1000; // Default 10% maker fee
+    const feeRate = constraints?.feeRateBps ?? 1000; // Дефолт: 10% maker fee
 
     this.logger.debug('Getting feeRateBps', {
       tokenId: tokenId.substring(0, 16) + '...',

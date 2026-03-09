@@ -85,13 +85,13 @@ export class UserEventsFeedService {
     this._metrics = new UserEventsFeedMetrics(logger);
     this._eventBus = eventBus;
 
-    // Default: LIVE environment (production trading)
+    // По умолчанию: LIVE окружение (реальная торговля)
     this._executionContext = executionContext || {
       environment: 'LIVE',
       accountId: 'default',
     };
 
-    // Suppress unused warnings - these will be used when WS feed is implemented
+    // Подавляем предупреждения об неиспользуемых переменных — будут использованы при реализации WS feed
     void this._wsNormalizer;
     void this._metrics;
     void this._executionContext;
@@ -113,7 +113,7 @@ export class UserEventsFeedService {
       return;
     }
 
-    // TODO: Subscribe to user WS channel когда Polymarket добавит user WS feed
+    // TODO: Подписаться на user WS channel когда Polymarket добавит user WS feed
     this.logger.info('[UserEventsFeedService] Started (placeholder - no user WS feed yet)');
     this.isStarted = true;
   }
@@ -127,7 +127,7 @@ export class UserEventsFeedService {
       return;
     }
 
-    // TODO: Unsubscribe from user WS channel
+    // TODO: Отписаться от user WS channel
     this.logger.info('[UserEventsFeedService] Stopped');
     this.isStarted = false;
   }

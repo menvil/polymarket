@@ -335,25 +335,35 @@ if (!result.ok) {
 
 ```typescript
 import { AssetQuantityService } from '@polymarket/value-objects/asset-quantity';
+import { AssetIdHelpers } from '@polymarket/ids';
 import { Ratio } from '@polymarket/value-objects/ratio';
 import Decimal from 'decimal.js';
 
 // 1. Order: 1000 USDC
 const orderQty = AssetQuantityService.createUsdc(1000);
-if (!orderQty.ok) return;
+if (!orderQty.ok) {
+  console.error(orderQty.error.message);
+  return;
+}
 
 // 2. Calculate 2% fee
 const feeRate = Ratio.of(new Decimal(0.02));
 const feeResult = AssetQuantityService.portion(orderQty.value, feeRate);
-if (!feeResult.ok) return;
+if (!feeResult.ok) {
+  console.error(feeResult.error.message);
+  return;
+}
 
 console.log(feeResult.value.amount().toNumber()); // 20 (2% fee)
 
-// 3. Fee должен иметь тот же asset
-expect(AssetIdHelpers.equals(
+// 3. Fee should have the same asset
+const sameAsset = AssetIdHelpers.equals(
   feeResult.value.asset(),
   orderQty.value.asset()
-)).toBe(true);
+);
+if (!sameAsset) {
+  throw new Error('Fee asset does not match order asset');
+}
 ```
 
 ### Allocation Workflow
@@ -364,17 +374,17 @@ if (!total.ok) return;
 
 // Allocation 1: 30%
 const alloc1 = AssetQuantityService.portion(total.value, Ratio.of(new Decimal(0.3)));
-expect(alloc1.ok && alloc1.value.amount().toNumber()).toBe(3000);
+if (alloc1.ok) console.log(alloc1.value.amount().toNumber()); // 3000
 
 // Allocation 2: 50%
 const alloc2 = AssetQuantityService.portion(total.value, Ratio.of(new Decimal(0.5)));
-expect(alloc2.ok && alloc2.value.amount().toNumber()).toBe(5000);
+if (alloc2.ok) console.log(alloc2.value.amount().toNumber()); // 5000
 
 // Allocation 3: 20%
 const alloc3 = AssetQuantityService.portion(total.value, Ratio.of(new Decimal(0.2)));
-expect(alloc3.ok && alloc3.value.amount().toNumber()).toBe(2000);
+if (alloc3.ok) console.log(alloc3.value.amount().toNumber()); // 2000
 
-// Sum должен быть 100% = 10000 ✓
+// Sum is 100% = 10000 ✓
 ```
 
 ### Edge Cases
@@ -387,28 +397,27 @@ if (!qty.ok) return;
 const rate = Ratio.of(new Decimal(0));
 const result = AssetQuantityService.portion(qty.value, rate);
 
-expect(result.ok).toBe(true);
 if (result.ok) {
-  expect(result.value.amount().toNumber()).toBe(0);
-  expect(result.value.isZero()).toBe(true);
+  console.log(result.value.amount().toNumber()); // 0
+  console.log(result.value.isZero());            // true
+} else {
+  console.error(result.error.message);
 }
 
-// 100% rate (весь amount)
+// 100% rate (full amount)
 const fullRate = Ratio.of(new Decimal(1));
 const fullResult = AssetQuantityService.portion(qty.value, fullRate);
 
-expect(fullResult.ok).toBe(true);
 if (fullResult.ok) {
-  expect(fullResult.value.amount().toNumber()).toBe(100);
+  console.log(fullResult.value.amount().toNumber()); // 100
 }
 
-// Negative rate (фэйлится)
+// Negative rate (fails — Quantity does not allow negative values)
 const negativeRate = Ratio.of(new Decimal(-0.1));
 const negativeResult = AssetQuantityService.portion(qty.value, negativeRate);
 
-expect(negativeResult.ok).toBe(false); // Quantity не допускает negative
 if (!negativeResult.ok) {
-  expect(negativeResult.error.message).toContain('Invalid result amount');
+  console.error(negativeResult.error.message); // "Invalid result amount ..."
 }
 ```
 

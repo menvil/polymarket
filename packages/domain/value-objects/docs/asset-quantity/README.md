@@ -35,9 +35,12 @@ const tokenResult = AssetQuantityService.createOutcomeToken(
   50
 );
 
-if (tokenResult.ok) {
-  console.log(tokenResult.value.isOutcomeToken()); // true
+if (isErr(tokenResult)) {
+  console.error(tokenResult.error.message);
+  return;
 }
+
+console.log(tokenResult.value.isOutcomeToken()); // true
 ```
 
 ## Операции с Ratio
@@ -63,15 +66,21 @@ import Decimal from 'decimal.js';
 
 // Fee calculation: 2% от 1000 USDC
 const orderQty = AssetQuantityService.createUsdc(1000);
-if (!orderQty.ok) return;
+if (isErr(orderQty)) {
+  console.error(orderQty.error.message);
+  return;
+}
 
 const feeRate = Ratio.of(new Decimal(0.02)); // 2%
 const feeResult = AssetQuantityService.portion(orderQty.value, feeRate);
 
-if (feeResult.ok) {
-  console.log(feeResult.value.amount().toNumber()); // 20 USDC
-  console.log(feeResult.value.isCurrency());        // true (сохраняется asset)
+if (isErr(feeResult)) {
+  console.error(feeResult.error.message);
+  return;
 }
+
+console.log(feeResult.value.amount().toNumber()); // 20 USDC
+console.log(feeResult.value.isCurrency());        // true (сохраняется asset)
 
 // Allocation: 30% от 5000 outcome tokens
 const totalTokens = AssetQuantityService.createOutcomeToken(
@@ -79,15 +88,21 @@ const totalTokens = AssetQuantityService.createOutcomeToken(
   BinaryOutcome.UP,
   5000
 );
-if (!totalTokens.ok) return;
+if (isErr(totalTokens)) {
+  console.error(totalTokens.error.message);
+  return;
+}
 
 const allocRate = Ratio.of(new Decimal(0.3)); // 30%
 const allocResult = AssetQuantityService.portion(totalTokens.value, allocRate);
 
-if (allocResult.ok) {
-  console.log(allocResult.value.amount().toNumber()); // 1500 tokens
-  console.log(allocResult.value.isOutcomeToken());    // true
+if (isErr(allocResult)) {
+  console.error(allocResult.error.message);
+  return;
 }
+
+console.log(allocResult.value.amount().toNumber()); // 1500 tokens
+console.log(allocResult.value.isOutcomeToken());    // true
 
 // Partial fill: 50% от 200 tokens
 const orderTokens = AssetQuantityService.createOutcomeToken(
@@ -95,14 +110,20 @@ const orderTokens = AssetQuantityService.createOutcomeToken(
   BinaryOutcome.DOWN,
   200
 );
-if (!orderTokens.ok) return;
+if (isErr(orderTokens)) {
+  console.error(orderTokens.error.message);
+  return;
+}
 
 const fillRate = Ratio.of(new Decimal(0.5)); // 50%
 const filledResult = AssetQuantityService.portion(orderTokens.value, fillRate);
 
-if (filledResult.ok) {
-  console.log(filledResult.value.amount().toNumber()); // 100 tokens
+if (isErr(filledResult)) {
+  console.error(filledResult.error.message);
+  return;
 }
+
+console.log(filledResult.value.amount().toNumber()); // 100 tokens
 ```
 
 **Возможные ошибки:**
@@ -147,9 +168,13 @@ if (result.ok) {
 
 ```typescript
 const assetId = AssetIdHelpers.USDC;
-const qty = expectOk(QuantityService.create(100));
+const qtyResult = QuantityService.create(100);
+if (!qtyResult.ok) {
+  console.error(qtyResult.error.message);
+  return;
+}
 
-const result = AssetQuantityService.create(assetId, qty);
+const result = AssetQuantityService.create(assetId, qtyResult.value);
 if (!result.ok) {
   console.error(result.error.message);
 }

@@ -134,24 +134,24 @@ describe('SpreadService', () => {
       if (!result.ok) {
         const ctx = result.error.context;
 
-        // opChain должна содержать вызов SpreadService.fromValues
+        // opChain should include a call to SpreadService.fromValues
         expect(ctx?.opChain).toContain('SpreadService.fromValues');
 
-        // source должен быть определён (это граница системы)
+        // source should be defined (system boundary)
         expect(ctx?.source).toBeDefined();
         expect(['RULE_VALIDATION', 'SERVICE_CALL', 'core_invariant']).toContain(ctx?.source);
 
-        // reason должен быть конкретным значением из PriceErrorReason
-        // (1.5 > MAX_PRICE = 0.9999, значит OUT_OF_RANGE_HIGH)
+        // reason should be a specific value from PriceErrorReason
+        // (1.5 > MAX_PRICE = 0.9999, therefore OUT_OF_RANGE_HIGH)
         expect(ctx?.reason).toBe('OUT_OF_RANGE_HIGH');
 
-        // Контекст должен содержать bidValue и askValue
+        // Context should include bidValue and askValue
         expect(ctx).toMatchObject({
           bidValue: '1.5',
           askValue: '0.52'
         });
 
-        // Должна быть ошибка InvalidSpreadError (не InvalidPriceError)
+        // Error should be InvalidSpreadError (not InvalidPriceError)
         expect(result.error.constructor.name).toBe('InvalidSpreadError');
       }
     });
@@ -163,24 +163,24 @@ describe('SpreadService', () => {
       if (!result.ok) {
         const ctx = result.error.context;
 
-        // opChain должна содержать вызов SpreadService.fromValues
+        // opChain should include a call to SpreadService.fromValues
         expect(ctx?.opChain).toContain('SpreadService.fromValues');
 
-        // source должен быть определён (это граница системы)
+        // source should be defined (system boundary)
         expect(ctx?.source).toBeDefined();
         expect(['RULE_VALIDATION', 'SERVICE_CALL', 'core_invariant']).toContain(ctx?.source);
 
-        // reason должен быть конкретным значением из PriceErrorReason
-        // (1.5 > MAX_PRICE = 0.9999, значит OUT_OF_RANGE_HIGH)
+        // reason should be a specific value from PriceErrorReason
+        // (1.5 > MAX_PRICE = 0.9999, therefore OUT_OF_RANGE_HIGH)
         expect(ctx?.reason).toBe('OUT_OF_RANGE_HIGH');
 
-        // Контекст должен содержать bidValue и askValue
+        // Context should include bidValue and askValue
         expect(ctx).toMatchObject({
           bidValue: '0.48',
           askValue: '1.5'
         });
 
-        // Должна быть ошибка InvalidSpreadError (не InvalidPriceError)
+        // Error should be InvalidSpreadError (not InvalidPriceError)
         expect(result.error.constructor.name).toBe('InvalidSpreadError');
       }
     });
@@ -842,7 +842,7 @@ describe('SpreadService', () => {
         expect(intersect.ok).toBe(true);
 
         if (intersect.ok) {
-          // Пересечение в одной точке (0.50)
+          // Intersection at a single point (0.50)
           expect(intersect.value.bid().value()).toEqual(new Decimal(0.50));
           expect(intersect.value.ask().value()).toEqual(new Decimal(0.50));
           expect(intersect.value.isZeroWidth()).toBe(true);

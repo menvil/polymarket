@@ -170,16 +170,16 @@ export class PolymarketMessageParser implements IMessageParser {
         return null;
       }
 
-      // Control messages (no asset_id) - handled by transport
+      // Управляющие сообщения (без asset_id) — обрабатываются транспортом
       if (eventType === 'pong' || eventType === 'error' || eventType === 'subscribed' || eventType === 'unsubscribed') {
-        // These are handled by BaseWebSocketTransport (isPongMessage, isErrorMessage)
+        // Обрабатываются BaseWebSocketTransport (isPongMessage, isErrorMessage)
         return null;
       }
 
-      // Ignored events (not needed for trading)
+      // Игнорируемые события (не нужны для торговли)
       if (eventType === 'price_change') {
-        // price_change has array of price_changes, not single asset_id
-        // Skip for now - not needed for trading or data collection
+        // price_change содержит массив price_changes, а не единственный asset_id
+        // Пропускаем — не нужно для торговли или сбора данных
         this.logger.trace('Skipping price_change event', {
           market: (message as any).market?.substring(0, 16) + '...',
           changes: (message as any).price_changes?.length,
@@ -188,22 +188,22 @@ export class PolymarketMessageParser implements IMessageParser {
       }
 
       if (eventType === 'tick_size_change') {
-        // tick_size_change - skip, not needed for trading or data collection
+        // tick_size_change — пропускаем, не нужно для торговли или сбора данных
         this.logger.trace('Skipping tick_size_change event', {
           market: (message as any).market?.substring(0, 16) + '...',
         });
         return null;
       }
 
-      // Data messages MUST have asset_id
+      // Сообщения с данными ДОЛЖНЫ иметь asset_id
       if (!message.asset_id) {
         this.logger.warn('Data message without asset_id', { eventType, message });
         return null;
       }
 
-      // Parse orderbook event
+      // Парсим событие стакана
       if (eventType === 'book') {
-        // Validate required fields
+        // Проверяем обязательные поля
         if (!message.bids || !message.asks) {
           this.logger.warn('Orderbook message missing bids or asks', { message });
           return null;
@@ -216,9 +216,9 @@ export class PolymarketMessageParser implements IMessageParser {
         };
       }
 
-      // Parse trade event
+      // Парсим событие сделки
       if (eventType === 'trade' || eventType === 'last_trade_price') {
-        // Validate required fields
+        // Проверяем обязательные поля
         if (!message.price || !message.size) {
           this.logger.trace('Trade message missing price or size', { eventType, message });
           return null;
@@ -231,7 +231,7 @@ export class PolymarketMessageParser implements IMessageParser {
         };
       }
 
-      // Unknown event type
+      // Неизвестный тип события
       this.logger.debug('Unknown event type', {
         eventType,
         asset_id: message.asset_id?.substring(0, 16),

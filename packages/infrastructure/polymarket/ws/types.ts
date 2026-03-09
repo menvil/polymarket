@@ -41,13 +41,13 @@
  */
 export interface PolymarketSubscriptionParams {
   /**
-   * Array of asset IDs (token IDs) to subscribe to
+   * Массив ID активов (token IDs) для подписки
    *
    * @remarks
-   * - Token IDs are very long numeric strings (77 digits)
-   * - Must be valid token IDs from Polymarket markets
-   * - Duplicates will be removed automatically
-   * - Each token represents one side of a binary market (YES or NO)
+   * - Token ID — очень длинные числовые строки (77 цифр)
+   * - Должны быть валидными token ID маркетов Polymarket
+   * - Дубликаты удаляются автоматически
+   * - Каждый токен представляет одну сторону бинарного маркета (YES или NO)
    *
    * @example
    * ['67704255197116168826604911233626301865010283966205730455742704536521111535950']
@@ -55,13 +55,13 @@ export interface PolymarketSubscriptionParams {
   assets_ids: string[];
 
   /**
-   * Subscription type
+   * Тип подписки
    *
    * @remarks
-   * - 'market': Subscribe to market data (orderbook, trades)
-   * - 'user': Subscribe to user-specific events (fills, orders)
+   * - 'market': Подписка на рыночные данные (стакан, сделки)
+   * - 'user': Подписка на user-specific события (fills, ордера)
    *
-   * Most common is 'market' for market making / trading bots.
+   * Наиболее распространён 'market' для маркет-мейкинга / торговых ботов.
    */
   type: 'market' | 'user';
 }
@@ -113,36 +113,36 @@ export interface PolymarketSubscriptionParams {
  */
 export interface PolymarketWSMessage {
   /**
-   * Event type
+   * Тип события
    *
    * @remarks
-   * Determines how to parse the rest of the message.
+   * Определяет, как парсить остальную часть сообщения.
    *
-   * Data Events:
-   * - book: Orderbook snapshot/update
-   * - trade: Trade execution
-   * - last_trade_price: Last trade price update
+   * События с данными:
+   * - book: Снапшот/обновление стакана
+   * - trade: Исполнение сделки
+   * - last_trade_price: Обновление последней цены сделки
    *
-   * Control Events:
-   * - pong: Heartbeat response
-   * - error: Error message
-   * - subscribed: Subscription confirmation
-   * - unsubscribed: Unsubscription confirmation
+   * Управляющие события:
+   * - pong: Ответ на heartbeat
+   * - error: Сообщение об ошибке
+   * - subscribed: Подтверждение подписки
+   * - unsubscribed: Подтверждение отписки
    *
-   * Ignored Events:
-   * - price_change: Price change notifications (batched)
-   * - tick_size_change: Tick size configuration change
+   * Игнорируемые события:
+   * - price_change: Уведомления об изменении цен (пакетные)
+   * - tick_size_change: Изменение конфигурации шага цены
    */
   event_type: 'book' | 'trade' | 'last_trade_price' | 'pong' | 'error' | 'subscribed' | 'unsubscribed' | 'price_change' | 'tick_size_change';
 
   /**
-   * Asset ID (token ID)
+   * ID актива (token ID)
    *
    * @remarks
-   * Present only for data events (book, trade, last_trade_price).
-   * Not present for control events (pong, error, subscribed).
+   * Присутствует только в событиях с данными (book, trade, last_trade_price).
+   * Отсутствует в управляющих событиях (pong, error, subscribed).
    *
-   * 77-digit numeric string representing a specific market outcome.
+   * 77-значная числовая строка, представляющая конкретный исход маркета.
    *
    * @example
    * '67704255197116168826604911233626301865010283966205730455742704536521111535950'
@@ -150,14 +150,14 @@ export interface PolymarketWSMessage {
   asset_id?: string;
 
   /**
-   * Bids (for orderbook events)
+   * Биды (для событий стакана)
    *
    * @remarks
-   * Array of { price: string, size: string } objects.
-   * Prices are decimal strings (e.g., '0.52').
-   * Sizes are decimal strings (e.g., '100.5').
+   * Массив объектов { price: string, size: string }.
+   * Цены — десятичные строки (например, '0.52').
+   * Размеры — десятичные строки (например, '100.5').
    *
-   * Sorted by price descending (best bid first).
+   * Отсортированы по убыванию цены (лучший бид первым).
    *
    * @example
    * [{ price: '0.52', size: '100' }, { price: '0.51', size: '200' }]
@@ -165,11 +165,11 @@ export interface PolymarketWSMessage {
   bids?: Array<{ price: string; size: string }>;
 
   /**
-   * Asks (for orderbook events)
+   * Аски (для событий стакана)
    *
    * @remarks
-   * Array of { price: string, size: string } objects.
-   * Sorted by price ascending (best ask first).
+   * Массив объектов { price: string, size: string }.
+   * Отсортированы по возрастанию цены (лучший аск первым).
    *
    * @example
    * [{ price: '0.53', size: '150' }, { price: '0.54', size: '250' }]
@@ -177,10 +177,10 @@ export interface PolymarketWSMessage {
   asks?: Array<{ price: string; size: string }>;
 
   /**
-   * Trade price (for trade events)
+   * Цена сделки (для событий сделки)
    *
    * @remarks
-   * Decimal string representing the execution price.
+   * Десятичная строка, представляющая цену исполнения.
    *
    * @example
    * '0.52'
@@ -188,10 +188,10 @@ export interface PolymarketWSMessage {
   price?: string;
 
   /**
-   * Trade size (for trade events)
+   * Размер сделки (для событий сделки)
    *
    * @remarks
-   * Decimal string representing the trade quantity.
+   * Десятичная строка, представляющая объём сделки.
    *
    * @example
    * '50.5'
@@ -199,22 +199,22 @@ export interface PolymarketWSMessage {
   size?: string;
 
   /**
-   * Trade side (for trade events)
+   * Сторона сделки (для событий сделки)
    *
    * @remarks
-   * - BUY: Aggressive buy (taker bought from maker)
-   * - SELL: Aggressive sell (taker sold to maker)
+   * - BUY: Агрессивная покупка (тейкер купил у мейкера)
+   * - SELL: Агрессивная продажа (тейкер продал мейкеру)
    *
-   * This is from the taker's perspective.
+   * С точки зрения тейкера.
    */
   side?: 'BUY' | 'SELL';
 
   /**
-   * Timestamp (Unix milliseconds)
+   * Временна́я метка (Unix миллисекунды)
    *
    * @remarks
-   * Present for data events (book, trade).
-   * Represents when the event occurred on the exchange.
+   * Присутствует для событий с данными (book, trade).
+   * Представляет момент возникновения события на бирже.
    *
    * @example
    * 1766875759895
@@ -222,10 +222,10 @@ export interface PolymarketWSMessage {
   timestamp?: number;
 
   /**
-   * Error message (for error events)
+   * Сообщение об ошибке (для событий ошибки)
    *
    * @remarks
-   * Human-readable error description.
+   * Человекочитаемое описание ошибки.
    *
    * @example
    * 'Invalid token ID'

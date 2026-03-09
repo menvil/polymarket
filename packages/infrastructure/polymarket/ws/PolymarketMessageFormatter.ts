@@ -139,13 +139,13 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
   formatSubscription(_channel: string, params: SubscriptionParams): string {
     const polyParams = params as Partial<PolymarketSubscriptionParams>;
 
-    // Validate required fields
+    // Проверяем обязательные поля
     if (!polyParams.assets_ids || polyParams.assets_ids.length === 0) {
       this.logger.error('assets_ids is required for Polymarket subscription', { params });
       throw new Error('assets_ids is required and must not be empty');
     }
 
-    // Remove duplicates
+    // Удаляем дубликаты
     const uniqueTokens = [...new Set(polyParams.assets_ids)];
 
     if (uniqueTokens.length !== polyParams.assets_ids.length) {
@@ -157,7 +157,7 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
       });
     }
 
-    // Validate token format (should be numeric strings)
+    // Проверяем формат токенов (должны быть числовые строки)
     const invalidTokens = uniqueTokens.filter(t => !/^\d+$/.test(t));
     if (invalidTokens.length > 0) {
       this.logger.error('❌ Invalid token format detected!', {
@@ -167,7 +167,7 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
       });
     }
 
-    // Build Polymarket subscription format
+    // Формируем формат подписки Polymarket
     const subscription = {
       assets_ids: uniqueTokens,
       type: polyParams.type || 'market',
@@ -175,11 +175,11 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
 
     const subscriptionJson = JSON.stringify(subscription);
 
-    // Log subscription details
+    // Логируем детали подписки
     this.logger.info('📡 Formatting Polymarket subscription', {
       tokenCount: uniqueTokens.length,
       tokens: uniqueTokens.map(t => t.substring(0, 16) + '...'),
-      fullTokens: uniqueTokens, // Full tokens for debugging
+      fullTokens: uniqueTokens, // Полные токены для отладки
       type: subscription.type,
       jsonLength: subscriptionJson.length,
       jsonPreview: subscriptionJson.substring(0, 500) + (subscriptionJson.length > 500 ? '...' : ''),
@@ -212,7 +212,7 @@ export class PolymarketMessageFormatter implements IMessageFormatter {
    * ```
    */
   formatUnsubscription(channel: string, params: SubscriptionParams): string {
-    // Polymarket uses same format for subscribe and unsubscribe
+    // Polymarket использует одинаковый формат для подписки и отписки
     this.logger.debug('Formatting Polymarket unsubscription (same as subscription)', { params });
     return this.formatSubscription(channel, params);
   }

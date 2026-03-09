@@ -188,8 +188,14 @@ console.log(portfolio.getPositionCount()); // 3
 ```typescript
 import { getTotalValue, getTotalUnrealizedPnL } from '@polymarket/portfolio';
 
-const getPrice = (instrumentId: InstrumentId) => prices.get(instrumentId);
+const prices = new Map<InstrumentId, Price>([
+  [instrumentId, currentPrice],
+]);
 
+const getPrice = (id: InstrumentId): Price | undefined => prices.get(id);
+
+// getPrice может вернуть undefined — getTotalValue и getTotalUnrealizedPnL
+// пропускают позиции без котировки
 const totalValue = getTotalValue(portfolio.getPositions(), getPrice, 'USDC');
 const totalPnL   = getTotalUnrealizedPnL(portfolio.getPositions(), getPrice);
 ```

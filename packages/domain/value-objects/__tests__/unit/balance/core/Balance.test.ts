@@ -84,14 +84,15 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(-100), 'USDC');
       const reserved = Money.of(new Decimal(0));
 
+      let caughtError: unknown;
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        fail('Should have thrown');
       } catch (error) {
-        expect(error).toBeInstanceOf(BalanceInvariantViolation);
-        if (error instanceof BalanceInvariantViolation) {
-          expect(error.reason).toBe('NEGATIVE_AVAILABLE');
-        }
+        caughtError = error;
+      }
+      expect(caughtError).toBeInstanceOf(BalanceInvariantViolation);
+      if (caughtError instanceof BalanceInvariantViolation) {
+        expect(caughtError.reason).toBe('NEGATIVE_AVAILABLE');
       }
     });
 
@@ -99,14 +100,15 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal(10000));
       const reserved = Money.of(new Decimal(-100), 'USDC');
 
+      let caughtError: unknown;
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        fail('Should have thrown');
       } catch (error) {
-        expect(error).toBeInstanceOf(BalanceInvariantViolation);
-        if (error instanceof BalanceInvariantViolation) {
-          expect(error.reason).toBe('NEGATIVE_RESERVED');
-        }
+        caughtError = error;
+      }
+      expect(caughtError).toBeInstanceOf(BalanceInvariantViolation);
+      if (caughtError instanceof BalanceInvariantViolation) {
+        expect(caughtError.reason).toBe('NEGATIVE_RESERVED');
       }
     });
 
@@ -125,18 +127,19 @@ describe('Balance Core', () => {
       const available = Money.of(new Decimal('6e14'));
       const reserved = Money.of(new Decimal('5e14'));
 
+      let caughtError: unknown;
       try {
         Balance.of(available, reserved, TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        fail('Should have thrown');
       } catch (error) {
-        expect(error).toBeInstanceOf(BalanceInvariantViolation);
-        if (error instanceof BalanceInvariantViolation) {
-          expect(error.reason).toBe('TOTAL_EXCEEDS_MAX_AMOUNT');
-          expect((error as any).total).toBeDefined();
-          expect((error as any).maxAmount).toBeDefined();
-          expect((error as any).available).toBeDefined();
-          expect((error as any).reserved).toBeDefined();
-        }
+        caughtError = error;
+      }
+      expect(caughtError).toBeInstanceOf(BalanceInvariantViolation);
+      if (caughtError instanceof BalanceInvariantViolation) {
+        expect(caughtError.reason).toBe('TOTAL_EXCEEDS_MAX_AMOUNT');
+        expect((caughtError as any).total).toBeDefined();
+        expect((caughtError as any).maxAmount).toBeDefined();
+        expect((caughtError as any).available).toBeDefined();
+        expect((caughtError as any).reserved).toBeDefined();
       }
     });
 
@@ -201,7 +204,7 @@ describe('Balance Core', () => {
       });
     });
 
-    describe('isEmpty()', () => {
+    describe('isZero()', () => {
       it('возвращает false для непустого баланса', () => {
         expect(balance.isZero()).toBe(false);
       });

@@ -435,7 +435,7 @@ describe('OrderbookNormalizer', () => {
       const result = OrderbookNormalizer.normalize(raw);
       expect(result.ok).toBe(false);
       if (!result.ok) {
-        expect(result.error.message).toContain('asks');
+        expect(result.error.message).toContain('price');
       }
     });
 

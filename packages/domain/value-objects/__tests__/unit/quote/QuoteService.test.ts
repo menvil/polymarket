@@ -969,7 +969,9 @@ describe('QuoteService', () => {
 
     describe('Preservation of sourceId and instrumentId in WithRefresh methods', () => {
       const customSourceId = 'CUSTOM_SOURCE' as MarketDataSourceId;
-      const customInstrumentId = asInstrumentId('CUSTOM_INSTRUMENT')!;
+      const parsedInstrumentId = asInstrumentId('CUSTOM_INSTRUMENT');
+      if (!parsedInstrumentId) throw new Error('asInstrumentId returned undefined for CUSTOM_INSTRUMENT');
+      const customInstrumentId = parsedInstrumentId;
 
       it('shiftWithRefresh сохраняет sourceId и instrumentId', () => {
         const clock = new PaperClock(new Date('2024-01-01T12:00:00Z'));

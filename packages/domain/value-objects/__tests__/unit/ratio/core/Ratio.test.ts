@@ -311,9 +311,9 @@ describe('Ratio core', () => {
     });
 
     it('проверяет reason в RatioInvariantViolation для NaN', () => {
+      expect.assertions(3);
       try {
         Ratio.of(new Decimal(NaN));
-        fail('Should have thrown');
       } catch (e) {
         expect(e).toBeInstanceOf(RatioInvariantViolation);
         if (e instanceof RatioInvariantViolation) {
@@ -324,9 +324,9 @@ describe('Ratio core', () => {
     });
 
     it('проверяет reason в RatioInvariantViolation для NON_FINITE', () => {
+      expect.assertions(3);
       try {
         Ratio.of(new Decimal(Infinity));
-        fail('Should have thrown');
       } catch (e) {
         expect(e).toBeInstanceOf(RatioInvariantViolation);
         if (e instanceof RatioInvariantViolation) {

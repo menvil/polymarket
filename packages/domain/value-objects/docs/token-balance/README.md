@@ -18,7 +18,7 @@ import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
 import { Quantity } from '@polymarket/value-objects/quantity';
 import { BinaryOutcome, KnownOnChainProtocols, KnownVenues } from '@polymarket/ids';
-import type { OnChainConditionRef, AccountId, VenueId } from '@polymarket/ids';
+import type { OnChainConditionRef, AccountId, VenueId, ChainId, ConditionId } from '@polymarket/ids';
 import { parseWalletAddress, accountIdFromWallet } from '@polymarket/ids';
 import { isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';

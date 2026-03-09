@@ -142,7 +142,7 @@ export class MarketParser {
     }
 
     const o0 = data.outcomes[0] as Record<string, unknown>;
-    if (!o0 || typeof o0 !== 'object') {
+    if (!o0 || typeof o0 !== 'object' || Array.isArray(o0)) {
       return Err(
         new MarketValidationError('Market data: outcomes[0] must be an object', {
           context: { field: 'outcomes[0]' },
@@ -166,7 +166,7 @@ export class MarketParser {
     }
 
     const o1 = data.outcomes[1] as Record<string, unknown>;
-    if (!o1 || typeof o1 !== 'object') {
+    if (!o1 || typeof o1 !== 'object' || Array.isArray(o1)) {
       return Err(
         new MarketValidationError('Market data: outcomes[1] must be an object', {
           context: { field: 'outcomes[1]' },

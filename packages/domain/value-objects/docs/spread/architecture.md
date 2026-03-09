@@ -384,13 +384,16 @@ User: result.error.context.reason === BID_GREATER_THAN_ASK
 
 ```typescript
 // Исходный спред: 0.48-0.52, mid=0.50
-const spread = SpreadService.fromValues(0.48, 0.52);
+const spreadResult = SpreadService.fromValues(0.48, 0.52);
+if (spreadResult.ok) {
+  const spread = spreadResult.value;
 
-// Сужение на 0.01
-tighten(spread, 0.01);  // → 0.49-0.51, mid=0.50 (сохранён!)
+  // Сужение на 0.01
+  SpreadService.tighten(spread, 0.01);  // → 0.49-0.51, mid=0.50 (сохранён!)
 
-// Расширение на 0.02
-widen(spread, 0.02);    // → 0.46-0.54, mid=0.50 (сохранён!)
+  // Расширение на 0.02
+  SpreadService.widen(spread, 0.02);    // → 0.46-0.54, mid=0.50 (сохранён!)
+}
 ```
 
 ### 3. Почему shift не называется move?
@@ -468,14 +471,17 @@ Spread не форсирует alignment к базовому тику (0.0001):
 `widthRatio(): Ratio` возвращает относительную ширину как дробь от midpoint:
 
 ```typescript
-const spread = SpreadService.fromValues(0.48, 0.52).value;
-spread.widthRatio().toNumber();  // 0.08 (= 0.04 / 0.50 = 8%)
+const spreadResult = SpreadService.fromValues(0.48, 0.52);
+if (spreadResult.ok) {
+  const spread = spreadResult.value;
+  spread.widthRatio().toDecimal().toNumber();  // 0.08 (= 0.04 / 0.50 = 8%)
 
-// Для отображения в процентах:
-spread.widthRatio().toDecimal().times(100).toFixed(2);  // "8.00"
+  // Для отображения в процентах:
+  spread.widthRatio().toDecimal().times(100).toFixed(2);  // "8.00"
 
-// Для basis points:
-spread.widthRatio().toDecimal().times(10000).toNumber();  // 800
+  // Для basis points:
+  spread.widthRatio().toDecimal().times(10000).toNumber();  // 800
+}
 ```
 
 **Обоснование:**
@@ -490,8 +496,10 @@ spread.widthRatio().toDecimal().times(10000).toNumber();  // 800
 Разрешены спреды с bid === ask:
 
 ```typescript
-SpreadService.fromValues(0.50, 0.50);  // Ok
-spread.isZeroWidth();  // true
+const zeroWidthResult = SpreadService.fromValues(0.50, 0.50);  // Ok
+if (zeroWidthResult.ok) {
+  zeroWidthResult.value.isZeroWidth();  // true
+}
 ```
 
 **Обоснование:**
@@ -505,15 +513,21 @@ spread.isZeroWidth();  // true
 Spread использует **строгие** сравнения без epsilon:
 
 ```typescript
-const spread1 = SpreadService.fromValues(0.48, 0.52).value;
-const spread2 = SpreadService.fromValues(0.48, 0.52).value;
+const result1 = SpreadService.fromValues(0.48, 0.52);
+const result2 = SpreadService.fromValues(0.48, 0.52);
+const result3 = SpreadService.fromValues(0.48000001, 0.52);
 
-// Строгое сравнение через equals()
-spread1.equals(spread2);  // true — точное совпадение
+if (result1.ok && result2.ok && result3.ok) {
+  const spread1 = result1.value;
+  const spread2 = result2.value;
+  const spread3 = result3.value;
 
-// Приближенное совпадение НЕ равно
-const spread3 = SpreadService.fromValues(0.48000001, 0.52).value;
-spread1.equals(spread3);  // false — не точное совпадение
+  // Строгое сравнение через equals()
+  spread1.equals(spread2);  // true — точное совпадение
+
+  // Приближенное совпадение НЕ равно
+  spread1.equals(spread3);  // false — не точное совпадение
+}
 ```
 
 **Обоснование:**

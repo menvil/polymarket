@@ -105,10 +105,14 @@ Money модуль построен на **4-слойной архитектур
 ┌─────────────────────────────────────────────────┐
 │           Core Layer                            │
 │  (Money, MoneyInvariantViolation)               │
+│  ┌───────────────────────────────────────────┐  │
+│  │  Rules Layer (internal)                   │  │
+│  │  ValidateDivisorForMoneyDivision          │  │
+│  │  ValidateFactorForMoneyMultiplication     │  │
+│  │  ValidateDeltaForIncreaseBy               │  │
+│  └───────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────┘
 ```
-
-**Примечание:** Money имеет Rules Layer для валидации операндов арифметических операций (ValidateDivisorForMoneyDivision, ValidateFactorForMoneyMultiplication, ValidateDeltaForIncreaseBy).
 
 ### Паттерн Throws+Facade
 
@@ -142,7 +146,7 @@ Money модуль построен на **4-слойной архитектур
 
 1. Валюта поддерживается (сейчас только `USDC`)
 2. Сумма finite (не `NaN`, не `Infinity`)
-3. | Сумма | <= MAX_AMOUNT (1e15)
+3. `abs(Сумма)` <= MAX_AMOUNT (1e15)
 
 **НЕ инварианты** (контекстные правила):
 
@@ -391,24 +395,27 @@ console.log(`Fee: $${fee.value()}`);  // $2.00
 
 ### Проверка совпадения валют
 
+> **Примечание:** В текущей реализации поддерживается только USDC. Проверка `CURRENCY_MISMATCH` является будущей функцией для поддержки нескольких валют. Все операции `MoneyService.add` / `subtract` работают только с USDC.
+
 ```typescript
 import { MoneyService, Money } from '@polymarket/value-objects/money';
 
 const r1 = MoneyService.create(100);
 const r2 = MoneyService.create(50);
 if (!r1.ok || !r2.ok) return;
-const usd1 = r1.value;
-const usd2 = r2.value;
+const usdc1 = r1.value;  // USDC
+const usdc2 = r2.value;  // USDC
 
-// Попытка сложить разные валюты
-const sumResult = MoneyService.add(usd1, usd2);
+// Сложение двух USDC сумм — всегда успешно при валидных значениях
+const sumResult = MoneyService.add(usdc1, usdc2);
 
 if (!sumResult.ok) {
-  // InvalidMoneyError (reason: CURRENCY_MISMATCH)
-  console.error(sumResult.error.context?.expected);  // "USDC"
-  console.error(sumResult.error.context?.actual);    // "EUR" (example)
+  // InvalidMoneyError (например, reason: EXCEEDS_MAX_AMOUNT)
+  console.error(sumResult.error.message);
   return;
 }
+
+console.log(sumResult.value.value().toNumber());  // 150
 ```
 
 ### Сериализация для API

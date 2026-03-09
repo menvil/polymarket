@@ -177,7 +177,16 @@ export class TradeMapper {
       );
     }
 
-    const price = Price.of(priceDecimal);
+    let price: Price;
+    try {
+      price = Price.of(priceDecimal);
+    } catch {
+      return Err(
+        new ValidationError('Invalid lastTradeEvent: price must be positive', {
+          context: { field: 'price', value: priceRaw },
+        })
+      );
+    }
 
     // Извлечь size
     const sizeRaw = raw['size'];
@@ -208,7 +217,16 @@ export class TradeMapper {
       );
     }
 
-    const size = Quantity.of(sizeDecimal);
+    let size: Quantity;
+    try {
+      size = Quantity.of(sizeDecimal);
+    } catch {
+      return Err(
+        new ValidationError('Invalid lastTradeEvent: size must be positive', {
+          context: { field: 'size', value: sizeRaw },
+        })
+      );
+    }
 
     // Извлечь timestamp — Polymarket может возвращать секунды (10 цифр) или миллисекунды (13 цифр)
     const timestampRaw = raw['timestamp'];

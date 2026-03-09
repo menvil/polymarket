@@ -220,7 +220,7 @@ describe('TokenBalance Core', () => {
       expect(ref).toEqual(conditionRef);
       expect(ref.kind).toBe('ONCHAIN');
       expect(ref.protocolId).toBe(KnownOnChainProtocols.POLYMARKET_CTF);
-      expect(ref.chainId).toBe(137);
+      expect(ref.chainId).toBe(KnownChainIds.POLYGON);
     });
 
     it('outcomeKey() делегирует к token.outcomeKey()', () => {

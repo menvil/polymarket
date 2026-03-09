@@ -176,8 +176,8 @@ export class PolymarketSigner {
    * Currently uses simple JSON encoding for demonstration.
    */
   private encodeOrderData(orderData: Record<string, unknown>): string {
-    // TODO: Implement EIP-712 typed data encoding in production
-    // For now, use simple JSON encoding
+    // TODO: Реализовать EIP-712 typed data encoding в production
+    // Пока используем простое JSON-кодирование
     return JSON.stringify(orderData);
   }
 
@@ -188,7 +188,7 @@ export class PolymarketSigner {
    * @returns Encoded message string
    */
   private encodeCancelData(cancelData: Record<string, unknown>): string {
-    // TODO: Implement EIP-712 typed data encoding in production
+    // TODO: Реализовать EIP-712 typed data encoding в production
     return JSON.stringify(cancelData);
   }
 }

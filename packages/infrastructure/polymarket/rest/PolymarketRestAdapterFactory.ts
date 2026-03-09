@@ -8,7 +8,7 @@
  * - PolymarketRestClient (base HTTP client)
  * - 6 REST clients (Order, Balance, Positions, Orderbook, Trades, MarketData)
  * - 3 Mappers (Balance, Order, Position)
- * - 3 Providers (Balance, Positions, Orders)
+ * - 2 Providers (Balance, Positions)
  * - 2 Policies (MarketConstraints, Balance)
  * - 2 Adapters (Execution, Portfolio)
  * - 1 Facade (RestAdapter)
@@ -57,7 +57,6 @@ import { PolymarketOrderBuilder } from './auth/PolymarketOrderBuilder.js';
 
 import { PolymarketBalanceProvider } from './providers/PolymarketBalanceProvider.js';
 import { PolymarketPositionsProvider } from './providers/PolymarketPositionsProvider.js';
-import { PolymarketOrdersProvider } from './providers/PolymarketOrdersProvider.js';
 
 import { PolymarketMarketConstraintsPolicy } from './policies/PolymarketMarketConstraintsPolicy.js';
 import { PolymarketBalancePolicy } from './policies/PolymarketBalancePolicy.js';
@@ -78,14 +77,14 @@ export class PolymarketRestAdapterFactory {
    * @param eventBus - EventBus for publishing ExecutionEvent
    * @param logger - Logger instance
    * @param simulationMode - Enable simulation mode (virtual balance/trades)
-   * @param portfolioProjector - Optional PortfolioProjector for instant balance checks (v7.6)
+   * @param portfolioProjector - Опциональный PortfolioProjector для мгновенных проверок баланса
    * @returns Configured PolymarketRestAdapter
    *
    * @remarks
    * ExecutionAdapter требует EventBus для публикации ExecutionEvent
    *
-   * v7.6: PortfolioProjector enables zero-lag balance checks for SELL orders.
-   * When provided, BalancePolicy uses event-sourced inventory instead of Balance API.
+   * PortfolioProjector позволяет проводить проверки баланса без задержки для SELL ордеров.
+   * Если передан, BalancePolicy использует event-sourced инвентарь вместо Balance API.
    *
    * @example
    * ```typescript
@@ -127,43 +126,44 @@ export class PolymarketRestAdapterFactory {
     simulationMode: boolean = false,
     portfolioProjector?: IPortfolioProjector
   ): PolymarketRestAdapter {
-    // Base HTTP client
+    // Базовый HTTP клиент
     const restClient = new PolymarketRestClient(config, logger);
 
-    // Data API client (for positions endpoint)
+    // Data API клиент (для endpoint позиций)
     const dataApiClient = new PolymarketDataApiClient(
       { baseUrl: 'https://data-api.polymarket.com' },
       logger
     );
 
-    // Order builder (for EIP-712 signed orders)
+    // Построитель ордеров (для EIP-712 подписанных ордеров)
     const signer = restClient.getSigner();
     const makerAddress = config.funderAddress || signer.getAddress();
     const orderBuilder = new PolymarketOrderBuilder(
       signer.getWallet(),
       config.chainId,
       makerAddress,
-      config.signatureType!
+      config.signatureType!,
+      logger
     );
 
-    // REST clients
+    // REST клиенты
     const orderClient = new PolymarketOrderRestClient(restClient, orderBuilder, logger);
     const balanceClient = new PolymarketBalanceRestClient(restClient, logger);
-    // ✅ CRITICAL: Use MAKER address (funder), NOT SIGNER address (proxy)
-    // When using proxy wallet, positions belong to MAKER, not SIGNER
+    // КРИТИЧНО: Используем адрес MAKER (funder), НЕ адрес SIGNER (proxy)
+    // При использовании proxy-кошелька позиции принадлежат MAKER, не SIGNER
     const positionsClient = new PolymarketPositionsRestClient(
       dataApiClient,
-      makerAddress, // Use MAKER/funder address (same address used for orders)
+      makerAddress, // Используем адрес MAKER/funder (тот же, что используется для ордеров)
       logger
     );
     const marketDataClient = new PolymarketMarketDataRestClient(marketDataConfig, logger);
 
-    // Mappers
+    // Маппинги
     const balanceMapper = new PolymarketBalanceMapper(logger);
     const orderMapper = new PolymarketOrderMapper(logger);
     const positionMapper = new PolymarketPositionMapper();
 
-    // Providers
+    // Провайдеры
     const balanceProvider = new PolymarketBalanceProvider(
       balanceClient,
       balanceMapper,
@@ -177,30 +177,26 @@ export class PolymarketRestAdapterFactory {
       logger
     );
 
-    // Orders provider - currently unused, but available for future use
-    // @ts-expect-error - Temporarily unused until order querying is implemented
-    const _ordersProvider = new PolymarketOrdersProvider(orderClient, orderMapper, logger);
-
-    // Policies
+    // Политики
     const constraintsPolicy = new PolymarketMarketConstraintsPolicy(
       marketDataClient,
       logger
     );
 
-    // ✅ v7.6: Pass PortfolioProjector to BalancePolicy for instant balance checks
+    // Передаём PortfolioProjector в BalancePolicy для мгновенных проверок баланса
     const balancePolicy = new PolymarketBalancePolicy(
       balanceProvider,
       logger,
-      portfolioProjector // undefined for global adapter, provided for strategy-specific adapter
+      portfolioProjector // undefined для глобального адаптера, передаётся для стратегий
     );
 
-    // Adapters ( ExecutionAdapter теперь требует EventBus)
+    // Адаптеры (ExecutionAdapter теперь требует EventBus)
     const executionAdapter = new PolymarketExecutionAdapter(
       orderClient,
       orderMapper,
       eventBus,
       logger,
-      undefined, // executionContext (use default)
+      undefined, // executionContext (используем дефолтный)
       simulationMode
     );
 
@@ -212,7 +208,7 @@ export class PolymarketRestAdapterFactory {
       logger
     );
 
-    // Facade
+    // Фасад
     const restAdapter = new PolymarketRestAdapter(
       executionAdapter,
       portfolioAdapter,

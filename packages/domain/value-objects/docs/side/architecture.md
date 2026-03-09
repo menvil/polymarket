@@ -58,15 +58,15 @@ export function isValidSide(value: unknown): value is Side {
 
 **Почему `SIDE_SET` не экспортируется:** это деталь реализации. Внешний код должен использовать `isValidSide()` или `SideService.isValid()`, а не напрямую обращаться к Set.
 
-**Почему `[...ALL_SIDES]` в ошибках (spread):** каждое место, где нужен список допустимых значений для сообщения об ошибке, делает spread `[...ALL_SIDES]`, а не хранит общую ссылку. Это изолирует контекст ошибки от будущих мутаций (хотя `ALL_SIDES` заморожен — это defence in depth).
+**Почему `ALL_SIDES` (без spread) в ошибках:** поскольку `ALL_SIDES` заморожен через `Object.freeze`, его безопасно передавать по ссылке без лишних аллокаций. Спред `[...ALL_SIDES]` создавал бы новый массив при каждом броске — это излишне, когда исходный массив уже иммутабелен.
 
 ```typescript
-// parseSideOrThrow — spread изолирует контекст ошибки
+// parseSideOrThrow — использует ALL_SIDES напрямую (уже заморожен, лишние аллокации не нужны)
 throw new InvalidSideError(
   (ctx) => `Invalid side value: ${ctx.value}. Expected ${ALL_SIDES.join(' or ')}`,
   {
     context: {
-      expectedValues: [...ALL_SIDES], // spread, не прямая ссылка
+      expectedValues: ALL_SIDES, // frozen array — safe to share directly
       reason: SideErrorReason.INVALID_VALUE,
     },
   }

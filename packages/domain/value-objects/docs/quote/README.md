@@ -885,7 +885,7 @@ const quote = quoteResult.value;
 
 // Spread
 const spreadWidth = quote.spreadWidthOrZero();
-console.log(spreadWidth?.toNumber());  // 0.04
+console.log(spreadWidth.toNumber());  // 0.04
 
 // Spread в процентах от mid price: width / mid (как дробь)
 const spreadPct = quote.spreadPercentage();
@@ -987,13 +987,13 @@ if (!sizesResult.ok) {
 
 // Проверка минимального spread
 const minSpreadResult = ValidateMinSpread.check(
-  quote.spreadWidthOrZero()!,
+  quote.spreadWidthOrZero(),
   new Decimal(0.01)  // минимум 1%
 );
 
 // Проверка максимального spread
 const maxSpreadResult = ValidateMaxSpread.check(
-  quote.spreadWidthOrZero()!,
+  quote.spreadWidthOrZero(),
   new Decimal(0.10)  // максимум 10%
 );
 

@@ -73,7 +73,7 @@ export class PolymarketPositionsProvider implements IPositionsProvider {
   async getPositions(tokenId?: string): Promise<PositionResponse[]> {
     this.logger.debug('Getting positions', { tokenId });
 
-    // v7.7.14: Removed duplicate log (logged in PolymarketPositionsRestClient)
+    // Дублирующий лог удалён (логируется в PolymarketPositionsRestClient)
     const rawPositions = await this.positionsClient.getPositions(tokenId);
     const normalized = this.mapper.toDomainPositions(rawPositions);
     return normalized;
@@ -108,7 +108,7 @@ export class PolymarketPositionsProvider implements IPositionsProvider {
       ? this.mapper.toDomainPosition(rawPosition).size
       : 0;
 
-    // Default position limit (can be configured)
+    // Лимит позиции по умолчанию (можно настроить)
     const positionLimit = 1000;
 
     const canIncrease = Math.abs(currentPosition) < positionLimit;

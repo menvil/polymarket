@@ -77,10 +77,10 @@ export interface MarketInfoResponse {
   slug?: string;
 
   /** CLOB token IDs - JSON string array */
-  clobTokenIds: string;  // Always string from API: "[\"token1\", \"token2\"]"
+  clobTokenIds: string;  // Всегда строка из API: "[\"token1\", \"token2\"]"
 
   /** Outcomes - JSON string array */
-  outcomes: string;  // Always string from API: "[\"Yes\", \"No\"]"
+  outcomes: string;  // Всегда строка из API: "[\"Yes\", \"No\"]"
 
   /** Market status */
   active: boolean;
@@ -166,7 +166,7 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
   constructor(config: MarketDataClientConfig, logger: ILogger) {
     this.config = {
       ...config,
-      timeout: config.timeout ?? 30000, // 30s default
+      timeout: config.timeout ?? 30000, // 30 секунд по умолчанию
     };
 
     this.logger = logger.child?.('PolymarketMarketDataRestClient') ?? logger;
@@ -206,8 +206,8 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
         url.searchParams.set('closed', 'false');
         url.searchParams.set('limit', limit.toString());
         url.searchParams.set('offset', offset.toString());
-        url.searchParams.set('order', 'volume'); // Sort by volume
-        url.searchParams.set('ascending', 'false'); // Descending (highest volume first)
+        url.searchParams.set('order', 'volume'); // Сортировка по объёму
+        url.searchParams.set('ascending', 'false'); // По убыванию (наибольший объём первым)
 
         const rawMarkets = await this.fetch<MarketInfoResponse[]>(url.toString(), true);
 
@@ -215,13 +215,13 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
           break;
         }
 
-        // Map and accumulate
+        // Маппируем и накапливаем
         const mappedMarkets = rawMarkets.map((raw) => this.mapToDomainFormat(raw));
         allMarkets.push(...mappedMarkets);
 
         offset += limit;
 
-        // If we got less than limit, we've reached the end
+        // Если получили меньше limit, значит достигли конца
         if (rawMarkets.length < limit) {
           break;
         }
@@ -332,10 +332,10 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
       const market = await this.getMarketInfo(slugOrConditionId);
 
       const constraints: MarketConstraintsResponse = {
-        minimum_order_value: 0, // No minimum value - only require min 1 share
-        minimum_order_size: market.orderMinSize ?? 10, // Shares minimum for SELL orders
-        maximum_order_size: 10000, // API doesn't provide max, use default
-        minimum_tick_size: 0.01, // API doesn't provide size tick, use default
+        minimum_order_value: 0, // Нет минимального значения — требуется минимум 1 акция
+        minimum_order_size: market.orderMinSize ?? 10, // Минимум акций для SELL-ордеров
+        maximum_order_size: 10000, // API не предоставляет максимум — используем дефолт
+        minimum_tick_size: 0.01, // API не предоставляет шаг размера — используем дефолт
         minimum_price_tick: market.orderPriceMinTickSize ?? 0.0001,
       };
 
@@ -346,7 +346,7 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
 
       return constraints;
     } catch (error) {
-      // HTTP 422 is expected if passing conditionId instead of slug
+      // HTTP 422 ожидаем, если передан conditionId вместо slug
       const is422 = error && typeof error === 'object' && 'statusCode' in error && error.statusCode === 422;
 
       if (is422) {
@@ -360,11 +360,11 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
         });
       }
 
-      // Return safe defaults
-      // КРИТИЧНО: minimum_order_size = 1 (fallback, когда API unavailable)
+      // Возвращаем безопасные значения по умолчанию
+      // КРИТИЧНО: minimum_order_size = 1 (запасной вариант, когда API недоступен)
       return {
-        minimum_order_value: 0, // No minimum value - only require min 1 share
-        minimum_order_size: 1, // Safe default: 1 share minimum
+        minimum_order_value: 0, // Нет минимального значения — требуется минимум 1 акция
+        minimum_order_size: 1, // Безопасный дефолт: минимум 1 акция
         maximum_order_size: 10000,
         minimum_tick_size: 0.01,
         minimum_price_tick: 0.0001,
@@ -392,15 +392,15 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
       active: raw.active,
       closed: raw.closed,
       enableOrderBook: raw.enableOrderBook,
-      clobTokenIds: raw.clobTokenIds, // JSON string: "[\"token1\", \"token2\"]"
-      outcomes: raw.outcomes, // JSON string: "[\"Yes\", \"No\"]"
-      liquidity: raw.liquidity, // String number from API
-      spread: raw.spread, // Bid-ask spread from API
-      bestBid: raw.bestBid, // Best bid price from API
-      bestAsk: raw.bestAsk, // Best ask price from API
-      orderMinSize: raw.orderMinSize, // Minimum order size from API (e.g., 5 shares)
-      orderPriceMinTickSize: raw.orderPriceMinTickSize, // Price tick from API (e.g., 0.01)
-      // Optional fields not in API response
+      clobTokenIds: raw.clobTokenIds, // JSON-строка: "[\"token1\", \"token2\"]"
+      outcomes: raw.outcomes, // JSON-строка: "[\"Yes\", \"No\"]"
+      liquidity: raw.liquidity, // Строковое число из API
+      spread: raw.spread, // Спред bid-ask из API
+      bestBid: raw.bestBid, // Лучший bid из API
+      bestAsk: raw.bestAsk, // Лучший ask из API
+      orderMinSize: raw.orderMinSize, // Минимальный размер ордера из API (напр., 5 акций)
+      orderPriceMinTickSize: raw.orderPriceMinTickSize, // Шаг цены из API (напр., 0.01)
+      // Необязательные поля, отсутствующие в ответе API
       description: undefined,
       tags: undefined,
     };
@@ -436,7 +436,7 @@ export class PolymarketMarketDataRestClient implements IMarketDataProvider {
       if (!response.ok) {
         const errorBody = await response.text();
 
-        // HTTP 422 is expected when using conditionId instead of slug
+        // HTTP 422 ожидаем — используется conditionId вместо slug
         if (response.status === 422) {
           if (!silent) {
             this.logger.debug(`HTTP 422 (expected - need slug, not conditionId)`, {

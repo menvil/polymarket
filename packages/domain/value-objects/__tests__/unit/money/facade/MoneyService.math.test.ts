@@ -206,7 +206,7 @@ describe('MoneyService.divide()', () => {
       }
     });
 
-    it('делит на дробное', () => {
+    it('делит на целое', () => {
       const result = MoneyService.divide(Money.of(new Decimal(100)), 4);
       expect(result.ok).toBe(true);
       if (result.ok) {
@@ -279,17 +279,19 @@ describe('MoneyService - unexpected error handling', () => {
       return originalMoneyOf.call(Money, value, currency);
     });
 
-    // Пытаемся выполнить операцию, которая использует createFromDecimal
-    const result = MoneyService.add(m1, m2);
+    try {
+      // Пытаемся выполнить операцию, которая использует createFromDecimal
+      const result = MoneyService.add(m1, m2);
 
-    // Должен вернуть Err с InvalidMoneyError (не бросить исключение)
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.error).toBeInstanceOf(InvalidMoneyError);
-      expect(result.error.message).toContain('Unexpected error');
+      // Должен вернуть Err с InvalidMoneyError (не бросить исключение)
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.error).toBeInstanceOf(InvalidMoneyError);
+        expect(result.error.message).toContain('Unexpected error');
+      }
+    } finally {
+      // Восстанавливаем оригинальную реализацию в любом случае
+      spyMoneyOf.mockRestore();
     }
-
-    // Восстанавливаем оригинальную реализацию
-    spyMoneyOf.mockRestore();
   });
 });

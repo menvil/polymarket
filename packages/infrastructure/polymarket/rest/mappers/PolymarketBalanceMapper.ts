@@ -27,6 +27,7 @@
 
 import type { ILogger } from '../../../../domain/ports/ILogger.js';
 import type { BalanceResponse } from '../clients/PolymarketBalanceRestClient.js';
+import { USDC_MULTIPLIER } from '../constants.js';
 
 /**
  * Normalized balance (domain format)
@@ -112,7 +113,7 @@ export class PolymarketBalanceMapper {
         result.lockedUSDC = this.parseBalance(response.locked);
         result.totalUSDC = this.parseBalance(response.total);
       } else {
-        // Outcome token
+        // Outcome-токен
         const tokenId = response.asset;
         const balance = this.parseBalance(response.available);
         result.outcomeTokens[tokenId] = balance;
@@ -144,9 +145,8 @@ export class PolymarketBalanceMapper {
       return 0;
     }
 
-    // CRITICAL: Convert from minimum units to USDC (6 decimals)
-    const USDC_DECIMALS = 6;
-    const balanceInUSDC = parsed / Math.pow(10, USDC_DECIMALS);
+    // КРИТИЧНО: Конвертируем из минимальных единиц в USDC (делим на 10^6)
+    const balanceInUSDC = parsed / USDC_MULTIPLIER;
 
     this.logger.silly('Balance converted from minimum units', {
       raw: parsed,

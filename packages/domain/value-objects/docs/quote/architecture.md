@@ -162,8 +162,12 @@ class Quote {
 5. **Валидный timestamp:**
    - Валидация делегируется Timestamp VO
    - Timestamp гарантирует: isFinite, isInteger, >= 0, разумные границы
-   - Quote принимает уже валидный Timestamp VO без дополнительных проверок
-   - `INVALID_TIMESTAMP` в `QuoteInvariantViolation` зарезервирован для случаев, когда внутренняя логика Quote создаёт производный timestamp (например, при shift/skew операциях), который может оказаться невалидным
+   - Quote принимает уже валидный Timestamp VO без дополнительных проверок при нормальном создании
+   - `INVALID_TIMESTAMP` в `QuoteInvariantViolation` используется **только** когда внутренняя логика Quote
+     создаёт производный timestamp в специфических операциях (например, при `shiftWithRefresh` / `skewWithRefresh`).
+     Конкретные примеры граничных случаев: сдвиг на отрицательную/огромную дельту, выход результата за допустимые
+     границы или ошибки округления. Для обычной конструкции через `Quote.of()` с заранее валидным Timestamp VO
+     этот инвариант не срабатывает.
 
 **Исключения:**
 
@@ -310,7 +314,9 @@ QuoteService.create(0.48, 0.52, 100, 150, 'POLYMARKET_WS', 'TEST_MARKET')
           rewrap('create', { component: 'bid' }, error, ...)
         ↓
         Quote.of(Price, Price, Quantity, Quantity, timestamp, sourceId, instrumentId)
-          ↓ (если QuoteInvariantViolation)
+          ↓ (если QuoteInvariantViolation — перехватывается явно)
+          rewrap('create', { reason: mapInvariantReason(e.reason) }, e, InvalidQuoteError)
+          ↓ (если неизвестная ошибка — только тогда)
           unexpectedError(...)
       })
   })

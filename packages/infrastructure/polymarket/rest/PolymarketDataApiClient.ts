@@ -75,7 +75,7 @@ export class PolymarketDataApiClient {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
+          'Accept': 'application/json', // Явно запрашиваем JSON
         },
         signal: controller.signal,
       });

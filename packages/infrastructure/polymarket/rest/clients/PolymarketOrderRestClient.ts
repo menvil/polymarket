@@ -39,25 +39,25 @@ import type { PolymarketOrderBuilder } from '../auth/PolymarketOrderBuilder.js';
  * Create order request (simplified API format)
  */
 export interface CreateOrderRequest {
-  /** Token ID */
+  /** Идентификатор токена */
   tokenId: string;
 
-  /** Order side */
+  /** Направление ордера */
   side: 'BUY' | 'SELL';
 
-  /** Price (number: 0-1) */
+  /** Цена (число: 0-1) */
   price: number;
 
-  /** Size (number of shares) */
+  /** Размер (количество акций) */
   size: number;
 
-  /** Fee rate in basis points (default: 0) */
+  /** Ставка комиссии в базисных пунктах (по умолчанию: 0) */
   feeRateBps?: number;
 
-  /** Nonce for replay protection */
+  /** Nonce для защиты от повторного воспроизведения */
   nonce: number;
 
-  /** Price tick size for rounding (optional, defaults to 0.01) */
+  /** Шаг цены для округления (необязательно, по умолчанию: 0.01) */
   priceTick?: number;
 }
 
@@ -65,40 +65,40 @@ export interface CreateOrderRequest {
  * Create order response (raw API format)
  */
 export interface CreateOrderResponse {
-  /** Success flag */
+  /** Флаг успеха */
   success: boolean;
 
-  /** Error message (empty if success) */
+  /** Сообщение об ошибке (пустое при успехе) */
   errorMsg: string;
 
-  /** Order ID (Capital D!) */
+  /** Идентификатор ордера (с заглавной D!) */
   orderID: string;
 
-  /** Order status */
+  /** Статус ордера */
   status: 'pending' | 'live' | 'filled' | 'cancelled';
 
-  /** Taking amount */
+  /** Сумма к получению */
   takingAmount: string;
 
-  /** Making amount */
+  /** Сумма к отдаче */
   makingAmount: string;
 
-  /** Token ID (optional, not always present) */
+  /** Идентификатор токена (необязательно, не всегда присутствует) */
   tokenId?: string;
 
-  /** Order side (optional, not always present) */
+  /** Направление ордера (необязательно, не всегда присутствует) */
   side?: 'BUY' | 'SELL';
 
-  /** Price (optional, not always present) */
+  /** Цена (необязательно, не всегда присутствует) */
   price?: string;
 
-  /** Size (optional, not always present) */
+  /** Размер (необязательно, не всегда присутствует) */
   size?: string;
 
-  /** Filled size (optional, not always present) */
+  /** Исполненный размер (необязательно, не всегда присутствует) */
   filledSize?: string;
 
-  /** Timestamp (optional, not always present) */
+  /** Временная метка (необязательно, не всегда присутствует) */
   timestamp?: number;
 }
 
@@ -106,10 +106,10 @@ export interface CreateOrderResponse {
  * Cancel order request
  */
 export interface CancelOrderRequest {
-  /** Order ID to cancel */
+  /** Идентификатор ордера для отмены */
   orderId: string;
 
-  /** Timestamp */
+  /** Временная метка */
   timestamp: number;
 }
 
@@ -117,13 +117,13 @@ export interface CancelOrderRequest {
  * Cancel order response
  */
 export interface CancelOrderResponse {
-  /** Success flag */
+  /** Флаг успеха */
   success: boolean;
 
-  /** Order ID */
+  /** Идентификатор ордера */
   orderId: string;
 
-  /** Status after cancellation */
+  /** Статус после отмены */
   status: 'CANCELLED';
 }
 
@@ -131,8 +131,81 @@ export interface CancelOrderResponse {
  * Get orders response
  */
 export interface GetOrdersResponse {
-  /** Array of orders */
+  /** Массив ордеров */
   orders: CreateOrderResponse[];
+}
+
+/**
+ * Matched order response (from /data/orders?status=MATCHED)
+ *
+ * @remarks
+ * Represents an aggregated filled order.
+ * One row = one order (even if filled by multiple trades).
+ * size_matched = total filled size; avg_price = average execution price.
+ */
+export interface MatchedOrderResponse {
+  /** Идентификатор ордера */
+  id: string;
+  /** Идентификатор актива (токена) */
+  asset_id: string;
+  /** Направление ордера */
+  side: 'BUY' | 'SELL';
+  /** Исходный размер ордера */
+  original_size: string;
+  /** Суммарно исполненный размер (сумма всех сделок) */
+  size_matched: string;
+  /** Средняя цена исполнения */
+  avg_price: string;
+  /** Статус ордера */
+  status: string;
+  /** Адрес мейкера */
+  maker_address?: string;
+  /** Временная метка создания (строка ISO) */
+  created_at?: string;
+}
+
+/**
+ * Trade response (from /data/trades, paginated)
+ *
+ * @remarks
+ * Represents a single on-chain trade execution.
+ * Returned in paginated format: { data: TradeResponse[], next_cursor: string }.
+ */
+export interface TradeResponse {
+  /** Идентификатор сделки */
+  id: string;
+  /** Связанный идентификатор ордера */
+  order_id?: string;
+  /** Идентификатор условия маркета */
+  market?: string;
+  /** Идентификатор актива (токена) */
+  asset_id: string;
+  /** Направление сделки */
+  side: 'BUY' | 'SELL';
+  /** Размер исполнения */
+  size: string;
+  /** Цена исполнения */
+  price: string;
+  /** Ставка комиссии в базисных пунктах */
+  fee_rate_bps?: string;
+  /** Статус сделки */
+  status?: string;
+  /** Адрес мейкера */
+  maker_address?: string;
+  /** Хэш транзакции */
+  transaction_hash?: string;
+  /** Временная метка матчинга */
+  match_time?: string;
+}
+
+/**
+ * Paginated trades response envelope from /data/trades
+ */
+export interface PaginatedTradesResponse {
+  /** Массив сделок текущей страницы */
+  data: TradeResponse[];
+  /** Курсор для следующей страницы (LTE= означает конец результатов) */
+  next_cursor: string;
 }
 
 /**
@@ -143,17 +216,17 @@ export class PolymarketOrderRestClient {
     private readonly restClient: PolymarketRestClient,
     private readonly orderBuilder: PolymarketOrderBuilder,
     private readonly logger: ILogger,
-    private readonly makerAddress?: string // ✅ v7.7.10: MAKER address for /data/trades
+    private readonly makerAddress?: string // MAKER-адрес для запросов /data/trades
   ) {}
 
   /**
-   * Get MAKER address (funder address, NOT signer address!)
+   * Получает MAKER-адрес (адрес фандера, НЕ адрес подписанта!)
    *
-   * @returns MAKER address
+   * @returns MAKER-адрес
    *
    * @remarks
-   * v7.7.10: Used for /data/trades endpoint to fetch user's fills.
-   * CRITICAL: This is FUNDER address (proxy wallet), NOT SIGNER address!
+   * Используется для запросов /data/trades для получения fills пользователя.
+   * КРИТИЧНО: Это адрес ФАНДЕРА (proxy-кошелёк), НЕ адрес ПОДПИСАНТА!
    */
   getMakerAddress(): string | undefined {
     return this.makerAddress;
@@ -190,13 +263,13 @@ export class PolymarketOrderRestClient {
       size: request.size,
     });
 
-    // IMPORTANT: Pass nonce=0 for API auto-assignment
-    // API will automatically assign the correct nonce for the exchange
+    // ВАЖНО: Передаём nonce=0 для автоматического назначения API
+    // API автоматически назначит корректный nonce для биржи
     const exchangeNonce = 0;
 
     this.logger.debug('Using nonce for order', { exchangeNonce });
 
-    // Build EIP-712 signed order
+    // Строим EIP-712 подписанный ордер
     const signedOrder = await this.orderBuilder.buildOrder({
       tokenId: request.tokenId,
       side: request.side,
@@ -204,8 +277,8 @@ export class PolymarketOrderRestClient {
       size: request.size,
       feeRateBps: request.feeRateBps ?? 0,
       nonce: exchangeNonce,
-      expiration: 0, // No expiration
-      priceTick: request.priceTick, // Pass price tick for rounding
+      expiration: 0, // Без истечения
+      priceTick: request.priceTick, // Передаём шаг цены для округления
     });
 
     this.logger.debug('Order signed', {
@@ -216,27 +289,24 @@ export class PolymarketOrderRestClient {
       takerAmount: signedOrder.takerAmount,
     });
 
-    // Send order to API (POST /order expects specific format)
-    // CRITICAL: owner MUST be the API KEY string (UUID), NOT a wallet address!
-    // SDK reference: orderToJson(order, this.creds?.key, orderType, deferExec)
+    // Отправляем ордер в API (POST /order ожидает конкретный формат)
+    // КРИТИЧНО: owner ДОЛЖЕН быть строкой API KEY (UUID), НЕ адресом кошелька!
+    // Референс SDK: orderToJson(order, this.creds?.key, orderType, deferExec)
     const response = await this.restClient.post<CreateOrderResponse>(
       '/order',
       {
         order: signedOrder,
-        owner: this.restClient.getApiKey(), // API key string (UUID)
+        owner: this.restClient.getApiKey(), // Строка API ключа (UUID)
         orderType: 'GTC', // Good Till Cancel
       },
-      { requireSignature: false } // Order is already signed with EIP-712
+      { requireSignature: false } // Ордер уже подписан через EIP-712
     );
 
     this.logger.info('Order created successfully', {
       orderID: response.orderID,
       status: response.status,
       success: response.success,
-    });
-
-    this.logger.info('📤 POST /order FULL RESPONSE', {
-      response: JSON.stringify(response, null, 2),
+      errorMsg: response.errorMsg || undefined,
     });
 
     return response;
@@ -294,28 +364,27 @@ export class PolymarketOrderRestClient {
       signatureType: this.restClient.getSignatureType(),
     });
 
-    // ✅ CRITICAL FIX: DO NOT filter by signature_type!
-    // signature_type filters by SIGNER address, not MAKER address
-    // When using proxy wallet (signature_type=1), orders are created with MAKER=funder address
-    // But signature_type=1 filter returns orders for SIGNER address (proxy)
-    // Result: bot cannot see its own orders!
-    // Solution: Remove signature_type filter to get ALL orders for this account
+    // КРИТИЧНО: НЕ фильтровать по signature_type!
+    // signature_type фильтрует по адресу ПОДПИСАНТА, а не МЕЙКЕРА
+    // При использовании proxy-кошелька (signature_type=1), ордера создаются с MAKER=адрес фандера
+    // Но фильтр signature_type=1 возвращает ордера для адреса ПОДПИСАНТА (proxy)
+    // Результат: бот не видит собственные ордера!
+    // Решение: убрать фильтр signature_type для получения ВСЕХ ордеров аккаунта
     const params: Record<string, string> = {};
 
     if (tokenId) {
-      params.asset_id = tokenId; // Use 'asset_id' parameter, not 'tokenId'
+      params.asset_id = tokenId; // Используем параметр 'asset_id', не 'tokenId'
     }
 
-    // CRITICAL: Use /data/orders endpoint (not /orders - that returns HTTP 405)
+    // КРИТИЧНО: Используем endpoint /data/orders (не /orders — тот вернёт HTTP 405)
     const response = await this.restClient.get<CreateOrderResponse[]>('/data/orders', params);
 
-    // API returns array directly, not { orders: [...] } format
+    // API возвращает массив напрямую, не в формате { orders: [...] }
     const orders = Array.isArray(response) ? response : [];
 
-    this.logger.info('📥 GET /data/orders RESPONSE', {
+    this.logger.debug('Open orders retrieved', {
       count: orders.length,
       tokenIdFilter: tokenId || 'none',
-      orders: orders.length > 0 ? JSON.stringify(orders, null, 2) : 'NO ORDERS',
     });
 
     return orders;
@@ -372,28 +441,28 @@ export class PolymarketOrderRestClient {
    * // orders[0].avg_price - average price
    * ```
    */
-  async getMatchedOrders(tokenId?: string, limit: number = 100): Promise<any[]> {
-    this.logger.debug('[PolymarketOrderRestClient] v7.7.11: Getting matched orders from /data/orders', {
+  async getMatchedOrders(tokenId?: string, limit: number = 100): Promise<MatchedOrderResponse[]> {
+    this.logger.debug('[PolymarketOrderRestClient] Getting matched orders from /data/orders', {
       tokenId: tokenId ? tokenId.substring(0, 16) + '...' : 'all',
       limit,
     });
 
     const params: Record<string, string> = {
       limit: limit.toString(),
-      status: 'MATCHED', // ✅ Only filled orders
+      status: 'MATCHED', // Только исполненные ордера
     };
 
     if (tokenId) {
       params.asset_id = tokenId;
     }
 
-    // Use /data/orders endpoint (not /data/trades!)
-    const response = await this.restClient.get<any[]>('/data/orders', params);
+    // Используем endpoint /data/orders (не /data/trades!)
+    const response = await this.restClient.get<MatchedOrderResponse[]>('/data/orders', params);
 
-    // API returns array directly
+    // API возвращает массив напрямую
     const orders = Array.isArray(response) ? response : [];
 
-    this.logger.info('[PolymarketOrderRestClient] 📊 v7.7.11: Matched orders from /data/orders retrieved', {
+    this.logger.info('[PolymarketOrderRestClient] Matched orders from /data/orders retrieved', {
       count: orders.length,
       tokenIdFilter: tokenId ? tokenId.substring(0, 16) + '...' : 'all',
       limit,
@@ -441,12 +510,12 @@ export class PolymarketOrderRestClient {
       onlyFirstPage?: boolean;
       includeAllTrades?: boolean;
     }
-  ): Promise<any[]> {
-    // Default options
+  ): Promise<TradeResponse[]> {
+    // Параметры по умолчанию
     const onlyFirstPage = options?.onlyFirstPage ?? false;
     const includeAllTrades = options?.includeAllTrades ?? true;
 
-    this.logger.debug('[PolymarketOrderRestClient] v7.7.12: Getting fills from /data/trades', {
+    this.logger.debug('[PolymarketOrderRestClient] Getting fills from /data/trades', {
       tokenId: tokenId ? tokenId.substring(0, 16) + '...' : 'all',
       makerAddress: makerAddress ? makerAddress.substring(0, 10) + '...' : 'none',
       limit,
@@ -454,10 +523,10 @@ export class PolymarketOrderRestClient {
       includeAllTrades,
     });
 
-    // ✅ v7.7.12: Paginate through results (optional)
-    let allTrades: any[] = [];
-    let nextCursor = 'MA=='; // Initial cursor
-    const END_CURSOR = 'LTE='; // End marker
+    // Постранично получаем результаты (опционально)
+    let allTrades: TradeResponse[] = [];
+    let nextCursor = 'MA=='; // Начальный курсор
+    const END_CURSOR = 'LTE='; // Маркер конца результатов
     let pageCount = 0;
 
     while (nextCursor !== END_CURSOR) {
@@ -466,7 +535,7 @@ export class PolymarketOrderRestClient {
         next_cursor: nextCursor,
       };
 
-      // ✅ v7.7.10: CRITICAL - Use maker_address parameter!
+      // КРИТИЧНО: Используем параметр maker_address!
       if (makerAddress) {
         params.maker_address = makerAddress;
       }
@@ -475,16 +544,16 @@ export class PolymarketOrderRestClient {
         params.asset_id = tokenId;
       }
 
-      // ✅ v7.7.10: Use /data/trades endpoint (not /data/orders!)
-      // ✅ v7.7.11: API returns { data: [...], next_cursor: "..." }, NOT array directly!
-      const response = await this.restClient.get<any>('/data/trades', params);
+      // Используем endpoint /data/trades (не /data/orders!)
+      // API возвращает { data: [...], next_cursor: "..." }, НЕ массив напрямую!
+      const response = await this.restClient.get<PaginatedTradesResponse>('/data/trades', params);
 
-      // ✅ v7.7.11: Extract data field from response (paginated response format)
+      // Извлекаем поле data из ответа (постраничный формат ответа)
       const trades = Array.isArray(response?.data) ? response.data : [];
 
       pageCount++;
 
-      this.logger.debug('[PolymarketOrderRestClient] v7.7.12: Page fetched', {
+      this.logger.debug('[PolymarketOrderRestClient] Page fetched', {
         page: pageCount,
         count: trades.length,
         nextCursor: response?.next_cursor || 'none',
@@ -492,22 +561,22 @@ export class PolymarketOrderRestClient {
 
       allTrades = [...allTrades, ...trades];
 
-      // Update cursor for next iteration
+      // Обновляем курсор для следующей итерации
       nextCursor = response?.next_cursor || END_CURSOR;
 
-      // Safety: stop if no more data
+      // Защита: останавливаемся если нет данных
       if (trades.length === 0) {
         break;
       }
 
-      // ✅ v7.7.12: Stop after first page if requested
+      // Останавливаемся после первой страницы если запрошено
       if (onlyFirstPage) {
-        this.logger.debug('[PolymarketOrderRestClient] v7.7.12: Stopping after first page');
+        this.logger.debug('[PolymarketOrderRestClient] Stopping after first page');
         break;
       }
     }
 
-    this.logger.info('[PolymarketOrderRestClient] 📊 v7.7.12: Fills from /data/trades retrieved', {
+    this.logger.info('[PolymarketOrderRestClient] Fills from /data/trades retrieved', {
       totalCount: allTrades.length,
       pages: pageCount,
       tokenIdFilter: tokenId ? tokenId.substring(0, 16) + '...' : 'all',
@@ -516,14 +585,14 @@ export class PolymarketOrderRestClient {
       onlyFirstPage,
     });
 
-    // ✅ v7.7.12: Filter trades if needed
+    // Фильтруем сделки если нужно
     if (!includeAllTrades) {
       const beforeFilter = allTrades.length;
 
-      // Filter to only trades where we were MAKER
+      // Фильтруем только сделки, где мы были MAKER
       allTrades = allTrades.filter((trade) => trade.trader_side === 'MAKER');
 
-      this.logger.info('[PolymarketOrderRestClient] 📊 v7.7.12: Filtered to MAKER trades only', {
+      this.logger.info('[PolymarketOrderRestClient] Filtered to MAKER trades only', {
         before: beforeFilter,
         after: allTrades.length,
         filtered: beforeFilter - allTrades.length,

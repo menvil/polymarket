@@ -81,7 +81,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
     executionContext?: ExecutionContext,
     private readonly simulationMode: boolean = false
   ) {
-    // Default: LIVE environment (production trading)
+    // По умолчанию: LIVE окружение (реальная торговля)
     this.executionContext = executionContext || {
       environment: 'LIVE',
       accountId: 'default',
@@ -116,7 +116,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    * ```
    */
   async postOrder(params: PlaceOrderParams): Promise<OrderResponse> {
-    // SIMULATION MODE: Skip API call, return virtual order
+    // РЕЖИМ СИМУЛЯЦИИ: Пропускаем API вызов, возвращаем виртуальный ордер
     if (this.simulationMode) {
       const virtualOrderId = `sim-${Date.now()}-${Math.random().toString(36).substring(7)}`;
 
@@ -140,7 +140,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         createdAt: Date.now(),
       };
 
-      // Publish OrderAccepted event
+      // Публикуем событие OrderAccepted
       const orderAcceptedEvent: OrderAccepted = {
         type: 'OrderAccepted',
         orderId: virtualOrder.orderId,
@@ -163,7 +163,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       return virtualOrder;
     }
 
-    // LIVE MODE: Real API call
+    // БОЕВОЙ РЕЖИМ: Реальный API вызов
     this.logger.info('Placing order via API', {
       tokenId: params.tokenId,
       side: params.side,
@@ -173,20 +173,20 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
     });
 
     try {
-      // Convert domain params to API format
+      // Конвертируем параметры домена в формат API
       const apiRequest = this.mapper.toApiRequest({
         tokenId: params.tokenId,
         side: params.side,
         price: params.price,
         size: params.size,
         priceTick: params.priceTick,
-        feeRateBps: params.feeRateBps, // Use learned or default fee rate
+        feeRateBps: params.feeRateBps, // Используем изученную или дефолтную ставку комиссии
       });
 
-      // Execute API call
+      // Выполняем API вызов
       const apiResponse = await this.orderClient.createOrder(apiRequest);
 
-      // Convert API response to domain format
+      // Конвертируем ответ API в формат домена
       const domainOrder = this.mapper.toDomainOrder(apiResponse);
 
       this.logger.info('Order placed successfully', {
@@ -195,17 +195,17 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         sizeRemaining: domainOrder.sizeRemaining,
       });
 
-      // Publish OrderAccepted event (с minimal context)
-      // v4.2: Include strategyId для multi-strategy изоляции
+      // Публикуем событие OrderAccepted (с минимальным контекстом)
+      // Включаем strategyId для изоляции мульти-стратегии
       const orderAcceptedEvent: OrderAccepted = {
         type: 'OrderAccepted',
         orderId: domainOrder.orderId,
-        strategyId: params.strategyId, // ✅ v4.2: Domain correlation
+        strategyId: params.strategyId, // Корреляция на уровне домена
         side: params.side.toUpperCase() as 'BUY' | 'SELL',
         marketId: params.tokenId,
         price: params.price,
         size: params.size,
-        timestamp: new Date(), // TODO v4.3: Use deterministic timestamp from params/clock
+        timestamp: new Date(), // TODO: Использовать детерминированную временну́ю метку из params/clock
       };
 
       const envelope = createProductionEnvelope(
@@ -221,7 +221,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
 
       return domainOrder;
     } catch (error) {
-      // ✅ CRITICAL FIX: API может вернуть ошибку, но ордер всё равно размещён!
+      // КРИТИЧНО: API может вернуть ошибку, но ордер всё равно размещён!
       // Верифицируем реальное состояние перед публикацией OrderRejected
       this.logger.warn('Order placement returned error, verifying real state...', {
         error: error instanceof Error ? error.message : String(error),
@@ -243,11 +243,11 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
             Math.abs(parseFloat(o.price || '0') - params.price) < 0.001 &&
             Math.abs(parseFloat(o.size || '0') - params.size) < 0.1;
 
-          return orderAge < 5000 && matchesParams; // Created in last 5 seconds
+          return orderAge < 5000 && matchesParams; // Создан в последние 5 секунд
         });
 
         if (recentOrder) {
-          // ✅ Ордер был размещён несмотря на ошибку API!
+          // Ордер был размещён несмотря на ошибку API!
           this.logger.warn('Order was actually placed despite API error!', {
             orderId: recentOrder.orderID,
             tokenId: params.tokenId,
@@ -287,7 +287,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         this.logger.warn('Failed to verify order state after error', {
           verifyError: verifyError instanceof Error ? verifyError.message : String(verifyError),
         });
-        // Continue to publish OrderRejected
+        // Продолжаем публикацию OrderRejected
       }
 
       // Ордер НЕ найден в open orders → действительно rejected
@@ -295,10 +295,10 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         error: error instanceof Error ? error.message : String(error),
       });
 
-      // Publish OrderRejected event (ExecutionErrorEvent)
+      // Публикуем событие OrderRejected (ExecutionErrorEvent)
       const orderRejectedEvent: OrderRejected = {
         type: 'OrderRejected',
-        orderId: undefined, // Order не создан на бирже
+        orderId: undefined, // Ордер не создан на бирже
         reason: error instanceof Error ? error.message : 'Unknown error',
         errorCode: (error as any).code || 'API_ERROR',
         timestamp: new Date(),
@@ -315,7 +315,7 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
         reason: orderRejectedEvent.reason,
       });
 
-      // Re-throw error (для обработки выше в stack)
+      // Перебрасываем ошибку (для обработки выше по стеку)
       throw error;
     }
   }
@@ -330,11 +330,11 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    * После успешного API call публикует OrderCancelled event
    */
   async cancelOrder(orderId: string): Promise<void> {
-    // SIMULATION MODE: Skip API call, just publish event
+    // РЕЖИМ СИМУЛЯЦИИ: Пропускаем API вызов, публикуем только событие
     if (this.simulationMode) {
       this.logger.info('Cancelling order (SIMULATION MODE - virtual cancellation)', { orderId });
 
-      // Publish OrderCancelled event
+      // Публикуем событие OrderCancelled
       const orderCancelledEvent: OrderCancelled = {
         type: 'OrderCancelled',
         orderId,
@@ -353,14 +353,14 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
       return;
     }
 
-    // LIVE MODE: Real API call
+    // БОЕВОЙ РЕЖИМ: Реальный API вызов
     this.logger.info('Cancelling order via API', { orderId });
 
     await this.orderClient.cancelOrder(orderId);
 
     this.logger.info('Order cancelled successfully', { orderId });
 
-    // Publish OrderCancelled event
+    // Публикуем событие OrderCancelled
     const orderCancelledEvent: OrderCancelled = {
       type: 'OrderCancelled',
       orderId,
@@ -386,13 +386,13 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
    * @throws {ApiError} If API call fails
    */
   async getOpenOrders(tokenId?: string): Promise<OrderResponse[]> {
-    // SIMULATION MODE: Return empty array (no real orders)
+    // РЕЖИМ СИМУЛЯЦИИ: Возвращаем пустой массив (нет реальных ордеров)
     if (this.simulationMode) {
       this.logger.debug('Getting open orders (SIMULATION MODE - returning empty)', { tokenId });
       return [];
     }
 
-    // LIVE MODE: Real API call
+    // БОЕВОЙ РЕЖИМ: Реальный API вызов
     this.logger.debug('Getting open orders', { tokenId });
 
     const apiOrders = await this.orderClient.getOpenOrders(tokenId);
@@ -422,8 +422,8 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
   async getFillHistory(tokenId?: string): Promise<FillResponse[]> {
     this.logger.warn('getFillHistory not yet implemented', { tokenId });
 
-    // TODO: Implement when API endpoint is available
-    // For now, return empty array
+    // TODO: Реализовать когда API endpoint будет доступен
+    // Пока возвращаем пустой массив
     return [];
   }
 
@@ -453,13 +453,13 @@ export class PolymarketExecutionAdapter implements IExecutionAdapter {
     filledSize?: string;
     size?: string;
   }> {
-    // SIMULATION MODE: Throw error (no order history in simulation)
+    // РЕЖИМ СИМУЛЯЦИИ: Бросаем ошибку (нет истории ордеров в симуляции)
     if (this.simulationMode) {
       this.logger.warn('getOrderById not available in SIMULATION MODE', { orderId });
       throw new Error('getOrderById not available in simulation mode');
     }
 
-    // LIVE MODE: Real API call
+    // БОЕВОЙ РЕЖИМ: Реальный API вызов
     this.logger.debug('Getting order by ID', { orderId });
 
     try {
