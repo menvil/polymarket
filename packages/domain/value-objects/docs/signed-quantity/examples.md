@@ -585,7 +585,8 @@ const qty = result.value;
 ### Propagation через Result
 
 ```typescript
-import { Ok } from '@polymarket/result';
+import { SignedQuantityService, SignedQuantity, InvalidSignedQuantityError } from '@polymarket/value-objects/signed-quantity';
+import { Ok, Result } from '@polymarket/result';
 
 function calculateNetPnL(
   positions: SignedQuantity[],

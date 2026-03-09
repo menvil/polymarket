@@ -55,8 +55,8 @@ const balance = result.value;
 - `INVALID_FORMAT` — accountId or venueId is null
 - `NEGATIVE_AVAILABLE` — available < 0
 - `NEGATIVE_RESERVED` — reserved < 0
-- `NAN` — available или reserved является NaN
-- `NON_FINITE` — available или reserved не является finite
+- `NAN` — available или reserved являются NaN
+- `NON_FINITE` — available или reserved не являются finite
 
 ---
 
@@ -81,7 +81,7 @@ if (result.ok) {
 
 **Возможные ошибки:**
 
-- Те же что и у `create()`, кроме NEGATIVE_RESERVED (reserved всегда 0)
+- Те же, что и у `create()`, кроме NEGATIVE_RESERVED (reserved всегда 0)
 
 ---
 

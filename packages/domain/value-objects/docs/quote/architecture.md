@@ -162,7 +162,8 @@ class Quote {
 5. **Валидный timestamp:**
    - Валидация делегируется Timestamp VO
    - Timestamp гарантирует: isFinite, isInteger, >= 0, разумные границы
-   - Quote просто принимает валидный Timestamp без дополнительных проверок
+   - Quote принимает уже валидный Timestamp VO без дополнительных проверок
+   - `INVALID_TIMESTAMP` в `QuoteInvariantViolation` зарезервирован для случаев, когда внутренняя логика Quote создаёт производный timestamp (например, при shift/skew операциях), который может оказаться невалидным
 
 **Исключения:**
 
@@ -177,7 +178,7 @@ class QuoteInvariantViolation extends Error {
 }
 ```
 
-> **Примечание:** `QuoteInvariantViolation` использует собственный набор `reason`-значений (не `QuoteErrorReason`). Это разные типы: `QuoteInvariantViolation` бросается в Core и содержит внутренние причины нарушения инвариантов; `QuoteErrorReason` используется в Facade для типизированных ошибок, возвращаемых через `Result`.
+> **Примечание:** `QuoteInvariantViolation` и `QuoteErrorReason` — **разные типы** с разными TypeScript-типами, даже если некоторые строковые значения совпадают (например, `'BOTH_SIDES_NULL'`, `'BID_GREATER_THAN_ASK'`). `QuoteInvariantViolation` бросается в Core и содержит внутренние причины нарушения инвариантов; `QuoteErrorReason` используется в Facade для типизированных ошибок, возвращаемых через `Result`. Совпадение строк намеренно — Facade переводит Core-исключения в соответствующие Facade-коды.
 
 **Внутреннее представление:**
 

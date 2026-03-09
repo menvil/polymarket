@@ -576,7 +576,7 @@ describe('BalanceService', () => {
   describe('Facade Error Contract', () => {
     it('reserve: содержит op и операционные поля', () => {
       const balanceResult = BalanceService.create(Money.of(new Decimal(100)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      if (!balanceResult.ok) fail('Balance creation failed');
+      if (!balanceResult.ok) throw new Error('Balance creation failed');
 
       const result = BalanceService.reserve(balanceResult.value, Money.of(new Decimal(200)));
 
@@ -592,7 +592,7 @@ describe('BalanceService', () => {
 
     it('unfreezeReserved: содержит op и операционные поля', () => {
       const balanceResult = BalanceService.create(Money.of(new Decimal(100)), Money.of(new Decimal(50)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      if (!balanceResult.ok) fail('Balance creation failed');
+      if (!balanceResult.ok) throw new Error('Balance creation failed');
 
       const result = BalanceService.unfreezeReserved(balanceResult.value, Money.of(new Decimal(100)));
 
@@ -607,7 +607,7 @@ describe('BalanceService', () => {
 
     it('updateAvailable: содержит op и операционные поля', () => {
       const balanceResult = BalanceService.create(Money.of(new Decimal(100)), Money.of(new Decimal(50)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
-      if (!balanceResult.ok) fail('Balance creation failed');
+      if (!balanceResult.ok) throw new Error('Balance creation failed');
 
       const result = BalanceService.updateAvailable(balanceResult.value, Money.of(new Decimal(-100), 'USDC'));
 
@@ -627,7 +627,7 @@ describe('BalanceService', () => {
         const balance1Result = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
         const balance2Result = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -641,7 +641,7 @@ describe('BalanceService', () => {
         const balance1Result = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
         const balance2Result = BalanceService.create(Money.of(new Decimal(10001)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -655,7 +655,7 @@ describe('BalanceService', () => {
         const balance1Result = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
         const balance2Result = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2001)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -669,7 +669,7 @@ describe('BalanceService', () => {
         const balance1Result = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
         const balance2Result = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -702,7 +702,7 @@ describe('BalanceService', () => {
           TEST_VENUE_ID
         );
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -729,7 +729,7 @@ describe('BalanceService', () => {
           venueId2
         );
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -764,7 +764,7 @@ describe('BalanceService', () => {
           venueId2
         );
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -797,7 +797,7 @@ describe('BalanceService', () => {
           TEST_VENUE_ID
         );
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -832,7 +832,7 @@ describe('BalanceService', () => {
           TEST_VENUE_ID
         );
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -849,7 +849,7 @@ describe('BalanceService', () => {
       //   const balance1Result = BalanceService.create(Money.of(new Decimal(10000), 'USDC'), Money.of(new Decimal(2000), 'USDC'));
       //   const balance2Result = BalanceService.create(Money.of(new Decimal(10000), 'EUR'), Money.of(new Decimal(2000), 'EUR'));
       //
-      //   if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+      //   if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
       //
       //   const result = BalanceService.equals(balance1Result.value, balance2Result.value);
       //
@@ -865,7 +865,7 @@ describe('BalanceService', () => {
     describe('успешная проверка', () => {
       it('возвращает true если available >= amount', () => {
         const balanceResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(5000)));
 
@@ -877,7 +877,7 @@ describe('BalanceService', () => {
 
       it('возвращает true если available === amount (граница)', () => {
         const balanceResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(10000)));
 
@@ -889,7 +889,7 @@ describe('BalanceService', () => {
 
       it('возвращает false если available < amount', () => {
         const balanceResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(15000)));
 
@@ -901,7 +901,7 @@ describe('BalanceService', () => {
 
       it('возвращает true для нулевой суммы', () => {
         const balanceResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(0)));
 
@@ -913,7 +913,7 @@ describe('BalanceService', () => {
 
       it('возвращает false для пустого баланса с ненулевой суммой', () => {
         const balanceResult = BalanceService.create(Money.of(new Decimal(0)), Money.of(new Decimal(0)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(100)));
 
@@ -925,7 +925,7 @@ describe('BalanceService', () => {
 
       it('не учитывает reserved при проверке (только available)', () => {
         const balanceResult = BalanceService.create(Money.of(new Decimal(1000)), Money.of(new Decimal(9000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         // total = 10000, но available только 1000
         const result = BalanceService.canAfford(balanceResult.value, Money.of(new Decimal(5000)));
@@ -940,7 +940,7 @@ describe('BalanceService', () => {
     describe('ошибки проверки', () => {
       it('возвращает ошибку CURRENCY_MISMATCH для разных валют', () => {
         const balanceResult = BalanceService.create(Money.of(new Decimal(10000)), Money.of(new Decimal(2000)), TEST_ACCOUNT_ID, TEST_VENUE_ID);
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         // Создаем мок Money с другой валютой для тестирования ветки currency mismatch
         const amount = Money.of(new Decimal(5000));
@@ -995,7 +995,7 @@ describe('BalanceService', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         // Попытка reserve больше чем available должна быть поймана ValidateReserveAmount,
         // но для покрытия ветки subtractMoney error попробуем экстремальный случай
@@ -1015,7 +1015,7 @@ describe('BalanceService', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         // Попытка reserve - может быть Ok или Err в зависимости от валидации
         const result = BalanceService.reserve(
@@ -1039,7 +1039,7 @@ describe('BalanceService', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         // Попытка unfreezeReserved - может быть Ok или Err
         const result = BalanceService.unfreezeReserved(
@@ -1061,7 +1061,7 @@ describe('BalanceService', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         // ValidateReleaseAmount должен поймать это, но мы покрываем ветку
         const result = BalanceService.unfreezeReserved(
@@ -1079,7 +1079,7 @@ describe('BalanceService', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.consumeReserved(
           balanceResult.value,
@@ -1096,7 +1096,7 @@ describe('BalanceService', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         // Попытка updateAvailable с MAX_AMOUNT вызовет overflow в total
         const result = BalanceService.updateAvailable(
@@ -1126,7 +1126,7 @@ describe('BalanceService', () => {
           TEST_VENUE_ID
         );
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -1150,7 +1150,7 @@ describe('BalanceService', () => {
           TEST_VENUE_ID
         );
 
-        if (!balance1Result.ok || !balance2Result.ok) fail('Balance creation failed');
+        if (!balance1Result.ok || !balance2Result.ok) throw new Error('Balance creation failed');
 
         const result = BalanceService.equals(balance1Result.value, balance2Result.value);
 
@@ -1169,7 +1169,7 @@ describe('BalanceService', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         // Мокируем Money с другой валютой (включая value метод)
         const baseMoney = Money.of(new Decimal(1000));
@@ -1193,7 +1193,7 @@ describe('BalanceService', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         const baseMoney = Money.of(new Decimal(1000));
         const mockAmount = {
@@ -1216,7 +1216,7 @@ describe('BalanceService', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         const baseMoney = Money.of(new Decimal(1000));
         const mockAmount = {
@@ -1239,7 +1239,7 @@ describe('BalanceService', () => {
           TEST_ACCOUNT_ID,
           TEST_VENUE_ID
         );
-        if (!balanceResult.ok) fail('Balance creation failed');
+        if (!balanceResult.ok) throw new Error('Balance creation failed');
 
         const baseMoney = Money.of(new Decimal(15000));
         const mockAmount = {
