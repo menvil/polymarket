@@ -12,7 +12,8 @@ import { validateBrandedId } from './utils/validateBrandedId.js';
  *
  * @example
  * ```typescript
- * const hash = asTxHash('0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890ab')!;
+ * // 0x + 64 hex символов = 66 символов (Ethereum tx hash)
+ * const hash = asTxHash('0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890')!;
  * ```
  */
 export type TxHash = string & { readonly __brand: 'TxHash' };

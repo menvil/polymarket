@@ -65,8 +65,12 @@ import { ErrorSource } from '../ErrorSource.js';
  * - Математические операции: DivisionByZero, ArithmeticOverflow
  */
 /**
- * @deprecated Используйте DomainError класс для доменных ошибок агрегатов.
- * AnyTradingError — union всех известных VO/math ошибок для type-safe утилит.
+ * @remarks
+ * `AnyTradingError` — union всех известных VO/math ошибок для type-safe утилит
+ * (errorUtils, wrapOp, rewrap и т.д.). Используйте этот тип для Facade Service методов.
+ *
+ * Не путать с доменными ошибками агрегатов (PortfolioValidationError, PortfolioOperationError
+ * и т.п.) — те расширяют TradingError напрямую и не входят в этот union.
  */
 export type AnyTradingError =
   // Валидация диапазонов
