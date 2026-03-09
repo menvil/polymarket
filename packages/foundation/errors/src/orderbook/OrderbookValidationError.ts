@@ -31,5 +31,16 @@ import { TradingError } from '../base/TradingError.js';
  * Severity 'low' — ошибки входных данных, не системные сбои.
  */
 export class OrderbookValidationError extends TradingError {
+  public static readonly code = 'ORDERBOOK_VALIDATION_ERROR' as const;
   public override readonly severity = 'low' as const;
+
+  constructor(
+    message: string | ((context: Record<string, unknown>) => string),
+    options?: { context?: Record<string, unknown> }
+  ) {
+    super(message, {
+      code: OrderbookValidationError.code,
+      context: options?.context,
+    });
+  }
 }

@@ -94,4 +94,8 @@ export {
 
 // Blockchain
 export type { TxHash } from './TxHash.js';
+// unsafeTxHash экспортируется намеренно: нужен в serializer/mapper слоях,
+// где строка уже прошла валидацию и повторный парсинг — лишние аллокации.
+// В отличие от unsafeOutcomeKey (только @internal use), TxHash часто
+// десериализуется из доверенных DB/event-store источников.
 export { asTxHash, unsafeTxHash } from './TxHash.js';

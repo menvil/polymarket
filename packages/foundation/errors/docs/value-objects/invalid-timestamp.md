@@ -144,7 +144,7 @@ function createQuote(
   const timestampResult = TimestampService.create(timestampMs);
 
   if (!timestampResult.ok) {
-    return timestampResult;
+    return Err(timestampResult.error);
   }
 
   return Ok({

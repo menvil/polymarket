@@ -527,12 +527,14 @@ export function parseAssetId(str: string): AssetId | undefined {
  * { "asset_id": "62305814799875783974460176688386847666394972778903073967664089920408777315323" }
  * ```
  * Принимает только непустые строки из цифр (не 0).
+ * Ведущие нули автоматически убираются: '007' и '7' маппируются в одинаковый токен.
  *
  * @example
  * ```typescript
  * const token = asPolymarketCtfToken('62305814799875783974460176688386847666394972778903073967664089920408777315323');
  * // → { type: 'POLYMARKET_CTF_TOKEN', tokenId: '623...' }
  *
+ * asPolymarketCtfToken('007').tokenId === asPolymarketCtfToken('7').tokenId; // → true (ведущие нули)
  * asPolymarketCtfToken('not-a-number'); // → undefined
  * asPolymarketCtfToken('0');            // → undefined
  * ```
@@ -541,8 +543,14 @@ export function asPolymarketCtfToken(tokenId: string): AssetId | undefined {
   if (typeof tokenId !== 'string') {
     return undefined;
   }
-  const normalized = tokenId.trim();
-  if (!/^\d+$/.test(normalized) || normalized === '0') {
+  const trimmed = tokenId.trim();
+  if (!/^\d+$/.test(trimmed)) {
+    return undefined;
+  }
+  // Убираем ведущие нули, чтобы '007' и '7' маппировались в один токен.
+  // Если после удаления ведущих нулей строка пустая — это был '000...0' → '0' (невалидно).
+  const normalized = trimmed.replace(/^0+/, '') || '0';
+  if (normalized === '0') {
     return undefined;
   }
   return deepFreezeAssetId({ type: 'POLYMARKET_CTF_TOKEN', tokenId: normalized });

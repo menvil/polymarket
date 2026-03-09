@@ -359,7 +359,7 @@ function processSide(side: Side): string {
 
 ## Связанные ошибки
 
-- [InvalidAmountError](./invalid-amount.md) - универсальная валидация
+- [InvalidAmountError](./invalid-amount.md) — другой value object той же категории валидации; Side и Amount — независимые типы
 
 ## См. также
 

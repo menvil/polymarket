@@ -69,6 +69,7 @@ class SignedQuantity {
 }
 
 // Использование
+const userInput = 42; // пример числового значения
 const result = SignedQuantity.create(userInput);
 
 if (result.ok) {
@@ -151,8 +152,13 @@ class SignedQuantityService {
 }
 
 // Использование
-const a = SignedQuantity.create(100).value;
-const b = SignedQuantity.create(-30).value;
+const aResult = SignedQuantity.create(100);
+if (!aResult.ok) throw new Error('Unexpected');
+const a = aResult.value;
+
+const bResult = SignedQuantity.create(-30);
+if (!bResult.ok) throw new Error('Unexpected');
+const b = bResult.value;
 
 const sum = SignedQuantityService.add(a, b);
 // Ok(SignedQuantity(+70))
@@ -243,7 +249,7 @@ const positiveZero = SignedQuantity.create(0);
 
 // Они равны
 if (negativeZero.ok && positiveZero.ok) {
-  negativeZero.value.equals(positiveZero.value); // true
+  negativeZero.value.getValue().equals(positiveZero.value.getValue()); // true
 }
 ```
 

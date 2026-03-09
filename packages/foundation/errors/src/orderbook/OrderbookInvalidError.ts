@@ -141,11 +141,11 @@ export class OrderbookInvalidError extends TradingError {
 
   constructor(
     message: string | ((context: Record<string, unknown>) => string),
-    options?: { code?: string; context?: Record<string, unknown> }
+    options?: { context?: Record<string, unknown> }
   ) {
     super(message, {
       code: ORDERBOOK_INVALID_ERROR_CODE,
-      ...options,
+      context: options?.context,
     });
   }
 

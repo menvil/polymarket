@@ -139,7 +139,8 @@ import { Result, Ok, Err } from '@polymarket/result';
 import { InvalidFeeError } from '@polymarket/errors';
 
 class FeeService {
-  static ZERO_FEE = Fee.create(0, 'USDC');
+  // Используем Result<Fee, InvalidFeeError> — Fee.create возвращает Result, не Fee
+  static readonly ZERO_FEE: Result<Fee, InvalidFeeError> = Fee.create(0, 'USDC');
 
   static noFee(currency: string = 'USDC'): Result<Fee, InvalidFeeError> {
     return Fee.create(0, currency);
@@ -186,12 +187,14 @@ class FeeValidator {
 }
 
 // Использование
-const fee = Fee.create(5, 'USDC').value;
-const validation = FeeValidator.validateMaxFee(fee, 10);
+const feeResult = Fee.create(5, 'USDC');
+if (!feeResult.ok) throw new Error('Unexpected fee creation failure');
+const validation = FeeValidator.validateMaxFee(feeResult.value, 10);
 // Ok(Fee) - в пределах лимита
 
-const highFee = Fee.create(15, 'USDC').value;
-const validation2 = FeeValidator.validateMaxFee(highFee, 10);
+const highFeeResult = Fee.create(15, 'USDC');
+if (!highFeeResult.ok) throw new Error('Unexpected fee creation failure');
+const validation2 = FeeValidator.validateMaxFee(highFeeResult.value, 10);
 // Err(EXCEEDS_MAX)
 ```
 
@@ -214,7 +217,7 @@ function calculateTotalCost(
   const feeResult = FeeCalculator.calculateTradingFee(orderValue, feeRate);
 
   if (!feeResult.ok) {
-    return feeResult;
+    return Err(feeResult.error);
   }
 
   const fee = feeResult.value;
@@ -291,6 +294,7 @@ Fee.create(10, 'TOKEN_123'); // ✅ Ok(Fee)
 ```typescript
 import { InvalidFeeError } from '@polymarket/errors';
 
+const userInput = 1.5; // пример числового значения комиссии
 const result = Fee.create(userInput, 'USDC');
 
 if (result.ok) {
