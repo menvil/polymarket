@@ -34,6 +34,39 @@ export class ValidateMaxWidth {
     width: Decimal,
     maxWidth: Decimal
   ): Result<void, InvalidSpreadError> {
+    // Валидация width (защита от невалидного входного значения)
+    if (!width.isFinite() || width.isNaN()) {
+      return Err(
+        new InvalidSpreadError(
+          (ctx) => `width must be finite, got ${ctx.width}`,
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              width: width.toString(),
+              maxWidth: maxWidth.toString(),
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
+    if (width.isNegative()) {
+      return Err(
+        new InvalidSpreadError(
+          (ctx) => `width must be non-negative, got ${ctx.width}`,
+          {
+            context: {
+              source: ErrorSource.RULE_VALIDATION,
+              width: width.toString(),
+              maxWidth: maxWidth.toString(),
+              reason: SpreadErrorReason.INVALID_AMOUNT
+            }
+          }
+        )
+      );
+    }
+
     // Валидация maxWidth (защита от невалидной конфигурации)
     if (!maxWidth.isFinite()) {
       return Err(

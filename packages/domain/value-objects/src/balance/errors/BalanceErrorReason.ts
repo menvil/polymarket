@@ -24,6 +24,9 @@
  * 3. **Нарушение инвариантов:**
  *    - NEGATIVE_AVAILABLE - available amount < 0
  *    - NEGATIVE_RESERVED - reserved amount < 0
+ *    - NAN - amount является NaN
+ *    - NON_FINITE - amount не является finite (Infinity / -Infinity)
+ *    - TOTAL_EXCEEDS_MAX_AMOUNT - available + reserved > Money.MAX_AMOUNT
  *
  * 4. **Ошибки парсинга:**
  *    - INVALID_FORMAT - ошибка парсинга входных данных
@@ -53,6 +56,15 @@
  *     break;
  *   case BalanceErrorReason.NEGATIVE_RESERVED:
  *     console.log('Reserved cannot be negative');
+ *     break;
+ *   case BalanceErrorReason.NAN:
+ *     console.log('Amount is NaN');
+ *     break;
+ *   case BalanceErrorReason.NON_FINITE:
+ *     console.log('Amount is not finite');
+ *     break;
+ *   case BalanceErrorReason.TOTAL_EXCEEDS_MAX_AMOUNT:
+ *     console.log('Total exceeds maximum allowed amount');
  *     break;
  *   case BalanceErrorReason.UNSUPPORTED_CURRENCY:
  *     console.log('Currency not supported');

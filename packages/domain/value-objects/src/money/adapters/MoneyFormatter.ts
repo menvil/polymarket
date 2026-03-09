@@ -196,11 +196,21 @@ export class MoneyFormatter {
 
     if (absAmount.greaterThanOrEqualTo(1_000_000)) {
       const millions = absAmount.dividedBy(1_000_000);
+      // Rounding may push value to next unit (e.g. 999.5M → 1000M → 1B)
+      if (Number(millions.toFixed(decimals)) >= 1000) {
+        const billions = absAmount.dividedBy(1_000_000_000);
+        return Ok(`${sign}$${billions.toFixed(decimals)}B`);
+      }
       return Ok(`${sign}$${millions.toFixed(decimals)}M`);
     }
 
     if (absAmount.greaterThanOrEqualTo(1_000)) {
       const thousands = absAmount.dividedBy(1_000);
+      // Rounding may push value to next unit (e.g. 999.5K → 1000K → 1M)
+      if (Number(thousands.toFixed(decimals)) >= 1000) {
+        const millions = absAmount.dividedBy(1_000_000);
+        return Ok(`${sign}$${millions.toFixed(decimals)}M`);
+      }
       return Ok(`${sign}$${thousands.toFixed(decimals)}K`);
     }
 

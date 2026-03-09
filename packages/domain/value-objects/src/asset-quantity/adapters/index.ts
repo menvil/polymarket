@@ -2,7 +2,7 @@
  * AssetQuantity Adapters
  *
  * @remarks
- * Адаптеры для сериализации и форматирования AssetQuantity.
+ * Adapters for serialization and formatting of AssetQuantity.
  */
 
 export { AssetQuantitySerializer, type AssetQuantityJSON } from './AssetQuantitySerializer.js';
