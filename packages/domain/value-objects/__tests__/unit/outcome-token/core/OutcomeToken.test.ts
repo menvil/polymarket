@@ -103,20 +103,21 @@ describe('OutcomeToken (Core)', () => {
     });
   });
 
-  describe('fromAssetId() — нарушение инвариантов', () => {
-    it('бросает OutcomeTokenInvariantViolation если assetId.type !== OUTCOME_TOKEN', () => {
+  describe('fromAssetId() — invariant violations', () => {
+    it('throws OutcomeTokenInvariantViolation if assetId.type !== OUTCOME_TOKEN', () => {
       const currencyAssetId: AssetId = { type: 'CURRENCY', currency: 'USDC' };
 
       expect(() => OutcomeToken.fromAssetId(currencyAssetId)).toThrow(OutcomeTokenInvariantViolation);
       expect(() => OutcomeToken.fromAssetId(currencyAssetId)).toThrow('requires AssetId of type OUTCOME_TOKEN');
     });
 
-    it('проверяет name и context в OutcomeTokenInvariantViolation', () => {
+    it('checks name and context in OutcomeTokenInvariantViolation', () => {
       const currencyAssetId: AssetId = { type: 'CURRENCY', currency: 'USDC' };
 
+      expect.assertions(4);
       try {
         OutcomeToken.fromAssetId(currencyAssetId);
-        fail('Should have thrown');
+        throw new Error('Expected OutcomeTokenInvariantViolation to be thrown');
       } catch (e) {
         expect(e).toBeInstanceOf(OutcomeTokenInvariantViolation);
         if (e instanceof OutcomeTokenInvariantViolation) {

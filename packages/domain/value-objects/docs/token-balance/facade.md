@@ -13,7 +13,7 @@ import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
 import { OutcomeToken } from '@polymarket/value-objects/outcome-token';
 import { Quantity } from '@polymarket/value-objects/quantity';
 import { BinaryOutcome, KnownOnChainProtocols, KnownVenues } from '@polymarket/ids';
-import type { OnChainConditionRef, AccountId, VenueId } from '@polymarket/ids';
+import type { OnChainConditionRef, AccountId, VenueId, ChainId, ConditionId } from '@polymarket/ids';
 import { parseWalletAddress, accountIdFromWallet } from '@polymarket/ids';
 import { isErr } from '@polymarket/result';
 import Decimal from 'decimal.js';
@@ -21,12 +21,14 @@ import Decimal from 'decimal.js';
 const conditionRef: OnChainConditionRef = {
   kind: 'ONCHAIN',
   protocolId: KnownOnChainProtocols.POLYMARKET_CTF,
-  chainId: 137 as any,
-  conditionId: '0x...' as any
+  chainId: 137 as ChainId,
+  conditionId: '0x...' as ConditionId
 };
 
 const token = OutcomeToken.of(conditionRef, BinaryOutcome.UP);
-const walletAddress = parseWalletAddress('0x1234567890123456789012345678901234567890')!;
+const parsedAddress = parseWalletAddress('0x1234567890123456789012345678901234567890');
+if (!parsedAddress) throw new Error('Invalid wallet address');
+const walletAddress = parsedAddress;
 const accountId: AccountId = accountIdFromWallet(walletAddress);
 const venueId: VenueId = KnownVenues.POLYMARKET;
 
@@ -88,6 +90,9 @@ if (result.ok) {
 Резервирует токены из available в reserved.
 
 ```typescript
+import { TokenBalanceService, TokenBalanceErrorReason } from '@polymarket/value-objects/token-balance';
+import { isErr } from '@polymarket/result';
+
 const result = TokenBalanceService.reserve(
   balance,
   Quantity.of(new Decimal(30))
@@ -167,6 +172,9 @@ const newBalance = result.value;
 **Использование:** Исполнение сделки, расход зарезервированных токенов.
 
 ```typescript
+import { TokenBalanceService, TokenBalanceErrorReason } from '@polymarket/value-objects/token-balance';
+import { isErr } from '@polymarket/result';
+
 const result = TokenBalanceService.consumeReserved(
   balance,
   Quantity.of(new Decimal(30))
@@ -243,6 +251,8 @@ if (result.ok) {
 Проверяет, достаточно ли доступных токенов для резервирования указанного количества.
 
 ```typescript
+import { expectOk } from '@polymarket/result';
+
 const balance = expectOk(TokenBalanceService.create(
   token,
   Quantity.of(new Decimal(100)),
@@ -293,6 +303,9 @@ console.log(canReserve3); // true
 Сравнивает два баланса на точное равенство (strict equality).
 
 ```typescript
+import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
+import { expectOk } from '@polymarket/result';
+
 const balance1 = expectOk(TokenBalanceService.create(
   token,
   Quantity.of(new Decimal(100)),
@@ -384,6 +397,9 @@ console.log(TokenBalanceService.isZero(nonZeroBalance)); // false
 Проверяет, является ли баланс положительным (total > 0).
 
 ```typescript
+import { TokenBalanceService } from '@polymarket/value-objects/token-balance';
+import { expectOk } from '@polymarket/result';
+
 const balance = expectOk(TokenBalanceService.create(
   token,
   Quantity.of(new Decimal(100)),
@@ -456,6 +472,9 @@ console.log(balance2.available().value().toNumber()); // 70
 ### Exhaustive checking через switch
 
 ```typescript
+import { TokenBalanceErrorReason } from '@polymarket/value-objects/token-balance';
+import { isErr } from '@polymarket/result';
+
 const result = TokenBalanceService.reserve(balance, qty);
 
 if (isErr(result)) {

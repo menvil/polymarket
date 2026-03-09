@@ -52,10 +52,10 @@ public static readonly SUPPORTED_CURRENCIES = new Set<SupportedCurrency>(['USDC'
 // Максимальная абсолютная сумма
 public static readonly MAX_AMOUNT = new Decimal('1e15');
 
-// Singleton zero для каждой валюты
-public static readonly ZERO: Record<SupportedCurrency, Money> = {
-  USDC: Money.of(new Decimal(0), 'USDC')
-};
+// Singleton zero для каждой валюты (инициализируется после class body)
+public static readonly ZERO: Record<SupportedCurrency, Money>;
+// Фактическое присвоение происходит ПОСЛЕ определения класса:
+// Money.ZERO = { USDC: Money.of(new Decimal(0), 'USDC') };
 ```
 
 ---

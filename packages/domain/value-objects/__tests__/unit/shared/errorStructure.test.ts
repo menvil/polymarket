@@ -89,15 +89,9 @@ describe('Error Structure - ErrorSource & opChain tracking', () => {
   });
 
   describe('ErrorSource.RULE_VALIDATION', () => {
-    it('помечает ошибки валидации правил (проверяется в Rules тестах)', () => {
-      // NOTE: Rules (ValidateStepSize, ValidateMinSize и т.д.) - это отдельные модули,
-      // а не методы на QuantityService. Они тестируются в отдельных тестах.
-      // Здесь мы просто проверяем, что концепция source=rule_validation работает.
-
-      // Для демонстрации используем SpreadService, который имеет inline validations
-      // или проверяем через Rules напрямую в других тестах
-      expect(ErrorSource.RULE_VALIDATION).toBe('rule_validation');
-    });
+    // NOTE: Rules (ValidateStepSize, ValidateMinSize и т.д.) - отдельные модули,
+    // тестируются в соответствующих unit-тестах Rules.
+    it.todo('помечает ошибки валидации правил (source=rule_validation в ValidateStepSize и др.)');
   });
 
   describe('ErrorSource.SERVICE_CALL', () => {

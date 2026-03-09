@@ -303,7 +303,7 @@ describe('QuoteService Ratio Operations', () => {
       return result.value;
     };
 
-    it('getMidPrice возвращает Err для bid-only quote (без TypeErrror)', () => {
+    it('getMidPrice возвращает Err для bid-only quote (без TypeError)', () => {
       const bidOnly = createBidOnly(0.50, 100);
       const result = QuoteService.getMidPrice(bidOnly);
 

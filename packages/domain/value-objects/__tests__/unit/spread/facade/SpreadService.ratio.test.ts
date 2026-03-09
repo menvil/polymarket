@@ -524,7 +524,7 @@ describe('SpreadService Ratio Operations', () => {
       }
     });
 
-    it('фэйлится при выходе за границы Price', () => {
+    it('succeeds when result stays within Price boundaries', () => {
       const spread = createSpread(0.1, 0.2);
       const bidRatio = Ratio.of(new Decimal(-0.5)); // -50% от mid
       const askRatio = Ratio.of(new Decimal(0));
@@ -532,8 +532,8 @@ describe('SpreadService Ratio Operations', () => {
       const result = SpreadService.skewByRatio(spread, bidRatio, askRatio);
 
       // mid = 0.15, bidAdj = -0.075
-      // newBid = 0.1 - 0.075 = 0.025 < MIN_PRICE (0.0001) возможно ок, но проверим
-      expect(result.ok).toBe(true); // 0.025 > 0.0001, должно быть ok
+      // newBid = 0.1 - 0.075 = 0.025 >= MIN_PRICE (0.0001), so result is ok
+      expect(result.ok).toBe(true);
     });
 
     it('никогда не бросает исключения', () => {

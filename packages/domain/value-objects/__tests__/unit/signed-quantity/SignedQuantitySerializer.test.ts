@@ -42,7 +42,7 @@ describe('SignedQuantitySerializer', () => {
   });
 
   describe('fromJSON', () => {
-    describe('успешная десериализация', () => {
+    describe('successful deserialization', () => {
       it('should deserialize positive SignedQuantity', () => {
         const result = SignedQuantitySerializer.fromJSON({ value: '10.5' });
         expect(result.ok).toBe(true);
@@ -76,7 +76,7 @@ describe('SignedQuantitySerializer', () => {
       });
     });
 
-    describe('структурные ошибки', () => {
+    describe('structural errors', () => {
       it('should fail on null', () => {
         const result = SignedQuantitySerializer.fromJSON(null);
         expect(isErr(result)).toBe(true);
@@ -160,13 +160,13 @@ describe('SignedQuantitySerializer', () => {
         expect(isErr(result)).toBe(true);
         if (isErr(result)) {
           expect(result.error.message).toContain("Field 'value' must be string");
-          // BigInt вызывает ошибку при JSON.stringify, поэтому получим [Unstringifiable]
+          // BigInt causes an error with JSON.stringify, so we will get [Unstringifiable]
           expect(result.error.context?.json).toBe('[Unstringifiable]');
         }
       });
     });
 
-    describe('бизнес-ошибки валидации', () => {
+    describe('business validation errors', () => {
       it('should fail on invalid number string', () => {
         const result = SignedQuantitySerializer.fromJSON({ value: 'not-a-number' });
         expect(isErr(result)).toBe(true);
