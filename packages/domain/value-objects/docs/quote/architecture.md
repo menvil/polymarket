@@ -177,6 +177,8 @@ class QuoteInvariantViolation extends Error {
 }
 ```
 
+> **Примечание:** `QuoteInvariantViolation` использует собственный набор `reason`-значений (не `QuoteErrorReason`). Это разные типы: `QuoteInvariantViolation` бросается в Core и содержит внутренние причины нарушения инвариантов; `QuoteErrorReason` используется в Facade для типизированных ошибок, возвращаемых через `Result`.
+
 **Внутреннее представление:**
 
 - `_bid`, `_ask`: `Price | null`
@@ -412,20 +414,28 @@ if (spread.greaterThan(maxSpread)) {
 // Проверка bid стороны
 if (quoteBid !== null && orderbookAsk !== null) {
   if (quoteBid >= orderbookAsk) {
-    return Err({
-      reason: QuoteErrorReason.MARKET_CROSSING,
-      side: 'bid'
-    });
+    return Err(
+      new InvalidQuoteError('Quote bid crosses orderbook ask', {
+        context: {
+          reason: QuoteErrorReason.MARKET_CROSSING,
+          side: 'bid'
+        }
+      })
+    );
   }
 }
 
 // Проверка ask стороны
 if (quoteAsk !== null && orderbookBid !== null) {
   if (quoteAsk <= orderbookBid) {
-    return Err({
-      reason: QuoteErrorReason.MARKET_CROSSING,
-      side: 'ask'
-    });
+    return Err(
+      new InvalidQuoteError('Quote ask crosses orderbook bid', {
+        context: {
+          reason: QuoteErrorReason.MARKET_CROSSING,
+          side: 'ask'
+        }
+      })
+    );
   }
 }
 ```
@@ -596,7 +606,7 @@ Quote
 
 2. **Rules:** ValidateQuoteSizes, ValidateMinSpread, ValidateMaxSpread, ValidateMarketCrossing, ValidateAge
    - Бизнес-правила валидации
-   - Проверка размеров, spread границ, market crossing, свежести
+   - Проверка размеров, spread границ, market crossing, возраста котировки
 
 3. **Facade:** QuoteService.test.ts, QuoteService.ratio.test.ts
    - create(), bidOnly(), askOnly()

@@ -365,29 +365,29 @@ if (profitResult.ok && lossResult.ok) {
   const profit = profitResult.value;
   const loss = lossResult.value;
 
-// Стандартный формат
-const std1 = SignedQuantityFormatter.toString(profit, 2);
-if (std1.ok) {
-  console.log(std1.value); // "+1250.50"
-}
+  // Стандартный формат
+  const std1 = SignedQuantityFormatter.toString(profit, 2);
+  if (std1.ok) {
+    console.log(std1.value); // "+1250.50"
+  }
 
-// Без знака плюс
-const std2 = SignedQuantityFormatter.toString(profit, 2, { showPlusSign: false });
-if (std2.ok) {
-  console.log(std2.value); // "1250.50"
-}
+  // Без знака плюс
+  const std2 = SignedQuantityFormatter.toString(profit, 2, { showPlusSign: false });
+  if (std2.ok) {
+    console.log(std2.value); // "1250.50"
+  }
 
-// Компактный формат
-console.log(SignedQuantityFormatter.toCompactString(profit)); // "+1250.5"
-console.log(SignedQuantityFormatter.toCompactString(loss));   // "-750.25"
+  // Компактный формат
+  console.log(SignedQuantityFormatter.toCompactString(profit)); // "+1250.5"
+  console.log(SignedQuantityFormatter.toCompactString(loss));   // "-750.25"
 
-// Финансовый формат (negative in parentheses)
-const fin1 = SignedQuantityFormatter.toFinancialString(profit, 2);
-const fin2 = SignedQuantityFormatter.toFinancialString(loss, 2);
-if (fin1.ok && fin2.ok) {
-  console.log(fin1.value); // "1250.50"
-  console.log(fin2.value); // "(750.25)"
-}
+  // Финансовый формат (negative in parentheses)
+  const fin1 = SignedQuantityFormatter.toFinancialString(profit, 2);
+  const fin2 = SignedQuantityFormatter.toFinancialString(loss, 2);
+  if (fin1.ok && fin2.ok) {
+    console.log(fin1.value); // "1250.50"
+    console.log(fin2.value); // "(750.25)"
+  }
 
   // Debug формат
   console.log(SignedQuantityFormatter.toDebugString(profit)); // "SignedQuantity(+1250.5)"

@@ -36,7 +36,7 @@ const result = TokenBalanceService.create(
   venueId
 );
 
-if (isErr(result)) {
+if (!result.ok) {
   console.error('Ошибка создания:', result.error.message);
   return;
 }
@@ -219,8 +219,18 @@ if (deserializedResult.ok) {
 ```typescript
 // Получение баланса токенов с API
 async function fetchTokenBalance(userId: string, tokenId: string): Promise<TokenBalance | null> {
-  const response = await fetch(`/api/users/${userId}/tokens/${tokenId}/balance`);
-  const json = await response.json();
+  let json: unknown;
+  try {
+    const response = await fetch(`/api/users/${userId}/tokens/${tokenId}/balance`);
+    if (!response.ok) {
+      console.error(`HTTP error ${response.status}: ${response.statusText}`);
+      return null;
+    }
+    json = await response.json();
+  } catch (err) {
+    console.error('Network error:', err);
+    return null;
+  }
 
   const result = TokenBalanceSerializer.fromJSON(json);
   if (isErr(result)) {

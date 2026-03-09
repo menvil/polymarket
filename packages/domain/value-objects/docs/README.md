@@ -2,7 +2,7 @@
 
 > Неизменяемые value objects для доменной модели торговой системы Polymarket
 
-![Tests](https://img.shields.io/badge/tests-350%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-201%20passing-brightgreen)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.3-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 
@@ -619,9 +619,9 @@ console.log(`Общая стоимость портфеля: ${totalValue.toStri
 positions.forEach(pos => {
   const totalDecimal = totalValue.toDecimal();
   const posDecimal = pos.value.toDecimal();
-  const shareDecimal = posDecimal.dividedBy(totalDecimal).times(100);
+  const shareDecimal = posDecimal.dividedBy(totalDecimal); // дробь от 0 до 1
 
-  const share = unwrap(Percentage.fromDecimal(shareDecimal));
+  const share = unwrap(Percentage.fromDecimal(shareDecimal)); // fromDecimal ожидает долю (0.4444 = 44.44%)
   console.log(`${pos.symbol}: ${share.toString()}`);
 });
 // "YES-TRUMP: 44.44%"
@@ -698,6 +698,6 @@ MIT
 
 ## Поддержка
 
-- **Документация:** [docs/](./docs/)
+- **Документация:** [docs/](.)
 - **Issues:** [GitHub Issues](https://github.com/polymarket/issues)
 - **Tests:** 201/201 passing ✅ (Money: 77, Percentage: 95, Balance: 29)

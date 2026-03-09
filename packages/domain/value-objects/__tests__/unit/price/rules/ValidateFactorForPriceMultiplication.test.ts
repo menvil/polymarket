@@ -28,6 +28,7 @@ describe('ValidateFactorForPriceMultiplication', () => {
 
     it('содержит reason is_nan', () => {
       const result = ValidateFactorForPriceMultiplication.check(new Decimal(NaN));
+      expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.context?.reason).toBe('is_nan');
       }
@@ -35,6 +36,7 @@ describe('ValidateFactorForPriceMultiplication', () => {
 
     it('сообщение ошибки содержит NaN', () => {
       const result = ValidateFactorForPriceMultiplication.check(new Decimal(NaN));
+      expect(result.ok).toBe(false);
       if (!result.ok) {
         expect(result.error.message).toContain('NaN');
       }

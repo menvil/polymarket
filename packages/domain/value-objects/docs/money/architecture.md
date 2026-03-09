@@ -458,7 +458,7 @@ try {
 }
 ```
 
-### 4. Почему MAX_AMOUNT = 1e15?
+### 3. Почему MAX_AMOUNT = 1e15?
 
 **Причина:** Безопасность для Number.MAX_SAFE_INTEGER.
 
@@ -475,7 +475,7 @@ JavaScript `Number.MAX_SAFE_INTEGER = 9007199254740991 ≈ 9e15`.
 
 Это больше чем весь мировой GDP, поэтому лимит разумен.
 
-### 5. Почему MoneyService.create принимает Decimal | number | string?
+### 4. Почему MoneyService.create принимает Decimal | number | string?
 
 **Flexibility для разных use cases:**
 
@@ -485,7 +485,7 @@ JavaScript `Number.MAX_SAFE_INTEGER = 9007199254740991 ≈ 9e15`.
 
 **Facade парсит всё в Decimal** и делегирует `Money.of()` для zero-copy.
 
-### 6. Почему Currency обязательна, но есть default?
+### 5. Почему Currency обязательна, но есть default?
 
 **Money ≠ Number**:
 

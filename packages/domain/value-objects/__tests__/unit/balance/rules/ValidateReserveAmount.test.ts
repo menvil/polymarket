@@ -93,7 +93,7 @@ describe('ValidateReserveAmount', () => {
 
     it('возвращает ошибку для отрицательного reserveAmount', () => {
       const available = Money.of(new Decimal(10000));
-      const reserveAmount = Money.of(new Decimal(-100), 'USDC');
+      const reserveAmount = Money.of(new Decimal(-100));
 
       const result = ValidateReserveAmount.check(reserveAmount, available);
 

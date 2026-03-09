@@ -319,8 +319,12 @@ interface LiquidityMetrics {
 }
 
 function analyzeLiquidity(spread: Spread, depth: number): LiquidityMetrics {
+  if (depth <= 0) {
+    throw new Error(`depth must be positive, got ${depth}`);
+  }
+
   const widthBps = spread.widthRatio().toDecimal().times(10000);
-  
+
   // Определяем score на основе ширины спреда
   let liquidityScore: LiquidityMetrics['liquidityScore'];
   if (widthBps < 50) {

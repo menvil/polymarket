@@ -29,7 +29,7 @@ describe('Spread Core', () => {
 
       try {
         Spread.of(bid, ask);
-        fail('Expected SpreadInvariantViolation');
+        throw new Error('Expected SpreadInvariantViolation');
       } catch (error) {
         expect(error).toBeInstanceOf(SpreadInvariantViolation);
         if (error instanceof SpreadInvariantViolation) {
@@ -88,9 +88,8 @@ describe('Spread Core', () => {
       expect(widthRatio.toNumber()).toBe(0.08);
     });
 
-    it('should return Ratio.ZERO when midpoint is zero', () => {
-      // Edge case: if somehow midpoint is zero (shouldn't happen with valid Prices)
-      // This is a defensive programming test
+    it('should return Ratio.ZERO when spread width is zero', () => {
+      // Edge case: нулевой спред (bid === ask) даёт ширину 0, поэтому widthRatio = 0
       const bid = Price.of(new Decimal(0.0001));
       const ask = Price.of(new Decimal(0.0001));
       const spread = Spread.of(bid, ask);

@@ -628,7 +628,7 @@ describe('Balance Integration Tests', () => {
       }
     });
 
-    it('отклоняет reserve если приведёт к превышению лимита', () => {
+    it('позволяет reserve если total не меняется (available уменьшается, reserved растёт)', () => {
       // Создаём баланс близкий к лимиту
       const nearMax = new Decimal('9e14');
       const createResult = BalanceService.create(
