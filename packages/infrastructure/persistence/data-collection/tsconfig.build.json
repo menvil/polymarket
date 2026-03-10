@@ -1,0 +1,18 @@
+{
+  "extends": "../../../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "declaration": true,
+    "declarationMap": true,
+    "composite": true,
+    "paths": {
+      "@polymarket/logger":        ["../../../foundation/logger/dist/index.d.ts"],
+      "@polymarket/ids":           ["../../../foundation/ids/dist/index.d.ts"],
+      "@polymarket/value-objects": ["../../../domain/value-objects/dist/index.d.ts"],
+      "@polymarket/ports":         ["../../../application/ports/dist/index.d.ts"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "__tests__"]
+}

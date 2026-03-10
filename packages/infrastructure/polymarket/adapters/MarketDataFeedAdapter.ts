@@ -8,12 +8,18 @@
  * ### Поток данных:
  * ```
  * IPolymarketWsEmitter.onOrderbookSnapshot(dto)
+ *   → recorder?.recordEvent(tokenId, dto)   (опционально, сначала пишем raw)
  *   → WsRawLevel[] → PriceLevel[]           (конвертация на границе инфраструктуры)
  *   → BookUpdateHandler.handleSnapshot()    (application layer)
  *
  * IPolymarketWsEmitter.onReconnect()
  *   → BookUpdateHandler.onReconnect()       (инвалидирует кэш стаканов)
  * ```
+ *
+ * ### Запись сырых данных (опционально):
+ * Если передан `recorder`, каждый входящий WS-снапшот записывается на диск
+ * до доменной обработки. Это позволяет воспроизвести исторические данные в бектесте.
+ * `recordEvent` синхронен и никогда не бросает — не влияет на trading path.
  *
  * ### Gap recovery (при reconnect):
  * `onReconnect()` инвалидирует все стаканы.
@@ -24,6 +30,9 @@
  * ```typescript
  * const adapter = new MarketDataFeedAdapter(wsEmitter, bookHandler, logger);
  * adapter.start();
+ * // С записью сырых данных:
+ * const adapter = new MarketDataFeedAdapter(wsEmitter, bookHandler, logger, recorder);
+ * adapter.start();
  * // При завершении:
  * adapter.stop();
  * ```
@@ -33,6 +42,7 @@ import type { ILogger } from '@polymarket/logger';
 import { asInstrumentId } from '@polymarket/ids';
 import { Price, Quantity } from '@polymarket/value-objects';
 import type { PriceLevel } from '@polymarket/order-book';
+import type { IMarketDataRecorder } from '@polymarket/ports';
 import type { IPolymarketWsEmitter } from '../ws/IPolymarketWsEmitter.js';
 import type { BookUpdateHandler } from '@polymarket/handlers';
 
@@ -42,6 +52,7 @@ import type { BookUpdateHandler } from '@polymarket/handlers';
  * @remarks
  * Подписывается на WS-события при `start()`.
  * Снимает все подписки при `stop()`.
+ * Опционально записывает raw WS-события через `IMarketDataRecorder` (fire-and-forget).
  */
 export class MarketDataFeedAdapter {
   private readonly _logger: ILogger;
@@ -52,11 +63,13 @@ export class MarketDataFeedAdapter {
    * @param _wsEmitter - WS-эмиттер raw событий Polymarket
    * @param _bookHandler - Application handler обновлений стакана
    * @param _logger - Logger
+   * @param _recorder - Опциональный рекордер для сохранения сырых WS-событий на диск
    */
   constructor(
     private readonly _wsEmitter: IPolymarketWsEmitter,
     private readonly _bookHandler: BookUpdateHandler,
     logger: ILogger,
+    private readonly _recorder?: IMarketDataRecorder,
   ) {
     this._logger = logger.child({ component: 'MarketDataFeedAdapter' });
   }
@@ -75,6 +88,9 @@ export class MarketDataFeedAdapter {
    */
   public start(): void {
     const unsubSnapshot = this._wsEmitter.onOrderbookSnapshot(async (dto) => {
+      // Записываем raw событие до доменной обработки (fire-and-forget, синхронно)
+      this._recorder?.recordEvent(dto.asset_id, dto);
+
       const tokenId = asInstrumentId(dto.asset_id);
       if (!tokenId) {
         this._logger.warn('Invalid asset_id in orderbook snapshot, skipping', {

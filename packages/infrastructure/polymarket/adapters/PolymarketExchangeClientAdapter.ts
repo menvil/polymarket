@@ -36,12 +36,15 @@
  * if (result.ok) console.log('Order placed:', result.value);
  * ```
  */
+import Decimal from 'decimal.js';
 import type { Result } from '@polymarket/result';
 import { Ok, Err } from '@polymarket/result';
 import type { ILogger } from '@polymarket/logger';
-import type { OrderId } from '@polymarket/ids';
+import type { OrderId, AccountId, AssetId } from '@polymarket/ids';
 import { asOrderId, assetIdToString, isPolymarketCtfToken } from '@polymarket/ids';
-import type { IExchangeClient, SubmitOrderParams, ExchangeError } from '@polymarket/ports';
+import { Price, Quantity, TimestampService } from '@polymarket/value-objects';
+import type { Timestamp } from '@polymarket/value-objects';
+import type { IExchangeClient, SubmitOrderParams, ExchangeError, OpenOrderSnapshot, VenueTradeSnapshot } from '@polymarket/ports';
 import { ExchangeError as ExchangeErrorClass } from '@polymarket/ports';
 import type { PolymarketExecutionAdapter } from '../rest/adapters/PolymarketExecutionAdapter.js';
 
@@ -152,6 +155,86 @@ export class PolymarketExchangeClientAdapter implements IExchangeClient {
         { context: { orderId: String(orderId) } },
       ));
     }
+  }
+
+  /**
+   * Возвращает открытые ордера аккаунта от биржи.
+   *
+   * @param accountId - ID аккаунта трейдера (проставляется в каждый snapshot)
+   * @returns Ok(OpenOrderSnapshot[]) при успехе, Err(ExchangeError) при ошибке
+   *
+   * @remarks
+   * Вызывает `_executionAdapter.getOpenOrders()` без фильтра по tokenId — возвращает
+   * все открытые ордера аккаунта. Невалидные записи (некорректный orderId, VO) пропускаются.
+   * `filledSize = size - sizeRemaining` (вычисляется из полей ответа API).
+   */
+  public async getOpenOrders(accountId: AccountId): Promise<Result<OpenOrderSnapshot[], ExchangeError>> {
+    try {
+      const orders = await this._executionAdapter.getOpenOrders();
+      const snapshots: OpenOrderSnapshot[] = [];
+
+      for (const o of orders) {
+        const orderId = asOrderId(o.orderId);
+        if (!orderId) {
+          this._logger.warn('Skipping open order with invalid orderId', { orderId: o.orderId });
+          continue;
+        }
+
+        const timestampResult = TimestampService.create(o.createdAt);
+        if (!timestampResult.ok) {
+          this._logger.warn('Skipping open order with invalid createdAt', { orderId: o.orderId });
+          continue;
+        }
+
+        const filledSizeNum = Math.max(0, o.size - o.sizeRemaining);
+
+        try {
+          const asset: AssetId = { type: 'POLYMARKET_CTF_TOKEN', tokenId: o.tokenId };
+          snapshots.push({
+            orderId,
+            accountId,
+            asset,
+            side: o.side.toUpperCase() as 'BUY' | 'SELL',
+            price: Price.of(new Decimal(o.price)),
+            size: Quantity.of(new Decimal(o.size)),
+            filledSize: Quantity.of(new Decimal(filledSizeNum)),
+            status: filledSizeNum > 0 ? 'PARTIALLY_FILLED' : 'OPEN',
+            createdAt: timestampResult.value,
+          });
+        } catch {
+          this._logger.warn('Skipping open order with invalid price/size values', {
+            orderId: o.orderId,
+          });
+        }
+      }
+
+      this._logger.debug('Open orders fetched from exchange', { count: snapshots.length });
+      return Ok(snapshots);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      this._logger.error('Exchange getOpenOrders failed', { error: message });
+      return Err(new ExchangeErrorClass(`Exchange getOpenOrders failed: ${message}`));
+    }
+  }
+
+  /**
+   * Возвращает исполненные сделки аккаунта от биржи.
+   *
+   * @param _accountId - ID аккаунта (не используется — маппинг через /data/trades)
+   * @param _since - Начальная временная метка фильтрации (не используется в текущей реализации)
+   * @returns Ok([]) — заглушка (не реализовано)
+   *
+   * @remarks
+   * TODO: Реализовать через `_executionAdapter.getFilledOrders()` с маппингом
+   * `TradeResponse → VenueTradeSnapshot`. Требует FillId factory и маппинга marketId.
+   * Текущая заглушка безопасна: `ReconcileTradesUseCase` просто не обнаружит пропущенных fills.
+   */
+  public async getTrades(
+    _accountId: AccountId,
+    _since?: Timestamp,
+  ): Promise<Result<VenueTradeSnapshot[], ExchangeError>> {
+    this._logger.warn('getTrades not yet implemented, returning empty list');
+    return Ok([]);
   }
 
   /**

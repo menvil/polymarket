@@ -11,7 +11,10 @@
  * - `VersionConflictError` — ошибка конфликта версий (CAS)
  * - `IProcessedFillRepository` — idempotency guard для Fill
  * - `IExchangeClient` / `SubmitOrderParams` / `ExchangeError` — торговый клиент
+ * - `OpenOrderSnapshot` / `VenueTradeSnapshot` / `FeeSnapshot` — DTO от биржи
  * - `IMarketCatalog` / `InstrumentInfo` — каталог инструментов
+ * - `IBalanceAllocator` / `AllocationResult` / `AllocationStats` — распределитель баланса
+ * - `IMarketDataRecorder` / `MarketMeta` — запись сырых WS-событий на диск
  *
  * @example
  * ```typescript
@@ -20,6 +23,8 @@
  *   IPortfolioStore,
  *   IExchangeClient,
  *   IMarketCatalog,
+ *   IBalanceAllocator,
+ *   IMarketDataRecorder,
  * } from '@polymarket/ports';
  * ```
  */
@@ -29,5 +34,13 @@ export type { IPortfolioStore } from './IPortfolioStore.js';
 export { VersionConflictError } from './VersionConflictError.js';
 export type { IProcessedFillRepository } from './IProcessedFillRepository.js';
 export { ExchangeError } from './IExchangeClient.js';
-export type { IExchangeClient, SubmitOrderParams } from './IExchangeClient.js';
+export type {
+  IExchangeClient,
+  SubmitOrderParams,
+  OpenOrderSnapshot,
+  VenueTradeSnapshot,
+  FeeSnapshot,
+} from './IExchangeClient.js';
 export type { IMarketCatalog, InstrumentInfo } from './IMarketCatalog.js';
+export type { IBalanceAllocator, AllocationResult, AllocationStats } from './IBalanceAllocator.js';
+export type { IMarketDataRecorder, MarketMeta } from './IMarketDataRecorder.js';
