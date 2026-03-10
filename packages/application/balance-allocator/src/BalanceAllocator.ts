@@ -163,9 +163,16 @@ export class BalanceAllocator implements IBalanceAllocator {
 
     const results = this.allocateToNewMarkets([marketId]);
     if (results.length === 0) {
+      // allocateToNewMarkets фильтрует уже аллоцированные рынки — проверяем явно
+      if (this._allocations.has(marketId)) {
+        return Err(new TradingError(
+          'Cannot add market: market is already allocated',
+          { context: { marketId: String(marketId) } },
+        ));
+      }
       return Err(new TradingError(
         'Cannot allocate balance to market: insufficient free balance',
-        { context: { marketId: String(marketId) } },
+        { context: { marketId: String(marketId), stats: this.getStats() } },
       ));
     }
 
