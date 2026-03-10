@@ -497,9 +497,11 @@ export class Orderbook {
    * НЕ использует venueTimestamp, так как:
    * - Venue часы могут быть рассинхронизированы
    * - Latency уже учтена в receivedAt
+   *
+   * @param nowMs - Текущее время в мс (по умолчанию Date.now()). Передавайте clock.now().toNumber() для бэктеста.
    */
-  public getAgeMs(): number {
-    return Date.now() - this.receivedAt.toNumber();
+  public getAgeMs(nowMs?: number): number {
+    return (nowMs ?? Date.now()) - this.receivedAt.toNumber();
   }
 
   /**
@@ -530,9 +532,12 @@ export class Orderbook {
    *
    * Stale detection по локальному времени получения данных,
    * а не по времени venue (которое может быть некорректным).
+   *
+   * @param maxAgeMs - Максимальный возраст в мс (по умолчанию 5000)
+   * @param nowMs - Текущее время в мс (по умолчанию Date.now()). Передавайте clock.now().toNumber() для бэктеста.
    */
-  public isStale(maxAgeMs: number = 5000): boolean {
-    return this.getAgeMs() > maxAgeMs;
+  public isStale(maxAgeMs: number = 5000, nowMs?: number): boolean {
+    return this.getAgeMs(nowMs) > maxAgeMs;
   }
 
   // ==================== SERIALIZATION ====================

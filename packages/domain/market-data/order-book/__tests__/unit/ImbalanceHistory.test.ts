@@ -156,12 +156,12 @@ describe('ImbalanceHistory', () => {
 
     it('вычисляет дельту (last - first) в окне', () => {
       const h = ImbalanceHistory.create();
-      const now = Date.now();
+      const now = BASE_TIME + 10_000; // детерминированное время
       h.record(d(0.1), now - 4000);
       h.record(d(0.2), now - 3000);
       h.record(d(0.5), now - 1000);
 
-      const delta = h.getDelta(5000);
+      const delta = h.getDelta(5000, now);
       expect(delta).toBeDefined();
       // last(0.5) - first(0.1) = 0.4
       expect(delta!.toNumber()).toBeCloseTo(0.4, 5);
@@ -169,11 +169,11 @@ describe('ImbalanceHistory', () => {
 
     it('возвращает отрицательную дельту при убывании', () => {
       const h = ImbalanceHistory.create();
-      const now = Date.now();
+      const now = BASE_TIME + 10_000; // детерминированное время
       h.record(d(0.8), now - 3000);
       h.record(d(0.3), now - 1000);
 
-      const delta = h.getDelta(5000);
+      const delta = h.getDelta(5000, now);
       expect(delta).toBeDefined();
       // last(0.3) - first(0.8) = -0.5
       expect(delta!.toNumber()).toBeCloseTo(-0.5, 5);

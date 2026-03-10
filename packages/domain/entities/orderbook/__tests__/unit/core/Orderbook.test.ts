@@ -376,7 +376,8 @@ describe('Orderbook', () => {
 
   describe('getAgeMs()', () => {
     it('вычисляет возраст относительно receivedAt', () => {
-      const receivedAt = Date.now() - 5000; // 5 секунд назад
+      const BASE = 1_700_000_000_000; // детерминированное время
+      const receivedAt = BASE - 5000;
       const raw: RawOrderbook = {
         marketId: 'market-123',
         tokenId: 'token-yes',
@@ -389,10 +390,9 @@ describe('Orderbook', () => {
       if (!normalized.ok) throw new Error('Failed to normalize');
       const orderbook = Orderbook.fromNormalized(normalized.value);
 
-      const ageMs = orderbook.getAgeMs();
+      const ageMs = orderbook.getAgeMs(BASE); // передаём nowMs явно
 
-      expect(ageMs).toBeGreaterThanOrEqual(5000);
-      expect(ageMs).toBeLessThan(6000);
+      expect(ageMs).toBe(5000);
     });
   });
 
@@ -430,7 +430,8 @@ describe('Orderbook', () => {
 
   describe('isStale()', () => {
     it('возвращает true если orderbook старше maxAgeMs', () => {
-      const receivedAt = Date.now() - 6000; // 6 секунд назад
+      const BASE = 1_700_000_000_000; // детерминированное время
+      const receivedAt = BASE - 6000;
       const raw: RawOrderbook = {
         marketId: 'market-123',
         tokenId: 'token-yes',
@@ -443,13 +444,25 @@ describe('Orderbook', () => {
       if (!normalized.ok) throw new Error('Failed to normalize');
       const orderbook = Orderbook.fromNormalized(normalized.value);
 
-      expect(orderbook.isStale(5000)).toBe(true);
+      expect(orderbook.isStale(5000, BASE)).toBe(true); // 6000 > 5000
     });
 
     it('возвращает false если orderbook свежий', () => {
-      const orderbook = createTestOrderbook();
+      const BASE = 1_700_000_000_000;
+      const receivedAt = BASE - 100; // 100ms назад
+      const raw: RawOrderbook = {
+        marketId: 'market-123',
+        tokenId: 'token-yes',
+        bids: [],
+        asks: [],
+        receivedAt,
+      };
 
-      expect(orderbook.isStale(5000)).toBe(false);
+      const normalized = OrderbookNormalizer.normalize(raw);
+      if (!normalized.ok) throw new Error('Failed to normalize');
+      const orderbook = Orderbook.fromNormalized(normalized.value);
+
+      expect(orderbook.isStale(5000, BASE)).toBe(false); // 100ms < 5000ms
     });
   });
 

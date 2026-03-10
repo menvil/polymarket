@@ -294,6 +294,9 @@ export class OrderBook {
    * ```
    */
   public getBids(levels?: number): readonly PriceLevel[] {
+    if (levels !== undefined && (!Number.isInteger(levels) || levels < 0)) {
+      throw new RangeError(`OrderBook.getBids: levels must be a non-negative integer, got ${levels}`);
+    }
     const sorted = this._getSortedBids();
     return levels !== undefined ? sorted.slice(0, levels) : sorted;
   }
@@ -311,6 +314,9 @@ export class OrderBook {
    * ```
    */
   public getAsks(levels?: number): readonly PriceLevel[] {
+    if (levels !== undefined && (!Number.isInteger(levels) || levels < 0)) {
+      throw new RangeError(`OrderBook.getAsks: levels must be a non-negative integer, got ${levels}`);
+    }
     const sorted = this._getSortedAsks();
     return levels !== undefined ? sorted.slice(0, levels) : sorted;
   }

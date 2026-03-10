@@ -82,7 +82,7 @@ export class ImbalanceHistory {
   public static create(maxSize?: number): ImbalanceHistory {
     const size = maxSize ?? ImbalanceHistory.DEFAULT_MAX_SIZE;
     if (!Number.isInteger(size) || size <= 0) {
-      throw new RangeError(`ImbalanceHistory: maxSize must be a positive integer, got ${maxSize}`);
+      throw new RangeError(`ImbalanceHistory: maxSize must be a positive integer, got ${size}`);
     }
     return new ImbalanceHistory(size);
   }
@@ -140,19 +140,17 @@ export class ImbalanceHistory {
    * Вычисляет среднее значение дисбаланса
    *
    * @param windowMs - Длительность окна в миллисекундах (если не указано — все записи)
+   * @param nowMs - Текущее время в мс (по умолчанию Date.now()). Передавайте clock.now().toNumber() для бэктеста.
    * @returns Среднее значение как Decimal или undefined если нет записей
-   *
-   * @remarks
-   * При указании windowMs использует текущее время Date.now() как точку отсчёта.
    *
    * @example
    * ```typescript
-   * const avgLast10s = history.getAverage(10_000); // Decimal | undefined
-   * const avgAll = history.getAverage();            // Decimal | undefined
+   * const avgLast10s = history.getAverage(10_000, clock.now().toNumber()); // детерминированно
+   * const avgAll = history.getAverage();                                    // все записи
    * ```
    */
-  public getAverage(windowMs?: number): Decimal | undefined {
-    const now = Date.now();
+  public getAverage(windowMs?: number, nowMs?: number): Decimal | undefined {
+    const now = nowMs ?? Date.now();
     const points =
       windowMs !== undefined
         ? this.getWindow(now - windowMs, now)
@@ -168,6 +166,7 @@ export class ImbalanceHistory {
    * Вычисляет дельту дисбаланса за период
    *
    * @param windowMs - Длительность окна в миллисекундах
+   * @param nowMs - Текущее время в мс (по умолчанию Date.now()). Передавайте clock.now().toNumber() для бэктеста.
    * @returns last - first в окне как Decimal, или undefined если менее 2 записей
    *
    * @remarks
@@ -176,14 +175,14 @@ export class ImbalanceHistory {
    *
    * @example
    * ```typescript
-   * const delta = history.getDelta(5000); // Decimal | undefined
+   * const delta = history.getDelta(5000, clock.now().toNumber()); // детерминированно
    * if (delta?.greaterThan(0.1)) {
    *   // резкий рост давления bid
    * }
    * ```
    */
-  public getDelta(windowMs: number): Decimal | undefined {
-    const now = Date.now();
+  public getDelta(windowMs: number, nowMs?: number): Decimal | undefined {
+    const now = nowMs ?? Date.now();
     const points = this.getWindow(now - windowMs, now);
 
     if (points.length < 2) return undefined;
